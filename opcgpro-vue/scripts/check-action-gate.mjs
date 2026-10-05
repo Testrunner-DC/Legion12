@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import ts from 'typescript'
+import { actionGateTemplateContract } from './action-gate-template-contract.mjs'
+import './test-a3-action-gate-template-contract.mjs'
 
 const filename = new URL('../src/l12/useActionGate.ts', import.meta.url)
 let source = fs.readFileSync(filename, 'utf8')
@@ -66,12 +68,15 @@ let checks = 0
 }
 
 const friends = fs.readFileSync(new URL('../src/l12/site/FriendsPage.vue', import.meta.url), 'utf8')
+const publicContentSource = fs.readFileSync(new URL('../src/l12/site/PublicDeckContentEditor.vue', import.meta.url), 'utf8')
+const tournamentSource = fs.readFileSync(new URL('../src/l12/site/AdminTournamentWorkbench.vue', import.meta.url), 'utf8')
+const templateContract = actionGateTemplateContract(friends, publicContentSource, tournamentSource)
 assert(friends.includes("useActionGate()")); checks += 1
 assert(friends.includes('runAction(actionKey(player)')); checks += 1
 assert(!friends.includes("runAction('friends-write'")); checks += 1
-assert((friends.match(/:disabled="actionPending\(actionKey\(/g) ?? []).length >= 8); checks += 1
+assert(templateContract.friendsPending); checks += 1
 assert(!friends.includes('busy || actionBusy')); checks += 1
-assert(friends.includes(':aria-busy="actionBusy"')); checks += 1
+assert(templateContract.friendsBusy); checks += 1
 
 const deckLibrary = fs.readFileSync(new URL('../src/l12/site/DeckLibraryPage.vue', import.meta.url), 'utf8')
 assert(deckLibrary.includes('useActionGate()')); checks += 1
@@ -88,7 +93,7 @@ assert((publicDeck.match(/runAction\(publicDeckActionKey\(id, accountId\)/g) ?? 
 assert((publicDeck.match(/actionPending\(publicDeckActionKey\(entry.id\)\)/g) ?? []).length >= 6); checks += 1
 assert(publicDeck.includes("accountId === platformState.account?.id")); checks += 1
 assert(publicDeckContent.includes('useActionGate()') && publicDeckContent.includes('run(actionKey.value')); checks += 1
-assert(publicDeckContent.includes(':disabled="isPending(actionKey)"')); checks += 1
+assert(templateContract.publicPending); checks += 1
 
 const shell = fs.readFileSync(new URL('../src/l12/site/SiteShell.vue', import.meta.url), 'utf8')
 assert(shell.includes('runOnlineAction(onlineFriendActionKey(player.accountId, accountId)')); checks += 1
@@ -99,7 +104,7 @@ assert(!shell.includes('onlineActionBusy')); checks += 1
 const tournaments = fs.readFileSync(new URL('../src/l12/site/AdminTournamentWorkbench.vue', import.meta.url), 'utf8')
 assert(tournaments.includes('runGatedAction(key')); checks += 1
 assert((tournaments.match(/runAction\(tournamentActionKey\(item\)/g) ?? []).length >= 13); checks += 1
-assert(tournaments.includes(':disabled="actionPending(tournamentActionKey(item))')); checks += 1
+assert(templateContract.tournamentPending); checks += 1
 assert(!tournaments.includes('if (busy.value)')); checks += 1
 assert(!tournaments.includes('Promise.all([refreshTournaments(), loadFriends(), loadDeckCatalog(), getEffectiveOperationsPolicy(), syncSavedDecksFromAccount()])')); checks += 1
 assert(tournaments.includes('mergeTournamentSnapshot(result.items, tournaments.value, baselineVersions)')); checks += 1
