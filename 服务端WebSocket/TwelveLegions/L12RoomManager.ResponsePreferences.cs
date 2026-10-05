@@ -169,7 +169,8 @@ public sealed partial class L12RoomManager
         room.CommandSequence++;
         var commandJson = JsonSerializer.Serialize(new
         {
-            type = "responseAutoClose", lease.PromptId, lease.StackItemId, lease.PriorityPlayer,
+            type = "responseAutoClose", promptId = lease.PromptId,
+            stackItemId = lease.StackItemId, priorityPlayer = lease.PriorityPlayer,
             deadlineUtc = lease.DeadlineUtc, observedAtUtc = now,
         });
         try
@@ -195,12 +196,12 @@ public sealed partial class L12RoomManager
     {
         var messages = new List<OutgoingMessage>();
         var now = utcNow ?? _utcNow();
-        foreach (var room in _rooms.Values.Where(room => room.Game?.CaptureResponseAutoCloseLease() is not null)
-                     .ToArray())
+        foreach (var room in _rooms.Values.ToArray())
         {
-            await room.Gate.WaitAsync();
+            if (!room.Gate.Wait(0)) continue;
             try
             {
+                if (room.Closed || room.Game is null) continue;
                 if (await ExpireResponseWindowLockedAsync(room, now))
                     messages.AddRange(BroadcastGame(room, forceCritical: true));
             }
@@ -211,11 +212,12 @@ public sealed partial class L12RoomManager
             finally { room.Gate.Release(); }
         }
         await DrainResponsePreferenceOutboxAsync();
-        foreach (var room in _rooms.Values.Where(room => room.Game is not null))
+        foreach (var room in _rooms.Values.ToArray())
         {
-            await room.Gate.WaitAsync();
+            if (!room.Gate.Wait(0)) continue;
             try
             {
+                if (room.Closed || room.Game is null) continue;
                 for (var player = 0; player < room.Sessions.Count; player++)
                 {
                     if (!room.ResponsePreferenceSyncPending[player]) continue;

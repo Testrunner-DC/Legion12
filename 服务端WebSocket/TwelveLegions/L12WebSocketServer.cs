@@ -37,6 +37,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly Func<L12ServerStorageView> _storageSnapshot;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
+    private readonly ConcurrentDictionary<Guid, L12InboundConnection> _inboundConnections = new();
+    private readonly ConcurrentDictionary<Guid, byte> _establishedInboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
     private readonly ConcurrentDictionary<Guid, SocketPlatformBinding> _socketPlatformSessions = new();
     private readonly ConcurrentDictionary<Guid, ProtocolCapabilities> _socketCapabilities = new();
@@ -3639,6 +3641,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     acceptedSocket.Abort();
                 }, SocketSendTimeout);
             _outboundConnections[sessionId] = outbound;
+            var inbound = new L12InboundConnection(
+                json => DispatchAsync(sessionId, json, CancellationToken.None),
+                error =>
+                {
+                    Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
+                    acceptedSocket.Abort();
+                });
+            _inboundConnections[sessionId] = inbound;
+            var businessPathEstablished = false;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
                 context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
             if (rankedNetworkFingerprint is not null)
@@ -3650,7 +3661,38 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 var message = await ReceiveTextAsync(socket, buffer, cancellationToken);
                 if (message is null) break;
-                await DispatchAsync(sessionId, message, cancellationToken);
+                // The initial handshake is sequential. Once authentication/recovery has established
+                // this connection, it can never fall back to concurrent direct dispatch even if a
+                // revocation removes the current binding while old FIFO work is still running.
+                if (!businessPathEstablished)
+                {
+                    await DispatchAsync(sessionId, message, cancellationToken);
+                    businessPathEstablished = _establishedInboundConnections.ContainsKey(sessionId);
+                    continue;
+                }
+                if (TryReadMessageType(message, out var messageType)
+                    && string.Equals(messageType, "ping", StringComparison.Ordinal))
+                {
+                    if (await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken))
+                        await SendAsync(sessionId,
+                            new { type = "pong", utc = DateTimeOffset.UtcNow }, cancellationToken);
+                    continue;
+                }
+
+                var enqueue = inbound.TryEnqueue(message);
+                if (enqueue == L12InboundEnqueueResult.Accepted) continue;
+                if (enqueue == L12InboundEnqueueResult.Completed) break;
+
+                // The overflowing frame was received but never accepted. Drain every previously
+                // accepted FIFO item before sending its explicit rejection; never fabricate an ack.
+                var rejection = CreateInboundOverloadPayload(message, enqueue);
+                message = null; // Do not retain an unaccepted maximum-size frame while FIFO drains.
+                await inbound.CompleteAsync(drain: true);
+                await RejectInboundOverloadAsync(sessionId, rejection, cancellationToken);
+                if (socket.State == WebSocketState.Open)
+                    await socket.CloseOutputAsync((WebSocketCloseStatus)1013,
+                        "inbound queue capacity exceeded", cancellationToken);
+                break;
             }
         }
         catch (OperationCanceledException) { }
@@ -3658,6 +3700,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         finally
         {
             _sockets.TryRemove(sessionId, out _);
+            _establishedInboundConnections.TryRemove(sessionId, out _);
+            if (_inboundConnections.TryRemove(sessionId, out var inbound))
+            {
+                inbound.StopAcceptingAndCancelPending();
+                await inbound.CompleteAsync(drain: false);
+            }
             string? disconnectedAccountId = null;
             if (_socketPlatformSessions.TryRemove(sessionId, out var binding)
                 && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
@@ -3698,33 +3746,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var messageType = typeElement.GetString();
             if (messageType is not ("hello" or "deploymentProbe"))
             {
-                if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
-                {
-                    await SendAsync(sessionId, new
-                    {
-                        type = "authenticationRequired", reason = "authentication-required",
-                        message = "请先登录账号",
-                    }, cancellationToken);
-                    return;
-                }
-                if (!_platform.IsSessionActive(binding.PlatformSessionId))
-                {
-                    _socketPlatformSessions.TryRemove(sessionId, out _);
-                    _rooms.RecordConnectionClaimRejection(binding.AccountId, "platform-session-revoked");
-                    await SendAsync(sessionId, new
-                    {
-                        type = "authenticationRequired", reason = "platform-session-revoked",
-                        message = "登录会话已撤销",
-                    }, cancellationToken);
-                    return;
-                }
-                if (!_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
-                    || currentSocket != sessionId
-                    || !_rooms.IsCurrentConnection(sessionId, binding.AccountId, binding.ConnectionGeneration))
-                {
-                    await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
-                    return;
-                }
+                // This runs at dequeue, so revocation and connection-generation changes after
+                // receipt still fence the queued command before it reaches any room mutation.
+                if (!await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken)) return;
             }
             try
             {
@@ -3815,6 +3839,91 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
+    private async Task<bool> ValidateAuthenticatedConnectionAsync(Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
+        {
+            await SendAsync(sessionId, new
+            {
+                type = "authenticationRequired", reason = "authentication-required",
+                message = "请先登录账号",
+            }, cancellationToken);
+            return false;
+        }
+        if (!_platform.IsSessionActive(binding.PlatformSessionId))
+        {
+            _socketPlatformSessions.TryRemove(sessionId, out _);
+            _rooms.RecordConnectionClaimRejection(binding.AccountId, "platform-session-revoked");
+            await SendAsync(sessionId, new
+            {
+                type = "authenticationRequired", reason = "platform-session-revoked",
+                message = "登录会话已撤销",
+            }, cancellationToken);
+            return false;
+        }
+        if (_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
+            && currentSocket == sessionId
+            && _rooms.IsCurrentConnection(sessionId, binding.AccountId, binding.ConnectionGeneration))
+            return true;
+
+        await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
+        return false;
+    }
+
+    private static bool TryReadMessageType(string json, out string? messageType)
+    {
+        messageType = null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String) return false;
+            messageType = type.GetString();
+            return messageType is not null;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    private static object CreateInboundOverloadPayload(string json,
+        L12InboundEnqueueResult enqueue)
+    {
+        string? requestId = null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var candidate = document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("requestId", out var value)
+                && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+            // An overload response must not keep a hostile megabyte-sized requestId alive.
+            if (candidate is { Length: <= 128 }) requestId = candidate;
+        }
+        catch (JsonException) { }
+        return new
+        {
+            type = "error",
+            code = "inboundQueueCapacityExceeded",
+            reason = enqueue == L12InboundEnqueueResult.MessageLimit
+                ? "message-limit" : "retained-byte-limit",
+            message = "待处理请求过多，请重新连接后确认操作结果",
+            requestId,
+            retryWithSameRequestId = requestId is not null,
+        };
+    }
+
+    private async Task RejectInboundOverloadAsync(Guid sessionId, object payload,
+        CancellationToken cancellationToken)
+    {
+        if (!_outboundConnections.TryGetValue(sessionId, out var outbound)) return;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(SocketSendTimeout);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+        if (!await outbound.EnqueueAndWaitAsync(new L12QueuedPayload(bytes, false, false), timeout.Token)
+            && _sockets.TryGetValue(sessionId, out var socket)) socket.Abort();
+    }
+
     private async Task<IReadOnlyList<OutgoingMessage>> AuthenticateSessionAsync(Guid sessionId, JsonElement root)
     {
         if (_socketPlatformSessions.TryGetValue(sessionId, out var currentBinding))
@@ -3868,6 +3977,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 authenticated.Account.Id, claim.ConnectionGeneration);
             _activeAccountSockets[authenticated.Account.Id] = sessionId;
             recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
+            _establishedInboundConnections[sessionId] = 0;
         }
         finally { _socketClaimGate.Release(); }
 
@@ -3901,6 +4011,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
         CancellationToken cancellationToken)
     {
+        if (_inboundConnections.TryGetValue(sessionId, out var inbound))
+            inbound.StopAcceptingAndCancelPending();
         var payload = new
         {
             type = "sessionSuperseded", reason = "newer-connection-generation",
@@ -5266,6 +5378,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         var revoked = sessionIds.ToHashSet(StringComparer.Ordinal);
         foreach (var mapping in _socketPlatformSessions.Where(item => revoked.Contains(item.Value.PlatformSessionId)).ToArray())
         {
+            if (_inboundConnections.TryGetValue(mapping.Key, out var inbound))
+                inbound.StopAcceptingAndCancelPending();
             if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding)
                 && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
                 && active == mapping.Key)

@@ -383,12 +383,9 @@ public sealed partial class L12RoomManager
             else if (string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
             {
                 using var document = JsonDocument.Parse(recorded.CommandJson);
-                var root = document.RootElement;
-                engine.TryExpireResponseAutoClose(root.GetProperty("promptId").GetString() ?? string.Empty,
-                    root.GetProperty("stackItemId").GetString() ?? string.Empty,
-                    root.GetProperty("priorityPlayer").GetInt32(),
-                    root.GetProperty("deadlineUtc").GetDateTimeOffset(),
-                    root.GetProperty("observedAtUtc").GetDateTimeOffset());
+                var autoClose = L12ResponseAutoCloseRecordedCommand.Parse(document.RootElement);
+                engine.TryExpireResponseAutoClose(autoClose.PromptId, autoClose.StackItemId,
+                    autoClose.PriorityPlayer, autoClose.DeadlineUtc, autoClose.ObservedAtUtc);
                 outcome = CommandResult.Ok();
             }
             else

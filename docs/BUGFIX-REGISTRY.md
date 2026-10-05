@@ -1,5 +1,31 @@
 # Legion12 Bug 修复记录
 
+## RECOVERY-20261006-AUTOCLOSE-TIME｜真实恢复哈希RED，完整方案批准后限定修复中
+
+- 04:08实际增量：第三轮完整平台528/528，失败跳过0；新/旧三字段×单/双5秒真实Journal与ranked恢复、收到时刻漂移、物理clock差异、作用域异常清理、重复和坏记录全保留通过。旧缺精确时间事件仍严格拒绝，未削弱哈希。完整批／干净Release及同实包尚待，不部署。
+
+- 第二轮平台两条C2实际GetMatch重建抛“v2 命令重放校验失败：1”。键兼容已通过解析，不是同一异常。双方invalid-five时PassPriority/深层ResolveTopStack可同步创建下一5秒期限；运行取Engine物理clock，Journal/Ranked重放取更晚Recorder received_utc，旧observedAtUtc仅校验原lease，不冻结新期限，产生不同state hash。fake时钟扩大差异，实际调用顺序也存在时间差；不据此认定原线上事故唯一因果。
+- 用户批准完整对局保障方案。最小修复只在TryExpire全部原lease校验通过后try/finally暂存本命令observed；OfferResponse生成新deadline使用该时刻，否则仍原物理clock。覆盖同步PassPriority及栈结算产生的新响应，不改正常命令／投影／receivedUtc、不新增持久字段或迁移。两reader继续同一严格parser、完整revision/hash校验。无效/重复/过早lease不设置override。
+- 旧事件若曾生成下一期限而精确物理时间未记录，hash不可反推；继续拒绝，不能用新observed值冒充旧事实。原可信checkpoint之后的重建沿既有能力，不保证GetMatch从0重建所有旧历史。新/旧字段×单/双5秒SQLite回放与ranked恢复、物理clock漂移、finally清理、重复及坏记录回归由限定子测试租约补充；尚待执行。部署／维护／线上resolved均0。
+
+## NET-20261006-DEFERRED-MAINTENANCE｜Wait(0)丢有限窗口观察事实，新回归已实际RED
+
+- 04:08实际增量：完整平台528/528；EndsAt跨越、取消、即时覆盖及冻结后重开四时序通过，原authority/settlement/检查点守卫未删除。r1/r2独立复核保留，Closed/Game-null不误清尚可恢复的延期事实，消失的exact Room身份仍可清理。冻结状态为合成反射夹具，不冒称真实保存失败→认领复合链全部覆盖。
+
+- 独立复核r1静态发现后Main新增真实两排位房测试，第二轮实际NotNull失败。原await Gate保留已捕获active维护策略；零等待跳过后下轮若EndsAt已过便return，忙房永久丢已到期作废。不是修改维护规则，而是保留原延期行为。
+- 同一非重叠sweep下HashSet只记exact Room已观察事实，busy不丢、完成清除、移除身份清理，不转嫁给复用code的新房；窗口结束／配置取消／之后即时覆盖都不能撤销已开始观察，观察前即时维护仍保护旧局。authority写入／runtime/outbox/完成原路径保持，不新增schema或重置计时。Main三时序与重开恰一次权威事件回归接续；旧失败证据保留，完整验收尚待。集合是本进程延期调度，不宣称重启后额外事实恢复保障。
+
+## NET-20261006-INBOUND-WATCHDOG｜已批准，真实首轮验收中
+
+- C0固定树真实ClientWebSocket／两排位房RED：同连接syncState后的pong约30015ms，慢房Gate阻塞另一房到期耐久结算约30秒；证据`live-match-isolation-red-20261006-runs/main-current-20261006-023711/binding.json`。释放后一次性终局／双方结算和原checkpoint批失败原子性控制有效，不认定原事故唯一根因。
+- 用户批准后集成每连接8项／2228224保留字节（含执行项／UTF16）FIFO；初始hello恢复仍串行，认证ping独立且复用唯一出站发送者；撤销／接管／关闭取消未开始请求，不撤销在途耐久事务。逐房Gate零等待、重叠watchdog不排队；ranked cohort任何忙／异常则整轮普通checkpoint不提交，健康房终局沿原事务推进。SQLite／平台outbox慢写未完全隔离，不称完整方案已完成。
+- 首轮完整平台503项500通过／3失败／跳过0，原TRX／合成库／日志保留。代际夹具过早要求失效，Main校正原reservation屏障和提交后断言，未改认领合同。另两项为下列真实旧恢复缺陷，另获批准，不移除恢复断言。新增真实字节饱和／长requestId／socket关闭中耐久提交回归待执行，不部署／不提前resolved。
+
+## RECOVERY-20261006-AUTOCLOSE-KEYS｜实际复现，已批准限定兼容修复
+
+- responseAutoClose匿名属性默认写PromptId／StackItemId／PriorityPlayer，Journal与ranked两恢复入口仅读小写，C2实际在MatchRecorder.Journal.cs:650抛KeyNotFoundException。同型扫描全部responseAutoClose确认一生产者／两消费者，非卡效Bug。
+- 用户批准新记录显式小写，两入口兼容既有三大写键；其他字段／类型／必需性严格，不改旧记录、不迁移数据库、不改schema／规则。Main拥有生产者，子仅恢复分支／必要解析器／新回归，原失败测试不删不放宽。实际结果与最终提交待后续回执，当前不称已恢复通过；不部署／改维护。
+
 ## PLATFORM-20261006-COMMITTED-SESSION-ACTIVITY｜平台保存连带会话阻塞／提前注销通知（已批准，本地专项通过）
 
 - 原断连报告与现有对局保障计划对齐。本地真实外层管理事务及30秒故障屏障复现两条独立风险：IsSessionActive持平台全域_gate，另一次保存会令查询等待约30秒；嵌套禁用调用在真实外层提交前发送SessionsRevoked，提交失败后内存／SQLite会话仍有效却已经发通知。不是已证明原线上事故的唯一根因；不据此关闭原断连报告。

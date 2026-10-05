@@ -23,6 +23,12 @@ public sealed record L12RankedClockView(
 public sealed partial class L12RoomManager
 {
     private static readonly JsonSerializerOptions RankedSetupCommandJson = new(JsonSerializerDefaults.Web);
+    private readonly SemaphoreSlim _rankedClockTickGate = new(1, 1);
+    // Owned only by the non-overlapping watchdog sweep. An observed scheduled
+    // invalidation must survive a busy gate and the end/cancellation of its window,
+    // just as the original waiter retained its captured active policy. Exact Room
+    // identity prevents carrying this fact to a later room reusing the same code.
+    private readonly HashSet<Room> _deferredMaintenanceInvalidations = [];
 
     private sealed class RankedClockState
     {
@@ -357,16 +363,28 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> TickRankedClocksAsync(DateTimeOffset? utcNow = null)
     {
+        // Do not queue overlapping watchdog sweeps or mix their checkpoint cohorts.
+        if (!_rankedClockTickGate.Wait(0)) return [];
+        try { return await TickRankedClocksCoreAsync(utcNow); }
+        finally { _rankedClockTickGate.Release(); }
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> TickRankedClocksCoreAsync(DateTimeOffset? utcNow)
+    {
         var messages = new List<OutgoingMessage>();
         var checkpoints = new List<L12RankedRuntimeCheckpoint>();
+        var checkpointBatchComplete = true;
         var now = utcNow ?? _utcNow();
         foreach (var room in _rooms.Values.Where(room => room.RankedClock is not null && room.Game is not null
                      && (room.Game.State.Phase != L12Phase.GameOver || !room.CompletionRecorded
                          || !room.RankedResultReported)).ToArray())
         {
-            await room.Gate.WaitAsync();
+            // Busy rooms keep their existing baseline/deadlines; the next sweep charges
+            // accumulated UTC time under the same authoritative per-room write gate.
+            if (!room.Gate.Wait(0)) { checkpointBatchComplete = false; continue; }
             try
             {
+                if (room.Closed || room.RankedClock is null || room.Game is null) continue;
                 var broadcast = await ApplyRankedClockConclusionLockedAsync(room, now);
                 if (room.RankedClock is { SetupBroadcastPending: true } clock)
                 {
@@ -380,6 +398,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
+                checkpointBatchComplete = false;
                 // 一个房间的暂时性存储故障不能阻止其他排位房间的权威计时。
                 Console.Error.WriteLine($"Ranked clock room ({room.Code}): {error.Message}");
             }
@@ -388,7 +407,11 @@ public sealed partial class L12RoomManager
         try
         {
             // 所有活跃排位的 1 秒 checkpoint 共用一个 WAL 事务，避免逐房间 fsync。
-            await _recorder.PersistRankedRuntimeBatchAsync(checkpoints);
+            // A deferred/failed cohort member suppresses the entire ordinary checkpoint
+            // batch, never a partial checkpoint commit. Authority + runtime + outbox
+            // conclusions still use their existing individual durable transactions.
+            if (checkpointBatchComplete)
+                await _recorder.PersistRankedRuntimeBatchAsync(checkpoints);
         }
         catch (Exception error)
         {
@@ -407,24 +430,36 @@ public sealed partial class L12RoomManager
         var policy = CaptureOperationsPolicy();
         // Immediate maintenance closes only new-game entry. It deliberately shields already-running games
         // from the scheduled-maintenance invalidation path while the manual override is active.
-        if (policy.ImmediateMaintenance?.Enabled == true) return;
-        if (!policy.Maintenance.Enabled) return;
+        var scheduledAllowed = policy.ImmediateMaintenance?.Enabled != true && policy.Maintenance.Enabled;
         var starts = policy.Maintenance.StartsAt;
         var remaining = starts is { } scheduledStart ? scheduledStart - now : TimeSpan.Zero;
-        var active = policy.IsMaintenanceActive(now);
-        var warningMinutes = starts is not null && remaining.TotalMinutes is >= 0 and <= 30
+        var active = scheduledAllowed && policy.IsMaintenanceActive(now);
+        var warningMinutes = scheduledAllowed && starts is not null && remaining.TotalMinutes is >= 0 and <= 30
             ? Math.Max(0, (int)Math.Ceiling(remaining.TotalMinutes / 5d) * 5) : -1;
-        if (!active && warningMinutes < 0) return;
+        var currentRooms = _rooms.Values.ToArray();
+        var liveIdentities = currentRooms.ToHashSet();
+        _deferredMaintenanceInvalidations.RemoveWhere(room => !liveIdentities.Contains(room));
+        var eligible = currentRooms.Where(candidate => candidate.Game is not null
+            && !IsAuthorizedMaintenanceSandbox(candidate)
+            && (candidate.Game.State.Phase != L12Phase.GameOver || !candidate.CompletionRecorded)).ToArray();
+        if (active)
+            foreach (var room in eligible) _deferredMaintenanceInvalidations.Add(room);
+        if (_deferredMaintenanceInvalidations.Count == 0 && warningMinutes < 0) return;
 
-        foreach (var room in _rooms.Values.Where(candidate => candidate.Game is not null
-                     && !IsAuthorizedMaintenanceSandbox(candidate)
-                     && (candidate.Game.State.Phase != L12Phase.GameOver
-                         || !candidate.CompletionRecorded)).ToArray())
+        foreach (var room in _deferredMaintenanceInvalidations.Concat(warningMinutes >= 0 ? eligible : [])
+                     .Distinct().ToArray())
         {
-            await room.Gate.WaitAsync();
+            if (!room.Gate.Wait(0)) continue;
             try
             {
-                if (active)
+                if (room.Closed || room.Game is null)
+                {
+                    // Closed can mean temporarily frozen after an unprovable
+                    // recovery, not retired. Keep the observed fact until this
+                    // exact room recovers/completes or leaves _rooms entirely.
+                    continue;
+                }
+                if (_deferredMaintenanceInvalidations.Contains(room))
                 {
                     if (room.Game!.State.Phase != L12Phase.GameOver)
                     {
@@ -448,6 +483,7 @@ public sealed partial class L12RoomManager
                         if (completionError is not null)
                             Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
                     }
+                    if (room.CompletionRecorded) _deferredMaintenanceInvalidations.Remove(room);
                     messages.AddRange(BroadcastGame(room));
                     continue;
                 }

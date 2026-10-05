@@ -1792,6 +1792,11 @@ public sealed partial class L12GameEngine
         BeginResponseWindow(item);
     }
 
+    // Transient command-local clock, never persisted or used by normal commands.
+    // Replaying an auto-close must create the same next five-second lease even
+    // when its journal receipt or physical clock is later than the observation.
+    private DateTimeOffset? _responseAutoCloseObservedAtUtc;
+
     private void BeginResponseWindow(L12StackItem item)
     {
         State.ResponseWindow = CreateResponseWindow(State.ActivePlayer);
@@ -1874,7 +1879,8 @@ public sealed partial class L12GameEngine
             State.ResponseWindow.AutoClosePromptId = prompt.PromptId;
             State.ResponseWindow.AutoCloseStackItemId = top.StackItemId;
             State.ResponseWindow.AutoClosePriorityPlayer = playerIndex;
-            State.ResponseWindow.AutoCloseDeadlineUtc = _utcNow().ToUniversalTime().AddSeconds(5);
+            State.ResponseWindow.AutoCloseDeadlineUtc = (_responseAutoCloseObservedAtUtc ?? _utcNow())
+                .ToUniversalTime().AddSeconds(5);
         }
     }
 
@@ -1902,10 +1908,16 @@ public sealed partial class L12GameEngine
             || window.PriorityPlayer != priorityPlayer || prompt.PlayerIndex != priorityPlayer
             || prompt.StackItemId != stackItemId || State.EffectStack.LastOrDefault()?.StackItemId != stackItemId)
             return false;
-        State.PendingPrompts.Remove(prompt);
-        PassPriority(priorityPlayer);
-        State.Revision++;
-        return true;
+        var previousObservation = _responseAutoCloseObservedAtUtc;
+        _responseAutoCloseObservedAtUtc = observedAtUtc.ToUniversalTime();
+        try
+        {
+            State.PendingPrompts.Remove(prompt);
+            PassPriority(priorityPlayer);
+            State.Revision++;
+            return true;
+        }
+        finally { _responseAutoCloseObservedAtUtc = previousObservation; }
     }
 
     internal L12ResponseAutoCloseLease? CaptureResponseAutoCloseLease()

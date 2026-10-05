@@ -55,7 +55,7 @@ public sealed partial class L12RoomManager
     {
         foreach (var room in _rooms.Values.Where(item => item.Game?.State.Phase == L12Phase.GameOver).ToArray())
         {
-            await room.Gate.WaitAsync();
+            if (!room.Gate.Wait(0)) continue;
             try
             {
                 if (room.Closed || room.Game?.State.Phase != L12Phase.GameOver) continue;

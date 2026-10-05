@@ -647,12 +647,9 @@ public sealed partial class MatchRecorder
         }
         if (string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
         {
-            var promptId = commandRoot.GetProperty("promptId").GetString() ?? string.Empty;
-            var stackItemId = commandRoot.GetProperty("stackItemId").GetString() ?? string.Empty;
-            var priorityPlayer = commandRoot.GetProperty("priorityPlayer").GetInt32();
-            var deadline = commandRoot.GetProperty("deadlineUtc").GetDateTimeOffset();
-            var observedAt = commandRoot.GetProperty("observedAtUtc").GetDateTimeOffset();
-            engine.TryExpireResponseAutoClose(promptId, stackItemId, priorityPlayer, deadline, observedAt);
+            var recorded = L12ResponseAutoCloseRecordedCommand.Parse(commandRoot);
+            engine.TryExpireResponseAutoClose(recorded.PromptId, recorded.StackItemId,
+                recorded.PriorityPlayer, recorded.DeadlineUtc, recorded.ObservedAtUtc);
             return CommandResult.Ok();
         }
         if (playerIndex == -1)

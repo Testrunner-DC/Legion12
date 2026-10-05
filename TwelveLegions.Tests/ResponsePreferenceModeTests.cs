@@ -194,7 +194,8 @@ public sealed class ResponsePreferenceModeTests
         Assert.Equal(L12GameEngine.InvalidFiveSecondsResponseMode,
             game.State.ResponseWindow!.FrozenPlayerResponseModes![1]);
         Assert.Equal(1, game.State.ResponseWindow.PriorityPlayer);
-        Assert.NotNull(game.CaptureResponseAutoCloseLease());
+        var nextLease = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
+        Assert.Equal(firstLease.DeadlineUtc.AddSeconds(5), nextLease.DeadlineUtc);
 
         BeginNextWindow(game, 1, "default-next-response-stack");
         Assert.Equal(L12GameEngine.DefaultResponseMode,

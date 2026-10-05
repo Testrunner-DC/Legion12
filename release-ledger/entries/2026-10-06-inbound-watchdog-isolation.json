@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-inbound-watchdog-isolation",
+  "date": "2026-10-06",
+  "audience": "players",
+  "title": "对战连接与响应恢复",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "减少慢操作对同一连接心跳和其他对局计时的影响；断线时已开始的保存仍按原规则完成。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/L12InboundConnection.cs",
+        "服务端WebSocket/TwelveLegions/L12RankedClock.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "修复5秒自动关闭响应后，连续响应窗口的期限无法一致恢复的问题，并兼容旧记录中的字段名称。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+        "服务端WebSocket/TwelveLegions/L12ResponseAutoCloseRecordedCommand.cs"
+      ]
+    }
+  ]
+}
