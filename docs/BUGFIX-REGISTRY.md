@@ -1,8 +1,15 @@
 # Legion12 Bug 修复记录
 
-## UI-20261005-DRAWER-FOCUS｜已批准，本地专项通过，未部署
+## QUEUE-20261005-STRESS-CLOSE｜压力未复现关闭，非修复
 
-- 用户在本轮明确批准最小方案，随后仅SiteShell初始焦点候选过滤改动：真实可见、有正向tabIndex的a[href]/未disabled按钮，排除aria-disabled、hidden/inert祖先。布局/CSS、Escape、关闭焦点恢复、路由及卸载清理均未改。Shell最终SHA0D1B8F5A41C5D09516F6E60EB2BD7F19AE46ABA7BF7BA68CB7D426ACEA43EFA2。
+- 用户明确授权“压力测试也没出现问题的Bug就关掉，不要持续待办”。只对BUG-20261004-81b7f6a6、BUG-20261003-7d82522f做限定公开合成压力复测；没有自动关闭其他报告，不部署或改维护。两项原异常尚未复现，因此没有改规则、没有伪造fixCommit或原录像复测。
+- 当前正式c858同SHA发布包和候选82dc分别1200/1200通过、0失败，各3000检查点恢复/21960重复投影。莫德雷德/陵墓构造体权威6000相等、0—3守卫、双向进攻、20种子及三恢复路径480场；宫廷魔术师前后排远程、三格目标、活跃/休整禁攻720场（后排360），实际命令接受/拒绝及结算事实核对。使用权威引擎恢复，不复制结算。范围不是并发容量、客户端UI或原录像，不做超范围结论。
+- 11:43:44后台只更新两条为closed/rejected，原因“压力复测未复现，证据不足”；预演、If-Match、独立执行幂等、再次GET读回与负责人/备注/优先级/原证据保持通过，专用非Aimin会话finally注销HTTP200。不是resolved/fixed_verified，没有verifiedBy/verifiedAt。再次复发沿原反馈补证据重开，本批不继续待办。
+- 实际证据：D:/GPT/Legion12/artifacts/bug-pressure-closeout-20261005/acceptance.md、production-bound-r2.json、candidate-bound-r3.json、online-closure-receipt.json。首轮近战被错误要求远程无损180失败、首两份候选标签装载正式DLL均保留；夹具校正及启动SHA强校验后只有强绑定最终报告计入。关闭回执SHA9472A036C2A1915B66EFD22DFD435EF868A17521775CB498D54A252361E1256B。队列此时852/new578/resolved186/closed88，Main写入2，另新增1/此前外部7关闭不算Main动作。
+
+## UI-20261005-DRAWER-FOCUS｜已批准，完整Release并同步，未部署
+
+- 用户在本轮明确批准最小方案，随后仅SiteShell初始焦点候选过滤改动：真实可见、可聚焦（tabIndex≥0）的a[href]/未disabled按钮，排除aria-disabled、hidden/inert祖先。布局/CSS、Escape、关闭焦点恢复、路由及卸载清理均未改。Shell最终SHA0D1B8F5A41C5D09516F6E60EB2BD7F19AE46ABA7BF7BA68CB7D426ACEA43EFA2。
 - 六尺寸最终真实消费者107/107、12图通过，报告D:/GPT/Legion12/artifacts/site-summary-drawer-20261005-green-final-r2/report.json（SHA602CA2D860B714C7811525F146B0FEDC7F7CABF5BF9076381FAA89C78AE24915）。额外负例排除hidden、aria-disabled、负tabindex及inert；中间hidden属性被作者display覆盖而有矩形的失败证据保留，补语义隐藏排除后通过。npm verify:site-summary-drawer保留可复跑浏览器回归，不强迫没有Edge的CI安装浏览器，既有普通门禁不削弱。
 - 新玩家日志进入持续账本；完整最终门禁/同步/部署另记，未关闭线上Bug。下面待批准文字保留为修改前复现与提出方案的历史。
 
