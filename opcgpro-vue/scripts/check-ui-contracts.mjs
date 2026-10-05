@@ -8,6 +8,10 @@ import './test-a3-profile-auth-template-contract.mjs'
 import { usesWhitelistedBugDiagnostic } from './test-feedback-draft-lifecycle.mjs'
 import { hasMasterTitleBrandImage } from './ranked-brand-template-contract.mjs'
 import './test-a3-ranked-brand-template-contract.mjs'
+import { deckSnapshotGroups, deckSnapshotTemplateContract } from './deck-snapshot-template-contract.mjs'
+import './test-a3-deck-snapshot-template-contract.mjs'
+import { publicDeckConsumerTemplateContract } from './public-deck-consumer-template-contract.mjs'
+import './test-a3-public-deck-consumer-template-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -196,6 +200,12 @@ const maintenanceNow = Date.parse('2026-09-07T12:00:00Z')
 const scheduledMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '计划广播', startsAt: '2026-09-07T13:01:01Z' }, maintenanceNow)
 const endingMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '', startsAt: '2026-09-07T11:00:00Z', endsAt: '2026-09-07T12:01:01Z' }, maintenanceNow)
 const openEndedMaintenance = maintenanceCountdown({ enabled: true, message: '维护提示', broadcastMessage: '' }, maintenanceNow)
+const deckSnapshotContract = deckSnapshotTemplateContract({
+  adminMatches, adminMasterAnalytics, deckSnapshotViewer, deckConstructionBrowser,
+})
+const deckSnapshotContractPassed = deckSnapshotGroups(deckSnapshotContract)
+  .every(([, predicates]) => predicates.every(Boolean))
+const publicDeckConsumerContract = publicDeckConsumerTemplateContract({ publicDeckDetail, deckConstructionBrowser })
 
 const contracts = [
   [mainEntry.includes("import './l12/site/uiSystem.css'")
@@ -955,7 +965,7 @@ const contracts = [
     && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
   [deckLibrary.includes('publicDeckApi.list') && publicDeckDetail.includes('编辑') && publicDeckDetail.includes('删除') && publicDeckDetail.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
-  [publicDeckDetail.includes('<DeckConstructionBrowser :entries="entries"')
+  [publicDeckConsumerContract.sharedBrowserConsumer && publicDeckConsumerContract.uniqueDetailOwnership
     && publicDeckDetail.includes("add(entry.value.deck.cardIds, 'main')") && publicDeckDetail.includes("add(entry.value.deck.moraleIds, 'morale')")
     && publicDeckDetail.includes("add(entry.value.deck.specialIds ?? [], 'special')") && publicDeckDetail.includes('automaticExtraCardIdsForMaster')
     && deckConstructionBrowser.includes('grid-template-rows:auto minmax(2.8em,auto) auto')
@@ -1325,15 +1335,7 @@ const contracts = [
     && adminMatches.includes("summary.status === 'completed' || (view.value === 'sandbox' && summary.modeId === 'sandbox')")
     && adminMatches.includes("error.code === 'sandbox_replay_expired'") && adminMatches.includes('回放已过期')
     && replayPage.includes("reason.code === 'sandbox_replay_expired'") && replayPage.includes("? '回放已过期'"), '对局档案必须支持最近/按玩家查询和独立的管理员沙盒排查；沙盒不混入正式记录，管理员可排查各状态沙盒，过期回放明确失败关闭'],
-  [adminMatches.includes('data-ui-contract="match-snapshot-view-construction"')
-    && adminMatches.includes('<DeckSnapshotViewer v-if="deckViewer"')
-    && adminMasterAnalytics.includes('<DeckSnapshotViewer v-if="popularDeck && selected"')
-    && deckSnapshotViewer.includes('<DeckConstructionBrowser :entries="entries"')
-    && deckSnapshotViewer.includes('copyCode') && deckSnapshotViewer.includes('exportImage')
-    && deckSnapshotViewer.includes('copyToLibrary') && deckSnapshotViewer.includes("expand('special')")
-    && deckConstructionBrowser.includes('aria-label="构筑筛选"')
-    && deckConstructionBrowser.includes('entry.quantity') && deckConstructionBrowser.includes('const selected = computed')
-    && !adminMatches.includes('v-for="card in participant.deckCards"'), '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，并可复制牌库码、导出牌库图或复制到我的牌库，档案正文不得继续平铺单卡'],
+  [deckSnapshotContractPassed, '对局档案必须以“查看构筑”打开不可变当局快照，复用牌库式搜索、分类、数量与卡牌详情，并可复制牌库码、导出牌库图或复制到我的牌库，档案正文不得继续平铺单卡'],
   [adminCardAnalytics.includes('实际使用情况') && adminCardAnalytics.includes('构筑收录') && adminCardAnalytics.includes('实际抽到')
     && adminCardAnalytics.includes('从手牌打出') && adminCardAnalytics.includes('效果发动') && adminCardAnalytics.includes('正常结算')
     && adminCardAnalytics.includes('同条件未携带基线') && adminCardAnalytics.includes('不代表因果'), '卡牌数据必须展示独立使用指标、公平对照、样本与相关性边界，禁止用裸胜率冒充卡牌因果影响'],
