@@ -1947,7 +1947,7 @@ public sealed partial class L12GameEngine
             if (CanUseS1ResponseAtCurrentEffect(card.CardId, playerIndex, top)
                 && HasAvailablePublicResponseDeclaration(playerIndex, card.CardId, top))
                 choices.Add(card.InstanceId);
-            if (!defenderAttackTimingRoot && CanUseS2CounterAtStack(card.CardId, playerIndex, top)
+            if (CanUseS2CounterAtStack(card.CardId, playerIndex, top)
                 && HasAvailablePublicResponseDeclaration(playerIndex, card.CardId, top))
                 choices.Add(card.InstanceId);
         }
@@ -2074,7 +2074,8 @@ public sealed partial class L12GameEngine
         if (top.Trigger == "opponent-attack")
         {
             var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
-            return CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
+            return (CanUseS1ResponseAtCurrentEffect(cardId, playerIndex, top)
+                    || CanUseS2CounterAtStack(cardId, playerIndex, top))
                 && HasAvailablePublicResponseDeclaration(playerIndex, cardId, top);
         }
         if (L12StructuredCardSemantics.IsPitfallEntryNegationResponse(cardId))
@@ -2086,9 +2087,9 @@ public sealed partial class L12GameEngine
 
     private bool CanAbsoluteDefenseRespondTo(int playerIndex, L12StackItem target)
     {
-        if (target.Controller == playerIndex || target.Trigger == "authority-event"
+        if (target.Controller == playerIndex
             || State.Players[playerIndex].Hand.Count == 0) return false;
-        if (target.Trigger != "opponent-attack") return true;
+        if (target.Trigger != "opponent-attack") return IsRespondableCardEffectActivation(target);
         var defendingPlayer = State.PendingDefense is null ? -1 : 1 - State.PendingDefense.AttackerPlayer;
         return playerIndex == defendingPlayer;
     }
@@ -2104,21 +2105,23 @@ public sealed partial class L12GameEngine
 
     private bool CanUseS1ResponseAtCurrentEffect(string cardId, int playerIndex, L12StackItem top)
     {
-        // “对方发动效果时”包含对方发动的反击效果本身。原始进攻的方向规则仍由
-        // CanUseS1ReactionAtStack 维护；普通/晋升登场也在该公共入口共享同一家族谓词。
+        // “对方进攻”与“对方发动效果”是两个独立入口。必须检查选中的实际项目，
+        // 不能沿响应链退回进攻根项，也不能只枚举部分触发名称。
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
-            && IsDisasterAuthorityTiming(top))
-            return false;
-        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
-            && IsResponseEffectStackItem(top) && top.Controller != playerIndex
-            && PublicLegions(State.Players[playerIndex]).Any())
-            return true;
-        if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId)
-            && top.Trigger == "trial-complete" && top.Controller != playerIndex
-            && PublicLegions(State.Players[playerIndex]).Any())
-            return true;
+            && top.Trigger != "opponent-attack")
+            return top.Controller != playerIndex && IsRespondableCardEffectActivation(top)
+                && PublicLegions(State.Players[playerIndex]).Any();
         return CanUseS1ReactionAtStack(cardId, playerIndex, top);
     }
+
+    // 首类边界按运行时项目的角色判断，不依赖某张卡或真实触发名称白名单。
+    // 普通/晋升登场、进攻时、离场、回合触发及反击自身均是卡牌效果；权威事件、
+    // 裸进攻和续段屏障只是响应/调度载体，不是一次新的效果发动。结构判断同时
+    // 适用于旧检查点，不在读取或匿名卡池投影时补写状态。
+    private bool IsRespondableCardEffectActivation(L12StackItem item)
+        => item.Trigger is not ("opponent-attack" or "authority-event" or "composite-continuation")
+            && item.Data.GetValueOrDefault("unrespondable") != "true"
+            && !IsDisasterAuthorityTiming(item);
 
     private static bool IsResponseEffectStackItem(L12StackItem item)
         => item.Trigger is "reaction" or "s2-reaction" or "response-negate" or "response-block"

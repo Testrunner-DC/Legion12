@@ -201,7 +201,7 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
         $review += '；6G-A可选触发声明、次数预留与独立段已验收'
     }
     if ($batch6GBReviewedCardIds -contains $card.id) {
-        $review += '；6G-B隐藏展示延迟与独立抽牌段已验收'
+        $review += '；李牧隐藏展示延迟保留，2026-10-05整项单响应裁定已更新（旧独立抽牌规则撤销）'
     }
     if ($batch6IAReviewedCardIds -contains $card.id) {
         $review += '；6I-A原子可选触发公开声明与条件快照已验收'

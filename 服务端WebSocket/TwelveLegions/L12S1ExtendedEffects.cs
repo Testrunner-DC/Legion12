@@ -1026,10 +1026,9 @@ public sealed partial class L12GameEngine
         if (RequiresMoraleResponseCost(cardId) && !CanReturnMorale(State.Players[playerIndex], 1)) return false;
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId))
             return PublicLegions(State.Players[playerIndex]).Any()
-                && (timing.Trigger == "opponent-attack"
+                && (top.Trigger == "opponent-attack"
                     ? playerIndex == defendingPlayer
-                    : IsLegionEntryEffectTrigger(timing.Trigger)
-                        || timing.Trigger is "play" or "active" or "disaster");
+                    : IsRespondableCardEffectActivation(top));
         return cardId switch
         {
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,

@@ -649,13 +649,12 @@ public sealed partial class L12GameEngine
         }
         else if (batch6GAPlan == "limu-enter")
         {
-            candidate.Data["preserveIndependentStack"] = "true";
             var available = player.Library.Count > 0 ? new[] { "mode:none", "mode:use" } : ["mode:none"];
             steps =
             [
                 PublicTriggerStep("option", "revealMode", "李牧：预先声明是否展示牌库顶部1张牌",
                     available),
-                PublicTriggerStep("option", "drawMode", "李牧：预先声明是否发动独立的随后抽取1张牌效果",
+                PublicTriggerStep("option", "drawMode", "李牧：是否随后抽取1张牌",
                     available),
             ];
         }
@@ -1223,6 +1222,8 @@ public sealed partial class L12GameEngine
                 AdvanceTriggerBatches();
                 return true;
             }
+            // 两个可选子句属于同一项能力；只拒绝其中一个不等于拒绝整项能力。
+            declaredNone = false;
         }
         if (key is ("S01-0223", "reaction", _) && mode == "mode:none")
         {

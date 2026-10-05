@@ -396,7 +396,7 @@ if ($allRuntime.IndexOf('verified-atomic-optional', [StringComparison]::Ordinal)
 }
 Assert-Contains $plans '("S02-0102", "enter", _, _) => "limu-enter"' 'Li Mu enter must use the public trigger declaration route.'
 Assert-Contains $plans 'PublicTriggerStep("option", "revealMode"' 'Li Mu reveal opt-in must be declared before stack entry.'
-Assert-Contains $plans 'PublicTriggerStep("option", "drawMode"' 'Li Mu independent draw opt-in must be declared before stack entry.'
+Assert-Contains $plans 'PublicTriggerStep("option", "drawMode"' 'Li Mu subsequent draw opt-in must be declared before the single effect enters stack.'
 Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0102:enter"' 'Li Mu must skip disabled segments before creating its first real stack item.'
 Assert-Contains $composite '["trigger:S02-0102:enter"]' 'Li Mu enter needs one shared composite trigger plan.'
 Assert-Contains $composite 'RequiredDeclarationKey: "revealMode"' 'Li Mu reveal segment must consume its immutable declaration key.'

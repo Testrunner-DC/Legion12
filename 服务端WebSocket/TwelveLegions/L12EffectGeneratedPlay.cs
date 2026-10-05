@@ -212,7 +212,7 @@ public sealed partial class L12GameEngine
             }
             return;
         }
-        PushEffect(activation.Controller, card, "play", $"由{reason}打出的战术效果",
+        var child = PushEffect(activation.Controller, card, "play", $"由{reason}打出的战术效果",
             data: new Dictionary<string, string>
             {
                 ["effectGeneratedPlay"] = "free",
@@ -220,6 +220,7 @@ public sealed partial class L12GameEngine
                 ["playerLogGroupId"] = tacticPlayerLogGroupId,
                 ["playerLogTiming"] = "play",
             });
+        parent.Data["compositeGeneratedChildStackId"] = child.StackItemId;
         FinishStackItem(parent);
     }
 

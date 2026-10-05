@@ -6,7 +6,9 @@ public sealed partial class L12GameEngine
     {
         if (L12StructuredCardSemantics.UsesSpecialResponsePlan(cardId, "s2-counter"))
             return top.Controller != playerIndex
-                && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
+                && (top.Trigger == "opponent-attack"
+                    ? State.PendingDefense?.AttackerPlayer == 1 - playerIndex
+                    : IsRespondableCardEffectActivation(top));
         var timing = ResponseTimingContext(top);
         if (timing.Trigger != "authority-event" || timing.Controller == playerIndex) return false;
         var eventType = timing.Data.GetValueOrDefault("eventType");

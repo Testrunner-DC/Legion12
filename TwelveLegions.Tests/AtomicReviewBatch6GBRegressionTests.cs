@@ -14,7 +14,7 @@ public sealed class AtomicReviewBatch6GBRegressionTests
         var deck = Catalog.DeckAt(0);
         var game = new L12GameEngine(Catalog, "atomic-review-batch6gb", "ATOMIC6GB", seed,
             ["甲", "乙"], [deck, deck], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false, stateFormatVersion: 2);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -103,6 +103,18 @@ public sealed class AtomicReviewBatch6GBRegressionTests
             ResolveOnlyPrompt(game, "pass");
     }
 
+    private static void PassOnlyPostSettlementAuthorityEvents(L12GameEngine game)
+    {
+        for (var safety = 0; safety < 20 && game.State.PendingPrompts.Count > 0; safety++)
+        {
+            Assert.All(game.State.EffectStack, item => Assert.Equal("authority-event", item.Trigger));
+            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+            ResolveOnlyPrompt(game, "pass");
+        }
+        Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.ResponseWindow);
+    }
+
     [Fact]
     [Trait("L12Evidence", "entry:batch6gb-hidden-top-public-modes")]
     public void LiMuDeclaresOnlyPublicRevealAndDrawModesBeforeAnyStackItem()
@@ -149,7 +161,7 @@ public sealed class AtomicReviewBatch6GBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "entry:batch6gb-both-declined-no-stack")]
-    public void DecliningBothIndependentOptionsDoesNotCreateAnyEmptyStackItem()
+    public void DecliningBothOptionalClausesDoesNotCreateAnyEmptyStackItem()
     {
         var game = Create(9303);
         var top = Card("S01-0001", "batch6gb-decline-top");
@@ -164,8 +176,8 @@ public sealed class AtomicReviewBatch6GBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "entry:batch6gb-negated-reveal-keeps-draw")]
-    public void NegatedRevealStillQueuesThePredeclaredDrawAsAnIndependentStackItem()
+    [Trait("L12Evidence", "ruling:limu-whole-effect-negation-20261005")]
+    public void NegatingLiMuStopsBothRevealAndSubsequentDraw()
     {
         var game = Create(9304);
         var top = Card("S01-0001", "batch6gb-negated-top");
@@ -179,9 +191,10 @@ public sealed class AtomicReviewBatch6GBRegressionTests
 
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "reveal");
         Assert.Same(top, game.State.Players[0].Library[0]);
-        var draw = Assert.Single(game.State.EffectStack);
-        Assert.Equal("limu-draw", draw.Data.GetValueOrDefault("atomicFlow"));
-        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.Players[0].Hand);
+        Assert.Null(game.State.ResponseWindow);
+        Assert.Empty(game.State.PendingPrompts);
     }
 
     [Fact]
@@ -205,7 +218,7 @@ public sealed class AtomicReviewBatch6GBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "entry:batch6gb-ineligible-bottom-then-draw")]
-    public void IneligibleRevealedTopMovesToBottomBeforeTheIndependentDrawSegment()
+    public void IneligibleRevealedTopMovesToBottomThenDrawsWithoutASecondResponseWindow()
     {
         var game = Create(9306);
         var ineligible = Card("S01-0001", "batch6gb-ineligible-top");
@@ -215,11 +228,9 @@ public sealed class AtomicReviewBatch6GBRegressionTests
 
         PassCurrentStackItem(game);
 
-        Assert.Same(drawn, game.State.Players[0].Library[0]);
+        Assert.Contains(drawn, game.State.Players[0].Hand);
         Assert.Same(ineligible, game.State.Players[0].Library[^1]);
-        var draw = Assert.Single(game.State.EffectStack);
-        Assert.Equal("limu-draw", draw.Data.GetValueOrDefault("atomicFlow"));
-        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassOnlyPostSettlementAuthorityEvents(game);
         Assert.DoesNotContain(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-limu-draw");
     }
@@ -247,7 +258,7 @@ public sealed class AtomicReviewBatch6GBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "entry:batch6gb-source-snapshot-independent-segments")]
+    [Trait("L12Evidence", "entry:batch6gb-source-snapshot-single-effect")]
     public void SourceLeavingAfterDeclarationDoesNotSwallowRevealOrDrawSegments()
     {
         var game = Create(9308);
@@ -260,6 +271,166 @@ public sealed class AtomicReviewBatch6GBRegressionTests
         PassCurrentStackItem(game);
 
         Assert.Contains(game.State.Events, entry => entry.Type == "reveal");
-        Assert.Equal("limu-draw", Assert.Single(game.State.EffectStack).Data.GetValueOrDefault("atomicFlow"));
+        Assert.Contains(game.State.Players[0].Hand, card => card.InstanceId == "batch6gb-source-left-draw");
+        PassOnlyPostSettlementAuthorityEvents(game);
+    }
+
+    public static IEnumerable<object[]> RealPlayCases()
+    {
+        foreach (var owner in new[] { 0, 1 })
+        foreach (var row in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var outcome in new[] { "negated", "bottom", "free-play", "child-negated" })
+            yield return [owner, row, recover, outcome];
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    [Trait("L12Evidence", "checkpoint:limu-legacy-scope-absent")]
+    public void OldCheckpointWithoutTheScopeMarkerStillUsesTheCurrentWholeEffectRule(bool oldIndependentMarker)
+    {
+        var game = Create(9330);
+        PrepareLiMu(game, Card("S01-0005", "legacy-hidden-top"), Card("S01-0001", "legacy-draw"));
+        Declare(game, "mode:use", "mode:use");
+        var first = Assert.Single(game.State.EffectStack);
+        first.Data.Remove("compositeResponseScope");
+        if (oldIndependentMarker) first.Data["preserveIndependentStack"] = "true";
+        game = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), game.RandomState!.Value,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.False(Assert.Single(game.State.EffectStack).Data.ContainsKey("compositeResponseScope"));
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassCurrentStackItem(game);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.Players[0].Hand);
+        Assert.Equal(new[] { "legacy-hidden-top", "legacy-draw" },
+            game.State.Players[0].Library.Select(card => card.InstanceId));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "reveal");
+    }
+
+    [Theory]
+    [MemberData(nameof(RealPlayCases))]
+    [Trait("L12Evidence", "ruling:limu-real-play-single-effect-20261005")]
+    public void RealLiMuPlayAndActualPitfallKeepTheWholeEffectBoundary(int owner, int row,
+        bool recover, string outcome)
+    {
+        var game = Create(9310 + owner);
+        game.State.ActivePlayer = owner;
+        game.State.DisasterDeck.Clear();
+        var liMu = Card("S02-0102", "real-limu");
+        liMu.OwnerIndex = owner;
+        var top = Card(outcome == "bottom" ? "S01-0001" : "S01-0005", "real-top");
+        top.OwnerIndex = owner;
+        var drawn = Card("S01-0002", "real-drawn");
+        drawn.OwnerIndex = owner;
+        game.State.Players[owner].Hand.Add(liMu);
+        game.State.Players[owner].Library.AddRange([top, drawn]);
+        for (var i = 0; i < liMu.Cost; i++) game.State.Players[owner].Morale.Add(new L12MoraleCard
+        {
+            InstanceId = $"real-morale-{i}", CardId = "S01-04C1",
+        });
+        var target = Card("S01-0103", "real-volley-target");
+        target.OwnerIndex = 1 - owner;
+        game.State.Players[1 - owner].Field[0][0] = target;
+        if (outcome == "negated")
+        {
+            var pitfall = Card("S01-0018", "real-pitfall");
+            pitfall.OwnerIndex = 1 - owner;
+            pitfall.Hidden = true;
+            game.State.Players[1 - owner].Field[1][0] = pitfall;
+        }
+        else if (outcome == "child-negated")
+        {
+            var defense = Card("S01-0016", "real-absolute-defense");
+            defense.OwnerIndex = 1 - owner;
+            defense.Hidden = true;
+            game.State.Players[1 - owner].Field[1][0] = defense;
+            var discard = Card("S01-0003", "real-defense-discard");
+            discard.OwnerIndex = 1 - owner;
+            game.State.Players[1 - owner].Hand.Add(discard);
+        }
+        L12GameEngine Restore(L12GameEngine current) => !recover ? current
+            : L12GameEngine.RestoreCheckpoint(Catalog, current.SerializeFullState(), current.RandomState!.Value,
+                current.CardFactSignalSequence, autoPassEmptyResponses: false,
+                concealHiddenResponseAvailability: false);
+        game = Restore(game);
+        var played = game.Handle(owner, new L12Command("playCard", "real-limu", Row: row, Slot: 0));
+        Assert.True(played.Accepted, played.Error);
+        game = Restore(game);
+        ResolveOnlyPrompt(game, "mode:use");
+        game = Restore(game);
+        ResolveOnlyPrompt(game, "mode:use");
+        game = Restore(game);
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("single-effect", first.Data.GetValueOrDefault("compositeResponseScope"));
+        Assert.Equal(owner, Assert.Single(game.State.PendingPrompts).PlayerIndex);
+        if (outcome == "negated")
+        {
+            ResolveOnlyPrompt(game, "pass");
+            game = Restore(game);
+            Assert.Contains("real-pitfall", Assert.Single(game.State.PendingPrompts).ValidChoices);
+            ResolveOnlyPrompt(game, "real-pitfall");
+        }
+        for (var safety = 0; safety < 80 && game.State.PendingPrompts.Count > 0; safety++)
+        {
+            game = Restore(game);
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            if (prompt.Kind == "response")
+            {
+                Assert.DoesNotContain(game.State.EffectStack, item =>
+                    item.Data.GetValueOrDefault("atomicFlow") == "limu-draw");
+                ResolveOnlyPrompt(game, outcome == "child-negated"
+                    && game.State.EffectStack[^1].SourceInstanceId == "real-top"
+                    && prompt.ValidChoices.Contains("real-absolute-defense") ? "real-absolute-defense" : "pass");
+            }
+            else if (prompt.Data.GetValueOrDefault("action") == "s2-limu-tactic")
+                ResolveOnlyPrompt(game, "play");
+            else
+            {
+                if (prompt.ValidChoices.Contains("real-defense-discard"))
+                    ResolveOnlyPrompt(game, "real-defense-discard");
+                else
+                {
+                    Assert.Equal("pending-activation", prompt.Continuation);
+                    Assert.Contains("mode:front", prompt.ValidChoices);
+                    ResolveOnlyPrompt(game, "mode:front");
+                }
+            }
+        }
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack);
+        Assert.Contains(game.State.Players[owner].Field[row], card => card?.InstanceId == "real-limu");
+        Assert.All(game.State.Players[owner].Morale, morale => Assert.True(morale.Tapped));
+        if (outcome == "negated")
+        {
+            Assert.Empty(game.State.Players[owner].Hand);
+            Assert.Equal(new[] { "real-top", "real-drawn" },
+                game.State.Players[owner].Library.Select(card => card.InstanceId));
+            Assert.DoesNotContain(game.State.Events, action => action.Type == "reveal"
+                && action.Cards.Any(card => card.InstanceId == "real-top"));
+            Assert.Contains(game.State.Players[1 - owner].Graveyard,
+                card => card.InstanceId == "real-pitfall");
+        }
+        else
+        {
+            Assert.Contains(game.State.Players[owner].Hand, card => card.InstanceId == "real-drawn");
+            if (outcome == "bottom")
+                Assert.Equal("real-top", Assert.Single(game.State.Players[owner].Library).InstanceId);
+            else
+            {
+                Assert.Contains(game.State.Players[owner].Graveyard, card => card.InstanceId == "real-top");
+                var settled = Assert.Single(game.State.Events, action => action.Type == "effect-result"
+                    && action.Cards.Any(card => card.InstanceId == "real-top"));
+                var draw = Assert.Single(game.State.Events, action => action.Type == "draw");
+                Assert.True(settled.Sequence < draw.Sequence, "免费战术必须完整结算后才随后抽牌");
+                if (outcome == "child-negated")
+                {
+                    Assert.Contains(game.State.Players[1 - owner].Graveyard,
+                        card => card.InstanceId == "real-absolute-defense");
+                    Assert.Equal(target.BaseTroops, game.State.Players[1 - owner].Field[0][0]!.Troops);
+                }
+            }
+        }
     }
 }

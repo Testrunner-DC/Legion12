@@ -34,6 +34,7 @@ internal static partial class L12CompositeEffectPlans
     {
         "trigger:S01-0001:enter",
         "trigger:S02-0101:enter",
+        "trigger:S02-0102:enter",
         "trigger:S01-0223:reaction",
         "trigger:S01-0420:reaction",
         "response:S02-0106",
@@ -1100,8 +1101,11 @@ public sealed partial class L12GameEngine
             data["playerLogGroupId"] = activation.PlayerLogGroupId;
             data["playerLogTiming"] = "play";
         }
-        PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
+        var child = PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
             CompositeFirstSegmentTargets(source.CardId, activation.DeclaredValues), data);
+        var parent = State.EffectStack.FirstOrDefault(item =>
+            item.StackItemId == activation.CommittedParentStackItemId);
+        if (parent is not null) parent.Data["compositeGeneratedChildStackId"] = child.StackItemId;
         ResumeCommittedCompositeParent(activation);
     }
 
@@ -2043,6 +2047,32 @@ public sealed partial class L12GameEngine
         // 整项能力只响应一次：首段被无效时，后续只是同一效果内部的结算子句，
         // 必须一并停止，不能再创建一个看似独立的新效果。
         if (singleResponseEffect && item.Negated) return false;
+        if (singleResponseEffect && item.Data.Remove("compositeGeneratedChildStackId", out var childId))
+        {
+            var deferredIndex = State.DeferredEffectStack.FindIndex(candidate => candidate.StackItemId == childId);
+            var stackedIndex = State.EffectStack.FindIndex(candidate => candidate.StackItemId == childId);
+            if (deferredIndex >= 0 || stackedIndex >= 0)
+            {
+                // “免费打出”生成的卡牌效果必须完成自身响应及所有子段，才继续父能力的
+                // “随后”子句。复用可恢复的状态检查屏障，放在该子效果之下；不能把父
+                // 续段直接压回当前栈顶，让它抢在 Deferred 子效果之前结算。
+                var barrier = new L12StackItem
+                {
+                    StackItemId = $"stack-{++State.StackSequence}", Controller = item.Controller,
+                    SourceInstanceId = item.SourceInstanceId, SourceCardId = item.SourceCardId,
+                    SourceName = item.SourceName, SourceSnapshot = CaptureLastKnownSourceSnapshot(source),
+                    Trigger = "composite-continuation", Text = "继续处理已发动效果",
+                };
+                CopyCompositeContinuationData(item, barrier);
+                barrier.Data["atomicFlow"] = "composite-state-check-barrier";
+                barrier.Data["atomicContinuation"] = "true";
+                barrier.Data["compositeStateCheckBarrier"] = "true";
+                barrier.Data["unrespondable"] = "true";
+                if (deferredIndex >= 0) State.DeferredEffectStack.Insert(deferredIndex, barrier);
+                else State.EffectStack.Insert(stackedIndex, barrier);
+                return true;
+            }
+        }
         if (singleResponseEffect && item.Trigger != "authority-event")
         {
             // 若本段产生“因效果转为活跃”的权威时点，必须先让这些时点全部完成响应，
