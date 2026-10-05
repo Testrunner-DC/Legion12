@@ -728,13 +728,16 @@ public sealed partial class L12GameEngine
                 .Select(card => card.InstanceId).ToList();
             if (asgard.Count < 2)
             {
-                var direct = CompositeFirstSegmentData("trigger:S01-0320",
-                    new Dictionary<string, List<string>> { ["mode"] = ["mode:none"] });
-                foreach (var pair in direct) candidate.Data[pair.Key] = pair.Value;
-                candidate.Data["declaration-complete"] = "true";
-                return false;
+                // An unavailable later recovery segment does not activate the set
+                // counter automatically. Keep the ordinary declaration/cancellation
+                // lifecycle before its independent troop-reduction segment stacks.
+                steps =
+                [
+                    PublicTriggerStep("option", "bloodEagleActivation", "复仇血鹰：是否发动兵力减少效果？",
+                        ["mode:none", "mode:use"]),
+                ];
             }
-            steps =
+            else steps =
             [
                 PublicTriggerStep("order", "graveOrder",
                     "复仇血鹰：预先选择并排序墓地2张【阿斯加德】卡牌；第1张加入手牌，第2张置于牌库底部",
@@ -1623,7 +1626,11 @@ public sealed partial class L12GameEngine
         else if (fifthBatchPlan == "blood-eagle")
         {
             var order = activation.DeclaredValues.GetValueOrDefault("graveOrder", []);
-            if (order.Count != 2 || order.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
+            var onlyDebuff = activation.DeclaredValues.GetValueOrDefault("bloodEagleActivation", [])
+                .SingleOrDefault() == "mode:use";
+            if (onlyDebuff)
+                activation.DeclaredValues["mode"] = ["mode:none"];
+            else if (order.Count != 2 || order.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
                 || order.Any(id => !player.Graveyard.Any(card => card.InstanceId == id
                     && card.InstanceId != candidate.SourceInstanceId && CanEnterHandOrLibrary(card)
                     && L12StructuredCardRules.HasFaction(player, card, "asgard"))))
@@ -1635,7 +1642,7 @@ public sealed partial class L12GameEngine
                 AddEvent("effect-cancelled", candidate.Controller, error);
                 error = null;
             }
-            else
+            else if (!onlyDebuff)
                 activation.DeclaredValues["mode"] = ["mode:recover"];
         }
         else if (fifthBatchPlan == "wisdom-reward")
