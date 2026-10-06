@@ -3,6 +3,7 @@ namespace TwelveLegions.Server;
 internal enum L12InboundEnqueueResult
 {
     Accepted,
+    DeploymentDraining,
     MessageLimit,
     RetainedByteLimit,
     Completed,
@@ -22,13 +23,30 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     internal const long MaximumRetainedBytes = 2_228_224;
     private const int RetainedItemOverhead = 96;
 
-    private sealed record PendingMessage(string Json, int RetainedBytes);
+    private sealed class PendingMessage
+    {
+        private int _released;
+
+        internal PendingMessage(string json, int retainedBytes, L12DeploymentDrainLease? lease)
+        {
+            Json = json;
+            RetainedBytes = retainedBytes;
+            Lease = lease;
+        }
+
+        internal string Json { get; }
+        internal int RetainedBytes { get; }
+        internal L12DeploymentDrainLease? Lease { get; }
+
+        internal bool TryRelease() => Interlocked.Exchange(ref _released, 1) == 0;
+    }
 
     private readonly object _gate = new();
     private readonly Queue<PendingMessage> _queue = new();
     private readonly SemaphoreSlim _signal = new(0);
     private readonly Func<string, Task> _handler;
     private readonly Action<Exception>? _onFault;
+    private readonly Func<string, L12DeploymentDrainLease?>? _leaseAcquirer;
     private readonly Task _consumer;
     private bool _accepting = true;
     private bool _drain = true;
@@ -37,10 +55,12 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     private int _maximumObservedMessages;
     private long _maximumObservedBytes;
 
-    internal L12InboundConnection(Func<string, Task> handler, Action<Exception>? onFault = null)
+    internal L12InboundConnection(Func<string, Task> handler, Action<Exception>? onFault = null,
+        Func<string, L12DeploymentDrainLease?>? leaseAcquirer = null)
     {
         _handler = handler;
         _onFault = onFault;
+        _leaseAcquirer = leaseAcquirer;
         _consumer = Task.Run(ConsumeAsync);
     }
 
@@ -66,22 +86,47 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     {
         ArgumentNullException.ThrowIfNull(json);
         var retainedBytes = checked(RetainedItemOverhead + json.Length * sizeof(char));
+
+        // Preserve the legacy Completed result without acquiring a deployment lease after the
+        // connection has already been fenced. The second check below closes this observation race.
         lock (_gate)
         {
             if (!_accepting) return L12InboundEnqueueResult.Completed;
-            if (_retainedMessages >= MaximumRetainedMessages)
-                return L12InboundEnqueueResult.MessageLimit;
-            if (retainedBytes > MaximumRetainedBytes - _retainedBytes)
-                return L12InboundEnqueueResult.RetainedByteLimit;
-
-            _queue.Enqueue(new PendingMessage(json, retainedBytes));
-            _retainedMessages++;
-            _retainedBytes += retainedBytes;
-            UpdateMaximum(ref _maximumObservedMessages, _retainedMessages);
-            UpdateMaximum(ref _maximumObservedBytes, _retainedBytes);
-            _signal.Release();
-            return L12InboundEnqueueResult.Accepted;
         }
+
+        L12DeploymentDrainLease? lease = null;
+        if (_leaseAcquirer is not null)
+        {
+            lease = _leaseAcquirer(json);
+            if (lease is null || !lease.IsOriginal || !lease.IsActive)
+            {
+                lease?.Dispose();
+                return L12InboundEnqueueResult.DeploymentDraining;
+            }
+        }
+
+        L12InboundEnqueueResult result;
+        lock (_gate)
+        {
+            if (!_accepting) result = L12InboundEnqueueResult.Completed;
+            else if (_retainedMessages >= MaximumRetainedMessages)
+                result = L12InboundEnqueueResult.MessageLimit;
+            else if (retainedBytes > MaximumRetainedBytes - _retainedBytes)
+                result = L12InboundEnqueueResult.RetainedByteLimit;
+            else
+            {
+                _queue.Enqueue(new PendingMessage(json, retainedBytes, lease));
+                lease = null; // PendingMessage now owns it.
+                _retainedMessages++;
+                _retainedBytes += retainedBytes;
+                UpdateMaximum(ref _maximumObservedMessages, _retainedMessages);
+                UpdateMaximum(ref _maximumObservedBytes, _retainedBytes);
+                _signal.Release();
+                result = L12InboundEnqueueResult.Accepted;
+            }
+        }
+        lease?.Dispose();
+        return result;
     }
 
     /// <summary>
@@ -90,25 +135,39 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     /// </summary>
     internal void StopAcceptingAndCancelPending()
     {
+        List<PendingMessage>? cancelled = null;
         lock (_gate)
         {
             _accepting = false;
             _drain = false;
-            while (_queue.TryDequeue(out var pending)) ReleaseRetainedLocked(pending);
+            while (_queue.TryDequeue(out var pending))
+            {
+                ReleaseRetainedLocked(pending);
+                (cancelled ??= []).Add(pending);
+            }
             _signal.Release();
         }
+        ReleaseLeases(cancelled);
     }
 
     internal async Task CompleteAsync(bool drain)
     {
+        List<PendingMessage>? cancelled = null;
         lock (_gate)
         {
             _accepting = false;
             _drain = drain;
             if (!drain)
-                while (_queue.TryDequeue(out var pending)) ReleaseRetainedLocked(pending);
+            {
+                while (_queue.TryDequeue(out var pending))
+                {
+                    ReleaseRetainedLocked(pending);
+                    (cancelled ??= []).Add(pending);
+                }
+            }
             _signal.Release();
         }
+        ReleaseLeases(cancelled);
         await _consumer;
     }
 
@@ -125,7 +184,13 @@ internal sealed class L12InboundConnection : IAsyncDisposable
                 else continue;
             }
 
-            try { await _handler(pending.Json); }
+            IDisposable? executionScope = null;
+            try
+            {
+                if (pending.Lease?.Kind == L12DeploymentLeaseKind.Admission)
+                    executionScope = pending.Lease.EnterExecutionScope();
+                await _handler(pending.Json);
+            }
             catch (Exception error)
             {
                 StopAcceptingAndCancelPending();
@@ -138,7 +203,8 @@ internal sealed class L12InboundConnection : IAsyncDisposable
             }
             finally
             {
-                lock (_gate) ReleaseRetainedLocked(pending);
+                try { executionScope?.Dispose(); }
+                finally { ReleasePending(pending); }
             }
 
             lock (_gate)
@@ -150,10 +216,32 @@ internal sealed class L12InboundConnection : IAsyncDisposable
 
     private void ReleaseRetainedLocked(PendingMessage pending)
     {
+        if (!pending.TryRelease()) return;
         _retainedMessages--;
         _retainedBytes -= pending.RetainedBytes;
         if (_retainedMessages < 0 || _retainedBytes < 0)
             throw new InvalidOperationException("WebSocket 入站队列容量记账失衡");
+    }
+
+    private void ReleasePending(PendingMessage pending)
+    {
+        var releaseLease = false;
+        lock (_gate)
+        {
+            if (!pending.TryRelease()) return;
+            _retainedMessages--;
+            _retainedBytes -= pending.RetainedBytes;
+            if (_retainedMessages < 0 || _retainedBytes < 0)
+                throw new InvalidOperationException("WebSocket 入站队列容量记账失衡");
+            releaseLease = true;
+        }
+        if (releaseLease) pending.Lease?.Dispose();
+    }
+
+    private static void ReleaseLeases(List<PendingMessage>? messages)
+    {
+        if (messages is null) return;
+        foreach (var pending in messages) pending.Lease?.Dispose();
     }
 
     private static void UpdateMaximum(ref int target, int value)
