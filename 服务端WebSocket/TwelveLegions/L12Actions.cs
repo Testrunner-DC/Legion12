@@ -1515,16 +1515,10 @@ public sealed partial class L12GameEngine
         if (card is null || !IsFieldLegion(card) || card.Tapped || card.Hidden) return CommandResult.Reject("只能移动活跃且未覆盖的军团");
         var targetRow = command.Row.GetValueOrDefault();
         var targetSlot = command.Slot.GetValueOrDefault();
-        if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && targetRow == 1)
-            return CommandResult.Reject("〈腐秽大地〉持续期间无法位移至后排");
-        if (Math.Abs(sourceRow - targetRow) + Math.Abs(sourceSlot - targetSlot) != 1)
-            return CommandResult.Reject("规则位移每次只能移动至相邻空格");
-        if (player.Field[targetRow][targetSlot] is not null) return CommandResult.Reject("目标阵地已占用");
-        var tenkaFreeMoveKey = $"s2-tenka-free-move:{card.InstanceId}:{State.TurnSerial}";
-        var hasTenkaFreeMove = player.UsedAbilities.Contains(tenkaFreeMoveKey);
-        var hasHippolytaFreeFrontBackMove = sourceRow != targetRow
-            && PublicLegions(player).Any(candidate => candidate.CardId == "S02-0510" && candidate.Tapped);
-        if (!hasTenkaFreeMove && !hasHippolytaFreeFrontBackMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1))
+        if (OrdinaryMoveDestinationUnavailableReason(player, sourceRow, sourceSlot, targetRow, targetSlot) is { } destinationError)
+            return CommandResult.Reject(destinationError);
+        var hasFreeMove = HasFreeOrdinaryMove(player, card, sourceRow, targetRow, out var freeMoveKey);
+        if (!hasFreeMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1))
         {
             CreateResourcePaymentPrompt(playerIndex, 1, "move-morale-choice", null, new Dictionary<string, string>
             {
@@ -1534,14 +1528,14 @@ public sealed partial class L12GameEngine
             });
             return CommandResult.Ok();
         }
-        if (!hasTenkaFreeMove && !hasHippolytaFreeFrontBackMove && !(command.CardInstanceIds is not null
+        if (!hasFreeMove && !(command.CardInstanceIds is not null
             ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds)
             : TryConsumeMorale(player, 1)))
             return CommandResult.Reject("移动需要消耗 1 张活跃士气");
         player.Field[sourceRow][sourceSlot] = null;
         player.Field[targetRow][targetSlot] = card;
         card.LastMovedTurn = State.TurnSerial;
-        if (hasTenkaFreeMove) player.UsedAbilities.Remove(tenkaFreeMoveKey);
+        if (freeMoveKey is not null) player.UsedAbilities.Remove(freeMoveKey);
         AddPlayerBattlefieldMovementEvent("move", playerIndex, $"{card.Name} 移动至相邻阵地",
             new([BattlefieldMovementFact(card, playerIndex, sourceRow, sourceSlot, targetRow, targetSlot)]), card);
         RecordLegionMovement(playerIndex, card, sourceRow, targetRow);

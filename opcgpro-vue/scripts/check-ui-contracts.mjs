@@ -1459,7 +1459,11 @@ const contracts = [
   [tournamentCenter.includes('预览导入（dry-run）') && tournamentCenter.includes('确认导入') && tournamentCenter.includes('legacyPreview.value.previewHash') && !tournamentCenter.includes('localStorage.setItem'), '本机旧赛事只能显式预览并确认导入，不得继续作为 localStorage 权威状态写回'],
   [tournamentCenter.includes('organizerAccountId === accountId.value') && tournamentCenter.includes('person.accountId===accountId') && tournamentCenter.includes('两种身份均随赛事结束失效') && tournamentCenter.includes('transferCandidates') && !tournamentCenter.includes('待审批命令'), '赛事主办者、裁判临时身份、牌库范围与并发写入必须使用服务端账号 ID 和赛事版本，且不得进入账号角色审批'],
   [tournamentCenter.includes("tournamentApi.getByCode(item.code)") && tournamentCenter.includes('报名参赛（暂不提交牌库）') && tournamentCenter.includes('签到并锁定牌库') && tournamentCenter.includes('移出并禁报名') && tournamentCenter.includes('发起主办交接') && tournamentCenter.includes("link.searchParams.set('code', item.code)") && tournamentCenter.includes('瑞士排名快照') && tournamentCenter.includes('v-for="snapshotRound in standingSnapshots"') && l12Net.includes("type: 'enterTournamentMatch'") && l12Net.includes("type: 'spectateTournamentMatch'") && profilePage.includes("!route.query.redirect.startsWith('//')") && gamePage.includes('@click="returnToLobby">返回赛事/大厅'), '赛事稳定分享链接必须在登录后按码打开详情；报名不要求牌库，赛前签到才锁牌；移除禁报名与主办交接可操作；玩家/工作人员按配对身份进入或观战，每轮排名快照可查，且等待对手时也能退出专属房'],
-  [playerMat.includes("emit('cardAction', 'freeMove'") && playerMat.includes("unit?.cardId === 'S02-0510' && unit.tapped") && board.includes("mode.value === 'freeMove' ? 'move'"), '希波吕忒休整时必须提供独立的免费前后位移入口，并复用规则内移动命令'],
+  [playerMat.includes("emit('cardAction', 'freeMove'")
+    && playerMat.includes("card.ruleActions?.find(action => action.id === 'freeMove')")
+    && playerMat.includes('authority?.targetKeys?.length')
+    && playerMat.includes('?.targetKeys?.includes(`${row}:${slot}`)')
+    && board.includes("mode.value === 'freeMove' ? 'move'"), '天下布武与希波吕忒免费位移必须读取权威许可与合法目的格，并复用规则内移动命令'],
   [wsSmoke.includes("ws.send(JSON.stringify({ type: 'deploymentProbe' }))") && !wsSmoke.includes("wait(m => m.type === 'session')"), '发布烟雾测试必须先执行无状态 WebSocket 探针，不得恢复为认证前等待 session'],
   [wsServer.includes('"deploymentProbe" =>') && wsServer.includes('protocolVersion = 1') && wsServer.includes('authentication = "token"'), '服务端必须保留无需账号且不写运行数据的发布探针协议'],
   [l12Net.includes("message.type === 'recoveryComplete'") && l12Net.includes("message.type === 'pong'")

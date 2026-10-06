@@ -13,6 +13,11 @@ public sealed class S2FactionRegressionTests
         => new(Catalog, "s2-faction", "S2FACTION", seed, ["甲", "乙"], [0, 0], skipPreparation: true,
             autoPassEmptyResponses: autoPassEmptyResponses);
 
+    private static JsonElement FieldCardView(L12GameEngine game, int viewer, int playerIndex, int row, int slot)
+        => JsonSerializer.SerializeToElement(game.SnapshotFor(viewer),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .GetProperty("players")[playerIndex].GetProperty("field")[row][slot];
+
     private static L12GameEngine CreateWithFirstMaster(string masterId, int seed)
     {
         var baseDeck = Catalog.DeckAt(0);
@@ -3808,8 +3813,10 @@ public sealed class S2FactionRegressionTests
         movePlayer.Hand.Clear();
         var moveTactic = Card("S02-0406", "tenka-move-source");
         var mover = Card("S02-0402", "tenka-mover");
+        var ordinaryMover = Card("S02-0004", "tenka-non-target");
         movePlayer.Hand.Add(moveTactic);
         movePlayer.Field[0][0] = mover;
+        movePlayer.Field[1][2] = ordinaryMover;
         AddMorale(movePlayer, moveTactic.Cost);
         moveGame.State.Phase = L12Phase.Main;
 
@@ -3818,9 +3825,85 @@ public sealed class S2FactionRegressionTests
         Assert.True(moveGame.Handle(movePlayerIndex, new L12Command("resolvePrompt", PromptId: moveMode.PromptId,
             Choice: "mode:free-move")).Accepted);
         PassResponses(moveGame);
+
+        Assert.Equal(0, movePlayer.Morale.Count(morale => !morale.Tapped));
+        var freeMove = Assert.Single(FieldCardView(moveGame, movePlayerIndex, movePlayerIndex, 0, 0)
+            .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.Equal(["0:1", "1:0"], freeMove.GetProperty("targetKeys").EnumerateArray()
+            .Select(target => target.GetString()!).ToArray());
+        Assert.DoesNotContain(FieldCardView(moveGame, movePlayerIndex, movePlayerIndex, 1, 2)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.False(moveGame.Handle(movePlayerIndex,
+            new L12Command("move", ordinaryMover.InstanceId, Row: 1, Slot: 1)).Accepted);
+
+        moveGame.State.ActiveDisaster = Card("S01-DS03", "tenka-corrupt-earth");
+        freeMove = Assert.Single(FieldCardView(moveGame, movePlayerIndex, movePlayerIndex, 0, 0)
+            .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.Equal(["0:1"], freeMove.GetProperty("targetKeys").EnumerateArray()
+            .Select(target => target.GetString()!).ToArray());
+        Assert.False(moveGame.Handle(movePlayerIndex,
+            new L12Command("move", mover.InstanceId, Row: 1, Slot: 0)).Accepted);
+        moveGame.State.ActiveDisaster = null;
+
+        var checkpoint = moveGame.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        moveGame = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            moveGame.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), moveGame.CardFactSignalSequence);
+        movePlayer = moveGame.State.Players[movePlayerIndex];
+        mover = movePlayer.Field[0][0]!;
+        Assert.Contains(FieldCardView(moveGame, movePlayerIndex, movePlayerIndex, 0, 0)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
         Assert.True(moveGame.Handle(movePlayerIndex, new L12Command("move", mover.InstanceId, Row: 0, Slot: 1)).Accepted);
+        Assert.DoesNotContain(FieldCardView(moveGame, movePlayerIndex, movePlayerIndex, 0, 1)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
         var secondMove = moveGame.Handle(movePlayerIndex, new L12Command("move", mover.InstanceId, Row: 0, Slot: 2));
         Assert.False(secondMove.Accepted);
+    }
+
+    [Fact]
+    public void FreeMoveProjectionPreservesHippolytaDirectionAndTenkaTurnExpiry()
+    {
+        var game = Create(63182);
+        var playerIndex = game.State.ActivePlayer;
+        var player = game.State.Players[playerIndex];
+        player.Morale.Clear();
+        var mover = Card("S02-0004", "hippolyta-mover");
+        var hippolyta = Card("S02-0510", "hippolyta-rested");
+        hippolyta.Tapped = true;
+        player.Field[0][0] = mover;
+        player.Field[0][2] = hippolyta;
+        game.State.Phase = L12Phase.Main;
+
+        var freeMove = Assert.Single(FieldCardView(game, playerIndex, playerIndex, 0, 0)
+            .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.Equal(["1:0"], freeMove.GetProperty("targetKeys").EnumerateArray()
+            .Select(target => target.GetString()!).ToArray());
+        Assert.DoesNotContain(FieldCardView(game, playerIndex, playerIndex, 0, 2)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.False(game.Handle(playerIndex,
+            new L12Command("move", mover.InstanceId, Row: 0, Slot: 1)).Accepted);
+        Assert.True(game.Handle(playerIndex,
+            new L12Command("move", mover.InstanceId, Row: 1, Slot: 0)).Accepted);
+
+        hippolyta.Tapped = false;
+        var tenkaMover = Card("S02-0402", "expired-tenka-mover");
+        player.Field[0][1] = tenkaMover;
+        player.UsedAbilities.Add($"s2-tenka-free-move:{tenkaMover.InstanceId}:{game.State.TurnSerial}");
+        Assert.Contains(FieldCardView(game, playerIndex, playerIndex, 0, 1)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        game.State.TurnSerial++;
+        Assert.DoesNotContain(FieldCardView(game, playerIndex, playerIndex, 0, 1)
+                .GetProperty("ruleActions").EnumerateArray(),
+            action => action.GetProperty("id").GetString() == "freeMove");
+        Assert.False(game.Handle(playerIndex,
+            new L12Command("move", tenkaMover.InstanceId, Row: 0, Slot: 0)).Accepted);
     }
 
     [Theory]

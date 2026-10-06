@@ -2,6 +2,8 @@
 
 ## MAIN-20261007-CARD-INTAKE｜五项卡效反馈（获准两族修复，本地验收中）
 
+- 首次干净c878 Release实际规则6600/平台745失败跳过0，前端在新增根scripts测试依赖未带入隔离副本时MODULE_NOT_FOUND退出1；原release-final.log及失败timings/详细TRX保留，不能称完整Release通过。测试迁入标准opcgpro-vue/scripts、相对PlayerMat路径及package调用同步，产品源完全未改；20行为复跑通过，接续前端域Batch及新干净候选完整Release，不跳过隔离门禁或扩大复制范围。
+
 - **最终实施冻结**：447专项失败跳过0、24真实GameBoard/PlayerMat/HandArea双方三尺寸点击、20函数行为通过；完整Batch规则6600/平台745失败跳过0。首次Batch仅被旧前端卡号字串合同拦下，保留失败；只更新该实现叶为权威许可/合法格位+原move命令复用，随后前端域Batch退出0，UI354/反馈144/类型/双构建/卡图324+42通过，后端源未变，未重复其全量。此合同调整不计作A3全历史收口。最终干净Release/Git版本读D盘本批acceptance.json（缺失不视为通过）和scripts/release-status.mjs；文档历史阶段不作为部署指令。
 - 独立复核确认全部DiscardRelic真实调用无误伤、40来源离场/LKI/恢复和18拉格纳组合有效。箱搜索后的effect-hand-add合法独立时点保持，不将其当作重复enter响应；本批没有证明该辅助时点全局“恰好一个”，只证明整项enter无内部重复窗口，不夸大测试范围。所有首轮失败/夹具误差原始证据保留。
 
