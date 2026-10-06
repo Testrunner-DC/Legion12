@@ -7,12 +7,16 @@ Console.OutputEncoding = Encoding.UTF8;
 // Reject an invalid storage mode before creating runtime directories or opening a database.
 var privateDeckObjectPersistenceEnabled = L12PrivateDeckPersistenceStartup.Parse(
     Environment.GetEnvironmentVariable(L12PrivateDeckPersistenceStartup.EnvironmentKey));
+var deploymentDrainEnabled = L12DeploymentDrainStartup.Parse(
+    Environment.GetEnvironmentVariable(L12DeploymentDrainStartup.EnvironmentKey));
 
 var port = args.FirstOrDefault(argument => int.TryParse(argument, out _)) is { } portArgument
     && int.TryParse(portArgument, out var parsedPort) ? parsedPort : 8080;
 var dataPath = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data");
 var runtimePath = Path.Combine(AppContext.BaseDirectory, "runtime");
 Directory.CreateDirectory(runtimePath);
+var deploymentDrain = L12DeploymentDrainStartup.Create(deploymentDrainEnabled, runtimePath,
+    L12RuntimeBuildVersion.Capture());
 
 var ephemeralTestMatches = L12TestRunStorageProfile.Prepare(runtimePath,
     Environment.GetEnvironmentVariable(L12TestRunStorageProfile.EnvironmentKey),
@@ -60,6 +64,7 @@ await using var recorder = new MatchRecorder(Path.Combine(runtimePath, "matches.
 await recorder.InitializeAsync();
 
 var rooms = new L12RoomManager(catalog, recorder, platform);
+if (deploymentDrain is not null) rooms.AttachDeploymentDrain(deploymentDrain);
 var rankedRecovery = await rooms.RestoreRankedRoomsAsync();
 Console.WriteLine($"Ranked recovery: settlements={rankedRecovery.SettlementsApplied}, "
                   + $"rooms={rankedRecovery.Restored}, invalid={rankedRecovery.Invalidated}, "

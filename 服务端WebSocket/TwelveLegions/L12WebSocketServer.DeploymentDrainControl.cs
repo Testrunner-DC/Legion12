@@ -36,6 +36,21 @@ public sealed partial class L12WebSocketServer
             var result = _deploymentController!.Cancel(owner!);
             return DeploymentControlResponse(result, DeploymentTransitionStatus(result));
         });
+        app.MapPost("/api/admin/deployment-drain/consume", (HttpRequest request, L12DeploymentSealPermit body) =>
+        {
+            if (!TryAuthorizeDeploymentControl(request, L12Permission.ReleasesExecute, out var failure)) return failure;
+            if (_deploymentController is null) return DeploymentProtocolUnavailable(request);
+            if (body.ProtocolVersion != L12DeploymentDrainCoordinator.ProtocolVersion
+                || !L12DeploymentDrainOwner.TryCreate(body.OperationId, body.TargetCommit, body.ProcessInstance, out _)
+                || !L12DeploymentDrainCoordinator.IsCommit(body.ActiveCommit) || body.Epoch < 0
+                || !L12DeploymentDrainCoordinator.IsCanonicalGuid(body.SealId))
+                return ApiError(request, "invalid_deployment_permit", "发布许可无效", StatusCodes.Status400BadRequest);
+            if (!_platform.HighRiskAuditAvailable())
+                return ApiError(request, "audit_unavailable", "发布审计暂不可用", StatusCodes.Status503ServiceUnavailable);
+            var result = _deploymentController.ConsumeStopPermit(body);
+            return DeploymentControlResponse(result, result.Granted && result.Snapshot.StopConsumed
+                ? StatusCodes.Status200OK : StatusCodes.Status409Conflict);
+        });
     }
 
     private bool TryAuthorizeDeploymentControl(HttpRequest request, L12Permission permission, out IResult failure)
@@ -107,7 +122,9 @@ public sealed partial class L12WebSocketServer
             result.Snapshot.ActivityLeases,
             result.Snapshot.FenceSynchronized,
             result.Snapshot.FenceUnknown,
-            stopPermitted = result.Granted,
+            result.Snapshot.StopConsumed,
+            sealReady = result.Granted,
+            stopPermitted = result.Granted && result.Snapshot.StopConsumed,
             result.Permit,
             readiness = new { result.Rooms, result.Durability, result.Platform },
         }, statusCode: statusCode);

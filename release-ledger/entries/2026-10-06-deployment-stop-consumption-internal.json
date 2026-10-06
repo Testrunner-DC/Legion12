@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-deployment-stop-consumption-internal",
+  "date": "2026-10-06",
+  "audience": "internal",
+  "reason": "默认关闭的进程内许可消费、取消/断连失败关闭及启动边界；真实外部停服消费者仍待，不宣称线上启用。",
+  "paths": [
+    "服务端WebSocket/Program.cs",
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainStartup.cs",
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainCoordinator.cs",
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainController.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.DeploymentDrain.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.DeploymentDrainControl.cs"
+  ]
+}

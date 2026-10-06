@@ -101,7 +101,7 @@ internal interface IL12DeploymentDrainFenceStore
 internal sealed record L12DeploymentDrainSnapshot(L12DeploymentDrainPhase Phase, long Epoch,
     string ProcessInstance, string ActiveCommit, L12DeploymentDrainOwner? Owner,
     long AdmissionLeases, long ActivityLeases, string? SealId, bool FenceSynchronized,
-    bool FenceUnknown);
+    bool FenceUnknown, bool StopConsumed = false);
 
 internal sealed record L12DeploymentSealPermit(int ProtocolVersion, string OperationId,
     string TargetCommit, string ProcessInstance, string ActiveCommit, long Epoch, string SealId);
@@ -278,6 +278,8 @@ internal sealed class L12DeploymentDrainCoordinator
     private string? _sealId;
     private bool _fenceSynchronized;
     private bool _fenceUnknown;
+    private bool _stopConsumed;
+    private L12DeploymentSealPermit? _consumedStopPermit;
 
     internal L12DeploymentDrainCoordinator(string processInstance, string activeCommit,
         IL12DeploymentDrainFenceStore fenceStore)
@@ -305,10 +307,10 @@ internal sealed class L12DeploymentDrainCoordinator
     {
         lease = null;
         var ambientScope = NormalizeAdmissionScope();
-        if (ambientScope is not null && ambientScope.TryBorrow(out lease)) return true;
-
         lock (_gate)
         {
+            if (_stopConsumed) return false;
+            if (ambientScope is not null && ambientScope.TryBorrow(out lease)) return true;
             if (_phase != L12DeploymentDrainPhase.Open) return false;
             checked { _admissionLeases++; }
             lease = new L12DeploymentDrainLease(
@@ -323,7 +325,8 @@ internal sealed class L12DeploymentDrainCoordinator
         lease = null;
         lock (_gate)
         {
-            if (_phase is not (L12DeploymentDrainPhase.Open or L12DeploymentDrainPhase.Draining))
+            if (_stopConsumed
+                || _phase is not (L12DeploymentDrainPhase.Open or L12DeploymentDrainPhase.Draining))
                 return false;
             checked { _activityLeases++; }
             lease = new L12DeploymentDrainLease(
@@ -502,6 +505,15 @@ internal sealed class L12DeploymentDrainCoordinator
                     return TransitionLocked(L12DeploymentDrainTransitionCode.WrongPhase);
                 if (_owner != owner || !OwnerBelongsToProcess(owner))
                     return TransitionLocked(L12DeploymentDrainTransitionCode.OwnerMismatch);
+                if (_stopConsumed)
+                    return TransitionLocked(L12DeploymentDrainTransitionCode.WrongPhase);
+                // Withdraw the sealed permit before fence I/O. Transport close now
+                // uses ordinary Activity cleanup instead of a transport-only sealed
+                // callback that could invalidate state and then be overwritten Open.
+                _phase = L12DeploymentDrainPhase.Draining;
+                _epoch = NextEpoch(_epoch);
+                _sealId = null;
+                _fenceSynchronized = false;
             }
 
             var cleared = TryClearFence(owner);
@@ -509,19 +521,49 @@ internal sealed class L12DeploymentDrainCoordinator
             {
                 if (!cleared)
                 {
-                    _phase = L12DeploymentDrainPhase.Draining;
-                    _epoch = NextEpoch(_epoch);
-                    _sealId = null;
-                    _fenceSynchronized = false;
                     return TransitionLocked(L12DeploymentDrainTransitionCode.FenceFailure);
                 }
 
                 _phase = L12DeploymentDrainPhase.Open;
-                _epoch = NextEpoch(_epoch);
                 _owner = null;
                 _sealId = null;
                 _fenceSynchronized = true;
                 return TransitionLocked(L12DeploymentDrainTransitionCode.Applied);
+            }
+        }
+        finally
+        {
+            _managementGate.Release();
+        }
+    }
+
+    internal L12DeploymentDrainTransition ConsumeStopPermit(L12DeploymentSealPermit permit)
+    {
+        ArgumentNullException.ThrowIfNull(permit);
+        if (!_managementGate.Wait(0))
+            return Transition(L12DeploymentDrainTransitionCode.TransitionInProgress);
+        try
+        {
+            lock (_gate)
+            {
+                if (_stopConsumed)
+                {
+                    var repeated = _consumedStopPermit == permit
+                        && IsCurrentSealPermitLocked(permit);
+                    return new L12DeploymentDrainTransition(
+                        repeated
+                            ? L12DeploymentDrainTransitionCode.Idempotent
+                            : L12DeploymentDrainTransitionCode.StaleEpoch,
+                        SnapshotLocked(), repeated ? _consumedStopPermit : null);
+                }
+
+                if (!IsCurrentSealPermitLocked(permit))
+                    return TransitionLocked(L12DeploymentDrainTransitionCode.StaleEpoch);
+
+                _stopConsumed = true;
+                _consumedStopPermit = permit;
+                return new L12DeploymentDrainTransition(L12DeploymentDrainTransitionCode.Applied,
+                    SnapshotLocked(), permit);
             }
         }
         finally
@@ -710,7 +752,7 @@ internal sealed class L12DeploymentDrainCoordinator
 
     private L12DeploymentDrainSnapshot SnapshotLocked() =>
         new(_phase, _epoch, _processInstance, _activeCommit, _owner, _admissionLeases,
-            _activityLeases, _sealId, _fenceSynchronized, _fenceUnknown);
+            _activityLeases, _sealId, _fenceSynchronized, _fenceUnknown, _stopConsumed);
 
     private L12DeploymentSealPermit PermitLocked()
     {

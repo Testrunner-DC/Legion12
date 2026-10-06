@@ -46,6 +46,13 @@ internal sealed class L12DeploymentDrainController
         return new(result.Code.ToString(), result.Snapshot);
     }
 
+    internal L12DeploymentDrainControlResult ConsumeStopPermit(L12DeploymentSealPermit permit)
+    {
+        var result = _coordinator.ConsumeStopPermit(permit);
+        var observation = _coordinator.CaptureCurrentSealPermit(result.Permit);
+        return new(result.Code.ToString(), observation.Snapshot, observation.Permit);
+    }
+
     internal async Task<L12DeploymentDrainControlResult> SealAsync(L12DeploymentDrainOwner owner,
         CancellationToken cancellationToken = default)
     {

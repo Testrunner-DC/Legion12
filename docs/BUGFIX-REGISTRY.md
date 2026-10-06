@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## DEPLOYMENT-20261006-CANCEL-TRANSPORT｜取消围栏I/O与sealed断连竞态（本地RED/GREEN）
+
+- 属于用户已批准的完整对局保障方案及消费者激活前的失败关闭边界，不是玩家新功能。独立复核发现：Cancel验证后释放短状态锁去清fence，phase仍Sealed；并发WS finally因此执行transport-only cleanup，异常能改Draining/epoch，却又被Cancel返回后的无条件Open覆盖。
+- 同型扫描为Coordinator全部管理转移／TryRunSealedTransportCleanup、RoomManager断连／ConnectAsync恢复、WS finally、五条控制路由及startup；非卡效，不伪造全卡池迁移。Main确定性阻塞TryClearFence，成功／失败两支均实测callback不应运行但实际运行；完整r2为745总、743通过、2失败、0跳过，原TRX和夹具保留。
+- 最小修复：持managementGate、首次短状态锁确认相同owner且未消费后，先撤销sealed资格为Draining、epoch仅递增一次、sealId清空和FenceSync=false，再做外部fence I/O。成功Open不二次增epoch，失败保持Draining；窗口中的真实断连走原Activity处理，不引入等待队列或改变断线规则。消费与Cancel仍串行，已消费／未知或字节CAS失败不重开，旧permit不能再消费。
+- 正常先sealed transport cleanup后显式Cancel允许放弃未消费的发布；合法terminal／无房间session保留原处理，真实ConnectAsync重绑并删除旧session已回归。异常导致许可失效后即使tuple相同也不返旧stop确认，StopConsumed持续关闭；并非为恢复工具而降失败关闭。
+- r3完整745／745失败跳过0，源码SHA前后无漂移。r1稀疏树遗漏218字节既有AssemblyInfo使测试内部类型不可见，仅补既有源、不改访问级别；失败证据保留。当前主树Batch／干净Release／Git待，默认关闭且外部停服工具未接，无部署／维护／线上Bug写入，不称已在正式启用。
+
 ## RECOVERY-20261006-AUTOCLOSE-TIME｜真实恢复哈希RED，完整方案批准后限定修复中
 
 - 04:08实际增量：第三轮完整平台528/528，失败跳过0；新/旧三字段×单/双5秒真实Journal与ranked恢复、收到时刻漂移、物理clock差异、作用域异常清理、重复和坏记录全保留通过。旧缺精确时间事件仍严格拒绝，未削弱哈希。完整批／干净Release及同实包尚待，不部署。

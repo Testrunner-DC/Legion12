@@ -53,7 +53,8 @@ public sealed class DeploymentControlHttpTests
         Assert.Equal(HttpStatusCode.OK, sealResponse.StatusCode);
         AssertNoStore(sealResponse);
         var sealedResult = await ReadJsonAsync(sealResponse);
-        AssertProtocolEnvelope(sealedResult, "Applied", "sealed", stopPermitted: true);
+        AssertProtocolEnvelope(sealedResult, "Applied", "sealed", stopPermitted: false);
+        Assert.True(sealedResult.GetProperty("sealReady").GetBoolean());
         Assert.Equal(0L, sealedResult.GetProperty("admissionLeases").GetInt64());
         Assert.Equal(0L, sealedResult.GetProperty("activityLeases").GetInt64());
         var permit = sealedResult.GetProperty("permit");
@@ -73,7 +74,8 @@ public sealed class DeploymentControlHttpTests
             "/api/admin/deployment-drain/seal", fixture.Owner);
         Assert.Equal(HttpStatusCode.OK, repeatedResponse.StatusCode);
         var repeated = await ReadJsonAsync(repeatedResponse);
-        AssertProtocolEnvelope(repeated, "Idempotent", "sealed", stopPermitted: true);
+        AssertProtocolEnvelope(repeated, "Idempotent", "sealed", stopPermitted: false);
+        Assert.True(repeated.GetProperty("sealReady").GetBoolean());
         Assert.Equal(firstSealId, repeated.GetProperty("permit").GetProperty("sealId").GetString());
 
         using var sealedStatusResponse = await client.GetAsync("/api/admin/deployment-drain/status");

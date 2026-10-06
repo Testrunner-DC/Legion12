@@ -16,6 +16,7 @@ public sealed partial class L12WebSocketServer
         => path == "/api/admin/deployment-drain/status"
             || path == "/api/admin/deployment-drain/begin"
             || path == "/api/admin/deployment-drain/seal"
+            || path == "/api/admin/deployment-drain/consume"
             || path == "/api/admin/deployment-drain/cancel";
 
     internal static L12DeploymentIngressKind ClassifyDeploymentHttpIngress(string method, string path)

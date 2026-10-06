@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## MAIN-20261006-STOP-CONSUMPTION｜进程内许可消费与启动边界（本地验收）
+
+- 主验收树完整Batch已实际6477规则／745平台、失败跳过0，UI354快检及128内部账本检查通过，成功监督receipt均已读。接续保存干净候选、完整Release／同包／Git；本片默认关闭，不部署、不改维护，外部消费者仍待。下方r3专项绿色不再是唯一证据，但仍不预称完整Release已完成。
+
+- 上一入口批实际已完整验收并精确同步`87fc4c194d4cc6aa2802b6a87950b7cbe59f9dd4`，最终回执D盘deployment-drain-integration-20261006/acceptance.json；6477规则／707平台／167发布保护专项及七阶段通过。17:04:59实读测试428fff25／正式c85819f0、两维护false，无部署／维护／生产写入。用户再次明确禁止过期补部署，任何后续发布需新授权。
+- 下一10源码路径已从独立D盘树接回主树，当前新差异不借上一候选绿色：精确permit经managementGate一次消费、同tuple幂等、消费后同进程不可Cancel或接受新Activity／Admission；正常sealed有效许可才可stopPermitted，失效cleanup保留关闭标记而不返旧许可。只改进程内协议，不迁移DB／fence schema／Journal。
+- Program启动开关默认false；invalid布尔在存储前拒绝，已有／unknown fence不能用关闭开关绕过，严格包身份且Attach在ranked restore前。真实外部deploy／rollback stop消费者仍未接入，跨进程systemd切换与围栏完成合同仍待，不能称线上原子停服能力启用。
+- 独立复核实定位Cancel在清fence I/O期间仍按Sealed清transport的竞态。r2完整745项743通过／2真实RED／0跳过，唯一失败为清除成功／失败两个确定性时序；Main前置撤销sealed资格为Draining、epoch仅+1，再清fence，失败保持关闭、正常断连有Activity。r3完整745／745失败跳过0，含实际cleanup后Cancel／同账号Connect替换旧session、HTTP权限／幂等／失效、重启拒旧许可。r1因稀疏树漏既有218字节Properties/AssemblyInfo编译失败，仅补原源不扩大访问级别；原失败证据保留。D盘自有夹具与源码前后SHA无漂移；主树Batch／干净Release／同包／Git接续。
+- 扩展P2外围生命周期和P3发布保护，P0/P1卡效与P4页面不变；最多两个写入者、构建串行，子任务已冻结并回执。下一仍是外部保护消费者→广播／已提交身份→10秒采样／7日留存。真机／真实Linux容量和长期负载缺口保留，不安装Linux、不关线上Bug。
+
 ## MAIN-20261006-DRAIN-INGRESS｜底座后真实入口接线（本地实施）
 
 - 修正后的五路径前端域Batch实际退出0，UI354／反馈144／类型检查及正式、testrun双构建全部通过。后端产品源没有因验证合同失败而改动，原6477／707证据保留；Main随后保存修正候选并重新跑提交级完整Release，不预称已推送。原失败候选43ac29f1和四阶段failure证据仍留存，不删除或用成功覆盖。
