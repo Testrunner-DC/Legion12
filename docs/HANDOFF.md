@@ -1,5 +1,7 @@
 # 十二军团简短交接
 
+- **16:40首轮干净Release被旧验证句式拦下，未推送／未部署**：43ac29f1实际规则6477／平台707通过；UI354中的匹配恢复合同仍要求直接return Task，与本批为保留排空租约而新增的return await冲突。Main只将该叶改为明确要求await，保留其余恢复／迟到消息／唯一串行发送保护及实际707平台证据；不把这一句式调整称A3迁移或删断言。原失败timings／TRX／日志保留，定向前端Batch及修正后完整干净Release待。
+
 - **2026-10-06 16:21，全入口／控制协议片本地Batch通过，未部署**：Main已在主验收树接回冻结35路径并核对一致，完整Batch实际6477规则／707平台失败跳过0；当前HEAD及origin仍c72b5316，本批差异待保存为干净候选、完整Release／同包及Git精确读回。默认不启用，Program和标准停服消费者未接；独立复核指出返回permit后Cancel的外部停服竞态，下一片须先原子消费并阻止同进程重开，再接真实工具。用户再次明确错过时限不部署；两服、维护、生产与Bug状态不写。最后14:26只读测试428fff25／正式c85819f0、两维护false。下一仍按保护消费者→广播／身份→10秒采样／7日留存推进，不安装Linux。
 
 - **10月6日15:50控制协议完整平台已通过，接续完整门禁／Git，未部署**。integration树最终r6实际707/707、失败跳过0，源清单`D:/GPT/Legion12/artifacts/deployment-drain-integration-20261006/platform-r6-source.json`与原TRX／监督回执保留；实际sandbox正常投降在Draining完成、terminal只改transport不新增checkpoint、控制401/403不写DB、同owner幂等permit、unknown/锁忙/取消/异常及epoch竞态均通过。r4为Main局部变量编译错误，r5两失败为隔离quarantine缺父FK和DELETE锁夹具未清自己的旧pooled WAL句柄；只修测试、直接核DELETE模式，原失败保留。只读架构锁与127账本通过；稀疏源码缺前端/CI导致最初检查失败，只补已有小源文件，不复制卡图、不删除守卫。Program/标准stop消费者仍不启用，尚不宣称正式全模式发布门可用；最新禁止部署继续生效。

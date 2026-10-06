@@ -5,6 +5,7 @@
   "audience": "internal",
   "reason": "发布保护的入站租约、提交代际核对与管理协议；默认未接Program及stop消费者，不宣称正式启用。",
   "paths": [
+    "opcgpro-vue/scripts/check-ui-contracts.mjs",
     "服务端WebSocket/TwelveLegions/L12DeploymentDrainCoordinator.cs",
     "服务端WebSocket/TwelveLegions/L12DeploymentDrainController.cs",
     "服务端WebSocket/TwelveLegions/L12PlatformStore.DeploymentDrain.cs",

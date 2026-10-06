@@ -2,6 +2,10 @@
 
 ## MAIN-20261006-DRAIN-INGRESS｜底座后真实入口接线（本地实施）
 
+- 修正后的五路径前端域Batch实际退出0，UI354／反馈144／类型检查及正式、testrun双构建全部通过。后端产品源没有因验证合同失败而改动，原6477／707证据保留；Main随后保存修正候选并重新跑提交级完整Release，不预称已推送。原失败候选43ac29f1和四阶段failure证据仍留存，不删除或用成功覆盖。
+
+- 干净候选43ac29f1首轮Release规则6477／平台707通过，前端旧合同441行固定匹配`return RecoveryStateAsync(sessionId);`而拒绝新`return await`，原失败timings／TRX／日志保留。新await是保持mixed排空租约直到恢复完成的必要边界，不回退产品语义、不删匹配恢复或出站串行守卫；合同明确要求await，原真实Draining恢复／sync在途lease测试已经同候选通过。该前端验证叶只按实际异步生命周期更新，不计作A3全模板迁移；定向完整前端Batch与新干净候选Release接续，尚未推送或部署。
+
 - 16:21主验收工作树完整Batch实际规则6477／平台707、失败跳过0，两个监督receipt均success且自有临时树已清理；35路径与冻结暂存树逐文件规范化比对一致。实际fetch后HEAD与origin/main无分歧，源码仍为本批新差异；接续干净提交级Release与同包绑定，不把Debug专项或上一候选当最终验收。独立复核指出“已返回permit后Cancel→新入场→外部停服”的消费者竞态必须在下一接线片先以精确permit原子消费封闭；当前Program/停服工具未接、默认不启用，不对外宣称stop资格。
 
 - 15:50最终完整平台r6实际707通过／失败跳过0、编译无新增警告，源码清单与原TRX在D盘deployment-drain-integration-20261006；真实房间及控制协议矩阵已完成。Core原子观察Snapshot+Permit避免复核和返回之间的撕裂，HTTP显式投影internal Owner保持操作绑定字段。r4编译失败及r5两隔离夹具失败保留，未降断言或以WAL可读冒称exclusive busy。架构锁／127项账本已实跑通过；完整Batch／干净Release／同包／Git接续。这里只称平台完整通过，不替代完整门禁或正式启用。
