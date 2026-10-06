@@ -115,6 +115,17 @@ try {
         "正式前端哈希资源路由激活器缺少唯一站点定位或失败回滚。"
     Assert-True (([regex]::Matches($sharePagesNginxSource, 'proxy_hide_header Cache-Control;')).Count -eq 4 -and ([regex]::Matches($sharePagesNginxSource, 'add_header Cache-Control "no-cache" always;')).Count -eq 4) `
         "正式分享页 HTML 没有统一覆盖为 no-cache。"
+    Assert-True ($serverDeploySource.Contains('timeout 310 python3 -B "$runtime_verifier"')) `
+        "停服数据库证明没有保留 300 秒内部预算与 310 秒外层硬超时。"
+    Assert-True ($serverDeploySource.Contains('runtimeProofFailureCode=%s')) `
+        "停服数据库证明失败现场没有持久化常量原因码。"
+    foreach ($reasonCode in @(
+        "TIME_BUDGET_EXCEEDED", "SNAPSHOT_NOT_LATEST", "PERSISTENT_FACTS_CHANGED",
+        "BACKUP_CHECKSUM_CHANGED", "SQLITE_INTEGRITY_REJECTED", "SCHEMA_CONTRACT_REJECTED",
+        "UNSAFE_PATH_OR_FILE_SET", "SQLITE_READ_UNAVAILABLE", "PROOF_REJECTED", "EXTERNAL_TIMEOUT"
+    )) {
+        Assert-True ($serverDeploySource.Contains($reasonCode)) "停服数据库证明编排缺少固定原因码：$reasonCode"
+    }
 
     foreach ($accepted in @("root@legion-12.com", "root@154.201.80.91")) {
         $endpoint = Resolve-L12ProductionEndpoint -RemoteServer $accepted
@@ -257,7 +268,7 @@ try {
             [switch]$FailBackup,
             [switch]$FailBackupValidation,
             [switch]$FailBackupSha,
-            [ValidateSet("", "rejected", "timeout", "invalid-json", "wrong-sha")][string]$RuntimeProofFault = "",
+            [ValidateSet("", "rejected", "timeout", "invalid-json", "wrong-sha", "known-reason", "private-unknown-reason", "missing-stage-timings", "missing-empty-wal-transitions", "bad-stage-order", "negative-empty-wal-transitions", "invalid-stage-duration")][string]$RuntimeProofFault = "",
             [switch]$WriteOnStart,
             [switch]$DisabledService,
             [switch]$PreexistingBlock,
@@ -572,10 +583,31 @@ printf 'runtime-proof\n' >> "$L12_TEST_COMMAND_LOG"
 case "${L12_TEST_RUNTIME_PROOF_FAULT:-}" in
   rejected) exit 1 ;;
   invalid-json) printf 'invalid-proof'; exit 0 ;;
+  known-reason)
+    printf '%s\n' '{"schema":1,"verified":false,"reasonCode":"SNAPSHOT_NOT_LATEST","failedStage":"snapshot_stream","elapsedMilliseconds":1.25,"stageTimings":[{"stage":"path_guard","elapsedMilliseconds":0.1},{"stage":"backup_hash_before","elapsedMilliseconds":0.1},{"stage":"database_hash_before","elapsedMilliseconds":0.1},{"stage":"snapshot_stream","elapsedMilliseconds":0.1}]}'
+    exit 1 ;;
+  private-unknown-reason)
+    printf '%s\n' '{"schema":1,"verified":false,"reasonCode":"PRIVATE_SENTINEL_/secret/runtime","failedStage":"PRIVATE_SENTINEL_/secret/stage","elapsedMilliseconds":1.25,"stageTimings":[],"detail":"PRIVATE_SENTINEL_/secret/detail"}'
+    exit 1 ;;
 esac
 sha="$5"
 if [ "${L12_TEST_RUNTIME_PROOF_FAULT:-}" = "wrong-sha" ]; then sha="wrong"; fi
-printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$sha"
+stages='[{"stage":"path_guard","elapsedMilliseconds":0.1},{"stage":"backup_hash_before","elapsedMilliseconds":0.1},{"stage":"database_hash_before","elapsedMilliseconds":0.1},{"stage":"snapshot_stream","elapsedMilliseconds":0.1},{"stage":"sqlite_platform","elapsedMilliseconds":0.1},{"stage":"sqlite_matches","elapsedMilliseconds":0.1},{"stage":"database_hash_after","elapsedMilliseconds":0.1},{"stage":"backup_hash_after","elapsedMilliseconds":0.1}]'
+empty_wal_transitions=0
+case "${L12_TEST_RUNTIME_PROOF_FAULT:-}" in
+  missing-stage-timings)
+    printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"emptyWalPresenceTransitions":0,"elapsedMilliseconds":0.8,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$sha"
+    exit 0 ;;
+  missing-empty-wal-transitions)
+    printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"stageTimings":%s,"elapsedMilliseconds":0.8,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$stages" "$sha"
+    exit 0 ;;
+  bad-stage-order)
+    stages='[{"stage":"backup_hash_before","elapsedMilliseconds":0.1},{"stage":"path_guard","elapsedMilliseconds":0.1},{"stage":"database_hash_before","elapsedMilliseconds":0.1},{"stage":"snapshot_stream","elapsedMilliseconds":0.1},{"stage":"sqlite_platform","elapsedMilliseconds":0.1},{"stage":"sqlite_matches","elapsedMilliseconds":0.1},{"stage":"database_hash_after","elapsedMilliseconds":0.1},{"stage":"backup_hash_after","elapsedMilliseconds":0.1}]' ;;
+  negative-empty-wal-transitions) empty_wal_transitions=-1 ;;
+  invalid-stage-duration)
+    stages='[{"stage":"path_guard","elapsedMilliseconds":"PRIVATE_SENTINEL"},{"stage":"backup_hash_before","elapsedMilliseconds":0.1},{"stage":"database_hash_before","elapsedMilliseconds":0.1},{"stage":"snapshot_stream","elapsedMilliseconds":0.1},{"stage":"sqlite_platform","elapsedMilliseconds":0.1},{"stage":"sqlite_matches","elapsedMilliseconds":0.1},{"stage":"database_hash_after","elapsedMilliseconds":0.1},{"stage":"backup_hash_after","elapsedMilliseconds":0.1}]' ;;
+esac
+printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"emptyWalPresenceTransitions":%s,"stageTimings":%s,"elapsedMilliseconds":0.8,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$empty_wal_transitions" "$stages" "$sha"
 '@ | Out-Null
         New-FakeCommand $fakeBin "flock" "exit 0`n" | Out-Null
         New-FakeCommand $fakeBin "id" @'
@@ -788,6 +820,14 @@ exec "$L12_TEST_REAL_TAR" "$@"
         )) {
             Assert-True (-not (Test-Path -LiteralPath $path)) "$($Scenario.Name)：失败后遗留本次未完成备份：$path"
         }
+    }
+
+    function Get-FailureReceipt {
+        param([Parameter(Mandatory = $true)]$Scenario)
+        $failureDirectory = Join-Path $Scenario.Root "opt\legion12-deployment\failures"
+        $records = @(Get-ChildItem -LiteralPath $failureDirectory -Filter "deploy-*.txt" -ErrorAction SilentlyContinue)
+        Assert-True ($records.Count -eq 1) "$($Scenario.Name)：失败现场文件数量不是精确 1。"
+        return Get-Content -LiteralPath $records[0].FullName -Raw
     }
 
     function Assert-EarlyExternalRejection {
@@ -1139,13 +1179,53 @@ exec "$L12_TEST_REAL_TAR" "$@"
     }
     Assert-True ($backupFailures[3].Output.Contains("超过 4 GiB 硬上限")) "外置备份超上限没有明确 fail-closed。"
 
-    foreach ($proofFault in @("rejected", "timeout", "invalid-json", "wrong-sha")) {
+    $proofFailureReasons = [ordered]@{
+        "rejected" = "PROOF_REJECTED"
+        "timeout" = "EXTERNAL_TIMEOUT"
+        "known-reason" = "SNAPSHOT_NOT_LATEST"
+        "private-unknown-reason" = "PROOF_REJECTED"
+    }
+    foreach ($proofFault in $proofFailureReasons.Keys) {
         $proofFailure = Invoke-ServerScenario -Name "stopped-runtime-proof-$proofFault" -ArtifactRoot "/www/legion12" -RuntimeProofFault $proofFault
         Assert-True ($proofFailure.ExitCode -ne 0) "停服数据库证明错误被接受：$proofFault"
-        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 120 python3")) "证明拒绝没有到达停服备份后边界。"
+        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 310 python3 -B")) "证明拒绝没有到达停服备份后边界。"
         Assert-True ($proofFailure.Output.Contains("上一版本已恢复并通过")) "证明失败后原服务未经过身份核验。"
+        $expectedReason = $proofFailureReasons[$proofFault]
+        Assert-True ($proofFailure.Output.Contains("停服校验拒绝原因：$expectedReason")) `
+            "证明失败没有只输出固定原因码：$proofFault / $expectedReason"
+        $proofFailureReceipt = Get-FailureReceipt $proofFailure
+        Assert-True ($proofFailureReceipt.Contains("failureStage=verify-stopped-runtime-backup")) `
+            "证明失败现场没有绑定停服证明阶段：$proofFault"
+        Assert-True ($proofFailureReceipt.Contains("runtimeProofFailureCode=$expectedReason")) `
+            "证明失败现场原因码错误：$proofFault / $expectedReason"
+        Assert-True (-not ($proofFailure.Output + $proofFailureReceipt).Contains("PRIVATE_SENTINEL")) `
+            "证明失败输出或现场泄漏了非固定私密错误内容：$proofFault"
         Assert-True (-not (Test-Path -LiteralPath $proofFailure.ExpectedRelease)) "证明失败后仍安装候选版本。"
         Assert-True (([regex]::Matches($proofFailure.Commands, 'systemctl start')).Count -eq 1) "证明失败后服务启动次数错误。"
+        Assert-BaseStatePreserved $proofFailure
+        Assert-RootBackupsPreserved $proofFailure
+        $null = Assert-BackupReceipt $proofFailure
+    }
+
+    foreach ($proofFault in @("invalid-json", "wrong-sha", "missing-stage-timings", "missing-empty-wal-transitions", "bad-stage-order", "negative-empty-wal-transitions", "invalid-stage-duration")) {
+        $proofFailure = Invoke-ServerScenario -Name "stopped-runtime-proof-contract-$proofFault" `
+            -ArtifactRoot "/www/legion12" -RuntimeProofFault $proofFault
+        Assert-True ($proofFailure.ExitCode -ne 0) "停服数据库成功合同错误被接受：$proofFault"
+        Assert-True ($proofFailure.Commands.Contains("systemctl stop") -and $proofFailure.Commands.Contains("timeout 310 python3 -B")) `
+            "成功合同拒绝没有到达停服备份后边界：$proofFault"
+        Assert-True ($proofFailure.Output.Contains("上一版本已恢复并通过")) `
+            "成功合同拒绝后原服务未经过身份核验：$proofFault"
+        $proofFailureReceipt = Get-FailureReceipt $proofFailure
+        Assert-True ($proofFailureReceipt.Contains("failureStage=verify-stopped-runtime-backup")) `
+            "成功合同拒绝现场没有绑定停服证明阶段：$proofFault"
+        Assert-True ($proofFailureReceipt.Contains("runtimeProofFailureCode=PROOF_REJECTED")) `
+            "成功合同拒绝没有归一为 PROOF_REJECTED：$proofFault"
+        Assert-True (-not ($proofFailure.Output + $proofFailureReceipt).Contains("PRIVATE_SENTINEL")) `
+            "成功合同拒绝泄漏了非法阶段内容：$proofFault"
+        Assert-True (-not (Test-Path -LiteralPath $proofFailure.ExpectedRelease)) `
+            "成功合同拒绝后仍安装候选版本：$proofFault"
+        Assert-True (([regex]::Matches($proofFailure.Commands, 'systemctl start')).Count -eq 1) `
+            "成功合同拒绝后服务启动次数错误：$proofFault"
         Assert-BaseStatePreserved $proofFailure
         Assert-RootBackupsPreserved $proofFailure
         $null = Assert-BackupReceipt $proofFailure

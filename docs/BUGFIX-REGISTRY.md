@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## DEPLOYMENT-20261007-RUNTIME-PROOF｜停服备份校验空WAL误拒与有界诊断（获准，验收中）
+
+- 正式bc1f发布先因SSH缓存探测失败在停服前阻止；用户批准受控重试后，最新运行快照已校验，但停服proof拒绝。新服务从未启动，标准流程恢复c858本机/公网/WS并保留最新库、快照和失败现场，维护未改。原日志、授权及两次独立收据在D盘artifacts/release-20261007-approved；不冒称部署成功，不自动重试模糊切换或回写旧库。
+- 原CLI将所有原因压成同一句，不能据此把真实拒绝直接裁为损坏或超时。只读实核两库约3.8GiB、压缩备份约1.07GiB；旧110秒包含重复主库/WAL/备份哈希、流式解压及quick_check，小库15测试不能证明真实吞吐。用户批准安全原因码/阶段耗时、适当延长有界预算及独立服务器合成验证，不安装Linux、不读取玩家正文。
+- 真实服务器Python3.12.3/SQLite3.45.1的两微型干净WAL-mode库准确RED：before无WAL，mode=ro quick_check后出现两个0字节WAL；主库SHA完全不变、非空WAL未变，旧before!=after仍拒绝。新合成GREEN同样产生空WAL但保持全部持久事实一致，证据在D盘artifacts/runtime-proof-gate-20261007/synthetic-wal-original-linux.json与synthetic-wal-candidate-linux.json；这不是正式完整备份通过或长期容量证明。
+- 最小修正仅known WAL的(0,空SHA)在比较时规范化，不删文件、不checkpoint、不repair、不immutable。主库/任何非空WAL/归档/路径/schema/完整性仍强拒绝；完整哈希次数不减少。内部300秒、外层310秒有界，8个固定stage耗时及安全常量原因码；超时/数据漂移/损坏/未知仍拒绝，失败现场登记原因码，不输出SQLite原文、路径输入或私有数据。全同型仅此唯一proof生产入口及其Shell消费/回归，非卡效迁移。
+- 最终专项：旧15个SQLite测试全部保留，现30/30通过；6个实际发布重试执行器和53个隔离服务器场景通过，覆盖固定原因码、未知私密错误不泄漏、成功合同缺失/乱序/非法数值在安装前拒绝且旧服务仅恢复一次。Main独立30项复验通过，最终源FC374619的服务器合成GREEN在synthetic-wal-final-linux-20261006T190750Z.json；早期fallback缺字段、mock缺elapsed、Windows长夹具路径和受限环境运行失败均保留，不作为产品成功证据。两个测试租约归还，无并行构建。
+- Main完整ops Batch实际退出0，架构锁、53发布故障、6执行器及30 SQLite回归全过。干净候选完整Release/同包/Git与正式结果只认D盘runtime-proof-gate-20261007/acceptance.json及release-20261007-approved/retry-2的实际收据，缺失不视为完成；原bc1f成功卡效门禁不冒充本批。上次失败残留自有sandbox围栏已精确只读核对归属，仅在无活跃部署、旧服务/最新数据安全及本次受控重试授权内由标准发布处理，不手动清未知围栏、不解除运营维护。
+
 ## EFFECT-20261007-CANOPIC-ENTRY｜卡诺匹斯整项无效与真实来源区位（获准，验收中）
 
 - 最终本地447专项通过，含箱搜索建立/恢复时对手隐私、canonical旧scope fallback、只通过首窗、正常后段presentation事实、来源已离场40和目标失效仍自弃。12项严格窗口初版失败实际是合法effect-hand-add独立时点，未删除该时点；改为明确只允许该权威事件，仍禁止enter子句另开窗。4项报价补断言初版失败为夹具漏目录IsCounterTactic，补真实标记后报价0及反击身份均通过。批次规则6600/平台745、前端域完整通过；最终干净Release/同步以D盘本批acceptance.json实际绑定为准，无线上复测不resolved。

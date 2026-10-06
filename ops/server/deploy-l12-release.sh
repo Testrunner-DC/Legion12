@@ -731,6 +731,7 @@ runtime_backup_partial=""
 runtime_backup_checksum=""
 runtime_backup_checksum_partial=""
 runtime_backup_sha256=""
+runtime_proof_failure_code=""
 runtime_restore_dir=""
 failed_runtime_dir=""
 failure_stage="preflight"
@@ -1073,6 +1074,7 @@ write_failure_record() {
     printf 'status=failed\n'
     printf 'failedCommit=%s\n' "$commit"
     printf 'failureStage=%s\n' "$failure_stage"
+    printf 'runtimeProofFailureCode=%s\n' "$runtime_proof_failure_code"
     printf 'disposition=%s\n' "$disposition"
     printf 'serviceState=%s\n' "$(if [[ "$service_stopped" -eq 1 ]]; then printf stopped; else printf unknown; fi)"
     printf 'activeTarget=%s\n' "$active_target"
@@ -1280,21 +1282,41 @@ chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
 failure_stage="verify-stopped-runtime-backup"
-if runtime_proof="$(timeout 120 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256")"; then
+if runtime_proof="$(timeout 310 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256")"; then
   : # Conditional assignment prevents inherited ERR from recovering twice in a subshell.
 else
+  proof_status=$?
+  if [[ "$proof_status" -eq 124 ]]; then
+    runtime_proof_failure_code="EXTERNAL_TIMEOUT"
+  else
+    runtime_proof_failure_code="$(printf '%s' "$runtime_proof" | node -e '
+let text="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>text+=chunk);
+process.stdin.on("end",()=>{try{const proof=JSON.parse(text);const known=new Set(["TIME_BUDGET_EXCEEDED","SNAPSHOT_NOT_LATEST","PERSISTENT_FACTS_CHANGED","BACKUP_CHECKSUM_CHANGED","SQLITE_INTEGRITY_REJECTED","SCHEMA_CONTRACT_REJECTED","UNSAFE_PATH_OR_FILE_SET","SQLITE_READ_UNAVAILABLE","PROOF_REJECTED"]);process.stdout.write(proof.verified===false&&known.has(proof.reasonCode)?proof.reasonCode:"PROOF_REJECTED");}catch{process.stdout.write("PROOF_REJECTED");}});')"
+  fi
+  log "停服校验拒绝原因：${runtime_proof_failure_code}"
   fail "停服数据库与备份证明失败或超时，拒绝切换版本"
 fi
-printf '%s' "$runtime_proof" | node -e '
+runtime_proof_failure_code="PROOF_REJECTED"
+if printf '%s' "$runtime_proof" | node -e '
 let body="";process.stdin.on("data",chunk=>body+=chunk);process.stdin.on("end",()=>{
   try { const proof=JSON.parse(body);
+    const stages=["path_guard","backup_hash_before","database_hash_before","snapshot_stream","sqlite_platform","sqlite_matches","database_hash_after","backup_hash_after"];
     if(proof.schema!==1||proof.verified!==true||proof.databases!==2||proof.sqliteQuickCheck!=="ok"
       ||proof.schemaAnchorsVerified!==true||proof.latestDatabaseAndWalEqualBackup!==true
       ||proof.persistentFactMutations!==0||proof.checkpointOrRepairPerformed!==false
       ||proof.backupSha256!==process.argv[1]
-      ||!/^[a-f0-9]{64}$/.test(proof.databaseWalFingerprintSha256||"")) process.exit(2);
+      ||!/^[a-f0-9]{64}$/.test(proof.databaseWalFingerprintSha256||"")
+      ||!Number.isInteger(proof.emptyWalPresenceTransitions)||proof.emptyWalPresenceTransitions<0||proof.emptyWalPresenceTransitions>2
+      ||!Number.isFinite(proof.elapsedMilliseconds)||proof.elapsedMilliseconds<0||proof.elapsedMilliseconds>300000
+      ||!Array.isArray(proof.stageTimings)||proof.stageTimings.length!==stages.length
+      ||proof.stageTimings.some((item,index)=>item.stage!==stages[index]
+        ||!Number.isFinite(item.elapsedMilliseconds)||item.elapsedMilliseconds<0||item.elapsedMilliseconds>300000)) process.exit(2);
   } catch { process.exit(2); }
-});' "$runtime_backup_sha256"
+});' "$runtime_backup_sha256"; then
+  runtime_proof_failure_code=""
+else
+  fail "停服校验成功合同无效，拒绝切换版本"
+fi
 log "停服最新数据库、WAL与备份只读校验通过；未执行修复或数据回退"
 ln -s "$runtime_dir" "${stage_dir}/publish/runtime"
 

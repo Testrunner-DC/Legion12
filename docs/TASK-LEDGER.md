@@ -1,5 +1,13 @@
 # 十二军团任务台账
 
+## MAIN-20261007-RUNTIME-PROOF｜正式发布校验器限定修复（已批准，实施验收中）
+
+- 当前卡效bc1f已实际完整Release6600/745、447专项/24真实组件、七阶段/同DLL/精确Git收口。用户最新授权正式部署、SSH固定元数据及旧版首次升级例外；02:00维护自然active，版本92原样，不授权测试部署或解除维护。10旧friendly中1条维护watchdog正常补结束且检查点保留，剩9与1waived原样保留，不删除或重算。
+- 第一正式流程仅上传后SSH cache probe超时中止，现场同PID/old c858/无fence证明未切换；用户明确批准受控retry，独立目录保留原收据。第二流程真正停服后生成最新快照，但新proof拒绝，旧程序在未启动新服务边界按标准恢复，HTTP/WS通过、维护保持，无旧DB回写；失败记录、快照与自有sandbox围栏保留。详情见D盘release-20261007-approved/retry-1与registry同号。
+- 用户明确批准安全失败原因码/阶段耗时、有界预算调整以及本地/真实服务器独立合成小库验证；服务器Python3.12.3/SQLite3.45.1的空WAL误拒RED和修后GREEN已实际完成，不打开生产库。仅known 0-byte WAL比较规范化，其他完整性检查不减；Main两个ops源、子代理两测试文件租约互斥，不递归，Main统一验收/同步/新发布。
+- 专项已冻结接收：SQLite30（旧15全保留）、6实际执行器、53发布故障场景通过；Main独立30复验及最终源码服务器微库GREEN通过。独立源审查未发现阻断，主库/非空WAL/完整归档/schema/quick_check和路径限制均保留；两测试写入和运行租约结束，Main串行Batch。已在部署锁空闲时只读取证，旧sandbox围栏精确属于本次bc1f失败；不手动删除、不开运营维护，只有新完整验收和最新现场门通过后由标准受控发布替换并在成功时清除。
+- Main完整ops Batch实际退出0，架构/边界/性能/配置及53+6+30全过；接续保存干净候选、新完整Release及同包/Git绑定。唯一本批本地验收为D盘runtime-proof-gate-20261007/acceptance.json；正式受控重试结果为release-20261007-approved/retry-2实际发布及独立核验收据，不能据本行或旧卡效门禁推定已完成。当前旧正式仍c858；不绕过guard、不自动重部署、不手动清未知fence、不解除维护。卡效与本批ops复用累计28玩家更新，内部proof诊断不加玩家项。
+
 ## MAIN-20261007-CARD-INTAKE｜五项卡效反馈（获准两族修复，本地验收中）
 
 - 首次干净c878 Release实际规则6600/平台745失败跳过0，前端在新增根scripts测试依赖未带入隔离副本时MODULE_NOT_FOUND退出1；原release-final.log及失败timings/详细TRX保留，不能称完整Release通过。测试迁入标准opcgpro-vue/scripts、相对PlayerMat路径及package调用同步，产品源完全未改；20行为复跑通过，接续前端域Batch及新干净候选完整Release，不跳过隔离门禁或扩大复制范围。
