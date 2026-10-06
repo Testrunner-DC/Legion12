@@ -481,8 +481,12 @@ foreach ($obsoleteTakedaSplit in @('batch6JAFollowup', 'takeda-followup', 'case 
     }
 }
 Assert-Contains $composite '["trigger:S01-0111:enter"]' 'Zhuge reveal and disaster adjustment must remain independent stack segments.'
-Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target and discard must remain independent stack segments.'
-Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'
+Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One must preserve its internal target/discard settlement clauses.'
+Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four must preserve its internal target/discard settlement clauses.'
+$singleResponsePlans = [regex]::Match($composite, '(?s)SingleResponseEffectPlans.*?\{(?<plans>.*?)\};').Groups['plans'].Value
+foreach ($cardId in @('S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220')) {
+    Assert-Contains $singleResponsePlans ('"trigger:' + $cardId + ':enter"') 'Each Canopic entry must keep its approved whole-effect response boundary.'
+}
 foreach ($drawDiscardPlan in @(
     'trigger:S01-0001:death', 'trigger:S01-0303:death',
     'trigger:S01-0306:death', 'trigger:S02-0301:death',

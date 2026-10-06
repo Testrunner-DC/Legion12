@@ -135,6 +135,11 @@ public sealed class PublicEnterOwnTargetRevalidationTests
         Assert.Equal(0, transformed.ImmortalUses);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        if (sourceId == "S01-0217")
+        {
+            Assert.Contains(source, game.State.Players[0].Graveyard);
+            Assert.Null(game.State.Players[0].Relic);
+        }
     }
 
     [Fact]
@@ -184,6 +189,8 @@ public sealed class PublicEnterOwnTargetRevalidationTests
 
         Assert.Equal(0, transformed.ImmortalUses);
         Assert.Equal(1, valid.ImmortalUses);
+        Assert.Contains(source, player.Graveyard);
+        Assert.Null(player.Relic);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("1个已声明对象", StringComparison.Ordinal));
     }

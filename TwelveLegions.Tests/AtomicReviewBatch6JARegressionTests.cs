@@ -466,21 +466,23 @@ public sealed class AtomicReviewBatch6JARegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "entry:batch6ja-canopic-independent-discard")]
-    public void CanopicFourDiscardStillStacksAfterTargetSegmentIsNegated()
+    [Trait("L12Evidence", "ruling:canopic-whole-effect-negation-20261007")]
+    public void NegatedCanopicFourKeepsItsRelicAndDoesNotStartTheDiscardClause()
     {
         var fixture = Arrange("S01-0220", "enter", 9972);
+        fixture.Game.State.Players[0].ExtraRelics.Add(fixture.Source);
         Resolve(fixture.Game, "batch6ja-own-sun");
         var first = Assert.Single(fixture.Game.State.EffectStack);
         first.Negated = true;
         PassResponses(fixture.Game);
-        Assert.Contains(fixture.Game.State.EffectStack,
-            item => item.Data.GetValueOrDefault("atomicFlow") == "canopic-four-discard");
+        Assert.Empty(fixture.Game.State.EffectStack);
+        Assert.Contains(fixture.Source, fixture.Game.State.Players[0].ExtraRelics);
+        Assert.DoesNotContain(fixture.Source, fixture.Game.State.Players[0].Graveyard);
     }
 
     [Fact]
-    [Trait("L12Evidence", "entry:batch6ja-canopic-no-target-direct-discard")]
-    public void CanopicWithoutALegalFirstTargetStartsWithItsIndependentDiscardSegment()
+    [Trait("L12Evidence", "entry:canopic-whole-effect-no-target-discard")]
+    public void CanopicWithoutALegalFirstTargetStillExecutesItsDiscardClause()
     {
         var game = Create(9977);
         var player = game.State.Players[0];

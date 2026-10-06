@@ -52,8 +52,10 @@ public sealed partial class L12GameEngine
             && !PublicLegions(State.Players[candidate.Controller]).Any(card =>
                 L12StructuredCardRules.HasFaction(State.Players[candidate.Controller], card, "taiyangcheng")))
         {
-            var compositePlan = $"trigger:{plan}:enter";
+            var compositePlan = $"trigger:{candidate.SourceCardId}:enter";
             candidate.Data["compositePlan"] = compositePlan;
+            if (L12CompositeEffectPlans.UsesSingleResponseEffect(compositePlan))
+                candidate.Data["compositeResponseScope"] = "single-effect";
             candidate.Data["compositeSegment"] = "1";
             candidate.Data["atomicFlow"] = plan == "canopic-one" ? "canopic-one-discard" : "canopic-four-discard";
             candidate.Data["atomicContinuation"] = "true";

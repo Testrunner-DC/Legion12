@@ -513,8 +513,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     [InlineData("S01-0216", "canopic-box-search", "canopic-box-heal-discard")]
     [InlineData("S01-0218", "canopic-two-free", "canopic-two-discard")]
     [InlineData("S01-0219", "canopic-three-morale", "canopic-three-discard")]
-    [Trait("L12Evidence", "entry:batch6kb-canopic-independent-followup")]
-    public void CanopicDeterministicFollowupsRemainIndependentAfterTheFirstSegmentIsNegated(
+    [Trait("L12Evidence", "ruling:canopic-whole-effect-negation-20261007")]
+    public void NegatedCanopicEntryStopsItsDiscardAndHealingClauses(
         string cardId, string firstFlow, string secondFlow)
     {
         var game = Create(8204 + cardId[^1]);
@@ -528,11 +528,14 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal(firstFlow, first.Data["atomicFlow"]);
         first.Negated = true;
-        var second = PassUntilFlow(game, secondFlow);
-        Assert.Contains(source, player.ExtraRelics);
         PassResponses(game);
-        Assert.Contains(source, player.Graveyard);
-        if (cardId == "S01-0216") Assert.Equal(6, player.Hp);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.Data.GetValueOrDefault("atomicFlow") == secondFlow);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(source, player.ExtraRelics);
+        Assert.DoesNotContain(source, player.Graveyard);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Text.Contains("随后", StringComparison.Ordinal));
+        Assert.Equal(5, player.Hp);
     }
 
     [Fact]
@@ -546,23 +549,12 @@ public sealed class AtomicReviewBatch6KBRegressionTests
 
         QueueTrigger(game, source, "enter");
         Assert.Equal("canopic-three-morale", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
-        for (var safety = 0; safety < 8 && player.TemporaryMorale == 0; safety++)
-        {
-            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
-            Resolve(game, "pass");
-        }
-
+        PassResponses(game);
         Assert.Equal(2, player.TemporaryMorale);
-        Assert.Contains(source, player.ExtraRelics);
-        Assert.Equal("canopic-three-discard", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
-        for (var safety = 0; safety < 8 && player.ExtraRelics.Contains(source); safety++)
-        {
-            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
-            Resolve(game, "pass");
-        }
-
         Assert.Contains(source, player.Graveyard);
         Assert.DoesNotContain(source, player.ExtraRelics);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingPrompts);
     }
 
     [Theory]

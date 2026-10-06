@@ -1790,6 +1790,12 @@ public sealed partial class L12GameEngine
 
     private void DiscardRelic(L12PlayerState player, L12CardInstance relic)
     {
+        // “弃置此圣物”只作用于仍在圣物区的真实实例。已移往手牌／牌库等区域
+        // 的来源可以继续承载 LKI 效果，但不能再被加入墓地或重置第二次。
+        var actual = player.Relic?.InstanceId == relic.InstanceId ? player.Relic
+            : player.ExtraRelics.FirstOrDefault(card => card.InstanceId == relic.InstanceId);
+        if (actual is null) return;
+        relic = actual;
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(relic);
         if (player.Relic?.InstanceId == relic.InstanceId) player.Relic = null; else player.ExtraRelics.Remove(relic);
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
