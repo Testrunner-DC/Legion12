@@ -10,6 +10,8 @@ public sealed partial class L12RoomManager
     public async Task<L12TournamentRoomCommandDrainResult> DrainTournamentRoomCommandsAsync(
         string? tournamentId = null)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return new(0, 0, -1, []);
+        using var deployment = deploymentGuard;
         if (_platform is null) return new(0, 0, 0, []);
         await _tournamentRoomCommandGate.WaitAsync();
         try

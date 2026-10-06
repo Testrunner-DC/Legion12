@@ -532,10 +532,21 @@ internal sealed class L12DeploymentDrainCoordinator
 
     internal bool IsCurrentSealPermit(L12DeploymentSealPermit? permit)
     {
-        if (permit is null) return false;
+        lock (_gate) return IsCurrentSealPermitLocked(permit);
+    }
+
+    internal L12DeploymentDrainTransition CaptureCurrentSealPermit(L12DeploymentSealPermit? permit)
+    {
         lock (_gate)
         {
-            return _phase == L12DeploymentDrainPhase.Sealed
+            var valid = IsCurrentSealPermitLocked(permit);
+            return new(valid ? L12DeploymentDrainTransitionCode.Applied : L12DeploymentDrainTransitionCode.StaleEpoch,
+                SnapshotLocked(), valid ? permit : null);
+        }
+    }
+
+    private bool IsCurrentSealPermitLocked(L12DeploymentSealPermit? permit)
+        => permit is not null && _phase == L12DeploymentDrainPhase.Sealed
                 && _fenceSynchronized && !_fenceUnknown
                 && _owner is not null
                 && permit.ProtocolVersion == ProtocolVersion
@@ -545,6 +556,27 @@ internal sealed class L12DeploymentDrainCoordinator
                 && permit.ActiveCommit == _activeCommit
                 && permit.Epoch == _epoch
                 && permit.SealId == _sealId;
+
+    // Only bounded in-memory transport cleanup is allowed here. Never wait for a
+    // room/platform gate or perform persistence under this short state lock.
+    // Cancel and a new admission cannot race the cleanup after its sealed check.
+    internal bool TryRunSealedTransportCleanup(Action cleanup)
+    {
+        ArgumentNullException.ThrowIfNull(cleanup);
+        lock (_gate)
+        {
+            if (_phase != L12DeploymentDrainPhase.Sealed || !_fenceSynchronized || _fenceUnknown)
+                return false;
+            try { cleanup(); return true; }
+            catch
+            {
+                // An unexpected live game must invalidate, not reuse, the old permit.
+                _phase = L12DeploymentDrainPhase.Draining;
+                _epoch = NextEpoch(_epoch);
+                _sealId = null;
+                _fenceSynchronized = false;
+                throw;
+            }
         }
     }
 

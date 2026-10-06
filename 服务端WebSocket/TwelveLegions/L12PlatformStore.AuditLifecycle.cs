@@ -56,6 +56,10 @@ public sealed partial class L12PlatformStore
     internal L12AuditLifecycleResult RunAuditLifecycle(DateTimeOffset now,
         IReadOnlyCollection<string> protectedMatchIds, CancellationToken cancellationToken = default)
     {
+        IDisposable? deployment;
+        try { deployment = EnterDeploymentMutation(); }
+        catch (L12DeploymentBarrierClosedException) { return new(0, 0, 0); }
+        using var deploymentGuard = deployment;
         ArgumentNullException.ThrowIfNull(protectedMatchIds);
         cancellationToken.ThrowIfCancellationRequested();
         // Do not queue a long wait behind a player/admin mutation for background cleanup.

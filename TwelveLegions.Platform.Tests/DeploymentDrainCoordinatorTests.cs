@@ -51,6 +51,9 @@ public sealed class DeploymentDrainCoordinatorTests
         Assert.Equal(3, sealedResult.Snapshot.Epoch);
         Assert.NotNull(sealedResult.Permit);
         Assert.True(coordinator.IsCurrentSealPermit(sealedResult.Permit));
+        var observation = coordinator.CaptureCurrentSealPermit(sealedResult.Permit);
+        Assert.Equal(L12DeploymentDrainPhase.Sealed, observation.Snapshot.Phase);
+        Assert.Equal(sealedResult.Permit, observation.Permit);
         Assert.False(coordinator.TryAcquireAdmission(out _));
         Assert.False(coordinator.TryAcquireActivity(out _));
 
@@ -59,6 +62,9 @@ public sealed class DeploymentDrainCoordinatorTests
         Assert.Equal(L12DeploymentDrainPhase.Open, reopened.Snapshot.Phase);
         Assert.Equal(4, reopened.Snapshot.Epoch);
         Assert.False(coordinator.IsCurrentSealPermit(sealedResult.Permit));
+        var staleObservation = coordinator.CaptureCurrentSealPermit(sealedResult.Permit);
+        Assert.Equal(L12DeploymentDrainPhase.Open, staleObservation.Snapshot.Phase);
+        Assert.Null(staleObservation.Permit);
         Assert.True(coordinator.TryAcquireAdmission(out var afterCancel));
         afterCancel!.Dispose();
     }
@@ -516,6 +522,50 @@ public sealed class DeploymentDrainCoordinatorTests
         Assert.True(L12DeploymentDrainOwner.TryCreate(OperationId, TargetCommit.ToUpperInvariant(),
             ProcessInstance, out var normalized));
         Assert.Equal(TargetCommit, normalized!.TargetCommit);
+    }
+
+    [Fact]
+    public void UnexpectedSealedTransportStateInvalidatesPermitWithoutReopening()
+    {
+        var coordinator = CreateCoordinator(new FakeFenceStore());
+        var owner = CreateOwner();
+        coordinator.BeginDrain(owner);
+        var sealing = coordinator.TryBeginSeal(owner);
+        var completed = coordinator.CompleteSeal(owner, sealing.Snapshot.Epoch, L12DeploymentExternalReadiness.Clear);
+        Assert.True(coordinator.IsCurrentSealPermit(completed.Permit));
+        Assert.Throws<InvalidOperationException>(() => coordinator.TryRunSealedTransportCleanup(
+            () => throw new InvalidOperationException("synthetic unexpected active room")));
+        Assert.False(coordinator.IsCurrentSealPermit(completed.Permit));
+        Assert.False(coordinator.TryAcquireAdmission(out _));
+        Assert.Equal(L12DeploymentDrainPhase.Draining, coordinator.Snapshot().Phase);
+        Assert.False(coordinator.Snapshot().FenceSynchronized);
+    }
+
+    [Fact]
+    public async Task SealedCleanupAndExplicitReopenAreLinearized()
+    {
+        var coordinator = CreateCoordinator(new FakeFenceStore());
+        var owner = CreateOwner();
+        coordinator.BeginDrain(owner);
+        var sealing = coordinator.TryBeginSeal(owner);
+        var completed = coordinator.CompleteSeal(owner, sealing.Snapshot.Epoch, L12DeploymentExternalReadiness.Clear);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var cleanup = Task.Factory.StartNew(() => coordinator.TryRunSealedTransportCleanup(() =>
+        {
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(3)));
+        }), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
+        var cancel = Task.Run(() => coordinator.Cancel(owner));
+        try { Assert.NotSame(cancel, await Task.WhenAny(cancel, Task.Delay(50))); }
+        finally { release.Set(); }
+        Assert.True(await cleanup.WaitAsync(TimeSpan.FromSeconds(3)));
+        Assert.True((await cancel.WaitAsync(TimeSpan.FromSeconds(3))).Succeeded);
+        Assert.False(coordinator.IsCurrentSealPermit(completed.Permit));
+        var called = false;
+        Assert.False(coordinator.TryRunSealedTransportCleanup(() => called = true));
+        Assert.False(called);
     }
 
     private static void AssertClosedUnknown(L12DeploymentDrainCoordinator coordinator)

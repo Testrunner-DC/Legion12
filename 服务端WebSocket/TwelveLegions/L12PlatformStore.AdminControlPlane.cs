@@ -127,6 +127,8 @@ public sealed partial class L12PlatformStore
 
     internal T ExecuteAdminTransaction<T>(Func<T> action)
     {
+        // Includes the outer durable commit and post-commit revocation dispatch.
+        using var deployment = EnterDeploymentMutation();
         IReadOnlyList<string> committedRevocations = [];
         T result;
         lock (_gate)

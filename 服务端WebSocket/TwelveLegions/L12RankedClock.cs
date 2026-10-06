@@ -363,6 +363,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> TickRankedClocksAsync(DateTimeOffset? utcNow = null)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
+        using var deployment = deploymentGuard;
         // Do not queue overlapping watchdog sweeps or mix their checkpoint cohorts.
         if (!_rankedClockTickGate.Wait(0)) return [];
         try { return await TickRankedClocksCoreAsync(utcNow); }
@@ -537,6 +539,8 @@ public sealed partial class L12RoomManager
 
     public async Task ExtendTournamentClockAsync(string tournamentId, string matchId, int minutes)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
             && item.TournamentMatchId == matchId);
         if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return;
@@ -563,6 +567,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> PauseTournamentClockAsync(string tournamentId,
         string matchId, bool paused, string reason)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
             && item.TournamentMatchId == matchId);
         if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return [];
@@ -605,6 +611,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> CancelTournamentRoomsAsync(string tournamentId,
         string reason)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         var messages = new List<OutgoingMessage>();
         foreach (var room in _rooms.Values.Where(item => item.TournamentId == tournamentId
                      && item.Game is not null).ToArray())

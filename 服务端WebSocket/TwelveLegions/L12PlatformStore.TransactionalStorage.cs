@@ -260,6 +260,16 @@ public sealed partial class L12PlatformStore
         Action<SqliteConnection, SqliteTransaction>? objectWrite,
         bool privateDeckObjectWrite)
     {
+        IDisposable? deployment;
+        try { deployment = EnterDeploymentMutation(); }
+        catch (L12DeploymentBarrierClosedException)
+        {
+            // Legacy direct mutators call Save after staging in-memory changes.
+            // Reject before opening SQLite and restore the last committed generation.
+            RestoreLastCommittedSnapshot();
+            throw;
+        }
+        using var deploymentGuard = deployment;
         if (!_storageWritable)
         {
             RestoreLastCommittedSnapshot();
@@ -401,6 +411,7 @@ public sealed partial class L12PlatformStore
     private T ExecuteSeasonFinalizationStorageMutation<T>(
         Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             if (!_storageWritable)

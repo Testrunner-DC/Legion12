@@ -6,10 +6,12 @@ public sealed partial class L12PlatformStore
 {
     // One in-memory projection of the existing committed authority; never a token/role cache.
     private sealed record CommittedSessionActivity(long Revision, byte[] RollbackSnapshot,
-        FrozenDictionary<string, DateTimeOffset> Sessions, bool Available);
+        FrozenDictionary<string, DateTimeOffset> Sessions, bool Available,
+        L12DeploymentPlatformReadiness DeploymentReadiness);
 
     private static readonly CommittedSessionActivity UnavailableSessionActivity = new(-1, [],
-        FrozenDictionary<string, DateTimeOffset>.Empty, false);
+        FrozenDictionary<string, DateTimeOffset>.Empty, false,
+        L12DeploymentPlatformReadiness.Unknown("committed_generation_unavailable"));
     private CommittedSessionActivity _committedSessionActivity = UnavailableSessionActivity;
     private readonly List<string> _pendingSessionRevocations = [];
 
@@ -27,7 +29,8 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("已提交会话标识为空或重复");
         }
         var prepared = new CommittedSessionActivity(data.Version, rollbackSnapshot,
-            sessions.ToFrozenDictionary(StringComparer.Ordinal), true);
+            sessions.ToFrozenDictionary(StringComparer.Ordinal), true,
+            PrepareCommittedDeploymentReadiness(data));
         StorageFailureInjector?.Invoke("after-session-index-build");
         return prepared;
     }

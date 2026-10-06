@@ -251,6 +251,7 @@ public sealed partial class L12PlatformStore
     internal void RecordTournamentRoomCommandAttempt(string tournamentId, string commandId,
         bool completed, string? error)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var row = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId)

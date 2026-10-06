@@ -1474,6 +1474,7 @@ public sealed partial class L12PlatformStore
     public L12TournamentView RecordTournamentGameResult(string tournamentId, string matchId,
         string recordedMatchId, int winnerIndex)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var tournament = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId)
@@ -1589,6 +1590,8 @@ public sealed partial class L12PlatformStore
     private L12TournamentView Mutate(L12AccountView actor, TournamentRow row, string action, string target,
         L12AdminAuditContext context, bool apply, Action<TournamentRow> mutation)
     {
+        using var deployment = apply ? EnterDeploymentMutation(action is
+            "start" or "round-create" or "round-start" or "rematch" or "check-in") : null;
         // 先在副本上完成全部校验与编排。配对等操作抛错时，
         // 不得在内存中留下半完成状态，即使 Save 尚未执行也一样。
         var working = CloneTournament(row);

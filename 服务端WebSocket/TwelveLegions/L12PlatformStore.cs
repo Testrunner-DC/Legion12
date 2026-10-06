@@ -1186,6 +1186,7 @@ public sealed partial class L12PlatformStore
 
     public L12PublishedDeckView? TogglePublishedDeckLike(string accountId, string publicationId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var row = FindPublishedDeck(publicationId);
@@ -1202,6 +1203,7 @@ public sealed partial class L12PlatformStore
 
     public L12PublishedDeckView? RecordPublishedDeckCopy(string publicationId, string? viewerAccountId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var row = FindPublishedDeck(publicationId);
@@ -1213,6 +1215,7 @@ public sealed partial class L12PlatformStore
 
     public L12PublishedDeckView? RecordPublishedDeckView(string publicationId, string? viewerAccountId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var row = FindPublishedDeck(publicationId);

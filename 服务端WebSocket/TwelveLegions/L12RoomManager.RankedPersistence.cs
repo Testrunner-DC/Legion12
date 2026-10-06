@@ -30,6 +30,8 @@ public sealed partial class L12RoomManager
     private async Task StartRecordedGameAsync(Room room, IReadOnlyList<Session> members,
         IReadOnlyList<L12PresetDeckDefinition> decks)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (room.Game is null) throw new InvalidOperationException("对局尚未建立");
         var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
         if (ranked) await _rankedSeasonGate.WaitAsync();
@@ -70,6 +72,8 @@ public sealed partial class L12RoomManager
     internal async Task<T> ExecuteRankedSeasonCutoverAsync<T>(
         Func<L12RankedSeasonCutoverReadiness, T> activate)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
         Interlocked.Increment(ref _rankedSeasonCutoverInProgress);
         await _rankedSeasonGate.WaitAsync();
@@ -103,6 +107,8 @@ public sealed partial class L12RoomManager
     internal async Task<T> InspectRankedSeasonCutoverSnapshotAsync<T>(string seasonId,
         Func<L12RankedSeasonCutoverReadiness, T> inspect)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         await _rankedSeasonGate.WaitAsync();
         try
         {
@@ -114,6 +120,8 @@ public sealed partial class L12RoomManager
     internal async Task<L12SeasonIdentityMigrationPreview> PreviewSeasonIdentityNormalizationAsync(
         L12AccountView actor, DateTimeOffset observedAt)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
         await _rankedSeasonGate.WaitAsync();
         try
@@ -130,6 +138,8 @@ public sealed partial class L12RoomManager
         L12AccountView actor, string expectedPlatformFingerprint, string expectedRecorderFingerprint,
         string owner, string reason, DateTimeOffset observedAt, L12AdminAuditContext context)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (_platform is null) throw new InvalidOperationException("排位平台服务不可用");
         Interlocked.Increment(ref _rankedSeasonCutoverInProgress);
         await _rankedSeasonGate.WaitAsync();
@@ -178,6 +188,8 @@ public sealed partial class L12RoomManager
 
     public async Task<L12RankedRecoverySummary> RestoreRankedRoomsAsync()
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         await DrainTournamentResultOutboxAsync();
         var settlementResult = await DrainRankedSettlementOutboxAsync(includeApplied: true);
         var restored = 0;

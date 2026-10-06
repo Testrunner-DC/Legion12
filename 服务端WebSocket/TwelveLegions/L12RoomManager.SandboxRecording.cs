@@ -7,6 +7,9 @@ public sealed partial class L12RoomManager
     internal async Task<L12SandboxReplayCleanupResult> RunSandboxReplayMaintenanceAsync(
         CancellationToken cancellationToken = default)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard))
+            return new(false, 0, null, _recorder.NextStorageCleanupUtc(_utcNow()));
+        using var deployment = deploymentGuard;
         var now = _utcNow();
         await _sessionRecoveryGate.WaitAsync(cancellationToken);
         try

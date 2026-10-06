@@ -72,6 +72,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _rooms = rooms;
         _recorder = recorder;
         _platform = platform;
+        _deploymentController = rooms.DeploymentDrain is { } coordinator
+            ? new L12DeploymentDrainController(rooms, recorder, platform, coordinator) : null;
         _adminCommands = new L12AdminCommandBus(platform);
         _modianImports = new L12ModianImportService(platform, modianImportClient);
         _releaseControl = releaseControl ?? new L12DisabledReleaseControlAdapter();
@@ -124,6 +126,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag, Retry-After, RateLimit-Limit, RateLimit-Remaining, Server-Timing";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
+            if (!TryAcquireHttpDeploymentGuard(context.Request, out var deploymentGuard))
+            {
+                context.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsJsonAsync(new L12ApiError("deploymentDrainActive",
+                    "服务器正在更新，请稍后再试", correlationId));
+                return;
+            }
+            using var deploymentRequestGuard = deploymentGuard;
             var anonymousPublicTournamentRead = HttpMethods.IsGet(context.Request.Method)
                 && context.Request.Path.StartsWithSegments("/api/public/tournaments");
             if (anonymousPublicTournamentRead || HttpMethods.IsGet(context.Request.Method)
@@ -188,6 +200,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         _app.UseRouting();
         _app.UseWebSockets();
+        MapDeploymentDrainEndpoints();
         _app.MapGet("/health", () =>
         {
             var build = L12RuntimeBuildVersion.Capture();
@@ -3641,13 +3654,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     acceptedSocket.Abort();
                 }, SocketSendTimeout);
             _outboundConnections[sessionId] = outbound;
+            var deploymentDrain = _rooms.DeploymentDrain;
             var inbound = new L12InboundConnection(
                 json => DispatchAsync(sessionId, json, CancellationToken.None),
                 error =>
                 {
                     Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
                     acceptedSocket.Abort();
-                });
+                }, deploymentDrain is null
+                    ? null
+                    : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json));
             _inboundConnections[sessionId] = inbound;
             var businessPathEstablished = false;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
@@ -3671,17 +3687,28 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     continue;
                 }
                 if (TryReadMessageType(message, out var messageType)
-                    && string.Equals(messageType, "ping", StringComparison.Ordinal))
+                    && messageType is "ping" or "deploymentProbe")
                 {
                     if (await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken))
-                        await SendAsync(sessionId,
-                            new { type = "pong", utc = DateTimeOffset.UtcNow }, cancellationToken);
+                    {
+                        if (messageType == "ping")
+                            await SendAsync(sessionId,
+                                new { type = "pong", utc = DateTimeOffset.UtcNow }, cancellationToken);
+                        else
+                            await DispatchAsync(sessionId, message, cancellationToken);
+                    }
                     continue;
                 }
 
                 var enqueue = inbound.TryEnqueue(message);
                 if (enqueue == L12InboundEnqueueResult.Accepted) continue;
                 if (enqueue == L12InboundEnqueueResult.Completed) break;
+                if (enqueue == L12InboundEnqueueResult.DeploymentDraining)
+                {
+                    await SendAsync(sessionId, CreateDeploymentDrainActivePayload(message),
+                        cancellationToken);
+                    continue;
+                }
 
                 // The overflowing frame was received but never accepted. Drain every previously
                 // accepted FIFO item before sending its explicit rejection; never fabricate an ack.
@@ -3714,7 +3741,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 disconnectedAccountId = binding.AccountId;
                 _activeAccountSockets.TryRemove(binding.AccountId, out _);
             }
-            await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
+            await SendManyAsync(DisconnectForTransportClose(sessionId), CancellationToken.None);
             if (disconnectedAccountId is not null) NotifyPresenceChanged();
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
             _socketRankedDevices.TryRemove(sessionId, out _);
@@ -3738,9 +3765,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         using (document)
         {
             var root = document.RootElement;
-            if (!root.TryGetProperty("type", out var typeElement))
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String)
             {
-                await SendAsync(sessionId, new { type = "error", message = "消息缺少 type" }, cancellationToken);
+                await SendAsync(sessionId,
+                    new { type = "error", message = "消息缺少有效的 type" }, cancellationToken);
                 return;
             }
             var messageType = typeElement.GetString();
@@ -3811,6 +3841,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     or "cancelMatchmaking" or "joinRoom" or "enterTournamentMatch" or "spectateRoom"
                     or "spectateTournamentMatch" or "leaveRoom" or "ready" or "resolveFriendInvitation")
                     NotifyPresenceChanged();
+            }
+            catch (L12DeploymentBarrierClosedException)
+            {
+                await SendManyAsync(DeploymentDrainActive(sessionId, root), cancellationToken);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
@@ -3959,53 +3993,65 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             })];
         }
 
-        L12SessionClaimResult claim;
-        var capabilities = ReadProtocolCapabilities(root);
-        _socketCapabilities[sessionId] = capabilities;
-        if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
-            snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
-        Guid? previousSocket;
-        IReadOnlyList<OutgoingMessage> recovery;
-        await _socketClaimGate.WaitAsync();
+        if (!TryAcquireHelloDeploymentGuard(out var deploymentGuard))
+            return DeploymentDrainActive(sessionId, root);
+        using var deployment = deploymentGuard;
         try
         {
-            previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
-            claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
-                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
-                _socketRankedDevices.GetValueOrDefault(sessionId));
-            _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
-                authenticated.Account.Id, claim.ConnectionGeneration);
-            _activeAccountSockets[authenticated.Account.Id] = sessionId;
-            recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
-            _establishedInboundConnections[sessionId] = 0;
-        }
-        finally { _socketClaimGate.Release(); }
-
-        var replaced = claim.ReplacedSessionId ?? previousSocket;
-        if (replaced is { } oldSessionId && oldSessionId != sessionId)
-            await SupersedeSocketAsync(oldSessionId, authenticated.Account.Id, CancellationToken.None);
-
-        var session = new OutgoingMessage(sessionId, new
-        {
-            type = "session", sessionId, accountId = authenticated.Account.Id, name = claim.Name,
-            claim.Recovered, claim.RoomCode,
-            claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
-            claim.RecoveryRevision,
-            protocolVersion = 2,
-            capabilities = new
+            L12SessionClaimResult claim;
+            var capabilities = ReadProtocolCapabilities(root);
+            _socketCapabilities[sessionId] = capabilities;
+            if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+                snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
+            Guid? previousSocket;
+            IReadOnlyList<OutgoingMessage> recovery;
+            await _socketClaimGate.WaitAsync();
+            try
             {
-                requestIds = capabilities.RequestIds,
-                deltaGameState = capabilities.DeltaGameState,
-            },
-        });
-        var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
-        return new[]
+                previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
+                claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
+                    authenticated.Account.Username,
+                    _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
+                    _socketRankedDevices.GetValueOrDefault(sessionId));
+                _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
+                    authenticated.Account.Id, claim.ConnectionGeneration);
+                _activeAccountSockets[authenticated.Account.Id] = sessionId;
+                recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
+                _establishedInboundConnections[sessionId] = 0;
+            }
+            finally { _socketClaimGate.Release(); }
+
+            var replaced = claim.ReplacedSessionId ?? previousSocket;
+            if (replaced is { } oldSessionId && oldSessionId != sessionId)
+                await SupersedeSocketAsync(oldSessionId, authenticated.Account.Id, CancellationToken.None);
+
+            var session = new OutgoingMessage(sessionId, new
+            {
+                type = "session", sessionId, accountId = authenticated.Account.Id, name = claim.Name,
+                claim.Recovered, claim.RoomCode,
+                claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
+                claim.RecoveryRevision,
+                protocolVersion = 2,
+                capabilities = new
+                {
+                    requestIds = capabilities.RequestIds,
+                    deltaGameState = capabilities.DeltaGameState,
+                },
+            });
+            var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
+            return new[]
+            {
+                session,
+                EffectiveOperationsPolicyMessage(sessionId),
+                new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
+                PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision),
+            }.Concat(recovery).ToArray();
+        }
+        catch (L12DeploymentBarrierClosedException)
         {
-            session,
-            EffectiveOperationsPolicyMessage(sessionId),
-            new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
-            PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision),
-        }.Concat(recovery).ToArray();
+            CleanupRejectedHello(sessionId, authenticated.Account.Id);
+            return DeploymentDrainActive(sessionId, root);
+        }
     }
 
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,

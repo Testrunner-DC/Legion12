@@ -33,6 +33,7 @@ public sealed partial class L12PlatformStore
     public L12PublicDeckDetailsView? UpdatePublicDeckContent(string accountId, string publicationId,
         L12PublicDeckContentInput input)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var published = FindPublishedDeck(publicationId);

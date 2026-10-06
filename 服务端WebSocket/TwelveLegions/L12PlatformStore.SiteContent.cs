@@ -647,6 +647,7 @@ public sealed partial class L12PlatformStore
     public L12SiteMediaView UploadSiteMedia(L12AccountView actor, L12SiteMediaUpload upload,
         L12AdminAuditContext? context = null)
     {
+        using var deployment = EnterDeploymentMutation();
         var kind = NormalizeMediaKind(upload.Kind);
         var policy = MediaPolicies[kind];
         ValidateUploadBytes(upload.Original, "原图", SiteMediaOriginalMaxBytes);

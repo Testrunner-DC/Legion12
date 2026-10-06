@@ -178,6 +178,8 @@ public sealed partial class L12RoomManager
     public async Task<L12SessionClaimResult> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
         string? integrityClientKey = null, string? rankedBrowserKey = null)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         var name = NormalizeName(requestedName);
         await _sessionRecoveryGate.WaitAsync();
         try
@@ -384,6 +386,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> JoinMatchmakingAsync(Guid sessionId, string? mode,
         L12CustomDeckSubmission? submission)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         // Cover admission, pair removal and durable room creation, not merely the list edit.
         // Also fence connection replacement while these memberships are being assigned.
         await _sessionRecoveryGate.WaitAsync();
@@ -523,6 +527,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> CancelMatchmaking(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId
             || (!string.IsNullOrWhiteSpace(session.AccountId) && entry.AccountId == session.AccountId));
@@ -530,17 +536,19 @@ public sealed partial class L12RoomManager
             message = "已取消匹配" })];
     }
 
-    public Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
+    public async Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (_sessions.TryGetValue(sessionId, out var session) && session.RoomCode is not null)
-            return RecoveryStateAsync(sessionId);
+            return await RecoveryStateAsync(sessionId);
         MatchmakingEntry? existing;
         lock (_matchmakingGate)
             existing = _matchmaking.FirstOrDefault(entry => entry.SessionId == sessionId && IsQueueEntryValid(entry));
         if (existing is null)
-            return Task.FromResult<IReadOnlyList<OutgoingMessage>>(
+            return
                 [new OutgoingMessage(sessionId, new { type = "matchmakingState", queued = false,
-                    message = "当前不在匹配队列" })]);
+                    message = "当前不在匹配队列" })];
         var deck = new L12CustomDeckSubmission
         {
             PublicationId = existing.Deck.PublicationId,
@@ -552,7 +560,7 @@ public sealed partial class L12RoomManager
             SpecialIds = [.. existing.Deck.SpecialIds],
             AlternateArtSelections = new Dictionary<string, string>(existing.Deck.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
         };
-        return JoinMatchmakingAsync(sessionId, existing.Mode, deck);
+        return await JoinMatchmakingAsync(sessionId, existing.Mode, deck);
     }
 
     private bool IsQueueEntryValid(MatchmakingEntry entry)
@@ -641,6 +649,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> InviteFriend(Guid sessionId, string? targetAccountId)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
             return Error(sessionId, "会话不存在");
         var policy = CaptureOperationsPolicy();
@@ -676,11 +686,15 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> ResolveFriendInvitation(Guid sessionId, string? invitationId, bool accept)
     {
+        if (!TryDeploymentGuard(admission: accept, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         lock (_friendInvitationGate) return ResolveFriendInvitationCore(sessionId, invitationId, accept);
     }
 
     public IReadOnlyList<OutgoingMessage> CancelFriendInvitation(Guid sessionId, string? invitationId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         lock (_friendInvitationGate)
         {
             if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
@@ -789,6 +803,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateAsync(Guid sessionId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)
             || session.RoomCode is null
             || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
@@ -821,6 +837,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateWithAckAsync(Guid sessionId,
         bool recovered = false)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
             return [RecoveryComplete(session, recovered, null)];
@@ -872,6 +890,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> CreateRoom(Guid sessionId, L12RoomOptions? options = null)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var currentPolicy = CaptureOperationsPolicy();
@@ -902,6 +922,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> UpdateRoomOptions(Guid sessionId, L12RoomOptions? options)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error);
         if (room.TournamentId is not null)
@@ -926,6 +948,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, L12SandboxRequest? request)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
@@ -1041,6 +1065,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> SpectateRoom(Guid sessionId, string? roomCode)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var currentPolicy = CaptureOperationsPolicy();
@@ -1077,6 +1103,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> JoinRoom(Guid sessionId, string? roomCode)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
@@ -1105,6 +1133,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> EnterTournamentMatchAsync(Guid sessionId,
         string? tournamentId, string? matchId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
             return Error(sessionId, "请先登录账号");
         if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
@@ -1132,6 +1162,8 @@ public sealed partial class L12RoomManager
                 await current.Gate.WaitAsync();
                 try
                 {
+                    if (current.Game is null && DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                        return DeploymentEntryRejected(sessionId);
                     if (await StartTournamentGameIfReadyLockedAsync(current))
                         return MaintenanceBlocked(sessionId, CaptureOperationsPolicy());
                     if (current.Game?.State.Phase == L12Phase.GameOver)
@@ -1149,6 +1181,8 @@ public sealed partial class L12RoomManager
         {
             if (!_rooms.TryGetValue(assignment.RoomCode, out room!))
             {
+                if (DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                    return DeploymentEntryRejected(sessionId);
                 room = CreateTournamentRoom(assignment);
                 if (!_rooms.TryAdd(room.Code, room)) room = _rooms[room.Code];
             }
@@ -1164,6 +1198,8 @@ public sealed partial class L12RoomManager
             var currentPolicy = CaptureOperationsPolicy();
             if (room.Game is null && currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
                 return MaintenanceBlocked(sessionId, currentPolicy);
+            if (room.Game is null && DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                return DeploymentEntryRejected(sessionId);
             var playerIndex = assignment.PlayerA.AccountId == session.AccountId ? 0 : 1;
             var occupiedId = room.Sessions[playerIndex];
             if (_sessions.TryGetValue(occupiedId, out var occupied) && !occupied.IsVirtual
@@ -1192,6 +1228,8 @@ public sealed partial class L12RoomManager
     public IReadOnlyList<OutgoingMessage> SpectateTournamentMatch(Guid sessionId, string? tournamentId,
         string? matchId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
             return Error(sessionId, "请先登录账号");
         if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
@@ -1293,6 +1331,8 @@ public sealed partial class L12RoomManager
         if (room.Game is not null || room.TournamentId is null
             || !room.Sessions.All(id => _sessions.TryGetValue(id, out var member)
                 && !member.IsVirtual && member.Connected)) return false;
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (CaptureOperationsPolicy().IsNewGameEntryBlocked(DateTimeOffset.UtcNow)) return true;
         var members = room.Sessions.Select(id => _sessions[id]).ToArray();
         var responsePreferences = await ResolveResponsePreferencesAsync(members);
@@ -1314,6 +1354,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> SelectDeck(Guid sessionId, int deckIndex)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
@@ -1328,6 +1370,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, L12CustomDeckSubmission submission)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
@@ -1341,6 +1385,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> SetReadyAsync(Guid sessionId, bool ready)
     {
+        if (!TryDeploymentGuard(admission: ready, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null)
             return Error(sessionId, "赛事房间由轮次签到与进入身份自动准备");
@@ -1405,6 +1451,8 @@ public sealed partial class L12RoomManager
         JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         await room.Gate.WaitAsync();
@@ -1542,6 +1590,8 @@ public sealed partial class L12RoomManager
         JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
@@ -1613,6 +1663,8 @@ public sealed partial class L12RoomManager
         Guid sessionId, int actingPlayerIndex, JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out _, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
@@ -1681,6 +1733,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> Disconnect(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return [];
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
@@ -1723,6 +1777,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var member) || member.RoomCode is not { } code
             || !_rooms.TryGetValue(code, out var room)) return LeaveRoomLocked(sessionId);
         room.Gate.Wait();

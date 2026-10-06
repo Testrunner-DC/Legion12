@@ -36,6 +36,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> GetResponsePreferenceAsync(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)
             || session.IsSpectator || session.PlayerIndex is null || room.Game is null)
             return Error(sessionId, error ?? "响应设置只对参战玩家开放", "responsePreferenceRejected");
@@ -53,6 +55,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> SetResponsePreferenceAsync(Guid sessionId,
         string? mode, string? requestId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, NormalizeActionRequestId(requestId));
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)
             || session.IsSpectator || session.PlayerIndex is null || room.Game is null
             || string.IsNullOrWhiteSpace(session.AccountId))
@@ -194,6 +198,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> TickResponseWindowsAsync(DateTimeOffset? utcNow = null)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
+        using var deployment = deploymentGuard;
         var messages = new List<OutgoingMessage>();
         var now = utcNow ?? _utcNow();
         foreach (var room in _rooms.Values.ToArray())

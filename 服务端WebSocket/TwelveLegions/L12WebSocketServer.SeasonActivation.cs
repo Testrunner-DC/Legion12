@@ -75,6 +75,8 @@ public sealed partial class L12WebSocketServer
 
     internal async Task<bool> RunSeasonFinalizationOnceAsync(DateTimeOffset now)
     {
+        if (!TryAcquireDeploymentActivityGuard(out var deploymentGuard)) return false;
+        using var deployment = deploymentGuard;
         L12SeasonFinalizationClaim? claim;
         try
         {
@@ -145,6 +147,8 @@ public sealed partial class L12WebSocketServer
 
     internal async Task<bool> RunSeasonActivationOnceAsync(DateTimeOffset now)
     {
+        if (!TryAcquireDeploymentActivityGuard(out var deploymentGuard)) return false;
+        using var deployment = deploymentGuard;
         L12SeasonActivationClaim? claim;
         try
         {
