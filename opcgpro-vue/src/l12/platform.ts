@@ -954,7 +954,8 @@ export interface LegacyTournamentInput {
 export interface TournamentLegacyImport { previewHash: string; applied: boolean; tournaments: Tournament[] }
 export class PlatformRequestError extends Error {
   constructor(message: string, public readonly status: number, public readonly code: string,
-    public readonly correlationId: string, public readonly retryAfterMs = 0) { super(message) }
+    public readonly correlationId: string, public readonly retryAfterMs = 0,
+    public readonly currentRevision?: number) { super(message) }
 }
 
 export const PLATFORM_MAX_CONCURRENT_REQUESTS = 4
@@ -1007,13 +1008,18 @@ function isTemporaryAuthFailure(error: unknown) {
     || (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError')
 }
 
-function scheduleAuthRefreshRetry(requestToken: string) {
-  if (authRefreshRetryTimer !== null || !requestToken || platformState.token !== requestToken) return
+function platformSessionIsCurrent(token: string, sessionVersion: number) {
+  return platformState.token === token && platformSessionVersion === sessionVersion
+}
+
+function scheduleAuthRefreshRetry(requestToken: string, requestSessionVersion: number) {
+  if (authRefreshRetryTimer !== null || !requestToken
+    || !platformSessionIsCurrent(requestToken, requestSessionVersion)) return
   const delay = Math.min(AUTH_REFRESH_RETRY_BASE_MS * (2 ** authRefreshRetryAttempts), AUTH_REFRESH_RETRY_MAX_MS)
   authRefreshRetryAttempts += 1
   authRefreshRetryTimer = window.setTimeout(() => {
     authRefreshRetryTimer = null
-    if (platformState.token !== requestToken) return
+    if (!platformSessionIsCurrent(requestToken, requestSessionVersion)) return
     void refreshCurrentAccount({ force: true }).catch(() => undefined)
   }, delay)
 }
@@ -1098,7 +1104,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
       retryDelayMs: (error, attempt) => error instanceof PlatformRequestError && error.retryAfterMs > 0
         ? error.retryAfterMs : Math.min(250 * (2 ** (attempt - 1)), 2_000),
       run: async signal => {
-        if (requestToken && platformState.token !== requestToken)
+        if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
           throw new PlatformRequestError('账号已切换，已忽略旧请求', 0, 'stale_session', '')
         const headers = new Headers(fetchInit.headers)
         if (anonymousPublicRead) headers.delete('Authorization')
@@ -1110,7 +1116,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
           ...(anonymousPublicRead ? { credentials: 'omit' as const, cache: 'no-store' as const } : {}) })
         const payload = responseType === 'blob' && response.ok
           ? await response.blob() : await response.json().catch(() => ({}))
-        if (requestToken && platformState.token !== requestToken)
+        if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
           throw new PlatformRequestError('账号已切换，已忽略旧响应', 0, 'stale_session', '')
         if (!response.ok) {
           const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
@@ -1118,15 +1124,24 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
             ? '图片上传总量超过 32MB，请压缩原图后重试'
             : `请求失败（${response.status}）`
           const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
+          const code = typeof payload.code === 'string' ? payload.code : 'request_failed'
+          const currentRevision = response.status === 409 && code === 'deck_revision_conflict'
+            && ['GET', 'PUT', 'DELETE'].includes(method)
+            && /^\/api\/decks\/by-id\/[^/?]+(?:\?[^#]*)?$/.test(path)
+            && Number.isSafeInteger(payload.currentRevision) && payload.currentRevision > 0
+            ? payload.currentRevision as number : undefined
           // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
-          if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
+          if (response.status === 401 && requestToken && platformState.token === requestToken
+            && platformSessionVersion === requestSessionVersion) forgetAccount(requestToken)
           // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
-          if (response.status === 403 && requestToken && platformState.token === requestToken && path !== '/api/auth/me') {
+          if (response.status === 403 && requestToken && platformState.token === requestToken
+            && platformSessionVersion === requestSessionVersion
+            && path !== '/api/auth/me') {
             authState.verified = false
             void refreshCurrentAccount({ force: true }).catch(() => undefined)
           }
-          throw new PlatformRequestError(message, response.status, String(payload.code || 'request_failed'),
-            correlationId, retryAfterMilliseconds(response))
+          throw new PlatformRequestError(message, response.status, code,
+            correlationId, retryAfterMilliseconds(response), currentRevision)
         }
         return payload as T
       },
@@ -1142,7 +1157,10 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
 
 function remember(account: PlatformAccount, token: string) {
   clearAuthRefreshRetry(true)
-  if (platformState.token !== token) platformSessionVersion += 1
+  if (platformState.token !== token) {
+    platformSessionVersion += 1
+    authRefreshPromise = null
+  }
   platformState.account = account
   platformState.token = token
   authState.initialized = true
@@ -1164,36 +1182,41 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
 
   clearAuthRefreshRetry()
   const requestToken = platformState.token
+  const requestSessionVersion = platformSessionVersion
   const controller = new AbortController()
   const requestTimeout = window.setTimeout(() => controller.abort(), AUTH_REFRESH_REQUEST_TIMEOUT_MS)
   authState.refreshing = true
   authState.verified = false
-  const pending = (async () => {
+  const pending = Promise.resolve().then(async () => {
     try {
+      if (!platformSessionIsCurrent(requestToken, requestSessionVersion)) return platformState.account
       // 认证刷新已有独立的指数退避调度；这里禁用通用 GET 重试，避免两层重试相乘。
       const account = await platformRequest<PlatformAccount>('/api/auth/me', {
         signal: controller.signal,
         reliability: { maxAttempts: 1 },
       })
       if (platformState.token !== requestToken) return platformState.account
+      if (platformSessionVersion !== requestSessionVersion) return platformState.account
       remember(account, requestToken)
       return account
     } catch (error) {
-      if (platformState.token === requestToken) {
+      if (platformSessionIsCurrent(requestToken, requestSessionVersion)) {
         // 网络与 5xx 不销毁可重试的 token，但绝不能继续把缓存身份当成已验证权限。
         authState.initialized = true
         authState.verified = false
-        if (isTemporaryAuthFailure(error)) scheduleAuthRefreshRetry(requestToken)
+        if (isTemporaryAuthFailure(error)) scheduleAuthRefreshRetry(requestToken, requestSessionVersion)
       }
       if (error instanceof PlatformRequestError && error.status === 401)
-        return platformState.token === requestToken ? null : platformState.account
+        return platformSessionIsCurrent(requestToken, requestSessionVersion) ? null : platformState.account
       throw error
     } finally {
       window.clearTimeout(requestTimeout)
-      if (platformState.token === requestToken) authState.refreshing = false
-      authRefreshPromise = null
+      if (platformSessionIsCurrent(requestToken, requestSessionVersion)) authState.refreshing = false
+      if (authRefreshPromise === pending) {
+        authRefreshPromise = null
+      }
     }
-  })()
+  })
   authRefreshPromise = pending
   return pending
 }
@@ -1213,11 +1236,15 @@ export async function login(username: string, password: string) {
   remember(result.account, result.token)
 }
 
-function forgetAccount(expectedToken?: string) {
+function forgetAccount(expectedToken?: string, expectedSessionVersion?: number) {
   if (expectedToken !== undefined && platformState.token !== expectedToken) return
+  if (expectedSessionVersion !== undefined && platformSessionVersion !== expectedSessionVersion) return
   clearAuthRefreshRetry(true)
   disconnect()
-  if (platformState.token) platformSessionVersion += 1
+  if (platformState.token) {
+    platformSessionVersion += 1
+    authRefreshPromise = null
+  }
   platformState.account = null
   platformState.token = ''
   authState.initialized = true
@@ -1230,11 +1257,13 @@ function forgetAccount(expectedToken?: string) {
 }
 
 export async function logout(options: { revokeServer?: boolean } = {}) {
+  const requestToken = platformState.token
+  const requestSessionVersion = platformSessionVersion
   try {
-    if (options.revokeServer !== false && platformState.token) {
+    if (options.revokeServer !== false && requestToken) {
       await platformRequest<SessionRevocation>('/api/auth/sessions/current', { method: 'DELETE' })
     }
-  } finally { forgetAccount() }
+  } finally { forgetAccount(requestToken, requestSessionVersion) }
 }
 
 export const sessionApi = {

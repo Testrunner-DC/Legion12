@@ -312,8 +312,8 @@ export function deckSnapshotTemplateContract(sources) {
     && noVisibility(node))
   const footer = modal && unique(renderedChildren(modal), node => node.tag === 'footer' && hasClass(node, 'deck-viewer-actions')
     && noVisibility(node) && !hasVisualHidingOverride(node))
-  const action = (label, handler) => footer && unique(renderedChildren(footer), node => node.tag === 'button'
-    && staticText(node) === label && exactDirective(node, 'bind', 'disabled', '!deck')
+  const action = (label, handler, disabled = '!deck') => footer && unique(renderedChildren(footer), node => node.tag === 'button'
+    && staticText(node) === label && exactDirective(node, 'bind', 'disabled', disabled)
     && exactDirective(node, 'on', 'click', handler)
     && exactDynamicSurface(node, ['disabled'], ['click']) && noVisibility(node) && !hasVisualHidingOverride(node))
 
@@ -346,7 +346,7 @@ export function deckSnapshotTemplateContract(sources) {
 
   const copyCode = action('复制牌库码', 'copyCode')
   const exportImage = action('导出牌库图', 'exportImage')
-  const copyToLibrary = action('复制到我的牌库', 'copyToLibrary')
+  const copyToLibrary = action('复制到我的牌库', 'copyToLibrary', '!deck || copyBusy')
   return {
     archiveLauncher: Boolean(matchHost && participant && launcher
       && staticAttribute(launcher, 'data-ui-contract', 'match-snapshot-view-construction')

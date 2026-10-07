@@ -1,6 +1,28 @@
 # Legion12 Bug 修复记录
 
-## REVIEW-20261007-PUBLIC-CONTENT-CONSUMERS｜薄保存及按需前端生命周期（限定已验，整批待）
+## REVIEW-20261008-PRIVATE-CONSUMERS｜认证目录和单对象消费族（本地专项通过，完整门禁待）
+
+- 最终整族分段证据：完整平台1067/1067、失败跳过0，原联合Batch因前端失败exit1保留；前端域最终r8 exit0，类型/双构建、UI354/反馈144/324+42保持。正常private177+UI内模板24共201，不重复跑模板。同步本机准备显式phase避免静态误当待执行HTTP，真正读取仍有界、cap3不变；原发布键/赛事签到/三动作叶迁移保持原风险并增负例，旧切片夹具改真实SFC AST/真实元数据消费，四类型窄边界修正。导入新增文档epoch挡路径ABA，metadata22；Editor31/Selector18真实六尺寸绑定最终Core/platform，旧r6/r7截图与全部门禁失败不覆盖。唯一`main-pre-release-acceptance-r2.json`，尚待clean Release/Git，不部署或关闭线上Bug。
+
+- 延伸 P2 查询/权限和 P3 原单一缓存/修订体系，不改 schema。认证目录30/页，真实正文只按选中id/revision读取；五模式各自验证，不把赛季禁限直接用于不受该限制的模式。游客保持原本地正文校验。赛事选牌仍按现有5参数端口，不冒称新修订协议；身份页移除无用途的全读取。
+- 精确名称及公开来源过滤按本人全域元数据执行，不用部分缓存断言同名不存在或来源不存在；最多32个命名候选、每次1条薄结果，多来源要求明确选择，不任取第一条。严格参数/响应与外账号、deleted、页外改名等36后台Focused；前端21项含关闭重开/改输入/重复导入的真实消费函数。
+- 完整正常 private chain 194；原UI354与公共counter76保持。两叶字符串迁 AST 18正反例，不删原风险；快照12谓词复制锁扩展为`!deck || copyBusy`，保原缺牌锁并增两负例，原51→53。Editor30真实脚本函数边界、四轻消费者21真实Vue挂载；真实Edge29/六尺寸含actual WebLock/cache envelope、两tab修订冲突/旧草稿、quota、页外同名另存与删除消息；Selector18/六尺寸及可达性。Browser API为合成HTTP，不能冒称生产SQLite或真机iOS。
+- 新增删除后误提示“当前修改仍保留”由本批 watcher 同步计数引起，先保存preservedChanges再newDeck，真实Vue删除回归确认无误提示。截图r6/r7/advanced-r1超时原证据保留，稳定活跃帧后r8通过，不将未查明的截图原因写成已根治产品故障。主族源码冻结，完整Batch/Release/Git尚待；当前正式2da/测试428fff25未变，无部署/维护或线上Bug关闭。
+
+## REVIEW-20261007-PRIVATE-READ-REQUEST-BOUNDARIES｜共享请求边界（用户已批准，专项已验，完整门禁待）
+
+- 用户明确回复“允许修复批准，且持续推进任务”。关键代理只改platform.ts及新增真实回归脚本；Main独立27/27通过并审查最终diff，产品raw72DAB068/测试D6922599，代理回执B25F6189。请求获槽、有限重试及读完响应核token+代际；refresh按代际去重，旧finally不清新pending；延迟auth重试、forget/logout保同一边界。401仍正常失效、403权限失败关闭并去重刷新、public/login匿名及cap4保持；只有GET/PUT/DELETE私牌by-id的409/deck_revision_conflict正安全整数进入currentRevision，不复制通用payload。真实基线26例16绿10红→27全绿，原Main r4及代理red保留；邻22公开/32协调器/76计数绿。未证明线上原事故、真实网络、全浏览器/类型/Batch/Release，未生产写。下面待批准表述为原诊断历史。
+
+- Editor B同族先取真实旧ensure→sync→GET/api/decks RED，基线17210215、原红日志30CA9569；修改只Editor及新Focused脚本。认证列表分页30，选择按稳定id/rev取真实正文；未保存确认、草稿/账号、晚改内容/新建/路由/卸载/ABA、手机弹框取消、删除中新增内容、目录刷新失败不伪装写失败补30正反例。初两失败为fire-and-forget刷新尚未结束/DELETE尚未发出的夹具屏障，原日志保留，修明确屏障后30通过；原workspace12和draft通过。实际浏览器锁/CAS、六尺寸及整族仍待，不拿受控helper当实际WebLock证据。
+
+- 已核此前公开请求22项与B1账号生命周期记录及当前diff；未改`platform.ts`。Main提取其真实16声明（含platformRequest/remember/forgetAccount）、真实Vue及实际RequestCoordinator，只注入纯合成fetch/内存storage。`platform-read-boundaries-red-r4.log` SHA C2622BAC证明：同token A→B→A后的旧401会清当前A并disconnect1次；409 wire currentRevision=2在PlatformRequestError转为null。首r1声明计数、r2空缓存初始化、r3CommonJS导出提取器失败全留，不当产品RED；无网络、生产写或线上发生声称。
+- 同类源查验：platformRequest请求/响应只比token，sessionVersion用于摘要去重key但未用于stale guard；HTTP错误转换不保留当前修订号。页面epoch守卫不能撤销先发生的全局forgetAccount，注入带revision错误不能证明真实wire保留。已单独请用户批准限定代际检查和仅合法私牌409修订字段，不改规则/数据库/部署/维护；答复前此依赖单独挂起，C-U4其余三路径继续，不扩子租约或声称全部ABA/冲突已验。
+
+## REVIEW-20261007-PUBLIC-CONTENT-CONSUMERS｜薄保存及按需前端生命周期（已完整验收同步，未部署）
+
+- 下一批CU4三源接回后，Main原counter suite实读失败26项：隔离copy函数未注入真实loadMineDirectory；补真实loader/query/validator后43项又因旧精确`() => epoch++`谓词拒合法首语句block。仅该叶迁无条件同步首语句AST，保conditional/async/shadow/wrong/missing负例；新增反例最初错将script AST offset应用整Vue，r3失败保留，修测试偏移后原65+11=76全过。日志`main-cu4-counter-fixture-r4.log` D5C145A5，源码364546F5；不修改产品兼容旧fixture，不删原权限/actor/body/一次性计数保护。CU4 Main私人43/公开43/读取65亦通过，均仅Focused；mock lock/commit不能当真实浏览器CAS，完整新门禁/共享请求两待批准依赖仍待，未同步该新批或部署。
+
+- 最终20:44应用8b1536c0完整Release6601规则/1053平台、失败跳过0、八stage/原TRX/双前端和卡图通过，新增五类76项全包含；同包B869实际两场退出0/无监听，Git三处精确，唯一033CD3ED回执。r3/r4锚点截图实际页首，诊断原状态可见位置未达标，故拒用这些图作区域视觉证据；r5同步稳定轮询和12实时bounds/六尺寸42图补证绑定，原取景失败保留。只涉及本地验收，不部署或提前关闭线上Bug。Main下一批原取证脚本补28真实位置及48图Focused通过，保全部原功能断言；这些新脚本/记录差异不借8b完整Release。下面“整批待”和数字42为当时历史。
 
 - 20:22最终Main分段验收：6601规则/1053平台全执行且失败跳过0，完整前端域r6 exit0，summary43/read65/原counter65全部纳正常build；真实六尺寸42图与加载12场景/12图通过。原联合Batch前端预算失败exit1保留；初始化/身份切换分阶段后仍cap3，真实mount三场景和原15+7预算负例保持，不加豁免。唯一`deck-summary-ui-20261007/main-independent-cu-family-acceptance.json` 7DAA3304绑定Main最新源，原可空类型与旧DTO/短码局部作用域夹具失败均保留。提交级干净Release/Git尚待，不部署或提前关闭线上Bug；下列数字42和待完整门禁为各时点历史。
 

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, captureDeckAccountGuard, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, uniqueDeckCopyName, loadPrivatePublicationSource, captureDeckAccountGuard, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { platformState, publicDeckApi, publicDeckReadApi, type PublicDeckGuide, type PublicDeckStatisticsPage, type PublicDeckVersionChange, type PublicDeckVersionPage, type PublicDeckVersionRead } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
@@ -390,16 +390,8 @@ async function recordInitialView(value: PublicDeckPresentationEntry) {
   })
 }
 
-function uniqueName(base: string) {
-  const saved = loadSavedDecks()
-  const truncated = base.slice(0, 24)
-  if (!saved[truncated]) return truncated
-  let index = 2
-  for (;;) {
-    const suffix = ` ${index++}`
-    const name = `${base.slice(0, 24 - suffix.length)}${suffix}`
-    if (!saved[name]) return name
-  }
+async function uniqueName(base: string, current: () => boolean = () => true) {
+  return uniqueDeckCopyName(base, current)
 }
 async function copyToMine() {
   if (!entry.value) return
@@ -410,7 +402,10 @@ async function copyToMine() {
   await runAction(key, async () => {
     try {
       if (!current() || !entry.value) return
-      const deck = { ...entry.value.deck, id: undefined, revision: undefined, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
+      const source = entry.value.deck
+      const name = await uniqueName(source.name, current)
+      if (!current()) return
+      const deck = { ...source, id: undefined, revision: undefined, name, publicationId: null, publicationVersion: null, cardIds: [...source.cardIds], moraleIds: [...source.moraleIds], specialIds: [...(source.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
       if (current())
         notice.value = `已复制《${saved.name}》到我的牌库`
@@ -456,19 +451,28 @@ async function previewImage() {
   imagePreview.value = { blob, url: URL.createObjectURL(blob) }
 }
 async function editDeck() {
-  if (!entry.value?.canEdit) return
-  const account = platformState.account?.id, token = platformState.token, id = entry.value.id
+  const opened = entry.value
+  if (!opened?.canEdit) return
+  const account = platformState.account?.id, token = platformState.token, id = opened.id
+  const context = capturePinnedReadContext()
+  if (!context) return
+  const current = context.current
+  await runAction(publicDeckActionKey(id, account), async () => {
   try {
-    const existing = Object.values(loadSavedDecks()).find(deck => deck.publicationId === entry.value?.id)
-    const saved = await saveDeck({ ...entry.value.deck, id: existing?.id, revision: existing?.revision,
-      name: existing?.name ?? uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds],
-      moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
-    if (account !== platformState.account?.id || token !== platformState.token || entry.value?.id !== id) return
+    const source = opened.deck
+    const existing = await loadPrivatePublicationSource(id, current)
+    if (!current()) return
+    const name = existing?.name ?? await uniqueName(source.name, current)
+    if (!current()) return
+    const saved = await saveDeck({ ...source, id: existing?.id, revision: existing?.revision,
+      name, cardIds: [...source.cardIds], moraleIds: [...source.moraleIds], specialIds: [...(source.specialIds ?? [])] })
+    if (!current() || account !== platformState.account?.id || token !== platformState.token || entry.value?.id !== id) return
     await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id) })
   } catch (error) {
-    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+    if (current() && account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
       notice.value = error instanceof Error ? error.message : '读取或保存牌库失败'
   }
+  })
 }
 async function deleteDeck() {
   if (!entry.value?.canEdit || !window.confirm('确定删除这个公开牌库？')) return
@@ -529,7 +533,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
         <nav class="detail-tabs" aria-label="公开牌库详情内容">
           <button v-for="tab in sectionTabs" :key="tab.id" @click="scrollToSection(tab.id)">{{ tab.label }}</button>
         </nav>
-        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.canEdit" @click="editDeck">编辑牌库</button><button v-if="entry.canEdit" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
+        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.canEdit" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="editDeck">编辑牌库</button><button v-if="entry.canEdit" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
       </div>
       <section id="public-deck-construction" class="deck-layout detail-anchor-section">
         <aside>

@@ -615,22 +615,23 @@ async function specialDictionaryNamesStayData() {
   assert.equal(Object.hasOwn(decksModule.loadSavedDecks(), '__proto__'), true)
   assert.equal(decksModule.loadSavedDecks()['__proto__'].id, saved.id)
 }
-function unavailableReadConsumersRemainVisible() {
+async function unavailableReadConsumersRemainVisible() {
   for (const relative of ['../src/l12/LobbyPage.vue', '../src/l12/site/BattleHubPage.vue']) {
-    const text = readFileSync(new URL(relative, import.meta.url), 'utf8')
-    const start = text.indexOf('function visibleDecks('), end = text.indexOf('const customDecks', start)
-    const javascript = ts.transpileModule(text.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
     const notice = { notice: '' }
-    const run = new Function('loadSavedDecksState', 'l12State', javascript + '; return visibleDecks()')
-    const result = run(() => ({ status: 'unavailable', decks: null, error: Error('本机牌库不可用') }), notice)
+    const run = actualHandler(relative, 'visibleDecks', {
+      loadSavedDecksState: () => ({ status: 'unavailable', decks: null, error: Error('本机牌库不可用') }), l12State: notice,
+    })
+    const result = run()
     assert.deepEqual(result, {}); assert.equal(notice.notice, '本机牌库不可用', 'Unavailable UI collection has an explicit visible error')
   }
-  const home = readFileSync(new URL('../src/l12/site/HomeRevisitActions.vue', import.meta.url), 'utf8')
-  const start = home.indexOf('function refreshRecent()'), end = home.indexOf('function refreshWhenVisible()', start)
-  const run = new Function('verifiedAccount', 'recentName', 'cacheError', 'loadSavedDecksState', 'recentHomeDeckName', home.slice(start, end) + '; refreshRecent()')
   const recentName = { value: '旧资料' }, cacheError = { value: '' }
-  run({ value: true }, recentName, cacheError, () => ({ status: 'unavailable', decks: null, error: Error('读取失败') }), () => { throw Error('Must not interpret unavailable as empty') })
-  assert.equal(recentName.value, ''); assert.equal(cacheError.value, '读取失败')
+  const run = actualHandler('../src/l12/site/HomeRevisitActions.vue', 'refreshRecent', {
+    verifiedAccount: { value: true }, recentName, cacheError, disposed: false, recentEpoch: 0,
+    platformState, route: { fullPath: '/' }, deckErrorBelongsToCurrentAccount: () => true,
+    loadPrivateDeckSummaryPage: async () => { throw Error('读取失败') },
+  })
+  await run()
+  assert.equal(recentName.value, '旧资料'); assert.equal(cacheError.value, '读取失败', 'Unavailable remains an explicit visible error, not a fabricated empty success')
 }
 
 await accountLateMutationCannotCrossIdentity()
@@ -639,7 +640,7 @@ await lateSameAccountAckCannotResurrectOrDowngrade()
 await cacheUnavailableCannotSeedSaveOrDelete()
 await exactMetadataAndMigrationQuota()
 await specialDictionaryNamesStayData()
-unavailableReadConsumersRemainVisible()
+await unavailableReadConsumersRemainVisible()
 function actualScript(relative) {
   const text = parse(readFileSync(new URL(relative, import.meta.url), 'utf8')).descriptor.scriptSetup.content
   return ts.createSourceFile(relative, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS)
@@ -775,15 +776,20 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
     restoreFiltersFromRoute: () => {}, libraryContext: () => ({}), libraryContextCurrent: () => true,
     libraryMounted: false, libraryDisposed: false, loadSummarySources: () => { const task = loadSummarySources(); publicWork.push(task); return task }, loadOwnReferences: () => {},
     catalog, saved, published, notice, ownedAlternateArts: arts, operationsPolicy: policy, platformState,
+    privateLoadState: { value: 'loading' },
     loadDeckCatalog: async () => ['PUBLIC-CATALOG'], ensureOfficialPrebuiltDecks: decksModule.ensureOfficialPrebuiltDecks,
     alternateArtApi: { mine: async () => [] },
     loadOfficialPresetDecks: async () => [deck('公开预组')],
     publicDeckApi: { list: async () => [{ id: 'public-card', deck: deck('公开牌库') }] },
     getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
     deckErrorBelongsToCurrentAccount: decksModule.deckErrorBelongsToCurrentAccount,
+    loadSavedDecksState: decksModule.loadSavedDecksState,
+    loadMineDirectory: async () => {},
     nextTick: async () => {}, sessionStorage: { getItem: () => null }, route: { fullPath: '/decks' },
   }
-  const initialize = new Function(...Object.keys(environment), code + '; return initialize')(...Object.values(environment))
+  const applyCache = script.statements.find(item => ts.isFunctionDeclaration(item) && item.name?.text === 'applyLibraryCacheSnapshot')
+  assert.ok(applyCache)
+  const initialize = new Function(...Object.keys(environment), applyCache.getText(script) + ';' + code + '; return initialize')(...Object.values(environment))
   await initialize()
   await Promise.all(publicWork)
   assert.deepEqual(catalog.value, ['PUBLIC-CATALOG'])
@@ -816,13 +822,18 @@ await unavailablePrivateCacheDoesNotBlockPublicLibrary()
       loadSummarySources: () => publicRead.promise, loadOwnReferences: () => {},
       loadDeckCatalog: async () => { privateStarts++; return [] },
       ensureOfficialPrebuiltDecks: async () => { privateStarts++; return {} },
+      loadMineDirectory: async () => { privateStarts++ },
+      loadSavedDecksState: () => ({ status: 'available', decks: {} }),
+      privateLoadState: { value: 'loading' },
       alternateArtApi: { mine: async () => { privateStarts++; return [] } },
       catalog: snapshot, saved: { value: {} }, ownedAlternateArts: snapshot, operationsPolicy: snapshot, notice,
       platformState: { account: { id: 'synthetic-owner' } }, deckErrorBelongsToCurrentAccount: () => true,
       getEffectiveOperationsPolicy: async () => null, nextTick: async () => {},
       sessionStorage: { getItem: () => null }, route: { fullPath: '/decks' },
     }
-    const runtime = new Function(...Object.keys(environment), 'let libraryDisposed=false;' + body
+    const applyCache = script.statements.find(item => ts.isFunctionDeclaration(item) && item.name?.text === 'applyLibraryCacheSnapshot')
+    assert.ok(applyCache)
+    const runtime = new Function(...Object.keys(environment), 'let libraryDisposed=false;' + applyCache.getText(script) + ';' + body
       + ';return {initialize,dispose(){libraryDisposed=true;}}')(...Object.values(environment))
     const running = runtime.initialize()
     await Promise.resolve()

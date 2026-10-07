@@ -102,8 +102,12 @@ function libraryPublishGateContract(source) {
   if (!ts.isIdentifier(alias)) return false
   const key = bindings.get(alias.text)
   if (!key || !ts.isTemplateExpression(key) || key.head.text !== 'public-deck:publish:'
-    || key.templateSpans.length !== 1 || key.templateSpans[0].expression.getText(file) !== 'deck.name'
+    || key.templateSpans.length !== 1 || !ts.isIdentifier(key.templateSpans[0].expression)
     || key.templateSpans[0].literal.text !== '') return false
+  // Capture the selected directory name before the body read. Pending must be
+  // checked before that read and before incrementing the request generation.
+  const name = bindings.get(key.templateSpans[0].expression.text)
+  if (!name || name.getText(file) !== 'publishName.value') return false
   const guardIndex = operation.body.statements.findIndex(node => ts.isIfStatement(node)
     && ts.isCallExpression(node.expression) && node.expression.expression.getText(file) === 'actionPending'
     && node.expression.arguments.length === 1 && node.expression.arguments[0].getText(file) === alias.text
@@ -114,7 +118,9 @@ function libraryPublishGateContract(source) {
   return guardIndex >= 0 && epochIndex > guardIndex
 }
 for (const [label, mutation] of [
-  ['wrong publication key', deckLibrary.replace('`public-deck:publish:${deck.name}`', '`public-deck:publish:${other.name}`')],
+  ['wrong publication key', deckLibrary.replace('`public-deck:publish:${deckName}`', '`public-deck:publish:${other.name}`')],
+  ['wrong selected-name capture', deckLibrary.replace('const deckName = publishName.value', 'const deckName = mineQuery.value')],
+  ['uncaptured mutable publication key', deckLibrary.replace('`public-deck:publish:${deckName}`', '`public-deck:publish:${publishName.value}`')],
   ['publication gate bypass', deckLibrary.replace('await runAction(actionKey, async () => {', 'await ungatedAction(actionKey, async () => {')],
   ['missing early duplicate guard', deckLibrary.replace('if (actionPending(actionKey)) return', 'if (false) return')],
   ['wrong early duplicate key', deckLibrary.replace('if (actionPending(actionKey)) return', 'if (actionPending(otherKey)) return')],

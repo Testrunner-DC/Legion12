@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { platformState } from '@/l12/platform'
 import { encodeDeckCode, downloadDeckImage } from './deckShare'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
-import { loadSavedDecks, saveDeck, deckErrorBelongsToCurrentAccount, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { uniqueDeckCopyName, captureDeckAccountGuard, saveDeck, deckErrorBelongsToCurrentAccount, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 
 const props = withDefaults(defineProps<{
   entries: ConstructionEntry[]
@@ -14,6 +14,9 @@ const props = withDefaults(defineProps<{
   eyebrow?: string
 }>(), { masterId: '', deckName: '', eyebrow: '赛后不可变快照' })
 const emit = defineEmits<{ close: []; notice: [message: string] }>()
+const copyBusy = ref(false)
+let snapshotAlive = true
+onBeforeUnmount(() => { snapshotAlive = false })
 
 const deck = computed<SavedL12Deck | null>(() => {
   if (!props.masterId.trim()) return null
@@ -24,13 +27,8 @@ const deck = computed<SavedL12Deck | null>(() => {
     cardIds: expand('main'), moraleIds: expand('morale'), specialIds: expand('special'), updatedAt: new Date().toISOString(),
   }
 })
-function uniqueDeckName(base: string) {
-  const saved = loadSavedDecks()
-  if (!saved[base]) return base
-  let index = 2
-  let name = `${base} ${index}`.slice(0, 24)
-  while (saved[name]) name = `${base} ${++index}`.slice(0, 24)
-  return name
+async function uniqueDeckName(base: string, current: () => boolean) {
+  return uniqueDeckCopyName(base, current)
 }
 async function copyCode() {
   if (!deck.value) return
@@ -43,16 +41,20 @@ async function exportImage() {
   catch (error) { emit('notice', error instanceof Error ? error.message : '牌库图导出失败') }
 }
 async function copyToLibrary() {
-  if (!deck.value) return
-  const account = platformState.account?.id, token = platformState.token
+  if (!deck.value || copyBusy.value) return
+  const actorCurrent = captureDeckAccountGuard(), original = deck.value
+  const current = () => snapshotAlive && actorCurrent() && deck.value === original
+  copyBusy.value = true
   try {
-    const copy = { ...deck.value, name: uniqueDeckName(deck.value.name), updatedAt: new Date().toISOString() }
+    const name = await uniqueDeckName(original.name, current)
+    if (!current()) return
+    const copy = { ...original, name, updatedAt: new Date().toISOString() }
     const saved = await saveDeck(copy)
-    if (account === platformState.account?.id && token === platformState.token) emit('notice', `已复制《${saved.name}》到我的牌库`)
+    if (current()) emit('notice', `已复制《${saved.name}》到我的牌库`)
   } catch (error) {
-    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+    if (current() && deckErrorBelongsToCurrentAccount(error))
       emit('notice', error instanceof Error ? error.message : '复制到我的牌库失败')
-  }
+  } finally { copyBusy.value = false }
 }
 </script>
 
@@ -62,7 +64,7 @@ async function copyToLibrary() {
       <section class="deck-viewer-modal ui-state-scope" role="dialog" aria-modal="true" :aria-label="title">
         <header><div><small>{{ eyebrow }}</small><h2>{{ title }}</h2></div><button type="button" aria-label="关闭构筑" @click="emit('close')">×</button></header>
         <DeckConstructionBrowser :entries="entries" :catalog="catalog" :title="title"/>
-        <footer class="deck-viewer-actions"><button :disabled="!deck" @click="copyCode">复制牌库码</button><button :disabled="!deck" @click="exportImage">导出牌库图</button><button class="primary" :disabled="!deck" @click="copyToLibrary">复制到我的牌库</button><small v-if="!deck">快照缺少主宰，无法生成可复用牌库。</small></footer>
+        <footer class="deck-viewer-actions"><button :disabled="!deck" @click="copyCode">复制牌库码</button><button :disabled="!deck" @click="exportImage">导出牌库图</button><button class="primary" :disabled="!deck || copyBusy" @click="copyToLibrary">复制到我的牌库</button><small v-if="!deck">快照缺少主宰，无法生成可复用牌库。</small></footer>
       </section>
     </div>
   </Teleport>

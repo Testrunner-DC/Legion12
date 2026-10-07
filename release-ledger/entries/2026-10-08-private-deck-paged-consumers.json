@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-08-private-deck-paged-consumers",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "已保存牌库浏览与选择",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "我的牌库、编辑器、大厅、沙盒和赛事选牌支持分页与搜索；翻页不会更换当前牌库，确认选择后才读取完整构筑。复制、导入和另存会检查同名牌库；从公开页编辑已改名的原牌库不会另建重复副本。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/SavedDeckSelector.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+        "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/SandboxPage.vue",
+        "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+        "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue"
+      ]
+    },
+    {
+      "category": "accounts",
+      "text": "切换账号、页面或修改构筑后，较早请求的结果不会覆盖当前内容或误退出新登录；牌库保存冲突仍保留当前修改。",
+      "paths": ["opcgpro-vue/src/l12/platform.ts"]
+    }
+  ]
+}

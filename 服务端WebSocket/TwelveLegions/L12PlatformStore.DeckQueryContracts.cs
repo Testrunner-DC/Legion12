@@ -4,14 +4,17 @@ using Microsoft.AspNetCore.Http;
 namespace TwelveLegions.Server;
 
 public sealed record L12PrivateDeckQuery(int Page = 1, int PageSize = 30,
-    string? Keyword = null, string? MasterId = null, bool? Legal = null, string Sort = "latest")
+    string? Keyword = null, string? MasterId = null, bool? Legal = null, string Sort = "latest",
+    string? ExactName = null, string? PublicationId = null)
 {
-    public bool IsValid => Page > 0 && PageSize is > 0 and <= 100 && Sort is "latest" or "name";
+    public bool IsValid => Page > 0 && PageSize is > 0 and <= 100 && Sort is "latest" or "name"
+        && (ExactName is null || ExactName.Trim().Length is > 0 and <= 24)
+        && (PublicationId is null || PublicationId.Trim().Length is > 0 and <= 128);
 
     public static bool TryParse(IQueryCollection values, out L12PrivateDeckQuery query)
     {
         query = new();
-        var allowed = new HashSet<string>(["page", "pageSize", "keyword", "masterId", "legal", "sort"], StringComparer.Ordinal);
+        var allowed = new HashSet<string>(["page", "pageSize", "keyword", "masterId", "legal", "sort", "exactName", "publicationId"], StringComparer.Ordinal);
         if (values.Any(item => !allowed.Contains(item.Key) || item.Value.Count != 1)) return false;
         bool Integer(string key, int fallback, out int value)
         {
@@ -29,8 +32,9 @@ public sealed record L12PrivateDeckQuery(int Page = 1, int PageSize = 30,
         var sort = values.TryGetValue("sort", out var rawSort) ? rawSort[0] : "latest";
         if (sort is not ("latest" or "name")) return false;
         query = new(page, size, values["keyword"].FirstOrDefault()?.Trim(),
-            values["masterId"].FirstOrDefault()?.Trim(), legal, sort);
-        return true;
+            values["masterId"].FirstOrDefault()?.Trim(), legal, sort,
+            values["exactName"].FirstOrDefault()?.Trim(), values["publicationId"].FirstOrDefault()?.Trim());
+        return query.IsValid;
     }
 
     public static bool TryParseRevision(IQueryCollection values, out long? revision)

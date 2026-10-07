@@ -1,29 +1,45 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { authState, platformState } from '@/l12/platform'
-import { loadSavedDecksState } from '@/l12/decks'
+import { deckErrorBelongsToCurrentAccount, loadPrivateDeckSummaryPage } from '@/l12/decks'
 import { l12State } from '@/l12/net'
-import { homeAccountVerified, homeCanContinueGame, recentHomeDeckName } from './homeRevisit'
+import { homeAccountVerified, homeCanContinueGame } from './homeRevisit'
 
+const route = useRoute()
 const verifiedAccount = computed(() => homeAccountVerified(platformState.account?.id,
   platformState.token, authState.verified) && !platformState.account?.disabled && !platformState.account?.deleted)
 const recentName = ref('')
 const cacheError = ref('')
 const canContinue = computed(() => homeCanContinueGame(platformState.account?.id, verifiedAccount.value, l12State))
-function refreshRecent() {
+let disposed = false
+let recentEpoch = 0
+async function refreshRecent() {
+  const epoch = ++recentEpoch
   if (!verifiedAccount.value) { recentName.value = ''; cacheError.value = ''; return }
-  const snapshot = loadSavedDecksState()
-  cacheError.value = snapshot.status === 'unavailable' ? snapshot.error.message : ''
-  recentName.value = snapshot.status === 'unavailable' ? '' : recentHomeDeckName(snapshot.decks)
+  const accountId = platformState.account?.id, token = platformState.token, path = route.fullPath
+  const current = () => !disposed && epoch === recentEpoch && verifiedAccount.value
+    && accountId === platformState.account?.id && token === platformState.token && path === route.fullPath
+  try {
+    const page = await loadPrivateDeckSummaryPage({ page: 1, pageSize: 1, sort: 'latest' })
+    if (!current()) return
+    recentName.value = page.items[0]?.name ?? ''
+    cacheError.value = ''
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error))
+      cacheError.value = error instanceof Error ? error.message : '最近牌库暂不可读取'
+  }
 }
-function refreshWhenVisible() { if (!document.hidden) refreshRecent() }
-watch(() => [verifiedAccount.value, platformState.account?.id, platformState.token], refreshRecent, { immediate: true })
+function refreshWhenVisible() { if (!document.hidden) void refreshRecent() }
+watch(() => [verifiedAccount.value, platformState.account?.id, platformState.token, route.fullPath],
+  () => { void refreshRecent() }, { immediate: true })
 onMounted(() => {
-  window.addEventListener('storage', refreshRecent)
+  window.addEventListener('storage', refreshWhenVisible)
   document.addEventListener('visibilitychange', refreshWhenVisible)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('storage', refreshRecent)
+  disposed = true; recentEpoch++
+  window.removeEventListener('storage', refreshWhenVisible)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
 })
 </script>

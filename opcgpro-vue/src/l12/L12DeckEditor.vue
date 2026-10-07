@@ -8,7 +8,8 @@ import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
   MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
-  saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
+  loadPrivateDeckBody, loadPrivateDeckSummaryPage, uniqueDeckCopyName, saveDeck, validateDeck, type DeckCard,
+  type PrivateDeckSummary, type PrivateDeckSummaryPage, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type OperationsCardRestriction } from './platform'
 import CardImage from './CardImage.vue'
@@ -25,6 +26,22 @@ const route = useRoute()
 const returnTo = computed(() => deckEditorReturnTarget(route.query.returnTo))
 const catalog = ref<DeckCard[]>([])
 const savedDecks = ref<Record<string, SavedL12Deck>>({})
+type EditorSavedDeck = SavedL12Deck | PrivateDeckSummary
+const savedDirectory = ref<PrivateDeckSummaryPage | null>(null)
+const savedDirectorySearch = ref('')
+const savedDirectoryKeyword = ref('')
+const savedDirectoryLoading = ref(false)
+const savedDirectoryError = ref('')
+const deckReadBusy = ref(false)
+let directoryReadSequence = 0
+let deckReadSequence = 0
+let editorAlive = true
+const authenticatedEditor = computed(() => Boolean(platformState.account?.id && platformState.token))
+const savedDirectoryDecks = computed<EditorSavedDeck[]>(() => authenticatedEditor.value
+  ? savedDirectory.value?.items ?? [] : Object.values(savedDecks.value))
+const savedDirectoryTotal = computed(() => authenticatedEditor.value
+  ? savedDirectory.value?.total ?? 0 : Object.keys(savedDecks.value).length)
+const savedDirectoryPages = computed(() => Math.max(1, Math.ceil(savedDirectoryTotal.value / 30)))
 const loading = ref(true)
 const notice = ref('')
 const deckName = ref('新牌库')
@@ -47,7 +64,7 @@ const activeDeckRevision = ref<number | null>(null)
 const specialIds = ref<string[]>([])
 const catalogTab = ref<'master' | 'main' | 'extra'>('master')
 const pendingDeleteName = ref('')
-const pendingDeleteDeck = ref<SavedL12Deck | null>(null)
+const pendingDeleteDeck = ref<EditorSavedDeck | null>(null)
 const deckMutationBusy = ref(false)
 const deletingDeck = ref(false)
 const deckImageUrl = ref('')
@@ -65,9 +82,57 @@ const ownedAlternateArts = ref<AlternateArt[]>([])
 let ownedArtRequest = 0
 let editorAccountEpoch = 0
 let editorDocumentEpoch = 0
-const editorContext = () => ({ accountId: platformState.account?.id, accountEpoch: editorAccountEpoch, documentEpoch: editorDocumentEpoch })
-const isCurrentEditorContext = (context: ReturnType<typeof editorContext>) => context.accountId === platformState.account?.id
+const editorContext = () => ({ accountId: platformState.account?.id, token: platformState.token,
+  accountEpoch: editorAccountEpoch, documentEpoch: editorDocumentEpoch, route: route.fullPath })
+const isCurrentEditorContext = (context: ReturnType<typeof editorContext>) => editorAlive
+  && context.accountId === platformState.account?.id && context.token === platformState.token
   && context.accountEpoch === editorAccountEpoch && context.documentEpoch === editorDocumentEpoch
+  && context.route === route.fullPath
+
+function savedDeckCountLabel(deck: EditorSavedDeck) {
+  if (!('counts' in deck)) return `${deck.cardIds.length} 张主牌`
+  return `${deck.counts.main}${deck.counts.uncountedMain ? `（${deck.counts.uncountedMain} 不计构筑）` : ''} 张主牌`
+}
+
+async function loadSavedDirectory(page = 1) {
+  if (!authenticatedEditor.value) return
+  const call = ++directoryReadSequence
+  const accountId = platformState.account?.id, token = platformState.token, epoch = editorAccountEpoch
+  const current = () => editorAlive && call === directoryReadSequence && epoch === editorAccountEpoch
+    && accountId === platformState.account?.id && token === platformState.token
+  savedDirectoryLoading.value = true
+  savedDirectoryError.value = ''
+  try {
+    const result = await loadPrivateDeckSummaryPage({ page, pageSize: 30, keyword: savedDirectoryKeyword.value || undefined })
+    if (current()) savedDirectory.value = result
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error))
+      savedDirectoryError.value = mutationError(error, '牌库列表暂不可读取，请重试')
+  } finally { if (current()) savedDirectoryLoading.value = false }
+}
+
+function searchSavedDirectory() {
+  savedDirectoryKeyword.value = savedDirectorySearch.value.trim()
+  void loadSavedDirectory(1)
+}
+
+async function loadRequestedSavedDeck() {
+  const requestedId = typeof route.query.deckId === 'string' ? route.query.deckId : ''
+  const requestedName = typeof route.query.deck === 'string' ? route.query.deck : ''
+  if (!requestedId && !requestedName) return
+  const cached = requestedId ? Object.values(savedDecks.value).find(deck => deck.id === requestedId)
+    : savedDecks.value[requestedName]
+  const summary = requestedId ? savedDirectory.value?.items.find(deck => deck.id === requestedId)
+    : savedDirectory.value?.items.find(deck => deck.name === requestedName)
+  const candidate = cached ?? summary
+  if (candidate) await requestLoadDeck(candidate)
+  else notice.value = '请在已保存牌库中搜索并选择这份牌库'
+}
+
+function refreshSavedDirectoryAfterMutation() {
+  // A failed directory refresh is not a failed save/delete; its error stays next to the list.
+  if (authenticatedEditor.value) void loadSavedDirectory(savedDirectory.value?.page ?? 1)
+}
 async function refreshOwnedAlternateArts() {
   const accountId = platformState.account?.id, request = ++ownedArtRequest
   ownedAlternateArts.value = []
@@ -137,27 +202,26 @@ const typeLabels: Record<string, string> = {
 
 onMounted(async () => {
   const loadingAccountEpoch = editorAccountEpoch
+  const loadingContext = editorContext()
+  const loadingContentRevision = editorContentRevision.value
+  const requestedPublicationCode = publicationCode.value
   try {
-    const [loadedCatalog, loadedDecks] = await Promise.all([
-      loadDeckCatalog().then(cards => { catalog.value = cards; return cards }),
-      ensureOfficialPrebuiltDecks(),
-      refreshOwnedAlternateArts(),
+    catalog.value = await loadDeckCatalog()
+    if (!isCurrentEditorContext(loadingContext)) return
+    if (authenticatedEditor.value) savedDecks.value = loadSavedDecks()
+    else savedDecks.value = await ensureOfficialPrebuiltDecks()
+    if (!isCurrentEditorContext(loadingContext)) return
+    await Promise.all([
+      loadSavedDirectory(1), refreshOwnedAlternateArts(),
+      getEffectiveOperationsPolicy().then(policy => {
+        if (isCurrentEditorContext(loadingContext)) operationsRestrictions.value = policy.cardRestrictions
+      }).catch(() => undefined),
     ])
-    catalog.value = loadedCatalog
-    savedDecks.value = loadingAccountEpoch === editorAccountEpoch ? loadedDecks : loadSavedDecks()
-    void getEffectiveOperationsPolicy().then(policy => {
-      operationsRestrictions.value = policy.cardRestrictions
-    }).catch(() => undefined)
-    if (loadingAccountEpoch !== editorAccountEpoch) { selected.value = mainCards.value[0] ?? null; refreshLocalDraft(); return }
-    const requestedPublicationCode = publicationCode.value
-    const requested = typeof router.currentRoute.value.query.deck === 'string' ? router.currentRoute.value.query.deck : ''
-    const requestedId = typeof router.currentRoute.value.query.deckId === 'string'
-      ? router.currentRoute.value.query.deckId : ''
-    const requestedById = requestedId
-      ? Object.values(savedDecks.value).find(deck => deck.id === requestedId) : null
-    if (requestedById) loadDeck(requestedById, true)
-    else if (!requestedId && requested && savedDecks.value[requested]) loadDeck(savedDecks.value[requested], true)
-    else selected.value = mainCards.value[0] ?? null
+    if (!isCurrentEditorContext(loadingContext) || editorContentRevision.value !== loadingContentRevision) return
+    await loadRequestedSavedDeck()
+    if (!editorAlive || loadingAccountEpoch !== editorAccountEpoch || loadingContext.token !== platformState.token
+      || loadingContext.route !== route.fullPath) return
+    selected.value ??= mainCards.value[0] ?? null
     if (requestedPublicationCode) publicationCode.value = requestedPublicationCode
     if (publicationId.value || publicationCode.value) await resolvePublishedDeck()
     refreshLocalDraft()
@@ -165,7 +229,7 @@ onMounted(async () => {
     if (loadingAccountEpoch === editorAccountEpoch && deckErrorBelongsToCurrentAccount(error))
       notice.value = error instanceof Error ? error.message : '牌库编辑器加载失败'
   } finally {
-    loading.value = false
+    if (editorAlive && loadingAccountEpoch === editorAccountEpoch && loadingContext.token === platformState.token) loading.value = false
   }
 })
 
@@ -373,8 +437,8 @@ function selectCard(card: DeckCard) {
   if (window.matchMedia('(max-width:820px)').matches) mobileDetailOpen.value = true
 }
 
-function chooseMobileSavedDeck(deck: SavedL12Deck) {
-  if (requestLoadDeck(deck)) mobileSavedDecksOpen.value = false
+async function chooseMobileSavedDeck(deck: EditorSavedDeck) {
+  if (await requestLoadDeck(deck, () => mobileSavedDecksOpen.value)) mobileSavedDecksOpen.value = false
 }
 
 function closeEditorDialogOnEscape(event: KeyboardEvent) {
@@ -532,6 +596,8 @@ function removeAppearance(entry: PoolCardAppearance) {
 }
 
 function newDeck() {
+  deckReadSequence++
+  deckReadBusy.value = false
   editorDocumentEpoch++
   publicationVersion.value = null
   publicationId.value = ''
@@ -579,10 +645,27 @@ function requestNewDeck() {
   secondaryActionsOpen.value = false
 }
 
-function requestLoadDeck(deck: SavedL12Deck) {
-  if (!confirmDiscardChanges()) return false
-  loadDeck(deck, true)
-  return true
+async function requestLoadDeck(deck: EditorSavedDeck, actionCurrent: () => boolean = () => true) {
+  if (deckReadBusy.value || deckMutationBusy.value || deletingDeck.value || !confirmDiscardChanges()) return false
+  const call = ++deckReadSequence
+  const context = editorContext(), revision = editorContentRevision.value
+  const current = () => call === deckReadSequence && isCurrentEditorContext(context)
+    && editorContentRevision.value === revision && actionCurrent()
+  deckReadBusy.value = true
+  try {
+    const body = authenticatedEditor.value
+      ? await loadPrivateDeckBody({ id: deck.id ?? '', revision: deck.revision ?? 0 }, current)
+      : 'counts' in deck ? null : deck
+    if (!body || !current()) return false
+    const cache = loadSavedDecks()
+    if (!current()) return false
+    loadDeck(body, true)
+    savedDecks.value = cache
+    return true
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error)) notice.value = mutationError(error, '牌库暂不可载入，请刷新列表后重试')
+    return false
+  } finally { if (call === deckReadSequence) deckReadBusy.value = false }
 }
 
 function saveLocalDraft() {
@@ -687,6 +770,7 @@ async function onSave() {
     const saved = await saveDeck(deck)
     if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
+    refreshSavedDirectoryAfterMutation()
     const editorUnchanged = editorContentRevision.value === requestedRevision
     activeDeckName.value = saved.name
     activeDeckId.value = saved.id ?? null
@@ -711,21 +795,19 @@ async function onSaveAs() {
   if (validation.value) { notice.value = validation.value; return }
   if (deckMutationBusy.value || deletingDeck.value) return
   const base = `${deckName.value.trim()} 副本`
-  let name = base.slice(0, 24)
-  let suffix = 2
-  while (savedDecks.value[name]) {
-    const ending = ` ${suffix++}`
-    name = `${base.slice(0, 24 - ending.length)}${ending}`
-  }
-  const deck = { ...currentDeck(), id: undefined, revision: undefined,
-    name, publicationId: null, publicationVersion: null }
+  const source = currentDeck()
   const requestedRevision = editorContentRevision.value
   const context = editorContext()
   deckMutationBusy.value = true
   try {
+    const current = () => isCurrentEditorContext(context) && editorContentRevision.value === requestedRevision
+    const name = await uniqueDeckCopyName(base, current)
+    if (!current()) return
+    const deck = { ...source, id: undefined, revision: undefined, name, publicationId: null, publicationVersion: null }
     const saved = await saveDeck(deck)
     if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
+    refreshSavedDirectoryAfterMutation()
     if (editorContentRevision.value === requestedRevision) {
       publicationId.value = ''
       publicationCode.value = ''
@@ -765,6 +847,7 @@ async function publishCurrentDeck() {
       publicationVersion: result.deck.publicationVersion })
     if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
+    refreshSavedDirectoryAfterMutation()
     activeDeckName.value = published.name
     activeDeckId.value = published.id ?? null
     activeDeckRevision.value = published.revision ?? null
@@ -831,7 +914,8 @@ function selectAlternateArt(cardId: string, artId: string) {
   alternateArtSelections.value = next
 }
 
-function requestDelete(target?: SavedL12Deck) {
+function requestDelete(target?: EditorSavedDeck) {
+  if (deckReadBusy.value || deckMutationBusy.value || deletingDeck.value) return
   const deck = target ?? Object.values(savedDecks.value).find(item => item.id && item.id === activeDeckId.value)
     ?? (activeDeckName.value ? savedDecks.value[activeDeckName.value] : undefined)
   if (!deck) { notice.value = '当前不是已保存牌库'; return }
@@ -849,14 +933,24 @@ async function confirmDelete() {
   if (!deck || deletingDeck.value || deckMutationBusy.value) return
   const deletingActiveDeck = deck.id ? activeDeckId.value === deck.id : activeDeckName.value === deck.name
   const context = editorContext()
+  const contentRevision = editorContentRevision.value
   if (deletingActiveDeck && !confirmDiscardChanges()) return
   deletingDeck.value = true
   try {
-    await deleteDeck(deck)
+    const current = () => isCurrentEditorContext(context) && editorContentRevision.value === contentRevision
+      && pendingDeleteDeck.value === deck && Boolean(pendingDeleteName.value)
+    const body = authenticatedEditor.value
+      ? await loadPrivateDeckBody({ id: deck.id ?? '', revision: deck.revision ?? 0 }, current)
+      : 'counts' in deck ? null : deck
+    if (!body || !current()) return
+    await deleteDeck(body)
     if (!isCurrentEditorContext(context)) return
     savedDecks.value = loadSavedDecks()
-    if (deletingActiveDeck) newDeck()
-    notice.value = `已删除〈${deck.name}〉`
+    refreshSavedDirectoryAfterMutation()
+    const preservedChanges = deletingActiveDeck && editorContentRevision.value !== contentRevision
+    if (deletingActiveDeck && !preservedChanges) newDeck()
+    notice.value = preservedChanges
+      ? `已删除〈${deck.name}〉；当前修改仍保留，可暂存草稿或另存为牌库` : `已删除〈${deck.name}〉`
     closePendingDelete()
   } catch (error) {
     if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error && typeof error === 'object' && 'serverConfirmed' in error && error.serverConfirmed === true
@@ -916,6 +1010,9 @@ async function saveGeneratedDeckImage() {
 }
 
 onBeforeUnmount(() => {
+  editorAlive = false
+  directoryReadSequence++
+  deckReadSequence++
   editorAccountEpoch++
   ownedArtRequest++
   window.removeEventListener('keydown', closeEditorDialogOnEscape)
@@ -924,10 +1021,8 @@ onBeforeUnmount(() => {
 })
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
 
-watch(() => platformState.account?.id, (current, previous) => {
-  if (current === previous) return
-  editorAccountEpoch++
-  void refreshOwnedAlternateArts()
+// Complete the local document/draft switch synchronously before starting new reads.
+function applyEditorAccountChange(previous: string | undefined) {
   let preserveError = ''
   if (hasUnsavedChanges.value) {
     try {
@@ -942,9 +1037,29 @@ watch(() => platformState.account?.id, (current, previous) => {
   newDeck()
   const cache = loadSavedDecksState()
   savedDecks.value = cache.status === 'unavailable' ? {} : cache.decks
+  savedDirectorySearch.value = savedDirectoryKeyword.value = ''
   refreshLocalDraft()
   if (cache.status === 'unavailable') preserveError = [preserveError, cache.error.message].filter(Boolean).join('；')
   notice.value = preserveError ? `账号已切换，原账号未保存的修改暂存失败：${preserveError}` : '账号已切换；当前仅显示此账号的牌库和草稿'
+}
+
+async function refreshEditorAccountReads(context: ReturnType<typeof editorContext>) {
+  if (!isCurrentEditorContext(context)) return
+  await Promise.all([loadSavedDirectory(1), refreshOwnedAlternateArts()])
+}
+
+watch(() => [platformState.account?.id, platformState.token] as const, ([current, token], [previous, previousToken]) => {
+  if (current === previous && token === previousToken) return
+  editorAccountEpoch++
+  directoryReadSequence++
+  deckReadSequence++
+  deckReadBusy.value = savedDirectoryLoading.value = false
+  savedDirectory.value = null
+  savedDirectoryError.value = ''
+  // Token refresh invalidates pending reads but keeps this account's working draft.
+  if (current !== previous) applyEditorAccountChange(previous)
+  loading.value = false
+  void refreshEditorAccountReads(editorContext())
 }, { flush: 'sync' })
 </script>
 
@@ -976,7 +1091,7 @@ watch(() => platformState.account?.id, (current, previous) => {
       <button :class="{ active: mobilePane === 'deck' }" @click="setMobilePane('deck')">牌表 · {{ totalCards }}</button>
       <button :class="{ active: mobilePane === 'insights' && workspace !== 'content' }" @click="setMobilePane('insights')">统计 / 起手</button>
       <button v-if="publicationCode" :class="{ active: workspace === 'content' }" @click="setWorkspace('content')">公开内容</button>
-      <button class="mobile-saved-decks-nav-trigger" aria-haspopup="dialog" aria-controls="mobile-saved-decks-dialog" @click="mobileSavedDecksOpen = true">已保存 · {{ Object.keys(savedDecks).length }}</button>
+      <button class="mobile-saved-decks-nav-trigger" aria-haspopup="dialog" aria-controls="mobile-saved-decks-dialog" @click="mobileSavedDecksOpen = true">已保存 · {{ savedDirectoryTotal }}</button>
     </nav>
 
     <main v-if="loading" class="deck-loading">正在载入卡牌数据…</main>
@@ -998,16 +1113,20 @@ watch(() => platformState.account?.id, (current, previous) => {
         <p v-else-if="!detailCollapsed" class="empty-detail">选择卡牌后在此查看详情。</p>
       </aside>
       <section class="saved-decks-panel grand-panel" aria-label="已保存牌库">
-        <header><div><p class="kicker">已保存牌库</p><h2>选择牌库</h2></div><span>{{ Object.keys(savedDecks).length }} 个</span></header>
+        <header><div><p class="kicker">已保存牌库</p><h2>选择牌库</h2></div><span>{{ savedDirectoryTotal }} 个</span></header>
+        <form v-if="authenticatedEditor" class="saved-directory-search" @submit.prevent="searchSavedDirectory"><input v-model="savedDirectorySearch" type="search" maxlength="64" aria-label="搜索已保存牌库" placeholder="搜索牌库"><button type="submit" :disabled="savedDirectoryLoading">搜索</button></form>
+        <p v-if="savedDirectoryError" class="saved-directory-error" role="status">{{ savedDirectoryError }} <button type="button" :disabled="savedDirectoryLoading" @click="loadSavedDirectory(savedDirectory?.page ?? 1)">重试</button></p>
         <div class="saved-list">
-          <article v-for="deck in savedDecks" :key="deck.name" :class="{ active: deck.name === activeDeckName }">
-            <button type="button" @click="requestLoadDeck(deck)">
-              <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="`${deck.cardIds.length} 张主牌`" :selected="deck.name === activeDeckName"/>
+          <article v-for="deck in savedDirectoryDecks" :key="deck.id || deck.name" :class="{ active: deck.id ? deck.id === activeDeckId : deck.name === activeDeckName }">
+            <button type="button" :disabled="deckReadBusy || deckMutationBusy || deletingDeck" @click="requestLoadDeck(deck)">
+              <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="savedDeckCountLabel(deck)" :selected="deck.id ? deck.id === activeDeckId : deck.name === activeDeckName"/>
             </button>
-            <button type="button" class="delete" :aria-label="`删除牌库${deck.name}`" @click="requestDelete(deck)">×</button>
+            <button type="button" class="delete" :disabled="deckReadBusy || deckMutationBusy || deletingDeck" :aria-label="`删除牌库${deck.name}`" @click="requestDelete(deck)">×</button>
           </article>
-          <p v-if="!Object.keys(savedDecks).length">保存牌库后会显示在这里。</p>
+          <p v-if="savedDirectoryLoading">正在读取牌库…</p>
+          <p v-else-if="!savedDirectoryDecks.length && !savedDirectoryError">{{ savedDirectoryKeyword ? '没有匹配的牌库' : '保存牌库后会显示在这里。' }}</p>
         </div>
+        <nav v-if="authenticatedEditor && savedDirectory && savedDirectoryTotal" class="saved-directory-pages" aria-label="已保存牌库分页"><button type="button" :disabled="savedDirectoryLoading || savedDirectory.page <= 1" @click="loadSavedDirectory(savedDirectory.page - 1)">上一页</button><span>{{ savedDirectory.page }} / {{ savedDirectoryPages }}</span><button type="button" :disabled="savedDirectoryLoading || savedDirectory.page >= savedDirectoryPages" @click="loadSavedDirectory(savedDirectory.page + 1)">下一页</button></nav>
       </section>
       </div>
 
@@ -1121,14 +1240,18 @@ watch(() => platformState.account?.id, (current, previous) => {
     <div v-if="mobileSavedDecksOpen" class="builder-modal-mask mobile-saved-decks-mask" @click.self="mobileSavedDecksOpen = false">
       <section id="mobile-saved-decks-dialog" class="mobile-saved-decks-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-saved-decks-title">
         <header><div><p class="kicker">已保存牌库</p><h2 id="mobile-saved-decks-title">选择牌库</h2></div><button type="button" aria-label="关闭已保存牌库" autofocus @click="mobileSavedDecksOpen = false">×</button></header>
-        <p class="mobile-saved-decks-current">当前：<b>{{ activeDeckName || '尚未载入已保存牌库' }}</b><span>{{ Object.keys(savedDecks).length }} 个</span></p>
+        <p class="mobile-saved-decks-current">当前：<b>{{ activeDeckName || '尚未载入已保存牌库' }}</b><span>{{ savedDirectoryTotal }} 个</span></p>
+        <form v-if="authenticatedEditor" class="saved-directory-search" @submit.prevent="searchSavedDirectory"><input v-model="savedDirectorySearch" type="search" maxlength="64" aria-label="搜索已保存牌库" placeholder="搜索牌库"><button type="submit" :disabled="savedDirectoryLoading">搜索</button></form>
+        <p v-if="savedDirectoryError" class="saved-directory-error" role="status">{{ savedDirectoryError }} <button type="button" :disabled="savedDirectoryLoading" @click="loadSavedDirectory(savedDirectory?.page ?? 1)">重试</button></p>
         <div class="mobile-saved-decks-list">
-          <button v-for="deck in savedDecks" :key="deck.name" type="button" :class="{ active: deck.name === activeDeckName }" :aria-current="deck.name === activeDeckName ? 'true' : undefined" @click="chooseMobileSavedDeck(deck)">
-            <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="`${deck.cardIds.length} 张主牌`" :selected="deck.name === activeDeckName"/>
-            <span>{{ deck.name === activeDeckName ? '当前牌库' : '载入牌库' }}</span>
+          <button v-for="deck in savedDirectoryDecks" :key="deck.id || deck.name" type="button" :disabled="deckReadBusy || deckMutationBusy || deletingDeck" :class="{ active: deck.id ? deck.id === activeDeckId : deck.name === activeDeckName }" :aria-current="(deck.id ? deck.id === activeDeckId : deck.name === activeDeckName) ? 'true' : undefined" @click="chooseMobileSavedDeck(deck)">
+            <DeckProfile compact :master-id="deck.masterId" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :master-name="byId.get(deck.masterId)?.nameZh || deck.masterId" :meta="savedDeckCountLabel(deck)" :selected="deck.id ? deck.id === activeDeckId : deck.name === activeDeckName"/>
+            <span>{{ deckReadBusy ? '正在载入…' : (deck.id ? deck.id === activeDeckId : deck.name === activeDeckName) ? '当前牌库' : '载入牌库' }}</span>
           </button>
-          <p v-if="!Object.keys(savedDecks).length" class="mobile-saved-decks-empty">尚无已保存牌库。请先完成构筑并保存。</p>
+          <p v-if="savedDirectoryLoading" class="mobile-saved-decks-empty">正在读取牌库…</p>
+          <p v-else-if="!savedDirectoryDecks.length && !savedDirectoryError" class="mobile-saved-decks-empty">{{ savedDirectoryKeyword ? '没有匹配的牌库' : '尚无已保存牌库。请先完成构筑并保存。' }}</p>
         </div>
+        <nav v-if="authenticatedEditor && savedDirectory && savedDirectoryTotal" class="saved-directory-pages" aria-label="已保存牌库分页"><button type="button" :disabled="savedDirectoryLoading || savedDirectory.page <= 1" @click="loadSavedDirectory(savedDirectory.page - 1)">上一页</button><span>{{ savedDirectory.page }} / {{ savedDirectoryPages }}</span><button type="button" :disabled="savedDirectoryLoading || savedDirectory.page >= savedDirectoryPages" @click="loadSavedDirectory(savedDirectory.page + 1)">下一页</button></nav>
       </section>
     </div>
     <div v-if="pendingDeleteName" class="builder-modal-mask" @click.self="deletingDeck ? undefined : closePendingDelete()">
@@ -1149,6 +1272,9 @@ watch(() => platformState.account?.id, (current, previous) => {
 </template>
 
 <style scoped>
+.deck-side-column .saved-decks-panel{overflow-y:auto;overscroll-behavior:contain}.saved-decks-panel .saved-list{flex:none;overflow:visible}
+.deck-builder-shell .mobile-saved-decks-dialog{display:flex;flex-direction:column}
+.saved-directory-search{display:flex;flex:none;gap:6px;min-width:0;margin:0 0 8px}.saved-directory-search input{box-sizing:border-box;min-width:0;width:100%;min-height:40px;padding:8px;border:1px solid #52615d;background:#080f11;color:#eee}.saved-directory-search button,.saved-directory-pages button,.saved-directory-error button{flex:none;min-height:40px;padding:6px 10px;border:1px solid #52615d;background:#141e21;color:#eee;font:inherit;font-weight:700}.saved-directory-search input:focus-visible,.saved-directory-search button:focus-visible,.saved-directory-pages button:focus-visible,.saved-directory-error button:focus-visible{outline:2px solid #70d7df;outline-offset:2px}.saved-directory-pages{display:flex;flex:none;align-items:center;justify-content:space-between;gap:4px;margin-top:6px}.saved-directory-pages span{min-width:0;font-size:12px;white-space:nowrap}.saved-directory-error{flex:none;margin:0 0 6px;color:#efadb6;font-size:13px;overflow-wrap:anywhere}.saved-directory-pages button:disabled,.saved-directory-search button:disabled{opacity:.5}.saved-list{flex:1}.mobile-saved-decks-dialog{display:flex;flex-direction:column}.mobile-saved-decks-dialog>header,.mobile-saved-decks-current{flex:none}.mobile-saved-decks-dialog>.saved-directory-search,.mobile-saved-decks-dialog>.saved-directory-error,.mobile-saved-decks-dialog>.saved-directory-pages{margin:8px 12px}.mobile-saved-decks-list{flex:1}.mobile-saved-decks-dialog .saved-directory-search input,.mobile-saved-decks-dialog .saved-directory-search button,.mobile-saved-decks-dialog .saved-directory-pages button{min-height:44px}
 .saved-decks-panel{display:flex;min-width:0;min-height:0;flex-direction:column;overflow:hidden;color:#eee}.saved-decks-panel>header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}.saved-decks-panel>header span{color:#8e9995;font-size:12px;white-space:nowrap}@media(max-width:820px){.deck-file-actions{grid-template-columns:repeat(2,minmax(0,1fr))!important}.saved-decks-panel{margin-block:6px}}
 .selected-extra-cards{grid-template-rows:auto minmax(0,1fr)}
 .portrait-guide{position:fixed;z-index:3000;inset:0;display:grid;place-items:center;padding:max(18px,env(safe-area-inset-top)) max(18px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(18px,env(safe-area-inset-left));background:#020609dd;backdrop-filter:blur(8px)}.portrait-guide section{box-sizing:border-box;width:min(420px,100%);padding:22px;border:1px solid #d2b25c;background:#11191d;box-shadow:0 20px 70px #000;text-align:center}.portrait-guide small{color:#62c7ce;font-size:11px;font-weight:900;letter-spacing:.15em}.portrait-guide h2{margin:8px 0;font-size:22px}.portrait-guide p{color:#9aa5a3;font-size:13px;line-height:1.7}.portrait-guide button{min-width:140px;min-height:44px;margin-top:8px;border:1px solid #d2b25c;background:#d2b25c;color:#101313;font-weight:900}

@@ -5,7 +5,6 @@ import { l12State } from '@/l12/net'
 import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
 import { alternateArtApi, canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type EmailStatus, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type PlayerStatisticsRange, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
-import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
 import { masterProfileUrl } from '@/l12/specialAssets'
 import CardImage from '@/l12/CardImage.vue'
@@ -204,7 +203,6 @@ async function submitAuth() {
       auth.password = ''
       return
     }
-    await ensureOfficialPrebuiltDecks()
     const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
       && !route.query.redirect.startsWith('//')
       ? route.query.redirect : ''
@@ -230,7 +228,6 @@ async function submitUsernameChange() {
     usernameChange.currentPassword = ''; usernameChange.username = ''
     notice.value = result.message
     if (!platformState.account?.mustChangePassword) {
-      await ensureOfficialPrebuiltDecks()
       await loadAccountData()
       const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
         && !route.query.redirect.startsWith('//') ? route.query.redirect : ''

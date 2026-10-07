@@ -122,15 +122,30 @@ try {
   await page.addInitScript(() => localStorage.setItem('l12-account', JSON.stringify({ id: 'author', username: '验收作者', role: 'player', createdAt: '', publicHistory: true })))
   const errors = []
   const failedRequests = []
-  const waitForSection = async section => page.waitForFunction(async id => {
+  const waitForSection = async section => page.waitForFunction(id => {
     const element = document.getElementById(`public-deck-${id}`)
     if (!element) return false
     const bounds = element.getBoundingClientRect()
-    if (bounds.top < -1 || bounds.top >= innerHeight || bounds.bottom <= 0) return false
-    for (let frame = 0; frame < 4; frame++) await new Promise(resolve => requestAnimationFrame(resolve))
-    const settled = element.getBoundingClientRect()
-    return Math.abs(settled.top - bounds.top) <= 0.5 && settled.top >= -1 && settled.top < innerHeight
+    const states = window.__l12ContentAnchorStates ||= {}
+    if (bounds.top < -1 || bounds.top >= innerHeight || bounds.bottom <= 0) {
+      delete states[id]
+      return false
+    }
+    const state = states[id]
+    if (!state || Math.abs(state.top - bounds.top) > 0.5) {
+      states[id] = { top: bounds.top, at: performance.now() }
+      return false
+    }
+    return performance.now() - state.at >= 200
   }, section, { timeout: 5000 })
+  const anchoredCaptures = []
+  const captureSection = async (section, viewport, filename) => {
+    const bounds = await page.locator(`[data-detail-section="${section}"]`).boundingBox()
+    assert(bounds && bounds.y >= -1 && bounds.y < viewport.height,
+      `${section} must actually be in the screenshot viewport at ${suffix(viewport)}`)
+    anchoredCaptures.push({ section, viewport, bounds })
+    await page.screenshot({ path: path.join(output, filename), fullPage: false })
+  }
   page.on('pageerror', error => errors.push(error.message))
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || 'failed'}`))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
@@ -201,10 +216,11 @@ try {
     await page.getByRole('button', { name: '指南', exact: true }).click()
     await waitForSection('guide')
     assert.match(await page.locator('[data-detail-section="guide"]').innerText(), /构筑思路[\s\S]*起手建议[\s\S]*常见展开/)
+    await captureSection('guide', viewport, `guide-${suffix(viewport)}.png`)
     await page.getByRole('button', { name: '对局建议', exact: true }).click()
     await waitForSection('matchups')
     assert.equal(await page.locator('.matchup-city .deck-profile__portrait').count(), 3, `matchup avatar count mismatch at ${suffix(viewport)}`)
-    await page.screenshot({ path: path.join(output, `guide-${suffix(viewport)}.png`), fullPage: true })
+    await captureSection('matchups', viewport, `matchups-${suffix(viewport)}.png`)
     await page.getByRole('button', { name: '对局', exact: true }).click()
     await waitForSection('matches')
     const statistics = await page.locator('[data-detail-section="matches"]').innerText()
@@ -212,11 +228,11 @@ try {
     assert.equal(await page.locator('.match-stat-list article').count(), 2)
     assert.equal(await page.locator('[data-detail-section="matches"] a').count(), 0, '匿名统计不得提供单局或录像入口')
     assert.doesNotMatch(statistics, /match-|bind|author|验收作者|账号|录像|回放/)
-    await page.screenshot({ path: path.join(output, `statistics-${suffix(viewport)}.png`), fullPage: true })
+    await captureSection('matches', viewport, `statistics-${suffix(viewport)}.png`)
     await page.getByRole('button', { name: '起手', exact: true }).click()
     await waitForSection('hands')
     assert.equal(await page.locator('.opening-hand article').count(), 6, `opening hand count mismatch at ${suffix(viewport)}`)
-    await page.screenshot({ path: path.join(output, `hands-${suffix(viewport)}.png`), fullPage: true })
+    await captureSection('hands', viewport, `hands-${suffix(viewport)}.png`)
     report.push({ viewport, guideHeight: await page.locator('[data-detail-section="guide"]').evaluate(element => element.scrollHeight) })
   }
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
@@ -240,7 +256,7 @@ try {
     if (scenario === 'smallStats') assert.match(copy, /样本不足[\s\S]*3 场/)
     else assert.match(copy, /(?:过去|最近) 90 天暂无可核验/)
     assert.equal(await statistics.locator('a').count(), 0)
-    await page.screenshot({ path: path.join(output, `statistics-${scenario}-390x844.png`), fullPage: true })
+    await captureSection('matches', { width: 390, height: 844 }, `statistics-${scenario}-390x844.png`)
   }
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport)
@@ -253,10 +269,11 @@ try {
     await waitForSection('matches')
     assert.equal(await page.locator('.match-stat-list article').count(), 2, 'Guest retains public anonymous statistics')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
-    await page.screenshot({ path: path.join(output, `guest-statistics-${suffix(viewport)}.png`), fullPage: true })
+    await captureSection('matches', viewport, `guest-statistics-${suffix(viewport)}.png`)
   }
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
-  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, errors }, null, 2))
+  assert.equal(anchoredCaptures.length, 28, 'All guide, matchup, statistics and hand captures require live bounds')
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, anchoredCaptures, errors }, null, 2))
   console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')).length }, null, 2))
 } finally {
   await browser?.close()

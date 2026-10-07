@@ -53,6 +53,35 @@ const roomBase = {
     players: [{ name: '甲', playerIndex: 0, connected: true }, { name: '乙', playerIndex: 1, connected: false }] },
 }
 
+function ownedMetadataCheckIn(source) {
+  const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1]
+  if (!script) return false
+  const file = ts.createSourceFile('owned-checkin.ts', script, ts.ScriptTarget.Latest, true)
+  if (file.parseDiagnostics.length) return false
+  const fn = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'preCheckIn')
+  if (!fn?.body) return false
+  const declaration = fn.body.statements.filter(ts.isVariableStatement).flatMap(node => node.declarationList.declarations)
+    .find(node => node.name.getText(file) === 'deck')
+  if (declaration?.initializer?.getText(file) !== 'selectedDeck.value') return false
+  const guard = fn.body.statements.findIndex(node => ts.isIfStatement(node)
+    && node.expression.getText(file) === '!deck?.id' && node.thenStatement.getText(file).includes('return'))
+  const calls = []
+  function visit(node) {
+    if (ts.isCallExpression(node) && node.expression.getText(file) === 'tournamentApi.preCheckIn') calls.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(fn.body)
+  return guard >= 0 && calls.length === 1 && calls[0].arguments.length === 5
+    && calls[0].arguments.map(node => node.getText(file)).join('|') === "item.id|item.version|deck.name|''|deck.id"
+    && calls[0].pos > fn.body.statements[guard].end
+    && source.includes('loadPrivateDeckSummaryPage')
+}
+for (const [before, after] of [["deck.name, '', deck.id", "deck.name, '', deck.name"],
+  ['if (!deck?.id)', 'if (false)'], ['const deck = selectedDeck.value', 'const deck = savedDecks.value[0]']]) {
+  const changed = detail.replace(before, after)
+  if (changed === detail || ownedMetadataCheckIn(changed)) throw new Error(`Owned check-in guard must reject ${after}`)
+}
+
 const checks = [
   ['player tournament pages use the shared site visual tokens', visualSources.every(source => source.includes('--l12-ui-')) && visualSources.every(source => !/var\(--(?:border|panel|accent|muted|danger)\)/.test(source))],
   ['player tournament pages share the 700px compact boundary', visualSources.every(source => source.includes('@media(max-width:700px)')) && visualSources.every(source => !/@media\(max-width:(?:650|680|720|760|850)px\)/.test(source))],
@@ -86,7 +115,7 @@ const checks = [
   ['check-in range matches server authority', wizard.includes('v-model.number="form.checkInMinutes" type="number" min="1" max="60"')],
   ['admin tournament workbench has an explicit admin-only name', router.includes("import('@/l12/site/AdminTournamentWorkbench.vue')") && !router.includes('TournamentCenterPage')],
   ['player route uses hub and stable detail routes', router.includes("component: () => import('@/l12/site/TournamentHubPage.vue')") && router.includes("path: '/battle/tournaments/:code'")],
-  ['pre-check-in binds an owned deck ID rather than a reusable name', detail.includes('syncSavedDecksFromAccount') && detail.includes('v-model="deckId"') && detail.includes("preCheckIn(item.id, item.version, deck.name, '', deck.id!)") && admin.includes('v-model="deckDrafts[detail.id].id"') && admin.includes("preCheckIn(item.id, item.version, selected.name, '', selected.id)") && platform.includes('expectedVersion, deckName, deckCode, deckId')],
+  ['pre-check-in binds an owned deck ID rather than a reusable name', ownedMetadataCheckIn(detail) && detail.includes('v-model="deckId"') && admin.includes('v-model="deckDrafts[detail.id].id"') && admin.includes("preCheckIn(item.id, item.version, selected.name, '', selected.id)") && platform.includes('expectedVersion, deckName, deckCode, deckId')],
   ['critical tournament actions use inline reasons', !detail.includes('prompt(') && !judge.includes('prompt(') && !management.includes('confirm(') && detail.includes('participantReasons[person.accountId]') && judge.includes('appealReasons[item.id]')],
   ['organizer transfer uses eligible named candidates', management.includes('transferCandidates') && management.includes('选择本场裁判或主办者好友')],
   ['career history is visible and server-paged', hub.includes('个人赛事履历') && hub.includes('career.totalPages') && platform.includes("params.set('pageSize', String(query.pageSize))")],

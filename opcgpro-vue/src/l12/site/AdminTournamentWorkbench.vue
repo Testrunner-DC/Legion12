@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { loadDeckCatalog, syncSavedDecksFromAccount, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { deckErrorBelongsToCurrentAccount, loadDeckCatalog, loadPrivateDeckSummaryPage,
+  type DeckCard, type PrivateDeckSummary, type PrivateDeckSummaryPage } from '@/l12/decks'
 import { connect, enterTournamentMatch, l12State, spectateTournamentMatch } from '@/l12/net'
 import ConstructionRuleEditor from './ConstructionRuleEditor.vue'
 import DisasterPoolPicker from './DisasterPoolPicker.vue'
@@ -34,10 +35,18 @@ const platformVersion = ref(0)
 const tournaments = ref<Tournament[]>([])
 const friends = ref<PlatformFriend[]>([])
 const catalog = ref<DeckCard[]>([])
-const savedDecks = ref<SavedL12Deck[]>([])
+const savedDecks = ref<PrivateDeckSummary[]>([])
+const savedDeckIds = computed(() => new Set(savedDecks.value.map(deck => deck.id)))
+const deckDirectory = ref<PrivateDeckSummaryPage | null>(null)
+const deckPage = ref(1)
+const deckSearchInput = ref('')
+const deckSearch = ref('')
+const deckLoading = ref(false)
+const deckError = ref('')
 const legacyCandidates = ref<LegacyTournamentInput[]>([])
 const legacyPreview = ref<TournamentLegacyImport | null>(null)
 const deckDrafts = reactive<Record<string, { id: string }>>({})
+const selectedDeckMetadata = reactive<Record<string, PrivateDeckSummary | undefined>>({})
 const rulingReasons = reactive<Record<string, string>>({})
 const participantReasons = reactive<Record<string, string>>({})
 const staffDraft = ref<string[]>([])
@@ -58,6 +67,7 @@ const form = reactive({
 const timeControlMinutes = reactive(tournamentTimeControlMinutes(form.timeControl))
 
 const accountId = computed(() => platformState.account?.id ?? '')
+const deckPageCount = computed(() => Math.max(1, Math.ceil((deckDirectory.value?.total ?? 0) / 30)))
 const detail = computed(() => tournaments.value.find(item => item.id === detailId.value) ?? null)
 const currentRound = computed(() => detail.value?.rounds.at(-1) ?? null)
 const canImportLegacy = computed(() => hasPermission('tournaments.import-legacy'))
@@ -94,33 +104,58 @@ const canCreateNextRound = (item: Tournament, round: TournamentRound) => {
 }
 
 function errorText(error: unknown) { return error instanceof Error ? error.message : '赛事请求失败，请稍后重试' }
+let componentAlive = true
+let actorEpoch = 0
+let tournamentLoadEpoch = 0
+let deckLoadEpoch = 0
+function actorIsCurrent(account: string | undefined, token: string | null | undefined, path: string, epoch: number) {
+  return componentAlive && account === platformState.account?.id && token === platformState.token
+    && path === route.fullPath && epoch === actorEpoch
+}
+function selectedDeckFor(tournamentId: string) {
+  const id = deckDrafts[tournamentId]?.id
+  if (!id) return undefined
+  const remembered = selectedDeckMetadata[tournamentId]
+  return remembered?.id === id ? remembered : savedDecks.value.find(deck => deck.id === id)
+}
+function selectDeckDraft(tournamentId: string) {
+  const selected = savedDecks.value.find(deck => deck.id === deckDrafts[tournamentId]?.id)
+  if (selected) selectedDeckMetadata[tournamentId] = selected
+}
 function hydrateDrafts(items: Tournament[]) {
   for (const item of items) {
     const own = item.participants.find(person => person.accountId === accountId.value)
-    if (own?.deck) deckDrafts[item.id] = { id: '' }
-    else if (!deckDrafts[item.id] && savedDecks.value.length)
-      deckDrafts[item.id] = { id: savedDecks.value[0].id || '' }
+    if (own?.deck) {
+      deckDrafts[item.id] = { id: '' }
+      delete selectedDeckMetadata[item.id]
+    } else if (!deckDrafts[item.id]) deckDrafts[item.id] = { id: '' }
   }
 }
-async function refreshTournaments() {
+async function refreshTournaments(extraCurrent: () => boolean = () => true) {
   if (!platformState.account) return
+  const requestEpoch = ++tournamentLoadEpoch, account = platformState.account.id, token = platformState.token
+  const path = route.fullPath, actor = actorEpoch
+  const baseCurrent = () => actorIsCurrent(account, token, path, actor) && requestEpoch === tournamentLoadEpoch
+  const current = () => baseCurrent() && extraCurrent()
   const baselineVersions = new Map(tournaments.value.map(item => [item.id, item.version]))
   loading.value = true
   try {
     const result = await tournamentApi.list()
+    if (!current()) return
     platformVersion.value = Math.max(platformVersion.value, result.platformVersion)
     tournaments.value = mergeTournamentSnapshot(result.items, tournaments.value, baselineVersions)
     hydrateDrafts(tournaments.value)
     if (detailId.value && !tournaments.value.some(item => item.id === detailId.value)) detailId.value = null
-  } finally { loading.value = false }
+  } finally { if (baseCurrent()) loading.value = false }
 }
-async function syncAfterWrite(result: Tournament, success: string) {
+async function syncAfterWrite(result: Tournament, success: string, current: () => boolean = () => true) {
+  if (!current()) return
   const index = tournaments.value.findIndex(item => item.id === result.id)
   if (index >= 0) tournaments.value[index] = result
   else tournaments.value.push(result)
   hydrateDrafts([result])
-  notice.value = success
-  await refreshTournaments()
+  await refreshTournaments(current)
+  if (current()) notice.value = success
 }
 const tournamentActionKey = (item: Tournament) => `tournament:${item.id}`
 const busy = computed(() => detail.value ? actionPending(tournamentActionKey(detail.value)) : actionBusy.value)
@@ -132,26 +167,65 @@ const transferCandidates = computed(() => {
   return [...candidates].map(([accountId, username]) => ({ accountId, username }))
 })
 async function runAction(key: string, work: () => Promise<void>) {
+  const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const current = () => actorIsCurrent(account, token, path, actor)
   await runGatedAction(key, async () => {
-    try { await work() } catch (error) { notice.value = errorText(error) }
+    try { await work() } catch (error) { if (current()) notice.value = errorText(error) }
   })
 }
 async function loadFriends() {
   if (!platformState.account) return
-  try { friends.value = await friendApi.friends() } catch (error) { notice.value = errorText(error) }
+  const account = platformState.account.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const current = () => actorIsCurrent(account, token, path, actor)
+  try { const result = await friendApi.friends(); if (current()) friends.value = result }
+  catch (error) { if (current()) notice.value = errorText(error) }
 }
 async function openDetail(item: Tournament) {
   detailId.value = item.id
   staffDraft.value = item.referees.map(person => person.accountId)
   staffReason.value = ''
   roundReason.value = ''
+  const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const currentView = () => actorIsCurrent(account, token, path, actor) && detailId.value === item.id
   try {
     const current = await tournamentApi.getByCode(item.code)
+    if (!currentView()) return
     const index = tournaments.value.findIndex(candidate => candidate.id === current.id)
     if (index >= 0) tournaments.value[index] = current
     hydrateDrafts([current])
     staffDraft.value = current.referees.map(person => person.accountId)
-  } catch (error) { notice.value = errorText(error) }
+  } catch (error) { if (currentView()) notice.value = errorText(error) }
+}
+async function loadDeckDirectory(requestedPage = deckPage.value) {
+  const requestEpoch = ++deckLoadEpoch, account = platformState.account?.id, token = platformState.token
+  const path = route.fullPath, actor = actorEpoch
+  if (props.adminMode || !account || !token) {
+    savedDecks.value = []; deckDirectory.value = null; deckError.value = ''; deckLoading.value = false
+    return
+  }
+  const current = () => actorIsCurrent(account, token, path, actor) && requestEpoch === deckLoadEpoch
+  deckLoading.value = true; deckError.value = ''
+  try {
+    const page = await loadPrivateDeckSummaryPage({ page: requestedPage, pageSize: 30,
+      keyword: deckSearch.value || undefined, sort: 'latest' })
+    if (!current()) return
+    deckDirectory.value = page; deckPage.value = page.page; savedDecks.value = page.items
+    for (const [tournamentId, draft] of Object.entries(deckDrafts)) {
+      const refreshedSelection = page.items.find(deck => deck.id === draft.id)
+      if (refreshedSelection) selectedDeckMetadata[tournamentId] = refreshedSelection
+    }
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error))
+      deckError.value = errorText(error)
+  } finally { if (current()) deckLoading.value = false }
+}
+function applyDeckSearch() {
+  deckSearch.value = deckSearchInput.value.trim(); deckPage.value = 1
+  void loadDeckDirectory(1)
+}
+function changeDeckPage(change: number) {
+  const next = Math.max(1, Math.min(deckPageCount.value, deckPage.value + change))
+  if (next !== deckPage.value) void loadDeckDirectory(next)
 }
 function toggleReferee(account: PlatformFriend) {
   const index = form.referees.indexOf(account.accountId)
@@ -194,10 +268,14 @@ function join(item: Tournament) { void runAction(tournamentActionKey(item), asyn
 }) }
 function saveDeck(item: Tournament, person: TournamentParticipant) { void runAction(tournamentActionKey(item), async () => {
   if (person.accountId !== accountId.value) throw new Error('只能为自己的报名完成赛前签到')
-  const selected = savedDecks.value.find(deck => deck.id && deck.id === deckDrafts[item.id]?.id)
+  const selected = selectedDeckFor(item.id)
   if (!selected?.id) throw new Error('请从账号牌库选择牌库')
+  const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const actorCurrent = () => actorIsCurrent(account, token, path, actor)
+  const selectionCurrent = () => actorCurrent() && deckDrafts[item.id]?.id === selected.id
   const updated = await tournamentApi.preCheckIn(item.id, item.version, selected.name, '', selected.id)
-  await syncAfterWrite(updated, '赛前签到完成，牌库已校验并锁定')
+  if (!selectionCurrent()) return
+  await syncAfterWrite(updated, '赛前签到完成，牌库已校验并锁定', actorCurrent)
 }) }
 function dropRegistration(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   await syncAfterWrite(await tournamentApi.drop(item.id, item.version), '已退出该赛事')
@@ -336,36 +414,59 @@ function enterMatch(item: Tournament, match: TournamentMatch, spectate = false) 
 }) }
 
 watch(() => l12State.notice, value => { if (value) notice.value = value })
-const onTournamentResource = () => { void refreshTournaments().catch(error => { notice.value = errorText(error) }) }
+watch(() => [platformState.account?.id, platformState.token], () => {
+  actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
+  loading.value = false; deckLoading.value = false; savedDecks.value = []; deckDirectory.value = null
+  deckPage.value = 1; deckSearch.value = ''; deckSearchInput.value = ''; deckError.value = ''
+  for (const key of Object.keys(deckDrafts)) delete deckDrafts[key]
+  for (const key of Object.keys(selectedDeckMetadata)) delete selectedDeckMetadata[key]
+  if (!platformState.account) return
+  const actor = actorEpoch
+  void refreshTournaments().catch(error => { if (componentAlive && actor === actorEpoch) notice.value = errorText(error) })
+  if (!props.adminMode && platformState.token) void loadDeckDirectory(1)
+}, { flush: 'sync' })
+watch(() => route.fullPath, () => {
+  actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
+  loading.value = false; deckLoading.value = false
+}, { flush: 'sync' })
+const onTournamentResource = () => {
+  const actor = actorEpoch
+  void refreshTournaments().catch(error => { if (componentAlive && actor === actorEpoch) notice.value = errorText(error) })
+}
 const onVisibility = () => { if (document.visibilityState === 'visible') onTournamentResource() }
 
 onMounted(async () => {
   window.addEventListener('l12-resource-tournaments', onTournamentResource)
   document.addEventListener('visibilitychange', onVisibility)
   if (!platformState.account) { notice.value = '请先登录账号后使用赛事中心'; return }
+  const account = platformState.account.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
+  const current = () => actorIsCurrent(account, token, path, actor)
   if (props.adminMode) {
-    try { await refreshTournaments() } catch (error) { notice.value = errorText(error) }
+    try { await refreshTournaments() } catch (error) { if (current()) notice.value = errorText(error) }
     return
   }
   legacyCandidates.value = readLegacyCandidates()
   try {
-    const [, cards, decks] = await Promise.all([refreshTournaments(), loadDeckCatalog(), syncSavedDecksFromAccount()])
+    const [, cards] = await Promise.all([refreshTournaments(), loadDeckCatalog(), loadDeckDirectory(1)])
+    if (!current()) return
     const [, policy] = await Promise.all([loadFriends(), getEffectiveOperationsPolicy()])
+    if (!current()) return
     catalog.value = cards
-    savedDecks.value = Object.values(decks)
     hydrateDrafts(tournaments.value)
     form.disasterCardIds = [...policy.disasterCardIds]
     form.cardRestrictions = policy.cardRestrictions.map(item => ({ ...item }))
     const sharedCode = typeof route.query.code === 'string' ? route.query.code.trim() : ''
     if (sharedCode) {
       const shared = await tournamentApi.getByCode(sharedCode)
+      if (!current()) return
       const index = tournaments.value.findIndex(item => item.id === shared.id)
       if (index >= 0) tournaments.value[index] = shared; else tournaments.value.unshift(shared)
       await openDetail(shared)
     }
-  } catch (error) { notice.value = errorText(error) }
+  } catch (error) { if (current()) notice.value = errorText(error) }
 })
 onBeforeUnmount(() => {
+  componentAlive = false; actorEpoch++; tournamentLoadEpoch++; deckLoadEpoch++
   window.removeEventListener('l12-resource-tournaments', onTournamentResource)
   document.removeEventListener('visibilitychange', onVisibility)
 })
@@ -396,7 +497,7 @@ onBeforeUnmount(() => {
     <div v-if="detail" class="mask" @click.self="detailId=null"><section class="detail">
       <header><div><small>{{ detail.code }} · v{{ detail.version }}</small><h2>{{ detail.name }}</h2></div><button @click="detailId=null">×</button></header><div class="summary"><span>{{ statusText(detail.status) }}</span><span>{{ formatText(detail.format) }}</span><span v-if="detail.swissRounds">计划 {{ detail.swissRounds }} 轮瑞士</span><span v-if="detail.cutSize">Cut {{ detail.cutSize }}</span><span>{{ disasterText(detail.rules.disasterMode) }}</span><span>{{ deckVisibilityText(detail.rules.deckVisibility) }}</span><span>{{ detail.registrationVisibility==='public'?'报名公开':'报名名单限定' }}</span><span>已报名 {{ detail.counts.registered }} · 待赛前签到 {{ detail.counts.pendingCheckIn }} · 已锁牌 {{ detail.counts.checkedIn }} · 已移除 {{ detail.counts.removed }}</span><span>{{ tournamentTimeControlLabel(detail.timeControl) }}</span><span>每轮签到 {{ detail.checkInMinutes }} 分钟 · 迟到宽限 {{ detail.lateGraceMinutes }} 分钟</span><span v-if="detail.usesLegacyRoundClock">旧赛事沿用原桌次截止时间</span><span v-if="detail.legacyImported">已导入旧赛事</span></div><p>{{ detail.description || '赛事方尚未发布说明。' }}</p><section class="rules"><b>规则快照：{{ detail.rules.ruleset }}</b><span>天灾池 {{ detail.rules.disasterCardIds.length }} 张</span><span>构筑规则 {{ detail.rules.cardRestrictions.length }} 条（含通用/主宰专属）</span><span>补充说明：{{ detail.rules.banList || '无' }}</span><span>快照 {{ detail.rules.hash.slice(0,12) }}</span><span>计划开始：{{ detail.startAt ? new Date(detail.startAt).toLocaleString() : '由主办者通知' }}</span></section>
       <h3>本场工作人员</h3><div class="chips"><span>主办者 · {{ detail.organizerName }}</span><span v-for="person in detail.referees" :key="person.accountId">裁判 · {{ person.username }}</span></div><section v-if="detail.status !== 'completed' && isOrganizer(detail)" class="staff-editor"><button v-for="friend in friends" :key="friend.accountId" type="button" :class="{selected:staffDraft.includes(friend.accountId)}" @click="toggleStaffDraft(friend)">{{ friend.username }}</button><input v-model="staffReason" placeholder="本场裁判变更理由（写入审计）"/><button :disabled="actionPending(tournamentActionKey(detail))" @click="saveStaff(detail)">保存本场裁判</button><select v-model="transferAccountId"><option value="">选择接任主办者</option><option v-for="candidate in transferCandidates" :key="candidate.accountId" :value="candidate.accountId">{{ candidate.username }}</option></select><input v-model="transferReason" placeholder="主办交接说明"/><button :disabled="busy" @click="requestOrganizerTransfer(detail)">发起主办交接</button></section><section v-if="detail.pendingOrganizerTransfer" class="pending"><b>主办交接：{{ detail.pendingOrganizerTransfer.fromUsername }} → {{ detail.pendingOrganizerTransfer.toUsername }}</b><p>{{ detail.pendingOrganizerTransfer.reason }} · {{ new Date(detail.pendingOrganizerTransfer.expiresAt).toLocaleString() }} 前有效</p><footer v-if="detail.pendingOrganizerTransfer.toAccountId===accountId"><button class="gold" :disabled="busy" @click="decideOrganizerTransfer(detail,true)">确认接任</button><button :disabled="busy" @click="decideOrganizerTransfer(detail,false)">拒绝</button></footer></section>
-      <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>#{{ person.seed || '—' }} · {{ person.username }}<em v-if="person.removed"> · 已移除</em><em v-else-if="person.dropped"> · 已退赛</em><em v-else-if="person.eliminated"> · 已淘汰</em></b><span>{{ person.tournamentCheckedInAt ? '赛前已签到锁牌' : '待赛前签到' }}</span><template v-if="!props.adminMode&&person.accountId===accountId&&detail.status==='registration'&&!person.tournamentCheckedInAt&&deckDrafts[detail.id]"><select v-model="deckDrafts[detail.id].id"><option disabled value="">选择账号牌库</option><option v-for="deck in savedDecks" :key="deck.id || deck.name" :value="deck.id">{{ deck.name }}</option></select><button class="gold" :disabled="actionPending(tournamentActionKey(detail))||!deckDrafts[detail.id].id" @click="saveDeck(detail,person)">签到并锁定牌库</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.masterId }} · {{ person.deck.hash.slice(0,12) }}</code></template><em v-else>尚未签到锁牌或牌库不可见</em><template v-if="(isOrganizer(detail)||canGloballyManage)&&detail.status!=='completed'&&person.accountId!==detail.organizerAccountId"><input v-model="participantReasons[person.accountId]" placeholder="移除或解除限制理由"/><button v-if="!person.removed" class="danger" :disabled="busy" @click="removeParticipant(detail,person,false)">移出赛事</button><button v-if="!person.removed" class="danger" :disabled="busy" @click="removeParticipant(detail,person,true)">移出并禁报名</button><button v-if="person.registrationBanned" :disabled="busy" @click="unbanParticipant(detail,person)">解除禁报名</button></template></div></div>
+      <h3>参赛人员与牌库快照</h3><div class="participants"><div v-for="person in detail.participants" :key="person.accountId"><b>#{{ person.seed || '—' }} · {{ person.username }}<em v-if="person.removed"> · 已移除</em><em v-else-if="person.dropped"> · 已退赛</em><em v-else-if="person.eliminated"> · 已淘汰</em></b><span>{{ person.tournamentCheckedInAt ? '赛前已签到锁牌' : '待赛前签到' }}</span><template v-if="!props.adminMode&&person.accountId===accountId&&detail.status==='registration'&&!person.tournamentCheckedInAt&&deckDrafts[detail.id]"><div class="deck-picker"><form @submit.prevent="applyDeckSearch"><input v-model="deckSearchInput" aria-label="搜索账号牌库" placeholder="按牌库名称搜索" :disabled="deckLoading || actionPending(tournamentActionKey(detail))"><button type="submit" :disabled="deckLoading || actionPending(tournamentActionKey(detail))">搜索</button></form><select v-model="deckDrafts[detail.id].id" aria-label="选择账号牌库" :disabled="deckLoading || actionPending(tournamentActionKey(detail))" @change="selectDeckDraft(detail.id)"><option disabled value="">选择账号牌库</option><option v-if="selectedDeckFor(detail.id) && !savedDeckIds.has(selectedDeckFor(detail.id)?.id || '')" :value="selectedDeckFor(detail.id)?.id">{{ selectedDeckFor(detail.id)?.name }}（当前选择）</option><option v-for="deck in savedDecks" :key="deck.id" :value="deck.id">{{ deck.name }}</option></select><div class="deck-pages"><button type="button" :disabled="deckLoading || deckPage <= 1" @click="changeDeckPage(-1)">上一页</button><span>第 {{ deckPage }} / {{ deckPageCount }} 页 · 共 {{ deckDirectory?.total ?? 0 }} 副</span><button type="button" :disabled="deckLoading || deckPage >= deckPageCount" @click="changeDeckPage(1)">下一页</button></div><em v-if="deckLoading">正在读取牌库目录…</em><em v-else-if="deckError" class="deck-error" role="alert">{{ deckError }}</em><em v-else-if="deckDirectory && !deckDirectory.total">没有找到牌库，请调整搜索词或先到牌库保存。</em></div><button class="gold" :disabled="deckLoading||actionPending(tournamentActionKey(detail))||!selectedDeckFor(detail.id)?.id" @click="saveDeck(detail,person)">签到并锁定牌库</button></template><template v-else-if="person.deck"><span>{{ person.deck.name }}</span><code>{{ person.deck.masterId }} · {{ person.deck.hash.slice(0,12) }}</code></template><em v-else>尚未签到锁牌或牌库不可见</em><template v-if="(isOrganizer(detail)||canGloballyManage)&&detail.status!=='completed'&&person.accountId!==detail.organizerAccountId"><input v-model="participantReasons[person.accountId]" placeholder="移除或解除限制理由"/><button v-if="!person.removed" class="danger" :disabled="busy" @click="removeParticipant(detail,person,false)">移出赛事</button><button v-if="!person.removed" class="danger" :disabled="busy" @click="removeParticipant(detail,person,true)">移出并禁报名</button><button v-if="person.registrationBanned" :disabled="busy" @click="unbanParticipant(detail,person)">解除禁报名</button></template></div></div>
       <template v-if="standingSnapshots.length"><h3>瑞士排名快照</h3><details v-for="snapshotRound in standingSnapshots" :key="snapshotRound.id" class="standing-snapshot" :open="snapshotRound.number===standingSnapshots.at(-1)?.number"><summary>第 {{ snapshotRound.number }} 轮排名 · {{ snapshotRound.standingsCapturedAt ? new Date(snapshotRound.standingsCapturedAt).toLocaleString() : '已存档' }}<b v-if="detail.finalSwissStandings.length&&snapshotRound.number===standingSnapshots.at(-1)?.number"> · 最终瑞士排名</b></summary><div class="standings"><div class="standing-head"><b>名次</b><b>玩家</b><b>胜-负-和</b><b>对手分</b><b>对手的对手分</b><b>种子</b></div><div v-for="entry in snapshotRound.standings" :key="entry.accountId"><b>#{{ entry.rank }}</b><span>{{ entry.username }}</span><span>{{ entry.wins }}-{{ entry.losses }}-{{ entry.draws }}<small v-if="entry.byes"> · 轮空 {{ entry.byes }}</small></span><span>{{ entry.opponentScore }}</span><span>{{ entry.opponentsOpponentScore }}</span><span>{{ entry.seed }}</span></div></div></details></template>
       <template v-if="detail.eliminationBracket.length"><h3>淘汰树</h3><p class="scroll-hint">横向滚动查看后续轮次</p><div class="bracket" tabindex="0" aria-label="淘汰树，可横向滚动"><section v-for="round in detail.eliminationBracket" :key="round.number"><b>淘汰第 {{ round.number }} 轮</b><article v-for="match in round.matches" :key="match.id"><span>{{ match.playerAName }}</span><i>VS</i><span>{{ match.playerBName }}</span><em>{{ resultText(match.result) || '待定' }}</em></article></section></div></template>
       <template v-if="currentRound"><h3>第 {{ currentRound.number }} 轮 · {{ currentRound.stage==='elimination'?'淘汰赛':'瑞士轮' }} · {{ currentRound.status==='checkin'?'签到/准备':currentRound.status==='running'?'对局中':'已完成' }}</h3><div class="round-controls" v-if="canManageTournament(detail)&&detail.status!=='completed'"><input v-model="roundReason" placeholder="开轮、暂停或下一轮的操作理由（写入审计）"/><button v-if="currentRound.status==='checkin'" class="gold" :disabled="busy" @click="startRound(detail,currentRound)">开始本轮（已准备桌启动）</button><button v-if="currentRound.status==='running'" :disabled="busy" @click="pauseRound(detail,currentRound)">{{ currentRound.paused?'恢复赛事推进':'暂停赛事推进' }}</button><button v-if="currentRound.status==='completed'&&canCreateNextRound(detail,currentRound)" :disabled="busy" @click="nextRound(detail)">生成下一轮配对</button></div>
@@ -415,4 +516,5 @@ onBeforeUnmount(() => {
 .time-control{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));align-items:end}.time-control label{min-width:0}.staff-editor select{min-height:40px;padding:8px;border:1px solid #4b483d;background:#080a0a;color:#fff}.participants .danger{border-color:#8e343d;background:#321319;color:#f3b3ba}
 .scroll-hint{margin:0 18px 6px;color:#d5b55d!important;font-size:12px!important}.bracket{max-width:calc(100% - 36px);overscroll-behavior-inline:contain;scrollbar-gutter:stable}.bracket:focus-visible{outline:2px solid #d5b55d;outline-offset:2px}
 @media(max-width:520px){.tournament-page{padding:14px 10px 34px}.page-head{gap:8px;padding-bottom:12px}.page-head small,.create-panel small,.registry small,.detail small{font-size:10px;letter-spacing:.13em}.page-head h1{margin:3px 0;font-size:24px}.page-head p,.create-panel p,.migration p,.pending p,.registry p,.migration-preview,.registry dt,.registry dd,.form-grid label,.form-grid fieldset span,.summary span,.chips span,.detail>p,.rules,.participants span,.participants em,.standings>div,.bracket article,.matches article>header span,.matches p,.matches li{font-size:12px}.page-head button,.create-action{min-height:44px;padding:8px 11px;font-size:12px}.migration{gap:7px;margin-top:10px;padding:10px}.migration button{min-height:44px;padding:6px 8px;font-size:12px}.tabs{margin-top:10px}.tabs button{min-height:44px;padding:8px;font-size:12px}.registry,.create-panel{margin-top:10px}.registry>input{min-height:44px;width:calc(100% - 20px);margin:10px;padding:8px;font-size:12px}.registry>article{gap:10px;padding:11px}.registry h2{margin:2px 0;font-size:16px}.registry dl{gap:5px}.actions{flex-wrap:wrap}.actions select,.participants select{min-height:44px;padding:6px;font-size:12px}.actions button,.detail button,.round-controls button,.staff-editor button,.pending button,.detail-actions select{min-height:44px;padding:6px 8px;font-size:12px}.create-panel{padding:14px}.create-panel>header{padding-bottom:10px}.form-grid{gap:9px;margin-top:12px}.form-grid input,.form-grid select,.form-grid textarea,.participants input,.matches textarea,.round-controls input,.staff-editor input,.pending input,.reference input{min-height:44px;margin-top:5px;padding:8px;font-size:12px}.form-grid fieldset{gap:5px;padding:5px}.form-grid fieldset button{min-height:44px;padding:6px;font-size:12px}.create-action{min-height:44px;margin-top:13px}.mask{padding:8px}.detail{width:calc(100vw - 16px);max-height:calc(100vh - 16px)}.detail>header{padding:11px}.detail h2{font-size:18px}.summary,.chips{gap:5px;padding:9px 11px}.summary span,.chips span{padding:4px 6px}.detail>p,.detail>h3,.rules,.participants,.round-controls,.matches,.staff-editor,.pending,.standing-snapshot,.bracket{margin-right:11px;margin-left:11px}.detail>p{margin-top:11px;margin-bottom:11px}.detail>h3{margin-top:15px;font-size:15px}.rules{gap:7px;padding:8px}.staff-editor{gap:5px;padding:8px}.staff-editor input{min-height:44px}.pending{margin-top:11px;padding:9px}.participants{gap:5px}.participants>div{gap:6px;padding:7px}.standing-snapshot summary{padding:7px;font-size:12px}.standings>div{gap:5px;padding:7px}.bracket{gap:7px}.bracket>section{min-width:190px;padding:8px}.bracket article{gap:4px;margin-top:6px;padding:6px}.round-controls{gap:5px;margin-bottom:7px}.matches{gap:6px}.matches>article{padding:8px}.matches article>header{gap:5px}.matches article>div{gap:5px;margin-top:7px}.matches textarea{min-height:46px}.matches footer{gap:4px;margin-top:6px}.detail-actions{gap:6px;margin-top:14px;padding:10px 11px}.site-toast{top:auto;right:auto;bottom:max(12px,env(safe-area-inset-bottom,0px));left:50%;max-width:calc(100vw - 24px);padding:10px 12px;font-size:12px;transform:translateX(-50%)}}
+.deck-picker{display:grid;grid-column:3/5;min-width:0;gap:6px}.deck-picker form,.deck-pages{display:flex;min-width:0;align-items:center;gap:6px}.deck-picker input,.deck-picker select{box-sizing:border-box;min-width:0;width:100%;margin:0;padding:9px;border:1px solid #4b483d;background:#080a0a;color:#fff}.deck-picker form input{flex:1}.deck-picker form button,.deck-pages button{flex:0 0 auto}.deck-pages{justify-content:space-between}.deck-pages span{min-width:0;color:#aaa;text-align:center;overflow-wrap:anywhere}.deck-picker .deck-error{color:#f3b3ba}@media(max-width:900px){.deck-picker{grid-column:1/-1}}@media(max-width:390px){.deck-picker form,.deck-pages{display:grid;grid-template-columns:1fr}.deck-pages span{order:-1}.deck-picker form button,.deck-pages button{width:100%}}
 </style>

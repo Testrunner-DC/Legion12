@@ -33,6 +33,9 @@ public sealed partial class L12PlatformStore
             var data = _data;
             var policy = EffectiveOperationsPolicy();
             var summaries = data.Decks.Where(deck => deck.AccountId == actor.Id)
+                .Where(deck => query.ExactName is null || DeckNameKey(deck.Name) == DeckNameKey(query.ExactName))
+                .Where(deck => query.PublicationId is null || string.Equals(deck.PublicationId,
+                    query.PublicationId.Trim(), StringComparison.Ordinal))
                 .Select(deck => PrivateDeckSummary(data, deck, catalog, policy.CardRestrictions))
                 .Where(deck => string.IsNullOrEmpty(query.Keyword)
                     || CultureInfo.GetCultureInfo("zh-CN").CompareInfo.IndexOf(deck.Name, query.Keyword, CompareOptions.IgnoreCase) >= 0)

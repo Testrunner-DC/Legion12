@@ -157,7 +157,11 @@ reject('copy action loses deck lock', 'viewerCopyCodeAction', changed('deckSnaps
 reject('export action wrong text', 'viewerExportImageAction', changed('deckSnapshotViewer',
   '@click="exportImage">导出牌库图', '@click="exportImage">导出图片'))
 reject('library action hidden', 'viewerCopyToLibraryAction', changed('deckSnapshotViewer',
-  'class="primary" :disabled="!deck"', 'v-show="false" class="primary" :disabled="!deck"'))
+  'class="primary" :disabled="!deck || copyBusy"', 'v-show="false" class="primary" :disabled="!deck || copyBusy"'))
+reject('library action loses duplicate-submit lock', 'viewerCopyToLibraryAction', changed('deckSnapshotViewer',
+  ':disabled="!deck || copyBusy" @click="copyToLibrary"', ':disabled="!deck" @click="copyToLibrary"'))
+reject('library action loses missing-content lock', 'viewerCopyToLibraryAction', changed('deckSnapshotViewer',
+  ':disabled="!deck || copyBusy" @click="copyToLibrary"', ':disabled="copyBusy" @click="copyToLibrary"'))
 reject('callable name only in comment', 'viewerCopyCodeAction', changed('deckSnapshotViewer',
   'async function copyCode() {', '// async function copyCode() {\nasync function copyCodeMissing() {'))
 reject('special section omitted from reconstructed deck', 'viewerSpecialExpansion', changed('deckSnapshotViewer',

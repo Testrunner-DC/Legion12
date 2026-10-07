@@ -13,6 +13,8 @@ import './test-a3-deck-snapshot-template-contract.mjs'
 import { publicDeckConsumerTemplateContract, publicDeckAuthorActionsContract, publicDeckServerSummarySortContract } from './public-deck-consumer-template-contract.mjs'
 import './test-a3-public-deck-consumer-template-contract.mjs'
 import { publicDeckCounterBindingsContract } from './test-public-deck-counter-results.mjs'
+import { privateEditorSavedPanelsContract, privateModeLegalityContract } from './private-deck-template-contract.mjs'
+import './test-private-deck-template-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -801,10 +803,7 @@ const contracts = [
   [seasonConfigurationEditor.includes('data-ui-contract="ranked-broadcast-config"') && seasonConfigurationEditor.includes('ranked.broadcast.displaySeconds') && seasonConfigurationEditor.includes('ranked.broadcast.minimumTierIndex'), '排位广播的时长、大厅延迟、间隔、门槛和类别开关必须由后台统一配置'],
   [board.includes('selected-card-inspector-anchor') && board.includes(':style="modalInspectorVisible ? inspectorFloatStyle : undefined"'), '弹框期间详情必须由原选中卡牌框锚点定位'],
   [!board.includes('.modal-card-inspector') && !prompt.includes('.prompt-card-inspector'), '不得保留第二套弹框详情框样式'],
-  [deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
-    && deckEditor.includes(':class="{ active: deck.name === activeDeckName }"') && deckEditor.includes('<DeckProfile compact')
-    && deckEditor.includes('class="mobile-saved-decks-dialog"') && deckEditor.includes('chooseMobileSavedDeck')
-    && !deckEditor.includes('<label>已保存牌库<select'), '已保存牌库必须在桌面保持详情栏列表与明确选中态，并在移动端通过独立可滚动弹框选择，不得恢复顶部下拉菜单'],
+  [privateEditorSavedPanelsContract(deckEditor), '已保存牌库必须在桌面保持详情栏列表与明确选中态，并在移动端通过独立可滚动弹框选择，不得恢复顶部下拉菜单'],
   [board.includes('card.playCost ?? card.currentCost ?? card.cost'), '手牌可打出校验必须使用服务端动态费用'],
   [battleLog.includes('class="event-message"') && battleLog.includes('overflow-wrap:anywhere'), '对局记录必须使用可换行的独立消息容器'],
   [board.includes('<Teleport :to="landscapeTeleportTarget()">') && board.includes('public-card-reveal-animation') && board.includes('.public-reveal-animation{z-index:903}') && visualTransitionProjection.includes("event.type === 'effect-trigger'") && visualTransitionProjection.includes("event.type === 'effect-response'") && visualTransitionProjection.includes("event.type === 'effect-activation'") && visualTransitionProjection.includes('event.effectSceneId') && visualTransitionProjection.includes('event.cards?.slice(0, 1)') && board.includes("event.type === 'reveal'") && board.includes("event.playerIndex !== props.game.you") && board.includes("event.type === 'effect-trigger' && /展示|公开/.test(event.text)") && board.includes("event.type === 'search' && /展示|加入手牌/") && board.includes('text: publicRevealText(event)') && board.includes('const override = event.effectText?.trim()') && board.indexOf('if (override) return override') < board.indexOf('/花魁的馈赠/.test(text)') && board.includes('花魁的馈赠将〈${card.name}〉加入手牌') && board.includes('l12AnimationDuration(3000, 700)') && !board.includes('reveal-confirm') && !board.includes('public-reveal-mask'), '公开展示与检索仍只向非发动方播放；结构化触发、响应与发动向双方播放且只展示权威来源卡。两者共享无蒙版非阻塞队列、后台文案与统一时长'],
@@ -885,10 +884,7 @@ const contracts = [
   [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
   [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '各类牌库框必须复用主宰 Profile 公共组件，不得各自裁切卡面'],
-  [savedDeckSelector.includes('data-ui-contract="l12-saved-deck-selector"')
-    && savedDeckSelector.includes('validateDeck(deck, props.catalog, props.restrictions)')
-    && savedDeckSelector.includes("row.error || '符合当前模式规则'")
-    && savedDeckSelector.includes('当前模式没有可用牌库'), '大厅共享牌库选择器必须逐副展示当前模式合法性并明确提示无可用牌库'],
+  [privateModeLegalityContract(savedDeckSelector), '大厅共享牌库选择器必须逐副展示当前模式合法性并明确提示无可用牌库'],
   [savedDeckSelector.includes("emit('cancel')") && savedDeckSelector.includes("emit('confirm', selected.value.deck)")
     && !savedDeckSelector.includes('saveSelectedDeckName(')
     && savedDeckSelector.includes('draftName.value = props.currentDeckName'), '共享牌库选择器取消必须无副作用，且只有确认事件可提交草稿选择'],

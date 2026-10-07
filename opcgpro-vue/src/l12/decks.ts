@@ -72,6 +72,54 @@ export interface SavedL12Deck {
   updatedAt: string
 }
 
+export interface PrivateDeckSummaryCounts {
+  main: number
+  uncountedMain: number
+  morale: number
+  special: number
+  bench: number
+}
+
+export interface PrivateDeckSummary {
+  id: string
+  revision: number
+  name: string
+  masterId: string
+  updatedAt: string
+  publicationId: string | null
+  publicationVersion: number | null
+  counts: PrivateDeckSummaryCounts
+  legal: boolean
+  legalityReason: string | null
+}
+
+export interface PrivateDeckSummaryPage {
+  items: PrivateDeckSummary[]
+  total: number
+  page: number
+  pageSize: number
+  generation: number
+  permissionVersion: number
+  catalogVersion: string
+  policyVersion: number
+  facets: {
+    masters: Array<{ masterId: string; count: number }>
+    legal: number
+    illegal: number
+  }
+}
+
+export interface PrivateDeckSummaryQuery {
+  page?: number
+  pageSize?: number
+  keyword?: string
+  masterId?: string
+  legal?: boolean
+  sort?: 'latest' | 'name'
+  exactName?: string
+  publicationId?: string
+}
+
 export interface OfficialL12PresetDeck {
   name: string
   masterId: string
@@ -390,6 +438,196 @@ function commitSavedDecks(context: ReturnType<typeof captureDeckStorageContext>,
   const aliases = migrateDeckSelectionReferences(context, previous, decks)
   return commitDeckCache(localStorage, context.storageKey, previous, decks, activity, aliases,
     () => requireCurrentOperation(context, activity)).decks
+}
+
+function privateDeckObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    && Object.getPrototypeOf(value) === Object.prototype
+}
+function privateDeckExactFields(value: Record<string, unknown>, fields: readonly string[]) {
+  const keys = Reflect.ownKeys(value)
+  return keys.length === fields.length && fields.every(field => Object.hasOwn(value, field))
+}
+function privateDeckInteger(value: unknown, minimum = 0): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum
+}
+function privateDeckText(value: unknown, allowEmpty = false): value is string {
+  return typeof value === 'string' && (allowEmpty || Boolean(value.trim()))
+}
+function privateDeckContractError(message: string): never {
+  throw new Error(`牌库目录响应无效：${message}`)
+}
+function normalizePrivateDeckSummaryQuery(query: PrivateDeckSummaryQuery = {}) {
+  const page = query.page ?? 1, pageSize = query.pageSize ?? 30, sort = query.sort ?? 'latest'
+  if (!privateDeckInteger(page, 1) || !privateDeckInteger(pageSize, 1) || pageSize > 100)
+    throw new Error('牌库目录页码或每页数量无效')
+  if (sort !== 'latest' && sort !== 'name') throw new Error('牌库目录排序无效')
+  if (query.legal !== undefined && typeof query.legal !== 'boolean') throw new Error('牌库目录合法性筛选无效')
+  if (query.keyword !== undefined && typeof query.keyword !== 'string') throw new Error('牌库目录搜索词无效')
+  if (query.masterId !== undefined && typeof query.masterId !== 'string') throw new Error('牌库目录主宰筛选无效')
+  if (query.exactName !== undefined && (!privateDeckText(query.exactName) || query.exactName.trim().length > 24))
+    throw new Error('牌库名称筛选无效')
+  if (query.publicationId !== undefined && (!privateDeckText(query.publicationId) || query.publicationId.trim().length > 128))
+    throw new Error('牌库来源筛选无效')
+  return { page, pageSize, sort, keyword: query.keyword?.trim() || undefined,
+    masterId: query.masterId?.trim() || undefined, legal: query.legal,
+    exactName: query.exactName?.trim(), publicationId: query.publicationId?.trim() }
+}
+
+export function privateDeckSummaryRequestPath(query: PrivateDeckSummaryQuery = {}) {
+  const normalized = normalizePrivateDeckSummaryQuery(query)
+  const values = new URLSearchParams({ page: String(normalized.page), pageSize: String(normalized.pageSize), sort: normalized.sort })
+  if (normalized.keyword) values.set('keyword', normalized.keyword)
+  if (normalized.masterId) values.set('masterId', normalized.masterId)
+  if (normalized.legal !== undefined) values.set('legal', String(normalized.legal))
+  if (normalized.exactName !== undefined) values.set('exactName', normalized.exactName)
+  if (normalized.publicationId !== undefined) values.set('publicationId', normalized.publicationId)
+  return `/api/decks/summaries?${values}`
+}
+
+export function validatePrivateDeckSummaryPage(value: unknown, query: PrivateDeckSummaryQuery = {}): PrivateDeckSummaryPage {
+  const normalized = normalizePrivateDeckSummaryQuery(query)
+  const pageFields = ['items', 'total', 'page', 'pageSize', 'generation', 'permissionVersion', 'catalogVersion', 'policyVersion', 'facets'] as const
+  if (!privateDeckObject(value) || !privateDeckExactFields(value, pageFields)) privateDeckContractError('分页字段不完整')
+  if (!Array.isArray(value.items) || !privateDeckInteger(value.total) || value.page !== normalized.page
+    || value.pageSize !== normalized.pageSize || !privateDeckInteger(value.generation)
+    || !privateDeckInteger(value.permissionVersion) || !privateDeckInteger(value.policyVersion)
+    || typeof value.catalogVersion !== 'string' || !/^[0-9A-F]{64}$/.test(value.catalogVersion))
+    privateDeckContractError('分页身份或版本字段无效')
+  if (value.items.length > normalized.pageSize || value.items.length > value.total) privateDeckContractError('分页数量无效')
+  const itemFields = ['id', 'revision', 'name', 'masterId', 'updatedAt', 'publicationId', 'publicationVersion', 'counts', 'legal', 'legalityReason'] as const
+  const countFields = ['main', 'uncountedMain', 'morale', 'special', 'bench'] as const
+  const identities = new Set<string>()
+  const items = value.items.map((entry, index) => {
+    if (!privateDeckObject(entry) || !privateDeckExactFields(entry, itemFields)) privateDeckContractError(`第${index + 1}项字段无效`)
+    if (!privateDeckText(entry.id) || identities.has(entry.id as string) || !privateDeckInteger(entry.revision, 1)
+      || !privateDeckText(entry.name) || !privateDeckText(entry.masterId) || !privateDeckText(entry.updatedAt)
+      || !Number.isFinite(Date.parse(entry.updatedAt as string)) || typeof entry.legal !== 'boolean')
+      privateDeckContractError(`第${index + 1}项身份或正文元数据无效`)
+    identities.add(entry.id as string)
+    if (normalized.exactName !== undefined && String(entry.name).trim().toUpperCase() !== normalized.exactName.toUpperCase())
+      privateDeckContractError(`第${index + 1}项名称筛选不一致`)
+    if (normalized.publicationId !== undefined && entry.publicationId !== normalized.publicationId)
+      privateDeckContractError(`第${index + 1}项公开来源筛选不一致`)
+    const hasPublication = entry.publicationId !== null
+    if (hasPublication !== (entry.publicationVersion !== null)
+      || hasPublication && (!privateDeckText(entry.publicationId) || !privateDeckInteger(entry.publicationVersion, 1)))
+      privateDeckContractError(`第${index + 1}项公开来源无效`)
+    const counts = entry.counts
+    if (!privateDeckObject(counts) || !privateDeckExactFields(counts, countFields)
+      || countFields.some(field => !privateDeckInteger(counts[field]))) privateDeckContractError(`第${index + 1}项计数无效`)
+    if (entry.legal ? entry.legalityReason !== null
+      : !privateDeckText(entry.legalityReason)) privateDeckContractError(`第${index + 1}项合法性原因无效`)
+    if (normalized.masterId && (entry.masterId as string).toLocaleLowerCase() !== normalized.masterId.toLocaleLowerCase())
+      privateDeckContractError(`第${index + 1}项不符合主宰筛选`)
+    if (normalized.legal !== undefined && entry.legal !== normalized.legal) privateDeckContractError(`第${index + 1}项不符合合法性筛选`)
+    return entry as unknown as PrivateDeckSummary
+  })
+  if (!privateDeckObject(value.facets) || !privateDeckExactFields(value.facets, ['masters', 'legal', 'illegal'])
+    || !Array.isArray(value.facets.masters) || !privateDeckInteger(value.facets.legal) || !privateDeckInteger(value.facets.illegal))
+    privateDeckContractError('聚合字段无效')
+  const masters = new Set<string>()
+  for (const facet of value.facets.masters) {
+    if (!privateDeckObject(facet) || !privateDeckExactFields(facet, ['masterId', 'count'])
+      || !privateDeckText(facet.masterId) || !privateDeckInteger(facet.count, 1)
+      || masters.has((facet.masterId as string).toLocaleLowerCase())) privateDeckContractError('主宰聚合无效')
+    masters.add((facet.masterId as string).toLocaleLowerCase())
+  }
+  if (value.facets.legal + value.facets.illegal !== value.total
+    || value.facets.masters.reduce((total, facet) => total + Number((facet as Record<string, unknown>).count), 0) !== value.total)
+    privateDeckContractError('聚合总数无效')
+  return { ...(value as unknown as PrivateDeckSummaryPage), items }
+}
+
+export async function loadPrivateDeckSummaryPage(query: PrivateDeckSummaryQuery = {}): Promise<PrivateDeckSummaryPage> {
+  const context = captureDeckStorageContext()
+  try {
+    assertCompleteDeckAccount(context)
+    if (!context.accountId || !context.token) throw new Error('请先登录账号再读取牌库目录')
+    const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), { cache: 'no-store' })
+    if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
+    return validatePrivateDeckSummaryPage(response, query)
+  } catch (error) { throw operationError(error, context) }
+}
+
+export async function loadPrivateDeckBody(target: Pick<PrivateDeckSummary, 'id' | 'revision'>,
+    current: () => boolean = () => true): Promise<SavedL12Deck> {
+  const context = captureDeckStorageContext()
+  try {
+    assertCompleteDeckAccount(context)
+    if (!context.accountId || !context.token) throw new Error('请先登录账号再读取牌库正文')
+    if (!privateDeckText(target.id) || !privateDeckInteger(target.revision, 1)) throw new Error('牌库身份或修订无效')
+    if (!current()) throw new Error('页面已切换，已取消牌库正文读取')
+    const response = await platformRequest<unknown>(
+      `/api/decks/by-id/${encodeURIComponent(target.id)}?expectedRevision=${target.revision}`, { cache: 'no-store' })
+    if (!isCurrentDeckStorageContext(context) || !current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
+    const saved = normalizeSavedDeck(response as SavedL12Deck)
+    if (saved.id !== target.id || saved.revision !== target.revision)
+      throw new Error('服务器牌库身份或修订结果不一致')
+    return await withGuestDeckMutation(context, () => {
+      if (!isCurrentDeckStorageContext(context) || !current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
+      const previous = currentDeckSnapshot(context)
+      const sameIdentity = Object.values(previous.decks).find(deck => deck.id === saved.id)
+      if (sameIdentity?.revision && sameIdentity.revision > saved.revision!)
+        throw new Error('本机已有更新修订，请刷新目录后重试')
+      const nameCollision = Object.values(previous.decks).find(deck => deck.id !== saved.id && sameDeckName(deck.name, saved.name))
+      if (nameCollision) throw new Error('本机已有另一副同名牌库，未覆盖任何缓存')
+      const decks = { ...previous.decks }
+      upsertCachedDeck(decks, saved)
+      const activity = markDeckCacheActivity(context)
+      const committed = commitSavedDecks(context, previous, decks, activity)
+      const result = Object.values(committed).find(deck => deck.id === saved.id)
+      if (!result || result.revision !== saved.revision) throw new Error('牌库正文缓存提交结果不一致')
+      return result
+    })
+  } catch (error) { throw operationError(error, context) }
+}
+
+export async function uniqueDeckCopyName(base: string, current: () => boolean = () => true): Promise<string> {
+  const context = captureDeckStorageContext()
+  try {
+    assertCompleteDeckAccount(context)
+    const stem = base.trim().slice(0, 24)
+    if (!stem) throw new Error('请填写牌库名称')
+    const valid = () => isCurrentDeckStorageContext(context) && current()
+    if (!valid()) throw new Error('页面已切换，已取消复制')
+    if (!context.accountId) {
+      const cached = Object.values(currentDeckSnapshot(context).decks)
+      for (let number = 1; ; number++) {
+        const ending = number === 1 ? '' : ` ${number}`
+        const name = `${stem.slice(0, 24 - ending.length)}${ending}`
+        if (!cached.some(deck => sameDeckName(deck.name, name))) return name
+      }
+    }
+    for (let number = 1; number <= 32; number++) {
+      if (!valid()) throw new Error('页面已切换，已取消复制')
+      const ending = number === 1 ? '' : ` ${number}`
+      const name = `${stem.slice(0, 24 - ending.length)}${ending}`
+      const result = await loadPrivateDeckSummaryPage({ exactName: name, page: 1, pageSize: 1 })
+      if (!valid()) throw new Error('账号或页面已切换，已取消复制')
+      if (result.total > 1) throw new Error('存在多副同名牌库，请先检查我的牌库')
+      if (result.total === 0) return name
+    }
+    throw new Error('同名牌库较多，请先调整牌库名称')
+  } catch (error) { throw operationError(error, context) }
+}
+
+export async function loadPrivatePublicationSource(publicationId: string,
+    current: () => boolean = () => true): Promise<SavedL12Deck | null> {
+  const context = captureDeckStorageContext()
+  try {
+    assertCompleteDeckAccount(context)
+    if (!context.accountId || !context.token) throw new Error('请先登录账号')
+    const valid = () => isCurrentDeckStorageContext(context) && current()
+    if (!valid()) throw new Error('页面已切换，已取消读取')
+    const result = await loadPrivateDeckSummaryPage({ publicationId, page: 1, pageSize: 2 })
+    if (!valid()) throw new Error('账号或页面已切换，已忽略旧结果')
+    if (result.total > 1) throw new Error('多副牌库关联此公开版本，请从我的牌库选择要编辑的牌库')
+    if (result.total === 0) return null
+    const target = result.items[0]
+    if (!target) throw new Error('牌库来源暂不可读取，请刷新后重试')
+    return await loadPrivateDeckBody(target, valid)
+  } catch (error) { throw operationError(error, context) }
 }
 
 export function loadDeckCatalog(): Promise<DeckCard[]> {

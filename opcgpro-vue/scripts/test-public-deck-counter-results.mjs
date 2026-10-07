@@ -75,11 +75,26 @@ export function publicDeckCounterBindingsContract({ detail, library, helper }) {
       const capture = set.get('captureCounterContext')
       if (!capture?.includes('capturePublicDeckCounterGuard') || !capture.includes(actor)
         || !capture.includes('actionPending(key)') || !capture.includes('route.fullPath') || !capture.includes(epoch)) return false
-      const file = parsed(source), hasEpochWatch = file.statements.some(node => ts.isExpressionStatement(node)
-        && ts.isCallExpression(node.expression) && node.expression.expression.getText(file) === 'watch'
-        && node.expression.arguments[0]?.getText(file) === '() => route.fullPath'
-        && node.expression.arguments[1]?.getText(file) === `() => ${epoch}++`
-        && node.expression.arguments[2]?.getText(file).includes("'sync'"))
+      const file = parsed(source), hasEpochWatch = file.statements.some(node => {
+        if (!ts.isExpressionStatement(node) || !ts.isCallExpression(node.expression)
+          || node.expression.expression.getText(file) !== 'watch'
+          || node.expression.arguments[0]?.getText(file) !== '() => route.fullPath'
+          || !node.expression.arguments[2]?.getText(file).includes("'sync'")) return false
+        const listener = node.expression.arguments[1]
+        if (!listener || !ts.isArrowFunction(listener) || listener.parameters.length
+          || listener.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) return false
+        let advance = listener.body
+        if (ts.isBlock(advance)) {
+          if (advance.statements.some(statement => ts.isVariableStatement(statement)
+            && statement.declarationList.declarations.some(declaration => declaration.name.getText(file) === epoch))) return false
+          const first = advance.statements[0]
+          if (!first || !ts.isExpressionStatement(first)) return false
+          advance = first.expression
+        }
+        return (ts.isPostfixUnaryExpression(advance) || ts.isPrefixUnaryExpression(advance))
+          && advance.operator === ts.SyntaxKind.PlusPlusToken
+          && ts.isIdentifier(advance.operand) && advance.operand.text === epoch
+      })
       if (!hasEpochWatch) return false
     }
     return true
@@ -117,6 +132,16 @@ function pageRuntime(kind, helper, baseline = false) {
   const route = { fullPath: '/decks/CODE12' }, platformState = { account: { id: 'A' }, token: 'token-A' }
   const actor = frozenActorGuard(platformState), active = new Set(), marker = new Map(), counters = [], saves = []
   let libraryEpoch = 0, counterReply = async () => scalar(), saveReply = async deck => ({ ...deck, name: 'confirmed copy' })
+  const directoryRequests = [], privateSummaryPage = { value: null }, privateLoadState = { value: 'available' }, privateLoadError = { value: '' }
+  const emptyPrivatePage = query => ({ items: [], total: 0, page: query.page, pageSize: query.pageSize,
+    generation: 1, permissionVersion: 1, catalogVersion: 'A'.repeat(64), policyVersion: 1,
+    facets: { masters: [], legal: 0, illegal: 0 } })
+  let directoryReply = async query => emptyPrivatePage(query)
+  const privateFunctions = declarations.has('loadMineDirectory') ? functions(read('src/l12/decks.ts')) : null
+  const validatePrivatePage = privateFunctions ? evaluated([
+    'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
+    'normalizePrivateDeckSummaryQuery', 'validatePrivateDeckSummaryPage',
+  ].map(name => privateFunctions.get(name)).join('\n'), {}, 'validatePrivateDeckSummaryPage') : null
   const scalar = () => ({ id: 'p', publicCode: 'CODE12', views: 1, likes: 2, copies: 3, viewerLiked: true, canEdit: true })
   const runAction = async (key, action) => { if (active.has(key)) return; active.add(key); try { return await action() } finally { active.delete(key) } }
   const counter = async (reference, operation) => { counters.push([reference, operation]); return counterReply() }
@@ -136,9 +161,18 @@ function pageRuntime(kind, helper, baseline = false) {
     uniqueName: name => name, loadSavedDecks: () => saved.value, saveDeck: async deck => { saves.push(deck); return saveReply(deck) },
     deckErrorBelongsToCurrentAccount: () => true,
     updatePublished: value => { published.value[0] = value },
+    PAGE_SIZE: 30, privateSummaryPage, privateLoadState, privateLoadError,
+    minePage: { value: 1 }, mineQuery: { value: '' }, mineHomeCityFilter: { value: 'all' },
+    mineLegalFilter: { value: 'all' }, mineSort: { value: 'latest' },
+    loadPrivateDeckSummaryPage: async query => {
+      directoryRequests.push(query)
+      return validatePrivatePage(await directoryReply(query), query)
+    },
+    loadOwnReferences: async () => {},
   }
-  const names = ['publicDeckReference', 'captureCounterContext', 'recordInitialView', 'toggleLike', 'copyToMine'].filter(name => declarations.has(name))
-  const code = 'let counterDocumentEpoch = 0, libraryCounterDocumentEpoch = 0;\n' + names.map(name => declarations.get(name)).join('\n')
+  const names = ['publicDeckReference', 'captureCounterContext', 'recordInitialView', 'toggleLike', 'copyToMine',
+    ...(kind === 'library' ? ['mineDirectoryQuery', 'loadMineDirectory'] : [])].filter(name => declarations.has(name))
+  const code = 'let counterDocumentEpoch = 0, libraryCounterDocumentEpoch = 0, privateDirectorySequence = 0, libraryMounted = true, libraryDisposed = false;\n' + names.map(name => declarations.get(name)).join('\n')
   const methods = evaluated(code, dependencies, `{ ${names.join(',')}, advanceDocument: () => { counterDocumentEpoch++; libraryCounterDocumentEpoch++ } }`)
   const current = () => kind === 'detail' ? entry.value : published.value[0]
   return { initial, body, details, notice, saved, counters, saves, marker, route, platformState, current,
@@ -148,7 +182,9 @@ function pageRuntime(kind, helper, baseline = false) {
     reply: value => { counterReply = value }, saveReply: value => { saveReply = value },
     setActor: (id, token) => { actor.set(id, token); libraryEpoch++ },
     setRoute: value => { route.fullPath = value; methods.advanceDocument() }, disposeAction: () => active.clear(),
-    replace: value => { if (kind === 'detail') entry.value = value; else published.value[0] = value }, scalar, baseline }
+    replace: value => { if (kind === 'detail') entry.value = value; else published.value[0] = value }, scalar, baseline,
+    directoryRequests, privateSummaryPage, privateLoadState, privateLoadError, emptyPrivatePage,
+    directoryReply: value => { directoryReply = value } }
 }
 
 function requestRuntime() {
@@ -490,6 +526,33 @@ async function main() {
       if (kind === 'detail') { await row.view(); assert.equal(row.counters.length, 0) }
     })
   }
+  await check('library copy keeps its once-only counter after actual directory loader catches an unavailable read', async () => {
+    const row = pageRuntime('library', helper)
+    row.directoryReply(async () => { throw new Error('synthetic unavailable private directory') })
+    await row.copy()
+    assert.equal(row.saves.length, 1); assert.equal(row.directoryRequests.length, 1)
+    assert.equal(row.privateLoadState.value, 'unavailable'); assert.deepEqual(row.counters, [['CODE12', 'copy']])
+    assert.match(row.notice.value, /已复制.*confirmed copy/); assert.strictEqual(row.current().deck, row.body)
+  })
+  await check('library copy keeps its once-only counter when real private summary validation rejects a response', async () => {
+    const row = pageRuntime('library', helper)
+    row.directoryReply(async query => ({ ...row.emptyPrivatePage(query), cardIds: ['injected-body'] }))
+    await row.copy()
+    assert.equal(row.privateLoadState.value, 'unavailable'); assert.equal(row.saves.length, 1)
+    assert.deepEqual(row.counters, [['CODE12', 'copy']]); assert.strictEqual(row.current().details, row.details)
+  })
+  for (const transition of ['account-aba', 'route-aba', 'action-disposal'])
+    await check(`library copy after actual directory wait rejects ${transition} without repeating the save`, async () => {
+      const row = pageRuntime('library', helper), entered = deferred(), response = deferred()
+      row.directoryReply(query => { entered.resolve(); return response.promise.then(() => row.emptyPrivatePage(query)) })
+      const work = row.copy(); await entered.promise
+      if (transition === 'account-aba') { row.setActor('B', 'token-B'); row.setActor('A', 'token-A') }
+      if (transition === 'route-aba') { row.setRoute('/other'); row.setRoute('/decks/CODE12') }
+      if (transition === 'action-disposal') row.disposeAction()
+      response.resolve(); await work
+      assert.equal(row.saves.length, 1); assert.equal(row.counters.length, 0); assert.equal(row.notice.value, '')
+      if (transition !== 'action-disposal') assert.equal(row.privateSummaryPage.value, null)
+    })
   await check('actual view handler posts once and retains full content', async () => {
     const row = pageRuntime('detail', helper); await row.view(); await row.view()
     assert.deepEqual(row.counters, [['CODE12', 'view']]); assert.strictEqual(row.current().details, row.details)
@@ -533,6 +596,27 @@ async function main() {
   })
   await check('counter consumer negative contract: legacy fallback added', () => {
     assert.equal(publicDeckCounterBindingsContract({ detail: detail.replace('const counters = await publicDeckApi.counter(reference,', 'await publicDeckApi.toggleLike(reference); const counters = await publicDeckApi.counter(reference,'), library, helper: helperSource }), false)
+  })
+  const routeFile = parsed(library), routeWatch = routeFile.statements.find(node => typescript().isExpressionStatement(node)
+    && typescript().isCallExpression(node.expression) && node.expression.expression.getText(routeFile) === 'watch'
+    && node.expression.arguments[0]?.getText(routeFile) === '() => route.fullPath')
+  assert(routeWatch, 'Use the actual library route listener, not a decoy')
+  const listener = routeWatch.expression.arguments[1]
+  const scriptOffset = library.indexOf(scriptOf(library))
+  assert(scriptOffset >= 0, 'Bind AST offsets to the actual Vue script region')
+  const withRouteListener = replacement => library.slice(0, scriptOffset + listener.getStart(routeFile))
+    + replacement + library.slice(scriptOffset + listener.end)
+  await check('counter route contract preserves the former direct synchronous epoch advance', () => {
+    assert.equal(publicDeckCounterBindingsContract({ detail, library: withRouteListener('() => libraryCounterDocumentEpoch++'), helper: helperSource }), true)
+  })
+  for (const [label, replacement] of [
+    ['missing advance', '() => {}'],
+    ['conditional advance', '() => { if (true) libraryCounterDocumentEpoch++ }'],
+    ['asynchronous advance', 'async () => { libraryCounterDocumentEpoch++ }'],
+    ['shadowed advance', '() => { libraryCounterDocumentEpoch++; let libraryCounterDocumentEpoch = 0 }'],
+    ['wrong epoch', '() => { mineBodyReadSequence++ }'],
+  ]) await check(`counter route contract rejects ${label}`, () => {
+    assert.equal(publicDeckCounterBindingsContract({ detail, library: withRouteListener(replacement), helper: helperSource }), false)
   })
   await loadLifecycleChecks(check, helper)
   console.log(`C-U1 focused Node result: ${passed}/${passed}, failed=0, skipped=0`)

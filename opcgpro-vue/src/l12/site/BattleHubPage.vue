@@ -2,9 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cancelMatchmaking, connect, createRoom, joinMatchmaking, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPES, loadDeckCatalog,
-  loadSavedDecksState, deckErrorBelongsToCurrentAccount, loadSelectedDeckName, saveSelectedDeckName, validateDeck, type DeckCard,
-  type L12DeckSelectionScope, type SavedL12Deck } from '@/l12/decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPES, loadDeckCatalog, loadPrivateDeckBody,
+  loadSavedDecksState, deckErrorBelongsToCurrentAccount, loadSelectedDeckName, saveSelectedDeckName, SELECTED_DECK_KEY,
+  validateDeck, type DeckCard, type L12DeckSelectionScope, type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
 import CardImage from '@/l12/CardImage.vue'
@@ -24,16 +24,28 @@ const maintenanceView = computed(() => operationsPolicy.value
   ? maintenanceCountdown(operationsPolicy.value.maintenance, policyNow.value)
   : null)
 const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.entryBlocked === true)
+
+type ModeDeckSelection = {
+  id: string
+  revision: number
+  name: string
+  body: SavedL12Deck
+  summary?: PrivateDeckSummary
+}
+type DeckSelectionCandidate = PrivateDeckSummary | SavedL12Deck
+
+function emptySelections(): Record<L12DeckSelectionScope, ModeDeckSelection | null> {
+  return { ranked: null, casual: null, friendly: null, 'sandbox-player': null, 'sandbox-opponent': null }
+}
+function emptySelectionMessages(): Record<L12DeckSelectionScope, string> {
+  return { ranked: '', casual: '', friendly: '', 'sandbox-player': '', 'sandbox-opponent': '' }
+}
 function visibleDecks(): Record<string, SavedL12Deck> {
   const snapshot = loadSavedDecksState()
   if (snapshot.status === 'unavailable') { l12State.notice = snapshot.error.message; return {} }
   return snapshot.decks
 }
-const customDecks = ref(visibleDecks())
-watch(() => [platformState.account?.id, platformState.token], () => {
-  customDecks.value = visibleDecks()
-  try { hydrateDeckSelections() } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择暂不可读取' }
-}, { flush: 'sync' })
+const cachedDecks = ref(visibleDecks())
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const detailCard = ref<DeckCard | null>(null)
@@ -78,15 +90,21 @@ const pendingFactionName = computed(() => ranked.value?.config.factions.find(ite
 const selectedDeckNames = ref<Record<L12DeckSelectionScope, string>>({
   ranked: '', casual: '', friendly: '', 'sandbox-player': '', 'sandbox-opponent': '',
 })
+const selectedDecks = ref<Record<L12DeckSelectionScope, ModeDeckSelection | null>>(emptySelections())
+const selectionMessages = ref<Record<L12DeckSelectionScope, string>>(emptySelectionMessages())
 const deckSelectorOpen = ref(false)
 const deckSelectorScope = ref<L12DeckSelectionScope>('friendly')
-const savedDeckList = computed(() => Object.values(customDecks.value))
+const deckSelectorConfirming = ref(false)
+const deckSelectorError = ref('')
+const modeActionPending = ref(false)
+const guestDeckList = computed(() => platformState.account?.id && platformState.token ? [] : Object.values(cachedDecks.value))
 const activeDeckScope = computed<L12DeckSelectionScope>(() => {
   if (l12State.room || tab.value === 'friendly') return 'friendly'
   if (tab.value === 'sandbox') return 'sandbox-player'
   return selectedMatchMode.value
 })
-const currentDeck = computed(() => customDecks.value[selectedDeckNames.value[activeDeckScope.value]])
+const currentSelection = computed(() => selectedDecks.value[activeDeckScope.value])
+const currentDeck = computed(() => currentSelection.value?.body)
 const selectorCurrentName = computed(() => selectedDeckNames.value[deckSelectorScope.value])
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 const isRoomHost = computed(() => l12State.room?.yourPlayerIndex === 0)
@@ -103,7 +121,13 @@ function restrictionsForScope(scope: L12DeckSelectionScope) {
     return operationsPolicy.value?.cardRestrictions ?? []
   return []
 }
+function friendlyRulesKey() {
+  return friendlyUsesRestrictions()
+    ? `restricted:${operationsPolicy.value?.version ?? 'unversioned'}`
+    : 'open'
+}
 function deckError(deck: SavedL12Deck | undefined, scope = activeDeckScope.value) {
+  if (selectionMessages.value[scope]) return selectionMessages.value[scope]
   if (!deck) return '尚未选择牌库'
   if (!catalog.value.length || (scopeNeedsPolicy(scope) && !operationsPolicy.value)) return '正在加载当前模式规则'
   return validateDeck(deck, catalog.value, restrictionsForScope(scope))
@@ -113,22 +137,114 @@ const selectorRestrictions = computed(() => restrictionsForScope(deckSelectorSco
 const selectorLoading = computed(() => !catalog.value.length
   || (scopeNeedsPolicy(deckSelectorScope.value) && !operationsPolicy.value))
 
+function selectionStorageBase() {
+  return platformState.account?.id ? `${SELECTED_DECK_KEY}:${platformState.account.id}` : SELECTED_DECK_KEY
+}
+function hasStoredSelection(scope: L12DeckSelectionScope) {
+  const base = selectionStorageBase()
+  try { return Boolean(localStorage.getItem(`${base}:${scope}`) || localStorage.getItem(base)) }
+  catch { return false }
+}
 function hydrateDeckSelections() {
   L12_DECK_SELECTION_SCOPES.forEach(scope => {
-    selectedDeckNames.value[scope] = loadSelectedDeckName(scope, customDecks.value)
+    const name = loadSelectedDeckName(scope, cachedDecks.value)
+    const deck = name ? cachedDecks.value[name] : undefined
+    selectedDeckNames.value[scope] = name
+    selectedDecks.value[scope] = deck?.id && deck.revision
+      ? { id: deck.id, revision: deck.revision, name: deck.name, body: deck }
+      : null
+    selectionMessages.value[scope] = !deck && hasStoredSelection(scope)
+      ? '原选择缺少可验证的服务器修订，请重新选择牌库'
+      : ''
   })
 }
 function openDeckSelector() {
   if (l12State.room && me.value?.ready) return
   deckSelectorScope.value = activeDeckScope.value
+  deckSelectorError.value = ''
   deckSelectorOpen.value = true
 }
-function confirmDeckSelection(deck: SavedL12Deck) {
+
+let componentAlive = true
+let identityEpoch = 0
+let selectorActionEpoch = 0
+let modeActionEpoch = 0
+
+function identityCurrent(epoch: number, accountId: string | undefined, token: string) {
+  return componentAlive && identityEpoch === epoch && platformState.account?.id === accountId && platformState.token === token
+}
+function selectionCurrent(scope: L12DeckSelectionScope, id: string, revision: number) {
+  const selection = selectedDecks.value[scope]
+  return selection?.id === id && selection.revision === revision
+}
+function requestStatus(error: unknown) {
+  return error && typeof error === 'object' && 'status' in error && typeof error.status === 'number' ? error.status : 0
+}
+function bodyFailureMessage(error: unknown, scope: L12DeckSelectionScope, markSelection = true) {
+  const status = requestStatus(error)
+  if (status === 404) {
+    const message = '这副牌库当前不可用，请重新选择；其他模式的选择没有改变'
+    if (markSelection) selectionMessages.value[scope] = message
+    return message
+  }
+  if (status === 409) {
+    const message = '牌库已有新修订，请刷新目录并明确选择；未自动重试旧正文'
+    if (markSelection) selectionMessages.value[scope] = message
+    return message
+  }
+  return error instanceof Error ? error.message : '牌库正文暂不可读取'
+}
+function cachedSelection(deck: SavedL12Deck, summary?: PrivateDeckSummary): ModeDeckSelection {
+  if (!deck.id || !deck.revision) throw new Error('牌库缺少稳定身份或修订，请重新选择')
+  return { id: deck.id, revision: deck.revision, name: deck.name, body: deck, summary }
+}
+
+async function confirmDeckSelection(candidate: DeckSelectionCandidate) {
+  if (deckSelectorConfirming.value || (l12State.room && me.value?.ready)) return
+  const scope = deckSelectorScope.value
+  const action = ++selectorActionEpoch
+  const epoch = identityEpoch
+  const accountId = platformState.account?.id
+  const token = platformState.token
+  const id = candidate.id
+  const revision = candidate.revision
+  const current = () => identityCurrent(epoch, accountId, token) && selectorActionEpoch === action
+    && deckSelectorOpen.value && deckSelectorScope.value === scope && !(l12State.room && me.value?.ready)
+  deckSelectorConfirming.value = true
+  deckSelectorError.value = ''
   try {
-    saveSelectedDeckName(deckSelectorScope.value, deck.name)
-    selectedDeckNames.value[deckSelectorScope.value] = deck.name
+    if (!id || !revision) throw new Error('牌库缺少稳定身份或修订，请重新选择')
+    const deck = 'counts' in candidate
+      ? await loadPrivateDeckBody({ id, revision }, current)
+      : candidate
+    if (!current()) return
+    if (deck.id !== id || deck.revision !== revision) throw new Error('服务器返回了不同的牌库身份或修订，请重新选择')
+    const invalid = !catalog.value.length || (scopeNeedsPolicy(scope) && !operationsPolicy.value)
+      ? '正在加载当前模式规则'
+      : validateDeck(deck, catalog.value, restrictionsForScope(scope))
+    if (invalid) { deckSelectorError.value = invalid; return }
+    saveSelectedDeckName(scope, deck.name)
+    if (!current()) return
+    const selection = cachedSelection(deck, 'counts' in candidate ? candidate : undefined)
+    const nextCache = { ...cachedDecks.value }
+    Object.keys(nextCache).filter(name => nextCache[name]?.id === deck.id).forEach(name => delete nextCache[name])
+    nextCache[deck.name] = deck
+    cachedDecks.value = nextCache
+    selectedDecks.value[scope] = selection
+    selectedDeckNames.value[scope] = deck.name
+    selectionMessages.value[scope] = ''
     deckSelectorOpen.value = false
-  } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择保存失败' }
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error)) deckSelectorError.value = bodyFailureMessage(error, scope, false)
+  } finally {
+    if (identityCurrent(epoch, accountId, token) && selectorActionEpoch === action) deckSelectorConfirming.value = false
+  }
+}
+function cancelDeckSelection() {
+  selectorActionEpoch++
+  deckSelectorConfirming.value = false
+  deckSelectorError.value = ''
+  deckSelectorOpen.value = false
 }
 function visibleDeckLabel(index: number) {
   const player = l12State.room?.players[index]
@@ -146,6 +262,9 @@ const optionLabels = {
 let maintenanceClockTimer = 0
 let refreshingOperationsPolicy = false
 let roomDefaultsHydrated = false
+let roomDeckSubmitKey = ''
+let roomDeckSyncKey = ''
+let roomDeckSyncPromise: Promise<boolean> | null = null
 
 function consumeOperationsPolicy(policy: EffectiveOperationsPolicy) {
   operationsPolicy.value = policy
@@ -191,26 +310,74 @@ watch(() => l12State.room?.options, options => {
   }
 }, { immediate: true, deep: true })
 
+async function refreshGuestDecks(epoch: number, accountId: string | undefined, token: string) {
+  if (accountId || token) return
+  try {
+    const decks = await ensureOfficialPrebuiltDecks()
+    if (!identityCurrent(epoch, accountId, token)) return
+    cachedDecks.value = decks
+    hydrateDeckSelections()
+  } catch (error) {
+    if (identityCurrent(epoch, accountId, token) && deckErrorBelongsToCurrentAccount(error))
+      l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
+  }
+}
+
+hydrateDeckSelections()
+watch(() => [platformState.account?.id, platformState.token] as const, ([accountId, token]) => {
+  identityEpoch++
+  selectorActionEpoch++
+  modeActionEpoch++
+  roomDeckSubmitKey = ''
+  roomDeckSyncKey = ''
+  roomDeckSyncPromise = null
+  deckSelectorOpen.value = false
+  deckSelectorConfirming.value = false
+  deckSelectorError.value = ''
+  cachedDecks.value = visibleDecks()
+  try { hydrateDeckSelections() }
+  catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择暂不可读取' }
+  if (!accountId && !token) void refreshGuestDecks(identityEpoch, accountId, token)
+}, { flush: 'sync' })
+
 onMounted(async () => {
   maintenanceClockTimer = window.setInterval(() => { policyNow.value = Date.now() }, 1_000)
   window.addEventListener('l12-resource-operationsPolicy', onOperationsResource)
+  const epoch = identityEpoch
   const account = platformState.account?.id, token = platformState.token
   try {
-    const [decks] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog().then(cards => { catalog.value = cards })])
-    if (account === platformState.account?.id && token === platformState.token) { customDecks.value = decks; hydrateDeckSelections() }
+    const [decks, cards] = await Promise.all([
+      account && token ? Promise.resolve(cachedDecks.value) : ensureOfficialPrebuiltDecks(),
+      loadDeckCatalog(),
+    ])
+    if (identityCurrent(epoch, account, token)) {
+      catalog.value = cards
+      cachedDecks.value = decks
+      hydrateDeckSelections()
+    }
   } catch (error) {
-    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+    if (identityCurrent(epoch, account, token) && deckErrorBelongsToCurrentAccount(error))
       l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
   }
+  if (!identityCurrent(epoch, account, token)) return
   await refreshOperationsPolicy()
+  if (!identityCurrent(epoch, account, token)) return
   try { ranked.value = normalizeRankedOverview(await rankedApi.overview()) }
-  catch (error) { l12State.notice = error instanceof Error ? error.message : '排位资料加载失败' }
+  catch (error) {
+    if (identityCurrent(epoch, account, token)) l12State.notice = error instanceof Error ? error.message : '排位资料加载失败'
+  }
+  if (!identityCurrent(epoch, account, token)) return
   if (platformState.account && platformState.token && l12State.status === 'offline') {
     try { await connect() } catch { /* 页面保留离线提示，创建/加入时仍可重试。 */ }
   }
 })
 
 onBeforeUnmount(() => {
+  componentAlive = false
+  identityEpoch++
+  selectorActionEpoch++
+  modeActionEpoch++
+  roomDeckSyncPromise = null
   window.clearInterval(maintenanceClockTimer)
   window.removeEventListener('l12-resource-operationsPolicy', onOperationsResource)
 })
@@ -220,13 +387,69 @@ function onOperationsResource(event: Event) {
     void refreshOperationsPolicy()
 }
 
-// 创建、加入或恢复好友房时，把该模式已确认的牌库同步到房间；选择器取消不会触发这里。
-watch(() => [l12State.room?.roomCode, currentDeck.value?.name, currentDeckError.value] as const, ([roomCode]) => {
-  const deck = currentDeck.value
-  if (!roomCode || !deck || currentDeckError.value || me.value?.ready) return
-  if (me.value?.customDeck && me.value.deckName === deck.name) return
-  selectCustomDeck(deck)
-}, { immediate: true })
+async function loadSelectedBody(scope: L12DeckSelectionScope, current: () => boolean) {
+  const selection = selectedDecks.value[scope]
+  if (!selection?.id || !selection.revision) throw new Error('当前选择缺少可验证的牌库修订，请重新选择')
+  if (!platformState.account?.id || !platformState.token) return selection.body
+  const body = await loadPrivateDeckBody({ id: selection.id, revision: selection.revision }, current)
+  if (!current()) return null
+  if (body.id !== selection.id || body.revision !== selection.revision)
+    throw new Error('服务器返回了不同的牌库身份或修订，请重新选择')
+  const nextCache = { ...cachedDecks.value }
+  Object.keys(nextCache).filter(name => nextCache[name]?.id === body.id).forEach(name => delete nextCache[name])
+  nextCache[body.name] = body
+  cachedDecks.value = nextCache
+  selectedDecks.value[scope] = { ...selection, name: body.name, body }
+  selectedDeckNames.value[scope] = body.name
+  return body
+}
+
+async function runRoomDeckSync(key: string, roomCode: string, id: string, revision: number, rulesKey: string,
+    epoch: number, accountId: string | undefined, token: string) {
+  const current = () => identityCurrent(epoch, accountId, token) && l12State.room?.roomCode === roomCode
+    && selectionCurrent('friendly', id, revision) && friendlyRulesKey() === rulesKey && !me.value?.ready
+  try {
+    const deck = await loadSelectedBody('friendly', current)
+    if (!deck || !current()) return false
+    const invalid = deckError(deck, 'friendly')
+    if (invalid) { l12State.notice = invalid; return false }
+    selectCustomDeck(deck)
+    if (!current()) return false
+    roomDeckSubmitKey = key
+    return true
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error)) l12State.notice = bodyFailureMessage(error, 'friendly')
+    return false
+  }
+}
+
+async function syncCurrentRoomDeck() {
+  const roomCode = l12State.room?.roomCode
+  const selection = selectedDecks.value.friendly
+  if (!roomCode || !selection || me.value?.ready) return false
+  const epoch = identityEpoch
+  const accountId = platformState.account?.id
+  const token = platformState.token
+  const rulesKey = friendlyRulesKey()
+  const key = `${epoch}:${roomCode}:${selection.id}:${selection.revision}:${rulesKey}`
+  if (roomDeckSubmitKey === key) return true
+  if (roomDeckSyncPromise && roomDeckSyncKey === key) return roomDeckSyncPromise
+  roomDeckSyncKey = key
+  const task = runRoomDeckSync(key, roomCode, selection.id, selection.revision, rulesKey, epoch, accountId, token)
+  roomDeckSyncPromise = task
+  try { return await task }
+  finally {
+    if (roomDeckSyncPromise === task) {
+      roomDeckSyncPromise = null
+      roomDeckSyncKey = ''
+    }
+  }
+}
+
+// 创建、加入或恢复好友房时，只展开并提交已确认的稳定ID+修订；选择器取消不会触发这里。
+watch(() => [l12State.room?.roomCode, selectedDecks.value.friendly?.id, selectedDecks.value.friendly?.revision,
+  me.value?.ready, catalog.value.length, operationsPolicy.value?.version, l12State.room?.options?.useCardRestrictions] as const,
+() => { if (l12State.room?.roomCode && !me.value?.ready) void syncCurrentRoomDeck() }, { immediate: true })
 
 async function chooseFaction(faction: 'order' | 'chaos' | 'fate') {
   if (factionSaving.value) return
@@ -246,15 +469,44 @@ async function submitFaction(faction: 'order' | 'chaos' | 'fate') {
   finally { factionSaving.value = false }
 }
 async function onMatch() {
+  if (modeActionPending.value) return
+  const action = ++modeActionEpoch
+  const epoch = identityEpoch
+  const accountId = platformState.account?.id
+  const token = platformState.token
+  const mode = selectedMatchMode.value
+  const scope: L12DeckSelectionScope = mode
+  const selection = selectedDecks.value[scope]
+  const current = () => identityCurrent(epoch, accountId, token) && modeActionEpoch === action
+    && selectedMatchMode.value === mode && tab.value === 'match' && !l12State.room
+    && Boolean(selection && selectionCurrent(scope, selection.id, selection.revision))
+  modeActionPending.value = true
   try {
     if (!operationsAllowed() || !(await ensureConnected())) return
-    if (!currentDeck.value || currentDeckError.value) {
-      l12State.notice = currentDeckError.value || '当前模式没有可用牌库'
+    if (!current() || !selection) {
+      if (identityCurrent(epoch, accountId, token)) l12State.notice = '当前模式没有可验证的牌库，请重新选择'
       return
     }
-    if (selectedMatchMode.value === 'ranked' && !ranked.value?.profile.faction) { l12State.notice = '请先选择本赛季派系'; return }
-    joinMatchmaking(selectedMatchMode.value, currentDeck.value)
-  } catch {}
+    const deck = await loadSelectedBody(scope, current)
+    if (!deck || !current()) return
+    const invalid = deckError(deck, scope)
+    if (invalid) { l12State.notice = invalid; return }
+    if (mode === 'ranked' && !ranked.value?.profile.faction) { l12State.notice = '请先选择本赛季派系'; return }
+    joinMatchmaking(mode, deck)
+  } catch (error) {
+    if (current() && deckErrorBelongsToCurrentAccount(error)) l12State.notice = bodyFailureMessage(error, scope)
+  } finally {
+    if (identityCurrent(epoch, accountId, token) && modeActionEpoch === action) modeActionPending.value = false
+  }
+}
+
+async function toggleReady() {
+  if (me.value?.ready) { setReady(false); return }
+  if (modeActionPending.value) return
+  modeActionPending.value = true
+  try {
+    if (await syncCurrentRoomDeck()) setReady(true)
+  } finally { modeActionPending.value = false }
 }
 
 async function ensureConnected() {
@@ -316,7 +568,7 @@ async function copyRoomCode() {
       </section>
       <section v-if="operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
       <section class="room-current-deck"><DeckProfile v-if="currentDeck" compact :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" context="好友房牌库" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><p v-else>当前没有已保存牌库</p><div><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合好友房规则' }}</span><button type="button" :disabled="me?.ready" @click="openDeckSelector">更换牌库</button></div></section>
-      <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/decks">管理我的牌库</router-link><button class="primary" :disabled="l12State.room.players.length < 2 || !!currentDeckError" @click="setReady(!me?.ready)">{{ me?.ready ? '取消准备' : '准备对战' }}</button></footer>
+      <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/decks">管理我的牌库</router-link><button class="primary" :disabled="modeActionPending || l12State.room.players.length < 2 || !!currentDeckError" @click="toggleReady">{{ me?.ready ? '取消准备' : modeActionPending ? '正在校验牌库…' : '准备对战' }}</button></footer>
     </section>
 
     <template v-else>
@@ -330,17 +582,19 @@ async function copyRoomCode() {
         <div v-if="selectedMatchMode === 'ranked' && ranked && (!ranked.profile.faction || changingFaction)" class="faction-select"><b>{{ changingFaction ? '改选本赛季派系' : '选择本赛季派系' }}</b><strong v-if="changingFaction" class="faction-reset-warning">注意：确认更换后七曜值将清零，定级与本赛季战绩重新开始。</strong><span v-else>请选择本赛季参与排位的派系。</span><button v-if="changingFaction" :disabled="factionSaving" @click="changingFaction = false">返回，不更改</button><div><button v-for="faction in ranked.config.factions" :key="faction.id" :disabled="factionSaving || faction.name === ranked.profile.faction || faction.id === ranked.profile.faction" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
         <div v-else-if="selectedMatchMode === 'ranked' && ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.titles?.length"> · {{ ranked.profile.titles.join(' · ') }}</template><template v-else-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button @click="changingFaction = true">改选派系</button></div>
         <div class="match-options"><button :class="{ active: selectedMatchMode === 'ranked' }" @click="selectedMatchMode = 'ranked'">排位匹配</button><button :class="{ active: selectedMatchMode === 'casual' }" @click="selectedMatchMode = 'casual'">休闲匹配</button></div>
-        <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="!currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">开始{{ selectedMatchMode === 'ranked' ? '排位' : '休闲' }}匹配</button>
+        <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="modeActionPending || !currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">{{ modeActionPending ? '正在校验牌库…' : `开始${selectedMatchMode === 'ranked' ? '排位' : '休闲'}匹配` }}</button>
       </section>
 
       <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终堙灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
-    <SavedDeckSelector :open="deckSelectorOpen" :mode="deckSelectorScope" :decks="savedDeckList"
-      :catalog="catalog" :current-deck-name="selectorCurrentName" :restrictions="selectorRestrictions"
-      :loading="selectorLoading" :disabled="!!(l12State.room && me?.ready)"
-      @cancel="deckSelectorOpen = false" @confirm="confirmDeckSelection"/>
+    <SavedDeckSelector :open="deckSelectorOpen" :mode="deckSelectorScope" :guest-decks="guestDeckList"
+      :catalog="catalog" :current-deck-id="selectedDecks[deckSelectorScope]?.id"
+      :current-deck-revision="selectedDecks[deckSelectorScope]?.revision" :current-deck-name="selectorCurrentName"
+      :restrictions="selectorRestrictions" :uses-season-restrictions="scopeNeedsPolicy(deckSelectorScope)"
+      :loading="selectorLoading" :disabled="!!(l12State.room && me?.ready)" :confirming="deckSelectorConfirming"
+      :action-error="deckSelectorError" @cancel="cancelDeckSelection" @confirm="confirmDeckSelection"/>
     <Teleport to="body">
       <div v-if="pendingFaction" class="ranked-rules-backdrop" @click.self="!factionSaving && (pendingFaction = null)">
         <section class="ranked-rules-modal ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="faction-confirm-title" @keydown.esc="!factionSaving && (pendingFaction = null)">
