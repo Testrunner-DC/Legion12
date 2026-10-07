@@ -55,6 +55,38 @@ public sealed class B2StableDeckIdentityTests
             Assert.Equal(created.Id, renamed!.Id);
             Assert.Equal(2, renamed.Revision);
 
+            var readExpansions = new List<string>();
+            store.DeckPayloadExpansionObserver = readExpansions.Add;
+            using (var staleRead = Authorized(HttpMethod.Get,
+                $"/api/decks/by-id/{created.Id}?expectedRevision=1", login.Token!))
+            using (var staleReadResponse = await client.SendAsync(staleRead))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, staleReadResponse.StatusCode);
+                using var error = JsonDocument.Parse(await staleReadResponse.Content.ReadAsStringAsync());
+                Assert.Equal("deck_revision_conflict", error.RootElement.GetProperty("code").GetString());
+                Assert.Equal(2, error.RootElement.GetProperty("currentRevision").GetInt64());
+            }
+            var otherReader = store.Register("tb2reader", "password-123");
+            Assert.True(otherReader.Success, otherReader.Message);
+            using (var otherRead = Authorized(HttpMethod.Get, $"/api/decks/by-id/{created.Id}", otherReader.Token!))
+            using (var otherReadResponse = await client.SendAsync(otherRead))
+                Assert.Equal(HttpStatusCode.NotFound, otherReadResponse.StatusCode);
+            Assert.Empty(readExpansions);
+            using (var currentRead = Authorized(HttpMethod.Get,
+                $"/api/decks/by-id/{created.Id}?expectedRevision=2", login.Token!))
+            using (var currentReadResponse = await client.SendAsync(currentRead))
+            {
+                Assert.Equal(HttpStatusCode.OK, currentReadResponse.StatusCode);
+                var detail = await currentReadResponse.Content.ReadFromJsonAsync<L12AccountDeckView>();
+                Assert.Equal(renamed.Id, detail!.Id);
+                Assert.Equal(renamed.Revision, detail.Revision);
+                Assert.Equal(renamed.Name, detail.Name);
+                Assert.Equal(renamed.CardIds, detail!.CardIds);
+                Assert.Equal(JsonSerializer.Serialize(renamed), JsonSerializer.Serialize(detail));
+            }
+            Assert.Single(readExpansions);
+            store.DeckPayloadExpansionObserver = null;
+
             using var stale = Authorized(HttpMethod.Put, $"/api/decks/by-id/{created.Id}", login.Token!, new
             {
                 deck = Submission(source, "HTTP 陈旧"),
@@ -77,6 +109,17 @@ public sealed class B2StableDeckIdentityTests
                 $"/api/decks/by-id/{created.Id}?expectedRevision=2", login.Token!);
             using var deletedResponse = await client.SendAsync(delete);
             Assert.Equal(HttpStatusCode.NoContent, deletedResponse.StatusCode);
+            using var reuseName = Authorized(HttpMethod.Post, "/api/decks", login.Token!, Submission(source, "HTTP 改名"));
+            using var reusedResponse = await client.SendAsync(reuseName);
+            Assert.Equal(HttpStatusCode.Created, reusedResponse.StatusCode);
+            var reused = await reusedResponse.Content.ReadFromJsonAsync<L12AccountDeckView>();
+            Assert.NotEqual(created.Id, reused!.Id);
+            readExpansions.Clear();
+            store.DeckPayloadExpansionObserver = readExpansions.Add;
+            using var deletedRead = Authorized(HttpMethod.Get, $"/api/decks/by-id/{created.Id}", login.Token!);
+            using var deletedReadResponse = await client.SendAsync(deletedRead);
+            Assert.Equal(HttpStatusCode.NotFound, deletedReadResponse.StatusCode);
+            Assert.Empty(readExpansions);
         }
         finally
         {

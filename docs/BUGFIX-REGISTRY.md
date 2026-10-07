@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## TEST-20261007-INBOUND-OBSERVATION｜失效连接测试观察竞态（仅测试修正，本地已验）
+
+- CQ1首次完整相关族394中旧撤销测试因`missing runtime inbound connection`失败；冻结pre-CQ1产品318及测试cc5独立执行同一真实case仍0/1，证据在D盘`deck-payload-a-20261007/.tmp/c-q1/old-ws-results/old-ws.trx`，不是空过滤或新接口引入的产品回归。
+- 根因：撤销后的正常断连finally可从live连接表移除对象，旧测试再从live表取该对象作断言。仅在`WebSocketInboundIsolationTests.cs`提前捕获同一连接，并在其锁内证明一条执行/一条待执行；保留撤销数量、关闭新输入、待执行取消、拒绝、重登录房间未leave断言。全类同型查找仅另一个容量溢出后观察点，亦提前捕获，保容量/FIFO/无溢出确认/恢复断言。
+- 不修改WebSocket或入站队列产品，不增加产品hook、不吞失败、不缩过滤。子394/394与Main完整平台840/840均fail/skip0；精确十源、原两轮失败和最终TRX绑定`deck-query-private-20261007/main-independent-acceptance.json`。未部署，不改变线上Bug状态。
+
+## RELEASE-20261007-FIVE-CLOSURES｜五条已发布具名卡效反馈闭环
+
+- 正式`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`已实际部署/独立核验，与完整6600规则/745平台及实包绑定。Main04:21—04:22新读取仅五原ID，原标题/反馈文本与只读审计一致，源文件哈希及最终TRX92个具名成功项逐项精确核对；不声称重现玩家原录像。
+- `BUG-20261004-f86b94b7`侵略如火1项、`9ca9d447`复仇血鹰40项、`2b0e3350`迦具土/伏击16项、`1b0bdc4e`李牧33项、`BUG-20261005-8d630b27`普罗米修斯双方2项（另实际组件验收）均条件关闭为`resolved/fixed_verified`，正式修复/部署提交与具名回归写入并读回。原备注、分派、优先级保留；每项预览/版本CAS/幂等键，模糊写入不自动重试。
+- 专用正式账号会话已finally撤销，维护/两服部署写入0；其余反馈无批量关闭。完整收据`D:/GPT/Legion12/artifacts/bug-closure-20261007/online-closure-receipt.json` SHA256 `B6B7CAE047A0A93234E1E4355168F09261D2AFB442B17660B0EEFDE153E58FC7`。旧条目“未部署/本地”仅历史过程，保留其原失败与裁定证据。
+
 ## DEPLOYMENT-20261007-RUNTIME-PROOF｜停服备份校验空WAL误拒与有界诊断（获准，验收中）
 
 - 正式bc1f发布先因SSH缓存探测失败在停服前阻止；用户批准受控重试后，最新运行快照已校验，但停服proof拒绝。新服务从未启动，标准流程恢复c858本机/公网/WS并保留最新库、快照和失败现场，维护未改。原日志、授权及两次独立收据在D盘artifacts/release-20261007-approved；不冒称部署成功，不自动重试模糊切换或回写旧库。

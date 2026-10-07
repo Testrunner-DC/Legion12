@@ -1246,6 +1246,35 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.Decks(account.Id));
         });
+        _app.MapGet("/api/decks/summaries", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12PrivateDeckQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "牌库摘要查询参数无效" });
+            var page = _platform.PrivateDeckSummaries(account, _catalog, query);
+            return page is null ? Results.Unauthorized() : Results.Ok(page);
+        });
+        _app.MapGet("/api/decks/by-id/{id}", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12PrivateDeckQuery.TryParseRevision(request.Query, out var revision))
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            var result = _platform.ReadPrivateDeck(account, id, revision);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Deck),
+                "unauthorized" => Results.Unauthorized(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                _ => Results.NotFound(),
+            };
+        });
         _app.MapPost("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

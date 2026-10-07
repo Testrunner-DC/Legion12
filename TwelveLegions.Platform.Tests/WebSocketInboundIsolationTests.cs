@@ -345,14 +345,16 @@ public sealed class WebSocketInboundIsolationTests
                 try
                 {
                     await holder.Entered.WaitAsync(TimeSpan.FromSeconds(2));
+                    var inbound = RuntimeInbound(server);
                     await SendAsync(socket, new { type = "syncState" });
                     await SendAsync(socket, new { type = "leaveRoom" });
                     Assert.True(SpinWait.SpinUntil(
-                        () => RuntimeInbound(server).RetainedMessages >= 2, TimeSpan.FromSeconds(2)),
-                        "two business messages were not retained behind the room gate");
+                        () => HasOneExecutingAndOnePending(inbound), TimeSpan.FromSeconds(2)),
+                        "one executing and one pending message were not retained behind the room gate");
                     var revoked = platform.RevokeOwnSession(actor, actor.SessionId);
                     Assert.Equal(1, revoked.RevokedCount);
-                    Assert.Equal(1, RuntimeInbound(server).RetainedMessages);
+                    Assert.False(inbound.IsAccepting);
+                    Assert.Equal(1, inbound.RetainedMessages);
                 }
                 finally
                 {
@@ -482,13 +484,14 @@ public sealed class WebSocketInboundIsolationTests
                 try
                 {
                     await holder.Entered.WaitAsync(TimeSpan.FromSeconds(2));
+                    var inbound = RuntimeInbound(server);
                     for (var index = 0; index < L12InboundConnection.MaximumRetainedMessages; index++)
                         await SendAsync(socket, new { type = "syncState", requestId = $"accepted-{index}" });
                     Assert.True(SpinWait.SpinUntil(
-                        () => RuntimeInbound(server).RetainedMessages == L12InboundConnection.MaximumRetainedMessages,
+                        () => inbound.RetainedMessages == L12InboundConnection.MaximumRetainedMessages,
                         TimeSpan.FromSeconds(2)));
                     await SendAsync(socket, new { type = "leaveRoom", requestId = "overflow-must-not-ack" });
-                    Assert.True(SpinWait.SpinUntil(() => !RuntimeInbound(server).IsAccepting,
+                    Assert.True(SpinWait.SpinUntil(() => !inbound.IsAccepting,
                         TimeSpan.FromSeconds(2)), "overflow was not received before releasing the FIFO barrier");
                 }
                 finally
@@ -783,6 +786,17 @@ public sealed class WebSocketInboundIsolationTests
             return (SemaphoreSlim)room.GetType().GetProperty("Gate")!.GetValue(room)!;
         }
         throw new InvalidOperationException($"missing runtime room {roomCode}");
+    }
+
+    private static bool HasOneExecutingAndOnePending(L12InboundConnection inbound)
+    {
+        var gate = typeof(L12InboundConnection).GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inbound)!;
+        lock (gate)
+        {
+            var pending = (ICollection)typeof(L12InboundConnection)
+                .GetField("_queue", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inbound)!;
+            return inbound.IsAccepting && inbound.RetainedMessages == 2 && pending.Count == 1;
+        }
     }
 
     private static L12InboundConnection RuntimeInbound(L12WebSocketServer server)

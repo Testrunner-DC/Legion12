@@ -1,5 +1,51 @@
 # 十二军团任务台账
 
+## MAIN-20261007-0801｜08点正式开放已核验，后续仅本地
+
+- **10:54当前**：Main CQ1精确十源已接回，独立完整840/840 fail/skip0，39源/DLL/TRX实际回执SHA `A6A1018BC9D06CC6EC9CDA615516BF60333DA5A13E49A1DD81A73AD0BCA352E6`；旧新41golden同C19AE、子394全过，WS只稳定测试观察，不改产品。五本地特性提交HEAD2fe0f985，remote/正式2da、测试428fff25；CQ1记录/干净Release/Git同步仍待。原完整Batch规则6601/平台829和纠正前端域41132证据保留，不把初exit1说成全成功。CQ2公开/官方摘要精确10源已授写/静态，CardPool唯一源、全库排序/代际/匿名边界，不改旧API或暗带CQ3/C-U；Archive两源独占.NET，首59为49通过/10失败，UTC日解析共同原因核对修复中，未接Main/Program。08开服已核、无超时部署/维护变更；两整套及规模长期未完，持续本地推进。
+
+- **08:41当前**：旧镜像夹具最终10/10、Main规则域Batch80068完整6601/6601（08:28:10、fail/skip0、监督success），成功临时TRX已清而监督receipt/日志保留。Main独立平台779和未变前端/ops证据保持，原完整Batch失败及首修9/10失败都不覆盖；最终干净Release/Git仍待。08:37实际fetch local/origin精确2da，63路径dirty。C-R13租约中的实际8源及12case/在线大计数预算补片占.NET，首冻结源码编译0/0，尚无GREEN声明；旧readerartifact准备已只静态Plan12资产/PS/XML/绑定通过，源码冻结，禁止并行Build/Run。原8点正式开服事实不变，两方案未全完成，之后无部署授权。
+
+- **08:13门禁增量，未同步**：原完整合并Batch92787已exit1，完整规则6600为6599通过/1失败/skip0；唯一失败为`EffectPresentationTextTests.DuplicateLegacySceneRowsUseTheNewestOverrideInsteadOfBreakingReads`。原TRX SHA `F9B65B9DD156E67FBF47107273033B1CE9A2C66DCC8482839D27D486482CF7FE`及监督失败目录保留。未改的旧夹具在当前DB仍在时手改同Version镜像并期待覆盖DB，与已审A拒绝同代漂移的保护冲突；不因此放宽产品守卫。只读穷举规则测试确认仅此场景，真正删DB后首次旧数据恢复的原测试保留。给子代理单`EffectPresentationTextTests.cs`测试租约：真实新路径首次导入保原“重复行取最新”，新增同代拒覆盖对照；原数据域空集明确证明完整，未删原DB或伪加版本。全类Focused在执行，随后Main仅复验失效规则域并统一干净Release/Git，未称整体Batch通过。C-R另一写入者继续；artifact-only旧reader准备暂停、资产已冻结保留，当前没有第三写入者。正式仍开放，不受此本地失败影响。
+
+- 预约在08:00自然到期，08:00:54工具成功，08:01:26 Main独立fresh HTTP/policy确认正式2da、health ok、维护false、新对局entryBlocked false、即时false、策略92 open；同服务PID1465526/重启0、三围栏missing、匿名WS成功。
+- 实际成功收据`maintenance-open-20261007/maintenance-open-receipt.json` SHA `40C838C35516F441F6F39D46785C60B6E5113586FE05AB1C4171A09A25DFA33B`，独立读回`independent-opening-readback.json`。自然失效无需CAS，维护配置版本未变、专用会话已撤销。原08一次性回访已工具删除，不重复动作。
+- 两完整方案未达退出条件，本轮不追加发布：正式仍已验2da、测试428fff25不变。后续不存在新的正式/测试部署授权；已授权本地任务继续。Main完整Batch92787仍执行、源冻结，完整Release/Git待。
+- 下一两写入管线：既有牌库聊天在A稀疏树持C-R13精确路径写/静态租约（运行态引用与同代自足rollback），C-Q/C-U未授；旧reader子代理只在D盘新artifact准备合成生成器/Windows冻结2da reader/probe，禁用私有副本、复制旧runtime或改变repo。Main独占.NET槽，二者不得构建至明确交槽。
+- 共享C-R/广播schema、导入、冲突刷新与恢复出口按序接线，广播只读矩阵已接收，未授写。领域revision分离须显式记录真实合同，45秒不改为重发。采样/容量/长期仍待，不把局部短测说成全方案完成。
+
+## MAIN-20261007-0736｜不追加发布、并行本地收口、08点独立开放
+
+- **07:54增量实证**：A14主树独立完整平台755/755已07:38:56退出0（TRX SHA `982E5275B054D48C30881B295E9B0A6BA7A728C79D612E28465376ADA15B273F`）；最终身份6含SourceOrder已独立24/24并接回，Main合并A/身份完整平台779/779失败跳过0（TRX SHA `94A9164071C7A6E9A322A5031063F2F9A7FB7494AE0961C81426CB8C843CCB18`）。两份Main独立acceptance已实际生成，不是完整Release。现完整合并Batch92787运行、源冻结；两只读管线分别预检旧reader Windows同依赖兼容与广播对象事务，均无写/构建租约。旧2da托管DLL可配既有同包SQLite3.53.3 Windows原生库做后续合成probe，不安装Linux、不冒称Linux/生产回退，尚未执行。07:50公开HTTP再次确认2da/策略92/预约08结束/即时false，尚非开服证明。
+
+- 07:20实际决策文件`D:/GPT/Legion12/artifacts/maintenance-open-20261007/decision-0720.json`为`no-additional-deployment`；两整套未完成，不以局部通过候选赶正式部署。正式保留已验证2da、测试428fff25。08点开服独立，普通本地构建绝不延长维护。
+- B0/B1缓存及消费者已接回；Main最终前端域Batch31966实际exit0，完整日志`deployment-drain-consumer-20261007/main-frontend-batch-contract-fix2.log`，旧固定字符串合同失败留存。原ops八路径冻结，72场/6执行器、SQLite30、Python28与fresh testrun通过；新完整Release/Git尚未进行。
+- A14已Main逐路径比较后集成：版本化单正文、schema8事务迁移/恢复拒绝、最新事实反迁移，子755/755、失败跳过0，TRX SHA `A77D4D51CC40AA1209B89273B767D71EA6F402B0934EAC6F92BEC726CC6DC604`。Main独占构建槽运行主树完整平台60906；旧冻结2da真实reader与真实DB/WAL/内存规模测量仍待，不冒称A退出证据齐全。
+- committed身份6路径原22focused通过。Main独立发现冻结字典Values不能代替原列表稳定并列顺序；子仅同6路径保留原SourceOrder并补ghost/隐藏同名完全并列测试，持写租约但无构建租约。不得引入AccountId新排名规则、历史窗口剪裁或时刻钳制，原22不能冒充修订后测试结果。
+- C-R/C-Q/C-U依赖评审已接收但尚无写租约；等待A/身份共有入口冻结，保留P2兼容、同代回退事实、B1原键/原草稿和权限，不在08前新增风险。广播对象事务、进程采样/7日保留、250/325人及4小时长期未完成，既有Windows短测不等价。
+- 08开服工具与独立43项证据保持；06:39公开策略及06:51 PID1465526/重启0/三围栏missing仅历史观察。08必须fresh HTTP/policy/WS/服务及实际收据，无未知围栏自动清理。完成后删除一次性08回访，继续本地任务。
+
+## MAIN-20261007-0643｜并行存储/身份验收与08点独立开服
+
+- 正式实际2da、测试428fff25；06:39公开读回配置92预约08:00结束，即时false。没有两套完整退出证据不追加部署；08点实核开放，不因本地任务延期。
+- B1已集成16路径及B0六路径；Main缓存/authority专项与子任务六尺寸故障/真实Vue证据保持。完整合并Batch原81825在testrun静默后中断exit1，失败保留；Main fresh独立64949该专项退出0，不据此填完整Batch/Release通过。
+- ops冻结八路径：Main strict gate、72/6、SQLite30、Python28通过；未提交/未推送/未追加部署。原fixture停点在grep-failure的假服务预检后、stop前，未触达真实网络；捕获器无期限与顺序双流风险另列，根因未证实。
+- A存储9路径：产品编译通过，测试编译两失败真实保留（稀疏linked源/新fixture init-only赋值），只修夹具后继续；非空赛事full JSON与最新事实反迁移、坏第二条整事务回滚必须真实通过。独占.NET focused租约。
+- 身份投影6路径在独立树实施，不并行构建；Prepare/Publish/rollback必须同一已提交代，时间窗按查询时刻，不以长期缓存代替当前称号。
+- 牌库存储C、广播对象事务、10秒采样/7天留存、250/325目标容量与4小时长期仍待。所有任务/证据在D盘，生产写入和维护配置变更为0；五条已关闭具名报告不重复Apply。
+
+## MAIN-20261007-POST-RELEASE｜五条Bug闭环后优先两完整方案，08:00开服
+
+- 最新实际正式版本`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`；03:50部署、03:53独立核验、03:57完成收据。正式计划92仍按02:00—08:00，测试`428fff25`不部署。
+- 先仅核对并条件关闭五条具名报告：侵略如火、复仇血鹰、迦具土/伏击、李牧、普罗米修斯；核原文、当前状态、具名TRX、源哈希和实际正式绑定，不批量关闭其余反馈。回执`D:/GPT/Legion12/artifacts/bug-closure-20261007`。
+- 用户指定下一优先：牌库存储A/B/C与正式服对局保障完整方案。P2/P3内扩展，保留稳定ID、隐藏信息、事务/镜像/回退、Journal/检查点/outbox、权威投影；不以旧脏规范树替换来源。
+- 最多两产品写入者、精确文件租约、构建串行；Main独立验收/记录/Git/发布。B0六路径已接回主树，Main独立codec708、短码235字符与两类QR专项通过，缓存接线B1、后端A/C仍未完成；首次启用控制面和历史未结束记录不是普通consumer可绕过的永久豁免。
+- 今日07:20停止新风险、07:30做发布判断；两整套完整验收才追加正式发布，未全部完成则不部署，08:00仍解除本次维护。原预约已设结束08:00；一次性安全截止和开服核验回访已实际创建。仅实际发布/最新数据安全恢复事务进行中才先安全收口，不拖延普通本地任务而延迟开服。
+- 不安装Linux/WSL、不购买资源、不做测试部署、不擅自复用私有副本新用途、不回写旧数据库；真实4小时/长期容量缺口不能以短测冒充。开服后未完已授权工作继续。
+- **04:22阶段1完成**：五条报告均由Main核原文、当前字段、92具名最终TRX、源哈希与实际正式2da绑定后条件更新，逐项`resolved/fixed_verified`读回，原备注/分派/优先级保留，专用会话已撤销。实际回执`bug-closure-20261007/online-closure-receipt.json` SHA256 `B6B7CAE047A0A93234E1E4355168F09261D2AFB442B17660B0EEFDE153E58FC7`；维护写入0、部署0，其余报告不动。
+- **05:25本地实施租约**：ops consumer子任务独占8个ops/test路径，只做本地协议消费者/同运行兼容指纹的程序回退，不修改核心协议、不生产启开关。Main独立Python28负例通过，完整发布故障套件正在执行；原NoRetry检查和Windows合成夹具失败均留存，尚未宣布全套通过。B1子聊天独占缓存/storage/测试及9个既有Vue的错误消费、账号代际小片；新增真实迟到/配额/原值保持专项通过，完整类型/浏览器尚未执行，未集成主树。没有并行完整构建。
+- **08工具已独立验收冻结**：新工具SHA `7ED7D825CC475902CFA264A41B470FC29CF59AC659132E5AFB48625D957C8672`、测试SHA `636B11C6DE7C39C164308995E52385F125904C0931BA32C0DA0DFE8C154C7699`，Main实际复跑43/43、失败跳过0，回执`maintenance-open-20261007/main-independent-acceptance.json`。已核真实当前协议默认关闭/精确认证503与三围栏合同，不能拿mock Open替代线上。08点必须实核远端锁/服务/PID/HTTP/WS/有效策略，尚未执行维护动作，不把离线验收当成开服回执。
+
 ## MAIN-20261007-RUNTIME-PROOF｜正式发布校验器限定修复（已批准，实施验收中）
 
 - 当前卡效bc1f已实际完整Release6600/745、447专项/24真实组件、七阶段/同DLL/精确Git收口。用户最新授权正式部署、SSH固定元数据及旧版首次升级例外；02:00维护自然active，版本92原样，不授权测试部署或解除维护。10旧friendly中1条维护watchdog正常补结束且检查点保留，剩9与1waived原样保留，不删除或重算。

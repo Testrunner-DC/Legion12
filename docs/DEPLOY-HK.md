@@ -1,5 +1,9 @@
 # Legion12 正式服快速部署
 
+> **2026-10-07 08:01开服实际核验**：预约维护08:00自然结束，08:00:54工具和08:01:26独立fresh读回正式`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`、health ok、策略92 open、maintenance/entryBlocked/immediate均false；同PID、重启0、三发布围栏missing、匿名WS正常。没有追加发布、没有维护配置CAS，专用会话已撤销。实际D盘`maintenance-open-20261007/maintenance-open-receipt.json`及`independent-opening-readback.json`优先于下方待开服历史；一次回访已删除。未完本地方案继续，不能再使用今日截止前的追加部署授权。
+
+> **2026-10-07实际读回优先于下方历史资料**：正式已部署并独立核验`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`，测试独立运行`428fff25`；真实收口为D盘`release-20261007-approved/retry-2/release-closure.json`。当前标准Windows工具默认制品根`/www/legion12`，正式不可变release、已消费incoming和备份在该根下，稳定入口/活跃数据库仍`/opt/legion12-test`及`/opt/legion12-runtime`，不把目录名test误认测试服。下方09月“测试服尚未启用/当前根opt”仅历史，不作为当前配置。外部原子排空consumer正在本地实现，开关仍未启用，未知/历史未结束记录不豁免；未通过新批完整验收不可发布。今日新部署仅在完整牌库存储A/B/C和正式对局保障同时完成且07:30前有足够安全余量时授权；否则不追加发布，08:00仍开服。不得执行旧日期发布/维护入口，不进行测试服部署，不恢复旧数据库。
+
 > **迁移后正式服提醒（2026-09）**：本文件中的发布路径当前服务于正式服 `legion-12.com`；`legion12-test.service` 只是历史名称，不能据此认定为测试服。伙伴提交与维护者正式发布的角色边界、Git 门禁、上线验收及停止条件，请先阅读[《伙伴提交与正式服发布指南》](CONTRIBUTION-AND-PRODUCTION-RELEASE.md)。独立测试服尚未启用，旧服务器不得重新启用或形成双写。
 
 发布流程采用“开发电脑或 CI 完整验证一次、服务器只校验并切换预构建产物”的模型。服务器不再保存源码、`node_modules` 或执行第二轮完整测试；账号、牌库、Bug、官网内容和对局记录独立保存在共享运行目录。
