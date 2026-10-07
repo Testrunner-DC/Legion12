@@ -14,9 +14,11 @@ var port = args.FirstOrDefault(argument => int.TryParse(argument, out _)) is { }
     && int.TryParse(portArgument, out var parsedPort) ? parsedPort : 8080;
 var dataPath = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data");
 var runtimePath = Path.Combine(AppContext.BaseDirectory, "runtime");
+var runtimeBuild = L12RuntimeBuildVersion.Capture();
+var processMetricInstance = Guid.NewGuid();
 Directory.CreateDirectory(runtimePath);
 var deploymentDrain = L12DeploymentDrainStartup.Create(deploymentDrainEnabled, runtimePath,
-    L12RuntimeBuildVersion.Capture());
+    runtimeBuild);
 
 var ephemeralTestMatches = L12TestRunStorageProfile.Prepare(runtimePath,
     Environment.GetEnvironmentVariable(L12TestRunStorageProfile.EnvironmentKey),
@@ -79,6 +81,12 @@ await using var server = new L12WebSocketServer(rooms, recorder, platform, catal
 Console.WriteLine("Twelve Legions online battle server");
 Console.WriteLine($"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");
 await server.StartAsync(port);
+var processMetricStart = L12ProcessMetricArchiveStartup.TryStart(runtimePath,
+    runtimeBuild.ServerRelease, processMetricInstance,
+    reason => Console.Error.WriteLine($"Process metrics degraded: {reason}."));
+var processMetricRuntime = processMetricStart.Runtime;
+if (!processMetricStart.Started)
+    Console.Error.WriteLine($"Process metrics unavailable: {processMetricStart.Reason}.");
 
 var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -89,4 +97,10 @@ Console.CancelKeyPress += (_, eventArgs) =>
 
 await stopped.Task;
 Console.WriteLine("Stopping server...");
-await server.StopAsync();
+var processMetricStop = processMetricRuntime?.StopAsync(TimeSpan.FromSeconds(2));
+try { await server.StopAsync(); }
+finally
+{
+    if (processMetricStop is not null && !await processMetricStop)
+        Console.Error.WriteLine($"Process metrics stopped: {L12ProcessMetricStartupReason.ShutdownIncomplete}.");
+}
