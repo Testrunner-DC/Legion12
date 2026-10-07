@@ -1,6 +1,33 @@
 # Legion12 Bug 修复记录
 
-## REVIEW-20261008-PRIVATE-CONSUMERS｜认证目录和单对象消费族（本地专项通过，完整门禁待）
+## ADMIN-20261008-INTEGRITY-GROUP-FILTER｜排位审计归组真正筛选（直接授权，Main已验，Release待）
+
+- 正常链最终为可移植实际compiler-sfc/TypeScript/Vue内存宿主挂载Panel+原PagedCollection14/14，Main默认项目依赖独立重跑，源码2FF333F2。原完整9浏览器体保留为显式`verify-ranked-integrity-group-filter.mjs`（836E0083），只自身指纹路径变化；旧Panel同一portable脚本RED89未筛61，原interop夹具失败保留。正常build不依赖本机C盘Playwright或msedge，未冒称Ubuntu CI实际已通过；原Actions/Paged产品不改。
+
+- 原因：原按钮只设置selected，PagedCollection仍消费全部rows；在后页点组既不筛选也不回第一页。仅前端按当前有界查询的真实matchId集合过滤，切组/清除/同组重选回第一页，组内全部成员保留可翻页；选择仍最多50且跳过已处理项。当前查询最多300条，不称完整历史，不改API、风险规则、人工处置或服务端权限。加载代际/卸载拒迟回，查询失败不显示成功空态。
+- Main精确接回两源后实际Vue/真实PagedCollection9/9：后页点61条组、全七页61条、50选择、terminal不选、另一组20条、获益组5条、清除恢复86条、reload/空/失败/迟回与390px横向包含均通过。证据`ranked-integrity-group-filter-20261008/main-integrated-r2`、原RED保留。正常UI链已纳9项；RankedIntegrityActions和PagedCollection产品均不改，原风险与20安全合同保持。仍待完整Batch/Release/Git，不部署或自动关闭Bug。
+
+## UI-20261008-SETTINGS-FEEDBACK｜首页回访和反馈入口收敛（用户直接授权，Main浏览器已验，Release待）
+
+- Main最终分段Batch已完成：原完整6601规则过，平台首1088/1089唯一旧watchdog测试Dispose清理393216字节matches.db被占用失败，原TRX/临时目录/receipt不删；进程结束后同文件独占只读可开，源码不改15专项过，再同源完整平台1089/1089和完整前端域r2 exit0（UI355、反馈144、Group14、所有原私人/公共/B1/类型/双环境/324+42）。这不是原整条Batch exit0，原占用者根因未定，未通过改业务、放宽断言或跳过测试变绿。最终clean Release另保原完整TRX，与测试程序集/实包独立绑定。
+
+- 删除首页“我的牌库／我的赛事”，仅有权威进行中对局/观战时保留继续入口，无空容器和私人牌库读取。普通站点、编辑器、对战、观战与回放均从共享设置打开唯一Global反馈宿主；删除浮动按钮、个人页横条及工具菜单直接入口，后台Bug管理不动。设置先关闭再nextTick开反馈；原提交/现场采集/账号隔离/草稿语义与144回归不改，P4画布、P1卡效不动。
+- Main按稀疏hunk接回，保留4b2私人读取/编辑器草稿/账号保护/AST迁移，不覆写旧树。拒绝改写SiteShell历史更新文案，新变化进入单独玩家账本。原21轻消费者全过，Home原四案例改验零读取、同token身份ABA权威续局、无storage/visibility/route多余请求、结束/卸载不复活入口；赛事9/账号3与四身份零读取继续保留。
+- 独立真实SiteShell390px复现新焦点RED（导航已收起，设置按钮left=-318.96/right=-164.46，client rect并不等于可见），共享helper改为拒离屏/不可用焦点，Global复用；移动回可见菜单、宽屏回设置，Main实际两尺寸GREEN。未扩大为全站焦点架构。原144语义与新六尺寸设置/反馈/匿名/失败草稿/身份切换/Tab/Escape均通过。
+- Main独立实际投降surrender和观战leaveRoom、移动回放原返回归属、宽屏回放播放/倍速/返回与多蒙版、真实编辑器三短屏21项全过。tracked编辑器夹具首轮假定“更多操作”永远可见而三失败，子artifact修了但tracked patch漏同步；Main只把夹具按真实可见设置/更多入口二选一并补关闭后可见焦点，全部原21任务保留，r1失败不覆盖。子284图逐SHA核0坏图，但不拿子旧源码替代Main最终源码浏览器。
+- 主证据`feedback-settings-main-20261008`：settings-six-r2、site-host-r2、battle-host-r1、replay-mobile-r1、replay-controls-r1、editor-scroll-r2；原site-host-r1焦点RED与editor-scroll-r1三失败保持。浏览器是本机Edge合成接口，非真iOS/Safari/微信输入法；未部署/维护变更/线上Bug关闭。六项移动几何转述没有新租约，未擅改GameBoard/HandArea/PlayerMat。
+
+## ADMIN-20261008-CARD-ANALYTICS-LIFECYCLE｜后台卡牌统计限定查询修复（已批准，Main全平台已验，Release待）
+
+- Main独立完整平台1089/1089，失败/跳过0，新22具名项逐一Passed；原TRX SHA546BF6DA9B7027E3A95708C7870CC7A47710AB9B921D14501AA218F6E7DBC73B，实际产品DLL B4C28F87F0F8520EB639F50B20E12733A3768072BBBE55522BBC9FDFDEC3ED26。证据`admin-carddata-implementation-20261008/main-full-platform-r1`，五产品及两测试LF精确匹配冻结交付；没有把本地完整回归冒称真实正式冷暖SLA已通过。最终联合门禁和同步回执后更新状态。
+
+- 主动根因复现：旧缓存遗漏Page/Sort/Direction，实际3测试2红/1绿；同键查询无共享作业，浏览器断开后SQL继续，Microsoft.Data.Sqlite10.0.10仅传token不等于运行中SQL取消。仅补完整规范键、同键+epoch单作业、16注册/2运行及独立waiter，最后waiter/epoch/预算/停止使专属Pooling=false连接原生interrupt+progress取消；注册释放先于关闭，不复用他人连接。请求7.5秒，工作含队列6.25秒，1秒专属busy重试，为清理预留1.25秒；不扩大浏览器10秒、不新持久投影、不改统计SQL口径/库格式。两卡GET有固定枚举阶段/耗时/cache/singleflight，无参数/卡名/身份进入头。
+- 子最终26平台+45同族全执行/失败跳过0，Main独立核原TRX SHA/计数、7源及稀疏patch；真实native预算owner6.27s、晚busy+teardown6.66s、单waiter不伤同伴、最后waiter/旧finally/epoch/32取消竞态及真实WebApplication.Stop均有专项。原简单SQL中断临近完成、全局app timing测试假设的两夹具失败保留。Frozen D盘`admin-carddata-implementation-20261008/frozen-delivery`，Main七源LF均匹配。Windows ABI和合成场景不是正式冷暖性能/真实Linux容量，不能声称线上超时已全根治。
+- `MasterAnalytics`为原有外围调用者，其卡统计部分也消费新的有界方法；未改其统计SQL和端口，Main全平台需覆盖，不假称只有UI卡列表会受影响。两HTTP仍保原鉴权/权限和recent matches sanitization。此前线上一次冷GET只证2xx，本地解析失败使耗时/bytes未存；旧失联自有会话已由Main DELETE200读回不存在，临时核验会话logout200，未公开凭据。当前完整验收/Git及发布仍待，无部署/维护或Bug状态写。
+
+## REVIEW-20261008-PRIVATE-CONSUMERS｜认证目录和单对象消费族（4b2a431f完整同步，未部署）
+
+- 当前事实覆盖下列历史过程：唯一应用4b2a431fc7998f22bfa4836f03f96112a0830894完整干净Release6601规则/1067平台，失败跳过0，八阶段/原TRX/双环境构建及同包DLL均Main独立核；Git三处精确读回，`accepted-release-4b2a431f.json` SHA521D938C。新用户要求移除首页两快捷入口，最近牌库消费已在下一限定界面批撤除；原赛事/个人资料保护保留，Home四生命周期改验零读取和权威续局而不是保留已取消功能。没有新部署。
 
 - 最终整族分段证据：完整平台1067/1067、失败跳过0，原联合Batch因前端失败exit1保留；前端域最终r8 exit0，类型/双构建、UI354/反馈144/324+42保持。正常private177+UI内模板24共201，不重复跑模板。同步本机准备显式phase避免静态误当待执行HTTP，真正读取仍有界、cap3不变；原发布键/赛事签到/三动作叶迁移保持原风险并增负例，旧切片夹具改真实SFC AST/真实元数据消费，四类型窄边界修正。导入新增文档epoch挡路径ABA，metadata22；Editor31/Selector18真实六尺寸绑定最终Core/platform，旧r6/r7截图与全部门禁失败不覆盖。唯一`main-pre-release-acceptance-r2.json`，尚待clean Release/Git，不部署或关闭线上Bug。
 
