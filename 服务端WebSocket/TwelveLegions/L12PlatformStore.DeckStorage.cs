@@ -19,16 +19,15 @@ public sealed partial class L12PlatformStore
         string MoraleJson, string SpecialJson, IReadOnlyList<string> MainCards,
         IReadOnlyList<string> MoraleCards, IReadOnlyList<string> SpecialCards);
 
-    private static void InitializeDeckDomainSchema(SqliteConnection connection)
+    private static void InitializeDeckDomainSchema(SqliteConnection connection, int? existingSchemaVersion)
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
             CREATE TABLE IF NOT EXISTS deck_payloads (
                 payload_hash TEXT PRIMARY KEY,
                 master_id TEXT NOT NULL,
-                main_cards_json TEXT NOT NULL,
-                morale_cards_json TEXT NOT NULL,
-                special_cards_json TEXT NOT NULL,
+                payload_format INTEGER NOT NULL,
+                payload_json TEXT NOT NULL,
                 created_utc TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS account_decks (
@@ -113,6 +112,7 @@ public sealed partial class L12PlatformStore
                 ON published_deck_content_revisions(content_hash);
             """;
         command.ExecuteNonQuery();
+        EnsureCompactDeckPayloadStorage(connection, existingSchemaVersion);
         EnsureDeckColumn(connection, "account_decks", "bench_cards_json", "TEXT NOT NULL DEFAULT '[]'");
         EnsureDeckColumn(connection, "account_decks", "publication_id", "TEXT");
         EnsureDeckColumn(connection, "account_decks", "publication_version", "INTEGER");
@@ -189,7 +189,7 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private void EnsureAndHydrateDeckDomainStorage(SqliteConnection connection, DataFile data)
+    private DataFile EnsureAndHydrateDeckDomainStorage(SqliteConnection connection, DataFile data)
     {
         var state = ReadMeta(connection, DeckDomainStateKey);
         if (!string.Equals(state, DeckDomainActiveState, StringComparison.Ordinal))
@@ -225,7 +225,20 @@ public sealed partial class L12PlatformStore
         }
 
         EnsureDeckIdentityMigration(connection, data);
-        HydrateDeckDomain(connection, data);
+        // Migrations are complete. Capture the platform header and every compact
+        // reference/body in one read generation, including another writer's
+        // committed header if it advanced during startup.
+        using var read = connection.BeginTransaction(deferred: true);
+        var stored = ReadSnapshot(connection, read)
+            ?? throw new InvalidDataException("牌库启动缺少平台快照");
+        if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+            throw new InvalidDataException("牌库启动平台快照校验失败");
+        var captured = DeserializeDataAndValidate(stored.Json);
+        if (captured.Version != ReadStorageRevision(connection, read))
+            throw new InvalidDataException("牌库启动平台版本不一致");
+        HydrateDeckDomain(connection, captured, read);
+        read.Commit();
+        return captured;
     }
 
     private void EnsureDeckIdentityMigration(SqliteConnection connection, DataFile data)
@@ -290,7 +303,7 @@ public sealed partial class L12PlatformStore
         if (data.Decks.Count == 0) return;
         var path = _databasePath + ".pre-deck-identity-v1.full.json.gz";
         _migrationBackupPath ??= path;
-        WriteGzipAtomically(path, JsonSerializer.Serialize(data, PlatformMigrationJsonOptions));
+        WriteGzipAtomically(path, SerializeFullDeckDomainBackup(data));
     }
 
     private void WriteDeckIdentityMigrationMap(DataFile data)
@@ -375,7 +388,7 @@ public sealed partial class L12PlatformStore
         var path = _databasePath + ".pre-deck-domain-v1.json.gz";
         _migrationBackupPath = path;
         if (File.Exists(path)) return;
-        var json = JsonSerializer.Serialize(data, PlatformMigrationJsonOptions);
+        var json = SerializeFullDeckDomainBackup(data);
         using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
         using var gzip = new GZipStream(file, CompressionLevel.SmallestSize);
         using var writer = new StreamWriter(gzip, new UTF8Encoding(false));
@@ -411,8 +424,6 @@ public sealed partial class L12PlatformStore
         IEnumerable<string> moraleIds, IEnumerable<string> specialIds)
     {
         static string CardsJson(IReadOnlyList<DeckCardCount> cards) => JsonSerializer.Serialize(cards);
-        static IReadOnlyList<string> Expand(IReadOnlyList<DeckCardCount> cards) => cards
-            .SelectMany(card => Enumerable.Repeat(card.CardId, card.Quantity)).ToArray();
 
         var normalizedMaster = (masterId ?? string.Empty).Trim().ToUpperInvariant();
         var main = NormalizeDeckCardCounts(cardIds);
@@ -431,24 +442,25 @@ public sealed partial class L12PlatformStore
         });
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
         return new(hash, normalizedMaster, mainJson, moraleJson, specialJson,
-            Expand(main), Expand(morale), Expand(special));
+            [], [], []);
     }
 
     private static void PersistPayload(SqliteConnection connection, SqliteTransaction transaction,
         NormalizedDeckPayload payload, DateTimeOffset createdAt)
     {
+        var compact = L12DeckPayloadCodec.EncodeLegacyJson(
+            payload.MainJson, payload.MoraleJson, payload.SpecialJson);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             INSERT OR IGNORE INTO deck_payloads(
-                payload_hash,master_id,main_cards_json,morale_cards_json,special_cards_json,created_utc)
-            VALUES($hash,$master,$main,$morale,$special,$created);
+                payload_hash,master_id,payload_format,payload_json,created_utc)
+            VALUES($hash,$master,$format,$payload,$created);
             """;
         command.Parameters.AddWithValue("$hash", payload.Hash);
         command.Parameters.AddWithValue("$master", payload.MasterId);
-        command.Parameters.AddWithValue("$main", payload.MainJson);
-        command.Parameters.AddWithValue("$morale", payload.MoraleJson);
-        command.Parameters.AddWithValue("$special", payload.SpecialJson);
+        command.Parameters.AddWithValue("$format", L12DeckPayloadCodec.CurrentFormat);
+        command.Parameters.AddWithValue("$payload", compact);
         command.Parameters.AddWithValue("$created", createdAt.ToString("O"));
         command.ExecuteNonQuery();
     }
@@ -457,10 +469,11 @@ public sealed partial class L12PlatformStore
         DataFile data)
     {
         AssignDeckIdentities(data);
+        CompactRuntimeDeckDomain(data);
         DeleteStaleDeckDomainRows(connection, transaction, data);
         foreach (var deck in data.Decks)
         {
-            var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+            var payload = ReadReferencedDeckPayload(data, CaptureDeckPayload(data, deck));
             PersistPayload(connection, transaction, payload, deck.UpdatedAt);
             using var command = connection.CreateCommand();
             command.Transaction = transaction;
@@ -485,7 +498,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$payload", payload.Hash);
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
-            command.Parameters.AddWithValue("$bench", CompactDeckCardsJson(deck.BenchIds));
+            command.Parameters.AddWithValue("$bench", DeckBenchJson(deck));
             command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
@@ -494,7 +507,7 @@ public sealed partial class L12PlatformStore
 
         foreach (var deck in data.PublishedDecks)
         {
-            var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+            var payload = ReadReferencedDeckPayload(data, CaptureDeckPayload(data, deck));
             PersistPayload(connection, transaction, payload, deck.CreatedAt);
             var version = CurrentPublishedDeckVersion(connection, transaction, deck.Id, payload.Hash, deck.Name);
             deck.Version = version;
@@ -562,7 +575,7 @@ public sealed partial class L12PlatformStore
             var deck = participant.Deck;
             if (string.IsNullOrWhiteSpace(deck.MasterId) && deck.CardIds.Count == 0
                 && deck.MoraleIds.Count == 0 && deck.SpecialIds.Count == 0) continue;
-            var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+            var payload = ReadReferencedDeckPayload(data, CaptureDeckPayload(data, deck));
             deck.PayloadHash = payload.Hash;
             PersistPayload(connection, transaction, payload, deck.SubmittedAt);
             using var command = connection.CreateCommand();
@@ -667,7 +680,7 @@ public sealed partial class L12PlatformStore
 
         var expectedAccounts = data.Decks.ToDictionary(
             deck => $"{deck.AccountId}\n{DeckNameKey(deck.Name)}",
-            deck => $"{deck.Id}\n{deck.Revision}\n{NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds).Hash}",
+            deck => $"{deck.Id}\n{deck.Revision}\n{CaptureDeckPayload(data, deck)}",
             StringComparer.Ordinal);
         var storedAccounts = ReadReferences(connection, transaction,
             "SELECT account_id || char(10) || name_key,deck_id || char(10) || revision || char(10) || payload_hash FROM account_decks WHERE is_deleted=0;");
@@ -678,7 +691,7 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("账号牌库规范化哈希校验失败");
 
         var expectedPublished = data.PublishedDecks.ToDictionary(deck => deck.Id,
-            deck => NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds).Hash,
+            deck => CaptureDeckPayload(data, deck),
             StringComparer.Ordinal);
         var storedPublished = ReadReferences(connection, transaction,
             "SELECT publication_id,current_payload_hash FROM published_decks WHERE is_deleted=0;");
@@ -695,8 +708,7 @@ public sealed partial class L12PlatformStore
                 .Select(participant => new
                 {
                     Key = $"{tournament.Id}\n{participant.AccountId}",
-                    Hash = NormalizeDeckPayload(participant.Deck.MasterId, participant.Deck.CardIds,
-                        participant.Deck.MoraleIds, participant.Deck.SpecialIds).Hash,
+                    Hash = CaptureDeckPayload(data, participant.Deck),
                 }))
             .ToDictionary(item => item.Key, item => item.Hash, StringComparer.Ordinal);
         var storedTournaments = ReadReferences(connection, transaction,
@@ -730,7 +742,8 @@ public sealed partial class L12PlatformStore
     private static void HydrateDeckDomain(SqliteConnection connection, DataFile data,
         SqliteTransaction? transaction = null)
     {
-        var payloads = ReadPayloads(connection, transaction);
+        var payloads = ReadCompactRuntimeDeckPayloads(connection, transaction, data);
+        data.DeckPayloads = payloads;
         data.Decks = [];
         using (var command = connection.CreateCommand())
         {
@@ -751,11 +764,10 @@ public sealed partial class L12PlatformStore
                     Id = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
                     Revision = reader.IsDBNull(10) ? 1 : Math.Max(1, reader.GetInt64(10)),
                     AccountId = reader.GetString(0), Name = reader.GetString(1), MasterId = payload.MasterId,
-                    CardIds = payload.MainCards.ToList(), MoraleIds = payload.MoraleCards.ToList(),
-                    SpecialIds = payload.SpecialCards.ToList(),
+                    PayloadHash = reader.GetString(2),
                     AlternateArtSelections = DeserializeDictionary(reader.GetString(3)),
                     AlternateArtCopies = DeserializeDictionaryOfLists(reader.GetString(4)),
-                    BenchIds = ExpandCards(reader.GetString(5)).ToList(),
+                    BenchJson = reader.GetString(5),
                     UpdatedAt = DateTimeOffset.Parse(reader.GetString(6)),
                     PublicationId = reader.IsDBNull(7) ? null : reader.GetString(7),
                     PublicationVersion = reader.IsDBNull(8) ? null : reader.GetInt32(8),
@@ -794,8 +806,7 @@ public sealed partial class L12PlatformStore
                 data.PublishedDecks.Add(new PublishedDeckRow
                 {
                     Id = reader.GetString(0), PublicCode = reader.GetString(1), OwnerId = reader.GetString(2), Name = reader.GetString(3),
-                    MasterId = payload.MasterId, CardIds = payload.MainCards.ToList(),
-                    MoraleIds = payload.MoraleCards.ToList(), SpecialIds = payload.SpecialCards.ToList(),
+                    MasterId = payload.MasterId, PayloadHash = reader.GetString(4),
                     AlternateArtSelections = DeserializeDictionary(reader.GetString(5)),
                     AlternateArtCopies = DeserializeDictionaryOfLists(reader.GetString(6)),
                     Views = reader.GetInt32(7), Copies = reader.GetInt32(8),
@@ -825,31 +836,10 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("赛事牌库引用了不存在的构筑正文");
             participant.Deck.PayloadHash = payloadHash;
             participant.Deck.MasterId = payload.MasterId;
-            participant.Deck.CardIds = payload.MainCards.ToList();
-            participant.Deck.MoraleIds = payload.MoraleCards.ToList();
-            participant.Deck.SpecialIds = payload.SpecialCards.ToList();
+            participant.Deck.CardIds = [];
+            participant.Deck.MoraleIds = [];
+            participant.Deck.SpecialIds = [];
         }
-    }
-
-    private static Dictionary<string, NormalizedDeckPayload> ReadPayloads(SqliteConnection connection,
-        SqliteTransaction? transaction = null)
-    {
-        var result = new Dictionary<string, NormalizedDeckPayload>(StringComparer.Ordinal);
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            SELECT payload_hash,master_id,main_cards_json,morale_cards_json,special_cards_json FROM deck_payloads;
-            """;
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            var main = ExpandCards(reader.GetString(2));
-            var morale = ExpandCards(reader.GetString(3));
-            var special = ExpandCards(reader.GetString(4));
-            result[reader.GetString(0)] = new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
-                reader.GetString(3), reader.GetString(4), main, morale, special);
-        }
-        return result;
     }
 
     private L12DeckStorageStatusView ReadDeckStorageStatus()

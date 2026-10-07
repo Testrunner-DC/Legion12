@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-compact-deck-payload-storage",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "牌库正文单一版本化紧凑格式及事务迁移、恢复拒绝和最新事实反向转换。保留既有正文哈希、引用与完整历史，不改变玩家卡效或公开编码；内部存储实现不写入玩家更新日志。源码已集成，完整方案退出与发布仍需各自实际验收，不以本条目作为部署证明。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.StorageRecoveryValidation.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12DeckPayloadCodec.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CompactDeckPayloadStorage.cs"
+  ]
+}

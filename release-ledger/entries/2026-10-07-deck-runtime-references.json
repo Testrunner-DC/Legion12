@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-deck-runtime-references",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "牌库运行态按同一已提交代持有紧凑正文引用，内存回滚自足，显式全文读取与完整导出先核展开资源预算；保留全部SQLite历史、墓碑、孤儿正文和赛事锁牌，不修改卡效、公开编码或玩家功能文案。摘要接口及前端按需消费另片实施；本条不是完整方案、验收或部署证明。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckPayloadReferences.cs"
+  ]
+}

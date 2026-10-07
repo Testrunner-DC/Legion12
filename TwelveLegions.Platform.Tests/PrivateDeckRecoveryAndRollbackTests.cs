@@ -68,15 +68,16 @@ public sealed class PrivateDeckRecoveryAndRollbackTests
             using (var connection = Open(copy.TransactionalStoragePath))
             {
                 Execute(connection, "PRAGMA foreign_keys=OFF;");
-                if (damage == "extreme-count-validhash") CorruptQuantityWithMatchingHash(connection);
+                if (damage is "extreme-count" or "extreme-count-validhash")
+                    CorruptQuantityWithMatchingHash(connection,
+                        damage == "extreme-count" ? "CORRUPT" : "RETAINED");
                 else if (damage == "expanded-aggregate") CorruptAggregateBenchCopies(connection);
                 else Execute(connection, damage switch
                 {
                     "active-payload" => "UPDATE deck_payloads SET master_id='TAMPERED' WHERE payload_hash IN (SELECT payload_hash FROM account_decks WHERE is_deleted=0);",
                     "retained-payload" => "UPDATE deck_payloads SET master_id='TAMPERED' WHERE master_id='M1';",
-                    "extreme-count" => "UPDATE deck_payloads SET main_cards_json='[{\"CardId\":\"CORRUPT\",\"Quantity\":2147483647}]' WHERE master_id='M1';",
                     "extreme-bench-count" => "UPDATE account_decks SET bench_cards_json='[{\"CardId\":\"CORRUPT\",\"Quantity\":2147483647}]' WHERE is_deleted=0;",
-                    "compressed-body" => "UPDATE deck_payloads SET main_cards_json=CAST(zeroblob(1048577) AS TEXT) WHERE master_id='M1';",
+                    "compressed-body" => "UPDATE deck_payloads SET payload_json=CAST(zeroblob(1048577) AS TEXT) WHERE master_id='M1';",
                     "active-identity" => "UPDATE account_decks SET deck_id=NULL WHERE is_deleted=0;",
                     "missing-payload" => "DELETE FROM deck_payloads WHERE master_id='M1';",
                     "published-head" => "UPDATE published_decks SET current_version=999;",
@@ -298,9 +299,9 @@ public sealed class PrivateDeckRecoveryAndRollbackTests
         command.ExecuteNonQuery();
     }
 
-    private static void CorruptQuantityWithMatchingHash(SqliteConnection connection)
+    private static void CorruptQuantityWithMatchingHash(SqliteConnection connection, string cardId)
     {
-        var main = new[] { new { CardId = "RETAINED", Quantity = int.MaxValue } };
+        var main = new[] { new { CardId = cardId, Quantity = int.MaxValue } };
         var morale = new[] { new { CardId = "R1", Quantity = 1 } };
         var special = Array.Empty<object>();
         var canonical = JsonSerializer.Serialize(new { schema = 1, master = "M1", main, morale, special });
@@ -308,12 +309,13 @@ public sealed class PrivateDeckRecoveryAndRollbackTests
         var oldHash = Scalar(connection, "SELECT payload_hash FROM deck_payloads WHERE master_id='M1';");
         using var command = connection.CreateCommand();
         command.CommandText = """
-            UPDATE deck_payloads SET payload_hash=$new,main_cards_json=$json WHERE payload_hash=$old;
+            UPDATE deck_payloads SET payload_hash=$new,payload_json=$payload WHERE payload_hash=$old;
             UPDATE account_decks SET payload_hash=$new WHERE payload_hash=$old;
             """;
         command.Parameters.AddWithValue("$new", hash);
         command.Parameters.AddWithValue("$old", oldHash);
-        command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(main));
+        command.Parameters.AddWithValue("$payload",
+            $"[[[\"{cardId}\",{int.MaxValue}]],[[\"R1\",1]],[]]");
         command.ExecuteNonQuery();
     }
 

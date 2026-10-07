@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Reflection;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
@@ -86,7 +88,28 @@ public sealed class BugClosureDispositionTests
                 .Single(item => item["Id"]!.GetValue<string>() == candidate.Id);
             legacyRow.Remove("ClosureDisposition");
             File.WriteAllText(path, document.ToJsonString());
-            var legacyStore = new L12PlatformStore(path);
+
+            // The current compatibility mirror is compact and cannot overwrite
+            // same-generation authoritative SQLite facts.
+            var compactStore = new L12PlatformStore(path);
+            var compactPersisted = compactStore.Bugs(null).Single(item => item.Id == candidate.Id);
+            Assert.Equal("rejected", compactPersisted.ClosureDisposition);
+            Assert.Equal("closed", compactPersisted.Status);
+            var compactAdmin = compactStore.Login("Admin", "L12master").Account!;
+            var compactUpdated = compactStore.UpdateBug(compactAdmin, candidate.Id, "closed", "critical", null, null)!;
+            Assert.Equal("rejected", compactUpdated.ClosureDisposition);
+            Assert.Equal("critical", compactUpdated.Priority);
+
+            // A genuinely independent full legacy snapshot remains a supported
+            // first migration source. Its old closed row has no classification.
+            var legacyPath = Path.Combine(root, "legacy", "platform.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+            var fullLegacyDocument = JsonNode.Parse(FullJson(compactStore))!.AsObject();
+            var fullLegacyRow = fullLegacyDocument["BugReports"]!.AsArray().OfType<JsonObject>()
+                .Single(item => item["Id"]!.GetValue<string>() == candidate.Id);
+            fullLegacyRow.Remove("ClosureDisposition");
+            File.WriteAllText(legacyPath, fullLegacyDocument.ToJsonString());
+            var legacyStore = new L12PlatformStore(legacyPath);
             var legacyAdmin = legacyStore.Login("Admin", "L12master").Account!;
             var legacyUpdated = legacyStore.UpdateBug(legacyAdmin, candidate.Id, "closed", "high", null, null)!;
             Assert.Null(legacyUpdated.ClosureDisposition);
@@ -218,6 +241,16 @@ public sealed class BugClosureDispositionTests
         request.Headers.Add(L12CorrelationIds.HeaderName, Guid.NewGuid().ToString("N"));
         request.Content = JsonContent.Create(body);
         return request;
+    }
+
+    private static string FullJson(L12PlatformStore store)
+    {
+        const BindingFlags privateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+        const BindingFlags privateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+        var data = typeof(L12PlatformStore).GetProperty("_data", privateInstance)!.GetValue(store)!;
+        var options = (JsonSerializerOptions)typeof(L12PlatformStore)
+            .GetField("PlatformMigrationJsonOptions", privateStatic)!.GetValue(null)!;
+        return JsonSerializer.Serialize(data, data.GetType(), options);
     }
 
     private static string TempRoot()

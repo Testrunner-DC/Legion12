@@ -41,25 +41,22 @@ public sealed partial class L12PlatformStore
         {
             payloads.Transaction = transaction;
             payloads.CommandText = """
-                SELECT payload_hash,master_id,main_cards_json,morale_cards_json,special_cards_json,
-                       length(CAST(main_cards_json AS BLOB)),length(CAST(morale_cards_json AS BLOB)),
-                       length(CAST(special_cards_json AS BLOB)) FROM deck_payloads;
+                SELECT payload_hash,master_id,payload_format,payload_json,
+                       length(CAST(payload_json AS BLOB)) FROM deck_payloads;
                 """;
             using var reader = payloads.ExecuteReader();
             while (reader.Read())
             {
-                if (checked(reader.GetInt64(5) + reader.GetInt64(6) + reader.GetInt64(7)) > RecoveryCompressedRowByteLimit)
+                if (reader.GetInt64(4) > RecoveryCompressedRowByteLimit)
                     throw new InvalidDataException("恢复演练安全预算超限：压缩正文过大");
                 var master = reader.GetString(1);
-                var main = ReadRecoveryCardCounts(reader.GetString(2));
-                var morale = ReadRecoveryCardCounts(reader.GetString(3));
-                var special = ReadRecoveryCardCounts(reader.GetString(4));
+                var decoded = L12DeckPayloadCodec.Decode(reader.GetInt32(2), reader.GetString(3));
+                L12DeckPayloadCodec.ValidateHash(reader.GetString(0), master, decoded);
+                var main = ReadRecoveryCardCounts(decoded.MainJson);
+                var morale = ReadRecoveryCardCounts(decoded.MoraleJson);
+                var special = ReadRecoveryCardCounts(decoded.SpecialJson);
                 // Check compressed counts before hydration expands them. Corruption
                 // such as int.MaxValue quantity must not allocate billions of cards.
-                var canonical = JsonSerializer.Serialize(new { schema = 1, master, main, morale, special });
-                if (master != master.Trim().ToUpperInvariant()
-                    || !FixedEquals(reader.GetString(0), Sha256(canonical)))
-                    throw new InvalidDataException("恢复副本构筑正文哈希或规范格式不一致");
                 var cards = checked(CountRecoveryCards(main) + CountRecoveryCards(morale) + CountRecoveryCards(special));
                 AddRecoveryExpansionBudget(ref expansionCards, cards);
                 payloadCardCounts.Add(reader.GetString(0), cards);

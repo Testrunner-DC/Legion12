@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -253,24 +254,130 @@ public sealed class PlatformRollbackMemoryTests
     }
 
     [Fact]
-    public void LegacyFullJsonAndCompactReadonlyFallbackProduceCompleteRecoverableCache()
+    public void LegacyFullJsonReadonlyFallbackProducesCompleteRecoverableCache()
     {
-        InStore((path, store, owner) =>
+        InStore((path, store, ownerId) =>
         {
+            var owner = store.Accounts().Single(account => account.Id == ownerId);
+            var saved = Assert.Single(store.Decks(ownerId));
+            var tournament = store.CreateTournament(owner,
+                new L12TournamentCreatePayload("完整回退赛", "swiss", "public", 8,
+                    DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "fallback", "after", "season",
+                    string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),
+                new L12AdminAuditContext("full-json-fallback-create"), true);
+            tournament = store.PreCheckInTournament(owner, tournament.Id,
+                new L12TournamentPreCheckInPayload(saved.Name, string.Empty, saved.Id), tournament.Version,
+                new L12AdminAuditContext("full-json-fallback-lock"), true);
+            var expectedTournamentDeck = Assert.Single(store.Tournament(owner, tournament.Id)!.Participants).Deck!;
+            var expectedFullJson = FullJson(store);
+
             var legacyPath = Path.Combine(Path.GetDirectoryName(path)!, "legacy", "platform.json");
             Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
-            File.WriteAllText(legacyPath, FullJson(store));
-            var migrated = new L12PlatformStore(legacyPath);
-            Assert.Equal("saved", Assert.Single(migrated.Decks(owner)).Name);
-            Assert.Equal(FullJson(migrated), CacheJson(migrated));
-            SqliteConnection.ClearAllPools();
-            File.WriteAllBytes(migrated.TransactionalStoragePath, [1, 2, 3]);
+            File.WriteAllText(legacyPath, expectedFullJson);
+            File.WriteAllBytes(Path.ChangeExtension(legacyPath, ".db"), [1, 2, 3]);
             var fallback = new L12PlatformStore(legacyPath);
             Assert.Equal("json-fallback-readonly", fallback.StorageStatus().Mode);
             Assert.Equal(FullJson(fallback), CacheJson(fallback));
+            var privateDeck = Assert.Single(fallback.Decks(ownerId));
+            Assert.Equal("saved", privateDeck.Name);
+            Assert.NotEmpty(privateDeck.CardIds);
+            var publicDeck = Assert.Single(fallback.PublishedDecks(ownerId)).Deck;
+            Assert.Equal("published", publicDeck.Name);
+            Assert.NotEmpty(publicDeck.CardIds);
+            var restoredTournament = fallback.Tournament(owner, tournament.Id)!;
+            var tournamentDeck = Assert.Single(restoredTournament.Participants).Deck!;
+            Assert.Equal(expectedTournamentDeck.Name, tournamentDeck.Name);
+            Assert.Equal(expectedTournamentDeck.Code, tournamentDeck.Code);
+            Assert.Equal(expectedTournamentDeck.Hash, tournamentDeck.Hash);
+            Assert.Equal(expectedTournamentDeck.SubmittedAt, tournamentDeck.SubmittedAt);
+            Assert.Equal(expectedTournamentDeck.LockedAt, tournamentDeck.LockedAt);
+            Assert.Equal(expectedTournamentDeck.MasterId, tournamentDeck.MasterId);
+            Assert.Equal(expectedTournamentDeck.CardIds, tournamentDeck.CardIds);
+            Assert.Equal(expectedTournamentDeck.MoraleIds, tournamentDeck.MoraleIds);
+            Assert.Equal(expectedTournamentDeck.SpecialIds, tournamentDeck.SpecialIds);
+            // The private stable ID/revision, publication source/version and any
+            // alternate-art metadata are private rows; exact full JSON equality
+            // binds those facts in addition to the public tournament projection.
+            Assert.Equal(expectedFullJson, FullJson(fallback));
             var before = FullJson(fallback);
             Assert.Throws<L12PlatformStorageUnavailableException>(() => fallback.Register("failuser", "password-123"));
             Assert.Equal(before, FullJson(fallback));
+        });
+    }
+
+    [Fact]
+    public void CompactMirrorCannotBecomeAReadonlyEmptyDeckDomain()
+    {
+        InStore((path, store, _) =>
+        {
+            SqliteConnection.ClearAllPools();
+            File.WriteAllBytes(store.TransactionalStoragePath, [1, 2, 3]);
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => new L12PlatformStore(path));
+        });
+    }
+
+    [Fact]
+    public void ChangedSameVersionCompactMirrorCannotTombstoneCommittedDeckFacts()
+    {
+        InStore((path, store, owner) =>
+        {
+            File.AppendAllText(path, Environment.NewLine);
+            var beforeRevision = store.StorageStatus().StorageRevision;
+            var restarted = new L12PlatformStore(path);
+            Assert.False(restarted.StorageStatus().FallbackMirrorHealthy);
+            Assert.Equal(beforeRevision, restarted.StorageStatus().StorageRevision);
+            Assert.Equal("saved", Assert.Single(restarted.Decks(owner)).Name);
+            Assert.Equal("published", Assert.Single(restarted.PublishedDecks(owner)).Deck.Name);
+            using var connection = new SqliteConnection(
+                $"Data Source={restarted.TransactionalStoragePath};Mode=ReadOnly;Pooling=False");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                  (SELECT COUNT(*) FROM account_decks WHERE is_deleted=0),
+                  (SELECT COUNT(*) FROM published_decks WHERE is_deleted=0);
+                """;
+            using var reader = command.ExecuteReader();
+            Assert.True(reader.Read());
+            Assert.Equal(1, reader.GetInt32(0));
+            Assert.Equal(1, reader.GetInt32(1));
+        });
+    }
+
+    [Theory]
+    [InlineData("future-schema")]
+    [InlineData("unknown-format")]
+    public void CompleteLegacyJsonCannotMaskUnsupportedDatabaseSchemaOrPayloadFormat(string damage)
+    {
+        InStore((path, store, _) =>
+        {
+            var fullJson = FullJson(store);
+            using (var connection = new SqliteConnection(
+                       $"Data Source={store.TransactionalStoragePath};Mode=ReadWrite;Pooling=False"))
+            {
+                connection.Open();
+                using var command = connection.CreateCommand();
+                command.CommandText = damage == "future-schema"
+                    ? "UPDATE storage_meta SET value='9' WHERE key='schema_version'; UPDATE platform_state SET schema_version=9 WHERE singleton_id=1;"
+                    : "UPDATE deck_payloads SET payload_format=99;";
+                command.ExecuteNonQuery();
+            }
+            File.WriteAllText(path, fullJson);
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => new L12PlatformStore(path));
+        });
+    }
+
+    [Fact]
+    public void PartialLegacyDeckBodyCannotNormalizeIntoReadonlyEmptyCards()
+    {
+        InStore((path, store, _) =>
+        {
+            var full = JsonNode.Parse(FullJson(store))!.AsObject();
+            full["Decks"]!.AsArray()[0]!.AsObject().Remove("CardIds");
+            File.WriteAllText(path, full.ToJsonString());
+            SqliteConnection.ClearAllPools();
+            File.WriteAllBytes(store.TransactionalStoragePath, [1, 2, 3]);
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => new L12PlatformStore(path));
         });
     }
 

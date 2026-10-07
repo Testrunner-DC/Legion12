@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -309,7 +310,9 @@ public sealed class PrivateDeckPersistenceStartupTests
             Assert.True(player.Success, player.Message);
             if (fallback)
             {
+                var fullLegacyJson = FullJson(store);
                 SqliteConnection.ClearAllPools();
+                File.WriteAllText(path, fullLegacyJson);
                 File.WriteAllText(store.TransactionalStoragePath, "synthetic-corrupt-sqlite");
                 store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
             }
@@ -394,6 +397,16 @@ public sealed class PrivateDeckPersistenceStartupTests
             }
         }
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rows.ToString())));
+    }
+
+    private static string FullJson(L12PlatformStore store)
+    {
+        const BindingFlags privateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+        const BindingFlags privateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+        var data = typeof(L12PlatformStore).GetProperty("_data", privateInstance)!.GetValue(store)!;
+        var options = (JsonSerializerOptions)typeof(L12PlatformStore)
+            .GetField("PlatformMigrationJsonOptions", privateStatic)!.GetValue(null)!;
+        return JsonSerializer.Serialize(data, data.GetType(), options);
     }
 
     private static string FindProgramSource()

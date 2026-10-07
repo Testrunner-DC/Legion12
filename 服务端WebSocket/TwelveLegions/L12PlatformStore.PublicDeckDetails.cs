@@ -175,30 +175,45 @@ public sealed partial class L12PlatformStore
 
     private static L12PublicDeckGuideView EmptyGuide() => new("", "", "", "", "");
 
-    private static IReadOnlyList<L12PublicDeckVersionView> ReadPublicDeckVersions(SqliteConnection connection,
+    private IReadOnlyList<L12PublicDeckVersionView> ReadPublicDeckVersions(SqliteConnection connection,
         PublishedDeckRow published)
     {
         var stored = new List<(int Version, string Name, NormalizedDeckPayload Payload, DateTimeOffset Created)>();
+        var total = 0L;
         using (var command = connection.CreateCommand())
         {
             command.CommandText = """
                 SELECT versions.version,versions.name,versions.payload_hash,payload.master_id,
-                       payload.main_cards_json,payload.morale_cards_json,payload.special_cards_json,
+                       payload.payload_format,payload.payload_json,
                        versions.created_utc
                 FROM published_deck_versions versions
                 JOIN deck_payloads payload ON payload.payload_hash=versions.payload_hash
-                WHERE versions.publication_id=$id ORDER BY versions.version;
+                WHERE versions.publication_id=$id AND versions.version<=$version ORDER BY versions.version;
                 """;
             command.Parameters.AddWithValue("$id", published.Id);
+            command.Parameters.AddWithValue("$version", published.Version);
             using var reader = command.ExecuteReader();
             while (reader.Read())
             {
-                var payload = new NormalizedDeckPayload(reader.GetString(2), reader.GetString(3), reader.GetString(4),
-                    reader.GetString(5), reader.GetString(6), ExpandCards(reader.GetString(4)),
-                    ExpandCards(reader.GetString(5)), ExpandCards(reader.GetString(6)));
+                var decoded = L12DeckPayloadCodec.Decode(reader.GetInt32(4), reader.GetString(5));
+                L12DeckPayloadCodec.ValidateHash(reader.GetString(2), reader.GetString(3), decoded);
+                var payload = new NormalizedDeckPayload(reader.GetString(2), reader.GetString(3), decoded.MainJson,
+                    decoded.MoraleJson, decoded.SpecialJson, [], [], []);
+                CheckOnlineDeckExpansionBudget(payload, null, ref total);
                 stored.Add((reader.GetInt32(0), string.IsNullOrWhiteSpace(reader.GetString(1)) ? published.Name : reader.GetString(1),
-                    payload, DateTimeOffset.Parse(reader.GetString(7))));
+                    payload, DateTimeOffset.Parse(reader.GetString(6))));
             }
+        }
+        // All version consumers have passed the aggregate budget before copies.
+        for (var index = 0; index < stored.Count; index++)
+        {
+            var row = stored[index];
+            DeckPayloadExpansionObserver?.Invoke(row.Payload.Hash);
+            stored[index] = (row.Version, row.Name, row.Payload with
+            {
+                MainCards = ExpandCards(row.Payload.MainJson), MoraleCards = ExpandCards(row.Payload.MoraleJson),
+                SpecialCards = ExpandCards(row.Payload.SpecialJson),
+            }, row.Created);
         }
         var views = new List<L12PublicDeckVersionView>(stored.Count);
         for (var index = 0; index < stored.Count; index++)

@@ -252,6 +252,8 @@ public sealed partial class L12PlatformStore
 
     private sealed class DeckRow
     {
+        public string PayloadHash { get; set; } = string.Empty;
+        public string BenchJson { get; set; } = "[]";
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public long Revision { get; set; } = 1;
         public string? PublicationId { get; set; }
@@ -270,6 +272,7 @@ public sealed partial class L12PlatformStore
 
     private sealed class PublishedDeckRow
     {
+        public string PayloadHash { get; set; } = string.Empty;
         public int Version { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string PublicCode { get; set; } = string.Empty;
@@ -311,6 +314,7 @@ public sealed partial class L12PlatformStore
         public List<AccountRow> Accounts { get; set; } = [];
         public List<SessionRow> Sessions { get; set; } = [];
         public List<DeckRow> Decks { get; set; } = [];
+        public Dictionary<string, CompactDeckPayloadFact> DeckPayloads { get; set; } = new(StringComparer.Ordinal);
         public List<PublishedDeckRow> PublishedDecks { get; set; } = [];
         public List<FriendRow> Friends { get; set; } = [];
         public List<BlockedAccountRow> BlockedAccounts { get; set; } = [];
@@ -903,8 +907,15 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12AccountDeckView> Decks(string accountId)
     {
-        lock (_gate) return _data.Decks.Where(row => row.AccountId == accountId)
-            .OrderByDescending(row => row.UpdatedAt).Select(ToView).ToArray();
+        lock (_gate)
+        {
+            var data = _data;
+            var rows = data.Decks.Where(row => row.AccountId == accountId)
+                .OrderByDescending(row => row.UpdatedAt).ToArray();
+            PreflightRuntimeDeckProjection(data, rows.Select(row =>
+                (CaptureDeckPayload(data, row), (string?)DeckBenchJson(row))));
+            return rows.Select(ToView).ToArray();
+        }
     }
 
     public L12AccountDeckView UpsertDeck(string accountId, L12PresetDeckDefinition deck)
@@ -1019,6 +1030,8 @@ public sealed partial class L12PlatformStore
 
     private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck)
     {
+        row.PayloadHash = string.Empty;
+        row.BenchJson = "[]";
         row.Name = deck.Name;
         row.MasterId = deck.MasterId;
         row.CardIds = deck.CardIds.ToList();
@@ -1083,9 +1096,14 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
     {
-        lock (_gate) return _data.PublishedDecks
-            .OrderByDescending(row => row.UpdatedAt)
-            .Select(row => ToView(row, viewerAccountId)).ToArray();
+        lock (_gate)
+        {
+            var data = _data;
+            var rows = data.PublishedDecks.OrderByDescending(row => row.UpdatedAt).ToArray();
+            PreflightRuntimeDeckProjection(data, rows.Select(row =>
+                (CaptureDeckPayload(data, row), (string?)null)));
+            return rows.Select(row => ToView(row, viewerAccountId)).ToArray();
+        }
     }
 
     private PublishedDeckRow? FindPublishedDeck(string? reference)
@@ -1157,6 +1175,7 @@ public sealed partial class L12PlatformStore
                 };
                 _data.PublishedDecks.Add(row);
             }
+            row.PayloadHash = string.Empty;
             row.Name = deck.Name;
             row.MasterId = deck.MasterId;
             row.CardIds = deck.CardIds.ToList();
@@ -1879,18 +1898,22 @@ public sealed partial class L12PlatformStore
     private FriendRow? FindFriendRow(string firstAccountId, string secondAccountId)
         => _data.Friends.FirstOrDefault(row => (row.RequesterId == firstAccountId && row.AddresseeId == secondAccountId)
             || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
-    private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
-        row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt,
-        new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
-        (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
-            item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
-        row.BenchIds.ToArray(), row.PublicationId, row.PublicationVersion, row.Id, row.Revision);
+    private L12AccountDeckView ToView(DeckRow row)
+    {
+        var payload = ExpandRuntimeDeckPayload(_data, CaptureDeckPayload(_data, row), DeckBenchJson(row));
+        return new(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards, payload.SpecialCards, row.UpdatedAt,
+            new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
+            (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
+                item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
+            ExpandCards(DeckBenchJson(row)), row.PublicationId, row.PublicationVersion, row.Id, row.Revision);
+    }
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
         var author = owner is null ? "已注销玩家" : PublicUsername(owner);
-        var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
-            row.SpecialIds.ToArray(), row.UpdatedAt,
+        var payload = ExpandRuntimeDeckPayload(_data, CaptureDeckPayload(_data, row));
+        var deck = new L12AccountDeckView(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards,
+            payload.SpecialCards, row.UpdatedAt,
             PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,
             PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null);
         return new L12PublishedDeckView(row.Id, row.PublicCode, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,

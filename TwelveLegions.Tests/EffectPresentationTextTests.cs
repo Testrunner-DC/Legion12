@@ -197,7 +197,44 @@ public sealed class EffectPresentationTextTests
     [Fact]
     public void DuplicateLegacySceneRowsUseTheNewestOverrideInsteadOfBreakingReads()
     {
-        var directory = TempDirectory("duplicate-row");
+        var seedDirectory = TempDirectory("duplicate-row-seed");
+        var seedPath = Path.Combine(seedDirectory, "platform.json");
+        var catalog = Catalog;
+        var store = new L12PlatformStore(seedPath, catalog.PresetDecks, officialCards: catalog.Cards);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var card = catalog.AtomicEffects.Find("S01-0103")!;
+        var scene = Assert.Single(card.Abilities.SelectMany(ability => ability.Presentations),
+            item => item.Trigger == "top-card");
+        store.SaveEffectPresentationOverride(admin, scene, "较早文案");
+
+        var root = JsonNode.Parse(File.ReadAllText(seedPath))!.AsObject();
+        AssertAndCompleteEmptyLegacyDeckDomain(store, admin, root);
+        var rows = root.First(item => item.Key.Equals("EffectPresentationOverrides",
+            StringComparison.OrdinalIgnoreCase)).Value!.AsArray();
+        var duplicate = rows[0]!.DeepClone().AsObject();
+        SetJsonProperty(duplicate, "Text", "较新文案");
+        SetJsonProperty(duplicate, "UpdatedAt", DateTimeOffset.UtcNow.AddMinutes(1));
+        rows.Add(duplicate);
+
+        var importDirectory = TempDirectory("duplicate-row-import");
+        var importPath = Path.Combine(importDirectory, "platform.json");
+        var importDatabase = Path.ChangeExtension(importPath, ".db");
+        Directory.CreateDirectory(importDirectory);
+        File.WriteAllText(importPath, root.ToJsonString());
+        Assert.False(File.Exists(importDatabase));
+        Assert.False(File.Exists(importDatabase + "-wal"));
+        Assert.False(File.Exists(importDatabase + "-shm"));
+
+        var reloaded = new L12PlatformStore(importPath, catalog.PresetDecks, officialCards: catalog.Cards);
+        var effective = Assert.Single(reloaded.ApplyEffectPresentationOverrides(card).Abilities
+            .SelectMany(ability => ability.Presentations), item => item.SceneId == scene.SceneId);
+        Assert.Equal("较新文案", effective.EffectiveText);
+    }
+
+    [Fact]
+    public void SameVersionLegacyMirrorDriftDoesNotOverrideCommittedPresentationText()
+    {
+        var directory = TempDirectory("same-version-mirror");
         var path = Path.Combine(directory, "platform.json");
         var catalog = Catalog;
         var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
@@ -206,12 +243,16 @@ public sealed class EffectPresentationTextTests
         var scene = Assert.Single(card.Abilities.SelectMany(ability => ability.Presentations),
             item => item.Trigger == "top-card");
         store.SaveEffectPresentationOverride(admin, scene, "较早文案");
+        var committedVersion = store.Version;
 
         var root = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        Assert.Equal(committedVersion, root.First(item => item.Key.Equals("Version",
+            StringComparison.OrdinalIgnoreCase)).Value!.GetValue<long>());
+        AssertAndCompleteEmptyLegacyDeckDomain(store, admin, root);
         var rows = root.First(item => item.Key.Equals("EffectPresentationOverrides",
             StringComparison.OrdinalIgnoreCase)).Value!.AsArray();
         var duplicate = rows[0]!.DeepClone().AsObject();
-        SetJsonProperty(duplicate, "Text", "较新文案");
+        SetJsonProperty(duplicate, "Text", "同代镜像伪较新文案");
         SetJsonProperty(duplicate, "UpdatedAt", DateTimeOffset.UtcNow.AddMinutes(1));
         rows.Add(duplicate);
         File.WriteAllText(path, root.ToJsonString());
@@ -219,7 +260,9 @@ public sealed class EffectPresentationTextTests
         var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
         var effective = Assert.Single(reloaded.ApplyEffectPresentationOverrides(card).Abilities
             .SelectMany(ability => ability.Presentations), item => item.SceneId == scene.SceneId);
-        Assert.Equal("较新文案", effective.EffectiveText);
+        Assert.Equal("较早文案", effective.EffectiveText);
+        Assert.Equal(committedVersion, reloaded.Version);
+        Assert.False(reloaded.StorageStatus().FallbackMirrorHealthy);
     }
 
     [Fact]
@@ -321,6 +364,22 @@ public sealed class EffectPresentationTextTests
     {
         var key = source.First(item => item.Key.Equals(name, StringComparison.OrdinalIgnoreCase)).Key;
         source[key] = JsonValue.Create(value);
+    }
+
+    private static void AssertAndCompleteEmptyLegacyDeckDomain(L12PlatformStore store, L12AccountView viewer,
+        JsonObject source)
+    {
+        Assert.Empty(store.Decks(viewer.Id));
+        Assert.Empty(store.PublishedDecks(null));
+        Assert.Empty(store.Tournaments(viewer).Items);
+        Assert.DoesNotContain(source, item => item.Key.Equals("Decks", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(source, item => item.Key.Equals("PublishedDecks", StringComparison.OrdinalIgnoreCase));
+        source["Decks"] = new JsonArray();
+        source["PublishedDecks"] = new JsonArray();
+        Assert.Empty(source["Decks"]!.AsArray());
+        Assert.Empty(source["PublishedDecks"]!.AsArray());
+        Assert.Empty(source.First(item => item.Key.Equals("Tournaments", StringComparison.OrdinalIgnoreCase))
+            .Value!.AsArray());
     }
 
     private static string TempDirectory(string suffix)

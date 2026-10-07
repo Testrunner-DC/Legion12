@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
@@ -41,7 +42,16 @@ public sealed class ControlPlanePhaseThreeStorageTests
             {
                 Assert.Equal("ok", Scalar(connection, "PRAGMA quick_check;"));
                 Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM platform_state;"));
-                Assert.Equal("7", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("8", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("8", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+                Assert.Equal("2", Scalar(connection, """
+                    SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                    WHERE name IN ('payload_format','payload_json');
+                    """));
+                Assert.Equal("0", Scalar(connection, """
+                    SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                    WHERE name IN ('main_cards_json','morale_cards_json','special_cards_json');
+                    """));
             }
 
             var rehearsal = store.RehearseStorageRecovery();
@@ -74,17 +84,42 @@ public sealed class ControlPlanePhaseThreeStorageTests
 
             using (var connection = OpenWritable(store.TransactionalStoragePath))
             {
-                Execute(connection, "UPDATE storage_meta SET value='2' WHERE key='schema_version';");
-                Execute(connection, "UPDATE platform_state SET schema_version=2 WHERE singleton_id=1;");
+                Execute(connection, "PRAGMA wal_checkpoint(TRUNCATE);");
             }
 
-            var reloaded = new L12PlatformStore(path);
+            var legacyPath = Path.Combine(root, "schema-seven", "platform.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
+            var legacyDatabase = Path.ChangeExtension(legacyPath, ".db");
+            File.Copy(store.TransactionalStoragePath, legacyDatabase);
+            L12PlatformStore.RevertCompactDeckPayloadStorageForRehearsal(legacyDatabase);
+            using (var legacy = Open(legacyDatabase))
+            {
+                Assert.Equal("7", Scalar(legacy, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("3", Scalar(legacy, """
+                    SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                    WHERE name IN ('main_cards_json','morale_cards_json','special_cards_json');
+                    """));
+                Assert.Equal("0", Scalar(legacy, """
+                    SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                    WHERE name IN ('payload_format','payload_json');
+                    """));
+            }
+
+            var reloaded = new L12PlatformStore(legacyPath);
             var reloadedAdmin = reloaded.Login("Admin", "L12master").Account!;
             Assert.Equal("schema-upgrade-preserved",
                 reloaded.OperationsConfig(reloadedAdmin).Config.Maintenance.Message);
             using var upgraded = Open(reloaded.TransactionalStoragePath);
-            Assert.Equal("7", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("7", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("8", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("8", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("2", Scalar(upgraded, """
+                SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                WHERE name IN ('payload_format','payload_json');
+                """));
+            Assert.Equal("0", Scalar(upgraded, """
+                SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
+                WHERE name IN ('main_cards_json','morale_cards_json','special_cards_json');
+                """));
         }
         finally { Directory.Delete(root, true); }
     }
@@ -180,6 +215,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
         {
             var store = new L12PlatformStore(path);
             var account = store.Register("tfallbf8420", "password-123").Account!;
+            var fullLegacyJson = FullJson(store);
+            File.WriteAllText(path, fullLegacyJson);
             File.WriteAllText(store.TransactionalStoragePath, "not-a-sqlite-database");
 
             var fallback = new L12PlatformStore(path);
@@ -266,6 +303,16 @@ public sealed class ControlPlanePhaseThreeStorageTests
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         return Convert.ToString(command.ExecuteScalar())!;
+    }
+
+    private static string FullJson(L12PlatformStore store)
+    {
+        const BindingFlags privateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
+        const BindingFlags privateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+        var data = typeof(L12PlatformStore).GetProperty("_data", privateInstance)!.GetValue(store)!;
+        var options = (JsonSerializerOptions)typeof(L12PlatformStore)
+            .GetField("PlatformMigrationJsonOptions", privateStatic)!.GetValue(null)!;
+        return JsonSerializer.Serialize(data, data.GetType(), options);
     }
 
     private static string TempRoot()

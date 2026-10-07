@@ -148,7 +148,7 @@ public sealed partial class L12PlatformStore
         DeckRow deck, string? storedNameKey)
     {
         var nameKey = DeckNameKey(deck.Name);
-        var payload = NormalizeDeckPayload(deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+        var payload = ReadReferencedDeckPayload(_data, CaptureDeckPayload(_data, deck));
         StorageFailureInjector?.Invoke("before-private-deck-payload");
         PersistPayload(connection, transaction, payload, deck.UpdatedAt);
         StorageFailureInjector?.Invoke("after-private-deck-payload");
@@ -198,7 +198,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$payload", payload.Hash);
             command.Parameters.AddWithValue("$selections", JsonSerializer.Serialize(deck.AlternateArtSelections));
             command.Parameters.AddWithValue("$copies", JsonSerializer.Serialize(deck.AlternateArtCopies));
-            command.Parameters.AddWithValue("$bench", CompactDeckCardsJson(deck.BenchIds));
+            command.Parameters.AddWithValue("$bench", DeckBenchJson(deck));
             command.Parameters.AddWithValue("$updated", deck.UpdatedAt.ToString("O"));
             command.Parameters.AddWithValue("$publication", (object?)deck.PublicationId ?? DBNull.Value);
             command.Parameters.AddWithValue("$version", (object?)deck.PublicationVersion ?? DBNull.Value);
@@ -263,16 +263,19 @@ public sealed partial class L12PlatformStore
         {
             payloadCommand.Transaction = transaction;
             payloadCommand.CommandText = """
-                SELECT master_id,main_cards_json,morale_cards_json,special_cards_json
+                SELECT master_id,payload_format,payload_json
                 FROM deck_payloads WHERE payload_hash=$hash;
                 """;
             payloadCommand.Parameters.AddWithValue("$hash", payload.Hash);
             using var payloadReader = payloadCommand.ExecuteReader();
-            if (!payloadReader.Read()
-                || payloadReader.GetString(0) != payload.MasterId
-                || payloadReader.GetString(1) != payload.MainJson
-                || payloadReader.GetString(2) != payload.MoraleJson
-                || payloadReader.GetString(3) != payload.SpecialJson)
+            if (!payloadReader.Read() || payloadReader.GetString(0) != payload.MasterId)
+                throw new InvalidDataException("私人牌库对象写入正文读回校验失败");
+            var decoded = L12DeckPayloadCodec.Decode(payloadReader.GetInt32(1), payloadReader.GetString(2));
+            L12DeckPayloadCodec.ValidateHash(payload.Hash, payload.MasterId, decoded);
+            if (decoded.MainJson != payload.MainJson
+                || decoded.MoraleJson != payload.MoraleJson
+                || decoded.SpecialJson != payload.SpecialJson
+                || payloadReader.Read())
                 throw new InvalidDataException("私人牌库对象写入正文读回校验失败");
         }
 
@@ -294,7 +297,7 @@ public sealed partial class L12PlatformStore
             || reader.GetString(3) != payload.Hash
             || reader.GetString(4) != JsonSerializer.Serialize(deck.AlternateArtSelections)
             || reader.GetString(5) != JsonSerializer.Serialize(deck.AlternateArtCopies)
-            || reader.GetString(6) != CompactDeckCardsJson(deck.BenchIds)
+            || reader.GetString(6) != DeckBenchJson(deck)
             || reader.GetString(7) != deck.UpdatedAt.ToString("O")
             || ReadNullableString(reader, 8) != deck.PublicationId
             || ReadNullableInt(reader, 9) != deck.PublicationVersion

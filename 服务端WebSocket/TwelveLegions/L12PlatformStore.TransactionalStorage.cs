@@ -64,6 +64,9 @@ public sealed class L12PlatformStorageConflictException : L12PlatformStorageUnav
 internal sealed class L12PlatformStorageRefreshException(string message, Exception inner)
     : L12PlatformStorageUnavailableException(message, inner);
 
+internal sealed class L12PlatformStorageIncompatibleException(string message)
+    : IOException(message);
+
 internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStorageUnavailableException
 {
     public L12SeasonFinalizationStaleWriteException(string message) : base(message) { }
@@ -71,7 +74,7 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 7;
+    private const int PlatformStorageSchemaVersion = 8;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
@@ -176,7 +179,7 @@ public sealed partial class L12PlatformStore
                 data = ImportChangedLegacyMirrorIfNeeded(connection, data);
             }
 
-            EnsureAndHydrateDeckDomainStorage(connection, data);
+            data = EnsureAndHydrateDeckDomainStorage(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeRollbackState(data);
             _storageMode = "sqlite";
@@ -188,14 +191,22 @@ public sealed partial class L12PlatformStore
         {
             _databaseIntegrityValid = false;
             _storageWritable = false;
-            _storageMode = databaseExisted ? "json-fallback-readonly" : "unavailable";
+            _storageMode = databaseError is L12PlatformStorageIncompatibleException
+                ? "unavailable"
+                : databaseExisted ? "json-fallback-readonly" : "unavailable";
             _storageIssue = $"事务存储不可用：{databaseError.Message}";
+            if (databaseError is L12PlatformStorageIncompatibleException)
+                throw new L12PlatformStorageUnavailableException(_storageIssue, databaseError);
             if (!File.Exists(_path))
                 throw new L12PlatformStorageUnavailableException(_storageIssue, databaseError);
 
             try
             {
-                var fallback = DeserializeDataAndValidate(File.ReadAllText(_path));
+                var fallbackJson = File.ReadAllText(_path);
+                if (!HasCompleteLegacyDeckDomain(fallbackJson))
+                    throw new InvalidDataException("紧凑 JSON 镜像不包含可独立恢复的完整牌库正文");
+                var fallback = DeserializeDataAndValidate(fallbackJson);
+                ValidateCompactRuntimeDeckDomain(fallback);
                 _lastCommittedSnapshot = SerializeRollbackState(fallback);
                 return fallback;
             }
@@ -230,6 +241,12 @@ public sealed partial class L12PlatformStore
         var recordedHash = ReadMeta(connection, "fallback_json_sha256");
         if (FixedEquals(currentHash, recordedHash)) return databaseData;
 
+        if (!HasCompleteLegacyDeckDomain(legacyJson))
+        {
+            _fallbackMirrorHealthy = false;
+            return databaseData;
+        }
+
         DataFile legacyData;
         try
         {
@@ -241,7 +258,7 @@ public sealed partial class L12PlatformStore
             return databaseData;
         }
 
-        if (legacyData.Version < databaseData.Version)
+        if (legacyData.Version <= databaseData.Version)
         {
             _fallbackMirrorHealthy = false;
             return databaseData;
@@ -657,6 +674,10 @@ public sealed partial class L12PlatformStore
 
     private static void InitializeStorageSchema(SqliteConnection connection)
     {
+        var existingSchemaVersion = ReadExistingStorageSchemaVersion(connection);
+        if (existingSchemaVersion is > PlatformStorageSchemaVersion)
+            throw new L12PlatformStorageIncompatibleException(
+                $"不支持的平台存储版本：{existingSchemaVersion} > {PlatformStorageSchemaVersion}");
         using var command = connection.CreateCommand();
         command.CommandText = """
             PRAGMA journal_mode=WAL;
@@ -743,21 +764,105 @@ public sealed partial class L12PlatformStore
                 created_utc TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_audit_archive_until ON audit_archive_segments(until_utc DESC);
-            INSERT INTO storage_meta(key,value) VALUES('schema_version',$schema)
-            ON CONFLICT(key) DO UPDATE SET value=
-                CASE
-                    WHEN CAST(storage_meta.value AS INTEGER) < CAST(excluded.value AS INTEGER)
-                    THEN excluded.value
-                    ELSE storage_meta.value
-                END;
-            UPDATE platform_state
-            SET schema_version=$schema
-            WHERE singleton_id=1 AND schema_version < $schema;
             """;
-        command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.ExecuteNonQuery();
-        InitializeDeckDomainSchema(connection);
         InitializeAuditLifecycleSchema(connection);
+        InitializeDeckDomainSchema(connection, existingSchemaVersion);
+    }
+
+    private static int? ReadExistingStorageSchemaVersion(SqliteConnection connection)
+    {
+        var versions = new List<int>();
+        if (TableExists(connection, "storage_meta"))
+        {
+            using var meta = connection.CreateCommand();
+            meta.CommandText = "SELECT value FROM storage_meta WHERE key='schema_version';";
+            var value = meta.ExecuteScalar();
+            if (value is not null && value is not DBNull)
+            {
+                if (!int.TryParse(Convert.ToString(value), out var parsed) || parsed < 1)
+                    throw new InvalidDataException("存储元数据版本无效");
+                versions.Add(parsed);
+            }
+        }
+        if (TableExists(connection, "platform_state"))
+        {
+            using var state = connection.CreateCommand();
+            state.CommandText = "SELECT schema_version FROM platform_state WHERE singleton_id=1;";
+            var value = state.ExecuteScalar();
+            if (value is not null && value is not DBNull)
+            {
+                var parsed = Convert.ToInt32(value);
+                if (parsed < 1) throw new InvalidDataException("平台状态存储版本无效");
+                versions.Add(parsed);
+            }
+        }
+        if (versions.Distinct().Skip(1).Any())
+            throw new InvalidDataException("存储元数据与平台状态版本不一致");
+        return versions.Count == 0 ? null : versions[0];
+    }
+
+    private static bool TableExists(SqliteConnection connection, string table)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=$name);";
+        command.Parameters.AddWithValue("$name", table);
+        return Convert.ToInt32(command.ExecuteScalar()) != 0;
+    }
+
+    private static bool HasCompleteLegacyDeckDomain(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryGetJsonProperty(root, nameof(DataFile.Decks), out var decks) || decks.ValueKind != JsonValueKind.Array
+                || !TryGetJsonProperty(root, nameof(DataFile.PublishedDecks), out var published)
+                || published.ValueKind != JsonValueKind.Array
+                || !TryGetJsonProperty(root, nameof(DataFile.Tournaments), out var tournaments)
+                || tournaments.ValueKind != JsonValueKind.Array)
+                return false;
+            if (decks.EnumerateArray().Any(deck => !HasCompleteLegacyDeckBody(deck))
+                || published.EnumerateArray().Any(deck => !HasCompleteLegacyDeckBody(deck)))
+                return false;
+            foreach (var tournament in tournaments.EnumerateArray())
+            {
+                if (!TryGetJsonProperty(tournament, "Participants", out var participants)
+                    || participants.ValueKind != JsonValueKind.Array)
+                    return false;
+                foreach (var participant in participants.EnumerateArray())
+                {
+                    if (!TryGetJsonProperty(participant, "Deck", out var deck) || deck.ValueKind != JsonValueKind.Object
+                        || !HasCompleteLegacyDeckBody(deck))
+                        return false;
+                }
+            }
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasCompleteLegacyDeckBody(JsonElement deck)
+        => deck.ValueKind == JsonValueKind.Object
+           && TryGetJsonProperty(deck, "MasterId", out var master) && master.ValueKind == JsonValueKind.String
+           && TryGetJsonProperty(deck, "CardIds", out var main) && main.ValueKind == JsonValueKind.Array
+           && TryGetJsonProperty(deck, "MoraleIds", out var morale) && morale.ValueKind == JsonValueKind.Array
+           && TryGetJsonProperty(deck, "SpecialIds", out var special) && special.ValueKind == JsonValueKind.Array;
+
+    private static bool TryGetJsonProperty(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = property.Value;
+            return true;
+        }
+        value = default;
+        return false;
     }
 
     private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented)
@@ -768,7 +873,7 @@ public sealed partial class L12PlatformStore
             if (typeInfo.Type == typeof(DataFile))
             {
                 foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
-                             or nameof(DataFile.PublishedDecks)))
+                             or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)))
                     property.ShouldSerialize = static (_, _) => false;
             }
             else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))
@@ -892,6 +997,7 @@ public sealed partial class L12PlatformStore
             if (session.PermissionVersion < 1)
                 session.PermissionVersion = data.Accounts.FirstOrDefault(row => row.Id == session.AccountId)?.PermissionVersion ?? 1;
         }
+        data.DeckPayloads ??= new(StringComparer.Ordinal);
         data.Decks ??= [];
         data.PublishedDecks ??= [];
         var publicDeckCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1098,6 +1204,7 @@ public sealed partial class L12PlatformStore
             var restored = JsonSerializer.Deserialize<DataFile>(compressed, PlatformSnapshotJsonOptions)
                 ?? throw new InvalidDataException("完整回滚缓存为空");
             restored = NormalizeDeserializedData(restored);
+            ValidateCompactRuntimeDeckDomain(restored);
             var sessionActivity = SessionActivityForRollback(restored, snapshot);
             _data = restored;
             PublishCommittedSessionActivity(sessionActivity);
@@ -1158,6 +1265,7 @@ public sealed partial class L12PlatformStore
     // last known committed decks just because writable recovery is unavailable.
     private static byte[] SerializeRollbackState(DataFile data)
     {
+        CompactRuntimeDeckDomain(data);
         using var bytes = new MemoryStream();
         using (var compressed = new GZipStream(bytes, CompressionLevel.Fastest, leaveOpen: true))
             JsonSerializer.Serialize(compressed, data, PlatformMigrationJsonOptions);
