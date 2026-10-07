@@ -559,13 +559,18 @@ public sealed class CommittedSessionActivityTests
             .GetField("PlatformMigrationJsonOptions", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var legacy = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(fixture.Path)!, "legacy", "platform.json");
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(legacy)!);
-        File.WriteAllText(legacy, System.Text.Json.JsonSerializer.Serialize(data, data.GetType(), options));
+        var fullLegacyJson = System.Text.Json.JsonSerializer.Serialize(data, data.GetType(), options);
+        File.WriteAllText(legacy, fullLegacyJson);
         var migrated = new L12PlatformStore(legacy);
         Assert.True(migrated.IsSessionActive(fixture.Owner.SessionId));
         Assert.Same(Cache(migrated), ProjectionCache(migrated));
         var restarted = new L12PlatformStore(legacy);
         Assert.True(restarted.IsSessionActive(fixture.Owner.SessionId));
         Assert.Same(Cache(restarted), ProjectionCache(restarted));
+        // Migration writes the compact compatibility mirror. Restore the independent
+        // full legacy input before damaging SQLite so readonly recovery proves a
+        // complete source rather than treating the compact mirror as complete.
+        File.WriteAllText(legacy, fullLegacyJson);
         SqliteConnection.ClearAllPools();
         File.WriteAllBytes(migrated.TransactionalStoragePath, new byte[] { 1, 2, 3 });
         var fallback = new L12PlatformStore(legacy);

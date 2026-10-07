@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-committed-ranked-identity",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "对战辅助身份从单一已提交代读取，避免平台写锁影响展示；保留当前称号窗口、总体样本、原列表完全并列顺序和提交失败回退。不变更段位、称号与排名产品规则，内部索引不写入玩家更新日志。最终24项专项通过，合并完整平台及统一发布门禁仍分别核验。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedRankedIdentity.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.SessionActivity.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedMasterTitles.cs"
+  ]
+}

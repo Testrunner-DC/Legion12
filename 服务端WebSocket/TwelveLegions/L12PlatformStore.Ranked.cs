@@ -545,25 +545,11 @@ public sealed partial class L12PlatformStore
     }
 
     public L12RankedBattleIdentityView RankedBattleIdentity(string accountId, int playerIndex)
-    {
-        lock (_gate)
-        {
-            var row = RequireRankedProfile(accountId);
-            var factionRank = FactionRank(row);
-            var placementTitle = FactionPlacementTitle(row, factionRank);
-            var placed = row.PlacementPlayed >= _data.RankedConfig!.PlacementMatches;
-            var highestTier = placed && IsHighestTier(row);
-            var tier = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty
-                : placed ? TierFor(row).Name
-                : $"定级 {row.PlacementPlayed}/{_data.RankedConfig.PlacementMatches}";
-            var overallRank = highestTier ? OverallRank(row) : 0;
-            var masterTitles = PlayerMasterTitles(row, CurrentMasterChampions());
-            var selected = SelectedMasterTitle(row, masterTitles);
-            var faction = string.IsNullOrWhiteSpace(row.Faction) ? string.Empty : FactionFor(row.Faction).Name;
-            return new L12RankedBattleIdentityView(playerIndex, faction,
-                overallRank > 0 ? overallRank : null, tier, placementTitle, selected, highestTier);
-        }
-    }
+        => ReadCommittedRankedBattleIdentity(accountId, playerIndex);
+
+    internal L12RankedBattleIdentityView RankedBattleIdentityAt(string accountId, int playerIndex,
+        DateTimeOffset utcNow)
+        => ReadCommittedRankedBattleIdentityAt(accountId, playerIndex, utcNow);
 
     internal double HiddenRating(string accountId)
     {
