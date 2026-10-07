@@ -1373,6 +1373,60 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _ => Results.BadRequest(),
             };
         });
+        IResult PublicDeckReadResponse(string status, object? value) => status switch
+        {
+            "ok" => Results.Ok(value),
+            "unauthorized" => Results.Unauthorized(),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "公开牌库读取参数无效" }),
+        };
+        bool PublicDeckReadUnavailable(Exception error) => error is InvalidDataException or JsonException
+            or Microsoft.Data.Sqlite.SqliteException or L12PlatformStorageUnavailableException or OverflowException or ArgumentException;
+        IResult PublicDeckReadFailure() => Results.Json(new { code = "public_deck_read_unavailable",
+            message = "公开牌库正文或引用当前无法安全读取" }, statusCode: 503);
+        _app.MapGet("/api/public-decks/{reference}/current", (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, false, out var query)) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckCurrent(_catalog, reference, query.ExpectedReadToken, viewer);
+                return PublicDeckReadResponse(result.Status, result.Detail);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/versions", (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, true, out var query)) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckVersionPage(_catalog, reference, query, viewer);
+                return PublicDeckReadResponse(result.Status, result.Page);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/versions/{version}", (HttpRequest request, string reference, string version) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, false, out var query)
+                || !int.TryParse(version, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                    out var number) || number < 1) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckVersion(_catalog, reference, number, query.ExpectedReadToken, viewer);
+                return PublicDeckReadResponse(result.Status, result.Detail);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
         _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);

@@ -37,7 +37,10 @@ if(fixtureQuery.has('empty')){fixture.details.guide={buildIdea:'',opening:'',key
 if(fixtureQuery.has('emptyStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'empty',groups:[]};fixture.details.matchBindingStatus='empty';fixture.details.matchBindingMessage='过去 90 天暂无可核验的公开版本对局统计。'}
 if(fixtureQuery.has('smallStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'insufficient',groups:[]};fixture.details.matchBindingStatus='insufficient';fixture.details.matchBindingMessage='样本不足：过去 90 天各主宰组合均不足 3 场，暂不展示胜率。'}
 publicDeckApi.get=async()=>fixture
-publicDeckApi.recordView=async()=>fixture
+publicDeckApi.counter=async(_reference,kind)=>{
+  if(kind!=='view')throw new Error('这个页面夹具只授权浏览计数')
+  return {id:fixture.id,publicCode:fixture.publicCode,views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:fixture.liked,canEdit:fixture.ownerId===platformState.account?.id}
+}
 const nativeFetch=window.fetch.bind(window)
 window.fetch=(input,init)=>{
   const url=String(input)

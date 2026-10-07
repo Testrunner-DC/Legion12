@@ -12,6 +12,7 @@ import { deckSnapshotGroups, deckSnapshotTemplateContract } from './deck-snapsho
 import './test-a3-deck-snapshot-template-contract.mjs'
 import { publicDeckConsumerTemplateContract } from './public-deck-consumer-template-contract.mjs'
 import './test-a3-public-deck-consumer-template-contract.mjs'
+import { publicDeckCounterBindingsContract } from './test-public-deck-counter-results.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -1023,7 +1024,8 @@ const contracts = [
     && !zoneMovementLayer.includes("event.type === 'search'"), '公开展示并加入手牌必须进入统一区域移动队列并显示来源横幅，隐私入手不播放，历史 search 死分支不得恢复'],
   [platform.includes('views: number; likes: number; copies: number') && platform.includes('recordView: (id: string)')
     && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
-    && wsServer.includes('/api/public-decks/{id}/view') && publicDeckDetail.includes('publicDeckApi.recordView(publicDeckRouteReference(entry.value!))')
+    && wsServer.includes('/api/public-decks/{id}/view')
+    && publicDeckCounterBindingsContract({ detail: publicDeckDetail, library: deckLibrary, helper: read('../src/l12/site/publicDeckEntry.ts') })
     && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.likes - a.likes')
     && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.createdAt.localeCompare(a.createdAt)')
     && deckLibrary.includes('<option value="copies">最多复制</option>')

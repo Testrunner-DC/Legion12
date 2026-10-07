@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { publicDeckConsumerTemplateContract } from './public-deck-consumer-template-contract.mjs'
+import { publicDeckCounterBindingsContract } from './test-public-deck-counter-results.mjs'
 
 const root = process.cwd()
 const read = value => fs.readFileSync(path.join(root, value), 'utf8')
@@ -34,7 +35,7 @@ const checks = [
   ['详情内容覆盖长期版本、准确对局与随机起手', ['data-detail-section="versions"', 'data-detail-section="matches"', 'data-detail-section="hands"'].every(key => detail.includes(key))],
   ['对局记录不拿作者总战绩替代', detailsStore.includes('不会用作者总战绩替代') && detailsStore.includes('"unavailable"')],
   ['对局区使用匿名聚合统计而非单局回放', detail.includes('match-stat-list') && detail.includes('matchStatisticsRange') && !detail.includes('recordedMatchId')],
-  ['点赞复制与浏览计数更新不会清空已加载详情', detail.includes('preservePublicDeckDetails(entry.value, value)') && (detail.match(/preservePublicDeckDetails\(entry\.value, updated\)/g)?.length ?? 0) >= 2],
+  ['点赞复制与浏览计数更新不会清空已加载详情', publicDeckCounterBindingsContract({ detail, library, helper: read('src/l12/site/publicDeckEntry.ts') })],
   ['牌库界面对玩家只提供已实装主城，不开放 divinity 模式', content.includes("card.cardType === 'master'") && !content.includes("card.cardType === 'master' || card.cardType === 'divinity'")],
 ]
 

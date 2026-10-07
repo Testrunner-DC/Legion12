@@ -39,6 +39,8 @@ globalThis.__deckAuthorityTestPlatform = {
 const productionModuleUrl = source => 'data:text/javascript;base64,' + Buffer.from(ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText).toString('base64')
+const publicDeckCounters = await import(productionModuleUrl(
+  readFileSync(new URL('../src/l12/site/publicDeckEntry.ts', import.meta.url), 'utf8')))
 const binaryUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCodeCodec.ts', import.meta.url), 'utf8'))
 const codecUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCacheCodec.ts', import.meta.url), 'utf8')
   .replace("from './deckCodeCodec'", "from '" + binaryUrl + "'"))
@@ -651,19 +653,32 @@ async function queuedPublicCopyUsesOriginalAuthenticationGeneration() {
   for (const change of ['account', 'token', 'aba', 'unchanged']) {
     localStorage.clear(); authenticate(); seedAccountDecks([owned('原始牌库')])
     const beforeA = localStorage.getItem(accountKey())
-    const gate = deferred(); let callback, posts = 0, copies = 0
+    const gate = deferred(); let callback, posts = 0, copies = 0, actionActive = false
     const entry = { value: { id: 'public-qa', publicCode: '23456789ABCD', ownerId: 'public-author', official: false, deck: deck('公开复制') } }
+    const originalBody = entry.value.deck
     const notice = { value: '' }
     requestHandler = async () => { posts++; return owned('公开复制') }
+    const captureCounterContext = actualHandler('../src/l12/site/PublicDeckDetailPage.vue', 'captureCounterContext', {
+      capturePublicDeckCounterGuard: publicDeckCounters.capturePublicDeckCounterGuard,
+      captureDeckAccountGuard: decksModule.captureDeckAccountGuard,
+      counterDocumentEpoch: 0, route: { fullPath: '/decks/23456789ABCD' }, entry,
+      actionPending: () => actionActive,
+    })
     const handler = actualHandler('../src/l12/site/PublicDeckDetailPage.vue', 'copyToMine', {
       entry, notice, platformState,
       captureDeckAccountGuard: decksModule.captureDeckAccountGuard,
+      captureCounterContext,
+      isOfficialPublicDeckCounterTarget: publicDeckCounters.isOfficialPublicDeckCounterTarget,
+      mergePublicDeckCounters: publicDeckCounters.mergePublicDeckCounters,
       publicDeckActionKey: () => 'public-qa-action',
-      runAction: (_key, work) => { callback = work; return gate.promise },
+      runAction: (_key, work) => { actionActive = true; callback = work; return gate.promise },
       uniqueName: value => value, saveDeck: decksModule.saveDeck,
-      publicDeckApi: { recordCopy: async () => { copies++; return entry.value } },
+      publicDeckApi: { counter: async (reference, kind) => {
+        assert.equal(reference, entry.value.publicCode); assert.equal(kind, 'copy'); copies++
+        return { id: entry.value.id, publicCode: entry.value.publicCode, views: 0, likes: 0,
+          copies, viewerLiked: false, canEdit: false }
+      } },
       publicDeckRouteReference: value => value.publicCode,
-      preservePublicDeckDetails: (_old, updated) => updated,
       deckErrorBelongsToCurrentAccount: decksModule.deckErrorBelongsToCurrentAccount,
     })
     const running = handler()
@@ -671,7 +686,8 @@ async function queuedPublicCopyUsesOriginalAuthenticationGeneration() {
     if (change === 'account' || change === 'aba') { platformState.account = { id: 'account-b' }; platformState.token = 'token-b' }
     if (change === 'token') platformState.token = 'renewed-a'
     if (change === 'aba') { platformState.account = { id: 'account-a' }; platformState.token = 'token-a' }
-    await callback(); gate.resolve(); await running
+    await callback(); actionActive = false; gate.resolve(); await running
+    assert.strictEqual(entry.value.deck, originalBody, 'Counter completion preserves the current body reference')
     if (change === 'unchanged') {
       assert.equal(posts, 1); assert.equal(copies, 1); assert.match(notice.value, /已复制/)
     } else {

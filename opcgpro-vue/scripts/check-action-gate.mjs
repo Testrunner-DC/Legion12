@@ -87,9 +87,56 @@ assert(deckLibrary.includes("actionPending(`public-deck:publish:${publishName}`)
 
 const publicDeck = fs.readFileSync(new URL('../src/l12/site/PublicDeckDetailPage.vue', import.meta.url), 'utf8')
 const publicDeckContent = fs.readFileSync(new URL('../src/l12/site/PublicDeckContentEditor.vue', import.meta.url), 'utf8')
+// The serialization key may be passed directly or captured before the callback.
+// Check each operation's binding, not the spelling/count of one call expression.
+function publicDeckMutationGateContract(source) {
+  const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? source
+  const file = ts.createSourceFile('public-deck.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  if (file.parseDiagnostics.length) return false
+  const functions = file.statements.filter(ts.isFunctionDeclaration)
+  const isKey = expression => expression && ts.isCallExpression(expression)
+    && expression.expression.getText(file) === 'publicDeckActionKey'
+    && expression.arguments.length === 2
+    && expression.arguments[0].getText(file) === 'id'
+    && expression.arguments[1].getText(file) === 'accountId'
+  return ['copyToMine', 'toggleLike', 'deleteDeck'].every(name => {
+    const operation = functions.find(node => node.name?.text === name)
+    if (!operation?.body) return false
+    const bindings = new Map(operation.body.statements.filter(ts.isVariableStatement)
+      .flatMap(node => node.declarationList.declarations)
+      .filter(node => ts.isIdentifier(node.name)).map(node => [node.name.text, node.initializer]))
+    if (bindings.get('id')?.getText(file) !== 'entry.value.id'
+      || !['platformState.account.id', 'platformState.account?.id'].includes(bindings.get('accountId')?.getText(file))) return false
+    const calls = []
+    const visit = node => {
+      if (ts.isCallExpression(node) && node.expression.getText(file) === 'runAction') calls.push(node)
+      ts.forEachChild(node, visit)
+    }
+    visit(operation.body)
+    if (calls.length !== 1 || calls[0].arguments.length !== 2) return false
+    const key = calls[0].arguments[0]
+    return isKey(ts.isIdentifier(key) ? bindings.get(key.text) : key)
+      && ts.isArrowFunction(calls[0].arguments[1])
+  })
+}
 assert(publicDeck.includes('useActionGate()')); checks += 1
 assert(publicDeck.includes('publicDeckActionKey')); checks += 1
-assert((publicDeck.match(/runAction\(publicDeckActionKey\(id, accountId\)/g) ?? []).length === 3); checks += 1
+assert(publicDeckMutationGateContract(publicDeck)); checks += 1
+assert(publicDeckMutationGateContract(['copyToMine', 'toggleLike', 'deleteDeck'].map(name =>
+  `async function ${name}() { const id = entry.value.id; const accountId = platformState.account?.id;
+    await runAction(publicDeckActionKey(id, accountId), async () => {}); }`).join('\n'))); checks += 1
+for (const [label, mutation] of [
+  ['missing operation', publicDeck.replace('async function toggleLike()', 'async function ignoredLike()')],
+  ['wrong actor', publicDeck.replace('publicDeckActionKey(id, accountId), current', 'publicDeckActionKey(id, "another-account"), current')],
+  ['wrong deck', publicDeck.replace('publicDeckActionKey(id, accountId), current', 'publicDeckActionKey("another-deck", accountId), current')],
+  ['missing actor', publicDeck.replace('publicDeckActionKey(id, accountId), current', 'publicDeckActionKey(id), current')],
+  ['wrong key alias', publicDeck.replaceAll('await runAction(key, async () => {', 'await runAction(unrelatedKey, async () => {')],
+  ['duplicate gate', publicDeck.replaceAll('await runAction(key, async () => {', 'await runAction(key, async () => {}); await runAction(key, async () => {')],
+  ['gate bypass', publicDeck.replaceAll('await runAction(key, async () => {', 'await ungatedAction(key, async () => {')],
+]) {
+  assert.notEqual(mutation, publicDeck, `Mutation must alter the source: ${label}`)
+  assert.equal(publicDeckMutationGateContract(mutation), false, `Mutation gate must reject ${label}`); checks += 1
+}
 assert((publicDeck.match(/actionPending\(publicDeckActionKey\(entry.id\)\)/g) ?? []).length >= 6); checks += 1
 assert(publicDeck.includes("accountId === platformState.account?.id")); checks += 1
 assert(publicDeckContent.includes('useActionGate()') && publicDeckContent.includes('run(actionKey.value')); checks += 1

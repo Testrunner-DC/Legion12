@@ -495,6 +495,10 @@ export interface RankedAnalytics {
   range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[]
   fromUtc?: string | null; untilUtc?: string | null; seasonId?: string | null; seasonName?: string | null
 }
+export interface PublicDeckCounterResult {
+  id: string; publicCode: string; views: number; likes: number; copies: number
+  viewerLiked: boolean; canEdit: boolean
+}
 export interface RankedIntegritySignal { code: string; label: string }
 export interface RankedIntegrityAudit {
   id: string; matchId: string; seasonId: string
@@ -1802,6 +1806,8 @@ export const alternateArtApi = {
 }
 
 export const publicDeckApi = {
+  counter: (id: string, kind: 'view' | 'copy' | 'like') => platformRequest<PublicDeckCounterResult>(
+    `/api/public-decks/${encodeURIComponent(id)}/counters/${kind}`, { method: 'POST' }),
   list: (query: { sort?: 'copies' | 'likes' | 'views' | 'latest'; seasonCompliant?: boolean } = {}) => {
     const params = new URLSearchParams()
     if (query.sort) params.set('sort', query.sort)

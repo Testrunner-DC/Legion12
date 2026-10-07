@@ -8,7 +8,7 @@ import DeckProfile from '@/l12/DeckProfile.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
-import { matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
+import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters, matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
 import { deckEnvironmentForDeck, deckEnvironmentLabel, type DeckEnvironmentFilter } from './deckEnvironment'
 import { deckEditorQuery } from './deckEditorNavigation'
 
@@ -62,6 +62,9 @@ const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
 let hotDeckResizeObserver: ResizeObserver | null = null
 let libraryAccountEpoch = 0
+let libraryCounterDocumentEpoch = 0
+watch(() => route.fullPath, () => libraryCounterDocumentEpoch++, { flush: 'sync' })
+onBeforeUnmount(() => libraryCounterDocumentEpoch++)
 function libraryContext() { return { account: platformState.account?.id, token: platformState.token, epoch: libraryAccountEpoch, route: route.fullPath, tab: tab.value } }
 function libraryContextCurrent(context: ReturnType<typeof libraryContext>, document = true) {
   return context.account === platformState.account?.id && context.token === platformState.token && context.epoch === libraryAccountEpoch
@@ -84,6 +87,15 @@ watch(() => [platformState.account?.id, platformState.token], () => {
 
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
+function captureCounterContext(value: PublishedDeck, key: string) {
+  const context = libraryContext()
+  return capturePublicDeckCounterGuard(value, {
+    actorCurrent: () => libraryContextCurrent(context),
+    document: () => `${libraryCounterDocumentEpoch}:${route.fullPath}`,
+    entry: () => published.value.find(item => item.id === value.id) ?? null,
+    actionCurrent: () => actionPending(key),
+  })
+}
 const editorLink = (deckName?: string, publicationId?: string, personalDeckId?: string) => ({
   path: '/deck-editor',
   query: deckEditorQuery(route.fullPath, deckName, publicationId, personalDeckId),
@@ -245,24 +257,29 @@ function uniqueName(base: string) {
   }
 }
 async function copyToMine(entry: PublishedDeck) {
-  const context = libraryContext()
   const accountId = platformState.account?.id
-  await runAction(publicDeckActionKey(entry.id, accountId), async () => {
-    if (!libraryContextCurrent(context)) return
+  const key = publicDeckActionKey(entry.id, accountId), current = captureCounterContext(entry, key)
+  await runAction(key, async () => {
+    if (!current()) return
     const deck = { ...entry.deck, id: undefined, revision: undefined, name: uniqueName(entry.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
     try {
       const confirmed = await saveDeck(deck)
-      if (accountId === platformState.account?.id && libraryContextCurrent(context)) {
+      if (current()) {
         saved.value = loadSavedDecks()
         notice.value = `已复制《${confirmed.name}》到我的牌库`
       }
-      if (!entry.official) {
-        const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry)).catch(() => null)
-        if (updated && accountId === platformState.account?.id && libraryContextCurrent(context)) updatePublished(updated)
+      if (current() && !isOfficialPublicDeckCounterTarget(entry)) {
+        try {
+          const counters = await publicDeckApi.counter(publicDeckRouteReference(entry), 'copy')
+          if (current()) {
+            const latest = published.value.find(item => item.id === entry.id)!
+            updatePublished(mergePublicDeckCounters(latest, counters))
+          }
+        } catch { /* The deck save is confirmed; a counter failure cannot undo it or repeat the save. */ }
       }
     } catch (error) {
       if (!deckErrorBelongsToCurrentAccount(error)) return
-      if (accountId === platformState.account?.id && libraryContextCurrent(context))
+      if (current())
         notice.value = error instanceof Error ? error.message : '复制到我的牌库失败'
     }
   })
@@ -336,16 +353,18 @@ function deckFaction(entry: PublishedDeck) {
   return byId.value.get(entry.deck.masterId)?.faction || 'universal'
 }
 async function toggleLike(entry: PublishedDeck) {
-  if (entry.official) return
+  if (isOfficialPublicDeckCounterTarget(entry)) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
   const accountId = platformState.account.id
-  await runAction(publicDeckActionKey(entry.id, accountId), async () => {
+  const key = publicDeckActionKey(entry.id, accountId), current = captureCounterContext(entry, key)
+  await runAction(key, async () => {
+    if (!current()) return
     try {
-      const updated = await publicDeckApi.toggleLike(publicDeckRouteReference(entry))
-      if (accountId === platformState.account?.id) updatePublished(updated)
+      const counters = await publicDeckApi.counter(publicDeckRouteReference(entry), 'like')
+      if (current()) updatePublished(mergePublicDeckCounters(published.value.find(item => item.id === entry.id)!, counters))
     }
     catch (error) {
-      if (accountId === platformState.account?.id)
+      if (current())
         notice.value = error instanceof Error ? error.message : '点赞失败'
     }
   })

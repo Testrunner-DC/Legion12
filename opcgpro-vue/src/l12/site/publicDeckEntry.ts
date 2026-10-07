@@ -1,5 +1,53 @@
 import type { SavedL12Deck } from '@/l12/decks'
-import type { PublishedDeck } from '@/l12/platform'
+import type { PublishedDeck, PublicDeckCounterResult } from '@/l12/platform'
+
+interface PublicDeckCounterTarget {
+  id: string
+  publicCode?: string
+  official?: boolean
+  source?: string
+  deck?: unknown
+  details?: unknown
+  readToken?: unknown
+}
+
+export function isOfficialPublicDeckCounterTarget(entry: PublicDeckCounterTarget) {
+  return entry.official === true || entry.source === 'official'
+}
+
+export function mergePublicDeckCounters<T extends PublicDeckCounterTarget>(current: T | null,
+  counters: PublicDeckCounterResult): T & { viewerLiked: boolean; canEdit: boolean; liked: boolean } {
+  const fields = ['id', 'publicCode', 'views', 'likes', 'copies', 'viewerLiked', 'canEdit']
+  if (!current || isOfficialPublicDeckCounterTarget(current) || !counters || typeof counters !== 'object'
+    || Array.isArray(counters) || Object.keys(counters).length !== fields.length
+    || fields.some(field => !Object.hasOwn(counters, field)) || typeof counters.id !== 'string'
+    || !counters.id.trim() || counters.id !== current.id
+    || typeof counters.publicCode !== 'string' || !counters.publicCode.trim()
+    || current.publicCode && counters.publicCode !== current.publicCode
+    || [counters.views, counters.likes, counters.copies].some(value => !Number.isInteger(value) || value < 0 || value > 2147483647)
+    || typeof counters.viewerLiked !== 'boolean' || typeof counters.canEdit !== 'boolean')
+    throw new Error('公开牌库计数响应无效或不属于当前牌库')
+  // Only these scalar fields cross the boundary. The body, guide, versions,
+  // statistics and consistency token retain their actual captured references.
+  return { ...current, publicCode: counters.publicCode, views: counters.views, likes: counters.likes,
+    copies: counters.copies, viewerLiked: counters.viewerLiked, liked: counters.viewerLiked, canEdit: counters.canEdit }
+}
+
+export function capturePublicDeckCounterGuard<T extends PublicDeckCounterTarget>(initial: T, context: {
+  actorCurrent: () => boolean
+  document: () => string
+  entry: () => T | null
+  actionCurrent: () => boolean
+}) {
+  const document = context.document(), id = initial.id, code = initial.publicCode
+  const body = initial.deck, details = initial.details, token = initial.readToken
+  return () => {
+    const current = context.entry()
+    return context.actorCurrent() && context.actionCurrent() && context.document() === document
+      && current?.id === id && current.publicCode === code && current.deck === body
+      && current.details === details && current.readToken === token
+  }
+}
 
 export function preservePublicDeckDetails<T extends { details?: unknown }>(current: T | null, updated: T): T {
   return { ...updated, details: updated.details ?? current?.details }

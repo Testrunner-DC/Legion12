@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, captureDeckAccountGuard, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
@@ -11,7 +11,7 @@ import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import StatisticsScope from './StatisticsScope.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
-import { preservePublicDeckDetails, publicDeckRouteReference } from './publicDeckEntry'
+import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters, publicDeckRouteReference } from './publicDeckEntry'
 import { useActionGate } from '@/l12/useActionGate'
 import { deckEditorQuery } from './deckEditorNavigation'
 
@@ -22,12 +22,34 @@ const publicDeckActionKey = (deckId: string, accountId = platformState.account?.
   `public-deck:${accountId}:${deckId}`
 const catalog = ref<DeckCard[]>([])
 const entry = ref<PublishedDeck | null>(null)
+let counterDocumentEpoch = 0
+watch(() => route.fullPath, () => counterDocumentEpoch++, { flush: 'sync' })
+onBeforeUnmount(() => counterDocumentEpoch++)
+function captureCounterContext(value: PublishedDeck, key: string) {
+  return capturePublicDeckCounterGuard(value, {
+    actorCurrent: captureDeckAccountGuard(),
+    document: () => `${counterDocumentEpoch}:${route.fullPath}`,
+    entry: () => entry.value,
+    actionCurrent: () => actionPending(key),
+  })
+}
 const notice = ref('')
 const loading = ref(true)
 const imagePreview = ref<{ blob: Blob; url: string } | null>(null)
 const openingHandIds = ref<string[]>([])
 const selectedCard = ref<DeckCard | null>(null)
 const mobileDetailsOpen = ref(false)
+let detailLoadGeneration = 0
+let detailMounted = false
+let detailDisposed = false
+interface DetailLoadContext {
+  generation: number
+  reference: string
+  path: string
+  documentEpoch: number
+  actorCurrent: () => boolean
+}
+let detailCanonicalNavigation: { context: DetailLoadContext; targetPath: string; targetReference: string } | null = null
 function selectCard(card: DeckCard) {
   selectedCard.value = card
   mobileDetailsOpen.value = window.matchMedia('(max-width:1000px)').matches
@@ -97,33 +119,102 @@ const openingHand = computed(() => {
   })
 })
 
-onMounted(async () => {
+async function loadDetail() {
+  const context: DetailLoadContext = { generation: ++detailLoadGeneration,
+    reference: String(route.params.deckId || ''), path: route.fullPath,
+    documentEpoch: counterDocumentEpoch, actorCurrent: captureDeckAccountGuard() }
+  detailCanonicalNavigation = null
+  const current = () => detailMounted && !detailDisposed && context.generation === detailLoadGeneration
+    && context.actorCurrent() && context.path === route.fullPath && context.reference === String(route.params.deckId || '')
+    && context.documentEpoch === counterDocumentEpoch
+  if (!current() || route.name !== 'public-deck-detail' || !context.reference) return
+  entry.value = null
+  selectedCard.value = null
+  openingHandIds.value = []
+  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
+  imagePreview.value = null
+  notice.value = ''
+  loading.value = true
   try {
-    catalog.value = await loadDeckCatalog()
-    const id = String(route.params.deckId || '')
+    const cards = await loadDeckCatalog()
+    if (!current()) return
+    catalog.value = cards
+    const id = context.reference
+    let loaded: PublishedDeck
     if (id.startsWith('official-')) {
       const index = Number(id.slice('official-'.length))
-      const preset = (await loadOfficialPresetDecks())[index]
+      const presets = await loadOfficialPresetDecks()
+      if (!current()) return
+      const preset = presets[index]
       if (!preset) throw new Error('未找到这个官方牌库')
-      entry.value = { id, ownerId: 'official', deck: { ...preset, specialIds: preset.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '', details: emptyDetails() }
+      loaded = { id, ownerId: 'official', deck: { ...preset, specialIds: preset.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '', details: emptyDetails() }
     } else {
-      entry.value = await publicDeckApi.get(id)
-      const canonicalReference = publicDeckRouteReference(entry.value)
-      if (canonicalReference !== id)
-        await router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }, query: route.query, hash: route.hash })
-      const viewedKey = `l12:public-deck-viewed:${entry.value.id}`
-      if (!sessionStorage.getItem(viewedKey)) {
-        sessionStorage.setItem(viewedKey, '1')
-        void publicDeckApi.recordView(publicDeckRouteReference(entry.value!)).then(value => {
-          entry.value = preservePublicDeckDetails(entry.value, value)
-        }).catch(() => sessionStorage.removeItem(viewedKey))
+      loaded = await publicDeckApi.get(id)
+      if (!current()) return
+      const canonicalReference = publicDeckRouteReference(loaded)
+      if (canonicalReference !== id) {
+        const target = { name: 'public-deck-detail', params: { deckId: canonicalReference }, query: route.query, hash: route.hash }
+        detailCanonicalNavigation = { context, targetPath: router.resolve(target).fullPath, targetReference: canonicalReference }
+        const failure = await router.replace(target)
+        if (detailCanonicalNavigation?.context === context) detailCanonicalNavigation = null
+        if (!current()) return
+        if (failure) throw new Error('牌库规范地址跳转未完成，请重新打开')
       }
     }
-    selectedCard.value = master.value ?? byId.value.get(entry.value.deck.cardIds[0] || '') ?? null
+    if (!current()) return
+    entry.value = loaded
+    selectedCard.value = master.value ?? byId.value.get(loaded.deck.cardIds[0] || '') ?? null
     redrawOpeningHand()
-  } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库加载失败' }
-  finally { loading.value = false }
+    if (!isOfficialPublicDeckCounterTarget(loaded)) void recordInitialView(entry.value).catch(() => undefined)
+  } catch (error) {
+    if (current()) notice.value = error instanceof Error ? error.message : '公开牌库加载失败'
+  } finally {
+    if (detailCanonicalNavigation?.context === context) detailCanonicalNavigation = null
+    if (current()) loading.value = false
+  }
+}
+
+watch(() => [route.fullPath, platformState.account?.id, platformState.token], (next, previous) => {
+  if (!detailMounted || detailDisposed || previous && next.every((value, index) => value === previous[index])) return
+  const canonical = detailCanonicalNavigation
+  if (canonical && canonical.context.generation === detailLoadGeneration && canonical.context.actorCurrent()
+    && previous && previous[0] === canonical.context.path && next[0] === canonical.targetPath
+    && next[1] === previous[1] && next[2] === previous[2] && route.name === 'public-deck-detail'
+    && String(route.params.deckId || '') === canonical.targetReference) {
+    // Only the synchronous arrival at this load's exact target can extend its
+    // context. An external navigation invalidates it before replace resolves.
+    canonical.context.path = route.fullPath
+    canonical.context.reference = canonical.targetReference
+    canonical.context.documentEpoch = counterDocumentEpoch
+    return
+  }
+  void loadDetail()
+}, { flush: 'sync' })
+onMounted(() => { detailMounted = true; void loadDetail() })
+onBeforeUnmount(() => {
+  detailDisposed = true
+  detailMounted = false
+  detailLoadGeneration++
+  detailCanonicalNavigation = null
 })
+
+async function recordInitialView(value: PublishedDeck) {
+  if (isOfficialPublicDeckCounterTarget(value)) return
+  const viewedKey = `l12:public-deck-viewed:${value.id}`
+  if (sessionStorage.getItem(viewedKey)) return
+  const key = publicDeckActionKey(value.id), current = captureCounterContext(value, key)
+  const marker = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}:${counterDocumentEpoch}`
+  await runAction(key, async () => {
+    if (!current() || sessionStorage.getItem(viewedKey)) return
+    sessionStorage.setItem(viewedKey, marker)
+    try {
+      const counters = await publicDeckApi.counter(publicDeckRouteReference(value), 'view')
+      if (current()) entry.value = mergePublicDeckCounters(entry.value, counters)
+    } catch {
+      if (sessionStorage.getItem(viewedKey) === marker) sessionStorage.removeItem(viewedKey)
+    }
+  })
+}
 
 function uniqueName(base: string) {
   const saved = loadSavedDecks()
@@ -141,40 +232,41 @@ async function copyToMine() {
   const id = entry.value.id
   const currentAccount = captureDeckAccountGuard()
   const accountId = platformState.account?.id
-  await runAction(publicDeckActionKey(id, accountId), async () => {
+  const key = publicDeckActionKey(id, accountId), current = captureCounterContext(entry.value, key)
+  await runAction(key, async () => {
     try {
-      if (!currentAccount() || !entry.value || entry.value.id !== id) return
+      if (!current() || !entry.value) return
       const deck = { ...entry.value.deck, id: undefined, revision: undefined, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
-      if (accountId === platformState.account?.id && currentAccount() && entry.value?.id === id)
+      if (current())
         notice.value = `已复制《${saved.name}》到我的牌库`
-      if (!currentAccount() || entry.value?.id !== id) return
-      if (!entry.value.official) {
+      if (!current()) return
+      if (!isOfficialPublicDeckCounterTarget(entry.value!)) {
         try {
-          const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry.value))
-          if (accountId === platformState.account?.id && currentAccount() && entry.value?.id === id)
-            entry.value = preservePublicDeckDetails(entry.value, updated)
+          const counters = await publicDeckApi.counter(publicDeckRouteReference(entry.value!), 'copy')
+          if (current()) entry.value = mergePublicDeckCounters(entry.value, counters)
         } catch { /* 本地复制已经成功；远端统计失败不得反写为复制失败。 */ }
       }
     } catch (error) {
-      if (accountId === platformState.account?.id && currentAccount() && deckErrorBelongsToCurrentAccount(error))
+      if (current() && currentAccount() && deckErrorBelongsToCurrentAccount(error))
         notice.value = error instanceof Error ? error.message : '复制到我的牌库失败'
     }
   })
 }
 async function toggleLike() {
-  if (!entry.value || entry.value.official) return
+  if (!entry.value || isOfficialPublicDeckCounterTarget(entry.value)) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
   const id = entry.value.id
   const reference = publicDeckRouteReference(entry.value)
   const accountId = platformState.account.id
-  await runAction(publicDeckActionKey(id, accountId), async () => {
+  const key = publicDeckActionKey(id, accountId), current = captureCounterContext(entry.value, key)
+  await runAction(key, async () => {
+    if (!current()) return
     try {
-      const updated = await publicDeckApi.toggleLike(reference)
-      if (accountId === platformState.account?.id && entry.value?.id === id)
-        entry.value = preservePublicDeckDetails(entry.value, updated)
+      const counters = await publicDeckApi.counter(reference, 'like')
+      if (current()) entry.value = mergePublicDeckCounters(entry.value, counters)
     } catch (error) {
-      if (accountId === platformState.account?.id)
+      if (current())
         notice.value = error instanceof Error ? error.message : '点赞失败'
     }
   })

@@ -2,6 +2,14 @@
 
 ## MAIN-20261007-0801｜08点正式开放已核验，后续仅本地
 
+- **15:46限定片本地已验**：CQ3-read完整6601规则/977平台与当前六源相同；C-U1首次加载前捕获世代/路由/actor，每await后核对，同组件切页新载、canonical单次、卸载/ABA拒迟回，Vue落地proxy捕获不削弱引用。Main实际65专项、52动作门禁、354UI、B1全旧范围、L12D2 golden235字符、完整前端type/双构建/卡图324+42，正常6尺寸40截图与真实12加载场景12截图错误0及动作锁释放已验。组合回执`deck-counter-ui-20261007/main-independent-acceptance.json`对原外层失败/两次夹具修正和Source17前后不变作清晰区分；所有失败/RED保留。已批准范围只Main四脚本等价谓词/真实夹具迁移，不削保护；未提交级Release/同步/部署。下一U2需先补正文pin及按ID轻量公开引用前置，原聊天只读返回无写租约，不能摘要伪正文或页外当不存在。整套牌库存储/对局保障、最终规模/旧reader/广播/真实长期仍未全完成，08开放保持。
+
+- **14:58当前**：CQ3-read新六源实际完整Batch6601/977于14:27退出0，原专项977/41和Batch独立回执都保留；未提交/Release/同步。C-U1七源精确接回，Main43实际行为/20浏览合同已过，但完整前端尚未通过：旧动作锁写法谓词、旧浏览接口谓词、旧B1 queued-copy夹具顺次阻断，四轮原日志未覆盖。前两条等价AST/共享消费者保护保留其余原断言，Main B1完整旧范围使用真实production guard/helper及scalar7响应后已过。独立审查首次GET期间路由/卸载失效后重捕获guard风险，只作为验收阻断；子两源加载世代修复/真实RED与Focused正在做，Main三脚本/记录专属，完整构建暂停，最多两写者。新候选完整前端/真实浏览器/干净Release/Git待，最终规模不能跑旧bfa冒称最终；广播schema9在schema8退出证据之后单独推进。两服/维护无写入，所有完整方案缺口保留。
+
+- **14:14CQ3-read独立平台已验**：精确六源normalized一致，Main标准checkout完整977/977全部执行、失败跳过0，其中41新项逐条全Passed；原TRX/监督与778FE171产品/0339FCAD测试程序集绑定`deck-query-read-20261007/main-independent-acceptance.json`。子487最终、三GET真实RED及首两合成FK注入错误保留，未改产品FK/schema。Main完整Batch41895正在冻结源运行，不先称完整Release/同步。C-U只读地图实际确认auth/me只有账号、缓存仍全解码、官方ID新旧断点及新current无异步stats；按序只授第一片counter前端7路径写/static/轻量Node，旧列表/正文/history/guide/stats/官方/样式及B1/五scope不改。growth三artifact仅准备同包DLL引用/TRX复用及Git tracked隐私保护，当前Main新CQ3差异让bfa Run拒绝，待新最终候选重绑。两写者、构建串行，正式/测试/维护不写，两完整方案仍未全完成。
+
+- **13:45应用批已完整验收/同步，未部署**：本地/远端精确应用候选bfa63dc6，完整Release6601/936失败跳过0、八stage及实包已独立核验；同包409E真实Program两场2行10038ms/两退出0/监听0，原未知目录保留。唯一`storage-availability-bounded-20261007/accepted-release-bfa63dc6.json`绑定原TRX、timings、包和实际Git。fresh测试428fff25/正式2da、两维护false，无线上写入。D已去重自己结束的编译依赖，172+1549个SHA相同条目（包含首批已共享条目）保留原路径/字节并硬链接，实际两次空间增量约9.7GiB；不把9.706GiB第二次逻辑重复量再重复相加，全部日志/独有程序集/失败运行数据保持。此后Main记录进入下一批差异。CQ3-read六源41计划静态已冻结，构建槽交原牌库聊天；growth只补tracked源码manifest且不开Run，防止枚举忽略私有runtime。两整套剩余项继续，精确日志清理仍未正式启用。
+
 - **13:09完整组合Batch已验**：Main实际6601规则/936平台、失败跳过0、exit0。CQ2十源、归档清理六源及counter三源已精确接回；counter真实冻结3363 DLL三HTTP404 RED、最终446/446同族及Main新增15项完整平台均执行，局部SQL/鉴权/并发/失败/重启/镜像与版本不变且零正文展开。唯一组合回执 `storage-availability-bounded-20261007/main-batch-cq2-metrics-counter.json`。成功监督临时TRX已按合同清理，Release须另保全证据；当前新差异待独立提交、干净Release和同步，不冒称已部署。下一CQ3只读六源在原牌库聊天静态，growth代理三artifact准备，两写者且.NET串行；两完整方案剩余历史/C-U/广播/最终规模/真实长期仍待。owned-v1仅本地授权验收，生产不启用。
 
 - **12:43精确清理本地验收完成**：Archive六源与最终冻结子源normalized相等，Main组合完整平台921/921失败跳过0；同一Main冻结产品336328E2的真实生命周期2行/10024ms、健康与未知root两场景定向停机均0，未知证据保留、两个监听0。唯一 `process-metric-archive-20261007/main-independent-acceptance.json` 同时记录Main外层错查未赋/陈旧LASTEXITCODE导致shell1，原日志保留；另实际读回内部success/两零退出/监听0成功，不伪称原外层命令exit0。用户owned-v1精确清理只获本地验收，正式未启用、未部署、维护无写；真实Linux/7日长期未实证，R5非零根因未定。旧DLL真实RED首断言证明未知enum旧日误删，最终四族74全过。当前唯一.NET已授counter三源管线用真实冻结3363基线HTTP RED再Focused，其余源冻结；Main只记录/Git准备。完整Release/同步尚待，不能将该本地节点称两方案全收口。

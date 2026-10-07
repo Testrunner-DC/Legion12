@@ -64,7 +64,49 @@ assert.equal(entryModule.publicDeckRouteReference({ id: 'legacy-uuid', ownerId: 
 assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: 'player' }), '')
 assert.ok(librarySource.includes('publicDeckRouteReference(entry)'))
 assert.ok(detailSource.includes('publicDeckRouteReference(entry.value)'))
-assert.ok(detailSource.includes("router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }"))
+function canonicalDetailReplacement(source) {
+  const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? source
+  const file = ts.createSourceFile('canonical-detail.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  if (file.parseDiagnostics.length) return false
+  const declarations = [], calls = []
+  const visit = node => {
+    if (ts.isVariableDeclaration(node)) declarations.push(node)
+    if (ts.isCallExpression(node)) calls.push(node)
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return calls.some(call => {
+    if (call.expression.getText(file) !== 'router.replace' || call.arguments.length !== 1) return false
+    let target = call.arguments[0]
+    if (ts.isIdentifier(target)) {
+      const bindings = declarations.filter(node => ts.isIdentifier(node.name) && node.name.text === target.text)
+      if (bindings.length !== 1) return false
+      target = bindings[0].initializer
+    }
+    if (!target || !ts.isObjectLiteralExpression(target)) return false
+    const properties = new Map(target.properties.filter(ts.isPropertyAssignment)
+      .map(node => [node.name.getText(file), node.initializer]))
+    const params = properties.get('params')
+    return properties.get('name')?.text === 'public-deck-detail'
+      && properties.get('query')?.getText(file) === 'route.query'
+      && properties.get('hash')?.getText(file) === 'route.hash'
+      && params && ts.isObjectLiteralExpression(params)
+      && params.properties.some(node => ts.isPropertyAssignment(node)
+        && node.name.getText(file) === 'deckId' && node.initializer.getText(file) === 'canonicalReference')
+  })
+}
+assert.ok(canonicalDetailReplacement(detailSource), 'Canonical detail replacement preserves route, reference, query and hash')
+assert.ok(canonicalDetailReplacement("router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }, query: route.query, hash: route.hash })"), 'The original inline form remains accepted')
+for (const [label, source] of [
+  ['wrong reference', detailSource.replace('params: { deckId: canonicalReference }', 'params: { deckId: oldReference }')],
+  ['wrong route', detailSource.replace("const target = { name: 'public-deck-detail'", "const target = { name: 'another-page'")],
+  ['missing query', detailSource.replace('query: route.query, hash: route.hash', 'query: {}, hash: route.hash')],
+  ['missing hash', detailSource.replace('query: route.query, hash: route.hash', "query: route.query, hash: ''")],
+  ['history push', detailSource.replace('await router.replace(target)', 'await router.push(target)')],
+]) {
+  assert.notEqual(source, detailSource, `Canonical mutation must be exercised: ${label}`)
+  assert.equal(canonicalDetailReplacement(source), false, `Canonical contract rejects ${label}`)
+}
 
 
 assert.equal(decodeDeckCode('L12D2-' + code.slice(6).toLowerCase().replaceAll('-', ' - \n')).masterId, deck.masterId)

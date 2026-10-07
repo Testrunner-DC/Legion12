@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## REVIEW-20261007-PUBLIC-COUNTER-LIFECYCLE｜标量结果与首次加载世代（限定本地已验，待Release/同步，未部署）
+
+- 最终两源manifest e6ce2901/patch2b2f93cd已Main normalized逐一相等接回；子65包括原43与新22加载，真实Vue正例计入而非额外相加。早期63普通ref模型不能覆盖raw/proxy，实际Vue RED保留；最终只使用已落地entry.value捕获，严格正文/详情引用守卫不削弱。Main独立65、52门禁、354UI及原完整B1/golden235，全前端type/双环境/324+42通过。
+- Main真实页面6尺寸内容40截图、两尺寸×6加载场景12截图全部通过，错误0/动作锁最终释放：旧响应先于新页、旧成功/失败、新页正常、A-B-A、卸载、canonical单GET/单View。唯一`deck-counter-ui-20261007/main-independent-acceptance.json`绑定17源不变；原main-green-2因夹具把真实b当heading的外层失败，以及合成离开页误用runtime template，均保原日志并仅纠正夹具后复验。不伪称这些原整段exit0，不改产品来过错误夹具。页面使用合成目录，不冒称CDN卡图解码/真实iOS/线上事故/全部C-U完成。
+
+- 已批准按需消费者片中，浏览/复制/点赞只接收严格7标量，保留正文、指南、版本、统计和读取标记原引用；账号/token ABA、路由世代、动作存活及当前对象共同守卫，非幂等POST仍单次。Main七源normalized与冻结子manifest76A78EDF一致，实际43Node/20浏览合同通过。旧整DTO回调RED只证明引用更换及新标记不保留，正文值相同、原详情引用保留，不能称线上丢牌库/历史。
+- 完整前端依次暴露三处旧测试依赖：动作锁只认直接表达式、UI只认旧recordView、B1实际回调夹具未注入新production guard。四轮原日志`deck-counter-ui-20261007/main-frontend-batch*.log`保留；Main等价迁移前两leaf，其余断言不改，动作锁逐复制/点赞/删除绑定身份并有错账号/缺账号/错牌库/错alias/重复/绕过锁等负例。B1全原范围改执行实际guard/helper与7标量响应后通过；不删除Queued/ABA/Quota守卫。
+- 独立只读审查发现首次GET期间换页/卸载后才创建guard。Main真实Edge390×844完整页面合成夹具：get(qa)挂起→同组件跳到B→qa迟回，实际发出qa浏览计数，预期零；有效RED日志SHA5ABAE66B19763EB7B72103D460E57D5781AE9EC330B3EF9E077455B21940CF68，report SHA6D66D80047F9D5F0997ED0D1600598378DD288C1F9DA3D350031DCAD3078447D。这是本地真实页面行为，不据此称生产事故；初夹具误把JS当HTML的timeout原样留存，不计产品RED。
+- 只给原牌库聊天详情页/Focused脚本两源修正加载世代，所有await后先核有效性；同组件切页必须加载新牌库，canonical规范化不循环/重复浏览，官方原路径与模板/样式/保存/原API不变。完整前端、真实浏览器及最终Release/同步未过，不写成已验收/已部署。P2单权威查询与P3身份/事实保持；C-U其他片、异步统计及同候选规模出口另待。
+
 ## REVIEW-20261007-METRIC-RETENTION｜owned-v1日志删除完整性（限定本地已验）
 
 - 用户精确授权仅自动清理`runtime/metrics/process`中当前日及此前7个完整UTC日之外、root/day精确owned-v1、持锁并逐行校验的目录，每轮最多8；PINNED/失败证据/未知文件/坏内容/链接保留，不涉及玩家数据、库或发布包。授权收据在D盘`process-metric-archive-20261007/local-retention-authorization.json`，正式启用仍待新部署授权。
