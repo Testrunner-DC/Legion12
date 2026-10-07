@@ -1,5 +1,28 @@
 # Legion12 Bug 修复记录
 
+## REVIEW-20261007-METRIC-RETENTION｜owned-v1日志删除完整性（限定本地已验）
+
+- 用户精确授权仅自动清理`runtime/metrics/process`中当前日及此前7个完整UTC日之外、root/day精确owned-v1、持锁并逐行校验的目录，每轮最多8；PINNED/失败证据/未知文件/坏内容/链接保留，不涉及玩家数据、库或发布包。授权收据在D盘`process-metric-archive-20261007/local-retention-authorization.json`，正式启用仍待新部署授权。
+- Main独立发现原canonical JSON回编码守卫不能拒绝未知enum、负值和字段可用性矛盾。反向临时恢复旧守卫被安全审批拒绝，当前源未回退、未绕过；改为独立合成工程引用冻结旧R5 DLL作真实RED，1项执行/1失败，首断言仅实际证明未知availability旧日被误删，不冒称其后五类全都执行为RED。
+- 集中新增指标语义合法性校验；五类坏旧日原字节保留、合法不可用/null与无界memory.max、零count无分位桶仍允许，待写坏行ContentMismatch。旧UTC解析、当前writer长度、逐项fresh再检、两稳定时钟转换、80MiB/day与768MiB/root保护保留。最终四族74/74失败跳过0，原缺pass-proof执行未产生TRX且被监督拒绝，不称绿色；随后正常restore真测试通过。
+- 六冻结源与同最终产品125E19F4绑定；Windows真实R6同一DLL写2行、间距10037ms，健康和拒收未知目录两场景定向CancelKeyPress均零退出，未知证据保留、两个监听均结束。R1—R5及旧模块失败均保留，R5非零根因未定，不能据R6成功称根治。Main六源normalized相等已接回，组合完整平台及Main独立真实进程验收待。
+- Main最终独立完整平台921/921及冻结336328E2真实生命周期已验：2行间距10024ms，两场景定向停机0、监听0、未知内容保留。原外层错误检查LASTEXITCODE而shell1保留，实际内部成功回执另行核验，不改写原命令结果。此后含counter的完整组合Batch实际6601规则/936平台全过，失败跳过0。唯一独立回执`process-metric-archive-20261007/main-independent-acceptance.json`。
+- 本片不增加HTTP/后台展示或更改资源配额；不删除正式日志、不部署、不改维护。至少7日真实长期与Linux/cgroup容量仍未实证，不把合成UTC跳跃和Windows生命周期等同。
+
+## REVIEW-20261007-PUBLIC-SUMMARY-VERSION｜公开摘要作者版本边界（本地已验）
+
+- CQ2新接口独立审查发现`PublishedLibraryEntry`无条件输出`row.Version`，与既有完整DTO仅owner可见的`PublicationVersion`边界冲突。冻结301产品的真实HTTP五场景实测：owner正例通过，匿名/其他玩家及撤销/过期后的匿名fallback四项泄露；撤销/过期本身401正常，不能误判成鉴权失败。原426仅首稿，不绑定此次修复。
+- 原十源内集中采用同一个isOwner谓词控制publicationVersion及canEdit；owner必须先通过当前账号/权限与有效会话校验。全同型扫描本次私人摘要、公开摘要、官方预组、完整公开DTO及generation fingerprint，官方版本继续null，不改原详情/写入/历史入口。补五HTTP身份、失效viewer摘要及零正文展开守卫。
+- 修复后首完整相关431为430通过/1既有恢复演练SQLite14/跳过0，新增五HTTP已实过。监督路径138字符加fixture和恢复WAL后264，保原失败TRX与owned监督树；旧测试自身finally已删内层，不能声称保有该内层。只缩短监督临时基址重跑原全部族，不删断言/过滤、不改恢复产品。Main十源normalized逐一相等已接回，完整平台与最终提交级验收待；不部署、不关闭线上Bug。
+- 证据位于`D:/GPT/Legion12/worktrees/deck-payload-a-20261007/.tmp/c-q2/review-version`，包含冻结源码、旧301真实RED、修复首轮TRX/监督与原426/patch。用户已批准牌库摘要方案的权限保真边界；没有新增管理员/游客授权或旧码兼容。
+- 后续子同源短根431/431、Main标准checkout完整877/877及组合Batch完整936/936全部失败跳过0；Main最初自定义输出路径导致旧启动合同无法定位Program.cs的失败保留，只改验收输出位置重跑原全部范围。唯一Main独立回执`deck-query-public-20261007/main-independent-acceptance.json`，最终Release与同步仍待，不部署、不关闭线上Bug。
+
+## STORAGE-20261007-COUNTER-SCALAR｜公开牌库轻量原子计数结果（本地已验）
+
+- 已批准完整牌库存储方案中的按需消费扩展，P2/P3内新增浏览/复制/点赞scalar路由，复用既有局部SQL；旧API/DTO/schema均不改。当前鉴权再检、公共开关和排空mutation barrier保持，不输出正文、hash、ownerId或作者发布版本，不自动重试非幂等计数。
+- 冻结Main336328E2真实HTTP三404为RED，非缺类型编译错误；最终446/446相关族包括15新项及Main完整平台936/936均失败跳过0。实际覆盖128并发、饱和、撤销/禁用/权限变化、SQL触发器故障原子拒绝、重启、snapshot/mirror/version不变与零正文展开，原RED及监督失败证据保留。
+- 三源及patch/TRX指纹见原子树`.tmp/c-q3-counter/final-focused3.json`，Main独立组合回执见`storage-availability-bounded-20261007/main-batch-cq2-metrics-counter.json`。当前/历史读取与C-U前端仍另片；不称完整CQ3、完整储存或线上启用，Release/Git待。
+
 ## TEST-20261007-INBOUND-OBSERVATION｜失效连接测试观察竞态（仅测试修正，本地已验）
 
 - CQ1首次完整相关族394中旧撤销测试因`missing runtime inbound connection`失败；冻结pre-CQ1产品318及测试cc5独立执行同一真实case仍0/1，证据在D盘`deck-payload-a-20261007/.tmp/c-q1/old-ws-results/old-ws.trx`，不是空过滤或新接口引入的产品回归。

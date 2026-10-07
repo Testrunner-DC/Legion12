@@ -23,13 +23,15 @@ public sealed class L12Catalog
     public L12AtomicEffectCatalog AtomicEffects { get; }
     public IReadOnlyList<L12OfficialAlternateArtDefinition> OfficialAlternateArts { get; }
     public IReadOnlyDictionary<string, IReadOnlyList<string>> CardProducts { get; }
+    public IReadOnlyDictionary<string, string?> CardPools { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
         IReadOnlyList<L12PresetDeckDefinition> presetDecks,
         L12MoraleIdentityCatalog moraleIdentities,
         IReadOnlyList<L12OfficialAlternateArtDefinition> officialAlternateArts,
-        IReadOnlyDictionary<string, IReadOnlyList<string>> cardProducts)
+        IReadOnlyDictionary<string, IReadOnlyList<string>> cardProducts,
+        IReadOnlyDictionary<string, string?> cardPools)
     {
         Cards = cards;
         PresetDecks = presetDecks;
@@ -37,6 +39,7 @@ public sealed class L12Catalog
         AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
         OfficialAlternateArts = officialAlternateArts;
         CardProducts = cardProducts;
+        CardPools = cardPools;
     }
 
     public static L12Catalog Load(string dataPath)
@@ -91,11 +94,12 @@ public sealed class L12Catalog
         }
 
         var officialAlternateArts = LoadOfficialAlternateArts(dataPath, byId);
-        var cardProducts = LoadCardProducts(dataPath);
-        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts, cardProducts);
+        var cardProducts = LoadCardProducts(dataPath, out var cardPools);
+        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts, cardProducts, cardPools);
     }
 
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> LoadCardProducts(string dataPath)
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> LoadCardProducts(string dataPath,
+        out IReadOnlyDictionary<string, string?> cardPools)
     {
         var path = Path.Combine(dataPath, "card-product-inclusions.json");
         if (!File.Exists(path)) throw new FileNotFoundException("卡牌产品收录登记缺失", path);
@@ -105,6 +109,9 @@ public sealed class L12Catalog
             .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
         if (duplicates.Length > 0)
             throw new InvalidDataException($"卡牌产品收录登记存在重复卡号：{string.Join(", ", duplicates)}");
+        cardPools = catalog.Cards.ToDictionary(row => row.CardId,
+            row => row.CardPool.ValueKind == JsonValueKind.String ? row.CardPool.GetString() : null,
+            StringComparer.OrdinalIgnoreCase);
         return catalog.Cards.ToDictionary(row => row.CardId,
             row => (IReadOnlyList<string>)row.Products.Distinct(StringComparer.Ordinal).ToArray(),
             StringComparer.OrdinalIgnoreCase);
@@ -160,6 +167,9 @@ public sealed class L12Catalog
     private sealed class CardProductInclusionRow
     {
         public string CardId { get; init; } = string.Empty;
+        // Retain the same source without tightening the pre-existing loader:
+        // absent/non-string metadata remains unconfigured for environment reads.
+        public JsonElement CardPool { get; init; }
         public List<string> Products { get; init; } = [];
     }
 

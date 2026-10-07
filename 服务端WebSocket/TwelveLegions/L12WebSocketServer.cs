@@ -1358,6 +1358,21 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
+        _app.MapGet("/api/deck-library/summaries", (HttpRequest request) =>
+        {
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckSummaryQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "公开牌库摘要查询参数无效" });
+            var result = _platform.DeckLibrarySummaries(_catalog, query, viewer);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Page),
+                "unauthorized" => Results.Unauthorized(),
+                "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                _ => Results.BadRequest(),
+            };
+        });
         _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -1455,6 +1470,21 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var published = _platform.PublishedDeckByPublicCode(id, account.Id);
             return published is not null && _platform.DeletePublishedDeck(account.Id, published.Id)
                 ? Results.Ok() : Results.NotFound();
+        });
+        _app.MapPost("/api/public-decks/{reference}/counters/{kind}", (HttpRequest request, string reference, string kind) =>
+        {
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (request.Query.Count > 0) return Results.BadRequest(new { message = "计数请求参数无效" });
+            var result = _platform.UpdatePublicDeckCounter(reference, kind, viewer);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Counters),
+                "unauthorized" => Results.Unauthorized(),
+                "not_found" => Results.NotFound(),
+                "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                _ => Results.BadRequest(new { message = "计数请求无效" }),
+            };
         });
         _app.MapPost("/api/public-decks/{id}/like", (HttpRequest request, string id) =>
         {
