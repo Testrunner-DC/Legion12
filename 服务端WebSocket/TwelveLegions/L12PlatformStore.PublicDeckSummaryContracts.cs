@@ -51,7 +51,7 @@ public sealed record L12PublicDeckSummaryView(string Id, string Source, string N
     string MasterName, string Faction, string Author, string? PublicCode, int? PublicationVersion,
     DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt, L12DeckSummaryCounts Counts,
     bool Legal, string? LegalityReason, L12DeckEnvironmentView Environment,
-    int Views, int Likes, int Copies, bool ViewerLiked, bool CanEdit);
+    int Views, int Likes, int Copies, bool ViewerLiked, bool CanEdit, string? ReadToken = null);
 public sealed record L12DeckSummaryFacet(string Value, int Count);
 public sealed record L12PublicDeckSummaryFacets(IReadOnlyList<L12DeckSummaryFacet> Sources,
     IReadOnlyList<L12DeckSummaryFacet> Masters, IReadOnlyList<L12DeckSummaryFacet> Factions,

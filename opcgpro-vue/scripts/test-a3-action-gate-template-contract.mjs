@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { actionGateTemplateContract } from './action-gate-template-contract.mjs'
+import { actionGateTemplateContract, publicContentSaveDisabledBinding } from './action-gate-template-contract.mjs'
 
 const read = name => fs.readFileSync(new URL(`../src/l12/site/${name}.vue`, import.meta.url), 'utf8')
 const originals = [read('FriendsPage'), read('PublicDeckContentEditor'), read('AdminTournamentWorkbench')]
@@ -54,7 +54,7 @@ fail(0, ':aria-busy="actionBusy"', 'aria-busy="actionBusy"', 'friendsBusy')
 fail(0, ':aria-busy="actionBusy"', ':aria-busy="actionBusy" v-bind="overrides"', 'friendsBusy')
 fail(0, ':aria-busy="actionBusy"', '><span :aria-busy="actionBusy"></span><div', 'friendsBusy')
 
-for (const [index, handler, lock, field] of [[1, 'saveContent', 'isPending(actionKey)', 'publicPending'], [2, 'join(item)', 'actionPending(tournamentActionKey(item))', 'tournamentPending']]) {
+for (const [index, handler, lock, field] of [[1, 'saveContent', publicContentSaveDisabledBinding, 'publicPending'], [2, 'join(item)', 'actionPending(tournamentActionKey(item))', 'tournamentPending']]) {
   fail(index, `@click="${handler}"`, '@click="wrongHandler"', field)
   fail(index, `:disabled="${lock}"`, ':disabled="false"', field)
   fail(index, `@click="${handler}"`, `@click="${handler}" v-bind="overrides"`, field)
@@ -74,13 +74,13 @@ for (const decoy of ['<!-- <button :disabled="isPending(actionKey)" @click="save
   '<script>const fake=\'<button :disabled="isPending(actionKey)" @click="saveContent">fake</button>\'</script>',
   '<style>/* <button :disabled="isPending(actionKey)" @click="saveContent">fake</button> */</style>']) {
   const sources = [...originals]
-  sources[1] = sources[1].replace(':disabled="isPending(actionKey)"', ':disabled="false"') + decoy
+  sources[1] = sources[1].replace(`:disabled="${publicContentSaveDisabledBinding}"`, ':disabled="false"') + decoy
   assert.equal(actionGateTemplateContract(...sources).publicPending, false); checks++
 }
 // Hidden duplicate controls and extra visible copies cannot satisfy uniqueness.
 fail(1, '@click="saveContent"', '@click="wrongHandler"', 'publicPending')
 const duplicated = [...originals]
-duplicated[1] = duplicated[1].replace('<footer>', '<footer><button :disabled="isPending(actionKey)" @click="saveContent">duplicate</button>')
+duplicated[1] = duplicated[1].replace('<footer>', `<footer><button :disabled="${publicContentSaveDisabledBinding}" @click="saveContent">duplicate</button>`)
 assert.equal(actionGateTemplateContract(...duplicated).publicPending, false); checks++
 for (const [index, rootClass, field] of [[0, 'friends-page', 'friendsPending'], [1, 'public-content-editor', 'publicPending'], [2, 'tournament-page', 'tournamentPending']]) {
   const sources = [...originals]
@@ -96,3 +96,15 @@ externalDecoy[1] = externalDecoy[1].replace('@click="saveContent"', '@click="wro
   .replace('<template>', '<template><button :disabled="isPending(actionKey)" @click="saveContent">outside</button>')
 assert.equal(actionGateTemplateContract(...externalDecoy).publicPending, false); checks++
 console.log(`A3 action pending template contract: ${checks}/${checks} cases passed`)
+
+const reorderedPublic = [...originals]
+reorderedPublic[1] = reorderedPublic[1].replace(publicContentSaveDisabledBinding,
+  '(isPending(actionKey)) || (refreshRequired) || (!readGeneration) || (loading)')
+pass(reorderedPublic)
+for (const missing of ['loading', '!readGeneration', 'refreshRequired', 'isPending(actionKey)']) {
+  fail(1, `:disabled="${publicContentSaveDisabledBinding}"`,
+    `:disabled="${publicContentSaveDisabledBinding.split(' || ').filter(term => term !== missing).join(' || ')}"`, 'publicPending')
+}
+fail(1, `:disabled="${publicContentSaveDisabledBinding}"`, ':disabled="true"', 'publicPending')
+fail(1, `:disabled="${publicContentSaveDisabledBinding}"`, ':disabled="loading && isPending(actionKey)"', 'publicPending')
+console.log('Public content save availability: 7 reordered/missing-term/inert-button cases passed; original cases retained')

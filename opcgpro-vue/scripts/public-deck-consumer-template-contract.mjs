@@ -295,3 +295,53 @@ export const publicDeckConsumerGroups = contract => [
   ['detail mounts shared browser filter bridge', [contract.sharedBrowserConsumer, contract.filterBridge]],
   ['detail ownership stays external', [contract.uniqueDetailOwnership]],
 ]
+
+// The old leaves required full-list local comparers and an ownerId string.
+// The directory is now server-paged and authority is the pinned canEdit field.
+// Keep both original risks: all six selected sort modes reach the server query,
+// and neither author action renders without its authoritative permission gate.
+export function publicDeckAuthorActionsContract(source) {
+  const component = parseComponent(source)
+  if (!component) return false
+  return ['editDeck', 'deleteDeck'].every(handler => {
+    const action = unique(component.nodes, node => node.tag === 'button'
+      && exactDirective(node, 'on', 'click', handler))
+    return action && !hasRenderingOverride(action)
+      && exactVisibility(action, 'if', 'entry.canEdit')
+  })
+}
+
+export function publicDeckServerSummarySortContract(source) {
+  const component = parseComponent(source)
+  if (!component) return false
+  const query = component.script.statements.find(node => ts.isFunctionDeclaration(node)
+    && node.name?.text === 'summaryQuery')
+  const loader = component.script.statements.find(node => ts.isFunctionDeclaration(node)
+    && node.name?.text === 'loadSummarySources')
+  if (!query?.body || !loader?.body) return false
+  const request = loader.body.statements.filter(ts.isVariableStatement)
+    .flatMap(node => node.declarationList.declarations).find(node => node.name.getText(component.script) === 'request')
+  if (!request?.initializer || !expressionIs(request.initializer.getText(component.script), 'summaryQuery()')) return false
+  let forwardsRequest = 0
+  const walk = node => {
+    if (ts.isCallExpression(node) && expressionIs(node.expression.getText(component.script), 'deckLibraryApi.summaries')
+      && node.arguments.length === 1 && expressionIs(node.arguments[0].getText(component.script), 'request')) forwardsRequest++
+    ts.forEachChild(node, walk)
+  }
+  walk(loader.body)
+  if (forwardsRequest !== 1) return false
+  const dependencies = { plazaPage: { value: 3 }, PAGE_SIZE: 30, query: { value: '  名称  ' },
+    masterFilter: { value: 'M' }, factionFilter: { value: 'fate' }, legalFilter: { value: 'legal' },
+    environmentFilter: { value: '2.5' }, cardFilter: { value: 'C' }, updatedSince: { value: '2026-10-01T00:00:00Z' } }
+  try {
+    const body = ts.transpileModule(query.getText(component.script), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+    const evaluate = new Function(...Object.keys(dependencies), 'sortMode', body + '; return summaryQuery();')
+    return ['trend', 'copies', 'likes', 'views', 'latest', 'name'].every(sort => {
+      const result = evaluate(...Object.values(dependencies), { value: sort })
+      return result.source === 'all' && result.page === 3 && result.pageSize === 30 && result.sort === sort
+        && result.keyword === '名称' && result.masterId === 'M' && result.faction === 'fate'
+        && result.legal === true && result.environment === '2.5' && result.cardId === 'C'
+        && result.updatedAfter === dependencies.updatedSince.value
+    })
+  } catch { return false }
+}

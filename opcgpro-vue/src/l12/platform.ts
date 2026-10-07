@@ -499,6 +499,54 @@ export interface PublicDeckCounterResult {
   id: string; publicCode: string; views: number; likes: number; copies: number
   viewerLiked: boolean; canEdit: boolean
 }
+export interface PublicDeckSummary {
+  id: string; source: 'public' | 'official'; name: string; masterId: string; masterName: string; faction: string; author: string
+  publicCode: string | null; publicationVersion: number | null; createdAt: string | null; updatedAt: string | null
+  counts: { main: number; uncountedMain: number; morale: number; special: number; bench: number }
+  legal: boolean; legalityReason: string | null; environment: { status: string; value: '1.0' | '2.0' | '2.5' | null; reason: string | null }
+  views: number; likes: number; copies: number; viewerLiked: boolean; canEdit: boolean; readToken: string | null
+}
+export interface PublicDeckSummaryQuery {
+  source?: 'all' | 'public' | 'official'; page?: number; pageSize?: number; keyword?: string; masterId?: string; faction?: string
+  legal?: boolean; environment?: '1.0' | '2.0' | '2.5'; cardId?: string; updatedAfter?: string
+  sort?: 'trend' | 'copies' | 'likes' | 'views' | 'latest' | 'name'
+}
+export interface PublicDeckSummaryPage {
+  items: PublicDeckSummary[]; total: number; page: number; pageSize: number; generation: string; catalogVersion: string; policyVersion: number
+  sourceAvailability: { public: 'available' | 'disabled'; official: 'available' }
+  facets: { sources: Array<{ value: string; count: number }>; masters: Array<{ value: string; count: number }>
+    factions: Array<{ value: string; count: number }>; environments: Array<{ value: string; count: number }>
+    cards: Array<{ value: string; count: number }>; legal: number; illegal: number }
+}
+export interface OwnPublicDeckReference { id: string; publicCode: string; publicationVersion: number; ownerId: string }
+export interface OwnPublicDeckReferences { status: 'available'; items: OwnPublicDeckReference[] }
+export interface PublicDeckReadGeneration {
+  id: string; publicCode: string; readToken: string; catalogVersion: string; policyVersion: number
+}
+export interface PublicDeckCurrentRead {
+  summary: PublicDeckSummary; version: number; deck: SavedL12Deck; guide: PublicDeckGuide; matchups: PublicDeckMatchup[]
+  contentRevision: number; contentUpdatedAt: string | null; readToken: string; catalogVersion: string; policyVersion: number
+}
+export interface PublicDeckVersionMetadata {
+  version: number; name: string; masterId: string; createdAt: string
+  counts: PublicDeckSummary['counts']; legal: boolean; legalityReason: string | null
+  environment: PublicDeckSummary['environment']; changes: PublicDeckVersionChange[]
+}
+export interface PublicDeckVersionPage extends PublicDeckReadGeneration {
+  items: PublicDeckVersionMetadata[]; total: number; page: number; pageSize: number; canEdit: boolean
+}
+export interface PublicDeckVersionRead extends PublicDeckReadGeneration {
+  metadata: PublicDeckVersionMetadata; deck: SavedL12Deck; canEdit: boolean
+}
+export interface PublicDeckContentCurrent extends PublicDeckReadGeneration {
+  guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number
+  contentUpdatedAt: string | null; canEdit: true
+}
+export interface PublicDeckStatisticsPage extends PublicDeckReadGeneration {
+  from: string; to: string; recentDays: number; games: number
+  sampleStatus: 'available' | 'insufficient' | 'empty'; groups: PublicDeckVersionStatistic[]
+  total: number; page: number; pageSize: number
+}
 export interface RankedIntegritySignal { code: string; label: string }
 export interface RankedIntegrityAudit {
   id: string; matchId: string; seasonId: string
@@ -1803,6 +1851,68 @@ export const alternateArtApi = {
   gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
   notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
   acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
+}
+
+export const deckLibraryApi = {
+  summaries: (query: PublicDeckSummaryQuery = {}) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value))
+    return platformRequest<PublicDeckSummaryPage>(`/api/deck-library/summaries${params.size ? `?${params}` : ''}`)
+  },
+  ownReferences: (ids: readonly string[]) => {
+    if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length
+      || ids.some(id => !id || id !== id.trim() || id.length > 64 || /[\x00-\x1f\x7f]/.test(id)))
+      return Promise.reject(new Error('公开牌库引用查询参数无效'))
+    const params = new URLSearchParams()
+    ids.forEach(id => params.append('publicationId', id))
+    return platformRequest<OwnPublicDeckReferences>(`/api/me/public-deck-references?${params}`)
+  },
+}
+
+function publicDeckReadReference(value: string) {
+  if (!value || value !== value.trim() || value.length > 64 || /[\x00-\x1f\x7f]/.test(value))
+    throw new Error('公开牌库读取引用无效')
+  return encodeURIComponent(value)
+}
+
+function publicDeckReadToken(value?: string) {
+  if (value !== undefined && !/^[a-f0-9]{64}$/.test(value)) throw new Error('公开牌库读取代际无效')
+  return value
+}
+
+function publicDeckReadPage(page = 1, pageSize = 30, expectedReadToken?: string) {
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100)
+    throw new Error('公开牌库分页参数无效')
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  const token = publicDeckReadToken(expectedReadToken)
+  if (token) params.set('expectedReadToken', token)
+  return params
+}
+
+export const publicDeckReadApi = {
+  current: (reference: string, expectedReadToken?: string) => {
+    const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
+    if (token) params.set('expectedReadToken', token)
+    return platformRequest<PublicDeckCurrentRead>(`/api/public-decks/${publicDeckReadReference(reference)}/current${params.size ? `?${params}` : ''}`)
+  },
+  versions: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
+    platformRequest<PublicDeckVersionPage>(`/api/public-decks/${publicDeckReadReference(reference)}/versions?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
+  version: (reference: string, version: number, expectedReadToken?: string) => {
+    if (!Number.isSafeInteger(version) || version < 1) throw new Error('公开牌库版本参数无效')
+    const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
+    if (token) params.set('expectedReadToken', token)
+    return platformRequest<PublicDeckVersionRead>(`/api/public-decks/${publicDeckReadReference(reference)}/versions/${version}${params.size ? `?${params}` : ''}`)
+  },
+  statistics: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
+    platformRequest<PublicDeckStatisticsPage>(`/api/public-decks/${publicDeckReadReference(reference)}/statistics?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
+  updateContent: (reference: string, expectedReadToken: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => {
+    const token = publicDeckReadToken(expectedReadToken)
+    if (!token) throw new Error('保存公开内容必须带有当前读取代际')
+    const params = new URLSearchParams({ expectedReadToken: token })
+    return platformRequest<PublicDeckContentCurrent>(`/api/public-decks/${publicDeckReadReference(reference)}/content/current?${params}`, {
+      method: 'PUT', body: JSON.stringify({ guide, matchups }),
+    })
+  },
 }
 
 export const publicDeckApi = {

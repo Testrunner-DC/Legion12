@@ -40,71 +40,76 @@ public sealed partial class L12PlatformStore
             if (published is null) return null;
             if (!string.Equals(published.OwnerId, accountId, StringComparison.Ordinal))
                 throw new UnauthorizedAccessException("只有公开牌库作者可以编辑指南和对局建议");
-
-            var guide = NormalizeGuide(input.Guide);
-            var matchups = NormalizeMatchups(input.Matchups);
-            var guideJson = JsonSerializer.Serialize(guide);
-            var matchupJson = JsonSerializer.Serialize(matchups);
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-                $"{{\"guide\":{guideJson},\"matchups\":{matchupJson}}}"))).ToLowerInvariant();
-            var now = DateTimeOffset.UtcNow;
             using var connection = OpenDatabase(_databasePath, readOnly: false);
             using var transaction = connection.BeginTransaction();
-            var current = ReadPublicDeckContent(connection, published.Id, transaction);
-            string? currentHash = null;
-            using (var query = connection.CreateCommand())
-            {
-                query.Transaction = transaction;
-                query.CommandText = "SELECT content_hash FROM published_deck_content_heads WHERE publication_id=$id;";
-                query.Parameters.AddWithValue("$id", published.Id);
-                currentHash = Convert.ToString(query.ExecuteScalar());
-            }
-            if (string.Equals(currentHash, hash, StringComparison.Ordinal))
-            {
-                transaction.Commit();
-                return new(current.Guide, current.Matchups, current.Revision, current.UpdatedAt,
-                    ReadPublicDeckVersions(connection, published), EmptyPublicDeckMatchStatistics, "unavailable",
-                    "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。");
-            }
-            using (var payload = connection.CreateCommand())
-            {
-                payload.Transaction = transaction;
-                payload.CommandText = """
-                    INSERT OR IGNORE INTO published_deck_content_payloads(
-                        content_hash,guide_json,matchups_json,created_utc)
-                    VALUES($hash,$guide,$matchups,$created);
-                    """;
-                payload.Parameters.AddWithValue("$hash", hash);
-                payload.Parameters.AddWithValue("$guide", guideJson);
-                payload.Parameters.AddWithValue("$matchups", matchupJson);
-                payload.Parameters.AddWithValue("$created", now.ToString("O"));
-                payload.ExecuteNonQuery();
-            }
-            var revision = current.Revision + 1;
-            using (var revisionCommand = connection.CreateCommand())
-            {
-                revisionCommand.Transaction = transaction;
-                revisionCommand.CommandText = """
-                    INSERT INTO published_deck_content_revisions(
-                        publication_id,revision,content_hash,author_id,created_utc)
-                    VALUES($id,$revision,$hash,$author,$created);
-                    INSERT INTO published_deck_content_heads(publication_id,revision,content_hash,updated_utc)
-                    VALUES($id,$revision,$hash,$created)
-                    ON CONFLICT(publication_id) DO UPDATE SET
-                        revision=excluded.revision,content_hash=excluded.content_hash,updated_utc=excluded.updated_utc;
-                    """;
-                revisionCommand.Parameters.AddWithValue("$id", published.Id);
-                revisionCommand.Parameters.AddWithValue("$revision", revision);
-                revisionCommand.Parameters.AddWithValue("$hash", hash);
-                revisionCommand.Parameters.AddWithValue("$author", accountId);
-                revisionCommand.Parameters.AddWithValue("$created", now.ToString("O"));
-                revisionCommand.ExecuteNonQuery();
-            }
+            var content = WritePublicDeckContentCanonical(connection, transaction, published, accountId, input);
             transaction.Commit();
-            return new(guide, matchups, revision, now, ReadPublicDeckVersions(connection, published),
+            return new(content.Guide, content.Matchups, content.Revision, content.UpdatedAt,
+                ReadPublicDeckVersions(connection, published),
                 EmptyPublicDeckMatchStatistics,
                 "unavailable", "尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。");
         }
+    }
+
+    private StoredPublicDeckContent WritePublicDeckContentCanonical(SqliteConnection connection,
+        SqliteTransaction transaction, PublishedDeckRow published, string accountId, L12PublicDeckContentInput input,
+        StoredPublicDeckContent? current = null)
+    {
+        var guide = NormalizeGuide(input.Guide);
+        var matchups = NormalizeMatchups(input.Matchups);
+        var guideJson = JsonSerializer.Serialize(guide);
+        var matchupJson = JsonSerializer.Serialize(matchups);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{{\"guide\":{guideJson},\"matchups\":{matchupJson}}}"))).ToLowerInvariant();
+        current ??= ReadPublicDeckContent(connection, published.Id, transaction);
+        string? currentHash;
+        using (var query = connection.CreateCommand())
+        {
+            query.Transaction = transaction;
+            query.CommandText = "SELECT content_hash FROM published_deck_content_heads WHERE publication_id=$id;";
+            query.Parameters.AddWithValue("$id", published.Id);
+            currentHash = Convert.ToString(query.ExecuteScalar());
+        }
+        if (string.Equals(currentHash, hash, StringComparison.Ordinal)) return current;
+
+        var now = DateTimeOffset.UtcNow;
+        using (var payload = connection.CreateCommand())
+        {
+            payload.Transaction = transaction;
+            payload.CommandText = """
+                INSERT OR IGNORE INTO published_deck_content_payloads(
+                    content_hash,guide_json,matchups_json,created_utc)
+                VALUES($hash,$guide,$matchups,$created);
+                """;
+            payload.Parameters.AddWithValue("$hash", hash);
+            payload.Parameters.AddWithValue("$guide", guideJson);
+            payload.Parameters.AddWithValue("$matchups", matchupJson);
+            payload.Parameters.AddWithValue("$created", now.ToString("O"));
+            payload.ExecuteNonQuery();
+        }
+        PublicDeckContentWriteFaultHook?.Invoke("after-payload");
+        var revision = current.Revision + 1;
+        using (var revisionCommand = connection.CreateCommand())
+        {
+            revisionCommand.Transaction = transaction;
+            revisionCommand.CommandText = """
+                INSERT INTO published_deck_content_revisions(
+                    publication_id,revision,content_hash,author_id,created_utc)
+                VALUES($id,$revision,$hash,$author,$created);
+                INSERT INTO published_deck_content_heads(publication_id,revision,content_hash,updated_utc)
+                VALUES($id,$revision,$hash,$created)
+                ON CONFLICT(publication_id) DO UPDATE SET
+                    revision=excluded.revision,content_hash=excluded.content_hash,updated_utc=excluded.updated_utc;
+                """;
+            revisionCommand.Parameters.AddWithValue("$id", published.Id);
+            revisionCommand.Parameters.AddWithValue("$revision", revision);
+            revisionCommand.Parameters.AddWithValue("$hash", hash);
+            revisionCommand.Parameters.AddWithValue("$author", accountId);
+            revisionCommand.Parameters.AddWithValue("$created", now.ToString("O"));
+            revisionCommand.ExecuteNonQuery();
+        }
+        PublicDeckContentWriteFaultHook?.Invoke("after-head");
+        return new(guide, matchups, revision, now);
     }
 
     private static L12PublicDeckGuideView NormalizeGuide(L12PublicDeckGuideView? input)

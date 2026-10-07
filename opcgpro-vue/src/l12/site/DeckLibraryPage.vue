@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
+import { captureDeckAccountGuard, deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { alternateArtApi, deckLibraryApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, publicDeckReadApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup, type PublicDeckSummary, type PublicDeckSummaryPage, type PublicDeckSummaryQuery, type OwnPublicDeckReference } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MobileFilterSheet from './MobileFilterSheet.vue'
 import { useActionGate } from '@/l12/useActionGate'
-import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters, matchesPublishedDeckReference, publicDeckRouteReference } from './publicDeckEntry'
-import { deckEnvironmentForDeck, deckEnvironmentLabel, type DeckEnvironmentFilter } from './deckEnvironment'
+import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters, publicDeckRouteReference, publicDeckSummaryReference } from './publicDeckEntry'
+import { deckEnvironmentLabel, type DeckEnvironmentFilter } from './deckEnvironment'
+import { createSummaryRequestGate, matchesOwnPublication, rememberSummaryOpen, validateOwnReferences, validateSummaryPage } from './publicDeckSummary'
+import { currentReadGeneration, settlePublicDeckRead, validatePublicDeckContentCurrent, validatePublicDeckCurrent } from './publicDeckRead'
 import { deckEditorQuery } from './deckEditorNavigation'
 
 const PAGE_SIZE = 30
@@ -26,7 +28,18 @@ onBeforeUnmount(() => actionViewport.removeEventListener('change', updateActionV
 const catalog = ref<DeckCard[]>([])
 const ownedAlternateArts = ref<AlternateArt[]>([])
 const saved = ref<Record<string, SavedL12Deck>>({})
-const published = ref<PublishedDeck[]>([])
+const published = ref<Array<PublicDeckSummary | PublishedDeck>>([])
+const summaryPage = ref<PublicDeckSummaryPage | null>(null)
+const facetPage = ref<PublicDeckSummaryPage | null>(null)
+const hotSummaries = ref<PublicDeckSummary[]>([])
+const publicLoadState = ref<'loading' | 'available' | 'unavailable'>('loading')
+const publicLoadError = ref('')
+const ownReferences = ref<OwnPublicDeckReference[]>([])
+const referenceState = ref<'idle' | 'loading' | 'available' | 'unavailable'>('idle')
+const referenceError = ref('')
+const updatedSince = ref<string | undefined>()
+let libraryMounted = false
+let libraryDisposed = false
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const query = ref('')
 const importCode = ref('')
@@ -44,6 +57,7 @@ const updatedFilter = ref<'all' | '1' | '7' | '30' | '90' | '365'>('all')
 const sortMode = ref<'trend' | 'copies' | 'likes' | 'views' | 'latest' | 'name'>('trend')
 const plazaFiltersOpen = ref(false)
 const imagePreview = ref<{ deck: SavedL12Deck; blob: Blob; url: string } | null>(null)
+let imageReadSequence = 0
 const deletingMine = ref('')
 const mineQuery = ref('')
 const mineHomeCityFilter = ref('all')
@@ -57,6 +71,23 @@ const hotDeckTouchPaused = ref([false, false])
 const cardPickerOpen = ref(false)
 const publishGuide = ref<PublicDeckGuide>({ buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' })
 const publishMatchups = ref<PublicDeckMatchup[]>([])
+interface PendingPublicDeckPublish {
+  accountId: string
+  token: string
+  accountEpoch: number
+  deckId: string
+  deckRevision: number
+  deckBodyKey: string
+  publicationId: string
+  publicationVersion: number
+  reference: string
+  contentKey: string
+  guide: PublicDeckGuide
+  matchups: PublicDeckMatchup[]
+  provenanceSyncRequired: boolean
+}
+let pendingPublicDeckPublish: PendingPublicDeckPublish | null = null
+let publishRequestSequence = 0
 const route = useRoute()
 const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
@@ -70,24 +101,36 @@ function libraryContextCurrent(context: ReturnType<typeof libraryContext>, docum
   return context.account === platformState.account?.id && context.token === platformState.token && context.epoch === libraryAccountEpoch
     && (!document || context.route === route.fullPath && context.tab === tab.value)
 }
-watch(() => [platformState.account?.id, platformState.token], () => {
+watch(() => [platformState.account?.id, platformState.token], async () => {
   libraryAccountEpoch++
+  publishRequestSequence++
+  pendingPublicDeckPublish = null
   const context = libraryContext(), snapshot = loadSavedDecksState()
   saved.value = snapshot.status === 'unavailable' ? {} : snapshot.decks
   ownedAlternateArts.value = []
   deletingMine.value = ''; publishName.value = ''; showPublish.value = false
   closeImagePreview()
   notice.value = snapshot.status === 'unavailable' ? snapshot.error.message : ''
+  ownReferences.value = []; referenceState.value = 'idle'; referenceError.value = ''
+  if (libraryMounted) {
+    await loadSummarySources()
+    if (libraryDisposed || !libraryContextCurrent(context, false)) return
+    await loadOwnReferences()
+    if (libraryDisposed || !libraryContextCurrent(context, false)) return
+  }
   if (snapshot.status === 'unavailable') return
-  void Promise.all([ensureOfficialPrebuiltDecks(), platformState.account ? alternateArtApi.mine() : Promise.resolve([] as AlternateArt[])])
-    .then(([decks, arts]) => { if (libraryContextCurrent(context, false)) { saved.value = decks; ownedAlternateArts.value = arts } }).catch(error => {
+  try {
+    const [decks, arts] = await Promise.all([ensureOfficialPrebuiltDecks(), platformState.account ? alternateArtApi.mine() : Promise.resolve([] as AlternateArt[])])
+    if (!libraryDisposed && libraryContextCurrent(context, false)) { saved.value = decks; ownedAlternateArts.value = arts }
+  } catch (error) {
     if (libraryContextCurrent(context, false) && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '牌库暂不可读取'
-  })
+  }
 }, { flush: 'sync' })
+onBeforeUnmount(() => { publishRequestSequence++; pendingPublicDeckPublish = null })
 
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
-function captureCounterContext(value: PublishedDeck, key: string) {
+function captureCounterContext(value: PublishedDeck | PublicDeckSummary, key: string) {
   const context = libraryContext()
   return capturePublicDeckCounterGuard(value, {
     actorCurrent: () => libraryContextCurrent(context),
@@ -134,7 +177,10 @@ onBeforeUnmount(() => {
 })
 onMounted(async () => {
   restoreFiltersFromRoute()
+  libraryMounted = true
   const context = libraryContext()
+  await loadSummarySources()
+  if (libraryDisposed || !libraryContextCurrent(context, false)) return
   try {
     const [cards, decks, arts] = await Promise.all([
       loadDeckCatalog().then(cards => { catalog.value = cards; return cards }),
@@ -147,15 +193,10 @@ onMounted(async () => {
     ])
     if (!libraryContextCurrent(context, false)) return
     catalog.value = cards; saved.value = decks ?? {}; ownedAlternateArts.value = arts
-    const [presets, community, policy] = await Promise.all([
-      loadOfficialPresetDecks(), publicDeckApi.list(), getEffectiveOperationsPolicy().catch(() => null),
-    ])
+    const policy = await getEffectiveOperationsPolicy().catch(() => null)
     if (!libraryContextCurrent(context, false)) return
     operationsPolicy.value = policy
-    published.value = [
-      ...presets.map((deck, index) => ({ id: `official-${index}`, ownerId: 'official', deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '' })),
-      ...community,
-    ]
+    void loadOwnReferences()
     await nextTick()
     const savedScroll = sessionStorage.getItem(`l12:deck-library:scroll:${route.fullPath}`)
     if (savedScroll) listScrollHost()?.scrollTo({ top: Number(savedScroll) || 0 })
@@ -182,52 +223,84 @@ const filteredMine = computed(() => {
 const minePageCount = computed(() => Math.max(1, Math.ceil(filteredMine.value.length / PAGE_SIZE)))
 const pagedMine = computed(() => filteredMine.value.slice((minePage.value - 1) * PAGE_SIZE, minePage.value * PAGE_SIZE))
 const mineFilterActive = computed(() => Boolean(mineQuery.value.trim()) || mineHomeCityFilter.value !== 'all' || mineLegalFilter.value !== 'all' || mineSort.value !== 'latest')
-const plazaFactions = computed(() => [...new Set(published.value.map(entry => byId.value.get(entry.deck.masterId)?.faction).filter(Boolean) as string[])])
-const plazaMasters = computed(() => [...new Set(published.value.map(entry => entry.deck.masterId))].map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
-const plazaCards = computed(() => [...new Set(published.value.flatMap(entry => [...entry.deck.cardIds, ...entry.deck.moraleIds, ...(entry.deck.specialIds ?? [])]))].map(id => byId.value.get(id)).filter(Boolean) as DeckCard[])
+const plazaFactions = computed(() => facetPage.value?.facets.factions.map(item => item.value) ?? [])
+const plazaMasters = computed(() => (facetPage.value?.facets.masters ?? []).map(item => byId.value.get(item.value)).filter(Boolean) as DeckCard[])
+const plazaCards = computed(() => (facetPage.value?.facets.cards ?? []).map(item => byId.value.get(item.value)).filter(Boolean) as DeckCard[])
 const plazaCardPickerItems = computed<SingleCardPickerItem[]>(() => plazaCards.value.map(card => ({
   id: card.id, cardId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh,
   cardType: card.cardType, faction: card.faction, product: card.product, cost: card.cost,
   disasterLevel: card.disasterLevel, effect: card.effect, imageUrl: card.imageUrl, cardImageId: card.id, detailCard: card,
 })))
 const publishHomeCities = computed(() => catalog.value.filter(card => card.cardType === 'master'))
-const filteredPublished = computed(() => {
-  const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
-  const updatedAfter = updatedFilter.value === 'all' ? 0 : Date.now() - Number(updatedFilter.value) * 86400000
-  const values = published.value.filter(entry => {
-    const master = byId.value.get(entry.deck.masterId)
-    return (factionFilter.value === 'all' || master?.faction === factionFilter.value)
-      && (masterFilter.value === 'all' || entry.deck.masterId === masterFilter.value)
-      && (legalFilter.value === 'all' || seasonRequirement(entry).compliant === (legalFilter.value === 'legal'))
-      && (environmentFilter.value === 'all' || deckEnvironmentForDeck(entry.deck) === environmentFilter.value)
-      && (!cardFilter.value || [...entry.deck.cardIds, ...entry.deck.moraleIds, ...(entry.deck.specialIds ?? [])].includes(cardFilter.value))
-      && (!updatedAfter || !entry.updatedAt || Date.parse(entry.updatedAt) >= updatedAfter)
-      && (!keyword || [entry.deck.name, entry.author, master?.nameZh].some(value => value?.toLocaleLowerCase('zh-CN').includes(keyword)))
-  })
-  return [...values].sort((a, b) => sortMode.value === 'name'
-    ? a.deck.name.localeCompare(b.deck.name, 'zh-CN')
-    : sortMode.value === 'trend'
-      ? (b.copies * 4 + b.likes * 3 + (b.views ?? 0)) - (a.copies * 4 + a.likes * 3 + (a.views ?? 0)) || b.updatedAt.localeCompare(a.updatedAt)
-      : sortMode.value === 'latest'
-    ? b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
-    : sortMode.value === 'likes'
-      ? b.likes - a.likes || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
-      : sortMode.value === 'views'
-        ? (b.views ?? 0) - (a.views ?? 0) || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id)
-        : b.copies - a.copies || b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id))
-})
-const plazaPageCount = computed(() => Math.max(1, Math.ceil(filteredPublished.value.length / PAGE_SIZE)))
-const pagedPublished = computed(() => filteredPublished.value.slice((plazaPage.value - 1) * PAGE_SIZE, plazaPage.value * PAGE_SIZE))
+const filteredPublished = computed(() => published.value.filter((item): item is PublicDeckSummary => 'source' in item))
+const plazaTotal = computed(() => summaryPage.value?.total ?? 0)
+const plazaPageCount = computed(() => Math.max(1, Math.ceil(plazaTotal.value / PAGE_SIZE)))
+const pagedPublished = filteredPublished
 const hotDeckRows = computed(() => {
-  const ranked = published.value
-    .filter(entry => Boolean(publicDeckRouteReference(entry)))
-    .sort((left, right) => (right.copies * 4 + right.likes * 3 + (right.views ?? 0)) - (left.copies * 4 + left.likes * 3 + (left.views ?? 0)) || right.updatedAt.localeCompare(left.updatedAt))
-    .slice(0, 16)
+  const ranked = hotSummaries.value
   if (!ranked.length) return []
   const first = ranked.filter((_, index) => index % 2 === 0)
   const second = ranked.filter((_, index) => index % 2 === 1)
   return [first, second.length ? second : [...first].reverse()]
 })
+function summaryQuery(): PublicDeckSummaryQuery {
+  return { source: 'all', page: plazaPage.value, pageSize: PAGE_SIZE, keyword: query.value.trim() || undefined,
+    masterId: masterFilter.value === 'all' ? undefined : masterFilter.value,
+    faction: factionFilter.value === 'all' ? undefined : factionFilter.value,
+    legal: legalFilter.value === 'all' ? undefined : legalFilter.value === 'legal',
+    environment: environmentFilter.value === 'all' ? undefined : environmentFilter.value,
+    cardId: cardFilter.value || undefined, updatedAfter: updatedSince.value, sort: sortMode.value }
+}
+const summaryGate = createSummaryRequestGate(() => JSON.stringify({ ...libraryContext(), documentEpoch: libraryCounterDocumentEpoch, query: summaryQuery() }))
+const referenceGate = createSummaryRequestGate(() => JSON.stringify({ ...libraryContext(), documentEpoch: libraryCounterDocumentEpoch, ids: visiblePublicationIds() }))
+async function loadSummarySources() {
+  if (!libraryMounted || libraryDisposed) return
+  const request = summaryQuery(), current = summaryGate.begin()
+  const baseline: PublicDeckSummaryQuery = { source: 'all', page: 1, pageSize: 16, sort: 'trend' }
+  publicLoadState.value = 'loading'; publicLoadError.value = ''
+  published.value = []; summaryPage.value = null; facetPage.value = null; hotSummaries.value = []
+  try {
+    const [response, baselineResponse] = await Promise.all([deckLibraryApi.summaries(request), deckLibraryApi.summaries(baseline)])
+    const page = validateSummaryPage(response, request), global = validateSummaryPage(baselineResponse, baseline)
+    if (!current()) return
+    if (page.catalogVersion !== global.catalogVersion || page.policyVersion !== global.policyVersion)
+      throw new Error('牌库目录规则正在变化，请刷新后重新筛选')
+    summaryPage.value = page; published.value = page.items; publicLoadState.value = 'available'
+    facetPage.value = global; hotSummaries.value = global.items
+    if (plazaPage.value > Math.max(1, Math.ceil(page.total / PAGE_SIZE))) plazaPage.value = Math.max(1, Math.ceil(page.total / PAGE_SIZE))
+  } catch (error) {
+    if (current()) { publicLoadState.value = 'unavailable'; publicLoadError.value = error instanceof Error ? error.message : '公开牌库当前无法读取' }
+  }
+}
+function visiblePublicationIds() {
+  return [...new Set(pagedMine.value.map(deck => deck.publicationId).filter((id): id is string => Boolean(id)))].slice(0, 100)
+}
+async function loadOwnReferences() {
+  if (!libraryMounted || libraryDisposed) return
+  const actor = platformState.account?.id, ids = visiblePublicationIds(), current = referenceGate.begin()
+  ownReferences.value = []; referenceError.value = ''
+  if (!actor || !platformState.token || !ids.length) { referenceState.value = 'idle'; return }
+  referenceState.value = 'loading'
+  try {
+    const items = validateOwnReferences(await deckLibraryApi.ownReferences(ids), ids, actor)
+    if (current()) { ownReferences.value = items; referenceState.value = 'available' }
+  } catch (error) {
+    if (current()) { referenceState.value = 'unavailable'; referenceError.value = error instanceof Error ? error.message : '公开引用当前无法确认' }
+  }
+}
+watch(() => updatedFilter.value, value => {
+  updatedSince.value = value === 'all' ? undefined : new Date(Date.now() - Number(value) * 86400000).toISOString()
+}, { immediate: true, flush: 'sync' })
+// Identity refresh is serialized by the synchronous-start account watcher.
+// These watchers handle only navigation/filter/visible-row changes, avoiding a
+// second identical directory/reference request for the same identity event.
+watch(() => JSON.stringify({ route: route.fullPath, tab: tab.value, documentEpoch: libraryCounterDocumentEpoch, query: summaryQuery() }), () => {
+  if (libraryMounted) void loadSummarySources()
+})
+watch(() => JSON.stringify({ route: route.fullPath, tab: tab.value, ids: visiblePublicationIds() }), () => {
+  if (libraryMounted) void loadOwnReferences()
+})
+onBeforeUnmount(() => { libraryDisposed = true; summaryGate.dispose(); referenceGate.dispose(); ownReferences.value = [] })
 watch(hotDeckRows, async () => {
   await nextTick()
   syncHotDeckMotion()
@@ -284,12 +357,15 @@ async function copyToMine(entry: PublishedDeck) {
     }
   })
 }
-function updatePublished(entry: PublishedDeck) {
+function updatePublished(entry: PublishedDeck | PublicDeckSummary) {
   const index = published.value.findIndex(item => item.id === entry.id)
   if (index >= 0) published.value[index] = entry
+  const hotIndex = hotSummaries.value.findIndex(item => item.id === entry.id)
+  if (hotIndex >= 0 && 'source' in entry) hotSummaries.value[hotIndex] = entry
 }
 function publishedCopyFor(deck: SavedL12Deck) {
-  return published.value.find(item => !item.official && item.ownerId === platformState.account?.id && item.id === deck.publicationId)
+  if (referenceState.value !== 'available') return undefined
+  return ownReferences.value.find(item => matchesOwnPublication(deck, item, platformState.account?.id))
 }
 async function deleteMine(deck: SavedL12Deck) {
   const context = libraryContext()
@@ -323,15 +399,18 @@ async function duplicateMine(deck: SavedL12Deck) {
     notice.value = `已复制牌库《${copy.name}》`
   } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; notice.value = error instanceof Error ? error.message : '复制牌库失败' }
 }
-async function openDeck(entry: PublishedDeck) {
-  const deckId = publicDeckRouteReference(entry)
+async function openDeck(entry: PublicDeckSummary) {
+  const context = libraryContext(), actorCurrent = captureDeckAccountGuard()
+  const intent = rememberSummaryOpen(entry, actorCurrent)
+  const deckId = intent.reference
   if (!deckId) {
     notice.value = '该牌库暂时没有可用的详情地址'
     return
   }
   sessionStorage.setItem(`l12:deck-library:scroll:${route.fullPath}`, String(listScrollHost()?.scrollTop ?? window.scrollY))
   try {
-    await router.push({ name: 'public-deck-detail', params: { deckId }, query: { from: route.fullPath } })
+    if (!libraryContextCurrent(context) || !actorCurrent()) return
+    await router.push({ name: 'public-deck-detail', params: { deckId }, query: { from: route.fullPath, ...intent.query } })
   } catch {
     notice.value = '无法打开该牌库详情，请稍后重试'
   }
@@ -339,7 +418,11 @@ async function openDeck(entry: PublishedDeck) {
 function listScrollHost(): HTMLElement | null {
   return pageRoot.value?.closest<HTMLElement>('.site-content') ?? document.scrollingElement as HTMLElement | null
 }
-function seasonRequirement(entry: PublishedDeck) {
+function seasonRequirement(entry: PublicDeckSummary) {
+  return entry.legal ? { compliant: true, label: '符合本赛季', reason: '符合当前赛季构筑要求' }
+    : { compliant: false, label: '不符合本赛季', reason: entry.legalityReason || '不符合当前赛季构筑要求' }
+}
+function fullDeckSeasonRequirement(entry: PublishedDeck) {
   if (!entry.official && entry.seasonCompliant !== undefined) return entry.seasonCompliant
     ? { compliant: true, label: '符合本赛季', reason: operationsPolicy.value?.season.name ? `符合${operationsPolicy.value.season.name}构筑要求` : '符合当前赛季构筑要求' }
     : { compliant: false, label: '不符合本赛季', reason: entry.seasonComplianceReason || '不符合当前赛季构筑要求' }
@@ -349,10 +432,13 @@ function seasonRequirement(entry: PublishedDeck) {
     ? { compliant: false, label: '不符合本赛季', reason }
     : { compliant: true, label: '符合本赛季', reason: `符合${operationsPolicy.value.season.name || '当前赛季'}构筑要求` }
 }
-function deckFaction(entry: PublishedDeck) {
-  return byId.value.get(entry.deck.masterId)?.faction || 'universal'
+function deckFaction(entry: PublicDeckSummary) {
+  return entry.faction || 'universal'
 }
-async function toggleLike(entry: PublishedDeck) {
+function summaryCountLabel(entry: PublicDeckSummary) {
+  return entry.counts.uncountedMain ? `${entry.counts.main}(${entry.counts.uncountedMain})` : String(entry.counts.main)
+}
+async function toggleLike(entry: PublishedDeck | PublicDeckSummary) {
   if (isOfficialPublicDeckCounterTarget(entry)) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
   const accountId = platformState.account.id
@@ -360,7 +446,7 @@ async function toggleLike(entry: PublishedDeck) {
   await runAction(key, async () => {
     if (!current()) return
     try {
-      const counters = await publicDeckApi.counter(publicDeckRouteReference(entry), 'like')
+      const counters = await publicDeckApi.counter('source' in entry ? publicDeckSummaryReference(entry) : publicDeckRouteReference(entry), 'like')
       if (current()) updatePublished(mergePublicDeckCounters(published.value.find(item => item.id === entry.id)!, counters))
     }
     catch (error) {
@@ -369,27 +455,145 @@ async function toggleLike(entry: PublishedDeck) {
     }
   })
 }
+function publishDeckBodyKey(deck: SavedL12Deck) {
+  const orderedMap = (value: Record<string, string | string[]> | undefined) => Object.fromEntries(
+    Object.entries(value ?? {}).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0))
+  return JSON.stringify({ name: deck.name, masterId: deck.masterId, cardIds: deck.cardIds,
+    moraleIds: deck.moraleIds, specialIds: deck.specialIds, benchIds: deck.benchIds ?? [],
+    alternateArtSelections: orderedMap(deck.alternateArtSelections), alternateArtCopies: orderedMap(deck.alternateArtCopies) })
+}
+function normalizedPublishContent(guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) {
+  const text = (value: string) => value.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+  const normalizedGuide = { buildIdea: text(guide.buildIdea), opening: text(guide.opening),
+    keyCards: text(guide.keyCards), commonSequence: text(guide.commonSequence), substitutions: text(guide.substitutions) }
+  const normalizedMatchups = matchups.map(item => ({ opponentMasterId: item.opponentMasterId.trim().toUpperCase(),
+    notes: text(item.notes), keyCards: text(item.keyCards), suggestedSwaps: text(item.suggestedSwaps) }))
+    .filter(item => item.opponentMasterId || item.notes || item.keyCards || item.suggestedSwaps)
+    .sort((left, right) => left.opponentMasterId < right.opponentMasterId ? -1 : left.opponentMasterId > right.opponentMasterId ? 1 : 0)
+  return { guide: normalizedGuide, matchups: normalizedMatchups }
+}
+function publishContentKey(guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) {
+  return JSON.stringify(normalizedPublishContent(guide, matchups))
+}
+function publishContentHasValues(guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) {
+  const content = normalizedPublishContent(guide, matchups)
+  return Object.values(content.guide).some(Boolean) || content.matchups.length > 0
+}
+function matchingPendingPublish(deck: SavedL12Deck, context: ReturnType<typeof libraryContext>, deckBodyKey: string) {
+  const pending = pendingPublicDeckPublish
+  return pending && pending.accountId === context.account && pending.token === context.token
+    && pending.accountEpoch === context.epoch && pending.deckId === deck.id && pending.deckRevision === deck.revision
+    && pending.deckBodyKey === deckBodyKey ? pending : null
+}
 async function publishDeck() {
-  const context = libraryContext()
-  const deck = saved.value[publishName.value]
+  const deckName = publishName.value, deck = saved.value[deckName]
   if (!deck) return
   if (!platformState.account) { notice.value = '请先登录账号再公开牌库'; return }
   const error = validateDeck(deck, catalog.value)
   if (error) { notice.value = error; return }
-  await runAction(`public-deck:publish:${deck.name}`, async () => {
+  if (!deck.id || !Number.isSafeInteger(deck.revision)) { notice.value = '牌库状态已变化，请重新选择后再公开'; return }
+  const actionKey = `public-deck:publish:${deck.name}`
+  if (actionPending(actionKey)) return
+  const context = libraryContext(), actorCurrent = captureDeckAccountGuard(), request = ++publishRequestSequence
+  const submittedGuide = { ...publishGuide.value }
+  const submittedMatchups = publishMatchups.value.map(item => ({ ...item }))
+  const submittedContentKey = publishContentKey(submittedGuide, submittedMatchups)
+  const deckBodyKey = publishDeckBodyKey(deck)
+  const hasContent = publishContentHasValues(submittedGuide, submittedMatchups)
+  let expectedDeckId = deck.id, expectedDeckRevision = deck.revision, expectedDeckBodyKey = deckBodyKey
+  const baseCurrent = () => request === publishRequestSequence && actorCurrent() && libraryContextCurrent(context)
+    && showPublish.value && publishName.value === deckName
+  const current = () => {
+    const selected = saved.value[deckName]
+    return baseCurrent() && selected?.id === expectedDeckId && selected.revision === expectedDeckRevision
+      && publishDeckBodyKey(selected) === expectedDeckBodyKey
+  }
+  await runAction(actionKey, async () => {
     try {
-      const entry = await publicDeckApi.publish(deck)
-      if (!libraryContextCurrent(context)) return
-      await saveDeck({ ...deck, publicationId: entry.deck.publicationId, publicationVersion: entry.deck.publicationVersion })
-      if (!libraryContextCurrent(context)) return
-      saved.value = loadSavedDecks()
-      const hasContent = Object.values(publishGuide.value).some(value => value.trim()) || publishMatchups.value.length > 0
-      if (hasContent) entry.details = await publicDeckApi.updateContent(publicDeckRouteReference(entry), publishGuide.value, publishMatchups.value)
-      if (!libraryContextCurrent(context)) return
-      if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
-      else published.value.push(entry)
-      showPublish.value = false; tab.value = 'plaza'; notice.value = hasContent ? '牌库与公开内容已同步发布' : '牌库已公开到公开牌库'
-    } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; notice.value = error instanceof Error ? error.message : '公开牌库失败' }
+      if (!current()) return
+      let pending = matchingPendingPublish(deck, context, deckBodyKey)
+      if (pending?.provenanceSyncRequired) {
+        notice.value = '服务器已确认牌库发布信息，但本机牌库缓存尚未同步；公开内容草稿仍保留，请先刷新页面同步我的牌库。'
+        return
+      }
+      const retryingPending = Boolean(pending)
+      if (!pending) {
+        const entry = await publicDeckApi.publish(deck)
+        if (!current()) return
+        if (entry.deck.publicationId !== entry.id || !Number.isSafeInteger(entry.deck.publicationVersion)
+          || Number(entry.deck.publicationVersion) < 1) throw new Error('公开牌库返回的发布身份无效')
+        pending = {
+          accountId: context.account!, token: context.token, accountEpoch: context.epoch,
+          deckId: deck.id!, deckRevision: deck.revision!, deckBodyKey,
+          publicationId: entry.id, publicationVersion: entry.deck.publicationVersion!,
+          reference: publicDeckRouteReference(entry), contentKey: submittedContentKey,
+          guide: submittedGuide, matchups: submittedMatchups, provenanceSyncRequired: false,
+        }
+        pendingPublicDeckPublish = pending
+      } else {
+        pending = { ...pending, contentKey: submittedContentKey, guide: submittedGuide, matchups: submittedMatchups }
+        pendingPublicDeckPublish = pending
+      }
+      let selected = saved.value[deckName]
+      if (selected?.publicationId !== pending.publicationId || selected.publicationVersion !== pending.publicationVersion) {
+        const confirmed = await saveDeck({ ...deck, publicationId: pending.publicationId, publicationVersion: pending.publicationVersion })
+        if (!baseCurrent()) return
+        saved.value = loadSavedDecks()
+        selected = saved.value[deckName]
+        if (!confirmed.id || !Number.isSafeInteger(confirmed.revision) || Number(confirmed.revision) < 1
+          || !selected || selected.id !== confirmed.id || selected.revision !== confirmed.revision
+          || publishDeckBodyKey(selected) !== publishDeckBodyKey(confirmed)) return
+        pending = { ...pending, deckId: confirmed.id!, deckRevision: confirmed.revision!,
+          deckBodyKey: publishDeckBodyKey(confirmed) }
+        pendingPublicDeckPublish = pending
+        expectedDeckId = confirmed.id
+        expectedDeckRevision = confirmed.revision
+        expectedDeckBodyKey = pending.deckBodyKey
+      }
+      if (!current() || !selected || selected.id !== pending.deckId || selected.revision !== pending.deckRevision
+        || publishDeckBodyKey(selected) !== pending.deckBodyKey) return
+      if (hasContent || retryingPending) {
+        const read = await settlePublicDeckRead(publicDeckReadApi.current(pending.reference), validatePublicDeckCurrent)
+        if (!current()) return
+        if (read.status !== 'available') {
+          notice.value = `牌库已公开，但公开内容暂未确认保存；${read.message}草稿已保留，请再次点击“确认公开”。`
+          return
+        }
+        if (!read.value.summary.canEdit || read.value.summary.id !== pending.publicationId)
+          throw new Error('当前账号无法确认这个公开牌库的内容')
+        const generation = currentReadGeneration(read.value)
+        if (publishContentKey(read.value.guide, read.value.matchups) !== submittedContentKey) {
+          const write = await settlePublicDeckRead(
+            publicDeckReadApi.updateContent(generation.publicCode, generation.readToken, submittedGuide, submittedMatchups),
+            value => validatePublicDeckContentCurrent(value, generation, read.value.contentRevision))
+          if (!current()) return
+          if (write.status !== 'available') {
+            notice.value = `牌库已公开，但公开内容暂未确认保存；${write.message}草稿已保留，请再次点击“确认公开”。`
+            return
+          }
+        }
+      }
+      if (!current()) return
+      const currentDraftKey = publishContentKey(publishGuide.value, publishMatchups.value)
+      const draftUnchanged = currentDraftKey === submittedContentKey
+      pendingPublicDeckPublish = draftUnchanged ? null : { ...pending, contentKey: currentDraftKey,
+        guide: { ...publishGuide.value }, matchups: publishMatchups.value.map(item => ({ ...item })) }
+      void loadSummarySources(); void loadOwnReferences()
+      if (draftUnchanged) { showPublish.value = false; tab.value = 'plaza' }
+      notice.value = draftUnchanged
+        ? (hasContent ? '牌库与公开内容已同步发布' : '牌库已公开到公开牌库')
+        : '提交时的牌库与公开内容已保存；当前编辑仍有未保存修改'
+    } catch (error) {
+      if (!current() || !deckErrorBelongsToCurrentAccount(error)) return
+      if (error && typeof error === 'object' && (error as { serverConfirmed?: boolean }).serverConfirmed === true) {
+        if (pendingPublicDeckPublish) pendingPublicDeckPublish = { ...pendingPublicDeckPublish, provenanceSyncRequired: true }
+        notice.value = `${error instanceof Error ? error.message : '服务器已确认牌库发布信息，但本机缓存未更新'}；公开内容草稿仍保留，请先刷新页面同步我的牌库。`
+        return
+      }
+      notice.value = pendingPublicDeckPublish
+        ? `牌库已公开，但公开内容暂未确认保存；${error instanceof Error ? error.message : '请稍后重试'}。草稿已保留，请再次点击“确认公开”。`
+        : error instanceof Error ? error.message : '公开牌库失败'
+    }
   })
 }
 async function editPublished(entry: PublishedDeck) {
@@ -428,27 +632,33 @@ function publicDeckUrl(id: string) {
 async function verifiedPublicDeckUrl(deck: SavedL12Deck) {
   const id = deck.publicationId?.trim()
   if (!id || !deck.publicationVersion) return ''
-  const candidate = published.value.find(entry => !entry.official && entry.id === id)
-  if (!candidate?.publicCode) return ''
-  try {
-    const publishedDeck = await publicDeckApi.get(publicDeckRouteReference(candidate))
-    return matchesPublishedDeckReference(deck, publishedDeck, platformState.account?.id)
-      ? publicDeckUrl(publicDeckRouteReference(publishedDeck)) : ''
-  } catch { return '' }
+  const actor = platformState.account?.id, context = libraryContext()
+  if (!actor) return ''
+  const currentActor = captureDeckAccountGuard()
+  const references = validateOwnReferences(await deckLibraryApi.ownReferences([id]), [id], actor)
+  if (!currentActor() || !libraryContextCurrent(context)) throw new Error('账号或页面已切换，请重新生成牌库图')
+  const candidate = references[0]
+  return matchesOwnPublication(deck, candidate, actor) ? publicDeckUrl(candidate!.publicCode) : ''
 }
 async function previewImage(deck: SavedL12Deck) {
+  const context = libraryContext(), actorCurrent = captureDeckAccountGuard(), request = ++imageReadSequence
+  const current = () => request === imageReadSequence && actorCurrent() && libraryContextCurrent(context)
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
-  const publicUrl = await verifiedPublicDeckUrl(deck)
-  const presentationDeck = publicUrl
-    ? { ...deck, alternateArtSelections: {}, alternateArtCopies: {} }
-    : deck
-  const blob = await createDeckImageBlob(presentationDeck, catalog.value, {
-    publicUrl,
-    alternateArts: publicUrl ? [] : ownedAlternateArts.value,
-  })
-  imagePreview.value = { deck, blob, url: URL.createObjectURL(blob) }
+  imagePreview.value = null
+  try {
+    const publicUrl = await verifiedPublicDeckUrl(deck)
+    if (!current()) return
+    const presentationDeck = publicUrl ? { ...deck, alternateArtSelections: {}, alternateArtCopies: {} } : deck
+    const blob = await createDeckImageBlob(presentationDeck, catalog.value, {
+      publicUrl, alternateArts: publicUrl ? [] : ownedAlternateArts.value,
+    })
+    if (current()) imagePreview.value = { deck, blob, url: URL.createObjectURL(blob) }
+  } catch (error) {
+    if (current()) notice.value = error instanceof Error ? error.message : '公开牌库引用当前无法确认，请稍后再生成牌库图'
+  }
 }
 function closeImagePreview() {
+  imageReadSequence++
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
   imagePreview.value = null
 }
@@ -567,7 +777,9 @@ watch(() => route.query, restoreFiltersFromRoute, { deep: true })
 watch([mineQuery, mineHomeCityFilter, mineLegalFilter, mineSort], () => { minePage.value = 1 })
 watch([query, masterFilter, factionFilter, legalFilter, environmentFilter, cardFilter, updatedFilter, sortMode], () => { plazaPage.value = 1 })
 watch(minePageCount, total => { minePage.value = Math.min(minePage.value, total) }, { immediate: true })
-watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, total) }, { immediate: true })
+watch(plazaPageCount, total => {
+  if (publicLoadState.value === 'available') plazaPage.value = Math.min(plazaPage.value, total)
+}, { immediate: true })
 </script>
 
 <template>
@@ -577,6 +789,7 @@ watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, tot
     <p v-if="notice" class="deck-notice">{{ notice }}</p>
 
     <template v-if="tab === 'mine'">
+      <p v-if="referenceState === 'unavailable'" role="status">{{ referenceError || '公开牌库状态暂时无法确认，请刷新后重试' }}</p>
       <section class="mine-toolbar"><input v-model="mineQuery" type="search" placeholder="按牌库名称搜索"/><select v-model="mineHomeCityFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in homeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="mineLegalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">构筑合法</option><option value="illegal">构筑不合法</option></select><select v-model="mineSort" aria-label="我的牌库排序"><option value="latest">最近更新</option><option value="name">按名称</option></select><span>{{ filteredMine.length }} 个结果</span><button v-if="mineFilterActive" @click="resetMineFilters">清除筛选</button><button ref="importTrigger" type="button" @click="openImportModal">导入牌库码</button><button type="button" :disabled="!mine.length" @click="showPublish = true">公开牌库</button></section>
       <section v-if="filteredMine.length" class="mine-grid"><article v-for="deck in pagedMine" :key="deck.id || deck.name"><DeckProfile :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh" :fallback-url="byId.get(deck.masterId)?.imageUrl" :name="deck.name" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张主牌 · ${deck.moraleIds.length} 张士气`"/><small v-if="publishedCopyFor(deck)" class="mine-public-state">已公开 · 删除本地牌库不会删除公开版本</small><div class="deck-card-actions"><router-link :to="editorLink(deck.name, publishedCopyFor(deck)?.publicCode, deck.id)">编辑</router-link><details :open="desktopActions"><summary>更多操作</summary><div><button @click="duplicateMine(deck)">复制牌库</button><button @click="copyCode(deck)">复制牌库码</button><button @click="previewImage(deck)">生成牌库图</button><button class="danger" :disabled="deletingMine === deck.name" @click="deleteMine(deck)">{{ deletingMine === deck.name ? '删除中…' : '删除' }}</button></div></details></div></article></section>
       <nav v-if="filteredMine.length && minePageCount > 1" class="deck-pagination" aria-label="我的牌库分页"><button :disabled="minePage === 1" @click="minePage--">上一页</button><template v-for="item in pageItems(minePageCount,minePage)" :key="item.key"><button v-if="item.page" :class="{ active: item.page === minePage }" :aria-current="item.page === minePage ? 'page' : undefined" @click="minePage = item.page">{{ item.label }}</button><span v-else>{{ item.label }}</span></template><button :disabled="minePage === minePageCount" @click="minePage++">下一页</button></nav>
@@ -585,25 +798,28 @@ watch(plazaPageCount, total => { plazaPage.value = Math.min(plazaPage.value, tot
     </template>
 
     <template v-else>
-      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>主宰<select v-model="masterFilter"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select></label><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>赛季合法性<select v-model="legalFilter"><option value="all">全部</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select></label><label>环境<select v-model="environmentFilter"><option value="all">全部环境</option><option value="1.0">1.0</option><option value="2.0">2.0</option><option value="2.5">2.5</option></select></label><label>包含卡牌<button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `${byId.get(cardFilter)?.nameZh || cardFilter} · ${byId.get(cardFilter)?.number || ''}` : '选择单卡' }}</button></label><label>更新时间<select v-model="updatedFilter"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select></label><label>排序<select v-model="sortMode"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></label></div><template #apply-label>查看 {{ filteredPublished.length }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="masterFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="factionFilter" aria-label="按阵营筛选"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="legalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select><select v-model="environmentFilter" aria-label="按环境筛选"><option value="all">全部环境</option><option value="1.0">环境 1.0</option><option value="2.0">环境 2.0</option><option value="2.5">环境 2.5</option></select><button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `含：${byId.get(cardFilter)?.nameZh || cardFilter}` : '选择包含卡牌' }}</button><button v-if="cardFilter" type="button" class="card-filter-clear" @click="cardFilter = ''">清除单卡</button><select v-model="updatedFilter" aria-label="按更新时间筛选"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select><select v-model="sortMode" aria-label="排序"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
+      <p v-if="publicLoadState === 'loading'" role="status">正在读取牌库目录…</p>
+      <p v-else-if="publicLoadState === 'unavailable'" role="alert">{{ publicLoadError }}</p>
+      <p v-else-if="summaryPage?.sourceAvailability.public === 'disabled'" role="status">公开牌库暂未开放，当前显示官方预组。</p>
+      <section class="plaza-toolbar"><input v-model="query" placeholder="搜索牌库名称、作者或主宰"/><MobileFilterSheet v-model="plazaFiltersOpen" title="牌库筛选与排序" :active-count="plazaFilterCount" @reset="resetPlazaFilters"><div class="plaza-filter-fields"><label>主宰<select v-model="masterFilter"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select></label><label>阵营<select v-model="factionFilter"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select></label><label>赛季合法性<select v-model="legalFilter"><option value="all">全部</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select></label><label>环境<select v-model="environmentFilter"><option value="all">全部环境</option><option value="1.0">1.0</option><option value="2.0">2.0</option><option value="2.5">2.5</option></select></label><label>包含卡牌<button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `${byId.get(cardFilter)?.nameZh || cardFilter} · ${byId.get(cardFilter)?.number || ''}` : '选择单卡' }}</button></label><label>更新时间<select v-model="updatedFilter"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select></label><label>排序<select v-model="sortMode"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></label></div><template #apply-label>查看 {{ plazaTotal }} 个牌库</template></MobileFilterSheet><div class="plaza-desktop-filters"><select v-model="masterFilter" aria-label="按主宰筛选"><option value="all">全部主宰</option><option v-for="city in plazaMasters" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select><select v-model="factionFilter" aria-label="按阵营筛选"><option value="all">全部阵营</option><option v-for="faction in plazaFactions" :key="faction" :value="faction">{{ factionLabels[faction] || faction }}</option></select><select v-model="legalFilter" aria-label="按合法性筛选"><option value="all">全部合法性</option><option value="legal">符合本赛季</option><option value="illegal">不符合本赛季</option></select><select v-model="environmentFilter" aria-label="按环境筛选"><option value="all">全部环境</option><option value="1.0">环境 1.0</option><option value="2.0">环境 2.0</option><option value="2.5">环境 2.5</option></select><button type="button" class="card-picker-button" @click="cardPickerOpen = true">{{ cardFilter ? `含：${byId.get(cardFilter)?.nameZh || cardFilter}` : '选择包含卡牌' }}</button><button v-if="cardFilter" type="button" class="card-filter-clear" @click="cardFilter = ''">清除单卡</button><select v-model="updatedFilter" aria-label="按更新时间筛选"><option value="all">不限时间</option><option value="1">1天内</option><option value="7">7天内</option><option value="30">30天内</option><option value="90">90天内</option><option value="365">365天内</option></select><select v-model="sortMode" aria-label="排序"><option value="trend">综合热度</option><option value="copies">最多复制</option><option value="likes">最多点赞</option><option value="views">最多浏览</option><option value="latest">最新发布</option><option value="name">按名称</option></select></div><button :disabled="!mine.length" @click="showPublish = true">发布我的牌库</button></section>
       <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
       <section v-if="hotDeckRows.length" class="hot-decks" aria-labelledby="hot-decks-title">
         <header><h2 id="hot-decks-title">热门牌库</h2></header>
         <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="hotDeckFocusPaused[rowIndex] = true" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)" @pointerup="handleHotDeckPointerEnd($event,rowIndex)" @pointercancel="handleHotDeckPointerEnd($event,rowIndex)">
           <div class="hot-deck-track" :class="`row-${rowIndex + 1}`" :data-hot-row-track="rowIndex + 1">
             <div v-for="copyIndex in 2" :key="copyIndex" class="hot-deck-loop" :aria-hidden="copyIndex === 2 ? 'true' : undefined">
-              <button v-for="entry in row" :key="`${copyIndex}-${entry.id}`" type="button" :tabindex="copyIndex === 2 ? -1 : 0" :data-hot-row="rowIndex + 1" :data-hot-copy="copyIndex" :data-public-code="publicDeckRouteReference(entry)" :aria-label="`查看热门牌库《${entry.deck.name}》`" @click="openDeck(entry)">
-                <DeckProfile compact :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`浏览 ${entry.views ?? 0} · 点赞 ${entry.likes} · 复制 ${entry.copies}`"/>
-                <span class="deck-environment-badge">{{ deckEnvironmentLabel(deckEnvironmentForDeck(entry.deck)) }}</span>
+              <button v-for="entry in row" :key="`${copyIndex}-${entry.id}`" type="button" :tabindex="copyIndex === 2 ? -1 : 0" :data-hot-row="rowIndex + 1" :data-hot-copy="copyIndex" :data-public-code="publicDeckSummaryReference(entry)" :aria-label="`查看热门牌库《${entry.name}》`" @click="openDeck(entry)">
+                <DeckProfile compact :master-id="entry.masterId" :master-name="entry.masterName" :fallback-url="byId.get(entry.masterId)?.imageUrl" :name="entry.name" :context="entry.author" :meta="`浏览 ${entry.views ?? 0} · 点赞 ${entry.likes} · 复制 ${entry.copies}`"/>
+                <span class="deck-environment-badge">{{ deckEnvironmentLabel(entry.environment.value ?? 'pending') }}</span>
               </button>
             </div>
           </div>
         </div>
       </section>
-      <div class="plaza-result-line"><b>{{ filteredPublished.length }}</b> 个牌库<span v-if="plazaFilterCount"> · 已启用 {{ plazaFilterCount }} 项筛选</span><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
-      <section class="plaza-grid"><article v-for="entry in pagedPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.deck.masterId" :master-name="byId.get(entry.deck.masterId)?.nameZh" :fallback-url="byId.get(entry.deck.masterId)?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 主牌 · ${entry.deck.moraleIds.length} 士气`"/><span class="deck-environment-badge">{{ deckEnvironmentLabel(deckEnvironmentForDeck(entry.deck)) }}</span></button><footer><div class="plaza-card-stats"><span>浏览量 {{ entry.views ?? 0 }}</span><span>点赞 {{ entry.likes }}</span><span>复制 {{ entry.copies }}</span></div><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><div class="plaza-card-actions"><button @click="openDeck(entry)">查看构筑</button><details class="deck-actions-menu" :open="desktopActions"><summary>更多操作</summary><div><button :class="{ liked: entry.liked }" :disabled="entry.official || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike(entry)">♡ {{ entry.liked ? '取消点赞' : '点赞' }}</button></div></details></div></footer></article></section>
-      <nav v-if="filteredPublished.length && plazaPageCount > 1" class="deck-pagination" aria-label="公开牌库分页"><button :disabled="plazaPage === 1" @click="plazaPage--">上一页</button><template v-for="item in pageItems(plazaPageCount,plazaPage)" :key="item.key"><button v-if="item.page" :class="{ active: item.page === plazaPage }" :aria-current="item.page === plazaPage ? 'page' : undefined" @click="plazaPage = item.page">{{ item.label }}</button><span v-else>{{ item.label }}</span></template><button :disabled="plazaPage === plazaPageCount" @click="plazaPage++">下一页</button></nav>
-      <div v-if="!filteredPublished.length" class="empty-state"><b>{{ published.length ? '没有符合筛选条件的公开牌库' : '还没有公开牌库' }}</b><p v-if="published.length">调整筛选条件后再试。</p><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
+      <div class="plaza-result-line"><b>{{ plazaTotal }}</b> 个牌库<span v-if="plazaFilterCount"> · 已启用 {{ plazaFilterCount }} 项筛选</span><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
+      <section class="plaza-grid"><article v-for="entry in pagedPublished" :key="entry.id" :class="`faction-${deckFaction(entry)}`"><button class="plaza-summary" @click="openDeck(entry)"><DeckProfile :master-id="entry.masterId" :master-name="entry.masterName" :fallback-url="byId.get(entry.masterId)?.imageUrl" :name="entry.name" :context="entry.author" :meta="`${summaryCountLabel(entry)} 主牌 · ${entry.counts.morale} 士气`"/><span class="deck-environment-badge">{{ deckEnvironmentLabel(entry.environment.value ?? 'pending') }}</span></button><footer><div class="plaza-card-stats"><span>浏览量 {{ entry.views ?? 0 }}</span><span>点赞 {{ entry.likes }}</span><span>复制 {{ entry.copies }}</span></div><span class="season-compliance" :class="{ compliant: seasonRequirement(entry).compliant }" :title="seasonRequirement(entry).reason">{{ seasonRequirement(entry).label }}</span><div class="plaza-card-actions"><button @click="openDeck(entry)">查看构筑</button><details class="deck-actions-menu" :open="desktopActions"><summary>更多操作</summary><div><button :class="{ liked: entry.viewerLiked }" :disabled="entry.source === 'official' || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike(entry)">♡ {{ entry.viewerLiked ? '取消点赞' : '点赞' }}</button></div></details></div></footer></article></section>
+      <nav v-if="plazaTotal && plazaPageCount > 1" class="deck-pagination" aria-label="公开牌库分页"><button :disabled="plazaPage === 1" @click="plazaPage--">上一页</button><template v-for="item in pageItems(plazaPageCount,plazaPage)" :key="item.key"><button v-if="item.page" :class="{ active: item.page === plazaPage }" :aria-current="item.page === plazaPage ? 'page' : undefined" @click="plazaPage = item.page">{{ item.label }}</button><span v-else>{{ item.label }}</span></template><button :disabled="plazaPage === plazaPageCount" @click="plazaPage++">下一页</button></nav>
+      <div v-if="publicLoadState === 'available' && !plazaTotal" class="empty-state"><b>{{ plazaTotal ? '没有符合筛选条件的公开牌库' : '还没有公开牌库' }}</b><p v-if="plazaTotal">调整筛选条件后再试。</p><button v-if="plazaFilterCount" @click="resetPlazaFilters">清除筛选</button></div>
     </template>
     <div v-if="showImport" class="modal-mask" @click.self="closeImportModal" @keydown="handleImportDialogKeydown"><section class="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-deck-title"><header><h2 id="import-deck-title">导入牌库码</h2><button type="button" aria-label="关闭导入牌库码" @click="closeImportModal">×</button></header><form @submit.prevent="importFromCode"><label for="deck-import-code">牌库码</label><input id="deck-import-code" ref="importInput" v-model="importCode" autocomplete="off" placeholder="粘贴 L12D2 开头的牌库码"/><p v-if="importError" class="import-error" role="alert">{{ importError }}</p><footer><button type="button" @click="closeImportModal">取消</button><button class="primary" type="submit">确认导入</button></footer></form></section></div>
     <div v-if="showPublish" class="modal-mask" @click.self="showPublish = false"><section class="publish-modal"><header><h2>公开牌库</h2><button @click="showPublish = false">×</button></header><div class="publish-form"><p>选择一个已保存且合法的牌库；可在首次发布时同步填写公开内容。</p><select v-model="publishName"><option value="">选择牌库</option><option v-for="deck in mine" :key="deck.name" :value="deck.name">{{ deck.name }}</option></select><h3>牌库指南</h3><label>构筑思路<textarea v-model="publishGuide.buildIdea" rows="3" maxlength="1200"/></label><label>起手建议<textarea v-model="publishGuide.opening" rows="2" maxlength="1200"/></label><label>关键牌与配合<textarea v-model="publishGuide.keyCards" rows="2" maxlength="1200"/></label><label>常见展开<textarea v-model="publishGuide.commonSequence" rows="2" maxlength="1200"/></label><label>替换建议<textarea v-model="publishGuide.substitutions" rows="2" maxlength="1200"/></label><section class="publish-matchups"><header><h3>对局建议</h3><button type="button" @click="addPublishMatchup">添加主宰</button></header><article v-for="(row,index) in publishMatchups" :key="`${row.opponentMasterId}-${index}`"><label>对方主宰<select v-model="row.opponentMasterId"><option value="" disabled>请选择</option><option v-for="city in publishHomeCities" :key="city.id" :value="city.id">{{ city.nameZh }}</option></select></label><label>对局思路<textarea v-model="row.notes" rows="2" maxlength="800"/></label><label>关键牌<textarea v-model="row.keyCards" rows="2" maxlength="800"/></label><label>建议换牌<textarea v-model="row.suggestedSwaps" rows="2" maxlength="800"/></label><button type="button" class="danger" @click="publishMatchups.splice(index,1)">移除</button></article></section></div><button class="primary" :disabled="!publishName || !platformState.account || actionPending(`public-deck:publish:${publishName}`)" @click="publishDeck">{{ actionPending(`public-deck:publish:${publishName}`) ? '公开中…' : '确认公开' }}</button></section></div>

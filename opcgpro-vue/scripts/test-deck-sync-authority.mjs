@@ -41,6 +41,8 @@ const productionModuleUrl = source => 'data:text/javascript;base64,' + Buffer.fr
 }).outputText).toString('base64')
 const publicDeckCounters = await import(productionModuleUrl(
   readFileSync(new URL('../src/l12/site/publicDeckEntry.ts', import.meta.url), 'utf8')))
+const publicDeckSummaries = await import(productionModuleUrl(
+  readFileSync(new URL('../src/l12/site/publicDeckSummary.ts', import.meta.url), 'utf8')))
 const binaryUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCodeCodec.ts', import.meta.url), 'utf8'))
 const codecUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCacheCodec.ts', import.meta.url), 'utf8')
   .replace("from './deckCodeCodec'", "from '" + binaryUrl + "'"))
@@ -654,7 +656,7 @@ async function queuedPublicCopyUsesOriginalAuthenticationGeneration() {
     localStorage.clear(); authenticate(); seedAccountDecks([owned('原始牌库')])
     const beforeA = localStorage.getItem(accountKey())
     const gate = deferred(); let callback, posts = 0, copies = 0, actionActive = false
-    const entry = { value: { id: 'public-qa', publicCode: '23456789ABCD', ownerId: 'public-author', official: false, deck: deck('公开复制') } }
+    const entry = { value: { id: 'public-qa', publicCode: '23456789ABCD', source: 'public', readToken: 'a'.repeat(64), canEdit: false, deck: deck('公开复制') } }
     const originalBody = entry.value.deck
     const notice = { value: '' }
     requestHandler = async () => { posts++; return owned('公开复制') }
@@ -678,7 +680,7 @@ async function queuedPublicCopyUsesOriginalAuthenticationGeneration() {
         return { id: entry.value.id, publicCode: entry.value.publicCode, views: 0, likes: 0,
           copies, viewerLiked: false, canEdit: false }
       } },
-      publicDeckRouteReference: value => value.publicCode,
+      publicDeckReference: actualHandler('../src/l12/site/PublicDeckDetailPage.vue', 'publicDeckReference', {}),
       deckErrorBelongsToCurrentAccount: decksModule.deckErrorBelongsToCurrentAccount,
     })
     const running = handler()
@@ -742,8 +744,36 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
   const callback = mounted.expression.arguments[0]
   const code = ts.transpileModule('const initialize = ' + callback.getText(script), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   const catalog = { value: [] }, saved = { value: [] }, published = { value: [] }, notice = { value: '' }, arts = { value: [] }, policy = { value: null }
+  // Only the public-init fixture changes: execute the real paged loader and
+  // validator. Keep the original corrupt cache, zero private requests, retained
+  // bytes and independent public rendering assertions below.
+  const summaryItem = (id, source) => ({ id, source, name: '公开摘要', masterId: 'M', masterName: '主宰', faction: 'fate', author: '作者',
+    publicCode: source === 'public' ? 'CODE12' : null, publicationVersion: null, createdAt: null, updatedAt: null,
+    counts: { main: 0, uncountedMain: 0, morale: 0, special: 0, bench: 0 }, legal: true, legalityReason: null,
+    environment: { status: 'known', value: '2.5', reason: null }, views: 0, likes: 0, copies: 0,
+    viewerLiked: false, canEdit: false, readToken: source === 'public' ? 'a'.repeat(64) : null })
+  const summaryPage = { value: null }, facetPage = { value: null }, hotSummaries = { value: [] },
+    publicLoadState = { value: 'idle' }, publicLoadError = { value: '' }, plazaPage = { value: 1 }
+  const loaderEnvironment = { libraryMounted: true, libraryDisposed: false,
+    summaryQuery: () => ({ source: 'all', page: 1, pageSize: 30, sort: 'trend' }),
+    summaryGate: publicDeckSummaries.createSummaryRequestGate(() => 'same-public-init-context'),
+    publicLoadState, publicLoadError, published, summaryPage, facetPage, hotSummaries, plazaPage, PAGE_SIZE: 30,
+    validateSummaryPage: publicDeckSummaries.validateSummaryPage,
+    deckLibraryApi: { summaries: async query => ({
+      items: [summaryItem('official:' + 'b'.repeat(64), 'official'), summaryItem('public-card', 'public')],
+      total: 2, page: query.page, pageSize: query.pageSize, generation: 'a'.repeat(64), catalogVersion: 'catalog', policyVersion: 1,
+      sourceAvailability: { public: 'available', official: 'available' },
+      facets: { sources: [{ value: 'public', count: 1 }, { value: 'official', count: 1 }], masters: [{ value: 'M', count: 2 }],
+        factions: [{ value: 'fate', count: 2 }], environments: [{ value: '2.5', count: 2 }], cards: [], legal: 2, illegal: 0 },
+    }) } }
+  const loaderNode = script.statements.find(item => ts.isFunctionDeclaration(item) && item.name?.text === 'loadSummarySources')
+  assert.ok(loaderNode, 'The real paged public loader must exist')
+  const loaderCode = ts.transpileModule(loaderNode.getText(script), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const loadSummarySources = new Function(...Object.keys(loaderEnvironment), loaderCode + '; return loadSummarySources')(...Object.values(loaderEnvironment))
+  const publicWork = []
   const environment = {
     restoreFiltersFromRoute: () => {}, libraryContext: () => ({}), libraryContextCurrent: () => true,
+    libraryMounted: false, libraryDisposed: false, loadSummarySources: () => { const task = loadSummarySources(); publicWork.push(task); return task }, loadOwnReferences: () => {},
     catalog, saved, published, notice, ownedAlternateArts: arts, operationsPolicy: policy, platformState,
     loadDeckCatalog: async () => ['PUBLIC-CATALOG'], ensureOfficialPrebuiltDecks: decksModule.ensureOfficialPrebuiltDecks,
     alternateArtApi: { mine: async () => [] },
@@ -755,8 +785,10 @@ async function unavailablePrivateCacheDoesNotBlockPublicLibrary() {
   }
   const initialize = new Function(...Object.keys(environment), code + '; return initialize')(...Object.values(environment))
   await initialize()
+  await Promise.all(publicWork)
   assert.deepEqual(catalog.value, ['PUBLIC-CATALOG'])
   assert.equal(published.value.length, 2); assert.equal(published.value[1].id, 'public-card')
+  assert.equal(publicLoadState.value, 'available'); assert.equal(publicLoadError.value, '')
   assert.match(notice.value, /缓存/); assert.deepEqual(saved.value, {})
   assert.equal(decksModule.loadSavedDecksState().status, 'unavailable')
   assert.equal(localStorage.getItem('l12-custom-decks-v1'), raw); assert.equal(posts, 0)
@@ -766,4 +798,40 @@ await queuedPublicCopyUsesOriginalAuthenticationGeneration()
 await authenticationABARejectsRealLateSaveAndDelete()
 confirmedEditorCatchUsesAccurateStage()
 await unavailablePrivateCacheDoesNotBlockPublicLibrary()
+// Execute the real mount callback: the two bounded public reads finish before
+// the existing three-source private/catalog/art batch. A superseded mount must
+// not launch that second batch for a successor actor or a disposed document.
+{
+  const script = actualScript('../src/l12/site/DeckLibraryPage.vue')
+  const mounted = script.statements.find(item => ts.isExpressionStatement(item) && ts.isCallExpression(item.expression)
+    && item.expression.expression.getText(script) === 'onMounted')
+  const body = ts.transpileModule('const initialize = ' + mounted.expression.arguments[0].getText(script),
+    { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  for (const scenario of ['same-context', 'actor-changed', 'disposed']) {
+    const publicRead = deferred(), snapshot = { value: [] }, notice = { value: '' }
+    let contextCurrent = true, privateStarts = 0
+    const environment = {
+      restoreFiltersFromRoute: () => {}, libraryMounted: false,
+      libraryContext: () => ({}), libraryContextCurrent: () => contextCurrent,
+      loadSummarySources: () => publicRead.promise, loadOwnReferences: () => {},
+      loadDeckCatalog: async () => { privateStarts++; return [] },
+      ensureOfficialPrebuiltDecks: async () => { privateStarts++; return {} },
+      alternateArtApi: { mine: async () => { privateStarts++; return [] } },
+      catalog: snapshot, saved: { value: {} }, ownedAlternateArts: snapshot, operationsPolicy: snapshot, notice,
+      platformState: { account: { id: 'synthetic-owner' } }, deckErrorBelongsToCurrentAccount: () => true,
+      getEffectiveOperationsPolicy: async () => null, nextTick: async () => {},
+      sessionStorage: { getItem: () => null }, route: { fullPath: '/decks' },
+    }
+    const runtime = new Function(...Object.keys(environment), 'let libraryDisposed=false;' + body
+      + ';return {initialize,dispose(){libraryDisposed=true;}}')(...Object.values(environment))
+    const running = runtime.initialize()
+    await Promise.resolve()
+    assert.equal(privateStarts, 0, 'No private/catalog/art batch starts while public directory reads are pending')
+    if (scenario === 'actor-changed') contextCurrent = false
+    if (scenario === 'disposed') runtime.dispose()
+    publicRead.resolve(); await running
+    assert.equal(privateStarts, scenario === 'same-context' ? 3 : 0)
+    assert.equal(notice.value, '')
+  }
+}
 console.log('Deck authority/migration/Quota/unavailable, real queued public copies, authentication ABA, editor stage and public-init isolation passed')

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-public-deck-paged-ports",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "完成按需读取族的本页一致性标记、本人有界来源证明、有界匿名统计及薄内容保存端口。原API、全部历史、90日与每组3场口径和格式保持；统计先捕获平台代际、释放锁读WAL聚合、完成复核，不声称跨库原子。内容写入共用原canonical事务核心，提交后返回新标记，损坏或不可证明代际失败关闭，不全量重写镜像。原分级/Release门禁保留，并将前端消费者实际回归接入正常构建链。本条不是线上启用、整套方案完成或部署证明。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckReferenceQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetailQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckStatisticsQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetails.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckContentCommands.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.PublicDecks.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}

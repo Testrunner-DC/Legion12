@@ -2,6 +2,20 @@
 
 ## MAIN-20261007-0801｜08点正式开放已核验，后续仅本地
 
+- **20:22整族分段验收完成，最终Release待**：Main最终15后台源码6601规则/1053平台全执行、失败跳过0；首联合Batch前端预算失败exit1保留，真实初始化/身份阶段收敛后不提高cap3或减负例，完整前端域r6 exit0。summary43/read65/原counter65均纳正常build，UI354/反馈144/原B1、类型、双构建、卡图324+42保持；六尺寸详情42图与真实加载12场景/12图通过。`deck-summary-ui-20261007/main-independent-cu-family-acceptance.json` 7DAA3304绑定最终Main源及日志，私有监督成功TRX消耗清理如实记录，最终Release另保留原TRX。20:20 fetch本地/origin均2d，无冲突；新48路径待本地提交/干净Release/同步，不部署或改维护。P2查询/权限与P3唯一存储体系延伸，schema8/旧API/90日3场口径不变，回退保持最新事实、不旧库回写。CU4三路径仅只读预检，最终Release/Git后再授租约；私人消费者/最终规模与旧reader/广播/真实容量长期均待。
+
+- **19:17整族冻结**：后端C-write子22/171及Main独立22全过（2C8DD929回执），CU3八源精确LF集成EABD04A5，Main两处type边界调整后65/65/42与完整type r2再过；六实际尺寸含游客隐藏作者操作/匿名统计、42截图通过，滚动稳定取证加强中。现有354UI、11统计、20浏览、56动作、原83模板+7可用性及全B1原保护保持；迁移仅两旧列表/排序叶、捕获key与按钮OR合同和旧夹具，不写成新增线上Bug。两新suite进正常build，不依赖忽略before目录。两子租约归还、主树完整Batch/干净Release/Git待，玩家/内部账本2项格式144已验。不部署/维护写、不称私人消费者/同包规模旧reader/广播/容量长期已完成。
+
+- **18:35精确租约补充**：C-U3由六扩至八前端源，仅增加Library原publish保存段与原PublicDeckContentEditor加载/保存/明确刷新；先取Main基线，不在只读详情页新增编辑器。两真实入口保草稿，所有保存需玩家点击、迟回不覆盖输入，401/409不自动重放，原字段/picker/焦点/几何/B1不变。C-write实际首轮22/22是中间Focused，同族及最终源码冻结待；跨store只更新指南409，无法证明的storage_revision漂移503，不弱化损坏存储守卫。Main仍记录/只读复核，两代码写者及.NET独占保持。
+
+- **18:27增量**：pin/reference/statistics12源Main完整平台1031全过、失败跳过0（54新项逐条含于总数），C662371F回执；C-U2七源精确接回，Main42+原65Focused实过，0DB8A28E回执。保匿名、90日/3场原过滤、逐页pin与官方稳定解析，不将分页元数据伪装SavedL12Deck。C-U3六源继续current/history/stats/guide接线；新增C-write四路径薄保存是旧全历史PUT的必要收口，380B真实旧PUT200/新PUT404，首错误id夹具不算RED。新write不借1031证据。全球两写者、.NET串行、Main记录/独立验收；完整类型/浏览/Batch/Release/Git待，无部署/维护写，不标两整套完成。
+
+- **17:14必要前置本地已验，继续同族**：pin/reference8源Main独立118全过（含23新），回执`deck-query-pin-reference-20261007/main-independent-acceptance.json` A423319C。仅旧合成排序夹具改为同SQL事实，保巨大计数/并列原断言，不削产品严格head。C-U2七源前端34consumer+原65仅Focused，未完整页面/类型/浏览；官方稳定唯一解析及本人页外proof继续，社区详情尚需C-U3，不发布半成品。C-stat五路径已授关键子任务：新StatisticsQueries、Recorder.PublicDecks仅原过滤共享与有界分页、WS仅对应GET、两新测试；不schema/旧API/正文/镜像/房间/B1/记录/Git/生产写。捕获平台pin/权限/排除集合后释放_gate，matches只读同WAL时间窗聚合，完成再复核，冲突拒绝而非混代或假空。完整平台/Batch/Release只在整族冻结后统一跑；目前新源未同步/部署，已验应用底座仍2d。两写者/串行.NET，不新增未选目标。
+
+- **16:41两管线受限并行**：backend六路径真实旧包HTTP RED两项已交；wire冻结，待Focused/Main独立。C-U2原牌库聊天新增独立七前端路径租约，先baseline/RED，接公开与官方server摘要分页/全set facets/计数scalar及稳定官方唯一匹配，私人公开状态从认证owner≤100轻量reference proof取得，不能因page外当未发布。保原B1/五scope、详情body功能、geometry/暂停/URL滚动；无伪造SavedL12Deck或全列表fallback。权限/迟回/ABA/正常无命中vs不可用要覆盖。backend独占.NET，前端仅轻量Node，两代码写者，Main记录与独立复核；禁止子任务Git/状态文档/部署/维护，完整build统一串行。应用已验底座2d50451c；新增源未验不称新候选完成。全部方案及最终退出证据仍待。
+
+- **16:19已同步限定应用批**：本地/origin/GitHub完整应用`2d50451c`精确一致，Main实际干净Release6601/977全部执行、失败跳过0与八stage/双前端/卡图通过，实际包286C5559/内DLL ACC6C54B等于测试DLL；同包实际Program两零退出/监听0/未知证据保留。唯一`deck-counter-ui-20261007/accepted-release-2d50451c.json`，productionDeploymentReady=false；独立实时源确认正式2da/测试428fff25、两维护false，无部署。此行后进入下批记录差异。已明确六源`deck_pin_reference`租约：SummaryContracts/Queries、新ReferenceQueries、WS仅对应GET、新SummaryReadPin/OwnerReferenceHTTP测试；旧schema/正文/私人缓存/统计/guide/房间不改，旧同包真实RED后Focused。本页最多100public pin，不为全库查pin，Generation仍目录代；认证owner参考只本人、权限/公共开关/未知代失败关闭，分页不能否定页外引用。Main写记录，关键子任务写六源，U2旧聊天只读冻结，构建串行。两整套剩余出口与容量缺口继续，不额外部署或改维护。
+
 - **15:46限定片本地已验**：CQ3-read完整6601规则/977平台与当前六源相同；C-U1首次加载前捕获世代/路由/actor，每await后核对，同组件切页新载、canonical单次、卸载/ABA拒迟回，Vue落地proxy捕获不削弱引用。Main实际65专项、52动作门禁、354UI、B1全旧范围、L12D2 golden235字符、完整前端type/双构建/卡图324+42，正常6尺寸40截图与真实12加载场景12截图错误0及动作锁释放已验。组合回执`deck-counter-ui-20261007/main-independent-acceptance.json`对原外层失败/两次夹具修正和Source17前后不变作清晰区分；所有失败/RED保留。已批准范围只Main四脚本等价谓词/真实夹具迁移，不削保护；未提交级Release/同步/部署。下一U2需先补正文pin及按ID轻量公开引用前置，原聊天只读返回无写租约，不能摘要伪正文或页外当不存在。整套牌库存储/对局保障、最终规模/旧reader/广播/真实长期仍未全完成，08开放保持。
 
 - **14:58当前**：CQ3-read新六源实际完整Batch6601/977于14:27退出0，原专项977/41和Batch独立回执都保留；未提交/Release/同步。C-U1七源精确接回，Main43实际行为/20浏览合同已过，但完整前端尚未通过：旧动作锁写法谓词、旧浏览接口谓词、旧B1 queued-copy夹具顺次阻断，四轮原日志未覆盖。前两条等价AST/共享消费者保护保留其余原断言，Main B1完整旧范围使用真实production guard/helper及scalar7响应后已过。独立审查首次GET期间路由/卸载失效后重捕获guard风险，只作为验收阻断；子两源加载世代修复/真实RED与Focused正在做，Main三脚本/记录专属，完整构建暂停，最多两写者。新候选完整前端/真实浏览器/干净Release/Git待，最终规模不能跑旧bfa冒称最终；广播schema9在schema8退出证据之后单独推进。两服/维护无写入，所有完整方案缺口保留。

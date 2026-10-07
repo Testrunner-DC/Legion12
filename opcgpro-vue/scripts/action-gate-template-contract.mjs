@@ -53,6 +53,23 @@ function binding(node, name, expected) {
     && !(node.props || []).some(prop => prop.type === 6 && prop.name === name)
     && expressionIs(matches[0].exp?.content, expected)
 }
+export const publicContentSaveDisabledBinding = 'loading || !readGeneration || refreshRequired || isPending(actionKey)'
+function publicContentDisabled(node) {
+  const value = directive(node, 'bind', 'disabled')[0]?.exp?.content
+  if (!value || !binding(node, 'disabled', value)) return false
+  const file = ts.createSourceFile('public-content-disabled.ts', `(${value})`, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  if (file.parseDiagnostics.length || file.statements.length !== 1 || !ts.isExpressionStatement(file.statements[0])) return false
+  const terms = []
+  function collect(raw) {
+    const expression = unwrap(raw)
+    if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.BarBarToken) {
+      collect(expression.left); collect(expression.right)
+    } else terms.push(expressionKey(expression.getText(file)))
+  }
+  collect(file.statements[0].expression)
+  const expected = ['loading', '!readGeneration', 'refreshRequired', 'isPending(actionKey)'].map(expressionKey).sort()
+  return terms.length === expected.length && terms.sort().every((term, index) => term === expected[index])
+}
 function click(node, expected) {
   const handlers = directive(node, 'on', 'click')
   return noOverride(node, ['onClick', 'onclick']) && handlers.length === 1
@@ -110,7 +127,7 @@ export function actionGateTemplateContract(friendsSource, publicSource, tourname
   return {
     friendsPending,
     friendsBusy: !!friendsRoot && binding(friendsRoot, 'aria-busy', 'actionBusy'),
-    publicPending: !!publicControl && binding(publicControl, 'disabled', 'isPending(actionKey)'),
+    publicPending: !!publicControl && publicContentDisabled(publicControl),
     tournamentPending: !!tournamentControl && hasOwner(tournamentControl, tournamentRoot, tournament, 'article', 'item in visibleTournaments')
       && binding(tournamentControl, 'disabled', 'actionPending(tournamentActionKey(item))'),
   }

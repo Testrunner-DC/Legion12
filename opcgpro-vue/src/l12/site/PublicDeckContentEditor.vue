@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { DeckCard } from '@/l12/decks'
+import { captureDeckAccountGuard, type DeckCard } from '@/l12/decks'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
-import { platformState, publicDeckApi, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
+import { platformState, publicDeckReadApi, type PublicDeckGuide, type PublicDeckMatchup, type PublicDeckReadGeneration } from '@/l12/platform'
 import { useActionGate } from '@/l12/useActionGate'
+import { currentReadGeneration, settlePublicDeckRead, validatePublicDeckContentCurrent, validatePublicDeckCurrent } from './publicDeckRead'
 
 const props = defineProps<{ publicationId: string; catalog: DeckCard[] }>()
 const emit = defineEmits<{ saved: [message: string]; dialogChange: [open: boolean] }>()
@@ -14,9 +15,14 @@ const loading = ref(false)
 const error = ref('')
 const revision = ref(0)
 const updatedAt = ref('')
+const readGeneration = ref<PublicDeckReadGeneration | null>(null)
+const refreshRequired = ref(false)
 const matchupPickerIndex = ref<number | null>(null)
 const contentRoot = ref<HTMLElement | null>(null)
 let contentEpoch = 0
+let contentRequestSequence = 0
+let draftEpoch = 0
+let draftBaselineKey = ''
 let pickerReturnFocus: HTMLElement | null = null
 const pickerDialog = () => document.querySelector<HTMLElement>('.single-card-picker[aria-label="选择对方主宰"]')
 watch(matchupPickerIndex, async (index, previous) => {
@@ -42,7 +48,7 @@ function handlePickerKey(event: KeyboardEvent) {
   }
 }
 onMounted(() => window.addEventListener('keydown', handlePickerKey))
-onBeforeUnmount(() => { contentEpoch++; window.removeEventListener('keydown', handlePickerKey); emit('dialogChange', false) })
+onBeforeUnmount(() => { contentEpoch++; contentRequestSequence++; window.removeEventListener('keydown', handlePickerKey); emit('dialogChange', false) })
 const homeCities = computed(() => props.catalog.filter(card => card.cardType === 'master'))
 const matchupPickerItems = computed<SingleCardPickerItem[]>(() => homeCities.value.map(card => ({
   id: card.id, cardId: card.id, cardImageId: card.id, number: card.number, name: card.nameZh, nameZh: card.nameZh, cardType: card.cardType,
@@ -54,25 +60,39 @@ function emptyGuide(): PublicDeckGuide {
   return { buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' }
 }
 
+function contentDraftKey() {
+  return JSON.stringify({ guide: guide.value, matchups: matchups.value })
+}
+
 async function loadContent() {
-  const epoch = ++contentEpoch, publicationId = props.publicationId, accountId = platformState.account?.id
-  const current = () => epoch === contentEpoch && publicationId === props.publicationId && accountId === platformState.account?.id
+  const epoch = ++contentEpoch, request = ++contentRequestSequence, publicationId = props.publicationId
+  const actorCurrent = captureDeckAccountGuard()
+  const current = () => request === contentRequestSequence && epoch === contentEpoch
+    && publicationId === props.publicationId && actorCurrent()
   matchupPickerIndex.value = null
   guide.value = emptyGuide()
   matchups.value = []
   revision.value = 0
   updatedAt.value = ''
+  readGeneration.value = null
+  refreshRequired.value = false
+  draftBaselineKey = contentDraftKey()
   if (!props.publicationId) return
   loading.value = true
   error.value = ''
   try {
-    const entry = await publicDeckApi.get(publicationId)
+    const result = await settlePublicDeckRead(publicDeckReadApi.current(publicationId), validatePublicDeckCurrent)
     if (!current()) return
-    if (entry.ownerId !== accountId) throw new Error('只有公开牌库作者可以编辑这些内容')
-    guide.value = { ...(entry.details?.guide ?? emptyGuide()) }
-    matchups.value = (entry.details?.matchups ?? []).map(item => ({ ...item }))
-    revision.value = entry.details?.contentRevision ?? 0
-    updatedAt.value = entry.details?.contentUpdatedAt ?? ''
+    if (result.status !== 'available') { error.value = result.message; refreshRequired.value = result.status === 'refresh-required'; return }
+    const entry = result.value
+    if (!entry.summary.canEdit || entry.summary.id !== publicationId)
+      throw new Error('只有公开牌库作者可以编辑这些内容')
+    readGeneration.value = currentReadGeneration(entry)
+    guide.value = { ...entry.guide }
+    matchups.value = entry.matchups.map(item => ({ ...item }))
+    revision.value = entry.contentRevision
+    updatedAt.value = entry.contentUpdatedAt ?? ''
+    draftBaselineKey = contentDraftKey()
   } catch (cause) {
     if (current()) error.value = cause instanceof Error ? cause.message : '公开内容加载失败'
   } finally {
@@ -97,20 +117,41 @@ function matchupMasterName(cardId: string) {
 }
 
 async function saveContent() {
-  if (!props.publicationId || isPending(actionKey.value)) return
-  const accountId = platformState.account?.id
-  const publicationId = props.publicationId, epoch = contentEpoch
-  const current = () => accountId === platformState.account?.id && publicationId === props.publicationId && epoch === contentEpoch
+  if (!props.publicationId || !readGeneration.value || refreshRequired.value || isPending(actionKey.value)) return
+  const publicationId = props.publicationId, epoch = contentEpoch, request = ++contentRequestSequence
+  const actorCurrent = captureDeckAccountGuard(), generation = { ...readGeneration.value }
+  const submittedGuide = { ...guide.value }, submittedMatchups = matchups.value.map(item => ({ ...item }))
+  const submittedDraftEpoch = draftEpoch, previousRevision = revision.value
+  const current = () => request === contentRequestSequence && actorCurrent()
+    && publicationId === props.publicationId && epoch === contentEpoch
   await run(actionKey.value, async () => {
     try {
-      const details = await publicDeckApi.updateContent(publicationId, { ...guide.value }, matchups.value.map(item => ({ ...item })))
       if (!current()) return
-      guide.value = { ...details.guide }
-      matchups.value = details.matchups.map(item => ({ ...item }))
+      const result = await settlePublicDeckRead(
+        publicDeckReadApi.updateContent(generation.publicCode, generation.readToken, submittedGuide, submittedMatchups),
+        value => validatePublicDeckContentCurrent(value, generation, previousRevision))
+      if (!current()) return
+      if (result.status !== 'available') {
+        refreshRequired.value = result.status === 'refresh-required'
+        error.value = result.message
+        return
+      }
+      const details = result.value
+      const draftUnchanged = draftEpoch === submittedDraftEpoch
+      readGeneration.value = { id: details.id, publicCode: details.publicCode, readToken: details.readToken,
+        catalogVersion: details.catalogVersion, policyVersion: details.policyVersion }
+      if (draftUnchanged) {
+        guide.value = { ...details.guide }
+        matchups.value = details.matchups.map(item => ({ ...item }))
+        draftBaselineKey = contentDraftKey()
+      }
       revision.value = details.contentRevision
       updatedAt.value = details.contentUpdatedAt ?? ''
+      refreshRequired.value = false
       error.value = ''
-      emit('saved', '指南和对局建议已保存，可返回公开详情查看')
+      emit('saved', draftUnchanged
+        ? '指南和对局建议已保存，可返回公开详情查看'
+        : '提交时的公开内容已保存；当前编辑仍有未保存修改')
     } catch (cause) {
       if (current())
         error.value = cause instanceof Error ? cause.message : '公开内容保存失败'
@@ -118,11 +159,45 @@ async function saveContent() {
   })
 }
 
+async function refreshContentGeneration() {
+  if (!props.publicationId) return
+  const publicationId = props.publicationId, epoch = contentEpoch, request = ++contentRequestSequence
+  const hadGeneration = readGeneration.value !== null, baselineKey = draftBaselineKey
+  const actorCurrent = captureDeckAccountGuard()
+  const current = () => request === contentRequestSequence && actorCurrent()
+    && publicationId === props.publicationId && epoch === contentEpoch
+  loading.value = true
+  try {
+    const result = await settlePublicDeckRead(publicDeckReadApi.current(publicationId), validatePublicDeckCurrent)
+    if (!current()) return
+    if (result.status !== 'available') { error.value = result.message; return }
+    if (!result.value.summary.canEdit || result.value.summary.id !== publicationId) {
+      error.value = '只有公开牌库作者可以编辑这些内容'; return
+    }
+    const preserveDraft = hadGeneration || contentDraftKey() !== baselineKey
+    readGeneration.value = currentReadGeneration(result.value)
+    if (!preserveDraft) {
+      guide.value = { ...result.value.guide }
+      matchups.value = result.value.matchups.map(item => ({ ...item }))
+      draftBaselineKey = contentDraftKey()
+    }
+    revision.value = result.value.contentRevision
+    updatedAt.value = result.value.contentUpdatedAt ?? ''
+    refreshRequired.value = false
+    error.value = preserveDraft ? '已获取最新内容，当前指南和对局建议草稿仍保留。' : '已获取最新内容。'
+  } catch (cause) {
+    if (current()) error.value = cause instanceof Error ? cause.message : '公开内容加载失败'
+  } finally {
+    if (current()) loading.value = false
+  }
+}
+
 function formatTime(value: string) {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未保存内容'
 }
 
-watch(() => [props.publicationId, platformState.account?.id], loadContent, { immediate: true })
+watch(() => JSON.stringify({ guide: guide.value, matchups: matchups.value }), () => draftEpoch++, { flush: 'sync' })
+watch(() => [props.publicationId, platformState.account?.id, platformState.token], loadContent, { immediate: true, flush: 'sync' })
 </script>
 
 <template>
@@ -155,7 +230,7 @@ watch(() => [props.publicationId, platformState.account?.id], loadContent, { imm
         </article>
         <p v-if="!matchups.length" class="content-state">还没有对局建议，可按需要添加对方主宰。</p>
       </section>
-      <footer><button type="button" class="primary" :disabled="isPending(actionKey)" @click="saveContent">{{ isPending(actionKey) ? '保存中…' : '保存公开内容' }}</button></footer>
+      <footer><button v-if="refreshRequired || !readGeneration" type="button" :disabled="loading || isPending(actionKey)" @click="refreshContentGeneration">重新获取最新内容</button><button type="button" class="primary" :disabled="loading || !readGeneration || refreshRequired || isPending(actionKey)" @click="saveContent">{{ isPending(actionKey) ? '保存中…' : '保存公开内容' }}</button></footer>
     </template>
     <SingleCardPicker v-if="matchupPickerIndex !== null" title="选择对方主宰" :items="matchupPickerItems" :allowed-types="['master']" @select="chooseMatchupMaster" @close="matchupPickerIndex = null"/>
   </section>

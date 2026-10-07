@@ -54,7 +54,7 @@ const checks = [
   ['近30日最强称号独立标注', rankings.includes('最强玩家<small>近30日</small>')
     && rankings.includes('最强玩家称号另按近 30 日独立口径产生')],
   ['公开牌库显示可公开样本但不补低样本', publicDeck.includes('<StatisticsScope')
-    && publicDeck.includes('可展示 ${details.value.matchStatistics.games} 场')
+    && publicDeck.includes('可展示 ${statistics.games} 场') && publicDeck.includes('statisticsPage.value')
     && publicDeck.includes('低于门槛的组不会返回场次、胜负或胜率')],
   ['后台主宰口径绑定成功响应', adminMaster.includes('<StatisticsScope')
     && adminMaster.includes('appliedScope.value = nextScope')

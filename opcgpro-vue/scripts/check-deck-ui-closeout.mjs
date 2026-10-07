@@ -13,7 +13,7 @@ const construction = read('../src/l12/site/DeckConstructionBrowser.vue')
 const checks = [
   ['我的牌库逐项删除', library.includes('deleteMine(deck)') && library.includes('删除本地牌库不会删除公开版本')],
   ['公开内容进入编辑器子页', editor.includes('PublicDeckContentEditor') && editor.includes("workspace === 'content'")],
-  ['指南与对局建议保存闭环', content.includes('publicDeckApi.updateContent') && content.includes('publicDeckApi.get')],
+  ['指南与对局建议保存闭环', content.includes('publicDeckReadApi.updateContent') && content.includes('publicDeckReadApi.current') && content.includes('validatePublicDeckContentCurrent') && content.includes('validatePublicDeckCurrent')],
   ['空指南与空对局建议不生成内容和锚点', detail.includes('const hasGuide = computed') && detail.includes('const hasMatchups = computed') && detail.includes('v-if="hasGuide" id="public-deck-guide"') && detail.includes('v-if="hasMatchups" id="public-deck-matchups"') && detail.includes('v-for="tab in sectionTabs"')],
   ['对局建议显示主宰头像且统一主宰用语', detail.includes('class="matchup-city"') && detail.includes('<DeckProfile compact :master-id="row.opponentMasterId"') && detail.includes('对阵 ${masterName(row.opponentMasterId)}') && !detail.includes('homeCityName') && content.includes('添加对方主宰')],
   ['导航与操作同栏', detail.includes('class="detail-toolbar"')],
@@ -28,7 +28,7 @@ const checks = [
   ['二维码只保留白边并位于右下角，不挤压卡表', share.includes("margin: 3") && share.includes("fillStyle = '#ffffff'") && share.includes('const qrX = 1860 - qrSize') && !share.includes('扫码查看') && !share.includes('reservedQrWidth')],
   ['我的牌库支持名称、主宰、合法性、排序和独立空状态', ['mineQuery', 'mineHomeCityFilter', 'mineLegalFilter', 'mineSort', 'filteredMine'].every(value => library.includes(value)) && library.includes('没有符合筛选条件的牌库') && library.includes('还没有自定义牌库')],
   ['公开牌库单卡筛选复用共享选择器', library.includes('SingleCardPicker') && library.includes('plazaCardPickerItems') && library.includes('choosePlazaCard')],
-  ['首次公开可同步保存指南和对局建议且保留对战异画数据', library.includes('publicDeckApi.publish(deck)') && library.includes('publicDeckApi.updateContent(publicDeckRouteReference(entry), publishGuide.value, publishMatchups.value)') && library.includes('可在首次发布时同步填写公开内容')],
+  ['首次公开可同步保存指南和对局建议且保留对战异画数据', library.includes('publicDeckApi.publish(deck)') && library.includes('publicDeckReadApi.updateContent(generation.publicCode, generation.readToken, submittedGuide, submittedMatchups)') && library.includes('publishDeckBodyKey') && library.includes('可在首次发布时同步填写公开内容')],
   ['移动端次要操作进入更多操作菜单', library.includes('<details :open="desktopActions"><summary>更多操作</summary>') && library.includes('deck-actions-menu') && editor.includes('class="more-actions-trigger"') && editor.includes('class="secondary-actions"')],
 ]
 

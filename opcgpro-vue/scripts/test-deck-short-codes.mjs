@@ -63,7 +63,17 @@ assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: '
 assert.equal(entryModule.publicDeckRouteReference({ id: 'legacy-uuid', ownerId: 'player' }), '')
 assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: 'player' }), '')
 assert.ok(librarySource.includes('publicDeckRouteReference(entry)'))
-assert.ok(detailSource.includes('publicDeckRouteReference(entry.value)'))
+assert.ok(detailSource.includes('publicDeckReference(entry.value'))
+const detailScript = detailSource.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
+const detailAst = ts.createSourceFile('detail-reference.ts', detailScript, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+const referenceNode = detailAst.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'publicDeckReference')
+assert.ok(referenceNode)
+const detailReference = new Function(ts.transpileModule(referenceNode.getText(detailAst), {
+  compilerOptions: { target: ts.ScriptTarget.ES2022 },
+}).outputText + ';return publicDeckReference;')()
+assert.equal(detailReference({ source: 'public', id: 'internal-uuid', publicCode: 'CODE12' }), 'CODE12')
+assert.throws(() => detailReference({ source: 'public', id: 'internal-uuid', publicCode: null }))
+assert.equal(detailReference({ source: 'official', id: 'official:' + 'a'.repeat(64), publicCode: null }), 'official:' + 'a'.repeat(64))
 function canonicalDetailReplacement(source) {
   const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? source
   const file = ts.createSourceFile('canonical-detail.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -75,11 +85,16 @@ function canonicalDetailReplacement(source) {
     ts.forEachChild(node, visit)
   }
   visit(file)
+  const containingFunction = node => {
+    for (let parent = node.parent; parent; parent = parent.parent) if (ts.isFunctionLike(parent)) return parent
+    return file
+  }
   return calls.some(call => {
     if (call.expression.getText(file) !== 'router.replace' || call.arguments.length !== 1) return false
     let target = call.arguments[0]
     if (ts.isIdentifier(target)) {
-      const bindings = declarations.filter(node => ts.isIdentifier(node.name) && node.name.text === target.text)
+      const bindings = declarations.filter(node => ts.isIdentifier(node.name) && node.name.text === target.text
+        && containingFunction(node) === containingFunction(call))
       if (bindings.length !== 1) return false
       target = bindings[0].initializer
     }

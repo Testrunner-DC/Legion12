@@ -23,6 +23,7 @@
     "verify:a3-layout": "node scripts/test-a3-timed-layout-browser.mjs",
     "check:release-version": "node scripts/check-client-release-version.mjs && node ../scripts/release-ledger.mjs validate --repo ..",
     "check:card-assets": "node scripts/check-l12-card-assets.mjs",
+    "check:public-deck-consumers": "node scripts/test-public-deck-summary-consumers.mjs && node scripts/test-public-deck-read-consumers.mjs && node scripts/test-public-deck-counter-results.mjs",
     "check:rule-center": "node scripts/check-rule-center-contracts.mjs && node --experimental-strip-types scripts/test-rule-ruling-ordering.mjs",
     "verify:rule-center-experience": "node scripts/verify-rule-center-experience.mjs",
     "verify:profile-admin-responsive": "node scripts/verify-profile-admin-responsive.mjs",
@@ -31,7 +32,7 @@
     "verify:alternate-art-admin-closeout": "node scripts/verify-alternate-art-admin-closeout.mjs",
     "audit:card-assets": "node scripts/audit-l12-card-cdn.mjs",
     "build:card-cdn": "node scripts/build-l12-card-cdn.mjs",
-    "build": "npm run check:performance-architecture && npm run check:release-version && npm run check:ui-contracts && npm run check:defense-actions && npm run check:ranked-broadcast && npm run check:deck-sync && npm run check:card-assets && vue-tsc -b && vite build --configLoader runner && vite build --configLoader runner --mode testrun --outDir dist-testrun",
+    "build": "npm run check:performance-architecture && npm run check:release-version && npm run check:ui-contracts && npm run check:defense-actions && npm run check:ranked-broadcast && npm run check:deck-sync && npm run check:public-deck-consumers && npm run check:card-assets && vue-tsc -b && vite build --configLoader runner && vite build --configLoader runner --mode testrun --outDir dist-testrun",
     "preview": "vite preview --configLoader runner"
   },
   "dependencies": {

@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
 import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, captureDeckAccountGuard, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
-import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
+import { platformState, publicDeckApi, publicDeckReadApi, type PublicDeckGuide, type PublicDeckStatisticsPage, type PublicDeckVersionChange, type PublicDeckVersionPage, type PublicDeckVersionRead } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import CardDetailContent from '@/l12/CardDetailContent.vue'
@@ -11,9 +11,14 @@ import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import StatisticsScope from './StatisticsScope.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
-import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters, publicDeckRouteReference } from './publicDeckEntry'
+import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters } from './publicDeckEntry'
 import { useActionGate } from '@/l12/useActionGate'
 import { deckEditorQuery } from './deckEditorNavigation'
+import { resolveOfficialDeck } from './officialDeckReference'
+import { consumeSummaryOpen } from './publicDeckSummary'
+import { settlePublicDeckRead, toPublicDeckCurrentEntry,
+  validatePublicDeckCurrent, validatePublicDeckStatistics, validatePublicDeckVersion, validatePublicDeckVersionPage,
+  type OfficialDeckDetailEntry, type PublicDeckDetailEntry, type PublicDeckPresentationEntry } from './publicDeckRead'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,11 +26,11 @@ const { pending: actionBusy, isPending: actionPending, run: runAction } = useAct
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
 const catalog = ref<DeckCard[]>([])
-const entry = ref<PublishedDeck | null>(null)
+const entry = ref<PublicDeckPresentationEntry | null>(null)
 let counterDocumentEpoch = 0
 watch(() => route.fullPath, () => counterDocumentEpoch++, { flush: 'sync' })
 onBeforeUnmount(() => counterDocumentEpoch++)
-function captureCounterContext(value: PublishedDeck, key: string) {
+function captureCounterContext(value: PublicDeckPresentationEntry, key: string) {
   return capturePublicDeckCounterGuard(value, {
     actorCurrent: captureDeckAccountGuard(),
     document: () => `${counterDocumentEpoch}:${route.fullPath}`,
@@ -39,6 +44,19 @@ const imagePreview = ref<{ blob: Blob; url: string } | null>(null)
 const openingHandIds = ref<string[]>([])
 const selectedCard = ref<DeckCard | null>(null)
 const mobileDetailsOpen = ref(false)
+const versionsState = ref<'idle' | 'loading' | 'available' | 'unavailable'>('idle')
+const versionsNotice = ref('')
+const versionsPage = ref<PublicDeckVersionPage | null>(null)
+const selectedVersionState = ref<'idle' | 'loading' | 'available' | 'unavailable'>('idle')
+const selectedVersionNotice = ref('')
+const selectedVersion = ref<PublicDeckVersionRead | null>(null)
+const statisticsState = ref<'idle' | 'loading' | 'available' | 'unavailable'>('idle')
+const statisticsNotice = ref('')
+const statisticsPage = ref<PublicDeckStatisticsPage | null>(null)
+const refreshRequired = ref(false)
+let versionsRequestSequence = 0
+let selectedVersionRequestSequence = 0
+let statisticsRequestSequence = 0
 let detailLoadGeneration = 0
 let detailMounted = false
 let detailDisposed = false
@@ -48,6 +66,7 @@ interface DetailLoadContext {
   path: string
   documentEpoch: number
   actorCurrent: () => boolean
+  expectedReadToken?: string
 }
 let detailCanonicalNavigation: { context: DetailLoadContext; targetPath: string; targetReference: string } | null = null
 function selectCard(card: DeckCard) {
@@ -76,11 +95,13 @@ const curve = computed(() => {
   return values
 })
 const curveMax = computed(() => Math.max(1, ...curve.value))
-const details = computed(() => entry.value?.details ?? emptyDetails())
-const hasGuide = computed(() => Object.values(details.value.guide).some(value => value.trim()))
-const hasMatchups = computed(() => details.value.matchups.length > 0)
+const guide = computed(() => entry.value?.guide ?? emptyGuide())
+const matchups = computed(() => entry.value?.matchups ?? [])
+const hasGuide = computed(() => Object.values(guide.value).some(value => value.trim()))
+const hasMatchups = computed(() => matchups.value.length > 0)
 const matchStatisticsRange = computed(() => {
-  const statistics = details.value.matchStatistics
+  const statistics = statisticsPage.value
+  if (!statistics) return ''
   const from = new Date(statistics.from)
   const to = new Date(statistics.to)
   if (!Number.isFinite(from.valueOf()) || !Number.isFinite(to.valueOf()) || from.getUTCFullYear() < 2000)
@@ -88,9 +109,13 @@ const matchStatisticsRange = computed(() => {
   const format = (value: Date) => value.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
   return `最近 ${statistics.recentDays} 天（${format(from)} 至 ${format(to)}，UTC+8）`
 })
-const matchStatisticsSample = computed(() => details.value.matchStatistics.sampleStatus === 'available'
-  ? `可展示 ${details.value.matchStatistics.games} 场 · ${details.value.matchBindingMessage}`
-  : details.value.matchBindingMessage)
+const matchStatisticsSample = computed(() => {
+  const statistics = statisticsPage.value
+  if (!statistics) return ''
+  if (statistics.sampleStatus === 'available') return `可展示 ${statistics.games} 场；每次分页均标注该次读取的实际统计时间窗。`
+  if (statistics.sampleStatus === 'insufficient') return `样本不足：最近 ${statistics.recentDays} 天没有达到 3 场门槛的公开分组。`
+  return `最近 ${statistics.recentDays} 天暂无可核验的公开版本对局统计。`
+})
 const matchStatisticsItems = computed(() => [
   '只计入已结束、无错误、非沙盒，且开局时已绑定到这一公开牌库不可变版本的对局；不会用作者总战绩或后来更新的构筑替代。',
   '按公开版本、使用主宰和对方主宰分组；每组至少 3 场才公开，低于门槛的组不会返回场次、胜负或胜率。',
@@ -100,8 +125,8 @@ const sectionTabs = computed(() => [
   { id: 'construction', label: '构筑', visible: true },
   { id: 'guide', label: '指南', visible: hasGuide.value },
   { id: 'matchups', label: '对局建议', visible: hasMatchups.value },
-  { id: 'versions', label: '版本', visible: true },
-  { id: 'matches', label: '对局', visible: true },
+  { id: 'versions', label: '版本', visible: entry.value?.source === 'public' },
+  { id: 'matches', label: '对局', visible: entry.value?.source === 'public' },
   { id: 'hands', label: '起手', visible: true },
 ].filter(item => item.visible))
 const deckCopies = computed(() => entry.value ? deckImageGroups(entry.value.deck, catalog.value)
@@ -119,39 +144,91 @@ const openingHand = computed(() => {
   })
 })
 
+function publicDeckReference(value: PublicDeckPresentationEntry) {
+  if (value.source === 'official') return value.id
+  if (!value.publicCode) throw new Error('公开牌库规范地址无效')
+  return value.publicCode
+}
+
+function invalidateReadSections() {
+  versionsRequestSequence++; selectedVersionRequestSequence++; statisticsRequestSequence++
+  versionsState.value = 'idle'; versionsNotice.value = ''; versionsPage.value = null
+  selectedVersionState.value = 'idle'; selectedVersionNotice.value = ''; selectedVersion.value = null
+  statisticsState.value = 'idle'; statisticsNotice.value = ''; statisticsPage.value = null
+}
+
+function singleRouteQuery(value: unknown) { return typeof value === 'string' ? value : undefined }
+
+function captureInitialReadContext() {
+  const generation = ++detailLoadGeneration, reference = String(route.params.deckId || '')
+  const hasExpectedReadToken = Object.hasOwn(route.query, 'expectedReadToken')
+  const hasTicket = Object.hasOwn(route.query, 'summaryOpen')
+  const expectedReadToken = singleRouteQuery(route.query.expectedReadToken)
+  const ticket = singleRouteQuery(route.query.summaryOpen)
+  const accountCurrent = captureDeckAccountGuard()
+  let handoffCurrent = () => true
+  if (hasExpectedReadToken || hasTicket) {
+    if (!expectedReadToken || !/^[a-f0-9]{64}$/.test(expectedReadToken) || !ticket)
+      return { error: '牌库目录链接已失效，请刷新后重新读取。' } as const
+    const handoff = consumeSummaryOpen(ticket, reference, expectedReadToken)
+    if (!handoff) return { error: '牌库目录链接已过期或账号已变化，请刷新后重新读取。' } as const
+    handoffCurrent = handoff.actorCurrent
+  }
+  const context: DetailLoadContext = { generation, reference, path: route.fullPath,
+    documentEpoch: counterDocumentEpoch, expectedReadToken,
+    actorCurrent: () => accountCurrent() && handoffCurrent() }
+  return { context } as const
+}
+
+function officialDetailEntry(id: string, preset: SavedL12Deck): OfficialDeckDetailEntry {
+  return { id, publicCode: null, source: 'official', official: true, name: preset.name, author: '十二军团官方预组',
+    deck: preset, views: 0, likes: 0, copies: 0, viewerLiked: false, liked: false, canEdit: false,
+    createdAt: '', updatedAt: '', seasonCompliant: true, seasonComplianceReason: null, version: 1,
+    guide: emptyGuide(), matchups: [], contentRevision: 0, contentUpdatedAt: null, readToken: null }
+}
+
 async function loadDetail() {
-  const context: DetailLoadContext = { generation: ++detailLoadGeneration,
-    reference: String(route.params.deckId || ''), path: route.fullPath,
-    documentEpoch: counterDocumentEpoch, actorCurrent: captureDeckAccountGuard() }
+  const captured = captureInitialReadContext()
+  invalidateReadSections()
   detailCanonicalNavigation = null
-  const current = () => detailMounted && !detailDisposed && context.generation === detailLoadGeneration
-    && context.actorCurrent() && context.path === route.fullPath && context.reference === String(route.params.deckId || '')
-    && context.documentEpoch === counterDocumentEpoch
-  if (!current() || route.name !== 'public-deck-detail' || !context.reference) return
   entry.value = null
   selectedCard.value = null
   openingHandIds.value = []
   if (imagePreview.value) URL.revokeObjectURL(imagePreview.value.url)
   imagePreview.value = null
   notice.value = ''
+  refreshRequired.value = false
   loading.value = true
+  if ('error' in captured) {
+    notice.value = captured.error ?? '牌库目录链接无法确认，请刷新后重新读取。'
+    refreshRequired.value = true
+    loading.value = false
+    return
+  }
+  const context = captured.context
+  const current = () => detailMounted && !detailDisposed && context.generation === detailLoadGeneration
+    && context.actorCurrent() && context.path === route.fullPath && context.reference === String(route.params.deckId || '')
+    && context.documentEpoch === counterDocumentEpoch
+  if (!current() || route.name !== 'public-deck-detail' || !context.reference) return
   try {
     const cards = await loadDeckCatalog()
     if (!current()) return
     catalog.value = cards
     const id = context.reference
-    let loaded: PublishedDeck
-    if (id.startsWith('official-')) {
-      const index = Number(id.slice('official-'.length))
-      const presets = await loadOfficialPresetDecks()
+    let loaded: PublicDeckPresentationEntry
+    if (id.startsWith('official-') || id.startsWith('official:')) {
+      const preset = await resolveOfficialDeck(id, loadOfficialPresetDecks)
       if (!current()) return
-      const preset = presets[index]
-      if (!preset) throw new Error('未找到这个官方牌库')
-      loaded = { id, ownerId: 'official', deck: { ...preset, specialIds: preset.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '', details: emptyDetails() }
+      loaded = officialDetailEntry(id, { ...preset, specialIds: preset.specialIds ?? [], updatedAt: '' })
     } else {
-      loaded = await publicDeckApi.get(id)
+      const result = await settlePublicDeckRead(publicDeckReadApi.current(id, context.expectedReadToken), validatePublicDeckCurrent)
       if (!current()) return
-      const canonicalReference = publicDeckRouteReference(loaded)
+      if (result.status === 'refresh-required') {
+        refreshRequired.value = true; notice.value = result.message; return
+      }
+      if (result.status === 'unavailable') throw new Error(result.message)
+      loaded = toPublicDeckCurrentEntry(result.value)
+      const canonicalReference = loaded.publicCode
       if (canonicalReference !== id) {
         const target = { name: 'public-deck-detail', params: { deckId: canonicalReference }, query: route.query, hash: route.hash }
         detailCanonicalNavigation = { context, targetPath: router.resolve(target).fullPath, targetReference: canonicalReference }
@@ -165,7 +242,11 @@ async function loadDetail() {
     entry.value = loaded
     selectedCard.value = master.value ?? byId.value.get(loaded.deck.cardIds[0] || '') ?? null
     redrawOpeningHand()
-    if (!isOfficialPublicDeckCounterTarget(loaded)) void recordInitialView(entry.value).catch(() => undefined)
+    if (loaded.source === 'public') {
+      void loadVersionPage(1)
+      void loadStatisticsPage(1)
+      void recordInitialView(entry.value!).catch(() => undefined)
+    }
   } catch (error) {
     if (current()) notice.value = error instanceof Error ? error.message : '公开牌库加载失败'
   } finally {
@@ -196,9 +277,102 @@ onBeforeUnmount(() => {
   detailMounted = false
   detailLoadGeneration++
   detailCanonicalNavigation = null
+  invalidateReadSections()
 })
 
-async function recordInitialView(value: PublishedDeck) {
+interface PinnedReadContext {
+  generation: PublicDeckDetailEntry
+  canEdit: boolean
+  current: () => boolean
+}
+function capturePinnedReadContext(): PinnedReadContext | null {
+  const value = entry.value
+  if (!value || value.source !== 'public') return null
+  const actorCurrent = captureDeckAccountGuard(), path = route.fullPath, documentEpoch = counterDocumentEpoch
+  const loadGeneration = detailLoadGeneration, body = value.deck, canEdit = value.canEdit
+  return { generation: value, canEdit, current: () => detailMounted && !detailDisposed
+    && actorCurrent() && route.name === 'public-deck-detail' && route.fullPath === path
+    && counterDocumentEpoch === documentEpoch && detailLoadGeneration === loadGeneration
+    && entry.value?.source === 'public' && entry.value.id === value.id && entry.value.publicCode === value.publicCode
+    && entry.value.readToken === value.readToken && entry.value.catalogVersion === value.catalogVersion
+    && entry.value.policyVersion === value.policyVersion && entry.value.deck === body && entry.value.canEdit === canEdit }
+}
+
+function requireReadRefresh(message: string) {
+  refreshRequired.value = true
+  notice.value = message
+}
+
+async function loadVersionPage(page: number) {
+  const context = capturePinnedReadContext()
+  if (!context) return
+  const request = ++versionsRequestSequence, pageSize = 30
+  versionsState.value = 'loading'; versionsNotice.value = ''; versionsPage.value = null
+  selectedVersionRequestSequence++; selectedVersionState.value = 'idle'; selectedVersionNotice.value = ''; selectedVersion.value = null
+  const result = await settlePublicDeckRead(
+    publicDeckReadApi.versions(context.generation.publicCode, page, pageSize, context.generation.readToken),
+    value => validatePublicDeckVersionPage(value, context.generation, page, pageSize, context.canEdit))
+  if (!context.current() || request !== versionsRequestSequence) return
+  if (result.status === 'available') {
+    versionsPage.value = result.value; versionsState.value = 'available'; return
+  }
+  versionsState.value = 'unavailable'; versionsNotice.value = result.message
+  if (result.status === 'refresh-required') requireReadRefresh(result.message)
+}
+
+async function loadSelectedVersion(version: number) {
+  const context = capturePinnedReadContext()
+  if (!context) return
+  const request = ++selectedVersionRequestSequence
+  selectedVersionState.value = 'loading'; selectedVersionNotice.value = ''; selectedVersion.value = null
+  const result = await settlePublicDeckRead(
+    publicDeckReadApi.version(context.generation.publicCode, version, context.generation.readToken),
+    value => validatePublicDeckVersion(value, context.generation, version, context.canEdit))
+  if (!context.current() || request !== selectedVersionRequestSequence) return
+  if (result.status === 'available') {
+    selectedVersion.value = result.value; selectedVersionState.value = 'available'; return
+  }
+  selectedVersionState.value = 'unavailable'; selectedVersionNotice.value = result.message
+  if (result.status === 'refresh-required') requireReadRefresh(result.message)
+}
+
+async function loadStatisticsPage(page: number) {
+  const context = capturePinnedReadContext()
+  if (!context) return
+  const request = ++statisticsRequestSequence, pageSize = 30
+  statisticsState.value = 'loading'; statisticsNotice.value = ''; statisticsPage.value = null
+  const result = await settlePublicDeckRead(
+    publicDeckReadApi.statistics(context.generation.publicCode, page, pageSize, context.generation.readToken),
+    value => validatePublicDeckStatistics(value, context.generation, page, pageSize))
+  if (!context.current() || request !== statisticsRequestSequence) return
+  if (result.status === 'available') {
+    statisticsPage.value = result.value; statisticsState.value = 'available'; return
+  }
+  statisticsState.value = 'unavailable'; statisticsNotice.value = result.message
+  if (result.status === 'refresh-required') requireReadRefresh(result.message)
+}
+
+const versionPageCount = computed(() => Math.max(1, Math.ceil((versionsPage.value?.total ?? 0) / (versionsPage.value?.pageSize ?? 30))))
+const statisticsPageCount = computed(() => Math.max(1, Math.ceil((statisticsPage.value?.total ?? 0) / (statisticsPage.value?.pageSize ?? 30))))
+
+async function refreshCurrentDeck() {
+  const before = route.fullPath, query = { ...route.query }
+  delete query.expectedReadToken; delete query.summaryOpen
+  const target = { name: 'public-deck-detail', params: { deckId: String(route.params.deckId || '') }, query, hash: route.hash }
+  if (router.resolve(target).fullPath === before) { void loadDetail(); return }
+  const failure = await router.replace(target)
+  if (failure) { notice.value = '刷新地址未完成，请重新打开牌库。'; return }
+}
+
+async function copySelectedVersionCode() {
+  const context = capturePinnedReadContext(), selected = selectedVersion.value
+  if (!context || !selected) return
+  await navigator.clipboard.writeText(encodeDeckCode(selected.deck))
+  if (context.current() && selectedVersion.value === selected)
+    notice.value = `版本 ${selected.metadata.version} 的牌库码已复制`
+}
+
+async function recordInitialView(value: PublicDeckPresentationEntry) {
   if (isOfficialPublicDeckCounterTarget(value)) return
   const viewedKey = `l12:public-deck-viewed:${value.id}`
   if (sessionStorage.getItem(viewedKey)) return
@@ -208,7 +382,7 @@ async function recordInitialView(value: PublishedDeck) {
     if (!current() || sessionStorage.getItem(viewedKey)) return
     sessionStorage.setItem(viewedKey, marker)
     try {
-      const counters = await publicDeckApi.counter(publicDeckRouteReference(value), 'view')
+      const counters = await publicDeckApi.counter(publicDeckReference(value), 'view')
       if (current()) entry.value = mergePublicDeckCounters(entry.value, counters)
     } catch {
       if (sessionStorage.getItem(viewedKey) === marker) sessionStorage.removeItem(viewedKey)
@@ -243,7 +417,7 @@ async function copyToMine() {
       if (!current()) return
       if (!isOfficialPublicDeckCounterTarget(entry.value!)) {
         try {
-          const counters = await publicDeckApi.counter(publicDeckRouteReference(entry.value!), 'copy')
+          const counters = await publicDeckApi.counter(publicDeckReference(entry.value!), 'copy')
           if (current()) entry.value = mergePublicDeckCounters(entry.value, counters)
         } catch { /* 本地复制已经成功；远端统计失败不得反写为复制失败。 */ }
       }
@@ -257,7 +431,7 @@ async function toggleLike() {
   if (!entry.value || isOfficialPublicDeckCounterTarget(entry.value)) return
   if (!platformState.account) { notice.value = '请先登录账号再点赞'; return }
   const id = entry.value.id
-  const reference = publicDeckRouteReference(entry.value)
+  const reference = publicDeckReference(entry.value)
   const accountId = platformState.account.id
   const key = publicDeckActionKey(id, accountId), current = captureCounterContext(entry.value, key)
   await runAction(key, async () => {
@@ -282,7 +456,7 @@ async function previewImage() {
   imagePreview.value = { blob, url: URL.createObjectURL(blob) }
 }
 async function editDeck() {
-  if (!entry.value) return
+  if (!entry.value?.canEdit) return
   const account = platformState.account?.id, token = platformState.token, id = entry.value.id
   try {
     const existing = Object.values(loadSavedDecks()).find(deck => deck.publicationId === entry.value?.id)
@@ -297,9 +471,9 @@ async function editDeck() {
   }
 }
 async function deleteDeck() {
-  if (!entry.value || !window.confirm('确定删除这个公开牌库？')) return
+  if (!entry.value?.canEdit || !window.confirm('确定删除这个公开牌库？')) return
   const id = entry.value.id
-  const reference = publicDeckRouteReference(entry.value)
+  const reference = publicDeckReference(entry.value)
   const accountId = platformState.account?.id
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
@@ -314,15 +488,12 @@ async function deleteDeck() {
 function emptyGuide(): PublicDeckGuide {
   return { buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' }
 }
-function emptyDetails(): PublicDeckDetails {
-  return { guide: emptyGuide(), matchups: [], contentRevision: 0, versions: [], matchStatistics: { from: '', to: '', recentDays: 90, games: 0, sampleStatus: 'empty', groups: [] }, matchBindingStatus: 'empty', matchBindingMessage: '这个牌库暂无可核验的版本对局统计。' }
-}
 function scrollToSection(section: string) {
   document.getElementById(`public-deck-${section}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 function publicDeckUrl() {
   if (!entry.value || entry.value.official || typeof window === 'undefined') return ''
-  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: publicDeckRouteReference(entry.value) } }).href, window.location.origin).href
+  return new URL(router.resolve({ name: 'public-deck-detail', params: { deckId: publicDeckReference(entry.value) } }).href, window.location.origin).href
 }
 function redrawOpeningHand() {
   if (!entry.value) return
@@ -348,7 +519,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
   <main class="public-deck-detail" data-ui-contract="public-deck-detail-page" :aria-busy="actionBusy">
     <router-link class="back-link" :to="backTo">← 返回公开牌库</router-link>
     <p v-if="loading" class="state">正在载入构筑……</p>
-    <p v-else-if="!entry" class="state error">{{ notice || '未找到这个公开牌库' }}</p>
+    <div v-else-if="!entry" class="state error"><p>{{ notice || '未找到这个公开牌库' }}</p><button v-if="refreshRequired" @click="refreshCurrentDeck">刷新并重新读取</button></div>
     <template v-else>
       <header class="detail-head">
         <DeckProfile :master-id="entry.deck.masterId" :master-name="master?.nameZh" :fallback-url="master?.imageUrl" :name="entry.deck.name" :context="entry.author" :meta="`${deckCountSummary(entry.deck.cardIds, byId).label} 张主牌 · ${entry.deck.moraleIds.length} 张士气`"/>
@@ -358,7 +529,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
         <nav class="detail-tabs" aria-label="公开牌库详情内容">
           <button v-for="tab in sectionTabs" :key="tab.id" @click="scrollToSection(tab.id)">{{ tab.label }}</button>
         </nav>
-        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.ownerId === platformState.account?.id" @click="editDeck">编辑牌库</button><button v-if="entry.ownerId === platformState.account?.id" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
+        <div class="actions"><button v-if="!entry.official" :disabled="!platformState.account || actionPending(publicDeckActionKey(entry.id))" @click="toggleLike">♡ {{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : entry.liked ? '取消点赞' : '点赞' }}</button><button @click="copyCode">复制牌库码</button><button @click="previewImage">生成牌库图</button><button v-if="entry.canEdit" @click="editDeck">编辑牌库</button><button v-if="entry.canEdit" class="danger" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="deleteDeck">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '删除公开牌库' }}</button><button class="primary" :disabled="actionPending(publicDeckActionKey(entry.id))" @click="copyToMine">{{ actionPending(publicDeckActionKey(entry.id)) ? '处理中…' : '复制到我的牌库' }}</button></div>
       </div>
       <section id="public-deck-construction" class="deck-layout detail-anchor-section">
         <aside>
@@ -369,25 +540,31 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
         <div class="public-deck-main"><DeckConstructionBrowser :entries="entries" :catalog="catalog" :master-faction="master?.faction" :title="`${entry.deck.name} · 全部构筑`" filter-target="#public-deck-construction-filters" hide-header external-details @select="selectCard"/>
 
       <section v-if="hasGuide" id="public-deck-guide" class="content-panel detail-anchor-section" data-detail-section="guide">
-        <header><div><h2>牌库指南</h2><p v-if="details.contentUpdatedAt">作者更新于 {{ formatTime(details.contentUpdatedAt) }} · 修订 {{ details.contentRevision }}</p></div></header>
+        <header><div><h2>牌库指南</h2><p v-if="entry.contentUpdatedAt">作者更新于 {{ formatTime(entry.contentUpdatedAt) }} · 修订 {{ entry.contentRevision }}</p></div></header>
         <div class="reading-sections">
-          <article v-for="item in [['构筑思路',details.guide.buildIdea],['起手建议',details.guide.opening],['关键牌与配合',details.guide.keyCards],['常见展开',details.guide.commonSequence],['替换建议',details.guide.substitutions]].filter(item => item[1])" :key="item[0]"><h3>{{ item[0] }}</h3><p>{{ item[1] }}</p></article>
+          <article v-for="item in [['构筑思路',guide.buildIdea],['起手建议',guide.opening],['关键牌与配合',guide.keyCards],['常见展开',guide.commonSequence],['替换建议',guide.substitutions]].filter(item => item[1])" :key="item[0]"><h3>{{ item[0] }}</h3><p>{{ item[1] }}</p></article>
         </div>
       </section>
       <section v-if="hasMatchups" id="public-deck-matchups" class="content-panel detail-anchor-section" data-detail-section="matchups">
         <header><div><h2>对局建议</h2><p>按对方主宰查看作者提供的思路、关键牌与换牌建议。</p></div></header>
-        <div class="matchup-list"><article v-for="row in details.matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="masterName(row.opponentMasterId)" :name="`对阵 ${masterName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
+        <div class="matchup-list"><article v-for="row in matchups" :key="row.opponentMasterId"><header class="matchup-city"><DeckProfile compact :master-id="row.opponentMasterId" :master-name="masterName(row.opponentMasterId)" :name="`对阵 ${masterName(row.opponentMasterId)}`"/></header><p v-if="row.notes"><b>思路</b>{{ row.notes }}</p><p v-if="row.keyCards"><b>关键牌</b>{{ row.keyCards }}</p><p v-if="row.suggestedSwaps"><b>换牌</b>{{ row.suggestedSwaps }}</p></article></div>
       </section>
-      <section id="public-deck-versions" class="content-panel detail-anchor-section" data-detail-section="versions">
-        <header><div><h2>全部公开版本</h2></div></header>
-        <div v-if="details.versions.length" class="version-list"><details v-for="version in details.versions" :key="version.version" :open="version.version === details.versions[0]?.version"><summary><b>版本 {{ version.version }}</b><span>{{ version.name }}</span><time>{{ formatTime(version.createdAt) }}</time></summary><p v-if="version.version === 1">首次发布</p><ul v-else-if="version.changes.length"><li v-for="change in version.changes" :key="`${change.section}-${change.cardId}`">{{ changeLabel(change) }}</li></ul><p v-else>构筑正文未变化。</p></details></div>
-        <p v-else class="empty-copy">尚无可读取的公开版本。</p>
+      <section v-if="entry.source === 'public'" id="public-deck-versions" class="content-panel detail-anchor-section" data-detail-section="versions">
+        <header><div><h2>全部公开版本</h2><p v-if="versionsPage">共 {{ versionsPage.total }} 个版本 · 第 {{ versionsPage.page }} / {{ versionPageCount }} 页</p></div></header>
+        <p v-if="versionsState === 'loading'" class="empty-copy">正在读取版本目录……</p>
+        <p v-else-if="versionsState === 'unavailable'" class="empty-copy">{{ versionsNotice }}</p>
+        <div v-else-if="versionsState === 'available' && versionsPage?.items.length" class="version-list"><details v-for="version in versionsPage.items" :key="version.version" :open="version.version === versionsPage.items[0]?.version"><summary><b>版本 {{ version.version }}</b><span>{{ version.name }}</span><time>{{ formatTime(version.createdAt) }}</time></summary><p v-if="version.version === 1">首次发布</p><ul v-else-if="version.changes.length"><li v-for="change in version.changes" :key="`${change.section}-${change.cardId}`">{{ changeLabel(change) }}</li></ul><p v-else>这个版本没有可展示的数量变化。</p><button :disabled="selectedVersionState === 'loading'" @click="loadSelectedVersion(version.version)">查看版本 {{ version.version }} 构筑</button></details></div>
+        <p v-else-if="versionsState === 'available'" class="empty-copy">这个牌库没有公开版本记录。</p>
+        <div v-if="versionsState === 'available' && versionPageCount > 1" class="editor-actions"><button :disabled="(versionsPage?.page ?? 1) <= 1" @click="loadVersionPage((versionsPage?.page ?? 1) - 1)">上一页</button><button :disabled="(versionsPage?.page ?? 1) >= versionPageCount" @click="loadVersionPage((versionsPage?.page ?? 1) + 1)">下一页</button></div>
+        <p v-if="selectedVersionState === 'loading'" class="empty-copy">正在读取所选版本构筑……</p>
+        <p v-else-if="selectedVersionState === 'unavailable'" class="empty-copy">{{ selectedVersionNotice }}</p>
+        <article v-else-if="selectedVersionState === 'available' && selectedVersion" class="matchup-editor"><h3>版本 {{ selectedVersion.metadata.version }} · {{ selectedVersion.metadata.name }}</h3><p>{{ masterName(selectedVersion.deck.masterId) }} · {{ selectedVersion.deck.cardIds.length }} 张主牌 · {{ selectedVersion.deck.moraleIds.length }} 张士气 · {{ selectedVersion.deck.specialIds.length }} 张额外牌</p><div class="editor-actions"><button @click="copySelectedVersionCode">复制该版本牌库码</button></div></article>
       </section>
-      <section id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
+      <section v-if="entry.source === 'public'" id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
         <header><div><h2>版本对局</h2><p>按开局时绑定的不可变公开版本统计。</p></div></header>
-        <StatisticsScope :summary="matchStatisticsRange" :sample="matchStatisticsSample" :items="matchStatisticsItems"/>
-        <div v-if="details.matchStatistics.groups.length" class="match-stat-list"><article v-for="stat in details.matchStatistics.groups" :key="`${stat.version}-${stat.masterId}-${stat.opponentMasterId}`"><header><b>版本 {{ stat.version }}</b><span>{{ masterName(stat.masterId) }} 对阵 {{ masterName(stat.opponentMasterId) }}</span></header><dl><div><dt>场次</dt><dd>{{ stat.games }}</dd></div><div><dt>胜率</dt><dd>{{ formatRate(stat.winRate) }}</dd></div><div><dt>胜 / 负 / 平</dt><dd>{{ stat.wins }} / {{ stat.losses }} / {{ stat.draws }}</dd></div></dl></article></div>
-        <p v-else class="empty-copy">当前没有达到公开门槛的版本对局分组。</p>
+        <p v-if="statisticsState === 'loading'" class="empty-copy">正在读取匿名统计……</p>
+        <p v-else-if="statisticsState === 'unavailable'" class="empty-copy">{{ statisticsNotice }}</p>
+        <template v-else-if="statisticsState === 'available' && statisticsPage"><StatisticsScope :summary="matchStatisticsRange" :sample="matchStatisticsSample" :items="matchStatisticsItems"/><div v-if="statisticsPage.groups.length" class="match-stat-list"><article v-for="stat in statisticsPage.groups" :key="`${stat.version}-${stat.masterId}-${stat.opponentMasterId}`"><header><b>版本 {{ stat.version }}</b><span>{{ masterName(stat.masterId) }} 对阵 {{ masterName(stat.opponentMasterId) }}</span></header><dl><div><dt>场次</dt><dd>{{ stat.games }}</dd></div><div><dt>胜率</dt><dd>{{ formatRate(stat.winRate) }}</dd></div><div><dt>胜 / 负 / 平</dt><dd>{{ stat.wins }} / {{ stat.losses }} / {{ stat.draws }}</dd></div></dl></article></div><p v-else class="empty-copy">{{ matchStatisticsSample }}</p><div v-if="statisticsPageCount > 1" class="editor-actions"><button :disabled="statisticsPage.page <= 1" @click="loadStatisticsPage(statisticsPage.page - 1)">上一页</button><button :disabled="statisticsPage.page >= statisticsPageCount" @click="loadStatisticsPage(statisticsPage.page + 1)">下一页</button></div></template>
       </section>
       <section id="public-deck-hands" class="content-panel detail-anchor-section" data-detail-section="hands">
         <header><div><h2>随机起手</h2><p>随机展示当前构筑中的 6 张主牌。</p></div><button @click="redrawOpeningHand">重新抽取</button></header>
@@ -397,7 +574,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
         <aside class="archive-detail public-card-detail" aria-label="卡牌详情"><CardDetailContent v-if="selectedCard" :card="selectedCard" :show-catalog-only="false"/></aside>
       </section>
 </template>
-    <p v-if="notice && entry" class="notice">{{ notice }}</p>
+    <div v-if="notice && entry" class="notice"><span>{{ notice }}</span><button v-if="refreshRequired" @click="refreshCurrentDeck">刷新并重新读取</button></div>
     <div v-if="imagePreview && entry" class="preview-mask" @click.self="imagePreview = null"><section><button class="close" @click="imagePreview = null">×</button><img :src="imagePreview.url" alt="牌库图预览"/><footer><button class="primary" @click="downloadDeckImage(entry.deck,catalog,imagePreview.blob)">下载 PNG</button></footer></section></div>
   </main>
   <CatalogCardDetails v-if="mobileDetailsOpen && selectedCard" :card="selectedCard" :show-catalog-only="false" @close="mobileDetailsOpen = false"/>

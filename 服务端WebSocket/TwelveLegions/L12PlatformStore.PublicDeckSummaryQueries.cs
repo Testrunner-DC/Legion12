@@ -36,7 +36,10 @@ public sealed partial class L12PlatformStore
             {
                 catalogVersion, policy.Version, policy.VersionId, availability,
                 Viewer = viewer?.Account.Id, Permission = viewer?.Account.PermissionVersion,
-                Entries = entries.Select(entry => entry.View).OrderBy(entry => entry.Id, StringComparer.Ordinal),
+                // A directory generation tracks visible metadata and counters. Per-item
+                // content pins are attached only after paging and never enter this hash.
+                Entries = entries.Select(entry => entry.View with { ReadToken = null })
+                    .OrderBy(entry => entry.Id, StringComparer.Ordinal),
             })));
             var comparison = CultureInfo.GetCultureInfo("zh-CN").CompareInfo;
             var filtered = entries.Where(entry => string.IsNullOrEmpty(query.Keyword) || new[]
@@ -63,7 +66,25 @@ public sealed partial class L12PlatformStore
             };
             var offset = ((long)query.Page - 1) * query.PageSize;
             var items = offset >= filtered.Length ? [] : sorted.ThenBy(entry => entry.Id, StringComparer.Ordinal).Skip((int)offset).Take(query.PageSize).ToArray();
-            return new("ok", new(items, filtered.Length, query.Page, query.PageSize, generation, catalogVersion, policy.Version, availability, facets));
+            using var connection = OpenDatabase(_databasePath, readOnly: true);
+            using var transaction = connection.BeginTransaction(deferred: true);
+            ValidatePublicDeckReadGeneration(connection, transaction);
+            var pinned = new L12PublicDeckSummaryView[items.Length];
+            for (var index = 0; index < items.Length; index++)
+            {
+                var item = items[index];
+                if (item.Source == "official")
+                {
+                    pinned[index] = item with { ReadToken = null };
+                    continue;
+                }
+                var row = data.PublishedDecks.FirstOrDefault(candidate => candidate.Id == item.Id)
+                    ?? throw new InvalidDataException("公开牌库摘要页引用了不存在的已提交目录项");
+                var head = CapturePublicDeckReadHead(connection, transaction, row, catalog, policy, viewer, catalogVersion);
+                pinned[index] = item with { ReadToken = head.Token };
+            }
+            transaction.Commit();
+            return new("ok", new(pinned, filtered.Length, query.Page, query.PageSize, generation, catalogVersion, policy.Version, availability, facets));
         }
     }
 

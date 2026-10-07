@@ -4,6 +4,8 @@ import {
   publicDeckConsumerGroups,
   publicDeckConsumerPredicateNames,
   publicDeckConsumerTemplateContract,
+  publicDeckAuthorActionsContract,
+  publicDeckServerSummarySortContract,
 } from './public-deck-consumer-template-contract.mjs'
 
 const read = name => readFileSync(new URL(`../src/l12/site/${name}`, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -161,3 +163,19 @@ assert.deepEqual(Object.entries(publicDeckConsumerTemplateContract(fakeSources))
 cases++
 
 console.log(`A3 public deck consumer template contract passed: 5 legacy contract groups, 3 AST groups, ${cases} focused cases`)
+
+const authorSource = baselineSources.publicDeckDetail
+assert.equal(publicDeckAuthorActionsContract(authorSource), true)
+assert.equal(publicDeckAuthorActionsContract(replaceOnce(authorSource, 'v-if="entry.canEdit"', 'v-if=" ( entry.canEdit ) "')), true)
+assert.equal(publicDeckAuthorActionsContract(replaceOnce(authorSource, 'v-if="entry.canEdit"', 'v-if="true"')), false)
+assert.equal(publicDeckAuthorActionsContract(replaceOnce(authorSource, 'v-if="entry.canEdit"', '')), false)
+assert.equal(publicDeckAuthorActionsContract(replaceOnce(authorSource, '@click="deleteDeck"', '@click="copyToMine"')), false)
+assert.equal(publicDeckAuthorActionsContract(replaceOnce(authorSource, '@click="editDeck"', '@click="editDeck"/><button v-if="entry.canEdit" @click="editDeck"')), false)
+const directorySource = read('DeckLibraryPage.vue')
+assert.equal(publicDeckServerSummarySortContract(directorySource), true)
+assert.equal(publicDeckServerSummarySortContract(replaceOnce(directorySource, 'sort: sortMode.value', "sort: 'name'")), false)
+assert.equal(publicDeckServerSummarySortContract(replaceOnce(directorySource, 'page: plazaPage.value', 'page: 1')), false)
+assert.equal(publicDeckServerSummarySortContract(replaceOnce(directorySource, 'legal: legalFilter.value', 'legal: true ? undefined : legalFilter.value')), false)
+assert.equal(publicDeckServerSummarySortContract(replaceOnce(directorySource, 'deckLibraryApi.summaries(request)', 'publicDeckApi.list(request)')), false)
+assert.equal(publicDeckServerSummarySortContract(replaceOnce(directorySource, 'const request = summaryQuery()', 'const request = {}')), false)
+console.log('Public deck paged sort and author action replacement: 12 actual-source positive/negative cases; all six sorts executed')

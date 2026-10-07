@@ -90,6 +90,7 @@ public sealed class PublicDeckSummaryProjectionTests
             row.GetType().GetProperty("Copies")!.SetValue(row, int.MaxValue);
             row.GetType().GetProperty("Views")!.SetValue(row, int.MaxValue);
         }
+        fixture.CommitReflectedPublicRows();
         fixture.Observe();
         foreach (var sort in new[] { "trend", "name", "copies", "views", "latest", "likes" })
             Assert.Equal(new[] { one.Id, two.Id }.Order(StringComparer.Ordinal),
@@ -169,6 +170,34 @@ internal sealed class PublicDeckSummaryFixture : IDisposable
     {
         var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Store)!;
         return ((IEnumerable)data.GetType().GetProperty("PublishedDecks")!.GetValue(data)!).Cast<object>().ToArray();
+    }
+    public void CommitReflectedPublicRows()
+    {
+        using var connection = new SqliteConnection($"Data Source={Store.TransactionalStoragePath}");
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        foreach (var row in PublicRows())
+        {
+            var type = row.GetType();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE published_decks
+                SET name=$name,views=$views,copies=$copies,created_utc=$created,updated_utc=$updated
+                WHERE publication_id=$id;
+                UPDATE published_deck_versions SET name=$name
+                WHERE publication_id=$id AND version=$version;
+                """;
+            command.Parameters.AddWithValue("$id", type.GetProperty("Id")!.GetValue(row)!);
+            command.Parameters.AddWithValue("$version", type.GetProperty("Version")!.GetValue(row)!);
+            command.Parameters.AddWithValue("$name", type.GetProperty("Name")!.GetValue(row)!);
+            command.Parameters.AddWithValue("$views", type.GetProperty("Views")!.GetValue(row)!);
+            command.Parameters.AddWithValue("$copies", type.GetProperty("Copies")!.GetValue(row)!);
+            command.Parameters.AddWithValue("$created", ((DateTimeOffset)type.GetProperty("CreatedAt")!.GetValue(row)!).ToString("O"));
+            command.Parameters.AddWithValue("$updated", ((DateTimeOffset)type.GetProperty("UpdatedAt")!.GetValue(row)!).ToString("O"));
+            Assert.Equal(2, command.ExecuteNonQuery());
+        }
+        transaction.Commit();
     }
     public void Observe() => Store.DeckPayloadExpansionObserver = Expansions.Add;
     public void Complete() => passed = true;

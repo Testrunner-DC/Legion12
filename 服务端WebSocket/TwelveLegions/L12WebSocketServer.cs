@@ -1358,20 +1358,82 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
+        bool PublicDeckReadUnavailable(Exception error) => error is InvalidDataException or JsonException or FormatException
+            or Microsoft.Data.Sqlite.SqliteException or L12PlatformStorageUnavailableException or OverflowException or ArgumentException;
+        IResult PublicDeckReadFailure() => Results.Json(new { code = "public_deck_read_unavailable",
+            message = "公开牌库正文或引用当前无法安全读取" }, statusCode: 503);
+        IResult PublicDeckQueryFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "公开牌库已提交读取代当前不可用" }, statusCode: 503);
+        IResult PublicDeckStatisticsFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "牌库统计暂时无法读取，请稍后重试" }, statusCode: 503);
+        IResult PublicDeckStatisticsStatus(string status) => status switch
+        {
+            "unauthorized" => Results.Unauthorized(),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "牌库统计查询参数无效" }),
+        };
+        bool TryPublicDeckContentWriteToken(IQueryCollection query, out string token)
+        {
+            token = "";
+            if (query.Count != 1 || !query.TryGetValue("expectedReadToken", out var raw)
+                || raw.Count != 1 || raw[0] is not { } value) return false;
+            token = value;
+            return token.Length == 64
+                && token.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+        }
+        IResult PublicDeckContentWriteFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "牌库内容暂时无法保存，请稍后重试" }, statusCode: 503);
+        IResult PublicDeckContentWriteStatus(L12PublicDeckContentHeadWriteResult result) => result.Status switch
+        {
+            "ok" => Results.Ok(result.Head),
+            "unauthorized" => Results.Unauthorized(),
+            "forbidden" => Results.StatusCode(StatusCodes.Status403Forbidden),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "牌库内容写入参数无效" }),
+        };
         _app.MapGet("/api/deck-library/summaries", (HttpRequest request) =>
         {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
             var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
             if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
             if (!L12PublicDeckSummaryQuery.TryParse(request.Query, out var query))
                 return Results.BadRequest(new { message = "公开牌库摘要查询参数无效" });
-            var result = _platform.DeckLibrarySummaries(_catalog, query, viewer);
-            return result.Status switch
+            try
             {
-                "ok" => Results.Ok(result.Page),
-                "unauthorized" => Results.Unauthorized(),
-                "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
-                _ => Results.BadRequest(),
-            };
+                var result = _platform.DeckLibrarySummaries(_catalog, query, viewer);
+                return result.Status switch
+                {
+                    "ok" => Results.Ok(result.Page),
+                    "unauthorized" => Results.Unauthorized(),
+                    "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                    _ => Results.BadRequest(),
+                };
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckQueryFailure(); }
+        });
+        _app.MapGet("/api/me/public-deck-references", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReferenceQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "公开牌库引用查询参数无效" });
+            try
+            {
+                var result = _platform.PublicDeckReferences(_catalog, query.PublicationIds, viewer);
+                return result.Status switch
+                {
+                    "available" => Results.Ok(result),
+                    "unauthorized" => Results.Unauthorized(),
+                    "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                    _ => Results.BadRequest(new { message = "公开牌库引用查询参数无效" }),
+                };
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckQueryFailure(); }
         });
         IResult PublicDeckReadResponse(string status, object? value) => status switch
         {
@@ -1382,10 +1444,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
             _ => Results.BadRequest(new { message = "公开牌库读取参数无效" }),
         };
-        bool PublicDeckReadUnavailable(Exception error) => error is InvalidDataException or JsonException
-            or Microsoft.Data.Sqlite.SqliteException or L12PlatformStorageUnavailableException or OverflowException or ArgumentException;
-        IResult PublicDeckReadFailure() => Results.Json(new { code = "public_deck_read_unavailable",
-            message = "公开牌库正文或引用当前无法安全读取" }, statusCode: 503);
         _app.MapGet("/api/public-decks/{reference}/current", (HttpRequest request, string reference) =>
         {
             request.HttpContext.Response.Headers.CacheControl = "no-store";
@@ -1426,6 +1484,35 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return PublicDeckReadResponse(result.Status, result.Detail);
             }
             catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/statistics", async Task<IResult> (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, true, out var query))
+                return Results.BadRequest(new { message = "牌库统计查询参数无效" });
+            try
+            {
+                var captured = _platform.CapturePublicDeckStatisticsRead(_catalog, reference,
+                    query.ExpectedReadToken, viewer);
+                if (captured.Status != "available") return PublicDeckStatisticsStatus(captured.Status);
+                var lease = captured.Lease!;
+                var statistics = await _recorder.PublicDeckVersionStatisticsPageAsync(lease.Id,
+                    query.Page, query.PageSize, lease.ExcludedMatchIds, lease.ExcludedAccountIds,
+                    request.HttpContext.RequestAborted);
+                var status = _platform.RevalidatePublicDeckStatisticsRead(_catalog, lease, viewer);
+                if (status != "available") return PublicDeckStatisticsStatus(status);
+                return Results.Ok(new L12PublicDeckStatisticsPage(lease.Id, lease.PublicCode, lease.ReadToken,
+                    lease.CatalogVersion, lease.PolicyVersion, statistics.From, statistics.To,
+                    statistics.RecentDays, statistics.Games, statistics.SampleStatus, statistics.Groups,
+                    statistics.Total, statistics.Page, statistics.PageSize));
+            }
+            catch (Exception error) when (error is not OperationCanceledException
+                && (PublicDeckReadUnavailable(error) || error is TimeoutException))
+            {
+                return PublicDeckStatisticsFailure();
+            }
         });
         _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
@@ -1515,6 +1602,29 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (ArgumentException error)
             {
                 return Results.BadRequest(new { message = error.Message });
+            }
+        });
+        _app.MapPut("/api/public-decks/{reference}/content/current", (HttpRequest request, string reference,
+            L12PublicDeckContentInput body) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var actor = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (actor is null) return Results.Unauthorized();
+            if (!TryPublicDeckContentWriteToken(request.Query, out var expectedReadToken))
+                return Results.BadRequest(new { message = "牌库内容写入参数无效" });
+            try
+            {
+                return PublicDeckContentWriteStatus(_platform.WritePublicDeckContentCurrent(_catalog, reference,
+                    expectedReadToken, actor, body));
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { message = error.Message });
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)
+                || error is L12DeploymentBarrierClosedException)
+            {
+                return PublicDeckContentWriteFailure();
             }
         });
         _app.MapDelete("/api/public-decks/{id}", (HttpRequest request, string id) =>

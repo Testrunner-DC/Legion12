@@ -16,7 +16,7 @@ import {createApp,h} from 'vue'
 import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
 import PublicDeckDetailPage from '/src/l12/site/PublicDeckDetailPage.vue'
 import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
-import {publicDeckApi,platformState} from '/src/l12/platform.ts'
+import {publicDeckApi,publicDeckReadApi,platformState} from '/src/l12/platform.ts'
 import '/src/style.css'
 platformState.account={id:'author',username:'验收作者',role:'player'}
 const catalog=await loadDeckCatalog()
@@ -36,10 +36,43 @@ const fixtureQuery=new URL(location.href).searchParams
 if(fixtureQuery.has('empty')){fixture.details.guide={buildIdea:'',opening:'',keyCards:'',commonSequence:'',substitutions:''};fixture.details.matchups=[];fixture.details.contentRevision=0;delete fixture.details.contentUpdatedAt}
 if(fixtureQuery.has('emptyStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'empty',groups:[]};fixture.details.matchBindingStatus='empty';fixture.details.matchBindingMessage='过去 90 天暂无可核验的公开版本对局统计。'}
 if(fixtureQuery.has('smallStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'insufficient',groups:[]};fixture.details.matchBindingStatus='insufficient';fixture.details.matchBindingMessage='样本不足：过去 90 天各主宰组合均不足 3 场，暂不展示胜率。'}
-publicDeckApi.get=async()=>fixture
+const generation={id:fixture.id,publicCode:fixture.publicCode,readToken:'a'.repeat(64),catalogVersion:'synthetic-catalog',policyVersion:1}
+const owner=!fixtureQuery.has('guest')
+if(!owner)platformState.account=null
+function bodyFor(deck,version){return {...deck,publicationId:owner?fixture.id:null,publicationVersion:owner?version:null}}
+function countsFor(deck){return {main:deck.cardIds.length,uncountedMain:0,morale:deck.moraleIds.length,special:deck.specialIds.length,bench:deck.benchIds?.length||0}}
+function metadataFor(version){return {version:version.version,name:version.name,masterId:version.deck.masterId,createdAt:version.createdAt,
+  counts:countsFor(version.deck),legal:true,legalityReason:null,environment:{status:'known',value:'2.5',reason:null},changes:version.changes}}
+function readCurrentFixture(){return {summary:{id:fixture.id,source:'public',name:fixture.deck.name,masterId:fixture.deck.masterId,
+  masterName:catalog.find(card=>card.id===fixture.deck.masterId)?.nameZh||'主宰',faction:'synthetic',author:fixture.author,
+  publicCode:fixture.publicCode,publicationVersion:owner?3:null,createdAt:fixture.createdAt,updatedAt:fixture.updatedAt,
+  counts:countsFor(fixture.deck),legal:true,legalityReason:null,environment:{status:'known',value:'2.5',reason:null},
+  views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:false,canEdit:owner,readToken:null},
+  version:3,deck:bodyFor(fixture.deck,3),guide:fixture.details.guide,matchups:fixture.details.matchups,
+  contentRevision:fixture.details.contentRevision,contentUpdatedAt:fixture.details.contentUpdatedAt||null,
+  readToken:generation.readToken,catalogVersion:generation.catalogVersion,policyVersion:generation.policyVersion}}
+publicDeckApi.get=async()=>{throw Error('Legacy full detail must not be requested')}
+publicDeckReadApi.current=async()=>readCurrentFixture()
+publicDeckReadApi.versions=async(_reference,page,pageSize,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact body pin')
+  return {...generation,items:fixture.details.versions.slice((page-1)*pageSize,page*pageSize).map(metadataFor),
+    total:fixture.details.versions.length,page,pageSize,canEdit:owner}
+}
+publicDeckReadApi.version=async(_reference,version,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact selected-body pin')
+  const selected=fixture.details.versions.find(item=>item.version===version)
+  if(!selected)throw Error('Unknown synthetic version')
+  return {...generation,metadata:metadataFor(selected),deck:bodyFor(selected.deck,version),canEdit:owner}
+}
+publicDeckReadApi.statistics=async(_reference,page,pageSize,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact statistics pin')
+  const statistics=fixture.details.matchStatistics
+  return {...generation,...statistics,groups:statistics.groups.slice((page-1)*pageSize,page*pageSize),
+    total:statistics.groups.length,page,pageSize}
+}
 publicDeckApi.counter=async(_reference,kind)=>{
   if(kind!=='view')throw new Error('这个页面夹具只授权浏览计数')
-  return {id:fixture.id,publicCode:fixture.publicCode,views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:fixture.liked,canEdit:fixture.ownerId===platformState.account?.id}
+  return {id:fixture.id,publicCode:fixture.publicCode,views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:fixture.liked,canEdit:owner}
 }
 const nativeFetch=window.fetch.bind(window)
 window.fetch=(input,init)=>{
@@ -89,6 +122,15 @@ try {
   await page.addInitScript(() => localStorage.setItem('l12-account', JSON.stringify({ id: 'author', username: '验收作者', role: 'player', createdAt: '', publicHistory: true })))
   const errors = []
   const failedRequests = []
+  const waitForSection = async section => page.waitForFunction(async id => {
+    const element = document.getElementById(`public-deck-${id}`)
+    if (!element) return false
+    const bounds = element.getBoundingClientRect()
+    if (bounds.top < -1 || bounds.top >= innerHeight || bounds.bottom <= 0) return false
+    for (let frame = 0; frame < 4; frame++) await new Promise(resolve => requestAnimationFrame(resolve))
+    const settled = element.getBoundingClientRect()
+    return Math.abs(settled.top - bounds.top) <= 0.5 && settled.top >= -1 && settled.top < innerHeight
+  }, section, { timeout: 5000 })
   page.on('pageerror', error => errors.push(error.message))
   page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || 'failed'}`))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
@@ -152,15 +194,19 @@ try {
     }
     for (const tab of ['指南', '对局建议', '版本', '对局', '起手']) {
       await page.getByRole('button', { name: tab, exact: true }).click()
+      await waitForSection({ 指南: 'guide', 对局建议: 'matchups', 版本: 'versions', 对局: 'matches', 起手: 'hands' }[tab])
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false,
         `${tab} page overflows at ${suffix(viewport)}`)
     }
     await page.getByRole('button', { name: '指南', exact: true }).click()
+    await waitForSection('guide')
     assert.match(await page.locator('[data-detail-section="guide"]').innerText(), /构筑思路[\s\S]*起手建议[\s\S]*常见展开/)
     await page.getByRole('button', { name: '对局建议', exact: true }).click()
+    await waitForSection('matchups')
     assert.equal(await page.locator('.matchup-city .deck-profile__portrait').count(), 3, `matchup avatar count mismatch at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `guide-${suffix(viewport)}.png`), fullPage: true })
     await page.getByRole('button', { name: '对局', exact: true }).click()
+    await waitForSection('matches')
     const statistics = await page.locator('[data-detail-section="matches"]').innerText()
     assert.match(statistics, /最近 90 天[\s\S]*版本 3[\s\S]*场次[\s\S]*12[\s\S]*胜率[\s\S]*58\.3%/)
     assert.equal(await page.locator('.match-stat-list article').count(), 2)
@@ -168,6 +214,7 @@ try {
     assert.doesNotMatch(statistics, /match-|bind|author|验收作者|账号|录像|回放/)
     await page.screenshot({ path: path.join(output, `statistics-${suffix(viewport)}.png`), fullPage: true })
     await page.getByRole('button', { name: '起手', exact: true }).click()
+    await waitForSection('hands')
     assert.equal(await page.locator('.opening-hand article').count(), 6, `opening hand count mismatch at ${suffix(viewport)}`)
     await page.screenshot({ path: path.join(output, `hands-${suffix(viewport)}.png`), fullPage: true })
     report.push({ viewport, guideHeight: await page.locator('[data-detail-section="guide"]').evaluate(element => element.scrollHeight) })
@@ -186,13 +233,27 @@ try {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?${scenario}=1`)
     await page.getByRole('button', { name: '对局', exact: true }).click()
+    await waitForSection('matches')
     const statistics = page.locator('[data-detail-section="matches"]')
     assert.equal(await statistics.locator('.match-stat-list article').count(), 0)
     const copy = await statistics.innerText()
-    if (scenario === 'smallStats') assert.match(copy, /样本不足[\s\S]*不足 3 场/)
-    else assert.match(copy, /过去 90 天暂无可核验/)
+    if (scenario === 'smallStats') assert.match(copy, /样本不足[\s\S]*3 场/)
+    else assert.match(copy, /(?:过去|最近) 90 天暂无可核验/)
     assert.equal(await statistics.locator('a').count(), 0)
     await page.screenshot({ path: path.join(output, `statistics-${scenario}-390x844.png`), fullPage: true })
+  }
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?guest=1`)
+    await page.getByRole('button', { name: '构筑', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '编辑牌库', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '删除公开牌库', exact: true }).count(), 0)
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    await page.locator('.match-stat-list article').first().waitFor()
+    await waitForSection('matches')
+    assert.equal(await page.locator('.match-stat-list article').count(), 2, 'Guest retains public anonymous statistics')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
+    await page.screenshot({ path: path.join(output, `guest-statistics-${suffix(viewport)}.png`), fullPage: true })
   }
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, errors }, null, 2))

@@ -1,7 +1,28 @@
 # Legion12 Bug 修复记录
 
+## REVIEW-20261007-PUBLIC-CONTENT-CONSUMERS｜薄保存及按需前端生命周期（限定已验，整批待）
+
+- 20:22最终Main分段验收：6601规则/1053平台全执行且失败跳过0，完整前端域r6 exit0，summary43/read65/原counter65全部纳正常build；真实六尺寸42图与加载12场景/12图通过。原联合Batch前端预算失败exit1保留；初始化/身份切换分阶段后仍cap3，真实mount三场景和原15+7预算负例保持，不加豁免。唯一`deck-summary-ui-20261007/main-independent-cu-family-acceptance.json` 7DAA3304绑定Main最新源，原可空类型与旧DTO/短码局部作用域夹具失败均保留。提交级干净Release/Git尚待，不部署或提前关闭线上Bug；下列数字42和待完整门禁为各时点历史。
+
+- 按已批准储存方案接真实Library发布与原ContentEditor保存入口，详情页仍只读；不新建重复UI、不把摘要/分页包装成旧全文DTO。旧380B DLL PUT旧content200含历史/统计、新current404真实RED保留，首错误id与编译沙箱准备错误不算产品RED。旧写wrapper保完整输出，新出口只返同事务已提交十字段，canonical幂等/三故障整体回滚/坏存储503/旧pin409、跨store代漂移503保持；子22与171、Main独立22绑定最终四源/AE0E/1554 DLL，2C8DD929回执。
+- CU3八源manifest7a0e3c0c及94abd91f delta精确接回，EABD04A5集成回执；Main完整type首两可空TS2322保留，仅补朴素错误fallback与confirmed身份/正整数revision守卫，type r2通过并同最终源65读取/65计数/42目录重跑。实际函数覆盖actor/token ABA、卸载/迟回、135历史/105统计分页、409明确刷新、并发输入、首次加载失败及网络不确定对账；同key早拒绝不递增首声明seq，serverConfirmed私牌缓存失败不自动重存/发布，草稿不丢。
+- 原UI354/统计11/浏览20/B1及动作56保持；旧source写法和夹具失败原日志保留。两列表/排序叶改实际summaryQuery六sort转发和Vue AST作者gate；捕获publish key改AST绑定/四错误反例，已迁AST按钮允许四OR状态并保原83/加7反例。统计三叶仅DTO名称保真适配，不假算A3迁移；新65/42进正常build，忽略目录不是测试依赖。真实六尺寸42图验证可见/权限/匿名统计，不冒称iOS真机/CDN或线上复测。完整Batch/Release/Git待，未部署/改维护/关闭线上Bug。
+
+## REVIEW-20261007-PUBLIC-PAGED-STATISTICS｜有界统计与匿名读取一致性（限定本地已验，消费者/整批待）
+
+- 属已批准按需存储方案，未据审查推断线上事故。冻结ACC6真实新statistics GET404 RED保留；首用户名夹具未发目标HTTP不计RED。新statistics仅90日时间窗、组至少3场、每页最多100；平台锁捕获head/pin/权限/排除集合后释放，matches单只读WAL快照聚合，再复核平台代际。计数不失效正文pin；匿名仍可读，坏显式认证401，变代409，不可证明503而非空数据，不声称跨库原子。
+- 同型检查涵盖current/版本分页、excluded/held/void/删除禁用、窗口/错误/Sandbox/缺主宰正常排除、旧统计105组分页等价、并发提交及重启。Main独立完整平台1031/1031 fail/skip0，含新pin23+statistics31全部，C662371F回执绑定12源码、380B/7017程序集和实际TRX。首过严预检已按原合法过滤修正，未降低真实坏绑定/破损存储守卫；编译、新夹具比较/observer/SQLite fixture锁失败均留存。
+- C-U2七前端源Main独立42+原65Focused已验，C-U3与薄内容保存仍待；新write后最终源须再跑整族门禁。未部署、不关闭线上报告，最终schema8同包出口/真实容量缺口不冒称完成。
+
+## REVIEW-20261007-PUBLIC-READ-PIN-REFERENCE｜按需消费者一致性前置（限定本地已验，整批待）
+
+- 属已批准储存方案的必要读取合同，不据此宣称新的线上事故。冻结2d发布DLL ACC6C54B真实HTTP/JSON证明：摘要200缺readToken、本人reference GET404；native缺依赖的首尝试未发HTTP，不计RED。新逐页public pin/官方null/计数不失效，认证本人≤100引用proof及空页SQL代际守卫、单次catalog hash/no-store、坏存储日期503/零正文展开保持。
+- 同型检查覆盖同族公开摘要、当前/历史读取、guide、计数、来源开关、权限、失效session与页外本人引用。Main实核8源及E3AD444E产品/421E71B5测试DLL和两TRX，独立同族118/118失败跳过0、含23新增；唯一`deck-query-pin-reference-20261007/main-independent-acceptance.json` A423319C。原编译、List引用比较/observer范围、旧排序夹具只改内存未同步SQL的失败留存；旧fixture同步合成事实并保全部原排序/巨大counter断言，产品name/time/head拒漂移没有放宽。
+- C-U2/C-U3与有界异步统计还未完成；新整批全平台/Batch/Release/Git仍待，未部署/启用/关闭线上Bug，不借旧2d绿色覆盖新源。格式与旧API保持，schema8最终同包出口仍为退出门槛。
+
 ## REVIEW-20261007-PUBLIC-COUNTER-LIFECYCLE｜标量结果与首次加载世代（限定本地已验，待Release/同步，未部署）
 
+- 最终应用同步：2d50451c完整干净Release6601规则/977平台失败跳过0、八stage及真实包内DLL ACC6C54B与测试DLL同源，同包两生命周期退出0/未知目录保留/两端监听0；origin/main精确读回。唯一`deck-counter-ui-20261007/accepted-release-2d50451c.json`。原准备误认archive根目录DLL而非publish/DLL失败记录保留，只改合成提取路径，不改产品/包。未部署、不据此关闭线上反馈；下面待Release措辞为历史过程。
 - 最终两源manifest e6ce2901/patch2b2f93cd已Main normalized逐一相等接回；子65包括原43与新22加载，真实Vue正例计入而非额外相加。早期63普通ref模型不能覆盖raw/proxy，实际Vue RED保留；最终只使用已落地entry.value捕获，严格正文/详情引用守卫不削弱。Main独立65、52门禁、354UI及原完整B1/golden235，全前端type/双环境/324+42通过。
 - Main真实页面6尺寸内容40截图、两尺寸×6加载场景12截图全部通过，错误0/动作锁最终释放：旧响应先于新页、旧成功/失败、新页正常、A-B-A、卸载、canonical单GET/单View。唯一`deck-counter-ui-20261007/main-independent-acceptance.json`绑定17源不变；原main-green-2因夹具把真实b当heading的外层失败，以及合成离开页误用runtime template，均保原日志并仅纠正夹具后复验。不伪称这些原整段exit0，不改产品来过错误夹具。页面使用合成目录，不冒称CDN卡图解码/真实iOS/线上事故/全部C-U完成。
 

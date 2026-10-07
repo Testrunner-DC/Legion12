@@ -82,8 +82,46 @@ const deckLibrary = fs.readFileSync(new URL('../src/l12/site/DeckLibraryPage.vue
 assert(deckLibrary.includes('useActionGate()')); checks += 1
 assert(deckLibrary.includes('publicDeckActionKey') && deckLibrary.includes('runAction(publicDeckActionKey(entry.id')); checks += 1
 assert(deckLibrary.includes('actionPending(publicDeckActionKey(entry.id))')); checks += 1
-assert(deckLibrary.includes('runAction(`public-deck:publish:${deck.name}`')); checks += 1
+assert(libraryPublishGateContract(deckLibrary)); checks += 1
 assert(deckLibrary.includes("actionPending(`public-deck:publish:${publishName}`)")); checks += 1
+
+function libraryPublishGateContract(source) {
+  const script = source.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)?.[1] ?? source
+  const file = ts.createSourceFile('library-publish.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  if (file.parseDiagnostics.length) return false
+  const operation = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'publishDeck')
+  if (!operation?.body) return false
+  const bindings = new Map(operation.body.statements.filter(ts.isVariableStatement)
+    .flatMap(node => node.declarationList.declarations).filter(node => ts.isIdentifier(node.name))
+    .map(node => [node.name.text, node.initializer]))
+  const calls = []
+  const visit = node => { if (ts.isCallExpression(node) && node.expression.getText(file) === 'runAction') calls.push(node); ts.forEachChild(node, visit) }
+  visit(operation.body)
+  if (calls.length !== 1 || calls[0].arguments.length !== 2 || !ts.isArrowFunction(calls[0].arguments[1])) return false
+  const alias = calls[0].arguments[0]
+  if (!ts.isIdentifier(alias)) return false
+  const key = bindings.get(alias.text)
+  if (!key || !ts.isTemplateExpression(key) || key.head.text !== 'public-deck:publish:'
+    || key.templateSpans.length !== 1 || key.templateSpans[0].expression.getText(file) !== 'deck.name'
+    || key.templateSpans[0].literal.text !== '') return false
+  const guardIndex = operation.body.statements.findIndex(node => ts.isIfStatement(node)
+    && ts.isCallExpression(node.expression) && node.expression.expression.getText(file) === 'actionPending'
+    && node.expression.arguments.length === 1 && node.expression.arguments[0].getText(file) === alias.text
+    && ts.isReturnStatement(node.thenStatement) && !node.elseStatement)
+  const epochIndex = operation.body.statements.findIndex(node => ts.isVariableStatement(node)
+    && node.declarationList.declarations.some(row => row.name.getText(file) === 'request'
+      && row.initializer?.getText(file) === '++publishRequestSequence'))
+  return guardIndex >= 0 && epochIndex > guardIndex
+}
+for (const [label, mutation] of [
+  ['wrong publication key', deckLibrary.replace('`public-deck:publish:${deck.name}`', '`public-deck:publish:${other.name}`')],
+  ['publication gate bypass', deckLibrary.replace('await runAction(actionKey, async () => {', 'await ungatedAction(actionKey, async () => {')],
+  ['missing early duplicate guard', deckLibrary.replace('if (actionPending(actionKey)) return', 'if (false) return')],
+  ['wrong early duplicate key', deckLibrary.replace('if (actionPending(actionKey)) return', 'if (actionPending(otherKey)) return')],
+]) {
+  assert.notEqual(mutation, deckLibrary, `Publication mutation must alter source: ${label}`)
+  assert.equal(libraryPublishGateContract(mutation), false, label); checks += 1
+}
 
 const publicDeck = fs.readFileSync(new URL('../src/l12/site/PublicDeckDetailPage.vue', import.meta.url), 'utf8')
 const publicDeckContent = fs.readFileSync(new URL('../src/l12/site/PublicDeckContentEditor.vue', import.meta.url), 'utf8')

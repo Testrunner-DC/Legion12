@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-public-deck-paged-consumers",
+  "date": "2026-10-07",
+  "audience": "players",
+  "title": "公开牌库浏览与内容保存",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "公开牌库保留完整筛选和排序，历史版本与对局统计可翻页查看；官方预组和自己的公开牌库来源可正确打开。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+        "opcgpro-vue/src/l12/site/publicDeckRead.ts",
+        "opcgpro-vue/src/l12/site/publicDeckSummary.ts",
+        "opcgpro-vue/src/l12/site/publicDeckEntry.ts",
+        "opcgpro-vue/src/l12/site/officialDeckReference.ts"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "指南和对局建议保存遇到冲突或断网时会保留当前输入；重复点击不会重复发布，保存期间继续输入的内容也不会被覆盖。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/PublicDeckContentEditor.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    }
+  ]
+}

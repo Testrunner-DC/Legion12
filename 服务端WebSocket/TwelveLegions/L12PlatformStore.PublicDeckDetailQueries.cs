@@ -27,7 +27,8 @@ public sealed partial class L12PlatformStore
     // The gate pins cache, permissions and policy. The first SQL read pins a single
     // WAL snapshot for the head, content and selected immutable version facts.
     private PublicDeckReadHead CapturePublicDeckReadHead(SqliteConnection connection, SqliteTransaction transaction,
-        PublishedDeckRow row, L12Catalog catalog, L12OperationsPolicySnapshot policy, L12AuthenticatedSession? viewer)
+        PublishedDeckRow row, L12Catalog catalog, L12OperationsPolicySnapshot policy, L12AuthenticatedSession? viewer,
+        string? frozenCatalogVersion = null)
     {
         using (var state = connection.CreateCommand())
         {
@@ -63,7 +64,7 @@ public sealed partial class L12PlatformStore
         if (revision < 0 || revision == 0 && (hash is not null || updated is not null || reader.GetBoolean(9))
             || revision > 0 && (hash is null || updated is null || hash.Length != 64 || !hash.All(Uri.IsHexDigit)))
             throw new InvalidDataException("公开牌库指南头无效");
-        var catalogVersion = LibraryCatalogVersion(catalog);
+        var catalogVersion = frozenCatalogVersion ?? LibraryCatalogVersion(catalog);
         var account = _data.Accounts.FirstOrDefault(item => item.Id == row.OwnerId);
         // Counters are intentionally excluded: opening a deck must not invalidate
         // its own pin. Viewer identity is consistency context, never authorization.

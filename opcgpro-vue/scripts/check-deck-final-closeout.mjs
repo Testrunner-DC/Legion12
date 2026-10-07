@@ -9,6 +9,7 @@ const share = read('../src/l12/site/deckShare.ts')
 const entry = read('../src/l12/site/publicDeckEntry.ts')
 const picker = read('../src/l12/SingleCardPicker.vue')
 const server = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.cs')
+const summary = read('../src/l12/site/publicDeckSummary.ts')
 
 const removedDetailCopy = [
   '版本永久保存；相同构筑重复发布不会制造新版本。',
@@ -19,9 +20,9 @@ const removedDetailCopy = [
 
 const checks = [
   ['详情页移除面向存储与实现的说明', removedDetailCopy.every(value => !detail.includes(value))],
-  ['详情页保留版本日期、匿名聚合统计和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('details.value.matchBindingMessage') && detail.includes(':sample="matchStatisticsSample"')],
+  ['详情页保留版本日期、匿名聚合统计和不可用原因', detail.includes('formatTime(version.createdAt)') && detail.includes('statisticsPage.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('statisticsNotice') && detail.includes('matchStatisticsItems') && detail.includes(':sample="matchStatisticsSample"')],
   ['详情页不再展示单局或回放入口', !detail.includes('match.matchId') && !detail.includes('match.playedAt') && !detail.includes('match.result') && !detail.includes('replayPath')],
-  ['编辑器与我的牌库复用同一公开实体核验', entry.includes('matchesPublishedDeckReference') && editor.includes('matchesPublishedDeckReference(currentDeck()') && library.includes('matchesPublishedDeckReference(deck, publishedDeck')],
+  ['编辑器与我的牌库保持同一公开实体核验语义', entry.includes('matchesPublishedDeckReference') && editor.includes('matchesPublishedDeckReference(currentDeck()') && library.includes('matchesOwnPublication(deck, candidate, actor)') && summary.includes('reference.id === deck.publicationId && reference.publicationVersion === deck.publicationVersion') && summary.includes('reference.ownerId === owner')],
   ['公开实体核验同时匹配ID、版本与作者', ['published.id === publicationId', 'published.deck.publicationVersion === publicationVersion', 'published.ownerId === ownerId'].every(value => entry.includes(value))],
   ['我的牌库分享图仅在核验后传入稳定公开链接且公开图剥离异画', library.includes('const publicUrl = await verifiedPublicDeckUrl(deck)') && library.includes('alternateArts: publicUrl ? [] : ownedAlternateArts.value') && library.includes('alternateArtSelections: {}')],
   ['当前牌表原画归入基础行、异画另起横幅且不再提供备卡按钮', editor.includes('originalAppearanceCount(entry.card,entry.count)') && editor.includes('class="deck-entry-row alternate-art-banner"') && !editor.includes('moveMainToBench(entry.card.id)')],

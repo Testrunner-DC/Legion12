@@ -1,9 +1,9 @@
 import type { SavedL12Deck } from '@/l12/decks'
-import type { PublishedDeck, PublicDeckCounterResult } from '@/l12/platform'
+import type { PublishedDeck, PublicDeckCounterResult, PublicDeckSummary } from '@/l12/platform'
 
 interface PublicDeckCounterTarget {
   id: string
-  publicCode?: string
+  publicCode?: string | null
   official?: boolean
   source?: string
   deck?: unknown
@@ -68,4 +68,9 @@ export function publicDeckRouteReference(published: PublishedDeck) {
   if (published.official && published.ownerId === 'official' && /^official-\d+$/.test(published.id))
     return published.id
   return published.publicCode?.trim() || ''
+}
+
+export function publicDeckSummaryReference(item: PublicDeckSummary) {
+  if (item.source === 'official') return /^official:[a-f0-9]{64}$/.test(item.id) && item.readToken === null ? item.id : ''
+  return item.publicCode && /^[a-f0-9]{64}$/.test(item.readToken ?? '') ? item.publicCode : ''
 }

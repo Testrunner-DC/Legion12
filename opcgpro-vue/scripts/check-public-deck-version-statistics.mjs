@@ -16,10 +16,13 @@ const checks = [
   ['查询结果不返回单局与录像', recorder.includes('PublicDeckVersionStatisticsAsync') && !recorder.includes('PublicDeckMatchesAsync') && !recorder.includes('viewerAccountId') && !recorder.includes('ReplayPath') && !recorder.includes('ListRecentPlayerReplayMatchesAsync')],
   ['公开接口对所有访问者复用同一匿名统计', (server.includes('PublicDeckDetailsWithStatisticsAsync(item.Id)') || server.includes('PublicDeckDetailsWithStatisticsAsync(published.Id)')) && !server.includes('PublicDeckDetailsWithMatchesAsync') && server.includes('MatchStatistics = statistics')],
   ['前端数据契约没有单局与录像字段', platform.includes('PublicDeckMatchStatistics') && platform.includes('PublicDeckVersionStatistic') && !platform.includes('matchId: string; version: number; playedAt') && !platform.includes('replayPath: string | null')],
-  ['页面只显示聚合量与时间范围', detail.includes('details.matchStatistics.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('matchStatisticsRange')],
+  // These leaves preserve the original anonymous-display risks after the DTO
+  // split. The mandatory read-consumer suite executes real validators and
+  // component functions for empty/insufficient/error, pagination and stale pins.
+  ['页面只显示聚合量与时间范围', detail.includes('statisticsPage.groups') && detail.includes('stat.games') && detail.includes('formatRate(stat.winRate)') && detail.includes('matchStatisticsRange')],
   ['有公开组时仍显示绑定和门槛说明', detail.includes('matchStatisticsSample')
-    && detail.includes('details.value.matchBindingMessage')
-    && detail.includes('可展示 ${details.value.matchStatistics.games} 场')
+    && detail.includes('matchStatisticsItems') && detail.includes('statisticsPage.value')
+    && detail.includes('可展示 ${statistics.games} 场')
     && detail.includes('每组至少 3 场才公开')],
   ['低样本提示不泄漏隐藏组数量', detail.includes('低于门槛的组不会返回场次、胜负或胜率')
     && !detail.includes('candidateGroups') && !detail.includes('hiddenGroupGames')],

@@ -10,7 +10,7 @@ import { hasMasterTitleBrandImage } from './ranked-brand-template-contract.mjs'
 import './test-a3-ranked-brand-template-contract.mjs'
 import { deckSnapshotGroups, deckSnapshotTemplateContract } from './deck-snapshot-template-contract.mjs'
 import './test-a3-deck-snapshot-template-contract.mjs'
-import { publicDeckConsumerTemplateContract } from './public-deck-consumer-template-contract.mjs'
+import { publicDeckConsumerTemplateContract, publicDeckAuthorActionsContract, publicDeckServerSummarySortContract } from './public-deck-consumer-template-contract.mjs'
 import './test-a3-public-deck-consumer-template-contract.mjs'
 import { publicDeckCounterBindingsContract } from './test-public-deck-counter-results.mjs'
 
@@ -968,7 +968,7 @@ const contracts = [
   [openingHandEligibility.includes("构筑时不计入卡组数量") && decks.includes('bypassesNormalDrawDeck(card)')
     && decks.includes("`${counted}${uncounted ? `(${uncounted})` : ''}`"), '不计入构筑上下限的卡牌必须使用通用规则识别，并以 40(3) 形式单列数量'],
   [deckEditor.includes('publicDeckApi.publish') && deckEditor.includes("publicationId.value = ''") && deckEditor.includes("preservePublication = false"), '牌库编辑器须支持公开/更新公开牌库，并在新建、另存或切换本地牌库时隔离公开版本身份'],
-  [deckLibrary.includes('publicDeckApi.list') && publicDeckDetail.includes('编辑') && publicDeckDetail.includes('删除') && publicDeckDetail.includes('ownerId === platformState.account?.id'), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
+  [publicDeckServerSummarySortContract(deckLibrary) && publicDeckAuthorActionsContract(publicDeckDetail), '公开牌库必须由服务端持久化，且仅作者显示编辑与删除入口'],
   [publicDeckConsumerContract.sharedBrowserConsumer && publicDeckConsumerContract.uniqueDetailOwnership
     && publicDeckDetail.includes("add(entry.value.deck.cardIds, 'main')") && publicDeckDetail.includes("add(entry.value.deck.moraleIds, 'morale')")
     && publicDeckDetail.includes("add(entry.value.deck.specialIds ?? [], 'special')") && publicDeckDetail.includes('automaticExtraCardIdsForMaster')
@@ -1026,8 +1026,7 @@ const contracts = [
     && platform.includes("sort?: 'copies' | 'likes' | 'views' | 'latest'")
     && wsServer.includes('/api/public-decks/{id}/view')
     && publicDeckCounterBindingsContract({ detail: publicDeckDetail, library: deckLibrary, helper: read('../src/l12/site/publicDeckEntry.ts') })
-    && deckLibrary.includes('b.copies - a.copies') && deckLibrary.includes('b.likes - a.likes')
-    && deckLibrary.includes('(b.views ?? 0) - (a.views ?? 0)') && deckLibrary.includes('b.createdAt.localeCompare(a.createdAt)')
+    && publicDeckServerSummarySortContract(deckLibrary)
     && deckLibrary.includes('<option value="copies">最多复制</option>')
     && deckLibrary.includes('<option value="likes">最多点赞</option>')
     && deckLibrary.includes('<option value="views">最多浏览</option>')

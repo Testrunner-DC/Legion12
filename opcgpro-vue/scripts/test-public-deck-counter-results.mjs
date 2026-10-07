@@ -32,6 +32,10 @@ function evaluated(source, dependencies, expression) {
   return run(...Object.values(dependencies), exports)
 }
 
+function productionModule(relative) {
+  return evaluated(read(relative), {}, 'exports')
+}
+
 // This replaces only the previous counter-preservation leaf. The surrounding
 // browser geometry, permissions and construction-consumer contracts remain.
 export function publicDeckCounterBindingsContract({ detail, library, helper }) {
@@ -133,7 +137,7 @@ function pageRuntime(kind, helper, baseline = false) {
     deckErrorBelongsToCurrentAccount: () => true,
     updatePublished: value => { published.value[0] = value },
   }
-  const names = ['captureCounterContext', 'recordInitialView', 'toggleLike', 'copyToMine'].filter(name => declarations.has(name))
+  const names = ['publicDeckReference', 'captureCounterContext', 'recordInitialView', 'toggleLike', 'copyToMine'].filter(name => declarations.has(name))
   const code = 'let counterDocumentEpoch = 0, libraryCounterDocumentEpoch = 0;\n' + names.map(name => declarations.get(name)).join('\n')
   const methods = evaluated(code, dependencies, `{ ${names.join(',')}, advanceDocument: () => { counterDocumentEpoch++; libraryCounterDocumentEpoch++ } }`)
   const current = () => kind === 'detail' ? entry.value : published.value[0]
@@ -181,9 +185,12 @@ function detailLoadRuntime(helper, vueRefs = false) {
   const source = process.env.L12_DETAIL_LOAD_BASELINE_SOURCE
     ? fs.readFileSync(process.env.L12_DETAIL_LOAD_BASELINE_SOURCE, 'utf8') : read('src/l12/site/PublicDeckDetailPage.vue')
   const ts = typescript(), file = parsed(source), declarations = functions(source)
+  const readHelper = productionModule('src/l12/site/publicDeckRead.ts')
+  const summaryHelper = productionModule('src/l12/site/publicDeckSummary.ts')
+  const officialHelper = productionModule('src/l12/site/officialDeckReference.ts')
   const vue = vueRefs ? requireDependency('vue') : null
   const makeRef = value => vue ? vue.ref(value) : { value }
-  const entry = makeRef(null), catalog = makeRef([]), notice = makeRef(''), loading = makeRef(true)
+  const entry = makeRef(null), catalog = makeRef([]), notice = makeRef(''), loading = makeRef(true), refreshRequired = makeRef(false)
   const selectedCard = makeRef(null), openingHandIds = makeRef([]), imagePreview = makeRef(null)
   const makeReactive = value => vue ? vue.reactive(value) : value
   const platformState = makeReactive({ account: { id: 'account-A' }, token: 'auth-A' }), actor = frozenActorGuard(platformState)
@@ -205,13 +212,23 @@ function detailLoadRuntime(helper, vueRefs = false) {
   function applyRoute(id, fullPath = `/decks/${id}`, name = 'public-deck-detail') {
     route.params = { deckId: id }; route.fullPath = fullPath; route.name = name; trigger()
   }
-  const publication = (code = 'A', label = code) => ({ id: `pub-${code}`, publicCode: code, ownerId: 'account-A',
-    author: 'author', deck: { name: label, masterId: 'M', cardIds: ['C'], moraleIds: [], specialIds: [], updatedAt: 'captured' },
-    views: 0, likes: 0, copies: 0, liked: false, createdAt: 'captured', updatedAt: 'captured',
-    details: { guide: { buildIdea: 'real guide' }, versions: [{ version: 1 }], matchStatistics: { games: 3 } } })
+  const readToken = 'a'.repeat(64)
+  const publication = (code = 'A', label = code) => {
+    const owner = platformState.account?.id === 'account-A'
+    return { summary: { id: `pub-${code}`, source: 'public', name: label, masterId: 'M', masterName: 'master', faction: 'faction',
+      author: 'author', publicCode: code, publicationVersion: owner ? 1 : null,
+      createdAt: '2026-10-07T00:00:00Z', updatedAt: '2026-10-07T00:00:00Z',
+      counts: { main: 1, uncountedMain: 0, morale: 0, special: 0, bench: 0 }, legal: true, legalityReason: null,
+      environment: { status: 'known', value: '2.5', reason: null }, views: 0, likes: 0, copies: 0,
+      viewerLiked: false, canEdit: owner, readToken: null }, version: 1,
+      deck: { name: label, masterId: 'M', cardIds: ['C'], moraleIds: [], specialIds: [], updatedAt: '2026-10-07T00:00:00Z',
+        publicationId: owner ? `pub-${code}` : null, publicationVersion: owner ? 1 : null },
+      guide: { buildIdea: 'real guide', opening: '', keyCards: '', commonSequence: '', substitutions: '' }, matchups: [],
+      contentRevision: 1, contentUpdatedAt: '2026-10-07T00:00:00Z', readToken, catalogVersion: 'catalog-1', policyVersion: 1 }
+  }
   const byId = { get value() { return new Map(catalog.value.map(card => [card.id, card])) } }
   const master = { get value() { return entry.value ? byId.value.get(entry.value.deck.masterId) : null } }
-  const dependencies = { ...helper, entry, catalog, notice, loading, selectedCard, openingHandIds, imagePreview,
+  const dependencies = { ...helper, entry, catalog, notice, loading, refreshRequired, selectedCard, openingHandIds, imagePreview,
     platformState, route, byId, master, captureDeckAccountGuard: actor.capture,
     publicDeckActionKey: (id, account = platformState.account?.id ?? 'anonymous') => `public-deck:${account}:${id}`,
     actionPending: key => active.has(key),
@@ -221,11 +238,17 @@ function detailLoadRuntime(helper, vueRefs = false) {
     sessionStorage: { getItem: key => markers.get(key) ?? null, setItem: (key, value) => markers.set(key, value), removeItem: key => markers.delete(key) },
     loadDeckCatalog: () => { const row = deferred(); catalogs.push(row); return row.promise },
     loadOfficialPresetDecks: () => { const row = deferred(); presets.push(row); return row.promise },
+    publicDeckReadApi: {
+      current: (reference, expectedReadToken) => { const row = { reference, expectedReadToken, ...deferred() }; gets.push(row); return row.promise },
+    },
     publicDeckApi: {
-      get: reference => { const row = { reference, ...deferred() }; gets.push(row); return row.promise },
       counter: async (reference, kind) => { posts.push([reference, kind]); return { id: `pub-${reference}`, publicCode: reference,
         views: 1, likes: 0, copies: 0, viewerLiked: false, canEdit: true } },
     },
+    settlePublicDeckRead: readHelper.settlePublicDeckRead, validatePublicDeckCurrent: readHelper.validatePublicDeckCurrent,
+    toPublicDeckCurrentEntry: readHelper.toPublicDeckCurrentEntry, consumeSummaryOpen: summaryHelper.consumeSummaryOpen,
+    resolveOfficialDeck: officialHelper.resolveOfficialDeck, invalidateReadSections: () => {},
+    loadVersionPage: async () => {}, loadStatisticsPage: async () => {},
     router: {
       resolve: target => ({ fullPath: targetPath(target) }),
       replace: target => {
@@ -247,7 +270,8 @@ function detailLoadRuntime(helper, vueRefs = false) {
     && (['onMounted', 'onBeforeUnmount'].includes(node.expression.expression.getText(file))
       || node.expression.expression.getText(file) === 'watch' && node.expression.arguments[0]?.getText(file).includes('route.fullPath')))
     .map(node => node.getText(file))
-  const names = ['loadDetail', 'captureCounterContext', 'recordInitialView', 'emptyGuide', 'emptyDetails'].filter(name => declarations.has(name))
+  const names = ['publicDeckReference', 'singleRouteQuery', 'captureInitialReadContext', 'officialDetailEntry', 'loadDetail',
+    'captureCounterContext', 'recordInitialView', 'emptyGuide'].filter(name => declarations.has(name))
   evaluated([...variables, ...names.map(name => declarations.get(name)), ...hooks].join('\n'), dependencies, 'undefined')
   return { entry, catalog, notice, loading, selectedCard, catalogs, gets, presets, replaces, posts, publication, route, vue,
     mount: () => { for (const callback of mounts) callback() },
@@ -337,7 +361,7 @@ async function loadLifecycleChecks(check, helper) {
     row.gets[0].resolve(owned); await flushLoad(); assert.equal(row.entry.value.deck.publicationVersion, 1)
     row.setActor('account-B', 'auth-B'); assert.equal(row.entry.value, null)
     row.resolveCatalog(1); await flushLoad(); row.gets[1].resolve(row.publication('A', 'other viewer')); await flushLoad()
-    assert.equal(row.entry.value.deck.publicationVersion, undefined); assert.equal(row.entry.value.deck.name, 'other viewer')
+    assert.equal(row.entry.value.deck.publicationVersion, null); assert.equal(row.entry.value.deck.name, 'other viewer')
   })
   for (const stage of ['catalog', 'get']) await check(`load: late ${stage} failure never clears new B loading or notice`, async () => {
     const row = detailLoadRuntime(helper); row.mount()
