@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { createDeckImageBlob, decodeDeckCode, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { deckCountSummary, deleteDeck as deleteSavedDeck, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, saveDeck, validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type EffectiveOperationsPolicy, type PublishedDeck, type PublicDeckGuide, type PublicDeckMatchup } from '@/l12/platform'
 import { useRoute, useRouter } from 'vue-router'
 import DeckProfile from '@/l12/DeckProfile.vue'
@@ -61,6 +61,27 @@ const route = useRoute()
 const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
 let hotDeckResizeObserver: ResizeObserver | null = null
+let libraryAccountEpoch = 0
+function libraryContext() { return { account: platformState.account?.id, token: platformState.token, epoch: libraryAccountEpoch, route: route.fullPath, tab: tab.value } }
+function libraryContextCurrent(context: ReturnType<typeof libraryContext>, document = true) {
+  return context.account === platformState.account?.id && context.token === platformState.token && context.epoch === libraryAccountEpoch
+    && (!document || context.route === route.fullPath && context.tab === tab.value)
+}
+watch(() => [platformState.account?.id, platformState.token], () => {
+  libraryAccountEpoch++
+  const context = libraryContext(), snapshot = loadSavedDecksState()
+  saved.value = snapshot.status === 'unavailable' ? {} : snapshot.decks
+  ownedAlternateArts.value = []
+  deletingMine.value = ''; publishName.value = ''; showPublish.value = false
+  closeImagePreview()
+  notice.value = snapshot.status === 'unavailable' ? snapshot.error.message : ''
+  if (snapshot.status === 'unavailable') return
+  void Promise.all([ensureOfficialPrebuiltDecks(), platformState.account ? alternateArtApi.mine() : Promise.resolve([] as AlternateArt[])])
+    .then(([decks, arts]) => { if (libraryContextCurrent(context, false)) { saved.value = decks; ownedAlternateArts.value = arts } }).catch(error => {
+    if (libraryContextCurrent(context, false) && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '牌库暂不可读取'
+  })
+}, { flush: 'sync' })
+
 const publicDeckActionKey = (deckId: string, accountId = platformState.account?.id ?? 'anonymous') =>
   `public-deck:${accountId}:${deckId}`
 const editorLink = (deckName?: string, publicationId?: string, personalDeckId?: string) => ({
@@ -101,15 +122,23 @@ onBeforeUnmount(() => {
 })
 onMounted(async () => {
   restoreFiltersFromRoute()
+  const context = libraryContext()
   try {
-    ;[catalog.value, saved.value, ownedAlternateArts.value] = await Promise.all([
-      loadDeckCatalog(),
-      ensureOfficialPrebuiltDecks(),
+    const [cards, decks, arts] = await Promise.all([
+      loadDeckCatalog().then(cards => { catalog.value = cards; return cards }),
+      ensureOfficialPrebuiltDecks().catch(error => {
+        if (libraryContextCurrent(context, false) && deckErrorBelongsToCurrentAccount(error))
+          notice.value = error instanceof Error ? error.message : '本机牌库暂不可读取'
+        return null
+      }),
       platformState.account ? alternateArtApi.mine().catch(() => [] as AlternateArt[]) : Promise.resolve([] as AlternateArt[]),
     ])
+    if (!libraryContextCurrent(context, false)) return
+    catalog.value = cards; saved.value = decks ?? {}; ownedAlternateArts.value = arts
     const [presets, community, policy] = await Promise.all([
       loadOfficialPresetDecks(), publicDeckApi.list(), getEffectiveOperationsPolicy().catch(() => null),
     ])
+    if (!libraryContextCurrent(context, false)) return
     operationsPolicy.value = policy
     published.value = [
       ...presets.map((deck, index) => ({ id: `official-${index}`, ownerId: 'official', deck: { ...deck, specialIds: deck.specialIds ?? [], updatedAt: '' }, author: '十二军团官方预组', views: 0, likes: 0, copies: 0, liked: false, official: true, createdAt: '', updatedAt: '' })),
@@ -119,7 +148,8 @@ onMounted(async () => {
     const savedScroll = sessionStorage.getItem(`l12:deck-library:scroll:${route.fullPath}`)
     if (savedScroll) listScrollHost()?.scrollTo({ top: Number(savedScroll) || 0 })
   } catch (error) {
-    notice.value = error instanceof Error ? error.message : '牌库页面加载失败'
+    if (libraryContextCurrent(context, false) && deckErrorBelongsToCurrentAccount(error))
+      notice.value = error instanceof Error ? error.message : '牌库页面加载失败'
   }
 })
 
@@ -215,21 +245,24 @@ function uniqueName(base: string) {
   }
 }
 async function copyToMine(entry: PublishedDeck) {
+  const context = libraryContext()
   const accountId = platformState.account?.id
   await runAction(publicDeckActionKey(entry.id, accountId), async () => {
+    if (!libraryContextCurrent(context)) return
     const deck = { ...entry.deck, id: undefined, revision: undefined, name: uniqueName(entry.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.deck.cardIds], moraleIds: [...entry.deck.moraleIds], specialIds: [...(entry.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
     try {
       const confirmed = await saveDeck(deck)
-      if (accountId === platformState.account?.id) {
+      if (accountId === platformState.account?.id && libraryContextCurrent(context)) {
         saved.value = loadSavedDecks()
         notice.value = `已复制《${confirmed.name}》到我的牌库`
       }
       if (!entry.official) {
         const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry)).catch(() => null)
-        if (updated && accountId === platformState.account?.id) updatePublished(updated)
+        if (updated && accountId === platformState.account?.id && libraryContextCurrent(context)) updatePublished(updated)
       }
     } catch (error) {
-      if (accountId === platformState.account?.id)
+      if (!deckErrorBelongsToCurrentAccount(error)) return
+      if (accountId === platformState.account?.id && libraryContextCurrent(context))
         notice.value = error instanceof Error ? error.message : '复制到我的牌库失败'
     }
   })
@@ -242,6 +275,7 @@ function publishedCopyFor(deck: SavedL12Deck) {
   return published.value.find(item => !item.official && item.ownerId === platformState.account?.id && item.id === deck.publicationId)
 }
 async function deleteMine(deck: SavedL12Deck) {
+  const context = libraryContext()
   if (deletingMine.value) return
   const stillPublic = publishedCopyFor(deck)
   const message = stillPublic
@@ -251,22 +285,26 @@ async function deleteMine(deck: SavedL12Deck) {
   deletingMine.value = deck.name
   try {
     await deleteSavedDeck(deck)
+    if (!libraryContextCurrent(context)) return
     saved.value = loadSavedDecks()
     notice.value = stillPublic ? `已删除本地牌库《${deck.name}》，公开版本保持不变` : `已删除《${deck.name}》`
   } catch (error) {
+    if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return
     notice.value = error instanceof Error ? error.message : '删除牌库失败'
   } finally {
-    deletingMine.value = ''
+    if (libraryContextCurrent(context, false)) deletingMine.value = ''
   }
 }
 async function duplicateMine(deck: SavedL12Deck) {
+  const context = libraryContext()
   try {
     const copy = { ...deck, id: undefined, revision: undefined,
       name: uniqueName(`${deck.name} 副本`), publicationId: null, publicationVersion: null }
     await saveDeck(copy)
+    if (!libraryContextCurrent(context)) return
     saved.value = loadSavedDecks()
     notice.value = `已复制牌库《${copy.name}》`
-  } catch (error) { notice.value = error instanceof Error ? error.message : '复制牌库失败' }
+  } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; notice.value = error instanceof Error ? error.message : '复制牌库失败' }
 }
 async function openDeck(entry: PublishedDeck) {
   const deckId = publicDeckRouteReference(entry)
@@ -313,6 +351,7 @@ async function toggleLike(entry: PublishedDeck) {
   })
 }
 async function publishDeck() {
+  const context = libraryContext()
   const deck = saved.value[publishName.value]
   if (!deck) return
   if (!platformState.account) { notice.value = '请先登录账号再公开牌库'; return }
@@ -321,26 +360,31 @@ async function publishDeck() {
   await runAction(`public-deck:publish:${deck.name}`, async () => {
     try {
       const entry = await publicDeckApi.publish(deck)
+      if (!libraryContextCurrent(context)) return
       await saveDeck({ ...deck, publicationId: entry.deck.publicationId, publicationVersion: entry.deck.publicationVersion })
+      if (!libraryContextCurrent(context)) return
       saved.value = loadSavedDecks()
       const hasContent = Object.values(publishGuide.value).some(value => value.trim()) || publishMatchups.value.length > 0
       if (hasContent) entry.details = await publicDeckApi.updateContent(publicDeckRouteReference(entry), publishGuide.value, publishMatchups.value)
+      if (!libraryContextCurrent(context)) return
       if (published.value.some(item => item.id === entry.id)) updatePublished(entry)
       else published.value.push(entry)
       showPublish.value = false; tab.value = 'plaza'; notice.value = hasContent ? '牌库与公开内容已同步发布' : '牌库已公开到公开牌库'
-    } catch (error) { notice.value = error instanceof Error ? error.message : '公开牌库失败' }
+    } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; notice.value = error instanceof Error ? error.message : '公开牌库失败' }
   })
 }
 async function editPublished(entry: PublishedDeck) {
+  const context = libraryContext()
   const existing = Object.values(saved.value).find(deck => deck.publicationId === entry.id)
   const deck = { ...entry.deck, id: existing?.id, revision: existing?.revision,
     name: existing?.name ?? uniqueName(entry.deck.name), cardIds: [...entry.deck.cardIds],
     moraleIds: [...entry.deck.moraleIds], specialIds: [...entry.deck.specialIds] }
   try {
     const confirmed = await saveDeck(deck)
+    if (!libraryContextCurrent(context)) return
     saved.value = loadSavedDecks()
     await router.push(editorLink(confirmed.name, publicDeckRouteReference(entry), confirmed.id))
-  } catch (error) { notice.value = error instanceof Error ? error.message : '牌库保存失败' }
+  } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; notice.value = error instanceof Error ? error.message : '牌库保存失败' }
 }
 async function deletePublished(entry: PublishedDeck) {
   if (!window.confirm('确定删除这个公开牌库？删除后将不再显示在公开牌库。')) return
@@ -397,6 +441,7 @@ async function copyPreviewImage() {
   } catch { notice.value = '当前浏览器不支持复制图片，请使用下载' }
 }
 async function importFromCode() {
+  const context = libraryContext()
   importError.value = ''
   if (!importCode.value.trim()) {
     importError.value = '请粘贴牌库码'
@@ -408,9 +453,10 @@ async function importFromCode() {
     const error = validateDeck(deck, catalog.value)
     if (error) throw new Error(error)
     const confirmed = await saveDeck(deck)
+    if (!libraryContextCurrent(context)) return
     saved.value = loadSavedDecks(); importCode.value = ''; minePage.value = 1; notice.value = `已导入《${confirmed.name}》`
     closeImportModal()
-  } catch (error) { importError.value = error instanceof Error ? error.message : '牌库码导入失败' }
+  } catch (error) { if (!libraryContextCurrent(context) || !deckErrorBelongsToCurrentAccount(error)) return; importError.value = error instanceof Error ? error.message : '牌库码导入失败' }
 }
 async function openImportModal() {
   importError.value = ''

@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import ts from 'typescript'
 
 const shareSource = fs.readFileSync(new URL('../src/l12/site/deckShare.ts', import.meta.url), 'utf8')
-const codecSource = shareSource.slice(shareSource.indexOf('const DECK_CODE_ALPHABET'), shareSource.indexOf('async function loadImage'))
+assert.match(shareSource, /export \{ encodeDeckCode, decodeDeckCode \} from '\.\.\/deckCodeCodec'/, 'Share exports must point to the extracted production codec')
+const codecSource = fs.readFileSync(new URL('../src/l12/deckCodeCodec.ts', import.meta.url), 'utf8')
 const javascript = ts.transpileModule(codecSource, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText
@@ -31,6 +32,9 @@ function counts(values) {
 }
 
 const code = encodeDeckCode(deck)
+const GOLDEN = 'L12D2-WXY3D-ZYPC3-JXSD7-VBEXD-GZFAV-2HCPV-GJGRJ-SP8Y5-WK59X-PQBFF-DNSQZ-HEZ23-K2CGS-7XZYJ-NT22Z-SCTNE-J8XK5-6TR7C-XC4PZ-DK9BG-62S9J-PN86K-RBTH5-RBGJP-RVD98-GXC49-MPFWG-SP8X3-6ZB54-MW2EG-7TCG9-W9XF7-2WANS-2EDK9-5HQJ3-7EKAK-QH5SN-HRD43-7'
+assert.equal(code, GOLDEN, 'Extracting the codec must preserve the exact pre-change L12D2 bytes')
+assert.notEqual(encodeDeckCode({ ...deck, name: '另一名称' }), GOLDEN, 'Share codes retain their existing name-bearing protocol')
 assert.match(code, /^L12D2-[23456789ABCDEFGHJKMNPQRSTVWXYZ-]+$/)
 assert.equal(encodeDeckCode({ ...deck, cardIds: [...deck.cardIds].reverse(), moraleIds: [...deck.moraleIds].reverse() }), code)
 assert.ok(code.length < legacyCode(deck).length * 0.55, `新牌库码未显著缩短：${code.length}/${legacyCode(deck).length}`)
@@ -61,5 +65,13 @@ assert.equal(entryModule.publicDeckRouteReference({ id: 'official-0', ownerId: '
 assert.ok(librarySource.includes('publicDeckRouteReference(entry)'))
 assert.ok(detailSource.includes('publicDeckRouteReference(entry.value)'))
 assert.ok(detailSource.includes("router.replace({ name: 'public-deck-detail', params: { deckId: canonicalReference }"))
+
+
+assert.equal(decodeDeckCode('L12D2-' + code.slice(6).toLowerCase().replaceAll('-', ' - \n')).masterId, deck.masterId)
+assert.equal(decodeDeckCode(encodeDeckCode({ ...deck, cardIds: Array(512).fill('PROMO-X') })).cardIds.length, 512)
+assert.throws(() => decodeDeckCode(encodeDeckCode({ ...deck, cardIds: Array(513).fill('PROMO-X') })), /数量无效/)
+assert.throws(() => decodeDeckCode(encodeDeckCode({ ...deck, cardIds: Array.from({ length: 257 }, (_, index) => 'P-' + index) })), /种类超出/)
+assert.throws(() => decodeDeckCode(encodeDeckCode({ ...deck, masterId: 'X'.repeat(129) })), /文本超出/)
+assert.throws(() => decodeDeckCode(encodeDeckCode({ ...deck, masterId: '' })), /内容不完整/)
 
 console.log(`短编码回归通过：L12D2 ${code.length} 字符，旧 L12D1 ${legacyCode(deck).length} 字符已按产品裁定失效，大小写/校验通过`)

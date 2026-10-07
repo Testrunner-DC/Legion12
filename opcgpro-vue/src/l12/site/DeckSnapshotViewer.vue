@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { platformState } from '@/l12/platform'
 import { encodeDeckCode, downloadDeckImage } from './deckShare'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
-import { loadSavedDecks, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { loadSavedDecks, saveDeck, deckErrorBelongsToCurrentAccount, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 
 const props = withDefaults(defineProps<{
   entries: ConstructionEntry[]
@@ -43,9 +44,15 @@ async function exportImage() {
 }
 async function copyToLibrary() {
   if (!deck.value) return
-  const copy = { ...deck.value, name: uniqueDeckName(deck.value.name), updatedAt: new Date().toISOString() }
-  try { const saved = await saveDeck(copy); emit('notice', `已复制《${saved.name}》到我的牌库`) }
-  catch (error) { emit('notice', error instanceof Error ? error.message : '复制到我的牌库失败') }
+  const account = platformState.account?.id, token = platformState.token
+  try {
+    const copy = { ...deck.value, name: uniqueDeckName(deck.value.name), updatedAt: new Date().toISOString() }
+    const saved = await saveDeck(copy)
+    if (account === platformState.account?.id && token === platformState.token) emit('notice', `已复制《${saved.name}》到我的牌库`)
+  } catch (error) {
+    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+      emit('notice', error instanceof Error ? error.message : '复制到我的牌库失败')
+  }
 }
 </script>
 

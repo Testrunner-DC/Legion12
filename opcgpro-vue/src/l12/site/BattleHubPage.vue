@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { cancelMatchmaking, connect, createRoom, joinMatchmaking, joinRoom, l12State, leaveRoom, selectCustomDeck, setReady, spectateRoom, updateRoomOptions, type RoomOptions } from '@/l12/net'
 import { deckCountSummary, ensureOfficialPrebuiltDecks, L12_DECK_SELECTION_SCOPES, loadDeckCatalog,
-  loadSavedDecks, loadSelectedDeckName, saveSelectedDeckName, validateDeck, type DeckCard,
+  loadSavedDecksState, deckErrorBelongsToCurrentAccount, loadSelectedDeckName, saveSelectedDeckName, validateDeck, type DeckCard,
   type L12DeckSelectionScope, type SavedL12Deck } from '@/l12/decks'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
@@ -24,7 +24,16 @@ const maintenanceView = computed(() => operationsPolicy.value
   ? maintenanceCountdown(operationsPolicy.value.maintenance, policyNow.value)
   : null)
 const maintenanceActive = computed(() => operationsPolicy.value?.maintenance.entryBlocked === true)
-const customDecks = ref(loadSavedDecks())
+function visibleDecks(): Record<string, SavedL12Deck> {
+  const snapshot = loadSavedDecksState()
+  if (snapshot.status === 'unavailable') { l12State.notice = snapshot.error.message; return {} }
+  return snapshot.decks
+}
+const customDecks = ref(visibleDecks())
+watch(() => [platformState.account?.id, platformState.token], () => {
+  customDecks.value = visibleDecks()
+  try { hydrateDeckSelections() } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择暂不可读取' }
+}, { flush: 'sync' })
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const detailCard = ref<DeckCard | null>(null)
@@ -115,9 +124,11 @@ function openDeckSelector() {
   deckSelectorOpen.value = true
 }
 function confirmDeckSelection(deck: SavedL12Deck) {
-  selectedDeckNames.value[deckSelectorScope.value] = deck.name
-  saveSelectedDeckName(deckSelectorScope.value, deck.name)
-  deckSelectorOpen.value = false
+  try {
+    saveSelectedDeckName(deckSelectorScope.value, deck.name)
+    selectedDeckNames.value[deckSelectorScope.value] = deck.name
+    deckSelectorOpen.value = false
+  } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择保存失败' }
 }
 function visibleDeckLabel(index: number) {
   const player = l12State.room?.players[index]
@@ -183,8 +194,14 @@ watch(() => l12State.room?.options, options => {
 onMounted(async () => {
   maintenanceClockTimer = window.setInterval(() => { policyNow.value = Date.now() }, 1_000)
   window.addEventListener('l12-resource-operationsPolicy', onOperationsResource)
-  ;[customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
-  hydrateDeckSelections()
+  const account = platformState.account?.id, token = platformState.token
+  try {
+    const [decks] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog().then(cards => { catalog.value = cards })])
+    if (account === platformState.account?.id && token === platformState.token) { customDecks.value = decks; hydrateDeckSelections() }
+  } catch (error) {
+    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+      l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
+  }
   await refreshOperationsPolicy()
   try { ranked.value = normalizeRankedOverview(await rankedApi.overview()) }
   catch (error) { l12State.notice = error instanceof Error ? error.message : '排位资料加载失败' }

@@ -7,7 +7,7 @@ import { compareDeckCards } from './deckOrdering'
 import { createDeckImageBlob, downloadDeckImage } from './site/deckShare'
 import { samplePublicDeckOpeningHand } from './site/publicDeckHands'
 import {
-  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, normalOpeningHandCopies, trialCapacityForMaster,
+  MAIN_DECK_TYPES, automaticExtraCardIdsForMaster, buildMoraleDeck, deckCountSummary, deleteDeck, doesNotCountTowardMainDeck, effectiveDeckLimit, ensureOfficialPrebuiltDecks, filterableCardCost, isDerivedSpecialCard, loadDeckCatalog, loadSavedDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, trialCapacityForMaster,
   saveDeck, validateDeck, type DeckCard, type SavedL12Deck,
 } from './decks'
 import { alternateArtApi, getEffectiveOperationsPolicy, platformState, publicDeckApi, type AlternateArt, type OperationsCardRestriction } from './platform'
@@ -139,7 +139,7 @@ onMounted(async () => {
   const loadingAccountEpoch = editorAccountEpoch
   try {
     const [loadedCatalog, loadedDecks] = await Promise.all([
-      loadDeckCatalog(),
+      loadDeckCatalog().then(cards => { catalog.value = cards; return cards }),
       ensureOfficialPrebuiltDecks(),
       refreshOwnedAlternateArts(),
     ])
@@ -162,7 +162,8 @@ onMounted(async () => {
     if (publicationId.value || publicationCode.value) await resolvePublishedDeck()
     refreshLocalDraft()
   } catch (error) {
-    notice.value = error instanceof Error ? error.message : '牌库编辑器加载失败'
+    if (loadingAccountEpoch === editorAccountEpoch && deckErrorBelongsToCurrentAccount(error))
+      notice.value = error instanceof Error ? error.message : '牌库编辑器加载失败'
   } finally {
     loading.value = false
   }
@@ -699,7 +700,8 @@ async function onSave() {
       notice.value = `已保存〈${saved.name}〉，可在房间中选择`
     }
   } catch (error) {
-    if (isCurrentEditorContext(context)) notice.value = `牌库保存失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error && typeof error === 'object' && 'serverConfirmed' in error && error.serverConfirmed === true
+        ? mutationError(error, '请稍后重试') : `牌库保存失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deckMutationBusy.value = false
   }
@@ -737,7 +739,8 @@ async function onSaveAs() {
       notice.value = `已另存为〈${saved.name}〉`
     }
   } catch (error) {
-    if (isCurrentEditorContext(context)) notice.value = `牌库另存失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error && typeof error === 'object' && 'serverConfirmed' in error && error.serverConfirmed === true
+        ? mutationError(error, '请稍后重试') : `牌库另存失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deckMutationBusy.value = false
   }
@@ -776,7 +779,7 @@ async function publishCurrentDeck() {
       notice.value = publishedId ? `已更新公开牌库〈${saved.name}〉` : `已公开〈${saved.name}〉，后续可从此处更新公开版本`
     }
   } catch (error) {
-    if (isCurrentEditorContext(context)) notice.value = error instanceof Error ? error.message : '公开牌库失败'
+    if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '公开牌库失败'
   } finally {
     deckMutationBusy.value = false
   }
@@ -856,7 +859,8 @@ async function confirmDelete() {
     notice.value = `已删除〈${deck.name}〉`
     closePendingDelete()
   } catch (error) {
-    if (isCurrentEditorContext(context)) notice.value = `删除〈${deck.name}〉失败：${mutationError(error, '请稍后重试')}`
+    if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error && typeof error === 'object' && 'serverConfirmed' in error && error.serverConfirmed === true
+        ? mutationError(error, '请稍后重试') : `删除〈${deck.name}〉失败：${mutationError(error, '请稍后重试')}`
   } finally {
     deletingDeck.value = false
   }
@@ -900,7 +904,7 @@ async function generateDeckImage() {
     deckImageBlob.value = imageBlob
     deckImageUrl.value = URL.createObjectURL(deckImageBlob.value)
   } catch (error) {
-    if (isCurrentEditorContext(context)) notice.value = error instanceof Error ? error.message : '牌库图生成失败'
+    if (isCurrentEditorContext(context) && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '牌库图生成失败'
   } finally {
     generatingDeckImage.value = false
   }
@@ -936,8 +940,10 @@ watch(() => platformState.account?.id, (current, previous) => {
   closePendingDelete()
   closeDeckImage()
   newDeck()
-  savedDecks.value = loadSavedDecks()
+  const cache = loadSavedDecksState()
+  savedDecks.value = cache.status === 'unavailable' ? {} : cache.decks
   refreshLocalDraft()
+  if (cache.status === 'unavailable') preserveError = [preserveError, cache.error.message].filter(Boolean).join('；')
   notice.value = preserveError ? `账号已切换，原账号未保存的修改暂存失败：${preserveError}` : '账号已切换；当前仅显示此账号的牌库和草稿'
 }, { flush: 'sync' })
 </script>

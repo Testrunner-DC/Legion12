@@ -70,7 +70,7 @@ try {
       if (endpoint.pathname === '/api/decks' && request.method() === 'GET') {
         if (!authority) {
           const presets = JSON.parse(fs.readFileSync(path.join(root, 'public/data/l12/preset-decks.s1.json'), 'utf8').replace(/^\uFEFF/, ''))
-          authority = { ...presets[0], id: 'tabs-deck', revision: 1, name: '双页面原内容', updatedAt: '2026-10-03T00:00:00Z' }
+          authority = { ...presets[0], specialIds: presets[0].specialIds ?? [], id: 'tabs-deck', revision: 1, name: '双页面原内容', updatedAt: '2026-10-03T00:00:00Z' }
         }
         return route.fulfill({ json: authority ? [authority] : [] })
       }
@@ -119,7 +119,10 @@ try {
     if (!guest) assert.deepEqual(requests.map(request => request.revision), [1, 1, 1], '旧标签和恢复的旧草稿都必须发送原版本1，不能借用版本2')
     await b.setViewportSize({ width: 390, height: 844 })
     await b.screenshot({ path: path.join(out, `${guest ? 'guest' : 'account'}-draft-conflict-mobile.png`), fullPage: true })
-    report.push({ mode: guest ? 'guest' : 'account', staleSave: 'rejected', restoredDraft: 'rejected', authority: 'A preserved', requests })
+    const envelope = await b.evaluate(guest => JSON.parse(localStorage.getItem(guest ? 'l12-custom-decks-v1' : 'l12-custom-decks-v1:tabs-qa')), guest)
+    assert.equal(envelope.format, 'l12-deck-cache', 'Actual editor must persist the single new cache envelope')
+    assert.equal(envelope.schema, 1)
+    report.push({ mode: guest ? 'guest' : 'account', staleSave: 'rejected', restoredDraft: 'rejected', authority: 'A preserved', cacheSchema:envelope.schema, requests })
     if (guest) await b.evaluate(() => localStorage.setItem('l12-custom-decks-v1', '{}'))
     else authority = null
     await b.getByRole('button', { name: '保存牌库', exact: true }).click()

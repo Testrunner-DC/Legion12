@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { syncSavedDecksFromAccount, type SavedL12Deck } from '@/l12/decks'
+import { syncSavedDecksFromAccount, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type SavedL12Deck } from '@/l12/decks'
 import { connect, enterTournamentMatch, l12State, spectateTournamentMatch } from '@/l12/net'
 import { hasPermission, platformState, tournamentApi, type Tournament, type TournamentMatch, type TournamentParticipant } from '@/l12/platform'
 import { tournamentDeckVisibilityText, tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
@@ -48,7 +48,27 @@ async function room(match: TournamentMatch, spectate: boolean) { if (!tournament
 async function copyLink() { await navigator.clipboard.writeText(location.href); notice.value = '稳定赛事链接已复制' }
 async function exportCsv() { if (!tournament.value) return; try { const blob = await tournamentApi.exportCsv(tournament.value.id); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = `tournament-${tournament.value.code}.csv`; link.click(); URL.revokeObjectURL(link.href) } catch (error) { notice.value = error instanceof Error ? error.message : '导出失败' } }
 const onResource = () => { void load() }; const onVisibility = () => { if (document.visibilityState === 'visible') void load() }
-onMounted(() => { window.addEventListener('l12-resource-tournaments', onResource); document.addEventListener('visibilitychange', onVisibility); void Promise.all([load(), syncSavedDecksFromAccount().then(value => { savedDecks.value = Object.values(value); if (!deckId.value && savedDecks.value.length) deckId.value = savedDecks.value[0].id || '' })]) })
+let deckLoadEpoch = 0
+watch(() => [platformState.account?.id, platformState.token], () => {
+  deckLoadEpoch++
+  const snapshot = loadSavedDecksState()
+  savedDecks.value = snapshot.status === 'unavailable' ? [] : Object.values(snapshot.decks)
+  deckId.value = ''
+  if (snapshot.status === 'unavailable') notice.value = snapshot.error.message
+}, { flush: 'sync' })
+onMounted(() => {
+  window.addEventListener('l12-resource-tournaments', onResource)
+  document.addEventListener('visibilitychange', onVisibility)
+  const epoch = deckLoadEpoch, account = platformState.account?.id, token = platformState.token
+  const current = () => !disposed && epoch === deckLoadEpoch && account === platformState.account?.id && token === platformState.token
+  void Promise.all([load(), syncSavedDecksFromAccount().then(value => {
+    if (!current()) return
+    savedDecks.value = Object.values(value)
+    if (!deckId.value && savedDecks.value.length) deckId.value = savedDecks.value[0].id || ''
+  })]).catch(error => {
+    if (current() && deckErrorBelongsToCurrentAccount(error)) notice.value = error instanceof Error ? error.message : '牌库暂不可读取'
+  })
+})
 onBeforeUnmount(() => { disposed = true; window.removeEventListener('l12-resource-tournaments', onResource); document.removeEventListener('visibilitychange', onVisibility) })
 </script>
 

@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { authState, platformState } from '@/l12/platform'
-import { loadSavedDecks } from '@/l12/decks'
+import { loadSavedDecksState } from '@/l12/decks'
 import { l12State } from '@/l12/net'
 import { homeAccountVerified, homeCanContinueGame, recentHomeDeckName } from './homeRevisit'
 
 const verifiedAccount = computed(() => homeAccountVerified(platformState.account?.id,
   platformState.token, authState.verified) && !platformState.account?.disabled && !platformState.account?.deleted)
 const recentName = ref('')
+const cacheError = ref('')
 const canContinue = computed(() => homeCanContinueGame(platformState.account?.id, verifiedAccount.value, l12State))
 function refreshRecent() {
-  recentName.value = verifiedAccount.value ? recentHomeDeckName(loadSavedDecks()) : ''
+  if (!verifiedAccount.value) { recentName.value = ''; cacheError.value = ''; return }
+  const snapshot = loadSavedDecksState()
+  cacheError.value = snapshot.status === 'unavailable' ? snapshot.error.message : ''
+  recentName.value = snapshot.status === 'unavailable' ? '' : recentHomeDeckName(snapshot.decks)
 }
 function refreshWhenVisible() { if (!document.hidden) refreshRecent() }
 watch(() => [verifiedAccount.value, platformState.account?.id, platformState.token], refreshRecent, { immediate: true })
@@ -30,7 +34,7 @@ onBeforeUnmount(() => {
       <strong>{{ l12State.spectating ? '继续观战' : '继续对局' }}</strong><span>返回正在进行的对局</span>
     </router-link>
     <router-link to="/decks?tab=mine" class="home-revisit-action">
-      <strong>我的牌库</strong><span>{{ recentName ? `最近保存：${recentName}` : '查看与编辑自己的牌库' }}</span>
+      <strong>我的牌库</strong><span>{{ cacheError || (recentName ? `最近保存：${recentName}` : '查看与编辑自己的牌库') }}</span>
     </router-link>
     <router-link to="/battle/tournaments?section=mine" class="home-revisit-action">
       <strong>我的赛事</strong><span>查看参赛与主办进度</span>

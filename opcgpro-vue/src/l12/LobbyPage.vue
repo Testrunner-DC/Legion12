@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, setReady } from './net'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecks, type DeckCard } from './decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type DeckCard, type SavedL12Deck } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 import { platformState } from './platform'
@@ -10,13 +10,28 @@ import DeckProfile from './DeckProfile.vue'
 
 const roomCode = ref('')
 const router = useRouter()
-const customDecks = ref(loadSavedDecks())
+function visibleDecks(): Record<string, SavedL12Deck> {
+  const snapshot = loadSavedDecksState()
+  if (snapshot.status === 'unavailable') { l12State.notice = snapshot.error.message; return {} }
+  return snapshot.decks
+}
+const customDecks = ref(visibleDecks())
+watch(() => [platformState.account?.id, platformState.token], () => { customDecks.value = visibleDecks() }, { flush: 'sync' })
 const catalog = ref<DeckCard[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const view = ref<'home' | 'room' | 'cards' | 'replay'>('home')
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
 
-onMounted(async () => { [customDecks.value, catalog.value] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()]) })
+onMounted(async () => {
+  const account = platformState.account?.id, token = platformState.token
+  try {
+    const [decks] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog().then(cards => { catalog.value = cards })])
+    if (account === platformState.account?.id && token === platformState.token) customDecks.value = decks
+  } catch (error) {
+    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+      l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
+  }
+})
 
 async function ensureConnected() {
   if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return false }

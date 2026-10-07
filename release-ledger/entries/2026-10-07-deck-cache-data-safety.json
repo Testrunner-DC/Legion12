@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-deck-cache-data-safety",
+  "date": "2026-10-07",
+  "audience": "players",
+  "title": "牌库同步与异常提示改善",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "牌库读写异常时保留原内容，区分服务器已完成操作与本机尚未同步；换账号或迟到结果不会覆盖当前牌库和草稿，公开牌库仍可正常浏览。",
+      "paths": [
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/deckCacheStorage.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/LobbyPage.vue",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue",
+        "opcgpro-vue/src/l12/site/HomeRevisitActions.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+        "opcgpro-vue/src/l12/site/SandboxPage.vue",
+        "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue"
+      ]
+    }
+  ]
+}

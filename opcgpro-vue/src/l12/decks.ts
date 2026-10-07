@@ -1,3 +1,8 @@
+import { watch } from 'vue'
+import { readDeckCache, requireDeckCache, commitDeckCache, interpretDeckSelection,
+  DeckCacheStorageError, type ReadableDeckCache, type DeckSelectionAliases } from './deckCacheStorage'
+import { encodeDeckCache, decodeDeckCache } from './deckCacheCodec'
+
 import { normalizeLookupCardType } from './cardPresentation'
 import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 import { deploymentPath } from './deploymentBase'
@@ -233,64 +238,40 @@ function scopedSelectedDeckStorageKey(scope: L12DeckSelectionScope, accountId = 
 
 export function loadSelectedDeckName(scope: L12DeckSelectionScope,
     decks: Readonly<Record<string, SavedL12Deck>>) {
-  const scoped = localStorage.getItem(scopedSelectedDeckStorageKey(scope))
-  if (scoped) {
-    const selected = Object.values(decks).find(deck => deck.id && deck.id === scoped)
+  const snapshot = readDeckCache(localStorage, accountStorageKey(), deckCacheOwner(platformState.account?.id))
+  if (snapshot.status === 'unavailable') return ''
+  const keys = [scopedSelectedDeckStorageKey(scope), selectedDeckStorageKey()]
+  for (const key of keys) {
+    const raw = localStorage.getItem(key)
+    if (!raw) continue
+    const value = interpretDeckSelection(snapshot, key, raw)
+    if (value.startsWith('unresolved:')) return ''
+    const selected = Object.values(decks).find(deck => deck.id && deck.id === value)
     if (selected) return selected.name
-    if (scoped.startsWith('unresolved:')) return ''
-    if (decks[scoped] && !decks[scoped].id) return scoped
-    // A stale account name must never silently select a different deck that reused that name.
-    return ''
-  }
-  // 兼容编辑器曾写入的单一选择键；迁移只读取，不在打开选择器时产生副作用。
-  const legacy = localStorage.getItem(selectedDeckStorageKey())
-  if (legacy) {
-    const selected = Object.values(decks).find(deck => deck.id && deck.id === legacy)
-    if (selected) return selected.name
-    if (legacy.startsWith('unresolved:')) return ''
-    if (decks[legacy] && !decks[legacy].id) return legacy
-    return ''
+    return Object.hasOwn(decks, value) && !decks[value].id ? value : ''
   }
   return Object.keys(decks)[0] ?? ''
 }
 
 export function saveSelectedDeckName(scope: L12DeckSelectionScope, name: string) {
-  const deck = loadSavedDecks()[name]
-  localStorage.setItem(scopedSelectedDeckStorageKey(scope), deck?.id || name)
+  const decks = readSavedDecks(accountStorageKey())
+  const deck = Object.hasOwn(decks, name) ? decks[name] : undefined
+  if (!deck) throw new Error('当前模式没有可选择的牌库，请刷新后重试')
+  localStorage.setItem(scopedSelectedDeckStorageKey(scope), deck.id || name)
 }
 
+function deckCacheOwner(accountId?: string) {
+  return accountId ? `account:${accountId}` : 'guest'
+}
+function ownerForStorageKey(storageKey: string) {
+  return storageKey === STORAGE_KEY ? 'guest' : `account:${storageKey.slice(STORAGE_KEY.length + 1)}`
+}
 function normalizeSavedDeck(deck: SavedL12Deck): SavedL12Deck {
-  const alternateArtSelections = Object.fromEntries(Object.entries(deck.alternateArtSelections ?? {})
-    .filter(([cardId, artId]) => cardId.trim() && typeof artId === 'string' && artId.trim())
-    .slice(0, 128).map(([cardId, artId]) => [cardId.trim(), artId.trim()]))
-  const alternateArtCopies = Object.fromEntries(Object.entries(deck.alternateArtCopies ?? {})
-    .filter(([cardId, artIds]) => cardId.trim() && Array.isArray(artIds))
-    .slice(0, 128).map(([cardId, artIds]) => [cardId.trim(), artIds.slice(0, 50)
-      .map(artId => typeof artId === 'string' ? artId.trim() : '')]))
-  return {
-    ...deck,
-    cardIds: [...deck.cardIds],
-    moraleIds: (deck.moraleIds ?? []).map(canonicalMoraleCardId),
-    specialIds: [...(deck.specialIds ?? [])],
-    benchIds: (deck.benchIds ?? []).filter(id => typeof id === 'string' && id.trim())
-      .slice(0, 200).map(id => id.trim()),
-    alternateArtSelections,
-    alternateArtCopies,
-  }
+  // Storage validation must retain original metadata, IDs and every copy's position.
+  return decodeDeckCache(encodeDeckCache(deck))
 }
-
 function readSavedDecks(storageKey: string): Record<string, SavedL12Deck> {
-  try {
-    const value = JSON.parse(localStorage.getItem(storageKey) || '{}')
-    if (!value || typeof value !== 'object') return {}
-    return Object.fromEntries(Object.entries(value).map(([name, raw]) => [name, normalizeSavedDeck(raw as SavedL12Deck)]))
-  } catch {
-    return {}
-  }
-}
-
-function writeSavedDecks(decks: Record<string, SavedL12Deck>, storageKey = accountStorageKey()) {
-  localStorage.setItem(storageKey, JSON.stringify(decks))
+  return requireDeckCache(readDeckCache(localStorage, storageKey, ownerForStorageKey(storageKey))).decks
 }
 
 function sameDeckName(first: string, second: string) {
@@ -300,7 +281,7 @@ function sameDeckName(first: string, second: string) {
 function upsertCachedDeck(decks: Record<string, SavedL12Deck>, deck: SavedL12Deck) {
   Object.keys(decks).filter(name => sameDeckName(name, deck.name)
     || Boolean(deck.id && decks[name]?.id === deck.id)).forEach(name => delete decks[name])
-  decks[deck.name] = deck
+  Object.defineProperty(decks, deck.name, { value: deck, enumerable: true, writable: true, configurable: true })
 }
 
 function deckIdentityContent(deck: SavedL12Deck) {
@@ -308,27 +289,41 @@ function deckIdentityContent(deck: SavedL12Deck) {
 }
 
 function migrateDeckSelectionReferences(context: ReturnType<typeof captureDeckStorageContext>,
-  previous: Readonly<Record<string, SavedL12Deck>>, authoritative: Readonly<Record<string, SavedL12Deck>>) {
+  previous: ReadableDeckCache, authoritative: Readonly<Record<string, SavedL12Deck>>): DeckSelectionAliases {
   const currentById = new Map(Object.values(authoritative).filter(deck => deck.id).map(deck => [deck.id!, deck]))
+  const aliases: DeckSelectionAliases = {}
   const keys = [context.selectedKey, ...L12_DECK_SELECTION_SCOPES.map(scope =>
     scopedSelectedDeckStorageKey(scope, context.accountId))]
   for (const key of keys) {
-    const value = localStorage.getItem(key)
-    if (!value || currentById.has(value) || value.startsWith('unresolved:')) continue
-    const cached = previous[value]
-    const exactId = cached?.id && currentById.get(cached.id)
-    const legacy = !cached?.id && cached && authoritative[value]
-      && deckIdentityContent(cached) === deckIdentityContent(authoritative[value])
-        ? authoritative[value] : null
-    const matched = exactId || legacy
-    localStorage.setItem(key, matched?.id || `unresolved:${value}`)
+    const raw = localStorage.getItem(key)
+    if (!raw) continue
+    const effective = interpretDeckSelection(previous, key, raw)
+    if (effective.startsWith('unresolved:')) { aliases[key] = { raw, resolved: effective }; continue }
+    const cached = Object.values(previous.decks).find(deck => deck.id === effective) ?? (Object.hasOwn(previous.decks, raw) ? previous.decks[raw] : undefined)
+    const legacy = !cached?.id && cached && authoritative[raw]
+      && deckIdentityContent(cached) === deckIdentityContent(authoritative[raw]) ? authoritative[raw] : null
+    const matched = currentById.get(effective) || (cached?.id && currentById.get(cached.id)) || legacy
+    const resolved = matched?.id || `unresolved:${raw}`
+    if (resolved !== raw) aliases[key] = { raw, resolved }
   }
+  return aliases
+}
+
+let deckAccountEpoch = 0
+watch(() => [platformState.account?.id, platformState.token], (current, previous) => {
+  if (!previous || current[0] !== previous[0] || current[1] !== previous[1]) deckAccountEpoch++
+}, { flush: 'sync' })
+
+export function captureDeckAccountGuard() {
+  const context = captureDeckStorageContext()
+  return () => isCurrentDeckStorageContext(context)
 }
 
 function captureDeckStorageContext() {
   const accountId = platformState.account?.id
   return {
     accountId,
+    epoch: deckAccountEpoch,
     token: platformState.token,
     storageKey: accountStorageKey(accountId),
     selectedKey: selectedDeckStorageKey(accountId),
@@ -364,11 +359,37 @@ function deckCacheActivity(context: ReturnType<typeof captureDeckStorageContext>
 }
 
 function isCurrentDeckStorageContext(context: ReturnType<typeof captureDeckStorageContext>) {
-  return platformState.account?.id === context.accountId && platformState.token === context.token
+  return deckAccountEpoch === context.epoch && platformState.account?.id === context.accountId && platformState.token === context.token
 }
 
 function visibleDecksAfterAsyncWork(context: ReturnType<typeof captureDeckStorageContext>) {
   return isCurrentDeckStorageContext(context) ? readSavedDecks(context.storageKey) : loadSavedDecks()
+}
+
+const deckErrorContexts = new WeakMap<object, ReturnType<typeof captureDeckStorageContext>>()
+export function deckErrorBelongsToCurrentAccount(error: unknown) {
+  const context = error && typeof error === 'object' ? deckErrorContexts.get(error) : undefined
+  return !context || isCurrentDeckStorageContext(context)
+}
+function operationError(error: unknown, context: ReturnType<typeof captureDeckStorageContext>, confirmed = false): Error {
+  const original = error instanceof Error ? error : new Error(String(error))
+  const result = confirmed ? new Error(`服务器已确认本次操作；${original.message}。本机缓存未更新，请刷新后同步`) : original
+  Object.assign(result, { serverConfirmed: confirmed })
+  deckErrorContexts.set(result, context)
+  return result
+}
+function requireCurrentOperation(context: ReturnType<typeof captureDeckStorageContext>, activity: string) {
+  if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧操作的本机结果')
+  if (deckCacheActivity(context) !== activity) throw new Error('牌库已被更新，已忽略迟到的本机结果')
+}
+function currentDeckSnapshot(context: ReturnType<typeof captureDeckStorageContext>) {
+  return requireDeckCache(readDeckCache(localStorage, context.storageKey, deckCacheOwner(context.accountId)))
+}
+function commitSavedDecks(context: ReturnType<typeof captureDeckStorageContext>, previous: ReadableDeckCache,
+  decks: Record<string, SavedL12Deck>, activity: string) {
+  const aliases = migrateDeckSelectionReferences(context, previous, decks)
+  return commitDeckCache(localStorage, context.storageKey, previous, decks, activity, aliases,
+    () => requireCurrentOperation(context, activity)).decks
 }
 
 export function loadDeckCatalog(): Promise<DeckCard[]> {
@@ -390,29 +411,33 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
   return catalogPromise
 }
 
+export function loadSavedDecksState() {
+  return readDeckCache(localStorage, accountStorageKey(), deckCacheOwner(platformState.account?.id))
+}
 export function loadSavedDecks(): Record<string, SavedL12Deck> {
-  return readSavedDecks(accountStorageKey())
+  return requireDeckCache(loadSavedDecksState()).decks
 }
 
 export async function syncSavedDecksFromAccount(): Promise<Record<string, SavedL12Deck>> {
   const context = captureDeckStorageContext()
-  const local = readSavedDecks(context.storageKey)
-  if (!context.accountId || !context.token) return local
-  const activity = markDeckCacheActivity(context)
   try {
-    const remote = await platformRequest<SavedL12Deck[]>('/api/decks')
-    // Mutation completion, a newer sync, or an account switch makes this response stale for both cache and current view.
-    if (!isCurrentDeckStorageContext(context) || deckCacheActivity(context) !== activity) {
-      return visibleDecksAfterAsyncWork(context)
-    }
+    const previous = currentDeckSnapshot(context)
+    if (!context.accountId || !context.token) return previous.decks
+    const activity = markDeckCacheActivity(context)
+    let remote: SavedL12Deck[]
+    try { remote = await platformRequest<SavedL12Deck[]>('/api/decks') }
+    catch { return visibleDecksAfterAsyncWork(context) }
+    if (!isCurrentDeckStorageContext(context) || deckCacheActivity(context) !== activity) return visibleDecksAfterAsyncWork(context)
     const authoritative = Object.fromEntries(remote.map(deck => [deck.name, normalizeSavedDeck(deck)]))
-    // 登录同步只消费服务端权威列表。旧标签页、其他设备或旧版留下的缓存不能因远端缺失而自动上传。
-    migrateDeckSelectionReferences(context, local, authoritative)
-    writeSavedDecks(authoritative, context.storageKey)
-    return authoritative
-  } catch {
-    return visibleDecksAfterAsyncWork(context)
-  }
+    return await withGuestDeckMutation(context, () => {
+      if (!isCurrentDeckStorageContext(context) || deckCacheActivity(context) !== activity) return visibleDecksAfterAsyncWork(context)
+      try { return commitSavedDecks(context, previous, authoritative, activity) }
+      catch (error) {
+        if (error instanceof DeckCacheStorageError && error.kind === 'conflict') return visibleDecksAfterAsyncWork(context)
+        throw error
+      }
+    })
+  } catch (error) { throw operationError(error, context) }
 }
 
 export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]> {
@@ -431,156 +456,126 @@ export async function loadOfficialPresetDecks(): Promise<OfficialL12PresetDeck[]
 
 export async function ensureOfficialPrebuiltDecks() {
   const context = captureDeckStorageContext()
-  let decks = await syncSavedDecksFromAccount()
-  if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
-  // 登录账号的官方预组只在服务端创建账号时初始化一次。这里不得按“缺失名称”反复补齐，
-  // 否则玩家主动删除的预组会在下一次进入大厅/牌库页时重新出现。
-  if (context.accountId || context.token) return decks
-  await withGuestDeckMutation(context, () => {
-    const current = readSavedDecks(context.storageKey)
-    const previous = structuredClone(current)
-    let changed = false
-    for (const deck of Object.values(current)) {
-      if (deck.id && deck.revision) continue
-      deck.id ||= globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-      deck.revision ||= 1
-      changed = true
-    }
-    if (changed) {
-      writeSavedDecks(current, context.storageKey)
-      migrateDeckSelectionReferences(context, previous, current)
-    }
-  })
-  decks = readSavedDecks(context.storageKey)
-  const guestSeedKey = 'l12:official-presets:guest-seeded:v1'
-  if (localStorage.getItem(guestSeedKey) === 'true') return decks
-  if (Object.keys(decks).length > 0) {
-    localStorage.setItem(guestSeedKey, 'true')
-    return decks
-  }
-  const presets = await loadOfficialPresetDecks()
-  if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
-  const configuredMasterIds = await getEffectiveOperationsPolicy()
-    .then(policy => new Set(policy.defaultPresetDeckIds))
-    .catch(() => null)
-  if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
-  const defaultPresets = configuredMasterIds?.size
-    ? presets.filter(preset => configuredMasterIds.has(preset.masterId))
-    : presets
-  return await withGuestDeckMutation(context, () => {
-  const current = readSavedDecks(context.storageKey)
-  if (localStorage.getItem(guestSeedKey) === 'true') return current
-  if (Object.keys(current).length === 0) defaultPresets.forEach(preset => {
-    current[preset.name] = {
-      ...preset,
-      id: globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
-      revision: 1,
-      cardIds: [...preset.cardIds],
-      moraleIds: [...preset.moraleIds],
-      specialIds: [...(preset.specialIds ?? [])],
-      updatedAt: new Date().toISOString(),
-    }
-  })
-  writeSavedDecks(current, context.storageKey)
-  localStorage.setItem(guestSeedKey, 'true')
-  return current
-  })
+  try {
+    let decks = await syncSavedDecksFromAccount()
+    if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
+    if (context.accountId || context.token) return decks
+    await withGuestDeckMutation(context, () => {
+      const previous = currentDeckSnapshot(context)
+      const current = structuredClone(previous.decks)
+      let changed = previous.status === 'legacy'
+      for (const deck of Object.values(current)) {
+        if (deck.id && deck.revision) continue
+        deck.id ||= globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+        deck.revision ||= 1
+        changed = true
+      }
+      if (changed) commitSavedDecks(context, previous, current, markDeckCacheActivity(context))
+    })
+    decks = readSavedDecks(context.storageKey)
+    const guestSeedKey = 'l12:official-presets:guest-seeded:v1'
+    if (localStorage.getItem(guestSeedKey) === 'true') return decks
+    if (Object.keys(decks).length > 0) { localStorage.setItem(guestSeedKey, 'true'); return decks }
+    const presets = await loadOfficialPresetDecks()
+    if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
+    const configuredMasterIds = await getEffectiveOperationsPolicy().then(policy => new Set(policy.defaultPresetDeckIds)).catch(() => null)
+    if (!isCurrentDeckStorageContext(context)) return loadSavedDecks()
+    const defaults = configuredMasterIds?.size ? presets.filter(preset => configuredMasterIds.has(preset.masterId)) : presets
+    return await withGuestDeckMutation(context, () => {
+      const previous = currentDeckSnapshot(context)
+      if (localStorage.getItem(guestSeedKey) === 'true' || Object.keys(previous.decks).length > 0) return previous.decks
+      const current = Object.fromEntries(defaults.map(preset => [preset.name, { ...preset,
+        id: globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
+        revision: 1, cardIds: [...preset.cardIds], moraleIds: [...preset.moraleIds],
+        specialIds: [...(preset.specialIds ?? [])], updatedAt: new Date().toISOString() }]))
+      const result = commitSavedDecks(context, previous, current, markDeckCacheActivity(context))
+      // Seeding is idempotent even if this optional marker cannot be persisted.
+      try { localStorage.setItem(guestSeedKey, 'true') } catch { /* Existing decks prevent reseeding. */ }
+      return result
+    })
+  } catch (error) { throw operationError(error, context) }
 }
 
 export async function saveDeck(deck: SavedL12Deck): Promise<SavedL12Deck> {
   const context = captureDeckStorageContext()
-  assertCompleteDeckAccount(context)
-  markDeckCacheActivity(context)
-  const normalized = normalizeSavedDeck(deck)
+  let confirmed = false
   try {
-    const commit = (saved: SavedL12Deck) => {
-      const decks = readSavedDecks(context.storageKey)
-      upsertCachedDeck(decks, saved)
-      writeSavedDecks(decks, context.storageKey)
-      markDeckCacheActivity(context)
+    assertCompleteDeckAccount(context)
+    const normalized = normalizeSavedDeck(deck)
+    if (!context.accountId) return await withGuestDeckMutation(context, () => {
+      const previous = currentDeckSnapshot(context)
+      const entries = Object.values(previous.decks)
+      const current = entries.find(value => normalized.id ? value.id === normalized.id : sameDeckName(value.name, normalized.name))
+      if (normalized.id && (!current || current.revision !== normalized.revision) || !normalized.id && current?.id)
+        throw new Error('牌库已被其他操作更新或删除，请重新打开；当前修改可另存为牌库')
+      if (entries.some(value => sameDeckName(value.name, normalized.name)
+        && (normalized.id ? value.id !== normalized.id : Boolean(value.id)))) throw new Error('已有同名牌库，请使用其他名称')
+      const saved = { ...normalized, id: normalized.id || globalThis.crypto?.randomUUID?.()
+        || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`, revision: (normalized.revision ?? 0) + 1 }
+      const currentDecks = { ...previous.decks }
+      upsertCachedDeck(currentDecks, saved)
+      commitSavedDecks(context, previous, currentDecks, markDeckCacheActivity(context))
       return saved
-    }
-    if (!context.accountId) {
-      const saveLocal = () => {
-        const entries = Object.values(readSavedDecks(context.storageKey))
-        const current = entries.find(value => normalized.id ? value.id === normalized.id : sameDeckName(value.name, normalized.name))
-        if (normalized.id && (!current || current.revision !== normalized.revision)
-          || !normalized.id && current?.id)
-          throw new Error('牌库已被其他操作更新或删除，请重新打开；当前修改可另存为牌库')
-        if (entries.some(value => sameDeckName(value.name, normalized.name)
-          && (normalized.id ? value.id !== normalized.id : Boolean(value.id))))
-          throw new Error('已有同名牌库，请使用其他名称')
-        return commit({ ...normalized, id: normalized.id || globalThis.crypto?.randomUUID?.()
-          || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`,
-          revision: (normalized.revision ?? 0) + 1 })
-      }
-      // 同源标签页使用同一锁，在锁内读取版本并落盘，避免并发检查后覆盖。
-      return await withGuestDeckMutation(context, saveLocal)
-    }
-    const saved = normalizeSavedDeck(await (normalized.id
-        ? platformRequest<SavedL12Deck>(`/api/decks/by-id/${encodeURIComponent(normalized.id)}`, {
-          method: 'PUT', body: JSON.stringify({ deck: normalized, expectedRevision: normalized.revision }),
-        })
-        : platformRequest<SavedL12Deck>('/api/decks', { method: 'POST', body: JSON.stringify(normalized) })))
-    // Saving, importing or copying a deck must not silently change a battle mode's selection.
-    // Each mode records its own explicit choice through saveSelectedDeckName.
-    return commit(saved)
-  } catch (error) {
-    markDeckCacheActivity(context)
-    throw error
-  }
+    })
+    const previous = currentDeckSnapshot(context)
+    const activity = markDeckCacheActivity(context)
+    const response = await (normalized.id
+      ? platformRequest<SavedL12Deck>(`/api/decks/by-id/${encodeURIComponent(normalized.id)}`, {
+        method: 'PUT', body: JSON.stringify({ deck: normalized, expectedRevision: normalized.revision }),
+      }) : platformRequest<SavedL12Deck>('/api/decks', { method: 'POST', body: JSON.stringify(normalized) }))
+    confirmed = true
+    const saved = normalizeSavedDeck(response)
+    if (!saved.id || !saved.revision || normalized.id && saved.id !== normalized.id)
+      throw new Error('服务器牌库身份或修订结果不一致')
+    return await withGuestDeckMutation(context, () => {
+      requireCurrentOperation(context, activity)
+      const latest = currentDeckSnapshot(context)
+      const existing = Object.values(latest.decks).find(value => value.id === saved.id)
+      if (existing?.revision && existing.revision > saved.revision!) throw new Error('迟到的低修订结果不能覆盖当前牌库')
+      const current = { ...previous.decks }
+      upsertCachedDeck(current, saved)
+      commitSavedDecks(context, previous, current, activity)
+      return saved
+    })
+  } catch (error) { throw operationError(error, context, confirmed) }
 }
 
 export async function deleteDeck(target: string | SavedL12Deck): Promise<void> {
   const context = captureDeckStorageContext()
-  assertCompleteDeckAccount(context)
-  markDeckCacheActivity(context)
+  let confirmed = false
   try {
-    const remove = async () => {
-    const name = typeof target === 'string' ? target : target.name
-    const selectedId = typeof target === 'string' ? undefined : target.id
-    if (context.accountId && typeof target !== 'string' && !selectedId)
-      throw new Error('牌库身份尚未同步，请刷新后重试')
-    const cached = readSavedDecks(context.storageKey)
-    const current = selectedId
-      ? Object.values(cached).find(deck => deck.id === selectedId)
-      : cached[name]
-    if (!current) throw new Error('牌库已变化，请刷新后重试')
-    if (typeof target !== 'string' && target.revision !== current.revision)
-      throw new Error('牌库已被其他操作更新，请刷新后重试')
-    if (context.accountId) {
-      if (!current.id || !current.revision) throw new Error('牌库身份尚未同步，请刷新后重试')
-      try {
-        await platformRequest(`/api/decks/by-id/${encodeURIComponent(current.id)}?expectedRevision=${current.revision}`, { method: 'DELETE' })
-      } catch (error) {
-        // DELETE is idempotent from the user's perspective: 404 also confirms that the server no longer has this deck.
-        if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) throw error
+    assertCompleteDeckAccount(context)
+    const execute = async () => {
+      const previous = currentDeckSnapshot(context)
+      const name = typeof target === 'string' ? target : target.name
+      const id = typeof target === 'string' ? undefined : target.id
+      if (context.accountId && typeof target !== 'string' && !id) throw new Error('牌库身份尚未同步，请刷新后重试')
+      const current = id ? Object.values(previous.decks).find(deck => deck.id === id) : (Object.hasOwn(previous.decks, name) ? previous.decks[name] : undefined)
+      if (!current) throw new Error('牌库已变化，请刷新后重试')
+      if (typeof target !== 'string' && target.revision !== current.revision) throw new Error('牌库已被其他操作更新，请刷新后重试')
+      const activity = markDeckCacheActivity(context)
+      if (context.accountId) {
+        if (!current.id || !current.revision) throw new Error('牌库身份尚未同步，请刷新后重试')
+        try { await platformRequest(`/api/decks/by-id/${encodeURIComponent(current.id)}?expectedRevision=${current.revision}`, { method: 'DELETE' }) }
+        catch (error) {
+          if (!error || typeof error !== 'object' || !('status' in error) || error.status !== 404) throw error
+        }
+        confirmed = true
       }
+      const commit = () => {
+        requireCurrentOperation(context, activity)
+        const decks = { ...previous.decks }
+        Object.keys(decks).filter(deckName => current.id ? decks[deckName]?.id === current.id : sameDeckName(deckName, name))
+          .forEach(deckName => delete decks[deckName])
+        commitSavedDecks(context, previous, decks, activity)
+      }
+      if (context.accountId) await withGuestDeckMutation(context, commit)
+      else commit()
     }
-    const decks = readSavedDecks(context.storageKey)
-    Object.keys(decks).filter(deckName => current.id
-      ? decks[deckName]?.id === current.id
-      : sameDeckName(deckName, name)).forEach(deckName => delete decks[deckName])
-    writeSavedDecks(decks, context.storageKey)
-    const selectedWasDeleted = (value: string | null) => Boolean(value && (current.id
-      ? value === current.id || (sameDeckName(value, current.name) && !Object.values(decks)
-        .some(deck => sameDeckName(deck.name, value)))
-      : sameDeckName(value, name)))
-    if (selectedWasDeleted(localStorage.getItem(context.selectedKey))) localStorage.removeItem(context.selectedKey)
-    L12_DECK_SELECTION_SCOPES.forEach(scope => {
-      const scopedKey = scopedSelectedDeckStorageKey(scope, context.accountId)
-      if (selectedWasDeleted(localStorage.getItem(scopedKey))) localStorage.removeItem(scopedKey)
-    })
-    markDeckCacheActivity(context)
-    }
-    if (context.accountId) await remove()
-    else await withGuestDeckMutation(context, remove)
-  } catch (error) {
-    markDeckCacheActivity(context)
-    throw error
-  }
+    if (context.accountId) await execute()
+    else await withGuestDeckMutation(context, execute)
+  } catch (error) { throw operationError(error, context, confirmed) }
 }
-
 export function validateDeck(deck: Pick<SavedL12Deck, 'name' | 'masterId' | 'cardIds' | 'moraleIds'> & { specialIds?: string[] }, catalog: DeckCard[], restrictions: readonly OperationsCardRestriction[] = []) {
   const byId = new Map(catalog.map(card => [card.id, card]))
   const master = byId.get(deck.masterId)

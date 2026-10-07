@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
-const output = path.resolve(root, '../artifacts/deck-library-pagination-import')
+const output = path.resolve(process.env.L12_QA_OUTPUT || path.join(root, '../artifacts/deck-library-pagination-import'))
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
 
@@ -247,7 +247,46 @@ try {
     report.push({ viewport:`${width}x${height}`, dialogBox })
     await page.close()
   }
-  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status:'passed', profiles:report }, null, 2))
+  const cacheFaults = []
+  const faultProfiles = [[360,800],[390,844],[430,932],[768,1024],[1366,768],[1920,1080]]
+  const preset = JSON.parse(fs.readFileSync(path.join(root, 'public/data/l12/preset-decks.s1.json'), 'utf8').replace(/^\uFEFF/, ''))[0]
+  const readableRaw = JSON.stringify({ [preset.name]: { ...preset, id: 'fault-stable', revision: 1, specialIds: preset.specialIds ?? [], updatedAt: '2026-10-07T00:00:00Z' } })
+  for (const [width,height] of faultProfiles) {
+    for (const fault of ['unknown', 'corrupt', 'quota', 'read-denied']) {
+      const page = await browser.newPage({ viewport:{width,height} })
+      const pageErrors = [], privatePosts = []
+      page.on('pageerror', error => pageErrors.push(error.message))
+      page.on('request', request => { if (request.method() === 'POST' && new URL(request.url()).pathname.startsWith('/api/decks')) privatePosts.push(request.url()) })
+      await prepare(page)
+      const raw = fault === 'unknown' ? JSON.stringify({ format:'l12-deck-cache', schema:99 }) : fault === 'corrupt' ? '{broken-cache' : readableRaw
+      await page.addInitScript(({raw,fault}) => {
+        const key = 'l12-custom-decks-v1'
+        localStorage.setItem(key, raw)
+        const originalGet = Storage.prototype.getItem
+        const originalSet = Storage.prototype.setItem
+        window.__cacheFaultRaw = () => originalGet.call(localStorage, key)
+        if (fault === 'quota') Storage.prototype.setItem = function(name,value) {
+          if (name === key) throw new DOMException('合成本机Quota失败', 'QuotaExceededError')
+          return originalSet.call(this,name,value)
+        }
+        if (fault === 'read-denied') Storage.prototype.getItem = function(name) {
+          if (name === key) throw new DOMException('合成本机读取拒绝', 'SecurityError')
+          return originalGet.call(this,name)
+        }
+      }, {raw,fault})
+      await page.goto(`http://127.0.0.1:${port}/decks?count=31`)
+      await page.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length > 0)
+      await page.getByText(/牌库缓存|本机牌库缓存/).first().waitFor()
+      assert.equal(await page.evaluate(() => window.__cacheFaultRaw()), raw, 'Fault keeps original raw exactly')
+      assert.deepEqual(privatePosts, [], 'Initialization cannot create a private deck to repair a fault')
+      assert.deepEqual(pageErrors, [], 'An unavailable cache must not blank setup or leave unhandled rejections')
+      await assertNoOverflow(page, `${width}x${height} ${fault}`)
+      await page.screenshot({ path:path.join(output,`cache-${fault}-${width}x${height}.png`),fullPage:true })
+      cacheFaults.push({ viewport:`${width}x${height}`, fault, rawPreserved:true, publicVisible:true, privatePosts:0, pageErrors })
+      await page.close()
+    }
+  }
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status:'passed', profiles:report, cacheFaults, platform:'desktop Edge synthetic viewports; no iOS/WeChat keyboard claim' }, null, 2))
   console.log(JSON.stringify({ status:'passed', screenshots:fs.readdirSync(output).filter(name=>name.endsWith('.png')).length, output }))
 } finally {
   await browser?.close()

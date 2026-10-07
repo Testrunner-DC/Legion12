@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { connect, createSandbox, l12State } from '@/l12/net'
-import { ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSelectedDeckName, saveSelectedDeckName,
+import { ensureOfficialPrebuiltDecks, deckErrorBelongsToCurrentAccount, loadSavedDecksState, loadDeckCatalog, loadSelectedDeckName, saveSelectedDeckName,
   validateDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { platformState } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
@@ -22,25 +22,43 @@ const opponentDeckError = computed(() => opponentDeck.value ? validateDeck(oppon
 const selectorCurrentName = computed(() => selectorTarget.value === 'sandbox-opponent'
   ? opponentDeckName.value : playerDeckName.value)
 
+function refreshCacheView() {
+  const snapshot = loadSavedDecksState()
+  decks.value = snapshot.status === 'unavailable' ? [] : Object.values(snapshot.decks)
+  playerDeckName.value = ''; opponentDeckName.value = ''
+  if (snapshot.status === 'unavailable') { l12State.notice = snapshot.error.message; return }
+  try {
+    playerDeckName.value = loadSelectedDeckName('sandbox-player', snapshot.decks)
+    opponentDeckName.value = loadSelectedDeckName('sandbox-opponent', snapshot.decks)
+  } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择暂不可读取' }
+}
+watch(() => [platformState.account?.id, platformState.token], refreshCacheView, { flush: 'sync' })
 onMounted(async () => {
-  const [savedDecks, cards] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog()])
-  decks.value = Object.values(savedDecks)
-  catalog.value = cards
-  const record = Object.fromEntries(decks.value.map(deck => [deck.name, deck]))
-  playerDeckName.value = loadSelectedDeckName('sandbox-player', record)
-  opponentDeckName.value = loadSelectedDeckName('sandbox-opponent', record)
-  if (platformState.account && platformState.token && l12State.status === 'offline') {
-    try { await connect() } catch { /* 页面保留服务端提示。 */ }
+  const account = platformState.account?.id, token = platformState.token
+  try {
+    const [savedDecks] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog().then(cards => { catalog.value = cards })])
+    if (account !== platformState.account?.id || token !== platformState.token) return
+    decks.value = Object.values(savedDecks)
+    playerDeckName.value = loadSelectedDeckName('sandbox-player', savedDecks)
+    opponentDeckName.value = loadSelectedDeckName('sandbox-opponent', savedDecks)
+    if (platformState.account && platformState.token && l12State.status === 'offline') {
+      try { await connect() } catch { /* 页面保留服务端提示。 */ }
+    }
+  } catch (error) {
+    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+      l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
   }
 })
 
 function confirmDeckSelection(deck: SavedL12Deck) {
   const scope = selectorTarget.value
   if (!scope) return
-  if (scope === 'sandbox-player') playerDeckName.value = deck.name
-  else opponentDeckName.value = deck.name
-  saveSelectedDeckName(scope, deck.name)
-  selectorTarget.value = null
+  try {
+    saveSelectedDeckName(scope, deck.name)
+    if (scope === 'sandbox-player') playerDeckName.value = deck.name
+    else opponentDeckName.value = deck.name
+    selectorTarget.value = null
+  } catch (error) { l12State.notice = error instanceof Error ? error.message : '牌库选择保存失败' }
 }
 
 async function startSandbox() {

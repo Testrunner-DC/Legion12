@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createDeckImageBlob, deckImageGroups, downloadDeckImage, encodeDeckCode } from './deckShare'
-import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
+import { automaticExtraCardIdsForMaster, deckCountSummary, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecks, captureDeckAccountGuard, deckErrorBelongsToCurrentAccount, normalOpeningHandCopies, saveDeck, type DeckCard, type SavedL12Deck } from '@/l12/decks'
 import { platformState, publicDeckApi, type PublishedDeck, type PublicDeckDetails, type PublicDeckGuide, type PublicDeckVersionChange } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
@@ -139,23 +139,25 @@ function uniqueName(base: string) {
 async function copyToMine() {
   if (!entry.value) return
   const id = entry.value.id
+  const currentAccount = captureDeckAccountGuard()
   const accountId = platformState.account?.id
   await runAction(publicDeckActionKey(id, accountId), async () => {
     try {
-      if (!entry.value || entry.value.id !== id) return
+      if (!currentAccount() || !entry.value || entry.value.id !== id) return
       const deck = { ...entry.value.deck, id: undefined, revision: undefined, name: uniqueName(entry.value.deck.name), publicationId: null, publicationVersion: null, cardIds: [...entry.value.deck.cardIds], moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])], updatedAt: new Date().toISOString() }
       const saved = await saveDeck(deck)
-      if (accountId === platformState.account?.id && entry.value?.id === id)
+      if (accountId === platformState.account?.id && currentAccount() && entry.value?.id === id)
         notice.value = `已复制《${saved.name}》到我的牌库`
+      if (!currentAccount() || entry.value?.id !== id) return
       if (!entry.value.official) {
         try {
           const updated = await publicDeckApi.recordCopy(publicDeckRouteReference(entry.value))
-          if (accountId === platformState.account?.id && entry.value?.id === id)
+          if (accountId === platformState.account?.id && currentAccount() && entry.value?.id === id)
             entry.value = preservePublicDeckDetails(entry.value, updated)
         } catch { /* 本地复制已经成功；远端统计失败不得反写为复制失败。 */ }
       }
     } catch (error) {
-      if (accountId === platformState.account?.id)
+      if (accountId === platformState.account?.id && currentAccount() && deckErrorBelongsToCurrentAccount(error))
         notice.value = error instanceof Error ? error.message : '复制到我的牌库失败'
     }
   })
@@ -189,11 +191,18 @@ async function previewImage() {
 }
 async function editDeck() {
   if (!entry.value) return
-  const existing = Object.values(loadSavedDecks()).find(deck => deck.publicationId === entry.value?.id)
-  const saved = await saveDeck({ ...entry.value.deck, id: existing?.id, revision: existing?.revision,
-    name: existing?.name ?? uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds],
-    moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
-  await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id) })
+  const account = platformState.account?.id, token = platformState.token, id = entry.value.id
+  try {
+    const existing = Object.values(loadSavedDecks()).find(deck => deck.publicationId === entry.value?.id)
+    const saved = await saveDeck({ ...entry.value.deck, id: existing?.id, revision: existing?.revision,
+      name: existing?.name ?? uniqueName(entry.value.deck.name), cardIds: [...entry.value.deck.cardIds],
+      moraleIds: [...entry.value.deck.moraleIds], specialIds: [...(entry.value.deck.specialIds ?? [])] })
+    if (account !== platformState.account?.id || token !== platformState.token || entry.value?.id !== id) return
+    await router.push({ path: '/deck-editor', query: deckEditorQuery(route.fullPath, saved.name, entry.value.id, saved.id) })
+  } catch (error) {
+    if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
+      notice.value = error instanceof Error ? error.message : '读取或保存牌库失败'
+  }
 }
 async function deleteDeck() {
   if (!entry.value || !window.confirm('确定删除这个公开牌库？')) return

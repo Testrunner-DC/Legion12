@@ -5,6 +5,7 @@ const editor = read('../src/l12/L12DeckEditor.vue')
 const decks = read('../src/l12/decks.ts')
 const models = read('../../服务端WebSocket/TwelveLegions/Models.cs')
 const storage = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs')
+const payloadReferences = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.DeckPayloadReferences.cs')
 const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.cs')
 const validator = read('../../服务端WebSocket/TwelveLegions/L12DeckValidator.cs')
 
@@ -26,9 +27,9 @@ const checks = [
   ['备选区可从卡池加入并移回主牌，右侧主牌不设置备卡按钮', ['addToBench(entry.card)', 'moveBenchToMain(entry.card)'].every(value => editor.includes(value)) && !editor.includes('moveMainToBench')],
   ['右侧牌表不显示逐副本原画异画文字或备卡按钮', editor.includes('alternate-art-banner') && !editor.includes('class="deck-copy-labels"') && !editor.includes('aria-label="移入备选区"')],
   ['备选区不计主牌数量与合法性', editor.includes('备选区') && editor.includes('不计入主牌数量与合法性') && !editor.match(/validateDeck\([\s\S]{0,300}benchIds/)],
-  ['私人牌库类型与本地缓存保留 benchIds', decks.includes('benchIds?: string[]') && decks.includes('benchIds: (deck.benchIds ?? [])')],
+  ['私人牌库类型与无损缓存保留 benchIds（真实迁移由test-deck-sync-authority验证）', decks.includes('benchIds?: string[]') && decks.includes('return decodeDeckCache(encodeDeckCache(deck))')],
   ['服务端输入与私人牌库视图支持 BenchIds', models.includes('public List<string> BenchIds') && store.includes('IReadOnlyList<string>? BenchIds = null')],
-  ['备选区在账号牌库行使用紧凑数量 JSON', storage.includes('bench_cards_json') && storage.includes('CompactDeckCardsJson(deck.BenchIds)') && storage.includes('ExpandCards(reader.GetString(5))')],
+  ['备选区在账号牌库行使用紧凑数量 JSON，只在详情边界展开', storage.includes('bench_cards_json') && storage.includes('"$bench", DeckBenchJson(deck)') && storage.includes('BenchJson = reader.GetString(5)') && payloadReferences.includes('row.BenchIds.Count > 0 ? CompactDeckCardsJson(row.BenchIds) : row.BenchJson') && store.includes('ExpandCards(DeckBenchJson(row))')],
   ['备选区不进入公开构筑正文哈希', !storage.match(/NormalizeDeckPayload\([^\n]*BenchIds/) && store.includes('row.BenchIds = deck.BenchIds.ToList()')],
   ['服务端限制未知、异阵营、非主牌与超大备选区', ['备选区最多保存 200 张卡牌', '备选区包含未知卡牌', '不能放入备选区', '与主宰阵营不符'].every(value => validator.includes(value))],
   ['竖屏不再强制提示旋转设备', !editor.includes('横屏编辑更完整') && !editor.includes('orientation:portrait')],
