@@ -184,7 +184,7 @@ try {
     if ($testStorageChanged) { $backendChanged=$true; $platformChanged=$true }
     $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup|test-l12-storage-audit)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
     $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$', '^scripts/(release-ledger|test-release-ledger|release-status|test-release-status)\.mjs$', '^release-ledger/')
-    $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs|verify-l12-runtime-backup\.py)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$', '^scripts/test-l12-runtime-backup\.py$')
+    $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs|verify-l12-runtime-backup\.py|l12-deployment-drain-consumer\.py)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$', '^scripts/test-l12-(runtime-backup|deployment-drain-consumer)\.py$')
     $testrunDeploymentChanged = Test-AnyPath @('^ops/server/deploy-l12-testrun-release\.sh$', '^scripts/(test-l12-testrun-deploy-behavior|verify-l12-change)\.ps1$')
 
     # Non-ASCII service paths are classified by their filename. Unknown shared
@@ -293,6 +293,10 @@ try {
             "-FixtureBase", $deploymentFixtureBase
         )
         Invoke-Checked "Stopped SQLite/WAL snapshot proof regressions" "python" @("-B", (Join-Path $repoRoot "scripts/test-l12-runtime-backup.py"))
+        if ($Level -ne "Release") {
+            Invoke-Checked "Deployment drain consumer fault matrix" "python" @(
+                "-B", (Join-Path $repoRoot "scripts/test-l12-deployment-drain-consumer.py"))
+        }
     }
 
     if ($testrunDeploymentChanged) {

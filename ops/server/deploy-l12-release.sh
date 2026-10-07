@@ -29,6 +29,7 @@ readonly sandbox_fence="${runtime_dir}/.maintenance-sandbox-drain"
 readonly deployment_dir="${test_root}/opt/legion12-deployment"
 readonly failure_dir="${deployment_dir}/failures"
 readonly runtime_verifier="${test_root}/usr/local/libexec/verify-legion12-runtime-backup.py"
+readonly drain_consumer="${test_root}/usr/local/libexec/l12-deployment-drain-consumer.py"
 readonly service_name="legion12-test.service"
 readonly public_host="legion-12.com"
 readonly lock_file="${test_root}/run/lock/legion12-deploy.lock"
@@ -73,6 +74,9 @@ readonly runtime_backup_keep_groups="${L12_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
 [[ "$runtime_backup_keep_groups" =~ ^[1-9][0-9]*$ ]] \
   || { fail "runtime 快照保留组数必须为正整数"; exit 2; }
 readonly web_asset_retention_minutes="${L12_WEB_ASSET_RETENTION_MINUTES:-2880}"
+# Includes the unchanged 310-second runtime proof, release switch, exact health
+# checks, and a bounded old-process restart/cancel attempt before the outer cutoff.
+readonly deployment_recovery_reserve_seconds=900
 [[ "$web_asset_retention_minutes" =~ ^[0-9]+$ ]] \
   && (( web_asset_retention_minutes >= 1440 && web_asset_retention_minutes <= 2880 )) \
   || { fail "前端哈希资源保留窗口只允许 1440—2880 分钟"; exit 2; }
@@ -474,6 +478,7 @@ self_test() {
   test -f "$environment_file" || fail "管理员环境配置不存在"
   test -f "$health_verifier" || fail "缺少提交身份校验器：${health_verifier}"
   [[ -f "$runtime_verifier" && ! -L "$runtime_verifier" && -r "$runtime_verifier" ]] || fail "缺少普通只读停服数据库校验器"
+  [[ -f "$drain_consumer" && ! -L "$drain_consumer" && -x "$drain_consumer" ]] || fail "缺少普通可执行部署排空消费者"
   [[ "$health_attempts" =~ ^[1-9][0-9]*$ ]] || fail "健康检查重试次数无效"
   [[ "$health_delay_seconds" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "健康检查间隔无效"
   id "$service_user" >/dev/null 2>&1 || fail "找不到服务账号：${service_user}"
@@ -498,6 +503,117 @@ validate_archive() {
     [[ "$member" != /* ]] || fail "压缩包包含绝对路径"
     [[ "/${member}/" != *"/../"* ]] || fail "压缩包包含越界路径"
   done < <(tar -tzf "$archive")
+}
+
+read_deployment_capability_fingerprint() {
+  local release_root="$1"
+  local expected_commit="$2"
+  local marker="${release_root}/.deployment-drain-capability.json"
+  node - "$marker" "$expected_commit" <<'NODE'
+const { lstatSync, readFileSync } = require('node:fs')
+const marker = process.argv[2]
+const expectedCommit = process.argv[3]
+const stat = lstatSync(marker)
+if (!stat.isFile() || stat.isSymbolicLink()) process.exit(2)
+const value = JSON.parse(readFileSync(marker, 'utf8'))
+const keys = Object.keys(value).sort()
+const expectedKeys = ['commit', 'protocolVersion', 'requiresExternalStopPermit', 'runtimeDataCompatibility', 'runtimeSourceCompatibility', 'schema']
+if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)
+    || value.schema !== 1
+    || value.protocolVersion !== 1
+    || value.requiresExternalStopPermit !== true
+    || value.runtimeDataCompatibility !== 'l12-runtime-v1'
+    || !/^[a-f0-9]{64}$/.test(value.runtimeSourceCompatibility)
+    || value.commit !== expectedCommit) process.exit(2)
+process.stdout.write(value.runtimeSourceCompatibility)
+NODE
+}
+
+validate_deployment_capability() {
+  local actual
+  actual="$(read_deployment_capability_fingerprint "$1" "$2")" || return 1
+  [[ -z "${3:-}" || "$actual" == "$3" ]]
+}
+
+assert_before_stop_deadline() {
+  local now
+  now="$(date -u +%s)"
+  [[ "$now" =~ ^[0-9]+$ ]] || { fail "无法读取部署截止时间"; return 1; }
+  (( now < deployment_deadline_epoch - deployment_recovery_reserve_seconds )) \
+    || { fail "部署截止时间不足以保留取消与恢复预算，拒绝消费停服许可或停止服务"; return 1; }
+}
+
+assert_before_recovery_deadline() {
+  local now
+  now="$(date -u +%s)"
+  [[ "$now" =~ ^[0-9]+$ ]] || return 1
+  (( now < deployment_deadline_epoch ))
+}
+
+parse_consumer_failure() {
+  node -e '
+let text="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>text+=chunk);
+process.stdin.on("end",()=>{try{const value=JSON.parse(text);const keys=Object.keys(value).sort();
+const expected=["failedStage","ok","reasonCode","retrySafe","schema","stateDisposition"];
+const known=new Set(["ARGUMENT_REJECTED","TOKEN_REJECTED","RESPONSE_CONTRACT_REJECTED","AUTHENTICATION_REJECTED","AUTHORIZATION_REJECTED","AUDIT_UNAVAILABLE","PROTOCOL_UNAVAILABLE","REQUEST_REJECTED","HTTP_REJECTED","STATUS_REJECTED","PREEXISTING_OR_UNKNOWN_FENCE","OWNER_OR_STATE_MISMATCH","BEGIN_STATE_UNKNOWN","BEGIN_REJECTED","READINESS_CONTRACT_REJECTED","PERMIT_MISMATCH","SEAL_STATE_UNKNOWN","SEAL_REJECTED","DRAIN_TIMEOUT","CONSUME_STATE_UNKNOWN","CONSUME_REJECTED","CANCEL_FAILED","TRANSPORT_REJECTED","TRANSPORT_STATE_UNKNOWN","RESTART_STATE_REJECTED","OPEN_PRECONDITION_REJECTED","OPEN_RESPONSE_REJECTED","OPEN_STATE_UNKNOWN","DEPLOYMENT_DEADLINE_EXCEEDED","CONSUMER_REJECTED"]);
+if(JSON.stringify(keys)!==JSON.stringify(expected)||value.schema!==1||value.ok!==false||!known.has(value.reasonCode)||typeof value.failedStage!=="string"||!new Set(["unchanged","open","closed","unknown"]).has(value.stateDisposition)||typeof value.retrySafe!=="boolean")process.exit(2);process.stdout.write(value.reasonCode+"\t"+value.stateDisposition)}catch{process.exit(2)}});'
+}
+
+validate_consumer_receipt() {
+  local expected_command="$1" expected_active_commit="$2" expected_phase="$3"
+  node -e "$(cat <<'NODE'
+const { createHash } = require('node:crypto')
+const [command, action, packageSha256, operationId, targetCommit, activeCommit, phase] = process.argv.slice(1)
+let text='';process.stdin.setEncoding('utf8');process.stdin.on('data',chunk=>text+=chunk)
+process.stdin.on('end',()=>{try{
+  const value=JSON.parse(text)
+  const keys=Object.keys(value).sort()
+  const expectedKeys=['action','activeCommit','command','epoch','ok','operationId','packageSha256','phase','processInstance','protocolVersion','schema','sealId','stateBindingSha256','targetCommit','transactionBindingSha256']
+  const guid=/^[0-9a-f]{32}$/; const sha=/^[0-9a-f]{64}$/; const commit=/^[0-9a-f]{40}$/
+  if(JSON.stringify(keys)!==JSON.stringify(expectedKeys)||value.schema!==1||value.ok!==true||value.protocolVersion!==1
+    ||value.command!==command||value.action!==action||value.packageSha256!==packageSha256
+    ||value.operationId!==operationId||value.targetCommit!==targetCommit||value.activeCommit!==activeCommit
+    ||value.phase!==phase||!guid.test(value.processInstance)||!Number.isSafeInteger(value.epoch)||value.epoch<0
+    ||!sha.test(value.transactionBindingSha256)||!sha.test(value.stateBindingSha256)||!commit.test(value.activeCommit))process.exit(2)
+  if(command==='acquire-stop'){if(value.phase!=='sealed'||!guid.test(value.sealId))process.exit(2)}
+  else if(value.sealId!==null)process.exit(2)
+  const transaction=JSON.stringify({action,operationId,packageSha256,schema:1,targetCommit})
+  const transactionHash=createHash('sha256').update(transaction).digest('hex')
+  const state=JSON.stringify({activeCommit,epoch:value.epoch,processInstance:value.processInstance,sealId:value.sealId,transactionBindingSha256:transactionHash})
+  const stateHash=createHash('sha256').update(state).digest('hex')
+  if(value.transactionBindingSha256!==transactionHash||value.stateBindingSha256!==stateHash)process.exit(2)
+  process.stdout.write([value.processInstance,String(value.epoch),value.sealId===null?'-':value.sealId,transactionHash,stateHash].join('\t'))
+}catch{process.exit(2)}})
+NODE
+)" "$expected_command" "$mode" "$release_sha256" "$deployment_operation_id" "$commit" "$expected_active_commit" "$expected_phase"
+}
+
+run_consumer() {
+  local expected_command="$1" expected_active_commit="$2" expected_phase="$3"
+  shift 3
+  local status parsed
+  consumer_output=""
+  if consumer_output="$(printf '%s\n' "$deployment_control_token" | "$drain_consumer" "$@")"; then
+    :
+  else
+    status=$?
+    if parsed="$(printf '%s' "$consumer_output" | parse_consumer_failure 2>/dev/null)"; then
+      IFS=$'\t' read -r drain_failure_code drain_failure_disposition <<<"$parsed"
+    else
+      drain_failure_code="CONSUMER_REJECTED"
+      drain_failure_disposition="unknown"
+    fi
+    consumer_output=""
+    return "$status"
+  fi
+  if ! parsed="$(printf '%s' "$consumer_output" | validate_consumer_receipt "$expected_command" "$expected_active_commit" "$expected_phase")"; then
+    drain_failure_code="CONSUMER_RECEIPT_REJECTED"
+    drain_failure_disposition="unknown"
+    consumer_output=""
+    return 2
+  fi
+  consumer_output=""
+  consumer_fields="$parsed"
 }
 
 read_release_commit() {
@@ -674,9 +790,14 @@ legacy_cards_archive="${7:--}"
 card_assets_hash="${8:--}"
 card_assets_sha256="${9:--}"
 card_assets_archive="${10:--}"
-[[ "$mode" == "deploy" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|dry-run> <提交> <运行包SHA256> <运行包> <- legacy已退役> <- > <- > <优化卡图版本> <优化卡图SHA256|-> <优化卡图包|-> [/opt|/www/legion12]"
+deployment_deadline_epoch="${12:-}"
+[[ -z "${13:-}" ]] || fail "发布参数数量错误"
+[[ "$mode" == "deploy" || "$mode" == "rollback" || "$mode" == "dry-run" ]] || fail "用法：$0 <deploy|rollback|dry-run> <提交> <运行包SHA256> <运行包> <- legacy已退役> <- > <- > <优化卡图版本> <优化卡图SHA256|-> <优化卡图包|-> [/opt|/www/legion12] [截止Unix秒]"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "提交哈希格式错误"
 [[ "$release_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "运行包 SHA256 格式错误"
+if [[ "$mode" == "deploy" || "$mode" == "rollback" ]]; then
+  [[ "$deployment_deadline_epoch" =~ ^[0-9]{10,}$ ]] || fail "正式发布必须携带有界部署截止时间"
+fi
 assert_incoming_file "$release_archive" "${incoming_dir}/l12-release-${commit}.tar.gz"
 [[ "$legacy_cards_hash" == "-" && "$legacy_cards_sha256" == "-" && "$legacy_cards_archive" == "-" ]] || fail "旧版 /cards 卡图链路已退役"
 
@@ -732,11 +853,34 @@ runtime_backup_checksum=""
 runtime_backup_checksum_partial=""
 runtime_backup_sha256=""
 runtime_proof_failure_code=""
+drain_failure_code=""
+drain_failure_disposition=""
+deployment_control_token=""
+consumer_output=""
+consumer_fields=""
+deployment_operation_id=""
+drain_process_instance=""
+drain_epoch=""
+drain_seal_id=""
+drain_transaction_sha256=""
+drain_state_sha256=""
+target_runtime_source_compatibility=""
+current_runtime_source_compatibility=""
+restart_process_instance=""
+restart_epoch=""
+old_main_pid=""
+new_main_pid=""
+drain_stop_consumed=0
+drain_opened=0
+stop_attempted=0
+sandbox_fence_created=0
 runtime_restore_dir=""
 failed_runtime_dir=""
 failure_stage="preflight"
 
 cleanup() {
+  deployment_control_token=""
+  consumer_output=""
   if [[ -n "$stage_dir" && -d "$stage_dir" ]]; then rm -rf -- "$stage_dir"; fi
   if [[ -n "$stage_card_assets_dir" && -d "$stage_card_assets_dir" ]]; then rm -rf -- "$stage_card_assets_dir"; fi
   if [[ -n "$runtime_restore_dir" && -d "$runtime_restore_dir" ]]; then rm -rf -- "$runtime_restore_dir"; fi
@@ -1051,12 +1195,55 @@ restore_previous() {
   mv -Tf "$restore_link" "$active_dir" || return 1
 }
 
+read_service_main_pid() {
+  local pid
+  pid="$(systemctl show --property MainPID --value "$service_name")" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  printf '%s\n' "$pid"
+}
+
 stop_service_and_confirm() {
   systemctl stop "$service_name" >/dev/null 2>&1 || true
   if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
     return 1
   fi
+  [[ "$(read_service_main_pid)" == "0" ]] || return 1
   return 0
+}
+
+write_sandbox_fence_payload() {
+  printf 'schema=1\naction=%s\npackageSha256=%s\ncommit=%s\noperationId=%s\n' \
+    "$mode" "$release_sha256" "$commit" "$deployment_operation_id"
+}
+
+assert_sandbox_fence_absent() {
+  [[ ! -e "$sandbox_fence" && ! -L "$sandbox_fence" ]]
+}
+
+assert_owned_sandbox_fence() {
+  local expected_sha256 actual_sha256
+  [[ "$sandbox_fence_created" -eq 1 && -f "$sandbox_fence" && ! -L "$sandbox_fence" ]] || return 1
+  expected_sha256="$(write_sandbox_fence_payload | sha256sum | awk '{print $1}')" || return 1
+  actual_sha256="$(sha256sum -- "$sandbox_fence" | awk '{print $1}')" || return 1
+  [[ "$expected_sha256" =~ ^[0-9a-f]{64}$ && "$actual_sha256" == "$expected_sha256" ]]
+}
+
+create_owned_sandbox_fence() {
+  assert_sandbox_fence_absent || return 1
+  # noclobber turns the final open into an atomic create. A file, directory, or
+  # symlink appearing after the preflight is therefore preserved, never replaced.
+  ( umask 022; set -o noclobber; write_sandbox_fence_payload > "$sandbox_fence" ) || return 1
+  sandbox_fence_created=1
+  assert_owned_sandbox_fence
+}
+
+remove_sandbox_fence_and_confirm() {
+  log "最终开放前清除并核验临时沙盒围栏"
+  assert_owned_sandbox_fence || return 1
+  rm -f -- "$sandbox_fence" || return 1
+  [[ ! -e "$sandbox_fence" && ! -L "$sandbox_fence" ]] || return 1
+  sandbox_fence_created=0
+  log "临时沙盒围栏已确认不存在；下一步 exact cancel 是最终业务开放点"
 }
 
 write_failure_record() {
@@ -1075,6 +1262,13 @@ write_failure_record() {
     printf 'failedCommit=%s\n' "$commit"
     printf 'failureStage=%s\n' "$failure_stage"
     printf 'runtimeProofFailureCode=%s\n' "$runtime_proof_failure_code"
+    printf 'deploymentAction=%s\n' "$mode"
+    printf 'drainFailureCode=%s\n' "$drain_failure_code"
+    printf 'drainFailureDisposition=%s\n' "$drain_failure_disposition"
+    printf 'drainStopConsumed=%s\n' "$drain_stop_consumed"
+    printf 'drainOpened=%s\n' "$drain_opened"
+    printf 'drainTransactionBindingSha256=%s\n' "$drain_transaction_sha256"
+    printf 'drainStateBindingSha256=%s\n' "$drain_state_sha256"
     printf 'disposition=%s\n' "$disposition"
     printf 'serviceState=%s\n' "$(if [[ "$service_stopped" -eq 1 ]]; then printf stopped; else printf unknown; fi)"
     printf 'activeTarget=%s\n' "$active_target"
@@ -1094,6 +1288,36 @@ write_failure_record() {
   log "失败现场说明已保存：${incident_file}"
 }
 
+observe_restarted_drain() {
+  local expected_active_commit="$1"
+  assert_before_recovery_deadline || { drain_failure_code="DEPLOYMENT_DEADLINE_EXCEEDED"; return 1; }
+  run_consumer "observe-restart" "$expected_active_commit" "draining" \
+    observe-restart --action "$mode" --package-sha256 "$release_sha256" \
+    --operation-id "$deployment_operation_id" --target-commit "$commit" \
+    --expected-active-commit "$expected_active_commit" \
+    --previous-process-instance "$drain_process_instance" --previous-epoch "$drain_epoch" || return 1
+  IFS=$'\t' read -r restart_process_instance restart_epoch _ _ _ <<<"$consumer_fields"
+  [[ "$restart_process_instance" =~ ^[0-9a-f]{32}$ && "$restart_epoch" =~ ^[0-9]+$ \
+    && "$restart_process_instance" != "$drain_process_instance" \
+    && "$restart_epoch" -gt "$drain_epoch" ]] || { drain_failure_code="CONSUMER_RECEIPT_REJECTED"; return 1; }
+}
+
+cancel_restarted_drain() {
+  local expected_active_commit="$1"
+  local opened_process opened_epoch opened_seal opened_transaction opened_state
+  assert_before_recovery_deadline || { drain_failure_code="DEPLOYMENT_DEADLINE_EXCEEDED"; return 1; }
+  run_consumer "cancel-open" "$expected_active_commit" "open" \
+    cancel-open --action "$mode" --package-sha256 "$release_sha256" \
+    --operation-id "$deployment_operation_id" --target-commit "$commit" \
+    --expected-active-commit "$expected_active_commit" \
+    --process-instance "$restart_process_instance" --epoch "$restart_epoch" || return 1
+  IFS=$'\t' read -r opened_process opened_epoch opened_seal opened_transaction opened_state <<<"$consumer_fields"
+  [[ "$opened_process" == "$restart_process_instance" && "$opened_epoch" =~ ^[0-9]+$ \
+    && "$opened_epoch" -gt "$restart_epoch" && "$opened_seal" == "-" \
+    && "$opened_transaction" == "$drain_transaction_sha256" ]] \
+    || { drain_failure_code="CONSUMER_RECEIPT_REJECTED"; return 1; }
+}
+
 rollback_on_error() {
   local status=$?
   local rollback_ok=1
@@ -1111,12 +1335,45 @@ rollback_on_error() {
     else
       log "严重：新服务已尝试启动且无法确认停服；未覆盖 runtime，须立即人工隔离流量并对账。"
     fi
-  elif [[ "$service_stopped" -eq 1 ]]; then
+  else
+    if [[ "$drain_stop_consumed" -eq 0 \
+      && ( "$drain_failure_disposition" == "closed" || "$drain_failure_disposition" == "unknown" ) ]]; then
+      write_failure_record "deployment drain state is not proven open; service and latest runtime preserved; manual reconciliation required" 1 || true
+      log "部署排空消费者未能证明控制面保持开放；不停止服务、不恢复旧数据，保留现场等待人工对账。"
+      cleanup
+      exit "$status"
+    fi
+    if [[ "$drain_stop_consumed" -eq 1 && "$service_stopped" -eq 0 ]]; then
+      if [[ "$stop_attempted" -eq 0 ]] && assert_before_recovery_deadline && stop_service_and_confirm; then
+        stop_attempted=1
+        service_stopped=1
+      else
+        write_failure_record "stop permit consumed but service stop was not confirmed; runtime preserved; manual reconciliation required" 1 || true
+        log "停服许可已消费但无法确认服务停止；保留最新 runtime 与排空围栏，须人工对账。"
+        cleanup
+        exit "$status"
+      fi
+    fi
+  fi
+
+  if [[ "$new_service_launch_attempted" -eq 0 && "$service_stopped" -eq 1 ]]; then
     if [[ "$active_entry_changed" -eq 1 || "$switched" -eq 1 ]]; then
       restore_previous || rollback_ok=0
     fi
-    if [[ "$rollback_ok" -eq 1 ]]; then
+    if [[ "$rollback_ok" -eq 1 ]] && assert_before_recovery_deadline; then
       systemctl start "$service_name" || rollback_ok=0
+    else
+      rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      systemctl is-active --quiet "$service_name" || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 ]]; then
+      new_main_pid="$(read_service_main_pid)" || rollback_ok=0
+      [[ "$new_main_pid" =~ ^[1-9][0-9]+$ && "$new_main_pid" != "$old_main_pid" ]] || rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 && "$drain_stop_consumed" -eq 1 ]]; then
+      observe_restarted_drain "$previous_commit" || rollback_ok=0
     fi
     if [[ "$rollback_ok" -eq 1 ]]; then
       verify_release_health "$previous_commit" "恢复版本" || rollback_ok=0
@@ -1124,8 +1381,18 @@ rollback_on_error() {
     if [[ "$rollback_ok" -eq 1 ]]; then
       verify_release_websocket "恢复版本" || rollback_ok=0
     fi
+    if [[ "$rollback_ok" -eq 1 ]] && ! assert_before_recovery_deadline; then
+      rollback_ok=0
+    fi
+    if [[ "$rollback_ok" -eq 1 && "$drain_stop_consumed" -eq 1 ]]; then
+      remove_sandbox_fence_and_confirm || rollback_ok=0
+      if [[ "$rollback_ok" -eq 1 ]]; then cancel_restarted_drain "$previous_commit" || rollback_ok=0; fi
+    fi
     if [[ "$rollback_ok" -eq 1 ]]; then
       service_stopped=0
+      drain_opened=1
+      drain_failure_code=""
+      drain_failure_disposition="open"
       write_failure_record "failed before new-service launch; previous release restored and verified" 0 || true
       log "新服务启动前失败；上一版本已恢复并通过本机、公网提交身份及 WebSocket 核验。"
     else
@@ -1185,6 +1452,8 @@ stage_dir="$stage_candidate"
 tar --no-same-owner --no-same-permissions -xzf "$release_archive" -C "$stage_dir"
 test -f "${stage_dir}/.deployment-commit" || fail "运行包缺少提交标记"
 [[ "$(tr -d '\r\n' < "${stage_dir}/.deployment-commit")" == "$commit" ]] || fail "运行包提交标记不匹配"
+target_runtime_source_compatibility="$(read_deployment_capability_fingerprint "$stage_dir" "$commit")" \
+  || fail "运行包缺少精确部署排空与 runtime 源兼容能力标记"
 test -r "${stage_dir}/publish/GrandUMIServer.dll" || fail "运行包缺少后端入口"
 test -r "${stage_dir}/opcgpro-vue/dist/index.html" || fail "运行包缺少前端首页"
 validate_web_assets_tree "${stage_dir}/opcgpro-vue/dist/assets"
@@ -1205,7 +1474,7 @@ if [[ "$card_assets_hash" != "-" ]]; then
     chmod 0755 "$stage_card_assets_dir"
     find "$stage_card_assets_dir" -type d -exec chmod 0755 {} +
     find "$stage_card_assets_dir" -type f -exec chmod 0644 {} +
-    if [[ "$mode" == "deploy" ]]; then
+    if [[ "$mode" != "dry-run" ]]; then
       mv -Tn "$stage_card_assets_dir" "$card_assets_target"
       [[ -d "$card_assets_target" && ! -L "$card_assets_target" && ! -e "$stage_card_assets_dir" ]] \
         || fail "优化卡图最终目录发生竞争或未能原子发布"
@@ -1244,6 +1513,12 @@ else
   previous_target="$active_dir"
 fi
 previous_commit="$(read_release_commit "$previous_target")"
+if [[ "$mode" == "rollback" ]]; then
+  current_runtime_source_compatibility="$(read_deployment_capability_fingerprint "$previous_target" "$previous_commit")" \
+    || fail "当前活动包缺少可验证的 runtime 源兼容指纹，拒绝 rollback"
+  [[ "$target_runtime_source_compatibility" == "$current_runtime_source_compatibility" ]] \
+    || fail "rollback 目标与当前活动包的 runtime 源兼容指纹不同，拒绝读取或覆盖最新 runtime"
+fi
 
 failure_stage="install-compatible-web-assets"
 install_web_assets_tree "${previous_target}/opcgpro-vue/dist/assets" "assets"
@@ -1253,31 +1528,72 @@ sample_web_asset="$(find "${static_web_assets_dir}/assets" -type f -print -quit)
 test -n "$sample_web_asset" || fail "共享前端哈希资源池为空"
 runuser -u "$web_user" -- test -r "$sample_web_asset" || fail "Nginx 账号无法读取共享前端哈希资源"
 
-# This deployment fence is independent of the saved operations maintenance plan.
-# Keep it on failure; only a completely verified release may remove it.
-block_sandbox_creation() {
-  [[ ! -L "$sandbox_fence" && ( ! -e "$sandbox_fence" || -f "$sandbox_fence" ) ]] \
-    || fail "沙盒发布围栏不是普通文件，拒绝覆盖"
-  printf '%s\n' "$commit" > "$sandbox_fence"
-  chmod 0644 "$sandbox_fence"
-}
-if [[ -d "$runtime_dir" ]]; then block_sandbox_creation; fi
+failure_stage="verify-current-service-before-drain"
+assert_plain_directory "$runtime_dir" || fail "常规部署消费者要求既有共享 runtime；首次分离须走独立人工核验流程"
+assert_sandbox_fence_absent || fail "常规部署开始前检测到未知沙盒围栏；拒绝覆盖或复用"
+systemctl is-active --quiet "$service_name" || fail "当前正式服务不是 active，拒绝消费停服许可"
+old_main_pid="$(read_service_main_pid)"
+[[ "$old_main_pid" =~ ^[1-9][0-9]+$ ]] || fail "当前正式服务 MainPID 无效，拒绝消费停服许可"
+verify_release_health "$previous_commit" "停服前当前版本"
+verify_release_websocket "停服前当前版本"
+
+failure_stage="consume-deployment-stop-permit"
+assert_before_stop_deadline
+[[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "消费停服许可前运行包 SHA256 已变化"
+validate_deployment_capability "$stage_dir" "$commit" "$target_runtime_source_compatibility" || fail "消费停服许可前部署能力标记已变化"
+if [[ "$mode" == "rollback" ]]; then
+  validate_deployment_capability "$previous_target" "$previous_commit" "$current_runtime_source_compatibility" \
+    || fail "消费停服许可前当前活动包 runtime 源兼容指纹已变化"
+fi
+if [[ -n "$test_root" ]]; then
+  deployment_operation_id="${L12_DEPLOY_TEST_OPERATION_ID:-}"
+else
+  [[ -r /proc/sys/kernel/random/uuid ]] || fail "服务器无法生成部署操作标识"
+  deployment_operation_id="$(tr -d '-' < /proc/sys/kernel/random/uuid)"
+fi
+[[ "$deployment_operation_id" =~ ^[0-9a-f]{32}$ ]] || fail "部署操作标识生成失败"
+if ! IFS= read -r deployment_control_token; then
+  fail "缺少标准输入中的部署排空会话"
+fi
+[[ "$deployment_control_token" =~ ^[0-9a-f]{64}$ ]] || { deployment_control_token=""; fail "部署排空会话格式无效"; }
+drain_wait_seconds=$((deployment_deadline_epoch - $(date -u +%s) - deployment_recovery_reserve_seconds))
+(( drain_wait_seconds > 0 )) || fail "部署截止时间不足以等待排空"
+if (( drain_wait_seconds > 1800 )); then drain_wait_seconds=1800; fi
+drain_failure_code="CONSUMER_INTERRUPTED"
+drain_failure_disposition="unknown"
+if run_consumer "acquire-stop" "$previous_commit" "sealed" \
+  acquire-stop --action "$mode" --package-sha256 "$release_sha256" \
+  --operation-id "$deployment_operation_id" --target-commit "$commit" \
+  --expected-active-commit "$previous_commit" --wait-seconds "$drain_wait_seconds" \
+  --poll-milliseconds 1000 --deadline-epoch "$deployment_deadline_epoch"; then
+  :
+else
+  fail "部署排空消费者拒绝停服许可：${drain_failure_code}"
+fi
+IFS=$'\t' read -r drain_process_instance drain_epoch drain_seal_id drain_transaction_sha256 drain_state_sha256 <<<"$consumer_fields"
+[[ "$drain_process_instance" =~ ^[0-9a-f]{32}$ && "$drain_epoch" =~ ^[0-9]+$ \
+  && "$drain_seal_id" =~ ^[0-9a-f]{32}$ \
+  && "$drain_transaction_sha256" =~ ^[0-9a-f]{64}$ \
+  && "$drain_state_sha256" =~ ^[0-9a-f]{64}$ ]] || fail "停服许可回执字段无效"
+drain_stop_consumed=1
+drain_failure_code=""
+drain_failure_disposition="closed"
 
 failure_stage="stop-current-service"
-log "暂停服务并首次分离持久化运行数据"
+[[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "停服许可消费后运行包 SHA256 已变化"
+validate_deployment_capability "$stage_dir" "$commit" "$target_runtime_source_compatibility" || fail "停服许可消费后部署能力标记已变化"
+if [[ "$mode" == "rollback" ]]; then
+  validate_deployment_capability "$previous_target" "$previous_commit" "$current_runtime_source_compatibility" \
+    || fail "停服许可消费后当前活动包 runtime 源兼容指纹已变化"
+fi
+assert_before_stop_deadline
+create_owned_sandbox_fence || fail "停服许可消费后无法原子创建本事务沙盒围栏；保留未知对象并保持排空关闭"
+log "已消费同 owner/epoch 停服许可并创建本事务沙盒围栏；暂停服务"
+stop_attempted=1
+stop_service_and_confirm || fail "服务停止命令返回后无法确认 inactive 且 MainPID=0，拒绝继续备份或切换"
 service_stopped=1
-systemctl stop "$service_name"
-if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
-  fail "服务停止命令返回后仍处于 active，拒绝继续备份或切换"
-fi
-if [[ ! -d "$runtime_dir" ]]; then
-  failure_stage="separate-runtime"
-  test -d "${active_dir}/publish/runtime" || fail "当前版本缺少运行数据目录"
-  mv "${active_dir}/publish/runtime" "$runtime_dir"
-  ln -s "$runtime_dir" "${active_dir}/publish/runtime"
-fi
 failure_stage="snapshot-runtime"
-block_sandbox_creation
+assert_owned_sandbox_fence || fail "停止服务后本事务沙盒围栏归属发生变化；保留现场并保持排空关闭"
 chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
@@ -1352,6 +1668,17 @@ failure_stage="start-new-service"
 new_service_launch_attempted=1
 systemctl start "$service_name"
 service_stopped=0
+systemctl is-active --quiet "$service_name" || fail "目标服务启动后不是 active"
+new_main_pid="$(read_service_main_pid)"
+[[ "$new_main_pid" =~ ^[1-9][0-9]+$ && "$new_main_pid" != "$old_main_pid" ]] \
+  || fail "目标服务启动后 MainPID 未精确更换"
+
+failure_stage="verify-restarted-deployment-drain"
+if observe_restarted_drain "$commit"; then
+  :
+else
+  fail "目标服务未以相同部署 owner、递增 epoch 与精确提交继承排空围栏：${drain_failure_code}"
+fi
 
 failure_stage="verify-new-release-health"
 log "验证本机与公网 HTTP 提交身份"
@@ -1394,18 +1721,42 @@ Legion12 正式服
 停服数据库与快照验证：${runtime_proof}
 旧版 /cards 卡图：已退役
 内容寻址优化卡图版本：${card_assets_hash}
+部署动作：${mode}
+部署排空协议：v1 consumer-level binding（非服务端原子 package binding）
+目标包runtime源兼容指纹：${target_runtime_source_compatibility}
+当前包runtime源兼容指纹：${current_runtime_source_compatibility:--}
+部署事务绑定SHA256：${drain_transaction_sha256}
+停服许可状态绑定SHA256：${drain_state_sha256}
+停服前进程实例：${drain_process_instance}
+停服前epoch：${drain_epoch}
+重启后进程实例：${restart_process_instance}
+重启后epoch：${restart_epoch}
 域名：${public_host}
 部署日期：$(date -u +%Y-%m-%dT%H:%M:%SZ)
 EOF
 
-failure_stage="post-success-storage-cleanup"
+failure_stage="clear-sandbox-fence-before-open"
+remove_sandbox_fence_and_confirm || fail "无法在最终开放前精确清除临时沙盒围栏；保持部署排空关闭"
+failure_stage="open-new-release"
+assert_before_recovery_deadline || { drain_failure_code="DEPLOYMENT_DEADLINE_EXCEEDED"; fail "部署截止时间已到，拒绝重新开放业务"; }
+if cancel_restarted_drain "$commit"; then
+  drain_opened=1
+  drain_failure_code=""
+  drain_failure_disposition="open"
+else
+  fail "无法精确取消目标进程的部署排空围栏：${drain_failure_code}"
+fi
+deployment_control_token=""
+trap - ERR INT TERM
+
+# The application drain is now exactly open, and this cancel is the final
+# business-success linearization point. Remaining cleanup is non-mutating to
+# service/runtime/admission state.
 if ! converge_deployment_storage "$release_dir" "$previous_target"; then
   log "部署后存储收口未全部完成；已验证的新版本保持运行，未删除项将在下次安全收口重试"
 fi
-
-# Do not call any maintenance-end/server-start operation or mutate its plan.
-rm -f -- "$sandbox_fence"
-rm -f -- "$release_archive"
-if [[ "$card_assets_archive" != "-" ]]; then rm -f -- "$card_assets_archive"; fi
-trap - ERR INT TERM
-log "快速部署完成：${commit}"
+if ! rm -f -- "$release_archive"; then log "发布已完成，但 incoming 运行包清理失败，保守保留"; fi
+if [[ "$card_assets_archive" != "-" ]] && ! rm -f -- "$card_assets_archive"; then
+  log "发布已完成，但 incoming 卡图包清理失败，保守保留"
+fi
+log "快速${mode}完成：${commit}"

@@ -86,6 +86,59 @@ function Write-FakeCommand {
     [IO.File]::WriteAllText((Join-Path $Directory "$Name.cmd"), $body, [Text.Encoding]::ASCII)
 }
 
+function Get-FunctionDefinitionText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+    $tokens = $null
+    $errors = $null
+    $ast = [Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+    if ($errors.Count -ne 0) { throw "无法解析 PowerShell validator：$Path" }
+    $matches = @($ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $Name
+    }, $true))
+    if ($matches.Count -ne 1) { throw "PowerShell validator 函数数量不是 1：$Name" }
+    return $matches[0].Extent.Text
+}
+
+function Invoke-DeploymentManifestContractProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExactIntegerDefinition,
+        [Parameter(Mandatory = $true)][string]$ManifestContractDefinition,
+        [Parameter(Mandatory = $true)][string]$Json
+    )
+    return & {
+        param($ExactDefinition, $ContractDefinition, $DocumentJson)
+        . ([scriptblock]::Create($ExactDefinition))
+        . ([scriptblock]::Create($ContractDefinition))
+        $document = $DocumentJson | ConvertFrom-Json
+        Test-DeploymentManifestContract -Manifest $document
+    } $ExactIntegerDefinition $ManifestContractDefinition $Json
+}
+
+function Invoke-RemoteCapabilityContractProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$ExactIntegerDefinition,
+        [Parameter(Mandatory = $true)][string]$RemoteCapabilityDefinition,
+        [Parameter(Mandatory = $true)][string]$Json,
+        [Parameter(Mandatory = $true)][string]$ExpectedCommit,
+        [Parameter(Mandatory = $true)][string]$ExpectedFingerprint
+    )
+    . ([scriptblock]::Create($ExactIntegerDefinition))
+    . ([scriptblock]::Create($RemoteCapabilityDefinition))
+    $deploymentDeadlineUtc = [DateTimeOffset]::UtcNow.AddMinutes(1)
+    $LASTEXITCODE = 0
+    function ssh { return $Json }
+    try {
+        $actual = Read-RemoteActiveRuntimeSourceCompatibility `
+            -SshOptions @('-o', 'BatchMode=yes') -Destination 'fixture.invalid' -ExpectedCommit $ExpectedCommit
+        return $actual -ceq $ExpectedFingerprint
+    }
+    catch { return $false }
+}
+
 # Release planning may include targeted semantic audits, but the full rules, platform,
 # and frontend build must be owned by verify-l12.ps1 exactly once.
 $dryRun = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @(
@@ -139,14 +192,17 @@ foreach ($case in @(
 }
 
 foreach ($case in @(
-    @{ Path = 'ops/server/verify-l12-runtime-backup.py'; Production = $true; Testrun = $false },
-    @{ Path = 'scripts/test-l12-runtime-backup.py'; Production = $true; Testrun = $false },
-    @{ Path = 'ops/server/deploy-l12-testrun-release.sh'; Production = $false; Testrun = $true },
-    @{ Path = 'scripts/test-l12-testrun-deploy-behavior.ps1'; Production = $false; Testrun = $true }
+    @{ Path = 'ops/server/verify-l12-runtime-backup.py'; Production = $true; Consumer = $true; Testrun = $false },
+    @{ Path = 'scripts/test-l12-runtime-backup.py'; Production = $true; Consumer = $true; Testrun = $false },
+    @{ Path = 'ops/server/l12-deployment-drain-consumer.py'; Production = $true; Consumer = $true; Testrun = $false },
+    @{ Path = 'scripts/test-l12-deployment-drain-consumer.py'; Production = $true; Consumer = $true; Testrun = $false },
+    @{ Path = 'ops/server/deploy-l12-testrun-release.sh'; Production = $false; Consumer = $false; Testrun = $true },
+    @{ Path = 'scripts/test-l12-testrun-deploy-behavior.ps1'; Production = $false; Consumer = $false; Testrun = $true }
 )) {
     $plan = Invoke-ChildPowerShell -ScriptPath $changeGateScript -Arguments @('-Level','Batch','-DryRun','-ChangedPaths',$case.Path)
     Assert-True ($plan.ExitCode -eq 0) "Deployment source selection failed: $($case.Path)"
     Assert-True ($plan.Output.Contains('Stopped SQLite/WAL snapshot proof regressions') -eq $case.Production) "Runtime proof selection mismatch: $($case.Path)"
+    Assert-True ($plan.Output.Contains('Deployment drain consumer fault matrix') -eq $case.Consumer) "Deployment consumer selection mismatch: $($case.Path)"
     Assert-True ($plan.Output.Contains('Test release storage budget and protected evidence behavior') -eq $case.Testrun) "Test deployment budget selection mismatch: $($case.Path)"
     Assert-True (-not $plan.Output.Contains('L12 full rule tests') -and -not $plan.Output.Contains('Platform persistence release gate')) "Ops-only change should not masquerade as gameplay implementation: $($case.Path)"
 }
@@ -164,6 +220,7 @@ foreach ($activeTest in @("AdminResetAndLogicalDeletionProtectRootAndSelfAndScru
 }
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "rules" dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "platform" dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
+Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "deployment-drain-consumer" python -B "\.\\scripts\\test-l12-deployment-drain-consumer\.py"')).Count -eq 1) "Commit-level Release must run the deployment-drain fault matrix exactly once."
 Assert-True ($verifySource.Contains('LogFileName=rules.trx') -and $verifySource.Contains('LogFileName=platform.trx') -and
     $verifySource.Contains('"--results-directory", $evidenceDirectory') -and $verifySource.Contains('trxOmittedForBudget = $trxOmittedForBudget')) "Both full suites must write distinct TRX files unless the budget omission is explicitly recorded."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-External node "\.\\scripts\\test-release-status\.mjs"')).Count -eq 1) "Commit-level verifier must validate release state source exactly once."
@@ -174,6 +231,74 @@ Assert-True (([regex]::Matches($deploySource, 'if \(\$cardAssetsCached\)')).Coun
 Assert-True ($deploySource.IndexOf('Invoke-External scp @sshOptions $cardAssetsArchive') -gt $deploySource.IndexOf('else {', $deploySource.IndexOf('if ($cardAssetsCached)'))) "Card asset upload must remain confined to the remote-cache-miss branch."
 Assert-True ($deploySource.Contains('Resolve-L12ProductionBaseCommit')) "Production deployment must read the live production commit before aggregating player notes."
 Assert-True ($deploySource.Contains('"-ProductionBaseCommit", $productionBaseCommit')) "Production deployment must bind release verification to the live production commit."
+Assert-True ($deploySource.Contains('[Security.SecureString]$DeploymentControlSessionToken') -and
+    $deploySource.Contains('[Security.SecureString]$SecureStandardInput') -and
+    $deploySource.Contains('Invoke-External -NoRetry -SecureStandardInput $DeploymentControlSessionToken ssh') -and
+    -not $deploySource.Contains('$env:L12_DEPLOYMENT_DRAIN_TOKEN')) "Deployment control token must remain SecureString-to-stdin only."
+Assert-True ($deploySource.Contains('[switch]$Rollback') -and $deploySource.Contains('"rollback"') -and
+    $deploySource.Contains('runtimeDataCompatibility') -and $deploySource.Contains('runtimeSourceCompatibility') -and
+    $deploySource.Contains('Read-RemoteActiveRuntimeSourceCompatibility')) `
+    "Standard deployment entrypoint is missing fail-closed runtime-source-compatible rollback support."
+Assert-True ($verifySource.Contains('.deployment-drain-capability.json') -and
+    $verifySource.Contains('requiresExternalStopPermit') -and $verifySource.Contains('runtimeDataCompatibility') -and
+    $verifySource.Contains('runtimeSourceCompatibility') -and $verifySource.Contains('backendGitTree') -and
+    $verifySource.Contains('publishDepsSha256') -and $verifySource.Contains('rootBuildConfiguration')) `
+    "Release archive is missing its exact deployment-drain capability marker."
+$exactIntegerDefinition = Get-FunctionDefinitionText -Path $deployScript -Name 'Test-ExactJsonInteger'
+$manifestContractDefinition = Get-FunctionDefinitionText -Path $deployScript -Name 'Test-DeploymentManifestContract'
+$remoteCapabilityDefinition = Get-FunctionDefinitionText -Path $deployScript -Name 'Read-RemoteActiveRuntimeSourceCompatibility'
+$validatorCommit = 'a' * 40
+$validatorFingerprint = 'f' * 64
+$validDeploymentManifest = [ordered]@{
+    schema = 3
+    deploymentDrainProtocol = 1
+    requiresExternalStopPermit = $true
+    runtimeDataCompatibility = 'l12-runtime-v1'
+    runtimeSourceCompatibility = $validatorFingerprint
+} | ConvertTo-Json -Compress
+Assert-True (Invoke-DeploymentManifestContractProbe $exactIntegerDefinition $manifestContractDefinition $validDeploymentManifest) `
+    '发布清单实际 validator 拒绝了真实 JSON 整数。'
+$validRemoteCapability = [ordered]@{
+    schema = 1
+    protocolVersion = 1
+    requiresExternalStopPermit = $true
+    runtimeDataCompatibility = 'l12-runtime-v1'
+    runtimeSourceCompatibility = $validatorFingerprint
+    commit = $validatorCommit
+} | ConvertTo-Json -Compress
+Assert-True (Invoke-RemoteCapabilityContractProbe $exactIntegerDefinition $remoteCapabilityDefinition `
+        $validRemoteCapability $validatorCommit $validatorFingerprint) `
+    '远端能力实际 validator 拒绝了真实 JSON 整数。'
+foreach ($numericCase in @(
+    @{ Field = 'schema'; Value = $true; Label = 'schema bool' },
+    @{ Field = 'schema'; Value = '3'; Label = 'schema string' },
+    @{ Field = 'schema'; Value = 3.4; Label = 'schema fractional' },
+    @{ Field = 'deploymentDrainProtocol'; Value = $true; Label = 'protocol bool' },
+    @{ Field = 'deploymentDrainProtocol'; Value = '1'; Label = 'protocol string' },
+    @{ Field = 'deploymentDrainProtocol'; Value = 1.4; Label = 'protocol fractional' }
+)) {
+    $document = $validDeploymentManifest | ConvertFrom-Json
+    $document.PSObject.Properties[$numericCase.Field].Value = $numericCase.Value
+    $malformedJson = $document | ConvertTo-Json -Compress
+    Assert-True (-not (Invoke-DeploymentManifestContractProbe $exactIntegerDefinition `
+            $manifestContractDefinition $malformedJson)) `
+        "发布清单实际 validator 接受了非精确 JSON 整数：$($numericCase.Label)"
+}
+foreach ($numericCase in @(
+    @{ Field = 'schema'; Value = $true; Label = 'schema bool' },
+    @{ Field = 'schema'; Value = '1'; Label = 'schema string' },
+    @{ Field = 'schema'; Value = 1.4; Label = 'schema fractional' },
+    @{ Field = 'protocolVersion'; Value = $true; Label = 'protocol bool' },
+    @{ Field = 'protocolVersion'; Value = '1'; Label = 'protocol string' },
+    @{ Field = 'protocolVersion'; Value = 1.4; Label = 'protocol fractional' }
+)) {
+    $document = $validRemoteCapability | ConvertFrom-Json
+    $document.PSObject.Properties[$numericCase.Field].Value = $numericCase.Value
+    $malformedJson = $document | ConvertTo-Json -Compress
+    Assert-True (-not (Invoke-RemoteCapabilityContractProbe $exactIntegerDefinition `
+            $remoteCapabilityDefinition $malformedJson $validatorCommit $validatorFingerprint)) `
+        "远端能力实际 validator 接受了非精确 JSON 整数：$($numericCase.Label)"
+}
 $staleReleaseBaseMessage = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(
     '5Y+R5biD5YyF55qE5pu05paw5pel5b+X5Z+657q/5LiN5piv5b2T5YmN5q2j5byP5pyN5o+Q5Lqk'))
 Assert-True ($deploySource.Contains($staleReleaseBaseMessage)) "A stale or prebuilt manifest must not bypass the production changelog range gate."
@@ -259,6 +384,7 @@ try {
 
     $assetVersionA = "a" * 64
     $assetVersionB = "b" * 64
+    $runtimeSourceCompatibility = "f" * 64
     $cardManifestPath = Join-Path $fixtureCardAssets "card-assets.manifest.json"
     Write-CardManifest -Path $cardManifestPath -AssetVersion $assetVersionA
 
@@ -275,6 +401,10 @@ try {
     [ordered]@{
         schema = 3
         commit = $fixtureCommit
+        deploymentDrainProtocol = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = $runtimeSourceCompatibility
         generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
         releaseArchive = $releaseArchive
         releaseSha256 = $releaseSha
@@ -284,6 +414,7 @@ try {
         releaseBaseCommit = ""
         playerReleaseNotesSha256 = $fixtureNotesHash
     } | ConvertTo-Json | Set-Content -LiteralPath $cachedManifest -Encoding utf8
+    $validCachedManifestJson = Get-Content -LiteralPath $cachedManifest -Raw
 
     Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
     $fixtureVerify = Join-Path $fixtureRepo "ops\windows\verify-l12.ps1"
@@ -328,6 +459,30 @@ try {
     $budgetTimings = @($budgetRuns | ForEach-Object { Get-Content -LiteralPath (Join-Path $_.FullName "timings.json") -Raw | ConvertFrom-Json })
     Assert-True (@($budgetTimings | Where-Object { $_.trxOmittedForBudget -and $_.status -eq "failure" }).Count -eq 1) "Budgeted failure did not record that its TRX was omitted."
 
+    # Invoke the real cached-artifact validator with JSON values that PowerShell
+    # can coerce numerically. Only actual JSON Int32/Int64 values may reuse cache.
+    foreach ($numericCase in @(
+        @{ Field = 'schema'; Value = $true; Label = 'schema bool' },
+        @{ Field = 'schema'; Value = '3'; Label = 'schema string' },
+        @{ Field = 'schema'; Value = 3.4; Label = 'schema fractional' },
+        @{ Field = 'deploymentDrainProtocol'; Value = $true; Label = 'protocol bool' },
+        @{ Field = 'deploymentDrainProtocol'; Value = '1'; Label = 'protocol string' },
+        @{ Field = 'deploymentDrainProtocol'; Value = 1.4; Label = 'protocol fractional' }
+    )) {
+        $malformedManifest = $validCachedManifestJson | ConvertFrom-Json
+        $malformedManifest.PSObject.Properties[$numericCase.Field].Value = $numericCase.Value
+        $malformedManifest | ConvertTo-Json | Set-Content -LiteralPath $cachedManifest -Encoding utf8
+        Remove-Item -LiteralPath $commandLog -Force -ErrorAction SilentlyContinue
+        $numericRejection = Invoke-ChildPowerShell -ScriptPath $fixtureVerify -Arguments $verifyArguments
+        Assert-True ($numericRejection.ExitCode -ne 0 -and
+            -not $numericRejection.Output.Contains($cachedManifest)) `
+            "真实缓存 validator 接受了非精确 JSON 整数：$($numericCase.Label)"
+        $numericCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+        Assert-True ($numericCommands.Contains('dotnet test')) `
+            "非精确 JSON 整数没有使真实缓存 validator 失效并进入重新验证：$($numericCase.Label)"
+    }
+    [IO.File]::WriteAllText($cachedManifest, $validCachedManifestJson, [Text.UTF8Encoding]::new($false))
+
     # Both entry points must fail before audit/build/cache reuse when any tracked
     # or untracked content makes the commit identity ambiguous.
     Write-CardManifest -Path $cardManifestPath -AssetVersion $assetVersionA
@@ -367,6 +522,10 @@ try {
     [ordered]@{
         schema = 3
         commit = $expiredCommit
+        deploymentDrainProtocol = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = $runtimeSourceCompatibility
         generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
         releaseArchive = $releaseArchive
         releaseSha256 = $releaseSha

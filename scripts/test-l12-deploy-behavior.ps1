@@ -20,6 +20,16 @@ function Write-Utf8NoBom {
     [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
 }
 
+function Get-TextSha256 {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        return (($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text)) |
+            ForEach-Object { $_.ToString('x2') }) -join '')
+    }
+    finally { $algorithm.Dispose() }
+}
+
 function ConvertTo-MsysPath {
     param([Parameter(Mandatory = $true)][string]$Path)
     $full = [IO.Path]::GetFullPath($Path).Replace('\', '/')
@@ -69,6 +79,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $windowsDeploy = Join-Path $repoRoot "ops\windows\deploy-l12.ps1"
 $targetHelper = Join-Path $repoRoot "ops\windows\L12DeployTarget.ps1"
 $serverDeploy = Join-Path $repoRoot "ops\server\deploy-l12-release.sh"
+$drainConsumer = Join-Path $repoRoot "ops\server\l12-deployment-drain-consumer.py"
 $webAssetsNginx = Join-Path $repoRoot "ops\server\nginx-l12-web-assets.conf"
 $webAssetsActivator = Join-Path $repoRoot "ops\server\activate-l12-web-assets.sh"
 $sharePagesNginx = Join-Path $repoRoot "ops\server\nginx-l12-share-pages.conf"
@@ -95,6 +106,7 @@ try {
     . $targetHelper
 
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
+    $drainConsumerSource = Get-Content -LiteralPath $drainConsumer -Raw
     $webAssetsActivatorSource = Get-Content -LiteralPath $webAssetsActivator -Raw
     $webAssetsNginxSource = Get-Content -LiteralPath $webAssetsNginx -Raw
     $sharePagesNginxSource = Get-Content -LiteralPath $sharePagesNginx -Raw
@@ -119,6 +131,21 @@ try {
         "停服数据库证明没有保留 300 秒内部预算与 310 秒外层硬超时。"
     Assert-True ($serverDeploySource.Contains('runtimeProofFailureCode=%s')) `
         "停服数据库证明失败现场没有持久化常量原因码。"
+    Assert-True ($drainConsumerSource.Contains('LOOPBACK_PORT = 8083') -and
+        -not $drainConsumerSource.Contains('8084') -and $drainConsumerSource.Contains('sys.stdin.buffer.read')) `
+        "部署排空消费者没有固定到正式 8083 或没有仅从 stdin 读取会话。"
+    Assert-True ($serverDeploySource.Contains('l12-deployment-drain-consumer.py') -and
+        $serverDeploySource.Contains('deployment_recovery_reserve_seconds=900') -and
+        $serverDeploySource.Contains('"rollback"') -and $serverDeploySource.Contains('systemctl show --property MainPID --value')) `
+        "服务器标准 deploy/rollback 没有接入有界排空消费者、截止时间或精确进程更换证明。"
+    Assert-True ($serverDeploySource.Contains('runtimeSourceCompatibility') -and
+        $serverDeploySource.Contains('target_runtime_source_compatibility') -and
+        $serverDeploySource.Contains('current_runtime_source_compatibility')) `
+        "服务器 rollback 没有把目标与当前活动包绑定到同一 runtime 源兼容指纹。"
+    $finalFenceRemoval = $serverDeploySource.IndexOf('remove_sandbox_fence_and_confirm || fail')
+    $finalOpen = $serverDeploySource.IndexOf('if cancel_restarted_drain "$commit"')
+    Assert-True ($finalFenceRemoval -ge 0 -and $finalFenceRemoval -lt $finalOpen) `
+        "最终沙盒围栏没有在 exact cancel/Open 业务成功线性化之前严格清除。"
     foreach ($reasonCode in @(
         "TIME_BUDGET_EXCEEDED", "SNAPSHOT_NOT_LATEST", "PERSISTENT_FACTS_CHANGED",
         "BACKUP_CHECKSUM_CHANGED", "SQLITE_INTEGRITY_REJECTED", "SCHEMA_CONTRACT_REJECTED",
@@ -202,6 +229,7 @@ try {
 
     $commitA = "a" * 40
     $commitB = "b" * 40
+    $runtimeSourceCompatibility = "a" * 64
     $validHealth = "{`"status`":`"ok`",`"maintenance`":false,`"service`":`"twelve-legions`",`"serverVersion`":`"$commitA`",`"engineVersion`":`"l12-engine/$commitA`"}"
     $validResult = Invoke-NativeCapture -Executable $nodePath -Arguments @($healthVerifier, $commitA) -StandardInput $validHealth
     Assert-True ($validResult.ExitCode -eq 0) "精确健康身份被错误拒绝：$($validResult.Output)"
@@ -256,7 +284,7 @@ try {
             [string]$PublicCommitOverride = "",
             [string]$HealthStatus = "ok",
             [string]$HealthMaintenance = "",
-            [ValidateSet("deploy", "dry-run")][string]$Mode = "deploy",
+            [ValidateSet("deploy", "rollback", "dry-run")][string]$Mode = "deploy",
             [string]$ArtifactRoot = "/opt",
             [string]$ExternalMountTarget = "",
             [string]$ExternalMountSource = "",
@@ -280,7 +308,15 @@ try {
             [switch]$ExistingReleaseTarget,
             [switch]$ExternalCardTargetSymlink,
             [switch]$OmitArtifactRootArgument,
-            [switch]$SeedStorageCleanup
+            [switch]$SeedStorageCleanup,
+            [ValidateSet("", "missing", "bad-protocol", "wrong-commit", "missing-runtime-fingerprint", "bad-runtime-fingerprint")][string]$CapabilityFault = "",
+            [switch]$RuntimeCompatibilityMismatch,
+            [ValidateSet("", "unavailable", "blocker", "invalid-receipt", "closed", "observe-failure", "cancel-failure", "sandbox-fence-race")][string]$DrainFault = "",
+            [int]$DeadlineOffsetSeconds = 3600,
+            [switch]$FailStopConfirmation,
+            [switch]$FailSandboxFenceCleanup,
+            [switch]$PreexistingSandboxFence,
+            [switch]$DriftSandboxFenceOwnership
         )
 
         $script:serverScenarioCount += 1
@@ -323,12 +359,24 @@ try {
             (Join-Path $root "etc") -Force | Out-Null
 
         Write-Utf8NoBom (Join-Path $active ".deployment-commit") "$commitA`n"
+        Write-Utf8NoBom (Join-Path $active ".deployment-drain-capability.json") `
+            (([ordered]@{
+                schema = 1
+                protocolVersion = 1
+                requiresExternalStopPermit = $true
+                runtimeDataCompatibility = "l12-runtime-v1"
+                runtimeSourceCompatibility = $runtimeSourceCompatibility
+                commit = $commitA
+            } | ConvertTo-Json -Compress) + "`n")
         Write-Utf8NoBom (Join-Path $active "publish\GrandUMIServer.dll") "old"
         Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\index.html") "old"
         Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\assets\Page-old.js") "export const release = 'old'"
         Write-Utf8NoBom (Join-Path $active "opcgpro-vue\dist\assets\Page-old.css") ".old{display:block}"
         Write-Utf8NoBom (Join-Path $active "scripts\ws-smoke.mjs") "// old"
         Write-Utf8NoBom (Join-Path $runtime "authoritative-before.txt") "preserve"
+        if ($PreexistingSandboxFence) {
+            Write-Utf8NoBom (Join-Path $runtime ".maintenance-sandbox-drain") "foreign-preexisting-fence`n"
+        }
         New-Item -ItemType Directory -Path (Join-Path $root "usr\local\libexec") -Force | Out-Null
         Write-Utf8NoBom (Join-Path $root "usr\local\libexec\verify-legion12-runtime-backup.py") "# Synthetic command-boundary fixture; real SQLite cases run separately."
         Write-Utf8NoBom (Join-Path $root "etc\legion12-test.env") "fixture=1`n"
@@ -342,6 +390,24 @@ try {
             (Join-Path $package "opcgpro-vue\dist\assets"), `
             (Join-Path $package "scripts") -Force | Out-Null
         Write-Utf8NoBom (Join-Path $package ".deployment-commit") "$commitB`n"
+        if ($CapabilityFault -ne "missing") {
+            $capabilityCommit = if ($CapabilityFault -eq "wrong-commit") { $commitA } else { $commitB }
+            $capabilityProtocol = if ($CapabilityFault -eq "bad-protocol") { 2 } else { 1 }
+            $targetRuntimeSourceCompatibility = if ($RuntimeCompatibilityMismatch) { "b" * 64 } `
+                elseif ($CapabilityFault -eq "bad-runtime-fingerprint") { "invalid" } else { $runtimeSourceCompatibility }
+            $capability = [ordered]@{
+                schema = 1
+                protocolVersion = $capabilityProtocol
+                requiresExternalStopPermit = $true
+                runtimeDataCompatibility = "l12-runtime-v1"
+                commit = $capabilityCommit
+            }
+            if ($CapabilityFault -ne "missing-runtime-fingerprint") {
+                $capability['runtimeSourceCompatibility'] = $targetRuntimeSourceCompatibility
+            }
+            Write-Utf8NoBom (Join-Path $package ".deployment-drain-capability.json") `
+                (($capability | ConvertTo-Json -Compress) + "`n")
+        }
         Write-Utf8NoBom (Join-Path $package "publish\GrandUMIServer.dll") "new"
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\index.html") "new"
         Write-Utf8NoBom (Join-Path $package "opcgpro-vue\dist\assets\Page-new.js") "export const release = 'new'"
@@ -521,14 +587,31 @@ printf 'systemctl %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
 case "${1:-}" in
   cat|daemon-reload) exit 0 ;;
   is-enabled) [ "${L12_TEST_SERVICE_ENABLED:-1}" = "1" ] && exit 0; exit 1 ;;
-  stop) printf 'stopped\n' > "$L12_TEST_SERVICE_STATE"; exit 0 ;;
+  stop)
+    if [ "${L12_TEST_FAIL_STOP_CONFIRMATION:-0}" = "1" ]; then exit 0; fi
+    printf 'stopped\n' > "$L12_TEST_SERVICE_STATE"
+    printf '0\n' > "$L12_TEST_SERVICE_PID"
+    exit 0 ;;
   is-active)
     [ -f "$L12_TEST_SERVICE_STATE" ] && [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = "running" ] && exit 0
     exit 3 ;;
+  show)
+    cat "$L12_TEST_SERVICE_PID"
+    exit 0 ;;
   start)
+    next_pid=$(( $(tr -d '\r\n' < "$L12_TEST_SERVICE_PID_COUNTER") + 1 ))
+    printf '%s\n' "$next_pid" > "$L12_TEST_SERVICE_PID_COUNTER"
+    printf '%s\n' "$next_pid" > "$L12_TEST_SERVICE_PID"
     printf 'running\n' > "$L12_TEST_SERVICE_STATE"
     if [ "${L12_TEST_WRITE_ON_START:-0}" = "1" ]; then
       printf 'accepted-after-launch\n' > "$L12_TEST_RUNTIME_DIR/post-launch-write.txt"
+    fi
+    if [ "${L12_TEST_FAIL_SANDBOX_FENCE_CLEANUP:-0}" = "1" ]; then
+      rm -f "$L12_TEST_SANDBOX_FENCE"
+      mkdir "$L12_TEST_SANDBOX_FENCE"
+    fi
+    if [ "${L12_TEST_DRIFT_SANDBOX_FENCE_OWNERSHIP:-0}" = "1" ]; then
+      printf 'foreign-drift-fence\n' > "$L12_TEST_SANDBOX_FENCE"
     fi
     exit 0 ;;
 esac
@@ -552,16 +635,25 @@ for argument in "$@"; do url="$argument"; done
 printf 'curl %s\n' "$url" >> "$L12_TEST_COMMAND_LOG"
 if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ] || [ "$url" = "$L12_DEPLOY_PUBLIC_BASE/health" ]; then
   served_commit="$(tr -d '\r\n' < "$L12_TEST_ACTIVE_DIR/.deployment-commit")"
+  active_commit="$served_commit"
   engine_commit="$served_commit"
-  if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ] && [ -n "${L12_TEST_LOCAL_COMMIT_OVERRIDE:-}" ]; then
-    served_commit="$L12_TEST_LOCAL_COMMIT_OVERRIDE"
-  fi
-  if [ "$url" = "$L12_DEPLOY_PUBLIC_BASE/health" ] && [ -n "${L12_TEST_PUBLIC_COMMIT_OVERRIDE:-}" ]; then
-    served_commit="$L12_TEST_PUBLIC_COMMIT_OVERRIDE"
-  fi
+  if [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ]; then health_scope=local; else health_scope=public; fi
+  health_count_file="${L12_TEST_HEALTH_CALL_STATE}.${health_scope}"
+  health_count=0
+  [ -f "$health_count_file" ] && health_count="$(tr -d '\r\n' < "$health_count_file")"
+  health_count=$((health_count + 1))
+  printf '%s\n' "$health_count" > "$health_count_file"
+  apply_health_fault=0
+  if [ "$active_commit" = "$L12_TEST_TARGET_COMMIT" ] || [ "$health_count" -gt 1 ]; then apply_health_fault=1; fi
+  if [ "$apply_health_fault" = "1" ] && [ "$url" = "$L12_DEPLOY_LOCAL_BASE/health" ] && [ -n "${L12_TEST_LOCAL_COMMIT_OVERRIDE:-}" ]; then served_commit="$L12_TEST_LOCAL_COMMIT_OVERRIDE"; fi
+  if [ "$apply_health_fault" = "1" ] && [ "$url" = "$L12_DEPLOY_PUBLIC_BASE/health" ] && [ -n "${L12_TEST_PUBLIC_COMMIT_OVERRIDE:-}" ]; then served_commit="$L12_TEST_PUBLIC_COMMIT_OVERRIDE"; fi
   engine_commit="$served_commit"
-  health_status="${L12_TEST_HEALTH_STATUS:-ok}"
-  health_maintenance="${L12_TEST_HEALTH_MAINTENANCE:-}"
+  health_status=ok
+  health_maintenance=false
+  if [ "$apply_health_fault" = "1" ]; then
+    health_status="${L12_TEST_HEALTH_STATUS:-ok}"
+    health_maintenance="${L12_TEST_HEALTH_MAINTENANCE:-}"
+  fi
   if [ -z "$health_maintenance" ]; then
     if [ "$health_status" = "maintenance" ]; then health_maintenance=true; else health_maintenance=false; fi
   fi
@@ -609,6 +701,69 @@ case "${L12_TEST_RUNTIME_PROOF_FAULT:-}" in
 esac
 printf '{"schema":1,"verified":true,"databases":2,"sqliteQuickCheck":"ok","schemaAnchorsVerified":true,"latestDatabaseAndWalEqualBackup":true,"persistentFactMutations":0,"checkpointOrRepairPerformed":false,"emptyWalPresenceTransitions":%s,"stageTimings":%s,"elapsedMilliseconds":0.8,"backupSha256":"%s","databaseWalFingerprintSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n' "$empty_wal_transitions" "$stages" "$sha"
 '@ | Out-Null
+        $fakeDrainConsumer = Join-Path $root "usr\local\libexec\l12-deployment-drain-consumer.py"
+        Write-Utf8NoBom $fakeDrainConsumer @'
+#!/usr/bin/env sh
+set -eu
+IFS= read -r token || exit 2
+[ "${#token}" -eq 64 ] || exit 2
+case "$token" in *[!0-9a-f]*) exit 2 ;; esac
+command_name="${1:-}"
+shift
+action=""; package=""; operation=""; target=""; active=""; previous_process=""; previous_epoch=""; process=""; epoch=""
+while [ "$#" -gt 0 ]; do
+  key="$1"; value="${2:-}"; shift 2
+  case "$key" in
+    --action) action="$value" ;;
+    --package-sha256) package="$value" ;;
+    --operation-id) operation="$value" ;;
+    --target-commit) target="$value" ;;
+    --expected-active-commit) active="$value" ;;
+    --previous-process-instance) previous_process="$value" ;;
+    --previous-epoch) previous_epoch="$value" ;;
+    --process-instance) process="$value" ;;
+    --epoch) epoch="$value" ;;
+  esac
+done
+printf 'drain-consumer %s %s %s %s\n' "$command_name" "$action" "$package" "$target" >> "$L12_TEST_COMMAND_LOG"
+failure() {
+  printf '{"failedStage":"fixture","ok":false,"reasonCode":"%s","retrySafe":%s,"schema":1,"stateDisposition":"%s"}\n' "$1" "$2" "$3"
+  exit 2
+}
+case "${L12_TEST_DRAIN_FAULT:-}:$command_name" in
+  unavailable:acquire-stop) failure PROTOCOL_UNAVAILABLE false unchanged ;;
+  blocker:acquire-stop) failure DRAIN_TIMEOUT true open ;;
+  closed:acquire-stop) failure CANCEL_FAILED false closed ;;
+  observe-failure:observe-restart) failure RESTART_STATE_REJECTED false closed ;;
+  cancel-failure:cancel-open) failure CANCEL_FAILED false closed ;;
+esac
+if [ "${L12_TEST_DRAIN_FAULT:-}" = "invalid-receipt" ] && [ "$command_name" = "acquire-stop" ]; then
+  printf '{"schema":1,"ok":true,"unexpected":true}\n'
+  exit 0
+fi
+case "$command_name" in
+  acquire-stop) result_process=11111111111111111111111111111111; result_epoch=3; seal=33333333333333333333333333333333; phase=sealed ;;
+  observe-restart) result_process=22222222222222222222222222222222; result_epoch=$((previous_epoch + 1)); seal=-; phase=draining ;;
+  cancel-open) result_process="$process"; result_epoch=$((epoch + 1)); seal=-; phase=open ;;
+  *) exit 2 ;;
+esac
+if [ "${L12_TEST_DRAIN_FAULT:-}" = "sandbox-fence-race" ] && [ "$command_name" = "acquire-stop" ]; then
+  printf 'foreign-race-fence\n' > "$L12_TEST_SANDBOX_FENCE"
+fi
+node - "$command_name" "$action" "$package" "$operation" "$target" "$active" "$result_process" "$result_epoch" "$seal" "$phase" <<'NODE'
+const { createHash } = require('node:crypto')
+const [command,action,packageSha256,operationId,targetCommit,activeCommit,processInstance,epochText,sealText,phase]=process.argv.slice(2)
+const epoch=Number(epochText); const sealId=sealText==='-'?null:sealText
+const transactionBindingSha256=createHash('sha256').update(JSON.stringify({action,operationId,packageSha256,schema:1,targetCommit})).digest('hex')
+const stateBindingSha256=createHash('sha256').update(JSON.stringify({activeCommit,epoch,processInstance,sealId,transactionBindingSha256})).digest('hex')
+process.stdout.write(JSON.stringify({schema:1,ok:true,command,protocolVersion:1,action,packageSha256,operationId,targetCommit,activeCommit,processInstance,epoch,sealId,phase,transactionBindingSha256,stateBindingSha256})+'\n')
+NODE
+'@
+        $consumerExecutable = Invoke-NativeCapture -Executable $bashPath -Arguments @(
+            "-c", 'test -f "$1" && test -x "$1"', "l12-consumer-mode", (ConvertTo-MsysPath $fakeDrainConsumer)
+        )
+        Assert-True ($consumerExecutable.ExitCode -eq 0) `
+            "MSYS 夹具没有把普通部署排空消费者视为可执行文件：$($consumerExecutable.Output)"
         New-FakeCommand $fakeBin "flock" "exit 0`n" | Out-Null
         New-FakeCommand $fakeBin "id" @'
 if [ "${1:-}" = "-u" ]; then printf '0\n'; fi
@@ -621,11 +776,16 @@ exit 0
 '@ | Out-Null
         New-FakeCommand $fakeBin "seq" "exit 0`n" | Out-Null
         New-FakeCommand $fakeBin "sha256sum" @'
+if [ "${1:-}" = "--" ]; then shift; fi
 case "${1:-}" in
   *runtime-before-*.partial)
     if [ "${L12_TEST_FAIL_BACKUP_SHA:-0}" = "1" ]; then exit 92; fi ;;
 esac
-node -e "const fs=require('node:fs'),crypto=require('node:crypto');const p=process.argv[1];process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+p+'\n')" "$1"
+if [ "$#" -eq 0 ]; then
+  node -e "const fs=require('node:fs'),crypto=require('node:crypto');process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(0)).digest('hex')+'  -\n')"
+else
+  node -e "const fs=require('node:fs'),crypto=require('node:crypto');const p=process.argv[1];process.stdout.write(crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')+'  '+p+'\n')" "$1"
+fi
 '@ | Out-Null
         New-FakeCommand $fakeBin "stat" @'
 if [ "${1:-}" = "-c" ] && [ "${2:-}" = "%s" ]; then
@@ -677,6 +837,11 @@ exec "$L12_TEST_REAL_TAR" "$@"
         $realTarPosix = ConvertTo-MsysPath (Get-Command tar -ErrorAction Stop).Source
         $commandLog = Join-Path $root "commands.log"
         $serviceState = Join-Path $root "service.state"
+        $servicePid = Join-Path $root "service.pid"
+        $servicePidCounter = Join-Path $root "service.pid-counter"
+        Write-Utf8NoBom $serviceState "running`n"
+        Write-Utf8NoBom $servicePid "1001`n"
+        Write-Utf8NoBom $servicePidCounter "1001`n"
 
         $environment = @{
             L12_DEPLOY_TEST_MODE = "1"
@@ -693,7 +858,11 @@ exec "$L12_TEST_REAL_TAR" "$@"
             L12_TEST_REAL_TAR = $realTarPosix
             L12_TEST_COMMAND_LOG = (ConvertTo-MsysPath $commandLog)
             L12_TEST_SERVICE_STATE = (ConvertTo-MsysPath $serviceState)
+            L12_TEST_SERVICE_PID = (ConvertTo-MsysPath $servicePid)
+            L12_TEST_SERVICE_PID_COUNTER = (ConvertTo-MsysPath $servicePidCounter)
             L12_TEST_ACTIVE_DIR = "$rootPosix/opt/legion12-test"
+            L12_TEST_TARGET_COMMIT = $commitB
+            L12_TEST_HEALTH_CALL_STATE = (ConvertTo-MsysPath (Join-Path $root "health-calls"))
             L12_TEST_RUNTIME_DIR = "$rootPosix/opt/legion12-runtime"
             L12_TEST_LOCAL_COMMIT_OVERRIDE = $LocalCommitOverride
             L12_TEST_PUBLIC_COMMIT_OVERRIDE = $PublicCommitOverride
@@ -704,6 +873,12 @@ exec "$L12_TEST_REAL_TAR" "$@"
             L12_TEST_FAIL_BACKUP_SHA = $(if ($FailBackupSha) { "1" } else { "0" })
             L12_TEST_RUNTIME_PROOF_FAULT = $RuntimeProofFault
             L12_TEST_WRITE_ON_START = $(if ($WriteOnStart) { "1" } else { "0" })
+            L12_TEST_DRAIN_FAULT = $DrainFault
+            L12_DEPLOY_TEST_OPERATION_ID = ("4" * 32)
+            L12_TEST_FAIL_STOP_CONFIRMATION = $(if ($FailStopConfirmation) { "1" } else { "0" })
+            L12_TEST_FAIL_SANDBOX_FENCE_CLEANUP = $(if ($FailSandboxFenceCleanup) { "1" } else { "0" })
+            L12_TEST_DRIFT_SANDBOX_FENCE_OWNERSHIP = $(if ($DriftSandboxFenceOwnership) { "1" } else { "0" })
+            L12_TEST_SANDBOX_FENCE = "$rootPosix/opt/legion12-runtime/.maintenance-sandbox-drain"
             L12_TEST_SERVICE_ENABLED = $(if ($DisabledService) { "0" } else { "1" })
             L12_DEPLOY_TEST_SYSTEM_AVAILABLE_BYTES = $(if ($SystemAvailableBytes -gt 0) { [string]$SystemAvailableBytes } else { "" })
             L12_DEPLOY_TEST_EXTERNAL_MOUNT_TARGET = $(if ([string]::IsNullOrEmpty($ExternalMountTarget)) { $externalMountPosix } else { $ExternalMountTarget })
@@ -728,7 +903,11 @@ exec "$L12_TEST_REAL_TAR" "$@"
                 $cardAssetsSha, $cardAssetsArgument
             )
             if (-not $OmitArtifactRootArgument) { $serverArguments += $ArtifactRoot }
-            $result = Invoke-NativeCapture -Executable $bashPath -Arguments $serverArguments
+            if (-not $OmitArtifactRootArgument) {
+                $serverArguments += [string]([DateTimeOffset]::UtcNow.AddSeconds($DeadlineOffsetSeconds).ToUnixTimeSeconds())
+            }
+            $standardInput = if ($Mode -eq "dry-run") { "" } else { ("1" * 64) + "`n" }
+            $result = Invoke-NativeCapture -Executable $bashPath -Arguments $serverArguments -StandardInput $standardInput
         }
         finally {
             foreach ($entry in $savedEnvironment.GetEnumerator()) {
@@ -875,6 +1054,91 @@ exec "$L12_TEST_REAL_TAR" "$@"
         "Windows 正式部署入口没有在最终发布连接内激活分享路由并清理远端工具目录。"
     Assert-True ($windowsDeployText.Contains('''$ServerArtifactRoot''')) `
         "Windows 发布入口没有把固定制品根传给最终服务器发布命令。"
+    Assert-True ($windowsDeployText.Contains('[Security.SecureString]$DeploymentControlSessionToken') -and
+        $windowsDeployText.Contains('[Security.SecureString]$SecureStandardInput') -and
+        $windowsDeployText.Contains('Invoke-External -NoRetry -SecureStandardInput $DeploymentControlSessionToken ssh') -and
+        -not $windowsDeployText.Contains('$env:L12_DEPLOYMENT_DRAIN_TOKEN')) `
+        "Windows 发布入口没有把排空会话限制为 SecureString 到标准输入。"
+    Assert-True ($windowsDeployText.Contains('ops/server/l12-deployment-drain-consumer.py') -and
+        $windowsDeployText.Contains('/usr/local/libexec/l12-deployment-drain-consumer.py')) `
+        "Windows 工具包没有安装与服务器脚本同源的排空消费者。"
+    Assert-True ($deployCommand.Parameters.ContainsKey("Rollback") -and
+        $deployCommand.Parameters.ContainsKey("DeploymentControlSessionToken")) `
+        "Windows 标准入口缺少 rollback 或排空会话参数。"
+    Assert-True ($windowsDeployText.Contains('Read-RemoteActiveRuntimeSourceCompatibility') -and
+        $windowsDeployText.Contains('$manifest.runtimeSourceCompatibility -cne $activeRuntimeSourceCompatibility')) `
+        "Windows rollback 入口没有在上传/停服前比对当前活动包与目标包的 runtime 源兼容指纹。"
+    $executorDefinitions = @($deployCommand.ScriptBlock.Ast.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-External'
+    }, $true))
+    Assert-True ($executorDefinitions.Count -eq 1) "Windows 发布入口没有唯一的真实外部执行器。"
+    $finalSecureCalls = @($deployCommand.ScriptBlock.Ast.FindAll({
+        param($node)
+        if ($node -isnot [Management.Automation.Language.CommandAst] -or $node.GetCommandName() -ne 'Invoke-External') { return $false }
+        $parameters = @($node.CommandElements | Where-Object { $_ -is [Management.Automation.Language.CommandParameterAst] } |
+            ForEach-Object ParameterName)
+        return $parameters -contains 'NoRetry' -and $parameters -contains 'SecureStandardInput' -and
+            $node.Extent.Text.Contains('deploy-legion12-release $mode')
+    }, $true))
+    Assert-True ($finalSecureCalls.Count -eq 1) `
+        "正式 cutover 没有通过唯一执行器的 SecureString stdin 且显式单次调用。"
+
+    $secureProbeRoot = Join-Path $fixtureRoot 'secure-stdin-probe'
+    New-Item -ItemType Directory -Path $secureProbeRoot -Force | Out-Null
+    $secureProbeScript = Join-Path $secureProbeRoot 'probe.ps1'
+    $secureProbeCount = Join-Path $secureProbeRoot 'calls.txt'
+    $secureProbeProof = Join-Path $secureProbeRoot 'proof.json'
+    Write-Utf8NoBom $secureProbeScript @'
+param([string]$CountPath,[string]$ProofPath,[string]$ExpectedTokenSha256)
+$raw = [Console]::In.ReadToEnd()
+$normalized = $raw.TrimEnd("`r", "`n")
+$algorithm = [Security.Cryptography.SHA256]::Create()
+try {
+    $inputHash = (($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($normalized)) | ForEach-Object { $_.ToString('x2') }) -join '')
+    $leaked = $false
+    foreach ($candidate in @([Environment]::GetCommandLineArgs()) + @([Environment]::GetEnvironmentVariables().Values)) {
+        $candidateText = [string]$candidate
+        $candidateHash = (($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($candidateText)) | ForEach-Object { $_.ToString('x2') }) -join '')
+        if ($candidateHash -ceq $ExpectedTokenSha256) { $leaked = $true }
+    }
+    [IO.File]::AppendAllText($CountPath, "call`n", [Text.UTF8Encoding]::new($false))
+    [ordered]@{
+        inputSha256 = $inputHash
+        endedWithNewline = $raw.EndsWith("`n", [StringComparison]::Ordinal)
+        tokenFoundInArgumentOrEnvironment = $leaked
+    } | ConvertTo-Json -Compress | Set-Content -LiteralPath $ProofPath -Encoding utf8
+}
+finally { $algorithm.Dispose() }
+exit 255
+'@
+    $syntheticToken = 'c' * 64
+    $syntheticTokenHash = Get-TextSha256 $syntheticToken
+    $secureToken = ConvertTo-SecureString $syntheticToken -AsPlainText -Force
+    $secureProbeResult = & {
+        param($Definition, $Deadline, $SecureToken, $HostPath, $ProbeScript, $CountPath, $ProofPath, $TokenHash)
+        . ([scriptblock]::Create($Definition))
+        $DeploymentDeadline = $Deadline
+        $threw = $false
+        $message = ''
+        try {
+            Invoke-External -NoRetry -SecureStandardInput $SecureToken $HostPath `
+                '-NoLogo' '-NoProfile' '-File' $ProbeScript $CountPath $ProofPath $TokenHash
+        }
+        catch { $threw = $true; $message = $_.Exception.Message }
+        [pscustomobject]@{ Threw = $threw; Message = $message }
+    } $executorDefinitions[0].Extent.Text ([DateTimeOffset]::UtcNow.AddMinutes(1)) $secureToken `
+        $powerShellPath.Source $secureProbeScript $secureProbeCount $secureProbeProof $syntheticTokenHash
+    $secureToken = $null
+    $secureProof = Get-Content -LiteralPath $secureProbeProof -Raw | ConvertFrom-Json
+    Assert-True ($secureProbeResult.Threw -and @(Get-Content -LiteralPath $secureProbeCount).Count -eq 1) `
+        "未知 cutover 返回没有在第一次调用后失败关闭。"
+    Assert-True ($secureProof.inputSha256 -ceq $syntheticTokenHash -and $secureProof.endedWithNewline) `
+        "SecureString 会话没有精确通过一次标准输入交给远端事务。"
+    Assert-True (-not $secureProof.tokenFoundInArgumentOrEnvironment -and
+        -not $secureProbeResult.Message.Contains($syntheticToken) -and
+        -not $windowsDeployText.Contains('$env:L12_DEPLOYMENT_DRAIN_TOKEN')) `
+        "排空会话泄漏到 argv、环境、错误或产品日志路径。"
     $artifactRootAst = $deployCommand.ScriptBlock.Ast.ParamBlock.Parameters |
         Where-Object { $_.Name.VariablePath.UserPath -eq "ServerArtifactRoot" }
     Assert-True ($artifactRootAst.DefaultValue.Extent.Text -eq '"/www/legion12"') `
@@ -897,6 +1161,16 @@ exec "$L12_TEST_REAL_TAR" "$@"
         else { Get-Content -LiteralPath $successFailureRecord.FullName -Raw }
     }
     Assert-True ($success.ExitCode -eq 0) "精确版本部署行为夹具失败：$($success.Output)`n失败现场：$successFailureDetails`n命令轨迹：$($success.Commands)"
+    $acquireIndex = $success.Commands.IndexOf("drain-consumer acquire-stop deploy", [StringComparison]::Ordinal)
+    $stopIndex = $success.Commands.IndexOf("systemctl stop", [StringComparison]::Ordinal)
+    $startIndex = $success.Commands.IndexOf("systemctl start", [StringComparison]::Ordinal)
+    $observeIndex = $success.Commands.IndexOf("drain-consumer observe-restart deploy", [StringComparison]::Ordinal)
+    $cancelIndex = $success.Commands.IndexOf("drain-consumer cancel-open deploy", [StringComparison]::Ordinal)
+    Assert-True ($acquireIndex -ge 0 -and $acquireIndex -lt $stopIndex -and $stopIndex -lt $startIndex -and
+        $startIndex -lt $observeIndex -and $observeIndex -lt $cancelIndex) `
+        "成功发布没有按 consume -> stop -> new PID/epoch observe -> exact cancel 顺序执行。"
+    Assert-True (-not ($success.Output + $success.Commands).Contains(("1" * 64))) `
+        "排空会话泄漏到发布输出或命令轨迹。"
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $success.Root "opt\legion12-runtime\.maintenance-sandbox-drain"))) "成功发布后没有仅解除临时沙盒围栏。"
     Assert-True ($success.Commands.Contains("curl http://127.0.0.1:8083/health")) "成功路径没有核验目标机本地健康身份。"
     Assert-True ($success.Commands.Contains("curl https://legion-12.com/health")) "成功路径没有核验公网健康身份。"
@@ -906,6 +1180,10 @@ exec "$L12_TEST_REAL_TAR" "$@"
     Assert-True ($successInfo.StartsWith("Legion12 正式服`n") -or $successInfo.StartsWith("Legion12 正式服`r`n")) `
         "成功元数据标题未标识正式服。"
     Assert-True ($successInfo.Contains($commitB)) "成功元数据未绑定目标提交。"
+    Assert-True ($successInfo.Contains("部署动作：deploy") -and
+        $successInfo.Contains("v1 consumer-level binding（非服务端原子 package binding）") -and
+        $successInfo.Contains("部署事务绑定SHA256：")) `
+        "成功元数据冒称服务端原子绑定或缺少 consumer-level action/package 绑定。"
     Assert-True ($successInfo.Contains("服务器制品根：/opt")) "默认发布元数据未记录兼容的 /opt 制品根。"
     Assert-True (Test-Path -LiteralPath $success.ExpectedRelease -PathType Container) "默认发布没有落入既有 /opt release 布局。"
     $successBackupSha = Assert-BackupReceipt $success
@@ -997,6 +1275,133 @@ exec "$L12_TEST_REAL_TAR" "$@"
 
     $maintenanceSuccess = Invoke-ServerScenario -Name "maintenance-success" -HealthStatus "maintenance"
     Assert-True ($maintenanceSuccess.ExitCode -eq 0) "维护门禁下精确版本部署被错误判定失败：$($maintenanceSuccess.Output)"
+
+    $rollbackSuccess = Invoke-ServerScenario -Name "rollback-success" -Mode "rollback"
+    Assert-True ($rollbackSuccess.ExitCode -eq 0) "标准 rollback 未复用同一排空消费者安全时序：$($rollbackSuccess.Output)"
+    Assert-True ($rollbackSuccess.Commands.Contains("drain-consumer acquire-stop rollback") -and
+        $rollbackSuccess.Commands.Contains("drain-consumer observe-restart rollback") -and
+        $rollbackSuccess.Commands.Contains("drain-consumer cancel-open rollback")) `
+        "rollback action 未绑定到 consumer-level operation/package 事务。"
+    $rollbackInfo = Get-Content -LiteralPath (Join-Path $rollbackSuccess.Root "opt\legion12-deployment\deployment-info.txt") -Raw
+    Assert-True ($rollbackInfo.Contains("部署动作：rollback")) "rollback 成功元数据没有记录精确动作。"
+
+    $rollbackCompatibilityRejected = Invoke-ServerScenario -Name "rollback-runtime-source-mismatch" `
+        -Mode "rollback" -RuntimeCompatibilityMismatch
+    Assert-True ($rollbackCompatibilityRejected.ExitCode -ne 0) `
+        "runtime 源指纹不同的祖先 rollback 被错误接受。"
+    Assert-True (-not $rollbackCompatibilityRejected.Commands.Contains("drain-consumer") -and
+        -not $rollbackCompatibilityRejected.Commands.Contains("systemctl stop")) `
+        "runtime 源不兼容 rollback 在拒绝前已消费许可或停服。"
+    Assert-BaseStatePreserved $rollbackCompatibilityRejected
+
+    foreach ($capabilityFault in @("missing", "bad-protocol", "wrong-commit", "missing-runtime-fingerprint", "bad-runtime-fingerprint")) {
+        $capabilityRejected = Invoke-ServerScenario -Name "capability-$capabilityFault" -CapabilityFault $capabilityFault
+        Assert-True ($capabilityRejected.ExitCode -ne 0) "运行包能力标记错误被接受：$capabilityFault"
+        Assert-True (-not $capabilityRejected.Commands.Contains("drain-consumer") -and
+            -not $capabilityRejected.Commands.Contains("systemctl stop")) `
+            "运行包能力标记拒绝发生在消费许可或停服之后：$capabilityFault"
+        Assert-BaseStatePreserved $capabilityRejected
+    }
+
+    foreach ($drainFault in @("unavailable", "blocker")) {
+        $drainRejected = Invoke-ServerScenario -Name "drain-$drainFault" -DrainFault $drainFault
+        Assert-True ($drainRejected.ExitCode -ne 0) "排空控制面拒绝被旧停服流程绕过：$drainFault"
+        Assert-True ($drainRejected.Commands.Contains("drain-consumer acquire-stop") -and
+            -not $drainRejected.Commands.Contains("systemctl stop")) `
+            "排空控制面不可用/有历史 blocker 时仍停止服务：$drainFault"
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $drainRejected.Root "opt\legion12-deployment\deployment-blocked.txt"))) `
+            "消费者已证明 open/unchanged 时被错误固化为未知围栏：$drainFault"
+        Assert-BaseStatePreserved $drainRejected
+    }
+
+    foreach ($drainFault in @("invalid-receipt", "closed")) {
+        $drainUnknown = Invoke-ServerScenario -Name "drain-$drainFault" -DrainFault $drainFault
+        Assert-True ($drainUnknown.ExitCode -ne 0) "未知/closed 排空状态被继续执行：$drainFault"
+        Assert-True (-not $drainUnknown.Commands.Contains("systemctl stop")) `
+            "未知/closed 排空状态触发了未经证明的停服：$drainFault"
+        Assert-True (Test-Path -LiteralPath (Join-Path $drainUnknown.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
+            "未知/closed 排空状态没有留下人工对账阻断：$drainFault"
+        Assert-BaseStatePreserved $drainUnknown
+    }
+
+    $deadlineRejected = Invoke-ServerScenario -Name "drain-deadline-reserve" -DeadlineOffsetSeconds 899
+    Assert-True ($deadlineRejected.ExitCode -ne 0) "不足取消/恢复预算的截止时间仍进入排空。"
+    Assert-True (-not $deadlineRejected.Commands.Contains("drain-consumer") -and
+        -not $deadlineRejected.Commands.Contains("systemctl stop")) `
+        "截止时间在 helper/stop 前没有再次失败关闭。"
+    Assert-BaseStatePreserved $deadlineRejected
+
+    $stopUnknown = Invoke-ServerScenario -Name "drain-stop-unconfirmed" -FailStopConfirmation
+    Assert-True ($stopUnknown.ExitCode -ne 0 -and $stopUnknown.Commands.Contains("drain-consumer acquire-stop")) `
+        "停服不确认夹具没有到达许可消费边界。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $stopUnknown.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
+        "停服不确认没有保留最新 runtime 与人工对账阻断。"
+    Assert-True (-not $stopUnknown.Commands.Contains("systemctl start")) `
+        "停服不确认时错误启动了新旧程序。"
+
+    $preexistingFence = Invoke-ServerScenario -Name "sandbox-fence-preexisting" -PreexistingSandboxFence
+    $preexistingFencePath = Join-Path $preexistingFence.Root "opt\legion12-runtime\.maintenance-sandbox-drain"
+    Assert-True ($preexistingFence.ExitCode -ne 0 -and
+        -not $preexistingFence.Commands.Contains("drain-consumer") -and
+        -not $preexistingFence.Commands.Contains("systemctl stop")) `
+        "常规消费者在既有沙盒围栏存在时仍消费许可或停服。"
+    Assert-True ((Get-Content -LiteralPath $preexistingFencePath -Raw) -ceq "foreign-preexisting-fence`n") `
+        "常规消费者改写或删除了未知既有沙盒围栏。"
+
+    $racingFence = Invoke-ServerScenario -Name "sandbox-fence-race-after-consume" -DrainFault "sandbox-fence-race"
+    $racingFencePath = Join-Path $racingFence.Root "opt\legion12-runtime\.maintenance-sandbox-drain"
+    Assert-True ($racingFence.ExitCode -ne 0 -and
+        $racingFence.Commands.Contains("drain-consumer acquire-stop") -and
+        -not $racingFence.Commands.Contains("drain-consumer cancel-open")) `
+        "许可消费后围栏竞态没有失败关闭。"
+    Assert-True ((Get-Content -LiteralPath $racingFencePath -Raw) -ceq "foreign-race-fence`n") `
+        "原子创建失败后改写或删除了竞态产生的未知围栏。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $racingFence.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
+        "许可消费后围栏竞态没有留下人工对账阻断。"
+
+    $driftedFence = Invoke-ServerScenario -Name "sandbox-fence-content-drift" `
+        -DriftSandboxFenceOwnership -WriteOnStart
+    $driftedFencePath = Join-Path $driftedFence.Root "opt\legion12-runtime\.maintenance-sandbox-drain"
+    Assert-True ($driftedFence.ExitCode -ne 0 -and
+        $driftedFence.Commands.Contains("systemctl start") -and
+        -not $driftedFence.Commands.Contains("drain-consumer cancel-open")) `
+        "最终清理前围栏内容漂移仍被删除或开放。"
+    Assert-True ((Get-Content -LiteralPath $driftedFencePath -Raw) -ceq "foreign-drift-fence`n") `
+        "最终清理错误删除或改写了内容已漂移的围栏。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $driftedFence.Root "opt\legion12-runtime\post-launch-write.txt") -PathType Leaf) `
+        "围栏归属漂移后没有保留目标程序写入的最新 runtime。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $driftedFence.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
+        "围栏归属漂移没有留下人工对账阻断。"
+
+    $fenceCleanupRejected = Invoke-ServerScenario -Name "sandbox-fence-cleanup-failure" `
+        -FailSandboxFenceCleanup -WriteOnStart
+    Assert-True ($fenceCleanupRejected.ExitCode -ne 0 -and
+        -not $fenceCleanupRejected.Commands.Contains("drain-consumer cancel-open")) `
+        "沙盒围栏无法严格清除时仍执行 exact cancel/Open 或报告成功。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $fenceCleanupRejected.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
+        "沙盒围栏清理失败没有保留排空状态并写入人工对账阻断。"
+    Assert-True (Test-Path -LiteralPath (Join-Path $fenceCleanupRejected.Root "opt\legion12-runtime\post-launch-write.txt") -PathType Leaf) `
+        "沙盒围栏清理失败丢失目标程序已经写入的最新 runtime。"
+
+    foreach ($postStartFault in @("observe-failure", "cancel-failure")) {
+        $closedTarget = Invoke-ServerScenario -Name "drain-$postStartFault" -DrainFault $postStartFault -WriteOnStart
+        Assert-True ($closedTarget.ExitCode -ne 0 -and $closedTarget.Commands.Contains("systemctl start")) `
+            "重启后排空故障没有到达目标进程边界：$postStartFault"
+        Assert-True (([regex]::Matches($closedTarget.Commands, 'systemctl start')).Count -eq 1 -and
+            ([regex]::Matches($closedTarget.Commands, 'systemctl stop')).Count -ge 2) `
+            "重启后排空故障错误恢复旧程序或未停止目标程序：$postStartFault"
+        Assert-True (Test-Path -LiteralPath (Join-Path $closedTarget.Root "opt\legion12-runtime\post-launch-write.txt") -PathType Leaf) `
+            "重启后排空故障丢失了目标程序最新 runtime：$postStartFault"
+        $sandboxFencePath = Join-Path $closedTarget.Root "opt\legion12-runtime\.maintenance-sandbox-drain"
+        if ($postStartFault -eq "observe-failure") {
+            Assert-True (Test-Path -LiteralPath $sandboxFencePath -PathType Leaf) `
+                "observe 失败在最终清理前错误清除了沙盒围栏。"
+        }
+        else {
+            Assert-True (-not (Test-Path -LiteralPath $sandboxFencePath)) `
+                "cancel 失败发生在已确认清除沙盒围栏之后，却重新制造了未绑定围栏。"
+        }
+    }
 
     $wrongMountTarget = Invoke-ServerScenario -Name "external-wrong-mount-target" -ArtifactRoot "/www/legion12" `
         -ExternalMountTarget "/unexpected-mount"

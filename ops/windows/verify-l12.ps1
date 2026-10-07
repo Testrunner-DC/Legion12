@@ -95,6 +95,24 @@ function Require-Command {
     }
 }
 
+function Get-TextSha256 {
+    param([Parameter(Mandatory = $true)][string]$Text)
+    $algorithm = [Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($Text))
+        return (($hash | ForEach-Object { $_.ToString('x2') }) -join '')
+    }
+    finally { $algorithm.Dispose() }
+}
+
+function Test-ExactJsonInteger {
+    param(
+        [AllowNull()][object]$Value,
+        [Parameter(Mandatory = $true)][long]$Expected
+    )
+    return (($Value -is [int32] -or $Value -is [int64]) -and [long]$Value -eq $Expected)
+}
+
 function Assert-CleanCommit {
     param(
         [Parameter(Mandatory = $true)][string]$ExpectedCommit,
@@ -146,8 +164,12 @@ function Test-CachedArtifact {
     if (-not (Test-Path -LiteralPath $ManifestPath)) { return $false }
     try {
         $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
-        if ($manifest.schema -ne 3) { return $false }
+        if (-not (Test-ExactJsonInteger -Value $manifest.schema -Expected 3)) { return $false }
         if ($manifest.commit -ne $commit) { return $false }
+        if (-not (Test-ExactJsonInteger -Value $manifest.deploymentDrainProtocol -Expected 1) -or
+            $manifest.requiresExternalStopPermit -isnot [bool] -or -not $manifest.requiresExternalStopPermit -or
+            $manifest.runtimeDataCompatibility -ne "l12-runtime-v1") { return $false }
+        if ([string]$manifest.runtimeSourceCompatibility -notmatch '^[a-f0-9]{64}$') { return $false }
         if ($manifest.cardAssetsHash -ne $cardAssetsHash) { return $false }
         $cachedReleaseBase = if ($manifest.PSObject.Properties['releaseBaseCommit']) { [string]$manifest.releaseBaseCommit } else { "" }
         $cachedNotesHash = if ($manifest.PSObject.Properties['playerReleaseNotesSha256']) { [string]$manifest.playerReleaseNotesSha256 } else { "" }
@@ -179,7 +201,7 @@ $script:verificationTimings = [Collections.Generic.List[object]]::new()
 
 try {
     Set-Location $repoRoot
-    foreach ($commandName in @("git", "dotnet", "npm", "tar")) { Require-Command $commandName }
+    foreach ($commandName in @("git", "dotnet", "npm", "tar", "python")) { Require-Command $commandName }
     $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
     $commit = (& git rev-parse HEAD).Trim()
@@ -250,6 +272,7 @@ try {
     $platformTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=platform.trx", "--results-directory", $evidenceDirectory) }
     Invoke-TimedExternal "platform" dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release `
         @platformTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
+    Invoke-TimedExternal "deployment-drain-consumer" python -B ".\scripts\test-l12-deployment-drain-consumer.py"
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"
@@ -350,6 +373,37 @@ try {
     Get-ChildItem -LiteralPath (Join-Path $nativeRuntimesRoot "linux-x64") -Recurse -Filter "*.a" |
         Remove-Item -Force
 
+    $backendGitTree = (& git rev-parse "${commit}:服务端WebSocket").Trim()
+    if ($LASTEXITCODE -ne 0 -or $backendGitTree -notmatch '^[a-f0-9]{40}$') {
+        throw "无法把 runtime 兼容证明绑定到已验证提交的后台 Git subtree。"
+    }
+    $rootBuildConfiguration = [Collections.Generic.List[object]]::new()
+    foreach ($relativePath in @('Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props', 'global.json', 'NuGet.Config')) {
+        $configurationPath = Join-Path $repoRoot $relativePath
+        if (-not (Test-Path -LiteralPath $configurationPath -PathType Leaf)) { continue }
+        $configurationItem = Get-Item -LiteralPath $configurationPath -Force
+        if ($configurationItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "根级构建/SDK 配置不是普通文件：$relativePath"
+        }
+        $rootBuildConfiguration.Add([ordered]@{
+            path = $relativePath.Replace('\', '/')
+            sha256 = (Get-FileHash -LiteralPath $configurationPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        })
+    }
+    $publishDepsPath = Join-Path $publishRoot 'GrandUMIServer.deps.json'
+    if (-not (Test-Path -LiteralPath $publishDepsPath -PathType Leaf) -or
+        ((Get-Item -LiteralPath $publishDepsPath -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        throw "实际 publish 缺少普通 GrandUMIServer.deps.json，无法生成 runtime 兼容证明。"
+    }
+    $runtimeCompatibilityEvidence = [ordered]@{
+        schema = 1
+        backendGitTree = $backendGitTree
+        rootBuildConfiguration = @($rootBuildConfiguration)
+        publishDepsSha256 = (Get-FileHash -LiteralPath $publishDepsPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    $runtimeSourceCompatibility = Get-TextSha256 `
+        ($runtimeCompatibilityEvidence | ConvertTo-Json -Depth 6 -Compress)
+
     Write-Host "[L12 验证] 汇总前端运行产物（卡图单独缓存）..."
     $frontendDistRoot = (Resolve-Path (Join-Path $frontendBuildDirectory "dist")).Path
     $frontendCardsRoot = Join-Path $frontendDistRoot "cards"
@@ -386,6 +440,18 @@ try {
         -ManifestPath (Join-Path $releaseRoot "opcgpro-vue\testrun-shared-files.txt")
     Copy-Item ".\scripts\ws-smoke.mjs" (Join-Path $scriptsRoot "ws-smoke.mjs") -Force
     [IO.File]::WriteAllText((Join-Path $releaseRoot ".deployment-commit"), $commit, [Text.UTF8Encoding]::new($false))
+    $deploymentCapability = [ordered]@{
+        schema = 1
+        protocolVersion = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = $runtimeSourceCompatibility
+        commit = $commit
+    } | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText(
+        (Join-Path $releaseRoot ".deployment-drain-capability.json"),
+        $deploymentCapability + "`n",
+        [Text.UTF8Encoding]::new($false))
 
     $releaseArchive = Join-Path $artifactDirectory "l12-release-$commit.tar.gz"
     if (Test-Path -LiteralPath $releaseArchive) { Remove-Item -LiteralPath $releaseArchive -Force }
@@ -405,6 +471,10 @@ try {
     [ordered]@{
         schema = 3
         commit = $commit
+        deploymentDrainProtocol = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = $runtimeSourceCompatibility
         generatedAt = [DateTimeOffset]::UtcNow.ToString("O")
         releaseArchive = $releaseArchive
         releaseSha256 = $releaseSha256
