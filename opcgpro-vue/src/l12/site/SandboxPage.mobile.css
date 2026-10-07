@@ -17,7 +17,7 @@ html[data-l12-mobile=true][data-l12-viewport] .site-sidebar {
 }
 html[data-l12-mobile=true][data-l12-viewport] .site-sidebar.open { transform:none; box-shadow:18px 0 50px #000; }
 html[data-l12-mobile=true][data-l12-viewport] .site-sidebar .site-brand { display:none; }
-html[data-l12-mobile=true][data-l12-viewport] .site-sidebar :is(.site-nav a,.site-utilities button,.mobile-feedback-utility) {
+html[data-l12-mobile=true][data-l12-viewport] .site-sidebar :is(.site-nav a,.site-utilities button) {
   min-height:42px; flex-direction:row; justify-content:flex-start; gap:12px; padding:0 18px;
 }
 html[data-l12-mobile=true][data-l12-viewport] .site-sidebar .site-utilities { display:grid; grid-template-columns:1fr 1fr; }

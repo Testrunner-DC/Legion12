@@ -624,14 +624,9 @@ async function unavailableReadConsumersRemainVisible() {
     const result = run()
     assert.deepEqual(result, {}); assert.equal(notice.notice, '本机牌库不可用', 'Unavailable UI collection has an explicit visible error')
   }
-  const recentName = { value: '旧资料' }, cacheError = { value: '' }
-  const run = actualHandler('../src/l12/site/HomeRevisitActions.vue', 'refreshRecent', {
-    verifiedAccount: { value: true }, recentName, cacheError, disposed: false, recentEpoch: 0,
-    platformState, route: { fullPath: '/' }, deckErrorBelongsToCurrentAccount: () => true,
-    loadPrivateDeckSummaryPage: async () => { throw Error('读取失败') },
-  })
-  await run()
-  assert.equal(recentName.value, '旧资料'); assert.equal(cacheError.value, '读取失败', 'Unavailable remains an explicit visible error, not a fabricated empty success')
+  const home = readFileSync(new URL('../src/l12/site/HomeRevisitActions.vue', import.meta.url), 'utf8')
+  assert.ok(!home.includes('loadSavedDecksState') && !home.includes('loadPrivateDeckSummaryPage')
+    && !home.includes('refreshRecent'), 'Removed Home shortcuts must not retain a private deck consumer or fabricate an empty recent-deck state')
 }
 
 await accountLateMutationCannotCrossIdentity()

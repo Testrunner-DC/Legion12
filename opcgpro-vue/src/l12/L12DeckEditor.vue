@@ -16,6 +16,8 @@ import CardImage from './CardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
 import DeckCostCurve from './DeckCostCurve.vue'
 import PublicDeckContentEditor from './site/PublicDeckContentEditor.vue'
+import L12SettingsModal from './site/L12SettingsModal.vue'
+import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { matchesPublishedDeckReference, publicDeckRouteReference } from './site/publicDeckEntry'
 import { deckEditorReturnTarget } from './site/deckEditorNavigation'
 import { clearDeckEditorDraft, draftOwner, readDeckEditorDraft, writeDeckEditorDraft, type DeckEditorDraft } from './site/deckEditorDraft'
@@ -153,6 +155,8 @@ const poolSelectorOpen = ref(false)
 const secondaryActionsOpen = ref(false)
 const detailCollapsed = ref(false)
 const publicPickerOpen = ref(false)
+const settingsOpen = ref(false)
+const settingsOpener = ref<HTMLElement | null>(null)
 const editorScrollContainer = ref<HTMLElement | null>(null)
 const portraitScrollPositions = new Map<string, number>()
 let scrollRestoreGeneration = 0
@@ -164,7 +168,7 @@ watch(() => `${mobilePane.value}:${workspace.value}`, async (key, previousKey) =
   if (generation === scrollRestoreGeneration && deckEditorPortrait.value)
     editorScrollContainer.value?.scrollTo({ top: portraitScrollPositions.get(key) ?? 0, behavior: 'instant' })
 }, { flush: 'pre' })
-const editorModalOpen = computed(() => mobileDetailOpen.value || mobileSavedDecksOpen.value || !!pendingDeleteName.value || !!deckImageUrl.value || publicPickerOpen.value)
+const editorModalOpen = computed(() => mobileDetailOpen.value || mobileSavedDecksOpen.value || !!pendingDeleteName.value || !!deckImageUrl.value || publicPickerOpen.value || settingsOpen.value)
 let editorModalReturnFocus: HTMLElement | null = null
 watch(editorModalOpen, async (open, previousOpen) => {
   if (open && !previousOpen) editorModalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -462,6 +466,21 @@ function closeEditorDialogOnEscape(event: KeyboardEvent) {
   secondaryActionsOpen.value = false
   if (!deletingDeck.value) closePendingDelete()
   if (deckImageUrl.value) closeDeckImage()
+}
+
+function openEditorSettings(event?: Event) {
+  settingsOpener.value = rememberSettingsOpener(event)
+  secondaryActionsOpen.value = false
+  settingsOpen.value = true
+}
+function editorSettingsFallback() {
+  return document.querySelector<HTMLElement>('.deck-builder-shell .more-actions-trigger')
+}
+function closeEditorSettings() {
+  void closeSettingsAndRestore(() => { settingsOpen.value = false }, settingsOpener.value, editorSettingsFallback())
+}
+function openEditorFeedback() {
+  void openBugFeedbackFromSettings(() => { settingsOpen.value = false }, settingsOpener.value, editorSettingsFallback())
 }
 
 onMounted(() => window.addEventListener('keydown', closeEditorDialogOnEscape))
@@ -1074,6 +1093,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         <button class="primary" :disabled="!!validation || deckMutationBusy || deletingDeck" @click="onSave">{{ deckMutationBusy ? '保存中…' : '保存牌库' }}</button>
         <button class="more-actions-trigger" :aria-expanded="secondaryActionsOpen" @click="secondaryActionsOpen = !secondaryActionsOpen">更多操作</button>
         <div class="secondary-actions" :class="{ open: secondaryActionsOpen }">
+          <button type="button" @click="openEditorSettings">设置</button>
           <button @click="requestNewDeck">新建牌库</button>
           <button @click="saveLocalDraft">暂存草稿</button>
           <button v-if="localDraft" @click="restoreLocalDraft">恢复草稿</button>
@@ -1236,6 +1256,9 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
           </select>
         </label>
       </section>
+    </div>
+    <div v-if="settingsOpen" class="builder-modal-mask" @click.self="closeEditorSettings">
+      <L12SettingsModal @close="closeEditorSettings" @feedback="openEditorFeedback"/>
     </div>
     <div v-if="mobileSavedDecksOpen" class="builder-modal-mask mobile-saved-decks-mask" @click.self="mobileSavedDecksOpen = false">
       <section id="mobile-saved-decks-dialog" class="mobile-saved-decks-dialog" role="dialog" aria-modal="true" aria-labelledby="mobile-saved-decks-title">

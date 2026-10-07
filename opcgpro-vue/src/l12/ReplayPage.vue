@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
+import L12SettingsModal from './site/L12SettingsModal.vue'
+import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { loadDeckCatalog, type DeckCard } from './decks'
 import { adminApi, PlatformRequestError, platformRequest } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
@@ -28,6 +30,8 @@ const indexCategory = ref<ReplayIndexCategory | ''>('')
 const indexSearch = ref('')
 const indexPage = ref(0)
 const indexError = ref('')
+const settingsOpen = ref(false)
+const settingsOpener = ref<HTMLElement | null>(null)
 const indexPageSize = 40
 // Mobile replay is intentionally a hard stop: do not load its data or mount a
 // board behind a message that a player cannot use on this form factor.
@@ -245,12 +249,23 @@ function returnFromReplay() {
     ? { name: 'records' }
     : { name: 'records', query: { selected: detail.value?.match.matchId } })
 }
+function openReplaySettings(event?: Event) {
+  settingsOpener.value = rememberSettingsOpener(event)
+  settingsOpen.value = true
+}
+function closeReplaySettings() {
+  void closeSettingsAndRestore(() => { settingsOpen.value = false }, settingsOpener.value)
+}
+function openReplayFeedback() {
+  void openBugFeedbackFromSettings(() => { settingsOpen.value = false }, settingsOpener.value)
+}
 </script>
 
 <template>
   <div class="game-page replay-page">
     <main v-if="mobileReplayBlocked" class="replay-mobile-blocked" role="status">
       <p>请到电脑端查看回放</p>
+      <button type="button" @click="openReplaySettings">设置</button>
       <button @click="returnFromReplay">{{ returnLabel }}</button>
     </main>
     <GameBoard v-else-if="currentGame" :game="currentGame" :replay-focus-card="replayFocusCard"
@@ -259,6 +274,7 @@ function returnFromReplay() {
     <Teleport v-if="!mobileReplayBlocked" :to="landscapeTeleportTarget()">
       <div class="replay-route-controls">
         <span v-if="detail">{{ detail.match.player0 }} VS {{ detail.match.player1 }}</span>
+        <button type="button" @click="openReplaySettings">设置</button>
         <button @click="returnFromReplay">{{ returnLabel }}</button>
       </div>
 
@@ -307,6 +323,12 @@ function returnFromReplay() {
         <button v-if="error" @click="returnFromReplay">{{ returnLabel }}</button>
       </main>
     </Teleport>
+
+    <Teleport :to="landscapeTeleportTarget()">
+      <div v-if="settingsOpen" class="replay-settings-mask" @click.self="closeReplaySettings">
+        <L12SettingsModal @close="closeReplaySettings" @feedback="openReplayFeedback"/>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -331,6 +353,7 @@ function returnFromReplay() {
 .replay-index-rounds{display:flex;flex-wrap:wrap;gap:6px;flex:none}.replay-index-events{min-height:0;overflow:auto;display:grid;gap:6px;overscroll-behavior:contain}.replay-index-events button{display:grid;gap:5px;text-align:left;overflow-wrap:anywhere}.replay-index-events small,.replay-index-note{color:#adb8b7;font-size:12px}.replay-index-note,.replay-index-events p{margin:0}.replay-result{bottom:80px}
 .replay-index-events button{height:auto;min-height:58px;align-content:center}
 .replay-controls small{min-width:92px;padding:0 6px;color:#919b98;font-size:14px;text-align:center}
+.replay-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
 .replay-loading{position:fixed;z-index:3300;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}
 @media(max-width:760px){.replay-result{top:58px;bottom:auto;min-width:0}.replay-result>strong{display:none}.replay-route-controls span{display:none}.replay-controls{right:14px;justify-content:center}.replay-controls small{position:absolute;right:0;bottom:100%;padding:5px 7px;background:#080d11ed}}
 </style>

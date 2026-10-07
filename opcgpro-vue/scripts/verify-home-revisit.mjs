@@ -91,45 +91,25 @@ try {
         await page.evaluate(()=>window.__homeFixture.recover())
       }
       await page.waitForSelector('.official-home')
-      if(!scenario.startsWith('guest')&&scenario!=='unverified'&&scenario!=='cached-failure') await page.waitForSelector('.home-revisit-actions')
+      if(['continue','spectate'].includes(scenario)) await page.waitForSelector('.home-revisit-actions')
       const body=await page.locator('.official-home').innerText()
       ok(!/占位|范例|2026[./]00/.test(body),`${scenario}: no fake player content`)
-      const hasPersonal=await page.locator('.home-revisit-actions').count()
-      ok(hasPersonal===(!scenario.startsWith('guest')&&scenario!=='unverified'&&scenario!=='cached-failure'?1:0),`${scenario}: verified-only shortcuts`)
+      const hasRevisit=await page.locator('.home-revisit-actions').count()
+      ok(hasRevisit===(['continue','spectate'].includes(scenario)?1:0),`${scenario}: revisit only exists for a confirmed ongoing match`)
       if(scenario.startsWith('guest'))ok((await page.evaluate(()=>window.__homeFixture.calls)).every(call=>call.startsWith('public-')),'guest makes zero personal requests')
       if(scenario==='guest-published'||scenario==='cached-failure')ok(body.includes('已发布主视觉')&&body.includes('已发布通知')&&body.includes('已发布news内容'),'published content retained')
       else ok(body.includes('暂无资讯')&&body.includes('暂无视频')&&body.includes('暂无产品'),'genuine empty sections')
-      if(hasPersonal){
-        if(scenario==='storage-blocked')ok(body.includes('查看与编辑自己的牌库')&&!body.includes('最近保存'),'blocked local cache has usable generic deck link')
-        else ok(body.includes('最近保存：最近牌库'),'most recent own cache label, not cloud availability claim')
-      }
+      ok(!body.includes('我的牌库')&&!body.includes('我的赛事'),'home does not restore removed revisit shortcuts')
       ok(await page.locator('.home-revisit-action.continue-game').count()===(['continue','spectate'].includes(scenario)?1:0),'continue only acknowledged ongoing connection')
       if(scenario==='switch'){
         await page.evaluate(()=>window.__homeFixture.account('b'))
-        await page.waitForFunction(()=>document.querySelector('.home-revisit-actions')?.textContent.includes('第二账号牌库'))
-        ok(!(await page.locator('.home-revisit-actions').innerText()).includes('最近保存：最近牌库'),'switch clears old account label')
+        ok(await page.locator('.home-revisit-actions').count()===0,'account switch cannot create an empty revisit bar')
         await page.evaluate(()=>window.__homeFixture.account(null))
-        await page.waitForFunction(()=>!document.querySelector('.home-revisit-actions'))
-        ok(await page.locator('.home-revisit-actions').count()===0,'logout removes all personal shortcuts')
+        ok(await page.locator('.home-revisit-actions').count()===0,'logout keeps revisit absent')
       }
       if(scenario==='account'){
-        const tournamentsLink=page.getByRole('link',{name:'我的赛事 查看参赛与主办进度'})
-        if(profile.width===1920){await tournamentsLink.focus();await page.keyboard.press('Enter')}
-        else await tournamentsLink.click()
-        await page.waitForSelector('.hub-page')
-        ok(await page.evaluate(()=>window.__homeFixture.route())==='/battle/tournaments?section=mine','my tournaments actual route')
-        ok(await page.getByRole('button',{name:'我的赛事',exact:true}).getAttribute('aria-current')==='page','mine tab is truly active')
-        const calls=await page.evaluate(()=>window.__homeFixture.calls)
-        ok(calls.filter(call=>call.startsWith('tournament-')&&call!=='tournament-career').join(',')==='tournament-mine','initial mine query without duplicate discover request')
-        await page.getByRole('button',{name:'发现赛事',exact:true}).click()
-        await page.waitForFunction(()=>window.__homeFixture.route().includes('section=discover'))
-        await page.evaluate(()=>window.__homeFixture.go('/battle/tournaments?section=mine'))
-        await page.waitForFunction(()=>document.querySelector('.section-tabs [aria-current="page"]')?.textContent==='我的赛事')
-        ok(true,'query navigation restores correct section')
-        await page.evaluate(()=>window.__homeFixture.go('/'));await page.waitForSelector('.home-revisit-actions')
-        await page.getByRole('link',{name:/我的牌库 最近保存/}).click()
-        ok(await page.evaluate(()=>window.__homeFixture.route())==='/decks?tab=mine','deck shortcut stays in own library')
-        await page.evaluate(()=>window.__homeFixture.go('/'));await page.waitForSelector('.home-revisit-actions')
+        ok(await page.locator('.home-revisit-actions').count()===0,'verified idle account has no empty revisit bar')
+        ok((await page.evaluate(()=>window.__homeFixture.calls)).every(call=>!call.startsWith('deck-')&&!call.startsWith('tournament-')),'home performs no private deck or tournament read')
       }
       if(['continue','spectate'].includes(scenario)){
         ok((await page.locator('.continue-game').innerText()).includes(scenario==='spectate'?'继续观战':'继续对局'),'correct continue label')

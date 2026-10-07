@@ -1,24 +1,41 @@
 <script setup lang="ts">
+import { onMounted, ref } from 'vue'
 import { audioPreferences } from '@/l12/audioPreferences'
 
-defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: []; feedback: [] }>()
+const modal = ref<HTMLElement | null>(null)
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') { event.stopPropagation(); emit('close'); return }
+  if (event.key !== 'Tab' || !modal.value) return
+  event.stopPropagation()
+  const actions = Array.from(modal.value.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled)'))
+    .filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0)
+  if (!actions.length) return
+  const first = actions[0]!, last = actions[actions.length - 1]!
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
+
+onMounted(() => modal.value?.querySelector<HTMLElement>('button')?.focus())
 </script>
 
 <template>
-  <section class="l12-settings-modal" data-ui-contract="l12-settings-all-features">
-    <header><div><small>SETTINGS</small><h2>设置</h2></div><button aria-label="关闭设置" @click="$emit('close')">×</button></header>
+  <section ref="modal" class="l12-settings-modal" data-ui-contract="l12-settings-all-features" role="dialog" aria-modal="true" aria-labelledby="l12-settings-title" @keydown="onKeydown">
+    <header><div><small>SETTINGS</small><h2 id="l12-settings-title">设置</h2></div><button aria-label="关闭设置" @click="emit('close')">×</button></header>
     <div class="settings-grid">
       <label class="setting-row"><span><b>卡牌显示</b><small>图鉴、牌库与对战同步调整</small></span><select v-model="audioPreferences.cardSize"><option value="auto">自动</option><option value="small">小</option><option value="medium">中</option><option value="large">大</option></select></label>
       <label class="setting-row"><span><b>移动布局</b><small>按实际可用画面判断，不依赖手机物理横竖屏</small></span><select v-model="audioPreferences.mobileLayout"><option value="auto">自动适配</option><option value="on">始终启用</option><option value="off">使用宽屏布局</option></select></label>
       <label class="setting-row"><span><b>对局动画</b><small>必要的公开与结算信息始终保留</small></span><select v-model="audioPreferences.animation"><option value="off">关闭</option><option value="fast">快速</option><option value="standard">标准</option></select></label>
       <div class="setting-row"><span><b>游戏音乐</b><small>官网与对局曲目平滑切换；低音量区可精细调整</small></span><div class="audio-setting"><label class="volume-control"><span class="sr-only">音乐音量</span><input v-model.number="audioPreferences.musicVolume" :disabled="!audioPreferences.musicEnabled" type="range" min="0" max="1" step="0.01"/><output>{{ Math.round(audioPreferences.musicVolume * 100) }}%</output></label><button type="button" class="toggle" :class="{ on: audioPreferences.musicEnabled }" @click="audioPreferences.musicEnabled = !audioPreferences.musicEnabled">{{ audioPreferences.musicEnabled ? '已开启' : '已关闭' }}</button></div></div>
       <div class="setting-row"><span><b>游戏音效</b><small>卡牌、战斗、回合与系统提示</small></span><div class="audio-setting"><label class="volume-control"><span class="sr-only">音效音量</span><input v-model.number="audioPreferences.sfxVolume" :disabled="!audioPreferences.sfxEnabled" type="range" min="0" max="1" step="0.05"/><output>{{ Math.round(audioPreferences.sfxVolume * 100) }}%</output></label><button type="button" class="toggle" :class="{ on: audioPreferences.sfxEnabled }" @click="audioPreferences.sfxEnabled = !audioPreferences.sfxEnabled">{{ audioPreferences.sfxEnabled ? '已开启' : '已关闭' }}</button></div></div>
+      <div class="setting-row feedback-setting"><span><b>问题反馈</b><small>提交 Bug 或优化建议，并自动附带当前页面与对局诊断</small></span><button type="button" class="feedback-entry" @click="emit('feedback')">反馈 Bug</button></div>
     </div>
     <p class="setting-note">修改会立即作用于当前页面与对局；登录后保存到账号并同步至其他设备。</p>
   </section>
 </template>
 
 <style scoped>
-.l12-settings-modal{box-sizing:border-box;width:min(610px,94vw);max-height:min(720px,90vh);overflow:auto;padding:24px;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.l12-settings-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}h2{margin:4px 0 0;font-size:24px}header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.settings-grid{display:grid}.setting-row{display:grid;grid-template-columns:minmax(190px,1fr) minmax(230px,1fr);align-items:center;gap:18px;padding:18px 0;border:0;border-bottom:1px solid rgba(235,230,216,.1);color:inherit}.setting-row>span,.setting-row>span b,.setting-row>span small{display:block}.setting-row>span small{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle{box-sizing:border-box;min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.audio-setting{display:grid;min-width:0;grid-template-columns:minmax(0,1fr) 92px;align-items:center;gap:12px}.volume-control{display:grid;min-width:0;grid-template-rows:auto auto;gap:3px}.volume-control input{display:block;min-width:0;width:100%;margin:0}.volume-control output{display:block;color:#9eabad;font:900 14px monospace;text-align:center}.audio-setting .toggle{min-width:0;width:92px}.audio-setting input:disabled{opacity:.4}.setting-note{margin:16px 0 0;color:#7e898f;font-size:14px;line-height:1.7}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.l12-settings-modal{box-sizing:border-box;width:min(610px,94vw);max-height:min(720px,90vh);overflow:auto;padding:24px;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.l12-settings-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}h2{margin:4px 0 0;font-size:24px}header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.settings-grid{display:grid}.setting-row{display:grid;grid-template-columns:minmax(190px,1fr) minmax(230px,1fr);align-items:center;gap:18px;padding:18px 0;border:0;border-bottom:1px solid rgba(235,230,216,.1);color:inherit}.setting-row>span,.setting-row>span b,.setting-row>span small{display:block}.setting-row>span small{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle,.feedback-entry{box-sizing:border-box;min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.feedback-entry{border-color:#d2b861;background:#221c0d;color:#f6df91}.feedback-entry:focus-visible{outline:2px solid #54c5cc;outline-offset:2px}.audio-setting{display:grid;min-width:0;grid-template-columns:minmax(0,1fr) 92px;align-items:center;gap:12px}.volume-control{display:grid;min-width:0;grid-template-rows:auto auto;gap:3px}.volume-control input{display:block;min-width:0;width:100%;margin:0}.volume-control output{display:block;color:#9eabad;font:900 14px monospace;text-align:center}.audio-setting .toggle{min-width:0;width:92px}.audio-setting input:disabled{opacity:.4}.setting-note{margin:16px 0 0;color:#7e898f;font-size:14px;line-height:1.7}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 @media(max-width:620px){.l12-settings-modal{padding:18px}.setting-row{grid-template-columns:1fr;gap:10px}.setting-row select{width:100%}.audio-setting{grid-template-columns:minmax(0,1fr) 92px}}
 </style>

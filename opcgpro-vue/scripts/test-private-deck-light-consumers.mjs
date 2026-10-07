@@ -330,15 +330,12 @@ function profileComponent() {
     './UiButton.vue': componentModule, './UiNotice.vue': componentModule,
   })
 }
+const homeRevisitModule = await import(productionModuleUrl(read('src/l12/site/homeRevisit.ts')))
 function homeComponent() {
   return compileComponent('src/l12/site/HomeRevisitActions.vue', {
     vue, '@/l12/platform': { authState, platformState }, '@/l12/decks': deckModule,
     '@/l12/net': netModule,
-    './homeRevisit': {
-      homeAccountVerified: (id, token, verified) => Boolean(id && token && verified),
-      homeCanContinueGame: () => false,
-      recentHomeDeckName: values => Object.values(values).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]?.name ?? '',
-    },
+    './homeRevisit': homeRevisitModule,
     'vue-router': routeModule,
   })
 }
@@ -605,69 +602,52 @@ await check('Profile preserves must-change gates and form drafts without any pri
   renameView.unmount()
 })
 
-await check('HomeRevisitActions reads only latest pageSize=1 summary metadata for a verified account', async () => {
-  resetIdentity()
-  const requests = captureRequests(requestPath => requestPath.startsWith('/api/decks/summaries?')
-    ? summaryPage(requestPath, [summary('latest', { name: '最近牌库' })])
-    : Promise.reject(new Error(`unexpected ${requestPath}`)))
-  const mounted = mount(homeComponent())
-  await flush()
-  console.log('OBSERVE HomeRevisitActions', requests.map(item => item.path))
-  assert.equal(summaryRequests(requests).length, 1)
-  assert.equal(summaryRequests(requests)[0].init.cache, 'no-store')
-  const url = new URL(summaryRequests(requests)[0].path, 'http://synthetic.invalid')
-  assert.equal(url.searchParams.get('pageSize'), '1'); assert.equal(url.searchParams.get('sort'), 'latest')
-  assert.equal(mounted.state.recentName, '最近牌库')
-  mounted.unmount()
-})
-
-await check('HomeRevisitActions rejects same-token A-B-A late 401/403 while keeping the newest 200', async () => {
-  resetIdentity()
-  const pending = []
-  captureRequests(requestPath => {
-    const gate = deferred(); pending.push({ gate, requestPath }); return gate.promise
-  })
-  const mounted = mount(homeComponent()); await flush(2)
-  platformState.account = { id: 'account-B', username: 'Account B', permissions: [] }; await flush(2)
-  platformState.account = { id: 'account-A', username: 'Account A', permissions: [] }; await flush(2)
-  assert.equal(pending.length, 3); assert.equal(platformState.token, 'token-A')
-  pending[2].gate.resolve(summaryPage(pending[2].requestPath, [summary('newest', { name: 'A2 最新牌库' })])); await flush()
-  pending[0].gate.reject(Object.assign(new Error('迟到 401'), { status: 401 }))
-  pending[1].gate.reject(Object.assign(new Error('迟到 403'), { status: 403 })); await flush()
-  assert.equal(mounted.state.recentName, 'A2 最新牌库'); assert.equal(mounted.state.cacheError, '')
-  assert.equal(platformState.account.id, 'account-A')
-  mounted.unmount()
-})
-
-await check('HomeRevisitActions refreshes on visible storage/route changes and does not infer from cache', async () => {
-  resetIdentity()
-  const requests = captureRequests((requestPath, _init, all) => summaryPage(requestPath,
-    [summary(`refresh-${all.length}`, { name: `服务端最近 ${all.length}` })]))
+// The user removed both Home shortcuts. Preserve the four lifecycle cases,
+// now proving zero reads rather than testing the retired recent-deck consumer.
+await check('HomeRevisitActions has no private read for a verified idle account', async () => {
+  resetIdentity(); netModule.l12State.game = null
+  const requests = captureRequests(requestPath => Promise.reject(new Error(`unexpected ${requestPath}`)))
   const mounted = mount(homeComponent()); await flush()
-  assert.equal(mounted.state.recentName, '服务端最近 1')
-  windowEvents.dispatch('storage'); await flush()
-  assert.equal(requests.length, 2); assert.equal(mounted.state.recentName, '服务端最近 2')
-  document.hidden = true; documentEvents.dispatch('visibilitychange'); await flush()
-  assert.equal(requests.length, 2, 'hidden visibility event must not refresh')
-  document.hidden = false; documentEvents.dispatch('visibilitychange'); await flush()
-  assert.equal(requests.length, 3); assert.equal(mounted.state.recentName, '服务端最近 3')
-  route.fullPath = '/?home-revisit=2'; await flush()
-  assert.equal(requests.length, 4); assert.equal(mounted.state.recentName, '服务端最近 4')
+  assert.equal(requests.length, 0); assert.equal(mounted.state.canContinue, false)
+  assert.equal(mounted.state.refreshRecent, undefined)
   mounted.unmount()
 })
 
-await check('HomeRevisitActions shows a current read error but ignores a completion after unmount', async () => {
+await check('HomeRevisitActions keeps own-connection authority across same-token A-B-A without reads', async () => {
   resetIdentity()
-  captureRequests(() => Promise.reject(new Error('牌库目录暂不可读取 503')))
-  const failedView = mount(homeComponent()); await flush()
-  assert.match(failedView.state.cacheError, /503/); assert.equal(failedView.state.recentName, '')
-  failedView.unmount()
+  Object.assign(netModule.l12State, { accountId: 'account-A', status: 'online',
+    recoveryPhase: 'snapshot-acknowledged', leavingRoom: false, game: { matchId: 'synthetic-match', phase: 'Main' } })
+  const requests = captureRequests(requestPath => Promise.reject(new Error(`unexpected ${requestPath}`)))
+  const mounted = mount(homeComponent()); await flush(); assert.equal(mounted.state.canContinue, true)
+  platformState.account = { id: 'account-B', username: 'Account B', permissions: [] }; await flush()
+  assert.equal(mounted.state.canContinue, false)
+  platformState.account = { id: 'account-A', username: 'Account A', permissions: [] }; await flush()
+  assert.equal(mounted.state.canContinue, true); assert.equal(requests.length, 0)
+  assert.equal(platformState.token, 'token-A')
+  mounted.unmount(); netModule.l12State.game = null
+})
 
-  resetIdentity(); const gate = deferred(); let requestPath = ''
-  captureRequests(pathValue => { requestPath = pathValue; return gate.promise })
-  const lateView = mount(homeComponent()); await flush(2); lateView.unmount()
-  gate.resolve(summaryPage(requestPath, [summary('late', { name: '不应显示' })])); await flush()
-  assert.equal(lateView.state.recentName, ''); assert.equal(lateView.state.cacheError, '')
+await check('HomeRevisitActions adds no refresh listeners or reads on storage, visibility and route changes', async () => {
+  resetIdentity(); netModule.l12State.game = null
+  const count = events => [...events.listeners.values()].reduce((total, values) => total + values.size, 0)
+  const listenersBefore = [count(windowEvents), count(documentEvents)]
+  const requests = captureRequests(requestPath => Promise.reject(new Error(`unexpected ${requestPath}`)))
+  const mounted = mount(homeComponent()); await flush()
+  windowEvents.dispatch('storage'); document.hidden = true; documentEvents.dispatch('visibilitychange'); await flush()
+  document.hidden = false; documentEvents.dispatch('visibilitychange'); route.fullPath = '/?home-revisit=2'; await flush()
+  assert.equal(requests.length, 0); assert.deepEqual([count(windowEvents), count(documentEvents)], listenersBefore)
+  mounted.unmount(); assert.deepEqual([count(windowEvents), count(documentEvents)], listenersBefore)
+})
+
+await check('HomeRevisitActions ended connection and unmount cannot revive removed shortcuts', async () => {
+  resetIdentity()
+  Object.assign(netModule.l12State, { accountId: 'account-A', status: 'online',
+    recoveryPhase: 'snapshot-acknowledged', leavingRoom: false, game: { matchId: 'synthetic-match', phase: 'Main' } })
+  const requests = captureRequests(requestPath => Promise.reject(new Error(`unexpected ${requestPath}`)))
+  const mounted = mount(homeComponent()); await flush()
+  netModule.l12State.game.phase = 'GameOver'; await flush(); assert.equal(mounted.state.canContinue, false)
+  mounted.unmount(); windowEvents.dispatch('storage'); documentEvents.dispatch('visibilitychange'); await flush()
+  assert.equal(requests.length, 0); netModule.l12State.game = null
 })
 
 for (const [label, identity] of [
@@ -687,7 +667,9 @@ await check('consumer sources contain no legacy full-sync or cache-latest fallba
   assert.equal(sources['src/l12/site/AdminTournamentWorkbench.vue'].includes('syncSavedDecksFromAccount'), false)
   assert.equal(sources['src/l12/site/ProfilePage.vue'].includes('ensureOfficialPrebuiltDecks'), false)
   assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('loadSavedDecksState'), false)
-  assert.match(sources['src/l12/site/HomeRevisitActions.vue'], /pageSize:\s*1/)
+  assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('loadPrivateDeck'), false)
+  assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('我的牌库'), false)
+  assert.equal(sources['src/l12/site/HomeRevisitActions.vue'].includes('我的赛事'), false)
   for (const name of ['src/l12/site/TournamentAccountDetail.vue', 'src/l12/site/AdminTournamentWorkbench.vue']) {
     assert.match(sources[name], /pageSize:\s*30/)
     assert.equal(sources[name].includes('loadPrivateDeckBody'), false)

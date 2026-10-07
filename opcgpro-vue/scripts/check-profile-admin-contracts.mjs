@@ -62,12 +62,12 @@ const checks = [
   '本季排位、总体战绩、已结算历史必须连续且保留实际年月与称号管理'],
   [profile.match(/<span>总场次<\/span>/g)?.length === 1
     && profile.match(/to="\/battle\/rankings"/g)?.length === 1
-    && profile.match(/@click="openBugFeedback"/g)?.length === 1
+    && !profile.includes('openBugFeedback') && !profile.includes('feedback-banner')
     && profile.includes('近 7 天与近 30 天跨赛季统计；本赛季只统计当前赛季。')
     && profile.includes("section: 'overview', range: next")
     && profile.includes("else if (current === 'collection') await profileResource('arts'")
     && profile.includes('v-if="visitedPerformance"'),
-  '合并页战绩四格、排行榜、反馈入口均只出现一次；收藏不重复加载排位，判罚按需加载'],
+  '合并页战绩四格与排行榜均只出现一次，个人页不再保留独立反馈入口；收藏不重复加载排位，判罚按需加载'],
   [router.includes("AdminRuleRulingsPanel.vue") && adminNavigation.includes("label: '规则审核'")
     && !siteContent.includes("section === 'rules'") && !siteContent.includes("id: 'rules'"),
   '规则中心审核必须与站点内容工作台平级'],

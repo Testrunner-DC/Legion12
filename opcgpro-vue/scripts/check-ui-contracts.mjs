@@ -72,6 +72,8 @@ const app = read('../src/App.vue')
 const gameReentry = read('../src/l12/gameReentry.ts')
 const backgroundMusic = read('../src/l12/backgroundMusic.ts')
 const settingsModal = read('../src/l12/site/L12SettingsModal.vue')
+const bugFeedbackEntry = read('../src/l12/site/bugFeedbackEntry.ts')
+const homeRevisitActions = read('../src/l12/site/HomeRevisitActions.vue')
 const deckConstructionBrowser = read('../src/l12/site/DeckConstructionBrowser.vue')
 const catalogCardDetails = read('../src/l12/CatalogCardDetails.vue')
 const homePublishedCache = read('../src/l12/site/homePublishedCache.ts')
@@ -663,13 +665,16 @@ const contracts = [
   [!board.includes('<CardTile'), '卡牌详情不得渲染战场角标 UI'],
   [!prompt.includes('class="prompt-card-inspector"') && !prompt.includes('class="prompt-card-detail"'), 'PromptOverlay 不得自建卡牌详情框'],
   [prompt.includes('<section v-if="minimized"') && prompt.includes('<section v-else-if="prompt"') && prompt.includes('minimizedChange'), 'Prompt 最小化后必须只保留展开条，并同步隐藏浮动卡牌详情'],
-  [prompt.includes('.l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}') && prompt.includes('@media(max-width:760px){.l12-prompt-overlay.minimized{right:10px;bottom:60px}') && masterOverlay.includes('.master-overlay.minimized{z-index:2000;inset:auto 16px 66px auto') && playerMat.includes('.faction-effect-overlay.minimized{z-index:2000;inset:auto 16px 66px auto') && globalBugFeedback.includes('.bug-feedback-trigger{position:fixed;z-index:1900;right:16px;bottom:16px'), '所有最小化展开入口必须在桌面与小屏幕避开全局 Bug 反馈按钮，可操作 Prompt 入口还必须高于被动展示层'],
+  [prompt.includes('.l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}') && masterOverlay.includes('.master-overlay.minimized{z-index:2000;inset:auto 16px 66px auto') && playerMat.includes('.faction-effect-overlay.minimized{z-index:2000;inset:auto 16px 66px auto') && !globalBugFeedback.includes('bug-feedback-trigger') && globalBugFeedback.includes('.bug-feedback-mask{position:fixed;z-index:5000') && gamePage.includes('--l12-battle-fixed-controls-z,5100') && replayPage.includes('--l12-battle-fixed-controls-z,5100'), '全局反馈不得保留浮动入口；对局返回、投降与回放控制必须保持在反馈遮罩之上'],
   [prompt.includes('<section v-if="minimized" class="prompt-minimized-bar" role="status">\n        <button :aria-label="`展开：${overlayTitle}`"') && masterOverlay.includes('<section v-if="minimized" class="master-minimized">\n        <button :aria-label="`展开：${player.master.masterName} · 主宰效果`"') && playerMat.includes('<section v-if="factionMinimized" class="faction-minimized-bar">\n        <button :aria-label="`展开：${player.factionEffect?.name || \'阵营效果\'}`"') && playerMat.includes('<section v-if="abilityCardMinimized" class="faction-minimized-bar">\n        <button :aria-label="`展开：${abilityCardOpen.name}`"'), '弹框最小化后必须仅保留带上下文无障碍名称的展开按钮'],
   [gamePage.includes("import GameBoard from './game/GameBoard.vue'"), '对战入口必须唯一指向 src/l12/game/GameBoard.vue'],
   [!lobby.includes('l12State.room.decks'), '友谊战整备室不得同时渲染服务端预组与我的牌库'],
   [lobby.includes('platformState.account') && !lobby.includes('玩家昵称<input'), '对战大厅必须使用登录账号身份且不得保留手填昵称'],
   [/type:\s*'hello',[\s\S]{0,160}?authToken/.test(l12Net) && !l12Net.includes("type: 'hello', name"), 'WebSocket 握手必须使用账号令牌而非任意昵称'],
   [app.includes('startAutomaticConnection') && app.includes('[platformState.token, authState.verified]') && app.includes('token && verified') && app.includes('{ immediate: true }'), '只有经过服务端验证的登录玩家才能在全站启动自动连接'],
+  [homeRevisitActions.includes('<nav v-if="canContinue"') && homeRevisitActions.includes("to=\"/game\"")
+    && !homeRevisitActions.includes('我的牌库') && !homeRevisitActions.includes('我的赛事')
+    && !homeRevisitActions.includes('loadSavedDecks') && !homeRevisitActions.includes('loadPrivateDeck'), '首页回访区只在权威续局成立时显示继续对局/观战，不得读取牌库或恢复我的牌库、我的赛事快捷入口'],
   [mainEntry.includes('initializeAuth()') && mainEntry.includes('await Promise.race([') && mainEntry.includes('window.setTimeout(resolve, 3_000)') && mainEntry.indexOf('initializeAuth()') < mainEntry.indexOf("mount('#app')"), '应用挂载前必须有界等待权威身份初始化，认证服务不可达时也不能让公共站点无限白屏'],
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
@@ -712,7 +717,9 @@ const contracts = [
     && settingsModal.indexOf('<label class="volume-control"') < settingsModal.indexOf('<button type="button" class="toggle"')
     && audioPreferencesModule.includes('dataset.l12CardSize') && audioPreferencesModule.includes('dataset.l12Animation')
     && audioPreferencesModule.includes('dataset.l12MobileLayoutPreference')
-    && shell.includes('<L12SettingsModal') && gamePage.includes('<L12SettingsModal'), '音乐、音效、卡牌尺寸与动画必须由官网/对局共用设置框，音乐低音量区使用细分感知曲线，并在每次操作时立即同步实际消费者、DOM显示和本地/账号持久化'],
+    && settingsModal.includes('class="feedback-entry"') && settingsModal.includes("emit('feedback')")
+    && bugFeedbackEntry.includes("new CustomEvent('l12-open-bug-feedback'") && bugFeedbackEntry.includes('await nextTick()')
+    && shell.includes('<L12SettingsModal') && gamePage.includes('<L12SettingsModal') && replayPage.includes('<L12SettingsModal') && deckEditor.includes('<L12SettingsModal'), '音乐、音效、卡牌尺寸、动画与反馈必须由官网/对局/回放/编辑器共用设置框，音乐低音量区使用细分感知曲线，并在每次操作时立即同步实际消费者、DOM显示和本地/账号持久化'],
   [backgroundMusic.includes('const FADE_DURATION_MS = 520') && backgroundMusic.includes('private generation = 0')
     && backgroundMusic.includes('private fades = new Map<HTMLAudioElement, number>()')
     && backgroundMusic.includes('this.fade(audio, volume, generation)') && backgroundMusic.includes('this.fade(previous.audio, 0, generation, true)')
@@ -746,8 +753,8 @@ const contracts = [
     && board.includes('data-ui-contract="selected-card-utility-dock"')
     && board.includes('<BattleUtilityDock @settings="emit(\'settings\')"')
     && board.includes('.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}')
-    && gamePage.includes('@settings="settingsOpen = true"')
-    && gamePage.includes('<L12SettingsModal @close="settingsOpen = false"')
+    && gamePage.includes('@settings="openBattleSettings"')
+    && gamePage.includes('<L12SettingsModal @close="closeBattleSettings" @feedback="openBattleFeedback"')
     && gamePage.includes('class="battle-settings-mask"'), '选中卡牌容器下方必须保留横向三按钮工具坞并为其避让，设置入口复用完整设置页且立即作用于当前对局'],
   [adminOperations.includes("id: 'announcements'") && adminOperations.includes('data-ui-contract="independent-long-term-announcements"')
     && adminOperations.includes('不设置结束时间') && adminOperations.includes('data-ui-contract="idempotent-server-start"')
@@ -1378,7 +1385,7 @@ const contracts = [
     && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_fact_stats')
     && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('ReadStratifiedComparisonsAsync')
     && l12ServerSources.includes('not-estimated'), '单卡分析必须复用参赛方聚合与目标卡事实，并使用分层对照；未修正样本依赖不得伪造差值置信区间'],
-  [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && profilePage.includes('反馈 Bug 和建议') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口并整合反馈与排位资料，且不得出现未规划的自设卡背功能'],
+  [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && !profilePage.includes('feedback-banner') && !profilePage.includes('openBugFeedback') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口与排位资料，不得保留独立反馈入口或出现未规划的自设卡背功能'],
   [hasProfileAuthTemplate(profilePage) && profilePage.includes("if (authBusy.value) return")
     && profilePage.includes("authMode.value === 'login' ? '登录中…' : '正在建立账号…'"), '个人中心登录/注册必须使用语义表单，支持回车且空字段不可提交；请求中须禁用并以同步忙碌门禁阻止快速重复提交，结果须在表单旁无障碍播报'],
   [profilePage.includes('error instanceof PlatformRequestError') && profilePage.includes('error.status === 403')
@@ -1749,8 +1756,8 @@ contracts.push(
     && battleDock.includes('输入所出现的Bug给对手申请平局')
     && battleDock.includes('governance.value?.canRequestDraw') && battleDock.includes('governance.value?.drawUnavailableReason')
     && battleDock.includes('drawRequest.value?.viewerCanRespond') && battleDock.includes('每局双方合计仅限一次') && battleDock.includes('接受或拒绝后均不能再申请')
-    && battleDock.includes("new CustomEvent('l12-open-bug-feedback')"),
-    '选中卡牌下方工具坞必须是连续三等宽纯图标入口，并复用设置、好友、普通Bug反馈与好友屏蔽能力'],
+    && !battleDock.includes("l12-open-bug-feedback") && !battleDock.includes('Bug反馈') && settingsModal.includes('反馈 Bug'),
+    '选中卡牌下方工具坞必须是连续三等宽纯图标入口，并复用设置、好友与好友屏蔽能力；反馈只从共享设置进入'],
   [matchGovernance.includes("type: 'requestMatchDraw'")
     && matchGovernance.includes("type: 'resolveMatchDraw'")
     && matchGovernance.includes("type: 'reportOpponent'")

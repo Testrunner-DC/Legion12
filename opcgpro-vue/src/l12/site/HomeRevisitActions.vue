@@ -1,59 +1,18 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed } from 'vue'
 import { authState, platformState } from '@/l12/platform'
-import { deckErrorBelongsToCurrentAccount, loadPrivateDeckSummaryPage } from '@/l12/decks'
 import { l12State } from '@/l12/net'
 import { homeAccountVerified, homeCanContinueGame } from './homeRevisit'
 
-const route = useRoute()
 const verifiedAccount = computed(() => homeAccountVerified(platformState.account?.id,
   platformState.token, authState.verified) && !platformState.account?.disabled && !platformState.account?.deleted)
-const recentName = ref('')
-const cacheError = ref('')
 const canContinue = computed(() => homeCanContinueGame(platformState.account?.id, verifiedAccount.value, l12State))
-let disposed = false
-let recentEpoch = 0
-async function refreshRecent() {
-  const epoch = ++recentEpoch
-  if (!verifiedAccount.value) { recentName.value = ''; cacheError.value = ''; return }
-  const accountId = platformState.account?.id, token = platformState.token, path = route.fullPath
-  const current = () => !disposed && epoch === recentEpoch && verifiedAccount.value
-    && accountId === platformState.account?.id && token === platformState.token && path === route.fullPath
-  try {
-    const page = await loadPrivateDeckSummaryPage({ page: 1, pageSize: 1, sort: 'latest' })
-    if (!current()) return
-    recentName.value = page.items[0]?.name ?? ''
-    cacheError.value = ''
-  } catch (error) {
-    if (current() && deckErrorBelongsToCurrentAccount(error))
-      cacheError.value = error instanceof Error ? error.message : '最近牌库暂不可读取'
-  }
-}
-function refreshWhenVisible() { if (!document.hidden) void refreshRecent() }
-watch(() => [verifiedAccount.value, platformState.account?.id, platformState.token, route.fullPath],
-  () => { void refreshRecent() }, { immediate: true })
-onMounted(() => {
-  window.addEventListener('storage', refreshWhenVisible)
-  document.addEventListener('visibilitychange', refreshWhenVisible)
-})
-onBeforeUnmount(() => {
-  disposed = true; recentEpoch++
-  window.removeEventListener('storage', refreshWhenVisible)
-  document.removeEventListener('visibilitychange', refreshWhenVisible)
-})
 </script>
 
 <template>
-  <nav v-if="verifiedAccount" class="home-revisit-actions" aria-label="继续你的旅程">
-    <router-link v-if="canContinue" to="/game" class="home-revisit-action continue-game">
+  <nav v-if="canContinue" class="home-revisit-actions" aria-label="继续你的旅程">
+    <router-link to="/game" class="home-revisit-action continue-game">
       <strong>{{ l12State.spectating ? '继续观战' : '继续对局' }}</strong><span>返回正在进行的对局</span>
-    </router-link>
-    <router-link to="/decks?tab=mine" class="home-revisit-action">
-      <strong>我的牌库</strong><span>{{ cacheError || (recentName ? `最近保存：${recentName}` : '查看与编辑自己的牌库') }}</span>
-    </router-link>
-    <router-link to="/battle/tournaments?section=mine" class="home-revisit-action">
-      <strong>我的赛事</strong><span>查看参赛与主办进度</span>
     </router-link>
   </nav>
 </template>

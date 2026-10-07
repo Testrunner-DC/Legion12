@@ -197,7 +197,6 @@ html[data-l12-mobile=true] #l12-landscape-teleports .game-over>button{min-height
 html[data-l12-mobile=true] #l12-landscape-teleports .game-over>.game-over-minimize{position:absolute;top:8px;right:8px;display:block;width:34px;min-width:34px;height:30px;margin:0;padding:0}
 html[data-l12-mobile=true] #l12-landscape-teleports .game-over-restore{position:fixed;z-index:2147483604;left:96px;bottom:74px;display:block;min-height:32px;padding:4px 9px;border:1px solid #d6bd69;background:#403714;color:#fff;font-size:10px;font-weight:900}
 html[data-l12-mobile=true] #l12-landscape-teleports :is(.gm-panel,.game-over,.battle-settings-mask,.bug-feedback-mask) { z-index:2147483620; }
-html[data-l12-mobile=true]:has(.mobile-battle-dock) .bug-feedback-trigger { display:none; }
 
 @media (max-height:340px) {
   #l12-landscape-teleports .mobile-battle-dock .mobile-player-name {

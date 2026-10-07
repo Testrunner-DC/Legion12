@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import ts from 'typescript'
-import { homeAccountVerified, homeCanContinueGame, recentHomeDeckName } from '../src/l12/site/homeRevisit.ts'
+import { homeAccountVerified, homeCanContinueGame } from '../src/l12/site/homeRevisit.ts'
 import { tournamentHubSection } from '../src/l12/site/tournamentHubNavigation.ts'
 
 let assertions = 0
@@ -9,12 +9,6 @@ const equal = (value, expected, message) => { assert.deepEqual(value, expected, 
 equal(homeAccountVerified('account-a', 'token-a', true), true)
 for (const args of [[undefined, 'token', true], ['a', '', true], ['a', 'token', false]])
   equal(homeAccountVerified(...args), false, 'cached identity alone cannot expose personal shortcuts')
-equal(recentHomeDeckName({}), '')
-equal(recentHomeDeckName({ old: { name:'旧牌库', updatedAt:'2026-10-01T00:00:00Z' }, newer: {
-  name:'新牌库', updatedAt:'2026-10-02T00:00:00Z' }, broken: { name:'坏日期', updatedAt:'invalid' } }), '新牌库')
-equal(recentHomeDeckName({ '旧名称键': { name:'新名称', updatedAt:'2026-10-02T00:00:00Z' } }), '新名称')
-equal(recentHomeDeckName({ '名称键': { updatedAt:'2026-10-02T00:00:00Z' } }), '名称键')
-equal(recentHomeDeckName({ corrupt: null, noDate: { name:'无日期' } }), '')
 const connection = { accountId:'a', status:'online', recoveryPhase:'snapshot-acknowledged', leavingRoom:false,
   game:{ matchId:'fixture-match', phase:'Main' } }
 equal(homeCanContinueGame('a', true, connection), true)

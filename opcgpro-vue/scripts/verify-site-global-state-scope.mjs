@@ -100,13 +100,7 @@ try {
       check(focused.color==='rgb(85, 199, 206)'&&focused.style==='solid'&&focused.width==='2px',selector+' actual keyboard focus shares state')
       check(await rootNode.getAttribute('aria-modal')==='false',selector+' remains non-modal')
     }
-    const trigger=page.locator('.bug-feedback-trigger')
-    if(await trigger.isVisible()){
-      check(await trigger.evaluate(e=>e.classList.contains('ui-state-control')),'global trigger receives self focus state')
-      check((await focus(trigger,page)).color==='rgb(85, 199, 206)','actual feedback trigger keyboard focus')
-    }else{
-      check(viewport.width<=760||viewport.height<=520,'legacy compact/short-screen trigger visibility is preserved')
-    }
+    check(await page.locator('.bug-feedback-trigger').count()===0,'global floating feedback trigger is absent')
     await page.screenshot({path:path.join(output,`notifications-${viewport.width}x${viewport.height}.png`)})
     await page.evaluate(()=>window.__qa.mode('friend'));await page.locator('.integrity-notice').waitFor({state:'detached'})
     const friend=page.locator('.friend-request-dialog')
@@ -153,7 +147,6 @@ try {
       await page.evaluate(path=>window.__qa.navigate(path),route)
       const ordinary=route==='/admin'||route==='/'
       check(await feedback.evaluate(e=>e.classList.contains('ui-state-scope'))===ordinary,'route-aware feedback scope '+route)
-      check(await page.locator('.bug-feedback-trigger').evaluate(e=>e.classList.contains('ui-state-control'))===ordinary,'route-aware trigger scope '+route)
       await page.evaluate(()=>window.__qa.mode('friend'))
       await friend.waitFor()
       check(await friend.evaluate(e=>e.classList.contains('ui-state-scope'))===ordinary,'route-aware friend scope '+route)

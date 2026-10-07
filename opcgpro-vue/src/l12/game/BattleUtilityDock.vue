@@ -105,11 +105,6 @@ onBeforeUnmount(() => {
   if (acknowledgementTimer) window.clearTimeout(acknowledgementTimer)
 })
 
-function openBugFeedback() {
-  showTools.value = false
-  window.dispatchEvent(new CustomEvent('l12-open-bug-feedback'))
-}
-
 async function blockOpponent() {
   const accountId = governance.value?.opponentAccountId
   const name = governance.value?.opponentName || '对手'
@@ -202,7 +197,6 @@ function saveResponseSettings() {
         <p class="connection" role="status"><i :class="l12State.status"/>{{ connection }}</p>
 
         <div v-if="toolView === 'menu'" class="tool-menu" data-ui-contract="equal-option-group">
-          <button type="button" @click="openBugFeedback">Bug反馈<span>描述遇到的问题</span></button>
           <button type="button" :disabled="busy" @click="openResponseSettings">响应设置<span>默认 / 仅有效响应 / 5秒关闭无效响应</span></button>
           <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '本局双方合计仅可申请一次' }}</span></button>
           <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>仅屏蔽好友申请，不影响本局或匹配</span></button>

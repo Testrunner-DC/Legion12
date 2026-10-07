@@ -80,7 +80,6 @@ function hasRouteState(source, rootClass, stateClass, tag) {
 let globalCases = 0
 for (const [file, rootClass, stateClass, tag] of [
   ['GlobalBugFeedback.vue', 'bug-feedback-dialog', 'ui-state-scope', 'section'],
-  ['GlobalBugFeedback.vue', 'bug-feedback-trigger', 'ui-state-control', 'button'],
   ['FriendRequestNotifications.vue', 'friend-request-dialog', 'ui-state-scope', 'section'],
   ['RankedIntegrityNotice.vue', 'integrity-notice', 'ui-state-scope', 'section'],
 ]) {
@@ -99,4 +98,5 @@ for (const [file, rootClass, stateClass, tag] of [
   expect(source.replace(`class="${rootClass}"`, `class="${rootClass}" v-bind="uncontrolled"`), false)
   expect(`<template><!-- <${tag} class="${rootClass}" :class="{ '${stateClass}': usesSiteUiStates(route.meta) }"/> --></template>`, false)
 }
+assert.equal(fs.readFileSync(path.join(import.meta.dirname, '../src/l12/site/GlobalBugFeedback.vue'), 'utf8').includes('bug-feedback-trigger'), false, 'global feedback must not render a floating trigger')
 console.log(`Global site route-aware state contracts: ${globalCases}/${globalCases}`)

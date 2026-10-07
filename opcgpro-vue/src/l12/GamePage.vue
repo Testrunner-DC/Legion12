@@ -10,6 +10,7 @@ import GmPanel from './game/GmPanel.vue'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
+import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { gameAction, l12State, leaveRoom } from './net'
 import { connect, send } from './net'
 import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
@@ -28,10 +29,21 @@ const playerFacingWinnerReason = computed(() => {
   return filtered || '对局已结束'
 })
 const settingsOpen = ref(false)
+const settingsOpener = ref<HTMLElement | null>(null)
 const loadRetrying = ref(false)
 const gmPanelOpen = ref(l12State.gmEnabled)
 const gameOverMinimized = ref(false)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
+function openBattleSettings(event?: Event) {
+  settingsOpener.value = rememberSettingsOpener(event)
+  settingsOpen.value = true
+}
+function closeBattleSettings() {
+  void closeSettingsAndRestore(() => { settingsOpen.value = false }, settingsOpener.value)
+}
+function openBattleFeedback() {
+  void openBugFeedbackFromSettings(() => { settingsOpen.value = false }, settingsOpener.value)
+}
 const missingGameState = computed(() => tournamentRoomLoadingState({
   status: l12State.status,
   recoveryPhase: l12State.recoveryPhase,
@@ -109,16 +121,17 @@ async function retryGameLoad() {
     <RankedBroadcastTicker class="battle-ranked-ticker" />
     <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
+      <button v-if="l12State.spectating" type="button" @click="openBattleSettings">设置</button>
       <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div></BattleDockPortal>
     <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
-      @gm-placement-resolved="gmPlacement = null" @settings="settingsOpen = true" />
+      @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
-    <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="settingsOpen = false">
-      <L12SettingsModal @close="settingsOpen = false"/>
+    <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="closeBattleSettings">
+      <L12SettingsModal @close="closeBattleSettings" @feedback="openBattleFeedback"/>
     </div></BattleOverlayPortal>
 
     <Transition name="fade">

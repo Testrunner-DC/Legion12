@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "feedback-settings-entry-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "页面入口整理",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "首页移除“我的牌库”和“我的赛事”快捷入口；正在进行的对局和观战仍可从首页继续。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/HomeRevisitActions.vue",
+        "opcgpro-vue/src/l12/site/homeRevisit.ts"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "反馈 Bug 统一从设置中打开，移除页面浮动按钮和个人页反馈横条；牌库编辑器、对战、观战及回放仍可在设置中提交反馈。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/GlobalBugFeedback.vue",
+        "opcgpro-vue/src/l12/site/L12SettingsModal.vue",
+        "opcgpro-vue/src/l12/site/bugFeedbackEntry.ts",
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/ReplayPage.vue",
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css",
+        "opcgpro-vue/src/l12/site/SandboxPage.mobile.css"
+      ]
+    }
+  ]
+}
