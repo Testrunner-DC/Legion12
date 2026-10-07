@@ -374,9 +374,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, _app.Lifetime.ApplicationStopping);
             try
             {
-                var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request));
+                var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request),
+                    cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-list",
                     "cards", AuditContext(request, permission));
                 return Results.Ok(page);
@@ -385,18 +389,34 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (CardAnalyticsUnavailableException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.StatusCode);
+            }
+            catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.StatusCode(499);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
         });
         _app.MapGet("/api/admin/analytics/cards/{cardId}", async (HttpRequest request, string cardId) =>
         {
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, _app.Lifetime.ApplicationStopping);
             try
             {
                 var includeRecentMatches = L12Authorization.HasPermission(authenticated.Account,
                     L12Permission.AdminMatchesRead);
                 var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request),
-                    includeRecentMatches);
+                    includeRecentMatches, cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
                     cardId, AuditContext(request, permission));
                 return detail is null ? Results.NotFound() : Results.Ok(detail);
@@ -405,6 +425,19 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (CardAnalyticsUnavailableException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.StatusCode);
+            }
+            catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.StatusCode(499);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
         });
         _app.MapGet("/api/admin/analytics/masters", async (HttpRequest request) =>
         {

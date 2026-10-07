@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "admin-card-analytics-lifecycle-20261008",
+  "date": "2026-10-08",
+  "audience": "internal",
+  "reason": "后台卡牌数据完整缓存键、同键作业与真实SQLite查询取消；仅本地验收，统计口径和数据库格式不变。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalyticsCache.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalyticsExecution.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalyticsNativeCancellation.cs",
+    "TwelveLegions.Platform.Tests/CacheIdentityTests.cs",
+    "TwelveLegions.Platform.Tests/CardAnalyticsRequestLifecycleTests.cs"
+  ]
+}
