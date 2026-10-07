@@ -27,6 +27,11 @@ internal static class L12PerformanceMetrics
         try { Window.Value(stage, value); }
         catch { }
     }
+    internal static bool TrySnapshot(out PerformanceMetricBatch? batch)
+    {
+        try { return Window.TrySnapshot(out batch); }
+        catch { batch = null; return false; }
+    }
 
     private static void Flush() => Window.TryFlush(batch =>
     {
@@ -95,6 +100,7 @@ internal sealed class PerformanceMetricWindow
     private readonly FrozenDictionary<(Kind Kind, string Stage), Series> _known;
     private readonly FrozenDictionary<string, Series> _fullNames;
     private int _flushing;
+    private long _flushEpoch;
     private long _unknownStages, _invalidSamples, _clampedNegatives, _sinkFailures,
         _lostSinkSamples, _skippedFlushes;
 
@@ -167,6 +173,7 @@ internal sealed class PerformanceMetricWindow
     {
         if (Interlocked.CompareExchange(ref _flushing, 1, 0) != 0)
         { Interlocked.Increment(ref _skippedFlushes); return false; }
+        Interlocked.Increment(ref _flushEpoch); // Odd while a destructive cut is in progress.
         long capturedSamples = 0;
         try
         {
@@ -200,7 +207,43 @@ internal sealed class PerformanceMetricWindow
             AddLostSamples(capturedSamples);
             return false;
         }
-        finally { Volatile.Write(ref _flushing, 0); }
+        finally
+        {
+            Interlocked.Increment(ref _flushEpoch);
+            Volatile.Write(ref _flushing, 0);
+        }
+    }
+    internal bool TrySnapshot(out PerformanceMetricBatch? batch)
+    {
+        batch = null;
+        if (Volatile.Read(ref _flushing) != 0) return false;
+        var epoch = Interlocked.Read(ref _flushEpoch);
+        if ((epoch & 1) != 0) return false;
+
+        var summaries = new List<PerformanceMetricSummary>(_series.Length);
+        foreach (var series in _series)
+        {
+            if (Volatile.Read(ref _flushing) != 0 || Interlocked.Read(ref _flushEpoch) != epoch)
+                return false;
+            if (!Monitor.TryEnter(series.Gate)) return false;
+            try
+            {
+                if (Volatile.Read(ref _flushing) != 0 || Interlocked.Read(ref _flushEpoch) != epoch)
+                    return false;
+                var histogram = (long[])series.Histogram.Clone();
+                var ended = DateTimeOffset.UtcNow;
+                summaries.Add(new PerformanceMetricSummary(series.Stage, series.Unit, series.StartedAt,
+                    ended, series.Count, series.Total / 1000d, series.Maximum / 1000d,
+                    series.TotalSaturated, Array.AsReadOnly(histogram),
+                    Percentile(series, histogram, 20), Percentile(series, histogram, 100),
+                    histogram[^1], Interlocked.Read(ref series.DroppedContentionTotal)));
+            }
+            finally { Monitor.Exit(series.Gate); }
+        }
+        if (Volatile.Read(ref _flushing) != 0 || Interlocked.Read(ref _flushEpoch) != epoch)
+            return false;
+        batch = new PerformanceMetricBatch(summaries.AsReadOnly(), Diagnostics());
+        return true;
     }
     internal PerformanceMetricDiagnostics Diagnostics() => new(Interlocked.Read(ref _unknownStages),
         Interlocked.Read(ref _invalidSamples), Interlocked.Read(ref _clampedNegatives),

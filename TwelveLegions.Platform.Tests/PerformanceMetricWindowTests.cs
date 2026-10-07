@@ -263,6 +263,80 @@ public sealed class PerformanceMetricWindowTests
         Assert.Equal(15, batch.Series.Count);
     }
 
+    [Fact]
+    public void SnapshotKeepsAllFixedStagesAndDoesNotResetTheMinuteWindow()
+    {
+        var window = new PerformanceMetricWindow();
+        window.Value("websocket.queue-depth", 7);
+
+        Assert.True(window.TrySnapshot(out var first));
+        Assert.True(window.TrySnapshot(out var second));
+        Assert.Equal(15, Assert.IsType<PerformanceMetricBatch>(first).Series.Count);
+        Assert.Equal(7, Row(first!, "websocket.queue-depth").Total);
+        Assert.Equal(7, Row(Assert.IsType<PerformanceMetricBatch>(second), "websocket.queue-depth").Total);
+
+        var flushed = Capture(window);
+        Assert.Equal(1, Row(flushed, "websocket.queue-depth").Count);
+        Assert.True(window.TrySnapshot(out var afterFlush));
+        Assert.Equal(0, Row(Assert.IsType<PerformanceMetricBatch>(afterFlush), "websocket.queue-depth").Count);
+    }
+
+    [Fact]
+    public async Task SnapshotReturnsUnavailableWithoutWaitingForAnyBusyStage()
+    {
+        var window = new PerformanceMetricWindow();
+        var series = ((IEnumerable)typeof(PerformanceMetricWindow).GetField("_series",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!).Cast<object>().Single(item =>
+                (string)item.GetType().GetField("Stage", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(item)!
+                    == "websocket.queue-depth");
+        var gate = series.GetType().GetField("Gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(series)!;
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var holder = Task.Factory.StartNew(() =>
+        {
+            lock (gate)
+            {
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic metric gate");
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
+            var watch = Stopwatch.StartNew();
+            Assert.False(window.TrySnapshot(out var snapshot));
+            Assert.Null(snapshot);
+            Assert.True(watch.Elapsed < TimeSpan.FromMilliseconds(250));
+        }
+        finally { release.Set(); await holder.WaitAsync(TimeSpan.FromSeconds(2)); }
+    }
+
+    [Fact]
+    public async Task SnapshotNeverPublishesAWindowWhileDestructiveFlushEpochIsOpen()
+    {
+        var window = new PerformanceMetricWindow();
+        window.Value("websocket.queue-depth", 1);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var flushing = Task.Factory.StartNew(() => window.TryFlush(_ =>
+        {
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic slow sink");
+        }), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
+            Assert.False(window.TrySnapshot(out var duringFlush));
+            Assert.Null(duringFlush);
+            window.Value("websocket.queue-depth", 2);
+        }
+        finally { release.Set(); Assert.True(await flushing.WaitAsync(TimeSpan.FromSeconds(2))); }
+
+        Assert.True(window.TrySnapshot(out var nextWindow));
+        Assert.Equal(2, Row(Assert.IsType<PerformanceMetricBatch>(nextWindow),
+            "websocket.queue-depth").Total);
+    }
+
     private static PerformanceMetricBatch Capture(PerformanceMetricWindow window)
     {
         PerformanceMetricBatch? batch = null;
