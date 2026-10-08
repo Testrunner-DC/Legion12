@@ -23,7 +23,12 @@ const checks = [
   ['起手完整展示逐副本卡面、名称、编号与单次概率说明', editor.includes('fit="contain"') && editor.includes('openingHandMeta(copy,index)') && editor.includes('{{ copy.card.number }} · {{ copy.label }}') && editor.includes('等概率、不放回') && editor.includes('overflow-wrap:anywhere')],
   ['移动端次要操作收进更多操作菜单', editor.includes('class="more-actions-trigger"') && editor.includes('class="secondary-actions"')],
   ['分区折叠状态持久保留', editor.includes('l12-deck-editor-sections-v1') && editor.includes('watch(collapsedSections')],
-  ['禁限、超量与阵营问题就地显示', editor.includes('entryIssue(entry.card, entry.count)') && editor.includes('operationsRestrictions')],
+  ['基础硬错误与本赛季排位禁限提示分别显示', editor.includes('entryIssue(entry.card, entry.count)')
+    && editor.includes('seasonEntryIssue(entry.card)') && editor.includes('data-season-advisory')
+    && editor.includes('const validation = computed(() => validateDeck(construction.value, catalog.value))')
+    && editor.includes('validateDeck(construction.value, catalog.value, operationsRestrictions.value)')
+    && editor.includes('return effectiveDeckLimit(card, masterId.value)')
+    && !editor.includes('Math.min(effectiveDeckLimit(card, masterId.value), restrictionFor')],
   ['备选区可从卡池加入并移回主牌，右侧主牌不设置备卡按钮', ['addToBench(entry.card)', 'moveBenchToMain(entry.card)'].every(value => editor.includes(value)) && !editor.includes('moveMainToBench')],
   ['右侧牌表不显示逐副本原画异画文字或备卡按钮', editor.includes('alternate-art-banner') && !editor.includes('class="deck-copy-labels"') && !editor.includes('aria-label="移入备选区"')],
   ['备选区不计主牌数量与合法性', editor.includes('备选区') && editor.includes('不计入主牌数量与合法性') && !editor.match(/validateDeck\([\s\S]{0,300}benchIds/)],

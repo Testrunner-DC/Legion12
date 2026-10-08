@@ -53,7 +53,7 @@ const actualDecks = execute(functionText('src/l12/decks.ts', ['syncSavedDecksFro
 const dependencies = {
   platformState, editorAccountEpoch: 0, editorDocumentEpoch: 0, editorContentRevision: ref(0),
   catalog: ref([]), savedDecks: ref({}), loading: ref(true), notice: ref(''),
-  selected: ref(null), mainCards: ref([]), operationsRestrictions: ref([]), publicationCode: ref(''), publicationId: ref(''),
+  selected: ref(null), mainCards: ref([]), operationsRestrictions: ref([]), operationsPolicyLoaded: ref(false), publicationCode: ref(''), publicationId: ref(''),
   route: { fullPath: '/deck-editor', query: {} }, router: { currentRoute: ref({ query: {} }) },
   loadDeckCatalog: async () => [], ensureOfficialPrebuiltDecks: actualDecks.ensureOfficialPrebuiltDecks,
   refreshOwnedAlternateArts: async () => undefined, getEffectiveOperationsPolicy: async () => ({ cardRestrictions: [] }),
@@ -106,31 +106,41 @@ function page(items = [summary()], number = 1, total = items.length) {
     catalogVersion: 'A'.repeat(64), policyVersion: 9, facets: { masters: total ? [{ masterId: 'MASTER', count: total }] : [], legal: total, illegal: 0 } }
 }
 function editorRuntime(options = {}) {
-  const state = { calls: [], loaded: [], deleted: [], saved: [], confirmed: true,
+  const state = { calls: [], loaded: [], deleted: [], saved: [], published: [], images: [], confirmed: true,
     route: { fullPath: '/deck-editor', query: {} }, platform: { account: { id: 'synthetic-a' }, token: 'synthetic-a' },
     cache: {}, requestBody: async target => body(target.id, target.revision), requestPage: async query => page([summary()], query.page),
-    requestDelete: async () => undefined, requestSave: async deck => ({ ...deck, id: deck.id ?? 'saved-id', revision: (deck.revision ?? 0) + 1 }), ...options }
+    requestDelete: async () => undefined, requestSave: async deck => ({ ...deck, id: deck.id ?? 'saved-id', revision: (deck.revision ?? 0) + 1 }),
+    requestPublish: async deck => ({ id: 'public-id', publicCode: 'PUBLICCODE12', deck: { ...deck, publicationId: 'public-id', publicationVersion: 1 } }), ...options }
   const names = ['savedDecks', 'savedDirectory', 'savedDirectorySearch', 'savedDirectoryKeyword', 'savedDirectoryLoading',
     'savedDirectoryError', 'deckReadBusy', 'directoryReadSequence', 'deckReadSequence', 'editorAlive', 'authenticatedEditor',
     'savedDirectoryDecks', 'savedDirectoryTotal', 'savedDirectoryPages', 'notice', 'deckName', 'masterId', 'counts', 'benchCounts',
     'specialIds', 'alternateArtSelections', 'alternateArtCopies', 'activeDeckName', 'activeDeckId', 'activeDeckRevision',
     'pendingDeleteName', 'pendingDeleteDeck', 'deletingDeck', 'deckMutationBusy', 'publicationId', 'publicationCode', 'publicationVersion',
     'editorContentRevision', 'persistedContentRevision', 'restoredLocalDraft', 'openingHandIds', 'selected', 'mobileSavedDecksOpen',
-    'editorAccountEpoch', 'editorDocumentEpoch', 'editorContext', 'isCurrentEditorContext', 'hasUnsavedChanges']
+    'editorAccountEpoch', 'editorDocumentEpoch', 'editorContext', 'isCurrentEditorContext', 'hasUnsavedChanges',
+    'generatingDeckImage', 'deckImageBlob', 'deckImageUrl']
   const functions = ['mutationError', 'savedDeckCountLabel', 'loadSavedDirectory', 'searchSavedDirectory', 'loadRequestedSavedDeck',
     'refreshSavedDirectoryAfterMutation', 'confirmDiscardChanges', 'requestLoadDeck', 'loadDeck', 'newDeck', 'chooseMobileSavedDeck',
-    'requestDelete', 'closePendingDelete', 'confirmDelete', 'canSaveCurrentDeck', 'onSave']
+    'requestDelete', 'closePendingDelete', 'confirmDelete', 'canSaveCurrentDeck', 'onSave', 'onSaveAs',
+    'publishCurrentDeck', 'generateDeckImage']
   const source = names.map(declarationText).join('\n') + '\n' + functionText(editorPath, functions)
   const runtime = execute(source, {
     ref, computed, platformState: state.platform, route: state.route, mainCards: ref([]), byId: ref(new Map()),
-    MAIN_DECK_TYPES: new Set(['legion', 'tactic', 'artifact']), validation: ref(''),
+    MAIN_DECK_TYPES: new Set(['legion', 'tactic', 'artifact']), validation: options.validation ?? ref(''),
+    catalog: options.catalog ?? ref([]), ownedAlternateArts: ref([]),
     window: { confirm: () => state.confirmed }, deckErrorBelongsToCurrentAccount: () => true,
     loadSavedDecks: () => state.cache, resolvePublishedDeck: async () => undefined,
     loadPrivateDeckSummaryPage: async query => { state.calls.push({ kind: 'directory', query }); return state.requestPage(query) },
     loadPrivateDeckBody: async (target, current) => { state.calls.push({ kind: 'body', target, current }); return state.requestBody(target, current) },
     deleteDeck: async deck => { state.deleted.push(deck); return state.requestDelete(deck) },
     saveDeck: async deck => { state.saved.push(deck); return state.requestSave(deck) },
-    currentDeck: () => body('current', 2), clearCurrentDraftAfterServerSave: () => undefined,
+    currentDeck: () => options.workingDeck ?? body('current', 2), clearCurrentDraftAfterServerSave: () => undefined,
+    uniqueDeckCopyName: async (name, current) => { assert.equal(current(), true); return name },
+    publicDeckApi: { publish: async deck => { state.published.push(deck); return state.requestPublish(deck) } },
+    publicDeckRouteReference: result => result.publicCode,
+    closeDeckImage: () => undefined, verifiedPublicDeckUrl: async () => undefined,
+    createDeckImageBlob: async deck => { state.images.push(deck); return { image: true } },
+    URL: { createObjectURL: () => 'blob:synthetic-image' },
     router: { replace: async () => undefined },
   }, `({${names.filter(name => !['editorAlive','directoryReadSequence','deckReadSequence','editorAccountEpoch','editorDocumentEpoch'].includes(name)).join(',')},${functions.join(',')},
     bumpAccount(){editorAccountEpoch++}, bumpDocument(){editorDocumentEpoch++}, dispose(){editorAlive=false;directoryReadSequence++;deckReadSequence++}})`)
@@ -251,6 +261,119 @@ await check('editing while DELETE is in flight preserves the new working documen
   assert.equal(r.state.deleted.length, 1, 'the real DELETE consumer must already be in flight')
   r.editorContentRevision.value++; r.deckName.value = '保留我的修改'
   wait.resolve(); await pending; assert.equal(r.deckName.value, '保留我的修改'); assert.match(r.notice.value, /当前修改仍保留/)
+})
+
+// Use the shipped catalog, prebuilt and validator, then execute the actual
+// editor computations and mutation handlers. A summary's season flag cannot
+// stand in for either the base construction or a successful save/publish.
+const json = name => JSON.parse(read(name).replace(/^\uFEFF/, ''))
+const cardCatalog = json('../服务端WebSocket/TwelveLegions/Data/cards.s1.json')
+const prebuilt = { ...json('../服务端WebSocket/TwelveLegions/Data/preset-decks.s1.json')[0], name: '赛季受限构筑' }
+const identities = json('../服务端WebSocket/TwelveLegions/Data/morale-identities.json')
+const validators = execute(functionText('src/l12/openingHandEligibility.ts', ['isDerivedDeckSpecialCard', 'bypassesNormalDrawDeck'])
+  + '\n' + functionText('src/l12/decks.ts', ['canonicalMoraleCardId', 'validateDeck', 'effectiveDeckLimit',
+    'doesNotCountTowardMainDeck', 'isDerivedSpecialCard', 'deckCountSummary', 'trialCapacityForMaster']), {
+  MAIN_DECK_TYPES: new Set(['legion', 'tactic', 'artifact']),
+  moraleIdentityByFaction: new Map(identities.map(identity => [identity.faction, identity])),
+  moraleIdentityByVersion: new Map(identities.flatMap(identity => identity.versionCardIds.map(id => [id, identity]))),
+  moraleIdentityByGodPower: new Map(identities.filter(identity => identity.godPowerCardId).map(identity => [identity.godPowerCardId, identity])),
+}, '({validateDeck,effectiveDeckLimit,doesNotCountTowardMainDeck,deckCountSummary})')
+assert.equal(validators.validateDeck(prebuilt, cardCatalog), '')
+const restrictedCard = cardCatalog.find(card => card.id === prebuilt.cardIds[0])
+function constructionRuntime(maxCopies = 0, mutate = () => {}) {
+  const deck = structuredClone(prebuilt); mutate(deck)
+  const counts = ref(Object.fromEntries([...new Set(deck.cardIds)].map(id => [id, deck.cardIds.filter(cardId => cardId === id).length])))
+  const byId = new Map(cardCatalog.map(card => [card.id, card]))
+  const entries = computed(() => Object.entries(counts.value).map(([id, count]) => ({ card: byId.get(id) ?? { id }, count })))
+  const dependencies = { ...validators, ref, computed, counts, entries, catalog: ref(cardCatalog),
+    selectedMaster: ref(byId.get(deck.masterId)), masterId: ref(deck.masterId), deckName: ref(deck.name),
+    moraleIds: ref(deck.moraleIds), specialIds: ref(deck.specialIds ?? []), operationsPolicyLoaded: ref(true),
+    operationsRestrictions: ref([{ cardId: restrictedCard.id, maxCopies, reason: '本赛季排位规则' }]),
+    totalCards: computed(() => validators.deckCountSummary(Object.entries(counts.value).flatMap(([id, count]) => Array(count).fill(id)), byId).counted),
+    notice: ref(''), selected: ref(null), openingHandIds: ref([]), alternateArtCopies: ref({}), alternateArtSelections: ref({}),
+    currentDeck: () => ({ ...deck, cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)) }),
+  }
+  const names = ['construction', 'validation', 'seasonValidation', 'seasonAdvisory']
+  const source = names.filter(name => tree(editorPath).statements.some(node => ts.isVariableStatement(node)
+    && node.declarationList.declarations.some(declaration => declaration.name.getText() === name))).map(declarationText).join('\n')
+    + '\n' + functionText(editorPath, ['restrictionFor', 'allowedCopies', 'cardLegality', 'entryIssue', 'seasonEntryIssue', 'normalizedAppearanceList', 'addCardAppearance'])
+  const runtime = execute(source, dependencies, '({validation, allowedCopies, cardLegality, entryIssue, seasonEntryIssue, addCardAppearance,'
+    + 'seasonValidation: typeof seasonValidation === "undefined" ? null : seasonValidation,'
+    + 'seasonAdvisory: typeof seasonAdvisory === "undefined" ? null : seasonAdvisory})')
+  return { ...runtime, ...dependencies, workingDeck: dependencies.currentDeck() }
+}
+for (const maxCopies of [0, 1]) {
+  await check(`season maxCopies=${maxCopies} is advisory, while the real base-valid deck saves, copies, publishes and exports`, async () => {
+    const c = constructionRuntime(maxCopies)
+    assert.equal(c.validation.value, '', 'season restrictions must not make the base construction invalid')
+    assert.match(c.seasonValidation.value, /禁用|最多/)
+    assert.match(c.seasonAdvisory.value, /排位不可用/)
+    assert.equal(c.cardLegality(restrictedCard), maxCopies ? 'restricted' : 'banned')
+    assert.match(c.seasonEntryIssue(restrictedCard), /本赛季排位/)
+    assert.equal(c.entryIssue(restrictedCard, 3), '')
+    assert.equal(c.allowedCopies(restrictedCard), 3)
+    for (const action of ['onSave', 'onSaveAs', 'publishCurrentDeck', 'generateDeckImage']) {
+      const r = editorRuntime({ validation: c.validation, catalog: c.catalog, workingDeck: c.workingDeck })
+      await r[action]()
+      assert.equal(r.state.saved.length, action === 'publishCurrentDeck' ? 2 : action === 'generateDeckImage' ? 0 : 1)
+      assert.equal(r.state.published.length, action === 'publishCurrentDeck' ? 1 : 0)
+      assert.equal(r.state.images.length, action === 'generateDeckImage' ? 1 : 0)
+      assert.equal(r.deckMutationBusy.value, false)
+      const submitted = r.state.saved[0] ?? r.state.images[0]
+      assert.deepEqual(submitted.cardIds, c.workingDeck.cardIds)
+      if (action === 'onSaveAs') { assert.equal(submitted.id, undefined); assert.equal(submitted.publicationId, null) }
+    }
+    c.counts.value = { ...c.counts.value, [restrictedCard.id]: 1 }
+    c.addCardAppearance(restrictedCard, 'synthetic-art')
+    c.addCardAppearance(restrictedCard)
+    assert.equal(c.counts.value[restrictedCard.id], 3, 'banned/limited cards still add to their inherent copy limit')
+    assert.deepEqual(c.alternateArtCopies.value[restrictedCard.id], ['', 'synthetic-art', ''])
+    c.addCardAppearance(restrictedCard)
+    assert.equal(c.counts.value[restrictedCard.id], 3, 'alternate and original art must share the inherent limit')
+  })
+}
+for (const [name, mutate] of [
+  ['short main deck', deck => { deck.cardIds = deck.cardIds.slice(0, 39) }],
+  ['unknown card', deck => { deck.cardIds[0] = 'UNKNOWN' }],
+  ['wrong faction', deck => { deck.cardIds[0] = cardCatalog.find(card => card.cardType === 'legion' && !['universal', 'tianting'].includes(card.faction)).id }],
+  ['inherent copy limit', deck => { deck.cardIds[deck.cardIds.findIndex(id => id !== restrictedCard.id)] = restrictedCard.id }],
+  ['wrong morale count', deck => { deck.moraleIds.pop() }],
+  ['invalid master', deck => { deck.masterId = 'UNKNOWN' }],
+]) await check(`${name} still prevents every authoritative editor action`, async () => {
+  const c = constructionRuntime(0, mutate)
+  assert.notEqual(c.validation.value, '')
+  for (const action of ['onSave', 'onSaveAs', 'publishCurrentDeck', 'generateDeckImage']) {
+    const r = editorRuntime({ validation: c.validation, catalog: c.catalog, workingDeck: c.workingDeck })
+    await r[action]()
+    assert.deepEqual([r.state.saved.length, r.state.published.length, r.state.images.length], [0, 0, 0])
+    assert.equal(r.notice.value, c.validation.value)
+  }
+})
+await check('missing seasonal policy stays unconfirmed without blocking a base-valid save', async () => {
+  const c = constructionRuntime(); c.operationsPolicyLoaded.value = false
+  assert.equal(c.validation.value, ''); assert.match(c.seasonAdvisory.value, /待确认/)
+  const r = editorRuntime({ validation: c.validation, workingDeck: c.workingDeck }); await r.onSave()
+  assert.equal(r.state.saved.length, 1)
+})
+await check('base-valid seasonal decks retain save locks and the unproven draft revision guard', async () => {
+  const c = constructionRuntime(), wait = deferred()
+  const r = editorRuntime({ validation: c.validation, workingDeck: c.workingDeck, requestSave: () => wait.promise })
+  const first = r.onSave(); await Promise.resolve()
+  await r.onSave(); await r.onSaveAs(); await r.publishCurrentDeck()
+  assert.equal(r.state.saved.length, 1); assert.equal(r.state.published.length, 0)
+  wait.resolve({ ...c.workingDeck, id: 'saved', revision: 1 }); await first
+  assert.equal(r.deckMutationBusy.value, false)
+  const draft = editorRuntime({ validation: c.validation, workingDeck: c.workingDeck })
+  draft.activeDeckName.value = '旧草稿'; await draft.onSave(); await draft.publishCurrentDeck()
+  assert.equal(draft.state.saved.length, 0); assert.match(draft.notice.value, /原牌库版本/)
+})
+await check('account A-B-A during save cannot launch a stale public publish', async () => {
+  const c = constructionRuntime(), wait = deferred()
+  const r = editorRuntime({ validation: c.validation, workingDeck: c.workingDeck, requestSave: () => wait.promise })
+  const pending = r.publishCurrentDeck(); await Promise.resolve()
+  r.bumpAccount(); r.bumpAccount(); wait.resolve({ ...c.workingDeck, id: 'saved', revision: 1 }); await pending
+  assert.equal(r.state.published.length, 0); assert.equal(r.activeDeckId.value, null)
+  assert.equal(r.deckMutationBusy.value, false)
 })
 
 console.log(`Private editor Focused: ${passed}/${passed}, failed=0, skipped=0`)

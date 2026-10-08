@@ -147,6 +147,7 @@ async function refreshOwnedAlternateArts() {
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
 const operationsRestrictions = ref<OperationsCardRestriction[]>([])
+const operationsPolicyLoaded = ref(false)
 const workspace = ref<'gallery' | 'stats' | 'hand' | 'content'>('gallery')
 const mobilePane = ref<'pool' | 'deck' | 'insights'>('pool')
 const mobileDetailOpen = ref(false)
@@ -218,7 +219,10 @@ onMounted(async () => {
     await Promise.all([
       loadSavedDirectory(1), refreshOwnedAlternateArts(),
       getEffectiveOperationsPolicy().then(policy => {
-        if (isCurrentEditorContext(loadingContext)) operationsRestrictions.value = policy.cardRestrictions
+        if (isCurrentEditorContext(loadingContext)) {
+          operationsRestrictions.value = policy.cardRestrictions
+          operationsPolicyLoaded.value = true
+        }
       }).catch(() => undefined),
     ])
     if (!isCurrentEditorContext(loadingContext) || editorContentRevision.value !== loadingContentRevision) return
@@ -276,7 +280,7 @@ function restrictionFor(cardId: string) {
     ?? operationsRestrictions.value.find(rule => rule.cardId === cardId && !rule.masterId)
 }
 function allowedCopies(card: DeckCard) {
-  return Math.min(effectiveDeckLimit(card, masterId.value), restrictionFor(card.id)?.maxCopies ?? Number.MAX_SAFE_INTEGER)
+  return effectiveDeckLimit(card, masterId.value)
 }
 function cardLegality(card: DeckCard) {
   const restriction = restrictionFor(card.id)
@@ -285,11 +289,15 @@ function cardLegality(card: DeckCard) {
 }
 function entryIssue(card: DeckCard, count: number) {
   if (selectedMaster.value && card.faction !== 'universal' && card.faction !== selectedMaster.value.faction) return '与当前主宰阵营不符'
-  const restriction = restrictionFor(card.id)
   const limit = allowedCopies(card)
-  if (count > limit) return restriction?.reason ? `超过上限 ${limit}（${restriction.reason}）` : `超过上限 ${limit}`
-  if (restriction?.maxCopies === 0) return restriction.reason ? `当前禁用（${restriction.reason}）` : '当前禁用'
+  if (count > limit) return `超过上限 ${limit}`
   return ''
+}
+function seasonEntryIssue(card: DeckCard) {
+  const restriction = restrictionFor(card.id)
+  if (!restriction) return ''
+  const label = restriction.maxCopies === 0 ? '本赛季排位禁用' : `本赛季排位最多 ${restriction.maxCopies} 张`
+  return restriction.reason ? `${label}（${restriction.reason}）` : label
 }
 const filteredBaseCards = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
@@ -329,12 +337,19 @@ const filtered = computed<PoolCardAppearance[]>(() => filteredBaseCards.value.fl
   ...ownedAlternateArts.value.filter(art => art.baseCardId === card.id)
     .map(art => ({ key: `${card.id}:${art.id}`, card, art })),
 ]))
-const validation = computed(() => validateDeck({
+const construction = computed(() => ({
   name: deckName.value, masterId: masterId.value,
   cardIds: entries.value.flatMap(entry => Array(entry.count).fill(entry.card.id)),
   moraleIds: moraleIds.value,
   specialIds: specialIds.value,
-}, catalog.value, operationsRestrictions.value))
+}))
+const validation = computed(() => validateDeck(construction.value, catalog.value))
+const seasonValidation = computed(() => validation.value ? ''
+  : validateDeck(construction.value, catalog.value, operationsRestrictions.value))
+const seasonAdvisory = computed(() => validation.value ? '' : !operationsPolicyLoaded.value
+  ? '当前赛季排位可用性待确认'
+  : seasonValidation.value ? `本赛季排位不可用：${seasonValidation.value}；仍可保存和公开`
+    : '符合当前赛季构筑要求')
 const curve = computed(() => {
   const values = Array(9).fill(0) as number[]
   entries.value.forEach(({ card, count }) => values[Math.min(8, card.cost ?? 0)] += count)
@@ -1106,6 +1121,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
     </header>
 
     <p v-if="notice" class="deck-operation-notice" role="status">{{ notice }}</p>
+    <p v-if="seasonAdvisory" class="deck-operation-notice" data-season-advisory>{{ seasonAdvisory }}</p>
     <nav class="deck-mobile-nav" aria-label="移动端牌库编辑工作区">
       <button :class="{ active: mobilePane === 'pool' }" @click="setMobilePane('pool')">牌库</button>
       <button :class="{ active: mobilePane === 'deck' }" @click="setMobilePane('deck')">牌表 · {{ totalCards }}</button>
@@ -1174,7 +1190,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
           <label>费用<select v-model="costFilter"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
           <label>兵力<select v-model="troopsFilter"><option value="all">全部兵力</option><option value="0-999">0–999</option><option value="1000-1999">1000–1999</option><option value="2000-2999">2000–2999</option><option value="3000+">3000+</option></select></label>
           <label>天灾等级<select v-model="disasterFilter"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-          <label>可用状态<select v-model="legalityFilter"><option value="all">全部</option><option value="allowed">可用</option><option value="restricted">受限</option><option value="banned">禁用</option></select></label>
+          <label>本赛季排位<select v-model="legalityFilter"><option value="all">全部</option><option value="allowed">可用</option><option value="restricted">受限</option><option value="banned">禁用</option></select></label>
           <label>排序<select v-model="sortMode"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
           <button class="filter-reset" @click="resetFilters">清除筛选</button>
         </section>
@@ -1191,7 +1207,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
               <CardImage :card-id="entry.art ? (entry.art.cardImageId || entry.art.id) : entry.card.id" :legacy-url="entry.art && !entry.art.builtIn ? (entry.art.thumbnailUrl || entry.art.imageUrl) : entry.card.imageUrl" :alt="entry.art?.displayName || entry.card.nameZh" intent="thumb" :fit="deckEditorPortrait || isHorizontalCardType(entry.card.cardType) ? 'contain' : 'cover'"/>
               <b v-if="appearanceCount(entry)" class="copy-count">×{{ appearanceCount(entry) }}</b>
             </button>
-            <div><b>{{ entry.card.nameZh }}<em v-if="entry.art">异画</em></b><small>{{ entry.art?.artCode || entry.card.number }} · {{ cardTypeLabel(entry.card.cardType, entry.card.isCounterTactic) }}</small><span v-if="entryIssue(entry.card, counts[entry.card.id] || 0)" class="entry-issue">{{ entryIssue(entry.card, counts[entry.card.id] || 0) }}</span></div>
+            <div><b>{{ entry.card.nameZh }}<em v-if="entry.art">异画</em></b><small>{{ entry.art?.artCode || entry.card.number }} · {{ cardTypeLabel(entry.card.cardType, entry.card.isCounterTactic) }}</small><span v-if="entryIssue(entry.card, counts[entry.card.id] || 0) || seasonEntryIssue(entry.card)" class="entry-issue">{{ entryIssue(entry.card, counts[entry.card.id] || 0) || seasonEntryIssue(entry.card) }}</span></div>
             <div class="pool-count-controls">
               <button :disabled="!appearanceCount(entry)" aria-label="减少一张" @click.stop="removeAppearance(entry)">−</button>
               <strong>{{ appearanceCount(entry) }}</strong>
@@ -1236,12 +1252,12 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         <p v-if="validation && deckEditorPortrait" class="portrait-deck-issue">{{ validation }}</p>
         <div class="deck-sections">
           <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMaster.id" :legacy-url="selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
-          <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><template v-for="entry in entries" :key="entry.card.id"><article class="deck-entry-row" :class="{ invalid: entryIssue(entry.card, entry.count) }" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small><em v-if="entryIssue(entry.card, entry.count)">{{ entryIssue(entry.card, entry.count) }}</em></div><strong>×{{ originalAppearanceCount(entry.card,entry.count) }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><article v-for="group in alternateAppearanceGroups(entry.card,entry.count)" :key="group.presentation.key" class="deck-entry-row alternate-art-banner" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="group.presentation.cardImageId" :legacy-url="group.presentation.legacyUrl" :alt="group.presentation.art?.displayName || entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>异</span><div><b>{{ group.presentation.art?.displayName || entry.card.nameZh }}</b><small>{{ group.presentation.art?.artCode || entry.card.number }}</small></div><strong>×{{ group.count }}</strong></article></template><p v-if="!entries.length">从卡池加入卡牌，或从备选区移回主牌。</p></div></section>
+          <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><template v-for="entry in entries" :key="entry.card.id"><article class="deck-entry-row" :class="{ invalid: entryIssue(entry.card, entry.count) }" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small><em v-if="entryIssue(entry.card, entry.count) || seasonEntryIssue(entry.card)">{{ entryIssue(entry.card, entry.count) || seasonEntryIssue(entry.card) }}</em></div><strong>×{{ originalAppearanceCount(entry.card,entry.count) }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><article v-for="group in alternateAppearanceGroups(entry.card,entry.count)" :key="group.presentation.key" class="deck-entry-row alternate-art-banner" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="group.presentation.cardImageId" :legacy-url="group.presentation.legacyUrl" :alt="group.presentation.art?.displayName || entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>异</span><div><b>{{ group.presentation.art?.displayName || entry.card.nameZh }}</b><small>{{ group.presentation.art?.artCode || entry.card.number }}</small></div><strong>×{{ group.count }}</strong></article></template><p v-if="!entries.length">从卡池加入卡牌，或从备选区移回主牌。</p></div></section>
           <section class="deck-zone" data-deck-section="morale"><header><button @click="toggleSection('morale')"><span>士气</span><b>{{ moraleIds.length }}/{{ selectedMaster?.faction === 'taiyangcheng' ? 6 : 8 }}</b><i>{{ collapsedSections.morale ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.morale" class="deck-zone-body"><article v-for="(card,index) in moraleCards" :key="`${card.id}-${index}`" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>士</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></div><strong>×1</strong></article><p v-if="!moraleCards.length">选择主宰后自动配置士气。</p></div></section>
           <section class="deck-zone" data-deck-section="extra"><header><button @click="toggleSection('extra')"><span>额外区</span><b>{{ selectedTrials.length }}/{{ trialCapacity }}<span v-if="automaticExtraCards.length"> + {{ automaticExtraCards.length }} 自动</span></b><i>{{ collapsedSections.extra ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.extra" class="deck-zone-body"><article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selectCard(trial)"><CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong><button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button></article><article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong><button aria-label="主宰自动配置" disabled>锁</button></article><p v-if="!selectedTrials.length && !automaticExtraCards.length">当前没有额外区卡牌。</p></div></section>
           <section class="deck-zone" data-deck-section="bench"><header><button @click="toggleSection('bench')"><span>备选区</span><b>{{ benchTotal }} 张</b><i>{{ collapsedSections.bench ? '展开' : '折叠' }}</i></button><small>不计入主牌数量与合法性</small></header><div v-if="!collapsedSections.bench" class="deck-zone-body"><article v-for="entry in benchEntries" :key="entry.card.id" class="deck-entry-row" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ entry.count }}</strong><button title="加入主牌库" aria-label="加入主牌库" :disabled="(counts[entry.card.id] || 0) >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="moveBenchToMain(entry.card)">＋主</button><button aria-label="移出备选区" @click.stop="removeFromBench(entry.card.id)">−</button></article><p v-if="!benchEntries.length">从卡池加入暂不采用的卡牌。</p></div></section>
         </div>
-        <footer :class="{ error: validation }">{{ validation || '牌库合法，可以保存并用于房间对战' }}</footer>
+        <footer :class="{ error: validation }">{{ validation || '基础构筑合法，可以保存和公开；对战按所选模式校验' }}</footer>
       </aside>
     </main>
     <div v-if="mobileDetailOpen && selected" class="builder-modal-mask mobile-card-detail-mask" @click.self="mobileDetailOpen = false">
