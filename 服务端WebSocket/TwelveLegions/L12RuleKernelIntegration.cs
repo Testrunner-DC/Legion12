@@ -2614,13 +2614,17 @@ public sealed partial class L12GameEngine
            && !source.IsMasterLegion
            && source.CardId == State.Players[controller].MasterId;
 
+    private static L12CardInstance[] CurrentGlobalTroopsPenaltySources(L12PlayerState player)
+        => player.Field.SelectMany(row => row).Where(card =>
+                card is { CardId: "S02-0523", Hidden: false, OwnerIndex: >= 0 and <= 1 }
+                && card.OwnerIndex != player.PlayerIndex)
+            .Cast<L12CardInstance>().ToArray();
+
     private void RecalculateContinuousTroops()
     {
         foreach (var player in State.Players)
         {
-            var trojanHorses = player.Field.SelectMany(row => row).Count(card =>
-                card is { CardId: "S02-0523", Hidden: false, OwnerIndex: >= 0 and <= 1 }
-                && card.OwnerIndex != player.PlayerIndex);
+            var trojanHorses = CurrentGlobalTroopsPenaltySources(player).Length;
             var globalModifier = -1000 * trojanHorses;
             for (var row = 0; row < player.Field.Length; row++)
             for (var slot = 0; slot < player.Field[row].Length; slot++)

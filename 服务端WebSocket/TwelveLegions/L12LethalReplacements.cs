@@ -7,6 +7,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12GameEngine
 {
     private const string DeclineLethalSubstitution = "decline";
+    private const string LethalEventProtectionPrefix = "lethal-event-protected:";
 
     private string CardLethalSubstitutionKey(L12CardInstance protectedCard)
         => $"lethal-substitution:{protectedCard.CardId}:{protectedCard.InstanceId}:{State.TurnSerial}";
@@ -14,8 +15,72 @@ public sealed partial class L12GameEngine
     private string PendingCardLethalSubstitutionKey(L12CardInstance protectedCard)
         => $"pending:{CardLethalSubstitutionKey(protectedCard)}";
 
+    private static string CardLethalEventProtectionPrefix(L12CardInstance protectedCard)
+        => $"{LethalEventProtectionPrefix}{protectedCard.InstanceId}:";
+
+    private string LethalStateFingerprint(L12CardInstance protectedCard)
+    {
+        var raw = new System.Text.StringBuilder();
+        static void Append(System.Text.StringBuilder builder, string name, string? value)
+        {
+            builder.Append(name).Append('=').Append(value?.Length ?? -1).Append(':')
+                .Append(value).Append(';');
+        }
+
+        Append(raw, "cardId", protectedCard.CardId);
+        Append(raw, "baseTroops", protectedCard.BaseTroops.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "troops", protectedCard.Troops.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "setTroops", protectedCard.SetTroopsValue?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "setUntil", protectedCard.SetTroopsUntilTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuous", protectedCard.ContinuousTroopsModifier.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousGranted", protectedCard.ContinuousTroopsBonusGranted.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousConsumed", protectedCard.ContinuousTroopsBonusConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousPenalty", protectedCard.ContinuousTroopsPenalty.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (var modifier in protectedCard.TimedModifiers
+                     .Where(entry => entry.TroopsDelta != 0 || entry.ConsumedTroopsBonus != 0)
+                     .OrderBy(entry => entry.Source, StringComparer.Ordinal)
+                     .ThenBy(entry => entry.ExpiresAfterTurn)
+                     .ThenBy(entry => entry.TroopsDelta)
+                     .ThenBy(entry => entry.ConsumedTroopsBonus))
+        {
+            Append(raw, "timedSource", modifier.Source);
+            Append(raw, "timedUntil", modifier.ExpiresAfterTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "timedTroops", modifier.TroopsDelta.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "timedConsumed", modifier.ConsumedTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        foreach (var layer in protectedCard.ContinuousTroopsBonusLayers.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            Append(raw, "layerSource", layer.Key);
+            Append(raw, "layerGranted", layer.Value.Granted.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "layerConsumed", layer.Value.Consumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        // Negative continuous layers keep an aggregate amount in the existing
+        // card model. Reuse the authoritative source query as well, so replacing
+        // a source with an equal penalty cannot inherit a consumed lethal event.
+        foreach (var host in State.Players.Where(player => player.Field.SelectMany(row => row)
+                     .Any(card => card?.InstanceId == protectedCard.InstanceId)))
+        foreach (var source in CurrentGlobalTroopsPenaltySources(host)
+                     .OrderBy(card => card.InstanceId, StringComparer.Ordinal))
+            Append(raw, "continuousPenaltySource", source.InstanceId);
+
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(raw.ToString())));
+    }
+
     private string CurrentLethalEventProtectionKey(L12CardInstance protectedCard)
-        => $"lethal-event-protected:{protectedCard.InstanceId}:{State.Revision}";
+        => $"{CardLethalEventProtectionPrefix(protectedCard)}{LethalStateFingerprint(protectedCard)}";
+
+    private bool HasCurrentLethalEventProtection(
+        L12PlayerState controller, L12CardInstance protectedCard)
+        => controller.UsedAbilities.Contains(CurrentLethalEventProtectionKey(protectedCard));
+
+    private void ReplaceCurrentLethalEventProtection(
+        L12PlayerState controller, L12CardInstance protectedCard)
+    {
+        var prefix = CardLethalEventProtectionPrefix(protectedCard);
+        controller.UsedAbilities.RemoveWhere(key => key.StartsWith(prefix, StringComparison.Ordinal));
+        controller.UsedAbilities.Add(CurrentLethalEventProtectionKey(protectedCard));
+    }
 
     private string? CardLethalSubstitutionKind(L12PlayerState controller, L12CardInstance protectedCard)
     {
@@ -107,7 +172,10 @@ public sealed partial class L12GameEngine
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
         controller.UsedAbilities.Add(CardLethalSubstitutionKey(protectedCard));
-        controller.UsedAbilities.Add(CurrentLethalEventProtectionKey(protectedCard));
+        // TryApplyCardLethalSubstitution has already removed the substitute and
+        // recalculated continuous layers.  Bind protection to that authoritative
+        // post-transaction lethal state, not to the pre-substitution battlefield.
+        ReplaceCurrentLethalEventProtection(controller, protectedCard);
         AddEvent("replacement-transaction", controller.PlayerIndex,
             $"致死事件 {prompt.Data.GetValueOrDefault("lethalEventId", "legacy")} 已由替代效果消费；同一事件不会再次结算〈{protectedCard.Name}〉",
             protectedCard);

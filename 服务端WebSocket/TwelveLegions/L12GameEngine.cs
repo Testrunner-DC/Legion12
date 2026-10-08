@@ -2230,12 +2230,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                     .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
                     .Cast<L12CardInstance>()
                     .Where(card => !IsPendingCombatDeath(card.InstanceId))
-                    .Where(card => !player.UsedAbilities.Contains(CurrentLethalEventProtectionKey(card)))
+                    .Where(card => !HasCurrentLethalEventProtection(player, card))
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
             if (defeated.Length == 0)
             {
-                ClearCurrentLethalEventProtections();
+                ClearStaleLethalEventProtections();
                 ClearPendingStateBasedKillSources();
                 return;
             }
@@ -2252,7 +2252,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             ResolvePendingStateBasedKillSources(removed);
             if (removed.Count == 0)
             {
-                ClearCurrentLethalEventProtections();
+                ClearStaleLethalEventProtections();
                 return;
             }
         }
@@ -2288,12 +2288,19 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");
     }
 
-    private void ClearCurrentLethalEventProtections()
+    private void ClearStaleLethalEventProtections()
     {
-        var suffix = $":{State.Revision}";
         foreach (var player in State.Players)
-            player.UsedAbilities.RemoveWhere(key => key.StartsWith("lethal-event-protected:", StringComparison.Ordinal)
-                && key.EndsWith(suffix, StringComparison.Ordinal));
+        {
+            var current = player.Field.SelectMany(row => row)
+                .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
+                .Cast<L12CardInstance>()
+                .Select(CurrentLethalEventProtectionKey)
+                .ToHashSet(StringComparer.Ordinal);
+            player.UsedAbilities.RemoveWhere(key => key.StartsWith(LethalEventProtectionPrefix,
+                    StringComparison.Ordinal)
+                && !current.Contains(key));
+        }
     }
 
     internal void ConcludeByAuthority(int? winner, string reason)
