@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "master-rate-sort-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "主宰排行榜",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "主宰榜按所选胜率、先手胜率或后手胜率的实际百分比排序，不再因样本不足而排错位置；小样本的浅色提醒、百分比和场次显示保持。",
+      "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"]
+    }
+  ]
+}

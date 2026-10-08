@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
+
+const require = createRequire(import.meta.url)
+const Vue = require('vue')
+const ts = require('typescript')
+const { parse, compileScript, compileTemplate } = require('@vue/compiler-sfc')
 
 const read = relative => fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
 const ranked = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs')
@@ -40,7 +46,6 @@ const checks = [
     && rankings.includes('low-sample-display="muted"')
     && rankings.includes('sampledPercent(row.winRate, row.games)')
     && rankings.includes('samples > 0 ? percent(value)')
-    && rankings.includes('leftSamples < publicMasterSampleMinimum ? rightSamples - leftSamples')
     && rankings.includes('场不是结算门槛')],
   ['主宰矩阵低样本显示可选且后台保持原口径', matrix.includes("lowSampleDisplay?: 'hidden' | 'muted'")
     && matrix.includes("lowSampleDisplay: 'hidden'")
@@ -69,4 +74,132 @@ const checks = [
 ]
 
 assert.deepEqual(checks.filter(([, passed]) => !passed).map(([label]) => label), [])
-console.log(`统计可信度契约通过：${checks.length}/${checks.length} 项`)
+
+// Mount the actual RankingsPage script and template in Vue's in-memory host.
+// These are rendered row/model-update checks, not a copied comparator or a
+// browser/layout claim. The browser companion retains the geometry checks.
+function element(tag, value = '') {
+  return { tag, text: value, children: [], parent: null, props: {}, listeners: new Map(),
+    tagName: tag.toUpperCase(), value: '', selected: false,
+    get options() { return descendants(this, item => item.tag === 'option') },
+    addEventListener(name, handler) { this.listeners.set(name, handler) },
+    removeEventListener(name) { this.listeners.delete(name) },
+  }
+}
+function descendants(node, predicate) { return [...(predicate(node) ? [node] : []), ...node.children.flatMap(child => descendants(child, predicate))] }
+function content(node) { return node.tag === '#comment' ? '' : node.text + node.children.map(content).join('') }
+function detach(node) {
+  if (node.parent) { node.parent.children.splice(node.parent.children.indexOf(node), 1); node.parent = null }
+}
+const renderer = Vue.createRenderer({
+  createElement: tag => element(tag), createText: value => element('#text', value), createComment: value => element('#comment', value),
+  insert(node, parent, anchor = null) { detach(node); node.parent = parent; const index = anchor ? parent.children.indexOf(anchor) : -1;
+    if (index < 0) parent.children.push(node); else parent.children.splice(index, 0, node) },
+  remove: detach, parentNode: node => node.parent, nextSibling: node => node.parent?.children[node.parent.children.indexOf(node) + 1] ?? null,
+  setText: (node, value) => { node.text = value },
+  setElementText(node, value) { node.children.forEach(child => { child.parent = null }); node.children = []; node.text = value },
+  patchProp(node, name, previous, value) { node.props[name] = value; if (name === 'value') { node.value = value; node._value = value } },
+  setScopeId() {},
+})
+function evaluate(code, imports) {
+  const compiled = ts.transpileModule(code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } })
+  const module = { exports: {} }
+  new Function('require', 'exports', 'module', 'document', compiled.outputText)(id => {
+    if (id === 'vue') return Vue
+    assert.ok(Object.hasOwn(imports, id), `unexpected actual RankingsPage dependency ${id}`)
+    return imports[id]
+  }, module.exports, module, { hidden: true, addEventListener() {}, removeEventListener() {} })
+  return module.exports
+}
+const settle = async () => { await Promise.resolve(); await Vue.nextTick(); await Promise.resolve(); await Vue.nextTick() }
+const fixtureState = { masters: [], calls: [] }
+const stub = { __esModule: true, default: { render: () => Vue.h('span') } }
+const filename = new URL('../src/l12/site/RankingsPage.vue', import.meta.url).pathname
+const parsed = parse(rankings, { filename })
+assert.deepEqual(parsed.errors, [])
+const script = compileScript(parsed.descriptor, { id: 'rankings-rate-regression' })
+const template = compileTemplate({ id: 'rankings-rate-regression', filename, source: parsed.descriptor.template.content,
+  compilerOptions: { bindingMetadata: script.bindings, hoistStatic: false } })
+assert.deepEqual(template.errors, [])
+const RankingPage = evaluate(script.content, {
+  '@/l12/specialAssets': { masterProfileUrl: id => `synthetic:${id}` },
+  '@/l12/RankedIdentityBadge.vue': stub, './RankedMasterTitleRulesModal.vue': stub,
+  './MasterMatchupMatrix.vue': stub, './StatisticsScope.vue': stub,
+  '@/l12/platform': { platformState: { account: null }, rankedApi: {
+    leaderboard: async (faction, range) => { fixtureState.calls.push({ faction, range }); return { players: [],
+      analytics: { range, masters: structuredClone(fixtureState.masters), matchups: [],
+        summary: { matches: 100, placedPlayers: 0, activeMasters: fixtureState.masters.length } } } },
+    history: async () => ({ honors: [], factionTotals: [] }),
+  } },
+}).default
+RankingPage.render = evaluate(template.code, {}).render
+const container = element('root')
+const app = renderer.createApp(RankingPage)
+const warnings = []
+app.config.warnHandler = warning => warnings.push(warning)
+const row = (id, games, winRate, firstGames = games, firstWinRate = winRate, secondGames = games, secondWinRate = winRate) => ({
+  rank: 99, masterId: id, masterName: id, games, wins: games * winRate / 100, losses: games * (100 - winRate) / 100,
+  winRate, usageRate: games, firstGames, firstWins: firstGames * firstWinRate / 100, firstWinRate,
+  secondGames, secondWins: secondGames * secondWinRate / 100, secondWinRate, strongestPlayer: null, title: null,
+})
+const rows = () => descendants(container, node => String(node.props.class || '').split(/\s+/).includes('tr'))
+const cell = (node, label) => descendants(node, item => item.props['data-label'] === label)[0]
+const order = () => rows().map(node => content(descendants(cell(node, '主宰'), item => item.tag === 'small')[0]))
+async function chooseSort(sort) {
+  const control = descendants(container, node => node.tag === 'select')[0]
+  control.props['onUpdate:modelValue'](sort)
+  await settle()
+}
+async function loadRows(values) {
+  fixtureState.masters = values
+  const refresh = descendants(container, node => node.tag === 'button' && content(node) === '刷新数据')[0]
+  refresh.props.onClick(); await settle()
+}
+let behaviorChecks = 0
+async function behavior(name, action) { await action(); behaviorChecks++; console.log(`PASS rankings ${behaviorChecks}: ${name}`) }
+try {
+  app.mount(container); await settle()
+  descendants(container, node => node.tag === 'button' && content(node) === '主宰榜')[0].props.onClick(); await settle()
+  await behavior('equal four-game samples sort 50% ahead of 0%', async () => {
+    await loadRows([{ ...row('four-zero', 4, 0), masterName: '同4场0%' },
+      { ...row('four-half', 4, 50), masterName: '同4场50%' }]); await chooseSort('winRate')
+    assert.deepEqual(order(), ['four-half', 'four-zero'])
+    assert.deepEqual(rows().map(node => content(cell(node, '胜率'))), ['50.0%', '0.0%'])
+  })
+  for (const sort of ['winRate', 'firstWinRate', 'secondWinRate']) await behavior(`${sort} orders actual percentages across the 30-sample boundary`, async () => {
+    await loadRows([row('large-low', 40, 25), row('small-high', 4, 75), row('zero', 4, 0)]); await chooseSort(sort)
+    assert.deepEqual(order(), ['small-high', 'large-low', 'zero'])
+  })
+  for (const [sort, label] of [['firstWinRate', '先手'], ['secondWinRate', '后手']]) await behavior(`${sort} puts a known 0% before a missing initiative sample`, async () => {
+    const absent = row('absent', 100, 80, sort === 'firstWinRate' ? 0 : 100, 100, sort === 'secondWinRate' ? 0 : 100, 100)
+    await loadRows([absent, row('known-zero', 4, 0), row('known-half', 4, 50)]); await chooseSort(sort)
+    assert.deepEqual(order(), ['known-half', 'known-zero', 'absent'])
+    assert.match(content(cell(rows()[1], label)), /^0\.0%/)
+    assert.match(content(cell(rows()[2], label)), /^—0\/0$/)
+  })
+  await behavior('all missing initiative samples retain deterministic total-games tie-break', async () => {
+    await loadRows([row('missing-small', 4, 0, 0, 100), row('missing-large', 40, 80, 0, 0)]); await chooseSort('firstWinRate')
+    assert.deepEqual(order(), ['missing-large', 'missing-small'])
+  })
+  await behavior('switching initiative sorts uses the selected percentage, not the overall rate', async () => {
+    await loadRows([row('first-high', 40, 25, 20, 100, 20, 0), row('second-high', 40, 50, 20, 0, 20, 100),
+      row('balanced', 40, 75, 20, 50, 20, 50)])
+    await chooseSort('firstWinRate'); assert.deepEqual(order(), ['first-high', 'balanced', 'second-high'])
+    await chooseSort('secondWinRate'); assert.deepEqual(order(), ['second-high', 'balanced', 'first-high'])
+  })
+  for (const sort of ['winRate', 'firstWinRate', 'secondWinRate']) await behavior(`${sort} ties retain total-games then name tie-breaks`, async () => {
+    await loadRows([row('tie-b', 4, 50), row('tie-a', 4, 50), row('tie-big', 40, 50)]); await chooseSort(sort)
+    assert.deepEqual(order(), ['tie-big', 'tie-a', 'tie-b'])
+  })
+  await behavior('games and usage ordering still use their original primary value', async () => {
+    const large = row('large', 40, 0), small = { ...row('small', 4, 100), usageRate: 90 }
+    await loadRows([small, large]); await chooseSort('games'); assert.deepEqual(order(), ['large', 'small'])
+    await chooseSort('usageRate'); assert.deepEqual(order(), ['small', 'large'])
+  })
+  assert.deepEqual(warnings, [])
+  assert(fixtureState.calls.every(call => call.range === 'season' && call.faction === ''), 'sorting must not mutate source/scope')
+} finally {
+  app.unmount()
+}
+console.log(`统计可信度契约通过：${checks.length}/${checks.length} 项；真实主宰组件行为 ${behaviorChecks}/${behaviorChecks}`)
+export const publicMasterSortingVerified = behaviorChecks === 12

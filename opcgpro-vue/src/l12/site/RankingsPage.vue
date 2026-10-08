@@ -99,10 +99,11 @@ const visibleMasters = computed(() => {
     const leftSamples = masterSortSamples(left, sort)
     const rightSamples = masterSortSamples(right, sort)
     const rateSort = sort === 'winRate' || sort === 'firstWinRate' || sort === 'secondWinRate'
-    const reliability = Number(rightSamples >= publicMasterSampleMinimum)
-      - Number(leftSamples >= publicMasterSampleMinimum)
-    return (rateSort ? reliability : 0)
-      || (rateSort && leftSamples < publicMasterSampleMinimum ? rightSamples - leftSamples : right[sort] - left[sort])
+    const leftHasRate = leftSamples > 0 && Number.isFinite(left[sort])
+    const rightHasRate = rightSamples > 0 && Number.isFinite(right[sort])
+    const availability = Number(rightHasRate) - Number(leftHasRate)
+    return (rateSort ? availability : 0)
+      || (!rateSort || (leftHasRate && rightHasRate) ? right[sort] - left[sort] : 0)
       || right.games - left.games
       || (!rateSort ? right.winRate - left.winRate : 0)
       || left.masterName.localeCompare(right.masterName, 'zh-CN')
