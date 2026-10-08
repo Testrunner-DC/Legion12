@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "pharaoh-festival-ring-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "法老王的庆典",
+  "changes": [{
+    "category": "card-effects",
+    "text": "法老王的庆典两次选牌都按当前有效阵营判断；万物统御之戒生效时，被视为太阳城的通用卡也可选择，庆典自身与其他阵营卡仍不可选择。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"]
+  }]
+}

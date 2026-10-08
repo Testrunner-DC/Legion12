@@ -1916,12 +1916,15 @@ public sealed partial class L12GameEngine
                             StringComparer.OrdinalIgnoreCase))));
     }
 
+    private static bool IsPharaohFestivalCandidate(L12PlayerState player, L12CardInstance card)
+        => card.CardId != "S01-0222" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng");
+
     private void BeginPharaohFestival(L12StackItem item)
     {
         var player = State.Players[item.Controller];
         var top = player.Library.Take(5).ToArray();
         item.Data["festival-cards"] = string.Join('|', top.Select(card => card.InstanceId));
-        var eligible = top.Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
+        var eligible = top.Where(card => IsPharaohFestivalCandidate(player, card)).ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
         CreateFestivalCardPrompt(item, "festival-hand", "法老王的庆典：选择1张【太阳城】卡牌加入手牌", eligible);
     }
@@ -1937,7 +1940,8 @@ public sealed partial class L12GameEngine
                 $"法老王的庆典展示〈{selected.Name}〉并加入手牌",
                 $"法老王的庆典将{selected.Name}加入手牌", "S01-0222", "search-hit");
         }
-        var eligible = FestivalCardsStillInLibrary(item, player).Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
+        var eligible = FestivalCardsStillInLibrary(item, player)
+            .Where(card => IsPharaohFestivalCandidate(player, card)).ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
         CreateFestivalCardPrompt(item, "festival-grave", "法老王的庆典：选择另1张【太阳城】卡牌置入墓地", eligible);
     }
