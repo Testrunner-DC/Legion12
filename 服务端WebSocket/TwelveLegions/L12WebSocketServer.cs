@@ -3991,11 +3991,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             string? disconnectedAccountId = null;
             if (_socketPlatformSessions.TryRemove(sessionId, out var binding)
-                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
-                && active == sessionId)
+                && TryReleaseActiveAccountSocket(_activeAccountSockets, binding.AccountId, sessionId))
             {
                 disconnectedAccountId = binding.AccountId;
-                _activeAccountSockets.TryRemove(binding.AccountId, out _);
             }
             await SendManyAsync(DisconnectForTransportClose(sessionId), CancellationToken.None);
             if (disconnectedAccountId is not null) NotifyPresenceChanged();
@@ -4141,16 +4139,77 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }, cancellationToken);
             return false;
         }
-        if (!_platform.IsSessionActive(binding.PlatformSessionId))
+
+        while (!_platform.IsSessionActive(binding.PlatformSessionId))
         {
-            _socketPlatformSessions.TryRemove(sessionId, out _);
-            _rooms.RecordConnectionClaimRejection(binding.AccountId, "platform-session-revoked");
-            await SendAsync(sessionId, new
+            L12OutboundConnection? terminalOutbound = null;
+            WebSocket? terminalSocket = null;
+            Task<bool>? terminalDelivery = null;
+            CancellationTokenSource? terminalTimeout = null;
+            var ownerReleased = false;
+            var retired = false;
+            await _socketClaimGate.WaitAsync(cancellationToken);
+            try
             {
-                type = "authenticationRequired", reason = "platform-session-revoked",
-                message = "登录会话已撤销",
-            }, cancellationToken);
-            return false;
+                if (!_socketPlatformSessions.TryGetValue(sessionId, out var currentBinding))
+                    return false;
+                if (currentBinding != binding)
+                {
+                    binding = currentBinding;
+                    continue;
+                }
+                // A concurrent committed activity may have refreshed the same session while this
+                // validator waited for a hello claim to finish. Recheck inside the claim fence.
+                if (_platform.IsSessionActive(currentBinding.PlatformSessionId))
+                {
+                    binding = currentBinding;
+                    break;
+                }
+                if (!TryReleaseSocketPlatformBinding(_socketPlatformSessions, sessionId,
+                        currentBinding))
+                    return false;
+
+                retired = true;
+                _rooms.RecordConnectionClaimRejection(currentBinding.AccountId,
+                    "platform-session-revoked");
+                ownerReleased = TryReleaseActiveAccountSocket(_activeAccountSockets,
+                    currentBinding.AccountId, sessionId);
+                _establishedInboundConnections.TryRemove(sessionId, out _);
+                if (_inboundConnections.TryGetValue(sessionId, out var inbound))
+                    inbound.StopAcceptingAndCancelPending();
+                if (_sockets.TryGetValue(sessionId, out var socket)
+                    && _sockets.TryRemove(new KeyValuePair<Guid, WebSocket>(sessionId, socket)))
+                    terminalSocket = socket;
+                if (_outboundConnections.TryGetValue(sessionId, out var outbound)
+                    && _outboundConnections.TryRemove(
+                        new KeyValuePair<Guid, L12OutboundConnection>(sessionId, outbound)))
+                {
+                    terminalOutbound = outbound;
+                    var payload = new
+                    {
+                        type = "authenticationRequired", reason = "platform-session-revoked",
+                        message = "登录会话已撤销",
+                    };
+                    var serializationStartedAt = L12PerformanceMetrics.Start();
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+                    L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                    terminalTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken);
+                    terminalTimeout.CancelAfter(SocketSendTimeout);
+                    // The async method establishes its queue fence synchronously before returning
+                    // this task, while the transport is still inside the claim fence.
+                    terminalDelivery = outbound.EnqueueTerminalAndCompleteAsync(
+                        new L12QueuedPayload(bytes, false, false), terminalTimeout.Token);
+                }
+            }
+            finally { _socketClaimGate.Release(); }
+
+            if (retired)
+            {
+                await RetireInactiveTransportAsync(sessionId, terminalOutbound, terminalSocket,
+                    terminalDelivery, terminalTimeout, ownerReleased, cancellationToken);
+                return false;
+            }
         }
         if (_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
             && currentSocket == sessionId
@@ -4159,6 +4218,54 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
         await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
         return false;
+    }
+
+    private async Task RetireInactiveTransportAsync(Guid sessionId, L12OutboundConnection? outbound,
+        WebSocket? socket, Task<bool>? terminalDelivery,
+        CancellationTokenSource? terminalTimeout, bool ownerReleased,
+        CancellationToken cancellationToken)
+    {
+        var terminalDelivered = false;
+        try
+        {
+            await SendManyAsync(DisconnectForTransportClose(sessionId), CancellationToken.None);
+            if (ownerReleased) NotifyPresenceChanged();
+            if (terminalDelivery is not null) terminalDelivered = await terminalDelivery;
+
+            if (!terminalDelivered || socket is null || socket.State != WebSocketState.Open)
+            {
+                socket?.Abort();
+                return;
+            }
+            using var closeTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            closeTimeout.CancelAfter(SocketSendTimeout);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation,
+                "platform session inactive", closeTimeout.Token);
+        }
+        catch (Exception error)
+        {
+            socket?.Abort();
+            Console.Error.WriteLine($"WebSocket {sessionId} 失效连接收尾隔离：{error.Message}");
+        }
+        finally
+        {
+            if (terminalDelivery is not null)
+            {
+                try { await terminalDelivery; }
+                catch { }
+            }
+            terminalTimeout?.Dispose();
+            if (outbound is not null)
+            {
+                try { await outbound.DisposeAsync(); }
+                catch (Exception error)
+                {
+                    socket?.Abort();
+                    Console.Error.WriteLine($"WebSocket {sessionId} 终止发送队列释放失败：{error.Message}");
+                }
+            }
+        }
     }
 
     private static bool TryReadMessageType(string json, out string? messageType)
@@ -4256,14 +4363,27 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             L12SessionClaimResult claim;
             var capabilities = ReadProtocolCapabilities(root);
-            _socketCapabilities[sessionId] = capabilities;
-            if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
-                snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
             Guid? previousSocket;
             IReadOnlyList<OutgoingMessage> recovery;
             await _socketClaimGate.WaitAsync();
             try
             {
+                // Natural expiry permanently retires this transport before it releases the claim
+                // fence. A hello already read from that transport must not reclaim the same Guid.
+                if (!_sockets.ContainsKey(sessionId)
+                    || !_outboundConnections.ContainsKey(sessionId))
+                {
+                    _rooms.RecordConnectionClaimRejection(authenticated.Account.Id,
+                        "platform-session-revoked");
+                    return [new OutgoingMessage(sessionId, new
+                    {
+                        type = "authenticationRequired", reason = "platform-session-revoked",
+                        message = "当前连接已失效，请重新连接",
+                    })];
+                }
+                _socketCapabilities[sessionId] = capabilities;
+                if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
                 claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
                     authenticated.Account.Username,
@@ -5675,6 +5795,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return long.TryParse(normalized, out var parsed) && parsed >= 0 ? parsed : null;
     }
 
+    private static bool TryReleaseActiveAccountSocket(
+        ConcurrentDictionary<string, Guid> owners, string accountId, Guid expectedSessionId)
+        => owners.TryRemove(new KeyValuePair<string, Guid>(accountId, expectedSessionId));
+
+    private static bool TryReleaseSocketPlatformBinding(
+        ConcurrentDictionary<Guid, SocketPlatformBinding> bindings, Guid sessionId,
+        SocketPlatformBinding expectedBinding)
+        => bindings.TryRemove(new KeyValuePair<Guid, SocketPlatformBinding>(sessionId,
+            expectedBinding));
+
     private void HandlePlatformSessionsRevoked(IReadOnlyList<string> sessionIds)
     {
         var revoked = sessionIds.ToHashSet(StringComparer.Ordinal);
@@ -5682,10 +5812,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             if (_inboundConnections.TryGetValue(mapping.Key, out var inbound))
                 inbound.StopAcceptingAndCancelPending();
-            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding)
-                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
-                && active == mapping.Key)
-                _activeAccountSockets.TryRemove(binding.AccountId, out _);
+            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding))
+                TryReleaseActiveAccountSocket(_activeAccountSockets, binding.AccountId, mapping.Key);
             _rooms.RecordConnectionClaimRejection(mapping.Value.AccountId, "platform-session-revoked");
             if (_sockets.TryGetValue(mapping.Key, out var socket)) socket.Abort();
         }

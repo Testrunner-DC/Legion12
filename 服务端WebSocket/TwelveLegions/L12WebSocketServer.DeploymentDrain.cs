@@ -203,8 +203,7 @@ public sealed partial class L12WebSocketServer
     {
         _establishedInboundConnections.TryRemove(sessionId, out _);
         _socketPlatformSessions.TryRemove(sessionId, out _);
-        if (_activeAccountSockets.TryGetValue(accountId, out var active) && active == sessionId)
-            _activeAccountSockets.TryRemove(accountId, out _);
+        TryReleaseActiveAccountSocket(_activeAccountSockets, accountId, sessionId);
         _socketCapabilities.TryRemove(sessionId, out _);
         if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
             snapshotCodec.SetDeltaEnabled(false);

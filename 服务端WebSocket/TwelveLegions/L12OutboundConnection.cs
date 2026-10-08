@@ -56,6 +56,36 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         return true;
     }
 
+    /// <summary>
+    /// Atomically fences future output, discards every frame that has not started sending, and lets
+    /// the single existing sender deliver one final transport notice. A frame already owned by the
+    /// sender cannot be recalled and remains ordered before the terminal notice.
+    /// </summary>
+    internal async Task<bool> EnqueueTerminalAndCompleteAsync(object payload,
+        CancellationToken cancellationToken)
+    {
+        var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_gate)
+        {
+            if (_completed) return false;
+
+            _completed = true;
+            _replaceableTail = null;
+            foreach (var queued in _queue) queued.Delivered?.TrySetCanceled();
+            _queue.Clear();
+            _queue.AddLast(new PendingMessage(payload, ReplaceableGameState: false, delivered));
+            UpdateMaximumDepth(_queue.Count);
+
+            // One permit exposes the terminal frame; the second lets the sender observe the
+            // completed empty queue. Permits left by discarded frames are harmless.
+            _signal.Release(2);
+        }
+
+        await delivered.Task.WaitAsync(cancellationToken);
+        await _senderLoop.WaitAsync(cancellationToken);
+        return true;
+    }
+
     private bool TryEnqueueCore(PendingMessage message)
     {
         lock (_gate)

@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text.Json;
@@ -538,8 +539,13 @@ public sealed class WebSocketInboundIsolationTests
         finally { DeleteIsolatedTestDirectory(directory, "l12-inbound-overload"); }
     }
 
-    [Fact]
-    public async Task InboundByteLimitRejectsLongRequestIdWithoutApplyingUnacceptedMutation()
+    public static IEnumerable<object[]> InboundByteReconnectCases()
+        => Enumerable.Range(0, 20).Select(index => new object[] { index, index % 2 == 1 });
+
+    [Theory]
+    [MemberData(nameof(InboundByteReconnectCases))]
+    public async Task InboundByteLimitRejectsLongRequestIdWithoutApplyingUnacceptedMutation(
+        int attempt, bool renewPlatformSession)
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-inbound-bytes", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -589,10 +595,19 @@ public sealed class WebSocketInboundIsolationTests
                 Assert.Equal("retained-byte-limit", rejection.GetProperty("reason").GetString());
                 Assert.Equal(JsonValueKind.Null, rejection.GetProperty("requestId").ValueKind);
                 Assert.False(rejection.GetProperty("retryWithSameRequestId").GetBoolean());
-                using var replacement = await ConnectAuthenticatedAsync(endpoint, token);
+                var replacementToken = renewPlatformSession
+                    ? platform.Login(account.Username, "Password123!").Token! : token;
+                using var replacement = await ConnectAuthenticatedAsync(endpoint, replacementToken);
+                var owners = Assert.IsType<ConcurrentDictionary<string, Guid>>(typeof(L12WebSocketServer)
+                    .GetField("_activeAccountSockets", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(server));
+                Assert.True(owners.TryGetValue(account.Id, out var replacementOwner),
+                    $"replacement lost its claim before sync in attempt {attempt}");
                 await SendAsync(replacement, new { type = "syncState" });
                 Assert.Equal(roomCode, (await ReceiveTypeAsync(replacement, "recoveryComplete",
                     TimeSpan.FromSeconds(10))).GetProperty("roomCode").GetString());
+                Assert.True(owners.TryGetValue(account.Id, out var ownerAfterSync));
+                Assert.Equal(replacementOwner, ownerAfterSync);
                 replacement.Abort();
                 socket.Abort();
             }
