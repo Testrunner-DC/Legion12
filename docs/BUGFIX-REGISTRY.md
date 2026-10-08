@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## RULE-20261009-AY-COMPLETE-WORK｜必发与共享天灾顺序
+
+- **最终当前源码完整Batch r2通过**：6721规则/1191平台、失败跳过0，独立九源SHA及两success回执绑定D盘`main-complete-batch-r2-acceptance.json`；原r1的16失败、诊断过程与旧三测试字节原样保留。按根因提交后clean Release/最终同包出口待，本批多段Bug未上线仍不resolved。
+
+- 完整规则r1实际6721中16失败/6705过：不是环境问题，不删除测试。AfterStackSettled原idle-only守卫恢复，真实combat在checkpoint后移区的stale保护仅后置清理；取消声明无Finish的真实天廷链pending:factionZeroRecovery滞留，成功公开选择统一请求工作续办，持有栈有后续提示时不改解析状态。原CardDisaster/近藤8例保持，Egil保原-2000冻结事件和死亡私区重置；武田手塞legacy中段导致search重入，改真实public链并禁止手删提示；天廷按source而不是“第一声明”选择恢复。全旧测试字节在D盘`old-tests-before-fixture-remediation`，原TRX及7→1诊断都保持。最终154同族+武田全公开双方2绿色，完整Batch重跑待。
+
+- 最终独立有界反例补证：原土方S01-0004死亡触发打开后续命令，四绿不能证明无介入路径；换真实无死亡触发的合法低费目标后1RED，墨子未leave而天灾已结算。泵只在暂停守卫之后加状态死亡/Starter checkpoint、重新检查等待；抑制捕获/累计与异常清理保持。另真实fixed-grave committed activation因墓地4→3失效会Finish，后续orphan使请求丢失1RED；仅整批reconcile scope恢复已存在请求，不新增Request。最初orphan-only四个“应翻灾”期望被Main拒接，改为保原“不继续结算”合同对照，原失败保留。最终新族+原相邻120/120、0失败跳过；六冻结源码实际绑定，完整Batch/Release待。
+
+- BUG-20261008-309c2eb6三项分开：正式2da真实阿伊可取消与拉美西斯灾难提前复现；构造体/合计≥抵挡符合公开规则，用户保持。阿伊限定修与底层全部当前堆叠后天灾获批准；整个多项报告未上线，不提前resolved。
+- 阿伊S01-0208只在合法守卫/空位存在时拒绝取消，无对象正常结束，原S02-0202离场/S01-0204构造体不改。原6实3RED，最终109相邻绿；双方、重复、来源/对象失效及V2恢复。
+- 全族657处Finish，两拉美西斯入口在Finish后才登记后继，调用内瞬时空容器不是idle。公共dispatch/pump延后推进，保原生成/组合/Deferred单独响应；命令后段光环失去→墨子死亡实际2RED纳入同闭包；5秒响应超时共享旁路实际4RED/2人工对照后修。23新族及103广域通过，完整门禁仍待。土方续段四例合法实绿，原费用/阈值准备失败保留，不算产品RED。
+- 同源证据D盘`ay-mandatory-enter-20261009`与`disaster-pending-work-20261009`原TRX。回退守卫包括多委派、取消/目标失效、重复、Scope异常、deadline观察时刻/单次Revision、完整状态恢复与天灾触发抑制。P0/P1/P3不新建旁路或放宽哈希，无法证明的老期限继续拒绝。
+
 ## E1-20261009-CATALOG-RETRY-AND-ITEM-BUSY｜真实组件RED后的两个独立最小修
 
 - Main最终6真实browser与并发诊断false、源码C17B/643A精确绑定均过；两个完整分域Batch1191及前端r2/355/49/144/163/324+42/双构建过。原前端r1被广播方法搬迁后的旧静态路径误报，适配到权威调用链并补6负例，不删旧行为守卫；原失败日志保持。完整提交级Release/同包旧reader/Git另验，未部署。
