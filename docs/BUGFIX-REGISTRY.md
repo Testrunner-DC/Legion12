@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## E1-20261009-CATALOG-RETRY-AND-ITEM-BUSY｜真实组件RED后的两个独立最小修
+
+- Main最终6真实browser与并发诊断false、源码C17B/643A精确绑定均过；两个完整分域Batch1191及前端r2/355/49/144/163/324+42/双构建过。原前端r1被广播方法搬迁后的旧静态路径误报，适配到权威调用链并补6负例，不删旧行为守卫；原失败日志保持。完整提交级Release/同包旧reader/Git另验，未部署。
+- 用户分别批准。共享loadDeckCatalog首次失败会永久缓存rejected Promise；Main真实browser重试未发新请求，原失败/夹具初始化错误均保留。仅以当前request identity清失败缓存，不吞错误，成功与inflight合并保留；真实函数网络/非200/JSON失败、图鉴和direct/editor共用及原authority链过；两尺寸六family真实修后过。最终decks源643AE186；后续完整门禁另验。
+- 同时发布两个规则条目会覆盖global publishingId，第1按钮尚未完成提前可点击；真实截图/diagnostic在 `e1-rule-center-states-20261009/runs/316b9181202610090000000000000008`。仅center/ruling分doc逐项Set、入口防同项重复、finally只清自身，原API/权限/version/history流程不改；actual-source并发/成功失败/同ID跨doc/版本冲突过，原44+新5负例49保持。Admin源C17B1386，最终browser/完整域门禁待，不部署。
+- Bug第三方建议不自动实施：用户保持随机洗牌、不增加防连牌已closed/rejected；AI未决定；新多项报告逐项复现，雷锤本地已验待上线，不提前关闭。
+
+## BUG-CLOSURE-20261009-FOURTH｜原条件压力闭环，不以未上线修复关单
+
+- 正式2da同0E73 DLL/九公开JSON，三轮6场景/1409断言均过：腐秽自然翻开后排限制、全部18反击双方0费盖伏、李牧空前排神妙完整链及恢复、高杉300次无目标与有目标对照。五精确原报告条件未复现/重复，逐原文SHA、预览版本、条件写与终态读回闭环。
+- 原Apply回执BCC0中五终态和会话均成功，但汇总误用旧19条；原回执/脚本保持，不重提PATCH。只读刷新A1D2及派生reconciled回执6A15再次核五终态、重复主反馈和原文，实际本轮累计36、891历史/568未关。范围不覆盖原未知录像、不证明所有客户端；荆轲/巴御前、木马及未部署修复仍不自动关闭。
+
 ## RELEASE-20261008-ISOLATION-PREBUILT｜隔离构建缺预组目录（内部工具，非卡效变更）
 
 - 首386干净Release规则6684/平台1164/排空消费者都通过，隔离front的真实编辑器保存/季限制回归读取Root公开预组JSON时ENOENT，完整Release仍失败。Batch在完整工作树通过不能证明隔离依赖复制完整。原timings A630DEBD、两原TRX3378F79B/6F26A26D与失败日志保持，不覆盖为成功。

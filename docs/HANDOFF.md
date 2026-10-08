@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+- **2026-10-09 01:16 提交前完整分域Batch已过，未部署**：Main平台1191/1191、0 fail/skip/test-248a success；最终6browser与busy并发false，原RED保持。前端r1旧广播路径静态合同失败已纠正到真实public/At/Object调用链并加6负例，r2完整355UI/49rule/144feedback/163账本/324+42/类型双构建通过。当前授权变化按根因提交，随后干净完整Release、真正316/schema8同包退出读回、Git精确同步；尚不称其已完成。唯一最终候选以外部A2回执为准，不由文档触发部署。
+
+- **2026-10-09 01:00 当前继续，未部署**：存储最终316功能出口DC5F已接受；新广播十源冻、1191/1191及独立复核过，Main平台Batch运行，真正316/schema8 reader仍待Run。Bug第四组正式同DLL三轮18/4227，五报告闭环经原BCC0固定计数缺陷及只读6A15派生核对，累计36实际关闭/568未关（00:44），无重复PATCH或维护写。A3原355链及44保留，用户批准共享卡池失败缓存已Node/六browser绿；再批准独立发布busy已49Node/五源冻，最后browser/前端Batch/干净Release/Git待。所有子写/构建租约已退，Main唯一构建者；当前HEAD316dirty不借旧绿。唯一事实仍读 `card-ui-closeout-20261008/latest-status.json` 和绑定回执，下方是历史。
+
+- **2026-10-08 22:38 当前继续，未部署**：按用户顺序已完成316最终包Windows存储功能出口（真6增长+6冻结2da旧reader、六非空WAL、逐阶段墓碑/正文、25历史/精确2真实API锁、8→7→8、三测试产品/两生命周期复制产品/双库镜像），唯一总回执 `deck-final-package-exit-20261008/main-final-functional-exit-acceptance.json` SHA DC5F5B24。真实Linux/目标并发/4小时7日/iOS仍待，不安装Linux、不读新私有副本。广播schema9八路径关键代理已授写/Focused.NET，Main仅独立记录与Bug只读准备，无重叠；新源不借316旧绿，完整Batch/Release/Git随后统一。不部署、不改维护、不提前fixed关闭未上线Bug。下方为对应时点历史。
+
 - **2026-10-08 提交级Release准备缺口已修正，正式仍未部署**：386候选实际6684规则/1164平台/排空消费者通过，但隔离前端遗漏公开`preset-decks.s1.json`，首次完整Release失败；原TRX/五阶段failure timings A630DEBD/完整日志保留，不称386已接受。仅门禁工具补S1/S2两预组JSON，原门禁新增真实AST数据依赖/缺项/错Target反例，原全部合同通过；Main新独立隔离目录按真实copylist/allCS/账本装载，完整UI355/反馈144/卡图/类型双前端构建已实际通过。产品91源未改，只有工具两源、内部账本与本三记录增量；冻结新干净候选后完整Release重跑，再Git，不部署或维护。最终94源闭包按真实绑定计，F2不使用旧91/386或伪称Linux包包含Win native，仍须最终真实包/Windows测试native分离来源绑定。
 
 - **2026-10-08 20:54 提交前最终证据：整体期限与来源守卫完整 Batch 已接受，Release/Git 待，未部署**：91冻结路径源码前后漂移0；第二轮实际6684规则/1164平台全执行、失败跳过0，355UI/144反馈/159玩家账本/324+42卡图/类型双前端通过。唯一绑定 `replay-user-match-20261008/main-complete-batch-r2-acceptance.json` 引用原完整日志5D968B5D及两个success监督；原成功Batch的临时TRX按既定合同消费，最终Release另留原TRX。62同族专项B9403B05与独立最后只读复核无新阻断；旧单场期限仍无法证明、不能恢复，未知I/O/格式错误不泛吞。此行为提交前历史证据：提交/远端/发布级验收的最终状态只看 `card-ui-closeout-20261008/latest-status.json` 与其绑定回执，不据本段猜最终SHA。按连接/庆典/Hammer/名称/隐私/期限逐根因提交，再一次完整干净Release/Git；没有部署或维护授权，不提前关闭新修复反馈。F2最终同包六案与广播/真实长期容量仍待，不安装Linux。
