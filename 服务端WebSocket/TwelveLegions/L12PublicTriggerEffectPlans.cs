@@ -896,6 +896,20 @@ public sealed partial class L12GameEngine
                 break;
             }
             case ("S01-0208", "enter", _):
+            {
+                var guards = player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
+                    .Select(card => card.InstanceId).ToList();
+                steps = guards.Count == 0 || !EmptySlots(player).Any() ? [] :
+                [
+                    PublicTriggerStep("grave-card", "entryCard", "阿伊：预先选择墓地1张陵墓守卫登场", guards,
+                        allowCancel: false),
+                    PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "阿伊：预先选择登场战场",
+                        ["dynamic"], referenceKey: "entryCard", allowCancel: false),
+                    PublicTriggerStep("effect-entry-slot", "entrySlot", "阿伊：预先选择登场位置",
+                        ["dynamic"], referenceKey: "entryCard", allowCancel: false),
+                ];
+                break;
+            }
             case ("S02-0202", "death", _):
             {
                 var guards = player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
