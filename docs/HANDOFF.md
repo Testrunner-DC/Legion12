@@ -1,5 +1,7 @@
 # 十二军团简短交接
 
+- **2026-10-08 提交级Release准备缺口已修正，正式仍未部署**：386候选实际6684规则/1164平台/排空消费者通过，但隔离前端遗漏公开`preset-decks.s1.json`，首次完整Release失败；原TRX/五阶段failure timings A630DEBD/完整日志保留，不称386已接受。仅门禁工具补S1/S2两预组JSON，原门禁新增真实AST数据依赖/缺项/错Target反例，原全部合同通过；Main新独立隔离目录按真实copylist/allCS/账本装载，完整UI355/反馈144/卡图/类型双前端构建已实际通过。产品91源未改，只有工具两源、内部账本与本三记录增量；冻结新干净候选后完整Release重跑，再Git，不部署或维护。最终94源闭包按真实绑定计，F2不使用旧91/386或伪称Linux包包含Win native，仍须最终真实包/Windows测试native分离来源绑定。
+
 - **2026-10-08 20:54 提交前最终证据：整体期限与来源守卫完整 Batch 已接受，Release/Git 待，未部署**：91冻结路径源码前后漂移0；第二轮实际6684规则/1164平台全执行、失败跳过0，355UI/144反馈/159玩家账本/324+42卡图/类型双前端通过。唯一绑定 `replay-user-match-20261008/main-complete-batch-r2-acceptance.json` 引用原完整日志5D968B5D及两个success监督；原成功Batch的临时TRX按既定合同消费，最终Release另留原TRX。62同族专项B9403B05与独立最后只读复核无新阻断；旧单场期限仍无法证明、不能恢复，未知I/O/格式错误不泛吞。此行为提交前历史证据：提交/远端/发布级验收的最终状态只看 `card-ui-closeout-20261008/latest-status.json` 与其绑定回执，不据本段猜最终SHA。按连接/庆典/Hammer/名称/隐私/期限逐根因提交，再一次完整干净Release/Git；没有部署或维护授权，不提前关闭新修复反馈。F2最终同包六案与广播/真实长期容量仍待，不安装Linux。
 
 - **2026-10-08 当前增量：独立最终审查拦截内部类型冒用，已补同族守卫，第二轮完整 Batch 待**：刚才6684/1139绿色绑定的是修正前源码，不能当最终源门禁。三保留类型 authority/preference/auto-close 原只按type分发，玩家/GM被拒命令可能被重放为内部命令；Main实际15旧例12RED/3对照绿，actor+accepted共享守卫同时接录制fallback、detail、friendly tail、ranked及其预解析、管理员draw摘要。新增17来源/两假draw、8GM/preference/auto-close延时生产者，62同族全绿（B9403B05）；第一green-r1六失败因测试越过120秒turn后恢复，本地夹具改20秒，原失败保持、产品计时不动。独立只读子无写/build租约，Main即将冻结新完整Batch，最终预计平台1164但以实际TRX为准。未commit/Release/Git/部署/维护，新旧原证据都保；下面20:22及更早为对应源历史事实。

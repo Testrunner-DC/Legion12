@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "release-isolation-prebuilt-data-20261008",
+  "date": "2026-10-08",
+  "audience": "internal",
+  "reason": "完整发布隔离前端漏复制实际编辑器回归读取的两份公开预组JSON；补齐依赖与缺项/错目标反例，不改产品、测试分母或发布保护。",
+  "paths": ["ops/windows/verify-l12.ps1", "scripts/test-l12-release-gate.ps1"]
+}

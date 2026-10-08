@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## RELEASE-20261008-ISOLATION-PREBUILT｜发布隔离预组依赖收口（内部工具修正）
+
+- 386完整Release原规则6684/平台1164通过但隔离front漏公开预组JSON而失败；修复门禁copylist仅加S1/S2两文件，原gate及缺项/错目标反例通过，Main独立实际隔离全前端/类型/双构建通过。不动91产品源和完整测试分母，不降低门禁；原failure/两原TRX保留。
+- 再绑定94路径最终候选、干净完整Release/Git后才收口，本内部项不显示玩家更新。F2最终实核source count随Main最终closure绑定，Windows native不得假称Linux包成员。无两服部署或维护授权。
+
 ## CLOCK-20261008-CROSS-PATH｜共享期限与恢复时钟整体治理（已批准，完整 Batch 通过，Release 待）
 
 - 用户批准统一命令执行时刻/记录，回放及排位恢复复用；旧记录只有可信完整事实并严格逐步校验时才兼容。补充“整体检查”已落实为独立只读分类审查与Main/子并行实现验收，不只改resolvePrompt，不把会话/维护/cache墙钟或请求单调预算统一改成历史时钟。

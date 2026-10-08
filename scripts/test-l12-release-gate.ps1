@@ -208,6 +208,46 @@ foreach ($case in @(
 }
 
 $verifySource = Get-Content -LiteralPath $verifyScript -Raw
+$isolationTokens = $null
+$isolationErrors = $null
+$isolationAst = [Management.Automation.Language.Parser]::ParseFile($verifyScript, [ref]$isolationTokens, [ref]$isolationErrors)
+Assert-True ($isolationErrors.Count -eq 0) 'Release verifier must parse before isolation data is read.'
+$isolationAssignments = @($isolationAst.FindAll({ param($node)
+    $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+    $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+    $node.Left.VariablePath.UserPath -ceq 'contractFiles'
+}, $true))
+Assert-True ($isolationAssignments.Count -eq 1) 'Release isolation must have one exact contract-file declaration.'
+$isolationValue = $isolationAssignments[0].Right
+$unsafeIsolation = @($isolationValue.FindAll({ param($node)
+    $node -is [Management.Automation.Language.CommandAst] -or
+    $node -is [Management.Automation.Language.InvokeMemberExpressionAst] -or
+    $node -is [Management.Automation.Language.ExpandableStringExpressionAst] -or
+    $node -is [Management.Automation.Language.VariableExpressionAst] -or
+    $node -is [Management.Automation.Language.ScriptBlockExpressionAst]
+}, $true))
+Assert-True ($unsafeIsolation.Count -eq 0) 'Isolation dependencies must be literal data, not executable expressions.'
+$isolationFiles = @(& ([scriptblock]::Create($isolationValue.Extent.Text)))
+function Test-PrebuiltIsolation {
+    param([object[]]$Files)
+    foreach ($required in @('服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json',
+            '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json')) {
+        $matching = @($Files | Where-Object { $_.Source -ceq $required })
+        if ($matching.Count -ne 1 -or $matching[0].Target -cne $required) { return $false }
+    }
+    return $true
+}
+Assert-True (Test-PrebuiltIsolation $isolationFiles) 'Both shipped prebuilt catalogs must be present at their exact isolated relative paths.'
+foreach ($required in @('服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json',
+        '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json')) {
+    Assert-True (-not (Test-PrebuiltIsolation @($isolationFiles | Where-Object { $_.Source -cne $required }))) 'Missing prebuilt dependency was not detected.'
+}
+$wrongTarget = @($isolationFiles | ForEach-Object {
+    if ($_.Source -ceq '服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json') {
+        @{ Source = $_.Source; Target = 'wrong\preset-decks.s1.json' }
+    } else { $_ }
+})
+Assert-True (-not (Test-PrebuiltIsolation $wrongTarget)) 'Wrong isolated prebuilt target was not detected.'
 $deploySource = Get-Content -LiteralPath $deployScript -Raw
 $changeGateSource = Get-Content -LiteralPath $changeGateScript -Raw
 $platformProjectSource = Get-Content -LiteralPath $platformProject -Raw

@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## RELEASE-20261008-ISOLATION-PREBUILT｜隔离构建缺预组目录（内部工具，非卡效变更）
+
+- 首386干净Release规则6684/平台1164/排空消费者都通过，隔离front的真实编辑器保存/季限制回归读取Root公开预组JSON时ENOENT，完整Release仍失败。Batch在完整工作树通过不能证明隔离依赖复制完整。原timings A630DEBD、两原TRX3378F79B/6F26A26D与失败日志保持，不覆盖为成功。
+- 仅显式copylist补齐S1/S2预组目录，未把私有runtime/库或全工作树加入隔离；原gate通过真实AST读取literal依赖集合，逐项缺省和错Target三反例。Main独立重建隔离前端、实拷文件并验字节一致、全正常前端双构建通过，其他产品源码和测试分母不变。
+- 工具/回归及内部账本另根因提交，三共享记录仅登记事实；随后新干净候选完整Release/Git待。本内部项不写玩家日志、不部署、不解除维护、不借原两测试绿灯称整个Release完成。
+
 ## CLOCK-20261008-EXECUTION-AND-RECOVERY｜期限时间跨路径不一致（整体修复已批准，完整 Batch 通过，Release 待）
 
 - 真实正式当日同版本录像：seq76普通resolvePrompt结果Accepted/Revision一致、StateHash不同。正式GET重建拿晚采样received_utc，运行OfferResponse拿物理_utcNow，自动关闭期限进入hash，差10ms也会拒绝。Main合成双向×0/10/1000ms公开Handle基线直接复现4失败/2对照绿；不是卡效或按钮根因。

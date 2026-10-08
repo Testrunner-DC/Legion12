@@ -317,6 +317,8 @@ try {
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s1.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.s2.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\cards.st.json"; Target = "服务端WebSocket\TwelveLegions\Data\cards.st.json" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json"; Target = "服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json" },
+        @{ Source = "服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json"; Target = "服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\morale-identities.json"; Target = "服务端WebSocket\TwelveLegions\Data\morale-identities.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\card-product-inclusions.json"; Target = "服务端WebSocket\TwelveLegions\Data\card-product-inclusions.json" },
         @{ Source = "服务端WebSocket\TwelveLegions\Data\card-archive-assets.json"; Target = "服务端WebSocket\TwelveLegions\Data\card-archive-assets.json" },
