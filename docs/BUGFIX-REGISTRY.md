@@ -1,5 +1,41 @@
 # Legion12 Bug 修复记录
 
+### 2026-10-08 15:20 本地验收状态更新（非部署）
+
+以下四项新批准根因统一完整Batch已实际通过：6650规则/1089平台、失败跳过0、全部前端守卫/类型/双构建，完整log及success receipts位于`kagutsuchi-attack-factory-fix-20261008`和D盘cache/test-evidence。此前各条“Batch待”为当时历史；提交级clean Release/Git仍待，最终绑定只读`card-ui-closeout-20261008/latest-status.json`。未切换两服/维护，原反馈不能提前以fixed关闭，原失败证据全部保持。
+
+## BUG-20261008-KAGUTSUCHI-ATTACK-FACTORY｜同时触发绕过进攻候选元数据（已批准，Focused已验，未部署）
+
+- 具名原反馈895bd8e2/961ab290/5d676498：真实Handle进攻时同时出现迦具土与本多，四方向/排序实际CostModifier仍0；不是仅后段续段缺失。根因在L12Actions迦具土合并分支直接CreateTriggerCandidate，绕过共享进攻计划构造。候选没有attackPlan，本多后段有target所以默认composite不能补，声明/结算入口均跳过。旧反射直接Queue组件测试会注入正确元数据，未覆盖这个真实入口；原四RED与Main诊断均保留。
+- 最小共享修复：原Attack-plan构造提取只返回候选列表的builder；普通Queue与迦具土合并分支共用，再由原QueueTriggerCandidates统一延迟资格/排序/响应。不加本多卡号特判，不提前付费或单独入队；理查defense/squires及罗宾rune/draw拆分保持，未注册汉尼拔沿原fallback。P0/P1既有候选出口扩展，Kernel/Composite/Models未动，V2仍唯一体系。
+- 全池19显式+6self-buff共25张按真实进攻断言attackPlan/sourceSnapshot，名单与查询SHA2EE9FC76绑定`kagutsuchi-attack-factory-fix-20261008/same-type-scan.json`；原Hondo四顺序、两处恢复、无0费对象不建空prompt、Richard预付侍从、Robin条件拆分均纳入新36。
+- 子监督101/101、Main独立新进攻/旧声明与近藤保护116/116失败/跳过0，源码冻结6A024DD2/0CC70383，原TRX与清理receipt保留。最新统一完整Batch/clean Release/同步尚待，不能借此前仅近藤6614的全规则绿色替代此新源，原线上报告不提前fixed关闭。玩家账本只写发生的结果，记录本身不触发部署。
+
+## BUG-20261008-DECK-SEASON-ADVISORY｜牌库保存与赛季排位可用性解耦（已批准，本地行为与浏览器已验，未部署）
+
+- 原报告`BUG-20261006-a21882ec`。编辑器错误把赛季maxCopies并入加牌固有限制与保存validation，导致基础合法的旧季牌库不能保存/另存/公开。真实官方天庭预组在禁0/限1政策下均为基础合法，却实际被旧编辑器阻断，RED保留。
+- 只修改Editor：加牌上限保卡牌固有限制，validation只检查基础构筑，seasonValidation与待确认状态只作排位说明/逐卡标签/筛选；保存、公开和牌库图仍保基础非法与草稿/版本/去重/账号ABA守卫。后端原存储/public、casual/sandbox、friend主办自选及赛事独立锁规则正确，未改它们；排位强制季禁限不变。P4只改既有编辑器消费者，不新建权限旁路。
+- Main独立实际41编辑器、24参考流程及原B1保护；浏览器最终64（原31+新增33）、六视口及三尺寸禁0/限1/政策503、真实private/public HTTP和六张1920×1080 PNG全部过，原两夹具失败保留。Main目检844×390及390×844提示/控件，原窄高滚动仍可用，source前后逐SHA相同。Editor3F6D5C4F；组合证据`deck-season-rate-browser-20261008/browser-evidence.json` SHA99B5648B，A最终report5E40360C。真iOS/微信输入法/CDN未验，不将本机模拟说成真机。完整类型检查已实际exit0，Batch/Release与新候选线上验证待；不提前fixed关闭原报告。
+
+## BUG-20261008-MASTER-RATE-SORT｜小样本主宰胜率排序（已批准，本地行为与浏览器已验，未部署）
+
+- 原报告`BUG-20261007-3edfc04c`。旧排序先放≥30场者，再按小样本场次/名称，造成真实4场50%排在0%后面；旧字符串守卫反而要求该错行为。保原来源/范围/统计数据，只按所选winRate/firstWinRate/secondWinRate实值降序，有对应样本的0%先于缺样本；同率仍总场次/名称tie-break，games/usage不变。颜色/百分比/低样本提醒保持。
+- 替换错误谓词为真实SFC脚本+模板挂载/v-model行为，原12统计合同与原355UI风险守卫保持。Main独立12原合同+12实际组件场景通过；最终完整浏览器原13组+12排序全部过、九图、errors0，Main目检宽窄矩阵及逐源绑定。Rankings63C4FE4E，B report837795B6、run27521054。旧wire夹具的失败保留，只在测试内按当前已验按需DTO适配，不改public来源或低样本门槛；类型检查过。统一完整门禁/同步及新候选上线仍待，不提前线上fixed。
+
+## BUG-20261008-CONSUMED-LETHAL-STATE｜同次致死替代跨无关命令与恢复保护（已批准，Focused已验，未部署）
+
+- 原报告`BUG-20261007-08cd2642`。根因：effect替代标记按State.Revision保存，resolvePrompt尾部状态检查立即清掉该标记；下一命令把仍为0的梅林限时减兵状态再当新致死。旧只验“选择近藤后即时没死”的测试遗漏后续命令；原人工把梅林说成进攻不能作为卡效身份依据。
+- 共享修复沿原权威引擎：替代完成/持续层重算后绑定规范化兵力指纹；同状态跨命令、两种恢复及投影读取保留，正兵力/私区精确清键。新的独立兵力来源、伤害或负层变化允许再次致死，不改Troops为1、不复活、不改每回合次数。Main独立发现纯费用层与同数值新持续负层风险：前者不纳入指纹，后者复用原木马负层来源查询并纳入规范来源ID，不加卡号旁路/第二模型。
+- 全池查询`rg -n 'CurrentLethalEventProtectionKey|effect-lethal-replacement|kondo-field-discard|helen-hand|horemheb-field|lethal-event-protected' 服务端WebSocket/TwelveLegions`与持续层入口：三效果替代霍列姆赫布/海伦/近藤都用共享出口；战斗专用决策表、阿喀琉斯/湖中仙女/王者之剑路径保持。海拉/梅林作为持续减兵来源、木马持续负层及正常区域重置纳入边界核对。
+- Main最终同族93（13新增）失败/跳过0，TRX2685BE75/产品4259E888，D盘`main-focused-acceptance.json`逐源绑定。原r5真实RED、两子夹具失败、Main独立输出布局73/74文件定位失败及新持续来源RED均保留；标准布局74及最终93通过不覆盖原记录。完整规则/前端/Batch/干净Release待，不把本记录或玩家账本写入当部署，近藤线上反馈尚未fixed关闭。
+
+## BUG-20261008-CLOSURE-WORKFLOW｜稳定编号逐项闭环（后台已读回，非产品部署）
+
+- 用户明确授权关闭具名正式回归已通过的旧报告、重复项、规则符合及压力场景未复现反馈；产品建议仍按用户答复处理，不自动采纳。建立D盘`bug-closure-workflow-20261008/workflow-policy.json`与唯一`work-items.json`，只增量推进原文指纹未变的稳定编号，不反复清空重拉待办。
+- Main核验已部署2da累计版本、原Release具名TRX和正式closure，不借未部署02f源码声称线上修好。首轮6项包括天下布武fixed、三条真实场景未复现及两个已被用户拒绝建议；第二轮19项为12fixed/5duplicate/2规则符合。孟婆零目标及阿喀琉斯至下个我方回合结束均按现行规则关闭，不冒称本轮修复。
+- 887条历史提交不变；实际未关闭600→594→575，25项逐条终态读回。第二轮收据B0A25FDE，保备注/优先级/负责人/原文；使用dryRun预览、ETag/CAS、幂等键落盘、读回和会话撤销。5条重复主反馈未改，乾坤阳、戒指＋法老王庆典主问题仍待真实复现，不因通用规则测试而关闭主问题。
+- 原首轮数组展开形状错误仅产生失败回执、零Bug写，证据保留；修正明确JSON逐记录读取后才应用。部署/维护写均0，不清历史、不输出凭据或玩家身份。新的近藤/Honda/梅杰德证据各自保真实RED与夹具失败状态，未混入此轮fixed。
+
 ## ADMIN-20261008-INTEGRITY-GROUP-FILTER｜排位审计归组真正筛选（直接授权，Main已验，Release待）
 
 - 正常链最终为可移植实际compiler-sfc/TypeScript/Vue内存宿主挂载Panel+原PagedCollection14/14，Main默认项目依赖独立重跑，源码2FF333F2。原完整9浏览器体保留为显式`verify-ranked-integrity-group-filter.mjs`（836E0083），只自身指纹路径变化；旧Panel同一portable脚本RED89未筛61，原interop夹具失败保留。正常build不依赖本机C盘Playwright或msedge，未冒称Ubuntu CI实际已通过；原Actions/Paged产品不改。
