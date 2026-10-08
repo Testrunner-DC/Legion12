@@ -5,6 +5,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12PlatformStore
 {
     private const int LegacyDeckPayloadSchemaVersion = 7;
+    private const int CompactDeckPayloadSchemaVersion = 8;
     private const string DeckPayloadFormatStateKey = "deck_payload_format_state";
     private const string DeckPayloadFormatActiveState = "compact-v1";
     private const string DeckPayloadFormatLegacyState = "legacy-v7";
@@ -46,16 +47,17 @@ public sealed partial class L12PlatformStore
                     $"不支持的牌库构筑正文格式：{row.Format}");
             ValidateCompactPayload(row);
         }
-        if (existingSchemaVersion is not null && existingSchemaVersion < PlatformStorageSchemaVersion)
+        if (existingSchemaVersion is not null && existingSchemaVersion < CompactDeckPayloadSchemaVersion)
             throw new L12PlatformStorageIncompatibleException("牌库构筑正文格式已切换，但存储版本未提交");
-        if (existingSchemaVersion == PlatformStorageSchemaVersion
+        if (existingSchemaVersion is >= CompactDeckPayloadSchemaVersion
             && !string.Equals(ReadMeta(connection, DeckPayloadFormatStateKey),
                 DeckPayloadFormatActiveState, StringComparison.Ordinal))
             throw new L12PlatformStorageIncompatibleException("牌库构筑正文格式状态未提交或未知");
 
         using var transaction = connection.BeginTransaction(deferred: false);
         SetStorageMeta(connection, transaction, DeckPayloadFormatStateKey, DeckPayloadFormatActiveState);
-        SetStorageSchemaVersion(connection, transaction, PlatformStorageSchemaVersion);
+        if (existingSchemaVersion is null)
+            SetStorageSchemaVersion(connection, transaction, CompactDeckPayloadSchemaVersion);
         transaction.Commit();
     }
 
@@ -88,7 +90,7 @@ public sealed partial class L12PlatformStore
         ExecutePayloadDdl(connection, transaction, "ALTER TABLE deck_payloads DROP COLUMN special_cards_json;");
         VerifyForeignKeys(connection, transaction);
         SetStorageMeta(connection, transaction, DeckPayloadFormatStateKey, DeckPayloadFormatActiveState);
-        SetStorageSchemaVersion(connection, transaction, PlatformStorageSchemaVersion);
+        SetStorageSchemaVersion(connection, transaction, CompactDeckPayloadSchemaVersion);
         transaction.Commit();
     }
 
@@ -103,7 +105,7 @@ public sealed partial class L12PlatformStore
             pragmas.ExecuteNonQuery();
         }
         var version = ReadExistingStorageSchemaVersion(connection);
-        if (version != PlatformStorageSchemaVersion)
+        if (version != CompactDeckPayloadSchemaVersion)
             throw new InvalidDataException("反向迁移副本不是当前牌库存储版本");
         if (!string.Equals(ReadMeta(connection, DeckPayloadFormatStateKey),
                 DeckPayloadFormatActiveState, StringComparison.Ordinal))

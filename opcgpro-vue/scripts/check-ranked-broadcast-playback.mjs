@@ -8,6 +8,19 @@ const playback = read('src/l12/site/rankedBroadcastPlayback.ts')
 const ticker = read('src/l12/site/RankedBroadcastTicker.vue')
 const platform = read('src/l12/platform.ts')
 const store = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs')
+const broadcastObjects = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.RankedBroadcastStorage.cs')
+function subscriptionFreshnessContract(wrapper, objects) {
+  const claimStart = objects.indexOf('private L12RankedBroadcastClaimView? ClaimRankedBroadcastObject(')
+  const claimEnd = objects.indexOf('private bool CompleteRankedBroadcastObject(', claimStart)
+  if (claimStart < 0 || claimEnd <= claimStart) return false
+  const claim = objects.slice(claimStart, claimEnd)
+  return wrapper.includes('ClaimRankedBroadcastAt(accountId, subscriptionStartedAt, DateTimeOffset.UtcNow)')
+    && /ClaimRankedBroadcastObject\(accountId, subscriptionStartedAt, now,\s*RankedBroadcastRealtimeWindow\)/.test(wrapper)
+    && claim.includes('var freshFloor = normalizedNow - realtimeWindow')
+    && claim.includes('if (requestedStart < freshFloor) requestedStart = freshFloor')
+    && claim.includes('if (requestedStart > normalizedNow) requestedStart = normalizedNow')
+    && !claim.includes('pending.ClaimToken = Guid.NewGuid()')
+}
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const battleHub = read('src/l12/site/BattleHubPage.vue')
 const gamePage = read('src/l12/GamePage.vue')
@@ -18,11 +31,16 @@ function requireContract(condition, message) {
 
 requireContract(store.includes('DateTimeOffset? subscriptionStartedAt = null'),
   'server claim must keep an optional subscription time for old-client compatibility')
-requireContract(store.includes('now - RankedBroadcastRealtimeWindow')
-  && store.includes('if (requestedStart < freshFloor) requestedStart = freshFloor'),
+requireContract(subscriptionFreshnessContract(store, broadcastObjects),
   'server must bound client clock rollback with its realtime window')
-requireContract(!store.includes('pending.ClaimToken = Guid.NewGuid()'),
-  'an unfinished delivery must never receive a refreshed token or be shown again')
+for (const [label, wrapper, objects] of [
+  ['non-authoritative public clock', store.replace('subscriptionStartedAt, DateTimeOffset.UtcNow)', 'subscriptionStartedAt, DateTimeOffset.MinValue)'), broadcastObjects],
+  ['wrong window delegation', store.replace('RankedBroadcastRealtimeWindow);', 'TimeSpan.Zero);'), broadcastObjects],
+  ['missing rollback clamp', store, broadcastObjects.replace('if (requestedStart < freshFloor) requestedStart = freshFloor', '')],
+  ['missing future clamp', store, broadcastObjects.replace('if (requestedStart > normalizedNow) requestedStart = normalizedNow', '')],
+  ['unfinished token refresh', store, broadcastObjects.replace('var freshFloor = normalizedNow - realtimeWindow', 'pending.ClaimToken = Guid.NewGuid(); var freshFloor = normalizedNow - realtimeWindow')],
+  ['missing authoritative owner', store, broadcastObjects.replace('private L12RankedBroadcastClaimView? ClaimRankedBroadcastObject(', 'private L12RankedBroadcastClaimView? DetachedClaim(')],
+]) requireContract(!subscriptionFreshnessContract(wrapper, objects), `subscription guard incorrectly accepted ${label}`)
 requireContract(server.includes('ClaimRankedBroadcast(account.Id, subscriptionStartedAt)'),
   'HTTP claim endpoint must forward the optional subscription time')
 requireContract(platform.includes('?subscriptionStartedAt=${encodeURIComponent(subscriptionStartedAt)}'),

@@ -74,7 +74,7 @@ internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStor
 
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 8;
+    private const int PlatformStorageSchemaVersion = 9;
     private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
     private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
     private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
@@ -134,6 +134,7 @@ public sealed partial class L12PlatformStore
                 if (!FixedEquals(snapshot.Checksum, Sha256(snapshot.Json)))
                     throw new InvalidDataException("恢复副本快照校验和不匹配");
                 ValidateRecoveredDeckDomain(recovered, transaction, recoveredData);
+                HydrateRankedBroadcastObjects(recovered, recoveredData, transaction);
                 transaction.Commit();
                 var audits = CountRetainedAuditEvents(recovered);
                 return new(true, "sqlite-rehearsal", _databasePath, recoveredData.Version,
@@ -180,6 +181,7 @@ public sealed partial class L12PlatformStore
             }
 
             data = EnsureAndHydrateDeckDomainStorage(connection, data);
+            HydrateRankedBroadcastObjects(connection, data);
             MergeIndependentAudit(connection, data);
             _lastCommittedSnapshot = SerializeRollbackState(data);
             _storageMode = "sqlite";
@@ -322,6 +324,7 @@ public sealed partial class L12PlatformStore
                 if (currentStorageRevision != expectedRevision)
                     throw new L12PrivateDeckStorageConflictException(expectedRevision, currentStorageRevision);
             }
+            SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
             var snapshotJson = SerializeSnapshot(_data);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
             StorageFailureInjector?.Invoke("before-mirror-serialize");
@@ -396,6 +399,7 @@ public sealed partial class L12PlatformStore
                 throw new InvalidDataException("冲突刷新平台版本不一致");
             StorageFailureInjector?.Invoke("after-conflict-snapshot-read");
             HydrateDeckDomain(connection, latest, transaction);
+            HydrateRankedBroadcastObjects(connection, latest, transaction);
             MergeIndependentAudit(connection, latest, transaction);
             var rollbackSnapshot = SerializeRollbackState(latest);
             var sessionActivity = PrepareCommittedSessionActivity(latest, rollbackSnapshot);
@@ -454,6 +458,7 @@ public sealed partial class L12PlatformStore
                 // The new platform revision and normalized decks must be read from
                 // the same database generation, even for a no-op claim/preview.
                 HydrateDeckDomain(connection, latest, transaction);
+                HydrateRankedBroadcastObjects(connection, latest, transaction);
                 _data = latest;
                 var mutation = action(connection, transaction);
                 if (!mutation.Changed)
@@ -470,6 +475,7 @@ public sealed partial class L12PlatformStore
                 _data.BusinessVersion ??= _data.Version;
                 _data.Version++;
                 _data.BusinessVersion++;
+                SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
                 var snapshotJson = SerializeSnapshot(_data);
                 var mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
                 UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson),
@@ -527,9 +533,12 @@ public sealed partial class L12PlatformStore
         FilterMigratedAuditSnapshot(connection, data);
         WriteDeckMigrationBackup(data);
         using var transaction = connection.BeginTransaction();
+        var initialLegacyProjection = ReadSnapshot(connection, transaction) is null;
         PersistDeckDomainSnapshot(connection, transaction, data);
         VerifyDeckDomainSnapshot(connection, transaction, data);
         SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
+        SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
+            allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshotJson = SerializeSnapshot(data);
         var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
         UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
@@ -767,7 +776,24 @@ public sealed partial class L12PlatformStore
             """;
         command.ExecuteNonQuery();
         InitializeAuditLifecycleSchema(connection);
-        InitializeDeckDomainSchema(connection, existingSchemaVersion);
+        try
+        {
+            InitializeDeckDomainSchema(connection, existingSchemaVersion);
+            InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
+        }
+        catch (L12PlatformStorageIncompatibleException)
+        {
+            throw;
+        }
+        catch (Exception error) when (existingSchemaVersion is >= LegacyDeckPayloadSchemaVersion
+                                      and < PlatformStorageSchemaVersion)
+        {
+            // A failed version transition must not be hidden by a rich JSON
+            // fallback: doing so would allow the old arrays to become authority
+            // after a partially attempted object/deck migration.
+            throw new L12PlatformStorageIncompatibleException(
+                $"平台存储版本迁移失败，保留原版本：{error.Message}");
+        }
     }
 
     private static int? ReadExistingStorageSchemaVersion(SqliteConnection connection)
@@ -1205,11 +1231,30 @@ public sealed partial class L12PlatformStore
                 ?? throw new InvalidDataException("完整回滚缓存为空");
             restored = NormalizeDeserializedData(restored);
             ValidateCompactRuntimeDeckDomain(restored);
-            var sessionActivity = SessionActivityForRollback(restored, snapshot);
+            var replacement = snapshot;
+            // Most failures must remain a pure memory rollback: this preserves the
+            // exact committed cache even if the database is temporarily missing or
+            // another platform generation has advanced. A full-save transaction
+            // that actually observed a different broadcast generation is the sole
+            // case that needs to rehydrate that independently committed domain.
+            if (_storageWritable
+                && restored.RankedBroadcastGeneration != _data.RankedBroadcastGeneration)
+            {
+                using var connection = OpenDatabase(_databasePath, readOnly: true);
+                using var transaction = connection.BeginTransaction(deferred: true);
+                if (ReadStorageRevision(connection, transaction) != restored.Version)
+                    throw new InvalidDataException("回滚缓存平台版本已过期");
+                HydrateRankedBroadcastObjects(connection, restored, transaction);
+                transaction.Commit();
+                replacement = SerializeRollbackState(restored);
+            }
+            var sessionActivity = SessionActivityForRollback(restored, replacement);
             _data = restored;
+            _lastCommittedSnapshot = replacement;
             PublishCommittedSessionActivity(sessionActivity);
-            // Complete committed generation: normal rollback must not hydrate it
-            // again from a potentially newer SQLite generation.
+            // The platform/deck generation remains the committed cache generation;
+            // only the independently committed broadcast projection is refreshed,
+            // and only while the database platform revision still matches.
         }
         catch (Exception cacheError)
         {
@@ -1227,6 +1272,7 @@ public sealed partial class L12PlatformStore
                     throw new InvalidDataException("回滚恢复快照校验失败");
                 var restored = DeserializeDataAndValidate(stored.Json);
                 ValidateRecoveredDeckDomain(connection, transaction, restored);
+                HydrateRankedBroadcastObjects(connection, restored, transaction);
                 MergeIndependentAudit(connection, restored, transaction);
                 var replacement = SerializeRollbackState(restored);
                 var sessionActivity = sessionActivityWasAvailable

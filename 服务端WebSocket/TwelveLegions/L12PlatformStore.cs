@@ -361,6 +361,7 @@ public sealed partial class L12PlatformStore
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
         public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
         public List<RankedBroadcastDeliveryRow> RankedBroadcastDeliveries { get; set; } = [];
+        public long RankedBroadcastGeneration { get; set; }
         public DateTimeOffset? RankedBroadcastDeliveryCutover { get; set; }
         public List<RankedMasterRecordRow> RankedMasterRecords { get; set; } = [];
         public List<string> RankedMasterRecordedMatchIds { get; set; } = [];

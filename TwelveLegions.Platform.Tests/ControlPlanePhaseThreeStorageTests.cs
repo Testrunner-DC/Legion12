@@ -42,8 +42,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             {
                 Assert.Equal("ok", Scalar(connection, "PRAGMA quick_check;"));
                 Assert.Equal("1", Scalar(connection, "SELECT COUNT(*) FROM platform_state;"));
-                Assert.Equal("8", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-                Assert.Equal("8", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+                Assert.Equal("9", Scalar(connection, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+                Assert.Equal("9", Scalar(connection, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
                 Assert.Equal("2", Scalar(connection, """
                     SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
                     WHERE name IN ('payload_format','payload_json');
@@ -91,6 +91,7 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Directory.CreateDirectory(Path.GetDirectoryName(legacyPath)!);
             var legacyDatabase = Path.ChangeExtension(legacyPath, ".db");
             File.Copy(store.TransactionalStoragePath, legacyDatabase);
+            L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(legacyDatabase);
             L12PlatformStore.RevertCompactDeckPayloadStorageForRehearsal(legacyDatabase);
             using (var legacy = Open(legacyDatabase))
             {
@@ -110,8 +111,8 @@ public sealed class ControlPlanePhaseThreeStorageTests
             Assert.Equal("schema-upgrade-preserved",
                 reloaded.OperationsConfig(reloadedAdmin).Config.Maintenance.Message);
             using var upgraded = Open(reloaded.TransactionalStoragePath);
-            Assert.Equal("8", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("8", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("9", Scalar(upgraded, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("9", Scalar(upgraded, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             Assert.Equal("2", Scalar(upgraded, """
                 SELECT COUNT(*) FROM pragma_table_info('deck_payloads')
                 WHERE name IN ('payload_format','payload_json');

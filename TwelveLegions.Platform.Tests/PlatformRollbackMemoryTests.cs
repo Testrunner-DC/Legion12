@@ -358,7 +358,7 @@ public sealed class PlatformRollbackMemoryTests
                 connection.Open();
                 using var command = connection.CreateCommand();
                 command.CommandText = damage == "future-schema"
-                    ? "UPDATE storage_meta SET value='9' WHERE key='schema_version'; UPDATE platform_state SET schema_version=9 WHERE singleton_id=1;"
+                    ? "UPDATE storage_meta SET value='10' WHERE key='schema_version'; UPDATE platform_state SET schema_version=10 WHERE singleton_id=1;"
                     : "UPDATE deck_payloads SET payload_format=99;";
                 command.ExecuteNonQuery();
             }

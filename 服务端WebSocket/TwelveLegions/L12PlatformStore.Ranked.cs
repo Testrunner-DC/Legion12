@@ -294,6 +294,7 @@ public sealed partial class L12PlatformStore
         public string EventType { get; set; } = string.Empty;
         public string Message { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public long Generation { get; set; }
     }
     private sealed class RankedBroadcastDeliveryRow
     {
@@ -302,6 +303,7 @@ public sealed partial class L12PlatformStore
         public string ClaimToken { get; set; } = string.Empty;
         public DateTimeOffset LeaseExpiresAt { get; set; }
         public DateTimeOffset? CompletedAt { get; set; }
+        public long Generation { get; set; }
     }
     private sealed class RankedMasterRecordRow
     {
@@ -1116,52 +1118,11 @@ public sealed partial class L12PlatformStore
 
     internal L12RankedBroadcastClaimView? ClaimRankedBroadcastAt(string accountId,
         DateTimeOffset? subscriptionStartedAt, DateTimeOffset now)
-    {
-        lock (_gate)
-        {
-            var account = _data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
-                ?? throw new KeyNotFoundException("账号不存在或不可用");
-            var cutoff = _data.RankedBroadcastDeliveryCutover ?? now;
-            if (account.CreatedAt > cutoff) cutoff = account.CreatedAt;
-            var freshFloor = now - RankedBroadcastRealtimeWindow;
-            var requestedStart = subscriptionStartedAt ?? freshFloor;
-            if (requestedStart > now) requestedStart = now;
-            if (requestedStart < freshFloor) requestedStart = freshFloor;
-            if (requestedStart > cutoff) cutoff = requestedStart;
-            var delivered = _data.RankedBroadcastDeliveries.Where(row => row.AccountId == accountId)
-                .Select(row => row.BroadcastId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var next = _data.RankedBroadcasts.Where(row => row.CreatedAt >= cutoff && !delivered.Contains(row.Id))
-                .OrderBy(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
-            if (next is null) return null;
-            var delivery = new RankedBroadcastDeliveryRow
-            {
-                AccountId = accountId,
-                BroadcastId = next.Id,
-                ClaimToken = Guid.NewGuid().ToString("N"),
-                LeaseExpiresAt = now.AddSeconds(45),
-            };
-            _data.RankedBroadcastDeliveries.Add(delivery);
-            Save();
-            return new(ToView(next), delivery.ClaimToken, delivery.LeaseExpiresAt);
-        }
-    }
+        => ClaimRankedBroadcastObject(accountId, subscriptionStartedAt, now,
+            RankedBroadcastRealtimeWindow);
 
     public bool CompleteRankedBroadcast(string accountId, string broadcastId, string claimToken)
-    {
-        lock (_gate)
-        {
-            var delivery = _data.RankedBroadcastDeliveries.FirstOrDefault(row => row.AccountId == accountId
-                && row.BroadcastId == broadcastId);
-            if (delivery is null || string.IsNullOrWhiteSpace(claimToken)
-                || !System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                    System.Text.Encoding.UTF8.GetBytes(delivery.ClaimToken),
-                    System.Text.Encoding.UTF8.GetBytes(claimToken))) return false;
-            if (delivery.CompletedAt is not null) return true;
-            delivery.CompletedAt = DateTimeOffset.UtcNow;
-            Save();
-            return true;
-        }
-    }
+        => CompleteRankedBroadcastObject(accountId, broadcastId, claimToken, DateTimeOffset.UtcNow);
 
     public bool DeleteRankedBroadcast(L12AccountView actor, string id, L12AdminAuditContext context)
     {

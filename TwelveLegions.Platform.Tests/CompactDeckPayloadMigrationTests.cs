@@ -18,6 +18,34 @@ public sealed class CompactDeckPayloadMigrationTests
             var fixture = CreateRichStore(sourcePath);
             var copyPath = Path.Combine(root, "copy", "platform.json");
             CopyStore(sourcePath, copyPath);
+            L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(
+                Path.ChangeExtension(copyPath, ".db"));
+
+            using (var mirror = JsonDocument.Parse(File.ReadAllText(copyPath)))
+            {
+                var document = mirror.RootElement;
+                var mirrorPrivateDeck = document.GetProperty("Decks").EnumerateArray()
+                    .Single(row => row.GetProperty("Name").GetString() == "schema8-bound");
+                Assert.Equal(new string?[] { "C00" }, mirrorPrivateDeck.GetProperty("CardIds").EnumerateArray()
+                    .Select(card => card.GetString()).ToArray());
+                Assert.Equal(new string?[] { "BENCH", "BENCH" }, mirrorPrivateDeck.GetProperty("BenchIds").EnumerateArray()
+                    .Select(card => card.GetString()).ToArray());
+                Assert.Equal("ALT-A", mirrorPrivateDeck.GetProperty("AlternateArtSelections")
+                    .GetProperty("C00").GetString());
+                Assert.Equal(new string?[] { "ALT-A", "" }, mirrorPrivateDeck.GetProperty("AlternateArtCopies")
+                    .GetProperty("C00").EnumerateArray().Select(card => card.GetString()).ToArray());
+                var publicDeck = document.GetProperty("PublishedDecks").EnumerateArray()
+                    .Single(row => row.GetProperty("Id").GetString() == fixture.PublicationId);
+                Assert.Equal(new string?[] { "C24" }, publicDeck.GetProperty("CardIds").EnumerateArray()
+                    .Select(card => card.GetString()).ToArray());
+                var tournament = document.GetProperty("Tournaments").EnumerateArray()
+                    .Single(row => row.GetProperty("Id").GetString() == fixture.TournamentId);
+                var tournamentDeck = tournament.GetProperty("Participants").EnumerateArray()
+                    .Single(row => row.GetProperty("AccountId").GetString() == fixture.OwnerId)
+                    .GetProperty("Deck");
+                Assert.Equal(new string?[] { "C00" }, tournamentDeck.GetProperty("CardIds").EnumerateArray()
+                    .Select(card => card.GetString()).ToArray());
+            }
             L12PlatformStore.RevertCompactDeckPayloadStorageForRehearsal(
                 Path.ChangeExtension(copyPath, ".db"));
 
@@ -33,11 +61,26 @@ public sealed class CompactDeckPayloadMigrationTests
 
             SqliteConnection.ClearAllPools();
             var migrated = new L12PlatformStore(copyPath);
-            Assert.Equal("schema8-bound", Assert.Single(migrated.Decks(fixture.OwnerId)
-                .Where(deck => deck.Name == "schema8-bound")).Name);
+            var privateDeck = Assert.Single(migrated.Decks(fixture.OwnerId)
+                .Where(deck => deck.Name == "schema8-bound"));
+            Assert.Equal(new[] { "C00" }, privateDeck.CardIds.ToArray());
+            Assert.Equal(new[] { "BENCH", "BENCH" }, privateDeck.BenchIds!.ToArray());
+            var ownerSession = migrated.AuthenticateTokenSession(
+                migrated.Login("tmigrateall", "password-123").Token)!;
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var history = migrated.ReadPublicDeckVersionPage(catalog, fixture.PublicationId,
+                new L12PublicDeckReadQuery(PageSize: 100), ownerSession);
+            Assert.Equal("ok", history.Status);
+            Assert.Equal(25, history.Page!.Total);
+            var firstVersion = migrated.ReadPublicDeckVersion(catalog, fixture.PublicationId, 1,
+                viewer: ownerSession);
+            Assert.Equal("ok", firstVersion.Status);
+            Assert.Equal(new[] { "C00" }, firstVersion.Detail!.Deck.CardIds.ToArray());
+            var restoredTournament = migrated.Tournament(ownerSession.Account, fixture.TournamentId)!;
+            Assert.Equal(new[] { "C00" }, Assert.Single(restoredTournament.Participants).Deck!.CardIds.ToArray());
             using var current = Open(migrated.TransactionalStoragePath);
-            Assert.Equal("8", Scalar(current, "SELECT value FROM storage_meta WHERE key='schema_version';"));
-            Assert.Equal("8", Scalar(current, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
+            Assert.Equal("9", Scalar(current, "SELECT value FROM storage_meta WHERE key='schema_version';"));
+            Assert.Equal("9", Scalar(current, "SELECT schema_version FROM platform_state WHERE singleton_id=1;"));
             Assert.Equal("compact-v1", Scalar(current,
                 "SELECT value FROM storage_meta WHERE key='deck_payload_format_state';"));
             Assert.Contains("payload_format", PayloadColumns(current));
@@ -95,6 +138,7 @@ public sealed class CompactDeckPayloadMigrationTests
             var copyPath = Path.Combine(root, "exit-copy.db");
             CopyDatabase(store.TransactionalStoragePath, copyPath);
             var compactHashes = PayloadHashes(copyPath);
+            L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(copyPath);
             L12PlatformStore.RevertCompactDeckPayloadStorageForRehearsal(copyPath);
 
             using var legacy = Open(copyPath);
@@ -127,6 +171,7 @@ public sealed class CompactDeckPayloadMigrationTests
             Assert.True(store.CreateDeck(owner.Id, Deck("first", "C1")).Success);
             Assert.True(store.CreateDeck(owner.Id, Deck("second", "C2")).Success);
             var database = store.TransactionalStoragePath;
+            L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(database);
             L12PlatformStore.RevertCompactDeckPayloadStorageForRehearsal(database);
             using (var corrupt = Open(database))
                 Execute(corrupt, """
@@ -166,7 +211,7 @@ public sealed class CompactDeckPayloadMigrationTests
             using (var connection = Open(store.TransactionalStoragePath))
             {
                 Execute(connection, damage == "future-schema"
-                    ? "UPDATE storage_meta SET value='9' WHERE key='schema_version'; UPDATE platform_state SET schema_version=9 WHERE singleton_id=1;"
+                    ? "UPDATE storage_meta SET value='10' WHERE key='schema_version'; UPDATE platform_state SET schema_version=10 WHERE singleton_id=1;"
                     : "UPDATE deck_payloads SET payload_format=99;");
             }
             var before = FullDatabaseProjection(store.TransactionalStoragePath);
@@ -182,7 +227,7 @@ public sealed class CompactDeckPayloadMigrationTests
         }
     }
 
-    private static (string OwnerId, string PublicationId, string OrphanHash) CreateRichStore(string path)
+    private static (string OwnerId, string PublicationId, string OrphanHash, string TournamentId) CreateRichStore(string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var store = new L12PlatformStore(path) { PrivateDeckObjectPersistenceEnabled = true };
@@ -202,7 +247,7 @@ public sealed class CompactDeckPayloadMigrationTests
             PublicationVersion = 1,
             BenchIds = ["BENCH", "BENCH"],
         };
-        Assert.True(store.CreateDeck(owner.Id, bound).Success);
+        var boundDeck = Assert.IsType<L12AccountDeckView>(store.CreateDeck(owner.Id, bound).Deck);
         var deleted = store.CreateDeck(owner.Id, Deck("schema8-deleted", "ORPHAN")).Deck!;
         Assert.True(store.DeleteDeck(owner.Id, deleted.Id, deleted.Revision).Success);
         var orphan = store.CreateDeck(owner.Id, Deck("schema8-orphan", "UNREFERENCED")).Deck!;
@@ -213,18 +258,6 @@ public sealed class CompactDeckPayloadMigrationTests
             orphanHash = Scalar(connection,
                 "SELECT payload_hash FROM account_decks WHERE is_deleted=1 AND name='schema8-orphan';");
             Execute(connection, "DELETE FROM account_decks WHERE is_deleted=1 AND name='schema8-orphan';");
-            var tournamentHash = Scalar(connection,
-                "SELECT payload_hash FROM account_decks WHERE is_deleted=0 AND name='schema8-bound';");
-            using var insert = connection.CreateCommand();
-            insert.CommandText = """
-                INSERT INTO tournament_deck_refs(tournament_id,account_id,payload_hash,submitted_utc,locked_utc)
-                VALUES('synthetic-tournament',$account,$payload,$submitted,$locked);
-                """;
-            insert.Parameters.AddWithValue("$account", owner.Id);
-            insert.Parameters.AddWithValue("$payload", tournamentHash);
-            insert.Parameters.AddWithValue("$submitted", DateTimeOffset.UtcNow.AddMinutes(-1).ToString("O"));
-            insert.Parameters.AddWithValue("$locked", DateTimeOffset.UtcNow.ToString("O"));
-            insert.ExecuteNonQuery();
             Execute(connection, """
                 UPDATE account_decks SET
                     alternate_art_selections_json='{"C00":"ALT-A"}',
@@ -232,7 +265,17 @@ public sealed class CompactDeckPayloadMigrationTests
                 WHERE name='schema8-bound';
                 """);
         }
-        return (owner.Id, published.Id, orphanHash);
+        var refreshed = new L12PlatformStore(path) { PrivateDeckObjectPersistenceEnabled = true };
+        var refreshedOwner = refreshed.Account(owner.Id)!;
+        var tournament = refreshed.CreateTournament(refreshedOwner,
+            new L12TournamentCreatePayload("schema8-rich-tournament", "swiss", "public", 8,
+                DateTimeOffset.UtcNow.AddHours(1), "S01/S02", "schema8-rich", "after", "season",
+                string.Empty, 50, 5, RegistrationVisibility: "public", LateGraceMinutes: 5),
+            new L12AdminAuditContext("schema8-rich-tournament-create"), true);
+        tournament = refreshed.PreCheckInTournament(refreshedOwner, tournament.Id,
+            new L12TournamentPreCheckInPayload(boundDeck.Name, string.Empty, boundDeck.Id), tournament.Version,
+            new L12AdminAuditContext("schema8-rich-tournament-lock"), true);
+        return (owner.Id, published.Id, orphanHash, tournament.Id);
     }
 
     private static L12PresetDeckDefinition Deck(string name, string card) => new()
