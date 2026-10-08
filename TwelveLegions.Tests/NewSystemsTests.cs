@@ -2136,20 +2136,40 @@ public sealed class NewSystemsTests
         Assert.True(recovery.Handle(0, new L12Command("activateAbility", "master-0", Ability: "nonLethal")).Accepted);
         while (recovery.State.PendingPrompts.FirstOrDefault(prompt => prompt.Continuation == "stack-response") is { } response)
             Assert.True(recovery.Handle(response.PlayerIndex, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
-        var trigger = Assert.Single(recovery.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
-        Assert.True(recovery.Handle(0, new L12Command("resolvePrompt", PromptId: trigger.PromptId, Choice: "mode:use")).Accepted);
-        while (recovery.State.PendingPrompts.FirstOrDefault()?.Continuation == "pending-activation")
+        var factionRecoveryActivated = false;
+        for (var safety = 0; safety < 30 && recovery.State.PendingPrompts.Count > 0; safety++)
         {
-            var otherDeclaration = recovery.State.PendingPrompts[0];
-            Assert.True(recovery.Handle(otherDeclaration.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: otherDeclaration.PromptId, Choice: "mode:none")).Accepted);
+            var prompt = Assert.Single(recovery.State.PendingPrompts);
+            string choice;
+            if (prompt.Kind == "response") choice = "pass";
+            else if (prompt.SourceCardId == "S01-01C1")
+            {
+                Assert.False(factionRecoveryActivated);
+                choice = "mode:use";
+                factionRecoveryActivated = true;
+            }
+            else
+            {
+                // Complete Yang Jian's generated Hound interaction before the
+                // resource-zero trigger. Do not assume the first declaration is the faction.
+                Assert.Equal("S02-01S1", prompt.SourceCardId);
+                choice = prompt.ValidChoices.Contains("mode:none") ? "mode:none" : "skip";
+            }
+            Assert.Contains(choice, prompt.ValidChoices);
+            var result = recovery.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+            Assert.True(result.Accepted, $"{result.Error}; source={prompt.SourceCardId}; "
+                + $"text={prompt.Text}; choices={string.Join(',', prompt.ValidChoices)}");
         }
-        while (recovery.State.PendingPrompts.FirstOrDefault()?.Kind == "response")
+        Assert.True(factionRecoveryActivated, JsonSerializer.Serialize(new
         {
-            var response = recovery.State.PendingPrompts[0];
-            Assert.True(recovery.Handle(response.PlayerIndex,
-                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
-        }
+            keys = recoveryPlayer.UsedAbilities,
+            prompts = recovery.State.PendingPrompts.Select(prompt => new { prompt.Continuation, prompt.SourceCardId }),
+            batches = recovery.State.PendingTriggerBatches,
+            candidates = recovery.State.PendingTriggerStackCandidates,
+            events = recovery.State.Events.Select(action => new { action.Type, action.Text }),
+        }));
+        Assert.Empty(recovery.State.PendingPrompts);
         Assert.Equal(2, recoveryPlayer.Morale.Count);
         Assert.All(recoveryPlayer.Morale, card => Assert.True(card.Tapped));
     }

@@ -115,14 +115,27 @@ public sealed class BattlePlayerTroopsModifierPresentationTests
         Settle(route, game, item, prompt);
         var delta = route.StartsWith("egil", StringComparison.Ordinal) ? -2000
             : route.Contains("inahime", StringComparison.Ordinal) || route == "inaihime-buff" ? 1000 : 2000;
-        Assert.Equal(1000 + delta, target.Troops);
+        var original = Assert.Single(game.State.Events, action => action.PlayerTroopsModifier is not null);
+        var frozenTarget = Assert.Single(original.Cards);
+        Assert.Equal(1000 + delta, frozenTarget.BaseTroops + Assert.Single(frozenTarget.TimedModifiers).TroopsDelta);
+        if (1000 + delta <= 0)
+        {
+            // Finishing now runs the real state checkpoint. A lethal modifier
+            // moves the card and resets its private-zone state, never the frozen fact.
+            Assert.DoesNotContain(game.State.Players[target.OwnerIndex!.Value].Field.SelectMany(row => row),
+                card => card?.InstanceId == target.InstanceId);
+            Assert.Single(game.State.Players[target.OwnerIndex.Value].Graveyard,
+                card => card.InstanceId == target.InstanceId);
+            Assert.Equal(target.BaseTroops, target.Troops);
+            Assert.Empty(target.TimedModifiers);
+        }
+        else Assert.Equal(1000 + delta, target.Troops);
         Assert.Equal(beforeCost, target.CostModifier);
         Assert.Empty(twin.TimedModifiers);
-        var modifier = Assert.Single(target.TimedModifiers);
+        var modifier = Assert.Single(frozenTarget.TimedModifiers);
         Assert.Equal(delta, modifier.TroopsDelta);
         Assert.Equal(0, modifier.CostDelta);
         Assert.Equal(7, modifier.ExpiresAfterTurn);
-        var original = Assert.Single(game.State.Events, action => action.PlayerTroopsModifier is not null);
         var expected = new L12PlayerTroopsModifier(target.InstanceId, target.OwnerIndex, delta, "this-turn");
         Assert.Equal(expected, original.PlayerTroopsModifier);
         Assert.Equal("troops-modifier", original.Type);

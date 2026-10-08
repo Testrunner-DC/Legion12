@@ -1162,18 +1162,15 @@ public sealed class PromptNarrativeMatrixTests
 
         ResolvePromptChoice(success.Game, slot, "0:1");
         Assert.Same(success.FirstSanada, success.Game.State.Players[controller].Field[0][1]);
-        var morale = Assert.Single(success.Game.State.PendingPrompts, prompt =>
-            prompt.Data.GetValueOrDefault("action") == "s2-takeda-ready-morale");
-        foreach (var generated in success.Game.State.PendingPrompts.Where(prompt => prompt != morale).ToArray())
-            success.Game.State.PendingPrompts.Remove(generated);
+        var morale = Assert.Single(success.Game.State.PendingPrompts);
+        Assert.Equal("s2-takeda-ready-morale", morale.Data.GetValueOrDefault("action"));
         AssertPresentation(morale, "武田信玄", "已经活跃登场", "不能跳过");
         Assert.Contains("不补偿，也不会改选", morale.Presentation!.Situation, StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
             $"对手正在选择效果对象");
 
         var selectedMorale = morale.ValidChoices[0];
-        success.Game.State.PendingPrompts.Remove(morale);
-        ContinueS2Faction(success.Game, success.Item, morale, selectedMorale);
+        ResolvePromptChoice(success.Game, morale, selectedMorale);
         Assert.False(success.Game.State.Players[controller].Morale
             .Single(card => card.InstanceId == selectedMorale).Tapped);
         Assert.Empty(success.Game.State.PendingPrompts);
@@ -1207,16 +1204,12 @@ public sealed class PromptNarrativeMatrixTests
             staleMorale.FirstSanada.InstanceId);
         var validSlot = Assert.Single(staleMorale.Game.State.PendingPrompts);
         ResolvePromptChoice(staleMorale.Game, validSlot, "0:1");
-        var staleMoralePrompt = Assert.Single(staleMorale.Game.State.PendingPrompts, prompt =>
-            prompt.Data.GetValueOrDefault("action") == "s2-takeda-ready-morale");
-        foreach (var generated in staleMorale.Game.State.PendingPrompts
-                     .Where(prompt => prompt != staleMoralePrompt).ToArray())
-            staleMorale.Game.State.PendingPrompts.Remove(generated);
+        var staleMoralePrompt = Assert.Single(staleMorale.Game.State.PendingPrompts);
+        Assert.Equal("s2-takeda-ready-morale", staleMoralePrompt.Data.GetValueOrDefault("action"));
         var staleMoraleId = staleMoralePrompt.ValidChoices[0];
         staleMorale.Game.State.Players[controller].Morale
             .Single(card => card.InstanceId == staleMoraleId).Tapped = false;
-        staleMorale.Game.State.PendingPrompts.Remove(staleMoralePrompt);
-        ContinueS2Faction(staleMorale.Game, staleMorale.Item, staleMoralePrompt, staleMoraleId);
+        ResolvePromptChoice(staleMorale.Game, staleMoralePrompt, staleMoraleId);
         Assert.Empty(staleMorale.Game.State.PendingPrompts);
         Assert.Contains(staleMorale.Game.State.Players[controller].Morale,
             card => card.InstanceId != staleMoraleId && card.Tapped);
@@ -2290,15 +2283,21 @@ public sealed class PromptNarrativeMatrixTests
         var firstSanada = Card("S01-0404", $"narrative-takeda-sanada-1-{suffix}-{controller}", controller);
         var secondSanada = Card("S01-0404", $"narrative-takeda-sanada-2-{suffix}-{controller}", controller);
         player.Hand.AddRange([firstSanada, secondSanada]);
-        AddMorale(game, controller, 2, $"takeda-followup-{suffix}");
-        foreach (var morale in player.Morale) morale.Tapped = true;
         var takeda = Card("S02-0401", $"narrative-takeda-followup-{suffix}-{controller}", controller);
-        player.Field[0][0] = takeda;
-        var item = LegacyStackItem($"narrative-takeda-followup-stack-{suffix}-{controller}",
-            controller, takeda, "enter", "武田信玄");
-        game.State.EffectStack.Add(item);
-
-        Assert.True(Assert.IsType<bool>(Invoke(game, "BeginTakedaFollowupWithinStack", item)));
+        player.Hand.Add(takeda);
+        player.Library.Add(Card("S01-0402", $"narrative-takeda-library-{suffix}-{controller}", controller));
+        AddMorale(game, controller, takeda.Cost + 2, $"takeda-followup-{suffix}");
+        game.State.ActivePlayer = controller;
+        Assert.True(game.Handle(controller, new L12Command("playCard", takeda.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:use", declaration.ValidChoices);
+        ResolvePromptChoice(game, declaration, "mode:use");
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-takeda-search", search.Data.GetValueOrDefault("action"));
+        ResolvePromptChoice(game, search, "skip");
+        foreach (var morale in player.Morale) morale.Tapped = true;
+        var item = Assert.Single(game.State.EffectStack, candidate => candidate.SourceInstanceId == takeda.InstanceId);
         return (game, Assert.Single(game.State.PendingPrompts), item, firstSanada, secondSanada);
     }
 

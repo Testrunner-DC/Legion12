@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261009-disaster-complete-effect-work",
+  "date": "2026-10-09",
+  "audience": "players",
+  "title": "天灾结算顺序",
+  "changes": [{
+    "category": "battle",
+    "text": "天灾等待当前效果、后续登场效果及阵亡触发全部处理完毕再结算；拉美西斯二世指定的军团先完成登场效果，手动响应和5秒关闭响应均遵循此顺序。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs"]
+  }]
+}

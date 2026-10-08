@@ -272,7 +272,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             && !string.IsNullOrWhiteSpace(command.PromptId)
             && State.PendingPrompts.Any(prompt => prompt.PromptId == command.PromptId
                 && prompt.PlayerIndex == playerIndex);
-        var reconciledPendingTransactions = ReconcilePendingActivationTransactions();
+        var reconciledPendingTransactions = WithinEffectWorkDispatch(ReconcilePendingActivationTransactions);
         if (reconciledPendingTransactions) State.Revision++;
 
         // Capture this before resolving the command: a disaster prompt/stack item may be
@@ -284,36 +284,47 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 && State.PendingPrompts.Any(prompt => prompt.PromptId == command.PromptId
                     && prompt.Continuation == "disaster-effect"));
 
-        var result = command.Type switch
+        // State-based deaths and resource triggers caused by this command are
+        // still current effect work. Publish the next stack/disaster boundary
+        // only after these producers have registered all of their successors,
+        // and before the command revision is incremented.
+        var result = WithinEffectWorkDispatch(() =>
         {
-            // If authoritative reconciliation invalidated the exact prompt that this
-            // player was submitting, the requested choice can no longer have an effect.
-            // Treat that stale acknowledgement as idempotently accepted: the orphan was
-            // already removed and its combat/stack continuation was safely resumed.
-            "resolvePrompt" when ownedPromptBeforeReconcile
-                && State.PendingPrompts.All(prompt => prompt.PromptId != command.PromptId) => CommandResult.Ok(),
-            "resolvePrompt" => ResolvePrompt(playerIndex, command),
-            "mulligan" => Mulligan(playerIndex, command.CardInstanceIds ?? []),
-            "advancePhase" => CommandResult.Reject("触发天灾至主要阶段由服务器自动结算"),
-            "playCard" => PlayCard(playerIndex, command),
-            "attack" => Attack(playerIndex, command),
-            "resolveDefense" => ResolveDefense(playerIndex, command),
-            "move" => Move(playerIndex, command),
-            "cavalryMove" => CavalryMove(playerIndex, command),
-            "activateAbility" => ActivateAbility(playerIndex, command),
-            "flipHidden" => FlipHidden(playerIndex, command.CardInstanceId),
-            "endTurn" => EndTurn(playerIndex),
-            "surrender" => Surrender(playerIndex),
-            _ => CommandResult.Reject("未知操作"),
-        };
+            var dispatched = command.Type switch
+            {
+                // If authoritative reconciliation invalidated the exact prompt that this
+                // player was submitting, the requested choice can no longer have an effect.
+                // Treat that stale acknowledgement as idempotently accepted: the orphan was
+                // already removed and its combat/stack continuation was safely resumed.
+                "resolvePrompt" when ownedPromptBeforeReconcile
+                    && State.PendingPrompts.All(prompt => prompt.PromptId != command.PromptId) => CommandResult.Ok(),
+                "resolvePrompt" => ResolvePrompt(playerIndex, command),
+                "mulligan" => Mulligan(playerIndex, command.CardInstanceIds ?? []),
+                "advancePhase" => CommandResult.Reject("触发天灾至主要阶段由服务器自动结算"),
+                "playCard" => PlayCard(playerIndex, command),
+                "attack" => Attack(playerIndex, command),
+                "resolveDefense" => ResolveDefense(playerIndex, command),
+                "move" => Move(playerIndex, command),
+                "cavalryMove" => CavalryMove(playerIndex, command),
+                "activateAbility" => ActivateAbility(playerIndex, command),
+                "flipHidden" => FlipHidden(playerIndex, command.CardInstanceId),
+                "endTurn" => EndTurn(playerIndex),
+                "surrender" => Surrender(playerIndex),
+                _ => CommandResult.Reject("未知操作"),
+            };
 
+            if (dispatched.Accepted)
+            {
+                if (State.Phase != L12Phase.GameOver)
+                {
+                    ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+                    FlushStarterResourceTriggerBatches();
+                }
+            }
+            return dispatched;
+        });
         if (result.Accepted)
         {
-            if (State.Phase != L12Phase.GameOver)
-            {
-                ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
-                FlushStarterResourceTriggerBatches();
-            }
             State.Revision++;
             CheckWinner();
         }
@@ -331,7 +342,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, L12RecipientVisibility.Policy visibility)
     {
-        if (ReconcilePendingActivationTransactions()) State.Revision++;
+        if (WithinEffectWorkDispatch(ReconcilePendingActivationTransactions)) State.Revision++;
         if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion)
             RecalculateContinuousTroops();
         else PrepareV2ProjectionState();

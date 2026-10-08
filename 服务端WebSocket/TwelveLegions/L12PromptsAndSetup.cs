@@ -927,7 +927,89 @@ public sealed partial class L12GameEngine
             .Append(State.ActiveDisaster).FirstOrDefault(item => item?.InstanceId == instanceId);
     }
 
+    // A synchronous resolver can finish its current item before it registers
+    // delegated work. Empty state containers during that call are not an idle
+    // boundary. These fields are call-stack bookkeeping, never checkpoint data.
+    private int _effectWorkDispatchDepth;
+    private bool _stackProgressRequested;
+    private bool _stackProgressDraining;
+    private bool _stackProgressSuppressStateDeathTriggers;
+
+    private T WithinEffectWorkDispatch<T>(Func<T> continuation)
+    {
+        _effectWorkDispatchDepth++;
+        var returnedNormally = false;
+        try
+        {
+            var result = continuation();
+            returnedNormally = true;
+            return result;
+        }
+        finally
+        {
+            _effectWorkDispatchDepth--;
+            if (_effectWorkDispatchDepth == 0)
+            {
+                if (returnedNormally) DrainRequestedStackProgress();
+                else
+                {
+                    _stackProgressRequested = false;
+                    _stackProgressSuppressStateDeathTriggers = false;
+                }
+            }
+        }
+    }
+
+    private void RequestStackProgress(bool suppressStateDeathTriggers = false)
+    {
+        _stackProgressRequested = true;
+        _stackProgressSuppressStateDeathTriggers |= suppressStateDeathTriggers
+            || State.Phase == L12Phase.Disaster
+            || State.EffectStack.Any(item => item.Trigger == "disaster");
+        if (_effectWorkDispatchDepth == 0) DrainRequestedStackProgress();
+    }
+
+    private void DrainRequestedStackProgress()
+    {
+        if (_effectWorkDispatchDepth != 0 || _stackProgressDraining) return;
+        _stackProgressDraining = true;
+        try
+        {
+            while (_stackProgressRequested)
+            {
+                _stackProgressRequested = false;
+                if (State.Phase == L12Phase.GameOver)
+                {
+                    _stackProgressSuppressStateDeathTriggers = false;
+                    return;
+                }
+                ContinueFinishedStackProgress();
+                ClearStaleLethalEventProtections();
+            }
+        }
+        catch
+        {
+            _stackProgressRequested = false;
+            _stackProgressSuppressStateDeathTriggers = false;
+            throw;
+        }
+        finally
+        {
+            _stackProgressDraining = false;
+        }
+    }
+
     private CommandResult ResolvePromptCore(int playerIndex, L12Command command)
+        => WithinEffectWorkDispatch(() =>
+        {
+            var result = ResolvePromptWithinEffectWork(playerIndex, command);
+            // Declining a declaration can end current work without creating or
+            // finishing a stack item. Resume its resource/trigger tail as well.
+            if (result.Accepted) RequestStackProgress();
+            return result;
+        });
+
+    private CommandResult ResolvePromptWithinEffectWork(int playerIndex, L12Command command)
     {
         if (string.IsNullOrWhiteSpace(command.PromptId)) return CommandResult.Reject("缺少 promptId");
         var prompt = State.PendingPrompts.FirstOrDefault(item => item.PromptId == command.PromptId);
@@ -1908,8 +1990,19 @@ public sealed partial class L12GameEngine
             || window.PriorityPlayer != priorityPlayer || prompt.PlayerIndex != priorityPlayer
             || prompt.StackItemId != stackItemId || State.EffectStack.LastOrDefault()?.StackItemId != stackItemId)
             return false;
-        State.PendingPrompts.Remove(prompt);
-        PassPriority(priorityPlayer);
+        var suppressStateDeathTriggers = State.Phase == L12Phase.Disaster
+            || State.EffectStack.Any(item => item.Trigger == "disaster");
+        WithinEffectWorkDispatch(() =>
+        {
+            State.PendingPrompts.Remove(prompt);
+            PassPriority(priorityPlayer);
+            if (State.Phase != L12Phase.GameOver)
+            {
+                ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+                FlushStarterResourceTriggerBatches();
+            }
+            return true;
+        });
         State.Revision++;
         return true;
     }
@@ -2485,6 +2578,13 @@ public sealed partial class L12GameEngine
     }
 
     private void ResolveTopStack()
+        => WithinEffectWorkDispatch(() =>
+        {
+            ResolveTopStackWithinEffectWork();
+            return true;
+        });
+
+    private void ResolveTopStackWithinEffectWork()
     {
         if (State.EffectStack.Count == 0)
         {
@@ -2610,6 +2710,8 @@ public sealed partial class L12GameEngine
             && State.PendingPrompts.Any(prompt => prompt.PromptId == promptId))
             return;
         item.Data.Remove("pendingEffectKillPromptId");
+        var suppressStateDeathTriggers = State.Phase == L12Phase.Disaster
+            || item.Trigger == "disaster";
         var resultStatus = TrackStackCompletion(item);
         AddEffectResultEvent(item, resultStatus);
         QueueNextTrialCompletionSegment(item);
@@ -2664,6 +2766,37 @@ public sealed partial class L12GameEngine
             State.IsResolvingStack = false;
             return;
         }
+        RequestStackProgress(suppressStateDeathTriggers);
+    }
+
+    private void ContinueFinishedStackProgress()
+    {
+        // A generated interaction or a delegated declaration remains part of
+        // the current work, even when its original stack item was removed.
+        if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+            || State.ResponseWindow is not null)
+        {
+            if (State.EffectStack.Count == 0) State.IsResolvingStack = false;
+            return;
+        }
+        // The pump can resolve a lower/unrespondable continuation after the
+        // command's own state check. Its deaths and resource triggers are still
+        // current work, not a reason to publish the next disaster early.
+        var suppressStateDeathTriggers = _stackProgressSuppressStateDeathTriggers;
+        _stackProgressSuppressStateDeathTriggers = false;
+        WithinEffectWorkDispatch(() =>
+        {
+            ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+            FlushStarterResourceTriggerBatches();
+            return true;
+        });
+        if (State.Phase == L12Phase.GameOver) return;
+        if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+            || State.ResponseWindow is not null)
+        {
+            if (State.EffectStack.Count == 0) State.IsResolvingStack = false;
+            return;
+        }
         if (State.EffectStack.Count > 0)
         {
             if (State.IsResolvingStack) ResolveTopStack();
@@ -2705,7 +2838,7 @@ public sealed partial class L12GameEngine
                 || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)
                 || State.EffectStack.Count > 0) return;
         }
-        AfterStackSettled();
+        AfterStackSettledWithinProgress();
     }
 
     private void TrySettleScheduledDisasterIfIdle()
@@ -2725,6 +2858,18 @@ public sealed partial class L12GameEngine
     }
 
     private void AfterStackSettled()
+    {
+        // This entry has always been an idle-boundary check. It must not open
+        // or restart a still-held stack; Finish owns that progress request.
+        if (State.EffectStack.Count > 0 || State.DeferredEffectStack.Count > 0
+            || State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0
+            || State.PendingActivations.Count > 0 || State.PendingPrompts.Count > 0
+            || State.ResponseWindow is not null)
+            return;
+        RequestStackProgress();
+    }
+
+    private void AfterStackSettledWithinProgress()
     {
         if (State.EffectStack.Count > 0
             || State.DeferredEffectStack.Count > 0
