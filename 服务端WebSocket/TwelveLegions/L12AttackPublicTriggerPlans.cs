@@ -49,10 +49,11 @@ public sealed partial class L12GameEngine
         => trigger.Equals("attack", StringComparison.OrdinalIgnoreCase)
             && AttackPublicTriggerPlans.ContainsKey(cardId);
 
-    private bool TryQueueAttackPublicTriggerCandidates(int controller, L12CardInstance source, string trigger,
+    private IReadOnlyList<L12TriggerCandidate>? BuildAttackPublicTriggerCandidates(int controller,
+        L12CardInstance source, string trigger,
         string text, IEnumerable<string>? targets, IReadOnlyDictionary<string, string>? data)
     {
-        if (!HasAttackPublicTriggerDeclarationPlan(source.CardId, trigger)) return false;
+        if (!HasAttackPublicTriggerDeclarationPlan(source.CardId, trigger)) return null;
 
         L12TriggerCandidate Candidate(string planId, string candidateText, bool complete = false)
         {
@@ -68,13 +69,11 @@ public sealed partial class L12GameEngine
 
         if (source.CardId == "S02-0608")
         {
-            var candidates = new List<L12TriggerCandidate>
-            {
+            return
+            [
                 Candidate("richard-defense", "进攻时：对方抵挡/支援需额外弃置1张手牌", complete: true),
                 Candidate("richard-squires", "进攻时：可弃置侍从骑士使兵力增加"),
-            };
-            QueueTriggerCandidates(candidates);
-            return true;
+            ];
         }
 
         if (source.CardId == "S02-0617")
@@ -85,13 +84,19 @@ public sealed partial class L12GameEngine
             };
             if (PublicLegions(State.Players[controller]).Any(card => card.CardId == "S02-0608"))
                 candidates.Add(Candidate("robin-draw", "进攻时：可抽牌1张"));
-            QueueTriggerCandidates(candidates);
-            return true;
+            return candidates;
         }
 
         var simpleBuff = L12SimpleSelfTroopBuffTriggerEffects.Find(source.CardId, trigger);
-        QueueTriggerCandidates([Candidate(AttackPublicTriggerPlans[source.CardId].PlanId,
-            simpleBuff?.SettlementText ?? text)]);
+        return [Candidate(AttackPublicTriggerPlans[source.CardId].PlanId, simpleBuff?.SettlementText ?? text)];
+    }
+
+    private bool TryQueueAttackPublicTriggerCandidates(int controller, L12CardInstance source, string trigger,
+        string text, IEnumerable<string>? targets, IReadOnlyDictionary<string, string>? data)
+    {
+        var candidates = BuildAttackPublicTriggerCandidates(controller, source, trigger, text, targets, data);
+        if (candidates is null) return false;
+        QueueTriggerCandidates(candidates);
         return true;
     }
 

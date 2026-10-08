@@ -935,8 +935,15 @@ public sealed partial class L12GameEngine
             {
                 var candidates = new List<L12TriggerCandidate>();
                 if (hasPrintedAttackerAttackTiming)
-                    candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "attack",
-                        "进攻方【进攻时】效果"));
+                {
+                    var attackCandidates = BuildAttackPublicTriggerCandidates(playerIndex, attacker, "attack",
+                        "进攻方【进攻时】效果", targets: null, data: null);
+                    if (attackCandidates is null)
+                        candidates.Add(CreateTriggerCandidate(playerIndex, attacker, "attack",
+                            "进攻方【进攻时】效果"));
+                    else
+                        candidates.AddRange(attackCandidates);
+                }
                 candidates.Add(kagutsuchiCandidate);
                 QueueTriggerCandidates(candidates);
             }
