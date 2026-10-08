@@ -30,7 +30,8 @@ const detailCard = ref<DeckCard | null>(null)
 const ruleMedia = ref<SiteMedia[]>([])
 const openRulingEditors = ref<Set<string>>(new Set())
 const busy = ref(false)
-const publishingId = ref('')
+const publishingCenterIds = ref(new Set<string>())
+const publishingRulingIds = ref(new Set<string>())
 const selectedSource = ref('')
 const sourceQuery = ref('')
 const sourceStates = { 'pending-review': '待梳理', replaced: '已替代', 'conflict-flagged': '发现冲突' } as const
@@ -335,21 +336,24 @@ async function preview() {
   } catch (error) { notice(error instanceof Error ? error.message : '发布预览失败') }
 }
 async function publishRuling(item: RuleRuling) {
-  publishingId.value = item.id
+  const itemId = item.id
+  if (publishingRulingIds.value.has(itemId)) return
+  publishingRulingIds.value.add(itemId)
   try {
     normalizeAllRulingProducts()
     const saved = await adminApi.saveContentDraft('rules.rulings', serializeRulingDocument(entries.value), rulingVersion.value)
-    const published = await adminApi.publishRuleItem('rules.rulings', 'entries', item.id, saved.version)
+    const published = await adminApi.publishRuleItem('rules.rulings', 'entries', itemId, saved.version)
     rulingVersion.value = published.version
     entries.value = parseRulingDocument(published.draftValue)
     publishedRulings.value = parseRulingDocument(published.publishedValue)
     history.value = await adminApi.contentBatches()
-    notice(`裁定 ${item.id} 已单独审核并发布；其他草稿未受影响`)
+    notice(`裁定 ${itemId} 已单独审核并发布；其他草稿未受影响`)
   } catch (error) { notice(error instanceof Error ? error.message : '裁定逐项发布失败') }
-  finally { publishingId.value = '' }
+  finally { publishingRulingIds.value.delete(itemId) }
 }
 async function publishCenterItem(collection: string, itemId: string) {
-  publishingId.value = itemId
+  if (publishingCenterIds.value.has(itemId)) return
+  publishingCenterIds.value.add(itemId)
   try {
     const saved = await adminApi.saveContentDraft('rules.center', ruleCenterDraft.value, centerVersion.value)
     const published = await adminApi.publishRuleItem('rules.center', collection, itemId, saved.version)
@@ -359,7 +363,7 @@ async function publishCenterItem(collection: string, itemId: string) {
     history.value = await adminApi.contentBatches()
     notice(`规则中心条目 ${itemId} 已单独审核并发布；其他草稿未受影响`)
   } catch (error) { notice(error instanceof Error ? error.message : '规则条目逐项发布失败') }
-  finally { publishingId.value = '' }
+  finally { publishingCenterIds.value.delete(itemId) }
 }
 onMounted(load)
 </script>
@@ -385,7 +389,7 @@ onMounted(load)
             <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><select v-model="item.row.mediaAssetId"><option value="">不插入图片</option><option v-for="media in ruleMedia" :key="media.id" :value="media.id">{{ media.altText || media.contentHash.slice(0, 12) }}</option></select><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
             <label v-if="item.collection !== 'coreBlocks'">来源说明<input v-model.trim="item.row.sourceRef" maxlength="300"></label><label>生效时间（北京时间，可留空）<input :value="effectiveInput(String(item.row.effectiveAt || ''))" type="datetime-local" @input="setCenterEffective(item.row, ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingId === item.id" @click="publishCenterItem(item.collection, item.id)">{{ publishingId === item.id ? '发布中…' : '审核并发布此项' }}</button></div></template>
+          <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem(item.collection, item.id)">{{ publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template>
           <div v-if="workspace === 'published'" class="item-actions published-order-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">退回并上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">退回并下移</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除并取消公开</button></div>
         </details>
       </section>
@@ -403,7 +407,7 @@ onMounted(load)
             <div class="derived-products"><span>自动归属产品</span><div><b v-for="product in row.item.productIds" :key="product">{{ product }}</b><em v-if="!row.item.productIds.length">选择关联卡牌后自动生成</em></div><small>保存与发布时按规范卡牌目录重新计算，不可手工修改。</small></div>
             <label>搜索标签（逗号分隔）<input :value="join(row.item.tags)" @change="normalizeList(row.item, 'tags', ($event.target as HTMLInputElement).value)"></label><label>原始来源 ID（逗号分隔）<input :value="join(row.item.sourceIds)" @change="normalizeList(row.item, 'sourceIds', ($event.target as HTMLInputElement).value)"></label><label class="wide">替代的旧条目 ID（逗号分隔）<input :value="join(row.item.supersedes)" @change="normalizeList(row.item, 'supersedes', ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
-          <div class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">保存此项</button><button v-if="canDraft && row.state === 'draft'" class="danger" @click="removeRuling(row.index)">移除草稿</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingId === row.item.id" @click="publishRuling(row.item)">{{ publishingId === row.item.id ? '发布中…' : '审核并发布此项' }}</button></div></template></template>
+          <div class="item-actions"><button v-if="canDraft" @click="saveRulingItem(row.item)">保存此项</button><button v-if="canDraft && row.state === 'draft'" class="danger" @click="removeRuling(row.index)">移除草稿</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingRulingIds.has(row.item.id)" @click="publishRuling(row.item)">{{ publishingRulingIds.has(row.item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template></template>
         </details>
       </section>
       <p v-if="!activeCenterItems.length && !activeRulingItems.length" class="empty">此工作区暂无对象</p>

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261009-rule-item-publication-busy",
+  "date": "2026-10-09",
+  "audience": "internal",
+  "reason": "管理员规则审核发布采用逐条目独立忙碌状态，防止并发条目提前解除另一条目的操作锁；不改玩家资料、布局、权限或版本冲突校验。",
+  "paths": ["opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue"]
+}

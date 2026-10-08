@@ -1,6 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ruleCenterGroups, ruleCenterTemplateContract } from './rule-center-template-contract.mjs'
+import './test-a3-rule-center-template-contract.mjs'
+import './test-rule-item-publication-busy.mjs'
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = resolve(frontendRoot, '..')
@@ -23,6 +26,10 @@ for (const token of ['compareCardNumbers', 'numeric: true', 'rulingCardSortKey',
   assert(ordering.includes(token), `ruling ordering helper missing ${token}`)
 
 const player = readFrontend('src/l12/site/RuleCenterPage.vue')
+const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
+const templateContract = ruleCenterTemplateContract({ player, admin })
+for (const [name, predicates] of ruleCenterGroups(templateContract))
+  assert(predicates.every(Boolean), `template family missing ${name}`)
 assert((player.match(/getPublicContentBatch\(/g) ?? []).length >= 2, 'initial and resource refresh paths must use public batch reads')
 assert(!player.includes("getPublicContent('rules."), 'rule center must not fan out single-content requests')
 assert(!player.includes('setInterval('), 'rule center must not poll')
@@ -48,17 +55,13 @@ for (const token of ['cardArchiveProducts', 'canonicalProductRanks', 'compareCar
 assert(player.includes('width:min(100%,1680px)'), 'rule center content must remain bounded on ultra-wide screens')
 assert(player.includes('compareCardRulingsByNumber(left, right') && player.includes('compareRulingsByScoreAndDate(left, right'),
   'card rulings must remain ordered by descending canonical card number')
-assert(player.includes('v-if="openIds.has(item.id)"')
-  && player.includes("if (next.has(item.id) && item.cardIds.length) void ensureCardCatalog()"),
-  'linked card art must stay behind the expanded ruling boundary')
 assert(/watch\(\[tab, faqMode\],[\s\S]*?ensureCardCatalog\(\)[\s\S]*?\}, \{ immediate: true \}\)/.test(player),
   'direct card FAQ entry must initialize card title metadata immediately')
-for (const token of ['coreTableOfContents', 'scrollToCoreChapter', 'aria-label="规则手册章节目录"', 'rule-block-image', 'block.image.mobileUrl'])
+for (const token of ['coreTableOfContents', 'scrollToCoreChapter', 'rule-block-image', 'block.image.mobileUrl'])
   assert(player.includes(token), `core rule chapter directory or managed image presentation missing ${token}`)
 assert(player.includes('ruleResults.value') && player.includes("const chapter = block.chapter?.trim() || '其他规则'"),
   'core directory must derive from the currently filtered published blocks')
 
-const admin = readFrontend('src/l12/site/AdminRuleRulingsPanel.vue')
 for (const token of ['SingleCardPicker', 'rule-item-publish', 'ruleHistory', 'historyChanges', '审核并发布此项', '高级：查看原始结构（只读）'])
   assert(admin.includes(token), `admin rule workflow missing ${token}`)
 for (const token of ["'drafts'", "'sources'", "'published'", "'history'", 'workspaceCounts', 'admin-item-preview', '退回修改', '保存此项'])
@@ -69,12 +72,8 @@ for (const token of ["workspace === 'published'", 'published-preview', 'publishe
   assert(admin.includes(token), `published read-only workflow missing ${token}`)
 for (const token of ['addCenterItem', 'moveCenterItem', 'deleteCenterItem', 'createRuleItem', 'deleteRuleItem', 'MediaUploadField', 'kind="rule"'])
   assert(admin.includes(token), `rule material block management missing ${token}`)
-assert(!admin.includes('稳定 ID<input v-model.trim="item.row.id"'), 'rule material stable IDs must not be editable')
-assert(!admin.includes('页码（可留空）') && !admin.includes('>主题<input v-model.trim="item.row.topic"')
-  && !admin.includes('>栏目<input :value="item.collection"'), 'page, topic and raw collection fields must stay out of the rule material editor')
 assert(admin.includes('width:min(100%,1680px)'), 'rule review workspace must remain bounded on ultra-wide screens')
 assert(!admin.includes('产品（逗号分隔）'), 'card ruling products must not remain manually editable')
-assert(!admin.includes('class="publish-queue"'), 'publishing controls must stay next to each reviewed object')
 assert(!admin.includes('移动实体'), 'admin ruling copy must use game terminology')
 
 const store = readRepo('服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs')
