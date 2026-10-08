@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261009-catalog-retry",
+  "date": "2026-10-09",
+  "audience": "players",
+  "title": "卡牌资料读取重试",
+  "changes": [
+    {
+      "category": "content",
+      "text": "图鉴、规则中心和牌库编辑器的卡牌资料读取失败后，重试可以正确重新获取；正常读取仍避免重复请求。",
+      "paths": ["opcgpro-vue/src/l12/decks.ts"]
+    }
+  ]
+}

@@ -632,7 +632,7 @@ export async function loadPrivatePublicationSource(publicationId: string,
 
 export function loadDeckCatalog(): Promise<DeckCard[]> {
   if (catalogPromise) return catalogPromise
-  catalogPromise = Promise.all([
+  const request = Promise.all([
     fetch(deploymentPath('/data/l12/cards.s1.json'), { cache: 'no-store' }),
     fetch(deploymentPath('/data/l12/cards.lookup.json'), { cache: 'no-store' }),
     fetch(deploymentPath('/data/l12/cards.st.json'), { cache: 'no-store' }),
@@ -646,7 +646,11 @@ export function loadDeckCatalog(): Promise<DeckCard[]> {
       .map(normalizeMoraleCatalogCard)
       .map(normalizeCardDimensions)
   })
-  return catalogPromise
+  catalogPromise = request
+  void request.catch(() => {
+    if (catalogPromise === request) catalogPromise = null
+  })
+  return request
 }
 
 export function loadSavedDecksState() {

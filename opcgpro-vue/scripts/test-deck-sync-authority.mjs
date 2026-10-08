@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { reactive, watch } from 'vue'
 import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import './test-deck-catalog-cache.mjs'
 
 const deckSourceUrl = new URL('../src/l12/decks.ts', import.meta.url)
 const editorSourceUrl = new URL('../src/l12/L12DeckEditor.vue', import.meta.url)
