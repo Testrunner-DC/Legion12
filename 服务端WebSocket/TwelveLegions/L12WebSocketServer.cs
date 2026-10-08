@@ -231,12 +231,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
-            if (match is not null && match.Commands.Count == 0)
-                return ApiError(request, "replay_payload_expired",
-                    "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
-                    StatusCodes.Status410Gone);
-            return match is null ? Results.NotFound() : Results.Ok(match);
+            try
+            {
+                var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
+                if (match is not null && match.Commands.Count == 0)
+                    return ApiError(request, "replay_payload_expired",
+                        "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
+                        StatusCodes.Status410Gone);
+                return match is null ? Results.NotFound() : Results.Ok(match);
+            }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (player-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，仍可查看对局结果。",
+                    StatusCodes.Status409Conflict);
+            }
         });
         _app.MapGet("/api/admin/matches", async (HttpRequest request) =>
         {
@@ -294,6 +305,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         StatusCodes.Status410Gone);
                 return match is null ? Results.NotFound() : Results.Ok(match);
             }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (admin-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，对局档案仍可查看。",
+                    StatusCodes.Status409Conflict);
+            }
             catch (L12ReplayPayloadTooLargeException error)
             {
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-rejected",
@@ -337,6 +356,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
                 return page is null ? Results.NotFound() : Results.Ok(page);
+            }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (admin-page; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，对局档案仍可查看。",
+                    StatusCodes.Status409Conflict);
             }
             catch (ArgumentException error)
             {

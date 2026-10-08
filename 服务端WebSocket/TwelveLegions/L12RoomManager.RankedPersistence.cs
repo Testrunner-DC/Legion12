@@ -323,7 +323,6 @@ public sealed partial class L12RoomManager
 
     private L12GameEngine ReplayRankedEngine(L12RankedRecoverySource source)
     {
-        var replayNow = DateTimeOffset.UnixEpoch;
         L12GameEngine engine;
         long expectedSequence;
         if (source.StorageVersion >= MatchRecorder.JournalStorageVersion)
@@ -332,7 +331,8 @@ public sealed partial class L12RoomManager
                 ?? throw new InvalidDataException("v2 排位缺少状态检查点");
             engine = L12GameEngine.RestoreCheckpoint(_catalog, checkpoint.StateJson,
                 checkpoint.RandomState, checkpoint.CardFactSignalSequence,
-                checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability, () => replayNow);
+                checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability,
+                _utcNow);
             if (engine.State.Revision != checkpoint.Revision
                 || !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
                     StringComparison.Ordinal))
@@ -354,7 +354,7 @@ public sealed partial class L12RoomManager
                 : null;
             engine = new L12GameEngine(_catalog, source.MatchId, source.RoomCode, source.Seed,
                 source.PlayerNames, source.Decks, disasterMode: disasterMode, operationsPolicy: policy,
-                effectPresentationSnapshot: presentationSnapshot, utcNow: () => replayNow);
+                effectPresentationSnapshot: presentationSnapshot, utcNow: _utcNow);
             if (!string.Equals(engine.ComputeStateHash(), HashStateJson(source.InitialStateJson),
                     StringComparison.Ordinal))
                 throw new InvalidDataException("初始状态重放校验失败");
@@ -373,38 +373,48 @@ public sealed partial class L12RoomManager
             if (recorded.Sequence != ++expectedSequence)
                 throw new InvalidDataException("排位命令序号不连续");
             var type = recorded.CommandType;
-            replayNow = DateTimeOffset.Parse(recorded.ReceivedUtc);
+            var receivedUtc = DateTimeOffset.Parse(recorded.ReceivedUtc);
+            var internalCommand = L12RecordedCommandOrigin.AllowsInternalReplay(type,
+                recorded.PlayerIndex, recorded.Accepted);
             CommandResult outcome;
-            if (string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+            if (internalCommand && string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
             {
-                var winner = recorded.AuthorityWinner;
-                var reason = recorded.AuthorityWinnerReason ?? "排位权威裁决";
-                if (winner is null && string.Equals(source.Runtime?.ConclusionKind,
-                        L12GameEngine.AgreedDrawConclusionKind, StringComparison.OrdinalIgnoreCase))
-                    engine.ConcludeAgreedDrawByAuthority(reason);
-                else
-                    engine.ConcludeByAuthority(winner, reason);
-                outcome = CommandResult.Ok();
+                outcome = engine.ReplayRecordedCommand(receivedUtc, () =>
+                {
+                    var winner = recorded.AuthorityWinner;
+                    var reason = recorded.AuthorityWinnerReason ?? "排位权威裁决";
+                    if (winner is null && string.Equals(source.Runtime?.ConclusionKind,
+                            L12GameEngine.AgreedDrawConclusionKind, StringComparison.OrdinalIgnoreCase))
+                        engine.ConcludeAgreedDrawByAuthority(reason);
+                    else
+                        engine.ConcludeByAuthority(winner, reason);
+                    return CommandResult.Ok();
+                });
             }
-            else if (string.Equals(type, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
+            else if (internalCommand && string.Equals(type, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
             {
                 using var document = JsonDocument.Parse(recorded.CommandJson);
-                outcome = engine.ApplyResponsePreference(recorded.PlayerIndex,
-                    document.RootElement.GetProperty("responseMode").GetString());
+                outcome = engine.ReplayRecordedCommand(receivedUtc,
+                    () => engine.ApplyResponsePreference(recorded.PlayerIndex,
+                        document.RootElement.GetProperty("responseMode").GetString()));
             }
-            else if (string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
+            else if (internalCommand && string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
             {
                 using var document = JsonDocument.Parse(recorded.CommandJson);
                 var autoClose = L12ResponseAutoCloseRecordedCommand.Parse(document.RootElement);
-                engine.TryExpireResponseAutoClose(autoClose.PromptId, autoClose.StackItemId,
-                    autoClose.PriorityPlayer, autoClose.DeadlineUtc, autoClose.ObservedAtUtc);
-                outcome = CommandResult.Ok();
+                outcome = engine.ReplayRecordedCommand(autoClose.ObservedAtUtc, () =>
+                {
+                    engine.TryExpireResponseAutoClose(autoClose.PromptId, autoClose.StackItemId,
+                        autoClose.PriorityPlayer, autoClose.DeadlineUtc, autoClose.ObservedAtUtc);
+                    return CommandResult.Ok();
+                });
             }
             else
             {
                 var command = JsonSerializer.Deserialize<L12Command>(recorded.CommandJson, RankedRecoveryJson)
                     ?? throw new InvalidDataException("排位命令载荷为空");
-                outcome = engine.Handle(recorded.PlayerIndex, command);
+                outcome = engine.ReplayRecordedCommand(receivedUtc,
+                    () => engine.Handle(recorded.PlayerIndex, command));
             }
             if (outcome.Accepted != recorded.Accepted
                 || engine.State.Revision != recorded.Revision

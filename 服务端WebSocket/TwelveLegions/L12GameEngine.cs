@@ -230,6 +230,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     }
 
     internal CommandResult ApplyResponsePreference(int playerIndex, string? mode)
+        => ExecuteRecordedCommand(() => ApplyResponsePreferenceCore(playerIndex, mode));
+
+    private CommandResult ApplyResponsePreferenceCore(int playerIndex, string? mode)
     {
         if (playerIndex is < 0 or > 1 || !IsValidResponseMode(mode))
             return CommandResult.Reject("响应设置无效");
@@ -259,6 +262,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     }
 
     public CommandResult Handle(int playerIndex, L12Command command)
+        => ExecuteRecordedCommand(() => HandleCore(playerIndex, command));
+
+    private CommandResult HandleCore(int playerIndex, L12Command command)
     {
         if (playerIndex is < 0 or > 1) return CommandResult.Reject("无效玩家");
         if (State.Phase == L12Phase.GameOver) return CommandResult.Reject("对局已经结束");

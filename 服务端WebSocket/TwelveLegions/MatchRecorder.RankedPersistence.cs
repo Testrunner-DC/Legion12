@@ -887,7 +887,9 @@ public sealed partial class MatchRecorder
         for (var index = 0; index < events.Count; index++)
         {
             var recorded = events[index];
-            if (!string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+            if (!L12RecordedCommandOrigin.AllowsInternalReplay(recorded.CommandType,
+                    recorded.PlayerIndex, recorded.Accepted)
+                || !string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
                 continue;
             var authority = journalV2
                 ? ReadAuthorityConclusionCommand(recorded.CommandJson)

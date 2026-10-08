@@ -43,6 +43,9 @@ public sealed partial class L12GameEngine
     /// 玩家、卡号、区域和位置，且所有成功动作都会写入对局事件并增加 revision。
     /// </summary>
     public CommandResult HandleGm(L12GmCommand command)
+        => ExecuteRecordedCommand(() => HandleGmCore(command));
+
+    private CommandResult HandleGmCore(L12GmCommand command)
     {
         if (command.TargetPlayer is < 0 or > 1) return CommandResult.Reject("GM 目标玩家无效");
         if (string.IsNullOrWhiteSpace(command.Type)) return CommandResult.Reject("缺少 GM 操作类型");

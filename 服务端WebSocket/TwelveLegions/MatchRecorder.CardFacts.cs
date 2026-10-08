@@ -253,7 +253,6 @@ public sealed partial class MatchRecorder
         var stateHash = engine.ComputeStateHash();
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
-        var occurredUtc = _utcNow().ToUniversalTime().ToString("O");
         await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var transactionStartedAt = L12PerformanceMetrics.Start();
@@ -291,9 +290,19 @@ public sealed partial class MatchRecorder
                 if (responsePreference is not null)
                     await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
                 await transaction.CommitAsync();
+                engine.DiscardRecordedCommandTiming();
                 return;
             }
         }
+
+        var authorityConclusion = playerIndex == -1 && result.Accepted
+                                  && IsAuthorityConclusionCommand(commandJson);
+        var recordedTiming = authorityConclusion
+            ? null : engine.TakeRecordedCommandTiming(result, validateResult: journalV2);
+        if (authorityConclusion) engine.DiscardRecordedCommandTiming();
+        if (journalV2 && !authorityConclusion && recordedTiming is null)
+            throw new InvalidOperationException("v2 对局命令缺少权威执行时刻，拒绝持久化");
+        var occurredUtc = (recordedTiming?.OccurredUtc ?? _utcNow().ToUniversalTime()).ToString("O");
 
         if (journalV2 && !lightweightRejection)
         {
@@ -476,6 +485,24 @@ public sealed partial class MatchRecorder
                 _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
             engine.MarkEventsPersisted(engine.State.EventSequence);
             engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+        }
+    }
+
+    private static bool IsAuthorityConclusionCommand(string commandJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(commandJson);
+            var root = document.RootElement;
+            var type = root.TryGetProperty("type", out var lowerType) ? lowerType
+                : root.TryGetProperty("Type", out var upperType) ? upperType : default;
+            return type.ValueKind == JsonValueKind.String
+                   && string.Equals(type.GetString(), "authorityConclusion",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

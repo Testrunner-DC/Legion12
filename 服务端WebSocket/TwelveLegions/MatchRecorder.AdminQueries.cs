@@ -14,6 +14,7 @@ public sealed partial class MatchRecorder
         EXISTS(
             SELECT 1 FROM match_events conclusion
             WHERE conclusion.match_id=m.match_id
+              AND conclusion.player_index=-1 AND conclusion.accepted=1
               AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
                       THEN conclusion.command_json ELSE '{}' END,'$.type')='authorityConclusion'
               AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
