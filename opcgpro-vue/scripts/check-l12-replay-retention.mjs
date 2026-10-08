@@ -26,7 +26,7 @@ assert.equal(replayTemplate.recordsReplayAvailability, true,
   'playback and JSON export must share the unavailable guard and explain cleaned payloads')
 assert.match(source, /const detail = parseReplayPayload[^]*rememberImportedReplay\(detail\)[^]*router\.push\(\{ name: 'json-replay' \}\)/,
   'opening a JSON replay must navigate directly into playback')
-assert.doesNotMatch(source, /imported-record|consumeImportedReplay|selectedSummary\.deck[01]/,
+assert.doesNotMatch(source, /imported-record|consumeImportedReplay|(?:match|selected)\.deck[01]|record-decks/,
   'opened JSON replays must not join the history list and replay details must not show deck names')
 assert.match(source, /anchor\.download = `\$\{replayFileDate\(detail\.match\.startedUtc\)\}-\$\{detail\.match\.matchId\}\.json`/,
   'downloaded replay JSON must be named with the match date and match ID only')

@@ -369,7 +369,7 @@ public sealed partial class MatchRecorder
             Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
             State = SanitizeRecordedState(command.State, viewer),
         }).ToArray();
-        return new L12MatchDetail(detail.Match, commands, viewer);
+        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
     }
 
     private static string BuildAdminMatchWhere(L12AdminMatchQuery query, bool includeCursor,

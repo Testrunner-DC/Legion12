@@ -63,6 +63,40 @@ export const replayCompatibilityVersion = 1
 export function rememberImportedReplay(detail: MatchDetail) { importedReplay = detail }
 export function consumeImportedReplay() { return importedReplay }
 
+function withoutPrivateReplayDeckNames(detail: MatchDetail): MatchDetail {
+  const commands = detail.commands.map(command => {
+    const state = command.state
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return command
+    let projectedState: Record<string, any> | undefined
+    for (const key of ['Players', 'players'] as const) {
+      const players = state[key]
+      if (!Array.isArray(players)) continue
+      let changed = false
+      const projectedPlayers = players.map(player => {
+        if (!player || typeof player !== 'object' || Array.isArray(player)) return player
+        const hasPascalName = Object.hasOwn(player, 'DeckName')
+        const hasCamelName = Object.hasOwn(player, 'deckName')
+        if (!hasPascalName && !hasCamelName) return player
+        changed = true
+        return {
+          ...player,
+          ...(hasPascalName ? { DeckName: '' } : {}),
+          ...(hasCamelName ? { deckName: '' } : {}),
+        }
+      })
+      if (!changed) continue
+      projectedState ??= { ...state }
+      projectedState[key] = projectedPlayers
+    }
+    return projectedState ? { ...command, state: projectedState } : command
+  })
+  return {
+    ...detail,
+    match: { ...detail.match, deck0: '', deck1: '' },
+    commands,
+  }
+}
+
 export function parseReplayPayload(raw: unknown): MatchDetail {
   const envelope = raw as any
   if (envelope?.format !== 'legion12-replay') {
@@ -77,13 +111,14 @@ export function parseReplayPayload(raw: unknown): MatchDetail {
     throw new Error('文件不是有效的十二军团回放')
   if (candidate.commands.some((command: any) => !command || typeof command.state !== 'object'))
     throw new Error('回放缺少可播放的对局状态')
-  return candidate as MatchDetail
+  return withoutPrivateReplayDeckNames(candidate as MatchDetail)
 }
 
 export function exportReplayPayload(detail: MatchDetail) {
   return {
     format: 'legion12-replay', version: replayFormatVersion,
-    compatibilityVersion: replayCompatibilityVersion, exportedAt: new Date().toISOString(), detail,
+    compatibilityVersion: replayCompatibilityVersion, exportedAt: new Date().toISOString(),
+    detail: withoutPrivateReplayDeckNames(detail),
   }
 }
 

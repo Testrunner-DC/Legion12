@@ -323,7 +323,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 200));
         var matches = new List<L12MatchSummary>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) matches.Add(ReadSummary(reader));
+        while (await reader.ReadAsync()) matches.Add(SanitizePlayerReplaySummary(ReadSummary(reader)));
         return matches;
     }
 
@@ -463,7 +463,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
             State = SanitizeRecordedState(command.State, viewer),
         }).ToArray();
-        return new L12MatchDetail(detail.Match, commands, viewer);
+        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
     }
 
     public Task<int> AnonymizePlayerAsync(string playerName, string anonymousName)
@@ -509,6 +509,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         return node;
     }
 
+    private static L12MatchSummary SanitizePlayerReplaySummary(L12MatchSummary summary)
+        => summary with { Deck0 = string.Empty, Deck1 = string.Empty };
+
     private static JsonElement SanitizeRecordedCommand(JsonElement command, bool ownCommand)
     {
         var type = command.TryGetProperty("type", out var camel) ? camel.GetString()
@@ -534,6 +537,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
                 if (players[playerIndex] is not JsonObject player) continue;
                 if (player["Name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var playerName))
                     player["Name"] = L12UsernamePolicy.PublicName(playerName);
+                player.Remove("DeckName");
+                player.Remove("deckName");
                 RedactCardArray(player["Library"] as JsonArray, "牌库");
                 if (playerIndex != viewer) RedactCardArray(player["Hand"] as JsonArray, "对方手牌");
                 RedactCoveredField(player["Field"] as JsonArray, playerIndex, viewer);

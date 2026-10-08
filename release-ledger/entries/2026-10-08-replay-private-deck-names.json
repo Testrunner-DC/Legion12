@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "replay-private-deck-names-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "回放隐私",
+  "changes": [{
+    "category": "battle",
+    "text": "对局回放入口、详情及保存的回放文件不再包含双方个人牌库名称；打开旧本地回放也会隐藏这些名称，正常播放功能保留。",
+    "paths": ["服务端WebSocket/TwelveLegions/MatchRecorder.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.AdminQueries.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.PlayerReplayRetention.cs", "opcgpro-vue/src/l12/MatchRecords.vue", "opcgpro-vue/src/l12/replayModel.ts"]
+  }]
+}

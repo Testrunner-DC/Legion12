@@ -166,7 +166,7 @@ public sealed partial class MatchRecorder
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, PlayerReplayWindowSize));
         var matches = new List<L12MatchSummary>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken)) matches.Add(ReadSummary(reader));
+        while (await reader.ReadAsync(cancellationToken)) matches.Add(SanitizePlayerReplaySummary(ReadSummary(reader)));
         return matches;
     }
 
