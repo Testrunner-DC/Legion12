@@ -3,7 +3,7 @@
 由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 随台账同次生成；不要手工修改此表。
 只认精确能力 ID 绑定的具名证据 scope（完全匹配或 `矩阵项-子项` 前缀形式）；不适用必须给出理由；归属、运行入口与测试证据分别展示。
 能力段分母：686（含未归属段；档案外段不构成完成证据）。档案：78，已完成：78，未完成：0。
-内容指纹：`467bd6057fa6adb091da6c6d31e69cc5d0210a4af441b849e4ab0b5910dfed3a`。
+内容指纹：`fb5aa421f82fe01dda4a26d058498bd86d25e92560c52fc3737c8707201258a6`。
 
 | 定义证据分桶 | 能力数 |
 | --- | ---: |
@@ -1424,7 +1424,7 @@
 
 ## rule:thor-hammer-master-gate（已完成）
 
-绑定能力段：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate。
+绑定能力段：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate；usage-check = L12CardNameUsageRules.HasUsed；usage-commit = L12CardNameUsageRules.TryUse；usage-key = L12CardNameUsageRules.Key。
 
 | 矩阵项 | 已有具名证据 | 缺失 | 不适用（含理由） |
 | --- | --- | --- | --- |

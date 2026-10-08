@@ -397,7 +397,7 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
     [L12AbilityEvidence("S02-0006:ability:continuous:7f3bdf9055e53845", "usage-commit", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0306:ability:continuous:a5a8e191442bbfac", "usage-commit", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0008:ability:continuous:766cca673a9815ad", "effective-faction", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-0301:ability:continuous:e48cf407ce847427", "master-gate", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-0301:ability:continuous:e48cf407ce847427", "master-gate", "usage-commit", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0305:ability:game-setup:cf14affeb486a9f7", "setup-defaults", "authoritative-consumer")]
     [L12AbilityEvidence("S02-03M1:ability:game-setup:46b2a85c54cecc56", "setup-defaults", "authoritative-consumer")]
     [L12AbilityEvidence("S01-01D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
@@ -408,12 +408,17 @@ public sealed class FrontRowTauntAndTrialLifecycleProfileTests
     [L12AbilityEvidence("S02-06D1:ability:setup:281db2829152b981", "setup-defaults", "authoritative-consumer")]
     public void RuleDeclarationSegmentsBindToTheirSharedRegistries()
     {
-        // 卡名共享次数族：信仰狂热者与密米尔之泉共读同一注册表键。
+        // 卡名共享次数族：信仰狂热者、雷神之锤与密米尔之泉共读同一注册表键；
+        // 雷神之锤的同一规则段仍由原主宰门禁档案承载，不重复登记第二份生命周期档案。
         Assert.Equal(EffectLifecycleProfiles.CardNameOncePerTurnAbilityIds.Order(StringComparer.Ordinal),
             Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
                 .Where(ability => ability.Trigger == "continuous" && ability.ExecutionModel == "rule"
                     && L12CardNameUsageRules.Keys.ContainsKey(ability.CardId))
                 .Select(ability => ability.AbilityId).Order(StringComparer.Ordinal).ToArray());
+        var hammerProfile = EffectLifecycleProfiles.Read(Catalog)[EffectLifecycleProfiles.ThorHammerMasterGateAbilityId];
+        Assert.Equal("rule:thor-hammer-master-gate", hammerProfile.Id);
+        Assert.Contains("master-gate", hammerProfile.RuntimeOwners.Keys);
+        Assert.Contains("usage-commit", hammerProfile.RuntimeOwners.Keys);
         Assert.False(L12CardNameUsageRules.Keys.ContainsKey("S02-0007"));
         // 开场规则族：全池恰好两段。
         Assert.Equal(EffectLifecycleProfiles.GameSetupRuleAbilityIds.Order(StringComparer.Ordinal),

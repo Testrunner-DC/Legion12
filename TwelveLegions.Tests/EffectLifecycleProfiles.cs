@@ -1100,6 +1100,7 @@ internal static class EffectLifecycleProfiles
     internal static readonly string[] CardNameOncePerTurnAbilityIds =
     [
         "S02-0006:ability:continuous:7f3bdf9055e53845",
+        "S02-0301:ability:continuous:e48cf407ce847427",
         "S02-0306:ability:continuous:a5a8e191442bbfac",
     ];
 
@@ -1133,8 +1134,11 @@ internal static class EffectLifecycleProfiles
             ["button-projection"] = "BuildAbilityViews",
             ["declaration"] = "TryBeginS2RemainingAbility",
             ["commit"] = "TryCommitS2RemainingAbility",
+            ["usage-key"] = "L12CardNameUsageRules.Key",
+            ["usage-check"] = "L12CardNameUsageRules.HasUsed",
+            ["usage-commit"] = "L12CardNameUsageRules.TryUse",
         },
-        RuleDeclarationExemptions("主宰条件声明不创建效果；按钮、声明与提交入口共读同一结构化门禁。"));
+        RuleDeclarationExemptions("主宰条件与卡名共享次数声明不创建效果；按钮、声明、提交与次数入口共读同一结构化门禁。"));
 
     internal static readonly string[] GameSetupRuleAbilityIds =
     [
@@ -2802,9 +2806,15 @@ internal static class EffectLifecycleProfiles
         {
             if (!abilities.TryGetValue(id, out var ability)
                 || !L12CardNameUsageRules.Keys.ContainsKey(ability.CardId)
-                || !ability.Text.Contains("每回合只可使用1次", StringComparison.Ordinal))
+                || (id == ThorHammerMasterGateAbilityId
+                    ? !ability.Text.Contains("当我方主宰为", StringComparison.Ordinal)
+                        || !abilities.TryGetValue("S02-0301:ability:active:61c655977499e4be", out var hammerRevive)
+                        || hammerRevive.CardId != "S02-0301" || hammerRevive.Trigger != "active"
+                        || !hammerRevive.Text.Contains("我方 回合1次", StringComparison.Ordinal)
+                        || L12ActiveUsageRules.Find("S02-0301", "thorHammerRevive") is null
+                    : !ability.Text.Contains("每回合只可使用1次", StringComparison.Ordinal)))
                 throw new InvalidOperationException($"Stale reviewed card-name once-per-turn segment: {id}");
-            bindings.Add(id, CardNameOncePerTurn);
+            bindings.Add(id, id == ThorHammerMasterGateAbilityId ? ThorHammerMasterGate : CardNameOncePerTurn);
         }
         var cardNameOncePerTurns = abilities.Values.Where(ability => ability.Trigger == "continuous"
                 && ability.ExecutionModel == "rule"
@@ -2826,7 +2836,9 @@ internal static class EffectLifecycleProfiles
             || thorGate.CardId != "S02-0301"
             || !thorGate.Text.Contains("当我方主宰为", StringComparison.Ordinal))
             throw new InvalidOperationException($"Stale reviewed thor-hammer master-gate segment: {ThorHammerMasterGateAbilityId}");
-        bindings.Add(ThorHammerMasterGateAbilityId, ThorHammerMasterGate);
+        if (!bindings.TryGetValue(ThorHammerMasterGateAbilityId, out var thorProfile)
+            || !ReferenceEquals(thorProfile, ThorHammerMasterGate))
+            throw new InvalidOperationException("Thor-hammer combined gate/usage profile is not bound exactly once.");
         var thorHammerGates = abilities.Values.Where(ability => ability.ExecutionModel == "rule"
                 && ability.Text.Contains("当我方主宰为", StringComparison.Ordinal))
             .Select(ability => ability.AbilityId).ToHashSet(StringComparer.Ordinal);

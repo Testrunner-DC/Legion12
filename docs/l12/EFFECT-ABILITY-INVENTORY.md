@@ -487,12 +487,12 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 
 ### rule:thor-hammer-master-gate
 
-精确绑定能力数：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate。
+精确绑定能力数：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate；usage-check = L12CardNameUsageRules.HasUsed；usage-commit = L12CardNameUsageRules.TryUse；usage-key = L12CardNameUsageRules.Key。
 
 - duplicate-submit：规则判定读取无副作用。
 - negated：规则声明不入栈，不能被响应或无效。
 - no-target：规则声明不选择效果对象。
-- note：主宰条件声明不创建效果；按钮、声明与提交入口共读同一结构化门禁。
+- note：主宰条件与卡名共享次数声明不创建效果；按钮、声明、提交与次数入口共读同一结构化门禁。
 - payment-cancel：规则声明本身没有费用或支付Prompt。
 - target-invalidated：无效果对象；每次判定读取当前状态。
 
@@ -1179,7 +1179,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerGraveyardActiveButtonStartsCostAndSlotDeclarationWithoutDuplicateConfirmation / S02-0301 | normal, presentation-consumers |
 | S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateRemainsAuthoritativeAfterReconnect / S02-0301 | reconnect |
 | S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateUsesTheSameReasonForButtonAndDirectSubmission / S02-0301 | master-gate-rejected |
-| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0301 | authoritative-consumer, master-gate |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0301 | authoritative-consumer, master-gate, usage-commit |
 | S02-0301:ability:active:61c655977499e4be | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0301 | authoritative-consumer, per-card-branch |
 | S02-0302:ability:hand-play:4e8ff9ea92325bac | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0302 | authoritative-consumer, per-card-flow |
 | S02-0302:ability:continuous:48719a94741bbf36 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0302 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |

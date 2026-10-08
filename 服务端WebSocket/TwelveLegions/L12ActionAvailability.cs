@@ -10,8 +10,10 @@ public sealed partial class L12GameEngine
     private bool HasUsedLimitedActiveAbility(L12PlayerState player, string cardId, string instanceId, string ability)
     {
         var canonical = _catalog.MoraleIdentities.CanonicalEffectCardId(cardId);
-        return L12ActiveUsageRules.Find(canonical, ability) is not null
-            && player.UsedAbilities.Contains(ActiveAbilityUsageKey(instanceId, canonical, ability));
+        if (L12ActiveUsageRules.Find(canonical, ability) is null) return false;
+        return L12CardNameUsageRules.Keys.ContainsKey(canonical)
+            ? L12CardNameUsageRules.HasUsed(player, canonical)
+            : player.UsedAbilities.Contains(ActiveAbilityUsageKey(instanceId, canonical, ability));
     }
 
     private void RecordLimitedActiveAbilityUse(L12PlayerState player, L12CardInstance source, string ability)

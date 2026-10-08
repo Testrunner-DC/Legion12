@@ -67,5 +67,10 @@ public static class L12ActiveUsageRules
         => ByAbility.GetValueOrDefault($"{canonicalCardId}|{ability}");
 
     public static string UsageKey(string sourceInstanceId, string canonicalCardId, string ability)
-        => $"active:{sourceInstanceId}:{Find(canonicalCardId, ability)?.SharedGroup ?? ability}";
+    {
+        var rule = Find(canonicalCardId, ability);
+        return rule is not null && L12CardNameUsageRules.Keys.ContainsKey(canonicalCardId)
+            ? L12CardNameUsageRules.Key(canonicalCardId)
+            : $"active:{sourceInstanceId}:{rule?.SharedGroup ?? ability}";
+    }
 }

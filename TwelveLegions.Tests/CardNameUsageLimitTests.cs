@@ -170,7 +170,21 @@ public sealed class CardNameUsageLimitTests
             System.Text.RegularExpressions.Regex.IsMatch(card.Effect ?? string.Empty,
                 @"[<〈《].+?[>〉》](?:的效果)?每回合只可使用1次")).Select(card => card.Id).Order().ToArray();
         Assert.Equal(new[] { "S02-0006", "S02-0306" }, named);
-        Assert.Equal(named, L12CardNameUsageRules.Keys.Keys.Order());
+        var reviewedSharedNames = named.Append("S02-0301").Order().ToArray();
+        Assert.Equal(new[] { "S02-0006", "S02-0301", "S02-0306" }, reviewedSharedNames);
+        Assert.Equal(reviewedSharedNames, L12CardNameUsageRules.Keys.Keys.Order());
+    }
+
+    [Fact]
+    public void ThorHammerLegacyInstanceUsageIsRecognizedWithoutCrossingControllers()
+    {
+        var game = Create();
+        game.State.Players[0].UsedAbilities.Add("active:legacy-hammer:thorHammerRevive");
+        game = Restore(game);
+
+        Assert.True(L12CardNameUsageRules.HasUsed(game.State.Players[0], "S02-0301"));
+        Assert.False(L12CardNameUsageRules.HasUsed(game.State.Players[1], "S02-0301"));
+        Assert.Equal("card-name:S02-0301", L12CardNameUsageRules.Key("S02-0301"));
     }
 
     [Theory]
@@ -206,10 +220,11 @@ public sealed class CardNameUsageLimitTests
     {
         var game = Create();
         var player = game.State.Players[0];
-        player.UsedAbilities.UnionWith([FaithKey, "trigger:faith-zealot:old", "s2-mimir-used"]);
+        player.UsedAbilities.UnionWith([FaithKey, "trigger:faith-zealot:old", "card-name:S02-0301", "s2-mimir-used"]);
         var result = game.Handle(0, new L12Command("endTurn"));
         Assert.True(result.Accepted, result.Error);
         Assert.False(L12CardNameUsageRules.HasUsed(player, "S02-0006"));
+        Assert.False(L12CardNameUsageRules.HasUsed(player, "S02-0301"));
         Assert.False(L12CardNameUsageRules.HasUsed(player, "S02-0306"));
     }
 

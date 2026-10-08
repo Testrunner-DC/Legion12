@@ -128,18 +128,24 @@ public sealed class CardInstanceZoneResetTests
 
     [Theory]
     [MemberData(nameof(LimitedInstanceUsageRules))]
-    public void EveryRegisteredLimitedActiveUsageKeyIsClearedAtAPrivateZoneBoundary(
+    public void EveryRegisteredLimitedActiveUsageKeyObeysItsPrivateZoneScope(
         string cardId, string ability)
     {
         var game = Create();
         var player = game.State.Players[0];
         var card = Card(cardId, $"limited-{cardId}-{ability}");
         var key = L12ActiveUsageRules.UsageKey(card.InstanceId, cardId, ability);
+        var instanceKey = $"active:{card.InstanceId}:{ability}";
         player.UsedAbilities.Add(key);
+        player.UsedAbilities.Add(instanceKey);
 
         Invoke(game, "ResetCardForPrivateZone", card);
 
-        Assert.DoesNotContain(key, player.UsedAbilities);
+        Assert.DoesNotContain(instanceKey, player.UsedAbilities);
+        if (L12CardNameUsageRules.Keys.ContainsKey(cardId))
+            Assert.Contains(key, player.UsedAbilities);
+        else
+            Assert.DoesNotContain(key, player.UsedAbilities);
     }
 
     [Fact]

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "thor-hammer-name-limit-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "雷神之锤",
+  "changes": [{
+    "category": "card-effects",
+    "text": "雷神之锤的墓地登场效果按卡名共享我方回合一次；同回合更换同名卡、离场或再次进入墓地都不会恢复次数，下个我方回合重新可用。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12CardNameUsageRules.cs", "服务端WebSocket/TwelveLegions/L12ActiveUsageRules.cs", "服务端WebSocket/TwelveLegions/L12ActionAvailability.cs"]
+  }]
+}

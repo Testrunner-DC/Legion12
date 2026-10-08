@@ -10,6 +10,7 @@ public static class L12CardNameUsageRules
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["S02-0006"] = "card-name:S02-0006",
+            ["S02-0301"] = "card-name:S02-0301",
             // 保留原有存档键；密米尔本来就是控制者内卡名共享。
             ["S02-0306"] = "s2-mimir-used",
         };
@@ -20,7 +21,10 @@ public static class L12CardNameUsageRules
         => player.UsedAbilities.Contains(Key(cardId))
             // 旧检查点已记实例次数视为本回合已用，不能重连后绕过新卡名限制。
             || cardId == "S02-0006" && player.UsedAbilities.Any(key =>
-                key.StartsWith("trigger:faith-zealot:", StringComparison.OrdinalIgnoreCase));
+                key.StartsWith("trigger:faith-zealot:", StringComparison.OrdinalIgnoreCase))
+            || cardId == "S02-0301" && player.UsedAbilities.Any(key =>
+                key.StartsWith("active:", StringComparison.OrdinalIgnoreCase)
+                && key.EndsWith(":thorHammerRevive", StringComparison.OrdinalIgnoreCase));
 
     public static bool TryUse(L12PlayerState player, string cardId)
         => !HasUsed(player, cardId) && player.UsedAbilities.Add(Key(cardId));
