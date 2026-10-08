@@ -45,7 +45,7 @@ export function tournamentDisasterSnapshot(mode: TournamentDisasterMode,
   if (new Set(cardIds.map(cardId => cardId.toUpperCase())).size !== cardIds.length)
     throw new Error('当前运营策略天灾池包含重复卡牌，无法创建赛事')
   if (cardIds.at(-1)?.toUpperCase() !== TOURNAMENT_ANNIHILATION_CARD_ID)
-    throw new Error(`当前运营策略天灾池必须以堙灭（${TOURNAMENT_ANNIHILATION_CARD_ID}）作为最后一张`)
+    throw new Error(`当前运营策略天灾池必须以湮灭（${TOURNAMENT_ANNIHILATION_CARD_ID}）作为最后一张`)
   return [...cardIds]
 }
 

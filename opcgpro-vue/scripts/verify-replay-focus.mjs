@@ -67,7 +67,7 @@ try {
   const currentDisaster = disaster('disaster-1', 'S01-DS01', '日月无光')
   const disasterState = {
     ...state(basePlayers), ActiveDisaster: currentDisaster,
-    SessionDisasters: [currentDisaster, { InstanceId: 'hidden-1', Hidden: true }, { InstanceId: 'hidden-2', Hidden: true }, disaster('final-1', 'S01-DS10', '堙灭')],
+    SessionDisasters: [currentDisaster, { InstanceId: 'hidden-1', Hidden: true }, { InstanceId: 'hidden-2', Hidden: true }, disaster('final-1', 'S01-DS10', '湮灭')],
     RemovedDisasters: [], RevealedDisasters: [currentDisaster], ChosenDisasters: [], DisasterDeck: [{ Hidden: true }],
   }
   const disasterDetail = { match, commands: [command(1, 0, { type: 'passPriority' }, disasterState)] }

@@ -33,7 +33,7 @@ public static class L12ActiveDisasterRules
     public static bool RelicEffectUseDamagesMaster(string? activeDisasterId)
         => activeDisasterId == "S01-DS08";
 
-    // S01-DS10 堙灭：天灾值锁定为0、不再推进，最终天灾不再触发。
+    // S01-DS10 湮灭：天灾值锁定为0、不再推进，最终天灾不再触发。
     public static bool DisasterValueLocked(string? activeDisasterId)
         => activeDisasterId == AnnihilationCardId;
 

@@ -31,11 +31,11 @@ public sealed partial class L12GameEngine
             Shuffle(all);
             State.DisasterDeck.AddRange(all);
             State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
-            AddEvent("shuffle", null, "洗切测试沙盒天灾牌库，〈堙灭〉固定置于最底部");
+            AddEvent("shuffle", null, "洗切测试沙盒天灾牌库，〈湮灭〉固定置于最底部");
             State.DisasterPool.Clear();
             SetDisasterValue(0);
         }
-        AddEvent("gm", null, "[GM] 已为测试沙盒建立天灾牌库；〈堙灭〉固定置于最底部");
+        AddEvent("gm", null, "[GM] 已为测试沙盒建立天灾牌库；〈湮灭〉固定置于最底部");
     }
 
     /// <summary>
@@ -437,7 +437,7 @@ public sealed partial class L12GameEngine
     private CommandResult GmTriggerDisaster()
     {
         if (!DisastersEnabled) return CommandResult.Reject("当前沙盒未启用天灾");
-        if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)) return CommandResult.Reject("最终天灾〈堙灭〉已触发");
+        if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)) return CommandResult.Reject("最终天灾〈湮灭〉已触发");
         if (State.DisasterDeck.Count == 0) return CommandResult.Reject("天灾牌库为空");
         SetDisasterValue(9, null, "[GM] 将天灾值设为触发阈值 9");
         BeginDisasterTrigger(DisasterTriggerSourceGm);
@@ -450,7 +450,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("只有自定天灾沙盒可更换本局天灾");
         if (command.Slot is null || command.Slot is < 0 or > 3)
             return CommandResult.Reject("天灾槽位无效");
-        if (command.Slot == 3) return CommandResult.Reject("最终天灾〈堙灭〉固定在第四槽，不能更换");
+        if (command.Slot == 3) return CommandResult.Reject("最终天灾〈湮灭〉固定在第四槽，不能更换");
         if (!TryCreateGmCard(command, out var replacement, out var error)) return CommandResult.Reject(error);
         if (replacement.CardType != "destruction" || replacement.CardId == "S01-DS10")
             return CommandResult.Reject("请选择非最终天灾卡牌");

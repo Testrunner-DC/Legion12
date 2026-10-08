@@ -1448,7 +1448,7 @@ public sealed partial class L12GameEngine
         {
             State.Phase = L12Phase.DisasterPreparation;
             BuildRandomDisasterDeck();
-            PrepareAfterDisasterSelection("已随机建立本局天灾牌库；〈堙灭〉固定置于最底部");
+            PrepareAfterDisasterSelection("已随机建立本局天灾牌库；〈湮灭〉固定置于最底部");
             return;
         }
         State.Phase = L12Phase.DisasterPreparation;
@@ -1464,7 +1464,7 @@ public sealed partial class L12GameEngine
         State.DisasterDeck.Clear();
         State.DisasterDeck.AddRange(normal);
         State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
-        AddEvent("shuffle", null, "随机模式洗切天灾牌库，〈堙灭〉固定置于最底部");
+        AddEvent("shuffle", null, "随机模式洗切天灾牌库，〈湮灭〉固定置于最底部");
         State.DisasterPool.Clear();
         SetDisasterValue(0);
     }
@@ -1590,9 +1590,9 @@ public sealed partial class L12GameEngine
         Shuffle(State.SelectedDisasters);
         State.DisasterDeck.AddRange(State.SelectedDisasters);
         State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
-        AddEvent("shuffle", null, "洗切双方选定的天灾，〈堙灭〉固定置于最底部");
+        AddEvent("shuffle", null, "洗切双方选定的天灾，〈湮灭〉固定置于最底部");
         State.DisasterPool.Clear();
-        PrepareAfterDisasterSelection("本局 4 张天灾牌库已组成，〈堙灭〉位于牌库底部");
+        PrepareAfterDisasterSelection("本局 4 张天灾牌库已组成，〈湮灭〉位于牌库底部");
     }
 
     private void PrepareAfterDisasterSelection(string eventText)

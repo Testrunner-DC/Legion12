@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`f9713ac26f2a9b8f1e10ef773b325aa00dc91a378ce6881a3a15a5f94bd0bf4b`。
+内容指纹：`338e577901471dfbeedb73f0289fa2231d903c46a527c5955ba3da8ccd8875f7`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1963,8 +1963,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-DS07 天启默示录 #1 | S01-DS07:ability:disaster:040d7237df85e67c | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有玩家将其战场上的军团置入所有者墓地，直至不高于2张。随后所有玩家手牌自选顺序返回牌库底部，并抽取4张牌 |
 | S01-DS08 虚构的圣杯 #1 | S01-DS08:ability:static:3e7cd5724f09420c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 当玩家使用圣物效果时，对其主宰造成1点非致命伤害 |
 | S01-DS09 诸神黄昏 #1 | S01-DS09:ability:disaster:1769e30a76faee99 | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 将所有军团置入所有者墓地。若为开场触发：所有玩家各抽取2张牌。若为主动触发：其余玩家各抽取2张牌，随后立即结束当前回合，并为回合玩家追加1个新的回合 |
-| S01-DS10 堙灭 #1 | S01-DS10:ability:static:33501d2503c08b73 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 |
-| S01-DS10 堙灭 #2 | S01-DS10:ability:turn-start:a790e35d0012c86f | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 回合开始时，对所有主宰造成1点非致命伤害 |
+| S01-DS10 湮灭 #1 | S01-DS10:ability:static:33501d2503c08b73 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 |
+| S01-DS10 湮灭 #2 | S01-DS10:ability:turn-start:a790e35d0012c86f | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 回合开始时，对所有主宰造成1点非致命伤害 |
 | S02-0001 驱魔道士 陆瑛 #1 | S02-0001:ability:after-opponent-tactic:6d30a9b672845491 | after-opponent-tactic/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:legacy.resolve | 1 | 对方 战术的效果结算后，我方 可选择将此军团从战场上回到手牌。 |
 | S02-0001 驱魔道士 陆瑛 #2 | S02-0001:ability:enter:dcff9e78d7ca1141 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 对方下个回合手牌中&lt;主动战术&gt;打出的费用+1。 |
 | S02-0002 疯狂的爱丽丝 #1 | S02-0002:ability:continuous:5643b9f0c6e298e6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻无损。 |

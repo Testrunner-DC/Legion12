@@ -80,7 +80,7 @@ const timingError = computed(() => rankedTimeError(ranked.value))
         <label>结束时间<input v-model="draft.endsAt" type="datetime-local" :disabled="!draft.endsAt"/></label>
         <label class="toggle-row wide"><span><b>不设置结束时间</b><small>赛季持续有效，直到管理员设置结束时间。</small></span><input type="checkbox" :checked="!draft.endsAt" @change="toggleSeasonEnd"/></label>
       </fieldset>
-      <fieldset><legend>赛季天灾池</legend><DisasterPoolPicker v-model="draft.configuration.disasterPool.cardIds" class="wide" :cards="cards" locked-id="S01-DS10"/><span class="locked-note wide">堙灭固定公开并锁定在最后一张。</span></fieldset>
+      <fieldset><legend>赛季天灾池</legend><DisasterPoolPicker v-model="draft.configuration.disasterPool.cardIds" class="wide" :cards="cards" locked-id="S01-DS10"/><span class="locked-note wide">湮灭固定公开并锁定在最后一张。</span></fieldset>
     </template>
 
     <template v-else-if="section === 'construction'">

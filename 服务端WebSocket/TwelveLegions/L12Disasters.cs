@@ -12,7 +12,7 @@ public sealed partial class L12GameEngine
             && L12ActiveDisasterRules.DisasterValueLocked(lockedDisaster.CardId) && State.DisasterDeck.Count == 0)
         {
             State.DisasterValue = 0;
-            AddEvent("disaster", State.ActivePlayer, "最终天灾〈堙灭〉持续生效，天灾值保持为 0", lockedDisaster);
+            AddEvent("disaster", State.ActivePlayer, "最终天灾〈湮灭〉持续生效，天灾值保持为 0", lockedDisaster);
             return;
         }
         if (State.DisasterDeck.Count == 0)
@@ -64,8 +64,8 @@ public sealed partial class L12GameEngine
 
         State.LastTurnStartDisasterEffectTurn = State.TurnSerial;
         State.LastTurnStartDisasterEffectInstanceId = disaster.InstanceId;
-        DamageMasterNonLethalFromDisaster(0, 1, "〈堙灭〉");
-        DamageMasterNonLethalFromDisaster(1, 1, "〈堙灭〉");
+        DamageMasterNonLethalFromDisaster(0, 1, "〈湮灭〉");
+        DamageMasterNonLethalFromDisaster(1, 1, "〈湮灭〉");
     }
 
     private void ResolveDisasterEffect(L12StackItem item)
@@ -82,7 +82,7 @@ public sealed partial class L12GameEngine
         {
             case "黯陨晨星":
             case "虚构的圣杯":
-            case "堙灭":
+            case "湮灭":
                 AddEvent("disaster-active", null, $"〈{disaster.Name}〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
             case "腐秽大地":

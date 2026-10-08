@@ -63,7 +63,7 @@ const activeSection = ref<OperationsSection>('season')
 const historySection = ref<OperationsConfigSection>('room')
 const loadError = ref('')
 const sections: Array<{ id: OperationsSection; title: string; summary: string }> = [
-  { id: 'season', title: '赛季与天灾', summary: '赛季周期、赛季天灾池与堙灭锁定' },
+  { id: 'season', title: '赛季与天灾', summary: '赛季周期、赛季天灾池与湮灭锁定' },
   { id: 'ranked', title: '排位与七曜', summary: '派系、五段位、七曜结算、称号与广播' },
   { id: 'construction', title: '构筑规则', summary: '禁限卡与新账号默认预组' },
   { id: 'room', title: '对战与房间', summary: '模式开关与默认房间规则' },

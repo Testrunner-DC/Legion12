@@ -22,7 +22,7 @@ function toggle(id: string) {
 
 <template>
   <div class="pool-picker" data-ui-contract="landscape-disaster-pool-picker">
-    <header><input v-model="query" placeholder="按天灾名称或卡号筛选"/><span :class="{ invalid: modelValue.length < minimum }">已选 {{ modelValue.length }} 张 · 至少 {{ minimum }} 张（含堙灭）</span></header>
+    <header><input v-model="query" placeholder="按天灾名称或卡号筛选"/><span :class="{ invalid: modelValue.length < minimum }">已选 {{ modelValue.length }} 张 · 至少 {{ minimum }} 张（含湮灭）</span></header>
     <div class="pool-grid">
       <button v-for="card in filtered" :key="card.id" type="button" :class="{ selected: selected(card.id), locked: card.id === lockedId }" :aria-pressed="selected(card.id)" @click="toggle(card.id)">
         <span class="pool-card-art">

@@ -1719,7 +1719,7 @@ function statusTexts(card: Card) {
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
-  <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
+  <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽湮灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
 </template>
 
 <style scoped>

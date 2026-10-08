@@ -157,11 +157,14 @@ public sealed partial class L12GameEngine
         }
     }
 
+    private static string NormalizeAtomicFlowKey(string value)
+        => value == "\u5819\u706D" ? "湮灭" : value;
+
     private static string AtomicFlowKey(L12StackItem item, L12CardInstance card)
-        => item.Data.GetValueOrDefault("atomicFlow") ?? card.Name;
+        => NormalizeAtomicFlowKey(item.Data.GetValueOrDefault("atomicFlow") ?? card.Name);
 
     private static string AtomicFlowKey(L12StackItem item)
-        => item.Data.GetValueOrDefault("atomicFlow") ?? item.SourceName;
+        => NormalizeAtomicFlowKey(item.Data.GetValueOrDefault("atomicFlow") ?? item.SourceName);
 
     private L12CardInstance? FindSource(L12StackItem item)
     {

@@ -840,7 +840,7 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Equal(before[1] - 1, game.State.Players[1].Hp);
         var view = game.SnapshotFor(0);
         Assert.Contains(view.RecentEvents, entry => entry.Type == "damage"
-            && entry.Text.Contains("堙灭", StringComparison.Ordinal));
+            && entry.Text.Contains("湮灭", StringComparison.Ordinal));
 
         var random = game.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
         game = L12GameEngine.RestoreCheckpoint(Catalog,

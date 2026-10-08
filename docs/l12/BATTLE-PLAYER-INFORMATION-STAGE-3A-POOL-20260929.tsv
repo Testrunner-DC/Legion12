@@ -131,7 +131,7 @@
 "S01-DS07"	"天启默示录"	"destruction"	"3A-entry-with-deferred-semantics"	"1"	"1"	"0"	"0"	"0"	"0"	"1"	"S01-DS07:ability:disaster:040d7237df85e67c"	"S01-DS07:ability:disaster:040d7237df85e67c"
 "S01-DS08"	"虚构的圣杯"	"destruction"	"non-3A-only"	"1"	"0"	"0"	"0"	"0"	"0"	"1"	""	"S01-DS08:ability:static:3e7cd5724f09420c"
 "S01-DS09"	"诸神黄昏"	"destruction"	"3A-entry-with-deferred-semantics"	"1"	"1"	"0"	"0"	"0"	"0"	"1"	"S01-DS09:ability:disaster:1769e30a76faee99"	"S01-DS09:ability:disaster:1769e30a76faee99"
-"S01-DS10"	"堙灭"	"destruction"	"3A-entry-with-deferred-semantics"	"2"	"1"	"0"	"0"	"0"	"0"	"2"	"S01-DS10:ability:turn-start:a790e35d0012c86f"	"S01-DS10:ability:static:33501d2503c08b73;S01-DS10:ability:turn-start:a790e35d0012c86f"
+"S01-DS10"	"湮灭"	"destruction"	"3A-entry-with-deferred-semantics"	"2"	"1"	"0"	"0"	"0"	"0"	"2"	"S01-DS10:ability:turn-start:a790e35d0012c86f"	"S01-DS10:ability:static:33501d2503c08b73;S01-DS10:ability:turn-start:a790e35d0012c86f"
 "S02-0001"	"驱魔道士 陆瑛"	"legion"	"3A-ordinary-present"	"2"	"2"	"2"	"0"	"1"	"1"	"0"	"S02-0001:ability:after-opponent-tactic:6d30a9b672845491;S02-0001:ability:enter:dcff9e78d7ca1141"	""
 "S02-0002"	"疯狂的爱丽丝"	"legion"	"3A-ordinary-present"	"2"	"1"	"1"	"0"	"0"	"1"	"0"	"S02-0002:ability:after-kill:2187acbb87c49880"	""
 "S02-0003"	"宫廷魔术师"	"legion"	"3A-ordinary-present"	"3"	"2"	"1"	"1"	"1"	"1"	"1"	"S02-0003:ability:enter:0907b9ab55d8b4fb;S02-0003:ability:active:484fb98a6af8df3f"	"S02-0003:ability:enter:0907b9ab55d8b4fb"

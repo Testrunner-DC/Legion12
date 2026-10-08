@@ -338,7 +338,7 @@ public sealed class Bq20260830_02RegressionTests
         Assert.Equal(hpBefore[0] - 1, game.State.Players[0].Hp);
         Assert.Equal(hpBefore[1] - 1, game.State.Players[1].Hp);
         Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "damage"
-            && entry.Text.Contains("〈堙灭〉", StringComparison.Ordinal)));
+            && entry.Text.Contains("〈湮灭〉", StringComparison.Ordinal)));
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 }

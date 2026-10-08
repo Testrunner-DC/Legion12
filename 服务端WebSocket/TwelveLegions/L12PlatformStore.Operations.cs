@@ -981,7 +981,7 @@ public sealed partial class L12PlatformStore
         EnsureTimeRange(payload.Season.StartsAt, payload.Season.EndsAt, "赛季");
 
         if (!payload.DisasterPool.AnnihilationLocked)
-            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须保持锁定");
+            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈湮灭〉必须保持锁定");
         var disasterIds = payload.DisasterPool.CardIds.Select(id => RequireCardId(id, "天灾卡号"))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (disasterIds.Length == 0
@@ -989,9 +989,9 @@ public sealed partial class L12PlatformStore
                 StringComparison.OrdinalIgnoreCase)
             || disasterIds.Count(id => string.Equals(id, L12ActiveDisasterRules.AnnihilationCardId,
                 StringComparison.OrdinalIgnoreCase)) != 1)
-            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须唯一且固定在天灾池末尾");
+            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈湮灭〉必须唯一且固定在天灾池末尾");
         if (disasterIds.Length is < 9 or > 64 || disasterIds.Length != payload.DisasterPool.CardIds.Count)
-            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 9–64 张不重复卡牌（含堙灭），以满足禁用、公开与选择流程");
+            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 9–64 张不重复卡牌（含湮灭），以满足禁用、公开与选择流程");
         if (_officialCards.Count > 0)
         {
             var unknownDisaster = disasterIds.FirstOrDefault(id => !_officialCards.TryGetValue(id, out var card)

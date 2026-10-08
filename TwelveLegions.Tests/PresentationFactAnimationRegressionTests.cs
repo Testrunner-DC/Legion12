@@ -142,14 +142,19 @@ public sealed class PresentationFactAnimationRegressionTests
         }
 
         // Establish the later legal private-zone state without adding a second
-        // presentation producer: the second activation itself still traverses
-        // the real declaration, response, resolver, put and result pipeline.
+        // presentation producer, then advance through both real end-turn commands.
+        // The card-name usage limit must only reopen on the next own turn.
         game.State.Players[0].Field[0][0] = null;
         game.State.Players[0].Graveyard.Add(hammer);
-        game.State.Players[0].UsedAbilities.RemoveWhere(key =>
-            key.Contains(hammer.InstanceId, StringComparison.Ordinal));
-        game.State.ActivePlayer = 0;
-        game.State.Phase = L12Phase.Main;
+        game.State.Players[0].Field[1][0] = Card("S02-0002", "presentation-owner-anchor");
+        game.State.Players[1].Field[1][0] = Card("S02-0002", "presentation-rival-anchor", owner: 1);
+        game.State.Players[0].Library.Add(Card("S02-0002", "presentation-owner-draw"));
+        game.State.Players[1].Library.Add(Card("S02-0002", "presentation-rival-draw", owner: 1));
+        var firstEnd = game.Handle(0, new L12Command("endTurn"));
+        Assert.True(firstEnd.Accepted, firstEnd.Error);
+        var secondEnd = game.Handle(1, new L12Command("endTurn"));
+        Assert.True(secondEnd.Accepted, secondEnd.Error);
+        Assert.Equal(0, game.State.ActivePlayer);
         var restoredHammer = Assert.Single(game.State.Players[0].Graveyard,
             card => card.InstanceId == hammer.InstanceId);
         var secondCosts = Enumerable.Range(0, 3)

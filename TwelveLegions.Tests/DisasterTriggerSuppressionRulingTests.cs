@@ -110,7 +110,7 @@ public sealed class DisasterTriggerSuppressionRulingTests
     [Fact]
     public void FinalDisasterTurnStartDamageQueuesNoDamageReactions()
     {
-        // 堙灭的回合开始伤害走灾难专用入口：反击、玛格丽特、圣物抽牌全部不触发。
+        // 湮灭的回合开始伤害走灾难专用入口：反击、玛格丽特、圣物抽牌全部不触发。
         var game = Create(2302);
         var player = game.State.Players[0];
         player.Field[1][0] = Card("S01-0021", "final-counter");
