@@ -155,6 +155,119 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         Assert.True(Assert.IsType<bool>(method.Invoke(null, [cardId, trigger, null])));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:strict-hand-entry-settlement")]
+    public void SiwaKabaLocksMoraleOnlyWhenItsDeclaredHandEntrySucceeds(bool staleBeforeSettlement)
+    {
+        var game = Create(staleBeforeSettlement ? 8220 : 8219);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", $"batch6kb-kaba-strict-{staleBeforeSettlement}");
+        player.Hand.Add(kaba);
+        var morale = new L12MoraleCard
+        {
+            CardId = "S01-02C1",
+            InstanceId = $"batch6kb-kaba-morale-{staleBeforeSettlement}",
+            Tapped = true,
+        };
+        player.Morale.Add(morale);
+        var beforeLock = morale.CannotUntapUntilRound;
+        var item = new L12StackItem
+        {
+            StackItemId = $"batch6kb-kaba-stack-{staleBeforeSettlement}",
+            Controller = 0,
+            SourceInstanceId = kaba.InstanceId,
+            SourceCardId = kaba.CardId,
+            SourceName = kaba.Name,
+            SourceSnapshot = kaba,
+            Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果",
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+        if (staleBeforeSettlement)
+        {
+            player.Hand.Remove(kaba);
+            player.Graveyard.Add(kaba);
+        }
+
+        Invoke(game, "ResolveS1ReactionEffect", item);
+
+        if (staleBeforeSettlement)
+        {
+            Assert.Contains(kaba, player.Graveyard);
+            Assert.Null(player.Field[0][0]);
+            Assert.Equal(beforeLock, morale.CannotUntapUntilRound);
+            Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("不执行下个重置阶段的士气锁定", StringComparison.Ordinal));
+        }
+        else
+        {
+            Assert.Same(kaba, player.Field[0][0]);
+            Assert.Equal(game.State.Round + 1, morale.CannotUntapUntilRound);
+        }
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:siwa-kaba-occupied-slot-special-graveyard")]
+    [L12AbilityEvidence("S01-0213:ability:after-attack:bf52deb7316f89d3", "target-invalidated")]
+    public void SiwaKabaMovesToGraveyardWhenItsDeclaredSlotIsOccupiedBeforeSettlement()
+    {
+        var game = Create(8221);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", "batch6kb-kaba-occupied");
+        player.Hand.Add(kaba);
+        player.Field[0][0] = Card("S01-0103", "batch6kb-slot-occupant");
+        var item = new L12StackItem
+        {
+            StackItemId = "batch6kb-kaba-occupied-stack", Controller = 0,
+            SourceInstanceId = kaba.InstanceId, SourceCardId = kaba.CardId,
+            SourceName = kaba.Name, SourceSnapshot = kaba, Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果",
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveS1ReactionEffect", item);
+
+        Assert.DoesNotContain(kaba, player.Hand);
+        Assert.Contains(kaba, player.Graveyard);
+        Assert.Equal("batch6kb-slot-occupant", player.Field[0][0]!.InstanceId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0213")]
+    [Trait("L12Evidence", "entry:siwa-kaba-negated-special-graveyard")]
+    [L12AbilityEvidence("S01-0213:ability:after-attack:bf52deb7316f89d3", "negated")]
+    public void NegatedSiwaKabaHandEntryMovesItsSourceToGraveyard()
+    {
+        var game = Create(8222);
+        var player = game.State.Players[0];
+        var kaba = Card("S01-0213", "batch6kb-kaba-negated");
+        player.Hand.Add(kaba);
+        var item = new L12StackItem
+        {
+            StackItemId = "batch6kb-kaba-negated-stack", Controller = 0,
+            SourceInstanceId = kaba.InstanceId, SourceCardId = kaba.CardId,
+            SourceName = kaba.Name, SourceSnapshot = kaba, Trigger = "reaction",
+            Text = "锡瓦的卡巴进攻后效果", Negated = true,
+        };
+        item.Data["atomicFlow"] = "锡瓦的卡巴";
+        item.Data["declared:entrySlot"] = "0:0";
+        game.State.EffectStack.Add(item);
+
+        Invoke(game, "ResolveTopStack");
+
+        Assert.DoesNotContain(kaba, player.Hand);
+        Assert.Contains(kaba, player.Graveyard);
+        Assert.Null(player.Field[0][0]);
+    }
+
     [Fact]
     [Trait("L12Evidence", "card:S01-0223")]
     public void ImmortalGiftUsesCurrentCostAndMayDeclineTheWholeReaction()
@@ -163,6 +276,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var player = game.State.Players[0];
         game.State.ActivePlayer = 1;
         var gift = Card("S01-0223", "batch6kb-gift-decline");
+        gift.Hidden = true;
+        gift.OwnerIndex = player.PlayerIndex;
         var discounted = Card("S01-0208", "batch6kb-gift-discounted");
         discounted.CostModifier = -2;
         player.Field[1][0] = gift;
@@ -200,6 +315,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var player = game.State.Players[0];
         game.State.ActivePlayer = 1;
         var gift = Card("S01-0223", "batch6kb-gift-draw-only");
+        gift.Hidden = true;
+        gift.OwnerIndex = player.PlayerIndex;
         var left = Card("S01-0208", "batch6kb-gift-left");
         var guard = Card("S01-0212", "batch6kb-gift-optional-guard");
         var drawn = Card("S01-0201", "batch6kb-gift-drawn-card");
@@ -245,7 +362,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var giftChoice = order.ValidChoices.Single(id => order.Data[id].Contains("不朽之礼", StringComparison.Ordinal));
         var nitocrisChoice = order.ValidChoices.Single(id => order.Data[id].Contains("尼托克丽丝", StringComparison.Ordinal));
         var ordered = game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [giftChoice, nitocrisChoice]));
+            // 玩家排列发动顺序；后发动者先结算。让不朽之礼后发动，先取得是否发动选择。
+            CardInstanceIds: [nitocrisChoice, giftChoice]));
         Assert.True(ordered.Accepted, ordered.Error);
 
         var giftMode = Assert.Single(game.State.PendingPrompts);
@@ -334,7 +452,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var discard = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, discard.PlayerIndex);
         Assert.True(discard.IsPrivate);
-        Assert.Equal("nefertiti-discard", discard.Data["action"]);
+        Assert.Equal(L12OpponentHandDiscardTriggerEffects.Continuation, discard.Data["action"]);
         Assert.Equal(6, discard.ValidChoices.Count);
     }
 
@@ -349,6 +467,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var hidden = Card("S01-0201", "batch6kb-ivar-hidden");
         player.Field[0][0] = source;
         player.Library.AddRange([eligible, hidden]);
+        var displayedBeforeChoice = player.Library.Take(3).Select(card => card.InstanceId).ToArray();
 
         QueueTrigger(game, source, "enter");
 
@@ -364,7 +483,14 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         PassResponses(game);
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", search.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice), search.Data["displayCardIds"]);
         Assert.Contains(eligible.InstanceId, search.ValidChoices);
+        Assert.Contains(hidden.InstanceId, search.Data["displayCardIds"]);
+        Assert.DoesNotContain(hidden.InstanceId, search.ValidChoices);
+        Assert.Equal("只能选择【阿斯加德】卡牌，且不能选择效果来源本身",
+            search.Data[$"disabledChoice:{hidden.InstanceId}"]);
+        Assert.False(search.Data.ContainsKey($"disabledChoice:{eligible.InstanceId}"));
+        Assert.DoesNotContain(hidden.InstanceId, JsonSerializer.Serialize(game.SnapshotFor(1)));
     }
 
     [Fact]
@@ -387,8 +513,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
     [InlineData("S01-0216", "canopic-box-search", "canopic-box-heal-discard")]
     [InlineData("S01-0218", "canopic-two-free", "canopic-two-discard")]
     [InlineData("S01-0219", "canopic-three-morale", "canopic-three-discard")]
-    [Trait("L12Evidence", "entry:batch6kb-canopic-independent-followup")]
-    public void CanopicDeterministicFollowupsRemainIndependentAfterTheFirstSegmentIsNegated(
+    [Trait("L12Evidence", "ruling:canopic-whole-effect-negation-20261007")]
+    public void NegatedCanopicEntryStopsItsDiscardAndHealingClauses(
         string cardId, string firstFlow, string secondFlow)
     {
         var game = Create(8204 + cardId[^1]);
@@ -402,11 +528,14 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var first = Assert.Single(game.State.EffectStack);
         Assert.Equal(firstFlow, first.Data["atomicFlow"]);
         first.Negated = true;
-        var second = PassUntilFlow(game, secondFlow);
-        Assert.Contains(source, player.ExtraRelics);
         PassResponses(game);
-        Assert.Contains(source, player.Graveyard);
-        if (cardId == "S01-0216") Assert.Equal(6, player.Hp);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.Data.GetValueOrDefault("atomicFlow") == secondFlow);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(source, player.ExtraRelics);
+        Assert.DoesNotContain(source, player.Graveyard);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Text.Contains("随后", StringComparison.Ordinal));
+        Assert.Equal(5, player.Hp);
     }
 
     [Fact]
@@ -420,23 +549,12 @@ public sealed class AtomicReviewBatch6KBRegressionTests
 
         QueueTrigger(game, source, "enter");
         Assert.Equal("canopic-three-morale", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
-        for (var safety = 0; safety < 8 && player.TemporaryMorale == 0; safety++)
-        {
-            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
-            Resolve(game, "pass");
-        }
-
+        PassResponses(game);
         Assert.Equal(2, player.TemporaryMorale);
-        Assert.Contains(source, player.ExtraRelics);
-        Assert.Equal("canopic-three-discard", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
-        for (var safety = 0; safety < 8 && player.ExtraRelics.Contains(source); safety++)
-        {
-            Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
-            Resolve(game, "pass");
-        }
-
         Assert.Contains(source, player.Graveyard);
         Assert.DoesNotContain(source, player.ExtraRelics);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingPrompts);
     }
 
     [Theory]

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-counter-tactic-response-lifecycle",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "反击战术重复响应修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "不朽之礼、拼死反抗、摄政皇权、复仇血鹰、切腹仪式、暗度陈仓等反击战术：不发动时仍可等待后续合适时机；一旦合法发动，同一张卡不会再以旧时机重复询问。重新盖放后只接受新的响应时机。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12CounterTacticResponseLifecycle.cs", "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "特洛伊木马响应进攻后会先翻开并进入结算；被无效或所选位置失效时正常进入墓地，不再留在盖伏区重复发动。正常置入对方战场、持续减兵和到期抽牌不变。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"]
+    }
+  ]
+}

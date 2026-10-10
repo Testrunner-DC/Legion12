@@ -33,18 +33,44 @@ internal static class L12EffectPresentationVariants
         new ReadOnlyDictionary<string, int>(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
         {
             ["active:S01-0105:searchBrothers"] = 2,
+            ["active:S01-0117:artifactDraw"] = 2,
+            ["active:S01-0117:artifactSearch"] = 2,
             ["active:S01-0116:xishiExchange"] = 2,
             ["active:S01-01D1:palaceReward"] = 1,
             ["active:S01-01D1:palaceExchange"] = 2,
+            ["active:S01-0215:ankhReady"] = 2,
+            ["active:S01-0215:ankhDraw"] = 2,
+            ["active:S01-0317:gramDamage"] = 2,
+            ["active:S01-04D1:yomiRecover"] = 3,
             ["active:S01-01M1:drawCycle"] = 1,
             ["active:S01-02D1:sunTopThree"] = 2,
+            ["active:S01-03M2:lokiCycle"] = 1,
             ["active:S01-03D1:valhallaRecover"] = 2,
             ["active:S01-04D1:yomiSweep"] = 2,
             ["active:S01-04M1:amaterasuKill"] = 1,
             ["active:S01-04M1:amaterasuReady"] = 2,
+            ["active:S02-01M1:wukongTransform"] = 1,
+            ["active:S02-02M1:nephthysSacrifice"] = 2,
+            ["active:S02-0404:magatamaMove"] = 2,
+            ["active:S02-0404:magatamaImmortal"] = 2,
+            ["active:S02-0520:forgePromotionDiscount"] = 2,
+            ["active:S02-0520:forgeReadyOnKill"] = 2,
+            ["active:S02-05M1:artemisBuff"] = 2,
+            ["active:S02-06M1:morriganReadyOnKill"] = 2,
             ["active:S02-05D1:divinityRecover"] = 2,
+            ["active:S02-05M2:prometheusTopThree"] = 1,
+            ["active:S02-0616:amakineTop"] = 3,
+            ["active:ST05-06:telemachusTopThree"] = 1,
             ["response:S01-0020"] = 1,
             ["response:S01-0120"] = 1,
+            ["response:S02-0015"] = 1,
+            ["response:S02-0106"] = 1,
+            ["trigger:S02-0523:trojan-after-attack"] = 1,
+            ["trigger:S02-0523:trojan-expiry"] = 1,
+            ["trigger:S01-0021:reaction"] = 1,
+            ["trigger:S01-0223:reaction"] = 1,
+            ["trigger:S01-0420:reaction"] = 1,
+            ["trigger:ST01-10:reaction"] = 1,
             ["response:S02-0016"] = 1,
             ["response:S02-0017"] = 1,
             ["response:S02-0018"] = 1,
@@ -53,6 +79,22 @@ internal static class L12EffectPresentationVariants
             ["trigger:S02-0304:margaretMasterDamage"] = 1,
         });
 
+    // A card-level composite plan can select a printed granted child ability.  Keep the
+    // runtime plan/segment identity, but let each public branch own its presentation scene
+    // instead of attaching every branch to the parent selector line.
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, int>> PlanBranchAbilitySequences =
+        new ReadOnlyDictionary<string, IReadOnlyDictionary<string, int>>(
+            new Dictionary<string, IReadOnlyDictionary<string, int>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["S02-0406"] = new ReadOnlyDictionary<string, int>(
+                    new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["mode:row-cost"] = 2,
+                        ["mode:front-attack"] = 3,
+                        ["mode:free-move"] = 4,
+                    }),
+            });
+
     private static readonly L12EffectPresentationBranch[] PublicBranches =
     [
         Branch("volley-effect", "对方前排兵力-2000", "对方前排所有军团本回合兵力-2000", "volleyMode", "mode:front"),
@@ -60,8 +102,20 @@ internal static class L12EffectPresentationVariants
         Branch("volley-effect", "单体兵力-4000", "对方1张军团本回合兵力-4000", "volleyMode", "mode:single"),
         Branch("duat-effect", "击杀军团", "击杀对方1张兵力不高于5000的军团", "duatMode", "mode:kill"),
         Branch("duat-effect", "回收卡牌", "墓地最多1张其他【太阳城】卡牌加入手牌", "duatMode", "mode:recover"),
+        Branch("immortal-gift-summon", "不登场", "选择不发动后续的〈陵墓守卫〉登场效果", "entryMode", "mode:none"),
+        Branch("immortal-gift-summon", "活跃登场", "将已声明的墓地1张〈陵墓守卫〉活跃登场", "entryMode", "mode:summon"),
+        Branch("divinity-entry", "不登场", "选择不发动诸神巅后续的军团登场效果", "entryMode", "mode:none"),
+        Branch("divinity-entry", "活跃登场", "诸神巅令已声明的费用不高于4军团活跃登场", "entryMode", "mode:entry"),
+        Branch("landlord-coercion", "等待对方选择", "要求对方额外弃置1张手牌，否则本次抵挡/支援无效", "mode", "mode:pending"),
+        Branch("landlord-coercion", "额外弃置手牌", "对方额外弃置1张手牌，本次抵挡/支援继续", "mode", "mode:discard"),
+        Branch("landlord-coercion", "抵挡/支援无效", "对方未额外弃置手牌，本次抵挡/支援无效", "mode", "mode:invalidate"),
+        Branch("cosmos-yin-reveal", "等待展示牌库顶", "展示牌库顶部1张牌，并在结算时判断后续分支", "revealMode", "mode:pending"),
+        Branch("cosmos-yin-reveal", "符合条件并弃置", "展示牌库顶部1张牌；其为费用不高于3的【天廷】军团，将其弃置", "revealMode", "mode:hit"),
+        Branch("cosmos-yin-reveal", "不符合并置底", "展示牌库顶部1张牌；其不符合条件，将其置于牌库底部", "revealMode", "mode:return"),
         Branch("hunter-gift", "震击伤害+2000", "所选奥林匹斯军团本回合震击伤害+2000", "mode", "mode:shock"),
         Branch("hunter-gift", "进攻时兵力+2000", "所选奥林匹斯远程军团本回合进攻时兵力+2000", "mode", "mode:ranged"),
+        Branch("artemis-grant", "获得强攻", "所选【奥林匹斯】军团本回合获得强攻", "buffMode", "buff:strong"),
+        Branch("artemis-grant", "获得震击", "所选【奥林匹斯】军团本回合获得震击", "buffMode", "buff:shock"),
         Branch("ruined-ritual", "盲选并弃置手牌", "盲选并弃置对方1张手牌", "mode", "mode:discard"),
         Branch("ruined-ritual", "登场效果无效", "令该军团登场效果无效且本回合兵力-3000", "mode", "mode:suppress"),
         Branch("ritual-disaster", "天灾值-2", "将天灾值减少2点", "disasterValue", "-2"),
@@ -76,10 +130,14 @@ internal static class L12EffectPresentationVariants
         Branch("tenka-effect", "对方后排费用-2", "对方后排所有军团本回合费用-2", ("mode", "mode:row-cost"), ("row", "row:1")),
         Branch("tenka-effect", "前排进攻兵力+1000", "本回合我方前排所有【高天原】军团进攻时兵力+1000", "mode", "mode:front-attack"),
         Branch("tenka-effect", "活跃军团免费位移", "本回合我方所有活跃的【高天原】军团可免费进行1格位移", "mode", "mode:free-move"),
-        Branch("desert-transaction", "按0张结算", "不再弃置，按数量0处理", "desertRepeatCount", "count:0"),
-        Branch("desert-transaction", "按1张结算", "不再弃置，按数量1处理", "desertRepeatCount", "count:1"),
-        Branch("desert-transaction", "按2张结算", "不再弃置，按数量2处理", "desertRepeatCount", "count:2"),
-        Branch("desert-transaction", "按3张结算", "不再弃置，按数量3处理", "desertRepeatCount", "count:3"),
+        Branch("desert-transaction", "按数量0结算", "按数量0处理，令天灾等级为0的【太阳城】军团活跃登场", "desertRepeatCount", "count:0"),
+        Branch("desert-transaction", "按数量1结算", "按数量1处理，令天灾等级为1的【太阳城】军团活跃登场", "desertRepeatCount", "count:1"),
+        Branch("desert-transaction", "按数量2结算", "按数量2处理，令天灾等级为2的【太阳城】军团活跃登场", "desertRepeatCount", "count:2"),
+        Branch("desert-transaction", "按数量3结算", "按数量3处理，令天灾等级为3的【太阳城】军团活跃登场", "desertRepeatCount", "count:3"),
+        Branch("amakine-top-card", "等待处理已展示牌", "处理已展示的牌，并按其有效特征选择去向", "place", "mode:pending"),
+        Branch("amakine-top-card", "加入手牌", "将仅具有【彼界】单一特征的牌加入手牌", "place", "hand"),
+        Branch("amakine-top-card", "返回牌库顶部", "将展示的牌返回牌库顶部", "place", "top"),
+        Branch("amakine-top-card", "返回牌库底部", "将展示的牌返回牌库底部", "place", "bottom"),
     ];
 
     private static readonly L12StandaloneEffectPresentationBranch[] StandalonePublicBranches =
@@ -92,14 +150,20 @@ internal static class L12EffectPresentationVariants
             "迦具土消耗1士气：使进攻军团本回合兵力+2000", "mode", "mode:morale")),
         new("ST04-M1", "legion-attack-timing", Branch("kagutsuchi-buff", "弃置手牌",
             "迦具土弃置1张手牌：使进攻军团本回合兵力+2000", "mode", "mode:discard")),
+        new("S02-0602", "enter", Branch("trial-advance:lancelot-entry", "获得冲锋",
+            "兰斯洛特消耗1符文并获得冲锋", "mode", "mode:use")),
         new("S02-0602", "after-attack", Branch("trial-advance:lancelot-kill", "推进试炼",
-            "兰斯洛特推进1点试炼", "mode", "mode:trial")),
+            "兰斯洛特推进1点试炼", "mode", "mode:trial"), 4),
         new("S02-0602", "after-attack", Branch("trial-advance:lancelot-kill", "获得符文",
-            "兰斯洛特使我方获得1符文", "mode", "mode:rune")),
+            "兰斯洛特使我方获得1符文", "mode", "mode:rune"), 5),
         new("S02-0614", "enter", Branch("trial-advance:constance-entry", "获得符文",
-            "康斯坦丝使我方获得1符文", "mode", "mode:rune")),
+            "康斯坦丝使我方获得1符文", "mode", "mode:rune"), 4),
         new("S02-0614", "enter", Branch("trial-advance:constance-entry", "推进试炼",
-            "康斯坦丝推进1点试炼", "mode", "mode:trial")),
+            "康斯坦丝推进1点试炼", "mode", "mode:trial"), 5),
+        new("S02-0610", "trial-advance-followup", Branch("trial-advance:finn-ready", "转为活跃",
+            "芬恩消耗1符文并转为活跃，本回合无法再次发动试炼", "mode", "mode:use"), 3),
+        new("S02-06D1", "turn-start", Branch("trial-advance:avalon", "推进试炼并获得符文",
+            "彼界 阿瓦隆使试炼进度+1并获得1符文", "mode", "mode:mandatory")),
         new("S02-0615", "death", Branch("gwen-choice", "恢复血量",
             "格温莉安使我方主宰增加1点血量", "mode", "mode:heal")),
         new("S02-0615", "death", Branch("gwen-choice", "抽取卡牌",
@@ -109,15 +173,15 @@ internal static class L12EffectPresentationVariants
         new("S01-02M1", "active", Branch("isis-reward-choice", "主宰增加1点血量",
             "伊西斯完成卡诺匹斯操作后使我方主宰增加1点血量", "rewardMode", "mode:heal"), 1),
         new("S02-05D1", "active", Branch("divinity-power", "分配6000兵力伤害",
-            "诸神巅对对方军团分配合计6000兵力伤害", "mode", "mode:damage"), 3),
+            "诸神巅对对方军团分配合计6000兵力伤害", "mode", "mode:damage"), 2),
         new("S01-02M3", "active", Branch("medjed-debuff", "兵力-1000",
             "梅杰德使对方1张军团本回合兵力-1000", "mode", "mode:normal"), 1),
         new("S01-02M3", "active", Branch("medjed-debuff", "兵力-3000",
             "梅杰德额外休整陵墓守卫，使对方1张军团本回合兵力-3000", "mode", "mode:strong"), 1),
         new("S02-06C1", "active", Branch("otherworld-rune-use", "试炼+1",
-            "彼界阵营符文效果使当前试炼进度+1", "mode", "mode:trial"), 2),
+            "彼界阵营符文效果使当前试炼进度+1", "mode", "mode:trial"), 1),
         new("S02-06C1", "active", Branch("otherworld-rune-use", "抽取1张牌",
-            "彼界阵营符文效果使我方抽取1张牌", "mode", "mode:draw"), 2),
+            "彼界阵营符文效果使我方抽取1张牌", "mode", "mode:draw"), 1),
         new("S02-0603", "active", Branch("merlin-rune", "兵力-3000",
             "梅林使对方1张军团本回合兵力-3000", "mode", "mode:debuff"), 3),
         new("S02-0603", "active", Branch("merlin-rune", "检索主动战术",
@@ -130,6 +194,14 @@ internal static class L12EffectPresentationVariants
             "加拉哈德抽取1张牌", "healMode", "mode:none"), 3),
         new("S02-0604", "active", Branch("galahad-grail-reward", "抽牌并回复血量",
             "加拉哈德抽取1张牌，并使我方主宰增加1点血量", "healMode", "mode:heal"), 3),
+        new("S01-0016", "response-negate", Branch("absolute-defense-response", "抵挡本次进攻",
+            "抵挡本次进攻", "mode", "mode:block"), 1),
+        new("S01-0016", "response-negate", Branch("absolute-defense-response", "无效该效果",
+            "无效该效果", "mode", "mode:negate"), 1),
+        new("S01-0017", "reaction", Branch("last-stand-response", "单体兵力-2000",
+            "选择对方1张休整的军团，直到下个我方回合结束前兵力-2000", "mode", "mode:single"), 1),
+        new("S01-0017", "reaction", Branch("last-stand-response", "全部休整军团兵力-1000",
+            "对方所有休整的军团，直到下个我方回合结束前兵力-1000", "mode", "mode:all"), 1),
         .. SkyCityBranches(),
     ];
 
@@ -149,14 +221,23 @@ internal static class L12EffectPresentationVariants
         var result = abilities.ToArray();
         foreach (var plan in plans)
         {
-            var ownerIndex = ResolveOwnerIndex(result, plan);
-
-            var owner = result[ownerIndex];
-            var additions = BuildPlanScenes(owner, plan).ToArray();
-            result[ownerIndex] = owner with
+            var defaultOwnerIndex = ResolveOwnerIndex(result, plan);
+            var defaultOwner = result[defaultOwnerIndex];
+            var additions = BuildPlanScenes(defaultOwner, plan).ToArray();
+            foreach (var addition in additions)
             {
-                Presentations = owner.Presentations.Concat(additions).ToArray(),
-            };
+                var ownerIndex = ResolvePlanBranchOwnerIndex(result, plan, addition, defaultOwnerIndex);
+                var owner = result[ownerIndex];
+                var ownedScene = ownerIndex == defaultOwnerIndex ? addition : addition with
+                {
+                    SceneId = $"{owner.AbilityId}:presentation:{addition.Trigger}",
+                    AbilityId = owner.AbilityId,
+                };
+                result[ownerIndex] = owner with
+                {
+                    Presentations = owner.Presentations.Append(ownedScene).ToArray(),
+                };
+            }
         }
 
         foreach (var group in standalone.GroupBy(branch =>
@@ -181,6 +262,19 @@ internal static class L12EffectPresentationVariants
 
         ValidateConfiguration(result.SelectMany(ability => ability.Presentations));
         return result;
+    }
+
+    private static int ResolvePlanBranchOwnerIndex(IReadOnlyList<L12AtomicAbility> abilities,
+        L12EffectPresentationPlan plan, L12EffectPresentationScene scene, int defaultOwnerIndex)
+    {
+        if (!PlanBranchAbilitySequences.TryGetValue(plan.PlanId, out var branchOwners)
+            || scene.RequiredChoices?.GetValueOrDefault("mode") is not { } mode
+            || !branchOwners.TryGetValue(mode, out var sequence)) return defaultOwnerIndex;
+        var matches = abilities.Select((ability, index) => (ability, index))
+            .Where(item => item.ability.Sequence == sequence).Select(item => item.index).ToArray();
+        if (matches.Length == 1) return matches[0];
+        throw new InvalidOperationException(
+            $"动效计划 {plan.PlanId} 的分支 {mode} 无法唯一归属能力序号 {sequence}");
     }
 
     private static string StandaloneOwnerTrigger(L12StandaloneEffectPresentationBranch branch)
@@ -372,6 +466,9 @@ internal static partial class L12CompositeEffectPlans
         {
             ["starter-aeneas-promotion"] = ("ST05-01", "promotion-enter"),
             ["starter-athena-active"] = ("ST05-M1", "active"),
+            ["starter-oiran-active"] = ("ST04-06", "active"),
+            ["starter-horus-active"] = ("ST02-M1", "active"),
+            ["starter-nuada-active"] = ("ST06-M1", "active"),
         };
 
     internal static IReadOnlyList<L12EffectPresentationPlan> PresentationPlansForCard(string cardId)

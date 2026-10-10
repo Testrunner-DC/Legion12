@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-home-revisit",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "首页回访入口与空态",
+  "changes": [{
+    "category": "ui",
+    "text": "登录后首页可进入我的牌库和我的赛事，并提示本机最近保存的牌库；正在进行且已恢复的对局可点击继续。未发布首页内容时不再显示样例通知、标题或日期，原有已发布内容和缓存保留。",
+    "paths": ["opcgpro-vue/src/l12/site/OfficialHomePage.vue", "opcgpro-vue/src/l12/site/HomeRevisitActions.vue", "opcgpro-vue/src/l12/site/homeRevisit.ts", "opcgpro-vue/src/l12/site/TournamentHubPage.vue", "opcgpro-vue/src/l12/site/tournamentHubNavigation.ts", "opcgpro-vue/src/l12/site/homePublishedCache.ts"]
+  }]
+}

@@ -2,28 +2,9 @@ import { automaticExtraCardIdsForMaster, deckCountSummary, type DeckCard, type S
 import { compareDeckCardIds } from '@/l12/deckOrdering'
 import { resolveCardAssetUrls } from '@/l12/cardAssets'
 import { isHorizontalCardType } from '@/l12/cardPresentation'
+import QRCode from 'qrcode'
 
-interface DeckCodePayload { v: 1; n: string; m: string; c: string[]; r: string[]; s?: string[] }
-
-export function encodeDeckCode(deck: SavedL12Deck) {
-  const payload: DeckCodePayload = { v: 1, n: deck.name, m: deck.masterId, c: deck.cardIds, r: deck.moraleIds, s: deck.specialIds }
-  const bytes = new TextEncoder().encode(JSON.stringify(payload))
-  let binary = ''
-  bytes.forEach(byte => { binary += String.fromCharCode(byte) })
-  return `L12D1.${btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`
-}
-
-export function decodeDeckCode(code: string): SavedL12Deck {
-  const trimmed = code.trim()
-  if (!trimmed.startsWith('L12D1.')) throw new Error('不是有效的十二军团牌库码')
-  const base64 = trimmed.slice(6).replace(/-/g, '+').replace(/_/g, '/')
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
-  const binary = atob(padded)
-  const bytes = Uint8Array.from(binary, char => char.charCodeAt(0))
-  const payload = JSON.parse(new TextDecoder().decode(bytes)) as DeckCodePayload
-  if (payload.v !== 1 || !payload.n || !payload.m || !Array.isArray(payload.c) || !Array.isArray(payload.r)) throw new Error('牌库码内容不完整')
-  return { name: payload.n.slice(0, 24), masterId: payload.m, cardIds: payload.c, moraleIds: payload.r, specialIds: payload.s ?? [], updatedAt: new Date().toISOString() }
-}
+export { encodeDeckCode, decodeDeckCode } from '../deckCodeCodec'
 
 async function loadImage(cardId: string | undefined, legacyUrl?: string) {
   const candidates = await resolveCardAssetUrls(cardId ?? '', legacyUrl, 'detail')
@@ -45,11 +26,77 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
   context.fill()
 }
 
-export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[]) {
+function loadDataImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('二维码图像生成失败'))
+    image.src = url
+  })
+}
+
+export interface DeckImageAlternateArt {
+  id: string
+  artCode?: string
+  displayName?: string
+  imageUrl?: string
+  thumbnailUrl?: string
+  cardImageId?: string
+  builtIn?: boolean
+}
+
+export interface DeckImageOptions {
+  publicUrl?: string
+  alternateArts?: readonly DeckImageAlternateArt[]
+}
+
+export interface DeckImageAppearance {
+  artId: string
+  label: string
+  cardImageId: string
+  legacyUrl?: string
+}
+
+export interface DeckImageGroup extends DeckImageAppearance {
+  cardId: string
+  count: number
+}
+
+function appearanceFor(cardId: string, artId: string, arts: ReadonlyMap<string, DeckImageAlternateArt>, byId: ReadonlyMap<string, DeckCard>): DeckImageAppearance {
+  const art = artId ? arts.get(artId) : undefined
+  return {
+    artId,
+    label: art ? [art.artCode, art.displayName].filter(Boolean).join(' · ') : artId ? `异画 · ${artId}` : '原画',
+    cardImageId: art?.cardImageId || (artId || cardId),
+    legacyUrl: art ? (art.builtIn ? undefined : art.thumbnailUrl || art.imageUrl) : artId ? undefined : byId.get(cardId)?.imageUrl,
+  }
+}
+
+export function deckImageGroups(deck: SavedL12Deck, catalog: DeckCard[], alternateArts: readonly DeckImageAlternateArt[] = []): DeckImageGroup[] {
   const byId = new Map(catalog.map(card => [card.id, card]))
+  const arts = new Map(alternateArts.map(art => [art.id, art]))
   const masterFaction = byId.get(deck.masterId)?.faction
-  const groups = [...deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())]
-    .sort(([left], [right]) => compareDeckCardIds(left, right, byId, masterFaction))
+  const totals = deck.cardIds.reduce((map, id) => map.set(id, (map.get(id) || 0) + 1), new Map<string, number>())
+  return [...totals.keys()].sort((left, right) => compareDeckCardIds(left, right, byId, masterFaction)).flatMap(cardId => {
+    const count = totals.get(cardId) ?? 0
+    const explicit = [...(deck.alternateArtCopies?.[cardId] ?? [])].slice(0, count)
+    const appearances = explicit.length ? explicit : Array(count).fill(deck.alternateArtSelections?.[cardId] ?? '') as string[]
+    while (appearances.length < count) appearances.push('')
+    const grouped = new Map<string, number>()
+    appearances.forEach(artId => grouped.set(artId, (grouped.get(artId) ?? 0) + 1))
+    return [...grouped].map(([artId, appearanceCount]) => ({
+      cardId,
+      count: appearanceCount,
+      ...appearanceFor(cardId, artId, arts, byId),
+    }))
+  })
+}
+
+export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[], options: DeckImageOptions = {}) {
+  const byId = new Map(catalog.map(card => [card.id, card]))
+  const publicUrl = /^https?:\/\//i.test(options.publicUrl?.trim() ?? '') ? options.publicUrl!.trim() : ''
+  const alternateArts = new Map((options.alternateArts ?? []).map(art => [art.id, art]))
+  const groups = deckImageGroups(deck, catalog, options.alternateArts)
   const extraIds = [...new Set([
     ...(deck.specialIds ?? []),
     ...automaticExtraCardIdsForMaster(deck.masterId),
@@ -74,13 +121,17 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   context.fillStyle = '#e1bf6d'; context.fillRect(410, 168, 1464, 3)
 
   const loadedBitmaps = await Promise.all([
-    loadImage(master?.id, master?.imageUrl),
-    ...groups.map(([id]) => loadImage(id, byId.get(id)?.imageUrl)),
-    ...extraIds.map(id => loadImage(id, byId.get(id)?.imageUrl)),
+    (() => { const appearance = appearanceFor(deck.masterId, deck.alternateArtSelections?.[deck.masterId] ?? '', alternateArts, byId); return loadImage(appearance.cardImageId, appearance.legacyUrl) })(),
+    ...groups.map(group => loadImage(group.cardImageId, group.legacyUrl)),
+    ...extraIds.map(id => { const appearance = appearanceFor(id, deck.alternateArtSelections?.[id] ?? '', alternateArts, byId); return loadImage(appearance.cardImageId, appearance.legacyUrl) }),
   ])
   const masterBitmap = loadedBitmaps[0]
   const bitmaps = loadedBitmaps.slice(1, 1 + groups.length)
   const extraBitmaps = loadedBitmaps.slice(1 + groups.length)
+  const qrImage = publicUrl
+    ? await QRCode.toDataURL(publicUrl, { errorCorrectionLevel: 'M', margin: 3, width: 180, color: { dark: '#050708', light: '#ffffff' } })
+      .then(loadDataImage)
+    : null
   context.fillStyle = '#10171b'; roundedRect(context, 74, 104, 254, 356, 4)
   if (masterBitmap) context.drawImage(masterBitmap, 74, 104, 254, 356)
   else { context.fillStyle = '#263139'; context.fillRect(74, 104, 254, 356) }
@@ -119,13 +170,13 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     context.textAlign = 'left'
   }
 
-  const areaX = 410; const areaY = 198; const areaWidth = 1464; const areaHeight = 784
+  const areaX = 410; const areaY = 198; const areaWidth = 1464; const areaHeight = publicUrl ? 650 : 784
   const gapX = 13
   const rowPitch = areaHeight / rows
   const cardWidth = Math.min(162, (areaWidth - gapX * (columns - 1)) / columns, (rowPitch - 42) / 1.4)
   const cardHeight = cardWidth * 1.4
-  groups.forEach(([id, count], index) => {
-    const card = byId.get(id)
+  groups.forEach((group, index) => {
+    const card = byId.get(group.cardId)
     const col = index % columns
     const row = Math.floor(index / columns)
     const x = areaX + col * (cardWidth + gapX)
@@ -134,13 +185,20 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
     const bitmap = bitmaps[index]
     if (bitmap) context.drawImage(bitmap, x, y, cardWidth, cardHeight)
     else { context.fillStyle = '#263139'; context.fillRect(x, y, cardWidth, cardHeight); context.fillStyle = '#77858c'; context.font = '900 13px Microsoft YaHei'; context.fillText('暂无卡图', x + 25, y + cardHeight / 2) }
-    context.fillStyle = '#f1ede3'; context.font = '900 13px Microsoft YaHei'; context.fillText((card?.nameZh || id).slice(0, 10), x + 2, y + cardHeight + 18)
-    context.fillStyle = '#7f8b90'; context.font = '700 10px Microsoft YaHei'; context.fillText(card?.number || id, x + 2, y + cardHeight + 33)
+    context.fillStyle = '#f1ede3'; context.font = '900 13px Microsoft YaHei'; context.fillText((card?.nameZh || group.cardId).slice(0, 10), x + 2, y + cardHeight + 18)
+    context.fillStyle = '#7f8b90'; context.font = '700 10px Microsoft YaHei'; context.fillText(group.label.slice(0, 18), x + 2, y + cardHeight + 33)
     context.fillStyle = '#e1bf6d'
     const badgeX = x + cardWidth - 16
     context.beginPath(); context.arc(badgeX, y + 16, 16, 0, Math.PI * 2); context.fill()
-    context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${count}`, badgeX, y + 21); context.textAlign = 'left'
+    context.fillStyle = '#0b0e10'; context.font = '900 15px Microsoft YaHei'; context.textAlign = 'center'; context.fillText(`×${group.count}`, badgeX, y + 21); context.textAlign = 'left'
   })
+  if (qrImage && publicUrl) {
+    const qrSize = 132
+    const qrX = 1860 - qrSize
+    const qrY = 864
+    context.fillStyle = '#ffffff'; context.fillRect(qrX - 6, qrY - 6, qrSize + 12, qrSize + 12)
+    context.drawImage(qrImage, qrX, qrY, qrSize, qrSize)
+  }
   context.fillStyle = '#7f8b90'; context.font = '700 14px Microsoft YaHei'; context.fillText('由十二军团网页平台生成 · 可使用牌库码导入', 74, canvas.height - 70)
   context.fillStyle = '#e1bf6d'; context.font = '900 19px Microsoft YaHei'; context.fillText('LEGION12', 74, canvas.height - 42)
   masterBitmap?.close()
@@ -149,8 +207,8 @@ export async function createDeckImageBlob(deck: SavedL12Deck, catalog: DeckCard[
   return await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('牌库图生成失败')), 'image/png'))
 }
 
-export async function downloadDeckImage(deck: SavedL12Deck, catalog: DeckCard[], existingBlob?: Blob) {
-  const blob = existingBlob || await createDeckImageBlob(deck, catalog)
+export async function downloadDeckImage(deck: SavedL12Deck, catalog: DeckCard[], existingBlob?: Blob, options: DeckImageOptions = {}) {
+  const blob = existingBlob || await createDeckImageBlob(deck, catalog, options)
   const anchor = document.createElement('a')
   anchor.href = URL.createObjectURL(blob)
   anchor.download = `${deck.name.replace(/[\\/:*?"<>|]/g, '_')}-牌库图.png`

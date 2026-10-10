@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-mobile-battle-animation-stability",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "移动端卡牌动画稳定性修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正手机横屏与竖屏旋转模式下，卡牌活跃与休整切换、区域移动和战败入墓可能漂移、闪烁、拉伸或在交接后再次转动的问题；视口与安全区域轻微变化时，正在播放的动画会继续从原位置平稳完成。",
+      "paths": [
+        "opcgpro-vue/src/l12/mobileViewport.ts",
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue",
+        "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"
+      ]
+    }
+  ]
+}

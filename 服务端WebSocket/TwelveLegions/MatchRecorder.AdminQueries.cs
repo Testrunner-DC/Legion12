@@ -14,6 +14,7 @@ public sealed partial class MatchRecorder
         EXISTS(
             SELECT 1 FROM match_events conclusion
             WHERE conclusion.match_id=m.match_id
+              AND conclusion.player_index=-1 AND conclusion.accepted=1
               AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
                       THEN conclusion.command_json ELSE '{}' END,'$.type')='authorityConclusion'
               AND json_extract(CASE WHEN json_valid(conclusion.command_json)=1
@@ -331,13 +332,13 @@ public sealed partial class MatchRecorder
     }
 
     public Task<IReadOnlyList<L12MatchSummary>> ListMatchesForAccountAsync(
-        string accountId, string legacyPlayerName, int limit = 30) =>
+        string accountId, string legacyPlayerName, int limit = PlayerReplayWindowSize) =>
         ListRecentPlayerReplayMatchesAsync(accountId, legacyPlayerName, limit);
 
     public async Task<L12MatchDetail?> GetMatchForAccountAsync(
         string matchId, string accountId, string legacyPlayerName)
     {
-        // The URL must obey the same 30-match ownership window as the list.
+        // The URL must obey the same age-and-count ownership window as the list.
         // Check expiry before trying to reconstruct a journal whose checkpoints were pruned.
         if (!await IsWithinRecentPlayerReplayWindowAsync(matchId, accountId, legacyPlayerName)
             || await IsPlayerReplayPayloadExpiredAsync(matchId)) return null;
@@ -369,7 +370,7 @@ public sealed partial class MatchRecorder
             Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
             State = SanitizeRecordedState(command.State, viewer),
         }).ToArray();
-        return new L12MatchDetail(detail.Match, commands, viewer);
+        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
     }
 
     private static string BuildAdminMatchWhere(L12AdminMatchQuery query, bool includeCursor,

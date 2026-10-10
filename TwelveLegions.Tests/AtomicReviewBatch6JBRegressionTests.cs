@@ -92,11 +92,11 @@ public sealed class AtomicReviewBatch6JBRegressionTests
                 new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass")).Accepted);
     }
 
-    [Theory]
-    [InlineData("S01-0007")]
-    [Trait("L12Evidence", "hand-play:batch6jb-public-followup-declaration")]
-    public void RemainingCompositeTacticsDeclareTheirPublicFollowupBeforeAnyStack(string cardId)
+    [Fact]
+    [Trait("L12Evidence", "hand-play:batch6jb-staged-followup-declaration")]
+    public void WildCampDoesNotDeclareItsIndependentFollowupBeforeTheSearchStack()
     {
+        const string cardId = "S01-0007";
         var game = Create(9980 + cardId[^1]);
         var player = game.State.Players[0];
         var opponent = game.State.Players[1];
@@ -111,9 +111,14 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
 
-        Assert.Equal("pending-activation", OnlyPrompt(game).Continuation);
-        Assert.Empty(game.State.EffectStack);
-        Assert.Contains(game.State.PendingActivations, activation => activation.SourceCardId == cardId);
+        var search = OnlyPrompt(game);
+        Assert.Equal("search", search.Kind);
+        Assert.Equal("camp-pick", search.Data["action"]);
+        Assert.NotEqual("pending-activation", search.Continuation);
+        Assert.Equal("camp-search", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        Assert.DoesNotContain(game.State.PendingActivations, activation => activation.SourceCardId == cardId);
+        Assert.DoesNotContain(source, player.Hand);
+        Assert.Contains(source, player.Resolving);
     }
 
     [Fact]
@@ -189,6 +194,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.Equal("pending-activation", OnlyPrompt(game).Continuation);
         Assert.Empty(game.State.EffectStack);
+        Assert.Equal("master-legion-returned",
+            Assert.Single(game.State.PendingTriggerStackCandidates).Trigger);
     }
 
     [Fact]
@@ -207,6 +214,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Contains("pending:factionZeroRecovery", player.UsedAbilities);
         Assert.DoesNotContain("trigger:factionZeroRecovery", player.UsedAbilities);
         Assert.Empty(game.State.EffectStack);
+        Assert.Equal("morale-returned-to-zero",
+            Assert.Single(game.State.PendingTriggerStackCandidates).Trigger);
     }
 
     [Fact]
@@ -237,8 +246,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "hand-play:batch6jb-prepaid-independent-segments")]
-    public void WildCampPrepaysTheDeclaredFollowupAndStillQueuesItWhenTheSearchIsNegated()
+    [Trait("L12Evidence", "hand-play:batch6jb-staged-independent-segments")]
+    public void WildCampDeclaresItsIndependentFollowupAfterTheSearchIsNegated()
     {
         var game = new L12GameEngine(Catalog, "atomic-review-batch6jb", "ATOMIC6JB", 9998,
             ["甲", "乙"], [0, 1], skipPreparation: true, autoPassEmptyResponses: false);
@@ -254,17 +263,18 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         game.State.Phase = L12Phase.Main;
 
         Assert.True(game.Handle(0, new L12Command("playCard", camp.InstanceId)).Accepted);
-        Resolve(game, "mode:draw");
-
-        Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));
-        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.True(game.State.EffectStack.Count > 0,
             $"prompts={string.Join(';', game.State.PendingPrompts.Select(prompt => $"{prompt.Kind}:{prompt.Continuation}:{prompt.Data.GetValueOrDefault("activationStep")}"))}; "
             + $"activations={string.Join(';', game.State.PendingActivations.Select(activation => $"{activation.Ability}:{activation.CurrentStep}"))}; "
             + $"events={string.Join(';', game.State.Events.TakeLast(8).Select(entry => $"{entry.Type}:{entry.Text}"))}");
         Assert.Equal("camp-search", game.State.EffectStack[^1].Data["atomicFlow"]);
+        Assert.Equal(camp.Cost, player.Morale.Count(morale => morale.Tapped));
         game.State.EffectStack[^1].Negated = true;
         PassCurrentResponseWindow(game);
+
+        var followup = OnlyPrompt(game);
+        Assert.Equal("pending-activation", followup.Continuation);
+        Resolve(game, "mode:draw");
 
         Assert.Equal("camp-draw", game.State.EffectStack[^1].Data["atomicFlow"]);
         Assert.Equal(camp.Cost + 1, player.Morale.Count(morale => morale.Tapped));
@@ -306,8 +316,8 @@ public sealed class AtomicReviewBatch6JBRegressionTests
     }
 
     [Fact]
-    [Trait("L12Evidence", "trigger:batch6jb-lubu-prepaid-no-refund")]
-    public void LuBuReturnsFourDeclaredMoraleBeforeStackAndNegationDoesNotRefundThem()
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-negation")]
+    public void LuBuPaysFourMoraleBeforeResponseAndNegationOnlyStopsReady()
     {
         var game = Create(9999);
         var player = game.State.Players[0];
@@ -330,11 +340,103 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
         Assert.Equal(2, player.Morale.Count);
         Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal("返还4士气", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：返还4士气", response.Text, StringComparison.Ordinal);
+        Assert.Contains("效果：将此军团转为活跃。", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("效果：此军团进攻后，可返还4士气", response.Text, StringComparison.Ordinal);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text == "吕布返还4士气");
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("入栈前", StringComparison.Ordinal)
+            || entry.Text.Contains("已声明", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("费用已改为", StringComparison.Ordinal)
+            || entry.Text.Contains("规则修正", StringComparison.Ordinal));
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 
         Assert.True(lubu.Tapped);
         Assert.Equal(2, player.Morale.Count);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-resolves")]
+    public void LuBuPaidMoraleStaysReturnedAndOnlyReadyResolves()
+    {
+        var game = Create(10001);
+        var player = game.State.Players[0];
+        var lubu = Card("S01-0101", "batch6jb-lubu-resolve");
+        lubu.Tapped = true;
+        player.Field[0][0] = lubu;
+        AddMorale(player, 6, "batch6jb-lubu-resolve-morale");
+        HoldOpponentResponseWindow(game);
+        var returned = player.Morale.Take(4).Select(card => card.InstanceId).ToList();
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, lubu, "after-attack", "吕布进攻后", null,
+            new Dictionary<string, string>());
+        Resolve(game, "mode:use");
+        Resolve(game, choices: returned);
+
+        Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
+        Assert.True(lubu.Tapped);
+        PassResponses(game);
+
+        Assert.Equal(2, player.Morale.Count);
+        Assert.False(lubu.Tapped);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-lubu-effect-chain-revalidates")]
+    public void LuBuPaidMoraleIsNotRefundedWhenSourceLeavesDuringResponse()
+    {
+        var game = Create(10002);
+        var player = game.State.Players[0];
+        var lubu = Card("S01-0101", "batch6jb-lubu-revalidate");
+        lubu.Tapped = true;
+        player.Field[0][0] = lubu;
+        AddMorale(player, 6, "batch6jb-lubu-revalidate-morale");
+        HoldOpponentResponseWindow(game);
+        var returned = player.Morale.Take(4).Select(card => card.InstanceId).ToList();
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, lubu, "after-attack", "吕布进攻后", null,
+            new Dictionary<string, string>());
+        Resolve(game, "mode:use");
+        Resolve(game, choices: returned);
+        player.Field[0][0] = null;
+        PassResponses(game);
+
+        Assert.Equal(2, player.Morale.Count);
+        Assert.DoesNotContain(player.Morale, card => returned.Contains(card.InstanceId));
+        Assert.True(lubu.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text == "吕布已离开战场，不能因本次效果转为活跃");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "trigger:batch6jb-gawain-no-colon-effect-chain")]
+    public void GawainRuneSelectionIsNotPaidCostAndNegationStopsRuneSpend()
+    {
+        var game = Create(10003);
+        var player = game.State.Players[0];
+        var gawain = Card("S02-0607", "batch6jb-gawain-no-colon");
+        player.Field[0][0] = gawain;
+        player.SpecialZones.Runes = 3;
+        HoldOpponentResponseWindow(game);
+
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, gawain, "attack", "高文进攻时", null,
+            new Dictionary<string, string>());
+        Resolve(game, "rune-count:2");
+
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        game.State.EffectStack[^1].Negated = true;
+        PassResponses(game);
+
+        Assert.Equal(3, player.SpecialZones.Runes);
+        Assert.Equal(gawain.BaseTroops, gawain.Troops);
     }
 
     [Fact]
@@ -359,6 +461,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Empty(player.Graveyard);
         Assert.Equal([second.InstanceId, first.InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Contains($"gustav-ready:{gustav.InstanceId}:{game.State.TurnSerial}", player.UsedAbilities);
+        var response = OnlyPrompt(game);
+        Assert.Equal("response", response.Kind);
+        Assert.Contains($"将墓地中的〈{first.Name}〉置于牌库底部",
+            response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains($"将墓地中的〈{second.Name}〉置于牌库底部",
+            response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Contains("将此军团转为活跃", response.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("效果：我方 回合1次 此军团进攻后，可将墓地", response.Text,
+            StringComparison.Ordinal);
         game.State.EffectStack[^1].Negated = true;
         PassResponses(game);
 
@@ -393,6 +505,7 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-prayer-prepaid-hidden-no-refund")]
+    [L12AbilityEvidence("S02-0012:ability:granted:1c5ef0343f70615c", "negated")]
     public void PrayerPrivatePreviewPaysBeforeStackAndNegationKeepsTheCostWithoutRevealingTheTopCard()
     {
         var game = Create(10002);
@@ -426,16 +539,24 @@ public sealed class AtomicReviewBatch6JBRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "trigger:batch6jb-faction-once-decline-release")]
+    [L12AbilityEvidence("ST01-C1:ability:static:605b9aa3d8a1ed93",
+        "normal", "duplicate-submit", "presentation-consumers")]
     public void TiantingDeclineCreatesNoEmptyStackAndAcceptFinalizesOnceBeforeResponse()
     {
         var decline = Create(10003);
         var declinePlayer = decline.State.Players[0];
         declinePlayer.UsedAbilities.Add("pending:factionZeroRecovery");
         Invoke(decline, "AfterStackSettled");
+        var declinePrompt = OnlyPrompt(decline);
         Resolve(decline, "mode:none");
         Assert.Empty(decline.State.EffectStack);
         Assert.DoesNotContain("pending:factionZeroRecovery", declinePlayer.UsedAbilities);
         Assert.DoesNotContain("trigger:factionZeroRecovery", declinePlayer.UsedAbilities);
+        Assert.Single(decline.State.Events, entry => entry.Type == "effect-declined"
+            && entry.EffectResultStatus == "declined"
+            && entry.Cards.Any(card => card.CardId == "S01-01C1"));
+        Assert.False(decline.Handle(declinePrompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: declinePrompt.PromptId, Choice: "mode:use")).Accepted);
 
         var accept = Create(10004);
         var acceptPlayer = accept.State.Players[0];
@@ -446,5 +567,16 @@ public sealed class AtomicReviewBatch6JBRegressionTests
         Assert.Contains("trigger:factionZeroRecovery", acceptPlayer.UsedAbilities);
         Assert.DoesNotContain("pending:factionZeroRecovery", acceptPlayer.UsedAbilities);
         Assert.NotEmpty(accept.State.EffectStack);
+        var declaration = Assert.Single(accept.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S01-01C1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Equal(1, declaration.EffectSegmentIndex);
+        Assert.Equal(1, declaration.EffectSegmentCount);
+        PassResponses(accept);
+        Assert.Equal(2, acceptPlayer.Morale.Count);
+        Assert.All(acceptPlayer.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Single(accept.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 }

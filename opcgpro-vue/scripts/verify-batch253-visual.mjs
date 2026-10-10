@@ -7,7 +7,7 @@ import { createServer } from 'vite'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
-const out = process.env.L12_QA_OUT || 'D:/GPT/Legion12/artifacts/batch253-ui'
+const out = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/batch253-ui')
 fs.mkdirSync(out,{recursive:true})
 const qaCardArtwork={
  'S02-06M2':'/assets/l12/special/master/S02-06M2.png',
@@ -19,7 +19,7 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createMemoryHistory} from 'vue-router'
 import GamePage from '/src/l12/GamePage.vue'
-import SandboxCardPicker from '/src/l12/game/SandboxCardPicker.vue'
+import SingleCardPicker from '/src/l12/SingleCardPicker.vue'
 import RankingsPage from '/src/l12/site/RankingsPage.vue'
 import DeckConstructionBrowser from '/src/l12/site/DeckConstructionBrowser.vue'
 import SiteShell from '/src/l12/site/SiteShell.vue'
@@ -73,20 +73,33 @@ const players=[0,1].map(i=>({
 }))
 if(relicMode)players[0].relic=battleCard(battleArtwork[2],'visual-relic')
 l12State.spectating=spectatorMode
-l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges:[{playerIndex:0,rankLabel:'迷雾旅人',masterTitle:'最强银臂努阿达'},{playerIndex:1,rankLabel:'未定级',masterTitle:'暂无称号'}],recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
+const identityMode=params.get('identity')||'mixed'
+const playerBadges=identityMode==='full'
+ ? [{playerIndex:0,faction:'秩序',rank:3,tier:'秩序天冠',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达',highestTier:true},{playerIndex:1,faction:'混沌',rank:128,tier:'混沌魔冠',placementTitle:'混沌先声',masterTitle:'最强阿斯加德',highestTier:true}]
+ : identityMode==='crown'
+  ? [{playerIndex:0,faction:'秩序',rank:18,tier:'秩序天冠',highestTier:true},{playerIndex:1,faction:'混沌',rank:247,tier:'混沌魔冠',highestTier:true}]
+ : identityMode==='placement'
+  ? [{playerIndex:0,faction:'秩序',tier:'定级 3/5',highestTier:false},{playerIndex:1,faction:'混沌',tier:'定级 4/5',highestTier:false}]
+  : identityMode==='minimal'
+   ? [{playerIndex:0,faction:'秩序',rank:18,tier:'精英',highestTier:false},{playerIndex:1,faction:'混沌',rank:247,tier:'进阶',highestTier:false}]
+   : [{playerIndex:0,faction:'秩序',rank:3,tier:'秩序天冠',placementTitle:'秩序冠首',masterTitle:'最强银臂努阿达',highestTier:true},{playerIndex:1,faction:'混沌',rank:128,tier:'统领',highestTier:false}]
+l12State.game={matchId:'synthetic-batch253',roomCode:'TEST253',you:0,revision:1,activePlayer:0,firstPlayer:0,diceWinner:0,initiativeRolls:[6,3],phase:'Main',round:3,turnSerial:5,disasterMode:'all',disasterValue:0,players,sessionDisasters:disasters.map((d,j)=>card(d,'disaster'+j)),prompts:[],effectStack:[],stateHash:'synthetic',playerBadges,recentEvents:Array.from({length:20},(_,j)=>({sequence:j+1,type:j%4===0?'turn-start':j%3===0?'prompt-resolved':'attack',playerIndex:j%2,text:j%4===0?'第 '+(j/4+1)+' 回合 · 回合开始':j%3===0?'选择另外1张军团 → 公开军团':'以公开军团进攻，兵力5000 → 3000',cards:[]}))}
 if(logMode){
  const source=battleCard(battleArtwork[2],'log-source'),target=battleCard(battleArtwork[1],'log-target'),hidden={...battleCard(battleArtwork[0],'log-hidden'),name:'绝密手牌',hidden:true}
  l12State.game.recentEvents=[
   {sequence:1,type:'turn-start',playerIndex:0,text:'第 3 回合 · 回合开始',cards:[]},
-  {sequence:2,type:'draw',playerIndex:0,text:'〈迦具土〉使我方测试昵称抽取 1 张牌。',cards:[source]},
-  {sequence:3,type:'move',playerIndex:0,text:'战术调度使〈荷鲁斯〉位移 1 格。',cards:[target]},
-  {sequence:4,type:'draw',playerIndex:0,text:'我方测试昵称受到 1 点伤害并抽取 1 张牌。',cards:[]},
-  {sequence:5,type:'move',playerIndex:0,text:'〈荷鲁斯〉先转为活跃再位移 1 格。',cards:[target]},
-  {sequence:6,type:'draw',playerIndex:0,text:'恢复 0 点，但抽取 1 张牌。',cards:[]},
+  {sequence:2,type:'draw',playerIndex:0,text:'抽取 2 张牌。',cards:[hidden]},
+  {sequence:3,type:'move',playerIndex:0,text:'〈荷鲁斯〉位移 1 格。',cards:[target]},
+  {sequence:4,type:'cost',playerIndex:0,text:'消耗 2 士气。',cards:[]},
+  {sequence:5,type:'effect',playerIndex:0,text:'兵力增加 1000 点。',cards:[source]},
+  {sequence:6,type:'effect-failed',playerIndex:0,text:'重新校验失败，未生成空堆叠项。',cards:[source]},
   {sequence:7,type:'damage',playerIndex:0,text:'兵力增加 0 点。',cards:[]},
-  {sequence:8,type:'effect-failed',playerIndex:0,text:'未选择合法目标，兵力增加 0 点。',cards:[]},
-  {sequence:9,type:'reveal',playerIndex:0,text:'检视〈绝密手牌〉后放回。',cards:[hidden]},
-  {sequence:10,type:'effect',playerIndex:0,text:'仅结算公开效果。',cards:[source]},
+  {sequence:8,type:'reveal',playerIndex:0,text:'〈迦具土〉展示〈荷鲁斯〉并加入手牌。',cards:[target,source]},
+  {sequence:9,type:'reveal',playerIndex:0,text:'〈绝密手牌〉加入手牌。',cards:[hidden]},
+  {sequence:10,type:'attack',playerIndex:0,text:'〈迦具土〉6000 vs 〈荷鲁斯〉4000',cards:[source,target]},
+  {sequence:11,type:'defense',playerIndex:1,text:'〈荷鲁斯〉进行抵挡',cards:[target]},
+  {sequence:12,type:'damage',playerIndex:1,text:'〈荷鲁斯〉受到 2 点伤害',cards:[target]},
+  {sequence:13,type:'leave',playerIndex:1,text:'〈荷鲁斯〉离场',cards:[target]},
  ]
 }
 if(slotMode)l12State.game.prompts=[{promptId:'occupied-slot-prompt',playerIndex:0,kind:'slot',text:'选择支付后登场位置',validChoices:['0:0','1:1'],minChoose:1,maxChoose:1,data:{choiceMode:'board-slot',targetPlayerIndex:'0'},choiceLabels:{},createdRevision:1,controller:0},{promptId:'declared-cost-prompt',playerIndex:0,kind:'resource-payment',text:'已声明费用',validChoices:['0unit','0morale0'],minChoose:1,maxChoose:1,data:{choiceMode:'resource-payment'},choiceLabels:{},createdRevision:1,controller:0}]
@@ -124,8 +137,8 @@ if(isOnlineFixture){
 }
 const masterRows=masters.map((m,i)=>({rank:100+i,masterId:m.id,masterName:m.nameZh,games:999,wins:999,losses:0,winRate:100,usageRate:50,firstWinRate:100,secondWinRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499,strongestPlayer:'合成测试玩家',title:'最强'+m.nameZh}))
 rankedApi.leaderboard=async()=>({players:Array.from({length:4},(_,i)=>({rank:i+1,username:'合成测试长昵称'+i,faction:'命运',tier:'迷雾旅人',titles:['最强银臂努阿达','最强雷神索尔'],favoriteMasterId:masters[0].id,favoriteMasterName:masters[0].nameZh,displayValue:'七曜值 21,945',wins:999,losses:888})),analytics:{range:'season',summary:{matches:999,placedPlayers:4,activeMasters:2},masters:masterRows,matchups:masterRows.flatMap(a=>masterRows.map(b=>({masterId:a.masterId,opponentMasterId:b.masterId,games:999,wins:999,winRate:100,firstWins:500,firstGames:500,secondWins:499,secondGames:499})))}})
-rankedApi.history=async()=>[]
-const app=createApp({render:()=>isPicker?h(SandboxCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
+rankedApi.history=async()=>({honors:[],factionTotals:[]})
+const app=createApp({render:()=>isPicker?h(SingleCardPicker,{title:'GM横卡验收',allowedTypes:['destruction']}):isRanking?h(RankingsPage):isDeckViewer?h(DeckConstructionBrowser,{entries:deckEntries,catalog:deckCatalog,title:'公开牌库完整构筑'}):(isInviteFixture||isOutgoingInviteFixture||isOnlineFixture)?h(SiteShell,null,{default:()=>h('div',{style:'padding:40px'},'非阻塞页面内容仍可见')}):h(GamePage)})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}));app.mount('#app')
 `
 let browser
@@ -158,7 +171,7 @@ try {
   reports.push(await page.evaluate(()=>{
    const box=s=>{const e=document.querySelector(s);if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,scroll:e.scrollHeight,client:e.clientHeight}}
    const artwork=[...document.querySelectorAll('.hand-card-wrap .l12-card-image,.formation-slot .l12-card-image')]
-   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')).fontSize,artwork:{count:artwork.length,sameOrigin:artwork.filter(image=>image.dataset.source==='sameOrigin').length},opponentBadges:document.querySelectorAll('.opponent-summary .ranked-identity-badge').length,myBadges:document.querySelectorAll('.my-summary .ranked-identity-badge').length,summaryText:document.querySelector('.player-panel').textContent}
+   return {width:innerWidth,height:innerHeight,summary:box('.player-panel'),rail:box('.right-rail'),log:box('.event-list'),dock:box('.battle-utility-dock'),clock:box('.my-status-lane'),hand:box('.board-center>.l12-hand:last-child'),phase:box('.l12-phase-track'),seam:box('.board-seam'),font:getComputedStyle(document.querySelector('.event-message')??document.querySelector('.event-list')).fontSize,artwork:{count:artwork.length,sameOrigin:artwork.filter(image=>image.dataset.source==='sameOrigin').length},opponentBadges:document.querySelectorAll('.opponent-summary .ranked-identity-badge').length,myBadges:document.querySelectorAll('.my-summary .ranked-identity-badge').length,summaryText:document.querySelector('.player-panel').textContent}
   }))
  }
  for(const report of reports){
@@ -167,9 +180,9 @@ try {
  if(report.hand.y+report.hand.h>report.height+1)throw new Error('Hand leaves viewport at '+report.width+'x'+report.height)
  if(report.dock.y+report.dock.h>report.height+1)throw new Error('Utility dock leaves viewport at '+report.width+'x'+report.height)
  assert.deepEqual(report.artwork,{count:8,sameOrigin:8},'all visible face-up battle cards must use controlled real local artwork at '+report.width+'x'+report.height)
- assert.equal(report.opponentBadges,0,'server placeholder rank/title values must render as blank at '+report.width+'x'+report.height)
- assert.equal(report.myBadges,2,'real rank and title badges must remain visible at '+report.width+'x'+report.height)
- assert(!report.summaryText.includes('未定级')&&!report.summaryText.includes('暂无称号'),'player summary must not display rank/title placeholders at '+report.width+'x'+report.height)
+  assert.equal(report.opponentBadges,1,'opponent tier must remain visible when optional titles are absent at '+report.width+'x'+report.height)
+  assert.equal(report.myBadges,2,'ranked Crown must be omitted while faction and master titles remain separate at '+report.width+'x'+report.height)
+  assert(report.summaryText.includes('第 3 名')&&!report.summaryText.includes('冠冕')&&report.summaryText.includes('秩序冠首')&&report.summaryText.includes('最强银臂努阿达'),'player summary must omit redundant Crown after rank while preserving the remaining identity order at '+report.width+'x'+report.height)
  }
  const logReports=[]
  for(const viewport of [{width:1920,height:1080},{width:1440,height:810},{width:1280,height:720}]){
@@ -177,24 +190,27 @@ try {
   await page.goto('http://127.0.0.1:'+port+'/__qa__?log=1')
   await page.locator('[data-event-sequence="10"]').waitFor()
   const logResult=await page.evaluate(()=>{
-   const messages=Object.fromEntries([...document.querySelectorAll('[data-event-sequence]')].map(row=>[row.dataset.eventSequence,row.querySelector('.event-message')?.textContent?.trim()||'']))
+   const messages=Object.fromEntries([...document.querySelectorAll('[data-event-sequence]')].map(row=>[row.dataset.eventSequence,row.querySelector('.event-message,.combat-cards')?.textContent?.trim()||'']))
    const links=[...document.querySelectorAll('.log-card-link')].map(link=>link.textContent?.trim())
    const list=document.querySelector('.event-list')
    return {messages,links,rowCount:Object.keys(messages).length,scrollWidth:list.scrollWidth,clientWidth:list.clientWidth}
   })
-  assert.equal(logResult.rowCount,8,'only the standalone zero-change row may be omitted')
-  assert.equal(logResult.messages['2'],'我方迦具土：抽取1张牌。','simple draw must use the shared compact result format')
-  assert.equal(logResult.messages['3'],'我方战术调度：〈荷鲁斯〉位移1格。','simple movement must use the shared compact result format')
-  assert.equal(logResult.messages['4'],'我方受到1点伤害并抽取1张牌。','compound draw must preserve its preceding outcome')
-  assert.equal(logResult.messages['5'],'我方〈荷鲁斯〉先转为活跃再位移1格。','compound movement must preserve its preceding outcome')
-  assert.equal(logResult.messages['6'],'我方恢复0点，但抽取1张牌。','mixed zero and positive outcomes must remain visible')
-  assert.equal(logResult.messages['8'],'我方未选择合法目标，兵力增加0点。','meaningful failed outcomes must remain visible')
-  assert(!logResult.messages['7'],'standalone zero-change noise must be omitted')
-  assert(!logResult.messages['9'].includes('绝密手牌')&&logResult.messages['9'].includes('隐藏卡牌'),'hidden card identities must be redacted')
-  assert(!logResult.messages['10'].includes('迦具土'),'public card metadata absent from authoritative text must not be appended')
-  assert(logResult.links.includes('荷鲁斯')&&logResult.links.includes('迦具土'),'full public card names in the current event text must remain clickable')
+  assert.equal(logResult.rowCount,6,'whitelist projection must omit costs, failures, zero changes and private hand-adds')
+  assert(logResult.messages['2'].includes('抽取')&&logResult.messages['2'].includes('2张'),'ordinary draws must show count without card identity')
+  assert(logResult.messages['3'].includes('〈荷鲁斯〉')&&logResult.messages['3'].includes('1格'),'movement must use a focusable card and numeric badge')
+  assert(logResult.messages['5'].includes('发动效果')&&logResult.messages['5'].includes('士气 −2'),'cost must merge into the effect row')
+  assert(logResult.messages['8'].includes('〈迦具土〉')&&logResult.messages['8'].includes('〈荷鲁斯〉加入手牌'),'public hand-add must show source and selected card')
+  assert(!logResult.messages['6']&&!logResult.messages['7']&&!logResult.messages['9'],'failed, zero-change and private hand-add rows must be absent')
+  assert(logResult.messages['10'].includes('6000')&&logResult.messages['10'].includes('4000')&&logResult.messages['10'].includes('击破'),'combat chain must collapse into one summary')
+  assert(!JSON.stringify(logResult.messages).match(/入栈|堆叠|校验|声明|结算步骤|事务|派生|重新校验|空堆叠|失效/),'player log must contain no engine terminology')
+  assert(!JSON.stringify(logResult.messages).includes('绝密手牌'),'hidden card identities must never enter player rows')
+  assert(logResult.links.some(link=>link?.includes('荷鲁斯'))&&logResult.links.some(link=>link?.includes('迦具土')),'public cards must remain focusable')
   assert(logResult.links.every(link=>!/^S(?:T|0\d)-/.test(link||'')),'log links must not expose card IDs')
   assert(logResult.scrollWidth<=logResult.clientWidth+1,'battle log must not overflow horizontally at '+viewport.width+'x'+viewport.height)
+  await page.locator('.combat-toggle').click()
+  assert.equal(await page.locator('.combat-detail .battle-event').count(),3,'combat summary must expand to defense, damage and leave detail')
+  const expandedOverflow=await page.locator('.event-list').evaluate(list=>list.scrollWidth-list.clientWidth)
+  assert(expandedOverflow<=1,'expanded combat detail must not overflow horizontally at '+viewport.width+'x'+viewport.height)
   logReports.push({viewport,...logResult})
   await page.screenshot({path:path.join(out,'battle-log-'+viewport.width+'x'+viewport.height+'.png')})
  }
@@ -334,22 +350,26 @@ try {
  const cellHeights=await page.locator('.matrix-cell,.matrix-head,.matrix-row-head').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height))
  if(cellHeights.some(height=>Math.abs(height-76)>1))throw new Error('Matrix row height must stay at the enlarged 76px avatar-safe size')
  await page.screenshot({path:path.join(out,'rankings-matrix.png')})
- for(const viewport of [{width:1920,height:1080},{width:760,height:900}]){
+ for(const viewport of [{width:1920,height:1080},{width:1280,height:720}]){
   await page.setViewportSize(viewport)
   await page.goto('http://127.0.0.1:'+port+'/__qa__')
-  await page.locator('.l12-player-mat.side-my .formation-slot .card-tile').first().hover()
+  await page.locator('.l12-player-mat.side-my .formation-slot .card-tile').first().click()
   const inspector=page.locator('[data-ui-contract="selected-card-inspector"]')
-  const image=inspector.locator('.inspector-card-image')
+  const image=inspector.locator('.archive-detail-image')
+  if(!await image.isVisible()){
+   const handle=page.getByRole('button',{name:'展开卡牌详情',exact:true})
+   if(await handle.isVisible())await handle.click()
+  }
   await image.waitFor()
   const normal={outer:await inspector.boundingBox(),image:await image.boundingBox()}
   const tagLayout=await inspector.evaluate(element=>{
-   const group=element.querySelector('.inspector-card-tags');if(!group)return null
+   const group=element.querySelector('.archive-tags');if(!group)return null
    const outer=element.getBoundingClientRect(),rect=group.getBoundingClientRect(),style=getComputedStyle(group)
-   return {outerCenter:outer.left+outer.width/2,groupCenter:rect.left+rect.width/2,groupWidth:rect.width,justify:style.justifyContent,widthRule:style.width,spanWidths:[...group.querySelectorAll('span')].map(span=>span.getBoundingClientRect().width)}
+   return {outerLeft:outer.left,outerRight:outer.right,groupLeft:rect.left,groupRight:rect.right,groupWidth:rect.width,flexWrap:style.flexWrap,widthRule:style.width,spanWidths:[...group.querySelectorAll('span')].map(span=>span.getBoundingClientRect().width)}
   })
   assert(tagLayout&&tagLayout.spanWidths.length>1,'Inspector fixture must expose multiple natural-width tags')
-  assert(Math.abs(tagLayout.outerCenter-tagLayout.groupCenter)<1.5,`Inspector tag group must stay centered at ${viewport.width}px`)
-  assert.equal(tagLayout.justify,'center','Inspector wrapped tags must center within their compact group')
+  assert(tagLayout.groupLeft>=tagLayout.outerLeft-1&&tagLayout.groupRight<=tagLayout.outerRight+1,`Inspector tags must remain inside the unified detail panel at ${viewport.width}px`)
+  assert.equal(tagLayout.flexWrap,'wrap','Inspector tags must wrap instead of clipping in the unified detail panel')
   assert(tagLayout.spanWidths.every(width=>width<tagLayout.groupWidth),'Inspector tags must keep natural widths instead of stretching to the container edges')
   await page.evaluate(()=>window.__setInspectorPrompt(true))
   await page.locator('.prompt-panel').waitFor()
@@ -375,7 +395,7 @@ try {
   {name:'morale-11',query:'morale=11&active=11',expected:11,label:'11/11'},
   {name:'morale-12',query:'morale=12&active=12',expected:12,label:'12/12'},
   {name:'morale-lock',query:'morale=3&active=3&moraleLock=1',expected:3,label:'3/3',locked:true},
-  {name:'morale-overflow-special',query:'morale=18&active=5&special=1',expected:12,label:'5/18'},
+  {name:'morale-overflow-special',query:'morale=18&active=5&special=1',expected:18,label:'5/18'},
   {name:'morale-trial',query:'morale=3&active=3&trial=1',expected:3,label:'3/3'},
  ]){
   await page.goto('http://127.0.0.1:'+port+'/__qa__?'+scenario.query)
@@ -388,7 +408,7 @@ try {
    const trial=box('.trial-zone'),relic=box('.relic-zone')
    return {resource,piles,stack,orbs,canopics:canopics.map(rect=>({top:rect.top,bottom:rect.bottom})),trial,relic,label:mat.querySelector('.resource-morale-count')?.textContent?.trim(),expectedLabel}
   },scenario.label)
-  assert.equal(result.orbs.length,scenario.expected,scenario.name+' must render at most twelve real morale circles')
+  assert.equal(result.orbs.length,scenario.expected,scenario.name+' must render every real morale circle')
   assert.equal(result.label,scenario.label,scenario.name+' must keep the full two-digit morale counter')
   assert(result.orbs.every(orb=>orb.cssWidth==='32px'&&orb.cssHeight==='32px'),scenario.name+' morale circles must keep the 32px design token: '+JSON.stringify(result.orbs))
   assert(Math.abs(result.resource.cy-result.piles.cy)<2,scenario.name+' resource group must dynamically center against piles')
@@ -449,7 +469,8 @@ try {
  assert.equal(await ownSlots.filter({has:page.locator('.card-tile')}).filter({hasNot:page.locator('.missing-card')}).count(),6,'all full-field fixtures must remain real cards')
  assert.equal(await ownSlots.locator('.available').count(),0,'available is a class on the slot itself, not a descendant')
  assert.equal(await page.locator('.l12-player-mat.side-my .formation-slot.available').count(),2,'only authoritative occupied slot choices may highlight')
- await page.getByRole('button',{name:'最小化弹框',exact:true}).click()
+ const slotPromptMinimize=page.getByRole('button',{name:'最小化弹框',exact:true})
+ if(await slotPromptMinimize.isVisible())await slotPromptMinimize.click()
  await page.screenshot({path:path.join(out,'occupied-authoritative-slots.png')})
  await ownSlots.nth(2).click()
  assert.equal(await page.evaluate(()=>window.__sentCommands.length),0,'occupied non-candidate slot must not submit')
@@ -512,8 +533,8 @@ try {
  assert.deepEqual(scoutSent?.command?.cardInstanceIds,['confirm'],'scout acknowledgement must submit only the authoritative confirm choice')
  await page.setViewportSize({width:770,height:850})
  await page.goto('http://127.0.0.1:'+port+'/__qa__?picker=1')
- await page.locator('.picker-card.horizontal').first().waitFor()
- await page.locator('.picker-image').first().click()
+ await page.locator('.single-card-result-card.horizontal').first().waitFor()
+ await page.locator('.single-card-image').first().click()
  await page.locator('.catalog-detail-mask').waitFor({timeout:3000})
  await page.screenshot({path:path.join(out,'sandbox-landscape.png')})
  fs.writeFileSync(path.join(out,'report.json'),JSON.stringify({errors,reports,logReports},null,2))

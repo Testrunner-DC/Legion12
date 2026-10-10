@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-public-deck-pinned-version-query",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "公开牌库按同一已提交头、权限、策略和目录读取当前正文或选中历史版本；版本目录分页仅返回计数及差异，不展开整份历史。过期读取标记拒绝并要求刷新，不作为权限、不静默回退旧详情。原接口、全部历史及存储格式保留；异步统计和前端接线仍待，本条不表示整套完成或线上部署。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetailQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckVersionQueries.cs"
+  ]
+}

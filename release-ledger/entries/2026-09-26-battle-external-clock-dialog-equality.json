@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-26-battle-external-clock-dialog-equality",
+  "date": "2026-09-26",
+  "audience": "players",
+  "title": "对战计时与选项布局修正",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "桌面双方计时统一显示在牌桌外侧，不再遮挡或挤压战场、牌堆与手牌；移动端继续按安全区独立排布。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "统一对战弹框内同级选项的尺寸，长短文字、横竖卡图以及选中或禁用状态不会再令选项忽大忽小。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/GameActions.vue",
+        "opcgpro-vue/src/l12/game/MasterOverlay.vue",
+        "opcgpro-vue/src/l12/game/PlayerMat.vue",
+        "opcgpro-vue/src/l12/game/PromptCardCandidate.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    }
+  ]
+}

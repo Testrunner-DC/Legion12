@@ -154,6 +154,31 @@ public sealed class StarterTargetedBatch2ARegressionTests
     }
 
     [Fact]
+    public void XiaoHeDecliningOptionalTriggerEndsDeclarationWithoutPayingOrStacking()
+    {
+        var game = Create(201011);
+        var player = game.State.Players[0];
+        var xiaoHe = Card("ST01-03", "xiaohe-decline");
+        var morale = new L12MoraleCard { CardId = "S01-01C1", InstanceId = "xiaohe-decline-morale" };
+        player.Field[0][0] = xiaoHe;
+        player.Hand.Add(Card("S01-0104", "xiaohe-decline-hanxin"));
+        player.Morale.Add(morale);
+
+        Queue(game, xiaoHe);
+        var prompt = Prompt(game);
+        Assert.False(prompt.Presentation!.ChoiceConsequences.ContainsKey("mode:none"));
+        Assert.Null(prompt.Presentation.SubmissionConsequence);
+        Choose(game, "mode:none");
+
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(morale, player.Morale);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("萧何", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void KhufuDiscardsGuardBeforeStackAndHasSummonTurnCounterProtection()
     {
         var game = Create(20102);
@@ -180,6 +205,35 @@ public sealed class StarterTargetedBatch2ARegressionTests
         PassResponses(game);
 
         Assert.Equal(enemy.BaseTroops - 4000, enemy.Troops);
+    }
+
+    [Fact]
+    public void KhufuKeepsItsPaidGuardButRecordsFailedSettlementWhenTheDeclaredTargetChanges()
+    {
+        var game = Create(201021);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var khufu = Card("ST02-01", "khufu-stale");
+        var guard = Card("S01-0212", "khufu-stale-guard");
+        var enemy = Card("S01-0102", "khufu-stale-enemy");
+        player.Field[0][0] = khufu;
+        player.Field[0][1] = guard;
+        opponent.Field[0][0] = enemy;
+        HoldOpponentResponseWindow(game);
+
+        Queue(game, khufu);
+        Choose(game, "mode:use");
+        Choose(game, guard.InstanceId);
+        Choose(game, enemy.InstanceId);
+        opponent.Field[0][0] = null;
+        opponent.Graveyard.Add(enemy);
+        PassResponses(game);
+
+        Assert.Contains(guard, player.Graveyard);
+        Assert.Contains(enemy, opponent.Graveyard);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("胡夫", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
     }
 
     [Fact]
@@ -286,5 +340,67 @@ public sealed class StarterTargetedBatch2ARegressionTests
         Assert.DoesNotContain(recover, player.Graveyard);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("展示", StringComparison.Ordinal)
             && entry.Text.Contains(recover.Name, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FreydisKeepsItsPaidHandCostButRecordsFailedSettlementWhenGraveTargetLeaves()
+    {
+        var game = Create(201051);
+        var player = game.State.Players[0];
+        var freydis = Card("ST03-03", "freydis-stale");
+        var handCost = Card("S01-0002", "freydis-stale-cost");
+        var recover = Card("S01-0302", "freydis-stale-recover");
+        player.Field[0][0] = freydis;
+        player.Hand.Add(handCost);
+        player.Graveyard.Add(recover);
+        HoldOpponentResponseWindow(game);
+
+        Queue(game, freydis);
+        Choose(game, "mode:use");
+        Choose(game, handCost.InstanceId);
+        Choose(game, recover.InstanceId);
+        player.Graveyard.Remove(recover);
+        player.Hand.Add(recover);
+        PassResponses(game);
+
+        Assert.Contains(handCost, player.Graveyard);
+        Assert.Contains(recover, player.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("弗蕾迪斯", StringComparison.Ordinal)
+            && entry.EffectResultStatus == "failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:jozef-front-attacks-zhuge-liang-front")]
+    public void FrontRowJozefMayAttackFrontRowZhugeLiangWithoutAnExternalRestriction()
+    {
+        var game = Create(201052);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = null;
+        foreach (var player in game.State.Players)
+        {
+            player.Field[0] = new L12CardInstance?[3];
+            player.Field[1] = new L12CardInstance?[3];
+            player.Hand.Clear();
+        }
+        var jozef = Card("ST02-06", "auxiliary-jozef-front");
+        var zhugeLiang = Card("S01-0111", "auxiliary-zhuge-front");
+        jozef.SummonRound = -1;
+        jozef.OwnerIndex = 0;
+        zhugeLiang.SummonRound = -1;
+        zhugeLiang.OwnerIndex = 1;
+        game.State.Players[0].Field[0][0] = jozef;
+        game.State.Players[1].Field[0][0] = zhugeLiang;
+
+        var result = game.Handle(0, new L12Command("attack", jozef.InstanceId,
+            Target: new L12AttackTarget("legion", zhugeLiang.InstanceId)));
+
+        Assert.True(result.Accepted, result.Error);
+        Assert.Contains(game.State.Events, entry => entry.Type == "attack"
+            && entry.Text.Contains("乔泽", StringComparison.Ordinal)
+            && entry.Text.Contains("诸葛亮", StringComparison.Ordinal));
     }
 }

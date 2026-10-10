@@ -42,7 +42,7 @@ $unexpected = @($auditCards | Where-Object { $expectedCards -notcontains $_ })
 if ($expectedCards.Count -ne 38 -or $auditCards.Count -ne 38 -or $missing.Count -gt 0 -or $unexpected.Count -gt 0) {
     throw "Batch 6L-D audit inventory drifted (expected=$($expectedCards.Count), actual=$($auditCards.Count), missing=$($missing -join ','), unexpected=$($unexpected -join ','))."
 }
-Assert-Contains $tests 'Assert.Equal(109, AuditedAbilityCounts.Values.Sum())' 'Current Batch 6L-D inventory must include the approved independent Angus trial-progress trigger (109 abilities).'
+Assert-Contains $tests 'Assert.Equal(107, AuditedAbilityCounts.Values.Sum())' 'Current Batch 6L-D inventory must preserve the accepted S02-06C1 merged-label boundary, the shared divinity setup segment, and the exact Morrigan, Angus, Grail Journey, and Sleepless Night ability boundaries (107 abilities).'
 
 Assert-Contains $faction 'DeclarationKey = "mode", Text = "梅林：选择效果"' 'Merlin public mode declaration is missing.'
 Assert-Contains $faction 'RequiredDeclaredChoice = "mode:debuff"' 'Merlin public enemy target must only be declared for debuff mode.'
@@ -62,12 +62,16 @@ Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, declaredTarg
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, chosen, "otherworld")' 'Fenian commit validation must use effective Otherworld faction.'
 Assert-Contains $faction 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Otherworld hidden search must use effective faction.'
 Assert-Contains $trialCompletion 'L12StructuredCardRules.HasFaction(player, card, "otherworld")' 'Grail resolution must use effective Otherworld faction.'
-Assert-Contains $faction 'player.Graveyard.Where(card => card.Faction == "otherworld")' 'Crusade only-Otherworld printed-faction boundary must remain explicit.'
-Assert-Contains $faction 'var isOnlyOtherworldTrait = top.Traits.Count == 1' 'Amakine must require exactly one printed trait.'
+Assert-Contains $faction 'HasOnlyEffectiveFactionTrait(player, card, "otherworld")' 'Crusade only-Otherworld boundary must use the shared effective-trait set.'
+Assert-Contains $faction 'var isOnlyOtherworldTrait = L12StructuredCardRules.HasOnlyEffectiveFactionTrait(' 'Amakine must use the shared effective-trait set.'
 Assert-Contains $faction 'item.Data["amakine-can-take"] = isOnlyOtherworldTrait ? "true" : "false";' 'Amakine only-Otherworld eligibility must be frozen before the choice.'
-Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole printed trait is Otherworld.'
+Assert-Contains $faction 'var choices = isOnlyOtherworldTrait ? new[] { "hand", "top", "bottom" }' 'Amakine may offer hand only for cards whose sole effective trait is Otherworld.'
 
-Assert-Contains $active '$"active:{sourceInstanceId}:crusade-choice"' 'Crusade three modes must share the printed once-per-turn key.'
+$usageRules = Read-Source 'L12ActiveUsageRules.cs'
+foreach ($ability in @('crusadeTrialNoLoss', 'crusadeRichardPiercing', 'crusadeRecover')) {
+    Assert-Contains $usageRules ('new("S02-06S6", "' + $ability + '", "crusade-choice")') 'Crusade three modes must share the printed once-per-turn key.'
+}
+Assert-Contains $active 'L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability)' 'Active usage must consume the shared registry key.'
 $galahadStart = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', [StringComparison]::Ordinal)
 $galahadCommit = $faction.IndexOf('if (ability == "galahadGrailReward" && source.CardId == "S02-0604")', $galahadStart + 1, [StringComparison]::Ordinal)
 $galahadEnd = $faction.IndexOf('if (ability == "runeUse"', $galahadCommit, [StringComparison]::Ordinal)
@@ -128,7 +132,7 @@ $matrixFixedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String
 $fullPassedCount = @($allAuditRows | Where-Object Status -eq $passedStatus).Count
 $fullFixedCount = @($allAuditRows | Where-Object Status -eq $fixedStatus).Count
 $fullQuestionRows = @($allAuditRows | Where-Object { $_.Status.StartsWith($questionStatus, [StringComparison]::Ordinal) })
-if ($fullPassedCount -ne 189 -or $fullFixedCount -ne 59 -or $fullQuestionRows.Count -ne 0) {
+if ($fullPassedCount -ne 186 -or $fullFixedCount -ne 62 -or $fullQuestionRows.Count -ne 0) {
     throw "Full-pool audit status totals drifted (passed=$fullPassedCount, fixed=$fullFixedCount, questionCards=$($fullQuestionRows.Count))."
 }
 $expectedQuestionCards = @()
@@ -163,4 +167,4 @@ Assert-Contains $openQuestions $noOpenQuestionText 'OPEN-QUESTIONS must record t
 $openHeadings = [regex]::Matches($openQuestions, '(?m)^### [1-5]\. ').Count
 if ($openHeadings -ne 0) { throw "OPEN-QUESTIONS must not retain resolved numbered ruling items (actual=$openHeadings)." }
 
-Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 109 current abilities; historical audit: 248 cards / 577 abilities; 189 passed / 59 fixed / 0 question cards).'
+Write-Host 'S02 Otherworld + disaster per-ability audit guard passed (38 cards / 107 current abilities; full audit: 248 cards / 577 abilities; 186 passed / 62 fixed / 0 question cards).'

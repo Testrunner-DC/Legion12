@@ -198,8 +198,13 @@ public sealed class RulingClosureRegressionTests
             && entry.Cards.Any(card => card.InstanceId == substitute.InstanceId));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "leave"
             && entry.Cards.Any(card => card.InstanceId == substitute.InstanceId));
-        Assert.Contains(player.UsedAbilities,
-            key => key == $"trigger:faith-zealot:{substitute.InstanceId}");
+        Assert.DoesNotContain("card-name:S02-0006", player.UsedAbilities);
+        var faithDeclaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", faithDeclaration.Continuation);
+        Assert.Equal(substitute.InstanceId, Assert.Single(game.State.PendingActivations).SourceInstanceId);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: faithDeclaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        Assert.Contains("card-name:S02-0006", player.UsedAbilities);
     }
 
     [Fact]
@@ -313,7 +318,7 @@ public sealed class RulingClosureRegressionTests
     }
 
     [Fact]
-    public void PtolemyCancelsWhenARepeatedEffectsDeclaredTargetBecomesInvalid()
+    public void PtolemyFailsWhenARepeatedEffectsDeclaredTargetBecomesInvalid()
     {
         var game = Create();
         var player = game.State.Players[0];
@@ -336,8 +341,36 @@ public sealed class RulingClosureRegressionTests
             Choice: target.InstanceId)).Accepted);
 
         Assert.DoesNotContain(game.State.EffectStack, item => item.SourceCardId == "S02-0622");
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("目标失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("目标失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PtolemyInvalidRepeatedCardIdentityIsFailedNotCancelled()
+    {
+        var game = Create();
+
+        _ = InvokePrivate(game, "BeginPtolemyRepeatedTacticEffect", 0, "S01-0101");
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有可再次发动的主动战术效果", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有可再次发动的主动战术效果", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PtolemyRepeatedTargetEffectWithoutAnInitialTargetRemainsNoop()
+    {
+        var game = Create();
+
+        _ = InvokePrivate(game, "BeginPtolemyRepeatedTacticEffect", 0, "S02-0622");
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-noop"
+            && entry.Text.Contains("没有合法目标", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有合法目标", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -387,6 +420,10 @@ public sealed class RulingClosureRegressionTests
         var zealot = Card("S02-0006", "ruling-faith-zealot");
         player.Graveyard.Add(zealot);
         InvokePrivate(game, "NotifyCardDiscarded", player, zealot, "library", true);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         PassResponses(game);
 
         var choice = Assert.Single(game.State.PendingPrompts,
@@ -458,6 +495,37 @@ public sealed class RulingClosureRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Contains(game.State.Events, entry => entry.Type == "reveal"
             && entry.Cards.Any(card => card.InstanceId == hiddenTop.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-DS03")]
+    [Trait("L12Evidence", "auxiliary-report:corrupt-land-placement")]
+    public void CorruptLandPreventsLiJingFromOfferingRearRowRecruitWhenNoFrontSlotExists()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var liJing = Card("S01-0103", "ruling-corrupt-li-jing");
+        var hiddenTop = Card("S01-0105", "ruling-corrupt-li-jing-top");
+        game.State.ActiveDisaster = Card("S01-DS03", "ruling-corrupt-land");
+        player.Field[0][1] = Card("S01-0001", "ruling-corrupt-front-1");
+        player.Field[0][2] = Card("S01-0002", "ruling-corrupt-front-2");
+        player.Hand.Add(liJing);
+        player.Library.Add(hiddenTop);
+        AddReadyMorale(player, liJing.Cost);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", liJing.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var declaration = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
+        PassResponses(game);
+
+        var choice = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Data.GetValueOrDefault("action") == "lijing-choice");
+        Assert.Equal(["top", "bottom"], choice.ValidChoices);
+        Assert.DoesNotContain("recruit", choice.ValidChoices);
+        Assert.Same(hiddenTop, player.Library[0]);
+        Assert.All(player.Field[1], Assert.Null);
     }
 
     [Fact]

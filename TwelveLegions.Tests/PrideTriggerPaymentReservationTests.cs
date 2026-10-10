@@ -99,13 +99,37 @@ public sealed class PrideTriggerPaymentReservationTests
         player.Field[0][2] = target;
         var master = Card("S02-04M1", "master-0");
         master.OwnerIndex = 0;
-        Invoke(game, "QueueOrPushTriggeredEffect", 0, master, "active", "军团位移时效果", null,
+        Invoke(game, "QueueOrPushTriggeredEffect", 0, master, "friendly-legion-moves", "军团位移时效果", null,
             new Dictionary<string, string>
             {
                 ["ability"] = "tsukuyomiFollowMove",
                 ["moved"] = moved.InstanceId,
             });
         return (moved, target);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S02-04M1:ability:friendly-legion-moves:654df25d049352f7", "payment-cancel")]
+    public void TsukuyomiBasePaymentCanBeCancelledWithoutChargingOrConsumingItsOnce()
+    {
+        var game = Create(9099, "S02-04M1");
+        var player = game.State.Players[0];
+        var first = Morale("tsukuyomi-cancel-first");
+        var second = Morale("tsukuyomi-cancel-second");
+        player.Morale.AddRange([first, second]);
+        QueueTsukuyomiFollowMove(game);
+
+        ResolveAccepted(game, "mode:use");
+        var payment = OnlyPrompt(game);
+        Assert.Equal("resource-payment", payment.Kind);
+        Assert.Contains("skip", payment.ValidChoices);
+        Assert.True(Resolve(game, payment, "skip").Accepted);
+
+        Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
     }
 
     [Theory]
@@ -292,6 +316,7 @@ public sealed class PrideTriggerPaymentReservationTests
         game.State.PendingTriggerStackCandidates.Add(candidate);
         Invoke(game, "AdvanceTriggerBatches");
 
+        Assert.Null(OnlyPrompt(game).Presentation?.PaymentStatus);
         ResolveAccepted(game, "mode:none");
 
         Assert.False(morale.Tapped);

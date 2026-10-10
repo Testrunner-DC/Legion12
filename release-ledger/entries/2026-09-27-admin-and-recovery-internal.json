@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-admin-and-recovery-internal",
+  "date": "2026-09-27",
+  "audience": "internal",
+  "reason": "后台工作台、统计视图、服务器状态采样、维护计划预览快照、共享分析组件及对局日志失败关闭属于管理或恢复基础设施，不向普通玩家展示。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalAnalyticsSummary.vue",
+    "opcgpro-vue/src/l12/site/AdminGlobalDataPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMatchesPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminServerStoragePanel.vue",
+    "opcgpro-vue/src/l12/site/AdminWorkbenchPage.vue",
+    "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue",
+    "opcgpro-vue/src/l12/site/MasterMatchupMatrix.vue",
+    "opcgpro-vue/src/l12/site/RankingsPage.vue",
+    "opcgpro-vue/src/l12/site/operationsConfigPreview.ts",
+    "服务端WebSocket/TwelveLegions/L12RuntimeStatus.cs",
+    "服务端WebSocket/TwelveLegions/L12ServerStorageMonitor.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs"
+  ]
+}

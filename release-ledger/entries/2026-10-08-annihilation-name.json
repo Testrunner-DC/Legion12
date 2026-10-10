@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "annihilation-name-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "最终天灾名称",
+  "changes": [{
+    "category": "content",
+    "text": "最终天灾的名称统一更正为“湮灭”，同步卡牌数据、图鉴、规则资料及对战、赛季和赛事提示；卡号与效果不变。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12ActiveDisasterRules.cs", "服务端WebSocket/TwelveLegions/L12CardEffects.cs", "服务端WebSocket/TwelveLegions/L12Disasters.cs", "服务端WebSocket/TwelveLegions/L12GmCommands.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12RuntimeEffectRoutes.cs", "服务端WebSocket/TwelveLegions/Models.cs", "服务端WebSocket/TwelveLegions/Data/cards.s1.json", "opcgpro-vue/public/data/l12/cards.s1.json", "opcgpro-vue/public/data/l12/cards.lookup.json", "opcgpro-vue/src/l12/data/officialRules.ts", "opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/site/BattleHubPage.vue", "opcgpro-vue/src/l12/site/AdminOperationsPanel.vue", "opcgpro-vue/src/l12/site/SeasonConfigurationEditor.vue", "opcgpro-vue/src/l12/site/DisasterPoolPicker.vue", "opcgpro-vue/src/l12/tournamentCreatePolicy.ts"]
+  }]
+}

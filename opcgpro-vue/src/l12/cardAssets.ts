@@ -1,3 +1,5 @@
+import { deploymentPath } from './deploymentBase'
+
 export type CardImageIntent = 'thumb' | 'board' | 'detail'
 
 export interface CardAssetVariants {
@@ -43,15 +45,11 @@ export interface ResolvedCardAsset {
 const MANIFEST_PATH = '/card-assets/card-assets.manifest.json'
 const SAME_ORIGIN_ROOT = '/card-assets'
 const RETRY_COOLDOWN_MS = 15_000
+const CARD_IMAGE_ID_MARKER = 'l12-card-id:'
 
-export const CARD_IMAGE_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 336">
-    <rect width="240" height="336" fill="#090d0e"/>
-    <rect x="7" y="7" width="226" height="322" rx="5" fill="none" stroke="#59625f" stroke-width="2"/>
-    <text x="120" y="160" fill="#d5bc70" font-family="Georgia,serif" font-size="36" text-anchor="middle">XII</text>
-    <text x="120" y="190" fill="#78817e" font-family="sans-serif" font-size="12" text-anchor="middle">CARD IMAGE</text>
-  </svg>
-`)}`
+// Missing assets and deliberately concealed cards share the official main-deck
+// back. Never expose a diagnostic image in player-facing card slots.
+export const CARD_IMAGE_PLACEHOLDER = deploymentPath('/assets/l12/card-back-official.png')
 
 let manifestPromise: Promise<CardAssetManifest | null> | null = null
 let manifestValue: CardAssetManifest | null = null
@@ -148,13 +146,29 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
   })
 }
 
+// 异画文件由本站后台上传，只有本站受控媒体路由可以覆盖官方清单卡图。
+// 不把任意 API / WebSocket 中的 imageUrl 当作图片地址，避免把展示层变成外链追踪入口。
+function trustedSiteMediaSource(url: string | undefined): CardAssetSource | null {
+  const normalized = url?.trim() ?? ''
+  if (!normalized.startsWith('/api/site/media/')) return null
+  const deployed = deploymentPath(normalized)
+  return { kind: 'sameOrigin', lowWebp: deployed, webp: deployed }
+}
+
+function selectedManifestCardId(cardId: string, legacyUrl: string | undefined) {
+  const normalized = legacyUrl?.trim() ?? ''
+  return normalized.startsWith(CARD_IMAGE_ID_MARKER)
+    ? normalized.slice(CARD_IMAGE_ID_MARKER.length).trim()
+    : cardId
+}
+
 function resolvedCardAssetFromManifest(
   manifest: CardAssetManifest,
   cardId: string,
-  _legacyUrl: string | undefined,
+  legacyUrl: string | undefined,
   intent: CardImageIntent,
 ): ResolvedCardAsset | null {
-  const entry = manifest.cards[cardId]
+  const entry = manifest.cards[selectedManifestCardId(cardId, legacyUrl)]
   if (!entry) return null
 
   const explicitCdnBaseUrl = configuredCdnBase()
@@ -165,6 +179,7 @@ function resolvedCardAssetFromManifest(
     intent,
     orientation: entry.orientation,
     sources: uniqueSources([
+      trustedSiteMediaSource(legacyUrl),
       explicitCdnBaseUrl ? sourceFor('cdn', explicitCdnBaseUrl, entry.variants, intent) : null,
       sourceFor('sameOrigin', sameOrigin, entry.variants, intent),
       !explicitCdnBaseUrl && manifestCdnBaseUrl
@@ -184,17 +199,19 @@ export function peekCardAsset(cardId: string, legacyUrl: string | undefined, int
   return manifestValue ? resolvedCardAssetFromManifest(manifestValue, cardId, legacyUrl, intent) : null
 }
 
-export function fallbackCardAsset(cardId: string, _legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
+export function fallbackCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): ResolvedCardAsset {
   return {
     cardId,
     intent,
-    sources: [{ kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER }],
+    sources: uniqueSources([trustedSiteMediaSource(legacyUrl),
+      { kind: 'placeholder', lowWebp: CARD_IMAGE_PLACEHOLDER, webp: CARD_IMAGE_PLACEHOLDER }]),
   }
 }
 
 export async function resolveCardAsset(cardId: string, legacyUrl: string | undefined, intent: CardImageIntent): Promise<ResolvedCardAsset> {
   let manifest = await loadCardAssetManifest()
-  let entry = manifest?.cards[cardId]
+  const manifestCardId = selectedManifestCardId(cardId, legacyUrl)
+  let entry = manifest?.cards[manifestCardId]
   if (manifest && !entry) {
     if (manifestPromise) {
       manifest = await manifestPromise
@@ -202,7 +219,7 @@ export async function resolveCardAsset(cardId: string, legacyUrl: string | undef
       missingEntryRefreshAfter = Date.now() + RETRY_COOLDOWN_MS
       manifest = await loadCardAssetManifest(true)
     }
-    entry = manifest?.cards[cardId]
+    entry = manifest?.cards[manifestCardId]
   }
   if (!manifest || !entry) return fallbackCardAsset(cardId, legacyUrl, intent)
   return resolvedCardAssetFromManifest(manifest, cardId, legacyUrl, intent)
@@ -213,4 +230,3 @@ export async function resolveCardAssetUrls(cardId: string, legacyUrl: string | u
   const resolved = await resolveCardAsset(cardId, legacyUrl, intent)
   return resolved.sources.flatMap(source => [source.avif, source.webp, source.lowWebp]).filter((url, index, urls): url is string => !!url && urls.indexOf(url) === index)
 }
-

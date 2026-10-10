@@ -10,11 +10,21 @@ import RankedIntegrityNotice from '@/l12/site/RankedIntegrityNotice.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
 import { useLandscapeViewport } from '@/l12/mobileViewport'
+import { deckEditorPortrait, useDeckEditorViewport } from '@/l12/deckEditorViewport'
 import '@/l12/mobileViewport.css'
 
 const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
-useLandscapeViewport(computed(() => route.path === '/game' || route.path === '/deck-editor' || route.meta.replay === true))
+const adaptiveEditor = computed(() => route.meta.editorAdaptiveCanvas === true)
+useDeckEditorViewport(adaptiveEditor)
+const landscapeExperience = computed(() => route.meta.landscapeCanvas === true && !(adaptiveEditor.value && deckEditorPortrait.value))
+useLandscapeViewport(landscapeExperience)
+const lockedViewport = 'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
+const readableViewport = 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover'
+watch(landscapeExperience, locked => {
+  const viewport = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+  if (viewport) viewport.content = locked ? lockedViewport : readableViewport
+}, { immediate: true })
 const backgroundMusic = new BackgroundMusicController()
 let battleTrack = 0
 let primed = false
@@ -64,7 +74,9 @@ watch(() => platformState.account?.audioPreferences, async value => {
   await nextTick()
   applyingAccountPreferences = false
 }, { immediate: true, deep: true })
-onMounted(() => window.addEventListener('pointerdown', primeMusic, { once: true }))
+onMounted(() => {
+  window.addEventListener('pointerdown', primeMusic, { once: true })
+})
 onBeforeUnmount(() => {
   audioSaveGeneration++
   window.clearTimeout(audioSaveTimer)
@@ -78,8 +90,12 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 </script>
 
 <template>
-  <router-view v-if="immersive" />
-  <SiteShell v-else><router-view /></SiteShell>
+  <div id="l12-landscape-teleports" />
+  <!-- One route host: an editor resize never destroys its state or draft. -->
+  <div :class="landscapeExperience ? 'l12-landscape-surface' : 'l12-route-surface'" :data-l12-landscape-canvas="landscapeExperience ? '' : undefined">
+    <router-view v-if="immersive" v-slot="{ Component, route: viewRoute }"><Transition name="page-fade" mode="out-in"><component :is="Component" :key="viewRoute.path" /></Transition></router-view>
+    <SiteShell v-else><router-view v-slot="{ Component, route: viewRoute }"><Transition name="page-slide"><component :is="Component" :key="viewRoute.path" /></Transition></router-view></SiteShell>
+  </div>
   <GlobalBugFeedback />
   <FriendRequestNotifications />
   <RankedIntegrityNotice />
@@ -114,7 +130,5 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
 :root[data-l12-card-size="small"] .formation-slot .card-tile{width:70px;height:98px;flex-basis:70px}
 :root[data-l12-card-size="medium"] .formation-slot .card-tile{width:82px;height:115px;flex-basis:82px}
 :root[data-l12-card-size="large"] .formation-slot .card-tile{width:92px;height:129px;flex-basis:92px}
-:root[data-l12-animation="fast"] *{--l12-motion-duration:.55s}
-:root[data-l12-animation="off"] *{--l12-motion-duration:0s}
 :root[data-l12-animation="off"] *:not([data-essential-motion]){animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
 </style>

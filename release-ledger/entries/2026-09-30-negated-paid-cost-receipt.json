@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-negated-paid-cost-receipt",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "被无效效果的费用记录更清楚",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "效果被无效后，对局记录会明确标出费用已经支付，展开可查看实际支付内容；不会把已支付费用误写成返还，也不会从旧记录或隐藏信息猜测费用。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/logViewModel.ts"
+      ]
+    }
+  ]
+}

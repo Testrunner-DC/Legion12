@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-alternate-art-grant-notification",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "异画到账提示精简",
+  "changes": [
+    {
+      "category": "content",
+      "text": "异画到账弹框统一显示“获得异画！”，正文只保留获得的卡名、编号和管理员填写的原因；赛季、活动编号等后台派发标识不再向玩家展示。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs"
+      ]
+    }
+  ]
+}

@@ -24,10 +24,18 @@ public sealed partial class L12GameEngine
         }
         var item = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == prompt.StackItemId);
         if (item is null) return;
+        if (TryContinueLibraryPlacement(item, prompt, command)) return;
         var action = prompt.Data.GetValueOrDefault("action") ?? string.Empty;
+        if (IsLibraryInspectionChoiceAction(action) && chosen.Any(id => id != "skip"
+                && State.Players[item.Controller].Library.All(card => card.InstanceId != id)))
+        {
+            FailLibraryPlacement(item);
+            return;
+        }
         if (action == "private-view-confirm") { FinishStackItem(item); return; }
         var source = FindSource(item);
         var player = State.Players[item.Controller];
+        if (TryContinueOpponentHandDiscardTrigger(item, prompt, chosen)) return;
         if (action.StartsWith("s2-", StringComparison.Ordinal))
         {
             if (ContinueS2CounterEffect(item, prompt, chosen)) return;
@@ -55,13 +63,28 @@ public sealed partial class L12GameEngine
                     KillTarget(item, chosen[0], $"被{item.SourceName}击杀");
                 FinishStackItem(item); break;
             case "peace-talk":
+                var playerLogGroupId = item.Data.GetValueOrDefault("playerLogGroupId");
+                var playerLogTiming = item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger;
+                var decisionLabel = chosen[0] == "agree" ? "同意议和" : "不同意议和";
+                AddPlayerLogEvent("effect-decision", prompt.PlayerIndex,
+                    $"{State.Players[prompt.PlayerIndex].Name}{decisionLabel}",
+                    playerLogGroupId, playerLogTiming, decisionLabel,
+                    source is null ? [] : [source]);
                 if (chosen[0] == "agree")
                 {
                     for (var index = 0; index < 2; index++)
-                        if (!Draw(State.Players[index], 1, logEffectDraw: false)) SetWinner(1 - index, "议和谈判抽牌时牌库为空");
-                    AddEvent("effect", prompt.PlayerIndex, "双方同意议和谈判并各抽取 1 张牌", source is null ? [] : [source]);
+                    {
+                        if (!Draw(State.Players[index], 1, logEffectDraw: false))
+                        {
+                            SetWinner(1 - index, "议和谈判抽牌时牌库为空");
+                            continue;
+                        }
+                        AddPlayerLogEvent("draw", index,
+                            $"〈{item.SourceName}〉使{State.Players[index].Name}抽取 1 张牌",
+                            playerLogGroupId, playerLogTiming, null,
+                            source is null ? [] : [source]);
+                    }
                 }
-                else AddEvent("effect", prompt.PlayerIndex, "对方不同意议和谈判，双方不额外抽牌");
                 FinishStackItem(item); break;
             case "inaihime-buff":
             {
@@ -69,7 +92,7 @@ public sealed partial class L12GameEngine
                 if (target is not null && row == 0 && IsFieldLegion(target)
                     && target.InstanceId != item.SourceInstanceId && target.Troops <= 5000
                     && L12StructuredCardRules.HasFaction(player, target, "gaotianyuan"))
-                    AddTimedModifier(target, 1000, 0, State.TurnSerial, item.SourceName);
+                    ApplyPlayerThisTurnTroopsModifier(target, 1000, item.Controller, item.SourceName);
                 FinishStackItem(item); break;
             }
             case "takasugi-enter-target":
@@ -77,9 +100,8 @@ public sealed partial class L12GameEngine
                 var opponent = State.Players[1 - item.Controller];
                 if (FindOnField(opponent, chosen[0], out _, out _) is { } target && IsFieldLegion(target))
                     AddTimedModifier(target, 0, -2, State.TurnSerial, item.SourceName);
-                else if (source is not null)
-                    AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留", source);
-                else AddEvent("effect-cancelled", item.Controller, "高杉晋作抽牌后的目标已失效；抽牌结果保留");
+                else RecordPromptContinuationFailure(item,
+                    "高杉晋作抽牌后的目标已失效；抽牌结果保留", source);
                 FinishStackItem(item);
                 break;
             }
@@ -150,14 +172,18 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void KillTarget(L12StackItem sourceItem, string instanceId, string reason)
+    /// <summary>
+    /// 结算一次效果击杀。返回 false 表示该对象正在等待“即将阵亡”替代裁定，
+    /// 调用方必须暂停当前效果段，并在替代弹框完成后从持久化续程点恢复。
+    /// </summary>
+    private bool KillTarget(L12StackItem sourceItem, string instanceId, string reason)
     {
         for (var owner = 0; owner < 2; owner++)
         {
             var target = FindOnField(State.Players[owner], instanceId, out _, out _);
             if (target is null) continue;
             var source = FindSource(sourceItem);
-            if (source is null) return;
+            if (source is null) return true;
             var killEvent = new L12KillSourceEvent(
                 $"effect-kill:{sourceItem.StackItemId}:{source.InstanceId}",
                 L12KillSourceKind.CardEffect,
@@ -169,11 +195,79 @@ public sealed partial class L12GameEngine
                 [target.InstanceId]);
             if (!RemoveFromField(State.Players[owner], target, true, reason))
             {
-                AttachCardLethalKillSource(target, killEvent);
-                return;
+                // 湖中仙女之剑等同步替代不会建立弹框，属于本次动作已完成；
+                // 只有实际附着到待裁定弹框时，调用方才需要暂停。
+                if (!AttachCardLethalKillSource(target, killEvent)) return true;
+                AttachEffectKillContinuation(target, sourceItem, "finish-stack-item");
+                return false;
             }
             ResolveTypedKillSourceEvent(killEvent);
+            return true;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 多对象击杀的公共逐项续程。目标顺序与当前索引写入 StackItem，确保任一对象
+    /// 建立“即将阵亡”裁定时不会越过后续对象，且检查点恢复后仍从下一项继续。
+    /// </summary>
+    private bool ResolveSequentialEffectKills(L12StackItem item, IEnumerable<string>? initialTargets = null,
+        string? initialReason = null)
+    {
+        const string targetsKey = "sequentialEffectKillTargets";
+        const string indexKey = "sequentialEffectKillIndex";
+        const string reasonKey = "sequentialEffectKillReason";
+        if (!item.Data.TryGetValue(targetsKey, out var serializedTargets))
+        {
+            serializedTargets = string.Join('|', (initialTargets ?? [])
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
+            item.Data[targetsKey] = serializedTargets;
+            item.Data[indexKey] = "0";
+            item.Data[reasonKey] = initialReason ?? "被效果击杀";
+        }
+
+        var targets = serializedTargets.Split('|', StringSplitOptions.RemoveEmptyEntries);
+        var index = int.TryParse(item.Data.GetValueOrDefault(indexKey), out var parsed) ? parsed : 0;
+        while (index < targets.Length)
+        {
+            var targetId = targets[index++];
+            item.Data[indexKey] = index.ToString();
+            var target = State.Players.Select(player => FindOnField(player, targetId, out _, out _))
+                .FirstOrDefault(card => card is not null);
+            if (target is null) continue;
+            if (KillTarget(item, targetId, item.Data.GetValueOrDefault(reasonKey, "被效果击杀"))) continue;
+            AttachEffectKillContinuation(target, item, "sequential-effect-kills");
+            return false;
+        }
+
+        item.Data.Remove(targetsKey);
+        item.Data.Remove(indexKey);
+        item.Data.Remove(reasonKey);
+        return true;
+    }
+
+    private void ResumeEffectKillContinuation(L12Prompt prompt)
+    {
+        if (prompt.Data.GetValueOrDefault("effectKillStackItemId") is not { Length: > 0 } stackItemId)
             return;
+        var item = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == stackItemId);
+        if (item is null) return;
+        item.Data.Remove("pendingEffectKillPromptId");
+        switch (prompt.Data.GetValueOrDefault("effectKillContinuation"))
+        {
+            case "yingzheng-mass-kill":
+                if (ResolveYingzhengKillSegment(item)) FinishStackItem(item);
+                return;
+            case "sequential-effect-kills":
+                if (ResolveSequentialEffectKills(item)) FinishStackItem(item);
+                return;
+            case "legacy-hijikata-next":
+                ContinueLegacyHijikataAfterKill(item);
+                return;
+            default:
+                FinishStackItem(item);
+                return;
         }
     }
 
@@ -266,14 +360,14 @@ public sealed partial class L12GameEngine
         var legion = FindOnField(player, choice, out var row, out var slot);
         if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已无法位移");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的军团已无法位移");
             FinishStackItem(item);
             return;
         }
         var destinations = AdjacentEmptySlots(player, row, slot).ToArray();
         if (destinations.Length == 0)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的军团已没有相邻空位");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的军团已没有相邻空位");
             FinishStackItem(item);
             return;
         }
@@ -290,20 +384,26 @@ public sealed partial class L12GameEngine
         if (legion is null || !IsFieldLegion(legion) || legion.Tapped || legion.Hidden
             || targetRow is < 0 or > 1 || targetSlot is < 0 or > 2
             || Math.Abs(row - targetRow) + Math.Abs(slot - targetSlot) != 1
-            || State.ActiveDisaster?.CardId == "S01-DS03" && targetRow == 1
+            || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && targetRow == 1
             || player.Field[targetRow][targetSlot] is not null)
         {
-            AddEvent("effect-cancelled", item.Controller, "高天原阵营效果选择的位移位置已失效");
+            RecordPromptContinuationFailure(item, "高天原阵营效果选择的位移位置已失效");
             FinishStackItem(item);
             return;
         }
         player.Field[row][slot] = null;
         player.Field[targetRow][targetSlot] = legion;
         legion.LastMovedTurn = State.TurnSerial;
-        AddEvent("faction-effect", item.Controller, $"高天原阵营效果使 {legion.Name} 位移 1 格", legion);
+        AddPlayerBattlefieldMovementEvent("faction-effect", item.Controller,
+            $"高天原阵营效果使 {legion.Name} 位移 1 格",
+            new([BattlefieldMovementFact(legion, item.Controller, row, slot, targetRow, targetSlot)]), legion);
         RecordLegionMovement(item.Controller, legion, row, targetRow);
         FinishStackItem(item);
     }
+
+    private void RecordPromptContinuationFailure(L12StackItem item, string reason,
+        L12CardInstance? source = null)
+        => AddEvent("effect-failed", item.Controller, reason, source is null ? [] : [source]);
 
     private void BeginLiJingEffect(L12StackItem item)
     {
@@ -315,7 +415,7 @@ public sealed partial class L12GameEngine
         item.Data["revealed"] = top.InstanceId;
         var choices = new List<string> { "top", "bottom" };
         if (top.CardType == "legion" && top.Faction == "tianting" && L12StructuredCardRules.CurrentCostAtMost(top, 5)
-            && CanReturnMorale(player, 1) && player.Field.SelectMany(row => row).Any(card => card is null))
+            && CanReturnMorale(player, 1) && EmptySlots(player).Any())
             choices.Add("recruit");
         var data = new Dictionary<string, string>
         {
@@ -346,10 +446,9 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == item.Data["revealed"]);
         if (card is null) { FinishStackItem(item); return; }
-        var (row, slot) = ParseSlot(slotChoice);
-        player.Library.Remove(card); card.SummonRound = State.Round; card.Tapped = false; player.Field[row][slot] = card;
-        AddEvent("put", item.Controller, $"李靖使 {card.Name} 活跃登场", card);
-        CompleteEffectLegionEntry(item.Controller, card, "library");
+        if (!TrySummonFromAnyPrivateZone(player, item.Controller, card.InstanceId, slotChoice,
+                tapped: false, presentationOwner: item))
+            RecordPromptContinuationFailure(item, "李靖已声明的登场位置已失效；展示卡保留在原区域", card);
         FinishStackItem(item);
     }
 
@@ -360,8 +459,12 @@ public sealed partial class L12GameEngine
         {
             var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
                 ?? item.Controller;
-            SummonFromHand(player, PublicTriggerDeclared(item, "entryCard"),
-                PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
+            var entryCard = PublicTriggerDeclared(item, "entryCard");
+            if (!TrySummonFromHand(player, entryCard,
+                    PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield,
+                    candidate => candidate.CardId is "S01-0106" or "S01-0107"))
+                RecordTargetSettlementFailure(item, entryCard,
+                    "已声明的关羽/张飞或登场位置在响应逆结算后失效；不改选其他对象");
             FinishStackItem(item);
             return;
         }
@@ -372,7 +475,15 @@ public sealed partial class L12GameEngine
     {
         for (var row = 0; row < 2; row++)
             for (var slot = 0; slot < 3; slot++)
-                if (player.Field[row][slot] is null && !(State.ActiveDisaster?.CardId == "S01-DS03" && row == 1))
+                if (player.Field[row][slot] is null && !(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1))
+                    yield return $"{row}:{slot}";
+    }
+
+    private static IEnumerable<string> AllEmptyBattlefieldSlots(L12PlayerState player)
+    {
+        for (var row = 0; row < 2; row++)
+            for (var slot = 0; slot < 3; slot++)
+                if (player.Field[row][slot] is null)
                     yield return $"{row}:{slot}";
     }
 
@@ -394,35 +505,16 @@ public sealed partial class L12GameEngine
         }
         item.Data["reorder-context"] = context;
         item.Data["reorder-cards"] = string.Join('|', cards.Select(card => card.InstanceId));
-        CreatePrompt(item.Controller, "order", $"依次选择牌库顶部 {cards.Length} 张牌的排列顺序", cards.Select(card => card.InstanceId),
-            cards.Length, cards.Length, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string>
-            {
-                ["action"] = "reorder-order",
-                ["placementMode"] = "split-top-bottom",
-            });
+        CreateLibraryPlacementPrompt(item, cards.Select(card => card.InstanceId), "reorder-order", "split-top-bottom",
+            $"依次选择牌库顶部 {cards.Length} 张牌的排列顺序");
     }
 
     private void BeginAllTopBottomReorder(L12StackItem item, string context, IEnumerable<string> cardIds, string text)
     {
         var ids = cardIds.Distinct().ToArray();
-        if (ids.Length == 0) { FinishStackItem(item); return; }
         item.Data["reorder-context"] = context;
         item.Data["reorder-cards"] = string.Join('|', ids);
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "reorder-order",
-            ["placementMode"] = "all-top-bottom",
-            ["displayCardIds"] = string.Join('|', ids),
-        };
-        var player = State.Players[item.Controller];
-        foreach (var id in ids)
-        {
-            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
-            if (card is not null) AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,
-            "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, ids, "reorder-order", "all-top-bottom", text);
     }
 
     private void ContinueReorderOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)
@@ -435,34 +527,15 @@ public sealed partial class L12GameEngine
 
     private void CompleteTopDeckReorderDirect(L12StackItem item, List<string> topIds, List<string> bottomIds)
     {
-        var player = State.Players[item.Controller];
-        var expected = item.Data["reorder-cards"].Split('|');
-        var ordered = topIds.Concat(bottomIds).ToArray();
-        if (ordered.Length != expected.Length || ordered.Distinct().Count() != expected.Length
-            || ordered.Any(id => !expected.Contains(id)))
-        {
-            AddEvent("effect-rejected", item.Controller, "牌库调整结果不完整");
-            FinishStackItem(item);
-            return;
-        }
-        var cards = expected.ToDictionary(id => id, id => player.Library.First(card => card.InstanceId == id));
-        foreach (var card in cards.Values) player.Library.Remove(card);
-        player.Library.InsertRange(0, topIds.Select(id => cards[id]));
-        player.Library.AddRange(bottomIds.Select(id => cards[id]));
-        AddEvent("reorder", item.Controller, $"将 {topIds.Count} 张牌放回牌库顶部、{bottomIds.Count} 张牌放回牌库底部");
-        FinishStackItem(item);
+        CompleteLibraryPlacement(item, item.Data["reorder-cards"].Split('|', StringSplitOptions.RemoveEmptyEntries), topIds, bottomIds);
     }
 
     private void CompleteTopDeckReorder(L12StackItem item, L12Prompt prompt, string topCountText)
     {
-        var player = State.Players[item.Controller];
-        var ids = item.Data["reorder-order"].Split('|');
-        var cards = ids.Select(id => player.Library.First(card => card.InstanceId == id)).ToArray();
-        foreach (var card in cards) player.Library.Remove(card);
-        var topCount = int.Parse(topCountText);
-        player.Library.InsertRange(0, cards.Take(topCount));
-        player.Library.AddRange(cards.Skip(topCount));
-        FinishStackItem(item);
+        var ids = item.Data["reorder-order"].Split('|', StringSplitOptions.RemoveEmptyEntries);
+        if (!int.TryParse(topCountText, out var topCount) || topCount < 0 || topCount > ids.Length)
+        { FailLibraryPlacement(item); return; }
+        CompleteLibraryPlacement(item, ids, ids.Take(topCount).ToArray(), ids.Skip(topCount).ToArray());
     }
 
     private void BeginOiranGift(L12StackItem item)
@@ -470,17 +543,29 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var top = player.Library.Take(3).ToArray();
         item.Data["oiran-cards"] = string.Join('|', top.Select(card => card.InstanceId));
-        var choices = top.Where(card => card.CardId != "S01-0419"
-                && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+        var choices = top.Where(card => IsOiranGiftSearchCandidate(player, card))
             .Select(card => card.InstanceId).ToList();
-        choices.Add("skip");
+        if (top.Length == 0)
+        {
+            item.Data["effectResultStatus"] = "skipped";
+            AddEvent("effect-noop", item.Controller, "花魁的馈赠结算时牌库为空，跳过查看与选择");
+            FinishStackItem(item);
+            return;
+        }
+        if (choices.Count == 0)
+        {
+            ContinueOiranPick(item, "skip");
+            return;
+        }
         var data = new Dictionary<string, string>
         {
             ["action"] = "oiran-pick",
-            ["choiceMode"] = "optional-add",
+            ["choiceMode"] = "required-add",
             ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
         };
         foreach (var card in top) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+            "只能选择【高天原】卡牌，且不能选择〈花魁的馈赠〉本身");
         CreatePrompt(item.Controller, "card", "查看牌库顶部 3 张牌，选择 1 张符合条件的牌", choices, 1, 1,
             "card-effect", item.StackItemId, data: data);
     }
@@ -490,13 +575,36 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         if (choice != "skip")
         {
-            var card = player.Library.First(candidate => candidate.InstanceId == choice);
-            player.Library.Remove(card);
-            PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
-                $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
-                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "reveal-add");
-            AddPresentationEvent("search", item.Controller,
-                $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "search-add", card);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == choice
+                && IsStillInInspectedLibrarySet(item, "oiran-cards", candidate)
+                && IsOiranGiftSearchCandidate(player, candidate));
+            if (card is null)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller, "花魁的馈赠已选择的牌库卡牌在结算步骤中失效");
+            }
+            else
+            {
+                player.Library.Remove(card);
+                PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
+                    $"花魁的馈赠展示〈{card.Name}〉并加入手牌",
+                    $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "reveal-add");
+                AddPresentationEvent("search", item.Controller,
+                    $"花魁的馈赠将〈{card.Name}〉加入手牌", "S01-0419", "search-add", card);
+            }
+        }
+        else
+        {
+            var frozen = item.Data.GetValueOrDefault("oiran-cards", string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var stillHasRequiredChoice = frozen.Any(id => player.Library.Any(card =>
+                card.InstanceId == id && IsOiranGiftSearchCandidate(player, card)));
+            if (stillHasRequiredChoice)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller,
+                    "花魁的馈赠升级前选择不加入手牌，但当前存在必须选择的合法卡牌");
+            }
         }
         var remaining = item.Data["oiran-cards"].Split('|').Where(id => id != choice).ToList();
         if (remaining.Count <= 1)
@@ -504,19 +612,8 @@ public sealed partial class L12GameEngine
             CompleteOiranOrder(item, remaining);
             return;
         }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "oiran-order",
-            ["placementMode"] = "all-bottom",
-            ["displayCardIds"] = string.Join('|', remaining)
-        };
-        foreach (var id in remaining)
-        {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
-            AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", "调整其余展示牌的顺序，然后将它们全部放回牌库底部。",
-            remaining, remaining.Count, remaining.Count, "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining, "oiran-order", "all-bottom",
+            "调整其余展示牌的顺序，然后将它们全部放回牌库底部。");
     }
 
     private void CompleteOiranOrder(L12StackItem item, List<string> order)

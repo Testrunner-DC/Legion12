@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-player-experience-closeout",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "对局、牌库、赛事与规则体验收口",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战工具新增默认、仅有效响应、5秒关闭无效响应三档设置；卡牌效果的目标、费用、必选、可放弃和结算后果提示进一步统一，重连后仍会保持本局选择。",
+      "paths": [
+        "opcgpro-vue/src/l12/SingleCardPicker.vue",
+        "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css",
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/site/DisasterPoolPicker.vue",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs",
+        "服务端WebSocket/TwelveLegions/L12LibraryPlacementTransactions.cs",
+        "服务端WebSocket/TwelveLegions/L12MoralePayments.cs",
+        "服务端WebSocket/TwelveLegions/L12MoraleReturns.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicResponseEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2UniversalEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.ResponsePreferences.cs"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "实时对局、重连和玩家回放统一按观看者权限隐藏私密手牌、盖伏内容和未公开选择，避免不同入口出现信息差异。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "对战玩家信息优先显示更有辨识度的段位称号；已有称号时不重复显示普通段位，非冠冕级玩家不显示名次。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "牌库广场恢复可直接进入详情的热门牌库双行轮播，滚动速度更舒缓；公开牌库与我的牌库使用更清晰的盒式信息布局和独立分页。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    },
+    {
+      "category": "content",
+      "text": "移动端图鉴按真实可用宽度每行显示2至4张牌，横竖屏均保留完整卡面和卡名，并可自然滚动到最后一行。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardArchive.vue"
+      ]
+    },
+    {
+      "category": "rules",
+      "text": "规则中心改为以检索、分类与问答为核心的连续阅读页面，现有规则资料、裁定、版本和后台审核能力全部保留；审核对象与操作会在同一工作区内呈现。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue",
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue"
+      ]
+    },
+    {
+      "category": "tournaments",
+      "text": "赛事发现、创建、详情、裁判、管理与历史摘要统一视觉层级和移动端操作密度，长内容、状态与操作不再互相挤压。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue",
+        "opcgpro-vue/src/l12/site/TournamentDetailPage.vue",
+        "opcgpro-vue/src/l12/site/TournamentHubPage.vue",
+        "opcgpro-vue/src/l12/site/TournamentJudgeDesk.vue",
+        "opcgpro-vue/src/l12/site/TournamentManagementPanel.vue",
+        "opcgpro-vue/src/l12/site/TournamentSummaryList.vue"
+      ]
+    }
+  ]
+}

@@ -12,11 +12,6 @@ public sealed partial class L12GameEngine
         "S02-0009", "S02-0010", "S02-0011", "S02-0012", "S02-0013", "S02-0014", "S02-0105",
     };
 
-    internal static readonly HashSet<string> S2UniversalAfterAttackCards = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "S02-0002",
-    };
-
     private static bool HasS2UniversalImmediateEffect(string cardId, string trigger)
         => trigger == "enter" ? S2UniversalEnterCards.Contains(cardId) : S2UniversalTacticCards.Contains(cardId);
 
@@ -31,10 +26,22 @@ public sealed partial class L12GameEngine
                     .Where(target => target is not null && IsCounterTactic(target.CardId))
                     .Select(target => target!.InstanceId).ToList();
                 if (choices.Count == 0) { FinishStackItem(item); return true; }
+                var consequences = choices.ToDictionary(choice => choice,
+                    _ => "将所选反击战术置入其所有者墓地。",
+                    StringComparer.OrdinalIgnoreCase);
                 choices.Add("skip");
+                consequences["skip"] = "不选择对象，结束〈宫廷魔术师〉的登场时效果。";
                 CreatePrompt(item.Controller, "covered-counter", "宫廷魔术师：可选择战场上 1 张反击战术置入所有者墓地",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-magician-remove-counter" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-magician-remove-counter", ["skip"] = "不发动",
+                        },
+                        new("宫廷魔术师",
+                            "〈宫廷魔术师〉的登场时效果正在结算。你可以将战场上的1张反击战术置入其所有者墓地，也可以不发动。",
+                            "请选择1张战场上的反击战术，或选择“不发动”。",
+                            L12PromptWaitingAction.TargetSelection, consequences)));
                 return true;
             }
             case "万物统御之戒":
@@ -46,12 +53,21 @@ public sealed partial class L12GameEngine
                 }
                 CreatePrompt(item.Controller, "optional", "万物统御之戒：是否弃置1张手牌，检索1张【通用】卡牌？",
                     ["yes", "no"], 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-ring-start", ["choiceMode"] = "instant",
-                        ["yes"] = "弃置1张手牌，检索1张【通用】卡牌",
-                        ["no"] = "不发动",
-                    });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-ring-start", ["choiceMode"] = "instant",
+                            ["yes"] = "发动", ["no"] = "不发动",
+                        },
+                        new("万物统御之戒",
+                            "〈万物统御之戒〉的登场时效果正在结算。你可以弃置1张手牌作为费用；成功支付后，从牌库检索1张【通用】卡牌，展示并加入手牌，然后洗牌。",
+                            "请选择“发动”继续支付费用，或选择“不发动”结束本次登场时效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "继续选择并弃置1张手牌作为费用，然后检索1张【通用】卡牌。",
+                                ["no"] = "不支付费用，直接结束〈万物统御之戒〉的登场时效果。",
+                            })));
                 return true;
             }
             default:
@@ -67,22 +83,9 @@ public sealed partial class L12GameEngine
             case "defense-deployment-set":
             {
                 var cards = CompositeDeclared(item, "entryCards");
-                for (var index = 0; index < cards.Length; index++)
-                {
-                    var slotText = CompositeDeclared(item, $"entrySlot{index + 1}").SingleOrDefault();
-                    if (slotText?.Split(':') is not ["1", var slotValue]
-                        || !int.TryParse(slotValue, out var slot) || slot is < 0 or > 2
-                        || player.Field[1][slot] is not null) continue;
-                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cards[index]
-                        && IsCounterTactic(candidate.CardId));
-                    if (counter is null) continue;
-                    player.Hand.Remove(counter);
-                    counter.Hidden = true;
-                    counter.SetRound = State.Round;
-                    counter.SummonRound = State.Round;
-                    player.Field[1][slot] = counter;
-                    AddEvent("counter-set", item.Controller, $"{player.Name}因〈防御部署〉在后排{slot + 1}号位覆盖1张反击战术");
-                }
+                SetDeclaredCounterTactics(item, cards,
+                    [.. Enumerable.Range(0, cards.Length).Select(index =>
+                        CompositeDeclared(item, $"entrySlot{index + 1}").SingleOrDefault())]);
                 FinishStackItem(item);
                 return true;
             }
@@ -94,7 +97,6 @@ public sealed partial class L12GameEngine
                 var delta = int.TryParse(CompositeDeclared(item, "disasterMode").SingleOrDefault(), out var parsed)
                     ? Math.Clamp(parsed, -1, 1) : 0;
                 AdjustDisasterValue(delta);
-                AddEvent("disaster-value", item.Controller, $"黑色莲花将天灾值调整为 {State.DisasterValue}", card);
                 FinishStackItem(item);
                 return true;
             }
@@ -112,9 +114,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "chaotic-arrows-effect":
-                foreach (var targetId in CompositeDeclared(item, "killTargets"))
-                    if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 2000) is not null)
-                        KillTarget(item, targetId, "被〈纷乱箭〉击杀");
+                if (!ResolveDeclaredEnemyKillTargets(item, CompositeDeclared(item, "killTargets"),
+                    target => target.DisplayBaseTroops <= 2000,
+                    "被〈纷乱箭〉击杀",
+                    "发动时没有选择原本兵力不高于2000的军团",
+                    "所选军团已离场、不再是军团或原本兵力已高于2000")) return true;
                 FinishStackItem(item);
                 return true;
             case "holy-lock-effect":
@@ -132,8 +136,21 @@ public sealed partial class L12GameEngine
             case "qianyang-kill":
             {
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                if (DeclaredEnemyTarget(item.Controller, targetId, target => target.DisplayBaseTroops <= 3000) is not null)
-                    KillTarget(item, targetId!, "被〈乾坤 阳〉击杀");
+                var target = DeclaredEnemyTarget(item.Controller, targetId,
+                    candidate => candidate.DisplayBaseTroops <= 3000);
+                if (target is not null)
+                {
+                    var publicTargetId = target.InstanceId;
+                    var publicTargetName = target.Name;
+                    var wasPublic = !target.Hidden;
+                    if (KillTarget(item, targetId!, "被〈乾坤 阳〉击杀") && wasPublic)
+                    {
+                        item.Data[EffectProcessedPublicTargetIdDataKey] = publicTargetId;
+                        item.Data[EffectProcessedPublicTargetNameDataKey] = publicTargetName;
+                    }
+                }
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场、不再是军团或原本兵力已高于3000");
                 FinishStackItem(item);
                 return true;
             }
@@ -146,27 +163,6 @@ public sealed partial class L12GameEngine
             default:
                 return false;
         }
-    }
-
-    private bool TryResolveS2UniversalAfterAttack(L12StackItem item, L12CardInstance card)
-    {
-        if (card.CardId != "S02-0002") return false;
-        if (item.Data.GetValueOrDefault("killed") != "true"
-            || PublicTriggerDeclared(item, "mode") != "mode:use")
-        {
-            FinishStackItem(item);
-            return true;
-        }
-        var source = FindSource(item);
-        if (source is not null && FindOnField(State.Players[item.Controller], source.InstanceId, out _, out _) is not null)
-        {
-            ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因击杀转为活跃");
-            AddEvent("effect", item.Controller, "疯狂的爱丽丝因击杀转为活跃", source);
-        }
-        else AddEvent("effect-cancelled", item.Controller,
-            "疯狂的爱丽丝在结算时已不在战场；转为活跃效果取消", card);
-        FinishStackItem(item);
-        return true;
     }
 
     private void QueueS2ExorcistReturns(int tacticController, L12CardInstance tactic)
@@ -203,12 +199,17 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source.CardId == "S02-0104")
         {
             var player = State.Players[playerIndex];
-            var used = GetAbilities(player.MasterId)
-                .Where(view => player.UsedAbilities.Contains($"active:master-{playerIndex}:{view.Id}"))
-                .ToArray();
+            var used = UsedMasterUsageResetChoices(player);
             if (used.Length == 0) return CommandResult.Reject("我方主宰没有已使用的效果次数");
-            var result = BeginPendingActivation(playerIndex, source, ability, used.Select(view => view.Id).ToArray(),
-                "神农鼎：选择要重置使用次数的主宰效果");
+            var result = BeginPendingActivationSequence(playerIndex, source, ability,
+            [
+                new L12ActivationSelectionStep
+                {
+                    Kind = "option", Text = "神农鼎：选择要重置使用次数的主宰效果",
+                    ValidChoices = used.Select(view => view.Id).ToList(),
+                    ChoiceLabels = used.ToDictionary(view => view.Id, view => view.Label, StringComparer.OrdinalIgnoreCase),
+                },
+            ]);
             var prompt = State.PendingPrompts.LastOrDefault(candidate => candidate.PlayerIndex == playerIndex
                 && candidate.Continuation == "pending-activation");
             if (prompt is not null)
@@ -254,8 +255,13 @@ public sealed partial class L12GameEngine
         if (ability == "shennongReset" && source?.CardId == "S02-0104")
         {
             var targetAbility = item.Data.GetValueOrDefault("target") ?? string.Empty;
-            State.Players[item.Controller].UsedAbilities.Remove($"active:master-{item.Controller}:{targetAbility}");
-            AddEvent("effect", item.Controller, "神农鼎重置我方主宰1个效果的使用次数", source);
+            var player = State.Players[item.Controller];
+            if (UsedMasterAbilityUsageKey(player, targetAbility) is { } targetKey
+                && player.UsedAbilities.Remove(targetKey))
+                AddEvent("effect", item.Controller, "神农鼎重置我方主宰1个效果的使用次数", source);
+            else
+                RecordTargetSettlementFailure(item, targetAbility,
+                    "所选主宰效果在逆结算后已不再处于使用过的状态");
             FinishStackItem(item);
             return true;
         }
@@ -266,7 +272,7 @@ public sealed partial class L12GameEngine
             {
                 source.AttachedCards.Remove(holyLock);
                 var owner = holyLock.OwnerIndex is >= 0 and <= 1 ? holyLock.OwnerIndex.Value : 1 - item.Controller;
-                ResetCardAfterLeavingField(holyLock);
+                ResetCardForPrivateZone(holyLock);
                 State.Players[owner].Graveyard.Add(holyLock);
                 if (source.AttachedCards.All(card => card.CardId != "S02-0013"))
                     source.Abilities.RemoveAll(view => view.Id == "discardHolyLock");
@@ -288,27 +294,44 @@ public sealed partial class L12GameEngine
                     FinishStackItem(item);
                     break;
                 }
+                var discardChoices = State.Players[item.Controller].Hand.ToArray();
                 CreatePrompt(item.Controller, "hand-card", "万物统御之戒：弃置1张手牌",
-                    State.Players[item.Controller].Hand.Select(candidate => candidate.InstanceId), 1, 1,
+                    discardChoices.Select(candidate => candidate.InstanceId), 1, 1,
                     "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-discard" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-ring-discard" },
+                        new("万物统御之戒",
+                            "你已决定发动〈万物统御之戒〉的登场时效果。现在必须弃置1张手牌支付费用；只有成功支付后才会继续检索。",
+                            "请选择1张手牌弃置作为费用；本步骤不能取消。",
+                            L12PromptWaitingAction.CostPayment,
+                            discardChoices.ToDictionary(candidate => candidate.InstanceId,
+                                candidate => $"弃置〈{candidate.Name}〉作为费用，然后进入【通用】卡牌检索。",
+                                StringComparer.OrdinalIgnoreCase))));
                 break;
             case "s2-ring-discard":
             {
-                MoveHandToGrave(State.Players[item.Controller], chosen[0], causedByEffect: false);
-                var candidates = State.Players[item.Controller].Library
-                    .Where(candidate => candidate.Faction == "universal")
-                    .Select(candidate => candidate.InstanceId).ToArray();
+                var player = State.Players[item.Controller];
+                if (!MoveHandToGrave(player, chosen[0], causedByEffect: false))
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法支付弃置费用");
+                    FinishStackItem(item);
+                    break;
+                }
+                var candidates = player.Library.Where(candidate => candidate.Faction == "universal").ToArray();
                 if (candidates.Length == 0) { FinishStackItem(item); break; }
                 CreatePrompt(item.Controller, "library-search", "万物统御之戒：选择牌库1张【通用】卡牌展示并加入手牌",
-                    candidates, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "s2-ring-search" });
+                    candidates.Select(candidate => candidate.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    data: BuildS2RingSearchPromptData(candidates,
+                        new Dictionary<string, string> { ["action"] = "s2-ring-search" }));
                 break;
             }
             case "s2-ring-search":
             {
                 var player = State.Players[item.Controller];
-                var target = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
+                var target = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    // 〈万物统御之戒〉在圣物区会把印刷【通用】牌的有效阵营映射为主宰阵营；
+                    // 此处卡文检索的是印刷【通用】牌，必须与候选生成使用同一身份判据。
+                    && candidate.Faction == "universal");
                 if (target is not null)
                 {
                     player.Library.Remove(target);
@@ -316,6 +339,7 @@ public sealed partial class L12GameEngine
                         $"万物统御之戒展示并将〈{target.Name}〉加入手牌",
                         $"万物统御之戒将{target.Name}加入手牌", "S02-0008", "search-hit");
                 }
+                else RecordTargetSettlementFailure(item, chosen[0], "所选【通用】卡牌已离开牌库或不再符合检索条件");
                 ShuffleLibrary(player, "万物统御之戒检索结算");
                 FinishStackItem(item);
                 break;
@@ -375,6 +399,52 @@ public sealed partial class L12GameEngine
             else AddEvent("draw", item.Controller, "〈防御部署〉因手牌不高于4张抽取1张牌", source is null ? [] : [source]);
         }
         FinishStackItem(item);
+    }
+
+    // Both 〈防御部署〉 and 〈上杉谦信〉 declare private hand counters and public
+    // back-row slots before the response window. Settlement always uses the same
+    // current-state check, never substitutes another hand card, and lets a valid
+    // independently declared counter continue when its sibling has gone stale.
+    private bool IsCounterDeploymentCandidate(L12CardInstance candidate, string? sourceInstanceId = null)
+        => candidate.InstanceId != sourceInstanceId && IsCounterTactic(candidate.CardId);
+
+    private int SetDeclaredCounterTactics(L12StackItem item, IReadOnlyList<string> declaredCards,
+        IReadOnlyList<string?> declaredSlots)
+    {
+        var player = State.Players[item.Controller];
+        var declared = declaredCards.Take(2).ToArray();
+        if (declared.Length == 0) return 0;
+
+        var resolved = 0;
+        var usedSlots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < declared.Length; index++)
+        {
+            var slotText = declaredSlots.ElementAtOrDefault(index);
+            var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == declared[index]
+                && IsCounterDeploymentCandidate(candidate));
+            if (counter is null || slotText?.Split(':') is not ["1", var slotValue]
+                || !int.TryParse(slotValue, out var slot) || slot is < 0 or > 2
+                || !usedSlots.Add(slotText) || player.Field[1][slot] is not null)
+                continue;
+
+            player.Hand.Remove(counter);
+            ResetCardForFieldEntry(counter);
+            counter.Hidden = true;
+            counter.SetRound = State.Round;
+            counter.SummonRound = State.Round;
+            player.Field[1][slot] = counter;
+            AddEvent("counter-set", item.Controller,
+                $"{player.Name}因〈{item.SourceName}〉在{PlayerBattlefieldSlotLabel(item.Controller, item.Controller, 1, slot)}覆盖1张反击战术");
+            resolved++;
+        }
+
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared), "已声明的反击战术已离开手牌或后排位置已失效");
+        else if (resolved < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved}张已声明的反击战术或后排位置在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return resolved;
     }
 
     private void BeginPrayerPublicPreview(L12StackItem item)

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-platform-save-and-ranking-completeness",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "保存提示与排行榜统计修正",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "保存遇到数据更新时会提示刷新重试；暂时无法保存时给出明确提示，不把失败显示为操作成功。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12HttpReliability.cs"]
+    },
+    {
+      "category": "ranking",
+      "text": "排行榜统计范围不完整时会提示样本限制，不再因无效记录被过滤就误显示完整统计。",
+      "paths": ["服务端WebSocket/TwelveLegions/MatchRecorder.Rankings.cs"]
+    }
+  ]
+}

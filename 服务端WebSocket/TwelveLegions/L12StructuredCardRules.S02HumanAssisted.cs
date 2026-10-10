@@ -31,7 +31,7 @@ public static partial class L12StructuredCardRules
                 H("granted", "granted-continuous", "挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。")),
             "S02-0005" => HumanCard(
                 H("continuous", "continuous", "无法进攻。"),
-                H("opponent-attacks-master", "reaction", "对方进攻我方主宰时，可从手牌中休整登场于前排。将本次进攻目标改为此军团。")),
+                H("opponent-attacks-master", "reaction", "对方进攻我方主宰时，可从手牌中休整登场于前排：将本次进攻目标改为此军团。")),
             "S02-0006" => HumanCard(
                 H("continuous", "rule", "<信仰狂热者>的效果每回合只可使用1次。"),
                 H("discarded", "triggered", "我方回合 此军团从牌库弃置或因效果从手牌弃置时：可无视消耗触发1次我方需要消耗士气的主宰效果，且不计入主宰效果使用次数。")),
@@ -72,7 +72,7 @@ public static partial class L12StructuredCardRules
                 H("continuous", "continuous", "「位于前排」我方主宰无法被兵力不高于2000的军团进攻。"),
                 H("enter", "triggered", "登场时 弃置手牌中1张费用为8的军团：击杀除此军团以外的所有军团。随后返还所有士气，且本回合我方无法因阵营效果以外的方式追加士气。若未能满足登场时效果的发动条件，则展示我方所有手牌。")),
             "S02-0102" => HumanCard(
-                H("morale-returned-by-master", "triggered", "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。"),
+                H("master-morale-return", "triggered", "我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。"),
                 H("enter", "triggered", "登场时 可展示牌库顶部1张牌。若其为费用不高于4的<主动战术>，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。")),
             "S02-0103" => HumanCard(
                 H("enter", "triggered", "登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。"),
@@ -83,9 +83,10 @@ public static partial class L12StructuredCardRules
             "S02-0105" => HumanCard(
                 H("play", "spell", "击杀对方1张原本兵力不高于3000的军团。 可返还1士气：抽取1张牌。")),
             "S02-0106" => HumanCard(
-                H("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。")),
+                HWithTarget("opponent-attack-or-effect", "reaction", "对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。",
+                    "controller.field", "card-type=legion;public=true")),
             "S02-01S1" => HumanCard(
-                H("morale-returned-by-master", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
+                H("master-morale-return", "triggered", "「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，<哮天犬·稚>可在前排活跃登场，视为1张兵力2000的【特殊】军团。"),
                 H("death", "triggered", "阵亡时 可从士气牌库追加1张休整的士气。")),
             "S02-0201" => HumanCard(
                 H("continuous", "rule", "规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。"),
@@ -107,9 +108,11 @@ public static partial class L12StructuredCardRules
                 H("continuous", "continuous", "若<黄金圣甲虫>位于我方圣物区，我方无法从手牌打出其他圣物。"),
                 H("enter", "triggered", "登场时 可将墓地1张<增殖的甲虫>活跃登场。"),
                 H("active", "activated", "主动休整 可将墓地1张<增殖的甲虫>活跃登场。"),
-                H("active", "activated", "我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。")),
+                HWithTarget("active", "activated", "我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。",
+                    "opponent.field", "card-type=legion;public=true")),
             "S02-0206" => HumanCard(
-                H("play", "spell", "选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。"),
+                HWithTarget("play", "spell", "选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。",
+                    "controller.field", "card-type=legion;faction=taiyangcheng;row=front;public=true"),
                 H("granted", "granted-continuous", "必中 进攻无法被抵挡/支援。"),
                 H("play", "spell", "本回合此军团无法因效果重置为活跃，回合结束时弃置此军团。")),
             "S02-0207" => HumanCard(
@@ -130,7 +133,7 @@ public static partial class L12StructuredCardRules
                 H("keyword-definition", "keyword-definition", "挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。"),
                 H("enter", "triggered", "登场时 我方主宰增加1点血量。")),
             "S02-0303" => HumanCard(
-                H("hand-play", "special-summon", "可对我方主宰造成1点伤害：此军团登场费用-1。"),
+                SelfDamageEntryDiscountAbility("human-assisted", HumanS02ReviewSource),
                 H("enter", "triggered", "登场时 可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡效果。")),
             "S02-0304" => HumanCard(
                 H("continuous", "continuous", "进攻距离+1，远程进攻无损。"),
@@ -145,7 +148,8 @@ public static partial class L12StructuredCardRules
                 H("continuous", "rule", "<密米尔之泉>每回合只可使用1次。"),
                 H("master-effect-damage-threshold", "triggered", "若本回合我方主宰因效果受到累计2点及更多伤害：我方主宰可增加1点血量，抽取1张牌。随后可弃置我方牌库顶部2张牌。")),
             "S02-0307" => HumanCard(
-                H("play", "spell", "弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。")),
+                HWithTarget("play", "spell", "弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。",
+                    "opponent.field", "card-type=legion;public=true")),
             "S02-03M1" => HumanCard(
                 H("game-setup", "setup", "游戏开始时，可将1张<雷神之锤>加入手牌，其视为1张起始手牌。"),
                 H("active", "activated", "我方回合 当我方主宰血量不高于3时，可消耗2士气：本回合我方所有【阿斯加德】军团在登场时获得ABILITY 3。以上效果发动后，我方主宰本局游戏无法因任何效果增加血量。"),
@@ -202,6 +206,25 @@ public static partial class L12StructuredCardRules
         return new(trigger, executionModel, text, atoms, "human-assisted", HumanS02ReviewSource);
     }
 
+    // 同一句同时出现费用区与效果目标区时，通用词面推断不得让冒号前的费用对象污染
+    // 冒号后的目标区域。能力仍保留共用推断产生的条件、费用、结算与期限原子，只覆盖
+    // 已经人工确认的目标身份。
+    private static L12StructuredAbilityTemplate HWithTarget(string trigger, string executionModel, string text,
+        string zone, string filter)
+    {
+        var atoms = InferHumanAtoms(trigger, executionModel, text).Select(atom =>
+        {
+            if (atom.Kind != L12AtomKinds.SelectTarget) return atom;
+            var parameters = new Dictionary<string, string>(atom.Parameters, StringComparer.Ordinal)
+            {
+                ["zone"] = zone,
+                ["filter"] = filter,
+            };
+            return atom with { Parameters = parameters };
+        }).ToArray();
+        return new(trigger, executionModel, text, atoms, "human-assisted", HumanS02ReviewSource);
+    }
+
     private static IReadOnlyList<L12StructuredAbilityTemplate> HolyLockAbilities() => HumanCard(
         new("play", "spell", "叠放至对方圣物区的1张【圣物】之上，对方无法使用此【圣物】，直到此战术被弃置。",
         [
@@ -240,6 +263,8 @@ public static partial class L12StructuredCardRules
         string trigger, string executionModel, string text)
     {
         var atoms = new List<L12StructuredAtomTemplate>();
+        var separator = text.IndexOfAny(['：', ':']);
+        var printedCostClause = separator > 0 ? text[..separator] : string.Empty;
         void Add(string kind, string label, string stage, params (string Key, string Value)[] values)
         {
             if (atoms.Any(atom => atom.Kind == kind && atom.Label == label && atom.Stage == stage)) return;
@@ -285,7 +310,12 @@ public static partial class L12StructuredCardRules
         if (text.Contains("加入手牌", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "将所选或展示的卡牌加入手牌", "resolution",
                 ("to", "controller.hand"), ("event", "add-card-to-hand-by-effect"));
-        if (text.Contains("返回", StringComparison.Ordinal) && text.Contains("牌库", StringComparison.Ordinal))
+        var returnsCardsToLibraryAsPrintedCost = printedCostClause.Contains("返回", StringComparison.Ordinal)
+            && printedCostClause.Contains("牌库", StringComparison.Ordinal);
+        if (returnsCardsToLibraryAsPrintedCost)
+            Add(L12AtomKinds.MoveZone, "将冒号前指定卡牌返回牌库", "cost", ("to", "owner.library"));
+        if (!returnsCardsToLibraryAsPrintedCost
+            && text.Contains("返回", StringComparison.Ordinal) && text.Contains("牌库", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "按文本将卡牌返回牌库", "resolution", ("to", "owner.library"));
         if (text.Contains("活跃登场", StringComparison.Ordinal) || text.Contains("休整登场", StringComparison.Ordinal))
             Add(L12AtomKinds.MoveZone, "将所选军团按指定状态登场", "resolution", ("to", "field"));
@@ -369,6 +399,8 @@ public static partial class L12StructuredCardRules
             add(L12AtomKinds.AttackRule, "无法进攻主宰", "resolution", ("cannotAttackMaster", "true"));
         else if (text.Contains("无法进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法进攻", "resolution", ("cannotAttack", "true"));
+        if (text.Contains("无法支援", StringComparison.Ordinal))
+            add(L12AtomKinds.AttackRule, "无法支援", "resolution", ("cannotSupport", "true"));
         if (text.Contains("无法被远程进攻", StringComparison.Ordinal))
             add(L12AtomKinds.AttackRule, "无法被远程进攻", "resolution", ("cannotBeRanged", "true"));
         if (text.Contains("主宰无法被兵力不高于2000的军团进攻", StringComparison.Ordinal))

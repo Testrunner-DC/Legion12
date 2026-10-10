@@ -11,6 +11,8 @@ public sealed record L12TournamentRulesSnapshotView(
     IReadOnlyList<string> DisasterCardIds,
     IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
     string DeckVisibility,
+    string? RuleContentVersionId,
+    string RuleContentHash,
     string Hash,
     DateTimeOffset CapturedAt);
 
@@ -33,8 +35,37 @@ public sealed record L12TournamentParticipantView(
     bool CheckedIn,
     bool Dropped,
     bool Eliminated,
+    bool Removed,
+    bool RegistrationBanned,
+    string? RemovalReason,
+    DateTimeOffset? TournamentCheckedInAt,
     int Seed,
-    L12TournamentDeckSnapshotView? Deck);
+    L12TournamentDeckSnapshotView? Deck,
+    bool Waitlisted,
+    int? WaitlistPosition,
+    DateTimeOffset? PromotedAt);
+
+public sealed record L12TournamentCountsView(
+    int Registered,
+    int PendingCheckIn,
+    int CheckedIn,
+    int Active,
+    int Waitlisted,
+    int Dropped,
+    int Removed,
+    int RegistrationBanned);
+
+public sealed record L12TournamentOrganizerTransferView(
+    string Id,
+    string FromAccountId,
+    string FromUsername,
+    string ToAccountId,
+    string ToUsername,
+    string Status,
+    string Reason,
+    DateTimeOffset RequestedAt,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset? ResolvedAt);
 
 public sealed record L12TournamentStandingView(
     int RoundNumber,
@@ -95,7 +126,22 @@ public sealed record L12TournamentMatchView(
     int ReplayNumber,
     bool CanEnter,
     bool CanSpectate,
-    IReadOnlyList<L12TournamentMatchEventView> Events);
+    IReadOnlyList<L12TournamentMatchEventView> Events,
+    bool Paused,
+    string? PauseReason,
+    DateTimeOffset? PausedAt,
+    int TotalPausedSeconds);
+
+public sealed record L12TournamentPostponementView(
+    string Id, DateTimeOffset? PreviousStartAt, DateTimeOffset NewStartAt, string Reason,
+    string ActorId, string ActorName, DateTimeOffset CreatedAt);
+
+public sealed record L12TournamentJudgeCaseView(
+    string Id, int RoundNumber, string MatchId, int Table, string Category, string Urgency,
+    string Status, string RequesterAccountId, string RequesterName, string PlayerMessage,
+    string? AssigneeAccountId, string? AssigneeName, string? StaffNote, string? Resolution,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, DateTimeOffset? AppealedAt,
+    string? AppealReason, bool CanManage);
 
 public sealed record L12TournamentRoundView(
     string Id,
@@ -141,6 +187,11 @@ public sealed record L12TournamentView(
     L12TournamentRulesSnapshotView Rules,
     int RoundMinutes,
     int CheckInMinutes,
+    L12RankedTimeControlConfig TimeControl,
+    bool UsesLegacyRoundClock,
+    L12TournamentCountsView Counts,
+    L12TournamentOrganizerTransferView? PendingOrganizerTransfer,
+    IReadOnlyList<L12TournamentOrganizerTransferView> OrganizerTransferHistory,
     IReadOnlyList<L12TournamentParticipantView> Participants,
     IReadOnlyList<L12TournamentRoundView> Rounds,
     long Version,
@@ -153,7 +204,13 @@ public sealed record L12TournamentView(
     string RegistrationVisibility,
     int LateGraceMinutes,
     IReadOnlyList<L12TournamentStandingView> FinalSwissStandings,
-    IReadOnlyList<L12TournamentBracketRoundView> EliminationBracket);
+    IReadOnlyList<L12TournamentBracketRoundView> EliminationBracket,
+    string Phase,
+    bool RegistrationOpen,
+    DateTimeOffset? CanceledAt,
+    string? CancellationReason,
+    IReadOnlyList<L12TournamentPostponementView> Postponements,
+    IReadOnlyList<L12TournamentJudgeCaseView> JudgeCases);
 
 public sealed record L12TournamentListView(long PlatformVersion, IReadOnlyList<L12TournamentView> Items);
 
@@ -176,16 +233,33 @@ public sealed record L12TournamentCreatePayload(
     int SwissRounds = 1,
     int? CutSize = null,
     string RegistrationVisibility = "public",
-    int LateGraceMinutes = 5);
+    int LateGraceMinutes = 5,
+    L12RankedTimeControlConfig? TimeControl = null);
 
-public sealed record L12TournamentRegistrationPayload(string DeckName, string DeckCode);
+public sealed record L12TournamentRegistrationPayload(string? DeckName = null, string? DeckCode = null);
+public sealed record L12TournamentPreCheckInPayload(string DeckName, string DeckCode, string? DeckId = null);
 public sealed record L12TournamentStaffPayload(IReadOnlyList<string> RefereeAccountIds);
+public sealed record L12TournamentVisibilityPayload(string Visibility, string RegistrationVisibility);
 public sealed record L12TournamentCheckInPayload(string? AccountId, bool Ready);
+public sealed record L12TournamentRemoveParticipantPayload(string AccountId, bool BanRegistration, string Reason);
+public sealed record L12TournamentRegistrationBanPayload(string AccountId, bool Banned, string Reason);
+public sealed record L12TournamentOrganizerTransferRequestPayload(string AccountId, string Reason);
+public sealed record L12TournamentOrganizerTransferDecisionPayload(string RequestId, bool Accept);
 public sealed record L12TournamentPausePayload(bool Paused, string Reason);
 public sealed record L12TournamentTimeExtensionPayload(int Minutes, string Reason);
 public sealed record L12TournamentRulingPayload(string Kind, string? TargetAccountId, string Decision, string Reason);
 public sealed record L12TournamentMatchReferencePayload(string RecordedMatchId);
 public sealed record L12TournamentRematchPayload(string Reason);
+public sealed record L12TournamentPhasePayload(string Phase, string Reason);
+public sealed record L12TournamentPostponePayload(DateTimeOffset NewStartAt, string Reason);
+public sealed record L12TournamentCancelPayload(string Reason);
+public sealed record L12TournamentMatchPausePayload(bool Paused, string Reason);
+public sealed record L12TournamentJudgeCaseCreatePayload(string MatchId, string Category, string Urgency,
+    string Message);
+public sealed record L12TournamentJudgeCaseAssignPayload(string CaseId, string AssigneeAccountId, string Reason);
+public sealed record L12TournamentJudgeCaseResolvePayload(string CaseId, string Status, string Resolution,
+    string StaffNote);
+public sealed record L12TournamentJudgeCaseAppealPayload(string CaseId, string Reason);
 
 public sealed record L12LegacyTournamentParticipantInput(
     string Name,
@@ -280,9 +354,13 @@ public sealed record L12TournamentRoomAssignment(
     L12OperationsPolicySnapshot OperationsPolicy,
     string DisasterMode,
     string RulesHash,
+    L12RankedTimeControlConfig TimeControl,
     DateTimeOffset? Deadline,
     bool CanPlay,
-    bool CanSpectate);
+    bool CanSpectate,
+    bool Paused,
+    string? PauseReason,
+    bool CanRefereeView);
 
 public sealed partial class L12PlatformStore
 {
@@ -294,21 +372,28 @@ public sealed partial class L12PlatformStore
         public List<string> DisasterCardIds { get; set; } = [];
         public List<L12CardRestrictionConfig> CardRestrictions { get; set; } = [];
         public string DeckVisibility { get; set; } = "after";
+        public string? RuleContentVersionId { get; set; }
+        public string RuleContentHash { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
     private sealed class TournamentDeckSnapshotRow
     {
+        public string? SourceDeckId { get; set; }
         public string Name { get; set; } = string.Empty;
         public string Code { get; set; } = string.Empty;
         public string Hash { get; set; } = string.Empty;
         public DateTimeOffset SubmittedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? LockedAt { get; set; }
+        public string PayloadHash { get; set; } = string.Empty;
+        public string? PublicationId { get; set; }
+        public int? PublicationVersion { get; set; }
         public string MasterId { get; set; } = string.Empty;
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
 
     private sealed class TournamentParticipantRow
@@ -317,8 +402,36 @@ public sealed partial class L12PlatformStore
         public bool CheckedIn { get; set; }
         public bool Dropped { get; set; }
         public bool Eliminated { get; set; }
+        public bool Removed { get; set; }
+        public string? RemovalReason { get; set; }
+        public DateTimeOffset? RemovedAt { get; set; }
+        public DateTimeOffset? TournamentCheckedInAt { get; set; }
         public int Seed { get; set; }
         public TournamentDeckSnapshotRow Deck { get; set; } = new();
+        public bool Waitlisted { get; set; }
+        public int? WaitlistPosition { get; set; }
+        public DateTimeOffset? PromotedAt { get; set; }
+    }
+
+    private sealed class TournamentRegistrationBanRow
+    {
+        public string AccountId { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string ActorId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? LiftedAt { get; set; }
+    }
+
+    private sealed class TournamentOrganizerTransferRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string FromAccountId { get; set; } = string.Empty;
+        public string ToAccountId { get; set; } = string.Empty;
+        public string Status { get; set; } = "pending";
+        public string Reason { get; set; } = string.Empty;
+        public DateTimeOffset RequestedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset ExpiresAt { get; set; } = DateTimeOffset.UtcNow.AddHours(24);
+        public DateTimeOffset? ResolvedAt { get; set; }
     }
 
     private sealed class TournamentStandingRow
@@ -383,6 +496,52 @@ public sealed partial class L12PlatformStore
         public int ReplayNumber { get; set; }
         public List<TournamentRulingRow> Rulings { get; set; } = [];
         public List<TournamentMatchEventRow> Events { get; set; } = [];
+        public bool Paused { get; set; }
+        public string? PauseReason { get; set; }
+        public DateTimeOffset? PausedAt { get; set; }
+        public int TotalPausedSeconds { get; set; }
+    }
+
+    private sealed class TournamentPostponementRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public DateTimeOffset? PreviousStartAt { get; set; }
+        public DateTimeOffset NewStartAt { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        public string ActorId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class TournamentJudgeCaseRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public int RoundNumber { get; set; }
+        public string MatchId { get; set; } = string.Empty;
+        public string Category { get; set; } = "rules";
+        public string Urgency { get; set; } = "normal";
+        public string Status { get; set; } = "pending";
+        public string RequesterAccountId { get; set; } = string.Empty;
+        public string PlayerMessage { get; set; } = string.Empty;
+        public string? AssigneeAccountId { get; set; }
+        public string? StaffNote { get; set; }
+        public string? Resolution { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? AppealedAt { get; set; }
+        public string? AppealReason { get; set; }
+    }
+
+    private sealed class TournamentRoomCommandRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string Kind { get; set; } = string.Empty;
+        public string MatchId { get; set; } = string.Empty;
+        public bool? Paused { get; set; }
+        public string Reason { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? CompletedAt { get; set; }
+        public int Attempts { get; set; }
+        public string? LastError { get; set; }
     }
 
     private sealed class TournamentRoundRow
@@ -417,18 +576,29 @@ public sealed partial class L12PlatformStore
         public TournamentRulesSnapshotRow Rules { get; set; } = new();
         public int RoundMinutes { get; set; } = 50;
         public int CheckInMinutes { get; set; } = 5;
+        public L12RankedTimeControlConfig? TimeControl { get; set; }
+        public bool UsesLegacyRoundClock { get; set; }
         public int SwissRounds { get; set; } = 1;
         public int? CutSize { get; set; }
         public string RegistrationVisibility { get; set; } = "public";
         public int LateGraceMinutes { get; set; } = 5;
         public List<TournamentStandingRow> FinalSwissStandings { get; set; } = [];
         public List<TournamentParticipantRow> Participants { get; set; } = [];
+        public List<TournamentRegistrationBanRow> RegistrationBans { get; set; } = [];
+        public List<TournamentOrganizerTransferRow> OrganizerTransfers { get; set; } = [];
         public List<TournamentRoundRow> Rounds { get; set; } = [];
         public long Version { get; set; } = 1;
         public string? LegacySourceId { get; set; }
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset? CompletedAt { get; set; }
+        public string Phase { get; set; } = "registration-open";
+        public bool RegistrationOpen { get; set; } = true;
+        public DateTimeOffset? CanceledAt { get; set; }
+        public string? CancellationReason { get; set; }
+        public List<TournamentPostponementRow> Postponements { get; set; } = [];
+        public List<TournamentJudgeCaseRow> JudgeCases { get; set; } = [];
+        public List<TournamentRoomCommandRow> RoomCommands { get; set; } = [];
     }
 
     public L12TournamentListView Tournaments(L12AccountView viewer, string? status = null, string? search = null,
@@ -450,8 +620,9 @@ public sealed partial class L12PlatformStore
             var globalStaff = CanGloballyAccessTournaments(viewer);
             query = query.Where(row => globalStaff || row.Visibility == "public" || IsConfiguredStaff(row, viewer.Id)
                 || row.Participants.Any(item => item.AccountId == viewer.Id));
-            return new L12TournamentListView(Version, query.OrderByDescending(row => row.UpdatedAt)
-                .Select(row => ToView(row, viewer)).ToArray());
+            var rows = query.OrderByDescending(row => row.UpdatedAt).ToArray();
+            PreflightOnlineDeckProjection(rows.SelectMany(row => VisibleTournamentDeckPayloads(row, viewer)));
+            return new L12TournamentListView(Version, rows.Select(row => ToView(row, viewer)).ToArray());
         }
     }
 
@@ -482,6 +653,31 @@ public sealed partial class L12PlatformStore
                 string.Equals(item.Code, normalized, StringComparison.OrdinalIgnoreCase));
             // code 可见赛事不进入公开列表；持有稳定分享码本身即是读取详情与报名入口。
             return row is null ? null : ToView(row, viewer);
+        }
+    }
+
+    public L12TournamentView SetTournamentVisibility(L12AccountView actor, string tournamentId,
+        L12TournamentVisibilityPayload payload, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            // 公开链接撤回是投影权限变更，不推进赛事生命周期；已结束赛事也必须能够撤回。
+            RequireActiveTournamentAccount(actor);
+            if (row.OrganizerAccountId != actor.Id
+                && !L12Authorization.HasPermission(actor, L12Permission.TournamentsManage))
+                throw new L12TournamentScopeException("仅赛事主办者或全局赛事管理员可执行该操作");
+            var visibility = Allowed(payload.Visibility, "可见性", "public", "code");
+            var registrationVisibility = Allowed(payload.RegistrationVisibility, "报名名单可见性",
+                "public", "staff");
+            if (row.Visibility == visibility && row.RegistrationVisibility == registrationVisibility)
+                return ToView(row, actor);
+            return Mutate(actor, row, "visibility-set", tournamentId, context, apply, working =>
+            {
+                working.Visibility = visibility;
+                working.RegistrationVisibility = registrationVisibility;
+            });
         }
     }
 
@@ -526,6 +722,9 @@ public sealed partial class L12PlatformStore
                 }
                 prepared.Add(ConvertLegacyTournament(actor, item));
             }
+            // Prepared previews may contain bodies which do not belong to live
+            // state. Validate the entire response without interning them there.
+            PreflightOnlineDeckProjection(prepared.SelectMany(row => VisibleTournamentDeckPayloads(row, actor)));
             if (!apply) return new L12TournamentLegacyImportView(previewHash, false,
                 prepared.Select(row => ToView(row, actor)).ToArray());
             var added = prepared.Where(row => !_data.Tournaments.Any(existing => existing.Id == row.Id
@@ -548,19 +747,38 @@ public sealed partial class L12PlatformStore
         {
             EnsurePermission(actor, L12Permission.TournamentsRegister);
             var row = RequireTournament(tournamentId, expectedVersion);
-            if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事已停止报名");
-            if (row.Participants.Any(item => item.AccountId == actor.Id))
+            if (row.Status != "registration" || !row.RegistrationOpen)
+                throw new L12TournamentVersionConflictException("赛事已停止报名");
+            if (row.RegistrationBans.Any(item => item.AccountId == actor.Id && item.LiftedAt is null))
+                throw new L12TournamentScopeException("你已被禁止再次报名本场赛事");
+            if (row.Participants.Any(item => item.AccountId == actor.Id && !item.Removed))
                 throw new L12TournamentVersionConflictException("账号已经报名该赛事");
-            if (row.Participants.Count(item => !item.Dropped) >= row.MaxPlayers)
-                throw new L12TournamentVersionConflictException("赛事名额已满");
-            var deck = ResolveTournamentDeckSnapshot(actor.Id, row.Rules, payload);
+            var waitlisted = row.Participants.Count(item => !item.Dropped && !item.Removed && !item.Waitlisted)
+                >= row.MaxPlayers;
             return Mutate(actor, row, "register", actor.Id, context, apply, working =>
+            {
+                var existing = working.Participants.FirstOrDefault(item => item.AccountId == actor.Id);
+                if (existing is not null)
+                {
+                    existing.Removed = false;
+                    existing.RemovalReason = null;
+                    existing.RemovedAt = null;
+                    existing.Dropped = false;
+                    existing.CheckedIn = false;
+                    existing.TournamentCheckedInAt = null;
+                    existing.Deck = new TournamentDeckSnapshotRow();
+                    existing.Waitlisted = waitlisted;
+                    existing.WaitlistPosition = waitlisted ? NextWaitlistPosition(working) : null;
+                    existing.PromotedAt = null;
+                    return;
+                }
                 working.Participants.Add(new TournamentParticipantRow
                 {
-                    AccountId = actor.Id,
-                    Seed = working.Participants.Count + 1,
-                    Deck = deck,
-                }));
+                    AccountId = actor.Id, Seed = working.Participants.Count + 1,
+                    Waitlisted = waitlisted,
+                    WaitlistPosition = waitlisted ? NextWaitlistPosition(working) : null,
+                });
+            });
         }
     }
 
@@ -571,15 +789,54 @@ public sealed partial class L12PlatformStore
         {
             EnsurePermission(actor, L12Permission.TournamentsRegister);
             var row = RequireTournament(tournamentId, expectedVersion);
-            if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事开始后牌库快照已锁定");
+            if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事开始后不能修改报名");
             var participant = row.Participants.FirstOrDefault(item => item.AccountId == actor.Id)
                 ?? throw new KeyNotFoundException("尚未报名该赛事");
-            var deck = ResolveTournamentDeckSnapshot(actor.Id, row.Rules, payload);
+            if (participant.Removed) throw new L12TournamentScopeException("已被移出赛事，不能修改报名");
+            if (participant.TournamentCheckedInAt is not null)
+                throw new L12TournamentVersionConflictException("赛前签到已锁牌，不能通过报名入口换牌");
             return Mutate(actor, row, "registration-update", actor.Id, context, apply, working =>
             {
                 var target = working.Participants.First(item => item.AccountId == participant.AccountId);
-                target.Deck = deck;
                 target.Dropped = false;
+            });
+        }
+    }
+
+    public L12TournamentView PreCheckInTournament(L12AccountView actor, string tournamentId,
+        L12TournamentPreCheckInPayload payload, long expectedVersion, L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            EnsurePermission(actor, L12Permission.TournamentsRegister);
+            var row = RequireTournament(tournamentId, expectedVersion);
+            if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事已停止赛前签到");
+            var participant = row.Participants.FirstOrDefault(item => item.AccountId == actor.Id)
+                ?? throw new KeyNotFoundException("尚未报名该赛事");
+            if (participant.Removed || participant.Dropped)
+                throw new L12TournamentScopeException("当前报名资格不可签到");
+            if (participant.Waitlisted)
+                throw new L12TournamentScopeException("候补递补为正式席位后才能签到锁牌");
+            if (participant.TournamentCheckedInAt is not null)
+            {
+                var requestedDeckId = OptionalText(payload.DeckId, 128);
+                var sameDeck = !string.IsNullOrWhiteSpace(requestedDeckId)
+                    ? string.Equals(participant.Deck.SourceDeckId, requestedDeckId, StringComparison.Ordinal)
+                    : string.Equals(participant.Deck.Name, payload.DeckName?.Trim(), StringComparison.Ordinal)
+                      && (string.IsNullOrWhiteSpace(payload.DeckCode)
+                          || string.Equals(participant.Deck.Code, payload.DeckCode.Trim(), StringComparison.Ordinal));
+                if (sameDeck)
+                    return ToView(row, actor);
+                throw new L12TournamentVersionConflictException("牌库已在赛前签到时锁定");
+            }
+            var deck = ResolveTournamentDeckSnapshot(actor.Id, row.Rules, payload);
+            return Mutate(actor, row, "pre-check-in", actor.Id, context, apply, working =>
+            {
+                var target = working.Participants.First(item => item.AccountId == actor.Id);
+                var now = DateTimeOffset.UtcNow;
+                deck.LockedAt = now;
+                target.Deck = deck;
+                target.TournamentCheckedInAt = now;
             });
         }
     }
@@ -598,6 +855,7 @@ public sealed partial class L12PlatformStore
                 var participant = working.Participants.First(item => item.AccountId == actor.Id);
                 participant.Dropped = true;
                 participant.CheckedIn = false;
+                if (working.Status == "registration") PromoteNextWaitlisted(working);
             });
         }
     }
@@ -615,6 +873,151 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12TournamentView RemoveTournamentParticipant(L12AccountView actor, string tournamentId,
+        L12TournamentRemoveParticipantPayload payload, long expectedVersion, L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireOrganizerOrGlobalManager(actor, row);
+            var accountId = RequireText(payload.AccountId, "选手账号", 128);
+            var reason = RequireText(payload.Reason, "移除理由", 500);
+            var participant = row.Participants.FirstOrDefault(item => item.AccountId == accountId)
+                ?? throw new KeyNotFoundException("参赛者不存在");
+            if (participant.Removed && (!payload.BanRegistration
+                    || row.RegistrationBans.Any(item => item.AccountId == accountId && item.LiftedAt is null)))
+                return ToView(row, actor);
+            return Mutate(actor, row, payload.BanRegistration ? "participant-remove-ban" : "participant-remove",
+                accountId, context, apply, working =>
+            {
+                var target = working.Participants.First(item => item.AccountId == accountId);
+                target.Removed = true;
+                target.RemovalReason = reason;
+                target.RemovedAt = DateTimeOffset.UtcNow;
+                target.Dropped = true;
+                target.CheckedIn = false;
+                target.TournamentCheckedInAt = null;
+                target.Deck = new TournamentDeckSnapshotRow();
+                if (payload.BanRegistration && !working.RegistrationBans.Any(item =>
+                        item.AccountId == accountId && item.LiftedAt is null))
+                    working.RegistrationBans.Add(new TournamentRegistrationBanRow
+                        { AccountId = accountId, Reason = reason, ActorId = actor.Id });
+                foreach (var round in working.Rounds.Where(item => item.Status != "completed"))
+                {
+                    foreach (var match in round.Matches.Where(item => item.Status != "completed"
+                                 && (item.PlayerAAccountId == accountId || item.PlayerBAccountId == accountId)))
+                    {
+                        var opponent = match.PlayerAAccountId == accountId ? match.PlayerBAccountId : match.PlayerAAccountId;
+                        if (opponent is null) continue;
+                        match.Result = match.PlayerAAccountId == accountId ? "player-b" : "player-a";
+                        match.Status = "completed";
+                        match.Events.Add(NewMatchEvent("participant-removed", match.Result, null, actor.Id, reason));
+                        match.Rulings.Add(NewRuling(actor, match.Id, "result", accountId, match.Result, 0, reason));
+                    }
+                    FinalizeRoundIfComplete(working, round);
+                }
+                if (working.Status == "registration") PromoteNextWaitlisted(working);
+            });
+        }
+    }
+
+    public L12TournamentView SetTournamentRegistrationBan(L12AccountView actor, string tournamentId,
+        L12TournamentRegistrationBanPayload payload, long expectedVersion, L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireOrganizerOrGlobalManager(actor, row);
+            var accountId = RequireText(payload.AccountId, "账号", 128);
+            var reason = RequireText(payload.Reason, payload.Banned ? "禁止报名理由" : "解除理由", 500);
+            var current = row.RegistrationBans.LastOrDefault(item => item.AccountId == accountId && item.LiftedAt is null);
+            if (payload.Banned && current is not null || !payload.Banned && current is null) return ToView(row, actor);
+            return Mutate(actor, row, payload.Banned ? "registration-ban" : "registration-unban", accountId,
+                context, apply, working =>
+            {
+                var active = working.RegistrationBans.LastOrDefault(item => item.AccountId == accountId
+                    && item.LiftedAt is null);
+                if (payload.Banned)
+                    working.RegistrationBans.Add(new TournamentRegistrationBanRow
+                        { AccountId = accountId, Reason = reason, ActorId = actor.Id });
+                else if (active is not null) active.LiftedAt = DateTimeOffset.UtcNow;
+            });
+        }
+    }
+
+    public L12TournamentView RequestTournamentOrganizerTransfer(L12AccountView actor, string tournamentId,
+        L12TournamentOrganizerTransferRequestPayload payload, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireOrganizer(actor, row);
+            var accountId = RequireText(payload.AccountId, "接任账号", 128);
+            var reason = RequireText(payload.Reason, "交接说明", 500);
+            if (accountId == actor.Id) throw new ArgumentException("接任者不能是当前主办者");
+            var successor = AccountById(accountId) ?? throw new ArgumentException("接任账号不存在");
+            if (successor.Disabled) throw new ArgumentException("接任账号已停用");
+            if (row.RegistrationBans.Any(item => item.AccountId == accountId && item.LiftedAt is null))
+                throw new L12TournamentScopeException("被本场限制报名的账号不能接任主办者");
+            if (!row.RefereeAccountIds.Contains(accountId, StringComparer.Ordinal)
+                && FindFriendRow(actor.Id, accountId)?.Status != "accepted")
+                throw new L12TournamentScopeException("接任者必须是本场裁判或当前主办者好友");
+            return Mutate(actor, row, "organizer-transfer-request", accountId, context, apply, working =>
+            {
+                var now = DateTimeOffset.UtcNow;
+                foreach (var pending in working.OrganizerTransfers.Where(item => item.Status == "pending"))
+                {
+                    pending.Status = "superseded";
+                    pending.ResolvedAt = now;
+                }
+                working.OrganizerTransfers.Add(new TournamentOrganizerTransferRow
+                {
+                    FromAccountId = actor.Id,
+                    ToAccountId = accountId,
+                    Reason = reason,
+                    RequestedAt = now,
+                    ExpiresAt = now.AddHours(24),
+                });
+            });
+        }
+    }
+
+    public L12TournamentView DecideTournamentOrganizerTransfer(L12AccountView actor, string tournamentId,
+        L12TournamentOrganizerTransferDecisionPayload payload, long expectedVersion,
+        L12AdminAuditContext context, bool apply)
+    {
+        lock (_gate)
+        {
+            var row = RequireTournament(tournamentId, expectedVersion);
+            RequireActiveTournament(row);
+            RequireActiveTournamentAccount(actor);
+            var request = row.OrganizerTransfers.FirstOrDefault(item => item.Id == payload.RequestId)
+                ?? throw new KeyNotFoundException("主办交接请求不存在");
+            if (request.Status != "pending") throw new L12TournamentVersionConflictException("交接请求已处理");
+            if (request.ToAccountId != actor.Id) throw new L12TournamentScopeException("仅指定接任者可处理交接");
+            if (request.FromAccountId != row.OrganizerAccountId)
+                throw new L12TournamentVersionConflictException("赛事主办者已变化，请重新发起交接");
+            if (request.ExpiresAt <= DateTimeOffset.UtcNow)
+                throw new L12TournamentVersionConflictException("主办交接请求已过期");
+            if (row.RegistrationBans.Any(item => item.AccountId == actor.Id && item.LiftedAt is null))
+                throw new L12TournamentScopeException("被本场限制报名的账号不能接任主办者");
+            if (payload.Accept && !row.RefereeAccountIds.Contains(actor.Id, StringComparer.Ordinal)
+                && FindFriendRow(row.OrganizerAccountId, actor.Id)?.Status != "accepted")
+                throw new L12TournamentScopeException("接任时仍须是本场裁判或当前主办者好友");
+            return Mutate(actor, row, payload.Accept ? "organizer-transfer-accept" : "organizer-transfer-decline",
+                request.Id, context, apply, working =>
+            {
+                var target = working.OrganizerTransfers.First(item => item.Id == request.Id);
+                target.Status = payload.Accept ? "accepted" : "declined";
+                target.ResolvedAt = DateTimeOffset.UtcNow;
+                if (!payload.Accept) return;
+                working.OrganizerAccountId = actor.Id;
+                working.RefereeAccountIds.RemoveAll(id => id == actor.Id);
+            });
+        }
+    }
+
     public L12TournamentView StartTournament(L12AccountView actor, string tournamentId, long expectedVersion,
         L12AdminAuditContext context, bool apply)
     {
@@ -623,30 +1026,38 @@ public sealed partial class L12PlatformStore
             var row = RequireTournament(tournamentId, expectedVersion);
             RequireOrganizerOrGlobalManager(actor, row);
             if (row.Status != "registration") throw new L12TournamentVersionConflictException("赛事已开始或结束");
-            var active = row.Participants.Where(item => !item.Dropped).ToArray();
+            var check = BuildTournamentStartCheck(row);
+            if (!check.CanStart) throw new ArgumentException(string.Join("；", check.Blockers));
+            var active = row.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
+                && item.TournamentCheckedInAt is not null).ToArray();
             if (active.Length < 2) throw new ArgumentException("至少需要两名未退赛选手");
             if (row.Format == "swiss-cut" && (row.CutSize is not { } cutSize || active.Length < cutSize))
                 throw new ArgumentException("未退赛选手数少于 cut 人数");
-            if (active.Any(item => string.IsNullOrWhiteSpace(item.Deck.Hash)))
-                throw new ArgumentException("所有参赛者必须先提交牌库快照");
+            if (active.Any(item => string.IsNullOrWhiteSpace(item.Deck.Hash) || item.Deck.LockedAt is null))
+                throw new ArgumentException("所有有效参赛者必须先完成赛前签到并锁定牌库");
             return Mutate(actor, row, "start", tournamentId, context, apply, working =>
             {
                 var now = DateTimeOffset.UtcNow;
                 working.Status = "running";
+                working.Phase = "running";
+                working.RegistrationOpen = false;
                 var seed = 1;
                 foreach (var participant in working.Participants
                              .OrderBy(item => item.Seed > 0 ? item.Seed : int.MaxValue)
                              .ThenBy(item => item.AccountId, StringComparer.Ordinal))
                     participant.Seed = seed++;
-                foreach (var participant in working.Participants.Where(item => !item.Dropped))
+                foreach (var participant in working.Participants.Where(item => !item.Dropped && !item.Removed
+                             && !item.Waitlisted
+                             && item.TournamentCheckedInAt is not null))
                 {
                     participant.Eliminated = false;
                     participant.CheckedIn = false;
-                    participant.Deck.LockedAt = now;
                 }
                 working.Rounds.Add(working.Format == "single"
                     ? CreateInitialEliminationRound(working, working.Participants
-                        .Where(item => !item.Dropped).OrderBy(item => item.Seed).ToArray(), 1)
+                        .Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
+                            && item.TournamentCheckedInAt is not null)
+                        .OrderBy(item => item.Seed).ToArray(), 1)
                     : CreateSwissRound(working, 1));
             });
         }
@@ -676,7 +1087,10 @@ public sealed partial class L12PlatformStore
                 {
                     working.FinalSwissStandings = workingPrevious.Standings.Select(CloneStanding).ToList();
                     var activeStandings = working.FinalSwissStandings.Where(item =>
-                        !working.Participants.First(participant => participant.AccountId == item.AccountId).Dropped)
+                    {
+                        var participant = working.Participants.First(candidate => candidate.AccountId == item.AccountId);
+                        return !participant.Dropped && !participant.Removed && !participant.Waitlisted;
+                    })
                         .ToArray();
                     if (activeStandings.Length < working.CutSize!.Value)
                         throw new L12TournamentPairingException("未退赛选手数少于 cut 人数，未创建淘汰轮");
@@ -733,7 +1147,8 @@ public sealed partial class L12PlatformStore
                     var now = DateTimeOffset.UtcNow;
                     match.Status = "running";
                     match.StartedAt = now;
-                    match.Deadline = now.AddMinutes(working.RoundMinutes + match.TimeExtensionMinutes);
+                    match.Deadline = working.UsesLegacyRoundClock
+                        ? now.AddMinutes(working.RoundMinutes + match.TimeExtensionMinutes) : null;
                     match.Events.Add(NewMatchEvent("late-table-start", null, null, actor.Id,
                         "双方在宽限期内到齐，本桌启动"));
                 }
@@ -762,7 +1177,8 @@ public sealed partial class L12PlatformStore
                     {
                         match.Status = "running";
                         match.StartedAt = now;
-                        match.Deadline = now.AddMinutes(working.RoundMinutes + match.TimeExtensionMinutes);
+                        match.Deadline = working.UsesLegacyRoundClock
+                            ? now.AddMinutes(working.RoundMinutes + match.TimeExtensionMinutes) : null;
                         match.Events.Add(NewMatchEvent("table-start", null, null, actor.Id,
                             "轮次启动时双方已到齐"));
                     }
@@ -906,6 +1322,8 @@ public sealed partial class L12PlatformStore
             return Mutate(actor, row, "complete", tournamentId, context, apply, working =>
             {
                 working.Status = "completed";
+                working.Phase = "completed";
+                working.RegistrationOpen = false;
                 working.CompletedAt = DateTimeOffset.UtcNow;
             });
         }
@@ -966,15 +1384,21 @@ public sealed partial class L12PlatformStore
             if (tournament.Status != "running" || round.Status != "running" || match.Status != "running")
                 throw new L12TournamentVersionConflictException("本桌赛事房间尚未启动或已结束");
             var canPlay = match.PlayerAAccountId == accountId || match.PlayerBAccountId == accountId;
-            var canSpectate = IsStaff(tournament, accountId);
+            var canRefereeView = IsStaff(tournament, accountId)
+                || CanGloballyAccessTournaments(ToView(account));
+            var canSpectate = canRefereeView || tournament.Visibility == "public";
             if (spectate ? !canSpectate : !canPlay)
                 throw new L12TournamentScopeException(spectate
-                    ? "仅赛事主办者与裁判可观战本桌"
+                    ? "该桌当前不可观战"
                     : "仅本桌配对玩家可进入专属房间");
-            var playerA = RequireTournamentRoomPlayer(tournament, match.PlayerAAccountId,
-                match.PlayerADeckHash);
-            var playerB = RequireTournamentRoomPlayer(tournament, match.PlayerBAccountId!,
-                match.PlayerBDeckHash);
+            if (canPlay)
+            {
+                var participant = tournament.Participants.First(item => item.AccountId == accountId);
+                if (participant.Removed || participant.Dropped)
+                    throw new L12TournamentScopeException("参赛资格已失效，不能进入或恢复本桌");
+            }
+            var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
+                match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
             var current = ToPolicySnapshot(RequireOperationsConfig());
             var policy = current with
             {
@@ -988,15 +1412,69 @@ public sealed partial class L12PlatformStore
                 MatchModes = [new L12MatchModeConfig("tournament", "赛事对局", true)],
                 Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
             };
+            var roomTimeControl = NormalizeRankedTimeControl(tournament.TimeControl);
+            if (!tournament.UsesLegacyRoundClock && match.TimeExtensionMinutes > 0)
+            {
+                roomTimeControl = roomTimeControl with
+                {
+                    TotalTimeSeconds = Math.Min(7200,
+                        roomTimeControl.TotalTimeSeconds + match.TimeExtensionMinutes * 60),
+                };
+            }
             return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id, match.RoomCode,
                 playerA, playerB, policy, tournament.Rules.DisasterMode, tournament.Rules.Hash,
-                match.Deadline, canPlay, canSpectate);
+                roomTimeControl, match.Deadline, canPlay, canSpectate, match.Paused, match.PauseReason,
+                canRefereeView);
+        }
+    }
+
+    internal L12TournamentRoomAssignment TournamentRoomAssignmentByRoom(string roomCode)
+    {
+        lock (_gate)
+        {
+            foreach (var tournament in _data.Tournaments)
+            foreach (var round in tournament.Rounds)
+            {
+                var match = round.Matches.FirstOrDefault(item => string.Equals(item.RoomCode, roomCode,
+                    StringComparison.OrdinalIgnoreCase));
+                if (match is not null)
+                {
+                    var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
+                        match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
+                    var current = ToPolicySnapshot(RequireOperationsConfig());
+                    var policy = current with
+                    {
+                        Version = tournament.Version,
+                        VersionId = $"tournament:{tournament.Id}:{tournament.Rules.Hash}",
+                        DisasterCardIds = tournament.Rules.DisasterCardIds.ToArray(),
+                        CardRestrictions = tournament.Rules.CardRestrictions.ToArray(),
+                        DefaultPresetDeckIds = [],
+                        DefaultRoomConfig = new L12DefaultRoomConfig("tournament", "disabled", "request",
+                            tournament.Rules.DisasterMode),
+                        MatchModes = [new L12MatchModeConfig("tournament", "赛事对局", true)],
+                        Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
+                    };
+                    var roomTimeControl = NormalizeRankedTimeControl(tournament.TimeControl);
+                    if (!tournament.UsesLegacyRoundClock && match.TimeExtensionMinutes > 0)
+                        roomTimeControl = roomTimeControl with
+                        {
+                            TotalTimeSeconds = Math.Min(7200,
+                                roomTimeControl.TotalTimeSeconds + match.TimeExtensionMinutes * 60),
+                        };
+                    return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id,
+                        match.RoomCode, playerA, playerB, policy, tournament.Rules.DisasterMode,
+                        tournament.Rules.Hash, roomTimeControl, match.Deadline, false, false,
+                        match.Paused, match.PauseReason, false);
+                }
+            }
+            throw new KeyNotFoundException("赛事房间绑定不存在");
         }
     }
 
     public L12TournamentView RecordTournamentGameResult(string tournamentId, string matchId,
         string recordedMatchId, int winnerIndex)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
             var tournament = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId)
@@ -1047,26 +1525,52 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private L12TournamentRoomPlayer RequireTournamentRoomPlayer(TournamentRow tournament, string accountId,
-        string? expectedDeckHash)
+    private (TournamentParticipantRow Participant, AccountRow Account, NormalizedDeckPayload Payload)
+        PrepareTournamentRoomPlayer(TournamentRow tournament, string accountId,
+        string? expectedDeckHash, ref long expansionTotal)
     {
         var participant = tournament.Participants.FirstOrDefault(item => item.AccountId == accountId)
             ?? throw new L12TournamentVersionConflictException("赛事房间玩家不在报名快照中");
         if (participant.Dropped || participant.Eliminated)
             throw new L12TournamentVersionConflictException("该玩家已退赛或被淘汰");
-        if (string.IsNullOrWhiteSpace(participant.Deck.MasterId)
-            || participant.Deck.CardIds.Count == 0 || participant.Deck.MoraleIds.Count == 0)
+        if (string.IsNullOrWhiteSpace(participant.Deck.MasterId))
             throw new L12TournamentVersionConflictException("该报名使用旧版牌库快照，需在开赛前重新选择账号牌库");
         if (!string.Equals(participant.Deck.Hash, expectedDeckHash, StringComparison.Ordinal))
             throw new L12TournamentVersionConflictException("桌次绑定的牌库快照与报名快照不一致");
         var account = AccountById(accountId) ?? throw new L12TournamentVersionConflictException("参赛账号不存在");
-        return new L12TournamentRoomPlayer(accountId, PublicUsername(account), new L12PresetDeckDefinition
+        var payload = ReadTournamentDeckPayload(participant.Deck);
+        CheckOnlineDeckExpansionBudget(payload, null, ref expansionTotal);
+        if (CountRecoveryCards(ReadRecoveryCardCounts(payload.MainJson)) == 0
+            || CountRecoveryCards(ReadRecoveryCardCounts(payload.MoraleJson)) == 0)
+            throw new L12TournamentVersionConflictException("该报名使用旧版牌库快照，需在开赛前重新选择账号牌库");
+        return (participant, account, payload);
+    }
+
+    private (L12TournamentRoomPlayer PlayerA, L12TournamentRoomPlayer PlayerB) RequireTournamentRoomPlayers(
+        TournamentRow tournament, string accountA, string? expectedHashA, string accountB, string? expectedHashB)
+    {
+        var total = 0L;
+        var first = PrepareTournamentRoomPlayer(tournament, accountA, expectedHashA, ref total);
+        var second = PrepareTournamentRoomPlayer(tournament, accountB, expectedHashB, ref total);
+        return (MaterializeTournamentRoomPlayer(first), MaterializeTournamentRoomPlayer(second));
+    }
+
+    private L12TournamentRoomPlayer MaterializeTournamentRoomPlayer(
+        (TournamentParticipantRow Participant, AccountRow Account, NormalizedDeckPayload Payload) prepared)
+    {
+        var participant = prepared.Participant;
+        var account = prepared.Account;
+        var payload = ExpandRuntimeDeckPayload(prepared.Payload);
+        return new L12TournamentRoomPlayer(participant.AccountId, PublicUsername(account), new L12PresetDeckDefinition
         {
             Name = participant.Deck.Name,
             MasterId = participant.Deck.MasterId,
-            CardIds = [.. participant.Deck.CardIds],
-            MoraleIds = [.. participant.Deck.MoraleIds],
-            SpecialIds = [.. participant.Deck.SpecialIds],
+            CardIds = [.. payload.MainCards],
+            MoraleIds = [.. payload.MoraleCards],
+            SpecialIds = [.. payload.SpecialCards],
+            AlternateArtSelections = new Dictionary<string, string>(participant.Deck.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
+            PublicationId = participant.Deck.PublicationId,
+            PublicationVersion = participant.Deck.PublicationVersion,
         }, participant.Deck.Hash);
     }
 
@@ -1088,6 +1592,17 @@ public sealed partial class L12PlatformStore
                 var environment = ReleaseEnvironmentFromScope(scope);
                 return environment is null ? Version : ReleaseEnvironmentVersion(environment);
             }
+            if (type.StartsWith("rule-item.", StringComparison.Ordinal)
+                || type == "content.draft.save"
+                && (scope.StartsWith("content:rules.center", StringComparison.Ordinal)
+                    || scope.StartsWith("content:rules.rulings", StringComparison.Ordinal)))
+            {
+                const string prefix = "content:";
+                if (!scope.StartsWith(prefix, StringComparison.Ordinal)) return null;
+                var key = scope[prefix.Length..].Split('/', 2)[0];
+                return _data.ContentEntries.FirstOrDefault(row =>
+                    string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase))?.Version ?? 0;
+            }
             if (!type.StartsWith("tournament.", StringComparison.Ordinal)) return Version;
             var tournamentId = TournamentIdFromScope(scope);
             if (tournamentId is null) return Version;
@@ -1098,6 +1613,8 @@ public sealed partial class L12PlatformStore
     private L12TournamentView Mutate(L12AccountView actor, TournamentRow row, string action, string target,
         L12AdminAuditContext context, bool apply, Action<TournamentRow> mutation)
     {
+        using var deployment = apply ? EnterDeploymentMutation(action is
+            "start" or "round-create" or "round-start" or "rematch" or "check-in") : null;
         // 先在副本上完成全部校验与编排。配对等操作抛错时，
         // 不得在内存中留下半完成状态，即使 Save 尚未执行也一样。
         var working = CloneTournament(row);
@@ -1121,7 +1638,6 @@ public sealed partial class L12PlatformStore
         var visibility = Allowed(payload.Visibility, "可见性", "public", "code");
         var registrationVisibility = Allowed(payload.RegistrationVisibility, "报名名单可见性", "public", "staff");
         if (payload.MaxPlayers is < 2 or > 256) throw new ArgumentException("赛事人数必须为 2–256");
-        if (payload.RoundMinutes is < 5 or > 240) throw new ArgumentException("每轮时长必须为 5–240 分钟");
         if (payload.CheckInMinutes is < 1 or > 60) throw new ArgumentException("签到时限必须为 1–60 分钟");
         if (payload.LateGraceMinutes is < 0 or > 60) throw new ArgumentException("迟到宽限期必须为 0–60 分钟");
         if (format is "swiss" or "swiss-cut" && payload.SwissRounds is < 1 or > 20)
@@ -1132,9 +1648,13 @@ public sealed partial class L12PlatformStore
         if (format != "swiss-cut" && payload.CutSize is not null)
             throw new ArgumentException("仅瑞士 cut 赛制可设置 cut 人数");
         var policy = ToPolicySnapshot(RequireOperationsConfig());
+        var timeControl = NormalizeRankedTimeControl(payload.TimeControl ?? RankedTimeControl());
         var rules = RulesSnapshot(payload.Ruleset, payload.DisasterMode, payload.BanList,
             payload.DeckVisibility, payload.DisasterCardIds ?? policy.DisasterCardIds,
             payload.CardRestrictions ?? policy.CardRestrictions);
+        var ruleContent = GetContentEntry("rules.center");
+        rules.RuleContentVersionId = ruleContent.PublishedVersionId;
+        rules.RuleContentHash = Hash(GetContent("rules.center"));
         var now = DateTimeOffset.UtcNow;
         return new TournamentRow
         {
@@ -1150,6 +1670,8 @@ public sealed partial class L12PlatformStore
             Rules = rules,
             RoundMinutes = payload.RoundMinutes,
             CheckInMinutes = payload.CheckInMinutes,
+            TimeControl = timeControl,
+            UsesLegacyRoundClock = false,
             SwissRounds = format is "single" ? 0 : payload.SwissRounds,
             CutSize = format == "swiss-cut" ? payload.CutSize : null,
             RegistrationVisibility = registrationVisibility,
@@ -1177,6 +1699,7 @@ public sealed partial class L12PlatformStore
         row.Code = ValidLegacyCode(input.Code) && !_data.Tournaments.Any(item => item.Code == input.Code)
             ? input.Code!.ToUpperInvariant() : UniqueTournamentCode();
         row.Status = AllowedOrDefault(input.Status, "registration", "registration", "running", "completed");
+        row.UsesLegacyRoundClock = row.Status != "registration";
         row.CreatedAt = input.CreatedAt ?? DateTimeOffset.UtcNow;
         row.UpdatedAt = input.UpdatedAt ?? row.CreatedAt;
         row.CompletedAt = row.Status == "completed" ? input.CompletedAt ?? row.UpdatedAt : null;
@@ -1199,7 +1722,12 @@ public sealed partial class L12PlatformStore
         if (row.Participants.Count > row.MaxPlayers) row.Participants = row.Participants.Take(row.MaxPlayers).ToList();
         row.Rounds = ConvertLegacyRounds(actor, row, input.Rounds ?? []);
         if (row.Status != "registration")
-            foreach (var participant in row.Participants) participant.Deck.LockedAt ??= row.UpdatedAt;
+            foreach (var participant in row.Participants)
+            {
+                participant.Deck.LockedAt ??= row.UpdatedAt;
+                if (!string.IsNullOrWhiteSpace(participant.Deck.Hash))
+                    participant.TournamentCheckedInAt ??= participant.Deck.LockedAt;
+            }
         return row;
     }
 
@@ -1251,7 +1779,8 @@ public sealed partial class L12PlatformStore
 
     private TournamentRoundRow CreateSwissRound(TournamentRow tournament, int number)
     {
-        var active = tournament.Participants.Where(item => !item.Dropped && !item.Eliminated)
+        var active = tournament.Participants.Where(item => !item.Dropped && !item.Removed && !item.Waitlisted
+                && item.TournamentCheckedInAt is not null && !item.Eliminated)
             .OrderBy(item => item.Seed).ThenBy(item => item.AccountId, StringComparer.Ordinal).ToArray();
         if (active.Length < 2) throw new ArgumentException("至少需要两名未退赛选手");
         var standings = number == 1
@@ -1554,33 +2083,66 @@ public sealed partial class L12PlatformStore
     private static string TournamentPairKey(string first, string second)
         => string.CompareOrdinal(first, second) < 0 ? $"{first}|{second}" : $"{second}|{first}";
 
+    private NormalizedDeckPayload ReadTournamentDeckPayload(TournamentDeckSnapshotRow deck)
+        => ReadExportDeckPayload(_data, deck.MasterId, deck.PayloadHash,
+            deck.CardIds, deck.MoraleIds, deck.SpecialIds);
+
+    private IEnumerable<NormalizedDeckPayload> VisibleTournamentDeckPayloads(TournamentRow row, L12AccountView viewer)
+    {
+        var configuredStaff = IsConfiguredStaff(row, viewer.Id) || CanGloballyAccessTournaments(viewer);
+        var restricted = row.RegistrationVisibility == "staff" && !configuredStaff;
+        var allDecks = configuredStaff || row.Rules.DeckVisibility == "always"
+            || row.Rules.DeckVisibility == "after" && row.Status == "completed";
+        foreach (var item in row.Participants)
+        {
+            if (restricted && item.AccountId != viewer.Id) continue;
+            if (!allDecks && item.AccountId != viewer.Id) continue;
+            if (string.IsNullOrWhiteSpace(item.Deck.Hash) || string.IsNullOrWhiteSpace(item.Deck.MasterId)) continue;
+            yield return ReadTournamentDeckPayload(item.Deck);
+        }
+    }
+
     private L12TournamentView ToView(TournamentRow row, L12AccountView viewer)
     {
         var organizer = _data.Accounts.FirstOrDefault(item => item.Id == row.OrganizerAccountId);
         var staff = row.RefereeAccountIds.Select(AccountById).Where(item => item is not null)
             .Select(item => new L12TournamentStaffView(item!.Id, PublicUsername(item))).ToArray();
         var configuredStaff = IsConfiguredStaff(row, viewer.Id) || CanGloballyAccessTournaments(viewer);
+        var participantIdentitiesRestricted = row.RegistrationVisibility == "staff" && !configuredStaff;
         var canViewAllDecks = configuredStaff || row.Rules.DeckVisibility == "always"
             || row.Rules.DeckVisibility == "after" && row.Status == "completed";
-        var visibleParticipantRows = row.Status == "registration" && row.RegistrationVisibility == "staff"
-            && !configuredStaff
+        var visibleParticipantRows = participantIdentitiesRestricted
             ? row.Participants.Where(item => item.AccountId == viewer.Id)
             : row.Participants.AsEnumerable();
+        visibleParticipantRows = visibleParticipantRows.ToArray();
+        PreflightOnlineDeckProjection(VisibleTournamentDeckPayloads(row, viewer));
         var participants = visibleParticipantRows.Select(item =>
         {
             var account = AccountById(item.AccountId);
             var canViewDeck = canViewAllDecks || item.AccountId == viewer.Id;
             L12TournamentDeckSnapshotView? deck = null;
             if (canViewDeck && !string.IsNullOrWhiteSpace(item.Deck.Hash))
+            {
+                var payload = string.IsNullOrWhiteSpace(item.Deck.MasterId) ? null
+                    : ExpandRuntimeDeckPayload(ReadTournamentDeckPayload(item.Deck));
                 deck = new L12TournamentDeckSnapshotView(item.Deck.Name, item.Deck.Code, item.Deck.Hash,
-                    item.Deck.SubmittedAt, item.Deck.LockedAt, item.Deck.MasterId, item.Deck.CardIds.ToArray(),
-                    item.Deck.MoraleIds.ToArray(), item.Deck.SpecialIds.ToArray());
+                    item.Deck.SubmittedAt, item.Deck.LockedAt, item.Deck.MasterId, payload?.MainCards ?? [],
+                    payload?.MoraleCards ?? [], payload?.SpecialCards ?? []);
+            }
+            var banned = row.RegistrationBans.Any(ban => ban.AccountId == item.AccountId && ban.LiftedAt is null);
+            var canViewParticipantModeration = configuredStaff || item.AccountId == viewer.Id;
             return new L12TournamentParticipantView(item.AccountId, account is null ? "已删除账号" : PublicUsername(account),
-                item.CheckedIn, item.Dropped, item.Eliminated, item.Seed, deck);
+                item.CheckedIn, item.Dropped, item.Eliminated, item.Removed,
+                canViewParticipantModeration && banned,
+                canViewParticipantModeration ? item.RemovalReason : null,
+                item.TournamentCheckedInAt, item.Seed, deck, item.Waitlisted,
+                item.WaitlistPosition, item.PromotedAt);
         }).ToArray();
         var bracket = row.Rounds.Where(round => round.Stage == "elimination")
             .Select((round, index) => new L12TournamentBracketRoundView(index + 1,
-                round.Matches.OrderBy(match => match.Table).Select(match =>
+                round.Matches.Where(match => !participantIdentitiesRestricted
+                        || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id)
+                    .OrderBy(match => match.Table).Select(match =>
                 {
                     var a = AccountById(match.PlayerAAccountId);
                     var b = match.PlayerBAccountId is null ? null : AccountById(match.PlayerBAccountId);
@@ -1588,23 +2150,72 @@ public sealed partial class L12PlatformStore
                         a is null ? "已删除账号" : PublicUsername(a), match.PlayerBAccountId,
                         b is null ? "轮空" : PublicUsername(b), match.Result, match.SourceMatchIds.ToArray());
                 }).ToArray())).ToArray();
+        var counts = new L12TournamentCountsView(
+            row.Participants.Count(item => !item.Removed && !item.Waitlisted),
+            row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted
+                && item.TournamentCheckedInAt is null),
+            row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted
+                && item.TournamentCheckedInAt is not null),
+            row.Participants.Count(item => !item.Removed && !item.Dropped && !item.Waitlisted
+                && item.TournamentCheckedInAt is not null),
+            row.Participants.Count(item => !item.Removed && !item.Dropped && item.Waitlisted),
+            row.Participants.Count(item => item.Dropped && !item.Removed),
+            row.Participants.Count(item => item.Removed),
+            row.RegistrationBans.Count(item => item.LiftedAt is null));
+        var transfers = row.OrganizerTransfers.OrderByDescending(item => item.RequestedAt)
+            .Select(ToOrganizerTransferView).ToArray();
+        var pendingTransfer = transfers.FirstOrDefault(item => item.Status == "pending"
+            && item.ExpiresAt > DateTimeOffset.UtcNow);
+        var visiblePendingTransfer = pendingTransfer is not null
+            && (configuredStaff || pendingTransfer.FromAccountId == viewer.Id
+                || pendingTransfer.ToAccountId == viewer.Id)
+            ? pendingTransfer : null;
+        var visibleTransferHistory = configuredStaff ? transfers : [];
         return new L12TournamentView(row.Id, row.Code, row.Name, row.OrganizerAccountId,
             organizer is null ? "已删除账号" : PublicUsername(organizer), staff, row.Status, row.Format, row.Visibility, row.MaxPlayers,
             row.StartAt, row.Description, new L12TournamentRulesSnapshotView(row.Rules.Ruleset,
                 row.Rules.DisasterMode, row.Rules.BanList, row.Rules.DisasterCardIds.ToArray(),
-                row.Rules.CardRestrictions.ToArray(), row.Rules.DeckVisibility, row.Rules.Hash,
-                row.Rules.CapturedAt), row.RoundMinutes, row.CheckInMinutes, participants,
-            row.Rounds.OrderBy(round => round.Number).Select(round => ToView(round, row, viewer, configuredStaff))
+                row.Rules.CardRestrictions.ToArray(), row.Rules.DeckVisibility,
+                row.Rules.RuleContentVersionId, row.Rules.RuleContentHash, row.Rules.Hash,
+            row.Rules.CapturedAt), row.RoundMinutes, row.CheckInMinutes,
+            NormalizeRankedTimeControl(row.TimeControl), row.UsesLegacyRoundClock, counts,
+            visiblePendingTransfer, visibleTransferHistory, participants,
+            row.Rounds.OrderBy(round => round.Number).Select(round => ToView(round, row, viewer, configuredStaff,
+                    row.Visibility == "public" && row.Status is "completed" or "canceled",
+                    participantIdentitiesRestricted))
                 .ToArray(), row.Version, row.LegacySourceId is not null, row.CreatedAt, row.UpdatedAt, row.CompletedAt,
             row.SwissRounds, row.CutSize, row.RegistrationVisibility, row.LateGraceMinutes,
-            row.FinalSwissStandings.Select(ToStandingView).ToArray(), bracket);
+            (participantIdentitiesRestricted
+                ? row.FinalSwissStandings.Where(item => item.AccountId == viewer.Id)
+                : row.FinalSwissStandings).Select(ToStandingView).ToArray(), bracket,
+            row.Phase, row.RegistrationOpen, row.CanceledAt, row.CancellationReason,
+            row.Postponements.OrderByDescending(item => item.CreatedAt).Select(item =>
+            {
+                var actor = AccountById(item.ActorId);
+                return new L12TournamentPostponementView(item.Id, item.PreviousStartAt, item.NewStartAt,
+                    item.Reason, item.ActorId, actor is null ? "已删除账号" : PublicUsername(actor), item.CreatedAt);
+            }).ToArray(),
+            row.JudgeCases.OrderByDescending(item => item.CreatedAt)
+                .Where(item => configuredStaff || JudgeCaseIncludesViewer(row, item, viewer.Id))
+                .Select(item => ToJudgeCaseView(row, item, viewer, configuredStaff)).ToArray());
+    }
+
+    private L12TournamentOrganizerTransferView ToOrganizerTransferView(TournamentOrganizerTransferRow row)
+    {
+        var from = AccountById(row.FromAccountId);
+        var to = AccountById(row.ToAccountId);
+        var status = row.Status == "pending" && row.ExpiresAt <= DateTimeOffset.UtcNow ? "expired" : row.Status;
+        return new L12TournamentOrganizerTransferView(row.Id, row.FromAccountId,
+            from is null ? "已删除账号" : PublicUsername(from), row.ToAccountId,
+            to is null ? "已删除账号" : PublicUsername(to), status, row.Reason,
+            row.RequestedAt, row.ExpiresAt, row.ResolvedAt);
     }
 
     private L12TournamentRoundView ToView(TournamentRoundRow row, TournamentRow tournament,
-        L12AccountView viewer, bool configuredStaff)
+        L12AccountView viewer, bool configuredStaff, bool publicArchive, bool participantIdentitiesRestricted)
         => new(row.Id, row.Number, row.Status, row.Paused, row.StartedAt, row.PausedAt, row.TotalPausedSeconds,
-            row.Matches.Where(match => configuredStaff || match.PlayerAAccountId == viewer.Id
-                    || match.PlayerBAccountId == viewer.Id)
+            row.Matches.Where(match => configuredStaff || !participantIdentitiesRestricted && publicArchive
+                    || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id)
                 .OrderBy(match => match.Table).Select(match =>
             {
                 var a = AccountById(match.PlayerAAccountId);
@@ -1614,16 +2225,22 @@ public sealed partial class L12PlatformStore
                     b is null ? "轮空" : PublicUsername(b), match.RoomCode,
                     match.ReadyA, match.ReadyB, match.Status, match.Result, match.TimeExtensionMinutes,
                     match.StartedAt, match.Deadline, match.RecordedMatchId,
-                    match.Rulings.Select(ruling => new L12TournamentRulingView(ruling.Id, ruling.MatchId,
+                    (configuredStaff || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id
+                        ? match.Rulings : []).Select(ruling => new L12TournamentRulingView(ruling.Id, ruling.MatchId,
                         ruling.Kind, ruling.TargetAccountId, ruling.Decision, ruling.Minutes, ruling.Reason,
                         ruling.ActorId, ruling.ActorName, ruling.CreatedAt)).ToArray(), match.GraceDeadline,
                     match.SourceMatchIds.ToArray(), match.RulesHash, match.PlayerADeckHash, match.PlayerBDeckHash,
                     match.ReplayNumber, match.Status == "running" && (match.PlayerAAccountId == viewer.Id
-                        || match.PlayerBAccountId == viewer.Id), match.Status == "running" && configuredStaff,
-                    match.Events.Select(item => new L12TournamentMatchEventView(item.Id, item.Kind, item.Result,
-                        item.RecordedMatchId, item.ActorId, item.Detail, item.CreatedAt)).ToArray());
+                        || match.PlayerBAccountId == viewer.Id), match.Status == "running"
+                        && (configuredStaff || tournament.Visibility == "public"),
+                    (configuredStaff || match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id
+                        ? match.Events : []).Select(item => new L12TournamentMatchEventView(item.Id, item.Kind, item.Result,
+                        item.RecordedMatchId, item.ActorId, item.Detail, item.CreatedAt)).ToArray(),
+                    match.Paused, match.PauseReason, match.PausedAt, match.TotalPausedSeconds);
             }).ToArray(), row.Stage, row.StandingsCapturedAt,
-            row.Standings.Select(ToStandingView).ToArray(), row.PairingFailure);
+            (participantIdentitiesRestricted
+                ? row.Standings.Where(item => item.AccountId == viewer.Id)
+                : row.Standings).Select(ToStandingView).ToArray(), row.PairingFailure);
 
     private L12TournamentStandingView ToStandingView(TournamentStandingRow row)
         => new(row.RoundNumber, row.Rank, row.AccountId, AccountById(row.AccountId) is { } account
@@ -1693,12 +2310,12 @@ public sealed partial class L12PlatformStore
 
     private static void RequireActiveTournament(TournamentRow tournament)
     {
-        if (tournament.Status == "completed")
+        if (tournament.Status is "completed" or "canceled")
             throw new L12TournamentScopeException("赛事已结束，主办者与裁判临时权限已经失效");
     }
 
     private static bool IsStaff(TournamentRow row, string accountId)
-        => row.Status != "completed"
+        => row.Status is not ("completed" or "canceled")
            && IsConfiguredStaff(row, accountId);
 
     private static bool IsConfiguredStaff(TournamentRow row, string accountId)
@@ -1748,8 +2365,9 @@ public sealed partial class L12PlatformStore
         var normalizedDisasters = normalizedDisaster == "none" ? [] : disasterCardIds
             .Select(id => RequireCardId(id, "赛事天灾卡号")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (normalizedDisaster != "none" && (normalizedDisasters.Length is < 9 or > 64
-            || !string.Equals(normalizedDisasters[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException("赛事天灾池须为 9–64 张（含堙灭），且堙灭固定在最后一张");
+            || !string.Equals(normalizedDisasters[^1], L12ActiveDisasterRules.AnnihilationCardId,
+                StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("赛事天灾池须为 9–64 张（含湮灭），且湮灭固定在最后一张");
         if (_officialCards.Count > 0 && normalizedDisasters.Any(id => !_officialCards.TryGetValue(id, out var card)
                 || card.CardType != "destruction"))
             throw new ArgumentException("赛事天灾池包含非天灾卡牌");
@@ -1786,32 +2404,43 @@ public sealed partial class L12PlatformStore
     }
 
     private TournamentDeckSnapshotRow ResolveTournamentDeckSnapshot(string accountId,
-        TournamentRulesSnapshotRow rules, L12TournamentRegistrationPayload payload)
+        TournamentRulesSnapshotRow rules, L12TournamentPreCheckInPayload payload)
     {
+        var requestedDeckId = OptionalText(payload.DeckId, 128);
         var requestedName = OptionalText(payload.DeckName, 200);
-        var saved = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
-            && string.Equals(item.Name, requestedName, StringComparison.OrdinalIgnoreCase));
+        var saved = string.IsNullOrWhiteSpace(requestedDeckId)
+            ? _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Name, requestedName, StringComparison.OrdinalIgnoreCase))
+            : _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, requestedDeckId, StringComparison.Ordinal));
         if (saved is null)
         {
+            if (!string.IsNullOrWhiteSpace(requestedDeckId))
+                throw new KeyNotFoundException("所选牌库不存在或不属于当前登录账号");
             // 兼容旧客户端和已导入数据；新流程始终从账号牌库选择。
             if (string.IsNullOrWhiteSpace(payload.DeckCode))
                 throw new ArgumentException("所选牌库不在当前登录账号的服务端牌库中");
             ValidateTournamentDeckCode(rules, payload.DeckCode);
             return DeckSnapshot(requestedName, payload.DeckCode);
         }
-        ValidateStructuredTournamentDeck(rules, saved.MasterId, saved.CardIds, saved.MoraleIds, saved.SpecialIds);
+        var savedView = ToView(saved);
+        ValidateStructuredTournamentDeck(rules, saved.MasterId, savedView.CardIds, savedView.MoraleIds, savedView.SpecialIds);
         var canonical = JsonSerializer.Serialize(new
         {
-            saved.Name, saved.MasterId, saved.CardIds, saved.MoraleIds, saved.SpecialIds,
+            saved.Name, saved.MasterId, CardIds = savedView.CardIds, MoraleIds = savedView.MoraleIds, SpecialIds = savedView.SpecialIds, saved.AlternateArtSelections,
         });
         return new TournamentDeckSnapshotRow
         {
+            SourceDeckId = saved.Id,
             Name = saved.Name,
             Code = OptionalText(payload.DeckCode, 4096),
             MasterId = saved.MasterId,
-            CardIds = [.. saved.CardIds],
-            MoraleIds = [.. saved.MoraleIds],
-            SpecialIds = [.. saved.SpecialIds],
+            CardIds = [.. savedView.CardIds],
+            MoraleIds = [.. savedView.MoraleIds],
+            SpecialIds = [.. savedView.SpecialIds],
+            AlternateArtSelections = new Dictionary<string, string>(saved.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
+            PublicationId = saved.PublicationId,
+            PublicationVersion = saved.PublicationVersion,
             Hash = Hash(canonical),
             SubmittedAt = DateTimeOffset.UtcNow,
         };
@@ -1865,59 +2494,33 @@ public sealed partial class L12PlatformStore
         cards = [];
         morale = [];
         special = [];
-        var value = code?.Trim() ?? string.Empty;
-        if (!value.StartsWith("L12D1.", StringComparison.Ordinal)) return false;
-        try
-        {
-            var encoded = value[6..].Replace('-', '+').Replace('_', '/');
-            encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
-            var root = document.RootElement;
-            masterId = root.GetProperty("m").GetString() ?? string.Empty;
-            cards = ReadDeckCodeArray(root, "c");
-            morale = ReadDeckCodeArray(root, "r");
-            special = ReadDeckCodeArray(root, "s");
-            return !string.IsNullOrWhiteSpace(masterId);
-        }
-        catch { return false; }
+        if (!L12DeckCodeCodec.TryDecode(code, out var decoded) || decoded is null) return false;
+        masterId = decoded.MasterId;
+        cards = decoded.CardIds.ToList();
+        morale = decoded.MoraleIds.ToList();
+        special = decoded.SpecialIds.ToList();
+        return true;
     }
-
-    private static List<string> ReadDeckCodeArray(JsonElement root, string property)
-        => root.TryGetProperty(property, out var items) && items.ValueKind == JsonValueKind.Array
-            ? items.EnumerateArray().Select(item => item.GetString()).OfType<string>().ToList() : [];
 
     private static void ValidateTournamentDeckCode(TournamentRulesSnapshotRow rules, string? code)
     {
         if (string.IsNullOrWhiteSpace(code)) return;
-        var value = code.Trim();
-        // 旧赛事快照可能保存不可解析的历史码；新 L12D1 牌库码执行结构化规则校验。
-        if (!value.StartsWith("L12D1.", StringComparison.Ordinal)) return;
-        try
+        if (!L12DeckCodeCodec.TryDecode(code, out var decoded) || decoded is null)
+            throw new ArgumentException("赛事牌库码无法解析");
+        var cardIds = new[] { decoded.MasterId }.Concat(decoded.CardIds)
+            .Concat(decoded.MoraleIds).Concat(decoded.SpecialIds);
+        foreach (var group in cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
         {
-            var encoded = value[6..].Replace('-', '+').Replace('_', '/');
-            encoded = encoded.PadRight((encoded.Length + 3) / 4 * 4, '=');
-            using var document = JsonDocument.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(encoded)));
-            var root = document.RootElement;
-            var masterId = root.GetProperty("m").GetString() ?? string.Empty;
-            var cardIds = new List<string> { masterId };
-            foreach (var key in new[] { "c", "r", "s" })
-                if (root.TryGetProperty(key, out var items) && items.ValueKind == JsonValueKind.Array)
-                    cardIds.AddRange(items.EnumerateArray().Select(item => item.GetString()).OfType<string>());
-            foreach (var group in cardIds.GroupBy(id => id, StringComparer.OrdinalIgnoreCase))
-            {
-                var rule = rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
-                               StringComparison.OrdinalIgnoreCase) && string.Equals(item.MasterId, masterId,
-                               StringComparison.OrdinalIgnoreCase))
-                           ?? rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
-                               StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(item.MasterId));
-                if (rule is null || group.Count() <= rule.MaxCopies) continue;
-                throw new ArgumentException(rule.MaxCopies == 0
-                    ? $"赛事规则禁止使用 {group.Key}"
-                    : $"赛事规则限制 {group.Key} 最多投入 {rule.MaxCopies} 张");
-            }
+            var rule = rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                           StringComparison.OrdinalIgnoreCase) && string.Equals(item.MasterId, decoded.MasterId,
+                           StringComparison.OrdinalIgnoreCase))
+                       ?? rules.CardRestrictions.FirstOrDefault(item => string.Equals(item.CardId, group.Key,
+                           StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(item.MasterId));
+            if (rule is null || group.Count() <= rule.MaxCopies) continue;
+            throw new ArgumentException(rule.MaxCopies == 0
+                ? $"赛事规则禁止使用 {group.Key}"
+                : $"赛事规则限制 {group.Key} 最多投入 {rule.MaxCopies} 张");
         }
-        catch (ArgumentException) { throw; }
-        catch (Exception) { throw new ArgumentException("赛事牌库码无法解析"); }
     }
 
     private static TournamentRulingRow NewRuling(L12AccountView actor, string matchId, string kind,
@@ -1980,8 +2583,23 @@ public sealed partial class L12PlatformStore
     {
         row.RefereeAccountIds ??= [];
         row.Participants ??= [];
+        row.RegistrationBans ??= [];
+        row.OrganizerTransfers ??= [];
         row.Rounds ??= [];
         row.FinalSwissStandings ??= [];
+        row.Postponements ??= [];
+        row.JudgeCases ??= [];
+        row.RoomCommands ??= [];
+        row.Phase = row.Status switch
+        {
+            "running" when row.Phase is not ("running" or "result-confirmation") => "running",
+            "completed" => "completed",
+            "canceled" => "canceled",
+            "registration" when row.Phase is not ("registration-open" or "registration-closed" or "pre-check-in")
+                => "registration-open",
+            _ => row.Phase,
+        };
+        row.RegistrationOpen = row.Status == "registration" && row.Phase == "registration-open";
         row.RegistrationVisibility = row.RegistrationVisibility is "public" or "staff"
             ? row.RegistrationVisibility : "public";
         row.LateGraceMinutes = Math.Clamp(row.LateGraceMinutes, 0, 60);
@@ -1990,15 +2608,30 @@ public sealed partial class L12PlatformStore
         row.Rules ??= new TournamentRulesSnapshotRow();
         row.Rules.DisasterCardIds ??= [];
         row.Rules.CardRestrictions ??= [];
+        if (row.TimeControl is null)
+        {
+            row.TimeControl = DefaultRankedTimeControl();
+            row.UsesLegacyRoundClock = row.Status != "registration" && row.Rounds.Count > 0;
+        }
+        else row.TimeControl = NormalizeRankedTimeControl(row.TimeControl);
         var nextSeed = 1;
+        var nextWaitlistPosition = 1;
         foreach (var participant in row.Participants)
         {
             participant.Deck ??= new TournamentDeckSnapshotRow();
             participant.Deck.CardIds ??= [];
             participant.Deck.MoraleIds ??= [];
             participant.Deck.SpecialIds ??= [];
+            participant.Deck.AlternateArtSelections ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (participant.TournamentCheckedInAt is null && row.Status != "registration"
+                && participant.Deck.LockedAt is not null && !string.IsNullOrWhiteSpace(participant.Deck.Hash))
+                participant.TournamentCheckedInAt = participant.Deck.LockedAt;
             if (participant.Seed < 1) participant.Seed = nextSeed;
             nextSeed = Math.Max(nextSeed + 1, participant.Seed + 1);
+            if (participant.Waitlisted && participant.WaitlistPosition is null)
+                participant.WaitlistPosition = nextWaitlistPosition++;
+            else if (participant.WaitlistPosition is { } position)
+                nextWaitlistPosition = Math.Max(nextWaitlistPosition, position + 1);
         }
         foreach (var round in row.Rounds)
         {
@@ -2018,6 +2651,8 @@ public sealed partial class L12PlatformStore
                     item.AccountId == match.PlayerBAccountId)?.Deck.Hash;
             }
         }
+        foreach (var judgeCase in row.JudgeCases)
+            if (judgeCase.UpdatedAt == default) judgeCase.UpdatedAt = judgeCase.CreatedAt;
         foreach (var round in row.Rounds.Where(item => item.Stage == "swiss" && item.Status == "completed"
                      && item.Standings.Count == 0).OrderBy(item => item.Number))
         {

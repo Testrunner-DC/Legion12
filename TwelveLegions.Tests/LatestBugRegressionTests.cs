@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Reflection;
 using System.Text.Json;
 using Xunit;
 
@@ -14,6 +15,14 @@ public sealed class LatestBugRegressionTests
 
     private static L12GameEngine Create(int seed = 6401)
         => new(Catalog, "latest-regression", "LATEST", seed, ["甲", "乙"], [0, 0], skipPreparation: true);
+
+    private static L12GameEngine RestoreV2(L12GameEngine game)
+    {
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+    }
 
     private static L12GameEngine CreateWithFirstMaster(string masterId, int seed)
     {
@@ -1052,6 +1061,39 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
+    public void OsirisErrataChangesOnlyItsConditionSentenceAndKeepsManualVictory()
+    {
+        const string approved = "我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。";
+        Assert.Equal(approved + "\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。",
+            Catalog.Cards["S01-02M2"].Effect);
+        var abilities = (List<L12AbilityView>)typeof(L12GameEngine)
+            .GetMethod("GetS1FactionAbilities", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, ["S01-02M2"])!;
+        Assert.Equal(approved, Assert.Single(abilities).Label);
+        var game = CreateWithFirstMaster("S01-02M1", 64083);
+        var osiris = PrepareIsisVictory(game);
+        _ = game.SnapshotFor(0);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "special-victory");
+        var restored = RestoreV2(game);
+        Assert.Null(restored.State.Winner);
+        Assert.True(restored.Handle(0, new L12Command("activateAbility", osiris.InstanceId, Ability: "isisVictory")).Accepted);
+        Assert.Equal(0, restored.State.Winner);
+        Assert.Single(restored.State.Events, entry => entry.Type == "special-victory");
+    }
+
+    [Fact]
+    public void OsirisErrataDoesNotRemoveTheFiveCanopicCondition()
+    {
+        var game = CreateWithFirstMaster("S01-02M1", 64084);
+        var osiris = PrepareIsisVictory(game);
+        game.State.Players[0].SpecialZones.CanopicProgress.RemoveAt(4);
+        Assert.False(game.Handle(0, new L12Command("activateAbility", osiris.InstanceId, Ability: "isisVictory")).Accepted);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "special-victory");
+    }
+
+    [Fact]
     public void IsisAndOsirisVictorySourcesPublishTheSameSingleCanonicalEvent()
     {
         foreach (var activateFromMaster in new[] { true, false })
@@ -1221,7 +1263,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public void FenianLegendPrepaysThreeRunesForThreeRepeatableIndependentDebuffs()
+    public void FenianLegendResolvesThreeRepeatableDebuffsAsThreeIndependentStacks()
     {
         var game = Create(64105);
         var player = game.State.Players[0];
@@ -1239,26 +1281,24 @@ public sealed class LatestBugRegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", trial.InstanceId,
             Ability: "completeTrial")).Accepted);
         PassResponses(game);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
-            Choice: "mode:use")).Accepted);
-        var amount = Assert.Single(game.State.PendingPrompts);
-        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: amount.PromptId,
-            Choice: "rune-count:3")).Accepted);
         for (var index = 0; index < 3; index++)
         {
+            var mode = Assert.Single(game.State.PendingPrompts);
+            Assert.Contains("mode:use", mode.ValidChoices);
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
+                Choice: "mode:use")).Accepted);
             var target = Assert.Single(game.State.PendingPrompts);
             Assert.Contains(enemy.InstanceId, target.ValidChoices);
             Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: target.PromptId,
                 Choice: enemy.InstanceId)).Accepted);
+            Assert.Equal(2 - index, player.SpecialZones.Runes);
+            PassResponses(game);
         }
-
-        PassResponses(game);
 
         Assert.Equal(0, player.SpecialZones.Runes);
         Assert.Equal(enemy.BaseTroops - 9000, enemy.Troops);
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第2个目标", StringComparison.Ordinal));
-        Assert.Contains(game.State.Events, entry => entry.Text.Contains("第3个目标", StringComparison.Ordinal));
+        Assert.Equal(3, game.State.Events.Count(entry => entry.Type == "cost"
+            && entry.Text.Contains("芬尼亚传奇", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -1335,15 +1375,17 @@ public sealed class LatestBugRegressionTests
     [Theory]
     [InlineData("S02-0606")]
     [InlineData("S02-0611")]
+    [L12AbilityEvidence("S02-0606:ability:keyword-definition:672734be0285300f", "normal", "reconnect", "presentation-consumers", "leave-or-turn-expiry", "reconnect-state")]
+    [L12AbilityEvidence("S02-0611:ability:keyword-definition:672734be0285300f", "normal", "reconnect", "presentation-consumers", "leave-or-turn-expiry", "reconnect-state")]
+    [L12AbilityEvidence("S02-0606:ability:after-kill:7680beaaf4313595", "normal", "reconnect", "presentation-consumers", "no-attack-trigger-on-generated")]
+    [L12AbilityEvidence("S02-0611:ability:after-kill:7680beaaf4313595", "normal", "reconnect", "presentation-consumers", "no-attack-trigger-on-generated")]
     public void NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger(string cardId)
     {
         var game = Create(6421);
         var attackerPlayer = game.State.Players[0];
         var defender = game.State.Players[1];
         var attacker = Card(cardId, $"piercing-{cardId}");
-        var target = Card("S01-0102", $"piercing-target-{cardId}");
-        attacker.Troops = 5000;
-        target.Troops = 1000;
+        var target = Card("S01-0004", $"piercing-target-{cardId}");
         attacker.SummonRound = target.SummonRound = 0;
         attackerPlayer.Field[0][0] = attacker;
         defender.Field[0][0] = target;
@@ -1353,10 +1395,18 @@ public sealed class LatestBugRegressionTests
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
 
+        game = RestoreV2(game);
+        attackerPlayer = game.State.Players[0];
+        defender = game.State.Players[1];
+        attacker = attackerPlayer.Field[0][0]!;
+        target = defender.Field[0][0]!;
+        var expectedRemainingTroops = attacker.CurrentTroops - target.CurrentTroops;
+
         Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
             Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
-        for (var step = 0; step < 12 && (!defender.Resolving.Contains(target)
-                 || game.State.PendingDefense?.Target.Type != "master"); step++)
+        for (var step = 0; step < 30 && (!defender.Resolving.Contains(target)
+                 || game.State.PendingDefense?.Target.Type != "master"
+                 || game.State.PendingDefense.Stage != L12CombatStage.DefenseChoice); step++)
         {
             var prompt = game.State.PendingPrompts.FirstOrDefault();
             if (prompt is null) continue;
@@ -1373,19 +1423,24 @@ public sealed class LatestBugRegressionTests
         Assert.NotNull(game.State.PendingDefense);
         Assert.Equal("master", game.State.PendingDefense!.Target.Type);
         Assert.True(game.State.PendingDefense.SuppressAttackTriggers);
-        Assert.Equal(4000, game.State.PendingDefense.AttackValue);
-        Assert.Equal(4000, attacker.Troops);
+        Assert.Equal(expectedRemainingTroops, game.State.PendingDefense.AttackValue);
+        Assert.Equal(expectedRemainingTroops, attacker.Troops);
         Assert.Contains(game.State.Events, entry => entry.Type == "piercing"
-            && entry.Text.Contains("剩余兵力4000") && entry.Text.Contains("不触发【进攻时】效果"));
+            && entry.Text.Contains($"剩余兵力{expectedRemainingTroops}")
+            && entry.Text.Contains("不触发【进攻时】效果"));
     }
 
-    [Fact]
-    public void PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack()
+    [Theory]
+    [InlineData("S02-0606")]
+    [InlineData("S02-0611")]
+    [L12AbilityEvidence("S02-0606:ability:after-kill:7680beaaf4313595", "target-invalidated")]
+    [L12AbilityEvidence("S02-0611:ability:after-kill:7680beaaf4313595", "target-invalidated")]
+    public void PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack(string cardId)
     {
         var game = Create(6425);
         var attackerPlayer = game.State.Players[0];
         var defender = game.State.Players[1];
-        var attacker = Card("S02-0606", "piercing-shared-validation");
+        var attacker = Card(cardId, $"piercing-shared-validation-{cardId}");
         var killedTaunt = Card("S01-0107", "piercing-killed-taunt");
         var remainingTaunt = Card("S02-0004", "piercing-remaining-taunt");
         attacker.Troops = 5000;
@@ -1418,6 +1473,64 @@ public sealed class LatestBugRegressionTests
         Assert.Null(game.State.PendingDefense);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("挑衅"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "keyword:piercing")]
+    [Trait("L12Evidence", "card:S02-DS05")]
+    public void WrathDisasterLegionPriorityAlsoBlocksGeneratedPiercing()
+    {
+        var game = Create(64250);
+        var attackerPlayer = game.State.Players[0];
+        var defender = game.State.Players[1];
+        var attacker = Card("S02-0606", "piercing-wrath-attacker");
+        var killed = Card("S01-0102", "piercing-wrath-killed");
+        var remaining = Card("S01-0103", "piercing-wrath-remaining");
+        attacker.Troops = 5000;
+        killed.Troops = 1000;
+        remaining.Troops = 2000;
+        attacker.SummonRound = killed.SummonRound = remaining.SummonRound = 0;
+        attackerPlayer.Field[0][0] = attacker;
+        defender.Field[0][0] = killed;
+        defender.Field[0][1] = remaining;
+        defender.Field[1] = new L12CardInstance?[3];
+        defender.Hand.Clear();
+        game.State.ActiveDisaster = Card("S02-DS05", "active-wrath-disaster");
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var directMaster = game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("master")));
+        Assert.False(directMaster.Accepted);
+        Assert.Contains("暴怒之罪", directMaster.Error, StringComparison.Ordinal);
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", killed.InstanceId))).Accepted);
+        for (var step = 0; step < 24 && !game.State.Events.Any(entry => entry.Type == "effect-failed"
+                 && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("暴怒之罪")); step++)
+        {
+            var prompt = game.State.PendingPrompts.FirstOrDefault();
+            if (prompt is not null)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("skip") ? "skip"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices[0];
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.PendingDefense is { Stage: L12CombatStage.DefenseChoice } pending)
+                Assert.True(game.Handle(1 - pending.AttackerPlayer,
+                    new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+        }
+
+        Assert.Contains(remaining, defender.Field[0]);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "piercing");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("贯穿进攻失败") && entry.Text.Contains("暴怒之罪"));
+        Assert.Equal(1, attacker.AttacksThisTurn);
     }
 
     [Fact]
@@ -1645,33 +1758,105 @@ public sealed class LatestBugRegressionTests
     }
 
     [Theory]
-    [InlineData("S01-0201")]
-    [InlineData("S01-0202")]
-    public void SummonTurnCounterTacticProtectionComesFromStructuredRules(string cardId)
+    [InlineData("S01-0201", "S01-0016", false)]
+    [InlineData("S01-0201", "S01-0018", false)]
+    [InlineData("S01-0201", "S01-0019", true)]
+    [InlineData("S01-0201", "S02-0106", true)]
+    [InlineData("S01-0202", "S01-0016", false)]
+    [InlineData("S01-0202", "S01-0018", false)]
+    [InlineData("S01-0202", "S01-0019", true)]
+    [InlineData("S01-0202", "S02-0106", true)]
+    [InlineData("ST02-01", "S01-0016", false)]
+    [InlineData("ST02-01", "S01-0018", false)]
+    [InlineData("ST02-01", "S01-0019", true)]
+    [InlineData("ST02-01", "S02-0106", true)]
+    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
+    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "normal", "presentation-consumers", "four-response-types", "anonymous-availability")]
+    public void SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect(
+        string cardId, string responseCardId, bool expectedAvailable)
     {
         var game = Create(6427);
         var owner = game.State.Players[0];
         var opponent = game.State.Players[1];
         var protectedLegion = Card(cardId, $"structured-counter-protection-{cardId}");
-        var ambush = Card("S01-0019", $"structured-counter-ambush-{cardId}");
-        owner.Hand.Clear();
-        owner.Hand.Add(protectedLegion);
-        AddReadyMorale(owner, protectedLegion.Cost);
-        ambush.Hidden = true;
-        ambush.SetRound = 0;
-        opponent.Field[1][0] = ambush;
+        var response = Card(responseCardId, $"structured-counter-response-{cardId}-{responseCardId}");
+        var responseTarget = Card("S01-0001", $"structured-counter-response-target-{cardId}-{responseCardId}");
+        var discard = Card("S01-0005", $"structured-counter-discard-{cardId}-{responseCardId}");
+        owner.Field[0][0] = protectedLegion;
+        opponent.Hand.Clear();
+        opponent.Hand.Add(discard);
+        opponent.Field[0][0] = responseTarget;
+        response.Hidden = true;
+        response.SetRound = 0;
+        opponent.Field[1][0] = response;
         game.State.ActivePlayer = 0;
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
+        protectedLegion.SummonRound = game.State.Round;
 
-        var played = game.Handle(0, new L12Command("playCard", protectedLegion.InstanceId, Row: 0, Slot: 0));
-
-        Assert.True(played.Accepted, played.Error);
-        Assert.DoesNotContain(game.State.PendingPrompts,
-            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(ambush.InstanceId));
-        Assert.Same(ambush, opponent.Field[1][0]);
-        Assert.True(ambush.Hidden);
+        var push = typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(nameof(L12GameEngine), "PushEffect");
+        push.Invoke(game, [0, protectedLegion, "enter", "受保护的登场时效果", null,
+            new Dictionary<string, string>()]);
+        var ownerResponse = game.State.PendingPrompts.FirstOrDefault(prompt =>
+            prompt.PlayerIndex == 0 && prompt.Kind == "response");
+        if (ownerResponse is not null)
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ownerResponse.PromptId,
+                Choice: "pass")).Accepted);
+        var actualAvailable = game.State.PendingPrompts.Any(
+            prompt => prompt.Kind == "response" && prompt.ValidChoices.Contains(response.InstanceId));
+        Assert.True(actualAvailable == expectedAvailable,
+            "prompts=" + string.Join(" || ", game.State.PendingPrompts.Select(prompt =>
+                $"p{prompt.PlayerIndex}:{prompt.Kind}:{string.Join(',', prompt.ValidChoices)}"))
+            + "; stack=" + string.Join(" || ", game.State.EffectStack.Select(item =>
+                $"{item.SourceCardId}:{item.Trigger}:{item.Text}")));
+        Assert.Same(response, opponent.Field[1][0]);
+        Assert.True(response.Hidden);
         Assert.Same(protectedLegion, owner.Field[0][0]);
+    }
+
+    [Theory]
+    [InlineData("S01-0201")]
+    [InlineData("S01-0202")]
+    [InlineData("ST02-01")]
+    [Trait("L12Evidence", "family:summon-turn-counter-protection-expiry")]
+    [L12AbilityEvidence("S01-0201:ability:static:7d31de8999ce168a", "summon-round", "expiry")]
+    [L12AbilityEvidence("S01-0202:ability:static:76a4a87caae11a73", "summon-round", "expiry")]
+    [L12AbilityEvidence("ST02-01:ability:continuous:42ada4e462a2fb94", "summon-round", "expiry")]
+    public void SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect(string cardId)
+    {
+        var game = Create(64271 + cardId.Length);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var source = Card(cardId, $"expired-counter-protection-{cardId}");
+        var absoluteDefense = Card("S01-0016", $"expired-counter-response-{cardId}");
+        var discard = Card("S01-0005", $"expired-counter-discard-{cardId}");
+        owner.Field[0][0] = source;
+        opponent.Hand.Clear();
+        opponent.Hand.Add(discard);
+        absoluteDefense.Hidden = true;
+        absoluteDefense.SetRound = 0;
+        opponent.Field[1][0] = absoluteDefense;
+        game.State.ActivePlayer = 0;
+        game.State.Round = 3;
+        game.State.Phase = L12Phase.Main;
+        source.SummonRound = 2;
+
+        Assert.False(L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, game.State.Round));
+        var push = typeof(L12GameEngine).GetMethod("PushEffect", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingMethodException(nameof(L12GameEngine), "PushEffect");
+        push.Invoke(game, [0, source, "attack", "非登场回合的进攻时效果", null,
+            new Dictionary<string, string>()]);
+        var ownerResponse = game.State.PendingPrompts.FirstOrDefault(prompt =>
+            prompt.PlayerIndex == 0 && prompt.Kind == "response");
+        if (ownerResponse is not null)
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: ownerResponse.PromptId,
+                Choice: "pass")).Accepted);
+
+        var response = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.PlayerIndex == 1 && prompt.Kind == "response");
+        Assert.Contains(absoluteDefense.InstanceId, response.ValidChoices);
     }
 
     [Fact]
@@ -1698,16 +1883,24 @@ public sealed class LatestBugRegressionTests
         PassResponses(game);
         Assert.Equal(1, player.SpecialZones.Runes);
         var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("s2-rune-power-mode", mode.Data["action"]);
+        Assert.Equal("pending-activation", mode.Continuation);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId,
             Choice: "mode:search")).Accepted);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal("rune-search-choice", game.State.EffectStack[^1].Data["atomicFlow"]);
+        PassResponses(game);
         var pick = Assert.Single(game.State.PendingPrompts);
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "resource-payment");
         Assert.Equal("s2-rune-power-pick", pick.Data["action"]);
         Assert.Contains(eligible.InstanceId, pick.ValidChoices);
         Assert.DoesNotContain(neutral.InstanceId, pick.ValidChoices);
         Assert.DoesNotContain(sameName.InstanceId, pick.ValidChoices);
+        Assert.Equal(string.Join('|', eligible.InstanceId, neutral.InstanceId, sameName.InstanceId), pick.Data["displayCardIds"]);
+        Assert.Equal("只能选择【彼界】卡牌，且不能选择〈符文之力〉本身",
+            pick.Data[$"disabledChoice:{neutral.InstanceId}"]);
+        Assert.Equal(pick.Data[$"disabledChoice:{neutral.InstanceId}"],
+            pick.Data[$"disabledChoice:{sameName.InstanceId}"]);
+        Assert.False(pick.Data.ContainsKey($"disabledChoice:{eligible.InstanceId}"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: pick.PromptId,
             Choice: eligible.InstanceId)).Accepted);
 
@@ -1721,6 +1914,31 @@ public sealed class LatestBugRegressionTests
         Assert.Contains(eligible, player.Hand);
         Assert.Equal([sameName.InstanceId, neutral.InstanceId], player.Library.TakeLast(2).Select(card => card.InstanceId));
         Assert.Contains(game.State.Events, entry => entry.Type == "reveal" && entry.Cards.Any(card => card.InstanceId == eligible.InstanceId));
+    }
+
+    [Fact]
+    public void RunePowerKeepsItsRuneGainWhenTheLaterMoraleCostCannotBePaid()
+    {
+        var game = Create(64281);
+        var player = game.State.Players[0];
+        var runePower = Card("S02-0620", "rune-power-staged-cost");
+        player.Hand.Clear();
+        player.Library.Clear();
+        player.Morale.Clear();
+        player.Hand.Add(runePower);
+        player.Library.Add(Card("S02-0609", "rune-power-staged-library"));
+        AddReadyMorale(player, runePower.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", runePower.InstanceId));
+        Assert.True(played.Accepted, played.Error);
+        PassResponses(game);
+
+        Assert.Equal(1, player.SpecialZones.Runes);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(runePower, player.Graveyard);
+        Assert.Equal(runePower.Cost, player.Morale.Count(card => card.Tapped));
     }
 
     [Fact]
@@ -2011,6 +2229,7 @@ public sealed class LatestBugRegressionTests
         var canopic = Card("S01-0219", "wisdom-artifact-entry");
         var discard = Card("S01-0001", "wisdom-discard-cost");
         var recovery = Card("S01-0012", "wisdom-recovery");
+        var anotherWisdom = Card("S01-0224", "wisdom-recovery-same-name");
         var draw = Card("S01-0001", "wisdom-draw");
         wisdom.Hidden = true;
         wisdom.SetRound = 0;
@@ -2019,7 +2238,7 @@ public sealed class LatestBugRegressionTests
         codexOwner.Library.Clear();
         codexOwner.Library.Add(draw);
         codexOwner.Graveyard.Clear();
-        codexOwner.Graveyard.Add(recovery);
+        codexOwner.Graveyard.AddRange([recovery, anotherWisdom]);
         opponent.Hand.Clear();
         opponent.Hand.AddRange([canopic, discard]);
         game.State.ActivePlayer = 1;
@@ -2047,6 +2266,7 @@ public sealed class LatestBugRegressionTests
             Choice: "mode:recover")).Accepted);
         var recoveryTarget = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(recovery.InstanceId, recoveryTarget.ValidChoices);
+        Assert.DoesNotContain(anotherWisdom.InstanceId, recoveryTarget.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: recoveryTarget.PromptId,
             Choice: recovery.InstanceId)).Accepted);
         PassResponses(game);
@@ -2124,6 +2344,163 @@ public sealed class LatestBugRegressionTests
         var triggeredResponse = Assert.Single(triggeredGame.State.PendingPrompts);
         Assert.Contains(triggeredWisdom.InstanceId, triggeredResponse.ValidChoices);
         Assert.Contains("主宰受到伤害时效果", triggeredGame.State.EffectStack[^1].Text);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0224")]
+    [Trait("L12Evidence", "response-source:last-known-snapshot")]
+    public void WisdomCodexCanRespondWhenTheTargetEffectSourceOnlyHasALastKnownSnapshot()
+    {
+        var game = Create(6439);
+        var wisdom = Card("S01-0224", "wisdom-snapshot-response");
+        wisdom.Hidden = true;
+        wisdom.SetRound = 0;
+        game.State.Players[0].Field[1][0] = wisdom;
+        game.State.Round = 2;
+        var tactic = Card("S01-0012", "departed-tactic-source");
+        var target = new L12StackItem
+        {
+            StackItemId = "snapshot-only-target",
+            Controller = 1,
+            SourceInstanceId = tactic.InstanceId,
+            SourceCardId = tactic.CardId,
+            SourceName = tactic.Name,
+            SourceSnapshot = tactic.Clone(),
+            Trigger = "play",
+            Text = "战术效果",
+        };
+
+        var method = typeof(L12GameEngine).GetMethod("CanUseS1ReactionAtStack",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.True((bool)method.Invoke(game, [wisdom.CardId, 0, target])!);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0224")]
+    [Trait("L12Evidence", "named-card-exclusion")]
+    public void WisdomCodexRecoveryRejectsAnotherWisdomCodexButKeepsOtherEligibleCards()
+    {
+        var game = Create(6440);
+        var owner = game.State.Players[0];
+        var source = Card("S01-0224", "wisdom-reward-source");
+        var anotherWisdom = Card("S01-0224", "wisdom-reward-same-name");
+        var eligible = Card("S01-0012", "wisdom-reward-eligible");
+        owner.Graveyard.Clear();
+        owner.Graveyard.AddRange([source, anotherWisdom, eligible]);
+
+        var invalid = new L12StackItem
+        {
+            StackItemId = "wisdom-recover-same-name",
+            Controller = 0,
+            SourceInstanceId = source.InstanceId,
+            SourceCardId = source.CardId,
+            SourceName = source.Name,
+            SourceSnapshot = source.Clone(),
+            Trigger = "wisdom-reward",
+            Text = "智慧法典回收",
+        };
+        invalid.Data["atomicFlow"] = "wisdom-recover";
+        invalid.Data["declared:recoverTarget"] = anotherWisdom.InstanceId;
+        game.State.EffectStack.Add(invalid);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveWisdomCodexReward",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [invalid]);
+
+        Assert.Contains(anotherWisdom, owner.Graveyard);
+        Assert.DoesNotContain(anotherWisdom, owner.Hand);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed");
+
+        var candidateMethod = typeof(L12GameEngine).GetMethod("IsWisdomCodexRecoveryCandidate",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Assert.False((bool)candidateMethod.Invoke(game, [anotherWisdom])!);
+        Assert.True((bool)candidateMethod.Invoke(game, [eligible])!);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0103,S01-01M1")]
+    [Trait("L12Evidence", "damage-source:explicit-stack-item")]
+    public void PingyangUsesTheYangjianEffectSourceEvenWhenAnotherStackItemIsAboveIt()
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6441);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.NextMasterDamageToOpponentBecomesTwoUntilTurn = game.State.TurnSerial;
+        opponent.Hp = Math.Max(4, opponent.Hp);
+        var before = opponent.Hp;
+        var yangjian = Card("S01-01M1", "master-0");
+        var active = new L12StackItem
+        {
+            StackItemId = "yangjian-nonlethal-under-stack",
+            Controller = 0,
+            SourceInstanceId = yangjian.InstanceId,
+            SourceCardId = yangjian.CardId,
+            SourceName = yangjian.Name,
+            SourceSnapshot = yangjian.Clone(),
+            Trigger = "active",
+            Text = "杨戬的主宰效果",
+        };
+        active.Data["ability"] = "nonLethal";
+        var unrelated = Card("S01-0001", "unrelated-stack-source");
+        var laterStackItem = new L12StackItem
+        {
+            StackItemId = "unrelated-stack-item",
+            Controller = 1,
+            SourceInstanceId = unrelated.InstanceId,
+            SourceCardId = unrelated.CardId,
+            SourceName = unrelated.Name,
+            SourceSnapshot = unrelated.Clone(),
+            Trigger = "enter",
+            Text = "无关的后入栈效果",
+        };
+        game.State.EffectStack.AddRange([active, laterStackItem]);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveActiveEffect",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [active]);
+
+        Assert.Equal(before - 2, opponent.Hp);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+    }
+
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(2, 0)]
+    [InlineData(3, 2)]
+    [InlineData(4, 2)]
+    [Trait("L12Evidence", "card:S02-0103,S01-01M1")]
+    [Trait("L12Evidence", "damage:nonlethal-replacement-all-or-nothing")]
+    public void PingyangReplacementNeverDowngradesTwoNonLethalDamageToOne(int hp, int expectedDamage)
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6442 + hp);
+        var player = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        player.NextMasterDamageToOpponentBecomesTwoUntilTurn = game.State.TurnSerial;
+        opponent.Hp = hp;
+        var yangjian = Card("S01-01M1", "master-0");
+        var active = new L12StackItem
+        {
+            StackItemId = $"yangjian-pingyang-nonlethal-{hp}",
+            Controller = 0,
+            SourceInstanceId = yangjian.InstanceId,
+            SourceCardId = yangjian.CardId,
+            SourceName = yangjian.Name,
+            SourceSnapshot = yangjian.Clone(),
+            Trigger = "active",
+            Text = "杨戬的主宰效果",
+        };
+        active.Data["ability"] = "nonLethal";
+        game.State.EffectStack.Add(active);
+
+        var method = typeof(L12GameEngine).GetMethod("ResolveActiveEffect",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        method.Invoke(game, [active]);
+
+        Assert.Equal(hp - expectedDamage, opponent.Hp);
+        Assert.Equal(expectedDamage, opponent.MasterDamageTakenThisTurn);
+        Assert.Equal(-1, player.NextMasterDamageToOpponentBecomesTwoUntilTurn);
+        Assert.Equal(expectedDamage > 0, game.State.Events.Any(entry => entry.Type == "damage"
+            && entry.PlayerIndex == 1));
     }
 
     [Fact]

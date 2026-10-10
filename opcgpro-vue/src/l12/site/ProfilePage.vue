@@ -1,44 +1,140 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { l12State } from '@/l12/net'
+import RankedIdentityBadge from '@/l12/RankedIdentityBadge.vue'
 import RankedPenaltyHistory from './RankedPenaltyHistory.vue'
-import { canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformRequest, platformState, rankedApi, register, sessionApi, type EmailStatus, type MfaCapability, type PlatformSession, type RankedOverview } from '@/l12/platform'
-import { ensureOfficialPrebuiltDecks } from '@/l12/decks'
+import { alternateArtApi, canAccessAdmin, changePassword, changeUsername, emailApi, login, logout, mfaCapability as loadMfaCapability, PlatformRequestError, platformState, playerApi, rankedApi, refreshCurrentAccount, register, sessionApi, usernameChangeApi, type AlternateArt, type EmailStatus, type MfaCapability, type PlatformSession, type PlayerStatLine, type PlayerStatistics, type PlayerStatisticsRange, type RankedOverview, type UsernameChangeStatus } from '@/l12/platform'
 import RankedMasterTitleRulesModal from './RankedMasterTitleRulesModal.vue'
+import { masterProfileUrl } from '@/l12/specialAssets'
+import CardImage from '@/l12/CardImage.vue'
+import { useSectionScroll } from './useSectionScroll'
+import UiButton from './UiButton.vue'
+import UiNotice from './UiNotice.vue'
 
-interface Match { player0: string; player1: string; winner?: number | null; endedUtc?: string | null; startedUtc: string }
 const publicHistory = ref(localStorage.getItem('l12-public-history') === 'true')
-const matches = ref<Match[]>([])
 const notice = ref('')
 const authNotice = ref('')
 const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '', currentPassword: '', newPassword: '' })
 const usernameChange = reactive({ username: '', currentPassword: '' })
 const usernameChangeNotice = ref('')
+const renameStatus = ref<UsernameChangeStatus | null>(null)
+const renameForm = reactive({ username: '', currentPassword: '', reason: '' })
+const renameNotice = ref('')
 const emailForm = reactive({ email: '', currentPassword: '' })
 const authBusy = ref(false)
 const route = useRoute()
 const router = useRouter()
+const profileNavigation = [
+  { id: 'overview', label: '排位与战绩' },
+  { id: 'collection', label: '收藏与偏好' }, { id: 'security', label: '账号与安全' },
+] as const
+const statisticsRanges: Array<{ id: PlayerStatisticsRange; label: string }> = [
+  { id: '7d', label: '近 7 天' }, { id: '30d', label: '近 30 天' }, { id: 'season', label: '本赛季' },
+]
+const section = computed(() => platformState.account?.mustChangePassword ? 'security'
+  : route.query.section === 'performance' ? 'overview'
+  : profileNavigation.find(item => item.id === route.query.section)?.id ?? 'overview')
+const statisticsRange = computed<PlayerStatisticsRange>(() =>
+  statisticsRanges.some(item => item.id === route.query.range) ? route.query.range as PlayerStatisticsRange : 'season')
+const statisticsRangeLabel = computed(() => statisticsRanges.find(item => item.id === statisticsRange.value)?.label ?? '本赛季')
+const visitedPerformance = ref(false)
+const sectionLoading = ref(false)
+const sectionError = ref('')
+useSectionScroll(() => platformState.account?.id ?? 'guest', () => !sectionLoading.value)
+function switchProfileSection(next: string) {
+  void router.push({ path: '/me', query: { ...route.query, section: next } })
+}
+function switchStatisticsRange(next: PlayerStatisticsRange) {
+  void router.push({ path: '/me', query: { ...route.query, section: 'overview', range: next } })
+}
+function showPenaltyHistory(event: Event) {
+  if ((event.currentTarget as HTMLDetailsElement).open) visitedPerformance.value = true
+}
 const sessions = ref<PlatformSession[]>([])
 const mfa = ref<MfaCapability | null>(null)
 const emailStatus = ref<EmailStatus | null>(null)
 const emailFeatureEnabled = ref(false)
 const ranked = ref<RankedOverview | null>(null)
+const playerStatistics = ref<PlayerStatistics | null>(null)
+const ownedAlternateArts = ref<AlternateArt[]>([])
+const profileTitleVariant = (title: string) => ranked.value?.profile.masterTitles.includes(title) || title.startsWith('最强') ? 'master-title' as const : 'faction-title' as const
+const historyTitleVariant = (title: string, masterTitles: string[]) => masterTitles.includes(title) || title.startsWith('最强') ? 'master-title' as const : 'faction-title' as const
+const historyWinRate = (value?: number | null) => value == null ? '—' : `${value.toFixed(1)}%`
 const selectedMasterTitle = ref('')
 const masterTitleRulesOpen = ref(false)
+const compactProfile = ref(false)
+const profileSections = reactive({
+  masterRecords: sessionStorage.getItem('l12-profile-master-records') === 'open',
+  sessions: sessionStorage.getItem('l12-profile-sessions') === 'open',
+})
+function updateProfileViewport() { compactProfile.value = window.matchMedia('(max-width:700px)').matches }
+function rememberProfileSection(key: keyof typeof profileSections, event: Event) {
+  if (!compactProfile.value) return
+  profileSections[key] = (event.currentTarget as HTMLDetailsElement).open
+  sessionStorage.setItem(`l12-profile-${key === 'masterRecords' ? 'master-records' : 'sessions'}`, profileSections[key] ? 'open' : 'closed')
+}
 
+let accountGeneration = 0
+let sectionGeneration = 0
+let pendingSection = Promise.resolve()
+const loadedResources = new Set<string>()
+const statisticsCache = new Map<PlayerStatisticsRange, PlayerStatistics>()
+async function finishProfileReads(reads: Promise<PromiseSettledResult<unknown>[]>) {
+  const results = await reads
+  const failure = results.find(item => item.status === 'rejected')
+  if (failure?.status === 'rejected') throw failure.reason
+}
+async function profileResource<T>(key: string, read: () => Promise<T>, apply: (value: T) => void) {
+  if (loadedResources.has(key)) return
+  const generation = accountGeneration
+  const accountId = platformState.account?.id
+  const value = await read()
+  if (generation !== accountGeneration || accountId !== platformState.account?.id) return
+  apply(value); loadedResources.add(key)
+}
+const loadRanked = () => profileResource('ranked', () => rankedApi.overview(), value => {
+  ranked.value = value; selectedMasterTitle.value = value.profile.selectedMasterTitle || ''
+})
+async function loadStatistics(range = statisticsRange.value) {
+  const cached = statisticsCache.get(range)
+  if (cached) { playerStatistics.value = cached; return }
+  await profileResource(`statistics:${range}`, () => playerApi.statistics(range), value => {
+    statisticsCache.set(range, value)
+    if (statisticsRange.value === range) playerStatistics.value = value
+  })
+}
+async function loadRenameStatus() {
+  if (!platformState.account || platformState.account.mustChangeUsername) { renameStatus.value = null; return }
+  loadedResources.delete('rename')
+  await profileResource('rename', () => usernameChangeApi.status(), value => { renameStatus.value = value })
+}
 async function loadAccountData() {
-  if (!platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) return
-  const [matchResult, sessionResult, rankedResult] = await Promise.allSettled([
-    platformRequest<Match[]>('/api/matches?limit=200'), sessionApi.list(), rankedApi.overview(),
-  ])
-  if (matchResult.status === 'fulfilled') matches.value = matchResult.value
-  if (sessionResult.status === 'fulfilled') sessions.value = sessionResult.value
-  if (rankedResult.status === 'fulfilled') {
-    ranked.value = rankedResult.value
-    selectedMasterTitle.value = rankedResult.value.profile.selectedMasterTitle || ''
-  }
+  const request = ++sectionGeneration
+  const current = section.value
+  // Serialize transitions so a rapid section switch cannot exceed the three-read budget.
+  pendingSection = pendingSection.catch(() => {}).then(async () => {
+    if (request !== sectionGeneration || !platformState.account || platformState.account.mustChangePassword || platformState.account.mustChangeUsername) return
+    sectionLoading.value = true; sectionError.value = ''
+    try {
+      if (current === 'overview') { await finishProfileReads(Promise.allSettled([
+        loadRanked(), loadStatistics(statisticsRange.value),
+      ])) }
+      else if (current === 'collection') await profileResource('arts', () => alternateArtApi.mine(), value => { ownedAlternateArts.value = value })
+      else if (current === 'security') { await finishProfileReads(Promise.allSettled([
+        profileResource('sessions', () => sessionApi.list(), value => { sessions.value = value }),
+        profileResource('rename', () => usernameChangeApi.status(), value => { renameStatus.value = value }),
+      ])); if (request === sectionGeneration) await profileResource('mfa', () => loadMfaCapability(), value => { mfa.value = value }) }
+    } catch (error) { if (request === sectionGeneration) sectionError.value = error instanceof Error ? error.message : '资料加载失败，请重试' }
+    finally { if (request === sectionGeneration) sectionLoading.value = false }
+  })
+  await pendingSection
+}
+function resetProfileAccountData() {
+  accountGeneration++; sectionGeneration++; loadedResources.clear(); statisticsCache.clear(); visitedPerformance.value = false
+  sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null
+  ownedAlternateArts.value = []; mfa.value = null; sectionError.value = ''; sectionLoading.value = false
 }
 
 async function saveRankedTitle() {
@@ -62,7 +158,13 @@ async function loadEmailCapability() {
     await loadEmailStatus()
   } catch { emailFeatureEnabled.value = false; emailStatus.value = null }
 }
-onMounted(() => { loadAccountData(); loadEmailCapability(); loadMfaCapability().then(value => { mfa.value = value }).catch(() => {}) })
+onMounted(() => { updateProfileViewport(); window.addEventListener('resize', updateProfileViewport) })
+onBeforeUnmount(() => { accountGeneration++; sectionGeneration++; window.removeEventListener('resize', updateProfileViewport) })
+watch(() => platformState.account?.id, () => { resetProfileAccountData(); void loadAccountData() }, { immediate: true })
+watch([section, statisticsRange], ([, range], [, previousRange]) => {
+  if (range !== previousRange) playerStatistics.value = statisticsCache.get(range) ?? null
+  void loadAccountData()
+})
 watch(publicHistory, value => localStorage.setItem('l12-public-history', String(value)))
 const authSubmitLabel = computed(() => authBusy.value
   ? (authMode.value === 'login' ? '登录中…' : '正在建立账号…')
@@ -101,7 +203,6 @@ async function submitAuth() {
       auth.password = ''
       return
     }
-    await ensureOfficialPrebuiltDecks()
     const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
       && !route.query.redirect.startsWith('//')
       ? route.query.redirect : ''
@@ -110,7 +211,6 @@ async function submitAuth() {
       return
     }
     await loadAccountData()
-    await loadEmailCapability()
     notice.value = authMode.value === 'login' ? '登录成功' : '账号建立成功，六阵营预组会自动加入牌库'
     auth.password = ''
   } catch (error) {
@@ -128,14 +228,34 @@ async function submitUsernameChange() {
     usernameChange.currentPassword = ''; usernameChange.username = ''
     notice.value = result.message
     if (!platformState.account?.mustChangePassword) {
-      await ensureOfficialPrebuiltDecks()
       await loadAccountData()
-      await loadEmailCapability()
       const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
         && !route.query.redirect.startsWith('//') ? route.query.redirect : ''
       if (redirect) await router.replace(redirect)
     }
   } catch (error) { usernameChangeNotice.value = error instanceof Error ? error.message : '用户名修改失败' }
+  finally { authBusy.value = false }
+}
+async function useFreeRename() {
+  if (authBusy.value) return
+  authBusy.value = true; renameNotice.value = ''
+  try {
+    const result = await usernameChangeApi.useFreeRename(renameForm.currentPassword, renameForm.username)
+    renameForm.username = ''; renameForm.currentPassword = ''
+    await refreshCurrentAccount({ force: true }); await loadRenameStatus()
+    notice.value = result.message
+  } catch (error) { renameNotice.value = error instanceof Error ? error.message : '改名失败' }
+  finally { authBusy.value = false }
+}
+async function submitRenameRequest() {
+  if (authBusy.value) return
+  authBusy.value = true; renameNotice.value = ''
+  try {
+    const request = await usernameChangeApi.request(renameForm.username, renameForm.reason)
+    renameForm.username = ''; renameForm.reason = ''
+    renameStatus.value = { ...(renameStatus.value ?? { freeRenameAvailable: false, freeRenameUsed: 1 }), latestRequest: request }
+    notice.value = '改名申请已提交，等待管理员审核'
+  } catch (error) { renameNotice.value = error instanceof Error ? error.message : '提交改名申请失败' }
   finally { authBusy.value = false }
 }
 async function submitPassword() {
@@ -148,7 +268,7 @@ async function signOut() {
   authBusy.value = true; notice.value = ''
   try { await logout(); notice.value = '当前设备已退出，服务器会话已撤销' }
   catch (error) { notice.value = `本机已退出；服务器会话撤销失败：${error instanceof Error ? error.message : '未知错误'}` }
-  finally { sessions.value = []; authBusy.value = false }
+  finally { sessions.value = []; renameStatus.value = null; playerStatistics.value = null; ranked.value = null; ownedAlternateArts.value = []; authBusy.value = false }
 }
 async function submitEmailBinding() {
   authBusy.value = true; notice.value = ''
@@ -184,7 +304,7 @@ async function revokeSession(session: PlatformSession) {
 async function revokeOtherSessions() {
   authBusy.value = true; notice.value = ''
   try {
-    for (const session of sessions.value.filter(item => !item.current)) await sessionApi.revoke(session.id)
+    await sessionApi.revokeOthers()
     sessions.value = sessions.value.filter(item => item.current)
     notice.value = '其他设备会话已全部撤销'
   } catch (error) { notice.value = error instanceof Error ? error.message : '撤销失败' }
@@ -196,58 +316,85 @@ async function revokeAllSessions() {
   catch (error) { notice.value = error instanceof Error ? error.message : '撤销失败' }
   finally { await logout({ revokeServer: false }); sessions.value = []; authBusy.value = false }
 }
-const myMatches = computed(() => matches.value)
-const wins = computed(() => myMatches.value.filter(match => match.winner === (match.player0 === l12State.nickname ? 0 : 1)).length)
-const losses = computed(() => myMatches.value.filter(match => match.endedUtc && match.winner !== null && match.winner !== undefined && match.winner !== (match.player0 === l12State.nickname ? 0 : 1)).length)
+const wins = computed(() => playerStatistics.value?.overall.wins ?? 0)
+const losses = computed(() => playerStatistics.value?.overall.losses ?? 0)
+const overallGames = computed(() => playerStatistics.value?.overall.games ?? 0)
+function winRate(line?: PlayerStatLine) { return line && line.games ? `${(line.wins * 100 / line.games).toFixed(1)}%` : '0.0%' }
+function sideWinRate(winsValue: number, games: number) { return games ? `${(winsValue * 100 / games).toFixed(1)}%` : '—' }
 const rankedWinRate = computed(() => {
   const profile = ranked.value?.profile
   return profile && profile.wins + profile.losses ? `${(profile.wins * 100 / (profile.wins + profile.losses)).toFixed(1)}%` : '0.0%'
 })
-function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as HTMLButtonElement | null)?.click() }
 </script>
 
 <template>
-  <div class="profile-page">
-    <header><small>PROFILE</small><h1>我的</h1><p>管理账号身份、牌库、战绩公开范围与数据文件。</p></header>
-    <section class="identity"><div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div><div><small>当前玩家</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account ? `${platformState.account.role === 'admin' ? '管理员' : '玩家'} · ${l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务'}` : '登录后同步牌库并进入对战' }}</span></div><div class="record-chip"><b>{{ ranked?.profile.placed ? ranked.profile.tier : myMatches.length }}</b><span>{{ ranked?.profile.placed ? `七曜值 ${ranked.profile.sevenValue.toLocaleString()}` : '已记录对局' }}</span></div><router-link v-if="canAccessAdmin" class="admin-button" to="/admin">⚙ 管理后台</router-link></section>
-    <button class="feedback-banner" type="button" @click="openBugFeedback"><span><b>反馈 Bug 和建议</b><small>将当前页面与对局环境一并提交，方便准确复现问题。</small></span><i>进入反馈 →</i></button>
-    <p v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</p>
-    <section v-if="ranked" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><b>{{ ranked.profile.rankLabel }}</b></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><span v-for="title in ranked.profile.titles" :key="title">✦ {{ title }}</span></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中默认显示段位和1个最强主宰称号；若位列本派系第1至5名，则派系排名称号代替段位。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
-    <section class="stats"><article><span>总场次</span><b>{{ myMatches.length }}</b></article><article><span>胜场</span><b>{{ wins }}</b></article><article><span>负场</span><b>{{ losses }}</b></article><article><span>胜率</span><b>{{ myMatches.length ? `${(wins / myMatches.length * 100).toFixed(1)}%` : '0.0%' }}</b></article></section>
-    <section class="panel account-panel">
-      <header><h2>账号与安全</h2><span>{{ platformState.account ? `${platformState.account.username} · ${platformState.account.role}` : '用户名与密码' }}</span></header>
+  <div class="profile-page ui-state-scope">
+    <header><small>PROFILE</small><h1>我的</h1><p>管理账号身份、牌库、战绩公开范围与个人收藏。</p></header>
+    <nav v-if="platformState.account" class="profile-section-nav" aria-label="个人中心分区"><UiButton v-for="item in profileNavigation" :key="item.id" :selected="section === item.id" :aria-current="section === item.id ? 'page' : undefined" @click="switchProfileSection(item.id)">{{ item.label }}</UiButton></nav>
+    <p v-if="sectionLoading" role="status">正在加载当前分区…</p>
+    <UiNotice v-if="sectionError" kind="error">{{ sectionError }}<template #action><UiButton @click="loadAccountData">重试</UiButton></template></UiNotice>
+    <section v-if="platformState.account" class="identity"><div class="avatar">{{ (platformState.account?.username || '游').slice(0,1) }}</div><div><small>当前玩家</small><h2>{{ platformState.account?.username || '游客' }}</h2><span>{{ platformState.account ? `${platformState.account.role === 'admin' ? '管理员' : '玩家'} · ${l12State.status === 'online' ? '服务器在线' : '尚未连接对战服务'}` : '登录后同步牌库并进入对战' }}</span></div><div v-if="ranked || playerStatistics" class="record-chip"><b>{{ ranked?.profile.placed ? ranked.profile.tier : overallGames }}</b><span>{{ ranked?.profile.placed ? `七曜值 ${ranked.profile.sevenValue.toLocaleString()}` : `${statisticsRangeLabel}对局` }}</span></div><router-link v-if="canAccessAdmin" class="admin-button" to="/admin">⚙ 管理后台</router-link></section>
+    <UiNotice v-if="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">{{ notice }}</UiNotice>
+    <div v-if="platformState.account && section === 'overview'" class="ranked-season-panel">
+    <section v-if="ranked" class="rank-overview"><header><div><small>RANKED PROFILE</small><h2>本赛季排位</h2></div><div class="rank-links"><router-link to="/battle/rankings">查看排行榜 →</router-link></div></header><div class="rank-body"><article><span>派系</span><b>{{ ranked.profile.faction || '尚未选择' }}</b></article><article><span>段位</span><RankedIdentityBadge variant="tier" :faction="ranked.profile.faction" :label="ranked.profile.rankLabel"/></article><article><span>七曜值</span><b>{{ ranked.profile.sevenValue.toLocaleString() }}</b></article><article><span>排位胜率</span><b>{{ rankedWinRate }}</b></article></div><div v-if="ranked.profile.titles.length" class="profile-titles"><RankedIdentityBadge v-for="title in ranked.profile.titles" :key="title" :variant="profileTitleVariant(title)" :faction="ranked.profile.faction" :label="title"/></div><p v-else>达到称号条件后会在这里展示派系与最强主宰称号。</p><section class="title-manager"><div class="title-manager-heading"><b>最强称号管理</b><button type="button" @click="masterTitleRulesOpen = true">最强称号规则</button></div><span class="title-manager-description">对战中依次显示全服名次、段位、已获得的派系段位称号和1个已选择的最强主宰称号；没有的称号不会显示。</span><div v-if="ranked.profile.masterTitles.length" class="title-manager-controls"><select v-model="selectedMasterTitle"><option v-for="title in ranked.profile.masterTitles" :key="title" :value="title">{{ title }}</option></select><button :disabled="authBusy || selectedMasterTitle === (ranked.profile.selectedMasterTitle || '')" @click="saveRankedTitle">保存称号</button></div><em v-else>近 30 日尚未获得最强主宰称号</em></section></section>
+    <section class="statistics-range-panel">
+      <div><small>PERFORMANCE RANGE</small><h2>总体战绩 · {{ statisticsRangeLabel }}</h2><p>近 7 天与近 30 天跨赛季统计；本赛季只统计当前赛季。</p></div>
+      <nav aria-label="战绩时间范围"><button v-for="item in statisticsRanges" :key="item.id" type="button" :aria-pressed="statisticsRange === item.id" @click="switchStatisticsRange(item.id)">{{ item.label }}</button></nav>
+    </section>
+    <section v-if="playerStatistics" class="stats season-stats" :aria-label="`${statisticsRangeLabel}总体战绩`"><article><span>总场次</span><b>{{ overallGames }}</b></article><article><span>胜 / 负 / 平</span><b>{{ wins }} / {{ losses }} / {{ playerStatistics.overall.draws }}</b></article><article><span>总胜率</span><b>{{ winRate(playerStatistics.overall) }}</b></article><article><span>排位场次</span><b>{{ playerStatistics.ranked.games }}</b></article></section>
+    <section v-if="ranked" class="season-history">
+      <header><div><small>SEASON HISTORY</small><h2>赛季历史</h2></div><span>只记录已正式结束的赛季</span></header>
+      <div v-if="ranked.history.length" class="season-history-list">
+        <div class="season-history-head" aria-hidden="true"><span>赛季名称</span><span>段位</span><span>派系</span><span>总名次</span><span>七曜值</span><span>胜率</span><span>胜负</span><span>称号</span></div>
+        <article v-for="item in ranked.history" :key="`${item.seasonId}-${item.archivedAt}`">
+          <span data-label="赛季名称">{{ item.seasonName || '历史赛季' }}<small v-if="item.seasonMonth">{{ item.seasonMonth }}</small></span>
+          <span data-label="段位"><RankedIdentityBadge variant="tier" :faction="item.faction" :label="item.rankLabel || (item.placed === null || item.placed === undefined ? '历史版本未记录' : item.placed ? item.tier : `定级 ${item.placementPlayed}/${item.placementRequired ?? '—'}`)"/></span>
+          <span data-label="派系">{{ item.faction }}</span><span data-label="总名次">{{ item.overallRank ? `第 ${item.overallRank} 名` : '—' }}</span>
+          <span data-label="七曜值">{{ item.sevenValue.toLocaleString() }}</span><span data-label="胜率">{{ historyWinRate(item.winRate) }}</span><span data-label="胜负">{{ item.wins }}胜 {{ item.losses }}负</span>
+          <span data-label="称号" class="season-history-titles"><RankedIdentityBadge v-for="title in item.titles" :key="title" :variant="historyTitleVariant(title, item.masterTitles)" :faction="item.faction" :label="title"/><span v-if="!item.titles.length">—</span></span>
+        </article>
+      </div>
+      <UiNotice v-else kind="empty">赛季正式结束后，最终段位、名次、七曜值、胜率和称号会保存在这里。</UiNotice>
+    </section>
+    </div>
+    <section v-if="platformState.account && section === 'overview' && playerStatistics" class="performance-panel"><header><div><small>PLAYER PERFORMANCE</small><h2>战绩详情 · {{ statisticsRangeLabel }}</h2></div><span>你的对局表现</span></header><div class="side-stats"><article><span>先手</span><b>{{ playerStatistics.overall.firstGames }} 场 · {{ sideWinRate(playerStatistics.overall.firstWins, playerStatistics.overall.firstGames) }}</b></article><article><span>后手</span><b>{{ playerStatistics.overall.secondGames }} 场 · {{ sideWinRate(playerStatistics.overall.secondWins, playerStatistics.overall.secondGames) }}</b></article><article><span>排位胜率</span><b>{{ winRate(playerStatistics.ranked) }}</b></article><article><span>最近统计</span><b>{{ playerStatistics.updatedAt ? new Date(playerStatistics.updatedAt).toLocaleDateString() : '暂无' }}</b></article></div><details class="master-records" :open="!compactProfile || profileSections.masterRecords" @toggle="rememberProfileSection('masterRecords', $event)"><summary><b>主宰战绩</b><span>按主宰查看胜负与先后手表现 · 展开 / 收起</span></summary><div class="master-records-head"><span>主宰</span><span>总体战绩</span><span>排位表现</span><span>先后手胜率</span></div><article v-for="master in playerStatistics.masters" :key="master.masterId"><div class="master-record"><img :src="masterProfileUrl(master.masterId)" :alt="`${master.masterName}头像`"><span><b>{{ master.masterName }}</b><small>{{ master.masterId }}</small></span></div><span>整体 {{ master.overall.wins }}胜 {{ master.overall.losses }}负 {{ master.overall.draws }}平 · <b>{{ winRate(master.overall) }}</b></span><span>排位 {{ master.ranked.games }} 场 · <b>{{ winRate(master.ranked) }}</b></span><span>先手 {{ sideWinRate(master.overall.firstWins, master.overall.firstGames) }} / 后手 {{ sideWinRate(master.overall.secondWins, master.overall.secondGames) }}</span></article><p v-if="!playerStatistics.masters.length">完成对局后，这里会按主宰展示战绩。</p></details></section>
+    <details v-if="!platformState.account || section === 'security'" class="panel account-panel" open>
+      <summary><span><b>账号与安全</b><small>{{ platformState.account ? `${platformState.account.username} · 点击展开管理` : '登录或建立账号' }}</small></span><i>展开 / 收起</i></summary>
       <template v-if="!platformState.account">
-        <div class="auth-tabs"><button type="button" :disabled="authBusy" :class="{ active: authMode === 'login' }" @click="selectAuthMode('login')">登录</button><button type="button" :disabled="authBusy" :class="{ active: authMode === 'register' }" @click="selectAuthMode('register')">注册</button></div>
+        <div class="auth-tabs"><UiButton :disabled="authBusy" :selected="authMode === 'login'" :class="{ active: authMode === 'login' }" @click="selectAuthMode('login')">登录</UiButton><UiButton :disabled="authBusy" :selected="authMode === 'register'" :class="{ active: authMode === 'register' }" @click="selectAuthMode('register')">注册</UiButton></div>
         <form class="account-form auth-form" :aria-busy="authBusy" @submit.prevent="submitAuth">
-          <label>用户名<input v-model="auth.username" autocomplete="username" required :disabled="authBusy"/><small>长度为 2–11 个可见字符，不得包含冒充官方、辱骂、色情、违法交易或广告导流内容。</small></label>
+          <label>用户名<input v-model="auth.username" autocomplete="username" required :disabled="authBusy"/></label>
           <label>密码<input v-model="auth.password" type="password" maxlength="128" :autocomplete="authMode === 'login' ? 'current-password' : 'new-password'" required :disabled="authBusy"/></label>
-          <button class="primary" type="submit" :disabled="authBusy || !auth.username.trim() || !auth.password">{{ authSubmitLabel }}</button>
-          <p v-if="authNotice" class="auth-notice" role="alert" aria-live="assertive" aria-atomic="true">{{ authNotice }}</p>
+          <UiButton class="primary" tone="primary" type="submit" :busy="authBusy" :disabled="authBusy || !auth.username.trim() || !auth.password">{{ authSubmitLabel }}</UiButton>
+          <small class="form-support">长度为 2–11 个可见字符，不得包含冒充官方、辱骂、色情、违法交易或广告导流内容。</small>
+          <UiNotice v-if="authNotice" class="auth-notice" kind="error" role="alert" aria-live="assertive" aria-atomic="true">{{ authNotice }}</UiNotice>
         </form>
         <router-link v-if="authMode === 'login' && emailFeatureEnabled" class="recovery-link" to="/auth/recovery">忘记密码？使用已验证邮箱找回</router-link>
       </template>
       <template v-else>
         <p v-if="platformState.account.mustChangePassword" class="password-required">管理员已重置此账号密码，必须修改密码。完成下方操作前，请勿继续使用临时密码。</p>
         <div class="account-form"><label>当前密码<input v-model="auth.currentPassword" type="password" autocomplete="current-password"/></label><label>新密码<input v-model="auth.newPassword" type="password" minlength="8" maxlength="128" autocomplete="new-password"/></label><button class="primary" :disabled="authBusy" @click="submitPassword">修改密码</button><button class="logout" :disabled="authBusy" @click="signOut">退出当前设备</button></div>
+        <section v-if="renameStatus" class="rename-manager"><header><div><h3>改名</h3><p>{{ renameStatus.freeRenameAvailable ? '你还有一次自助改名机会；确认后立即生效。' : '自助改名机会已使用，后续改名需要填写原因并由管理员审核。' }}</p></div><span>{{ renameStatus.freeRenameAvailable ? '可自助改名 1 次' : '需管理员审核' }}</span></header><template v-if="renameStatus.freeRenameAvailable"><div class="rename-form"><label>新用户名<input v-model.trim="renameForm.username" maxlength="11" autocomplete="username" placeholder="2–11 个可见字符"/></label><label>当前密码<input v-model="renameForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !renameForm.username || !renameForm.currentPassword" @click="useFreeRename">确认改名</button></div></template><template v-else><div v-if="renameStatus.latestRequest?.status === 'pending'" class="rename-request-status"><b>申请审核中</b><span>{{ renameStatus.latestRequest.currentUsername }} → {{ renameStatus.latestRequest.requestedUsername }}</span><small>提交于 {{ new Date(renameStatus.latestRequest.createdAt).toLocaleString() }}。管理员处理后会在此显示结果。</small></div><template v-else><div v-if="renameStatus.latestRequest" class="rename-request-status" :class="renameStatus.latestRequest.status"><b>{{ renameStatus.latestRequest.status === 'approved' ? '最近申请已通过' : '最近申请未通过' }}</b><span>{{ renameStatus.latestRequest.currentUsername }} → {{ renameStatus.latestRequest.requestedUsername }}</span><small v-if="renameStatus.latestRequest.reviewNote">管理员说明：{{ renameStatus.latestRequest.reviewNote }}</small></div><div class="rename-form request"><label>申请的新用户名<input v-model.trim="renameForm.username" maxlength="11" autocomplete="username" placeholder="2–11 个可见字符"/></label><label>申请原因<textarea v-model.trim="renameForm.reason" rows="3" maxlength="400" placeholder="请说明需要再次改名的原因（4–400 字）"></textarea></label><button :disabled="authBusy || !renameForm.username || renameForm.reason.trim().length < 4" @click="submitRenameRequest">提交审核申请</button></div></template></template><p v-if="renameNotice" class="rename-notice" role="alert">{{ renameNotice }}</p></section>
         <section v-if="emailFeatureEnabled" class="email-manager">
           <header><div><h3>邮箱与账号恢复</h3><p v-if="emailStatus?.verified">已验证：{{ emailStatus.maskedEmail }}</p><p v-else>尚未绑定已验证邮箱，忘记密码时无法找回。</p><small v-if="emailStatus?.pendingMaskedEmail">待验证：{{ emailStatus.pendingMaskedEmail }} · {{ new Date(emailStatus.pendingExpiresAt || '').toLocaleString() }} 前有效</small></div></header>
           <div class="email-form"><label>新邮箱 / 换绑邮箱<input v-model="emailForm.email" type="email" maxlength="254" autocomplete="email"/></label><label>当前密码<input v-model="emailForm.currentPassword" type="password" autocomplete="current-password"/></label><button :disabled="authBusy || !emailStatus?.mailConfigured" @click="submitEmailBinding">发送验证邮件</button><button v-if="emailStatus?.verified" class="danger" :disabled="authBusy" @click="unbindEmail">解绑邮箱</button></div>
           <small v-if="emailStatus && !emailStatus.mailConfigured" class="mail-unavailable">邮件服务尚未配置，绑定和换绑暂不可用。</small>
         </section>
         <section v-if="mfa?.enrollmentEnabled" class="mfa-boundary"><b>MFA 已启用</b><span>可使用已登记的验证器保护账号。</span></section>
-        <section class="session-manager">
-          <header><div><h3>登录设备与会话</h3><p>撤销后对应设备的令牌立即失效。</p></div><span class="session-actions"><button :disabled="authBusy || sessions.length <= 1" @click="revokeOtherSessions">退出其他设备</button><button class="danger" :disabled="authBusy || !sessions.length" @click="revokeAllSessions">退出全部设备</button></span></header>
+        <details class="session-manager" :open="!compactProfile || profileSections.sessions" @toggle="rememberProfileSection('sessions', $event)">
+          <summary><div><h3>登录设备与会话</h3><p>撤销后对应设备的令牌立即失效。</p></div><span>展开 / 收起</span></summary>
+          <span class="session-actions"><button :disabled="authBusy || sessions.length <= 1" @click="revokeOtherSessions">退出其他设备</button><button class="danger" :disabled="authBusy || !sessions.length" @click="revokeAllSessions">退出全部设备</button></span>
           <article v-for="session in sessions" :key="session.id" class="session-row">
             <div><b>{{ session.current ? '当前设备' : '其他设备' }}</b><code>{{ session.id }}</code></div>
             <span>登录：{{ new Date(session.createdAt).toLocaleString() }}<small>到期：{{ new Date(session.expiresAt).toLocaleString() }} · {{ session.authStrength }}</small></span>
             <button :disabled="authBusy" @click="revokeSession(session)">{{ session.current ? '退出' : '撤销' }}</button>
           </article>
           <p v-if="!sessions.length" class="session-empty">暂无可显示的活动会话</p>
-        </section>
+        </details>
       </template>
-    </section>
-    <div class="profile-grid"><section class="panel"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel links"><header><h2>数据与工具</h2></header><router-link to="/battle/records"><b>对局记录与 JSON 回放</b><span>导出、导入并在实战棋盘查看 →</span></router-link><router-link to="/decks"><b>我的牌库</b><span>账号牌库、牌库码与牌库图分享 →</span></router-link><router-link to="/battle/rankings"><b>排行榜</b><span>玩家榜、主宰榜与对阵矩阵 →</span></router-link></section></div>
-    <RankedPenaltyHistory />
+    </details>
+    <div v-if="platformState.account && section === 'collection'" class="profile-grid"><section class="panel public-settings"><header><h2>公开设置</h2><span>账号偏好</span></header><div class="switch-row"><div><b>公开我的战绩</b><span>关闭后，其他玩家的个人页和公开榜单不展示你的个人对局列表。</span></div><button :class="{ on: publicHistory }" @click="publicHistory = !publicHistory">{{ publicHistory ? '已公开' : '不公开' }}</button></div></section><section class="panel alternate-art-collection"><header><h2>我的异画</h2><span>{{ ownedAlternateArts.length }} 项使用权</span></header><div v-if="ownedAlternateArts.length" class="alternate-art-grid"><article v-for="art in ownedAlternateArts" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl || art.imageUrl" :alt="art.displayName"><div><b>{{ art.displayName }} · {{ art.artCode }}</b><span>对应原画：{{ art.baseCardName || art.baseCardId }}</span><small>获得时间：{{ art.grantedAt ? new Date(art.grantedAt).toLocaleString() : '历史权益' }}</small></div></article></div><p v-else class="alternate-art-empty">{{ platformState.account ? '尚未获得异画使用权。' : '登录后查看已获得的异画使用权。' }}</p></section></div>
+    <details v-if="platformState.account && section === 'overview'" class="penalty-history-shell" @toggle="showPenaltyHistory"><summary>判罚历史与申诉 · 展开查看</summary><RankedPenaltyHistory v-if="visitedPerformance" /></details>
     <RankedMasterTitleRulesModal v-model="masterTitleRulesOpen"/>
     <div v-if="platformState.account?.mustChangeUsername" class="username-change-gate" role="dialog" aria-modal="true" aria-labelledby="username-change-title">
       <form class="username-change-card" @submit.prevent="submitUsernameChange">
@@ -265,14 +412,43 @@ function openBugFeedback() { (document.querySelector('.bug-feedback-trigger') as
 </template>
 
 <style scoped>
-.profile-page{min-height:100%;padding:30px clamp(18px,3vw,46px) 56px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.profile-page>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.18em}.profile-page>header h1{margin:5px 0;font-size:30px}.profile-page>header p{margin:0;color:#77858b;font-size:14px}.identity{display:grid;grid-template-columns:72px 1fr 160px auto;align-items:center;gap:18px;margin-top:22px;padding:22px;border:1px solid rgba(226,191,105,.35);background:linear-gradient(120deg,#111a24,#251318)}.avatar{display:grid;width:64px;height:64px;place-items:center;border:1px solid #e1c16c;border-radius:50%;background:#172831;color:#e4c674;font-size:25px;font-weight:900}.identity small,.identity h2,.identity span{display:block}.identity small{color:#78858b;font-size:14px}.identity h2{margin:5px 0;font-size:22px}.identity span{color:#8a969b;font-size:14px}.record-chip{padding:14px;border-left:1px solid #48545b}.record-chip b,.record-chip span{display:block}.record-chip b{font-size:21px;color:#e2c372}.admin-button{padding:11px 16px;border:1px solid #e1c16c;background:#e1c16c;color:#101214;font-size:14px;font-weight:900;text-decoration:none;white-space:nowrap}.feedback-banner{display:flex;width:100%;align-items:center;justify-content:space-between;margin-top:12px;padding:16px 20px;border:1px solid #8e2543;background:linear-gradient(90deg,#2a0e1a,#15121d);color:#fff;text-align:left}.feedback-banner span,.feedback-banner b,.feedback-banner small{display:block}.feedback-banner b{color:#ff87a8;font-size:14px}.feedback-banner small{margin-top:4px;color:#987987;font-size:14px}.feedback-banner i{color:#ef9fb6;font-size:14px;font-style:normal;font-weight:900}.rank-overview{margin-top:12px;padding:20px;border:1px solid #6330a0;background:linear-gradient(135deg,#151027,#20113a)}.rank-overview>header{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #503078;padding-bottom:12px}.rank-overview h2{margin:4px 0 0}.rank-overview header small{color:#9b6ce0;font:900 14px monospace;letter-spacing:.16em}.rank-overview a{color:#cba6ff;font-size:14px;font-weight:900;text-decoration:none}.rank-body{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.rank-body article{padding:13px;border:1px solid #4d3470;background:#100c1c}.rank-body span,.rank-body b{display:block}.rank-body span{color:#8f80a2;font-size:14px}.rank-body b{margin-top:5px;color:#eadbff;font-size:16px}.profile-titles{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.profile-titles span{padding:6px 10px;border:1px solid #e4ad3f;border-radius:4px;background:linear-gradient(135deg,#a56b13,#3e2204);color:#fff1a8;font-size:14px;font-weight:900;box-shadow:0 0 12px #d98d2f55}.rank-overview>p{margin:12px 0 0;color:#8c7d9d;font-size:14px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.stats article{padding:16px;border:1px solid #35424a;background:#101821}.stats span,.stats b{display:block}.stats span{color:#748188;font-size:14px}.stats b{margin-top:5px;font-size:21px}.stats article:last-child{border-color:#7d2530;background:#241318}.stats article:last-child b{color:#e4c06d}.profile-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:12px}.panel{padding:20px;border:1px solid #35424a;background:#101821}.panel>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #35424a}.panel h2{margin:0;font-size:18px}.panel header span{color:#69767d;font-size:14px}.panel label{display:block;margin:18px 0;color:#aab2b5;font-size:14px;font-weight:900}.panel input{display:block;width:100%;margin-top:8px;padding:11px;border:1px solid #4b5860;background:#080e13;color:#fff}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid rgba(235,230,216,.08);border-bottom:1px solid rgba(235,230,216,.08)}.switch-row b,.switch-row span{display:block}.switch-row span{max-width:430px;margin-top:4px;color:#748087;font-size:14px;line-height:1.6}.switch-row button{min-width:100px;padding:9px;border:1px solid #536068;background:#0b1218;color:#90999e;font-weight:900}.switch-row button.on{border-color:#58c398;color:#7ae0b5}.primary{display:block;margin:16px 0 0 auto;padding:10px 18px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.links a{display:block;padding:15px 2px;border-bottom:1px solid rgba(235,230,216,.09);color:#eeeae1;text-decoration:none}.links b,.links span{display:block}.links span{margin-top:5px;color:#758289;font-size:14px}.links a:hover span{color:#58c5cc}.notice{position:fixed;right:24px;bottom:24px;z-index:90;max-width:min(520px,calc(100vw - 32px));margin:0;padding:12px 14px;border:1px solid #765f28;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584;font-size:14px;box-shadow:0 12px 32px #000a}
-@media(max-width:760px){.profile-page{padding:20px 12px 48px}.identity{grid-template-columns:60px 1fr}.record-chip{grid-column:1/-1;border-left:0;border-top:1px solid #48545b}.admin-button{grid-column:1/-1;text-align:center}.rank-body,.stats{grid-template-columns:1fr 1fr}.profile-grid{grid-template-columns:1fr}.switch-row{align-items:flex-start;flex-direction:column}.switch-row button{width:100%}.feedback-banner{align-items:flex-start;flex-direction:column;gap:9px}}
-.account-panel{margin-bottom:12px}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:16px}.auth-tabs button{padding:10px;border:1px solid #46535b;background:#080e13;color:#879197;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-tabs button:disabled{cursor:not-allowed;opacity:.58}.account-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:10px}.account-form label{margin:14px 0 0}.account-form .primary{margin:0}.auth-form .auth-notice{grid-column:1/-1;margin:2px 0 0;padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa;line-height:1.55}.logout{padding:10px 16px;border:1px solid #7e3c45;background:#2b1116;color:#eab5bb;font-weight:900}.admin-link{align-self:center;color:#e1c16c;font-size:14px;font-weight:900;text-decoration:none}@media(max-width:900px){.account-form{grid-template-columns:1fr 1fr}.account-form .primary,.account-form .logout,.account-form .admin-link{width:100%}}
-.session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:14px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:14px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:14px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:760px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
-.mfa-boundary{grid-column:1/-1;display:flex;flex-direction:column;gap:5px;margin-top:14px;padding:11px;border-left:3px solid #8a6b32;background:#20190d}.mfa-boundary span,.mfa-boundary small{color:#859197;font-size:14px}.mfa-boundary small{line-height:1.6}.session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:14px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:14px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:14px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:760px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
+.profile-section-nav{position:sticky;top:0;z-index:5;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:8px 0;background:#0b1219}.profile-section-nav button{min-width:0;min-height:44px;padding:8px;border:1px solid #43525a;background:#0d161c;color:#dce2df;font:inherit}.profile-section-nav button[aria-current=page]{border-color:#d6b563;background:#2b2414;color:#f0d478}.profile-section-nav button:focus-visible{outline:2px solid #54c5cc;outline-offset:2px}@media(max-width:520px){.profile-section-nav button{font-size:12px;padding:6px 2px}}
+.statistics-range-panel{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-top:12px;padding:16px;border:1px solid #35424a;background:#101821}.statistics-range-panel small{color:#52c3ca;font-weight:900;letter-spacing:.12em}.statistics-range-panel h2{margin:3px 0;font-size:20px}.statistics-range-panel p{margin:0;color:#819095;font-size:13px}.statistics-range-panel nav{display:flex;flex-wrap:wrap;gap:8px}.statistics-range-panel button{min-height:44px;padding:9px 14px;border:1px solid #536068;background:#0b1218;color:#aab4b8;font:inherit;font-weight:900}.statistics-range-panel button[aria-pressed=true]{border-color:#e1c16c;background:#2b2414;color:#f0d478}.statistics-range-panel button:focus-visible{outline:2px solid #54c5cc;outline-offset:2px}
+
+.profile-page{min-height:100%;padding:30px clamp(18px,3vw,46px) 56px;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.profile-page>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.18em}.profile-page>header h1{margin:5px 0;font-size:30px}.profile-page>header p{margin:0;color:#77858b;font-size:14px}.identity{display:grid;grid-template-columns:72px 1fr 160px auto;align-items:center;gap:18px;margin-top:22px;padding:22px;border:1px solid rgba(226,191,105,.35);background:linear-gradient(120deg,#111a24,#251318)}.avatar{display:grid;width:64px;height:64px;place-items:center;border:1px solid #e1c16c;border-radius:50%;background:#172831;color:#e4c674;font-size:25px;font-weight:900}.identity small,.identity h2,.identity span{display:block}.identity small{color:#78858b;font-size:14px}.identity h2{margin:5px 0;font-size:22px}.identity span{color:#8a969b;font-size:14px}.record-chip{padding:14px;border-left:1px solid #48545b}.record-chip b,.record-chip span{display:block}.record-chip b{font-size:21px;color:#e2c372}.admin-button{padding:11px 16px;border:1px solid #e1c16c;background:#e1c16c;color:#101214;font-size:14px;font-weight:900;text-decoration:none;white-space:nowrap}.rank-overview{margin-top:12px;padding:20px;border:1px solid #6330a0;background:linear-gradient(135deg,#151027,#20113a)}.rank-overview>header{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid #503078;padding-bottom:12px}.rank-overview h2{margin:4px 0 0}.rank-overview header small{color:#9b6ce0;font:900 14px monospace;letter-spacing:.16em}.rank-overview a{color:#cba6ff;font-size:14px;font-weight:900;text-decoration:none}.rank-body{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}.rank-body article{padding:13px;border:1px solid #4d3470;background:#100c1c}.rank-body span,.rank-body b{display:block}.rank-body span{color:#8f80a2;font-size:14px}.rank-body b{margin-top:5px;color:#eadbff;font-size:16px}.profile-titles{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.profile-titles span{padding:6px 10px;border:1px solid #e4ad3f;border-radius:4px;background:linear-gradient(135deg,#a56b13,#3e2204);color:#fff1a8;font-size:14px;font-weight:900;box-shadow:0 0 12px #d98d2f55}.rank-overview>p{margin:12px 0 0;color:#8c7d9d;font-size:14px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0}.stats article{padding:16px;border:1px solid #35424a;background:#101821}.stats span,.stats b{display:block}.stats span{color:#748188;font-size:14px}.stats b{margin-top:5px;font-size:21px}.stats article:last-child{border-color:#7d2530;background:#241318}.stats article:last-child b{color:#e4c06d}.profile-grid{display:grid;grid-template-columns:minmax(250px,.65fr) minmax(0,1.35fr);align-items:start;gap:12px}.panel{padding:20px;border:1px solid #35424a;background:#101821}.panel>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:13px;border-bottom:1px solid #35424a}.panel h2{margin:0;font-size:18px}.panel header span{color:#69767d;font-size:14px}.panel label{display:block;margin:18px 0;color:#aab2b5;font-size:14px;font-weight:900}.panel input{display:block;width:100%;margin-top:8px;padding:11px;border:1px solid #4b5860;background:#080e13;color:#fff}.public-settings{padding:16px}.public-settings .switch-row{align-items:flex-start;flex-direction:column;gap:12px;padding-bottom:0;border-bottom:0}.public-settings .switch-row button{width:100%}.switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 0;border-top:1px solid rgba(235,230,216,.08);border-bottom:1px solid rgba(235,230,216,.08)}.switch-row b,.switch-row span{display:block}.switch-row span{max-width:430px;margin-top:4px;color:#748087;font-size:14px;line-height:1.6}.switch-row button{min-width:100px;padding:9px;border:1px solid #536068;background:#0b1218;color:#90999e;font-weight:900}.switch-row button.on{border-color:#58c398;color:#7ae0b5}.primary{display:block;margin:16px 0 0 auto;padding:10px 18px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.alternate-art-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:12px}.alternate-art-grid article{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:center;gap:10px;padding:9px;border:1px solid #35424a;background:#0a1117}.alternate-art-grid img,.alternate-art-grid :deep(.l12-card-image){width:52px;height:72px;object-fit:cover}.alternate-art-grid article>div{display:grid;min-width:0;gap:4px}.alternate-art-grid b,.alternate-art-grid span,.alternate-art-grid small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.alternate-art-grid b{color:#f0d479;font-size:14px}.alternate-art-grid span,.alternate-art-grid small{color:#819095;font-size:12px}.alternate-art-empty{margin:16px 0 0;color:#7b888e;font-size:13px}.notice{position:fixed;right:24px;bottom:24px;z-index:90;max-width:min(520px,calc(100vw - 32px));margin:0;padding:12px 14px;border:1px solid #765f28;border-left:3px solid #d1b25c;background:#241c0a;color:#edd584;font-size:14px;box-shadow:0 12px 32px #000a}
+@media(max-width:700px){.profile-page{padding:20px 12px 48px}.identity{grid-template-columns:60px 1fr}.record-chip{grid-column:1/-1;border-left:0;border-top:1px solid #48545b}.admin-button{grid-column:1/-1;text-align:center}.statistics-range-panel{align-items:stretch;flex-direction:column}.statistics-range-panel nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.statistics-range-panel button{padding:8px 4px}.rank-body,.stats{grid-template-columns:1fr 1fr}.profile-grid{grid-template-columns:1fr}.switch-row{align-items:flex-start;flex-direction:column}.switch-row button{width:100%}}
+@media(max-width:520px){.alternate-art-grid{grid-template-columns:1fr}.alternate-art-collection{padding:14px}}
+.account-panel{margin-bottom:12px}.account-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}.account-panel>summary::-webkit-details-marker{display:none}.account-panel>summary span,.account-panel>summary b,.account-panel>summary small{display:block}.account-panel>summary b{font-size:18px}.account-panel>summary small{margin-top:4px;color:#748188;font-size:12px}.account-panel>summary i{color:#d8bc69;font-size:12px;font-style:normal}.account-panel[open]>summary{padding-bottom:13px;border-bottom:1px solid #35424a}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:16px}.account-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:10px}.account-form label{display:grid;grid-template-rows:auto var(--l12-form-control-height,44px);gap:6px;margin:14px 0 0}.account-form label input{box-sizing:border-box;height:var(--l12-form-control-height,44px);margin:0}.account-form .primary{height:var(--l12-form-control-height,44px);margin:0}.form-support{grid-column:1/-1;min-height:1.55em;color:#9aa5a3;font-size:12px;line-height:1.55}.auth-form .auth-notice{grid-column:1/-1;margin:2px 0 0;padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa;line-height:1.55}.logout{padding:10px 16px;border:1px solid #7e3c45;background:#2b1116;color:#eab5bb;font-weight:900}.admin-link{align-self:center;color:#e1c16c;font-size:14px;font-weight:900;text-decoration:none}@media(max-width:900px){.account-form{grid-template-columns:1fr 1fr}.account-form .primary,.account-form .logout,.account-form .admin-link{width:100%}}@media(max-width:560px){.account-form{grid-template-columns:1fr}.form-support,.auth-form .auth-notice{grid-column:1}}
+.session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:14px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:14px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:14px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:700px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
+.mfa-boundary{grid-column:1/-1;display:flex;flex-direction:column;gap:5px;margin-top:14px;padding:11px;border-left:3px solid #8a6b32;background:#20190d}.mfa-boundary span,.mfa-boundary small{color:#859197;font-size:14px}.mfa-boundary small{line-height:1.6}.session-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.session-manager>header{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager h3{margin:0;font-size:14px}.session-manager p{margin:4px 0 0;color:#748188;font-size:14px}.session-actions{display:flex;gap:7px}.session-manager button{padding:8px 11px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.session-manager button.danger,.session-row>button{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.session-manager button:disabled{cursor:not-allowed;opacity:.42}.session-row{display:grid;grid-template-columns:minmax(180px,.8fr) 1fr auto;align-items:center;gap:12px;margin-top:8px;padding:10px;border:1px solid #303d44;background:#0a1117}.session-row b,.session-row code,.session-row small{display:block}.session-row code{margin-top:3px;color:#8e9ba0;font-size:14px;overflow-wrap:anywhere}.session-row span{color:#c0c8c7;font-size:14px}.session-row small{margin-top:3px;color:#718087}.session-empty{text-align:center}@media(max-width:700px){.session-manager>header{align-items:flex-start;flex-direction:column}.session-actions{width:100%}.session-actions button{flex:1}.session-row{grid-template-columns:1fr auto}.session-row>span{grid-column:1/-1;grid-row:2}}
 .recovery-link{display:inline-block;margin-top:12px;color:#70cbd2;font-size:14px;text-decoration:none}.password-required{padding:10px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}.email-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.email-manager h3{margin:0;font-size:14px}.email-manager p,.email-manager small{margin:4px 0;color:#7f8c91;font-size:14px}.email-form{display:grid;grid-template-columns:1fr 1fr auto auto;align-items:end;gap:8px}.email-form label{margin:12px 0 0}.email-form button{padding:10px;border:1px solid #4b5960;background:#0a1117;color:#d8deda;font-weight:900}.email-form button.danger{border-color:#7e3c45;background:#2b1116;color:#eab5bb}.email-form button:disabled{opacity:.45}.mail-unavailable{display:block;margin-top:8px!important;color:#d9a46d!important}@media(max-width:900px){.email-form{grid-template-columns:1fr 1fr}.email-form button{width:100%}}
-.title-manager{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,auto);align-items:center;gap:10px;margin-top:14px;padding:14px;border:1px solid #6a4a91;background:#100b1c}.title-manager-heading{display:flex;grid-column:1/-1;align-items:center;justify-content:space-between;gap:10px}.title-manager-heading button{flex:0 0 auto;margin-left:auto}.title-manager b,.title-manager span{display:block}.title-manager-description{color:#9a8aaa;font-size:14px;line-height:1.6}.title-manager-controls{display:grid;grid-template-columns:minmax(180px,260px) auto;gap:10px;justify-self:end}.title-manager select,.title-manager button{padding:10px;border:1px solid #8062a8;background:#090611;color:#eee2ff;font-weight:900}.title-manager button{border-color:#d5af55;background:#33260c;color:#f1d67d}.title-manager button:disabled{opacity:.45}.title-manager em{justify-self:end;color:#8c7d9d;font-size:14px;font-style:normal}@media(max-width:760px){.title-manager{grid-template-columns:1fr}.title-manager-heading{grid-column:1;flex-wrap:wrap}.title-manager-controls{width:100%;grid-template-columns:minmax(0,1fr) auto;justify-self:stretch}.title-manager em{justify-self:start}}@media(max-width:420px){.title-manager-heading button{width:100%;margin-left:0}.title-manager-controls{grid-template-columns:1fr}.title-manager-controls button{width:100%}}
+.title-manager{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,auto);align-items:center;gap:10px;margin-top:14px;padding:14px;border:1px solid #6a4a91;background:#100b1c}.title-manager-heading{display:flex;grid-column:1/-1;align-items:center;justify-content:space-between;gap:10px}.title-manager-heading button{flex:0 0 auto;margin-left:auto}.title-manager b,.title-manager span{display:block}.title-manager-description{color:#9a8aaa;font-size:14px;line-height:1.6}.title-manager-controls{display:grid;grid-template-columns:minmax(180px,260px) auto;gap:10px;justify-self:end}.title-manager select,.title-manager button{padding:10px;border:1px solid #8062a8;background:#090611;color:#eee2ff;font-weight:900}.title-manager button{border-color:#d5af55;background:#33260c;color:#f1d67d}.title-manager button:disabled{opacity:.45}.title-manager em{justify-self:end;color:#8c7d9d;font-size:14px;font-style:normal}@media(max-width:700px){.title-manager{grid-template-columns:1fr}.title-manager-heading{grid-column:1;flex-wrap:wrap}.title-manager-controls{width:100%;grid-template-columns:minmax(0,1fr) auto;justify-self:stretch}.title-manager em{justify-self:start}}@media(max-width:420px){.title-manager-heading button{width:100%;margin-left:0}.title-manager-controls{grid-template-columns:1fr}.title-manager-controls button{width:100%}}
 .rank-links{display:flex;align-items:center;gap:9px}.rank-links button{padding:8px 11px;border:1px solid #a9873f;background:#261d0e;color:#f0d477;font-size:14px;font-weight:900}
+.performance-panel{margin:0 0 12px;padding:18px;border:1px solid #36525a;background:linear-gradient(135deg,#101a23,#0a1016)}.performance-panel>header,.master-records>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}.performance-panel h2{margin:4px 0 0}.performance-panel>header small{color:#55c6cd;font-size:12px;font-weight:900;letter-spacing:.12em}.performance-panel>header span,.master-records>header span{color:#77868b;font-size:12px}.side-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:12px}.side-stats article{padding:11px;border:1px solid #304047;background:linear-gradient(135deg,#101a23,#091116)}.side-stats span,.side-stats b{display:block}.side-stats span{color:#7f8e93;font-size:12px}.side-stats b{margin-top:4px;color:#efd375;font-size:14px}.master-records{margin-top:14px;padding-top:13px;border-top:1px solid #304047}.master-records-head,.master-records article{display:grid;grid-template-columns:minmax(180px,1.1fr) repeat(3,minmax(145px,1fr));align-items:center;gap:10px;padding:8px 12px}.master-records-head{margin-top:10px;color:#697980;font-size:11px;font-weight:900}.master-records article{min-height:58px;margin-top:0;border-top:1px solid rgba(235,230,216,.09);background:#0a1217}.master-records article:hover{background:#111c26}.master-record{display:flex!important;align-items:center;gap:9px}.master-record img{box-sizing:border-box;width:42px;height:42px;flex:0 0 42px;border:1px solid #66747b;background:#080d11;object-fit:cover}.master-record>span{display:grid;gap:2px}.master-records article small,.master-records article>span{color:#8d999d;font-size:12px}.master-records article>span>b{color:#f0c86a}.master-records>p{color:#7f8c91;font-size:12px}@media(max-width:820px){.side-stats{grid-template-columns:1fr 1fr}.master-records-head{display:none}.master-records article{grid-template-columns:1fr 1fr;margin-top:7px;border:1px solid #293940}.master-record{grid-column:1/-1}}@media(max-width:520px){.performance-panel{padding:13px}.performance-panel>header{align-items:flex-start;flex-direction:column}.master-records article{grid-template-columns:1fr}.master-record{grid-column:auto}.master-record img{width:36px;height:36px;flex-basis:36px}}
 .username-change-gate{position:fixed;z-index:1000;inset:0;display:grid;place-items:center;padding:18px;background:#020609e8;backdrop-filter:blur(8px)}.username-change-card{width:min(520px,100%);padding:26px;border:1px solid #9f7d36;background:#0d151b;color:#edf0ed;box-shadow:0 24px 80px #000}.username-change-card>small{color:#54c5cc;font-weight:900;letter-spacing:.14em}.username-change-card h2{margin:8px 0 10px;font-size:24px}.username-change-card>p{color:#99a5a8;line-height:1.7}.username-change-card>b{display:block;padding:10px 12px;border-left:3px solid #d7b75d;background:#211b0f;color:#f0d77f}.username-change-card label{display:block;margin-top:16px;font-weight:900}.username-change-card input{display:block;width:100%;box-sizing:border-box;margin-top:7px;padding:12px;border:1px solid #53626a;background:#070d11;color:#fff}.username-change-card label span{display:block;margin-top:5px;color:#77878c;font-size:13px;font-weight:500}.username-change-card>div{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}.username-change-card .primary{margin:0}.username-change-error{padding:9px 11px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}
-@media(max-width:760px){.rank-overview>header{align-items:flex-start;flex-direction:column;gap:10px}.rank-links{width:100%;justify-content:space-between}}
+@media(max-width:700px){.rank-overview>header{align-items:flex-start;flex-direction:column;gap:10px}.rank-links{width:100%;justify-content:space-between}}
+@media(max-width:520px){.profile-page{padding:16px 12px 42px}.profile-page>header small{font-size:11px}.profile-page>header h1{margin:3px 0;font-size:25px}.profile-page>header p{font-size:12px}.identity{grid-template-columns:52px 1fr;gap:12px;margin-top:14px;padding:14px}.avatar{width:48px;height:48px;font-size:20px}.identity small,.identity span{font-size:12px}.identity h2{margin:3px 0;font-size:19px}.record-chip{padding:10px}.record-chip b,.stats b{font-size:18px}.stats{gap:8px;margin:9px 0}.stats article{padding:12px}.stats span{font-size:12px}.panel{padding:15px}.panel h2{font-size:16px}.panel header span,.panel label,.switch-row span,.links span{font-size:12px}.panel label{margin:14px 0}.links a{padding:12px 2px}.session-manager,.rename-manager,.email-manager{margin-top:14px;padding-top:13px}.session-manager p,.session-row span,.session-row code,.email-manager p,.rename-manager p{font-size:12px}}
+.rename-manager{grid-column:1/-1;margin-top:18px;border-top:1px solid #35424a;padding-top:16px}.rename-manager>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.rename-manager h3{margin:0;font-size:14px}.rename-manager p{margin:4px 0;color:#7f8c91;font-size:14px}.rename-manager>header>span{padding:5px 8px;border:1px solid #806a32;background:#211a0b;color:#e6cc83;font-size:13px;font-weight:900;white-space:nowrap}.rename-form{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:8px}.rename-form label{margin:12px 0 0}.rename-form textarea{box-sizing:border-box;display:block;width:100%;margin-top:8px;padding:10px;border:1px solid #4b5860;background:#080e13;color:#fff;resize:vertical}.rename-form button{padding:10px;border:1px solid #caaa55;background:#30240c;color:#f2d77c;font-weight:900}.rename-form button:disabled{opacity:.45}.rename-request-status{display:grid;gap:4px;margin-top:12px;padding:10px;border-left:3px solid #b8953e;background:#211b0e}.rename-request-status span,.rename-request-status small{color:#aeb6b5;font-size:14px}.rename-request-status.approved{border-color:#52bd8b;background:#10251c}.rename-request-status.rejected{border-color:#bb5861;background:#291217}.rename-notice{padding:9px 11px;border-left:3px solid #d96b72;background:#281217;color:#f0a4aa!important}@media(max-width:900px){.rename-form{grid-template-columns:1fr 1fr}.rename-form.request{grid-template-columns:1fr}.rename-form button{width:100%}}@media(max-width:560px){.rename-manager>header{flex-direction:column}.rename-form{grid-template-columns:1fr}}
+.profile-quick-actions{display:none}.master-records>summary,.session-manager>summary{list-style:none;cursor:pointer}.master-records>summary::-webkit-details-marker,.session-manager>summary::-webkit-details-marker{display:none}.master-records>summary{display:flex;align-items:flex-end;justify-content:space-between;gap:12px}.session-manager>summary{display:flex;align-items:center;justify-content:space-between;gap:12px}.session-manager>summary>span{color:#d8bc69;font-size:12px}.session-manager>.session-actions{display:flex;justify-content:flex-end;margin-top:10px}
+@media(max-width:700px){
+  .profile-quick-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:9px}.profile-quick-actions button,.profile-quick-actions a{display:grid;min-height:var(--l12-site-hit,44px);place-items:center;padding:7px;border:1px solid #43525a;background:#0d161c;color:#dce2df;font-size:12px;font-weight:900;text-align:center;text-decoration:none}.profile-quick-actions button.on{border-color:#58c398;color:#7ae0b5}
+.performance-panel{padding:12px}.performance-panel>header{align-items:flex-start}.side-stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .master-records>summary{min-height:44px;align-items:center}.master-records>summary span{max-width:58%;text-align:right}.master-records:not([open])> :not(summary){display:none}
+  .session-manager>summary{min-height:44px}.session-manager:not([open])> :not(summary){display:none}.session-manager>.session-actions{width:100%}.session-manager>.session-actions button{min-height:44px;flex:1}
+  .account-panel>summary,.switch-row button,.rank-links button,.title-manager button,.title-manager select{min-height:var(--l12-site-hit,44px)}
+}
+.season-history{min-width:0;margin:12px 0;padding:20px;border:1px solid #35424a;background:#101821;overflow-x:hidden}.season-history>header{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:12px;border-bottom:1px solid #35424a}.season-history>header small{color:#52c3ca;font:900 14px monospace;letter-spacing:.16em}.season-history>header h2{margin:4px 0 0}.season-history>header>span,.season-history>p{color:#7e8b91;font-size:14px}.season-history-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.season-history-list>article{min-width:0;padding:14px;border:1px solid #4d3470;background:#100c1c}.season-history-list>article>header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.season-history-list>article>header div{min-width:0}.season-history-list>article>header b,.season-history-list>article>header span{display:block;overflow-wrap:anywhere}.season-history-list>article>header>div>b{color:#eadbff}.season-history-list>article>header>div>span{margin-top:4px;color:#756b7e;font-size:12px}.season-history-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:12px}.season-history-facts>span{min-width:0;padding:8px;border:1px solid #37284a;color:#8f80a2;font-size:12px;overflow-wrap:anywhere}.season-history-facts b{display:block;margin-top:3px;color:#ece5f4;font-size:14px}
+.season-history-list{display:block;min-width:0}.season-history-head,.season-history-list>article{display:grid;grid-template-columns:minmax(128px,1.35fr) minmax(94px,1fr) minmax(54px,.6fr) minmax(72px,.8fr) minmax(74px,.8fr) minmax(64px,.7fr) minmax(78px,.8fr) minmax(180px,2fr);align-items:center;gap:8px}.season-history-head{padding:9px 12px;color:#8f80a2;font-size:12px;font-weight:900}.season-history-list>article{margin-top:6px;padding:10px 12px}.season-history-list>article>span{min-width:0;overflow-wrap:anywhere;font-size:13px}.season-history-list>article>span:first-child{font-weight:900}.season-history-list>article small{display:block;margin-top:3px;color:#a696b8;font-size:12px;font-weight:500}.season-history-titles{display:flex;flex-wrap:wrap;align-items:center;gap:4px}.season-history-titles :deep(.ranked-identity-badge){max-width:100%}
+@media(max-width:1050px){.season-history-head{display:none}.season-history-list>article{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.season-history-list>article>span[data-label]::before{content:attr(data-label);display:block;margin-bottom:5px;color:#8f80a2;font-size:11px;font-weight:900}.season-history-list>article>span[data-label="称号"]{grid-column:1/-1}}
+@media(max-width:700px){.season-history{padding:14px}.season-history>header{align-items:flex-start;flex-direction:column}.season-history-list>article{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:12px}.season-history-titles{align-content:start}}
+.ranked-season-panel{min-width:0;margin-top:12px;border:1px solid #6330a0;background:#101821;overflow:hidden}
+.ranked-season-panel>.rank-overview{min-width:0;margin:0;border:0;border-bottom:1px solid #503078}
+.ranked-season-panel>.statistics-range-panel{min-width:0;margin:0;border:0;border-bottom:1px solid #35424a;background:#101821}
+.ranked-season-panel .rank-body{grid-template-columns:repeat(4,minmax(0,1fr))}
+.ranked-season-panel .rank-body article{min-width:0;overflow-wrap:anywhere}
+.ranked-season-panel>.season-stats{min-width:0;margin:0;padding:14px 20px;border-bottom:1px solid #35424a;background:#101821;grid-template-columns:repeat(4,minmax(0,1fr))}
+.ranked-season-panel>.season-history{min-width:0;margin:0;border:0;background:#101821}
+@media(max-width:700px){.ranked-season-panel>.rank-overview{padding:14px}.ranked-season-panel>.season-stats{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px}.ranked-season-panel>.season-history{padding:14px}}
+.penalty-history-shell{min-width:0;margin:12px 0;border:1px solid #4f5e65;background:#111b24}.penalty-history-shell>summary{min-height:44px;padding:12px 18px;cursor:pointer;color:#d8bc69;font-weight:900}.penalty-history-shell>.penalty-history{margin:0;border:0;border-top:1px solid #4f5e65}
 </style>
+

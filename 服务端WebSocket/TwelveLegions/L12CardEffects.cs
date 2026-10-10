@@ -14,7 +14,8 @@ public sealed partial class L12GameEngine
     };
 
     private static bool HasImmediateEffect(L12CardInstance card, string trigger)
-        => L12VerifiedAtomicPrograms.Find(card.CardId, trigger) is not null
+        => trigger == "attack" && card.HasShock
+            || L12VerifiedAtomicPrograms.Find(card.CardId, trigger) is not null
             || (trigger == "enter" ? ImmediateEnterCards.Contains(card.CardId) || HasS1ExtendedImmediateEffect(card.CardId, trigger)
                 || HasS2UniversalImmediateEffect(card.CardId, trigger)
                 || HasS2FactionImmediateEffect(card.CardId, trigger)
@@ -31,20 +32,77 @@ public sealed partial class L12GameEngine
         AddEvent("effect", playerIndex, $"{card.Name} 获得〈全军出击〉赋予的冲锋", card);
     }
 
-    private void ResolveEntryContinuousEffects(int playerIndex, L12CardInstance card)
+    private const string ThorGrantedEntryCharge = "thorGrantedEntryCharge";
+
+    private L12TriggerCandidate? BuildThorGrantedEntryChargeCandidate(int playerIndex, L12CardInstance card)
     {
         var player = State.Players[playerIndex];
-        if (card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard")
-            && player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}"))
+        if (card.CardType != "legion" || !L12StructuredCardRules.HasFaction(player, card, "asgard")
+            || !player.UsedAbilities.Contains($"s2-thor-charge:{State.TurnSerial}")) return null;
+        const string effectText = "登场时 获得冲锋。";
+        return new L12TriggerCandidate
+        {
+            CandidateId = $"trigger-{++State.TriggerBatchSequence}",
+            Controller = playerIndex,
+            SourceInstanceId = card.InstanceId,
+            SourceCardId = card.CardId,
+            SourceName = card.Name,
+            Trigger = "enter",
+            Text = "雷神索尔赋予的【登场时】冲锋效果",
+            SourceSnapshot = CaptureLastKnownSourceSnapshot(card),
+            Data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [ThorGrantedEntryCharge] = "true",
+                ["grantedByCardId"] = "S02-03M1",
+                ["triggerEffectText"] = effectText,
+                ["stackText"] = effectText,
+            },
+        };
+    }
+
+    private bool TryResolveThorGrantedEntryCharge(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault(ThorGrantedEntryCharge) != "true") return false;
+        var card = FindOnField(State.Players[item.Controller], item.SourceInstanceId, out _, out _);
+        if (card is null)
+            AddEvent("effect-noop", item.Controller,
+                $"〈{item.SourceName}〉已离开战场，雷神索尔赋予的冲锋未生效");
+        else
         {
             card.HasCharge = true;
-            AddEvent("effect", playerIndex, $"{card.Name}获得雷神索尔赋予的冲锋", card);
+            AddEvent("effect", item.Controller, $"{card.Name}获得雷神索尔赋予的冲锋", card);
         }
+        FinishStackItem(item);
+        return true;
     }
 
     private void ResolveCardEffect(L12StackItem item)
     {
+        if (TryResolveThorGrantedEntryCharge(item)) return;
+        if (item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
+        {
+            var status = item.Data.GetValueOrDefault("effectResultStatus");
+            AddEvent(status switch
+                {
+                    "skipped" => "effect-noop",
+                    "declined" => "effect-declined",
+                    _ => "effect-failed",
+                }, item.Controller,
+                item.Data.GetValueOrDefault("effectFailureReason")
+                    ?? (status == "skipped"
+                        ? $"〈{item.SourceName}〉发动时没有合法处理对象"
+                        : $"〈{item.SourceName}〉已声明的对象或费用条件在结算前失效"));
+            FinishStackItem(item);
+            return;
+        }
         if (TryResolveTrialAdvanceEffect(item)) return;
+        if (item.Trigger == "attack"
+            && item.Data.GetValueOrDefault("shockApplied") != "true"
+            && FindSource(item) is { HasShock: true } shockSource)
+        {
+            ApplyS2Shock(item, shockSource);
+            item.Data["shockApplied"] = "true";
+        }
         // 复合能力拆出的后续独立段已经由前一段指定 atomicFlow；若再次从卡牌根程序
         // 开始执行，会把该 flow 覆盖回第一段并重复提示。后续段直接进入结构化复合路由。
         if (item.Data.GetValueOrDefault("atomicContinuation") != "true"
@@ -54,6 +112,7 @@ public sealed partial class L12GameEngine
 
     private void ResolveStructuredCompositeFlow(L12StackItem item)
     {
+        if (TryResolveOpponentHandDiscardTrigger(item)) return;
         if (TryResolveStarterRemainingEffect(item)) return;
         if (TryResolveStarterTargetedEffect(item)) return;
         switch (item.Trigger)
@@ -66,8 +125,18 @@ public sealed partial class L12GameEngine
             case "death": ResolveDeathEffect(item); break;
             case "leave": ResolveLeaveEffect(item); break;
             case "after-attack": ResolveAfterAttackEffect(item); break;
+            case "after-kill": ResolveAfterAttackEffect(item); break;
             case "after-damage": ResolveS1FactionAfterDamage(item); break;
             case "active": ResolveActiveEffect(item); break;
+            case "master-damaged": ResolveActiveEffect(item); break;
+            case "master-damaged-by-effect": ResolveActiveEffect(item); break;
+            case "friendly-ranged-death": ResolveActiveEffect(item); break;
+            case "friendly-round-table-enter": ResolveActiveEffect(item); break;
+            case "friendly-legion-moves": ResolveActiveEffect(item); break;
+            case "friendly-back-to-front": ResolveActiveEffect(item); break;
+            case "friendly-front-to-back": ResolveActiveEffect(item); break;
+            case "master-legion-returned": ResolveActiveEffect(item); break;
+            case "morale-returned-to-zero": ResolveActiveEffect(item); break;
             case "reaction": ResolveS1ReactionEffect(item); break;
             case "wisdom-reward": ResolveWisdomCodexReward(item); break;
             case "s2-reaction": ResolveS2CounterEffect(item); break;
@@ -77,26 +146,33 @@ public sealed partial class L12GameEngine
             case "prayer-private": ResolvePrayerPrivatePreview(item); break;
             case "discard-trigger": ResolveS2DiscardTrigger(item); break;
             case "forge-ready-after-kill": ResolveForgeReadyAfterKill(item); break;
-            case "morrigan-enemy-death": ResolveS2MorriganEnemyDeath(item); break;
             case "nephthys-own-death": ResolveS2NephthysOwnDeath(item); break;
             case "master-morale-return": ResolveS2MasterMoraleReturn(item); break;
             case "medjed-master-damage": ResolveMedjedMasterDamageReaction(item); break;
             case "trojan-after-attack": ResolveS2TrojanHorseAfterAttack(item); break;
+            case "trojan-expiry": ResolveS2TrojanHorseExpiry(item); break;
             case "trial-complete": ResolveTrialCompletionTriggerEffect(item); break;
             case "return-library-top": ResolveReturnToLibraryTopEffect(item); break;
             default: FinishStackItem(item); break;
         }
     }
 
+    private static string NormalizeAtomicFlowKey(string value)
+        => value == "\u5819\u706D" ? "湮灭" : value;
+
     private static string AtomicFlowKey(L12StackItem item, L12CardInstance card)
-        => item.Data.GetValueOrDefault("atomicFlow") ?? card.Name;
+        => NormalizeAtomicFlowKey(item.Data.GetValueOrDefault("atomicFlow") ?? card.Name);
 
     private static string AtomicFlowKey(L12StackItem item)
-        => item.Data.GetValueOrDefault("atomicFlow") ?? item.SourceName;
+        => NormalizeAtomicFlowKey(item.Data.GetValueOrDefault("atomicFlow") ?? item.SourceName);
 
     private L12CardInstance? FindSource(L12StackItem item)
     {
         var player = State.Players[item.Controller];
+        // 孙悟空等主宰可能临时以独立实例处于战场。先取权威区域实例，再回退到
+        // 主宰区的虚拟来源，避免“印刷为主宰”覆盖其当前军团状态。
+        if (FindAuthoritativeCard(item.SourceInstanceId) is { } authoritative)
+            return authoritative;
         if (item.SourceCardId == player.MasterId)
             return CreateCard(player.MasterId, item.SourceInstanceId);
         if (item.SourceInstanceId == $"faction-{item.Controller}" && !string.IsNullOrWhiteSpace(item.SourceCardId))
@@ -104,7 +180,7 @@ public sealed partial class L12GameEngine
         foreach (var candidate in State.Players)
             if (candidate.Morale.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId) is { } morale)
                 return CreateCard(morale.IsGodPower ? "S02-05C1" : morale.CardId, morale.InstanceId);
-        return FindAuthoritativeCard(item.SourceInstanceId) ?? item.SourceSnapshot;
+        return item.SourceSnapshot;
     }
 
     private void ResolveEnterEffect(L12StackItem item)
@@ -119,12 +195,21 @@ public sealed partial class L12GameEngine
                 target => target.DisasterLevel is 1 or 2, CanReturnMorale(player, 2)); return;
             case "武则天":
             {
-                var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
-                    .Where(target => target is { Tapped: true }).Select(target => target!.InstanceId).ToList();
+                var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+                    .Where(target => target is { Tapped: true }).Cast<L12CardInstance>().ToList();
+                var choices = targets.Select(target => target.InstanceId).ToList();
                 if (!CanReturnMorale(player, 1) || choices.Count == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "optional-targets", "可返还 1 张士气：选择对方最多 2 张休整军团，下个对方重置阶段不能转为活跃",
                     choices, 0, Math.Min(2, choices.Count), "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "wuzetian-lock" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "wuzetian-lock" },
+                        new(card.Name,
+                            $"〈{card.Name}〉的登场时效果可以返还1张士气，令对方至多2张休整军团在下个对方重置阶段不能转为活跃。",
+                            "请选择0至2个合法目标并确认；不选择任何目标即表示不发动，本次不会返还士气。",
+                            L12PromptWaitingAction.TargetSelection,
+                            targets.ToDictionary(target => target.InstanceId,
+                                target => $"选择〈{target.Name}〉作为效果目标；确认后返还1张士气，并锁定所选全部目标的下个重置阶段。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             case "李靖": BeginLiJingEffect(item); return;
@@ -132,7 +217,23 @@ public sealed partial class L12GameEngine
             case "花木兰":
                 if (CanReturnMorale(player, 1))
                     CreatePrompt(item.Controller, "optional", "是否返还 1 张士气，使花木兰获得冲锋？", ["yes", "no"], 1, 1,
-                        "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "mulan-charge" });
+                        "card-effect", item.StackItemId,
+                        data: WithPromptNarrative(
+                            new Dictionary<string, string>
+                            {
+                                ["action"] = "mulan-charge",
+                                ["yes"] = "发动",
+                                ["no"] = "不发动",
+                            },
+                            new(card.Name,
+                                $"〈{card.Name}〉登场后，你可以返还1张士气，使她获得冲锋并能在登场回合进攻。",
+                                "请选择是否发动；选择发动后还需完成士气返还，选择不发动则直接结束这次登场时效果。",
+                                L12PromptWaitingAction.EffectDecision,
+                                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                                {
+                                    ["yes"] = "发动效果并继续返还1张士气；返还完成后，〈花木兰〉获得冲锋。",
+                                    ["no"] = "不返还士气，〈花木兰〉不会因这次登场时效果获得冲锋。",
+                                })));
                 else FinishStackItem(item);
                 return;
             case "服部半藏":
@@ -142,14 +243,23 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return;
             case "稻姬本多小松":
             {
-                var choices = PublicFactionLegions(player, "gaotianyuan").Where(target =>
+                var targets = PublicFactionLegions(player, "gaotianyuan").Where(target =>
                         target.InstanceId != card.InstanceId
                         && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0
-                        && target.Troops <= 5000).Select(target => target.InstanceId).ToArray();
+                        && target.Troops <= 5000).ToArray();
+                var choices = targets.Select(target => target.InstanceId).ToArray();
                 if (choices.Length == 0) { FinishStackItem(item); return; }
                 CreatePrompt(item.Controller, "target", "选择我方前排 1 张其他兵力不高于 5000 的【高天原】军团，本回合兵力 +1000",
                     choices, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "inaihime-buff" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "inaihime-buff" },
+                        new(card.Name,
+                            $"〈{card.Name}〉的登场时效果可以强化我方前排另一张兵力不高于5000的【高天原】军团。",
+                            "请选择1个合法目标；确认后，该军团本回合兵力增加1000。",
+                            L12PromptWaitingAction.TargetSelection,
+                            targets.ToDictionary(target => target.InstanceId,
+                                target => $"选择〈{target.Name}〉；确认后，该军团本回合兵力增加1000。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             }
             case "草薙剑":
@@ -171,8 +281,10 @@ public sealed partial class L12GameEngine
         {
             case "march-buff-effect":
             {
-                var target = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+                var target = DeclaredOwnLegionTarget(item.Controller, targetId);
                 if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, card.Name);
+                else RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
                 var canContinue = CanReturnMorale(player, 2)
                     && PublicLegions(State.Players[1 - item.Controller]).Any(candidate => candidate.Troops <= 6000);
                 if (!canContinue)
@@ -197,6 +309,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被神妙行军击杀");
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场或当前兵力已高于6000");
                 FinishStackItem(item);
                 return;
             }
@@ -207,7 +321,22 @@ public sealed partial class L12GameEngine
             case "peace-negotiation":
                 CreatePrompt(1 - item.Controller, "opponent-confirm", "是否同意〈议和谈判〉？", ["agree", "refuse"], 1, 1,
                     "card-effect", item.StackItemId, isPrivate: false,
-                    data: new Dictionary<string, string> { ["action"] = "peace-talk" });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "peace-talk",
+                            ["agree"] = "同意议和",
+                            ["refuse"] = "拒绝议和",
+                        },
+                        new(card.Name,
+                            $"对方打出〈{card.Name}〉并已先抽取1张牌，现在请求你决定是否同意议和。",
+                            "请选择同意或拒绝；同意后，对方再抽1张牌、你抽1张牌；拒绝后，双方不再抽牌。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["agree"] = "同意议和：对方再抽取1张牌，你抽取1张牌；因此对方本次共抽取2张，你抽取1张。",
+                                ["refuse"] = "拒绝议和：双方不再抽牌；因此对方本次只抽取此前的1张牌，你不抽牌。",
+                            })));
                 return;
             case "草薙剑":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use"
@@ -230,8 +359,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => L12StructuredCardRules.CurrentCostAtMost(target, 7)) is not null)
                     KillTarget(item, targetId!, "被天诛击杀");
-                else AddEvent("effect-cancelled", item.Controller,
-                    "天诛已声明的费用不高于7目标失效；效果取消", card);
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选军团已离场或当前费用已高于7");
                 FinishStackItem(item);
                 return;
             }
@@ -241,7 +370,8 @@ public sealed partial class L12GameEngine
                 var targetId = CompositeDeclared(item, "moraleTarget").SingleOrDefault();
                 var morale = player.Morale.FirstOrDefault(candidate => candidate.InstanceId == targetId && candidate.Tapped);
                 if (morale is not null) ReadyMoraleByEffect(item.Controller, card, morale, "士气因〈花魁的馈赠〉转为活跃");
-                else AddEvent("effect-cancelled", item.Controller, "花魁的馈赠已声明的休整士气目标已失效", card);
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选士气已离开士气区或不再休整");
                 FinishStackItem(item);
                 return;
             }
@@ -308,12 +438,19 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "吕布":
-                if (PublicTriggerDeclared(item, "mode") == "mode:use"
-                    && FindOnField(player, item.SourceInstanceId, out _, out _) is { } lubu)
-                    ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃");
-                else if (PublicTriggerDeclared(item, "mode") == "mode:use")
-                    AddEvent("effect-cancelled", item.Controller,
-                        "吕布在结算时已不在战场；转为活跃段取消，已返还士气不恢复", card);
+                if (PublicTriggerDeclared(item, "mode") == "mode:use")
+                {
+                    var lubu = FindOnField(player, item.SourceInstanceId, out _, out _);
+                    if (lubu is null)
+                    {
+                        AddEvent("effect-cancelled", item.Controller,
+                            "吕布已离开战场，不能因本次效果转为活跃", card);
+                    }
+                    else
+                    {
+                        ReadyCardByEffect(item.Controller, lubu, lubu, "吕布因进攻后效果转为活跃", item);
+                    }
+                }
                 FinishStackItem(item);
                 return;
             case "桂小五郎":
@@ -327,7 +464,7 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return;
             default:
-                if (!TryResolveS1ExtendedAfterAttack(item, card) && !TryResolveS2UniversalAfterAttack(item, card)
+                if (!TryResolveS1ExtendedAfterAttack(item, card)
                     && !TryResolveS2FactionAfterAttack(item, card)) FinishStackItem(item);
                 return;
         }
@@ -362,7 +499,7 @@ public sealed partial class L12GameEngine
     {
         var card = FindSource(item);
         var sourceName = item.Data.GetValueOrDefault("source-name") ?? "效果";
-        if (card is not null) ReadyCardByEffect(item.Controller, card, card, $"{card.Name}因{sourceName}转为活跃");
+        if (card is not null) ReadyCardByEffect(item.Controller, card, card, $"{card.Name}因{sourceName}转为活跃", item);
         FinishStackItem(item);
     }
 
@@ -376,12 +513,38 @@ public sealed partial class L12GameEngine
     private void PromptEnemyLegion(L12StackItem item, string action, string text,
         Func<L12CardInstance, bool> predicate, bool optional)
     {
-        var choices = State.Players[1 - item.Controller].Field.SelectMany(row => row)
+        var targets = State.Players[1 - item.Controller].Field.SelectMany(row => row)
             .Where(target => target is not null && !target.Hidden && predicate(target))
-            .Select(target => target!.InstanceId).ToList();
+            .Cast<L12CardInstance>().ToList();
+        var choices = targets.Select(target => target.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
         if (optional) choices.Add("skip");
+        Dictionary<string, string> data = new() { ["action"] = action };
+        if (action is "lubu-kill" or "kusanagi-enter-kill")
+        {
+            var consequences = targets.ToDictionary(target => target.InstanceId,
+                target => action == "lubu-kill"
+                    ? $"选择〈{target.Name}〉；确认后继续返还2张士气，返还完成后击杀该军团。"
+                    : $"选择〈{target.Name}〉；确认后击杀该军团。",
+                StringComparer.OrdinalIgnoreCase);
+            if (optional)
+            {
+                data["skip"] = "不发动";
+                consequences["skip"] = "不返还士气，也不发动这次登场时效果。";
+            }
+            var sourceName = string.IsNullOrWhiteSpace(item.SourceName) ? "卡牌效果" : item.SourceName;
+            data = WithPromptNarrative(data,
+                action == "lubu-kill"
+                    ? new(sourceName,
+                        $"〈{sourceName}〉的登场时效果可以返还2张士气，击杀对方1张天灾等级为1或2的军团。",
+                        "请选择1个合法目标，或选择“不发动”；选择目标后还需完成士气返还。",
+                        L12PromptWaitingAction.TargetSelection, consequences)
+                    : new(sourceName,
+                        $"〈{sourceName}〉的登场时效果必须选择并击杀对方1张费用不高于2的军团。",
+                        "请选择1个合法目标；这个效果不能跳过，确认后将击杀所选军团。",
+                        L12PromptWaitingAction.TargetSelection, consequences));
+        }
         CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId,
-            data: new Dictionary<string, string> { ["action"] = action });
+            data: data);
     }
 }

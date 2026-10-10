@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-hot-deck-independent-pause",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "热门卡组展示与交互优化",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "热门卡组两行轮播现在可分别暂停，鼠标、键盘或触控操作其中一行时不会打断另一行；宽屏卡组展示区域增大约30%，移动端继续保持原有紧凑尺寸。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"
+      ]
+    }
+  ]
+}

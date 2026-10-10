@@ -1,13 +1,27 @@
 namespace TwelveLegions.Server;
 
+internal sealed record L12EffectEventMetadata(
+    string? SceneId,
+    string? AbilityId,
+    string? SegmentId,
+    int? SegmentIndex,
+    int? SegmentCount,
+    string? BranchId,
+    string? BranchLabel,
+    string? ResultStatus);
+
 public sealed partial class L12GameEngine
 {
+    private const string EffectProcessedPublicTargetIdDataKey = "effectProcessedPublicTargetId";
+    private const string EffectProcessedPublicTargetNameDataKey = "effectProcessedPublicTargetName";
     private void AddPresentationEvent(string type, int? playerIndex, string text,
         string producerCardId, string sceneKey, IReadOnlyDictionary<string, string>? values,
         params L12CardInstance[] cards)
     {
         var effectText = ResolveFrozenPresentation(producerCardId, sceneKey, values);
-        AddEventCore(type, playerIndex, text, effectText, cards);
+        var scene = FindEffectPresentationSceneByKey(producerCardId, sceneKey);
+        AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText,
+            BuildEffectEventMetadata(scene, DeclaredStatus(type)), cards);
     }
 
     private void AddPresentationEvent(string type, int? playerIndex, string text,
@@ -22,10 +36,23 @@ public sealed partial class L12GameEngine
         AddPresentationEvent(type, playerIndex, text, producerCardId, sceneKey, values, cards);
     }
 
-    private void AddPresentationEventById(string type, int? playerIndex, string text,
-        string? sceneId, params L12CardInstance[] cards)
+    private void AddPresentationEventByIdWithPlayerLog(string type, int? playerIndex, string text,
+        string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithPlayerLog(type, playerIndex, text,
+            cards.FirstOrDefault()?.CardId, sceneId, playerLogData, cards);
+
+    private void AddPresentationEventByProducerIdWithPlayerLog(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovement(type, playerIndex, text,
+            producerCardId, sceneId, playerLogData, null, cards);
+
+    private void AddPresentationEventByProducerIdWithMovement(string type, int? playerIndex, string text,
+        string? producerCardId, string? sceneId, IReadOnlyDictionary<string, string>? playerLogData,
+        L12PlayerBattlefieldMovement? movement, params L12CardInstance[] cards)
     {
-        var configured = FindEffectPresentationScene(cards.FirstOrDefault()?.CardId, sceneId);
+        var configured = FindEffectPresentationScene(producerCardId, sceneId);
         var frozen = string.IsNullOrWhiteSpace(sceneId)
             ? null
             : State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
@@ -35,7 +62,9 @@ public sealed partial class L12GameEngine
         // historical event shape.  Legacy scenes keep their previous frozen-only behavior;
         // only the new Flow scenes contribute a default EffectText without an override.
         var effectText = frozen?.Text
-            ?? (configured?.Flow is not null ? configured.DefaultText : null);
+            ?? (configured is { EventType: not "effect" } || configured?.Flow is not null
+                ? configured?.DefaultText
+                : null);
         if (configured is { EventType: "effect", Flow: null }
             && _catalog.AtomicEffects.Find(configured.CardId)?.Abilities.Any(ability =>
                 ability.Presentations.Any(scene => scene.SceneId == configured.SceneId)
@@ -46,7 +75,257 @@ public sealed partial class L12GameEngine
             // chosen branch may enter the card animation queue.
             type = "effect-announced";
         }
-        AddEventCore(type, playerIndex, text, effectText, cards);
+        AddEventCoreWithCombat(type, playerIndex, text, effectText,
+            BuildEffectEventMetadata(configured, DeclaredStatus(type)),
+            playerLogData?.GetValueOrDefault("playerLogGroupId"),
+            playerLogData?.GetValueOrDefault("playerLogTiming"), null, null, null, movement, cards);
+    }
+
+    private void AddPresentationEventById(string type, int? playerIndex, string text,
+        string? sceneId, params L12CardInstance[] cards)
+        => AddPresentationEventByIdWithPlayerLog(type, playerIndex, text, sceneId, null, cards);
+
+    private void AddPresentationBattlefieldMovementEventById(string type, int? playerIndex, string text,
+        string? sceneId, L12PlayerBattlefieldMovement movement, params L12CardInstance[] cards)
+        => AddPresentationEventByProducerIdWithMovement(type, playerIndex, text,
+            cards.FirstOrDefault()?.CardId, sceneId, null, movement, cards);
+
+    private void AddEffectResultEvent(L12StackItem item, string resultStatus)
+    {
+        if (item.Data.GetValueOrDefault("effectResultPublished") == "true") return;
+        var source = FindSource(item) ?? item.SourceSnapshot
+            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        var sceneId = item.Data.GetValueOrDefault("presentationSceneId");
+        if (string.IsNullOrWhiteSpace(sceneId))
+        {
+            var fallback = ResolveEffectPresentationText(source, item.Trigger, item.Text, item.Data);
+            sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, fallback);
+        }
+        var configured = FindEffectPresentationScene(source.CardId, sceneId);
+        // Successful legacy effects already have public outcome events.  Unsuccessful effects
+        // still need one authoritative terminal fact so the player log can explain why the
+        // declared action produced no result.
+        if ((configured is null || configured.Flow is null) && resultStatus == "resolved"
+            && (!State.PresentationFactProtocolEnabled
+                || item.PresentationFactSequences is not { Count: > 0 })) return;
+        item.Data["effectResultPublished"] = "true";
+        item.Data["effectResultStatus"] = resultStatus;
+        var effectText = State.EffectPresentationSnapshot?.FirstOrDefault(scene =>
+                string.Equals(scene.SceneId, sceneId, StringComparison.Ordinal))?.Text
+            ?? configured?.DefaultText;
+        var summary = resultStatus switch
+        {
+            "negated" => $"〈{item.SourceName}〉的效果被无效",
+            "skipped" => $"〈{item.SourceName}〉没有合法处理对象，跳过该效果段",
+            "failed" => $"〈{item.SourceName}〉的效果未能完成结算",
+            "declined" => $"〈{item.SourceName}〉的效果选择不发动",
+            _ => $"〈{item.SourceName}〉的效果结算完成",
+        };
+        // Both values were committed by the resolver before this terminal event.  The cost
+        // receipt is already public in the response window. A resolver must explicitly
+        // register its player-facing reason before it can appear in this result event.
+        var publicReason = resultStatus is "failed" or "skipped" or "declined"
+            ? item.Data.GetValueOrDefault("effectPlayerReason") : null;
+        var paidCost = item.Data.GetValueOrDefault(PaidCostSummaryDataKey);
+        var processedTargetId = item.Data.GetValueOrDefault(EffectProcessedPublicTargetIdDataKey);
+        var processedTargetName = item.Data.GetValueOrDefault(EffectProcessedPublicTargetNameDataKey);
+        if (string.IsNullOrWhiteSpace(processedTargetId) || string.IsNullOrWhiteSpace(processedTargetName))
+        {
+            processedTargetId = null;
+            processedTargetName = null;
+        }
+        var outcome = new[]
+        {
+            string.IsNullOrWhiteSpace(publicReason) ? null : $"原因：{publicReason}",
+            string.IsNullOrWhiteSpace(paidCost) ? null : $"已支付费用：{paidCost}",
+        }.Where(value => value is not null).ToArray();
+        // Existing terminal facts remain intact for covered cards, but their additional
+        // receipt never carries private payment/choice information to a public viewer.
+        var semantic = source.Hidden || (outcome.Length == 0 && processedTargetId is null)
+            ? null : new L12PlayerLogSemantic(
+                "效果结果", string.Join("；", outcome), source.InstanceId, source.Name,
+                processedTargetId, processedTargetName);
+        AddEventCoreWithPlayerLogSemantic("effect-result", item.Controller, summary, effectText,
+            BuildEffectEventMetadata(configured, resultStatus)
+                ?? new L12EffectEventMetadata(null, null, null, null, null, null, null, resultStatus),
+            item.Data.GetValueOrDefault("playerLogGroupId"),
+            item.Data.GetValueOrDefault("playerLogTiming") ?? item.Trigger, null, semantic, source);
+        AttachPresentationFactsToLastEvent(item);
+    }
+
+    /// <summary>
+    /// 区分“发动时本来没有对象”与“已声明对象在逆结算后失去合法性”。前者是必发
+    /// 效果的空处理，后者是一次真实的结算失败；两者都不回退已支付费用。
+    /// </summary>
+    private static void RecordPlayerSafeEffectReason(L12StackItem item, string? playerReason)
+    {
+        // A producer must opt in with a reason that is safe for every public recipient.
+        // Never derive one from an event's text or whichever item happens to top the stack.
+        if (!string.IsNullOrWhiteSpace(playerReason))
+            item.Data["effectPlayerReason"] = playerReason;
+    }
+
+    private void RecordTargetSettlementFailure(L12StackItem item, string? declaredTarget, string reason,
+        string? playerReason = null)
+    {
+        var wasDeclared = !string.IsNullOrWhiteSpace(declaredTarget)
+            && !declaredTarget.StartsWith("mode:", StringComparison.OrdinalIgnoreCase);
+        item.Data["effectResultStatus"] = wasDeclared ? "failed" : "skipped";
+        RecordPlayerSafeEffectReason(item, playerReason);
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        AddEvent(wasDeclared ? "effect-failed" : "effect-noop", item.Controller,
+            wasDeclared
+                ? $"〈{item.SourceName}〉已声明的对象在逆结算后不再符合条件：{reason}"
+                : $"〈{item.SourceName}〉发动时没有合法处理对象：{reason}",
+            source is null ? [] : [source]);
+    }
+
+    /// <summary>
+    /// 用于不存在“已声明目标”、但结算所必需的权威来源或区域事务已失效的情形。
+    /// 这不是玩家选择不发动，也不是效果被无效；已进入堆叠的本段应明确结束为失败。
+    /// </summary>
+    private void RecordResolutionFailure(L12StackItem item, string reason, string? playerReason = null)
+    {
+        item.Data["effectResultStatus"] = "failed";
+        RecordPlayerSafeEffectReason(item, playerReason);
+        var source = FindSource(item) ?? item.SourceSnapshot;
+        AddEvent("effect-failed", item.Controller,
+            $"〈{item.SourceName}〉结算时无法继续：{reason}", source is null ? [] : [source]);
+    }
+
+    /// <summary>
+    /// 统一结算“选择最多 N 个对方军团”的独立目标。未声明对象是必发效果的空处理；
+    /// 已声明对象全部失效是整段失败；仅部分失效时，仍合法的对象继续结算，并留下
+    /// 可供回放与排错使用的公开说明。
+    /// </summary>
+    private int ResolveDeclaredEnemyTargets(L12StackItem item, IEnumerable<string> declaredTargets,
+        Func<L12CardInstance, bool>? predicate, Action<string, L12CardInstance> resolve,
+        string noTargetReason, string invalidTargetReason)
+    {
+        var declared = declaredTargets
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var resolved = 0;
+        foreach (var targetId in declared)
+        {
+            var target = DeclaredEnemyTarget(item.Controller, targetId, predicate);
+            if (target is null) continue;
+            resolve(targetId, target);
+            resolved++;
+        }
+
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? noTargetReason : invalidTargetReason);
+        else if (resolved < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved}个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return resolved;
+    }
+
+    private bool ResolveDeclaredEnemyKillTargets(L12StackItem item, IEnumerable<string> declaredTargets,
+        Func<L12CardInstance, bool>? predicate, string reason,
+        string noTargetReason, string invalidTargetReason)
+    {
+        var declared = declaredTargets
+            .Where(id => !string.IsNullOrWhiteSpace(id) && !id.StartsWith("mode:", StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var legal = declared.Where(targetId => DeclaredEnemyTarget(item.Controller, targetId, predicate) is not null)
+            .ToArray();
+        if (legal.Length == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared),
+                declared.Length == 0 ? noTargetReason : invalidTargetReason);
+        else if (legal.Length < declared.Length)
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - legal.Length}个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        return ResolveSequentialEffectKills(item, legal, reason);
+    }
+
+    // 两个预先声明的独立去向，组合现有回手/回库操作；不是固定数量整组回库原子。
+    // 每次移动前读取当前墓地区域与条件，不能用另一合法对象替代失效对象。
+    private void ResolveDeclaredGraveDestinations(L12StackItem item, string handId, string bottomId,
+        Func<L12CardInstance, bool>? predicate = null)
+    {
+        if (string.IsNullOrWhiteSpace(handId) || string.IsNullOrWhiteSpace(bottomId)
+            || string.Equals(handId, bottomId, StringComparison.OrdinalIgnoreCase))
+        {
+            RecordResolutionFailure(item, "墓地对象的去向声明不完整或重复");
+            return;
+        }
+        var player = State.Players[item.Controller];
+        var resolved = 0;
+        foreach (var (id, toHand) in new[] { (handId, true), (bottomId, false) })
+        {
+            var card = player.Graveyard.FirstOrDefault(card => card.InstanceId == id
+                && CanEnterHandOrLibrary(card) && (predicate?.Invoke(card) ?? true));
+            if (card is null) continue;
+            if (toHand)
+            {
+                player.Graveyard.Remove(card);
+                PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
+                    $"〈{card.Name}〉从墓地公开加入手牌", $"{card.Name}从墓地加入手牌", item);
+            }
+            else
+            {
+                MoveGraveToLibraryBottom(player, [card]);
+            }
+            resolved++;
+        }
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, $"{handId}|{bottomId}", "所选墓地对象均不再符合条件");
+        else if (resolved < 2)
+            AddEvent("effect", item.Controller, $"〈{item.SourceName}〉有1个已声明对象在逆结算后失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+    }
+
+    // 已声明的单个墓地回手对象：所有续接均在结算期重新读取墓地、资格及区域替代限制。
+    // 不存在或失效时不补选，并由同一结果协议写出 failed。
+    private bool TryMoveDeclaredGraveCardToHand(L12StackItem item, string? targetId,
+        Func<L12PlayerState, L12CardInstance, bool> isLegal, string successText, string failureReason)
+    {
+        var player = State.Players[item.Controller];
+        var target = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId && isLegal(player, card));
+        if (target is null)
+        {
+            RecordTargetSettlementFailure(item, targetId, failureReason);
+            return false;
+        }
+
+        player.Graveyard.Remove(target);
+        PubliclyRevealThenAddCardToHandByEffect(player, target, "graveyard",
+            $"〈{target.Name}〉从墓地公开加入手牌", successText, item);
+        return true;
+    }
+
+    private static string? DeclaredStatus(string type)
+        => type is "effect-trigger" or "effect-activation" or "effect-response" ? "declared" : null;
+
+    private static L12EffectEventMetadata? BuildEffectEventMetadata(
+        L12EffectPresentationScene? scene, string? resultStatus)
+    {
+        if (scene is null) return null;
+        var hasBranch = !string.IsNullOrWhiteSpace(scene.BranchLabel)
+            || scene.RequiredChoices is { Count: > 0 };
+        return new L12EffectEventMetadata(
+            scene.SceneId,
+            scene.AbilityId,
+            EffectSegmentIdFor(scene),
+            scene.SegmentIndex,
+            scene.SegmentCount,
+            hasBranch ? scene.SceneId : null,
+            scene.BranchLabel,
+            resultStatus);
+    }
+
+    private static string? EffectSegmentIdFor(L12EffectPresentationScene scene)
+    {
+        if (scene.SegmentIndex is null) return null;
+        var branchMarker = scene.Trigger.IndexOf(":branch-", StringComparison.Ordinal);
+        return branchMarker < 0 ? scene.Trigger : scene.Trigger[..branchMarker];
     }
 
     internal string? ResolveFrozenPresentation(string cardId, string sceneKey,
@@ -79,8 +358,17 @@ public sealed partial class L12GameEngine
             System.Diagnostics.Trace.TraceError(
                 $"Effect presentation branch ambiguity failed closed for {source.CardId}/{trigger}.");
 
+        if (L12SingleSegmentResponseEffectPresentations.TryResolveScene(card, trigger,
+                out var singleResponseSceneId))
+            return singleResponseSceneId;
+        if (L12SingleSegmentTriggeredEffectPresentations.TryResolveScene(card, trigger,
+                out var singleTriggeredSceneId))
+            return singleTriggeredSceneId;
         var candidateAbilities = triggerAbilities;
         var declaredAbilityId = data?.GetValueOrDefault("ability");
+        if (L12SingleSegmentEffectPresentations.TryResolveScene(card, trigger,
+                declaredAbilityId, out var singleSegmentSceneId))
+            return singleSegmentSceneId;
         if (!string.IsNullOrWhiteSpace(declaredAbilityId))
         {
             var direct = candidateAbilities.FirstOrDefault(ability =>
@@ -122,6 +410,14 @@ public sealed partial class L12GameEngine
         else candidate.Data["presentationSceneId"] = sceneId;
     }
 
+    private void RefreshDeclaredPresentationSceneId(L12StackItem item, L12CardInstance source)
+    {
+        var fallback = source.EffectText ?? item.Text;
+        var sceneId = ResolveEffectPresentationSceneId(source, item.Trigger, item.Data, fallback);
+        if (string.IsNullOrWhiteSpace(sceneId)) item.Data.Remove("presentationSceneId");
+        else item.Data["presentationSceneId"] = sceneId;
+    }
+
     private static void DeclarePresentationBranch(Dictionary<string, string> data,
         string flow, string declarationKey, string? publicChoice)
     {
@@ -149,7 +445,11 @@ public sealed partial class L12GameEngine
         var planPrefix = string.IsNullOrWhiteSpace(compositePlan)
             ? null
             : L12EffectPresentationVariants.SceneKeyPrefix(compositePlan);
-        if (planPrefix is null)
+        // An explicit presentation flow is the authoritative public branch identity.  The
+        // runtime trigger may belong to the parent ability while the resolved branch belongs
+        // to a granted child segment (for example Constance's enter choice).  Restricting by
+        // the parent trigger here would make that child scene unreachable.
+        if (planPrefix is null && string.IsNullOrWhiteSpace(data.GetValueOrDefault("presentationFlow")))
         {
             var triggerScoped = card.Abilities.Where(ability => ability.Trigger.Equals(trigger,
                 StringComparison.OrdinalIgnoreCase)).ToArray();
@@ -201,6 +501,16 @@ public sealed partial class L12GameEngine
         if (card is null) return null;
         var matches = card.Abilities.SelectMany(ability => ability.Presentations)
             .Where(scene => string.Equals(scene.SceneId, sceneId, StringComparison.Ordinal))
+            .Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
+    private L12EffectPresentationScene? FindEffectPresentationSceneByKey(string cardId, string sceneKey)
+    {
+        var card = _catalog.AtomicEffects.Find(cardId);
+        if (card is null) return null;
+        var matches = card.Abilities.SelectMany(ability => ability.Presentations)
+            .Where(scene => string.Equals(scene.Trigger, sceneKey, StringComparison.Ordinal))
             .Take(2).ToArray();
         return matches.Length == 1 ? matches[0] : null;
     }

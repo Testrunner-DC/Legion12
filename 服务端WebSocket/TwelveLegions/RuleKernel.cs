@@ -4,15 +4,8 @@ public sealed record L12LibraryResult(bool Success, IReadOnlyList<L12CardInstanc
 
 public static class L12LibraryOps
 {
-    public static L12LibraryResult Draw(L12PlayerState player, int count)
-    {
-        if (count < 0) return new(false, [], "抽牌数量不能为负数");
-        if (player.Library.Count < count) return new(false, [], "牌库数量不足");
-        var cards = player.Library.Take(count).ToArray();
-        player.Library.RemoveRange(0, count);
-        player.Hand.AddRange(cards);
-        return new(true, cards);
-    }
+    public static L12LibraryResult Draw(L12PlayerState player, int count, Action<L12CardInstance>? onMoved = null)
+        => MoveLibraryCardsOneAtATime(player, player.Hand, count, onMoved);
 
     public static L12LibraryResult ViewTop(L12PlayerState player, int count)
     {
@@ -21,13 +14,23 @@ public static class L12LibraryOps
         return new(true, player.Library.Take(count).ToArray());
     }
 
-    public static L12LibraryResult Mill(L12PlayerState player, int count)
+    public static L12LibraryResult Mill(L12PlayerState player, int count, Action<L12CardInstance>? onMoved = null)
+        => MoveLibraryCardsOneAtATime(player, player.Graveyard, count, onMoved);
+
+    private static L12LibraryResult MoveLibraryCardsOneAtATime(L12PlayerState player,
+        List<L12CardInstance> destination, int count, Action<L12CardInstance>? onMoved)
     {
-        if (count < 0) return new(false, [], "弃置数量不能为负数");
-        if (player.Library.Count < count) return new(false, [], "牌库数量不足");
-        var cards = player.Library.Take(count).ToArray();
-        player.Library.RemoveRange(0, count);
-        player.Graveyard.AddRange(cards);
+        if (count < 0) return new(false, [], "操作数量不能为负数");
+        var cards = new List<L12CardInstance>();
+        for (var index = 0; index < count; index++)
+        {
+            if (player.Library.Count == 0) return new(false, cards, "下一次操作时牌库为空");
+            var card = player.Library[0];
+            player.Library.RemoveAt(0);
+            destination.Add(card);
+            cards.Add(card);
+            onMoved?.Invoke(card);
+        }
         return new(true, cards);
     }
 
@@ -36,6 +39,9 @@ public static class L12LibraryOps
 
     public static bool PutOnTop(L12PlayerState player, IEnumerable<L12CardInstance> cards)
         => MoveKnownCards(player, cards, top: true);
+
+    public static bool PutOnTop(L12PlayerState source, L12PlayerState destination, IEnumerable<L12CardInstance> cards)
+        => MoveKnownCards(source, cards, top: true, destination);
 
     public static bool PutOnBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)
         => MoveKnownCards(player, cards, top: false);
@@ -61,7 +67,8 @@ public static class L12LibraryOps
         }
     }
 
-    private static bool MoveKnownCards(L12PlayerState player, IEnumerable<L12CardInstance> cards, bool top)
+    private static bool MoveKnownCards(L12PlayerState player, IEnumerable<L12CardInstance> cards, bool top,
+        L12PlayerState? destination = null)
     {
         var ordered = cards.ToArray();
         if (ordered.Length != ordered.Select(card => card.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count()) return false;
@@ -72,8 +79,9 @@ public static class L12LibraryOps
             player.Removed.Remove(card);
             player.Library.Remove(card);
         }
-        if (top) player.Library.InsertRange(0, ordered);
-        else player.Library.AddRange(ordered);
+        destination ??= player;
+        if (top) destination.Library.InsertRange(0, ordered);
+        else destination.Library.AddRange(ordered);
         return true;
     }
 }
@@ -85,7 +93,7 @@ public static class L12DerivedStats
         var setValue = card.SetTroopsValue is not null && card.SetTroopsUntilTurn >= turnSerial
             ? card.SetTroopsValue.Value
             : card.Troops - card.ContinuousTroopsModifier;
-        return setValue + card.ContinuousTroopsModifier;
+        return Math.Max(0, setValue + card.ContinuousTroopsModifier);
     }
 
     public static void SetUntilTurnEnd(L12CardInstance card, int value, int turnSerial)
@@ -93,6 +101,18 @@ public static class L12DerivedStats
         card.SetTroopsValue = value;
         card.SetTroopsUntilTurn = turnSerial;
         card.Troops = value + card.ContinuousTroopsModifier;
+    }
+
+    /// <summary>
+    /// 清除已经结算到当前兵力上的伤害，并把军团的当前兵力固定为指定值。
+    /// 设定值会抵消此刻仍然存在的持续修正，保证同一结算事件不会再次套用伤害或修正。
+    /// 后续持续修正发生变化时，仍会以这次固定后的当前兵力为基准正常增减。
+    /// </summary>
+    public static void ClearDamageAndSetCurrentUntilTurnEnd(L12CardInstance card, int value, int turnSerial)
+    {
+        card.SetTroopsValue = value - card.ContinuousTroopsModifier;
+        card.SetTroopsUntilTurn = turnSerial;
+        card.Troops = value;
     }
 
     public static void ApplyContinuousModifier(L12CardInstance card, int modifier, int turnSerial)
@@ -300,15 +320,17 @@ public static class L12S2ZoneOps
         return true;
     }
 
-    public static bool FlipMoraleFace(L12PlayerState player, string instanceId, bool? toGodPower = null)
+    public static bool FlipMoraleFace(L12PlayerState player, L12MoraleIdentityCatalog identities,
+        string instanceId, bool? toGodPower = null)
     {
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId == instanceId);
-        if (morale is null || !L12StructuredCardRules.IsReversibleOlympusMorale(morale.CardId)) return false;
+        if (morale is null || !identities.CanUseGodPowerFace(morale.CardId)) return false;
         morale.IsGodPower = toGodPower ?? !morale.IsGodPower;
         return true;
     }
 
-    public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted, int godPowerCost)
+    public static bool Promote(L12PlayerState player, L12CardInstance foundation, L12CardInstance promoted,
+        int godPowerCost, Action<L12CardInstance>? preparePromotedForField = null)
     {
         if (!promoted.HasTrait("晋升者") || foundation.HasTrait("晋升者")) return false;
         var normalizedPromotedName = promoted.Name.Replace("·晋升", string.Empty, StringComparison.Ordinal);
@@ -323,6 +345,7 @@ public static class L12S2ZoneOps
             if (player.Field[row][slot]?.InstanceId == foundation.InstanceId) position = (row, slot);
         if (position.Row < 0 || !ConsumeAndFlipGodPower(player, godPowerCost)) return false;
 
+        preparePromotedForField?.Invoke(promoted);
         InheritPromotionState(foundation, promoted);
         promoted.AttachedCards.Add(foundation);
         player.Hand.Remove(promoted);
@@ -370,6 +393,8 @@ public static class L12S2ZoneOps
         promoted.CannotSupport |= foundation.CannotSupport;
         promoted.CanAttackBackAndMasterUntilTurn = Math.Max(promoted.CanAttackBackAndMasterUntilTurn,
             foundation.CanAttackBackAndMasterUntilTurn);
+        if (foundation.CanAttackBackUntilTurn is { } backPermission)
+            promoted.CanAttackBackUntilTurn = Math.Max(promoted.CanAttackBackUntilTurn ?? -1, backPermission);
         promoted.CanAttackMasterOnSummonUntilTurn = Math.Max(promoted.CanAttackMasterOnSummonUntilTurn,
             foundation.CanAttackMasterOnSummonUntilTurn);
         promoted.CanAttackLegionsOnSummonUntilTurn = Math.Max(promoted.CanAttackLegionsOnSummonUntilTurn,

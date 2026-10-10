@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-trial-back-restoration",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "试炼卡背显示修正",
+  "changes": [{
+    "category": "battle",
+    "text": "宽屏和移动端双方未揭示的试炼恢复使用专用试炼卡背；我方仍可查看自己的试炼，进度数字保留。",
+    "paths": ["opcgpro-vue/src/l12/game/PlayerMat.vue", "opcgpro-vue/src/l12/game/GameBoard.vue"]
+  }]
+}

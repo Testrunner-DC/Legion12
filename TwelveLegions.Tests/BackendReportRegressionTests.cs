@@ -222,7 +222,6 @@ public sealed class BackendReportRegressionTests
 
         var play = game.Handle(0, new L12Command("playCard", qianYang.InstanceId));
         Assert.True(play.Accepted, play.Error);
-        Choose(game, "mode:none");
         var target = Prompt(game);
 
         Assert.Contains(ordinaryLowTarget.InstanceId, target.ValidChoices);

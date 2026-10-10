@@ -103,7 +103,8 @@ public sealed partial class L12GameEngine
     private bool IsOrdinaryResourceIdentity(L12PlayerState player, string id)
         => TryParseTemporaryMoralePaymentChoice(id, out _)
             || player.Morale.Any(card => card.InstanceId.Equals(id, StringComparison.OrdinalIgnoreCase))
-            || FindAuthoritativeCard(id)?.CardId == "S01-0212";
+            || SpendableFieldMoraleResources(player).Any(card => card.InstanceId.Equals(
+                id, StringComparison.OrdinalIgnoreCase));
 
     private bool TryCommitPreparedPrideMasterSurcharge(
         L12TriggerCandidate candidate, L12PendingActivation activation)

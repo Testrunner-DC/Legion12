@@ -211,10 +211,51 @@ public sealed class Bq20260830_02RegressionTests
         game.State.Round = 2;
         game.State.Phase = L12Phase.Main;
 
+        void ResolveMovementTriggers()
+        {
+            for (var safety = 0; safety < 40 && game.State.PendingPrompts.Count > 0; safety++)
+            {
+                var prompt = Assert.Single(game.State.PendingPrompts);
+                if (prompt.Kind == "trigger-order")
+                {
+                    var candidates = prompt.ValidChoices.Where(choice => choice != "pass").ToArray();
+                    var follow = Assert.Single(candidates,
+                        choice => prompt.Data[$"trigger:{choice}"] == "friendly-legion-moves");
+                    var directional = Assert.Single(candidates, choice => choice != follow);
+                    Assert.True(game.Handle(prompt.PlayerIndex,
+                        new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                            CardInstanceIds: [follow, directional])).Accepted);
+                    continue;
+                }
+
+                if (prompt.Kind == "response")
+                {
+                    Assert.True(game.Handle(prompt.PlayerIndex,
+                        new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                            Choice: "pass")).Accepted);
+                    continue;
+                }
+
+                Assert.Contains("mode:none", prompt.ValidChoices);
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                        Choice: "mode:none")).Accepted);
+            }
+
+            Assert.Empty(game.State.PendingPrompts);
+        }
+
         Assert.True(game.Handle(0, new L12Command("move", mover.InstanceId, Row: 0, Slot: 0)).Accepted);
+        ResolveMovementTriggers();
+        Assert.Equal(1, mover.TsukuyomiFrontMoveBonusCount);
         Assert.True(game.Handle(0, new L12Command("move", mover.InstanceId, Row: 1, Slot: 0)).Accepted);
+        ResolveMovementTriggers();
+        Assert.Equal(1, mover.TsukuyomiFrontMoveBonusCount);
         Assert.True(game.Handle(0, new L12Command("move", mover.InstanceId, Row: 0, Slot: 0)).Accepted);
+        ResolveMovementTriggers();
+        Assert.Equal(2, mover.TsukuyomiFrontMoveBonusCount);
         Assert.Equal(-1, mover.LastCavalryMoveTurn);
+        Assert.DoesNotContain("active:master-0:tsukuyomiFollowMove", player.UsedAbilities);
 
         var attack = game.Handle(0, new L12Command("attack", mover.InstanceId,
             Target: new L12AttackTarget("master")));
@@ -297,7 +338,7 @@ public sealed class Bq20260830_02RegressionTests
         Assert.Equal(hpBefore[0] - 1, game.State.Players[0].Hp);
         Assert.Equal(hpBefore[1] - 1, game.State.Players[1].Hp);
         Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "damage"
-            && entry.Text.Contains("〈堙灭〉", StringComparison.Ordinal)));
+            && entry.Text.Contains("〈湮灭〉", StringComparison.Ordinal)));
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 }

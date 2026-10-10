@@ -49,6 +49,12 @@ public sealed class L12CardDefinition
     public required string NameZh { get; init; }
     public string? ImageUrl { get; init; }
     public required string CardType { get; init; }
+    /// <summary>战术的独立反击身份；主动战术为 tactic 且本值为 false。</summary>
+    public bool IsCounterTactic { get; init; }
+    /// <summary>该反击战术是否直接无效或改变它所响应的效果；用于受保护效果的统一候选判断。</summary>
+    public bool AffectsRespondedEffect { get; init; }
+    /// <summary>该卡是否具有“抵挡本次进攻”响应分支；必中攻击不得选择该分支。</summary>
+    public bool BlocksAttack { get; init; }
     public required string Product { get; init; }
     public required string Faction { get; init; }
     public int? Cost { get; init; }
@@ -69,20 +75,34 @@ public sealed class L12CardDefinition
 
 public sealed class L12PresetDeckDefinition
 {
+    // Optional explicit publication provenance; the platform verifies ownership and immutable content at lock-in.
+    public string? PublicationId { get; init; }
+    public int? PublicationVersion { get; init; }
     public required string Name { get; init; }
     public required string MasterId { get; init; }
     public required List<string> CardIds { get; init; }
     public required List<string> MoraleIds { get; init; }
     public List<string> SpecialIds { get; init; } = [];
+    /// <summary>私人编辑器备选区；不参与构筑合法性、公开版本或对局牌表。</summary>
+    public List<string> BenchIds { get; init; } = [];
+    /// <summary>玩家选择的异画：规则卡牌编号 -> 已拥有的异画编号。服务端会再次校验权益。</summary>
+    public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>主牌库每个同编号副本的卡图：规则卡牌编号 -> 按该卡在牌库中的出现次序登记异画编号；空值表示原画。</summary>
+    public Dictionary<string, List<string>> AlternateArtCopies { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12CustomDeckSubmission
 {
+    public string? PublicationId { get; init; }
+    public int? PublicationVersion { get; init; }
     public string Name { get; init; } = string.Empty;
     public string MasterId { get; init; } = string.Empty;
     public List<string> CardIds { get; init; } = [];
     public List<string> MoraleIds { get; init; } = [];
     public List<string> SpecialIds { get; init; } = [];
+    public List<string> BenchIds { get; init; } = [];
+    public Dictionary<string, string> AlternateArtSelections { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, List<string>> AlternateArtCopies { get; init; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class L12RoomOptions
@@ -103,8 +123,9 @@ public sealed class L12CardInstance
     public required string CardId { get; init; }
     public required string Name { get; init; }
     public required string CardType { get; init; }
+    public bool IsCounterTactic { get; init; }
     public required string Faction { get; init; }
-    public string? ImageUrl { get; init; }
+    public string? ImageUrl { get; set; }
     public int Cost { get; init; }
     /// <summary>卡面是否实际印刷费用；与支付计算使用的数值0分开保存。</summary>
     public bool HasPrintedCost { get; init; } = true;
@@ -120,6 +141,9 @@ public sealed class L12CardInstance
     public int? MinimumPlayCost { get; set; }
     /// <summary>当前公开场面下禁止从手牌打出此牌的权威原因；为空表示未被静态规则禁止。</summary>
     public string? PlayBlockedReason { get; set; }
+    /// <summary>当前快照中该公开场上卡可作为哪一类支付资源；为空表示当前不可支付。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? SpendableResourceType { get; set; }
     public string? EffectText { get; init; }
     public int BaseTroops { get; init; }
     public int Troops { get; set; }
@@ -131,12 +155,12 @@ public sealed class L12CardInstance
     /// <summary>持续负兵力修正单独保存，避免与可消耗的正兵力层混算。</summary>
     public int ContinuousTroopsPenalty { get; set; }
     /// <summary>按实际持续效果来源保存正兵力层；不同来源失效时只移除自己的未消耗部分。</summary>
-    public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; init; } = new(StringComparer.Ordinal);
+    public Dictionary<string, L12TroopsBonusLayer> ContinuousTroopsBonusLayers { get; set; } = new(StringComparer.Ordinal);
     public int? SetTroopsValue { get; set; }
     public int SetTroopsUntilTurn { get; set; } = -1;
     public int DisasterLevel { get; init; }
     public int TrialValue { get; init; }
-    public List<string> Traits { get; init; } = [];
+    public List<string> Traits { get; set; } = [];
     public string? Profession { get; init; }
     /// <summary>随位置或持续效果变化后的当前职介；离场时恢复印刷职介。</summary>
     public string? EffectiveProfession { get; set; }
@@ -196,6 +220,9 @@ public sealed class L12CardInstance
     public List<string> StatusIcons { get; set; } = [];
     public List<L12StatusEffectView> StatusEffects { get; set; } = [];
     public int CanAttackBackAndMasterUntilTurn { get; set; } = -1;
+    // Omit the unused new permission so old checkpoints retain their serialized shape.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? CanAttackBackUntilTurn { get; set; }
     public int CanAttackMasterOnSummonUntilTurn { get; set; } = -1;
     public int CanAttackLegionsOnSummonUntilTurn { get; set; } = -1;
     /// <summary>由限时效果赋予的挑畔持续到哪个回合结束；前排判定仍由进攻规则实时计算。</summary>
@@ -213,10 +240,14 @@ public sealed class L12CardInstance
     public int ImmortalExpiresAtPlayerTurnStart { get; set; } = -1;
     public int SuppressDeathUntilTurn { get; set; } = -1;
     public List<L12AbilityView> Abilities { get; set; } = [];
-    public List<L12TimedModifier> TimedModifiers { get; init; } = [];
-    public List<L12CardInstance> AttachedCards { get; init; } = [];
+    /// <summary>不进入效果堆叠的规则动作；按钮资格、禁用原因和呈现文字均由服务端投影。</summary>
+    public List<L12RuleActionView> RuleActions { get; set; } = [];
+    public List<L12TimedModifier> TimedModifiers { get; set; } = [];
+    public List<L12CardInstance> AttachedCards { get; set; } = [];
 
     public int CurrentCost => Math.Max(0, Cost + CostModifier + ContinuousCostModifier);
+    /// <summary>对规则消费者和玩家投影公开的当前兵力；内部修正累计可以暂时低于0。</summary>
+    public int CurrentTroops => Math.Max(0, Troops);
     /// <summary>场面兵力 UI 的比较基准；设定兵力不是兵力增益。</summary>
     public int DisplayBaseTroops => SetTroopsValue ?? BaseTroops;
     public bool HasRangeBonus => L12StructuredCardRules.HasAnyRowRangeBonus(this);
@@ -225,7 +256,39 @@ public sealed class L12CardInstance
     public bool CannotBeRanged => L12StructuredCardRules.CannotBeRangedInAnyRow(this);
     public bool HasTrait(string trait) => Traits.Contains(trait, StringComparer.Ordinal);
 
-    public L12CardInstance Clone() => (L12CardInstance)MemberwiseClone();
+    /// <summary>
+    /// 创建与权威实例完全隔离的卡牌快照。事件、最后已知状态、Prompt 审计和玩家投影
+    /// 都会长期持有该对象；任何可变集合或集合元素都不得与原实例共享，否则在线结算与
+    /// JSON 检查点恢复会因引用别名不同而产生两套权威结果。
+    /// </summary>
+    public L12CardInstance Clone()
+    {
+        var snapshot = (L12CardInstance)MemberwiseClone();
+        snapshot.ContinuousTroopsBonusLayers = ContinuousTroopsBonusLayers.ToDictionary(
+            pair => pair.Key,
+            pair => new L12TroopsBonusLayer { Granted = pair.Value.Granted, Consumed = pair.Value.Consumed },
+            StringComparer.Ordinal);
+        snapshot.Traits = [.. Traits];
+        snapshot.LastKnownAttachedCardIds = [.. LastKnownAttachedCardIds];
+        snapshot.ActiveKeywords = [.. ActiveKeywords];
+        snapshot.StatusIcons = [.. StatusIcons];
+        snapshot.StatusEffects = [.. StatusEffects];
+        snapshot.Abilities = [.. Abilities];
+        snapshot.RuleActions = RuleActions.Select(action => action with
+        {
+            TargetKeys = action.TargetKeys is null ? null : action.TargetKeys.ToArray(),
+        }).ToList();
+        snapshot.TimedModifiers = TimedModifiers.Select(modifier => new L12TimedModifier
+        {
+            TroopsDelta = modifier.TroopsDelta,
+            ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
+            CostDelta = modifier.CostDelta,
+            ExpiresAfterTurn = modifier.ExpiresAfterTurn,
+            Source = modifier.Source,
+        }).ToList();
+        snapshot.AttachedCards = AttachedCards.Select(card => card.Clone()).ToList();
+        return snapshot;
+    }
 }
 
 public sealed record L12AbilityView(
@@ -234,6 +297,15 @@ public sealed record L12AbilityView(
     bool Enabled = true,
     string? DisabledReason = null,
     bool TriggerOnly = false);
+
+public sealed record L12RuleActionView(
+    string Id,
+    string Label,
+    string Text,
+    bool Enabled = true,
+    string? DisabledReason = null,
+    string? PresentationSceneId = null,
+    IReadOnlyList<string>? TargetKeys = null);
 
 /// <summary>卡面短期状态的结构化投影；Kind 决定图标，Label/Source 用于提示。</summary>
 public sealed record L12StatusEffectView(string Kind, string Label, string? Source = null);
@@ -284,6 +356,12 @@ public sealed class L12PlayerState
         new L12CardInstance?[3],
     ];
     public L12CardInstance? Relic { get; set; }
+    /// <summary>
+    /// 主宰临时作为军团登场后返回主宰区时保留的同一权威实例。
+    /// 旧检查点没有此字段时保持 null，并在下一次军团化时按旧行为创建实例。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12CardInstance? MasterLegionState { get; set; }
     public List<L12CardInstance> ExtraRelics { get; } = [];
     public List<L12CardInstance> Resolving { get; } = [];
     public List<L12CardInstance> Graveyard { get; } = [];
@@ -342,6 +420,9 @@ public sealed record L12AttackTarget(string Type, string? InstanceId = null);
 
 public sealed class L12PendingDefense
 {
+    /// <summary>一次进攻的公开日志关联键；旧检查点没有此字段时保持 null。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? CombatId { get; set; }
     public required int AttackerPlayer { get; init; }
     public required string AttackerInstanceId { get; init; }
     public required L12AttackTarget Target { get; set; }
@@ -355,6 +436,13 @@ public sealed class L12PendingDefense
     public bool AttackNoLoss { get; set; }
     public bool SureHit { get; set; }
     public int MasterDamage { get; set; } = 1;
+    /// <summary>
+    /// 本次进攻声明时已计入 MasterDamage 的天灾分量；只用于判断伤害替换能否减小这笔伤害，
+    /// 不得从确认总值中拆出或在替换后重新追加。
+    /// null 仅表示来自尚未保存此字段的旧 V2 检查点；新声明显式保存0或1。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? DeclaredDisasterMasterDamageBonus { get; set; }
     /// <summary>理查的独立抵挡费用段成功结算后，才对本次进攻生效。</summary>
     public bool RichardDefenseTaxActive { get; set; }
     public int TemporaryAttackerTroopsBonus { get; set; }
@@ -421,11 +509,41 @@ public sealed class L12Prompt
     /// </summary>
     public Dictionary<string, string> ChoiceLabels { get; init; } = [];
     /// <summary>
+    /// 玩家弹框的权威叙事结构。旧检查点没有该字段时保持 null，由客户端使用安全的自然语言降级；
+    /// 等待视角只能取得 WaitingSummary，绝不能取得其余私密内容。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PromptPresentation? Presentation { get; init; }
+    /// <summary>
     /// 服务端专用的匿名选项映射。公开快照只投影 ValidChoices 与 Data，绝不传输此映射；
     /// 用于从随机槽位恢复隐藏区域中的真实实例，避免客户端获得手牌顺序或实例标识。
     /// </summary>
     public Dictionary<string, string> HiddenChoiceMap { get; init; } = [];
 }
+
+public sealed class L12PromptPresentation
+{
+    public required string Title { get; init; }
+    public required string Situation { get; init; }
+    public required string Instruction { get; init; }
+    public required string WaitingSummary { get; init; }
+    public Dictionary<string, string> ChoiceConsequences { get; init; } = [];
+    /// <summary>Only explicitly declared payment facts reach the acting player. Null means unknown.</summary>
+    public string? PaymentStatus { get; init; }
+    public string? PaymentSummary { get; init; }
+    public string? SubmissionConsequence { get; init; }
+}
+
+public sealed record L12PromptAutoCloseView(
+    string Reason,
+    DateTimeOffset DeadlineUtc,
+    DateTimeOffset ServerNowUtc);
+
+internal sealed record L12ResponseAutoCloseLease(
+    string PromptId,
+    string StackItemId,
+    int PriorityPlayer,
+    DateTimeOffset DeadlineUtc);
 
 public sealed class L12StackItem
 {
@@ -442,6 +560,12 @@ public sealed class L12StackItem
     public bool Negated { get; set; }
     public List<string> Targets { get; } = [];
     public Dictionary<string, string> Data { get; } = [];
+    /// <summary>
+    /// 本效果结算期间实际产生、并可由表现层消费的公开事实事件序号。
+    /// 只保存既有 ActionEvent.Sequence，不引入第二套序号。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<long>? PresentationFactSequences { get; set; }
 }
 
 public sealed class L12PendingActivation
@@ -460,6 +584,13 @@ public sealed class L12PendingActivation
     public List<L12ActivationSelectionStep> SelectionSteps { get; init; } = [];
     public int CurrentStep { get; set; }
     public List<string> DeclaredTargets { get; } = [];
+    /// <summary>
+    /// 仅记录声明步骤显式标注的公开战场效果对象。费用、来源、私有区卡牌、
+    /// 位置、模式及内部控制值不得写入；该集合会随检查点序列化。
+    /// </summary>
+    public List<string> ResponsePresentationTargetIds { get; } = [];
+    /// <summary>仅在本次激活同步提交堆叠项期间为 true；完成或失败后必须清理。</summary>
+    public bool IsCommittingResponsePresentation { get; set; }
     /// <summary>
     /// 复合效果按声明键保存每一步的选择边界。旧主动/触发流程继续读取扁平的
     /// DeclaredTargets；事务化复合计划不得再靠实例类型猜测“哪个目标属于哪一段”。
@@ -484,6 +615,7 @@ public sealed class L12PendingActivation
     /// </summary>
     public string? CommittedOriginZone { get; set; }
     public string? CommittedReason { get; set; }
+    public string? PlayerLogGroupId { get; set; }
     /// <summary>非空时表示这是尚未揭示、尚未入栈的响应卡目标声明。</summary>
     public string? ResponseTargetStackItemId { get; init; }
 }
@@ -515,6 +647,14 @@ public sealed class L12ActivationSelectionStep
     public required string Kind { get; init; }
     public required string Text { get; init; }
     public required List<string> ValidChoices { get; init; }
+    /// <summary>可见但不一定可选的完整选项集；用于保持同类弹框结构稳定。</summary>
+    public List<string> DisplayChoices { get; init; } = [];
+    /// <summary>选项不可用时的服务端权威原因。</summary>
+    public Dictionary<string, string> DisabledChoiceReasons { get; init; } = new(StringComparer.OrdinalIgnoreCase);
+    public string? UiPattern { get; init; }
+    public string? EffectText { get; init; }
+    /// <summary>即使只剩下拒绝选项也必须显示，不得自动关闭。</summary>
+    public bool RequireExplicitDecline { get; init; }
     public int MinChoose { get; init; } = 1;
     public int MaxChoose { get; init; } = 1;
     /// <summary>
@@ -524,10 +664,14 @@ public sealed class L12ActivationSelectionStep
     public L12ActivationCancellationPolicy CancellationPolicy { get; set; }
         = L12ActivationCancellationPolicy.WhenNoExplicitDecline;
     /// <summary>
-    /// 合法候选数量恰好等于固定选择数量时，服务端直接记录整个集合而不弹出无意义选择。
-    /// 仅用于“必须选择全部现有公开对象”的声明步；候选更多时仍由玩家明确选择。
+    /// 请求确定性自动选择；仅费用或内部控制标记可生效。
+    /// 效果对象即使唯一也必须选择；由公共声明层强制保护。
     /// </summary>
     public bool AutoSelectWhenExact { get; init; }
+    /// <summary>显式按该效果段冒号前的文字标注费用；不可从候选数量推断。</summary>
+    public bool IsCostSelection { get; init; }
+    /// <summary>本步骤选择的是响应窗口可展示的公开战场效果对象，而不是费用或控制值。</summary>
+    public bool IsResponsePresentationTarget { get; init; }
     /// <summary>
     /// 本费用步骤仅在全部候选都是同卡号、同锁定后果的普通士气时允许确定性自动选择。
     /// 临时士气、神力、黑色莲花、陵墓守卫及任何不同后果仍必须由玩家明确选择。
@@ -624,7 +768,89 @@ public sealed class L12ResponseWindow
 {
     public int PriorityPlayer { get; set; }
     public int ConsecutivePasses { get; set; }
+    /// <summary>窗口创建时冻结的双方响应模式；null 表示双方均为历史默认模式。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? FrozenPlayerResponseModes { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoClosePromptId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? AutoCloseStackItemId { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? AutoClosePriorityPlayer { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public DateTimeOffset? AutoCloseDeadlineUtc { get; set; }
 }
+
+/// <summary>
+/// 玩家日志使用的权威公开语义。规则入口在状态实际改变时同时声明来源、动作、对象和终态，
+/// 客户端只负责组合卡牌链接与这些公开短语，不得再从审计文本或数值结果反推动作含义。
+/// </summary>
+public sealed record L12PlayerLogSemantic(
+    string ActionLabel,
+    string OutcomeLabel,
+    string? SourceInstanceId = null,
+    string? SourceName = null,
+    string? TargetInstanceId = null,
+    string? TargetName = null);
+
+/// <summary>仅包含已公开战斗事实的日志合同。所有字段可缺省，以兼容旧事件。</summary>
+public sealed record L12PlayerCombatPresentation(
+    string? CombatId = null,
+    string? EventKind = null,
+    string? OutcomeCode = null,
+    string? PublicReasonCode = null,
+    string? AttackerInstanceId = null,
+    string? TargetInstanceId = null,
+    int? AttackerTroops = null,
+    int? DefenderTroops = null,
+    int? MasterDamage = null);
+
+/// <summary>单次公开战场位移的已完成位置事实；字段可空以便旧回放安全降级。</summary>
+public sealed record L12PlayerBattlefieldMovementFact(
+    string? InstanceId = null,
+    int? BattlefieldPlayerIndex = null,
+    int? FromRow = null,
+    int? FromSlot = null,
+    int? ToRow = null,
+    int? ToSlot = null);
+
+/// <summary>一次事件可包含多张军团的有序公开位移，例如双卡互换。</summary>
+public sealed record L12PlayerBattlefieldMovement(
+    L12PlayerBattlefieldMovementFact[]? Facts = null);
+
+/// <summary>仅记录已公开的跨玩家战场置入终态；不记录来源位置。</summary>
+public sealed record L12PlayerPublicPlacement(
+    string? InstanceId = null,
+    int? OwnerPlayerIndex = null,
+    int? ControllerPlayerIndex = null,
+    int? Row = null,
+    int? Slot = null,
+    bool? Tapped = null,
+    string? DurationCode = null);
+
+/// <summary>已完成的单目标本回合兵力修正；不是伤害或击杀结论。</summary>
+public sealed record L12PlayerTroopsModifier(
+    string? TargetInstanceId = null,
+    int? TargetControllerPlayerIndex = null,
+    int? TroopsDelta = null,
+    string? DurationCode = null);
+
+/// <summary>响应前已选、当时公开的对象快照；不从之后的棋盘或审计文字重建。</summary>
+public sealed record L12PlayerSelectedTargetFact(
+    string Id, int Owner, string Zone, int Row, int Slot,
+    string? PublicName, int? CurrentCost, bool Tapped, bool? IsGodPower = null);
+
+public sealed record L12PlayerSelectedTargets(
+    string SourceInstanceId, L12PlayerSelectedTargetFact[] Facts);
+
+/// <summary>已结算的公开天灾值变化；旧事件缺失时不得从文字或当前状态补算。</summary>
+public sealed record L12PlayerDisasterValue(int? Before = null, int? After = null);
+
+/// <summary>一笔已完成的公开卡牌横置状态事实；同修订可按事件序号保留多次真实变化。</summary>
+public sealed record L12PlayerCardStateTransition(
+    string InstanceId,
+    bool FromTapped,
+    bool ToTapped);
 
 public sealed record L12ActionEvent(
     long Sequence,
@@ -635,6 +861,46 @@ public sealed record L12ActionEvent(
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EffectText { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectSceneId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectAbilityId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectSegmentId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EffectSegmentIndex { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? EffectSegmentCount { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectBranchId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectBranchLabel { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EffectResultStatus { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogGroupId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogTiming { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PlayerLogDecisionLabel { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerLogSemantic? PlayerLogSemantic { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerCombatPresentation? PlayerCombat { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerBattlefieldMovement? PlayerBattlefieldMovement { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerPublicPlacement? PlayerPublicPlacement { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerTroopsModifier? PlayerTroopsModifier { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerSelectedTargets? PlayerSelectedTargets { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerDisasterValue? PlayerDisasterValue { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerCardStateTransition? PlayerCardStateTransition { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long[]? PlayerPresentationFactSequences { get; init; }
 }
 
 public sealed class L12GameState
@@ -642,6 +908,12 @@ public sealed class L12GameState
     /// <summary>0 表示历史全事件哈希；2 表示有界表现窗口 + 独立完整事件日志。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int StateFormatVersion { get; init; }
+    /// <summary>
+    /// 新建 V2 对局显式启用表现事实引用。旧 V2 检查点缺省为 false，
+    /// 其 Journal 重放不会生成新字段，因而保持历史 state_hash。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool PresentationFactProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }
@@ -665,7 +937,7 @@ public sealed class L12GameState
     public List<L12CardInstance> SelectedDisasters { get; } = [];
     public List<L12CardInstance> RevealedDisasters { get; } = [];
     public List<L12CardInstance> ChosenDisasters { get; } = [];
-    /// <summary>测试沙盒自定天灾的稳定四槽清单；第四槽固定为最终天灾〈堙灭〉。</summary>
+    /// <summary>测试沙盒自定天灾的稳定四槽清单；第四槽固定为最终天灾〈湮灭〉。</summary>
     public List<L12CardInstance> CustomDisasters { get; } = [];
     public Dictionary<string, int> ChosenDisasterOwners { get; } = [];
     public L12CardInstance? ActiveDisaster { get; set; }
@@ -684,6 +956,9 @@ public sealed class L12GameState
     public List<L12TriggerCandidate> PendingTriggerStackCandidates { get; } = [];
     public List<L12AuthorityEvent> AuthorityEvents { get; } = [];
     public L12ResponseWindow? ResponseWindow { get; set; }
+    /// <summary>为空表示双方均使用历史默认响应流程，以保持旧检查点与默认局哈希不变。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? PlayerResponseModes { get; set; }
     public bool IsResolvingStack { get; set; }
     public bool ResumeTurnStartAfterStack { get; set; }
     public bool ResumeGmResetAfterStack { get; set; }
@@ -691,6 +966,8 @@ public sealed class L12GameState
     public int LastTurnStartDisasterEffectTurn { get; set; } = -1;
     public string? LastTurnStartDisasterEffectInstanceId { get; set; }
     public bool CheckDisasterAfterStack { get; set; }
+    /// <summary>已越过阈值但尚待当前堆叠关闭的天灾触发来源；检查点恢复后仍决定分支、日志与回放语义。</summary>
+    public string? PendingDisasterTriggerSource { get; set; }
     public int ExtraTurnsForPlayer { get; set; } = -1;
     public int CounterTacticsDisabledUntilTurnSerial { get; set; } = -1;
     public int CounterTacticsDisabledExpiresAtPlayerTurnStart { get; set; } = -1;

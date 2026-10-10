@@ -35,13 +35,13 @@ public sealed partial class L12GameEngine
     private List<L12AbilityView> GetAbilities(string cardId)
     {
         cardId = _catalog.MoraleIdentities.CanonicalEffectCardId(cardId);
+        if (L12StructuredCardSemantics.ExtendedRangeRule(cardId) is { } rangeRule)
+            return [new("extendedRange", $"{rangeRule.CostText}：进攻后排{(rangeRule.AllowsMaster ? "和主宰" : "")}")];
         return cardId switch
         {
-        "S01-0003" => [new("extendedRange", "消耗2士气：扩展进攻范围")],
         "S01-0004" => [new("destroyInfiltrator", "消耗2士气：击杀此军团")],
         "S01-0105" => [new("searchBrothers", "检索关羽/张飞")],
         "S01-0109" => [new("addMorale", "追加士气")],
-        "S01-0113" => [new("extendedRange", "返还1士气：进攻后排")],
         "S01-0116" => [new("xishiExchange", "弃置自身并返还1士气：替换登场")],
         "S01-0117" => [new("artifactDraw", "返还1活跃士气：抽取1张牌。"), new("artifactSearch", "弃置1张手牌：查看牌库顶部3张牌，选择其中1张【天廷】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
         "S01-0415" => [new("revealHidden", "主动：翻回正面，作为军团恢复公开状态。")],
@@ -62,7 +62,7 @@ public sealed partial class L12GameEngine
             new("godPowerDraw", "我方 回合1次 可消耗并翻转1神力：抽取1张牌。"),
         ],
         "S02-05M2" => [new("prometheusTopThree", "我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。")],
-        "S02-01M1" => [new("wukongTransform", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。")],
+        "S02-01M1" => [new("wukongTransform", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。")],
         "S02-03M1" => [new("thorCharge", "我方回合 当我方主宰血量不高于3时，可消耗2士气：本回合我方所有【阿斯加德】军团在登场时获得冲锋。以上效果发动后，我方主宰本局游戏无法因任何效果增加血量。")],
         "S02-0301" => [new("thorHammerRevive", "我方 回合1次 当此军团在墓地时，可将墓地3张其他卡牌自选顺序返回我方牌库底部：将此军团活跃登场。")],
         "S02-05D1" =>
@@ -71,7 +71,7 @@ public sealed partial class L12GameEngine
             new("divinityPower", "我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。"),
             new("divinityFreePromotion", "主动休整：本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。"),
         ],
-        "S02-05M1" => [new("artemisBuff", "我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得强攻或震击。")],
+        "S02-05M1" => [new("artemisBuff", "我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。")],
         "S02-0510" => [new("hippolytaRevive", "主动休整 消耗3士气并弃置1张手牌：选择墓地1张费用不高于4的【奥林匹斯】军团活跃登场。")],
         "S02-06D1" =>
         [
@@ -101,7 +101,7 @@ public sealed partial class L12GameEngine
             new("completeTrial", "试炼达到8：完成《十字军东征》。"),
             new("crusadeTrialNoLoss", "消耗1符文：选择我方1张【试炼军团】，本回合下一次进攻无损。"),
             new("crusadeRichardPiercing", "消耗2符文：本回合我方1张〈狮心王理查一世〉击杀时获得贯穿。"),
-            new("crusadeRecover", "消耗2符文并弃置1张手牌：将墓地1张只有【彼界】特征的卡牌加入手牌。"),
+            new("crusadeRecover", "消耗2符文：弃置1张手牌，并将墓地1张只有【彼界】特征的卡牌加入手牌。"),
         ],
             _ => GetStarterRemainingAbilityViews(cardId) is { Count: > 0 } starterAbilities
                 ? starterAbilities
@@ -124,7 +124,11 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item);
                 return true;
             case "无名的渗透者":
+                var infiltratorWasTapped = card.Tapped;
                 card.Tapped = true;
+                RegisterPresentationFact(item, AddPlayerCardStateTransitionEvent(
+                    item.Controller, card, fromTapped: infiltratorWasTapped, toTapped: true,
+                    "无名的渗透者因登场效果转为休整"));
                 card.CannotAttack = true;
                 card.CannotSupport = true;
                 AddEvent("effect", item.Controller, "无名的渗透者休整登场，且不可进攻或支援", card);
@@ -179,8 +183,10 @@ public sealed partial class L12GameEngine
                 {
                     var destinations = new[] { PublicTriggerDeclared(item, "moveSlot1"), PublicTriggerDeclared(item, "moveSlot2") };
                     if (declaredTargets.Length == 2
-                        && FindOnField(player, declaredTargets[0], out var firstRow, out var firstSlot) is { Tapped: true } first
-                        && FindOnField(player, declaredTargets[1], out var secondRow, out var secondSlot) is { Tapped: true } second
+                        && TryGetDeclaredPublicLegion(item.Controller, declaredTargets[0], card => card.Tapped,
+                            out _, out var first, out var firstRow, out var firstSlot)
+                        && TryGetDeclaredPublicLegion(item.Controller, declaredTargets[1], card => card.Tapped,
+                            out _, out var second, out var secondRow, out var secondSlot)
                         && destinations[0] == $"{secondRow}:{secondSlot}" && destinations[1] == $"{firstRow}:{firstSlot}")
                     {
                         player.Field[firstRow][firstSlot] = second;
@@ -189,11 +195,30 @@ public sealed partial class L12GameEngine
                         second.LastMovedTurn = State.TurnSerial;
                         RecordLegionMovement(item.Controller, first, firstRow, secondRow);
                         RecordLegionMovement(item.Controller, second, secondRow, firstRow);
-                        AddEvent("move", item.Controller, $"坂本龙马使{first.Name}与{second.Name}互换阵地", first, second);
+                        AddPlayerBattlefieldMovementEvent("move", item.Controller,
+                            $"坂本龙马使{first.Name}与{second.Name}互换阵地",
+                            new([
+                                BattlefieldMovementFact(first, item.Controller,
+                                    firstRow, firstSlot, secondRow, secondSlot),
+                                BattlefieldMovementFact(second, item.Controller,
+                                    secondRow, secondSlot, firstRow, firstSlot),
+                            ]), first, second);
                         FinishStackItem(item); return true;
                     }
+                    var moved = 0;
                     for (var index = 0; index < declaredTargets.Length; index++)
-                        MoveOwnCardToSlot(player, declaredTargets[index], destinations[index]);
+                        if (TryMoveDeclaredPublicLegion(item, item.Controller, declaredTargets[index],
+                                destinations.ElementAtOrDefault(index), null, requireAdjacent: false,
+                                "所选对象已离场、不再是公开军团或声明位置已失效",
+                                target => $"坂本龙马使〈{target.Name}〉位移", recordFailure: false))
+                            moved++;
+                    if (moved == 0)
+                        RecordTargetSettlementFailure(item, string.Join('|', declaredTargets),
+                            "全部已声明军团或位移位置在逆结算后失效");
+                    else if (moved < declaredTargets.Length)
+                        AddEvent("effect", item.Controller,
+                            $"〈坂本龙马〉有{declaredTargets.Length - moved}个已声明对象在逆结算后失效；其余对象继续结算",
+                            FindSource(item) is { } currentSource ? [currentSource] : []);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -230,13 +255,24 @@ public sealed partial class L12GameEngine
                 if (mode is "mode:front" or "mode:back")
                 {
                     var row = mode == "mode:front" ? 0 : 1;
-                    foreach (var target in enemy.Field[row].Where(target => target is not null).Cast<L12CardInstance>())
+                    var targets = enemy.Field[row].Where(target => target is not null)
+                        .Cast<L12CardInstance>().ToArray();
+                    if (targets.Length == 0)
+                    {
+                        item.Data["effectResultStatus"] = "skipped";
+                        RecordPlayerSafeEffectReason(item, row == 0
+                            ? "对方前排没有可处理的军团"
+                            : "对方后排没有可处理的军团");
+                    }
+                    foreach (var target in targets)
                         AddTimedModifier(target, -2000, 0, State.TurnSerial, card.Name);
                 }
                 else
                 {
-                    var target = FindOnField(enemy, CompositeDeclared(item, "singleTarget").SingleOrDefault(), out _, out _);
+                    var targetId = CompositeDeclared(item, "singleTarget").SingleOrDefault();
+                    var target = DeclaredEnemyTarget(item.Controller, targetId);
                     if (target is not null) AddTimedModifier(target, -4000, 0, State.TurnSerial, card.Name);
+                    else RecordTargetSettlementFailure(item, targetId, "所选对方军团已离场或不再是军团");
                 }
                 FinishStackItem(item);
                 return true;
@@ -247,10 +283,14 @@ public sealed partial class L12GameEngine
                 return true;
             case "strategic-transfer-effect":
             {
-                var returnTarget = FindOnField(player, CompositeDeclared(item, "returnTarget").SingleOrDefault(), out _, out _);
+                var returnTargetId = CompositeDeclared(item, "returnTarget").SingleOrDefault();
+                var returnTarget = DeclaredOwnLegionTarget(item.Controller, returnTargetId);
                 if (returnTarget is not null) MoveFieldCardToZone(player, returnTarget, "hand", "因战略转移返回手牌");
-                var buffTarget = FindOnField(player, CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _);
+                else RecordTargetSettlementFailure(item, returnTargetId, "所选我方军团已离场或不再是军团");
+                var buffTargetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+                var buffTarget = DeclaredOwnLegionTarget(item.Controller, buffTargetId);
                 if (buffTarget is not null) AddTimedModifier(buffTarget, 2000, 0, State.TurnSerial, card.Name);
+                else RecordTargetSettlementFailure(item, buffTargetId, "所选我方军团已离场或不再是军团");
                 FinishStackItem(item);
                 return true;
             }
@@ -259,14 +299,22 @@ public sealed partial class L12GameEngine
                 var targets = CompositeDeclared(item, "moveTargets");
                 for (var index = 0; index < targets.Length; index++)
                 {
-                    var target = FindOnField(enemy, targets[index], out var row, out var slot);
+                    var target = DeclaredEnemyTarget(item.Controller, targets[index]);
+                    var row = -1;
+                    var slot = -1;
+                    if (target is not null)
+                        _ = FindOnField(enemy, target.InstanceId, out row, out slot);
                     var destination = CompositeDeclared(item, $"moveSlot{index + 1}").SingleOrDefault();
                     if (target is null || destination?.Split(':') is not [var rowText, var slotText]
                         || !int.TryParse(rowText, out var nextRow) || !int.TryParse(slotText, out var nextSlot)
                         || nextRow != 1 - row || nextSlot != slot || enemy.Field[nextRow][nextSlot] is not null
-                        || State.ActiveDisaster?.CardId == "S01-DS03" && nextRow == 1) continue;
+                        || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && nextRow == 1) continue;
                     enemy.Field[row][slot] = null;
                     enemy.Field[nextRow][nextSlot] = target;
+                    AddPlayerBattlefieldMovementEvent("move", item.Controller,
+                        $"〈伪造密令〉使〈{target.Name}〉位移",
+                        new([BattlefieldMovementFact(target, enemy.PlayerIndex,
+                            row, slot, nextRow, nextSlot)]), target);
                     RecordLegionMovement(1 - item.Controller, target, row, nextRow);
                 }
                 FinishStackItem(item);
@@ -287,15 +335,29 @@ public sealed partial class L12GameEngine
             {
                 var top = player.Library.Take(3).ToArray();
                 item.Data["camp-top"] = string.Join('|', top.Select(candidate => candidate.InstanceId));
-                var choices = top.Where(candidate => candidate.CardType == "legion" && candidate.Faction == player.Faction)
+                var choices = top.Where(candidate => IsCampSearchCandidate(player, candidate))
                     .Select(candidate => candidate.InstanceId).ToList();
-                choices.Add("skip");
+                if (top.Length == 0)
+                {
+                    item.Data["effectResultStatus"] = "skipped";
+                    AddEvent("effect-noop", item.Controller, "野外扎营结算时牌库为空，跳过查看与选择");
+                    FinishStackItem(item);
+                    return true;
+                }
+                if (choices.Count == 0)
+                {
+                    CompleteCampPick(item, "skip");
+                    return true;
+                }
                 var data = new Dictionary<string, string>
                 {
                     ["action"] = "camp-pick",
+                    ["choiceMode"] = "required-add",
                     ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
                 };
                 foreach (var candidate in top) AddPromptCardData(data, candidate);
+                AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+                    "只能选择与主宰阵营相同的军团");
                 CreatePrompt(item.Controller, "search", "野外扎营：选择其中1张与主宰阵营相同的军团加入手牌", choices, 1, 1,
                     "card-effect", item.StackItemId, data: data);
                 return true;
@@ -366,6 +428,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1ExtendedDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        if (TryResolveDrawDiscardSegment(item, card)) return true;
+        if (TryResolveGraveToHandTrigger(item, card)) return true;
+        if (TryResolveHandLegionSummonTrigger(item, card)) return true;
         switch (AtomicFlowKey(item, card))
         {
             case "黑胡子蒂奇":
@@ -392,7 +457,7 @@ public sealed partial class L12GameEngine
                 var target = PublicTriggerDeclared(item, "recoverTarget");
                 if (State.DisasterValue <= 4 && player.Graveyard.Any(candidate => candidate.InstanceId == target
                         && candidate.CardType == "tactic" && L12StructuredCardRules.CurrentCostAtMost(candidate, 4)))
-                    MoveGraveToHand(player, target);
+                    MoveGraveToHand(player, target, item);
                 FinishStackItem(item); return true;
             }
             case "荆轲":
@@ -401,6 +466,8 @@ public sealed partial class L12GameEngine
                 if (!string.IsNullOrWhiteSpace(target)
                     && DeclaredEnemyTarget(item.Controller, target, legion => legion.Troops <= 2000) is not null)
                     KillTarget(item, target, "被荆轲阵亡效果击杀");
+                else RecordTargetSettlementFailure(item, target,
+                    "所选军团已离场、不再是军团或当前兵力已高于2000");
                 FinishStackItem(item); return true;
             }
             case "上杉谦信":
@@ -408,20 +475,7 @@ public sealed partial class L12GameEngine
                 var selected = PublicTriggerDeclared(item, "entryCards")
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var destinations = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
-                for (var index = 0; index < Math.Min(selected.Length, destinations.Length); index++)
-                {
-                    var counter = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == selected[index]
-                        && IsCounterTactic(candidate.CardId));
-                    var (row, slot) = ParseSlot(destinations[index]);
-                    if (counter is null || row != 1 || slot is < 0 or > 2 || player.Field[row][slot] is not null)
-                    {
-                        AddEvent("effect-cancelled", item.Controller,
-                            "上杉谦信已声明的反击战术或后排位置失效；仅取消该对象", card);
-                        continue;
-                    }
-                    player.Hand.Remove(counter); counter.Hidden = true; counter.SetRound = State.Round;
-                    player.Field[row][slot] = counter;
-                }
+                SetDeclaredCounterTactics(item, selected, destinations);
                 FinishStackItem(item); return true;
             }
             case "坂本龙马":
@@ -460,9 +514,8 @@ public sealed partial class L12GameEngine
         {
             case "teach-discard":
             {
-                item.Data[$"teach-discard:{prompt.PlayerIndex}"] = string.Join(',', chosen);
-                if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-                    && candidate.Data.GetValueOrDefault("action") == "teach-discard")) return true;
+                if (!CommitSimultaneousPrivateSelection(item, prompt, "teach-discard",
+                        "teach-discard", chosen)) return true;
                 for (var chooserIndex = 0; chooserIndex < 2; chooserIndex++)
                 {
                     var chooser = State.Players[chooserIndex];
@@ -490,10 +543,20 @@ public sealed partial class L12GameEngine
                 player.Resolving.Remove(artifact);
                 if (chosen[0] == "play")
                 {
-                    if (player.Relic is not null) DiscardRelic(player, player.Relic);
-                    player.Relic = artifact; artifact.Tapped = false;
+                    artifact.OwnerIndex ??= item.Controller;
+                    artifact.SummonRound = State.Round;
+                    artifact.Tapped = false;
+                    PlaceArtifactInRelicZone(item.Controller, artifact);
+                    ApplyDisasterLevelOnEntry(item.Controller, artifact, deferTriggerUntilStackSettles: true);
+                    AddEvent("play", item.Controller,
+                        $"诸葛亮使〈{artifact.Name}〉无需消耗费用活跃登场", artifact);
+                    ResolveOnPlayContinuousEffects(item.Controller, artifact);
+                    RecalculateContinuousTroops();
+                    if (HasImmediateEffect(artifact, "enter"))
+                        QueueOrPushTriggeredEffect(item.Controller, artifact, "enter", "【登场时】效果");
                 }
-                else AddCardToHandByEffect(player, artifact, "library", $"诸葛亮将{artifact.Name}加入手牌");
+                else AddPreviouslyRevealedCardToHandByEffect(player, artifact, "library",
+                    $"诸葛亮将{artifact.Name}加入手牌");
                 FinishStackItem(item); return true;
             }
             case "sunwu-free-tactic":
@@ -504,24 +567,23 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip") KillTarget(item, chosen[0], $"被{source?.Name}击杀");
                 FinishStackItem(item); return true;
             case "hijikata-enter-kill":
-                if (chosen[0] != "skip") KillTarget(item, chosen[0], "被土方岁三击杀");
-                if (item.Data["hijikata-step"] == "2")
+                if (chosen[0] != "skip" && !KillTarget(item, chosen[0], "被土方岁三击杀"))
                 {
-                    item.Data["hijikata-step"] = "1";
-                    PromptEnemyLegion(item, "hijikata-enter-kill", "土方岁三：击杀对方1张费用不高于1的军团", target => L12StructuredCardRules.CurrentCostAtMost(target, 1), true);
+                    OverrideEffectKillContinuation(item, "legacy-hijikata-next");
+                    return true;
                 }
-                else FinishStackItem(item);
+                ContinueLegacyHijikataAfterKill(item);
                 return true;
             case "takasugi-debuff":
             case "tachibana-debuff":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) target.CostModifier += action == "tachibana-debuff" ? -3 : -2;
                 FinishStackItem(item); return true;
             }
             case "abe-immortal":
             {
-                var target = FindOnField(player, chosen[0], out _, out _);
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
                 if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller);
                 FinishStackItem(item); return true;
             }
@@ -533,12 +595,19 @@ public sealed partial class L12GameEngine
                 FinishStackItem(item); return true;
             case "scout-shuffle":
             {
-                var target = enemy.Hand.First(candidate => candidate.InstanceId == chosen[0]); enemy.Hand.Remove(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
+                var target = enemy.Hand.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]);
+                if (target is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开对方手牌区");
+                    FinishStackItem(item);
+                    return true;
+                }
+                enemy.Hand.Remove(target); ResetCardForPrivateZone(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
                 FinishStackItem(item); return true;
             }
             case "ambush-buff":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "伏击");
                 FinishStackItem(item); return true;
             }
             case "empty-city-block":
@@ -560,13 +629,13 @@ public sealed partial class L12GameEngine
             }
             case "last-stand-single":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
                 FinishStackItem(item); return true;
             }
             case "seppuku-cost":
             {
-                var target = FindOnField(enemy, chosen[0], out _, out _);
+                var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
                 if (target is not null) AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item); return true;
             }
@@ -644,12 +713,13 @@ public sealed partial class L12GameEngine
         };
         switch (ability)
         {
-            case "extendedRange" when source.CardId is "S01-0003" or "S01-0113":
+            case "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(source.CardId) is { } rangeRule:
             {
-                if (FindOnField(player, source.InstanceId, out var row, out _) is null || row != 1) return CommandResult.Reject("该效果只能在后排发动");
-                var paid = source.CardId == "S01-0003" ? ConsumeMorale(2) : returnMoralePrepaid || ReturnMorale(player, 1);
-                if (!paid) return CommandResult.Reject(source.CardId == "S01-0003" ? "需要消耗2张活跃士气" : "需要返还1张士气");
-                if (source.CardId == "S01-0003") player.UsedAbilities.Add(onceKey);
+                if (ExtendedRangeSourceUnavailableReason(player, source) is { } rangeError) return CommandResult.Reject(rangeError);
+                var paid = rangeRule.ConsumeMorale > 0 ? ConsumeMorale(rangeRule.ConsumeMorale)
+                    : returnMoralePrepaid || ReturnMorale(player, rangeRule.ReturnMorale);
+                if (!paid) return CommandResult.Reject(rangeRule.ConsumeMorale > 0
+                    ? $"需要消耗{rangeRule.ConsumeMorale}张活跃士气" : $"需要返还{rangeRule.ReturnMorale}张士气");
                 break;
             }
             case "xishiExchange" when source.CardId == "S01-0116":
@@ -692,13 +762,33 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
+    private void ContinueLegacyHijikataAfterKill(L12StackItem item)
+    {
+        if (item.Data.GetValueOrDefault("hijikata-step") == "2")
+        {
+            item.Data["hijikata-step"] = "1";
+            PromptEnemyLegion(item, "hijikata-enter-kill",
+                "土方岁三：击杀对方1张费用不高于1的军团",
+                target => L12StructuredCardRules.CurrentCostAtMost(target, 1), true);
+            return;
+        }
+        FinishStackItem(item);
+    }
+
     private bool TryResolveS1ExtendedActive(L12StackItem item, L12CardInstance? source, string ability)
     {
         var player = State.Players[item.Controller];
         switch (ability)
         {
-            case "extendedRange" when source is not null:
-                source.CanAttackBackAndMasterUntilTurn = State.TurnSerial;
+            case "extendedRange" when L12StructuredCardSemantics.ExtendedRangeRule(item.SourceCardId) is { } rangeRule:
+                var current = FindOnField(player, item.SourceInstanceId, out _, out _);
+                if (current is null || !IsFieldLegion(current))
+                {
+                    RecordResolutionFailure(item, "来源已不在我方战场或已不是军团");
+                    FinishStackItem(item); return true;
+                }
+                current.CanAttackBackUntilTurn = State.TurnSerial;
+                if (rangeRule.AllowsMaster) current.CanAttackBackAndMasterUntilTurn = State.TurnSerial;
                 FinishStackItem(item); return true;
             case "xishiExchange":
             {
@@ -708,8 +798,13 @@ public sealed partial class L12GameEngine
                     {
                         var declared = item.Data.GetValueOrDefault("target", string.Empty)
                             .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                        if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) is { } battlefield)
-                            SummonFromHand(player, declared[0], declared[2], tapped: false, battlefield);
+                        if (declared.Length != 3 || ParseEffectEntryBattlefieldChoice(declared[1]) is not { } battlefield)
+                            RecordResolutionFailure(item, "已声明的手牌军团或登场战场格式不完整");
+                        else if (!TrySummonFromHand(player, declared[0], declared[2], tapped: false, battlefield,
+                                     candidate => candidate.CardType == "legion"
+                                         && candidate.CardId != "S01-0116" && candidate.Troops <= 2000))
+                            RecordTargetSettlementFailure(item, declared[0],
+                                "已声明的手牌军团、登场战场或位置在响应逆结算后失效；不改选其他对象");
                         FinishStackItem(item); return true;
                     }
                     case "xishi-draw":
@@ -775,12 +870,18 @@ public sealed partial class L12GameEngine
             data: new Dictionary<string, string> { ["action"] = action, ["sourceZone"] = "hand", ["layout"] = "single-row" });
     }
 
-    private void MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect,
+    private bool MoveHandToGrave(L12PlayerState player, string instanceId, bool causedByEffect,
         L12CardInstance? source = null)
+        => MoveHandToGraveWithPresentationSequence(player, instanceId, causedByEffect, source, out _);
+
+    private bool MoveHandToGraveWithPresentationSequence(L12PlayerState player, string instanceId, bool causedByEffect,
+        L12CardInstance? source, out long discardPresentationSequence)
     {
+        discardPresentationSequence = 0;
         var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
-        if (card is null) return;
+        if (card is null) return false;
         player.Hand.Remove(card);
+        ResetCardForPrivateZone(card);
         player.Graveyard.Add(card);
         var authoritativeSource = source;
         if (authoritativeSource is null && State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
@@ -789,15 +890,21 @@ public sealed partial class L12GameEngine
             && (authoritativeSource.CardType == "master" || authoritativeSource.CardId == player.MasterId))
             player.HandDiscardedByMasterThisTurn = true;
         AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
+        discardPresentationSequence = State.EventSequence;
         NotifyCardDiscarded(player, card, "hand", causedByEffect);
+        return true;
     }
 
-    private void MoveGraveToHand(L12PlayerState player, string instanceId)
+    private void MoveGraveToHand(L12PlayerState player, string instanceId, L12StackItem item)
     {
         var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入手牌，仍置于墓地", card); return; }
-        player.Graveyard.Remove(card); AddCardToHandByEffect(player, card, "graveyard", $"{card.Name}从墓地回到手牌"); AddEvent("return", player.PlayerIndex, $"{card.Name}从墓地回到手牌", card);
+        player.Graveyard.Remove(card);
+        ResetCardForPrivateZone(card);
+        PubliclyRevealThenAddCardToHandByEffect(player, card, "graveyard",
+            $"〈{card.Name}〉从墓地公开加入手牌", $"{card.Name}从墓地回到手牌", item);
+        AddEvent("return", player.PlayerIndex, $"{card.Name}从墓地回到手牌", card);
     }
 
     private int ExpiryAtNextOwnEnd(int controller) => State.TurnSerial + (State.ActivePlayer == controller ? 0 : 1);
@@ -815,11 +922,28 @@ public sealed partial class L12GameEngine
         var topIds = item.Data["camp-top"].Split('|', StringSplitOptions.RemoveEmptyEntries);
         if (choice != "skip")
         {
-            var selected = player.Library.First(card => card.InstanceId == choice);
-            player.Library.Remove(selected);
-            PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
-                $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
-                "S01-0007", "reveal-add");
+            var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice
+                && IsStillInInspectedLibrarySet(item, "camp-top", card)
+                && IsCampSearchCandidate(player, card));
+            if (selected is null)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller, "野外扎营已选择的牌库卡牌在结算步骤中失效");
+            }
+            else
+            {
+                player.Library.Remove(selected);
+                PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                    $"野外扎营展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
+                    "S01-0007", "reveal-add");
+            }
+        }
+        else if (topIds.Any(id => player.Library.Any(card => card.InstanceId == id
+                     && IsCampSearchCandidate(player, card))))
+        {
+            item.Data["effectResultStatus"] = "failed";
+            AddEvent("effect-failed", item.Controller,
+                "野外扎营升级前选择不加入手牌，但当前存在必须选择的合法军团");
         }
         var remaining = topIds.Where(id => id != choice && player.Library.Any(card => card.InstanceId == id)).ToArray();
         if (remaining.Length <= 1)
@@ -827,20 +951,8 @@ public sealed partial class L12GameEngine
             CompleteCampOrder(item, remaining.ToList());
             return;
         }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "camp-order",
-            ["placementMode"] = "all-bottom",
-            ["layout"] = "single-row",
-            ["displayCardIds"] = string.Join('|', remaining),
-        };
-        foreach (var id in remaining)
-        {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
-            AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", "野外扎营：调整其余卡牌的顺序，然后全部放回牌库底部。",
-            remaining, remaining.Length, remaining.Length, "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining, "camp-order", "all-bottom",
+            "野外扎营：调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompleteCampOrder(L12StackItem item, List<string> order)
@@ -869,24 +981,42 @@ public sealed partial class L12GameEngine
                 ? playerIndex
                 : null;
 
-    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped, int? targetPlayerIndex = null)
+    /// <summary>
+    /// 严格结算已声明的手牌登场：只能移动同一张仍在手牌区的实例，不能把它在响应
+    /// 期间移入墓地/牌库后的同实例当作替代对象，也不能覆盖或改选位置。调用方据返回值
+    /// 决定本效果段是否失败及是否可继续“随后”段。
+    /// </summary>
+    private bool TrySummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped,
+        int? targetPlayerIndex = null, Func<L12CardInstance, bool>? candidateRule = null)
     {
-        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId); if (card is null) return;
+        var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == cardId
+            && candidate.CardType == "legion" && (candidateRule?.Invoke(candidate) ?? true));
+        if (card is null) return false;
         var battlefield = targetPlayerIndex ?? player.PlayerIndex;
-        if (battlefield != player.PlayerIndex && card.CardId != "S01-0004") return;
+        if (battlefield < 0 || battlefield >= State.Players.Length
+            || battlefield != player.PlayerIndex && card.CardId != "S01-0004"
+            || !EmptySlots(State.Players[battlefield]).Contains(slotChoice, StringComparer.OrdinalIgnoreCase)) return false;
         var (row, slot) = ParseSlot(slotChoice);
-        if (row is < 0 or > 1 || slot is < 0 or > 2 || State.Players[battlefield].Field[row][slot] is not null) return;
-        player.Hand.Remove(card); card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
+        player.Hand.Remove(card);
+        ResetCardForFieldEntry(card);
+        card.OwnerIndex ??= player.PlayerIndex; card.Tapped = tapped; card.SummonRound = State.Round;
         State.Players[battlefield].Field[row][slot] = card;
-        AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        if (battlefield != player.PlayerIndex)
+            AddPlayerPublicPlacementEvent(battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场",
+                card, player.PlayerIndex, battlefield, row, slot);
+        else
+            AddEvent("put", battlefield, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
         CompleteEffectLegionEntry(battlefield, card, "hand");
+        return true;
     }
 
-    private static bool IsCounterTactic(string cardId) => cardId is
-        "S01-0016" or "S01-0017" or "S01-0018" or "S01-0019" or "S01-0020" or "S01-0021" or "S01-0120" or
-        "S01-0223" or "S01-0224" or "S01-0320" or "S01-0420" or
-        "S02-0015" or "S02-0016" or "S02-0017" or "S02-0018" or "S02-0106" or "S02-0523" or
-        "ST01-10";
+    private void SummonFromHand(L12PlayerState player, string cardId, string slotChoice, bool tapped,
+        int? targetPlayerIndex = null)
+        => _ = TrySummonFromHand(player, cardId, slotChoice, tapped, targetPlayerIndex);
+
+    private bool IsCounterTactic(string cardId)
+        => _catalog.Cards.TryGetValue(cardId, out var definition)
+            && L12CounterTacticRules.IsCounterTactic(definition);
 
     private bool CanUseS1ReactionAtStack(string cardId, int playerIndex, L12StackItem top)
     {
@@ -896,10 +1026,9 @@ public sealed partial class L12GameEngine
         if (RequiresMoraleResponseCost(cardId) && !CanReturnMorale(State.Players[playerIndex], 1)) return false;
         if (L12StructuredCardRules.RequiresOwnLegionResponseTarget(cardId))
             return PublicLegions(State.Players[playerIndex]).Any()
-                && (timing.Trigger == "opponent-attack"
+                && (top.Trigger == "opponent-attack"
                     ? playerIndex == defendingPlayer
-                    : IsLegionEntryEffectTrigger(timing.Trigger)
-                        || timing.Trigger is "play" or "active" or "disaster");
+                    : IsRespondableCardEffectActivation(top));
         return cardId switch
         {
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,
@@ -928,7 +1057,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 
@@ -948,48 +1077,61 @@ public sealed partial class L12GameEngine
             {
                 var entryId = PublicTriggerDeclared(item, "entryCard");
                 var slot = PublicTriggerDeclared(item, "entrySlot");
-                if (!string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
+                var valid = !string.IsNullOrWhiteSpace(entryId) && !string.IsNullOrWhiteSpace(slot)
                     && player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
-                        && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
-                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 4)
+                        && L12StructuredCardRules.HasFaction(player, card, "tianting"))
+                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
                     SummonFromHand(player, entryId, slot, tapped: false);
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        "暗度陈仓选择的军团或登场位置已失效；已返还的士气不返还");
+                    AddEvent("effect-failed", item.Controller,
+                        "暗度陈仓已发动，但选择的军团或登场位置在结算前失效；已返还的士气不返还");
                 FinishStackItem(item);
                 return;
             }
             case "伏击":
             {
                 var target = PublicLegions(player).FirstOrDefault(card => card.InstanceId == item.Data.GetValueOrDefault("target"));
-                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "伏击");
+                if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "伏击");
+                else RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                    "所选我方军团已离场");
                 FinishStackItem(item);
                 return;
             }
             case "战斗至黎明":
             case "battle-until-dawn-buff":
-                foreach (var target in PublicLegions(player)) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
+            {
+                var targets = PublicLegions(player).ToArray();
+                if (targets.Length == 0) RecordTargetSettlementFailure(item, null, "我方当前没有军团可以增加兵力");
+                foreach (var target in targets) AddTimedModifier(target, 1000, 0, State.TurnSerial, "战斗至黎明");
                 FinishStackItem(item); return;
+            }
             case "battle-until-dawn-draw":
-                if (player.Graveyard.Count >= 5) Draw(player, 1);
-                FinishStackItem(item); return;
+                ResolveConditionalResponseDraw(item, player.Graveyard.Count >= 5, "墓地卡牌数量已少于5张");
+                return;
             case "空城计":
             case "empty-city-block":
             {
-                var targetStack = State.EffectStack.FirstOrDefault(stack => stack.StackItemId == item.Targets.FirstOrDefault());
-                if (targetStack is not null) targetStack.Negated = true;
+                var targetStack = DeclaredResponseTimingTarget(item);
+                if (targetStack?.Trigger == "opponent-attack") DeclareEffectBlock(item, targetStack);
+                else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "原进攻已离开堆叠或不再是进攻事件");
                 FinishStackItem(item);
                 return;
             }
             case "empty-city-draw":
-                if (!player.Field[0].Any(card => card is not null && IsFieldLegion(card))) Draw(player, 1);
-                FinishStackItem(item); return;
+                ResolveConditionalResponseDraw(item,
+                    !player.Field[0].Any(card => card is not null && IsFieldLegion(card)), "我方前排已有军团");
+                return;
             case "拼死反抗":
             {
                 var declared = item.Data.GetValueOrDefault("declaredTargets");
                 if (declared == "mode:all")
                 {
-                    foreach (var target in PublicLegions(State.Players[1 - item.Controller]).Where(card => card.Tapped))
+                    var targets = PublicLegions(State.Players[1 - item.Controller])
+                        .Where(card => card.Tapped).ToArray();
+                    if (targets.Length == 0) item.Data["effectResultStatus"] = "skipped";
+                    foreach (var target in targets)
                         AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
                 }
                 else
@@ -997,6 +1139,8 @@ public sealed partial class L12GameEngine
                     var target = PublicLegions(State.Players[1 - item.Controller])
                         .FirstOrDefault(card => card.InstanceId == declared && card.Tapped);
                     if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                    else RecordTargetSettlementFailure(item, declared,
+                        "所选军团已离场或不再处于休整状态");
                 }
                 FinishStackItem(item);
                 return;
@@ -1008,17 +1152,49 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(seppukuTarget, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
                 FinishStackItem(item);
                 return;
+            case "seppuku-draw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    item.Data.Remove("compositePlan");
+                }
+                FinishStackItem(item);
+                return;
+            case "seppuku-cost":
+            {
+                var declaredTarget = PublicTriggerDeclared(item, "costTarget");
+                var target = DeclaredEnemyTarget(item.Controller, declaredTarget);
+                if (target is not null)
+                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                else
+                    RecordTargetSettlementFailure(item, declaredTarget,
+                        "所选对方军团已离场；若发动时原本无对象则仅跳过本段");
+                FinishStackItem(item);
+                return;
+            }
             case "摄政皇权":
+            case "regency-entry":
             {
                 var declaredCard = PublicTriggerDeclared(item, "entryCard");
-                if (!string.IsNullOrWhiteSpace(declaredCard))
+                var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
+                    ?? item.Controller;
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                var valid = !string.IsNullOrWhiteSpace(declaredCard)
+                    && player.Hand.Any(card => card.InstanceId == declaredCard && card.CardType == "legion"
+                        && L12StructuredCardRules.CurrentCostAtMost(card, 3)
+                        && EffectEntryBattlefieldChoices(item.Controller, card).Contains(battlefield))
+                    && EmptySlots(State.Players[battlefield]).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
                 {
-                    var battlefield = ParseEffectEntryBattlefieldChoice(PublicTriggerDeclared(item, "entryBattlefield"))
-                        ?? item.Controller;
-                    SummonFromHand(player, declaredCard, PublicTriggerDeclared(item, "entrySlot"), tapped: false, battlefield);
-                    FinishStackItem(item); return;
+                    SummonFromHand(player, declaredCard, slot, tapped: false, battlefield);
                 }
-                FinishStackItem(item); return;
+                else
+                {
+                    AddEvent("effect-failed", item.Controller,
+                        "摄政皇权已发动，但声明的手牌军团或登场位置在结算前失效");
+                }
+                FinishStackItem(item);
+                return;
             }
             case "复仇血鹰":
             case "blood-eagle-debuff":
@@ -1029,29 +1205,42 @@ public sealed partial class L12GameEngine
             case "blood-eagle-recover":
             {
                 var order = CompositeDeclared(item, "graveOrder");
-                if (order is not [var handId, var bottomId]) { FinishStackItem(item); return; }
-                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == handId);
-                var bottomCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == bottomId);
-                if (handCard is not null)
+                if (order is not [var handId, var bottomId])
                 {
-                    player.Graveyard.Remove(handCard);
-                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}从墓地加入手牌");
+                    RecordResolutionFailure(item, "墓地对象的去向声明不完整");
+                    FinishStackItem(item); return;
                 }
-                if (bottomCard is not null)
-                {
-                    player.Graveyard.Remove(bottomCard);
-                    player.Library.Add(bottomCard);
-                    AddEvent("return", item.Controller, $"〈{bottomCard.Name}〉从墓地置于牌库底部", bottomCard);
-                }
+                ResolveDeclaredGraveDestinations(item, handId, bottomId,
+                    card => card.InstanceId != item.SourceInstanceId
+                        && L12StructuredCardRules.HasFaction(player, card, "asgard"));
                 FinishStackItem(item);
                 return;
             }
             case "锡瓦的卡巴":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "entrySlot")))
                 {
-                    SummonFromHand(player, item.SourceInstanceId, PublicTriggerDeclared(item, "entrySlot"), false);
-                    var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
-                    if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                    if (TrySummonFromHand(player, item.SourceInstanceId,
+                            PublicTriggerDeclared(item, "entrySlot"), false, candidateRule:
+                            candidate => candidate.CardId == "S01-0213"))
+                    {
+                        var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
+                        if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                    }
+                    else
+                    {
+                        var failedKaba = player.Hand.FirstOrDefault(card => card.InstanceId == item.SourceInstanceId
+                            && card.CardId == "S01-0213");
+                        if (failedKaba is not null)
+                        {
+                            player.Hand.Remove(failedKaba);
+                            ResetCardForPrivateZone(failedKaba);
+                            player.Graveyard.Add(failedKaba);
+                            AddEvent("move", item.Controller,
+                                "〈锡瓦的卡巴〉声明的登场位置在逆结算后被占用，按单卡裁定置入墓地", failedKaba);
+                        }
+                        RecordResolutionFailure(item,
+                            "来源已不在手牌区或预先选择的登场位置在响应逆结算后失效；不执行下个重置阶段的士气锁定");
+                    }
                     FinishStackItem(item); return;
                 }
                 FinishStackItem(item); return;
@@ -1062,11 +1251,46 @@ public sealed partial class L12GameEngine
                     && player.Graveyard.Any(card => card.InstanceId == declaredGuard && card.CardId == "S01-0212")
                     && EmptySlots(player).Contains(PublicTriggerDeclared(item, "entrySlot"), StringComparer.OrdinalIgnoreCase))
                 {
-                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"), false);
+                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"),
+                        tapped: false, presentationOwner: item);
                     FinishStackItem(item); return;
                 }
                 if (item.Data.ContainsKey("declared:entryCard")) { FinishStackItem(item); return; }
                 FinishStackItem(item); return;
+            case "immortal-gift-draw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    item.Data.Remove("compositePlan");
+                }
+                FinishStackItem(item);
+                return;
+            case "immortal-gift-summon":
+            {
+                if (PublicTriggerDeclared(item, "entryMode") != "mode:summon")
+                {
+                    item.Data["effectResultStatus"] = "declined";
+                    FinishStackItem(item);
+                    return;
+                }
+                var plannedGuard = PublicTriggerDeclared(item, "entryCard");
+                var battlefield = ParseEffectEntryBattlefieldChoice(
+                    PublicTriggerDeclared(item, "entryBattlefield")) ?? item.Controller;
+                var slot = PublicTriggerDeclared(item, "entrySlot");
+                var valid = !string.IsNullOrWhiteSpace(plannedGuard)
+                    && player.Graveyard.Any(card => card.InstanceId == plannedGuard
+                        && card.CardId == "S01-0212"
+                        && EffectEntryBattlefieldChoices(item.Controller, card).Contains(battlefield))
+                    && EmptySlots(State.Players[battlefield]).Contains(slot, StringComparer.OrdinalIgnoreCase);
+                if (valid)
+                    _ = TrySummonFromAnyPrivateZone(player, battlefield, plannedGuard, slot,
+                        tapped: false, presentationOwner: item);
+                else
+                    RecordTargetSettlementFailure(item, plannedGuard,
+                        "所选陵墓守卫、战场或登场位置不再合法");
+                FinishStackItem(item);
+                return;
+            }
             case "智慧法典 卷一":
             {
                 var opponent = State.Players[1 - item.Controller];
@@ -1096,7 +1320,10 @@ public sealed partial class L12GameEngine
                 return;
             case "wisdom-recover":
                 var target = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
-                if (target is not null) MoveGraveToHand(player, target);
+                _ = TryMoveDeclaredGraveCardToHand(item, target,
+                    (owner, candidate) => IsWisdomCodexRecoveryCandidate(candidate),
+                    "智慧法典将所选墓地卡牌加入手牌",
+                    "智慧法典已选择的墓地回收对象已离开墓地或不再符合费用与类型条件");
                 FinishStackItem(item);
                 return;
             default:
@@ -1106,19 +1333,18 @@ public sealed partial class L12GameEngine
         }
     }
 
+    private bool IsWisdomCodexRecoveryCandidate(L12CardInstance candidate)
+        => candidate.CardId != "S01-0224"
+            && L12StructuredCardRules.CurrentCostAtMost(candidate, 3)
+            && candidate.CardType is "tactic" or "artifact"
+            && CanEnterHandOrLibrary(candidate);
+
     private void QueueS1PostAttackReactions(int attackerPlayer)
     {
         var defenderIndex = 1 - attackerPlayer;
         var defender = State.Players[defenderIndex];
-        var hasOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any();
-        var hasRestedOpponentLegion = PublicLegions(State.Players[attackerPlayer]).Any(target => target.Tapped);
         var candidates = defender.Field[1].Where(card => card is not null
-                && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId, hasOpponentLegion,
-                    hasRestedOpponentLegion)
-                && (card.CardId != "ST01-10" || defender.Morale.Count > 0
-                    && defender.Hand.Any(hand => hand.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(hand, 4)
-                        && L12StructuredCardRules.HasFaction(defender, hand, "tianting"))
-                    && EmptySlots(defender).Any())).Cast<L12CardInstance>()
+                && L12StructuredCardRules.CanOfferPostAttackReaction(card.CardId)).Cast<L12CardInstance>()
             .Select(counter => IsTrojanHorse(counter)
                 ? CreateTriggerCandidate(defenderIndex, counter, "trojan-after-attack", "【对方进攻后】反击战术",
                     new Dictionary<string, string> { ["attacker"] = attackerPlayer.ToString() })
@@ -1130,6 +1356,11 @@ public sealed partial class L12GameEngine
     }
 
     private void QueueS1MasterDamageReaction(int damagedPlayer, int? sourcePlayer, bool effectDamage)
+        => QueueS1MasterDamageReactionCore(damagedPlayer, sourcePlayer, effectDamage,
+            allowDamageTriggeredRelicEffects: true);
+
+    private void QueueS1MasterDamageReactionCore(int damagedPlayer, int? sourcePlayer, bool effectDamage,
+        bool allowDamageTriggeredRelicEffects)
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
@@ -1138,8 +1369,7 @@ public sealed partial class L12GameEngine
             candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
         if (player.MasterId == "S01-02M3" && State.ActivePlayer == 1 - damagedPlayer
             && sourcePlayer == 1 - damagedPlayer
-            && player.Graveyard.Any(card => card.CardId == "S01-0212")
-            && !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            && !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
             && player.UsedAbilities.Add("pending:medjedDamageResponse"))
         {
             var master = CreateCard(player.MasterId, $"master-{damagedPlayer}");
@@ -1149,10 +1379,10 @@ public sealed partial class L12GameEngine
         {
             candidates.AddRange(PublicLegions(player)
                 .Where(card => card.CardId == "S02-0304" && !card.Tapped)
-                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "active", "【我方主宰因效果受到伤害时】效果",
+                .Select(card => CreateTriggerCandidate(damagedPlayer, card, "master-damaged-by-effect", "【我方主宰因效果受到伤害时】效果",
                     new Dictionary<string, string> { ["ability"] = "margaretMasterDamage" })));
         }
-        if (BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
+        if (allowDamageTriggeredRelicEffects && BuildAnderstorpRingDrawCandidate(damagedPlayer) is { } ringDraw)
             candidates.Add(ringDraw);
         QueueTriggerCandidates(candidates);
     }

@@ -134,7 +134,7 @@ public static class L12RuntimeEffectRoutes
         new("S01-DS07", "disaster", "天启默示录"),
         new("S01-DS08", "disaster", "虚构的圣杯"),
         new("S01-DS09", "disaster", "诸神黄昏"),
-        new("S01-DS10", "disaster", "堙灭"),
+        new("S01-DS10", "disaster", "湮灭"),
         new("S02-0003", "enter", "宫廷魔术师"),
         new("S02-0008", "enter", "万物统御之戒"),
         new("S02-0009", "play", "防御部署"),

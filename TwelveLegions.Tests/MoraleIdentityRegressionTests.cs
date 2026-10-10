@@ -104,6 +104,16 @@ public sealed class MoraleIdentityRegressionTests
         }
     }
 
+    [Theory]
+    [InlineData("S02-05C1", true)]
+    [InlineData("S02-05C1A", true)]
+    [InlineData("ST05-C1", true)]
+    [InlineData("S01-01C1", false)]
+    [InlineData("S02-0010", false)]
+    [InlineData("S02-06C1", false)]
+    public void GodPowerFaceEligibilityComesFromTheMoraleIdentityCatalog(string cardId, bool expected)
+        => Assert.Equal(expected, Catalog.MoraleIdentities.CanUseGodPowerFace(cardId));
+
     private static L12PresetDeckDefinition CopyWithMorale(L12PresetDeckDefinition source, string moraleId)
         => new()
         {

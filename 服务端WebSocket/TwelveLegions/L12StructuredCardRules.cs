@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace TwelveLegions.Server;
 
 /// <summary>
@@ -10,23 +12,96 @@ public sealed record L12ConditionalCombatProfile(
     bool HasRangedNoLoss,
     bool HasAttackNoLoss,
     bool CannotBeRanged,
+    bool CannotAttackMaster,
+    bool CannotAttack,
+    bool CannotSupport,
+    bool CannotBeAttacked,
     int? AttackTroopsSetValue,
     int IncomingRangedCombatDamageAdjustment,
     string ConditionExpression);
 
+public sealed record L12SelfDamageEntryDiscountRule(
+    int DamageAmount,
+    int CostAdjustment,
+    string CostText,
+    string ResolutionText);
+
 public static partial class L12StructuredCardRules
 {
+    internal const string SharedDivinitySetupText = "主神开场即可追加2张额外士气。";
+
+    internal static L12StructuredAbilityTemplate SharedDivinitySetupAbility()
+        => new("setup", "triggered", SharedDivinitySetupText,
+        [
+            new(L12AtomKinds.AddMorale, "主神开场追加 2 张额外士气", "resolution", new()
+            {
+                ["amount"] = "2", ["state"] = "ready", ["source"] = "morale-deck",
+            }),
+        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260924" };
+
+    public static (string? CostText, string ResolutionText) SplitAbilityText(string text, bool hasCost)
+    {
+        if (!hasCost || !HasPrintedCostBoundary(text)) return (null, text);
+        var separator = text.IndexOfAny(['：', ':']);
+        return separator > 0 && separator + 1 < text.Length
+            ? (text[..separator].Trim(), text[(separator + 1)..].Trim())
+            : (null, text);
+    }
+
+    /// <summary>
+    /// 只把冒号前最后一个完整子句中的支付动作视为印刷Cost。
+    /// “进攻时：”、“1~2：”、“选择一项：”只是时点/分支标点，不能因为冒号后出现弃置等字样就误报为Cost。
+    /// </summary>
+    public static bool HasPrintedCostBoundary(string text)
+    {
+        var separator = text.IndexOfAny(['：', ':']);
+        if (separator <= 0) return false;
+        var prefix = text[..separator].Trim();
+        var clauseStart = prefix.LastIndexOfAny(['。', '；', ';']);
+        var clause = prefix[(clauseStart + 1)..].Trim();
+        if (string.IsNullOrWhiteSpace(clause) || clause.EndsWith("时", StringComparison.Ordinal)
+            || Regex.IsMatch(clause, @"^(?:\d+\s*[~～至-]\s*\d+|选择(?:以下)?一?项)$"))
+            return false;
+        return clause.Contains("消耗", StringComparison.Ordinal)
+            || clause.Contains("返还", StringComparison.Ordinal)
+            || clause.Contains("弃置", StringComparison.Ordinal)
+            || clause.Contains("展示", StringComparison.Ordinal)
+            || clause.Contains("移除", StringComparison.Ordinal)
+            || clause.Contains("放回", StringComparison.Ordinal)
+            || clause.Contains("返回", StringComparison.Ordinal)
+            || clause.Contains("置入", StringComparison.Ordinal)
+            || clause.Contains("主动休整", StringComparison.Ordinal)
+            || clause.Contains("转为休整", StringComparison.Ordinal)
+            || Regex.IsMatch(clause, @"对我方主宰造成\s*\d+点伤害");
+    }
+
     public static bool CurrentCostAtMost(L12CardInstance card, int maximum)
         => card.HasPrintedCost && card.CurrentCost <= maximum;
 
     public static bool CurrentCostEquals(L12CardInstance card, int value)
         => card.HasPrintedCost && card.CurrentCost == value;
 
+    /// <summary>
+    /// 牌库检索按费用筛选时，未印刷费用的卡按0处理；这不会赋予其0费打出能力。
+    /// </summary>
+    public static bool SearchCostAtMost(L12CardInstance card, int maximum)
+        => (card.HasPrintedCost ? card.CurrentCost : 0) <= maximum;
+
+    /// <summary>
+    /// 【试炼军团】是卡牌类型与当前实例试炼值共同定义的规则身份。
+    /// 试炼值不是阵营、特征或职介；所有候选、提交与结算入口都必须查询此定义，禁止维护卡号白名单。
+    /// </summary>
+    public static bool IsTrialLegion(L12CardInstance card)
+        => card.CardType == "legion" && card.TrialValue > 0;
+
+    public static bool IsTrialLegion(L12CardDefinition card)
+        => card.CardType == "legion" && card.TrialValue is > 0;
+
     private static readonly HashSet<string> AlwaysRangedCards = new(StringComparer.Ordinal)
     {
         "S01-0003", "S01-0110", "S01-0111", "S01-0112", "S01-0113", "S01-0114", "S01-0116",
         "S01-0208", "S01-0209", "S01-0210", "S01-0211", "S01-0214", "S01-0309", "S01-0313",
-        "S01-0314", "S01-0410", "S01-0411", "S01-0413", "S01-0416",
+        "S01-0410", "S01-0411", "S01-0413", "S01-0416",
         "ST01-07", "ST01-09", "ST02-08", "ST03-05", "ST04-07", "ST05-03",
         "ST05-04", "ST05-08", "ST05-09",
     };
@@ -39,7 +114,6 @@ public static partial class L12StructuredCardRules
     private static readonly HashSet<string> FrontRowTauntOverlayCards = new(StringComparer.Ordinal)
     {
         "S01-0107", "S01-0204", "S01-0312",
-        "ST01-04", "ST02-02", "ST04-01", "ST06-02",
     };
 
     private static readonly HashSet<string> AlwaysAttackNoLossCards = new(StringComparer.Ordinal)
@@ -58,7 +132,6 @@ public static partial class L12StructuredCardRules
         = new Dictionary<string, int>(StringComparer.Ordinal)
         {
             ["S01-0107"] = 1000,
-            ["S01-0212"] = 1000,
             ["S01-0312"] = 1000,
             ["S02-0004"] = 1000,
             ["S02-0007"] = 1000,
@@ -67,13 +140,6 @@ public static partial class L12StructuredCardRules
             ["ST04-01"] = 1000,
             ["ST06-02"] = 1000,
         };
-
-    // 卡面冒号前的可选主宰伤害属于登场费用替代，必须由结构化身份语义驱动，
-    // 禁止根据可变的 EffectText 推断按钮合法性或最终费用。
-    private static readonly HashSet<string> OptionalSelfDamageEntryDiscountCards = new(StringComparer.Ordinal)
-    {
-        "S01-0303", "S01-0304", "S01-0308", "S01-0310", "S01-0314", "S02-0303",
-    };
 
     // 只有写明“触发”的天灾在翻开时播放触发式效果展示；纯持续天灾只公开卡牌。
     // 此列表同时供实战展示和原子审计使用，不再扫描卡面文本。
@@ -114,13 +180,6 @@ public static partial class L12StructuredCardRules
         "ST05-06|telemachusTopThree", "ST06-09|lightSwordActive",
     };
 
-    // 卡面明确写明“登场回合不受反击战术效果影响”的军团。
-    // 响应窗口只查询这一处结构化规则，禁止再从 EffectText.Contains 推断。
-    private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards = new(StringComparer.Ordinal)
-    {
-        "S01-0201", "S01-0202", "ST02-01",
-    };
-
     // 冒号前存在“先选择并支付登场时效果费用”的卡，必须在效果入栈前完成预声明。
     // 身份映射集中在结构化规则层；运行时入口只查询规则能力，禁止重新出现分散卡号分支。
     private static readonly HashSet<string> PreStackEnterCostCards = new(StringComparer.Ordinal)
@@ -139,8 +198,68 @@ public static partial class L12StructuredCardRules
     public static bool HasFaction(L12PlayerState owner, L12CardInstance card, string faction)
         => string.Equals(EffectiveFaction(owner, card), faction, StringComparison.Ordinal);
 
+    private static readonly IReadOnlyDictionary<string, string> FactionTraitNames =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["universal"] = "通用",
+            ["tianting"] = "天廷",
+            ["taiyangcheng"] = "太阳城",
+            ["asgard"] = "阿斯加德",
+            ["gaotianyuan"] = "高天原",
+            ["olympus"] = "奥林匹斯",
+            ["otherworld"] = "彼界",
+        };
+
+    private static bool IsAdditionalRuleTrait(string trait)
+        => trait is "圆桌骑士" or "晋升者"
+            || trait.EndsWith("专属", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 规则特征由当前有效阵营（六阵营或通用）与明确的附加特征组成。
+    /// 职介与试炼值不是特征；圆桌骑士、晋升者及“某主宰专属”是附加特征。
+    /// 万物统御之戒会把通用特征替换为持有者主宰的阵营特征。
+    /// </summary>
+    public static IReadOnlySet<string> EffectiveTraits(L12PlayerState owner, L12CardInstance card)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (FactionTraitNames.TryGetValue(EffectiveFaction(owner, card), out var factionTrait))
+            result.Add(factionTrait);
+        foreach (var trait in card.Traits.Where(IsAdditionalRuleTrait))
+            result.Add(trait);
+        return result;
+    }
+
+    public static bool HasOnlyEffectiveFactionTrait(L12PlayerState owner, L12CardInstance card, string faction)
+    {
+        if (!FactionTraitNames.TryGetValue(faction, out var expectedTrait)) return false;
+        var traits = EffectiveTraits(owner, card);
+        return traits.Count == 1 && traits.Contains(expectedTrait);
+    }
+
     public static bool HasOptionalSelfDamageEntryDiscount(string cardId)
-        => OptionalSelfDamageEntryDiscountCards.Contains(cardId);
+        => SelfDamageEntryDiscount(cardId) is not null;
+
+    public static L12SelfDamageEntryDiscountRule? SelfDamageEntryDiscount(string cardId)
+    {
+        if (!TryGetStructuredAbilities(cardId, out var abilities)) return null;
+        var ability = abilities.SingleOrDefault(candidate => candidate.Trigger == "hand-play"
+            && candidate.Atoms.Any(atom => atom.Stage == "cost"
+                && atom.Kind == L12AtomKinds.DamageMaster
+                && atom.Parameters.GetValueOrDefault("semantic") == "self-damage-entry-discount-cost"));
+        if (ability is null) return null;
+        var damage = ability.Atoms.Single(atom => atom.Stage == "cost"
+            && atom.Kind == L12AtomKinds.DamageMaster);
+        var adjustment = ability.Atoms.Single(atom => atom.Kind == L12AtomKinds.SetState
+            && atom.Parameters.GetValueOrDefault("key") == "source.derived-cost");
+        if (!int.TryParse(damage.Parameters.GetValueOrDefault("amount"), out var damageAmount)
+            || damageAmount <= 0
+            || !int.TryParse(adjustment.Parameters.GetValueOrDefault("value"), out var costAdjustment)
+            || costAdjustment >= 0)
+            return null;
+        var textParts = SplitAbilityText(ability.Text, hasCost: true);
+        if (textParts.CostText is null) return null;
+        return new(damageAmount, costAdjustment, textParts.CostText, textParts.ResolutionText);
+    }
 
     public static bool HasTriggeredDisasterEffect(string cardId)
         => TriggeredDisasterCards.Contains(cardId);
@@ -152,7 +271,11 @@ public static partial class L12StructuredCardRules
         => ActiveRestAbilities.Contains($"{cardId}|{ability}");
 
     public static int OpponentTurnFrontTroopsBonus(string cardId)
-        => OpponentTurnFrontTroopsBonuses.GetValueOrDefault(cardId);
+        => L12StructuredCardSemantics.OpponentTurnFieldRule(cardId)?.FrontRowTroopsBonus
+           ?? OpponentTurnFrontTroopsBonuses.GetValueOrDefault(cardId);
+
+    public static int OpponentTurnCostModifier(string cardId)
+        => L12StructuredCardSemantics.OpponentTurnFieldRule(cardId)?.CostAdjustment ?? 0;
 
     public static bool HasAnyRowRangeBonus(L12CardInstance card)
         => CombatProfile(card, 0).HasRangeBonus || CombatProfile(card, 1).HasRangeBonus;
@@ -194,17 +317,22 @@ public static partial class L12StructuredCardRules
 
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {
-        if (card.CardType != "artifact") return null;
         var artifactZone = controller.Relic is null
             ? controller.ExtraRelics
             : controller.ExtraRelics.Prepend(controller.Relic);
-        if (artifactZone.Any(source => source.CardId == "S02-0305"))
-            return "〈安德华拉诺特〉使我方无法从手牌打出圣物";
-        // “其他圣物”不包含另一张〈黄金圣甲虫〉。同名圣物可正常打出并按
-        // 圣物顶替规则处理；不同名圣物仍由此权威查询同时禁用按钮与提交。
-        if (card.CardId != "S02-0205"
-            && artifactZone.Any(source => source.CardId == "S02-0205"))
-            return "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物";
+        var blockers = artifactZone
+            .Select(source => (Source: source, Rule: L12StructuredCardSemantics.HandPlayBlockRule(source.CardId)))
+            .Where(entry => entry.Rule is not null)
+            .OrderBy(entry => entry.Rule!.Priority);
+        foreach (var (source, ruleOrNull) in blockers)
+        {
+            var rule = ruleOrNull!;
+            if (!string.Equals(card.CardType, rule.BlockedCardType, StringComparison.Ordinal)) continue;
+            // “其他圣物”不包含另一张同名来源；是否允许同名由规则参数决定。
+            if (rule.AllowsSameCardId && string.Equals(card.CardId, source.CardId, StringComparison.OrdinalIgnoreCase))
+                continue;
+            return rule.Reason;
+        }
         return null;
     }
 
@@ -229,7 +357,8 @@ public static partial class L12StructuredCardRules
                 var faction = atom.Parameters.GetValueOrDefault("faction");
                 if (string.IsNullOrWhiteSpace(faction)) continue;
                 modifier -= controller.Field.SelectMany(row => row)
-                    .Count(target => target is not null && HasFaction(controller, target, faction));
+                    .Count(target => target is { CardType: "legion" }
+                        && HasFaction(controller, target, faction));
             }
         }
         return modifier;
@@ -239,7 +368,7 @@ public static partial class L12StructuredCardRules
     {
         if (card.TauntUntilTurn >= 0) return !card.TauntRequiresFrontRow || row == 0;
         var abilities = GetCombatRuleAbilities(card.CardId);
-        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             // `granted-continuous` 是被其他能力引用的定义，不能脱离授予条件独立生效。
             .Where(ability => ability.ExecutionModel != "granted-continuous")
             .Where(ability => !ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Condition
@@ -250,7 +379,7 @@ public static partial class L12StructuredCardRules
     public static bool CannotReceiveBackRowSupport(L12CardInstance card, int row)
     {
         var abilities = GetCombatRuleAbilities(card.CardId);
-        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+        return abilities.Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Any(atom => atom.Kind == L12AtomKinds.AttackRule
                 && atom.Parameters.GetValueOrDefault("cannotReceiveBackRowSupport") == "true");
@@ -260,7 +389,7 @@ public static partial class L12StructuredCardRules
     {
         if (row != 1) return false;
         return GetCombatRuleAbilities(card.CardId)
-            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Any(atom => atom.Kind == L12AtomKinds.Keyword
                 && atom.Parameters.GetValueOrDefault("keywordRef") == "cooperative-support");
@@ -293,11 +422,15 @@ public static partial class L12StructuredCardRules
         var rangedNoLoss = false;
         var attackNoLoss = false;
         var cannotBeRanged = false;
+        var cannotAttackMaster = false;
+        var cannotAttack = false;
+        var cannotSupport = false;
+        var cannotBeAttacked = false;
         int? attackTroopsSetValue = null;
         var incomingRangedCombatDamageAdjustment = 0;
         var matchedConditions = new List<string>();
         var abilities = GetCombatRuleAbilities(card.CardId);
-        foreach (var ability in abilities.Where(ability => ConditionMatchesRow(ability, row)))
+        foreach (var ability in abilities.Where(ability => ConditionMatches(ability, card, row)))
         {
             var expression = ConditionExpression(ability);
             if (!string.IsNullOrWhiteSpace(expression)) matchedConditions.Add(expression);
@@ -315,6 +448,15 @@ public static partial class L12StructuredCardRules
                     rangedNoLoss |= atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true";
                     attackNoLoss |= atom.Parameters.GetValueOrDefault("attackNoLoss") == "true";
                     cannotBeRanged |= atom.Parameters.GetValueOrDefault("cannotBeRanged") == "true";
+                    cannotAttackMaster |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotAttackMaster") == "true";
+                    cannotAttack |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotAttack") == "true";
+                    cannotSupport |= ability.ExecutionModel != "granted-continuous"
+                        && atom.Parameters.GetValueOrDefault("cannotSupport") == "true";
+                    cannotBeAttacked |= ability.ExecutionModel != "granted-continuous"
+                        && (atom.Parameters.GetValueOrDefault("cannotBeAttacked") == "true"
+                            || atom.Parameters.GetValueOrDefault("targetableByAttack") == "false");
                     if (int.TryParse(atom.Parameters.GetValueOrDefault("incomingRangedCombatDamageAdjustment"),
                             out var adjustment))
                         incomingRangedCombatDamageAdjustment += adjustment;
@@ -336,18 +478,43 @@ public static partial class L12StructuredCardRules
             rangedNoLoss = true;
         }
 
-        return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, attackTroopsSetValue,
+        return new(profession, ranged, ranged && rangedNoLoss, attackNoLoss, cannotBeRanged, cannotAttackMaster,
+            cannotAttack, cannotSupport, cannotBeAttacked, attackTroopsSetValue,
             incomingRangedCombatDamageAdjustment,
             matchedConditions.Count == 0 ? "always" : string.Join(';', matchedConditions.Distinct(StringComparer.Ordinal)));
     }
 
     public static bool ProtectsMasterFromTroops(L12CardInstance card, int row, int attackerTroops)
         => GetCombatRuleAbilities(card.CardId)
-            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatchesRow(ability, row))
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, row))
             .SelectMany(ability => ability.Atoms)
             .Where(atom => atom.Kind == L12AtomKinds.AttackRule)
             .Select(atom => atom.Parameters.GetValueOrDefault("protectMasterFromTroopsAtMost"))
             .Any(value => int.TryParse(value, out var threshold) && attackerTroops <= threshold);
+
+    public static bool CannotAttack(L12CardInstance card, int row)
+        => card.CannotAttack || CombatProfile(card, row).CannotAttack;
+
+    public static bool CannotSupport(L12CardInstance card, int row)
+        => card.CannotSupport || CombatProfile(card, row).CannotSupport;
+
+    public static bool CannotBeAttacked(L12CardInstance card, int row)
+        => CombatProfile(card, row).CannotBeAttacked;
+
+    public static bool HasUnconditionalAttackRestriction(string cardId, string parameter)
+        => GetCombatRuleAbilities(cardId)
+            .Where(ability => ability.ExecutionModel == "continuous"
+                && string.IsNullOrWhiteSpace(ConditionExpression(ability)))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                && atom.Parameters.GetValueOrDefault(parameter) == "true");
+
+    public static bool ProtectsActiveTrialLegions(L12CardInstance card)
+        => GetCombatRuleAbilities(card.CardId)
+            .Where(ability => IsContinuous(ability.ExecutionModel) && ConditionMatches(ability, card, 0))
+            .SelectMany(ability => ability.Atoms)
+            .Any(atom => atom.Kind == L12AtomKinds.AttackRule
+                && atom.Parameters.GetValueOrDefault("protect") == "controller.active-trial-legions");
 
     public static string? EffectiveProfession(L12CardInstance card, int row)
         => CombatProfile(card, row).EffectiveProfession;
@@ -356,7 +523,8 @@ public static partial class L12StructuredCardRules
         => string.Equals(EffectiveProfession(card, row), profession, StringComparison.Ordinal);
 
     public static bool HasSummonTurnCounterTacticProtection(L12CardInstance card, int currentRound)
-        => card.SummonRound == currentRound && SummonTurnCounterTacticProtectionCards.Contains(card.CardId);
+        => card.SummonRound == currentRound
+            && L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection(card.CardId);
 
     public static bool RequiresPreStackEnterCost(L12CardInstance card)
         => PreStackEnterCostCards.Contains(card.CardId);
@@ -381,12 +549,12 @@ public static partial class L12StructuredCardRules
         };
     }
 
-    public static bool CanOfferPostAttackReaction(string cardId, bool hasAnyOpponentLegion,
-        bool hasRestedOpponentLegion)
+    public static bool CanOfferPostAttackReaction(string cardId)
         => cardId switch
         {
-            "S01-0017" => hasRestedOpponentLegion,
-            "S01-0420" => hasAnyOpponentLegion,
+            // 这里只声明印刷时点；目标在该候选实际轮到声明时重新建立。
+            "S01-0017" => true,
+            "S01-0420" => true,
             "S02-0523" => true,
             "ST01-10" => true,
             _ => false,
@@ -396,9 +564,20 @@ public static partial class L12StructuredCardRules
     {
         var result = new List<L12StructuredAbilityTemplate>();
         if (TryGetStructuredAbilities(cardId, out var structured)) result.AddRange(structured);
-        result.AddRange(GetCombatOverlayAbilities(cardId));
+        foreach (var overlay in GetCombatOverlayAbilities(cardId))
+            if (!result.Any(ability => MatchesRangedOverlay(ability.Text, ability.ExecutionModel, overlay)))
+                result.Add(overlay);
         return result;
     }
+
+    internal static bool IsBasicRangedOverlay(L12StructuredAbilityTemplate overlay)
+        => overlay.ExecutionModel == "continuous"
+            && overlay.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("rangeBonus") == "1")
+            && overlay.Atoms.Any(atom => atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true");
+
+    internal static bool MatchesRangedOverlay(string text, string executionModel, L12StructuredAbilityTemplate overlay)
+        => IsBasicRangedOverlay(overlay) && executionModel == "continuous"
+            && string.Equals(text.Trim().TrimEnd('。'), overlay.Text.Trim().TrimEnd('。'), StringComparison.Ordinal);
 
     public static IReadOnlyList<L12StructuredAbilityTemplate> GetCombatOverlayAbilities(string cardId)
     {
@@ -429,6 +608,26 @@ public static partial class L12StructuredCardRules
         return false;
     }
 
+    /// <summary>
+    /// 读取卡牌自身的结构化关键词定义。定义只描述关键词的规则语义；具体由哪一段效果、
+    /// 费用或条件授予该关键词，仍由引用这个定义的父能力负责。
+    /// </summary>
+    public static bool HasKeywordDefinition(string cardId, string keyword)
+        => TryGetStructuredAbilities(cardId, out var abilities)
+            && abilities.Any(ability => ability.Trigger == "keyword-definition"
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+                    && atom.Parameters.GetValueOrDefault("keywordRef") == keyword));
+
+    /// <summary>
+    /// 读取印刷能力中由父能力引用的关键词。ST早期结构使用granted子能力，S2使用
+    /// keyword-definition；运行时不能为同一规则语义继续维护卡号白名单。
+    /// </summary>
+    public static bool HasPrintedKeywordReference(string cardId, string keyword)
+        => TryGetStructuredAbilities(cardId, out var abilities)
+            && abilities.Any(ability => ability.Trigger is "keyword-definition" or "granted"
+                && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Keyword
+                    && atom.Parameters.GetValueOrDefault("keywordRef") == keyword));
+
     private static bool IsContinuous(string executionModel)
         => executionModel is "continuous" or "granted-continuous";
 
@@ -436,12 +635,14 @@ public static partial class L12StructuredCardRules
         => ability.Atoms.FirstOrDefault(atom => atom.Kind == L12AtomKinds.Condition)
             ?.Parameters.GetValueOrDefault("expression");
 
-    private static bool ConditionMatchesRow(L12StructuredAbilityTemplate ability, int row)
+    private static bool ConditionMatches(L12StructuredAbilityTemplate ability, L12CardInstance card, int row)
     {
         var expression = ConditionExpression(ability);
         if (string.IsNullOrWhiteSpace(expression)) return true;
         if (expression.Contains("source.row=front", StringComparison.Ordinal) && row != 0) return false;
         if (expression.Contains("source.row=back", StringComparison.Ordinal) && row != 1) return false;
+        if (expression.Contains("source.ready=true", StringComparison.Ordinal) && card.Tapped) return false;
+        if (expression.Contains("source.rested=true", StringComparison.Ordinal) && !card.Tapped) return false;
         return true;
     }
 
@@ -450,16 +651,31 @@ public static partial class L12StructuredCardRules
 
     public static bool TryGetStructuredAbilities(string cardId, out IReadOnlyList<L12StructuredAbilityTemplate> abilities)
     {
+        if (L12StructuredCardSemantics.ExtendedRangeRule(cardId) is { } rangeRule)
+        {
+            abilities = ExtendedRangeAbilities(rangeRule);
+            return true;
+        }
         if (TryGetStarterBatch1Abilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterTargetedBatch2BAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3AAbilities(cardId, out abilities)) return true;
         if (TryGetStarterBatch3BAbilities(cardId, out abilities)) return true;
+        if (TryGetStarterBatch4Abilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedS02BatchAbilities(cardId, out abilities)) return true;
         if (TryGetHumanAssistedOtherworldAbilities(cardId, out abilities)) return true;
         abilities = cardId switch
         {
+            "S01-0002" => MercenaryCompanyAbilities(),
+            "S01-0004" => InfiltratorAbilities(),
+            "S01-0106" => GuanYuAbilities(),
+            "S01-0110" => MoziAbilities(),
             "S01-0215" => AnkhSteleAbilities(),
+            "S01-0303" => RagnarAbilities(),
+            "S01-0304" => HaraldAbilities(),
+            "S01-0308" => ErikAbilities(),
+            "S01-0310" => SigurdAbilities(),
+            "S01-0314" => OlgaAbilities(),
             "S02-0501" => HeraclesPromotedAbilities(),
             "S02-0502" => HeraclesAbilities(),
             "S02-0503" => AchillesPromotedAbilities(),
@@ -488,12 +704,339 @@ public static partial class L12StructuredCardRules
             "S02-05M2" => PrometheusAbilities(),
             "S02-05C1" => OlympusResourceAbilities(),
             "S02-05C1A" => OlympusResourceAbilities(),
+            "S02-05D1" => DivinityAbilities(),
+            "S02-DS03" => SleeplessNightAbilities(),
+            "ST-DS01" => StarterMountainDisasterAbilities(),
+            "ST-DS03" => StarterEvilEyeDisasterAbilities(),
             "S02-01M1" => WukongAbilities(),
+            "S01-01C1" => TiantingMoraleAbilities(),
             "S01-0409" => YoshitsuneAbilities(),
             _ => [],
         };
         return abilities.Count > 0;
     }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ExtendedRangeAbilities(L12ExtendedRangeRule rule) =>
+    [
+        RangedAbility(),
+        new("active", "activated", rule.Text,
+        [
+            new(L12AtomKinds.Condition, "发动时位于我方后排", "condition", new() { ["expression"] = "source.row=back;source.zone=field" }),
+            new(rule.ConsumeMorale > 0 ? L12AtomKinds.PayMorale : L12AtomKinds.ReturnMorale, rule.CostText, "cost",
+                new() { ["amount"] = (rule.ConsumeMorale + rule.ReturnMorale).ToString() }),
+            new(L12AtomKinds.AttackRule, "本回合扩展进攻对象", "resolution",
+                new() { ["allowBackRow"] = "true", ["allowMaster"] = rule.AllowsMaster ? "true" : "false" }),
+            new(L12AtomKinds.Duration, "本回合", "duration", new() { ["duration"] = "this-turn" }),
+        ], ReviewStatus: "confirmed", ReviewSource: "user-20260917") { RuntimeAbilityId = "extendedRange" },
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> InfiltratorAbilities() =>
+    [
+        new("static", "continuous", "此军团可在战场任意位置休整登场，不可进行支援和进攻。",
+        [
+            new(L12AtomKinds.Special, "可在任意一方战场休整登场", "resolution", new()
+            {
+                ["operation"] = "enter-any-battlefield-rested",
+            }),
+            new(L12AtomKinds.AttackRule, "不可进行支援和进攻", "resolution", new()
+            {
+                ["cannotSupport"] = "true",
+                ["cannotAttack"] = "true",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("active", "activated", "我方/对方 可消耗2士气：击杀此军团。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.PayMorale, "消耗 2 士气", "cost", new() { ["amount"] = "2" }),
+            new(L12AtomKinds.MoveZone, "击杀此军团", "resolution", new()
+            {
+                ["from"] = "field",
+                ["to"] = "owner.grave",
+                ["operation"] = "kill-source",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("death", "triggered", "阵亡时 此军团的所有者抽取1张牌。",
+        [
+            new(L12AtomKinds.Draw, "其所有者抽取 1 张牌", "resolution", new()
+            {
+                ["amount"] = "1",
+                ["target"] = "source-owner",
+            }),
+        ], "confirmed", "user-20260914"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> MoziAbilities() =>
+    [
+        RangedAbility() with { ReviewStatus = "confirmed", ReviewSource = "user-20260914" },
+        new("enter", "triggered", "登场时 可返还1士气：选择我方最多2张【天廷】军团，直到我方下个回合开始前获得免死。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替）",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.ReturnMorale, "返还 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.SelectTarget, "选择我方 0 至 2 张【天廷】军团；无合法对象时跳过", "target", new()
+            {
+                ["zone"] = "controller.field",
+                ["filter"] = "card-type=legion;faction=tianting",
+                ["min"] = "0",
+                ["max"] = "2",
+                ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.Keyword, "所选军团获得免死", "resolution", new()
+            {
+                ["keywordRef"] = "immortality",
+                ["uses"] = "1",
+                ["replacementTroops"] = "1000",
+            }),
+            new(L12AtomKinds.Duration, "持续至我方下个回合开始前", "duration", new()
+            {
+                ["duration"] = "until-controller-next-turn",
+            }),
+        ], "confirmed", "user-20260914"),
+        new("death", "triggered", "阵亡时 抽取1张牌。",
+        [
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+        ], "confirmed", "user-20260914"),
+    ];
+
+    public static L12StructuredAbilityTemplate? FindRuntimeAbility(string cardId, string runtimeAbilityId)
+    {
+        if (!TryGetStructuredAbilities(cardId, out var abilities)) return null;
+        return abilities.SingleOrDefault(ability =>
+            string.Equals(ability.RuntimeAbilityId, runtimeAbilityId, StringComparison.Ordinal));
+    }
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> OlgaAbilities() =>
+    [
+        RangedAbility() with { ReviewStatus = "confirmed", ReviewSource = "user-20260911" },
+        SelfDamageEntryDiscountAbility(),
+        new("active", "activated", "我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且来源位于我方战场", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.zone=field",
+            }),
+            new(L12AtomKinds.Optional, "可选择发动", "condition", new()),
+            new(L12AtomKinds.SelectTarget, "选择对方前排 1 张军团；无合法对象时跳过", "target", new()
+            {
+                ["zone"] = "opponent.field.front", ["filter"] = "card-type=legion;public=true",
+                ["min"] = "0", ["max"] = "1", ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.Discard, "弃置此军团", "cost", new()
+            {
+                ["amount"] = "1", ["zone"] = "source.field",
+            }),
+            new(L12AtomKinds.ModifyTroops, "所选军团本回合兵力 -2000", "resolution", new()
+            {
+                ["operation"] = "add", ["value"] = "-2000", ["selection"] = "declared-targets",
+            }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new()
+            {
+                ["duration"] = "this-turn",
+            }),
+        ], "confirmed", "user-20260911") { RuntimeAbilityId = "olgaDebuff" },
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> SleeplessNightAbilities() =>
+    [
+        new("disaster", "triggered", "触发 双方弃置各自战场上所有原本兵力不高于2000的军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "锁定双方战场上所有原本兵力不高于 2000 的军团", "target", new()
+            {
+                ["zone"] = "both.field", ["filter"] = "card-type=legion;printed-troops<=2000",
+                ["selection"] = "automatic-all", ["min"] = "0", ["max"] = "all",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "将仍符合条件的军团弃置", "resolution", new()
+            {
+                ["from"] = "both.field", ["to"] = "owner.graveyard", ["operation"] = "discard",
+                ["leaveKind"] = "discard", ["queueDeathTrigger"] = "false",
+            }),
+        ]) { ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("continuous", "continuous", "持续 当玩家使用主动休整时，对其主宰造成1点非致命伤害。",
+        [
+            new(L12AtomKinds.Condition, "监听任一玩家实际使用主动休整", "condition", new()
+            {
+                ["expression"] = "event=active-rest-ability-used",
+            }),
+            new(L12AtomKinds.DamageMaster, "对使用者的主宰造成 1 点非致命伤害", "resolution", new()
+            {
+                ["target"] = "event.controller.master", ["amount"] = "1", ["nonlethal"] = "true",
+            }),
+            new(L12AtomKinds.Duration, "〈无眠之夜〉处于天灾区期间持续", "duration", new()
+            {
+                ["duration"] = "while-source-is-active-disaster",
+            }),
+        ]) { RuntimeRouteOwner = false, ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> StarterMountainDisasterAbilities() => Confirmed(
+    [
+        new("disaster", "triggered", "触发 将所有前排兵力不高于4000的军团置入所有者墓地。",
+        [
+            new(L12AtomKinds.Condition, "逐一检查前排军团的原本兵力不高于4000", "condition", new()
+            {
+                ["expression"] = "field.row=front;card-type=legion;printed-troops<=4000",
+            }),
+            new(L12AtomKinds.MoveZone, "将全部符合条件的军团置入所有者墓地", "resolution", new()
+            {
+                ["from"] = "both.field.front", ["to"] = "owner.grave", ["amount"] = "all-matching",
+                ["selection"] = "automatic", ["deathTriggers"] = "false",
+            }),
+        ], ReviewSource: "user-20260924-colon-cost-rule"),
+    ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> StarterEvilEyeDisasterAbilities() => Confirmed(
+    [
+        new("disaster", "triggered", "触发 双方弃置各自战场上1张军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "双方各自选择战场上1张当前军团", "target", new()
+            {
+                ["zone"] = "each-player.field", ["filter"] = "current-card-type=legion",
+                ["min"] = "1", ["max"] = "1", ["selection"] = "simultaneous-private",
+                ["emptyPolicy"] = "skip-empty-player",
+            }),
+            new(L12AtomKinds.Discard, "弃置双方各自选择的军团", "resolution", new()
+            {
+                ["amount"] = "1-each", ["zone"] = "declared-targets.field",
+                ["deathTriggers"] = "false",
+            }),
+        ], ReviewSource: "user-20260924-colon-cost-rule"),
+    ]);
+
+    private static L12StructuredAbilityTemplate SelfDamageEntryDiscountAbility(
+        string reviewStatus = "confirmed", string reviewSource = "user-20260911") =>
+        new("hand-play", "special-summon", "可对我方主宰造成1点伤害：此军团登场费用-1。",
+        [
+            new(L12AtomKinds.Condition, "此军团位于手牌", "condition", new()
+            {
+                ["expression"] = "source.zone=hand",
+            }),
+            new(L12AtomKinds.Optional, "可选择支付此费用", "condition", new()),
+            new(L12AtomKinds.DamageMaster, "对我方主宰造成 1 点伤害", "cost", new()
+            {
+                ["amount"] = "1", ["target"] = "controller.master",
+                ["semantic"] = "self-damage-entry-discount-cost",
+            }),
+            new(L12AtomKinds.SetState, "此军团登场费用 -1", "resolution", new()
+            {
+                ["key"] = "source.derived-cost", ["operation"] = "add", ["value"] = "-1",
+            }),
+        ], reviewStatus, reviewSource);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> RagnarAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("enter", "triggered", "登场时 若我方主宰血量不高于7，获得冲锋。（可在登场回合进攻）",
+        [
+            new(L12AtomKinds.Condition, "我方主宰血量不高于 7", "condition", new() { ["expression"] = "controller.hp<=7" }),
+            new(L12AtomKinds.Keyword, "获得冲锋", "resolution", new() { ["keywordRef"] = "charge" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 可抽取1张牌，并弃置1张手牌。",
+        [
+            new(L12AtomKinds.Optional, "可发动完整效果", "condition", new()),
+            new(L12AtomKinds.Draw, "抽取 1 张牌", "resolution", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.Discard, "弃置 1 张手牌", "resolution", new() { ["amount"] = "1", ["zone"] = "controller.hand" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> HaraldAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("enter", "triggered", "登场时 若对方主宰血量高于我方，可对其造成1点伤害。",
+        [
+            new(L12AtomKinds.Condition, "对方主宰血量高于我方", "condition", new() { ["expression"] = "opponent.hp>controller.hp" }),
+            new(L12AtomKinds.Optional, "可对对方主宰造成 1 点伤害", "condition", new()),
+            new(L12AtomKinds.DamageMaster, "对方主宰受到 1 点伤害", "resolution", new() { ["amount"] = "1", ["target"] = "opponent.master" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 击杀对方1张兵力不高于2000的军团。",
+        [
+            new(L12AtomKinds.SelectTarget, "存在时选择对方 1 张兵力不高于 2000 的军团", "target", new()
+            {
+                ["zone"] = "opponent.field", ["filter"] = "card-type=legion;troops<=2000;public=true",
+                ["min"] = "0", ["max"] = "1", ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "击杀所选军团", "resolution", new() { ["from"] = "opponent.field", ["to"] = "owner.grave", ["operation"] = "kill" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> ErikAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("after-damage", "triggered", "此军团对对方主宰造成伤害时：对方弃置1张手牌。",
+        [
+            new(L12AtomKinds.Condition, "此军团对对方主宰造成伤害", "condition", new() { ["expression"] = "source.damaged-opponent-master=true" }),
+            new(L12AtomKinds.SelectTarget, "对方选择弃置 1 张手牌", "target", new() { ["zone"] = "opponent.hand", ["actor"] = "opponent", ["min"] = "1", ["max"] = "1", ["emptyPolicy"] = "skip-resolution" }),
+            new(L12AtomKinds.Discard, "对方弃置所选手牌", "resolution", new() { ["amount"] = "1", ["zone"] = "opponent.hand" }),
+        ], "confirmed", "user-20260911"),
+        new("death", "triggered", "阵亡时 将墓地1张费用不高于3的【阿斯加德】军团活跃登场。",
+        [
+            new(L12AtomKinds.SelectTarget, "存在时选择墓地 1 张费用不高于 3 的【阿斯加德】军团", "target", new()
+            {
+                ["zone"] = "controller.grave", ["filter"] = "card-type=legion;faction=asgard;current-cost<=3",
+                ["min"] = "0", ["max"] = "1", ["selection"] = "explicit-click-when-present",
+                ["emptyPolicy"] = "skip-resolution",
+            }),
+            new(L12AtomKinds.MoveZone, "将所选军团活跃登场", "resolution", new() { ["from"] = "controller.grave", ["to"] = "controller.field", ["state"] = "ready" }),
+        ], "confirmed", "user-20260911"),
+    ];
+
+    // 佣兵部队与关羽：位移段按共享骑兵位移规则行动模板结构化（运行时由【骑兵】职介驱动，
+    // 段为声明）；佣兵部队抵挡段的运行时资格/提交仍是卡号入口，待反应族资格收敛后归属；
+    // 关羽进攻时段引用既有"关羽"复合路由，复合定义层级不变。
+    private static L12StructuredAbilityTemplate StarterCavalryMoveRuleAction() =>
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Move, "进行 1 次位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "human-assisted", "product-database");
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> MercenaryCompanyAbilities() =>
+    [
+        StarterCavalryMoveRuleAction(),
+        new("reaction", "reaction", "对方 进攻我方军团时，可从手牌中弃置此军团：抵挡本次进攻。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.Discard, "从手牌中弃置此军团", "cost", new() { ["target"] = "source", ["from"] = "controller.hand" }),
+            new(L12AtomKinds.AttackRule, "抵挡本次进攻", "resolution", new() { ["responseBlock"] = "true" }),
+        ], "human-assisted", "product-database"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> GuanYuAbilities() =>
+    [
+        StarterCavalryMoveRuleAction(),
+        new("attack", "triggered", "进攻时 可返还1士气：此军团本回合兵力+1000，并获得必中。（进攻无法被抵挡/支援）。",
+        [
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.ReturnMorale, "返还 1 士气", "cost", new() { ["amount"] = "1" }),
+            new(L12AtomKinds.ModifyTroops, "本回合兵力 +1000", "resolution", new() { ["operation"] = "add", ["value"] = "1000", ["target"] = "source" }),
+            new(L12AtomKinds.Keyword, "获得【必中】", "resolution", new() { ["keywordRef"] = "must-hit" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+            new(L12AtomKinds.CompositeFlow, "关羽进攻时流程", "resolution", new() { ["flow"] = "关羽" }),
+        ], "human-assisted", "product-database"),
+    ];
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> SigurdAbilities() =>
+    [
+        SelfDamageEntryDiscountAbility(),
+        new("active", "rule-action", "我方回合1次 可进行1次位移。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未进行骑兵位移", "condition", new() { ["expression"] = "controller.turn;source.cavalry-move-unused=true" }),
+            new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260911"),
+        new("attack", "triggered", "进攻时 若我方存在<神剑格拉墨>，此军团本回合兵力+1000。",
+        [
+            new(L12AtomKinds.Condition, "我方圣物区存在〈神剑格拉墨〉", "condition", new() { ["expression"] = "controller.artifact.card-id=S01-0317" }),
+            new(L12AtomKinds.ModifyTroops, "此军团兵力 +1000", "resolution", new() { ["operation"] = "add", ["value"] = "1000", ["target"] = "source" }),
+            new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
+        ], "confirmed", "user-20260911"),
+    ];
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> AnkhSteleAbilities() =>
     [
@@ -554,7 +1097,7 @@ public static partial class L12StructuredCardRules
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> WukongAbilities() => Assisted(
     [
-        new("active", "active", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。",
+        new("active", "active", "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;once-per-turn" }),
             new(L12AtomKinds.SelectTarget, "在场面上选择返还 2 至 8 张士气", "target", new() { ["zone"] = "controller.morale", ["min"] = "2", ["max"] = "8", ["presentation"] = "direct-board" }),
@@ -562,25 +1105,18 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.MoveZone, "作为【斗士】军团在我方前排活跃登场", "resolution", new() { ["operation"] = "master-enter-as-legion", ["profession"] = "斗士", ["row"] = "front", ["state"] = "active" }),
             new(L12AtomKinds.ModifyTroops, "兵力设为返还士气数量 ×1000", "resolution", new() { ["operation"] = "set", ["value"] = "selected-count*1000" }),
             new(L12AtomKinds.Keyword, "获得本回合可进攻", "resolution", new() { ["keywordRef"] = "charge" }),
+            new(L12AtomKinds.MoveZone, "我方回合结束时/进攻后返回主宰区", "duration", new()
+            {
+                ["operation"] = "return-master-zone", ["timing"] = "controller-turn-end|after-attack",
+            }),
         ]),
-        new("static", "continuous", "「作为军团」在登场的回合即可进攻。",
-        [
-            new(L12AtomKinds.Condition, "作为军团且处于登场回合", "condition", new() { ["expression"] = "source.is-master-legion;source.entered-this-turn" }),
-            new(L12AtomKinds.AttackRule, "本回合可进攻", "resolution", new() { ["canAttack"] = "true" }),
-            new(L12AtomKinds.Duration, "持续至登场回合结束", "duration", new() { ["duration"] = "entry-turn" }),
-        ]),
-        new("after-attack-or-turn-end", "triggered", "「作为军团」我方回合结束时 或 进攻后 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。",
-        [
-            new(L12AtomKinds.Condition, "作为军团", "condition", new() { ["expression"] = "source.is-master-legion" }),
-            new(L12AtomKinds.MoveZone, "返回主宰区", "resolution", new() { ["operation"] = "return-master-zone" }),
-            new(L12AtomKinds.Condition, "我方士气少于对方", "condition", new() { ["expression"] = "controller.morale-count<opponent.morale-count" }),
-            new(L12AtomKinds.Optional, "可追加士气", "condition", new()),
-            new(L12AtomKinds.AddMorale, "从士气牌库追加 1 张休整士气", "resolution", new() { ["amount"] = "1", ["state"] = "rested" }),
-        ]),
-        new("leave", "replacement", "「作为军团」离场时 返回主宰区。",
+        new("leave", "replacement", "「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。",
         [
             new(L12AtomKinds.Condition, "作为军团且即将离场", "condition", new() { ["expression"] = "source.is-master-legion;source.would-leave-field" }),
             new(L12AtomKinds.MoveZone, "代替离场并返回主宰区", "replacement", new() { ["operation"] = "replace-leave-with-return-master-zone" }),
+            new(L12AtomKinds.Condition, "我方士气少于对方", "condition", new() { ["expression"] = "controller.morale-count<opponent.morale-count" }),
+            new(L12AtomKinds.Optional, "可追加士气", "condition", new()),
+            new(L12AtomKinds.AddMorale, "从士气牌库追加 1 张休整士气", "resolution", new() { ["amount"] = "1", ["state"] = "rested" }),
         ]),
     ]);
 
@@ -685,6 +1221,37 @@ public static partial class L12StructuredCardRules
         ]),
     ]);
 
+    private static IReadOnlyList<L12StructuredAbilityTemplate> TiantingMoraleAbilities() =>
+    [
+        new("active", "activated", "我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.PayMorale, "消耗2士气", "cost", new() { ["amount"] = "2" }),
+            new(L12AtomKinds.AddMorale, "追加1张活跃士气", "resolution", new()
+            {
+                ["amount"] = "1", ["state"] = "active",
+            }),
+            new(L12AtomKinds.Duration, "回合1次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260913"),
+        new("morale-returned-to-zero", "triggered", "我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。",
+        [
+            new(L12AtomKinds.Condition, "我方士气为0且本回合未发动", "condition", new()
+            {
+                ["expression"] = "controller.morale-count=0;source.once-per-turn-unused=true",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.AddMorale, "追加2张休整士气", "resolution", new()
+            {
+                ["amount"] = "2", ["state"] = "rested",
+            }),
+            new(L12AtomKinds.Duration, "回合1次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ], "confirmed", "user-20260913"),
+    ];
+
     private static IReadOnlyList<L12StructuredAbilityTemplate> CooperativeSupportAbilities() =>
     [
         RangedAbility(),
@@ -727,7 +1294,7 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.SetState, "下个对方重置阶段无法转为活跃", "resolution", new() { ["key"] = "target.skip-next-reset-ready", ["value"] = "true" }),
             new(L12AtomKinds.Duration, "持续至下个对方重置阶段", "duration", new() { ["duration"] = "until-opponent-next-reset" }),
         ]),
-        new("active", "activated", "我方 回合1次 可进行1次位移。",
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
         [
             new(L12AtomKinds.Condition, "我方回合、此军团活跃且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.ready=true;source.once-per-turn-unused=true" }),
             new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
@@ -1124,26 +1691,26 @@ public static partial class L12StructuredCardRules
 
     private static IReadOnlyList<L12StructuredAbilityTemplate> ArtemisAbilities() => Assisted(
     [
-        new("friendly-ranged-death", "triggered", "回合1次 我方远程军团阵亡时，可翻转1张休整的士气。",
+        new("friendly-ranged-death", "triggered", "回合1次 我方远程军团阵亡时，可翻转1张士气。",
         [
             new(L12AtomKinds.Condition, "我方远程军团阵亡且本回合未发动", "condition", new() { ["expression"] = "friendly.ranged-legion-died;source.once-per-turn-unused=true" }),
             new(L12AtomKinds.Optional, "可发动", "condition", new()),
-            new(L12AtomKinds.Special, "翻转 1 张休整士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip-rested", ["amount"] = "1" }),
+            new(L12AtomKinds.Special, "翻转 1 张士气", "resolution", new() { ["domain"] = "morale", ["operation"] = "flip", ["amount"] = "1" }),
             new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
         ]),
-        new("active", "activated", "我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得 ABILITY 3 或 ABILITY 4。",
+        new("active", "activated", "我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000）",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn;source.once-per-turn-unused=true" }),
-            new(L12AtomKinds.SelectMode, "选择消耗并翻转 1 神力或弃置 1 张手牌", "cost", new() { ["options"] = "god-power|discard-hand" }),
-            new(L12AtomKinds.SelectTarget, "选择我方 1 张费用为 3 至 6 的【奥林匹斯】军团", "target", new() { ["zone"] = "controller.field", ["filter"] = "card-type=legion;faction=olympus;cost>=3;cost<=6", ["min"] = "1", ["max"] = "1" }),
+            new(L12AtomKinds.SelectMode, "选择消耗 1 神力或弃置 1 张手牌", "cost", new() { ["options"] = "god-power|discard-hand" }),
+            new(L12AtomKinds.SelectTarget, "选择我方 1 张【奥林匹斯】军团", "target", new() { ["zone"] = "controller.field", ["filter"] = "card-type=legion;faction=olympus", ["min"] = "1", ["max"] = "1" }),
             new(L12AtomKinds.SelectMode, "选择赋予强攻或震击", "target", new() { ["options"] = "S02-05M1:ability:3|S02-05M1:ability:4" }),
             new(L12AtomKinds.Duration, "持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
         ]),
-        new("keyword-definition", "keyword-definition", "强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。",
+        new("keyword-definition", "keyword-definition", "强攻 进攻时对主宰造成额外1点伤害。",
         [
             new(L12AtomKinds.Keyword, "【强攻】规则引用", "resolution", new() { ["keywordRef"] = "strong-attack", ["extraMasterDamage"] = "1" }),
         ]),
-        new("keyword-definition", "keyword-definition", "震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。",
+        new("keyword-definition", "keyword-definition", "震击 被进攻军团的左右相邻军团本回合兵力-2000。",
         [
             new(L12AtomKinds.Keyword, "【震击】规则引用", "resolution", new() { ["keywordRef"] = "shock", ["adjacentTroopsDelta"] = "-2000" }),
             new(L12AtomKinds.Duration, "相邻军团兵力修正持续至本回合结束", "duration", new() { ["duration"] = "this-turn" }),
@@ -1202,6 +1769,64 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
         ]),
     ]);
+
+    private static IReadOnlyList<L12StructuredAbilityTemplate> DivinityAbilities() =>
+    [
+        new("active", "activated", "我方 回合1次 可翻转1张士气。",
+        [
+            new(L12AtomKinds.Condition, "我方回合、本回合未发动且存在可翻转士气", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true;controller.morale.non-god-power>=1",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            new(L12AtomKinds.SelectTarget, "结算时选择 1 张士气", "target", new()
+            {
+                ["zone"] = "controller.morale", ["filter"] = "is-god-power=false", ["timing"] = "resolution",
+                ["min"] = "1", ["max"] = "1",
+            }),
+            new(L12AtomKinds.Special, "翻转所选士气", "resolution", new()
+            {
+                ["domain"] = "morale", ["operation"] = "flip-selected-to-god-power",
+            }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]) { RuntimeAbilityId = "divinityFlipMorale", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("active", "activated", "我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。",
+        [
+            new(L12AtomKinds.Condition, "我方回合、本回合未发动且有 2 张活跃神力", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.once-per-turn-unused=true;controller.active-god-power>=2",
+            }),
+            new(L12AtomKinds.Optional, "可发动", "condition", new()),
+            GodPowerCost(2, true),
+            new(L12AtomKinds.SelectMode, "选择回收登场或分配 6000 兵力伤害", "target", new()
+            {
+                ["options"] = "recover-and-entry|allocate-6000-troop-damage",
+            }),
+            new(L12AtomKinds.Special, "按所选分支执行结构化效果段", "resolution", new()
+            {
+                ["domain"] = "olympus-divinity", ["operation"] = "selected-branch",
+            }),
+            new(L12AtomKinds.Duration, "回合 1 次", "duration", new() { ["duration"] = "once-per-turn" }),
+        ]) { RuntimeAbilityId = "divinityPower", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        new("active", "activated", "主动休整 本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。",
+        [
+            new(L12AtomKinds.Condition, "我方回合且诸神巅处于活跃", "condition", new()
+            {
+                ["expression"] = "controller.turn;source.ready=true",
+            }),
+            new(L12AtomKinds.RestSource, "将诸神巅转为休整", "cost", new()),
+            new(L12AtomKinds.SetState, "下 1 张【奥林匹斯】军团晋升登场无需神力", "resolution", new()
+            {
+                ["key"] = "controller.next-olympus-promotion-god-power-cost", ["value"] = "0",
+            }),
+            new(L12AtomKinds.Duration, "持续至本回合被下一次符合条件的晋升登场消耗", "duration", new()
+            {
+                ["duration"] = "this-turn-or-next-matching-consumption",
+            }),
+        ]) { RuntimeAbilityId = "divinityFreePromotion", ReviewStatus = "confirmed", ReviewSource = "user-20260913" },
+        SharedDivinitySetupAbility(),
+    ];
+
     private static IReadOnlyList<L12StructuredAbilityTemplate> TheseusAbilities() => Assisted(
     [
         new("static", "continuous", "「位于手牌」若我方神力为0张，此军团登场费用-1。",
@@ -1264,7 +1889,7 @@ public static partial class L12StructuredCardRules
             new(L12AtomKinds.ModifyTroops, "本次进攻兵力视为 2000", "resolution", new() { ["operation"] = "set", ["value"] = "2000" }),
             new(L12AtomKinds.Duration, "仅本次进攻", "duration", new() { ["duration"] = "current-attack" }),
         ]),
-        new("active", "activated", "我方 回合1次 可进行1次位移。",
+        new("active", "rule-action", "我方 回合1次 可进行1次位移。",
         [
             new(L12AtomKinds.Condition, "我方回合且本回合未发动", "condition", new() { ["expression"] = "controller.turn-and-once" }),
             new(L12AtomKinds.Move, "进行 1 次骑兵位移", "resolution", new() { ["operation"] = "cavalry-move", ["amount"] = "1" }),
@@ -1286,7 +1911,10 @@ public sealed record L12StructuredAbilityTemplate(
     IReadOnlyList<L12StructuredAtomTemplate> Atoms,
     string ReviewStatus = "unreviewed",
     string ReviewSource = "automatic",
-    bool RuntimeRouteOwner = true);
+    bool RuntimeRouteOwner = true)
+{
+    public string RuntimeAbilityId { get; init; } = string.Empty;
+}
 
 public sealed record L12StructuredAtomTemplate(
     string Kind,

@@ -65,7 +65,7 @@
     "hp": null,
     "troops": 5000,
     "disasterLevel": 1,
-    "effect": "「位于前排」获得挑畔，且在对方回合此军团兵力+1000。",
+    "effect": "「位于前排」获得挑衅，且在对方回合此军团兵力+1000。",
     "traits": [
       "中立"
     ],
@@ -83,7 +83,7 @@
     "hp": null,
     "troops": 1000,
     "disasterLevel": null,
-    "effect": "无法进攻。\n对方进攻我方主宰时，可从手牌中休整登场于前排。将本次进攻目标改为此军团。",
+    "effect": "无法进攻。\n对方进攻我方主宰时，可从手牌中休整登场于前排：将本次进攻目标改为此军团。",
     "traits": [
       "中立"
     ],
@@ -119,7 +119,7 @@
     "hp": null,
     "troops": 2000,
     "disasterLevel": null,
-    "effect": "无法进攻，无法被远程进攻。\n「位于前排」获得挑畔，且在对方回合此军团兵力+1000。",
+    "effect": "无法进攻，无法被远程进攻。\n「位于前排」获得挑衅，且在对方回合此军团兵力+1000。",
     "traits": [
       "中立"
     ],
@@ -229,6 +229,7 @@
     "nameZh": "地主的胁迫",
     "imageUrl": "/cards/faces/通用/地主的胁迫.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "S02",
     "faction": "universal",
     "cost": 2,
@@ -243,6 +244,7 @@
     "nameZh": "破败仪式",
     "imageUrl": "/cards/faces/通用/破败仪式.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "S02",
     "faction": "universal",
     "cost": 2,
@@ -257,6 +259,7 @@
     "nameZh": "粮草掠夺",
     "imageUrl": "/cards/faces/通用/粮草掠夺.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "S02",
     "faction": "universal",
     "cost": 2,
@@ -271,6 +274,8 @@
     "nameZh": "毒药发作",
     "imageUrl": "/cards/faces/通用/毒药发作.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
+    "affectsRespondedEffect": true,
     "product": "S02",
     "faction": "universal",
     "cost": 2,
@@ -367,6 +372,7 @@
     "nameZh": "乾坤 阴",
     "imageUrl": "/cards/faces/天廷/乾坤 阴.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "S02",
     "faction": "tianting",
     "cost": 2,
@@ -387,7 +393,7 @@
     "hp": 8,
     "troops": null,
     "disasterLevel": null,
-    "effect": "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，且在登场回合即可进攻。\n「作为军团」在登场的回合即可进攻。\n「作为军团」我方回合结束时 或 进攻后 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。\n「作为军团」离场时 返回主宰区。"
+    "effect": "我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。\n「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。"
   },
   {
     "id": "S02-01S1",
@@ -395,6 +401,7 @@
     "nameZh": "哮天犬·稚",
     "imageUrl": "/cards/faces/天廷/哮天犬·稚.png",
     "cardType": "legion",
+    "deckLimit": 1,
     "product": "S02",
     "faction": "tianting",
     "cost": null,
@@ -567,7 +574,7 @@
     "hp": null,
     "troops": 8000,
     "disasterLevel": 3,
-    "effect": "可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部：每返回2张，此军团登场费用-1。\n「位于前排」获得挑畔，且无法被后排支援。\n登场时 我方主宰增加1点血量。",
+    "effect": "可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部：每返回2张，此军团登场费用-1。\n「位于前排」获得挑衅，且无法被后排支援。\n登场时 我方主宰增加1点血量。",
     "traits": [
       "阿斯加德"
     ],
@@ -1170,6 +1177,7 @@
     "nameZh": "特洛伊木马",
     "imageUrl": "/cards/faces/奥林匹斯/特洛伊木马.png",
     "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "S02",
     "faction": "olympus",
     "cost": 2,
@@ -1232,7 +1240,7 @@
     "hp": 8,
     "troops": null,
     "disasterLevel": null,
-    "effect": "回合1次 我方远程军团（远程图标）阵亡时，可翻转1张休整的士气。\n我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得 强攻 或 震击。"
+    "effect": "回合1次 我方远程军团阵亡时，可翻转1张士气。\n我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000）"
   },
   {
     "id": "S02-05M2",
@@ -1659,7 +1667,8 @@
     "hp": null,
     "troops": null,
     "disasterLevel": null,
-    "effect": "阵营效果\n我方 回合1次 可消耗2士气：获得1符文。"
+    "effect": "阵营效果\n我方 回合1次 可消耗2士气：获得1符文。",
+    "atomicReference": "Ability 1\n阵营效果\n我方 回合1次 可消耗2士气：获得1符文。"
   },
   {
     "id": "S02-06D1",
@@ -1673,7 +1682,7 @@
     "hp": 6,
     "troops": null,
     "disasterLevel": null,
-    "effect": "规则上，可携带1张已完成的试炼。\n我方回合开始时，试炼+1并获得1符文。\n我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用。\n主动休整 选择对方1张军团，本回合兵力-4000。"
+    "effect": "规则上，可携带1张已完成的试炼。\n我方回合开始时，试炼+1并获得1符文。\n我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用。\n主动休整 选择对方1张军团，本回合兵力-4000。\n主神开场即可追加2张额外士气。"
   },
   {
     "id": "S02-06M1",
@@ -1722,7 +1731,8 @@
     "number": "S02-06S2",
     "nameZh": "王者之剑",
     "imageUrl": "/cards/faces/彼界/王者之剑.png",
-    "cardType": "legion",
+    "cardType": "token",
+    "deckLimit": 1,
     "product": "S02",
     "faction": "otherworld",
     "cost": null,
@@ -1771,7 +1781,7 @@
     "hp": null,
     "troops": null,
     "disasterLevel": null,
-    "effect": "触发 可消耗X符文，每消耗1符文可选择对方1张军团，本回合兵力-3000。\n我方 回合1次 可消耗1符文：将我方1张<芬恩>或1张原本兵力不高于4000的【彼界】军团转为活跃。"
+    "effect": "触发 可消耗1符文：选择对方1张军团，本回合兵力-3000。本效果可重复发动。\n我方 回合1次 可消耗1符文：将我方1张<芬恩>或1张原本兵力不高于4000的【彼界】军团转为活跃。"
   },
   {
     "id": "S02-06S6",
@@ -1841,7 +1851,7 @@
     "hp": null,
     "troops": null,
     "disasterLevel": null,
-    "effect": "触发 双方后排所有卡牌回到所有者手牌中，随后将双方前排所有军团向后位移1格。\n持续 军团无法发动远程进攻。"
+    "effect": "触发 双方后排所有卡牌回到所有者手牌中，随后将双方前排所有军团向后位移1格。\n持续 远程军团无法发动远程进攻。"
   },
   {
     "id": "S02-DS05",

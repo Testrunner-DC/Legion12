@@ -28,6 +28,7 @@ $s2 = Read-Source 'L12S2UniversalEffects.cs'
 $s2Faction = Read-Source 'L12S2FactionEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
 $effectGeneratedPlay = Read-Source 'L12EffectGeneratedPlay.cs'
+$triggerGateway = Read-Source 'L12PublicTriggerEffectPlans.cs'
 $allRuntime = $s1 + "`n" + $s1Faction + "`n" + $cards + "`n" + $s2 + "`n" + $s2Faction + "`n" + $continuations
 
 foreach ($cardId in @(
@@ -99,6 +100,15 @@ Assert-Contains $plans 'case "conditional-master-damage"' 'Composite hand play m
 Assert-Contains $plans 'case "grave-bottom"' 'Composite hand play must support ordered grave-to-library-bottom costs.'
 Assert-Contains $plans '!next.PreStackCost && !TryPayCompositeSegmentCost' 'Prepaid costs must not be charged again between independent segments.'
 Assert-Contains $actions 'TryCommitCompositePreStackCosts(playerIndex, card, compositeDeclaration)' 'Ordinary hand play must atomically commit declared colon costs before stack entry.'
+Assert-Contains $triggerGateway 'L12StructuredCardRules.RequiresPreStackEnterCost(source)' 'Every entry source must pass the shared pre-stack enter-cost gateway.'
+Assert-Contains $triggerGateway 'data?.GetValueOrDefault("entryCostPaid") != "true"' 'The shared entry gateway must distinguish paid entry costs.'
+Assert-Contains $triggerGateway 'data?.GetValueOrDefault("entryCostUnavailable") != "true"' 'The shared entry gateway must preserve the mandatory unavailable-cost fallback.'
+Assert-Contains $s2Faction 'L12StructuredCardRules.CurrentCostEquals(card, 8)' 'Yingzheng must validate the current, not printed, cost of the discarded legion.'
+$yingzhengGatewayCalls = [regex]::Matches(($actions + "`n" + $triggerGateway + "`n" + $allRuntime),
+    'BeginYingzhengEnterActivation\(').Count
+if ($yingzhengGatewayCalls -ne 2) {
+    throw "Yingzheng pre-stack entry payment must have exactly one caller plus its definition; found $yingzhengGatewayCalls references."
+}
 Assert-Contains $actions 'HasHandPlayPlan(card.CardId)' 'Ordinary hand play must route every composite plan through the shared declaration entry.'
 Assert-Contains $s2Faction 'BeginEffectGeneratedFreePlay(item.Controller, card, item, "library"' 'Every effect-generated free play must enter the shared authority transaction.'
 Assert-Contains $effectGeneratedPlay 'BeginCommittedCompositeEffectDeclaration(activation.Controller, card, parent, "finish-parent")' 'Free composite tactics must enter the same composite declaration planner.'
@@ -115,7 +125,10 @@ Assert-Contains $plans 'new[] { handCard, bottomCard }.Any' 'Blood Eagle must pr
 Assert-Contains $plans 'HandPlayPlansWithoutControllerDeclaration' 'Affected-player-only composite plans must not create an empty controller declaration prompt.'
 Assert-Contains $plans '"moraleTarget"' 'Oiran Gift must retain the exact public morale target in immutable declaration data.'
 Assert-Contains $plans '"disasterValue"' 'Sacrifice to Heaven must retain its public disaster delta in immutable declaration data.'
-Assert-Contains $plans 'player.UsedAbilities.Add("s2-mimir-used")' 'Mimir once usage must be reserved when its declaration commits, before stack response.'
+Assert-Contains $plans 'L12CardNameUsageRules.TryUse(player, source.CardId)' 'Mimir name usage must be recorded through the shared card-name usage rule when its declaration commits, before stack response.'
+Assert-Contains $plans '!L12CardNameUsageRules.HasUsed(player, card.CardId)' 'Mimir declaration must revalidate the same name usage rule.'
+Assert-Contains $actions 'L12CardNameUsageRules.HasUsed(player, card.CardId)' 'Mimir play eligibility must use the same name usage rule.'
+Assert-Contains (Read-Source 'L12CardNameUsageRules.cs') '["S02-0306"] = "s2-mimir-used"' 'Mimir shared name usage must preserve the checkpoint key.'
 
 foreach ($modeLabel in @('mode:front', 'mode:back', 'mode:single', 'mode:kill', 'mode:morale', 'mode:mill')) {
     Assert-Contains $prompts ('["' + $modeLabel + '"]') "Sixth-batch player-facing label is missing: $modeLabel"

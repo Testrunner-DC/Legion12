@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-ranked-season-history-layout",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "历史荣誉与赛季历史展示优化",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "历史荣誉先展示各派系赛季结算七曜值，再按指定称号顺序和主宰卡号展示历届获得者；旧赛季默认折叠，最强主宰称号显示主宰头像，派系徽章恢复对应颜色。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/RankingsPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "“我的”赛季历史按赛季名称与年月、段位、派系、总名次、七曜值、胜率、胜负和称号八项排列；月份取赛季时间，不再误用归档日期。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/platform.ts"
+      ]
+    }
+  ]
+}

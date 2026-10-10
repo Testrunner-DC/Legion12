@@ -13,16 +13,18 @@ public sealed partial class L12GameEngine
         bool Optional = true);
 
     private static readonly IReadOnlyDictionary<string, AttackPublicTriggerPlan> AttackPublicTriggerPlans =
-        new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
+        BuildAttackPublicTriggerPlans();
+
+    private static IReadOnlyDictionary<string, AttackPublicTriggerPlan> BuildAttackPublicTriggerPlans()
+    {
+        var plans = new Dictionary<string, AttackPublicTriggerPlan>(StringComparer.OrdinalIgnoreCase)
         {
             ["S01-0401"] = new("honda", Optional: false),
             ["S01-0104"] = new("hanxin", "return-morale"),
             ["S01-0106"] = new("guanyu", "return-morale"),
             ["S01-0203"] = new("menes", "discard-own-legion"),
             ["S01-0208"] = new("ay", "ordinary-morale", "own-front-low"),
-            ["S01-0301"] = new("beowulf", "master-damage"),
             ["S01-0306"] = new("olaf", "grave-bottom-one"),
-            ["S01-0311"] = new("gustav", "grave-bottom-two"),
             ["S01-0402"] = new("nobunaga", "ordinary-morale"),
             ["S01-0405"] = new("miyamoto"),
             ["S01-0406"] = new("hijikata", "ordinary-morale", "enemy-cost-one"),
@@ -30,26 +32,28 @@ public sealed partial class L12GameEngine
             ["S01-0413"] = new("hiromasa", TargetKind: "enemy-covered-counter", Optional: false),
             ["S01-0416"] = new("inahime", TargetKind: "own-front-gaotianyuan", Optional: false),
             ["S02-0103"] = new("pingyang"),
-            ["S02-0509"] = new("odysseus", "show-hand-tactic"),
             ["S02-0511"] = new("perot", "god-power", "attack-legion"),
-            ["S02-0517"] = new("penthesilea", "god-power"),
-            ["S02-0519"] = new("spartan", "god-power"),
             ["S02-0605"] = new("bors", "ordinary-morale"),
-            ["S02-0606"] = new("percival", "discard-hand"),
             ["S02-0607"] = new("gawain", "rune-count", Optional: false),
             ["S02-0608"] = new("richard"),
             ["S02-0612"] = new("scathach", "rune-one"),
             ["S02-0617"] = new("robin"),
         };
+        foreach (var spec in L12SimpleSelfTroopBuffTriggerEffects.All)
+            if (!plans.TryAdd(spec.CardId, new AttackPublicTriggerPlan(spec.PlanId, spec.CostKind)))
+                throw new InvalidOperationException($"重复的进攻时单段兵力规格：{spec.CardId}");
+        return plans;
+    }
 
     private static bool HasAttackPublicTriggerDeclarationPlan(string cardId, string trigger)
         => trigger.Equals("attack", StringComparison.OrdinalIgnoreCase)
             && AttackPublicTriggerPlans.ContainsKey(cardId);
 
-    private bool TryQueueAttackPublicTriggerCandidates(int controller, L12CardInstance source, string trigger,
+    private IReadOnlyList<L12TriggerCandidate>? BuildAttackPublicTriggerCandidates(int controller,
+        L12CardInstance source, string trigger,
         string text, IEnumerable<string>? targets, IReadOnlyDictionary<string, string>? data)
     {
-        if (!HasAttackPublicTriggerDeclarationPlan(source.CardId, trigger)) return false;
+        if (!HasAttackPublicTriggerDeclarationPlan(source.CardId, trigger)) return null;
 
         L12TriggerCandidate Candidate(string planId, string candidateText, bool complete = false)
         {
@@ -65,14 +69,11 @@ public sealed partial class L12GameEngine
 
         if (source.CardId == "S02-0608")
         {
-            var candidates = new List<L12TriggerCandidate>
-            {
+            return
+            [
                 Candidate("richard-defense", "进攻时：对方抵挡/支援需额外弃置1张手牌", complete: true),
-            };
-            if (source.AttachedCards.Any(card => card.CardId == "S02-0609"))
-                candidates.Add(Candidate("richard-squires", "进攻时：可弃置侍从骑士使兵力增加"));
-            QueueTriggerCandidates(candidates);
-            return true;
+                Candidate("richard-squires", "进攻时：可弃置侍从骑士使兵力增加"),
+            ];
         }
 
         if (source.CardId == "S02-0617")
@@ -83,11 +84,19 @@ public sealed partial class L12GameEngine
             };
             if (PublicLegions(State.Players[controller]).Any(card => card.CardId == "S02-0608"))
                 candidates.Add(Candidate("robin-draw", "进攻时：可抽牌1张"));
-            QueueTriggerCandidates(candidates);
-            return true;
+            return candidates;
         }
 
-        QueueTriggerCandidates([Candidate(AttackPublicTriggerPlans[source.CardId].PlanId, text)]);
+        var simpleBuff = L12SimpleSelfTroopBuffTriggerEffects.Find(source.CardId, trigger);
+        return [Candidate(AttackPublicTriggerPlans[source.CardId].PlanId, simpleBuff?.SettlementText ?? text)];
+    }
+
+    private bool TryQueueAttackPublicTriggerCandidates(int controller, L12CardInstance source, string trigger,
+        string text, IEnumerable<string>? targets, IReadOnlyDictionary<string, string>? data)
+    {
+        var candidates = BuildAttackPublicTriggerCandidates(controller, source, trigger, text, targets, data);
+        if (candidates is null) return false;
+        QueueTriggerCandidates(candidates);
         return true;
     }
 
@@ -129,7 +138,9 @@ public sealed partial class L12GameEngine
         {
             var canUse = CanDeclareAttackPlan(candidate, plan, source);
             if (plan.Optional)
-                steps.Add(PublicTriggerStep("option", "mode", $"{source.Name}：预先声明是否发动进攻时效果",
+                steps.Add(PublicTriggerStep("option", "mode",
+                    L12SimpleSelfTroopBuffTriggerEffects.Find(candidate.SourceCardId, candidate.Trigger)?.PromptText
+                        ?? $"{source.Name}：预先声明是否发动进攻时效果",
                     canUse ? ["mode:none", "mode:use"] : ["mode:none"]));
 
             var required = plan.Optional ? "mode:use" : null;
@@ -137,20 +148,23 @@ public sealed partial class L12GameEngine
             {
                 case "return-morale":
                     steps.Add(PublicTriggerStep("target-morale", "cost", $"{source.Name}：预先选择返还的1张士气",
-                        player.Morale.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Morale.Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "discard-own-legion":
                     steps.Add(PublicTriggerStep("field-legion", "cost", "美尼斯：预先选择作为费用弃置的我方1张军团",
-                        PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required));
+                        PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "ordinary-morale":
                     steps.Add(PublicTriggerStep("composite-ordinary-payment", "cost", $"{source.Name}：预先选择消耗的1份公开资源",
                         CompositeOrdinaryPaymentChoices(player), requiredChoice: required,
-                        autoSelectEquivalentOrdinaryMorale: true));
+                        autoSelectEquivalentOrdinaryMorale: true, isCostSelection: true));
                     break;
                 case "grave-bottom-one":
                     steps.Add(PublicTriggerStep("grave-card", "cost", "奥拉夫二世：预先选择置于牌库底部的墓地1张牌",
-                        player.Graveyard.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Graveyard.Where(CanEnterHandOrLibrary).Select(card => card.InstanceId),
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "grave-bottom-two":
                     steps.Add(GraveCostSelectionStep(player,
@@ -160,23 +174,25 @@ public sealed partial class L12GameEngine
                     break;
                 case "show-hand-tactic":
                     steps.Add(PublicTriggerStep("hand-card", "cost", "奥德修斯：预先选择并展示手牌中的1张战术",
-                        player.Hand.Where(card => card.CardType == "tactic").Select(card => card.InstanceId), requiredChoice: required));
+                        player.Hand.Where(card => card.CardType == "tactic").Select(card => card.InstanceId),
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "god-power":
                     steps.Add(PublicTriggerStep("target-morale", "cost", $"{source.Name}：预先选择消耗并翻转的1神力",
                         player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId),
-                        requiredChoice: required));
+                        requiredChoice: required, isCostSelection: true));
                     break;
                 case "discard-hand":
                     steps.Add(PublicTriggerStep("hand-card", "cost", "帕西瓦尔：预先选择弃置的1张手牌",
-                        player.Hand.Select(card => card.InstanceId), requiredChoice: required));
+                        player.Hand.Select(card => card.InstanceId), requiredChoice: required,
+                        isCostSelection: true));
                     break;
                 case "rune-count":
                 {
                     var choices = Enumerable.Range(1, player.SpecialZones.Runes)
                         .Select(count => $"rune-count:{count}").ToList();
                     var runeStep = PublicTriggerStep("option", "runeCount", "高文：预先声明本次效果要消耗的符文数量",
-                        choices);
+                        choices, isCostSelection: true);
                     foreach (var choice in choices)
                         runeStep.ChoiceLabels[choice] = $"消耗{choice["rune-count:".Length..]}符文";
                     steps.Add(runeStep);
@@ -218,6 +234,13 @@ public sealed partial class L12GameEngine
         }
 
         if (steps.Count == 0) return false;
+        if (ShouldSilentlySkipUnavailableOptionalTrigger(steps))
+        {
+            CleanupPublicTriggerReservation(candidate);
+            State.PendingTriggerStackCandidates.Remove(candidate);
+            AdvanceTriggerBatches();
+            return true;
+        }
         var result = BeginPendingActivationSequence(candidate.Controller, source, "public-trigger-declaration",
             steps, candidate.CandidateId);
         if (result.Accepted) return true;
@@ -248,9 +271,10 @@ public sealed partial class L12GameEngine
             "return-morale" => CanReturnMorale(player, 1),
             "discard-own-legion" => PublicLegions(player).Any(),
             "ordinary-morale" => ActiveResourceCount(player) > 0,
-            "master-damage" => player.Hp > 1,
-            "grave-bottom-one" => player.Graveyard.Count > 0,
-            "grave-bottom-two" => player.Graveyard.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
+            "master-damage" => CanPayMasterDamageCost(player, 1),
+            "grave-bottom-one" => player.Graveyard.Any(CanEnterHandOrLibrary),
+            "grave-bottom-two" => player.Graveyard.Where(CanEnterHandOrLibrary)
+                .Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 2,
             "show-hand-tactic" => player.Hand.Any(card => card.CardType == "tactic"),
             "god-power" => player.Morale.Any(card => card.IsGodPower && !card.Tapped),
             "discard-hand" => player.Hand.Count > 0,
@@ -316,7 +340,7 @@ public sealed partial class L12GameEngine
                 foreach (var squire in discarded)
                 {
                     source.AttachedCards.Remove(squire);
-                    ResetCardAfterLeavingField(squire);
+                    ResetCardForPrivateZone(squire);
                     player.Graveyard.Add(squire);
                 }
                 activation.DeclaredValues["squireCount"] = [discarded.Length.ToString()];
@@ -346,10 +370,11 @@ public sealed partial class L12GameEngine
                         => "美尼斯声明的弃置费用已失效；未支付费用且效果未入栈",
                     "ordinary-morale" when !CanConsumeAttackOrdinaryCost(player, costIds)
                         => $"{candidate.SourceName}声明的士气费用已失效；未支付费用且效果未入栈",
-                    "master-damage" when player.Hp <= 1
+                    "master-damage" when !CanPayMasterDamageCost(player, 1)
                         => "贝奥武夫的主宰伤害费用已失效；未支付费用且效果未入栈",
                     "grave-bottom-one" when costIds.Count != 1
-                        || !player.Graveyard.Any(card => card.InstanceId == costIds[0])
+                        || !player.Graveyard.Any(card => card.InstanceId == costIds[0]
+                            && CanEnterHandOrLibrary(card))
                         => "奥拉夫二世声明的墓地费用已失效；未支付费用且效果未入栈",
                     "grave-bottom-two" when !L12StructuredCardRules.TryResolveGraveCostDeclaration(player,
                         graveCostValues, 2, string.Empty, legionOnly: false, out _, out _)
@@ -380,9 +405,11 @@ public sealed partial class L12GameEngine
                         || row != 0 || !IsFieldLegion(target) || target.Troops > 2000
                         => "阿伊声明的前排目标已失效；未支付费用且效果未入栈",
                     "enemy-cost-one" when targetId is null
-                        || FindOnField(opponent, targetId, out _, out _) is not { } target || !L12StructuredCardRules.CurrentCostAtMost(target, 1)
+                        || DeclaredEnemyTarget(candidate.Controller, targetId,
+                            target => L12StructuredCardRules.CurrentCostAtMost(target, 1)) is null
                         => "土方岁三声明的击杀目标已失效；未支付费用且效果未入栈",
-                    "enemy-legion" when targetId is null || FindOnField(opponent, targetId, out _, out _) is null
+                    "enemy-legion" when targetId is null
+                        || DeclaredEnemyTarget(candidate.Controller, targetId, predicate: null) is null
                         => "高杉晋作声明的目标已失效；未支付费用且效果未入栈",
                     "enemy-covered-counter" when targetId is null
                         || FindOnField(opponent, targetId, out var row, out _) is not { CardType: "tactic" } || row != 1
@@ -399,6 +426,8 @@ public sealed partial class L12GameEngine
             if (error is null)
                 PayAttackPublicCost(candidate, activation, plan, player, source, costIds);
         }
+
+        if (State.Phase == L12Phase.GameOver) return true;
 
         if (error is not null)
         {
@@ -436,7 +465,7 @@ public sealed partial class L12GameEngine
                 _ = TryConsumeSelectedResources(player, 1, costIds);
                 break;
             case "master-damage":
-                DamageMaster(candidate.Controller, 1, "贝奥武夫进攻效果费用");
+                _ = PayMasterDamageCostAndCanContinue(candidate.Controller, 1, "贝奥武夫进攻效果费用");
                 break;
             case "grave-bottom-one":
                 MoveGraveToLibraryBottom(player, costIds.Select(id => player.Graveyard.First(card =>
@@ -452,9 +481,12 @@ public sealed partial class L12GameEngine
             }
             case "show-hand-tactic":
                 if (player.Hand.FirstOrDefault(card => card.InstanceId == costIds[0]) is { } shown)
+                {
                     AddPresentationEvent("reveal", candidate.Controller,
                         $"奥德修斯展示手牌中的〈{shown.Name}〉作为进攻效果费用",
                         "S02-0509", "attack-cost", shown);
+                    RecordPaidCostPresentation(candidate.Data, $"展示手牌中的〈{shown.Name}〉");
+                }
                 break;
             case "god-power":
                 if (player.Morale.First(card => card.InstanceId == costIds[0]) is { } power)
@@ -489,11 +521,11 @@ public sealed partial class L12GameEngine
         var source = FindOnField(player, item.SourceInstanceId, out _, out _);
         var targetId = PublicTriggerDeclared(item, "target");
 
-        void Cancel(string reason) => AddEvent("effect-cancelled", item.Controller, reason, card);
+        void Fail(string reason) => AddEvent("effect-failed", item.Controller, reason, card);
         void Finish() => FinishStackItem(item);
         void BuffSource(int amount, string label)
         {
-            if (source is null) Cancel($"〈{item.SourceName}〉已离开战场；其自身兵力增加不结算");
+            if (source is null) Fail($"〈{item.SourceName}〉已离开战场；其自身兵力增加不结算");
             else AddTimedModifier(source, amount, 0,
                 item.SourceCardId.StartsWith("S02", StringComparison.Ordinal) ? ExpiryAtNextOwnEnd(item.Controller) : State.TurnSerial,
                 label);
@@ -512,7 +544,8 @@ public sealed partial class L12GameEngine
                     if (DeclaredEnemyTarget(item.Controller, hondaTarget,
                             target => L12StructuredCardRules.CurrentCostEquals(target, 0)) is not null)
                         KillTarget(item, hondaTarget!, "被本多忠胜击杀");
-                    else Cancel("本多忠胜选择的费用为0目标失效；该目标不会被击杀");
+                    else RecordTargetSettlementFailure(item, hondaTarget,
+                        "所选军团已离场或当前费用不再为0");
                 }
                 Finish(); return true;
             case "hanxin":
@@ -532,47 +565,44 @@ public sealed partial class L12GameEngine
                 if (source is not null) GrantStrongAttack(source);
                 Finish(); return true;
             case "ay":
-                if (FindOnField(player, targetId, out _, out _) is { } ayTarget)
-                    AddTimedModifier(ayTarget, 2000, 0, State.TurnSerial, "阿伊");
-                else Cancel("阿伊声明的目标已失效；已支付费用不返还");
-                Finish(); return true;
-            case "beowulf":
-                BuffSource(2000, "贝奥武夫");
+                if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
+                        FindOnField(player, card.InstanceId, out var row, out _) is not null
+                        && row == 0 && card.Troops <= 2000,
+                        "位于前排且兵力不高于2000") is { } ayTarget)
+                    ApplyPlayerThisTurnTroopsModifier(ayTarget, 2000, item.Controller, "阿伊");
                 Finish(); return true;
             case "olaf":
-                if (source is null) Cancel("奥拉夫二世已离开战场；已支付的墓地费用不返还");
+                if (source is null) Fail("奥拉夫二世已离开战场；已支付的墓地费用不返还");
                 else GrantStrongAttack(source);
-                Finish(); return true;
-            case "gustav":
-                BuffSource(2000, "古斯塔夫一世");
                 Finish(); return true;
             case "nobunaga":
                 foreach (var enemy in PublicLegions(opponent)) enemy.CostModifier--;
                 Finish(); return true;
             case "hijikata":
-                if (FindOnField(opponent, targetId, out _, out _) is { } hijikataTarget
-                    && L12StructuredCardRules.CurrentCostAtMost(hijikataTarget, 1))
-                    KillTarget(item, targetId, "被土方岁三击杀");
-                else Cancel("土方岁三声明的目标已失效；已支付费用不返还");
+                if (DeclaredEnemyTarget(item.Controller, targetId,
+                    target => L12StructuredCardRules.CurrentCostAtMost(target, 1)) is { } hijikataTarget)
+                    KillTarget(item, hijikataTarget.InstanceId, "被土方岁三击杀");
+                else Fail("土方岁三声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "takasugi":
-                if (FindOnField(opponent, targetId, out _, out _) is { } takasugiTarget)
+                if (DeclaredEnemyTarget(item.Controller, targetId, predicate: null) is { } takasugiTarget)
                     takasugiTarget.CostModifier -= 2;
-                else Cancel("高杉晋作声明的目标已失效；已支付费用不返还");
+                else Fail("高杉晋作声明的目标已失效；已支付费用不返还");
                 Finish(); return true;
             case "hiromasa":
                 if (FindOnField(opponent, targetId, out var counterRow, out _) is { CardType: "tactic" } counter
                     && counterRow == 1)
                     counter.CannotRespondUntilRound = State.Round;
-                else Cancel("源博雅声明的覆盖反击战术已失效");
+                else Fail("源博雅声明的覆盖反击战术已失效");
                 Finish(); return true;
             case "inahime":
-                if (FindOnField(player, targetId, out var targetRow, out _) is { } inahimeTarget && targetRow == 0
-                    && IsFieldLegion(inahimeTarget) && inahimeTarget.InstanceId != item.SourceInstanceId
-                    && L12StructuredCardRules.HasFaction(player, inahimeTarget, "gaotianyuan")
-                    && inahimeTarget.Troops <= 5000)
-                    AddTimedModifier(inahimeTarget, 1000, 0, State.TurnSerial, "稻姬本多小松");
-                else Cancel("稻姬声明的目标已失效");
+                if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
+                        FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
+                        && card.InstanceId != item.SourceInstanceId
+                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && card.Troops <= 5000,
+                        "位于前排、兵力不高于5000且具有高天原阵营") is { } inahimeTarget)
+                    ApplyPlayerThisTurnTroopsModifier(inahimeTarget, 1000, item.Controller, "稻姬本多小松");
                 Finish(); return true;
             case "pingyang":
             {
@@ -585,7 +615,7 @@ public sealed partial class L12GameEngine
                     {
                         if (source is not null)
                             AddTimedModifier(source, 2000, 0, ExpiryAtNextOwnEnd(item.Controller), "平阳昭公主");
-                        else Cancel("平阳昭公主已离开战场；展示仍结算但自身增益取消");
+                        else Fail("平阳昭公主已离开战场；展示仍结算但自身增益取消");
                     }
                     else
                     {
@@ -595,9 +625,6 @@ public sealed partial class L12GameEngine
                 }
                 Finish(); return true;
             }
-            case "odysseus":
-                BuffSource(1000, "奥德修斯");
-                Finish(); return true;
             case "perot":
                 BuffSource(1000, "珀洛特埃");
                 if (source is not null)
@@ -606,18 +633,9 @@ public sealed partial class L12GameEngine
                     ApplyS2Shock(item, source);
                 }
                 Finish(); return true;
-            case "penthesilea":
-                BuffSource(2000, "彭忒西勒亚");
-                Finish(); return true;
-            case "spartan":
-                BuffSource(2000, "斯巴达勇士");
-                Finish(); return true;
             case "bors":
-                if (source is null) Cancel("鲍斯已离开战场；已支付费用不返还");
+                if (source is null) Fail("鲍斯已离开战场；已支付费用不返还");
                 else GrantStrongAttack(source);
-                Finish(); return true;
-            case "percival":
-                BuffSource(2000, "帕西瓦尔");
                 Finish(); return true;
             case "gawain":
             {
@@ -625,7 +643,7 @@ public sealed partial class L12GameEngine
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (count <= 0 || !L12S2ZoneOps.SpendRunes(player, count))
                 {
-                    Cancel("高文选择的符文数量在结算时已失效；不消耗符文");
+                    Fail("高文选择的符文数量在结算时已失效；不消耗符文");
                     Finish(); return true;
                 }
                 var data = new Dictionary<string, string>
@@ -645,7 +663,7 @@ public sealed partial class L12GameEngine
                 var count = PublicTriggerDeclared(item, "runeCount").Split(':') is ["rune-count", var countText]
                     && int.TryParse(countText, out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("高文已离开战场；已消耗符文不返还，兵力增加不结算");
+                    Fail("高文已离开战场；已消耗符文不返还，兵力增加不结算");
                 else
                 {
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "高文");
@@ -663,13 +681,13 @@ public sealed partial class L12GameEngine
                 if (State.PendingDefense is { } richardAttack
                     && richardAttack.AttackerInstanceId == item.SourceInstanceId)
                     richardAttack.RichardDefenseTaxActive = true;
-                else Cancel("理查增加抵挡费用的效果已不属于当前进攻，效果取消");
+                else Fail("理查增加抵挡费用的效果已不属于当前进攻，效果未能结算");
                 Finish(); return true;
             case "richard-squires":
             {
                 var count = int.TryParse(PublicTriggerDeclared(item, "squireCount"), out var declared) ? declared : 0;
                 if (source is null || count <= 0)
-                    Cancel("理查已离开战场；已弃置的侍从骑士不返还，兵力增加不结算");
+                    Fail("理查已离开战场；已弃置的侍从骑士不返还，兵力增加不结算");
                 else
                     AddTimedModifier(source, count * 1000, 0, ExpiryAtNextOwnEnd(item.Controller), "狮心王理查一世");
                 Finish(); return true;

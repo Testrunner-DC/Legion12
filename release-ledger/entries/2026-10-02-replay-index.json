@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-replay-index",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "回放定位",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "电脑端回放新增回合与关键事件定位，可按回合、费用支付、效果处理、天灾等筛选并点击跳转到对应步骤；支持搜索当前视角可见的卡名和事件。打开定位会暂停播放，隐藏卡牌不会因后续公开而提前显示。",
+      "paths": ["opcgpro-vue/src/l12/ReplayPage.vue", "opcgpro-vue/src/l12/replayIndex.ts", "opcgpro-vue/package.json"]
+    }
+  ]
+}

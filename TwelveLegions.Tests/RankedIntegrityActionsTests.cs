@@ -25,6 +25,121 @@ public sealed class RankedIntegrityActionsTests
     }
 
     [Fact]
+    public void RepeatedSevenMinuteLowProgressWinsAreRecommendedForReviewWithoutAutomaticPenalty()
+    {
+        var fixture = Create("padded-transfer");
+        var baseTime = DateTimeOffset.UtcNow.AddHours(-1);
+        for (var index = 0; index < 3; index++)
+        {
+            var endedAt = baseTime.AddMinutes(index * 8);
+            var result = fixture.Store.SettleRankedMatch($"padded-transfer-{index}", fixture.First.Id,
+                fixture.Second.Id, 0, integrity: new L12RankedIntegrityContext(
+                    endedAt.AddMinutes(-7), endedAt, 3, "surrender", null, null, 2));
+            Assert.Equal("applied", result.First.RewardStatus);
+        }
+
+        var audit = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "padded-transfer-2"));
+        Assert.True(audit.ReviewRecommended);
+        Assert.Equal("none", audit.Enforcement);
+        Assert.Contains(audit.Signals, signal => signal.Code == "repeated-pair-day");
+        Assert.Contains(audit.Signals, signal => signal.Code == "unilateral-score-transfer");
+        Assert.Contains(audit.Signals, signal => signal.Code == "repeated-padded-transfer");
+        Assert.DoesNotContain("padded-transfer-2", fixture.Store.RankedIntegrityExcludedMatchIds());
+    }
+
+    [Fact]
+    public void OneBeneficiaryAgainstLinkedLosingAccountsCreatesClusterReviewEvidence()
+    {
+        var fixture = Create("linked-loser-cluster");
+        var thirdRegistration = fixture.Store.Register("thr" + Guid.NewGuid().ToString("N")[..7],
+            "Password123!");
+        Assert.True(thirdRegistration.Success, thirdRegistration.Message);
+        var third = thirdRegistration.Account!;
+        fixture.Store.SelectRankedFaction(third.Id, "fate");
+        var sharedLoserNetwork = "net-v1:" + new string('a', 64);
+        var winnerNetwork = "net-v1:" + new string('b', 64);
+        var sharedLoserBrowser = "browser-v1:" + new string('c', 64);
+        var winnerBrowser = "browser-v1:" + new string('d', 64);
+        var baseTime = DateTimeOffset.UtcNow.AddHours(-2);
+
+        Settle("cluster-0", fixture.Second, baseTime);
+        Settle("cluster-1", fixture.Second, baseTime.AddMinutes(9));
+        Settle("cluster-2", third, baseTime.AddMinutes(18));
+
+        var audit = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "cluster-2"));
+        Assert.True(audit.ReviewRecommended);
+        Assert.Equal("none", audit.Enforcement);
+        Assert.Contains(audit.Signals, signal => signal.Code == "linked-loser-cluster");
+        Assert.False(audit.NetworkLinked);
+        Assert.False(audit.BrowserLinked);
+
+        void Settle(string matchId, L12AccountView loser, DateTimeOffset endedAt)
+        {
+            var result = fixture.Store.SettleRankedMatch(matchId, fixture.First.Id, loser.Id, 0,
+                integrity: new L12RankedIntegrityContext(endedAt.AddMinutes(-7), endedAt, 4,
+                    "normal", winnerNetwork, sharedLoserNetwork, 2,
+                    winnerBrowser, sharedLoserBrowser));
+            Assert.Equal("applied", result.First.RewardStatus);
+        }
+    }
+
+    [Fact]
+    public void LegacyIntegrityAuditWithoutEvidenceVersionKeepsOutboxVerificationCompatible()
+    {
+        var fixture = Create("legacy-integrity-evidence");
+        var endedAt = DateTimeOffset.UtcNow;
+        var startedAt = endedAt.AddMinutes(-8);
+        fixture.Store.SettleRankedMatch("legacy-integrity-evidence-match", fixture.First.Id,
+            fixture.Second.Id, 0, integrity: new L12RankedIntegrityContext(
+                startedAt, endedAt, 10, "normal", null, null, 5));
+        var audit = GetRankedIntegrityAuditRow(fixture.Store, "legacy-integrity-evidence-match");
+        audit.GetType().GetProperty("EvidenceVersion")!.SetValue(audit, 0);
+        audit.GetType().GetProperty("FinalRound")!.SetValue(audit, 0);
+
+        fixture.Store.VerifyRankedSettlementApplied(new L12RankedSettlementEnvelope(1,
+            "legacy-integrity-evidence-match", fixture.First.Id, fixture.Second.Id, "", "", 0,
+            startedAt, endedAt, 10, "normal", "", "", 5,
+            "browser-v1:" + new string('e', 64), "browser-v1:" + new string('f', 64)));
+    }
+
+    [Fact]
+    public void ReviewQueueExcludesEffectiveTerminalDecisionsAndRestoresRevokedCases()
+    {
+        var fixture = Create("review-queue-terminal-filter");
+        var endedAt = DateTimeOffset.UtcNow;
+        fixture.Store.SettleRankedMatch("review-queue-match", fixture.First.Id,
+            fixture.Second.Id, 0, integrity: new L12RankedIntegrityContext(
+                endedAt.AddSeconds(-40), endedAt, 0, "surrender", null, null, 1));
+
+        var initial = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        Assert.Equal("unreviewed", initial.EffectiveDisposition);
+
+        var action = Input("review-queue-confirmed", "confirmed", ["review-queue-match"]);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, action);
+        var decision = fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, action,
+            preview.Revision, Audit("review-queue-confirmed"));
+
+        Assert.Empty(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        var historical = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match"));
+        Assert.Equal("confirmed", historical.EffectiveDisposition);
+
+        var revoke = Input("review-queue-revoked", "revoked", ["review-queue-match"],
+            revokesDecisionId: decision.DecisionId);
+        var revokePreview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, revoke);
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, revoke, revokePreview.Revision,
+            Audit("review-queue-revoked"));
+
+        var restored = Assert.Single(fixture.Store.RankedIntegrityAudits(fixture.Admin,
+            matchId: "review-queue-match", reviewOnly: true));
+        Assert.Equal("unreviewed", restored.EffectiveDisposition);
+    }
+
+    [Fact]
     public void ThirdRepeatedUnilateralExtremeZeroActionMatchIsHeldAndNotified()
     {
         var fixture = Create("automatic-hold");
@@ -185,21 +300,120 @@ public sealed class RankedIntegrityActionsTests
     }
 
     [Fact]
-    public void NonLatestOrResetProfileCorrectionsAreBlockedInsteadOfGuessed()
+    public void NonLatestMatchesAreVoidedWithoutRewritingLaterProfileSettlements()
     {
         var fixture = Create("blocked-chain");
         CompletePlacement(fixture);
         fixture.Store.SettleRankedMatch("blocked-old", fixture.First.Id, fixture.Second.Id, 0);
         fixture.Store.SettleRankedMatch("blocked-new", fixture.First.Id, fixture.Second.Id, 1);
+        var firstBefore = fixture.Store.RankedProfile(fixture.First.Id);
+        var secondBefore = fixture.Store.RankedProfile(fixture.Second.Id);
+        var firstRatingBefore = fixture.Store.HiddenRating(fixture.First.Id);
+        var secondRatingBefore = fixture.Store.HiddenRating(fixture.Second.Id);
 
         var nonLatest = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin,
             Input("blocked-non-latest", "confirmed", ["blocked-old"]));
-        Assert.False(nonLatest.CanConfirm);
-        Assert.Contains(nonLatest.BlockingReasons, reason => reason.Contains("连续最新结算后缀"));
+        Assert.True(nonLatest.CanConfirm, string.Join(" | ", nonLatest.BlockingReasons));
+        Assert.All(nonLatest.AccountEffects, effect =>
+        {
+            Assert.Equal(0, effect.ScoreDelta);
+            Assert.Equal("voided-profile-preserved", effect.RewardOutcome);
+        });
+        var decision = fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin,
+            Input("blocked-non-latest", "confirmed", ["blocked-old"]), nonLatest.Revision,
+            Audit("blocked-non-latest"));
 
+        AssertProfilesEqual(firstBefore, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(secondBefore, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal(firstRatingBefore, fixture.Store.HiddenRating(fixture.First.Id), 8);
+        Assert.Equal(secondRatingBefore, fixture.Store.HiddenRating(fixture.Second.Id), 8);
+        Assert.Equal("voided", fixture.Store.RankedSettlement("blocked-old", fixture.First.Id)!.RewardStatus);
+        Assert.Equal("applied", fixture.Store.RankedSettlement("blocked-new", fixture.First.Id)!.RewardStatus);
+
+        var revoke = Input("blocked-non-latest-revoke", "revoked", ["blocked-old"],
+            revokesDecisionId: decision.DecisionId);
+        var revokePreview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, revoke);
+        Assert.True(revokePreview.CanConfirm, string.Join(" | ", revokePreview.BlockingReasons));
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, revoke, revokePreview.Revision,
+            Audit("blocked-non-latest-revoke"));
+
+        AssertProfilesEqual(firstBefore, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(secondBefore, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal(firstRatingBefore, fixture.Store.HiddenRating(fixture.First.Id), 8);
+        Assert.Equal(secondRatingBefore, fixture.Store.HiddenRating(fixture.Second.Id), 8);
+        Assert.Equal("applied", fixture.Store.RankedSettlement("blocked-old", fixture.First.Id)!.RewardStatus);
+        Assert.Equal("applied", fixture.Store.RankedSettlement("blocked-new", fixture.First.Id)!.RewardStatus);
+    }
+
+    [Fact]
+    public void BroadcastDisabledHighestTierHistoryCanStillBeVoidedWithoutProfileRewrite()
+    {
+        var fixture = Create("broadcast-disabled-highest-tier");
+        ConfigureCompactTiers(fixture, broadcastEnabled: false);
+        fixture.Store.SettleRankedMatch("highest-placement", fixture.First.Id, fixture.Second.Id, 0);
+        fixture.Store.SettleRankedMatch("highest-old", fixture.First.Id, fixture.Second.Id, 0);
+        fixture.Store.SettleRankedMatch("highest-later", fixture.First.Id, fixture.Second.Id, 1);
+        var firstBefore = fixture.Store.RankedProfile(fixture.First.Id);
+        var secondBefore = fixture.Store.RankedProfile(fixture.Second.Id);
+
+        Assert.True(RankedProfileBoolean(fixture.Store, fixture.First.Id, "ReachedHighestTier"));
+        var input = Input("highest-old-confirm", "confirmed", ["highest-old"]);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, input);
+
+        Assert.True(preview.CanConfirm, string.Join(" | ", preview.BlockingReasons));
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, input, preview.Revision,
+            Audit("highest-old-confirm"));
+        AssertProfilesEqual(firstBefore, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(secondBefore, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal("voided", fixture.Store.RankedSettlement("highest-old", fixture.First.Id)!.RewardStatus);
+    }
+
+    [Fact]
+    public void CurrentTierConfigChangesDoNotRewriteHistoricalSettlementFacts()
+    {
+        var fixture = Create("tier-config-history");
+        CompletePlacement(fixture);
+        fixture.Store.SettleRankedMatch("tier-config-latest", fixture.First.Id, fixture.Second.Id, 0);
+        var firstBefore = fixture.Store.RankedProfile(fixture.First.Id);
+        var secondBefore = fixture.Store.RankedProfile(fixture.Second.Id);
+        ConfigureCompactTiers(fixture, broadcastEnabled: true);
+
+        var input = Input("tier-config-confirm", "confirmed", ["tier-config-latest"]);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, input);
+
+        Assert.True(preview.CanConfirm, string.Join(" | ", preview.BlockingReasons));
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, input, preview.Revision,
+            Audit("tier-config-confirm"));
+        Assert.NotEqual(firstBefore.SevenValue, fixture.Store.RankedProfile(fixture.First.Id).SevenValue);
+        Assert.NotEqual(secondBefore.SevenValue, fixture.Store.RankedProfile(fixture.Second.Id).SevenValue);
+    }
+
+    [Fact]
+    public void StableProfileLedgerMismatchStillBlocksDisposition()
+    {
+        var fixture = Create("stable-ledger-mismatch");
+        CompletePlacement(fixture);
+        fixture.Store.SettleRankedMatch("stable-ledger-latest", fixture.First.Id, fixture.Second.Id, 0);
+        SetRankedProfileValue(fixture.Store, fixture.First.Id, "Wins",
+            fixture.Store.RankedProfile(fixture.First.Id).Wins + 1);
+
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin,
+            Input("stable-ledger-confirm", "confirmed", ["stable-ledger-latest"]));
+
+        Assert.False(preview.CanConfirm);
+        Assert.Contains(preview.BlockingReasons, reason => reason.Contains("不可变结算链不一致"));
+    }
+
+    [Fact]
+    public void ResetProfileCorrectionsAreStillBlockedInsteadOfGuessed()
+    {
+        var fixture = Create("blocked-reset");
+        CompletePlacement(fixture);
+        fixture.Store.SettleRankedMatch("blocked-reset-old", fixture.First.Id, fixture.Second.Id, 0);
         fixture.Store.SelectRankedFaction(fixture.First.Id, "fate");
+
         var reset = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin,
-            Input("blocked-reset", "confirmed", ["blocked-new"]));
+            Input("blocked-reset", "confirmed", ["blocked-reset-old"]));
         Assert.False(reset.CanConfirm);
         Assert.Contains(reset.BlockingReasons, reason => reason.Contains("跨赛季或切换派系"));
     }
@@ -223,6 +437,75 @@ public sealed class RankedIntegrityActionsTests
         Assert.Equal(secondBefore, recoveredSecond, 7);
         Assert.False(L12PlatformStore.TryReverseRankedElo(500d, secondAfter, winner,
             out _, out _));
+    }
+
+    [Fact]
+    public void LegacyPlacementLatestSuffixCanBeReversedFromValidatedSettlementChain()
+    {
+        var fixture = Create("legacy-placement-inverse");
+        var beforeFirst = fixture.Store.RankedProfile(fixture.First.Id);
+        var beforeSecond = fixture.Store.RankedProfile(fixture.Second.Id);
+        var beforeFirstRating = fixture.Store.HiddenRating(fixture.First.Id);
+        var beforeSecondRating = fixture.Store.HiddenRating(fixture.Second.Id);
+        var matchIds = Enumerable.Range(0, 5)
+            .Select(index => $"legacy-placement-inverse-{index}").ToArray();
+        for (var index = 0; index < matchIds.Length; index++)
+            fixture.Store.SettleRankedMatch(matchIds[index], fixture.First.Id, fixture.Second.Id,
+                index % 2);
+        ClearProfileFacts(fixture.Store);
+
+        var action = Input("legacy-placement-confirm", "confirmed", matchIds);
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin, action);
+        Assert.True(preview.CanConfirm, string.Join(" | ", preview.BlockingReasons));
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin, action, preview.Revision,
+            Audit("legacy-placement-confirm"));
+
+        AssertProfilesEqual(beforeFirst, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(beforeSecond, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal(beforeFirstRating, fixture.Store.HiddenRating(fixture.First.Id), 7);
+        Assert.Equal(beforeSecondRating, fixture.Store.HiddenRating(fixture.Second.Id), 7);
+    }
+
+    [Fact]
+    public void LegacyPlacementHistoryCanBeVoidedWhileLaterProfilesStayExact()
+    {
+        var fixture = Create("legacy-placement-not-latest");
+        var matchIds = Enumerable.Range(0, 5)
+            .Select(index => $"legacy-placement-not-latest-{index}").ToArray();
+        for (var index = 0; index < matchIds.Length; index++)
+            fixture.Store.SettleRankedMatch(matchIds[index], fixture.First.Id, fixture.Second.Id,
+                index % 2);
+        fixture.Store.SettleRankedMatch("legacy-placement-later-0", fixture.First.Id,
+            fixture.Second.Id, 0);
+        fixture.Store.SettleRankedMatch("legacy-placement-later-1", fixture.First.Id,
+            fixture.Second.Id, 1);
+        ClearProfileFacts(fixture.Store);
+        var firstBefore = fixture.Store.RankedProfile(fixture.First.Id);
+        var secondBefore = fixture.Store.RankedProfile(fixture.Second.Id);
+        var firstRatingBefore = fixture.Store.HiddenRating(fixture.First.Id);
+        var secondRatingBefore = fixture.Store.HiddenRating(fixture.Second.Id);
+
+        var preview = fixture.Store.PreviewRankedIntegrityAction(fixture.Admin,
+            Input("legacy-placement-not-latest-confirm", "confirmed", matchIds));
+
+        Assert.True(preview.CanConfirm, string.Join(" | ", preview.BlockingReasons));
+        Assert.All(preview.AccountEffects, effect =>
+        {
+            Assert.Equal(0, effect.ScoreDelta);
+            Assert.Equal("voided-profile-preserved", effect.RewardOutcome);
+        });
+        fixture.Store.ConfirmRankedIntegrityAction(fixture.Admin,
+            Input("legacy-placement-not-latest-confirm", "confirmed", matchIds), preview.Revision,
+            Audit("legacy-placement-not-latest-confirm"));
+
+        AssertProfilesEqual(firstBefore, fixture.Store.RankedProfile(fixture.First.Id));
+        AssertProfilesEqual(secondBefore, fixture.Store.RankedProfile(fixture.Second.Id));
+        Assert.Equal(firstRatingBefore, fixture.Store.HiddenRating(fixture.First.Id), 8);
+        Assert.Equal(secondRatingBefore, fixture.Store.HiddenRating(fixture.Second.Id), 8);
+        Assert.All(matchIds, matchId => Assert.Equal("voided",
+            fixture.Store.RankedSettlement(matchId, fixture.First.Id)!.RewardStatus));
+        Assert.Equal("applied", fixture.Store.RankedSettlement("legacy-placement-later-1",
+            fixture.First.Id)!.RewardStatus);
     }
 
     [Fact]
@@ -291,10 +574,62 @@ public sealed class RankedIntegrityActionsTests
 
     private static void ClearProfileFacts(L12PlatformStore store)
     {
-        var data = typeof(L12PlatformStore).GetField("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(store)!;
         var facts = (IList)data.GetType().GetProperty("RankedSettlementProfileFacts")!.GetValue(data)!;
         facts.Clear();
+    }
+
+    private static void ConfigureCompactTiers(Fixture fixture, bool broadcastEnabled)
+    {
+        var original = fixture.Store.RankedConfig(fixture.Admin);
+        int[] thresholds = [0, 1, 2, 3, 4];
+        var factions = original.Factions.Select(faction => faction with
+        {
+            Tiers = faction.Tiers.Select((tier, index) => tier with
+            {
+                Minimum = thresholds[index],
+                BaseDelta = 4,
+                WinStreakCap = 0,
+                LossProtectionCap = 0,
+                RatingGapCap = 0,
+            }).ToArray(),
+        }).ToArray();
+        fixture.Store.UpdateRankedConfig(fixture.Admin, original with
+        {
+            PlacementMatches = 1,
+            PlacementMaximum = 1,
+            BroadcastEnabled = broadcastEnabled,
+            Factions = factions,
+        }, "测试历史结算不受广播与段位配置影响", Audit("compact-ranked-config"));
+    }
+
+    private static bool RankedProfileBoolean(L12PlatformStore store, string accountId,
+        string property)
+        => (bool)GetRankedProfileRow(store, accountId).GetType().GetProperty(property)!
+            .GetValue(GetRankedProfileRow(store, accountId))!;
+
+    private static void SetRankedProfileValue(L12PlatformStore store, string accountId,
+        string property, object value)
+        => GetRankedProfileRow(store, accountId).GetType().GetProperty(property)!
+            .SetValue(GetRankedProfileRow(store, accountId), value);
+
+    private static object GetRankedProfileRow(L12PlatformStore store, string accountId)
+    {
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(store)!;
+        var profiles = (IEnumerable)data.GetType().GetProperty("RankedProfiles")!.GetValue(data)!;
+        return profiles.Cast<object>().Single(row => string.Equals((string)row.GetType()
+            .GetProperty("AccountId")!.GetValue(row)!, accountId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static object GetRankedIntegrityAuditRow(L12PlatformStore store, string matchId)
+    {
+        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(store)!;
+        var audits = (IEnumerable)data.GetType().GetProperty("RankedIntegrityAudits")!.GetValue(data)!;
+        return audits.Cast<object>().Single(row => string.Equals((string)row.GetType()
+            .GetProperty("MatchId")!.GetValue(row)!, matchId, StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed record Fixture(string Directory, L12PlatformStore Store,

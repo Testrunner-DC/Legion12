@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-season-summary-and-auto-cutover",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "赛季总结与新赛季衔接",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "赛季结算后会收到个人总结，显示最终派系、段位、派系名次、全服名次、七曜值、排位胜率及获得的称号；确认后仍可在“我的”页面的赛季历史中查看。",
+      "paths": [
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/site/SeasonSummaryNotice.vue",
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "预约的新赛季到时会先暂停新的排位入场，已开始的对局仍可恢复并完成；满足就绪条件后系统会原子切换赛季并发送总结，切换期间会明确提示“赛季正在切换”。",
+      "paths": [
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/site/SeasonSummaryNotice.vue",
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.SeasonActivation.cs"
+      ]
+    }
+  ]
+}

@@ -55,7 +55,7 @@ foreach ($token in @(
     '"' + [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5peg6aqo6ICF5LyK55Om5bCU77ya6aKE5YWI5aOw5piO5piv5ZCm5p+l55yL54mM5bqT6aG26YOoM+W8oOeJjA==')) + '"'
 )) { Assert-Contains $triggers $token "Batch 6K-B public declaration token is missing: $token" }
 # BATCH296 P2: the user approved post-debuff targeting for both attack and death.
-if ([regex]::Matches($composite, 'new\("thutmose-kill",[^)]*DeclareAtSegmentStart: true\)').Count -ne 2) {
+if ([regex]::Matches($composite, '(?s)new\("thutmose-kill",.*?DeclareAtSegmentStart: true,\s*WaitForStateCheckTriggers: true\)').Count -ne 2) {
     throw 'Both Thutmose follow-up kills must declare their target at their own segment start.'
 }
 Assert-Contains $composite 'PublicLegions(opponent).Where(card => card.Troops <= 1000)' 'Thutmose must use current post-debuff troops for follow-up candidates.'
@@ -70,10 +70,12 @@ foreach ($flow in @(
     'case "canopic-two-discard"','case "canopic-three-discard"',
     'AtomicFlowKey(item) == "sun-top-three-recover"','AtomicFlowKey(item) == "valhalla-recover"'
 )) { Assert-Contains $faction $flow "Batch 6K-B resolver flow is missing: $flow" }
-if ($faction.Contains('HealMaster(item.Controller, 1, "卡诺匹斯箱"); if (source is not null) DiscardRelic')) {
+$canopicBoxName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('5Y2h6K+65Yy55pav566x'))
+$valhallaName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6Iux54G15q6/'))
+if ($faction.Contains("HealMaster(item.Controller, 1, `"$canopicBoxName`"); if (source is not null) DiscardRelic")) {
     throw 'Canopic Box search must not heal/discard inside the hidden search continuation.'
 }
-if ($faction.Contains('case "valhallaRecover": Mill(player, 2, "英灵殿"); RecoverAsgard')) {
+if ($faction.Contains("case `"valhallaRecover`": Mill(player, 2, `"$valhallaName`"); RecoverAsgard")) {
     throw 'Valhalla mill and subsequent public recovery must remain separate StackItems.'
 }
 Assert-Contains $lethal 'TryOfferCardLethalSubstitution' 'Shared lethal-substitution framework is missing.'
@@ -88,7 +90,7 @@ $passedStatus = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('6YC
 $fixedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($fixedStatus) + ' \|').Count
 $questionCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($questionStatus)).Count
 $passedCount = [regex]::Matches($audit, '\| ' + [regex]::Escape($passedStatus) + ' \|').Count
-if ($fixedCount -ne 9 -or $questionCount -ne 0 -or $passedCount -ne 44) {
+if ($fixedCount -ne 10 -or $questionCount -ne 0 -or $passedCount -ne 43) {
     throw "Batch 6K-B status totals drifted (passed=$passedCount, fixed=$fixedCount, questions=$questionCount)."
 }
 Write-Host 'S01 Sun City + Asgard per-ability audit guard passed (53 cards / 124 abilities).'

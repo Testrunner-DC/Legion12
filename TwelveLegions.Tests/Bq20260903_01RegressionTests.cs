@@ -185,6 +185,53 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
+    public void AeneasPromotionRequiresAndConsumesTwoActiveGodPowers()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var promoted = Card("ST05-01", "aeneas-two-power-promotion");
+        var foundation = Card("S02-0512", "aeneas-two-power-foundation");
+        promoted.OwnerIndex = 0;
+        foundation.OwnerIndex = 0;
+        player.Hand.Add(promoted);
+        player.Field[0][0] = foundation;
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "aeneas-first-power", CardId = "S02-05C1A", IsGodPower = true, Tapped = false,
+        });
+
+        var insufficient = JsonSerializer.SerializeToElement(game.SnapshotFor(0));
+        Assert.False(insufficient.GetProperty("Players")[0].GetProperty("promotionOptions")
+            .TryGetProperty(promoted.InstanceId, out _));
+        var rejected = game.Handle(0, new L12Command("playCard", promoted.InstanceId));
+        Assert.False(rejected.Accepted);
+        Assert.False(player.Morale[0].Tapped);
+
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "aeneas-second-power", CardId = "S02-05C1A", IsGodPower = true, Tapped = false,
+        });
+        var sufficient = JsonSerializer.SerializeToElement(game.SnapshotFor(0));
+        Assert.True(sufficient.GetProperty("Players")[0].GetProperty("promotionOptions")
+            .TryGetProperty(promoted.InstanceId, out _));
+
+        var started = game.Handle(0, new L12Command("playCard", promoted.InstanceId));
+        Assert.True(started.Accepted, started.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("s2-promotion-foundation", prompt.Continuation);
+        var resolved = game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: foundation.InstanceId));
+        Assert.True(resolved.Accepted, resolved.Error);
+        Assert.Same(promoted, player.Field[0][0]);
+        Assert.Equal(6000, promoted.BaseTroops);
+        Assert.All(player.Morale, power =>
+        {
+            Assert.True(power.Tapped);
+            Assert.False(power.IsGodPower);
+        });
+    }
+
+    [Fact]
     public void LancelotEntryRuneCostUsesTheSharedSpendEventPath()
     {
         var game = Create();
@@ -330,7 +377,8 @@ public sealed class Bq20260903_01RegressionTests
                 && label.Contains("军团位移时效果", StringComparison.Ordinal));
         var front = Assert.Single(order.ValidChoices, id => id != follow && id != "pass");
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
-            CardInstanceIds: [follow, front])).Accepted);
+            // 后发动者先结算；让跟随位移先进入逐项声明与响应。
+            CardInstanceIds: [front, follow])).Accepted);
 
         ResolveOnlyPrompt(game, "mode:use");
         var targetPrompt = Assert.Single(game.State.PendingPrompts);
@@ -468,6 +516,14 @@ public sealed class Bq20260903_01RegressionTests
 
         var topThree = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("oiran-pick", topThree.Data.GetValueOrDefault("action"));
+        Assert.Equal(string.Join('|', chosen.InstanceId, second.InstanceId, third.InstanceId), topThree.Data["displayCardIds"]);
+        Assert.Equal([chosen.InstanceId], topThree.ValidChoices);
+        Assert.False(topThree.Data.ContainsKey($"disabledChoice:{chosen.InstanceId}"));
+        Assert.Equal("只能选择【高天原】卡牌，且不能选择〈花魁的馈赠〉本身",
+            topThree.Data[$"disabledChoice:{second.InstanceId}"]);
+        Assert.Equal(topThree.Data[$"disabledChoice:{second.InstanceId}"],
+            topThree.Data[$"disabledChoice:{third.InstanceId}"]);
+        Assert.DoesNotContain(second.InstanceId, JsonSerializer.Serialize(game.SnapshotFor(1)));
         Assert.True(morale.Tapped);
         ResolveOnlyPrompt(game, chosen.InstanceId);
         ResolveOnlyBottomOrder(game, second.InstanceId, third.InstanceId);
@@ -548,6 +604,8 @@ public sealed class Bq20260903_01RegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "normal", "single-candidate-choice")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "normal", "single-candidate-choice")]
     public void TemporaryMoraleCanPayTheFactionEffectThatSummonsATombGuard()
     {
         var game = Create(69038, "S01-02M1");

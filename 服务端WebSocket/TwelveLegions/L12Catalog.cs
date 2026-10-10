@@ -2,6 +2,14 @@ using System.Text.Json;
 
 namespace TwelveLegions.Server;
 
+public sealed record L12OfficialAlternateArtDefinition(
+    string Id,
+    string ArtCode,
+    string BaseCardId,
+    string DisplayName,
+    string CardImageId,
+    string ProductName);
+
 public sealed class L12Catalog
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -13,16 +21,25 @@ public sealed class L12Catalog
     public IReadOnlyList<L12PresetDeckDefinition> PresetDecks { get; }
     public L12MoraleIdentityCatalog MoraleIdentities { get; }
     public L12AtomicEffectCatalog AtomicEffects { get; }
+    public IReadOnlyList<L12OfficialAlternateArtDefinition> OfficialAlternateArts { get; }
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> CardProducts { get; }
+    public IReadOnlyDictionary<string, string?> CardPools { get; }
 
     private L12Catalog(
         IReadOnlyDictionary<string, L12CardDefinition> cards,
         IReadOnlyList<L12PresetDeckDefinition> presetDecks,
-        L12MoraleIdentityCatalog moraleIdentities)
+        L12MoraleIdentityCatalog moraleIdentities,
+        IReadOnlyList<L12OfficialAlternateArtDefinition> officialAlternateArts,
+        IReadOnlyDictionary<string, IReadOnlyList<string>> cardProducts,
+        IReadOnlyDictionary<string, string?> cardPools)
     {
         Cards = cards;
         PresetDecks = presetDecks;
         MoraleIdentities = moraleIdentities;
         AtomicEffects = L12AtomicEffectCatalog.Build(cards.Values);
+        OfficialAlternateArts = officialAlternateArts;
+        CardProducts = cardProducts;
+        CardPools = cardPools;
     }
 
     public static L12Catalog Load(string dataPath)
@@ -76,7 +93,84 @@ public sealed class L12Catalog
                 throw new InvalidDataException($"预组 {deck.Name} 包含无效的特殊区卡牌。");
         }
 
-        return new L12Catalog(byId, decks, moraleIdentities);
+        var officialAlternateArts = LoadOfficialAlternateArts(dataPath, byId);
+        var cardProducts = LoadCardProducts(dataPath, out var cardPools);
+        return new L12Catalog(byId, decks, moraleIdentities, officialAlternateArts, cardProducts, cardPools);
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<string>> LoadCardProducts(string dataPath,
+        out IReadOnlyDictionary<string, string?> cardPools)
+    {
+        var path = Path.Combine(dataPath, "card-product-inclusions.json");
+        if (!File.Exists(path)) throw new FileNotFoundException("卡牌产品收录登记缺失", path);
+        var catalog = JsonSerializer.Deserialize<CardProductInclusionCatalog>(File.ReadAllText(path), JsonOptions)
+            ?? throw new InvalidDataException("卡牌产品收录登记格式无效");
+        var duplicates = catalog.Cards.GroupBy(row => row.CardId, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
+        if (duplicates.Length > 0)
+            throw new InvalidDataException($"卡牌产品收录登记存在重复卡号：{string.Join(", ", duplicates)}");
+        cardPools = catalog.Cards.ToDictionary(row => row.CardId,
+            row => row.CardPool.ValueKind == JsonValueKind.String ? row.CardPool.GetString() : null,
+            StringComparer.OrdinalIgnoreCase);
+        return catalog.Cards.ToDictionary(row => row.CardId,
+            row => (IReadOnlyList<string>)row.Products.Distinct(StringComparer.Ordinal).ToArray(),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<L12OfficialAlternateArtDefinition> LoadOfficialAlternateArts(
+        string dataPath, IReadOnlyDictionary<string, L12CardDefinition> cards)
+    {
+        var path = Path.Combine(dataPath, "card-archive-assets.json");
+        if (!File.Exists(path)) throw new FileNotFoundException("画廊异画登记缺失", path);
+        var archive = JsonSerializer.Deserialize<ArchiveAlternateArtCatalog>(File.ReadAllText(path), JsonOptions)
+            ?? throw new InvalidDataException("画廊异画登记格式无效");
+        var definitions = archive.Cards
+            .Where(row => !row.Id.Equals("S02-05C1B", StringComparison.OrdinalIgnoreCase))
+            .Select(row => OfficialAlternateArt(row.Id, row.BaseCardId, row.Products.FirstOrDefault()
+                ?? row.Product, cards)).ToList();
+        definitions.Add(OfficialAlternateArt("S02-05C1A", "S02-05C1", "第2季|典藏版", cards));
+        var duplicateCodes = definitions.GroupBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
+        if (duplicateCodes.Length > 0)
+            throw new InvalidDataException($"画廊异画编号重复：{string.Join(", ", duplicateCodes)}");
+        return definitions.OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    private static L12OfficialAlternateArtDefinition OfficialAlternateArt(string cardImageId,
+        string baseCardId, string productName, IReadOnlyDictionary<string, L12CardDefinition> cards)
+    {
+        if (!cards.TryGetValue(baseCardId, out var baseCard))
+            throw new InvalidDataException($"画廊异画 {cardImageId} 引用了不存在的原卡 {baseCardId}");
+        return new L12OfficialAlternateArtDefinition($"catalog-alt:{cardImageId}", cardImageId,
+            baseCardId, baseCard.NameZh, cardImageId, productName);
+    }
+
+    private sealed class ArchiveAlternateArtCatalog
+    {
+        public List<ArchiveAlternateArtRow> Cards { get; init; } = [];
+    }
+
+    private sealed class ArchiveAlternateArtRow
+    {
+        public string Id { get; init; } = string.Empty;
+        public string BaseCardId { get; init; } = string.Empty;
+        public string Product { get; init; } = string.Empty;
+        public List<string> Products { get; init; } = [];
+    }
+
+    private sealed class CardProductInclusionCatalog
+    {
+        public List<string> Products { get; init; } = [];
+        public List<CardProductInclusionRow> Cards { get; init; } = [];
+    }
+
+    private sealed class CardProductInclusionRow
+    {
+        public string CardId { get; init; } = string.Empty;
+        // Retain the same source without tightening the pre-existing loader:
+        // absent/non-string metadata remains unconfigured for environment reads.
+        public JsonElement CardPool { get; init; }
+        public List<string> Products { get; init; } = [];
     }
 
     public L12PresetDeckDefinition DeckAt(int index)

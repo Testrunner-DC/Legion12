@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-site-control-states",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "站点操作状态",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "统一普通页面和部分弹框的禁用、键盘焦点与输入校验样式；对战和牌库编辑器布局保持不变。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "opcgpro-vue/src/l12/site/siteUiStateScope.ts",
+        "opcgpro-vue/src/l12/site/AdminAccountsPage.vue",
+        "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+        "opcgpro-vue/src/l12/site/RankedMasterTitleRulesModal.vue",
+        "opcgpro-vue/src/l12/site/ArticleContentRenderer.vue",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue"
+      ]
+    }
+  ]
+}

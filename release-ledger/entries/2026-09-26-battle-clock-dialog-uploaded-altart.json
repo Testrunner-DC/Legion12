@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-26-battle-clock-dialog-uploaded-altart",
+  "date": "2026-09-26",
+  "audience": "players",
+  "title": "对战计时、选择弹框与自主上传异画修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "桌面双方计时器改为位于各自手牌右侧的镜像安全区域，不再侵入对战垫、开始区、额外区、手牌或右侧记录；移动端计时停靠方式保持不变。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "对战弹框中的同级文本选项统一宽高；选中、拒绝、禁用和不可用状态只改变视觉状态，不再让同组按钮出现大小差异。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "玩家自主上传的异画现在会立即出现在完整卡池中，可正确预览并按同名卡的不同副本切换；保存牌库、起手展示、生成牌库图和对战卡面沿用同一选择，其他玩家仍需获得对应使用权。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"
+      ]
+    }
+  ]
+}

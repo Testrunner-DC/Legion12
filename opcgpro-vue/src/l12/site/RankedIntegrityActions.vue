@@ -73,7 +73,7 @@ onMounted(loadHistory)
 </script>
 <template>
   <section class="integrity-actions" data-ui-contract="ranked-integrity-disposition">
-    <h3>复核与处置</h3><p>选中具体对局后按证据处置。风险信号不等于违规；同IP不单独作为处罚依据。积分纠正不安全时服务器会拒绝确认。</p>
+    <h3>复核与处置</h3><p>选中具体对局后按证据处置。风险信号不等于违规；同IP不单独作为处罚依据。所选对局是当前连续最新结算后缀时会精确回滚排位档案；历史对局之后已有正常结算时只作废所选结果并保持当前档案，结算链本身不一致时仍会拒绝确认。</p>
     <p v-if="!canWrite">当前账号仅可查看；处置需要对局治理写入权限。</p>
     <form v-if="canWrite" @submit.prevent="makePreview"><fieldset :disabled="busy">
       <p>本次关联 {{ targets.length }} 场（最多50场）<span v-if="form.revoke"> · 撤销原处置 {{ form.revoke }}</span></p>
@@ -83,13 +83,13 @@ onMounted(loadHistory)
       <label>给玩家的处置原因<textarea v-model="form.reason" required maxlength="1000" rows="3" placeholder="说明违规事实或复核结论，不包含IP、设备标识、其他玩家隐私。"/></label>
       <button :disabled="!targets.length || targets.length > 50">预览影响</button><button v-if="form.revoke" type="button" @click="form.revoke = ''; form.disposition = 'review'">取消撤销操作</button>
     </fieldset></form>
-    <div v-if="preview" class="preview"><h4>确认前预览</h4><p v-for="reason in preview.blockingReasons" :key="reason" class="error">{{ reason }}</p><article v-for="effect in preview.accountEffects" :key="effect.accountId"><b>{{ effect.username }}</b><span>七曜值调整 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}</span><span>{{ effect.rewardOutcome }}</span><span v-if="effect.restrictionUntil">排位限制截至 {{ new Date(effect.restrictionUntil).toLocaleString() }}</span><span v-if="effect.blockedReason" class="error">{{ effect.blockedReason }}</span></article><p>确认后会保存处置证据并通知相关玩家。无需第二名管理员批准。</p><button :disabled="busy || !preview.canConfirm" @click="confirm">{{ busy ? '处理中…' : '确认执行本次处置' }}</button></div>
+    <div v-if="preview" class="preview"><h4>确认前预览</h4><p v-for="reason in preview.blockingReasons" :key="reason" class="error">{{ reason }}</p><article v-for="effect in preview.accountEffects" :key="effect.accountId"><b>{{ effect.username }}</b><span>七曜值调整 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}</span><span>{{ integrityLabel(effect.rewardOutcome) }}</span><span v-if="effect.restrictionUntil">排位限制截至 {{ new Date(effect.restrictionUntil).toLocaleString() }}</span><span v-if="effect.blockedReason" class="error">{{ effect.blockedReason }}</span></article><p>确认后会保存处置证据并通知相关玩家。无需第二名管理员批准。</p><button :disabled="busy || !preview.canConfirm" @click="confirm">{{ busy ? '处理中…' : '确认执行本次处置' }}</button></div>
     <p v-if="notice" role="status" class="notice">{{ notice }}</p>
     <h3>处置历史 <button :disabled="busy" @click="loadHistory">刷新</button></h3>
     <div class="history"><article v-for="decision in decisions" :key="decision.decisionId">
       <h4>{{ integrityLabel(decision.effectiveDisposition) }} · {{ new Date(decision.createdAt).toLocaleString() }}</h4>
       <p>{{ decision.reason }}</p><small>{{ decision.actorName }} · {{ decision.matchIds.length }}场 · {{ decision.decisionId }}</small>
-      <details><summary>证据及调整详情</summary><p>{{ decision.evidence }}</p><p v-for="effect in decision.accountEffects" :key="effect.accountId">{{ effect.username }}：七曜值 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}；{{ effect.rewardOutcome }}</p></details>
+      <details><summary>证据及调整详情</summary><p>{{ decision.evidence }}</p><p v-for="effect in decision.accountEffects" :key="effect.accountId">{{ effect.username }}：七曜值 {{ effect.scoreDelta > 0 ? '+' : '' }}{{ effect.scoreDelta }}；{{ integrityLabel(effect.rewardOutcome) }}</p></details>
       <button v-if="canWrite && ['confirmed', 'system-error'].includes(decision.disposition) && !decision.revokedByDecisionId" :disabled="busy" @click="prepareRevoke(decision)">复核撤销</button>
     </article></div><button v-if="decisionCursor" :disabled="busy" @click="more('decisions')">加载更多处置</button>
     <h3>玩家申诉</h3><div class="history"><article v-for="appeal in appeals" :key="appeal.id"><h4>{{ appeal.username }} · {{ ({ open: '待处理', reviewing: '复核中', answered: '已回复', closed: '已结案' } as Record<string,string>)[appeal.status] || appeal.status }}</h4><p>{{ appeal.statement }}</p><small>处置 {{ appeal.decisionId }} · {{ new Date(appeal.createdAt).toLocaleString() }}</small><p v-if="appeal.reply">已回复：{{ appeal.reply }}</p><template v-if="canWrite"><textarea v-model="replies[appeal.id]" maxlength="1000" rows="3" :disabled="busy" placeholder="填写给玩家的复核进度或结论；撤销处罚须在处置历史另行预览确认。"/><div class="buttons"><button :disabled="busy || !replies[appeal.id]?.trim()" @click="reply(appeal, 'reviewing')">进入复核</button><button :disabled="busy || !replies[appeal.id]?.trim()" @click="reply(appeal, 'answered')">回复玩家</button><button :disabled="busy || !replies[appeal.id]?.trim()" @click="reply(appeal, 'closed')">回复并结案</button></div></template></article><p v-if="!appeals.length">暂无申诉。</p></div><button v-if="appealCursor" :disabled="busy" @click="more('appeals')">加载更多申诉</button>

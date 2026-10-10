@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-piercing-normal-attack",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "贯穿进攻规则修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "帕西瓦尔、库丘林、赵云，以及受十字军东征影响的狮心王理查一世，其贯穿进攻统一遵守正常进攻限制：暴怒之罪生效且攻击范围内仍有对方军团时不能贯穿；迷雾绝境生效且当前兵力不高于2000时不能贯穿。带天灾等级军团的贯穿会享受百鬼夜行的伤害加1，并正常计算其他适用的进攻伤害增益；仍不会触发进攻方的进攻时效果。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs"]
+    }
+  ]
+}

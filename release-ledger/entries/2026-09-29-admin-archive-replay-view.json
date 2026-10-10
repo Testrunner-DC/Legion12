@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-admin-archive-replay-view",
+  "date": "2026-09-29",
+  "audience": "internal",
+  "reason": "仅管理员档案回放入口显示档案中已有的双方手牌与盖伏牌身份，并保持只读；不修改普通玩家回放、公开导出或普通观战权限。赛事裁判实时视角已另列玩家条目。",
+  "paths": [
+    "opcgpro-vue/src/l12/ReplayPage.vue"
+  ]
+}

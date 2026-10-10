@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-season-finalization-write-guard",
+  "date": "2026-10-01",
+  "audience": "internal",
+  "reason": "赛季结算完成后，过期的管理写入会明确失败并刷新到最新状态，不自动重放原命令；该存储一致性保护没有新增玩家界面或文案。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs"
+  ]
+}

@@ -9,6 +9,20 @@ public sealed partial class L12GameEngine
     private const string TrialLakeLady = "S02-06S3";
     private const string TrialGrailJourney = "S02-06S4";
     private const string TrialFenianLegend = "S02-06S5";
+    private void CompleteTrialRuleAction(int controller, L12CardInstance trial)
+    {
+        if (trial.TrialCompleted) return;
+        trial.TrialCompleted = true;
+        var player = State.Players[controller];
+        player.SpecialZones.TrialLevel = player.SpecialZones.Trials.Where(card => !card.TrialCompleted)
+            .Select(card => card.TrialProgress).DefaultIfEmpty().Max();
+        AddSemanticPlayerLogEvent("trial", controller, $"完成试炼《{trial.Name}》",
+            new L12PlayerLogSemantic("完成试炼", "试炼已翻至完成面",
+                trial.InstanceId, trial.Name, trial.InstanceId, trial.Name), trial);
+        // Flipping is a rule action. Only the resulting printed trigger gets a response window.
+        QueueCompletedTrialTriggerBatch(controller, trial);
+    }
+
     private static bool HasTrialCompletionTriggerDeclarationPlan(string cardId, string trigger,
         IReadOnlyDictionary<string, string>? data)
         => trigger == "trial-complete"
@@ -85,25 +99,15 @@ public sealed partial class L12GameEngine
             }
             case "fenian-legend":
             {
-                var maximum = enemyTargets.Count == 0 ? 0 : player.SpecialZones.Runes;
                 steps.Add(TrialCompletionStep("option", "mode",
-                    "芬尼亚传奇：预先声明是否消耗X符文选择对方军团",
-                    maximum > 0 ? ["mode:none", "mode:use"] : ["mode:none"]));
-                if (maximum > 0)
+                    "芬尼亚传奇：是否消耗1符文发动一次兵力降低效果",
+                    enemyTargets.Count > 0 && player.SpecialZones.Runes > 0
+                        ? ["mode:none", "mode:use"] : ["mode:none"]));
+                if (enemyTargets.Count > 0 && player.SpecialZones.Runes > 0)
                 {
-                    steps.Add(TrialCompletionStep("option", "runeCount",
-                        "芬尼亚传奇：预先声明消耗的符文数量X",
-                        Enumerable.Range(1, maximum).Select(value => $"rune-count:{value}"),
-                        requiredChoice: "mode:use",
-                        labels: Enumerable.Range(1, maximum).ToDictionary(value => $"rune-count:{value}",
-                            value => $"消耗{value}符文")));
-                    for (var index = 1; index <= maximum; index++)
-                    {
-                        steps.Add(TrialCompletionStep("enemy-legion", $"target{index}",
-                            $"芬尼亚传奇：预先选择第{index}个兵力-3000的公开军团目标（可重复）",
-                            enemyTargets, requiredChoice: "mode:use", referenceKey: "runeCount",
-                            minimumReferenceNumericValue: index, referenceNumericChoicePrefix: "rune-count:"));
-                    }
+                    steps.Add(TrialCompletionStep("enemy-legion", "target",
+                        "芬尼亚传奇：选择对方1张军团，本回合兵力-3000",
+                        enemyTargets, requiredChoice: "mode:use"));
                 }
                 break;
             }
@@ -135,6 +139,7 @@ public sealed partial class L12GameEngine
             ReferenceDeclarationKey = referenceKey,
             MinimumReferenceNumericValue = minimumReferenceNumericValue,
             ReferenceNumericChoicePrefix = referenceNumericChoicePrefix,
+            IsResponsePresentationTarget = kind is "field-legion" or "enemy-legion" or "field-card",
             ChoiceLabels = labels ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["mode:none"] = "不发动",
@@ -175,24 +180,19 @@ public sealed partial class L12GameEngine
         }
         else if (plan == "fenian-legend")
         {
-            var countChoice = activation.DeclaredValues.GetValueOrDefault("runeCount", []).SingleOrDefault();
-            var count = countChoice?.Split(':') is ["rune-count", var countText]
-                && int.TryParse(countText, out var parsed) ? parsed : 0;
-            var targets = Enumerable.Range(1, Math.Max(0, count))
-                .Select(index => activation.DeclaredValues.GetValueOrDefault($"target{index}", []).SingleOrDefault())
-                .ToArray();
-            if (count <= 0 || targets.Any(target => target is null
-                    || DeclaredEnemyTarget(candidate.Controller, target) is null)
-                || player.SpecialZones.Runes < count || !L12S2ZoneOps.SpendRunes(player, count))
+            var target = activation.DeclaredValues.GetValueOrDefault("target", []).SingleOrDefault();
+            if (target is null || DeclaredEnemyTarget(candidate.Controller, target) is null
+                || !L12S2ZoneOps.SpendRunes(player, 1))
             {
                 RemoveUnstackedTriggerCandidate(candidate,
-                    "芬尼亚传奇声明的符文数量或公开目标已失效；未支付符文且效果未入栈");
+                    "芬尼亚传奇声明的公开目标已失效或无法支付1符文；效果未入栈");
                 return true;
             }
-            candidate.Data["fenianTargets"] = string.Join('|', targets!);
+            candidate.Data["fenianTarget"] = target;
+            candidate.Data["fenianRunePaid"] = "true";
+            candidate.Data["stackText"] = "选择对方1张军团，本回合兵力-3000";
             candidate.Data["trialSegment"] = "0";
-            AddEvent("cost", candidate.Controller, $"芬尼亚传奇入栈前消耗{count}符文", candidate.SourceSnapshot ??
-                CreateCard(candidate.SourceCardId, candidate.SourceInstanceId));
+            AddEvent("cost", candidate.Controller, "〈芬尼亚传奇〉消耗1符文支付本次发动费用", candidate.SourceSnapshot is null ? [] : [candidate.SourceSnapshot]);
         }
 
         if (plan == "lake-lady")
@@ -237,7 +237,9 @@ public sealed partial class L12GameEngine
                     else
                     {
                         player.Graveyard.Remove(arthur);
-                        AddCardToHandByEffect(player, arthur, "graveyard", "湖中仙女的馈赠将亚瑟王加入手牌");
+                        PubliclyRevealThenAddCardToHandByEffect(player, arthur, "graveyard",
+                            "湖中仙女的馈赠公开墓地的〈亚瑟王〉",
+                            "湖中仙女的馈赠将亚瑟王加入手牌", item);
                     }
                     FinishStackItem(item);
                     return;
@@ -266,6 +268,7 @@ public sealed partial class L12GameEngine
                 foreach (var arthur in player.Graveyard.Where(card => card.CardId == "S02-0601").ToArray())
                 {
                     player.Graveyard.Remove(arthur);
+                    ResetCardForPrivateZone(arthur);
                     player.Library.Add(arthur);
                 }
                 ShuffleLibrary(player, "湖中仙女的馈赠返回墓地亚瑟王并重洗");
@@ -298,15 +301,17 @@ public sealed partial class L12GameEngine
 
         if (plan == "fenian-legend")
         {
-            var targets = item.Data.GetValueOrDefault("fenianTargets", string.Empty)
-                .Split('|', StringSplitOptions.RemoveEmptyEntries);
-            var targetId = segment >= 0 && segment < targets.Length ? targets[segment] : null;
+            var targetId = item.Data.GetValueOrDefault("fenianTarget");
             var target = DeclaredEnemyTarget(item.Controller, targetId);
             if (target is null)
-                AddEvent("effect-cancelled", item.Controller,
-                    "芬尼亚传奇选择的目标已失效；该目标不受影响，已支付符文不返还", source);
+                RecordTargetSettlementFailure(item, targetId,
+                    "芬尼亚传奇本次已选择目标在逆结算后已离场、被覆盖、转为隐藏或不再是军团；已支付符文不返还");
             else
+            {
                 AddTimedModifier(target, -3000, 0, ExpiryAtNextOwnEnd(item.Controller), "芬尼亚传奇");
+                AddEvent("effect", item.Controller,
+                    $"芬尼亚传奇使〈{target.Name}〉本回合兵力-3000", source, target);
+            }
             ResolveStateBasedLegionDeaths();
             FinishStackItem(item);
             return;
@@ -329,8 +334,9 @@ public sealed partial class L12GameEngine
                     if (selected is not null)
                     {
                         player.Library.Remove(selected);
-                        AddCardToHandByEffect(player, selected, "library",
-                            "湖中仙女的馈赠将亚瑟王加入手牌");
+                        PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
+                            "湖中仙女的馈赠公开牌库中的〈亚瑟王〉",
+                            "湖中仙女的馈赠将亚瑟王加入手牌", item);
                     }
                 }
                 FinishStackItem(item);
@@ -348,8 +354,9 @@ public sealed partial class L12GameEngine
                         player.Library.Remove(selected);
                         PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                             $"寻找圣杯之旅展示〈{selected.Name}〉并加入手牌",
-                            "寻找圣杯之旅将彼界军团展示并加入手牌", "S02-06S4", "search-hit");
+                        "寻找圣杯之旅将彼界军团展示并加入手牌", "S02-06S4", "search-hit");
                     }
+                    else RecordTargetSettlementFailure(item, chosen[0], "所选彼界军团已离开牌库或不再符合检索条件");
                 }
                 ShuffleLibrary(player, "寻找圣杯之旅检索结算");
                 FinishStackItem(item);
@@ -364,12 +371,26 @@ public sealed partial class L12GameEngine
     {
         if (item.Trigger != "trial-complete") return;
         var plan = item.Data.GetValueOrDefault("trialCompletionPlan");
+        if (plan == "fenian-legend")
+        {
+            var player = State.Players[item.Controller];
+            if (player.SpecialZones.Runes <= 0 || !PublicLegions(State.Players[1 - item.Controller]).Any()) return;
+            var fenianSource = FindSource(item) ?? item.SourceSnapshot
+                ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+            QueueTriggerCandidates([CreateTriggerCandidate(item.Controller, fenianSource, "trial-complete",
+                "芬尼亚传奇可重复发动",
+                new Dictionary<string, string>
+                {
+                    ["trialCompletionPlan"] = "fenian-legend",
+                    ["triggerEffectText"] = ResolveTriggeredEffectDisplayText(fenianSource, "trial-complete", "触发"),
+                    ["fenianRepeat"] = "true",
+                }, fenianSource)]);
+            return;
+        }
         var current = int.TryParse(item.Data.GetValueOrDefault("trialSegment"), out var parsed) ? parsed : 0;
         var next = plan switch
         {
             "lake-lady" when current < 2 => current + 1,
-            "fenian-legend" when current + 1 < item.Data.GetValueOrDefault("fenianTargets", string.Empty)
-                .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
             "sky-city" when current + 1 < item.Data.GetValueOrDefault("skySegments", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).Length => current + 1,
             _ => -1,
@@ -384,8 +405,6 @@ public sealed partial class L12GameEngine
         var text = plan == "sky-city"
             ? StarterSkySegmentText(item.Data.GetValueOrDefault("skySegments", string.Empty)
                 .Split('|', StringSplitOptions.RemoveEmptyEntries)[next])
-            : plan == "fenian-legend"
-            ? $"芬尼亚传奇：第{next + 1}个目标本回合兵力-3000"
             : next == 1
                 ? "湖中仙女的馈赠：墓地所有亚瑟王返回牌库并重洗"
                 : "湖中仙女的馈赠：本回合亚瑟王登场费用-3";

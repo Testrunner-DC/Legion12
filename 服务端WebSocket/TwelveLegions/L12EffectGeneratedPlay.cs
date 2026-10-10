@@ -14,9 +14,9 @@ public sealed partial class L12GameEngine
         for (var row = 0; row < 2; row++)
         for (var slot = 0; slot < 3; slot++)
         {
-            if (State.ActiveDisaster?.CardId == "S01-DS03" && row == 1) continue;
+            if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && row == 1) continue;
             var occupant = player.Field[row][slot];
-            if (occupant is null || row == 1 && IsCounterTactic(occupant.CardId))
+            if (occupant is null || CanReplaceOwnCoveredCounter(player.PlayerIndex, player, row, occupant))
                 yield return $"{row}:{slot}";
         }
     }
@@ -28,7 +28,8 @@ public sealed partial class L12GameEngine
         if (locations.Count != 1 || locations[0].Host.PlayerIndex != controller
             || locations[0].Zone != originZone || !ReferenceEquals(locations[0].Card, card))
         {
-            AddEvent("effect-cancelled", controller, $"{reason}的打出来源已失效；不改选且不移动其他实例");
+            RecordEffectGeneratedPlayFailure(controller,
+                $"{reason}的打出来源已失效；不改选且不移动其他实例");
             FinishStackItem(parent);
             return CommandResult.Ok();
         }
@@ -38,7 +39,8 @@ public sealed partial class L12GameEngine
             var choices = EffectGeneratedFreePlaySlots(State.Players[controller]).ToArray();
             if (choices.Length == 0)
             {
-                AddEvent("effect-cancelled", controller, $"{reason}没有合法登场位置；该卡牌保留在原区域", card);
+                RecordEffectGeneratedPlayFailure(controller,
+                    $"{reason}没有合法登场位置；该卡牌保留在原区域", card);
                 FinishStackItem(parent);
                 return CommandResult.Ok();
             }
@@ -54,19 +56,20 @@ public sealed partial class L12GameEngine
                     MaxChoose = 1,
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
                 },
-            ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null);
+            ], triggerCandidateId: null, playCardInstanceId: card.InstanceId, responseTargetStackItemId: null,
+                activation =>
+                {
+                    activation.CommittedParentStackItemId = parent.StackItemId;
+                    activation.CommittedOriginZone = originZone;
+                    activation.CommittedReason = reason;
+                });
             if (!result.Accepted)
             {
-                AddEvent("effect-cancelled", controller, result.Error ?? $"{reason}无法建立免费打出声明", card);
+                RecordEffectGeneratedPlayFailure(controller,
+                    result.Error ?? $"{reason}无法建立免费打出声明", card);
                 FinishStackItem(parent);
                 return CommandResult.Ok();
             }
-            var activation = State.PendingActivations.Last(candidate => candidate.Controller == controller
-                && candidate.SourceInstanceId == card.InstanceId
-                && candidate.Ability == EffectGeneratedFreePlayAbility);
-            activation.CommittedParentStackItemId = parent.StackItemId;
-            activation.CommittedOriginZone = originZone;
-            activation.CommittedReason = reason;
             return CommandResult.Ok();
         }
 
@@ -124,12 +127,13 @@ public sealed partial class L12GameEngine
             {
                 player.Field[row][slot] = null;
                 displacedCounter.Hidden = false;
-                ResetCardAfterLeavingField(displacedCounter);
+                ResetCardForPrivateZone(displacedCounter);
                 CardOwner(displacedCounter, player).Graveyard.Add(displacedCounter);
                 AddEvent("counter-displaced", activation.Controller,
                     $"{reason}打出军团并将自己覆盖的反击战术〈{displacedCounter.Name}〉置入墓地", displacedCounter);
             }
-            if (!TrySummonFromAnyPrivateZone(player, activation.Controller, card.InstanceId, declaredSlot, tapped: false))
+            if (!TrySummonFromAnyPrivateZone(player, activation.Controller, card.InstanceId, declaredSlot,
+                    tapped: false, presentationOwner: parent))
             {
                 AbortEffectGeneratedFreePlay(activation, $"{reason}的登场事务失效；未生成重复实例");
                 return;
@@ -150,23 +154,20 @@ public sealed partial class L12GameEngine
         card.SummonRound = State.Round;
         if (card.CardType == "artifact")
         {
-            if (card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && player.Relic is not null)
-                player.ExtraRelics.Add(card);
-            else
-            {
-                if (player.Relic is not null)
-                {
-                    DiscardRelic(player, player.Relic);
-                    AddEvent("leave", activation.Controller, "原圣物离开圣物区");
-                }
-                player.Relic = card;
-            }
+            PlaceArtifactInRelicZone(activation.Controller, card);
             ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
-            AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
+            var playerLogGroupId = $"play:{State.EventSequence + 1}";
+            AddPlayerLogEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出",
+                playerLogGroupId, "enter", cards: card);
             ResolveOnPlayContinuousEffects(activation.Controller, card);
             RecalculateContinuousTroops();
             if (HasImmediateEffect(card, "enter"))
-                QueueOrPushTriggeredEffect(activation.Controller, card, "enter", "【登场时】效果");
+                QueueOrPushTriggeredEffect(activation.Controller, card, "enter", "【登场时】效果",
+                    data: new Dictionary<string, string>
+                    {
+                        ["playerLogGroupId"] = playerLogGroupId,
+                        ["playerLogTiming"] = "enter",
+                    });
             FinishStackItem(parent);
             return;
         }
@@ -175,7 +176,7 @@ public sealed partial class L12GameEngine
         {
             // 当前已核准的李牧/冲田路径不会命中此分支；保持真实实例在可追溯的墓地，
             // 不把不合法的反击战术伪装成主动战术压入堆叠。
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
             AbortEffectGeneratedFreePlay(activation, $"{reason}不能在当前时点打出该类型卡牌");
             return;
@@ -185,13 +186,15 @@ public sealed partial class L12GameEngine
         player.LastActiveTacticCardId = card.CardId;
         player.LastActiveTacticTurnSerial = State.TurnSerial;
         ApplyDisasterLevelOnEntry(activation.Controller, card, deferTriggerUntilStackSettles: true);
-        AddEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出", card);
+        var tacticPlayerLogGroupId = $"play:{State.EventSequence + 1}";
+        AddPlayerLogEvent("play", activation.Controller, $"{reason}使〈{card.Name}〉无需消耗费用打出",
+            tacticPlayerLogGroupId, "play", cards: card);
         ResolveOnPlayContinuousEffects(activation.Controller, card);
         RecalculateContinuousTroops();
         if (!HasImmediateEffect(card, "play"))
         {
             player.Resolving.Remove(card);
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
             FinishStackItem(parent);
             return;
@@ -202,19 +205,22 @@ public sealed partial class L12GameEngine
             if (!result.Accepted)
             {
                 player.Resolving.Remove(card);
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
                 AddEvent("ability-rejected", activation.Controller, result.Error ?? "复合战术无法建立声明", card);
                 FinishStackItem(parent);
             }
             return;
         }
-        PushEffect(activation.Controller, card, "play", $"由{reason}打出的战术效果",
+        var child = PushEffect(activation.Controller, card, "play", $"由{reason}打出的战术效果",
             data: new Dictionary<string, string>
             {
                 ["effectGeneratedPlay"] = "free",
                 ["originZone"] = originZone,
+                ["playerLogGroupId"] = tacticPlayerLogGroupId,
+                ["playerLogTiming"] = "play",
             });
+        parent.Data["compositeGeneratedChildStackId"] = child.StackItemId;
         FinishStackItem(parent);
     }
 
@@ -223,7 +229,11 @@ public sealed partial class L12GameEngine
 
     private void AbortEffectGeneratedFreePlay(L12PendingActivation activation, string reason)
     {
-        AddEvent("effect-cancelled", activation.Controller, reason);
+        RecordEffectGeneratedPlayFailure(activation.Controller, reason);
         if (FindEffectGeneratedPlayParent(activation) is { } parent) FinishStackItem(parent);
     }
+
+    private void RecordEffectGeneratedPlayFailure(int controller, string reason,
+        L12CardInstance? card = null)
+        => AddEvent("effect-failed", controller, reason, card is null ? [] : [card]);
 }

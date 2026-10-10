@@ -3,7 +3,8 @@ using System.Text.RegularExpressions;
 namespace TwelveLegions.Server;
 
 /// <summary>
-/// 主牌库以外的构筑规则。数量由卡面规则文本推导，避免按某张主宰编号写死。
+/// 主牌库以外的构筑与区域规则。逐卡能力身份由结构化语义目录提供；
+/// 不从展示卡文反推运行规则，避免勘误或换行修改改变结算。
 /// </summary>
 public static partial class L12SpecialDeckRules
 {
@@ -29,14 +30,18 @@ public static partial class L12SpecialDeckRules
         return capacity;
     }
 
+    public static bool StartsTrialsCompleted(L12CardDefinition master)
+        => L12StructuredCardSemantics.StartsWithCompletedTrials(master.Id);
+
     public static bool DoesNotCountTowardMainDeck(L12CardDefinition card)
-        => HasRule(card.Effect, "构筑时不计入卡组数量");
+        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id)
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.Id);
 
     public static bool StartsInGraveyard(L12CardDefinition card)
-        => HasRule(card.Effect, "游戏开始时置入墓地");
+        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.Id);
 
     public static bool CannotEnterHandOrLibrary(L12CardInstance card)
-        => HasRule(card.EffectText, "不能进入手牌和牌库")
+        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.CardId)
            || IsDerivedSpecialCard(card);
 
     /// <summary>
@@ -45,8 +50,19 @@ public static partial class L12SpecialDeckRules
     /// </summary>
     public static bool IsDerivedSpecialCard(L12CardInstance card)
         => card.CardType == "token"
-           || card.CardId == "S02-01S1"
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.CardId)
            || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
+
+    public static bool IsDerivedSpecialCard(L12CardDefinition card)
+        => card.CardType == "token"
+           || L12StructuredCardSemantics.IsDerivedSpecialCard(card.Id)
+           || card.Traits.Any(trait => trait.EndsWith("专属", StringComparison.Ordinal));
+
+    public static bool CanGenerateDerivedSpecialCard(string cardId, int existingInstances)
+    {
+        var limit = L12StructuredCardSemantics.DerivedSpecialCardLimit(cardId);
+        return limit > 0 && existingInstances < limit;
+    }
 
     /// <summary>
     /// 规则书“衍生卡/指示物”通则：衍生卡离开战场时直接消灭，
@@ -57,10 +73,5 @@ public static partial class L12SpecialDeckRules
         => IsDerivedSpecialCard(card);
 
     public static bool AlwaysReturnsToOwnerGraveyard(L12CardInstance card)
-        => HasRule(card.EffectText, "以任何形式离场")
-           && HasRule(card.EffectText, "所有者墓地");
-
-    private static bool HasRule(string? effect, string rule)
-        => !string.IsNullOrWhiteSpace(effect)
-           && effect.Contains(rule, StringComparison.Ordinal);
+        => L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle(card.CardId);
 }

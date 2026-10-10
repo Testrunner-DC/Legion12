@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-structured-battle-records",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "对局记录补全关键过程",
+  "changes": [
+    {
+      "category": "replays",
+      "text": "进攻记录会按同一次战斗汇总进攻、抵挡或支援、无效原因、双方兵力与主宰伤害，不再把一个战斗过程拆成难以理解的零散行。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleEventLog.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12CombatTimeline.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "公开的战场移动会记录卡牌从哪个格位移动到哪个格位，并按当前观看视角正确显示我方／对方或上方／下方位置。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/BattleEventLog.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "卡牌进入另一名玩家的战场时，会记录所有者、当前控制方、落位格、活跃／休整状态和已确定的持续时间。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "本回合兵力变化会显示实际目标和精确增减值，实时记录与回放使用同一份权威事实。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    }
+  ]
+}

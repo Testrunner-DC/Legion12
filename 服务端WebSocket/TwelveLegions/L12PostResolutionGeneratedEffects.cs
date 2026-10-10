@@ -27,7 +27,8 @@ public sealed partial class L12GameEngine
         if (!_catalog.Cards.TryGetValue(repeatedCardId, out var definition)
             || definition.CardType != "tactic" || IsCounterTactic(repeatedCardId))
         {
-            AddEvent("effect-cancelled", controller, "托勒密十三世没有可再次发动的主动战术效果");
+            RecordPostResolutionGeneratedFailure(controller,
+                "托勒密十三世没有可再次发动的主动战术效果");
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
         }
@@ -37,7 +38,7 @@ public sealed partial class L12GameEngine
             var result = BeginRepeatedCompositeEffectDeclaration(controller, source);
             if (!result.Accepted)
             {
-                AddEvent("effect-cancelled", controller,
+                AddEvent("effect-noop", controller,
                     $"〈{source.Name}〉的重复效果没有足够的合法选项或目标；未建立效果", source);
                 ResumeAfterPostResolutionGeneratedInteraction();
             }
@@ -48,7 +49,7 @@ public sealed partial class L12GameEngine
             var targets = PublicLegions(State.Players[1 - controller]).Select(card => card.InstanceId).ToArray();
             if (targets.Length == 0)
             {
-                AddEvent("effect-cancelled", controller, $"〈{source.Name}〉的重复效果没有合法目标", source);
+                AddEvent("effect-noop", controller, $"〈{source.Name}〉的重复效果没有合法目标", source);
                 ResumeAfterPostResolutionGeneratedInteraction();
                 return;
             }
@@ -61,6 +62,7 @@ public sealed partial class L12GameEngine
                     ValidChoices = targets.ToList(),
                     DeclarationKey = "target",
                     CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
+                    IsResponsePresentationTarget = true,
                 }
             ], triggerCandidateId: null, playCardInstanceId: source.InstanceId,
                 responseTargetStackItemId: null);
@@ -76,7 +78,7 @@ public sealed partial class L12GameEngine
         if (L12StructuredCardRules.RequiresPreStackHandPlayTarget(source.CardId)
             && DeclaredEnemyTarget(activation.Controller, target) is null)
         {
-            AddEvent("effect-cancelled", activation.Controller,
+            RecordPostResolutionGeneratedFailure(activation.Controller,
                 $"〈{source.Name}〉的重复效果目标失效；未建立效果", source);
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
@@ -129,7 +131,7 @@ public sealed partial class L12GameEngine
         var master = CreateCard(player.MasterId, $"master-{prompt.PlayerIndex}");
         if (!IsFaithZealotEligibleAbility(player.MasterId, ability))
         {
-            AddEvent("effect-failed", prompt.PlayerIndex,
+            RecordPostResolutionGeneratedFailure(prompt.PlayerIndex,
                 "〈信仰狂热者〉在结算后无法建立所选主宰效果");
             ResumeAfterPostResolutionGeneratedInteraction();
             return;
@@ -144,10 +146,14 @@ public sealed partial class L12GameEngine
             new L12Command("activateAbility", CardInstanceId: master.InstanceId, Ability: ability));
         if (result.Accepted) return;
         State.FreeMasterActivation = null;
-        AddEvent("effect-failed", prompt.PlayerIndex,
+        RecordPostResolutionGeneratedFailure(prompt.PlayerIndex,
             $"〈信仰狂热者〉无法发动所选主宰效果：{result.Error}");
         ResumeAfterPostResolutionGeneratedInteraction();
     }
+
+    private void RecordPostResolutionGeneratedFailure(int controller, string reason,
+        L12CardInstance? card = null)
+        => AddEvent("effect-failed", controller, reason, card is null ? [] : [card]);
 
     private void ResumeAfterPostResolutionGeneratedInteraction()
     {
@@ -159,6 +165,17 @@ public sealed partial class L12GameEngine
             return;
         }
         State.IsResolvingStack = false;
+        // 结算后生成的互动（例如信仰狂热者选择主宰效果）仍属于当前触发项的完整
+        // 生命周期。它结束以后必须先恢复同一时点中尚未轮到声明的兄弟项；直接进入
+        // AfterStackSettled 会把已持久化的单候选批次留在无人推进的状态。
+        if (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+        {
+            AdvanceTriggerBatches();
+            if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
+                || State.ResponseWindow is not null || State.EffectStack.Count > 0
+                || State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
+                return;
+        }
         AfterStackSettled();
     }
 }

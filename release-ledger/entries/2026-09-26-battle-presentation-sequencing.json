@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-26-battle-presentation-sequencing",
+  "date": "2026-09-26",
+  "audience": "players",
+  "title": "对战动画、计时与移动选择界面修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正军团离开战场时偶发直接消失，以及主宰效果卡图可能延迟到下一段动画后才展示的问题；效果展示和区域移动现在按服务器事件顺序统一播放。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "完善宽屏与移动端的对局计时布局，避免计时、手牌、对局记录和操作区互相遮挡；移动端卡牌选择弹框会在安全画面内完整展示选项、状态和操作按钮。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PlayerTurnClock.vue",
+        "opcgpro-vue/src/l12/game/PromptCardCandidate.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    }
+  ]
+}

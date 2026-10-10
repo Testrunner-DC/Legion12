@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-ranking-states",
+  "date": "2026-10-06",
+  "audience": "players",
+  "title": "排行榜状态提示",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "排行榜页签、时段和派系选择，以及刷新等待与错误提示补齐辅助阅读状态；原有布局和统计规则不变。",
+      "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"]
+    }
+  ]
+}

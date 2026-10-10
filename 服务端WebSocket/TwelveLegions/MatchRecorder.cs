@@ -2,12 +2,18 @@ using Microsoft.Data.Sqlite;
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
 public sealed partial class MatchRecorder : IAsyncDisposable
 {
     internal const long JournalSizeLimitBytes = 64L * 1024 * 1024;
+    private static readonly JsonSerializerOptions RecordedStateJson = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
+    };
     private readonly string _connectionString;
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly ConcurrentDictionary<string, Dictionary<string, CardLocation>> _factLocationBaselines =
@@ -84,30 +90,42 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await InitializeJournalSchemaAsync(connection);
         await InitializeAnalyticsSchemaAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
+        await InitializeSeasonIdentityMigrationSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
         await InitializePlayerReplayRetentionSchemaAsync(connection, _utcNow());
+        await InitializeGlobalAnalyticsSchemaAsync(connection);
+        await InitializePublicDeckBindingsAsync(connection);
+        await InitializeTournamentResultOutboxAsync(connection);
+        await InitializeResponsePreferenceOutboxAsync(connection);
     }
 
     public Task StartAsync(L12GameState state, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
-        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(state, modeId, account0, account1, decks, [], null, null);
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null, IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(state, modeId, account0, account1, decks, [], null, null, bindings);
 
     public Task StartAsync(L12GameEngine engine, string modeId = "friendly",
         string? account0 = null, string? account1 = null,
-        IReadOnlyList<L12PresetDeckDefinition>? decks = null)
-        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null, engine);
+        IReadOnlyList<L12PresetDeckDefinition>? decks = null, IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals, null, engine, bindings);
 
     internal Task StartRankedAsync(L12GameEngine engine, string account0, string account1,
-        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime)
-        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine);
+        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime,
+        IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, "ranked", account0, account1, decks, engine.CardFactSignals, runtime, engine, bindings);
+
+    internal Task StartTimedAsync(L12GameEngine engine, string modeId, string account0, string account1,
+        IReadOnlyList<L12PresetDeckDefinition> decks, L12RankedRuntimeCheckpoint runtime,
+        IReadOnlyList<L12PublicDeckBinding?>? bindings = null)
+        => StartCoreAsync(engine.State, modeId, account0, account1, decks, engine.CardFactSignals,
+            runtime, engine, bindings);
 
     private async Task StartCoreAsync(L12GameState state, string modeId,
         string? account0, string? account1,
         IReadOnlyList<L12PresetDeckDefinition>? decks,
         IReadOnlyList<L12CardFactSignal> initialSignals,
         L12RankedRuntimeCheckpoint? rankedRuntime,
-        L12GameEngine? engine)
+        L12GameEngine? engine, IReadOnlyList<L12PublicDeckBinding?>? bindings)
     {
         if (decks is not null && decks.Count != 2)
             throw new ArgumentException("正式对局构筑快照必须恰好包含两名玩家", nameof(decks));
@@ -161,6 +179,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
+        await PersistPublicDeckBindingsAsync(connection, transaction, state.MatchId, bindings);
         if (normalizedMode == "sandbox")
             await InsertSandboxRecordingAsync(connection, transaction, state.MatchId, startedUtc);
         if (rankedRuntime is not null)
@@ -186,7 +205,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         CommandResult result, string? requestId = null, bool stateChangedOnRejection = false)
     {
         await AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, null, null,
-            requestId, stateChangedOnRejection);
+            requestId, stateChangedOnRejection, null);
     }
 
     internal Task AppendRankedAsync(L12GameEngine engine, long sequence, int playerIndex,
@@ -194,7 +213,13 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         L12RankedSettlementEnvelope? settlement, string? requestId = null,
         bool stateChangedOnRejection = false)
         => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement,
-            requestId, stateChangedOnRejection);
+            requestId, stateChangedOnRejection, null);
+
+    internal Task AppendResponsePreferenceAsync(L12GameEngine engine, long sequence, int playerIndex,
+        string commandJson, CommandResult result, L12ResponsePreferenceOutboxEnvelope envelope,
+        L12RankedRuntimeCheckpoint? runtime, string? requestId)
+        => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, null,
+            requestId, false, envelope);
 
     public Task AppendAuthorityAsync(L12GameEngine engine, long sequence, string reason)
         => AppendAsync(engine, sequence, -1,
@@ -205,7 +230,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }), CommandResult.Ok());
 
     internal Task AppendRankedAuthorityAsync(L12GameEngine engine, long sequence, string reason,
-        L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope settlement)
+        L12RankedRuntimeCheckpoint runtime, L12RankedSettlementEnvelope? settlement)
         => AppendRankedAsync(engine, sequence, -1,
             JsonSerializer.Serialize(new
             {
@@ -214,7 +239,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }), CommandResult.Ok(),
             runtime, settlement);
 
-    public async Task<bool> CompleteAsync(L12GameEngine engine)
+    public async Task<bool> CompleteAsync(L12GameEngine engine, string? tournamentId = null,
+        string? tournamentMatchId = null)
     {
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
@@ -251,6 +277,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
             await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
+        if (!string.IsNullOrWhiteSpace(tournamentId) && !string.IsNullOrWhiteSpace(tournamentMatchId)
+            && engine.State.Winner is { } tournamentWinner)
+            await UpsertTournamentResultOutboxAsync(connection, transaction, engine.State.MatchId,
+                tournamentId, tournamentMatchId, tournamentWinner, completedUtc);
         StorageFailureInjector?.Invoke("before-match-complete-commit");
         await transaction.CommitAsync();
         _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
@@ -293,7 +323,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 200));
         var matches = new List<L12MatchSummary>();
         await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) matches.Add(ReadSummary(reader));
+        while (await reader.ReadAsync()) matches.Add(SanitizePlayerReplaySummary(ReadSummary(reader)));
         return matches;
     }
 
@@ -306,7 +336,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             SELECT m.match_id,m.player_0,m.player_1,m.started_utc,m.ended_utc,m.winner,
                    COALESCE(p0.master_name,''),COALESCE(p1.master_name,''),m.first_player,
                    m.storage_version,
-                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END
+                   CASE WHEN m.storage_version < 2 THEN e.state_json ELSE NULL END,
+                   m.account_0,m.account_1
             FROM matches m
             LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
             LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
@@ -350,7 +381,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }
             matches.Add(new L12RankingMatch(reader.GetString(0), reader.GetString(1), reader.GetString(2),
                 reader.GetString(3), reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetInt32(5),
-                master0, master1, firstPlayer));
+                master0, master1, firstPlayer, AccountId0: reader.IsDBNull(11) ? null : reader.GetString(11),
+                AccountId1: reader.IsDBNull(12) ? null : reader.GetString(12)));
         }
         return matches;
     }
@@ -431,7 +463,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
             State = SanitizeRecordedState(command.State, viewer),
         }).ToArray();
-        return new L12MatchDetail(detail.Match, commands, viewer);
+        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
     }
 
     public Task<int> AnonymizePlayerAsync(string playerName, string anonymousName)
@@ -477,11 +509,16 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         return node;
     }
 
+    private static L12MatchSummary SanitizePlayerReplaySummary(L12MatchSummary summary)
+        => summary with { Deck0 = string.Empty, Deck1 = string.Empty };
+
     private static JsonElement SanitizeRecordedCommand(JsonElement command, bool ownCommand)
     {
-        if (ownCommand) return command;
         var type = command.TryGetProperty("type", out var camel) ? camel.GetString()
             : command.TryGetProperty("Type", out var pascal) ? pascal.GetString() : string.Empty;
+        if (type is "setResponsePreference" or "responseAutoClose")
+            return JsonSerializer.SerializeToElement(new { type = "authorityProgress" });
+        if (ownCommand) return command;
         return JsonSerializer.SerializeToElement(new { type });
     }
 
@@ -489,6 +526,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         var root = JsonNode.Parse(state.GetRawText())?.AsObject();
         if (root is null) return state;
+        L12GameState? authorityState;
+        try { authorityState = JsonSerializer.Deserialize<L12GameState>(state.GetRawText(), RecordedStateJson); }
+        catch (JsonException) { authorityState = null; }
         var players = root["Players"] as JsonArray;
         if (players is not null)
         {
@@ -497,6 +537,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
                 if (players[playerIndex] is not JsonObject player) continue;
                 if (player["Name"] is JsonValue nameValue && nameValue.TryGetValue<string>(out var playerName))
                     player["Name"] = L12UsernamePolicy.PublicName(playerName);
+                player.Remove("DeckName");
+                player.Remove("deckName");
                 RedactCardArray(player["Library"] as JsonArray, "牌库");
                 if (playerIndex != viewer) RedactCardArray(player["Hand"] as JsonArray, "对方手牌");
                 RedactCoveredField(player["Field"] as JsonArray, playerIndex, viewer);
@@ -512,6 +554,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }
         }
         RedactCardArray(root["DisasterDeck"] as JsonArray, "天灾牌库");
+        RedactCardArray(root["DisasterPool"] as JsonArray, "天灾候选");
+        RedactCardArray(root["SelectedDisasters"] as JsonArray, "待选天灾");
+        ProjectRecordedDisastersAndEvents(root, authorityState, viewer);
         if (root["OperationsPolicy"] is JsonObject operationsPolicy)
         {
             operationsPolicy.Remove("VersionId");
@@ -531,8 +576,71 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         root["PendingPrompts"] = new JsonArray();
         root["PendingActivations"] = new JsonArray();
+        // These are declaration work queues, not public resolved effects. They
+        // contain hidden battlefield/hand identities before the reveal boundary.
+        root["PendingTriggerBatches"] = new JsonArray();
+        root["PendingTriggerStackCandidates"] = new JsonArray();
+        // Allocation counters advance for private declarations too. Ordinary replay
+        // consumes recorded frames and visible event IDs, never these authority-only
+        // high-water marks. Keep them in raw archives/checkpoints, not this projection.
+        foreach (var counter in new[] { "EventSequence", "PromptSequence", "StackSequence",
+            "ActivationSequence", "TriggerBatchSequence", "AuthorityEventSequence" })
+            root.Remove(counter);
+        root["Log"] = new JsonArray();
+        root.Remove("PlayerResponseModes");
+        if (root["ResponseWindow"] is JsonObject responseWindow)
+        {
+            responseWindow.Remove("FrozenPlayerResponseModes");
+            responseWindow.Remove("AutoClosePromptId");
+            responseWindow.Remove("AutoCloseStackItemId");
+            responseWindow.Remove("AutoClosePriorityPlayer");
+            responseWindow.Remove("AutoCloseDeadlineUtc");
+        }
+        L12TrialProgressVisibility.RedactRecordedState(root);
         return JsonSerializer.SerializeToElement(root);
     }
+
+    private static void ProjectRecordedDisastersAndEvents(JsonObject root,
+        L12GameState? authorityState, int viewer)
+    {
+        if (authorityState is null)
+        {
+            // A legacy or malformed state that cannot be interpreted must fail closed at the
+            // player replay boundary. Internal authority replay remains available via GetMatchAsync.
+            root["ChosenDisasters"] = new JsonArray();
+            root["Events"] = new JsonArray();
+            root["LastAction"] = null;
+            return;
+        }
+
+        root["ChosenDisasters"] = new JsonArray(authorityState.ChosenDisasters.Select(card =>
+            L12RecipientVisibility.CanSeeDisaster(authorityState, card, viewer,
+                revealAllDisasters: false)
+                ? JsonSerializer.SerializeToNode(card)
+                : HiddenDisaster(card.InstanceId,
+                    authorityState.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId,
+                        card.OwnerIndex ?? -1))).ToArray());
+
+        root["Events"] = new JsonArray(authorityState.Events
+            .TakeLast(L12GameEngine.MaximumSnapshotEvents)
+            .Where(actionEvent => L12RecipientVisibility.CanSeeActionEvent(actionEvent, viewer))
+            .Select(actionEvent => JsonSerializer.SerializeToNode(
+                L12RecipientVisibility.ProjectActionEvent(authorityState, actionEvent, viewer,
+                    revealAllDisasters: false)))
+            .ToArray());
+        root["LastAction"] = authorityState.LastAction is null
+            || !L12RecipientVisibility.CanSeeActionEvent(authorityState.LastAction, viewer)
+            ? null
+            : JsonSerializer.SerializeToNode(L12RecipientVisibility.ProjectActionEvent(
+                authorityState, authorityState.LastAction, viewer, revealAllDisasters: false));
+    }
+
+    private static JsonObject HiddenDisaster(string instanceId, int ownerIndex) => new()
+    {
+        ["InstanceId"] = instanceId,
+        ["Hidden"] = true,
+        ["OwnerIndex"] = ownerIndex,
+    };
 
     private static void RedactCardArray(JsonArray? cards, string label)
     {
@@ -646,4 +754,5 @@ public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12Reco
 
 public sealed record L12RankingMatch(
     string MatchId, string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,
-    string Master0, string Master1, int FirstPlayer, string? MasterId0 = null, string? MasterId1 = null);
+    string Master0, string Master1, int FirstPlayer, string? MasterId0 = null, string? MasterId1 = null,
+    string? AccountId0 = null, string? AccountId1 = null);

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-08-private-deck-query-boundaries",
+  "date": "2026-10-08",
+  "audience": "internal",
+  "reason": "私人牌库目录增加严格精确名称与公开来源过滤，不改变存储格式；身份页移除无用途的全牌库读取，首页回访读取暂改薄摘要（两个快捷入口的删除请求另批实施）。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueryContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueries.cs",
+    "opcgpro-vue/src/l12/site/ProfilePage.vue",
+    "opcgpro-vue/src/l12/site/HomeRevisitActions.vue"
+  ]
+}

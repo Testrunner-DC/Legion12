@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -152,7 +153,7 @@ public sealed record L12OperationsPolicySnapshot(
            && (Season.StartsAt is null || Season.StartsAt <= now)
            && (Season.EndsAt is null || Season.EndsAt > now)
            && DisasterCardIds.Count >= 9
-           && string.Equals(DisasterCardIds[^1], L12PlatformStore.AnnihilationCardId,
+           && string.Equals(DisasterCardIds[^1], L12ActiveDisasterRules.AnnihilationCardId,
                StringComparison.OrdinalIgnoreCase);
 
     public L12OperationsPolicySnapshot ForRankedMatch()
@@ -213,7 +214,9 @@ public sealed record L12OperationsConfigView(
     L12OperationsConfigPayload Config,
     string UpdatedBy,
     DateTimeOffset UpdatedAt,
-    L12ImmediateMaintenanceView? ImmediateMaintenance = null);
+    L12ImmediateMaintenanceView? ImmediateMaintenance = null,
+    IReadOnlyDictionary<string, long>? SectionRevisions = null,
+    IReadOnlyDictionary<string, long>? FieldRevisions = null);
 
 public sealed record L12OperationsConfigVersionView(
     string Id,
@@ -224,7 +227,56 @@ public sealed record L12OperationsConfigVersionView(
     string ActorName,
     string Reason,
     DateTimeOffset CreatedAt,
-    L12ImmediateMaintenanceView? ImmediateMaintenance = null);
+    L12ImmediateMaintenanceView? ImmediateMaintenance = null,
+    string? Section = null,
+    long? SectionRevision = null,
+    IReadOnlyList<string>? ChangedFields = null);
+
+public sealed record L12OperationsSectionPayload(
+    L12DefaultRoomConfig? DefaultRoomConfig = null,
+    IReadOnlyList<L12MatchModeConfig>? MatchModes = null,
+    IReadOnlyDictionary<string, bool>? FeatureFlags = null,
+    L12MaintenanceConfig? Maintenance = null,
+    IReadOnlyList<L12AnnouncementConfig>? Announcements = null);
+
+public sealed record L12OperationsSectionView(
+    string Section,
+    long Revision,
+    long OperationsVersion,
+    string VersionId,
+    L12OperationsSectionPayload Config,
+    IReadOnlyDictionary<string, long> FieldRevisions,
+    string UpdatedBy,
+    DateTimeOffset UpdatedAt);
+
+public sealed record L12OperationsSectionVersionView(
+    string Id,
+    string Section,
+    long Revision,
+    long OperationsVersion,
+    string Action,
+    L12OperationsSectionPayload Config,
+    IReadOnlyList<string> ChangedFields,
+    string ActorId,
+    string ActorName,
+    string Reason,
+    DateTimeOffset CreatedAt);
+
+public sealed record L12OperationsSectionPreviewView(
+    bool Valid,
+    string Section,
+    long CurrentRevision,
+    long NextRevision,
+    L12OperationsSectionPayload Normalized,
+    IReadOnlyDictionary<string, long> ExpectedFieldRevisions,
+    IReadOnlyList<string> Changes,
+    IReadOnlyList<string> Warnings);
+
+public sealed record L12OperationsSectionOperationView(
+    bool Applied,
+    L12OperationsSectionView Current,
+    L12OperationsSectionVersionView? HistoryEntry,
+    IReadOnlyList<string> Changes);
 
 public sealed record L12OperationsConfigPreviewView(
     bool Valid,
@@ -259,8 +311,31 @@ public sealed class L12OperationsConfigException : InvalidOperationException
 
 public sealed partial class L12PlatformStore
 {
-    internal const string AnnihilationCardId = "S01-DS10";
     private const int OperationsHistoryLimit = 200;
+    private const string OperationsRoomSection = "room";
+    private const string OperationsFeaturesSection = "features";
+    private const string OperationsAnnouncementsSection = "announcements";
+    private const string OperationsMaintenanceSection = "maintenance";
+    private static readonly string[] WritableOperationsSections =
+    [
+        OperationsRoomSection,
+        OperationsFeaturesSection,
+        OperationsAnnouncementsSection,
+        OperationsMaintenanceSection,
+    ];
+    private static readonly string[] StaticOperationsFieldKeys =
+    [
+        "room/defaultRoomConfig/matchModeId",
+        "room/defaultRoomConfig/spectating",
+        "room/defaultRoomConfig/handVisibility",
+        "room/defaultRoomConfig/disasterMode",
+        "maintenance/enabled",
+        "maintenance/message",
+        "maintenance/startsAt",
+        "maintenance/endsAt",
+        "maintenance/advanceBroadcastHours",
+        "maintenance/expectedDurationHours",
+    ];
     private static readonly Regex OperationsIdPattern = new("^[a-zA-Z0-9_.-]{1,64}$", RegexOptions.Compiled);
 
     private sealed class OperationsSeasonRow
@@ -342,6 +417,12 @@ public sealed partial class L12PlatformStore
         public OperationsMaintenanceRow Maintenance { get; set; } = new();
         public OperationsImmediateMaintenanceRow ImmediateMaintenance { get; set; } = new();
         public List<OperationsAnnouncementRow> Announcements { get; set; } = [];
+        public Dictionary<string, long> SectionRevisions { get; set; } =
+            new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, long> FieldRevisions { get; set; } =
+            new(StringComparer.OrdinalIgnoreCase);
+        public List<string> LastChangedSections { get; set; } = [];
+        public List<string> LastChangedFields { get; set; } = [];
         public string UpdatedBy { get; set; } = "系统";
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
@@ -355,6 +436,9 @@ public sealed partial class L12PlatformStore
         public string ActorId { get; set; } = "system";
         public string ActorName { get; set; } = "系统";
         public string Reason { get; set; } = "initial configuration";
+        public string? Section { get; set; }
+        public long? SectionRevision { get; set; }
+        public List<string> ChangedFields { get; set; } = [];
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
@@ -375,6 +459,159 @@ public sealed partial class L12PlatformStore
             .Select(ToView).ToArray();
     }
 
+    public L12OperationsSectionView OperationsConfigSection(L12AccountView actor, string section)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        var normalizedSection = NormalizeOperationsSection(section);
+        lock (_gate) return ToSectionView(RequireOperationsConfig(), normalizedSection);
+    }
+
+    internal long OperationsConfigSectionRevision(string section)
+    {
+        var normalizedSection = NormalizeOperationsSection(section);
+        lock (_gate) return SectionRevision(RequireOperationsConfig(), normalizedSection);
+    }
+
+    public IReadOnlyList<L12OperationsSectionVersionView> OperationsConfigSectionHistory(
+        L12AccountView actor, string section, int limit = 50)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        var normalizedSection = NormalizeOperationsSection(section);
+        lock (_gate)
+        {
+            return _data.OperationsConfigHistory
+                .Where(row => string.Equals(row.Section, normalizedSection, StringComparison.OrdinalIgnoreCase)
+                    || row.ChangedFields.Any(field => FieldBelongsToSection(field, normalizedSection))
+                    || row.Action == "initialize")
+                .OrderByDescending(row => row.CreatedAt)
+                .ThenByDescending(row => row.Version)
+                .Take(Math.Clamp(limit, 1, OperationsHistoryLimit))
+                .Select(row => ToSectionView(row, normalizedSection)).ToArray();
+        }
+    }
+
+    public L12OperationsSectionPreviewView PreviewOperationsConfigSection(L12AccountView actor,
+        string section, L12OperationsSectionPayload payload, long? expectedRevision,
+        IReadOnlyDictionary<string, long>? expectedFieldRevisions, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedSection = NormalizeOperationsSection(section);
+        lock (_gate)
+        {
+            EnsureOperationsSectionFieldSet(normalizedSection, payload, expectedFieldRevisions);
+            var current = RequireOperationsConfig();
+            var candidate = PrepareOperationsSectionCandidate(current, normalizedSection, payload,
+                expectedRevision, expectedFieldRevisions, out var changes, out var validatedFields);
+            var currentRevision = SectionRevision(current, normalizedSection);
+            AddAdminAudit(actor, "operations", "config-section-preview",
+                $"operations:config:{normalizedSection}", currentRevision.ToString(),
+                (currentRevision + (changes.Count > 0 ? 1 : 0)).ToString(), string.Join(",", changes),
+                context with { DryRun = true, Outcome = "dry-run" });
+            Save(false);
+            return new L12OperationsSectionPreviewView(true, normalizedSection, currentRevision,
+                currentRevision + (changes.Count > 0 ? 1 : 0),
+                ToSectionPayload(candidate, normalizedSection), validatedFields, changes,
+                OperationsSectionWarnings(normalizedSection, candidate));
+        }
+    }
+
+    public L12OperationsSectionOperationView ApplyOperationsConfigSection(L12AccountView actor,
+        string section, L12OperationsSectionPayload payload, long expectedRevision,
+        IReadOnlyDictionary<string, long>? expectedFieldRevisions, string? reason,
+        L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        var normalizedSection = NormalizeOperationsSection(section);
+        lock (_gate)
+        {
+            EnsureOperationsSectionFieldSet(normalizedSection, payload, expectedFieldRevisions);
+            var current = RequireOperationsConfig();
+            var candidate = PrepareOperationsSectionCandidate(current, normalizedSection, payload,
+                expectedRevision, expectedFieldRevisions, out var changes, out _);
+            var currentRevision = SectionRevision(current, normalizedSection);
+            if (changes.Count == 0)
+            {
+                AddAdminAudit(actor, "operations", "config-section-apply",
+                    $"operations:config:{normalizedSection}", currentRevision.ToString(),
+                    currentRevision.ToString(), normalizedReason,
+                    context with { Outcome = "already-applied", Reason = normalizedReason });
+                Save(false);
+                return new L12OperationsSectionOperationView(false,
+                    ToSectionView(current, normalizedSection), null, changes);
+            }
+
+            var next = ToRow(candidate, current.Version + 1, actor.Username, current.ImmediateMaintenance);
+            _data.OperationsConfig = next;
+            var history = NewOperationsHistory(next, $"section:{normalizedSection}:apply", actor,
+                normalizedReason, normalizedSection, changes);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+            AddAdminAudit(actor, "operations", "config-section-apply",
+                $"operations:config:{normalizedSection}", currentRevision.ToString(),
+                SectionRevision(next, normalizedSection).ToString(), normalizedReason,
+                context with { Outcome = "succeeded", Reason = normalizedReason });
+            Save();
+            return new L12OperationsSectionOperationView(true, ToSectionView(next, normalizedSection),
+                ToSectionView(history, normalizedSection), changes);
+        }
+    }
+
+    public L12OperationsSectionOperationView RollbackOperationsConfigSection(L12AccountView actor,
+        string section, string versionId, long expectedRevision, string? reason,
+        L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        var normalizedSection = NormalizeOperationsSection(section);
+        var normalizedVersionId = versionId?.Trim() ?? string.Empty;
+        lock (_gate)
+        {
+            var current = RequireOperationsConfig();
+            var currentRevision = SectionRevision(current, normalizedSection);
+            if (expectedRevision != currentRevision)
+                throw new L12OperationsConfigException("operations_section_conflict",
+                    "该运营分区已变化，请刷新后重试");
+            var target = _data.OperationsConfigHistory.FirstOrDefault(row => row.Id == normalizedVersionId)
+                ?? throw new L12OperationsConfigException("operations_section_version_not_found",
+                    "运营分区历史版本不存在");
+            var targetPayload = ToSectionPayload(ToPayload(target.Config), normalizedSection);
+            var rollbackFields = OperationsSectionFields(ToPayload(current), normalizedSection)
+                .Concat(OperationsSectionFields(ToPayload(target.Config), normalizedSection))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(field => field, field => FieldRevision(current, field),
+                    StringComparer.OrdinalIgnoreCase);
+            var candidate = PrepareOperationsSectionCandidate(current, normalizedSection, targetPayload,
+                currentRevision, rollbackFields, out var changes, out _);
+            if (changes.Count == 0)
+            {
+                AddAdminAudit(actor, "operations", "config-section-rollback",
+                    $"operations:config:{normalizedSection}", currentRevision.ToString(),
+                    currentRevision.ToString(), $"{normalizedReason}; target={target.Id}",
+                    context with { Outcome = "already-applied", Reason = normalizedReason });
+                Save(false);
+                return new L12OperationsSectionOperationView(false,
+                    ToSectionView(current, normalizedSection), null, changes);
+            }
+
+            var next = ToRow(candidate, current.Version + 1, actor.Username, current.ImmediateMaintenance);
+            _data.OperationsConfig = next;
+            var history = NewOperationsHistory(next,
+                $"section:{normalizedSection}:rollback:{target.Id}", actor, normalizedReason,
+                normalizedSection, changes);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+            AddAdminAudit(actor, "operations", "config-section-rollback",
+                $"operations:config:{normalizedSection}", currentRevision.ToString(),
+                SectionRevision(next, normalizedSection).ToString(),
+                $"{normalizedReason}; target={target.Id}",
+                context with { Outcome = "succeeded", Reason = normalizedReason });
+            Save();
+            return new L12OperationsSectionOperationView(true, ToSectionView(next, normalizedSection),
+                ToSectionView(history, normalizedSection), changes);
+        }
+    }
+
     public L12OperationsConfigPreviewView PreviewOperationsConfig(L12AccountView actor,
         L12OperationsConfigPayload payload, long? expectedVersion, L12AdminAuditContext context)
     {
@@ -384,6 +621,10 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
+            if (!SeasonIdsEqual(current.Season.Id, normalized.Season.Id))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "切换赛季必须通过下一赛季生效命令执行");
+            normalized = normalized with { Season = normalized.Season with { Id = current.Season.Id } };
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var warnings = OperationsWarnings(normalized);
             AddAdminAudit(actor, "operations", "config-preview", "operations:config",
@@ -406,10 +647,14 @@ public sealed partial class L12PlatformStore
             var current = RequireOperationsConfig();
             EnsureOperationsVersion(current, expectedVersion);
             var normalized = NormalizeOperationsPayload(payload);
+            if (!SeasonIdsEqual(current.Season.Id, normalized.Season.Id))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "切换赛季必须通过下一赛季生效命令执行");
+            normalized = normalized with { Season = normalized.Season with { Id = current.Season.Id } };
             var changes = DescribeOperationsChanges(ToPayload(current), normalized);
             var next = ToRow(normalized, current.Version + 1, actor.Username, current.ImmediateMaintenance);
-            FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
             _data.OperationsConfig = next;
+            SyncActiveSeasonDefinitionFromRuntime(actor);
             var history = NewOperationsHistory(next, "apply", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
             TrimOperationsHistory();
@@ -434,10 +679,17 @@ public sealed partial class L12PlatformStore
             var target = _data.OperationsConfigHistory.FirstOrDefault(row => row.Id == normalizedVersionId)
                 ?? throw new L12OperationsConfigException("operations_version_not_found", "运营配置历史版本不存在");
             var targetPayload = ToPayload(target.Config);
+            if (!SeasonIdsEqual(current.Season.Id, targetPayload.Season.Id))
+                throw new L12OperationsConfigException("season_activation_required",
+                    "不能通过运营配置回滚激活或恢复其他赛季");
+            targetPayload = targetPayload with
+            {
+                Season = targetPayload.Season with { Id = current.Season.Id },
+            };
             var changes = DescribeOperationsChanges(ToPayload(current), targetPayload);
             var next = ToRow(targetPayload, current.Version + 1, actor.Username, current.ImmediateMaintenance);
-            FinalizeOutgoingRankedSeason(current.Season.Id, current.Season.Name, next.Season.Id);
             _data.OperationsConfig = next;
+            SyncActiveSeasonDefinitionFromRuntime(actor);
             var history = NewOperationsHistory(next, $"rollback:{target.Id}", actor, normalizedReason);
             _data.OperationsConfigHistory.Add(history);
             TrimOperationsHistory();
@@ -581,12 +833,17 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var policy = ToPolicySnapshot(RequireOperationsConfig());
+            var playerSeason = policy.Season with
+            {
+                Name = HistoricalSeasonDisplayNameLocked(policy.Season.Id, policy.Season.Name,
+                    fallback: "当前赛季"),
+            };
             var immediateActive = policy.ImmediateMaintenance?.Enabled == true;
             var scheduledActive = policy.IsMaintenanceActive(now);
             var entryBlocked = policy.IsNewGameEntryBlocked(now);
             return new L12EffectiveOperationsPolicyView(
                 policy.Version,
-                policy.Season,
+                playerSeason,
                 policy.DisasterCardIds.ToArray(),
                 policy.MatchModes.ToArray(),
                 policy.DefaultRoomConfig,
@@ -631,6 +888,8 @@ public sealed partial class L12PlatformStore
                     Version = _data.OperationsConfig.Version,
                     Action = "initialize",
                     Config = CloneOperationsRow(_data.OperationsConfig),
+                    ChangedFields = _data.OperationsConfig.FieldRevisions.Keys
+                        .OrderBy(field => field, StringComparer.OrdinalIgnoreCase).ToList(),
                     CreatedAt = _data.OperationsConfig.UpdatedAt,
                 });
                 changed = true;
@@ -653,6 +912,37 @@ public sealed partial class L12PlatformStore
                     history.Version = history.Config.Version;
                     changed = true;
                 }
+                if (history.ChangedFields is null)
+                {
+                    history.ChangedFields = [];
+                    changed = true;
+                }
+            }
+            L12OperationsConfigPayload? previousHistoryPayload = null;
+            foreach (var history in _data.OperationsConfigHistory
+                         .OrderBy(row => row.Version).ThenBy(row => row.CreatedAt))
+            {
+                var historyPayload = ToPayload(history.Config);
+                if (history.ChangedFields.Count == 0)
+                {
+                    history.ChangedFields = (previousHistoryPayload is null
+                            ? OperationsSectionFields(historyPayload)
+                            : DescribeOperationsFieldChanges(previousHistoryPayload, historyPayload))
+                        .OrderBy(field => field, StringComparer.OrdinalIgnoreCase).ToList();
+                    if (history.ChangedFields.Count > 0) changed = true;
+                }
+                if (history.Section is null)
+                {
+                    var changedSections = history.ChangedFields.Select(SectionForField)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                    if (changedSections.Length == 1)
+                    {
+                        history.Section = changedSections[0];
+                        history.SectionRevision = SectionRevision(history.Config, history.Section);
+                        changed = true;
+                    }
+                }
+                previousHistoryPayload = historyPayload;
             }
             if (changed) Save();
         }
@@ -683,7 +973,7 @@ public sealed partial class L12PlatformStore
             || payload.MatchModes is null || payload.FeatureFlags is null || payload.Maintenance is null)
             throw new L12OperationsConfigException("invalid_operations_config", "运营配置字段不完整");
 
-        var seasonId = RequireOperationsId(payload.Season.Id, "赛季 ID");
+        var seasonId = RequireSeasonId(payload.Season.Id);
         var seasonName = RequireOperationsText(payload.Season.Name, "赛季名称", 100);
         var seasonStatus = payload.Season.Status?.Trim().ToLowerInvariant();
         if (seasonStatus is not ("upcoming" or "active" or "archived"))
@@ -691,16 +981,17 @@ public sealed partial class L12PlatformStore
         EnsureTimeRange(payload.Season.StartsAt, payload.Season.EndsAt, "赛季");
 
         if (!payload.DisasterPool.AnnihilationLocked)
-            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须保持锁定");
+            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈湮灭〉必须保持锁定");
         var disasterIds = payload.DisasterPool.CardIds.Select(id => RequireCardId(id, "天灾卡号"))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (disasterIds.Length == 0
-            || !string.Equals(disasterIds[^1], AnnihilationCardId, StringComparison.OrdinalIgnoreCase)
-            || disasterIds.Count(id => string.Equals(id, AnnihilationCardId,
+            || !string.Equals(disasterIds[^1], L12ActiveDisasterRules.AnnihilationCardId,
+                StringComparison.OrdinalIgnoreCase)
+            || disasterIds.Count(id => string.Equals(id, L12ActiveDisasterRules.AnnihilationCardId,
                 StringComparison.OrdinalIgnoreCase)) != 1)
-            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈堙灭〉必须唯一且固定在天灾池末尾");
+            throw new L12OperationsConfigException("annihilation_locked", "最终天灾〈湮灭〉必须唯一且固定在天灾池末尾");
         if (disasterIds.Length is < 9 or > 64 || disasterIds.Length != payload.DisasterPool.CardIds.Count)
-            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 9–64 张不重复卡牌（含堙灭），以满足禁用、公开与选择流程");
+            throw new L12OperationsConfigException("invalid_disaster_pool", "天灾池必须包含 9–64 张不重复卡牌（含湮灭），以满足禁用、公开与选择流程");
         if (_officialCards.Count > 0)
         {
             var unknownDisaster = disasterIds.FirstOrDefault(id => !_officialCards.TryGetValue(id, out var card)
@@ -830,6 +1121,317 @@ public sealed partial class L12PlatformStore
                 .ThenBy(item => item.Id, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
+    private L12OperationsConfigPayload PrepareOperationsSectionCandidate(OperationsConfigRow current,
+        string section, L12OperationsSectionPayload payload, long? expectedRevision,
+        IReadOnlyDictionary<string, long>? expectedFieldRevisions, out IReadOnlyList<string> changes,
+        out IReadOnlyDictionary<string, long> validatedFields)
+    {
+        var currentRevision = SectionRevision(current, section);
+        if (expectedRevision is null || expectedRevision < 1 || expectedRevision > currentRevision)
+            throw new L12OperationsConfigException("operations_section_conflict",
+                "该运营分区版本无效，请刷新后重试");
+        var suppliedFields = expectedFieldRevisions is null
+            ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, long>(expectedFieldRevisions, StringComparer.OrdinalIgnoreCase);
+        foreach (var (field, expectedFieldRevision) in suppliedFields)
+        {
+            EnsureOperationsSectionField(section, field);
+            if (expectedFieldRevision < 0 || expectedFieldRevision != FieldRevision(current, field))
+                throw new L12OperationsConfigException("operations_field_conflict",
+                    $"运营字段 {field} 已变化，请刷新后重试");
+        }
+        if (expectedRevision != currentRevision && suppliedFields.Count == 0)
+            throw new L12OperationsConfigException("operations_section_conflict",
+                "该运营分区已变化，请刷新后重试");
+
+        var patched = ApplyOperationsSectionFields(ToPayload(current), section, payload, suppliedFields.Keys);
+        var normalized = NormalizeOperationsPayload(patched);
+        var actualChanges = DescribeOperationsFieldChanges(ToPayload(current), normalized)
+            .Where(suppliedFields.ContainsKey)
+            .OrderBy(field => field, StringComparer.OrdinalIgnoreCase).ToArray();
+        changes = actualChanges;
+        validatedFields = actualChanges.ToDictionary(field => field,
+            field => FieldRevision(current, field), StringComparer.OrdinalIgnoreCase);
+        return normalized;
+    }
+
+    private static void EnsureOperationsSectionFieldSet(string section,
+        L12OperationsSectionPayload payload,
+        IReadOnlyDictionary<string, long>? expectedFieldRevisions)
+    {
+        if ((expectedFieldRevisions?.Count ?? 0) == 0
+            && OperationsSectionPayloadIsPresent(section, payload))
+            throw new L12OperationsConfigException("operations_field_revisions_required",
+                "分区保存必须声明待写字段及其字段版本");
+    }
+
+    private static bool OperationsSectionPayloadIsPresent(string section,
+        L12OperationsSectionPayload payload)
+        => section switch
+        {
+            OperationsRoomSection => payload.DefaultRoomConfig is not null || payload.MatchModes is not null,
+            OperationsFeaturesSection => payload.FeatureFlags is not null,
+            OperationsAnnouncementsSection => payload.Announcements is not null,
+            OperationsMaintenanceSection => payload.Maintenance is not null,
+            _ => false,
+        };
+
+    private static L12OperationsConfigPayload ApplyOperationsSectionFields(
+        L12OperationsConfigPayload current, string section, L12OperationsSectionPayload payload,
+        IEnumerable<string> fields)
+    {
+        var requested = fields.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (section == OperationsRoomSection)
+        {
+            var sourceDefaults = payload.DefaultRoomConfig
+                ?? throw new L12OperationsConfigException("invalid_operations_config",
+                    "对战与房间分区字段不完整");
+            var sourceModes = payload.MatchModes
+                ?? throw new L12OperationsConfigException("invalid_operations_config",
+                    "对战与房间分区字段不完整");
+            var defaults = current.DefaultRoomConfig;
+            var modes = current.MatchModes.ToList();
+            foreach (var field in requested)
+            {
+                switch (field)
+                {
+                    case "room/defaultRoomConfig/matchModeId":
+                        defaults = defaults with { MatchModeId = sourceDefaults.MatchModeId };
+                        break;
+                    case "room/defaultRoomConfig/spectating":
+                        defaults = defaults with { Spectating = sourceDefaults.Spectating };
+                        break;
+                    case "room/defaultRoomConfig/handVisibility":
+                        defaults = defaults with { HandVisibility = sourceDefaults.HandVisibility };
+                        break;
+                    case "room/defaultRoomConfig/disasterMode":
+                        defaults = defaults with { DisasterMode = sourceDefaults.DisasterMode };
+                        break;
+                    default:
+                    {
+                        var id = field["room/matchModes/".Length..];
+                        var source = sourceModes.FirstOrDefault(item =>
+                            string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+                        modes.RemoveAll(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+                        if (source is not null) modes.Add(source);
+                        break;
+                    }
+                }
+            }
+            return current with { DefaultRoomConfig = defaults, MatchModes = modes };
+        }
+        if (section == OperationsFeaturesSection)
+        {
+            var source = payload.FeatureFlags
+                ?? throw new L12OperationsConfigException("invalid_operations_config",
+                    "功能开关分区字段不完整");
+            var flags = new Dictionary<string, bool>(current.FeatureFlags, StringComparer.OrdinalIgnoreCase);
+            foreach (var field in requested)
+            {
+                var id = field["features/featureFlags/".Length..];
+                var sourceItem = source.FirstOrDefault(item =>
+                    string.Equals(item.Key, id, StringComparison.OrdinalIgnoreCase));
+                flags.Remove(id);
+                if (!string.IsNullOrEmpty(sourceItem.Key)) flags[sourceItem.Key] = sourceItem.Value;
+            }
+            return current with { FeatureFlags = flags };
+        }
+        if (section == OperationsAnnouncementsSection)
+        {
+            var source = payload.Announcements
+                ?? throw new L12OperationsConfigException("invalid_operations_config",
+                    "长期公告分区字段不完整");
+            var announcements = (current.Announcements ?? []).ToList();
+            foreach (var field in requested)
+            {
+                var id = field["announcements/items/".Length..];
+                var sourceItem = source.FirstOrDefault(item =>
+                    string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+                announcements.RemoveAll(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+                if (sourceItem is not null) announcements.Add(sourceItem);
+            }
+            return current with { Announcements = announcements };
+        }
+        var sourceMaintenance = payload.Maintenance
+            ?? throw new L12OperationsConfigException("invalid_operations_config",
+                "预约维护分区字段不完整");
+        var maintenance = current.Maintenance;
+        foreach (var field in requested)
+        {
+            maintenance = field switch
+            {
+                "maintenance/enabled" => maintenance with { Enabled = sourceMaintenance.Enabled },
+                "maintenance/message" => maintenance with { Message = sourceMaintenance.Message },
+                "maintenance/startsAt" => maintenance with { StartsAt = sourceMaintenance.StartsAt },
+                "maintenance/endsAt" => maintenance with { EndsAt = sourceMaintenance.EndsAt },
+                "maintenance/advanceBroadcastHours" => maintenance with
+                    { AdvanceBroadcastHours = sourceMaintenance.AdvanceBroadcastHours },
+                "maintenance/expectedDurationHours" => maintenance with
+                    { ExpectedDurationHours = sourceMaintenance.ExpectedDurationHours },
+                _ => maintenance,
+            };
+        }
+        return current with { Maintenance = maintenance };
+    }
+
+    private static IReadOnlyList<string> DescribeOperationsFieldChanges(
+        L12OperationsConfigPayload current, L12OperationsConfigPayload next)
+    {
+        var changes = new List<string>();
+        if (!string.Equals(current.DefaultRoomConfig.MatchModeId, next.DefaultRoomConfig.MatchModeId,
+                StringComparison.Ordinal)) changes.Add("room/defaultRoomConfig/matchModeId");
+        if (!string.Equals(current.DefaultRoomConfig.Spectating, next.DefaultRoomConfig.Spectating,
+                StringComparison.Ordinal)) changes.Add("room/defaultRoomConfig/spectating");
+        if (!string.Equals(current.DefaultRoomConfig.HandVisibility, next.DefaultRoomConfig.HandVisibility,
+                StringComparison.Ordinal)) changes.Add("room/defaultRoomConfig/handVisibility");
+        if (!string.Equals(current.DefaultRoomConfig.DisasterMode, next.DefaultRoomConfig.DisasterMode,
+                StringComparison.Ordinal)) changes.Add("room/defaultRoomConfig/disasterMode");
+        foreach (var id in current.MatchModes.Select(item => item.Id).Concat(next.MatchModes.Select(item => item.Id))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var before = current.MatchModes.FirstOrDefault(item =>
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+            var after = next.MatchModes.FirstOrDefault(item =>
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (!JsonEqual(before, after)) changes.Add($"room/matchModes/{id}");
+        }
+        foreach (var key in current.FeatureFlags.Keys.Concat(next.FeatureFlags.Keys)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var beforeExists = current.FeatureFlags.TryGetValue(key, out var before);
+            var afterExists = next.FeatureFlags.TryGetValue(key, out var after);
+            if (beforeExists != afterExists || before != after) changes.Add($"features/featureFlags/{key}");
+        }
+        if (current.Maintenance.Enabled != next.Maintenance.Enabled) changes.Add("maintenance/enabled");
+        if (!string.Equals(current.Maintenance.Message, next.Maintenance.Message, StringComparison.Ordinal))
+            changes.Add("maintenance/message");
+        if (current.Maintenance.StartsAt != next.Maintenance.StartsAt) changes.Add("maintenance/startsAt");
+        if (current.Maintenance.EndsAt != next.Maintenance.EndsAt) changes.Add("maintenance/endsAt");
+        if (current.Maintenance.AdvanceBroadcastHours != next.Maintenance.AdvanceBroadcastHours)
+            changes.Add("maintenance/advanceBroadcastHours");
+        if (current.Maintenance.ExpectedDurationHours != next.Maintenance.ExpectedDurationHours)
+            changes.Add("maintenance/expectedDurationHours");
+        foreach (var id in (current.Announcements ?? []).Select(item => item.Id)
+                     .Concat((next.Announcements ?? []).Select(item => item.Id))
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var before = (current.Announcements ?? []).FirstOrDefault(item =>
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+            var after = (next.Announcements ?? []).FirstOrDefault(item =>
+                string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+            if (!JsonEqual(before, after)) changes.Add($"announcements/items/{id}");
+        }
+        return changes;
+    }
+
+    private static IEnumerable<string> OperationsSectionFields(L12OperationsConfigPayload payload,
+        string? section = null)
+    {
+        foreach (var field in StaticOperationsFieldKeys)
+            if (section is null || FieldBelongsToSection(field, section)) yield return field;
+        if (section is null || section == OperationsRoomSection)
+            foreach (var mode in payload.MatchModes) yield return $"room/matchModes/{mode.Id}";
+        if (section is null || section == OperationsFeaturesSection)
+            foreach (var key in payload.FeatureFlags.Keys) yield return $"features/featureFlags/{key}";
+        if (section is null || section == OperationsAnnouncementsSection)
+            foreach (var item in payload.Announcements ?? []) yield return $"announcements/items/{item.Id}";
+    }
+
+    private static string NormalizeOperationsSection(string? section)
+    {
+        var normalized = section?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (!WritableOperationsSections.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            throw new L12OperationsConfigException("operations_section_not_found", "运营配置分区不存在");
+        return normalized;
+    }
+
+    private static void EnsureOperationsSectionField(string section, string field)
+    {
+        var valid = section switch
+        {
+            OperationsRoomSection => StaticOperationsFieldKeys.Contains(field, StringComparer.OrdinalIgnoreCase)
+                && FieldBelongsToSection(field, OperationsRoomSection)
+                || field.StartsWith("room/matchModes/", StringComparison.OrdinalIgnoreCase)
+                   && OperationsIdPattern.IsMatch(field["room/matchModes/".Length..]),
+            OperationsFeaturesSection => field.StartsWith("features/featureFlags/",
+                    StringComparison.OrdinalIgnoreCase)
+                && OperationsIdPattern.IsMatch(field["features/featureFlags/".Length..]),
+            OperationsAnnouncementsSection => field.StartsWith("announcements/items/",
+                    StringComparison.OrdinalIgnoreCase)
+                && OperationsIdPattern.IsMatch(field["announcements/items/".Length..]),
+            OperationsMaintenanceSection => StaticOperationsFieldKeys.Contains(field,
+                StringComparer.OrdinalIgnoreCase) && FieldBelongsToSection(field, OperationsMaintenanceSection),
+            _ => false,
+        };
+        if (!valid)
+            throw new L12OperationsConfigException("invalid_operations_field",
+                $"字段 {field} 不属于运营分区 {section}");
+    }
+
+    private static string SectionForField(string field)
+        => field.Split('/', 2)[0].ToLowerInvariant();
+
+    private static bool FieldBelongsToSection(string field, string section)
+        => string.Equals(SectionForField(field), section, StringComparison.OrdinalIgnoreCase);
+
+    private static long SectionRevision(OperationsConfigRow row, string section)
+        => row.SectionRevisions.TryGetValue(section, out var revision) ? Math.Max(1, revision) : 1;
+
+    private static long FieldRevision(OperationsConfigRow row, string field)
+        => row.FieldRevisions.TryGetValue(field, out var revision) ? Math.Max(0, revision) : 0;
+
+    private static L12OperationsSectionPayload ToSectionPayload(OperationsConfigRow row, string section)
+        => ToSectionPayload(ToPayload(row), section);
+
+    private static L12OperationsSectionPayload ToSectionPayload(L12OperationsConfigPayload payload,
+        string section)
+        => section switch
+        {
+            OperationsRoomSection => new L12OperationsSectionPayload(payload.DefaultRoomConfig,
+                payload.MatchModes.ToArray()),
+            OperationsFeaturesSection => new L12OperationsSectionPayload(FeatureFlags:
+                new Dictionary<string, bool>(payload.FeatureFlags, StringComparer.OrdinalIgnoreCase)),
+            OperationsAnnouncementsSection => new L12OperationsSectionPayload(Announcements:
+                (payload.Announcements ?? []).ToArray()),
+            OperationsMaintenanceSection => new L12OperationsSectionPayload(Maintenance: payload.Maintenance),
+            _ => throw new L12OperationsConfigException("operations_section_not_found",
+                "运营配置分区不存在"),
+        };
+
+    private static L12OperationsSectionView ToSectionView(OperationsConfigRow row, string section)
+        => new(section, SectionRevision(row, section), row.Version, row.VersionId,
+            ToSectionPayload(row, section), row.FieldRevisions
+                .Where(item => FieldBelongsToSection(item.Key, section))
+                .ToDictionary(item => item.Key, item => item.Value, StringComparer.OrdinalIgnoreCase),
+            row.UpdatedBy, row.UpdatedAt);
+
+    private static L12OperationsSectionVersionView ToSectionView(OperationsConfigVersionRow row,
+        string section)
+    {
+        var changedFields = row.ChangedFields.Where(field => FieldBelongsToSection(field, section))
+            .OrderBy(field => field, StringComparer.OrdinalIgnoreCase).ToArray();
+        return new L12OperationsSectionVersionView(row.Id, section,
+            SectionRevision(row.Config, section), row.Version, row.Action,
+            ToSectionPayload(row.Config, section), changedFields, row.ActorId, row.ActorName,
+            row.Reason, row.CreatedAt);
+    }
+
+    private static IReadOnlyList<string> OperationsSectionWarnings(string section,
+        L12OperationsConfigPayload payload)
+    {
+        var warnings = new List<string>();
+        if (section == OperationsMaintenanceSection && payload.Maintenance.Enabled)
+            warnings.Add("maintenance-enabled");
+        if (section == OperationsRoomSection && payload.MatchModes.Any(item => !item.Enabled))
+            warnings.Add("match-modes-disabled");
+        if (section == OperationsRoomSection && payload.DefaultRoomConfig.DisasterMode == "season"
+            && !IsSeasonActive(payload.Season, DateTimeOffset.UtcNow))
+            warnings.Add("default-season-disaster-unavailable");
+        if (section == OperationsFeaturesSection && payload.FeatureFlags.Any(item => !item.Value))
+            warnings.Add("features-disabled");
+        return warnings;
+    }
+
     private static IReadOnlyList<string> DescribeOperationsChanges(L12OperationsConfigPayload current,
         L12OperationsConfigPayload next)
     {
@@ -863,7 +1465,8 @@ public sealed partial class L12PlatformStore
         => JsonSerializer.Serialize(left) == JsonSerializer.Serialize(right);
 
     private static OperationsConfigVersionRow NewOperationsHistory(OperationsConfigRow config, string action,
-        L12AccountView actor, string reason)
+        L12AccountView actor, string reason, string? section = null,
+        IReadOnlyList<string>? changedFields = null)
         => new()
         {
             Id = config.VersionId,
@@ -873,6 +1476,12 @@ public sealed partial class L12PlatformStore
             ActorId = actor.Id,
             ActorName = actor.Username,
             Reason = reason,
+            Section = section ?? (config.LastChangedSections.Count == 1
+                ? config.LastChangedSections[0] : null),
+            SectionRevision = (section ?? (config.LastChangedSections.Count == 1
+                    ? config.LastChangedSections[0] : null)) is { } changedSection
+                ? SectionRevision(config, changedSection) : null,
+            ChangedFields = (changedFields ?? config.LastChangedFields).ToList(),
             CreatedAt = config.UpdatedAt,
         };
 
@@ -884,10 +1493,33 @@ public sealed partial class L12PlatformStore
             .Take(OperationsHistoryLimit).ToList();
     }
 
-    private static OperationsConfigRow ToRow(L12OperationsConfigPayload payload, long version, string actorName,
+    private OperationsConfigRow ToRow(L12OperationsConfigPayload payload, long version, string actorName,
         OperationsImmediateMaintenanceRow? immediateMaintenance = null)
     {
         var now = DateTimeOffset.UtcNow;
+        var previous = _data.OperationsConfig;
+        var changedFields = previous is null
+            ? OperationsSectionFields(payload).ToArray()
+            : DescribeOperationsFieldChanges(ToPayload(previous), payload).ToArray();
+        var changedSections = changedFields.Select(SectionForField)
+            .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var sectionRevisions = previous is null
+            ? WritableOperationsSections.ToDictionary(section => section, _ => 1L,
+                StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, long>(previous.SectionRevisions, StringComparer.OrdinalIgnoreCase);
+        var fieldRevisions = previous is null
+            ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, long>(previous.FieldRevisions, StringComparer.OrdinalIgnoreCase);
+        foreach (var field in OperationsSectionFields(payload))
+            if (!fieldRevisions.ContainsKey(field)) fieldRevisions[field] = 1;
+        if (previous is not null)
+        {
+            foreach (var field in changedFields)
+                fieldRevisions[field] = FieldRevision(previous, field) + 1;
+            foreach (var section in changedSections)
+                sectionRevisions[section] = SectionRevision(previous, section) + 1;
+        }
         return new OperationsConfigRow
         {
             Version = version,
@@ -946,6 +1578,10 @@ public sealed partial class L12PlatformStore
                 StartsAt = item.StartsAt,
                 EndsAt = item.EndsAt,
             }).ToList(),
+            SectionRevisions = sectionRevisions,
+            FieldRevisions = fieldRevisions,
+            LastChangedSections = changedSections.ToList(),
+            LastChangedFields = changedFields.ToList(),
             UpdatedBy = actorName,
             UpdatedAt = now,
         };
@@ -989,11 +1625,14 @@ public sealed partial class L12PlatformStore
 
     private static L12OperationsConfigView ToView(OperationsConfigRow row)
         => new(row.Version, row.VersionId, ToPayload(row), row.UpdatedBy, row.UpdatedAt,
-            ToView(row.ImmediateMaintenance));
+            ToView(row.ImmediateMaintenance),
+            new Dictionary<string, long>(row.SectionRevisions, StringComparer.OrdinalIgnoreCase),
+            new Dictionary<string, long>(row.FieldRevisions, StringComparer.OrdinalIgnoreCase));
 
     private static L12OperationsConfigVersionView ToView(OperationsConfigVersionRow row)
         => new(row.Id, row.Version, row.Action, ToPayload(row.Config), row.ActorId, row.ActorName,
-            row.Reason, row.CreatedAt, ToView(row.Config.ImmediateMaintenance));
+            row.Reason, row.CreatedAt, ToView(row.Config.ImmediateMaintenance), row.Section,
+            row.SectionRevision, row.ChangedFields.ToArray());
 
     private static L12ImmediateMaintenanceView ToView(OperationsImmediateMaintenanceRow row)
         => new(row.Enabled, row.ExpectedDurationHours, row.StartedAt);
@@ -1068,6 +1707,26 @@ public sealed partial class L12PlatformStore
             changed = true;
         }
         if (row.Announcements is null) { row.Announcements = []; changed = true; }
+        row.SectionRevisions = row.SectionRevisions is null
+            ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, long>(row.SectionRevisions, StringComparer.OrdinalIgnoreCase);
+        foreach (var section in WritableOperationsSections)
+        {
+            if (row.SectionRevisions.TryGetValue(section, out var revision) && revision >= 1) continue;
+            row.SectionRevisions[section] = 1;
+            changed = true;
+        }
+        row.FieldRevisions = row.FieldRevisions is null
+            ? new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, long>(row.FieldRevisions, StringComparer.OrdinalIgnoreCase);
+        foreach (var field in OperationsSectionFields(ToPayload(row)))
+        {
+            if (row.FieldRevisions.TryGetValue(field, out var revision) && revision >= 1) continue;
+            row.FieldRevisions[field] = 1;
+            changed = true;
+        }
+        if (row.LastChangedSections is null) { row.LastChangedSections = []; changed = true; }
+        if (row.LastChangedFields is null) { row.LastChangedFields = []; changed = true; }
         if (string.IsNullOrWhiteSpace(row.UpdatedBy)) { row.UpdatedBy = "系统"; changed = true; }
         if (row.UpdatedAt == default) { row.UpdatedAt = DateTimeOffset.UtcNow; changed = true; }
         return changed;
@@ -1095,6 +1754,21 @@ public sealed partial class L12PlatformStore
             throw new L12OperationsConfigException("invalid_operations_config", $"{label}格式无效");
         return normalized;
     }
+
+    private static string RequireSeasonId(string? value)
+    {
+        var normalized = NormalizeSeasonIdentity(value);
+        if (!OperationsIdPattern.IsMatch(normalized))
+            throw new L12OperationsConfigException("invalid_operations_config", "赛季 ID格式无效");
+        return normalized;
+    }
+
+    private static string NormalizeSeasonIdentity(string? value)
+        => (value ?? string.Empty).Trim().Normalize(NormalizationForm.FormKC);
+
+    private static bool SeasonIdsEqual(string? left, string? right)
+        => string.Equals(NormalizeSeasonIdentity(left), NormalizeSeasonIdentity(right),
+            StringComparison.OrdinalIgnoreCase);
 
     private static string RequireCardId(string? value, string label)
     {

@@ -14,7 +14,8 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         var deck = Catalog.DeckAt(0);
         var game = new L12GameEngine(Catalog, "atomic-review-batch6jc", "ATOMIC6JC", seed,
             ["甲", "乙"], [deck, deck], skipPreparation: true,
-            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            stateFormatVersion: 2);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 2;
@@ -64,14 +65,19 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         method.Invoke(game, arguments);
     }
 
-    private static L12Prompt ResolveOnlyPrompt(L12GameEngine game, string choice)
+    private static L12Prompt ResolveOnlyPrompt(L12GameEngine game, params string[] choices)
     {
         var prompt = Assert.Single(game.State.PendingPrompts);
-        var result = game.Handle(prompt.PlayerIndex,
-            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+        var command = choices.Length == 1
+            ? new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choices[0])
+            : new L12Command("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: [.. choices]);
+        var result = game.Handle(prompt.PlayerIndex, command);
         Assert.True(result.Accepted, result.Error);
         return prompt;
     }
+
+    private static L12MoraleCard Morale(string instanceId)
+        => new() { CardId = "S01-01C1", InstanceId = instanceId };
 
     private static L12StackItem BeginOkitaTop(L12GameEngine game, L12CardInstance top)
     {
@@ -94,11 +100,12 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         return item;
     }
 
-    private static L12StackItem BeginLiMuRevealedTactic(L12GameEngine game, L12CardInstance tactic)
+    private static L12StackItem BeginLiMuRevealedTactic(L12GameEngine game, L12CardInstance tactic,
+        int liMuRow = 0)
     {
         var player = game.State.Players[0];
         var liMu = Card("S02-0102", $"batch6jc-limu-{tactic.InstanceId}");
-        player.Field[0][0] = liMu;
+        player.Field[liMuRow][0] = liMu;
         player.Library.Add(tactic);
         var item = new L12StackItem
         {
@@ -177,8 +184,97 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         Assert.DoesNotContain(top, player.Hand);
         Assert.DoesNotContain(top, player.Field.SelectMany(row => row));
         Assert.Same(blocker, player.Field[int.Parse(parts[0])][int.Parse(parts[1])]);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.EffectResultStatus == "failed"
             && entry.Text.Contains("位置已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("位置已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6jc-okita-source-invalid-failed")]
+    public void OkitaCommittedCardLeavingItsOriginIsFailedNotCancelled()
+    {
+        var game = Create(97021);
+        var player = game.State.Players[0];
+        var top = Card("S01-0410", "batch6jc-source-invalid-legion");
+        BeginOkitaTop(game, top);
+        ResolveOnlyPrompt(game, "play");
+        var slot = Assert.Single(game.State.PendingPrompts);
+        var declared = slot.ValidChoices.First();
+        player.Library.Remove(top);
+        player.Hand.Add(top);
+
+        ResolveOnlyPrompt(game, declared);
+
+        Assert.Contains(top, player.Hand);
+        Assert.DoesNotContain(top, player.Field.SelectMany(row => row));
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-generated-play-invalid-origin")]
+    public void GeneratedPlayRejectsAnInvalidOriginAsFailed()
+    {
+        var game = Create(97022);
+        var card = Card("S01-0410", "batch6jc-invalid-origin-legion");
+        var parent = new L12StackItem
+        {
+            StackItemId = "batch6jc-invalid-origin-parent",
+            Controller = 0,
+            SourceInstanceId = "batch6jc-invalid-origin-source",
+            SourceCardId = "S02-0403",
+            SourceName = "冲田总司",
+            Trigger = "attack",
+            Text = "效果生成打出",
+        };
+        game.State.EffectStack.Add(parent);
+
+        InvokeVoid(game, "BeginEffectGeneratedFreePlay", 0, card, parent, "library", "〈冲田总司〉");
+
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("打出来源已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:effect-generated-play-no-entry-slot")]
+    public void GeneratedLegionPlayWithoutALegalSlotIsFailedAndKeepsTheCardInItsOrigin()
+    {
+        var game = Create(97023);
+        var player = game.State.Players[0];
+        var card = Card("S01-0410", "batch6jc-no-slot-legion");
+        player.Library.Add(card);
+        for (var row = 0; row < 2; row++)
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[row][slot] = Card("S01-0101", $"batch6jc-no-slot-{row}-{slot}");
+        var parent = new L12StackItem
+        {
+            StackItemId = "batch6jc-no-slot-parent",
+            Controller = 0,
+            SourceInstanceId = "batch6jc-no-slot-source",
+            SourceCardId = "S02-0403",
+            SourceName = "冲田总司",
+            Trigger = "attack",
+            Text = "效果生成打出",
+        };
+        game.State.EffectStack.Add(parent);
+
+        InvokeVoid(game, "BeginEffectGeneratedFreePlay", 0, card, parent, "library", "〈冲田总司〉");
+
+        Assert.Contains(card, player.Library);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.EffectResultStatus == "failed"
+            && entry.Text.Contains("没有合法登场位置", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有合法登场位置", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -229,6 +325,28 @@ public sealed class AtomicReviewBatch6JCRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "card:S02-0523")]
+    [Trait("L12Evidence", "entry:face-up-tactic-slot-occupancy")]
+    public void EffectGeneratedLegionCannotDisplaceAFaceUpTrojanHorse()
+    {
+        var game = Create(97032);
+        var player = game.State.Players[0];
+        var top = Card("S01-0410", "batch6jc-face-up-occupied-legion");
+        var horse = Card("S02-0523", "batch6jc-face-up-trojan");
+        horse.OwnerIndex = 1;
+        horse.Hidden = false;
+        player.Field[1][2] = horse;
+        BeginOkitaTop(game, top);
+        ResolveOnlyPrompt(game, "play");
+
+        var slot = Assert.Single(game.State.PendingPrompts);
+
+        Assert.DoesNotContain("1:2", slot.ValidChoices);
+        Assert.Same(horse, player.Field[1][2]);
+        Assert.Contains(top, player.Library);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "entry:batch6jc-limu-simple-common-free-play")]
     public void LiMuSimpleTacticUsesTheCommonEffectGeneratedPlayTransaction()
     {
@@ -243,6 +361,41 @@ public sealed class AtomicReviewBatch6JCRegressionTests
             item => item.SourceInstanceId == tactic.InstanceId);
         Assert.Equal("free", child.Data.GetValueOrDefault("effectGeneratedPlay"));
         Assert.Equal("library", child.Data.GetValueOrDefault("originZone"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:auxiliary-limu-counter-bottom")]
+    public void LiMuRevealingAbsoluteDefenseReturnsItToTheLibraryBottomWithoutOpeningAPlayFlow()
+    {
+        var game = Create(97041);
+        var player = game.State.Players[0];
+        var liMu = Card("S02-0102", "auxiliary-limu-counter-source");
+        var absoluteDefense = Card("S01-0016", "auxiliary-limu-absolute-defense");
+        player.Field[0][0] = liMu;
+        player.Library.Clear();
+        player.Library.Add(absoluteDefense);
+        var item = new L12StackItem
+        {
+            StackItemId = "auxiliary-limu-counter-parent",
+            Controller = 0,
+            SourceInstanceId = liMu.InstanceId,
+            SourceCardId = liMu.CardId,
+            SourceName = liMu.Name,
+            Trigger = "enter",
+            Text = "李牧展示段",
+        };
+        game.State.EffectStack.Add(item);
+
+        InvokeVoid(game, "RevealS2LiMuTop", item);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Same(absoluteDefense, Assert.Single(player.Library));
+        Assert.Contains(game.State.Events, entry => entry.Type == "library"
+            && entry.Cards.Any(card => card.InstanceId == absoluteDefense.InstanceId));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "stack-push"
+            && entry.Cards.Any(card => card.InstanceId == absoluteDefense.InstanceId));
     }
 
     [Fact]
@@ -277,6 +430,116 @@ public sealed class AtomicReviewBatch6JCRegressionTests
             item => item.SourceInstanceId == tactic.InstanceId);
         Assert.Equal("free", child.Data.GetValueOrDefault("effectGeneratedPlay"));
         Assert.Equal("library", child.Data.GetValueOrDefault("originZone"));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6jc-limu-auto-completed-composite-context")]
+    [Trait("L12Evidence", "ruling:R2-S01-0118")]
+    public void LiMuFreeMarchWithoutAFrontLegionCommitsBeforeItsAutoCompletedDeclaration()
+    {
+        var game = Create(970511);
+        var player = game.State.Players[0];
+        var enemy = game.State.Players[1];
+        var tactic = Card("S01-0118", "batch6jc-limu-auto-march");
+        enemy.Field[0][0] = Card("S01-0402", "batch6jc-limu-auto-march-target", owner: 1);
+
+        var parent = BeginLiMuRevealedTactic(game, tactic, liMuRow: 1);
+
+        Assert.DoesNotContain(game.State.PendingActivations, activation =>
+            activation.SourceInstanceId == tactic.InstanceId);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        var child = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == tactic.InstanceId
+                && item.Data.GetValueOrDefault("atomicFlow") == "march-buff-segment");
+        Assert.Equal("free", child.Data.GetValueOrDefault("effectGeneratedPlay"));
+        Assert.Equal("library", child.Data.GetValueOrDefault("originZone"));
+        Assert.NotEmpty(game.State.PendingPrompts);
+        Assert.All(game.State.PendingPrompts, prompt => Assert.Equal("response", prompt.Kind));
+        Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == parent.StackItemId);
+    }
+
+    [Theory]
+    [InlineData("S02-0105")]
+    [InlineData("S02-0522")]
+    [InlineData("S02-0307")]
+    [Trait("L12Evidence", "entry:batch6jc-limu-auto-completed-empty-target-matrix")]
+    public void LiMuFreeCompositeWithNoFirstTargetDoesNotLeaveAnOrphanDeclaration(string cardId)
+    {
+        var game = Create(970512 + cardId[^1]);
+        var tactic = Card(cardId, $"batch6jc-limu-empty-{cardId}");
+
+        var parent = BeginLiMuRevealedTactic(game, tactic, liMuRow: 1);
+
+        Assert.DoesNotContain(tactic, game.State.Players[0].Library);
+        Assert.DoesNotContain(game.State.PendingActivations, activation =>
+            activation.SourceInstanceId == tactic.InstanceId);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Continuation == "pending-activation");
+        Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == parent.StackItemId);
+        Assert.True(game.State.EffectStack.Count(item => item.SourceInstanceId == tactic.InstanceId) <= 1);
+        Assert.All(game.State.PendingPrompts, prompt => Assert.Equal("response", prompt.Kind));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:batch6jc-limu-auto-completed-checkpoint")]
+    [Trait("L12Evidence", "ruling:R2-S01-0118")]
+    public void LiMuFreeMarchAutoCompletionSurvivesResponseAndLateDeclarationCheckpoints()
+    {
+        var game = Create(970516);
+        var player = game.State.Players[0];
+        var tactic = Card("S01-0118", "batch6jc-limu-checkpoint-march");
+        var target = Card("S01-0402", "batch6jc-limu-checkpoint-target", owner: 1);
+        player.Morale.AddRange([
+            Morale("batch6jc-limu-checkpoint-morale-1"),
+            Morale("batch6jc-limu-checkpoint-morale-2"),
+        ]);
+        game.State.Players[1].Field[0][0] = target;
+        BeginLiMuRevealedTactic(game, tactic, liMuRow: 1);
+
+        var responseRestored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(game.State.PendingPrompts.Select(prompt => prompt.PromptId),
+            responseRestored.State.PendingPrompts.Select(prompt => prompt.PromptId));
+
+        PassResponses(game);
+        PassResponses(responseRestored);
+        var originalLatePrompt = Assert.Single(game.State.PendingPrompts);
+        var restoredLatePrompt = Assert.Single(responseRestored.State.PendingPrompts);
+        Assert.Equal(originalLatePrompt.ValidChoices, restoredLatePrompt.ValidChoices);
+        Assert.Contains("mode:use", restoredLatePrompt.ValidChoices);
+
+        var lateRestored = L12GameEngine.RestoreCheckpoint(Catalog, responseRestored.SerializeFullState(),
+            responseRestored.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0),
+            responseRestored.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(restoredLatePrompt.PromptId, Assert.Single(lateRestored.State.PendingPrompts).PromptId);
+
+        CompleteMarchKill(game, target.InstanceId);
+        CompleteMarchKill(lateRestored, target.InstanceId);
+
+        AssertMarchFinished(game, tactic.InstanceId, target.InstanceId);
+        AssertMarchFinished(lateRestored, tactic.InstanceId, target.InstanceId);
+    }
+
+    private static void CompleteMarchKill(L12GameEngine game, string targetInstanceId)
+    {
+        ResolveOnlyPrompt(game, "mode:use");
+        var payment = Assert.Single(game.State.PendingPrompts);
+        ResolveOnlyPrompt(game, [.. payment.ValidChoices.Where(choice => choice != "skip").Take(2)]);
+        ResolveOnlyPrompt(game, targetInstanceId);
+        PassResponses(game);
+    }
+
+    private static void AssertMarchFinished(L12GameEngine game, string tacticInstanceId, string targetInstanceId)
+    {
+        Assert.Contains(game.State.Players[0].Graveyard, card => card.InstanceId == tacticInstanceId);
+        Assert.Contains(game.State.Players[1].Graveyard, card => card.InstanceId == targetInstanceId);
+        Assert.DoesNotContain(game.State.PendingActivations, activation =>
+            activation.SourceInstanceId == tacticInstanceId);
+        Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.ActivationId is { } activationId
+            && game.State.PendingActivations.Any(activation => activation.ActivationId == activationId
+                && activation.SourceInstanceId == tacticInstanceId));
+        Assert.DoesNotContain(game.State.EffectStack, item => item.SourceInstanceId == tacticInstanceId);
     }
 
     [Fact]

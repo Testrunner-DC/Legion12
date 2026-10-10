@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import BattleDockPortal from './game/BattleDockPortal.vue'
+import BattleOverlayPortal from './game/BattleOverlayPortal.vue'
+import { provideMobileBattleDock } from './game/mobileBattleDock'
+provideMobileBattleDock()
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
@@ -6,16 +10,47 @@ import GmPanel from './game/GmPanel.vue'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
+import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { gameAction, l12State, leaveRoom } from './net'
+import { connect, send } from './net'
+import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
 
 const router = useRouter()
 const game = computed(() => l12State.game)
 const agreedDraw = computed(() => game.value?.phase === 'GameOver' && game.value.winner == null
   && (game.value.matchGovernance?.drawRequest?.status === 'accepted'
     || game.value.recentEvents?.some(event => event.type === 'game-draw')))
+const playerFacingWinnerReason = computed(() => {
+  const raw = game.value?.winnerReason?.trim() ?? ''
+  const filtered = raw.split(/(?<=[。！？；])|\n+/)
+    .map(part => part.trim())
+    .filter(part => part && !/(双方.*离开.*关闭房间|最长.*30\s*分钟|点击返回.*离开本局|返回后才离开|服务器.*保留|结果将保留在此处)/.test(part))
+    .join('')
+  return filtered || '对局已结束'
+})
 const settingsOpen = ref(false)
+const settingsOpener = ref<HTMLElement | null>(null)
+const loadRetrying = ref(false)
 const gmPanelOpen = ref(l12State.gmEnabled)
+const gameOverMinimized = ref(false)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
+function openBattleSettings(event?: Event) {
+  settingsOpener.value = rememberSettingsOpener(event)
+  settingsOpen.value = true
+}
+function closeBattleSettings() {
+  void closeSettingsAndRestore(() => { settingsOpen.value = false }, settingsOpener.value)
+}
+function openBattleFeedback() {
+  void openBugFeedbackFromSettings(() => { settingsOpen.value = false }, settingsOpener.value)
+}
+const missingGameState = computed(() => tournamentRoomLoadingState({
+  status: l12State.status,
+  recoveryPhase: l12State.recoveryPhase,
+  connectionIssue: l12State.connectionIssue,
+  notice: l12State.notice,
+  room: l12State.room,
+}))
 const completedOsirisSequence = ref('')
 const osirisSequenceKey = ref('')
 let osirisSequenceMatchId = ''
@@ -41,6 +76,7 @@ watch(() => [game.value?.matchId ?? '', game.value?.recentEvents?.map(event => e
   if (key === completedOsirisSequence.value || key === osirisSequenceKey.value) return
   osirisSequenceKey.value = key
 }, { immediate: true })
+watch(() => `${game.value?.matchId ?? ''}:${game.value?.phase ?? ''}`, () => { gameOverMinimized.value = false })
 const osirisSequencePlaying = computed(() => Boolean(osirisSequenceKey.value
   && completedOsirisSequence.value !== osirisSequenceKey.value))
 function completeOsirisSequence() {
@@ -68,38 +104,49 @@ function returnToLobby() {
     return
   }
   if (l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
-  router.push(tournamentCode ? `/battle/tournaments?code=${encodeURIComponent(tournamentCode)}` : '/lobby')
+  router.push(tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby')
+}
+async function retryGameLoad() {
+  if (loadRetrying.value) return
+  loadRetrying.value = true
+  l12State.notice = ''
+  try { await connect(); send({ type: 'syncState' }) }
+  catch { /* 连接层会提供可读失败和自动重连状态。 */ }
+  finally { loadRetrying.value = false }
 }
 </script>
 
 <template>
   <div v-if="game" class="game-page">
     <RankedBroadcastTicker class="battle-ranked-ticker" />
-    <div class="battle-route-controls">
+    <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
-      <button @click="returnToLobby">返回大厅</button>
+      <button v-if="l12State.spectating" type="button" @click="openBattleSettings">设置</button>
+      <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
-    </div>
-    <GameBoard :game="game" :read-only="l12State.spectating" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
-      @gm-placement-resolved="gmPlacement = null" @settings="settingsOpen = true" />
+    </div></BattleDockPortal>
+    <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
+      @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
-    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="settingsOpen = false">
-      <L12SettingsModal @close="settingsOpen = false"/>
-    </div>
+    <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="closeBattleSettings">
+      <L12SettingsModal @close="closeBattleSettings" @feedback="openBattleFeedback"/>
+    </div></BattleOverlayPortal>
 
     <Transition name="fade">
       <button v-if="l12State.notice" class="toast" @click="l12State.notice = ''">{{ l12State.notice }}</button>
     </Transition>
 
+    <BattleOverlayPortal>    <Transition name="fade">
+      <button v-if="game.phase === 'GameOver' && !osirisSequencePlaying && gameOverMinimized" class="game-over-restore" type="button" @click="gameOverMinimized = false">恢复对局结果</button>
+    </Transition>
     <Transition name="fade">
-      <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying" class="game-over"
+      <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying && !gameOverMinimized" class="game-over"
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
+        <button class="game-over-minimize" type="button" aria-label="最小化对局结果" @click="gameOverMinimized = true">—</button>
         <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
-        <strong>{{ game.winnerReason || '对局已结束' }}</strong>
-        <small>点击返回后离开结算；双方都离开后关闭房间，最长保留30分钟。</small>
-        <small>MATCH {{ game.matchId.slice(0, 12) }} · REV {{ game.revision }}</small>
+        <strong>{{ playerFacingWinnerReason }}</strong>
         <section v-if="l12State.rankedSettlement" class="ranked-result">
           <b>{{ l12State.rankedSettlement.faction }} · {{ ['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '') ? l12State.rankedSettlement.tierBefore : l12State.rankedSettlement.tierAfter }}</b>
           <strong v-if="l12State.rankedSettlement.rewardStatus === 'held'">本局排位收益待审核，尚未计入七曜值与战绩。请查看处置通知，可提交申诉。</strong>
@@ -108,19 +155,29 @@ function returnToLobby() {
           <strong v-else>七曜值 {{ l12State.rankedSettlement.before.toLocaleString() }} → {{ l12State.rankedSettlement.after.toLocaleString() }} <i>{{ l12State.rankedSettlement.delta >= 0 ? '+' : '' }}{{ l12State.rankedSettlement.delta.toLocaleString() }}</i></strong>
           <details v-if="l12State.rankedSettlement.components.length && !['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '')"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
         </section>
-        <small>结果将保留在此处，点击返回后才离开本局。</small>
         <button @click="returnToLobby">返回大厅</button>
       </div>
     </Transition>
+</BattleOverlayPortal>
   </div>
-  <main v-else class="missing-game">
-    <h1>对局状态尚未加载</h1>
-    <button @click="returnToLobby">返回赛事/大厅</button>
+  <main v-else class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
+    <small>{{ missingGameState.kind === 'waiting' ? 'TOURNAMENT ROOM' : missingGameState.kind === 'loading' ? 'LOADING' : 'LOAD FAILED' }}</small>
+    <h1>{{ missingGameState.title }}</h1>
+    <p>{{ missingGameState.detail }}</p>
+    <div>
+      <button v-if="missingGameState.kind !== 'waiting'" :disabled="loadRetrying" @click="retryGameLoad">{{ loadRetrying ? '正在同步…' : '重新同步' }}</button>
+      <button @click="returnToLobby">返回赛事/大厅</button>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.battle-route-controls{position:fixed;z-index:1600;top:12px;right:14px;display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #445057;background:#080d11e8;box-shadow:0 8px 24px #000}.battle-route-controls span{display:flex;align-items:center;gap:6px;padding:0 7px;color:#b76570;font-size:14px;font-weight:900}.battle-route-controls span.online{color:#58c99a}.battle-route-controls i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor}.battle-route-controls button{padding:7px 10px;border:1px solid #57636a;background:#121a20;color:#fff;font-size:14px;font-weight:900}.battle-route-controls .surrender{border-color:#7f343e;background:#321219;color:#f2b6bc}
+.battle-route-controls{position:fixed;z-index:var(--l12-battle-fixed-controls-z,5100);top:12px;right:14px;display:flex;align-items:center;gap:7px;padding:6px;border:1px solid #445057;background:#080d11e8;box-shadow:0 8px 24px #000}.battle-route-controls>span{display:flex;align-items:center;gap:6px;padding:0 7px;color:#b76570;font-size:14px;font-weight:900}.battle-route-controls>span.online{color:#58c99a}.battle-route-controls i{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 7px currentColor}.battle-route-controls button{padding:7px 10px;border:1px solid #57636a;background:#121a20;color:#fff;font-size:14px;font-weight:900;text-align:center;text-wrap:balance;word-break:break-all}.battle-route-controls .surrender{border-color:#7f343e;background:#321219;color:#f2b6bc}.battle-route-controls .route-label,.battle-route-controls .route-label>span{display:inline;padding:0;color:inherit;font:inherit;line-height:inherit}
 .battle-settings-button{position:fixed;z-index:1600;left:12px;bottom:12px;display:grid;width:48px;height:48px;place-items:center;border:1px solid #59666b;background:#080d11ed;box-shadow:0 8px 24px #000;color:#e8d183;font-size:19px}.battle-settings-button span{position:absolute;left:100%;bottom:0;padding:4px 7px;border:1px solid #38454b;background:#080d11ed;color:#9da8a8;font-size:14px;letter-spacing:.12em}.battle-settings-mask{position:fixed;z-index:4000;inset:0;display:grid;place-items:center;padding:18px;background:#010407c9;backdrop-filter:blur(8px)}
-.battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:14px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details span{display:flex;justify-content:space-between;color:#b5bdbe;font-size:14px}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:14px}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
+.battle-ranked-ticker{position:fixed;z-index:1500;top:8px;left:50%;width:min(760px,calc(100vw - 430px));transform:translateX(-50%)}.ranked-result{display:flex;min-width:320px;align-items:center;flex-direction:column;gap:6px;margin:12px 0;padding:12px;border:1px solid #a88c42;background:#17150d;text-align:center}.ranked-result>b{color:#e8cf7e}.ranked-result strong{font-size:14px}.ranked-result i{color:#65d2a1;font-style:normal}.ranked-result details{width:100%;text-align:center}.ranked-result details span{display:block;color:#b5bdbe;font-size:14px;text-align:center}.ranked-result summary{cursor:pointer;color:#e1c978;font-size:14px;text-align:center}@media(max-width:900px){.battle-ranked-ticker{top:52px;width:calc(100vw - 20px)}}
+.game-over-minimize,.game-over-restore{display:none}
+.missing-game{min-height:60vh;display:grid;place-content:center;justify-items:center;gap:12px;padding:32px;text-align:center}.missing-game small{color:var(--muted);font-weight:900;letter-spacing:.14em}.missing-game h1,.missing-game p{margin:0}.missing-game p{max-width:560px;color:var(--muted)}.missing-game>div{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.missing-game[data-state="waiting"]{border-top:3px solid var(--accent)}.missing-game[data-state="failed"]{border-top:3px solid var(--danger)}
+/* Mobile route geometry lives with the dedicated dock; desktop stays above. */
+.game-page:has(.mobile-landscape-board){inset:0!important;width:100%!important;height:100%!important}
+.game-page:has(.mobile-landscape-board) .battle-ranked-ticker{display:none}
 </style>

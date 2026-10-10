@@ -1,0 +1,46 @@
+<script setup lang="ts">
+import { computed, reactive, ref } from 'vue'
+import { platformState, tournamentApi, type Tournament, type TournamentJudgeCase } from '@/l12/platform'
+import { tournamentJudgeCategoryText, tournamentJudgeStatusText, tournamentJudgeUrgencyText } from '@/l12/tournamentLabels'
+
+const props = defineProps<{ tournament: Tournament; canJudge: boolean }>()
+const emit = defineEmits<{ updated: [value: Tournament]; notice: [value: string] }>()
+const selectedMatch = ref(''); const category = ref('rules'); const urgency = ref('normal'); const message = ref('')
+const assignees = reactive<Record<string,string>>({}); const resolutions = reactive<Record<string,string>>({})
+const appealReasons = reactive<Record<string,string>>({}); const busy = ref(false)
+const accountId = computed(() => platformState.account?.id || '')
+const myMatches = computed(() => props.tournament.rounds.flatMap(round => round.matches)
+  .filter(match => match.playerBAccountId && (match.playerAAccountId === accountId.value || match.playerBAccountId === accountId.value)))
+const caseMatch = (item: TournamentJudgeCase) => props.tournament.rounds.flatMap(round => round.matches).find(match => match.id === item.matchId)
+const availableAssignees = (item: TournamentJudgeCase) => {
+  const match = caseMatch(item)
+  return [{ accountId: props.tournament.organizerAccountId, username: props.tournament.organizerName }, ...props.tournament.referees]
+    .filter(person => person.accountId !== match?.playerAAccountId && person.accountId !== match?.playerBAccountId)
+}
+const canAppeal = (item: TournamentJudgeCase) => {
+  const match = caseMatch(item)
+  return !!match && (match.playerAAccountId === accountId.value || match.playerBAccountId === accountId.value)
+    && ['ruled', 'closed'].includes(item.status) && !item.appealedAt
+}
+async function act(work: () => Promise<Tournament>, success: string) { busy.value = true; try { emit('updated', await work()); emit('notice', success) } catch (error) { emit('notice', error instanceof Error ? error.message : '操作失败') } finally { busy.value = false } }
+function callJudge() { void act(() => tournamentApi.createJudgeCase(props.tournament.id, props.tournament.version, { matchId: selectedMatch.value, category: category.value, urgency: urgency.value, message: message.value }), '裁判请求已提交') }
+function assign(item: TournamentJudgeCase) { const assignee = assignees[item.id]; if (assignee) void act(() => tournamentApi.assignJudgeCase(props.tournament.id, props.tournament.version, item.id, assignee, '裁判台分派案件'), '案件已分派') }
+function resolve(item: TournamentJudgeCase) { const resolution = resolutions[item.id]?.trim(); if (resolution) void act(() => tournamentApi.resolveJudgeCase(props.tournament.id, props.tournament.version, item.id, 'ruled', resolution), '裁定已记录') }
+function appeal(item: TournamentJudgeCase) { const reason = appealReasons[item.id]?.trim(); if (reason) void act(() => tournamentApi.appealJudgeCase(props.tournament.id, props.tournament.version, item.id, reason), '申诉已提交') }
+</script>
+
+<template>
+  <section class="judge-desk">
+    <header class="desk-head"><div><small>JUDGE DESK</small><h2>裁判台</h2><p>呼叫裁判、分派无利益冲突的受理人，并记录裁定与申诉。</p></div><span>{{ tournament.judgeCases.length }} 个可见案件</span></header>
+    <form v-if="myMatches.length" class="call" @submit.prevent="callJudge"><header><b>呼叫裁判</b><span>选择本人桌次并说明问题</span></header><label><span>桌次</span><select v-model="selectedMatch" required><option value="">选择本人桌次</option><option v-for="match in myMatches" :key="match.id" :value="match.id">第 {{ match.table }} 桌 · {{ match.playerAName }} 对 {{ match.playerBName }}</option></select></label><label><span>问题类型</span><select v-model="category"><option value="rules">规则问题</option><option value="technical">技术问题</option><option value="late">迟到处理</option><option value="result">赛果争议</option></select></label><label><span>紧急程度</span><select v-model="urgency"><option value="normal">普通</option><option value="urgent">紧急</option></select></label><label class="message"><span>问题说明</span><input v-model.trim="message" required maxlength="1000" placeholder="说明问题"></label><button class="primary" :disabled="busy">呼叫裁判</button></form>
+    <p v-else class="empty"><b>当前没有可呼叫的桌次</b><span>只有本人参与的赛事桌次可以发起裁判请求。</span></p>
+    <div v-if="!tournament.judgeCases.length" class="empty"><b>暂无可见案件</b><span>新的裁判请求会按权限显示在这里。</span></div>
+    <article v-for="item in tournament.judgeCases" :key="item.id" class="case"><header><div><small>TABLE {{ item.table }}</small><b>第 {{ item.table }} 桌 · {{ tournamentJudgeCategoryText(item.category) }}</b></div><span class="case-tags"><i>{{ tournamentJudgeStatusText(item.status) }}</i><i :class="{urgent: item.urgency === 'urgent'}">{{ tournamentJudgeUrgencyText(item.urgency) }}</i></span></header><p class="player-message">{{ item.playerMessage }}</p><p v-if="item.resolution" class="resolution"><b>裁定结论</b><span>{{ item.resolution }}</span></p><p v-if="item.appealReason" class="appeal"><b>申诉理由</b><span>{{ item.appealReason }}</span></p><div v-if="canJudge && item.canManage" class="actions manage-actions"><label><span>受理人</span><select v-model="assignees[item.id]"><option value="">选择无利益冲突的受理人</option><option v-for="person in availableAssignees(item)" :key="person.accountId" :value="person.accountId">{{ person.username }}</option></select></label><button :disabled="!assignees[item.id] || busy" @click="assign(item)">分派</button><label><span>裁定结论</span><input v-model.trim="resolutions[item.id]" placeholder="记录可执行的裁定"></label><button class="primary" :disabled="!resolutions[item.id] || busy" @click="resolve(item)">作出裁定</button></div><div v-if="canAppeal(item)" class="actions appeal-actions"><label><span>申诉理由</span><input v-model.trim="appealReasons[item.id]" maxlength="1000" placeholder="填写申诉理由"></label><button :disabled="!appealReasons[item.id] || busy" @click="appeal(item)">提交申诉</button></div></article>
+  </section>
+</template>
+
+<style scoped>
+.judge-desk{display:grid;gap:14px;color:var(--l12-ui-text)}.desk-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.desk-head small,.case header small{color:var(--l12-ui-info);font:900 11px ui-monospace,monospace;letter-spacing:.14em}.desk-head h2{margin:4px 0;font-size:20px}.desk-head p{margin:0;color:var(--l12-ui-text-muted);font-size:13px}.desk-head>span{padding:5px 8px;border:1px solid var(--l12-ui-line-strong);border-radius:999px;color:var(--l12-ui-text-muted);font-size:11px}.call{display:grid;grid-template-columns:minmax(220px,1.1fr) minmax(150px,.7fr) minmax(120px,.45fr);gap:10px;padding:14px;border:1px solid var(--l12-ui-line);background:var(--l12-ui-control)}.call>header{grid-column:1/-1;display:grid;gap:3px}.call>header span{color:var(--l12-ui-text-muted);font-size:12px}.call label,.actions label{display:grid;min-width:0;gap:5px}.call label>span,.actions label>span{color:var(--l12-ui-text-muted);font-size:10px;font-weight:800}.call .message{grid-column:1/-2}.call input,.call select,.actions input,.actions select{width:100%;min-height:40px;padding:8px}.call button{align-self:end}.case{display:grid;gap:12px;padding:15px;border:1px solid var(--l12-ui-line);border-radius:var(--l12-ui-radius-sm);background:rgba(7,13,18,.5)}.case>header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.case>header>div{display:grid;gap:4px}.case-tags{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:5px}.case-tags i{padding:4px 7px;border:1px solid var(--l12-ui-line-strong);border-radius:999px;color:var(--l12-ui-text-soft);font-size:11px;font-style:normal}.case-tags i.urgent{border-color:#8f4049;background:#2b1218;color:#efb1b7}.player-message{margin:0;color:var(--l12-ui-text-soft);font-size:13px}.resolution,.appeal{display:grid;gap:4px;margin:0;padding:10px 12px;border-left:3px solid var(--l12-ui-success);background:#10231c}.appeal{border-color:var(--l12-ui-info);background:#0b2025}.resolution b,.appeal b{font-size:11px}.resolution span,.appeal span{color:var(--l12-ui-text-soft);font-size:13px}.actions{display:grid;grid-template-columns:minmax(190px,1fr) auto minmax(190px,1fr) auto;align-items:end;gap:8px;padding-top:12px;border-top:1px solid var(--l12-ui-line)}.appeal-actions{grid-template-columns:1fr auto}.empty{display:grid;min-height:130px;place-items:center;align-content:center;gap:5px;margin:0;padding:20px;border:1px dashed var(--l12-ui-line-strong);color:var(--l12-ui-text-muted);text-align:center}.empty b{color:var(--l12-ui-text-soft)}.empty span{font-size:12px}
+@media(max-width:900px){.call{grid-template-columns:1fr 1fr}.call .message{grid-column:1/-1}.call>button{width:100%}.actions{grid-template-columns:1fr auto}.actions label:nth-of-type(2){grid-column:1}.appeal-actions{grid-template-columns:1fr auto}}
+@media(max-width:700px){.desk-head{align-items:flex-start}.desk-head>span{display:none}.call{grid-template-columns:1fr;padding:12px}.call>header,.call .message{grid-column:auto}.call input,.actions input,.call button,.actions button{min-height:44px}.call select,.actions select{height:44px;min-height:44px!important}.case{padding:12px}.case>header{display:grid}.case-tags{justify-content:flex-start}.actions,.appeal-actions{grid-template-columns:1fr}.actions label:nth-of-type(2){grid-column:auto}}
+</style>

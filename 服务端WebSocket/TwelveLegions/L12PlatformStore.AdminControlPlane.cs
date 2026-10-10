@@ -5,7 +5,11 @@ namespace TwelveLegions.Server;
 internal sealed record L12StoredAdminCommand(string Id, string Signature, L12AdminCommandView View);
 internal sealed record L12StoredAdminApproval(string Status, L12AdminApprovalView View);
 
-public sealed record L12ContentPublishItem(string Key, string DraftValue, long EntryVersion);
+/// <summary>
+/// DraftValue is retained for optimistic-concurrency checks. PublishedValue is the
+/// server-prepared public snapshot, which may deliberately omit unreviewed draft rows.
+/// </summary>
+public sealed record L12ContentPublishItem(string Key, string DraftValue, string PublishedValue, long EntryVersion);
 public sealed record L12ContentPublishCommandPayload(IReadOnlyList<L12ContentPublishItem> Items);
 public sealed record L12ContentRollbackItem(string Key, string TargetValue, long EntryVersion,
     string ExpectedPublishedVersionId, string? TargetVersionId);
@@ -111,7 +115,7 @@ public sealed partial class L12PlatformStore
         "home.decksTitle", "home.decksText", "home.recordsTitle", "home.recordsText", "home.newsTitle",
         "home.latestNews", "home.newsEmptyTitle", "home.newsEmptyText", "home.rulesTitle", "home.cardLinkLabel",
         "home.rulesLinkLabel", "home.replayLinkLabel", "home.developmentTitle", "home.battleStatus",
-        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "news.entries",
+        "home.s1Status", "home.s2Status", "home.mobileStatus", "rules.notice", "rules.rulings", "rules.center", "news.entries",
         HomeCompositionContentKey, SiteLegalContentKey,
         // 兼容旧 platform.json 和既有平台持久化测试中的早期首页键。
         "home.hero.title",
@@ -123,19 +127,27 @@ public sealed partial class L12PlatformStore
 
     internal T ExecuteAdminTransaction<T>(Func<T> action)
     {
+        // Includes the outer durable commit and post-commit revocation dispatch.
+        using var deployment = EnterDeploymentMutation();
+        IReadOnlyList<string> committedRevocations = [];
+        T result;
         lock (_gate)
         {
             var outer = _adminTransactionDepth == 0;
-            string? snapshot = null;
+            var snapshot = JsonSerializer.Serialize(_data);
+            var committedAtEntry = Volatile.Read(ref _committedSessionActivity);
+            var revocationCountAtEntry = _pendingSessionRevocations.Count;
+            var saveRequestedAtEntry = _adminTransactionSaveRequested;
+            var businessChangedAtEntry = _adminTransactionBusinessChanged;
             if (outer)
             {
-                snapshot = JsonSerializer.Serialize(_data);
                 _adminTransactionSaveRequested = false;
                 _adminTransactionBusinessChanged = false;
+                _pendingSessionRevocations.Clear();
+                revocationCountAtEntry = 0;
             }
 
             _adminTransactionDepth++;
-            T result;
             try
             {
                 result = action();
@@ -143,11 +155,16 @@ public sealed partial class L12PlatformStore
             catch
             {
                 _adminTransactionDepth--;
-                if (outer)
+                try
                 {
-                    _data = JsonSerializer.Deserialize<DataFile>(snapshot!) ?? new DataFile();
-                    _adminTransactionSaveRequested = false;
-                    _adminTransactionBusinessChanged = false;
+                    if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                        _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                }
+                finally
+                {
+                    _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
+                    _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
+                    TrimPendingSessionRevocations(revocationCountAtEntry);
                 }
                 throw;
             }
@@ -156,20 +173,36 @@ public sealed partial class L12PlatformStore
             if (!outer) return result;
             try
             {
-                if (_adminTransactionSaveRequested) PersistData(_adminTransactionBusinessChanged);
-                return result;
+                var preparedRevocations = PreparePendingSessionRevocations();
+                if (_adminTransactionSaveRequested)
+                {
+                    PersistData(_adminTransactionBusinessChanged);
+                    committedRevocations = preparedRevocations;
+                }
+            }
+            catch (L12PlatformStorageUnavailableException error) when (
+                error is L12SeasonFinalizationStaleWriteException or L12PlatformStorageConflictException
+                    or L12PlatformStorageRefreshException)
+            {
+                // PersistTransactionalData 已从 SQLite 刷新到包含赛季结算事实的最新快照。
+                // 保留该刷新结果，但仍向调用方明确返回可重试失败；绝不自动重放原命令。
+                throw;
             }
             catch
             {
-                _data = JsonSerializer.Deserialize<DataFile>(snapshot!) ?? new DataFile();
+                if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                    _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
                 throw;
             }
             finally
             {
                 _adminTransactionSaveRequested = false;
                 _adminTransactionBusinessChanged = false;
+                _pendingSessionRevocations.Clear();
             }
         }
+        DispatchCommittedSessionRevocations(committedRevocations);
+        return result;
     }
 
     internal L12StoredAdminCommand? FindAdminCommand(string actorId, string idempotencyKey)
@@ -255,10 +288,13 @@ public sealed partial class L12PlatformStore
         {
             var row = _data.AdminCommands.First(item => item.Id == commandId);
             row.Status = status;
-            row.ResultJson = result.Value is null
-                || result.Value is JsonElement element && element.ValueKind == JsonValueKind.Undefined
+            object? persistedValue = result.Value;
+            if (persistedValue is L12AdminPasswordResetView passwordReset)
+                persistedValue = passwordReset with { TemporaryPassword = null };
+            row.ResultJson = persistedValue is null
+                || persistedValue is JsonElement element && element.ValueKind == JsonValueKind.Undefined
                 ? null
-                : JsonSerializer.Serialize(result.Value, AdminJsonOptions);
+                : JsonSerializer.Serialize(persistedValue, persistedValue.GetType(), AdminJsonOptions);
             row.ResultCode = result.Code;
             row.ResultMessage = result.Message;
             row.ResultStatusCode = result.StatusCode;
@@ -333,7 +369,8 @@ public sealed partial class L12PlatformStore
             {
                 var row = FindContentEntry(key);
                 var published = _data.Content.GetValueOrDefault(key, string.Empty);
-                return new L12ContentPublishItem(key, row?.DraftValue ?? published, row?.Version ?? 0);
+                var draft = row?.DraftValue ?? published;
+                return new L12ContentPublishItem(key, draft, PreparePublicContentValue(key, draft), row?.Version ?? 0);
             }).ToArray());
         }
     }
@@ -347,8 +384,8 @@ public sealed partial class L12PlatformStore
             {
                 var row = FindContentEntry(item.Key);
                 var published = row?.PublishedValue ?? _data.Content.GetValueOrDefault(item.Key, string.Empty);
-                return new L12ContentPreviewItem(item.Key, item.DraftValue, published, item.EntryVersion,
-                    item.DraftValue != published);
+                return new L12ContentPreviewItem(item.Key, item.PublishedValue, published, item.EntryVersion,
+                    item.PublishedValue != published);
             }).ToArray());
         }
     }
@@ -375,7 +412,7 @@ public sealed partial class L12PlatformStore
                 {
                     BatchId = batch.Id,
                     Key = row.Key,
-                    Value = item.DraftValue,
+                    Value = item.PublishedValue,
                     PreviousVersionId = previousVersionId,
                     Kind = "publish",
                     ActorId = actor.Id,
@@ -387,13 +424,13 @@ public sealed partial class L12PlatformStore
                 {
                     Key = row.Key,
                     PreviousValue = row.PublishedValue,
-                    PublishedValue = item.DraftValue,
+                    PublishedValue = item.PublishedValue,
                     PreviousVersionId = previousVersionId,
                     PublishedVersionId = version.Id,
                 });
-                AddAdminAudit(actor, "content", "publish", row.Key, row.PublishedValue, item.DraftValue,
+                AddAdminAudit(actor, "content", "publish", row.Key, row.PublishedValue, item.PublishedValue,
                     batch.Id, context);
-                row.PublishedValue = item.DraftValue;
+                row.PublishedValue = item.PublishedValue;
                 row.Status = "published";
                 row.PublishedBy = actor.Username;
                 row.PublishedAt = now;
@@ -521,7 +558,8 @@ public sealed partial class L12PlatformStore
             var currentVersion = row?.Version ?? 0;
             if (currentVersion != item.EntryVersion || currentDraft != item.DraftValue)
                 throw new L12ContentStateConflictException($"内容 {item.Key} 的草稿已变化，请重新预览");
-            ValidateSiteContentValue(item.Key, item.DraftValue, true);
+            ValidateSiteContentValue(item.Key, item.DraftValue, false);
+            ValidateSiteContentValue(item.Key, item.PublishedValue, true);
         }
     }
 

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-card-state-and-lethal-recovery",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "卡牌状态恢复与免死结算修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "卡牌在重连、回放恢复及跨区域复制后会保持各自独立的权威状态，不再因共享内部集合而让一张卡的变化串到另一张卡。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "免死和致命伤害替代会按稳定顺序记录和结算；同一时点出现多个替代条件时不再因遍历顺序不同产生结果漂移。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs"
+      ]
+    }
+  ]
+}

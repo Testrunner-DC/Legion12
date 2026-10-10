@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using System.Reflection;
 using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
@@ -70,6 +71,37 @@ public sealed class MatchRecorderTests
         Assert.Equal(1, reader.GetInt32(1));
         Assert.True(reader.GetInt32(2) > 1000);
         Assert.Equal(64, reader.GetInt32(3));
+    }
+
+    [Fact]
+    public async Task PlayerStatisticsRemainAvailableIndependentlyOfReplayPayloads()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-tests", Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+        var game = new L12GameEngine(catalog, "player-statistics-test", "STAT01", 79, ["甲", "乙"], [0, 1], skipPreparation: true);
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        await recorder.StartAsync(game.State, "ranked", "account-a", "account-b");
+        game.ConcludeByAuthority(0, "统计测试");
+        await recorder.CompleteAsync(game);
+
+        var statistics = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲");
+        Assert.Equal(1, statistics.Overall.Games);
+        Assert.Equal(1, statistics.Overall.Wins);
+        Assert.Equal(1, statistics.Ranked.Games);
+        Assert.Single(statistics.Masters);
+        Assert.Equal(1, statistics.Masters[0].Ranked.Wins);
+
+        var voided = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲",
+            excludedMatchIds: ["player-statistics-test"]);
+        Assert.Equal(0, voided.Overall.Games);
+        Assert.Empty(voided.Masters);
+
+        var disabledParticipant = await recorder.PlayerStatisticsAsync("account-a", "已经改名的甲",
+            excludedAccountIds: ["account-b"]);
+        Assert.Equal(0, disabledParticipant.Overall.Games);
+        Assert.Empty(disabledParticipant.Masters);
     }
 
     [Fact]
@@ -198,6 +230,15 @@ public sealed class MatchRecorderTests
             TriggerEffects: false);
         var result = game.HandleGm(gm);
         Assert.True(result.Accepted, result.Error);
+        typeof(L12GameEngine).GetMethod("AddPlayerLogEvent",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, ["draw", 0, "回合开始时抽取 1 张牌", "turn:2", "turn-start", null,
+                Array.Empty<L12CardInstance>()]);
+        typeof(L12GameEngine).GetMethod("AddSemanticPlayerLogEvent",
+                BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, ["effect", 0, "免死权威事件",
+                new L12PlayerLogSemantic("触发 免死", "兵力变为1000", SourceName: "测试军团"),
+                Array.Empty<L12CardInstance>()]);
         await recorder.AppendAsync(game, 1, -1, JsonSerializer.Serialize(gm), result);
 
         await using var connection = new SqliteConnection($"Data Source={path}");
@@ -216,5 +257,27 @@ public sealed class MatchRecorderTests
         Assert.False(card.TryGetProperty("Troops", out _));
         Assert.False(card.TryGetProperty("EffectText", out _));
         Assert.True(json.Length < 512, $"紧凑动作事件不应重复持久化整张卡牌：{json.Length} bytes");
+
+        command.CommandText = """
+            SELECT event_json FROM match_action_events
+            WHERE match_id='compact-events' AND json_extract(event_json,'$.Type')='draw'
+            ORDER BY event_sequence DESC LIMIT 1;
+            """;
+        var groupedJson = Assert.IsType<string>(await command.ExecuteScalarAsync());
+        using var groupedDocument = JsonDocument.Parse(groupedJson);
+        Assert.Equal("turn:2", groupedDocument.RootElement.GetProperty("PlayerLogGroupId").GetString());
+        Assert.Equal("turn-start", groupedDocument.RootElement.GetProperty("PlayerLogTiming").GetString());
+
+        command.CommandText = """
+            SELECT event_json FROM match_action_events
+            WHERE match_id='compact-events' AND json_extract(event_json,'$.Type')='effect'
+            ORDER BY event_sequence DESC LIMIT 1;
+            """;
+        var semanticJson = Assert.IsType<string>(await command.ExecuteScalarAsync());
+        using var semanticDocument = JsonDocument.Parse(semanticJson);
+        var semantic = semanticDocument.RootElement.GetProperty("PlayerLogSemantic");
+        Assert.Equal("触发 免死", semantic.GetProperty("ActionLabel").GetString());
+        Assert.Equal("兵力变为1000", semantic.GetProperty("OutcomeLabel").GetString());
+        Assert.Equal("测试军团", semantic.GetProperty("SourceName").GetString());
     }
 }

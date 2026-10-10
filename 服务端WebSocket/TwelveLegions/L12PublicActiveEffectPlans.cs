@@ -56,7 +56,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("field-legion", "guardCosts", "伊西斯：预先选择弃置的3张陵墓守卫",
-                        guards, min: 3, max: 3, autoSelectWhenExact: true),
+                        guards, min: 3, max: 3, autoSelectWhenExact: true, isCostSelection: true),
                     PublicActiveStep("grave-card", "canopicTarget", "伊西斯：预先选择墓地1张卡诺匹斯圣物",
                         canopics),
                     PublicActiveStep("option", "rewardMode", "伊西斯：预先声明完成操作后的奖励",
@@ -69,7 +69,7 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("士气需少于对方，且需弃置1张手牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [PublicActiveStep("hand-card", "discardCost", "孟婆：预先选择弃置的1张手牌",
-                    player.Hand.Select(card => card.InstanceId))]);
+                    player.Hand.Select(card => card.InstanceId), isCostSelection: true)]);
             }
             case ("S01-04M1", "amaterasuReady"):
             {
@@ -77,7 +77,7 @@ public sealed partial class L12GameEngine
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     PublicActiveStep("hand-card", "discardCost", "天照大神：预先选择弃置的1张手牌",
-                        player.Hand.Select(card => card.InstanceId)),
+                        player.Hand.Select(card => card.InstanceId), isCostSelection: true),
                     PublicActiveStep("target-morale", "moraleTargets", "天照大神：预先选择转为活跃的最多2张休整士气",
                         player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId), min: 0, max: 2),
                 ]);
@@ -137,10 +137,10 @@ public sealed partial class L12GameEngine
             {
                 var grave = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
                 if (grave.Sum(L12StructuredCardRules.StarterGraveCardCopies) < 2)
-                    return CommandResult.Reject("墓地卡牌合计需能视为2张");
+                    return CommitActiveAbility(playerIndex, source, ability, null);
                 return BeginPendingActivationSequence(playerIndex, source, ability,
-                [GraveCostSelectionStep(player, "洛基：选择合计视为2张、返回牌库底部的墓地卡牌",
-                    "graveCards", grave, required: 2)]);
+                [GraveEffectSelectionStep(player, "洛基：选择合计视为2张、返回牌库底部的墓地卡牌",
+                    "graveEffect", grave, required: 2)]);
             }
             case ("S01-01D1", "palaceExchange"):
             {
@@ -180,7 +180,8 @@ public sealed partial class L12GameEngine
             case ("S01-04D1", "yomiRecover"):
             {
                 if (source.Tapped) return CommandResult.Reject("黄泉之门必须为活跃状态");
-                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+                var grave = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && CanEnterHandOrLibrary(card))
                     .Select(card => card.InstanceId).ToList();
                 if (grave.Count == 0) return CommandResult.Reject("墓地没有可回收的【高天原】卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
@@ -196,7 +197,7 @@ public sealed partial class L12GameEngine
                     PublicActiveStep("active-target", "debuffTarget",
                         "天照大神：预先选择本回合费用-1的敌方军团", targets),
                     PublicActiveStep("public-enemy-after-declared-cost-debuff", "killTarget",
-                        "天照大神：预先声明随后击杀的费用为0军团，或不选择", ["dynamic"],
+                        "天照大神：预先声明随后击杀的费用为0军团；没有合法目标时跳过", ["dynamic"],
                         referenceKey: "debuffTarget"),
                 ]);
             }
@@ -247,7 +248,7 @@ public sealed partial class L12GameEngine
     private static L12ActivationSelectionStep PublicActiveStep(string kind, string key, string text,
         IEnumerable<string> choices, int min = 1, int max = 1, string? referenceKey = null,
         bool skipWhenReferenceIsNone = false, int? costThreshold = null, string? requiredChoice = null,
-        bool autoSelectWhenExact = false, bool includeSourceSlotAfterCost = false)
+        bool autoSelectWhenExact = false, bool includeSourceSlotAfterCost = false, bool isCostSelection = false)
         => new()
         {
             Kind = kind,
@@ -257,6 +258,10 @@ public sealed partial class L12GameEngine
             MinChoose = min,
             MaxChoose = max,
             AutoSelectWhenExact = autoSelectWhenExact,
+            IsCostSelection = isCostSelection,
+            IsResponsePresentationTarget = !isCostSelection && kind is ("active-target" or "field-legion"
+                or "enemy-legion" or "public-enemy-after-cost-debuff"
+                or "public-enemy-after-declared-cost-debuff" or "public-palace-enemy"),
             ReferenceDeclarationKey = referenceKey,
             IncludeSourceSlotAfterCost = includeSourceSlotAfterCost,
             SkipWhenReferenceIsNone = skipWhenReferenceIsNone,

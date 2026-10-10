@@ -19,7 +19,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
             ["S02-0513"] = 3, ["S02-0514"] = 2, ["S02-0515"] = 3, ["S02-0516"] = 3,
             ["S02-0517"] = 3, ["S02-0518"] = 3, ["S02-0519"] = 2, ["S02-0520"] = 4,
             ["S02-0521"] = 2, ["S02-0522"] = 2, ["S02-0523"] = 2, ["S02-05M1"] = 4,
-            ["S02-05M2"] = 1, ["S02-05C1"] = 3, ["S02-05C1A"] = 3, ["S02-05D1"] = 3,
+            ["S02-05M2"] = 1, ["S02-05C1"] = 3, ["S02-05C1A"] = 3, ["S02-05D1"] = 4,
         };
 
     private static L12GameEngine Create(int seed = 8601, string firstMaster = "S02-05M1")
@@ -131,7 +131,7 @@ public sealed class AtomicReviewBatch6LCRegressionTests
     public void S2TakamagaharaAndOlympusAuditFreezesEveryCardAndAbility()
     {
         Assert.Equal(35, AuditedAbilityCounts.Count);
-        Assert.Equal(104, AuditedAbilityCounts.Values.Sum());
+        Assert.Equal(105, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);
@@ -150,10 +150,24 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         var moved = Card("S02-0401", "batch6lc-tsukuyomi-moved");
         player.Field[0][0] = moved;
 
+        void OrderBonusFirst()
+        {
+            var order = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("trigger-order", order.Kind);
+            var bonus = Assert.Single(order.ValidChoices,
+                id => order.Data[$"trigger:{id}"] == "friendly-back-to-front");
+            var follow = Assert.Single(order.ValidChoices,
+                id => order.Data[$"trigger:{id}"] == "friendly-legion-moves");
+            Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+                CardInstanceIds: [follow, bonus])).Accepted);
+        }
+
         Invoke(game, "RecordLegionMovement", 0, moved, 1, 0);
+        OrderBonusFirst();
 
         Assert.Equal(0, moved.TsukuyomiFrontMoveBonusCount);
         var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("friendly-back-to-front", first.Trigger);
         Assert.Equal("tsukuyomiFrontAttackBuff", first.Data["ability"]);
         first.Negated = true;
         PassResponses(game);
@@ -162,11 +176,75 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         for (var occurrence = 1; occurrence <= 2; occurrence++)
         {
             Invoke(game, "RecordLegionMovement", 0, moved, 1, 0);
+            OrderBonusFirst();
             var effect = Assert.Single(game.State.EffectStack);
             Assert.Equal("tsukuyomiFrontAttackBuff", effect.Data["ability"]);
             PassResponses(game);
             Assert.Equal(occurrence, moved.TsukuyomiFrontMoveBonusCount);
         }
+        var declarations = game.State.Events.Where(entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1")).ToArray();
+        Assert.Equal(3, declarations.Length);
+        Assert.All(declarations, declaration =>
+        {
+            Assert.NotNull(declaration.EffectSceneId);
+            Assert.Equal(1, declaration.EffectSegmentIndex);
+            Assert.Equal(1, declaration.EffectSegmentCount);
+        });
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "negated"
+            && entry.EffectSceneId == declarations[0].EffectSceneId);
+        Assert.Equal(2, game.State.Events.Count(entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declarations[0].EffectSceneId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-04M1")]
+    [Trait("L12Evidence", "entry:tsukuyomi-front-to-back-semantic-trigger")]
+    public void TsukuyomiFrontToBackReadyUsesTriggeredPresentation()
+    {
+        var game = Create(86021, "S02-04M1");
+        var player = game.State.Players[0];
+        var moved = Card("S02-0401", "batch6lc-tsukuyomi-back-moved");
+        player.Field[1][0] = moved;
+        var morale = new L12MoraleCard
+        {
+            CardId = "S02-04C1", InstanceId = "batch6lc-tsukuyomi-rested-morale", Tapped = true,
+        };
+        player.Morale.Add(morale);
+
+        Invoke(game, "RecordLegionMovement", 0, moved, 0, 1);
+
+        // Both timing facts are collected, even though follow-move has no current target.
+        // Resolve the ready effect first; the unavailable optional follow-up then skips independently.
+        var order = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trigger-order", order.Kind);
+        var ready = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-front-to-back");
+        var follow = Assert.Single(order.ValidChoices,
+            id => order.Data[$"trigger:{id}"] == "friendly-legion-moves");
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: order.PromptId,
+            CardInstanceIds: [follow, ready])).Accepted);
+        var selection = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(morale.InstanceId, selection.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt",
+            PromptId: selection.PromptId, Choice: morale.InstanceId)).Accepted);
+        var effect = Assert.Single(game.State.EffectStack);
+        Assert.Equal("friendly-front-to-back", effect.Trigger);
+        Assert.Equal("tsukuyomiReadyMorale", effect.Data["ability"]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-activation"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        PassResponses(game);
+        Assert.False(morale.Tapped);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
+            && entry.Cards.Any(card => card.CardId == "S02-04M1"));
+        Assert.NotNull(declaration.EffectSceneId);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.EffectSceneId == declaration.EffectSceneId);
     }
 
     [Fact]
@@ -260,7 +338,8 @@ public sealed class AtomicReviewBatch6LCRegressionTests
 
         var begin = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "artemisBuff"));
         Assert.True(begin.Accepted, begin.Error);
-        Resolve(game, $"discard:{player.Hand[0].InstanceId}");
+        Resolve(game, "pay:discard");
+        Resolve(game, player.Hand[0].InstanceId);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(neutral.InstanceId, target.ValidChoices);
     }
@@ -285,6 +364,18 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         Resolve(game, player.Hand[0].InstanceId);
         var target = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(neutral.InstanceId, target.ValidChoices);
+        Resolve(game, neutral.InstanceId);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        Resolve(game, slot.ValidChoices[0]);
+        PassResponses(game);
+
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == neutral.InstanceId);
+        Assert.DoesNotContain(neutral, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Fact]
@@ -357,6 +448,12 @@ public sealed class AtomicReviewBatch6LCRegressionTests
         var search = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", search.Data["action"]);
         Assert.Contains(neutral.InstanceId, search.ValidChoices);
+        var ineligible = "batch6lc-plato-other-a";
+        Assert.Contains(ineligible, search.Data["displayCardIds"]);
+        Assert.DoesNotContain(ineligible, search.ValidChoices);
+        Assert.Equal("只能选择【奥林匹斯】卡牌，且不能选择效果来源本身",
+            search.Data[$"disabledChoice:{ineligible}"]);
+        Assert.False(search.Data.ContainsKey($"disabledChoice:{neutral.InstanceId}"));
     }
 
     [Fact]
@@ -452,6 +549,43 @@ public sealed class AtomicReviewBatch6LCRegressionTests
             Assert.True(morale.Tapped);
             Assert.False(morale.IsGodPower);
         });
+        Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == second.StackItemId);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-05D1")]
+    [Trait("L12Evidence", "entry:divinity-recovery-current-state")]
+    public void DivinityEntrySegmentContinuesWhenItsDeclaredRecoveryCardLeavesTheGraveyard()
+    {
+        var game = Create(86121, "S02-05D1");
+        var player = game.State.Players[0];
+        var recover = Card("S02-0522", "batch6lc-divinity-departed-recover");
+        var entry = Card("S02-0502", "batch6lc-divinity-departed-entry");
+        player.Graveyard.AddRange([recover, entry]);
+        for (var index = 0; index < 2; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                CardId = "S02-05C1", InstanceId = $"batch6lc-divinity-departed-power-{index}",
+                IsGodPower = true,
+            });
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "divinityPower")).Accepted);
+        Resolve(game, "mode:recover");
+        Resolve(game, recover.InstanceId);
+        Resolve(game, entry.InstanceId);
+        Resolve(game, "0:0");
+
+        Assert.True(player.Graveyard.Remove(recover));
+        player.Library.Add(recover);
+        var second = PassUntilFlow(game, "divinity-entry");
+        PassResponses(game);
+
+        Assert.Contains(recover, player.Library);
+        Assert.DoesNotContain(recover, player.Hand);
+        Assert.Same(entry, player.Field[0][0]);
+        Assert.Contains(game.State.Events, entryEvent => entryEvent.Type == "effect-failed"
+            && entryEvent.Text.Contains("墓地回收对象", StringComparison.Ordinal));
         Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == second.StackItemId);
     }
 

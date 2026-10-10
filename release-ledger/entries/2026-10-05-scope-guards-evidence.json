@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-scope-guards-evidence",
+  "date": "2026-10-05",
+  "audience": "internal",
+  "reason": "将Profile表单和提示模板合同改为结构校验，保留权限及几何保护；补App级外置状态隔离、编辑器当前源回归及八轮合成平台赛事证据，未变更存储或规则实现。",
+  "paths": [
+    "opcgpro-vue/scripts/check-ui-contracts.mjs",
+    "opcgpro-vue/scripts/profile-auth-template-contract.mjs",
+    "opcgpro-vue/scripts/test-a3-profile-auth-template-contract.mjs",
+    "opcgpro-vue/scripts/test-site-ui-state-scope.mjs",
+    "opcgpro-vue/scripts/verify-site-global-state-scope.mjs",
+    "opcgpro-vue/scripts/verify-deck-editor-portrait.mjs",
+    "docs/TASK-LEDGER.md",
+    "docs/HANDOFF.md",
+    "docs/BUGFIX-REGISTRY.md",
+    "docs/E1-D3-ACCEPTANCE-20261002.md",
+    "docs/A3-GATE-LAYERING-20261002.md",
+    "docs/l12/E4-PORTRAIT-DECK-EDITOR-LOCAL-ACCEPTANCE-20261004.md",
+    "docs/F2-CONTROLLED-ENABLE-20261002.md"
+  ]
+}

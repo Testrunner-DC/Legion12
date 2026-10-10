@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-st05-01-aeneas-promotion",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "《埃涅阿斯·晋升》数值调整",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "ST05-01《埃涅阿斯·晋升》的兵力由 7000 调整为 6000，晋升要求由消耗并翻转 1 神力调整为消耗并翻转 2 神力。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Data/cards.st.json",
+        "opcgpro-vue/public/data/l12/cards.st.json"
+      ]
+    }
+  ]
+}

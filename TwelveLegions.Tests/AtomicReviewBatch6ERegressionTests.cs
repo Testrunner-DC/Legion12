@@ -35,7 +35,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
         return game;
     }
 
-    private static L12CardInstance Card(string cardId, string instanceId, int? owner = 0)
+    private static L12CardInstance Card(string cardId, string instanceId, int? owner = 0, int? cost = null)
     {
         var definition = Catalog.Cards[cardId];
         return new L12CardInstance
@@ -46,7 +46,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
             CardType = definition.CardType,
             Faction = definition.Faction,
             ImageUrl = definition.ImageUrl,
-            Cost = definition.Cost ?? 0,
+            Cost = cost ?? definition.Cost ?? 0,
             EffectText = definition.Effect,
             Traits = [.. definition.Traits],
             Profession = definition.Profession,
@@ -89,7 +89,24 @@ public sealed class AtomicReviewBatch6ERegressionTests
         var method = typeof(L12GameEngine).GetMethod("SummonFromAnyPrivateZone",
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.NotNull(method);
-        method.Invoke(game, [player, instanceId, slot, tapped]);
+        var owner = new L12StackItem
+        {
+            StackItemId = "batch6e-summon-owner",
+            Controller = player.PlayerIndex,
+            SourceInstanceId = instanceId,
+            SourceCardId = "test-private-zone-summon",
+            SourceName = "区域事务测试",
+            Trigger = "active",
+            Text = string.Empty,
+        };
+        var beforeSequence = game.State.EventSequence;
+        method.Invoke(game, [player, instanceId, slot, tapped, owner]);
+        var puts = game.State.Events.Where(entry => entry.Sequence > beforeSequence
+            && entry.Type == "put" && entry.Cards.Any(card => card.InstanceId == instanceId)).ToArray();
+        if (game.State.PresentationFactProtocolEnabled && puts.Length > 0)
+            Assert.Equal([Assert.Single(puts).Sequence], owner.PresentationFactSequences);
+        else
+            Assert.Null(owner.PresentationFactSequences);
     }
 
     private static int CountInstance(L12GameEngine game, string instanceId)
@@ -112,6 +129,105 @@ public sealed class AtomicReviewBatch6ERegressionTests
         yield return ["S02-0203", "S02-0201", false, false];
         yield return ["S02-0205", "S02-0201", false, false];
         yield return ["S02-0601", "S02-0606", true, false];
+    }
+
+    public static IEnumerable<object[]> DeathGraveSummonRows()
+    {
+        yield return ["S01-0210", "S01-0212"];
+        yield return ["S01-0308", "S01-0301"];
+        yield return ["S02-0202", "S01-0212"];
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathGraveSummonRows))]
+    [Trait("L12Evidence", "entry:death-grave-summon-shared-lifecycle")]
+    public void MandatoryDeathGraveSummonsRequireCardAndSlotEvenWhenTargetIsUnique(
+        string sourceCardId, string targetCardId)
+    {
+        var game = Create(7890 + sourceCardId[^1]);
+        var player = game.State.Players[0];
+        var source = Card(sourceCardId, $"death-summon-source-{sourceCardId}");
+        var target = Card(targetCardId, $"death-summon-target-{sourceCardId}",
+            cost: sourceCardId is "S01-0210" or "S01-0308" ? 2 : null);
+        var invalid = Card("S01-0002", $"death-summon-invalid-{sourceCardId}");
+        player.Field[0][0] = source;
+        player.Graveyard.AddRange([target, invalid]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: source.InstanceId)).Accepted);
+        var cardPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("grave-card", cardPrompt.Kind);
+        Assert.Equal([target.InstanceId], cardPrompt.ValidChoices);
+        Assert.DoesNotContain("skip", cardPrompt.ValidChoices);
+        var displayed = cardPrompt.Data["displayCardIds"].Split('|');
+        Assert.Contains(target.InstanceId, displayed);
+        Assert.Contains(invalid.InstanceId, displayed);
+        ResolveMany(game, target.InstanceId);
+
+        var slotPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("slot", slotPrompt.Kind);
+        Assert.Contains("0:1", slotPrompt.ValidChoices);
+        Assert.DoesNotContain("skip", slotPrompt.ValidChoices);
+        Resolve(game, "0:1");
+        var stack = Assert.Single(game.State.EffectStack);
+        Assert.Equal(target.InstanceId, stack.Data.GetValueOrDefault("declared:entryCard"));
+        Assert.Equal("0:1", stack.Data.GetValueOrDefault("declared:entrySlot"));
+        PassResponses(game);
+
+        Assert.Same(target, player.Field[0][1]);
+        Assert.False(target.Tapped);
+        Assert.DoesNotContain(target, player.Graveyard);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "resolved"
+            && entry.Cards.Any(card => card.CardId == sourceCardId));
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathGraveSummonRows))]
+    [Trait("L12Evidence", "entry:death-grave-summon-slot-revalidate")]
+    public void MandatoryDeathGraveSummonsFailIfDeclaredSlotIsOccupiedDuringResponses(
+        string sourceCardId, string targetCardId)
+    {
+        var game = Create(7895 + sourceCardId[^1]);
+        var player = game.State.Players[0];
+        var source = Card(sourceCardId, $"death-summon-late-source-{sourceCardId}");
+        var target = Card(targetCardId, $"death-summon-late-target-{sourceCardId}",
+            cost: sourceCardId is "S01-0210" or "S01-0308" ? 2 : null);
+        player.Field[0][0] = source;
+        player.Graveyard.Add(target);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: source.InstanceId)).Accepted);
+        ResolveMany(game, target.InstanceId);
+        Resolve(game, "0:0");
+        var blocker = Card("S01-0003", $"death-summon-late-blocker-{sourceCardId}");
+        player.Field[0][0] = blocker;
+        PassResponses(game);
+
+        Assert.Same(blocker, player.Field[0][0]);
+        Assert.Contains(target, player.Graveyard);
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.EffectResultStatus == "failed"
+            && entry.Cards.Any(card => card.CardId == sourceCardId));
+    }
+
+    [Theory]
+    [MemberData(nameof(DeathGraveSummonRows))]
+    [Trait("L12Evidence", "entry:death-grave-summon-no-target")]
+    public void MandatoryDeathGraveSummonsSilentlySkipWhenNoTargetExists(
+        string sourceCardId, string targetCardId)
+    {
+        _ = targetCardId;
+        var game = Create(7898 + sourceCardId[^1]);
+        var source = Card(sourceCardId, $"death-summon-empty-source-{sourceCardId}");
+        game.State.Players[0].Field[0][0] = source;
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: source.InstanceId)).Accepted);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
     }
 
     [Theory]
@@ -185,6 +301,69 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:death-colon-cost-revival-resolution")]
+    public void BjornRevivesRestedAfterItsPrepaidCostsResolve()
+    {
+        var game = Create(79111);
+        var player = game.State.Players[0];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-resolve");
+        var costs = Enumerable.Range(1, 4)
+            .Select(index => Card($"S01-000{index}", $"batch6e-bjorn-resolve-cost-{index}"))
+            .ToArray();
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange(costs);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: bjorn.InstanceId)).Accepted);
+        ResolveMany(game, costs.Select(card => card.InstanceId).ToArray());
+        Resolve(game, "0:1");
+        PassResponses(game);
+
+        Assert.Same(bjorn, player.Field[0][1]);
+        Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Graveyard);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+        Assert.Contains(game.State.Events, entry => entry.Type == "put"
+            && entry.Cards.Any(card => card.InstanceId == bjorn.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:weighted-grave-cost-revival-resolution")]
+    public void BjornWeightedGraveCostKeepsPhysicalOrderAndStillRevives()
+    {
+        var game = Create(79112);
+        var player = game.State.Players[0];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-weighted");
+        var warrior = Card("ST03-08", "batch6e-bjorn-weighted-warrior");
+        var ordinary = Card("S01-0001", "batch6e-bjorn-weighted-ordinary");
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange([warrior, ordinary]);
+
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", 0,
+            CardInstanceId: bjorn.InstanceId)).Accepted);
+        var graveChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(2, graveChoice.MinChoose);
+        Assert.Equal(2, graveChoice.MaxChoose);
+        ResolveMany(game, warrior.InstanceId, ordinary.InstanceId);
+
+        var representedCount = Assert.Single(game.State.PendingPrompts);
+        var asThree = Assert.Single(representedCount.ValidChoices,
+            choice => representedCount.ChoiceLabels[choice].Contains("视为3张", StringComparison.Ordinal));
+        Resolve(game, asThree);
+        Resolve(game, "0:1");
+        PassResponses(game);
+
+        Assert.Equal([warrior.InstanceId, ordinary.InstanceId],
+            player.Library.Select(card => card.InstanceId));
+        Assert.Same(bjorn, player.Field[0][1]);
+        Assert.True(bjorn.Tapped);
+        Assert.DoesNotContain(bjorn, player.Graveyard);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0305")]
     [Trait("L12Evidence", "entry:death-slot-invalid-no-cost-refund")]
     public void BjornSlotInvalidationDoesNotOverwriteOrRefundItsPrepaidCosts()
     {
@@ -210,8 +389,10 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Contains(bjorn, player.Graveyard);
         Assert.Equal(hpBefore - 1, player.Hp);
         Assert.Equal(costs, player.Library);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("位置", StringComparison.Ordinal));
+        Assert.True(game.State.Events.Any(entry => entry.Type == "effect-failed"
+                && entry.Text.Contains("位置不再为空", StringComparison.Ordinal)
+                && entry.Text.Contains("费用不返还", StringComparison.Ordinal)),
+            string.Join(Environment.NewLine, game.State.Events.Select(entry => $"{entry.Type}: {entry.Text}")));
     }
 
     [Fact]
@@ -228,6 +409,7 @@ public sealed class AtomicReviewBatch6ERegressionTests
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
             Ability: "scarabSummon")).Accepted);
+        Resolve(game, summoned.InstanceId);
         Resolve(game, "0:1");
         Assert.True(source.Tapped);
         var blocker = Card("S01-0003", "batch6e-golden-active-blocker");
@@ -238,8 +420,40 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Contains(summoned, player.Graveyard);
         Assert.True(source.Tapped);
         Assert.DoesNotContain($"active:{source.InstanceId}:scarabSummon", player.UsedAbilities);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("位置", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0205")]
+    public void GoldenScarabNegationKeepsItsRestCostAndPublishesNegatedResult()
+    {
+        var game = Create(79131);
+        var player = game.State.Players[0];
+        var source = Card("S02-0205", "batch6e-golden-negated");
+        var summoned = Card("S02-0201", "batch6e-golden-negated-target");
+        player.Relic = source;
+        player.Graveyard.Add(summoned);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", source.InstanceId,
+            Ability: "scarabSummon")).Accepted);
+        Resolve(game, summoned.InstanceId);
+        Resolve(game, "0:1");
+        var stackItem = Assert.Single(game.State.EffectStack);
+        stackItem.Negated = true;
+        PassResponses(game);
+
+        Assert.True(source.Tapped);
+        Assert.Contains(summoned, player.Graveyard);
+        Assert.Null(player.Field[0][1]);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
     }
 
     [Fact]

@@ -220,8 +220,10 @@ public sealed class BackendReportBatch296P1Tests
         Assert.Contains(source, player.Graveyard);
         Assert.Empty(game.State.EffectStack);
         Assert.Empty(game.State.PendingActivations);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("目标", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("failed", result.EffectResultStatus);
     }
 
     [Fact]
@@ -334,8 +336,10 @@ public sealed class BackendReportBatch296P1Tests
         Assert.DoesNotContain(source, player.Resolving);
         Assert.Empty(game.State.PendingActivations);
         Assert.Empty(game.State.EffectStack);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
-            && entry.Text.Contains("效果段与费用均不回退", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectSegmentIndex == 2);
+        Assert.Equal("declined", result.EffectResultStatus);
     }
 
     [Fact]

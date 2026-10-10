@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
         "S01-02C1" => [new("sunGuard", "我方 回合1次 可消耗2士气：将1张<陵墓守卫>从我方墓地活跃登场。"), new("sunDraw", "我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。")],
         "S01-03C1" => [new("asgardDraw", "我方 回合1次 可消耗2士气：抽取1张牌。若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量。")],
         "S01-0307" => [new("alvidaSummon", "我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场。")],
-        "S01-0314" => [new("olgaDebuff", "我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。")],
+        "S01-0314" => GetStructuredRuntimeAbilityViews("S01-0314"),
         "S01-0317" => [new("gramDamage", "主动休整 将墓地4张【阿斯加德】军团自选顺序返回我方牌库底部：对对方主宰造成1点非致命伤害。"), new("gramReady", "可消耗2士气：将此圣物转为活跃。")],
         "S01-01D1" => [new("palaceReward", "我方 回合1次 若本回合返还的士气高于1张，可从士气牌库追加2张休整的士气，随后抽取1张牌。"), new("palaceExchange", "主动休整 击杀对方1张军团，我方需返还此军团相应费用的士气。随后选择墓地1张费用不高于本次返还士气数量的【天廷】军团，将其活跃登场。")],
         "S01-01M2" => [new("mengpoSilence", "返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。"), new("mengpoMorale", "若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气。")],
@@ -46,9 +46,9 @@ public sealed partial class L12GameEngine
         "S01-02M1" =>
         [
             new("isisCanopic", "我方回合 可弃置我方战场3张<陵墓守卫>：将墓地1张名字包含<卡诺匹斯>的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量。"),
-            new("isisVictory", "圣物区存在5张名字包含<卡诺匹斯>的圣物时：可使墓地的<复苏的奥西里斯>替换<伊西斯>登场，并获得游戏胜利。"),
+            new("isisVictory", "若圣物区存在5张名字包含<卡诺匹斯>的圣物，可使墓地的<复苏的奥西里斯>替换<伊西斯>登场，并获得游戏胜利。"),
         ],
-        "S01-02M2" => [new("isisVictory", "圣物区存在5张名字包含<卡诺匹斯>的圣物时：可替换<伊西斯>登场，并获得游戏胜利。")],
+        "S01-02M2" => [new("isisVictory", "我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。")],
         "S01-02M3" =>
         [
             new("medjedDebuff", "我方 回合1次 可消耗1士气：选择对方1张军团本回合兵力-1000。若额外休整我方1张<陵墓守卫>，则选择的军团本回合兵力-3000作为代替。"),
@@ -58,9 +58,17 @@ public sealed partial class L12GameEngine
         "S01-03M1" => [new("valkyrieRecover", "我方 回合1次 可消耗1士气并对我方主宰造成1点伤害：选择墓地2张牌，其中1张返回牌库底部，另1张加入手牌。")],
         "S01-03M2" => [new("lokiCycle", "消耗1士气：抽取1张牌，并弃置1张手牌。"), new("lokiHeal", "消耗1士气：将墓地2张卡牌返回牌库底部，我方主宰增加1点血量。")],
         "S01-04D1" => [new("yomiDiscount", "我方 回合1次 本回合从手牌打出的下1张【高天原】军团登场费用-2。"), new("yomiSweep", "我方 回合1次 可消耗2士气：抽取1张牌。对方所有军团在本回合费用-1。随后可击杀对方1张费用不高于3的军团和1张费用不高于1的军团。"), new("yomiRecover", "主动休整 选择墓地1张【高天原】卡牌加入手牌。")],
-        "S01-04M1" => [new("amaterasuKill", "我方 回合1次 可消耗1士气：选择对方1张军团，本回合费用-1。随后击杀对方1张费用为0的军团。"), new("amaterasuReady", "我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。")],
+        "S01-04M1" => [new("amaterasuKill", "我方 回合1次 可消耗1士气：选择对方1张军团，本回合费用-1。随后击杀对方1张费用为0的军团。"), new("amaterasuReady", "我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。我方前排所有【高天原】军团本回合兵力+1000。")],
         _ => [],
     };
+
+    private static List<L12AbilityView> GetStructuredRuntimeAbilityViews(string cardId)
+    {
+        if (!L12StructuredCardRules.TryGetStructuredAbilities(cardId, out var abilities)) return [];
+        return abilities.Where(ability => !string.IsNullOrWhiteSpace(ability.RuntimeAbilityId))
+            .Select(ability => new L12AbilityView(ability.RuntimeAbilityId, ability.Text))
+            .ToList();
+    }
 
     private static List<L12AbilityView> GetAnkhSteleAbilityViews()
     {
@@ -83,7 +91,13 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item, card))
         {
             case "图特摩斯三世":
-                PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false); return true;
+                PromptEnemyByTroops(item, "thutmose-kill", "图特摩斯三世：击杀对方1张兵力不高于5000的军团", 5000, false,
+                    new("图特摩斯三世",
+                        "〈图特摩斯三世〉的登场时效果正在结算。必须从对方战场选择1张当前兵力不高于5000的军团；所选对象在结算时仍需位于对方战场、仍是军团且满足兵力条件。",
+                        "请选择1张当前兵力不高于5000的对方军团并击杀。",
+                        L12PromptWaitingAction.TargetSelection),
+                    "结算时若所选对象仍位于对方战场、仍是军团且当前兵力不高于5000，将其击杀；否则本次目标效果失败。");
+                return true;
             case "拉美西斯二世":
             {
                 var choices = PublicLegions(player).Where(target => target.Faction == "taiyangcheng"
@@ -99,7 +113,12 @@ public sealed partial class L12GameEngine
             case "陵墓构造体":
             {
                 var guards = player.Graveyard.Where(candidate => candidate.CardId == "S01-0212").ToArray();
-                foreach (var guard in guards) { player.Graveyard.Remove(guard); card.AttachedCards.Add(guard); }
+                foreach (var guard in guards)
+                {
+                    player.Graveyard.Remove(guard);
+                    ResetCardForFieldEntry(guard);
+                    card.AttachedCards.Add(guard);
+                }
                 AddEvent("effect", item.Controller, $"陵墓构造体叠放{guards.Length}张陵墓守卫，兵力+{guards.Length * 1000}", card);
                 RecalculateContinuousTroops();
                 FinishStackItem(item); return true;
@@ -123,7 +142,8 @@ public sealed partial class L12GameEngine
                     var slots = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
                     for (var index = 0; index < declaredGuards.Length; index++)
                         if (EmptySlots(player).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
-                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index], tapped: false);
+                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index],
+                                tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -133,7 +153,7 @@ public sealed partial class L12GameEngine
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
                         PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
-                        tapped: true);
+                        tapped: true, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -142,14 +162,6 @@ public sealed partial class L12GameEngine
                     PromptDiscard(item, 1 - item.Controller, 1, "纳芙蒂蒂：对方弃置1张手牌", "nefertiti-discard");
                 else FinishStackItem(item);
                 return true;
-            case "尼托克丽丝":
-            {
-                var guards = PublicLegions(player).Where(target => target.CardId == "S01-0212" && target.Tapped).Select(target => target.InstanceId).ToArray();
-                if (guards.Length == 0) { FinishStackItem(item); return true; }
-                CreatePrompt(item.Controller, "target", "尼托克丽丝：选择我方1张陵墓守卫转为活跃", guards, 1, 1, "card-effect", item.StackItemId,
-                    data: new Dictionary<string, string> { ["action"] = "nitocris-ready" });
-                return true;
-            }
             case "托勒密十三世":
             {
                 var previousId = player.LastActiveTacticCardId;
@@ -207,14 +219,31 @@ public sealed partial class L12GameEngine
                 {
                     _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
                         PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
-                        tapped: false);
+                        tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
             }
             case "神箭奥德尔":
                 CreatePrompt(item.Controller, "optional", "神箭奥德尔：是否令我方主宰受到1点伤害并抽1张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "oddr-draw" }); return true;
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "oddr-draw",
+                            ["yes"] = "发动",
+                            ["no"] = "不发动",
+                        },
+                        new("神箭奥德尔",
+                            "〈神箭奥德尔〉的登场时效果可以选择是否发动。选择发动后，我方主宰先受到1点伤害；只有该伤害处理后对局仍继续，才会抽取1张牌。若抽牌时牌库为空，沿用牌库耗尽的既有胜负规则。",
+                            "请选择“发动”并承担1点主宰伤害，或选择“不发动”结束本效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "发动：我方主宰先受到1点伤害；若对局仍继续，再抽取1张牌。",
+                                ["no"] = "不发动：我方主宰不受此伤害，不抽牌，并结束本效果。",
+                            })));
+                return true;
             case "无骨者伊瓦尔":
                 if (PublicTriggerDeclared(item, "mode") == "mode:use")
                     BeginFactionTopSearch(item, 3, "asgard", "S01-0315", "ivar-search");
@@ -222,11 +251,39 @@ public sealed partial class L12GameEngine
                 return true;
             case "夺命诗人埃吉尔":
                 CreatePrompt(item.Controller, "optional", "夺命诗人埃吉尔：是否令主宰受到1点伤害并弃置牌库顶部2张牌？", ["yes", "no"], 1, 1,
-                    "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "egil-pay" }); return true;
+                    "card-effect", item.StackItemId,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "egil-pay",
+                            ["yes"] = "发动",
+                            ["no"] = "不发动",
+                        },
+                        new("夺命诗人埃吉尔",
+                            "〈夺命诗人埃吉尔〉的登场时效果可以选择是否发动。选择发动后，我方主宰先受到1点伤害；若对局仍继续，再弃置我方牌库顶部2张牌，并在存在合法对方军团时继续选择1张使其本回合兵力-2000。若没有合法目标，已经处理的主宰伤害与牌库弃置不会返还。",
+                            "请选择“发动”并承担主宰伤害与牌库弃置，或选择“不发动”结束本效果。",
+                            L12PromptWaitingAction.EffectDecision,
+                            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["yes"] = "发动：我方主宰先受到1点伤害；若对局仍继续，再弃置牌库顶部2张牌，并按现有流程继续目标选择。",
+                                ["no"] = "不发动：我方主宰不受此伤害，不弃置牌库顶部卡牌，也不进入目标选择。",
+                            })));
+                return true;
             case "神剑格拉墨":
                 Mill(player, 2, "神剑格拉墨");
                 PromptEnemyByTroops(item, "gram-bottom", "神剑格拉墨：选择对方1张兵力不高于3000的军团返回牌库底部",
-                    3000, true, predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
+                    3000, true,
+                    new("神剑格拉墨",
+                        "〈神剑格拉墨〉已经弃置我方牌库顶部2张牌。现在可以选择对方1张当前兵力不高于3000、且能够返回牌库的军团，将其返回所有者牌库底部；也可以不选择目标。无论是否选择目标或目标结算是否成功，已经弃置的牌都不会返回。",
+                        "请选择1张符合条件的对方军团，或选择“不选择目标”结束后续处理。",
+                        L12PromptWaitingAction.TargetSelection,
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            ["skip"] = "不选择目标：结束本效果；已经弃置的牌不会返回。",
+                        }),
+                    "结算时若所选对象仍位于对方战场、仍是军团、当前兵力不高于3000且能够返回牌库，将其返回所有者牌库底部；否则目标效果失败，已经弃置的牌不会返回。",
+                    skipLabel: "不选择目标",
+                    predicate: card => !L12SpecialDeckRules.IsDerivedSpecialCard(card));
                 return true;
             default: return false;
         }
@@ -256,8 +313,8 @@ public sealed partial class L12GameEngine
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被神妙行军击杀");
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        "神妙行军选择的击杀目标已失效；已返还的士气不恢复", card);
+                    RecordTargetSettlementFailure(item, targetId,
+                        "所选军团已离场或当前兵力已高于6000；已返还的士气不恢复");
                 FinishStackItem(item);
                 return true;
             }
@@ -273,14 +330,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     var targetId = CompositeDeclared(item, "recoverTarget").SingleOrDefault();
-                    var target = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == targetId
-                        && candidate.CardId != card.CardId && CanEnterHandOrLibrary(candidate)
-                        && L12StructuredCardRules.HasFaction(player, candidate, "taiyangcheng"));
-                    if (target is not null)
-                    {
-                        player.Graveyard.Remove(target);
-                        AddCardToHandByEffect(player, target, "graveyard", $"{target.Name}从墓地加入手牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => candidate.CardId != card.CardId && CanEnterHandOrLibrary(candidate)
+                            && L12StructuredCardRules.HasFaction(owner, candidate, "taiyangcheng"),
+                        "杜阿特之门将所选【太阳城】卡牌从墓地加入手牌",
+                        "杜阿特之门已选择的墓地回收对象已离开墓地或不再符合【太阳城】条件");
                 }
                 FinishStackItem(item);
                 return true;
@@ -293,7 +347,8 @@ public sealed partial class L12GameEngine
                     && player.Graveyard.Any(candidate => candidate.InstanceId == targetId && candidate.CardType == "legion"
                         && L12StructuredCardRules.CurrentCostAtMost(candidate, 5) && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
                     && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
-                    SummonFromAnyPrivateZone(player, targetId, slot, false);
+                    SummonFromAnyPrivateZone(player, targetId, slot,
+                        tapped: false, presentationOwner: item);
                 FinishStackItem(item);
                 return true;
             }
@@ -301,8 +356,7 @@ public sealed partial class L12GameEngine
             {
                 var declared = CompositeDeclared(item, "graveEffect")
                     .Concat(CompositeDeclared(item, "graveEffectCopies"));
-                if (L12StructuredCardRules.TryResolveGraveCostDeclaration(player, declared, 4,
-                        string.Empty, legionOnly: false, out var returned, out _))
+                if (TryResolveFixedGraveEffectDeclaration(player, declared, 4, out var returned))
                 {
                     MoveGraveToLibraryBottom(player, returned);
                     var physicalText = returned.Length == 4
@@ -321,8 +375,8 @@ public sealed partial class L12GameEngine
                 if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 6000) is not null)
                     KillTarget(item, targetId!, "被猎杀时刻击杀");
                 else
-                    AddEvent("effect-cancelled", item.Controller,
-                        $"〈{item.SourceName}〉的击杀目标已失效，墓地返回效果不撤销");
+                    RecordTargetSettlementFailure(item, targetId,
+                        "击杀目标已离场、不再是军团或当前兵力已高于6000；此前墓地返回效果不撤销");
                 FinishStackItem(item);
                 return true;
             }
@@ -342,7 +396,11 @@ public sealed partial class L12GameEngine
             case "萨拉丁":
                 if (!string.IsNullOrWhiteSpace(PublicTriggerDeclared(item, "moveTarget")))
                 {
-                    MoveOwnCardToSlot(player, PublicTriggerDeclared(item, "moveTarget"), PublicTriggerDeclared(item, "moveSlot"));
+                    _ = TryMoveDeclaredPublicLegion(item, item.Controller,
+                        PublicTriggerDeclared(item, "moveTarget"), PublicTriggerDeclared(item, "moveSlot"),
+                        target => target.CardId == "S01-0212", requireAdjacent: false,
+                        "所选对象已离场、不再是公开军团、不再是〈陵墓守卫〉或声明位置已失效",
+                        target => $"萨拉丁使〈{target.Name}〉位移");
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -354,6 +412,9 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionDeath(L12StackItem item, L12CardInstance card)
     {
         var player = State.Players[item.Controller];
+        if (TryResolveDrawDiscardSegment(item, card)) return true;
+        if (TryResolveGraveToHandTrigger(item, card)) return true;
+        if (TryResolveGraveLegionSummonTrigger(item, card)) return true;
         switch (AtomicFlowKey(item, card))
         {
             case "thutmose-debuff": ApplySunKingDebuff(item); return true;
@@ -375,7 +436,8 @@ public sealed partial class L12GameEngine
                         if (owner.Graveyard.Any(candidate => candidate.InstanceId == guardIds[index]
                                 && candidate.CardId == "S01-0212")
                             && EmptySlots(owner).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
-                            SummonFromAnyPrivateZone(owner, guardIds[index], slots[index], tapped: true);
+                            SummonFromAnyPrivateZone(owner, guardIds[index], slots[index],
+                                tapped: true, presentationOwner: item);
                         else
                             AddEvent("effect-cancelled", item.Controller,
                                 "陵墓构造体已声明的守卫或所有者位置失效；仅取消该对象", card);
@@ -389,7 +451,11 @@ public sealed partial class L12GameEngine
                 if (item.Data.TryGetValue("declaredTargets", out var saladinDeclared))
                 {
                     var selected = saladinDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
-                    if (selected.Length == 2) MoveOwnCardToSlot(player, selected[0], selected[1]);
+                    if (selected.Length == 2)
+                        _ = TryMoveDeclaredPublicLegion(item, item.Controller, selected[0], selected[1],
+                            target => target.CardId == "S01-0212", requireAdjacent: false,
+                            "所选对象已离场、不再是公开军团、不再是〈陵墓守卫〉或声明位置已失效",
+                            target => $"萨拉丁使〈{target.Name}〉位移");
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -406,7 +472,8 @@ public sealed partial class L12GameEngine
             case "尼托克丽丝":
             {
                 _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex,
-                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"), tapped: false);
+                    PublicTriggerDeclared(item, "entryCard"), PublicTriggerDeclared(item, "entrySlot"),
+                    tapped: false, presentationOwner: item);
                 FinishStackItem(item); return true;
             }
             case "传奇的拉格纳":
@@ -417,7 +484,8 @@ public sealed partial class L12GameEngine
                 var target = PublicTriggerDeclared(item, "killTarget");
                 if (DeclaredEnemyTarget(item.Controller, target, legion => legion.Troops <= 2000) is not null)
                     KillTarget(item, target, "被无情者哈拉尔阵亡效果击杀");
-                else AddEvent("effect-cancelled", item.Controller, "无情者哈拉尔已声明的目标失效；效果取消", card);
+                else RecordTargetSettlementFailure(item, target,
+                    "所选军团已离场、不再是军团或当前兵力已高于2000");
                 FinishStackItem(item); return true;
             }
             case "勇士比约恩":
@@ -438,8 +506,15 @@ public sealed partial class L12GameEngine
                         }
                     }
                     if (costsPaid)
-                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
-                            declaredBjornSlot, tapped: true);
+                    {
+                        if (!EmptySlots(player).Contains(declaredBjornSlot, StringComparer.OrdinalIgnoreCase))
+                            RecordTargetSettlementFailure(item, declaredBjornSlot,
+                                "勇士比约恩已声明的休整登场位置不再为空；已支付的主宰伤害与墓地费用不返还");
+                        else if (!TrySummonFromAnyPrivateZone(player, player.PlayerIndex, card.InstanceId,
+                                     declaredBjornSlot, tapped: true, presentationOwner: item))
+                            RecordTargetSettlementFailure(item, card.InstanceId,
+                                "勇士比约恩已离开可登场区域或位置在最终区域事务中失效；已支付的主宰伤害与墓地费用不返还");
+                    }
                     FinishStackItem(item); return true;
                 }
                 AddEvent("effect-cancelled", item.Controller,
@@ -451,7 +526,7 @@ public sealed partial class L12GameEngine
             case "阿尔维达":
                 if (item.Data.TryGetValue("declaredTargets", out var alvidaDeclared))
                 {
-                    if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared);
+                    if (!string.IsNullOrWhiteSpace(alvidaDeclared)) MoveGraveToHand(player, alvidaDeclared, item);
                     FinishStackItem(item); return true;
                 }
                 RecoverAsgard(item, 3, legionOnly: false); return true;
@@ -460,22 +535,11 @@ public sealed partial class L12GameEngine
                 {
                     var selected = erikDeclared.Split('|', StringSplitOptions.RemoveEmptyEntries);
                     if (selected.Length == 2)
-                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1], tapped: false);
+                        _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, selected[0], selected[1],
+                            tapped: false, presentationOwner: item);
                     FinishStackItem(item); return true;
                 }
                 SummonAsgardFromGrave(item, 3); return true;
-            case "神箭奥德尔":
-            {
-                var targetId = PublicTriggerDeclared(item, "restTarget");
-                var target = FindOnField(State.Players[1 - item.Controller], targetId, out _, out _);
-                if (target is not null && !target.Tapped)
-                {
-                    target.Tapped = true;
-                    AddEvent("effect", item.Controller, "神箭奥德尔将目标转为休整", card);
-                }
-                else AddEvent("effect-cancelled", item.Controller, "神箭奥德尔已声明的活跃目标失效；效果取消", card);
-                FinishStackItem(item); return true;
-            }
             default: return false;
         }
     }
@@ -488,7 +552,7 @@ public sealed partial class L12GameEngine
             var player = State.Players[item.Controller];
             var source = FindOnField(player, item.SourceInstanceId, out _, out _);
             if (source is not null)
-                ReadyCardByEffect(item.Controller, source, source, "古斯塔夫一世因进攻后效果转为活跃");
+                ReadyCardByEffect(item.Controller, source, source, "古斯塔夫一世因进攻后效果转为活跃", item);
             else AddEvent("effect-cancelled", item.Controller,
                 "古斯塔夫一世在结算时已不在战场；转为活跃段取消，已置底费用不恢复", card);
         }
@@ -534,25 +598,37 @@ public sealed partial class L12GameEngine
             case "horemheb-charge":
                 if (chosen[0] != "skip" && source is not null)
                 {
-                    var target = FindOnField(player, chosen[0], out _, out _);
-                    if (target is not null)
-                        RemoveFromField(player, target, true, "被霍列姆赫布弃置", leaveKind: L12FieldLeaveKind.Discard);
+                    var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
+                    if (target is null)
+                    {
+                        RecordTargetSettlementFailure(item, chosen[0], "所选陵墓守卫已离场或不再是军团");
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    RemoveFromField(player, target, true, "被霍列姆赫布弃置", leaveKind: L12FieldLeaveKind.Discard);
                     source.HasCharge = true;
                 }
                 FinishStackItem(item); return true;
             case "nefertiti-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
-            case "nitocris-ready": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
             case "ankh-enter":
             {
-                var target = FindOnField(player, chosen[0], out _, out _);
-                if (target is not null) AddTimedModifier(target, 2000, 0, State.TurnSerial, "安卡神碑");
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]);
+                if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, 2000, item.Controller, "安卡神碑");
                 FinishStackItem(item);
                 return true;
             }
-            case "ankh-ready-target": { var target = FindOnField(player, chosen[0], out _, out _); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃"); FinishStackItem(item); return true; }
+            case "ankh-ready-target": { var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null && target.CardId == "S01-0212" && source is not null) ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因效果转为活跃", item); FinishStackItem(item); return true; }
             case "canopic-search":
             {
-                var selected = player.Library.First(candidate => candidate.InstanceId == chosen[0]);
+                var selected = player.Library.FirstOrDefault(candidate => candidate.InstanceId == chosen[0]
+                    && candidate.Name.Contains("卡诺匹斯罐", StringComparison.Ordinal));
+                if (selected is null)
+                {
+                    RecordTargetSettlementFailure(item, chosen[0], "所选卡诺匹斯罐已离开牌库或不再符合检索条件");
+                    ShuffleLibrary(player, "卡诺匹斯箱检索对象失效");
+                    FinishStackItem(item);
+                    return true;
+                }
                 player.Library.Remove(selected);
                 PubliclyRevealThenAddCardToHandByEffect(player, selected, "library",
                     $"卡诺匹斯箱展示〈{selected.Name}〉并加入手牌", $"{selected.Name}因效果加入手牌",
@@ -562,17 +638,31 @@ public sealed partial class L12GameEngine
             }
             case "canopic-one":
             {
-                var target = FindOnField(player, chosen[0], out _, out _); if (target is not null) { AddTimedModifier(target, 2000, 0, State.TurnSerial, "卡诺匹斯罐 一"); GrantStrongAttack(target); }
+                var target = DeclaredOwnLegionTarget(item.Controller, chosen[0]); if (target is not null) { AddTimedModifier(target, 2000, 0, State.TurnSerial, "卡诺匹斯罐 一"); GrantStrongAttack(target); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
             }
             case "canopic-four":
                 foreach (var id in chosen.Where(id => id != "skip")) { var target = FindOnField(player, id, out _, out _); if (target is not null) GrantImmortalUntilNextTurnStart(target, item.Controller); }
                 if (source is not null) DiscardRelic(player, source); FinishStackItem(item); return true;
-            case "oddr-draw": if (chosen[0] == "yes") { DamageMaster(item.Controller, 1, "神箭奥德尔登场效果"); Draw(player, 1); } FinishStackItem(item); return true;
+            case "oddr-draw":
+                if (chosen[0] == "yes")
+                {
+                    if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "神箭奥德尔登场效果")) return true;
+                    Draw(player, 1);
+                }
+                FinishStackItem(item); return true;
             case "egil-pay":
                 if (chosen[0] == "no") { FinishStackItem(item); return true; }
-                DamageMaster(item.Controller, 1, "夺命诗人埃吉尔效果"); Mill(player, 2, "夺命诗人埃吉尔"); PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false); return true;
-            case "egil-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -2000, 0, State.TurnSerial, "夺命诗人埃吉尔"); FinishStackItem(item); return true; }
+                if (!PayMasterDamageCostAndCanContinue(item.Controller, 1, "夺命诗人埃吉尔效果")) return true;
+                Mill(player, 2, "夺命诗人埃吉尔");
+                PromptEnemyByTroops(item, "egil-debuff", "选择对方1张军团，本回合兵力-2000", int.MaxValue, false,
+                    new("夺命诗人埃吉尔",
+                        "〈夺命诗人埃吉尔〉已令我方主宰受到1点伤害，并弃置我方牌库顶部2张牌。现在必须选择对方1张军团，使其本回合兵力-2000；无论目标结算是否成功，已经处理的主宰伤害与牌库弃置都不会返还。",
+                        "请选择1张对方军团，使其本回合兵力-2000。",
+                        L12PromptWaitingAction.TargetSelection),
+                    "结算时若所选对象仍位于对方战场且仍是军团，使其本回合兵力-2000；否则目标效果失败，已经处理的主宰伤害与牌库弃置不会返还。");
+                return true;
+            case "egil-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) ApplyPlayerThisTurnTroopsModifier(target, -2000, 1 - item.Controller, "夺命诗人埃吉尔"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             case "gram-bottom":
                 if (chosen[0] != "skip") ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]);
                 FinishStackItem(item); return true;
@@ -581,16 +671,38 @@ public sealed partial class L12GameEngine
             case "festival-hand": ContinuePharaohFestivalHand(item, chosen[0]); return true;
             case "festival-grave": ContinuePharaohFestivalGrave(item, chosen[0]); return true;
             case "festival-bottom-order": CompletePharaohFestivalOrder(item, command.BottomCardInstanceIds ?? chosen); return true;
-            case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0], false); FinishStackItem(item); return true;
+            case "faction-summon-slot": SummonFromAnyPrivateZone(player, item.Data["faction-summon"], chosen[0],
+                tapped: false, presentationOwner: item); FinishStackItem(item); return true;
             case "death-cycle-discard": MoveHandToGrave(player, chosen[0], causedByEffect: true,
                 FindSource(item) ?? item.SourceSnapshot); FinishStackItem(item); return true;
-            case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0]); FinishStackItem(item); return true;
-            case "summon-asgard": if (chosen[0] == "skip") FinishStackItem(item); else { item.Data["faction-summon"] = chosen[0]; PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置"); } return true;
+            case "recover-asgard": if (chosen[0] != "skip") MoveGraveToHand(player, chosen[0], item); FinishStackItem(item); return true;
+            case "summon-asgard":
+            {
+                if (chosen[0] == "skip")
+                {
+                    FinishStackItem(item);
+                    return true;
+                }
+                item.Data["faction-summon"] = chosen[0];
+                var selected = player.Graveyard.FirstOrDefault(card => card.InstanceId == chosen[0]);
+                var selectedName = selected?.Name ?? "所选军团";
+                var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "军团登场效果";
+                var slots = EmptySlots(player).ToArray();
+                PromptFirstEmptySlot(item, "faction-summon-slot", "选择军团活跃登场的位置",
+                    new(sourceName,
+                        $"你已经选择墓地中的〈{selectedName}〉作为登场对象。现在需要为其选择我方战场的合法空位；若该军团或所选空位在结算时失效，本次登场失败，不覆盖其他军团，也不会改选。",
+                        "请选择1个当前合法的空位，使所选军团活跃登场。",
+                        L12PromptWaitingAction.PositionSelection,
+                        slots.ToDictionary(slot => slot,
+                            _ => $"尝试使〈{selectedName}〉在所选空位活跃登场；若结算时失效，则不覆盖、不改选。",
+                            StringComparer.OrdinalIgnoreCase)));
+                return true;
+            }
             case "erik-discard": MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true); FinishStackItem(item); return true;
             case "queued-summon-slot": CompleteQueuedSummon(item, chosen[0]); return true;
-            case "mengpo-silence": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
+            case "mengpo-silence": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) target.SuppressDeathUntilTurn = State.TurnSerial; else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); if (player.Hand.Count <= 5) Draw(player, 1); FinishStackItem(item); return true; }
             case "sun-bottom": ReturnEnemyFieldToLibraryBottom(item.Controller, chosen[0]); FinishStackItem(item); return true;
-            case "medjed-debuff": { var target = FindOnField(enemy, chosen[0], out _, out _); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); FinishStackItem(item); return true; }
+            case "medjed-debuff": { var target = DeclaredEnemyTarget(item.Controller, chosen[0]); if (target is not null) AddTimedModifier(target, -1000, 0, State.TurnSerial, "梅杰德"); else RecordTargetSettlementFailure(item, chosen[0], "所选对方军团已离场或不再是军团"); FinishStackItem(item); return true; }
             default: return false;
         }
     }
@@ -602,45 +714,43 @@ public sealed partial class L12GameEngine
         var enemy = State.Players[1 - playerIndex];
         if (TryBeginPublicActiveDeclaration(playerIndex, source, ability) is { } publicDeclaration)
             return publicDeclaration;
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
+            return BeginSingleActiveSelection(playerIndex, source, ability, selection);
         string[] choices;
         switch (ability)
         {
             case "ankhReady" or "ankhDraw" when source.CardId == "S01-0215" && source.Tapped:
                 return CommandResult.Reject("安卡神碑已经休整，需先因其他效果转为活跃");
-            case "olgaDebuff":
-                choices = enemy.Field[0].Where(card => card is not null && IsFieldLegion(card) && !card.Hidden).Select(card => card!.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "奥尔加：选择对方前排 1 张军团");
             case "mengpoSilence":
                 choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
                 return BeginPendingActivation(playerIndex, source, ability, choices,
                     "孟婆：选择对方最多1张军团，本回合失去「阵亡时」效果", min: 0, max: 1);
-            case "sunBottomEnemy":
-                choices = PublicLegions(enemy).Where(card => card.Troops <= 4000
-                        && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
-                    .Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "众神之乡：选择返回牌库底部的军团");
             case "ankhReady":
-                if (!PublicLegions(player).Any(card => card.CardId == "S01-0212" && card.Tapped))
-                    return CommandResult.Reject("需要我方存在休整的陵墓守卫");
+                if (player.Hand.Count == 0
+                    || !PublicLegions(player).Any(card => card.CardId == "S01-0212" && CanReadyCardByEffect(card)))
+                    return CommandResult.Reject("需要我方存在休整的陵墓守卫，且手牌中有1张可弃置卡牌");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     new L12ActivationSelectionStep
                     {
                         Kind = "active-target", Text = "安卡神碑：选择我方1张休整的陵墓守卫",
-                        ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && card.Tapped).Select(card => card.InstanceId).ToList(),
+                        ValidChoices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && CanReadyCardByEffect(card)).Select(card => card.InstanceId).ToList(),
+                        IsResponsePresentationTarget = true,
                     },
                     new L12ActivationSelectionStep
                     {
                         Kind = "card", Text = "安卡神碑：选择弃置的1张手牌",
                         ValidChoices = player.Hand.Select(card => card.InstanceId).ToList(),
+                        IsCostSelection = true,
                     },
                 ]);
-            case "ankhDraw":
-                choices = PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "安卡神碑：选择转为休整的陵墓守卫");
             case "gramDamage":
                 var gramCandidates = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card)).ToArray();
+                if (gramCandidates.Sum(card =>
+                        L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard")) < 4)
+                    return CommandResult.Reject("墓地没有可合法返回牌库底部、合计视为4张的【阿斯加德】军团");
                 return BeginPendingActivationSequence(playerIndex, source, ability,
                 [
                     GraveCostSelectionStep(player,
@@ -662,6 +772,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "enemy-unselected-required", Text = "英灵殿：选择对方1张兵力不高于1000的军团",
                         ValidChoices = lowTargets.Count == 0 ? ["mode:none"] : lowTargets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["mode:none"] = "没有合法目标，继续结算",
@@ -671,6 +782,7 @@ public sealed partial class L12GameEngine
                     {
                         Kind = "enemy-unselected-required", Text = "英灵殿：选择另一张兵力不高于5000的军团",
                         ValidChoices = broadTargets.Count == 0 ? ["mode:none"] : broadTargets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                         {
                             ["mode:none"] = "没有其他合法目标，继续结算",
@@ -724,17 +836,17 @@ public sealed partial class L12GameEngine
                         Kind = "active-target", Text = "梅杰德：选择额外休整的1张活跃〈陵墓守卫〉",
                         ValidChoices = strongGuards, MinChoose = 1, MaxChoose = 1,
                         RequiredDeclaredChoice = "mode:strong",
+                        IsCostSelection = true,
+                        IsResponsePresentationTarget = false,
                     },
                     new L12ActivationSelectionStep
                     {
                         Kind = "active-target", Text = "梅杰德：选择本回合降低兵力的对方军团",
                         ValidChoices = targets, MinChoose = 1, MaxChoose = 1,
+                        IsResponsePresentationTarget = true,
                     },
                 ]);
             }
-            case "amaterasuKill":
-                choices = PublicLegions(enemy).Select(card => card.InstanceId).ToArray();
-                return PromptActiveTarget(playerIndex, source, ability, choices, "天照大神：选择本回合费用 -1 的军团");
             default:
                 return CommitActiveAbility(playerIndex, source, ability, null);
         }
@@ -779,14 +891,14 @@ public sealed partial class L12GameEngine
                     || player.Field[row][slot] is not null)
                     return CommandResult.Reject("太阳城阵营效果选择的陵墓守卫或登场位置已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+            case "sunDraw" when source.CardId == "S01-02C1": if (player.Hand.Count > 3 || !ConsumeMorale(1)) return CommandResult.Reject("手牌需不高于3张，且需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "asgardDraw" when source.CardId == "S01-03C1":
             {
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "alvidaSummon" when source.CardId == "S01-0307":
@@ -807,10 +919,15 @@ public sealed partial class L12GameEngine
                 break;
             }
             case "olgaDebuff" when source.CardId == "S01-0314":
-                if (!IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0)) return CommandResult.Reject("目标不再合法");
-                RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard); break;
+                if (string.IsNullOrWhiteSpace(target)
+                    ? EvaluateSingleActiveSelection(player, source, ability)!.Choices.Length != 0
+                    : !IsEnemyTargetLegal(playerIndex, target, card => FindOnField(State.Players[1 - playerIndex], card.InstanceId, out var row, out _) is not null && row == 0))
+                    return CommandResult.Reject("目标不再合法");
+                if (!RemoveFromField(player, source, true, "被主动效果弃置", leaveKind: L12FieldLeaveKind.Discard))
+                    return CommandResult.Reject("无法弃置来源军团支付费用");
+                break;
             case "gramReady" when source.CardId == "S01-0317": if (!source.Tapped || !ConsumeMorale(2)) return CommandResult.Reject("神剑格拉墨需为休整，且需要2张活跃士气"); break;
-            case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); player.UsedAbilities.Add(onceKey); break;
+            case "palaceReward" when source.CardId == "S01-01D1": if (player.ReturnedMoraleThisTurn <= 1) return CommandResult.Reject("本回合返还士气需高于1张"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "palaceExchange" when source.CardId == "S01-01D1":
             {
                 var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -837,14 +954,14 @@ public sealed partial class L12GameEngine
             case "mengpoSilence" when source.CardId == "S01-01M2":
                 if (!string.IsNullOrWhiteSpace(target) && DeclaredEnemyTarget(playerIndex, target) is null)
                     return CommandResult.Reject("目标不再合法");
-                if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!returnMoralePrepaid && !ReturnMorale(player, 1)) return CommandResult.Reject("需要返还1张士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "mengpoMorale" when source.CardId == "S01-01M2":
             {
                 var discard = player.Hand.FirstOrDefault(card => card.InstanceId == target);
                 if (player.Morale.Count >= State.Players[1 - playerIndex].Morale.Count || discard is null)
                     return CommandResult.Reject("士气需少于对方，且声明的弃牌费用必须保持合法");
                 MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "sunTopThree" or "sunBottomEnemy" when source.CardId == "S01-02D1":
@@ -856,12 +973,12 @@ public sealed partial class L12GameEngine
                 if (ability == "sunBottomEnemy" && DeclaredEnemyTarget(playerIndex, target,
                         card => card.Troops <= 4000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card)) is null)
                     return CommandResult.Reject("目标不再合法");
-                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "ankhReady" when source.CardId == "S01-0215":
             {
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var guard = declared.Length == 2 ? PublicLegions(player).FirstOrDefault(card => card.InstanceId == declared[0]
-                    && card.CardId == "S01-0212" && card.Tapped) : null;
+                    && card.CardId == "S01-0212" && CanReadyCardByEffect(card)) : null;
                 var discard = declared.Length == 2 ? player.Hand.FirstOrDefault(card => card.InstanceId == declared[1]) : null;
                 if (source.Tapped || guard is null || discard is null) return CommandResult.Reject("安卡神碑的目标或弃牌费用已不合法");
                 source.Tapped = true;
@@ -880,14 +997,15 @@ public sealed partial class L12GameEngine
                 var representation = ids.SingleOrDefault(id => id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase));
                 var cardIds = ids.Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
                 var cards = cardIds.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
-                    && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard"))).ToArray();
+                    && card.CardType == "legion" && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card))).ToArray();
                 if (source.Tapped || cards.Any(card => card is null)
                     || cardIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != cardIds.Length
                     || !L12StructuredCardRules.IsExactGraveFactionRepresentation(player,
                         cards.Cast<L12CardInstance>().ToArray(), representation, "asgard", 4, legionOnly: true))
                     return CommandResult.Reject("需要活跃的神剑格拉墨与可视为合计4张的墓地阿斯加德军团");
                 source.Tapped = true;
-                foreach (var card in cards.Cast<L12CardInstance>()) { player.Graveyard.Remove(card); player.Library.Add(card); }
+                MoveGraveToLibraryBottom(player, cards.Cast<L12CardInstance>());
                 break;
             }
             case "isisCanopic" when source.CardId == "S01-02M1":
@@ -922,17 +1040,20 @@ public sealed partial class L12GameEngine
                     return CommandResult.Reject("梅杰德选择的效果、陵墓守卫或目标不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张可用资源");
                 if (guard is not null) guard.Tapped = true;
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "valhallaDiscount" when source.CardId == "S01-03D1": if (player.Hp <= 1) return CommandResult.Reject("主宰血量不足"); DamageMaster(playerIndex, 1, "英灵殿费用减免"); player.UsedAbilities.Add(onceKey); break;
+            case "valhallaDiscount" when source.CardId == "S01-03D1":
+                if (!CanPayMasterDamageCost(player, 1)) return CommandResult.Reject("主宰血量不足");
+                if (!PayMasterDamageCostAndCanContinue(playerIndex, 1, "英灵殿费用减免")) return CommandResult.Ok();
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "valhallaRecover" when source.CardId == "S01-03D1":
                 if (target != "mode:none" && !player.Graveyard.Any(card => card.InstanceId == target
                         && L12StructuredCardRules.HasFaction(player, card, "asgard")
                         && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("英灵殿声明的墓地回收目标已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey); break;
+                RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "valhallaKill" when source.CardId == "S01-03D1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -958,30 +1079,29 @@ public sealed partial class L12GameEngine
             case "valkyrieRecover" when source.CardId == "S01-03M1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (ids.Length != 3 || player.Hp <= 1 || ActiveResourceCount(player) < 1)
-                    return CommandResult.Reject("需要完成墓地选择、1张活跃士气且主宰血量需高于1");
+                if (ids.Length != 3 || !CanPayMasterDamageCost(player, 1) || ActiveResourceCount(player) < 1)
+                    return CommandResult.Reject("需要完成墓地选择、1张活跃士气且主宰血量至少为1");
                 var pair = ids.Take(2).Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id && CanEnterHandOrLibrary(card))).ToArray();
                 if (pair.Any(card => card is null) || pair.Select(card => card!.InstanceId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2
                     || !ids.Take(2).Contains(ids[2], StringComparer.OrdinalIgnoreCase))
                     return CommandResult.Reject("瓦尔基里声明的墓地卡牌不再合法");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
-                DamageMaster(playerIndex, 1, "瓦尔基里主宰效果");
-                player.UsedAbilities.Add(onceKey);
+                if (!PayMasterDamageCostAndCanContinue(playerIndex, 1, "瓦尔基里主宰效果")) return CommandResult.Ok();
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "lokiCycle" when source.CardId == "S01-03M2":
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "lokiHeal" when source.CardId == "S01-03M2":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (!L12StructuredCardRules.TryResolveGraveCostDeclaration(player, ids, 2, string.Empty,
-                        legionOnly: false, out _, out _))
-                    return CommandResult.Reject("洛基声明的合计2张墓地费用已失效");
+                if (!ValidateFixedGraveEffectDeclaration(player, ids, 2))
+                    return CommandResult.Reject("洛基声明的墓地回库对象已失效");
                 if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
-            case "yomiDiscount" when source.CardId == "S01-04D1": player.UsedAbilities.Add(onceKey); break;
+            case "yomiDiscount" when source.CardId == "S01-04D1": RecordLimitedActiveAbilityUse(player, source, ability); break;
             case "yomiSweep" when source.CardId == "S01-04D1":
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
@@ -991,13 +1111,14 @@ public sealed partial class L12GameEngine
                     || ids[0] != "mode:none" && ids[0].Equals(ids[1], StringComparison.OrdinalIgnoreCase))
                     return CommandResult.Reject("黄泉之门的公开击杀目标声明已失效");
                 if (!ConsumeMorale(2)) return CommandResult.Reject("需要2张活跃士气");
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             case "yomiRecover" when source.CardId == "S01-04D1":
                 if (source.Tapped || string.IsNullOrWhiteSpace(target)
                     || !player.Graveyard.Any(card => card.InstanceId == target
-                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")))
+                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                        && CanEnterHandOrLibrary(card)))
                     return CommandResult.Reject("黄泉之门必须为活跃状态且墓地目标需保持合法");
                 source.Tapped = true;
                 player.MasterTapped = true;
@@ -1010,9 +1131,13 @@ public sealed partial class L12GameEngine
                     ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
                         - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
                     : null;
-                if (debuff is null || declared[1] != "mode:none" && kill is null)
+                var hasRequiredKill = debuff is not null && PublicLegions(State.Players[1 - playerIndex])
+                    .Any(card => Math.Max(0, card.CurrentCost
+                        - (card.InstanceId == debuff.InstanceId ? 1 : 0)) == 0);
+                if (debuff is null || kill is null
+                    && (declared[1] != "mode:none" || hasRequiredKill))
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");
-                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); player.UsedAbilities.Add(onceKey); break;
+                if (!ConsumeMorale(1)) return CommandResult.Reject("需要1张活跃士气"); RecordLimitedActiveAbilityUse(player, source, ability); break;
             }
             case "amaterasuReady" when source.CardId == "S01-04M1":
             {
@@ -1022,7 +1147,7 @@ public sealed partial class L12GameEngine
                     : null;
                 if (discard is null) return CommandResult.Reject("声明的弃牌费用已失效");
                 MoveHandToGrave(player, discard.InstanceId, causedByEffect: false, source);
-                player.UsedAbilities.Add(onceKey);
+                RecordLimitedActiveAbilityUse(player, source, ability);
                 break;
             }
             default: return null;
@@ -1104,6 +1229,49 @@ public sealed partial class L12GameEngine
             }
             foreach (var pair in CompositeFirstSegmentData(plan, declared)) data[pair.Key] = pair.Value;
         }
+        if (ability == "lokiCycle")
+        {
+            foreach (var pair in CompositeFirstSegmentData("active:S01-03M2:lokiCycle",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability == "valhallaKill")
+        {
+            var values = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
+            var movedCostIds = values.Where(id => player.Library.Any(card => card.InstanceId == id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var targets = values.Where(id => !movedCostIds.Contains(id)
+                    && !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
+            var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["lowTarget"] = [targets[0]],
+                ["broadTarget"] = [targets[1]],
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S01-03D1:valhallaKill", declared))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability is "ankhReady" or "ankhDraw")
+        {
+            var plan = $"active:S01-0215:{ability}";
+            foreach (var pair in CompositeFirstSegmentData(plan,
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability == "gramDamage")
+        {
+            foreach (var pair in CompositeFirstSegmentData("active:S01-0317:gramDamage",
+                         new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)))
+                data[pair.Key] = pair.Value;
+        }
+        if (ability == "yomiRecover")
+        {
+            var declared = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["graveCard"] = string.IsNullOrWhiteSpace(target) ? [] : [target],
+            };
+            foreach (var pair in CompositeFirstSegmentData("active:S01-04D1:yomiRecover", declared))
+                data[pair.Key] = pair.Value;
+        }
         if (ability == "isisCanopic")
             DeclarePresentationBranch(data, "isis-reward-choice", "rewardMode",
                 (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ElementAtOrDefault(4));
@@ -1116,14 +1284,31 @@ public sealed partial class L12GameEngine
     private bool TryResolveS1FactionActive(L12StackItem item, L12CardInstance? source, string ability)
     {
         var player = State.Players[item.Controller];
+        var settlementSource = source ?? item.SourceSnapshot
+            ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        if (TryResolveDrawDiscardSegment(item, settlementSource)) return true;
         switch (ability)
         {
             case "cleopatraGuard":
             {
                 var declared = item.Data.GetValueOrDefault("target", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
-                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                var guardId = declared.ElementAtOrDefault(0);
+                var slot = declared.ElementAtOrDefault(2);
+                var guard = player.Graveyard.FirstOrDefault(card => card.InstanceId == guardId
+                    && card.CardId == "S01-0212");
+                if (declared.Length != 3 || ParseEffectEntryBattlefieldChoice(declared[1]) != item.Controller
+                    || guard is null)
+                    RecordTargetSettlementFailure(item, guardId,
+                        "所选〈陵墓守卫〉已离开墓地或登场战场声明失效；主动休整与士气费用不返还");
+                else if (string.IsNullOrWhiteSpace(slot)
+                         || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    RecordTargetSettlementFailure(item, slot,
+                        "已声明的活跃登场位置不再为空；主动休整与士气费用不返还");
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot,
+                             tapped: false, presentationOwner: item))
+                    RecordTargetSettlementFailure(item, guardId,
+                        "所选〈陵墓守卫〉或登场位置在最终区域事务中失效；主动休整与士气费用不返还");
                 FinishStackItem(item);
                 return true;
             }
@@ -1131,8 +1316,21 @@ public sealed partial class L12GameEngine
             {
                 var declared = item.Data.GetValueOrDefault("target", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
-                if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
-                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                var guardId = declared.ElementAtOrDefault(0) ?? string.Empty;
+                var slot = declared.ElementAtOrDefault(2) ?? string.Empty;
+                var guard = player.Graveyard.FirstOrDefault(card => card.InstanceId == guardId
+                    && L12StructuredCardSemantics.IsTombGuard(card.CardId));
+                if (declared.Length != 3 || ParseEffectEntryBattlefieldChoice(declared[1]) != item.Controller
+                    || guard is null)
+                    RecordTargetSettlementFailure(item, guardId,
+                        "太阳城阵营效果所选〈陵墓守卫〉已离开墓地或登场战场声明失效；已支付士气不返还");
+                else if (!EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    RecordTargetSettlementFailure(item, slot,
+                        "太阳城阵营效果已声明的登场位置不再为空；已支付士气不返还");
+                else if (!TrySummonFromAnyPrivateZone(player, item.Controller, guard.InstanceId, slot,
+                             tapped: false, presentationOwner: item))
+                    RecordTargetSettlementFailure(item, guardId,
+                        "太阳城阵营效果所选〈陵墓守卫〉或位置在最终区域事务中失效；已支付士气不返还");
                 FinishStackItem(item);
                 return true;
             }
@@ -1153,13 +1351,20 @@ public sealed partial class L12GameEngine
                 var declared = item.Data.GetValueOrDefault("target", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 DamageMaster(item.Controller, 1, "阿尔维达主动效果");
+                if (State.Phase == L12Phase.GameOver) return true;
                 if (declared.Length == 3 && ParseEffectEntryBattlefieldChoice(declared[1]) == item.Controller)
-                    SummonFromAnyPrivateZone(player, declared[0], declared[2], tapped: false);
+                    SummonFromAnyPrivateZone(player, declared[0], declared[2],
+                        tapped: false, presentationOwner: item);
                 FinishStackItem(item);
                 return true;
             }
-            case "olgaDebuff": ApplyDeclaredTroopsDelta(item, -2000); FinishStackItem(item); return true;
-            case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃"); FinishStackItem(item); return true;
+            case "olgaDebuff":
+                if (!ApplyDeclaredTroopsDelta(item, -2000))
+                    RecordTargetSettlementFailure(item, item.Data.GetValueOrDefault("target"),
+                        "所选对方前排军团已离场；若发动时原本无对象则仅跳过本段");
+                FinishStackItem(item);
+                return true;
+            case "gramReady": if (source is not null) ReadyCardByEffect(item.Controller, source, source, $"{source.Name}因效果转为活跃", item); FinishStackItem(item); return true;
             case "palaceReward":
                 if (AtomicFlowKey(item) == "palace-reward-morale") AddMorale(player, 2, true);
                 else if (AtomicFlowKey(item) == "palace-reward-draw") Draw(player, 1);
@@ -1180,16 +1385,11 @@ public sealed partial class L12GameEngine
                 if (AtomicFlowKey(item) == "sun-top-three-recover")
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
-                    var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
-                        && CanEnterHandOrLibrary(card));
-                    if (recover is null)
-                        AddEvent("effect-cancelled", item.Controller, "众神之乡声明的墓地回收目标已失效");
-                    else
-                    {
-                        player.Graveyard.Remove(recover);
-                        AddCardToHandByEffect(player, recover, "graveyard", "众神之乡回收太阳城卡牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => L12StructuredCardRules.HasFaction(owner, candidate, "taiyangcheng")
+                            && CanEnterHandOrLibrary(candidate),
+                        "众神之乡回收太阳城卡牌",
+                        "众神之乡已选择的墓地回收对象已离开墓地或不再符合【太阳城】条件");
                     FinishStackItem(item); return true;
                 }
                 BeginFactionTopSearch(item, 3, "taiyangcheng", string.Empty, "sun-divinity"); return true;
@@ -1197,12 +1397,23 @@ public sealed partial class L12GameEngine
             case "ankhReady":
             {
                 var guardId = item.Data.GetValueOrDefault("target", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-                var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && card.Tapped);
-                if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃");
+                var guard = PublicLegions(player).FirstOrDefault(card => card.InstanceId == guardId && card.CardId == "S01-0212" && CanReadyCardByEffect(card));
+                if (guard is not null) ReadyCardByEffect(item.Controller, source ?? guard, guard, $"{guard.Name}因安卡神碑转为活跃", item);
+                else RecordTargetSettlementFailure(item, guardId,
+                    "所选〈陵墓守卫〉已离场或不再为休整状态");
                 FinishStackItem(item);
                 return true;
             }
-            case "ankhDraw": Draw(player, 1); FinishStackItem(item); return true;
+            case "ankhDraw":
+                if (!Draw(player, 1))
+                {
+                    item.Data["effectResultStatus"] = "failed";
+                    AddEvent("effect-failed", item.Controller, "安卡神碑效果抽牌时牌库为空",
+                        source is null ? [] : [source]);
+                    SetWinner(1 - item.Controller, "安卡神碑效果抽牌时牌库为空");
+                }
+                FinishStackItem(item);
+                return true;
             case "gramDamage": DamageMasterNonLethal(1 - item.Controller, 1, "神剑格拉墨"); FinishStackItem(item); return true;
             case "isisCanopic":
             {
@@ -1218,7 +1429,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 player.Graveyard.Remove(canopic);
-                ResetCardAfterLeavingField(canopic);
+                ResetCardForPrivateZone(canopic);
                 player.SpecialZones.CanopicProgress.Add(canopic);
                 if (declared[4] == "mode:draw") Draw(player, 1);
                 else HealMaster(item.Controller, 1, "伊西斯");
@@ -1241,61 +1452,68 @@ public sealed partial class L12GameEngine
                 if (AtomicFlowKey(item) == "valhalla-recover")
                 {
                     var targetId = CompositeDeclared(item, "graveCard").SingleOrDefault();
-                    var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                        && L12StructuredCardRules.HasFaction(player, card, "asgard")
-                        && CanEnterHandOrLibrary(card));
-                    if (recover is null)
-                        AddEvent("effect-cancelled", item.Controller, "英灵殿声明的墓地回收目标已失效");
-                    else
-                    {
-                        player.Graveyard.Remove(recover);
-                        AddCardToHandByEffect(player, recover, "graveyard", "英灵殿回收阿斯加德卡牌");
-                    }
+                    _ = TryMoveDeclaredGraveCardToHand(item, targetId,
+                        (owner, candidate) => L12StructuredCardRules.HasFaction(owner, candidate, "asgard")
+                            && CanEnterHandOrLibrary(candidate),
+                        "英灵殿回收阿斯加德卡牌",
+                        "英灵殿已选择的墓地回收对象已离开墓地或不再符合【阿斯加德】条件；已支付士气不返还");
                     FinishStackItem(item); return true;
                 }
                 Mill(player, 2, "英灵殿"); FinishStackItem(item); return true;
             case "valhallaKill":
             {
+                var flow = AtomicFlowKey(item);
+                if (flow is "valhalla-kill-low" or "valhalla-kill-broad")
+                {
+                    var low = flow == "valhalla-kill-low";
+                    var key = low ? "lowTarget" : "broadTarget";
+                    var maximum = low ? 1000 : 5000;
+                    var targetId = CompositeDeclared(item, key).SingleOrDefault();
+                    if (targetId == "mode:none")
+                        RecordTargetSettlementFailure(item, null,
+                            $"发动时没有另一张兵力不高于{maximum}的合法军团");
+                    else if (DeclaredEnemyTarget(item.Controller, targetId,
+                                 card => card.Troops <= maximum) is not null)
+                        KillTarget(item, targetId!, "被英灵殿击杀");
+                    else
+                        RecordTargetSettlementFailure(item, targetId,
+                            $"所选军团已离场、不再是军团或当前兵力已高于{maximum}");
+                    FinishStackItem(item);
+                    return true;
+                }
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
                 var graveIds = ids.Where(id => player.Library.Any(card => card.InstanceId == id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 var targets = ids.Where(id => !graveIds.Contains(id)
                     && !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
-                if (targets.Length == 2)
-                {
-                    if (targets[0] != "mode:none") KillTarget(item, targets[0], "被英灵殿击杀");
-                    if (targets[1] != "mode:none") KillTarget(item, targets[1], "被英灵殿击杀");
-                }
+                if (targets.Length == 2 && !ResolveSequentialEffectKills(item,
+                        targets.Where(target => target != "mode:none"), "被英灵殿击杀")) return true;
                 FinishStackItem(item); return true;
             }
             case "valkyrieRecover":
             {
                 var ids = item.Data.GetValueOrDefault("target")?.Split('|', StringSplitOptions.RemoveEmptyEntries) ?? [];
-                if (ids.Length != 3) { FinishStackItem(item); return true; }
-                var handCard = player.Graveyard.FirstOrDefault(card => card.InstanceId == ids[2]);
-                var bottomCard = player.Graveyard.FirstOrDefault(card => ids.Take(2).Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)
-                    && card.InstanceId != ids[2]);
-                if (handCard is not null)
+                if (ids.Length != 3 || string.Equals(ids[0], ids[1], StringComparison.OrdinalIgnoreCase)
+                    || !ids.Take(2).Contains(ids[2], StringComparer.OrdinalIgnoreCase))
                 {
-                    player.Graveyard.Remove(handCard);
-                    AddCardToHandByEffect(player, handCard, "graveyard", $"{handCard.Name}因瓦尔基里效果加入手牌");
+                    RecordResolutionFailure(item, "墓地对象的去向声明不完整或重复");
+                    FinishStackItem(item); return true;
                 }
-                if (bottomCard is not null) MoveGraveToLibraryBottom(player, [bottomCard]);
+                ResolveDeclaredGraveDestinations(item, ids[2],
+                    ids.Take(2).Single(id => !string.Equals(id, ids[2], StringComparison.OrdinalIgnoreCase)));
                 FinishStackItem(item); return true;
             }
             case "lokiCycle": Draw(player, 1); PromptDiscard(item, item.Controller, 1, "洛基：弃置1张手牌", "death-cycle-discard"); return true;
             case "lokiHeal":
             {
                 var ids = item.Data.GetValueOrDefault("target", string.Empty)
-                    .Split('|', StringSplitOptions.RemoveEmptyEntries)
-                    .Where(id => !id.StartsWith("grave-copies:", StringComparison.OrdinalIgnoreCase)).ToArray();
-                var cards = ids.Select(id => player.Graveyard.FirstOrDefault(card => card.InstanceId == id
-                        && CanEnterHandOrLibrary(card)))
-                    .Where(card => card is not null).Cast<L12CardInstance>().ToArray();
-                if (cards.Length > 0)
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (TryResolveFixedGraveEffectDeclaration(player, ids, 2, out var cards))
                 {
                     MoveGraveToLibraryBottom(player, cards);
-                    HealMaster(item.Controller, 1, "洛基主宰效果");
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉将墓地{cards.Length}张实体卡牌返回牌库底部", cards);
                 }
+                HealMaster(item.Controller, 1, "洛基主宰效果");
                 FinishStackItem(item);
                 return true;
             }
@@ -1314,17 +1532,27 @@ public sealed partial class L12GameEngine
                     case "yomi-kill3":
                     {
                         var targetId = CompositeDeclared(item, "kill3Target").SingleOrDefault();
-                        if (targetId != "mode:none"
+                        if (targetId == "mode:none")
+                            item.Data["effectResultStatus"] = "declined";
+                        else if (targetId is not null
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 3)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
+                        else
+                            RecordTargetSettlementFailure(item, targetId,
+                                "所选军团已离场或当前费用已高于3");
                         break;
                     }
                     case "yomi-kill1":
                     {
                         var targetId = CompositeDeclared(item, "kill1Target").SingleOrDefault();
-                        if (targetId != "mode:none"
+                        if (targetId == "mode:none")
+                            item.Data["effectResultStatus"] = "declined";
+                        else if (targetId is not null
                             && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null)
                             KillTarget(item, targetId!, "被黄泉之门击杀");
+                        else
+                            RecordTargetSettlementFailure(item, targetId,
+                                "所选军团已离场或当前费用已高于1");
                         break;
                     }
                 }
@@ -1335,12 +1563,16 @@ public sealed partial class L12GameEngine
             {
                 var targetId = item.Data.GetValueOrDefault("target");
                 var recover = player.Graveyard.FirstOrDefault(card => card.InstanceId == targetId
-                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"));
+                    && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
+                    && CanEnterHandOrLibrary(card));
                 if (recover is not null)
                 {
                     player.Graveyard.Remove(recover);
-                    AddCardToHandByEffect(player, recover, "graveyard", "黄泉之门回收高天原卡牌");
+                    PubliclyRevealThenAddCardToHandByEffect(player, recover, "graveyard",
+                        $"黄泉之门公开墓地的〈{recover.Name}〉", "黄泉之门回收高天原卡牌", item);
                 }
+                else RecordTargetSettlementFailure(item, targetId,
+                    "所选墓地【高天原】卡牌已离开墓地、失去有效特征或不能进入手牌");
                 FinishStackItem(item);
                 return true;
             }
@@ -1350,17 +1582,21 @@ public sealed partial class L12GameEngine
                 {
                     var targetId = CompositeDeclared(item, "debuffTarget").SingleOrDefault();
                     if (DeclaredEnemyTarget(item.Controller, targetId) is { } debuff) debuff.CostModifier--;
-                    else AddEvent("effect-cancelled", item.Controller,
-                        "天照大神选择的费用降低目标失效；该项目标的费用降低不结算", source is null ? [] : [source]);
+                    else RecordTargetSettlementFailure(item, targetId,
+                        "所选费用降低目标已离场");
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-kill")
                 {
                     var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
-                    if (targetId != "mode:none"
+                    if (targetId == "mode:none")
+                        RecordTargetSettlementFailure(item, null,
+                            "费用降低结算后没有费用为0的合法军团");
+                    else if (targetId is not null
                         && DeclaredEnemyTarget(item.Controller, targetId, card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null)
                         KillTarget(item, targetId!, "被天照大神击杀");
-                    else if (targetId != "mode:none") AddEvent("effect-cancelled", item.Controller,
-                        "天照大神选择的费用为0目标失效；该目标不会被击杀", source is null ? [] : [source]);
+                    else
+                        RecordTargetSettlementFailure(item, targetId,
+                            "所选军团已离场或当前费用不再为0");
                 }
                 FinishStackItem(item);
                 return true;
@@ -1379,9 +1615,16 @@ public sealed partial class L12GameEngine
                 }
                 else if (AtomicFlowKey(item) == "amaterasu-front-buff")
                 {
-                    // 本回合的前排持续状态，不是只给结算当刻的实体加值。
-                    player.UsedAbilities.Add($"amaterasu-front-aura:{State.TurnSerial}");
-                    RecalculateContinuousTroops();
+                    var affected = player.Field[0]
+                        .Where(card => card is not null && !card.Hidden && IsFieldLegion(card)
+                            && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"))
+                        .Cast<L12CardInstance>()
+                        .ToArray();
+                    foreach (var legion in affected)
+                        AddTimedModifier(legion, 1000, 0, State.TurnSerial, "天照大神");
+                    AddEvent("effect", item.Controller,
+                        $"天照大神结算时为我方前排的{affected.Length}张【高天原】军团各生成本回合兵力+1000修正",
+                        source is null ? [] : [source]);
                 }
                 FinishStackItem(item);
                 return true;
@@ -1413,7 +1656,17 @@ public sealed partial class L12GameEngine
     {
         foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
             AddTimedModifier(target, -1000, 0, State.TurnSerial, "图特摩斯三世");
-        PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true);
+        PromptEnemyByTroops(item, "thutmose-kill", "选择对方1张兵力不高于1000的军团并击杀", 1000, true,
+            new("图特摩斯三世",
+                "〈图特摩斯三世〉本次触发的全体减兵已经处理：对方所有军团本回合兵力-1000。现在可以选择对方1张当前兵力不高于1000的军团并击杀，也可以不执行后续击杀。无论是否击杀或目标结算是否成功，已经处理的全体减兵都不会撤销。",
+                "请选择1张当前兵力不高于1000的对方军团并击杀，或选择“不击杀”。",
+                L12PromptWaitingAction.TargetSelection,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["skip"] = "不击杀：结束后续击杀处理；已经处理的全体兵力-1000不会撤销。",
+                }),
+            "结算时若所选对象仍位于对方战场、仍是军团且当前兵力不高于1000，将其击杀；否则目标效果失败，已经处理的全体减兵不会撤销。",
+            skipLabel: "不击杀");
     }
 
     private void ApplySunKingDebuff(L12StackItem item)
@@ -1431,12 +1684,13 @@ public sealed partial class L12GameEngine
         var targetId = CompositeDeclared(item, "killTarget").SingleOrDefault();
         if (DeclaredEnemyTarget(item.Controller, targetId, target => target.Troops <= 1000) is not null)
             KillTarget(item, targetId!, "被图特摩斯三世击杀");
-        else AddEvent("effect-cancelled", item.Controller,
-            "图特摩斯三世选择的击杀目标已失效；该目标不会被击杀");
+        else RecordTargetSettlementFailure(item, targetId,
+            "所选军团已离场、不再是军团或当前兵力已高于1000");
         FinishStackItem(item);
     }
 
     private void PromptEnemyByTroops(L12StackItem item, string action, string text, int maxTroops, bool optional,
+        L12PromptNarrativeInput narrative, string targetConsequence, string? skipLabel = null,
         int? row = null, Func<L12CardInstance, bool>? predicate = null)
     {
         var enemy = State.Players[1 - item.Controller];
@@ -1445,8 +1699,18 @@ public sealed partial class L12GameEngine
                 && (row is null || FindOnField(enemy, target.InstanceId, out var targetRow, out _) is not null && targetRow == row))
             .Select(target => target.InstanceId).ToList();
         if (choices.Count == 0) { FinishStackItem(item); return; }
-        if (optional) choices.Add("skip");
-        CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
+        var consequences = narrative.ChoiceConsequences is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(narrative.ChoiceConsequences, StringComparer.OrdinalIgnoreCase);
+        foreach (var choice in choices) consequences[choice] = targetConsequence;
+        var data = new Dictionary<string, string> { ["action"] = action };
+        if (optional)
+        {
+            choices.Add("skip");
+            if (!string.IsNullOrWhiteSpace(skipLabel)) data["skip"] = skipLabel;
+        }
+        CreatePrompt(item.Controller, "target", text, choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data, narrative with { ChoiceConsequences = consequences }));
     }
 
     private void PromptOwnLegion(L12StackItem item, string action, string text, Func<L12CardInstance, bool> predicate, bool optional)
@@ -1477,7 +1741,7 @@ public sealed partial class L12GameEngine
         var guardId = PublicTriggerDeclared(item, "entryCard");
         var destination = PublicTriggerDeclared(item, "entrySlot");
         if (player.MasterId != "S01-02M3"
-            || !player.UsedAbilities.Contains("trigger:medjedDamageResponse")
+            || !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
             || !player.Graveyard.Any(card => card.InstanceId == guardId && card.CardId == "S01-0212")
             || !EmptySlots(player).Contains(destination, StringComparer.OrdinalIgnoreCase))
         {
@@ -1485,7 +1749,8 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
-        SummonFromAnyPrivateZone(player, guardId, destination, tapped: false);
+        SummonFromAnyPrivateZone(player, guardId, destination,
+            tapped: false, presentationOwner: item);
         FinishStackItem(item);
     }
 
@@ -1516,7 +1781,8 @@ public sealed partial class L12GameEngine
     {
         var queue = item.Data.GetValueOrDefault("summon-queue", string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries).ToList();
         if (queue.Count == 0) { FinishStackItem(item); return; }
-        SummonFromAnyPrivateZone(State.Players[item.Controller], queue[0], slotChoice, item.Data.GetValueOrDefault("summon-tapped") == "true");
+        SummonFromAnyPrivateZone(State.Players[item.Controller], queue[0], slotChoice,
+            item.Data.GetValueOrDefault("summon-tapped") == "true", item);
         queue.RemoveAt(0);
         item.Data["summon-queue"] = string.Join('|', queue);
         PromptNextQueuedSummon(item);
@@ -1524,11 +1790,17 @@ public sealed partial class L12GameEngine
 
     private void DiscardRelic(L12PlayerState player, L12CardInstance relic)
     {
+        // “弃置此圣物”只作用于仍在圣物区的真实实例。已移往手牌／牌库等区域
+        // 的来源可以继续承载 LKI 效果，但不能再被加入墓地或重置第二次。
+        var actual = player.Relic?.InstanceId == relic.InstanceId ? player.Relic
+            : player.ExtraRelics.FirstOrDefault(card => card.InstanceId == relic.InstanceId);
+        if (actual is null) return;
+        relic = actual;
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(relic);
         if (player.Relic?.InstanceId == relic.InstanceId) player.Relic = null; else player.ExtraRelics.Remove(relic);
         DiscardAttachedCards(relic, "被叠放的圣物离开圣物区");
         var owner = CardOwner(relic, player);
-        ResetCardAfterLeavingField(relic);
+        ResetCardForPrivateZone(relic);
         if (L12SpecialDeckRules.VanishesWhenLeavingField(relic))
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{relic.Name}〉离开圣物区时消灭，不进入其他区域", relic);
@@ -1538,11 +1810,25 @@ public sealed partial class L12GameEngine
     }
 
     private void Mill(L12PlayerState player, int count, string source)
+        => MillWithPlayerLog(player, count, source);
+
+    private void MillWithPlayerLog(L12PlayerState player, int count, string source,
+        string? playerLogGroupId = null, string? playerLogTiming = null)
     {
-        var result = L12LibraryOps.Mill(player, count);
-        if (!result.Success) { SetWinner(1 - player.PlayerIndex, $"{source}操作牌库时牌库数量不足"); return; }
-        AddEvent("mill", player.PlayerIndex, $"{source}弃置牌库顶部{result.Cards.Count}张牌", result.Cards.ToArray());
-        foreach (var card in result.Cards) NotifyCardDiscarded(player, card, "library", causedByEffect: true);
+        if (State.Phase == L12Phase.GameOver) return;
+        var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+        var result = L12LibraryOps.Mill(player, count, card =>
+        {
+            ResetCardForPrivateZone(card);
+            NotifyCardDiscarded(player, card, "library", causedByEffect: true);
+        });
+        if (result.Cards.Count > 0)
+            AddPlayerLogEvent("mill", player.PlayerIndex,
+                $"{source}弃置牌库顶部{result.Cards.Count}张牌",
+                playerLogGroupId ?? origin?.Data.GetValueOrDefault("playerLogGroupId"),
+                playerLogTiming ?? origin?.Data.GetValueOrDefault("playerLogTiming") ?? origin?.Trigger,
+                cards: result.Cards.ToArray());
+        CompleteLibrarySequence(player, result, count, origin, source);
     }
 
     private void MoveGraveToLibraryBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)
@@ -1551,7 +1837,10 @@ public sealed partial class L12GameEngine
         var legal = requested.Where(CanEnterHandOrLibrary).ToArray();
         foreach (var guard in requested.Where(card => !CanEnterHandOrLibrary(card)))
             AddEvent("replacement", player.PlayerIndex, $"{guard.Name}不能进入牌库，仍置于墓地", guard);
-        L12LibraryOps.PutOnBottom(player, legal);
+        foreach (var card in legal) ResetCardForPrivateZone(card);
+        if (!L12LibraryOps.PutOnBottom(player, legal)) return;
+        foreach (var card in legal)
+            AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card);
     }
 
     private void MoveGraveToLibraryTop(L12PlayerState player, string instanceId)
@@ -1559,31 +1848,83 @@ public sealed partial class L12GameEngine
         var card = player.Graveyard.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入牌库，仍置于墓地", card); return; }
-        L12LibraryOps.PutOnTop(player, [card]);
+        ResetCardForPrivateZone(card);
+        if (L12LibraryOps.PutOnTop(player, [card]))
+            AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card);
     }
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && L12StructuredCardRules.CurrentCostAtMost(card, maxCost) && (!legionOnly || card.CardType == "legion")).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return; }
+        var player = State.Players[item.Controller];
+        var candidates = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+            && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)
+            && (!legionOnly || card.CardType == "legion")).ToArray();
+        if (candidates.Length == 0) { FinishStackItem(item); return; }
+        var choices = candidates.Select(card => card.InstanceId).ToList();
         choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "recover-asgard" });
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "recover-asgard",
+            ["skip"] = "不发动",
+        };
+        foreach (var candidate in candidates) AddPromptCardData(data, candidate);
+        var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "墓地回收效果";
+        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】卡牌加入手牌",
+            choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data,
+                new(sourceName,
+                    $"〈{sourceName}〉的阵亡时效果正在选择墓地回收对象。你可以选择墓地中1张当前费用不高于{maxCost}的【阿斯加德】{(legionOnly ? "军团" : "卡牌")}，并尝试将其公开加入手牌。若所选牌在结算时已离开墓地，本次回收无事结束；若既有规则不允许其进入手牌，则该牌仍留在墓地；两种情况都不会改选其他卡牌。",
+                    "请选择1张当前符合条件的墓地卡牌，或选择“不发动”结束本效果。",
+                    L12PromptWaitingAction.CardSelection,
+                    candidates.ToDictionary(card => card.InstanceId,
+                            card => $"尝试将〈{card.Name}〉从墓地公开加入手牌；结算失败时不改选。",
+                            StringComparer.OrdinalIgnoreCase)
+                        .Append(new KeyValuePair<string, string>("skip",
+                            "结束本效果，不移动任何墓地卡牌。"))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value,
+                            StringComparer.OrdinalIgnoreCase))));
     }
 
     private void SummonAsgardFromGrave(L12StackItem item, int maxCost)
     {
-        var player = State.Players[item.Controller]; var choices = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard") && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0) { FinishStackItem(item); return; }
+        var player = State.Players[item.Controller];
+        var candidates = player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
+            && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, maxCost)).ToArray();
+        if (candidates.Length == 0) { FinishStackItem(item); return; }
+        var choices = candidates.Select(card => card.InstanceId).ToList();
         choices.Add("skip");
-        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场", choices, 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = "summon-asgard" });
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "summon-asgard",
+            ["skip"] = "不发动",
+        };
+        foreach (var candidate in candidates) AddPromptCardData(data, candidate);
+        var sourceName = FindSource(item)?.Name ?? item.SourceName ?? "墓地登场效果";
+        CreatePrompt(item.Controller, "optional-card", "选择墓地1张【阿斯加德】军团活跃登场",
+            choices, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(data,
+                new(sourceName,
+                    $"〈{sourceName}〉的阵亡时效果正在选择登场对象。你可以选择墓地中1张当前费用不高于{maxCost}的【阿斯加德】军团；选择后还需要为其选择我方战场的合法空位。此时只确定登场对象，该军团尚未离开墓地，也尚未登场。",
+                    "请选择1张当前符合条件的墓地军团进入位置选择，或选择“不发动”结束本效果。",
+                    L12PromptWaitingAction.CardSelection,
+                    candidates.ToDictionary(card => card.InstanceId,
+                            card => $"选择〈{card.Name}〉作为登场对象，然后进入合法空位选择；此时尚未登场。",
+                            StringComparer.OrdinalIgnoreCase)
+                        .Append(new KeyValuePair<string, string>("skip",
+                            "结束本效果，不选择登场对象，也不进入位置选择。"))
+                        .ToDictionary(pair => pair.Key, pair => pair.Value,
+                            StringComparer.OrdinalIgnoreCase))));
     }
+
+    private static bool IsPharaohFestivalCandidate(L12PlayerState player, L12CardInstance card)
+        => card.CardId != "S01-0222" && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng");
 
     private void BeginPharaohFestival(L12StackItem item)
     {
         var player = State.Players[item.Controller];
         var top = player.Library.Take(5).ToArray();
         item.Data["festival-cards"] = string.Join('|', top.Select(card => card.InstanceId));
-        var eligible = top.Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
+        var eligible = top.Where(card => IsPharaohFestivalCandidate(player, card)).ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
         CreateFestivalCardPrompt(item, "festival-hand", "法老王的庆典：选择1张【太阳城】卡牌加入手牌", eligible);
     }
@@ -1599,7 +1940,8 @@ public sealed partial class L12GameEngine
                 $"法老王的庆典展示〈{selected.Name}〉并加入手牌",
                 $"法老王的庆典将{selected.Name}加入手牌", "S01-0222", "search-hit");
         }
-        var eligible = FestivalCardsStillInLibrary(item, player).Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").ToArray();
+        var eligible = FestivalCardsStillInLibrary(item, player)
+            .Where(card => IsPharaohFestivalCandidate(player, card)).ToArray();
         if (eligible.Length == 0) { PromptPharaohFestivalOrder(item); return; }
         CreateFestivalCardPrompt(item, "festival-grave", "法老王的庆典：选择另1张【太阳城】卡牌置入墓地", eligible);
     }
@@ -1608,7 +1950,7 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
-        if (selected is not null) { player.Library.Remove(selected); player.Graveyard.Add(selected); AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected); }
+        if (selected is not null) { player.Library.Remove(selected); ResetCardForPrivateZone(selected); player.Graveyard.Add(selected); AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected); }
         PromptPharaohFestivalOrder(item);
     }
 
@@ -1617,6 +1959,8 @@ public sealed partial class L12GameEngine
         var displayed = FestivalCardsStillInLibrary(item, State.Players[item.Controller]);
         var data = new Dictionary<string, string> { ["action"] = action, ["displayCardIds"] = string.Join('|', displayed.Select(card => card.InstanceId)) };
         foreach (var card in displayed) AddPromptCardData(data, card);
+        AddUnavailableCardChoiceReasons(data, displayed.Select(card => card.InstanceId),
+            choices.Select(card => card.InstanceId), "只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身");
         CreatePrompt(item.Controller, "card", text, choices.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, data: data);
     }
 
@@ -1628,15 +1972,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var remaining = FestivalCardsStillInLibrary(item, player);
         if (remaining.Count <= 1) { CompletePharaohFestivalOrder(item, remaining.Select(card => card.InstanceId).ToList()); return; }
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "festival-bottom-order",
-            ["placementMode"] = "all-bottom",
-            ["displayCardIds"] = string.Join('|', remaining.Select(card => card.InstanceId))
-        };
-        foreach (var card in remaining) AddPromptCardData(data, card);
-        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。", remaining.Select(card => card.InstanceId), remaining.Count, remaining.Count,
-            "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining.Select(card => card.InstanceId), "festival-bottom-order", "all-bottom",
+            "调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompletePharaohFestivalOrder(L12StackItem item, List<string> order)
@@ -1653,12 +1990,14 @@ public sealed partial class L12GameEngine
     private void BeginFactionTopSearch(L12StackItem item, int count, string faction, string excluded, string context)
     {
         var player = State.Players[item.Controller]; var top = player.Library.Take(count).ToArray(); item.Data["faction-search-top"] = string.Join('|', top.Select(card => card.InstanceId)); item.Data["faction-search-context"] = context;
+        item.Data["faction-search-faction"] = faction;
+        item.Data["faction-search-excluded"] = excluded;
         if (context == "sun-divinity" && top.Length > 0)
             AddPresentationEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌",
                 "S01-02D1", "top-three", top);
         const int max = 1;
-        var choices = top.Where(card => L12StructuredCardRules.HasFaction(player, card, faction)
-            && card.CardId != excluded).Select(card => card.InstanceId).ToArray();
+        var choices = top.Where(card => IsFactionTopSearchCandidate(player, card, faction, excluded))
+            .Select(card => card.InstanceId).ToArray();
         if (choices.Length == 0)
         {
             PromptFactionSearchOrder(item, top.Select(card => card.InstanceId).ToList());
@@ -1670,15 +2009,31 @@ public sealed partial class L12GameEngine
             ["displayCardIds"] = string.Join('|', top.Select(card => card.InstanceId))
         };
         foreach (var card in top) AddPromptCardData(data, card);
+        var factionLabel = faction switch
+        {
+            "asgard" => "阿斯加德", "taiyangcheng" => "太阳城", "olympus" => "奥林匹斯",
+            _ => "指定阵营",
+        };
+        AddUnavailableCardChoiceReasons(data, top.Select(card => card.InstanceId), choices,
+            $"只能选择【{factionLabel}】卡牌" + (string.IsNullOrWhiteSpace(excluded) ? "" : "，且不能选择效果来源本身"));
         CreatePrompt(item.Controller, "search", $"选择{max}张符合条件的卡牌", choices, max, max, "card-effect", item.StackItemId, data: data);
     }
 
     private void CompleteFactionTopSearch(L12StackItem item, List<string> chosen)
     {
         var player = State.Players[item.Controller];
+        var (faction, excluded) = FactionTopSearchConstraints(item);
         foreach (var id in chosen)
         {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
+            var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id
+                && IsStillInInspectedLibrarySet(item, "faction-search-top", candidate)
+                && IsFactionTopSearchCandidate(player, candidate, faction, excluded));
+            if (card is null)
+            {
+                RecordTargetSettlementFailure(item, id, "所选牌库卡牌已离开查看范围或不再符合检索条件");
+                FinishStackItem(item);
+                return;
+            }
             player.Library.Remove(card);
             PubliclyRevealThenAddCardToHandByEffect(player, card, "library",
                 $"〈{item.SourceName}〉展示〈{card.Name}〉并加入手牌", $"{card.Name}因效果加入手牌",
@@ -1691,19 +2046,8 @@ public sealed partial class L12GameEngine
     private void PromptFactionSearchOrder(L12StackItem item, List<string> remaining)
     {
         if (remaining.Count <= 1) { CompleteFactionSearchOrder(item, remaining); return; }
-        var player = State.Players[item.Controller];
-        var data = new Dictionary<string, string>
-        {
-            ["action"] = "faction-search-order", ["placementMode"] = "all-bottom",
-            ["displayCardIds"] = string.Join('|', remaining),
-        };
-        foreach (var id in remaining)
-        {
-            var card = player.Library.First(candidate => candidate.InstanceId == id);
-            AddPromptCardData(data, card);
-        }
-        CreatePrompt(item.Controller, "order", "调整其余卡牌的顺序，然后全部放回牌库底部。",
-            remaining, remaining.Count, remaining.Count, "card-effect", item.StackItemId, data: data);
+        CreateLibraryPlacementPrompt(item, remaining, "faction-search-order", "all-bottom",
+            "调整其余卡牌的顺序，然后全部放回牌库底部。");
     }
 
     private void CompleteFactionSearchOrder(L12StackItem item, List<string> order)
@@ -1727,12 +2071,28 @@ public sealed partial class L12GameEngine
             MoveFieldCardToZone(enemy, card, "library-bottom", "返回牌库底部");
     }
 
-    private void PromptFirstEmptySlot(L12StackItem item, string action, string text)
-        => CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[item.Controller]), 1, 1, "card-effect", item.StackItemId, data: new Dictionary<string, string> { ["action"] = action });
+    private void PromptFirstEmptySlot(L12StackItem item, string action, string text,
+        L12PromptNarrativeInput narrative)
+        => CreatePrompt(item.Controller, "slot", text, EmptySlots(State.Players[item.Controller]), 1, 1,
+            "card-effect", item.StackItemId,
+            data: WithPromptNarrative(
+                new Dictionary<string, string> { ["action"] = action }, narrative));
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
-        string instanceId, string slotChoice, bool tapped)
+        string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner)
     {
+        if (!TrySummonFromAnyPrivateZone(sourceOwner, destinationPlayerIndex,
+                instanceId, slotChoice, tapped, out var presentationFactSequence))
+            return false;
+        if (presentationFactSequence is { } sequence)
+            RegisterPresentationFact(presentationOwner, sequence);
+        return true;
+    }
+
+    private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
+        string instanceId, string slotChoice, bool tapped, out long? presentationFactSequence)
+    {
+        presentationFactSequence = null;
         if (destinationPlayerIndex < 0 || destinationPlayerIndex >= State.Players.Length)
         {
             AddEvent("effect-cancelled", sourceOwner.PlayerIndex, "声明的登场战场已失效；仅取消本次登场");
@@ -1773,22 +2133,25 @@ public sealed partial class L12GameEngine
         sourceOwner.Hand.Remove(card);
         sourceOwner.Graveyard.Remove(card);
         sourceOwner.Library.Remove(card);
+        ResetCardForFieldEntry(card);
         card.OwnerIndex ??= sourceOwner.PlayerIndex;
         card.Tapped = tapped;
         card.SummonRound = State.Round;
         destination.Field[row][slot] = card;
-        AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        if (destinationPlayerIndex != sourceOwner.PlayerIndex)
+            AddPlayerPublicPlacementEvent(destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场",
+                card, sourceOwner.PlayerIndex, destinationPlayerIndex, row, slot);
+        else
+            AddEvent("put", destinationPlayerIndex, $"{card.Name}{(tapped ? "休整" : "活跃")}登场", card);
+        presentationFactSequence = State.EventSequence;
         CompleteEffectLegionEntry(destinationPlayerIndex, card,
             fromHand ? "hand" : fromLibrary ? "library" : "graveyard");
         return true;
     }
 
-    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice, bool tapped)
-        => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice, tapped);
+    private void SummonFromAnyPrivateZone(L12PlayerState player, string instanceId, string slotChoice,
+        bool tapped, L12StackItem presentationOwner)
+        => _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, instanceId, slotChoice,
+            tapped, presentationOwner);
 
-    private void MoveOwnCardToSlot(L12PlayerState player, string instanceId, string slotChoice)
-    {
-        var card = FindOnField(player, instanceId, out var row, out var slot); if (card is null) return; var (targetRow, targetSlot) = ParseSlot(slotChoice); player.Field[row][slot] = null; player.Field[targetRow][targetSlot] = card; card.LastMovedTurn = State.TurnSerial;
-        RecordLegionMovement(player.PlayerIndex, card, row, targetRow);
-    }
 }

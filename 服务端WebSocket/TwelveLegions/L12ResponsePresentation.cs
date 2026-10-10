@@ -4,25 +4,177 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string ResponsePresentationTargetIdsKey = "responsePresentationTargetIds";
+    private const string ResponsePublicTargetSnapshotKey = "responsePublicTargetSnapshotV1";
+    private sealed record ResponsePublicTargetSnapshot(string Id, int Owner, string Zone,
+        int Row, int Slot, string? PublicName, int? CurrentCost, bool Tapped, bool? IsGodPower = null);
+    private L12PendingActivation? _committingResponsePresentationActivation;
+
+    private CommandResult CommitWithResponsePresentation(L12PendingActivation activation,
+        Func<CommandResult> commit)
+    {
+        var previous = _committingResponsePresentationActivation;
+        activation.IsCommittingResponsePresentation = true;
+        _committingResponsePresentationActivation = activation;
+        try
+        {
+            return commit();
+        }
+        finally
+        {
+            _committingResponsePresentationActivation = previous;
+            activation.IsCommittingResponsePresentation = false;
+        }
+    }
+
+    private static void SetResponsePresentationTargets(Dictionary<string, string> data,
+        IEnumerable<string> targetIds)
+    {
+        var targets = targetIds.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (targets.Length == 0) data.Remove(ResponsePresentationTargetIdsKey);
+        else data[ResponsePresentationTargetIdsKey] = string.Join('|', targets);
+    }
+
+    private void CaptureResponsePresentationTargets(L12PendingActivation activation,
+        L12ActivationSelectionStep step, IEnumerable<string> selected)
+    {
+        if (!step.IsResponsePresentationTarget || step.IsCostSelection) return;
+        foreach (var id in selected)
+        {
+            if (!State.Players.Any(player => FindOnField(player, id, out _, out _) is not null
+                    || player.Morale.Any(card => card.InstanceId == id))
+                || activation.ResponsePresentationTargetIds.Contains(id, StringComparer.OrdinalIgnoreCase)) continue;
+            activation.ResponsePresentationTargetIds.Add(id);
+        }
+    }
+
+    private void CaptureResponsePublicTargetSnapshot(Dictionary<string, string> data,
+        IEnumerable<string> selectedIds)
+    {
+        var facts = new List<ResponsePublicTargetSnapshot>();
+        foreach (var id in selectedIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var player in State.Players)
+        {
+            var field = FindOnField(player, id, out var row, out var slot);
+            if (field is not null)
+            {
+                // A covered card has no public face or cost to snapshot.
+                facts.Add(new(id, player.PlayerIndex, "field", row, slot,
+                    field.Hidden ? null : field.Name, field.Hidden ? null : field.CurrentCost, false));
+                break;
+            }
+            if (player.Morale.FirstOrDefault(card => card.InstanceId == id) is { } morale)
+            {
+                // Only the public resource face/activity state is needed here. Its CardId is
+                // already public, but need not be repeated in response metadata.
+                facts.Add(new(id, player.PlayerIndex, "morale", -1, -1, null, null,
+                    morale.Tapped, morale.IsGodPower));
+                break;
+            }
+        }
+        if (facts.Count > 0) data[ResponsePublicTargetSnapshotKey] = JsonSerializer.Serialize(facts);
+    }
+
+    private static IReadOnlyList<ResponsePublicTargetSnapshot> ReadResponsePublicTargetSnapshot(
+        Dictionary<string, string> data)
+    {
+        if (!data.TryGetValue(ResponsePublicTargetSnapshotKey, out var encoded)) return [];
+        try { return JsonSerializer.Deserialize<List<ResponsePublicTargetSnapshot>>(encoded) ?? []; }
+        catch (JsonException) { return []; }
+    }
+
+    private void FreezeAndRecordPublicResponseTargets(L12StackItem item, L12CardInstance source)
+    {
+        // The four entry declarations and Olympus flip already captured their facts.
+        // Other completed declarations use the same snapshot before any response is offered.
+        if (!item.Data.ContainsKey(ResponsePublicTargetSnapshotKey))
+        {
+            var presentationIds = (item.Data.GetValueOrDefault(ResponsePresentationTargetIdsKey) ?? string.Empty)
+                .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            CaptureResponsePublicTargetSnapshot(item.Data, item.Targets.Concat(presentationIds));
+        }
+        if (source.Hidden || string.IsNullOrWhiteSpace(source.InstanceId)) return;
+        var facts = ReadResponsePublicTargetSnapshot(item.Data)
+            .Where(fact => !string.IsNullOrWhiteSpace(fact.Id) && fact.Owner is >= 0 and <= 1
+                && (fact.Zone == "field" && fact.Row is >= 0 and <= 1 && fact.Slot is >= 0 and <= 2
+                    || fact.Zone == "morale" && fact.Row == -1 && fact.Slot == -1))
+            .Select(fact => new L12PlayerSelectedTargetFact(fact.Id, fact.Owner, fact.Zone,
+                fact.Row, fact.Slot, fact.PublicName, fact.CurrentCost, fact.Tapped, fact.IsGodPower))
+            .ToArray();
+        if (facts.Length > 0) AddPlayerSelectedTargetsEvent(item, source, facts);
+    }
+
+    private static string ResponseTargetSideLabel(int viewer, int owner)
+        => viewer < 0 ? $"玩家{owner + 1}的" : owner == viewer ? "你的" : "对手的";
+
+    private static string ResponseBattlefieldSlotLabel(int viewer, int owner, int row, int slot)
+        => $"{ResponseTargetSideLabel(viewer, owner)}{(row == 0 ? "前排" : "后排")}{new[] { "左格", "中格", "右格" }[slot]}";
+
+    private bool IsCurrentPublicResponseTarget(string id)
+        => State.Players.Any(player => FindOnField(player, id, out _, out _) is not null
+            || player.Morale.Any(card => card.InstanceId == id));
+
+    private string DeclaredPublicTargetLabel(L12StackItem item, string id)
+    {
+        var label = PublicResponseTargets(item, item.Controller)
+            .FirstOrDefault(target => string.Equals(target.Id, id, StringComparison.OrdinalIgnoreCase)).Label;
+        return label is null ? "原目标" : $"原目标{label}";
+    }
+
     // Display only already-public identities. Never resolve a target through private-zone lookup.
     private IEnumerable<(string Id, string Label, bool OnField)> PublicResponseTargets(L12StackItem item, int viewer)
     {
         if (item.Data.GetValueOrDefault("eventType") == "effect-hand-add") yield break;
-        foreach (var id in item.Targets.Distinct(StringComparer.OrdinalIgnoreCase))
+        var frozen = ReadResponsePublicTargetSnapshot(item.Data);
+        var frozenIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fact in frozen)
         {
+            if (fact.Owner is < 0 or > 1 || !frozenIds.Add(fact.Id)) continue;
+            var side = ResponseTargetSideLabel(viewer, fact.Owner);
+            if (fact.Zone == "field" && fact.Row is >= 0 and < 2 && fact.Slot is >= 0 and < 3)
+            {
+                var name = fact.PublicName is null ? "盖伏卡牌" : $"〈{fact.PublicName}〉";
+                var cost = fact.CurrentCost is { } value ? $"；声明时当前费用{value}" : "";
+                yield return (fact.Id,
+                    $"{ResponseBattlefieldSlotLabel(viewer, fact.Owner, fact.Row, fact.Slot)}{name}{cost}", true);
+            }
+            else if (fact.Zone == "morale")
+            {
+                // Pre-change V2 snapshots lack the face fact. Keep that history neutral.
+                var face = fact.IsGodPower switch
+                {
+                    true => "神力面",
+                    false => "士气面",
+                    null => "资源",
+                };
+                yield return (fact.Id, $"{side}士气区的{(fact.Tapped ? "休整" : "活跃")}{face}", true);
+            }
+        }
+        var authoritativeTargets = item.Targets.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var presentationTargets = (item.Data.GetValueOrDefault(ResponsePresentationTargetIdsKey) ?? string.Empty)
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(id => !authoritativeTargets.Contains(id, StringComparer.OrdinalIgnoreCase) && !frozenIds.Contains(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(id => (Id: id, FieldOnly: true));
+        foreach (var candidate in authoritativeTargets.Select(id => (Id: id, FieldOnly: false)).Concat(presentationTargets))
+        {
+            var id = candidate.Id;
+            if (frozenIds.Contains(id)) continue;
             var found = false;
             foreach (var player in State.Players)
             {
-                var side = player.PlayerIndex == viewer ? "我方" : "对方";
+                var side = ResponseTargetSideLabel(viewer, player.PlayerIndex);
                 for (var row = 0; row < 2; row++)
                 for (var slot = 0; slot < 3; slot++)
                 {
                     var card = player.Field[row][slot];
-                    if (card?.InstanceId != id) continue;
+                    if (card is null || !string.Equals(card.InstanceId, id, StringComparison.OrdinalIgnoreCase)) continue;
                     var name = card.Hidden ? "盖伏卡牌" : $"〈{card.Name}〉";
-                    yield return (id, $"{side}{name}（{(row == 0 ? "前排" : "后排")}第{slot + 1}格）", true);
+                    yield return (id, $"{ResponseBattlefieldSlotLabel(viewer, player.PlayerIndex, row, slot)}{name}", true);
                     found = true;
                 }
+                if (candidate.FieldOnly) continue;
                 var grave = player.Graveyard.FirstOrDefault(card => card.InstanceId == id && !card.Hidden);
                 if (grave is not null)
                 {
@@ -31,11 +183,12 @@ public sealed partial class L12GameEngine
                 }
             }
             if (found) continue;
+            if (candidate.FieldOnly) continue;
             var targetEffect = State.EffectStack.FirstOrDefault(effect => effect.StackItemId == id);
             if (targetEffect is not null)
                 yield return (id, targetEffect.Data.GetValueOrDefault("eventType") == "effect-hand-add"
                     ? "因效果加入手牌的事件"
-                    : $"{(targetEffect.Controller == viewer ? "我方" : "对方")}〈{targetEffect.SourceName}〉的效果：{targetEffect.Text}", false);
+                    : $"{(targetEffect.Controller == viewer ? "你" : "对手")}的〈{targetEffect.SourceName}〉效果：{targetEffect.Text}", false);
         }
     }
 
@@ -46,11 +199,10 @@ public sealed partial class L12GameEngine
     private string DescribeResponse(L12StackItem item, int viewer)
     {
         if (item.Data.GetValueOrDefault("eventType") == "effect-hand-add")
-            return $"{(item.Controller == viewer ? "我方" : "对方")}因效果将卡牌加入手牌。是否响应？";
-        var side = item.Controller == viewer ? "我方" : "对方";
+            return $"{(item.Controller == viewer ? "你" : "对手")}因效果将卡牌加入手牌。是否响应？";
+        var side = item.Controller == viewer ? "你" : "对手";
         var targets = PublicResponseTargets(item, viewer).Select(target => target.Label).ToArray();
         return $"{side}使用{BuildResponsePromptText(item)}"
-            + "\n（效果原文中的我方／对方以发动者为准）"
             + (targets.Length == 0 ? "" : $"\n已选目标：{string.Join("；", targets)}")
             + "\n是否响应？";
     }
@@ -59,5 +211,6 @@ public sealed partial class L12GameEngine
     {
         data["responseTargetIds"] = ResponseTargetIds([target], viewer);
         data["responseContext"] = DescribeResponse(target, viewer);
+        AddPaidCostResponseData(target, data);
     }
 }

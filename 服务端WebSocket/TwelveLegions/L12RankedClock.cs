@@ -16,15 +16,23 @@ public sealed record L12RankedClockView(
     long OperationLimitMs,
     long ReconnectLimitMs,
     IReadOnlyList<L12RankedClockPlayerView> Players,
-    L12RankedTimeControlConfig TimeControl);
+    L12RankedTimeControlConfig TimeControl,
+    bool Paused,
+    string? PauseReason);
 
 public sealed partial class L12RoomManager
 {
     private static readonly JsonSerializerOptions RankedSetupCommandJson = new(JsonSerializerDefaults.Web);
+    private readonly SemaphoreSlim _rankedClockTickGate = new(1, 1);
+    // Owned only by the non-overlapping watchdog sweep. An observed scheduled
+    // invalidation must survive a busy gate and the end/cancellation of its window,
+    // just as the original waiter retained its captured active policy. Exact Room
+    // identity prevents carrying this fact to a later room reusing the same code.
+    private readonly HashSet<Room> _deferredMaintenanceInvalidations = [];
 
     private sealed class RankedClockState
     {
-        public required L12RankedTimeControlConfig TimeControl { get; init; }
+        public required L12RankedTimeControlConfig TimeControl { get; set; }
         public required long[] TotalRemainingMs { get; init; }
         public required long[] OperationRemainingMs { get; init; }
         public bool[] Acting { get; } = [false, false];
@@ -34,6 +42,9 @@ public sealed partial class L12RoomManager
         public bool NormalClockStarted { get; set; }
         public bool RestoreBaselinePending { get; set; }
         public bool SetupBroadcastPending { get; set; }
+        public bool Paused { get; set; }
+        public string? PauseReason { get; set; }
+        public DateTimeOffset? PausedAt { get; set; }
     }
 
     private void InitializeRankedClock(Room room)
@@ -42,12 +53,16 @@ public sealed partial class L12RoomManager
         room.MeaningfulCommandCount = 0;
         room.CompletionRecorded = false;
         room.RankedResultReported = false;
-        if (!string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase))
+        var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
+        var tournament = string.Equals(room.Options.MatchModeId, "tournament", StringComparison.OrdinalIgnoreCase);
+        if (!ranked && !tournament)
         {
             room.RankedClock = null;
             return;
         }
-        var timeControl = _platform?.RankedTimeControl() ?? L12PlatformStore.DefaultRankedTimeControl();
+        var timeControl = tournament
+            ? L12PlatformStore.NormalizeRankedTimeControl(room.TournamentTimeControl)
+            : _platform?.RankedTimeControl() ?? L12PlatformStore.DefaultRankedTimeControl();
         room.RankedClock = new RankedClockState
         {
             TimeControl = timeControl,
@@ -58,6 +73,9 @@ public sealed partial class L12RoomManager
                 SetupDecisionLimit(room.Game!, timeControl).TotalMillisecondsAsLong(),
             ],
             LastSettledAt = room.StartedAt,
+            Paused = room.TournamentClockPaused,
+            PauseReason = room.TournamentClockPauseReason,
+            PausedAt = room.TournamentClockPaused ? room.StartedAt : null,
         };
         RefreshRankedClockActorsLocked(room, room.StartedAt);
     }
@@ -80,7 +98,8 @@ public sealed partial class L12RoomManager
             players.Select(player => player.DisconnectedAt).ToArray(),
             players.Select(player => player.IntegrityClientKey).ToArray(),
             players.Select(player => player.ConnectionGeneration).ToArray(), now, clock.TimeControl,
-            players.Select(player => player.RankedBrowserKey).ToArray());
+            players.Select(player => player.RankedBrowserKey).ToArray(), clock.Paused,
+            clock.PauseReason, clock.PausedAt);
     }
 
     private static void RestoreRankedClock(Room room, L12RankedRuntimeCheckpoint runtime)
@@ -99,6 +118,9 @@ public sealed partial class L12RoomManager
             // settlement after reconstruction establishes a fresh process baseline so service
             // downtime is never charged and the persisted remainder is never reset to 60 seconds.
             RestoreBaselinePending = true,
+            Paused = runtime.Paused,
+            PauseReason = runtime.PauseReason,
+            PausedAt = runtime.PausedAt,
         };
         Array.Copy(runtime.Acting, clock.Acting, 2);
         room.RankedClock = clock;
@@ -109,6 +131,11 @@ public sealed partial class L12RoomManager
     {
         if (room.RankedClock is not { } clock || room.Game is not { } game
             || game.State.Phase == L12Phase.GameOver) return;
+        if (clock.Paused)
+        {
+            clock.LastSettledAt = now;
+            return;
+        }
         if (clock.RestoreBaselinePending)
         {
             clock.RestoreBaselinePending = false;
@@ -172,6 +199,7 @@ public sealed partial class L12RoomManager
     private static TimeSpan SetupDecisionLimit(L12GameEngine game, L12RankedTimeControlConfig timeControl)
         => TimeSpan.FromSeconds(game.State.Phase switch
         {
+            L12Phase.Initiative => timeControl.DisasterDecisionSeconds,
             L12Phase.DisasterPreparation => timeControl.DisasterDecisionSeconds,
             L12Phase.Mulligan => timeControl.MulliganDecisionSeconds,
             _ => 0,
@@ -242,6 +270,7 @@ public sealed partial class L12RoomManager
     private async Task<bool> ApplyRankedClockConclusionLockedAsync(Room room, DateTimeOffset now)
     {
         if (room.RankedClock is not { } clock || room.Game is null) return false;
+        if (clock.Paused) return false;
         var concluded = false;
         if (room.Game.State.Phase != L12Phase.GameOver)
         {
@@ -309,11 +338,12 @@ public sealed partial class L12RoomManager
             {
                 room.CommandSequence++;
                 clock.AuthorityEventRecorded = true;
-                var settlement = BuildRankedSettlementEnvelope(room, now);
+                var settlement = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase)
+                    ? BuildRankedSettlementEnvelope(room, now) : null;
                 await _recorder.AppendRankedAuthorityAsync(room.Game, room.CommandSequence,
                     room.Game.State.WinnerReason ?? "排位权威裁决",
                     CaptureRankedRuntime(room, now, "completed"), settlement);
-                room.CompletionRecorded = true;
+                room.CompletionRecorded = settlement is not null;
             }
             catch (Exception error)
             {
@@ -333,16 +363,30 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> TickRankedClocksAsync(DateTimeOffset? utcNow = null)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
+        using var deployment = deploymentGuard;
+        // Do not queue overlapping watchdog sweeps or mix their checkpoint cohorts.
+        if (!_rankedClockTickGate.Wait(0)) return [];
+        try { return await TickRankedClocksCoreAsync(utcNow); }
+        finally { _rankedClockTickGate.Release(); }
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> TickRankedClocksCoreAsync(DateTimeOffset? utcNow)
+    {
         var messages = new List<OutgoingMessage>();
         var checkpoints = new List<L12RankedRuntimeCheckpoint>();
+        var checkpointBatchComplete = true;
         var now = utcNow ?? _utcNow();
         foreach (var room in _rooms.Values.Where(room => room.RankedClock is not null && room.Game is not null
                      && (room.Game.State.Phase != L12Phase.GameOver || !room.CompletionRecorded
                          || !room.RankedResultReported)).ToArray())
         {
-            await room.Gate.WaitAsync();
+            // Busy rooms keep their existing baseline/deadlines; the next sweep charges
+            // accumulated UTC time under the same authoritative per-room write gate.
+            if (!room.Gate.Wait(0)) { checkpointBatchComplete = false; continue; }
             try
             {
+                if (room.Closed || room.RankedClock is null || room.Game is null) continue;
                 var broadcast = await ApplyRankedClockConclusionLockedAsync(room, now);
                 if (room.RankedClock is { SetupBroadcastPending: true } clock)
                 {
@@ -356,6 +400,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception error)
             {
+                checkpointBatchComplete = false;
                 // 一个房间的暂时性存储故障不能阻止其他排位房间的权威计时。
                 Console.Error.WriteLine($"Ranked clock room ({room.Code}): {error.Message}");
             }
@@ -364,7 +409,11 @@ public sealed partial class L12RoomManager
         try
         {
             // 所有活跃排位的 1 秒 checkpoint 共用一个 WAL 事务，避免逐房间 fsync。
-            await _recorder.PersistRankedRuntimeBatchAsync(checkpoints);
+            // A deferred/failed cohort member suppresses the entire ordinary checkpoint
+            // batch, never a partial checkpoint commit. Authority + runtime + outbox
+            // conclusions still use their existing individual durable transactions.
+            if (checkpointBatchComplete)
+                await _recorder.PersistRankedRuntimeBatchAsync(checkpoints);
         }
         catch (Exception error)
         {
@@ -372,6 +421,9 @@ public sealed partial class L12RoomManager
         }
         await TickMaintenanceLockedRoomsAsync(now, messages);
         await TickSettlementRoomsAsync(now, messages);
+        await DrainTournamentResultOutboxAsync();
+        var roomCommands = await DrainTournamentRoomCommandsAsync();
+        messages.AddRange(roomCommands.Messages);
         return messages;
     }
 
@@ -380,24 +432,36 @@ public sealed partial class L12RoomManager
         var policy = CaptureOperationsPolicy();
         // Immediate maintenance closes only new-game entry. It deliberately shields already-running games
         // from the scheduled-maintenance invalidation path while the manual override is active.
-        if (policy.ImmediateMaintenance?.Enabled == true) return;
-        if (!policy.Maintenance.Enabled) return;
+        var scheduledAllowed = policy.ImmediateMaintenance?.Enabled != true && policy.Maintenance.Enabled;
         var starts = policy.Maintenance.StartsAt;
         var remaining = starts is { } scheduledStart ? scheduledStart - now : TimeSpan.Zero;
-        var active = policy.IsMaintenanceActive(now);
-        var warningMinutes = starts is not null && remaining.TotalMinutes is >= 0 and <= 30
+        var active = scheduledAllowed && policy.IsMaintenanceActive(now);
+        var warningMinutes = scheduledAllowed && starts is not null && remaining.TotalMinutes is >= 0 and <= 30
             ? Math.Max(0, (int)Math.Ceiling(remaining.TotalMinutes / 5d) * 5) : -1;
-        if (!active && warningMinutes < 0) return;
+        var currentRooms = _rooms.Values.ToArray();
+        var liveIdentities = currentRooms.ToHashSet();
+        _deferredMaintenanceInvalidations.RemoveWhere(room => !liveIdentities.Contains(room));
+        var eligible = currentRooms.Where(candidate => candidate.Game is not null
+            && !IsAuthorizedMaintenanceSandbox(candidate)
+            && (candidate.Game.State.Phase != L12Phase.GameOver || !candidate.CompletionRecorded)).ToArray();
+        if (active)
+            foreach (var room in eligible) _deferredMaintenanceInvalidations.Add(room);
+        if (_deferredMaintenanceInvalidations.Count == 0 && warningMinutes < 0) return;
 
-        foreach (var room in _rooms.Values.Where(candidate => candidate.Game is not null
-                     && !IsAuthorizedMaintenanceSandbox(candidate)
-                     && (candidate.Game.State.Phase != L12Phase.GameOver
-                         || !candidate.CompletionRecorded)).ToArray())
+        foreach (var room in _deferredMaintenanceInvalidations.Concat(warningMinutes >= 0 ? eligible : [])
+                     .Distinct().ToArray())
         {
-            await room.Gate.WaitAsync();
+            if (!room.Gate.Wait(0)) continue;
             try
             {
-                if (active)
+                if (room.Closed || room.Game is null)
+                {
+                    // Closed can mean temporarily frozen after an unprovable
+                    // recovery, not retired. Keep the observed fact until this
+                    // exact room recovers/completes or leaves _rooms entirely.
+                    continue;
+                }
+                if (_deferredMaintenanceInvalidations.Contains(room))
                 {
                     if (room.Game!.State.Phase != L12Phase.GameOver)
                     {
@@ -421,6 +485,7 @@ public sealed partial class L12RoomManager
                         if (completionError is not null)
                             Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
                     }
+                    if (room.CompletionRecorded) _deferredMaintenanceInvalidations.Remove(room);
                     messages.AddRange(BroadcastGame(room));
                     continue;
                 }
@@ -442,14 +507,15 @@ public sealed partial class L12RoomManager
         var preparation = room.Game is not null && IsRankedPreparationPhase(room.Game);
         var timedPreparation = preparation && Enumerable.Range(0, 2)
             .Any(index => room.Game!.HasTimedRankedSetupDecision(index));
-        var elapsed = now > clock.LastSettledAt
-            ? (long)(now - clock.LastSettledAt).TotalMilliseconds : 0L;
+        var clockNow = clock.Paused && clock.PausedAt is { } pausedAt ? pausedAt : now;
+        var elapsed = clockNow > clock.LastSettledAt
+            ? (long)(clockNow - clock.LastSettledAt).TotalMilliseconds : 0L;
         var players = Enumerable.Range(0, 2).Select(index =>
         {
             var session = PlayerSession(room, index);
             long? reconnect = session is { Connected: false, DisconnectedAt: not null }
                 ? Math.Max(0L, (long)(TimeSpan.FromSeconds(clock.TimeControl.ReconnectGraceSeconds)
-                    - (now - session.DisconnectedAt.Value)).TotalMilliseconds)
+                    - (clockNow - session.DisconnectedAt.Value)).TotalMilliseconds)
                 : null;
             var setupRunning = elapsed > 0 && preparation && timedPreparation && clock.Acting[index]
                 && room.Game!.HasTimedRankedSetupDecision(index)
@@ -467,7 +533,122 @@ public sealed partial class L12RoomManager
         return new L12RankedClockView(now.ToUnixTimeMilliseconds(), clock.TimeControl.TotalTimeSeconds * 1000L,
             preparation ? (timedPreparation ? SetupDecisionLimit(room.Game!, clock.TimeControl).TotalMillisecondsAsLong() : 0L)
                 : clock.TimeControl.OperationTimeSeconds * 1000L,
-            clock.TimeControl.ReconnectGraceSeconds * 1000L, players, clock.TimeControl);
+            clock.TimeControl.ReconnectGraceSeconds * 1000L, players, clock.TimeControl,
+            clock.Paused, clock.PauseReason);
+    }
+
+    public async Task ExtendTournamentClockAsync(string tournamentId, string matchId, int minutes)
+    {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
+        var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
+            && item.TournamentMatchId == matchId);
+        if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return;
+        await room.Gate.WaitAsync();
+        try
+        {
+            var now = _utcNow();
+            SettleRankedClockLocked(room, now);
+            var addedSeconds = Math.Min(checked(minutes * 60),
+                7200 - room.RankedClock.TimeControl.TotalTimeSeconds);
+            if (addedSeconds <= 0) return;
+            room.RankedClock.TimeControl = room.RankedClock.TimeControl with
+            {
+                TotalTimeSeconds = checked(room.RankedClock.TimeControl.TotalTimeSeconds + addedSeconds),
+            };
+            for (var index = 0; index < 2; index++)
+                room.RankedClock.TotalRemainingMs[index] = checked(room.RankedClock.TotalRemainingMs[index]
+                    + addedSeconds * 1000L);
+            await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
+        }
+        finally { room.Gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<OutgoingMessage>> PauseTournamentClockAsync(string tournamentId,
+        string matchId, bool paused, string reason)
+    {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
+        var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
+            && item.TournamentMatchId == matchId);
+        if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return [];
+        await room.Gate.WaitAsync();
+        try
+        {
+            var clock = room.RankedClock;
+            if (clock.Paused == paused) return BroadcastGame(room, forceCritical: true);
+            var now = _utcNow();
+            SettleRankedClockLocked(room, now);
+            if (paused)
+            {
+                clock.Paused = true;
+                clock.PauseReason = reason;
+                clock.PausedAt = now;
+            }
+            else
+            {
+                var duration = clock.PausedAt is { } pausedAt ? now - pausedAt : TimeSpan.Zero;
+                if (duration > TimeSpan.Zero)
+                    foreach (var session in room.Sessions.Select(id => _sessions.TryGetValue(id, out var value)
+                                 ? value : null).Where(value => value?.DisconnectedAt is not null))
+                        session!.DisconnectedAt = session.DisconnectedAt!.Value.Add(duration);
+                clock.Paused = false;
+                clock.PauseReason = reason;
+                clock.PausedAt = null;
+                clock.LastSettledAt = now;
+            }
+            await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
+            return BroadcastGame(room, forceCritical: true);
+        }
+        catch
+        {
+            if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
+            throw;
+        }
+        finally { room.Gate.Release(); }
+    }
+
+    public async Task<IReadOnlyList<OutgoingMessage>> CancelTournamentRoomsAsync(string tournamentId,
+        string reason)
+    {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
+        var messages = new List<OutgoingMessage>();
+        foreach (var room in _rooms.Values.Where(item => item.TournamentId == tournamentId
+                     && item.Game is not null).ToArray())
+            messages.AddRange(await CancelTournamentMatchRoomAsync(room, reason));
+        return messages;
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> CancelTournamentMatchRoomAsync(Room room, string reason)
+    {
+        await room.Gate.WaitAsync();
+        try
+        {
+            if (room.Game is null) return [];
+            if (room.Game.State.Phase != L12Phase.GameOver)
+            {
+                room.Game!.ConcludeByAuthority(null, $"赛事取消：{reason}");
+                if (room.RankedClock is { } clock) clock.ConclusionKind = "tournament-canceled";
+                room.CommandSequence++;
+                if (room.RankedClock is not null)
+                    await _recorder.AppendRankedAuthorityAsync(room.Game, room.CommandSequence,
+                        room.Game.State.WinnerReason ?? "赛事取消", CaptureRankedRuntime(room, _utcNow(), "completed"), null);
+                else
+                    await _recorder.AppendAuthorityAsync(room.Game, room.CommandSequence,
+                        room.Game.State.WinnerReason ?? "赛事取消");
+            }
+            var completionError = await CompleteTournamentRoomGameAsync(room);
+            if (completionError is not null && !completionError.Contains("缺少胜者", StringComparison.Ordinal))
+                throw new InvalidOperationException(completionError);
+            return BroadcastGame(room, forceCritical: true);
+        }
+        catch
+        {
+            if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
+            throw;
+        }
+        finally { room.Gate.Release(); }
     }
 }
 

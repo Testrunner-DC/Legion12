@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-generated-composite-context",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "效果生成的复合战术稳定性修复",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修复李牧免费打出《神妙行军》等复合战术时，首段没有合法对象并自动跳过后可能导致对局卡住的问题；同类复合战术与效果生成的免费登场现在共用稳定的声明时序。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"
+      ]
+    }
+  ]
+}

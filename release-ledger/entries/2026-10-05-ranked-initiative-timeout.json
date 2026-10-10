@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-ranked-initiative-timeout",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "排位准备选择计时修复",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "排位准备阶段选择先后手也会按设定时限处理，超时后自动完成合法选择；断线、重连和恢复不会重新计时，也不会消耗正式对局总时。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RankedClock.cs"
+      ]
+    }
+  ]
+}

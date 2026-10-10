@@ -74,6 +74,19 @@ function validCompletion(value: unknown): value is PendingCompletion {
     && typeof row.queuedAt === 'string'
 }
 
+// The API is typed, but a half-written/stale response must never become visible
+// state.  In particular, HMR and reconnects can observe a claim while its nested
+// broadcast payload is absent; reject it before any view or completion path reads it.
+function validRankedBroadcastClaim(value: unknown): value is RankedBroadcastClaim {
+  if (!value || typeof value !== 'object') return false
+  const claim = value as Partial<RankedBroadcastClaim>
+  const broadcast = claim.broadcast
+  if (!broadcast) return false
+  return typeof claim.claimToken === 'string' && claim.claimToken.length > 0
+    && typeof broadcast.id === 'string' && broadcast.id.length > 0
+    && typeof broadcast.message === 'string'
+}
+
 function readPendingCompletions(accountId: string) {
   let stored: PendingCompletion[] = []
   try {
@@ -91,6 +104,7 @@ function readPendingCompletions(accountId: string) {
 }
 
 function enqueueCompletion(accountId: string, claim: RankedBroadcastClaim) {
+  if (!validRankedBroadcastClaim(claim)) return
   const completion: PendingCompletion = {
     broadcastId: claim.broadcast.id,
     claimToken: claim.claimToken,
@@ -165,7 +179,7 @@ function finishVisibleClaim(queueCompletion: boolean) {
   rankedBroadcastPlayback.playbackStartedAt = 0
   if (playbackTimer) window.clearTimeout(playbackTimer)
   playbackTimer = undefined
-  if (!claim || !accountId || !queueCompletion) return false
+  if (!validRankedBroadcastClaim(claim) || !accountId || !queueCompletion) return false
   enqueueCompletion(accountId, claim)
   void flushRankedBroadcastCompletions(accountId)
   return true
@@ -188,6 +202,7 @@ function ensureSubscription(accountId: string) {
 }
 
 function beginPlayback(claim: RankedBroadcastClaim) {
+  if (!validRankedBroadcastClaim(claim)) return
   rankedBroadcastPlayback.claim = claim
   rankedBroadcastPlayback.playbackStartedAt = Date.now()
   rankedBroadcastPlayback.playbackDurationMs = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -224,7 +239,8 @@ export async function claimNextRankedBroadcast(): Promise<RankedBroadcastClaim |
   const subscriptionStartedAt = rankedBroadcastPlayback.subscriptionStartedAt
   rankedBroadcastPlayback.loading = true
   const request = rankedApi.claimBroadcast(subscriptionStartedAt)
-    .then(claim => {
+    .then(response => {
+      const claim = validRankedBroadcastClaim(response) ? response : null
       if (!claim) return null
       if (subscriptionGeneration === generation && rankedBroadcastPlayback.accountId === accountId)
         beginPlayback(claim)

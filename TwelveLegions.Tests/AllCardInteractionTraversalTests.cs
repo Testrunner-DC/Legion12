@@ -9,7 +9,8 @@ namespace TwelveLegions.Tests;
 ///
 /// 这不是“存在某个测试文件”或“能够解析文本”的静态审计：每个用例都会建立独立的
 /// 权威对局状态，经由与网页相同的 Handle/resolvePrompt 命令入口实际点击卡牌、发动
-/// 可见主动能力并处理 Prompt。三个策略分别覆盖最少选择、最多/末项选择和拒绝/取消。
+/// 可见主动能力并处理 Prompt。四个策略分别覆盖最少选择、最多/末项选择、拒绝/取消，
+/// 以及越权、非法候选、检查点恢复和重复提交等敌对协议输入。
 /// 等价卡位不会做指数级排列，但首末目标、最少/最多数量、发动/不发动及取消语义均会经过。
 /// </summary>
 public sealed class AllCardInteractionTraversalTests
@@ -23,6 +24,7 @@ public sealed class AllCardInteractionTraversalTests
             yield return [cardId, "minimum"];
             yield return [cardId, "maximum"];
             yield return [cardId, "decline"];
+            yield return [cardId, "adversarial"];
         }
     }
 
@@ -54,7 +56,7 @@ public sealed class AllCardInteractionTraversalTests
     public void TraversalInventoryIsExactlyTheAuthoritativeThreeHundredTwentyFourCards()
     {
         Assert.Equal(324, Catalog.Cards.Count);
-        Assert.Equal(324 * 3, CardBranches().Count());
+        Assert.Equal(324 * 4, CardBranches().Count());
         Assert.Equal(Catalog.Cards.Count, Catalog.Cards.Keys.Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
@@ -69,8 +71,8 @@ public sealed class AllCardInteractionTraversalTests
         {
             "legion" or "token" => PlayFromHand(game, player, source, row: 0, slot: 0),
             "artifact" => PlayFromHand(game, player, source),
+            "tactic" when definition.IsCounterTactic => CoverCounterTactic(game, player, source),
             "tactic" => PlayFromHand(game, player, source),
-            "counter-tactic" => CoverCounterTactic(game, player, source),
             "destruction" => PutDisasterIntoAuthoritativeDeck(game, source),
             "trial" => PutTrialIntoSpecialZone(player, source),
             "rune" => PutRuneIntoResourceZone(player, source),
@@ -181,7 +183,8 @@ public sealed class AllCardInteractionTraversalTests
         var game = new L12GameEngine(Catalog, $"interaction-{focus.Id}-{seed}", "INTERACTION", seed,
             ["甲", "乙"], [focusDeck, baseDeck], skipPreparation: true,
             disasterMode: focus.CardType == "destruction" ? "all" : "none",
-            autoPassEmptyResponses: true, concealHiddenResponseAvailability: false);
+            autoPassEmptyResponses: true, concealHiddenResponseAvailability: false,
+            stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion);
         game.State.ActivePlayer = 0;
         game.State.FirstPlayer = 0;
         game.State.Round = 3;
@@ -217,7 +220,9 @@ public sealed class AllCardInteractionTraversalTests
         for (var moraleIndex = 0; moraleIndex < 16; moraleIndex++)
             player.Morale.Add(new L12MoraleCard
             {
-                CardId = "S01-00C1",
+                // 全卡交互遍历需要同时覆盖普通士气与神力面。使用实际拥有神力面的
+                // 奥林匹斯士气，避免构造“通用士气被强行标成神力”的非法状态。
+                CardId = "S02-05C1A",
                 InstanceId = $"resource-{index}-{moraleIndex}",
                 IsGodPower = moraleIndex >= 8,
                 Tapped = false,
@@ -345,6 +350,31 @@ public sealed class AllCardInteractionTraversalTests
             AssertPromptContract(prompt, evidence);
             var selected = SelectChoices(game, prompt, branch);
             var command = BuildPromptCommand(prompt, selected);
+            if (branch == "adversarial")
+            {
+                AssertRejectedSubmissionIsAtomic(game, 1 - prompt.PlayerIndex, command,
+                    $"{evidence}/{prompt.Kind}/wrong-player");
+                AssertRejectedSubmissionIsAtomic(game, prompt.PlayerIndex, BuildInvalidPromptCommand(prompt),
+                    $"{evidence}/{prompt.Kind}/invalid-choice");
+
+                var checkpoint = game.SerializeFullState();
+                var restored = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+                    Assert.IsType<L12RandomState>(game.RandomState), game.CardFactSignalSequence,
+                    game.AutoPassEmptyResponses, game.ConcealHiddenResponseAvailability);
+                Assert.Equal(checkpoint, restored.SerializeFullState());
+                var restoredResult = restored.Handle(prompt.PlayerIndex, command);
+                Assert.True(restoredResult.Accepted,
+                    $"{evidence} 的 {prompt.Kind}/{prompt.Continuation} 检查点恢复后选择失败：{restoredResult.Error}");
+
+                var adversarialResult = game.Handle(prompt.PlayerIndex, command);
+                Assert.True(adversarialResult.Accepted,
+                    $"{evidence} 的 {prompt.Kind}/{prompt.Continuation} 选择失败：{adversarialResult.Error}；候选={string.Join(',', prompt.ValidChoices)}；选择={string.Join(',', selected)}");
+                Assert.Equal(game.SerializeFullState(), restored.SerializeFullState());
+
+                AssertRejectedSubmissionIsAtomic(game, prompt.PlayerIndex, command,
+                    $"{evidence}/{prompt.Kind}/duplicate-submit");
+                continue;
+            }
             var result = game.Handle(prompt.PlayerIndex, command);
             Assert.True(result.Accepted,
                 $"{evidence} 的 {prompt.Kind}/{prompt.Continuation} 选择失败：{result.Error}；候选={string.Join(',', prompt.ValidChoices)}；选择={string.Join(',', selected)}");
@@ -417,6 +447,27 @@ public sealed class AllCardInteractionTraversalTests
         return new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             Choice: selected.Count == 1 ? selected[0] : null,
             CardInstanceIds: selected.Count == 1 ? null : selected);
+    }
+
+    private static L12Command BuildInvalidPromptCommand(L12Prompt prompt)
+    {
+        const string invalidChoice = "__l12_invalid_choice__";
+        var placement = prompt.Data.GetValueOrDefault("placementMode");
+        if (placement is "split-top-bottom" or "all-top-bottom" or "all-bottom")
+        {
+            return new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+                TopCardInstanceIds: [invalidChoice], BottomCardInstanceIds: []);
+        }
+        return new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: invalidChoice);
+    }
+
+    private static void AssertRejectedSubmissionIsAtomic(L12GameEngine game, int playerIndex,
+        L12Command command, string evidence)
+    {
+        var before = game.SerializeFullState();
+        var result = game.Handle(playerIndex, command);
+        Assert.False(result.Accepted, $"{evidence} 被错误受理");
+        Assert.Equal(before, game.SerializeFullState());
     }
 
     private static void AssertPromptContract(L12Prompt prompt, string evidence)

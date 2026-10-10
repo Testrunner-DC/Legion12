@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-effect-result-reasons",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战效果未完成原因补充",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局记录会在公开目标于响应后失效、牌库为空或所选公开战场排没有可处理军团时，显示该效果失败或跳过的具体原因；已经支付的公开费用仍按实际结果显示，且不会暴露手牌、牌库顺序或盖伏信息。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"
+      ]
+    }
+  ]
+}

@@ -60,8 +60,9 @@ public sealed partial class L12GameEngine
                     if (pending.BlockedByResponse)
                     {
                         pending.Stage = L12CombatStage.AttackerAfterAttack;
-                        AddEvent("attack-ended", 1 - pending.AttackerPlayer,
-                            "响应效果抵挡本次进攻；已结算的进攻时效果不回退");
+                        AddPlayerCombatEvent("attack-ended", 1 - pending.AttackerPlayer,
+                            "响应效果抵挡本次进攻；已结算的进攻时效果不回退",
+                            new(pending.CombatId, "attack-ended", "blocked"));
                         continue;
                     }
                     if (!pending.DefenderAttackTimingOpened)
@@ -77,7 +78,7 @@ public sealed partial class L12GameEngine
                     pending.Stage = L12CombatStage.DefenseChoice;
                     State.Phase = L12Phase.Defense;
                     AddEvent("combat-stage", 1 - pending.AttackerPlayer,
-                        $"防守方【对方进攻时】响应已全部结算；本次进攻数值冻结为 {pending.AttackValue}，进入抵挡/支援");
+                        $"防守方【对方进攻时】响应已全部结算；本次进攻值为 {pending.AttackValue}，请选择抵挡或支援");
                     if (AutoResolveLegionDefenseWithoutSupport()) return;
                     return;
 
@@ -227,7 +228,10 @@ public sealed partial class L12GameEngine
 
         RevertPendingCombatTroopsModifiers(pending, attacker);
         var reason = attacker is null ? "进攻军团已离场" : "被进攻军团已离场";
-        AddEvent("attack-aborted", eventPlayer, $"{reason}，本次进攻在当前安全边界自动结束并返回主要阶段");
+        AddPlayerCombatEvent("attack-aborted", eventPlayer,
+            $"{reason}，本次进攻中止",
+            new(pending.CombatId, "attack-aborted", "aborted", attacker is null
+                ? "attacker-left" : "target-left"));
         FinishCurrentCombatContext();
         return true;
     }
@@ -236,7 +240,9 @@ public sealed partial class L12GameEngine
     {
         var attacker = FindOnField(State.Players[pending.AttackerPlayer], pending.AttackerInstanceId, out _, out _);
         RevertPendingCombatTroopsModifiers(pending, attacker);
-        AddEvent("attack-ended", pending.AttackerPlayer, "本次进攻的【进攻后】与防守方结束效果已全部结算");
+        AddPlayerCombatEvent("attack-ended", pending.AttackerPlayer,
+            "本次进攻的【进攻后】与防守方结束效果已全部结算",
+            new(pending.CombatId, "attack-ended", "completed"));
         FinishCurrentCombatContext();
     }
 
@@ -284,7 +290,8 @@ public sealed partial class L12GameEngine
             killer.CardId,
             TriggersPrintedKillTiming: true,
             CausedBySourceCard: true,
-            [defeatedInstanceId]));
+            [defeatedInstanceId],
+            SourceWasAttackingLegion: isAttackerKill));
     }
 
     private void QueueAttackerAfterAttackTriggers(int playerIndex, L12CardInstance attacker)
@@ -339,12 +346,13 @@ public sealed partial class L12GameEngine
         var battlefield = State.Players[battlefieldController];
         var card = battlefield.Resolving.FirstOrDefault(candidate => candidate.InstanceId == instanceId);
         if (card is null) return;
-        battlefield.Resolving.Remove(card);
         var owner = CardOwner(card, battlefield);
+        if (ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(owner, card, "阵亡结算")) return;
+        battlefield.Resolving.Remove(card);
         var promotionFoundations = DetachPromotionFoundations(card);
         if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}阵亡");
         var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
-        ResetCardAfterLeavingField(card);
         if (returnsToMaster)
         {
             CompleteMasterLegionDeparture(owner, card);
@@ -352,12 +360,14 @@ public sealed partial class L12GameEngine
         }
         else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
+            ResetCardForPrivateZone(card);
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{card.Name}〉在阵亡触发完成后消灭，不进入其他区域", card);
             MovePromotionFoundationsToZone(promotionFoundations, owner, "vanished", $"{card.Name}阵亡");
         }
         else
         {
+            ResetCardForPrivateZone(card);
             owner.Graveyard.Add(card);
             MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}阵亡");
             AddEvent("grave", owner.PlayerIndex, $"{card.Name}的相关阵亡触发已完成，置入所有者墓地", card);

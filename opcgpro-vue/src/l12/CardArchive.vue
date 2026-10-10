@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
-import { cardArchiveProducts, displayCardNumber, loadCardArchiveCatalog, type DeckCard } from './decks'
+import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
-import CardImage from './CardImage.vue'
+import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
+import { alternateArtApi, authState, platformState, type AlternateArt } from './platform'
+import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
 type CatalogCard = DeckCard
 type ArchivePage = 'catalog' | 'gallery'
@@ -27,10 +29,12 @@ const factionLabels: Record<string, string> = {
 // The Olympus B face is a separate rules identity, never gallery artwork.
 const galleryVariantPatterns = [
   /^S\d{2}-\d{4}[a-z]$/,
-  /^S\d{2}-\d{2}[CM]1A$/,
+  /^S\d{2}-\d{2}[CM]\d+A$/,
   /^ST\d{2}-C1st$/,
 ]
 const cards = ref<CatalogCard[]>([])
+const galleryArts = ref<AlternateArt[]>([])
+const ownedArts = ref<AlternateArt[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const page = ref<ArchivePage>('catalog')
@@ -41,6 +45,7 @@ const cost = ref('all')
 const disaster = ref('all')
 const product = ref('all')
 const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
+const filtersOpen = ref(false)
 const selectedLogicalId = ref('')
 const selectedVersionId = ref('')
 const selectedGalleryId = ref('')
@@ -48,15 +53,73 @@ const modalCard = ref<CatalogCard | null>(null)
 const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
+let archiveMounted = false
+let ownedArtsRequest = 0
 
-const logicalCards = computed(() => groupArchiveCards(cards.value))
-const galleryCards = computed(() => cards.value.filter(isGalleryVariant).sort(compareArchiveVersions))
-const productOptions = computed(() => cardArchiveProducts.filter(value => cards.value.some(card => card.products?.includes(value))))
+function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
+  const base = cards.value.find(card => card.id === art.baseCardId)
+  if (!base || art.builtIn) return null
+  return {
+    ...base,
+    id: `ALT-${gallery ? art.artCode || art.id : art.id}`,
+    number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
+    nameZh: gallery ? `${base.nameZh} · ${art.displayName}` : base.nameZh,
+    imageUrl: art.imageUrl,
+    archiveBaseCardId: base.id,
+    products: art.productName ? [art.productName] : base.products,
+  }
+}
+const catalogAlternateArts = computed(() => authState.verified && platformState.account?.role === 'admin'
+  ? galleryArts.value
+  : ownedArts.value)
+const catalogCards = computed(() => [
+  ...cards.value,
+  ...catalogAlternateArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
+])
+const logicalCards = computed(() => groupArchiveCards(catalogCards.value))
+const galleryCards = computed(() => {
+  const legacy = cards.value.filter(isGalleryVariant)
+  const uploaded = galleryArts.value.map(art => projectedUploadedArt(art, true))
+    .filter((card): card is CatalogCard => Boolean(card))
+  return [...legacy, ...uploaded].sort(compareArchiveVersions)
+})
+const productOptions = computed(() => [...new Set([
+  ...cardArchiveProducts,
+  ...galleryCards.value.flatMap(card => card.products ?? []),
+])].filter(value => cards.value.some(card => card.products?.includes(value))
+  || galleryCards.value.some(card => card.products?.includes(value))))
+
+async function refreshOwnedArts() {
+  const request = ++ownedArtsRequest
+  const accountId = authState.verified ? platformState.account?.id ?? '' : ''
+  if (!accountId || platformState.account?.role === 'admin') {
+    ownedArts.value = []
+    return
+  }
+  try {
+    const owned = await alternateArtApi.mine()
+    if (request === ownedArtsRequest && authState.verified && platformState.account?.id === accountId)
+      ownedArts.value = owned
+  } catch {
+    if (request === ownedArtsRequest) ownedArts.value = []
+  }
+}
+
+watch(() => `${authState.verified}:${platformState.account?.id ?? ''}:${platformState.account?.role ?? ''}`, () => {
+  if (archiveMounted) void refreshOwnedArts()
+})
 
 onMounted(async () => {
+  archiveMounted = true
   window.addEventListener('keydown', onWindowKeydown)
   try {
-    cards.value = await loadCardArchiveCatalog()
+    const [catalog, arts] = await Promise.all([
+      loadCardArchiveCatalog(),
+      alternateArtApi.gallery(),
+    ])
+    cards.value = catalog
+    galleryArts.value = arts
+    await refreshOwnedArts()
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
     selectedGalleryId.value = galleryCards.value[0]?.id ?? ''
@@ -67,7 +130,11 @@ onMounted(async () => {
   }
 })
 
-onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
+onBeforeUnmount(() => {
+  archiveMounted = false
+  ownedArtsRequest += 1
+  window.removeEventListener('keydown', onWindowKeydown)
+})
 
 function hasCostDimension(card: CatalogCard) {
   return card.cardType !== 'master' && card.cost !== undefined
@@ -95,15 +162,15 @@ function matchesFilters(card: CatalogCard, keyword: string) {
     && (type.value === 'all' || cardTypeFilterKey(card.cardType) === type.value)
     && (faction.value === 'all' || card.faction === faction.value)
     && (product.value === 'all' || card.products?.includes(product.value))
-    && (cost.value === 'all' || (hasCostDimension(card)
-      && (cost.value === '7+' ? card.cost! >= 7 : card.cost === Number(cost.value))))
+    && (cost.value === 'all' || (filterableCardCost(card) !== null
+      && (cost.value === '7+' ? filterableCardCost(card)! >= 7 : filterableCardCost(card) === Number(cost.value))))
     && (disaster.value === 'all'
       || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value)))
 }
 
 function compareVisibleCards(left: CatalogCard, right: CatalogCard) {
   if (sort.value === 'name') return left.nameZh.localeCompare(right.nameZh, 'zh-CN')
-  if (sort.value === 'cost') return (left.cost ?? 99) - (right.cost ?? 99) || left.number.localeCompare(right.number)
+  if (sort.value === 'cost') return (filterableCardCost(left) ?? 99) - (filterableCardCost(right) ?? 99) || left.number.localeCompare(right.number)
   if (sort.value === 'troops') return (right.troops ?? -1) - (left.troops ?? -1) || left.number.localeCompare(right.number)
   return left.number.localeCompare(right.number)
 }
@@ -118,7 +185,6 @@ const filteredGallery = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return galleryCards.value.filter(card => matchesFilters(card, keyword)).sort(compareVisibleCards)
 })
-
 const types = computed(() => [...new Set(cards.value.map(card => cardTypeFilterKey(card.cardType)))]
   .filter(key => typeLabels[key]))
 const factions = computed(() => Object.keys(factionLabels).filter(key => cards.value.some(card => card.faction === key)))
@@ -137,6 +203,19 @@ const modalVersionIndex = computed(() => modalCard.value
   : -1)
 const visibleCount = computed(() => page.value === 'gallery' ? filteredGallery.value.length : filteredCatalog.value.length)
 const totalCount = computed(() => page.value === 'gallery' ? galleryCards.value.length : logicalCards.value.length)
+const activeFilterCount = computed(() => [type.value, faction.value, product.value, cost.value, disaster.value]
+  .filter(value => value !== 'all').length + (sort.value === 'number' ? 0 : 1))
+const activeFilterSummary = computed(() => {
+  const parts = [
+    type.value !== 'all' ? typeLabels[type.value] : '',
+    faction.value !== 'all' ? factionLabels[faction.value] : '',
+    product.value !== 'all' ? product.value : '',
+    cost.value !== 'all' ? `费用 ${cost.value}` : '',
+    disaster.value !== 'all' ? `天灾 ${disaster.value}` : '',
+    sort.value !== 'number' ? `按${sort.value === 'cost' ? '费用' : sort.value === 'troops' ? '兵力' : '名称'}排序` : '',
+  ].filter(Boolean)
+  return parts.length > 3 ? `${parts.slice(0, 3).join(' · ')} · +${parts.length - 3}` : parts.join(' · ')
+})
 
 function selectLogical(entry: LogicalArchiveCard) {
   if (selectedLogicalId.value === entry.logicalId) return
@@ -215,15 +294,28 @@ function resetFilters() {
 
     <div class="archive-toolbar">
       <label class="archive-search"><span>搜索</span><input v-model="query" type="search" placeholder="卡名、编号或效果文字"/></label>
-      <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
-      <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
-      <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
-      <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
-      <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-      <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
-      <button class="archive-reset" @click="resetFilters">重置</button>
+      <MobileFilterSheet v-model="filtersOpen" title="图鉴筛选与排序" :active-count="activeFilterCount" @reset="resetFilters">
+        <div class="archive-filter-fields">
+          <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
+          <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+          <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+          <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        </div>
+        <template #apply-label>查看 {{ visibleCount }} 张结果</template>
+      </MobileFilterSheet>
+      <div class="archive-desktop-filters archive-filter-fields">
+        <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
+        <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+        <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+        <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+        <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+        <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        <button class="archive-reset" @click="resetFilters">重置</button>
+      </div>
     </div>
-
+    <button v-if="activeFilterCount" type="button" class="archive-filter-summary" @click="filtersOpen = true">{{ activeFilterSummary }}</button>
     <div v-if="loading" class="archive-empty">正在载入卡牌数据…</div>
     <div v-else-if="loadError" class="archive-empty error">{{ loadError }}</div>
     <div v-else class="archive-workspace">
@@ -235,7 +327,7 @@ function resetFilters() {
             @click="selectLogical(entry)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event, entry.versions)">
-                <CardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh" intent="thumb"/>
+                <MobileDeferredCardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh"/>
               </div>
               <b v-if="hasCostDimension(displayedVersion(entry))" class="archive-cost">{{ displayedVersion(entry).cost }}</b>
               <b v-if="displayedVersion(entry).disasterLevel" class="archive-disaster">{{ displayedVersion(entry).disasterLevel }}</b>
@@ -246,7 +338,7 @@ function resetFilters() {
                 <b class="archive-version-count">{{ displayedVersionIndex(entry) + 1 }}/{{ entry.versions.length }}</b>
               </template>
             </div>
-            <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType) }}</small>
+            <span>{{ displayedVersion(entry).nameZh }}</span><small>{{ displayCardNumber(displayedVersion(entry)) }} · {{ cardTypeLabel(displayedVersion(entry).cardType, displayedVersion(entry).isCounterTactic) }}</small>
           </article>
           <div v-if="!filteredCatalog.length" class="archive-empty">没有符合条件的卡牌。</div>
         </template>
@@ -258,15 +350,15 @@ function resetFilters() {
             @click="selectGallery(card)" @keydown.enter.prevent="selectGallery(card); openDetail(card, $event)" @keydown.space.prevent="selectGallery(card)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(card, $event)">
-                <CardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb"/>
+                <MobileDeferredCardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh"/>
               </div>
               <b v-if="hasCostDimension(card)" class="archive-cost">{{ card.cost }}</b>
               <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
               <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
             </div>
-            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · {{ cardTypeLabel(card.cardType) }}</small>
+            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · 异画 · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
           </article>
-          <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的展示版本。</div>
+          <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的异画。</div>
         </template>
       </div>
 
@@ -312,11 +404,18 @@ function resetFilters() {
 </template>
 
 <style scoped>
+.archive-workspace{grid-template-columns:minmax(0,1fr) var(--l12-card-detail-sidebar-width,274px)}
+.archive-card-image{box-sizing:border-box;display:grid;min-width:0;min-height:0;place-items:stretch}
+.archive-image-open,
+.archive-image-open :deep(.mobile-deferred-card-image),
+.archive-image-open :deep(.l12-card-image),
+.archive-image-open :deep(.l12-card-image__img){box-sizing:border-box;min-width:0;min-height:0;width:100%;height:100%}
+.archive-image-open :deep(.l12-card-image__img){object-fit:contain!important;object-position:center!important}
+:global(.archive-card.landscape-thumbnail .archive-card-image){aspect-ratio:8/5}
 .archive-modal {
   box-sizing: border-box;
   overflow: hidden;
 }
-
 @media (max-width: 760px) {
   .archive-modal {
     grid-template-rows: auto minmax(0, 1fr);
@@ -330,5 +429,57 @@ function resetFilters() {
     padding: 0 12px 12px 4px;
     scrollbar-gutter: stable;
   }
+}
+@media (max-width: 900px), (max-height: 640px) {
+  /* SiteShell switches to the compact navigation for either a narrow width or
+     a short usable height. The archive must follow the same geometry rule;
+     otherwise a landscape phone keeps the desktop detail column and clips the
+     lower part of card rows inside the fixed-height desktop surface. */
+  :global(.card-archive) {
+    height: auto;
+    min-height: 100%;
+    overflow: visible;
+    padding: 14px;
+  }
+  :global(.archive-toolbar) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+  :global(.archive-search) { grid-column: auto; min-width: 0; }
+  :global(.archive-desktop-filters) { display: none; }
+  .archive-toolbar :deep(.mobile-filter-trigger) {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(.archive-filter-summary) {
+    display: block;
+    width: 100%;
+    margin-top: 8px;
+    padding: 8px 10px;
+    border: 1px solid #52636a;
+    background: #101a20;
+    color: #c7d8d6;
+    font-size: 12px;
+    font-weight: 800;
+    text-align: left;
+  }
+  .archive-workspace {
+    container-type: inline-size;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: auto;
+    flex: none;
+  }
+  .archive-detail { display: none; }
+  .archive-grid { min-height: auto; max-height: none; overflow: visible; padding-right: 0; }
+  .archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@container (max-width: 580px) {
+  .archive-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@container (max-width: 380px) {
+  .archive-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

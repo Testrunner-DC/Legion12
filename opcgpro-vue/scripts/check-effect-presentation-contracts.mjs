@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
+import './test-effect-result-presentation.mjs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const backendRoot = new URL('../../服务端WebSocket/TwelveLegions/', import.meta.url)
@@ -7,37 +8,37 @@ const backendFiles = readdirSync(backendRoot)
   .filter(name => name.endsWith('.cs'))
   .map(name => ({ name, source: read(`../../服务端WebSocket/TwelveLegions/${name}`) }))
 const backend = backendFiles.map(file => file.source).join('\n')
-const admin = read('../src/l12/site/AdminPage.vue')
-const board = read('../src/l12/game/GameBoard.vue')
+const admin = read('../src/l12/site/AdminEffectWorkbenchPanel.vue')
+const board = `${read('../src/l12/game/GameBoard.vue')}\n${read('../src/l12/game/GameBoard.mobile.css')}`
 const eventLog = read('../src/l12/game/BattleEventLog.vue')
+const eventLogViewModel = read('../src/l12/game/logViewModel.ts')
 const actionLayer = read('../src/l12/game/ActionPresentationLayer.vue')
 const actionPresentation = read('../src/l12/game/actionPresentation.ts')
 const zoneMovement = read('../src/l12/game/ZoneMovementPresentationLayer.vue')
 const combatMotion = read('../src/l12/game/CombatMotionPresentationLayer.vue')
 const phasePlayback = read('../src/l12/game/PhasePlayback.vue')
+const visualTransitionProjection = read('../src/l12/game/visualTransitionProjection.ts')
+const effectResultPresentation = read('../src/l12/game/effectResultPresentation.ts')
+const graveReturnHelper = read('../../服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs')
+const legacyGraveReturnCaller = read('../../服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs')
 const platform = read('../src/l12/platform.ts')
 const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.EffectPresentations.cs')
 const model = read('../../服务端WebSocket/TwelveLegions/EffectPresentationTexts.cs')
 const operations = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs')
 
+const runtimePresentation = `${board}\n${visualTransitionProjection}\n${effectResultPresentation}`
 for (const contract of [
-  'data-ui-contract="effect-presentation-editor"',
-  'data-ui-contract="effect-presentation-segment"',
-  'data-ui-contract="effect-presentation-branch"',
-  'data-ui-contract="effect-presentation-multiline"',
-  'scene.defaultText',
-  'scene.effectiveText',
-  'scene.segmentIndex',
-  'scene.segmentCount',
-  'scene.branchLabel',
-  'scene.requiredChoices',
-  'presentationDrafts[scene.sceneId]',
-  '@keydown.enter.stop',
-  '@keyup.enter.stop',
-  'savePresentation(scene)',
-  'restorePresentation(scene)',
+  'data-ui-contract="effect-workbench"',
+  'data-ui-contract="effect-workbench-preview"',
+  'draft.scenes.length',
+  'v-model="scene.text"',
+  'v-model="scene.styleId"',
+  'v-model="scene.publicLevel"',
+  "performAction(kind: 'validate' | 'review' | 'publish')",
+  'publishEffectWorkbench',
+  'rollbackEffectWorkbench',
   'white-space:pre-wrap',
-]) assert(admin.includes(contract), `Admin effect presentation editor is missing ${contract}`)
+]) assert(admin.includes(contract), `Admin effect workbench is missing ${contract}`)
 assert(platform.includes('presentations?: EffectPresentationScene[]'))
 for (const metadataField of [
   'flow?: string | null',
@@ -48,26 +49,13 @@ for (const metadataField of [
 ]) assert(platform.includes(metadataField), `Effect presentation scene type is missing ${metadataField}`)
 assert(platform.includes('/presentations/${encodeURIComponent(sceneId)}'))
 assert(platform.includes('/presentations/${encodeURIComponent(sceneId)}/restore'))
-assert(admin.includes("return context.filter(Boolean).join(' · ')")
-  && admin.includes('第 ${scene.segmentIndex}/${scene.segmentCount} 段')
-  && admin.includes('分段元数据异常')
-  && admin.includes('scene.segmentIndex != null || scene.segmentCount != null'),
-  'Segment/branch editor context must remain explicit and reject malformed metadata without guessing')
-assert(admin.includes("Object.entries(scene.requiredChoices ?? {})")
-  && admin.includes('公开选择条件：{{ formatPresentationChoices(scene) }}'),
-  'Public branch selectors must remain inspectable without driving client-side matching')
-assert(admin.includes("const hasFlowEffect = scenes.some(scene => scene.eventType === 'effect' && Boolean(scene.flow?.trim()))")
-  && admin.includes("return scenes.filter(scene => scene.eventType !== 'effect' || Boolean(scene.flow?.trim()))")
-  && admin.includes('v-for="scene in visiblePresentationScenes(ability)"'),
-  'Abilities with flow-specific effect scenes must hide their obsolete whole-effect scene while keeping other event types')
-assert(admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text)')
-  && !admin.includes('saveEffectPresentation(selectedEffect.value.cardId, scene.sceneId, text.trim())'),
-  'The editor must send the multiline draft without flattening or trimming internal newlines')
+assert(admin.includes('maxlength="2000"') && admin.includes('cloneDraft(result.draft)'),
+  'The workbench must preserve authoritative multiline scene drafts without flattening them')
 assert([board, actionLayer, actionPresentation, zoneMovement, combatMotion, phasePlayback]
   .every(source => !source.includes('effect-announced')),
   'Recorded whole-effect announcements must not enter any frontend animation queue')
-assert(eventLog.includes("'effect-announced'"),
-  'Recorded whole-effect announcements must remain authoritative history without repeating in the player-facing log')
+assert(eventLogViewModel.includes("'effect-announced'") && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
+  'Recorded whole-effect announcements must remain authoritative history while the player projection explicitly hides them')
 
 const overrideGuard = board.indexOf('if (override) return override')
 const oiranFallback = board.indexOf('/花魁的馈赠/.test(text)')
@@ -75,6 +63,42 @@ assert(overrideGuard >= 0 && overrideGuard < oiranFallback,
   'Authoritative override must win before the legacy Oiran compatibility fallback')
 assert(board.includes('.public-reveal-animation strong{') && board.includes('white-space:pre-wrap;overflow-wrap:anywhere'))
 assert(eventLog.includes('.event-effect{') && eventLog.includes('white-space:pre-wrap'))
+assert(actionLayer.includes('.l12-action-presentation .action-copy strong{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;text-overflow:clip}'),
+  '对局动效公告必须保留后台手动换行，并对超长单行安全折行')
+for (const contract of [
+  "event.type === 'effect-result'",
+  "event.effectResultStatus !== 'declared'",
+]) assert(runtimePresentation.includes(contract), `Battle animation settlement projection is missing ${contract}`)
+for (const contract of [
+  "negated: '被无效'",
+  "skipped: '跳过'",
+  "failed: '未能完成'",
+  "declined: '选择不发动'",
+]) assert(effectResultPresentation.includes(contract), `Battle result formatter is missing ${contract}`)
+assert(eventLogViewModel.includes("'effect-result'") && eventLogViewModel.includes("'effect-declined'")
+  && eventLogViewModel.includes('PLAYER_LOG_HIDDEN_TYPES'),
+  'Player log must explicitly suppress settlement internals and declined effects while authority history remains intact')
+assert.equal((backend.match(/MoveGraveToLibraryBottom\(/g) ?? []).length, 18,
+  'The reviewed grave-to-library-bottom family must remain one shared helper plus 17 callers; audit any new bypass')
+assert(graveReturnHelper.includes('foreach (var card in legal)')
+  && graveReturnHelper.includes('AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card)')
+  && graveReturnHelper.includes('AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card)'),
+  'Every successful shared grave-to-library move must publish one ordered authority event per physical card')
+assert(!/MoveGraveToLibraryBottom\(player, \[card\]\);\s*AddEvent\("return"/.test(legacyGraveReturnCaller),
+  'A caller must not publish a second return after the shared helper already emitted the movement fact')
+assert(backend.includes('"effect-declined" => "declined"'),
+  'Backend event and stack projections must share the declined result status')
+const replay = read('../src/l12/replayModel.ts')
+for (const field of [
+  'EffectText', 'EffectSceneId', 'EffectAbilityId', 'EffectSegmentId', 'EffectSegmentIndex',
+  'EffectSegmentCount', 'EffectBranchId', 'EffectBranchLabel', 'EffectResultStatus', 'PlayerLogSemantic',
+]) assert(replay.includes(field), `Replay projection is missing ${field}`)
+for (const contract of [
+  'AddEffectResultEvent(item, resultStatus)',
+  'effectResultPublished',
+  'effectResultStatus',
+  'BuildEffectEventMetadata(configured, resultStatus)',
+]) assert(backend.includes(contract), `Backend settlement-result contract is missing ${contract}`)
 
 assert(model.includes('.Where(scene => scene.Overridden)'), 'Only manual overrides may be frozen into a match')
 assert(store.includes('.GroupBy(row => row.SceneId'), 'Malformed legacy duplicate rows must not break reads')
@@ -141,5 +165,12 @@ for (const { cardId, sceneKey } of explicitPairs) {
   assert(producerSource.includes(evidence.producer) && sceneSource.includes(evidence.scene),
     `Delegated publisher evidence is stale for ${cardId}/${sceneKey}`)
 }
+
+assert(board.includes("resourceSelectionPrompt.data?.cancel ?? '取消打出'"),
+  'Resource payment cancellation must use the authoritative label in the existing footer')
+assert(backend.includes('excludedResourceIds, allowCancel: true);'),
+  'Active morale payment must retain its pre-stack cancellation escape')
+assert(backend.includes('continuation == "active-return-choice"') && backend.includes('data["cancel"] = "不发动";'),
+  'Active morale return must distinguish cancellation from mandatory effect-stage return')
 
 console.log(`Effect presentation contracts passed: ${explicitPairs.length} explicit card/scene publishers, system exemptions bounded, multiline UI/runtime preserved.`)

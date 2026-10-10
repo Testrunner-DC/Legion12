@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { l12State } from '../net'
+import { getResponsePreference, l12State, setResponsePreference, type ResponseMode } from '../net'
 import { friendApi } from '../platform'
 import { reportOpponent, requestMatchDraw, resolveMatchDraw } from '../matchGovernance'
 import FriendsPage from '../site/FriendsPage.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
 
 defineEmits<{ settings: [] }>()
 
 const showFriends = ref(false)
 const showTools = ref(false)
 const responseOpen = ref(false)
-const toolView = ref<'menu' | 'draw' | 'report'>('menu')
+const toolView = ref<'menu' | 'draw' | 'report' | 'response'>('menu')
 const drawReason = ref('')
 const reportDescription = ref('')
 const notice = ref('')
 const busy = ref(false)
 const pendingClientId = ref('')
 let acknowledgementTimer: ReturnType<typeof window.setTimeout> | undefined
+const responseDraft = ref<ResponseMode>('default')
+const responseRequestId = ref('')
 
 const governance = computed(() => l12State.game?.matchGovernance)
 const drawRequest = computed(() => governance.value?.drawRequest ?? null)
@@ -57,8 +60,24 @@ watch(() => l12State.status, status => {
   pendingClientId.value = ''
   if (acknowledgementTimer) window.clearTimeout(acknowledgementTimer)
   acknowledgementTimer = undefined
-  notice.value = '对战连接已中断；恢复连接后请根据权威状态重试'
+  notice.value = '对战连接已中断；恢复后请先查看操作结果，再重试'
 })
+
+watch(() => l12State.responsePreference, value => {
+  responseDraft.value = value.confirmedMode
+}, { immediate: true, deep: true })
+
+watch(() => l12State.responsePreferenceResult, result => {
+  if (!result || (responseRequestId.value && result.requestId !== responseRequestId.value)) return
+  responseDraft.value = result.confirmedMode
+  busy.value = false
+  responseRequestId.value = ''
+  notice.value = result.matchApplied && result.accountSynced
+    ? '响应设置已保存'
+    : result.matchApplied && result.syncPending
+      ? '本局设置已确认，账号同步待重试'
+      : '设置未写入本局，已恢复到服务器确认值'
+}, { deep: true })
 
 function awaitAcknowledgement(clientRequestId: string) {
   if (acknowledgementTimer) window.clearTimeout(acknowledgementTimer)
@@ -66,7 +85,7 @@ function awaitAcknowledgement(clientRequestId: string) {
     if (pendingClientId.value !== clientRequestId) return
     pendingClientId.value = ''
     busy.value = false
-    notice.value = '服务器未确认此操作；请先查看权威对局状态，再安全重试'
+    notice.value = '尚未收到操作结果；请先查看本局是否已更新，再重试'
   }, 12_000)
 }
 
@@ -85,11 +104,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', keydown)
   if (acknowledgementTimer) window.clearTimeout(acknowledgementTimer)
 })
-
-function openBugFeedback() {
-  showTools.value = false
-  window.dispatchEvent(new CustomEvent('l12-open-bug-feedback'))
-}
 
 async function blockOpponent() {
   const accountId = governance.value?.opponentAccountId
@@ -140,10 +154,24 @@ function answerDraw(accept: boolean) {
   resolveMatchDraw(request.id, accept)
   awaitAcknowledgement(request.id)
 }
+
+function openResponseSettings() {
+  toolView.value = 'response'
+  notice.value = ''
+  responseDraft.value = l12State.responsePreference.confirmedMode
+  getResponsePreference()
+}
+
+function saveResponseSettings() {
+  if (busy.value || l12State.status !== 'online') return
+  busy.value = true
+  notice.value = '正在等待服务器确认…'
+  responseRequestId.value = setResponsePreference(responseDraft.value)
+}
 </script>
 
 <template>
-  <aside class="battle-utility-dock" aria-label="对局通用功能">
+  <aside v-if="!l12State.spectating" class="battle-utility-dock" aria-label="对局通用功能">
     <button type="button" title="设置" aria-label="打开对局设置" @click="$emit('settings')">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.2 4.9v-2.8l-2-.7a7 7 0 0 0-.7-1.6l.9-1.9-2-2-1.9.9a7 7 0 0 0-1.6-.7l-.7-2H9.4l-.7 2a7 7 0 0 0-1.6.7l-1.9-.9-2 2 .9 1.9a7 7 0 0 0-.7 1.6l-2 .7v2.8l2 .7c.2.6.4 1.1.7 1.6l-.9 1.9 2 2 1.9-.9c.5.3 1 .5 1.6.7l.7 2h2.8l.7-2c.6-.2 1.1-.4 1.6-.7l1.9.9 2-2-.9-1.9c.3-.5.5-1 .7-1.6l2-.7Z"/></svg>
     </button>
@@ -155,7 +183,7 @@ function answerDraw(accept: boolean) {
     </button>
   </aside>
 
-  <Teleport to="body">
+  <Teleport :to="landscapeTeleportTarget()">
     <div v-if="showFriends" class="battle-modal-mask" @click.self="showFriends = false">
       <section class="battle-dialog friends-shell" role="dialog" aria-modal="true" aria-labelledby="battle-friends-title">
         <header><h2 id="battle-friends-title">好友</h2><button type="button" aria-label="关闭好友功能" @click="showFriends = false">×</button></header>
@@ -163,30 +191,41 @@ function answerDraw(accept: boolean) {
       </section>
     </div>
 
-    <div v-if="showTools" class="battle-modal-mask" @click.self="showTools = false">
+    <div v-if="showTools && !l12State.spectating" class="battle-modal-mask" @click.self="showTools = false">
       <section class="battle-dialog tools-dialog" role="dialog" aria-modal="true" aria-labelledby="battle-tools-title">
         <header><div><small>MATCH TOOLS</small><h2 id="battle-tools-title">对局工具</h2></div><button type="button" aria-label="关闭对局工具" @click="showTools = false">×</button></header>
         <p class="connection" role="status"><i :class="l12State.status"/>{{ connection }}</p>
 
-        <div v-if="toolView === 'menu'" class="tool-menu">
-          <button type="button" @click="openBugFeedback">Bug反馈<span>打开普通反馈入口</span></button>
+        <div v-if="toolView === 'menu'" class="tool-menu" data-ui-contract="equal-option-group">
+          <button type="button" :disabled="busy" @click="openResponseSettings">响应设置<span>默认 / 仅有效响应 / 5秒关闭无效响应</span></button>
           <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '本局双方合计仅可申请一次' }}</span></button>
           <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>仅屏蔽好友申请，不影响本局或匹配</span></button>
-          <button type="button" :disabled="!governance?.canReportOpponent || busy" @click="toolView = 'report'; notice = ''">举报对手<span>{{ governance?.reportUnavailableReason || '独立提交至对局治理' }}</span></button>
+          <button type="button" :disabled="!governance?.canReportOpponent || busy" @click="toolView = 'report'; notice = ''">举报对手<span>{{ governance?.reportUnavailableReason || '提交对手违规行为' }}</span></button>
           <button v-if="drawRequest?.viewerCanRespond" type="button" class="attention" @click="responseOpen = true">处理平局申请<span>{{ drawRequest.requesterName }} 正在等待答复</span></button>
           <p v-else-if="drawRequest?.status === 'pending'">平局申请等待 {{ drawRequest.responderName }} 处理。</p>
         </div>
 
+        <form v-else-if="toolView === 'response'" class="response-settings-form" @submit.prevent="saveResponseSettings">
+          <fieldset :disabled="busy">
+            <legend>响应窗口模式</legend>
+            <label><input v-model="responseDraft" type="radio" value="default"><span><b>默认</b></span></label>
+            <label><input v-model="responseDraft" type="radio" value="valid-only"><span><b>仅有效响应</b><small>没有实际可执行响应时直接让过</small></span></label>
+            <label><input v-model="responseDraft" type="radio" value="invalid-five-seconds"><span><b>5秒关闭无效响应</b><small>无有效响应时显示仅可让过的 5 秒窗口</small></span></label>
+          </fieldset>
+          <p v-if="l12State.responsePreference.syncPending">本局设置已确认，账号同步待重试。</p>
+          <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy" type="submit">{{ busy ? '保存中…' : '保存设置' }}</button></footer>
+        </form>
+
         <form v-else-if="toolView === 'draw'" @submit.prevent="submitDrawRequest">
           <label>申请原因<textarea v-model="drawReason" maxlength="1000" rows="5" placeholder="输入所出现的Bug给对手申请平局"/></label>
-          <p>真实双人进行中对局可申请，排位同样允许；每场对局双方合计仅可发起一次，无论接受或拒绝都不能再次申请。对方仍可响应已经收到的申请。</p>
-          <footer><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !drawReason.trim()" type="submit">{{ busy ? '提交中…' : '发送申请' }}</button></footer>
+          <p>双人对局（含排位）进行中可申请。每局双方合计仅限一次，接受或拒绝后均不能再申请。</p>
+          <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !drawReason.trim()" type="submit">{{ busy ? '提交中…' : '发送申请' }}</button></footer>
         </form>
 
         <form v-else @submit.prevent="submitPlayerReport">
           <label>举报内容<textarea v-model="reportDescription" maxlength="5000" rows="7" placeholder="请描述对手行为、发生时间与可核查细节" required/></label>
-          <p>举报将独立进入“对局治理”，不会混入普通Bug反馈。</p>
-          <footer><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !reportDescription.trim()" type="submit">{{ busy ? '提交中…' : '提交举报' }}</button></footer>
+          <p>举报将提交审核。</p>
+          <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy || !reportDescription.trim()" type="submit">{{ busy ? '提交中…' : '提交举报' }}</button></footer>
         </form>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       </section>
@@ -196,8 +235,8 @@ function answerDraw(accept: boolean) {
       <section class="battle-dialog response-dialog" role="alertdialog" aria-modal="true" aria-labelledby="draw-response-title" aria-describedby="draw-response-reason">
         <header><div><small>DRAW REQUEST</small><h2 id="draw-response-title">{{ drawRequest.requesterName }} 申请平局</h2></div><button type="button" aria-label="暂时关闭平局申请" @click="responseOpen = false">×</button></header>
         <p id="draw-response-reason" class="draw-reason">{{ drawRequest.reason }}</p>
-        <p>接受后服务器将权威结束本局为平局；拒绝则继续对局。</p>
-        <footer><button type="button" :disabled="busy" @click="answerDraw(false)">拒绝并继续</button><button type="button" class="primary" :disabled="busy" @click="answerDraw(true)">接受平局</button></footer>
+        <p>接受：本局以平局结束。拒绝：继续对局。</p>
+        <footer data-ui-contract="equal-action-group"><button type="button" :disabled="busy" @click="answerDraw(false)">拒绝平局</button><button type="button" class="primary" :disabled="busy" @click="answerDraw(true)">接受平局</button></footer>
         <p v-if="notice" class="notice" role="status">{{ notice }}</p>
       </section>
     </div>
@@ -213,4 +252,7 @@ function answerDraw(accept: boolean) {
 .tool-menu>button span{display:block;line-height:1.45;text-align:left;overflow-wrap:anywhere}
 .tool-menu>button.attention,.tool-menu>p{grid-column:1/-1}
 @media(max-width:700px){.tool-menu{grid-template-columns:1fr}.tool-menu>button.attention,.tool-menu>p{grid-column:auto}}
+.tool-menu>button{box-sizing:border-box;height:86px;min-height:86px;max-height:86px;overflow:hidden}.tool-menu>button span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}.tool-menu>button.attention{grid-column:auto}.tool-menu>p{grid-column:1/-1}
+.battle-dialog footer button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}
+.response-settings-form fieldset{display:grid;gap:8px;margin:0;padding:0;border:0}.response-settings-form fieldset>label{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid #485760;background:#0b141a;cursor:pointer}.response-settings-form input{width:18px;height:18px;accent-color:#d4b85f}.response-settings-form label span{display:grid;gap:3px}.response-settings-form label b{color:#fff}.response-settings-form label small{color:#93a0a5;font:400 13px 'Microsoft YaHei','微软雅黑';letter-spacing:0}
 </style>

@@ -7,6 +7,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12GameEngine
 {
     private const string DeclineLethalSubstitution = "decline";
+    private const string LethalEventProtectionPrefix = "lethal-event-protected:";
 
     private string CardLethalSubstitutionKey(L12CardInstance protectedCard)
         => $"lethal-substitution:{protectedCard.CardId}:{protectedCard.InstanceId}:{State.TurnSerial}";
@@ -14,8 +15,72 @@ public sealed partial class L12GameEngine
     private string PendingCardLethalSubstitutionKey(L12CardInstance protectedCard)
         => $"pending:{CardLethalSubstitutionKey(protectedCard)}";
 
+    private static string CardLethalEventProtectionPrefix(L12CardInstance protectedCard)
+        => $"{LethalEventProtectionPrefix}{protectedCard.InstanceId}:";
+
+    private string LethalStateFingerprint(L12CardInstance protectedCard)
+    {
+        var raw = new System.Text.StringBuilder();
+        static void Append(System.Text.StringBuilder builder, string name, string? value)
+        {
+            builder.Append(name).Append('=').Append(value?.Length ?? -1).Append(':')
+                .Append(value).Append(';');
+        }
+
+        Append(raw, "cardId", protectedCard.CardId);
+        Append(raw, "baseTroops", protectedCard.BaseTroops.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "troops", protectedCard.Troops.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "setTroops", protectedCard.SetTroopsValue?.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "setUntil", protectedCard.SetTroopsUntilTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuous", protectedCard.ContinuousTroopsModifier.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousGranted", protectedCard.ContinuousTroopsBonusGranted.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousConsumed", protectedCard.ContinuousTroopsBonusConsumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        Append(raw, "continuousPenalty", protectedCard.ContinuousTroopsPenalty.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        foreach (var modifier in protectedCard.TimedModifiers
+                     .Where(entry => entry.TroopsDelta != 0 || entry.ConsumedTroopsBonus != 0)
+                     .OrderBy(entry => entry.Source, StringComparer.Ordinal)
+                     .ThenBy(entry => entry.ExpiresAfterTurn)
+                     .ThenBy(entry => entry.TroopsDelta)
+                     .ThenBy(entry => entry.ConsumedTroopsBonus))
+        {
+            Append(raw, "timedSource", modifier.Source);
+            Append(raw, "timedUntil", modifier.ExpiresAfterTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "timedTroops", modifier.TroopsDelta.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "timedConsumed", modifier.ConsumedTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        foreach (var layer in protectedCard.ContinuousTroopsBonusLayers.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            Append(raw, "layerSource", layer.Key);
+            Append(raw, "layerGranted", layer.Value.Granted.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Append(raw, "layerConsumed", layer.Value.Consumed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        // Negative continuous layers keep an aggregate amount in the existing
+        // card model. Reuse the authoritative source query as well, so replacing
+        // a source with an equal penalty cannot inherit a consumed lethal event.
+        foreach (var host in State.Players.Where(player => player.Field.SelectMany(row => row)
+                     .Any(card => card?.InstanceId == protectedCard.InstanceId)))
+        foreach (var source in CurrentGlobalTroopsPenaltySources(host)
+                     .OrderBy(card => card.InstanceId, StringComparer.Ordinal))
+            Append(raw, "continuousPenaltySource", source.InstanceId);
+
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(raw.ToString())));
+    }
+
     private string CurrentLethalEventProtectionKey(L12CardInstance protectedCard)
-        => $"lethal-event-protected:{protectedCard.InstanceId}:{State.Revision}";
+        => $"{CardLethalEventProtectionPrefix(protectedCard)}{LethalStateFingerprint(protectedCard)}";
+
+    private bool HasCurrentLethalEventProtection(
+        L12PlayerState controller, L12CardInstance protectedCard)
+        => controller.UsedAbilities.Contains(CurrentLethalEventProtectionKey(protectedCard));
+
+    private void ReplaceCurrentLethalEventProtection(
+        L12PlayerState controller, L12CardInstance protectedCard)
+    {
+        var prefix = CardLethalEventProtectionPrefix(protectedCard);
+        controller.UsedAbilities.RemoveWhere(key => key.StartsWith(prefix, StringComparison.Ordinal));
+        controller.UsedAbilities.Add(CurrentLethalEventProtectionKey(protectedCard));
+    }
 
     private string? CardLethalSubstitutionKind(L12PlayerState controller, L12CardInstance protectedCard)
     {
@@ -64,7 +129,6 @@ public sealed partial class L12GameEngine
         var choices = candidates.Select(card => card.InstanceId).Append(DeclineLethalSubstitution).ToArray();
         var data = new Dictionary<string, string>
         {
-            ["lethalEventId"] = Guid.NewGuid().ToString("N"),
             ["replacementKind"] = kind,
             ["cardInstanceId"] = protectedCard.InstanceId,
             ["reason"] = reason,
@@ -77,8 +141,22 @@ public sealed partial class L12GameEngine
             "kondo-field-discard" => $"〈{protectedCard.Name}〉即将阵亡，是否弃置我方〈近藤勇〉代替承受？",
             _ => $"〈{protectedCard.Name}〉即将阵亡，弃置手牌中1张其他军团代替承受，或不发动",
         };
-        CreatePrompt(controller.PlayerIndex, "option", promptText,
-            choices, 1, 1, continuation, isPrivate: kind == "helen-hand", data: data);
+        var consequences = candidates.ToDictionary(
+            candidate => candidate.InstanceId,
+            candidate => kind switch
+            {
+                "helen-hand" => $"弃置手牌中的〈{candidate.Name}〉，代替〈{protectedCard.Name}〉承受本次致命结果。",
+                _ => $"让〈{candidate.Name}〉代替〈{protectedCard.Name}〉承受本次致命结果。",
+            },
+            StringComparer.OrdinalIgnoreCase);
+        consequences[DeclineLethalSubstitution] = $"不发动致命代替，继续结算〈{protectedCard.Name}〉的原致命结果。";
+        var prompt = CreatePrompt(controller.PlayerIndex, "option", promptText,
+            choices, 1, 1, continuation, isPrivate: kind == "helen-hand",
+            data: WithPromptNarrative(data,
+                new(protectedCard.Name, $"〈{protectedCard.Name}〉即将因{reason}阵亡，你可以选择1张符合条件的军团代替承受。",
+                    "请选择代替承受的军团，或选择“不发动”继续结算原致命结果。",
+                    L12PromptWaitingAction.LethalReplacement, consequences)));
+        prompt.Data["lethalEventId"] = $"lethal-event:{prompt.PromptId}:{protectedCard.InstanceId}";
         return true;
     }
 
@@ -94,7 +172,10 @@ public sealed partial class L12GameEngine
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
         controller.UsedAbilities.Add(CardLethalSubstitutionKey(protectedCard));
-        controller.UsedAbilities.Add(CurrentLethalEventProtectionKey(protectedCard));
+        // TryApplyCardLethalSubstitution has already removed the substitute and
+        // recalculated continuous layers.  Bind protection to that authoritative
+        // post-transaction lethal state, not to the pre-substitution battlefield.
+        ReplaceCurrentLethalEventProtection(controller, protectedCard);
         AddEvent("replacement-transaction", controller.PlayerIndex,
             $"致死事件 {prompt.Data.GetValueOrDefault("lethalEventId", "legacy")} 已由替代效果消费；同一事件不会再次结算〈{protectedCard.Name}〉",
             protectedCard);
@@ -109,17 +190,19 @@ public sealed partial class L12GameEngine
             AttachCardLethalKillSource(protectedCard, pending.Event);
     }
 
-    private void AttachCardLethalKillSource(L12CardInstance protectedCard, L12KillSourceEvent killEvent)
-    {
-        var prompt = State.PendingPrompts.LastOrDefault(candidate =>
+    private L12Prompt? EffectLethalReplacementPrompt(string protectedInstanceId)
+        => State.PendingPrompts.LastOrDefault(candidate =>
             candidate.Continuation == "effect-lethal-replacement"
-            && candidate.Data.GetValueOrDefault("cardInstanceId") == protectedCard.InstanceId
-            && candidate.Data.ContainsKey("replacementKind"));
-        if (prompt is null) return;
+            && candidate.Data.GetValueOrDefault("cardInstanceId") == protectedInstanceId);
+
+    private bool AttachCardLethalKillSource(L12CardInstance protectedCard, L12KillSourceEvent killEvent)
+    {
+        var prompt = EffectLethalReplacementPrompt(protectedCard.InstanceId);
+        if (prompt is null) return false;
         var count = int.TryParse(prompt.Data.GetValueOrDefault("lethalKillSourceCount"), out var parsed)
             ? parsed : 0;
         for (var index = 0; index < count; index++)
-            if (prompt.Data.GetValueOrDefault($"lethalKillSource:{index}:eventId") == killEvent.EventId) return;
+            if (prompt.Data.GetValueOrDefault($"lethalKillSource:{index}:eventId") == killEvent.EventId) return true;
         var prefix = $"lethalKillSource:{count}:";
         prompt.Data[$"{prefix}eventId"] = killEvent.EventId;
         prompt.Data[$"{prefix}kind"] = killEvent.Kind.ToString();
@@ -129,6 +212,24 @@ public sealed partial class L12GameEngine
         prompt.Data[$"{prefix}printed"] = killEvent.TriggersPrintedKillTiming.ToString();
         prompt.Data[$"{prefix}caused"] = killEvent.CausedBySourceCard.ToString();
         prompt.Data["lethalKillSourceCount"] = (count + 1).ToString();
+        return true;
+    }
+
+    private void AttachEffectKillContinuation(L12CardInstance protectedCard, L12StackItem sourceItem,
+        string continuation)
+    {
+        var prompt = EffectLethalReplacementPrompt(protectedCard.InstanceId);
+        if (prompt is null) return;
+        prompt.Data["effectKillContinuation"] = continuation;
+        prompt.Data["effectKillStackItemId"] = sourceItem.StackItemId;
+        sourceItem.Data["pendingEffectKillPromptId"] = prompt.PromptId;
+    }
+
+    private void OverrideEffectKillContinuation(L12StackItem sourceItem, string continuation)
+    {
+        var promptId = sourceItem.Data.GetValueOrDefault("pendingEffectKillPromptId");
+        var prompt = State.PendingPrompts.FirstOrDefault(candidate => candidate.PromptId == promptId);
+        if (prompt is not null) prompt.Data["effectKillContinuation"] = continuation;
     }
 
     private void ResolveAttachedCardLethalKillSources(L12Prompt prompt, string defeatedInstanceId)
@@ -177,8 +278,10 @@ public sealed partial class L12GameEngine
                 leaveKind: L12FieldLeaveKind.Defeat, bypassLethalReplacement: true,
                 deferGraveyard: deferFieldDeath);
             if (removed) defeatedInstanceId = substitute.InstanceId;
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉代替〈{protectedCard.Name}〉承受原致命结果，并沿原阵亡动作进入所有者目的区",
+                new("触发 致命代替", $"〈{substitute.Name}〉代替阵亡，〈{protectedCard.Name}〉未阵亡",
+                    protectedCard.InstanceId, protectedCard.Name, protectedCard.InstanceId, protectedCard.Name),
                 protectedCard, substitute);
             return true;
         }
@@ -189,13 +292,16 @@ public sealed partial class L12GameEngine
                 && card.CardType == "legion" && card.CardId != "S02-0515");
             if (substitute is null) return false;
             controller.Hand.Remove(substitute);
+            ResetCardForPrivateZone(substitute);
             var owner = CardOwner(substitute, controller);
             owner.Graveyard.Add(substitute);
             AddEvent("discard", controller.PlayerIndex,
                 $"〈{protectedCard.Name}〉弃置手牌中的〈{substitute.Name}〉代替承受致命结果", substitute);
             NotifyCardDiscarded(controller, substitute, "hand", causedByEffect: true);
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉按卡面从手牌弃置并进入所有者墓地，代替〈{protectedCard.Name}〉承受致命结果",
+                new("触发 致命代替", $"弃置〈{substitute.Name}〉，〈{protectedCard.Name}〉未阵亡",
+                    protectedCard.InstanceId, protectedCard.Name, protectedCard.InstanceId, protectedCard.Name),
                 protectedCard, substitute);
             return true;
         }
@@ -209,9 +315,11 @@ public sealed partial class L12GameEngine
                     $"作为费用弃置，代替〈{protectedCard.Name}〉承受{reason}",
                     queueDeathTrigger: !deferFieldDeath, leaveKind: L12FieldLeaveKind.Discard,
                     bypassLethalReplacement: true)) return false;
-            AddEvent("replacement", controller.PlayerIndex,
+            AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉作为费用弃置，代替〈{protectedCard.Name}〉承受原致命结果",
-                protectedCard, substitute);
+                new("触发 致命代替", $"自身弃置，〈{protectedCard.Name}〉未阵亡",
+                    substitute.InstanceId, substitute.Name, protectedCard.InstanceId, protectedCard.Name),
+                substitute, protectedCard);
             return true;
         }
 

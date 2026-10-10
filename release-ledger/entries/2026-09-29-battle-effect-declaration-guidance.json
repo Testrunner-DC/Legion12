@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-effect-declaration-guidance",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战效果声明与费用提示优化",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "普通主动与触发效果的选择提示会明确本步要求、费用待提交状态、对象范围及提交或不发动的后果；被条件跳过的费用不会再误显示为待支付，士气等效果对象也不会误写成费用。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12MoralePayments.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicActiveEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs"
+      ]
+    }
+  ]
+}

@@ -11,7 +11,6 @@ public static partial class L12StructuredCardRules
     internal static string? StarterTargetedBatch2BPlan(string cardId, string trigger)
         => (cardId, trigger) switch
         {
-            ("ST05-07", "enter") => "antinous-ready",
             ("ST06-01", "enter") => "elizabeth-lock-morale",
             ("ST06-04", "enter") => "mordred-enter-choice",
             ("ST06-04", "death") => "mordred-death-kill",
@@ -64,7 +63,7 @@ public static partial class L12StructuredCardRules
             ],
             "ST06-04" =>
             [
-                new("active", "active", "我方 回合1次 可进行1次骑兵位移。",
+                new("active", "rule-action", "我方 回合1次 可进行1次骑兵位移。",
                 [
                     new(L12AtomKinds.Move, "进行1次骑兵位移", "resolution", new()
                     {

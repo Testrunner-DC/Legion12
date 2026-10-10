@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-ui-statistics-credibility",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "界面状态与统计口径",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "个人页与规则中心的选中、禁用、保存提示和筛选弹框表现统一，键盘焦点与手机窄屏操作更清晰。公开牌库的卡牌详情在页面底部保持可见，长卡效可滚动阅读。",
+      "paths": ["opcgpro-vue/src/l12/site/UiButton.vue", "opcgpro-vue/src/l12/site/UiNotice.vue", "opcgpro-vue/src/l12/site/uiSystem.css", "opcgpro-vue/src/l12/site/ProfilePage.vue", "opcgpro-vue/src/l12/site/RuleCenterPage.vue", "opcgpro-vue/src/l12/site/MobileFilterSheet.vue", "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"]
+    },
+    {
+      "category": "ranking",
+      "text": "排行榜与公开牌库统计补充查询时间窗、样本和版本口径；近7天和近30天仍可跨赛季查看。主宰及对阵胜率样本不足30场时只显示样本不足，不再以小样本胜率排序；公开牌库继续只显示匿名版本汇总。",
+      "paths": ["opcgpro-vue/src/l12/site/StatisticsScope.vue", "opcgpro-vue/src/l12/site/RankingsPage.vue", "opcgpro-vue/src/l12/platform.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs", "opcgpro-vue/src/l12/site/MasterMatchupMatrix.vue"]
+    }
+  ]
+}

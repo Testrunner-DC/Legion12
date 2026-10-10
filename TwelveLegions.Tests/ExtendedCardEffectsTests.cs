@@ -12,7 +12,8 @@ public sealed class ExtendedCardEffectsTests
     private static L12GameEngine Create(int firstDeck, int secondDeck, int seed = 9012)
         => new(Catalog, "extended-effects", "EFFECT", seed, ["甲", "乙"], [firstDeck, secondDeck], skipPreparation: true);
 
-    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed = 9012)
+    private static L12GameEngine CreateWithFirstMaster(string masterId, int seed = 9012,
+        bool autoPassEmptyResponses = true)
     {
         var baseDeck = Catalog.DeckAt(2);
         var firstDeck = new L12PresetDeckDefinition
@@ -21,7 +22,8 @@ public sealed class ExtendedCardEffectsTests
             CardIds = [.. baseDeck.CardIds], MoraleIds = [.. baseDeck.MoraleIds], SpecialIds = [.. baseDeck.SpecialIds],
         };
         return new L12GameEngine(Catalog, "extended-effects", "EFFECT", seed,
-            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true);
+            ["甲", "乙"], [firstDeck, baseDeck], skipPreparation: true,
+            autoPassEmptyResponses: autoPassEmptyResponses);
     }
 
     private static void ReadyMain(L12GameEngine game, int playerIndex)
@@ -152,7 +154,7 @@ public sealed class ExtendedCardEffectsTests
         guard.Tapped = false;
         var restedAttempt = game.Handle(0, new L12Command("activateAbility", ankh.InstanceId, Ability: "ankhDraw"));
         Assert.False(restedAttempt.Accepted);
-        Assert.Contains("休整", restedAttempt.Error);
+        Assert.Contains("必须为活跃状态", restedAttempt.Error);
         Assert.Empty(game.State.PendingPrompts);
 
         ankh.Tapped = false;
@@ -286,14 +288,26 @@ public sealed class ExtendedCardEffectsTests
         var eligible = player.Library.Where(card => card.Faction == "taiyangcheng" && card.CardId != "S01-0222").Take(2).ToArray();
         foreach (var card in eligible) player.Library.Remove(card);
         player.Library.InsertRange(0, eligible);
+        var ineligible = Card("S01-0003", "festival-ineligible");
+        player.Library.Insert(2, ineligible);
+        var displayedBeforeChoice = player.Library.Take(5).Select(card => card.InstanceId).ToArray();
 
         Assert.True(game.Handle(0, new L12Command("playCard", festival.InstanceId)).Accepted);
         PassResponses(game);
         var handPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("festival-hand", handPrompt.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice), handPrompt.Data["displayCardIds"]);
+        Assert.DoesNotContain(ineligible.InstanceId, handPrompt.ValidChoices);
+        Assert.Equal("只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身",
+            handPrompt.Data[$"disabledChoice:{ineligible.InstanceId}"]);
+        Assert.False(handPrompt.Data.ContainsKey($"disabledChoice:{eligible[0].InstanceId}"));
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: handPrompt.PromptId, Choice: eligible[0].InstanceId)).Accepted);
         var gravePrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("festival-grave", gravePrompt.Data["action"]);
+        Assert.Equal(string.Join('|', displayedBeforeChoice.Where(id => id != eligible[0].InstanceId)),
+            gravePrompt.Data["displayCardIds"]);
+        Assert.Equal("只能选择【太阳城】卡牌，且不能选择〈法老王的庆典〉本身",
+            gravePrompt.Data[$"disabledChoice:{ineligible.InstanceId}"]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: gravePrompt.PromptId, Choice: eligible[1].InstanceId)).Accepted);
         var orderPrompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("all-bottom", orderPrompt.Data["placementMode"]);
@@ -303,6 +317,16 @@ public sealed class ExtendedCardEffectsTests
         Assert.Contains(eligible[0], player.Hand);
         Assert.Contains(eligible[1], player.Graveyard);
         Assert.Equal(order, player.Library.TakeLast(order.Count).Select(card => card.InstanceId));
+        Assert.Single(game.State.Events, entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == festival.InstanceId));
+        Assert.Single(game.State.Events, entry => entry.Type == "reveal"
+            && entry.Cards.Any(card => card.InstanceId == eligible[0].InstanceId));
+        Assert.Single(game.State.Events, entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId));
+        Assert.Single(game.SnapshotFor(0).RecentEvents, entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId));
+        Assert.Single(game.SnapshotFor(1).RecentEvents, entry => entry.Type == "discard"
+            && entry.Cards.Any(card => card.InstanceId == eligible[1].InstanceId));
     }
 
     [Fact]
@@ -330,6 +354,45 @@ public sealed class ExtendedCardEffectsTests
     }
 
     [Fact]
+    public void PlayedCardResourcePaymentCanBeCancelledWithoutConsumingAnyResource()
+    {
+        var game = Create(2, 3);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        var guard = player.Graveyard.First(card => card.CardId == "S01-0212");
+        player.Graveyard.Remove(guard);
+        player.Field[0][0] = guard;
+        var legion = Card("S01-0205", "cancel-paid-legion");
+        player.Hand.Add(legion);
+        var tappedBefore = player.Morale.Count(card => card.Tapped);
+
+        Assert.True(game.Handle(0, new L12Command("playCard", legion.InstanceId, Row: 0, Slot: 1)).Accepted);
+        var paymentPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
+        Assert.Contains("cancel", paymentPrompt.ValidChoices);
+
+        var mixed = player.Morale.Where(card => !card.Tapped).Take(Math.Max(0, legion.Cost - 1))
+            .Select(card => card.InstanceId).Append("cancel").ToList();
+        var invalidMixedCancel = game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            CardInstanceIds: mixed));
+        Assert.False(invalidMixedCancel.Accepted);
+        Assert.Equal(paymentPrompt.PromptId, Assert.Single(game.State.PendingPrompts).PromptId);
+        Assert.False(guard.Tapped);
+        Assert.Equal(tappedBefore, player.Morale.Count(card => card.Tapped));
+
+        var cancel = game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
+            Choice: "cancel"));
+        Assert.True(cancel.Accepted, cancel.Error);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(legion, player.Hand);
+        Assert.Null(player.Field[0][1]);
+        Assert.False(guard.Tapped);
+        Assert.Equal(tappedBefore, player.Morale.Count(card => card.Tapped));
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:ddab147dd97c360f", "normal", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:29d1864e955f856e", "normal", "presentation-consumers")]
     public void SolarCityPlayerAlsoChoosesTombGuardPaymentForActiveAbilities()
     {
         var game = Create(2, 3);
@@ -369,6 +432,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.Equal("resource-payment", paymentPrompt.Kind);
         Assert.Equal("play-morale-choice", paymentPrompt.Continuation);
         Assert.Equal("god-power", paymentPrompt.Data[$"{godPower.InstanceId}:resourceType"]);
+        Assert.Equal("active", paymentPrompt.Data[$"{godPower.InstanceId}:activityState"]);
 
         var selected = payWithGodPower ? godPower : ordinaryMorale;
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: paymentPrompt.PromptId,
@@ -406,6 +470,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.Contains("temporary-morale:1", payment.ValidChoices);
         Assert.Contains(ordinaryMorale.InstanceId, payment.ValidChoices);
         Assert.Equal("temporary-morale", payment.Data["temporary-morale:1:resourceType"]);
+        Assert.Equal("active", payment.Data["temporary-morale:1:activityState"]);
         var choice = payWithTemporaryMorale ? "temporary-morale:1" : ordinaryMorale.InstanceId;
 
         var paid = game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
@@ -579,7 +644,11 @@ public sealed class ExtendedCardEffectsTests
         PassResponses(game);
         var prompts = game.State.PendingPrompts.Where(prompt => prompt.Data.GetValueOrDefault("action") == "teach-discard").ToArray();
         Assert.Equal(2, prompts.Length);
-        Assert.All(prompts, prompt => Assert.Equal("true", prompt.Data["simultaneous"]));
+        Assert.All(prompts, prompt =>
+        {
+            Assert.True(prompt.IsPrivate);
+            Assert.Equal("true", prompt.Data["simultaneous"]);
+        });
 
         var first = prompts[0];
         var firstCards = first.ValidChoices.Take(2).ToList();
@@ -691,6 +760,87 @@ public sealed class ExtendedCardEffectsTests
         var secondLokiEffect = game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
         Assert.False(secondLokiEffect.Accepted);
         Assert.Contains("本回合", secondLokiEffect.Error);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:lokiCycle")]
+    public void LokiCyclePaysBeforeOneSharedResponseThenRequiresPrivatePostDrawDiscard()
+    {
+        var game = CreateWithFirstMaster("S01-03M2", 90161, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        player.Hand.Clear();
+        player.Library.Clear();
+        var existing = Card("S01-0001", "loki-cycle-existing");
+        var drawn = Card("S01-0002", "loki-cycle-drawn");
+        player.Hand.Add(existing);
+        player.Library.Add(drawn);
+        var activeBefore = player.Morale.Count(card => !card.Tapped);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.True(activation.Accepted, activation.Error);
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("active:S01-03M2:lokiCycle", first.Data["compositePlan"]);
+        Assert.Equal("draw-discard-draw-1", first.Data["atomicFlow"]);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+        Assert.Equal("消耗1士气", first.Data["paidCostSummary"]);
+        Assert.Equal(activeBefore - 1, player.Morale.Count(card => !card.Tapped));
+
+        PassResponses(game);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", discard.Continuation);
+        Assert.True(discard.IsPrivate);
+        Assert.DoesNotContain("skip", discard.ValidChoices);
+        Assert.Equal("post-draw-private", discard.Data["declarationTiming"]);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
+            CardInstanceIds: [drawn.InstanceId])).Accepted);
+        PassResponses(game);
+
+        Assert.True(player.Graveyard.Contains(drawn),
+            $"hand={string.Join(',', player.Hand.Select(card => card.InstanceId))}; " +
+            $"grave={string.Join(',', player.Graveyard.Select(card => card.InstanceId))}; " +
+            $"stack={string.Join(',', game.State.EffectStack.Select(item => item.Data.GetValueOrDefault("atomicFlow")))}; " +
+            $"events={string.Join(" || ", game.State.Events.TakeLast(8).Select(entry => entry.Text))}");
+        Assert.Contains(existing, player.Hand);
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.CardId == "S01-03M2"))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.Equal(2, results.Length);
+        Assert.All(results, result => Assert.Equal("resolved", result.EffectResultStatus));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:lokiCycle")]
+    public void NegatedLokiCycleKeepsPaidMoraleAndStopsDrawAndDiscardTogether()
+    {
+        var game = CreateWithFirstMaster("S01-03M2", 90162, autoPassEmptyResponses: false);
+        var player = game.State.Players[0];
+        ReadyMain(game, 0);
+        player.Hand.Clear();
+        player.Library.Clear();
+        var existing = Card("S01-0001", "loki-negated-existing");
+        var drawn = Card("S01-0002", "loki-negated-drawn");
+        player.Hand.Add(existing);
+        player.Library.Add(drawn);
+        var activeBefore = player.Morale.Count(card => !card.Tapped);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "lokiCycle"));
+        Assert.True(activation.Accepted, activation.Error);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        Assert.Equal(activeBefore - 1, player.Morale.Count(card => !card.Tapped));
+        Assert.Equal([existing.InstanceId], player.Hand.Select(card => card.InstanceId).ToArray());
+        Assert.Equal([drawn.InstanceId], player.Library.Select(card => card.InstanceId).ToArray());
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.CardId == "S01-03M2"));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(2, result.EffectSegmentCount);
     }
 
     private static IEnumerable<L12CardInstance> StateHand(L12GameEngine game, int playerIndex)
@@ -954,6 +1104,7 @@ public sealed class ExtendedCardEffectsTests
     [InlineData("S01-0308")]
     [InlineData("S01-0310")]
     [InlineData("S01-0314")]
+    [InlineData("S02-0303")]
     public void AsgardSelfDamageEntryDiscountIsAlwaysAnExplicitChoice(string cardId)
     {
         var game = Create(3, 2);
@@ -967,10 +1118,24 @@ public sealed class ExtendedCardEffectsTests
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("play-cost-choice", prompt.Continuation);
         Assert.Equal(["yes", "no"], prompt.ValidChoices);
+        var rule = Assert.IsType<L12SelfDamageEntryDiscountRule>(
+            L12StructuredCardRules.SelfDamageEntryDiscount(cardId));
+        Assert.Contains(rule.CostText, prompt.Text, StringComparison.Ordinal);
+        Assert.Contains(rule.ResolutionText, prompt.Text, StringComparison.Ordinal);
+        Assert.Equal("发动", prompt.ChoiceLabels["yes"]);
         Assert.Null(player.Field[0][0]);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "yes")).Accepted);
 
         Assert.Equal(hp - 1, player.Hp);
         Assert.Equal(card.InstanceId, player.Field[0][0]?.InstanceId);
+        var costDamageIndex = game.State.Events.FindIndex(entry => entry.Type == "damage"
+            && entry.Text.Contains(rule.CostText, StringComparison.Ordinal)
+            && entry.Text.Contains(rule.ResolutionText, StringComparison.Ordinal));
+        var playIndex = game.State.Events.FindIndex(entry => entry.Type == "play"
+            && entry.Cards.Any(eventCard => eventCard.InstanceId == card.InstanceId));
+        Assert.True(costDamageIndex >= 0, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
+        Assert.True(playIndex >= 0, string.Join(" | ", game.State.Events.Select(entry => $"{entry.Type}:{entry.Text}")));
+        Assert.True(costDamageIndex < playIndex,
+            $"自伤 Cost 必须先于军团打出：cost={costDamageIndex}, play={playIndex}");
     }
 }

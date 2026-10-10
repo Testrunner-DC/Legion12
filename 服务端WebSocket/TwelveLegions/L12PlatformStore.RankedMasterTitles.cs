@@ -1,3 +1,6 @@
+using System.Collections.Frozen;
+using System.Collections.Immutable;
+
 namespace TwelveLegions.Server;
 
 public sealed record L12RankedMasterTitleMatchFact(
@@ -31,6 +34,16 @@ public sealed partial class L12PlatformStore
         int Wins,
         double Score);
 
+    private sealed record RankedMasterTitleChampionProjection(
+        string AccountId,
+        string MasterId,
+        int Games,
+        int Wins);
+
+    private sealed record RankedMasterTitleFactIndex(
+        FrozenDictionary<string, ImmutableArray<L12RankedMasterTitleMatchFact>> FactsByMaster,
+        FrozenDictionary<string, FrozenSet<string>> MasterIdsByAccount);
+
     public int ImportRankedMasterTitleFacts(IReadOnlyList<L12RankedMasterTitleMatchFact> source)
     {
         lock (_gate)
@@ -54,7 +67,7 @@ public sealed partial class L12PlatformStore
                 {
                     var currentSeason = RequireOperationsConfig().Season.Id;
                     var profile = _data.RankedProfiles.FirstOrDefault(row => row.AccountId == record.AccountId
-                        && row.SeasonId == currentSeason);
+                        && SeasonIdsEqual(row.SeasonId, currentSeason));
                     var masterName = MasterName(record.MasterId);
                     return new L12RankedMasterChampionView(record.MasterId, masterName,
                         AccountName(record.AccountId), MasterTitle(record.MasterId), profile?.SevenValue ?? 0,
@@ -110,24 +123,55 @@ public sealed partial class L12PlatformStore
 
     private Dictionary<string, RankedMasterRecordRow> ProjectCurrentMasterChampions(DateTimeOffset utcNow)
     {
+        var selectable = SelectableMasterIds().ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var facts = _data.RankedMasterRecords.SelectMany(item => item.TitleFacts ?? []).ToArray();
+        var index = IndexRankedMasterTitleFacts(facts);
+        var excluded = ProjectRankedMasterTitleExclusions(_data, facts);
+        var inactive = _data.Accounts.Where(item => item.Disabled || item.Deleted).Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var eligible = _data.Accounts.Where(item => !item.Disabled && !item.Deleted).Select(item => item.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var projected = ProjectRankedMasterTitleChampions(index, index.FactsByMaster.Keys,
+            excluded, inactive, eligible, selectable, utcNow);
+        var seasonId = RequireOperationsConfig().Season.Id;
+        return projected.ToDictionary(item => item.Key, item => new RankedMasterRecordRow
+        {
+            AccountId = item.Value.AccountId,
+            SeasonId = seasonId,
+            MasterId = item.Value.MasterId,
+            Games = item.Value.Games,
+            Wins = item.Value.Wins,
+        }, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static Dictionary<string, RankedMasterTitleChampionProjection>
+        ProjectRankedMasterTitleChampions(
+            RankedMasterTitleFactIndex index,
+            IEnumerable<string> requestedMasterIds,
+            IReadOnlySet<string> excludedMatchIds,
+            IReadOnlySet<string> knownInactiveAccountIds,
+            IReadOnlySet<string> championEligibleAccountIds,
+            IReadOnlySet<string> selectableMasterIds,
+            DateTimeOffset utcNow)
+    {
         var now = utcNow.ToUniversalTime();
         var cutoff = now - RankedMasterTitleWindow;
-        var selectable = SelectableMasterIds().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var matches = _data.RankedMasterRecords.SelectMany(item => item.TitleFacts ?? [])
-            .Where(item => IsEligibleMasterTitleMatch(item, cutoff, now))
-            .Where(item => !IsRankedMatchExcludedLocked(item.MatchId))
-            .Where(item => selectable.Contains(item.FirstMasterId)
-                && selectable.Contains(item.SecondMasterId))
-            .OrderBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        var result = new Dictionary<string, RankedMasterRecordRow>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, RankedMasterTitleChampionProjection>(
+            StringComparer.OrdinalIgnoreCase);
 
-        foreach (var masterId in matches.SelectMany(item => new[] { item.FirstMasterId, item.SecondMasterId })
-                     .Where(selectable.Contains).Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var masterId in requestedMasterIds.Where(selectableMasterIds.Contains)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
         {
-            var masterMatches = matches.Where(item => item.FirstMasterId.Equals(masterId,
-                    StringComparison.OrdinalIgnoreCase)
-                || item.SecondMasterId.Equals(masterId, StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (!index.FactsByMaster.TryGetValue(masterId, out var indexedFacts)) continue;
+            var masterMatches = indexedFacts
+                .Where(item => IsEligibleMasterTitleMatch(item, cutoff, now))
+                .Where(item => !excludedMatchIds.Contains(item.MatchId))
+                .Where(item => !knownInactiveAccountIds.Contains(item.FirstAccountId)
+                    && !knownInactiveAccountIds.Contains(item.SecondAccountId))
+                .Where(item => selectableMasterIds.Contains(item.FirstMasterId)
+                    && selectableMasterIds.Contains(item.SecondMasterId))
+                .OrderBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             // 稀疏门槛按全服原始有效对局数判断；镜像两席仍只占一个 matchId。
             var allServerGames = masterMatches.Select(item => item.MatchId)
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count();
@@ -137,7 +181,7 @@ public sealed partial class L12PlatformStore
             foreach (var group in appearances.GroupBy(item => item.AccountId,
                          StringComparer.OrdinalIgnoreCase))
             {
-                if (!_data.Accounts.Any(account => account.Id == group.Key && !account.Disabled && !account.Deleted))
+                if (!championEligibleAccountIds.Contains(group.Key))
                     continue;
                 var personal = group.ToArray();
                 if (personal.Length < personalMinimum) continue;
@@ -165,16 +209,65 @@ public sealed partial class L12PlatformStore
                 .ThenByDescending(item => item.Games).ThenByDescending(item => item.Wins)
                 .ThenBy(item => item.AccountId, StringComparer.Ordinal).FirstOrDefault();
             if (champion is null) continue;
-            result[masterId] = new RankedMasterRecordRow
-            {
-                AccountId = champion.AccountId,
-                SeasonId = RequireOperationsConfig().Season.Id,
-                MasterId = champion.MasterId,
-                Games = champion.Games,
-                Wins = champion.Wins,
-            };
+            result[masterId] = new RankedMasterTitleChampionProjection(champion.AccountId,
+                champion.MasterId, champion.Games, champion.Wins);
         }
         return result;
+    }
+
+    private static RankedMasterTitleFactIndex IndexRankedMasterTitleFacts(
+        IEnumerable<L12RankedMasterTitleMatchFact> facts)
+    {
+        var materialized = facts.ToArray();
+        var byMaster = materialized.SelectMany(fact =>
+                new[] { fact.FirstMasterId, fact.SecondMasterId }
+                    .Where(masterId => !string.IsNullOrWhiteSpace(masterId))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Select(masterId => (MasterId: masterId, Fact: fact)))
+            .GroupBy(item => item.MasterId, StringComparer.OrdinalIgnoreCase)
+            .ToFrozenDictionary(group => group.Key,
+                group => group.Select(item => item.Fact).ToImmutableArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var byAccount = materialized.SelectMany(fact => new[]
+            {
+                (AccountId: fact.FirstAccountId, MasterId: fact.FirstMasterId),
+                (AccountId: fact.SecondAccountId, MasterId: fact.SecondMasterId),
+            })
+            .Where(item => !string.IsNullOrWhiteSpace(item.AccountId)
+                && !string.IsNullOrWhiteSpace(item.MasterId))
+            .GroupBy(item => item.AccountId, StringComparer.Ordinal)
+            .ToFrozenDictionary(group => group.Key,
+                group => group.Select(item => item.MasterId)
+                    .ToFrozenSet(StringComparer.OrdinalIgnoreCase), StringComparer.Ordinal);
+        return new RankedMasterTitleFactIndex(byMaster, byAccount);
+    }
+
+    private static FrozenSet<string> ProjectRankedMasterTitleExclusions(DataFile data,
+        IEnumerable<L12RankedMasterTitleMatchFact> facts)
+    {
+        var waived = data.RankedSeasonResetRepairs.SelectMany(row => row.TransitionMatchIds ?? [])
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var revoked = data.RankedIntegrityDecisions.Where(row => row.Disposition == "revoked"
+                && !string.IsNullOrWhiteSpace(row.RevokesDecisionId))
+            .Select(row => row.RevokesDecisionId!).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var activeDecisions = data.RankedIntegrityDecisions.Where(row => !revoked.Contains(row.Id))
+            .ToArray();
+        var held = data.RankedHeldRewards.Select(row => row.MatchId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var excluded = new HashSet<string>(waived, StringComparer.OrdinalIgnoreCase);
+        foreach (var matchId in facts.Select(row => row.MatchId)
+                     .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (excluded.Contains(matchId)) continue;
+            var latest = activeDecisions.Where(row => row.MatchIds.Contains(matchId,
+                    StringComparer.OrdinalIgnoreCase))
+                .OrderByDescending(row => row.Revision).FirstOrDefault();
+            var isHeld = held.Contains(matchId);
+            if (latest is null ? isHeld : latest.Disposition is "confirmed" or "system-error"
+                || latest.Disposition == "review" && isHeld)
+                excluded.Add(matchId);
+        }
+        return excluded.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<RankedMasterTitleAppearance> MasterAppearances(

@@ -26,6 +26,35 @@ public sealed class DeckValidatorTests
     }
 
     [Fact]
+    public void BenchIsPrivateWorkingStateAndValidatesWithoutAffectingConstruction()
+    {
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");
+        var benchCard = preset.CardIds[0];
+        L12CustomDeckSubmission Submission(params string[] benchIds) => new()
+        {
+            Name = "备选区验证", MasterId = preset.MasterId, CardIds = [.. preset.CardIds],
+            MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds], BenchIds = [.. benchIds],
+        };
+
+        Assert.True(L12DeckValidator.TryValidate(Catalog, Submission(benchCard), out var accepted, out var error), error);
+        Assert.Equal([benchCard], accepted.BenchIds);
+        Assert.Equal(preset.CardIds.Count, accepted.CardIds.Count);
+
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission("UNKNOWN"), out _, out var unknown));
+        Assert.Contains("未知卡牌", unknown);
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission(preset.MoraleIds[0]), out _, out var nonMain));
+        Assert.Contains("不能放入备选区", nonMain);
+        var crossFaction = Catalog.Cards.Values.First(card => card.CardType == "legion"
+            && card.Faction is not "universal" and not "tianting");
+        Assert.False(L12DeckValidator.TryValidate(Catalog, Submission(crossFaction.Id), out _, out var faction));
+        Assert.Contains("阵营不符", faction);
+        Assert.False(L12DeckValidator.TryValidate(Catalog,
+            Submission(Enumerable.Repeat(benchCard, Catalog.Cards[benchCard].DeckLimit + 1).ToArray()),
+            out _, out var copies));
+        Assert.Contains("备选区同编号卡牌最多", copies);
+    }
+
+    [Fact]
     public void RejectsTooManyCopiesAndCrossFactionCards()
     {
         var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == "tianting");
@@ -97,8 +126,34 @@ public sealed class DeckValidatorTests
 
         Assert.Equal([
             "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
-            "S02-0301", "S02-0305",
+            "S02-01S1", "S02-0301", "S02-0305", "S02-06S2",
         ], limited);
+    }
+
+    [Theory]
+    [InlineData("S02-01S1", "tianting")]
+    [InlineData("S02-06S2", "otherworld")]
+    public void LimitOneDerivedCardsAreGeneratedOutsideTheMainDeck(string cardId, string faction)
+    {
+        var definition = Catalog.Cards[cardId];
+        Assert.True(L12SpecialDeckRules.IsDerivedSpecialCard(definition));
+        Assert.True(L12SpecialDeckRules.DoesNotCountTowardMainDeck(definition));
+        Assert.Equal(1, definition.DeckLimit);
+        Assert.Equal(1, L12StructuredCardSemantics.DerivedSpecialCardLimit(cardId));
+
+        var preset = Catalog.PresetDecks.First(deck => Catalog.Cards[deck.MasterId].Faction == faction);
+        var submission = new L12CustomDeckSubmission
+        {
+            Name = $"衍生卡-{cardId}",
+            MasterId = preset.MasterId,
+            CardIds = [.. preset.CardIds, cardId],
+            MoraleIds = [.. preset.MoraleIds],
+            SpecialIds = [.. preset.SpecialIds],
+        };
+
+        Assert.False(L12DeckValidator.TryValidate(Catalog, submission, out _, out var error));
+        Assert.Contains("衍生卡", error);
+        Assert.Contains("Limit 1", error);
     }
 
     [Theory]

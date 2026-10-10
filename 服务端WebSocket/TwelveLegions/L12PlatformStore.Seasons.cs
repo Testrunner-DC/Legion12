@@ -1,0 +1,1846 @@
+namespace TwelveLegions.Server;
+
+public sealed record L12SeasonScopedConfig(
+    L12SeasonDisasterPoolConfig DisasterPool,
+    IReadOnlyList<L12CardRestrictionConfig> CardRestrictions,
+    IReadOnlyList<string> DefaultPresetDeckIds,
+    L12RankedConfigView Ranked);
+
+public sealed record L12SeasonDefinitionDraft(
+    string SeasonId,
+    string Name,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt,
+    L12SeasonScopedConfig Configuration);
+
+public sealed record L12SeasonDefinitionView(
+    string DefinitionId,
+    string SeasonId,
+    string Name,
+    string LifecycleStatus,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt,
+    long Revision,
+    string? PreviousSeasonId,
+    string? NextSeasonId,
+    L12SeasonScopedConfig Configuration,
+    string CreatedBy,
+    DateTimeOffset CreatedAt,
+    string UpdatedBy,
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? ActivatedAt = null,
+    L12SeasonActivationPlanView? ActivationPlan = null,
+    string FinalizationStatus = "active",
+    DateTimeOffset? DrainingAt = null,
+    DateTimeOffset? FinalizedAt = null,
+    int? SeasonOrdinal = null);
+
+public sealed record L12SeasonActivationPlanView(
+    string Status,
+    long Generation,
+    DateTimeOffset ScheduledAt,
+    DateTimeOffset ArmedAt,
+    long ArmedCurrentRevision,
+    long ArmedDraftRevision,
+    long ArmedOperationsVersion,
+    string IntentMask,
+    string DisarmGuardToken,
+    string LeaseState,
+    DateTimeOffset? LeaseExpiresAt,
+    int AttemptCount,
+    DateTimeOffset? LastAttemptAt,
+    string? LastErrorCode,
+    string SuggestedActionCode,
+    DateTimeOffset? CompletedAt,
+    [property: System.Text.Json.Serialization.JsonIgnore] string? IntentKey = null,
+    [property: System.Text.Json.Serialization.JsonIgnore] string? LeaseOwner = null,
+    [property: System.Text.Json.Serialization.JsonIgnore] string? LastErrorMessage = null);
+
+public sealed record L12SeasonTransitionImpactView(
+    string SeasonId,
+    string SeasonName,
+    string FromStatus,
+    string ToStatus);
+
+public sealed record L12SeasonActivationImpactPreviewView(
+    bool Valid,
+    DateTimeOffset ObservedAt,
+    string DefinitionId,
+    long CurrentRevision,
+    long DraftRevision,
+    long OperationsVersion,
+    string PlanStatus,
+    long PlanGeneration,
+    string LeaseState,
+    L12RankedSeasonCutoverReadiness Readiness,
+    int SettlementParticipantCount,
+    int HistoryRecordCount,
+    int SummaryNotificationCount,
+    L12SeasonTransitionImpactView CurrentToHistory,
+    L12SeasonTransitionImpactView NextToCurrent,
+    string RankedAdmissionImpact,
+    DateTimeOffset? RankedAdmissionFencesAt,
+    IReadOnlyList<string> BlockingCodes,
+    IReadOnlyList<string> SuggestedActionCodes,
+    string PreviewToken);
+
+internal sealed record L12SeasonActivationClaim(
+    string DefinitionId,
+    long Generation,
+    string IntentKey,
+    string LeaseOwner,
+    DateTimeOffset LeaseExpiresAt,
+    long ExpectedCurrentRevision,
+    long ExpectedDraftRevision,
+    long ExpectedOperationsVersion,
+    int ExpectedAuthorityVersion,
+    string ExpectedAuthorityToken);
+
+internal sealed record L12SeasonFinalizationClaim(
+    string DefinitionId,
+    string SeasonId,
+    string LeaseOwner,
+    DateTimeOffset LeaseExpiresAt);
+
+internal sealed record L12SeasonFinalizationView(
+    string SeasonId,
+    DateTimeOffset FinalizedAt,
+    L12RankedSeasonCutoverReadiness Readiness);
+
+public sealed record L12SeasonArchiveView(
+    string ArchiveId,
+    string SourceDefinitionId,
+    string SeasonId,
+    string Name,
+    long DefinitionRevision,
+    string? PreviousSeasonId,
+    string? NextSeasonId,
+    DateTimeOffset? StartsAt,
+    DateTimeOffset? EndsAt,
+    L12SeasonScopedConfig Configuration,
+    DateTimeOffset? ActivatedAt,
+    DateTimeOffset ArchivedAt,
+    string ArchivedBy,
+    int? SeasonOrdinal = null);
+
+public sealed record L12SeasonCatalogView(
+    L12SeasonDefinitionView Current,
+    L12SeasonDefinitionView? Next,
+    IReadOnlyList<L12SeasonArchiveView> Archives,
+    bool AutomaticActivationEnabled,
+    long OperationsVersion);
+
+public sealed record L12SeasonDefinitionPreviewView(
+    bool Valid,
+    string Slot,
+    long CurrentRevision,
+    long NextRevision,
+    long OperationsVersion,
+    L12SeasonDefinitionDraft Normalized,
+    IReadOnlyList<string> Changes,
+    IReadOnlyList<string> Warnings,
+    string PreviewToken);
+
+public sealed record L12SeasonDefinitionOperationView(
+    bool Applied,
+    string Slot,
+    L12SeasonDefinitionView Definition,
+    long PreviousRevision,
+    long OperationsVersion,
+    IReadOnlyList<string> Changes);
+
+public sealed record L12RankedSeasonCutoverReadiness(
+    string SeasonId,
+    int ActiveMatches,
+    int PendingSettlements,
+    int AppliedReconciliationFailures,
+    int QuarantinedSettlements)
+{
+    public bool Ready => ActiveMatches == 0 && PendingSettlements == 0
+        && AppliedReconciliationFailures == 0 && QuarantinedSettlements == 0;
+}
+
+internal sealed record L12RankedSeasonFinalizationImpact(
+    IReadOnlyList<string> AccountIds,
+    int HistoryRecordCount,
+    int SummaryNotificationCount);
+
+public sealed record L12SeasonActivationView(
+    bool Activated,
+    L12SeasonDefinitionView Current,
+    L12SeasonArchiveView Archive,
+    L12RankedSeasonCutoverReadiness Readiness,
+    long OperationsVersion);
+
+public sealed partial class L12PlatformStore
+{
+    private const int CurrentSeasonLifecycleMigrationVersion = 1;
+    private const int CurrentSeasonActivationAuthorityVersion = 1;
+    internal Action<string>? SeasonActivationFailureInjector { get; set; }
+
+    private sealed class SeasonScopedConfigRow
+    {
+        public OperationsDisasterPoolRow DisasterPool { get; set; } = new();
+        public List<OperationsCardRestrictionRow> CardRestrictions { get; set; } = [];
+        public List<string> DefaultPresetDeckIds { get; set; } = [];
+        public RankedConfigRow Ranked { get; set; } = new();
+    }
+
+    private sealed class SeasonDefinitionRow
+    {
+        public string DefinitionId { get; set; } = Guid.NewGuid().ToString("N");
+        public string SeasonId { get; set; } = string.Empty;
+        public int? SeasonOrdinal { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string LifecycleStatus { get; set; } = "draft";
+        public DateTimeOffset? StartsAt { get; set; }
+        public DateTimeOffset? EndsAt { get; set; }
+        public long Revision { get; set; } = 1;
+        public string? PreviousSeasonId { get; set; }
+        public string? NextSeasonId { get; set; }
+        public SeasonScopedConfigRow Configuration { get; set; } = new();
+        public string CreatedBy { get; set; } = "系统迁移";
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public string UpdatedBy { get; set; } = "系统迁移";
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? ActivatedAt { get; set; }
+        public SeasonActivationPlanRow? ActivationPlan { get; set; }
+        public DateTimeOffset? DrainingAt { get; set; }
+        public DateTimeOffset? FinalizedAt { get; set; }
+        public string? FinalizationLeaseOwner { get; set; }
+        public DateTimeOffset? FinalizationLeaseExpiresAt { get; set; }
+        public DateTimeOffset? LastFinalizationAttemptAt { get; set; }
+        public string? FinalizationErrorCode { get; set; }
+        public string? FinalizationErrorMessage { get; set; }
+        public List<SeasonFactionFinalTotalRow> FactionFinalTotals { get; set; } = [];
+    }
+
+    private sealed class SeasonActivationPlanRow
+    {
+        public string Status { get; set; } = "armed";
+        public long Generation { get; set; } = 1;
+        public DateTimeOffset ScheduledAt { get; set; }
+        public DateTimeOffset ArmedAt { get; set; }
+        public long ArmedCurrentRevision { get; set; }
+        public long ArmedDraftRevision { get; set; }
+        public long ArmedOperationsVersion { get; set; }
+        public int AuthorityVersion { get; set; }
+        public string AuthorityToken { get; set; } = string.Empty;
+        public string IntentKey { get; set; } = string.Empty;
+        public string? LeaseOwner { get; set; }
+        public DateTimeOffset? LeaseExpiresAt { get; set; }
+        public int AttemptCount { get; set; }
+        public DateTimeOffset? LastAttemptAt { get; set; }
+        public string? LastErrorCode { get; set; }
+        public string? LastErrorMessage { get; set; }
+        public DateTimeOffset? CompletedAt { get; set; }
+    }
+
+    private sealed class SeasonArchiveRow
+    {
+        public string ArchiveId { get; set; } = Guid.NewGuid().ToString("N");
+        public string SourceDefinitionId { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
+        public int? SeasonOrdinal { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public long DefinitionRevision { get; set; }
+        public string? PreviousSeasonId { get; set; }
+        public string? NextSeasonId { get; set; }
+        public DateTimeOffset? StartsAt { get; set; }
+        public DateTimeOffset? EndsAt { get; set; }
+        public SeasonScopedConfigRow Configuration { get; set; } = new();
+        public DateTimeOffset? ActivatedAt { get; set; }
+        public DateTimeOffset ArchivedAt { get; set; }
+        public string ArchivedBy { get; set; } = string.Empty;
+        public List<SeasonFactionFinalTotalRow> FactionFinalTotals { get; set; } = [];
+    }
+
+    private sealed class SeasonFactionFinalTotalRow
+    {
+        public string FactionId { get; set; } = string.Empty;
+        public string FactionNameSnapshot { get; set; } = string.Empty;
+        public int Value { get; set; }
+        public int EligiblePlayers { get; set; }
+        public DateTimeOffset CapturedAt { get; set; }
+        public string Provenance { get; set; } = string.Empty;
+        public string EvidenceFingerprint { get; set; } = string.Empty;
+    }
+
+    internal void EnsureSeasonLifecycleState()
+    {
+        lock (_gate)
+        {
+            var changed = false;
+            _data.SeasonDefinitions ??= [];
+            _data.SeasonArchives ??= [];
+            foreach (var definition in _data.SeasonDefinitions)
+                definition.FactionFinalTotals ??= [];
+            foreach (var archive in _data.SeasonArchives)
+                archive.FactionFinalTotals ??= [];
+            var shouldMigrateLegacyPendingGradient = IsLegacySeasonLifecycleMigrationPending();
+            var currentOperations = RequireOperationsConfig();
+            var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
+            if (active is null)
+            {
+                active = new SeasonDefinitionRow
+                {
+                    SeasonId = currentOperations.Season.Id,
+                    Name = currentOperations.Season.Name,
+                    LifecycleStatus = "active",
+                    StartsAt = currentOperations.Season.StartsAt,
+                    EndsAt = currentOperations.Season.EndsAt,
+                    Configuration = CaptureCurrentSeasonScope(),
+                    CreatedBy = currentOperations.UpdatedBy,
+                    CreatedAt = currentOperations.UpdatedAt,
+                    UpdatedBy = currentOperations.UpdatedBy,
+                    UpdatedAt = currentOperations.UpdatedAt,
+                    ActivatedAt = currentOperations.Season.StartsAt ?? currentOperations.UpdatedAt,
+                };
+                _data.SeasonDefinitions.Add(active);
+                changed = true;
+            }
+
+            if (shouldMigrateLegacyPendingGradient
+                && _data.SeasonDefinitions.All(row => row.LifecycleStatus != "draft")
+                && _data.RankedPendingGradient is not null)
+            {
+                var configuration = CaptureCurrentSeasonScope();
+                ApplyPendingGradient(configuration.Ranked, _data.RankedPendingGradient);
+                _data.SeasonDefinitions.Add(new SeasonDefinitionRow
+                {
+                    SeasonId = string.Empty,
+                    Name = "下一赛季（待完善）",
+                    LifecycleStatus = "draft",
+                    PreviousSeasonId = active.SeasonId,
+                    Configuration = configuration,
+                    CreatedBy = "系统迁移",
+                    UpdatedBy = "系统迁移",
+                });
+                changed = true;
+            }
+            if (_data.SeasonLifecycleMigrationVersion < CurrentSeasonLifecycleMigrationVersion)
+            {
+                _data.SeasonLifecycleMigrationVersion = CurrentSeasonLifecycleMigrationVersion;
+                changed = true;
+            }
+            foreach (var row in _data.SeasonDefinitions.Where(row =>
+                         row.ActivationPlan is { ArmedAt: var armedAt } && armedAt == default))
+            {
+                row.ActivationPlan!.ArmedAt = row.UpdatedAt == default
+                    ? row.ActivationPlan.ScheduledAt : row.UpdatedAt;
+                changed = true;
+            }
+            foreach (var draft in _data.SeasonDefinitions.Where(row => row.LifecycleStatus == "draft"
+                         && row.ActivationPlan is { Status: not ("disarmed" or "completed" or "failed") }
+                         && (row.ActivationPlan.AuthorityVersion != CurrentSeasonActivationAuthorityVersion
+                             || string.IsNullOrWhiteSpace(row.ActivationPlan.AuthorityToken))))
+            {
+                changed |= MigrateLegacySeasonActivationAuthority(active, draft,
+                    currentOperations, DateTimeOffset.UtcNow);
+            }
+            if (changed) Save();
+        }
+    }
+
+    public L12SeasonCatalogView SeasonCatalog(L12AccountView actor, DateTimeOffset? observedAt = null)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate)
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            var next = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft");
+            var now = observedAt ?? DateTimeOffset.UtcNow;
+            return new L12SeasonCatalogView(ToSeasonDefinitionView(current, now),
+                next is null ? null : ToSeasonDefinitionView(next, now),
+                _data.SeasonArchives.OrderByDescending(row => row.ArchivedAt)
+                    .Select(ToSeasonArchiveView).ToArray(), true,
+                RequireOperationsConfig().Version);
+        }
+    }
+
+    public L12SeasonDefinitionPreviewView PreviewSeasonDefinition(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, L12AdminAuditContext context)
+        => PreviewSeasonDefinitionCore(actor, definitionId, draft, expectedRevision,
+            expectedOperationsVersion, context, null);
+
+    public L12SeasonDefinitionPreviewView PreviewNextSeasonDefinition(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, L12AdminAuditContext context)
+        => PreviewSeasonDefinitionCore(actor, definitionId, draft, expectedRevision,
+            expectedOperationsVersion, context, "next");
+
+    private L12SeasonDefinitionPreviewView PreviewSeasonDefinitionCore(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, L12AdminAuditContext context, string? expectedSlot)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        lock (_gate)
+        {
+            var row = RequireMutableSeasonDefinition(definitionId);
+            EnsureSeasonSlot(row, expectedSlot);
+            var operations = RequireOperationsConfig();
+            EnsureSeasonDefinitionRevision(row, expectedRevision);
+            EnsureOperationsVersion(operations, expectedOperationsVersion);
+            var normalized = NormalizeSeasonDefinitionCandidate(row, draft);
+            var changes = DescribeSeasonDefinitionChanges(row, normalized);
+            var warnings = SeasonDefinitionWarnings(row, changes);
+            var previewToken = CreateSeasonPreviewToken(row, operations.Version, normalized);
+            AddAdminAudit(actor, "operations", "season-definition-preview",
+                $"season-definition:{row.DefinitionId}", row.Revision.ToString(),
+                (row.Revision + 1).ToString(), string.Join(',', changes),
+                context with
+                {
+                    DryRun = true,
+                    ExpectedVersion = expectedOperationsVersion,
+                    Outcome = "dry-run",
+                });
+            Save(false);
+            var normalizedDraft = new L12SeasonDefinitionDraft(normalized.SeasonId, normalized.Name,
+                normalized.StartsAt, normalized.EndsAt, ToSeasonScopeView(normalized.Configuration));
+            return new L12SeasonDefinitionPreviewView(true, SeasonSlot(row), row.Revision,
+                row.Revision + 1, operations.Version, normalizedDraft, changes, warnings, previewToken);
+        }
+    }
+
+    public L12SeasonDefinitionOperationView ApplySeasonDefinition(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, string previewToken, string reason,
+        L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => ApplySeasonDefinitionCore(actor, definitionId, draft,
+            expectedRevision, expectedOperationsVersion, previewToken, reason, context, null));
+
+    public L12SeasonDefinitionView ApplyNextSeasonDefinition(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, string previewToken, string reason,
+        L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => ApplySeasonDefinitionCore(actor, definitionId, draft,
+            expectedRevision, expectedOperationsVersion, previewToken, reason, context, "next").Definition);
+
+    private L12SeasonDefinitionOperationView ApplySeasonDefinitionCore(L12AccountView actor,
+        string definitionId, L12SeasonDefinitionDraft draft, long expectedRevision,
+        long expectedOperationsVersion, string previewToken, string reason,
+        L12AdminAuditContext context, string? expectedSlot)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var row = _data.SeasonDefinitions.FirstOrDefault(item => item.DefinitionId == definitionId);
+            if (row is null && !string.IsNullOrWhiteSpace(previewToken))
+                throw new L12OperationsConfigException("season_preview_stale",
+                    "赛季配置预览已失效，请重新预览后再保存");
+            if (row is null)
+                throw new L12OperationsConfigException("season_definition_not_found", "赛季定义不存在");
+            if (row.LifecycleStatus is not ("active" or "draft"))
+                throw new L12OperationsConfigException("season_definition_read_only", "历史赛季不可修改");
+            EnsureSeasonSlot(row, expectedSlot);
+            if (row.LifecycleStatus == "draft") EnsureSeasonActivationPlanAllowsMutation(row);
+            var operations = RequireOperationsConfig();
+            var normalized = NormalizeSeasonDefinitionCandidate(row, draft);
+            var expectedPreviewToken = CreateSeasonPreviewToken(row, operations.Version, normalized);
+            if (string.IsNullOrWhiteSpace(previewToken)
+                || !string.Equals(previewToken.Trim(), expectedPreviewToken, StringComparison.Ordinal))
+                throw new L12OperationsConfigException("season_preview_stale",
+                    "赛季配置预览已失效，请重新预览后再保存");
+            EnsureSeasonDefinitionRevision(row, expectedRevision);
+            EnsureOperationsVersion(operations, expectedOperationsVersion);
+
+            var previousRevision = row.Revision;
+            var changes = DescribeSeasonDefinitionChanges(row, normalized);
+            if (row.LifecycleStatus == "active")
+            {
+                var normalizedScope = ToSeasonScopeView(normalized.Configuration);
+                var normalizedOperations = NormalizeOperationsPayload(ToPayload(operations) with
+                {
+                    Season = new L12SeasonConfig(row.SeasonId, normalized.Name, "active",
+                        row.StartsAt, normalized.EndsAt),
+                    DisasterPool = normalizedScope.DisasterPool,
+                    CardRestrictions = normalizedScope.CardRestrictions,
+                    DefaultPresetDeckIds = normalizedScope.DefaultPresetDeckIds,
+                });
+                var nextOperations = ToRow(normalizedOperations, operations.Version + 1,
+                    actor.Username, operations.ImmediateMaintenance);
+                _data.RankedConfig = CloneSeasonScope(normalized.Configuration).Ranked;
+                _data.OperationsConfig = nextOperations;
+                var history = NewOperationsHistory(nextOperations, "season-current-apply",
+                    actor, normalizedReason);
+                _data.OperationsConfigHistory.Add(history);
+                TrimOperationsHistory();
+
+                row.Name = normalized.Name;
+                row.EndsAt = normalized.EndsAt;
+                row.Configuration = CloneSeasonScope(normalized.Configuration);
+                row.Revision++;
+                row.UpdatedBy = actor.Username;
+                row.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                row.SeasonId = normalized.SeasonId;
+                row.Name = normalized.Name;
+                row.StartsAt = normalized.StartsAt;
+                row.EndsAt = normalized.EndsAt;
+                row.Configuration = CloneSeasonScope(normalized.Configuration);
+                row.Revision++;
+                row.UpdatedBy = actor.Username;
+                row.UpdatedAt = DateTimeOffset.UtcNow;
+                var current = _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active");
+                current.NextSeasonId = row.SeasonId;
+                SyncPendingGradientFromDraft(current.SeasonId, row.Configuration.Ranked);
+            }
+
+            AddAdminAudit(actor, "operations", "season-definition-apply",
+                $"season-definition:{row.DefinitionId}", previousRevision.ToString(),
+                row.Revision.ToString(), normalizedReason,
+                context with
+                {
+                    ExpectedVersion = expectedOperationsVersion,
+                    Reason = normalizedReason,
+                    Outcome = "succeeded",
+                });
+            Save();
+            return new L12SeasonDefinitionOperationView(true, SeasonSlot(row),
+                ToSeasonDefinitionView(row), previousRevision,
+                RequireOperationsConfig().Version, changes);
+        }
+    }
+
+    public L12SeasonDefinitionView SeasonDefinition(L12AccountView actor, string definitionId)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate)
+        {
+            var row = _data.SeasonDefinitions.FirstOrDefault(item => item.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "赛季定义不存在");
+            return ToSeasonDefinitionView(row);
+        }
+    }
+
+    public IReadOnlyList<L12SeasonArchiveView> SeasonArchives(L12AccountView actor)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate) return _data.SeasonArchives.OrderByDescending(row => row.ArchivedAt)
+            .Select(ToSeasonArchiveView).ToArray();
+    }
+
+    public L12SeasonArchiveView SeasonArchive(L12AccountView actor, string seasonId)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate)
+        {
+            var row = _data.SeasonArchives.FirstOrDefault(item =>
+                    SeasonIdsEqual(item.SeasonId, seasonId))
+                ?? throw new L12OperationsConfigException("season_archive_not_found", "赛季档案不存在");
+            return ToSeasonArchiveView(row);
+        }
+    }
+
+    public L12SeasonDefinitionView CreateSeasonDraft(L12AccountView actor, long expectedCurrentRevision,
+        string reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            if (_data.SeasonDefinitions.Any(row => row.LifecycleStatus == "draft"))
+                throw new L12OperationsConfigException("season_draft_exists", "下一赛季草稿已存在");
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+            var nextOrdinal = current.SeasonOrdinal is null ? (int?)null
+                : _data.SeasonDefinitions.Select(item => item.SeasonOrdinal ?? -1)
+                    .Concat(_data.SeasonArchives.Select(item => item.SeasonOrdinal ?? -1)).Max() + 1;
+            var row = new SeasonDefinitionRow
+            {
+                SeasonOrdinal = nextOrdinal,
+                SeasonId = nextOrdinal is null ? string.Empty : CanonicalSeasonIdentityForOrdinal(nextOrdinal.Value),
+                Name = "下一赛季（待完善）",
+                PreviousSeasonId = current.SeasonId,
+                Configuration = CloneSeasonScope(current.Configuration),
+                CreatedBy = actor.Username,
+                UpdatedBy = actor.Username,
+            };
+            _data.SeasonDefinitions.Add(row);
+            AddAdminAudit(actor, "operations", "season-draft-create",
+                $"season-definition:{row.DefinitionId}", null, row.Revision.ToString(), normalizedReason,
+                context with { ExpectedVersion = expectedCurrentRevision, Reason = normalizedReason,
+                    Outcome = "succeeded" });
+            Save();
+            return ToSeasonDefinitionView(row);
+        }
+    }
+
+    public L12SeasonDefinitionView UpdateSeasonDraft(L12AccountView actor, string definitionId,
+        L12SeasonDefinitionDraft draft, long expectedRevision, string reason,
+        L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var row = _data.SeasonDefinitions.FirstOrDefault(item => item.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "赛季定义不存在");
+            if (row.LifecycleStatus != "draft")
+                throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以修改");
+            EnsureSeasonActivationPlanAllowsMutation(row);
+            EnsureSeasonDefinitionRevision(row, expectedRevision);
+            var normalized = NormalizeSeasonDraft(draft, definitionId);
+            var previousRevision = row.Revision;
+            row.SeasonId = normalized.SeasonId;
+            row.Name = normalized.Name;
+            row.StartsAt = normalized.StartsAt;
+            row.EndsAt = normalized.EndsAt;
+            row.Configuration = normalized.Configuration;
+            row.Revision++;
+            row.UpdatedBy = actor.Username;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+            var current = _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active");
+            current.NextSeasonId = row.SeasonId;
+            SyncPendingGradientFromDraft(current.SeasonId, row.Configuration.Ranked);
+            AddAdminAudit(actor, "operations", "season-draft-update",
+                $"season-definition:{row.DefinitionId}", previousRevision.ToString(), row.Revision.ToString(),
+                normalizedReason, context with { ExpectedVersion = expectedRevision, Reason = normalizedReason,
+                    Outcome = "succeeded" });
+            Save();
+            return ToSeasonDefinitionView(row);
+        }
+    }
+
+    public bool DeleteSeasonDraft(L12AccountView actor, string definitionId, long expectedRevision,
+        string reason, L12AdminAuditContext context)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var row = _data.SeasonDefinitions.FirstOrDefault(item => item.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "赛季定义不存在");
+            if (row.LifecycleStatus != "draft")
+                throw new L12OperationsConfigException("season_definition_read_only", "当前赛季和历史赛季不可删除");
+            EnsureSeasonActivationPlanAllowsMutation(row);
+            EnsureSeasonDefinitionRevision(row, expectedRevision);
+            _data.SeasonDefinitions.Remove(row);
+            var current = _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active");
+            current.NextSeasonId = null;
+            current.Revision++;
+            current.UpdatedBy = actor.Username;
+            current.UpdatedAt = DateTimeOffset.UtcNow;
+            _data.SeasonLifecycleMigrationVersion = Math.Max(_data.SeasonLifecycleMigrationVersion,
+                CurrentSeasonLifecycleMigrationVersion);
+            _data.RankedPendingGradient = null;
+            AddAdminAudit(actor, "operations", "season-draft-delete",
+                $"season-definition:{row.DefinitionId}", row.Revision.ToString(), null, normalizedReason,
+                context with { ExpectedVersion = expectedRevision, Reason = normalizedReason,
+                    Outcome = "succeeded" });
+            Save();
+            return true;
+        }
+    }
+
+    public L12SeasonActivationImpactPreviewView PreviewSeasonActivation(L12AccountView actor,
+        string definitionId, long expectedCurrentRevision, long expectedDraftRevision,
+        long expectedOperationsVersion, L12RankedSeasonCutoverReadiness readiness,
+        DateTimeOffset observedAt)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsRead);
+        lock (_gate)
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            var draft = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "下一赛季草稿不存在");
+            if (draft.LifecycleStatus != "draft")
+                throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以预览切换影响");
+            EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+            EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
+            var operations = RequireOperationsConfig();
+            EnsureOperationsVersion(operations, expectedOperationsVersion);
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId))
+                throw new L12OperationsConfigException("season_cutover_snapshot_conflict",
+                    "排位就绪状态所属赛季已变化，请刷新后重新预览");
+            return BuildSeasonActivationImpactPreview(current, draft, operations.Version,
+                readiness, observedAt);
+        }
+    }
+
+    private L12SeasonActivationImpactPreviewView BuildSeasonActivationImpactPreview(
+        SeasonDefinitionRow current, SeasonDefinitionRow draft, long operationsVersion,
+        L12RankedSeasonCutoverReadiness readiness, DateTimeOffset observedAt)
+    {
+        var impact = RankedSeasonFinalizationImpactLocked(current.SeasonId);
+        var plan = draft.ActivationPlan;
+        var planStatus = plan?.Status ?? "unarmed";
+        var leaseState = SeasonActivationLeaseState(plan, observedAt);
+        var blockingCodes = new List<string>();
+        if (!HighRiskAuditAvailable()) blockingCodes.Add("audit_unavailable");
+        if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
+            blockingCodes.Add("season_draft_incomplete");
+        if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+            || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
+            blockingCodes.Add("season_link_conflict");
+        if (draft.StartsAt is not { } scheduledAt || scheduledAt <= observedAt)
+            blockingCodes.Add("season_activation_time_invalid");
+        if (plan is { Status: not "disarmed" and not "completed" })
+            blockingCodes.Add("season_activation_already_armed");
+
+        var suggestions = new List<string>();
+        if (blockingCodes.Contains("audit_unavailable", StringComparer.Ordinal))
+            suggestions.Add("restore-audit-before-arm");
+        if (blockingCodes.Contains("season_draft_incomplete", StringComparer.Ordinal))
+            suggestions.Add("complete-next-season-definition");
+        if (blockingCodes.Contains("season_link_conflict", StringComparer.Ordinal))
+            suggestions.Add("refresh-season-authority");
+        if (blockingCodes.Contains("season_activation_time_invalid", StringComparer.Ordinal))
+            suggestions.Add("set-future-cutover-time");
+        if (planStatus is "waiting" or "failed") suggestions.Add("resolve-blocker-then-disarm-rearm");
+        else if (planStatus == "executing" && leaseState == "held") suggestions.Add("wait-for-current-attempt");
+        else if (planStatus == "executing" && leaseState == "expired") suggestions.Add("wait-for-automatic-retry");
+        else if (planStatus == "armed") suggestions.Add("wait-for-scheduled-cutover");
+        else if (planStatus is "unarmed" or "disarmed") suggestions.Add("preview-and-arm");
+        else if (planStatus == "completed") suggestions.Add("no-action-required");
+
+        var token = CreateSeasonActivationImpactPreviewToken(current, draft, operationsVersion,
+            readiness, impact);
+        var admissionImpact = plan is { Status: not "disarmed" and not "completed" }
+            ? plan.ScheduledAt <= observedAt ? "fenced" : "fence-scheduled"
+            : "fence-after-arm-at-scheduled-time";
+        return new L12SeasonActivationImpactPreviewView(blockingCodes.Count == 0, observedAt,
+            draft.DefinitionId, current.Revision, draft.Revision, operationsVersion,
+            planStatus, plan?.Generation ?? 0, leaseState, readiness,
+            impact.AccountIds.Count, impact.HistoryRecordCount, impact.SummaryNotificationCount,
+            new L12SeasonTransitionImpactView(current.SeasonId, current.Name, "active", "history"),
+            new L12SeasonTransitionImpactView(draft.SeasonId, draft.Name, "draft", "active"),
+            admissionImpact, draft.StartsAt, blockingCodes, suggestions.Distinct().ToArray(), token);
+    }
+
+    public L12SeasonDefinitionView ArmSeasonActivation(L12AccountView actor, string definitionId,
+        long expectedCurrentRevision, long expectedDraftRevision, long expectedOperationsVersion,
+        string impactPreviewToken, L12RankedSeasonCutoverReadiness readiness, string reason,
+        DateTimeOffset now, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() =>
+        {
+            EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+            var normalizedReason = RequireOperationsReason(reason);
+            lock (_gate)
+            {
+                var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+                var draft = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId)
+                    ?? throw new L12OperationsConfigException("season_definition_not_found", "下一赛季草稿不存在");
+                if (draft.LifecycleStatus != "draft")
+                    throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以预约生效");
+                EnsureSeasonActivationPlanAllowsMutation(draft);
+                EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+                EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
+                var operations = RequireOperationsConfig();
+                EnsureOperationsVersion(operations, expectedOperationsVersion);
+                var impactPreview = BuildSeasonActivationImpactPreview(current, draft,
+                    operations.Version, readiness, now);
+                if (string.IsNullOrWhiteSpace(impactPreviewToken)
+                    || !string.Equals(impactPreviewToken.Trim(), impactPreview.PreviewToken,
+                        StringComparison.Ordinal))
+                    throw new L12OperationsConfigException("season_activation_preview_stale",
+                        "切季影响预览已失效，请刷新后重新预览");
+                if (!impactPreview.Valid)
+                {
+                    var code = impactPreview.BlockingCodes.FirstOrDefault()
+                        ?? "season_activation_preview_blocked";
+                    throw new L12OperationsConfigException(code,
+                        "当前状态不允许预约切季，请按建议处理后重新预览");
+                }
+                if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
+                    throw new L12OperationsConfigException("season_draft_incomplete", "下一赛季草稿尚未填写完整");
+                if (draft.StartsAt is not { } scheduledAt || scheduledAt <= now)
+                    throw new L12OperationsConfigException("season_activation_time_invalid", "自动切季时间必须晚于当前权威时间");
+                if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+                    || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
+                    throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
+
+                var generation = (draft.ActivationPlan?.Generation ?? 0) + 1;
+                var previousRevision = draft.Revision;
+                draft.Revision++;
+                draft.UpdatedBy = actor.Username;
+                draft.UpdatedAt = now;
+                var authorityToken = CreateSeasonActivationAuthorityToken(current, draft,
+                    operations, generation, scheduledAt);
+                var intentKey = CreateSeasonActivationIntentKey(draft.DefinitionId, generation,
+                    current.Revision, draft.Revision, CurrentSeasonActivationAuthorityVersion,
+                    authorityToken, scheduledAt);
+                draft.ActivationPlan = new SeasonActivationPlanRow
+                {
+                    Status = "armed",
+                    Generation = generation,
+                    ScheduledAt = scheduledAt,
+                    ArmedAt = now,
+                    ArmedCurrentRevision = current.Revision,
+                    ArmedDraftRevision = draft.Revision,
+                    ArmedOperationsVersion = operations.Version,
+                    AuthorityVersion = CurrentSeasonActivationAuthorityVersion,
+                    AuthorityToken = authorityToken,
+                    IntentKey = intentKey,
+                };
+                AddAdminAudit(actor, "operations", "season-activation-arm",
+                    $"season-definition:{draft.DefinitionId}", previousRevision.ToString(),
+                    draft.Revision.ToString(), normalizedReason,
+                    context with { ExpectedVersion = expectedOperationsVersion, Reason = normalizedReason,
+                        Outcome = "succeeded" });
+                Save();
+                return ToSeasonDefinitionView(draft);
+            }
+        });
+
+    public L12SeasonDefinitionView DisarmSeasonActivation(L12AccountView actor, string definitionId,
+        long expectedDraftRevision, long expectedPlanGeneration, string disarmGuardToken,
+        string reason, DateTimeOffset now, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() =>
+        {
+            EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+            var normalizedReason = RequireOperationsReason(reason);
+            lock (_gate)
+            {
+                var draft = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId)
+                    ?? throw new L12OperationsConfigException("season_definition_not_found", "下一赛季草稿不存在");
+                if (draft.LifecycleStatus != "draft")
+                    throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以取消预约");
+                EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
+                var plan = draft.ActivationPlan
+                    ?? throw new L12OperationsConfigException("season_activation_not_armed",
+                        "下一赛季尚未预约自动生效");
+                if (plan.Generation != expectedPlanGeneration
+                    || string.IsNullOrWhiteSpace(disarmGuardToken)
+                    || !string.Equals(disarmGuardToken.Trim(),
+                        CreateSeasonActivationDisarmGuardToken(draft, plan),
+                        StringComparison.Ordinal))
+                    throw new L12OperationsConfigException("season_activation_plan_conflict",
+                        "自动切季计划已变化，请刷新后重新确认");
+                if (plan.Status is "disarmed" or "completed")
+                    throw new L12OperationsConfigException("season_activation_not_armed", "下一赛季尚未预约自动生效");
+                var previousRevision = draft.Revision;
+                draft.Revision++;
+                draft.UpdatedBy = actor.Username;
+                draft.UpdatedAt = now;
+                plan.Status = "disarmed";
+                plan.Generation++;
+                plan.LeaseOwner = null;
+                plan.LeaseExpiresAt = null;
+                plan.LastErrorCode = null;
+                plan.LastErrorMessage = null;
+                AddAdminAudit(actor, "operations", "season-activation-disarm",
+                    $"season-definition:{draft.DefinitionId}", previousRevision.ToString(),
+                    draft.Revision.ToString(), normalizedReason,
+                    context with { Reason = normalizedReason, Outcome = "succeeded" });
+                Save();
+                return ToSeasonDefinitionView(draft);
+            }
+        });
+
+    internal L12SeasonActivationClaim? TryClaimDueSeasonActivation(string workerId,
+        DateTimeOffset now, TimeSpan leaseDuration)
+        => ExecuteAdminTransaction(() =>
+        {
+            lock (_gate)
+            {
+                var draft = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft");
+                var plan = draft?.ActivationPlan;
+                if (draft is null || plan is null || plan.ScheduledAt > now
+                    || plan.Status is "disarmed" or "completed" or "failed") return null;
+                if (plan.Status is not ("armed" or "waiting" or "executing"))
+                {
+                    FailSeasonActivationPlan(plan, now, "season_activation_state_invalid",
+                        "自动切季状态无效；请取消预约并重新确认");
+                    Save();
+                    return null;
+                }
+                if (plan.Status == "executing" && plan.LeaseExpiresAt > now) return null;
+                var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+                var operations = RequireOperationsConfig();
+                if (plan.ArmedCurrentRevision != current.Revision
+                    || plan.ArmedDraftRevision != draft.Revision
+                    || !SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+                    || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId)
+                    || draft.StartsAt != plan.ScheduledAt
+                    || plan.AuthorityVersion != CurrentSeasonActivationAuthorityVersion
+                    || string.IsNullOrWhiteSpace(plan.AuthorityToken)
+                    || !string.Equals(plan.AuthorityToken,
+                        CreateSeasonActivationAuthorityToken(current, draft, operations,
+                            plan.Generation, plan.ScheduledAt), StringComparison.Ordinal))
+                {
+                    FailSeasonActivationPlan(plan, now, "season_activation_plan_expired",
+                        "预约后赛季定义、衔接关系或运行配置已变化；请取消预约并重新确认");
+                    Save();
+                    return null;
+                }
+
+                plan.Status = "executing";
+                plan.LeaseOwner = workerId;
+                plan.LeaseExpiresAt = now + leaseDuration;
+                plan.AttemptCount++;
+                plan.LastAttemptAt = now;
+                plan.LastErrorCode = null;
+                plan.LastErrorMessage = null;
+                Save();
+                return new L12SeasonActivationClaim(draft.DefinitionId, plan.Generation,
+                    plan.IntentKey, workerId, plan.LeaseExpiresAt.Value, current.Revision,
+                    draft.Revision, operations.Version, plan.AuthorityVersion,
+                    plan.AuthorityToken);
+            }
+        });
+
+    internal void RecordSeasonActivationWaiting(L12SeasonActivationClaim claim, DateTimeOffset now,
+        string code, string message)
+        => ExecuteAdminTransaction(() =>
+        {
+            lock (_gate)
+            {
+                var plan = RequireOwnedSeasonActivationPlan(claim, now, allowExpiredLease: true);
+                plan.Status = "waiting";
+                plan.LeaseOwner = null;
+                plan.LeaseExpiresAt = null;
+                plan.LastErrorCode = code;
+                plan.LastErrorMessage = message;
+                Save();
+            }
+            return true;
+        });
+
+    internal DateTimeOffset? NextSeasonActivationWakeAt(DateTimeOffset now, TimeSpan retryDelay)
+    {
+        lock (_gate)
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            DateTimeOffset? finalizationWake = null;
+            if (current.FinalizedAt is null && current.EndsAt is { } endsAt)
+            {
+                if (current.FinalizationLeaseExpiresAt is { } finalizationLease
+                    && finalizationLease > now)
+                    finalizationWake = finalizationLease;
+                else if (current.LastFinalizationAttemptAt is { } finalizationAttempt
+                         && current.DrainingAt is not null)
+                    finalizationWake = finalizationAttempt + retryDelay > now
+                        ? finalizationAttempt + retryDelay : now;
+                else finalizationWake = endsAt > now ? endsAt : now;
+            }
+
+            var plan = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft")
+                ?.ActivationPlan;
+            DateTimeOffset? activationWake = null;
+            if (plan is not null && plan.Status is not ("disarmed" or "completed" or "failed"))
+            {
+                if (plan.Status == "executing" && plan.LeaseExpiresAt is { } lease && lease > now)
+                    activationWake = lease;
+                else if (plan.Status == "waiting" && plan.LastAttemptAt is { } attempted)
+                    activationWake = attempted + retryDelay > now ? attempted + retryDelay : now;
+                else activationWake = plan.ScheduledAt > now ? plan.ScheduledAt : now;
+            }
+            if (finalizationWake is null) return activationWake;
+            if (activationWake is null) return finalizationWake;
+            return finalizationWake < activationWake ? finalizationWake : activationWake;
+        }
+    }
+
+    internal L12SeasonFinalizationClaim? TryClaimDueSeasonFinalization(string workerId,
+        DateTimeOffset now, TimeSpan leaseDuration)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            if (current.FinalizedAt is not null || current.EndsAt is not { } endsAt || endsAt > now)
+                return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(false, null);
+
+            var leaseExpiresAt = now + leaseDuration;
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO season_finalization_coordination(
+                    definition_id,season_id,status,lease_owner,lease_expires_utc,
+                    completed_utc,completed_storage_revision,updated_utc)
+                VALUES($definition,$season,'executing',$owner,$lease,NULL,NULL,$updated)
+                ON CONFLICT(definition_id,season_id) DO UPDATE SET
+                    status='executing',lease_owner=excluded.lease_owner,
+                    lease_expires_utc=excluded.lease_expires_utc,
+                    completed_utc=NULL,completed_storage_revision=NULL,updated_utc=excluded.updated_utc
+                WHERE season_finalization_coordination.status<>'finalized'
+                  AND (season_finalization_coordination.lease_owner IS NULL
+                       OR season_finalization_coordination.lease_expires_utc<=$updated);
+                """;
+            command.Parameters.AddWithValue("$definition", current.DefinitionId);
+            command.Parameters.AddWithValue("$season", current.SeasonId);
+            command.Parameters.AddWithValue("$owner", workerId);
+            command.Parameters.AddWithValue("$lease", leaseExpiresAt.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$updated", now.ToUniversalTime().ToString("O"));
+            if (command.ExecuteNonQuery() != 1)
+                return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(false, null);
+
+            current.DrainingAt ??= endsAt;
+            current.FinalizationLeaseOwner = workerId;
+            current.FinalizationLeaseExpiresAt = leaseExpiresAt;
+            current.LastFinalizationAttemptAt = now;
+            current.FinalizationErrorCode = null;
+            current.FinalizationErrorMessage = null;
+            var claim = new L12SeasonFinalizationClaim(current.DefinitionId, current.SeasonId,
+                workerId, leaseExpiresAt);
+            return new SeasonFinalizationStorageMutation<L12SeasonFinalizationClaim?>(true, claim);
+        });
+
+    internal void RecordSeasonFinalizationWaiting(L12SeasonFinalizationClaim claim,
+        DateTimeOffset now, string code, string message)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            var current = RequireSeasonFinalizationTarget(claim);
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE season_finalization_coordination
+                SET status='waiting',lease_owner=NULL,lease_expires_utc=NULL,updated_utc=$updated
+                WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                  AND lease_owner=$owner AND lease_expires_utc=$lease;
+                """;
+            command.Parameters.AddWithValue("$definition", claim.DefinitionId);
+            command.Parameters.AddWithValue("$season", claim.SeasonId);
+            command.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+            command.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$updated", now.ToUniversalTime().ToString("O"));
+            if (command.ExecuteNonQuery() != 1)
+                throw new L12OperationsConfigException("season_finalization_claim_stale",
+                    "赛季结算执行权已失效");
+
+            current.FinalizationLeaseOwner = null;
+            current.FinalizationLeaseExpiresAt = null;
+            current.FinalizationErrorCode = code;
+            current.FinalizationErrorMessage = message;
+            return new SeasonFinalizationStorageMutation<bool>(true, true);
+        });
+
+    internal L12SeasonFinalizationView FinalizeClaimedRankedSeason(L12AccountView actor,
+        L12SeasonFinalizationClaim claim, L12RankedSeasonCutoverReadiness readiness,
+        DateTimeOffset now, L12AdminAuditContext context)
+        => ExecuteSeasonFinalizationStorageMutation((connection, transaction) =>
+        {
+            EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+            var current = RequireSeasonFinalizationTarget(claim);
+            if (!HighRiskAuditAvailable())
+                throw new L12OperationsConfigException("audit_unavailable",
+                    "独立审计不可用，赛季结算已失败关闭");
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId) || !readiness.Ready)
+                throw new L12OperationsConfigException("season_finalization_not_ready",
+                    "当前赛季仍有未完成或未对账的排位对局");
+
+            using (var ownership = connection.CreateCommand())
+            {
+                ownership.Transaction = transaction;
+                ownership.CommandText = """
+                    SELECT COUNT(*) FROM season_finalization_coordination
+                    WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                      AND lease_owner=$owner AND lease_expires_utc=$lease
+                      AND lease_expires_utc>$now;
+                    """;
+                ownership.Parameters.AddWithValue("$definition", claim.DefinitionId);
+                ownership.Parameters.AddWithValue("$season", claim.SeasonId);
+                ownership.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+                ownership.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+                ownership.Parameters.AddWithValue("$now", now.ToUniversalTime().ToString("O"));
+                if (Convert.ToInt32(ownership.ExecuteScalar()) != 1)
+                    throw new L12OperationsConfigException("season_finalization_claim_stale",
+                        "赛季结算执行权已失效");
+            }
+
+            FinalizeOutgoingRankedSeason(current, current.NextSeasonId ?? string.Empty, now);
+            current.FinalizedAt = now;
+            current.FinalizationLeaseOwner = null;
+            current.FinalizationLeaseExpiresAt = null;
+            current.FinalizationErrorCode = null;
+            current.FinalizationErrorMessage = null;
+            AddAdminAudit(actor, "operations", "season-finalize",
+                $"season-definition:{current.DefinitionId}", "draining", "finalized",
+                "赛季截止且存量排位已全部完成，自动结算赛季", context with
+                {
+                    Outcome = "succeeded",
+                    Reason = "赛季截止且存量排位已全部完成，自动结算赛季",
+                });
+            var result = new L12SeasonFinalizationView(current.SeasonId, now, readiness);
+            return new SeasonFinalizationStorageMutation<L12SeasonFinalizationView>(true, result,
+                completedRevision =>
+                {
+                    using var complete = connection.CreateCommand();
+                    complete.Transaction = transaction;
+                    complete.CommandText = """
+                        UPDATE season_finalization_coordination
+                        SET status='finalized',lease_owner=NULL,lease_expires_utc=NULL,
+                            completed_utc=$completed,completed_storage_revision=$revision,
+                            updated_utc=$completed
+                        WHERE definition_id=$definition AND season_id=$season AND status='executing'
+                          AND lease_owner=$owner AND lease_expires_utc=$lease;
+                        """;
+                    complete.Parameters.AddWithValue("$definition", claim.DefinitionId);
+                    complete.Parameters.AddWithValue("$season", claim.SeasonId);
+                    complete.Parameters.AddWithValue("$owner", claim.LeaseOwner);
+                    complete.Parameters.AddWithValue("$lease", claim.LeaseExpiresAt.ToUniversalTime().ToString("O"));
+                    complete.Parameters.AddWithValue("$completed", now.ToUniversalTime().ToString("O"));
+                    complete.Parameters.AddWithValue("$revision", completedRevision);
+                    if (complete.ExecuteNonQuery() != 1)
+                        throw new L12OperationsConfigException("season_finalization_claim_stale",
+                            "赛季结算执行权已失效");
+                    StorageFailureInjector?.Invoke("after-season-finalization-complete-marker");
+                });
+        });
+
+    internal bool IsRankedSeasonCutoverFenced(DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (IsSeasonIdentityMigrationFencedLocked()) return true;
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            if (current.FinalizedAt is not null || current.DrainingAt is not null
+                || current.EndsAt is { } endsAt && endsAt <= now)
+                return true;
+            var plan = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "draft")
+                ?.ActivationPlan;
+            return plan is { Status: not "disarmed" and not "completed" }
+                && plan.ScheduledAt <= now;
+        }
+    }
+
+    public L12SeasonActivationView ActivateSeason(L12AccountView actor, string definitionId,
+        long expectedCurrentRevision, long expectedDraftRevision, string reason,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => ActivateSeasonCore(actor, definitionId,
+            expectedCurrentRevision, expectedDraftRevision, reason, readiness, context,
+            null, DateTimeOffset.UtcNow));
+
+    internal L12SeasonActivationView ActivateClaimedSeason(L12AccountView actor,
+        L12SeasonActivationClaim claim, string reason, L12RankedSeasonCutoverReadiness readiness,
+        DateTimeOffset now, L12AdminAuditContext context)
+        => ExecuteAdminTransaction(() => ActivateSeasonCore(actor, claim.DefinitionId,
+            claim.ExpectedCurrentRevision, claim.ExpectedDraftRevision, reason, readiness, context,
+            claim, now));
+
+    private L12SeasonActivationView ActivateSeasonCore(L12AccountView actor, string definitionId,
+        long expectedCurrentRevision, long expectedDraftRevision, string reason,
+        L12RankedSeasonCutoverReadiness readiness, L12AdminAuditContext context,
+        L12SeasonActivationClaim? claim, DateTimeOffset now)
+    {
+        EnsureOperationsPermission(actor, L12Permission.AdminOperationsWrite);
+        var normalizedReason = RequireOperationsReason(reason);
+        lock (_gate)
+        {
+            var current = _data.SeasonDefinitions.Single(row => row.LifecycleStatus == "active");
+            var draft = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId)
+                ?? throw new L12OperationsConfigException("season_definition_not_found", "下一赛季草稿不存在");
+            if (draft.LifecycleStatus != "draft")
+                throw new L12OperationsConfigException("season_definition_read_only", "只有下一赛季草稿可以生效");
+            SeasonActivationPlanRow? claimedPlan = null;
+            if (claim is not null)
+            {
+                claimedPlan = RequireOwnedSeasonActivationPlan(claim, now, allowExpiredLease: false);
+                EnsureClaimedSeasonActivationAuthority(claim, claimedPlan, current, draft,
+                    RequireOperationsConfig());
+            }
+            EnsureSeasonDefinitionRevision(current, expectedCurrentRevision);
+            EnsureSeasonDefinitionRevision(draft, expectedDraftRevision);
+            if (claim is not null)
+            {
+                if (!HighRiskAuditAvailable())
+                    throw new L12OperationsConfigException("audit_unavailable",
+                        "独立审计不可用，自动切季已失败关闭");
+            }
+            else if (draft.ActivationPlan is { Status: "executing", LeaseExpiresAt: { } lease }
+                     && lease > now)
+            {
+                throw new L12OperationsConfigException("season_activation_in_progress", "自动切季正在执行，请稍后刷新");
+            }
+            if (!SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+                || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId))
+                throw new L12OperationsConfigException("season_link_conflict", "赛季衔接关系已变化，请刷新后重试");
+            if (string.IsNullOrWhiteSpace(draft.SeasonId) || string.IsNullOrWhiteSpace(draft.Name))
+                throw new L12OperationsConfigException("season_draft_incomplete", "下一赛季草稿尚未填写完整");
+            if (!SeasonIdsEqual(readiness.SeasonId, current.SeasonId)
+                || !readiness.Ready)
+                throw new L12OperationsConfigException("season_cutover_not_ready", "当前赛季仍有未完成或未对账的排位对局");
+
+            var operations = RequireOperationsConfig();
+            if (!SeasonIdsEqual(operations.Season.Id, current.SeasonId))
+                throw new L12OperationsConfigException("season_runtime_conflict", "当前赛季定义与运行配置不一致");
+            if (_data.SeasonArchives.Any(row => row.SourceDefinitionId == current.DefinitionId))
+                throw new L12OperationsConfigException("season_archive_conflict", "当前赛季已经归档，不能再次切换");
+
+            var incomingScope = ToSeasonScopeView(draft.Configuration);
+            var incomingRanked = CloneSeasonScope(draft.Configuration).Ranked;
+            var previousOperations = ToPayload(operations);
+            // Finish validation and construction before the first mutable season write. The nested
+            // transaction savepoint remains the authority for failures from later reconciliation/storage.
+            var nextPayload = NormalizeOperationsPayload(previousOperations with
+            {
+                Season = new L12SeasonConfig(draft.SeasonId, draft.Name, "active",
+                    draft.StartsAt, draft.EndsAt),
+                DisasterPool = incomingScope.DisasterPool,
+                CardRestrictions = incomingScope.CardRestrictions,
+                DefaultPresetDeckIds = draft.Configuration.DefaultPresetDeckIds.ToArray(),
+            });
+            var nextOperations = ToRow(nextPayload, operations.Version + 1, actor.Username,
+                operations.ImmediateMaintenance);
+
+            if (claim is not null)
+                EnsureClaimedSeasonActivationAuthority(claim, claimedPlan!, current, draft,
+                    operations);
+
+            if (current.FinalizedAt is null)
+            {
+                if (claim is not null && current.EndsAt is not null)
+                    throw new L12OperationsConfigException("season_finalization_pending",
+                        "当前赛季尚未完成独立结算，不能自动激活下一赛季");
+                FinalizeOutgoingRankedSeason(current, draft.SeasonId, now);
+                current.FinalizedAt = now;
+            }
+            SeasonActivationFailureInjector?.Invoke("after-season-finalization");
+            var archive = new SeasonArchiveRow
+            {
+                SourceDefinitionId = current.DefinitionId,
+                SeasonId = current.SeasonId,
+                SeasonOrdinal = current.SeasonOrdinal,
+                Name = current.Name,
+                DefinitionRevision = current.Revision,
+                PreviousSeasonId = current.PreviousSeasonId,
+                NextSeasonId = draft.SeasonId,
+                StartsAt = current.StartsAt,
+                EndsAt = current.EndsAt,
+                Configuration = CloneSeasonScope(current.Configuration),
+                ActivatedAt = current.ActivatedAt,
+                ArchivedAt = now,
+                ArchivedBy = actor.Username,
+                FactionFinalTotals = current.FactionFinalTotals.Select(CloneFactionFinalTotal).ToList(),
+            };
+            _data.SeasonArchives.Add(archive);
+            SeasonActivationFailureInjector?.Invoke("after-season-archive");
+
+            _data.RankedConfig = incomingRanked;
+            CarryRankedProfilesIntoSeason(current.SeasonId, draft.SeasonId);
+            SeasonActivationFailureInjector?.Invoke("after-season-profile-carry");
+            _data.RankedPendingGradient = null;
+            _data.RankedGradientVersion = Math.Max(1, _data.RankedGradientVersion + 1);
+
+            _data.OperationsConfig = nextOperations;
+            var history = NewOperationsHistory(nextOperations, $"season-activate:{draft.SeasonId}",
+                actor, normalizedReason);
+            _data.OperationsConfigHistory.Add(history);
+            TrimOperationsHistory();
+
+            _data.SeasonDefinitions.Remove(current);
+            draft.LifecycleStatus = "active";
+            draft.PreviousSeasonId = current.SeasonId;
+            draft.NextSeasonId = null;
+            draft.Revision++;
+            draft.UpdatedBy = actor.Username;
+            draft.UpdatedAt = now;
+            draft.ActivatedAt = now;
+            if (draft.ActivationPlan is { } activationPlan)
+            {
+                activationPlan.Status = "completed";
+                activationPlan.LeaseOwner = null;
+                activationPlan.LeaseExpiresAt = null;
+                activationPlan.LastErrorCode = null;
+                activationPlan.LastErrorMessage = null;
+                activationPlan.CompletedAt = now;
+            }
+            SeasonActivationFailureInjector?.Invoke("after-season-runtime-swap");
+
+            AddAdminAudit(actor, "operations", "season-activate",
+                $"season-definition:{draft.DefinitionId}", current.SeasonId, draft.SeasonId,
+                normalizedReason, context with { ExpectedVersion = operations.Version,
+                    Reason = normalizedReason, Outcome = "succeeded" });
+            SeasonActivationFailureInjector?.Invoke("after-season-audit");
+            Save();
+            return new L12SeasonActivationView(true, ToSeasonDefinitionView(draft),
+                ToSeasonArchiveView(archive), readiness, nextOperations.Version);
+        }
+    }
+
+    private void SyncActiveSeasonDefinitionFromRuntime(L12AccountView actor)
+    {
+        var active = _data.SeasonDefinitions.SingleOrDefault(row => row.LifecycleStatus == "active");
+        var operations = RequireOperationsConfig();
+        if (active is null || !SeasonIdsEqual(active.SeasonId, operations.Season.Id)) return;
+        active.Name = operations.Season.Name;
+        active.StartsAt = operations.Season.StartsAt;
+        active.EndsAt = operations.Season.EndsAt;
+        active.Configuration = CaptureCurrentSeasonScope();
+        active.Revision++;
+        active.UpdatedBy = actor.Username;
+        active.UpdatedAt = DateTimeOffset.UtcNow;
+    }
+
+    private SeasonDefinitionRow NormalizeSeasonDraft(L12SeasonDefinitionDraft draft, string definitionId)
+    {
+        if (draft is null || draft.Configuration is null || draft.Configuration.Ranked is null)
+            throw new L12OperationsConfigException("invalid_season_definition", "下一赛季草稿字段不完整");
+        var seasonId = RequireSeasonId(draft.SeasonId);
+        var existing = _data.SeasonDefinitions.FirstOrDefault(row => row.DefinitionId == definitionId);
+        if (existing?.SeasonOrdinal is { } ordinal
+            && !string.Equals(seasonId, CanonicalSeasonIdentityForOrdinal(ordinal),
+                StringComparison.Ordinal))
+            throw new L12OperationsConfigException("season_ordinal_identity_conflict",
+                $"第 {ordinal} 赛季的内部编号必须为 {CanonicalSeasonIdentityForOrdinal(ordinal)}");
+        var name = RequireOperationsText(draft.Name, "赛季名称", 100);
+        if (_data.SeasonDefinitions.Any(row => row.DefinitionId != definitionId
+                && SeasonIdsEqual(row.SeasonId, seasonId))
+            || _data.SeasonArchives.Any(row => SeasonIdsEqual(row.SeasonId, seasonId)))
+            throw new L12OperationsConfigException("duplicate_season_id", "赛季 ID 已存在");
+
+        var currentPayload = ToPayload(RequireOperationsConfig());
+        var normalizedOperations = NormalizeOperationsPayload(currentPayload with
+        {
+            Season = new L12SeasonConfig(seasonId, name, "upcoming", draft.StartsAt, draft.EndsAt),
+            DisasterPool = draft.Configuration.DisasterPool,
+            CardRestrictions = draft.Configuration.CardRestrictions,
+            DefaultPresetDeckIds = draft.Configuration.DefaultPresetDeckIds,
+        });
+        var normalizedRanked = NormalizeRankedConfig(draft.Configuration.Ranked with { PendingGradient = null });
+        return new SeasonDefinitionRow
+        {
+            DefinitionId = definitionId,
+            SeasonOrdinal = existing?.SeasonOrdinal,
+            SeasonId = normalizedOperations.Season.Id,
+            Name = normalizedOperations.Season.Name,
+            StartsAt = normalizedOperations.Season.StartsAt,
+            EndsAt = normalizedOperations.Season.EndsAt,
+            Configuration = new SeasonScopedConfigRow
+            {
+                DisasterPool = new OperationsDisasterPoolRow
+                {
+                    CardIds = normalizedOperations.DisasterPool.CardIds.ToList(),
+                    AnnihilationLocked = true,
+                },
+                CardRestrictions = normalizedOperations.CardRestrictions.Select(item =>
+                    new OperationsCardRestrictionRow
+                    {
+                        CardId = item.CardId,
+                        MaxCopies = item.MaxCopies,
+                        Reason = item.Reason,
+                        MasterId = item.MasterId,
+                    }).ToList(),
+                DefaultPresetDeckIds = normalizedOperations.DefaultPresetDeckIds.ToList(),
+                Ranked = normalizedRanked,
+            },
+        };
+    }
+
+    private SeasonDefinitionRow RequireMutableSeasonDefinition(string definitionId)
+    {
+        var row = _data.SeasonDefinitions.FirstOrDefault(item => item.DefinitionId == definitionId)
+            ?? throw new L12OperationsConfigException("season_definition_not_found", "赛季定义不存在");
+        if (row.LifecycleStatus is not ("active" or "draft"))
+            throw new L12OperationsConfigException("season_definition_read_only", "历史赛季不可修改");
+        return row;
+    }
+
+    private SeasonDefinitionRow NormalizeSeasonDefinitionCandidate(SeasonDefinitionRow row,
+        L12SeasonDefinitionDraft draft)
+    {
+        var normalized = NormalizeSeasonDraft(draft, row.DefinitionId);
+        if (row.LifecycleStatus != "active") return normalized;
+        if (!SeasonIdsEqual(row.SeasonId, normalized.SeasonId))
+            throw new L12OperationsConfigException("season_identity_read_only",
+                "当前赛季 ID 不可通过配置修改；切换赛季必须使用赛季生效命令");
+        if (row.StartsAt != normalized.StartsAt)
+            throw new L12OperationsConfigException("season_start_read_only", "当前赛季实际开始时间不可修改");
+        normalized.SeasonId = row.SeasonId;
+        normalized.StartsAt = row.StartsAt;
+        return normalized;
+    }
+
+    private static string SeasonSlot(SeasonDefinitionRow row)
+        => row.LifecycleStatus == "active" ? "current" : "next";
+
+    private static void EnsureSeasonSlot(SeasonDefinitionRow row, string? expectedSlot)
+    {
+        if (expectedSlot is null || string.Equals(SeasonSlot(row), expectedSlot, StringComparison.Ordinal)) return;
+        throw new L12OperationsConfigException("season_definition_read_only", "旧版草稿接口只能修改下一赛季草稿");
+    }
+
+    private IReadOnlyList<string> DescribeSeasonDefinitionChanges(SeasonDefinitionRow current,
+        SeasonDefinitionRow next)
+    {
+        var changes = new List<string>();
+        if (!SeasonIdsEqual(current.SeasonId, next.SeasonId)) changes.Add("seasonId");
+        if (!string.Equals(current.Name, next.Name, StringComparison.Ordinal)) changes.Add("name");
+        if (current.StartsAt != next.StartsAt) changes.Add("startsAt");
+        if (current.EndsAt != next.EndsAt) changes.Add("endsAt");
+        var currentScope = ToSeasonScopeView(current.Configuration);
+        var nextScope = ToSeasonScopeView(next.Configuration);
+        if (!JsonEqual(currentScope.DisasterPool, nextScope.DisasterPool)) changes.Add("disasterPool");
+        if (!JsonEqual(currentScope.CardRestrictions, nextScope.CardRestrictions)) changes.Add("cardRestrictions");
+        if (!JsonEqual(currentScope.DefaultPresetDeckIds, nextScope.DefaultPresetDeckIds))
+            changes.Add("defaultPresetDeckIds");
+        if (!JsonEqual(currentScope.Ranked, nextScope.Ranked)) changes.Add("ranked");
+        return changes;
+    }
+
+    private static IReadOnlyList<string> SeasonDefinitionWarnings(SeasonDefinitionRow row,
+        IReadOnlyList<string> changes)
+    {
+        var warnings = new List<string>();
+        if (row.LifecycleStatus == "active")
+        {
+            warnings.Add("current-season-changes-apply-immediately");
+            if (changes.Contains("ranked", StringComparer.Ordinal))
+                warnings.Add("current-ranked-config-affects-subsequent-settlements");
+        }
+        else
+        {
+            warnings.Add("next-season-draft-only");
+        }
+        return warnings;
+    }
+
+    private string CreateSeasonPreviewToken(SeasonDefinitionRow row, long operationsVersion,
+        SeasonDefinitionRow normalized)
+    {
+        var current = _data.SeasonDefinitions.Single(item => item.LifecycleStatus == "active");
+        var next = _data.SeasonDefinitions.SingleOrDefault(item => item.LifecycleStatus == "draft");
+        var binding = new
+        {
+            row.DefinitionId,
+            Slot = SeasonSlot(row),
+            row.Revision,
+            row.PreviousSeasonId,
+            row.NextSeasonId,
+            Current = new { current.DefinitionId, current.Revision },
+            Next = next is null ? null : new { next.DefinitionId, next.Revision },
+            OperationsVersion = operationsVersion,
+            Draft = new L12SeasonDefinitionDraft(normalized.SeasonId, normalized.Name,
+                normalized.StartsAt, normalized.EndsAt, ToSeasonScopeView(normalized.Configuration)),
+        };
+        var bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(binding));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+    }
+
+    private SeasonScopedConfigRow CaptureCurrentSeasonScope()
+    {
+        var operations = RequireOperationsConfig();
+        return new SeasonScopedConfigRow
+        {
+            DisasterPool = new OperationsDisasterPoolRow
+            {
+                CardIds = operations.DisasterPool.CardIds.ToList(),
+                AnnihilationLocked = true,
+            },
+            CardRestrictions = operations.CardRestrictions.Select(item => new OperationsCardRestrictionRow
+            {
+                CardId = item.CardId,
+                MaxCopies = item.MaxCopies,
+                Reason = item.Reason,
+                MasterId = item.MasterId,
+            }).ToList(),
+            DefaultPresetDeckIds = operations.DefaultPresetDeckIds.ToList(),
+            Ranked = NormalizeRankedConfig(ToView(_data.RankedConfig!) with { PendingGradient = null }),
+        };
+    }
+
+    private SeasonScopedConfigRow CloneSeasonScope(SeasonScopedConfigRow source)
+        => new()
+        {
+            DisasterPool = new OperationsDisasterPoolRow
+            {
+                CardIds = source.DisasterPool.CardIds.ToList(),
+                AnnihilationLocked = true,
+            },
+            CardRestrictions = source.CardRestrictions.Select(item => new OperationsCardRestrictionRow
+            {
+                CardId = item.CardId,
+                MaxCopies = item.MaxCopies,
+                Reason = item.Reason,
+                MasterId = item.MasterId,
+            }).ToList(),
+            DefaultPresetDeckIds = source.DefaultPresetDeckIds.ToList(),
+            Ranked = NormalizeRankedConfig(ToView(source.Ranked) with { PendingGradient = null }),
+        };
+
+    private static void ApplyPendingGradient(RankedConfigRow ranked, RankedPendingGradientRow pending)
+    {
+        if (pending.Tiers.Count != 5 || ranked.Factions.Any(faction => faction.Tiers.Count != 5)) return;
+        foreach (var faction in ranked.Factions)
+            for (var index = 0; index < pending.Tiers.Count; index++)
+            {
+                var source = pending.Tiers[index];
+                var target = faction.Tiers[index];
+                target.Name = source.Name;
+                target.Minimum = source.Minimum;
+                target.BaseDelta = source.BaseDelta;
+                target.WinStreakCap = source.WinStreakCap;
+                target.LossProtectionCap = source.LossProtectionCap;
+                target.RatingGapCap = source.RatingGapCap;
+                target.StreakTerminationReward = source.StreakTerminationReward;
+            }
+    }
+
+    private void SyncPendingGradientFromDraft(string currentSeasonId, RankedConfigRow ranked)
+    {
+        var version = _data.RankedPendingGradient?.Version ?? Math.Max(2, _data.RankedGradientVersion + 1);
+        _data.RankedPendingGradient = new RankedPendingGradientRow
+        {
+            AfterSeasonId = currentSeasonId,
+            Version = version,
+            Tiers = ranked.Factions[0].Tiers.Select(tier => new RankedTierGradientRow
+            {
+                Name = tier.Name,
+                Minimum = tier.Minimum,
+                BaseDelta = tier.BaseDelta,
+                WinStreakCap = tier.WinStreakCap,
+                LossProtectionCap = tier.LossProtectionCap,
+                RatingGapCap = tier.RatingGapCap,
+                StreakTerminationReward = tier.StreakTerminationReward,
+            }).ToList(),
+        };
+    }
+
+    private static void EnsureSeasonDefinitionRevision(SeasonDefinitionRow row, long expectedRevision)
+    {
+        if (row.Revision != expectedRevision)
+            throw new L12OperationsConfigException("season_definition_revision_conflict",
+                "赛季草稿版本已变化，请刷新后重试");
+    }
+
+    private static void EnsureSeasonActivationPlanAllowsMutation(SeasonDefinitionRow row)
+    {
+        if (row.ActivationPlan is { Status: not "disarmed" and not "completed" })
+            throw new L12OperationsConfigException("season_activation_armed",
+                "下一赛季已预约自动生效；请先取消预约再修改或删除");
+    }
+
+    private SeasonActivationPlanRow RequireOwnedSeasonActivationPlan(
+        L12SeasonActivationClaim claim, DateTimeOffset now, bool allowExpiredLease)
+    {
+        var draft = _data.SeasonDefinitions.FirstOrDefault(row =>
+            row.LifecycleStatus == "draft" && row.DefinitionId == claim.DefinitionId)
+            ?? throw new L12OperationsConfigException("season_activation_claim_stale", "自动切季草稿已变化");
+        var plan = draft.ActivationPlan;
+        if (plan is null || plan.Status != "executing" || plan.Generation != claim.Generation
+            || !string.Equals(plan.IntentKey, claim.IntentKey, StringComparison.Ordinal)
+            || plan.AuthorityVersion != claim.ExpectedAuthorityVersion
+            || !string.Equals(plan.AuthorityToken, claim.ExpectedAuthorityToken,
+                StringComparison.Ordinal)
+            || !string.Equals(plan.LeaseOwner, claim.LeaseOwner, StringComparison.Ordinal)
+            || plan.LeaseExpiresAt != claim.LeaseExpiresAt
+            || (!allowExpiredLease && plan.LeaseExpiresAt <= now))
+            throw new L12OperationsConfigException("season_activation_claim_stale", "自动切季执行权已失效");
+        return plan;
+    }
+
+    private SeasonDefinitionRow RequireSeasonFinalizationTarget(L12SeasonFinalizationClaim claim)
+    {
+        var current = _data.SeasonDefinitions.FirstOrDefault(row =>
+            row.LifecycleStatus == "active" && row.DefinitionId == claim.DefinitionId
+            && SeasonIdsEqual(row.SeasonId, claim.SeasonId))
+            ?? throw new L12OperationsConfigException("season_finalization_claim_stale",
+                "赛季结算执行权已失效");
+        if (current.FinalizedAt is not null)
+            throw new L12OperationsConfigException("season_finalization_claim_stale",
+                "赛季结算执行权已失效");
+        return current;
+    }
+
+    private static void FailSeasonActivationPlan(SeasonActivationPlanRow plan, DateTimeOffset now,
+        string code, string message)
+    {
+        plan.Status = "failed";
+        plan.LeaseOwner = null;
+        plan.LeaseExpiresAt = null;
+        plan.LastAttemptAt = now;
+        plan.LastErrorCode = code;
+        plan.LastErrorMessage = message;
+    }
+
+    private static string CreateSeasonActivationIntentKey(string definitionId, long generation,
+        long currentRevision, long draftRevision, int authorityVersion, string authorityToken,
+        DateTimeOffset scheduledAt)
+    {
+        var value = string.Join('|', definitionId, generation, currentRevision, draftRevision,
+            authorityVersion, authorityToken, scheduledAt.ToUniversalTime().ToString("O"));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    }
+
+    private string CreateSeasonActivationAuthorityToken(SeasonDefinitionRow current,
+        SeasonDefinitionRow draft, OperationsConfigRow operations, long generation,
+        DateTimeOffset scheduledAt)
+    {
+        object? pendingGradient = _data.RankedPendingGradient is null ? null : new
+        {
+            AfterSeasonId = CanonicalSeasonActivationAuthorityId(
+                _data.RankedPendingGradient.AfterSeasonId),
+            _data.RankedPendingGradient.Version,
+            Tiers = _data.RankedPendingGradient.Tiers.Select(tier => new
+            {
+                tier.Name,
+                tier.Minimum,
+                tier.BaseDelta,
+                tier.WinStreakCap,
+                tier.LossProtectionCap,
+                tier.RatingGapCap,
+                tier.StreakTerminationReward,
+            }).ToArray(),
+        };
+        var runtimeRanked = ToView(_data.RankedConfig!) with { PendingGradient = null };
+        var binding = new
+        {
+            Version = CurrentSeasonActivationAuthorityVersion,
+            Generation = generation,
+            ScheduledAt = scheduledAt.ToUniversalTime(),
+            Current = SeasonActivationDefinitionAuthority(current),
+            Draft = SeasonActivationDefinitionAuthority(draft),
+            Runtime = new
+            {
+                Season = new
+                {
+                    Id = CanonicalSeasonActivationAuthorityId(operations.Season.Id),
+                    operations.Season.Name,
+                    operations.Season.Status,
+                    operations.Season.StartsAt,
+                    operations.Season.EndsAt,
+                },
+                DisasterPool = operations.DisasterPool.CardIds.ToArray(),
+                CardRestrictions = operations.CardRestrictions.Select(item => new
+                {
+                    item.CardId,
+                    item.MaxCopies,
+                    item.Reason,
+                    item.MasterId,
+                }).ToArray(),
+                DefaultPresetDeckIds = operations.DefaultPresetDeckIds.ToArray(),
+                Ranked = runtimeRanked,
+                PendingGradient = pendingGradient,
+            },
+        };
+        var bytes = System.Text.Encoding.UTF8.GetBytes(
+            System.Text.Json.JsonSerializer.Serialize(binding));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))
+            .ToLowerInvariant();
+    }
+
+    private object SeasonActivationDefinitionAuthority(SeasonDefinitionRow row)
+        => new
+        {
+            row.DefinitionId,
+            SeasonId = CanonicalSeasonActivationAuthorityId(row.SeasonId),
+            row.Name,
+            row.LifecycleStatus,
+            row.StartsAt,
+            row.EndsAt,
+            row.Revision,
+            PreviousSeasonId = CanonicalSeasonActivationAuthorityId(row.PreviousSeasonId),
+            NextSeasonId = CanonicalSeasonActivationAuthorityId(row.NextSeasonId),
+            Configuration = ToSeasonScopeView(row.Configuration),
+        };
+
+    private static string? CanonicalSeasonActivationAuthorityId(string? value)
+    {
+        var normalized = NormalizeSeasonIdentity(value);
+        return normalized.Length == 0 ? null : normalized.ToUpperInvariant();
+    }
+
+    private void EnsureClaimedSeasonActivationAuthority(L12SeasonActivationClaim claim,
+        SeasonActivationPlanRow plan, SeasonDefinitionRow current, SeasonDefinitionRow draft,
+        OperationsConfigRow operations)
+    {
+        if (claim.ExpectedAuthorityVersion != CurrentSeasonActivationAuthorityVersion
+            || plan.AuthorityVersion != CurrentSeasonActivationAuthorityVersion
+            || string.IsNullOrWhiteSpace(claim.ExpectedAuthorityToken)
+            || !string.Equals(plan.AuthorityToken, claim.ExpectedAuthorityToken,
+                StringComparison.Ordinal)
+            || !string.Equals(plan.AuthorityToken,
+                CreateSeasonActivationAuthorityToken(current, draft, operations,
+                    plan.Generation, plan.ScheduledAt), StringComparison.Ordinal))
+            throw new L12OperationsConfigException("season_activation_claim_stale",
+                "自动切季权威配置已变化，执行权已失效");
+    }
+
+    private bool MigrateLegacySeasonActivationAuthority(SeasonDefinitionRow current,
+        SeasonDefinitionRow draft, OperationsConfigRow currentOperations, DateTimeOffset now)
+    {
+        var plan = draft.ActivationPlan!;
+        if (plan.AuthorityVersion is not (0 or CurrentSeasonActivationAuthorityVersion)
+            || plan.ArmedCurrentRevision != current.Revision
+            || plan.ArmedDraftRevision != draft.Revision
+            || !SeasonIdsEqual(draft.PreviousSeasonId, current.SeasonId)
+            || !SeasonIdsEqual(current.NextSeasonId, draft.SeasonId)
+            || draft.StartsAt != plan.ScheduledAt
+            || !TryFindExactOperationsSnapshot(plan.ArmedOperationsVersion, currentOperations,
+                out var armedOperations)
+            || !LegacySeasonActivationRankedAuthorityIsConsistent(current, draft))
+        {
+            FailSeasonActivationPlan(plan, now, "season_activation_plan_migration_required",
+                "旧自动切季计划无法恢复精确权威快照；请显式取消预约并重新确认");
+            return true;
+        }
+
+        var armedToken = CreateSeasonActivationAuthorityToken(current, draft, armedOperations,
+            plan.Generation, plan.ScheduledAt);
+        var currentToken = CreateSeasonActivationAuthorityToken(current, draft, currentOperations,
+            plan.Generation, plan.ScheduledAt);
+        if (!string.Equals(armedToken, currentToken, StringComparison.Ordinal))
+        {
+            FailSeasonActivationPlan(plan, now, "season_activation_plan_migration_required",
+                "旧自动切季计划的权威配置已变化；请显式取消预约并重新确认");
+            return true;
+        }
+
+        plan.AuthorityVersion = CurrentSeasonActivationAuthorityVersion;
+        plan.AuthorityToken = armedToken;
+        return true;
+    }
+
+    private bool TryFindExactOperationsSnapshot(long version, OperationsConfigRow current,
+        out OperationsConfigRow snapshot)
+    {
+        var history = _data.OperationsConfigHistory.Where(row => row.Version == version).ToArray();
+        if (current.Version == version)
+        {
+            if (history.Any(row => !JsonEqual(ToPayload(row.Config), ToPayload(current))))
+            {
+                snapshot = current;
+                return false;
+            }
+            snapshot = current;
+            return true;
+        }
+        if (history.Length != 1)
+        {
+            snapshot = current;
+            return false;
+        }
+        snapshot = history[0].Config;
+        return true;
+    }
+
+    private bool LegacySeasonActivationRankedAuthorityIsConsistent(SeasonDefinitionRow current,
+        SeasonDefinitionRow draft)
+    {
+        var runtimeRanked = ToView(_data.RankedConfig!) with { PendingGradient = null };
+        var currentRanked = ToSeasonScopeView(current.Configuration).Ranked;
+        if (!JsonEqual(runtimeRanked, currentRanked)) return false;
+        var pending = _data.RankedPendingGradient;
+        if (pending is null || !SeasonIdsEqual(pending.AfterSeasonId, current.SeasonId)
+            || draft.Configuration.Ranked.Factions.Count == 0
+            || pending.Tiers.Count != draft.Configuration.Ranked.Factions[0].Tiers.Count)
+            return false;
+        for (var index = 0; index < pending.Tiers.Count; index++)
+        {
+            var actual = pending.Tiers[index];
+            var expected = draft.Configuration.Ranked.Factions[0].Tiers[index];
+            if (actual.Name != expected.Name || actual.Minimum != expected.Minimum
+                || actual.BaseDelta != expected.BaseDelta
+                || actual.WinStreakCap != expected.WinStreakCap
+                || actual.LossProtectionCap != expected.LossProtectionCap
+                || actual.RatingGapCap != expected.RatingGapCap
+                || actual.StreakTerminationReward != expected.StreakTerminationReward)
+                return false;
+        }
+        return true;
+    }
+
+    private static string CreateSeasonActivationImpactPreviewToken(SeasonDefinitionRow current,
+        SeasonDefinitionRow draft, long operationsVersion, L12RankedSeasonCutoverReadiness readiness,
+        L12RankedSeasonFinalizationImpact impact)
+    {
+        var binding = new
+        {
+            DefinitionId = draft.DefinitionId,
+            Current = new { current.DefinitionId, current.SeasonId, current.Name, current.Revision },
+            Draft = new { draft.DefinitionId, draft.SeasonId, draft.Name, draft.Revision,
+                draft.PreviousSeasonId, draft.StartsAt },
+            OperationsVersion = operationsVersion,
+            Readiness = new { readiness.SeasonId, readiness.ActiveMatches,
+                readiness.PendingSettlements, readiness.AppliedReconciliationFailures,
+                readiness.QuarantinedSettlements },
+            SettlementAccounts = impact.AccountIds,
+            impact.HistoryRecordCount,
+            impact.SummaryNotificationCount,
+        };
+        var bytes = System.Text.Encoding.UTF8.GetBytes(
+            System.Text.Json.JsonSerializer.Serialize(binding));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))
+            .ToLowerInvariant();
+    }
+
+    private static string SeasonActivationLeaseState(SeasonActivationPlanRow? plan,
+        DateTimeOffset observedAt)
+    {
+        if (plan?.LeaseExpiresAt is null || string.IsNullOrWhiteSpace(plan.LeaseOwner)) return "free";
+        return plan.LeaseExpiresAt > observedAt ? "held" : "expired";
+    }
+
+    private static string SeasonActivationSuggestedAction(SeasonActivationPlanRow plan,
+        DateTimeOffset observedAt)
+        => plan.Status switch
+        {
+            "armed" => "wait-for-scheduled-cutover",
+            "waiting" or "failed" => "resolve-blocker-then-disarm-rearm",
+            "executing" when SeasonActivationLeaseState(plan, observedAt) == "held"
+                => "wait-for-current-attempt",
+            "executing" => "wait-for-automatic-retry",
+            "disarmed" => "preview-and-arm",
+            "completed" => "no-action-required",
+            _ => "refresh-season-authority",
+        };
+
+    private static string MaskSeasonActivationIntent(string intentKey)
+    {
+        if (string.IsNullOrWhiteSpace(intentKey)) return "none";
+        var normalized = intentKey.Trim();
+        return normalized.Length <= 12 ? $"{normalized[..Math.Min(4, normalized.Length)]}…"
+            : $"{normalized[..8]}…{normalized[^4..]}";
+    }
+
+    private static string CreateSeasonActivationDisarmGuardToken(SeasonDefinitionRow draft,
+        SeasonActivationPlanRow plan)
+    {
+        var binding = string.Join('|', draft.DefinitionId, draft.Revision, plan.Generation,
+            plan.IntentKey, plan.Status, plan.ArmedCurrentRevision, plan.ArmedDraftRevision,
+            plan.ArmedOperationsVersion, plan.AuthorityVersion, plan.AuthorityToken,
+            plan.ScheduledAt.ToUniversalTime().ToString("O"));
+        return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(binding))).ToLowerInvariant();
+    }
+
+    private bool IsLegacySeasonLifecycleMigrationPending()
+        => _data.SeasonLifecycleMigrationVersion < CurrentSeasonLifecycleMigrationVersion
+            && (_data.SeasonDefinitions?.Count ?? 0) == 0
+            && (_data.SeasonArchives?.Count ?? 0) == 0;
+
+    private L12SeasonScopedConfig ToSeasonScopeView(SeasonScopedConfigRow row)
+        => new(new L12SeasonDisasterPoolConfig(row.DisasterPool.CardIds.ToArray(), true),
+            row.CardRestrictions.Select(item => new L12CardRestrictionConfig(item.CardId,
+                item.MaxCopies, item.Reason, item.MasterId)).ToArray(),
+            row.DefaultPresetDeckIds.ToArray(),
+            ToView(row.Ranked) with { PendingGradient = null });
+
+    private L12SeasonDefinitionView ToSeasonDefinitionView(SeasonDefinitionRow row,
+        DateTimeOffset? observedAt = null)
+    {
+        var observed = observedAt ?? DateTimeOffset.UtcNow;
+        var finalizationStatus = row.LifecycleStatus != "active" ? row.LifecycleStatus
+            : row.FinalizedAt is not null ? "finalized"
+            : row.DrainingAt is not null || row.EndsAt is { } endsAt && endsAt <= observed
+                ? "draining" : "active";
+        return new(row.DefinitionId, row.SeasonId, row.Name, row.LifecycleStatus, row.StartsAt, row.EndsAt,
+            row.Revision, row.PreviousSeasonId, row.NextSeasonId, ToSeasonScopeView(row.Configuration),
+            row.CreatedBy, row.CreatedAt, row.UpdatedBy, row.UpdatedAt, row.ActivatedAt,
+            row.ActivationPlan is null ? null : new L12SeasonActivationPlanView(
+                row.ActivationPlan.Status, row.ActivationPlan.Generation,
+                row.ActivationPlan.ScheduledAt, row.ActivationPlan.ArmedAt,
+                row.ActivationPlan.ArmedCurrentRevision,
+                row.ActivationPlan.ArmedDraftRevision, row.ActivationPlan.ArmedOperationsVersion,
+                MaskSeasonActivationIntent(row.ActivationPlan.IntentKey),
+                CreateSeasonActivationDisarmGuardToken(row, row.ActivationPlan),
+                SeasonActivationLeaseState(row.ActivationPlan, observedAt ?? DateTimeOffset.UtcNow),
+                row.ActivationPlan.LeaseExpiresAt, row.ActivationPlan.AttemptCount,
+                row.ActivationPlan.LastAttemptAt, row.ActivationPlan.LastErrorCode,
+                SeasonActivationSuggestedAction(row.ActivationPlan,
+                    observed), row.ActivationPlan.CompletedAt,
+                row.ActivationPlan.IntentKey, row.ActivationPlan.LeaseOwner,
+                row.ActivationPlan.LastErrorMessage), finalizationStatus, row.DrainingAt,
+            row.FinalizedAt, row.SeasonOrdinal);
+    }
+
+    private L12SeasonArchiveView ToSeasonArchiveView(SeasonArchiveRow row)
+        => new(row.ArchiveId, row.SourceDefinitionId, row.SeasonId, row.Name,
+            row.DefinitionRevision, row.PreviousSeasonId, row.NextSeasonId, row.StartsAt, row.EndsAt,
+            ToSeasonScopeView(row.Configuration), row.ActivatedAt, row.ArchivedAt, row.ArchivedBy,
+            row.SeasonOrdinal);
+}

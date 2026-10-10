@@ -1,6 +1,8 @@
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Data.Sqlite;
 
 namespace TwelveLegions.Server;
@@ -17,7 +19,21 @@ public sealed record L12PlatformStorageStatusView(
     long StorageRevision,
     long BusinessVersion,
     long RetainedAuditEvents,
-    string? Issue);
+    string? Issue,
+    L12DeckStorageStatusView? DeckStorage = null);
+
+public sealed record L12DeckStorageStatusView(
+    long Payloads,
+    long ActiveAccountDecks,
+    long RetainedDeletedAccountDecks,
+    long ActivePublishedDecks,
+    long PublishedVersions,
+    long Likes,
+    long TournamentReferences,
+    long ContentPayloads,
+    long ContentRevisions,
+    long DatabaseBytes,
+    long WalBytes);
 
 public sealed record L12PlatformRecoveryRehearsalView(
     bool Success,
@@ -29,26 +45,46 @@ public sealed record L12PlatformRecoveryRehearsalView(
     string? Error,
     DateTimeOffset RehearsedAt);
 
-public sealed class L12PlatformStorageUnavailableException : IOException
+public class L12PlatformStorageUnavailableException : IOException
 {
     public L12PlatformStorageUnavailableException(string message, Exception? inner = null) : base(message, inner) { }
 }
 
+public sealed class L12PlatformStorageConflictException : L12PlatformStorageUnavailableException
+{
+    public long? ExpectedStorageRevision { get; }
+    public long? CurrentStorageRevision { get; }
+    public L12PlatformStorageConflictException(long expectedRevision, long currentRevision)
+        : base("数据已被其他操作更新，请刷新后重试")
+        => (ExpectedStorageRevision, CurrentStorageRevision) = (expectedRevision, currentRevision);
+    internal L12PlatformStorageConflictException(Exception inner)
+        : base("数据已被其他操作更新，请刷新后重试", inner) { }
+}
+
+internal sealed class L12PlatformStorageRefreshException(string message, Exception inner)
+    : L12PlatformStorageUnavailableException(message, inner);
+
+internal sealed class L12PlatformStorageIncompatibleException(string message)
+    : IOException(message);
+
+internal sealed class L12SeasonFinalizationStaleWriteException : L12PlatformStorageUnavailableException
+{
+    public L12SeasonFinalizationStaleWriteException(string message) : base(message) { }
+}
+
 public sealed partial class L12PlatformStore
 {
-    private const int PlatformStorageSchemaVersion = 3;
-    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = new()
+    private const int PlatformStorageSchemaVersion = 9;
+    private static readonly JsonSerializerOptions PlatformSnapshotJsonOptions = CreatePlatformJsonOptions(false);
+    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = CreatePlatformJsonOptions(true);
+    private static readonly JsonSerializerOptions PlatformMigrationJsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-    };
-    private static readonly JsonSerializerOptions PlatformMirrorJsonOptions = new()
-    {
-        WriteIndented = true,
     };
 
     private string _databasePath = string.Empty;
     private string? _migrationBackupPath;
-    private string _lastCommittedSnapshot = string.Empty;
+    private byte[] _lastCommittedSnapshot = [];
     private string _storageMode = "sqlite";
     private string? _storageIssue;
     private bool _storageWritable = true;
@@ -64,10 +100,11 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var auditCount = _storageWritable ? CountRetainedAuditEvents() : _data.AdminAudit.Count;
+            var deckStorage = _storageWritable ? ReadDeckStorageStatus() : null;
             return new L12PlatformStorageStatusView(_storageMode, _databasePath, _path, _migrationBackupPath,
                 PlatformStorageSchemaVersion, _databaseIntegrityValid, _snapshotChecksumValid,
                 _fallbackMirrorHealthy, _data.Version, _data.BusinessVersion ?? _data.Version, auditCount,
-                _storageIssue);
+                _storageIssue, deckStorage);
         }
     }
 
@@ -90,11 +127,15 @@ public sealed partial class L12PlatformStore
 
                 using var recovered = OpenDatabase(rehearsalPath, readOnly: true);
                 AssertDatabaseIntegrity(recovered);
-                var snapshot = ReadSnapshot(recovered)
+                using var transaction = recovered.BeginTransaction(deferred: true);
+                var snapshot = ReadSnapshot(recovered, transaction)
                     ?? throw new InvalidDataException("恢复副本缺少平台快照");
                 var recoveredData = DeserializeDataAndValidate(snapshot.Json);
                 if (!FixedEquals(snapshot.Checksum, Sha256(snapshot.Json)))
                     throw new InvalidDataException("恢复副本快照校验和不匹配");
+                ValidateRecoveredDeckDomain(recovered, transaction, recoveredData);
+                HydrateRankedBroadcastObjects(recovered, recoveredData, transaction);
+                transaction.Commit();
                 var audits = CountRetainedAuditEvents(recovered);
                 return new(true, "sqlite-rehearsal", _databasePath, recoveredData.Version,
                     recoveredData.BusinessVersion ?? recoveredData.Version, audits, null, now);
@@ -139,8 +180,10 @@ public sealed partial class L12PlatformStore
                 data = ImportChangedLegacyMirrorIfNeeded(connection, data);
             }
 
+            data = EnsureAndHydrateDeckDomainStorage(connection, data);
+            HydrateRankedBroadcastObjects(connection, data);
             MergeIndependentAudit(connection, data);
-            _lastCommittedSnapshot = SerializeSnapshot(data);
+            _lastCommittedSnapshot = SerializeRollbackState(data);
             _storageMode = "sqlite";
             _storageWritable = true;
             _databaseIntegrityValid = true;
@@ -150,15 +193,23 @@ public sealed partial class L12PlatformStore
         {
             _databaseIntegrityValid = false;
             _storageWritable = false;
-            _storageMode = databaseExisted ? "json-fallback-readonly" : "unavailable";
+            _storageMode = databaseError is L12PlatformStorageIncompatibleException
+                ? "unavailable"
+                : databaseExisted ? "json-fallback-readonly" : "unavailable";
             _storageIssue = $"事务存储不可用：{databaseError.Message}";
+            if (databaseError is L12PlatformStorageIncompatibleException)
+                throw new L12PlatformStorageUnavailableException(_storageIssue, databaseError);
             if (!File.Exists(_path))
                 throw new L12PlatformStorageUnavailableException(_storageIssue, databaseError);
 
             try
             {
-                var fallback = DeserializeDataAndValidate(File.ReadAllText(_path));
-                _lastCommittedSnapshot = SerializeSnapshot(fallback);
+                var fallbackJson = File.ReadAllText(_path);
+                if (!HasCompleteLegacyDeckDomain(fallbackJson))
+                    throw new InvalidDataException("紧凑 JSON 镜像不包含可独立恢复的完整牌库正文");
+                var fallback = DeserializeDataAndValidate(fallbackJson);
+                ValidateCompactRuntimeDeckDomain(fallback);
+                _lastCommittedSnapshot = SerializeRollbackState(fallback);
                 return fallback;
             }
             catch (Exception fallbackError)
@@ -192,6 +243,12 @@ public sealed partial class L12PlatformStore
         var recordedHash = ReadMeta(connection, "fallback_json_sha256");
         if (FixedEquals(currentHash, recordedHash)) return databaseData;
 
+        if (!HasCompleteLegacyDeckDomain(legacyJson))
+        {
+            _fallbackMirrorHealthy = false;
+            return databaseData;
+        }
+
         DataFile legacyData;
         try
         {
@@ -203,7 +260,7 @@ public sealed partial class L12PlatformStore
             return databaseData;
         }
 
-        if (legacyData.Version < databaseData.Version)
+        if (legacyData.Version <= databaseData.Version)
         {
             _fallbackMirrorHealthy = false;
             return databaseData;
@@ -216,7 +273,22 @@ public sealed partial class L12PlatformStore
     }
 
     private void PersistTransactionalData(bool businessChange)
+        => PersistTransactionalData(businessChange, null, privateDeckObjectWrite: false);
+
+    private void PersistTransactionalData(bool businessChange,
+        Action<SqliteConnection, SqliteTransaction>? objectWrite,
+        bool privateDeckObjectWrite)
     {
+        IDisposable? deployment;
+        try { deployment = EnterDeploymentMutation(); }
+        catch (L12DeploymentBarrierClosedException)
+        {
+            // Legacy direct mutators call Save after staging in-memory changes.
+            // Reject before opening SQLite and restore the last committed generation.
+            RestoreLastCommittedSnapshot();
+            throw;
+        }
+        using var deploymentGuard = deployment;
         if (!_storageWritable)
         {
             RestoreLastCommittedSnapshot();
@@ -227,22 +299,67 @@ public sealed partial class L12PlatformStore
         try
         {
             using var connection = OpenDatabase(_databasePath, readOnly: false);
-            InitializeStorageSchema(connection);
+            if (objectWrite is null) InitializeStorageSchema(connection);
             FilterMigratedAuditSnapshot(connection, _data);
+            var expectedRevision = _data.Version;
             _data.BusinessVersion ??= _data.Version;
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
+            using var transaction = connection.BeginTransaction(deferred: false);
+            var completedFinalizationRevision = ReadLatestSeasonFinalizationRevision(connection, transaction);
+            if (expectedRevision < completedFinalizationRevision)
+                throw new L12SeasonFinalizationStaleWriteException(
+                    $"平台状态版本 {expectedRevision} 早于已完成赛季结算版本 {completedFinalizationRevision}，请重试原操作");
+            if (!privateDeckObjectWrite)
+            {
+                var currentRevision = ReadStorageRevision(connection, transaction);
+                if (currentRevision != expectedRevision)
+                    throw new L12PlatformStorageConflictException(expectedRevision, currentRevision);
+            }
+            if (objectWrite is null) PersistDeckDomainSnapshot(connection, transaction, _data);
+            else objectWrite(connection, transaction);
+            if (privateDeckObjectWrite)
+            {
+                var currentStorageRevision = ReadStorageRevision(connection, transaction);
+                if (currentStorageRevision != expectedRevision)
+                    throw new L12PrivateDeckStorageConflictException(expectedRevision, currentStorageRevision);
+            }
+            SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
             var snapshotJson = SerializeSnapshot(_data);
+            if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
+            StorageFailureInjector?.Invoke("before-mirror-serialize");
             mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
             var snapshotChecksum = Sha256(snapshotJson);
             var mirrorChecksum = Sha256(mirrorJson);
-            using var transaction = connection.BeginTransaction();
-            UpsertSnapshot(connection, transaction, snapshotJson, snapshotChecksum, mirrorChecksum, _data);
+            UpsertSnapshotCas(connection, transaction, snapshotJson, snapshotChecksum,
+                mirrorChecksum, _data, expectedRevision, privateDeckObjectWrite);
+            StorageFailureInjector?.Invoke("before-audit-append");
             AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+            StorageFailureInjector?.Invoke("after-audit-append");
             StorageFailureInjector?.Invoke("before-commit");
+            var rollbackSnapshot = SerializeRollbackState(_data);
+            var sessionActivity = PrepareCommittedSessionActivity(_data, rollbackSnapshot);
+            StorageFailureInjector?.Invoke("after-rollback-serialize");
             transaction.Commit();
-            _lastCommittedSnapshot = snapshotJson;
+            _lastCommittedSnapshot = rollbackSnapshot;
+            PublishCommittedSessionActivity(sessionActivity);
             _storageIssue = null;
+        }
+        catch (L12PrivateDeckMutationConflictException)
+        {
+            RefreshTransactionalStateAfterConflict();
+            throw;
+        }
+        catch (L12PlatformStorageConflictException)
+        {
+            RefreshTransactionalStateAfterConflict();
+            throw;
+        }
+        catch (L12SeasonFinalizationStaleWriteException error)
+        {
+            RefreshTransactionalStateAfterConflict();
+            _storageIssue = error.Message;
+            throw;
         }
         catch (Exception error)
         {
@@ -253,6 +370,7 @@ public sealed partial class L12PlatformStore
 
         try
         {
+            if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-mirror");
             WriteFallbackMirror(mirrorJson);
             _fallbackMirrorHealthy = true;
         }
@@ -263,16 +381,173 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private void RefreshTransactionalStateAfterConflict()
+    {
+        try
+        {
+            // Conflict recovery is a read of one committed database generation, not
+            // startup migration or a legacy JSON import. Never claim a fallback is fresh.
+            StorageFailureInjector?.Invoke("before-conflict-refresh");
+            using var connection = OpenDatabase(_databasePath, readOnly: true);
+            using var transaction = connection.BeginTransaction(deferred: true);
+            var stored = ReadSnapshot(connection, transaction)
+                ?? throw new InvalidDataException("冲突刷新缺少平台快照");
+            if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+                throw new InvalidDataException("冲突刷新快照校验和不匹配");
+            var latest = DeserializeDataAndValidate(stored.Json);
+            if (latest.Version != ReadStorageRevision(connection, transaction))
+                throw new InvalidDataException("冲突刷新平台版本不一致");
+            StorageFailureInjector?.Invoke("after-conflict-snapshot-read");
+            HydrateDeckDomain(connection, latest, transaction);
+            HydrateRankedBroadcastObjects(connection, latest, transaction);
+            MergeIndependentAudit(connection, latest, transaction);
+            var rollbackSnapshot = SerializeRollbackState(latest);
+            var sessionActivity = PrepareCommittedSessionActivity(latest, rollbackSnapshot);
+            transaction.Commit();
+            _data = latest;
+            _lastCommittedSnapshot = rollbackSnapshot;
+            PublishCommittedSessionActivity(sessionActivity);
+            _storageIssue = null;
+        }
+        catch (Exception refreshError)
+        {
+            // No further writes until a successful explicit recovery/restart. Do not
+            // erase the failure merely because the (possibly stale) JSON is readable.
+            _storageWritable = false;
+            _storageMode = "unavailable";
+            _databaseIntegrityValid = false;
+            // A healthy old rollback cache is not proof of the latest database authority.
+            PublishCommittedSessionActivity(UnavailableSessionActivity);
+            RestoreLastCommittedSnapshot();
+            _storageIssue = $"平台保存冲突后数据库刷新失败：{refreshError.Message}";
+            throw new L12PlatformStorageRefreshException(_storageIssue, refreshError);
+        }
+    }
+
+    private sealed record SeasonFinalizationStorageMutation<T>(
+        bool Changed,
+        T Result,
+        Action<long>? BeforeCommit = null);
+
+    private T ExecuteSeasonFinalizationStorageMutation<T>(
+        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
+    {
+        using var deployment = EnterDeploymentMutation();
+        lock (_gate)
+        {
+            if (!_storageWritable)
+                throw new L12PlatformStorageUnavailableException(
+                    _storageIssue ?? "事务存储处于只读回退模式");
+
+            var previous = _data;
+            var sessionAuthorityRequiresRefresh = true;
+            try
+            {
+                using var connection = OpenDatabase(_databasePath, readOnly: false);
+                InitializeStorageSchema(connection);
+                using var transaction = connection.BeginTransaction(deferred: false);
+                var stored = ReadSnapshot(connection, transaction)
+                    ?? throw new InvalidDataException("事务存储缺少平台快照");
+                if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+                    throw new InvalidDataException("SQLite 平台快照校验和不匹配");
+
+                var latest = DeserializeDataAndValidate(stored.Json);
+                var committedSessionActivity = Volatile.Read(ref _committedSessionActivity);
+                sessionAuthorityRequiresRefresh = !committedSessionActivity.Available
+                    || committedSessionActivity.Revision != latest.Version;
+                // The new platform revision and normalized decks must be read from
+                // the same database generation, even for a no-op claim/preview.
+                HydrateDeckDomain(connection, latest, transaction);
+                HydrateRankedBroadcastObjects(connection, latest, transaction);
+                _data = latest;
+                var mutation = action(connection, transaction);
+                if (!mutation.Changed)
+                {
+                    var unchangedRollbackSnapshot = SerializeRollbackState(_data);
+                    var unchangedSessionActivity = PrepareCommittedSessionActivity(_data, unchangedRollbackSnapshot);
+                    transaction.Rollback();
+                    _lastCommittedSnapshot = unchangedRollbackSnapshot;
+                    PublishCommittedSessionActivity(unchangedSessionActivity);
+                    _storageIssue = null;
+                    return mutation.Result;
+                }
+
+                _data.BusinessVersion ??= _data.Version;
+                _data.Version++;
+                _data.BusinessVersion++;
+                SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
+                var snapshotJson = SerializeSnapshot(_data);
+                var mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
+                UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson),
+                    Sha256(mirrorJson), _data);
+                AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+                mutation.BeforeCommit?.Invoke(_data.Version);
+                StorageFailureInjector?.Invoke("before-season-finalization-commit");
+                var rollbackSnapshot = SerializeRollbackState(_data);
+                var sessionActivity = PrepareCommittedSessionActivity(_data, rollbackSnapshot);
+                StorageFailureInjector?.Invoke("after-season-rollback-serialize");
+                transaction.Commit();
+                _lastCommittedSnapshot = rollbackSnapshot;
+                PublishCommittedSessionActivity(sessionActivity);
+                _storageIssue = null;
+                try
+                {
+                    WriteFallbackMirror(mirrorJson);
+                    _fallbackMirrorHealthy = true;
+                }
+                catch (Exception mirrorError)
+                {
+                    _fallbackMirrorHealthy = false;
+                    _storageIssue = $"SQLite 已提交，但 JSON 兼容镜像更新失败：{mirrorError.Message}";
+                }
+                return mutation.Result;
+            }
+            catch (L12OperationsConfigException)
+            {
+                _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
+                throw;
+            }
+            catch (L12PlatformStorageUnavailableException)
+            {
+                _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
+                throw;
+            }
+            catch (Exception error)
+            {
+                _data = previous;
+                if (sessionAuthorityRequiresRefresh) PublishCommittedSessionActivity(UnavailableSessionActivity);
+                _storageIssue = $"赛季结算事务提交失败：{error.Message}";
+                throw new L12PlatformStorageUnavailableException(_storageIssue, error);
+            }
+        }
+    }
+
+    private T ExecuteSeasonIdentityStorageMutation<T>(
+        Func<SqliteConnection, SqliteTransaction, SeasonFinalizationStorageMutation<T>> action)
+        => ExecuteSeasonFinalizationStorageMutation(action);
+
     private void PersistInitialSnapshot(SqliteConnection connection, DataFile data)
     {
         FilterMigratedAuditSnapshot(connection, data);
+        WriteDeckMigrationBackup(data);
+        using var transaction = connection.BeginTransaction();
+        var initialLegacyProjection = ReadSnapshot(connection, transaction) is null;
+        PersistDeckDomainSnapshot(connection, transaction, data);
+        VerifyDeckDomainSnapshot(connection, transaction, data);
+        SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
+        SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
+            allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshotJson = SerializeSnapshot(data);
         var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
-        using var transaction = connection.BeginTransaction();
         UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
         AppendIndependentAudit(connection, transaction, data.AdminAudit);
+        var rollbackSnapshot = SerializeRollbackState(data);
+        var sessionActivity = PrepareCommittedSessionActivity(data, rollbackSnapshot);
         transaction.Commit();
-        _lastCommittedSnapshot = snapshotJson;
+        _lastCommittedSnapshot = rollbackSnapshot;
+        PublishCommittedSessionActivity(sessionActivity);
         try
         {
             WriteFallbackMirror(mirrorJson);
@@ -383,10 +658,12 @@ public sealed partial class L12PlatformStore
         return result;
     }
 
-    private static void MergeIndependentAudit(SqliteConnection connection, DataFile data)
+    private static void MergeIndependentAudit(SqliteConnection connection, DataFile data,
+        SqliteTransaction? transaction = null)
     {
-        FilterMigratedAuditSnapshot(connection, data);
+        FilterMigratedAuditSnapshot(connection, data, transaction);
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT payload_json,payload_sha256 FROM admin_audit_events
             ORDER BY created_utc DESC, id DESC LIMIT 5000;
@@ -406,6 +683,10 @@ public sealed partial class L12PlatformStore
 
     private static void InitializeStorageSchema(SqliteConnection connection)
     {
+        var existingSchemaVersion = ReadExistingStorageSchemaVersion(connection);
+        if (existingSchemaVersion is > PlatformStorageSchemaVersion)
+            throw new L12PlatformStorageIncompatibleException(
+                $"不支持的平台存储版本：{existingSchemaVersion} > {PlatformStorageSchemaVersion}");
         using var command = connection.CreateCommand();
         command.CommandText = """
             PRAGMA journal_mode=WAL;
@@ -439,6 +720,49 @@ public sealed partial class L12PlatformStore
             CREATE INDEX IF NOT EXISTS ix_admin_audit_created ON admin_audit_events(created_utc DESC);
             CREATE INDEX IF NOT EXISTS ix_admin_audit_filters
                 ON admin_audit_events(category,outcome,actor_id,command_id,correlation_id);
+            CREATE TABLE IF NOT EXISTS season_finalization_coordination (
+                definition_id TEXT NOT NULL,
+                season_id TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('executing','waiting','finalized')),
+                lease_owner TEXT,
+                lease_expires_utc TEXT,
+                completed_utc TEXT,
+                completed_storage_revision INTEGER,
+                updated_utc TEXT NOT NULL,
+                PRIMARY KEY(definition_id,season_id),
+                CHECK((status='executing' AND lease_owner IS NOT NULL AND lease_expires_utc IS NOT NULL
+                       AND completed_utc IS NULL AND completed_storage_revision IS NULL)
+                   OR (status='waiting' AND lease_owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_utc IS NULL AND completed_storage_revision IS NULL)
+                   OR (status='finalized' AND lease_owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_utc IS NOT NULL AND completed_storage_revision IS NOT NULL))
+            );
+            CREATE INDEX IF NOT EXISTS ix_season_finalization_status
+                ON season_finalization_coordination(status,lease_expires_utc);
+            CREATE TABLE IF NOT EXISTS platform_season_identity_migrations (
+                migration_id TEXT PRIMARY KEY,
+                status TEXT NOT NULL CHECK(status IN ('executing','platform_committed','verified')),
+                owner TEXT,
+                lease_expires_utc TEXT,
+                source_platform_fingerprint TEXT NOT NULL,
+                result_platform_fingerprint TEXT,
+                source_recorder_fingerprint TEXT NOT NULL,
+                result_recorder_fingerprint TEXT,
+                season_zero_definition_id TEXT NOT NULL,
+                season_one_definition_id TEXT NOT NULL,
+                b0_evidence_fingerprint TEXT NOT NULL,
+                completed_storage_revision INTEGER,
+                started_utc TEXT NOT NULL,
+                completed_utc TEXT,
+                verified_utc TEXT,
+                CHECK((status='executing' AND owner IS NOT NULL AND lease_expires_utc IS NOT NULL
+                       AND completed_storage_revision IS NULL AND completed_utc IS NULL)
+                   OR (status='platform_committed' AND owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_storage_revision IS NOT NULL AND completed_utc IS NOT NULL)
+                   OR (status='verified' AND owner IS NULL AND lease_expires_utc IS NULL
+                       AND completed_storage_revision IS NOT NULL AND completed_utc IS NOT NULL
+                       AND verified_utc IS NOT NULL))
+            );
             CREATE TABLE IF NOT EXISTS audit_archive_segments (
                 id TEXT PRIMARY KEY,
                 from_utc TEXT NOT NULL,
@@ -449,20 +773,149 @@ public sealed partial class L12PlatformStore
                 created_utc TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS ix_audit_archive_until ON audit_archive_segments(until_utc DESC);
-            INSERT INTO storage_meta(key,value) VALUES('schema_version',$schema)
-            ON CONFLICT(key) DO UPDATE SET value=
-                CASE
-                    WHEN CAST(storage_meta.value AS INTEGER) < CAST(excluded.value AS INTEGER)
-                    THEN excluded.value
-                    ELSE storage_meta.value
-                END;
-            UPDATE platform_state
-            SET schema_version=$schema
-            WHERE singleton_id=1 AND schema_version < $schema;
             """;
-        command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.ExecuteNonQuery();
         InitializeAuditLifecycleSchema(connection);
+        try
+        {
+            InitializeDeckDomainSchema(connection, existingSchemaVersion);
+            InitializeRankedBroadcastObjectStorage(connection, ReadExistingStorageSchemaVersion(connection));
+        }
+        catch (L12PlatformStorageIncompatibleException)
+        {
+            throw;
+        }
+        catch (Exception error) when (existingSchemaVersion is >= LegacyDeckPayloadSchemaVersion
+                                      and < PlatformStorageSchemaVersion)
+        {
+            // A failed version transition must not be hidden by a rich JSON
+            // fallback: doing so would allow the old arrays to become authority
+            // after a partially attempted object/deck migration.
+            throw new L12PlatformStorageIncompatibleException(
+                $"平台存储版本迁移失败，保留原版本：{error.Message}");
+        }
+    }
+
+    private static int? ReadExistingStorageSchemaVersion(SqliteConnection connection)
+    {
+        var versions = new List<int>();
+        if (TableExists(connection, "storage_meta"))
+        {
+            using var meta = connection.CreateCommand();
+            meta.CommandText = "SELECT value FROM storage_meta WHERE key='schema_version';";
+            var value = meta.ExecuteScalar();
+            if (value is not null && value is not DBNull)
+            {
+                if (!int.TryParse(Convert.ToString(value), out var parsed) || parsed < 1)
+                    throw new InvalidDataException("存储元数据版本无效");
+                versions.Add(parsed);
+            }
+        }
+        if (TableExists(connection, "platform_state"))
+        {
+            using var state = connection.CreateCommand();
+            state.CommandText = "SELECT schema_version FROM platform_state WHERE singleton_id=1;";
+            var value = state.ExecuteScalar();
+            if (value is not null && value is not DBNull)
+            {
+                var parsed = Convert.ToInt32(value);
+                if (parsed < 1) throw new InvalidDataException("平台状态存储版本无效");
+                versions.Add(parsed);
+            }
+        }
+        if (versions.Distinct().Skip(1).Any())
+            throw new InvalidDataException("存储元数据与平台状态版本不一致");
+        return versions.Count == 0 ? null : versions[0];
+    }
+
+    private static bool TableExists(SqliteConnection connection, string table)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name=$name);";
+        command.Parameters.AddWithValue("$name", table);
+        return Convert.ToInt32(command.ExecuteScalar()) != 0;
+    }
+
+    private static bool HasCompleteLegacyDeckDomain(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryGetJsonProperty(root, nameof(DataFile.Decks), out var decks) || decks.ValueKind != JsonValueKind.Array
+                || !TryGetJsonProperty(root, nameof(DataFile.PublishedDecks), out var published)
+                || published.ValueKind != JsonValueKind.Array
+                || !TryGetJsonProperty(root, nameof(DataFile.Tournaments), out var tournaments)
+                || tournaments.ValueKind != JsonValueKind.Array)
+                return false;
+            if (decks.EnumerateArray().Any(deck => !HasCompleteLegacyDeckBody(deck))
+                || published.EnumerateArray().Any(deck => !HasCompleteLegacyDeckBody(deck)))
+                return false;
+            foreach (var tournament in tournaments.EnumerateArray())
+            {
+                if (!TryGetJsonProperty(tournament, "Participants", out var participants)
+                    || participants.ValueKind != JsonValueKind.Array)
+                    return false;
+                foreach (var participant in participants.EnumerateArray())
+                {
+                    if (!TryGetJsonProperty(participant, "Deck", out var deck) || deck.ValueKind != JsonValueKind.Object
+                        || !HasCompleteLegacyDeckBody(deck))
+                        return false;
+                }
+            }
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasCompleteLegacyDeckBody(JsonElement deck)
+        => deck.ValueKind == JsonValueKind.Object
+           && TryGetJsonProperty(deck, "MasterId", out var master) && master.ValueKind == JsonValueKind.String
+           && TryGetJsonProperty(deck, "CardIds", out var main) && main.ValueKind == JsonValueKind.Array
+           && TryGetJsonProperty(deck, "MoraleIds", out var morale) && morale.ValueKind == JsonValueKind.Array
+           && TryGetJsonProperty(deck, "SpecialIds", out var special) && special.ValueKind == JsonValueKind.Array;
+
+    private static bool TryGetJsonProperty(JsonElement element, string name, out JsonElement value)
+    {
+        foreach (var property in element.EnumerateObject())
+        {
+            if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)) continue;
+            value = property.Value;
+            return true;
+        }
+        value = default;
+        return false;
+    }
+
+    private static JsonSerializerOptions CreatePlatformJsonOptions(bool writeIndented)
+    {
+        var resolver = new DefaultJsonTypeInfoResolver();
+        resolver.Modifiers.Add(typeInfo =>
+        {
+            if (typeInfo.Type == typeof(DataFile))
+            {
+                foreach (var property in typeInfo.Properties.Where(property => property.Name is nameof(DataFile.Decks)
+                             or nameof(DataFile.PublishedDecks) or nameof(DataFile.DeckPayloads)))
+                    property.ShouldSerialize = static (_, _) => false;
+            }
+            else if (typeInfo.Type == typeof(TournamentDeckSnapshotRow))
+            {
+                foreach (var property in typeInfo.Properties.Where(property => property.Name is
+                             nameof(TournamentDeckSnapshotRow.CardIds) or nameof(TournamentDeckSnapshotRow.MoraleIds)
+                             or nameof(TournamentDeckSnapshotRow.SpecialIds)))
+                    property.ShouldSerialize = static (_, _) => false;
+            }
+        });
+        return new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = writeIndented,
+            TypeInfoResolver = resolver,
+        };
     }
 
     private static SqliteConnection OpenDatabase(string path, bool readOnly, bool initialize = true)
@@ -477,6 +930,7 @@ public sealed partial class L12PlatformStore
         };
         var connection = new SqliteConnection(builder.ToString());
         connection.Open();
+        AttachSyntheticStorageMeasurement(connection);
         if (initialize)
         {
             using var command = connection.CreateCommand();
@@ -503,9 +957,33 @@ public sealed partial class L12PlatformStore
         return reader.Read() ? (reader.GetString(0), reader.GetString(1)) : null;
     }
 
-    private static string? ReadMeta(SqliteConnection connection, string key)
+    private static (string Json, string Checksum)? ReadSnapshot(SqliteConnection connection,
+        SqliteTransaction transaction)
     {
         using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT snapshot_json,snapshot_sha256 FROM platform_state WHERE singleton_id=1;";
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? (reader.GetString(0), reader.GetString(1)) : null;
+    }
+
+    private static long ReadLatestSeasonFinalizationRevision(SqliteConnection connection,
+        SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT COALESCE(MAX(completed_storage_revision),-1)
+            FROM season_finalization_coordination
+            WHERE status='finalized';
+            """;
+        return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    private static string? ReadMeta(SqliteConnection connection, string key, SqliteTransaction? transaction = null)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT value FROM storage_meta WHERE key=$key;";
         command.Parameters.AddWithValue("$key", key);
         return command.ExecuteScalar() as string;
@@ -525,8 +1003,10 @@ public sealed partial class L12PlatformStore
     }
 
     private static DataFile DeserializeData(string json)
+        => NormalizeDeserializedData(JsonSerializer.Deserialize<DataFile>(json, PlatformSnapshotJsonOptions) ?? new DataFile());
+
+    private static DataFile NormalizeDeserializedData(DataFile data)
     {
-        var data = JsonSerializer.Deserialize<DataFile>(json, PlatformSnapshotJsonOptions) ?? new DataFile();
         data.Accounts ??= [];
         foreach (var account in data.Accounts)
         {
@@ -543,12 +1023,22 @@ public sealed partial class L12PlatformStore
             if (session.PermissionVersion < 1)
                 session.PermissionVersion = data.Accounts.FirstOrDefault(row => row.Id == session.AccountId)?.PermissionVersion ?? 1;
         }
+        data.DeckPayloads ??= new(StringComparer.Ordinal);
         data.Decks ??= [];
         data.PublishedDecks ??= [];
+        var publicDeckCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var deck in data.PublishedDecks)
         {
             deck.LikedByAccountIds ??= [];
             deck.Views = Math.Max(0, deck.Views);
+            var normalizedCode = deck.PublicCode?.Trim().Replace("-", string.Empty,
+                StringComparison.Ordinal).ToUpperInvariant() ?? string.Empty;
+            deck.PublicCode = normalizedCode.Length == PublicDeckCodeLength
+                              && normalizedCode.All(PublicDeckCodeAlphabet.Contains)
+                              && publicDeckCodes.Add(normalizedCode)
+                ? normalizedCode
+                : CreateUniquePublicDeckCode(publicDeckCodes);
+            publicDeckCodes.Add(deck.PublicCode);
         }
         data.Friends ??= [];
         data.BlockedAccounts ??= [];
@@ -570,6 +1060,8 @@ public sealed partial class L12PlatformStore
         foreach (var category in data.SiteCategories) NormalizeSiteCategory(category);
         data.EffectReviews ??= [];
         data.EffectPresentationOverrides ??= [];
+        data.EffectWorkbenchDrafts ??= [];
+        data.EffectWorkbenchVersions ??= [];
         data.AdminAudit ??= [];
         foreach (var audit in data.AdminAudit)
             if (string.IsNullOrWhiteSpace(audit.Outcome)) audit.Outcome = "succeeded";
@@ -591,7 +1083,11 @@ public sealed partial class L12PlatformStore
         NormalizeSecurityState(data.Security);
         data.RankedProfiles ??= [];
         data.RankedProfileHistory ??= [];
-        foreach (var history in data.RankedProfileHistory) history.Titles ??= [];
+        foreach (var history in data.RankedProfileHistory)
+        {
+            history.Titles ??= [];
+            history.MasterTitles ??= [];
+        }
         data.RankedSettlements ??= [];
         foreach (var settlement in data.RankedSettlements)
             settlement.Outcome = string.IsNullOrWhiteSpace(settlement.Outcome)
@@ -698,16 +1194,21 @@ public sealed partial class L12PlatformStore
             || data.RankedIntegrityAudits.GroupBy(row => row.Id, StringComparer.OrdinalIgnoreCase)
                 .Any(group => string.IsNullOrWhiteSpace(group.Key) || group.Count() > 1)
             || data.RankedIntegrityAudits.Any(row => string.IsNullOrWhiteSpace(row.Id)
+                || row.EvidenceVersion is < 0 or > 2
                 || string.IsNullOrWhiteSpace(row.FirstAccountId)
                 || string.IsNullOrWhiteSpace(row.SecondAccountId)
                 || string.Equals(row.FirstAccountId, row.SecondAccountId, StringComparison.OrdinalIgnoreCase)
                 || row.Winner is not null and not (0 or 1)
-                || row.DurationMs < 0 || row.MeaningfulCommandCount < 0
+                || row.DurationMs < 0 || row.MeaningfulCommandCount < 0 || row.FinalRound < 0
                 || row.Enforcement is not ("none" or "reward-held")
                 || (!string.IsNullOrEmpty(row.FirstNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.FirstNetworkFingerprint) != row.FirstNetworkFingerprint)
                 || (!string.IsNullOrEmpty(row.SecondNetworkFingerprint)
                     && NormalizeNetworkFingerprint(row.SecondNetworkFingerprint) != row.SecondNetworkFingerprint)
+                || (!string.IsNullOrEmpty(row.FirstBrowserFingerprint)
+                    && NormalizeBrowserFingerprint(row.FirstBrowserFingerprint) != row.FirstBrowserFingerprint)
+                || (!string.IsNullOrEmpty(row.SecondBrowserFingerprint)
+                    && NormalizeBrowserFingerprint(row.SecondBrowserFingerprint) != row.SecondBrowserFingerprint)
                 || !data.Accounts.Any(account => account.Id == row.FirstAccountId)
                 || !data.Accounts.Any(account => account.Id == row.SecondAccountId))
             || HasInvalidRankedIntegrityActionState(data))
@@ -717,8 +1218,81 @@ public sealed partial class L12PlatformStore
 
     private void RestoreLastCommittedSnapshot()
     {
-        if (!string.IsNullOrWhiteSpace(_lastCommittedSnapshot))
-            _data = DeserializeData(_lastCommittedSnapshot);
+        var sessionActivityWasAvailable = Volatile.Read(ref _committedSessionActivity).Available;
+        try
+        {
+            var snapshot = _lastCommittedSnapshot;
+            if (snapshot.Length <= 32 || !CryptographicOperations.FixedTimeEquals(
+                    snapshot.AsSpan(0, 32), SHA256.HashData(snapshot.AsSpan(32))))
+                throw new InvalidDataException("完整回滚缓存校验失败");
+            using var bytes = new MemoryStream(snapshot, 32, snapshot.Length - 32, writable: false);
+            using var compressed = new GZipStream(bytes, CompressionMode.Decompress);
+            var restored = JsonSerializer.Deserialize<DataFile>(compressed, PlatformSnapshotJsonOptions)
+                ?? throw new InvalidDataException("完整回滚缓存为空");
+            restored = NormalizeDeserializedData(restored);
+            ValidateCompactRuntimeDeckDomain(restored);
+            var replacement = snapshot;
+            // Most failures must remain a pure memory rollback: this preserves the
+            // exact committed cache even if the database is temporarily missing or
+            // another platform generation has advanced. A full-save transaction
+            // that actually observed a different broadcast generation is the sole
+            // case that needs to rehydrate that independently committed domain.
+            if (_storageWritable
+                && restored.RankedBroadcastGeneration != _data.RankedBroadcastGeneration)
+            {
+                using var connection = OpenDatabase(_databasePath, readOnly: true);
+                using var transaction = connection.BeginTransaction(deferred: true);
+                if (ReadStorageRevision(connection, transaction) != restored.Version)
+                    throw new InvalidDataException("回滚缓存平台版本已过期");
+                HydrateRankedBroadcastObjects(connection, restored, transaction);
+                transaction.Commit();
+                replacement = SerializeRollbackState(restored);
+            }
+            var sessionActivity = SessionActivityForRollback(restored, replacement);
+            _data = restored;
+            _lastCommittedSnapshot = replacement;
+            PublishCommittedSessionActivity(sessionActivity);
+            // The platform/deck generation remains the committed cache generation;
+            // only the independently committed broadcast projection is refreshed,
+            // and only while the database platform revision still matches.
+        }
+        catch (Exception cacheError)
+        {
+            try
+            {
+                // Exceptional corruption recovery only. Read all authoritative
+                // domains from one strictly verified read transaction; no mirror
+                // import, migration, repair or database write is allowed here.
+                using var connection = OpenDatabase(_databasePath, readOnly: true);
+                AssertDatabaseIntegrity(connection);
+                using var transaction = connection.BeginTransaction(deferred: true);
+                var stored = ReadSnapshot(connection, transaction)
+                    ?? throw new InvalidDataException("回滚恢复缺少平台快照");
+                if (!FixedEquals(stored.Checksum, Sha256(stored.Json)))
+                    throw new InvalidDataException("回滚恢复快照校验失败");
+                var restored = DeserializeDataAndValidate(stored.Json);
+                ValidateRecoveredDeckDomain(connection, transaction, restored);
+                HydrateRankedBroadcastObjects(connection, restored, transaction);
+                MergeIndependentAudit(connection, restored, transaction);
+                var replacement = SerializeRollbackState(restored);
+                var sessionActivity = sessionActivityWasAvailable
+                    ? PrepareCommittedSessionActivity(restored, replacement) : UnavailableSessionActivity;
+                transaction.Commit();
+                _data = restored;
+                _lastCommittedSnapshot = replacement;
+                PublishCommittedSessionActivity(sessionActivity);
+            }
+            catch (Exception databaseError)
+            {
+                _rollbackViewUnavailable = true;
+                PublishCommittedSessionActivity(UnavailableSessionActivity);
+                _storageWritable = false;
+                _storageMode = "unavailable";
+                _storageIssue = "完整回滚缓存恢复失败";
+                throw new L12PlatformStorageUnavailableException(_storageIssue,
+                    new AggregateException(cacheError, databaseError));
+            }
+        }
     }
 
     private void WriteFallbackMirror(string json)
@@ -726,16 +1300,48 @@ public sealed partial class L12PlatformStore
         var temp = _path + ".tmp";
         File.WriteAllText(temp, json);
         File.Move(temp, _path, true);
+        RecordSyntheticMirrorWrite(json);
     }
 
     private static string SerializeSnapshot(DataFile data)
         => JsonSerializer.Serialize(data, PlatformSnapshotJsonOptions);
 
+    // Memory-only rollback state includes the normalized deck domain. The on-disk
+    // snapshot/mirror remain compact; a failed database refresh cannot erase the
+    // last known committed decks just because writable recovery is unavailable.
+    private static byte[] SerializeRollbackState(DataFile data)
+    {
+        CompactRuntimeDeckDomain(data);
+        using var bytes = new MemoryStream();
+        using (var compressed = new GZipStream(bytes, CompressionLevel.Fastest, leaveOpen: true))
+            JsonSerializer.Serialize(compressed, data, PlatformMigrationJsonOptions);
+        var payload = bytes.GetBuffer().AsSpan(0, checked((int)bytes.Length));
+        var snapshot = new byte[checked(payload.Length + 32)];
+        SHA256.HashData(payload, snapshot.AsSpan(0, 32));
+        payload.CopyTo(snapshot.AsSpan(32));
+        return snapshot;
+    }
+
     private static string PlatformDatabasePath(string legacyPath)
         => Path.Combine(Path.GetDirectoryName(legacyPath)!, Path.GetFileNameWithoutExtension(legacyPath) + ".db");
 
     private static string Sha256(string value)
-        => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var encoder = Encoding.UTF8.GetEncoder();
+        ReadOnlySpan<char> remaining = value.AsSpan();
+        Span<byte> buffer = stackalloc byte[4096];
+        bool completed;
+        do
+        {
+            // Encoder state preserves pairs/replacement fallback at buffer edges,
+            // exactly matching Encoding.UTF8.GetBytes without a whole-value buffer.
+            encoder.Convert(remaining, buffer, flush: true, out var consumed, out var written, out completed);
+            hash.AppendData(buffer[..written]);
+            remaining = remaining[consumed..];
+        } while (!completed);
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+    }
 
     private static bool FixedEquals(string? left, string? right)
     {

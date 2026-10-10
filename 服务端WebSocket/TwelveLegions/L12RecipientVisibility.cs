@@ -1,0 +1,275 @@
+namespace TwelveLegions.Server;
+
+/// <summary>
+/// Pure recipient-visibility rules shared by live snapshots and persisted player replays.
+/// This layer must not advance the engine or mutate authoritative state.
+/// </summary>
+internal static class L12RecipientVisibility
+{
+    private static readonly HashSet<string> PublicCombatKinds = new(StringComparer.Ordinal)
+    {
+        "attack", "defense", "defense-invalid", "support", "combat", "attack-aborted", "attack-ended",
+    };
+    private static readonly HashSet<string> PublicCombatOutcomes = new(StringComparer.Ordinal)
+    {
+        "declared", "blocked", "unblocked", "supported", "invalid-block", "invalid-support",
+        "defeated", "not-defeated", "aborted", "completed", "unknown",
+    };
+    private static readonly HashSet<string> PublicCombatReasons = new(StringComparer.Ordinal)
+    {
+        "attacker-left", "target-left", "choice-unavailable", "context-unavailable",
+        "extra-cost-unpaid", "thunder-roll-failed", "unknown",
+    };
+
+    private static L12ActionEvent ProjectCombatEvent(L12ActionEvent actionEvent)
+    {
+        var combat = actionEvent.PlayerCombat;
+        if (combat is null) return actionEvent;
+        var visibleIds = actionEvent.Cards.Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        return actionEvent with
+        {
+            PlayerCombat = combat with
+            {
+                CombatId = combat.CombatId is { Length: > 0 and <= 64 } id
+                    && id.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-') ? id : null,
+                EventKind = combat.EventKind is { } kind && PublicCombatKinds.Contains(kind) ? kind : "unknown",
+                OutcomeCode = combat.OutcomeCode is { } outcome && PublicCombatOutcomes.Contains(outcome)
+                    ? outcome : "unknown",
+                PublicReasonCode = combat.PublicReasonCode is { } reason && PublicCombatReasons.Contains(reason)
+                    ? reason : "unknown",
+                AttackerInstanceId = combat.AttackerInstanceId is { } attacker && visibleIds.Contains(attacker)
+                    ? attacker : null,
+                TargetInstanceId = combat.TargetInstanceId is { } target && visibleIds.Contains(target)
+                    ? target : null,
+                AttackerTroops = combat.AttackerTroops is >= 0
+                    && combat.AttackerInstanceId is { } attackValueSource && visibleIds.Contains(attackValueSource)
+                    ? combat.AttackerTroops : null,
+                DefenderTroops = combat.DefenderTroops is >= 0
+                    && combat.TargetInstanceId is { } defenseValueSource && visibleIds.Contains(defenseValueSource)
+                    ? combat.DefenderTroops : null,
+                MasterDamage = combat.MasterDamage is >= 0 ? combat.MasterDamage : null,
+            },
+        };
+    }
+
+    private static L12ActionEvent ProjectBattlefieldMovementEvent(L12ActionEvent actionEvent)
+    {
+        var movement = actionEvent.PlayerBattlefieldMovement;
+        if (movement is null) return actionEvent;
+        if (actionEvent.Type is not ("move" or "faction-effect"))
+            return actionEvent with { PlayerBattlefieldMovement = null };
+        var visibleIds = actionEvent.Cards
+            .Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .Select(card => card.InstanceId).ToHashSet(StringComparer.Ordinal);
+        var safe = (movement.Facts ?? [])
+            .Where(fact => fact.InstanceId is { Length: > 0 } id && visibleIds.Contains(id)
+                && fact.BattlefieldPlayerIndex is >= 0 and <= 1
+                && fact.FromRow is >= 0 and <= 1 && fact.ToRow is >= 0 and <= 1
+                && fact.FromSlot is >= 0 and <= 2 && fact.ToSlot is >= 0 and <= 2
+                && (fact.FromRow != fact.ToRow || fact.FromSlot != fact.ToSlot))
+            .ToArray();
+        return actionEvent with
+        {
+            PlayerBattlefieldMovement = safe.Length == 0 ? null : new(safe),
+        };
+    }
+
+    private static L12ActionEvent ProjectPublicPlacementEvent(L12ActionEvent actionEvent)
+    {
+        var placement = actionEvent.PlayerPublicPlacement;
+        if (placement is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(candidate =>
+            candidate.InstanceId == placement.InstanceId).Take(2).ToArray();
+        var valid = actionEvent.Type == "put" && matches.Length == 1
+            && !matches[0].Hidden && !string.IsNullOrWhiteSpace(matches[0].Name)
+            && !string.IsNullOrWhiteSpace(placement.InstanceId)
+            && placement.OwnerPlayerIndex is >= 0 and <= 1
+            && placement.ControllerPlayerIndex is >= 0 and <= 1
+            && placement.OwnerPlayerIndex != placement.ControllerPlayerIndex
+            && placement.Row is >= 0 and <= 1 && placement.Slot is >= 0 and <= 2
+            && placement.Tapped is not null && matches[0].Tapped == placement.Tapped
+            && matches[0].OwnerIndex == placement.OwnerPlayerIndex
+            && placement.DurationCode is null or "until-owner-next-turn-end";
+        return valid ? actionEvent : actionEvent with { PlayerPublicPlacement = null };
+    }
+    private static L12ActionEvent ProjectTroopsModifierEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerTroopsModifier;
+        if (fact is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(card => card.InstanceId == fact.TargetInstanceId).Take(2).ToArray();
+        var valid = actionEvent.Type == "troops-modifier"
+            && !string.IsNullOrWhiteSpace(fact.TargetInstanceId)
+            && fact.TargetControllerPlayerIndex is >= 0 and <= 1
+            && fact.TargetControllerPlayerIndex == actionEvent.PlayerIndex
+            && fact.TroopsDelta is not null && fact.DurationCode == "this-turn"
+            && matches.Length == 1 && !matches[0].Hidden && !string.IsNullOrWhiteSpace(matches[0].Name);
+        return valid ? actionEvent : actionEvent with { PlayerTroopsModifier = null };
+    }
+
+    private static L12ActionEvent ProjectDisasterValueEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerDisasterValue;
+        if (fact is null) return actionEvent;
+        return actionEvent.Type == "disaster-value"
+            && fact.Before is >= 0 && fact.After is >= 0
+            ? actionEvent : actionEvent with { PlayerDisasterValue = null };
+    }
+
+    private static L12ActionEvent ProjectCardStateTransitionEvent(L12ActionEvent actionEvent)
+    {
+        var fact = actionEvent.PlayerCardStateTransition;
+        if (fact is null) return actionEvent;
+        var matches = actionEvent.Cards.Where(card => card.InstanceId == fact.InstanceId)
+            .Take(2).ToArray();
+        var valid = actionEvent.Type is "state" or "attack" or "attack-ended"
+            && !string.IsNullOrWhiteSpace(fact.InstanceId)
+            && fact.FromTapped != fact.ToTapped
+            && matches.Length == 1
+            && !matches[0].Hidden
+            && !string.IsNullOrWhiteSpace(matches[0].Name)
+            && matches[0].Tapped == fact.ToTapped;
+        return valid ? actionEvent : actionEvent with { PlayerCardStateTransition = null };
+    }
+
+    private static bool IsValidPresentationFact(L12ActionEvent actionEvent)
+    {
+        var visibleCards = actionEvent.Cards
+            .Where(card => !card.Hidden && !string.IsNullOrWhiteSpace(card.Name))
+            .ToArray();
+        if (actionEvent.Type is "put" or "enter" or "discard")
+            return visibleCards.Length == 1 && !string.IsNullOrWhiteSpace(visibleCards[0].InstanceId);
+
+        var state = actionEvent.PlayerCardStateTransition;
+        if (state is not null)
+            return actionEvent.Type is "state" or "attack" or "attack-ended"
+                && state.FromTapped != state.ToTapped
+                && !string.IsNullOrWhiteSpace(state.InstanceId)
+                && visibleCards.Count(card => card.InstanceId == state.InstanceId
+                    && card.Tapped == state.ToTapped) == 1;
+
+        var movements = actionEvent.PlayerBattlefieldMovement?.Facts;
+        return actionEvent.Type is "move" or "faction-effect"
+            && movements is { Length: > 0 }
+            && movements.All(fact => fact.InstanceId is { Length: > 0 } id
+                && visibleCards.Count(card => card.InstanceId == id) == 1
+                && fact.BattlefieldPlayerIndex is >= 0 and <= 1
+                && fact.FromRow is >= 0 and <= 1 && fact.ToRow is >= 0 and <= 1
+                && fact.FromSlot is >= 0 and <= 2 && fact.ToSlot is >= 0 and <= 2
+                && (fact.FromRow != fact.ToRow || fact.FromSlot != fact.ToSlot));
+    }
+
+    /// <summary>
+    /// Presentation references are a recipient contract, not authority-only
+    /// bookkeeping. Call this only after the recent-event window has been
+    /// visibility-projected for that recipient. Every reference must resolve to
+    /// one event in that exact delivered window and still expose a validated
+    /// movement/state fact; otherwise the result keeps its conservative full-card
+    /// fallback by receiving no references.
+    /// </summary>
+    internal static L12ActionEvent ProjectPresentationFactReferences(L12ActionEvent actionEvent,
+        IReadOnlyDictionary<long, L12ActionEvent> recipientEvents)
+    {
+        var references = actionEvent.PlayerPresentationFactSequences;
+        if (references is null) return actionEvent;
+        var distinct = references.Where(sequence => sequence > 0).Distinct().ToArray();
+        var valid = actionEvent.Type == "effect-result"
+            && distinct.Length > 0
+            && distinct.Length == references.Length
+            && distinct.All(sequence => recipientEvents.TryGetValue(sequence, out var fact)
+                && IsValidPresentationFact(fact));
+        return valid ? actionEvent : actionEvent with { PlayerPresentationFactSequences = null };
+    }
+
+    private static L12ActionEvent ProjectSelectedTargetsEvent(L12ActionEvent actionEvent)
+    {
+        var selected = actionEvent.PlayerSelectedTargets;
+        if (selected is null) return actionEvent;
+        var source = actionEvent.Cards.Where(card => card.InstanceId == selected.SourceInstanceId)
+            .Take(2).ToArray();
+        if (actionEvent.Type != "target-selected" || source.Length != 1 || source[0].Hidden
+            || string.IsNullOrWhiteSpace(source[0].Name))
+            return actionEvent with { PlayerSelectedTargets = null };
+        var safe = (selected.Facts ?? [])
+            .Where(fact => !string.IsNullOrWhiteSpace(fact.Id) && fact.Owner is >= 0 and <= 1
+                && (fact.Zone == "field" && fact.Row is >= 0 and <= 1 && fact.Slot is >= 0 and <= 2
+                    && fact.IsGodPower is null
+                    || fact.Zone == "morale" && fact.Row == -1 && fact.Slot == -1
+                    && fact.PublicName is null && fact.CurrentCost is null))
+            .DistinctBy(fact => fact.Id, StringComparer.OrdinalIgnoreCase).ToArray();
+        return actionEvent with
+        {
+            PlayerSelectedTargets = safe.Length == 0 ? null : selected with { Facts = safe },
+        };
+    }
+
+    internal readonly record struct Policy(bool BothHands, bool CoveredBattlefieldIdentity,
+        bool AllDisasters, bool PrivatePrompts, bool PrivateHandEvents, bool DeckOrder,
+        bool LegalActions)
+    {
+        internal static Policy Player => new(false, false, false, false, false, false, true);
+        internal static Policy Gm => new(true, true, true, true, true, true, true);
+        internal static Policy PublicSpectator => new(false, false, false, false, false, false, false);
+        internal static Policy Referee => new(true, true, true, false, false, false, false);
+    }
+
+    internal static bool CanSeeDisaster(L12GameState state, L12CardInstance card, int viewer,
+        bool revealAllDisasters)
+    {
+        if (revealAllDisasters) return true;
+        if (state.ActiveDisaster?.InstanceId == card.InstanceId
+            || state.RemovedDisasters.Any(item => item.InstanceId == card.InstanceId)
+            || state.RevealedDisasters.Any(item => item.InstanceId == card.InstanceId))
+            return true;
+        var owner = state.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId,
+            card.OwnerIndex ?? -1);
+        return viewer >= 0 && owner == viewer;
+    }
+
+    internal static bool CanSeeActionEvent(L12ActionEvent actionEvent, int viewer,
+        bool revealAllHands = false)
+        => !actionEvent.Type.StartsWith("private-trigger-", StringComparison.Ordinal)
+            || revealAllHands || actionEvent.PlayerIndex == viewer;
+
+    internal static L12ActionEvent ProjectActionEvent(L12GameState state,
+        L12ActionEvent actionEvent, int viewer, bool revealAllDisasters,
+        bool revealAllHands = false)
+    {
+        if (actionEvent.Type.StartsWith("private-trigger-", StringComparison.Ordinal))
+            return CanSeeActionEvent(actionEvent, viewer, revealAllHands)
+                ? actionEvent with { Type = actionEvent.Type["private-trigger-".Length..] }
+                : new L12ActionEvent(actionEvent.Sequence, "private", null, string.Empty, []);
+        actionEvent = ProjectSelectedTargetsEvent(ProjectCardStateTransitionEvent(ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
+            ProjectBattlefieldMovementEvent(ProjectCombatEvent(
+                L12TrialProgressVisibility.PublicEvent(actionEvent))))))));
+        if (actionEvent.Type == "private-return")
+            return revealAllHands || actionEvent.PlayerIndex == viewer
+                ? actionEvent with { Type = "return" }
+                : new L12ActionEvent(actionEvent.Sequence, "return", actionEvent.PlayerIndex,
+                    "放回1张牌", []);
+        if (!revealAllDisasters && actionEvent.Type == "private-disaster-reveal"
+            && actionEvent.PlayerIndex != viewer)
+        {
+            var viewingPlayerName = actionEvent.PlayerIndex is >= 0 and <= 1
+                ? state.Players[actionEvent.PlayerIndex.Value].Name
+                : "玩家";
+            return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type,
+                actionEvent.PlayerIndex, $"{viewingPlayerName}查看了下一张天灾", []);
+        }
+        if (revealAllDisasters || actionEvent.Type != "disaster-selected"
+            || actionEvent.Cards.Length == 0)
+            return actionEvent;
+
+        var visibleCards = actionEvent.Cards
+            .Where(card => CanSeeDisaster(state, card, viewer, revealAllDisasters))
+            .Select(card => card.Clone())
+            .ToArray();
+        if (visibleCards.Length == actionEvent.Cards.Length) return actionEvent;
+
+        var playerName = actionEvent.PlayerIndex is >= 0 and <= 1
+            ? state.Players[actionEvent.PlayerIndex.Value].Name
+            : "玩家";
+        return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type,
+            actionEvent.PlayerIndex, $"{playerName} 已完成天灾选择", visibleCards);
+    }
+}

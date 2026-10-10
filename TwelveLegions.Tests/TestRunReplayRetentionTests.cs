@@ -10,15 +10,16 @@ namespace TwelveLegions.Tests;
 public sealed class TestRunReplayRetentionTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 9, 20, 0, 0, TimeSpan.Zero);
-    private const string Url = "https://testrun.legion-12.com";
+    private const string Url = "https://legion-12.com/testrun";
 
     [Theory]
     [InlineData("production", Url)]
     [InlineData("", Url)]
     [InlineData("testrun", "https://legion-12.com")]
-    [InlineData("testrun", "https://testrun.legion-12.com.evil.test")]
-    [InlineData("testrun", "http://testrun.legion-12.com")]
-    [InlineData("testrun", "https://testrun.legion-12.com:8084")]
+    [InlineData("testrun", "https://legion-12.com.evil.test/testrun")]
+    [InlineData("testrun", "http://legion-12.com/testrun")]
+    [InlineData("testrun", "https://legion-12.com:8084/testrun")]
+    [InlineData("testrun", "https://legion-12.com/testrun/other")]
     public async Task WrongEnvironmentOrUrlNeverWrites(string marker, string url)
     {
         await using var fixture = await Fixture.Create();
@@ -141,28 +142,37 @@ public sealed class TestRunReplayRetentionTests
     {
         await using var f=await Fixture.Create();
         var alias=Path.Combine(f.Root,"release-runtime");
-        void Link(string target)
+        if(OperatingSystem.IsWindows())
         {
-            if(OperatingSystem.IsWindows())
+            var target=f.Runtime;
+            string Resolve(string path)
             {
-                var info=new System.Diagnostics.ProcessStartInfo("cmd.exe") { UseShellExecute=false,CreateNoWindow=true };
-                foreach(var arg in new[]{"/c","mklink","/J",alias,target})info.ArgumentList.Add(arg);
-                using var process=System.Diagnostics.Process.Start(info)!;process.WaitForExit();Assert.Equal(0,process.ExitCode);
+                var full=Path.GetFullPath(path);
+                var aliasRoot=Path.GetFullPath(alias);
+                if(full.StartsWith(aliasRoot+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))
+                    return Path.Combine(target,Path.GetRelativePath(aliasRoot,full));
+                return full;
             }
-            else Directory.CreateSymbolicLink(alias,target);
+            var aliasDatabase=Path.Combine(alias,"matches.db");
+            Assert.True(MatchRecorder.IsTestRunRetentionIsolatedCore("testrun",Url,f.Runtime,f.Production,
+                aliasDatabase,false,Resolve));
+            File.Copy(f.Database,Path.Combine(f.Production,"matches.db"));
+            target=f.Production;
+            Assert.False(MatchRecorder.IsTestRunRetentionIsolatedCore("testrun",Url,f.Runtime,f.Production,
+                aliasDatabase,false,Resolve));
+            return;
         }
         try
         {
-            Link(f.Runtime);
+            Directory.CreateSymbolicLink(alias,f.Runtime);
             Assert.True(MatchRecorder.IsTestRunRetentionIsolatedCore("testrun",Url,f.Runtime,f.Production,
                 Path.Combine(alias,"matches.db"),false));
             Directory.Delete(alias);
             File.Copy(f.Database,Path.Combine(f.Production,"matches.db"));
-            Link(f.Production);
+            Directory.CreateSymbolicLink(alias,f.Production);
             Assert.False(MatchRecorder.IsTestRunRetentionIsolatedCore("testrun",Url,f.Runtime,f.Production,
                 Path.Combine(alias,"matches.db"),false));
-            if(!OperatingSystem.IsWindows())
-                Assert.False(MatchRecorder.IsTestRunRetentionIsolated("testrun",Url,f.Runtime,f.Production,f.Database));
+            Assert.False(MatchRecorder.IsTestRunRetentionIsolated("testrun",Url,f.Runtime,f.Production,f.Database));
         }
         finally { if(Directory.Exists(alias))Directory.Delete(alias); }
     }

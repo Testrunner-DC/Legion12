@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-ranked-history-honors-and-faction-finals",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "历史荣誉与派系结算数值展示更新",
+  "changes": [
+    {
+      "category": "ranking",
+      "text": "历史荣誉现在按称号分别展示各赛季获得者，并只显示获奖时的账号名与派系；赛季按时间倒序排列，不再混入个人段位或七曜值。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/site/RankingsPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "历史荣誉新增每个赛季的秩序、混沌、命运最终结算数值；赛季名称缺失时使用自然序号，不再向玩家显示内部赛季编号。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/ProfilePage.vue",
+        "opcgpro-vue/src/l12/site/RankingsPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SeasonIdentityMigration.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    }
+  ]
+}

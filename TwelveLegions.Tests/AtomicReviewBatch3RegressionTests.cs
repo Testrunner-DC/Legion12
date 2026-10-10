@@ -96,7 +96,65 @@ public sealed class AtomicReviewBatch3RegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "cost-presentation:return-morale-active-rest")]
+    public void ActiveReturnAndRestCostsUseTheCommittedStateReceipt()
+    {
+        var game = Create(6899);
+        var player = game.State.Players[0];
+        var liuBei = Card("S01-0105", "active-cost-receipt-liubei");
+        player.Field[0][0] = liuBei;
+        player.Morale.Clear();
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "active-cost-return-ready", CardId = "S01-01C1", Tapped = false,
+        });
+        player.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "active-cost-return-rested", CardId = "S01-01C1", Tapped = true,
+        });
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", liuBei.InstanceId,
+            Ability: "searchBrothers")).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("resource-return", payment.Kind);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ["active-cost-return-ready"])).Accepted);
+
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Contains("返还1士气", response.Data["responsePaidCostSummary"], StringComparison.Ordinal);
+        Assert.Contains($"休整〈{liuBei.Name}〉", response.Data["responsePaidCostSummary"],
+            StringComparison.Ordinal);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "cost-presentation:waived-cost-is-not-paid")]
+    public void WaivedActiveCostDoesNotCreateAFakePaidCostLine()
+    {
+        var game = CreateWithFirstMaster("S01-01M1", 6900);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        player.Library.Add(Card("S01-0101", "waived-active-cost-draw"));
+        PrepareMain(game);
+        player.MasterMoraleWaiverUntilTurn = game.State.TurnSerial;
+        HoldOpponentResponseWindow(game);
+
+        var activation = game.Handle(0,
+            new L12Command("activateAbility", "master-0", Ability: "drawCycle"));
+
+        Assert.True(activation.Accepted, activation.Error);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.False(response.Data.ContainsKey("responsePaidCostSummary"));
+        Assert.DoesNotContain("Cost（已支付）", response.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:asgardDraw")]
+    [L12AbilityEvidence("S01-03C1:ability:static:fa92f5d792a32bdc", "normal", "presentation-consumers")]
+    [L12AbilityEvidence("ST03-C1:ability:static:36b1c5751cc508f9", "normal", "presentation-consumers")]
     public void AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves()
     {
         var game = CreateWithFirstMaster("S01-03M2", 6901);
@@ -159,6 +217,8 @@ public sealed class AtomicReviewBatch3RegressionTests
 
     [Fact]
     [Trait("L12Evidence", "ability:factionDrawMove")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "normal", "single-candidate-choice", "presentation-consumers")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "normal", "single-candidate-choice", "presentation-consumers")]
     public void GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot()
     {
         var game = CreateWithFirstMaster("S01-04M2", 6902);
@@ -195,6 +255,95 @@ public sealed class AtomicReviewBatch3RegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    [L12AbilityEvidence("S01-04C1:ability:static:7f60c31c00b0f718", "target-invalidated")]
+    [L12AbilityEvidence("ST04-C1:ability:static:d9cac21fb706e3c8", "target-invalidated")]
+    public void GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69021);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-stale-target-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-stale-target-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        var target = Assert.Single(game.State.PendingPrompts);
+        player.Field[0][0] = null;
+        player.Graveyard.Add(mover);
+        ResolveSinglePrompt(game, mover.InstanceId);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("军团已无法位移", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("军团已无法位移", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    public void GaotianyuanChosenMoverLosingEveryAdjacentSlotIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69022);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-no-slot-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-no-slot-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        var target = Assert.Single(game.State.PendingPrompts);
+        player.Field[0][1] = Card("S01-0101", "gaotianyuan-no-slot-front-blocker");
+        player.Field[1][0] = Card("S01-0101", "gaotianyuan-no-slot-back-blocker");
+        ResolveSinglePrompt(game, mover.InstanceId);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("没有相邻空位", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("没有相邻空位", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:factionDrawMove")]
+    public void GaotianyuanDeclaredDestinationBecomingOccupiedIsFailedNotCancelled()
+    {
+        var game = CreateWithFirstMaster("S01-04M2", 69023);
+        var player = game.State.Players[0];
+        player.Morale.Clear();
+        player.Library.Clear();
+        AddMorale(player, 2, "S01-04C1");
+        player.Library.Add(Card("S01-0401", "gaotianyuan-stale-slot-draw"));
+        var mover = Card("S01-0402", "gaotianyuan-stale-slot-mover");
+        player.Field[0][0] = mover;
+        HoldOpponentResponseWindow(game);
+        PrepareMain(game);
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "faction-0", Ability: "factionDrawMove")).Accepted);
+        PassResponses(game);
+        ResolveSinglePrompt(game, mover.InstanceId);
+        var slot = Assert.Single(game.State.PendingPrompts);
+        var destination = slot.ValidChoices.First();
+        var parts = destination.Split(':');
+        player.Field[int.Parse(parts[0])][int.Parse(parts[1])] =
+            Card("S01-0101", "gaotianyuan-stale-slot-blocker");
+        ResolveSinglePrompt(game, destination);
+
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("位移位置已失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-cancelled"
+            && entry.Text.Contains("位移位置已失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
     [Trait("L12Evidence", "ability:sunTopThree")]
     public void SunTopThreeKeepsHiddenPickDelayedButPredeclaresPublicGraveRecovery()
     {
@@ -209,6 +358,7 @@ public sealed class AtomicReviewBatch3RegressionTests
         var recover = Card("S01-0202", "sun-declared-recover");
         player.Library.Add(hiddenTop);
         player.Graveyard.Add(recover);
+        HoldOpponentResponseWindow(game);
         PrepareMain(game);
 
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "sunTopThree")).Accepted);
@@ -219,11 +369,16 @@ public sealed class AtomicReviewBatch3RegressionTests
         ResolveSinglePrompt(game, recover.InstanceId);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
 
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal("消耗2士气", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：消耗2士气", response.Text, StringComparison.Ordinal);
+
         PassResponses(game);
         var hiddenPick = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("faction-search-pick", hiddenPick.Data["action"]);
         Assert.Contains(hiddenTop.InstanceId, hiddenPick.ValidChoices);
         ResolveSinglePrompt(game, hiddenTop.InstanceId);
+        PassResponses(game);
 
         Assert.Contains(hiddenTop, player.Hand);
         Assert.Contains(recover, player.Hand);
@@ -306,6 +461,10 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.DoesNotContain(discard, player.Hand);
         Assert.Contains(discard, player.Graveyard);
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal($"弃置手牌中的〈{discard.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains($"Cost（已支付）：弃置手牌中的〈{discard.Name}〉", response.Text,
+            StringComparison.Ordinal);
         PassResponses(game);
         Assert.Single(player.Morale);
     }
@@ -329,15 +488,25 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "amaterasuReady")).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Contains(discard.InstanceId, prompt.ValidChoices);
+        Assert.Equal("pending", prompt.Presentation!.PaymentStatus);
+        Assert.Contains("正在支付费用", prompt.Presentation.WaitingSummary);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         ResolveSinglePrompt(game, discard.InstanceId);
         var moralePrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending", moralePrompt.Presentation!.PaymentStatus);
+        Assert.Contains("正在选择效果对象", moralePrompt.Presentation.WaitingSummary);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: moralePrompt.PromptId,
             CardInstanceIds: [.. player.Morale.Select(morale => morale.InstanceId)])).Accepted);
 
         Assert.Contains(discard, player.Graveyard);
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal($"弃置手牌中的〈{discard.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）", response.Text, StringComparison.Ordinal);
+        Assert.Contains("将已声明的最多2张士气转为活跃", response.Text, StringComparison.Ordinal);
+        Assert.Contains("前排所有【高天原】军团本回合兵力+1000", response.Text, StringComparison.Ordinal);
         PassResponses(game);
         Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
     }
@@ -373,11 +542,15 @@ public sealed class AtomicReviewBatch3RegressionTests
         Assert.Contains(milled, player.Graveyard);
         Assert.Equal(0, player.Morale.Count(card => !card.Tapped));
         Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("弃置我方牌库顶部1张牌", response.Data["responsePaidCostSummary"]);
+        Assert.Contains("Cost（已支付）：弃置我方牌库顶部1张牌", response.Text,
+            StringComparison.Ordinal);
         enemy.Field[0][0] = null;
         enemy.Graveyard.Add(target);
         PassResponses(game);
         Assert.Empty(target.TimedModifiers);
-        Assert.Contains(game.State.Events, entry => entry.Type == "effect-cancelled"
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("海拉", StringComparison.Ordinal));
     }
 

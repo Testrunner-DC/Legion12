@@ -4,6 +4,7 @@ param(
     [string]$Level = "Focused",
     [string[]]$ChangedPaths = @(),
     [string]$CacheRoot = "",
+    [string]$ProductionBaseCommit = "",
     [switch]$DryRun
 )
 
@@ -13,6 +14,7 @@ $script:paths = @()
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $originalLocation = Get-Location
+. (Join-Path $PSScriptRoot 'lib/l12-test-storage.ps1')
 
 function Invoke-Checked {
     param(
@@ -26,6 +28,11 @@ function Invoke-Checked {
     if ($DryRun) { return }
     Push-Location $WorkingDirectory
     try {
+        if ($Executable -eq 'dotnet' -and $Arguments[0] -eq 'test') {
+            Invoke-L12TestRun -Executable $Executable -Arguments $Arguments -Label $Label `
+                -TemporaryBase (Join-Path $env:L12_WORK_CACHE 'test-temp') -EvidenceBase (Join-Path $env:L12_WORK_CACHE 'test-evidence')
+            return
+        }
         & $Executable @Arguments
         if ($LASTEXITCODE -ne 0) { throw "$Label failed with exit code $LASTEXITCODE" }
     }
@@ -77,6 +84,10 @@ function Get-HeadChangedPaths {
 
 try {
     Set-Location $repoRoot
+    if ($ProductionBaseCommit.Length -gt 0) {
+        if ($Level -ne "Release") { throw "ProductionBaseCommit 仅可用于提交级 Release 验证。" }
+        if ($ProductionBaseCommit -notmatch '^[0-9a-fA-F]{40}$') { throw "ProductionBaseCommit 必须为完整 40 位提交 SHA。" }
+    }
     if ($Level -eq "Release" -and -not $DryRun) {
         $releaseDirtyPaths = @(Get-GitChangedPathStatus)
         if ($releaseDirtyPaths.Count -gt 0) {
@@ -115,6 +126,10 @@ try {
 
     Write-Host "[L12 $Level] Changed files: $($script:paths.Count)"
     $script:paths | ForEach-Object { Write-Host "  $_" }
+
+    Invoke-Checked "P0-P4 architecture exit lock" "node" @((Join-Path $repoRoot "scripts\check-l12-architecture-lock.mjs"))
+    Invoke-CheckedPowerShellScript "P1 kernel dependency boundary" `
+        (Join-Path $repoRoot "scripts\test-l12-core-architecture-boundaries.ps1")
 
     $configChanged = Test-AnyPath @('^\.codex/', '(^|/)AGENTS\.md$', '^scripts/verify-l12-change\.ps1$', '^scripts/verify-l12-codex-routing\.ps1$', '^docs/(TASK-LEDGER|CHANGE-BATCH-WORKFLOW|REGRESSION-FIXTURES)\.md$')
     $runtimeEvidenceChanged = Test-AnyPath @('^scripts/lib/l12-card-runtime-evidence\.ps1$', '^scripts/test-l12-card-runtime-evidence\.ps1$', '^scripts/export-l12-card-effect-review-matrix\.ps1$')
@@ -160,26 +175,41 @@ try {
         '(^|/)L12S1FactionEffects\.cs$',
         '(^|/)L12S2UniversalEffects\.cs$'
     )
-    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^service-backend-never-match$', '^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes|test-l12-st-effect-audit)'))
-    $platformChanged = Test-AnyPath @('^service-tests-never-match$')
+    $backendChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/', '^scripts/(audit-l12-atomic-effects|export-l12-legacy-effect-inventory|migrate-l12-card-cases-to-atomic-routes|test-l12-st-effect-audit)'))
+    $platformChanged = Test-AnyPath @('^TwelveLegions\.Platform\.Tests/')
     $frontendChanged = Test-AnyPath @('^opcgpro-vue/', '^scripts/(ws-smoke|ws-ui-peer)')
     $cardEffectChanged = $runtimeEvidenceChanged -or $publicActiveChanged -or $publicTriggerChanged -or $publicResponseChanged -or $publicHandPlayChanged -or (Test-AnyPath @('^TwelveLegions\.Tests/'))
-    $workflowChanged = Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/verify-l12-github-workflow\.ps1$')
-    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
-    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$')
-    $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$')
+    $testStorageChanged = Test-AnyPath @('^scripts/(lib/l12-test-storage|test-l12-test-storage|invoke-l12-tests)\.ps1$', '^scripts/lib/TestStorageIsolationTests\.cs$', '^ops/windows/Initialize-L12BuildEnvironment\.ps1$')
+    $workflowChanged = $testStorageChanged -or (Test-AnyPath @('^\.github/workflows/verify-release\.yml$', '^scripts/(check-l12-architecture-lock\.mjs|verify-l12-github-workflow\.ps1)$'))
+    if ($testStorageChanged) { $backendChanged=$true; $platformChanged=$true }
+    $storageChanged = Test-AnyPath @('^scripts/(audit-l12-storage|clean-l12-generated|test-l12-cleanup|test-l12-storage-audit)\.ps1$', '^ops/windows/(watch-l12-network|finalize-l12-codex-session-move)\.ps1$', '^docs/STORAGE-(GOVERNANCE|MAINTENANCE)\.md$')
+    $releaseGateChanged = Test-AnyPath @('^ops/windows/verify-l12\.ps1$', '^ops/windows/deploy-l12\.ps1$', '^scripts/verify-l12-change\.ps1$', '^scripts/test-l12-release-gate\.ps1$', '^scripts/(release-ledger|test-release-ledger|release-status|test-release-status)\.mjs$', '^release-ledger/')
+    $deploymentBehaviorChanged = Test-AnyPath @('^ops/windows/(deploy-l12|L12DeployTarget)\.ps1$', '^ops/server/(deploy-l12-release\.sh|verify-l12-health\.mjs|verify-l12-runtime-backup\.py|l12-deployment-drain-consumer\.py)$', '^scripts/(test-l12-deploy-behavior|verify-l12-change)\.ps1$', '^scripts/test-l12-(runtime-backup|deployment-drain-consumer)\.py$')
+    $testrunDeploymentChanged = Test-AnyPath @('^ops/server/deploy-l12-testrun-release\.sh$', '^scripts/(test-l12-testrun-deploy-behavior|verify-l12-change)\.ps1$')
 
-    # Add non-ASCII service paths without embedding them in this Windows PowerShell 5 compatible source file.
+    # Non-ASCII service paths are classified by their filename. Unknown shared
+    # server sources intentionally exercise both suites rather than silently
+    # skipping the dedicated platform gate.
     foreach ($path in $script:paths) {
-        if ($path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase) -and -not $path.StartsWith("TwelveLegions.Tests/", [StringComparison]::OrdinalIgnoreCase)) {
+        if (-not $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) { continue }
+        if ($path -eq 'scripts/lib/TestStorageIsolationTests.cs') { continue } # Both full suites selected above; no card semantics changed.
+        if ($path -match '^TwelveLegions\.Tests/') { continue }
+        if ($path -match '^TwelveLegions\.Platform\.Tests/') { continue }
+        $filename = [IO.Path]::GetFileName($path)
+        $platformOnly = $path -match '/TwelveLegions/' -and $filename -match '^(L12PlatformStore(?:\..*)?|MatchRecorder(?:\..*)?|L12AdminControlPlane|L12ServerStorageMonitor|L12UsernamePolicy|L12TrustedClientAddress|MatchAnalyticsModels)\.cs$'
+        $ruleOnly = $path -match '/TwelveLegions/' -and $filename -match '^(L12GameEngine(?:\..*)?|L12RuleKernelIntegration|L12CardEffects|L12S[12].*Effects|L12Public(?:Active|Response|Trigger)EffectPlans|L12CompositeEffectPlans|RuleKernel|AtomicEffects)\.cs$'
+        if (-not $platformOnly) {
             $backendChanged = $true
-        }
-        if ($path.EndsWith("GrandUMIServer.Tests.csproj", [StringComparison]::OrdinalIgnoreCase) -or $path.Contains("WebSocket.Tests/") -or $path.Contains("WebSocketBridge")) {
-            $platformChanged = $true
-        }
-        if ($path.Contains("/TwelveLegions/") -and $path.EndsWith(".cs", [StringComparison]::OrdinalIgnoreCase)) {
             $cardEffectChanged = $true
         }
+        if ($platformOnly -or -not $ruleOnly) { $platformChanged = $true }
+    }
+
+    # A frontend Batch build and the isolated Release build run the complete
+    # performance lock as their first npm build step. Focused and non-frontend
+    # Batch paths still run it here because they do not build the frontend.
+    if ($Level -eq "Focused" -or ($Level -eq "Batch" -and -not $frontendChanged)) {
+        Invoke-Checked "Low-latency performance architecture lock" "npm.cmd" @("run", "check:performance-architecture") (Join-Path $repoRoot "opcgpro-vue")
     }
 
     Invoke-Checked "Git whitespace and conflict-marker check" "git" @("diff", "--check")
@@ -224,35 +254,66 @@ try {
             (Join-Path $repoRoot "scripts\verify-l12-codex-routing.ps1")
     }
 
+    if ($testStorageChanged) {
+        Invoke-CheckedPowerShellScript 'Test temporary lifecycle and shared dependency regression' (Join-Path $repoRoot 'scripts/test-l12-test-storage.ps1')
+    }
     if ($workflowChanged) {
         Invoke-CheckedPowerShellScript "GitHub verification/release workflow contract" `
             (Join-Path $repoRoot "scripts\verify-l12-github-workflow.ps1")
     }
 
     if ($storageChanged) {
+        Invoke-CheckedPowerShellScript 'Storage scoped-budget and link behavior regression' (Join-Path $repoRoot 'scripts/test-l12-storage-audit.ps1')
         Invoke-CheckedPowerShellScript "D-drive storage budget and layout" `
-            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true }
+            (Join-Path $repoRoot "scripts\audit-l12-storage.ps1") @{ Strict = $true; Scope = 'Active'; CandidateRoot = $repoRoot }
         Invoke-CheckedPowerShellScript "Generated-output cleanup behavior regression" `
             (Join-Path $repoRoot "scripts\test-l12-cleanup.ps1")
     }
 
     if ($releaseGateChanged) {
+        Invoke-Checked "Player release ledger regression" "node" @(".\scripts\test-release-ledger.mjs")
+        Invoke-Checked "Release status source regression" "node" @(".\scripts\test-release-status.mjs")
         Invoke-CheckedPowerShellScript "Release verification gate regression" `
             (Join-Path $repoRoot "scripts\test-l12-release-gate.ps1")
     }
 
     if ($deploymentBehaviorChanged) {
-        Invoke-CheckedPowerShellScript "Deployment target, health and failure-preservation behavior" `
-            (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1")
+        $deploymentCacheRoot = $env:L12_WORK_CACHE
+        if ([string]::IsNullOrWhiteSpace($deploymentCacheRoot)) {
+            $deploymentCacheRoot = if ($CacheRoot) { $CacheRoot } elseif (Test-Path "D:\GPT\Legion12") { "D:\GPT\Legion12\cache\primary" } else { Join-Path $repoRoot ".l12-cache" }
+        }
+        $deploymentFixtureBase = if ([string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
+            Join-Path $deploymentCacheRoot "temp"
+        } else {
+            Join-Path $env:L12_WORK_CACHE "temp"
+        }
+        Invoke-Checked "Deployment target, health and failure-preservation behavior" "pwsh" @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            (Join-Path $repoRoot "scripts\test-l12-deploy-behavior.ps1"),
+            "-FixtureBase", $deploymentFixtureBase
+        )
+        Invoke-Checked "Stopped SQLite/WAL snapshot proof regressions" "python" @("-B", (Join-Path $repoRoot "scripts/test-l12-runtime-backup.py"))
+        if ($Level -ne "Release") {
+            Invoke-Checked "Deployment drain consumer fault matrix" "python" @(
+                "-B", (Join-Path $repoRoot "scripts/test-l12-deployment-drain-consumer.py"))
+        }
+    }
+
+    if ($testrunDeploymentChanged) {
+        $testrunFixtureBase = if ($env:L12_WORK_CACHE) { Join-Path $env:L12_WORK_CACHE "temp" } elseif ($CacheRoot) { Join-Path $CacheRoot "temp" } else { "D:/GPT/Legion12/cache/primary/temp" }
+        Invoke-Checked "Test release storage budget and protected evidence behavior" "pwsh" @(
+            "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+            (Join-Path $repoRoot "scripts/test-l12-testrun-deploy-behavior.ps1"), "-FixtureBase", $testrunFixtureBase
+        )
     }
 
     if ($Level -eq "Focused") {
         if ($backendChanged) {
-            Invoke-Checked "L12 focused rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--no-restore")
+            Invoke-Checked "L12 focused rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($platformChanged) {
-            $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
+            $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
+            Invoke-Checked "Platform persistence focused tests" "dotnet" @("test", $platformProject, "--no-restore", "--", "xUnit.ParallelizeTestCollections=false")
         }
         if ($frontendChanged) {
             Invoke-Checked "Frontend UI contracts" "npm.cmd" @("run", "check:ui-contracts") (Join-Path $repoRoot "opcgpro-vue")
@@ -270,16 +331,19 @@ try {
         if (-not [string]::IsNullOrWhiteSpace($env:L12_WORK_CACHE)) {
             $releaseArguments += @("-CacheRoot", $env:L12_WORK_CACHE)
         }
-        Invoke-Checked "Commit-level release verification (no deployment)" "powershell" $releaseArguments
+        if ($ProductionBaseCommit.Length -gt 0) {
+            $releaseArguments += @("-ProductionBaseCommit", $ProductionBaseCommit)
+        }
+        Invoke-Checked "Commit-level release verification (no deployment)" "pwsh" $releaseArguments
         return
     }
 
     if ($backendChanged) {
-        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release")
+        Invoke-Checked "L12 full rule tests" "dotnet" @("test", ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj", "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($platformChanged) {
-        $platformProject = Get-ChildItem -LiteralPath $repoRoot -Filter "GrandUMIServer.Tests.csproj" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--filter", "FullyQualifiedName~PlatformStoreTests|FullyQualifiedName~ControlPlane")
+        $platformProject = Join-Path $repoRoot "TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj"
+        Invoke-Checked "Platform persistence release gate" "dotnet" @("test", $platformProject, "--configuration", "Release", "--", "xUnit.ParallelizeTestCollections=false")
     }
     if ($frontendChanged) {
         $clientRelease = (& git -C $repoRoot rev-parse HEAD).Trim()

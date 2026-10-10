@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-news-route-resilience",
+  "date": "2026-09-25",
+  "audience": "players",
+  "title": "资讯图片与页面打开体验修正",
+  "changes": [
+    {
+      "category": "content",
+      "text": "移动端资讯列表、详情头图与正文图片会按原始比例完整显示，不再裁掉左右内容或拉伸变形。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/NewsPage.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "切换页面遇到加载缓慢或失败时会显示明确状态并提供重试，不再只留下空白页面；版本更新后的页面组件仍会自动恢复一次。",
+      "paths": [
+        "opcgpro-vue/src/chunkRecovery.ts",
+        "opcgpro-vue/src/router/index.ts"
+      ]
+    }
+  ]
+}

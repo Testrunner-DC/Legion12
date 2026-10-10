@@ -1,4 +1,5 @@
 using TwelveLegions.Server;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace TwelveLegions.Tests;
@@ -109,12 +110,179 @@ public sealed class AtomicEffectsTests
             Assert.DoesNotContain(program.Atoms, atom => atom.Kind == L12AtomKinds.Legacy);
             Assert.All(program.Atoms, atom => Assert.True(atom.RuntimeExecutable));
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
-            var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == program.Trigger);
+            var compositeFlow = program.Atoms.SingleOrDefault(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+            var ability = Assert.Single(card.Abilities, candidate => candidate.Trigger == program.Trigger
+                && (compositeFlow is null || candidate.Atoms.Any(atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow") == compositeFlow.Parameters.GetValueOrDefault("flow"))));
             Assert.Equal("verified", ability.MigrationStatus);
-            Assert.Contains("verified-runtime-program", ability.MappingSource, StringComparison.Ordinal);
-            Assert.Equal(program.Atoms, ability.Atoms);
+            if (compositeFlow is not null
+                && program.Atoms.Where(atom => atom.Kind != L12AtomKinds.Trigger)
+                    .All(atom => atom.Kind == L12AtomKinds.CompositeFlow)
+                && ability.MappingSource.Contains("shared-structured-rule", StringComparison.Ordinal))
+            {
+                Assert.Contains("verified-composite-flow", ability.MappingSource, StringComparison.Ordinal);
+                Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow") == compositeFlow.Parameters.GetValueOrDefault("flow"));
+            }
+            else
+            {
+                Assert.Contains("verified-runtime-program", ability.MappingSource, StringComparison.Ordinal);
+                Assert.Equal(program.Atoms, ability.Atoms);
+            }
         }
         Assert.True(catalog.AtomicEffects.Coverage().VerifiedAbilities >= L12VerifiedAtomicPrograms.All.Count);
+    }
+
+    [Fact]
+    public void EveryPrintedActiveColonClauseIsRepresentedAsCost()
+    {
+        var offenders = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities.Select(ability => (card.CardId, Ability: ability)))
+            .Where(item => item.Ability.Trigger.Contains("active", StringComparison.OrdinalIgnoreCase)
+                && item.Ability.Text.IndexOfAny(['：', ':']) > 0
+                && string.IsNullOrWhiteSpace(item.Ability.CostText))
+            .Select(item => $"{item.CardId}:{item.Ability.AbilityId}")
+            .ToArray();
+
+        Assert.True(offenders.Length == 0,
+            $"含冒号的主动效果必须将冒号前文本建模为 Cost：{string.Join(", ", offenders)}");
+    }
+
+    [Fact]
+    public void EverySemanticPrintedColonClauseIsRepresentedAsCostAcrossTheCatalog()
+    {
+        var offenders = Catalog.AtomicEffects.All
+            .SelectMany(card => card.Abilities.Select(ability => (card.CardId, Ability: ability)))
+            .Where(item => L12StructuredCardRules.HasPrintedCostBoundary(item.Ability.Text)
+                && string.IsNullOrWhiteSpace(item.Ability.CostText))
+            .Select(item => $"{item.CardId}:{item.Ability.AbilityId}")
+            .ToArray();
+
+        Assert.True(offenders.Length == 0,
+            $"冒号前含支付动作的能力必须建模为 Cost：{string.Join(", ", offenders)}");
+    }
+
+    [Theory]
+    [InlineData("进攻后：抽取1张牌。")]
+    [InlineData("触发 回合玩家掷骰。1~2：弃置最左列。")]
+    [InlineData("选择一项：抽取1张牌；或弃置1张牌。")]
+    [InlineData("此军团返回牌库顶部时：将士气转为活跃。")]
+    public void TimingAndBranchColonsAreNotPrintedCosts(string text)
+    {
+        Assert.False(L12StructuredCardRules.HasPrintedCostBoundary(text));
+        Assert.Null(L12StructuredCardRules.SplitAbilityText(text, true).CostText);
+    }
+
+    [Theory]
+    [InlineData("S01-0101", "after-attack", "返还4士气")]
+    [InlineData("S01-0301", "attack", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0305", "death", "墓地4张卡牌")]
+    [InlineData("S01-0306", "attack", "墓地1张卡牌置入我方牌库底部")]
+    [InlineData("S01-0309", "enter", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0311", "attack", "墓地2张卡牌")]
+    [InlineData("S01-0311", "after-attack", "墓地2张卡牌")]
+    [InlineData("S01-0313", "enter", "对我方主宰造成1点伤害")]
+    [InlineData("S01-0318", "play", "对我方主宰造成1点伤害")]
+    [InlineData("S01-03D1", "static", "对我方主宰造成1点伤害")]
+    [InlineData("S02-0207", "play", "弃置我方战场上最多3张军团")]
+    [InlineData("S02-0304", "master-damaged-by-effect", "将此军团转为休整")]
+    [InlineData("S02-0307", "play", "弃置我方牌库顶部1张牌")]
+    [InlineData("S02-0509", "attack", "展示手牌中的1张战术卡")]
+    [InlineData("S02-0608", "attack", "弃置下方任意数量<侍从骑士>")]
+    [InlineData("S02-06D1", "static", "消耗2符文")]
+    [InlineData("S02-06M1", "active", "消耗2符文")]
+    [InlineData("S02-06S1", "static", "消耗1符文")]
+    [InlineData("S02-06S3", "death", "移除<王者之剑>")]
+    [InlineData("S02-06S5", "static", "消耗1符文")]
+    public void PreviouslyMissingPrintedCostsAreExplicitInTheCatalog(
+        string cardId, string trigger, string expectedCostFragment)
+    {
+        var matches = Catalog.AtomicEffects.Find(cardId)!.Abilities
+            .Where(candidate => candidate.Trigger == trigger
+                && candidate.Text.IndexOfAny(['：', ':']) > 0
+                && candidate.Text.Contains(expectedCostFragment, StringComparison.Ordinal));
+        var ability = cardId == "S02-06S5"
+            ? Assert.Single(matches, candidate => candidate.Text.Contains("本效果可重复发动", StringComparison.Ordinal))
+            : Assert.Single(matches);
+        Assert.Contains(expectedCostFragment, ability.CostText, StringComparison.Ordinal);
+        Assert.Contains(ability.Atoms, atom => atom.Stage == "cost");
+    }
+
+    [Theory]
+    [InlineData("S01-0213", "after-attack", "进攻后：")]
+    [InlineData("S01-0224", "reaction", "发动战术效果或圣物效果时：")]
+    [InlineData("S01-0414", "after-attack", "返回牌库顶部时：")]
+    [InlineData("S01-DS01", "static", "双数：")]
+    [InlineData("ST05-10", "play", "选择一项：")]
+    public void CatalogTimingAndBranchColonsDoNotExposeFakeCosts(
+        string cardId, string trigger, string textFragment)
+    {
+        var ability = Assert.Single(Catalog.AtomicEffects.Find(cardId)!.Abilities,
+            candidate => candidate.Trigger == trigger
+                && candidate.Text.Contains(textFragment, StringComparison.Ordinal));
+        Assert.Null(ability.CostText);
+    }
+
+    [Fact]
+    public void DiscardIsACostOnlyWhenItAppearsBeforeThePrintedCostColon()
+    {
+        var evilEye = Assert.Single(Catalog.AtomicEffects.Find("ST-DS03")!.Abilities);
+        Assert.False(L12StructuredCardRules.HasPrintedCostBoundary(evilEye.Text));
+        Assert.Null(evilEye.CostText);
+        Assert.Contains(evilEye.Atoms, atom => atom.Kind == L12AtomKinds.Discard
+            && atom.Stage == "resolution");
+        Assert.DoesNotContain(evilEye.Atoms, atom => atom.Stage == "cost");
+
+        var yingzheng = Assert.Single(Catalog.AtomicEffects.Find("S02-0101")!.Abilities,
+            ability => ability.Trigger == "enter");
+        Assert.True(L12StructuredCardRules.HasPrintedCostBoundary(yingzheng.Text));
+        Assert.Contains("弃置手牌中1张费用为8的军团", yingzheng.CostText, StringComparison.Ordinal);
+        Assert.Contains(yingzheng.Atoms, atom => atom.Stage == "cost");
+    }
+
+    [Fact]
+    public void GoldenScarabDiscardCostDoesNotChangeItsEnemyFieldTargetIntoAHandTarget()
+    {
+        var ability = Assert.Single(Catalog.AtomicEffects.Find("S02-0205")!.Abilities,
+            candidate => candidate.Trigger == "active"
+                && candidate.Text.Contains("最多2张军团", StringComparison.Ordinal));
+        var target = Assert.Single(ability.Atoms, atom => atom.Kind == L12AtomKinds.SelectTarget);
+        Assert.Equal("opponent.field", target.Parameters["zone"]);
+        Assert.Equal("card-type=legion;public=true", target.Parameters["filter"]);
+        Assert.Contains(ability.Atoms, atom => atom.Kind == L12AtomKinds.Discard
+            && atom.Stage == "cost" && atom.Parameters["zone"] == "controller.hand");
+        Assert.Equal("S02-0205:ability:active:e33e843f8be8d5f6", ability.AbilityId);
+    }
+
+    [Fact]
+    public void HumanReviewedLegionSelectionsDoNotInheritAnUnrelatedPrivateCostZone()
+    {
+        static bool HasZone(L12AtomicAbility ability, string zone)
+            => ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.SelectTarget
+                && atom.Parameters.GetValueOrDefault("zone") == zone);
+
+        var abilities = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities)
+            .Where(ability => ability.ReviewSource.Contains("user-20260829", StringComparison.Ordinal))
+            .ToArray();
+        var opponentOffenders = abilities.Where(ability =>
+                Regex.IsMatch(ability.Text, @"选择对方(?:(?!墓地|手牌|牌库|士气).){0,40}军团")
+                && !HasZone(ability, "opponent.field"))
+            .Select(ability => $"{ability.AbilityId}: {ability.Text}").ToArray();
+        var controllerOffenders = abilities.Where(ability =>
+                Regex.IsMatch(ability.Text, @"选择我方(?:(?!墓地|手牌|牌库|士气).){0,40}军团")
+                && !HasZone(ability, "controller.field"))
+            .Select(ability => $"{ability.AbilityId}: {ability.Text}").ToArray();
+
+        Assert.Empty(opponentOffenders);
+        Assert.Empty(controllerOffenders);
+
+        var asgardTactic = Assert.Single(Catalog.AtomicEffects.Find("S02-0307")!.Abilities);
+        Assert.Equal("S02-0307:ability:play:e2a8efcc4ba499ee", asgardTactic.AbilityId);
+        var qianKun = Assert.Single(Catalog.AtomicEffects.Find("S02-0106")!.Abilities);
+        Assert.Equal("S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e", qianKun.AbilityId);
+        var solarCharge = Assert.Single(Catalog.AtomicEffects.Find("S02-0206")!.Abilities,
+            ability => ability.Text.Contains("兵力+3000", StringComparison.Ordinal));
+        Assert.Equal("S02-0206:ability:play:f6c0e9a69b3184b7", solarCharge.AbilityId);
     }
 
     [Fact]
@@ -130,7 +298,49 @@ public sealed class AtomicEffectsTests
             var composite = Assert.Single(program.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow);
             Assert.True(composite.RuntimeExecutable);
             Assert.False(string.IsNullOrWhiteSpace(composite.Parameters["flow"]));
-            Assert.Same(program, L12VerifiedAtomicPrograms.Find(program.CardId, program.Trigger));
+            var currentProgram = Assert.IsType<L12VerifiedAtomicProgram>(
+                L12VerifiedAtomicPrograms.Find(program.CardId, program.Trigger));
+            if (L12SimpleDrawTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Single(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.Draw);
+                continue;
+            }
+            if (L12SimpleResourceTriggerEffects.All.Any(spec =>
+                    spec.CardId == program.CardId && spec.Trigger == program.Trigger))
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind is L12AtomKinds.AddMorale
+                    or L12AtomKinds.GainRune or L12AtomKinds.FlipMorale);
+                continue;
+            }
+            if (L12SimpleCardStateTriggerEffects.Find(program.CardId, program.Trigger) is { } stateSpec)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind == (stateSpec.Operation ==
+                    L12SimpleCardStateTriggerEffects.Ready ? L12AtomKinds.Ready : L12AtomKinds.Rest));
+                continue;
+            }
+            if (L12SimpleSelfTroopBuffTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.DoesNotContain(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.CompositeFlow);
+                Assert.Single(currentProgram.Atoms,
+                    atom => atom.Kind == L12AtomKinds.ModifyTroops);
+                continue;
+            }
+            if (L12OpponentHandDiscardTriggerEffects.Find(program.CardId, program.Trigger) is not null)
+            {
+                Assert.Contains(currentProgram.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow
+                    && atom.Parameters.GetValueOrDefault("flow")
+                        == L12OpponentHandDiscardTriggerEffects.Flow);
+                continue;
+            }
+            Assert.Same(program, currentProgram);
 
             var card = Assert.IsType<L12AtomicCardEffect>(catalog.AtomicEffects.Find(program.CardId));
             var ability = card.Abilities.FirstOrDefault(candidate => candidate.Trigger == program.Trigger
@@ -394,7 +604,9 @@ public sealed class AtomicEffectsTests
 
         var yoshitsune = Assert.IsType<L12AtomicCardEffect>(Catalog.AtomicEffects.Find("S01-0409"));
         Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "continuous");
-        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "activated");
+        Assert.Contains(yoshitsune.Abilities, ability => ability.ExecutionModel == "rule-action"
+            && !ability.HasLegacyFallback
+            && ability.Presentations.Any(scene => scene.Flow == "rule-action:cavalry-move"));
         Assert.Contains(yoshitsune.Abilities, ability => ability.Trigger == "after-attack"
             && ability.MappingSource.Contains("verified-runtime-program", StringComparison.Ordinal));
     }

@@ -38,108 +38,173 @@ public sealed partial class MatchRecorder
         long InferredFacts,
         long PartialFacts,
         long TotalQuantity,
+        long ExactDrawCoverageSamples,
+        long GihWins,
+        long GnsSamples,
+        long GnsWins,
         MetricCoverageCounts DrawCoverage,
         MetricCoverageCounts PlayCoverage,
         MetricCoverageCounts ActivationCoverage,
         MetricCoverageCounts SettlementCoverage);
 
-    public async Task<L12CardAnalyticsPage> ListCardAnalyticsAsync(L12CardAnalyticsQuery query)
+    public Task<L12CardAnalyticsPage> ListCardAnalyticsAsync(L12CardAnalyticsQuery query,
+        CancellationToken cancellationToken = default)
+        => ListCardAnalyticsAsync(query, cancellationToken, new CardAnalyticsRequestTiming());
+
+    internal async Task<L12CardAnalyticsPage> ListCardAnalyticsAsync(L12CardAnalyticsQuery query,
+        CancellationToken cancellationToken, CardAnalyticsRequestTiming timing)
     {
-        var normalized = NormalizeAnalyticsQuery(query);
-        var cacheKey = AnalyticsResultCacheKey("list", normalized);
-        if (TryReadAnalyticsResultCache<L12CardAnalyticsPage>(cacheKey, out var cached)) return cached!;
-        var cacheEpoch = AnalyticsCacheEpoch;
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        await PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: false);
-        var population = await ReadAnalyticsPopulationAsync(connection, normalized);
-        var rows = await ReadCardAnalyticsRowsAsync(connection, normalized, includeCursor: true,
-            normalized.Limit + 1);
-        var hasMore = rows.Count > normalized.Limit;
-        if (hasMore) rows.RemoveAt(rows.Count - 1);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var requestBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestBudget.CancelAfter(CardAnalyticsHardBudget);
+        var epoch = AnalyticsCacheEpoch;
+        try
+        {
+            var normalized = NormalizeAnalyticsQuery(query);
+            return (await ExecuteCardAnalyticsAsync(AnalyticsResultCacheKey("list", normalized), epoch,
+                requestBudget.Token, timing, execution => ComputeCardAnalyticsPage(execution, normalized)))!;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            if (AnalyticsCacheEpoch != epoch) throw CardAnalyticsUnavailableException.Changed();
+            throw CardAnalyticsUnavailableException.TimedOut();
+        }
+        finally { timing.SetTotal(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
+    }
+
+    private static L12CardAnalyticsPage ComputeCardAnalyticsPage(CardAnalyticsExecution execution,
+        L12CardAnalyticsQuery normalized)
+    {
+        var connection = execution.Connection;
+        execution.Measure(CardAnalyticsStage.ScopeTotal, () =>
+            PrepareAnalyticsScopeAsync(connection, normalized, includeFacts: true).GetAwaiter().GetResult());
+        var population = execution.Measure(CardAnalyticsStage.Population, () =>
+            ReadAnalyticsPopulationAsync(connection, normalized).GetAwaiter().GetResult());
+        var rows = execution.Measure(CardAnalyticsStage.Rows, () =>
+            ReadCardAnalyticsRowsAsync(connection, normalized, normalized.Limit).GetAwaiter().GetResult());
         var cardIds = rows.Select(row => row.CardId).ToArray();
-        var structures = await ReadAnalyticsSampleStructuresAsync(connection, cardIds);
-        var comparisons = await ReadStratifiedComparisonsAsync(connection, cardIds);
+        var structures = execution.Measure(CardAnalyticsStage.Structures, () =>
+            ReadAnalyticsSampleStructuresAsync(connection, cardIds).GetAwaiter().GetResult());
+        var comparisons = execution.Measure(CardAnalyticsStage.Comparisons, () =>
+            ReadStratifiedComparisonsAsync(connection, cardIds).GetAwaiter().GetResult());
         var items = rows.Select(row => ToAnalyticsItem(row, population,
             structures.GetValueOrDefault(row.CardId), comparisons.GetValueOrDefault(row.CardId),
             factsLoaded: false)).ToArray();
-        var total = await CountCardAnalyticsRowsAsync(connection, normalized);
-        var coverage = await ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize,
-            factsLoaded: false);
-        var result = new L12CardAnalyticsPage(items, total,
-            hasMore && rows.Count > 0 ? Base64UrlEncode(rows[^1].CardId) : null,
+        var total = execution.Measure(CardAnalyticsStage.Count, () =>
+            CountCardAnalyticsRowsAsync(connection, normalized).GetAwaiter().GetResult());
+        var coverage = execution.Measure(CardAnalyticsStage.Coverage, () =>
+            ReadAnalyticsCoverageAsync(connection, normalized, population.SampleSize,
+                factsLoaded: false).GetAwaiter().GetResult());
+        return new L12CardAnalyticsPage(items, total, null,
             new L12CardAnalyticsPageSummary(population.EligibleMatches, population.SampleSize,
-                population.BaselineWinRate, normalized.MinimumSampleSize, "participant", coverage));
-        StoreAnalyticsResultCache(cacheKey, result, cacheEpoch);
-        return result;
+                population.BaselineWinRate, normalized.MinimumSampleSize, "participant", coverage),
+            normalized.Page, normalized.Limit);
     }
 
-    public async Task<L12CardAnalyticsDetail?> GetCardAnalyticsAsync(string cardId,
-        L12CardAnalyticsQuery query, bool includeRecentMatches = true)
+    public Task<L12CardAnalyticsDetail?> GetCardAnalyticsAsync(string cardId,
+        L12CardAnalyticsQuery query, bool includeRecentMatches = true,
+        CancellationToken cancellationToken = default)
+        => GetCardAnalyticsAsync(cardId, query, includeRecentMatches, cancellationToken,
+            new CardAnalyticsRequestTiming());
+
+    internal async Task<L12CardAnalyticsDetail?> GetCardAnalyticsAsync(string cardId,
+        L12CardAnalyticsQuery query, bool includeRecentMatches, CancellationToken cancellationToken,
+        CardAnalyticsRequestTiming timing)
     {
         if (string.IsNullOrWhiteSpace(cardId)) return null;
-        var normalizedCardId = cardId.Trim();
-        var normalized = NormalizeAnalyticsQuery(query with { Cursor = null, Search = null });
-        var cacheKey = AnalyticsResultCacheKey("detail-statistics", normalized, normalizedCardId);
-        if (!TryReadAnalyticsResultCache<L12CardAnalyticsDetail>(cacheKey, out var statistics))
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        using var requestBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        requestBudget.CancelAfter(CardAnalyticsHardBudget);
+        var epoch = AnalyticsCacheEpoch;
+        try
         {
-            var cacheEpoch = AnalyticsCacheEpoch;
-            statistics = await ComputeCardAnalyticsDetailAsync(normalizedCardId, normalized);
+            var normalizedCardId = cardId.Trim();
+            var normalized = NormalizeAnalyticsQuery(query with { Cursor = null, Search = null });
+            var cacheKey = AnalyticsResultCacheKey("detail-statistics", normalized, normalizedCardId);
+            var statistics = await ExecuteCardAnalyticsAsync(cacheKey, epoch, requestBudget.Token, timing,
+                execution => ComputeCardAnalyticsDetail(execution, normalizedCardId, normalized));
             if (statistics is null) return null;
-            StoreAnalyticsResultCache(cacheKey, statistics, cacheEpoch);
+            if (!includeRecentMatches) return statistics!;
+            var recentQuery = new L12AdminMatchQuery(
+                    Limit: 20,
+                    ModeId: "ranked",
+                    Status: "completed",
+                    FromUtc: normalized.FromUtc,
+                    ToUtc: normalized.ToUtc,
+                    CardId: normalizedCardId,
+                    CardOwnerMasterId: normalized.MasterId,
+                    CardOwnerOpponentMasterId: normalized.OpponentMasterId,
+                    CardOwnerInitiative: normalized.Initiative,
+                    RulesVersion: normalized.RulesVersion,
+                    SeasonId: normalized.SeasonId,
+                    RequireDecisiveResult: true,
+                    EffectVersion: normalized.EffectVersion,
+                    RequireAnalyticsEligible: true);
+            var recent = await ExecuteCardAnalyticsAsync<IReadOnlyList<L12AdminMatchSummary>>(
+                AnalyticsResultCacheKey("detail-recent", normalized, normalizedCardId), epoch,
+                requestBudget.Token, timing, execution => execution.Measure(CardAnalyticsStage.Recent,
+                    () => ReadCardAnalyticsRecentMatches(execution, recentQuery)), cacheResult: false);
+            requestBudget.Token.ThrowIfCancellationRequested();
+            if (AnalyticsCacheEpoch != epoch) throw CardAnalyticsUnavailableException.Changed();
+            return statistics! with
+            {
+                RecentMatches = recent!,
+            };
         }
-        if (!includeRecentMatches) return statistics!;
-        var recent = await ListAdminMatchesAsync(new L12AdminMatchQuery(
-                Limit: 20,
-                ModeId: "ranked",
-                Status: "completed",
-                FromUtc: normalized.FromUtc,
-                ToUtc: normalized.ToUtc,
-                CardId: normalizedCardId,
-                CardOwnerMasterId: normalized.MasterId,
-                CardOwnerOpponentMasterId: normalized.OpponentMasterId,
-                CardOwnerInitiative: normalized.Initiative,
-                RulesVersion: normalized.RulesVersion,
-                SeasonId: normalized.SeasonId,
-                RequireDecisiveResult: true,
-                EffectVersion: normalized.EffectVersion,
-                RequireAnalyticsEligible: true));
-        return statistics! with
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            RecentMatches = recent.Items.Select(SanitizeAnalyticsRecentMatch).ToArray(),
-        };
+            if (AnalyticsCacheEpoch != epoch) throw CardAnalyticsUnavailableException.Changed();
+            throw CardAnalyticsUnavailableException.TimedOut();
+        }
+        finally { timing.SetTotal(System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds); }
     }
 
-    private async Task<L12CardAnalyticsDetail?> ComputeCardAnalyticsDetailAsync(string cardId,
-        L12CardAnalyticsQuery query)
+    private static L12CardAnalyticsDetail? ComputeCardAnalyticsDetail(CardAnalyticsExecution execution,
+        string cardId, L12CardAnalyticsQuery query)
     {
-        await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
-        await PrepareAnalyticsScopeAsync(connection, query, cardId, includeFacts: true);
-        var population = await ReadAnalyticsPopulationAsync(connection, query);
-        var row = await ReadSingleCardAnalyticsRowAsync(connection, query, cardId);
+        var connection = execution.Connection;
+        execution.Measure(CardAnalyticsStage.ScopeTotal, () =>
+            PrepareAnalyticsScopeAsync(connection, query, cardId, includeFacts: true).GetAwaiter().GetResult());
+        var population = execution.Measure(CardAnalyticsStage.Population, () =>
+            ReadAnalyticsPopulationAsync(connection, query).GetAwaiter().GetResult());
+        var row = execution.Measure(CardAnalyticsStage.Rows, () =>
+            ReadSingleCardAnalyticsRowAsync(connection, query, cardId).GetAwaiter().GetResult());
         if (row is null || row.IncludedSamples < query.MinimumSampleSize) return null;
         var target = new[] { cardId };
-        var structures = await ReadAnalyticsSampleStructuresAsync(connection, target);
-        var comparisons = await ReadStratifiedComparisonsAsync(connection, target);
+        var structures = execution.Measure(CardAnalyticsStage.Structures, () =>
+            ReadAnalyticsSampleStructuresAsync(connection, target).GetAwaiter().GetResult());
+        var comparisons = execution.Measure(CardAnalyticsStage.Comparisons, () =>
+            ReadStratifiedComparisonsAsync(connection, target).GetAwaiter().GetResult());
         var summary = ToAnalyticsItem(row, population, structures.GetValueOrDefault(cardId),
             comparisons.GetValueOrDefault(cardId), factsLoaded: true);
-        var breakdowns = new List<L12CardAnalyticsBreakdown>();
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "master", "COALESCE(e.master_id,'unknown')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "opponent-master", "COALESCE(e.opponent_master_id,'unknown')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "initiative", InitiativeExpression("e")));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "rules-version", "COALESCE(e.rules_version,'legacy')"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "effect-version", "e.effect_version"));
-        breakdowns.AddRange(await ReadBreakdownsAsync(connection, query, cardId,
-            "season", "COALESCE(e.season_id,'unassigned')"));
-        var quantities = await ReadQuantityDistributionAsync(connection, query, cardId);
-        var turns = await ReadTurnDistributionAsync(connection, query, cardId);
-        var matchups = await ReadMatchupsAsync(connection, query, cardId);
+        var breakdowns = execution.Measure(CardAnalyticsStage.Breakdowns, () =>
+        {
+            var result = new List<L12CardAnalyticsBreakdown>();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "master", "COALESCE(e.master_id,'unknown')").GetAwaiter().GetResult());
+            execution.Check();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "opponent-master", "COALESCE(e.opponent_master_id,'unknown')").GetAwaiter().GetResult());
+            execution.Check();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "initiative", InitiativeExpression("e")).GetAwaiter().GetResult());
+            execution.Check();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "rules-version", "COALESCE(e.rules_version,'legacy')").GetAwaiter().GetResult());
+            execution.Check();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "effect-version", "e.effect_version").GetAwaiter().GetResult());
+            execution.Check();
+            result.AddRange(ReadBreakdownsAsync(connection, query, cardId,
+                "season", "COALESCE(e.season_id,'unassigned')").GetAwaiter().GetResult());
+            return result;
+        });
+        var quantities = execution.Measure(CardAnalyticsStage.Quantity, () =>
+            ReadQuantityDistributionAsync(connection, query, cardId).GetAwaiter().GetResult());
+        var turns = execution.Measure(CardAnalyticsStage.Turns, () =>
+            ReadTurnDistributionAsync(connection, query, cardId).GetAwaiter().GetResult());
+        var matchups = execution.Measure(CardAnalyticsStage.Matchups, () =>
+            ReadMatchupsAsync(connection, query, cardId).GetAwaiter().GetResult());
         return new L12CardAnalyticsDetail(summary, breakdowns, quantities, turns, matchups, [],
             summary.Coverage);
     }
@@ -153,8 +218,17 @@ public sealed partial class MatchRecorder
         var normalized = query with
         {
             Limit = Math.Clamp(query.Limit, 1, 200),
+            Page = Math.Clamp(query.Page, 1, 100_000),
+            Sort = (query.Sort ?? string.Empty).Trim().ToLowerInvariant() switch
+            {
+                "card" or "sample-size" or "inclusion-rate" or "win-rate" or "gih" or "iwd" => (query.Sort ?? string.Empty).Trim().ToLowerInvariant(),
+                _ => "sample-size",
+            },
+            Direction = string.Equals(query.Direction, "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc",
             MinimumSampleSize = Math.Clamp(query.MinimumSampleSize, 1, 1000),
             ExcludedMatchIds = query.ExcludedMatchIds?.Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+            ExcludedAccountIds = query.ExcludedAccountIds?.Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.Ordinal).OrderBy(id => id, StringComparer.Ordinal).ToArray(),
             Search = string.IsNullOrWhiteSpace(query.Search) ? null : query.Search.Trim(),
             CandidateCardIds = query.CandidateCardIds?.Where(cardId => !string.IsNullOrWhiteSpace(cardId))
@@ -212,6 +286,13 @@ public sealed partial class MatchRecorder
         {
             clauses.Add("NOT EXISTS(SELECT 1 FROM json_each($excludedMatches) excluded WHERE excluded.value=m.match_id)");
             parameters["$excludedMatches"] = System.Text.Json.JsonSerializer.Serialize(query.ExcludedMatchIds);
+        }
+        if (query.ExcludedAccountIds is { Count: > 0 })
+        {
+            clauses.Add("NOT EXISTS(SELECT 1 FROM match_participants excluded_participant "
+                + "JOIN json_each($excludedAccounts) excluded ON excluded.value=excluded_participant.account_id "
+                + "WHERE excluded_participant.match_id=m.match_id)");
+            parameters["$excludedAccounts"] = System.Text.Json.JsonSerializer.Serialize(query.ExcludedAccountIds);
         }
         if (query.OpponentMasterId is not null)
         {
@@ -376,25 +457,29 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<List<CardAnalyticsRow>> ReadCardAnalyticsRowsAsync(SqliteConnection connection,
-        L12CardAnalyticsQuery query, bool includeCursor, int take)
+        L12CardAnalyticsQuery query, int take)
     {
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var filters = new List<string>();
-        if (query.Search is not null) filters.Add(CardSearchPredicate("i", query, parameters));
-        if (includeCursor && query.Cursor is not null)
-        {
-            string cursor;
-            try { cursor = Base64UrlDecode(query.Cursor); }
-            catch (Exception error) when (error is FormatException or ArgumentException)
-            {
-                throw new ArgumentException("分页游标无效", nameof(query));
-            }
-            filters.Add("i.card_id > $cursor");
-            parameters["$cursor"] = cursor;
-        }
+        if (query.Search is not null || query.CandidateCardIds is not null)
+            filters.Add(CardSearchPredicate("i", query, parameters));
         parameters["$minimum"] = query.MinimumSampleSize;
         parameters["$take"] = take;
+        parameters["$offset"] = checked((query.Page - 1) * query.Limit);
+        var exactDraw = "COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0";
+        var gihRate = $"(1.0*SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} THEN 1 ELSE 0 END),0))";
+        var gnsRate = $"(1.0*SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)/NULLIF(SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} THEN 1 ELSE 0 END),0))";
+        var sortExpression = query.Sort switch
+        {
+            "card" => "i.card_id",
+            "inclusion-rate" or "sample-size" => "COUNT(*)",
+            "win-rate" => "(1.0*SUM(CASE WHEN e.winner=e.player_index THEN 1 ELSE 0 END)/COUNT(*))",
+            "gih" => gihRate,
+            "iwd" => $"({gihRate}-{gnsRate})",
+            _ => "COUNT(*)",
+        };
+        var order = query.Direction == "asc" ? "ASC" : "DESC";
         var command = connection.CreateCommand();
         command.CommandText = $"""
             {cte}
@@ -413,7 +498,11 @@ public sealed partial class MatchRecorder
                    SUM(COALESCE(f.play_exact,0)),SUM(COALESCE(f.play_inferred,0)),SUM(COALESCE(f.play_partial,0)),
                    SUM(COALESCE(f.activation_exact,0)),SUM(COALESCE(f.activation_inferred,0)),SUM(COALESCE(f.activation_partial,0)),
                    SUM(COALESCE(f.settlement_exact,0)),SUM(COALESCE(f.settlement_inferred,0)),SUM(COALESCE(f.settlement_partial,0)),
-                   SUM(i.quantity)
+                   SUM(i.quantity),
+                   SUM(CASE WHEN {exactDraw} THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND {exactDraw} AND e.winner=e.player_index THEN 1 ELSE 0 END)
             FROM inclusions i
             JOIN eligible e ON e.match_id=i.match_id AND e.player_index=i.player_index
             LEFT JOIN fact_stats f ON f.match_id=i.match_id AND f.player_index=i.player_index
@@ -421,8 +510,8 @@ public sealed partial class MatchRecorder
             {(filters.Count == 0 ? string.Empty : $"WHERE {string.Join(" AND ", filters)}")}
             GROUP BY i.card_id
             HAVING COUNT(*) >= $minimum
-            ORDER BY i.card_id
-            LIMIT $take;
+            ORDER BY ({sortExpression}) IS NULL, {sortExpression} {order}, i.card_id
+            LIMIT $take OFFSET $offset;
             """;
         AddParameters(command, parameters);
         var rows = new List<CardAnalyticsRow>();
@@ -437,7 +526,8 @@ public sealed partial class MatchRecorder
         var cte = MaterializedAnalyticsCte;
         var parameters = new Dictionary<string, object>(StringComparer.Ordinal);
         var search = string.Empty;
-        if (query.Search is not null) search = $"WHERE {CardSearchPredicate("i", query, parameters)}";
+        if (query.Search is not null || query.CandidateCardIds is not null)
+            search = $"WHERE {CardSearchPredicate("i", query, parameters)}";
         parameters["$minimum"] = query.MinimumSampleSize;
         var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -475,7 +565,11 @@ public sealed partial class MatchRecorder
                    SUM(COALESCE(f.play_exact,0)),SUM(COALESCE(f.play_inferred,0)),SUM(COALESCE(f.play_partial,0)),
                    SUM(COALESCE(f.activation_exact,0)),SUM(COALESCE(f.activation_inferred,0)),SUM(COALESCE(f.activation_partial,0)),
                    SUM(COALESCE(f.settlement_exact,0)),SUM(COALESCE(f.settlement_inferred,0)),SUM(COALESCE(f.settlement_partial,0)),
-                   SUM(i.quantity)
+                   SUM(i.quantity),
+                   SUM(CASE WHEN COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=1 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 AND e.winner=e.player_index THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 THEN 1 ELSE 0 END),
+                   SUM(CASE WHEN COALESCE(f.drawn,0)=0 AND COALESCE(f.draw_inferred,0)=0 AND COALESCE(f.draw_partial,0)=0 AND e.winner=e.player_index THEN 1 ELSE 0 END)
             FROM inclusions i
             JOIN eligible e ON e.match_id=i.match_id AND e.player_index=i.player_index
             LEFT JOIN fact_stats f ON f.match_id=i.match_id AND f.player_index=i.player_index
@@ -494,7 +588,7 @@ public sealed partial class MatchRecorder
             ReadLong(reader, 8), ReadLong(reader, 9), ReadLong(reader, 10), ReadLong(reader, 11),
             ReadLong(reader, 12), ReadLong(reader, 13), ReadLong(reader, 14), ReadLong(reader, 15),
             ReadLong(reader, 16), ReadLong(reader, 17), ReadLong(reader, 18), ReadLong(reader, 19),
-            ReadLong(reader, 32),
+            ReadLong(reader, 32), ReadLong(reader, 33), ReadLong(reader, 34), ReadLong(reader, 35), ReadLong(reader, 36),
             new MetricCoverageCounts(ReadLong(reader, 20), ReadLong(reader, 21), ReadLong(reader, 22)),
             new MetricCoverageCounts(ReadLong(reader, 23), ReadLong(reader, 24), ReadLong(reader, 25)),
             new MetricCoverageCounts(ReadLong(reader, 26), ReadLong(reader, 27), ReadLong(reader, 28)),
@@ -554,6 +648,15 @@ public sealed partial class MatchRecorder
     {
         var winRate = Rate(row.Wins, row.IncludedSamples);
         var winRateConfidence = WilsonInterval(row.Wins, row.IncludedSamples);
+        var gihRate = RateOrNull(row.GihWins, row.DrawnSamples);
+        var gnsRate = RateOrNull(row.GnsWins, row.GnsSamples);
+        var gihConfidence = row.DrawnSamples > 0 ? WilsonInterval(row.GihWins, row.DrawnSamples) : null;
+        var gnsConfidence = row.GnsSamples > 0 ? WilsonInterval(row.GnsWins, row.GnsSamples) : null;
+        double? iwd = gihRate is not null && gnsRate is not null
+            ? RoundRate(gihRate.Value - gnsRate.Value) : null;
+        var iwdConfidence = gihConfidence is not null && gnsConfidence is not null
+            ? new L12AnalyticsConfidenceInterval(RoundRate(gihConfidence.Low - gnsConfidence.High),
+                RoundRate(gihConfidence.High - gnsConfidence.Low)) : null;
         var metrics = new List<L12AnalyticsMetricCoverage>
         {
             new L12AnalyticsMetricCoverage("inclusion", "participant", population.SampleSize,
@@ -565,6 +668,8 @@ public sealed partial class MatchRecorder
         return new L12CardAnalyticsItem(row.CardId, row.IncludedSamples, population.SampleSize,
             row.IncludedMatches, Rate(row.TotalQuantity, row.IncludedSamples),
             Rate(row.IncludedSamples, population.SampleSize), row.Wins, winRate, winRateConfidence,
+            row.ExactDrawCoverageSamples, row.DrawnSamples, row.GihWins, gihRate, gihConfidence,
+            row.GnsSamples, row.GnsWins, gnsRate, gnsConfidence, iwd, iwdConfidence,
             comparison?.WinRate, null, comparison?.Delta, null,
             row.DrawnMatches, row.PlayedMatches, row.DrawnSamples, row.PlayedSamples,
             row.ActivatedSamples, row.SettledSamples, row.ResolvedSamples, row.NegatedSamples,
@@ -771,8 +876,12 @@ public sealed partial class MatchRecorder
     private static string CardSearchPredicate(string alias, L12CardAnalyticsQuery query,
         Dictionary<string, object> parameters)
     {
-        parameters["$search"] = $"%{EscapeLike(query.Search!)}%";
-        var predicates = new List<string> { $"{alias}.card_id LIKE $search ESCAPE '\\'" };
+        var predicates = new List<string>();
+        if (query.Search is not null)
+        {
+            parameters["$search"] = $"%{EscapeLike(query.Search)}%";
+            predicates.Add($"{alias}.card_id LIKE $search ESCAPE '\\'");
+        }
         var candidateIds = query.CandidateCardIds ?? [];
         if (candidateIds.Count > 0)
         {
@@ -785,6 +894,6 @@ public sealed partial class MatchRecorder
             }
             predicates.Add($"{alias}.card_id IN ({string.Join(',', names)})");
         }
-        return $"({string.Join(" OR ", predicates)})";
+        return predicates.Count == 0 ? "0=1" : $"({string.Join(" OR ", predicates)})";
     }
 }

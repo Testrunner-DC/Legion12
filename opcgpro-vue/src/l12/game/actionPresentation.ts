@@ -1,6 +1,6 @@
 import type { ActionEvent } from '../types'
 
-export type ActionPresentationKind = 'turn-start' | 'main-phase' | 'turn-end'
+export type ActionPresentationKind = 'turn-start' | 'main-phase' | 'turn-end' | 'cavalry-move'
 
 export interface ActionPresentation {
   sequence: number
@@ -14,6 +14,7 @@ const genericLabels: Record<ActionPresentationKind, string> = {
   'turn-start': '回合开始',
   'main-phase': '主要阶段',
   'turn-end': '回合结束',
+  'cavalry-move': '骑兵位移',
 }
 
 /**
@@ -28,6 +29,8 @@ export function actionPresentationFromEvent(event: ActionEvent): ActionPresentat
       ? 'main-phase'
       : event.type === 'phase' && event.text === '执行结束阶段'
         ? 'turn-end'
+        : event.type === 'move' && Boolean(event.effectSceneId)
+          ? 'cavalry-move'
         : null
   if (!kind) return null
   return {
@@ -35,7 +38,7 @@ export function actionPresentationFromEvent(event: ActionEvent): ActionPresentat
     kind,
     playerIndex: event.playerIndex,
     label: genericLabels[kind],
-    text: event.text,
+    text: event.effectText?.trim() || event.text,
   }
 }
 
@@ -43,4 +46,5 @@ export const actionPresentationDurations: Record<ActionPresentationKind, number>
   'turn-start': 780,
   'main-phase': 680,
   'turn-end': 680,
+  'cavalry-move': 760,
 }

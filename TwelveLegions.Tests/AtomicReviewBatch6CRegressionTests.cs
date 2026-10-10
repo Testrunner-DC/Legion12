@@ -110,8 +110,8 @@ public sealed class AtomicReviewBatch6CRegressionTests
     [InlineData("S01-0014", "-2")]
     [InlineData("S01-0119", "mode:morale")]
     [InlineData("S02-0306", "mode:mill")]
-    [Trait("L12Evidence", "entry:hand-play-public-declaration")]
-    public void KnownSecondSegmentChoicesAreDeclaredBeforeTheCardLeavesHand(string cardId, string expectedChoice)
+    [Trait("L12Evidence", "entry:segment-boundary-public-declaration")]
+    public void IndependentSecondSegmentChoicesAreNotDeclaredBeforeTheFirstStack(string cardId, string expectedChoice)
     {
         var game = Create(7701);
         var source = ArrangePlay(game, cardId);
@@ -119,32 +119,37 @@ public sealed class AtomicReviewBatch6CRegressionTests
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
 
-        var declaration = Assert.Single(game.State.PendingPrompts);
-        Assert.Equal("pending-activation", declaration.Continuation);
-        Assert.Contains(expectedChoice, declaration.ValidChoices);
-        Assert.Contains(source, game.State.Players[0].Hand);
-        Assert.DoesNotContain(source, game.State.Players[0].Resolving);
-        Assert.Empty(game.State.EffectStack);
-        Assert.DoesNotContain(hiddenIds, hiddenId => declaration.ValidChoices.Contains(hiddenId)
-            || declaration.Data.Values.Any(value => value.Contains(hiddenId, StringComparison.Ordinal)));
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.DoesNotContain(expectedChoice, response.ValidChoices);
+        Assert.DoesNotContain(source, game.State.Players[0].Hand);
+        Assert.Contains(source, game.State.Players[0].Resolving);
+        Assert.Single(game.State.EffectStack);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.DoesNotContain(hiddenIds, hiddenId => response.ValidChoices.Contains(hiddenId)
+            || response.Data.Values.Any(value => value.Contains(hiddenId, StringComparison.Ordinal)));
     }
 
     [Fact]
     [Trait("L12Evidence", "card:S01-0014")]
     [Trait("L12Evidence", "entry:independent-semantic-segments")]
-    public void SacrificeToHeavenKeepsThePredeclaredDisasterSegmentWhenDrawIsNegated()
+    public void SacrificeToHeavenDeclaresTheDisasterSegmentAfterDrawIsNegated()
     {
         var game = Create(7702);
         var source = ArrangePlay(game, "S01-0014");
         var initialDisaster = game.State.DisasterValue;
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
-        Resolve(game, "-2");
         var draw = Assert.Single(game.State.EffectStack);
         Assert.Equal("ritual-draw", draw.Data["atomicFlow"]);
         draw.Negated = true;
 
-        var disaster = PassUntilFlow(game, "ritual-disaster");
+        PassResponses(game);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Resolve(game, "-2");
+        var disaster = Assert.Single(game.State.EffectStack);
+        Assert.Equal("ritual-disaster", disaster.Data["atomicFlow"]);
         Assert.Equal(initialDisaster, game.State.DisasterValue);
         Assert.Equal("-2", disaster.Data["declared:disasterValue"]);
         PassResponses(game);
@@ -176,6 +181,41 @@ public sealed class AtomicReviewBatch6CRegressionTests
         Assert.Equal(1, decision.PlayerIndex);
         Assert.Contains("agree", decision.ValidChoices);
         Assert.Contains("refuse", decision.ValidChoices);
+
+        Resolve(game, "agree");
+        var play = Assert.Single(game.State.Events, entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        var choice = Assert.Single(game.State.Events, entry => entry.Type == "effect-decision"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal(1, choice.PlayerIndex);
+        Assert.Equal("同意议和", choice.PlayerLogDecisionLabel);
+        Assert.False(string.IsNullOrWhiteSpace(play.PlayerLogGroupId));
+        Assert.Equal(play.PlayerLogGroupId, choice.PlayerLogGroupId);
+        Assert.All(game.State.Events.Where(entry => entry.Type == "draw"
+                && entry.Cards.Any(card => card.InstanceId == source.InstanceId)),
+            entry => Assert.Equal(play.PlayerLogGroupId, entry.PlayerLogGroupId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S01-0012")]
+    [Trait("L12Evidence", "entry:player-log-negated-play")]
+    public void NegatedPlayedTacticKeepsPlayAndResultInOnePlayerLogGroup()
+    {
+        var game = Create(77031);
+        var source = ArrangePlay(game, "S01-0012");
+
+        Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
+        Assert.Single(game.State.EffectStack).Negated = true;
+        PassResponses(game);
+
+        var play = Assert.Single(game.State.Events, entry => entry.Type == "play"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("play", play.PlayerLogTiming);
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.False(string.IsNullOrWhiteSpace(play.PlayerLogGroupId));
+        Assert.Equal(play.PlayerLogGroupId, result.PlayerLogGroupId);
     }
 
     [Fact]
@@ -190,15 +230,16 @@ public sealed class AtomicReviewBatch6CRegressionTests
         var moraleBefore = player.Morale.Count;
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
-        var mode = Assert.Single(game.State.PendingPrompts);
-        Assert.DoesNotContain(hiddenIds, id => mode.ValidChoices.Contains(id)
-            || mode.Data.Values.Any(value => value.Contains(id, StringComparison.Ordinal)));
-        Resolve(game, "mode:morale");
         var reorder = Assert.Single(game.State.EffectStack);
         Assert.Equal("observing-stars-reorder", reorder.Data["atomicFlow"]);
         reorder.Negated = true;
 
-        PassUntilFlow(game, "observing-stars-morale");
+        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.DoesNotContain(hiddenIds, id => mode.ValidChoices.Contains(id)
+            || mode.Data.Values.Any(value => value.Contains(id, StringComparison.Ordinal)));
+        Resolve(game, "mode:morale");
+        Assert.Equal("observing-stars-morale", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
         PassResponses(game);
 
         Assert.Equal(moraleBefore + 1, player.Morale.Count);
@@ -249,13 +290,16 @@ public sealed class AtomicReviewBatch6CRegressionTests
         var hpBefore = player.Hp;
 
         Assert.True(game.Handle(0, new L12Command("playCard", source.InstanceId)).Accepted);
-        Resolve(game, "mode:mill");
         var recovery = Assert.Single(game.State.EffectStack);
         Assert.Equal("mimir-recover-draw", recovery.Data["atomicFlow"]);
         Assert.Contains("s2-mimir-used", player.UsedAbilities);
         recovery.Negated = true;
 
-        PassUntilFlow(game, "mimir-mill");
+        PassResponses(game);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", mode.Continuation);
+        Resolve(game, "mode:mill");
+        Assert.Equal("mimir-mill", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
         Assert.Equal(hpBefore, player.Hp);
         PassResponses(game);
 

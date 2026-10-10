@@ -15,6 +15,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> RequestMatchDrawAsync(
         Guid sessionId, string? requestId, string? reason)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, NormalizeActionRequestId(requestId));
+        using var deployment = deploymentGuard;
         var clientRequestId = requestId?.Trim() ?? string.Empty;
         if (!TryGetMembership(sessionId, out var session, out var room, out var membershipError))
             return MatchGovernanceFailure(sessionId, "request-draw", clientRequestId, membershipError);
@@ -66,6 +68,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> ResolveMatchDrawAsync(
         Guid sessionId, string? requestId, bool accept)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, NormalizeActionRequestId(requestId));
+        using var deployment = deploymentGuard;
         var clientRequestId = requestId?.Trim() ?? string.Empty;
         if (!TryGetMembership(sessionId, out var session, out var room, out var membershipError))
             return MatchGovernanceFailure(sessionId, "resolve-draw", clientRequestId, membershipError);
@@ -220,6 +224,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> ReportOpponentAsync(
         Guid sessionId, string? reportId, string? description)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, NormalizeActionRequestId(reportId));
+        using var deployment = deploymentGuard;
         var clientRequestId = reportId?.Trim() ?? string.Empty;
         if (!TryGetMembership(sessionId, out var session, out var room, out var membershipError))
             return MatchGovernanceFailure(sessionId, "report-opponent", clientRequestId, membershipError);

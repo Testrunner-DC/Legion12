@@ -1,0 +1,1322 @@
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using TwelveLegions.Server;
+using Xunit;
+
+namespace GrandUMI.Tests;
+
+[Collection("Platform environment")]
+public sealed class TournamentFullFlowTests
+{
+    [Fact]
+    public void SwissPairingIsRepeatFreeAndFailsAtomicallyWhenNoCompletePairingExists()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "SwissHard");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss") with { SwissRounds = 4 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("start"), true);
+
+            var pairings = new HashSet<string>(StringComparer.Ordinal);
+            for (var roundNumber = 1; roundNumber <= 3; roundNumber++)
+            {
+                var round = tournament.Rounds.Single(item => item.Number == roundNumber);
+                foreach (var match in round.Matches.Where(item => item.PlayerBAccountId is not null))
+                {
+                    var key = PairKey(match.PlayerAAccountId, match.PlayerBAccountId!);
+                    Assert.True(pairings.Add(key), $"第 {roundNumber} 轮出现重复交手 {key}");
+                    tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                        new L12TournamentRulingPayload("result", null, "draw", "test result"),
+                        tournament.Version, Context($"r{roundNumber}-{match.Id}"), true);
+                }
+
+                var completed = tournament.Rounds.Single(item => item.Number == roundNumber);
+                Assert.Equal("completed", completed.Status);
+                Assert.Equal(4, completed.Standings.Count);
+                Assert.Equal(Enumerable.Range(1, 4), completed.Standings.Select(item => item.Rank));
+                Assert.All(completed.Standings, item => Assert.Equal(roundNumber, item.RoundNumber));
+                if (roundNumber < 3)
+                    tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                        Context($"next-{roundNumber}"), true);
+            }
+
+            var before = tournament.Version;
+            var error = Assert.Throws<L12TournamentPairingException>(() =>
+                store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                    Context("no-legal-pairing"), true));
+
+            Assert.Contains("无法生成不重复交手的完整配对", error.Message);
+            var unchanged = store.Tournament(organizer, tournament.Id)!;
+            Assert.Equal(before, unchanged.Version);
+            Assert.Equal(3, unchanged.Rounds.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void SwissDownfloatChoosesHighestOpponentScoreFromOneWinLowerGroup()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 8, "Downfloat");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss") with { SwissRounds = 3 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("downfloat-start"), true);
+            var accountBySeed = tournament.Participants.ToDictionary(item => item.Seed,
+                item => item.AccountId);
+
+            var firstRoundWinners = new HashSet<string>(
+                new[] { 1, 3, 5, 7 }.Select(seed => accountBySeed[seed]), StringComparer.Ordinal);
+            foreach (var match in tournament.Rounds[0].Matches)
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null,
+                        DecisionForWinner(match, firstRoundWinners), "seeded first round"),
+                    tournament.Version, Context($"downfloat-r1-{match.Id}"), true);
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("downfloat-r2"), true);
+
+            var secondRoundWinners = new HashSet<string>(
+                new[] { 1, 4, 5 }.Select(seed => accountBySeed[seed]), StringComparer.Ordinal);
+            foreach (var match in tournament.Rounds[1].Matches)
+            {
+                var isDraw = new[] { match.PlayerAAccountId, match.PlayerBAccountId! }
+                    .ToHashSet(StringComparer.Ordinal).SetEquals(
+                        new[] { accountBySeed[6], accountBySeed[8] });
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null,
+                        isDraw ? "draw" : DecisionForWinner(match, secondRoundWinners), "shape downfloat"),
+                    tournament.Version, Context($"downfloat-r2-{match.Id}"), true);
+            }
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("downfloat-r3"), true);
+
+            var thirdRoundPairs = tournament.Rounds[2].Matches.Where(item => item.PlayerBAccountId is not null)
+                .Select(item => PairKey(item.PlayerAAccountId, item.PlayerBAccountId!)).ToHashSet(StringComparer.Ordinal);
+            Assert.Contains(PairKey(accountBySeed[4], accountBySeed[6]), thirdRoundPairs);
+            Assert.DoesNotContain(PairKey(accountBySeed[4], accountBySeed[8]), thirdRoundPairs);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void SwissByesAreDeterministicAndRotateUntilEveryPlayerHasReceivedOne()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 3, "SwissBye");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss") with { SwissRounds = 3 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("bye-start"), true);
+            var byes = new List<string>();
+            var pairs = new HashSet<string>(StringComparer.Ordinal);
+
+            for (var roundNumber = 1; roundNumber <= 3; roundNumber++)
+            {
+                var round = tournament.Rounds.Single(item => item.Number == roundNumber);
+                var bye = Assert.Single(round.Matches.Where(item => item.Result == "bye"));
+                byes.Add(bye.PlayerAAccountId);
+                var played = Assert.Single(round.Matches.Where(item => item.PlayerBAccountId is not null));
+                Assert.True(pairs.Add(PairKey(played.PlayerAAccountId, played.PlayerBAccountId!)));
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, played.Id,
+                    new L12TournamentRulingPayload("result", null, "draw", "rotate bye"),
+                    tournament.Version, Context($"bye-r{roundNumber}"), true);
+                if (roundNumber < 3)
+                    tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                        Context($"bye-next-{roundNumber}"), true);
+            }
+
+            Assert.Equal(3, byes.Distinct(StringComparer.Ordinal).Count());
+            Assert.Equal(3, pairs.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void PreStartDropsStayOutOfPairingsWithoutDuplicatingFixedSeeds()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "SwissSeedDrop");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss") with { SwissRounds = 1 });
+            var dropped = players[0];
+            tournament = store.DropTournament(dropped, tournament.Id, tournament.Version,
+                Context("pre-start-drop"), true);
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("start-after-drop"), true);
+
+            Assert.Equal(tournament.Participants.Count,
+                tournament.Participants.Select(item => item.Seed).Distinct().Count());
+            Assert.DoesNotContain(tournament.Rounds[0].Matches,
+                match => match.PlayerAAccountId == dropped.Id || match.PlayerBAccountId == dropped.Id);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void SwissCutPersistsFinalSwissStandingsAndAdvancesOnlyWinners()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 8, "SwissCut");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss-cut") with { SwissRounds = 1, CutSize = 4 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("cut-start"), true);
+            foreach (var match in tournament.Rounds[0].Matches)
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null, "player-a", "swiss result"),
+                    tournament.Version, Context($"swiss-{match.Id}"), true);
+
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("create-cut"), true);
+
+            Assert.Equal(8, tournament.FinalSwissStandings.Count);
+            Assert.Equal("elimination", tournament.Rounds[1].Stage);
+            Assert.Equal(2, tournament.Rounds[1].Matches.Count);
+            var cutAccounts = tournament.FinalSwissStandings.Take(4).Select(item => item.AccountId).ToHashSet();
+            Assert.All(tournament.Rounds[1].Matches, match =>
+            {
+                Assert.Contains(match.PlayerAAccountId, cutAccounts);
+                Assert.Contains(match.PlayerBAccountId!, cutAccounts);
+            });
+
+            var semifinalWinners = new HashSet<string>(StringComparer.Ordinal);
+            var semifinalLosers = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var match in tournament.Rounds[1].Matches)
+            {
+                semifinalWinners.Add(match.PlayerAAccountId);
+                semifinalLosers.Add(match.PlayerBAccountId!);
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null, "player-a", "semifinal result"),
+                    tournament.Version, Context($"semi-{match.Id}"), true);
+            }
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("create-final"), true);
+
+            var final = Assert.Single(tournament.Rounds[2].Matches);
+            Assert.Equal("elimination", tournament.Rounds[2].Stage);
+            Assert.Contains(final.PlayerAAccountId, semifinalWinners);
+            Assert.Contains(final.PlayerBAccountId!, semifinalWinners);
+            Assert.DoesNotContain(final.PlayerAAccountId, semifinalLosers);
+            Assert.DoesNotContain(final.PlayerBAccountId!, semifinalLosers);
+            Assert.Equal(2, final.SourceMatchIds.Count);
+            Assert.Equal(4, tournament.EliminationBracket[0].Matches.Count * 2);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void SwissCutExcludesPlayersWhoDropAfterFinalSwissStandingsAreCaptured()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 8, "SwissCutDrop");
+            var accounts = players.Append(organizer).ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss-cut") with { SwissRounds = 1, CutSize = 4 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("cut-drop-start"), true);
+            foreach (var match in tournament.Rounds[0].Matches)
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null, "player-a", "swiss result"),
+                    tournament.Version, Context($"cut-drop-{match.Id}"), true);
+
+            var droppedId = tournament.FinalSwissStandings[0].AccountId;
+            var replacementId = tournament.FinalSwissStandings[4].AccountId;
+            tournament = store.DropTournament(accounts[droppedId], tournament.Id, tournament.Version,
+                Context("drop-before-cut"), true);
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("create-cut-after-drop"), true);
+
+            var cutAccounts = tournament.Rounds[1].Matches
+                .SelectMany(match => new[] { match.PlayerAAccountId, match.PlayerBAccountId! })
+                .ToHashSet(StringComparer.Ordinal);
+            Assert.DoesNotContain(droppedId, cutAccounts);
+            Assert.Contains(replacementId, cutAccounts);
+            Assert.Equal(8, tournament.FinalSwissStandings.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void PureSingleEliminationBuildsARealBracketAndCompletesOnlyAfterFinal()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "SingleBracket");
+            var tournament = CreateAndRegister(store, organizer, players, Payload("single"));
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("single-start"), true);
+            Assert.Equal("elimination", tournament.Rounds[0].Stage);
+            Assert.Equal(2, tournament.Rounds[0].Matches.Count);
+            var semifinalWinners = new HashSet<string>(StringComparer.Ordinal);
+            var semifinalLosers = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var match in tournament.Rounds[0].Matches)
+            {
+                semifinalWinners.Add(match.PlayerAAccountId);
+                semifinalLosers.Add(match.PlayerBAccountId!);
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null, "player-a", "single semifinal"),
+                    tournament.Version, Context($"single-semi-{match.Id}"), true);
+            }
+            Assert.Throws<L12TournamentVersionConflictException>(() =>
+                store.CompleteTournament(organizer, tournament.Id, tournament.Version,
+                    Context("single-too-early"), true));
+
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("single-final"), true);
+            var final = Assert.Single(tournament.Rounds[1].Matches);
+            Assert.Contains(final.PlayerAAccountId, semifinalWinners);
+            Assert.Contains(final.PlayerBAccountId!, semifinalWinners);
+            Assert.DoesNotContain(final.PlayerAAccountId, semifinalLosers);
+            Assert.DoesNotContain(final.PlayerBAccountId!, semifinalLosers);
+            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, final.Id,
+                new L12TournamentRulingPayload("result", null, "player-b", "single final"),
+                tournament.Version, Context("single-final-result"), true);
+            tournament = store.SetTournamentPhase(organizer, tournament.Id,
+                new L12TournamentPhasePayload("result-confirmation", "最终赛果复核"), tournament.Version,
+                Context("single-confirm-result"), true);
+            Assert.Equal("result-confirmation", tournament.Phase);
+            tournament = store.CompleteTournament(organizer, tournament.Id, tournament.Version,
+                Context("single-complete"), true);
+
+            Assert.Equal("completed", tournament.Status);
+            Assert.Equal(2, tournament.EliminationBracket.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void EliminationWinnerWhoDropsBeforeNextRoundBecomesABracketBye()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "BracketDrop");
+            var accounts = players.Append(organizer).ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var tournament = CreateAndRegister(store, organizer, players, Payload("single"));
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("bracket-drop-start"), true);
+            var semifinals = tournament.Rounds[0].Matches.ToArray();
+            foreach (var match in semifinals)
+                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    new L12TournamentRulingPayload("result", null, "player-a", "semifinal winner"),
+                    tournament.Version, Context($"bracket-drop-{match.Id}"), true);
+
+            var droppedWinner = semifinals[0].PlayerAAccountId;
+            var advancingWinner = semifinals[1].PlayerAAccountId;
+            tournament = store.DropTournament(accounts[droppedWinner], tournament.Id, tournament.Version,
+                Context("drop-semifinal-winner"), true);
+            tournament = store.CreateNextRound(organizer, tournament.Id, tournament.Version,
+                Context("create-final-bye"), true);
+
+            var final = Assert.Single(tournament.Rounds[1].Matches);
+            Assert.Equal(advancingWinner, final.PlayerAAccountId);
+            Assert.Null(final.PlayerBAccountId);
+            Assert.Equal("bye", final.Result);
+            Assert.Equal("completed", tournament.Rounds[1].Status);
+            Assert.DoesNotContain(droppedWinner,
+                new[] { final.PlayerAAccountId, final.PlayerBAccountId });
+            tournament = store.CompleteTournament(organizer, tournament.Id, tournament.Version,
+                Context("complete-after-bracket-bye"), true);
+            Assert.Equal("completed", tournament.Status);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task PrivateTournamentRevocationRemovesSpectatorAndForgetsTheRefereeView()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "PrivateRef");
+            var referee = store.Register("tprivref42", "password-123").Account!;
+            MakeFriends(store, organizer, referee);
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("single") with { Visibility = "code", RefereeAccountIds = [referee.Id] });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("private-start"), true);
+            tournament = store.CheckInTournament(organizer, tournament.Id, 1,
+                new L12TournamentCheckInPayload(organizer.Id, true), tournament.Version,
+                Context("private-ready-a"), true);
+            tournament = store.CheckInTournament(players[0], tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("private-ready-b"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1,
+                tournament.Version, Context("private-round"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var host = Guid.NewGuid();
+            var guest = Guid.NewGuid();
+            var judge = Guid.NewGuid();
+            rooms.Connect(host, organizer.Id, organizer.Username);
+            rooms.Connect(guest, players[0].Id, players[0].Username);
+            rooms.Connect(judge, referee.Id, referee.Username);
+            await rooms.EnterTournamentMatchAsync(host, tournament.Id, match.Id);
+            await rooms.EnterTournamentMatchAsync(guest, tournament.Id, match.Id);
+            Assert.Equal("referee", rooms.SpectateTournamentMatch(judge, tournament.Id, match.Id)
+                .Where(message => MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)
+                    .GetProperty("observerView").GetString()).Single());
+
+            tournament = store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version,
+                Context("private-revoke"), true);
+            var revoked = await rooms.RecoveryStateWithAckAsync(host);
+            Assert.Contains(revoked, message => message.SessionId == judge
+                && MessageType(message.Payload) == "roomLeft");
+            Assert.DoesNotContain(revoked, message => message.SessionId == judge
+                && MessageType(message.Payload) == "gameState");
+            rooms.Disconnect(judge);
+            var replacement = Guid.NewGuid();
+            var claim = await rooms.ConnectAsync(replacement, referee.Id, referee.Username);
+            Assert.False(claim.Recovered);
+            Assert.Null(claim.RoomCode);
+            Assert.DoesNotContain(await rooms.RecoveryStateWithAckAsync(replacement),
+                message => MessageType(message.Payload) == "gameState");
+            Assert.Equal("tournamentRoomRejected", MessageType(Assert.Single(
+                rooms.SpectateTournamentMatch(replacement, tournament.Id, match.Id)).Payload));
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task TournamentRoomUsesBoundDeckAndRulesSnapshotsAndWritesResultIdempotently()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        MatchRecorder? restoredRecorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var organizer = store.Register("troomf68569", "password-123").Account!;
+            var player = store.Register("troomf35d5f", "password-123").Account!;
+            var outsider = store.Register("troomf5f5ec", "password-123").Account!;
+            var referee = store.Register("troomfdc6b4", "password-123").Account!;
+            MakeFriends(store, organizer, referee);
+            var tournament = CreateAndRegister(store, organizer, [player],
+                Payload("single") with { RefereeAccountIds = [referee.Id],
+                    TimeControl = new L12RankedTimeControlConfig(900, 90, 120, 30, 45) });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("room-start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            tournament = store.ExtendTournamentMatch(organizer, tournament.Id, match.Id,
+                new L12TournamentTimeExtensionPayload(1, "赛前补时进入本桌计时配置"), tournament.Version,
+                Context("room-pre-start-extension"), true);
+            tournament = store.CheckInTournament(organizer, tournament.Id, 1,
+                new L12TournamentCheckInPayload(organizer.Id, true), tournament.Version,
+                Context("ready-a"), true);
+            tournament = store.CheckInTournament(player, tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("ready-b"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("round-start"), true);
+            Assert.True(store.TournamentRoomAssignment(organizer.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.True(store.TournamentRoomAssignment(referee.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.False(store.TournamentRoomAssignment(player.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            Assert.False(store.TournamentRoomAssignment(outsider.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            var globalTournamentAdmin = store.Login("Admin", "L12master").Account!;
+            Assert.True(store.TournamentRoomAssignment(globalTournamentAdmin.Id, tournament.Id,
+                match.Id, spectate: true).CanRefereeView);
+
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var hostSession = Guid.NewGuid();
+            var playerSession = Guid.NewGuid();
+            var outsiderSession = Guid.NewGuid();
+            var refereeSession = Guid.NewGuid();
+            rooms.Connect(hostSession, organizer.Id, organizer.Username);
+            rooms.Connect(playerSession, player.Id, player.Username);
+            rooms.Connect(outsiderSession, outsider.Id, outsider.Username);
+            rooms.Connect(refereeSession, referee.Id, referee.Username);
+
+            var denied = await rooms.EnterTournamentMatchAsync(outsiderSession, tournament.Id, match.Id);
+            Assert.Equal("tournamentRoomRejected", MessageType(Assert.Single(denied).Payload));
+            var firstEntry = await rooms.EnterTournamentMatchAsync(hostSession, tournament.Id, match.Id);
+            Assert.Contains(firstEntry, message => MessageType(message.Payload) == "roomState");
+            var rulesChange = rooms.UpdateRoomOptions(hostSession, new L12RoomOptions
+            {
+                MatchModeId = "friendly",
+                DisasterMode = "none",
+                Spectating = "enabled",
+                UseCardRestrictions = false,
+            });
+            Assert.Equal("error", MessageType(Assert.Single(rulesChange).Payload));
+            var secondEntry = await rooms.EnterTournamentMatchAsync(playerSession, tournament.Id, match.Id);
+            var gameMessage = secondEntry.Single(message => message.SessionId == playerSession
+                && MessageType(message.Payload) == "gameState");
+            using (var gameDocument = JsonDocument.Parse(JsonSerializer.Serialize(gameMessage.Payload)))
+            {
+                Assert.Equal(tournament.Id, gameDocument.RootElement.GetProperty("tournamentId").GetString());
+                Assert.Equal(tournament.Code, gameDocument.RootElement.GetProperty("tournamentCode").GetString());
+                Assert.Equal(match.Id, gameDocument.RootElement.GetProperty("tournamentMatchId").GetString());
+                var clock = gameDocument.RootElement.GetProperty("rankedClock");
+                Assert.Equal(960, clock.GetProperty("TimeControl").GetProperty("TotalTimeSeconds").GetInt32());
+                Assert.Equal(90, clock.GetProperty("TimeControl").GetProperty("OperationTimeSeconds").GetInt32());
+            }
+            tournament = store.PauseTournamentMatch(referee, tournament.Id, match.Id,
+                new L12TournamentMatchPausePayload(true, "现场规则核查"), tournament.Version,
+                Context("pause-table"), true);
+            Assert.Single(store.PendingTournamentRoomCommands(tournament.Id));
+            recorder.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-ranked-runtime-batch-commit")
+                    throw new IOException("injected pause persistence failure");
+            };
+            var failedPauseDrain = await rooms.DrainTournamentRoomCommandsAsync(tournament.Id);
+            Assert.Equal(1, failedPauseDrain.Failed);
+            Assert.Equal(1, failedPauseDrain.Pending);
+            recorder.StorageFailureInjector = null;
+            var pauseDrain = await rooms.DrainTournamentRoomCommandsAsync(tournament.Id);
+            Assert.Equal(1, pauseDrain.Applied);
+            Assert.Equal(0, pauseDrain.Pending);
+            var pauseMessages = pauseDrain.Messages;
+            var pausedState = pauseMessages.Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .First(payload => payload.GetProperty("type").GetString() == "gameState");
+            Assert.True(pausedState.GetProperty("rankedClock").GetProperty("Paused").GetBoolean());
+            using (var blockedCommand = JsonDocument.Parse("{}"))
+            {
+                var blocked = await rooms.HandleActionAsync(hostSession, blockedCommand.RootElement.Clone());
+                Assert.Equal("tournamentMatchPaused", MessageType(Assert.Single(blocked).Payload));
+            }
+            tournament = store.PauseTournamentMatch(referee, tournament.Id, match.Id,
+                new L12TournamentMatchPausePayload(false, "核查完成"), tournament.Version,
+                Context("resume-table"), true);
+            var resumeDrain = await rooms.DrainTournamentRoomCommandsAsync(tournament.Id);
+            Assert.Equal(1, resumeDrain.Applied);
+            Assert.Equal(0, resumeDrain.Pending);
+            var resumeMessages = resumeDrain.Messages;
+            var resumedState = resumeMessages.Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .First(payload => payload.GetProperty("type").GetString() == "gameState");
+            Assert.False(resumedState.GetProperty("rankedClock").GetProperty("Paused").GetBoolean());
+            var spectate = rooms.SpectateTournamentMatch(refereeSession, tournament.Id, match.Id);
+            var spectatorPayloads = spectate.Where(message => message.SessionId == refereeSession)
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).ToArray();
+            Assert.Equal(new[] { "roomState", "gameState" }, spectatorPayloads
+                .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+            Assert.Equal(JsonValueKind.Null, spectatorPayloads[0].GetProperty("yourPlayerIndex").ValueKind);
+            Assert.All(spectatorPayloads[0].GetProperty("players").EnumerateArray(), viewedPlayer =>
+            {
+                Assert.Equal(string.Empty, viewedPlayer.GetProperty("deckName").GetString());
+                Assert.Equal(-1, viewedPlayer.GetProperty("deckIndex").GetInt32());
+                Assert.False(viewedPlayer.GetProperty("customDeck").GetBoolean());
+            });
+            using (var spectatorDocument = JsonDocument.Parse(spectatorPayloads[1].GetRawText()))
+            {
+                Assert.Equal(tournament.Code,
+                    spectatorDocument.RootElement.GetProperty("tournamentCode").GetString());
+                Assert.Equal("referee", spectatorDocument.RootElement.GetProperty("observerView").GetString());
+                Assert.False(spectatorDocument.RootElement.GetProperty("gmEnabled").GetBoolean());
+                var state = spectatorDocument.RootElement.GetProperty("state");
+                Assert.All(state.GetProperty("Players").EnumerateArray(), viewedPlayer =>
+                    Assert.Equal(viewedPlayer.GetProperty("handCount").GetInt32(),
+                        viewedPlayer.GetProperty("hand").GetArrayLength()));
+                Assert.Empty(state.GetProperty("Prompts").EnumerateArray());
+                Assert.Empty(state.GetProperty("LegalAttackTargets").EnumerateObject());
+            }
+            var publicSpectate = rooms.SpectateTournamentMatch(outsiderSession, tournament.Id, match.Id);
+            var publicState = publicSpectate.Where(message => message.SessionId == outsiderSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", publicState.GetProperty("observerView").GetString());
+            Assert.All(publicState.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
+
+            var mixedBroadcast = await rooms.RecoveryStateWithAckAsync(hostSession);
+            Assert.Equal("referee", mixedBroadcast.Where(message => message.SessionId == refereeSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .Single().GetProperty("observerView").GetString());
+            Assert.Equal("public", mixedBroadcast.Where(message => message.SessionId == outsiderSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload))
+                .Single().GetProperty("observerView").GetString());
+
+            rooms.Disconnect(refereeSession);
+            var replacementReferee = Guid.NewGuid();
+            var refereeClaim = await rooms.ConnectAsync(replacementReferee, referee.Id, referee.Username);
+            Assert.True(refereeClaim.Recovered);
+            Assert.Equal(match.RoomCode, refereeClaim.RoomCode);
+            var refereeRecovery = (await rooms.RecoveryStateWithAckAsync(replacementReferee, recovered: true))
+                .Where(message => message.SessionId == replacementReferee)
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).ToArray();
+            Assert.Equal(new[] { "roomState", "gameState", "recoveryComplete" }, refereeRecovery
+                .Select(payload => payload.GetProperty("type").GetString()!).ToArray());
+            Assert.Equal(tournament.Id, refereeRecovery[0].GetProperty("tournamentId").GetString());
+            Assert.Equal(tournament.Code, refereeRecovery[1].GetProperty("tournamentCode").GetString());
+            Assert.Equal(match.Id, refereeRecovery[1].GetProperty("tournamentMatchId").GetString());
+            Assert.Equal(match.RoomCode, refereeRecovery[2].GetProperty("roomCode").GetString());
+            Assert.Equal("referee", refereeRecovery[1].GetProperty("observerView").GetString());
+
+            tournament = store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version,
+                Context("revoke-referee-view"), true);
+            Assert.False(store.TournamentRoomAssignment(referee.Id, tournament.Id, match.Id,
+                spectate: true).CanRefereeView);
+            var downgraded = (await rooms.RecoveryStateWithAckAsync(hostSession))
+                .Where(message => message.SessionId == replacementReferee
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", downgraded.GetProperty("observerView").GetString());
+            Assert.All(downgraded.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
+            rooms.Disconnect(replacementReferee);
+            var revokedSession = Guid.NewGuid();
+            Assert.True((await rooms.ConnectAsync(revokedSession, referee.Id, referee.Username)).Recovered);
+            var revokedRecovery = (await rooms.RecoveryStateWithAckAsync(revokedSession, recovered: true))
+                .Where(message => message.SessionId == revokedSession
+                    && MessageType(message.Payload) == "gameState")
+                .Select(message => JsonSerializer.SerializeToElement(message.Payload)).Single();
+            Assert.Equal("public", revokedRecovery.GetProperty("observerView").GetString());
+            Assert.All(revokedRecovery.GetProperty("state").GetProperty("Players").EnumerateArray(),
+                viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
+
+            using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
+            var gameOver = await rooms.HandleActionAsync(hostSession, surrender.RootElement);
+            Assert.Contains(gameOver, message => MessageType(message.Payload) == "gameState");
+            Assert.DoesNotContain(gameOver, message => MessageType(message.Payload) == "tournamentResultPending");
+            var recorded = Assert.Single(await recorder.ListMatchesAsync());
+            Assert.Equal(match.RoomCode, recorded.RoomCode);
+            Assert.NotNull(recorded.EndedUtc);
+            var result = store.Tournament(organizer, tournament.Id)!;
+            var automaticallyRecorded = result.Rounds.SelectMany(round => round.Matches)
+                .Single(item => item.Id == match.Id);
+            Assert.Equal("player-b", automaticallyRecorded.Result);
+            Assert.Equal(recorded.MatchId, automaticallyRecorded.RecordedMatchId);
+            var replay = store.RecordTournamentGameResult(tournament.Id, match.Id, recorded.MatchId, 1);
+
+            Assert.Equal(result.Version, replay.Version);
+            var completedMatch = result.Rounds.SelectMany(round => round.Matches).Single(item => item.Id == match.Id);
+            Assert.Equal("player-b", completedMatch.Result);
+            Assert.Equal(recorded.MatchId, completedMatch.RecordedMatchId);
+            Assert.Single(completedMatch.Events.Where(item => item.Kind == "game-result"));
+            Assert.Equal(tournament.Rules.Hash, completedMatch.RulesHash);
+            Assert.All(result.Participants, item => Assert.False(string.IsNullOrWhiteSpace(item.Deck!.Hash)));
+
+            await using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "matches.db")}"))
+            {
+                await connection.OpenAsync();
+                var simulateAckFailure = connection.CreateCommand();
+                simulateAckFailure.CommandText = """
+                    UPDATE tournament_result_outbox
+                    SET status='pending',applied_utc=NULL,attempts=1,last_error='simulated ack failure'
+                    WHERE match_id=$match;
+                    """;
+                simulateAckFailure.Parameters.AddWithValue("$match", recorded.MatchId);
+                Assert.Equal(1, await simulateAckFailure.ExecuteNonQueryAsync());
+            }
+
+            restoredRecorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await restoredRecorder.InitializeAsync();
+            var restoredRooms = new L12RoomManager(catalog, restoredRecorder, store);
+            await restoredRooms.RestoreRankedRoomsAsync();
+            Assert.Equal(result.Version, store.Tournament(organizer, tournament.Id)!.Version);
+            await using (var connection = new SqliteConnection($"Data Source={Path.Combine(root, "matches.db")}"))
+            {
+                await connection.OpenAsync();
+                var status = connection.CreateCommand();
+                status.CommandText = "SELECT status FROM tournament_result_outbox WHERE match_id=$match;";
+                status.Parameters.AddWithValue("$match", recorded.MatchId);
+                Assert.Equal("applied", Convert.ToString(await status.ExecuteScalarAsync()));
+            }
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            if (restoredRecorder is not null) await restoredRecorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task TournamentCancellationRoomCommandRetriesAfterPersistenceFailureWithoutAFalseResult()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "CancelRoom");
+            var player = players[0];
+            var tournament = CreateAndRegister(store, organizer, [player], Payload("single"));
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("cancel-room-start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            tournament = store.CheckInTournament(organizer, tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("cancel-ready-a"), true);
+            tournament = store.CheckInTournament(player, tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("cancel-ready-b"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("cancel-round-start"), true);
+
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var organizerSession = Guid.NewGuid();
+            var playerSession = Guid.NewGuid();
+            rooms.Connect(organizerSession, organizer.Id, organizer.Username);
+            rooms.Connect(playerSession, player.Id, player.Username);
+            await rooms.EnterTournamentMatchAsync(organizerSession, tournament.Id, match.Id);
+            await rooms.EnterTournamentMatchAsync(playerSession, tournament.Id, match.Id);
+
+            tournament = store.CancelTournament(organizer, tournament.Id,
+                new L12TournamentCancelPayload("现场不可用"), tournament.Version,
+                Context("cancel-active-room"), true);
+            Assert.Equal("canceled", tournament.Status);
+            Assert.Single(store.PendingTournamentRoomCommands(tournament.Id));
+            recorder.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-ranked-command-commit")
+                    throw new IOException("injected cancellation persistence failure");
+            };
+            var failed = await rooms.DrainTournamentRoomCommandsAsync(tournament.Id);
+            Assert.Equal(1, failed.Failed);
+            Assert.Equal(1, failed.Pending);
+
+            await recorder.DisposeAsync();
+            recorder = null;
+            var reloadedStore = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            recorder.StorageFailureInjector = null;
+            var restoredRooms = new L12RoomManager(catalog, recorder, reloadedStore);
+            var recovery = await restoredRooms.RestoreRankedRoomsAsync();
+            Assert.Equal(0, recovery.Failed);
+            Assert.Empty(reloadedStore.PendingTournamentRoomCommands(tournament.Id));
+            var recorded = Assert.Single(await recorder.ListMatchesAsync());
+            Assert.NotNull(recorded.EndedUtc);
+            Assert.Null(recorded.Winner);
+            Assert.Empty(await recorder.ListPendingTournamentResultsAsync());
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void StaffRulingPrecedesLateGameResultWhileTheRecordBindingStaysIdempotent()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "RulingRace");
+            var tournament = CreateAndRegister(store, organizer, players, Payload("single"));
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("ruling-race-start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            foreach (var account in players.Append(organizer))
+                tournament = store.CheckInTournament(account, tournament.Id, 1,
+                    new L12TournamentCheckInPayload(null, true), tournament.Version,
+                    Context($"ruling-race-ready-{account.Id}"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("ruling-race-round"), true);
+            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                new L12TournamentRulingPayload("result", null, "player-a", "staff adjudication"),
+                tournament.Version, Context("staff-result-first"), true);
+
+            var bound = store.RecordTournamentGameResult(tournament.Id, match.Id, "late-game-record", 1);
+            var resolved = Assert.Single(bound.Rounds[0].Matches);
+            Assert.Equal("player-a", resolved.Result);
+            Assert.Equal("late-game-record", resolved.RecordedMatchId);
+            Assert.Contains(resolved.Events, item => item.Kind == "game-result-after-ruling"
+                && item.Result == "player-b");
+            var replay = store.RecordTournamentGameResult(tournament.Id, match.Id, "late-game-record", 1);
+            Assert.Equal(bound.Version, replay.Version);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void StartingRoundStartsReadyTablesWithoutWaitingForOtherTables()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "PartialReady");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("single") with { LateGraceMinutes = 5 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("partial-start"), true);
+            var first = tournament.Rounds[0].Matches[0];
+            var second = tournament.Rounds[0].Matches[1];
+            var accounts = players.Append(organizer).ToDictionary(item => item.Id, StringComparer.Ordinal);
+
+            foreach (var accountId in new[] { first.PlayerAAccountId, first.PlayerBAccountId! })
+                tournament = store.CheckInTournament(accounts[accountId], tournament.Id, 1,
+                    new L12TournamentCheckInPayload(null, true), tournament.Version,
+                    Context($"ready-{accountId}"), true);
+            tournament = store.CheckInTournament(accounts[second.PlayerAAccountId], tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("one-player-late-table"), true);
+
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("start-ready-tables"), true);
+
+            var round = Assert.Single(tournament.Rounds);
+            Assert.Equal("running", round.Status);
+            Assert.Equal("running", round.Matches.Single(item => item.Id == first.Id).Status);
+            var waiting = round.Matches.Single(item => item.Id == second.Id);
+            Assert.Equal("waiting", waiting.Status);
+            Assert.NotNull(waiting.GraceDeadline);
+            Assert.Contains(waiting.Events, item => item.Kind == "late-grace");
+            Assert.NotNull(store.TournamentRoomAssignment(first.PlayerAAccountId, tournament.Id, first.Id, false));
+            Assert.Throws<L12TournamentVersionConflictException>(() =>
+                store.TournamentRoomAssignment(second.PlayerAAccountId, tournament.Id, second.Id, false));
+
+            var before = tournament.Version;
+            Assert.Throws<L12TournamentVersionConflictException>(() =>
+                store.ApplyTournamentRuling(organizer, tournament.Id, second.Id,
+                    new L12TournamentRulingPayload("no-show", second.PlayerBAccountId, "no-show-b", "too early"),
+                    tournament.Version, Context("early-no-show"), true));
+            Assert.Equal(before, store.Tournament(organizer, tournament.Id)!.Version);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void ZeroMinuteGraceAllowsImmediateDeterministicNoShowRuling()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "NoShow");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("single") with { LateGraceMinutes = 0 });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("no-show-start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("zero-grace-start"), true);
+            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                new L12TournamentRulingPayload("no-show", match.PlayerBAccountId, "no-show-b", "grace elapsed"),
+                tournament.Version, Context("no-show-b"), true);
+
+            var completed = Assert.Single(tournament.Rounds[0].Matches);
+            Assert.Equal("completed", completed.Status);
+            Assert.Equal("no-show-b", completed.Result);
+            Assert.Equal("completed", tournament.Rounds[0].Status);
+            Assert.Contains(completed.Events, item => item.Kind == "no-show");
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void CodeOnlyTournamentIsHiddenFromDiscoveryButReadableThroughStableShareCode()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "ShareLink");
+            var tournament = CreateAndRegister(store, organizer, players,
+                Payload("swiss") with { Visibility = "code" });
+            var visitor = store.Register("tshare0731d", "password-123").Account!;
+
+            Assert.DoesNotContain(store.Tournaments(visitor, null, null, false).Items,
+                item => item.Id == tournament.Id);
+            var shared = store.TournamentByCode(visitor, tournament.Code);
+            Assert.NotNull(shared);
+            Assert.Equal(tournament.Id, shared.Id);
+            var visitorDeck = store.Decks(visitor.Id)[0];
+            var joined = store.RegisterTournament(visitor, shared.Id,
+                new L12TournamentRegistrationPayload(), shared.Version,
+                Context("join-from-share"), true);
+            joined = store.PreCheckInTournament(visitor, joined.Id,
+                new L12TournamentPreCheckInPayload(visitorDeck.Name, string.Empty), joined.Version,
+                Context("check-in-from-share"), true);
+            Assert.Contains(joined.Participants, item => item.AccountId == visitor.Id
+                && item.Deck?.Name == visitorDeck.Name);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void RegistrationDoesNotRequireADeckAndPreCheckInLocksTheValidatedSnapshot()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "PreCheckIn");
+            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            var player = players[0];
+            tournament = store.RegisterTournament(player, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, Context("register-without-deck"), true);
+            var registered = tournament.Participants.Single(item => item.AccountId == player.Id);
+            Assert.Null(registered.Deck);
+            Assert.Null(registered.TournamentCheckedInAt);
+
+            var deck = store.Decks(player.Id)[0];
+            tournament = store.PreCheckInTournament(player, tournament.Id,
+                new L12TournamentPreCheckInPayload(deck.Name, string.Empty), tournament.Version,
+                Context("pre-check-in"), true);
+            var checkedIn = tournament.Participants.Single(item => item.AccountId == player.Id);
+            Assert.NotNull(checkedIn.TournamentCheckedInAt);
+            Assert.NotNull(checkedIn.Deck?.LockedAt);
+            Assert.Throws<L12TournamentVersionConflictException>(() => store.PreCheckInTournament(player,
+                tournament.Id, new L12TournamentPreCheckInPayload("另一副牌", "OTHER"), tournament.Version,
+                Context("replace-locked-deck"), true));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void OrganizerCanRemoveAndBanBeforeOrDuringPlayWithoutChangingPastResults()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "RemoveBan");
+            var tournament = CreateAndRegister(store, organizer, players, Payload("single"));
+            var removed = players[0];
+            tournament = store.RemoveTournamentParticipant(organizer, tournament.Id,
+                new L12TournamentRemoveParticipantPayload(removed.Id, true, "违反赛事要求"), tournament.Version,
+                Context("remove-ban"), true);
+            var participant = tournament.Participants.Single(item => item.AccountId == removed.Id);
+            Assert.True(participant.Removed);
+            Assert.True(participant.RegistrationBanned);
+            Assert.Throws<L12TournamentScopeException>(() => store.RegisterTournament(removed, tournament.Id,
+                new L12TournamentRegistrationPayload(), tournament.Version, Context("banned-rejoin"), true));
+
+            tournament = store.SetTournamentRegistrationBan(organizer, tournament.Id,
+                new L12TournamentRegistrationBanPayload(removed.Id, false, "允许重新报名"), tournament.Version,
+                Context("unban"), true);
+            tournament = store.RegisterTournament(removed, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, Context("rejoin"), true);
+            Assert.False(tournament.Participants.Single(item => item.AccountId == removed.Id).Removed);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void OrganizerTransferRequiresSuccessorAcceptanceAndKeepsTournamentState()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "Transfer");
+            var successor = players[0];
+            MakeFriends(store, organizer, successor);
+            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
+                new L12TournamentOrganizerTransferRequestPayload(successor.Id, "由接任者继续控场"),
+                tournament.Version, Context("request-transfer"), true);
+            Assert.Equal(organizer.Id, tournament.OrganizerAccountId);
+            Assert.NotNull(tournament.PendingOrganizerTransfer);
+
+            tournament = store.DecideTournamentOrganizerTransfer(successor, tournament.Id,
+                new L12TournamentOrganizerTransferDecisionPayload(tournament.PendingOrganizerTransfer!.Id, true),
+                tournament.Version, Context("accept-transfer"), true);
+            Assert.Equal(successor.Id, tournament.OrganizerAccountId);
+            Assert.Null(tournament.PendingOrganizerTransfer);
+            Assert.Contains(tournament.OrganizerTransferHistory, item => item.Status == "accepted");
+            Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([]), tournament.Version, Context("former-organizer"), true));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void OrganizerTransferRevalidatesSuccessorEligibilityWhenAccepted()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "TransferEligibility");
+            var successor = players[0];
+            MakeFriends(store, organizer, successor);
+            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
+                new L12TournamentOrganizerTransferRequestPayload(successor.Id, "由接任者继续控场"),
+                tournament.Version, Context("request-transfer"), true);
+
+            Assert.True(store.RemoveFriend(organizer.Id, successor.Id));
+            Assert.Throws<L12TournamentScopeException>(() => store.DecideTournamentOrganizerTransfer(successor,
+                tournament.Id,
+                new L12TournamentOrganizerTransferDecisionPayload(tournament.PendingOrganizerTransfer!.Id, true),
+                tournament.Version, Context("accept-after-eligibility-lost"), true));
+
+            var unchanged = store.Tournament(organizer, tournament.Id)!;
+            Assert.Equal(organizer.Id, unchanged.OrganizerAccountId);
+            Assert.Equal("pending", unchanged.PendingOrganizerTransfer?.Status);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void PublicTournamentViewDoesNotLeakModerationReasonsOrOrganizerTransferHistory()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "TournamentPrivacy");
+            var removed = players[0];
+            var successor = players[1];
+            var outsider = players[2];
+            MakeFriends(store, organizer, successor);
+            var tournament = store.CreateTournament(organizer, Payload("single"), Context("create"), true);
+            tournament = store.RegisterTournament(removed, tournament.Id,
+                new L12TournamentRegistrationPayload(), tournament.Version, Context("register"), true);
+            tournament = store.RequestTournamentOrganizerTransfer(organizer, tournament.Id,
+                new L12TournamentOrganizerTransferRequestPayload(successor.Id, "仅工作人员与接任者可见"),
+                tournament.Version, Context("request-transfer"), true);
+            tournament = store.RemoveTournamentParticipant(organizer, tournament.Id,
+                new L12TournamentRemoveParticipantPayload(removed.Id, true, "内部处置原因"),
+                tournament.Version, Context("remove"), true);
+
+            var publicView = store.Tournament(outsider, tournament.Id)!;
+            var publicParticipant = publicView.Participants.Single(item => item.AccountId == removed.Id);
+            Assert.True(publicParticipant.Removed);
+            Assert.False(publicParticipant.RegistrationBanned);
+            Assert.Null(publicParticipant.RemovalReason);
+            Assert.Null(publicView.PendingOrganizerTransfer);
+            Assert.Empty(publicView.OrganizerTransferHistory);
+
+            var successorView = store.Tournament(successor, tournament.Id)!;
+            Assert.Equal(successor.Id, successorView.PendingOrganizerTransfer?.ToAccountId);
+            Assert.Empty(successorView.OrganizerTransferHistory);
+
+            var organizerView = store.Tournament(organizer, tournament.Id)!;
+            Assert.True(organizerView.Participants.Single(item => item.AccountId == removed.Id).RegistrationBanned);
+            Assert.Equal("内部处置原因", organizerView.Participants.Single(item => item.AccountId == removed.Id).RemovalReason);
+            Assert.NotEmpty(organizerView.OrganizerTransferHistory);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task TournamentClockAndRoomRecoverFromTheDurableCheckpointAfterRestart()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        MatchRecorder? restoredRecorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 2, "Recover");
+            var player = players[0];
+            var tournament = CreateAndRegister(store, organizer, [player], Payload("single") with
+            {
+                TimeControl = new L12RankedTimeControlConfig(840, 75, 105, 35, 40),
+            });
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("recovery-start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            tournament = store.CheckInTournament(organizer, tournament.Id, 1,
+                new L12TournamentCheckInPayload(organizer.Id, true), tournament.Version,
+                Context("recovery-ready-a"), true);
+            tournament = store.CheckInTournament(player, tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                Context("recovery-ready-b"), true);
+            tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
+                Context("recovery-round"), true);
+
+            var database = Path.Combine(root, "matches.db");
+            recorder = new MatchRecorder(database);
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var organizerSession = Guid.NewGuid();
+            var playerSession = Guid.NewGuid();
+            rooms.Connect(organizerSession, organizer.Id, organizer.Username);
+            rooms.Connect(playerSession, player.Id, player.Username);
+            await rooms.EnterTournamentMatchAsync(organizerSession, tournament.Id, match.Id);
+            var started = await rooms.EnterTournamentMatchAsync(playerSession, tournament.Id, match.Id);
+            Assert.Contains(started, message => MessageType(message.Payload) == "gameState");
+            await recorder.DisposeAsync();
+            recorder = null;
+
+            restoredRecorder = new MatchRecorder(database);
+            await restoredRecorder.InitializeAsync();
+            var restoredRooms = new L12RoomManager(catalog, restoredRecorder, store);
+            var summary = await restoredRooms.RestoreRankedRoomsAsync();
+            Assert.Equal(1, summary.Restored);
+            var replacement = Guid.NewGuid();
+            var claim = await restoredRooms.ConnectAsync(replacement, organizer.Id, organizer.Username);
+            Assert.True(claim.Recovered);
+            Assert.Equal(match.RoomCode, claim.RoomCode);
+            var recovery = await restoredRooms.RecoveryStateWithAckAsync(replacement, recovered: true);
+            var game = recovery.Where(item => item.SessionId == replacement)
+                .Select(item => JsonSerializer.SerializeToElement(item.Payload))
+                .Last(item => item.GetProperty("type").GetString() == "gameState");
+            Assert.Equal(match.Id, game.GetProperty("tournamentMatchId").GetString());
+            Assert.Equal(840, game.GetProperty("rankedClock").GetProperty("TimeControl")
+                .GetProperty("TotalTimeSeconds").GetInt32());
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            if (restoredRecorder is not null) await restoredRecorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void WaitlistPromotionLifecycleStartCheckAndCancellationAreAuthoritative()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 4, "Waitlist");
+            var tournament = store.CreateTournament(organizer,
+                Payload("single") with { MaxPlayers = 2 }, Context("create-waitlist"), true);
+            tournament = store.RegisterTournament(players[0], tournament.Id,
+                new L12TournamentRegistrationPayload(), tournament.Version, Context("register-formal"), true);
+            tournament = store.RegisterTournament(players[1], tournament.Id,
+                new L12TournamentRegistrationPayload(), tournament.Version, Context("register-waitlist"), true);
+            var waiting = tournament.Participants.Single(item => item.AccountId == players[1].Id);
+            Assert.True(waiting.Waitlisted);
+            Assert.Equal(1, waiting.WaitlistPosition);
+            Assert.Equal(1, tournament.Counts.Waitlisted);
+            Assert.Throws<L12TournamentScopeException>(() => store.PreCheckInTournament(players[1],
+                tournament.Id, new L12TournamentPreCheckInPayload("deck", "legacy"), tournament.Version,
+                Context("waitlist-cannot-lock"), true));
+
+            tournament = store.DropTournament(players[0], tournament.Id, tournament.Version,
+                Context("release-seat"), true);
+            var promoted = tournament.Participants.Single(item => item.AccountId == players[1].Id);
+            Assert.False(promoted.Waitlisted);
+            Assert.NotNull(promoted.PromotedAt);
+            tournament = SelectDeck(store, organizer, tournament, update: true);
+            tournament = SelectDeck(store, players[1], tournament, update: true);
+            var check = store.TournamentStartCheck(organizer, tournament.Id);
+            Assert.True(check.CanStart);
+            Assert.Empty(check.Blockers);
+
+            var postponed = DateTimeOffset.UtcNow.AddDays(2);
+            tournament = store.PostponeTournament(organizer, tournament.Id,
+                new L12TournamentPostponePayload(postponed, "场地调整"), tournament.Version,
+                Context("postpone"), true);
+            Assert.Equal(postponed, tournament.StartAt);
+            Assert.Single(tournament.Postponements);
+            tournament = store.SetTournamentPhase(organizer, tournament.Id,
+                new L12TournamentPhasePayload("registration-closed", "名单确认"), tournament.Version,
+                Context("registration-close"), true);
+            Assert.False(tournament.RegistrationOpen);
+            Assert.Equal("registration-closed", tournament.Phase);
+            tournament = store.SetTournamentPhase(organizer, tournament.Id,
+                new L12TournamentPhasePayload("pre-check-in", "进入赛前签到"), tournament.Version,
+                Context("pre-check-in"), true);
+            Assert.Equal("pre-check-in", tournament.Phase);
+            Assert.Throws<L12TournamentVersionConflictException>(() => store.RegisterTournament(players[2],
+                tournament.Id, new L12TournamentRegistrationPayload(), tournament.Version,
+                Context("closed-registration"), true));
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("start-after-check"), true);
+            tournament = store.CancelTournament(organizer, tournament.Id,
+                new L12TournamentCancelPayload("不可抗力"), tournament.Version,
+                Context("cancel-running"), true);
+            Assert.Equal("canceled", tournament.Status);
+            Assert.Equal("canceled", tournament.Phase);
+            Assert.NotNull(tournament.CanceledAt);
+            Assert.Equal("不可抗力", store.Tournament(players[2], tournament.Id)?.CancellationReason);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void JudgeCasesSupportAssignmentRecusalResolutionAndOneAppeal()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 3, "JudgeCase");
+            var player = players[0];
+            var referee = players[1];
+            MakeFriends(store, organizer, referee);
+            var tournament = CreateAndRegister(store, organizer, [player], Payload("single"));
+            tournament = store.SetTournamentStaff(organizer, tournament.Id,
+                new L12TournamentStaffPayload([referee.Id]), tournament.Version,
+                Context("set-referee"), true);
+            tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
+                Context("start"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            tournament = store.CreateTournamentJudgeCase(player, tournament.Id,
+                new L12TournamentJudgeCaseCreatePayload(match.Id, "rules", "urgent", "需要解释结算顺序"),
+                tournament.Version, Context("call-judge"), true);
+            var judgeCase = Assert.Single(tournament.JudgeCases);
+            Assert.False(judgeCase.CanManage);
+            Assert.Throws<L12TournamentScopeException>(() => store.AssignTournamentJudgeCase(organizer,
+                tournament.Id, new L12TournamentJudgeCaseAssignPayload(judgeCase.Id, organizer.Id, "自行受理"),
+                tournament.Version, Context("conflicted-assign"), true));
+
+            tournament = store.AssignTournamentJudgeCase(organizer, tournament.Id,
+                new L12TournamentJudgeCaseAssignPayload(judgeCase.Id, referee.Id, "分派无利益冲突裁判"),
+                tournament.Version, Context("assign"), true);
+            tournament = store.ResolveTournamentJudgeCase(referee, tournament.Id,
+                new L12TournamentJudgeCaseResolvePayload(judgeCase.Id, "ruled", "按当前步骤继续", "内部核对完成"),
+                tournament.Version, Context("resolve"), true);
+            tournament = store.AppealTournamentJudgeCase(player, tournament.Id,
+                new L12TournamentJudgeCaseAppealPayload(judgeCase.Id, "请求主办复核"), tournament.Version,
+                Context("appeal"), true);
+            Assert.Equal("appealed", Assert.Single(tournament.JudgeCases).Status);
+            Assert.Throws<L12TournamentVersionConflictException>(() => store.AppealTournamentJudgeCase(player,
+                tournament.Id, new L12TournamentJudgeCaseAppealPayload(judgeCase.Id, "重复申诉"),
+                tournament.Version, Context("appeal-again"), true));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void TournamentSummaryPaginationDoesNotReturnTheFullAggregate()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, _) = CreateStoreAndPlayers(root, 1, "Summary");
+            for (var index = 0; index < 31; index++)
+                store.CreateTournament(organizer, Payload("single") with { Name = $"分页赛事 {index:00}" },
+                    Context($"create-{index}"), true);
+            var first = store.TournamentSummaries(organizer, "host", null, null, 1, 12);
+            var third = store.TournamentSummaries(organizer, "host", null, null, 3, 12);
+            Assert.Equal(31, first.Total);
+            Assert.Equal(3, first.TotalPages);
+            Assert.Equal(12, first.Items.Count);
+            Assert.Equal(7, third.Items.Count);
+            Assert.All(first.Items, item => Assert.Equal("organizer", item.ViewerRole));
+            var careerFirst = store.TournamentCareer(organizer, page: 1, pageSize: 12);
+            var careerThird = store.TournamentCareer(organizer, page: 3, pageSize: 12);
+            Assert.Equal(31, careerFirst.Total);
+            Assert.Equal(3, careerFirst.TotalPages);
+            Assert.Equal(12, careerFirst.Items.Count);
+            Assert.Equal(7, careerThird.Items.Count);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void MaximumCapacityTournamentKeepsListPayloadBoundedAndCountsAuthoritative()
+    {
+        var root = TempRoot();
+        try
+        {
+            var (store, organizer, players) = CreateStoreAndPlayers(root, 256, "Capacity");
+            var tournament = store.CreateTournament(organizer,
+                Payload("swiss") with { Name = "256 人规模赛事", MaxPlayers = 256, SwissRounds = 8 },
+                Context("create-capacity"), true);
+            foreach (var player in players)
+                tournament = store.RegisterTournament(player, tournament.Id,
+                    new L12TournamentRegistrationPayload(), tournament.Version,
+                    Context($"register-{player.Id}"), true);
+
+            Assert.Equal(256, tournament.Counts.Registered);
+            Assert.Equal(256, tournament.Counts.PendingCheckIn);
+            Assert.Equal(0, tournament.Counts.Waitlisted);
+            var summaries = store.TournamentSummaries(organizer, "host", "swiss", "规模", 1, 24);
+            var summary = Assert.Single(summaries.Items);
+            Assert.Equal(256, summary.Counts.Registered);
+            Assert.Equal(256, summary.MaxPlayers);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    private static (L12PlatformStore Store, L12AccountView Organizer, L12AccountView[] Players)
+        CreateStoreAndPlayers(string root, int totalPlayers, string prefix)
+    {
+        var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+        var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+            officialCards: catalog.Cards);
+        var fixturePrefix = $"t{prefix[..Math.Min(6, prefix.Length)]}";
+        var organizer = store.Register($"{fixturePrefix}H", "password-123").Account!;
+        var players = Enumerable.Range(2, totalPlayers - 1)
+            .Select(index => store.Register($"{fixturePrefix}P{index}", "password-123").Account!).ToArray();
+        return (store, organizer, players);
+    }
+
+    private static L12TournamentView CreateAndRegister(L12PlatformStore store, L12AccountView organizer,
+        IReadOnlyList<L12AccountView> players, L12TournamentCreatePayload payload)
+    {
+        var tournament = store.CreateTournament(organizer, payload, Context("create"), true);
+        tournament = SelectDeck(store, organizer, tournament, update: true);
+        foreach (var player in players)
+            tournament = SelectDeck(store, player, tournament, update: false);
+        return tournament;
+    }
+
+    private static L12TournamentView SelectDeck(L12PlatformStore store, L12AccountView account,
+        L12TournamentView tournament, bool update)
+    {
+        var decks = store.Decks(account.Id);
+        var deck = decks[Math.Abs(StringComparer.Ordinal.GetHashCode(account.Id)) % decks.Count];
+        var payload = new L12TournamentRegistrationPayload(deck.Name, string.Empty);
+        tournament = update
+            ? store.UpdateTournamentRegistration(account, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, Context($"registration-{account.Id}"), true)
+            : store.RegisterTournament(account, tournament.Id, new L12TournamentRegistrationPayload(),
+                tournament.Version, Context($"registration-{account.Id}"), true);
+        return store.PreCheckInTournament(account, tournament.Id,
+            new L12TournamentPreCheckInPayload(payload.DeckName!, payload.DeckCode ?? string.Empty),
+            tournament.Version, Context($"pre-check-in-{account.Id}"), true);
+    }
+
+    private static L12TournamentCreatePayload Payload(string format)
+        => new("完整流程赛事", format, "public", 32, DateTimeOffset.UtcNow.AddHours(1), "S01/S02",
+            "full flow", "after", "season", string.Empty, 50, 5,
+            RegistrationVisibility: "public", LateGraceMinutes: 5);
+
+    private static void MakeFriends(L12PlatformStore store, L12AccountView first, L12AccountView second)
+    {
+        Assert.True(store.SendFriendRequest(first.Id, second.Id).Success);
+        Assert.True(store.ResolveFriendRequest(second.Id, first.Id, true).Success);
+    }
+
+    private static string PairKey(string first, string second)
+        => string.CompareOrdinal(first, second) < 0 ? $"{first}|{second}" : $"{second}|{first}";
+
+    private static string DecisionForWinner(L12TournamentMatchView match, IReadOnlySet<string> winners)
+    {
+        if (winners.Contains(match.PlayerAAccountId)) return "player-a";
+        if (match.PlayerBAccountId is not null && winners.Contains(match.PlayerBAccountId)) return "player-b";
+        throw new InvalidOperationException("测试未为该桌指定胜者");
+    }
+
+    private static string MessageType(object payload)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload));
+        return document.RootElement.GetProperty("type").GetString() ?? string.Empty;
+    }
+
+    private static L12AdminAuditContext Context(string correlationId)
+        => new(correlationId, "tournaments.manage", RequestMethod: "TEST", RequestPath: "/test/tournaments");
+
+    private static string TempRoot()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"l12-tournament-full-flow-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
+}

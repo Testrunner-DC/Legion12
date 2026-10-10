@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-home-notice-internal",
+  "date": "2026-10-03",
+  "audience": "internal",
+  "reason": "首页通知关联已发布资讯的校验支持新独立资讯路由，并保留旧锚点地址、资讯发布状态及类型校验；仅后台内部修复，不更改线上通知或发布内容。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs", "TwelveLegions.Platform.Tests/HomeNoticeArticleRouteRegressionTests.cs"]
+}

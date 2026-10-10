@@ -17,7 +17,7 @@ public sealed partial class L12GameEngine
             ("S02-0610", "enter", _, _) => "finn-entry",
             ("S02-0614", "enter", _, _) => "constance-entry",
             ("S02-0610", "trial-advance-followup", "finnReady", _) => "finn-ready",
-            ("S02-06M2", "active", "angusTacticTrial", _) => "angus",
+            ("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _) => "angus",
             ("S02-06D1", "turn-start", "avalonTurnStart", _) => "avalon",
             _ => null,
         };
@@ -30,14 +30,17 @@ public sealed partial class L12GameEngine
     {
         var plan = TrialAdvanceTriggerPlan(candidate.SourceCardId, candidate.Trigger, candidate.Data);
         if (plan is null) return false;
+        candidate.Data.TryAdd("playerLogGroupId", $"effect:{candidate.CandidateId}");
+        candidate.Data.TryAdd("playerLogTiming", candidate.Trigger);
 
         var player = State.Players[candidate.Controller];
-        var hasOpenTrial = player.SpecialZones.Trials.Any(card => !card.TrialCompleted);
+        var hasOpenTrial = player.SpecialZones.Trials.Any(card => !card.TrialCompleted
+            && card.TrialProgress < 8);
         List<L12ActivationSelectionStep> steps = plan switch
         {
             "lancelot-entry" =>
             [PublicTriggerStep("option", "mode", "兰斯洛特：是否消耗1符文并获得冲锋",
-                ["mode:none", "mode:use"])],
+                player.SpecialZones.Runes > 0 ? ["mode:none", "mode:use"] : ["mode:none"])],
             "lancelot-kill" =>
             [PublicTriggerStep("option", "mode", "兰斯洛特：选择击杀时效果",
                 hasOpenTrial ? ["mode:none", "mode:trial", "mode:rune"] : ["mode:none", "mode:rune"])],
@@ -106,7 +109,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     L12S2ZoneOps.SpendRunes(player, 1);
-                    AddEvent("cost", candidate.Controller, $"〈{candidate.SourceName}〉入栈前消耗1符文", source);
+                    AddPlayerLogEvent("cost", candidate.Controller,
+                        $"〈{candidate.SourceName}〉入栈前消耗1符文",
+                        candidate.Data.GetValueOrDefault("playerLogGroupId"),
+                        candidate.Data.GetValueOrDefault("playerLogTiming") ?? candidate.Trigger,
+                        cards: source);
                 }
                 break;
             case "galahad-entry":
@@ -117,7 +124,11 @@ public sealed partial class L12GameEngine
                 else
                 {
                     source.Tapped = true;
-                    AddEvent("cost", candidate.Controller, $"〈{candidate.SourceName}〉入栈前休整以发动试炼", source);
+                    AddPlayerLogEvent("cost", candidate.Controller,
+                        $"〈{candidate.SourceName}〉入栈前休整以发动试炼",
+                        candidate.Data.GetValueOrDefault("playerLogGroupId"),
+                        candidate.Data.GetValueOrDefault("playerLogTiming") ?? candidate.Trigger,
+                        cards: source);
                 }
                 break;
             case "lancelot-kill" when mode == "mode:trial":
@@ -135,7 +146,7 @@ public sealed partial class L12GameEngine
         foreach (var pair in activation.DeclaredValues)
             candidate.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
         candidate.Data["trialAdvancePlan"] = plan;
-        if (plan is "lancelot-kill" or "constance-entry")
+        if (plan is "lancelot-entry" or "lancelot-kill" or "constance-entry" or "finn-ready" or "avalon")
         {
             candidate.Data["presentationFlow"] = $"trial-advance:{plan}";
             RefreshDeclaredPresentationSceneId(candidate, source
@@ -156,6 +167,8 @@ public sealed partial class L12GameEngine
     private CommandResult BeginTrialAdvanceActivation(int playerIndex, L12CardInstance source)
     {
         var player = State.Players[playerIndex];
+        if (!L12StructuredCardRules.IsTrialLegion(source))
+            return CommandResult.Reject("只有【试炼军团】可以发动试炼");
         if (source.Tapped) return CommandResult.Reject("该军团必须为活跃状态");
         if (source.SummonRound >= State.Round) return CommandResult.Reject("登场回合不能通过通常行动发动试炼");
         if (player.SpecialZones.Trials.All(card => card.TrialCompleted)) return CommandResult.Reject("没有尚未完成的试炼");
@@ -166,7 +179,7 @@ public sealed partial class L12GameEngine
 
     private CommandResult? TryCommitTrialAdvanceActivation(int playerIndex, L12CardInstance source, string ability)
     {
-        if (ability != "trialAdvance" || source.TrialValue <= 0) return null;
+        if (ability != "trialAdvance" || !L12StructuredCardRules.IsTrialLegion(source)) return null;
         var player = State.Players[playerIndex];
         if (source.Tapped || source.SummonRound >= State.Round
             || player.SpecialZones.Trials.All(card => card.TrialCompleted)
@@ -184,9 +197,17 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[playerIndex];
         source.Tapped = true;
+        var stateFact = AddPlayerCardStateTransitionEvent(playerIndex, source,
+            fromTapped: false, toTapped: true, $"〈{source.Name}〉休整并发动试炼");
         AddEvent("trial-action", playerIndex, $"〈{source.Name}〉休整并发动试炼", source);
-        if (AdvanceTrial(playerIndex, source.TrialValue, source))
-            QueueFinnReadyAfterTrial(playerIndex, source);
+        AttachPresentationFactSequencesToLastEvent([stateFact]);
+        if (source.CardId == TrialAdvanceFinnCardId)
+        {
+            if (AdvanceTrialWithoutAngusTrigger(playerIndex, source.TrialValue, source))
+                QueueFinnTrialAdvanceFollowups(playerIndex, source, source);
+        }
+        else
+            _ = AdvanceTrial(playerIndex, source.TrialValue, source);
         return CommandResult.Ok();
     }
 
@@ -200,15 +221,22 @@ public sealed partial class L12GameEngine
         switch (plan)
         {
             case "generic":
-                if (AdvanceTrial(item.Controller, int.Parse(item.Data["trialAdvanceCount"]), item.SourceSnapshot ?? source))
-                    QueueFinnReadyAfterTrial(item.Controller, source);
+                if (source?.CardId == TrialAdvanceFinnCardId)
+                {
+                    if (AdvanceTrialWithoutAngusTrigger(item.Controller, int.Parse(item.Data["trialAdvanceCount"]),
+                            item.SourceSnapshot ?? source))
+                        QueueFinnTrialAdvanceFollowups(item.Controller, source, item.SourceSnapshot ?? source);
+                }
+                else
+                    _ = AdvanceTrial(item.Controller, int.Parse(item.Data["trialAdvanceCount"]), item.SourceSnapshot ?? source);
                 break;
             case "galahad-entry":
                 _ = AdvanceTrial(item.Controller, 2, item.SourceSnapshot ?? source);
                 break;
             case "finn-entry":
-                if (AdvanceTrial(item.Controller, 1, item.SourceSnapshot ?? source))
-                    QueueFinnReadyAfterTrial(item.Controller, source);
+                if (item.SourceSnapshot is { } finnSnapshot
+                    && AdvanceTrialWithoutAngusTrigger(item.Controller, 1, finnSnapshot))
+                    QueueFinnTrialAdvanceFollowups(item.Controller, source, finnSnapshot);
                 break;
             case "constance-entry":
                 if (mode == "mode:trial") _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot ?? source);
@@ -222,7 +250,7 @@ public sealed partial class L12GameEngine
                 break;
             case "lancelot-entry":
                 if (source is not null) source.HasCharge = true;
-                else AddEvent("effect-cancelled", item.Controller, "兰斯洛特已离场；获得冲锋段取消，已支付符文不返还");
+                else RecordResolutionFailure(item, "兰斯洛特已离场，无法获得冲锋；已支付符文不返还");
                 break;
             case "lancelot-kill":
                 if (mode == "mode:trial") _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot);
@@ -237,11 +265,11 @@ public sealed partial class L12GameEngine
             case "finn-ready":
                 if (source is not null)
                 {
-                    source.Tapped = false;
-                    player.UsedAbilities.Add($"trial-card-lock:{source.InstanceId}:{State.TurnSerial}");
-                    AddEvent("ready", item.Controller, "芬恩转为活跃，本回合不能再次发动试炼", source);
+                    var readyItem = ReadyCardByEffect(item.Controller, source, source,
+                        "芬恩转为活跃，本回合不能再次发动试炼", item);
+                    if (readyItem is not null) readyItem.Data["lockTrialCardUntilTurnEnd"] = "true";
                 }
-                else AddEvent("effect-cancelled", item.Controller, "芬恩已离场；转为活跃段取消，已支付符文不返还");
+                else RecordResolutionFailure(item, "芬恩已离场，无法转为活跃；已支付符文不返还");
                 break;
             case "angus":
                 _ = AdvanceTrial(item.Controller, 1, item.SourceSnapshot);
@@ -260,12 +288,29 @@ public sealed partial class L12GameEngine
 
     private void QueueFinnReadyAfterTrial(int playerIndex, L12CardInstance? source)
     {
-        if (source?.CardId != TrialAdvanceFinnCardId) return;
+        var candidate = BuildFinnReadyAfterTrialCandidate(playerIndex, source);
+        if (candidate is not null) QueueTriggerCandidates([candidate]);
+    }
+
+    private L12TriggerCandidate? BuildFinnReadyAfterTrialCandidate(int playerIndex, L12CardInstance? source)
+    {
+        if (source?.CardId != TrialAdvanceFinnCardId) return null;
         var player = State.Players[playerIndex];
-        if (FindOnField(player, source.InstanceId, out _, out _) is null || !source.Tapped
-            || player.SpecialZones.Runes < 1) return;
-        QueueTriggerCandidates([CreateTriggerCandidate(playerIndex, source, "trial-advance-followup",
-            "发动试炼后效果", new Dictionary<string, string> { ["ability"] = "finnReady" })]);
+        if (FindOnField(player, source.InstanceId, out _, out _) is null || !source.Tapped) return null;
+        // 是否有符文属于该可选效果轮到声明时的资格，不能在同刻的安格斯效果结算前裁掉。
+        return CreateTriggerCandidate(playerIndex, source, "trial-advance-followup",
+            "发动试炼后效果", new Dictionary<string, string> { ["ability"] = "finnReady" });
+    }
+
+    private void QueueFinnTrialAdvanceFollowups(int playerIndex, L12CardInstance? fieldSource,
+        L12CardInstance advanceSource)
+    {
+        var candidates = new List<L12TriggerCandidate>();
+        if (BuildS2AngusTrialAdvanceRuneCandidate(playerIndex, advanceSource) is { } angus)
+            candidates.Add(angus);
+        if (BuildFinnReadyAfterTrialCandidate(playerIndex, fieldSource) is { } finn)
+            candidates.Add(finn);
+        if (candidates.Count > 0) QueueTriggerCandidates(candidates);
     }
 
     private void QueueAvalonTurnStart(int playerIndex)

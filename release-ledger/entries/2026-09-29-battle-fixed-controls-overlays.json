@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-battle-fixed-controls-overlays",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "对战与回放固定控件不再被蒙版遮挡",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对战和观战中的返回大厅、玩家投降等固定控件不会再被选择弹框、等待层或特殊胜利演出遮挡；蒙版仍会阻止战场误操作。移动端若已展开卡牌详情，终局演出和结果页期间会暂时隐藏，最小化结果后可恢复。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/game/BattleDockPortal.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css",
+        "opcgpro-vue/src/l12/game/mobileBattleDock.ts",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.vue",
+        "opcgpro-vue/src/l12/game/OsirisVictorySequence.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    },
+    {
+      "category": "replays",
+      "text": "回放播放、暂停、进度和返回控件在回放蒙版出现时仍保持可见可操作，回放画面本身继续受到蒙版保护。",
+      "paths": [
+        "opcgpro-vue/src/l12/ReplayPage.vue",
+        "opcgpro-vue/src/l12/game/BattleDockPortal.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css"
+      ]
+    }
+  ]
+}

@@ -31,11 +31,11 @@ public sealed partial class L12GameEngine
             Shuffle(all);
             State.DisasterDeck.AddRange(all);
             State.DisasterDeck.Add(CreateCard("S01-DS10", "disaster-final"));
-            AddEvent("shuffle", null, "洗切测试沙盒天灾牌库，〈堙灭〉固定置于最底部");
+            AddEvent("shuffle", null, "洗切测试沙盒天灾牌库，〈湮灭〉固定置于最底部");
             State.DisasterPool.Clear();
             SetDisasterValue(0);
         }
-        AddEvent("gm", null, "[GM] 已为测试沙盒建立天灾牌库；〈堙灭〉固定置于最底部");
+        AddEvent("gm", null, "[GM] 已为测试沙盒建立天灾牌库；〈湮灭〉固定置于最底部");
     }
 
     /// <summary>
@@ -43,6 +43,9 @@ public sealed partial class L12GameEngine
     /// 玩家、卡号、区域和位置，且所有成功动作都会写入对局事件并增加 revision。
     /// </summary>
     public CommandResult HandleGm(L12GmCommand command)
+        => ExecuteRecordedCommand(() => HandleGmCore(command));
+
+    private CommandResult HandleGmCore(L12GmCommand command)
     {
         if (command.TargetPlayer is < 0 or > 1) return CommandResult.Reject("GM 目标玩家无效");
         if (string.IsNullOrWhiteSpace(command.Type)) return CommandResult.Reject("缺少 GM 操作类型");
@@ -143,6 +146,7 @@ public sealed partial class L12GameEngine
         };
         if (destination.Length == 0) return CommandResult.Reject("请选择手牌要前往的合法区域");
         player.Hand.Remove(card);
+        ResetCardForPrivateZone(card);
         switch (destination)
         {
             case "library-top": player.Library.Insert(0, card); break;
@@ -168,16 +172,18 @@ public sealed partial class L12GameEngine
             var targetSlot = command.Slot.GetValueOrDefault();
             if (player.Field[targetRow][targetSlot] is not null)
                 return CommandResult.Reject("目标阵地已有卡牌");
-            if (removeFromHand) player.Hand.Remove(card);
+            if (removeFromHand)
+            {
+                player.Hand.Remove(card);
+                ResetCardForFieldEntry(card);
+            }
             card.SummonRound = State.Round;
             player.Field[targetRow][targetSlot] = card;
         }
         else if (card.CardType == "artifact")
         {
             if (removeFromHand) player.Hand.Remove(card);
-            card.SummonRound = State.Round;
-            if (player.Relic is not null) DiscardRelic(player, player.Relic);
-            player.Relic = card;
+            PlaceArtifactInRelicZone(command.TargetPlayer, card);
         }
         else if (card.CardType == "tactic")
         {
@@ -194,19 +200,34 @@ public sealed partial class L12GameEngine
         if (command.TriggerEffects)
         {
             var trigger = card.CardType is "legion" or "artifact" ? "enter" : "play";
-            if (HasImmediateEffect(card, trigger))
+            var thorEntryCandidate = card.CardType == "legion"
+                ? BuildThorGrantedEntryChargeCandidate(command.TargetPlayer, card)
+                : null;
+            var grailEntryCandidate = card.CardType == "legion"
+                ? BuildS2GrailRoundTableEntryCandidate(command.TargetPlayer, card)
+                : null;
+            if (card.CardType == "legion"
+                && (thorEntryCandidate is not null || grailEntryCandidate is not null))
+            {
+                var candidates = new List<L12TriggerCandidate>();
+                if (HasImmediateEffect(card, trigger))
+                    candidates.Add(CreateTriggerCandidate(command.TargetPlayer, card, trigger, "【登场时】效果"));
+                if (thorEntryCandidate is not null) candidates.Add(thorEntryCandidate);
+                if (grailEntryCandidate is not null) candidates.Add(grailEntryCandidate);
+                if (candidates.Count > 0) QueueTriggerCandidates(candidates);
+            }
+            else if (HasImmediateEffect(card, trigger))
                 QueueOrPushTriggeredEffect(command.TargetPlayer, card, trigger,
                     trigger == "enter" ? "【登场时】效果" : "战术效果");
             else if (player.Resolving.Remove(card))
             {
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 player.Graveyard.Add(card);
             }
-            if (card.CardType == "legion") QueueS2GrailRoundTableEntry(command.TargetPlayer, card);
         }
         else if (player.Resolving.Remove(card))
         {
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             player.Graveyard.Add(card);
         }
         TrySettleScheduledDisasterIfIdle();
@@ -258,7 +279,7 @@ public sealed partial class L12GameEngine
             if (card.AttachedCards.Count > 0)
                 DiscardAttachedCards(card, $"{card.Name}离开圣物区");
             var owner = CardOwner(card, controller);
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             if (vanishes)
             {
                 AddEvent("derived-vanished", owner.PlayerIndex,
@@ -419,10 +440,10 @@ public sealed partial class L12GameEngine
     private CommandResult GmTriggerDisaster()
     {
         if (!DisastersEnabled) return CommandResult.Reject("当前沙盒未启用天灾");
-        if (State.ActiveDisaster?.CardId == "S01-DS10") return CommandResult.Reject("最终天灾〈堙灭〉已触发");
+        if (L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)) return CommandResult.Reject("最终天灾〈湮灭〉已触发");
         if (State.DisasterDeck.Count == 0) return CommandResult.Reject("天灾牌库为空");
         SetDisasterValue(9, null, "[GM] 将天灾值设为触发阈值 9");
-        BeginDisasterTrigger(opening: false);
+        BeginDisasterTrigger(DisasterTriggerSourceGm);
         return CommandResult.Ok();
     }
 
@@ -432,7 +453,7 @@ public sealed partial class L12GameEngine
             return CommandResult.Reject("只有自定天灾沙盒可更换本局天灾");
         if (command.Slot is null || command.Slot is < 0 or > 3)
             return CommandResult.Reject("天灾槽位无效");
-        if (command.Slot == 3) return CommandResult.Reject("最终天灾〈堙灭〉固定在第四槽，不能更换");
+        if (command.Slot == 3) return CommandResult.Reject("最终天灾〈湮灭〉固定在第四槽，不能更换");
         if (!TryCreateGmCard(command, out var replacement, out var error)) return CommandResult.Reject(error);
         if (replacement.CardType != "destruction" || replacement.CardId == "S01-DS10")
             return CommandResult.Reject("请选择非最终天灾卡牌");
@@ -477,7 +498,7 @@ public sealed partial class L12GameEngine
             foreach (var resolving in player.Resolving.ToArray())
             {
                 player.Resolving.Remove(resolving);
-                ResetCardAfterLeavingField(resolving);
+                ResetCardForPrivateZone(resolving);
                 player.Graveyard.Add(resolving);
             }
         }
@@ -542,6 +563,7 @@ public sealed partial class L12GameEngine
 
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         switch (State.Phase)
         {
             case L12Phase.Disaster:
@@ -565,22 +587,32 @@ public sealed partial class L12GameEngine
                 AddEvent("phase", playerIndex, "执行抽牌阶段");
                 if (player.MasterId == "S01-03M1")
                 {
-                    Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+                    MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
+                        playerLogGroupId, "turn-start");
                     AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
                 }
                 else if (State.Round == 1 && playerIndex == State.FirstPlayer)
-                    AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+                    AddPlayerLogEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌",
+                        playerLogGroupId, "turn-start");
                 else if (!Draw(player, 1))
                 {
                     SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
                 }
-                else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+                else
+                {
+                    AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+                    AddPlayerLogEvent("draw", playerIndex, "回合开始时抽取 1 张牌",
+                        playerLogGroupId, "turn-start");
+                }
                 break;
             case L12Phase.Draw:
                 State.Phase = L12Phase.Morale;
                 AddEvent("phase", playerIndex, "执行士气阶段");
                 var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
                 AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+                if (moraleAdded > 0)
+                    AddPlayerLogEvent("morale", playerIndex, $"回合开始时追加 {moraleAdded} 张士气",
+                        playerLogGroupId, "turn-start");
                 break;
             case L12Phase.Morale:
                 State.Phase = L12Phase.Main;

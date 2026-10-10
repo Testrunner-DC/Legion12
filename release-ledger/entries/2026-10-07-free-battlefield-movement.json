@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-free-battlefield-movement",
+  "date": "2026-10-07",
+  "audience": "players",
+  "title": "免费位移入口修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "天下布武赋予免费位移后，0可用士气也能通过免费位移按钮选择合法相邻空位；每张符合条件的军团仍只可使用一次。希波吕忒的免费前后位移也只显示合法落点。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleActions.cs",
+        "opcgpro-vue/src/l12/game/PlayerMat.vue"
+      ]
+    }
+  ]
+}

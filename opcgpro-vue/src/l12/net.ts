@@ -1,14 +1,22 @@
 import { reactive } from 'vue'
 import type { GameState, RankedClockView, RoomState } from './types'
 import type { SavedL12Deck } from './decks'
-import type { EffectiveOperationsPolicy, RankedSettlement } from './platform'
+import type { EffectiveOperationsPolicy, PlatformPresence, RankedSettlement } from './platform'
 import type { MatchGovernanceResult } from './matchGovernance'
 import { createGameReentryController } from './gameReentry'
+import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
   | 'superseded' | 'disconnected'
 export type L12ConnectionIssue = 'none' | 'http' | 'websocket' | 'authentication' | 'maintenance' | 'superseded'
+export type ResponseMode = 'default' | 'valid-only' | 'invalid-five-seconds'
+export interface ResponsePreferenceState { confirmedMode: ResponseMode; syncPending: boolean }
+export interface ResponsePreferenceResult extends ResponsePreferenceState {
+  matchApplied: boolean
+  accountSynced: boolean
+  requestId?: string
+}
 export interface BugClientConnectionDiagnostic {
   capturedAt: string
   currentRoute: string
@@ -36,7 +44,7 @@ function normalizeEndpoint(value: string) {
 
 const configuredEndpoint = String(import.meta.env.VITE_WS_URL || '').trim()
 const defaultEndpoint = configuredEndpoint || (location.protocol === 'https:'
-  ? `wss://${location.host}/ws`
+  ? `wss://${location.host}${deploymentWebSocketPath()}`
   : `ws://${location.hostname || 'localhost'}:8080/ws`)
 const storedEndpoint = localStorage.getItem('l12-endpoint') || ''
 // 正式 HTTPS 页面必须跟随当前域名，避免历史调试地址在部署后把玩家永久带到旧服务。
@@ -61,6 +69,55 @@ let negotiatedRequestIds = false
 let pendingActionEnvelope: null | Record<string, unknown> = null
 let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
+let resourceFallbackTimer: ReturnType<typeof setTimeout> | null = null
+let resourceFallbackLastAt = 0
+const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'seasonSummaryNotifications', 'operationsPolicy', 'presence', 'rulesContent', 'tournaments'] as const
+const fallbackResourceNames = resourceNames.filter(resource => resource !== 'rulesContent')
+
+function dispatchResourceChange(resource: string, detail: Record<string, unknown> = {}) {
+  const eventDetail = { resource, ...detail }
+  window.dispatchEvent(new CustomEvent('l12-resource-changed', { detail: eventDetail }))
+  window.dispatchEvent(new CustomEvent(`l12-resource-${resource}`, { detail: eventDetail }))
+}
+
+function acceptResourceRevision(resource: string, epoch: unknown, revision: unknown, allowEqual = false) {
+  const nextEpoch = String(epoch || '')
+  if (nextEpoch && nextEpoch !== l12State.resourceEpoch) {
+    l12State.resourceEpoch = nextEpoch
+    l12State.resourceRevisions = {}
+  }
+  const nextRevision = Number(revision || 0)
+  const current = Number(l12State.resourceRevisions[resource] || 0)
+  if (nextRevision < current || (!allowEqual && nextRevision === current && current !== 0)) return false
+  l12State.resourceRevisions[resource] = nextRevision
+  return true
+}
+
+function cancelResourceFallback() {
+  if (resourceFallbackTimer !== null) window.clearTimeout(resourceFallbackTimer)
+  resourceFallbackTimer = null
+}
+
+function scheduleResourceFallback() {
+  cancelResourceFallback()
+  if (!automaticConnectionEnabled || !localStorage.getItem('l12-auth-token')) return
+  resourceFallbackTimer = window.setTimeout(() => {
+    resourceFallbackTimer = null
+    if (l12State.status === 'online' || !automaticConnectionEnabled) return
+    if (typeof document === 'undefined' || !document.hidden) {
+      resourceFallbackLastAt = Date.now()
+      fallbackResourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
+    }
+    scheduleResourceFallback()
+  }, 60_000)
+}
+
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && l12State.status !== 'online' && Date.now() - resourceFallbackLastAt >= 60_000) {
+    resourceFallbackLastAt = Date.now()
+    fallbackResourceNames.forEach(resource => dispatchResourceChange(resource, { fallback: true }))
+  }
+})
 
 function createActionRequestId() {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
@@ -199,11 +256,16 @@ export const l12State = reactive({
   room: null as RoomState | null,
   game: null as GameState | null,
   spectating: false,
+  observerView: 'public' as 'public' | 'referee',
   leavingRoom: false,
   gmEnabled: false,
   pendingAction: false,
   notice: '',
   operationsPolicy: null as EffectiveOperationsPolicy | null,
+  accountId: '',
+  presence: [] as PlatformPresence[],
+  resourceEpoch: '',
+  resourceRevisions: {} as Record<string, number>,
   friendInvitation: null as null | { invitationId: string; roomCode: string; fromAccountId: string; fromName: string },
   outgoingFriendInvitation: null as null | { invitationId: string; roomCode: string; targetAccountId: string },
   matchmaking: null as null | { queued: boolean; mode?: 'ranked' | 'casual'; joinedAt?: string },
@@ -211,6 +273,8 @@ export const l12State = reactive({
   rankedSettlement: null as RankedSettlement | null,
   rankedClock: null as RankedClockView | null,
   matchGovernanceResult: null as MatchGovernanceResult | null,
+  responsePreference: { confirmedMode: 'default', syncPending: false } as ResponsePreferenceState,
+  responsePreferenceResult: null as ResponsePreferenceResult | null,
   connectionGeneration: 0,
   recoveryPhase: 'idle' as L12RecoveryPhase,
   connectionIssue: 'none' as L12ConnectionIssue,
@@ -255,12 +319,7 @@ function socketReadyStateName(socket: WebSocket | null) {
 
 function httpEndpoint(path: string) {
   try {
-    const url = new URL(l12State.endpoint)
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    url.pathname = path
-    url.search = ''
-    url.hash = ''
-    return url.toString()
+    return `${endpointHttpBase(l12State.endpoint)}${path}`
   } catch { return `${location.protocol}//${location.hostname}:8080${path}` }
 }
 
@@ -430,9 +489,11 @@ export function connect(): Promise<void> {
       // Any current server message proves the receive path is still alive.
       unansweredHeartbeats = 0
       if (message.type === 'session') {
+        cancelResourceFallback()
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
+        l12State.accountId = String(message.accountId || '')
         l12State.nickname = message.name
         l12State.connectionGeneration = claimedGeneration
         l12State.recoveryPhase = 'session-claimed'
@@ -484,14 +545,42 @@ export function connect(): Promise<void> {
           l12State.game = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
           completePendingAction(message.requestId)
         }
         syncGameReentry()
       }
       else if (message.type === 'effectiveOperationsPolicy') {
-        l12State.operationsPolicy = message.policy
-        if (message.policy?.maintenance?.active) l12State.connectionIssue = 'maintenance'
+        const accepted = acceptResourceRevision('operationsPolicy', message.epoch, message.revision, true)
+        if (accepted && Number(message.policy?.version ?? 0) >= Number(l12State.operationsPolicy?.version ?? 0)) {
+          l12State.operationsPolicy = message.policy
+          dispatchResourceChange('operationsPolicy', { revision: message.revision })
+          if (message.policy?.maintenance?.active) l12State.connectionIssue = 'maintenance'
+          else if (l12State.connectionIssue === 'maintenance') l12State.connectionIssue = 'none'
+        }
+      }
+      else if (message.type === 'resourceVersions') {
+        const epoch = String(message.epoch || '')
+        if (epoch && epoch !== l12State.resourceEpoch) {
+          l12State.resourceEpoch = epoch
+          l12State.resourceRevisions = {}
+        }
+        for (const [resource, revision] of Object.entries(message.revisions || {}))
+          l12State.resourceRevisions[resource] = Number(revision || 0)
+        resourceNames.forEach(resource => dispatchResourceChange(resource, { fullSync: true }))
+      }
+      else if (message.type === 'resourceChanged') {
+        const resource = String(message.resource || '')
+        if (resourceNames.includes(resource as typeof resourceNames[number])
+          && acceptResourceRevision(resource, message.epoch, message.revision))
+          dispatchResourceChange(resource, { revision: message.revision })
+      }
+      else if (message.type === 'presenceSnapshot') {
+        if (acceptResourceRevision('presence', message.epoch, message.revision, true)) {
+          l12State.presence = Array.isArray(message.items) ? message.items : []
+          dispatchResourceChange('presence', { revision: message.revision })
+        }
       }
       else if (message.type === 'operationsBlocked') {
         l12State.notice = message.message || '当前运营规则不允许执行此操作'
@@ -564,6 +653,7 @@ export function connect(): Promise<void> {
         l12State.rankedClock = null
         l12State.matchGovernanceResult = null
         l12State.spectating = false
+        l12State.observerView = 'public'
         l12State.leavingRoom = false
         l12State.gmEnabled = false
         cancelPendingAction()
@@ -589,14 +679,26 @@ export function connect(): Promise<void> {
             ? { ...(message.rankedClock as RankedClockView), receivedAtMs: Date.now() }
             : null
           l12State.spectating = Boolean(message.spectating)
+          l12State.observerView = message.spectating && message.observerView === 'referee' ? 'referee' : 'public'
           l12State.gmEnabled = Boolean(message.gmEnabled)
           completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
+          if (message.responsePreference) l12State.responsePreference = message.responsePreference as ResponsePreferenceState
           if (l12State.status === 'connecting') l12State.recoveryPhase = 'snapshot-received'
           clearMatchmakingRecovery()
           l12State.matchFound = null
           if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
           syncGameReentry()
+        }
+      }
+      else if (message.type === 'responsePreferenceState') {
+        l12State.responsePreference = message as ResponsePreferenceState
+      }
+      else if (message.type === 'responsePreferenceResult') {
+        l12State.responsePreferenceResult = message as ResponsePreferenceResult
+        l12State.responsePreference = {
+          confirmedMode: message.confirmedMode as ResponseMode,
+          syncPending: Boolean(message.syncPending),
         }
       }
       else if (message.type === 'recoveryComplete') {
@@ -622,6 +724,7 @@ export function connect(): Promise<void> {
           lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
           l12State.matchFound = null
         }
@@ -631,6 +734,7 @@ export function connect(): Promise<void> {
           lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
+          l12State.observerView = 'public'
           l12State.gmEnabled = false
         }
         reconnectAttempts = 0
@@ -681,9 +785,15 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = event.code === 4002 ? 'superseded' : 'disconnected'
         if (!negotiatedRequestIds || [4001, 4002, 1008].includes(event.code)) cancelPendingAction()
         l12State.gmEnabled = false
+        if (l12State.observerView === 'referee') {
+          l12State.game = null
+          lastGameStateEnvelope = null
+          l12State.observerView = 'public'
+        }
         syncGameReentry()
         settle(new Error(l12State.notice || '连接已关闭'))
         if (![4001, 4002, 1008].includes(event.code)) scheduleReconnect()
+        if (![4001, 4002, 1008].includes(event.code)) scheduleResourceFallback()
       }
     }
   })
@@ -703,6 +813,7 @@ export function startAutomaticConnection() {
 export function stopAutomaticConnection() {
   automaticConnectionEnabled = false
   clearReconnectTimer()
+  cancelResourceFallback()
   reconnectAttempts = 0
   l12State.retryCount = 0
   disconnect()
@@ -712,6 +823,7 @@ export function disconnect() {
   automaticConnectionEnabled = false
   connectionAttemptSerial += 1
   clearReconnectTimer()
+  cancelResourceFallback()
   clearSnapshotRecovery()
   clearHeartbeat()
   clearMatchmakingPolling()
@@ -727,9 +839,14 @@ export function disconnect() {
   l12State.recoveryPhase = 'idle'
   l12State.connectionIssue = 'none'
   l12State.sessionId = ''
+  l12State.accountId = ''
+  l12State.presence = []
+  l12State.resourceEpoch = ''
+  l12State.resourceRevisions = {}
   l12State.room = null
   l12State.game = null
   l12State.spectating = false
+  l12State.observerView = 'public'
   l12State.leavingRoom = false
   l12State.gmEnabled = false
   cancelPendingAction()
@@ -790,6 +907,12 @@ export const spectateTournamentMatch = (tournamentId: string, matchId: string) =
 export const selectDeck = (deckIndex: number) => send({ type: 'selectDeck', deckIndex })
 export const selectCustomDeck = (deck: SavedL12Deck) => send({ type: 'selectCustomDeck', deck })
 export const setReady = (ready: boolean) => send({ type: 'ready', ready })
+export const getResponsePreference = () => send({ type: 'getResponsePreference' })
+export const setResponsePreference = (mode: ResponseMode) => {
+  const requestId = createActionRequestId()
+  send({ type: 'setResponsePreference', mode, requestId })
+  return requestId
+}
 export const returnToRoom = () => {
   void gameReentry.requestExit(l12State.game?.matchId)
   setReady(false)

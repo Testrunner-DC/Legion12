@@ -239,6 +239,22 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12ArticleView? PublicArticle(string idOrSlug)
+    {
+        lock (_gate)
+        {
+            var key = (idOrSlug ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(key)) return null;
+            var now = DateTimeOffset.UtcNow;
+            var row = _data.Articles.FirstOrDefault(item => item.Published is not null
+                && (item.Status == "published" || item.Status == "scheduled" && item.PublishAt <= now)
+                && item.Published.Kind == "news"
+                && (string.Equals(item.Id, key, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(item.Published.Slug, key, StringComparison.OrdinalIgnoreCase)));
+            return row is null ? null : ToPublicArticleView(row);
+        }
+    }
+
     public IReadOnlyList<L12ArticleView> AdminArticles(string? status = null, string? category = null,
         string? search = null, int limit = 300, string kind = "news")
     {

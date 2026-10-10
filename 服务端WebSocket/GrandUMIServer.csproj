@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>GrandUMIServer</AssemblyName>
-    <RootNamespace>GrandUMI</RootNamespace>
+    <RootNamespace>TwelveLegions.Server</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -14,6 +14,19 @@
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.4" />
     <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="3.53.3" />
+  </ItemGroup>
+
+  <!--
+    The production host is Legion12-only. Keep the boundary explicit so retired
+    GrandUMI reference sources cannot silently return to the published server.
+  -->
+  <ItemGroup>
+    <Compile Remove="Cards\**\*.cs" />
+    <Compile Remove="Effects\**\*.cs" />
+    <Compile Remove="Game\**\*.cs" />
+    <Compile Remove="BugReportStore.cs" />
+    <Compile Remove="WebSocketBridge.cs" />
+    <Compile Remove="WsSession.cs" />
   </ItemGroup>
 
   <ItemGroup>

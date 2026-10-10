@@ -141,7 +141,8 @@ public sealed class Bq20260904_03RegressionTests
 
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal(1, prompt.PlayerIndex);
-        Assert.Equal("erik-discard", prompt.Data.GetValueOrDefault("action"));
+        Assert.Equal(L12OpponentHandDiscardTriggerEffects.Continuation,
+            prompt.Data.GetValueOrDefault("action"));
         var submit = new L12Command("resolvePrompt", PromptId: prompt.PromptId,
             CardInstanceIds: [first.InstanceId]);
         Assert.True(game.Handle(1, submit).Accepted);

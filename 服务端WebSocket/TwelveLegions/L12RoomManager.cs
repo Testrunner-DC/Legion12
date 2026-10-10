@@ -73,12 +73,16 @@ public sealed partial class L12RoomManager
         public string? TournamentCode { get; init; }
         public string? TournamentMatchId { get; init; }
         public string? TournamentRulesHash { get; init; }
+        public L12RankedTimeControlConfig? TournamentTimeControl { get; init; }
+        public bool TournamentClockPaused { get; init; }
+        public string? TournamentClockPauseReason { get; init; }
         public bool TournamentResultReported { get; set; }
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
         public bool CompletionRecorded { get; set; }
         public DateTimeOffset? SettlementStartedAt { get; set; }
         public bool[] SettlementLeft { get; } = [false, false];
+        public bool[] ResponsePreferenceSyncPending { get; } = [false, false];
         public long RankedCheckpointGeneration { get; set; }
         public RankedClockState? RankedClock { get; set; }
         public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -140,6 +144,7 @@ public sealed partial class L12RoomManager
     private readonly object _tournamentRoomGate = new();
     private readonly object _matchmakingGate = new();
     private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
+    private readonly SemaphoreSlim _rankedSeasonGate = new(1, 1);
     private readonly List<MatchmakingEntry> _matchmaking = [];
     private readonly Func<DateTimeOffset> _utcNow;
     private readonly Func<bool> _maintenanceSandboxFenceActive;
@@ -173,6 +178,8 @@ public sealed partial class L12RoomManager
     public async Task<L12SessionClaimResult> ConnectAsync(Guid sessionId, string accountId, string? requestedName,
         string? integrityClientKey = null, string? rankedBrowserKey = null)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         var name = NormalizeName(requestedName);
         await _sessionRecoveryGate.WaitAsync();
         try
@@ -219,8 +226,15 @@ public sealed partial class L12RoomManager
                         ? source.RankedBrowserKey : rankedBrowserKey,
                     ConnectionGeneration = generation,
                 };
-                if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom))
+                if (source.RoomCode is not null && _rooms.TryGetValue(source.RoomCode, out var recoveredRoom)
+                    && (!source.IsSpectator || CanRecoverTournamentSpectator(recoveredRoom, accountId)))
                 {
+                    if (!source.IsSpectator && recoveredRoom.TournamentId is not null
+                        && recoveredRoom.TournamentMatchId is not null)
+                    {
+                        _ = _platform?.TournamentRoomAssignment(accountId, recoveredRoom.TournamentId,
+                            recoveredRoom.TournamentMatchId, source.IsSpectator);
+                    }
                     await recoveredRoom.Gate.WaitAsync();
                     try
                     {
@@ -297,6 +311,11 @@ public sealed partial class L12RoomManager
                 }
                 else
                 {
+                    if (source.IsSpectator && source.RoomCode is not null
+                        && _rooms.TryGetValue(source.RoomCode, out var formerRoom))
+                    {
+                        lock (formerRoom.Spectators) formerRoom.Spectators.Remove(previous.Key);
+                    }
                     replacement.RoomCode = null;
                     replacement.PlayerIndex = null;
                     replacement.IsSpectator = false;
@@ -367,6 +386,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> JoinMatchmakingAsync(Guid sessionId, string? mode,
         L12CustomDeckSubmission? submission)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         // Cover admission, pair removal and durable room creation, not merely the list edit.
         // Also fence connection replacement while these memberships are being assigned.
         await _sessionRecoveryGate.WaitAsync();
@@ -388,7 +409,7 @@ public sealed partial class L12RoomManager
         if (!session.Connected) return Error(sessionId, "连接已失效，请重新连接", "matchmakingRejected");
         if (normalizedMode == "ranked")
         {
-            var entryBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
+            var entryBlock = RankedAdmissionBlock(session.AccountId, _utcNow());
             if (entryBlock is not null) return MatchmakingError(sessionId, entryBlock);
             if (HasOtherRankedBrowserOccupant(session))
                 return MatchmakingError(sessionId, "此浏览器已有其他账号正在排位匹配或对局中，请先结束后再试。此限制不代表违规判定。");
@@ -436,8 +457,8 @@ public sealed partial class L12RoomManager
             return await JoinMatchmakingCoreAsync(sessionId, normalizedMode, submission);
         if (normalizedMode == "ranked")
         {
-            var firstBlock = _platform.RankedEntryBlock(session.AccountId, _utcNow());
-            var secondBlock = _platform.RankedEntryBlock(other.AccountId!, _utcNow());
+            var firstBlock = RankedAdmissionBlock(session.AccountId, _utcNow());
+            var secondBlock = RankedAdmissionBlock(other.AccountId!, _utcNow());
             if (firstBlock is not null || secondBlock is not null)
                 return MatchmakingError(sessionId, firstBlock ?? "匹配对象暂不可进行排位，请重新匹配")
                     .Concat(MatchmakingError(other.Id, secondBlock ?? "匹配对象暂不可进行排位，请重新匹配")).ToArray();
@@ -469,10 +490,16 @@ public sealed partial class L12RoomManager
         room.Ready[0] = room.Ready[1] = true;
         other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
         session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
+        var responsePreferences = await ResolveResponsePreferencesAsync([other, session]);
+        room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+        room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
         room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
-            operationsPolicy: policy, stateFormatVersion: 2,
-            effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
+            operationsPolicy: policy,
+            stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
+            alternateArtUrls: ResolveAlternateArtUrls([other, session]), utcNow: _utcNow,
+            responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         InitializeRankedClock(room);
         try
         {
@@ -500,6 +527,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> CancelMatchmaking(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId
             || (!string.IsNullOrWhiteSpace(session.AccountId) && entry.AccountId == session.AccountId));
@@ -507,26 +536,31 @@ public sealed partial class L12RoomManager
             message = "已取消匹配" })];
     }
 
-    public Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
+    public async Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (_sessions.TryGetValue(sessionId, out var session) && session.RoomCode is not null)
-            return RecoveryStateAsync(sessionId);
+            return await RecoveryStateAsync(sessionId);
         MatchmakingEntry? existing;
         lock (_matchmakingGate)
             existing = _matchmaking.FirstOrDefault(entry => entry.SessionId == sessionId && IsQueueEntryValid(entry));
         if (existing is null)
-            return Task.FromResult<IReadOnlyList<OutgoingMessage>>(
+            return
                 [new OutgoingMessage(sessionId, new { type = "matchmakingState", queued = false,
-                    message = "当前不在匹配队列" })]);
+                    message = "当前不在匹配队列" })];
         var deck = new L12CustomDeckSubmission
         {
+            PublicationId = existing.Deck.PublicationId,
+            PublicationVersion = existing.Deck.PublicationVersion,
             Name = existing.Deck.Name,
             MasterId = existing.Deck.MasterId,
             CardIds = [.. existing.Deck.CardIds],
             MoraleIds = [.. existing.Deck.MoraleIds],
             SpecialIds = [.. existing.Deck.SpecialIds],
+            AlternateArtSelections = new Dictionary<string, string>(existing.Deck.AlternateArtSelections, StringComparer.OrdinalIgnoreCase),
         };
-        return JoinMatchmakingAsync(sessionId, existing.Mode, deck);
+        return await JoinMatchmakingAsync(sessionId, existing.Mode, deck);
     }
 
     private bool IsQueueEntryValid(MatchmakingEntry entry)
@@ -615,6 +649,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> InviteFriend(Guid sessionId, string? targetAccountId)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
             return Error(sessionId, "会话不存在");
         var policy = CaptureOperationsPolicy();
@@ -650,11 +686,15 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> ResolveFriendInvitation(Guid sessionId, string? invitationId, bool accept)
     {
+        if (!TryDeploymentGuard(admission: accept, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         lock (_friendInvitationGate) return ResolveFriendInvitationCore(sessionId, invitationId, accept);
     }
 
     public IReadOnlyList<OutgoingMessage> CancelFriendInvitation(Guid sessionId, string? invitationId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         lock (_friendInvitationGate)
         {
             if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
@@ -763,6 +803,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateAsync(Guid sessionId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)
             || session.RoomCode is null
             || !_rooms.TryGetValue(session.RoomCode, out var room)) return [];
@@ -771,7 +813,11 @@ public sealed partial class L12RoomManager
         {
             var tournamentStartBlocked = false;
             if (room.Game is not null)
+            {
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+                await ExpireResponseWindowLockedAsync(room, _utcNow());
+                await RefreshRoomResponsePreferencesAsync(room);
+            }
             if (room.TournamentId is not null)
             {
                 tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
@@ -791,6 +837,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> RecoveryStateWithAckAsync(Guid sessionId,
         bool recovered = false)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
             return [RecoveryComplete(session, recovered, null)];
@@ -799,7 +847,11 @@ public sealed partial class L12RoomManager
         {
             var tournamentStartBlocked = false;
             if (room.Game is not null)
+            {
                 await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+                await ExpireResponseWindowLockedAsync(room, _utcNow());
+                await RefreshRoomResponsePreferencesAsync(room);
+            }
             if (room.TournamentId is not null)
             {
                 tournamentStartBlocked = await StartTournamentGameIfReadyLockedAsync(room);
@@ -838,6 +890,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> CreateRoom(Guid sessionId, L12RoomOptions? options = null)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var currentPolicy = CaptureOperationsPolicy();
@@ -868,6 +922,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> UpdateRoomOptions(Guid sessionId, L12RoomOptions? options)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error);
         if (room.TournamentId is not null)
@@ -892,6 +948,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, L12SandboxRequest? request)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         request ??= new L12SandboxRequest();
@@ -967,11 +1025,16 @@ public sealed partial class L12RoomManager
         session.SelectedDeckIndex = playerDeckIndex;
         session.CustomDeck = playerDeck;
 
+        var sandboxPreference = await ResolveResponsePreferenceAsync(session.AccountId);
+        room.ResponsePreferenceSyncPending[0] = sandboxPreference.SyncPending;
         room.Game = new L12GameEngine(
             _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
             [session.Name, opponent.Name], [playerDeck, opponentDeck], skipPreparation: true,
             disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
-            stateFormatVersion: 2, effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
+            stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
+            alternateArtUrls: ResolveAlternateArtUrls([session, opponent]), utcNow: _utcNow,
+            responseModes: [sandboxPreference.Mode, L12GameEngine.DefaultResponseMode]);
         room.Game.InitializeGmDisasters();
         foreach (var playerIndex in new[] { 0, 1 })
         {
@@ -1002,6 +1065,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> SpectateRoom(Guid sessionId, string? roomCode)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var currentPolicy = CaptureOperationsPolicy();
@@ -1032,12 +1097,14 @@ public sealed partial class L12RoomManager
         {
             type = "gameState",
             spectating = true,
-            state = room.Game.SnapshotForSpectator(),
+            state = L12KernelProjection.ForSpectator(room.Game),
         })];
     }
 
     public IReadOnlyList<OutgoingMessage> JoinRoom(Guid sessionId, string? roomCode)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
@@ -1066,6 +1133,8 @@ public sealed partial class L12RoomManager
     public async Task<IReadOnlyList<OutgoingMessage>> EnterTournamentMatchAsync(Guid sessionId,
         string? tournamentId, string? matchId)
     {
+        if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
             return Error(sessionId, "请先登录账号");
         if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
@@ -1093,6 +1162,8 @@ public sealed partial class L12RoomManager
                 await current.Gate.WaitAsync();
                 try
                 {
+                    if (current.Game is null && DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                        return DeploymentEntryRejected(sessionId);
                     if (await StartTournamentGameIfReadyLockedAsync(current))
                         return MaintenanceBlocked(sessionId, CaptureOperationsPolicy());
                     if (current.Game?.State.Phase == L12Phase.GameOver)
@@ -1110,6 +1181,8 @@ public sealed partial class L12RoomManager
         {
             if (!_rooms.TryGetValue(assignment.RoomCode, out room!))
             {
+                if (DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                    return DeploymentEntryRejected(sessionId);
                 room = CreateTournamentRoom(assignment);
                 if (!_rooms.TryAdd(room.Code, room)) room = _rooms[room.Code];
             }
@@ -1125,6 +1198,8 @@ public sealed partial class L12RoomManager
             var currentPolicy = CaptureOperationsPolicy();
             if (room.Game is null && currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
                 return MaintenanceBlocked(sessionId, currentPolicy);
+            if (room.Game is null && DeploymentDrain is not null && deploymentGuard?.HasAdmission != true)
+                return DeploymentEntryRejected(sessionId);
             var playerIndex = assignment.PlayerA.AccountId == session.AccountId ? 0 : 1;
             var occupiedId = room.Sessions[playerIndex];
             if (_sessions.TryGetValue(occupiedId, out var occupied) && !occupied.IsVirtual
@@ -1153,6 +1228,8 @@ public sealed partial class L12RoomManager
     public IReadOnlyList<OutgoingMessage> SpectateTournamentMatch(Guid sessionId, string? tournamentId,
         string? matchId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
             return Error(sessionId, "请先登录账号");
         if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
@@ -1182,10 +1259,29 @@ public sealed partial class L12RoomManager
         return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
         {
             type = "gameState", spectating = true, gmEnabled = false,
+            observerView = assignment.CanRefereeView ? "referee" : "public",
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
-            state = room.Game.SnapshotForSpectator(),
-        })];
+            state = assignment.CanRefereeView
+                ? L12KernelProjection.ForReferee(room.Game)
+                : L12KernelProjection.ForSpectator(room.Game),
+        }, IsGameState: true, ForceFullGameState: true)];
+    }
+
+    private bool CanRecoverTournamentSpectator(Room room, string accountId)
+    {
+        if (room.TournamentId is null || room.TournamentMatchId is null) return true;
+        try
+        {
+            return _platform?.TournamentRoomAssignment(accountId, room.TournamentId,
+                room.TournamentMatchId, spectate: true).CanSpectate == true;
+        }
+        catch (Exception error) when (error is L12TournamentScopeException
+                                      or L12TournamentVersionConflictException
+                                      or KeyNotFoundException or ArgumentException)
+        {
+            return false;
+        }
     }
 
     private Room CreateTournamentRoom(L12TournamentRoomAssignment assignment)
@@ -1197,6 +1293,9 @@ public sealed partial class L12RoomManager
             TournamentCode = assignment.TournamentCode,
             TournamentMatchId = assignment.MatchId,
             TournamentRulesHash = assignment.RulesHash,
+            TournamentTimeControl = assignment.TimeControl,
+            TournamentClockPaused = assignment.Paused,
+            TournamentClockPauseReason = assignment.PauseReason,
             OperationsPolicy = assignment.OperationsPolicy,
             Options = new L12RoomOptions
             {
@@ -1232,22 +1331,31 @@ public sealed partial class L12RoomManager
         if (room.Game is not null || room.TournamentId is null
             || !room.Sessions.All(id => _sessions.TryGetValue(id, out var member)
                 && !member.IsVirtual && member.Connected)) return false;
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
+        using var deployment = deploymentGuard;
         if (CaptureOperationsPolicy().IsNewGameEntryBlocked(DateTimeOffset.UtcNow)) return true;
         var members = room.Sessions.Select(id => _sessions[id]).ToArray();
+        var responsePreferences = await ResolveResponsePreferencesAsync(members);
+        room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+        room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
         var game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code,
             Random.Shared.Next(), members.Select(member => member.Name).ToArray(),
             members.Select(SelectedDeck).ToArray(), disasterMode: room.Options.DisasterMode,
-            operationsPolicy: room.OperationsPolicy, stateFormatVersion: 2,
-            effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
-        // 只有对局记录成功落库后才发布可操作引擎；失败时下一次进入/恢复可安全重试。
-        await _recorder.StartAsync(game, "tournament", members[0].AccountId, members[1].AccountId,
-            members.Select(SelectedDeck).ToArray());
+            operationsPolicy: room.OperationsPolicy,
+            stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), alternateArtUrls: ResolveAlternateArtUrls(members),
+            utcNow: _utcNow, responseModes: responsePreferences.Select(item => item.Mode).ToArray());
         room.Game = game;
+        InitializeRankedClock(room);
+        // 只有对局记录与权威计时初始快照在同一事务落库后才发布可操作引擎。
+        await StartRecordedGameAsync(room, members, members.Select(SelectedDeck).ToArray());
         return false;
     }
 
     public IReadOnlyList<OutgoingMessage> SelectDeck(Guid sessionId, int deckIndex)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
@@ -1262,6 +1370,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, L12CustomDeckSubmission submission)
     {
+        if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null) return Error(sessionId, "赛事房间已锁定报名牌库", "deckRejected");
         if (room.Game is not null) return Error(sessionId, "对局已经开始");
@@ -1275,6 +1385,8 @@ public sealed partial class L12RoomManager
 
     public async Task<IReadOnlyList<OutgoingMessage>> SetReadyAsync(Guid sessionId, bool ready)
     {
+        if (!TryDeploymentGuard(admission: ready, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (room.TournamentId is not null)
             return Error(sessionId, "赛事房间由轮次签到与进入身份自动准备");
@@ -1306,14 +1418,29 @@ public sealed partial class L12RoomManager
             {
                 var playerNames = room.Sessions.Select(id => _sessions[id].Name).ToArray();
                 var selectedDecks = room.Sessions.Select(id => SelectedDeck(_sessions[id])).ToArray();
+                var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
+                var responsePreferences = await ResolveResponsePreferencesAsync(startedMembers);
+                room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+                room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
                 room.Game = new L12GameEngine(
                     _catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
                     playerNames, selectedDecks,
                     disasterMode: room.Options.DisasterMode, operationsPolicy: room.OperationsPolicy,
-                    stateFormatVersion: 2, effectPresentationSnapshot: CaptureEffectPresentationSnapshot());
+                    stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+                    effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
+                    alternateArtUrls: ResolveAlternateArtUrls(room.Sessions.Select(id => _sessions[id])),
+                    utcNow: _utcNow, responseModes: responsePreferences.Select(item => item.Mode).ToArray());
                 InitializeRankedClock(room);
-                var startedMembers = room.Sessions.Select(id => _sessions[id]).ToArray();
-                await StartRecordedGameAsync(room, startedMembers, selectedDecks);
+                try
+                {
+                    await StartRecordedGameAsync(room, startedMembers, selectedDecks);
+                }
+                catch (L12RankedSeasonChangedException seasonError)
+                {
+                    room.Game = null;
+                    room.Ready[0] = room.Ready[1] = false;
+                    return Error(sessionId, seasonError.Message, "roomSeasonExpired");
+                }
             }
             return room.Game is null ? BroadcastRoom(room) : BroadcastGame(room, forceCritical: true);
         }
@@ -1324,12 +1451,32 @@ public sealed partial class L12RoomManager
         JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         await room.Gate.WaitAsync();
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
+            if (room.TournamentId is not null && room.TournamentMatchId is not null
+                && session.AccountId is not null)
+            {
+                try
+                {
+                    _ = _platform?.TournamentRoomAssignment(session.AccountId, room.TournamentId,
+                        room.TournamentMatchId, spectate: false);
+                }
+                catch (Exception eligibilityError) when (eligibilityError is L12TournamentScopeException
+                                                         or L12TournamentVersionConflictException
+                                                         or KeyNotFoundException)
+                {
+                    return Error(sessionId, eligibilityError.Message, "tournamentRoomRejected", requestId);
+                }
+            }
+            if (room.RankedClock is { Paused: true } pausedClock)
+                return Error(sessionId, pausedClock.PauseReason ?? "裁判已暂停本桌对局",
+                    "tournamentMatchPaused", requestId);
             var actorIndex = session.PlayerIndex!.Value;
             if (room.TryGetProcessedActionRequest(actorIndex, requestId, out var duplicate))
             {
@@ -1339,13 +1486,14 @@ public sealed partial class L12RoomManager
                     : Error(sessionId, duplicate.Error ?? "操作被拒绝", "actionRejected", requestId);
             }
             var clockConcluded = await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
+            var responseExpired = await ExpireResponseWindowLockedAsync(room, _utcNow());
             if (room.RankedClock is { SetupBroadcastPending: true } setupClock)
             {
                 setupClock.SetupBroadcastPending = false;
                 return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
                     requestId: requestId);
             }
-            if (clockConcluded)
+            if (clockConcluded || responseExpired)
                 return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
                     requestId: requestId);
             if (room.Game.State.Phase == L12Phase.GameOver)
@@ -1371,15 +1519,16 @@ public sealed partial class L12RoomManager
             var result = room.Game.Handle(session.PlayerIndex!.Value, command);
             L12PerformanceMetrics.Duration("action.engine", engineStartedAt);
             room.CommandSequence++;
-            var ranked = room.RankedClock is not null;
+            var timed = room.RankedClock is not null;
+            var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
             try
             {
-                if (ranked)
+                if (timed)
                 {
                     if (result.Accepted && meaningful) room.MeaningfulCommandCount++;
                     if (result.Accepted)
                         RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
-                    var settlement = room.Game.State.Phase == L12Phase.GameOver
+                    var settlement = ranked && room.Game.State.Phase == L12Phase.GameOver
                         ? BuildRankedSettlementEnvelope(room, _utcNow()) : null;
                     await _recorder.AppendRankedAsync(room.Game, room.CommandSequence,
                         session.PlayerIndex.Value, commandElement.GetRawText(), result,
@@ -1396,7 +1545,7 @@ public sealed partial class L12RoomManager
             }
             catch (Exception)
             {
-                var restored = ranked
+                var restored = timed
                     ? await ReloadRankedRoomFromRecorderAsync(room)
                     : await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
@@ -1420,7 +1569,7 @@ public sealed partial class L12RoomManager
             }
             room.RememberProcessedActionRequest(actorIndex, requestId, true, null,
                 room.Game.State.Revision);
-            if (!ranked)
+            if (!timed)
             {
                 if (meaningful) room.MeaningfulCommandCount++;
                 RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
@@ -1441,6 +1590,8 @@ public sealed partial class L12RoomManager
         JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
@@ -1512,6 +1663,8 @@ public sealed partial class L12RoomManager
         Guid sessionId, int actingPlayerIndex, JsonElement commandElement, string? requestId = null)
     {
         requestId = NormalizeActionRequestId(requestId);
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
+        using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out _, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
@@ -1580,6 +1733,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> Disconnect(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return [];
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
@@ -1622,6 +1777,8 @@ public sealed partial class L12RoomManager
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
+        if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
+        using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var member) || member.RoomCode is not { } code
             || !_rooms.TryGetValue(code, out var room)) return LeaveRoomLocked(sessionId);
         room.Gate.Wait();
@@ -1793,9 +1950,8 @@ public sealed partial class L12RoomManager
         var messages = room.Sessions.Select(id =>
         {
             var viewer = _sessions[id];
-            var snapshot = room.IsSandbox && room.GmControllerSessionId == id
-                ? room.Game!.SnapshotForGm(_sessions[id].PlayerIndex!.Value)
-                : room.Game!.SnapshotFor(_sessions[id].PlayerIndex!.Value);
+            var snapshot = L12KernelProjection.ForPlayer(room.Game!, _sessions[id].PlayerIndex!.Value,
+                revealAllForGm: room.IsSandbox && room.GmControllerSessionId == id);
             var matchGovernance = MatchGovernanceForClient(room, viewer);
             var immediateInteraction = SnapshotRequiresCriticalDelivery(snapshot)
                                        || matchGovernance.DrawRequest?.ViewerCanRespond == true;
@@ -1809,6 +1965,11 @@ public sealed partial class L12RoomManager
                 playerBadges,
                 rankedClock,
                 matchGovernance,
+                responsePreference = viewer.IsSpectator || viewer.PlayerIndex is null ? null : new
+                {
+                    confirmedMode = room.Game.ResponseModeFor(viewer.PlayerIndex.Value),
+                    syncPending = room.ResponsePreferenceSyncPending[viewer.PlayerIndex.Value],
+                },
                 rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
                     ? _platform.RankedSettlement(room.Game!.State.MatchId,
                         viewer.AccountId ?? string.Empty) : null,
@@ -1826,17 +1987,59 @@ public sealed partial class L12RoomManager
         IEnumerable<OutgoingMessage> SpectatorMessages()
         {
             if (spectators.Length == 0) yield break;
-            // 所有观战者使用同一公开视角对象，发送层会按对象引用只序列化一次。
-            var payload = new
+            // 每次按权威赛事 assignment 选视角；同一类观战者复用同一载荷。
+            object? publicPayload = null;
+            object? refereePayload = null;
+            object SpectatorPayload(bool referee) => referee
+                ? refereePayload ??= BuildSpectatorPayload(true)
+                : publicPayload ??= BuildSpectatorPayload(false);
+            object BuildSpectatorPayload(bool referee) => new
             {
                 type = "gameState", spectating = true, gmEnabled = false,
+                observerView = referee ? "referee" : "public",
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
-                state = room.Game!.SnapshotForSpectator(),
+                state = referee ? L12KernelProjection.ForReferee(room.Game!)
+                    : L12KernelProjection.ForSpectator(room.Game!),
             };
             foreach (var id in spectators)
-                yield return new OutgoingMessage(id, payload, replaceable, IsGameState: true,
-                    ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
+            {
+                if (!_sessions.TryGetValue(id, out var spectator) || !spectator.IsSpectator
+                    || spectator.RoomCode != room.Code) continue;
+                var referee = false;
+                var authorized = true;
+                if (room.TournamentId is not null && room.TournamentMatchId is not null)
+                {
+                    try
+                    {
+                        if (spectator.AccountId is null)
+                            throw new L12TournamentScopeException("赛事观战账号缺失");
+                        var assignment = _platform?.TournamentRoomAssignment(spectator.AccountId,
+                            room.TournamentId, room.TournamentMatchId, spectate: true);
+                        referee = assignment?.CanRefereeView == true;
+                    }
+                    catch (Exception error) when (error is L12TournamentScopeException
+                                                  or L12TournamentVersionConflictException
+                                                  or KeyNotFoundException or ArgumentException)
+                    {
+                        authorized = false;
+                    }
+                }
+                if (!authorized)
+                {
+                    lock (room.Spectators) room.Spectators.Remove(id);
+                    ClearRoomMembership(spectator);
+                    yield return new OutgoingMessage(id, new
+                    {
+                        type = "roomLeft", message = "赛事观战资格已失效",
+                    });
+                    continue;
+                }
+                yield return new OutgoingMessage(id, SpectatorPayload(referee), replaceable,
+                    IsGameState: true, ForceFullGameState: room.TournamentId is not null
+                        && room.TournamentMatchId is not null || forceCritical
+                        || state.Phase == L12Phase.GameOver);
+            }
         }
     }
 
@@ -1921,7 +2124,7 @@ public sealed partial class L12RoomManager
                 return "排位最终事件尚未原子写入，已冻结结算并等待重试";
             try
             {
-                await _recorder.CompleteAsync(room.Game);
+                await _recorder.CompleteAsync(room.Game, room.TournamentId, room.TournamentMatchId);
                 room.CompletionRecorded = true;
             }
             catch (Exception error)
@@ -1949,8 +2152,8 @@ public sealed partial class L12RoomManager
         if (room.Game.State.Winner is not { } winner) return "对局已结束但缺少胜者，已保留记录待裁决";
         try
         {
-            _platform.RecordTournamentGameResult(room.TournamentId, room.TournamentMatchId,
-                room.Game.State.MatchId, winner);
+            var drained = await DrainTournamentResultOutboxAsync(room.Game.State.MatchId);
+            if (drained.Failed != 0) return "赛果回写待重试：持久化 outbox 尚未完成";
             room.TournamentResultReported = true;
             return null;
         }
@@ -1980,6 +2183,11 @@ public sealed partial class L12RoomManager
 
     private L12PresetDeckDefinition SelectedDeck(Session session)
         => session.CustomDeck ?? _catalog.DeckAt(session.SelectedDeckIndex);
+
+    private IReadOnlyDictionary<string, string>[] ResolveAlternateArtUrls(IEnumerable<Session> sessions)
+        => sessions.Select(session => _platform?.ResolveOwnedAlternateArtUrls(session.AccountId,
+            SelectedDeck(session).AlternateArtSelections, SelectedDeck(session).AlternateArtCopies)
+            ?? new Dictionary<string, string>()).ToArray();
 
     private bool TryGetMembership(Guid sessionId, out Session session, out Room room, out string error)
     {

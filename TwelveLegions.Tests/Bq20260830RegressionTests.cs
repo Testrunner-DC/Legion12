@@ -83,9 +83,16 @@ public sealed class Bq20260830RegressionTests
             Choice: "mode:use")).Accepted);
         PassResponses(game);
         var discard = Assert.Single(game.State.PendingPrompts,
-            prompt => prompt.Data.GetValueOrDefault("action") == "s2-olympus-draw-discard");
+            prompt => prompt.Continuation == "pending-activation"
+                && prompt.Data.GetValueOrDefault("declarationTiming") == "post-draw-private");
+        Assert.DoesNotContain("skip", discard.ValidChoices);
         Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: discard.PromptId,
             Choice: zealot.InstanceId)).Accepted);
+        PassResponses(game);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            Choice: "mode:use")).Accepted);
         PassResponses(game);
         return Assert.Single(game.State.PendingPrompts,
             prompt => prompt.Data.GetValueOrDefault("action") == "s2-faith-zealot");
@@ -146,6 +153,64 @@ public sealed class Bq20260830RegressionTests
         Assert.Contains(victim, opponent.Graveyard);
         Assert.Same(absoluteDefense, opponent.Field[1][0]);
         Assert.Same(pitfall, opponent.Field[1][1]);
+    }
+
+    [Fact]
+    public void RamsesThreeDelegatedEnterEffectsResolveWithoutStalling()
+    {
+        var game = Create(68003);
+        var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
+        var enteringRamses = Card("S01-0202", "ramses-three-entering");
+        var construct = Card("S01-0204", "ramses-three-construct");
+        var nefertiti = Card("S01-0209", "ramses-three-nefertiti");
+        var ptolemy = Card("S01-0211", "ramses-three-ptolemy");
+        owner.Hand.Clear();
+        owner.Hand.Add(enteringRamses);
+        owner.Field[0][1] = construct;
+        owner.Field[0][2] = nefertiti;
+        owner.Field[1][0] = ptolemy;
+        opponent.Hand.Clear();
+        for (var index = 0; index < 6; index++)
+            opponent.Hand.Add(Card("S01-0001", $"ramses-three-opponent-hand-{index}"));
+        AddReadyMorale(owner, enteringRamses.Cost);
+        game.State.ActivePlayer = 0;
+        game.State.Round = 2;
+        game.State.Phase = L12Phase.Main;
+
+        var played = game.Handle(0, new L12Command("playCard", enteringRamses.InstanceId, Row: 0, Slot: 0));
+
+        Assert.True(played.Accepted, played.Error);
+        var selection = Assert.Single(game.State.PendingPrompts,
+            prompt => prompt.Continuation == "pending-activation");
+        Assert.Equal(3, selection.MaxChoose);
+        Assert.All(new[] { construct, nefertiti, ptolemy },
+            target => Assert.Contains(target.InstanceId, selection.ValidChoices));
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: selection.PromptId,
+            CardInstanceIds: [construct.InstanceId, nefertiti.InstanceId, ptolemy.InstanceId])).Accepted);
+
+        for (var safety = 0; game.State.PendingPrompts.Count > 0 || game.State.EffectStack.Count > 0; safety++)
+        {
+            Assert.True(safety < 20, "拉美西斯二世委托三个登场效果后不应卡在未完成的提示或堆叠中。");
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var choice = prompt.Kind == "response"
+                ? "pass"
+                : prompt.ValidChoices.Contains("skip") ? "skip" : prompt.ValidChoices[0];
+            Assert.Contains(choice, prompt.ValidChoices);
+            Assert.True(game.Handle(prompt.PlayerIndex, new L12Command("resolvePrompt",
+                PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+
+        var delegatedTriggers = game.State.Events
+            .Where(entry => entry.Type == "effect-trigger"
+                && new[] { "墓地所有<陵墓守卫>", "手牌数量不低于6张", "上1张<主动战术>" }
+                    .Any(fragment => entry.Text.Contains(fragment, StringComparison.Ordinal)))
+            .Select(entry => entry.Text)
+            .ToArray();
+        Assert.Equal(3, delegatedTriggers.Length);
+        Assert.Contains(delegatedTriggers, entry => entry.Contains("墓地所有<陵墓守卫>", StringComparison.Ordinal));
+        Assert.Contains(delegatedTriggers, entry => entry.Contains("手牌数量不低于6张", StringComparison.Ordinal));
+        Assert.Contains(delegatedTriggers, entry => entry.Contains("上1张<主动战术>", StringComparison.Ordinal));
     }
 
     [Fact]

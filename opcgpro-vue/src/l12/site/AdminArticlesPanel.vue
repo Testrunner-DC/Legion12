@@ -5,6 +5,8 @@ import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleR
 import ArticleDocumentEditor from './ArticleDocumentEditor.vue'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
+import { useAdminRiskAction } from './useAdminRiskAction'
 
 type EditableArticle = Partial<Article> & ArticleDraft
 
@@ -38,6 +40,7 @@ const modianCategoryId = ref('')
 const modianSelectedIds = ref<string[]>([])
 const modianReimportIds = ref<string[]>([])
 const modianOverwriteIds = ref<string[]>([])
+const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 const activeCategories = computed(() => categories.value.filter(item => item.active))
 const coverMedia = computed(() => media.value.filter(item => item.kind === props.kind))
@@ -116,9 +119,8 @@ async function save() {
   } catch (error) { showNotice(error instanceof Error ? error.message : '稿件保存失败') }
   finally { busy.value = false }
 }
-async function mutate(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
+async function performMutation(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
   if (!selected.value?.id) { showNotice('请先保存稿件'); return }
-  if (action === 'archive' && !window.confirm('归档后内容不再公开展示，确认继续？')) return
   busy.value = true; notice.value = ''
   try {
     const id = selected.value.id
@@ -129,22 +131,39 @@ async function mutate(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
     showNotice(action === 'publish' ? (updated.status === 'scheduled' ? '已安排定时发布' : '已正式发布')
       : action === 'withdraw' ? '内容已停用' : action === 'archive' ? '稿件已归档' : '稿件已恢复为草稿')
     await load(); await loadRevisions(id)
-  } catch (error) { showNotice(error instanceof Error ? error.message : '稿件状态更新失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '稿件状态更新失败'); throw error }
   finally { busy.value = false }
+}
+function mutate(action: 'publish' | 'withdraw' | 'archive' | 'restore') {
+  const permission = action === 'publish' || action === 'withdraw' ? 'admin.content.publish' : 'admin.content.draft'
+  if (!hasPermission(permission)) { showNotice('当前账号没有执行此操作的权限'); return }
+  if (!selected.value?.id) { showNotice('请先保存稿件'); return }
+  const labels = { publish: '发布 / 安排发布', withdraw: '停用公开内容', archive: '归档稿件', restore: '恢复为草稿' }
+  requestRiskAction({
+    title: `确认${labels[action]}`,
+    target: selected.value.title || '未命名稿件',
+    impact: action === 'publish' ? '内容将立即公开或按设定时间自动公开。' : action === 'withdraw' ? '公开入口会立即停止展示该内容。' : action === 'archive' ? '内容将退出公开展示并进入归档。' : '归档内容将恢复为可编辑草稿。',
+    confirmLabel: labels[action], severity: action === 'restore' ? 'warning' : 'danger',
+    run: () => performMutation(action),
+  })
 }
 async function loadRevisions(id: string) {
   try { revisions.value = await adminApi.articleRevisions(id) } catch { revisions.value = [] }
 }
-async function restoreRevision(revision: number) {
-  if (!selected.value?.id || !window.confirm(`将版本 ${revision} 恢复为新的草稿？`)) return
+async function performRestoreRevision(revision: number) {
+  if (!selected.value?.id) return
   busy.value = true
   try {
     const restored = await adminApi.restoreArticleRevision(selected.value.id, revision)
     selected.value = { ...restored, publishAt: dateTimeLocal(restored.publishAt) }
     showNotice(`版本 ${revision} 已恢复为草稿，尚未影响线上内容`)
     await load(); await loadRevisions(restored.id)
-  } catch (error) { showNotice(error instanceof Error ? error.message : '历史版本恢复失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '历史版本恢复失败'); throw error }
   finally { busy.value = false }
+}
+function restoreRevision(revision: number) {
+  if (!hasPermission('admin.content.draft') || !selected.value?.id) return
+  requestRiskAction({ title: '确认恢复历史版本', target: `${selected.value.title || '未命名稿件'} · v${revision}`, impact: '该历史版本会复制成新的草稿；当前线上快照保持不变。', confirmLabel: '恢复为草稿', severity: 'warning', run: () => performRestoreRevision(revision) })
 }
 
 const modianStateLabel = (state: string) => ({
@@ -172,13 +191,7 @@ function selectAllNewModianUpdates() {
   modianOverwriteIds.value = []
 }
 
-async function importModianUpdates() {
-  if (!modianCategoryId.value) { showNotice('请先选择导入草稿使用的资讯分类'); return }
-  if (!modianSelectedIds.value.length) { showNotice('请至少选择一条项目更新'); return }
-  const reimport = modianReimportIds.value.filter(id => modianSelectedIds.value.includes(id))
-  const overwrite = modianOverwriteIds.value.filter(id => reimport.includes(id))
-  if (reimport.length && !window.confirm(`其中 ${reimport.length} 条允许在来源变化时重新导入；操作只更新草稿，不会自动发布。确认继续？`)) return
-  if (overwrite.length && !window.confirm(`其中 ${overwrite.length} 条将覆盖本地草稿编辑；已发布快照仍保持不变。确认覆盖？`)) return
+async function performImportModianUpdates(reimport: string[], overwrite: string[]) {
   modianBusy.value = true; modianResult.value = null
   try {
     const key = globalThis.crypto?.randomUUID?.() ?? `modian-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -190,8 +203,16 @@ async function importModianUpdates() {
     showNotice(`草稿同步完成：新建 ${result.created}，更新 ${result.updated}，未变化 ${result.unchanged}，需显式重导 ${result.needsReimport}，冲突 ${result.conflicted}，失败 ${result.failed}；没有自动发布`)
     await load()
     await previewModianUpdates(true)
-  } catch (error) { showNotice(error instanceof Error ? error.message : '项目更新同步失败') }
+  } catch (error) { showNotice(error instanceof Error ? error.message : '项目更新同步失败'); throw error }
   finally { modianBusy.value = false }
+}
+function importModianUpdates() {
+  if (!hasPermission('admin.content.draft')) return
+  if (!modianCategoryId.value) { showNotice('请先选择导入草稿使用的资讯分类'); return }
+  if (!modianSelectedIds.value.length) { showNotice('请至少选择一条项目更新'); return }
+  const reimport = modianReimportIds.value.filter(id => modianSelectedIds.value.includes(id))
+  const overwrite = modianOverwriteIds.value.filter(id => reimport.includes(id))
+  requestRiskAction({ title: overwrite.length ? '确认覆盖本地草稿' : '确认同步项目更新', target: `${modianSelectedIds.value.length} 条项目更新`, impact: overwrite.length ? `其中 ${overwrite.length} 条会覆盖本地草稿编辑；已发布快照保持不变。` : reimport.length ? `其中 ${reimport.length} 条会按来源变化重新导入；不会自动发布。` : '所选条目会生成本站草稿；不会自动发布。', confirmLabel: overwrite.length ? '覆盖并同步' : '同步为草稿', severity: overwrite.length ? 'danger' : 'warning', run: () => performImportModianUpdates(reimport, overwrite) })
 }
 
 watch(() => props.kind, () => { selected.value = null; void load() })
@@ -200,6 +221,7 @@ onMounted(load)
 
 <template>
   <section class="article-workbench">
+    <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header class="article-page-head">
       <div><small>{{ copy.en }}</small><h2>{{ copy.title }}</h2><p>复用统一稿件、草稿、发布、停用、审计和历史恢复链路；封面只能从后台素材库上传或选择。</p></div>
       <button v-if="hasPermission('admin.content.draft')" class="new-button" @click="createArticle">＋ 新建{{ copy.singular }}</button>
@@ -266,13 +288,13 @@ onMounted(load)
             <button v-if="hasPermission('admin.content.draft')" :disabled="busy" @click="save">保存草稿</button>
             <button :class="{ active: preview }" @click="preview = !preview">{{ preview ? '关闭预览' : '预览' }}</button>
             <button v-if="selectedIsSaved && hasPermission('admin.content.publish')" class="publish" :disabled="busy" @click="mutate('publish')">发布 / 安排发布</button>
-            <button v-if="selectedIsSaved && (selected.status === 'published' || selected.status === 'scheduled')" class="withdraw" :disabled="busy" @click="mutate('withdraw')">停用</button>
-            <button v-if="selectedIsSaved && selected.status === 'archived'" @click="mutate('restore')">恢复草稿</button>
-            <button v-else-if="selectedIsSaved" class="archive" @click="mutate('archive')">归档</button>
+            <button v-if="selectedIsSaved && hasPermission('admin.content.publish') && (selected.status === 'published' || selected.status === 'scheduled')" class="withdraw" :disabled="busy" @click="mutate('withdraw')">停用</button>
+            <button v-if="selectedIsSaved && hasPermission('admin.content.draft') && selected.status === 'archived'" @click="mutate('restore')">恢复草稿</button>
+            <button v-else-if="selectedIsSaved && hasPermission('admin.content.draft')" class="archive" @click="mutate('archive')">归档</button>
           </div>
           <article v-if="preview" class="article-preview"><img v-if="selectedPreview" :src="selectedPreview" :alt="selected.title"><small>{{ selected.category }} · {{ selected.publishAt ? new Date(selected.publishAt).toLocaleString() : '发布时立即公开' }}</small><h2>{{ selected.title || '未填写标题' }}</h2><b v-if="props.kind === 'video' && selected.videoAuthorName" class="video-author">作者：{{ selected.videoAuthorName }}</b><p v-if="props.kind !== 'video'">{{ selected.summary }}</p><ArticleContentRenderer v-if="props.kind === 'news'" :body="selected.body" :media="media"/><div v-else-if="props.kind === 'product'">{{ selected.body }}</div><a v-if="selected.link" :href="selected.link">{{ props.kind === 'video' ? '点击视频卡片将直接跳转到此链接' : '相关链接' }}</a></article>
           <p v-if="notice" class="article-notice">{{ notice }}</p>
-          <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><PagedCollection :items="revisions" v-slot="{ items: paged18709 }"><article v-for="revision in paged18709" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button @click="restoreRevision(revision.revision)">恢复为草稿</button></article></PagedCollection></details>
+          <details v-if="selectedIsSaved" class="revision-list"><summary>历史版本（{{ revisions.length }}）</summary><PagedCollection :items="revisions" v-slot="{ items: paged18709 }"><article v-for="revision in paged18709" :key="revision.revision"><span><b>v{{ revision.revision }} · {{ revision.action }}</b><small>{{ revision.actor }} · {{ new Date(revision.createdAt).toLocaleString() }}</small></span><button v-if="hasPermission('admin.content.draft')" @click="restoreRevision(revision.revision)">恢复为草稿</button></article></PagedCollection></details>
         </template>
       </main>
     </div>

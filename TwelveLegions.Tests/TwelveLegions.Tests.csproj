@@ -12,6 +12,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\服务端WebSocket\GrandUMIServer.csproj" />
+    <Compile Include="..\scripts\lib\TestStorageIsolationTests.cs" Link="TestInfrastructure\TestStorageIsolationTests.cs" />
     <None Include="..\服务端WebSocket\TwelveLegions\Data\*.json" Link="Data\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Fixtures\architecture-p1-contracts.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

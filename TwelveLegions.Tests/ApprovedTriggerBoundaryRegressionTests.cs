@@ -61,7 +61,7 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
         game.State.DisasterDeck.Clear();
         game.State.DisasterDeck.Add(Card("S01-DS10", "natural-disaster"));
 
-        Invoke(game, "BeginDisasterTrigger", false, false);
+        Invoke(game, "BeginDisasterTrigger", "turn-phase", false);
 
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Assert.Empty(game.State.EffectStack);
@@ -204,6 +204,15 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
 
         Invoke(game, "AdjustDisasterValue", 2, 0, "测试调整至 {value}");
         Assert.Equal(9, game.State.DisasterValue);
+        var valueEvent = Assert.Single(game.State.Events, entry => entry.Type == "disaster-value");
+        Assert.Null(valueEvent.PlayerIndex);
+        Assert.Contains("天灾值 7 → 9", valueEvent.Text, StringComparison.Ordinal);
+        Assert.Equal(new L12PlayerDisasterValue(7, 9), valueEvent.PlayerDisasterValue);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+            game.SnapshotForSpectator(), game.SnapshotForReferee(), game.SnapshotForGm(0) })
+            Assert.Equal(valueEvent.PlayerDisasterValue,
+                Assert.Single(snapshot.RecentEvents, entry => entry.Sequence == valueEvent.Sequence)
+                    .PlayerDisasterValue);
         Assert.True(game.State.CheckDisasterAfterStack);
         Invoke(game, "AfterStackSettled");
         Assert.Null(game.State.ActiveDisaster);
@@ -219,6 +228,26 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
         Invoke(game, "AfterStackSettled");
         Assert.Single(game.State.DisasterDeck);
+    }
+
+    [Fact]
+    public void DisasterValueFactRejectsWrongEventTypeAndMalformedNumbersForEveryViewer()
+    {
+        var game = Create(12011);
+        var raw = new L12ActionEvent(1, "disaster-value", null,
+            "秘密来源：天灾值 999 → 1000", [])
+            { PlayerDisasterValue = new L12PlayerDisasterValue(4, 5) };
+        foreach (var viewer in new[] { -1, 0, 1 }) foreach (var revealAll in new[] { false, true })
+        {
+            Assert.Equal(raw.PlayerDisasterValue,
+                L12RecipientVisibility.ProjectActionEvent(game.State, raw, viewer, revealAll)
+                    .PlayerDisasterValue);
+            foreach (var invalid in new[] { raw with { Type = "effect" },
+                raw with { PlayerDisasterValue = new(-1, 5) },
+                raw with { PlayerDisasterValue = new(4, null) } })
+                Assert.Null(L12RecipientVisibility.ProjectActionEvent(game.State, invalid, viewer, revealAll)
+                    .PlayerDisasterValue);
+        }
     }
 
     [Fact]
@@ -310,14 +339,12 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
     {
         var cases = new (string CardId, string Trigger, Dictionary<string, string> Data)[]
         {
-            ("S02-04M1", "active", new() { ["ability"] = "tsukuyomiFollowMove", ["moved"] = "already-moved" }),
+            ("S02-04M1", "friendly-legion-moves", new() { ["ability"] = "tsukuyomiFollowMove", ["moved"] = "already-moved" }),
             ("S02-0523", "trojan-after-attack", new() { ["attacker"] = "1" }),
             ("S01-02M3", "medjed-master-damage", new()),
             ("S02-02M1", "nephthys-own-death", new()),
             ("S02-01S1", "master-morale-return", new() { ["mode"] = "xiaotian" }),
-            ("S01-0105", "enter", new()),
             ("S01-0213", "reaction", new()),
-            ("S01-0309", "enter", new()),
             ("S02-0203", "enter", new()),
             ("S02-0205", "enter", new()),
             ("S01-0206", "attack", new()),
@@ -362,7 +389,9 @@ public sealed class ApprovedTriggerBoundaryRegressionTests
             Assert.True(game.Handle(0, new L12Command("endTurn")).Accepted);
         }
 
-        Assert.Equal(13, cases.Length);
+        // 刘备与布伦希尔德的冒号前是可支付 Cost；没有后段登场对象时仍可发动并支付，
+        // 因此由冒号 Cost 同类回归覆盖，不能再列入“仅剩不发动选项”的静默守卫样本。
+        Assert.Equal(11, cases.Length);
     }
 
     [Fact]

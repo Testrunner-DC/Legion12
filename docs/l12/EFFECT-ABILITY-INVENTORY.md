@@ -1,0 +1,2381 @@
+# 逐能力效果一致性台账（自动基线）
+
+由 `scripts/export-l12-effect-lifecycle-inventory.ps1` 从实际 L12Catalog 生成；不要手工修改此表。
+本表只盘点定义与待核对项，不是测试通过证明。执行进度与最终验收仍以 [实施计划](../EFFECT-LIFECYCLE-ROADMAP.md) 为准。
+
+卡牌：324；能力段：686；无能力卡：7。
+这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
+内容指纹：`338e577901471dfbeedb73f0289fa2231d903c46a527c5955ba3da8ccd8875f7`。
+
+| 定义证据 | 能力数 |
+| --- | ---: |
+| composite-definition | 194 |
+| fine-definition | 84 |
+| shared-rule-owner | 408 |
+
+fine-definition = 原子顺序/参数与本能力匹配；composite-definition = 本能力显式Flow与登记路由匹配；shared-rule-owner = 精确能力已绑定共用规则入口及适用性档案；owner-unreviewed = 还需定位实际入口。任何一种归属证据均不等于生命周期验收通过。
+同卡同触发只算候选，不能把另一能力的程序继承为本能力已覆盖。无能力卡单列，不能从分母中静默消失。
+具名用例按完整能力ID（含结构哈希）绑定；只记录列出的测试范围，不把声明期恢复冒充结算期恢复，也不把源代码引用当实际执行回执。完整异常矩阵仍待核对；不适用路径必须说明理由。
+共同待核对项：生命周期档案、展示消费者、正例、无目标、无效、目标失效、重复提交、重连。费用段另核对取消兜底，对象选择另核对唯一候选/多目标适用性。
+完整原子参数、Cost/效果正文、场景与路由候选保存在同次生成的JSON审计产物；程序标签verified仅为既有目录状态。
+
+## 已核对生命周期档案（不是执行回执）
+
+### rule-action:cavalry-move
+
+精确绑定能力数：8。运行入口：button = L12GameEngine.BuildRuleActionViews；candidate-generation = L12GameEngine.CavalryMoveDestinationKeys；command = L12GameEngine.CavalryMove；destination-revalidation = L12GameEngine.IsLegalCavalryMoveDestination；movement-event = L12GameEngine.RecordLegionMovement；presentation = L12GameEngine.NativeCavalryMovePresentation；source-eligibility = L12GameEngine.CavalryMoveSourceUnavailableReason；timing = L12GameEngine.CavalryMoveTimingUnavailableReason。
+
+- multi-target-applicability：一次只移动来源军团到一个空位，不存在独立多目标结算。
+- negated：原生职介位移是立即执行的规则动作，不创建可响应或无效的效果堆叠；后续位移触发另行验收。
+- payment-cancel：没有卡牌或资源费用，也无支付Prompt；未提交目的地不产生动作。
+- target-invalidated：无入栈后目标窗口；改以提交时来源/目的地复验覆盖过期客户端选择。
+
+### reaction:hand-block
+
+精确绑定能力数：1。运行入口：candidates = L12GameEngine.LegalResponseSources；commit = L12GameEngine.CommitMercenaryResponse；pool-timing = L12GameEngine.CanMasterCardPoolRespondAtTiming；settlement = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
+
+- duplicate-submit：重复提交由堆叠响应协议按当前栈顶与响应窗口复验。
+- no-target：抵挡对象即当前对我方军团的进攻，不另行选择效果目标。
+
+### continuous:printed-range
+
+精确绑定能力数：47。运行入口：candidate-generation = L12GameEngine.BuildLegalAttackTargets；combat-declaration = L12GameEngine.Attack；condition-and-permission = L12StructuredCardRules.CombatProfile；damage-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.GetCombatRuleAbilities；presentation = L12GameEngine.SnapshotFor；source-row = L12GameEngine.CanAttackFromRow；target-revalidation = L12GameEngine.TryValidateAttackTarget。
+
+- duplicate-submit：本段没有发动命令；重复读取条件/候选须无副作用，进攻命令重复提交仍由共用战斗协议验收。
+- multi-target-applicability：本段仅提供来源军团的持续进攻权限，不独立结算多个对象。
+- negated：该持续能力没有独立入栈、支付或响应窗口，不能作为堆叠效果单独无效；对进攻事件的无效仍属战斗动作验收。
+- payment-cancel：本段没有费用或支付Prompt；相邻付费扩展射程是另一段，不继承此豁免。
+- single-candidate-choice：本段不创建对象选择Prompt；玩家主动提交进攻目标由进攻规则处理，不能自动替玩家进攻。
+- target-invalidated：本段是进攻规则的持续权限，不声明或锁定效果对象，也没有独立响应窗口；进攻目标在共用战斗协议中校验。
+
+### active:paid-extended-range
+
+精确绑定能力数：2。运行入口：activation-eligibility = L12GameEngine.ExtendedRangeSourceUnavailableReason；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；cost-commit = L12GameEngine.TryCommitS1ExtendedActiveAbility；definition = L12StructuredCardSemantics.ExtendedRangeRule；expiry = L12GameEngine.ResetTemporaryCardState；presentation = L12GameEngine.ResolveEffectPresentationSceneId；response-stack = L12GameEngine.PushEffect；settlement = L12GameEngine.TryResolveS1ExtendedActive。
+
+- multi-target-applicability：一次结算只更新来源军团的权限，不同时处理多个进攻对象。
+- no-target：本效果不选择进攻对象，只赋予来源本回合的进攻权限；即使当前没有对方对象也可支付并发动。
+- single-candidate-choice：没有效果目标选择Prompt；玩家之后主动提交具体进攻目标。
+- target-invalidated：本效果入栈时不声明进攻对象；实际进攻另由公共战斗入口按当时状态生成并复验目标。
+
+### continuous:structured-combat-rule
+
+精确绑定能力数：16。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；combat-settlement = L12GameEngine.ResolveDefenseCore；condition-and-active-state = L12StructuredCardRules.CombatProfile；definition = L12StructuredCardRules.GetCombatRuleAbilities；master-protection = L12StructuredCardRules.ProtectsMasterFromTroops；presentation = L12GameEngine.SnapshotFor；support-source-revalidation = L12StructuredCardRules.CannotSupport；support-target-revalidation = L12StructuredCardRules.CannotReceiveBackRowSupport；trial-protection = L12StructuredCardRules.ProtectsActiveTrialLegions。
+
+- duplicate-submit：持续规则读取无副作用；重复进攻或支援提交仍由公共动作协议拒绝。
+- negated：印刷持续战斗规则不独立入栈，不能被一次效果无效；授予它的父效果若存在则另行验收。
+- no-target：本族为持续限制或保护规则，不发动效果也不声明对象；没有合法进攻或支援时由公共动作候选为空表达。
+- payment-cancel：本族持续规则本身没有费用或支付Prompt。
+- single-candidate-choice：本族只约束公共进攻/支援候选与提交复验，不代替玩家选择合法目标。
+- target-invalidated：本族没有效果对象或响应窗口；战斗对象在提交或结算前失效时由公共战斗动作协议复验。
+
+### pipeline:active-effect
+
+精确绑定能力数：45。运行入口：begin = L12GameEngine.BeginActiveAbility；commit = L12GameEngine.CommitActiveAbilityCore；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.ResolveActiveEffect；stack = L12GameEngine.PushEffect；usage = L12ActiveUsageRules.Find；views = L12GameEngine.BuildAbilityViews。
+
+
+### reaction:negate-pipeline
+
+精确绑定能力数：2。运行入口：candidates = L12GameEngine.LegalResponseSources；commit = L12GameEngine.CommitNegateResponse；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
+
+- duplicate-submit：重复提交由堆叠响应协议按当前栈顶与响应窗口复验。
+- no-target：响应对象是堆叠顶部的对方进攻或效果，不另行选择效果目标。
+
+### morale:resource-identity
+
+精确绑定能力数：3。运行入口：manual-selection = L12GameEngine.CanConsumeSelectedResources；payment = L12GameEngine.TryConsumeMorale；presentation = L12GameEngine.SnapshotMorale；resource-count = L12GameEngine.ActiveResourceCount。
+
+- duplicate-submit：声明读取无副作用；支付重复提交由公共支付协议复验。
+- negated：资源身份声明不是效果，不独立入栈，不能被无效。
+- no-target：资源身份声明不选择效果对象。
+- payment-cancel：本段自身没有费用；它声明的卡作为支付资源时的取消由公共支付协议处理。
+- target-invalidated：无效果对象；支付时按士气区当前成员身份重新计数。
+
+### continuous:duel-combat-line
+
+精确绑定能力数：1。运行入口：attack = L12GameEngine.Attack；attack-revalidation = L12GameEngine.TryValidateAttackTarget；combat-settlement = L12GameEngine.ResolveDefenseCore；condition-and-active-state = L12StructuredCardRules.CombatProfile；disaster-target = L12GameEngine.HasMandatoryDisasterLegionTarget。
+
+- duplicate-submit：持续规则读取无副作用；重复进攻提交由公共战斗协议拒绝。
+- negated：持续战斗规则不独立入栈，不能作为一次效果被无效。
+- no-target：本段只约束来源军团自身的战斗规则，不选择效果对象。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无效果目标；进攻与交战每次按当前状态复验。
+
+### hand-play:printed-entry-cost-condition
+
+精确绑定能力数：8。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12GameEngine.PrintedEntryCostModifier；definition = L12StructuredCardSemantics.PrintedEntryCostRule；presentation = L12GameEngine.SnapshotHand；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
+
+- multi-target-applicability：一次只计算当前待打出手牌实例的费用。
+- negated：印刷持续减费在支付前参与实际费用计算，不独立入栈，不能作为一次效果被无效。
+- no-target：本族只按当前公开状态修改手牌打出费用，不选择效果对象。
+- target-invalidated：没有效果目标；资源支付提交时重新计算当前状态下的实际费用。
+
+### private-zone:strict-hand-entry
+
+精确绑定能力数：3。运行入口：declaration = L12GameEngine.CreateActivationStepPrompt；dependent-continuation = L12GameEngine.QueueNextCompositeSegment；failed-settlement = L12GameEngine.RecordTargetSettlementFailure；presentation = L12GameEngine.SnapshotFor；settlement-revalidation = L12GameEngine.TrySummonFromHand；source-failure = L12GameEngine.RecordResolutionFailure。
+
+- replacement：已声明的手牌实例若离开手牌区，结算仅失败；不得从墓地、牌库或其他手牌替代。
+- slot-invalidated：已声明位置失效时不得覆盖或改选；本段记录失败。
+- S01-0213:ability:after-attack:bf52deb7316f89d3 / payment-cancel：〈锡瓦的卡巴〉无需消耗费用；下个重置阶段的士气锁定是结算结果，不是发动费用。
+- S01-0213:ability:after-attack:bf52deb7316f89d3 / single-candidate-choice：该能力选择公开空位，不选择手牌对象；来源固定为发动能力的同一张〈锡瓦的卡巴〉。
+
+### cost:active-rest
+
+精确绑定能力数：27。运行入口：button-eligibility = L12GameEngine.BuildAbilityViews；cost-commit = L12GameEngine.CommitStructuredActiveRestCost；cost-presentation = L12GameEngine.AddActivePaidCostPresentation；response-stack = L12GameEngine.PushEffect；runtime-identity = L12StructuredCardRules.IsActiveRestAbility。
+
+- multi-target-applicability：主动休整Cost只改变能力来源状态，不处理父能力的多个效果对象。
+- no-target：本档案只验收主动休整的共用Cost；各父能力是否需要目标及无目标时能否发动由对应效果档案验收。
+- payment-cancel：对象或分支选择取消发生在PushEffect共用Cost边界之前，由父能力声明档案验收；未进入本边界即不得休整来源。
+- single-candidate-choice：主动休整Cost本身不选择效果对象；唯一候选仍选择属于父能力声明协议。
+- target-invalidated：来源休整在入栈前已经支付；效果对象逆结算失效由父能力档案验收，不改变共用Cost。
+
+### declaration:front-row-composite-line
+
+精确绑定能力数：3。运行入口：entry-cost = L12GameEngine.PrintedEntryCostModifier；taunt = L12StructuredCardRules.HasTaunt；troops = L12StructuredCardRules.OpponentTurnFrontTroopsBonus。
+
+- duplicate-submit：持续授予读取无副作用；重复进攻提交仍由公共战斗协议拒绝。
+- negated：位置条件的持续关键词授予不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象，只按来源当前行位决定是否授予挑衅。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无效果目标；进攻候选与提交复验每次都读取当前行位与关键词状态。
+
+### continuous:front-row-taunt-overlay
+
+精确绑定能力数：4。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；condition-and-active-state = L12StructuredCardRules.HasTaunt；definition = L12StructuredCardRules.GetCombatOverlayAbilities；master-attack-rule = L12GameEngine.CanAttackMasterTarget；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：持续授予读取无副作用；重复进攻提交仍由公共战斗协议拒绝。
+- negated：位置条件的持续关键词授予不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象，只按来源当前行位决定是否授予挑衅。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无效果目标；进攻候选与提交复验每次都读取当前行位与关键词状态。
+
+### morale:active-effect-pipeline
+
+精确绑定能力数：14。运行入口：button = L12GameEngine.FactionEffectSnapshot；commit = L12GameEngine.CommitActiveAbilityCore；cost-table = L12GameEngine.GetActiveAbilityMoraleCost；eligibility = L12GameEngine.ActiveAbilityUnavailableReason；identity-normalization = L12MoraleIdentityCatalog.CanonicalEffectCardId；presentation = L12GameEngine.SnapshotFor；settlement-dispatch = L12GameEngine.ResolveActiveEffect；usage-rule = L12ActiveUsageRules.Find。
+
+- S01-01C1:ability:active:3a8789b35c0c2be4 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- S01-02C1:ability:static:ddab147dd97c360f / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- S01-03C1:ability:static:fa92f5d792a32bdc / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- S02-05C1:ability:active:5dec5c18aaf62a03 / payment-cancel：神力是唯一费用种类且由共享支付器自动支付，不产生玩家费用选择弹框。
+- S02-05C1:ability:active:5dec5c18aaf62a03 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- S02-05C1A:ability:active:5dec5c18aaf62a03 / payment-cancel：神力是唯一费用种类且由共享支付器自动支付，不产生玩家费用选择弹框。
+- S02-05C1A:ability:active:5dec5c18aaf62a03 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- S02-06C1:ability:static:7339369656140c39 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- ST01-C1:ability:static:6907bfcf5dbbfeb4 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- ST02-C1:ability:static:29d1864e955f856e / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- ST03-C1:ability:static:36b1c5751cc508f9 / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+- ST06-C1:ability:static:88a76dc195d499ee / target-invalidated：本段不声明等待响应后复验的效果对象；资源、牌库或固定结果在结算时读取当前状态。
+
+### pipeline:public-trigger
+
+精确绑定能力数：39。运行入口：batch-plan = L12TriggerBatchPlanner.Plan；begin-declaration = L12GameEngine.TryBeginPublicTriggerDeclaration；candidates = L12GameEngine.QueueTriggerCandidates；complete-declaration = L12GameEngine.TryCompletePublicTriggerDeclaration；presentation = L12GameEngine.ResolveTriggeredEffectDisplayText；settle = L12GameEngine.ResolveTopStack。
+
+
+### rule:game-setup
+
+精确绑定能力数：8。运行入口：hand-preparation = L12GameEngine.PrepareLibrariesAndHands；presentation = L12GameEngine.SnapshotFor；setup-defaults = L12GameEngine.BeginOptionalS2Setup。
+
+- negated：规则声明不入栈，不能被响应或无效。
+- no-target：规则声明不选择效果对象。
+- note：开场规则只在开局管线生效，不创建效果、费用或对象选择。
+- payment-cancel：规则声明本身没有费用或支付Prompt。
+- target-invalidated：无效果对象；每次判定读取当前状态。
+- S01-01D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+- S01-02D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+- S01-03D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+- S01-04D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+- S02-05D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+- S02-06D1:ability:setup:281db2829152b981 / duplicate-submit：额外士气由开局准备规则自动执行，没有玩家提交；恢复只读取已保存的士气区状态。
+
+### continuous:summon-turn-counter-protection
+
+精确绑定能力数：2。运行入口：current-round-condition = L12StructuredCardRules.HasSummonTurnCounterTacticProtection；definition = L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection；delegated-entry-inheritance = L12GameEngine.ResolveBatch6JAEnterEffect；legacy-delegated-entry-inheritance = L12GameEngine.TryContinueS1Faction；response-candidate-and-submit = L12GameEngine.IsProtectedFromCounterTactics。
+
+- multi-target-applicability：每个被转发的登场效果分别携带保护标记，不把多段效果合并为一个响应对象。
+- negated：保护本身是登场回合持续规则，不独立入栈；不能先无效保护再响应受保护效果。
+- no-target：持续保护不选择对象；它只过滤会影响受保护效果的反击响应。
+- payment-cancel：保护本身没有费用；反击战术是否支付费用由其自身协议处理。
+- target-invalidated：没有效果目标；每次响应候选与提交均按当前堆叠来源和回合复验。
+
+### continuous:ramses-protection-and-entry-cost
+
+精确绑定能力数：1。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；current-round-condition = L12StructuredCardRules.HasSummonTurnCounterTacticProtection；definition = L12StructuredCardSemantics.HasSummonTurnCounterTacticProtection；delegated-entry-inheritance = L12GameEngine.ResolveBatch6JAEnterEffect；entry-cost-calculation = L12GameEngine.PrintedEntryCostModifier；entry-cost-definition = L12StructuredCardSemantics.PrintedEntryCostRule；legacy-delegated-entry-inheritance = L12GameEngine.TryContinueS1Faction；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；response-candidate-and-submit = L12GameEngine.IsProtectedFromCounterTactics。
+
+- multi-target-applicability：减费只计算当前手牌实例；转发的每个登场效果分别携带保护标记。
+- negated：两项持续规则都不独立入栈，不能作为一次效果被无效。
+- no-target：持续保护与持续减费均不创建效果对象。
+- payment-cancel：保护没有费用；登场资源支付取消由公共手牌打出协议处理。
+- target-invalidated：保护按当前回合和堆叠来源复验；减费在支付提交时按当前场上陵墓守卫复算。
+
+### continuous:simple-troops-rule
+
+精确绑定能力数：4。运行入口：continuous-recalc = L12GameEngine.RecalculateContinuousTroops；turn-and-position-bonus = L12GameEngine.GetTurnAndPositionContinuousTroops。
+
+- duplicate-submit：持续修正读取无副作用。
+- negated：持续兵力修正不独立入栈，不能作为一次效果被无效。
+- no-target：修正对象由规则文本固定（自身/相邻/对方全场），不创建玩家选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无声明对象；每次重算按当前战场状态重新判定条件。
+
+### lethal-replacement:offer-pipeline
+
+精确绑定能力数：3。运行入口：apply = L12GameEngine.TryApplyCardLethalSubstitution；candidates = L12GameEngine.CardLethalSubstitutionCandidates；eligibility = L12GameEngine.CanUseAchillesLethalReplacement；offer = L12GameEngine.TryOfferEffectLethalReplacement；presentation = L12GameEngine.SnapshotFor；substitution-kind = L12GameEngine.CardLethalSubstitutionKind。
+
+- negated：致命替代在阵亡处理内以弹框裁定，不创建可无效的独立效果堆叠；天灾结算不建立替代窗口。
+- no-target：替代对象即即将阵亡的受保护卡本身；费用由分支协议支付，不另行选择效果目标。
+- S02-0504:ability:lethal-replacement:3fb565d50830f260 / target-invalidated：阿喀琉斯不声明替代牌对象；结算时只重新检查来源仍在前排及神力费用仍可支付。
+
+### declaration:saladin-line
+
+精确绑定能力数：1。运行入口：attack-passive = L12GameEngine.ApplyS1FactionAttackPassives；move = L12GameEngine.CavalryMove。
+
+- duplicate-submit：持续声明读取无副作用；重复位移提交由公共动作协议复验。
+- negated：持续印刷声明不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象；位移目的地与相邻增益目标按公共规则候选判定。
+- payment-cancel：本段没有费用或支付Prompt；位移动作本身无卡牌费用。
+- target-invalidated：无效果目标；位移与进攻增益每次按当前场上状态复验。
+
+### continuous:out-of-deck-graveyard-lifecycle
+
+精确绑定能力数：2。运行入口：authoritative-departure = L12GameEngine.MoveFieldCardToZone；deck-size-rule = L12SpecialDeckRules.DoesNotCountTowardMainDeck；definition = L12StructuredCardSemantics.HasOutOfDeckGraveyardLifecycle；departure-replacement = L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard；hand-library-replacement = L12SpecialDeckRules.CannotEnterHandOrLibrary；opening-zone-rule = L12SpecialDeckRules.StartsInGraveyard。
+
+- multi-target-applicability：多张同族卡分别应用区域替代，不因同批移动而合并或补位。
+- negated：规则能力不独立入栈，不能作为一次效果被无效；离场替代在目标效果结算时适用。
+- no-target：规则能力不选择对象；其他效果选择该卡时由目标效果自己的声明协议处理。
+- payment-cancel：规则能力没有费用；以该卡支付其他费用时仍按支付效果处理，并在离场后进入所有者墓地。
+- target-invalidated：没有自身目标；通用回手/回库候选与提交均从同一身份判断，已离区实例不得替换。
+
+### continuous:field-morale-resource
+
+精确绑定能力数：1。运行入口：automatic-payment = L12GameEngine.TryConsumeMorale；candidate-generation = L12GameEngine.SpendableFieldMoraleResources；composite-reservation = L12GameEngine.CompositeOrdinaryPaymentChoices；definition = L12StructuredCardSemantics.FieldMoraleResourceRule；effect-payment-retry = L12GameEngine.ContinueEffectMoralePayment；manual-payment = L12GameEngine.CreateResourcePaymentPrompt；paid-cost-presentation = L12GameEngine.AddPaidCostPresentationFromSnapshot；rejected-submit-rollback = L12GameEngine.RestoreActiveResourceRollback；selected-payment-commit = L12GameEngine.TryConsumeSelectedResources；selected-payment-revalidation = L12GameEngine.CanConsumeSelectedResources；snapshot-count = L12GameEngine.ActiveResourceCount；snapshot-projection = L12GameEngine.SnapshotField。
+
+- multi-target-applicability：每个合法场上实例各代表1份资源；混合支付按实例去重并一次性提交。
+- negated：持续资源能力不独立入栈，不能作为一次效果被无效；已支付费用不因后续效果无效而恢复。
+- no-target：持续资源能力不选择效果目标；支付协议只要求玩家选择实际消耗的资源实例。
+- payment-cancel：允许取消的支付流程由公共支付Prompt释放声明；未提交前不改变军团状态。
+- target-invalidated：支付提交时按原实例、当前控制者、当前回合、当前军团与活跃状态复验；失效时不换资源补位。
+
+### continuous:opponent-turn-field-rule
+
+精确绑定能力数：1。运行入口：authoritative-recalculation = L12GameEngine.RecalculateContinuousTroops；cost-derivation = L12StructuredCardRules.OpponentTurnCostModifier；definition = L12StructuredCardSemantics.OpponentTurnFieldRule；front-troops-derivation = L12StructuredCardRules.OpponentTurnFrontTroopsBonus；public-projection = L12GameEngine.SnapshotField。
+
+- duplicate-submit：持续能力没有发动或选择提交；重复生成双方快照只重新计算当前衍生值且没有副作用。
+- multi-target-applicability：每个同名实例分别重算，不共享或累积到其他军团。
+- negated：持续能力不独立入栈，不能作为一次效果被无效。
+- no-target：持续能力只修改自身衍生数值，不创建对象选择。
+- payment-cancel：能力没有费用；衍生费用只供其他支付协议读取。
+- target-invalidated：没有效果目标；每次快照与结算前按当前回合、控制者和位置重算。
+
+### continuous:relic-zone-limit-exempt
+
+精确绑定能力数：5。运行入口：artifact-zone-placement = L12GameEngine.PlaceArtifactInRelicZone；definition = L12StructuredCardSemantics.IgnoresRelicZoneLimit。
+
+- multi-target-applicability：每张符合身份的圣物独立进入额外圣物位，不替换既有主圣物。
+- negated：规则持续生效且不独立入栈，不能作为一次效果被无效。
+- no-target：持续上限豁免不选择对象；仅决定该圣物进入主圣物位或额外圣物位。
+- payment-cancel：豁免不改变打出费用；支付取消仍由手牌打出协议处理。
+- target-invalidated：没有效果目标；落位时按当前主圣物位状态重新判断。
+
+### death:immortal-replacement
+
+精确绑定能力数：2。运行入口：active-state = L12GameEngine.HasActiveImmortal；grant = L12GameEngine.GrantImmortalUntilNextTurnStart；lethal-replacement = L12GameEngine.RemoveFromField。
+
+- duplicate-submit：代替在致命裁定中按实例状态执行一次，没有独立提交命令。
+- negated：代替在阵亡处理内裁定，不创建可响应或无效的独立效果堆叠；授予它的登场效果另行验收。
+- no-target：本段的代替对象由授予它的登场效果选择；代替裁定本身不再选对象。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：代替在当前致命处理内读取仍位于战场的当前实例，不保存可被逆结算改变的对象声明。
+
+### continuous:tomb-guard-master-aura
+
+精确绑定能力数：1。运行入口：current-cost = L12GameEngine.RecalculateContinuousTroops；current-troops = L12GameEngine.GetTurnAndPositionContinuousTroops；definition = L12StructuredCardSemantics.MasterFieldAuraRule；presentation = L12GameEngine.SnapshotField。
+
+- duplicate-submit：持续重算为幂等读取，不产生次数、日志或重复状态。
+- multi-target-applicability：我方战场每张陵墓守卫各自同时获得兵力与当前费用修正。
+- negated：持续能力不独立入栈，不能作为一次效果被无效。
+- no-target：持续能力按当前战场上的陵墓守卫逐张应用，不建立玩家目标选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- single-candidate-choice：持续能力没有选择步骤。
+- target-invalidated：没有声明对象；离场、控制权或主神变化后由共享重算立即撤销。
+
+### rule:isis-setup
+
+精确绑定能力数：1。运行入口：setup = L12GameEngine.PrepareLibrariesAndHands。
+
+- duplicate-submit：没有玩家提交命令；建局只构造一次初始状态，恢复读取持久化结果而不重复执行。
+- negated：开局规则行动不入效果堆叠，不能被响应或无效。
+- no-target：开局规则直接把固定的<复苏的奥西里斯>置入所属玩家墓地，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；所属玩家与固定卡身份在建局时已确定。
+
+### hand-play:self-damage-entry-discount
+
+精确绑定能力数：6。运行入口：cost-calculation = L12GameEngine.GetPlayCostWithSigurdDiscount；declaration-and-choice = L12GameEngine.PlayCard；definition = L12StructuredCardRules.SelfDamageEntryDiscount；presentation = L12GameEngine.SnapshotHand；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice；self-damage-payment = L12GameEngine.PayMasterDamageCostAndCanContinue。
+
+- multi-target-applicability：一次只修改当前手牌军团的本次打出费用。
+- negated：冒号前自伤只改变本次打出费用，不生成独立可响应效果；支付最后1血会立即判败并终止打出。
+- no-target：该手牌费用能力不选择效果对象；合法位置和打出资源属于打出动作本身。
+- target-invalidated：没有效果目标；提交时只复验手牌实例、位置与实际支付资源。
+
+### rule:valkyrie-draw-phase
+
+精确绑定能力数：1。运行入口：turn-start = L12GameEngine.ContinueAutomaticTurnStart。
+
+- duplicate-submit：没有玩家发动命令；同一回合的自动阶段推进由回合状态机执行一次。
+- negated：阶段规则行动不入效果堆叠，不能被响应或无效。
+- no-target：抽牌阶段替代按牌库当前顺序逐张弃置，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；每次弃置只读取当时牌库顶。
+
+### composite:counter-deployment
+
+精确绑定能力数：2。运行入口：candidate-generation = L12GameEngine.IsCounterDeploymentCandidate；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement-revalidation = L12GameEngine.SetDeclaredCounterTactics；slot-declaration = L12GameEngine.CreateActivationStepPrompt。
+
+
+### attack:troops-set-on-attack
+
+精确绑定能力数：2。运行入口：attack-settlement = L12GameEngine.Attack；definition = L12StructuredCardRules.CombatProfile；post-attack-revert = L12GameEngine.RevertPendingCombatTroopsModifiers。
+
+- duplicate-submit：重复进攻提交由公共战斗协议拒绝；条件修正在进攻时按当前状态重新计算。
+- negated：进攻时兵力视为是进攻动作内的条件修正，不创建可响应或无效的独立效果堆叠。
+- no-target：本段只作用于来源军团自身，不选择效果对象。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无外部对象；进攻合法性由公共战斗入口按当前状态复验。
+
+### disaster:continuous-rule
+
+精确绑定能力数：14。运行入口：attack-legion-validation = L12GameEngine.TryValidateAttackTarget；attack-master-validation = L12GameEngine.CanAttackMasterTarget；disaster-value = L12GameEngine.SetDisasterValue；effect-hook = L12GameEngine.PushEffect；hand-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；main-phase-effect = L12GameEngine.BeginMainPhaseDisasterEffect；master-ability-quote = L12GameEngine.QuoteActiveMorale；placement-and-movement = L12GameEngine.PlayCard；presentation = L12GameEngine.SnapshotFor；rule-registry = L12ActiveDisasterRules.HasRegisteredContinuousRule。
+
+- duplicate-submit：规则判定读取无副作用。
+- negated：天灾机制无法被任何效果抵挡或规避，持续规则不独立入栈、不能被无效。
+- no-target：持续规则不选择效果对象，按规则文本对全场生效。
+- payment-cancel：持续规则本身没有费用；其施加的费用修正由被打出的卡自身协议处理。
+- single-candidate-choice：持续规则不声明玩家效果对象；攻击或放置命令的对象选择由对应规则行动协议负责。
+- target-invalidated：无声明对象；每次判定读取当前活跃天灾。
+
+### pipeline:disaster-authority
+
+精确绑定能力数：4。运行入口：damage = L12GameEngine.DamageMasterNonLethalFromDisaster；presentation = L12GameEngine.SnapshotFor；settle = L12GameEngine.ResolveDisasterEffect；trigger = L12GameEngine.BeginDisasterTrigger；turn-end = L12GameEngine.ResolveEndPhaseDisasterEffect；turn-start = L12GameEngine.ResolveTurnStartDisasterEffectIfNeeded。
+
+- negated：天灾不可响应不可无效。
+- S01-DS02:ability:turn-end:9d632a451357ff71 / target-invalidated：回合末从当前手牌一次提交返回顺序，不进入响应堆叠，也没有声明后等待逆结算的对象。
+- S01-DS10:ability:turn-start:a790e35d0012c86f / duplicate-submit：没有玩家提交；同回合幂等由天灾实例与回合序号棘轮保证。
+- S01-DS10:ability:turn-start:a790e35d0012c86f / no-target：回合开始规则自动对双方主宰造成非致命伤害，不生成对象选择。
+- S01-DS10:ability:turn-start:a790e35d0012c86f / target-invalidated：双方主宰是规则固定接受者，没有可在响应中失效的声明对象。
+- ST-DS01:ability:disaster:0c65265cbaf95168 / duplicate-submit：没有玩家选择提交；同一栈项由公共结束栈项协议只结算一次。
+- ST-DS01:ability:disaster:0c65265cbaf95168 / target-invalidated：本段结算时逐一读取所有当前符合条件的前排军团，没有声明后等待响应的对象。
+
+### continuous:front-row-keyword-troops
+
+精确绑定能力数：6。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；condition-and-active-state = L12StructuredCardRules.ConditionMatches；definition = L12StructuredCardRules.GetCombatRuleAbilities；keyword-grant-chain = L12StructuredCardRules.HasTaunt；presentation = L12GameEngine.BuildActiveKeywords；troops-bonus-definition = L12StructuredCardRules.OpponentTurnFrontTroopsBonus；troops-consumer = L12GameEngine.RecalculateContinuousTroops。
+
+- duplicate-submit：持续规则读取无副作用；重复进攻提交仍由公共战斗协议拒绝。
+- negated：位置条件的持续授予与兵力修正不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象；abilityRef 是本卡能力段的静态引用，不是玩家选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无效果目标；挑衅授予与兵力修正每次都按当前行位与回合归属重新判定。
+
+### keyword-granted:taunt
+
+精确绑定能力数：2。运行入口：active-state = L12StructuredCardRules.HasTaunt；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasPrintedKeywordReference；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
+
+### pipeline:response
+
+精确绑定能力数：2。运行入口：candidates = L12GameEngine.LegalResponseSources；capability = L12StructuredCardSemantics.SpecialResponseCapability；pool-timing = L12GameEngine.IsPoolCounterResponseAtTiming；presentation = L12GameEngine.ResolveResponseEffectDisplayText；settle = L12GameEngine.ResolveTopStack；submit = L12GameEngine.BeginSelectedStackResponse。
+
+
+### rule:once-per-turn-by-name
+
+精确绑定能力数：2。运行入口：usage-check = L12CardNameUsageRules.HasUsed；usage-commit = L12CardNameUsageRules.TryUse；usage-key = L12CardNameUsageRules.Key。
+
+- duplicate-submit：规则判定读取无副作用。
+- negated：规则声明不入栈，不能被响应或无效。
+- no-target：规则声明不选择效果对象。
+- note：每回合一次的限制声明不创建效果，只约束同名卡的共享次数记账。
+- payment-cancel：规则声明本身没有费用或支付Prompt。
+- target-invalidated：无效果对象；每次判定读取当前状态。
+
+### rule:universal-faction-mapping
+
+精确绑定能力数：1。运行入口：candidate-consumer = L12GameEngine.IsDesertHandSummonCandidate；effective-faction = L12StructuredCardRules.EffectiveFaction；effective-traits = L12StructuredCardRules.EffectiveTraits；faction-check = L12StructuredCardRules.HasFaction。
+
+- duplicate-submit：规则判定读取无副作用。
+- negated：规则声明不入栈，不能被响应或无效。
+- no-target：规则声明不选择效果对象。
+- note：阵营映射声明不创建效果，只参与有效阵营/特征的统一计算。
+- payment-cancel：规则声明本身没有费用或支付Prompt。
+- target-invalidated：无效果对象；每次判定读取当前状态。
+
+### replacement:morale-zone-resource
+
+精确绑定能力数：1。运行入口：definition = L12StructuredCardSemantics.MoraleZoneResourceRule；payment-identity = L12GameEngine.OrdinaryPaymentSemanticKey；payment-prompt = L12GameEngine.CreateResourcePaymentPrompt；presentation-projection = L12GameEngine.SnapshotMorale；return-prompt = L12GameEngine.CreateReturnMoralePrompt；return-settlement = L12GameEngine.ReturnMoraleCardToDestination；snapshot-projection = L12GameEngine.SnapshotMorale。
+
+- multi-target-applicability：同批返还的每个资源分别按当前身份决定去向，不合并、不转移到其他实例。
+- negated：替代规则不独立入栈，不可单独响应或无效；已支付的返还费用不因后续效果无效而恢复。
+- no-target：替代规则自身不选择对象；返还效果仍按公共协议选择实际士气实例。
+- payment-cancel：替代规则没有自身费用；它作为资源被消耗或返还时，由父级支付协议处理取消。
+- target-invalidated：提交时选定实例必须仍在当前玩家士气区；失效后不改选其他资源补位。
+
+### pipeline:hand-play
+
+精确绑定能力数：19。运行入口：composite-declaration = L12GameEngine.BeginCompositeHandPlayDeclaration；composite-validation = L12GameEngine.ValidateCompositeHandPlayDeclaration；cost = L12GameEngine.GetPlayCostWithSigurdDiscount；play = L12GameEngine.PlayCard；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.ResolveTacticEffect。
+
+
+### granted:prayer-modes
+
+精确绑定能力数：2。运行入口：presentation = L12GameEngine.SnapshotFor；preview = L12GameEngine.BeginPrayerPublicPreview；private-preview = L12GameEngine.BeginPrayerPrivatePreview；settle = L12GameEngine.TryResolveS2UniversalTactic。
+
+- target-invalidated：两段均查看结算时的天灾牌库顶，不声明会在响应期间失效或被替换的效果对象。
+
+### leave:attached-tactics-discard
+
+精确绑定能力数：1。运行入口：discard = L12GameEngine.DiscardAttachedCards。
+
+- duplicate-submit：清理没有独立玩家提交，完成后清空叠放集合，同一关系不能重复弃置。
+- negated：宿主离场后的叠放卡清理是区域规则处理，不创建可响应或无效的效果。
+- no-target：宿主圣物实际离开圣物区时按当前叠放关系自动弃置，不存在独立发动或对象候选阶段。
+- payment-cancel：宿主离场清理没有费用或支付Prompt。
+- target-invalidated：没有入栈后等待复验的对象；清理时枚举宿主当前仍叠放的卡牌实例。
+
+### granted:ruined-ritual-modes
+
+精确绑定能力数：2。运行入口：presentation = L12GameEngine.SnapshotFor；response-commit = L12GameEngine.CommitS2CounterResponse；settle = L12GameEngine.ResolveS2CounterEffect。
+
+
+### leave:master-legion-return
+
+精确绑定能力数：1。运行入口：departure = L12GameEngine.CompleteMasterLegionDeparture；morale-trigger = L12GameEngine.TryResolveSimpleResourceTrigger。
+
+- duplicate-submit：离场替代没有独立玩家提交；同一实例移出战场后不能再次执行同一次离场。
+- negated：返回主宰区是离场规则替代，不能被响应或无效；返回后的士气追加才是独立可选效果。
+- no-target：离场替代只在当前作为军团的孙悟空实际离场时执行，不存在独立发动或对象候选阶段。
+- payment-cancel：离场替代没有费用；返回后的可选士气效果另由资源触发生命周期管理。
+- target-invalidated：没有入栈后等待复验的已声明对象；离场动作持有当前实例并立即应用区域替代。
+
+### hand-play:artifact-block
+
+精确绑定能力数：2。运行入口：authoritative-submit = L12GameEngine.PlayCard；button-and-snapshot = L12GameEngine.SnapshotHand；condition-and-reason = L12StructuredCardRules.HandPlayBlockReason；definition = L12StructuredCardSemantics.HandPlayBlockRule。
+
+- multi-target-applicability：每次只判断当前提交的一张手牌；其他手牌各自读取同一规则。
+- negated：来源位于圣物区期间的持续规则不独立入栈，不能作为一次效果被无效。
+- no-target：持续封锁只判断待打出的手牌卡种，不创建对象选择。
+- payment-cancel：封锁在资源支付前拒绝，未创建支付Prompt，也不会扣除资源。
+- target-invalidated：没有效果目标；提交时按当前圣物区来源重新判断，旧按钮状态不具权威性。
+
+### keyword-granted:must-hit
+
+精确绑定能力数：1。运行入口：attack-declaration = L12GameEngine.Attack；defense-submit = L12GameEngine.ValidateDefenseChoice；definition = L12StructuredCardRules.HasPrintedKeywordReference；leave-reset = L12GameEngine.ResetCardAfterLeavingField；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
+
+### composite:desert-hand-summon
+
+精确绑定能力数：1。运行入口：candidate-generation = L12GameEngine.IsDesertHandSummonCandidate；cost-commit = L12GameEngine.TryCommitCompositePreStackCosts；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement-revalidation = L12GameEngine.TryResolveS2FactionTactic。
+
+- no-target：本效果必须先声明1张合格手牌军团；不存在候选时不能发动，且尚未提交弃置费用。
+
+### rule:thor-hammer-master-gate
+
+精确绑定能力数：1。运行入口：button-projection = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitS2RemainingAbility；declaration = L12GameEngine.TryBeginS2RemainingAbility；master-gate = L12StructuredCardSemantics.MasterAbilityGate；usage-check = L12CardNameUsageRules.HasUsed；usage-commit = L12CardNameUsageRules.TryUse；usage-key = L12CardNameUsageRules.Key。
+
+- duplicate-submit：规则判定读取无副作用。
+- negated：规则声明不入栈，不能被响应或无效。
+- no-target：规则声明不选择效果对象。
+- note：主宰条件与卡名共享次数声明不创建效果；按钮、声明、提交与次数入口共读同一结构化门禁。
+- payment-cancel：规则声明本身没有费用或支付Prompt。
+- target-invalidated：无效果对象；每次判定读取当前状态。
+
+### keyword:taunt
+
+精确绑定能力数：8。运行入口：active-state = L12StructuredCardRules.HasTaunt；attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasKeywordDefinition；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### replacement:anderstorp-damage-floor
+
+精确绑定能力数：1。运行入口：damage-floor = L12GameEngine.AdjustAnderstorpRingDamage。
+
+- duplicate-submit：替代规则没有独立提交命令；重复进攻或伤害由其原始动作协议处理。
+- negated：替代规则在伤害入口内裁定，不创建可响应或无效的独立效果。
+- no-target：伤害替代只读取本回合主宰首次受伤事实，不创建对象选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：没有已声明效果对象；每次伤害按当前控制者回合与累计受伤事实复验。
+
+### keyword-granted:charge
+
+精确绑定能力数：4。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasPrintedKeywordReference；leave-reset = L12GameEngine.ResetCardAfterLeavingField；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
+
+### keyword-granted:death-immunity
+
+精确绑定能力数：1。运行入口：active-state = L12GameEngine.HasActiveImmortal；definition = L12StructuredCardRules.HasPrintedKeywordReference；grant = L12GameEngine.GrantImmortalUntilNextTurnStart；lethal-replacement = L12GameEngine.RemoveFromField；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ExpireEffectsAtPlayerTurnStart。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
+
+### granted:tenka-modes
+
+精确绑定能力数：3。运行入口：attack-bonus = L12GameEngine.Attack；free-move = L12GameEngine.Move；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveS2FactionTactic。
+
+- single-candidate-choice：费用分支固定提供前排/后排两个行位选项；其余两段没有对象候选选择。
+- target-invalidated：三个分支均不声明单张效果对象：费用分支在结算时读取所选整排，另外两段授予回合规则状态。
+
+### summon-flow:promotion-entry
+
+精确绑定能力数：4。运行入口：commit = L12GameEngine.PlayS2Promotion；cost-calculation = L12GameEngine.S2PromotionGodPowerCost；entry = L12GameEngine.BeginS2PromotionEntry；foundation-candidates = L12GameEngine.S2PromotionFoundations；foundation-detach = L12GameEngine.DetachPromotionFoundations；identity = L12GameEngine.IsS2PromotionCard；options = L12GameEngine.BuildS2PromotionOptions；presentation = L12GameEngine.SnapshotFor；state-inheritance = L12S2ZoneOps.InheritPromotionState。
+
+- duplicate-submit：重复提交由打出/晋升流程的命令与Prompt协议复验。
+- multi-target-applicability：一次只叠放一个同名非【晋升者】基底，不存在多目标结算。
+- negated：晋升登场是打出流程中的规则行动，不创建可响应或无效的独立效果堆叠；晋升登场触发的效果另行验收。
+
+### granted-static:front-row-taunt-on-kill
+
+精确绑定能力数：1。运行入口：active-state = L12StructuredCardRules.HasTaunt；grant = L12GameEngine.GrantTauntUntilNextOwnTurnEnd；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：授予由父能力结算执行一次；本段没有独立提交命令。
+- negated：授予定义段不独立入栈；授予它的击杀时父能力是否被响应另行验收。
+- no-target：授予对象是来源军团自身，不选择效果对象。
+- payment-cancel：本段没有费用；击杀时父能力的费用由父能力自身协议处理。
+
+### keyword:charge
+
+精确绑定能力数：3。运行入口：attack-candidates = L12GameEngine.BuildLegalAttackTargets；attack-revalidation = L12GameEngine.TryValidateAttackTarget；definition = L12StructuredCardRules.HasKeywordDefinition；leave-reset = L12GameEngine.ResetCardAfterLeavingField；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### resource:morale-face-flip
+
+精确绑定能力数：11。运行入口：candidate-generation = L12GameEngine.CanFlipMoraleToGodPower；identity-definition = L12MoraleIdentityCatalog.CanUseGodPowerFace；presentation = L12GameEngine.SnapshotMorale；resolution-prompt = L12GameEngine.PromptS2FlipMorale；settlement-mutation = L12S2ZoneOps.FlipMoraleFace；toggle-candidate-generation = L12GameEngine.CanToggleMoraleFace。
+
+
+### hand-play:structured-hand-condition-cost
+
+精确绑定能力数：10。运行入口：button-and-snapshot = L12GameEngine.SnapshotHand；combined-play-cost = L12GameEngine.GetPlayCostWithSigurdDiscount；condition-and-calculation = L12StructuredCardRules.HandPlayCostModifier；definition = L12StructuredCardRules.TryGetStructuredAbilities；resource-payment = L12GameEngine.EnsurePlayResourcePaymentChoice。
+
+- multi-target-applicability：一次只计算当前待打出手牌实例，不修改其他手牌实例。
+- negated：满足条件期间的持续费用修正不独立入栈，不能作为一次效果被无效。
+- no-target：本族只读取手牌实例与当前公开状态计算打出费用，不创建效果对象。
+- target-invalidated：没有效果目标；支付时必须按当前状态重新计算实际费用。
+
+### continuous:rested-free-front-back-move
+
+精确绑定能力数：1。运行入口：move-command = L12GameEngine.Move。
+
+- duplicate-submit：重复位移提交由公共位移协议拒绝。
+- negated：持续费用豁免不独立入栈，不能作为一次效果被无效。
+- no-target：豁免不选择对象；位移目的地由玩家按公共位移协议选择。
+- payment-cancel：豁免本身没有费用；被豁免的位移动作没有支付Prompt。
+- target-invalidated：无声明对象；位移提交按当前来源休整状态与目的地合法性复验。
+
+### keyword:shock
+
+精确绑定能力数：2。运行入口：attack-trigger = L12GameEngine.ApplyS2Shock；combat-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.HasKeywordDefinition；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ResetTemporaryCardState。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### continuous:front-row-keyword-grant
+
+精确绑定能力数：1。运行入口：active-state = L12StructuredCardRules.HasTaunt；condition = L12StructuredCardRules.ConditionMatches；definition = L12StructuredCardRules.GetCombatRuleAbilities；grant-chain = L12StructuredCardRules.AbilityGrantsKeyword；presentation = L12GameEngine.BuildActiveKeywords。
+
+- duplicate-submit：持续授予读取无副作用。
+- negated：位置条件的持续授予不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象；abilityRef 是本卡能力段的静态引用。
+- payment-cancel：本段没有费用或支付Prompt。
+
+### keyword:strong-attack
+
+精确绑定能力数：2。运行入口：active-state = L12StructuredCardSemantics.HasEffectiveStrongAttack；combat-settlement = L12GameEngine.Attack；definition = L12StructuredCardRules.HasKeywordDefinition；grant = L12GameEngine.GrantStrongAttack；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ResetTemporaryCardState。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### trigger:paid-self-state
+
+精确绑定能力数：2。运行入口：begin-declaration = L12GameEngine.TryBeginTrialAdvanceTriggerDeclaration；candidate = L12GameEngine.CreateTriggerCandidate；cost-commit = L12GameEngine.TryCompleteTrialAdvanceTriggerDeclaration；presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12GameEngine.TryResolveTrialAdvanceEffect；source-failure = L12GameEngine.RecordResolutionFailure。
+
+
+### granted:lancelot-kill-modes
+
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+
+- target-invalidated：推进试炼是全局结算，不声明效果对象；来源离场不改变已公开选择。
+
+### granted:gain-rune
+
+精确绑定能力数：2。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settlement = L12S2ZoneOps.GainRunes。
+
+- duplicate-submit：本段没有独立提交命令；重复提交由父能力的计划/堆叠协议复验。
+- negated：granted 获得符文段不独立入栈；授予它的父能力是否被响应或无效另行验收。
+- no-target：获得符文不选择效果对象。
+- payment-cancel：本段没有费用；父能力的费用由父能力自身协议处理。
+- single-candidate-choice：“获得符文”作为父能力选项之一，分支选择由父能力的声明协议负责。
+- target-invalidated：无效果目标；分支失效由父能力的结算复验处理。
+
+### rule:trial-value
+
+精确绑定能力数：8。运行入口：advance-core = L12GameEngine.AdvanceTrialCore；button = L12GameEngine.BuildAbilityViews；commit = L12GameEngine.TryCommitTrialAdvanceActivation；completion = L12GameEngine.CompleteTrialRuleAction；presentation = L12GameEngine.SnapshotFor；printed-identity = L12StructuredCardRules.IsTrialLegion；settlement = L12GameEngine.ResolveUsualTrialAdvance。
+
+- duplicate-submit：重复提交由规则行动入口按当前试炼进度、回合与发动锁复验。
+- negated：发动试炼是规则行动而非卡牌效果，不创建可响应或无效的效果堆叠。
+- no-target：不选择效果对象，只推进来源军团自身的试炼进度。
+- payment-cancel：试炼推进不支付士气或符文；代价是来源军团休整，由规则行动提交复验。
+- target-invalidated：规则行动提交时同步复验来源军团并立即推进，不存在声明后等待逆结算的效果对象。
+
+### after-kill:printed-piercing
+
+精确绑定能力数：2。运行入口：generated-attack = L12GameEngine.BeginPiercingAttack；kill-fact-gate = L12GameEngine.ResolveTypedKillSourceEvent；printed-settlement = L12GameEngine.TryResolveS2FactionAfterAttack。
+
+- duplicate-submit：击杀事实由共享时间线裁定一次；没有独立提交命令。
+- negated：击杀时获得贯穿是印刷身份驱动的规则判定；是否可被响应由击杀触发族的响应范围另行验收。
+- no-target：本段不选择效果对象；贯穿进攻的主宰目标由生成进攻的公共复验决定。
+- payment-cancel：本段没有费用或支付Prompt。
+
+### keyword:piercing
+
+精确绑定能力数：2。运行入口：combat-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.HasKeywordDefinition；generated-attack = L12GameEngine.BeginPiercingAttack；kill-fact-gate = L12GameEngine.ResolveTypedKillSourceEvent；master-target-revalidation = L12GameEngine.CanAttackMasterTarget；printed-identity = L12StructuredCardRules.HasPrintedKeywordReference；printed-settlement = L12GameEngine.TryResolveS2FactionAfterAttack。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### keyword:death-immunity
+
+精确绑定能力数：2。运行入口：active-state = L12GameEngine.HasActiveImmortal；definition = L12StructuredCardRules.HasKeywordDefinition；grant = L12GameEngine.GrantImmortalUntilNextTurnStart；lethal-replacement = L12GameEngine.RemoveFromField；presentation = L12GameEngine.BuildActiveKeywords；turn-expiry = L12GameEngine.ExpireEffectsAtPlayerTurnStart。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：关键词定义只描述共享规则语义，不独立生成对象候选；对象属于授予它的父能力或后续规则动作。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于引用它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：关键词定义没有已声明对象；实际进攻、致命替代或状态检查均读取当前实例状态。
+
+### granted:constance-modes
+
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+
+- target-invalidated：推进试炼是全局结算，不声明效果对象；来源在声明时休整后不再作为结算目标。
+
+### rule:trial-capacity
+
+精确绑定能力数：2。运行入口：capacity = L12SpecialDeckRules.TrialCapacity；completed-setup = L12SpecialDeckRules.StartsTrialsCompleted；presentation = L12GameEngine.SnapshotFor；validator = L12DeckValidator.TryValidate。
+
+- duplicate-submit：本段没有独立对局提交命令；构筑提交由牌组校验事务处理。
+- multi-target-applicability：本段没有多目标结算。
+- negated：构筑与开局规则不进入效果堆叠，不能被响应或无效。
+- no-target：试炼容量是构筑与开局规则，不生成效果对象或候选。
+- payment-cancel：本段没有费用或支付Prompt。
+- single-candidate-choice：本段没有玩家对象选择。
+- target-invalidated：规则在构筑校验和对局建立时同步执行，没有声明后等待结算的对象。
+
+### turn-start:avalon
+
+精确绑定能力数：1。运行入口：presentation = L12GameEngine.ResolveEffectPresentationSceneId；queue = L12GameEngine.QueueAvalonTurnStart；settle = L12GameEngine.TryResolveTrialAdvanceEffect。
+
+- target-invalidated：本段没有声明对象；结算时仅处理当前未完成试炼，并独立获得1符文。
+
+### continuous:kings-sword-attached
+
+精确绑定能力数：1。运行入口：strong-attack = L12StructuredCardSemantics.GrantsStrongAttackWhileAttached；troops = L12GameEngine.GetTurnAndPositionContinuousTroops。
+
+- duplicate-submit：持续规则读取无副作用。
+- negated：叠放持续规则不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象，只按叠放关系作用于被叠放的<亚瑟王>。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无效果目标；每次重算读取当前叠放关系与位置。
+
+### replacement:lake-lady-sword
+
+精确绑定能力数：2。运行入口：replacement = L12GameEngine.TryApplyLakeLadySwordReplacement。
+
+- duplicate-submit：替代没有独立玩家提交；支付后王者之剑已离开叠放区，同一次致命检查由战斗决定表防止重复。
+- negated：持续替代属于致命离场前的规则处理，不进入效果堆叠，不能被响应或无效。
+- no-target：持续替代只在已完成试炼、当前亚瑟王及其当前叠放王者之剑同时满足时同步应用，不建立对象候选。
+- payment-cancel：移除当前唯一的王者之剑是必行费用，满足替代条件时自动支付且没有取消Prompt。
+- target-invalidated：没有声明后等待结算的对象；每次致命检查都读取当前亚瑟王、试炼完成状态和当前叠放关系。
+
+### keyword-granted:piercing
+
+精确绑定能力数：1。运行入口：combat-settlement = L12GameEngine.ResolveDefenseCore；definition = L12StructuredCardRules.HasPrintedKeywordReference；generated-attack = L12GameEngine.BeginPiercingAttack；kill-fact-gate = L12GameEngine.ResolveTypedKillSourceEvent；master-target-revalidation = L12GameEngine.CanAttackMasterTarget；printed-settlement = L12GameEngine.TryResolveS2FactionAfterAttack。
+
+- duplicate-submit：关键词定义没有独立提交命令；重复读取规则语义必须无副作用。
+- negated：授予形态的关键词定义不是独立发动的效果；授予它的父能力是否被响应或无效另行验收。
+- no-target：授予形态的定义段只描述共享关键词，不独立生成对象候选；对象由父能力声明。
+- payment-cancel：关键词定义本身没有费用或支付Prompt；费用属于授予它的父能力。
+- single-candidate-choice：关键词定义不创建玩家对象选择；实际进攻或致命替代使用当时的公共规则候选。
+- target-invalidated：定义段没有已声明对象；父能力结算及后续规则动作分别按当前实例复验。
+
+### continuous:cooperative-support
+
+精确绑定能力数：1。运行入口：definition = L12StructuredCardRules.HasCooperativeSupport；support-candidates = L12GameEngine.HasLegalLegionSupport；support-validation = L12GameEngine.ValidateDefenseChoice。
+
+- duplicate-submit：持续授予读取无副作用；重复支援提交由公共防御协议拒绝。
+- negated：持续关键词授予不独立入栈，不能作为一次效果被无效。
+- no-target：本段不选择效果对象；支援对象由玩家按公共防御协议选择。
+- payment-cancel：本段没有费用或支付Prompt。
+- target-invalidated：无声明对象；支援合法性按当前行位与状态复验。
+
+## 已关联具名证据（不是整能力验收通过）
+
+| 能力ID | 测试方法 / 参数卡牌 | 已核对的用例范围 |
+| --- | --- | --- |
+| S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0002 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0002 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0002 | button-rejection-consistency, timing |
+| S01-0002:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0002 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.EffectBlockAuthorityDoesNotCommitAfterItsBoundAttackerLeavesTheBattlefield / S01-0002 | attacker-left-before-authority, context-invalidated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RestoredEffectBlockAuthorityDoesNotBindAChangedCombatIdentity / S01-0002 | reconnect, stale-combat-binding |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RichardPaidExtraDiscardKeepsMercenaryBlockValid / S01-0002 | paid-cost-not-refunded, richard-extra-discard-paid |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.CounterBlockAuthorityRegressionTests.RichardUnpaidExtraDiscardInvalidatesMercenaryBlockAndAttackContinues / S01-0002 | paid-cost-not-refunded, richard-extra-discard-unpaid |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.SpecialResponseSegmentsReadTheSharedCapabilityRegistry / S01-0002 | authoritative-consumer, capability-registry, self-discard-cost |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.LandlordsCoercionMayInvalidateMercenaryBlockWithoutRefundingItsDiscard / S01-0002 | landlord-coercion, paid-cost-not-refunded |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.LandlordsCoercionPaidExtraDiscardKeepsMercenaryBlockValid / S01-0002 | landlord-coercion-paid, paid-cost-not-refunded |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.MissingAttackStackTargetFailsBlockWithoutBindingAnotherItem / S01-0002 | target-invalidated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.NegatedBlockKeepsPaidDiscardAndAttackContinues / S01-0002 | negated |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.PaidHandBlockSurvivesRestoreAndBlocksExactlyOnce / S01-0002 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0002:ability:reaction:a472c4e7c34abf4b | TwelveLegions.Tests.MercenaryHandBlockLifecycleProfileTests.PassingResponseWindowDoesNotPaySelfDiscardCost / S01-0002 | payment-cancel |
+| S01-0003:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0003 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0003:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0003 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0003 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0003 | duplicate-cancel, duplicate-submit, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0003 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0003 | negated-settlement, paid-cost-preserved, reconnect-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0003 | no-enemy, turn-end-expiry |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0003 | cost-scope, presentation-identity |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0003 | authoritative-attack, legal-targets, normal, presentation-consumers, reconnect-settlement |
+| S01-0003:ability:active:73c59f9367069790 | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0003 | activation-row, insufficient-cost |
+| S01-0004:ability:static:1644ef88125b05c1 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0004 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S01-0004:ability:active:6f9f6988e1ea4be0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0004 | authoritative-consumer, per-card-branch |
+| S01-0016:ability:reaction:eda8f9987e9ccfe3 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.SpecialResponseSegmentsReadTheSharedCapabilityRegistry / S01-0016 | authoritative-consumer, capability-registry, pool-parity |
+| S01-0016:ability:reaction:eda8f9987e9ccfe3 | TwelveLegions.Tests.NegateResponseLifecycleProfileTests.NegateResponseKeepsDeclaredTargetAndOutcomeAcrossCheckpoint / S01-0016 | negated, normal, presentation-consumers, reconnect, target-invalidated |
+| S01-0016:ability:reaction:eda8f9987e9ccfe3 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.CancelRestoresSamePriorityWithoutRevealPaymentOrPassing / S01-0016 | payment-cancel |
+| S01-0018:ability:reaction:248207b49df4bd77 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.SpecialResponseSegmentsReadTheSharedCapabilityRegistry / S01-0018 | authoritative-consumer, capability-registry, pool-parity |
+| S01-0018:ability:reaction:248207b49df4bd77 | TwelveLegions.Tests.NegateResponseLifecycleProfileTests.NegateResponseKeepsDeclaredTargetAndOutcomeAcrossCheckpoint / S01-0018 | negated, normal, presentation-consumers, reconnect, target-invalidated |
+| S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0020 | conditional-settlement, declined-branch, empty-library, negated-settlement, no-target, reconnect-settlement |
+| S01-0020:ability:reaction:f099e096c2d7437b | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0020 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S01-00C1:ability:static:db1ae0a9efb4bff8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleResourceIdentitySegmentIsStructurallySatisfied / S01-00C1 | authoritative-consumer, counts-as-morale-structural |
+| S01-00C1:ability:static:db1ae0a9efb4bff8 | TwelveLegions.Tests.MoraleResourceIdentityLifecycleTests.PrintedResourceIdentitySurvivesProjectionRecoveryAndSharedPayment / S01-00C1 | authoritative-consumer, counts-as-morale-structural, normal, presentation-consumers, reconnect |
+| S01-0101:ability:static:b5c9e323c0a061cc | TwelveLegions.Tests.DuelCombatLineLifecycleProfileTests.LuBuNoLossAndRangedImmunityShareTheAuthoritativeCombatProfileAcrossRestore / S01-0101 | normal, presentation-consumers, reconnect |
+| S01-0101:ability:static:b5c9e323c0a061cc | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.DuelCombatLineSharesTheCombatProfileOutletWithItsStructuredSiblings / S01-0101 | authoritative-consumer, structured-split-siblings |
+| S01-0101:ability:static:1f027ad861ea0006 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0101 | authoritative-consumer, combat-settlement, normal, presentation-consumers, reconnect |
+| S01-0101:ability:static:1041797d91099ae1 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S01-0101 | authoritative-consumer, combat-settlement, normal, presentation-consumers, reconnect |
+| S01-0104:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0104 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0104:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0104 | condition-false, display-and-payment-parity |
+| S01-0105:ability:enter:ee4ec5ee9f9e1cce | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.LiuBeiDoesNotReplaceADeclaredBrotherOrOverwriteAnOccupiedSlotAtSettlement / S01-0105 | target-invalidated |
+| S01-0105:ability:enter:ee4ec5ee9f9e1cce | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.LiuBeiManualReturnCostCanBeCancelledWithoutPartialPayment / S01-0105 | payment-cancel |
+| S01-0105:ability:enter:ee4ec5ee9f9e1cce | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.LiuBeiMayPayItsCostAndResolveWithoutABrotherTarget / S01-0105 | no-target |
+| S01-0105:ability:enter:ee4ec5ee9f9e1cce | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.LiuBeiRestoresItsPrivateBrotherChoiceAndCommitsTheDeclaredInstanceOnce / S01-0105 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S01-0105:ability:enter:ee4ec5ee9f9e1cce | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.NegatedLiuBeiEntryKeepsTheReturnedCostButDoesNotMoveTheBrother / S01-0105 | negated |
+| S01-0105:ability:active:0e81cd47a6221fd8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0105 | active-rest-cost, runtime-branch-mapping |
+| S01-0105:ability:active:0e81cd47a6221fd8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0105 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0106 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0106 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0106 | button-rejection-consistency, timing |
+| S01-0106:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0106 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0107 | normal, presentation-consumers, reconnect |
+| S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0107 | authoritative-consumer, row-condition-current, structured-split-siblings |
+| S01-0107:ability:static:715fe715dcb8ea28 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.MoraleComparisonIsReadFromTheCurrentPlayers / S01-0107 | entry-cost-condition-current, presentation-consumers |
+| S01-0107:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0107 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0107:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0107 | normal, presentation-consumers, reconnect |
+| S01-0109:ability:active:88c64e7a7e50fb25 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0109 | active-rest-cost, runtime-branch-mapping |
+| S01-0109:ability:active:88c64e7a7e50fb25 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0109 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-0110:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0110 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0111:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0111 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0112:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0112 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0113:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0113 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.ASecondActivationPaysAgainAndIgnoresLegacyOnceMarkers / S01-0113 | button-enabled, legacy-once-marker, payment-per-activation, repeat-activation |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.InvalidPaymentChoiceCanBeCancelledAfterRecoveryWithoutPaymentOrDeadlock / S01-0113 | duplicate-cancel, duplicate-submit, invalid-payment, payment-cancel, reconnect-payment |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.MissingOrNonLegionSourceFailsInsteadOfGrantingOutOfZone / S01-0113 | non-legion-state-fixture, reconnect-settlement, source-invalidated-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NegationPreservesPaymentButDoesNotGrantRange / S01-0113 | negated-settlement, paid-cost-preserved, reconnect-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.NoEnemyIsNotAnActivationCostAndRangeExpiresAtTurnEnd / S01-0113 | no-enemy, turn-end-expiry |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeHasItsOwnActiveCostAndSingleResultScene / S01-0113 | cost-scope, presentation-identity |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.PaidRangeUsesOnlyItsPrintedTargetsAfterV2Recovery / S01-0113 | authoritative-attack, legal-targets, normal, presentation-consumers, reconnect-settlement |
+| S01-0113:ability:active:e1b5cdab435b4c1f | TwelveLegions.Tests.ExtendedRangeLifecycleTests.SourceRowIsCheckedBeforePaymentAndInsufficientCostDoesNotLockTheGame / S01-0113 | activation-row, insufficient-cost |
+| S01-0114:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0114 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0114:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0114 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0114:ability:static:a91d7d481db612a9 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0114 | condition-false, display-and-payment-parity |
+| S01-0115:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0115 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0115:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0115 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S01-0116:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0116 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.AtomicReviewBatch6KARegressionTests.XishiDoesNotReplaceAStaleDeclaredHandLegionAndStopsItsThenDraw / S01-0116 | target-invalidated |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.AtomicReviewBatch6KARegressionTests.XishiRevalidatesTheDeclaredLegionsTroopsBeforeEntry / S01-0116 | target-invalidated-current-condition |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.AtomicReviewBatch6KARegressionTests.XishiWithNoDeclaredSummonStartsAtTheIndependentDrawSegment / S01-0116 | no-target |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.NegatedXishiSummonPreservesItsPaidCostsAndStopsTheDependentDraw / S01-0116 | negated |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.XishiManualReturnCostCanBeCancelledBeforeDiscardingTheSource / S01-0116 | payment-cancel |
+| S01-0116:ability:static:74c527aaab5e91cd | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.XishiRestoresItsSingleHandChoiceAndRunsSummonThenDrawOnce / S01-0116 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S01-0117:ability:active:ba48403c4da1e24c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0117 | active-rest-cost, runtime-branch-mapping |
+| S01-0117:ability:active:ba48403c4da1e24c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0117 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ConditionalResponseSegmentsReportActualOutcomesAfterRecovery / S01-0120 | conditional-settlement, declined-branch, empty-library, negated-settlement, reconnect-settlement, target-invalidated-settlement |
+| S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S01-0120 | nested-authority, reconnect-settlement |
+| S01-0120:ability:reaction:0865f062354681b2 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S01-0120 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-01C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.NewSystemsTests.TiantingFactionEffectsUseTheMoraleCardRules / S01-01C1 | normal |
+| S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-01C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-01C1 | payment-cancel |
+| S01-01C1:ability:active:3a8789b35c0c2be4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.TiantingActiveMoraleUsesTheSingleActiveSettlementScene / S01-01C1 | presentation-consumers |
+| S01-01D1:ability:static:103012fd4239104f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01D1 | authoritative-consumer, per-card-plan |
+| S01-01D1:ability:active:32505e4556bad1b8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-01D1 | active-rest-cost, runtime-branch-mapping |
+| S01-01D1:ability:active:32505e4556bad1b8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-01D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-01D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S01-01D1 | authoritative-consumer, setup-defaults |
+| S01-01D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S01-01D1 | normal, presentation-consumers, reconnect |
+| S01-01M1:ability:static:c03878ecc263c0e6 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M1 | authoritative-consumer, per-card-branch |
+| S01-01M1:ability:static:d024f673ff236321 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M1 | authoritative-consumer, per-card-branch |
+| S01-01M1:ability:static:0924c3a5995ba164 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01M1 | authoritative-consumer, per-card-plan |
+| S01-01M1:ability:death:ee5adb706424f233 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-01M1 | authoritative-consumer, per-card-plan |
+| S01-01M2:ability:static:f3ee48a69ee29306 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-01M2 | authoritative-consumer, per-card-branch |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0201 | expiry, summon-round |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0201 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| S01-0201:ability:static:7d31de8999ce168a | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / S01-0201 | duplicate-submit, reconnect, reconnect-derived-state |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / S01-0202 | expiry, summon-round |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / S01-0202 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| S01-0202:ability:static:76a4a87caae11a73 | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / S01-0202 | duplicate-submit, reconnect, reconnect-derived-state |
+| S01-0203:ability:static:0a317a499dc4420e | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S01-0203 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S01-0203:ability:static:0a317a499dc4420e | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S01-0203 | normal, presentation-consumers, reconnect |
+| S01-0204:ability:static:4108715d77479b32 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0204 | normal, presentation-consumers, reconnect |
+| S01-0204:ability:static:4108715d77479b32 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0204 | authoritative-consumer, row-condition-current, structured-split-siblings |
+| S01-0204:ability:leave:a59801f7c2874f4a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0204 | authoritative-consumer, per-card-plan |
+| S01-0204:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0204 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0204:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0204 | normal, presentation-consumers, reconnect |
+| S01-0205:ability:death:7016351513168cdb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S01-0205 | authoritative-consumer, once-per-turn, substitution-kind |
+| S01-0205:ability:death:7016351513168cdb | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.DeclaredSubstituteThatLeavesItsRequiredZoneDoesNotProtectOrSubstituteAnotherCard / S01-0205 | target-invalidated |
+| S01-0205:ability:death:7016351513168cdb | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.EveryEffectLethalReplacementRestoresTheSamePromptAndConsumesItOnce / S01-0205 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.PipelineLifecycleProfileTests.SaladinCompositeLineBindsToTheSharedMoveAndAttackPassiveOutlets / S01-0206 | authoritative-consumer, composite-line-declaration |
+| S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.SaladinCompositeLineLifecycleProfileTests.CompositeLinePublishesAndExecutesSharedCavalryMoveAcrossRestore / S01-0206 | normal, presentation-consumers, reconnect |
+| S01-0206:ability:static:cb39cf42a7feea7b | TwelveLegions.Tests.SaladinCompositeLineLifecycleProfileTests.FrontRowAdjacencyBonusUsesCurrentPositionAndExpiresAfterAttackAcrossRestore / S01-0206 | normal, presentation-consumers, reconnect |
+| S01-0208:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0208 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0209:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0209 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0210:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0210 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0211:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0211 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S01-0212 | deck-count, opening-graveyard |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.DerivedCardVanishRuleKeepsPriorityOverTheGraveyardLifecycle / S01-0212 | derived-card-precedence |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S01-0212 | all-departure-destinations, controller-owner-split, duplicate-submit, hand-filter, library-filter, normal, owner-graveyard, presentation-consumers |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.OwnerGraveyardReplacementRemainsAuthoritativeAfterReconnect / S01-0212 | reconnect |
+| S01-0212:ability:static:6d8b57888db9839b | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S01-0212 | exact-card-family, text-independent |
+| S01-0212:ability:static:025749085872cdff | TwelveLegions.Tests.FieldMoraleResourceLifecycleProfileTests.FieldMoralePaymentPromptRestoresItsExactResourceIdentityAndSelection / S01-0212 | reconnect |
+| S01-0212:ability:static:025749085872cdff | TwelveLegions.Tests.FieldMoraleResourceLifecycleProfileTests.ManualPaymentProjectsStructuredTypeAndCommitsTheSelectedInstanceOnlyOnce / S01-0212 | duplicate-submit, normal, presentation-consumers |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.LeavingTheFieldClearsBothDerivedValues / S01-0212 | leave-reset |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnFieldRuleIsAClosedStructuredFamily / S01-0212 | cost-and-troops-same-definition, exact-card-family |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.OpponentTurnUsesCurrentControllerRatherThanPrintedOwner / S01-0212 | current-controller |
+| S01-0212:ability:static:2f33fb3652e7bd28 | TwelveLegions.Tests.OpponentTurnFieldRuleLifecycleProfileTests.RuntimeRecalculatesCostAndTroopsFromCurrentTurnAndRow / S01-0212 | back-row, controller-turn, front-row, normal, opponent-turn, presentation-consumers, reconnect, reconnect-idempotence |
+| S01-0213:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0213 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0213:ability:after-attack:bf52deb7316f89d3 | TwelveLegions.Tests.AtomicReviewBatch6KBRegressionTests.NegatedSiwaKabaHandEntryMovesItsSourceToGraveyard / S01-0213 | negated |
+| S01-0213:ability:after-attack:bf52deb7316f89d3 | TwelveLegions.Tests.AtomicReviewBatch6KBRegressionTests.SiwaKabaMovesToGraveyardWhenItsDeclaredSlotIsOccupiedBeforeSettlement / S01-0213 | target-invalidated |
+| S01-0213:ability:after-attack:bf52deb7316f89d3 | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.KabaRestoresItsPublicSlotChoiceAndLocksMoraleOnlyAfterSuccessfulEntry / S01-0213 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0213:ability:after-attack:bf52deb7316f89d3 | TwelveLegions.Tests.StrictHandEntryLifecycleProfileTests.KabaWithNoOpenSlotCanOnlyDeclineAndRemainsInHand / S01-0213 | no-target |
+| S01-0214:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0214 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0214 | active-rest-cost, runtime-branch-mapping |
+| S01-0214:ability:active:30e47404439f2371 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0214 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0215 | active-rest-cost, runtime-branch-mapping |
+| S01-0215:ability:active:6984859bdd4fa8b1 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0215 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-0215:ability:mode-ready-guard:3e3294affff84b58 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
+| S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ANameContainingCanopicDoesNotExemptAnUnrelatedArtifact / S01-0216 | ordinary-artifact-replaces |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EmptyPrimarySlotReceivesTheFirstExemptArtifact / S01-0216 | primary-empty |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0216 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0216 | exact-card-family, primary-occupied |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0217 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0217 | exact-card-family, primary-occupied |
+| S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ZhugeGeneratedArtifactPlayUsesTheSharedPlacementKernel / S01-0217 | zhuge-generated-play |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EffectGeneratedArtifactPlayUsesTheSameExemptionIdentity / S01-0218 | effect-generated-play |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0218 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0218:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0218 | exact-card-family, primary-occupied |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.GmPlacementUsesTheSharedArtifactZoneRule / S01-0219 | gm-play |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0219 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0219:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0219 | exact-card-family, primary-occupied |
+| S01-0220:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0220 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0220:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0220 | exact-card-family, primary-occupied |
+| S01-0220:ability:death:00f139f8bc316591 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryImmortalReplacementSegmentSharesTheLethalReplacementPipeline / S01-0220 | authoritative-consumer, single-use, troops-set-to-1000 |
+| S01-0220:ability:death:00f139f8bc316591 | TwelveLegions.Tests.ImmortalReplacementLifecycleProfileTests.GrantedImmortalReplacementSurvivesRestoreThenReplacesExactlyOneLethalRemoval / S01-0220 | authoritative-consumer, normal, presentation-consumers, reconnect, single-use, troops-set-to-1000 |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.Bq20260903_01RegressionTests.TemporaryMoraleCanPayTheFactionEffectThatSummonsATombGuard / S01-02C1 | normal, single-candidate-choice |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.Bq20260907_263RegressionTests.SolarCityFactionPromptsAndPublicPresentationDoNotBorrowImmortalGiftText / S01-02C1 | presentation-consumers |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.Bq20260907_263RegressionTests.SolarGuardDoesNotReplaceADeclaredGuardThatLeavesTheGraveBeforeSettlement / S01-02C1 | target-invalidated |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-02C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-02C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S01-02C1:ability:static:91802cda49d575fb | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-02C1 | payment-cancel |
+| S01-02C1:ability:static:ddab147dd97c360f | TwelveLegions.Tests.ExtendedCardEffectsTests.SolarCityPlayerAlsoChoosesTombGuardPaymentForActiveAbilities / S01-02C1 | normal, presentation-consumers |
+| S01-02C1:ability:static:ddab147dd97c360f | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-02C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-02C1:ability:static:ddab147dd97c360f | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-02C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S01-02C1:ability:static:ddab147dd97c360f | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-02C1 | payment-cancel |
+| S01-02D1:ability:static:d1339da6822c9ae1 | TwelveLegions.Tests.TombGuardMasterAuraLifecycleProfileTests.AuraUsesTheCurrentBattlefieldControllerAndExactCardIdentity / S01-02D1 | current-controller, non-target-unaffected |
+| S01-02D1:ability:static:d1339da6822c9ae1 | TwelveLegions.Tests.TombGuardMasterAuraLifecycleProfileTests.GodsLandContinuouslyAddsOneCostAndOneThousandTroopsToFieldTombGuards / S01-02D1 | cost-and-troops-same-definition, current-cost-consumers, field-only, normal, presentation-consumers, reconnect, reconnect-derived-state |
+| S01-02D1:ability:static:dbf8222a61a31140 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02D1 | authoritative-consumer, per-card-branch |
+| S01-02D1:ability:static:f968b0d6950e6d13 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02D1 | authoritative-consumer, per-card-branch |
+| S01-02D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S01-02D1 | authoritative-consumer, setup-defaults |
+| S01-02D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S01-02D1 | normal, presentation-consumers, reconnect |
+| S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.IsisSetupLifecycleProfileTests.IsisSetupCreatesExactlyOneOsirisInItsOwnersGraveyardAcrossRestore / S01-02M1 | normal, presentation-consumers, reconnect |
+| S01-02M1:ability:static:68187ab0edb25d9c | TwelveLegions.Tests.PipelineLifecycleProfileTests.IsisSetupSegmentBindsToTheSharedSetupOutlet / S01-02M1 | authoritative-consumer |
+| S01-02M1:ability:static:53475d8f080332f1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M1 | authoritative-consumer, per-card-branch |
+| S01-02M2:ability:static:9144b69a84fc2635 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M2 | authoritative-consumer, per-card-branch |
+| S01-02M3:ability:static:705baec08fc6bc02 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-02M3 | authoritative-consumer, per-card-branch |
+| S01-02M3:ability:static:3a86c87f975d5851 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-02M3 | authoritative-consumer, per-card-plan |
+| S01-02M3:ability:static:c339139cc1c9b00c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-02M3 | authoritative-consumer, per-card-plan |
+| S01-0301:ability:static:71dd875155781eb0 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0301 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0301:ability:static:71dd875155781eb0 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0301 | condition-false, display-and-payment-parity |
+| S01-0302:ability:static:acc29b0ca499d087 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0302 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0302:ability:static:acc29b0ca499d087 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0302 | condition-false, display-and-payment-parity |
+| S01-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S01-0303 | duplicate-submit, normal, presentation-consumers |
+| S01-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0303 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S01-0303 | payment-cancel, reconnect-payment |
+| S01-0304:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S01-0304 | duplicate-submit, normal, presentation-consumers |
+| S01-0304:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0304 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0304:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S01-0304 | payment-cancel, reconnect-payment |
+| S01-0305:ability:static:9ed1ca8df2e5f029 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0305:ability:static:9ed1ca8df2e5f029 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0305 | condition-false, display-and-payment-parity |
+| S01-0306:ability:static:9ed1ca8df2e5f029 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S01-0306 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S01-0306:ability:static:9ed1ca8df2e5f029 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S01-0306 | condition-false, display-and-payment-parity |
+| S01-0307:ability:static:b89287bced985f8c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0307 | authoritative-consumer, per-card-branch |
+| S01-0308:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S01-0308 | duplicate-submit, normal, presentation-consumers |
+| S01-0308:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0308 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0308:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S01-0308 | payment-cancel, reconnect-payment |
+| S01-0309:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0309 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0310:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S01-0310 | duplicate-submit, normal, presentation-consumers |
+| S01-0310:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0310 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0310:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S01-0310 | payment-cancel, reconnect-payment |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0310 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0310 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0310 | button-rejection-consistency, timing |
+| S01-0310:ability:active:0a0575206e996652 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0310 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0311:ability:static:3409dd9fa29f684f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0311 | authoritative-consumer, per-card-plan |
+| S01-0311:ability:after-attack:65ce2315ff4c0465 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0311 | authoritative-consumer, per-card-plan |
+| S01-0312:ability:static:b2e1a67373ad69cc | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0312 | normal, presentation-consumers, reconnect |
+| S01-0312:ability:static:b2e1a67373ad69cc | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryFrontRowCompositeLineIsCarriedByItsStructuredSplitSiblings / S01-0312 | authoritative-consumer, row-condition-current, structured-split-siblings |
+| S01-0312:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / S01-0312 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| S01-0312:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / S01-0312 | normal, presentation-consumers, reconnect |
+| S01-0313:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0313 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0314:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0314 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0314:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S01-0314 | duplicate-submit, normal, presentation-consumers |
+| S01-0314:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S01-0314 | last-health-terminal, optional-choice, reconnect-payment |
+| S01-0314:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S01-0314 | payment-cancel, reconnect-payment |
+| S01-0314:ability:active:a923615d65edc8ea | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0314 | authoritative-consumer, per-card-branch |
+| S01-0316:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0316 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0317:ability:active:90c21e26f3d58b69 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-0317 | active-rest-cost, runtime-branch-mapping |
+| S01-0317:ability:active:90c21e26f3d58b69 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-0317 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-03C1:ability:static:fa92f5d792a32bdc | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves / S01-03C1 | normal, presentation-consumers |
+| S01-03C1:ability:static:fa92f5d792a32bdc | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-03C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-03C1:ability:static:fa92f5d792a32bdc | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-03C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S01-03C1:ability:static:fa92f5d792a32bdc | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-03C1 | payment-cancel |
+| S01-03D1:ability:static:d89d0b3dade7b6c8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03D1 | authoritative-consumer, per-card-branch |
+| S01-03D1:ability:static:d45b38f3f8bf48bc | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03D1 | authoritative-consumer, per-card-branch |
+| S01-03D1:ability:active:4260db0837113c77 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-03D1 | active-rest-cost, runtime-branch-mapping |
+| S01-03D1:ability:active:4260db0837113c77 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-03D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-03D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S01-03D1 | authoritative-consumer, setup-defaults |
+| S01-03D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S01-03D1 | normal, presentation-consumers, reconnect |
+| S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.ValkyrieDrawPhaseSegmentBindsToTheTurnStartOutlet / S01-03M1 | authoritative-consumer |
+| S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.FirstTurnDrawPhaseMillsTwoSequentialCardsAndRestoresWithoutRepeating / S01-03M1 | normal, presentation-consumers, reconnect |
+| S01-03M1:ability:static:794dd14bacd363d7 | TwelveLegions.Tests.ValkyrieDrawPhaseLifecycleProfileTests.OneCardLibraryDiscardsItsAvailableTopCardWithoutInventingASecondCard / S01-03M1 | short-library-sequential |
+| S01-03M1:ability:static:d047647f18d541e4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M1 | authoritative-consumer, per-card-branch |
+| S01-03M2:ability:static:ab4daf32452349c5 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-03M2 | authoritative-consumer, per-card-branch |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentDoesNotReplaceItsDeclaredHandCounterAfterResponse / S01-0403 | target-invalidated |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentRestoresItsDeclarationAndRejectsAConsumedPrompt / S01-0403 | duplicate-submit, reconnect |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentSetsItsDeclaredHandCounterAfterResponses / S01-0403 | normal, presentation-consumers |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentStopsBeforeMovingItsDeclaredCounterWhenNegated / S01-0403 | negated |
+| S01-0403:ability:death:c3e5fc27d01fe269 | TwelveLegions.Tests.AtomicReviewBatch6IBRegressionTests.UesugiCounterDeploymentWithNoHandCounterCreatesNoDeclarationOrStack / S01-0403 | no-target |
+| S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0409 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0409:ability:static:6c03e83e9e18abb1 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S01-0409 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S01-0409:ability:attack:c900a6435336564c | TwelveLegions.Tests.BackRowAttackTroopsSetLifecycleProfileTests.BackRowAttackUsesItsDeclaredSetValueAndRevertsAfterSettlement / S01-0409 | normal, post-attack-revert, presentation-consumers, reconnect |
+| S01-0409:ability:attack:c900a6435336564c | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryBackRowTroopsSetSegmentSharesTheCombatProfileOutlet / S01-0409 | authoritative-consumer, row-condition-current, set-value-parameter |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S01-0409 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S01-0409 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S01-0409 | button-rejection-consistency, timing |
+| S01-0409:ability:active:56a01edf47ee1225 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S01-0409 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S01-0410:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0410 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0411:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0411 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0411:ability:death:00f139f8bc316591 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryImmortalReplacementSegmentSharesTheLethalReplacementPipeline / S01-0411 | authoritative-consumer, single-use, troops-set-to-1000 |
+| S01-0411:ability:death:00f139f8bc316591 | TwelveLegions.Tests.ImmortalReplacementLifecycleProfileTests.GrantedImmortalReplacementSurvivesRestoreThenReplacesExactlyOneLethalRemoval / S01-0411 | authoritative-consumer, normal, presentation-consumers, reconnect, single-use, troops-set-to-1000 |
+| S01-0413:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0413 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0414:ability:static:e001b352b3693d93 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-0414 | authoritative-consumer, per-card-plan |
+| S01-0415:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0415 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0416:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S01-0416 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S01-0417:ability:static:f10ff922d718f82e | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0417 | authoritative-consumer, per-card-branch |
+| S01-04C1:ability:static:7f60c31c00b0f718 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled / S01-04C1 | target-invalidated |
+| S01-04C1:ability:static:7f60c31c00b0f718 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot / S01-04C1 | normal, presentation-consumers, single-candidate-choice |
+| S01-04C1:ability:static:7f60c31c00b0f718 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S01-04C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S01-04C1:ability:static:7f60c31c00b0f718 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-04C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S01-04C1:ability:static:7f60c31c00b0f718 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S01-04C1 | payment-cancel |
+| S01-04D1:ability:static:fcd47c32a0a46e1a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04D1 | authoritative-consumer, per-card-branch |
+| S01-04D1:ability:static:3c467d3eba318af6 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04D1 | authoritative-consumer, per-card-branch |
+| S01-04D1:ability:active:1dcb5503b8cd59a8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S01-04D1 | active-rest-cost, runtime-branch-mapping |
+| S01-04D1:ability:active:1dcb5503b8cd59a8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S01-04D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S01-04D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S01-04D1 | authoritative-consumer, setup-defaults |
+| S01-04D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S01-04D1 | normal, presentation-consumers, reconnect |
+| S01-04M1:ability:static:2c285709f5669922 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M1 | authoritative-consumer, per-card-branch |
+| S01-04M1:ability:static:51c3f1e1976210f8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M1 | authoritative-consumer, per-card-branch |
+| S01-04M2:ability:static:ce8699cac703af1c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M2 | authoritative-consumer, per-card-branch |
+| S01-04M2:ability:attack:ebb2054e23f75cd1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M2 | authoritative-consumer, per-card-branch |
+| S01-04M2:ability:leave:4e83a7191108369b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-04M2 | authoritative-consumer, per-card-plan |
+| S01-DS01:ability:static:9b5681c438931452 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS01 | normal, presentation-consumers, reconnect |
+| S01-DS01:ability:static:9b5681c438931452 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS01 | authoritative-consumer, registry-closed-set |
+| S01-DS02:ability:static:4408d437a8ab5e5a | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS02 | normal, presentation-consumers, reconnect |
+| S01-DS02:ability:static:4408d437a8ab5e5a | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS02 | authoritative-consumer, registry-closed-set |
+| S01-DS02:ability:turn-end:9d632a451357ff71 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryDisasterAuthoritySegmentBindsToTheDisasterPipeline / S01-DS02 | authoritative-consumer |
+| S01-DS02:ability:turn-end:9d632a451357ff71 | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.HundredGhostsEndHandPromptRestoresReturnsExactCardsAndRejectsDuplicateSubmission / S01-DS02 | duplicate-submit, no-target, normal, presentation-consumers, reconnect |
+| S01-DS03:ability:static:70004a014a03d2a0 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS03 | normal, presentation-consumers, reconnect |
+| S01-DS03:ability:static:70004a014a03d2a0 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS03 | authoritative-consumer, registry-closed-set |
+| S01-DS04:ability:static:017c7359962a2512 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS04 | normal, presentation-consumers, reconnect |
+| S01-DS04:ability:static:017c7359962a2512 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS04 | authoritative-consumer, registry-closed-set |
+| S01-DS04:ability:attack:68f2ff0b600a41e8 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS04 | normal, presentation-consumers, reconnect |
+| S01-DS04:ability:attack:68f2ff0b600a41e8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS04 | authoritative-consumer, registry-closed-set |
+| S01-DS08:ability:static:3e7cd5724f09420c | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS08 | normal, presentation-consumers, reconnect |
+| S01-DS08:ability:static:3e7cd5724f09420c | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS08 | authoritative-consumer, registry-closed-set |
+| S01-DS10:ability:static:33501d2503c08b73 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS10 | normal, presentation-consumers, reconnect |
+| S01-DS10:ability:static:33501d2503c08b73 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS10 | authoritative-consumer, registry-closed-set |
+| S01-DS10:ability:turn-start:a790e35d0012c86f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryDisasterAuthoritySegmentBindsToTheDisasterPipeline / S01-DS10 | authoritative-consumer |
+| S01-DS10:ability:turn-start:a790e35d0012c86f | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.FinalDisasterTurnStartDamagePersistsAndItsTurnLatchSurvivesReconnect / S01-DS10 | normal, presentation-consumers, reconnect |
+| S02-0001:ability:after-opponent-tactic:6d30a9b672845491 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0001 | authoritative-consumer, per-card-plan |
+| S02-0002:ability:continuous:5643b9f0c6e298e6 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0002 | authoritative-consumer, combat-settlement, normal, presentation-consumers, reconnect |
+| S02-0003:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0003 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0003:ability:active:484fb98a6af8df3f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0003 | active-rest-cost, runtime-branch-mapping |
+| S02-0003:ability:active:484fb98a6af8df3f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0003 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0004:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0004 | normal, presentation-consumers, reconnect |
+| S02-0004:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0004 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| S02-0004:ability:granted:be3174252606645e | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0004 | authoritative-consumer, parent-grant-boundary |
+| S02-0004:ability:granted:be3174252606645e | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0004 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0005:ability:continuous:0663e3d5b31edc67 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0005 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineResponseSegmentBindsToTheSharedResponsePipeline / S02-0005 | authoritative-consumer, capability-registry |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.S2UniversalEffectsTests.MagiciansPuppetIsNotOfferedWithoutAnEmptyFrontSlot / S02-0005 | no-target |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.S2UniversalEffectsTests.MagiciansPuppetResponseRestoresAndStillRequiresItsOnlyLegalSlot / S02-0005 | duplicate-submit, normal, reconnect, single-candidate-choice |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.S2UniversalEffectsTests.MagiciansPuppetRetargetFailsWhenItsPaidFieldStateLeavesBeforeSettlement / S02-0005 | target-invalidated |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.S2UniversalEffectsTests.NegatedMagiciansPuppetKeepsItsPaidRestedEntryAndDoesNotRetarget / S02-0005 | negated |
+| S02-0005:ability:opponent-attacks-master:806afb384f303aee | TwelveLegions.Tests.TriggeredEffectPresentationTests.EveryDirectResponseCardResolvesOnlyItsCurrentResponseAbilityBlock / S02-0005 | presentation-consumers |
+| S02-0006:ability:continuous:7f3bdf9055e53845 | TwelveLegions.Tests.CardNameUsageLimitTests.FaithZealotSharedNameRuleSurvivesReconnectAndUsesItsPrintedPrompt / S02-0006 | normal, presentation-consumers, reconnect |
+| S02-0006:ability:continuous:7f3bdf9055e53845 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0006 | authoritative-consumer, usage-commit |
+| S02-0006:ability:discarded:89d3ee4207648aa1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0006 | authoritative-consumer, per-card-plan |
+| S02-0007:ability:continuous:602cafbbc29faa3f | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0007 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-0007:ability:continuous:58ce6286f39b73ee | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0007 | normal, presentation-consumers, reconnect |
+| S02-0007:ability:continuous:58ce6286f39b73ee | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0007 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| S02-0007:ability:granted:be3174252606645e | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0007 | authoritative-consumer, parent-grant-boundary |
+| S02-0007:ability:granted:be3174252606645e | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0007 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0008 | reconnect |
+| S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0008 | normal, presentation-consumers |
+| S02-0008:ability:continuous:766cca673a9815ad | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0008 | authoritative-consumer, effective-faction |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentKeepsOneValidCounterAndItsIndependentDrawWhenAnotherDeclaredCounterExpires / S02-0009 | independent-target-settlement, slot-invalidated, target-invalidated |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentMayChooseZeroCountersAndStillResolvesItsIndependentDraw / S02-0009 | no-target |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentRestoresItsDeclaredCounterAndRejectsTheConsumedSelectionPrompt / S02-0009 | duplicate-submit, reconnect |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentSetsUpToTwoCounterTacticsWithoutTheirNormalSetCost / S02-0009 | multi-target-applicability, normal, presentation-consumers |
+| S02-0009:ability:play:ff53cfd909161da1 | TwelveLegions.Tests.S2UniversalEffectsTests.DefenseDeploymentStopsBeforeSettingTheDeclaredCounterWhenActuallyNegated / S02-0009 | negated |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.BlackLotusOwnsTheOnlyStructuredMoraleZoneReplacement / S02-0010 | exact-card-family, runtime-branch-mapping |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.EveryViewerReceivesTheSameAuthoritativeResourceIdentity / S02-0010 | frontend-structured-identity, presentation-consumers, reconnect, v2-snapshot |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.OnlyEligibleBlackLotusReturnsAutomaticallyToOwnerGraveyard / S02-0010 | automatic-return, return-owner-graveyard |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.PaymentPromptDistinguishesBlackLotusAndConsumesOnlyTheSelectedInstance / S02-0010 | duplicate-submit, normal, payment-distinct-identity |
+| S02-0010:ability:return-as-morale:9169de0e99d296e2 | TwelveLegions.Tests.BlackLotusMoraleResourceLifecycleProfileTests.ReturnPromptAndSettlementUseTheSameIdentityWithoutSecondMovement / S02-0010 | duplicate-submit, return-owner-graveyard, target-invalidated |
+| S02-0012:ability:play:bafe1ab6a18493c0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0012 | authoritative-consumer, per-card-flow |
+| S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.PipelineLifecycleProfileTests.PrayerGrantedModesBindToTheUniversalTacticOutlets / S02-0012 | authoritative-consumer |
+| S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerPublicAcknowledgementsSurviveRestoreAndRejectDuplicateConfirmation / S02-0012 | duplicate-submit, reconnect |
+| S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerRitualHandlesAnEmptyDisasterDeckAndDeclinedPrivatePaymentWithoutStalling / S02-0012 | no-target |
+| S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerRitualNegationStopsThePublicBranchBeforeConsentOrDisclosure / S02-0012 | negated |
+| S02-0012:ability:granted:e5bb0cce96aba072 | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerRitualPublicRevealRequiresBothPlayersToAcknowledgeTheCard / S02-0012 | normal, presentation-consumers |
+| S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.AtomicReviewBatch6JBRegressionTests.PrayerPrivatePreviewPaysBeforeStackAndNegationKeepsTheCostWithoutRevealingTheTopCard / S02-0012 | negated |
+| S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.PipelineLifecycleProfileTests.PrayerGrantedModesBindToTheUniversalTacticOutlets / S02-0012 | authoritative-consumer |
+| S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerPrivateDeclarationAndPreviewSurviveRestoreAndRejectConsumedPrompts / S02-0012 | duplicate-submit, reconnect |
+| S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerRitualCanSpendMoraleForAPrivatePreviewAfterRefusal / S02-0012 | normal, presentation-consumers |
+| S02-0012:ability:granted:1c5ef0343f70615c | TwelveLegions.Tests.S2UniversalEffectsTests.PrayerRitualHandlesAnEmptyDisasterDeckAndDeclinedPrivatePaymentWithoutStalling / S02-0012 | no-target, payment-cancel |
+| S02-0013:ability:host-leaves-artifact:b2720c3b205be910 | TwelveLegions.Tests.LeaveReplacementLifecycleProfileTests.AttachedHolyLockFollowsRelicOwnerToGraveyardAcrossRestore / S02-0013 | normal, presentation-consumers, reconnect |
+| S02-0013:ability:host-leaves-artifact:b2720c3b205be910 | TwelveLegions.Tests.PipelineLifecycleProfileTests.AttachedTacticsDiscardSegmentBindsToTheSharedDiscardOutlet / S02-0013 | authoritative-consumer |
+| S02-0013:ability:active-while-attached:f64dc7647e481c5f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0013 | authoritative-consumer, per-card-branch |
+| S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0016 | nested-authority, reconnect-settlement |
+| S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0016 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S02-0016:ability:s2-reaction:37e38b08d365f0bb | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, target-invalidated-settlement |
+| S02-0016:ability:granted:dfd998389876f15e | TwelveLegions.Tests.PipelineLifecycleProfileTests.RuinedRitualGrantedModesBindToTheCounterResponseOutlets / S02-0016 | authoritative-consumer |
+| S02-0016:ability:granted:dfd998389876f15e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-submit, negated, normal, presentation-consumers, reconnect, target-invalidated |
+| S02-0016:ability:granted:dfd998389876f15e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.RuinedRitualOffersOnlyBranchesWhoseCurrentEffectObjectsExist / S02-0016 | no-target |
+| S02-0016:ability:granted:df2c369f365d4497 | TwelveLegions.Tests.PipelineLifecycleProfileTests.RuinedRitualGrantedModesBindToTheCounterResponseOutlets / S02-0016 | authoritative-consumer |
+| S02-0016:ability:granted:df2c369f365d4497 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0016 | duplicate-submit, negated, normal, presentation-consumers, reconnect, target-invalidated |
+| S02-0016:ability:granted:df2c369f365d4497 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.RuinedRitualOffersOnlyBranchesWhoseCurrentEffectObjectsExist / S02-0016 | no-target |
+| S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.AnonymousReturnUsesOwnerLibraryBeforeFollowingDraw / S02-0017 | owner-destination, private-return, reconnect-settlement |
+| S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.PublicResponseDeclarationsRestoreAndRejectDuplicateFinalSubmission / S02-0017 | commit-declaration, duplicate-declaration, presentation-declaration, reconnect-declaration |
+| S02-0017:ability:s2-reaction:0e0643c2b48ae93e | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0017 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
+| S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.NestedResponseKeepsItsDeclaredRootWhenIntermediateStackChanges / S02-0018 | nested-authority, reconnect-settlement |
+| S02-0018:ability:s2-reaction:e0e92d0479a94844 | TwelveLegions.Tests.StackResponseChoiceRegressionTests.ResponseSettlementRevalidatesObjectsAndSuccessDependenciesAfterRecovery / S02-0018 | duplicate-rejected, negated-settlement, normal-settlement, reconnect-settlement, success-dependency, target-invalidated-settlement |
+| S02-0101:ability:continuous:4cd3104ae17d316d | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0101 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |
+| S02-0103:ability:attack:607e6460eed6637b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0103 | authoritative-consumer, per-card-plan |
+| S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0104 | active-rest-cost, runtime-branch-mapping |
+| S02-0104:ability:active:1687d445c6acc308 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0104 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.AtomicReviewBatch4RegressionTests.CosmosYinKeepsTopCardHiddenUntilResolutionThenDeclaresPublicTarget / S02-0106 | duplicate-submit, reconnect, target-invalidated |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.AtomicReviewBatch4RegressionTests.CosmosYinMatchingRevealSettlesBuffBeforeTheUnderlyingStackItem / S02-0106 | normal, single-candidate-choice |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.AtomicReviewBatch4RegressionTests.CosmosYinMatchingRevealWithoutOwnLegionSkipsBuffBeforeUnderlyingSettlement / S02-0106 | no-target |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.AtomicReviewBatch4RegressionTests.NegatedCosmosYinDoesNotRevealTheLibraryOrStartItsLaterSegment / S02-0106 | negated |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineResponseSegmentBindsToTheSharedResponsePipeline / S02-0106 | authoritative-consumer, capability-registry |
+| S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | TwelveLegions.Tests.TriggeredEffectPresentationTests.EveryDirectResponseCardResolvesOnlyItsCurrentResponseAbilityBlock / S02-0106 | presentation-consumers |
+| S02-01M1:ability:active:4834e3b50d036f27 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-01M1 | authoritative-consumer, per-card-branch |
+| S02-01M1:ability:leave:cf42cfffe1b9b9bc | TwelveLegions.Tests.LeaveReplacementLifecycleProfileTests.WukongLeaveReplacementAndOptionalMoraleSurviveRestoreWithoutOrdinaryDestination / S02-01M1 | normal, presentation-consumers, reconnect |
+| S02-01M1:ability:leave:cf42cfffe1b9b9bc | TwelveLegions.Tests.PipelineLifecycleProfileTests.WukongMasterLegionReturnSegmentBindsToTheDepartureOutlet / S02-01M1 | authoritative-consumer |
+| S02-01S1:ability:master-morale-return:8d098fe32e7b253b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-01S1 | authoritative-consumer, per-card-plan |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.BothCardsAreExcludedFromDeckCountAndStartInGraveyard / S02-0201 | deck-count, opening-graveyard |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.EveryFieldDepartureDestinationIsReplacedWithTheOwnersGraveyard / S02-0201 | all-departure-destinations, controller-owner-split, duplicate-submit, hand-filter, library-filter, normal, owner-graveyard, presentation-consumers |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.OwnerGraveyardReplacementRemainsAuthoritativeAfterReconnect / S02-0201 | reconnect |
+| S02-0201:ability:continuous:16b90b36ef8afe2c | TwelveLegions.Tests.OutOfDeckGraveyardLifecycleProfileTests.SpecialDeckAndDepartureDefinitionsMatchTheClosedFamilyWithoutReadingDisplayText / S02-0201 | exact-card-family, text-independent |
+| S02-0201:ability:continuous:39b0b1524eaed536 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0201 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-0202:ability:continuous:94759febdd62fd32 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S02-0202 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0202:ability:continuous:94759febdd62fd32 | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0202 | condition-false, display-and-payment-parity |
+| S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.DiscountedSnapshotCostIsTheRecoveredAuthoritativePayment / S02-0203 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0203:ability:continuous:418e71545576e12d | TwelveLegions.Tests.PrintedEntryCostLifecycleProfileTests.PrintedEntryCostDefinitionsMatchTheReviewedCardFamily / S02-0203 | condition-false, display-and-payment-parity |
+| S02-0204:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0204 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0204 | active-rest-cost, runtime-branch-mapping |
+| S02-0204:ability:active:4257a82eec559a94 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0204 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0205:ability:continuous:44bfa636b58de089 | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0205 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0205:ability:continuous:44bfa636b58de089 | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0205 | display-and-submit-parity, same-card-exception |
+| S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0205 | active-rest-cost, runtime-branch-mapping |
+| S02-0205:ability:active:8023ed21f8771697 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0205 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0205:ability:active:e33e843f8be8d5f6 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0205 | authoritative-consumer, per-card-branch |
+| S02-0205:ability:active:e33e843f8be8d5f6 | TwelveLegions.Tests.SingleActiveTargetStatePresentationTests.NegatedScarabKeepsDiscardCostAndChangesNoTargets / S02-0205 | negated, single-candidate-choice |
+| S02-0205:ability:active:e33e843f8be8d5f6 | TwelveLegions.Tests.SingleActiveTargetStatePresentationTests.ScarabFailsWhenEveryDeclaredTargetLeavesBeforeSettlement / S02-0205 | target-invalidated |
+| S02-0205:ability:active:e33e843f8be8d5f6 | TwelveLegions.Tests.SingleActiveTargetStatePresentationTests.ScarabKeepsValidTargetsWhenOnlyOneOfTwoDeclarationsBecomesInvalid / S02-0205 | multi-target-applicability, normal, presentation-consumers |
+| S02-0205:ability:active:e33e843f8be8d5f6 | TwelveLegions.Tests.SingleActiveTargetStatePresentationTests.ScarabWithNoTargetPaysItsCostAndPublishesSkipped / S02-0205 | no-target |
+| S02-0206:ability:play:f6c0e9a69b3184b7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0206 | authoritative-consumer, per-card-flow |
+| S02-0206:ability:granted:1aba3f5bd15a426d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0206 | authoritative-consumer, parent-grant-boundary |
+| S02-0206:ability:granted:1aba3f5bd15a426d | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedMustHitUsesOneCurrentStateForProjectionDefenseAndTurnExpiryAcrossRestore / S02-0206 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0206:ability:play:bd784d08e38e0ed8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0206 | authoritative-consumer, per-card-flow |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleCancellationBeforeCommitLeavesCostAndSourceUntouched / S02-0207 | payment-cancel |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleFailsWithoutSubstitutionWhenItsDeclaredHandLegionLeavesBeforeSettlement / S02-0207 | target-invalidated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleNegationKeepsItsPreStackDiscardCostAndDoesNotSummon / S02-0207 | negated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRulePrepaysDiscardCostBeforeResponseAndOccupiedSlotDoesNotRefundOrOverwrite / S02-0207 | cost-prepaid, settlement-slot-invalidated |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleRestoresTheDeclaredHandSummonBeforeItsResponseWindowSettles / S02-0207 | reconnect |
+| S02-0207:ability:play:528a4430c4b87fb5 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.DesertRuleUsesEffectiveFactionForHandCandidateAndSettlement / S02-0207 | candidate-effective-faction, duplicate-submit, normal, presentation-consumers, single-candidate-choice |
+| S02-02M1:ability:continuous:a83e1e0971bbe6f0 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-02M1 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-02M1:ability:active:014219b1c6c557fa | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-02M1 | authoritative-consumer, per-card-branch |
+| S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-02M1 | authoritative-consumer, per-card-plan |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerGraveyardActiveButtonStartsCostAndSlotDeclarationWithoutDuplicateConfirmation / S02-0301 | normal, presentation-consumers |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateRemainsAuthoritativeAfterReconnect / S02-0301 | reconnect |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorHammerMasterGateUsesTheSameReasonForButtonAndDirectSubmission / S02-0301 | master-gate-rejected |
+| S02-0301:ability:continuous:e48cf407ce847427 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0301 | authoritative-consumer, master-gate, usage-commit |
+| S02-0301:ability:active:61c655977499e4be | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0301 | authoritative-consumer, per-card-branch |
+| S02-0302:ability:hand-play:4e8ff9ea92325bac | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0302 | authoritative-consumer, per-card-flow |
+| S02-0302:ability:continuous:48719a94741bbf36 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0302 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |
+| S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0302 | authoritative-consumer, parent-grant-boundary |
+| S02-0302:ability:keyword-definition:eaba79729a9d7a65 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0302 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.AcceptedSelfDamageChoiceUsesDisplayedDiscountAndCannotBeSubmittedTwice / S02-0303 | duplicate-submit, normal, presentation-consumers |
+| S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.EveryPrintedSelfDamageDiscountUsesOneHandPlayCostProtocol / S02-0303 | last-health-terminal, optional-choice, reconnect-payment |
+| S02-0303:ability:hand-play:5e06807975eda2b7 | TwelveLegions.Tests.SelfDamageEntryDiscountLifecycleProfileTests.RecoveredSelfDamagePaymentCanCancelWithoutPayingEitherCost / S02-0303 | payment-cancel, reconnect-payment |
+| S02-0304:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0304 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0304 | authoritative-consumer, per-card-plan |
+| S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0305 | authoritative-consumer, setup-defaults |
+| S02-0305:ability:game-setup:cf14affeb486a9f7 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.CurrentArtifactBlockReasonSurvivesRestoreAndRejectsRepeatedSubmissionWithoutPayment / S02-0305 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0305:ability:continuous:26b824128ffced1a | TwelveLegions.Tests.HandPlayBlockLifecycleProfileTests.HandPlayBlockDefinitionsMatchTheClosedFamily / S02-0305 | display-and-submit-parity, priority |
+| S02-0305:ability:master-damaged:a4a2c92cad3ad28c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0305 | authoritative-consumer, per-card-plan |
+| S02-0305:ability:master-damaged:4c8ce907eed1f778 | TwelveLegions.Tests.AnderstorpDamageFloorLifecycleProfileTests.OpponentTurnFirstMasterDamageBecomesTwoAndLaterDamageDoesNotAcrossRestore / S02-0305 | normal, presentation-consumers, reconnect |
+| S02-0305:ability:master-damaged:4c8ce907eed1f778 | TwelveLegions.Tests.PipelineLifecycleProfileTests.AnderstorpDamageFloorSegmentBindsToTheReplacementOutlet / S02-0305 | authoritative-consumer |
+| S02-0306:ability:continuous:a5a8e191442bbfac | TwelveLegions.Tests.CardNameUsageLimitTests.MimirSharedNameRuleSurvivesReconnectAndExplainsTheLock / S02-0306 | normal, presentation-consumers, reconnect |
+| S02-0306:ability:continuous:a5a8e191442bbfac | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-0306 | authoritative-consumer, usage-commit |
+| S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0306 | authoritative-consumer, per-card-flow |
+| S02-0307:ability:play:e2a8efcc4ba499ee | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0307 | authoritative-consumer, per-card-flow |
+| S02-03M1:ability:game-setup:46b2a85c54cecc56 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-03M1 | authoritative-consumer, setup-defaults |
+| S02-03M1:ability:game-setup:46b2a85c54cecc56 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.OptionalSetupPromptsRestoreAndApplyBeforeTheStartingHandIsDrawn / S02-03M1 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-03M1:ability:active:54e6f9c40764f804 | TwelveLegions.Tests.ActiveUsageLimitTests.ThorCanPayAgainAfterResolutionOrNegationAndV2Recovery / S02-03M1 | duplicate-submit, negated, no-target, normal, presentation-consumers, reconnect |
+| S02-03M1:ability:active:54e6f9c40764f804 | TwelveLegions.Tests.AtomicReviewBatch6LBRegressionTests.ThorChargePublicPaymentOffersGodPowerAndTombGuardResources / S02-03M1 | payment-cancel |
+| S02-03M1:ability:active:54e6f9c40764f804 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-03M1 | authoritative-consumer, per-card-branch |
+| S02-03M1:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-03M1 | authoritative-consumer, parent-grant-boundary |
+| S02-03M1:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-03M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0401:ability:continuous:9601da1d8445f865 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0401 | authoritative-consumer, per-card-plan |
+| S02-0403:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0403 | authoritative-consumer, parent-grant-boundary |
+| S02-0403:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-0403 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0404 | active-rest-cost, runtime-branch-mapping |
+| S02-0404:ability:active:b30de444d37a3b6e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0404 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0404:ability:granted:2c2b9693ca8cf3b8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0404 | authoritative-consumer, per-card-branch |
+| S02-0404:ability:granted:e7c384ccba9ff2f3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0404 | authoritative-consumer, per-card-branch |
+| S02-0404:ability:granted:e3ff02735b6b18f4 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0404 | authoritative-consumer, parent-grant-boundary |
+| S02-0404:ability:granted:e3ff02735b6b18f4 | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedDeathImmunityUsesOneCurrentStateForProjectionLethalReplacementAndLeaveReset / S02-0404 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0405:ability:play:0a13775c2081e642 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0405 | authoritative-consumer, per-card-flow |
+| S02-0405:ability:play:b03190adf1322a1a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0405 | authoritative-consumer, per-card-flow |
+| S02-0405:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / S02-0405 | authoritative-consumer, parent-grant-boundary |
+| S02-0405:ability:granted:f4dd24f1fb07f3d5 | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / S02-0405 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0406:ability:play:35815c7115c7ce71 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0406 | authoritative-consumer, per-card-flow |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.EffectPresentationBranchSegmentTests.BranchOverrideUsesTheExistingSaveFreezeAndRestorePipelineByExactSceneId / S02-0406 | presentation-consumers |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TenkaGrantedModesBindToTheFactionTacticOutlets / S02-0406 | authoritative-consumer |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchDeclarationSurvivesRestoreAndRejectsConsumedPrompts / S02-0406 | duplicate-submit, reconnect |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchesResolveWithoutStallingWhenNoCurrentLegionCanBeAffected / S02-0406 | no-target |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuCanDebuffOneRowOrGrantEachCurrentActiveLegionOneFreeMove / S02-0406 | normal |
+| S02-0406:ability:granted:6aa04cbf27f6b4b7 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuNegationStopsEverySelectedBranch / S02-0406 | negated |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.EffectPresentationBranchSegmentTests.BranchOverrideUsesTheExistingSaveFreezeAndRestorePipelineByExactSceneId / S02-0406 | presentation-consumers |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.PipelineLifecycleProfileTests.TenkaGrantedModesBindToTheFactionTacticOutlets / S02-0406 | authoritative-consumer |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchDeclarationSurvivesRestoreAndRejectsConsumedPrompts / S02-0406 | duplicate-submit, reconnect |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchesResolveWithoutStallingWhenNoCurrentLegionCanBeAffected / S02-0406 | no-target |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuFrontAttackBonusExistsOnlyDuringThatAttack / S02-0406 | normal |
+| S02-0406:ability:granted:4f1f5a1d4791b5ef | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuNegationStopsEverySelectedBranch / S02-0406 | negated |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.EffectPresentationBranchSegmentTests.BranchOverrideUsesTheExistingSaveFreezeAndRestorePipelineByExactSceneId / S02-0406 | presentation-consumers |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TenkaGrantedModesBindToTheFactionTacticOutlets / S02-0406 | authoritative-consumer |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchDeclarationSurvivesRestoreAndRejectsConsumedPrompts / S02-0406 | duplicate-submit, reconnect |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuBranchesResolveWithoutStallingWhenNoCurrentLegionCanBeAffected / S02-0406 | no-target |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuCanDebuffOneRowOrGrantEachCurrentActiveLegionOneFreeMove / S02-0406 | normal |
+| S02-0406:ability:granted:4f26e688b66affd4 | TwelveLegions.Tests.S2FactionRegressionTests.TenkaFubuNegationStopsEverySelectedBranch / S02-0406 | negated |
+| S02-04M1:ability:friendly-legion-moves:654df25d049352f7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-04M1 | authoritative-consumer, per-card-plan |
+| S02-04M1:ability:friendly-legion-moves:654df25d049352f7 | TwelveLegions.Tests.PrideTriggerPaymentReservationTests.TsukuyomiBasePaymentCanBeCancelledWithoutChargingOrConsumingItsOnce / S02-04M1 | payment-cancel |
+| S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-04M1 | authoritative-consumer, per-card-plan |
+| S02-04M1:ability:friendly-front-to-back:e46218b2ac936410 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-04M1 | authoritative-consumer, per-card-plan |
+| S02-0501:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0501 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
+| S02-0501:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.EveryPromotionRestoresTheFoundationChoiceAndCommitsExactlyOnce / S02-0501 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0501:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.FoundationThatLeavesBeforeSubmissionInvalidatesWithoutReplacementOrPayment / S02-0501 | target-invalidated |
+| S02-0501:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionFoundationPromptCanBeCancelledWithoutPayingOrChangingZones / S02-0501 | payment-cancel |
+| S02-0501:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionWithoutAFoundationCannotStartOrSpendGodPower / S02-0501 | no-target |
+| S02-0503:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0503 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
+| S02-0503:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.EveryPromotionRestoresTheFoundationChoiceAndCommitsExactlyOnce / S02-0503 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0503:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.FoundationThatLeavesBeforeSubmissionInvalidatesWithoutReplacementOrPayment / S02-0503 | target-invalidated |
+| S02-0503:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionFoundationPromptCanBeCancelledWithoutPayingOrChangingZones / S02-0503 | payment-cancel |
+| S02-0503:ability:promotion:3eb467465ef47272 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionWithoutAFoundationCannotStartOrSpendGodPower / S02-0503 | no-target |
+| S02-0503:ability:static:5e2fcb0f2798f57a | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0503 | authoritative-consumer, combat-settlement, normal, presentation-consumers, reconnect |
+| S02-0503:ability:after-attack:e3ced12ddde14fdb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0503 | authoritative-consumer, per-card-plan |
+| S02-0503:ability:granted-static:e67d03cee97f98a6 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.FrontRowKeywordGrantLinesResolveThroughTheirDeclaredOutlets / S02-0503 | authoritative-consumer, front-row-required, parent-grant-boundary |
+| S02-0503:ability:granted-static:e67d03cee97f98a6 | TwelveLegions.Tests.GrantedFrontRowTauntOnKillLifecycleProfileTests.AchillesKillGrantSurvivesCombatRestoreAndStillRequiresTheCurrentFrontRow / S02-0503 | normal, presentation-consumers, reconnect, target-invalidated |
+| S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0503 | authoritative-consumer, parent-grant-boundary |
+| S02-0503:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0503 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0504:ability:static:0ada28f438439ac2 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0504 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |
+| S02-0504:ability:lethal-replacement:3fb565d50830f260 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S02-0504 | authoritative-consumer, front-row-required, once-per-turn |
+| S02-0504:ability:lethal-replacement:3fb565d50830f260 | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.AchillesPaymentFailureEndsThePromptAndDoesNotPreserveTheCard / S02-0504 | payment-cancel |
+| S02-0504:ability:lethal-replacement:3fb565d50830f260 | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.EveryEffectLethalReplacementRestoresTheSamePromptAndConsumesItOnce / S02-0504 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0505 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
+| S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.EveryPromotionRestoresTheFoundationChoiceAndCommitsExactlyOnce / S02-0505 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.FoundationThatLeavesBeforeSubmissionInvalidatesWithoutReplacementOrPayment / S02-0505 | target-invalidated |
+| S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionFoundationPromptCanBeCancelledWithoutPayingOrChangingZones / S02-0505 | payment-cancel |
+| S02-0505:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionWithoutAFoundationCannotStartOrSpendGodPower / S02-0505 | no-target |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / S02-0505 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / S02-0505 | destination-invalidated, reconnect-before-command, source-invalidated |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / S02-0505 | button-rejection-consistency, timing |
+| S02-0505:ability:active:bac4cb5d348f29f1 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / S02-0505 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| S02-0505:ability:keyword-definition:cf232142ca7d10f9 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0505 | authoritative-consumer, parent-grant-boundary |
+| S02-0505:ability:keyword-definition:cf232142ca7d10f9 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0505 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedPromotionSegmentMatchesItsGodPowerCostAndSharedEntry / S02-0507 | authoritative-consumer, god-power-consume-and-flip, single-candidate-choice |
+| S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.EveryPromotionRestoresTheFoundationChoiceAndCommitsExactlyOnce / S02-0507 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.FoundationThatLeavesBeforeSubmissionInvalidatesWithoutReplacementOrPayment / S02-0507 | target-invalidated |
+| S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionFoundationPromptCanBeCancelledWithoutPayingOrChangingZones / S02-0507 | payment-cancel |
+| S02-0507:ability:promotion:e890e8664470e824 | TwelveLegions.Tests.PromotionEntryLifecycleProfileTests.PromotionWithoutAFoundationCannotStartOrSpendGodPower / S02-0507 | no-target |
+| S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0507 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0507:ability:static:3f520b391281b325 | TwelveLegions.Tests.PrintedRangedProfileTests.RepresentativeRangeConditionsActuallyPreventRetaliationAfterRestore / S02-0507 | duplicate-attack, normal-ranged-combat, reconnect-before-attack |
+| S02-0507:ability:attack:d20040947938d125 | TwelveLegions.Tests.BackRowAttackTroopsSetLifecycleProfileTests.BackRowAttackUsesItsDeclaredSetValueAndRevertsAfterSettlement / S02-0507 | normal, post-attack-revert, presentation-consumers, reconnect |
+| S02-0507:ability:attack:d20040947938d125 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryBackRowTroopsSetSegmentSharesTheCombatProfileOutlet / S02-0507 | authoritative-consumer, row-condition-current, set-value-parameter |
+| S02-0508:ability:static:aa41bff900061e1d | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0508 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0508 | identity-definition, runtime-owner |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary / S02-0508 | candidate-generation, candidate-settlement-parity |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MandatoryMoraleFlipWithOnlyBlackLotusSilentlySkipsBeforeStacking / S02-0508 | black-lotus-excluded, no-target |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MandatorySingleMoraleTargetStillRequiresAPlayerClickAndRevalidatesOnSettlement / S02-0508 | target-invalidated |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MoraleFlipTargetListUsesGodPowerIdentityAndExcludesBlackLotus / S02-0508 | black-lotus-excluded, candidate-generation, single-candidate-choice |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MoraleFlipTriggerDistinguishesNegationFromStaleDeclaredTarget / S02-0508 | negated, target-invalidated |
+| S02-0508:ability:death:9aea23b4138e399e | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MoraleFlipTriggerRestoresChoiceAndResponseThenSettlesOnce / S02-0508 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0509:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0509 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0509:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0509 | condition-false, display-and-payment-parity |
+| S02-0510:ability:static:52b46f1b508e6aa1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0510 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0510:ability:static:52b46f1b508e6aa1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0510 | condition-false, display-and-payment-parity |
+| S02-0510:ability:static:5193793609facf70 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RestedFreeFrontBackMoveSegmentFeedsTheSharedMoveCommand / S02-0510 | authoritative-consumer, source-rested-current |
+| S02-0510:ability:static:5193793609facf70 | TwelveLegions.Tests.RestedFreeMoveLifecycleProfileTests.RestedHippolytaKeepsTheSharedFreeMoveRuleAfterReconnect / S02-0510 | normal, presentation-consumers, reconnect |
+| S02-0510:ability:active:2ee4c7f29b568e48 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0510 | active-rest-cost, runtime-branch-mapping |
+| S02-0510:ability:active:2ee4c7f29b568e48 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0510 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0511:ability:attack:c367ee3457cbd5f4 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0511 | authoritative-consumer, per-card-plan |
+| S02-0511:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0511 | authoritative-consumer, parent-grant-boundary |
+| S02-0511:ability:keyword-definition:96aa4e9504b12339 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedShockDefinitionUsesTheSharedFlagForProjectionCollateralAndTurnExpiry / S02-0511 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0512:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0512 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0512:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0512 | condition-false, display-and-payment-parity |
+| S02-0512:ability:static:e44e97f2fb745816 | TwelveLegions.Tests.FrontRowKeywordGrantLifecycleProfileTests.AeneasTauntAlwaysFollowsItsCurrentRowAcrossSnapshotAndRestore / S02-0512 | normal, presentation-consumers, reconnect, target-invalidated |
+| S02-0512:ability:static:e44e97f2fb745816 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.FrontRowKeywordGrantLinesResolveThroughTheirDeclaredOutlets / S02-0512 | ability-ref-chain, authoritative-consumer, row-condition-current |
+| S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0512 | authoritative-consumer, parent-grant-boundary |
+| S02-0512:ability:keyword-definition:6692b63a59c971d0 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0512 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0513:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0513 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0513 | identity-definition, runtime-owner |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0513 | black-lotus-excluded, normal, single-candidate-choice |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0513 | negated, target-invalidated |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0513 | duplicate-submit, presentation-consumers, reconnect |
+| S02-0513:ability:enter:eef83ec51f2ef093 | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0513 | no-target |
+| S02-0513:ability:active:0b4d5245336709f8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0513 | active-rest-cost, runtime-branch-mapping |
+| S02-0513:ability:active:0b4d5245336709f8 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0513 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0514:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0514 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0515:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0515 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0515:ability:lethal-replacement:654c3040d6da8b4d | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryLethalReplacementSegmentSharesTheOfferPipeline / S02-0515 | authoritative-consumer, front-row-required, once-per-turn |
+| S02-0515:ability:lethal-replacement:654c3040d6da8b4d | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.DeclaredSubstituteThatLeavesItsRequiredZoneDoesNotProtectOrSubstituteAnotherCard / S02-0515 | payment-cancel, target-invalidated |
+| S02-0515:ability:lethal-replacement:654c3040d6da8b4d | TwelveLegions.Tests.LethalReplacementLifecycleProfileTests.EveryEffectLethalReplacementRestoresTheSamePromptAndConsumesItOnce / S02-0515 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0516:ability:static:17774ead9eb8ed69 | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0516 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |
+| S02-0516:ability:static:a29458736f52d0a9 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0516 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0516:ability:static:a29458736f52d0a9 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0516 | normal, presentation-consumers, reconnect |
+| S02-0516:ability:attack:077dc7337586413c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0516 | authoritative-consumer, per-card-plan |
+| S02-0517:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0517 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0518:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0518 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0518:ability:static:fff4ed8e0ac25ed9 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0518 | condition-false, display-and-payment-parity |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0518 | identity-definition, runtime-owner |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0518 | black-lotus-excluded, normal, rested-only-filter, single-candidate-choice |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0518 | negated, target-invalidated |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0518 | duplicate-submit, presentation-consumers, reconnect |
+| S02-0518:ability:enter:6e9ddf89fefa712f | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0518 | no-target |
+| S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0519 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0519:ability:static:2b21805b14115304 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0519 | normal, presentation-consumers, reconnect |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0520 | identity-definition, runtime-owner |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OlympusFlipEntryUsesOneCancellableTargetChoiceBeforeResponse / S02-0520 | black-lotus-excluded, normal, single-candidate-choice |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipDistinguishesNegationFromStaleChoice / S02-0520 | negated, target-invalidated |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipRestoresItsChoiceAndPresentation / S02-0520 | duplicate-submit, presentation-consumers, reconnect |
+| S02-0520:ability:enter:361ec387b847ecee | TwelveLegions.Tests.S2FactionRegressionTests.OptionalEntryMoraleFlipWithNoGodPowerFaceCandidateEndsAsSkipped / S02-0520 | no-target |
+| S02-0520:ability:active:e4e320d416a9c103 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0520 | active-rest-cost, runtime-branch-mapping |
+| S02-0520:ability:active:e4e320d416a9c103 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0520 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0520:ability:mode-promotion-discount:98eb71c68928c091 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0520 | authoritative-consumer, per-card-branch |
+| S02-0520:ability:mode-ready-after-kill:927badbb354c7607 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0520 | authoritative-consumer, per-card-branch |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-0521 | identity-definition, runtime-owner |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.GloryRoadFlipsUpToThreeChosenMoraleThenPaysTwoChosenGodPowerAndSearchesOlympus / S02-0521 | normal |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.GloryRoadNeverOffersBlackLotusAsAMoraleFlipTarget / S02-0521 | black-lotus-excluded, candidate-generation, multi-target-applicability |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.GloryRoadRevalidatesEveryDeclaredFaceAndKeepsLegalTargets / S02-0521 | multi-target-independent-revalidation, target-invalidated |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.GloryRoadSoleFlipCandidateStillRequiresChoiceAndRestoresTheSegment / S02-0521 | duplicate-submit, presentation-consumers, reconnect, single-candidate-choice |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.GloryRoadWithNoGodPowerFaceCandidateCompletesItsFirstSegmentAsSkipped / S02-0521 | no-target |
+| S02-0521:ability:play:4ae24413479102d1 | TwelveLegions.Tests.S2FactionRegressionTests.NegatedGloryRoadFlipSegmentChangesNoDeclaredMoraleFace / S02-0521 | negated |
+| S02-0521:ability:play-additional:2b5a094468a81a7a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0521 | authoritative-consumer, per-card-flow |
+| S02-0522:ability:play:a09dadaebc5e13de | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0522 | authoritative-consumer, per-card-flow |
+| S02-0522:ability:play-additional:49fb773d1512e5b3 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0522 | authoritative-consumer, per-card-flow |
+| S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0523 | authoritative-consumer, per-card-plan |
+| S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba | TwelveLegions.Tests.S2FactionRegressionTests.TrojanHorsePlacementRevalidatesItsDeclaredSlotAfterCheckpointAndRejectsDuplicateSubmission / S02-0523 | duplicate-submit, reconnect, target-invalidated |
+| S02-0523:ability:static:05da64c53e8a7606 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EverySimpleContinuousTroopsRuleFeedsTheSharedRecalcOutlet / S02-0523 | authoritative-consumer, condition-current, shared-recalc-outlet |
+| S02-0523:ability:static:05da64c53e8a7606 | TwelveLegions.Tests.SimpleContinuousTroopsLifecycleProfileTests.ContinuousTroopsRulesRecalculateFromCurrentStateAfterReconnect / S02-0523 | normal, presentation-consumers, reconnect |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05C1 | identity-definition, runtime-owner |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt / S02-05C1 | negated, paid-cost-preserved |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource / S02-05C1 | black-lotus-excluded, no-target |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipFailsWhenEverySettlementCandidateChangedFaceDuringResponses / S02-05C1 | candidate-settlement-parity, target-invalidated |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipKeepsPaymentSeparateAndResolvesAfterCheckpoint / S02-05C1 | duplicate-submit, normal, payment-separate, presentation-consumers, reconnect, v2-prompt-reconnect |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipPaymentCanBeCancelledWithoutSpendingOrUsage / S02-05C1 | payment-cancel |
+| S02-05C1:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipRevalidatesTheFrozenSelectionBeforeChangingItsFace / S02-05C1 | single-candidate-choice, target-invalidated |
+| S02-05C1:ability:static:5879d4c3fe97b3cf | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleResourceIdentitySegmentIsStructurallySatisfied / S02-05C1 | authoritative-consumer, counts-as-morale-structural |
+| S02-05C1:ability:static:5879d4c3fe97b3cf | TwelveLegions.Tests.MoraleResourceIdentityLifecycleTests.PrintedResourceIdentitySurvivesProjectionRecoveryAndSharedPayment / S02-05C1 | authoritative-consumer, counts-as-morale-structural, normal, presentation-consumers, reconnect |
+| S02-05C1:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S02-05C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S02-05C1:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.GodPowerDrawPublishesResolvedAndUsesTheSameSegmentAfterCheckpoint / S02-05C1 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-05C1:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.GodPowerDrawWithAnEmptyLibraryPublishesFailedInsteadOfResolved / S02-05C1 | no-target |
+| S02-05C1:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.NegatedGodPowerDrawKeepsItsPaidGodPowerAndDrawsNothing / S02-05C1 | negated |
+| S02-05C1:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S02-05C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05C1A | identity-definition, runtime-owner |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt / S02-05C1A | negated |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource / S02-05C1A | no-target |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipFailsWhenEverySettlementCandidateChangedFaceDuringResponses / S02-05C1A | target-invalidated |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipKeepsPaymentSeparateAndResolvesAfterCheckpoint / S02-05C1A | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipPaymentCanBeCancelledWithoutSpendingOrUsage / S02-05C1A | payment-cancel |
+| S02-05C1A:ability:active:1ae9b19504eac93a | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipRevalidatesTheFrozenSelectionBeforeChangingItsFace / S02-05C1A | single-candidate-choice |
+| S02-05C1A:ability:static:5879d4c3fe97b3cf | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleResourceIdentitySegmentIsStructurallySatisfied / S02-05C1A | authoritative-consumer, counts-as-morale-structural |
+| S02-05C1A:ability:static:5879d4c3fe97b3cf | TwelveLegions.Tests.MoraleResourceIdentityLifecycleTests.PrintedResourceIdentitySurvivesProjectionRecoveryAndSharedPayment / S02-05C1A | authoritative-consumer, counts-as-morale-structural, normal, presentation-consumers, reconnect |
+| S02-05C1A:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S02-05C1A | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S02-05C1A:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.GodPowerDrawPublishesResolvedAndUsesTheSameSegmentAfterCheckpoint / S02-05C1A | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-05C1A:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.GodPowerDrawWithAnEmptyLibraryPublishesFailedInsteadOfResolved / S02-05C1A | no-target |
+| S02-05C1A:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveDrawPresentationTests.NegatedGodPowerDrawKeepsItsPaidGodPowerAndDrawsNothing / S02-05C1A | negated |
+| S02-05C1A:ability:active:5dec5c18aaf62a03 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S02-05C1A | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.DivinityEffectLifecycleTests.DivinityFlipCannotStartWithOnlyBlackLotusInTheMoraleZone / S02-05D1 | black-lotus-excluded, no-target |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.DivinityEffectLifecycleTests.DivinityFlipFailsWhenItsResolutionTimeCandidateDisappears / S02-05D1 | candidate-settlement-parity, target-invalidated |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.DivinityEffectLifecycleTests.DivinityFlipNeverOffersBlackLotusAsAGodPowerFaceTarget / S02-05D1 | black-lotus-excluded, candidate-generation, single-candidate-choice |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.DivinityEffectLifecycleTests.DivinityFlipRestoresItsSceneAndPublishesResolved / S02-05D1 | duplicate-submit, normal, presentation-consumers, reconnect, v2-prompt-reconnect |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.DivinityEffectLifecycleTests.NegatedDivinityFlipConsumesItsUseButDoesNotChangeMoraleFace / S02-05D1 | negated |
+| S02-05D1:ability:active:519ab3c1379a9256 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05D1 | identity-definition, runtime-owner |
+| S02-05D1:ability:active:1e9195c93dff4ee9 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05D1 | authoritative-consumer, per-card-branch |
+| S02-05D1:ability:active:f160e84288ecb28c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-05D1 | active-rest-cost, runtime-branch-mapping |
+| S02-05D1:ability:active:f160e84288ecb28c | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-05D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-05D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-05D1 | authoritative-consumer, setup-defaults |
+| S02-05D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S02-05D1 | normal, presentation-consumers, reconnect |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / S02-05M1 | identity-definition, runtime-owner |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.ArtemisMoraleFlipWithNoGodPowerFaceCandidateSilentlySkips / S02-05M1 | no-target |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.EveryMoraleFlipFilterUsesTheSameGodPowerIdentityBoundary / S02-05M1 | active-or-rested-morale, black-lotus-excluded, candidate-generation |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MoraleFlipTriggerDistinguishesNegationFromStaleDeclaredTarget / S02-05M1 | negated, target-invalidated |
+| S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | TwelveLegions.Tests.SimpleResourceTriggerConsistencyTests.MoraleFlipTriggerRestoresChoiceAndResponseThenSettlesOnce / S02-05M1 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| S02-05M1:ability:active:6fe03f6c35407ac7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05M1 | authoritative-consumer, per-card-branch |
+| S02-05M1:ability:keyword-definition:995c52041c470ca4 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-05M1:ability:keyword-definition:995c52041c470ca4 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedStrongAttackDefinitionUsesTheSharedSemanticForProjectionDamageAndExpiry / S02-05M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-05M1:ability:keyword-definition:41657ed47ef085ae | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-05M1 | authoritative-consumer, parent-grant-boundary |
+| S02-05M1:ability:keyword-definition:41657ed47ef085ae | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedShockDefinitionUsesTheSharedFlagForProjectionCollateralAndTurnExpiry / S02-05M1 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-05M2:ability:active:e4b2c63a32960f8e | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-05M2 | authoritative-consumer, per-card-branch |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DeclarationPromptSurvivesReconnectAndRejectsItsDuplicateSubmission / S02-0602 | duplicate-submit, reconnect |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DecliningBeforePaymentConsumesNeitherRuneNorStackSlot / S02-0602 | payment-cancel |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.MissingRunePreventsEitherOptionalEffectFromEnteringTheStack / S02-0602 | no-target |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.NegationDoesNotRefundThePrepaidRuneOrApplyTheStateChange / S02-0602 | negated |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.PaidSelfStateEffectsResolveAndExposeTheirExactAbilityResult / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:enter:1ec4fb001f87c88e | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.SourceLeavingAfterPaymentIsFailedSettlementRatherThanCancellation / S02-0602 | target-invalidated |
+| S02-0602:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0602 | authoritative-consumer, parent-grant-boundary |
+| S02-0602:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0602 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0602:ability:after-kill:e290e1e434e45531 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0602 | authoritative-consumer, per-card-plan |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.PipelineLifecycleProfileTests.LancelotKillGrantedModeBindsToTheTrialAdvanceOutlet / S02-0602 | authoritative-consumer |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0602 | duplicate-submit, reconnect |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.NegatingTrialModeStopsProgressAndDoesNotUndoItsRuleActionCost / S02-0602 | negated |
+| S02-0602:ability:granted:7a7545729484412a | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.TrialModeIsNotOfferedWhenThereIsNoOpenTrial / S02-0602 | no-target |
+| S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryGrantedGainRuneSegmentSharesTheSingleRuneSettlement / S02-0602 | authoritative-consumer, parent-grant-boundary |
+| S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0602 | normal, presentation-consumers |
+| S02-0602:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0602 | reconnect |
+| S02-0603:ability:continuous:5e0d666ac6a386ba | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0603 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-0603:ability:active:8768d3f1fcb44728 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0603 | active-rest-cost, runtime-branch-mapping |
+| S02-0603:ability:active:8768d3f1fcb44728 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0603 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0603:ability:granted:8cd73702b7db90b0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0603 | authoritative-consumer, per-card-branch |
+| S02-0603:ability:granted:ee3b46417c9fc4f7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0603 | authoritative-consumer, per-card-branch |
+| S02-0604:ability:trial:2117897dcefd3125 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0604 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0604:ability:trial:2117897dcefd3125 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0604 | normal, presentation-consumers, reconnect |
+| S02-0604:ability:trial-completed:9d25a05a194bedc1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-0604 | authoritative-consumer, per-card-branch |
+| S02-0605:ability:continuous:5ff487de55c0ca1d | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0605 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0605:ability:continuous:5ff487de55c0ca1d | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0605 | effective-faction, zero-floor |
+| S02-0605:ability:attack:82a5bf2622bf4d20 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0605 | authoritative-consumer, per-card-plan |
+| S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0605 | authoritative-consumer, parent-grant-boundary |
+| S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedStrongAttackDefinitionUsesTheSharedSemanticForProjectionDamageAndExpiry / S02-0605 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0606:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0606 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0606:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0606 | normal, presentation-consumers, reconnect |
+| S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryAfterKillPiercingSegmentSharesThePrintedPiercingOutlet / S02-0606 | authoritative-consumer, original-combat-kill-only |
+| S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0606 | no-attack-trigger-on-generated, normal, presentation-consumers, reconnect |
+| S02-0606:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack / S02-0606 | target-invalidated |
+| S02-0606:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0606 | authoritative-consumer, parent-grant-boundary |
+| S02-0606:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0606 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0607:ability:attack:25d5c998d14502d7 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0607 | authoritative-consumer, per-card-plan |
+| S02-0608:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0608 | authoritative-consumer, parent-grant-boundary |
+| S02-0608:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedDeathImmunityDefinitionUsesTheSharedReplacementAndTurnStartExpiry / S02-0608 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0608:ability:attack:4581df1cc635dd68 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0608 | authoritative-consumer, per-card-plan |
+| S02-0608:ability:attack:0999d120e02e3c50 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0608 | authoritative-consumer, per-card-plan |
+| S02-0609:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0609 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0609:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0609 | normal, presentation-consumers, reconnect |
+| S02-0609:ability:continuous:dc2aa603cc3d136c | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0609 | authoritative-consumer, candidate-and-submit-parity, normal, presentation-consumers, reconnect |
+| S02-0610:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0610 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0610:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0610 | normal, presentation-consumers, reconnect |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DeclarationPromptSurvivesReconnectAndRejectsItsDuplicateSubmission / S02-0610 | duplicate-submit, reconnect |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.DecliningBeforePaymentConsumesNeitherRuneNorStackSlot / S02-0610 | payment-cancel |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.MissingRunePreventsEitherOptionalEffectFromEnteringTheStack / S02-0610 | no-target |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.NegationDoesNotRefundThePrepaidRuneOrApplyTheStateChange / S02-0610 | negated |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.PaidSelfStateEffectsResolveAndExposeTheirExactAbilityResult / S02-0610 | normal, presentation-consumers |
+| S02-0610:ability:after-trial:451b6d549a5c98c4 | TwelveLegions.Tests.TrialAdvancePaidSelfStateLifecycleTests.SourceLeavingAfterPaymentIsFailedSettlementRatherThanCancellation / S02-0610 | target-invalidated |
+| S02-0611:ability:continuous:5745356459e85080 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0611 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0611:ability:continuous:5745356459e85080 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0611 | condition-false, source-still-in-hand |
+| S02-0611:ability:enter:0cc32f023a1b4f11 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0611 | authoritative-consumer, per-card-plan |
+| S02-0611:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:4d1e472a814a1e0b | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedDeathImmunityDefinitionUsesTheSharedReplacementAndTurnStartExpiry / S02-0611 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryAfterKillPiercingSegmentSharesThePrintedPiercingOutlet / S02-0611 | authoritative-consumer, original-combat-kill-only |
+| S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0611 | no-attack-trigger-on-generated, normal, presentation-consumers, reconnect |
+| S02-0611:ability:after-kill:7680beaaf4313595 | TwelveLegions.Tests.LatestBugRegressionTests.PiercingUsesTheSameMasterTargetRestrictionsAsAnOrdinaryAttack / S02-0611 | target-invalidated |
+| S02-0611:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0611 | authoritative-consumer, parent-grant-boundary |
+| S02-0611:ability:keyword-definition:672734be0285300f | TwelveLegions.Tests.LatestBugRegressionTests.NativePiercingStartsMasterAttackWithRemainingTroopsAndNoAttackTrigger / S02-0611 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0612:ability:continuous:064a0a1c5382575c | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / S02-0612 | duplicate-submit, normal, presentation-consumers, reconnect |
+| S02-0612:ability:continuous:064a0a1c5382575c | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / S02-0612 | condition-false, source-still-in-hand |
+| S02-0612:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0612 | authoritative-consumer, parent-grant-boundary |
+| S02-0612:ability:keyword-definition:beff9037e2c10a9d | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedChargeDefinitionUsesTheSharedFlagForProjectionAttackAndLeaveReset / S02-0612 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0612:ability:attack:c195f409c875e9eb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0612 | authoritative-consumer, per-card-plan |
+| S02-0613:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0613 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0613:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0613 | normal, presentation-consumers, reconnect |
+| S02-0614:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0614 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0614:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0614 | normal, presentation-consumers, reconnect |
+| S02-0614:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0614 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0614:ability:enter:601eddfb8abbb8d2 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0614 | authoritative-consumer, per-card-plan |
+| S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryGrantedGainRuneSegmentSharesTheSingleRuneSettlement / S02-0614 | authoritative-consumer, parent-grant-boundary |
+| S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0614 | normal, presentation-consumers |
+| S02-0614:ability:granted:6235a3f3a12afdbb | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0614 | reconnect |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.PipelineLifecycleProfileTests.ConstanceGrantedModeBindsToTheTrialAdvanceOutlet / S02-0614 | authoritative-consumer |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.EachDeclaredModePublishesAndSettlesItsOwnGrantedAbility / S02-0614 | normal, presentation-consumers |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.ModeDeclarationSurvivesReconnectAndRejectsTheExpiredPrompt / S02-0614 | duplicate-submit, reconnect |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.NegatingTrialModeStopsProgressAndDoesNotUndoItsRuleActionCost / S02-0614 | negated |
+| S02-0614:ability:granted:45f31f84b8f800cd | TwelveLegions.Tests.TrialAdvanceModeBranchLifecycleTests.TrialModeIsNotOfferedWhenThereIsNoOpenTrial / S02-0614 | no-target |
+| S02-0615:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / S02-0615 | normal, presentation-consumers, reconnect |
+| S02-0615:ability:continuous:16dc08d7324d1649 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / S02-0615 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| S02-0615:ability:keyword-definition:8a4c9aff096f6526 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / S02-0615 | authoritative-consumer, parent-grant-boundary |
+| S02-0615:ability:keyword-definition:8a4c9aff096f6526 | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / S02-0615 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| S02-0616:ability:continuous:5afe2828d587391f | TwelveLegions.Tests.StructuredContinuousCombatRuleLifecycleProfileTests.EveryStructuredContinuousCombatRuleHasOneSharedRuntimeOwner / S02-0616 | authoritative-consumer, normal, presentation-consumers, reconnect, row-and-ready-condition |
+| S02-0616:ability:active:3616b237df312569 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-0616 | active-rest-cost, runtime-branch-mapping |
+| S02-0616:ability:active:3616b237df312569 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-0616 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-0617:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0617 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0617:ability:trial:bb29c925c9fcdc82 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0617 | normal, presentation-consumers, reconnect |
+| S02-0617:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0617 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0617:ability:attack:c8dd6c6601a73ebb | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-0617 | authoritative-consumer, per-card-plan |
+| S02-0618:ability:trial:2117897dcefd3125 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryPrintedTrialValueSegmentMatchesCardDataAndBindsToTheRuleAction / S02-0618 | authoritative-consumer, trial-value-matches-card-data |
+| S02-0618:ability:trial:2117897dcefd3125 | TwelveLegions.Tests.TrialProgressPrivacyTests.EveryUsualTrialSourcePublishesOnlyProgressForEveryHiddenTrial / S02-0618 | normal, presentation-consumers, reconnect |
+| S02-0618:ability:continuous:e9823ffd970d6ce6 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0618 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0619:ability:continuous:f0839056592c5ee2 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / S02-0619 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| S02-0620:ability:play:ac4a80f231805917 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0620 | authoritative-consumer, per-card-flow |
+| S02-0620:ability:play:c2e3d34e7ac83c86 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0620 | authoritative-consumer, per-card-flow |
+| S02-0621:ability:play:9a7d744018bd9e66 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0621 | authoritative-consumer, per-card-flow |
+| S02-0621:ability:play:ecdfaa719e9112ba | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0621 | authoritative-consumer, per-card-flow |
+| S02-0622:ability:hand-play:5b5e4bf8f495f21a | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0622 | authoritative-consumer, per-card-flow |
+| S02-0622:ability:hand-play:5b5e4bf8f495f21a | TwelveLegions.Tests.S2FactionRegressionTests.MistletoeRunePaymentCanCancelAfterReconnectWithoutChargingOrStaleReplay / S02-0622 | duplicate-submit, payment-cancel, reconnect |
+| S02-0622:ability:play:d5226a525c565d25 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / S02-0622 | authoritative-consumer, per-card-flow |
+| S02-0622:ability:play:d5226a525c565d25 | TwelveLegions.Tests.S2FactionRegressionTests.MistletoeCharmCannotStartWithoutALegalOpponentLegionAndPaysNothing / S02-0622 | no-target |
+| S02-0622:ability:play:d5226a525c565d25 | TwelveLegions.Tests.S2FactionRegressionTests.MistletoeCharmDeclaresRunesBeforePayingAndThenDebuffsTarget / S02-0622 | normal, presentation-consumers, single-candidate-choice |
+| S02-0622:ability:play:d5226a525c565d25 | TwelveLegions.Tests.S2FactionRegressionTests.MistletoePaidEffectKeepsItsCostWhenNegatedOrItsDeclaredTargetLeaves / S02-0622 | negated, target-invalidated |
+| S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.FaithZealotMasterAuditRegressionTests.OtherworldFactionGainRuneRejectsDuplicateTemporaryPaymentWithoutChargingAnything / S02-06C1 | payment-cancel |
+| S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.FaithZealotMasterAuditRegressionTests.OtherworldFactionGainRuneRequiresAnExplicitTemporaryOrOrdinaryPaymentChoice / S02-06C1 | normal, presentation-consumers |
+| S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / S02-06C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S02-06C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| S02-06C1:ability:static:7339369656140c39 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / S02-06C1 | payment-cancel |
+| S02-06D1:ability:static:b173428fa383ae26 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TrialCapacitySegmentsBindToTheDeckRuleAndValidator / S02-06D1 | authoritative-consumer, completed-setup |
+| S02-06D1:ability:static:b173428fa383ae26 | TwelveLegions.Tests.TrialCapacityLifecycleProfileTests.TrialCapacityAndCompletedSetupUseTheSameAuthoritativeDeckRuleAcrossReconnect / S02-06D1 | normal, presentation-consumers, reconnect |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.MissingOpenTrialSkipsOnlyTheAdvanceAndStillGainsTheRune / S02-06D1 | no-target |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.NegatingTheCombinedEffectStopsBothAdvanceAndRuneGain / S02-06D1 | negated |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.ResponseWindowSurvivesReconnectAndRejectsAnExpiredPass / S02-06D1 | duplicate-submit, reconnect |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.AvalonTurnStartLifecycleTests.TurnStartAdvancesTheOpenTrialAndGainsOneRuneAsOneEffect / S02-06D1 | normal, presentation-consumers |
+| S02-06D1:ability:turn-start:97dca04b36fe51bf | TwelveLegions.Tests.PipelineLifecycleProfileTests.AvalonTurnStartSegmentBindsToTheTrialAdvancePipeline / S02-06D1 | authoritative-consumer |
+| S02-06D1:ability:static:65b6607da57e5096 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06D1 | authoritative-consumer, per-card-branch |
+| S02-06D1:ability:active:30a9d18991dc8481 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / S02-06D1 | active-rest-cost, runtime-branch-mapping |
+| S02-06D1:ability:active:30a9d18991dc8481 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / S02-06D1 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| S02-06D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.RuleDeclarationSegmentsBindToTheirSharedRegistries / S02-06D1 | authoritative-consumer, setup-defaults |
+| S02-06D1:ability:setup:281db2829152b981 | TwelveLegions.Tests.GameSetupLifecycleProfileTests.EveryDivinitySetupMoraleIsAppliedOnceAndRestoredAsCurrentResourceState / S02-06D1 | normal, presentation-consumers, reconnect |
+| S02-06M1:ability:active:08922e53e852b78f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06M1 | authoritative-consumer, per-card-branch |
+| S02-06M2:ability:rule:f86cd3914a10b001 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TrialCapacitySegmentsBindToTheDeckRuleAndValidator / S02-06M2 | authoritative-consumer |
+| S02-06M2:ability:rule:f86cd3914a10b001 | TwelveLegions.Tests.TrialCapacityLifecycleProfileTests.TrialCapacityAndCompletedSetupUseTheSameAuthoritativeDeckRuleAcrossReconnect / S02-06M2 | normal, presentation-consumers, reconnect |
+| S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | TwelveLegions.Tests.AtomicReviewBatch6FRegressionTests.AngusTacticSuccessIsMandatoryAndNegationStillConsumesItsOnce / S02-06M2 | negated |
+| S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06M2 | authoritative-consumer, per-card-plan |
+| S02-06S1:ability:static:75769d93e0ca669f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06S1 | authoritative-consumer, per-card-branch |
+| S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.KingsSwordAttachedLifecycleProfileTests.AttachedSwordProjectsTroopsAndStrongAttackFromTheSameCurrentRelationship / S02-06S2 | normal, presentation-consumers, reconnect |
+| S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.PipelineLifecycleProfileTests.KingsSwordAttachedSegmentBindsToTheContinuousTroopsAndStrongAttackOutlets / S02-06S2 | attached-source-current, authoritative-consumer |
+| S02-06S3:ability:static:3616e3ca17ffd729 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S3 | authoritative-consumer, per-card-plan |
+| S02-06S3:ability:static:f7e019a543066afd | TwelveLegions.Tests.LakeLadySwordReplacementLifecycleProfileTests.CompletedTrialAutomaticallyPaysCurrentSwordAndReplacesLethalEffectAcrossRestore / S02-06S3 | normal, presentation-consumers, reconnect |
+| S02-06S3:ability:static:f7e019a543066afd | TwelveLegions.Tests.PipelineLifecycleProfileTests.LakeLadySwordSegmentsBindToTheSwordReplacementPath / S02-06S3 | authoritative-consumer |
+| S02-06S3:ability:death:84330d935c195208 | TwelveLegions.Tests.LakeLadySwordReplacementLifecycleProfileTests.CompletedTrialAutomaticallyPaysCurrentSwordAndReplacesLethalEffectAcrossRestore / S02-06S3 | normal, presentation-consumers, reconnect |
+| S02-06S3:ability:death:84330d935c195208 | TwelveLegions.Tests.PipelineLifecycleProfileTests.LakeLadySwordSegmentsBindToTheSwordReplacementPath / S02-06S3 | authoritative-consumer |
+| S02-06S4:ability:trial-complete:f95fed6f3ff0efc0 | TwelveLegions.Tests.AtomicReviewBatch6LDRegressionTests.GrailCompletionOffersPublicUseModeWithoutPeekingForAHiddenMatch / S02-06S4 | no-target |
+| S02-06S4:ability:trial-complete:f95fed6f3ff0efc0 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S4 | authoritative-consumer, per-card-plan |
+| S02-06S5:ability:static:1e799825eedf3331 | TwelveLegions.Tests.AtomicReviewBatch6BRegressionTests.FenianRepeatMayChooseTheSameStillLegalTargetInASecondIndependentStack / S02-06S5 | normal |
+| S02-06S5:ability:static:1e799825eedf3331 | TwelveLegions.Tests.AtomicReviewBatch6BRegressionTests.FenianTargetLossFailsOnlyThatAlreadyPaidUseAndMayThenDeclineTheRepeat / S02-06S5 | target-invalidated |
+| S02-06S5:ability:static:1e799825eedf3331 | TwelveLegions.Tests.AtomicReviewBatch6BRegressionTests.FenianTrialPaysOneRuneForOneTargetAndOffersRepeatOnlyAfterThatStackEnds / S02-06S5 | negated, single-candidate-choice |
+| S02-06S5:ability:static:1e799825eedf3331 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06S5 | authoritative-consumer, per-card-plan |
+| S02-06S5:ability:static:5444a7c87e0351bd | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06S5 | authoritative-consumer, per-card-branch |
+| S02-06S6:ability:after-attack:54e87bc748d2e1f9 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06S6 | authoritative-consumer, per-card-branch |
+| S02-DS01:ability:static:31558cb4f3e2c3da | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS01 | normal, presentation-consumers, reconnect |
+| S02-DS01:ability:static:31558cb4f3e2c3da | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS01 | authoritative-consumer, registry-closed-set |
+| S02-DS02:ability:static:01aeea1f7fc7e317 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS02 | normal, presentation-consumers, reconnect |
+| S02-DS02:ability:static:01aeea1f7fc7e317 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS02 | authoritative-consumer, registry-closed-set |
+| S02-DS03:ability:continuous:fed4f60f2af1523c | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS03 | normal, presentation-consumers, reconnect |
+| S02-DS03:ability:continuous:fed4f60f2af1523c | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS03 | authoritative-consumer, registry-closed-set |
+| S02-DS04:ability:static:00575cc9fcb1aaaa | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS04 | normal, presentation-consumers, reconnect |
+| S02-DS04:ability:static:00575cc9fcb1aaaa | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS04 | authoritative-consumer, registry-closed-set |
+| S02-DS05:ability:static:335d304b639c5d3f | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS05 | normal, presentation-consumers, reconnect |
+| S02-DS05:ability:static:335d304b639c5d3f | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS05 | authoritative-consumer, registry-closed-set |
+| S02-DS05:ability:attack:4326fa5eef9e6e3a | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS05 | normal, presentation-consumers, reconnect |
+| S02-DS05:ability:attack:4326fa5eef9e6e3a | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS05 | authoritative-consumer, registry-closed-set |
+| S02-DS06:ability:static:c1632b7b22b87c4f | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S02-DS06 | normal, presentation-consumers, reconnect |
+| S02-DS06:ability:static:c1632b7b22b87c4f | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S02-DS06 | authoritative-consumer, registry-closed-set |
+| ST-DS01:ability:disaster:0c65265cbaf95168 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryDisasterAuthoritySegmentBindsToTheDisasterPipeline / ST-DS01 | authoritative-consumer |
+| ST-DS01:ability:disaster:0c65265cbaf95168 | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.StarterMountainDisasterSilentlyCompletesWhenNoFrontLegionQualifies / ST-DS01 | no-target |
+| ST-DS01:ability:disaster:0c65265cbaf95168 | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.StarterTriggeredDisastersResolveForBothBoardsWithoutDeathTriggers / ST-DS01 | normal, presentation-consumers, reconnect |
+| ST-DS03:ability:disaster:e661737a9a1faebe | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryDisasterAuthoritySegmentBindsToTheDisasterPipeline / ST-DS03 | authoritative-consumer |
+| ST-DS03:ability:disaster:e661737a9a1faebe | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.StarterEvilEyeRevalidatesBothDeclaredInstancesAndDoesNotDeadlockWhenOneVanished / ST-DS03 | target-invalidated |
+| ST-DS03:ability:disaster:e661737a9a1faebe | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.StarterEvilEyeSkipsTheEmptyBoardAndStillResolvesTheOtherPlayersChoice / ST-DS03 | no-target |
+| ST-DS03:ability:disaster:e661737a9a1faebe | TwelveLegions.Tests.StarterMissingEffectsRegressionTests.StarterTriggeredDisastersResolveForBothBoardsWithoutDeathTriggers / ST-DS03 | duplicate-submit, normal, presentation-consumers, reconnect, single-candidate-choice |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST01-01 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST01-01 | destination-invalidated, reconnect-before-command, source-invalidated |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST01-01 | button-rejection-consistency, timing |
+| ST01-01:ability:active:69626894e55e27e5 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST01-01 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST01-01:ability:granted:c502e9ac1489cd1a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / ST01-01 | authoritative-consumer, parent-grant-boundary |
+| ST01-01:ability:granted:c502e9ac1489cd1a | TwelveLegions.Tests.GrantedChargeKeywordLifecycleProfileTests.GrantedChargeUsesOneCurrentFlagForProjectionAttackAndLeaveResetAcrossRestore / ST01-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST01-01:ability:granted:6ec4b634ed12b206 | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryGrantedKeywordDefinitionHasOneStructuredSemanticOwner / ST01-01 | authoritative-consumer, parent-grant-boundary |
+| ST01-01:ability:granted:6ec4b634ed12b206 | TwelveLegions.Tests.GrantedCombatKeywordLifecycleProfileTests.GrantedPiercingRestoresPaidStackAndGeneratesOneTriggerSuppressedMasterAttack / ST01-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST01-04:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowTauntOverlaySegmentBindsToTheSharedCombatOutlet / ST01-04 | authoritative-consumer, closed-overlay-card-set, row-condition-current |
+| ST01-04:ability:static:af427a4637e1c138 | TwelveLegions.Tests.FrontRowTauntOverlayLifecycleProfileTests.EveryOverlayTauntUsesCurrentRowInRulesAndPublicProjection / ST01-04 | normal, presentation-consumers, reconnect |
+| ST01-04:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST01-04 | authoritative-consumer, parent-grant-boundary |
+| ST01-04:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST01-04 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST01-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-07 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST01-08:ability:static:9ba2f4f5354a2a05 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-08 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST01-09:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST01-09 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST01-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.NewSystemsTests.TiantingFactionEffectsUseTheMoraleCardRules / ST01-C1 | normal |
+| ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST01-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST01-C1 | payment-cancel |
+| ST01-C1:ability:static:6907bfcf5dbbfeb4 | TwelveLegions.Tests.SingleActiveStatePresentationTests.TiantingActiveMoraleUsesTheSingleActiveSettlementScene / ST01-C1 | presentation-consumers |
+| ST01-C1:ability:static:605b9aa3d8a1ed93 | TwelveLegions.Tests.AtomicReviewBatch6JBRegressionTests.TiantingDeclineCreatesNoEmptyStackAndAcceptFinalizesOnceBeforeResponse / ST01-C1 | duplicate-submit, normal, presentation-consumers |
+| ST01-C1:ability:static:605b9aa3d8a1ed93 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / ST01-C1 | authoritative-consumer, per-card-plan |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionExpiresBeforeALaterRoundAttackEffect / ST02-01 | expiry, summon-round |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.LatestBugRegressionTests.SummonTurnCounterTacticProtectionOnlyBlocksResponsesThatAffectProtectedEffect / ST02-01 | anonymous-availability, four-response-types, normal, presentation-consumers |
+| ST02-01:ability:continuous:42ada4e462a2fb94 | TwelveLegions.Tests.SummonTurnCounterProtectionLifecycleProfileTests.AllowedResponsePromptSurvivesRestoreAndCannotBeSubmittedTwice / ST02-01 | duplicate-submit, reconnect, reconnect-derived-state |
+| ST02-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST02-02 | normal, presentation-consumers, reconnect |
+| ST02-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST02-02 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| ST02-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST02-02 | authoritative-consumer, parent-grant-boundary |
+| ST02-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST02-02 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST02-05:ability:active:80aa98cc24ef764e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST02-05 | active-rest-cost, runtime-branch-mapping |
+| ST02-05:ability:active:80aa98cc24ef764e | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST02-05 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST02-08:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST02-08 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.Bq20260903_01RegressionTests.TemporaryMoraleCanPayTheFactionEffectThatSummonsATombGuard / ST02-C1 | normal, single-candidate-choice |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.Bq20260907_263RegressionTests.SolarCityFactionPromptsAndPublicPresentationDoNotBorrowImmortalGiftText / ST02-C1 | presentation-consumers |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.Bq20260907_263RegressionTests.SolarGuardDoesNotReplaceADeclaredGuardThatLeavesTheGraveBeforeSettlement / ST02-C1 | target-invalidated |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST02-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST02-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST02-C1:ability:static:f2b97501194b5c40 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST02-C1 | payment-cancel |
+| ST02-C1:ability:static:29d1864e955f856e | TwelveLegions.Tests.ExtendedCardEffectsTests.SolarCityPlayerAlsoChoosesTombGuardPaymentForActiveAbilities / ST02-C1 | normal, presentation-consumers |
+| ST02-C1:ability:static:29d1864e955f856e | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST02-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST02-C1:ability:static:29d1864e955f856e | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST02-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST02-C1:ability:static:29d1864e955f856e | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST02-C1 | payment-cancel |
+| ST03-01:ability:entry-discount:373b8092202cdf17 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineHandPlaySegmentBindsToTheSharedPlayPipeline / ST03-01 | authoritative-consumer, per-card-flow |
+| ST03-02:ability:continuous:057a02a660ebfae1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / ST03-02 | duplicate-submit, normal, presentation-consumers, reconnect |
+| ST03-02:ability:continuous:057a02a660ebfae1 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST03-02 | condition-false, source-still-in-hand |
+| ST03-05:ability:static:efd7771da618f0ac | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST03-05 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST03-05:ability:active:87d142bd0e12a218 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST03-05 | active-rest-cost, runtime-branch-mapping |
+| ST03-05:ability:active:87d142bd0e12a218 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST03-05 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST03-07:ability:active:0d4ebc1a2ab8b128 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST03-07 | active-rest-cost, runtime-branch-mapping |
+| ST03-07:ability:active:0d4ebc1a2ab8b128 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST03-07 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST03-C1:ability:static:36b1c5751cc508f9 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.AsgardDrawChecksAndPaysOptionalHealAfterTheDrawResolves / ST03-C1 | normal, presentation-consumers |
+| ST03-C1:ability:static:36b1c5751cc508f9 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST03-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST03-C1:ability:static:36b1c5751cc508f9 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST03-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST03-C1:ability:static:36b1c5751cc508f9 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST03-C1 | payment-cancel |
+| ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST04-01 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST04-01 | destination-invalidated, reconnect-before-command, source-invalidated |
+| ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST04-01 | button-rejection-consistency, timing |
+| ST04-01:ability:active:2786430f57a9abaa | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST04-01 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST04-01:ability:continuous:59dd263106457575 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST04-01 | normal, presentation-consumers, reconnect |
+| ST04-01:ability:continuous:59dd263106457575 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST04-01 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| ST04-01:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST04-01 | authoritative-consumer, parent-grant-boundary |
+| ST04-01:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST04-01 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST04-06:ability:active:8f6b1b9dfc246e36 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST04-06 | active-rest-cost, runtime-branch-mapping |
+| ST04-06:ability:active:8f6b1b9dfc246e36 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST04-06 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST04-07:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST04-07 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.CombatTimelineRegressionTests.CooperativeSupportMayJoinTheDirectRearSupportWithoutReplacingIt / ST04-07 | normal, presentation-consumers, reconnect |
+| ST04-07:ability:continuous:8f395636980d57ca | TwelveLegions.Tests.PipelineLifecycleProfileTests.CooperativeSupportSegmentBindsToTheSharedSupportValidation / ST04-07 | authoritative-consumer, row-condition-current |
+| ST04-10:ability:continuous:4a22e589b1849359 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / ST04-10 | duplicate-submit, normal, presentation-consumers, reconnect |
+| ST04-10:ability:continuous:4a22e589b1849359 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST04-10 | condition-false, source-still-in-hand |
+| ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanChosenMoverLeavingTheFieldIsFailedNotCancelled / ST04-C1 | target-invalidated |
+| ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.AtomicReviewBatch3RegressionTests.GaotianyuanDrawsBeforeChoosingOptionalMoveTargetAndSlot / ST04-C1 | normal, presentation-consumers, single-candidate-choice |
+| ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST04-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST04-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST04-C1:ability:static:d9cac21fb706e3c8 | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST04-C1 | payment-cancel |
+| ST05-03:ability:continuous:3119db9911c31cf3 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-03 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST05-04:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-04 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST05-06:ability:active:cc5d71f55d3a253f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST05-06 | active-rest-cost, runtime-branch-mapping |
+| ST05-06:ability:active:cc5d71f55d3a253f | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST05-06 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST05-08:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-08 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST05-09:ability:static:e3471cd2a7042e59 | TwelveLegions.Tests.PrintedRangedProfileTests.PrintedRangeUsesCurrentRowAndRestoresAuthoritativePreview / ST05-09 | attack-preview, conditional-profile, no-target-preview, normal, presentation-consumers, ranged-no-loss, reconnect, source-row-change |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / ST05-C1 | identity-definition, runtime-owner |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.NegatedOlympusMoraleFlipKeepsPaidMoraleAndCreatesNoTargetPrompt / ST05-C1 | negated |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipCannotStartWhenBlackLotusIsTheOnlyMoraleZoneResource / ST05-C1 | no-target |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipFailsWhenEverySettlementCandidateChangedFaceDuringResponses / ST05-C1 | target-invalidated |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipKeepsPaymentSeparateAndResolvesAfterCheckpoint / ST05-C1 | duplicate-submit, normal, presentation-consumers, reconnect |
+| ST05-C1:ability:static:6fe475d8923feb65 | TwelveLegions.Tests.MoraleFlipEffectLifecycleTests.OlympusMoraleFlipPaymentCanBeCancelledWithoutSpendingOrUsage / ST05-C1 | payment-cancel |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.MoraleFaceLifecycleProfileTests.EveryPrintedMoraleFaceFlipOwnsTheSharedIdentityBoundary / ST05-M1 | identity-definition, runtime-owner |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaCannotStartWithOnlyBlackLotusAndDoesNotPayTheDiscardCost / ST05-M1 | black-lotus-excluded, no-payment-before-choice, no-target |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaDiscardCostCanBeCancelledWithoutPayingOrUsingTheOncePerTurnAbility / ST05-M1 | payment-cancel |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaFlipTargetUsesTheGodPowerIdentityInsteadOfEveryMoraleZoneResource / ST05-M1 | black-lotus-excluded, candidate-generation, single-candidate-choice |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.AthenaLifecycleEvidenceCoversAllTargetSurvivalOutcomes / ST05-M1 | duplicate-submit, multi-target-applicability, normal, presentation-consumers, reconnect, target-invalidated |
+| ST05-M1:ability:active:b1f11ab05f68dda0 | TwelveLegions.Tests.StarterBatch3BRegressionTests.NegatingAthenaMoraleSegmentKeepsItsPaidCostButDoesNotBlockTheLaterBuffSegment / ST05-M1 | negated |
+| ST06-01:ability:continuous:3ced1d4d38141877 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.DiscountedSnapshotCostSurvivesReconnectAndIsTheAuthoritativePayment / ST06-01 | duplicate-submit, normal, presentation-consumers, reconnect |
+| ST06-01:ability:continuous:3ced1d4d38141877 | TwelveLegions.Tests.StructuredHandCostLifecycleProfileTests.StructuredHandCostFamilyIsClosedOverTheSharedConsumer / ST06-01 | condition-false, source-still-in-hand |
+| ST06-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowKeywordTroopsLifecycleProfileTests.FrontRowTauntAndOpponentTurnTroopsAlwaysUseCurrentState / ST06-02 | normal, presentation-consumers, reconnect |
+| ST06-02:ability:continuous:c51a646e6338a9d1 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryFrontRowKeywordTroopsLineSharesOneConditionChainAndBonusOutlet / ST06-02 | ability-ref-chain, authoritative-consumer, opponent-turn-troops, row-condition-current |
+| ST06-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.CombatKeywordDefinitionLifecycleProfileTests.EveryKeywordDefinitionHasOneStructuredSemanticOwner / ST06-02 | authoritative-consumer, parent-grant-boundary |
+| ST06-02:ability:keyword-definition:c24a6b9d8de8435a | TwelveLegions.Tests.PrintedCombatKeywordLifecycleProfileTests.PrintedTauntDefinitionsUseOneCurrentRowStateForProjectionAndAttackRestriction / ST06-02 | leave-or-turn-expiry, normal, presentation-consumers, reconnect, reconnect-state |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRequiresManualDestinationEvenWhenOnlyOneIsLegal / ST06-04 | missing-choice, no-payment-before-choice, no-target, single-candidate-choice |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementRevalidatesPublishedDestinationAndSourceAfterRecovery / ST06-04 | destination-invalidated, reconnect-before-command, source-invalidated |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementTimingRejectionMatchesTheDisabledButton / ST06-04 | button-rejection-consistency, timing |
+| ST06-04:ability:active:719cc1c7c1084fa0 | TwelveLegions.Tests.CavalryMoveRuleActionTests.NativeMovementUsesExactAbilitySceneAndRejectsRepeatAfterV2Recovery / ST06-04 | button-text, duplicate-submit, no-resource-cost, normal, presentation-consumers, presentation-event, reconnect-after-command, reconnect-before-command |
+| ST06-09:ability:active:e533dbf15f08cea0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryPrintedActiveRestSegmentUsesTheSharedCostBoundary / ST06-09 | active-rest-cost, runtime-branch-mapping |
+| ST06-09:ability:active:e533dbf15f08cea0 | TwelveLegions.Tests.ActiveRestCommonLifecycleProfileTests.EveryRuntimeBranchCommitsOneSharedRestCostAndKeepsItAcrossNegationRestoreAndRetryGate / ST06-09 | duplicate-submit, negated, normal, paid-cost-preserved, presentation-consumers, readied-source-reuse, reconnect |
+| ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.FaithZealotMasterAuditRegressionTests.OtherworldFactionGainRuneRejectsDuplicateTemporaryPaymentWithoutChargingAnything / ST06-C1 | payment-cancel |
+| ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.FaithZealotMasterAuditRegressionTests.OtherworldFactionGainRuneRequiresAnExplicitTemporaryOrOrdinaryPaymentChoice / ST06-C1 | normal, presentation-consumers |
+| ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryMoraleActiveEffectSegmentRunsThroughTheSharedPipeline / ST06-C1 | authoritative-consumer, canonical-version-parity, morale-cost-table |
+| ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST06-C1 | duplicate-submit, negated, no-target, presentation-consumers, reconnect |
+| ST06-C1:ability:static:88a76dc195d499ee | TwelveLegions.Tests.SingleActiveStatePresentationTests.MoraleActiveEffectFamilySharesCancellationResumeAndPaidNegationProtocol / ST06-C1 | payment-cancel |
+
+## 能力清单
+
+| 卡牌/效果段 | 稳定能力ID | 时点/模型 | 定义证据 | Cost | 原子顺序 | 场景数 | 正文 |
+| --- | --- | --- | --- | --- | --- | ---: | --- |
+| S01-0001 黑胡子蒂奇 #1 | S01-0001:ability:enter:9cf50e2bf6ea81ef | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 登场时 双方各弃置合计2张手牌。随后，我方合计抽取2张牌，对方抽1张牌 |
+| S01-0001 黑胡子蒂奇 #2 | S01-0001:ability:death:efe619e31179fd41 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 阵亡时 可抽取2张牌，并弃置1张手牌 |
+| S01-0002 佣兵部队 #1 | S01-0002:ability:active:2786430f57a9abaa | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S01-0002 佣兵部队 #2 | S01-0002:ability:reaction:a472c4e7c34abf4b | reaction/reaction | shared-rule-owner | 对方 进攻我方军团时，可从手牌中弃置此军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.attack-rule → resolution:legacy.resolve | 2 | 对方 进攻我方军团时，可从手牌中弃置此军团：抵挡本次进攻。 |
+| S01-0003 攻城投石车 #1 | S01-0003:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0003 攻城投石车 #2 | S01-0003:ability:active:73c59f9367069790 | active/activated | shared-rule-owner | 位于后排 可消耗2士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.pay-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。 |
+| S01-0004 无名的渗透者 #1 | S01-0004:ability:static:1644ef88125b05c1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团可在战场任意位置休整登场，不可进行支援和进攻。 |
+| S01-0004 无名的渗透者 #2 | S01-0004:ability:active:6f9f6988e1ea4be0 | active/activated | shared-rule-owner | 我方/对方 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 我方/对方 可消耗2士气：击杀此军团。 |
+| S01-0004 无名的渗透者 #3 | S01-0004:ability:death:17a2eed7427d41ed | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw | 1 | 阵亡时 此军团的所有者抽取1张牌。 |
+| S01-0005 万箭齐发 #1 | S01-0005:ability:play:4e2f35a88184b107 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 4 | 选择以下一项。·选择对方前排或后排所有军团，本回合兵力-2000。·选择对方1张军团，本回合兵力-4000 |
+| S01-0006 邪恶仪式 #1 | S01-0006:ability:play:4d15c0a265cfe9f2 | play/activated | composite-definition | 弃置1张手牌 | trigger:trigger.observe → cost:cost.discard → resolution:operation.composite-flow | 2 | 弃置1张手牌：对对方主宰造成1点非致命伤害 |
+| S01-0007 野外扎营 #1 | S01-0007:ability:play:82f7ea36d410ae48 | play/activated | composite-definition | 查看牌库顶部3张牌，选择1张与我方主宰阵营相同的军团，展示并加入手牌，其余卡牌自选顺序置入我方牌库底部。可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.pay-morale → resolution:operation.draw → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 5 | 查看牌库顶部3张牌，选择1张与我方主宰阵营相同的军团，展示并加入手牌，其余卡牌自选顺序置入我方牌库底部。可消耗1士气：选择以下一项。·我方主宰增加1点血量。·抽取1张牌 |
+| S01-0008 兵临城下 #1 | S01-0008:ability:play:1fcd2474054827d4 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 本回合，对方前排所有军团兵力-1000，且对方所有后排军团无法进行支援 |
+| S01-0009 战略转移 #1 | S01-0009:ability:play:a31f5ca9e9313984 | play/activated | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 2 | 选择我方1张军团回到所有者手牌：选择我方1张军团，本回合兵力+2000 |
+| S01-0010 伪造密令 #1 | S01-0010:ability:play:6b9ba699d4812087 | play/activated | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move → resolution:operation.composite-flow | 2 | 选择对方最多2张军团进行前后1格位移 |
+| S01-0011 瘟疫感染 #1 | S01-0011:ability:play:a95a1e71bf8c0d92 | play/activated | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.ready → resolution:operation.composite-flow | 2 | 选择对方1张军团或士气，在下个对方重置阶段无法转为活跃 |
+| S01-0012 全军出击 #1 | S01-0012:ability:play:05362a9e85146d04 | play/activated | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 本回合从手牌中打出的下1张费用不高于6的军团获得冲锋。（可在登场回合进攻） |
+| S01-0013 前线侦查 #1 | S01-0013:ability:play:e4eac467c9b7836c | play/activated | composite-definition | 查看对方所有手牌。可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:visibility.policy → resolution:operation.composite-flow | 4 | 查看对方所有手牌。可消耗1士气：对方选择其1张手牌洗回牌库 |
+| S01-0014 祭天仪式 #1 | S01-0014:ability:play:cec63f278f7e075f | play/activated | composite-definition | — | trigger:trigger.observe → resolution:operation.draw → resolution:special.domain → resolution:operation.composite-flow | 7 | 抽取1张牌，随后将天灾值增加或减少最多2点 |
+| S01-0015 议和谈判 #1 | S01-0015:ability:play:d3978ea1392a76f1 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw → resolution:operation.composite-flow | 3 | 抽取1张牌。随后询问对方是否议和谈判。·若对方同意，则双方各抽取1张牌。·若对方不同意，则双方不抽牌 |
+| S01-0016 绝对防御 #1 | S01-0016:ability:reaction:eda8f9987e9ccfe3 | reaction/reaction | shared-rule-owner | 对方 进攻或发动效果时，弃置1张手牌 | trigger:trigger.observe → cost:cost.discard → resolution:operation.attack-rule → duration:duration.apply | 3 | 对方 进攻或发动效果时，弃置1张手牌：抵挡本次进攻或无效该效果。 |
+| S01-0017 拼死反抗 #1 | S01-0017:ability:reaction:2daa504e0ab12865 | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.modify-troops → resolution:operation.rest → resolution:operation.composite-flow | 3 | 对方 进攻后：选择以下一项。<br>·选择对方1张休整的军团，直到下个我方回合结束前兵力-2000。<br>·对方所有休整的军团，直到下个我方回合结束前兵力-1000。 |
+| S01-0018 落穴陷阱 #1 | S01-0018:ability:reaction:248207b49df4bd77 | reaction/reaction | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 2 | 对方 军团登场时：使此军团登场效果无效。 |
+| S01-0019 伏击 #1 | S01-0019:ability:reaction:8828f6a3bf87ce59 | reaction/reaction | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 2 | 对方 进攻或发动效果时：选择我方1张军团，本回合兵力+2000。 |
+| S01-0020 战斗至黎明 #1 | S01-0020:ability:reaction:f099e096c2d7437b | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.draw → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 对方进攻时：我方所有军团本回合兵力+1000。若墓地卡牌数量不低于5，可抽取1张牌。 |
+| S01-0021 摄政皇权 #1 | S01-0021:ability:reaction:a0a418c3c31334fb | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.damage-master → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 2 | 我方主宰因对方进攻或效果受到伤害时：从我方手牌中将1张费用不高于3的军团活跃登场。 |
+| S01-00C1 士气·通用 #1 | S01-00C1:ability:static:db1ae0a9efb4bff8 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 额外通用士气 |
+| S01-0101 吕布 #1 | S01-0101:ability:static:b5c9e323c0a061cc | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule | 0 | 进攻无损，无法被远程进攻。此军团 |
+| S01-0101 吕布 #2 | S01-0101:ability:after-attack:ebbe924bba472efe | after-attack/triggered | composite-definition | 进攻后，可返还4士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.ready → resolution:operation.composite-flow | 1 | 进攻后，可返还4士气：将此军团转为活跃 |
+| S01-0101 吕布 #3 | S01-0101:ability:enter:5dfde2f721ac6c21 | enter/triggered | composite-definition | 登场时 可返还2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可返还2士气：击杀对方1张天灾等级1或2的军团 |
+| S01-0101 吕布 #4 | S01-0101:ability:static:1f027ad861ea0006 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻无损。 |
+| S01-0101 吕布 #5 | S01-0101:ability:static:1041797d91099ae1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 无法被远程进攻。 |
+| S01-0102 武则天 #1 | S01-0102:ability:enter:20edaa1cc11c4de3 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：选择对方最多2张休整的军团，在下个对方重置阶段无法转为活跃 |
+| S01-0102 武则天 #2 | S01-0102:ability:death:c1581c3f5243c374 | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw → resolution:operation.heal-master | 1 | 阵亡时 抽取1张牌，我方主宰增加1点血量 |
+| S01-0103 李靖 #1 | S01-0103:ability:enter:46c35ac58c1f7cec | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可展示牌库顶部1张牌。随后，选择将其放回牌库顶部或底部。若展示卡牌为费用不高于5的【天廷】军团，可返还1士气，将其活跃登场作为代替 |
+| S01-0104 韩信 #1 | S01-0104:ability:static:a91d7d481db612a9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1 |
+| S01-0104 韩信 #2 | S01-0104:ability:attack:dca347f8b8ee1cd7 | attack/triggered | composite-definition | 进攻时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可返还1士气：此军团本回合兵力+1000，并获得强攻。（进攻对主宰造成额外1点伤害） |
+| S01-0105 刘备 #1 | S01-0105:ability:enter:ee4ec5ee9f9e1cce | enter/triggered | shared-rule-owner | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：选择将手牌中1张&lt;关羽&gt;或&lt;张飞&gt;活跃登场 |
+| S01-0105 刘备 #2 | S01-0105:ability:active:0e81cd47a6221fd8 | active/activated | shared-rule-owner | 主动休整 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.return-morale → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy | 4 | 主动休整 可返还1士气：查看我方牌库，选择1张&lt;关羽&gt;或&lt;张飞&gt;展示并加入手牌。随后，重洗牌库 |
+| S01-0106 关羽 #1 | S01-0106:ability:active:2786430f57a9abaa | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S01-0106 关羽 #2 | S01-0106:ability:attack:9165425af3015018 | attack/triggered | composite-definition | 进攻时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow → resolution:operation.composite-flow | 1 | 进攻时 可返还1士气：此军团本回合兵力+1000，并获得必中。（进攻无法被抵挡/支援）。 |
+| S01-0107 张飞 #1 | S01-0107:ability:static:715fe715dcb8ea28 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1。「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团） |
+| S01-0107 张飞 #2 | S01-0107:ability:static:af427a4637e1c138 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
+| S01-0108 花木兰 #1 | S01-0108:ability:enter:312dd6c6c15d7a5f | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：获得冲锋。（可在登场回合进攻）对方回合 |
+| S01-0108 花木兰 #2 | S01-0108:ability:death:5bd627fade87c4f9 | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.ready → resolution:operation.rest → resolution:operation.composite-flow | 1 | 阵亡时 选择对方场上1张休整的士气，在下个对方重置阶段无法转为活跃 |
+| S01-0109 白起 #1 | S01-0109:ability:enter:987ca9f7eb3ce489 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.add-morale | 1 | 登场时 从士气牌库追加3张休整的士气 |
+| S01-0109 白起 #2 | S01-0109:ability:active:88c64e7a7e50fb25 | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.add-morale | 1 | 主动休整 从士气牌库追加1张休整的士气 |
+| S01-0110 墨子 #1 | S01-0110:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0110 墨子 #2 | S01-0110:ability:enter:eeb5f5bd6f78bbd4 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → target:selection.target → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：选择我方最多2张【天廷】军团，直到我方下个回合开始前获得免死。（仅1次，即将阵亡时，将兵力在本回合变为1000作为代替） |
+| S01-0110 墨子 #3 | S01-0110:ability:death:8a11998853c0aa4d | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw | 1 | 阵亡时 抽取1张牌。 |
+| S01-0111 诸葛亮 #1 | S01-0111:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0111 诸葛亮 #2 | S01-0111:ability:enter:66f869c856a21839 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:visibility.policy → resolution:special.domain → resolution:operation.composite-flow | 3 | 登场时 查看下1张天灾卡。随后，可选择将天灾值增加或减少1点 |
+| S01-0111 诸葛亮 #3 | S01-0111:ability:attack:9978ebecafb4bcd8 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 2 | 进攻时/ |
+| S01-0111 诸葛亮 #4 | S01-0111:ability:death:1bb463344321f1bb | death/triggered | composite-definition | 阵亡时 可返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 阵亡时 可返还1士气：将牌库顶部1张牌展示并加入手牌。若展示的是【圣物】，则可选择将其活跃登场作为代替 |
+| S01-0112 孙武 #1 | S01-0112:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0112 孙武 #2 | S01-0112:ability:enter:91366d15403c1a7f | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：本回合从手牌中打出的下1张战术卡无需消耗费用 |
+| S01-0112 孙武 #3 | S01-0112:ability:death:c91a9e71e9680c3d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → resolution:special.domain → resolution:operation.composite-flow | 1 | 阵亡时 若天灾值不高于4，可选择墓地1张费用不高于4的战术卡回到手牌 |
+| S01-0113 养由基 #1 | S01-0113:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0113 养由基 #2 | S01-0113:ability:active:e1b5cdab435b4c1f | active/activated | shared-rule-owner | 「位于后排」可返还1士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.return-morale → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」可返还1士气：此军团本回合可进攻对方后排。 |
+| S01-0114 秦良玉 #1 | S01-0114:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0114 秦良玉 #2 | S01-0114:ability:static:a91d7d481db612a9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方士气少于对方，此军团登场费用-1 |
+| S01-0114 秦良玉 #3 | S01-0114:ability:enter:89b2c77605906107 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:operation.move-zone → resolution:operation.rest → resolution:operation.composite-flow | 1 | 登场时 从士气牌库追加1张休整的士气 |
+| S01-0115 荆轲 #1 | S01-0115:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S01-0115 荆轲 #2 | S01-0115:ability:enter:9207ec0f85a3108c | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 登场时 若我方士气不高于7，可抽取1张牌 |
+| S01-0115 荆轲 #3 | S01-0115:ability:death:02a4c394eda56050 | death/triggered | composite-definition | 阵亡时 可返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.composite-flow | 1 | 阵亡时 可返还1士气：击杀对方最多1张兵力不高于2000的军团 |
+| S01-0116 西施 #1 | S01-0116:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0116 西施 #2 | S01-0116:ability:static:74c527aaab5e91cd | static/continuous | shared-rule-owner | 我方回合 可弃置此军团并返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready | 2 | 我方回合 可弃置此军团并返还1士气：选择手牌中最多1张&lt;西施&gt;以外兵力不高于2000的军团活跃登场。随后抽取1张牌 |
+| S01-0117 山河社稷图 #1 | S01-0117:ability:enter:62b39a2956892655 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.add-morale | 1 | 登场时 从士气牌库追加1张活跃的士气 |
+| S01-0117 山河社稷图 #2 | S01-0117:ability:active:ba48403c4da1e24c | active/activated | shared-rule-owner | 主动休整 选择以下一项。·返还1活跃士气 | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → cost:cost.rest-source → cost:cost.discard → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy | 5 | 主动休整 选择以下一项。·返还1活跃士气：抽取1张牌。·弃置1张手牌：查看牌库顶部3张牌，选择其中1张【天廷】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部 |
+| S01-0118 神妙行军 #1 | S01-0118:ability:play:5a3bc969a95c080b | play/activated | composite-definition | 选择我方前排1张军团，本回合兵力+2000。可返还2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 选择我方前排1张军团，本回合兵力+2000。可返还2士气：击杀对方1张兵力不高于6000的军团 |
+| S01-0119 观星 #1 | S01-0119:ability:play:6f8f56dae56f79ce | play/activated | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy → resolution:operation.composite-flow | 3 | 查看牌库顶部5张牌，自选顺序放回牌库顶部或底部。随后，可从士气牌库追加1张活跃的士气 |
+| S01-0120 空城计 #1 | S01-0120:ability:reaction:0865f062354681b2 | reaction/reaction | composite-definition | 对方 进攻时 可返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.draw → resolution:operation.attack-rule → duration:duration.apply → resolution:operation.composite-flow | 3 | 对方 进攻时 可返还1士气：可抵挡本次进攻。若我方战场前排没有军团，可抽取1张牌。 |
+| S01-01C1 士气·天廷 #1 | S01-01C1:ability:active:3a8789b35c0c2be4 | active/activated | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.pay-morale → resolution:operation.add-morale → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。 |
+| S01-01C1 士气·天廷 #2 | S01-01C1:ability:morale-returned-to-zero:1ba329603e34870a | morale-returned-to-zero/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。 |
+| S01-01D1 凌霄宝殿 #1 | S01-01D1:ability:static:103012fd4239104f | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.draw → resolution:operation.add-morale → resolution:operation.rest → duration:duration.apply | 2 | 我方 回合1次 若本回合返还的士气高于1张，可从士气牌库追加2张休整的士气，随后抽取1张牌 |
+| S01-01D1 凌霄宝殿 #2 | S01-01D1:ability:active:32505e4556bad1b8 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → cost:cost.return-morale → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.ready | 3 | 主动休整 击杀对方1张军团，我方需返还此军团相应费用的士气。随后选择墓地1张费用不高于本次返还士气数量的【天廷】军团，将其活跃登场 |
+| S01-01D1 凌霄宝殿 #3 | S01-01D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S01-01M1 杨戬 #1 | S01-01M1:ability:static:c03878ecc263c0e6 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.draw → resolution:operation.move-zone | 2 | 我方 回合1次 可消耗1士气：抽取1张牌。随后将1张手牌放回牌库顶部或底部 |
+| S01-01M1 杨戬 #2 | S01-01M1:ability:static:d024f673ff236321 | static/continuous | shared-rule-owner | 我方 回合1次 可返还4士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale | 0 | 我方 回合1次 可返还4士气：对对方主宰造成1点非致命伤害。【杨戬专属】哮天犬·稚 |
+| S01-01M1 杨戬 #3 | S01-01M1:ability:static:0924c3a5995ba164 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.ready | 0 | 我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团 |
+| S01-01M1 杨戬 #4 | S01-01M1:ability:death:ee5adb706424f233 | death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.rest | 1 | 阵亡时 可从士气牌库追加1张休整的士气 |
+| S01-01M2 孟婆 #1 | S01-01M2:ability:static:f3ee48a69ee29306 | static/continuous | shared-rule-owner | 我方 回合1次 可选择以下一项。·返还1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.return-morale → cost:cost.discard → resolution:operation.draw → resolution:operation.add-morale → resolution:operation.rest → duration:duration.apply | 0 | 我方 回合1次 可选择以下一项。·返还1士气：选择对方1张军团，本回合失去「阵亡时」效果。若我方手牌不高于5张，可抽取1张牌。·若我方士气少于对方，弃置1张手牌：从士气牌库追加1张休整的士气 |
+| S01-0201 图特摩斯三世 #1 | S01-0201:ability:static:7d31de8999ce168a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 此军团登场回合不受反击战术效果影响 |
+| S01-0201 图特摩斯三世 #2 | S01-0201:ability:enter:9a481888b22aee09 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张兵力不高于5000的军团 |
+| S01-0201 图特摩斯三世 #3 | S01-0201:ability:attack:5232e2abcec6d049 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 3 | 进攻时/ |
+| S01-0201 图特摩斯三世 #4 | S01-0201:ability:death:3be85aa38d99c0d3 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 3 | 阵亡时 对方所有军团本回合兵力-1000。随后击杀对方1张兵力不高于1000的军团 |
+| S01-0202 拉美西斯二世 #1 | S01-0202:ability:static:76a4a87caae11a73 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 此军团登场回合不受反击战术效果影响。若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-2 |
+| S01-0202 拉美西斯二世 #2 | S01-0202:ability:enter:488058d9c4033af4 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 选择&lt;拉美西斯二世&gt;以外最多3张【太阳城】军团，自选顺序发动其登场时效果 |
+| S01-0203 美尼斯 #1 | S01-0203:ability:static:0a317a499dc4420e | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 对方回合 若我方战场不存在&lt;陵墓守卫&gt;，此军团兵力+1000 |
+| S01-0203 美尼斯 #2 | S01-0203:ability:attack:31291f70ecb6b701 | attack/triggered | composite-definition | 进攻时 可弃置我方战场上1张军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可弃置我方战场上1张军团：此军团本回合兵力+2000，并获得强攻。（进攻对主宰造成额外1点伤害） |
+| S01-0204 陵墓构造体 #1 | S01-0204:ability:static:4108715d77479b32 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 「位于前排」获得挑衅。（对方只可进攻带有此效果的军团） |
+| S01-0204 陵墓构造体 #2 | S01-0204:ability:enter:a96863e7cb33076c | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 将我方墓地所有&lt;陵墓守卫&gt;叠放在此军团下方。此军团下每有1张&lt;陵墓守卫&gt;，获得兵力+1000 |
+| S01-0204 陵墓构造体 #3 | S01-0204:ability:death:1b878fe13df989c4 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时/ |
+| S01-0204 陵墓构造体 #4 | S01-0204:ability:leave:a59801f7c2874f4a | leave/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.rest → resolution:special.domain → resolution:legacy.resolve | 3 | 离场时 将此军团下方所有&lt;陵墓守卫&gt;休整登场 |
+| S01-0204 陵墓构造体 #5 | S01-0204:ability:static:af427a4637e1c138 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
+| S01-0205 霍列姆赫布 #1 | S01-0205:ability:enter:a9cc0bdbb6a76a11 | enter/triggered | composite-definition | 登场时 可弃置我方1张&lt;陵墓守卫&gt; | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.move-zone → resolution:operation.keyword → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可弃置我方1张&lt;陵墓守卫&gt;：获得冲锋。（可在登场回合进攻）。回合1次 此军团即将 |
+| S01-0205 霍列姆赫布 #2 | S01-0205:ability:death:7016351513168cdb | death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:legacy.resolve | 1 | 阵亡时，可将我方1张&lt;陵墓守卫&gt;代替承受本次致命进攻或效果 |
+| S01-0206 萨拉丁 #1 | S01-0206:ability:static:cb39cf42a7feea7b | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move | 0 | 我方 回合1次 可进行1次位移。「位于前排」此军团相邻的【太阳城】军团 |
+| S01-0206 萨拉丁 #2 | S01-0206:ability:attack:2156a411dc545613 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 进攻时获得兵力+1000 |
+| S01-0206 萨拉丁 #3 | S01-0206:ability:attack:a15431bc0cfd61a3 | attack/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 进攻时/ |
+| S01-0206 萨拉丁 #4 | S01-0206:ability:death:d2ce1ed43fd89bd5 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move → resolution:special.domain → resolution:operation.composite-flow | 1 | 阵亡时 可选择我方1张&lt;陵墓守卫&gt;，进行1次位移 |
+| S01-0207 图坦卡蒙 #1 | S01-0207:ability:enter:c61f303228aa2386 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 若我方军团数量少于对方，可将墓地最多2张&lt;陵墓守卫&gt;活跃登场 |
+| S01-0207 图坦卡蒙 #2 | S01-0207:ability:death:092c045b23fa41ce | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 可选择墓地1张&lt;图坦卡蒙&gt;以外费用不高于4的【太阳城】卡牌放回牌库顶部 |
+| S01-0208 阿伊 #1 | S01-0208:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0208 阿伊 #2 | S01-0208:ability:enter:9a52c746ee2c72ba | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.rest → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 将墓地1张&lt;陵墓守卫&gt;休整登场 |
+| S01-0208 阿伊 #3 | S01-0208:ability:attack:93868193b6cdce88 | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.pay-morale → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：选择我方前排1张兵力不高于2000的军团，本回合兵力+2000 |
+| S01-0209 纳芙蒂蒂 #1 | S01-0209:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0209 纳芙蒂蒂 #2 | S01-0209:ability:enter:fce4676c6a9c75ee | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 1 | 登场时 若对方手牌数量不低于6张，对方弃置1张手牌 |
+| S01-0209 纳芙蒂蒂 #3 | S01-0209:ability:death:af4a4ddd4ac17507 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 1 | 阵亡时 若我方手牌数量少于对方，对对方主宰造成1点伤害，我方主宰增加1点血量 |
+| S01-0210 尼托克丽丝 #1 | S01-0210:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0210 尼托克丽丝 #2 | S01-0210:ability:enter:9f4567a56f4d7190 | enter/triggered | fine-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.ready | 1 | 登场时 选择我方1张&lt;陵墓守卫&gt;转为活跃 |
+| S01-0210 尼托克丽丝 #3 | S01-0210:ability:death:601fa9db2745d075 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 阵亡时 将我方墓地1张费用不高于2的【太阳城】军团活跃登场 |
+| S01-0211 托勒密十三世 #1 | S01-0211:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0211 托勒密十三世 #2 | S01-0211:ability:enter:329b99bbae76f963 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 再次发动本回合打出的上1张&lt;主动战术&gt;效果 |
+| S01-0212 陵墓守卫 #1 | S01-0212:ability:static:6d8b57888db9839b | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 规则上，此军团构筑时不计入卡组数量，且不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地 |
+| S01-0212 陵墓守卫 #2 | S01-0212:ability:static:025749085872cdff | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:legacy.resolve | 0 | 我方回合 此军团在战场上可视为1张士气 |
+| S01-0212 陵墓守卫 #3 | S01-0212:ability:static:2f33fb3652e7bd28 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops | 0 | 对方回合 此军团费用+1，位于前排时兵力+1000 |
+| S01-0213 锡瓦的卡巴 #1 | S01-0213:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S01-0213 锡瓦的卡巴 #2 | S01-0213:ability:after-attack:bf52deb7316f89d3 | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.rest | 1 | 对方 进攻后：此军团可从手牌无需消耗费用活跃登场。若进行以上操作，则下个我方重置阶段，我方1张休整的士气无法转为活跃 |
+| S01-0214 克利奥帕特拉七世 #1 | S01-0214:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0214 克利奥帕特拉七世 #2 | S01-0214:ability:active:30e47404439f2371 | active/activated | shared-rule-owner | 主动休整 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 1 | 主动休整 可消耗1士气：将墓地1张&lt;陵墓守卫&gt;活跃登场 |
+| S01-0215 安卡神碑 #1 | S01-0215:ability:enter:d233a71e98f8438c | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 选择我方1张&lt;陵墓守卫&gt;，本回合兵力+2000。 |
+| S01-0215 安卡神碑 #2 | S01-0215:ability:active:6984859bdd4fa8b1 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → target:selection.mode → cost:cost.rest-source → resolution:legacy.resolve | 3 | 主动休整 选择 ABILITY 3 或 ABILITY 4。 |
+| S01-0215 安卡神碑 #3 | S01-0215:ability:mode-ready-guard:3e3294affff84b58 | mode-ready-guard/granted-effect | shared-rule-owner | 弃置1张手牌 | trigger:trigger.observe → target:selection.target → cost:cost.discard → resolution:operation.ready → resolution:legacy.resolve | 1 | 弃置1张手牌：选择我方1张休整的&lt;陵墓守卫&gt;转为活跃。 |
+| S01-0215 安卡神碑 #4 | S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53 | mode-rest-and-draw/granted-effect | shared-rule-owner | 将我方1张&lt;陵墓守卫&gt;转为休整 | trigger:trigger.observe → target:selection.target → cost:operation.rest → resolution:operation.draw → resolution:legacy.resolve | 1 | 将我方1张&lt;陵墓守卫&gt;转为休整：抽取1张牌。 |
+| S01-0216 卡诺匹斯箱 #1 | S01-0216:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0216 卡诺匹斯箱 #2 | S01-0216:ability:enter:58513d214cc06638 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:cost.discard → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:special.domain → resolution:operation.composite-flow | 4 | 登场时 查看我方牌库，选择1张名字包含&lt;卡诺匹斯罐&gt;的圣物展示并加入手牌，重洗牌库。随后我方主宰增加1点血量，并弃置此圣物 |
+| S01-0217 卡诺匹斯罐 一 #1 | S01-0217:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0217 卡诺匹斯罐 一 #2 | S01-0217:ability:enter:91e4d84326a54571 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:cost.discard → resolution:operation.damage-master → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 选择我方1张【太阳城】军团，本回合兵力+2000并获得强攻。随后弃置此圣物。（进攻对主宰造成额外1点伤害） |
+| S01-0218 卡诺匹斯罐 二 #1 | S01-0218:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0218 卡诺匹斯罐 二 #2 | S01-0218:ability:enter:b1ce769580688e47 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 本回合我方从手牌中打出的下1张战术卡无需消耗费用。随后弃置此圣物 |
+| S01-0219 卡诺匹斯罐 三 #1 | S01-0219:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0219 卡诺匹斯罐 三 #2 | S01-0219:ability:enter:f4375cd8630da57a | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 本回合获得2点临时士气。随后弃置此圣物 |
+| S01-0220 卡诺匹斯罐 四 #1 | S01-0220:ability:static:bf632dc8776cd134 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，名字包含&lt;卡诺匹斯&gt;的圣物不计入圣物区上限 |
+| S01-0220 卡诺匹斯罐 四 #2 | S01-0220:ability:enter:c2ed29068ec3f21b | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:cost.discard → resolution:operation.move-zone → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 3 | 登场时 选择我方最多2张【太阳城】军团，直到我方下个回合开始前获得免死。随后弃置此圣物。（仅1次，即将 |
+| S01-0220 卡诺匹斯罐 四 #3 | S01-0220:ability:death:00f139f8bc316591 | death/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → duration:duration.apply | 1 | 阵亡时，将兵力在本回合变为1000作为代替） |
+| S01-0221 杜阿特之门 #1 | S01-0221:ability:play:4b2b6b45cea1e729 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 选择以下一项。·击杀对方1张兵力不高于5000的军团。·选择墓地最多1张&lt;杜阿特之门&gt;以外的【太阳城】卡牌加入手牌 |
+| S01-0222 法老王的庆典 #1 | S01-0222:ability:play:febc4eed18b7b3f5 | play/activated | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 查看牌库顶部5张牌，选择其中2张&lt;法老王的庆典&gt;以外的【太阳城】卡牌展示，其中1张加入手牌，另1张置入墓地，其余卡牌自选顺序返回牌库底部 |
+| S01-0223 不朽之礼 #1 | S01-0223:ability:reaction:0d9f2aa88ce12c5f | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:operation.composite-flow | 4 | 对方 发动进攻或效果造成我方费用高于2的军团离场时：抽取1张牌。随后可将墓地1张&lt;陵墓守卫&gt;活跃登场。 |
+| S01-0224 智慧法典 卷一 #1 | S01-0224:ability:reaction:e6d8b17383b706ad | reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → resolution:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 对方 发动战术效果或圣物效果时：对方必须弃置1张手牌才可发动本次效果，否则无效。<br>对方 若成功发动效果：我方抽取1张牌。随后可选择墓地1张&lt;智慧法典&gt;以外费用不高于3的&lt;战术&gt;或&lt;圣物&gt;回到手牌。 |
+| S01-02C1 士气·太阳城 #1 | S01-02C1:ability:static:91802cda49d575fb | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2士气：将1张&lt;陵墓守卫&gt;从我方墓地活跃登场 |
+| S01-02C1 士气·太阳城 #2 | S01-02C1:ability:static:ddab147dd97c360f | static/continuous | shared-rule-owner | 我方 回合1次 若我方手牌不高于3张，可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌 |
+| S01-02D1 众神之乡 #1 | S01-02D1:ability:static:d1339da6822c9ae1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:special.domain → resolution:legacy.resolve | 0 | 我方战场上所有&lt;陵墓守卫&gt;兵力+1000，费用+1 |
+| S01-02D1 众神之乡 #2 | S01-02D1:ability:static:dbf8222a61a31140 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.move-zone → resolution:visibility.policy | 4 | 我方 回合1次 可消耗2士气：公开牌库顶部3张牌，选择其中1张加入手牌，其余卡牌自选顺序返回牌库底部。随后可选择墓地1张【太阳城】卡牌加入手牌 |
+| S01-02D1 众神之乡 #3 | S01-02D1:ability:static:f968b0d6950e6d13 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.pay-morale | 0 | 我方 回合1次 可消耗2士气：选择对方1张兵力不高于4000的军团，将其返回所有者牌库底部 |
+| S01-02D1 众神之乡 #4 | S01-02D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S01-02M1 伊西斯 #1 | S01-02M1:ability:static:68187ab0edb25d9c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 2 | 游戏开始时，将&lt;复苏的奥西里斯&gt;置入墓地 |
+| S01-02M1 伊西斯 #2 | S01-02M1:ability:static:53475d8f080332f1 | static/continuous | shared-rule-owner | 我方回合 可弃置我方战场3张&lt;陵墓守卫&gt; | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.discard → resolution:operation.draw → resolution:special.domain → resolution:legacy.resolve | 0 | 我方回合 可弃置我方战场3张&lt;陵墓守卫&gt;：将墓地1张名字包含&lt;卡诺匹斯&gt;的圣物置入圣物区。以上操作完成后，可选择抽取1张牌，或主宰增加1点血量 |
+| S01-02M2 复苏的奥西里斯 #1 | S01-02M2:ability:static:9144b69a84fc2635 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 若圣物区存在5张名字包含&lt;卡诺匹斯&gt;的圣物，可将此主宰替换&lt;伊西斯&gt;登场。双人模式：此主宰登场即可获得游戏胜利。多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。&lt;陵墓守卫&gt;兵力+1000 |
+| S01-02M3 梅杰德 #1 | S01-02M3:ability:static:705baec08fc6bc02 | static/replacement | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.pay-morale → resolution:operation.modify-troops → resolution:operation.rest → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 2 | 我方 回合1次 可消耗1士气：选择对方1张军团本回合兵力-1000。若额外休整我方1张&lt;陵墓守卫&gt;，则选择的军团本回合兵力-3000作为代替 |
+| S01-02M3 梅杰德 #2 | S01-02M3:ability:static:3a86c87f975d5851 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 对方 回合1次 我方主宰因对方进攻或效果 |
+| S01-02M3 梅杰德 #3 | S01-02M3:ability:static:c339139cc1c9b00c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.damage-master → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 受到伤害时：可将我方墓地1张&lt;陵墓守卫&gt;活跃登场 |
+| S01-0301 贝奥武夫 #1 | S01-0301:ability:static:71dd875155781eb0 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone | 0 | 我方墓地每有4张【阿斯加德】军团，此军团登场费用-1 |
+| S01-0301 贝奥武夫 #2 | S01-0301:ability:enter:2b2a177bd7b1381b | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 弃置我方牌库顶部2张牌 |
+| S01-0301 贝奥武夫 #3 | S01-0301:ability:attack:6eb088eeb2f5b38f | attack/triggered | fine-definition | 进攻时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:operation.damage-master → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可对我方主宰造成1点伤害：此军团本回合兵力+2000 |
+| S01-0301 贝奥武夫 #4 | S01-0301:ability:death:2f45ff3d516b1628 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌 |
+| S01-0302 金发哈拉尔 #1 | S01-0302:ability:static:acc29b0ca499d087 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 我方每存在1张军团，此军团登场费用-1 |
+| S01-0302 金发哈拉尔 #2 | S01-0302:ability:attack:e1925644421ebcfc | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 进攻时 若我方主宰血量不高于6，此军团本回合获得强攻。（进攻对主宰造成额外1点伤害） |
+| S01-0302 金发哈拉尔 #3 | S01-0302:ability:death:245b8340cc94aed0 | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 阵亡时 我方主宰增加1点血量 |
+| S01-0303 传奇的拉格纳 #1 | S01-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0303 传奇的拉格纳 #2 | S01-0303:ability:enter:ad235a4ffdc55fe7 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 登场时 若我方主宰血量不高于7，获得冲锋。（可在登场回合进攻） |
+| S01-0303 传奇的拉格纳 #3 | S01-0303:ability:death:d26c9c0565422dce | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:cost.discard → resolution:operation.composite-flow | 3 | 阵亡时 可抽取1张牌，并弃置1张手牌。 |
+| S01-0304 无情者哈拉尔 #1 | S01-0304:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0304 无情者哈拉尔 #2 | S01-0304:ability:enter:746ece3973c3f91f | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.damage-master | 1 | 登场时 若对方主宰血量高于我方，可对其造成1点伤害。 |
+| S01-0304 无情者哈拉尔 #3 | S01-0304:ability:death:0d6332e67771e0c7 | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 击杀对方1张兵力不高于2000的军团。 |
+| S01-0305 勇士比约恩 #1 | S01-0305:ability:static:9ed1ca8df2e5f029 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方主宰血量不高于6，此军团登场费用-1 |
+| S01-0305 勇士比约恩 #2 | S01-0305:ability:death:4459928b1e637a61 | death/triggered | composite-definition | 阵亡时 可对我方主宰造成1点伤害，并将墓地4张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:operation.rest → resolution:operation.composite-flow | 1 | 阵亡时 可对我方主宰造成1点伤害，并将墓地4张卡牌自选顺序返回我方牌库底部：此军团可重新休整登场 |
+| S01-0306 奥拉夫二世 #1 | S01-0306:ability:static:9ed1ca8df2e5f029 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone | 0 | 若我方主宰血量不高于6，此军团登场费用-1 |
+| S01-0306 奥拉夫二世 #2 | S01-0306:ability:attack:4baebddb65fe13d0 | attack/triggered | composite-definition | 进攻时 可将墓地1张卡牌置入我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.damage-master → resolution:operation.keyword → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可将墓地1张卡牌置入我方牌库底部：此军团本回合获得强攻。（进攻对主宰造成额外1点伤害） |
+| S01-0306 奥拉夫二世 #3 | S01-0306:ability:death:a6393afdf779878c | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 阵亡时 可抽取2张牌，并弃置1张手牌 |
+| S01-0307 阿尔维达 #1 | S01-0307:ability:static:b89287bced985f8c | static/continuous | shared-rule-owner | 我方回合 可弃置此军团 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方回合 可弃置此军团：对我方主宰造成1点伤害，将手牌中1张天灾等级2的军团活跃登场 |
+| S01-0307 阿尔维达 #2 | S01-0307:ability:death:79329a4fe221b0e0 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张费用不高于3的【阿斯加德】卡牌加入手牌 |
+| S01-0308 血斧艾瑞克 #1 | S01-0308:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0308 血斧艾瑞克 #2 | S01-0308:ability:after-damage:33e459431fcbeeb0 | after-damage/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → resolution:cost.discard → resolution:operation.composite-flow | 1 | 此军团对对方主宰造成伤害时：对方弃置1张手牌。 |
+| S01-0308 血斧艾瑞克 #3 | S01-0308:ability:death:94ee1a17102e681e | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张费用不高于3的【阿斯加德】军团活跃登场。 |
+| S01-0309 布伦希尔德 #1 | S01-0309:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0309 布伦希尔德 #2 | S01-0309:ability:enter:e9dcf28980e1de53 | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害：可将手牌或墓地的1张&lt;齐格鲁德&gt;活跃登场 |
+| S01-0309 布伦希尔德 #3 | S01-0309:ability:death:cd0e9cfabc8baede | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 若我方主宰血量不高于对方，可抽取1张牌 |
+| S01-0310 齐格鲁德 #1 | S01-0310:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0310 齐格鲁德 #2 | S01-0310:ability:active:0a0575206e996652 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方回合1次 可进行1次位移。 |
+| S01-0310 齐格鲁德 #3 | S01-0310:ability:attack:02cb9deafea9e44b | attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 若我方存在&lt;神剑格拉墨&gt;，此军团本回合兵力+1000。 |
+| S01-0311 古斯塔夫一世 #1 | S01-0311:ability:attack:0f533a6e93811615 | attack/triggered | fine-definition | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可将墓地2张卡牌自选顺序返回我方牌库底部：此军团本回合兵力+2000 |
+| S01-0311 古斯塔夫一世 #2 | S01-0311:ability:static:3409dd9fa29f684f | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 我方 回合1次 此军团 |
+| S01-0311 古斯塔夫一世 #3 | S01-0311:ability:after-attack:65ce2315ff4c0465 | after-attack/triggered | shared-rule-owner | 进攻后，可将墓地2张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → resolution:legacy.resolve | 1 | 进攻后，可将墓地2张卡牌自选顺序返回我方牌库底部：将此军团转为活跃 |
+| S01-0312 铁盾拉葛莎 #1 | S01-0312:ability:static:b2e1a67373ad69cc | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.modify-troops | 0 | 「位于前排」获得挑衅，且在对方回合此军团兵力+1000。（对方只可进攻带有此效果的军团） |
+| S01-0312 铁盾拉葛莎 #2 | S01-0312:ability:static:af427a4637e1c138 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
+| S01-0313 神箭奥德尔 #1 | S01-0313:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0313 神箭奥德尔 #2 | S01-0313:ability:enter:48f49bf5f355a620 | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害：抽取1张牌 |
+| S01-0313 神箭奥德尔 #3 | S01-0313:ability:death:8cc83cce5988d4da | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.rest | 1 | 阵亡时 可选择对方1张活跃军团，将其转为休整 |
+| S01-0314 奥尔加 #1 | S01-0314:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0314 奥尔加 #2 | S01-0314:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S01-0314 奥尔加 #3 | S01-0314:ability:active:a923615d65edc8ea | active/activated | shared-rule-owner | 我方回合 可弃置此军团 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 可弃置此军团：选择对方前排1张军团，本回合兵力-2000。 |
+| S01-0315 无骨者伊瓦尔 #1 | S01-0315:ability:enter:f908c4d5feb68d83 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 1 | 登场时 可查看牌库顶部3张牌，选择1张&lt;无骨者伊瓦尔&gt;以外的【阿斯加德】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部 |
+| S01-0316 夺命诗人埃吉尔 #1 | S01-0316:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S01-0316 夺命诗人埃吉尔 #2 | S01-0316:ability:enter:de98adb89823943b | enter/triggered | composite-definition | 登场时 可对我方主宰造成1点伤害，并弃置我方牌库顶部2张牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可对我方主宰造成1点伤害，并弃置我方牌库顶部2张牌：选择对方1张军团，本回合兵力-2000 |
+| S01-0317 神剑格拉墨 #1 | S01-0317:ability:enter:9baca9d4cee2f52d | enter/triggered | composite-definition | 登场时 可弃置我方牌库顶部2张牌 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部2张牌：选择对方1张兵力不高于3000的军团返回所有者牌库底部 |
+| S01-0317 神剑格拉墨 #2 | S01-0317:ability:active:90c21e26f3d58b69 | active/activated | shared-rule-owner | 主动休整 将墓地4张【阿斯加德】军团自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → cost:cost.rest-source → resolution:operation.ready | 2 | 主动休整 将墓地4张【阿斯加德】军团自选顺序返回我方牌库底部：对对方主宰造成1点非致命伤害。可消耗2士气：将此圣物转为活跃 |
+| S01-0318 女武神的召唤 #1 | S01-0318:ability:play:0ac378464637b6dc | play/activated | composite-definition | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → cost:special.domain → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 2 | 可对我方主宰造成1点伤害：选择墓地1张费用不高于5的【阿斯加德】军团活跃登场。若我方主宰血量不高于5，则其血量不会因此效果而减少 |
+| S01-0319 猎杀时刻 #1 | S01-0319:ability:play:287fda1f2a7a5d38 | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 2 | 将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团 |
+| S01-0320 复仇血鹰 #1 | S01-0320:ability:reaction:d7c7714154523f44 | reaction/reaction | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 我方 军团阵亡时：对方所有军团直到下个我方回合结束前兵力-1000。随后选择我方墓地2张【阿斯加德】卡牌，其中1张返回牌库底部，另1张加入手牌。 |
+| S01-03C1 士气·阿斯加德 #1 | S01-03C1:ability:static:fa92f5d792a32bdc | static/continuous | shared-rule-owner | 阵营效果我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 阵营效果我方 回合1次 可消耗2士气：抽取1张牌。若我方主宰血量不高于5，可额外消耗1士气：我方主宰增加1点血量 |
+| S01-03D1 英灵殿 #1 | S01-03D1:ability:static:d89d0b3dade7b6c8 | static/continuous | shared-rule-owner | 我方 回合1次 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → cost:special.domain → duration:duration.apply → resolution:legacy.resolve | 0 | 我方 回合1次 可对我方主宰造成1点伤害：手牌所有【阿斯加德】军团本回合费用-1 |
+| S01-03D1 英灵殿 #2 | S01-03D1:ability:static:d45b38f3f8bf48bc | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:cost.discard → resolution:operation.move-zone | 2 | 我方 回合1次 可消耗2士气：弃置牌库顶部2张牌，随后可选择墓地1张【阿斯加德】卡牌加入手牌 |
+| S01-03D1 英灵殿 #3 | S01-03D1:ability:active:4260db0837113c77 | active/activated | shared-rule-owner | 主动休整 将墓地2张卡牌返回我方牌库底部 | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source | 3 | 主动休整 将墓地2张卡牌返回我方牌库底部：击杀对方1张兵力不高于5000的军团和1张兵力不高于1000的军团 |
+| S01-03D1 英灵殿 #4 | S01-03D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S01-03M1 瓦尔基里 #1 | S01-03M1:ability:static:794dd14bacd363d7 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:cost.discard → resolution:operation.draw | 0 | 规则上，此主宰的抽牌阶段改为弃置牌库顶部2张牌。（先攻回合即可发动） |
+| S01-03M1 瓦尔基里 #2 | S01-03M1:ability:static:d047647f18d541e4 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气并对我方主宰造成1点伤害 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.move-zone | 0 | 我方 回合1次 可消耗1士气并对我方主宰造成1点伤害：选择墓地2张牌，其中1张返回牌库底部，另1张加入手牌 |
+| S01-03M2 洛基 #1 | S01-03M2:ability:static:ab4daf32452349c5 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.pay-morale → resolution:cost.discard → resolution:operation.draw → resolution:operation.move-zone | 2 | 我方 回合1次 可消耗1士气：选择以下一项。·抽取1张牌，并弃置1张手牌。·将墓地2张卡牌返回牌库底部，我方主宰增加1点血量 |
+| S01-0401 本多忠胜 #1 | S01-0401:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
+| S01-0401 本多忠胜 #2 | S01-0401:ability:attack:ecd7f4f29923a686 | attack/triggered | composite-definition | — | trigger:trigger.observe → duration:duration.apply → resolution:operation.composite-flow | 3 | 进攻时 对方所有军团本回合费用-1。随后击杀对方1张费用为0的军团 |
+| S01-0402 织田信长 #1 | S01-0402:ability:enter:28437823889be2d3 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于4的军团 |
+| S01-0402 织田信长 #2 | S01-0402:ability:attack:54bfa6b97746205c | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：对方所有军团，本回合费用-1 |
+| S01-0403 上杉谦信 #1 | S01-0403:ability:enter:ebef3f55d68053ea | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于X的军团。（X=双方战场&lt;反击战术&gt;合计数量） |
+| S01-0403 上杉谦信 #2 | S01-0403:ability:death:c3e5fc27d01fe269 | death/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多2张&lt;反击战术&gt;置入我方后排 |
+| S01-0404 真田幸村 #1 | S01-0404:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
+| S01-0405 宫本武藏 #1 | S01-0405:ability:enter:46425018899cf08f | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword | 1 | 登场时 若我方前排没有其他军团，此军团获得冲锋。（可在登场回合进攻） |
+| S01-0405 宫本武藏 #2 | S01-0405:ability:attack:fcbd396bbfbd88b2 | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 进攻时 若我方手牌数量不高于对方，可抽取1张牌 |
+| S01-0406 土方岁三 #1 | S01-0406:ability:enter:796189ebff95263b | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 登场时 击杀对方1张费用不高于2和1张费用不高于1的军团 |
+| S01-0406 土方岁三 #2 | S01-0406:ability:attack:fc9e1069bf13d12c | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：击杀对方1张费用不高于1的军团 |
+| S01-0407 坂本龙马 #1 | S01-0407:ability:enter:b266fb12242feb01 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.move → resolution:operation.composite-flow | 1 | 登场时 可选择我方最多2张军团进行1次任意位移 |
+| S01-0407 坂本龙马 #2 | S01-0407:ability:death:72f3dbe02322db28 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.rest → resolution:operation.composite-flow | 1 | 阵亡时 将手牌中最多1张费用不高于3的【高天原】军团休整登场 |
+| S01-0408 高杉晋作 #1 | S01-0408:ability:enter:de6b286ed9bd7a9c | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.draw → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 抽取1张牌，选择对方1张军团，本回合费用-2 |
+| S01-0408 高杉晋作 #2 | S01-0408:ability:attack:6577727173c2557b | attack/triggered | composite-definition | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 可消耗1士气：选择对方1张军团，本回合费用-2 |
+| S01-0409 源义经 #1 | S01-0409:ability:static:6c03e83e9e18abb1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于后排」进攻距离+1，远程进攻无损。 |
+| S01-0409 源义经 #2 | S01-0409:ability:attack:c900a6435336564c | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」进攻时 此军团兵力视为2000。 |
+| S01-0409 源义经 #3 | S01-0409:ability:active:56a01edf47ee1225 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S01-0409 源义经 #4 | S01-0409:ability:after-attack:87f74fda19997f92 | after-attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 击杀时 可抽取1张牌。 |
+| S01-0410 巴御前 #1 | S01-0410:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0410 巴御前 #2 | S01-0410:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
+| S01-0411 安倍晴明 #1 | S01-0411:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0411 安倍晴明 #2 | S01-0411:ability:enter:b1a723e4b7ce332a | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 登场时 选择我方1张军团，直到下个我方回合开始前，获得免死。（仅1次，即将 |
+| S01-0411 安倍晴明 #3 | S01-0411:ability:death:00f139f8bc316591 | death/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → duration:duration.apply | 1 | 阵亡时，将兵力在本回合变为1000作为代替） |
+| S01-0412 立花誾千代 #1 | S01-0412:ability:enter:202b0cded455ddcc | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 选择对方1张军团，本回合费用-3 |
+| S01-0412 立花誾千代 #2 | S01-0412:ability:death:8e3f657c72894324 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.composite-flow | 1 | 阵亡时 直到下个我方回合结束前，对方所有军团费用-1 |
+| S01-0413 源博雅 #1 | S01-0413:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0413 源博雅 #2 | S01-0413:ability:enter:eb2856bbafa7432e | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 登场时 若我方手牌不高于5张，可抽取1张牌 |
+| S01-0413 源博雅 #3 | S01-0413:ability:attack:f4160b9115a574fa | attack/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 选择对方1张&lt;反击战术&gt;，本回合无法发动 |
+| S01-0414 桂小五郎 #1 | S01-0414:ability:static:e001b352b3693d93 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:legacy.resolve | 0 | 此军团 |
+| S01-0414 桂小五郎 #2 | S01-0414:ability:after-attack:a356848bc7dd9124 | after-attack/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.ready → resolution:operation.composite-flow | 1 | 进攻后，可返回牌库顶部。此军团返回牌库顶部时：将我方最多2张士气转为活跃 |
+| S01-0415 服部半藏 #1 | S01-0415:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S01-0415 服部半藏 #2 | S01-0415:ability:enter:1aab52e1a0bc424b | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.keyword → resolution:operation.composite-flow | 2 | 登场时 发动隐匿。（翻转此牌，覆盖时无法被选为效果或攻击的目标，直到 |
+| S01-0415 服部半藏 #3 | S01-0415:ability:active:32503fbfe07e2ecf | active/activated | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state | 1 | 主动翻回正面。） |
+| S01-0416 稻姬本多小松 #1 | S01-0416:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S01-0416 稻姬本多小松 #2 | S01-0416:ability:enter:b209f6a32efee3d1 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时/ |
+| S01-0416 稻姬本多小松 #3 | S01-0416:ability:attack:15cb5a1ab50cdcc8 | attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 进攻时 选择我方前排1张&lt;稻姬本多小松&gt;以外兵力不高于5000的【高天原】军团，本回合兵力+1000 |
+| S01-0417 草薙剑 #1 | S01-0417:ability:enter:0ff28c505ec1b830 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 击杀对方1张费用不高于2的军团 |
+| S01-0417 草薙剑 #2 | S01-0417:ability:static:f10ff922d718f82e | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:cost.pay-morale → resolution:operation.damage-master → resolution:operation.keyword → duration:duration.apply | 0 | 我方 回合1次 可消耗1士气：选择以下一项。·选择对方1张军团，本回合费用-1。·选择我方1张【高天原】军团，本回合获得强攻。（进攻对主宰造成额外1点伤害） |
+| S01-0418 天诛 #1 | S01-0418:ability:play:5c9770f2a2ff41da | play/activated | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 2 | 击杀对方1张费用不高于7的军团 |
+| S01-0419 花魁的馈赠 #1 | S01-0419:ability:play:97db2728de7886de | play/activated | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.ready → resolution:visibility.policy → resolution:operation.composite-flow | 5 | 查看牌库顶部3张牌，选择其中1张&lt;花魁的馈赠&gt;以外的【高天原】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部。随后，将最多1张士气转为活跃 |
+| S01-0420 切腹仪式 #1 | S01-0420:ability:reaction:f505901f3f9c8724 | reaction/reaction | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.draw → resolution:operation.composite-flow | 3 | 对方 进攻后：抽取1张牌，选择对方1张军团，直到下个我方回合结束前，此军团费用-2。 |
+| S01-04C1 士气·高天原 #1 | S01-04C1:ability:static:7f60c31c00b0f718 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.draw → resolution:operation.ready → resolution:operation.move | 0 | 我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移 |
+| S01-04D1 黄泉之门 #1 | S01-04D1:ability:static:fcd47c32a0a46e1a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone → duration:duration.apply | 0 | 我方 回合1次 本回合从手牌打出的下1张【高天原】军团登场费用-2 |
+| S01-04D1 黄泉之门 #2 | S01-04D1:ability:static:3c467d3eba318af6 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw → duration:duration.apply | 4 | 我方 回合1次 可消耗2士气：抽取1张牌。对方所有军团在本回合费用-1。随后可击杀对方1张费用不高于3的军团和1张费用不高于1的军团 |
+| S01-04D1 黄泉之门 #3 | S01-04D1:ability:active:1dcb5503b8cd59a8 | active/activated | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → cost:cost.rest-source → resolution:operation.move-zone | 2 | 主动休整 选择墓地1张【高天原】卡牌加入手牌 |
+| S01-04D1 黄泉之门 #4 | S01-04D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S01-04M1 天照大神 #1 | S01-04M1:ability:static:2c285709f5669922 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → duration:duration.apply | 2 | 我方 回合1次 可消耗1士气：选择对方1张军团，本回合费用-1。随后击杀对方1张费用为0的军团 |
+| S01-04M1 天照大神 #2 | S01-04M1:ability:static:51c3f1e1976210f8 | static/continuous | shared-rule-owner | 我方 回合1次 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.ready → duration:duration.apply | 2 | 我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。我方前排所有【高天原】军团本回合兵力+1000 |
+| S01-04M2 须佐之男 #1 | S01-04M2:ability:static:ce8699cac703af1c | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → duration:duration.apply | 0 | 我方 回合1次 可消耗1士气：选择我方1张【高天原】军团，本回合位于前排 |
+| S01-04M2 须佐之男 #2 | S01-04M2:ability:attack:ebb2054e23f75cd1 | attack/triggered | shared-rule-owner | 进攻时兵力+2000。消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.modify-troops | 1 | 进攻时兵力+2000。消耗2士气：将我方&lt;草薙剑&gt;置入前排，视为1张兵力5000的【武者】军团。（草薙剑仍可发动其效果）。&lt;草薙剑&gt; |
+| S01-04M2 须佐之男 #3 | S01-04M2:ability:leave:4e83a7191108369b | leave/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone | 1 | 离场时：可选择将其放回牌库顶部 |
+| S01-DS01 黯陨晨星 #1 | S01-DS01:ability:static:9b5681c438931452 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.ready → resolution:operation.rest → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 主要阶段开始时，回合玩家掷骰。双数：将我方1张活跃士气转为休整。单数：选择以下一项在本回合中生效。·打出&lt;主动战术&gt;无需消耗费用。·【术师】/【弓手】位于后排时可攻击对方主宰 |
+| S01-DS02 百鬼夜行 #1 | S01-DS02:ability:disaster:4548c9e0f724c914 | disaster/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.damage-master | 1 | 触发 对所有主宰造成1点非致命伤害 |
+| S01-DS02 百鬼夜行 #2 | S01-DS02:ability:static:4408d437a8ab5e5a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 带有天灾等级的军团进攻主宰时，造成的伤害+1 |
+| S01-DS02 百鬼夜行 #3 | S01-DS02:ability:turn-end:9d632a451357ff71 | turn-end/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 1 | 回合结束时，回合玩家将手牌返回牌库底部，直至手牌数量不高于5 |
+| S01-DS03 腐秽大地 #1 | S01-DS03:ability:disaster:b550db07535ba893 | disaster/triggered | composite-definition | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 将所有后排军团置入所有者墓地 |
+| S01-DS03 腐秽大地 #2 | S01-DS03:ability:static:70004a014a03d2a0 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 后排无法放置军团。打出&lt;反击战术&gt;无需消耗费用 |
+| S01-DS04 雷霆天怒 #1 | S01-DS04:ability:disaster:1ea0951ecffc8449 | disaster/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有玩家掷骰，数字最小的玩家选择其1张军团返回所有者手牌 |
+| S01-DS04 雷霆天怒 #2 | S01-DS04:ability:static:017c7359962a2512 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 兵力高于2000的军团 |
+| S01-DS04 雷霆天怒 #3 | S01-DS04:ability:attack:68f2ff0b600a41e8 | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.rest → resolution:special.domain → resolution:legacy.resolve | 1 | 进攻时需掷骰。1~2：此军团转为休整并结束进攻 |
+| S01-DS05 魔龙降世 #1 | S01-DS05:ability:disaster:7179195220edfe82 | disaster/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 回合玩家掷骰。1~2：将其最左侧一列双方战场上的卡牌全部置入墓地。3~4：将其最右侧一列双方战场上的卡牌全部置入墓地。5~6：将中间一列双方战场上的卡牌全部置入墓地。（多人模式为中间两列）。随后所有玩家各将墓地4张卡牌自选顺序返回其牌库底部 |
+| S01-DS06 神之天平 #1 | S01-DS06:ability:disaster:d3fabe5fa268d242 | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:cost.discard → resolution:operation.draw → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有主宰的血量降至与血量最低主宰相等，血量产生变动的玩家抽取2张牌。若没有主宰血量产生变化，则所有玩家抽取1张牌。随后所有玩家弃置1张手牌并抽取1张牌 |
+| S01-DS07 天启默示录 #1 | S01-DS07:ability:disaster:040d7237df85e67c | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有玩家将其战场上的军团置入所有者墓地，直至不高于2张。随后所有玩家手牌自选顺序返回牌库底部，并抽取4张牌 |
+| S01-DS08 虚构的圣杯 #1 | S01-DS08:ability:static:3e7cd5724f09420c | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 当玩家使用圣物效果时，对其主宰造成1点非致命伤害 |
+| S01-DS09 诸神黄昏 #1 | S01-DS09:ability:disaster:1769e30a76faee99 | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 将所有军团置入所有者墓地。若为开场触发：所有玩家各抽取2张牌。若为主动触发：其余玩家各抽取2张牌，随后立即结束当前回合，并为回合玩家追加1个新的回合 |
+| S01-DS10 湮灭 #1 | S01-DS10:ability:static:33501d2503c08b73 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 |
+| S01-DS10 湮灭 #2 | S01-DS10:ability:turn-start:a790e35d0012c86f | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 回合开始时，对所有主宰造成1点非致命伤害 |
+| S02-0001 驱魔道士 陆瑛 #1 | S02-0001:ability:after-opponent-tactic:6d30a9b672845491 | after-opponent-tactic/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:legacy.resolve | 1 | 对方 战术的效果结算后，我方 可选择将此军团从战场上回到手牌。 |
+| S02-0001 驱魔道士 陆瑛 #2 | S02-0001:ability:enter:dcff9e78d7ca1141 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 对方下个回合手牌中&lt;主动战术&gt;打出的费用+1。 |
+| S02-0002 疯狂的爱丽丝 #1 | S02-0002:ability:continuous:5643b9f0c6e298e6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻无损。 |
+| S02-0002 疯狂的爱丽丝 #2 | S02-0002:ability:after-kill:2187acbb87c49880 | after-kill/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.ready | 1 | 我方 回合1次 此军团击杀对方军团后，可转为活跃。 |
+| S02-0003 宫廷魔术师 #1 | S02-0003:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0003 宫廷魔术师 #2 | S02-0003:ability:enter:0907b9ab55d8b4fb | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可选择战场上1张&lt;反击战术&gt;，将其置入所有者墓地。 |
+| S02-0003 宫廷魔术师 #3 | S02-0003:ability:active:484fb98a6af8df3f | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 直到我方下个回合开始前，战场上所有&lt;反击战术&gt;无法发动。 |
+| S02-0004 路易芒德兰 #1 | S02-0004:ability:continuous:16dc08d7324d1649 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
+| S02-0004 路易芒德兰 #2 | S02-0004:ability:granted:be3174252606645e | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0005 戏法师的傀儡 #1 | S02-0005:ability:continuous:0663e3d5b31edc67 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻。 |
+| S02-0005 戏法师的傀儡 #2 | S02-0005:ability:opponent-attacks-master:806afb384f303aee | opponent-attacks-master/reaction | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:legacy.resolve | 2 | 对方进攻我方主宰时，可从手牌中休整登场于前排：将本次进攻目标改为此军团。 |
+| S02-0006 信仰狂热者 #1 | S02-0006:ability:continuous:7f3bdf9055e53845 | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → duration:duration.apply → resolution:legacy.resolve | 0 | &lt;信仰狂热者&gt;的效果每回合只可使用1次。 |
+| S02-0006 信仰狂热者 #2 | S02-0006:ability:discarded:89d3ee4207648aa1 | discarded/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:legacy.resolve | 1 | 我方回合 此军团从牌库弃置或因效果从手牌弃置时：可无视消耗触发1次我方需要消耗士气的主宰效果，且不计入主宰效果使用次数。 |
+| S02-0007 重装士兵 #1 | S02-0007:ability:continuous:602cafbbc29faa3f | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法被远程进攻。 |
+| S02-0007 重装士兵 #2 | S02-0007:ability:continuous:58ce6286f39b73ee | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 3，且在对方回合此军团兵力+1000。 |
+| S02-0007 重装士兵 #3 | S02-0007:ability:granted:be3174252606645e | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0008 万物统御之戒 #1 | S02-0008:ability:continuous:766cca673a9815ad | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，本圣物位于圣物区时，所有【通用】卡牌都视为与我方主宰阵营相同。 |
+| S02-0008 万物统御之戒 #2 | S02-0008:ability:enter:d55717584e8ef56e | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可弃置1张手牌：查看我方牌库，选择1张【通用】卡牌展示并加入手牌。随后重洗牌库。 |
+| S02-0009 防御部署 #1 | S02-0009:ability:play:ff53cfd909161da1 | play/spell | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw → resolution:operation.composite-flow | 3 | 将手牌中最多2张&lt;反击战术&gt;置入战场。若手牌数量不高于4，可抽取1张牌。 |
+| S02-0010 黑色莲花 #1 | S02-0010:ability:play:6d06ac2a469671de | play/spell | composite-definition | 将天灾值增加或减少最多1点。 可消耗3士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:operation.composite-flow | 5 | 将天灾值增加或减少最多1点。 可消耗3士气：将此战术休整置入士气区，此战术视为1张士气。 |
+| S02-0010 黑色莲花 #2 | S02-0010:ability:return-as-morale:9169de0e99d296e2 | return-as-morale/replacement | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 「作为士气」当此战术作为士气被返还时，置入所有者墓地。 |
+| S02-0011 纷乱箭 #1 | S02-0011:ability:play:16d3a82605980345 | play/spell | composite-definition | — | trigger:trigger.observe → resolution:special.domain → resolution:operation.composite-flow | 2 | 击杀对方最多3张原本兵力不高于2000的军团。 |
+| S02-0012 祷告仪式 #1 | S02-0012:ability:play:bafe1ab6a18493c0 | play/spell | shared-rule-owner | — | trigger:trigger.observe → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 询问对方是否同意公开下1张天灾卡。若同意则执行ABILITY 2；若不同意则执行ABILITY 3。 |
+| S02-0012 祷告仪式 #2 | S02-0012:ability:granted:e5bb0cce96aba072 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:visibility.policy → resolution:legacy.resolve | 1 | 公开下1张天灾卡。 |
+| S02-0012 祷告仪式 #3 | S02-0012:ability:granted:1c5ef0343f70615c | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:visibility.policy → resolution:legacy.resolve | 1 | 可消耗1士气查看下1张天灾卡。 |
+| S02-0013 神圣伽锁 #1 | S02-0013:ability:play:b43016dce755388a | play/spell | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.set-state → duration:duration.apply → resolution:operation.composite-flow | 2 | 叠放至对方圣物区的1张【圣物】之上，对方无法使用此【圣物】，直到此战术被弃置。 |
+| S02-0013 神圣伽锁 #2 | S02-0013:ability:host-leaves-artifact:b2720c3b205be910 | host-leaves-artifact/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 被叠放的【圣物】以任何形式离开圣物区时，弃置此战术。 |
+| S02-0013 神圣伽锁 #3 | S02-0013:ability:active-while-attached:f64dc7647e481c5f | active-while-attached/activated-by-opponent | shared-rule-owner | 「叠放时」对方 可消耗3士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 「叠放时」对方 可消耗3士气：弃置此战术。 |
+| S02-0014 瞬间的思路 #1 | S02-0014:ability:play:58b56393329ae9ef | play/spell | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.draw | 1 | 我方 手牌不高于4张时，抽取2张牌。 |
+| S02-0015 地主的胁迫 #1 | S02-0015:ability:s2-reaction:cf8ca3a019a02076 | s2-reaction/reaction | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.set-state → resolution:operation.composite-flow | 4 | 当对方进行抵挡/支援时：对方需额外弃置1张手牌，否则本次抵挡/支援无效。 |
+| S02-0016 破败仪式 #1 | S02-0016:ability:s2-reaction:37e38b08d365f0bb | s2-reaction/reaction | composite-definition | — | trigger:trigger.observe → target:selection.mode → target:selection.target → resolution:operation.composite-flow | 3 | 对方军团以手牌以外的方式登场时：选择ABILITY 2或ABILITY 3。 |
+| S02-0016 破败仪式 #2 | S02-0016:ability:granted:dfd998389876f15e | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 1 | 弃置对方1张手牌。 |
+| S02-0016 破败仪式 #3 | S02-0016:ability:granted:df2c369f365d4497 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 使触发此战术的1张军团本回合登场效果无效，且兵力-3000。 |
+| S02-0017 粮草掠夺 #1 | S02-0017:ability:s2-reaction:0e0643c2b48ae93e | s2-reaction/reaction | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.draw → resolution:operation.move-zone → resolution:operation.move-zone → target:visibility.policy → resolution:operation.composite-flow | 3 | 对方 因效果将1张卡牌加入手牌时：随机选择对方1张手牌，将其返回所有者牌库顶部。随后我方抽取1张牌。 |
+| S02-0018 毒药发作 #1 | S02-0018:ability:s2-reaction:e0e92d0479a94844 | s2-reaction/reaction | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:cost.discard → resolution:operation.set-state → resolution:operation.ready → resolution:operation.composite-flow | 3 | 对方休整的卡牌因效果转为活跃时，可无效该效果。随后对方弃置1张手牌。 |
+| S02-0101 始皇帝 嬴政 #1 | S02-0101:ability:continuous:4cd3104ae17d316d | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 「位于前排」我方主宰无法被兵力不高于2000的军团进攻。 |
+| S02-0101 始皇帝 嬴政 #2 | S02-0101:ability:enter:eb0b26d094e02210 | enter/triggered | composite-definition | 登场时 弃置手牌中1张费用为8的军团 | trigger:trigger.observe → cost:cost.discard → resolution:visibility.policy → duration:duration.apply → resolution:operation.composite-flow | 4 | 登场时 弃置手牌中1张费用为8的军团：击杀除此军团以外的所有军团。随后返还所有士气，且本回合我方无法因阵营效果以外的方式追加士气。若未能满足登场时效果的发动条件，则展示我方所有手牌。 |
+| S02-0102 李牧 #1 | S02-0102:ability:master-morale-return:e84344a6b3d5d66f | master-morale-return/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 我方 回合1次 我方士气因主宰效果返还4张及以上时，可从士气牌库追加1张休整的士气。 |
+| S02-0102 李牧 #2 | S02-0102:ability:enter:2dc458f3fe3f8259 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 4 | 登场时 可展示牌库顶部1张牌。若其为费用不高于4的&lt;主动战术&gt;，可无需消耗费用将其打出；否则将其返回牌库底部。随后可抽取1张牌。 |
+| S02-0103 平阳昭公主 #1 | S02-0103:ability:enter:91a88c9cc3074ca1 | enter/triggered | composite-definition | — | trigger:trigger.observe → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 本回合我方主宰对对方主宰造成的下一次伤害变为2。 |
+| S02-0103 平阳昭公主 #2 | S02-0103:ability:attack:607e6460eed6637b | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 2 | 进攻时 可展示牌库顶部1张牌。若其为费用不高于5的【天廷】卡牌，此军团本回合兵力+2000；否则将其返回牌库底部。 |
+| S02-0104 神农鼎 #1 | S02-0104:ability:enter:8fa3e27817003123 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
+| S02-0104 神农鼎 #2 | S02-0104:ability:active:1687d445c6acc308 | active/activated | shared-rule-owner | 主动休整 返还1士气 | trigger:trigger.observe → cost:cost.rest-source → cost:cost.return-morale → resolution:legacy.resolve | 1 | 主动休整 返还1士气：重置我方主宰其中1个效果的使用次数。 |
+| S02-0105 乾坤 阳 #1 | S02-0105:ability:play:499f7a6a1da312d7 | play/spell | composite-definition | 击杀对方1张原本兵力不高于3000的军团。 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.draw → resolution:operation.composite-flow | 3 | 击杀对方1张原本兵力不高于3000的军团。 可返还1士气：抽取1张牌。 |
+| S02-0106 乾坤 阴 #1 | S02-0106:ability:opponent-attack-or-effect:cac751e0d790e16e | opponent-attack-or-effect/reaction | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:visibility.policy → duration:duration.apply → resolution:legacy.resolve | 6 | 对方 进攻或发动效果时：展示牌库顶部1张牌。若其为费用不高于3的【天廷】军团，将其弃置。随后选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力，否则将其返回牌库底部。 |
+| S02-01M1 孙悟空 #1 | S02-01M1:ability:active:4834e3b50d036f27 | active/active | shared-rule-owner | 我方 回合1次 可返还2至8士气 | trigger:trigger.observe → condition:condition.expression → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.modify-troops → resolution:operation.keyword → duration:operation.move-zone → resolution:legacy.resolve | 2 | 我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。 |
+| S02-01M1 孙悟空 #2 | S02-01M1:ability:leave:cf42cfffe1b9b9bc | leave/replacement | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → replacement:operation.move-zone → condition:condition.expression → condition:control.optional → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。 |
+| S02-01S1 哮天犬·稚 #1 | S02-01S1:ability:master-morale-return:8d098fe32e7b253b | master-morale-return/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 「主宰为杨戬时」我方 回合1次 我方士气因主宰效果返还4张及以上时，&lt;哮天犬·稚&gt;可在前排活跃登场，视为1张兵力2000的【特殊】军团。 |
+| S02-01S1 哮天犬·稚 #2 | S02-01S1:ability:death:544dd81cfc7627f4 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 阵亡时 可从士气牌库追加1张休整的士气。 |
+| S02-0201 增殖的甲虫 #1 | S02-0201:ability:continuous:16b90b36ef8afe2c | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:legacy.resolve | 0 | 规则上，此军团构筑时不计入卡组数量，不能进入手牌和牌库，游戏开始时置入墓地，此军团以任何形式离场均视为置入所有者墓地。 |
+| S02-0201 增殖的甲虫 #2 | S02-0201:ability:continuous:39b0b1524eaed536 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻，无法支援。 |
+| S02-0202 陵墓圣武士 #1 | S02-0202:ability:continuous:94759febdd62fd32 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → condition:visibility.policy → resolution:legacy.resolve | 0 | 我方回合 本回合我方每有1张卡名包含&lt;陵墓&gt;的军团离场时，此军团登场费用-1。 |
+| S02-0202 陵墓圣武士 #2 | S02-0202:ability:death:79d8237fa4fa11c6 | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 将墓地1张&lt;陵墓守卫&gt;活跃登场。 |
+| S02-0203 哈特谢普苏特 #1 | S02-0203:ability:continuous:418e71545576e12d | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → resolution:legacy.resolve | 0 | 若我方战场不存在&lt;陵墓守卫&gt;，此军团登场费用-1。 |
+| S02-0203 哈特谢普苏特 #2 | S02-0203:ability:enter:d02761e5760092ed | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
+| S02-0203 哈特谢普苏特 #3 | S02-0203:ability:death:4f44435f01c08067 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌。 |
+| S02-0204 伊姆何泰普 #1 | S02-0204:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0204 伊姆何泰普 #2 | S02-0204:ability:enter:753c4d14ca73c931 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 1 | 登场时 若我方手牌数量少于对方，可将墓地1张费用为6及以上的【太阳城】军团展示并加入手牌。 |
+| S02-0204 伊姆何泰普 #3 | S02-0204:ability:active:4257a82eec559a94 | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。 |
+| S02-0205 黄金圣甲虫 #1 | S02-0205:ability:continuous:44bfa636b58de089 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 若&lt;黄金圣甲虫&gt;位于我方圣物区，我方无法从手牌打出其他圣物。 |
+| S02-0205 黄金圣甲虫 #2 | S02-0205:ability:enter:391da24eedbd81b7 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
+| S02-0205 黄金圣甲虫 #3 | S02-0205:ability:active:8023ed21f8771697 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → cost:cost.rest-source → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
+| S02-0205 黄金圣甲虫 #4 | S02-0205:ability:active:e33e843f8be8d5f6 | active/activated | shared-rule-owner | 我方 回合1次 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可弃置1张手牌：选择对方最多2张军团，本回合兵力-1000。 |
+| S02-0206 无畏的刺杀 #1 | S02-0206:ability:play:f6c0e9a69b3184b7 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 2 | 选择我方前排1张【太阳城】军团，本回合兵力+3000，进攻对方军团时获得ABILITY 2。 |
+| S02-0206 无畏的刺杀 #2 | S02-0206:ability:granted:1aba3f5bd15a426d | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 必中 进攻无法被抵挡/支援。 |
+| S02-0206 无畏的刺杀 #3 | S02-0206:ability:play:bd784d08e38e0ed8 | play/spell | shared-rule-owner | — | trigger:trigger.observe → duration:duration.apply → resolution:legacy.resolve | 1 | 本回合此军团无法因效果重置为活跃，回合结束时弃置此军团。 |
+| S02-0207 沙漠君临 #1 | S02-0207:ability:play:528a4430c4b87fb5 | play/spell | shared-rule-owner | 弃置我方战场上最多3张军团 | trigger:trigger.observe → cost:special.domain → resolution:operation.move-zone → resolution:legacy.resolve | 5 | 弃置我方战场上最多3张军团：将手牌中1张天灾等级与弃置军团数量相同的【太阳城】军团活跃登场。 |
+| S02-02M1 奈芙蒂斯 #1 | S02-02M1:ability:continuous:a83e1e0971bbe6f0 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 我方&lt;陵墓守卫&gt;无法进攻主宰。 |
+| S02-02M1 奈芙蒂斯 #2 | S02-02M1:ability:active:014219b1c6c557fa | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.set-state → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 2 | 我方 回合1次 可弃置我方战场上任意数量军团，每弃置1张，本回合我方下1张带有天灾等级的【太阳城】军团登场费用-1。 |
+| S02-02M1 奈芙蒂斯 #3 | S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29 | friendly-legion-death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 对方 回合1次 我方费用为2及以上的【太阳城】军团阵亡时，可将墓地1张&lt;增殖的甲虫&gt;活跃登场。 |
+| S02-0301 雷神之锤 #1 | S02-0301:ability:enter:c3d7bde060b4a77f | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方主宰。 |
+| S02-0301 雷神之锤 #2 | S02-0301:ability:death:43e2e1e581db01d0 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:cost.discard → resolution:operation.draw → resolution:operation.composite-flow | 3 | 阵亡时 可抽取1张牌，并弃置1张手牌。 |
+| S02-0301 雷神之锤 #3 | S02-0301:ability:continuous:e48cf407ce847427 | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:legacy.resolve | 0 | 规则上，当我方主宰为【雷神索尔】，可使用ABILITY 4。 |
+| S02-0301 雷神之锤 #4 | S02-0301:ability:active:61c655977499e4be | active/activated | shared-rule-owner | 「位于墓地」我方 回合1次 可将墓地3张卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.move-zone → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于墓地」我方 回合1次 可将墓地3张卡牌自选顺序返回我方牌库底部：将此军团活跃登场。 |
+| S02-0302 步行者罗洛 #1 | S02-0302:ability:hand-play:4e8ff9ea92325bac | hand-play/special-summon | shared-rule-owner | 可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部 | trigger:trigger.observe → condition:control.optional → cost:operation.move-zone → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可将墓地最多8张【阿斯加德】卡牌自选顺序返回我方牌库底部：每返回2张，此军团登场费用-1。 |
+| S02-0302 步行者罗洛 #2 | S02-0302:ability:continuous:48719a94741bbf36 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 3，且无法被后排支援。 |
+| S02-0302 步行者罗洛 #3 | S02-0302:ability:keyword-definition:eaba79729a9d7a65 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0302 步行者罗洛 #4 | S02-0302:ability:enter:f2164791a703075c | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 登场时 我方主宰增加1点血量。 |
+| S02-0303 卡纽特大帝 #1 | S02-0303:ability:hand-play:5e06807975eda2b7 | hand-play/special-summon | shared-rule-owner | 可对我方主宰造成1点伤害 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:operation.damage-master → resolution:operation.set-state → resolution:legacy.resolve | 1 | 可对我方主宰造成1点伤害：此军团登场费用-1。 |
+| S02-0303 卡纽特大帝 #2 | S02-0303:ability:enter:188ca2ec5d57c93a | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.composite-flow | 1 | 登场时 可选择我方战场或墓地最多2张非同名的【阿斯加德】军团，触发其阵亡效果。 |
+| S02-0304 玛格丽特一世 #1 | S02-0304:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 2 | 进攻距离+1，远程进攻无损。 |
+| S02-0304 玛格丽特一世 #2 | S02-0304:ability:enter:3f76727a32a3cf1e | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部1张牌。 |
+| S02-0304 玛格丽特一世 #3 | S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b | master-damaged-by-effect/triggered | shared-rule-owner | 我方回合 我方主宰因效果受到伤害时，可将此军团转为休整 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.rest → resolution:operation.heal-master → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 我方主宰因效果受到伤害时，可将此军团转为休整：我方主宰增加1点血量。随后本回合我方主宰血量无法因军团效果增加。 |
+| S02-0305 安德华拉诺特 #1 | S02-0305:ability:game-setup:cf14affeb486a9f7 | game-setup/setup | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:legacy.resolve | 1 | 规则上，在游戏开始时可将此圣物从牌库置入圣物区，起始手牌数量为4张，且我方回合结束时弃置手牌，直至手牌数量不高于6张。 |
+| S02-0305 安德华拉诺特 #2 | S02-0305:ability:continuous:26b824128ffced1a | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 我方无法从手牌打出圣物。 |
+| S02-0305 安德华拉诺特 #3 | S02-0305:ability:master-damaged:a4a2c92cad3ad28c | master-damaged/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 我方主宰受到伤害时，可抽取1张牌。 |
+| S02-0305 安德华拉诺特 #4 | S02-0305:ability:master-damaged:4c8ce907eed1f778 | master-damaged/replacement | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:legacy.resolve | 0 | 对方回合 我方主宰受到的第一次伤害变为2。 |
+| S02-0306 密米尔之泉 #1 | S02-0306:ability:continuous:a5a8e191442bbfac | continuous/rule | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → duration:duration.apply → resolution:legacy.resolve | 2 | &lt;密米尔之泉&gt;每回合只可使用1次。 |
+| S02-0306 密米尔之泉 #2 | S02-0306:ability:master-effect-damage-threshold:978e2dc72d59418c | master-effect-damage-threshold/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.heal-master → duration:duration.apply → resolution:legacy.resolve | 1 | 若本回合我方主宰因效果受到累计2点及更多伤害：我方主宰可增加1点血量，抽取1张牌。随后可弃置我方牌库顶部2张牌。 |
+| S02-0307 海拉的凝视 #1 | S02-0307:ability:play:e2a8efcc4ba499ee | play/spell | shared-rule-owner | 弃置我方牌库顶部1张牌 | trigger:trigger.observe → target:selection.target → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 2 | 弃置我方牌库顶部1张牌：选择对方1张军团，本回合兵力-3000。 |
+| S02-03M1 雷神索尔 #1 | S02-03M1:ability:game-setup:46b2a85c54cecc56 | game-setup/setup | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:legacy.resolve | 2 | 游戏开始时，可将1张&lt;雷神之锤&gt;加入手牌，其视为1张起始手牌。 |
+| S02-03M1 雷神索尔 #2 | S02-03M1:ability:active:54e6f9c40764f804 | active/activated | shared-rule-owner | 我方回合 当我方主宰血量不高于3时，可消耗2士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.pay-morale → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 当我方主宰血量不高于3时，可消耗2士气：本回合我方所有【阿斯加德】军团在登场时获得ABILITY 3。以上效果发动后，我方主宰本局游戏无法因任何效果增加血量。 |
+| S02-03M1 雷神索尔 #3 | S02-03M1:ability:granted:f4dd24f1fb07f3d5 | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0401 武田信玄 #1 | S02-0401:ability:continuous:9601da1d8445f865 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.ready → resolution:legacy.resolve | 0 | 我方士气无法因主宰效果转为活跃。 |
+| S02-0401 武田信玄 #2 | S02-0401:ability:enter:27a167b8b905666d | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:operation.ready → resolution:operation.composite-flow | 2 | 登场时 可查看我方牌库，选择1张兵力不高于5000的【高天原】军团展示并加入手牌。随后重洗牌库，选择将手牌中1张&lt;真田幸村&gt;活跃登场，并将1张士气转为活跃。 |
+| S02-0402 井伊直虎 #1 | S02-0402:ability:enter:4e174017a4dffc0f | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.ready → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：将我方1张休整的【高天原】军团转为活跃。 |
+| S02-0402 井伊直虎 #2 | S02-0402:ability:death:53c6b545f1a48957 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌。 |
+| S02-0403 冲田总司 #1 | S02-0403:ability:enter:2ebf87c30fca9902 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 若&lt;草薙剑&gt;位于我方前排，此军团获得ABILITY 2，本回合兵力+1000。 |
+| S02-0403 冲田总司 #2 | S02-0403:ability:granted:f4dd24f1fb07f3d5 | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0403 冲田总司 #3 | S02-0403:ability:attack:f4e897276bb153c0 | attack/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 进攻时 展示牌库顶部1张牌，若其为费用不高于3的【高天原】卡牌，可无需消耗费用将其打出；否则加入手牌。 |
+| S02-0404 八尺琼勾玉 #1 | S02-0404:ability:enter:08f36fcae8096c88 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:operation.composite-flow | 2 | 登场时 可查看我方牌库，选择1张【高天原】的【骑兵】军团展示并加入手牌。随后重洗牌库。 |
+| S02-0404 八尺琼勾玉 #2 | S02-0404:ability:active:b30de444d37a3b6e | active/activated | shared-rule-owner | — | trigger:trigger.observe → target:selection.mode → target:selection.target → cost:cost.rest-source → resolution:legacy.resolve | 3 | 主动休整 选择ABILITY 3或ABILITY 4。 |
+| S02-0404 八尺琼勾玉 #3 | S02-0404:ability:granted:2c2b9693ca8cf3b8 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.move → resolution:legacy.resolve | 1 | 选择我方1张活跃军团，进行1次不占用该军团自身次数的骑兵位移。 |
+| S02-0404 八尺琼勾玉 #4 | S02-0404:ability:granted:e7c384ccba9ff2f3 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.set-state → resolution:operation.move → duration:duration.apply → resolution:legacy.resolve | 1 | 选择我方1张本回合位移过的军团，本回合获得ABILITY 5。 |
+| S02-0404 八尺琼勾玉 #5 | S02-0404:ability:granted:e3ff02735b6b18f4 | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
+| S02-0405 武运在天 铠甲在前 #1 | S02-0405:ability:play:0a13775c2081e642 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.move-zone → resolution:visibility.policy → resolution:legacy.resolve | 6 | 展示我方牌库顶部5张牌，选择其中1张【圣物】和1张&lt;上杉谦信&gt;加入手牌，其余牌自选顺序返回我方牌库底部。 |
+| S02-0405 武运在天 铠甲在前 #2 | S02-0405:ability:play:b03190adf1322a1a | play/spell | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 本回合我方下1张&lt;上杉谦信&gt;登场费用-2，并获得ABILITY 3。 |
+| S02-0405 武运在天 铠甲在前 #3 | S02-0405:ability:granted:f4dd24f1fb07f3d5 | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0406 天下布武 #1 | S02-0406:ability:play:35815c7115c7ce71 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.mode → target:selection.target → resolution:legacy.resolve | 1 | 选择ABILITY 2、ABILITY 3或ABILITY 4。 |
+| S02-0406 天下布武 #2 | S02-0406:ability:granted:6aa04cbf27f6b4b7 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → duration:duration.apply → resolution:legacy.resolve | 3 | 选择对方1排所有军团本回合费用-2。 |
+| S02-0406 天下布武 #3 | S02-0406:ability:granted:4f1f5a1d4791b5ef | granted/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 本回合我方位于前排的所有【高天原】军团进攻时兵力+1000。 |
+| S02-0406 天下布武 #4 | S02-0406:ability:granted:4f26e688b66affd4 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move → duration:duration.apply → resolution:legacy.resolve | 2 | 本回合我方所有活跃的【高天原】军团可免费进行1格位移。 |
+| S02-04M1 月读 #1 | S02-04M1:ability:friendly-legion-moves:654df25d049352f7 | friendly-legion-moves/triggered | shared-rule-owner | 我方 回合1次 我方军团位移时，可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.move → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 我方军团位移时，可消耗1士气：选择另外1张军团进行1格位移，并使其本回合费用-1。 |
+| S02-04M1 月读 #2 | S02-04M1:ability:friendly-back-to-front:03cb93e7e3eeedf3 | friendly-back-to-front/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.move → duration:duration.apply → resolution:legacy.resolve | 1 | 我方回合 当我方1张【高天原】军团从后排位移至前排时，此军团本回合进攻时兵力+1000。 |
+| S02-04M1 月读 #3 | S02-04M1:ability:friendly-front-to-back:e46218b2ac936410 | friendly-front-to-back/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.ready → resolution:operation.move → resolution:legacy.resolve | 1 | 我方回合 当我方1张【高天原】军团从前排位移至后排时，将我方1张士气转为活跃。 |
+| S02-0501 赫拉克勒斯·晋升 #1 | S02-0501:ability:promotion:3eb467465ef47272 | promotion/summon-flow | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转2神力，叠放至我方同名非【晋升者】军团上方登场。 |
+| S02-0501 赫拉克勒斯·晋升 #2 | S02-0501:ability:promotion-enter:aea99d552bc8adae | promotion-enter/triggered | composite-definition | 晋升登场 可展示手牌中1张军团并将其放回牌库顶部 | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:visibility.policy → cost:operation.move-zone → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 晋升登场 可展示手牌中1张军团并将其放回牌库顶部：击杀对方1张费用不高于展示军团其费用的军团。 |
+| S02-0501 赫拉克勒斯·晋升 #3 | S02-0501:ability:enter:f5937cc3d2f50de9 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.damage-master → resolution:operation.composite-flow | 1 | 登场时 可对双方主宰各造成1点非致命伤害。 |
+| S02-0501 赫拉克勒斯·晋升 #4 | S02-0501:ability:attack:9b5b0f34dc393288 | attack/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 进攻时 本回合获得强攻。 |
+| S02-0502 赫拉克勒斯 #1 | S02-0502:ability:enter:8919c3bc2ac8b7c6 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → target:selection.target → resolution:cost.discard → resolution:operation.composite-flow | 3 | 登场时 可抽取2张牌，并弃置1张手牌。 |
+| S02-0503 阿喀琉斯·晋升 #1 | S02-0503:ability:promotion:3eb467465ef47272 | promotion/summon-flow | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转2神力，叠放至我方同名非【晋升者】军团上方登场。 |
+| S02-0503 阿喀琉斯·晋升 #2 | S02-0503:ability:static:5e2fcb0f2798f57a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻无损，此军团受到远程进攻兵力额外-1000。 |
+| S02-0503 阿喀琉斯·晋升 #3 | S02-0503:ability:promotion-enter:15500275140609c1 | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.attack-rule → duration:duration.apply → resolution:operation.composite-flow | 1 | 晋升登场 本回合可进攻对方军团。 |
+| S02-0503 阿喀琉斯·晋升 #4 | S02-0503:ability:after-attack:e3ced12ddde14fdb | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 直到我方下个回合结束前，此军团获得 ABILITY 5。 |
+| S02-0503 阿喀琉斯·晋升 #5 | S02-0503:ability:granted-static:e67d03cee97f98a6 | granted-static/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得 ABILITY 6。 |
+| S02-0503 阿喀琉斯·晋升 #6 | S02-0503:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0504 阿喀琉斯 #1 | S02-0504:ability:static:0ada28f438439ac2 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」我方主宰无法被兵力不高于2000的军团进攻。 |
+| S02-0504 阿喀琉斯 #2 | S02-0504:ability:lethal-replacement:3fb565d50830f260 | lethal-replacement/replacement | shared-rule-owner | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」回合1次 即将阵亡时，可消耗并翻转1神力：代替承受本次致命进攻或效果。 |
+| S02-0505 珀尔修斯·晋升 #1 | S02-0505:ability:promotion:e890e8664470e824 | promotion/summon-flow | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。 |
+| S02-0505 珀尔修斯·晋升 #2 | S02-0505:ability:promotion-enter:125b53eb65b262bb | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.set-state → duration:duration.apply → resolution:operation.composite-flow | 1 | 晋升登场 可选择对方1张休整的军团，使其在下个对方重置阶段无法转为活跃。 |
+| S02-0505 珀尔修斯·晋升 #3 | S02-0505:ability:active:bac4cb5d348f29f1 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| S02-0505 珀尔修斯·晋升 #4 | S02-0505:ability:enter:2f48770e568d4c27 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得 ABILITY 5。 |
+| S02-0505 珀尔修斯·晋升 #5 | S02-0505:ability:keyword-definition:cf232142ca7d10f9 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0506 珀尔修斯 #1 | S02-0506:ability:enter:190c1bf49c2ede8b | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：将墓地1张&lt;珀尔修斯·晋升&gt;加入手牌。 |
+| S02-0507 阿塔兰忒·晋升 #1 | S02-0507:ability:promotion:e890e8664470e824 | promotion/summon-flow | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:special.domain → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。 |
+| S02-0507 阿塔兰忒·晋升 #2 | S02-0507:ability:promotion-enter:63c22abdf0d41b8e | promotion-enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 晋升登场 可抽取1张牌。 |
+| S02-0507 阿塔兰忒·晋升 #3 | S02-0507:ability:enter:3c1cf21d72d9b334 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
+| S02-0507 阿塔兰忒·晋升 #4 | S02-0507:ability:static:3f520b391281b325 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于后排」此军团视为【弓手】，进攻距离+1，远程进攻无损。 |
+| S02-0507 阿塔兰忒·晋升 #5 | S02-0507:ability:attack:d20040947938d125 | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 「位于后排」进攻时 此军团兵力视为3000。 |
+| S02-0508 阿塔兰忒 #1 | S02-0508:ability:static:aa41bff900061e1d | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0508 阿塔兰忒 #2 | S02-0508:ability:death:9aea23b4138e399e | death/triggered | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.flip-morale | 1 | 阵亡时 翻转1张士气。 |
+| S02-0509 奥德修斯 #1 | S02-0509:ability:static:fff4ed8e0ac25ed9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于手牌」若我方神力为0张，此军团登场费用-1。 |
+| S02-0509 奥德修斯 #2 | S02-0509:ability:enter:4b4a552c7407edb2 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合从手牌中打出的下1张战术卡无需消耗费用。 |
+| S02-0509 奥德修斯 #3 | S02-0509:ability:attack:e881bc3c0f362883 | attack/triggered | fine-definition | 进攻时 可展示手牌中的1张战术卡 | trigger:trigger.observe → condition:control.optional → cost:visibility.policy → resolution:operation.modify-troops → duration:duration.apply | 2 | 进攻时 可展示手牌中的1张战术卡：此军团本回合兵力+1000。 |
+| S02-0510 希波吕忒 #1 | S02-0510:ability:static:52b46f1b508e6aa1 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于手牌」若我方神力为5张及以上，此军团登场费用-3。 |
+| S02-0510 希波吕忒 #2 | S02-0510:ability:static:5193793609facf70 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply → resolution:legacy.resolve | 0 | 此军团休整时，我方军团前后位移无需消耗费用。 |
+| S02-0510 希波吕忒 #3 | S02-0510:ability:active:2ee4c7f29b568e48 | active/activated | shared-rule-owner | 主动休整 消耗3士气并弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → cost:cost.pay-morale → target:selection.target → cost:cost.discard → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 消耗3士气并弃置1张手牌：选择墓地1张费用不高于4的【奥林匹斯】军团活跃登场。 |
+| S02-0511 珀洛特埃 #1 | S02-0511:ability:enter:398588321106818e | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方军团。 |
+| S02-0511 珀洛特埃 #2 | S02-0511:ability:attack:c367ee3457cbd5f4 | attack/triggered | shared-rule-owner | 进攻时 若目标为对方军团，可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 若目标为对方军团，可消耗并翻转1神力：本回合兵力+1000，并获得 ABILITY 3。 |
+| S02-0511 珀洛特埃 #3 | S02-0511:ability:keyword-definition:96aa4e9504b12339 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 进攻时，被进攻者左右相邻的军团在本回合中兵力-2000。 |
+| S02-0512 埃涅阿斯 #1 | S02-0512:ability:static:fff4ed8e0ac25ed9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于手牌」若我方神力为0张，此军团登场费用-1。 |
+| S02-0512 埃涅阿斯 #2 | S02-0512:ability:static:e44e97f2fb745816 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得 ABILITY 3。 |
+| S02-0512 埃涅阿斯 #3 | S02-0512:ability:keyword-definition:6692b63a59c971d0 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻拥有挑衅效果的军团，若有多个具有挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0512 埃涅阿斯 #4 | S02-0512:ability:death:fe4dc14c5a024047 | death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 阵亡时 可抽取1张牌。 |
+| S02-0513 亚里士多德 #1 | S02-0513:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0513 亚里士多德 #2 | S02-0513:ability:enter:eef83ec51f2ef093 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可翻转1张士气。 |
+| S02-0513 亚里士多德 #3 | S02-0513:ability:active:0b4d5245336709f8 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 本回合我方下1张【奥林匹斯】军团登场费用-1。 |
+| S02-0514 柏拉图 #1 | S02-0514:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0514 柏拉图 #2 | S02-0514:ability:enter:eb48dfd6737606dc | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 2 | 登场时 可查看牌库顶部3张牌，选择其中1张&lt;柏拉图&gt;以外的【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部。 |
+| S02-0515 海伦 #1 | S02-0515:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0515 海伦 #2 | S02-0515:ability:enter:0440fe0acfaec451 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 1 | 登场时 若我方神力为1张及以上，对方弃置1张手牌。 |
+| S02-0515 海伦 #3 | S02-0515:ability:lethal-replacement:654c3040d6da8b4d | lethal-replacement/replacement | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」回合1次 即将阵亡时，可弃置手牌中的1张&lt;海伦&gt;以外的军团卡代替承受本次致命进攻或效果。 |
+| S02-0516 汉尼拔 #1 | S02-0516:ability:static:17774ead9eb8ed69 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 此军团活跃时不可被进攻。 |
+| S02-0516 汉尼拔 #2 | S02-0516:ability:static:a29458736f52d0a9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 此军团左右相邻军团兵力+1000。 |
+| S02-0516 汉尼拔 #3 | S02-0516:ability:attack:077dc7337586413c | attack/triggered | shared-rule-owner | 进攻时 可消耗1神力 | trigger:trigger.observe → condition:control.optional → cost:special.domain → target:selection.target → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 可消耗1神力：选择双方各1张军团，本回合兵力-2000。 |
+| S02-0517 彭忒西勒亚 #1 | S02-0517:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S02-0517 彭忒西勒亚 #2 | S02-0517:ability:enter:398588321106818e | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方军团。 |
+| S02-0517 彭忒西勒亚 #3 | S02-0517:ability:attack:b880db2c63b82bc9 | attack/triggered | fine-definition | 进攻时 可消耗并翻转1神力 | trigger:trigger.observe → condition:control.optional → cost:operation.flip-morale → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可消耗并翻转1神力：本回合兵力+2000。 |
+| S02-0518 忒修斯 #1 | S02-0518:ability:static:fff4ed8e0ac25ed9 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于手牌」若我方神力为0张，此军团登场费用-1。 |
+| S02-0518 忒修斯 #2 | S02-0518:ability:enter:6e9ddf89fefa712f | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可翻转1张休整的士气。 |
+| S02-0518 忒修斯 #3 | S02-0518:ability:death:88ff26ac36e38ec2 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → resolution:operation.composite-flow | 2 | 阵亡时 可选择墓地1张【晋升者】军团加入手牌。 |
+| S02-0519 斯巴达勇士 #1 | S02-0519:ability:attack:8f025023393c1f32 | attack/triggered | fine-definition | 进攻时 可消耗并翻转1神力 | trigger:trigger.observe → condition:control.optional → cost:operation.flip-morale → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可消耗并翻转1神力：此军团本回合兵力+2000。 |
+| S02-0519 斯巴达勇士 #2 | S02-0519:ability:static:2b21805b14115304 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 对方回合 此军团兵力+2000。 |
+| S02-0520 匠神锻造炉 #1 | S02-0520:ability:enter:361ec387b847ecee | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可翻转1张士气。 |
+| S02-0520 匠神锻造炉 #2 | S02-0520:ability:active:e4e320d416a9c103 | active/activated | shared-rule-owner | 主动休整 消耗1士气 | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → cost:cost.pay-morale → target:selection.mode → resolution:legacy.resolve | 3 | 主动休整 消耗1士气：选择 ABILITY 3 或 ABILITY 4。 |
+| S02-0520 匠神锻造炉 #3 | S02-0520:ability:mode-promotion-discount:98eb71c68928c091 | mode-promotion-discount/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 本回合我方下1张军团「晋升登场」消耗并翻转的神力-1。 |
+| S02-0520 匠神锻造炉 #4 | S02-0520:ability:mode-ready-after-kill:927badbb354c7607 | mode-ready-after-kill/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 选择我方1张【晋升者】以外的【奥林匹斯】军团，在本回合其下一次击杀对方军团后转为活跃。 |
+| S02-0521 荣耀之路 #1 | S02-0521:ability:play:4ae24413479102d1 | play/spell-resolution | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:special.domain → resolution:legacy.resolve | 3 | 翻转最多3张士气。 |
+| S02-0521 荣耀之路 #2 | S02-0521:ability:play-additional:2b5a094468a81a7a | play-additional/additional-resolution | shared-rule-owner | 可消耗并翻转2神力 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:special.domain → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → resolution:operation.shuffle → resolution:legacy.resolve | 2 | 可消耗并翻转2神力：查看我方牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库。 |
+| S02-0522 倪克斯的陨星 #1 | S02-0522:ability:play:a09dadaebc5e13de | play/spell-resolution | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 3 | 选择对方1张军团，本回合兵力-3000。 |
+| S02-0522 倪克斯的陨星 #2 | S02-0522:ability:play-additional:49fb773d1512e5b3 | play-additional/additional-resolution | shared-rule-owner | 可消耗并翻转1神力 | trigger:trigger.observe → condition:control.optional → cost:special.domain → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 可消耗并翻转1神力：选择对方1张军团，本回合兵力-2000。 |
+| S02-0523 特洛伊木马 #1 | S02-0523:ability:after-opponent-attack:5bff9b891b7b1cba | after-opponent-attack/reaction | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → resolution:operation.move-zone → duration:duration.apply → resolution:operation.move-zone → resolution:operation.draw → resolution:legacy.resolve | 4 | 对方 进攻后：可将此战术置入对方战场任意空位，直到下个我方回合结束。随后弃置此战术，抽取1张牌。 |
+| S02-0523 特洛伊木马 #2 | S02-0523:ability:static:05da64c53e8a7606 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 此战术在对方战场时：对方所有军团兵力-1000。 |
+| S02-05C1 士气·奥林匹斯 #1 | S02-05C1:ability:active:1ae9b19504eac93a | active/activated | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.pay-morale → target:selection.target → resolution:special.domain → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗1士气：翻转1张士气。 |
+| S02-05C1 士气·奥林匹斯 #2 | S02-05C1:ability:static:5879d4c3fe97b3cf | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 规则上，此卡可视为1张士气。 |
+| S02-05C1 士气·奥林匹斯 #3 | S02-05C1:ability:active:5dec5c18aaf62a03 | active/activated | shared-rule-owner | 我方 回合1次 可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.draw → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗并翻转1神力：抽取1张牌。 |
+| S02-05C1A 士气·奥林匹斯 #1 | S02-05C1A:ability:active:1ae9b19504eac93a | active/activated | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.pay-morale → target:selection.target → resolution:special.domain → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗1士气：翻转1张士气。 |
+| S02-05C1A 士气·奥林匹斯 #2 | S02-05C1A:ability:static:5879d4c3fe97b3cf | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 0 | 规则上，此卡可视为1张士气。 |
+| S02-05C1A 士气·奥林匹斯 #3 | S02-05C1A:ability:active:5dec5c18aaf62a03 | active/activated | shared-rule-owner | 我方 回合1次 可消耗并翻转1神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → resolution:operation.draw → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗并翻转1神力：抽取1张牌。 |
+| S02-05D1 奥林匹斯 诸神巅 #1 | S02-05D1:ability:active:519ab3c1379a9256 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → resolution:special.domain → duration:duration.apply → resolution:legacy.resolve | 1 | 我方 回合1次 可翻转1张士气。 |
+| S02-05D1 奥林匹斯 诸神巅 #2 | S02-05D1:ability:active:1e9195c93dff4ee9 | active/activated | shared-rule-owner | 我方 回合1次 可消耗并翻转2神力 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → target:selection.mode → resolution:special.domain → duration:duration.apply → resolution:legacy.resolve | 5 | 我方 回合1次 可消耗并翻转2神力：选择回收并登场，或对对方所有军团造成合计6000兵力的伤害。 |
+| S02-05D1 奥林匹斯 诸神巅 #3 | S02-05D1:ability:active:f160e84288ecb28c | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 主动休整 本回合我方下1张【奥林匹斯】军团「晋升登场」无需消耗并翻转神力。 |
+| S02-05D1 奥林匹斯 诸神巅 #4 | S02-05D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S02-05M1 阿尔忒弥斯 #1 | S02-05M1:ability:friendly-ranged-death:049d5f20b59f5888 | friendly-ranged-death/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.flip-morale | 1 | 回合1次 我方远程军团阵亡时，可翻转1张士气。 |
+| S02-05M1 阿尔忒弥斯 #2 | S02-05M1:ability:active:6fe03f6c35407ac7 | active/activated | shared-rule-owner | 我方 回合1次 可消耗1神力或弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → cost:selection.mode → target:selection.target → target:selection.mode → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000） |
+| S02-05M1 阿尔忒弥斯 #3 | S02-05M1:ability:keyword-definition:995c52041c470ca4 | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 强攻 进攻时对主宰造成额外1点伤害。 |
+| S02-05M1 阿尔忒弥斯 #4 | S02-05M1:ability:keyword-definition:41657ed47ef085ae | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 1 | 震击 被进攻军团的左右相邻军团本回合兵力-2000。 |
+| S02-05M2 普罗米修斯 #1 | S02-05M2:ability:active:e4b2c63a32960f8e | active/activated | shared-rule-owner | 我方 回合1次 消耗1神力 | trigger:trigger.observe → condition:condition.expression → cost:special.domain → resolution:special.domain → target:selection.target → resolution:visibility.policy → resolution:operation.move-zone → target:selection.target → target:selection.mode → resolution:operation.move-zone → duration:duration.apply → resolution:legacy.resolve | 3 | 我方 回合1次 消耗1神力：查看牌库顶部3张牌，选择其中1张【奥林匹斯】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库顶部或底部。 |
+| S02-0601 亚瑟王 #1 | S02-0601:ability:enter:d85ecd5fb722d62d | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.move-zone → resolution:special.domain → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：将1张&lt;王者之剑&gt;叠放至此军团下方。 |
+| S02-0601 亚瑟王 #2 | S02-0601:ability:death:85656f23e734439d | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 可将手牌中1张费用不高于4的【圆桌骑士】军团活跃登场。 |
+| S02-0602 兰斯洛特 #1 | S02-0602:ability:enter:1ec4fb001f87c88e | enter/triggered | shared-rule-owner | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.set-state → resolution:operation.composite-flow | 2 | 登场时 可消耗1符文：获得ABILITY 2。 |
+| S02-0602 兰斯洛特 #2 | S02-0602:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0602 兰斯洛特 #3 | S02-0602:ability:after-kill:e290e1e434e45531 | after-kill/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:legacy.resolve | 1 | 击杀时 可选择ABILITY 4或ABILITY 5。 |
+| S02-0602 兰斯洛特 #4 | S02-0602:ability:granted:7a7545729484412a | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → resolution:legacy.resolve | 2 | 试炼+1。 |
+| S02-0602 兰斯洛特 #5 | S02-0602:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 2 | 获得1符文。 |
+| S02-0603 梅林 #1 | S02-0603:ability:continuous:5e0d666ac6a386ba | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团无法进攻。 |
+| S02-0603 梅林 #2 | S02-0603:ability:enter:36ce19fd64a5ad8a | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
+| S02-0603 梅林 #3 | S02-0603:ability:active:8768d3f1fcb44728 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → cost:cost.rest-source → cost:special.domain → resolution:legacy.resolve | 5 | 主动休整 消耗1符文，可选择ABILITY 4或ABILITY 5。 |
+| S02-0603 梅林 #4 | S02-0603:ability:granted:8cd73702b7db90b0 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 选择对方1张军团，本回合兵力-3000。 |
+| S02-0603 梅林 #5 | S02-0603:ability:granted:ee3b46417c9fc4f7 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:legacy.resolve | 1 | 查看我方牌库，选择1张费用不高于4的&lt;主动战术&gt;展示并加入手牌。随后重洗牌库。 |
+| S02-0604 加拉哈德 #1 | S02-0604:ability:trial:2117897dcefd3125 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 2 |
+| S02-0604 加拉哈德 #2 | S02-0604:ability:enter:af3e70e09349d376 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可发动试炼。 |
+| S02-0604 加拉哈德 #3 | S02-0604:ability:trial-completed:9d25a05a194bedc1 | trial-completed/triggered | shared-rule-owner | 我方回合 试炼&lt;寻找圣杯之旅&gt;完成后，可弃置此军团 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.discard → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:legacy.resolve | 3 | 我方回合 试炼&lt;寻找圣杯之旅&gt;完成后，可弃置此军团：抽取1张牌，我方主宰可增加1点血量。 |
+| S02-0605 鲍斯 #1 | S02-0605:ability:continuous:5ff487de55c0ca1d | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 「位于手牌」我方战场每存在1张【彼界】军团，此军团登场费用-1。 |
+| S02-0605 鲍斯 #2 | S02-0605:ability:attack:82a5bf2622bf4d20 | attack/triggered | shared-rule-owner | 进攻时 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 可消耗1士气：本回合获得ABILITY 3。 |
+| S02-0605 鲍斯 #3 | S02-0605:ability:keyword-definition:60bccaeb6d982ea8 | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 强攻 此军团因进攻对主宰造成伤害时，额外再造成1点伤害。 |
+| S02-0605 鲍斯 #4 | S02-0605:ability:death:290ffa58316ea18b | death/triggered | composite-definition | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.composite-flow | 1 | 阵亡时 对方弃置1张手牌。 |
+| S02-0606 帕西瓦尔 #1 | S02-0606:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0606 帕西瓦尔 #2 | S02-0606:ability:enter:798511dfd0a8fb7f | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
+| S02-0606 帕西瓦尔 #3 | S02-0606:ability:attack:0e67ec1e2f1885c6 | attack/triggered | fine-definition | 进攻时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.modify-troops → duration:duration.apply | 1 | 进攻时 可弃置1张手牌：本回合兵力+2000。 |
+| S02-0606 帕西瓦尔 #4 | S02-0606:ability:after-kill:7680beaaf4313595 | after-kill/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 本回合获得ABILITY 5。 |
+| S02-0606 帕西瓦尔 #5 | S02-0606:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
+| S02-0607 高文 #1 | S02-0607:ability:enter:763a91057766361c | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
+| S02-0607 高文 #2 | S02-0607:ability:attack:25d5c998d14502d7 | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → cost:special.domain → resolution:operation.set-state → resolution:legacy.resolve | 1 | 进攻时 可消耗X符文。每消耗1符文，本回合此军团兵力+1000，且对对方主宰造成的伤害+1。 |
+| S02-0608 狮心王理查一世 #1 | S02-0608:ability:enter:7aacad3877f7fd4c | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.move-zone → resolution:operation.set-state → resolution:operation.advance-trial → resolution:selection.target → resolution:operation.composite-flow | 1 | 登场时 试炼+2。可从我方战场/手牌/牌库/墓地将最多3张&lt;侍从骑士&gt;叠放至此军团下方，且直到下个我方回合开始前，获得ABILITY 2。 |
+| S02-0608 狮心王理查一世 #2 | S02-0608:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
+| S02-0608 狮心王理查一世 #3 | S02-0608:ability:attack:4581df1cc635dd68 | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:cost.discard → resolution:operation.set-state → resolution:legacy.resolve | 1 | 进攻时 对方进行抵挡/支援需要额外弃置1张手牌，否则本次抵挡/支援无效。 |
+| S02-0608 狮心王理查一世 #4 | S02-0608:ability:attack:0999d120e02e3c50 | attack/triggered | shared-rule-owner | 可弃置下方任意数量&lt;侍从骑士&gt; | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 可弃置下方任意数量&lt;侍从骑士&gt;：每弃置1张，本回合兵力+1000。 |
+| S02-0609 侍从骑士 #1 | S02-0609:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0609 侍从骑士 #2 | S02-0609:ability:continuous:dc2aa603cc3d136c | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 无法进攻主宰。 |
+| S02-0609 侍从骑士 #3 | S02-0609:ability:death:ce243cddf7b976d1 | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.advance-trial | 1 | 阵亡时 试炼+1。 |
+| S02-0610 芬恩 #1 | S02-0610:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0610 芬恩 #2 | S02-0610:ability:enter:1ec0fc6825715f52 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.composite-flow | 1 | 登场时 可发动试炼。 |
+| S02-0610 芬恩 #3 | S02-0610:ability:after-trial:451b6d549a5c98c4 | after-trial/triggered | shared-rule-owner | 此军团发动试炼后可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.ready → duration:duration.apply → resolution:operation.set-state → resolution:legacy.resolve | 2 | 此军团发动试炼后可消耗1符文：将此军团转为活跃，且本回合无法再次发动试炼。 |
+| S02-0611 库丘林 #1 | S02-0611:ability:continuous:5745356459e85080 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于手牌」我方战场上存在&lt;斯卡哈&gt;时，此军团登场费用-2。 |
+| S02-0611 库丘林 #2 | S02-0611:ability:enter:0cc32f023a1b4f11 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 1 | 登场时 直到下个我方回合开始前，此军团「位于前排」获得ABILITY 3。 |
+| S02-0611 库丘林 #3 | S02-0611:ability:keyword-definition:4d1e472a814a1e0b | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 0 | 免死 仅1次，即将阵亡时，将兵力在本回合变为1000作为代替。 |
+| S02-0611 库丘林 #4 | S02-0611:ability:after-kill:7680beaaf4313595 | after-kill/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.set-state → duration:duration.apply → resolution:legacy.resolve | 1 | 击杀时 本回合获得ABILITY 5。 |
+| S02-0611 库丘林 #5 | S02-0611:ability:keyword-definition:672734be0285300f | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 0 | 贯穿 击杀时 在进攻军团后，以此军团剩余的兵力对对方主宰发动1次进攻，此次进攻不会触发“进攻时”效果。 |
+| S02-0612 斯卡哈 #1 | S02-0612:ability:continuous:064a0a1c5382575c | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于手牌」我方战场上存在&lt;库丘林&gt;时，此军团登场费用-2。 |
+| S02-0612 斯卡哈 #2 | S02-0612:ability:enter:af81d1bed4470503 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得ABILITY 3。 |
+| S02-0612 斯卡哈 #3 | S02-0612:ability:keyword-definition:beff9037e2c10a9d | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.keyword → resolution:legacy.resolve | 0 | 冲锋 在登场的回合即可进行进攻。 |
+| S02-0612 斯卡哈 #4 | S02-0612:ability:attack:c195f409c875e9eb | attack/triggered | shared-rule-owner | 进攻时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → cost:special.domain → resolution:operation.attack-rule → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 进攻时 可消耗1符文：本回合进攻无损且兵力+2000。 |
+| S02-0613 圣女贞德 #1 | S02-0613:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0613 圣女贞德 #2 | S02-0613:ability:enter:64f69e75c8f9a3da | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.discard → resolution:operation.attack-rule → resolution:operation.composite-flow | 1 | 登场时 可弃置1张手牌：我方主宰直到下个我方回合开始前无法被进攻。 |
+| S02-0613 圣女贞德 #3 | S02-0613:ability:death:db3d0495e90b3dbd | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.heal-master | 1 | 阵亡时 双方主宰增加1点血量。 |
+| S02-0614 康斯坦丝 #1 | S02-0614:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0614 康斯坦丝 #2 | S02-0614:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0614 康斯坦丝 #3 | S02-0614:ability:enter:601eddfb8abbb8d2 | enter/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.mode → target:selection.target → resolution:operation.composite-flow | 1 | 登场时 可选择ABILITY 4或ABILITY 5。 |
+| S02-0614 康斯坦丝 #4 | S02-0614:ability:granted:6235a3f3a12afdbb | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 2 | 获得1符文。 |
+| S02-0614 康斯坦丝 #5 | S02-0614:ability:granted:45f31f84b8f800cd | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 2 | 发动试炼。 |
+| S02-0615 格温莉安 #1 | S02-0615:ability:continuous:16dc08d7324d1649 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
+| S02-0615 格温莉安 #2 | S02-0615:ability:keyword-definition:8a4c9aff096f6526 | keyword-definition/granted-continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.keyword → resolution:legacy.resolve | 0 | 挑衅 对方只可进攻拥有 挑衅 效果的军团，若有多个具有 挑衅效果的军团，则可以选择其中1个进行进攻。 |
+| S02-0615 格温莉安 #3 | S02-0615:ability:death:99b745c7faa9a5c9 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.heal-master → condition:condition.expression → resolution:operation.composite-flow | 3 | 当此军团因效果阵亡时，我方主宰可增加1点血量或抽取1张牌。 |
+| S02-0616 阿麦金 #1 | S02-0616:ability:continuous:5afe2828d587391f | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → condition:condition.expression → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 此军团休整时，我方试炼军团活跃时不可被进攻。 |
+| S02-0616 阿麦金 #2 | S02-0616:ability:enter:d634145a7ee14bd0 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |
+| S02-0616 阿麦金 #3 | S02-0616:ability:active:3616b237df312569 | active/activated | shared-rule-owner | 主动休整 展示牌库顶部1张牌 | trigger:trigger.observe → condition:control.optional → cost:cost.rest-source → resolution:operation.move-zone → resolution:operation.move-zone → resolution:visibility.policy → resolution:legacy.resolve | 6 | 主动休整 展示牌库顶部1张牌：若其只拥有【彼界】特征，可将其加入手牌；否则将其返回牌库顶部或底部。 |
+| S02-0617 罗宾汉 #1 | S02-0617:ability:trial:bb29c925c9fcdc82 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 1 |
+| S02-0617 罗宾汉 #2 | S02-0617:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0617 罗宾汉 #3 | S02-0617:ability:enter:9dc7c4374dc77291 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可从我方手牌/牌库/墓地将1张&lt;侍从骑士&gt;活跃登场。 |
+| S02-0617 罗宾汉 #4 | S02-0617:ability:attack:c8dd6c6601a73ebb | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw → resolution:operation.gain-rune → resolution:legacy.resolve | 1 | 进攻时 获得1符文。若我方战场上存在&lt;狮心王理查一世&gt;，可抽取1张牌。 |
+| S02-0618 伊丽莎白·都铎 #1 | S02-0618:ability:trial:2117897dcefd3125 | trial/rule | shared-rule-owner | — | trigger:trigger.observe → rule:special.domain → resolution:legacy.resolve | 1 | 试炼 2 |
+| S02-0618 伊丽莎白·都铎 #2 | S02-0618:ability:continuous:e9823ffd970d6ce6 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| S02-0618 伊丽莎白·都铎 #3 | S02-0618:ability:enter:fa5ffc70365a2eee | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.gain-rune | 1 | 登场时 获得1符文。 |
+| S02-0619 克劳迪娅 #1 | S02-0619:ability:continuous:f0839056592c5ee2 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| S02-0619 克劳迪娅 #2 | S02-0619:ability:enter:a2a270aacbd06520 | enter/triggered | composite-definition | 登场时 可消耗1符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 登场时 可消耗1符文：选择对方1张军团，本回合兵力-2000。 |
+| S02-0620 符文之力 #1 | S02-0620:ability:play:ac4a80f231805917 | play/spell | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:legacy.resolve | 4 | 获得1符文。 |
+| S02-0620 符文之力 #2 | S02-0620:ability:play:c2e3d34e7ac83c86 | play/spell | shared-rule-owner | 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.move-zone → resolution:visibility.policy → resolution:legacy.resolve | 1 | 可消耗1士气：查看牌库顶部3张牌，选择1张&lt;符文之力&gt;以外的【彼界】卡牌，展示并加入手牌，其余卡牌自选顺序返回牌库底部。 |
+| S02-0621 圆桌领域 #1 | S02-0621:ability:play:9a7d744018bd9e66 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:legacy.resolve | 4 | 查看我方牌库，选择1张【圆桌骑士】军团展示并加入手牌。随后重洗牌库。 |
+| S02-0621 圆桌领域 #2 | S02-0621:ability:play:ecdfaa719e9112ba | play/spell | shared-rule-owner | 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 可消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000。 |
+| S02-0622 槲寄生符咒 #1 | S02-0622:ability:hand-play:5b5e4bf8f495f21a | hand-play/cost-modifier | shared-rule-owner | 「位于手牌」可消耗X符文 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:special.domain → duration:duration.apply → cost:special.domain → resolution:legacy.resolve | 1 | 「位于手牌」可消耗X符文：每消耗1符文，本回合此战术打出的费用-2。 |
+| S02-0622 槲寄生符咒 #2 | S02-0622:ability:play:d5226a525c565d25 | play/spell | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → duration:duration.apply → resolution:legacy.resolve | 1 | 选择对方1张军团，本回合兵力-6000。 |
+| S02-06C1 士气·彼界 #1 | S02-06C1:ability:static:7339369656140c39 | static/continuous | shared-rule-owner | 阵营效果<br>我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:legacy.resolve | 2 | 阵营效果<br>我方 回合1次 可消耗2士气：获得1符文。 |
+| S02-06D1 彼界 阿瓦隆 #1 | S02-06D1:ability:static:b173428fa383ae26 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:special.domain → resolution:legacy.resolve | 0 | 规则上，可携带1张已完成的试炼。我方 |
+| S02-06D1 彼界 阿瓦隆 #2 | S02-06D1:ability:turn-start:97dca04b36fe51bf | turn-start/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 2 | 回合开始时，试炼+1并获得1符文 |
+| S02-06D1 彼界 阿瓦隆 #3 | S02-06D1:ability:static:65b6607da57e5096 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.move-zone → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2符文：选择墓地中1张军团和1张战术加入手牌。随后，本回合从手牌中打出的下1张战术卡无需消耗费用 |
+| S02-06D1 彼界 阿瓦隆 #4 | S02-06D1:ability:active:30a9d18991dc8481 | active/activated | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → cost:cost.rest-source → resolution:operation.modify-troops → duration:duration.apply | 1 | 主动休整 选择对方1张军团，本回合兵力-4000 |
+| S02-06D1 彼界 阿瓦隆 #5 | S02-06D1:ability:setup:281db2829152b981 | setup/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.add-morale → resolution:legacy.resolve | 1 | 主神开场即可追加2张额外士气。 |
+| S02-06M1 莫瑞甘 #1 | S02-06M1:ability:morrigan-enemy-death:4d2e3aed72292122 | morrigan-enemy-death/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 我方 回合1次 对方军团阵亡时，可获得1符文。 |
+| S02-06M1 莫瑞甘 #2 | S02-06M1:ability:active:08922e53e852b78f | active/activated | shared-rule-owner | 我方 回合1次 可消耗2符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.ready → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 2 | 我方 回合1次 可消耗2符文：选择我方1张【彼界】军团，在本回合其下一次击杀对方军团后转为活跃。 |
+| S02-06M2 安格斯·麦·奥格 #1 | S02-06M2:ability:rule:f86cd3914a10b001 | rule/rule | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → rule:special.domain → resolution:legacy.resolve | 1 | 规则上，可完成的试炼数量增加1张。 |
+| S02-06M2 安格斯·麦·奥格 #2 | S02-06M2:ability:trial-advance:2004cb55b3358ee5 | trial-advance/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 我方 回合1次 推进试炼进度时，可获得1符文。 |
+| S02-06M2 安格斯·麦·奥格 #3 | S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | tactic-effect-resolved/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → duration:duration.apply → resolution:legacy.resolve | 1 | 回合1次 当我方成功发动战术效果时，试炼+1。 |
+| S02-06S1 符文 #1 | S02-06S1:ability:static:75769d93e0ca669f | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1符文 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:special.domain → resolution:operation.draw → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗1符文：选择以下一项。·试炼+1。·抽取1张牌 |
+| S02-06S2 王者之剑 #1 | S02-06S2:ability:static:0f86ac377c8c63ee | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.keyword | 0 | 当&lt;王者之剑&gt;叠放在我方&lt;亚瑟王&gt;下方时，使其原本兵力+1000，并获得强攻 |
+| S02-06S3 湖中仙女的馈赠 #1 | S02-06S3:ability:static:3616e3ca17ffd729 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 触发 可从牌库或墓地将1张&lt;亚瑟王&gt;加入手牌。随后将墓地所有&lt;亚瑟王&gt;返回牌库并重洗。本回合&lt;亚瑟王&gt;登场的费用-3 |
+| S02-06S3 湖中仙女的馈赠 #2 | S02-06S3:ability:static:f7e019a543066afd | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 我方已置放&lt;王者之剑&gt;的&lt;亚瑟王&gt;即将 |
+| S02-06S3 湖中仙女的馈赠 #3 | S02-06S3:ability:death:84330d935c195208 | death/triggered | shared-rule-owner | 阵亡时，移除&lt;王者之剑&gt; | trigger:trigger.observe → cost:special.domain → resolution:special.domain → resolution:legacy.resolve | 1 | 阵亡时，移除&lt;王者之剑&gt;：代替承受本次致命进攻或效果 |
+| S02-06S4 寻找圣杯之旅 #1 | S02-06S4:ability:trial-complete:f95fed6f3ff0efc0 | trial-complete/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.shuffle → resolution:visibility.policy → resolution:legacy.resolve | 2 | 触发 可查看我方牌库，选择1张【彼界】军团展示并加入手牌。随后重洗牌库。 |
+| S02-06S4 寻找圣杯之旅 #2 | S02-06S4:ability:friendly-round-table-enter:7dd7597016b45f25 | friendly-round-table-enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 我方 回合1次 我方【圆桌骑士】登场时，可获得1符文。 |
+| S02-06S5 芬尼亚传奇 #1 | S02-06S5:ability:static:1e799825eedf3331 | static/continuous | shared-rule-owner | 触发 可消耗1符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.modify-troops → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 触发 可消耗1符文：选择对方1张军团，本回合兵力-3000。本效果可重复发动 |
+| S02-06S5 芬尼亚传奇 #2 | S02-06S5:ability:static:5444a7c87e0351bd | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1符文 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:special.domain → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗1符文：将我方1张&lt;芬恩&gt;或1张原本兵力不高于4000的【彼界】军团转为活跃 |
+| S02-06S6 十字军东征 #1 | S02-06S6:ability:after-attack:54e87bc748d2e1f9 | after-attack/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → resolution:cost.discard → resolution:operation.move-zone → resolution:operation.attack-rule → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 1 | 我方 回合1次 可消耗X符文选择以下一项。1张符文：选择我方1张【试炼军团】，本回合下一次进攻无损。2张符文：本回合我方1张&lt;狮心王理查一世&gt;。击杀时获得贯穿。2张符文：弃置1张手牌，并将墓地1张只有【彼界】特征的卡牌加入手牌 |
+| S02-DS01 天地异变 #1 | S02-DS01:ability:static:31558cb4f3e2c3da | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 所有玩家将牌库翻转进行游戏，且玩家无法从手牌打出与其牌库顶部相同兵种的军团。（需要重洗或清点牌库数量时，临时将牌库翻转回背面朝上） |
+| S02-DS02 迷雾绝境 #1 | S02-DS02:ability:disaster:04079feaac3ff5d0 | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:cost.discard → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 所有玩家弃置手牌，直至手牌数量不高于5张 |
+| S02-DS02 迷雾绝境 #2 | S02-DS02:ability:static:01aeea1f7fc7e317 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 兵力不高于2000的军团无法进攻主宰。挑衅效果无效。不可进攻处于活跃状态的前排军团 |
+| S02-DS03 无眠之夜 #1 | S02-DS03:ability:disaster:a8ef93cfb61d4218 | disaster/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 触发 双方弃置各自战场上所有原本兵力不高于2000的军团。 |
+| S02-DS03 无眠之夜 #2 | S02-DS03:ability:continuous:fed4f60f2af1523c | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.damage-master → duration:duration.apply → resolution:legacy.resolve | 0 | 持续 当玩家使用主动休整时，对其主宰造成1点非致命伤害。 |
+| S02-DS04 风暴乱象 #1 | S02-DS04:ability:disaster:c7799b543e0bb0eb | disaster/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.move → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 双方后排所有卡牌回到所有者手牌中，随后将双方前排所有军团向后位移1格 |
+| S02-DS04 风暴乱象 #2 | S02-DS04:ability:static:00575cc9fcb1aaaa | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 远程军团无法发动远程进攻 |
+| S02-DS05 暴怒之罪 #1 | S02-DS05:ability:disaster:7c72353dac1c7dd1 | disaster/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.damage-master | 1 | 触发 对所有主宰造成1点非致命伤害 |
+| S02-DS05 暴怒之罪 #2 | S02-DS05:ability:static:335d304b639c5d3f | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 双方军团 |
+| S02-DS05 暴怒之罪 #3 | S02-DS05:ability:attack:4326fa5eef9e6e3a | attack/triggered | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:operation.attack-rule → resolution:special.domain → resolution:legacy.resolve | 1 | 进攻时必须优先选择进攻范围内的对方军团作为进攻目标 |
+| S02-DS06 傲慢之罪 #1 | S02-DS06:ability:disaster:7d81bfd73e044cc2 | disaster/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → target:selection.target → target:selection.mode → resolution:cost.discard → resolution:special.domain → resolution:operation.composite-flow | 1 | 触发 战场军团数量多的玩家选择以下1项。·弃置战场军团直到数量一致。·弃置战场军团数量之差的手牌 |
+| S02-DS06 傲慢之罪 #2 | S02-DS06:ability:static:c1632b7b22b87c4f | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:cost.pay-morale → resolution:operation.move-zone → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 玩家发动主宰效果需要额外消耗1士气，且手牌所有军团登场费用+1 |
+| ST-DS01 怒触不周山 #1 | ST-DS01:ability:disaster:0c65265cbaf95168 | disaster/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 触发 将所有前排兵力不高于4000的军团置入所有者墓地。 |
+| ST-DS02 色欲之罪 #1 | ST-DS02:ability:continuous:88bf24739956a581 | continuous/continuous | composite-definition | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.modify-troops → cost:cost.discard → resolution:operation.composite-flow | 0 | 持续 带有天灾等级的军团兵力+1000，且发动进攻需要弃置1张手牌。 |
+| ST-DS03 邪眼末日 #1 | ST-DS03:ability:disaster:e661737a9a1faebe | disaster/triggered | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → resolution:cost.discard → resolution:legacy.resolve | 1 | 触发 双方弃置各自战场上1张军团。 |
+| ST01-01 赵云 #1 | ST01-01:ability:active:69626894e55e27e5 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次位移。 |
+| ST01-01 赵云 #2 | ST01-01:ability:enter:c162f6022d363e83 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：获得冲锋。 |
+| ST01-01 赵云 #3 | ST01-01:ability:granted:c502e9ac1489cd1a | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 冲锋 在登场的回合即可进行进攻。 |
+| ST01-01 赵云 #4 | ST01-01:ability:after-attack:961ff51902cf99a2 | after-attack/triggered | composite-definition | 击杀时 可返还1士气 | trigger:trigger.observe → condition:condition.expression → condition:control.optional → cost:cost.return-morale → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 击杀时 可返还1士气：本回合获得贯穿。 |
+| ST01-01 赵云 #5 | ST01-01:ability:granted:6ec4b634ed12b206 | granted/granted-effect | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 贯穿 击杀时，以此军团剩余兵力对对方主宰发动1次进攻；此次进攻不会触发进攻时效果。 |
+| ST01-02 武松 #1 | ST01-02:ability:after-attack:d9cbc9c8569f7ebb | after-attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.add-morale | 1 | 击杀时 可从士气牌库追加1张休整的士气。 |
+| ST01-03 萧何 #1 | ST01-03:ability:enter:57c1a5eb3e176ab8 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → target:selection.target → cost:cost.return-morale → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：将1张&lt;韩信&gt;从手牌活跃登场。 |
+| ST01-04 程咬金 #1 | ST01-04:ability:static:af427a4637e1c138 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」获得【挑衅】。 |
+| ST01-04 程咬金 #2 | ST01-04:ability:keyword-definition:c24a6b9d8de8435a | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻带有此效果的军团。 |
+| ST01-06 刘季 #1 | ST01-06:ability:enter:bc1179905ede188d | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合我方下1张军团登场费用-1。 |
+| ST01-07 诸葛连弩兵 #1 | ST01-07:ability:after-attack:ab9f41e30020180d | after-attack/triggered | composite-definition | 我方 回合1次 此军团进攻后，可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.ready → resolution:operation.composite-flow | 1 | 我方 回合1次 此军团进攻后，可返还1士气：将此军团转为活跃。 |
+| ST01-07 诸葛连弩兵 #2 | ST01-07:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST01-08 聂隐娘 #1 | ST01-08:ability:enter:689604b5d4407771 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合对方军团挑衅效果无效。 |
+| ST01-08 聂隐娘 #2 | ST01-08:ability:static:9ba2f4f5354a2a05 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 「位于前排」进攻距离+1，远程进攻无损。 |
+| ST01-09 王昭君 #1 | ST01-09:ability:enter:40fa06b2cbf36d56 | enter/triggered | composite-definition | 登场时 可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → resolution:operation.draw → resolution:operation.composite-flow | 1 | 登场时 可返还1士气：抽取1张牌。 |
+| ST01-09 王昭君 #2 | ST01-09:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST01-10 暗度陈仓 #1 | ST01-10:ability:reaction:6c595d8cfc22fc59 | reaction/triggered | composite-definition | 对方 进攻后，可返还1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.return-morale → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 2 | 对方 进攻后，可返还1士气：从我方手牌中将1张费用不高于4的【天廷】军团活跃登场。 |
+| ST01-C1 士气·天廷 #1 | ST01-C1:ability:static:6907bfcf5dbbfeb4 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.add-morale → resolution:operation.ready | 0 | 我方 回合1次 可消耗2士气：从士气牌库追加1张活跃的士气。 |
+| ST01-C1 士气·天廷 #2 | ST01-C1:ability:static:605b9aa3d8a1ed93 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.rest | 0 | 我方 回合1次 我方士气为0张时，可从士气牌库追加2张休整的士气。 |
+| ST01-M1 嫦娥 #1 | ST01-M1:ability:morale-return:3488642de8b32238 | morale-return/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.add-morale → resolution:operation.composite-flow | 1 | 回合1次 我方返还士气时，可从士气牌库追加1张休整的士气。 |
+| ST02-01 胡夫 #1 | ST02-01:ability:continuous:42ada4e462a2fb94 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 此军团登场时不受反击战术效果影响。 |
+| ST02-01 胡夫 #2 | ST02-01:ability:enter:e216943b2cbaa027 | enter/triggered | composite-definition | 登场时 可弃置我方战场1张&lt;陵墓守卫&gt; | trigger:trigger.observe → condition:control.optional → target:selection.target → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 登场时 可弃置我方战场1张&lt;陵墓守卫&gt;：选择对方1张军团，本回合兵力-4000。 |
+| ST02-02 沙漠卫兵 #1 | ST02-02:ability:continuous:c51a646e6338a9d1 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
+| ST02-02 沙漠卫兵 #2 | ST02-02:ability:keyword-definition:c24a6b9d8de8435a | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻带有此效果的军团。 |
+| ST02-03 白沙瓦舞蛇人 #1 | ST02-03:ability:enter:22666493c9063c6a | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → target:visibility.policy → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可将手牌/牌库中1张&lt;沙漠眼镜蛇&gt;活跃登场。 |
+| ST02-04 绿洲的商人 #1 | ST02-04:ability:enter:dfff4c5cd3dd45cf | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
+| ST02-05 绿洲的舞女 #1 | ST02-05:ability:active:80aa98cc24ef764e | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.modify-troops → duration:duration.apply | 1 | 主动休整 我方所有【太阳城】军团，本回合兵力+1000。 |
+| ST02-06 乔泽 #1 | ST02-06:ability:enter:3f4098b307fbf1d6 | enter/triggered | composite-definition | 登场时 可弃置我方战场上1张军团 | trigger:trigger.observe → condition:control.optional → target:selection.target → target:selection.target → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 登场时 可弃置我方战场上1张军团：选择对方1张军团，本回合兵力-2000。 |
+| ST02-07 陵墓防卫体 #1 | ST02-07:ability:opponent-back-to-front:238947e7df03866d | opponent-back-to-front/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 回合1次 对方军团从后排位移至前排时，可使其本回合兵力-3000。 |
+| ST02-08 阿肯那顿 #1 | ST02-08:ability:enter:4bcd58fbf1c30cd3 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw → resolution:operation.draw | 1 | 登场时 抽取1张卡牌。随后，对方抽取1张牌。 |
+| ST02-08 阿肯那顿 #2 | ST02-08:ability:death:915ebb139267c275 | death/triggered | composite-definition | 阵亡时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.discard → resolution:operation.heal-master → resolution:operation.composite-flow | 1 | 阵亡时 可弃置1张手牌：我方主宰增加1点血量。 |
+| ST02-08 阿肯那顿 #3 | ST02-08:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST02-10 沙漠送葬 #1 | ST02-10:ability:play:b9dffb72dd89ca59 | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:operation.set-state → resolution:operation.composite-flow | 2 | 将墓地1张&lt;陵墓守卫&gt;活跃登场，回合结束时，弃置该&lt;陵墓守卫&gt;。 |
+| ST02-C1 士气·太阳城 #1 | ST02-C1:ability:static:f2b97501194b5c40 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.move-zone → resolution:operation.ready → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2士气：将1张&lt;陵墓守卫&gt;从我方墓地活跃登场。 |
+| ST02-C1 士气·太阳城 #2 | ST02-C1:ability:static:29d1864e955f856e | static/continuous | shared-rule-owner | 我方 回合1次 若我方手牌不高于3张，可消耗1士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 我方 回合1次 若我方手牌不高于3张，可消耗1士气：抽取1张牌。 |
+| ST02-M1 荷鲁斯 #1 | ST02-M1:ability:active:3594aeaf557df9df | active/triggered | composite-definition | 我方 回合1次 可弃置我方战场2张&lt;陵墓守卫&gt; 或 消耗1士气并弃置我方战场2张军团 | trigger:trigger.observe → cost:selection.mode → cost:cost.discard → cost:cost.pay-morale → target:selection.target → cost:cost.discard → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 2 | 我方 回合1次 可弃置我方战场2张&lt;陵墓守卫&gt; 或 消耗1士气并弃置我方战场2张军团：选择墓地1张兵力不高于2000的【太阳城】军团休整登场。 |
+| ST03-01 蛇眼西格德 #1 | ST03-01:ability:entry-discount:373b8092202cdf17 | entry-discount/replacement | shared-rule-owner | 可将墓地1张卡牌返回牌库底部 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:operation.move-zone → resolution:operation.set-state → resolution:legacy.resolve | 0 | 可将墓地1张卡牌返回牌库底部：此军团登场费用-1。 |
+| ST03-01 蛇眼西格德 #2 | ST03-01:ability:enter:398588321106818e | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方军团。 |
+| ST03-02 维京狂战士 #1 | ST03-02:ability:continuous:057a02a660ebfae1 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.set-state | 0 | 「位于手牌」若我方主宰血量不高于7，此军团登场费用-1。 |
+| ST03-03 弗蕾迪斯 #1 | ST03-03:ability:enter:4418313c8074f4ef | enter/triggered | composite-definition | 登场时 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.target → target:selection.target → cost:cost.discard → resolution:operation.move-zone → resolution:operation.composite-flow | 2 | 登场时 可弃置1张手牌：将墓地1张【阿斯加德】军团加入手牌。 |
+| ST03-04 维京掠夺者 #1 | ST03-04:ability:after-damage:6ba9889990bdac3f | after-damage/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.draw | 1 | 此军团对对方主宰造成伤害时，抽取2张牌。 |
+| ST03-05 克里斯蒂娜 #1 | ST03-05:ability:static:efd7771da618f0ac | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule | 0 | 进攻距离+1，远程进攻无损。 |
+| ST03-05 克里斯蒂娜 #2 | ST03-05:ability:active:87d142bd0e12a218 | active/activated | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → cost:cost.rest-source → duration:duration.apply | 1 | 主动休整 本回合从我方手牌中打出的下1张费用不高于3的&lt;主动战术&gt;无需消耗费用，改为对我方主宰造成1点伤害。 |
+| ST03-07 送葬者凯恩 #1 | ST03-07:ability:enter:629a2d1a4ab94c1d | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可弃置我方牌库顶部2张牌。 |
+| ST03-07 送葬者凯恩 #2 | ST03-07:ability:active:0d4ebc1a2ab8b128 | active/activated | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:operation.move-zone → resolution:legacy.resolve | 1 | 主动休整 弃置我方牌库顶部1张牌。 |
+| ST03-08 渴求死亡的勇士 #1 | ST03-08:ability:continuous:7ffc6ec471452fc7 | continuous/continuous | composite-definition | — | trigger:trigger.observe → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 「位于墓地」可最多视为3张【阿斯加德】军团。 |
+| ST03-10 传奇的血脉 #1 | ST03-10:ability:play:9c7331d3ea2cdebb | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.modify-troops → resolution:operation.modify-troops → resolution:operation.composite-flow | 3 | 选择我方1张【阿斯加德】军团，本回合兵力+2000。每当我方墓地有3张【阿斯加德】军团，该军团兵力额外+1000。 |
+| ST03-C1 士气·阿斯加德 #1 | ST03-C1:ability:static:36b1c5751cc508f9 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → cost:cost.pay-morale → resolution:operation.draw | 0 | 我方 回合1次 可消耗2士气：抽取1张牌；若我方主宰血量不高于5，可额外消耗1士气，我方主宰增加1点血量。 |
+| ST03-M1 西芙 #1 | ST03-M1:ability:active:62825471d656acbb | active/triggered | composite-definition | 我方 回合1次 可将墓地3张【阿斯加德】卡牌自选顺序返回牌库底部 | trigger:trigger.observe → target:selection.target → cost:operation.move-zone → resolution:operation.draw → resolution:operation.composite-flow | 1 | 我方 回合1次 可将墓地3张【阿斯加德】卡牌自选顺序返回牌库底部：抽取1张牌。 |
+| ST04-01 森可成 #1 | ST04-01:ability:active:2786430f57a9abaa | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.move → duration:duration.apply | 1 | 我方 回合1次 可进行1次位移。 |
+| ST04-01 森可成 #2 | ST04-01:ability:continuous:59dd263106457575 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 3，且在对方回合此军团兵力+1000。 |
+| ST04-01 森可成 #3 | ST04-01:ability:keyword-definition:c24a6b9d8de8435a | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻带有此效果的军团。 |
+| ST04-02 佐佐木小次郎 #1 | ST04-02:ability:attack:4aeae02df8a46a52 | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.composite-flow | 1 | 进攻时 若我方手牌数量不高于对方，对方弃置1张手牌。 |
+| ST04-02 佐佐木小次郎 #2 | ST04-02:ability:death:90cbed3b7337eee3 | death/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 可击杀对方最多2张原本兵力不高于2000的军团。 |
+| ST04-03 侍大将 #1 | ST04-03:ability:enter:398588321106818e | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方军团。 |
+| ST04-04 甲斐姬 #1 | ST04-04:ability:enter:8fa5e48afc1906a6 | enter/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.set-state → resolution:operation.composite-flow | 1 | 登场时 本回合我方主宰效果无需消耗士气。 |
+| ST04-05 近藤勇 #1 | ST04-05:ability:opponent-turn-lethal:133419b5471f0097 | opponent-turn-lethal/replacement | composite-definition | 对方回合 当我方其他【高天原】军团即将阵亡时，可弃置此军团 | trigger:trigger.observe → cost:cost.discard → resolution:operation.set-state → resolution:operation.composite-flow | 0 | 对方回合 当我方其他【高天原】军团即将阵亡时，可弃置此军团：代替其承受该次进攻或效果。 |
+| ST04-06 吉原的花魁 #1 | ST04-06:ability:active:8f6b1b9dfc246e36 | active/activated | shared-rule-owner | — | trigger:trigger.observe → target:selection.target → cost:cost.rest-source → resolution:operation.modify-troops → duration:duration.apply | 3 | 主动休整 选择对方1张军团，本回合兵力-1000。选择我方1张军团，本回合兵力+1000。 |
+| ST04-07 木下藤吉郎 #1 | ST04-07:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST04-07 木下藤吉郎 #2 | ST04-07:ability:continuous:8f395636980d57ca | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.keyword → resolution:legacy.resolve | 0 | 「位于后排」获得协防。（可支援我方任意前排军团，可联合支援） |
+| ST04-09 野猪王 #1 | ST04-09:ability:enter:c3d7bde060b4a77f | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.set-state | 1 | 登场时 本回合可进攻对方主宰。 |
+| ST04-10 侵略如火 #1 | ST04-10:ability:continuous:4a22e589b1849359 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 若我方战场存在&lt;武田信玄&gt;，此战术从手牌打出的费用-1。 |
+| ST04-10 侵略如火 #2 | ST04-10:ability:play:b17a4a336dbbbe35 | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → continuous:operation.keyword → resolution:operation.composite-flow | 2 | 将此战术叠放至我方1张【高天原】军团下方，被叠放的军团获得强攻。（进攻对主宰造成额外1点伤害。） |
+| ST04-C1 士气·高天原 #1 | ST04-C1:ability:static:d9cac21fb706e3c8 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → resolution:operation.draw → resolution:operation.ready → resolution:operation.move | 0 | 我方 回合1次 可消耗2士气：抽取1张牌。随后可选择我方1张活跃的军团进行1格位移。 |
+| ST04-M1 迦具土 #1 | ST04-M1:ability:legion-attack-timing:30752d1d1028362e | legion-attack-timing/triggered | composite-definition | 回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌 | trigger:trigger.observe → condition:control.optional → target:selection.mode → cost:cost.pay-morale → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.composite-flow | 3 | 回合1次 我方军团进攻/被进攻时，可消耗1士气或弃置1张手牌：该军团本回合兵力+2000。 |
+| ST05-01 埃涅阿斯·晋升 #1 | ST05-01:ability:promotion-enter:f315c7f28cfe179a | promotion-enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:visibility.policy → target:selection.target → resolution:operation.move-zone → resolution:operation.shuffle → resolution:operation.composite-flow | 3 | 晋升登场时 可从牌库选择最多2张【远程】军团活跃登场，随后重洗牌库。 |
+| ST05-03 珀涅罗珀 #1 | ST05-03:ability:continuous:3119db9911c31cf3 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → continuous:operation.attack-rule → continuous:operation.attack-rule → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST05-03 珀涅罗珀 #2 | ST05-03:ability:enter:bf56abfff5fc5e94 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → cost:special.domain → target:selection.target → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可消耗并翻转1神力，将手牌中1张费用不高于3的【奥林匹斯】军团活跃登场。 |
+| ST05-04 美狄亚 #1 | ST05-04:ability:enter:144b29e0405606a2 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.draw | 1 | 登场时 若我方战场军团合计兵力少于对方，可抽取2张牌。 |
+| ST05-04 美狄亚 #2 | ST05-04:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST05-06 特勒马科斯 #1 | ST05-06:ability:active:cc5d71f55d3a253f | active/triggered | shared-rule-owner | — | trigger:trigger.observe → cost:cost.rest-source → resolution:visibility.policy → resolution:selection.target → resolution:visibility.policy → resolution:operation.move-zone → resolution:operation.move-zone → resolution:operation.composite-flow | 3 | 主动休整 查看牌库顶部3张牌，选择其中1张【远程】军团或【奥林匹斯】战术卡，展示并加入手牌，其余卡牌自选顺序全部返回牌库顶部或全部返回牌库底部。 |
+| ST05-07 安提诺乌斯 #1 | ST05-07:ability:enter:3e777b4d7b93e218 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → target:selection.target → resolution:operation.ready | 1 | 登场时 若本回合因主宰弃置过手牌，可将我方1张休整的【奥林匹斯】军团转为活跃。 |
+| ST05-08 希帕蒂娅 #1 | ST05-08:ability:enter:c25e438ab6938fb8 | enter/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword | 1 | 登场时 获得冲锋。（可在登场回合进攻） |
+| ST05-08 希帕蒂娅 #2 | ST05-08:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST05-09 美杜莎 #1 | ST05-09:ability:attack:951ab40e312cca17 | attack/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.keyword → resolution:operation.modify-troops | 1 | 进攻时 获得震击，本回合兵力+1000。 |
+| ST05-09 美杜莎 #2 | ST05-09:ability:static:e3471cd2a7042e59 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.attack-rule → resolution:operation.attack-rule → duration:duration.apply → resolution:legacy.resolve | 0 | 进攻距离+1，远程进攻无损。 |
+| ST05-10 猎神的赐福 #1 | ST05-10:ability:play:71016c4f4c920ea2 | play/triggered | composite-definition | — | trigger:trigger.observe → target:selection.mode → target:selection.target → resolution:operation.set-state → resolution:operation.composite-flow | 3 | 选择一项：我方1张【奥林匹斯】军团本回合震击伤害+2000；或我方1张【奥林匹斯】【远程】军团本回合进攻时兵力+2000。 |
+| ST05-C1 士气·奥林匹斯 #1 | ST05-C1:ability:static:6fe475d8923feb65 | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale | 0 | 我方 回合1次 可消耗1士气：翻转1张士气。 |
+| ST05-M1 雅典娜 #1 | ST05-M1:ability:active:b1f11ab05f68dda0 | active/triggered | shared-rule-owner | 我方 回合1次 可弃置1张手牌 | trigger:trigger.observe → target:selection.target → cost:cost.discard → target:selection.target → target:selection.target → resolution:operation.modify-troops → resolution:operation.attack-rule → resolution:operation.composite-flow | 3 | 我方 回合1次 可弃置1张手牌：翻转1张士气。选择我方前排最多2张【奥林匹斯】军团，本回合兵力+1000，且对对方主宰造成的伤害+1。 |
+| ST06-01 伊丽莎白一世 #1 | ST06-01:ability:continuous:3ced1d4d38141877 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → continuous:operation.set-state → resolution:operation.composite-flow | 0 | 若我方场上存在〈伊丽莎白 都铎〉，此军团登场费用-2。 |
+| ST06-01 伊丽莎白一世 #2 | ST06-01:ability:enter:40f50e42ba982305 | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.set-state → resolution:operation.composite-flow | 1 | 登场时 选择对方最多2张休整的士气，下个重置阶段无法转为活跃。 |
+| ST06-02 森林魁熊 #1 | ST06-02:ability:continuous:c51a646e6338a9d1 | continuous/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.set-state → resolution:legacy.resolve | 0 | 「位于前排」获得ABILITY 2，且在对方回合此军团兵力+1000。 |
+| ST06-02 森林魁熊 #2 | ST06-02:ability:keyword-definition:c24a6b9d8de8435a | keyword-definition/keyword-definition | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.keyword → resolution:legacy.resolve | 1 | 挑衅 对方只可进攻带有此效果的军团。 |
+| ST06-03 加雷斯 #1 | ST06-03:ability:enter:1775bb55f896a6fc | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |
+| ST06-03 加雷斯 #2 | ST06-03:ability:after-attack:7a77bba666481ed8 | after-attack/triggered | composite-definition | — | trigger:trigger.observe → condition:condition.expression → condition:control.optional → resolution:operation.ready → resolution:operation.modify-troops → duration:duration.apply → resolution:operation.composite-flow | 1 | 击杀时 可将此军团转为活跃，本回合兵力+2000。 |
+| ST06-04 莫德雷德 #1 | ST06-04:ability:active:719cc1c7c1084fa0 | active/rule-action | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.move | 1 | 我方 回合1次 可进行1次骑兵位移。 |
+| ST06-04 莫德雷德 #2 | ST06-04:ability:enter:8dd378e7c1342c6e | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.mode → resolution:operation.gain-rune → resolution:operation.keyword → resolution:operation.composite-flow | 3 | 登场时 选择获得1符文或获得冲锋。 |
+| ST06-04 莫德雷德 #3 | ST06-04:ability:death:4aff670fce04a56c | death/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 阵亡时 击杀对方1张兵力不高于2000的军团。 |
+| ST06-05 栖木猎鹰 #1 | ST06-05:ability:enter:f3fa11bf004dd4f4 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
+| ST06-05 栖木猎鹰 #2 | ST06-05:ability:attack:22988d3e110f3200 | attack/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 进攻时 可抽取1张牌。 |
+| ST06-06 费奥纳的骑士 #1 | ST06-06:ability:enter:aba70ffd44c3b9ee | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.draw | 1 | 登场时 可抽取1张牌。 |
+| ST06-06 费奥纳的骑士 #2 | ST06-06:ability:death:5ce0a0860c35273d | death/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.advance-trial | 1 | 阵亡时 试炼+2。 |
+| ST06-07 布狄卡 #1 | ST06-07:ability:enter:8f17b66055b5375c | enter/triggered | composite-definition | — | trigger:trigger.observe → target:selection.target → resolution:operation.keyword → resolution:operation.composite-flow | 1 | 登场时 选择我方1张【彼界】军团，直到下个我方回合开始前获得一次免死。 |
+| ST06-08 纯白的灵鹿 #1 | ST06-08:ability:enter:f57a0cd8aab105c3 | enter/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 登场时 可获得1符文。 |
+| ST06-09 光之剑 #1 | ST06-09:ability:enter:9cab8d75151c4679 | enter/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 登场时 可击杀对方最多2张原本兵力不高于2000的军团。 |
+| ST06-09 光之剑 #2 | ST06-09:ability:active:e533dbf15f08cea0 | active/triggered | shared-rule-owner | 主动休整 弃置1张手牌 | trigger:trigger.observe → cost:cost.rest-source → target:selection.target → cost:cost.discard → target:selection.mode → resolution:legacy.resolve | 3 | 主动休整 弃置1张手牌：选择我方前排1张【彼界】军团，本回合兵力+2000；或获得1符文。 |
+| ST06-10 自然馈赠 #1 | ST06-10:ability:play:a7a7df602ed2165b | play/activated | fine-definition | — | trigger:trigger.observe → resolution:operation.advance-trial | 1 | 试炼+2。 |
+| ST06-C1 士气·彼界 #1 | ST06-C1:ability:static:88a76dc195d499ee | static/continuous | shared-rule-owner | 我方 回合1次 可消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗2士气：获得1符文。 |
+| ST06-M1 银臂努阿达 #1 | ST06-M1:ability:rune-spent:b36eeb46f9825a4c | rune-spent/triggered | composite-definition | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.modify-troops → resolution:operation.composite-flow | 1 | 我方消耗符文时，每消耗1符文，可选择我方1张【彼界】军团，本回合兵力+1000。 |
+| ST06-M1 银臂努阿达 #2 | ST06-M1:ability:active:550b3d9a69e113e8 | active/triggered | composite-definition | 我方 回合1次 可消耗2符文 | trigger:trigger.observe → cost:special.domain → target:selection.target → resolution:operation.ready → resolution:operation.advance-trial → resolution:operation.composite-flow | 3 | 我方 回合1次 可消耗2符文：将我方最多2张士气转为活跃，试炼+2。 |
+| ST06-S1 探寻天空之城 #1 | ST06-S1:ability:trial-complete:0b7f57a9cd62248a | trial-complete/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.gain-rune → resolution:operation.heal-master → resolution:operation.draw → resolution:operation.composite-flow | 8 | 触发 可获得2符文。我方主宰可增加2点血量。可抽取1张牌。 |
+| ST06-S1 探寻天空之城 #2 | ST06-S1:ability:active:6251a3b114da92d4 | active/triggered | composite-definition | — | trigger:trigger.observe → resolution:operation.set-state → resolution:operation.composite-flow | 1 | 我方 回合1次 本回合我方下1张【彼界】军团登场费用-1。 |
+
+## 无能力卡
+
+ST01-05、ST02-09、ST03-06、ST03-09、ST04-08、ST05-02、ST05-05

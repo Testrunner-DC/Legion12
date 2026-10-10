@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-card-image-and-uploaded-altart",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "卡图稳定性与自主上传异画修正",
+  "changes": [
+    {
+      "category": "content",
+      "text": "卡图在清单补全、备用来源切换和短暂加载失败时会保持当前可用画面，避免先显示卡背或旧图后又闪回正确卡图。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardImage.vue"
+      ]
+    },
+    {
+      "category": "content",
+      "text": "管理员自主上传并授予权限的异画会出现在完整卡池中，可查看同一原卡的可用版本并切换预览；公开画廊与玩家实际拥有权仍按各自边界展示。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardArchive.vue",
+        "opcgpro-vue/src/l12/cardArchiveVersions.ts"
+      ]
+    }
+  ]
+}

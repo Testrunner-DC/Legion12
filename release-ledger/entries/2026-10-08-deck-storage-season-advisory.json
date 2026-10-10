@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "deck-storage-season-advisory-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "牌库编辑器",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "符合基础构筑规则、但不符合本赛季禁限的牌库现在也可编辑、保存和公开；编辑器继续提示本赛季排位可用性，参加排位仍按当前赛季规则检查。",
+      "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue"]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "kagutsuchi-attack-candidates-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "同时触发的进攻效果",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "修复迦具土与本多忠胜等军团的进攻时效果同时触发后，军团效果可能不结算的问题；玩家仍可选择发动顺序，费用、目标、响应及后续结算各按原效果处理。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs"
+      ]
+    }
+  ]
+}

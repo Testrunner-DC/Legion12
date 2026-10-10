@@ -1,0 +1,1390 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.Data.Sqlite;
+using TwelveLegions.Server;
+using Xunit;
+
+namespace GrandUMI.Tests;
+
+[Collection("Platform environment")]
+public sealed class ControlPlaneOperationsAndScopedRolesTests
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public void DurableRolesArePlayerAndAdminAndLegacyRolesMigratePersistently()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var original = new L12PlatformStore(path);
+            var account = original.Register("tlegac900d1", "password-123").Account!;
+            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            var row = mirror["Accounts"]!.AsArray().OfType<JsonObject>()
+                .Single(item => item["Id"]!.GetValue<string>() == account.Id);
+            row["Role"] = "release-manager";
+            File.WriteAllText(path, mirror.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.Combine(root, "platform.db"));
+
+            var migrated = new L12PlatformStore(path);
+
+            Assert.Equal(new[] { "admin", "player" }, L12Authorization.Roles);
+            Assert.Equal("player", migrated.Account(account.Id)!.Role);
+            Assert.False(L12Authorization.IsKnownRole("support"));
+            Assert.False(L12Authorization.IsKnownRole("editor"));
+            Assert.False(L12Authorization.IsKnownRole("referee"));
+            Assert.False(L12Authorization.IsKnownRole("organizer"));
+            Assert.False(L12Authorization.IsKnownRole("release-manager"));
+            Assert.Equal("player", JsonNode.Parse(File.ReadAllText(path))!["Accounts"]!.AsArray()
+                .OfType<JsonObject>().Single(item => item["Id"]!.GetValue<string>() == account.Id)["Role"]!
+                .GetValue<string>());
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void TournamentCreatorAndFriendRefereeReceiveOnlyTournamentScopedAuthority()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var organizer = store.Register("tscope4d437", "password-123").Account!;
+            var referee = store.Register("tscopef8d35", "password-123").Account!;
+            var outsider = store.Register("tscope1aa63", "password-123").Account!;
+
+            Assert.True(store.SendFriendRequest(organizer.Id, referee.Id).Success);
+            Assert.True(store.ResolveFriendRequest(referee.Id, organizer.Id, true).Success);
+            var tournament = store.CreateTournament(organizer, CreateTournamentPayload([referee.Id]),
+                Context("scoped-create"), true);
+
+            Assert.Equal(organizer.Id, tournament.OrganizerAccountId);
+            Assert.Equal("player", store.Account(referee.Id)!.Role);
+            Assert.False(L12Authorization.HasPermission(referee, L12Permission.TournamentRulingsWrite));
+            Assert.False(L12Authorization.HasPermission(organizer, L12Permission.TournamentsManage));
+            Assert.Equal(referee.Id, Assert.Single(tournament.Referees).AccountId);
+            Assert.Throws<L12TournamentScopeException>(() => store.SetTournamentStaff(outsider,
+                tournament.Id, new L12TournamentStaffPayload([]), tournament.Version,
+                Context("outsider-staff"), true));
+
+            var otherOrganizer = store.Register("tother83f5c", "password-123").Account!;
+            Assert.Throws<ArgumentException>(() => store.CreateTournament(otherOrganizer,
+                CreateTournamentPayload([referee.Id]), Context("not-friends"), true));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsConfigPreviewApplyReplayHistoryRollbackAndRestartAreConsistent()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var changed = initial.Config with
+            {
+                CardRestrictions = [new L12CardRestrictionConfig("S01-0001", 0, "season ban")],
+                Maintenance = new L12MaintenanceConfig(true, "计划维护", null, null),
+            };
+
+            var bypass = Assert.Throws<L12OperationsConfigException>(() => store.ApplyOperationsConfig(admin,
+                changed with { Season = initial.Config.Season with { Id = "S02", Name = "S02" } },
+                initial.Version, "bypass season lifecycle", Context("ops-season-bypass")));
+            Assert.Equal("season_activation_required", bypass.Code);
+
+            var preview = store.PreviewOperationsConfig(admin, changed, initial.Version,
+                Context("ops-preview") with { Permission = "admin.operations.write" });
+            Assert.True(preview.Valid);
+            Assert.DoesNotContain("season", preview.Changes);
+            Assert.Equal(initial.Version, store.OperationsConfig(admin).Version);
+
+            var commandId = Guid.NewGuid().ToString("N");
+            var envelope = new L12AdminCommandEnvelope<L12OperationsConfigPayload>(commandId,
+                "ops-apply-1", "operations.config.apply", admin, DateTimeOffset.UtcNow,
+                "operations:config", "apply operations config", false, initial.Version, changed,
+                Context("ops-apply-1") with
+                {
+                    Permission = "admin.operations.write",
+                    CommandId = commandId,
+                    IdempotencyKey = "ops-apply-1",
+                    ExpectedVersion = initial.Version,
+                });
+            var bus = new L12AdminCommandBus(store);
+            L12AdminCommandResult<L12OperationsConfigOperationView> Execute()
+                => bus.Execute(envelope, L12Permission.AdminOperationsWrite,
+                    current => L12AdminCommandResult<L12OperationsConfigOperationView>.Ok(
+                        store.ApplyOperationsConfig(current.Actor, current.Payload,
+                            current.ExpectedVersion!.Value, current.Reason, current.AuditContext)));
+
+            var applied = Execute();
+            var replay = Execute();
+            Assert.True(applied.Success);
+            Assert.False(applied.Pending);
+            Assert.True(replay.Success);
+            Assert.True(replay.Replayed);
+            Assert.Equal(initial.Version + 1, store.OperationsConfig(admin).Version);
+            var appliedVersionId = applied.Value!.HistoryEntry.Id;
+
+            var reloaded = new L12PlatformStore(path);
+            var reloadedAdmin = reloaded.Login("Admin", "L12master").Account!;
+            var persisted = reloaded.OperationsConfig(reloadedAdmin);
+            Assert.Equal(initial.Config.Season.Id, persisted.Config.Season.Id);
+            Assert.True(persisted.Config.Maintenance.Enabled);
+            Assert.Contains(reloaded.OperationsConfigHistory(reloadedAdmin), item => item.Id == appliedVersionId);
+
+            var rollback = reloaded.RollbackOperationsConfig(reloadedAdmin, initial.VersionId,
+                persisted.Version, "restore initial", Context("ops-rollback"));
+            Assert.True(rollback.Applied);
+            Assert.Equal(initial.Config.Season.Id, rollback.Current.Config.Season.Id);
+            Assert.Equal(persisted.Version + 1, rollback.Current.Version);
+            Assert.StartsWith("rollback:", rollback.HistoryEntry.Action);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsSectionsMergeDifferentSectionsWithoutOverwritingEachOther()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var room = store.OperationsConfigSection(admin, "room");
+            var announcements = store.OperationsConfigSection(admin, "announcements");
+
+            var roomResult = store.ApplyOperationsConfigSection(admin, "room",
+                new L12OperationsSectionPayload(
+                    DefaultRoomConfig: initial.Config.DefaultRoomConfig with { Spectating = "friends" },
+                    MatchModes: initial.Config.MatchModes), room.Revision,
+                new Dictionary<string, long>
+                {
+                    ["room/defaultRoomConfig/spectating"] =
+                        room.FieldRevisions["room/defaultRoomConfig/spectating"],
+                }, "room change", Context("ops-section-room"));
+            Assert.True(roomResult.Applied);
+
+            var announcement = new L12AnnouncementConfig("notice-a", "独立公告", true, 0);
+            var announcementResult = store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements: [announcement]), announcements.Revision,
+                new Dictionary<string, long> { ["announcements/items/notice-a"] = 0 },
+                "announcement change", Context("ops-section-announcement"));
+            Assert.True(announcementResult.Applied);
+
+            var persisted = store.OperationsConfig(admin);
+            Assert.Equal("friends", persisted.Config.DefaultRoomConfig.Spectating);
+            Assert.Equal("独立公告", Assert.Single(persisted.Config.Announcements!).Content);
+            Assert.Equal(room.Revision + 1, persisted.SectionRevisions!["room"]);
+            Assert.Equal(announcements.Revision + 1, persisted.SectionRevisions!["announcements"]);
+
+            var latestRoom = store.OperationsConfigSection(admin, "room");
+            var operationsVersionBeforeNoOp = store.OperationsConfig(admin).Version;
+            var noOp = store.ApplyOperationsConfigSection(admin, "room", latestRoom.Config,
+                latestRoom.Revision, new Dictionary<string, long>
+                {
+                    ["room/defaultRoomConfig/spectating"] =
+                        latestRoom.FieldRevisions["room/defaultRoomConfig/spectating"],
+                }, "same value", Context("ops-section-no-op"));
+            Assert.False(noOp.Applied);
+            Assert.Null(noOp.HistoryEntry);
+            Assert.Equal(operationsVersionBeforeNoOp, store.OperationsConfig(admin).Version);
+            Assert.Equal(latestRoom.Revision, noOp.Current.Revision);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsSectionRejectsNonEmptyPayloadWithoutFieldRevisions()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var room = store.OperationsConfigSection(admin, "room");
+
+            var error = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ApplyOperationsConfigSection(admin, "room", room.Config with
+                    {
+                        DefaultRoomConfig = room.Config.DefaultRoomConfig! with
+                            { Spectating = "friends" },
+                    }, room.Revision, new Dictionary<string, long>(),
+                    "must name fields", Context("ops-section-empty-fields")));
+
+            Assert.Equal("operations_field_revisions_required", error.Code);
+            Assert.Equal(room.OperationsVersion, store.OperationsConfig(admin).Version);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsSectionAllowsStaleSectionRevisionWhenChangedFieldsAreStillCurrent()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var room = store.OperationsConfigSection(admin, "room");
+
+            store.ApplyOperationsConfigSection(admin, "room",
+                new L12OperationsSectionPayload(
+                    DefaultRoomConfig: initial.Config.DefaultRoomConfig with { Spectating = "friends" },
+                    MatchModes: initial.Config.MatchModes), room.Revision,
+                new Dictionary<string, long>
+                {
+                    ["room/defaultRoomConfig/spectating"] =
+                        room.FieldRevisions["room/defaultRoomConfig/spectating"],
+                }, "first field", Context("ops-field-first"));
+
+            var merged = store.ApplyOperationsConfigSection(admin, "room",
+                new L12OperationsSectionPayload(
+                    DefaultRoomConfig: initial.Config.DefaultRoomConfig with { HandVisibility = "public" },
+                    MatchModes: initial.Config.MatchModes), room.Revision,
+                new Dictionary<string, long>
+                {
+                    ["room/defaultRoomConfig/handVisibility"] =
+                        room.FieldRevisions["room/defaultRoomConfig/handVisibility"],
+                }, "second field", Context("ops-field-second"));
+
+            Assert.True(merged.Applied);
+            Assert.Equal("friends", store.OperationsConfig(admin).Config.DefaultRoomConfig.Spectating);
+            Assert.Equal("public", store.OperationsConfig(admin).Config.DefaultRoomConfig.HandVisibility);
+
+            var conflict = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ApplyOperationsConfigSection(admin, "room",
+                    new L12OperationsSectionPayload(
+                        DefaultRoomConfig: initial.Config.DefaultRoomConfig with { Spectating = "disabled" },
+                        MatchModes: initial.Config.MatchModes), room.Revision,
+                    new Dictionary<string, long>
+                    {
+                        ["room/defaultRoomConfig/spectating"] =
+                            room.FieldRevisions["room/defaultRoomConfig/spectating"],
+                    }, "stale same field", Context("ops-field-conflict")));
+            Assert.Equal("operations_field_conflict", conflict.Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsSectionListConcurrencyUsesStableIdsInsteadOfArrayPositions()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+
+            var room = store.OperationsConfigSection(admin, "room");
+            var originalModes = room.Config.MatchModes!.ToArray();
+            var casual = originalModes.Single(item => item.Id == "casual");
+            var ranked = originalModes.Single(item => item.Id == "ranked");
+            store.ApplyOperationsConfigSection(admin, "room",
+                new L12OperationsSectionPayload(room.Config.DefaultRoomConfig,
+                    [ranked, casual with { Name = "休闲 A" }]), room.Revision,
+                new Dictionary<string, long>
+                {
+                    ["room/matchModes/casual"] = room.FieldRevisions["room/matchModes/casual"],
+                }, "rename casual", Context("ops-mode-casual"));
+
+            var mergedModes = store.ApplyOperationsConfigSection(admin, "room",
+                new L12OperationsSectionPayload(room.Config.DefaultRoomConfig,
+                    [ranked with { Name = "排位 B" }, casual]), room.Revision,
+                new Dictionary<string, long>
+                {
+                    ["room/matchModes/ranked"] = room.FieldRevisions["room/matchModes/ranked"],
+                }, "rename ranked from reordered stale form", Context("ops-mode-ranked"));
+            Assert.Equal("休闲 A", mergedModes.Current.Config.MatchModes!
+                .Single(item => item.Id == "casual").Name);
+            Assert.Equal("排位 B", mergedModes.Current.Config.MatchModes!
+                .Single(item => item.Id == "ranked").Name);
+
+            var staleModeConflict = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ApplyOperationsConfigSection(admin, "room",
+                    new L12OperationsSectionPayload(room.Config.DefaultRoomConfig,
+                        [ranked, casual with { Name = "休闲 stale" }]), room.Revision,
+                    new Dictionary<string, long>
+                    {
+                        ["room/matchModes/casual"] = room.FieldRevisions["room/matchModes/casual"],
+                    }, "stale same mode", Context("ops-mode-conflict")));
+            Assert.Equal("operations_field_conflict", staleModeConflict.Code);
+
+            var announcements = store.OperationsConfigSection(admin, "announcements");
+            var noticeA = new L12AnnouncementConfig("notice-a", "公告 A", true, 10);
+            var noticeB = new L12AnnouncementConfig("notice-b", "公告 B", true, 20);
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements: [noticeA, noticeB]), announcements.Revision,
+                new Dictionary<string, long>
+                {
+                    ["announcements/items/notice-a"] = 0,
+                    ["announcements/items/notice-b"] = 0,
+                }, "seed announcements", Context("ops-announcement-seed"));
+
+            var announcementBaseline = store.OperationsConfigSection(admin, "announcements");
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements:
+                    [noticeB, noticeA with { Content = "公告 A 已更新" }]), announcementBaseline.Revision,
+                new Dictionary<string, long>
+                {
+                    ["announcements/items/notice-a"] =
+                        announcementBaseline.FieldRevisions["announcements/items/notice-a"],
+                }, "edit first announcement", Context("ops-announcement-edit"));
+
+            var deletedFromStaleReorderedForm = store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements: [noticeA]), announcementBaseline.Revision,
+                new Dictionary<string, long>
+                {
+                    ["announcements/items/notice-b"] =
+                        announcementBaseline.FieldRevisions["announcements/items/notice-b"],
+                }, "delete second announcement", Context("ops-announcement-delete"));
+            var remaining = Assert.Single(deletedFromStaleReorderedForm.Current.Config.Announcements!);
+            Assert.Equal("notice-a", remaining.Id);
+            Assert.Equal("公告 A 已更新", remaining.Content);
+
+            var staleAnnouncementConflict = Assert.Throws<L12OperationsConfigException>(() =>
+                store.ApplyOperationsConfigSection(admin, "announcements",
+                    new L12OperationsSectionPayload(Announcements:
+                        [noticeA with { SortOrder = 30 }]), announcementBaseline.Revision,
+                    new Dictionary<string, long>
+                    {
+                        ["announcements/items/notice-a"] =
+                            announcementBaseline.FieldRevisions["announcements/items/notice-a"],
+                    }, "stale reorder same announcement", Context("ops-announcement-conflict")));
+            Assert.Equal("operations_field_conflict", staleAnnouncementConflict.Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsSectionRollbackRestoresOnlyItsOwnSection()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var initialAnnouncementHistory = Assert.Single(
+                store.OperationsConfigSectionHistory(admin, "announcements"));
+            var announcements = store.OperationsConfigSection(admin, "announcements");
+            store.ApplyOperationsConfigSection(admin, "announcements",
+                new L12OperationsSectionPayload(Announcements:
+                    [new L12AnnouncementConfig("rollback-me", "待回滚", true, 0)]),
+                announcements.Revision,
+                new Dictionary<string, long> { ["announcements/items/rollback-me"] = 0 },
+                "add announcement", Context("ops-section-add"));
+
+            var features = store.OperationsConfigSection(admin, "features");
+            var changedFlags = new Dictionary<string, bool>(initial.Config.FeatureFlags,
+                StringComparer.OrdinalIgnoreCase) { ["publicDecks"] = false };
+            store.ApplyOperationsConfigSection(admin, "features",
+                new L12OperationsSectionPayload(FeatureFlags: changedFlags), features.Revision,
+                new Dictionary<string, long>
+                {
+                    ["features/featureFlags/publicDecks"] =
+                        features.FieldRevisions["features/featureFlags/publicDecks"],
+                }, "disable feature", Context("ops-feature-change"));
+
+            var latestAnnouncements = store.OperationsConfigSection(admin, "announcements");
+            var rollback = store.RollbackOperationsConfigSection(admin, "announcements",
+                initialAnnouncementHistory.Id, latestAnnouncements.Revision,
+                "restore announcements", Context("ops-section-rollback"));
+
+            Assert.True(rollback.Applied);
+            var persisted = store.OperationsConfig(admin).Config;
+            Assert.Empty(persisted.Announcements!);
+            Assert.False(persisted.FeatureFlags["publicDecks"]);
+            Assert.StartsWith("section:announcements:rollback:", rollback.HistoryEntry!.Action);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void LongTermAnnouncementsAreTimeScopedAndServerStartIsIdempotent()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initial = store.OperationsConfig(admin);
+            var now = new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
+            var payload = initial.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "人工维护", now.AddHours(-1), null),
+                Announcements =
+                [
+                    new L12AnnouncementConfig("second", "第二条", true, 20),
+                    new L12AnnouncementConfig("first", "第一条", true, 10, now.AddDays(-1), null),
+                    new L12AnnouncementConfig("expired", "已过期", true, 0, null, now),
+                    new L12AnnouncementConfig("future", "未开始", true, 1, now.AddMinutes(1), null),
+                    new L12AnnouncementConfig("disabled", "已停用", false, 2),
+                ],
+            };
+            var applied = store.ApplyOperationsConfig(admin, payload, initial.Version,
+                "activate maintenance and announcements", Context("announcements-apply"));
+            Assert.Contains("announcements", applied.Changes);
+            Assert.Contains("maintenance", applied.Changes);
+
+            var effective = store.EffectiveOperationsPolicy(now);
+            Assert.True(effective.Maintenance.Enabled);
+            Assert.True(effective.Maintenance.Active);
+            Assert.Null(effective.Maintenance.EndsAt);
+            Assert.Equal(new[] { "first", "second" }, effective.Announcements!.Select(item => item.Id));
+
+            var started = store.StartServer(admin, applied.Current.Version, "maintenance complete",
+                Context("server-start"));
+            Assert.True(started.Applied);
+            Assert.False(started.AlreadyStarted);
+            Assert.False(started.Current.Config.Maintenance.Enabled);
+            Assert.Null(started.Current.Config.Maintenance.StartsAt);
+            Assert.Null(started.Current.Config.Maintenance.EndsAt);
+            Assert.False(store.EffectiveOperationsPolicy(now).Maintenance.Enabled);
+            var startedVersion = started.Current.Version;
+
+            var repeated = store.StartServer(admin, applied.Current.Version, "retry after network timeout",
+                Context("server-start-retry"));
+            Assert.False(repeated.Applied);
+            Assert.True(repeated.AlreadyStarted);
+            Assert.Equal(startedVersion, repeated.Current.Version);
+            Assert.Equal(new[] { "first", "second" },
+                store.EffectiveOperationsPolicy(now).Announcements!.Select(item => item.Id));
+
+            var invalid = repeated.Current.Config with
+            {
+                Announcements = [new L12AnnouncementConfig("empty", "   ", true)],
+            };
+            Assert.Equal("announcement_content_required",
+                Assert.Throws<L12OperationsConfigException>(() => store.PreviewOperationsConfig(admin,
+                    invalid, repeated.Current.Version, Context("empty-announcement"))).Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsConfigRejectsUnlockingOrMovingAnnihilation()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+
+            var unlocked = current.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(current.Config.DisasterPool.CardIds, false),
+            };
+            var moved = current.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(
+                    [L12ActiveDisasterRules.AnnihilationCardId, "S01-DS01"], true),
+            };
+
+            Assert.Equal("annihilation_locked", Assert.Throws<L12OperationsConfigException>(() =>
+                store.PreviewOperationsConfig(admin, unlocked, current.Version, Context("unlock"))).Code);
+            Assert.Equal("annihilation_locked", Assert.Throws<L12OperationsConfigException>(() =>
+                store.PreviewOperationsConfig(admin, moved, current.Version, Context("move"))).Code);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsConfigAcceptsNineDisastersIncludingFinalAnnihilation()
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            var ordinary = current.Config.DisasterPool.CardIds
+                .Where(id => !id.Equals(L12ActiveDisasterRules.AnnihilationCardId, StringComparison.OrdinalIgnoreCase))
+                .Take(8).ToArray();
+            Assert.Equal(8, ordinary.Length);
+            var valid = current.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(
+                    ordinary.Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray(), true),
+            };
+
+            var preview = store.PreviewOperationsConfig(admin, valid, current.Version, Context("nine-disasters"));
+            Assert.Equal(9, preview.Normalized.DisasterPool.CardIds.Count);
+
+            var invalid = valid with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(
+                    ordinary.Take(7).Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray(), true),
+            };
+            Assert.Equal("invalid_disaster_pool", Assert.Throws<L12OperationsConfigException>(() =>
+                store.PreviewOperationsConfig(admin, invalid, current.Version, Context("eight-disasters"))).Code);
+            store.ApplyOperationsConfig(admin, valid, current.Version, "activate nine disasters",
+                Context("apply-nine-disasters"));
+            Assert.True(store.CaptureOperationsPolicy().IsSeasonDisasterModeAvailable(DateTimeOffset.UtcNow));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void OperationsPolicyBuildsAuthoritativeRankedCasualFriendlyAndSandboxScopes()
+    {
+        var root = TempRoot();
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            store.ApplyOperationsConfig(admin, current.Config with
+            {
+                CardRestrictions = [new L12CardRestrictionConfig("S01-0001", 0, "scope regression")],
+            }, current.Version, "scope regression", Context("scope-regression"));
+            var policy = store.CaptureOperationsPolicy();
+
+            var ranked = policy.ForRankedMatch();
+            Assert.Equal("ranked", ranked.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("season", ranked.DefaultRoomConfig.DisasterMode);
+            Assert.NotEmpty(ranked.DisasterCardIds);
+            Assert.Single(ranked.CardRestrictions);
+
+            var casual = policy.ForCasualMatch();
+            Assert.Equal("casual", casual.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("all", casual.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(casual.DisasterCardIds);
+            Assert.Empty(casual.CardRestrictions);
+
+            var unrestrictedFriendly = policy.ForFriendlyRoom(false, "random");
+            Assert.Equal("friendly", unrestrictedFriendly.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("random", unrestrictedFriendly.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(unrestrictedFriendly.DisasterCardIds);
+            Assert.Empty(unrestrictedFriendly.CardRestrictions);
+            var seasonFriendly = policy.ForFriendlyRoom(false, "season");
+            Assert.Equal("season", seasonFriendly.DefaultRoomConfig.DisasterMode);
+            Assert.Equal(policy.DisasterCardIds, seasonFriendly.DisasterCardIds);
+
+            var restrictedFriendly = policy.ForFriendlyRoom(true, "none");
+            Assert.Single(restrictedFriendly.CardRestrictions);
+            Assert.Empty(restrictedFriendly.DisasterCardIds);
+
+            var sandbox = policy.ForSandbox("custom");
+            Assert.Equal("sandbox", sandbox.DefaultRoomConfig.MatchModeId);
+            Assert.Equal("custom", sandbox.DefaultRoomConfig.DisasterMode);
+            Assert.Empty(sandbox.DisasterCardIds);
+            Assert.Empty(sandbox.CardRestrictions);
+            Assert.Throws<ArgumentOutOfRangeException>(() => policy.ForSandbox("season"));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void DefaultRoomConfigMigratesAndDefaultPresetSelectionSeedsOnlyNewAccounts()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            var selectedMaster = catalog.PresetDecks[1].MasterId;
+            var applied = store.ApplyOperationsConfig(admin, current.Config with
+            {
+                DefaultPresetDeckIds = [selectedMaster],
+                DefaultRoomConfig = new L12DefaultRoomConfig("ranked", "friends", "public", "random"),
+            }, current.Version, "default policy", Context("default-policy"));
+
+            var account = store.Register("tdefau38a1b", "password-123").Account!;
+            var seeded = store.Decks(account.Id);
+            Assert.NotEmpty(seeded);
+            Assert.All(seeded, deck => Assert.Equal(selectedMaster, deck.MasterId));
+            Assert.Equal("ranked", applied.Current.Config.DefaultRoomConfig.MatchModeId);
+
+            var mirror = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            mirror["OperationsConfig"]!.AsObject().Remove("DefaultRoomConfig");
+            mirror["OperationsConfig"]!.AsObject().Remove("SectionRevisions");
+            mirror["OperationsConfig"]!.AsObject().Remove("FieldRevisions");
+            foreach (var history in mirror["OperationsConfigHistory"]!.AsArray().OfType<JsonObject>())
+            {
+                history["Config"]?.AsObject().Remove("DefaultRoomConfig");
+                history["Config"]?.AsObject().Remove("SectionRevisions");
+                history["Config"]?.AsObject().Remove("FieldRevisions");
+                history.Remove("ChangedFields");
+            }
+            File.WriteAllText(path, mirror.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            SqliteConnection.ClearAllPools();
+            File.Delete(Path.Combine(root, "platform.db"));
+
+            var migrated = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards);
+            var migratedAdmin = migrated.Login("Admin", "L12master").Account!;
+            var migratedConfig = migrated.OperationsConfig(migratedAdmin);
+            var defaults = migratedConfig.Config.DefaultRoomConfig;
+            Assert.Equal(new L12DefaultRoomConfig("casual", "public", "request", "all"), defaults);
+            Assert.All(new[] { "room", "features", "announcements", "maintenance" }, section =>
+                Assert.Equal(1, migratedConfig.SectionRevisions![section]));
+            Assert.True(migratedConfig.FieldRevisions!["room/defaultRoomConfig/spectating"] >= 1);
+            Assert.NotNull(JsonNode.Parse(File.ReadAllText(path))!["OperationsConfig"]!["DefaultRoomConfig"]);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task OperationsRestrictionsOnlyApplyToOptInFriendlyRoomsWhileDeckStorageAndSandboxStayOpen()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var bannedIndex = Enumerable.Range(0, catalog.PresetDecks.Count).First(index =>
+                catalog.PresetDecks[index].CardIds.Any(cardId => catalog.PresetDecks
+                    .Where((_, otherIndex) => otherIndex != index)
+                    .Any(other => !other.CardIds.Contains(cardId, StringComparer.OrdinalIgnoreCase))));
+            var bannedPreset = catalog.PresetDecks[bannedIndex];
+            var bannedCardId = bannedPreset.CardIds.First(cardId => catalog.PresetDecks
+                .Where((_, index) => index != bannedIndex)
+                .Any(other => !other.CardIds.Contains(cardId, StringComparer.OrdinalIgnoreCase)));
+            Assert.Contains(catalog.PresetDecks, deck => !deck.CardIds.Contains(bannedCardId,
+                StringComparer.OrdinalIgnoreCase));
+
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var current = store.OperationsConfig(admin);
+            store.ApplyOperationsConfig(admin, current.Config with
+            {
+                CardRestrictions = [new L12CardRestrictionConfig(bannedCardId, 0, "regression ban")],
+            }, current.Version, "ban one card", Context("ban-card"));
+            var player = store.Register("trestr8a851", "password-123");
+            var opponent = store.Register("trestr92f3c", "password-123");
+
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            using (var request = Authorized(HttpMethod.Put, "/api/decks", player.Token!, "restricted-http",
+                       Submission(bannedPreset)))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using (var request = Authorized(HttpMethod.Post, "/api/public-decks", player.Token!,
+                       "restricted-publish", new { Deck = Submission(bannedPreset) }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var hostSession = Guid.NewGuid();
+            var joinSession = Guid.NewGuid();
+            rooms.Connect(hostSession, player.Account!.Id, player.Account.Username);
+            rooms.Connect(joinSession, opponent.Account!.Id, opponent.Account.Username);
+            var created = rooms.CreateRoom(hostSession, new L12RoomOptions
+            {
+                MatchModeId = "ranked",
+                DisasterMode = "season",
+                UseCardRestrictions = false,
+            });
+            var createdPayload = Payload(created[0]);
+            var roomCode = createdPayload["roomCode"]!.GetValue<string>();
+            Assert.Equal("friendly", createdPayload["options"]!["matchModeId"]!.GetValue<string>());
+            Assert.Equal("season", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.False(createdPayload["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.All(rooms.SelectDeck(hostSession, bannedIndex), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            Assert.All(rooms.JoinRoom(joinSession, roomCode), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            Assert.All(await rooms.SetReadyAsync(joinSession, true), message =>
+                Assert.Equal("gameState", Payload(message)["type"]!.GetValue<string>()));
+
+            var sandboxSession = Guid.NewGuid();
+            rooms.Connect(sandboxSession, "sandbox-restricted", "沙盒限制测试");
+            var sandbox = await rooms.CreateSandboxAsync(sandboxSession,
+                new L12SandboxRequest(Submission(bannedPreset)));
+            Assert.Contains(sandbox, message => Payload(message)["type"]!.GetValue<string>() == "gameState");
+
+            var seasonSandboxSession = Guid.NewGuid();
+            rooms.Connect(seasonSandboxSession, "season-sandbox", "赛季沙盒伪造");
+            var seasonSandbox = await rooms.CreateSandboxAsync(seasonSandboxSession,
+                new L12SandboxRequest(DisasterMode: "season"));
+            Assert.Equal("sandboxRejected", Payload(Assert.Single(seasonSandbox))["type"]!.GetValue<string>());
+
+            var restrictedHost = Guid.NewGuid();
+            rooms.Connect(restrictedHost, "restricted-friend-room", "禁限卡好友房");
+            var restrictedRoom = rooms.CreateRoom(restrictedHost, new L12RoomOptions
+            {
+                DisasterMode = "random",
+                UseCardRestrictions = true,
+            });
+            var restrictedPayload = Payload(restrictedRoom[0]);
+            Assert.True(restrictedPayload["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.Equal("deckRejected", Payload(Assert.Single(rooms.SelectDeck(restrictedHost, bannedIndex)))["type"]!
+                .GetValue<string>());
+
+            var inviter = store.Register("tinvit50595", "password-123").Account!;
+            var invitee = store.Register("tinvit307d9", "password-123").Account!;
+            Assert.True(store.SendFriendRequest(inviter.Id, invitee.Id).Success);
+            Assert.True(store.ResolveFriendRequest(invitee.Id, inviter.Id, true).Success);
+            var inviterSession = Guid.NewGuid();
+            var inviteeSession = Guid.NewGuid();
+            rooms.Connect(inviterSession, inviter.Id, inviter.Username);
+            rooms.Connect(inviteeSession, invitee.Id, invitee.Username);
+            var invitation = rooms.InviteFriend(inviterSession, invitee.Id)
+                .Select(Payload).Single(payload => payload["type"]!.GetValue<string>() == "friendInvitationSent");
+            var resolved = rooms.ResolveFriendInvitation(inviteeSession,
+                invitation["invitationId"]!.GetValue<string>(), true);
+            var invitedRoom = resolved.Select(Payload)
+                .First(payload => payload["type"]!.GetValue<string>() == "roomState");
+            Assert.False(invitedRoom["options"]!["useCardRestrictions"]!.GetValue<bool>());
+            Assert.Equal("all", invitedRoom["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.All(rooms.SelectDeck(inviterSession, bannedIndex), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RoomAndGamePinPolicyWhileMaintenanceGatesNewFriendlyFlows()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var initialPolicy = store.CaptureOperationsPolicy();
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            var host = store.Register("PolicyHost", "password-123").Account!;
+            var guest = store.Register("PolicyGuest", "password-123").Account!;
+            var hostSession = Guid.NewGuid();
+            var guestSession = Guid.NewGuid();
+            rooms.Connect(hostSession, host.Id, host.Username);
+            rooms.Connect(guestSession, guest.Id, guest.Username);
+            var created = rooms.CreateRoom(hostSession, new L12RoomOptions
+            {
+                MatchModeId = "ranked",
+                DisasterMode = "random",
+                UseCardRestrictions = true,
+            });
+            var createdPayload = Payload(created[0]);
+            var roomCode = createdPayload["roomCode"]!.GetValue<string>();
+            Assert.Equal(initialPolicy.Version, createdPayload["operationsPolicyVersion"]!.GetValue<long>());
+            Assert.Equal("friendly", createdPayload["options"]!["matchModeId"]!.GetValue<string>());
+            Assert.Equal("random", createdPayload["options"]!["disasterMode"]!.GetValue<string>());
+            Assert.All(rooms.JoinRoom(guestSession, roomCode), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+
+            var current = store.OperationsConfig(admin);
+            var maintenance = store.ApplyOperationsConfig(admin, current.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "维护门禁回归", null, null),
+            }, current.Version, "maintenance on", Context("maintenance-on")).Current;
+            Assert.Equal("maintenance_active", Payload(Assert.Single(await rooms.SetReadyAsync(hostSession, true)))["code"]!
+                .GetValue<string>());
+            var blockedRoomSession = Guid.NewGuid();
+            rooms.Connect(blockedRoomSession, "blocked-room", "维护建房");
+            Assert.Equal("maintenance_active", Payload(Assert.Single(rooms.CreateRoom(blockedRoomSession)))["code"]!
+                .GetValue<string>());
+            var blockedSandboxSession = Guid.NewGuid();
+            rooms.Connect(blockedSandboxSession, "blocked-sandbox", "维护沙盒");
+            Assert.Equal("maintenance_active",
+                Payload(Assert.Single(await rooms.CreateSandboxAsync(blockedSandboxSession, null)))["code"]!
+                    .GetValue<string>());
+
+            var mixedPool = Enumerable.Range(1, 6).Select(number => $"S02-DS{number:00}")
+                .Concat(Enumerable.Range(1, 3).Select(number => $"S01-DS{number:00}"))
+                .Append(L12ActiveDisasterRules.AnnihilationCardId).ToArray();
+            var live = store.ApplyOperationsConfig(admin, maintenance.Config with
+            {
+                DisasterPool = new L12SeasonDisasterPoolConfig(mixedPool),
+                MatchModes =
+                [
+                    new L12MatchModeConfig("casual", "休闲对战", false),
+                    new L12MatchModeConfig("ranked", "排位对战", true),
+                ],
+                DefaultRoomConfig = maintenance.Config.DefaultRoomConfig with { MatchModeId = "ranked" },
+                Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
+            }, maintenance.Version, "new policy", Context("new-policy")).Current;
+            var currentPolicy = store.CaptureOperationsPolicy();
+            Assert.NotEqual(initialPolicy.Version, currentPolicy.Version);
+
+            var casualSession = Guid.NewGuid();
+            rooms.Connect(casualSession, "friendly-independent", "好友房独立");
+            var friendlyUnaffected = rooms.CreateRoom(casualSession,
+                new L12RoomOptions { MatchModeId = "casual" });
+            Assert.Equal("roomState", Payload(Assert.Single(friendlyUnaffected))["type"]!.GetValue<string>());
+            Assert.Equal("friendly", Payload(friendlyUnaffected[0])["options"]!["matchModeId"]!.GetValue<string>());
+
+            // 好友房固定创建时的作用域策略；公开匹配模式开关不能污染已存在的好友房。
+            Assert.All(await rooms.SetReadyAsync(hostSession, true), message =>
+                Assert.Equal("roomState", Payload(message)["type"]!.GetValue<string>()));
+            var started = await rooms.SetReadyAsync(guestSession, true);
+            Assert.All(started, message => Assert.Equal(initialPolicy.Version,
+                Payload(message)["state"]!["operationsPolicyVersion"]!.GetValue<long>()));
+
+            var oldEngine = new L12GameEngine(catalog, "old-policy", "OLD", 1, ["甲", "乙"], [0, 1],
+                disasterMode: "season", operationsPolicy: initialPolicy);
+            var newEngine = new L12GameEngine(catalog, "new-policy", "NEW", 1, ["甲", "乙"], [0, 1],
+                disasterMode: "season", operationsPolicy: currentPolicy);
+            Assert.All(oldEngine.State.DisasterPool,
+                card => Assert.StartsWith("S01-DS", card.CardId));
+            Assert.Contains(newEngine.State.DisasterPool, card => card.CardId.StartsWith("S02-DS", StringComparison.Ordinal));
+
+            var waitingHost = store.Register("WaitingHost", "password-123").Account!;
+            var waitingGuest = store.Register("twaiti341e1", "password-123").Account!;
+            var waitingHostSession = Guid.NewGuid();
+            var waitingGuestSession = Guid.NewGuid();
+            rooms.Connect(waitingHostSession, waitingHost.Id, waitingHost.Username);
+            rooms.Connect(waitingGuestSession, waitingGuest.Id, waitingGuest.Username);
+            var waitingRoom = rooms.CreateRoom(waitingHostSession);
+            var waitingCode = Payload(waitingRoom[0])["roomCode"]!.GetValue<string>();
+            store.ApplyOperationsConfig(admin, live.Config with
+            {
+                Maintenance = new L12MaintenanceConfig(true, "再次维护",
+                    DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(2)),
+            }, live.Version, "maintenance again", Context("maintenance-again"));
+            Assert.Equal("maintenance_active",
+                Payload(Assert.Single(rooms.JoinRoom(waitingGuestSession, waitingCode)))["code"]!.GetValue<string>());
+
+            var matchId = Payload(started[0])["state"]!["matchId"]!.GetValue<string>();
+            var maintenanceMessages = await rooms.TickRankedClocksAsync(DateTimeOffset.UtcNow);
+            var invalidated = maintenanceMessages.Select(Payload)
+                .First(payload => payload["type"]!.GetValue<string>() == "gameState");
+            Assert.Equal("GameOver", invalidated["state"]!["phase"]!.GetValue<string>());
+            Assert.Null(invalidated["state"]!["winner"]);
+            Assert.Contains("服务器维护", invalidated["state"]!["winnerReason"]!.GetValue<string>());
+            var recorded = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(matchId));
+            Assert.NotNull(recorded.Match.EndedUtc);
+            Assert.Single(recorded.Commands, command =>
+                command.Command.GetProperty("type").GetString() == "authorityConclusion");
+            rooms.Disconnect(hostSession);
+            var recoveredSession = Guid.NewGuid();
+            var recovered = Payload(rooms.Connect(recoveredSession, host.Id, host.Username));
+            Assert.True(recovered["recovered"]!.GetValue<bool>());
+            Assert.NotEmpty(rooms.RecoveryState(recoveredSession));
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task OperationsSectionHttpEndpointsUseSectionAndFieldPreconditions()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var admin = store.Login("Admin", "L12master");
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+
+            L12OperationsSectionView room;
+            using (var getRoom = Authorized(HttpMethod.Get,
+                       "/api/admin/operations/config/sections/room", admin.Token!, "section-room-get"))
+            using (var response = await client.SendAsync(getRoom))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                room = (await response.Content.ReadFromJsonAsync<L12OperationsSectionView>())!;
+                Assert.Equal($"\"{room.Revision}\"", response.Headers.ETag!.Tag);
+            }
+            L12OperationsSectionView announcements;
+            using (var getAnnouncements = Authorized(HttpMethod.Get,
+                       "/api/admin/operations/config/sections/announcements", admin.Token!,
+                       "section-announcements-get"))
+            using (var response = await client.SendAsync(getAnnouncements))
+                announcements = (await response.Content.ReadFromJsonAsync<L12OperationsSectionView>())!;
+
+            var defaults = room.Config.DefaultRoomConfig! with { Spectating = "friends" };
+            using (var missingFields = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config/sections/room", admin.Token!,
+                       "section-room-missing-fields",
+                       new OperationsConfigSectionApplyRequest(
+                           room.Config with { DefaultRoomConfig = defaults },
+                           new Dictionary<string, long>(), "reject ambiguous patch",
+                           "section-room-missing-fields-1", room.Revision)))
+            using (var response = await client.SendAsync(missingFields))
+            {
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+                Assert.Equal("operations_field_revisions_required",
+                    JsonNode.Parse(await response.Content.ReadAsStringAsync())!["code"]!.GetValue<string>());
+            }
+
+            using (var applyRoom = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config/sections/room", admin.Token!, "section-room-apply",
+                       new OperationsConfigSectionApplyRequest(
+                           room.Config with { DefaultRoomConfig = defaults },
+                           new Dictionary<string, long>
+                           {
+                               ["room/defaultRoomConfig/spectating"] =
+                                   room.FieldRevisions["room/defaultRoomConfig/spectating"],
+                           }, "room via http", "section-room-apply-1", room.Revision)))
+            using (var response = await client.SendAsync(applyRoom))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var applied = await response.Content.ReadFromJsonAsync<L12OperationsSectionOperationView>();
+                Assert.True(applied!.Applied);
+                Assert.Equal(room.Revision + 1, applied.Current.Revision);
+            }
+
+            using (var applyAnnouncement = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config/sections/announcements", admin.Token!,
+                       "section-announcements-apply",
+                       new OperationsConfigSectionApplyRequest(
+                           new L12OperationsSectionPayload(Announcements:
+                               [new L12AnnouncementConfig("http-notice", "HTTP公告", true)]),
+                           new Dictionary<string, long> { ["announcements/items/http-notice"] = 0 },
+                           "announcement via http", "section-announcement-apply-1",
+                           announcements.Revision)))
+            using (var response = await client.SendAsync(applyAnnouncement))
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            using (var staleRoom = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config/sections/room", admin.Token!, "section-room-stale",
+                       new OperationsConfigSectionApplyRequest(
+                           room.Config with
+                           {
+                               DefaultRoomConfig = room.Config.DefaultRoomConfig! with
+                                   { Spectating = "disabled" },
+                           },
+                           new Dictionary<string, long>
+                           {
+                               ["room/defaultRoomConfig/spectating"] =
+                                   room.FieldRevisions["room/defaultRoomConfig/spectating"],
+                           }, "stale room", "section-room-stale-1", room.Revision)))
+            using (var response = await client.SendAsync(staleRoom))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                Assert.Equal("operations_field_conflict",
+                    JsonNode.Parse(await response.Content.ReadAsStringAsync())!["code"]!.GetValue<string>());
+            }
+
+            var final = store.OperationsConfig(admin.Account!);
+            Assert.Equal("friends", final.Config.DefaultRoomConfig.Spectating);
+            Assert.Equal("HTTP公告", Assert.Single(final.Config.Announcements!).Content);
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task HttpAccountChangesOperationsAndRuntimeAreDirectVersionedAndTruthful()
+    {
+        var root = TempRoot();
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var admin = store.Login("Admin", "L12master");
+            var target = store.Register("tdirecf9793", "password-123");
+            var tournamentOrganizer = store.Register("udf6bd3ecad", "password-123");
+            var tournamentReferee = store.Register("ub4fad6e2bb", "password-123");
+            Assert.True(store.SendFriendRequest(tournamentOrganizer.Account!.Id,
+                tournamentReferee.Account!.Id).Success);
+            Assert.True(store.ResolveFriendRequest(tournamentReferee.Account.Id,
+                tournamentOrganizer.Account.Id, true).Success);
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+
+            L12TournamentView createdTournament;
+            using (var createTournament = Authorized(HttpMethod.Post, "/api/tournaments",
+                       tournamentOrganizer.Token!, "direct-tournament-create",
+                       new TournamentCreateRequest(CreateTournamentPayload(), "direct-tournament-create-1",
+                           store.Version, false, "creator is organizer")))
+            using (var response = await client.SendAsync(createTournament))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                createdTournament = (await response.Content.ReadFromJsonAsync<L12TournamentView>())!;
+                Assert.Equal(tournamentOrganizer.Account.Id, createdTournament.OrganizerAccountId);
+            }
+            using (var setStaff = Authorized(HttpMethod.Put,
+                       $"/api/tournaments/{createdTournament.Id}/staff", tournamentOrganizer.Token!,
+                       "direct-tournament-staff", new TournamentStaffRequest([tournamentReferee.Account.Id],
+                           "direct-tournament-staff-1", createdTournament.Version, false, "friend referee")))
+            using (var response = await client.SendAsync(setStaff))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var updated = await response.Content.ReadFromJsonAsync<L12TournamentView>();
+                Assert.Equal(tournamentReferee.Account.Id, Assert.Single(updated!.Referees).AccountId);
+            }
+            Assert.Empty(store.AdminApprovals());
+            using (var removedTournamentApprovals = Authorized(HttpMethod.Get,
+                       $"/api/tournaments/{createdTournament.Id}/approvals", tournamentOrganizer.Token!,
+                       "removed-tournament-approvals"))
+            using (var response = await client.SendAsync(removedTournamentApprovals))
+                Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+            using (var roleRequest = Authorized(HttpMethod.Put,
+                       $"/api/admin/accounts/{target.Account!.Id}/role", admin.Token!, "direct-role",
+                       new RoleRequest("admin", "direct-role-1", target.Account.PermissionVersion, false, "promote")))
+            using (var response = await client.SendAsync(roleRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var result = await response.Content.ReadFromJsonAsync<RoleCommandResult>();
+                Assert.Equal("admin", result!.Role);
+                Assert.True(result.Changed);
+            }
+            using (var sameRole = Authorized(HttpMethod.Put,
+                       $"/api/admin/accounts/{target.Account.Id}/role", admin.Token!, "same-role",
+                       new RoleRequest("admin", "same-role-1", store.Account(target.Account.Id)!.PermissionVersion,
+                           false, "no change")))
+            using (var response = await client.SendAsync(sameRole))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var result = await response.Content.ReadFromJsonAsync<RoleCommandResult>();
+                Assert.False(result!.Changed);
+            }
+
+            var legacyApprovalId = Guid.NewGuid().ToString("N");
+            var legacyApproval = new L12AdminCommandEnvelope<RoleCommandPayload>(legacyApprovalId,
+                "legacy-direct-role-approval", "account.role.set", admin.Account!, DateTimeOffset.UtcNow,
+                $"account:{target.Account.Id}", "legacy approval must stay disabled", false,
+                store.Account(target.Account.Id)!.PermissionVersion,
+                new RoleCommandPayload(target.Account.Id, "player"),
+                Context("legacy-direct-role-approval") with
+                {
+                    CommandId = legacyApprovalId,
+                    IdempotencyKey = "legacy-direct-role-approval",
+                    ExpectedVersion = store.Account(target.Account.Id)!.PermissionVersion,
+                });
+            var legacyPayloadJson = JsonSerializer.Serialize(legacyApproval.Payload, JsonOptions);
+            store.PersistAdminCommand(legacyApproval,
+                L12Authorization.Key(L12Permission.AdminAccountRolesWrite), L12AdminCommandRisk.High,
+                "legacy-pending-signature", legacyPayloadJson, "requested");
+            store.PersistAdminApprovalRequest(legacyApprovalId, admin.Account!);
+            Assert.Empty(store.AdminApprovals());
+            Assert.Equal(0, store.SecurityStatus(admin.Account!).PendingApprovals);
+            using (var legacyReview = Authorized(HttpMethod.Post,
+                       $"/api/admin/approvals/{legacyApprovalId}", admin.Token!, "legacy-role-review",
+                       new { decision = "approve", reason = "must remain disabled" }))
+            using (var response = await client.SendAsync(legacyReview))
+            {
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                Assert.Equal("approval_disabled", (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+            }
+            Assert.Equal("requested", store.AdminCommand(legacyApprovalId)!.Status);
+            Assert.Equal("admin", store.Account(target.Account.Id)!.Role);
+
+            using (var rejectedLegacy = Authorized(HttpMethod.Put,
+                       $"/api/admin/accounts/{target.Account.Id}/role", admin.Token!, "legacy-role",
+                       new RoleRequest("organizer", "legacy-role-1", store.Account(target.Account.Id)!.PermissionVersion,
+                           false, "legacy")))
+            using (var response = await client.SendAsync(rejectedLegacy))
+                Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+            using (var statusRequest = Authorized(HttpMethod.Put,
+                       $"/api/admin/accounts/{target.Account.Id}/status", admin.Token!, "direct-status",
+                       new AccountStatusRequest(true, "security response contract", "direct-status-1",
+                           store.Account(target.Account.Id)!.PermissionVersion)))
+            using (var response = await client.SendAsync(statusRequest))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var result = await response.Content.ReadFromJsonAsync<L12AccountStatusOperationView>();
+                Assert.True(result!.Applied);
+                Assert.True(result.Account.Disabled);
+            }
+
+            L12OperationsConfigView current;
+            using (var getConfig = Authorized(HttpMethod.Get, "/api/admin/operations/config", admin.Token!, "ops-get"))
+            using (var response = await client.SendAsync(getConfig))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                current = (await response.Content.ReadFromJsonAsync<L12OperationsConfigView>())!;
+            }
+            var next = current.Config with
+            {
+                FeatureFlags = new Dictionary<string, bool>(current.Config.FeatureFlags)
+                {
+                    ["publicDecks"] = false,
+                    ["tournaments"] = false,
+                },
+                Maintenance = new L12MaintenanceConfig(true, "HTTP maintenance",
+                    DateTimeOffset.UtcNow.AddMinutes(-1), null),
+            };
+            using (var rejectedLegacyApply = Authorized(HttpMethod.Put,
+                       "/api/admin/operations/config", admin.Token!, "ops-http-no-intent",
+                       new OperationsConfigApplyRequest(next, "missing explicit intent",
+                           "ops-http-no-intent-1", current.Version)))
+            using (var response = await client.SendAsync(rejectedLegacyApply))
+            {
+                Assert.Equal((HttpStatusCode)428, response.StatusCode);
+                Assert.Equal("operations_cross_section_intent_required",
+                    (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+                Assert.Equal(current.Version, store.OperationsConfig(admin.Account!).Version);
+            }
+
+            L12OperationsConfigOperationView appliedOperations;
+            using (var apply = Authorized(HttpMethod.Put, "/api/admin/operations/config", admin.Token!, "ops-http",
+                       new OperationsConfigApplyRequest(next, "disable temporarily", "ops-http-1", current.Version,
+                           "replace-all-operations-sections")))
+            using (var response = await client.SendAsync(apply))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                appliedOperations = (await response.Content.ReadFromJsonAsync<L12OperationsConfigOperationView>())!;
+                Assert.False(appliedOperations.Current.Config.FeatureFlags["tournaments"]);
+            }
+
+            using (var rejectedLegacyRollback = Authorized(HttpMethod.Post,
+                       "/api/admin/operations/config/rollback", admin.Token!, "ops-rollback-no-intent",
+                       new OperationsConfigRollbackRequest(current.VersionId, "missing explicit intent",
+                           "ops-rollback-no-intent-1", appliedOperations.Current.Version)))
+            using (var response = await client.SendAsync(rejectedLegacyRollback))
+            {
+                Assert.Equal((HttpStatusCode)428, response.StatusCode);
+                Assert.Equal("operations_cross_section_intent_required",
+                    (await response.Content.ReadFromJsonAsync<L12ApiError>())!.Code);
+                Assert.Equal(appliedOperations.Current.Version,
+                    store.OperationsConfig(admin.Account!).Version);
+            }
+
+            using (var staleBeforeStart = Authorized(HttpMethod.Post,
+                       "/api/admin/operations/server/start", admin.Token!, "ops-start-http-stale",
+                       new OperationsServerStartRequest("stale before start", "ops-start-http-stale-1",
+                           appliedOperations.Current.Version - 1)))
+            using (var response = await client.SendAsync(staleBeforeStart))
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+
+            using (var start = Authorized(HttpMethod.Post, "/api/admin/operations/server/start", admin.Token!,
+                       "ops-start-http", new OperationsServerStartRequest("maintenance complete",
+                           "ops-start-http-1", appliedOperations.Current.Version)))
+            using (var response = await client.SendAsync(start))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var started = await response.Content.ReadFromJsonAsync<L12ServerStartOperationView>();
+                Assert.True(started!.Applied);
+                Assert.False(started.AlreadyStarted);
+            }
+            using (var retry = Authorized(HttpMethod.Post, "/api/admin/operations/server/start", admin.Token!,
+                       "ops-start-http-retry", new OperationsServerStartRequest("retry lost response",
+                           "ops-start-http-2", appliedOperations.Current.Version)))
+            using (var response = await client.SendAsync(retry))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var started = await response.Content.ReadFromJsonAsync<L12ServerStartOperationView>();
+                Assert.False(started!.Applied);
+                Assert.True(started.AlreadyStarted);
+                Assert.Equal(appliedOperations.Current.Version + 1, started.Current.Version);
+            }
+
+            using (var effectiveResponse = await client.GetAsync("/api/operations/effective-policy"))
+            {
+                Assert.Equal(HttpStatusCode.OK, effectiveResponse.StatusCode);
+                var effective = JsonNode.Parse(await effectiveResponse.Content.ReadAsStringAsync())!.AsObject();
+                Assert.NotNull(effective["defaultRoomConfig"]);
+                Assert.NotNull(effective["matchModes"]);
+                Assert.NotNull(effective["maintenance"]);
+                Assert.Null(effective["featureFlags"]);
+                Assert.Null(effective["disasterPool"]);
+            }
+            Assert.Equal(HttpStatusCode.ServiceUnavailable,
+                (await client.GetAsync("/api/public-decks")).StatusCode);
+            Assert.Equal(HttpStatusCode.ServiceUnavailable,
+                (await client.GetAsync("/api/tournaments")).StatusCode);
+
+            using (var runtime = Authorized(HttpMethod.Get, "/api/admin/runtime/status", admin.Token!, "runtime"))
+            using (var response = await client.SendAsync(runtime))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                var status = await response.Content.ReadFromJsonAsync<L12RuntimeStatusView>();
+                Assert.Equal(catalog.Cards.Count, status!.CardCount);
+                Assert.Equal(0, status.WebSocketConnectionCount);
+                Assert.False(status.Cdn.Configured);
+                Assert.Equal("unavailable", status.Cdn.State);
+                Assert.Equal("no-authoritative-source", status.Cdn.Detail);
+                Assert.Equal(2, status.ReleaseEnvironments.Count);
+            }
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task RuntimeStatsExcludeCompletedGames()
+    {
+        var root = TempRoot();
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var rooms = new L12RoomManager(catalog, recorder);
+            var sessionId = Guid.NewGuid();
+            rooms.Connect(sessionId, "sandbox-account", "统计测试");
+
+            await rooms.CreateSandboxAsync(sessionId, new L12SandboxRequest());
+            Assert.Equal(1, rooms.RuntimeStats().ActiveGameCount);
+
+            using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");
+            await rooms.HandleSandboxActionAsync(sessionId, 0, surrender.RootElement);
+
+            Assert.Equal(0, rooms.RuntimeStats().ActiveGameCount);
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Directory.Delete(root, true);
+        }
+    }
+
+    private static L12TournamentCreatePayload CreateTournamentPayload(IReadOnlyList<string>? referees = null)
+        => new("作用域赛事", "swiss", "public", 16, null, "现行规则", "scoped roles",
+            "after", "season", string.Empty, 50, 5, referees);
+
+    private static L12AdminAuditContext Context(string correlationId)
+        => new(correlationId, RequestMethod: "TEST", RequestPath: "/test");
+
+    private static HttpRequestMessage Authorized(HttpMethod method, string path, string token,
+        string correlationId, object? body = null)
+    {
+        var request = new HttpRequestMessage(method, path);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Add(L12CorrelationIds.HeaderName, correlationId);
+        if (body is not null) request.Content = JsonContent.Create(body);
+        return request;
+    }
+
+    private static L12CustomDeckSubmission Submission(L12PresetDeckDefinition deck)
+        => new()
+        {
+            Name = deck.Name,
+            MasterId = deck.MasterId,
+            CardIds = deck.CardIds.ToList(),
+            MoraleIds = deck.MoraleIds.ToList(),
+            SpecialIds = deck.SpecialIds.ToList(),
+        };
+
+    private static JsonObject Payload(OutgoingMessage message) => Payload(message.Payload);
+
+    private static JsonObject Payload(object payload)
+        => JsonSerializer.SerializeToNode(payload, JsonOptions)!.AsObject();
+
+    private static string TempRoot()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"l12-operations-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(path);
+        return path;
+    }
+}

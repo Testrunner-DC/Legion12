@@ -30,11 +30,15 @@ public sealed partial class MatchRecorder
             cardId,
             query.Cursor,
             query.Limit,
+            query.Page,
+            query.Sort,
+            query.Direction,
             query.MinimumSampleSize,
             query.Search,
             CandidateCardIds = query.CandidateCardIds?.OrderBy(value => value,
                 StringComparer.OrdinalIgnoreCase).ToArray(),
             query.MasterId,
+            query.ModeId,
             query.FromUtc,
             query.ToUtc,
             query.OpponentMasterId,
@@ -43,6 +47,7 @@ public sealed partial class MatchRecorder
             query.EffectVersion,
             query.SeasonId,
             query.ExcludedMatchIds,
+            query.ExcludedAccountIds,
         });
 
     private bool TryReadAnalyticsResultCache<T>(string key, out T? value)

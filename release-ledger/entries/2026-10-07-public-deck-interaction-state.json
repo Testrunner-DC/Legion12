@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-public-deck-interaction-state",
+  "date": "2026-10-07",
+  "audience": "players",
+  "title": "公开牌库交互稳定性改善",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "公开牌库浏览、点赞与复制刷新计数时保留当前构筑、指南和版本信息；切换牌库、账号或离开页面后，不接收旧页面的迟到结果。复制已经成功时，计数异常不会误报复制失败。",
+      "paths": [
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/site/publicDeckEntry.ts",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue"
+      ]
+    }
+  ]
+}

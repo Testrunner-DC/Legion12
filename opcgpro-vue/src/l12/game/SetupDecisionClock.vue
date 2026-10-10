@@ -36,9 +36,9 @@ function formatClock(value: number) {
 <template>
   <div v-if="clock" class="setup-decision-clock" :class="{ disconnected: !clock.connected }"
     data-ui-contract="ranked-setup-decision-clock" role="timer" aria-live="off">
-    <span>{{ roleLabel || '准备步骤' }}</span>
+    <span>{{ roleLabel || '准备步骤' }} · 本次剩余</span>
     <strong>{{ formatClock(clock.remaining) }}</strong>
-    <em v-if="!clock.connected">断线仍继续</em>
+    <em v-if="!clock.connected">断线时继续计时</em>
   </div>
 </template>
 

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "ranked-integrity-group-filter-20261008",
+  "date": "2026-10-08",
+  "audience": "internal",
+  "reason": "后台排位完整性归组筛选当前有界查询结果，重置分页并保留50条人工选择上限；不自动处置或改变风险判定。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminRankedIntegrityPanel.vue",
+    "opcgpro-vue/scripts/test-ranked-integrity-group-filter.mjs",
+    "opcgpro-vue/scripts/verify-ranked-integrity-group-filter.mjs",
+    "opcgpro-vue/package.json"
+  ]
+}

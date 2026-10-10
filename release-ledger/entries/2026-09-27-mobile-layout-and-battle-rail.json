@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-mobile-layout-and-battle-rail",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "移动端布局与宽屏对战空间修正",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "图鉴会按卡池实际可用宽度每行显示2至4张牌；低高度横屏导航、页面安全区和资讯等普通页面会按真实可用画面收口，不再依赖单一设备尺寸。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardArchive.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css",
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "opcgpro-vue/src/style.css"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "宽屏双方计时器固定在战区垫与右侧信息栏之间的独立轨道，对方贴上沿、我方贴下沿；移动端记录入口、恢复条和操作区继续使用互不遮挡的专用位置。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css"
+      ]
+    }
+  ]
+}

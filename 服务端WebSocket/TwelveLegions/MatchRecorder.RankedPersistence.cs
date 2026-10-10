@@ -13,14 +13,16 @@ internal sealed record L12RankedRuntimeCheckpoint(
     DateTimeOffset LastSettledAt, string? ConclusionKind, bool AuthorityEventRecorded,
     bool[] Connected, DateTimeOffset?[] DisconnectedAt,
     string[] IntegrityClientKeys, long[] ConnectionGenerations, DateTimeOffset UpdatedAt,
-    L12RankedTimeControlConfig? TimeControl = null, string[]? RankedBrowserKeys = null);
+    L12RankedTimeControlConfig? TimeControl = null, string[]? RankedBrowserKeys = null,
+    bool Paused = false, string? PauseReason = null, DateTimeOffset? PausedAt = null);
 
 internal sealed record L12RankedSettlementEnvelope(
     int Version, string MatchId, string FirstAccountId, string SecondAccountId,
     string FirstMasterId, string SecondMasterId, int? Winner,
     DateTimeOffset StartedAt, DateTimeOffset EndedAt, int MeaningfulCommandCount,
     string ConclusionKind, string FirstNetworkFingerprint, string SecondNetworkFingerprint,
-    int FinalRound = 0);
+    int FinalRound = 0, string FirstBrowserFingerprint = "", string SecondBrowserFingerprint = "",
+    string SeasonId = "");
 
 internal sealed record L12RankedSettlementOutboxEntry(
     string MatchId, L12RankedSettlementEnvelope? Payload, string PayloadHash, string Status, int Attempts,
@@ -31,10 +33,11 @@ internal sealed record L12RankedRecoverySource(
     string InitialStateJson, string StartedUtc, L12PresetDeckDefinition[] Decks,
     IReadOnlyList<L12RankedReplayCommand> Commands, L12RankedRuntimeCheckpoint? Runtime,
     string? LoadError, int StorageVersion = 1, L12PersistedCheckpoint? StateCheckpoint = null,
-    IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null);
+    IReadOnlyList<L12PersistedActionRequest>? ProcessedRequests = null, string ModeId = "ranked",
+    string SeasonId = "");
 
 internal sealed record L12RankedReplayCommand(
-    long Sequence, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
+    long Sequence, string ReceivedUtc, int PlayerIndex, string CommandJson, string CommandType, bool Accepted, long Revision,
     string StateHash, int? AuthorityWinner, string? AuthorityWinnerReason);
 
 public sealed record L12RankedRecoverySummary(
@@ -119,7 +122,7 @@ public sealed partial class MatchRecorder
 
     private static void ValidateSettlement(L12RankedSettlementEnvelope payload)
     {
-        if (payload.Version != 1 || string.IsNullOrWhiteSpace(payload.MatchId)
+        if (payload.Version is not (1 or 2) || string.IsNullOrWhiteSpace(payload.MatchId)
             || string.IsNullOrWhiteSpace(payload.FirstAccountId)
             || string.IsNullOrWhiteSpace(payload.SecondAccountId)
             || string.Equals(payload.FirstAccountId, payload.SecondAccountId,
@@ -129,7 +132,9 @@ public sealed partial class MatchRecorder
             || payload.FinalRound < 0
             || string.IsNullOrWhiteSpace(payload.ConclusionKind)
             || payload.FirstMasterId is null || payload.SecondMasterId is null
-            || payload.FirstNetworkFingerprint is null || payload.SecondNetworkFingerprint is null)
+            || payload.FirstNetworkFingerprint is null || payload.SecondNetworkFingerprint is null
+            || payload.FirstBrowserFingerprint is null || payload.SecondBrowserFingerprint is null
+            || payload.Version >= 2 && string.IsNullOrWhiteSpace(payload.SeasonId))
             throw new InvalidDataException("排位结算 outbox 载荷结构无效");
     }
 
@@ -323,10 +328,11 @@ public sealed partial class MatchRecorder
         await connection.OpenAsync();
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT match_id,payload_json,payload_hash,status,attempts
-            FROM ranked_settlement_outbox
-            WHERE status='pending' OR ($includeApplied=1 AND status='applied')
-            ORDER BY created_utc,match_id;
+            SELECT o.match_id,o.payload_json,o.payload_hash,o.status,o.attempts,m.season_id
+            FROM ranked_settlement_outbox o
+            JOIN matches m ON m.match_id=o.match_id AND m.mode_id='ranked'
+            WHERE o.status='pending' OR ($includeApplied=1 AND o.status='applied')
+            ORDER BY o.created_utc,o.match_id;
             """;
         command.Parameters.AddWithValue("$includeApplied", includeApplied ? 1 : 0);
         var result = new List<L12RankedSettlementOutboxEntry>();
@@ -346,6 +352,13 @@ public sealed partial class MatchRecorder
                 ValidateSettlement(payload);
                 if (!string.Equals(payload.MatchId, reader.GetString(0), StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("match identity mismatch");
+                var recordedSeasonId = reader.IsDBNull(5) ? string.Empty : reader.GetString(5);
+                if (string.IsNullOrWhiteSpace(recordedSeasonId))
+                    throw new InvalidDataException("recorded season identity missing");
+                if (payload.Version >= 2 && !string.Equals(payload.SeasonId, recordedSeasonId,
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("season identity mismatch");
+                if (payload.Version == 1) payload = payload with { SeasonId = recordedSeasonId };
             }
             catch (Exception error) when (error is InvalidDataException or JsonException)
             {
@@ -437,6 +450,50 @@ public sealed partial class MatchRecorder
 
     internal async Task<int> CountActiveRankedRuntimesAsync()
         => await ScalarCountAsync("SELECT COUNT(*) FROM ranked_match_runtime WHERE status='active';");
+
+    internal async Task<L12RankedSeasonCutoverReadiness> RankedSeasonCutoverReadinessAsync(string seasonId)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync();
+        async Task<int> CountAsync(string sql)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = sql;
+            return Convert.ToInt32(await command.ExecuteScalarAsync());
+        }
+
+        var active = await CountAsync("""
+            SELECT COUNT(*) FROM (
+                SELECT m.match_id
+                FROM matches m
+                WHERE m.ended_utc IS NULL
+                  AND LOWER(TRIM(COALESCE(m.mode_id,'')))
+                      NOT IN ('friendly','casual','tournament','sandbox')
+                UNION
+                SELECT r.match_id
+                FROM ranked_match_runtime r
+                LEFT JOIN matches m ON m.match_id=r.match_id
+                WHERE r.status='active'
+                  AND (m.match_id IS NULL
+                       OR LOWER(TRIM(COALESCE(m.mode_id,''))) NOT IN ('ranked','tournament')
+                       OR m.ended_utc IS NOT NULL
+                       OR r.room_code<>m.room_code COLLATE NOCASE)
+            );
+            """);
+        var pending = await CountAsync("""
+            SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='pending';
+            """);
+        var reconciliation = await CountAsync("""
+            SELECT COUNT(*) FROM ranked_settlement_outbox
+            WHERE status='applied' AND last_error IS NOT NULL;
+            """);
+        var quarantined = await CountAsync("""
+            SELECT
+                (SELECT COUNT(*) FROM ranked_settlement_outbox WHERE status='quarantined')
+              + (SELECT COUNT(*) FROM ranked_recovery_quarantine);
+            """);
+        return new L12RankedSeasonCutoverReadiness(seasonId, active, pending, reconciliation, quarantined);
+    }
 
     internal async Task<IReadOnlyList<L12RankedMasterTitleMatchFact>> ListRankedMasterTitleFactsAsync(
         DateTimeOffset utcNow)
@@ -548,7 +605,7 @@ public sealed partial class MatchRecorder
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT match_id FROM matches
-            WHERE mode_id='ranked' AND ended_utc IS NULL
+            WHERE mode_id IN ('ranked','tournament') AND ended_utc IS NULL
             ORDER BY started_utc,match_id;
             """;
         var result = new List<string>();
@@ -581,16 +638,17 @@ public sealed partial class MatchRecorder
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.seed,m.player_0,m.player_1,m.account_0,m.account_1,
                    COALESCE(m.initial_state_json,''),m.started_utc,
-                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation,m.storage_version
+                   r.checkpoint_json,r.checkpoint_hash,r.checkpoint_generation,m.storage_version,m.mode_id,
+                   COALESCE(m.season_id,'')
             FROM matches m
             LEFT JOIN ranked_match_runtime r ON r.match_id=m.match_id AND r.status='active'
-            WHERE m.match_id=$match AND m.mode_id='ranked' AND m.ended_utc IS NULL
+            WHERE m.match_id=$match AND m.mode_id IN ('ranked','tournament') AND m.ended_utc IS NULL
             LIMIT 1;
             """;
         command.Parameters.AddWithValue("$match", matchId);
         (string MatchId, string RoomCode, int Seed, string[] Names, string[] Accounts,
             string Initial, string Started, string? RuntimeJson, string? RuntimeHash,
-            long? RuntimeGeneration, int StorageVersion) row;
+            long? RuntimeGeneration, int StorageVersion, string ModeId, string SeasonId) row;
         await using (var reader = await command.ExecuteReaderAsync())
         {
             if (!await reader.ReadAsync()) return null;
@@ -601,7 +659,8 @@ public sealed partial class MatchRecorder
                 reader.GetString(7), reader.GetString(8),
                 reader.IsDBNull(9) ? null : reader.GetString(9),
                 reader.IsDBNull(10) ? null : reader.GetString(10),
-                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.GetInt32(12));
+                reader.IsDBNull(11) ? null : reader.GetInt64(11), reader.GetInt32(12), reader.GetString(13),
+                reader.GetString(14));
         }
         L12PresetDeckDefinition[] decks = [];
         IReadOnlyList<L12RankedReplayCommand> events = [];
@@ -660,7 +719,7 @@ public sealed partial class MatchRecorder
         }
         return new L12RankedRecoverySource(row.MatchId, row.RoomCode, row.Seed, row.Names,
             row.Accounts, recoveryInitialStateJson, row.Started, decks, events, runtime, error,
-            row.StorageVersion, stateCheckpoint, processedRequests);
+            row.StorageVersion, stateCheckpoint, processedRequests, row.ModeId, row.SeasonId);
     }
 
     private static async Task<L12PersistedCheckpoint?> LoadInitialStateCheckpointAsync(
@@ -803,7 +862,7 @@ public sealed partial class MatchRecorder
     {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT sequence,player_index,command_json,accepted,revision,state_hash
+            SELECT sequence,received_utc,player_index,command_json,accepted,revision,state_hash
             FROM match_events WHERE match_id=$match AND sequence>$after ORDER BY sequence;
             """;
         command.Parameters.AddWithValue("$match", matchId);
@@ -813,22 +872,24 @@ public sealed partial class MatchRecorder
         {
             while (await reader.ReadAsync())
             {
-                var commandJson = reader.GetString(2);
+                var commandJson = reader.GetString(3);
                 using var commandDocument = JsonDocument.Parse(commandJson);
                 var commandElement = commandDocument.RootElement;
                 if (!(commandElement.TryGetProperty("type", out var type)
                       || commandElement.TryGetProperty("Type", out type))
                     || type.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(type.GetString()))
                     throw new InvalidDataException("排位命令缺少类型");
-                events.Add(new L12RankedReplayCommand(reader.GetInt64(0), reader.GetInt32(1),
-                    commandJson, type.GetString()!, reader.GetInt32(3) == 1, reader.GetInt64(4),
-                    reader.GetString(5), null, null));
+                events.Add(new L12RankedReplayCommand(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2),
+                    commandJson, type.GetString()!, reader.GetInt32(4) == 1, reader.GetInt64(5),
+                    reader.GetString(6), null, null));
             }
         }
         for (var index = 0; index < events.Count; index++)
         {
             var recorded = events[index];
-            if (!string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+            if (!L12RecordedCommandOrigin.AllowsInternalReplay(recorded.CommandType,
+                    recorded.PlayerIndex, recorded.Accepted)
+                || !string.Equals(recorded.CommandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
                 continue;
             var authority = journalV2
                 ? ReadAuthorityConclusionCommand(recorded.CommandJson)

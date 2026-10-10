@@ -15,12 +15,14 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12WebSocketServer : IAsyncDisposable
 {
+    private const string OperationsCrossSectionReplaceIntent = "replace-all-operations-sections";
     private static readonly JsonSerializerOptions OutgoingJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan SocketSendTimeout = TimeSpan.FromSeconds(5);
 
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState);
+    private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
     private readonly L12RoomManager _rooms;
@@ -31,8 +33,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly IL12ReleaseControlAdapter _releaseControl;
     private readonly L12Catalog _catalog;
     private readonly int _cardCount;
+    private readonly L12HttpPerformanceMonitor _httpPerformance = new();
+    private readonly Func<L12ServerStorageView> _storageSnapshot;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
+    private readonly ConcurrentDictionary<Guid, L12InboundConnection> _inboundConnections = new();
+    private readonly ConcurrentDictionary<Guid, byte> _establishedInboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
     private readonly ConcurrentDictionary<Guid, SocketPlatformBinding> _socketPlatformSessions = new();
     private readonly ConcurrentDictionary<Guid, ProtocolCapabilities> _socketCapabilities = new();
@@ -47,6 +53,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private CancellationTokenSource? _rankedClockWatchdogCancellation;
     private Task? _rankedClockWatchdogTask;
     private readonly TimeSpan _sandboxReplayMaintenanceInterval;
+    private readonly Func<DateTimeOffset> _seasonActivationUtcNow;
     private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
     private Task? _sandboxReplayMaintenanceTask;
     private WebApplication? _app;
@@ -58,11 +65,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl = null,
         string? rankedIntegrityHmacKey = null, TimeSpan? rankedClockWatchdogInterval = null,
         IL12ModianImportClient? modianImportClient = null,
-        TimeSpan? sandboxReplayMaintenanceInterval = null)
+        TimeSpan? sandboxReplayMaintenanceInterval = null,
+        Func<L12ServerStorageView>? storageSnapshot = null,
+        Func<DateTimeOffset>? seasonActivationUtcNow = null)
     {
         _rooms = rooms;
         _recorder = recorder;
         _platform = platform;
+        _deploymentController = rooms.DeploymentDrain is { } coordinator
+            ? new L12DeploymentDrainController(rooms, recorder, platform, coordinator) : null;
         _adminCommands = new L12AdminCommandBus(platform);
         _modianImports = new L12ModianImportService(platform, modianImportClient);
         _releaseControl = releaseControl ?? new L12DisabledReleaseControlAdapter();
@@ -74,6 +85,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceInterval = sandboxReplayMaintenanceInterval is { } maintenanceInterval
                                             && maintenanceInterval > TimeSpan.Zero
             ? maintenanceInterval : TimeSpan.FromMinutes(5);
+        _storageSnapshot = storageSnapshot ?? (() => L12ServerStorageMonitor.Read());
+        _seasonActivationUtcNow = seasonActivationUtcNow ?? (() => DateTimeOffset.UtcNow);
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -88,7 +101,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         builder.WebHost.UseUrls($"http://{host}:{port}");
         builder.Services.AddRouting();
         _app = builder.Build();
+        var trafficGuard = new L12HttpTrafficGuard();
         MapRankedIntegrityEndpoints();
+        _app.Use((context, next) => _httpPerformance.InvokeAsync(context, next));
+        _app.Use((context, next) => L12HttpExceptionBoundary.InvokeAsync(context, next));
         _app.Use(async (context, next) =>
         {
             // Authentication, mail throttles and privacy-preserving ranked network keys
@@ -108,15 +124,48 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 $"Content-Type, Authorization, {L12CorrelationIds.HeaderName}, Idempotency-Key, If-Match, X-Admin-Reason";
             context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
             context.Response.Headers.AccessControlExposeHeaders =
-                $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag";
+                $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag, Retry-After, RateLimit-Limit, RateLimit-Remaining, Server-Timing";
             if (HttpMethods.IsOptions(context.Request.Method)) { context.Response.StatusCode = StatusCodes.Status204NoContent; return; }
-            var restrictedAccount = context.Request.Path.StartsWithSegments("/api")
+            if (!TryAcquireHttpDeploymentGuard(context.Request, out var deploymentGuard))
+            {
+                context.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
+                context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsJsonAsync(new L12ApiError("deploymentDrainActive",
+                    "服务器正在更新，请稍后再试", correlationId));
+                return;
+            }
+            using var deploymentRequestGuard = deploymentGuard;
+            var anonymousPublicTournamentRead = HttpMethods.IsGet(context.Request.Method)
+                && context.Request.Path.StartsWithSegments("/api/public/tournaments");
+            if (anonymousPublicTournamentRead || HttpMethods.IsGet(context.Request.Method)
+                    && context.Request.Path.StartsWithSegments("/api/rankings"))
+                context.Response.Headers.CacheControl = "no-store";
+            var restrictedAccount = !anonymousPublicTournamentRead
+                && context.Request.Path.StartsWithSegments("/api")
                 ? _platform.Authenticate(context.Request.Headers.Authorization) : null;
+            var rate = trafficGuard.Acquire(context.Request,
+                context.Connection.RemoteIpAddress?.ToString() ?? "unknown", restrictedAccount?.Id);
+            if (rate.Limit != int.MaxValue)
+            {
+                context.Response.Headers["RateLimit-Limit"] = rate.Limit.ToString();
+                context.Response.Headers["RateLimit-Remaining"] = rate.Remaining.ToString();
+            }
+            if (!rate.Allowed)
+            {
+                context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                context.Response.Headers.RetryAfter = rate.RetryAfterSeconds.ToString();
+                context.Response.Headers.CacheControl = "no-store";
+                await context.Response.WriteAsJsonAsync(new L12ApiError("rate_limited",
+                    "请求过于频繁，请稍后重试", correlationId));
+                return;
+            }
             var accountRecoveryPathAllowed = context.Request.Path == "/api/auth/me"
                 || context.Request.Path == "/api/auth/change-password"
                 || context.Request.Path == "/api/auth/change-username"
                 || context.Request.Path == "/api/auth/mfa/capability"
-                || context.Request.Path.StartsWithSegments("/api/auth/sessions");
+                || context.Request.Path.StartsWithSegments("/api/auth/sessions")
+                || anonymousPublicTournamentRead;
             if (restrictedAccount is { MustChangeUsername: true } && !accountRecoveryPathAllowed)
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -131,11 +180,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "必须先修改管理员设置的临时密码", correlationId));
                 return;
             }
-            var featureId = context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
+            var featureId = context.Request.Path.StartsWithSegments("/api/public/tournaments") ? "tournaments"
+                : context.Request.Path.StartsWithSegments("/api/public-decks") ? "publicDecks"
                 : context.Request.Path.StartsWithSegments("/api/tournaments") ? "tournaments"
                 : null;
             if (featureId is not null && !_platform.CaptureOperationsPolicy().IsFeatureEnabled(featureId))
             {
+                context.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 await context.Response.WriteAsJsonAsync(new
                 {
@@ -149,6 +200,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         _app.UseRouting();
         _app.UseWebSockets();
+        MapDeploymentDrainEndpoints();
         _app.MapGet("/health", () =>
         {
             var build = L12RuntimeBuildVersion.Capture();
@@ -179,12 +231,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
-            if (match is not null && match.Commands.Count == 0)
-                return ApiError(request, "replay_payload_expired",
-                    "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
-                    StatusCodes.Status410Gone);
-            return match is null ? Results.NotFound() : Results.Ok(match);
+            try
+            {
+                var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
+                if (match is not null && match.Commands.Count == 0)
+                    return ApiError(request, "replay_payload_expired",
+                        "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
+                        StatusCodes.Status410Gone);
+                return match is null ? Results.NotFound() : Results.Ok(match);
+            }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (player-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，仍可查看对局结果。",
+                    StatusCodes.Status409Conflict);
+            }
         });
         _app.MapGet("/api/admin/matches", async (HttpRequest request) =>
         {
@@ -242,6 +305,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         StatusCodes.Status410Gone);
                 return match is null ? Results.NotFound() : Results.Ok(match);
             }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (admin-detail; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，对局档案仍可查看。",
+                    StatusCodes.Status409Conflict);
+            }
             catch (L12ReplayPayloadTooLargeException error)
             {
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-rejected",
@@ -286,6 +357,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         StatusCodes.Status410Gone);
                 return page is null ? Results.NotFound() : Results.Ok(page);
             }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                _ = MatchRecorder.TryGetReplayIncompatibility(error, out var evidence);
+                Console.Error.WriteLine($"Replay reconstruction rejected (admin-page; correlation={CorrelationId(request)}): reason={evidence!.Reason}; sequence={evidence.Sequence?.ToString() ?? "none"}; type={evidence.CommandType ?? "none"}; dimension={evidence.Dimension}");
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，对局档案仍可查看。",
+                    StatusCodes.Status409Conflict);
+            }
             catch (ArgumentException error)
             {
                 return ApiError(request, "invalid_replay_cursor", error.Message,
@@ -322,9 +401,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, _app.Lifetime.ApplicationStopping);
             try
             {
-                var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request));
+                var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request),
+                    cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-list",
                     "cards", AuditContext(request, permission));
                 return Results.Ok(page);
@@ -333,18 +416,34 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (CardAnalyticsUnavailableException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.StatusCode);
+            }
+            catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.StatusCode(499);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
         });
         _app.MapGet("/api/admin/analytics/cards/{cardId}", async (HttpRequest request, string cardId) =>
         {
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, _app.Lifetime.ApplicationStopping);
             try
             {
                 var includeRecentMatches = L12Authorization.HasPermission(authenticated.Account,
                     L12Permission.AdminMatchesRead);
                 var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request),
-                    includeRecentMatches);
+                    includeRecentMatches, cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
                     cardId, AuditContext(request, permission));
                 return detail is null ? Results.NotFound() : Results.Ok(detail);
@@ -353,16 +452,87 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (CardAnalyticsUnavailableException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.StatusCode);
+            }
+            catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                return Results.StatusCode(499);
+            }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            {
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
         });
-        _app.MapGet("/api/rankings", async (string? faction, int? limit, string? range) =>
+        _app.MapGet("/api/admin/analytics/masters", async (HttpRequest request) =>
         {
-            var matches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
-            return Results.Ok(new { players = _platform.RankedLeaderboard(faction, limit ?? 100),
-                masterChampions = _platform.RankedMasterChampions(),
-                analytics = _platform.RankedAnalytics(matches, range) });
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var report = await _recorder.ReadMasterAnalyticsAsync(CardAnalyticsQuery(request));
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-master-report",
+                    report.SelectedMasterId ?? "masters", AuditContext(request, permission));
+                return Results.Ok(report);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/admin/analytics/global", async (HttpRequest request) =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var today = DateOnly.FromDateTime(DateTime.UtcNow);
+                var from = QueryDate(request, "fromUtc", "from") is { } parsedFrom
+                    ? DateOnly.FromDateTime(parsedFrom.UtcDateTime) : today.AddDays(-29);
+                var to = QueryDate(request, "toUtc", "to") is { } parsedTo
+                    ? DateOnly.FromDateTime(parsedTo.UtcDateTime) : today;
+                var report = await _recorder.ReadGlobalAnalyticsAsync(from, to, _platform.Accounts(),
+                    request.HttpContext.RequestAborted);
+                _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-global-report",
+                    $"{from:yyyy-MM-dd}:{to:yyyy-MM-dd}", AuditContext(request, permission));
+                return Results.Ok(report);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/rankings", async (HttpRequest request, string? faction, string? range) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            var recordedMatches = await _recorder.ListRankedAnalyticsMatchesAsync(20_000);
+            var matches = recordedMatches
+                .Concat(_platform.TestRunAcceptanceRankedMatches())
+                .DistinctBy(item => item.MatchId, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var rolling = range is "7d" or "30d";
+            var observedAt = DateTimeOffset.UtcNow;
+            // A capped page is complete for this window only when its oldest row is strictly
+            // earlier than the boundary; rows tied at the boundary may still be omitted.
+            var windowStart = observedAt.AddDays(range == "7d" ? -7 : -30);
+            var oldestRecordedStart = recordedMatches.LastOrDefault()?.StartedUtc;
+            var cappedWindowComplete = DateTimeOffset.TryParse(oldestRecordedStart, out var oldestStarted)
+                && oldestStarted < windowStart;
+            var rawWindowComplete = !rolling || await _recorder.IsRankedAnalyticsWindowCompleteAsync(windowStart);
+            var rangeLimited = rolling && (!rawWindowComplete
+                || recordedMatches.Count >= 20_000 && !cappedWindowComplete);
+            var players = rangeLimited ? Array.Empty<L12RankedLeaderboardEntry>()
+                : rolling ? _platform.RankedIntervalLeaderboard(matches, range!, faction, 50, account?.Id, observedAt)
+                : _platform.RankedLeaderboard(faction, 50, account?.Id);
+            var analytics = _platform.RankedAnalytics(rangeLimited ? [] : matches, range, observedAt);
+            return Results.Ok(new { players, analytics, rangeLimited });
         });
         _app.MapGet("/api/rankings/history", (int? limit) =>
-            Results.Ok(_platform.RankedSeasonHonors(limit ?? 500)));
+            Results.Ok(_platform.RankedSeasonHistory(limit ?? 500)));
         _app.MapGet("/api/ranked/me", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -402,10 +572,406 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 ? Results.Ok(new { completed = true })
                 : Results.Conflict(new { message = "广播领取不存在或确认凭据无效" });
         });
+        _app.MapGet("/api/admin/storage/private-deck-persistence", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.PrivateDeckPersistenceStatus(authenticated.Account));
+        });
         _app.MapGet("/api/admin/ranked/config", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure)) return failure;
             return Results.Ok(_platform.RankedConfig(authenticated.Account));
+        });
+        _app.MapGet("/api/admin/seasons", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.SeasonCatalog(authenticated.Account, _seasonActivationUtcNow()));
+        });
+        _app.MapGet("/api/admin/seasons/archives", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.SeasonArchives(authenticated.Account));
+        });
+        _app.MapGet("/api/admin/seasons/archives/{seasonId}", (HttpRequest request, string seasonId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            try { return Results.Ok(_platform.SeasonArchive(authenticated.Account, seasonId)); }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapGet("/api/admin/seasons/{definitionId}", (HttpRequest request, string definitionId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminOperationsRead, out var authenticated, out var failure))
+                return failure;
+            try { return Results.Ok(_platform.SeasonDefinition(authenticated.Account, definitionId)); }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/draft", (HttpRequest request, SeasonDraftCreateRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
+            var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+            var payload = new L12SeasonDraftCreateCommandPayload(body.ExpectedCurrentRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-draft-create", "operations:config", payload,
+                idempotencyKey, expectedVersion, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.CreateSeasonDraft(current.Actor,
+                    current.Payload.ExpectedCurrentRevision, current.Reason ?? string.Empty,
+                    current.AuditContext)));
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPut("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
+            string definitionId, SeasonDraftUpdateRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
+            try
+            {
+                var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+                var payload = new L12SeasonDefinitionApplyCommandPayload(definitionId, body.Draft,
+                    body.ExpectedRevision, body.PreviewToken ?? string.Empty);
+                var command = CommandEnvelope(request, authenticated.Account, permission,
+                    "operations.config.season-draft-update", "operations:config", payload,
+                    idempotencyKey, expectedVersion, false, body.Reason);
+                var outcome = _adminCommands.Execute(command, permission,
+                    current => ExecuteOperationsConfig(() =>
+                    {
+                        var token = current.Payload.PreviewToken;
+                        if (string.IsNullOrWhiteSpace(token))
+                            token = _platform.PreviewNextSeasonDefinition(current.Actor,
+                                current.Payload.DefinitionId, current.Payload.Draft,
+                                current.Payload.ExpectedRevision, expectedVersion,
+                                current.AuditContext).PreviewToken;
+                        return _platform.ApplyNextSeasonDefinition(current.Actor,
+                            current.Payload.DefinitionId, current.Payload.Draft,
+                            current.Payload.ExpectedRevision, expectedVersion, token,
+                            current.Reason ?? string.Empty, current.AuditContext);
+                    }));
+                var response = AdminCommandResponse(request, command, outcome);
+                request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+                return response;
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapDelete("/api/admin/seasons/draft/{definitionId}", (HttpRequest request,
+            string definitionId, [Microsoft.AspNetCore.Mvc.FromBody] SeasonDraftDeleteRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion ?? _platform.OperationsConfigVersion();
+            var idempotencyKey = ResolveSeasonCommandKey(request, body.IdempotencyKey);
+            var payload = new L12SeasonDraftDeleteCommandPayload(definitionId, body.ExpectedRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-draft-delete", "operations:config", payload,
+                idempotencyKey, expectedVersion, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.DeleteSeasonDraft(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.ExpectedRevision,
+                    current.Reason ?? string.Empty, current.AuditContext)));
+            request.HttpContext.Response.Headers["X-Command-ID"] = outcome.Command?.Id ?? command.CommandId;
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            if (outcome.Replayed) request.HttpContext.Response.Headers["X-Idempotent-Replay"] = "true";
+            return outcome.Success ? Results.NoContent()
+                : ApiError(request, outcome.Code, outcome.Message, outcome.StatusCode);
+        });
+        _app.MapPost("/api/admin/seasons/{definitionId}/preview", (HttpRequest request,
+            string definitionId, SeasonDefinitionPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季配置预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            try
+            {
+                return Results.Ok(_platform.PreviewSeasonDefinition(authenticated.Account, definitionId,
+                    body.Draft, body.ExpectedRevision, expectedVersion.Value,
+                    AuditContext(request, permission)));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPut("/api/admin/seasons/{definitionId}", (HttpRequest request,
+            string definitionId, SeasonDefinitionApplyRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonDefinitionApplyCommandPayload(definitionId, body.Draft,
+                body.ExpectedRevision, body.PreviewToken ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-definition-apply", "operations:config", payload,
+                key, expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ApplySeasonDefinition(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.Draft, current.Payload.ExpectedRevision,
+                    expected, current.Payload.PreviewToken, current.Reason ?? string.Empty,
+                    current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Slot == "current") NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/activate", async (HttpRequest request,
+            string definitionId, SeasonActivationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationCommandPayload(definitionId,
+                body.ExpectedCurrentRevision, body.ExpectedDraftRevision);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activate", "operations:config", payload, key, expected,
+                false, body.Reason);
+            var outcome = await _rooms.ExecuteRankedSeasonCutoverAsync(readiness =>
+                _adminCommands.Execute(command, permission,
+                    current => ExecuteOperationsConfig(() => _platform.ActivateSeason(current.Actor,
+                        current.Payload.DefinitionId, current.Payload.ExpectedCurrentRevision,
+                        current.Payload.ExpectedDraftRevision, current.Reason ?? string.Empty,
+                        readiness, current.AuditContext)), risk: L12AdminCommandRisk.High));
+            if (outcome.Success)
+            {
+                NotifyOperationsPolicyChanged();
+                if (outcome.Value is not null)
+                    NotifySeasonSummaryNotificationsChanged(
+                        _platform.SeasonSummaryRecipients(outcome.Value.Archive.SeasonId));
+            }
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/activation-preview", async (
+            HttpRequest request, string definitionId, SeasonActivationPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "切季影响预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            try
+            {
+                var catalog = _platform.SeasonCatalog(authenticated.Account,
+                    _seasonActivationUtcNow());
+                var preview = await _rooms.InspectRankedSeasonCutoverSnapshotAsync(
+                    catalog.Current.SeasonId, readiness =>
+                    {
+                        var observedAt = _seasonActivationUtcNow();
+                        return _platform.PreviewSeasonActivation(authenticated.Account, definitionId,
+                            body.ExpectedCurrentRevision, body.ExpectedDraftRevision,
+                            expectedVersion.Value, readiness, observedAt);
+                    });
+                return Results.Ok(preview);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/ranked/season-reset-repair/preview", async (HttpRequest request,
+            RankedSeasonResetRepairPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "T01 修复预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            try
+            {
+                var preview = await _rooms.InspectRankedSeasonCutoverSnapshotAsync("T01", readiness =>
+                    _platform.PreviewT01RankedSeasonReset(authenticated.Account,
+                        body.SeasonId ?? string.Empty, expectedVersion.Value, readiness,
+                        _seasonActivationUtcNow(), body.CompetitiveStartAt));
+                return Results.Ok(preview);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/ranked/season-reset-repair", async (HttpRequest request,
+            RankedSeasonResetRepairRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission,
+                    body.IdempotencyKey, body.ExpectedVersion, out var key, out var expected,
+                    out failure)) return failure;
+            var payload = new L12RankedSeasonResetRepairCommandPayload(body.SeasonId ?? string.Empty,
+                body.ExpectedEvidenceFingerprint ?? string.Empty, body.CompetitiveStartAt);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.ranked-season-reset-repair", "operations:config", payload,
+                key, expected, false, body.Reason);
+            var outcome = await _rooms.ExecuteRankedSeasonCutoverAsync(readiness =>
+                _adminCommands.Execute(command, permission,
+                    current => ExecuteOperationsConfig(() =>
+                        _platform.RepairT01RankedSeasonReset(current.Actor,
+                            current.Payload.SeasonId, current.Reason ?? string.Empty, expected,
+                            readiness, current.AuditContext, current.Payload.ExpectedEvidenceFingerprint,
+                            _seasonActivationUtcNow(), current.Payload.CompetitiveStartAt)),
+                    risk: L12AdminCommandRisk.High));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag =
+                $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/identity-normalization/preview", async (HttpRequest request,
+            SeasonIdentityMigrationPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季编号迁移预览必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            if (expectedVersion.Value != _platform.OperationsConfigVersion())
+                return ApiError(request, "operations_version_conflict",
+                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+            try
+            {
+                return Results.Ok(await _rooms.PreviewSeasonIdentityNormalizationAsync(
+                    authenticated.Account, _seasonActivationUtcNow()));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+            catch (L12SeasonIdentityMigrationException error)
+            {
+                return ApiError(request, error.Code, error.Message, StatusCodes.Status409Conflict);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/identity-normalization", async (HttpRequest request,
+            SeasonIdentityMigrationRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var expectedVersion = body.ExpectedVersion
+                ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault());
+            if (expectedVersion is null)
+                return ApiError(request, "expected_version_required",
+                    "赛季编号迁移必须提供 expectedVersion/If-Match",
+                    StatusCodes.Status428PreconditionRequired);
+            if (expectedVersion.Value != _platform.OperationsConfigVersion())
+                return ApiError(request, "operations_version_conflict",
+                    "运营配置已变化，请刷新后重试", StatusCodes.Status409Conflict);
+            var idempotencyKey = body.IdempotencyKey?.Trim() ?? string.Empty;
+            if (idempotencyKey.Length is < 8 or > 80)
+                return ApiError(request, "idempotency_key_required",
+                    "赛季编号迁移需要 8-80 位幂等键", StatusCodes.Status400BadRequest);
+            try
+            {
+                var owner = $"{_seasonActivationWorkerId}:season-identity:{idempotencyKey}";
+                if (owner.Length > 120) owner = owner[..120];
+                var result = await _rooms.ExecuteSeasonIdentityNormalizationAsync(
+                    authenticated.Account, body.ExpectedPlatformFingerprint ?? string.Empty,
+                    body.ExpectedRecorderFingerprint ?? string.Empty, owner,
+                    body.Reason ?? string.Empty, _seasonActivationUtcNow(),
+                    RequestAuditContext(request, permission) with { IdempotencyKey = idempotencyKey,
+                        ExpectedVersion = expectedVersion, Reason = body.Reason });
+                NotifyOperationsPolicyChanged();
+                request.HttpContext.Response.Headers.ETag =
+                    $"\"{_platform.OperationsConfigVersion()}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return SeasonManagementError(request, error);
+            }
+            catch (L12SeasonIdentityMigrationException error)
+            {
+                return ApiError(request, error.Code, error.Message, StatusCodes.Status409Conflict);
+            }
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/arm", async (HttpRequest request,
+            string definitionId, SeasonActivationArmRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationArmCommandPayload(definitionId,
+                body.ExpectedCurrentRevision, body.ExpectedDraftRevision,
+                body.ImpactPreviewToken ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activation-arm", "operations:config", payload, key,
+                expected, false, body.Reason);
+            var catalog = _platform.SeasonCatalog(authenticated.Account,
+                _seasonActivationUtcNow());
+            var outcome = await _rooms.InspectRankedSeasonCutoverSnapshotAsync(
+                catalog.Current.SeasonId, readiness =>
+                {
+                    var observedAt = _seasonActivationUtcNow();
+                    return _adminCommands.Execute(command, permission,
+                        current => ExecuteOperationsConfig(() => _platform.ArmSeasonActivation(
+                            current.Actor, current.Payload.DefinitionId,
+                            current.Payload.ExpectedCurrentRevision,
+                            current.Payload.ExpectedDraftRevision, expected,
+                            current.Payload.ImpactPreviewToken, readiness,
+                            current.Reason ?? string.Empty, observedAt, current.AuditContext)),
+                        risk: L12AdminCommandRisk.High);
+                });
+            if (outcome.Success) ScheduleSeasonActivationEvaluation();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/seasons/draft/{definitionId}/disarm", (HttpRequest request,
+            string definitionId, SeasonActivationDisarmRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12SeasonActivationDisarmCommandPayload(definitionId,
+                body.ExpectedDraftRevision, body.ExpectedPlanGeneration,
+                body.DisarmGuardToken ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.season-activation-disarm", "operations:config", payload, key,
+                expected, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.DisarmSeasonActivation(current.Actor,
+                    current.Payload.DefinitionId, current.Payload.ExpectedDraftRevision,
+                    current.Payload.ExpectedPlanGeneration, current.Payload.DisarmGuardToken,
+                    current.Reason ?? string.Empty, _seasonActivationUtcNow(), current.AuditContext)),
+                risk: L12AdminCommandRisk.High);
+            if (outcome.Success) ScheduleSeasonActivationEvaluation();
+            var response = AdminCommandResponse(request, command, outcome);
+            request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
+            return response;
         });
         _app.MapPut("/api/admin/ranked/config", (HttpRequest request, RankedConfigRequest body) =>
         {
@@ -488,6 +1054,51 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 body.NewUsername ?? string.Empty, authenticated.SessionId);
             return result.Success ? Results.Ok(new { result.Message, result.Account })
                 : Results.BadRequest(new { result.Message });
+        });
+        _app.MapGet("/api/me/statistics", async (HttpRequest request, string? range) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var recorded = await _recorder.PlayerStatisticsAsync(account.Id, account.Username,
+                    _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds(),
+                    range ?? "season", _platform.CaptureOperationsPolicy().Season,
+                    request.HttpContext.RequestAborted);
+                return Results.Ok(_platform.MergeTestRunAcceptanceStatistics(account.Id, recorded));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_statistics_range", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/auth/username-change-status", (HttpRequest request) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            return authenticated is null ? ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized)
+                : Results.Ok(_platform.UsernameChangeStatus(authenticated.Account.Id));
+        });
+        _app.MapPost("/api/auth/username-change", (HttpRequest request, ChangeUsernameRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            var result = _platform.SelfServiceChangeUsername(authenticated.Account.Id, body.CurrentPassword ?? string.Empty,
+                body.NewUsername ?? string.Empty, authenticated.SessionId);
+            return result.Success ? Results.Ok(new { result.Message, result.Account }) : Results.BadRequest(new { result.Message });
+        });
+        _app.MapPost("/api/auth/username-change-requests", (HttpRequest request, UsernameChangeApplicationRequest body) =>
+        {
+            var authenticated = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (authenticated is null)
+                return ApiError(request, "authentication_required", "请先登录账号", StatusCodes.Status401Unauthorized);
+            try { return Results.Ok(_platform.SubmitUsernameChangeRequest(authenticated.Account.Id,
+                body.NewUsername ?? string.Empty, body.Reason ?? string.Empty)); }
+            catch (KeyNotFoundException error) { return ApiError(request, "account_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (InvalidOperationException error) { return ApiError(request, "username_change_unavailable", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "username_change_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapPut("/api/auth/audio-preferences", (HttpRequest request, L12AudioPreferencesView body) =>
         {
@@ -592,6 +1203,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 AuditContext(request, L12Permission.SessionsRevokeOwn));
             return SessionRevocationResponse(request, result);
         });
+        _app.MapDelete("/api/auth/sessions/others", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
+            var result = _platform.RevokeOtherOwnSessions(authenticated,
+                AuditContext(request, L12Permission.SessionsRevokeOwn));
+            return SessionRevocationResponse(request, result);
+        });
         _app.MapGet("/api/players", (HttpRequest request, string? search) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
@@ -599,36 +1217,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
                     player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }));
         });
-        _app.MapGet("/api/presence", (HttpRequest request) =>
+        _app.MapGet("/api/presence", async (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var presence = _rooms.DescribeOnlinePresence(account.Id);
-            var friends = _platform.Friends(account.Id)
-                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-            var pending = _platform.FriendRequests(account.Id)
-                .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-            return Results.Ok(_platform.Accounts()
-                .Where(player => presence.ContainsKey(player.Id))
-                .OrderBy(player => player.Username)
-                .Select(player =>
-                {
-                    var state = presence[player.Id];
-                    var relationship = friends.GetValueOrDefault(player.Id) ?? pending.GetValueOrDefault(player.Id);
-                    return new
-                    {
-                        accountId = player.Id,
-                        player.Username,
-                        online = true,
-                        state.Activity,
-                        state.RoomCode,
-                        state.CanInvite,
-                        state.CanSpectate,
-                        state.ActionReason,
-                        friendStatus = player.Id == account.Id ? "self" : relationship?.Status ?? "none",
-                        friendDirection = relationship?.Direction ?? "none",
-                    };
-                }));
+            await _recorder.RecordSiteActivityAsync(account.Id, null, _rooms.RuntimeStats().OnlineAccountCount,
+                request.HttpContext.RequestAborted);
+            return Results.Ok(PresenceFor(account.Id));
+        });
+        _app.MapPost("/api/telemetry/page-view", async (HttpRequest request, TelemetryPageViewRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            await _recorder.RecordSiteActivityAsync(account?.Id, body.Path,
+                _rooms.RuntimeStats().OnlineAccountCount, request.HttpContext.RequestAborted);
+            return Results.NoContent();
         });
         _app.MapGet("/api/friends", (HttpRequest request) =>
         {
@@ -642,11 +1244,24 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.FriendRequests(account.Id));
         });
+        _app.MapGet("/api/friends/overview", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(new
+            {
+                friends = _platform.Friends(account.Id)
+                    .Select(player => new { player.AccountId, player.Username, player.Status, player.Direction,
+                        player.CreatedAt, online = _rooms.IsAccountOnline(player.AccountId) }),
+                requests = _platform.FriendRequests(account.Id),
+                blocked = _platform.BlockedAccounts(account.Id),
+            });
+        });
         _app.MapPost("/api/friends/requests", (HttpRequest request, FriendRequest body) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.SendFriendRequest(account.Id, body.AccountId ?? string.Empty);
+            if (result.Success) NotifyFriendsChanged(account.Id, body.AccountId ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapPost("/api/friends/requests/{requesterId}/resolve", (HttpRequest request, string requesterId, FriendResolveRequest body) =>
@@ -654,13 +1269,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.ResolveFriendRequest(account.Id, requesterId, body.Accept);
+            if (result.Success) NotifyFriendsChanged(account.Id, requesterId);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapDelete("/api/friends/{friendId}", (HttpRequest request, string friendId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.RemoveFriend(account.Id, friendId) ? Results.Ok() : Results.NotFound();
+            var removed = _platform.RemoveFriend(account.Id, friendId);
+            if (removed) NotifyFriendsChanged(account.Id, friendId);
+            return removed ? Results.Ok() : Results.NotFound();
         });
         _app.MapGet("/api/friends/blocked", (HttpRequest request) =>
         {
@@ -672,18 +1290,119 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
             var result = _platform.BlockAccount(account.Id, body.AccountId ?? string.Empty);
+            if (result.Success) NotifyFriendsChanged(account.Id, body.AccountId ?? string.Empty);
             return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
         });
         _app.MapDelete("/api/friends/blocked/{accountId}", (HttpRequest request, string accountId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.UnblockAccount(account.Id, accountId) ? Results.Ok() : Results.NotFound();
+            var removed = _platform.UnblockAccount(account.Id, accountId);
+            if (removed) NotifyFriendsChanged(account.Id, accountId);
+            return removed ? Results.Ok() : Results.NotFound();
         });
         _app.MapGet("/api/decks", (HttpRequest request) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             return account is null ? Results.Unauthorized() : Results.Ok(_platform.Decks(account.Id));
+        });
+        _app.MapGet("/api/decks/summaries", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12PrivateDeckQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "牌库摘要查询参数无效" });
+            var page = _platform.PrivateDeckSummaries(account, _catalog, query);
+            return page is null ? Results.Unauthorized() : Results.Ok(page);
+        });
+        _app.MapGet("/api/decks/by-id/{id}", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12PrivateDeckQuery.TryParseRevision(request.Query, out var revision))
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            var result = _platform.ReadPrivateDeck(account, id, revision);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Deck),
+                "unauthorized" => Results.Unauthorized(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                _ => Results.NotFound(),
+            };
+        });
+        _app.MapPost("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (!L12DeckValidator.TryValidate(_catalog, submission, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            var result = _platform.CreateDeck(account.Id, deck);
+            return result.Status switch
+            {
+                "ok" => Results.Created($"/api/decks/by-id/{result.Deck!.Id}", result.Deck),
+                "name_conflict" => Results.Conflict(new
+                {
+                    code = "deck_name_conflict",
+                    message = "已存在同名牌库",
+                }),
+                "storage_conflict" => StorageConflictResponse(request),
+                _ => Results.BadRequest(new { message = "无法创建牌库" }),
+            };
+        });
+        _app.MapPut("/api/decks/by-id/{id}", (HttpRequest request, string id, AccountDeckUpdateRequest body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (body.ExpectedRevision < 1)
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            if (body.Deck is null) return Results.BadRequest(new { message = "牌库数据为空" });
+            if (!L12DeckValidator.TryValidate(_catalog, body.Deck, out var deck, out var error))
+                return Results.BadRequest(new { message = error });
+            var result = _platform.UpdateDeck(account.Id, id, body.ExpectedRevision, deck);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Deck),
+                "not_found" => Results.NotFound(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                "name_conflict" => Results.Conflict(new
+                {
+                    code = "deck_name_conflict",
+                    message = "已存在同名牌库",
+                }),
+                "storage_conflict" => StorageConflictResponse(request),
+                _ => Results.BadRequest(new { message = "无法更新牌库" }),
+            };
+        });
+        _app.MapDelete("/api/decks/by-id/{id}", (HttpRequest request, string id, long? expectedRevision) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            if (expectedRevision is null or < 1)
+                return Results.BadRequest(new { message = "expectedRevision 必须为正整数" });
+            var result = _platform.DeleteDeck(account.Id, id, expectedRevision.Value);
+            return result.Status switch
+            {
+                "ok" => Results.NoContent(),
+                "not_found" => Results.NotFound(),
+                "revision_conflict" => Results.Conflict(new
+                {
+                    code = "deck_revision_conflict",
+                    message = "牌库已被其他操作更新，请刷新后重试",
+                    currentRevision = result.CurrentRevision,
+                }),
+                "storage_conflict" => StorageConflictResponse(request),
+                _ => Results.BadRequest(new { message = "无法删除牌库" }),
+            };
         });
         _app.MapPut("/api/decks", (HttpRequest request, L12CustomDeckSubmission submission) =>
         {
@@ -699,10 +1418,220 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             return _platform.DeleteDeck(account.Id, name) ? Results.Ok() : Results.NotFound();
         });
-        _app.MapGet("/api/public-decks", (HttpRequest request) =>
+        bool PublicDeckReadUnavailable(Exception error) => error is InvalidDataException or JsonException or FormatException
+            or Microsoft.Data.Sqlite.SqliteException or L12PlatformStorageUnavailableException or OverflowException or ArgumentException;
+        IResult PublicDeckReadFailure() => Results.Json(new { code = "public_deck_read_unavailable",
+            message = "公开牌库正文或引用当前无法安全读取" }, statusCode: 503);
+        IResult PublicDeckQueryFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "公开牌库已提交读取代当前不可用" }, statusCode: 503);
+        IResult PublicDeckStatisticsFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "牌库统计暂时无法读取，请稍后重试" }, statusCode: 503);
+        IResult PublicDeckStatisticsStatus(string status) => status switch
+        {
+            "unauthorized" => Results.Unauthorized(),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "牌库统计查询参数无效" }),
+        };
+        bool TryPublicDeckContentWriteToken(IQueryCollection query, out string token)
+        {
+            token = "";
+            if (query.Count != 1 || !query.TryGetValue("expectedReadToken", out var raw)
+                || raw.Count != 1 || raw[0] is not { } value) return false;
+            token = value;
+            return token.Length == 64
+                && token.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
+        }
+        IResult PublicDeckContentWriteFailure() => Results.Json(new { code = "storage_unavailable",
+            message = "牌库内容暂时无法保存，请稍后重试" }, statusCode: 503);
+        IResult PublicDeckContentWriteStatus(L12PublicDeckContentHeadWriteResult result) => result.Status switch
+        {
+            "ok" => Results.Ok(result.Head),
+            "unauthorized" => Results.Unauthorized(),
+            "forbidden" => Results.StatusCode(StatusCodes.Status403Forbidden),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "牌库内容写入参数无效" }),
+        };
+        _app.MapGet("/api/deck-library/summaries", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckSummaryQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "公开牌库摘要查询参数无效" });
+            try
+            {
+                var result = _platform.DeckLibrarySummaries(_catalog, query, viewer);
+                return result.Status switch
+                {
+                    "ok" => Results.Ok(result.Page),
+                    "unauthorized" => Results.Unauthorized(),
+                    "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                    _ => Results.BadRequest(),
+                };
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckQueryFailure(); }
+        });
+        _app.MapGet("/api/me/public-deck-references", (HttpRequest request) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReferenceQuery.TryParse(request.Query, out var query))
+                return Results.BadRequest(new { message = "公开牌库引用查询参数无效" });
+            try
+            {
+                var result = _platform.PublicDeckReferences(_catalog, query.PublicationIds, viewer);
+                return result.Status switch
+                {
+                    "available" => Results.Ok(result),
+                    "unauthorized" => Results.Unauthorized(),
+                    "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                    _ => Results.BadRequest(new { message = "公开牌库引用查询参数无效" }),
+                };
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckQueryFailure(); }
+        });
+        IResult PublicDeckReadResponse(string status, object? value) => status switch
+        {
+            "ok" => Results.Ok(value),
+            "unauthorized" => Results.Unauthorized(),
+            "not_found" => Results.NotFound(),
+            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
+            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+            _ => Results.BadRequest(new { message = "公开牌库读取参数无效" }),
+        };
+        _app.MapGet("/api/public-decks/{reference}/current", (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, false, out var query)) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckCurrent(_catalog, reference, query.ExpectedReadToken, viewer);
+                return PublicDeckReadResponse(result.Status, result.Detail);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/versions", (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, true, out var query)) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckVersionPage(_catalog, reference, query, viewer);
+                return PublicDeckReadResponse(result.Status, result.Page);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/versions/{version}", (HttpRequest request, string reference, string version) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, false, out var query)
+                || !int.TryParse(version, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture,
+                    out var number) || number < 1) return Results.BadRequest();
+            try
+            {
+                var result = _platform.ReadPublicDeckVersion(_catalog, reference, number, query.ExpectedReadToken, viewer);
+                return PublicDeckReadResponse(result.Status, result.Detail);
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)) { return PublicDeckReadFailure(); }
+        });
+        _app.MapGet("/api/public-decks/{reference}/statistics", async Task<IResult> (HttpRequest request, string reference) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (!L12PublicDeckReadQuery.TryParse(request.Query, true, out var query))
+                return Results.BadRequest(new { message = "牌库统计查询参数无效" });
+            try
+            {
+                var captured = _platform.CapturePublicDeckStatisticsRead(_catalog, reference,
+                    query.ExpectedReadToken, viewer);
+                if (captured.Status != "available") return PublicDeckStatisticsStatus(captured.Status);
+                var lease = captured.Lease!;
+                var statistics = await _recorder.PublicDeckVersionStatisticsPageAsync(lease.Id,
+                    query.Page, query.PageSize, lease.ExcludedMatchIds, lease.ExcludedAccountIds,
+                    request.HttpContext.RequestAborted);
+                var status = _platform.RevalidatePublicDeckStatisticsRead(_catalog, lease, viewer);
+                if (status != "available") return PublicDeckStatisticsStatus(status);
+                return Results.Ok(new L12PublicDeckStatisticsPage(lease.Id, lease.PublicCode, lease.ReadToken,
+                    lease.CatalogVersion, lease.PolicyVersion, statistics.From, statistics.To,
+                    statistics.RecentDays, statistics.Games, statistics.SampleStatus, statistics.Groups,
+                    statistics.Total, statistics.Page, statistics.PageSize));
+            }
+            catch (Exception error) when (error is not OperationCanceledException
+                && (PublicDeckReadUnavailable(error) || error is TimeoutException))
+            {
+                return PublicDeckStatisticsFailure();
+            }
+        });
+        _app.MapGet("/api/public-decks", (HttpRequest request, string? sort, bool? seasonCompliant) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            return Results.Ok(_platform.PublishedDecks(account?.Id));
+            var policy = _platform.EffectiveOperationsPolicy();
+            var decks = _platform.PublishedDecks(account?.Id).Select(item =>
+            {
+                var preset = new L12PresetDeckDefinition
+                {
+                    Name = item.Deck.Name,
+                    MasterId = item.Deck.MasterId,
+                    CardIds = item.Deck.CardIds.ToList(),
+                    MoraleIds = item.Deck.MoraleIds.ToList(),
+                    SpecialIds = item.Deck.SpecialIds.ToList(),
+                };
+                var valid = L12DeckValidator.TryValidatePreset(_catalog, preset, out var error,
+                    policy.CardRestrictions);
+                return item with
+                {
+                    SeasonCompliant = valid,
+                    SeasonComplianceReason = valid ? null : error,
+                };
+            });
+            if (seasonCompliant == true) decks = decks.Where(item => item.SeasonCompliant);
+            decks = (sort ?? "copies").Trim().ToLowerInvariant() switch
+            {
+                "likes" => decks.OrderByDescending(item => item.Likes)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+                "views" => decks.OrderByDescending(item => item.Views)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+                "latest" => decks.OrderByDescending(item => item.CreatedAt)
+                    .ThenBy(item => item.Id, StringComparer.Ordinal),
+                _ => decks.OrderByDescending(item => item.Copies)
+                    .ThenByDescending(item => item.CreatedAt).ThenBy(item => item.Id, StringComparer.Ordinal),
+            };
+            return Results.Ok(decks.ToArray());
+        });
+        _app.MapGet("/api/public-decks/{id}", async (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            var item = _platform.PublishedDeckByPublicCode(id, account?.Id);
+            if (item is null) return Results.NotFound();
+            var policy = _platform.EffectiveOperationsPolicy();
+            var preset = new L12PresetDeckDefinition
+            {
+                Name = item.Deck.Name,
+                MasterId = item.Deck.MasterId,
+                CardIds = item.Deck.CardIds.ToList(),
+                MoraleIds = item.Deck.MoraleIds.ToList(),
+                SpecialIds = item.Deck.SpecialIds.ToList(),
+            };
+            var valid = L12DeckValidator.TryValidatePreset(_catalog, preset, out var error,
+                policy.CardRestrictions);
+            return Results.Ok(item with
+            {
+                SeasonCompliant = valid,
+                SeasonComplianceReason = valid ? null : error,
+                Details = await PublicDeckDetailsWithStatisticsAsync(item.Id),
+            });
         });
         _app.MapPost("/api/public-decks", (HttpRequest request, PublishedDeckRequest body) =>
         {
@@ -714,30 +1643,115 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var published = _platform.PublishDeck(account.Id, deck, body.PublicationId);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
+        _app.MapPut("/api/public-decks/{id}/content", async (HttpRequest request, string id,
+            L12PublicDeckContentInput body) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try
+            {
+                var published = _platform.PublishedDeckByPublicCode(id, account.Id);
+                if (published is null) return Results.NotFound();
+                var details = _platform.UpdatePublicDeckContent(account.Id, published.Id, body);
+                return details is null ? Results.NotFound() : Results.Ok(await PublicDeckDetailsWithStatisticsAsync(published.Id));
+            }
+            catch (UnauthorizedAccessException error)
+            {
+                return Results.Json(new { message = error.Message }, statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { message = error.Message });
+            }
+        });
+        _app.MapPut("/api/public-decks/{reference}/content/current", (HttpRequest request, string reference,
+            L12PublicDeckContentInput body) =>
+        {
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var actor = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (actor is null) return Results.Unauthorized();
+            if (!TryPublicDeckContentWriteToken(request.Query, out var expectedReadToken))
+                return Results.BadRequest(new { message = "牌库内容写入参数无效" });
+            try
+            {
+                return PublicDeckContentWriteStatus(_platform.WritePublicDeckContentCurrent(_catalog, reference,
+                    expectedReadToken, actor, body));
+            }
+            catch (ArgumentException error)
+            {
+                return Results.BadRequest(new { message = error.Message });
+            }
+            catch (Exception error) when (PublicDeckReadUnavailable(error)
+                || error is L12DeploymentBarrierClosedException)
+            {
+                return PublicDeckContentWriteFailure();
+            }
+        });
         _app.MapDelete("/api/public-decks/{id}", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            return _platform.DeletePublishedDeck(account.Id, id) ? Results.Ok() : Results.NotFound();
+            var published = _platform.PublishedDeckByPublicCode(id, account.Id);
+            return published is not null && _platform.DeletePublishedDeck(account.Id, published.Id)
+                ? Results.Ok() : Results.NotFound();
+        });
+        _app.MapPost("/api/public-decks/{reference}/counters/{kind}", (HttpRequest request, string reference, string kind) =>
+        {
+            var viewer = _platform.AuthenticateSession(request.Headers.Authorization);
+            if (request.Headers.Authorization.Count > 0 && viewer is null) return Results.Unauthorized();
+            if (request.Query.Count > 0) return Results.BadRequest(new { message = "计数请求参数无效" });
+            var result = _platform.UpdatePublicDeckCounter(reference, kind, viewer);
+            return result.Status switch
+            {
+                "ok" => Results.Ok(result.Counters),
+                "unauthorized" => Results.Unauthorized(),
+                "not_found" => Results.NotFound(),
+                "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
+                _ => Results.BadRequest(new { message = "计数请求无效" }),
+            };
         });
         _app.MapPost("/api/public-decks/{id}/like", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var published = _platform.TogglePublishedDeckLike(account.Id, id);
+            var target = _platform.PublishedDeckByPublicCode(id, account.Id);
+            var published = target is null ? null : _platform.TogglePublishedDeckLike(account.Id, target.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
         _app.MapPost("/api/public-decks/{id}/copy", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var published = _platform.RecordPublishedDeckCopy(id, account?.Id);
+            var target = _platform.PublishedDeckByPublicCode(id, account?.Id);
+            var published = target is null ? null : _platform.RecordPublishedDeckCopy(target.Id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
         });
         _app.MapPost("/api/public-decks/{id}/view", (HttpRequest request, string id) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
-            var published = _platform.RecordPublishedDeckView(id, account?.Id);
+            var target = _platform.PublishedDeckByPublicCode(id, account?.Id);
+            var published = target is null ? null : _platform.RecordPublishedDeckView(target.Id, account?.Id);
             return published is null ? Results.NotFound() : Results.Ok(published);
+        });
+        _app.MapGet("/api/public/tournaments/summaries", (HttpRequest request, string? section, string? format,
+            string? search, int? page, int? pageSize, DateTimeOffset? startFrom, DateTimeOffset? startTo) =>
+        {
+            try
+            {
+                return Results.Ok(_platform.PublicTournamentSummaries(section, format, search,
+                    page ?? 1, pageSize ?? 24, startFrom, startTo));
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_public_tournament_query", error.Message,
+                    StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapGet("/api/public/tournaments/code/{code}", (HttpRequest request, string code) =>
+        {
+            var result = _platform.PublicTournamentByCode(code);
+            return result is null
+                ? ApiError(request, "tournament_not_found", "赛事不存在", StatusCodes.Status404NotFound)
+                : Results.Ok(result);
         });
         _app.MapGet("/api/tournaments", (HttpRequest request, string? status, string? search, bool? mine) =>
         {
@@ -746,6 +1760,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var result = _platform.Tournaments(authenticated.Account, status, search, mine ?? false);
             request.HttpContext.Response.Headers.ETag = $"\"{result.PlatformVersion}\"";
             return Results.Ok(result);
+        });
+        _app.MapGet("/api/tournaments/summaries", (HttpRequest request, string? section, string? format,
+            string? search, int? page, int? pageSize, DateTimeOffset? startFrom, DateTimeOffset? startTo) =>
+        {
+            if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
+                return failure;
+            var result = _platform.TournamentSummaries(authenticated.Account, section, format, search,
+                page ?? 1, pageSize ?? 24, startFrom, startTo);
+            request.HttpContext.Response.Headers.ETag = $"\"{result.PlatformVersion}\"";
+            return Results.Ok(result);
+        });
+        _app.MapGet("/api/tournaments/career", (HttpRequest request, int? page, int? pageSize) =>
+        {
+            if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
+                return failure;
+            return Results.Ok(_platform.TournamentCareer(authenticated.Account, page: page ?? 1,
+                pageSize: pageSize ?? 20));
         });
         _app.MapGet("/api/tournaments/code/{code}", (HttpRequest request, string code) =>
         {
@@ -766,6 +1797,36 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 StatusCodes.Status404NotFound);
             request.HttpContext.Response.Headers.ETag = $"\"{result.Version}\"";
             return Results.Ok(result);
+        });
+        _app.MapGet("/api/tournaments/{id}/start-check", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.TournamentsManage, out var authenticated, out var failure))
+                return failure;
+            try { return Results.Ok(_platform.TournamentStartCheck(authenticated.Account, id)); }
+            catch (L12TournamentScopeException error)
+            {
+                return ApiError(request, "scope_denied", error.Message, StatusCodes.Status403Forbidden);
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "tournament_resource_not_found", error.Message,
+                    StatusCodes.Status404NotFound);
+            }
+        });
+        _app.MapGet("/api/tournaments/{id}/export.csv", (HttpRequest request, string id) =>
+        {
+            if (!TryAuthorize(request, L12Permission.TournamentsRead, out var authenticated, out var failure))
+                return failure;
+            try
+            {
+                var csv = _platform.TournamentCsv(authenticated.Account, id);
+                return Results.File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv)).ToArray(),
+                    "text/csv; charset=utf-8", $"tournament-{id}.csv");
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "tournament_not_found", error.Message, StatusCodes.Status404NotFound);
+            }
         });
         _app.MapPost("/api/tournaments", (HttpRequest request, TournamentCreateRequest body) =>
         {
@@ -828,6 +1889,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
+        _app.MapPost("/api/tournaments/{id}/pre-check-in", (HttpRequest request, string id,
+            TournamentPreCheckInRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentPreCheckInPayload(body.DeckName ?? string.Empty,
+                body.DeckCode ?? string.Empty, body.DeckId);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.pre-check-in",
+                $"tournament:{id}/registration:{authenticated.Account.Id}", payload, key, expected,
+                body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.PreCheckInTournament(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
         _app.MapDelete("/api/tournaments/{id}/registration", (HttpRequest request, string id,
             [Microsoft.AspNetCore.Mvc.FromBody] TournamentActionRequest body) =>
         {
@@ -860,6 +1938,87 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
+        _app.MapPut("/api/tournaments/{id}/visibility", (HttpRequest request, string id,
+            TournamentVisibilityRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentVisibilityPayload(body.Visibility ?? string.Empty,
+                body.RegistrationVisibility ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "tournament.visibility.set", $"tournament:{id}/visibility", payload, key, expected,
+                body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentVisibility(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/participants/remove", (HttpRequest request, string id,
+            TournamentRemoveParticipantRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentRemoveParticipantPayload(body.AccountId ?? string.Empty,
+                body.BanRegistration, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.participant.remove",
+                $"tournament:{id}/participant:{body.AccountId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.RemoveTournamentParticipant(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/registration-ban", (HttpRequest request, string id,
+            TournamentRegistrationBanRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentRegistrationBanPayload(body.AccountId ?? string.Empty,
+                body.Banned, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.registration-ban",
+                $"tournament:{id}/registration-ban:{body.AccountId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentRegistrationBan(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/organizer-transfer", (HttpRequest request, string id,
+            TournamentOrganizerTransferRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentOrganizerTransferRequestPayload(body.AccountId ?? string.Empty,
+                body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.organizer-transfer.request",
+                $"tournament:{id}/organizer-transfer", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.RequestTournamentOrganizerTransfer(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/organizer-transfer/decision", (HttpRequest request, string id,
+            TournamentOrganizerTransferDecisionRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentOrganizerTransferDecisionPayload(body.RequestId ?? string.Empty,
+                body.Accept);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.organizer-transfer.decision",
+                $"tournament:{id}/organizer-transfer", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.DecideTournamentOrganizerTransfer(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
         _app.MapPost("/api/tournaments/{id}/start", (HttpRequest request, string id, TournamentActionRequest body) =>
         {
             const L12Permission permission = L12Permission.TournamentsManage;
@@ -871,6 +2030,56 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.StartTournament(current.Actor, current.Payload.TournamentId, expected,
                     current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/phase", (HttpRequest request, string id,
+            TournamentPhaseRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentPhasePayload(body.Phase ?? string.Empty, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.phase",
+                $"tournament:{id}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.SetTournamentPhase(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/postpone", (HttpRequest request, string id,
+            TournamentPostponeRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentPostponePayload(body.NewStartAt, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.postpone",
+                $"tournament:{id}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.PostponeTournament(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/cancel", async (HttpRequest request, string id,
+            TournamentCancelRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsManage;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentCancelPayload(body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.cancel",
+                $"tournament:{id}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.CancelTournament(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            if (outcome.Success && !body.DryRun)
+            {
+                var roomCommands = await _rooms.DrainTournamentRoomCommandsAsync(id);
+                await SendManyAsync(roomCommands.Messages, CancellationToken.None);
+            }
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/rounds", (HttpRequest request, string id, TournamentActionRequest body) =>
@@ -934,7 +2143,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/matches/{matchId}/time-extension",
-            (HttpRequest request, string id, string matchId, TournamentTimeExtensionRequest body) =>
+            async (HttpRequest request, string id, string matchId, TournamentTimeExtensionRequest body) =>
         {
             const L12Permission permission = L12Permission.TournamentsManage;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
@@ -945,6 +2154,92 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 $"tournament:{id}/match:{matchId}", payload, key, expected, body.DryRun, body.Reason);
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.ExtendTournamentMatch(current.Actor, id, matchId, current.Payload,
+                    expected, current.AuditContext, apply));
+            if (outcome.Success && !outcome.Replayed && !body.DryRun)
+                await _rooms.ExtendTournamentClockAsync(id, matchId, body.Minutes);
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/matches/{matchId}/pause",
+            async (HttpRequest request, string id, string matchId, TournamentMatchPauseRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentRulingsWrite;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentMatchPausePayload(body.Paused, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.match.pause",
+                $"tournament:{id}/match:{matchId}", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.PauseTournamentMatch(current.Actor, id, matchId,
+                    current.Payload, expected, current.AuditContext, apply));
+            if (outcome.Success && !body.DryRun)
+            {
+                var roomCommands = await _rooms.DrainTournamentRoomCommandsAsync(id);
+                await SendManyAsync(roomCommands.Messages, CancellationToken.None);
+            }
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/judge-cases", (HttpRequest request, string id,
+            TournamentJudgeCaseCreateRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentJudgeCaseCreatePayload(body.MatchId ?? string.Empty,
+                body.Category ?? string.Empty, body.Urgency ?? string.Empty, body.Message ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.judge-case.create",
+                $"tournament:{id}/judge-cases", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.CreateTournamentJudgeCase(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/judge-cases/assign", (HttpRequest request, string id,
+            TournamentJudgeCaseAssignRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentRulingsWrite;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentJudgeCaseAssignPayload(body.CaseId ?? string.Empty,
+                body.AssigneeAccountId ?? string.Empty, body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.judge-case.assign",
+                $"tournament:{id}/judge-cases", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.AssignTournamentJudgeCase(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/judge-cases/resolve", (HttpRequest request, string id,
+            TournamentJudgeCaseResolveRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentRulingsWrite;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentJudgeCaseResolvePayload(body.CaseId ?? string.Empty,
+                body.Status ?? string.Empty, body.Resolution ?? string.Empty, body.StaffNote ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.judge-case.resolve",
+                $"tournament:{id}/judge-cases", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.ResolveTournamentJudgeCase(current.Actor, id, current.Payload,
+                    expected, current.AuditContext, apply));
+            return TournamentCommandResponse(request, command, outcome, id);
+        });
+        _app.MapPost("/api/tournaments/{id}/judge-cases/appeal", (HttpRequest request, string id,
+            TournamentJudgeCaseAppealRequest body) =>
+        {
+            const L12Permission permission = L12Permission.TournamentsRegister;
+            if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryTournamentCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
+            var payload = new L12TournamentJudgeCaseAppealPayload(body.CaseId ?? string.Empty,
+                body.Reason ?? string.Empty);
+            var command = CommandEnvelope(request, authenticated.Account, permission, "tournament.judge-case.appeal",
+                $"tournament:{id}/judge-cases", payload, key, expected, body.DryRun, body.Reason);
+            var outcome = ExecuteTournamentCommand(command, permission,
+                (current, apply) => _platform.AppealTournamentJudgeCase(current.Actor, id, current.Payload,
                     expected, current.AuditContext, apply));
             return TournamentCommandResponse(request, command, outcome, id);
         });
@@ -1132,6 +2427,30 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.Accounts());
         });
+        _app.MapGet("/api/admin/accounts/{accountId}", (HttpRequest request, string accountId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
+            var account = _platform.Account(accountId);
+            return account is null
+                ? ApiError(request, "account_not_found", "账号不存在", StatusCodes.Status404NotFound)
+                : Results.Ok(account);
+        });
+        _app.MapGet("/api/admin/username-change-requests", (HttpRequest request, string? status) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.UsernameChangeRequests(status));
+        });
+        _app.MapPost("/api/admin/username-change-requests/{id}/review", (HttpRequest request, string id,
+            UsernameChangeReviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminAccountStatusWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.ReviewUsernameChangeRequest(authenticated.Account, id, body.Approve,
+                body.Note, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "username_change_request_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (InvalidOperationException error) { return ApiError(request, "username_change_request_conflict", error.Message, StatusCodes.Status409Conflict); }
+            catch (ArgumentException error) { return ApiError(request, "username_change_request_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapPut("/api/admin/accounts/{id}/role", (HttpRequest request, string id, RoleRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminAccountRolesWrite;
@@ -1231,6 +2550,101 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             return Results.Ok(_platform.OperationsConfigHistory(authenticated.Account, limit ?? 50));
         });
+        _app.MapGet("/api/admin/operations/config/sections/{section}",
+            (HttpRequest request, string section) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var result = _platform.OperationsConfigSection(authenticated.Account, section);
+                request.HttpContext.Response.Headers.ETag = $"\"{result.Revision}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapGet("/api/admin/operations/config/sections/{section}/history",
+            (HttpRequest request, string section, int? limit) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsRead;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.OperationsConfigSectionHistory(authenticated.Account,
+                    section, limit ?? 50));
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapPost("/api/admin/operations/config/sections/{section}/preview",
+            (HttpRequest request, string section, OperationsConfigSectionPreviewRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var result = _platform.PreviewOperationsConfigSection(authenticated.Account, section,
+                    body.Config, body.ExpectedRevision ?? ParseExpectedVersion(request.Headers.IfMatch.FirstOrDefault()),
+                    body.ExpectedFieldRevisions,
+                    AuditContext(request, permission) with { DryRun = true, Outcome = "dry-run" });
+                request.HttpContext.Response.Headers.ETag = $"\"{result.CurrentRevision}\"";
+                return Results.Ok(result);
+            }
+            catch (L12OperationsConfigException error)
+            {
+                return OperationsConfigError(request, error);
+            }
+        });
+        _app.MapPut("/api/admin/operations/config/sections/{section}",
+            (HttpRequest request, string section, OperationsConfigSectionApplyRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedRevision, out var key, out var expected, out failure)) return failure;
+            var payload = new L12OperationsSectionApplyCommandPayload(section, body.Config, expected,
+                body.ExpectedFieldRevisions ?? new Dictionary<string, long>());
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.section.apply", $"operations:config:{section}", payload, key,
+                null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.ApplyOperationsConfigSection(
+                    current.Actor, current.Payload.Section, current.Payload.Config,
+                    current.Payload.ExpectedRevision, current.Payload.ExpectedFieldRevisions,
+                    current.Reason, current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Applied == true) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            if (outcome.Value?.Current is { } currentSection)
+                request.HttpContext.Response.Headers.ETag = $"\"{currentSection.Revision}\"";
+            return response;
+        });
+        _app.MapPost("/api/admin/operations/config/sections/{section}/rollback",
+            (HttpRequest request, string section, OperationsConfigSectionRollbackRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminOperationsWrite;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
+                    body.ExpectedRevision, out var key, out var expected, out failure)) return failure;
+            var payload = new L12OperationsSectionRollbackCommandPayload(section,
+                body.VersionId?.Trim() ?? string.Empty, expected);
+            var command = CommandEnvelope(request, authenticated.Account, permission,
+                "operations.config.section.rollback", $"operations:config:{section}", payload, key,
+                null, false, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission,
+                current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfigSection(
+                    current.Actor, current.Payload.Section, current.Payload.VersionId,
+                    current.Payload.ExpectedRevision, current.Reason, current.AuditContext)));
+            if (outcome.Success && outcome.Value?.Applied == true) NotifyOperationsPolicyChanged();
+            var response = AdminCommandResponse(request, command, outcome);
+            if (outcome.Value?.Current is { } currentSection)
+                request.HttpContext.Response.Headers.ETag = $"\"{currentSection.Revision}\"";
+            return response;
+        });
         _app.MapPost("/api/admin/operations/config/preview",
             (HttpRequest request, OperationsConfigPreviewRequest body) =>
         {
@@ -1253,6 +2667,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminOperationsWrite;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!string.Equals(body.CrossSectionReplaceIntent, OperationsCrossSectionReplaceIntent,
+                    StringComparison.Ordinal))
+                return ApiError(request, "operations_cross_section_intent_required",
+                    "全量运营配置替换必须显式确认跨分区覆盖意图",
+                    StatusCodes.Status428PreconditionRequired);
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var command = CommandEnvelope(request, authenticated.Account, permission, "operations.config.apply",
@@ -1260,6 +2679,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.ApplyOperationsConfig(current.Actor,
                     current.Payload, expected, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1269,6 +2689,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminOperationsWrite;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            if (!string.Equals(body.CrossSectionReplaceIntent, OperationsCrossSectionReplaceIntent,
+                    StringComparison.Ordinal))
+                return ApiError(request, "operations_cross_section_intent_required",
+                    "全量运营配置回滚必须显式确认跨分区覆盖意图",
+                    StatusCodes.Status428PreconditionRequired);
             if (!TryOperationsCommandOptions(request, authenticated.Account, permission, body.IdempotencyKey,
                     body.ExpectedVersion, out var key, out var expected, out failure)) return failure;
             var payload = new L12OperationsRollbackCommandPayload(body.VersionId?.Trim() ?? string.Empty);
@@ -1277,6 +2702,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.RollbackOperationsConfig(current.Actor,
                     current.Payload.VersionId, expected, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1299,6 +2725,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 current => ExecuteOperationsConfig(() => _platform.StartServer(current.Actor,
                     current.Payload.ExpectedVersion,
                     current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1319,6 +2746,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 current => ExecuteOperationsConfig(() => _platform.BeginImmediateMaintenance(current.Actor,
                     current.Payload.ExpectedDurationHours, current.Payload.ExpectedVersion,
                     current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
@@ -1336,23 +2764,118 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission,
                 current => ExecuteOperationsConfig(() => _platform.EndImmediateMaintenance(current.Actor,
                     current.Payload.ExpectedVersion, current.Reason, current.AuditContext)));
+            if (outcome.Success) NotifyOperationsPolicyChanged();
             var response = AdminCommandResponse(request, command, outcome);
             request.HttpContext.Response.Headers.ETag = $"\"{_platform.OperationsConfigVersion()}\"";
             return response;
+        });
+        _app.MapGet("/api/admin/workbench/summary", (HttpRequest request) =>
+        {
+            if (!TryAuthenticate(request, L12Permission.AdminRuntimeRead, out var authenticated, out var failure))
+                return failure;
+            var account = authenticated.Account;
+            var adminReads = new[]
+            {
+                L12Permission.AdminBugsRead, L12Permission.AdminAccountsRead,
+                L12Permission.AdminRuntimeRead, L12Permission.AdminSecurityRead,
+                L12Permission.AdminAuditRead,
+            };
+            if (!adminReads.Any(permission => L12Authorization.HasPermission(account, permission)))
+                return ApiError(request, "permission_denied", "当前账号没有读取工作台摘要的权限",
+                    StatusCodes.Status403Forbidden);
+
+            var sampledAt = DateTimeOffset.UtcNow;
+            var pending = new List<L12AdminWorkbenchItemView>();
+            var anomalies = new List<L12AdminWorkbenchItemView>();
+            var recent = new List<L12AdminWorkbenchItemView>();
+            var unavailable = new List<string>();
+            void Capture(string id, string kind, string label, string path,
+                List<L12AdminWorkbenchItemView> target, Action read)
+            {
+                try { read(); }
+                catch (Exception error)
+                {
+                    unavailable.Add(id);
+                    LogAdminReadFailure(request, $"workbench.{id}", error);
+                    target.Add(new($"{id}-unavailable", kind, label,
+                        $"该摘要暂时不可用；关联 ID：{CorrelationId(request)}", path, "unavailable"));
+                }
+            }
+            if (L12Authorization.HasPermission(account, L12Permission.AdminBugsRead))
+            {
+                Capture("bugs", "bug", "Bug 闭环", "/admin/users/bugs", pending, () =>
+                {
+                    var openBugs = _platform.Bugs(null).Count(item => !string.Equals(item.Status, "closed",
+                        StringComparison.OrdinalIgnoreCase));
+                    pending.Add(new("bugs", "bug", "Bug 闭环", openBugs == 0 ? "当前没有待处理 Bug" :
+                        $"{openBugs} 条需要确认、处理或验证", "/admin/users/bugs",
+                        openBugs == 0 ? "ok" : "attention", openBugs));
+                });
+            }
+            if (L12Authorization.HasPermission(account, L12Permission.AdminAccountsRead))
+            {
+                Capture("renames", "account", "改名审核", "/admin/users/renames", pending, () =>
+                {
+                    var renameCount = _platform.UsernameChangeRequests("pending").Count;
+                    pending.Add(new("renames", "account", "改名审核", renameCount == 0 ? "当前没有待审核申请" :
+                        $"{renameCount} 条等待处理", "/admin/users/renames",
+                        renameCount == 0 ? "ok" : "attention", renameCount));
+                });
+            }
+            if (L12Authorization.HasPermission(account, L12Permission.AdminRuntimeRead))
+            {
+                Capture("runtime", "runtime", "服务运行状态", "/admin/system/releases", anomalies, () =>
+                {
+                    var performance = _httpPerformance.Snapshot();
+                    anomalies.Add(new("runtime", "runtime", "服务运行状态",
+                        performance.WithinBudget == false ? "请求性能超出预算，请检查运行状态" :
+                        $"{_rooms.RuntimeStats().ActiveGameCount} 场进行中",
+                        "/admin/system/releases", performance.WithinBudget == false ? "warning" : "ok"));
+                });
+            }
+            if (L12Authorization.HasPermission(account, L12Permission.AdminSecurityRead))
+            {
+                Capture("storage", "storage", "存储容量", "/admin/system/storage", anomalies, () =>
+                {
+                    var storage = _storageSnapshot();
+                    anomalies.Add(new("storage", "storage", "存储容量", storage.Conclusion,
+                        "/admin/system/storage", storage.Health));
+                });
+                Capture("security", "security", "安全告警", "/admin/system/security", anomalies, () =>
+                {
+                    var security = _platform.SecurityStatus(account);
+                    var alertCount = security.Alerts.Sum(item => (long)item.Count);
+                    if (alertCount > 0)
+                        anomalies.Add(new("security", "security", "安全告警", $"{alertCount} 项需要检查",
+                            "/admin/system/security", "warning", (int)Math.Min(int.MaxValue, alertCount)));
+                });
+            }
+            if (L12Authorization.HasPermission(account, L12Permission.AdminAuditRead))
+            {
+                Capture("audit", "audit", "最近活动", "/admin/system/audit", recent, () =>
+                    recent.AddRange(_platform.AdminAudit(limit: 6).Select(item => new L12AdminWorkbenchItemView(
+                        item.Id, item.Category, item.Action, $"{item.ActorName} · {item.Target}",
+                        "/admin/system/audit", item.Outcome is "failed" or "denied" ? "warning" : "neutral",
+                        OccurredAt: item.CreatedAt))));
+            }
+            return Results.Ok(new L12AdminWorkbenchSummaryView(sampledAt, pending, anomalies, recent,
+                unavailable.Count > 0, unavailable));
         });
         _app.MapGet("/api/admin/runtime/status", (HttpRequest request) =>
         {
             const L12Permission permission = L12Permission.AdminRuntimeRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             var observedAt = DateTimeOffset.UtcNow;
+            var build = L12RuntimeBuildVersion.Capture();
             var rooms = _rooms.RuntimeStats();
             var releases = _platform.ReleaseEnvironments(authenticated.Account, _releaseControl);
             var status = new L12RuntimeStatusView(observedAt,
-                typeof(L12WebSocketServer).Assembly.GetName().Version?.ToString() ?? "unknown",
+                build.ServerRelease,
                 _cardCount, rooms.OnlineAccountCount, _sockets.Count, rooms.RoomCount,
                 rooms.ActiveGameCount, releases,
                 new L12RuntimeDependencyView("cdn", false, "unavailable",
-                    "no-authoritative-source", observedAt));
+                    "no-authoritative-source", observedAt),
+                _httpPerformance.Snapshot());
             return Results.Ok(status);
         });
         _app.MapGet("/api/admin/accounts/{accountId}/sessions", (HttpRequest request, string accountId) =>
@@ -1399,26 +2922,53 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             const L12Permission permission = L12Permission.AdminBugsWrite;
             if (!TryAuthenticate(request, permission, out var authenticated, out var failure)) return failure;
+            if (!string.IsNullOrWhiteSpace(body.VerifiedBy) || body.VerifiedAt is not null)
+                return ApiError(request, "bug_verification_identity_client_forbidden",
+                    "复测人与复测时间由服务端根据当前管理员自动记录，无需填写。",
+                    StatusCodes.Status400BadRequest);
             var payload = new BugUpdateCommandPayload(id, body.Status, body.Priority, body.Assignee,
-                body.AdminNotes, body.Comment);
+                body.AdminNotes, body.Comment, body.FixCommit, body.RegressionTest, body.DeployedVersion,
+                body.DuplicateOf, body.ClosureDisposition);
             var command = CommandEnvelope(request, authenticated.Account, permission, "bug.update", $"bug:{id}",
                 payload, body.IdempotencyKey, body.ExpectedVersion, body.DryRun, body.Reason);
             var outcome = _adminCommands.Execute(command, permission, current =>
             {
-                var updated = _platform.UpdateBug(current.Actor, current.Payload.Id, current.Payload.Status,
-                    current.Payload.Priority, current.Payload.Assignee, current.Payload.AdminNotes,
-                    current.Payload.Comment, current.AuditContext);
-                return updated is null
-                    ? L12AdminCommandResult<L12BugReportView>.Fail("bug_not_found", "Bug 不存在",
-                        StatusCodes.Status404NotFound)
-                    : L12AdminCommandResult<L12BugReportView>.Ok(updated, "Bug 已更新");
+                try
+                {
+                    var updated = _platform.UpdateBug(current.Actor, current.Payload.Id, current.Payload.Status,
+                        current.Payload.Priority, current.Payload.Assignee, current.Payload.AdminNotes,
+                        current.Payload.Comment, current.AuditContext, current.Payload.FixCommit,
+                        current.Payload.RegressionTest, current.Payload.DeployedVersion,
+                        current.Payload.DuplicateOf, current.Payload.ClosureDisposition);
+                    return updated is null
+                        ? L12AdminCommandResult<L12BugReportView>.Fail("bug_not_found", "Bug 不存在",
+                            StatusCodes.Status404NotFound)
+                        : L12AdminCommandResult<L12BugReportView>.Ok(updated, "Bug 已更新");
+                }
+                catch (L12BugClosureValidationException error)
+                {
+                    return L12AdminCommandResult<L12BugReportView>.Fail(error.Code, error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
             }, current =>
             {
-                var existing = _platform.Bugs(null).FirstOrDefault(item => item.Id == current.Payload.Id);
-                return existing is null
-                    ? L12AdminCommandResult<L12BugReportView>.Fail("bug_not_found", "Bug 不存在",
-                        StatusCodes.Status404NotFound)
-                    : L12AdminCommandResult<L12BugReportView>.Ok(existing, "干运行验证通过");
+                try
+                {
+                    var existing = _platform.UpdateBug(current.Actor, current.Payload.Id, current.Payload.Status,
+                        current.Payload.Priority, current.Payload.Assignee, current.Payload.AdminNotes,
+                        current.Payload.Comment, current.AuditContext, current.Payload.FixCommit,
+                        current.Payload.RegressionTest, current.Payload.DeployedVersion,
+                        current.Payload.DuplicateOf, current.Payload.ClosureDisposition, validateOnly: true);
+                    return existing is null
+                        ? L12AdminCommandResult<L12BugReportView>.Fail("bug_not_found", "Bug 不存在",
+                            StatusCodes.Status404NotFound)
+                        : L12AdminCommandResult<L12BugReportView>.Ok(existing, "干运行验证通过");
+                }
+                catch (L12BugClosureValidationException error)
+                {
+                    return L12AdminCommandResult<L12BugReportView>.Fail(error.Code, error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
             });
             return AdminCommandResponse(request, command, outcome);
         });
@@ -1481,11 +3031,37 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/content", (HttpRequest request) =>
         {
             var keys = request.Query["key"].Where(key => _platform.IsContentKeyAllowed(key)).Distinct(StringComparer.OrdinalIgnoreCase);
-            return Results.Ok(new { values = keys.ToDictionary(key => key!, key => _platform.GetContent(key!), StringComparer.OrdinalIgnoreCase) });
+            return Results.Ok(_platform.PublicContents(keys!));
         });
-        _app.MapGet("/api/content/{key}", (string key) => Results.Ok(new { key, value = _platform.GetContent(key) }));
+        _app.MapGet("/api/content/{key}", (string key) =>
+        {
+            var content = _platform.PublicContents([key]);
+            return Results.Ok(new
+            {
+                key,
+                value = content.Values.GetValueOrDefault(key, string.Empty),
+                content.ObservedAt,
+                content.NextRuleTransitionAt,
+            });
+        });
         _app.MapGet("/api/site/home", () => Results.Ok(_platform.PublicSiteHome()));
         _app.MapGet("/api/site/categories", (string? kind) => Results.Ok(_platform.PublicSiteCategories(kind)));
+        _app.MapGet(L12SharePage.Endpoint, (HttpRequest request) =>
+        {
+            var path = request.Headers[L12SharePage.OriginalPathHeader].FirstOrDefault()
+                ?? request.Query["path"].FirstOrDefault() ?? "/";
+            try
+            {
+                request.HttpContext.Response.Headers.CacheControl = "public,max-age=60,must-revalidate";
+                request.HttpContext.Response.Headers["X-Content-Type-Options"] = "nosniff";
+                return Results.Content(L12SharePage.RenderDeploymentPage(_platform, path),
+                    "text/html; charset=utf-8", Encoding.UTF8);
+            }
+            catch (IOException)
+            {
+                return Results.Problem("站点页面入口暂时不可用", statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
         _app.MapGet("/api/site/media/{id}/{variant}/{fileName}", (HttpRequest request, string id,
             string variant, string fileName) =>
         {
@@ -1739,7 +3315,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     return L12AdminCommandResult<L12ContentEntryView>.Fail("content_key_not_allowed",
                         "内容键不在白名单中", StatusCodes.Status400BadRequest);
                 return L12AdminCommandResult<L12ContentEntryView>.Ok(_platform.SaveContentDraft(current.Actor,
-                    current.Payload.Key, current.Payload.Value, current.AuditContext), "草稿已保存");
+                    current.Payload.Key, current.Payload.Value, current.AuditContext,
+                    current.Payload.Key is "rules.center" or "rules.rulings" ? current.ExpectedVersion : null), "草稿已保存");
             }, current =>
             {
                 if (!_platform.IsContentKeyAllowed(current.Payload.Key))
@@ -1859,6 +3436,55 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (effect is null) return Results.NotFound();
             return Results.Ok(_platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect)));
         });
+        _app.MapGet("/api/admin/effect-workbench/styles", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
+            return Results.Ok(L12PlatformStore.EffectPresentationStyles);
+        });
+        _app.MapGet("/api/admin/effects/{cardId}/workbench", (HttpRequest request, string cardId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminEffectsRead, out _, out var failure)) return failure;
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            if (effect is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+                StatusCodes.Status404NotFound);
+            return Results.Ok(_platform.EffectWorkbench(
+                _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect))));
+        });
+        _app.MapPut("/api/admin/effects/{cardId}/workbench/draft",
+            (HttpRequest request, string cardId, L12EffectWorkbenchSaveRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminEffectsReview;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var effect = _catalog.AtomicEffects.Find(cardId);
+            if (effect is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+                StatusCodes.Status404NotFound);
+            try
+            {
+                return Results.Ok(_platform.SaveEffectWorkbenchDraft(authenticated.Account,
+                    _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(effect)), body,
+                    RequestAuditContext(request, permission)));
+            }
+            catch (InvalidOperationException error)
+            {
+                return ApiError(request, "effect_workbench_conflict", error.Message, StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException error)
+            {
+                return ApiError(request, "invalid_effect_workbench", error.Message, StatusCodes.Status400BadRequest);
+            }
+        });
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/validate",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "validate"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/review",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "review"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/publish",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "publish"));
+        _app.MapPost("/api/admin/effects/{cardId}/workbench/rollback",
+            (HttpRequest request, string cardId, L12EffectWorkbenchActionRequest body) =>
+            EffectWorkbenchAction(request, cardId, body, "rollback"));
         _app.MapPut("/api/admin/effects/{cardId}/review", (HttpRequest request, string cardId, EffectReviewRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminEffectsReview;
@@ -1870,6 +3496,256 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = _adminCommands.Execute(command, permission, ExecuteEffectReview,
                 current => ValidateEffectReview(current, false));
             return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/publish", (HttpRequest request, L12RuleItemPublishRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentPublish;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.publish",
+                $"content:{body.Key}/{body.Collection}/{body.ItemId}", body, body.IdempotencyKey, null,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entry = _platform.PublishRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    NotifyRulesContentChanged();
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则条目已发布");
+                }
+                catch (KeyNotFoundException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("rule_item_not_found", error.Message,
+                        StatusCodes.Status404NotFound);
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/create", (HttpRequest request, L12RuleItemCreateRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.create",
+                $"content:{body.Key}/{body.Collection}", body, body.IdempotencyKey, body.ExpectedVersion,
+                body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entry = _platform.CreateRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则资料子板块已新建");
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapPost("/api/admin/rule-items/delete", (HttpRequest request, L12RuleItemDeleteRequest body) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            var command = CommandEnvelope(request, authenticated.Account, permission, "rule-item.delete",
+                $"content:{body.Key}/{body.Collection}/{body.ItemId}", body, body.IdempotencyKey,
+                body.ExpectedVersion, body.DryRun, body.Reason);
+            var outcome = _adminCommands.Execute(command, permission, current =>
+            {
+                try
+                {
+                    var entry = _platform.DeleteRuleItem(current.Actor, current.Payload, current.AuditContext);
+                    NotifyRulesContentChanged();
+                    return L12AdminCommandResult<L12ContentEntryView>.Ok(entry, "规则资料子板块已删除");
+                }
+                catch (KeyNotFoundException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("rule_item_not_found", error.Message,
+                        StatusCodes.Status404NotFound);
+                }
+                catch (UnauthorizedAccessException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("permission_denied", error.Message,
+                        StatusCodes.Status403Forbidden);
+                }
+                catch (L12ContentStateConflictException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("content_version_conflict", error.Message,
+                        StatusCodes.Status409Conflict);
+                }
+                catch (ArgumentException error)
+                {
+                    return L12AdminCommandResult<L12ContentEntryView>.Fail("invalid_rule_item", error.Message,
+                        StatusCodes.Status400BadRequest);
+                }
+            });
+            return AdminCommandResponse(request, command, outcome);
+        });
+        _app.MapGet("/api/me/alternate-arts", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.OwnedAlternateArts(account.Id));
+        });
+        _app.MapGet("/api/me/alternate-art-grant-notifications", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized() : Results.Ok(_platform.PendingAlternateArtGrantNotifications(account.Id));
+        });
+        _app.MapGet("/api/me/season-summary-notifications", (HttpRequest request) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            return account is null ? Results.Unauthorized()
+                : Results.Ok(_platform.PendingSeasonSummaryNotifications(account.Id));
+        });
+        _app.MapPost("/api/me/season-summary-notifications/{id}/acknowledge",
+            (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try
+            {
+                _platform.AcknowledgeSeasonSummaryNotification(account.Id, id);
+                return Results.NoContent();
+            }
+            catch (KeyNotFoundException error)
+            {
+                return ApiError(request, "season_summary_notification_missing", error.Message,
+                    StatusCodes.Status404NotFound);
+            }
+        });
+        _app.MapPost("/api/me/alternate-art-grant-notifications/{id}/acknowledge", (HttpRequest request, string id) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            try { _platform.AcknowledgeAlternateArtGrantNotification(account.Id, id); return Results.NoContent(); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_grant_notification_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
+        // 画廊是公开展示；权益只在构筑选用和开局二次校验时生效。
+        _app.MapGet("/api/alternate-arts", () => Results.Ok(_platform.AlternateArts()));
+        _app.MapGet("/api/admin/alternate-art-products", (HttpRequest request, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtProducts(includeInactive == true));
+        });
+        _app.MapPut("/api/admin/alternate-art-products", (HttpRequest request, L12AlternateArtProductDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtProduct(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_product_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArts(includeInactive == true));
+        });
+        _app.MapGet("/api/admin/alternate-arts/search", (HttpRequest request, string? name, string? artCode,
+            string? baseCard, int? page, int? pageSize, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.SearchAlternateArts(name, artCode, baseCard, page ?? 1, pageSize ?? 20,
+                includeInactive != false));
+        });
+        _app.MapGet("/api/admin/server-storage", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminSecurityRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_storageSnapshot()); }
+            catch (Exception error)
+            {
+                LogAdminReadFailure(request, "server-storage", error);
+                return ApiError(request, "server_storage_unavailable",
+                    "服务器存储采样暂时不可用，请使用关联 ID 查询日志", StatusCodes.Status503ServiceUnavailable);
+            }
+        });
+        _app.MapPut("/api/admin/alternate-arts", (HttpRequest request, L12AlternateArtDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapGet("/api/admin/alternate-art-grants", (HttpRequest request, string? username) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtGrants(username));
+        });
+        _app.MapPost("/api/admin/alternate-art-grants", (HttpRequest request, L12AlternateArtGrantDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var grant = _platform.GrantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged([grant.AccountId]);
+                return Results.Ok(grant);
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_target_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_grant_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapDelete("/api/admin/alternate-art-grants/{id}", (HttpRequest request, string id) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { _platform.RevokeAlternateArtGrant(authenticated.Account, id, RequestAuditContext(request, permission)); return Results.NoContent(); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_grant_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
+        _app.MapGet("/api/admin/alternate-art-award-rules", (HttpRequest request) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtAwardRules());
+        });
+        _app.MapPut("/api/admin/alternate-art-award-rules", (HttpRequest request, L12AlternateArtAwardRuleDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtAwardRule(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_award_rule_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPost("/api/admin/alternate-art-award-rules/event-dispatch", (HttpRequest request, L12AlternateArtEventDispatchDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var grants = _platform.DispatchAlternateArtEvent(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged(grants.Select(grant => grant.AccountId));
+                return Results.Ok(grants);
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_event_target_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_event_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPost("/api/admin/alternate-art-grants/ranked-participants/preview", (HttpRequest request, L12AlternateArtRankedParticipantDispatchDraft draft) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_platform.PreviewRankedParticipantAlternateArtDispatch(draft)); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
+        _app.MapPost("/api/admin/alternate-art-grants/ranked-participants/dispatch", (HttpRequest request, L12AlternateArtRankedParticipantDispatchDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try
+            {
+                var grants = _platform.DispatchRankedParticipantAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission));
+                NotifyAlternateArtNotificationsChanged(grants.Select(grant => grant.AccountId));
+                return Results.Ok(grants);
+            }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
         });
         _app.MapPut("/api/admin/effects/{cardId}/presentations/{sceneId}",
             (HttpRequest request, string cardId, string sceneId, EffectPresentationRequest body) =>
@@ -1968,7 +3844,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 L12AdminCommandRisk.High);
             return AdminCommandResponse(request, command, outcome);
         });
-        _app.MapGet("/api/admin/security/audit-recovery-rehearsal", (HttpRequest request) =>
+        _app.MapPost("/api/admin/security/audit-recovery-rehearsal", (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminSecurityRead, out var authenticated, out var failure))
                 return failure;
@@ -1998,11 +3874,17 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _sandboxReplayMaintenanceCancellation = new CancellationTokenSource();
         _sandboxReplayMaintenanceTask = RunSandboxReplayMaintenanceAsync(
             _sandboxReplayMaintenanceCancellation.Token);
+        StartSeasonActivationCoordinator();
+        ScheduleNextOperationsTransition();
+        ScheduleNextRulesContentTransition();
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
     public async Task StopAsync()
     {
+        await StopSeasonActivationCoordinatorAsync();
+        await StopRulesContentTransitionAsync();
+        await StopOperationsTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         foreach (var outbound in _outboundConnections.Values)
@@ -2014,6 +3896,26 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             socket.Dispose();
         }
         if (_app is not null) await _app.StopAsync();
+    }
+
+    private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithStatisticsAsync(string id)
+    {
+        var published = _platform.PublishedDeck(id, null);
+        if (published is null) return null;
+        var details = _platform.PublicDeckDetails(published.Id);
+        if (details is null) return null;
+        var statistics = await _recorder.PublicDeckVersionStatisticsAsync(published.Id,
+            _platform.RankedIntegrityExcludedMatchIds(), _platform.StatisticsExcludedAccountIds());
+        return details with
+        {
+            MatchStatistics = statistics,
+            MatchBindingStatus = statistics.SampleStatus,
+            MatchBindingMessage = statistics.SampleStatus == "available"
+                ? $"过去 {statistics.RecentDays} 天，仅展示开局时已绑定公开版本且同组至少 3 场的匿名聚合统计。"
+                : statistics.SampleStatus == "insufficient"
+                    ? $"样本不足：过去 {statistics.RecentDays} 天各主宰组合均不足 3 场，暂不展示胜率。"
+                    : $"过去 {statistics.RecentDays} 天暂无可核验的公开版本对局统计。",
+        };
     }
 
     private async Task HandleConnectionAsync(HttpContext context, CancellationToken cancellationToken)
@@ -2035,6 +3937,18 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     acceptedSocket.Abort();
                 }, SocketSendTimeout);
             _outboundConnections[sessionId] = outbound;
+            var deploymentDrain = _rooms.DeploymentDrain;
+            var inbound = new L12InboundConnection(
+                json => DispatchAsync(sessionId, json, CancellationToken.None),
+                error =>
+                {
+                    Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
+                    acceptedSocket.Abort();
+                }, deploymentDrain is null
+                    ? null
+                    : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json));
+            _inboundConnections[sessionId] = inbound;
+            var businessPathEstablished = false;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
                 context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
             if (rankedNetworkFingerprint is not null)
@@ -2046,7 +3960,49 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 var message = await ReceiveTextAsync(socket, buffer, cancellationToken);
                 if (message is null) break;
-                await DispatchAsync(sessionId, message, cancellationToken);
+                // The initial handshake is sequential. Once authentication/recovery has established
+                // this connection, it can never fall back to concurrent direct dispatch even if a
+                // revocation removes the current binding while old FIFO work is still running.
+                if (!businessPathEstablished)
+                {
+                    await DispatchAsync(sessionId, message, cancellationToken);
+                    businessPathEstablished = _establishedInboundConnections.ContainsKey(sessionId);
+                    continue;
+                }
+                if (TryReadMessageType(message, out var messageType)
+                    && messageType is "ping" or "deploymentProbe")
+                {
+                    if (await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken))
+                    {
+                        if (messageType == "ping")
+                            await SendAsync(sessionId,
+                                new { type = "pong", utc = DateTimeOffset.UtcNow }, cancellationToken);
+                        else
+                            await DispatchAsync(sessionId, message, cancellationToken);
+                    }
+                    continue;
+                }
+
+                var enqueue = inbound.TryEnqueue(message);
+                if (enqueue == L12InboundEnqueueResult.Accepted) continue;
+                if (enqueue == L12InboundEnqueueResult.Completed) break;
+                if (enqueue == L12InboundEnqueueResult.DeploymentDraining)
+                {
+                    await SendAsync(sessionId, CreateDeploymentDrainActivePayload(message),
+                        cancellationToken);
+                    continue;
+                }
+
+                // The overflowing frame was received but never accepted. Drain every previously
+                // accepted FIFO item before sending its explicit rejection; never fabricate an ack.
+                var rejection = CreateInboundOverloadPayload(message, enqueue);
+                message = null; // Do not retain an unaccepted maximum-size frame while FIFO drains.
+                await inbound.CompleteAsync(drain: true);
+                await RejectInboundOverloadAsync(sessionId, rejection, cancellationToken);
+                if (socket.State == WebSocketState.Open)
+                    await socket.CloseOutputAsync((WebSocketCloseStatus)1013,
+                        "inbound queue capacity exceeded", cancellationToken);
+                break;
             }
         }
         catch (OperationCanceledException) { }
@@ -2054,11 +4010,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         finally
         {
             _sockets.TryRemove(sessionId, out _);
+            _establishedInboundConnections.TryRemove(sessionId, out _);
+            if (_inboundConnections.TryRemove(sessionId, out var inbound))
+            {
+                inbound.StopAcceptingAndCancelPending();
+                await inbound.CompleteAsync(drain: false);
+            }
+            string? disconnectedAccountId = null;
             if (_socketPlatformSessions.TryRemove(sessionId, out var binding)
-                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
-                && active == sessionId)
-                _activeAccountSockets.TryRemove(binding.AccountId, out _);
-            await SendManyAsync(_rooms.Disconnect(sessionId), CancellationToken.None);
+                && TryReleaseActiveAccountSocket(_activeAccountSockets, binding.AccountId, sessionId))
+            {
+                disconnectedAccountId = binding.AccountId;
+            }
+            await SendManyAsync(DisconnectForTransportClose(sessionId), CancellationToken.None);
+            if (disconnectedAccountId is not null) NotifyPresenceChanged();
             _socketRankedNetworkFingerprints.TryRemove(sessionId, out _);
             _socketRankedDevices.TryRemove(sessionId, out _);
             _socketCapabilities.TryRemove(sessionId, out _);
@@ -2081,41 +4046,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         using (document)
         {
             var root = document.RootElement;
-            if (!root.TryGetProperty("type", out var typeElement))
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("type", out var typeElement)
+                || typeElement.ValueKind != JsonValueKind.String)
             {
-                await SendAsync(sessionId, new { type = "error", message = "消息缺少 type" }, cancellationToken);
+                await SendAsync(sessionId,
+                    new { type = "error", message = "消息缺少有效的 type" }, cancellationToken);
                 return;
             }
             var messageType = typeElement.GetString();
             if (messageType is not ("hello" or "deploymentProbe"))
             {
-                if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
-                {
-                    await SendAsync(sessionId, new
-                    {
-                        type = "authenticationRequired", reason = "authentication-required",
-                        message = "请先登录账号",
-                    }, cancellationToken);
-                    return;
-                }
-                if (!_platform.IsSessionActive(binding.PlatformSessionId))
-                {
-                    _socketPlatformSessions.TryRemove(sessionId, out _);
-                    _rooms.RecordConnectionClaimRejection(binding.AccountId, "platform-session-revoked");
-                    await SendAsync(sessionId, new
-                    {
-                        type = "authenticationRequired", reason = "platform-session-revoked",
-                        message = "登录会话已撤销",
-                    }, cancellationToken);
-                    return;
-                }
-                if (!_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
-                    || currentSocket != sessionId
-                    || !_rooms.IsCurrentConnection(sessionId, binding.AccountId, binding.ConnectionGeneration))
-                {
-                    await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
-                    return;
-                }
+                // This runs at dequeue, so revocation and connection-generation changes after
+                // receipt still fence the queued command before it reaches any room mutation.
+                if (!await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken)) return;
             }
             try
             {
@@ -2146,6 +4090,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                     "gameAction" when root.TryGetProperty("command", out var command)
                         => await _rooms.HandleActionAsync(sessionId, command, GetString(root, "requestId")),
+                    "getResponsePreference" => await _rooms.GetResponsePreferenceAsync(sessionId),
+                    "setResponsePreference" => await _rooms.SetResponsePreferenceAsync(sessionId,
+                        GetString(root, "mode"), GetString(root, "requestId")),
                     "requestMatchDraw" => await _rooms.RequestMatchDrawAsync(sessionId,
                         GetString(root, "requestId"), GetString(root, "reason")),
                     "resolveMatchDraw" => await _rooms.ResolveMatchDrawAsync(sessionId,
@@ -2171,6 +4118,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
                 };
                 await SendManyAsync(outgoing, cancellationToken);
+                if (messageType is "hello" or "createRoom" or "createSandbox" or "joinMatchmaking"
+                    or "cancelMatchmaking" or "joinRoom" or "enterTournamentMatch" or "spectateRoom"
+                    or "spectateTournamentMatch" or "leaveRoom" or "ready" or "resolveFriendInvitation")
+                    NotifyPresenceChanged();
+            }
+            catch (L12DeploymentBarrierClosedException)
+            {
+                await SendManyAsync(DeploymentDrainActive(sessionId, root), cancellationToken);
             }
             catch (Exception error) when (error is not OperationCanceledException)
             {
@@ -2197,6 +4152,200 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 }
             }
         }
+    }
+
+    private async Task<bool> ValidateAuthenticatedConnectionAsync(Guid sessionId,
+        CancellationToken cancellationToken)
+    {
+        if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
+        {
+            await SendAsync(sessionId, new
+            {
+                type = "authenticationRequired", reason = "authentication-required",
+                message = "请先登录账号",
+            }, cancellationToken);
+            return false;
+        }
+
+        while (!_platform.IsSessionActive(binding.PlatformSessionId))
+        {
+            L12OutboundConnection? terminalOutbound = null;
+            WebSocket? terminalSocket = null;
+            Task<bool>? terminalDelivery = null;
+            CancellationTokenSource? terminalTimeout = null;
+            var ownerReleased = false;
+            var retired = false;
+            await _socketClaimGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (!_socketPlatformSessions.TryGetValue(sessionId, out var currentBinding))
+                    return false;
+                if (currentBinding != binding)
+                {
+                    binding = currentBinding;
+                    continue;
+                }
+                // A concurrent committed activity may have refreshed the same session while this
+                // validator waited for a hello claim to finish. Recheck inside the claim fence.
+                if (_platform.IsSessionActive(currentBinding.PlatformSessionId))
+                {
+                    binding = currentBinding;
+                    break;
+                }
+                if (!TryReleaseSocketPlatformBinding(_socketPlatformSessions, sessionId,
+                        currentBinding))
+                    return false;
+
+                retired = true;
+                _rooms.RecordConnectionClaimRejection(currentBinding.AccountId,
+                    "platform-session-revoked");
+                ownerReleased = TryReleaseActiveAccountSocket(_activeAccountSockets,
+                    currentBinding.AccountId, sessionId);
+                _establishedInboundConnections.TryRemove(sessionId, out _);
+                if (_inboundConnections.TryGetValue(sessionId, out var inbound))
+                    inbound.StopAcceptingAndCancelPending();
+                if (_sockets.TryGetValue(sessionId, out var socket)
+                    && _sockets.TryRemove(new KeyValuePair<Guid, WebSocket>(sessionId, socket)))
+                    terminalSocket = socket;
+                if (_outboundConnections.TryGetValue(sessionId, out var outbound)
+                    && _outboundConnections.TryRemove(
+                        new KeyValuePair<Guid, L12OutboundConnection>(sessionId, outbound)))
+                {
+                    terminalOutbound = outbound;
+                    var payload = new
+                    {
+                        type = "authenticationRequired", reason = "platform-session-revoked",
+                        message = "登录会话已撤销",
+                    };
+                    var serializationStartedAt = L12PerformanceMetrics.Start();
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+                    L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                    terminalTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                        cancellationToken);
+                    terminalTimeout.CancelAfter(SocketSendTimeout);
+                    // The async method establishes its queue fence synchronously before returning
+                    // this task, while the transport is still inside the claim fence.
+                    terminalDelivery = outbound.EnqueueTerminalAndCompleteAsync(
+                        new L12QueuedPayload(bytes, false, false), terminalTimeout.Token);
+                }
+            }
+            finally { _socketClaimGate.Release(); }
+
+            if (retired)
+            {
+                await RetireInactiveTransportAsync(sessionId, terminalOutbound, terminalSocket,
+                    terminalDelivery, terminalTimeout, ownerReleased, cancellationToken);
+                return false;
+            }
+        }
+        if (_activeAccountSockets.TryGetValue(binding.AccountId, out var currentSocket)
+            && currentSocket == sessionId
+            && _rooms.IsCurrentConnection(sessionId, binding.AccountId, binding.ConnectionGeneration))
+            return true;
+
+        await SupersedeSocketAsync(sessionId, binding.AccountId, cancellationToken);
+        return false;
+    }
+
+    private async Task RetireInactiveTransportAsync(Guid sessionId, L12OutboundConnection? outbound,
+        WebSocket? socket, Task<bool>? terminalDelivery,
+        CancellationTokenSource? terminalTimeout, bool ownerReleased,
+        CancellationToken cancellationToken)
+    {
+        var terminalDelivered = false;
+        try
+        {
+            await SendManyAsync(DisconnectForTransportClose(sessionId), CancellationToken.None);
+            if (ownerReleased) NotifyPresenceChanged();
+            if (terminalDelivery is not null) terminalDelivered = await terminalDelivery;
+
+            if (!terminalDelivered || socket is null || socket.State != WebSocketState.Open)
+            {
+                socket?.Abort();
+                return;
+            }
+            using var closeTimeout = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            closeTimeout.CancelAfter(SocketSendTimeout);
+            await socket.CloseOutputAsync(WebSocketCloseStatus.PolicyViolation,
+                "platform session inactive", closeTimeout.Token);
+        }
+        catch (Exception error)
+        {
+            socket?.Abort();
+            Console.Error.WriteLine($"WebSocket {sessionId} 失效连接收尾隔离：{error.Message}");
+        }
+        finally
+        {
+            if (terminalDelivery is not null)
+            {
+                try { await terminalDelivery; }
+                catch { }
+            }
+            terminalTimeout?.Dispose();
+            if (outbound is not null)
+            {
+                try { await outbound.DisposeAsync(); }
+                catch (Exception error)
+                {
+                    socket?.Abort();
+                    Console.Error.WriteLine($"WebSocket {sessionId} 终止发送队列释放失败：{error.Message}");
+                }
+            }
+        }
+    }
+
+    private static bool TryReadMessageType(string json, out string? messageType)
+    {
+        messageType = null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object
+                || !document.RootElement.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String) return false;
+            messageType = type.GetString();
+            return messageType is not null;
+        }
+        catch (JsonException) { return false; }
+    }
+
+    private static object CreateInboundOverloadPayload(string json,
+        L12InboundEnqueueResult enqueue)
+    {
+        string? requestId = null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var candidate = document.RootElement.ValueKind == JsonValueKind.Object
+                && document.RootElement.TryGetProperty("requestId", out var value)
+                && value.ValueKind == JsonValueKind.String
+                    ? value.GetString() : null;
+            // An overload response must not keep a hostile megabyte-sized requestId alive.
+            if (candidate is { Length: <= 128 }) requestId = candidate;
+        }
+        catch (JsonException) { }
+        return new
+        {
+            type = "error",
+            code = "inboundQueueCapacityExceeded",
+            reason = enqueue == L12InboundEnqueueResult.MessageLimit
+                ? "message-limit" : "retained-byte-limit",
+            message = "待处理请求过多，请重新连接后确认操作结果",
+            requestId,
+            retryWithSameRequestId = requestId is not null,
+        };
+    }
+
+    private async Task RejectInboundOverloadAsync(Guid sessionId, object payload,
+        CancellationToken cancellationToken)
+    {
+        if (!_outboundConnections.TryGetValue(sessionId, out var outbound)) return;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(SocketSendTimeout);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, OutgoingJsonOptions);
+        if (!await outbound.EnqueueAndWaitAsync(new L12QueuedPayload(bytes, false, false), timeout.Token)
+            && _sockets.TryGetValue(sessionId, out var socket)) socket.Abort();
     }
 
     private async Task<IReadOnlyList<OutgoingMessage>> AuthenticateSessionAsync(Guid sessionId, JsonElement root)
@@ -2234,49 +4383,85 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             })];
         }
 
-        L12SessionClaimResult claim;
-        var capabilities = ReadProtocolCapabilities(root);
-        _socketCapabilities[sessionId] = capabilities;
-        if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
-            snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
-        Guid? previousSocket;
-        IReadOnlyList<OutgoingMessage> recovery;
-        await _socketClaimGate.WaitAsync();
+        if (!TryAcquireHelloDeploymentGuard(out var deploymentGuard))
+            return DeploymentDrainActive(sessionId, root);
+        using var deployment = deploymentGuard;
         try
         {
-            previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
-            claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id, authenticated.Account.Username,
-                _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
-                _socketRankedDevices.GetValueOrDefault(sessionId));
-            _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
-                authenticated.Account.Id, claim.ConnectionGeneration);
-            _activeAccountSockets[authenticated.Account.Id] = sessionId;
-            recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
-        }
-        finally { _socketClaimGate.Release(); }
-
-        var replaced = claim.ReplacedSessionId ?? previousSocket;
-        if (replaced is { } oldSessionId && oldSessionId != sessionId)
-            await SupersedeSocketAsync(oldSessionId, authenticated.Account.Id, CancellationToken.None);
-
-        var session = new OutgoingMessage(sessionId, new
-        {
-            type = "session", sessionId, name = claim.Name, claim.Recovered, claim.RoomCode,
-            claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
-            claim.RecoveryRevision,
-            protocolVersion = 2,
-            capabilities = new
+            L12SessionClaimResult claim;
+            var capabilities = ReadProtocolCapabilities(root);
+            Guid? previousSocket;
+            IReadOnlyList<OutgoingMessage> recovery;
+            await _socketClaimGate.WaitAsync();
+            try
             {
-                requestIds = capabilities.RequestIds,
-                deltaGameState = capabilities.DeltaGameState,
-            },
-        });
-        return new[] { session, EffectiveOperationsPolicyMessage(sessionId) }.Concat(recovery).ToArray();
+                // Natural expiry permanently retires this transport before it releases the claim
+                // fence. A hello already read from that transport must not reclaim the same Guid.
+                if (!_sockets.ContainsKey(sessionId)
+                    || !_outboundConnections.ContainsKey(sessionId))
+                {
+                    _rooms.RecordConnectionClaimRejection(authenticated.Account.Id,
+                        "platform-session-revoked");
+                    return [new OutgoingMessage(sessionId, new
+                    {
+                        type = "authenticationRequired", reason = "platform-session-revoked",
+                        message = "当前连接已失效，请重新连接",
+                    })];
+                }
+                _socketCapabilities[sessionId] = capabilities;
+                if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
+                previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
+                claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
+                    authenticated.Account.Username,
+                    _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
+                    _socketRankedDevices.GetValueOrDefault(sessionId));
+                _socketPlatformSessions[sessionId] = new SocketPlatformBinding(authenticated.SessionId,
+                    authenticated.Account.Id, claim.ConnectionGeneration);
+                _activeAccountSockets[authenticated.Account.Id] = sessionId;
+                recovery = await _rooms.RecoveryStateWithAckAsync(sessionId, claim.Recovered);
+                _establishedInboundConnections[sessionId] = 0;
+            }
+            finally { _socketClaimGate.Release(); }
+
+            var replaced = claim.ReplacedSessionId ?? previousSocket;
+            if (replaced is { } oldSessionId && oldSessionId != sessionId)
+                await SupersedeSocketAsync(oldSessionId, authenticated.Account.Id, CancellationToken.None);
+
+            var session = new OutgoingMessage(sessionId, new
+            {
+                type = "session", sessionId, accountId = authenticated.Account.Id, name = claim.Name,
+                claim.Recovered, claim.RoomCode,
+                claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
+                claim.RecoveryRevision,
+                protocolVersion = 2,
+                capabilities = new
+                {
+                    requestIds = capabilities.RequestIds,
+                    deltaGameState = capabilities.DeltaGameState,
+                },
+            });
+            var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
+            return new[]
+            {
+                session,
+                EffectiveOperationsPolicyMessage(sessionId),
+                new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
+                PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision),
+            }.Concat(recovery).ToArray();
+        }
+        catch (L12DeploymentBarrierClosedException)
+        {
+            CleanupRejectedHello(sessionId, authenticated.Account.Id);
+            return DeploymentDrainActive(sessionId, root);
+        }
     }
 
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
         CancellationToken cancellationToken)
     {
+        if (_inboundConnections.TryGetValue(sessionId, out var inbound))
+            inbound.StopAcceptingAndCancelPending();
         var payload = new
         {
             type = "sessionSuperseded", reason = "newer-connection-generation",
@@ -2315,6 +4500,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         => new(sessionId, new
         {
             type = "effectiveOperationsPolicy",
+            resource = OperationsPolicyResource,
+            epoch = _resourceEpoch,
+            revision = Interlocked.Read(ref _operationsResourceRevision),
             policy = _platform.EffectiveOperationsPolicy(),
         });
 
@@ -2453,6 +4641,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 try
                 {
                     await SendManyAsync(await _rooms.TickRankedClocksAsync(), cancellationToken);
+                    await SendManyAsync(await _rooms.TickResponseWindowsAsync(), cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -2652,6 +4841,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return new L12CardAnalyticsQuery(
             Cursor: QueryValue(request, "cursor"),
             Limit: QueryInt(request, 50, "limit"),
+            Page: QueryInt(request, 1, "page"),
+            Sort: QueryValue(request, "sort") ?? "sample-size",
+            Direction: QueryValue(request, "direction") ?? "desc",
             MinimumSampleSize: QueryInt(request, 5, "minimumSampleSize", "minimumSample"),
             Search: search,
             CandidateCardIds: candidates,
@@ -2664,7 +4856,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             RulesVersion: QueryValue(request, "rulesVersion"),
             SeasonId: QueryValue(request, "seasonId"),
             EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")),
-            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray());
+            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray(),
+            ExcludedAccountIds: _platform.StatisticsExcludedAccountIds().ToArray());
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)
@@ -2724,8 +4917,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private static string ClientKey(HttpRequest request)
         => request.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown-client";
 
+    private static IResult StorageConflictResponse(HttpRequest request)
+    {
+        request.HttpContext.Response.Headers.CacheControl = "no-store";
+        return ApiError(request, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
+    }
+
     private static IResult ApiError(HttpRequest request, string code, string message, int statusCode)
-        => Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
+    {
+        if (statusCode == StatusCodes.Status503ServiceUnavailable
+            && code is "feature_disabled" or "email_feature_disabled")
+            request.HttpContext.Items[L12HttpPerformanceMonitor.ExpectedUnavailableItemName] = true;
+        return Results.Json(new L12ApiError(code, message, CorrelationId(request)), statusCode: statusCode);
+    }
+
+    private static IResult SeasonManagementError(HttpRequest request, L12OperationsConfigException error)
+    {
+        var status = error.Code switch
+        {
+            "season_definition_not_found" or "season_archive_not_found" => StatusCodes.Status404NotFound,
+            "season_definition_revision_conflict" or "season_draft_exists" or "duplicate_season_id"
+                or "operations_version_conflict" or "season_preview_stale"
+                or "season_activation_preview_stale" or "season_activation_plan_conflict"
+                or "season_cutover_snapshot_conflict"
+                => StatusCodes.Status409Conflict,
+            "permission_denied" => StatusCodes.Status403Forbidden,
+            _ => StatusCodes.Status400BadRequest,
+        };
+        return ApiError(request, error.Code, error.Message, status);
+    }
+
+    private static void LogAdminReadFailure(HttpRequest request, string component, Exception error)
+        => Console.Error.WriteLine($"[{CorrelationId(request)}] admin read failed: component={component}, "
+            + $"errorType={error.GetType().FullName}");
 
     private static IResult SessionRevocationResponse(HttpRequest request, L12SessionRevocationResult result)
         => result.Found
@@ -2831,6 +5055,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return true;
     }
 
+    private static string ResolveSeasonCommandKey(HttpRequest request, string? bodyIdempotencyKey)
+    {
+        var supplied = string.IsNullOrWhiteSpace(bodyIdempotencyKey)
+            ? request.Headers["Idempotency-Key"].FirstOrDefault()?.Trim()
+            : bodyIdempotencyKey.Trim();
+        if (!string.IsNullOrWhiteSpace(supplied)) return supplied;
+        return $"season-compat-{Guid.NewGuid():N}";
+    }
+
     private static L12AdminCommandResult<T> ExecuteOperationsConfig<T>(Func<T> operation)
     {
         try
@@ -2843,6 +5076,17 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 "operations_version_conflict" => StatusCodes.Status409Conflict,
                 "operations_version_not_found" => StatusCodes.Status404NotFound,
+                "operations_section_conflict" or "operations_field_conflict"
+                    => StatusCodes.Status409Conflict,
+                "operations_section_not_found" or "operations_section_version_not_found"
+                    => StatusCodes.Status404NotFound,
+                "season_definition_not_found" => StatusCodes.Status404NotFound,
+                "season_definition_revision_conflict" or "season_link_conflict"
+                    or "season_cutover_not_ready" or "season_runtime_conflict"
+                    or "season_archive_conflict" or "season_preview_stale"
+                    or "season_activation_preview_stale" or "season_activation_plan_conflict"
+                    or "season_cutover_snapshot_conflict"
+                    or "season_draft_exists" or "duplicate_season_id" => StatusCodes.Status409Conflict,
                 "permission_denied" => StatusCodes.Status403Forbidden,
                 _ => StatusCodes.Status400BadRequest,
             };
@@ -2857,6 +5101,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             "operations_version_conflict" => StatusCodes.Status409Conflict,
             "operations_version_not_found" => StatusCodes.Status404NotFound,
+            "operations_section_conflict" or "operations_field_conflict"
+                => StatusCodes.Status409Conflict,
+            "operations_section_not_found" or "operations_section_version_not_found"
+                => StatusCodes.Status404NotFound,
             "permission_denied" => StatusCodes.Status403Forbidden,
             _ => StatusCodes.Status400BadRequest,
         };
@@ -2968,6 +5216,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         L12AdminCommandEnvelope<TPayload> command, L12AdminCommandResult<T> outcome, string? tournamentId = null)
     {
         var result = AdminCommandResponse(request, command, outcome);
+        if (outcome.Success && !outcome.Replayed && !command.DryRun) NotifyTournamentsChanged();
         var version = tournamentId is null
             ? _platform.Version
             : _platform.AdminCommandResourceVersion("tournament.read", $"tournament:{tournamentId}")
@@ -3262,6 +5511,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var batch = _platform.PublishContentBatch(current.Actor, current.Payload, current.AuditContext);
+                if (batch.Items.Any(item => item.Key is "rules.center" or "rules.rulings"))
+                    NotifyRulesContentChanged();
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
                     new L12ContentBatchOperationView(true, batch, null), "内容批次已发布");
             }
@@ -3302,6 +5553,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var batch = _platform.RollbackContentBatch(current.Actor, current.Payload, current.AuditContext);
+                if (batch.Items.Any(item => item.Key is "rules.center" or "rules.rulings"))
+                    NotifyRulesContentChanged();
                 return L12AdminCommandResult<L12ContentBatchOperationView>.Ok(
                     new L12ContentBatchOperationView(true, batch, null), "内容批次已回滚");
             }
@@ -3343,6 +5596,42 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private L12AdminCommandResult<L12EffectReviewView> ExecuteEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command)
         => ValidateEffectReview(command, true);
+
+    private IResult EffectWorkbenchAction(HttpRequest request, string cardId,
+        L12EffectWorkbenchActionRequest body, string action)
+    {
+        const L12Permission permission = L12Permission.AdminEffectsReview;
+        if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+        var source = _catalog.AtomicEffects.Find(cardId);
+        if (source is null) return ApiError(request, "effect_not_found", "卡牌效果不存在",
+            StatusCodes.Status404NotFound);
+        var effect = _platform.ApplyEffectPresentationOverrides(_platform.ApplyEffectReviews(source));
+        try
+        {
+            var context = RequestAuditContext(request, permission);
+            var result = action switch
+            {
+                "validate" => _platform.ValidateEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "review" => _platform.ReviewEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "publish" => _platform.PublishEffectWorkbenchDraft(authenticated.Account, effect, body, context),
+                "rollback" => _platform.RollbackEffectWorkbench(authenticated.Account, effect, body, context),
+                _ => throw new ArgumentOutOfRangeException(nameof(action)),
+            };
+            return Results.Ok(result);
+        }
+        catch (KeyNotFoundException error)
+        {
+            return ApiError(request, "effect_workbench_not_found", error.Message, StatusCodes.Status404NotFound);
+        }
+        catch (InvalidOperationException error)
+        {
+            return ApiError(request, "effect_workbench_conflict", error.Message, StatusCodes.Status409Conflict);
+        }
+        catch (ArgumentException error)
+        {
+            return ApiError(request, "invalid_effect_workbench", error.Message, StatusCodes.Status400BadRequest);
+        }
+    }
 
     private L12AdminCommandResult<L12EffectReviewView> ValidateEffectReview(
         L12AdminCommandEnvelope<EffectReviewCommandPayload> command, bool apply)
@@ -3413,6 +5702,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var operation = _platform.SetAccountDisabled(actor, payload.AccountId, payload.Disabled,
                 payload.Reason, audit, apply);
+            if (operation.Applied) _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountStatusOperationView>.Ok(operation,
                 apply ? "账号状态已更新" : "干运行验证通过");
         }
@@ -3466,6 +5756,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
             var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, true) with { CleanedMatchRecords = cleanedMatches };
+            _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountDeletionView>.Ok(operation, "账号已逻辑删除并清理个人数据");
         }
         catch (L12SecurityPolicyException error)
@@ -3531,15 +5822,25 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         return long.TryParse(normalized, out var parsed) && parsed >= 0 ? parsed : null;
     }
 
+    private static bool TryReleaseActiveAccountSocket(
+        ConcurrentDictionary<string, Guid> owners, string accountId, Guid expectedSessionId)
+        => owners.TryRemove(new KeyValuePair<string, Guid>(accountId, expectedSessionId));
+
+    private static bool TryReleaseSocketPlatformBinding(
+        ConcurrentDictionary<Guid, SocketPlatformBinding> bindings, Guid sessionId,
+        SocketPlatformBinding expectedBinding)
+        => bindings.TryRemove(new KeyValuePair<Guid, SocketPlatformBinding>(sessionId,
+            expectedBinding));
+
     private void HandlePlatformSessionsRevoked(IReadOnlyList<string> sessionIds)
     {
         var revoked = sessionIds.ToHashSet(StringComparer.Ordinal);
         foreach (var mapping in _socketPlatformSessions.Where(item => revoked.Contains(item.Value.PlatformSessionId)).ToArray())
         {
-            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding)
-                && _activeAccountSockets.TryGetValue(binding.AccountId, out var active)
-                && active == mapping.Key)
-                _activeAccountSockets.TryRemove(binding.AccountId, out _);
+            if (_inboundConnections.TryGetValue(mapping.Key, out var inbound))
+                inbound.StopAcceptingAndCancelPending();
+            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding))
+                TryReleaseActiveAccountSocket(_activeAccountSockets, binding.AccountId, mapping.Key);
             _rooms.RecordConnectionClaimRejection(mapping.Value.AccountId, "platform-session-revoked");
             if (_sockets.TryGetValue(mapping.Key, out var socket)) socket.Abort();
         }
@@ -3548,6 +5849,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await StopSeasonActivationCoordinatorAsync();
+        await StopRulesContentTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();
         await StopRankedClockWatchdogAsync();
         _modianImports.Dispose();
@@ -3558,6 +5861,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 public sealed record AuthRequest(string? Username, string? Password);
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
 public sealed record ChangeUsernameRequest(string? CurrentPassword, string? NewUsername);
+public sealed record UsernameChangeApplicationRequest(string? NewUsername, string? Reason);
+public sealed record UsernameChangeReviewRequest(bool Approve, string? Note);
 public sealed record CurrentPasswordRequest(string? CurrentPassword);
 public sealed record EmailBindingRequest(string? Email, string? CurrentPassword);
 public sealed record ForgotPasswordRequest(string? Email);
@@ -3568,6 +5873,22 @@ public sealed record FriendResolveRequest(bool Accept);
 public sealed record RankedFactionRequest(string? Faction);
 public sealed record RankedTitleRequest(string? Title);
 public sealed record RankedConfigRequest(L12RankedConfigView Config, string? Reason);
+public sealed record SeasonDraftCreateRequest(long ExpectedCurrentRevision, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record SeasonDraftUpdateRequest(L12SeasonDefinitionDraft Draft, long ExpectedRevision,
+    string? Reason, string? PreviewToken = null, string? IdempotencyKey = null,
+    long? ExpectedVersion = null);
+public sealed record SeasonDraftDeleteRequest(long ExpectedRevision, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record SeasonDefinitionPreviewRequest(L12SeasonDefinitionDraft Draft,
+    long ExpectedRevision, long? ExpectedVersion = null);
+public sealed record SeasonDefinitionApplyRequest(L12SeasonDefinitionDraft Draft,
+    long ExpectedRevision, string? PreviewToken, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonDraftCreateCommandPayload(long ExpectedCurrentRevision);
+public sealed record L12SeasonDraftDeleteCommandPayload(string DefinitionId, long ExpectedRevision);
+public sealed record L12SeasonDefinitionApplyCommandPayload(string DefinitionId,
+    L12SeasonDefinitionDraft Draft, long ExpectedRevision, string PreviewToken);
 public sealed record RankedBroadcastCompleteRequest(string? ClaimToken);
 public sealed record RoleRequest(string? Role, string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
@@ -3582,10 +5903,50 @@ public sealed record AccountDeletionCommandPayload(string AccountId, string Reas
 public sealed record OperationsConfigPreviewRequest(L12OperationsConfigPayload Config,
     long? ExpectedVersion = null);
 public sealed record OperationsConfigApplyRequest(L12OperationsConfigPayload Config, string? Reason = null,
-    string? IdempotencyKey = null, long? ExpectedVersion = null);
+    string? IdempotencyKey = null, long? ExpectedVersion = null, string? CrossSectionReplaceIntent = null);
 public sealed record OperationsConfigRollbackRequest(string? VersionId, string? Reason = null,
-    string? IdempotencyKey = null, long? ExpectedVersion = null);
+    string? IdempotencyKey = null, long? ExpectedVersion = null, string? CrossSectionReplaceIntent = null);
 public sealed record L12OperationsRollbackCommandPayload(string VersionId);
+public sealed record OperationsConfigSectionPreviewRequest(L12OperationsSectionPayload Config,
+    IReadOnlyDictionary<string, long>? ExpectedFieldRevisions = null,
+    long? ExpectedRevision = null);
+public sealed record OperationsConfigSectionApplyRequest(L12OperationsSectionPayload Config,
+    IReadOnlyDictionary<string, long>? ExpectedFieldRevisions = null, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedRevision = null);
+public sealed record OperationsConfigSectionRollbackRequest(string? VersionId, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedRevision = null);
+public sealed record L12OperationsSectionApplyCommandPayload(string Section,
+    L12OperationsSectionPayload Config, long ExpectedRevision,
+    IReadOnlyDictionary<string, long> ExpectedFieldRevisions);
+public sealed record L12OperationsSectionRollbackCommandPayload(string Section, string VersionId,
+    long ExpectedRevision);
+public sealed record SeasonActivationRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
+    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonActivationCommandPayload(string DefinitionId,
+    long ExpectedCurrentRevision, long ExpectedDraftRevision);
+public sealed record RankedSeasonResetRepairPreviewRequest(string? SeasonId,
+    long? ExpectedVersion = null, DateTimeOffset? CompetitiveStartAt = null);
+public sealed record RankedSeasonResetRepairRequest(string? SeasonId, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null,
+    string? ExpectedEvidenceFingerprint = null, DateTimeOffset? CompetitiveStartAt = null);
+public sealed record SeasonIdentityMigrationPreviewRequest(long? ExpectedVersion = null);
+public sealed record SeasonIdentityMigrationRequest(string? ExpectedPlatformFingerprint,
+    string? ExpectedRecorderFingerprint, string? Reason = null, string? IdempotencyKey = null,
+    long? ExpectedVersion = null);
+public sealed record L12RankedSeasonResetRepairCommandPayload(string SeasonId,
+    string ExpectedEvidenceFingerprint, DateTimeOffset? CompetitiveStartAt = null);
+public sealed record SeasonActivationPreviewRequest(long ExpectedCurrentRevision,
+    long ExpectedDraftRevision, long? ExpectedVersion = null);
+public sealed record SeasonActivationArmRequest(long ExpectedCurrentRevision, long ExpectedDraftRevision,
+    string? Reason = null, string? IdempotencyKey = null, long? ExpectedVersion = null,
+    string? ImpactPreviewToken = null);
+public sealed record L12SeasonActivationArmCommandPayload(string DefinitionId,
+    long ExpectedCurrentRevision, long ExpectedDraftRevision, string ImpactPreviewToken);
+public sealed record SeasonActivationDisarmRequest(long ExpectedDraftRevision,
+    long ExpectedPlanGeneration, string? DisarmGuardToken = null, string? Reason = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null);
+public sealed record L12SeasonActivationDisarmCommandPayload(string DefinitionId,
+    long ExpectedDraftRevision, long ExpectedPlanGeneration, string DisarmGuardToken);
 public sealed record OperationsServerStartRequest(string? Reason = null,
     string? IdempotencyKey = null, long? ExpectedVersion = null);
 public sealed record L12ServerStartCommandPayload(long ExpectedVersion, string RequestedState = "open");
@@ -3623,11 +5984,15 @@ public sealed record EffectPresentationCommandPayload(string CardId, string Scen
 public sealed record BugRequest(string? Title, string Description, string? Page, string? RoomCode,
     string? MatchId, string? Version, L12ClientConnectionDiagnosticView? ClientDiagnostic = null);
 public sealed record BugUpdateRequest(string? Status, string? Priority, string? Assignee, string? AdminNotes,
-    string? Comment, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false,
-    string? Reason = null);
+    string? Comment, string? FixCommit = null, string? RegressionTest = null, string? DeployedVersion = null,
+    string? VerifiedBy = null, DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null,
+    string? ClosureDisposition = null, string? IdempotencyKey = null, long? ExpectedVersion = null,
+    bool DryRun = false, string? Reason = null);
 public sealed record BugUpdateCommandPayload(string Id, string? Status, string? Priority, string? Assignee,
-    string? AdminNotes, string? Comment);
+    string? AdminNotes, string? Comment, string? FixCommit = null, string? RegressionTest = null,
+    string? DeployedVersion = null, string? DuplicateOf = null, string? ClosureDisposition = null);
 public sealed record PublishedDeckRequest(string? PublicationId, L12CustomDeckSubmission? Deck);
+public sealed record AccountDeckUpdateRequest(L12CustomDeckSubmission? Deck, long ExpectedRevision);
 public sealed record TournamentCreateRequest(L12TournamentCreatePayload Tournament, string? IdempotencyKey = null,
     long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentLegacyImportRequest(IReadOnlyList<L12LegacyTournamentInput>? Tournaments,
@@ -3635,15 +6000,45 @@ public sealed record TournamentLegacyImportRequest(IReadOnlyList<L12LegacyTourna
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentRegistrationRequest(string? DeckName, string? DeckCode,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentPreCheckInRequest(string? DeckName, string? DeckCode, string? DeckId = null,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentRemoveParticipantRequest(string? AccountId, bool BanRegistration, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentRegistrationBanRequest(string? AccountId, bool Banned, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentOrganizerTransferRequest(string? AccountId, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentOrganizerTransferDecisionRequest(string? RequestId, bool Accept, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentActionRequest(string? IdempotencyKey = null, long? ExpectedVersion = null,
     bool DryRun = false, string? Reason = null);
 public sealed record TournamentStaffRequest(IReadOnlyList<string>? RefereeAccountIds,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
+public sealed record TournamentVisibilityRequest(string? Visibility, string? RegistrationVisibility,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentCheckInRequest(string? AccountId, bool Ready,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false, string? Reason = null);
 public sealed record TournamentPauseRequest(bool Paused, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentTimeExtensionRequest(int Minutes, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentPhaseRequest(string? Phase, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentPostponeRequest(DateTimeOffset NewStartAt, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentCancelRequest(string? Reason, string? IdempotencyKey = null,
+    long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentMatchPauseRequest(bool Paused, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentJudgeCaseCreateRequest(string? MatchId, string? Category, string? Urgency,
+    string? Message, string? IdempotencyKey = null, long? ExpectedVersion = null,
+    bool DryRun = false, string? Reason = null);
+public sealed record TournamentJudgeCaseAssignRequest(string? CaseId, string? AssigneeAccountId, string? Reason,
+    string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentJudgeCaseResolveRequest(string? CaseId, string? Status, string? Resolution,
+    string? StaffNote, string? Reason, string? IdempotencyKey = null,
+    long? ExpectedVersion = null, bool DryRun = false);
+public sealed record TournamentJudgeCaseAppealRequest(string? CaseId, string? Reason,
     string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);
 public sealed record TournamentRulingRequest(string? Kind, string? TargetAccountId, string? Decision,
     string? Reason, string? IdempotencyKey = null, long? ExpectedVersion = null, bool DryRun = false);

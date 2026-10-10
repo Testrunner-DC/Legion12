@@ -49,7 +49,7 @@ const rankedOverview = {
       disasterDecisionSeconds: 300, mulliganDecisionSeconds: 300 } }, history: [],
 }
 rankedApi.overview = async () => rankedOverview
-rankedApi.history = async () => []
+rankedApi.history = async () => ({ honors: [], factionTotals: [] })
 rankedApi.leaderboard = async () => ({
   players: [], masterChampions: [], analytics: {
     range: 'season', summary: { matches: 65, placedPlayers: 3, activeMasters: 3 }, masters,

@@ -10,6 +10,100 @@ public sealed class RankedSetupClockTests
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public async Task InitiativeUsesSixtySecondBudgetAndDisconnectedTimeoutPersistsOneDeterministicChoice()
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("initiative-boundary");
+        var initialClock = await fixture.ClockForAsync();
+        Assert.Equal(60_000, initialClock.GetProperty("operationLimitMs").GetInt64());
+        var actingPlayer = fixture.ActingPlayer(initialClock);
+        var before = await fixture.StateForAsync(actingPlayer);
+        Assert.Equal("Initiative", before.GetProperty("phase").GetString());
+        var prompt = fixture.SinglePrompt(before, "initiative");
+        var expected = prompt.GetProperty("validChoices").EnumerateArray()
+            .Select(choice => choice.GetString()!)
+            .OrderBy(choice => choice, StringComparer.Ordinal)
+            .First();
+        Assert.Equal("first", expected);
+
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(59_999);
+        Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        var durableBeforeBoundary = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.Equal(1, durableBeforeBoundary.OperationRemainingMs[actingPlayer]);
+        Assert.All(durableBeforeBoundary.TotalRemainingMs, remaining => Assert.Equal(25 * 60_000, remaining));
+
+        fixture.Manager.Disconnect(fixture.SessionFor(actingPlayer));
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(1);
+        var batches = await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow)));
+        Assert.NotEmpty(batches.SelectMany(batch => batch));
+
+        var after = await fixture.StateForAsync(1 - actingPlayer);
+        Assert.NotEqual("Initiative", after.GetProperty("phase").GetString());
+        Assert.Equal(actingPlayer, after.GetProperty("firstPlayer").GetInt32());
+        var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        var timeout = Assert.Single(detail.Commands, command => TimeoutMarker(command.Command));
+        Assert.Equal(expected, timeout.Command.GetProperty("cardInstanceIds")[0].GetString());
+        Assert.Contains(timeout.State.GetProperty("Events").EnumerateArray(), entry =>
+            entry.GetProperty("Type").GetString() == "setup-timeout");
+
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        Assert.Single(detail.Commands, command => TimeoutMarker(command.Command));
+    }
+
+    [Fact]
+    public async Task RestartPreservesPartialInitiativeBudgetAndTimeoutContinuesTheRecoveredSetup()
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("initiative-restart");
+        var initialClock = await fixture.ClockForAsync();
+        Assert.Equal(60_000, initialClock.GetProperty("operationLimitMs").GetInt64());
+        var actingPlayer = fixture.ActingPlayer(initialClock);
+
+        fixture.Clock.UtcNow += TimeSpan.FromSeconds(17);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.Equal(43_000, checkpoint.OperationRemainingMs[actingPlayer]);
+
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(2);
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, fixture.ReloadPlatform(),
+            () => fixture.Clock.UtcNow);
+        var summary = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, summary.Restored);
+        Assert.Equal(0, summary.Invalidated);
+
+        var firstReplacement = Guid.NewGuid();
+        var secondReplacement = Guid.NewGuid();
+        await restored.ConnectAsync(firstReplacement, fixture.First.Id, fixture.First.Username);
+        await restored.ConnectAsync(secondReplacement, fixture.Second.Id, fixture.Second.Username);
+        var recoveredClock = GameMessage(await restored.RecoveryStateWithAckAsync(
+                actingPlayer == 0 ? firstReplacement : secondReplacement, recovered: true),
+                actingPlayer == 0 ? firstReplacement : secondReplacement)
+            .GetProperty("rankedClock");
+        var recoveredActor = recoveredClock.GetProperty("players").EnumerateArray()
+            .Single(player => player.GetProperty("playerIndex").GetInt32() == actingPlayer);
+        Assert.True(recoveredActor.GetProperty("acting").GetBoolean());
+        Assert.Equal(43_000, recoveredActor.GetProperty("operationRemainingMs").GetInt64());
+        Assert.All(recoveredClock.GetProperty("players").EnumerateArray(), player =>
+            Assert.Equal(25 * 60_000, player.GetProperty("totalRemainingMs").GetInt64()));
+
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(42_999);
+        Assert.Empty(await restored.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(1);
+        await restored.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        var recoveredSession = actingPlayer == 0 ? firstReplacement : secondReplacement;
+        var recoveredState = GameMessage(await restored.RecoveryStateWithAckAsync(recoveredSession), recoveredSession)
+            .GetProperty("state");
+        Assert.NotEqual("Initiative", recoveredState.GetProperty("phase").GetString());
+        Assert.Equal(actingPlayer, recoveredState.GetProperty("firstPlayer").GetInt32());
+        var detail = Assert.IsType<L12MatchDetail>(await restoredRecorder.GetMatchAsync(fixture.MatchId));
+        Assert.Single(detail.Commands, command => TimeoutMarker(command.Command));
+    }
+
+    [Fact]
     public async Task DisasterChoiceUsesFreshSixtySecondBudgetAndTimesOutExactlyOnceAtBoundary()
     {
         await using var fixture = await RankedSetupFixture.CreateAsync("disaster-boundary");
@@ -187,7 +281,7 @@ public sealed class RankedSetupClockTests
         await using var fixture = await RankedSetupFixture.CreateAsync("configured-freeze", frozen);
         var initialClock = await fixture.ClockForAsync();
         Assert.Equal(1_800_000, initialClock.GetProperty("totalLimitMs").GetInt64());
-        Assert.Equal(0, initialClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(75_000, initialClock.GetProperty("operationLimitMs").GetInt64());
         Assert.Equal(180_000, initialClock.GetProperty("reconnectLimitMs").GetInt64());
         Assert.Equal(75, initialClock.GetProperty("timeControl").GetProperty("disasterDecisionSeconds").GetInt32());
         var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
@@ -202,7 +296,7 @@ public sealed class RankedSetupClockTests
 
         var unchangedClock = await fixture.ClockForAsync();
         Assert.Equal(1_800_000, unchangedClock.GetProperty("totalLimitMs").GetInt64());
-        Assert.Equal(0, unchangedClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(75_000, unchangedClock.GetProperty("operationLimitMs").GetInt64());
         Assert.Equal(180_000, unchangedClock.GetProperty("reconnectLimitMs").GetInt64());
         await fixture.ResolveInitiativeAsync();
         Assert.Equal(75_000, (await fixture.ClockForAsync()).GetProperty("operationLimitMs").GetInt64());
@@ -222,7 +316,7 @@ public sealed class RankedSetupClockTests
         var matched = await fixture.Manager.JoinMatchmakingAsync(secondSession, "ranked", null);
         var newClock = GameMessage(matched, firstSession).GetProperty("rankedClock");
         Assert.Equal(2_100_000, newClock.GetProperty("totalLimitMs").GetInt64());
-        Assert.Equal(0, newClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.Equal(80_000, newClock.GetProperty("operationLimitMs").GetInt64());
         Assert.Equal(210_000, newClock.GetProperty("reconnectLimitMs").GetInt64());
 
         await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);

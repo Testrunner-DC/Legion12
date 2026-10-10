@@ -9,6 +9,199 @@ public sealed class RankedPersistenceRecoveryTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
 
+    [Theory]
+    [InlineData("missing-runtime")]
+    [InlineData("null-season")]
+    [InlineData("blank-season")]
+    [InlineData("other-season")]
+    [InlineData("missing-match")]
+    public async Task CutoverBlocksActiveInMemoryRankedGameWhenPersistenceOwnershipIsUnprovable(
+        string corruption)
+    {
+        await using var fixture = await RankedFixture.CreateAsync($"cutover-{corruption}");
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = corruption switch
+            {
+                "missing-runtime" => "DELETE FROM ranked_match_runtime WHERE match_id=$match;",
+                "null-season" => "UPDATE matches SET season_id=NULL WHERE match_id=$match;",
+                "blank-season" => "UPDATE matches SET season_id='' WHERE match_id=$match;",
+                "missing-match" => "DELETE FROM matches WHERE match_id=$match;",
+                _ => "UPDATE matches SET season_id='other-season' WHERE match_id=$match;",
+            };
+            command.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await command.ExecuteNonQueryAsync());
+        }
+
+        var readiness = await fixture.Manager.ExecuteRankedSeasonCutoverAsync(value => value);
+
+        Assert.Equal(1, fixture.Manager.RuntimeStats().ActiveGameCount);
+        Assert.True(readiness.ActiveMatches >= 1);
+        Assert.False(readiness.Ready);
+    }
+
+    [Theory]
+    [InlineData("healthy-tournament", 0)]
+    [InlineData("tournament-missing-runtime", 0)]
+    [InlineData("tournament-room-mismatch", 1)]
+    [InlineData("unknown-mode", 1)]
+    [InlineData("orphan-runtime", 1)]
+    public async Task CutoverUsesAuthoritativeModeWithoutCouplingHealthyTournamentRuntime(
+        string scenario, int expectedActive)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-cutover-mode-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        try
+        {
+            await recorder.InitializeAsync();
+            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={Path.Combine(directory, "matches.db")}");
+            await connection.OpenAsync();
+            var orphan = scenario == "orphan-runtime";
+            var missingRuntime = scenario == "tournament-missing-runtime";
+            if (orphan)
+            {
+                var disableForeignKeys = connection.CreateCommand();
+                disableForeignKeys.CommandText = "PRAGMA foreign_keys=OFF;";
+                await disableForeignKeys.ExecuteNonQueryAsync();
+            }
+            if (!orphan)
+            {
+                var match = connection.CreateCommand();
+                match.CommandText = """
+                    INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                        started_utc,mode_id,season_id)
+                    VALUES($match,'TOUR01',1,'a','b','a','b',$started,$mode,'S01');
+                    """;
+                match.Parameters.AddWithValue("$match", scenario);
+                match.Parameters.AddWithValue("$started", DateTimeOffset.UtcNow.ToString("O"));
+                match.Parameters.AddWithValue("$mode", scenario == "unknown-mode" ? "mystery" : "tournament");
+                Assert.Equal(1, await match.ExecuteNonQueryAsync());
+            }
+            if (!missingRuntime)
+            {
+                var runtime = connection.CreateCommand();
+                runtime.CommandText = """
+                    INSERT INTO ranked_match_runtime(match_id,room_code,status,checkpoint_json,
+                        checkpoint_hash,checkpoint_generation,updated_utc)
+                    VALUES($match,$room,'active','{}','hash',1,$updated);
+                    """;
+                runtime.Parameters.AddWithValue("$match", scenario);
+                runtime.Parameters.AddWithValue("$room",
+                    scenario == "tournament-room-mismatch" ? "WRONG1" : "TOUR01");
+                runtime.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
+                Assert.Equal(1, await runtime.ExecuteNonQueryAsync());
+            }
+
+            var readiness = await recorder.RankedSeasonCutoverReadinessAsync("S01");
+
+            Assert.Equal(expectedActive, readiness.ActiveMatches);
+            Assert.Equal(expectedActive == 0, readiness.Ready);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
+    [Theory]
+    [InlineData("mystery", false, 1)]
+    [InlineData("", false, 1)]
+    [InlineData("mystery", true, 0)]
+    [InlineData("tournament", false, 0)]
+    [InlineData("friendly", false, 0)]
+    [InlineData("ranked", false, 1)]
+    public async Task CutoverFailsClosedForUnknownUnfinishedModeWithoutRuntime(
+        string mode, bool completed, int expectedActive)
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-cutover-unknown-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        try
+        {
+            await recorder.InitializeAsync();
+            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                $"Data Source={Path.Combine(directory, "matches.db")}");
+            await connection.OpenAsync();
+            var match = connection.CreateCommand();
+            match.CommandText = """
+                INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                    started_utc,ended_utc,mode_id,season_id)
+                VALUES('unknown-no-runtime','MODE01',1,'a','b','a','b',$started,$ended,$mode,'S01');
+                """;
+            match.Parameters.AddWithValue("$started", DateTimeOffset.UtcNow.ToString("O"));
+            match.Parameters.AddWithValue("$ended", completed
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : DBNull.Value);
+            match.Parameters.AddWithValue("$mode", mode);
+            Assert.Equal(1, await match.ExecuteNonQueryAsync());
+
+            var readiness = await recorder.RankedSeasonCutoverReadinessAsync("S01");
+
+            Assert.Equal(expectedActive, readiness.ActiveMatches);
+            Assert.Equal(expectedActive == 0, readiness.Ready);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
+    [Fact]
+    public async Task CutoverRechecksDurableStateImmediatelyBeforeActivation()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"l12-cutover-recheck-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        MatchRecorder? recorder = null;
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+            var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+                catalog.PresetDecks, officialCards: catalog.Cards);
+            var matchPath = Path.Combine(directory, "matches.db");
+            recorder = new MatchRecorder(matchPath);
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(catalog, recorder, platform);
+            manager.RankedSeasonCutoverFinalCheckInjector = async () =>
+            {
+                await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                    $"Data Source={matchPath}");
+                await connection.OpenAsync();
+                var command = connection.CreateCommand();
+                command.CommandText = """
+                    INSERT INTO matches(match_id,room_code,seed,player_0,player_1,deck_0,deck_1,
+                        started_utc,mode_id,season_id)
+                    VALUES('cutover-race','RACE01',1,'a','b','a','b',$started,'ranked',NULL);
+                    """;
+                command.Parameters.AddWithValue("$started", DateTimeOffset.UtcNow.ToString("O"));
+                Assert.Equal(1, await command.ExecuteNonQueryAsync());
+            };
+
+            var activated = false;
+            var readiness = await manager.ExecuteRankedSeasonCutoverAsync(value =>
+            {
+                activated = value.Ready;
+                return value;
+            });
+
+            Assert.False(activated);
+            Assert.Equal(1, readiness.ActiveMatches);
+            Assert.False(readiness.Ready);
+        }
+        finally
+        {
+            if (recorder is not null) await recorder.DisposeAsync();
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            await DeleteTestDirectoryAsync(directory);
+        }
+    }
+
     [Fact]
     public async Task RestartRestoresRankedSeatPromptAndClockBeforeReconnectBoundary()
     {
@@ -326,6 +519,9 @@ public sealed class RankedPersistenceRecoveryTests
         await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
 
         Assert.Equal(1, await fixture.Recorder.CountPendingRankedSettlementsAsync());
+        var pending = Assert.Single(await fixture.Recorder.ListPendingRankedSettlementsAsync());
+        Assert.Equal(2, pending.Payload!.Version);
+        Assert.Equal(fixture.Platform.CaptureOperationsPolicy().Season.Id, pending.Payload.SeasonId);
         Assert.Null(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.Null(fixture.Platform.RankedSettlement(fixture.MatchId, fixture.Second.Id));
         Assert.Empty(await fixture.Recorder.ListRankingMatchesAsync());
@@ -346,6 +542,57 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(fixture.MatchId, Assert.Single(await restoredRecorder.ListRankedAnalyticsMatchesAsync()).MatchId);
         Assert.Equal(0, restoredPlatform.ImportRankedMasterHistory(
             await restoredRecorder.ListRankingMatchesAsync()));
+    }
+
+    [Fact]
+    public async Task LegacyV1OutboxUsesRecordedMatchSeasonAsAuthoritativeFallback()
+    {
+        await using var fixture = await RankedFixture.CreateAsync("outbox-v1-season-fallback");
+        fixture.Platform.StorageFailureInjector = stage =>
+        {
+            if (stage == "before-commit") throw new IOException("hold settlement");
+        };
+        fixture.Manager.Disconnect(fixture.SessionFor(fixture.ActingPlayer));
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(4);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+
+        await using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(
+                         $"Data Source={fixture.MatchPath}"))
+        {
+            await connection.OpenAsync();
+            var read = connection.CreateCommand();
+            read.CommandText = "SELECT payload_json FROM ranked_settlement_outbox WHERE match_id=$match;";
+            read.Parameters.AddWithValue("$match", fixture.MatchId);
+            var payload = JsonNode.Parse((string)(await read.ExecuteScalarAsync())!)!.AsObject();
+            payload["Version"] = 1;
+            payload.Remove("SeasonId");
+            var json = payload.ToJsonString();
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(json))).ToLowerInvariant();
+            var update = connection.CreateCommand();
+            update.CommandText = """
+                UPDATE ranked_settlement_outbox SET payload_json=$json,payload_hash=$hash
+                WHERE match_id=$match;
+                """;
+            update.Parameters.AddWithValue("$json", json);
+            update.Parameters.AddWithValue("$hash", hash);
+            update.Parameters.AddWithValue("$match", fixture.MatchId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        var loaded = Assert.Single(await fixture.Recorder.ListPendingRankedSettlementsAsync());
+        Assert.Equal(1, loaded.Payload!.Version);
+        Assert.Equal(fixture.Platform.CaptureOperationsPolicy().Season.Id, loaded.Payload.SeasonId);
+
+        fixture.Platform.StorageFailureInjector = null;
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restoredPlatform = fixture.ReloadPlatform();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, restoredPlatform,
+            () => fixture.Clock.UtcNow);
+        var recovery = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, recovery.SettlementsApplied);
+        Assert.NotNull(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.First.Id));
     }
 
     [Fact]
@@ -388,6 +635,10 @@ public sealed class RankedPersistenceRecoveryTests
         Assert.Equal(1, recovery.Failed);
         Assert.Equal(1, await restoredRecorder.CountQuarantinedRankedSettlementsAsync());
         Assert.Equal(0, await restoredRecorder.CountPendingRankedSettlementsAsync());
+        var readiness = await restoredRecorder.RankedSeasonCutoverReadinessAsync(
+            restoredPlatform.CaptureOperationsPolicy().Season.Id);
+        Assert.Equal(1, readiness.QuarantinedSettlements);
+        Assert.False(readiness.Ready);
         Assert.Null(restoredPlatform.RankedSettlement(fixture.MatchId, fixture.First.Id));
         Assert.NotNull(restoredPlatform.RankedSettlement(second.MatchId, second.First.Id));
         Assert.NotNull(restoredPlatform.RankedSettlement(second.MatchId, second.Second.Id));

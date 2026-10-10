@@ -2,13 +2,17 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
-    private void BeginDisasterTrigger(bool opening, bool atTurnStart = false)
+    private void BeginDisasterTrigger(string triggerSource, bool atTurnStart = false)
     {
+        triggerSource = triggerSource == DisasterTriggerSourceTurnPhase
+            ? DisasterTriggerSourceTurnPhase
+            : triggerSource == DisasterTriggerSourceGm ? DisasterTriggerSourceGm : DisasterTriggerSourceCardEffect;
         if (!DisastersEnabled) { SetDisasterValue(0); return; }
-        if (State.ActiveDisaster?.CardId == "S01-DS10" && State.DisasterDeck.Count == 0)
+        if (State.ActiveDisaster is { } lockedDisaster
+            && L12ActiveDisasterRules.DisasterValueLocked(lockedDisaster.CardId) && State.DisasterDeck.Count == 0)
         {
             State.DisasterValue = 0;
-            AddEvent("disaster", State.ActivePlayer, "最终天灾〈堙灭〉持续生效，天灾值保持为 0", State.ActiveDisaster);
+            AddEvent("disaster", State.ActivePlayer, "最终天灾〈湮灭〉持续生效，天灾值保持为 0", lockedDisaster);
             return;
         }
         if (State.DisasterDeck.Count == 0)
@@ -28,26 +32,40 @@ public sealed partial class L12GameEngine
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
+        var triggerSourceText = triggerSource == DisasterTriggerSourceTurnPhase
+            ? "因回合阶段天灾值增长开场触发"
+            : triggerSource == DisasterTriggerSourceGm ? "由 GM 调试主动触发"
+            : "因军团登场或卡牌效果主动触发";
+        var triggerEffectText = triggerSource == DisasterTriggerSourceTurnPhase
+            ? "天灾开场触发效果"
+            : "天灾主动触发效果";
+        AddEvent("disaster-trigger-source", State.ActivePlayer,
+            $"〈{disaster.Name}〉{triggerSourceText}", disaster);
         if (atTurnStart) ResolveTurnStartDisasterEffectIfNeeded();
         if (L12StructuredCardRules.HasTriggeredDisasterEffect(disaster.CardId))
-            PublishEffectPresentation("effect-trigger", null, disaster, "disaster", "天灾触发效果");
+            PublishEffectPresentation("effect-trigger", null, disaster, "disaster", triggerEffectText);
         else
             AddEvent("disaster-reveal", null, $"天灾〈{disaster.Name}〉公开", disaster);
-        PushEffect(State.ActivePlayer, disaster, "disaster", "天灾触发效果",
-            data: new Dictionary<string, string> { ["opening"] = opening ? "true" : "false" });
+        PushEffect(State.ActivePlayer, disaster, "disaster", triggerEffectText,
+            data: new Dictionary<string, string>
+            {
+                ["opening"] = triggerSource == DisasterTriggerSourceTurnPhase ? "true" : "false",
+                ["triggerSource"] = triggerSource,
+            });
     }
 
     private void ResolveTurnStartDisasterEffectIfNeeded()
     {
-        if (!DisastersEnabled || State.ActiveDisaster is not { CardId: "S01-DS10" } disaster) return;
+        if (!DisastersEnabled || State.ActiveDisaster is not { } disaster
+            || !L12ActiveDisasterRules.DisasterValueLocked(disaster.CardId)) return;
         if (State.LastTurnStartDisasterEffectTurn == State.TurnSerial
             && State.LastTurnStartDisasterEffectInstanceId == disaster.InstanceId)
             return;
 
         State.LastTurnStartDisasterEffectTurn = State.TurnSerial;
         State.LastTurnStartDisasterEffectInstanceId = disaster.InstanceId;
-        DamageMasterNonLethal(0, 1, "〈堙灭〉", neutralSource: true);
-        DamageMasterNonLethal(1, 1, "〈堙灭〉", neutralSource: true);
+        DamageMasterNonLethalFromDisaster(0, 1, "〈湮灭〉");
+        DamageMasterNonLethalFromDisaster(1, 1, "〈湮灭〉");
     }
 
     private void ResolveDisasterEffect(L12StackItem item)
@@ -64,7 +82,7 @@ public sealed partial class L12GameEngine
         {
             case "黯陨晨星":
             case "虚构的圣杯":
-            case "堙灭":
+            case "湮灭":
                 AddEvent("disaster-active", null, $"〈{disaster.Name}〉的持续效果开始生效", disaster);
                 FinishStackItem(item); return;
             case "腐秽大地":
@@ -146,10 +164,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteStarterEvilEyeDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"evil-eye-discard:{playerIndex}"] = chosen.SingleOrDefault() ?? string.Empty;
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-st-evil-eye-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-st-evil-eye-discard",
+                "evil-eye-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var id = item.Data.GetValueOrDefault($"evil-eye-discard:{owner}");
@@ -179,10 +195,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteS2FogDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"fog-discard:{playerIndex}"] = string.Join(',', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-s2-fog-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-s2-fog-discard",
+                "fog-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var player = State.Players[owner];
@@ -210,7 +224,9 @@ public sealed partial class L12GameEngine
                 player.Field[0][slot] = null;
                 player.Field[1][slot] = front;
                 RecordLegionMovement(owner, front, 0, 1);
-                AddEvent("move", owner, $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排", front);
+                AddPlayerBattlefieldMovementEvent("move", owner,
+                    $"〈风暴乱象〉使〈{front.Name}〉从前排位移至后排",
+                    new([BattlefieldMovementFact(front, owner, 0, slot, 1, slot)]), front);
             }
         }
         FinishStackItem(item);
@@ -264,7 +280,7 @@ public sealed partial class L12GameEngine
             {
                 var card = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == id);
                 if (card is null) continue;
-                player.Hand.Remove(card); player.Graveyard.Add(card);
+                player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Graveyard.Add(card);
                 NotifyCardDiscarded(player, card, "hand", causedByEffect: true);
             }
         }
@@ -273,7 +289,7 @@ public sealed partial class L12GameEngine
 
     private void BeginMainPhaseDisasterEffect()
     {
-        if (State.ActiveDisaster?.CardId != "S01-DS01") return;
+        if (State.ActiveDisaster?.CardId != L12ActiveDisasterRules.DarkMorningStarCardId) return;
         PushEffect(State.ActivePlayer, State.ActiveDisaster, "disaster", "主要阶段开始时效果",
             data: new Dictionary<string, string> { ["subkind"] = "main" });
     }
@@ -384,6 +400,8 @@ public sealed partial class L12GameEngine
                 if (card is not null) RemoveFromField(State.Players[owner], card, true, "因魔龙降世置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
             }
+        // 2026-09-18 玩家裁定：魔龙降世的回库不依赖该列实际移入墓地的张数。
+        // 即使掷中空列也继续；这是本卡特例，不改变其他卡的“随后”依赖规则。
         BeginDisasterGraveBottom(item);
     }
 
@@ -392,18 +410,7 @@ public sealed partial class L12GameEngine
         var prompted = 0;
         for (var playerIndex = 0; playerIndex < 2; playerIndex++)
         {
-            var grave = State.Players[playerIndex].Graveyard.Where(CanEnterHandOrLibrary).ToArray();
-            var count = Math.Min(4, grave.Length);
-            if (count == 0) continue;
-            CreatePrompt(playerIndex, "order", $"选择墓地 {count} 张牌，依选择顺序返回牌库底部", grave.Select(card => card.InstanceId),
-                count, count, "disaster-effect", item.StackItemId,
-                data: new Dictionary<string, string>
-                {
-                    ["action"] = "disaster-grave-bottom",
-                    ["player"] = playerIndex.ToString(),
-                    ["simultaneous"] = "true"
-                });
-            prompted++;
+            if (BeginFixedGraveReturnResolution(item, playerIndex, 4)) prompted++;
         }
         if (prompted == 0) FinishStackItem(item);
     }
@@ -412,11 +419,9 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = int.Parse(prompt.Data["player"]);
         var player = State.Players[playerIndex];
-        foreach (var id in chosen)
-        {
-            var card = player.Graveyard.First(candidate => candidate.InstanceId == id);
-            MoveGraveToLibraryBottom(player, [card]);
-        }
+        // Compatibility with checkpoints containing the former direct order prompt.
+        if (TryResolveFixedGraveEffectDeclaration(player, chosen, 4, out var cards))
+            MoveGraveToLibraryBottom(player, cards);
         if (!State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
             && candidate.Data.GetValueOrDefault("action") == "disaster-grave-bottom"))
             FinishStackItem(item);
@@ -452,10 +457,8 @@ public sealed partial class L12GameEngine
 
     private void CompleteDisasterDiscard(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var promptPlayer = int.Parse(prompt.Data["player"]);
-        item.Data[$"balance-discard:{promptPlayer}"] = string.Join(',', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-discard")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-discard",
+                "balance-discard", chosen)) return;
         for (var owner = 0; owner < 2; owner++)
         {
             var player = State.Players[owner];
@@ -533,10 +536,8 @@ public sealed partial class L12GameEngine
 
     private void ContinueApocalypseHandOrder(L12StackItem item, L12Prompt prompt, List<string> chosen)
     {
-        var playerIndex = int.Parse(prompt.Data["player"]);
-        item.Data[$"apocalypse-hand-order:{playerIndex}"] = string.Join('|', chosen);
-        if (State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
-            && candidate.Data.GetValueOrDefault("action") == "disaster-apocalypse-hand-order")) return;
+        if (!CommitSimultaneousPrivateSelection(item, prompt, "disaster-apocalypse-hand-order",
+                "apocalypse-hand-order", chosen, '|')) return;
         CompleteApocalypseHands(item);
     }
 
@@ -559,6 +560,7 @@ public sealed partial class L12GameEngine
             {
                 var card = cards[id];
                 player.Hand.Remove(card);
+                ResetCardForPrivateZone(card);
                 player.Library.Add(card);
             }
             if (!Draw(player, 4)) SetWinner(1 - index, "天启默示录抽牌时牌库为空");
@@ -572,8 +574,10 @@ public sealed partial class L12GameEngine
             foreach (var card in DisasterLegions(State.Players[owner]).ToArray())
                 RemoveFromField(State.Players[owner], card, true, "因诸神黄昏置入墓地",
                     queueDeathTrigger: false, leaveKind: L12FieldLeaveKind.PutIntoGraveyard);
-        var opening = item.Data.GetValueOrDefault("opening") == "true";
-        if (opening)
+        // 旧检查点只有 opening；新检查点以不可歧义的权威来源决定分支。
+        var turnPhase = item.Data.GetValueOrDefault("triggerSource") == DisasterTriggerSourceTurnPhase
+            || (!item.Data.ContainsKey("triggerSource") && item.Data.GetValueOrDefault("opening") == "true");
+        if (turnPhase)
         {
             Draw(State.Players[0], 2); Draw(State.Players[1], 2);
         }
@@ -603,7 +607,7 @@ public sealed partial class L12GameEngine
         foreach (var id in chosen)
         {
             var card = player.Hand.First(candidate => candidate.InstanceId == id);
-            player.Hand.Remove(card); player.Library.Add(card);
+            player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Library.Add(card);
         }
         CompleteEndTurn(prompt.PlayerIndex);
     }

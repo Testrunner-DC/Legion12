@@ -266,6 +266,7 @@ public sealed partial class L12PlatformStore
         public List<RankedProfileTransition> Transitions { get; } = [];
         public HashSet<string> ReleasedHeldMatchIds { get; } = new(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> VoidedAppliedMatchIds { get; } = new(StringComparer.OrdinalIgnoreCase);
+        public bool PreservesProfilesForDownstreamSettlements { get; set; }
         public RankedIntegrityDecisionRow? RevokedDecision { get; set; }
     }
 
@@ -365,7 +366,8 @@ public sealed partial class L12PlatformStore
         {
             RequireActiveRankedIntegrityActorLocked(actor);
             var all = _data.RankedIntegrityNotifications.Where(row =>
-                row.AccountId.Equals(actor.Id, StringComparison.OrdinalIgnoreCase)).ToArray();
+                row.AccountId.Equals(actor.Id, StringComparison.OrdinalIgnoreCase)
+                && !row.MatchIds.Any(IsT01TransitionWaivedMatchLocked)).ToArray();
             var unreadCount = all.Count(row => row.AcknowledgedAt is null);
             var source = all.Where(row => !unreadOnly || row.AcknowledgedAt is null)
                 .OrderByDescending(row => row.DecidedAt).ThenByDescending(row => row.Id,
@@ -404,6 +406,9 @@ public sealed partial class L12PlatformStore
                 row.Id.Equals(normalizedDecisionId, StringComparison.OrdinalIgnoreCase))
                 ?? throw new L12RankedIntegrityActionException("ranked_integrity_decision_not_found",
                     "排位处置记录不存在");
+            if (decision.MatchIds.Any(IsT01TransitionWaivedMatchLocked))
+                throw new L12RankedIntegrityActionException("ranked_integrity_transition_waived",
+                    "该过渡期排位已由真实开季迁移统一作废，不再接受玩家申诉");
             if (!decision.AccountEffects.Any(effect => effect.AccountId.Equals(actor.Id,
                     StringComparison.OrdinalIgnoreCase)))
                 throw new L12RankedIntegrityActionException("ranked_integrity_appeal_forbidden",
@@ -446,7 +451,9 @@ public sealed partial class L12PlatformStore
         {
             RequireActiveRankedIntegrityActorLocked(actor);
             var source = _data.RankedIntegrityAppeals.Where(row => row.AccountId.Equals(actor.Id,
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)
+                    && !_data.RankedIntegrityDecisions.Any(decision => decision.Id == row.DecisionId
+                        && decision.MatchIds.Any(IsT01TransitionWaivedMatchLocked)))
                 .OrderByDescending(AppealUpdatedAt).ThenByDescending(row => row.Id, StringComparer.Ordinal);
             var rows = PageAfter(source, cursor, row => row.Id, Math.Clamp(limit, 1, 100), out var next);
             return new(rows.Select(RankedIntegrityAppealViewLocked).ToArray(), next);
@@ -537,8 +544,11 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            if (IsRankedSeasonCutoverFenced(now))
+                return "赛季正在切换，暂不接受新的排位对局；已开始的对局仍可恢复并完成";
             var activeRestriction = _data.RankedIntegrityDecisions
-                .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id))
+                .Where(row => row.Disposition == "confirmed" && !IsDecisionRevokedLocked(row.Id)
+                    && !row.MatchIds.Any(IsT01TransitionWaivedMatchLocked))
                 .SelectMany(row => row.AccountEffects)
                 .Where(effect => effect.AccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
                     && effect.RestrictionUntil > now)
@@ -548,8 +558,9 @@ public sealed partial class L12PlatformStore
 
             var cooldown = _data.RankedHeldRewards.Where(row =>
                     (row.FirstAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase)
-                        || row.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
-                    && row.CooldownUntil > now && IsRankedMatchExcludedLocked(row.MatchId))
+                     || row.SecondAccountId.Equals(accountId, StringComparison.OrdinalIgnoreCase))
+                    && row.CooldownUntil > now && IsRankedMatchExcludedLocked(row.MatchId)
+                    && !IsT01TransitionWaivedMatchLocked(row.MatchId))
                 .OrderByDescending(row => row.CooldownUntil).FirstOrDefault();
             return cooldown is null ? null
                 : $"异常极短排位奖励正在暂扣复核，请于 {cooldown.CooldownUntil.ToOffset(TimeSpan.FromHours(8)):HH:mm}（UTC+8）后重试";
@@ -562,6 +573,7 @@ public sealed partial class L12PlatformStore
         {
             var protectedIds = _data.RankedHeldRewards.Select(row => row.MatchId)
                 .Concat(_data.RankedIntegrityDecisions.SelectMany(row => row.MatchIds))
+                .Concat(_data.RankedSeasonResetRepairs.SelectMany(row => row.TransitionMatchIds))
                 .Concat(_data.RankedIntegrityAppeals.Where(row => CurrentAppealStatus(row) != "closed")
                     .SelectMany(row => _data.RankedIntegrityDecisions
                         .Where(decision => decision.Id == row.DecisionId).SelectMany(decision => decision.MatchIds)))
@@ -597,6 +609,9 @@ public sealed partial class L12PlatformStore
         foreach (var requested in input.MatchIds)
         {
             var normalized = requested?.Trim() ?? string.Empty;
+            if (IsT01TransitionWaivedMatchLocked(normalized))
+                throw new L12RankedIntegrityActionException("ranked_integrity_transition_waived",
+                    $"过渡期排位 {normalized} 已统一作废，不能重复处置");
             var audit = _data.RankedIntegrityAudits.FirstOrDefault(row =>
                 row.MatchId.Equals(normalized, StringComparison.OrdinalIgnoreCase))
                 ?? throw new L12RankedIntegrityActionException("ranked_integrity_match_not_found",
@@ -713,11 +728,8 @@ public sealed partial class L12PlatformStore
         var appliedRows = _data.RankedSettlements.Where(row => selected.Contains(row.MatchId)
                 && row.Outcome is "win" or "loss" && IsRankedMatchCurrentlyAppliedLocked(row.MatchId))
             .ToArray();
-        foreach (var row in appliedRows.Where(row => row.Placement
-                     && !_data.RankedSettlementProfileFacts.Any(fact => fact.AppliedInitially
-                         && fact.MatchId.Equals(row.MatchId, StringComparison.OrdinalIgnoreCase))))
-            plan.BlockingReasons.Add($"对局 {row.MatchId} 涉及定级进度，缺少安全反算依据");
-        if (plan.BlockingReasons.Count > 0) return;
+        var accountPlans = new List<(string AccountId, RankedProfileRow Profile,
+            RankedSettlementRow[] Rows, RankedSettlementRow[] Segment, bool IsLatestSuffix)>();
 
         foreach (var accountRows in appliedRows.GroupBy(row => row.AccountId,
                      StringComparer.OrdinalIgnoreCase))
@@ -770,16 +782,36 @@ public sealed partial class L12PlatformStore
                 plan.BlockingReasons.Add($"账号 {AccountName(accountId)}：{chainReason}");
                 continue;
             }
-            if (rows.Length > segment.Length
-                || !segment[^rows.Length..].Select(row => row.MatchId)
-                    .SequenceEqual(rows.Select(row => row.MatchId), StringComparer.OrdinalIgnoreCase))
+            var segmentIds = segment.Select(row => row.MatchId)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (rows.Any(row => !segmentIds.Contains(row.MatchId)))
             {
-                plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的所选对局不是当前连续最新结算后缀");
+                plan.BlockingReasons.Add($"账号 {AccountName(accountId)} 的所选对局不属于当前排位档案结算链");
+                continue;
+            }
+            var isLatestSuffix = rows.Length <= segment.Length
+                && segment[^rows.Length..].Select(row => row.MatchId)
+                    .SequenceEqual(rows.Select(row => row.MatchId), StringComparer.OrdinalIgnoreCase);
+            accountPlans.Add((accountId, profile, rows, segment, isLatestSuffix));
+        }
+        if (plan.BlockingReasons.Count > 0) return;
+
+        // 历史对局后面已经存在正常结算时，继续倒推会连带改写后续对手和整条排位链。
+        // 此时只作废所选对局、执行限制并保存证据，当前档案保持不变；最新连续后缀仍精确回滚。
+        plan.PreservesProfilesForDownstreamSettlements = accountPlans.Any(item => !item.IsLatestSuffix);
+        foreach (var accountPlan in accountPlans)
+        {
+            var (accountId, profile, rows, segment, _) = accountPlan;
+            var before = CaptureRankedProfile(profile);
+            if (plan.PreservesProfilesForDownstreamSettlements)
+            {
+                plan.Transitions.Add(new(accountId, before, CloneRankedProfileSnapshot(before),
+                    "void-applied", rows.Select(row => row.MatchId).ToArray()));
+                foreach (var row in rows) plan.VoidedAppliedMatchIds.Add(row.MatchId);
                 continue;
             }
 
             var prefix = segment[..^rows.Length];
-            var before = CaptureRankedProfile(profile);
             var exactFacts = rows.Select(row => _data.RankedSettlementProfileFacts.FirstOrDefault(fact =>
                     fact.AppliedInitially && fact.MatchId.Equals(row.MatchId,
                         StringComparison.OrdinalIgnoreCase)))
@@ -812,7 +844,8 @@ public sealed partial class L12PlatformStore
                 .Select(row => row.MatchId).ToArray()));
             foreach (var row in rows) plan.VoidedAppliedMatchIds.Add(row.MatchId);
         }
-        if (plan.BlockingReasons.Count == 0 && appliedRows.Length > 0
+        if (!plan.PreservesProfilesForDownstreamSettlements
+            && plan.BlockingReasons.Count == 0 && appliedRows.Length > 0
             && !TryApplyHistoricalHiddenRatingRollbackLocked(plan, appliedRows, out var ratingReason))
             plan.BlockingReasons.Add(ratingReason);
     }
@@ -1036,6 +1069,8 @@ public sealed partial class L12PlatformStore
                 && plan.Input.RestrictedAccountIds.Contains(accountId, StringComparer.OrdinalIgnoreCase);
             var rewardOutcome = plan.Input.Disposition switch
             {
+                "confirmed" or "system-error" when plan.PreservesProfilesForDownstreamSettlements
+                    => "voided-profile-preserved",
                 "confirmed" or "system-error" => "voided",
                 "normal" or "insufficient" when plan.ReleasedHeldMatchIds.Count > 0 => "released",
                 "review" when plan.Input.MatchIds.Any(matchId => _data.RankedHeldRewards.Any(row =>
@@ -1147,6 +1182,7 @@ public sealed partial class L12PlatformStore
 
     private bool IsRankedMatchExcludedLocked(string matchId)
     {
+        if (IsT01TransitionWaivedMatchLocked(matchId)) return true;
         var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
                 StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
             .OrderByDescending(row => row.Revision).FirstOrDefault();
@@ -1160,6 +1196,7 @@ public sealed partial class L12PlatformStore
 
     private string RankedRewardStatusLocked(string matchId)
     {
+        if (IsT01TransitionWaivedMatchLocked(matchId)) return "voided";
         var hasHold = _data.RankedHeldRewards.Any(row => row.MatchId.Equals(matchId,
             StringComparison.OrdinalIgnoreCase));
         var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
@@ -1171,6 +1208,10 @@ public sealed partial class L12PlatformStore
         if (hasHold && latest is null) return "held";
         return "applied";
     }
+
+    private bool IsT01TransitionWaivedMatchLocked(string matchId)
+        => _data.RankedSeasonResetRepairs.Any(row => row.TransitionMatchIds.Contains(matchId,
+            StringComparer.OrdinalIgnoreCase));
 
     private bool IsDecisionRevokedLocked(string decisionId)
         => _data.RankedIntegrityDecisions.Any(row => row.Disposition == "revoked"
@@ -1192,25 +1233,70 @@ public sealed partial class L12PlatformStore
                 return false;
             }
         }
+        var last = segment[^1];
+        var lastFact = _data.RankedSettlementProfileFacts.FirstOrDefault(fact => fact.AppliedInitially
+            && fact.MatchId.Equals(last.MatchId, StringComparison.OrdinalIgnoreCase));
+        if (lastFact is not null)
+        {
+            var expected = lastFact.FirstAccountId.Equals(profile.AccountId,
+                StringComparison.OrdinalIgnoreCase) ? lastFact.FirstAfter
+                : lastFact.SecondAccountId.Equals(profile.AccountId, StringComparison.OrdinalIgnoreCase)
+                    ? lastFact.SecondAfter : null;
+            if (expected is null)
+            {
+                reason = $"matchId {last.MatchId} 的档案快照不包含当前账号";
+                return false;
+            }
+            if (!RankedProfileSettlementStateEqual(profile, expected))
+            {
+                reason = CurrentRankedProfileMismatchReason(profile, expected);
+                return false;
+            }
+            reason = string.Empty;
+            return true;
+        }
+
+        // 旧结算没有逐场档案快照时，只核对不随段位配置改变的账本字段。
+        // HighestFloor / ReachedHighestTier 属于规则派生状态，不能用当前版本配置重算后
+        // 反过来阻止历史处置。
         var projected = CloneRankedProfileSnapshot(CaptureRankedProfile(profile));
         ApplyDerivedRankedProfileState(projected, segment);
-        var last = segment[^1];
         if (profile.SevenValue != last.After || profile.PlacementPlayed != projected.PlacementPlayed
             || profile.PlacementWins != projected.PlacementWins || profile.Wins != projected.Wins
             || profile.Losses != projected.Losses || profile.WinStreak != projected.WinStreak
-            || profile.LossStreak != projected.LossStreak || profile.HighestFloor != projected.HighestFloor
-            || profile.ReachedHighestTier != projected.ReachedHighestTier)
+            || profile.LossStreak != projected.LossStreak)
         {
-            reason = $"当前档案与不可变结算链不一致"
-                + $"（七曜{profile.SevenValue}/{last.After}，定级{profile.PlacementPlayed}/{projected.PlacementPlayed}，"
-                + $"定级胜{profile.PlacementWins}/{projected.PlacementWins}，胜负{profile.Wins}-{profile.Losses}/"
-                + $"{projected.Wins}-{projected.Losses}，连胜负{profile.WinStreak}-{profile.LossStreak}/"
-                + $"{projected.WinStreak}-{projected.LossStreak}，保底{profile.HighestFloor}/{projected.HighestFloor}，"
-                + $"最高阶{profile.ReachedHighestTier}/{projected.ReachedHighestTier}）";
+            reason = CurrentRankedProfileMismatchReason(profile, projected, includeDerivedState: false);
             return false;
         }
         reason = string.Empty;
         return true;
+    }
+
+    private static bool RankedProfileSettlementStateEqual(RankedProfileRow profile,
+        RankedProfileSnapshotRow expected)
+        => profile.SeasonId.Equals(expected.SeasonId, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(profile.Faction, expected.Faction, StringComparison.OrdinalIgnoreCase)
+           && Math.Abs(profile.HiddenRating - expected.HiddenRating) < 0.0000001d
+           && profile.SevenValue == expected.SevenValue
+           && profile.PlacementPlayed == expected.PlacementPlayed
+           && profile.PlacementWins == expected.PlacementWins
+           && profile.Wins == expected.Wins && profile.Losses == expected.Losses
+           && profile.WinStreak == expected.WinStreak && profile.LossStreak == expected.LossStreak
+           && profile.HighestFloor == expected.HighestFloor
+           && profile.ReachedHighestTier == expected.ReachedHighestTier;
+
+    private static string CurrentRankedProfileMismatchReason(RankedProfileRow profile,
+        RankedProfileSnapshotRow expected, bool includeDerivedState = true)
+    {
+        var derived = includeDerivedState
+            ? $"，保底{profile.HighestFloor}/{expected.HighestFloor}，最高阶{profile.ReachedHighestTier}/{expected.ReachedHighestTier}"
+            : string.Empty;
+        return $"当前档案与不可变结算链不一致"
+            + $"（七曜{profile.SevenValue}/{expected.SevenValue}，定级{profile.PlacementPlayed}/{expected.PlacementPlayed}，"
+            + $"定级胜{profile.PlacementWins}/{expected.PlacementWins}，胜负{profile.Wins}-{profile.Losses}/"
+            + $"{expected.Wins}-{expected.Losses}，连胜负{profile.WinStreak}-{profile.LossStreak}/"
+            + $"{expected.WinStreak}-{expected.LossStreak}{derived}）";
     }
 
     private void ApplyDerivedRankedProfileState(RankedProfileSnapshotRow target,

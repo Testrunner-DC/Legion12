@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-admin-account-picker",
+  "date": "2026-09-29",
+  "audience": "internal",
+  "reason": "后台精确指定玩家的入口统一改用昵称或玩家 ID 模糊候选，并以唯一玩家 ID 提交；覆盖异画直派、活动名单、对局档案与排位完整性查询，同时补充禁用、删除、重名及多实例无障碍校验。该变化仅影响管理员操作。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminAccountPicker.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMatchesPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminRankedIntegrityPanel.vue",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"
+  ]
+}

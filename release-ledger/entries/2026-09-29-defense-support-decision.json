@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-defense-support-decision",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "抵挡与支援选择说明",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "受到进攻时，抵挡与支援选择会显示已选军团、合计兵力、需要达到的进攻值，以及选择成功后的卡牌去向；需要额外弃牌时会提前提示。手机端可展开查看完整操作说明；已选牌后选择“不抵挡”或“不支援”，也会按放弃选择继续结算。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/DefenseDecisionExplanation.vue",
+        "opcgpro-vue/src/l12/game/GameActions.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css",
+        "opcgpro-vue/src/l12/types.ts"
+      ]
+    }
+  ]
+}

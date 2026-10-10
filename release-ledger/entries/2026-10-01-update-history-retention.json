@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-update-history-retention",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "更新日志与赛事说明修正",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "更新日志现在保留历次更新内容；同一天多次发布会合并展示，也不再只显示最近十条。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SiteShell.vue",
+        "opcgpro-vue/src/l12/site/generatedPlayerRelease.ts"
+      ]
+    },
+    {
+      "category": "tournaments",
+      "text": "瑞士轮名次完全同分时，页面会说明按固定顺序确定先后，不再展示账号内部编号。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/TournamentDetailPage.vue"
+      ]
+    }
+  ]
+}

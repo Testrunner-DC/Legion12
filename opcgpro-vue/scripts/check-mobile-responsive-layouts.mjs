@@ -1,0 +1,166 @@
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+const root = resolve(import.meta.dirname, '..')
+const read = path => readFile(resolve(root, path), 'utf8')
+const settings = await read('src/l12/site/L12SettingsModal.vue')
+const audioPreferences = await read('src/l12/audioPreferences.ts')
+const cardTile = await read('src/l12/CardTile.vue')
+const graveyardOverlay = await read('src/l12/game/GraveyardOverlay.vue')
+const [viewportCss, viewportTs, battleLayout, mobileDialogLayout, app, archive, decks, deckBrowser, filterSheet, boardComponent, boardMobileStyle, mobileDockStyle, playerMat, prompt, shell, rules, profile, admin, news, home, feedback, battleHub, rankings, tournaments, recovery, globalCss] = await Promise.all([
+  read('src/l12/mobileViewport.css'),
+  read('src/l12/mobileViewport.ts'),
+  read('src/l12/game/battleViewportLayout.ts'),
+  read('src/l12/mobileDialogLayout.ts'),
+  read('src/App.vue'),
+  read('src/l12/CardArchive.vue'),
+  read('src/l12/site/DeckLibraryPage.vue'),
+  read('src/l12/site/DeckConstructionBrowser.vue'),
+  read('src/l12/site/MobileFilterSheet.vue'),
+  read('src/l12/game/GameBoard.vue'),
+  read('src/l12/game/GameBoard.mobile.css'),
+  read('src/l12/game/MobileBattleDock.css'),
+  read('src/l12/game/PlayerMat.vue'),
+  read('src/l12/game/PromptOverlay.vue'),
+  read('src/l12/site/SiteShell.vue'),
+  read('src/l12/site/RuleCenterPage.vue'),
+  read('src/l12/site/ProfilePage.vue'),
+  read('src/l12/site/AdminPage.vue'),
+  read('src/l12/site/NewsPage.vue'),
+  read('src/l12/site/OfficialHomePage.vue'),
+  read('src/l12/site/GlobalBugFeedback.vue'),
+  read('src/l12/site/BattleHubPage.vue'),
+  read('src/l12/site/RankingsPage.vue'),
+  Promise.all([
+    read('src/l12/site/TournamentHubPage.vue'),
+    read('src/l12/site/TournamentAccountDetail.vue'),
+    read('src/l12/site/TournamentPublicDetail.vue'),
+    read('src/l12/site/AdminTournamentWorkbench.vue'),
+  ]).then(parts => parts.join('\n')),
+  read('src/l12/site/AccountRecoveryPage.vue'),
+  read('src/style.css'),
+])
+const board = `${boardComponent}\n${boardMobileStyle}`
+const adminModule = await read('src/l12/site/AdminAccountsPage.vue') + await read('src/l12/site/AdminBugsPage.vue') + await read('src/l12/site/AdminEffectsPage.vue')
+const matchRecords = await read('src/l12/MatchRecords.vue')
+const deckEditor = await read('src/l12/L12DeckEditor.vue')
+const mobileDeferredCardImage = await read('src/l12/MobileDeferredCardImage.vue')
+const promptCardCandidate = await read('src/l12/game/PromptCardCandidate.vue')
+const masterMatchupMatrix = await read('src/l12/site/MasterMatchupMatrix.vue')
+const [tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary] = await Promise.all([
+  read('src/l12/site/TournamentHubPage.vue'),
+  Promise.all([read('src/l12/site/TournamentAccountDetail.vue'), read('src/l12/site/TournamentPublicDetail.vue')]).then(parts => parts.join('\n')),
+  read('src/l12/site/TournamentCreateWizard.vue'),
+  read('src/l12/site/TournamentJudgeDesk.vue'),
+  read('src/l12/site/TournamentManagementPanel.vue'),
+  read('src/l12/site/TournamentSummaryList.vue'),
+])
+
+const expect = (condition, message) => {
+  if (!condition) throw new Error(`mobile responsive contract: ${message}`)
+}
+
+expect(!viewportCss.includes('body {\n  transform: rotate(90deg)') && viewportCss.includes('.l12-landscape-surface,#l12-landscape-teleports'), 'only the opted-in route canvas and Teleport host may rotate')
+expect(boardComponent.includes('<style scoped src="./GameBoard.mobile.css"></style>') && !boardComponent.includes('.mobile-landscape-board{') && boardMobileStyle.includes('.mobile-landscape-board'), 'mobile battle CSS must remain physically isolated from the desktop component stylesheet')
+expect(viewportTs.includes('export function resolveViewportMode(') && !viewportTs.includes('(pointer: coarse)') && !viewportTs.includes('screen.orientation'), 'the viewport runtime must classify geometry without device identity or physical orientation')
+expect(viewportTs.includes("mobileLayout === 'on' ? true : mobileLayout === 'off' ? false : geometryMobile") && viewportTs.includes('watch([enabled, () => audioPreferences.mobileLayout], update)'), 'the user mobile-layout preference must override layout classification without taking over physical rotation')
+expect(viewportTs.includes('compactLandscape(rotatedWidth, rotatedHeight, previous.rotated)') && !viewportTs.includes('previous.rotated || previous.mobile'), 'forced mobile layout must not relax or couple the independent geometry rotation decision')
+expect(battleLayout.includes('export function resolveBattleViewportLayout(') && battleLayout.includes('scale: options.mobile ? 1 : desktopScale') && battleLayout.includes("window.addEventListener('l12-viewport-change', update)"), 'battle viewport classification, scaling and listeners must stay behind one testable layout boundary')
+expect(mobileDialogLayout.includes('MOBILE_DIALOG_COVERAGE = 0.75') && mobileDialogLayout.includes('MOBILE_DIALOG_ASPECT_RATIO = 16 / 9') && viewportTs.includes("root.style.setProperty('--l12-mobile-dialog-width'") && viewportCss.includes('width: var(--l12-mobile-dialog-width) !important'), 'mobile dialogs must share a stable 16:9 frame capped to 75% of the safe logical canvas')
+expect(graveyardOverlay.includes('class="graveyard-card-name"') && viewportCss.includes('.prompt-card-candidate__name') && viewportCss.includes('.graveyard-card-name') && viewportCss.includes('justify-content: safe center !important'), 'mobile dialog card collections must retain explicit complete names and centre sparse content without stretching dense rows')
+expect(prompt.includes('class="prompt-panel prompt-choice-panel"') && prompt.includes('class="prompt-choice-body"') && prompt.includes('data-ui-contract="mobile-choice-scroll-body"') && viewportCss.includes('.prompt-choice-body') && viewportCss.includes('overflow: hidden !important'), 'mobile choice dialogs must reserve the confirmation footer and constrain overflow to their own scroll body')
+expect(promptCardCandidate.includes("'已选择'") && promptCardCandidate.includes("'当前不可选择'") && promptCardCandidate.includes(':aria-pressed="selected"') && promptCardCandidate.includes('prompt-card-candidate__state') && promptCardCandidate.includes('{ empty: !stateLabel }'), 'card choices must expose an explicit selected/unavailable state instead of relying on dimming alone')
+const densityRules = [...viewportCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+const mobileDensityRule = (selector, declaration) => densityRules.some(([, selectors, body]) =>
+  selectors.trim().startsWith('html[data-l12-mobile=true][data-l12-viewport]')
+  && selectors.includes(selector) && body.includes(declaration))
+expect(['height','min-height','max-height'].every(property => mobileDensityRule('.prompt-card-candidate:not(.size-featured)', `${property}: var(--l12-dialog-card-h) !important`))
+  && ['width','min-width','flex-basis'].every(property => mobileDensityRule('.prompt-card-candidate.horizontal:not(.size-featured)', `${property}: var(--l12-dialog-card-w) !important`))
+  && mobileDensityRule('.prompt-card-candidate:not(.size-featured)', 'grid-template-rows: minmax(0, 1fr) 2.7em 1.9em'), 'mobile choice rows must give every orientation and state one shared peer box with reserved name/state lanes')
+expect(mobileDensityRule('.prompt-choices.response-target-list', 'grid-template-columns: minmax(0, 1fr)')
+  && mobileDensityRule('> :is(button,.response-target-row)', 'width: 100%')
+  && mobileDensityRule('.prompt-choices:not(.prompt-card-strip)', 'grid-auto-rows: minmax(44px, auto)'), 'mobile vertical choices must stretch to one width and horizontal grid peers must stretch to their tallest content')
+expect(mobileDensityRule('> :is(button,.response-target-row)', 'min-height: 44px !important')
+  && mobileDensityRule('.prompt-action-footer,.mobile-morale-actions', 'min-width: 44px !important')
+  && mobileDensityRule('.prompt-action-footer,.mobile-morale-actions', 'min-height: 44px !important')
+  && mobileDensityRule('.prompt-minimize,.master-minimize', 'width: 44px')
+  && mobileDensityRule('.prompt-minimize,.master-minimize', 'height: 44px'), 'mobile option, footer and dialog chrome hit boxes must preserve a 44px minimum')
+expect(mobileDensityRule('html[data-l12-mobile=true][data-l12-viewport]', '--l12-dialog-copy: clamp(.8125rem, calc(var(--l12-mobile-dialog-width) * .026), .9375rem)')
+  && mobileDensityRule('.prompt-card-candidate__name', 'font-size: var(--l12-dialog-copy) !important')
+  && mobileDensityRule('.prompt-card-candidate__state', 'font-size: var(--l12-dialog-meta) !important'), 'mobile dialog type must scale from its safe frame and rem bounds, with visible name/state lanes')
+expect(viewportCss.includes('touch-action: pan-x') && viewportCss.includes('.disaster-preparation-history button span') && viewportCss.includes('text-overflow: clip !important'), 'dense choice and disaster-history card collections must pan horizontally without clipping full card names')
+expect(prompt.includes("'disaster-ban': '正在禁用天灾'") && prompt.includes("'disaster-pick': '正在选择天灾'"), 'disaster ban and pick prompts must retain player-readable action labels')
+expect(settings.includes('v-model="audioPreferences.mobileLayout"') && audioPreferences.includes("mobileLayout: 'auto' | 'on' | 'off'") && audioPreferences.includes('dataset.l12MobileLayoutPreference'), 'mobile layout choice must be exposed and persisted through the shared settings model')
+expect(cardTile.includes('container-type:inline-size') && cardTile.includes('--l12-card-stat-font:clamp(6px,11cqw,18px)') && board.includes('var(--l12-card-stat-font, 7px)'), 'card value badges must scale continuously from their own card container rather than viewport-specific fixed sizes')
+expect(app.includes('data-l12-landscape-canvas') && !app.includes('l12-rotate-device') && !app.includes('requestLandscapeExperience'), 'immersive compact routes must use the logical canvas without a rotate-device blocker')
+expect(archive.includes('MobileFilterSheet') && archive.includes('archive-desktop-filters'), 'card archive must retain search while moving portrait filters into a sheet')
+expect(archive.includes('@media (max-width: 900px), (max-height: 640px)')
+  && archive.includes('container-type: inline-size')
+  && archive.includes("object-fit:contain!important")
+  && archive.includes('.archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }')
+  && archive.includes('@container (max-width: 580px)')
+  && archive.includes('@container (max-width: 380px)'), 'card archive must switch with the shared short-height compact boundary, preserve complete artwork, and scale between two and four columns from usable width')
+expect(decks.includes('MobileFilterSheet') && decks.includes('plaza-desktop-filters'), 'deck plaza must retain search while moving portrait filters into a sheet')
+expect(deckBrowser.includes('MobileFilterSheet') && deckBrowser.includes('construction-desktop-filters') && deckBrowser.includes('grid-template-columns:minmax(0,1fr) auto'), 'shared deck construction viewer must retain search while moving portrait filters into a sheet')
+expect(rules.includes('MobileFilterSheet') && rules.includes('rule-desktop-filter') && rules.includes('desktop-popular-keywords'), 'rule center must retain search while moving portrait categories and keyword helpers into a sheet')
+expect(filterSheet.includes('@keydown.esc="close"') && filterSheet.includes('env(safe-area-inset-left)') && filterSheet.includes('env(safe-area-inset-right)'), 'shared portrait filter sheet must close by keyboard and respect both horizontal safe areas')
+expect(board.includes("const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)"), 'morale summary must open on mobile even outside a payment prompt')
+expect(board.includes(':data-l12-battle-layout="mobileLandscapeViewport ? \'mobile\' : \'desktop\'"') && !board.includes('function updateScale()'), 'the board tree must declare its active layout while delegating viewport math to the shared layout kernel')
+expect(board.includes('class="mobile-detail-handle-reservation" aria-hidden="true"') && mobileDockStyle.includes('--l12-mobile-left-rail-w:max(78px,calc(var(--l12-mobile-master-w) * 1.3))') && board.includes('grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w)') && board.includes('grid-template-rows:var(--l12-mobile-current-disaster-h) var(--l12-mobile-disaster-value-h) calc(var(--l12-mobile-disaster-orb) * 2'), 'the detail handle, current disaster, value, round-card pool, bottom utility row and optional extra zones must share one master-proportional rail allocation')
+expect(!board.includes('@media (max-height: 520px)') && !board.includes('@media (min-height: 521px)'), 'logical portrait rotation and physical landscape must not receive different card geometry from physical CSS media height')
+expect(board.includes('--l12-mobile-resource-w:clamp(74px,calc(var(--l12-mobile-master-w) * 1.1),92px)') && mobileDockStyle.includes('--l12-mobile-hand-h:clamp(64px,calc(var(--l12-viewport-height,100vh) * .16),102px)') && board.includes('--l12-mobile-morale-orb:clamp(14px,calc(var(--l12-mobile-master-w) * .28),22px)'), 'live mobile card, hand, resource and morale dimensions must resolve from the logical master/viewport tokens rather than unrelated physical vw/vh scales')
+expect(board.includes('mobileMoraleInteractive'), 'morale viewing and payment selection must remain distinct')
+expect(board.includes('<BattleDockPortal lane="primary">') && board.includes('<MobileBattleDock v-if="mobileLandscapeViewport" />'), 'mobile actions must reserve independent current/primary lanes')
+expect(playerMat.includes('<BattleDockPortal lane="context">') && playerMat.includes("'mobile-action-dock': mobileLayout") && board.includes(':mobile-layout="mobileLandscapeViewport"') && board.includes('provideMobileBattleDock()'), 'field attack and active-ability actions must use the shared logical-canvas mobile action dock instead of remaining clipped inside the battlefield')
+expect(prompt.includes('@click="focusChoice(choice); toggle(choice)"') && !prompt.includes('class="response-target-detail"'), 'response-target rows must focus and select through one unobscured control, including Court Magician counter-tactic choices')
+expect(shell.includes('overflow-x:clip') && shell.includes('env(safe-area-inset-bottom)') && shell.includes('--mobile-head-h:calc(58px + env(safe-area-inset-top') && shell.includes('height:100dvh'), 'site shell must contain portrait content and reserve dynamic safe areas')
+expect(rules.includes('.material-grid,.qa-entry-grid{grid-template-columns:1fr}') && rules.includes('.rules-page{padding:0 12px 48px}'), 'portrait rule material entry cards must use one natural-scrolling column')
+expect(shell.includes('title="设置"') && settings.includes('class="feedback-entry"') && !shell.includes('mobile-feedback-utility') && !feedback.includes('bug-feedback-trigger'), 'compact landscape and portrait feedback must be available only through Settings without a floating or drawer entry')
+expect(decks.includes('.page-head h1{font-size:25px}') && profile.includes('.profile-page>header h1{margin:3px 0;font-size:25px}'), 'portrait player pages must use compact heading density')
+expect(admin.includes('class="admin-mobile-navigation"') && admin.includes('function navigate(event: Event)') && admin.includes('.admin-mobile-navigation{display:none}') && admin.includes('.admin-sidebar{display:none}'), 'portrait administration must use one compact functional module picker while preserving the desktop sidebar')
+expect(adminModule.includes('.account-row{grid-template-columns:1fr}') && adminModule.includes('<label>长期身份') && adminModule.includes('.filters{grid-template-columns:1fr}'), 'portrait administration must label stacked account fields and reflow dense workbench filters without horizontal overflow')
+expect(decks.includes('.deck-notice{position:static;max-width:none'), 'portrait notices must not cover deck actions')
+expect(news.includes('.news-page h1{margin:4px 0;font-size:26px}') && home.includes('.hero-copy h1{font-size:26px;line-height:1.08}'), 'portrait editorial pages must use compact hero typography')
+expect(battleHub.includes('.battle-hub{padding:14px 10px 34px}') && battleHub.includes('.mode-panel{padding:14px}'), 'battle lobby must scale its panels and controls together on narrow phones')
+expect(rankings.includes('.ranking-page{--ranking-master-avatar:28px;padding:14px 10px 32px}') && masterMatchupMatrix.includes('.matrix-grid{grid-auto-rows:52px}'), 'rankings must compact both table rows and the shared matchup matrix cells')
+expect(rankings.includes('data-label="最擅长主宰"') && rankings.includes('data-label="最强玩家"') && rankings.includes('@media(max-width:700px)') && rankings.includes('.player-mobile-meta') && rankings.includes('.player-table,.master-table,.honor-table{overflow:visible'), 'portrait rankings must become compact information cards instead of requiring horizontal table scrolling')
+expect(tournaments.includes('.tournament-page{padding:14px 10px 34px}') && tournaments.includes('.bracket>section{min-width:190px;padding:8px}'), 'tournament content must preserve bracket proportions while compacting its panels')
+expect([tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary]
+  .every(source => source.includes('@media(max-width:700px)'))
+  && [tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement, tournamentSummary]
+    .every(source => !/@media\(max-width:(650|680|720|760|850)px\)/.test(source)), 'player tournament surfaces must use the shared 700px compact boundary')
+expect(tournamentHub.includes('.hub-page{padding:18px 10px calc(42px + env(safe-area-inset-bottom))')
+  && tournamentDetail.includes('.detail-page{padding:16px 10px calc(42px + env(safe-area-inset-bottom))'), 'player tournament pages must keep compact gutters and bottom safe-area space')
+expect(tournamentHub.includes('.section-tabs{grid-template-columns:1fr 1fr}')
+  && tournamentDetail.includes('.personal-actions{display:grid;grid-template-columns:1fr 1fr')
+  && tournamentDetail.includes('.match-actions{display:grid;grid-template-columns:1fr 1fr}')
+  && tournamentManagement.includes('.actions{display:grid;grid-template-columns:1fr 1fr}'), 'portrait tournament action groups must preserve a clear stacked reading order')
+expect(tournamentDetail.includes('.standings-table .thead{display:none}')
+  && tournamentDetail.includes('data-label="胜-负-平"')
+  && tournamentDetail.includes('.person{grid-template-columns:1fr}'), 'portrait tournament standings and participant operations must become contained labeled cards')
+expect([tournamentHub, tournamentDetail, tournamentWizard, tournamentJudge, tournamentManagement]
+  .every(source => source.includes('min-height:44px')), 'portrait tournament controls must retain 44px interaction targets')
+expect(tournaments.includes('class="site-toast"') && !tournaments.includes('class="toast"') && tournaments.includes('top:auto;right:22px;bottom:22px;left:auto;transform:none'), 'site notifications must be isolated from the battle toast positioning contract')
+expect(shell.includes('class="site-drawer-backdrop"') && shell.includes('aria-controls="site-mobile-drawer"') && shell.includes("event.key === 'Escape'") && shell.includes("document.body.style.overflow = 'hidden'"), 'mobile navigation must provide a modal backdrop, escape close, focus semantics and body scroll lock')
+expect(app.includes('maximum-scale=5, user-scalable=yes') && app.includes('locked ? lockedViewport : readableViewport'), 'reading routes must allow zoom while immersive battle and editor routes stay locked')
+expect(archive.includes('MobileDeferredCardImage') && mobileDeferredCardImage.includes('IntersectionObserver')
+  && mobileDeferredCardImage.includes("window.matchMedia('(max-width: 900px), (pointer: coarse)').matches")
+  && !archive.includes('renderLimit') && !archive.includes('archive-group-nav') && !archive.includes('archive-back-to-top'), 'the archive must preserve its original continuous browsing UI while deferring off-screen card images only on mobile or coarse-pointer devices')
+expect(matchRecords.includes('class="record-summary-grid"') && matchRecords.includes('class="mobile-replay-inline"') && !matchRecords.includes('mobileReplayNotice'), 'mobile records must expose a complete inline summary without a blocking replay notice')
+expect(profile.includes('l12-profile-master-records') && profile.includes('l12-profile-sessions')
+  && profile.includes('class="profile-section-nav"')
+  && profile.includes("route.query.section === 'performance' ? 'overview'")
+  && !profile.includes('class="feedback-banner"')
+  && profile.includes('.profile-section-nav button{min-width:0;min-height:44px'),
+  'mobile profile must remember open sections and preserve the old performance deep link without restoring its removed feedback banner')
+expect(deckEditor.includes('class="deck-mobile-nav"') && deckEditor.includes("setMobilePane('pool')")
+  && deckEditor.includes("setMobilePane('deck')") && deckEditor.includes("setMobilePane('insights')")
+  && !deckEditor.includes('class="portrait-guide"'), 'portrait deck editor must offer complete single-task navigation without forcing rotation or discarding edit state')
+for (const [name, source] of [['shell', shell], ['news', news], ['home', home], ['rules', rules], ['rankings', rankings]]) {
+  expect(!/@media\s*\(max-width:\s*(720|760|850)px\)/.test(source), `${name} must use the shared 700px compact boundary rather than a legacy primary breakpoint`)
+}
+expect(recovery.includes('.recovery-card{padding:18px}') && recovery.includes('.recovery-card button{min-height:44px'), 'recovery form must scale the card and primary control together')
+expect(globalCss.includes('body .friends-page{padding:14px 10px 34px}') && globalCss.includes('body .friends-page .hero-avatar{width:56px;height:56px'), 'friends page must compact its container and visual anchors together')
+
+console.log('Mobile responsive layout contracts passed.')
+

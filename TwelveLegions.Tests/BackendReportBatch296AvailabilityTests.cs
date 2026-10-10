@@ -174,8 +174,7 @@ public sealed class BackendReportBatch296AvailabilityTests
     public void EveryCounterTacticUsesTheSameNormalAndDisasterPlacementProjection()
     {
         var game = Create(); var p = game.State.Players[0];
-        var classifier = typeof(L12GameEngine).GetMethod("IsCounterTactic", BindingFlags.Static | BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var counterIds = Catalog.Cards.Keys.Where(id => (bool)classifier.Invoke(game, [id])!).ToArray();
+        var counterIds = Catalog.Cards.Values.Where(card => card.IsCounterTactic).Select(card => card.Id).ToArray();
         Assert.NotEmpty(counterIds);
         foreach (var id in counterIds)
         {

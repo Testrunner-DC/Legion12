@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-release-ledger-infrastructure",
+  "date": "2026-09-25",
+  "audience": "internal",
+  "reason": "建立玩家更新日志账本、自动聚合与生产发布门禁；本条仅描述发布基础设施，不向玩家展示。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/SiteShell.vue",
+    "opcgpro-vue/src/l12/site/generatedPlayerRelease.ts"
+  ]
+}

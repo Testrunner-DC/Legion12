@@ -32,8 +32,8 @@ public sealed class RankedAdmissionTests
         await manager.ConnectAsync(a, first.Id, first.Username, "shared-network", "browser-v1:same");
         await manager.ConnectAsync(b, second.Id, second.Username, "shared-network", "browser-v1:same");
         var attempts = await Task.WhenAll(manager.JoinMatchmakingAsync(a, "ranked", null), manager.JoinMatchmakingAsync(b, "ranked", null));
-        Assert.Single(attempts.SelectMany(x => x).Where(x => Type(x) == "matchmakingRejected"));
-        Assert.Single(attempts.SelectMany(x => x).Where(x => Type(x) == "matchmakingState"));
+        Assert.Single(attempts.SelectMany(x => x), x => Type(x) == "matchmakingRejected");
+        Assert.Single(attempts.SelectMany(x => x), x => Type(x) == "matchmakingState");
         var replacement = Guid.NewGuid();
         await manager.ConnectAsync(replacement, first.Id, first.Username, "shared-network", "browser-v1:same");
         Assert.DoesNotContain(await manager.JoinMatchmakingAsync(replacement, "ranked", null), x => Type(x) == "matchmakingRejected");

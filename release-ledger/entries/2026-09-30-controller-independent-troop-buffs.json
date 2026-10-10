@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-controller-independent-troop-buffs",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "临时兵力强化不再误改费用",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "贝奥武夫、古斯塔夫一世、奥德修斯、彭忒西勒亚、斯巴达勇士、帕西瓦尔和美杜莎的攻击时兵力强化不再因卡牌所在席位而误增加费用；既有的真实费用修正保持不变。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12AtomicRuntimeIntegration.cs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-osiris-disaster-priority",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "奥西里斯勘误与进攻伤害顺序",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "复苏的奥西里斯同步主动发动的新卡文，并在图鉴标注黄金的理想乡（勘误收录），保留旧卡文记录。",
+      "paths": ["服务端WebSocket/TwelveLegions/Data/cards.s1.json", "服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json", "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs", "opcgpro-vue/public/data/l12/cards.s1.json", "opcgpro-vue/public/data/l12/cards.lookup.json", "opcgpro-vue/src/l12/data/cardErrata.ts", "opcgpro-vue/src/l12/data/officialFaq.ts"]
+    },
+    {
+      "category": "card-effects",
+      "text": "安德华拉诺特按确认后的伤害进行替换：仅强攻或仅百鬼夜行加伤时为2点；两者同时生效时保留3点，不让血戒削弱无法规避的天灾影响。普通及贯穿进攻使用相同规则。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs", "服务端WebSocket/TwelveLegions/Models.cs", "opcgpro-vue/src/l12/data/officialFaq.ts"]
+    }
+  ]
+}

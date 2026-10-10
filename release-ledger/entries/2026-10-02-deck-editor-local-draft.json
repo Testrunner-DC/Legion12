@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-deck-editor-local-draft",
+  "date": "2026-10-02",
+  "audience": "players",
+  "title": "牌库编辑器支持本地草稿",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "未完成的牌库现在也能暂存到本机，之后可返回编辑器恢复；离开或切换牌库时会提醒尚未保存的修改。草稿不会作为可对战或公开的牌库使用。",
+      "paths": [
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/site/deckEditorDraft.ts"
+      ]
+    }
+  ]
+}

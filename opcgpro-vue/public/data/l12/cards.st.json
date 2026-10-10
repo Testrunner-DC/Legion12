@@ -147,7 +147,8 @@
     "id": "ST01-10",
     "number": "ST01-10",
     "nameZh": "暗度陈仓",
-    "cardType": "counter-tactic",
+    "cardType": "tactic",
+    "isCounterTactic": true,
     "product": "ST01",
     "faction": "tianting",
     "cost": 2,
@@ -695,7 +696,7 @@
     "cardType": "legion",
     "product": "ST05",
     "faction": "olympus",
-    "troops": 7000,
+    "troops": 6000,
     "cost": 7,
     "disasterLevel": 2,
     "profession": "领军",
@@ -703,8 +704,8 @@
       "奥林匹斯",
       "晋升者"
     ],
-    "effect": "晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。",
-    "atomicReference": "Ability 1\n晋升 消耗并翻转1神力，叠放至我方同名非【晋升者】军团上方登场。\nAbility 2\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。"
+    "effect": "晋升 消耗并翻转2神力，叠放至我方同名非【晋升者】军团上方登场。\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。",
+    "atomicReference": "Ability 1\n晋升 消耗并翻转2神力，叠放至我方同名非【晋升者】军团上方登场。\nAbility 2\n晋升登场 可查看我方牌库，选择最多2张【远程】军团活跃登场。随后重洗牌库。"
   },
   {
     "id": "ST05-02",

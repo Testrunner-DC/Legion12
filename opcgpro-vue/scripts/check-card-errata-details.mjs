@@ -11,6 +11,17 @@ const PRODUCT = 'ST06|彼界阵营预组'
 const PRODUCT_LABEL = `${PRODUCT}（勘误收录）`
 const OLD_EFFECT = '规则上，可完成的试炼数量增加1张。\n每完成1次试炼，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'
 const NEW_EFFECT = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'
+const ARTEMIS_ID = 'S02-05M1'
+const ARTEMIS_PRODUCT = 'ST05|奥林匹斯阵营预组'
+const ARTEMIS_PRODUCT_LABEL = `${ARTEMIS_PRODUCT}（勘误收录）`
+const ARTEMIS_OLD_EFFECT = '回合1次 我方远程军团（远程图标）阵亡时，可翻转1张休整的士气。\n我方 回合1次 可消耗并翻转1神力或弃置1张手牌：选择我方1张费用为3至6的【奥林匹斯】军团，本回合获得 强攻 或 震击。'
+const ARTEMIS_NEW_EFFECT = '回合1次 我方远程军团阵亡时，可翻转1张士气。\n我方 回合1次 可消耗1神力或弃置1张手牌：选择我方1张【奥林匹斯】军团，本回合获得强攻或震击。（进攻时对主宰造成额外1点伤害。）（被进攻军团的左右相邻军团本回合兵力-2000）'
+const OSIRIS_ID = 'S01-02M2'
+const OSIRIS_PRODUCT = '黄金的理想乡'
+const OSIRIS_PRODUCTS = ['第1季|天御', '第1季|天御·再临', '第1季|典藏版', `${OSIRIS_PRODUCT}（勘误收录）`]
+const OSIRIS_SUFFIX = '\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。'
+const OSIRIS_OLD_EFFECT = '我方 圣物区存在5张名字包含<卡诺匹斯>的圣物时：可将此主宰替换<伊西斯>登场。' + OSIRIS_SUFFIX
+const OSIRIS_NEW_EFFECT = '我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。' + OSIRIS_SUFFIX
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repoRoot = path.resolve(root, '..')
 const out = process.env.L12_QA_OUT || 'D:/GPT/Legion12/artifacts/batch294-errata'
@@ -27,6 +38,9 @@ const products = JSON.parse(fs.readFileSync(path.join(repoRoot, '服务端WebSoc
 const productEntry = products.cards.find(card => card.cardId === CARD_ID)
 const lookupCard = lookup.find(card => card.cardNo === CARD_ID)
 const serverCard = serverCards.find(card => card.id === CARD_ID)
+const artemisProductEntry = products.cards.find(card => card.cardId === ARTEMIS_ID)
+const artemisLookupCard = lookup.find(card => card.cardNo === ARTEMIS_ID)
+const artemisServerCard = serverCards.find(card => card.id === ARTEMIS_ID)
 assert(productEntry, `${CARD_ID} product entry missing`)
 assert.deepEqual(productEntry.products, ['第2季|伟大试炼', '第2季|典藏版', PRODUCT], 'Angus must retain both season products and add exactly one ST06 product')
 assert.equal(productEntry.products.filter(product => product === PRODUCT).length, 1, 'ST06 product must not be duplicated')
@@ -35,7 +49,27 @@ assert.equal(lookupCard?.effectText, NEW_EFFECT, 'frontend catalog must contain 
 assert.equal(lookupCard?.effectText, serverCard?.effect, 'frontend and server Angus effects must remain identical')
 assert(errataSource.includes(`cardId: '${CARD_ID}'`) && errataSource.includes(`sourceProduct: '${PRODUCT}'`), 'errata metadata must target the exact card and product')
 assert(errataSource.includes("previousEffect: '规则上，可完成的试炼数量增加1张。\\n每完成1次试炼，可获得1符文。\\n回合1次 当我方成功发动战术效果时，试炼+1。'"), 'errata metadata must preserve the exact previous effect')
-assert.equal((errataSource.match(/^\s+id: '[^']+'/gm) ?? []).length, 1, 'errata module must contain exactly one record')
+assert.equal((errataSource.match(/^\s+id: '[^']+'/gm) ?? []).length, 3, 'errata module must contain the three approved records')
+const osirisProducts = products.cards.find(card => card.cardId === OSIRIS_ID)
+assert.deepEqual(osirisProducts?.products, [...OSIRIS_PRODUCTS.slice(0, 3), OSIRIS_PRODUCT], 'Osiris retains all original products and adds Golden Ideal once')
+for (const catalog of ['public/data/l12/cards.s1.json', '../服务端WebSocket/TwelveLegions/Data/cards.s1.json']) {
+  assert.equal(JSON.parse(read(catalog)).find(card => card.id === OSIRIS_ID)?.effect, OSIRIS_NEW_EFFECT, `${catalog}: exact approved Osiris text`)
+}
+assert.equal(lookup.find(card => card.cardNo === OSIRIS_ID)?.effectText, OSIRIS_NEW_EFFECT)
+assert(lookup.find(card => card.cardNo === OSIRIS_ID)?.searchText.includes(OSIRIS_NEW_EFFECT), 'Osiris search must use current text')
+assert(errataSource.includes(`cardId: '${OSIRIS_ID}'`) && errataSource.includes(`sourceProduct: '${OSIRIS_PRODUCT}'`))
+assert(errataSource.includes(`previousEffect: '${OSIRIS_OLD_EFFECT.replaceAll('\n', '\\n')}'`), 'Osiris old text must remain in the errata record')
+assert(artemisProductEntry, `${ARTEMIS_ID} product entry missing`)
+assert.deepEqual(artemisProductEntry.products,
+  ['第2季|伟大试炼', '第2季|典藏版', ARTEMIS_PRODUCT_LABEL],
+  'Artemis must retain both season products and add exactly one annotated ST05 errata product')
+assert.equal(artemisServerCard?.effect, ARTEMIS_NEW_EFFECT, 'server catalog must contain the approved current Artemis effect')
+assert.equal(artemisLookupCard?.effectText, ARTEMIS_NEW_EFFECT, 'frontend catalog must contain the approved current Artemis effect')
+assert.equal(artemisLookupCard?.effectText, artemisServerCard?.effect, 'frontend and server Artemis effects must remain identical')
+assert(errataSource.includes(`cardId: '${ARTEMIS_ID}'`) && errataSource.includes(`sourceProduct: '${ARTEMIS_PRODUCT}'`),
+  'Artemis errata metadata must target the exact card and base product')
+assert(errataSource.includes(`previousEffect: '${ARTEMIS_OLD_EFFECT.replaceAll('\n', '\\n')}'`),
+  'Artemis errata metadata must preserve the exact previous effect')
 assert.equal((archiveSource.match(/#catalog-extra/g) ?? []).length, 2, 'archive panel and modal must both use the guarded catalog slot')
 assert(archiveSource.includes('withErrataProductLabels') && archiveSource.includes('（勘误收录）'), 'archive must annotate only errata products for display')
 assert(!editorSource.includes('cardErrata') && !editorSource.includes('勘误记录'), 'deck editor must not import or render errata metadata')
@@ -75,7 +109,7 @@ function normalizedText(text) {
 
 async function chooseAngus(page) {
   const productSelect = page.locator('.archive-toolbar label').filter({ hasText: '收录产品' }).locator('select')
-  await productSelect.selectOption(PRODUCT)
+  await productSelect.selectOption('第2季|伟大试炼', { force: true })
   const card = page.locator('.archive-card').filter({ hasText: CARD_NAME }).first()
   await card.waitFor()
   await card.click()
@@ -95,6 +129,39 @@ async function verifyDetail(scope) {
     const errata = element.querySelector('[data-card-errata]')
     return Boolean(products && errata && (products.compareDocumentPosition(errata) & Node.DOCUMENT_POSITION_FOLLOWING))
   }), 'errata section must follow the products section')
+}
+
+async function verifyArtemisDetail(page) {
+  const card = page.locator('.archive-card').filter({ hasText: '阿尔忒弥斯' }).first()
+  await card.waitFor()
+  await card.click()
+  const panel = page.locator('.archive-detail')
+  const current = panel.locator('.card-detail-copy > .archive-effect:not([data-card-errata]) .l12-effect-body')
+  const products = await panel.locator('.card-detail-copy > .archive-decks p').allInnerTexts()
+  const errata = panel.locator('[data-card-errata]')
+  assert.equal(normalizedText(await current.innerText()), ARTEMIS_NEW_EFFECT,
+    'Artemis detail must show the approved current effect')
+  assert.deepEqual(products, ['第2季|伟大试炼', '第2季|典藏版', ARTEMIS_PRODUCT_LABEL],
+    'Artemis detail must preserve season products and annotate ST05 once')
+  assert.equal(await errata.count(), 1, 'Artemis detail must contain exactly one errata section')
+  assert.equal(normalizedText(await errata.locator('.l12-effect-body').innerText()), ARTEMIS_OLD_EFFECT,
+    'Artemis errata section must preserve the exact old effect')
+  await page.screenshot({ path: path.join(out, 'artemis-archive-panel-1920x1080.png') })
+}
+
+async function chooseOsiris(page) {
+  await page.locator('.archive-toolbar label').filter({ hasText: '收录产品' }).locator('select').selectOption(OSIRIS_PRODUCT, { force: true })
+  const card = page.locator('.archive-card').filter({ hasText: '复苏的奥西里斯' }).first()
+  await card.waitFor()
+  await card.click()
+  return card
+}
+
+async function verifyOsirisDetail(scope) {
+  assert.equal(normalizedText(await scope.locator('.card-detail-copy > .archive-effect:not([data-card-errata]) .l12-effect-body').innerText()), OSIRIS_NEW_EFFECT)
+  assert.deepEqual(await scope.locator('.card-detail-copy > .archive-decks p').allInnerTexts(), OSIRIS_PRODUCTS)
+  assert.equal(await scope.locator('[data-card-errata]').count(), 1)
+  assert.equal(normalizedText(await scope.locator('[data-card-errata] .l12-effect-body').innerText()), OSIRIS_OLD_EFFECT)
 }
 
 async function verifyNarrowModalScroll(page, modal, screenshotName) {
@@ -124,7 +191,13 @@ try {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } })
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    if (url.pathname === '/api/alternate-arts') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
+    }
+    return url.hostname === '127.0.0.1' ? route.continue() : route.abort()
+  })
 
   await page.goto(`http://127.0.0.1:${port}/__card_errata_detail__?mode=archive`)
   const card = await chooseAngus(page)
@@ -138,6 +211,15 @@ try {
   await modal.waitFor()
   await verifyDetail(modal)
   await page.screenshot({ path: path.join(out, 'angus-archive-modal-1920x1080.png') })
+  await modal.locator('.archive-modal-close').click()
+  await verifyArtemisDetail(page)
+  const osirisCard = await chooseOsiris(page)
+  await verifyOsirisDetail(panel)
+  await page.screenshot({ path: path.join(out, 'osiris-archive-panel-1920x1080.png') })
+  await osirisCard.locator('.archive-image-open').dblclick()
+  await modal.waitFor()
+  await verifyOsirisDetail(modal)
+  await page.screenshot({ path: path.join(out, 'osiris-archive-modal-1920x1080.png') })
   await modal.locator('.archive-modal-close').click()
 
   await page.setViewportSize({ width: 760, height: 900 })
@@ -162,6 +244,11 @@ try {
   const phoneBox = await phoneModal.boundingBox()
   assert(phoneBox && phoneBox.width <= 390 && phoneBox.height <= 844, 'phone errata modal must remain inside the viewport')
   await verifyNarrowModalScroll(page, phoneModal, 'angus-archive-modal-390x844-bottom.png')
+  const osirisPhone = await chooseOsiris(page)
+  await osirisPhone.locator('.archive-image-open').dblclick()
+  await phoneModal.waitFor()
+  await verifyOsirisDetail(phoneModal)
+  await verifyNarrowModalScroll(page, phoneModal, 'osiris-archive-modal-390x844-bottom.png')
 
   await page.setViewportSize({ width: 1920, height: 1080 })
   await page.goto(`http://127.0.0.1:${port}/__card_errata_detail__?mode=deck`)
@@ -175,8 +262,10 @@ try {
   await page.screenshot({ path: path.join(out, 'angus-deck-editor-1920x1080.png') })
 
   assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
-  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ cardId: CARD_ID, products: productEntry.products, newEffect: NEW_EFFECT, oldEffect: OLD_EFFECT, errors }, null, 2))
-  console.log(`Angus errata detail passed: real multi-product filter, panel/modal old-text record, editor isolation. Screenshots: ${out}`)
+  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ cardId: CARD_ID, products: productEntry.products, newEffect: NEW_EFFECT, oldEffect: OLD_EFFECT,
+    osiris: { cardId: OSIRIS_ID, products: OSIRIS_PRODUCTS, newEffect: OSIRIS_NEW_EFFECT, oldEffect: OSIRIS_OLD_EFFECT, viewports: ['1920x1080', '390x844'] },
+    scope: 'offline text/product/errata detail; external card images intentionally blocked', errors }, null, 2))
+  console.log(`Angus, Artemis and Osiris errata details passed: real multi-product filters, panel/modal old-text records, editor isolation. Screenshots: ${out}`)
 } finally {
   await browser?.close()
   await server.close()

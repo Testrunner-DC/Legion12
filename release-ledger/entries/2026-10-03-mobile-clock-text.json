@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-mobile-clock-text",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "移动端对战计时显示",
+  "changes": [{
+    "category": "ui",
+    "text": "修复移动端短横屏计时数字和说明被裁切的问题，默认及最大计时均完整显示。计时器位置、战场布局和计时规则不变，工具区仍可上下滚动查看双方计时。",
+    "paths": ["opcgpro-vue/src/l12/game/MobileBattleDock.css", "opcgpro-vue/scripts/probe-e2-clock-boundary.mjs"]
+  }]
+}

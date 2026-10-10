@@ -1,6 +1,7 @@
 import type { CardData } from "@/types/card";
 import { CARD_SET_PATHS } from "./cardSets";
 import { DATA_VERSION } from "./dataVersion";
+import { deploymentPath } from "@/l12/deploymentBase";
 
 interface RawCardData {
   number: string;
@@ -38,7 +39,7 @@ let manifestLoaded = false;
 async function ensureManifest(): Promise<void> {
   if (manifestLoaded) return;
   try {
-    const res = await fetch("/data/imageManifest.json");
+    const res = await fetch(deploymentPath("/data/imageManifest.json"));
     if (res.ok) imageManifest = await res.json();
   } catch {
     // manifest 加载失败时降级：每张卡只有默认正画
@@ -84,7 +85,7 @@ export async function loadCardSet(setName: string): Promise<CardData[]> {
 
   await ensureManifest();
 
-  const res = await fetch(path);
+  const res = await fetch(deploymentPath(path));
   if (!res.ok) throw new Error(`加载卡集失败: ${setName} (${res.status})`);
 
   const raw: RawCardData[] = await res.json();
@@ -118,7 +119,7 @@ let allCardsPromise: Promise<void> | null = null;
 export function loadAllCards(): Promise<void> {
   if (allCardsPromise) return allCardsPromise;
   allCardsPromise = (async () => {
-    const res = await fetch(`/data/allCards.json?v=${DATA_VERSION}`);
+    const res = await fetch(`${deploymentPath('/data/allCards.json')}?v=${DATA_VERSION}`);
     if (!res.ok) throw new Error(`加载卡牌总包失败 (${res.status})`);
 
     const bundle: { manifest?: Record<string, string[]>; cards: RawCardData[] } = await res.json();

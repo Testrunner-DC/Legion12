@@ -2,17 +2,31 @@ import { computed, reactive } from 'vue'
 import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
+import { endpointHttpBase } from './deploymentBase'
+import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
   permissionVersion?: number; disabled?: boolean; disabledAt?: string; disabledReason?: string
   mustChangePassword?: boolean; mustChangeUsername?: boolean; deleted?: boolean; deletedAt?: string; emailMasked?: string; emailVerified?: boolean
-  audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard' }
+  audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard'; mobileLayout: 'auto'|'on'|'off' }
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
 export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
 export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
+}
+export interface UsernameChangeRequest {
+  id: string; accountId: string; currentUsername: string; requestedUsername: string; reason: string
+  status: 'pending' | 'approved' | 'rejected'; reviewedByUsername?: string; reviewNote?: string; createdAt: string; reviewedAt?: string
+}
+export interface UsernameChangeStatus { freeRenameAvailable: boolean; freeRenameUsed: number; latestRequest?: UsernameChangeRequest }
+export interface PlayerStatLine { games: number; wins: number; losses: number; draws: number; firstGames: number; firstWins: number; secondGames: number; secondWins: number }
+export interface PlayerMasterStatistics { masterId: string; masterName: string; overall: PlayerStatLine; ranked: PlayerStatLine }
+export type PlayerStatisticsRange = '7d' | '30d' | 'season'
+export interface PlayerStatistics {
+  overall: PlayerStatLine; ranked: PlayerStatLine; masters: PlayerMasterStatistics[]; updatedAt?: string
+  range: PlayerStatisticsRange; fromUtc?: string; untilUtc: string; seasonId?: string
 }
 export interface SessionRevocation { sessionId?: string; revokedCount: number; alreadyRevoked: boolean }
 export interface EmailStatus {
@@ -21,7 +35,7 @@ export interface EmailStatus {
 }
 export interface EmailCapability { enabled: boolean; mailConfigured: boolean }
 export interface AuthOperation { code: string; message: string }
-export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number }
+export interface AdminPasswordReset { applied: boolean; account: PlatformAccount; revokedSessions: number; temporaryPassword?: string | null }
 export interface AccountDeletion {
   applied: boolean; account: PlatformAccount; revokedSessions: number; removedPrivateRecords: number; cleanedMatchRecords?: number
 }
@@ -35,9 +49,37 @@ export interface PlatformPresence {
   canInvite: boolean; canSpectate: boolean; actionReason?: string
   friendStatus: 'self' | 'none' | 'pending' | 'accepted'; friendDirection: 'none' | 'incoming' | 'outgoing'
 }
+export interface FriendOverview {
+  friends: PlatformFriend[]; requests: PlatformFriend[]; blocked: PlatformFriend[]
+}
 export interface PublishedDeck {
-  id: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
-  createdAt: string; updatedAt: string; official?: boolean
+  id: string; publicCode?: string; ownerId: string; author: string; deck: SavedL12Deck; views: number; likes: number; copies: number; liked: boolean
+  createdAt: string; updatedAt: string; seasonCompliant?: boolean; seasonComplianceReason?: string; official?: boolean
+  details?: PublicDeckDetails
+}
+export interface PublicDeckGuide {
+  buildIdea: string; opening: string; keyCards: string; commonSequence: string; substitutions: string
+}
+export interface PublicDeckMatchup {
+  opponentMasterId: string; notes: string; keyCards: string; suggestedSwaps: string
+}
+export interface PublicDeckVersionChange {
+  section: 'master' | 'main' | 'morale' | 'special'; cardId: string; previousQuantity: number; currentQuantity: number
+}
+export interface PublicDeckVersion {
+  version: number; name: string; deck: SavedL12Deck; createdAt: string; changes: PublicDeckVersionChange[]
+}
+export interface PublicDeckVersionStatistic {
+  version: number; masterId: string; opponentMasterId: string
+  games: number; wins: number; losses: number; draws: number; winRate: number
+}
+export interface PublicDeckMatchStatistics {
+  from: string; to: string; recentDays: number; games: number; sampleStatus: 'empty' | 'insufficient' | 'available'; groups: PublicDeckVersionStatistic[]
+}
+export interface PublicDeckDetails {
+  guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number; contentUpdatedAt?: string
+  versions: PublicDeckVersion[]; matchStatistics: PublicDeckMatchStatistics
+  matchBindingStatus: string; matchBindingMessage: string
 }
 export interface BugReport {
   id: string; reporterName: string; title: string; description: string; page: string; roomCode?: string; matchId?: string
@@ -45,6 +87,8 @@ export interface BugReport {
   status: string; priority: string; assignee?: string; adminNotes?: string; history: BugAudit[]; createdAt: string; updatedAt: string
   diagnostic?: BugRuntimeDiagnostic; clientDiagnostic?: BugClientConnectionDiagnostic
   connectionDiagnostic?: BugConnectionClaimDiagnostic
+  fixCommit?: string; regressionTest?: string; deployedVersion?: string; verifiedBy?: string; verifiedAt?: string; duplicateOf?: string
+  closureDisposition?: 'fixed_verified' | 'duplicate' | 'rejected'
 }
 export interface BugRuntimeDiagnostic {
   capturedAt: string; matchId?: string; roomCode?: string; phase?: string; round?: number; turnSerial?: number
@@ -70,12 +114,13 @@ export interface EffectPresentationScene {
 }
 export interface AtomicAbility {
   abilityId: string; cardId: string; sequence: number; text: string; trigger: string; atoms: EffectAtom[]
+  costText?: string | null; resolutionText: string
   migrationStatus: string; hasLegacyFallback: boolean; mappingSource: string; confidence: number; executionModel: string
   reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
   presentations?: EffectPresentationScene[]
 }
 export interface AtomicCardEffect {
-  cardId: string; name: string; product: string; faction: string; cardType: string; imageUrl?: string; effectText: string
+  cardId: string; name: string; product: string; faction: string; cardType: string; isCounterTactic: boolean; imageUrl?: string; effectText: string
   abilities: AtomicAbility[]; migrationStatus: string; atomCount: number; executableAtomCount: number; legacyAtomCount: number; atomKinds: string[]
   reviewStatus: 'unreviewed' | 'human-assisted' | 'confirmed' | 'rejected'; reviewSource: string
 }
@@ -84,9 +129,41 @@ export interface AtomicCoverage {
   verifiedAbilities: number; legacyBackedAbilities: number; byStatus: Record<string, number>; byAtomKind: Record<string, number>
 }
 export interface AtomicEffectPage { items: AtomicCardEffect[]; total: number; page: number; pageSize: number; coverage: AtomicCoverage }
+export interface EffectWorkbenchErrata {
+  id: string; previousText: string; correctedText: string; reason: string; effectiveVersion: string; products: string[]
+}
+export interface EffectWorkbenchAbilityDraft {
+  abilityId: string; structureHash: string; trigger: string; optional: boolean; costText: string; resolutionText: string
+  responseBoundary: string; targetSummary: string; branchSummary: string
+}
+export interface EffectWorkbenchSceneDraft { sceneId: string; text: string; styleId: string; publicLevel: string }
+export interface EffectWorkbenchDraft {
+  effectText: string; baseProduct: string; includedProducts: string[]; effectiveScope: string
+  styleId: string; publicLevel: string; errata: EffectWorkbenchErrata[]
+  abilities: EffectWorkbenchAbilityDraft[]; scenes: EffectWorkbenchSceneDraft[]
+}
+export interface EffectWorkbenchValidation {
+  valid: boolean; requiresDevelopment: boolean; errors: string[]; warnings: string[]
+}
+export interface EffectWorkbenchPreview {
+  channel: string; label: string; text: string; publicLevel: string; styleId: string
+}
+export interface EffectPresentationStyle {
+  id: string; name: string; description: string; applicableScenes: string; legendTitle: string; legendBody: string
+  legendTone: string; desktopPreview: string; mobilePreview: string
+}
+export interface EffectWorkbenchVersion {
+  id: string; version: number; status: string; publishedBy: string; publishedAt: string; reason: string; sourceStructureHash: string
+}
+export interface EffectWorkbenchView {
+  cardId: string; cardName: string; version: number; status: string; sourceStructureHash: string
+  draft: EffectWorkbenchDraft; validation: EffectWorkbenchValidation; previews: EffectWorkbenchPreview[]
+  updatedBy?: string; updatedAt?: string; reviewedBy?: string; reviewedAt?: string; publishedVersionId?: string
+  history: EffectWorkbenchVersion[]
+}
 export interface ContentEntry { key: string; draftValue: string; publishedValue: string; status: 'draft' | 'published'; updatedBy?: string; updatedAt?: string; publishedBy?: string; publishedAt?: string; version: number; publishedVersionId?: string; rollbackVersionId?: string }
 export type SiteContentKind = 'news' | 'video' | 'product'
-export type SiteMediaKind = 'hero' | 'article' | SiteContentKind
+export type SiteMediaKind = 'hero' | 'article' | 'rule' | 'card-art' | SiteContentKind
 export interface SiteMediaPolicy {
   kind: SiteMediaKind; label: string; desktopWidth: number; desktopHeight: number
   mobileWidth: number; mobileHeight: number; thumbnailWidth: number; thumbnailHeight: number
@@ -171,6 +248,17 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; cardImageId?: string; builtIn?: boolean; baseCardName?: string; grantedAt?: string; grantReason?: string }
+export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; page: number; pageSize: number }
+export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
+export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string }
+export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
+export interface ServerStorageVolume { id: string; label: string; totalBytes: number; usedBytes: number; freeBytes: number }
+export interface ServerStorageCategory { id: string; label: string; bytes: number; available: boolean }
+export interface ServerStorageTrendPoint { observedAt: string; workingSetBytes: number; volumeUsedPercent: Record<string, number> }
+export interface ServerStorageStatus { observedAt: string; workingSetBytes: number; volumes: ServerStorageVolume[]; categories: ServerStorageCategory[]; health: 'healthy'|'warning'|'critical'|'unknown'; conclusion: string; impact: string; recommendedAction: string; thresholds: { warningPercent: number; criticalPercent: number; source: string }; trend: ServerStorageTrendPoint[]; trendScope: 'current-process'; trendDescription: string; sampleState: 'complete'|'partial'|'unavailable'; unavailableSourceCount: number }
+export interface AlternateArtGrant { id: string; accountId: string; username: string; alternateArtId: string; sourceKind: 'manual' | 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event' | 'ranked-participants'; sourceReference: string; grantedAt: string; revokedAt?: string }
+export interface AlternateArtAwardRule { id: string; alternateArtId: string; kind: 'rank-reached' | 'season-final' | 'master-champion-season-final' | 'event'; seasonId: string; eventId: string; minimumTierIndex: number; active: boolean; createdAt: string; updatedAt: string; masterId?: string }
 export interface AdminAnalyticsMetricCoverage {
   metric: string; unit: string; eligibleSamples: number; observedSamples: number
   exactFacts: number; inferredFacts: number; partialFacts: number
@@ -187,6 +275,9 @@ export interface AdminReplayPage {
 export interface AdminCardAnalyticsItem {
   cardId: string; sampleSize: number; eligibleSampleSize: number; includedMatches: number; averageQuantity: number; inclusionRate: number; wins: number; winRate: number
   winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  exactDrawCoverageSamples: number; gihSamples: number; gihWins: number; gihWinRate?: number | null; gihWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  gnsSamples: number; gnsWins: number; gnsWinRate?: number | null; gnsWinRateConfidence?: AdminAnalyticsConfidenceInterval | null
+  inHandWinRateDelta?: number | null; inHandWinRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null
   winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null; drawnMatches: number; playedMatches: number
   drawnSamples: number; playedSamples: number; activatedSamples: number; settledSamples: number
   resolvedSamples: number; negatedSamples: number; fizzledSamples: number
@@ -217,6 +308,7 @@ export interface AdminAnalyticsStratifiedComparison {
 }
 export interface AdminCardAnalyticsPage {
   items: AdminCardAnalyticsItem[]; total: number; nextCursor?: string | null
+  page?: number; pageSize?: number
   summary?: { eligibleMatches?: number; sampleSize?: number; baselineWinRate?: number | null; minimumSampleSize?: number; statisticalUnit?: string; coverage?: AdminMatchDetail['coverage'] }
 }
 export interface AdminCardAnalyticsBreakdown {
@@ -230,6 +322,29 @@ export interface AdminCardAnalyticsDetail {
   turnDistribution: Array<{ turn: number; firstDrawSamples: number; firstPlaySamples: number }>
   matchups: Array<{ masterId: string; opponentMasterId: string; sampleSize: number; eligibleSampleSize: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval; baselineWinRate?: number | null; baselineWinRateConfidence?: AdminAnalyticsConfidenceInterval | null; winRateDelta?: number | null; winRateDeltaConfidence?: AdminAnalyticsConfidenceInterval | null }>
   recentMatches: AdminMatchSummary[]; coverage: AdminAnalyticsCoverage
+}
+export interface AdminMasterAnalyticsItem {
+  masterId: string; participantSamples: number; distinctMatches: number; distinctDecks: number
+  usageRate: number; deckShare: number; wins: number; winRate: number; winRateConfidence: AdminAnalyticsConfidenceInterval
+  averageDurationSeconds: number; firstSamples: number; firstWinRate?: number | null
+  secondSamples: number; secondWinRate?: number | null
+}
+export interface AdminMasterAnalyticsReport {
+  items: AdminMasterAnalyticsItem[]
+  matchups: Array<{ masterId: string; opponentMasterId: string; samples: number; wins: number; winRate?: number | null }>
+  trend: Array<{ date: string; samples: number; wins: number; winRate: number }>
+  selectedMasterId?: string | null
+  popularDecks: Array<{ signature: string; samples: number; wins: number; winRate: number; cards: Array<{ cardId: string; quantity: number; section: string }> }>
+  cards?: AdminCardAnalyticsPage | null
+}
+export interface AdminGlobalAnalyticsDay {
+  date: string; dailyActiveUsers: number; weeklyActiveUsers: number; monthlyActiveUsers: number
+  dailyMatches: number; weeklyMatches: number; monthlyMatches: number; averageOnline: number
+  peakOnline: number; peakOnlineAt?: string | null; newUsers: number; returningUsers: number; pageViews: number
+}
+export interface AdminGlobalAnalyticsReport {
+  fromDate: string; toDate: string; days: AdminGlobalAnalyticsDay[]
+  pageViews: Array<{ path: string; views: number }>
 }
 export interface AdminCommand {
   id: string; idempotencyKey?: string; type: string; actorId: string; actorName: string; requestedAt: string
@@ -288,7 +403,9 @@ export interface EffectiveOperationsPolicy {
   maintenance: { enabled: boolean; active: boolean; entryBlocked: boolean; status: 'open'|'upcoming'|'maintenance'; message: string; broadcastMessage: string; startsAt?: string; endsAt?: string; advanceBroadcastHours: number; expectedDurationHours: number; immediateActive?: boolean; immediateStartedAt?: string; immediateExpectedDurationHours?: number }
   announcements: Array<{ id: string; content: string; sortOrder: number; startsAt?: string; endsAt?: string }>
 }
-export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; color: string; icon: string }
+export interface RankedTierConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; streakTerminationReward: number; color: string; icon: string }
+export interface RankedTierGradientConfig { name: string; minimum: number; baseDelta: number; winStreakCap: number; lossProtectionCap: number; ratingGapCap: number; streakTerminationReward: number }
+export interface RankedPendingGradientConfig { afterSeasonId: string; tiers: RankedTierGradientConfig[] }
 export interface RankedFactionConfig { id: 'order' | 'chaos' | 'fate'; name: string; color: string; icon: string; firstTitle: string; topFiveTitle: string; tiers: RankedTierConfig[] }
 export interface RankedMasterTitleConfig { masterId: string; masterName: string; title: string }
 export interface RankedTimeControlConfig {
@@ -331,7 +448,7 @@ export const DEFAULT_RANKED_BROADCAST_CONFIG: RankedBroadcastConfig = {
   factionTitleEnabled: true,
   masterTitleEnabled: true,
 }
-export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[]; timeControl: RankedTimeControlConfig; broadcast: RankedBroadcastConfig }
+export interface RankedConfig { placementMatches: number; placementMaximum: number; broadcastEnabled: boolean; factions: RankedFactionConfig[]; masterTitles: RankedMasterTitleConfig[]; timeControl: RankedTimeControlConfig; broadcast: RankedBroadcastConfig; pendingGradient?: RankedPendingGradientConfig }
 export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'broadcast'> & { timeControl?: Partial<RankedTimeControlConfig>; broadcast?: Partial<RankedBroadcastConfig> }): RankedConfig {
   return { ...config,
     timeControl: { ...DEFAULT_RANKED_TIME_CONTROL, ...(config.timeControl ?? {}) },
@@ -339,14 +456,30 @@ export function normalizeRankedConfig(config: Omit<RankedConfig, 'timeControl'|'
   }
 }
 export interface RankedProfile { accountId: string; username: string; seasonId: string; faction?: string; sevenValue: number; displayValue: string; placementPlayed: number; placementWins: number; placed: boolean; wins: number; losses: number; winStreak: number; lossStreak: number; tier: string; tierIndex: number; factionRank: number; title?: string; titles: string[]; rankLabel: string; placementTitle?: string; selectedMasterTitle?: string; masterTitles: string[] }
-export interface RankedProfileHistory { seasonId: string; faction: string; sevenValue: number; placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number; archivedAt: string }
-export interface RankedSeasonHonor { seasonId: string; seasonName: string; username: string; faction: string; tier: string; sevenValue: number; displayValue: string; titles: string[]; awardedAt: string }
+export interface RankedProfileHistory {
+  seasonId: string; seasonName: string; seasonMonth?: string | null; faction: string; sevenValue: number; displayValue: string
+  placementPlayed: number; placementWins: number; wins: number; losses: number; winStreak: number
+  archivedAt: string; tier: string; winRate?: number | null; factionTitle?: string
+  masterTitles: string[]; titles: string[]; factionRank?: number | null; overallRank?: number | null
+  placed?: boolean | null; placementRequired?: number | null; rankLabel?: string | null
+}
+export interface SeasonSummaryNotification {
+  id: string; seasonId: string; seasonName: string; faction: string; placed: boolean
+  rankLabel: string; factionRank?: number | null; overallRank?: number | null
+  sevenValue: number; displayValue: string; wins: number; losses: number; winRate?: number | null
+  factionTitle?: string; masterTitles: string[]; titles: string[]; availableAt: string
+}
+export interface RankedSeasonHonorWinner { username: string; faction: string }
+export interface RankedSeasonHonorHistory { seasonName: string; title: string; winners: RankedSeasonHonorWinner[]; masterId?: string | null }
+export interface RankedSeasonFactionFinalValue { faction: string; value: number; displayValue: string }
+export interface RankedSeasonFactionTotalsHistory { seasonName: string; factions: RankedSeasonFactionFinalValue[] }
+export interface RankedSeasonHistory { honors: RankedSeasonHonorHistory[]; factionTotals: RankedSeasonFactionTotalsHistory[]; latestSeasonName?: string | null }
 export interface RankedOverview { profile: RankedProfile; factionTotals: Record<string, number>; config: RankedConfig; history: RankedProfileHistory[] }
 export interface RankedSettlementComponent { kind: string; label: string; value: number }
 export interface RankedSettlement { matchId: string; accountId: string; faction: string; won: boolean; placement: boolean; placementPlayed: number; placementRequired: number; before: number; after: number; delta: number; tierBefore: string; tierAfter: string; components: RankedSettlementComponent[]; settledAt: string; rewardStatus?: 'applied' | 'held' | 'released' | 'voided'; effectiveDelta?: number; pendingDelta?: number }
 export interface RankedBroadcast { id: string; matchId: string; eventType: string; message: string; createdAt: string }
 export interface RankedBroadcastClaim { broadcast: RankedBroadcast; claimToken: string; leaseExpiresAt: string }
-export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number }
+export interface RankedLeaderboardEntry { rank: number; username: string; faction: string; sevenValue: number; displayValue: string; tier: string; title?: string; titles: string[]; wins: number; losses: number; winStreak: number; intervalSevenDelta?: number | null; intervalSevenIncomplete?: boolean }
 export interface RankedMasterChampion { masterId: string; masterName: string; username: string; title: string; sevenValue: number; displayValue: string; games: number; wins: number }
 export interface RankedAnalyticsSummary { matches: number; placedPlayers: number; activeMasters: number; updatedAt?: string }
 export interface RankedMasterStats {
@@ -358,22 +491,82 @@ export interface RankedMatchupStats {
   masterId: string; opponentMasterId: string; games: number; wins: number; winRate: number
   firstGames: number; firstWins: number; secondGames: number; secondWins: number
 }
-export interface RankedAnalytics { range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[] }
+export interface RankedAnalytics {
+  range: '7d' | '30d' | 'season'; summary: RankedAnalyticsSummary; masters: RankedMasterStats[]; matchups: RankedMatchupStats[]
+  fromUtc?: string | null; untilUtc?: string | null; seasonId?: string | null; seasonName?: string | null
+}
+export interface PublicDeckCounterResult {
+  id: string; publicCode: string; views: number; likes: number; copies: number
+  viewerLiked: boolean; canEdit: boolean
+}
+export interface PublicDeckSummary {
+  id: string; source: 'public' | 'official'; name: string; masterId: string; masterName: string; faction: string; author: string
+  publicCode: string | null; publicationVersion: number | null; createdAt: string | null; updatedAt: string | null
+  counts: { main: number; uncountedMain: number; morale: number; special: number; bench: number }
+  legal: boolean; legalityReason: string | null; environment: { status: string; value: '1.0' | '2.0' | '2.5' | null; reason: string | null }
+  views: number; likes: number; copies: number; viewerLiked: boolean; canEdit: boolean; readToken: string | null
+}
+export interface PublicDeckSummaryQuery {
+  source?: 'all' | 'public' | 'official'; page?: number; pageSize?: number; keyword?: string; masterId?: string; faction?: string
+  legal?: boolean; environment?: '1.0' | '2.0' | '2.5'; cardId?: string; updatedAfter?: string
+  sort?: 'trend' | 'copies' | 'likes' | 'views' | 'latest' | 'name'
+}
+export interface PublicDeckSummaryPage {
+  items: PublicDeckSummary[]; total: number; page: number; pageSize: number; generation: string; catalogVersion: string; policyVersion: number
+  sourceAvailability: { public: 'available' | 'disabled'; official: 'available' }
+  facets: { sources: Array<{ value: string; count: number }>; masters: Array<{ value: string; count: number }>
+    factions: Array<{ value: string; count: number }>; environments: Array<{ value: string; count: number }>
+    cards: Array<{ value: string; count: number }>; legal: number; illegal: number }
+}
+export interface OwnPublicDeckReference { id: string; publicCode: string; publicationVersion: number; ownerId: string }
+export interface OwnPublicDeckReferences { status: 'available'; items: OwnPublicDeckReference[] }
+export interface PublicDeckReadGeneration {
+  id: string; publicCode: string; readToken: string; catalogVersion: string; policyVersion: number
+}
+export interface PublicDeckCurrentRead {
+  summary: PublicDeckSummary; version: number; deck: SavedL12Deck; guide: PublicDeckGuide; matchups: PublicDeckMatchup[]
+  contentRevision: number; contentUpdatedAt: string | null; readToken: string; catalogVersion: string; policyVersion: number
+}
+export interface PublicDeckVersionMetadata {
+  version: number; name: string; masterId: string; createdAt: string
+  counts: PublicDeckSummary['counts']; legal: boolean; legalityReason: string | null
+  environment: PublicDeckSummary['environment']; changes: PublicDeckVersionChange[]
+}
+export interface PublicDeckVersionPage extends PublicDeckReadGeneration {
+  items: PublicDeckVersionMetadata[]; total: number; page: number; pageSize: number; canEdit: boolean
+}
+export interface PublicDeckVersionRead extends PublicDeckReadGeneration {
+  metadata: PublicDeckVersionMetadata; deck: SavedL12Deck; canEdit: boolean
+}
+export interface PublicDeckContentCurrent extends PublicDeckReadGeneration {
+  guide: PublicDeckGuide; matchups: PublicDeckMatchup[]; contentRevision: number
+  contentUpdatedAt: string | null; canEdit: true
+}
+export interface PublicDeckStatisticsPage extends PublicDeckReadGeneration {
+  from: string; to: string; recentDays: number; games: number
+  sampleStatus: 'available' | 'insufficient' | 'empty'; groups: PublicDeckVersionStatistic[]
+  total: number; page: number; pageSize: number
+}
 export interface RankedIntegritySignal { code: string; label: string }
 export interface RankedIntegrityAudit {
   id: string; matchId: string; seasonId: string
   firstAccountId: string; firstPlayer: string; secondAccountId: string; secondPlayer: string
   winner?: number | null; durationMs: number; meaningfulCommandCount: number; conclusionKind: string
   networkLinked: boolean; networkCorrelationId?: string | null; signals: RankedIntegritySignal[]
-  reviewRecommended: boolean; enforcement: 'none' | string; createdAt: string
+  browserLinked: boolean; browserCorrelationId?: string | null; finalRound: number
+  reviewRecommended: boolean; effectiveDisposition: 'unreviewed' | 'review' | 'normal' | 'insufficient' | 'system-error' | 'confirmed' | string
+  enforcement: 'none' | string; createdAt: string
 }
 export interface OperationsConfigView {
   version: number; versionId: string; config: OperationsConfigPayload; updatedBy: string; updatedAt: string
   immediateMaintenance?: { enabled: boolean; expectedDurationHours: number; startedAt?: string }
+  sectionRevisions?: Record<string, number>
+  fieldRevisions?: Record<string, number>
 }
 export interface OperationsConfigVersion {
   id: string; version: number; action: string; config: OperationsConfigPayload
   actorId: string; actorName: string; reason: string; createdAt: string
+  section?: OperationsConfigSection; sectionRevision?: number; changedFields?: string[]
 }
 export interface OperationsConfigPreview {
   valid: boolean; currentVersion: number; nextVersion: number; normalized: OperationsConfigPayload
@@ -382,15 +575,192 @@ export interface OperationsConfigPreview {
 export interface OperationsConfigOperation {
   applied: boolean; current: OperationsConfigView; historyEntry: OperationsConfigVersion; changes: string[]
 }
+export type OperationsConfigSection = 'room' | 'features' | 'announcements' | 'maintenance'
+export interface OperationsSectionPayload {
+  defaultRoomConfig?: OperationsDefaultRoomConfig
+  matchModes?: OperationsMatchMode[]
+  featureFlags?: Record<string, boolean>
+  maintenance?: OperationsMaintenanceConfig
+  announcements?: OperationsAnnouncementConfig[]
+}
+export interface OperationsSectionView {
+  section: OperationsConfigSection
+  revision: number
+  operationsVersion: number
+  versionId: string
+  config: OperationsSectionPayload
+  fieldRevisions: Record<string, number>
+  updatedBy: string
+  updatedAt: string
+}
+export interface OperationsSectionVersion {
+  id: string
+  section: OperationsConfigSection
+  revision: number
+  operationsVersion: number
+  action: string
+  config: OperationsSectionPayload
+  changedFields: string[]
+  actorId: string
+  actorName: string
+  reason: string
+  createdAt: string
+}
+export interface OperationsSectionPreview {
+  valid: boolean
+  section: OperationsConfigSection
+  currentRevision: number
+  nextRevision: number
+  normalized: OperationsSectionPayload
+  expectedFieldRevisions: Record<string, number>
+  changes: string[]
+  warnings: string[]
+}
+export interface OperationsSectionOperation {
+  applied: boolean
+  current: OperationsSectionView
+  historyEntry?: OperationsSectionVersion
+  changes: string[]
+}
+export interface SeasonScopedConfig {
+  disasterPool: OperationsDisasterPoolConfig
+  cardRestrictions: OperationsCardRestriction[]
+  defaultPresetDeckIds: string[]
+  ranked: RankedConfig
+}
+export interface SeasonDefinitionDraft {
+  seasonId: string
+  name: string
+  startsAt?: string | null
+  endsAt?: string | null
+  configuration: SeasonScopedConfig
+}
+export interface SeasonDefinitionView extends SeasonDefinitionDraft {
+  definitionId: string
+  lifecycleStatus: 'active' | 'draft' | string
+  revision: number
+  previousSeasonId?: string
+  nextSeasonId?: string
+  createdBy: string
+  createdAt: string
+  updatedBy: string
+  updatedAt: string
+  activatedAt?: string
+  activationPlan?: SeasonActivationPlan
+}
+export interface SeasonActivationPlan {
+  status: 'unarmed' | 'armed' | 'waiting' | 'executing' | 'failed' | 'disarmed' | 'completed' | string
+  generation: number
+  scheduledAt: string
+  armedAt: string
+  armedCurrentRevision: number
+  armedDraftRevision: number
+  armedOperationsVersion: number
+  intentMask: string
+  disarmGuardToken: string
+  leaseState: 'free' | 'held' | 'expired' | string
+  leaseExpiresAt?: string
+  attemptCount: number
+  lastAttemptAt?: string
+  lastErrorCode?: string
+  suggestedActionCode: string
+  completedAt?: string
+}
+export interface RankedSeasonCutoverReadiness {
+  seasonId: string
+  activeMatches: number
+  pendingSettlements: number
+  appliedReconciliationFailures: number
+  quarantinedSettlements: number
+  ready: boolean
+}
+export interface SeasonTransitionImpact {
+  seasonId: string
+  seasonName: string
+  fromStatus: string
+  toStatus: string
+}
+export interface SeasonActivationImpactPreview {
+  valid: boolean
+  observedAt: string
+  definitionId: string
+  currentRevision: number
+  draftRevision: number
+  operationsVersion: number
+  planStatus: string
+  planGeneration: number
+  leaseState: string
+  readiness: RankedSeasonCutoverReadiness
+  settlementParticipantCount: number
+  historyRecordCount: number
+  summaryNotificationCount: number
+  currentToHistory: SeasonTransitionImpact
+  nextToCurrent: SeasonTransitionImpact
+  rankedAdmissionImpact: string
+  rankedAdmissionFencesAt?: string
+  blockingCodes: string[]
+  suggestedActionCodes: string[]
+  previewToken: string
+}
+export interface SeasonArchiveView {
+  archiveId: string; sourceDefinitionId: string; seasonId: string; name: string; definitionRevision: number
+  previousSeasonId?: string; nextSeasonId?: string; startsAt?: string | null; endsAt?: string | null
+  configuration: SeasonScopedConfig; activatedAt?: string; archivedAt: string; archivedBy: string
+}
+export interface SeasonCatalog {
+  current: SeasonDefinitionView
+  next?: SeasonDefinitionView
+  archives: SeasonArchiveView[]
+  automaticActivationEnabled: boolean
+  operationsVersion: number
+}
+export interface SeasonDefinitionPreview {
+  valid: boolean
+  slot: 'current' | 'next'
+  currentRevision: number
+  nextRevision: number
+  operationsVersion: number
+  normalized: SeasonDefinitionDraft
+  changes: string[]
+  warnings: string[]
+  previewToken: string
+}
+export interface SeasonDefinitionOperation {
+  applied: boolean
+  slot: 'current' | 'next'
+  definition: SeasonDefinitionView
+  previousRevision: number
+  operationsVersion: number
+  changes: string[]
+}
 export interface ServerStartOperation { applied: boolean; alreadyStarted: boolean; current: OperationsConfigView }
 export interface ImmediateMaintenanceOperation { applied: boolean; alreadyApplied: boolean; current: OperationsConfigView }
 export interface RuntimeDependencyStatus {
   name: string; configured: boolean; state: string; detail?: string; observedAt: string
 }
+export interface HttpPerformanceStatus {
+  windowSeconds: number; slowRequestThresholdMilliseconds: number; minimumSamples: number
+  minimumReadSamples: number; minimumMutationSamples: number
+  sampleCount: number; readSampleCount: number; mutationSampleCount: number; diagnosticRequestCount: number
+  inFlight: number; peakInFlight: number; averageDurationMilliseconds: number
+  p95LatencyBand: string; slowRequestCount: number; slowRequestPercent: number
+  rateLimitedCount: number; rateLimitedPercent: number; serverErrorCount: number; serverErrorPercent: number
+  expectedUnavailableCount: number; expectedUnavailablePercent: number
+  clientCancelledCount: number; clientCancelledPercent: number
+  sampleSufficient: boolean; withinBudget: boolean | null; budgetFailures: string[]
+}
 export interface RuntimeStatus {
   observedAt: string; serviceVersion: string; cardCount: number; onlineAccountCount: number
   webSocketConnectionCount: number; roomCount: number; activeGameCount: number
-  releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus
+  releaseEnvironments: ReleaseEnvironment[]; cdn: RuntimeDependencyStatus; httpPerformance: HttpPerformanceStatus
+}
+export interface AdminWorkbenchItem {
+  id: string; kind: string; label: string; detail: string; path: string
+  severity: 'ok'|'neutral'|'attention'|'warning'|'critical'|'unavailable'; count?: number; occurredAt?: string
+}
+export interface AdminWorkbenchSummary {
+  sampledAt: string; pending: AdminWorkbenchItem[]; anomalies: AdminWorkbenchItem[]; recentActivities: AdminWorkbenchItem[]
+  partial: boolean; unavailableSections: string[]
 }
 export interface AuditArchiveSegment {
   id: string; from: string; until: string; eventCount: number; sha256: string; createdAt: string
@@ -404,7 +774,7 @@ export interface AuditArchiveRecovery {
 }
 export interface AdminCommandAccepted { commandId: string; status: 'requested'; message: string; command: AdminCommand }
 export interface ContentBatchItem { key: string; previousValue: string; publishedValue: string; previousVersionId?: string; publishedVersionId: string }
-export interface ContentBatch { id: string; action: 'publish' | 'rollback'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
+export interface ContentBatch { id: string; action: 'publish' | 'rollback' | 'rule-item-publish'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
 export interface ContentPreviewItem { key: string; draftValue: string; publishedValue: string; entryVersion: number; wouldChange: boolean }
 export interface ContentBatchPreview { action: 'publish' | 'rollback'; sourceBatchId?: string; items: ContentPreviewItem[] }
 export interface ContentBatchOperation { applied: boolean; batch?: ContentBatch; preview?: ContentBatchPreview }
@@ -429,14 +799,15 @@ export interface ReleasePlan {
   targetArtifact: VerifiedReleaseArtifact; rollbackTargetRunId?: string; steps: string[]; willExecute: boolean
 }
 export interface ReleaseOperation { applied: boolean; plan: ReleasePlan; run?: ReleaseRun }
-export type TournamentStatus = 'registration' | 'running' | 'completed'
+export type TournamentStatus = 'registration' | 'running' | 'completed' | 'canceled'
 export type TournamentRoundStatus = 'pending' | 'checkin' | 'running' | 'completed'
 export type TournamentDeckVisibility = 'always' | 'after' | 'private'
 export type TournamentDisasterMode = 'all' | 'random' | 'season' | 'none'
 export interface TournamentRulesSnapshot {
   ruleset: string; disasterMode: TournamentDisasterMode; banList: string
   disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
-  deckVisibility: TournamentDeckVisibility; hash: string; capturedAt: string
+  deckVisibility: TournamentDeckVisibility; ruleContentVersionId?: string; ruleContentHash: string
+  hash: string; capturedAt: string
 }
 export interface TournamentDeckSnapshot {
   name: string; code?: string; hash: string; submittedAt: string; lockedAt?: string
@@ -444,8 +815,18 @@ export interface TournamentDeckSnapshot {
 }
 export interface TournamentStaff { accountId: string; username: string }
 export interface TournamentParticipant {
-  accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean; seed: number
-  deck?: TournamentDeckSnapshot
+  accountId: string; username: string; checkedIn: boolean; dropped: boolean; eliminated: boolean
+  removed: boolean; registrationBanned: boolean; removalReason?: string; tournamentCheckedInAt?: string; seed: number
+  deck?: TournamentDeckSnapshot; waitlisted: boolean; waitlistPosition?: number; promotedAt?: string
+}
+export interface TournamentCounts {
+  registered: number; pendingCheckIn: number; checkedIn: number; active: number; waitlisted: number
+  dropped: number; removed: number; registrationBanned: number
+}
+export interface TournamentOrganizerTransfer {
+  id: string; fromAccountId: string; fromUsername: string; toAccountId: string; toUsername: string
+  status: 'pending' | 'accepted' | 'declined' | 'superseded' | 'expired'; reason: string
+  requestedAt: string; expiresAt: string; resolvedAt?: string
 }
 export interface TournamentStanding {
   roundNumber: number; rank: number; accountId: string; username: string; wins: number; losses: number
@@ -464,7 +845,15 @@ export interface TournamentMatch {
   result?: string; timeExtensionMinutes: number; startedAt?: string; deadline?: string; recordedMatchId?: string
   rulings: TournamentRuling[]; graceDeadline?: string; sourceMatchIds: string[]; rulesHash: string
   playerADeckHash?: string; playerBDeckHash?: string; replayNumber: number; canEnter: boolean; canSpectate: boolean
-  events: TournamentMatchEvent[]
+  events: TournamentMatchEvent[]; paused: boolean; pauseReason?: string; pausedAt?: string; totalPausedSeconds: number
+}
+export interface TournamentPostponement {
+  id: string; previousStartAt?: string; newStartAt: string; reason: string; actorId: string; actorName: string; createdAt: string
+}
+export interface TournamentJudgeCase {
+  id: string; roundNumber: number; matchId: string; table: number; category: string; urgency: string; status: string
+  requesterAccountId: string; requesterName: string; playerMessage: string; assigneeAccountId?: string; assigneeName?: string
+  staffNote?: string; resolution?: string; createdAt: string; updatedAt: string; appealedAt?: string; appealReason?: string; canManage: boolean
 }
 export interface TournamentRound {
   id: string; number: number; status: TournamentRoundStatus; paused: boolean; startedAt?: string; pausedAt?: string
@@ -480,17 +869,69 @@ export interface Tournament {
   id: string; code: string; name: string; organizerAccountId: string; organizerName: string; referees: TournamentStaff[]
   status: TournamentStatus; format: 'single' | 'swiss' | 'swiss-cut' | 'league'; visibility: 'public' | 'code'; maxPlayers: number
   startAt?: string; description: string; rules: TournamentRulesSnapshot; roundMinutes: number; checkInMinutes: number
+  timeControl: RankedTimeControlConfig; usesLegacyRoundClock: boolean; counts: TournamentCounts
+  pendingOrganizerTransfer?: TournamentOrganizerTransfer; organizerTransferHistory: TournamentOrganizerTransfer[]
   participants: TournamentParticipant[]; rounds: TournamentRound[]; version: number; legacyImported: boolean
   createdAt: string; updatedAt: string; completedAt?: string; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
   finalSwissStandings: TournamentStanding[]; eliminationBracket: TournamentBracketRound[]
+  phase: string; registrationOpen: boolean; canceledAt?: string; cancellationReason?: string
+  postponements: TournamentPostponement[]; judgeCases: TournamentJudgeCase[]
 }
 export interface TournamentList { platformVersion: number; items: Tournament[] }
+export interface TournamentSummary {
+  id: string; code: string; name: string; organizerName: string; status: TournamentStatus; phase: string
+  format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
+  counts: TournamentCounts; viewerRole: string; requiresAction: boolean; version: number; updatedAt: string
+}
+export interface TournamentSummaryPage {
+  platformVersion: number; items: TournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
+}
+// Anonymous DTOs deliberately cannot express account IDs, credentials, deck snapshots or staff data.
+export interface PublicTournamentCounts { registered: number; checkedIn: number; active: number; waitlisted: number }
+export interface PublicTournamentSummary {
+  code: string; name: string; organizerName: string; status: TournamentStatus; format: Tournament['format']; phase: string
+  maxPlayers: number; startAt?: string; roundMinutes: number; checkInMinutes: number; counts: PublicTournamentCounts
+}
+export interface PublicTournamentPage {
+  items: PublicTournamentSummary[]; page: number; pageSize: number; total: number; totalPages: number
+}
+export interface PublicTournamentStanding {
+  roundNumber: number; rank: number; name: string; wins: number; losses: number; draws: number; byes: number
+  opponentScore: number; opponentsOpponentScore: number
+}
+export interface PublicTournamentMatch {
+  table: number; playerAName?: string; playerBName?: string; status: TournamentMatch['status']; result?: string
+  startedAt?: string; deadline?: string
+}
+export interface PublicTournamentRules {
+  ruleset: string; disasterMode: TournamentDisasterMode; banList: string; disasterCardIds: string[]
+  cardRestrictions: Array<Pick<OperationsCardRestriction, 'cardId' | 'maxCopies' | 'masterId'>>; deckVisibility: TournamentDeckVisibility; swissRounds: number
+  cutSize?: number; lateGraceMinutes: number; timeControl: RankedTimeControlConfig
+}
+export interface PublicTournamentDetail extends PublicTournamentSummary {
+  description: string; registrationVisibility: 'public' | 'staff'; registrationOpen: boolean; rules: PublicTournamentRules
+  participants: Array<{ name: string; status: string }>
+  rounds: Array<{ number: number; stage: 'swiss' | 'elimination'; status: TournamentRoundStatus; startedAt?: string; matches: PublicTournamentMatch[]; standings: PublicTournamentStanding[] }>
+  finalStandings: PublicTournamentStanding[]
+}
+export interface TournamentStartCheck {
+  canStart: boolean; blockers: string[]; warnings: string[]; eligiblePlayers: number; waitlistedPlayers: number; openJudgeCases: number
+}
+export interface TournamentCareerEntry {
+  tournamentId: string; code: string; name: string; status: TournamentStatus; format: Tournament['format']; completedAt?: string
+  finalRank?: number; wins: number; losses: number; draws: number; organized: boolean; refereed: boolean
+}
+export interface TournamentCareer {
+  accountId: string; participated: number; organized: number; refereed: number; wins: number; losses: number; draws: number
+  items: TournamentCareerEntry[]; page: number; pageSize: number; total: number; totalPages: number
+}
 export interface TournamentCreateInput {
   name: string; format: Tournament['format']; visibility: Tournament['visibility']; maxPlayers: number; startAt?: string
   ruleset: string; description: string; deckVisibility: TournamentDeckVisibility; disasterMode: TournamentDisasterMode
   banList: string; disasterCardIds: string[]; cardRestrictions: OperationsCardRestriction[]
-  roundMinutes: number; checkInMinutes: number; refereeAccountIds: string[]; swissRounds: number; cutSize?: number
+  roundMinutes: number; checkInMinutes: number; timeControl: RankedTimeControlConfig
+  refereeAccountIds: string[]; swissRounds: number; cutSize?: number
   registrationVisibility: 'public' | 'staff'; lateGraceMinutes: number
 }
 export interface LegacyTournamentParticipantInput {
@@ -512,8 +953,25 @@ export interface LegacyTournamentInput {
 }
 export interface TournamentLegacyImport { previewHash: string; applied: boolean; tournaments: Tournament[] }
 export class PlatformRequestError extends Error {
-  constructor(message: string, public readonly status: number, public readonly code: string, public readonly correlationId: string) { super(message) }
+  constructor(message: string, public readonly status: number, public readonly code: string,
+    public readonly correlationId: string, public readonly retryAfterMs = 0,
+    public readonly currentRevision?: number) { super(message) }
 }
+
+export const PLATFORM_MAX_CONCURRENT_REQUESTS = 4
+export const PLATFORM_READ_TIMEOUT_MS = 10_000
+export const PLATFORM_MUTATION_TIMEOUT_MS = 20_000
+export const PLATFORM_UPLOAD_TIMEOUT_MS = 60_000
+export const PLATFORM_READ_MAX_ATTEMPTS = 2
+
+interface PlatformRequestReliabilityOptions {
+  timeoutMs?: number
+  maxAttempts?: number
+}
+
+type PlatformRequestInit = RequestInit & { reliability?: PlatformRequestReliabilityOptions; responseType?: 'json' | 'blob' }
+const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURRENT_REQUESTS)
+let platformSessionVersion = 0
 
 function loadAccount(): PlatformAccount | null {
   try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
@@ -544,18 +1002,24 @@ function clearAuthRefreshRetry(resetAttempts = false) {
 }
 
 function isTemporaryAuthFailure(error: unknown) {
-  if (error instanceof PlatformRequestError) return error.status >= 500
+  if (error instanceof PlatformRequestError)
+    return error.status >= 500 || error.code === 'network_error' || error.code === 'request_timeout'
   return error instanceof TypeError
     || (typeof DOMException !== 'undefined' && error instanceof DOMException && error.name === 'AbortError')
 }
 
-function scheduleAuthRefreshRetry(requestToken: string) {
-  if (authRefreshRetryTimer !== null || !requestToken || platformState.token !== requestToken) return
+function platformSessionIsCurrent(token: string, sessionVersion: number) {
+  return platformState.token === token && platformSessionVersion === sessionVersion
+}
+
+function scheduleAuthRefreshRetry(requestToken: string, requestSessionVersion: number) {
+  if (authRefreshRetryTimer !== null || !requestToken
+    || !platformSessionIsCurrent(requestToken, requestSessionVersion)) return
   const delay = Math.min(AUTH_REFRESH_RETRY_BASE_MS * (2 ** authRefreshRetryAttempts), AUTH_REFRESH_RETRY_MAX_MS)
   authRefreshRetryAttempts += 1
   authRefreshRetryTimer = window.setTimeout(() => {
     authRefreshRetryTimer = null
-    if (platformState.token !== requestToken) return
+    if (!platformSessionIsCurrent(requestToken, requestSessionVersion)) return
     void refreshCurrentAccount({ force: true }).catch(() => undefined)
   }, delay)
 }
@@ -572,46 +1036,131 @@ export const canAccessAdmin = computed(() => authState.verified && platformState
 
 export function apiBase() {
   try {
-    const url = new URL(l12State.endpoint)
-    url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    url.pathname = ''
-    return url.toString().replace(/\/$/, '')
+    return endpointHttpBase(l12State.endpoint)
   } catch { return `${location.protocol}//${location.hostname}:8080` }
 }
 
-export async function platformRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers)
-  if (!(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
-  headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+function retryAfterMilliseconds(response: Response) {
+  const raw = response.headers.get('Retry-After')?.trim()
+  if (!raw) return 0
+  const seconds = Number(raw)
+  if (Number.isFinite(seconds)) return Math.max(0, Math.min(seconds * 1_000, 5_000))
+  const at = Date.parse(raw)
+  return Number.isFinite(at) ? Math.max(0, Math.min(at - Date.now(), 5_000)) : 0
+}
+
+function retryableReadFailure(error: unknown) {
+  if (error instanceof RequestDeadlineError || error instanceof TypeError) return true
+  return error instanceof PlatformRequestError
+    // 429 is a deliberate admission decision. Retrying it here would amplify traffic precisely
+    // while the server is asking this client to stop; surface it to the caller immediately.
+    && [408, 425, 500, 502, 503, 504].includes(error.status)
+}
+
+async function requestFingerprint(value: string) {
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) return undefined
+  const digest = await subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+export async function platformRequest<T>(path: string, init: PlatformRequestInit = {}): Promise<T> {
+  const { reliability = {}, responseType = 'json', ...fetchInit } = init
+  const method = String(fetchInit.method || 'GET').toUpperCase()
+  const safeRead = method === 'GET' || method === 'HEAD'
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
     || path === '/api/auth/email/capability'
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
-  const requestToken = anonymousCredentialRequest ? '' : platformState.token
-  if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
-  const response = await fetch(`${apiBase()}${path}`, { ...init, headers })
-  const payload = await response.json().catch(() => ({}))
-  if (!response.ok) {
-    const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
-    const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
-      ? '图片上传总量超过 32MB，请压缩原图后重试'
-      : `请求失败（${response.status}）`
-    const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
-    // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
-    if (response.status === 401 && requestToken && platformState.token === requestToken) forgetAccount(requestToken)
-    // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
-    if (response.status === 403 && requestToken && platformState.token === requestToken && path !== '/api/auth/me') {
-      authState.verified = false
-      void refreshCurrentAccount({ force: true }).catch(() => undefined)
-    }
-    throw new PlatformRequestError(message, response.status, String(payload.code || 'request_failed'), correlationId)
+  // Public projections are identity-independent, even while an administrator browses.
+  const anonymousPublicRead = safeRead && path.startsWith('/api/public/')
+  const requestToken = anonymousCredentialRequest || anonymousPublicRead ? '' : platformState.token
+  const requestSessionVersion = platformSessionVersion
+  const headerKey = Array.from(new Headers(fetchInit.headers).entries())
+    .filter(([name]) => name.toLowerCase() !== 'x-correlation-id')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, value]) => `${name}:${value}`).join('\n')
+  // 仅合并无独立取消语义的安全读取；Map 中只保留摘要，不驻留令牌、查询参数或业务头原文。
+  const requestKey = safeRead && !fetchInit.signal
+    ? await requestFingerprint(`${requestToken ? `session:${requestSessionVersion}` : 'anonymous'}\n${method}\n${path}\n${headerKey}`)
+    : undefined
+  const maximumTimeoutMs = path === '/api/admin/site/media'
+    ? PLATFORM_UPLOAD_TIMEOUT_MS : safeRead ? PLATFORM_READ_TIMEOUT_MS : PLATFORM_MUTATION_TIMEOUT_MS
+  const timeoutMs = Math.max(1, Math.min(reliability.timeoutMs ?? maximumTimeoutMs, maximumTimeoutMs))
+  // 写入即使调用方误配 maxAttempts 也只执行一次；只有 GET/HEAD 允许有限重试。
+  const maxAttempts = safeRead
+    ? Math.max(1, Math.min(reliability.maxAttempts ?? PLATFORM_READ_MAX_ATTEMPTS, PLATFORM_READ_MAX_ATTEMPTS))
+    : 1
+
+  try {
+    return await platformRequestCoordinator.execute<T>({
+      key: requestKey,
+      method,
+      signal: fetchInit.signal,
+      timeoutMs,
+      maxAttempts,
+      shouldRetry: error => safeRead && retryableReadFailure(error),
+      retryDelayMs: (error, attempt) => error instanceof PlatformRequestError && error.retryAfterMs > 0
+        ? error.retryAfterMs : Math.min(250 * (2 ** (attempt - 1)), 2_000),
+      run: async signal => {
+        if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
+          throw new PlatformRequestError('账号已切换，已忽略旧请求', 0, 'stale_session', '')
+        const headers = new Headers(fetchInit.headers)
+        if (anonymousPublicRead) headers.delete('Authorization')
+        if (!(fetchInit.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+        headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.()
+          ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
+        if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
+        const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers,
+          ...(anonymousPublicRead ? { credentials: 'omit' as const, cache: 'no-store' as const } : {}) })
+        const payload = responseType === 'blob' && response.ok
+          ? await response.blob() : await response.json().catch(() => ({}))
+        if (requestToken && (platformState.token !== requestToken || platformSessionVersion !== requestSessionVersion))
+          throw new PlatformRequestError('账号已切换，已忽略旧响应', 0, 'stale_session', '')
+        if (!response.ok) {
+          const correlationId = String(payload.correlationId || response.headers.get('X-Correlation-ID') || '')
+          const fallbackMessage = response.status === 413 && path === '/api/admin/site/media'
+            ? '图片上传总量超过 32MB，请压缩原图后重试'
+            : `请求失败（${response.status}）`
+          const message = `${payload.message || fallbackMessage}${correlationId ? `（关联 ID：${correlationId}）` : ''}`
+          const code = typeof payload.code === 'string' ? payload.code : 'request_failed'
+          const currentRevision = response.status === 409 && code === 'deck_revision_conflict'
+            && ['GET', 'PUT', 'DELETE'].includes(method)
+            && /^\/api\/decks\/by-id\/[^/?]+(?:\?[^#]*)?$/.test(path)
+            && Number.isSafeInteger(payload.currentRevision) && payload.currentRevision > 0
+            ? payload.currentRevision as number : undefined
+          // 某些旧端点返回无 JSON body 的裸 401；只要本次确实携带当前 token，就必须失效本机会话。
+          if (response.status === 401 && requestToken && platformState.token === requestToken
+            && platformSessionVersion === requestSessionVersion) forgetAccount(requestToken)
+          // 403 代表会话仍可能有效但权限已变化。立即让权限 UI 失败关闭，并去重刷新权威账号。
+          if (response.status === 403 && requestToken && platformState.token === requestToken
+            && platformSessionVersion === requestSessionVersion
+            && path !== '/api/auth/me') {
+            authState.verified = false
+            void refreshCurrentAccount({ force: true }).catch(() => undefined)
+          }
+          throw new PlatformRequestError(message, response.status, code,
+            correlationId, retryAfterMilliseconds(response), currentRevision)
+        }
+        return payload as T
+      },
+    })
+  } catch (error) {
+    if (error instanceof RequestDeadlineError)
+      throw new PlatformRequestError('请求超时，请稍后重试', 0, 'request_timeout', '')
+    if (error instanceof TypeError)
+      throw new PlatformRequestError('网络连接不稳定，请检查网络后重试', 0, 'network_error', '')
+    throw error
   }
-  return payload as T
 }
 
 function remember(account: PlatformAccount, token: string) {
   clearAuthRefreshRetry(true)
+  if (platformState.token !== token) {
+    platformSessionVersion += 1
+    authRefreshPromise = null
+  }
   platformState.account = account
   platformState.token = token
   authState.initialized = true
@@ -633,32 +1182,41 @@ export function refreshCurrentAccount(options: { force?: boolean } = {}): Promis
 
   clearAuthRefreshRetry()
   const requestToken = platformState.token
+  const requestSessionVersion = platformSessionVersion
   const controller = new AbortController()
   const requestTimeout = window.setTimeout(() => controller.abort(), AUTH_REFRESH_REQUEST_TIMEOUT_MS)
   authState.refreshing = true
   authState.verified = false
-  const pending = (async () => {
+  const pending = Promise.resolve().then(async () => {
     try {
-      const account = await platformRequest<PlatformAccount>('/api/auth/me', { signal: controller.signal })
+      if (!platformSessionIsCurrent(requestToken, requestSessionVersion)) return platformState.account
+      // 认证刷新已有独立的指数退避调度；这里禁用通用 GET 重试，避免两层重试相乘。
+      const account = await platformRequest<PlatformAccount>('/api/auth/me', {
+        signal: controller.signal,
+        reliability: { maxAttempts: 1 },
+      })
       if (platformState.token !== requestToken) return platformState.account
+      if (platformSessionVersion !== requestSessionVersion) return platformState.account
       remember(account, requestToken)
       return account
     } catch (error) {
-      if (platformState.token === requestToken) {
+      if (platformSessionIsCurrent(requestToken, requestSessionVersion)) {
         // 网络与 5xx 不销毁可重试的 token，但绝不能继续把缓存身份当成已验证权限。
         authState.initialized = true
         authState.verified = false
-        if (isTemporaryAuthFailure(error)) scheduleAuthRefreshRetry(requestToken)
+        if (isTemporaryAuthFailure(error)) scheduleAuthRefreshRetry(requestToken, requestSessionVersion)
       }
       if (error instanceof PlatformRequestError && error.status === 401)
-        return platformState.token === requestToken ? null : platformState.account
+        return platformSessionIsCurrent(requestToken, requestSessionVersion) ? null : platformState.account
       throw error
     } finally {
       window.clearTimeout(requestTimeout)
-      if (platformState.token === requestToken) authState.refreshing = false
-      authRefreshPromise = null
+      if (platformSessionIsCurrent(requestToken, requestSessionVersion)) authState.refreshing = false
+      if (authRefreshPromise === pending) {
+        authRefreshPromise = null
+      }
     }
-  })()
+  })
   authRefreshPromise = pending
   return pending
 }
@@ -678,10 +1236,15 @@ export async function login(username: string, password: string) {
   remember(result.account, result.token)
 }
 
-function forgetAccount(expectedToken?: string) {
+function forgetAccount(expectedToken?: string, expectedSessionVersion?: number) {
   if (expectedToken !== undefined && platformState.token !== expectedToken) return
+  if (expectedSessionVersion !== undefined && platformSessionVersion !== expectedSessionVersion) return
   clearAuthRefreshRetry(true)
   disconnect()
+  if (platformState.token) {
+    platformSessionVersion += 1
+    authRefreshPromise = null
+  }
   platformState.account = null
   platformState.token = ''
   authState.initialized = true
@@ -694,17 +1257,20 @@ function forgetAccount(expectedToken?: string) {
 }
 
 export async function logout(options: { revokeServer?: boolean } = {}) {
+  const requestToken = platformState.token
+  const requestSessionVersion = platformSessionVersion
   try {
-    if (options.revokeServer !== false && platformState.token) {
+    if (options.revokeServer !== false && requestToken) {
       await platformRequest<SessionRevocation>('/api/auth/sessions/current', { method: 'DELETE' })
     }
-  } finally { forgetAccount() }
+  } finally { forgetAccount(requestToken, requestSessionVersion) }
 }
 
 export const sessionApi = {
   list: () => platformRequest<PlatformSession[]>('/api/auth/sessions'),
   revoke: (sessionId: string) => platformRequest<SessionRevocation>(`/api/auth/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }),
   revokeAll: () => platformRequest<SessionRevocation>('/api/auth/sessions', { method: 'DELETE' }),
+  revokeOthers: () => platformRequest<SessionRevocation>('/api/auth/sessions/others', { method: 'DELETE' }),
 }
 
 export async function changePassword(currentPassword: string, newPassword: string) {
@@ -719,6 +1285,21 @@ export async function changeUsername(currentPassword: string, newUsername: strin
   })
   remember(result.account, platformState.token)
   return result
+}
+
+export const usernameChangeApi = {
+  status: () => platformRequest<UsernameChangeStatus>('/api/auth/username-change-status'),
+  useFreeRename: (currentPassword: string, newUsername: string) => platformRequest<{ message: string; account: PlatformAccount }>('/api/auth/username-change', {
+    method: 'POST', body: JSON.stringify({ currentPassword, newUsername }),
+  }),
+  request: (newUsername: string, reason: string) => platformRequest<UsernameChangeRequest>('/api/auth/username-change-requests', {
+    method: 'POST', body: JSON.stringify({ newUsername, reason }),
+  }),
+}
+
+export const playerApi = {
+  statistics: (range: PlayerStatisticsRange = 'season') =>
+    platformRequest<PlayerStatistics>(`/api/me/statistics?range=${encodeURIComponent(range)}`),
 }
 
 export const updateAudioPreferences = (value: NonNullable<PlatformAccount['audioPreferences']>) =>
@@ -753,13 +1334,13 @@ export async function submitBug(input: { title: string; description: string; pag
 }
 
 export async function getPublicContent(key: string) {
-  return platformRequest<{ key: string; value: string }>(`/api/content/${encodeURIComponent(key)}`)
+  return platformRequest<{ key: string; value: string; observedAt?: string; nextRuleTransitionAt?: string | null }>(`/api/content/${encodeURIComponent(key)}`)
 }
 
 export async function getPublicContentBatch(keys: string[]) {
   const params = new URLSearchParams()
   keys.forEach(key => params.append('key', key))
-  return platformRequest<{ values: Record<string, string> }>(`/api/content?${params}`)
+  return platformRequest<{ values: Record<string, string>; observedAt: string; nextRuleTransitionAt?: string | null }>(`/api/content?${params}`)
 }
 
 export const getEffectiveOperationsPolicy = () =>
@@ -809,7 +1390,7 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminMatchPage>(`/api/admin/players/${encodeURIComponent(accountId)}/matches${params.size ? `?${params}` : ''}`)
   },
-  cardAnalytics: (query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
+  cardAnalytics: (query: { cursor?: string; page?: number; limit?: number; sort?: string; direction?: 'asc'|'desc'; from?: string; to?: string; mode?: string; masterId?: string; opponentMasterId?: string; initiative?: string; rulesVersion?: string; effectVersion?: string; seasonId?: string; search?: string; minimumSample?: number } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, modeId: query.mode, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['mode', 'from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
@@ -823,7 +1404,21 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
   },
+  masterAnalytics: (query: { from?: string; to?: string; masterId?: string; effectVersion?: string; seasonId?: string; minimumSample?: number; sort?: string } = {}) => {
+    const params = new URLSearchParams()
+    const mapped = { ...query, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
+    ;['from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])
+    Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminMasterAnalyticsReport>(`/api/admin/analytics/masters${params.size ? `?${params}` : ''}`)
+  },
+  globalAnalytics: (query: { from?: string; to?: string } = {}) => {
+    const params = new URLSearchParams()
+    const from = localDateBoundary(query.from); const to = localDateBoundary(query.to)
+    if (from) params.set('fromUtc', from); if (to) params.set('toUtc', to)
+    return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
+  },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
+  account: (id: string) => platformRequest<PlatformAccount>(`/api/admin/accounts/${encodeURIComponent(id)}`),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {
     method: 'PUT', body: JSON.stringify(commandBody('account-status', { disabled, reason, expectedVersion })),
@@ -842,7 +1437,7 @@ export const adminApi = {
     Object.entries(query).forEach(([key, value]) => { if (value) params.set(key, value) })
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
-  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes'>> & { comment?: string }) => platformRequest<BugReport>(`/api/admin/v1/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
+  updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'duplicateOf' | 'closureDisposition'>> & { comment?: string; expectedVersion?: number; dryRun?: boolean; reason?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
   articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
@@ -875,6 +1470,32 @@ export const adminApi = {
   siteMedia: (kind?: SiteMediaKind) => platformRequest<SiteMedia[]>(`/api/admin/site/media${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),
+  searchAlternateArts: (query: { name?: string; artCode?: string; baseCard?: string; page?: number; pageSize?: number; includeInactive?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.name) params.set('name', query.name)
+    if (query.artCode) params.set('artCode', query.artCode)
+    if (query.baseCard) params.set('baseCard', query.baseCard)
+    params.set('page', String(query.page ?? 1))
+    params.set('pageSize', String(query.pageSize ?? 20))
+    params.set('includeInactive', String(query.includeInactive ?? true))
+    return platformRequest<AlternateArtSearchPage>(`/api/admin/alternate-arts/search?${params}`)
+  },
+  serverStorage: () => platformRequest<ServerStorageStatus>('/api/admin/server-storage', { cache: 'no-store' }),
+  workbenchSummary: () => platformRequest<AdminWorkbenchSummary>('/api/admin/workbench/summary', { cache: 'no-store' }),
+  alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
+  saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
+  saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'artCode' | 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
+  alternateArtGrants: (username?: string) => platformRequest<AlternateArtGrant[]>(`/api/admin/alternate-art-grants${username ? `?username=${encodeURIComponent(username)}` : ''}`),
+  grantAlternateArt: (draft: { alternateArtId: string; accountId: string; sourceKind: AlternateArtGrant['sourceKind']; sourceReference?: string }) => platformRequest<AlternateArtGrant>('/api/admin/alternate-art-grants', { method: 'POST', body: JSON.stringify(draft) }),
+  previewAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtRankedParticipantDispatchPreview>('/api/admin/alternate-art-grants/ranked-participants/preview', { method: 'POST', body: JSON.stringify(draft) }),
+  dispatchAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-grants/ranked-participants/dispatch', { method: 'POST', body: JSON.stringify(draft) }),
+  revokeAlternateArtGrant: (id: string) => platformRequest<void>(`/api/admin/alternate-art-grants/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  usernameChangeRequests: (status = '') => platformRequest<UsernameChangeRequest[]>(`/api/admin/username-change-requests${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  reviewUsernameChangeRequest: (id: string, approve: boolean, note = '') => platformRequest<UsernameChangeRequest>(`/api/admin/username-change-requests/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ approve, note }) }),
+  alternateArtAwardRules: () => platformRequest<AlternateArtAwardRule[]>('/api/admin/alternate-art-award-rules'),
+  saveAlternateArtAwardRule: (draft: Partial<AlternateArtAwardRule> & Pick<AlternateArtAwardRule, 'alternateArtId' | 'kind' | 'seasonId' | 'eventId' | 'minimumTierIndex'>) => platformRequest<AlternateArtAwardRule>('/api/admin/alternate-art-award-rules', { method: 'PUT', body: JSON.stringify(draft) }),
+  dispatchAlternateArtEvent: (ruleId: string, accountIds: string[]) => platformRequest<AlternateArtGrant[]>('/api/admin/alternate-art-award-rules/event-dispatch', { method: 'POST', body: JSON.stringify({ ruleId, accountIds }) }),
   siteCategories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/admin/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
   saveSiteCategory: (category: Partial<SiteCategory> & Pick<SiteCategory, 'kind' | 'name' | 'slug' | 'sortOrder' | 'active'>) => {
     const body = { kind: category.kind, name: category.name, slug: category.slug, sortOrder: category.sortOrder,
@@ -885,9 +1506,19 @@ export const adminApi = {
   },
   reorderSiteCategories: (kind: SiteContentKind, ids: string[]) => platformRequest<SiteCategory[]>(`/api/admin/site/categories/order/${kind}`, { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteSiteCategory: (id: string, migrateTo?: string) => platformRequest<void>(`/api/admin/site/categories/${encodeURIComponent(id)}${migrateTo ? `?migrateTo=${encodeURIComponent(migrateTo)}` : ''}`, { method: 'DELETE' }),
-  saveContentDraft: (key: string, value: string) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value })) }),
+  saveContentDraft: (key: string, value: string, expectedVersion?: number) => platformRequest<ContentEntry>(`/api/admin/v1/content/${encodeURIComponent(key)}/draft`, { method: 'PUT', body: JSON.stringify(commandBody('draft', { value, expectedVersion })) }),
   previewContent: (keys: string[]) => platformRequest<ContentBatchPreview>('/api/admin/v1/content/preview', { method: 'POST', body: JSON.stringify({ keys }) }),
   publishContent: (keys: string[], dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/publish', { method: 'POST', body: JSON.stringify(commandBody('content-publish', { keys, dryRun })) }),
+  publishRuleItem: (key: 'rules.rulings' | 'rules.center', collection: string, itemId: string, expectedVersion?: number) => platformRequest<ContentEntry>('/api/admin/rule-items/publish', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-publish', { key, collection, itemId, expectedVersion })),
+  }),
+  createRuleItem: (collection: string, expectedVersion: number) => platformRequest<ContentEntry>('/api/admin/rule-items/create', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-create', { key: 'rules.center', collection, expectedVersion })),
+  }),
+  deleteRuleItem: (collection: string, itemId: string, expectedVersion: number) => platformRequest<ContentEntry>('/api/admin/rule-items/delete', {
+    method: 'POST', body: JSON.stringify(commandBody('rule-item-delete', { key: 'rules.center', collection, itemId, expectedVersion,
+      reason: '管理员确认删除规则资料子板块，并同步移除公开快照' })),
+  }),
   contentBatches: () => platformRequest<ContentBatch[]>('/api/admin/v1/content/batches'),
   rollbackContent: (batchId: string, dryRun = false) => platformRequest<AdminCommandAccepted | ContentBatchOperation>('/api/admin/v1/content/rollback', { method: 'POST', body: JSON.stringify(commandBody('content-rollback', { batchId, dryRun })) }),
   effectAtoms: () => platformRequest<EffectAtomDescriptor[]>('/api/admin/effect-atoms'),
@@ -898,6 +1529,23 @@ export const adminApi = {
     return platformRequest<AtomicEffectPage>(`/api/admin/effects${params.size ? `?${params}` : ''}`)
   },
   effect: (cardId: string) => platformRequest<AtomicCardEffect>(`/api/admin/effects/${encodeURIComponent(cardId)}`),
+  effectWorkbenchStyles: () => platformRequest<EffectPresentationStyle[]>('/api/admin/effect-workbench/styles'),
+  effectWorkbench: (cardId: string) => platformRequest<EffectWorkbenchView>(`/api/admin/effects/${encodeURIComponent(cardId)}/workbench`),
+  saveEffectWorkbench: (cardId: string, draft: EffectWorkbenchDraft, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/draft`, {
+    method: 'PUT', body: JSON.stringify({ draft, expectedVersion, reason }),
+  }),
+  validateEffectWorkbench: (cardId: string, expectedVersion: number) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/validate`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion }),
+  }),
+  reviewEffectWorkbench: (cardId: string, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/review`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, reason }),
+  }),
+  publishEffectWorkbench: (cardId: string, expectedVersion: number, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/publish`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, reason }),
+  }),
+  rollbackEffectWorkbench: (cardId: string, expectedVersion: number, versionId: string, reason: string) => platformRequest<EffectWorkbenchView>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/workbench/rollback`, {
+    method: 'POST', body: JSON.stringify({ expectedVersion, versionId, reason }),
+  }),
   reviewEffect: (cardId: string, body: { abilityId?: string; status: string; note?: string }) => platformRequest<EffectReview>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/review`, { method: 'PUT', body: JSON.stringify(commandBody('effect-review', body)) }),
   saveEffectPresentation: (cardId: string, sceneId: string, text: string) => platformRequest<EffectPresentationScene>(`/api/admin/v1/effects/${encodeURIComponent(cardId)}/presentations/${encodeURIComponent(sceneId)}`, {
     method: 'PUT', body: JSON.stringify(commandBody('effect-presentation', { text, reason: '更新卡牌动效文案' })),
@@ -932,7 +1580,7 @@ export const adminApi = {
   archiveAudit: (retentionDays: number, expectedVersion: number, dryRun: boolean, reason: string) => platformRequest<AdminCommandAccepted | AuditArchiveOperation>('/api/admin/v1/security/audit-archives', {
     method: 'POST', body: JSON.stringify(commandBody('audit-archive', { retentionDays, expectedVersion, dryRun, reason })),
   }),
-  rehearseAuditRecovery: () => platformRequest<AuditArchiveRecovery>('/api/admin/v1/security/audit-recovery-rehearsal'),
+  rehearseAuditRecovery: () => platformRequest<AuditArchiveRecovery>('/api/admin/v1/security/audit-recovery-rehearsal', { method: 'POST' }),
   audit: (query: string | { category?: string; outcome?: string; actorId?: string; commandId?: string; correlationId?: string } = '') => {
     const filters = typeof query === 'string' ? { category: query } : query
     const params = new URLSearchParams()
@@ -940,15 +1588,89 @@ export const adminApi = {
     return platformRequest<AdminAudit[]>(`/api/admin/v1/audit${params.size ? `?${params}` : ''}`)
   },
   operationsConfig: () => platformRequest<OperationsConfigView>('/api/admin/operations/config'),
+  operationsSection: (section: OperationsConfigSection) =>
+    platformRequest<OperationsSectionView>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}`),
+  operationsSectionHistory: (section: OperationsConfigSection, limit = 50) =>
+    platformRequest<OperationsSectionVersion[]>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}/history?limit=${Math.max(1, Math.min(200, limit))}`),
+  previewOperationsSection: (section: OperationsConfigSection, config: OperationsSectionPayload,
+    expectedRevision: number, expectedFieldRevisions: Record<string, number>) =>
+    platformRequest<OperationsSectionPreview>(`/api/admin/operations/config/sections/${encodeURIComponent(section)}/preview`, {
+      method: 'POST', body: JSON.stringify({ config, expectedRevision, expectedFieldRevisions }),
+    }),
+  applyOperationsSection: (section: OperationsConfigSection, config: OperationsSectionPayload,
+    expectedRevision: number, expectedFieldRevisions: Record<string, number>, reason: string,
+    idempotencyKey?: string) => platformRequest<OperationsSectionOperation>(
+      `/api/admin/operations/config/sections/${encodeURIComponent(section)}`, {
+        method: 'PUT', body: JSON.stringify(commandBody('operations-section', {
+          config, expectedRevision, expectedFieldRevisions, reason, idempotencyKey,
+        })),
+      }),
+  rollbackOperationsSection: (section: OperationsConfigSection, versionId: string,
+    expectedRevision: number, reason: string, idempotencyKey?: string) =>
+    platformRequest<OperationsSectionOperation>(
+      `/api/admin/operations/config/sections/${encodeURIComponent(section)}/rollback`, {
+        method: 'POST', body: JSON.stringify(commandBody('operations-section-rollback', {
+          versionId, expectedRevision, reason, idempotencyKey,
+        })),
+      }),
+  seasonCatalog: () => platformRequest<SeasonCatalog>('/api/admin/seasons'),
+  previewSeasonDefinition: (definitionId: string, draft: SeasonDefinitionDraft,
+    expectedRevision: number, expectedVersion: number) => platformRequest<SeasonDefinitionPreview>(
+      `/api/admin/seasons/${encodeURIComponent(definitionId)}/preview`, {
+        method: 'POST', body: JSON.stringify({ draft, expectedRevision, expectedVersion }),
+      }),
+  applySeasonDefinition: (definitionId: string, draft: SeasonDefinitionDraft,
+    expectedRevision: number, expectedVersion: number, previewToken: string,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionOperation>(
+      `/api/admin/seasons/${encodeURIComponent(definitionId)}`, {
+        method: 'PUT', body: JSON.stringify({ draft, expectedRevision, expectedVersion,
+          previewToken, reason, idempotencyKey }),
+      }),
+  createSeasonDraft: (expectedCurrentRevision: number, expectedVersion: number,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionView>(
+      '/api/admin/seasons/draft', {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision, expectedVersion,
+          reason, idempotencyKey }),
+      }),
+  deleteSeasonDraft: (definitionId: string, expectedRevision: number,
+    expectedVersion: number, reason: string, idempotencyKey: string) => platformRequest<void>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}`, {
+        method: 'DELETE', body: JSON.stringify({ expectedRevision, expectedVersion,
+          reason, idempotencyKey }),
+      }),
+  previewSeasonActivation: (definitionId: string, expectedCurrentRevision: number,
+    expectedDraftRevision: number, expectedVersion: number) =>
+    platformRequest<SeasonActivationImpactPreview>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/activation-preview`, {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision,
+          expectedDraftRevision, expectedVersion }),
+      }),
+  armSeasonActivation: (definitionId: string, expectedCurrentRevision: number,
+    expectedDraftRevision: number, expectedVersion: number, impactPreviewToken: string,
+    reason: string, idempotencyKey: string) => platformRequest<SeasonDefinitionView>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/arm`, {
+        method: 'POST', body: JSON.stringify({ expectedCurrentRevision, expectedDraftRevision,
+          expectedVersion, impactPreviewToken, reason, idempotencyKey }),
+      }),
+  disarmSeasonActivation: (definitionId: string, expectedDraftRevision: number,
+    expectedPlanGeneration: number, disarmGuardToken: string, expectedVersion: number,
+    reason: string, idempotencyKey: string) =>
+    platformRequest<SeasonDefinitionView>(
+      `/api/admin/seasons/draft/${encodeURIComponent(definitionId)}/disarm`, {
+        method: 'POST', body: JSON.stringify({ expectedDraftRevision, expectedPlanGeneration,
+          disarmGuardToken, expectedVersion, reason, idempotencyKey }),
+      }),
   operationsHistory: (limit = 50) => platformRequest<OperationsConfigVersion[]>(`/api/admin/operations/config/history?limit=${Math.max(1, Math.min(200, limit))}`),
   previewOperationsConfig: (config: OperationsConfigPayload, expectedVersion?: number) => platformRequest<OperationsConfigPreview>('/api/admin/operations/config/preview', {
     method: 'POST', body: JSON.stringify({ config, expectedVersion }),
   }),
-  applyOperationsConfig: (config: OperationsConfigPayload, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config', {
-    method: 'PUT', body: JSON.stringify(commandBody('operations-config', { config, reason, expectedVersion })),
+  applyOperationsConfig: (config: OperationsConfigPayload, reason: string, expectedVersion: number | undefined,
+    crossSectionReplaceIntent: 'replace-all-operations-sections') => platformRequest<OperationsConfigOperation>('/api/admin/operations/config', {
+    method: 'PUT', body: JSON.stringify(commandBody('operations-config', { config, reason, expectedVersion, crossSectionReplaceIntent })),
   }),
-  rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion?: number) => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
-    method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion })),
+  rollbackOperationsConfig: (versionId: string, reason: string, expectedVersion: number | undefined,
+    crossSectionReplaceIntent: 'replace-all-operations-sections') => platformRequest<OperationsConfigOperation>('/api/admin/operations/config/rollback', {
+    method: 'POST', body: JSON.stringify(commandBody('operations-rollback', { versionId, reason, expectedVersion, crossSectionReplaceIntent })),
   }),
   startServer: (reason: string, expectedVersion?: number) => platformRequest<ServerStartOperation>('/api/admin/operations/server/start', {
     method: 'POST', body: JSON.stringify(commandBody('operations-server-start', { reason, expectedVersion })),
@@ -972,9 +1694,9 @@ export const rankedApi = {
   leaderboard: (faction = '', range: '7d' | '30d' | 'season' = 'season') => {
     const params = new URLSearchParams({ range })
     if (faction) params.set('faction', faction)
-    return platformRequest<{ players: RankedLeaderboardEntry[]; masterChampions: RankedMasterChampion[]; analytics: RankedAnalytics }>(`/api/rankings?${params}`)
+    return platformRequest<{ players: RankedLeaderboardEntry[]; analytics: RankedAnalytics; rangeLimited?: boolean }>(`/api/rankings?${params}`)
   },
-  history: (limit = 500) => platformRequest<RankedSeasonHonor[]>(`/api/rankings/history?limit=${limit}`),
+  history: (limit = 500) => platformRequest<RankedSeasonHistory>(`/api/rankings/history?limit=${limit}`),
   broadcasts: (limit = 30) => platformRequest<RankedBroadcast[]>(`/api/ranked/broadcasts?limit=${limit}`),
   broadcastSettings: () => platformRequest<RankedBroadcastConfig>('/api/ranked/broadcasts/settings'),
   claimBroadcast: (subscriptionStartedAt?: string) => {
@@ -984,6 +1706,11 @@ export const rankedApi = {
   completeBroadcast: (id: string, claimToken: string) => platformRequest<{ completed: boolean }>(`/api/ranked/broadcasts/${encodeURIComponent(id)}/complete`, {
     method: 'POST', body: JSON.stringify({ claimToken }),
   }),
+}
+
+export const seasonSummaryApi = {
+  notifications: () => platformRequest<SeasonSummaryNotification[]>('/api/me/season-summary-notifications'),
+  acknowledge: (id: string) => platformRequest<void>(`/api/me/season-summary-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }
 
 export const articleApi = {
@@ -999,6 +1726,15 @@ export const siteContentApi = {
   categories: (kind?: SiteContentKind) => platformRequest<SiteCategory[]>(`/api/site/categories${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
 }
 
+export const publicTournamentApi = {
+  summaries: (query: { section?: 'discover' | 'history'; format?: string; search?: string; page?: number; pageSize?: number; startFrom?: string; startTo?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<PublicTournamentPage>(`/api/public/tournaments/summaries${params.size ? `?${params}` : ''}`)
+  },
+  getByCode: (code: string) => platformRequest<PublicTournamentDetail>(`/api/public/tournaments/code/${encodeURIComponent(code)}`),
+}
+
 export const tournamentApi = {
   list: (query: { status?: string; search?: string; mine?: boolean } = {}) => {
     const params = new URLSearchParams()
@@ -1007,17 +1743,48 @@ export const tournamentApi = {
   },
   get: (id: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}`),
   getByCode: (code: string) => platformRequest<Tournament>(`/api/tournaments/code/${encodeURIComponent(code)}`),
+  setVisibility: (id: string, expectedVersion: number, visibility: Tournament['visibility'], registrationVisibility: Tournament['registrationVisibility'], reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/visibility`, {
+    method: 'PUT', body: JSON.stringify(commandBody('tournament-visibility', { expectedVersion, visibility, registrationVisibility, reason })),
+  }),
+  summaries: (query: { section?: string; format?: string; search?: string; page?: number; pageSize?: number; startFrom?: string; startTo?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<TournamentSummaryPage>(`/api/tournaments/summaries${params.size ? `?${params}` : ''}`)
+  },
+  career: (query: { page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (query.page) params.set('page', String(query.page))
+    if (query.pageSize) params.set('pageSize', String(query.pageSize))
+    return platformRequest<TournamentCareer>(`/api/tournaments/career${params.size ? `?${params}` : ''}`)
+  },
+  startCheck: (id: string) => platformRequest<TournamentStartCheck>(`/api/tournaments/${encodeURIComponent(id)}/start-check`),
+  exportCsv: (id: string) => platformRequest<Blob>(`/api/tournaments/${encodeURIComponent(id)}/export.csv`, { responseType: 'blob' }),
   create: (tournament: TournamentCreateInput, expectedVersion: number, dryRun = false) => platformRequest<Tournament>('/api/tournaments', {
     method: 'POST', body: JSON.stringify(commandBody('tournament-create', { tournament, expectedVersion, dryRun })),
   }),
   importLegacy: (tournaments: LegacyTournamentInput[], expectedVersion: number, previewHash?: string, dryRun = true) => platformRequest<TournamentLegacyImport>('/api/tournaments/import-legacy', {
     method: 'POST', body: JSON.stringify(commandBody('tournament-import', { tournaments, expectedVersion, previewHash, dryRun })),
   }),
-  register: (id: string, expectedVersion: number, deckName: string, deckCode: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registrations`, {
-    method: 'POST', body: JSON.stringify(commandBody('tournament-register', { expectedVersion, deckName, deckCode })),
+  register: (id: string, expectedVersion: number) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registrations`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-register', { expectedVersion })),
   }),
   updateRegistration: (id: string, expectedVersion: number, deckName: string, deckCode: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'PUT', body: JSON.stringify(commandBody('tournament-registration', { expectedVersion, deckName, deckCode })),
+  }),
+  preCheckIn: (id: string, expectedVersion: number, deckName: string, deckCode = '', deckId = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/pre-check-in`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-pre-check-in', { expectedVersion, deckName, deckCode, deckId })),
+  }),
+  removeParticipant: (id: string, expectedVersion: number, accountId: string, banRegistration: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/participants/remove`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-participant-remove', { expectedVersion, accountId, banRegistration, reason })),
+  }),
+  setRegistrationBan: (id: string, expectedVersion: number, accountId: string, banned: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration-ban`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-registration-ban', { expectedVersion, accountId, banned, reason })),
+  }),
+  requestOrganizerTransfer: (id: string, expectedVersion: number, accountId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/organizer-transfer`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-organizer-transfer', { expectedVersion, accountId, reason })),
+  }),
+  decideOrganizerTransfer: (id: string, expectedVersion: number, requestId: string, accept: boolean) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/organizer-transfer/decision`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-organizer-transfer-decision', { expectedVersion, requestId, accept, reason: accept ? '接任者确认承接主办职责' : '接任者拒绝交接' })),
   }),
   drop: (id: string, expectedVersion: number) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/registration`, {
     method: 'DELETE', body: JSON.stringify(commandBody('tournament-drop', { expectedVersion })),
@@ -1027,6 +1794,15 @@ export const tournamentApi = {
   }),
   start: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/start`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-start', { expectedVersion, reason })),
+  }),
+  setPhase: (id: string, expectedVersion: number, phase: 'registration-open' | 'registration-closed' | 'pre-check-in' | 'result-confirmation' | 'running', reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/phase`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-phase', { expectedVersion, phase, reason })),
+  }),
+  postpone: (id: string, expectedVersion: number, newStartAt: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/postpone`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-postpone', { expectedVersion, newStartAt, reason })),
+  }),
+  cancel: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-cancel', { expectedVersion, reason })),
   }),
   nextRound: (id: string, expectedVersion: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/rounds`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-round', { expectedVersion, reason })),
@@ -1042,6 +1818,21 @@ export const tournamentApi = {
   }),
   extendMatch: (id: string, matchId: string, expectedVersion: number, minutes: number, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/time-extension`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-extension', { expectedVersion, minutes, reason })),
+  }),
+  pauseMatch: (id: string, matchId: string, expectedVersion: number, paused: boolean, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/pause`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-match-pause', { expectedVersion, paused, reason })),
+  }),
+  createJudgeCase: (id: string, expectedVersion: number, body: { matchId: string; category: string; urgency: string; message: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-case', { expectedVersion, ...body })),
+  }),
+  assignJudgeCase: (id: string, expectedVersion: number, caseId: string, assigneeAccountId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/assign`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-assign', { expectedVersion, caseId, assigneeAccountId, reason })),
+  }),
+  resolveJudgeCase: (id: string, expectedVersion: number, caseId: string, status: string, resolution: string, staffNote = '') => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/resolve`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-resolve', { expectedVersion, caseId, status, resolution, staffNote })),
+  }),
+  appealJudgeCase: (id: string, expectedVersion: number, caseId: string, reason: string) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/judge-cases/appeal`, {
+    method: 'POST', body: JSON.stringify(commandBody('tournament-judge-appeal', { expectedVersion, caseId, reason })),
   }),
   ruleMatch: (id: string, matchId: string, expectedVersion: number, body: { kind: 'result' | 'penalty' | 'no-show'; targetAccountId?: string; decision: string; reason: string }) => platformRequest<Tournament>(`/api/tournaments/${encodeURIComponent(id)}/matches/${encodeURIComponent(matchId)}/rulings`, {
     method: 'POST', body: JSON.stringify(commandBody('tournament-ruling', { expectedVersion, ...body })),
@@ -1059,6 +1850,7 @@ export const tournamentApi = {
 
 export const friendApi = {
   presence: () => platformRequest<PlatformPresence[]>('/api/presence'),
+  overview: () => platformRequest<FriendOverview>('/api/friends/overview'),
   players: (search = '') => platformRequest<PlatformFriend[]>(`/api/players${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   friends: () => platformRequest<PlatformFriend[]>('/api/friends'),
   requests: () => platformRequest<PlatformFriend[]>('/api/friends/requests'),
@@ -1076,11 +1868,100 @@ export const friendApi = {
   unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
 }
 
+export const telemetryApi = {
+  pageView: (path: string) => platformRequest<void>('/api/telemetry/page-view', {
+    method: 'POST', body: JSON.stringify({ path }),
+  }),
+}
+
+/** 玩家自己的异画库存；卡图选择仍由服务端在开局时二次校验。 */
+export const alternateArtApi = {
+  mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
+  gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
+  notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
+  acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
+}
+
+export const deckLibraryApi = {
+  summaries: (query: PublicDeckSummaryQuery = {}) => {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value))
+    return platformRequest<PublicDeckSummaryPage>(`/api/deck-library/summaries${params.size ? `?${params}` : ''}`)
+  },
+  ownReferences: (ids: readonly string[]) => {
+    if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length
+      || ids.some(id => !id || id !== id.trim() || id.length > 64 || /[\x00-\x1f\x7f]/.test(id)))
+      return Promise.reject(new Error('公开牌库引用查询参数无效'))
+    const params = new URLSearchParams()
+    ids.forEach(id => params.append('publicationId', id))
+    return platformRequest<OwnPublicDeckReferences>(`/api/me/public-deck-references?${params}`)
+  },
+}
+
+function publicDeckReadReference(value: string) {
+  if (!value || value !== value.trim() || value.length > 64 || /[\x00-\x1f\x7f]/.test(value))
+    throw new Error('公开牌库读取引用无效')
+  return encodeURIComponent(value)
+}
+
+function publicDeckReadToken(value?: string) {
+  if (value !== undefined && !/^[a-f0-9]{64}$/.test(value)) throw new Error('公开牌库读取代际无效')
+  return value
+}
+
+function publicDeckReadPage(page = 1, pageSize = 30, expectedReadToken?: string) {
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(pageSize) || pageSize < 1 || pageSize > 100)
+    throw new Error('公开牌库分页参数无效')
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  const token = publicDeckReadToken(expectedReadToken)
+  if (token) params.set('expectedReadToken', token)
+  return params
+}
+
+export const publicDeckReadApi = {
+  current: (reference: string, expectedReadToken?: string) => {
+    const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
+    if (token) params.set('expectedReadToken', token)
+    return platformRequest<PublicDeckCurrentRead>(`/api/public-decks/${publicDeckReadReference(reference)}/current${params.size ? `?${params}` : ''}`)
+  },
+  versions: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
+    platformRequest<PublicDeckVersionPage>(`/api/public-decks/${publicDeckReadReference(reference)}/versions?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
+  version: (reference: string, version: number, expectedReadToken?: string) => {
+    if (!Number.isSafeInteger(version) || version < 1) throw new Error('公开牌库版本参数无效')
+    const params = new URLSearchParams(), token = publicDeckReadToken(expectedReadToken)
+    if (token) params.set('expectedReadToken', token)
+    return platformRequest<PublicDeckVersionRead>(`/api/public-decks/${publicDeckReadReference(reference)}/versions/${version}${params.size ? `?${params}` : ''}`)
+  },
+  statistics: (reference: string, page = 1, pageSize = 30, expectedReadToken?: string) =>
+    platformRequest<PublicDeckStatisticsPage>(`/api/public-decks/${publicDeckReadReference(reference)}/statistics?${publicDeckReadPage(page, pageSize, expectedReadToken)}`),
+  updateContent: (reference: string, expectedReadToken: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => {
+    const token = publicDeckReadToken(expectedReadToken)
+    if (!token) throw new Error('保存公开内容必须带有当前读取代际')
+    const params = new URLSearchParams({ expectedReadToken: token })
+    return platformRequest<PublicDeckContentCurrent>(`/api/public-decks/${publicDeckReadReference(reference)}/content/current?${params}`, {
+      method: 'PUT', body: JSON.stringify({ guide, matchups }),
+    })
+  },
+}
+
 export const publicDeckApi = {
-  list: () => platformRequest<PublishedDeck[]>('/api/public-decks'),
+  counter: (id: string, kind: 'view' | 'copy' | 'like') => platformRequest<PublicDeckCounterResult>(
+    `/api/public-decks/${encodeURIComponent(id)}/counters/${kind}`, { method: 'POST' }),
+  list: (query: { sort?: 'copies' | 'likes' | 'views' | 'latest'; seasonCompliant?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    if (query.sort) params.set('sort', query.sort)
+    if (query.seasonCompliant) params.set('seasonCompliant', 'true')
+    const suffix = params.size ? `?${params}` : ''
+    return platformRequest<PublishedDeck[]>(`/api/public-decks${suffix}`)
+  },
+  get: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}`),
   publish: (deck: SavedL12Deck, publicationId?: string) => platformRequest<PublishedDeck>('/api/public-decks', {
     method: 'POST', body: JSON.stringify({ publicationId: publicationId || null, deck }),
   }),
+  updateContent: (id: string, guide: PublicDeckGuide, matchups: PublicDeckMatchup[]) => platformRequest<PublicDeckDetails>(
+    `/api/public-decks/${encodeURIComponent(id)}/content`, {
+      method: 'PUT', body: JSON.stringify({ guide, matchups }),
+    }),
   delete: (id: string) => platformRequest<void>(`/api/public-decks/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   toggleLike: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/like`, { method: 'POST' }),
   recordView: (id: string) => platformRequest<PublishedDeck>(`/api/public-decks/${encodeURIComponent(id)}/view`, { method: 'POST' }),

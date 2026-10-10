@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-ranking-low-sample",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "排行榜低样本胜率展示",
+  "changes": [{
+    "category": "ranking",
+    "text": "主宰榜与对阵一览有对局即显示胜率百分比；少于30场的对阵使用较浅强弱色，30场及以上保留正常颜色。没有对局时显示横线，不显示0%胜率。",
+    "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue", "opcgpro-vue/src/l12/site/MasterMatchupMatrix.vue"]
+  }]
+}

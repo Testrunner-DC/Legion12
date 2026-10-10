@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs'
+import ts from 'typescript'
 
 const read = path => {
   const url = new URL(path, import.meta.url)
@@ -8,6 +9,53 @@ const read = path => {
 const s1 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s1.json'))
 const webS1 = JSON.parse(read('../public/data/l12/cards.s1.json'))
 const webLookup = JSON.parse(read('../public/data/l12/cards.lookup.json'))
+const webS1ById = new Map(webS1.map(card => [card.id, card]))
+const lookupByCardNo = new Map(webLookup.map(card => [card.cardNo, card]))
+const lookupExemptS1Ids = new Set(['S01-00C1', 'S01-01C1', 'S01-02C1', 'S01-03C1', 'S01-03M2', 'S01-04C1'])
+// 读取实际导出的问答数据，防止重新导入历史工作表时恢复已撤回的裁定。
+// 编译后取值不依赖TS接口、换行或export声明的字符串格式。
+const faqModule = ts.transpileModule(read('../src/l12/data/officialFaq.ts'), {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const { QA_ENTRIES } = await import(`data:text/javascript;base64,${Buffer.from(faqModule).toString('base64')}`)
+const damageRulings = QA_ENTRIES.filter(entry => entry.id === 51)
+const damageRuling = damageRulings[0]?.answer ?? ''
+if (damageRulings.length !== 1
+  || !damageRuling.includes('确认总伤害后')
+  || !damageRuling.includes('天灾影响无法被规避')
+  || !damageRuling.includes('仅强攻或仅百鬼夜行加伤，伤害为2')
+  || !damageRuling.includes('强攻和百鬼夜行同时生效，伤害为3')
+  || /最后应用天灾|替换为2→百鬼夜行\+1/.test(damageRuling)) {
+  throw new Error('FAQ51必须保留最新2/2/3裁定，不得恢复已撤回的天灾末位加伤解释')
+}
+// 用户2026-10-03确认：只改奥西里斯首段，三个目录不得同时回退为旧触发式文本。
+const osirisEffect = '我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。\n双人模式：此主宰登场即可获得游戏胜利。\n多人模式：主宰增加2点血量，并将墓地1张【太阳城】军团活跃登场。<陵墓守卫>兵力+1000。'
+if (s1.find(card => card.id === 'S01-02M2')?.effect !== osirisEffect) throw new Error('奥西里斯勘误首段及原有模式后段不一致')
+const osirisProduct = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json')).cards.find(card => card.cardId === 'S01-02M2')
+if (JSON.stringify(osirisProduct?.products) !== JSON.stringify(['第1季|天御', '第1季|天御·再临', '第1季|典藏版', '黄金的理想乡'])) throw new Error('奥西里斯原收录及黄金的理想乡勘误归属不一致')
+const errata = read('../src/l12/data/cardErrata.ts')
+if (!errata.includes("cardId: 'S01-02M2'") || !errata.includes("sourceProduct: '黄金的理想乡'")) throw new Error('奥西里斯勘误记录缺失')
+if (s1.length !== webS1.length) throw new Error('S1服务端与图鉴卡牌数量不一致')
+for (const card of s1) {
+  const webCard = webS1ById.get(card.id)
+  if (!webCard || webCard.effect !== card.effect) {
+    throw new Error(`${card.id}的S1服务端与图鉴卡文不一致`)
+  }
+  if (String(card.effect ?? '').includes('\r')) {
+    throw new Error(`${card.id}的S1卡文必须统一使用LF换行`)
+  }
+  const lookupCard = lookupByCardNo.get(card.id)
+  if (!lookupCard) {
+    if (!lookupExemptS1Ids.has(card.id)) throw new Error(`${card.id}缺少图鉴搜索数据`)
+    continue
+  }
+  if (lookupCard.effectText !== card.effect || !lookupCard.searchText?.includes(card.effect)) {
+    throw new Error(`${card.id}的S1服务端、图鉴详情与搜索卡文不一致`)
+  }
+}
+for (const cardId of lookupExemptS1Ids) {
+  if (lookupByCardNo.has(cardId)) throw new Error(`${cardId}已进入图鉴搜索数据，应移出S1搜索豁免`)
+}
 const huntingMomentText = '将墓地4张卡牌自选顺序返回我方牌库底部，击杀对方1张兵力不高于6000的军团。'
 if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
   || webS1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
@@ -16,8 +64,29 @@ if (s1.find(card => card.id === 'S01-0319')?.effect !== huntingMomentText
   throw new Error('猎杀时刻必须在服务端、图鉴与搜索数据中统一使用已批准的非费用效果文本')
 }
 const s2 = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.s2.json'))
+const tauntCards = [...s1, ...s2].filter(card => String(card.effect ?? '').includes('挑衅'))
+if ([...s1, ...s2].some(card => String(card.effect ?? '').includes('挑畔'))
+  || webLookup.some(card => String(card.effectText ?? '').includes('挑畔') || String(card.searchText ?? '').includes('挑畔'))
+  || tauntCards.some(card => !lookupByCardNo.get(card.id)?.searchText?.includes('挑衅'))
+  || !['S02-0004', 'S02-0007'].every(cardId => lookupByCardNo.get(cardId)?.searchText?.includes('挑衅'))) {
+  throw new Error('挑衅关键词必须在权威卡文、图鉴与组卡搜索中使用统一写法')
+}
+const wukongEffect = '我方 回合1次 可返还2至8士气：将此主宰作为【斗士】军团在我方前排活跃登场，兵力=本次返还的士气数量×1000，在登场回合即可进攻，且在我方回合结束时/进攻后返回主宰区。\n「作为军团」离场时 返回主宰区，若我方士气少于对方，可从士气牌库追加1张休整的士气。'
+if (s2.find(card => card.id === 'S02-01M1')?.effect !== wukongEffect
+  || webLookup.find(card => card.cardNo === 'S02-01M1')?.effectText !== wukongEffect
+  || !webLookup.find(card => card.cardNo === 'S02-01M1')?.searchText?.includes(wukongEffect)) {
+  throw new Error('孙悟空勘误文本必须在服务端、图鉴与搜索数据中逐字一致')
+}
 const st = JSON.parse(read('../../服务端WebSocket/TwelveLegions/Data/cards.st.json'))
 const webSt = JSON.parse(read('../public/data/l12/cards.st.json'))
+const aeneas = st.find(card => card.id === 'ST05-01')
+const webAeneas = webSt.find(card => card.id === 'ST05-01')
+if (aeneas?.troops !== 6000
+  || !aeneas.effect.startsWith('晋升 消耗并翻转2神力，')
+  || !aeneas.atomicReference.includes('晋升 消耗并翻转2神力，')
+  || JSON.stringify(aeneas) !== JSON.stringify(webAeneas)) {
+  throw new Error('ST05-01 的 6000 兵力、2 神力晋升及前后端卡库必须一致')
+}
 const angusEffect = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'
 if (st.find(card => card.id === 'ST04-M1')?.hp !== 8
   || webSt.find(card => card.id === 'ST04-M1')?.hp !== 8
@@ -34,7 +103,7 @@ const cardAssets = read('../src/l12/cardAssets.ts')
 const cardImage = read('../src/l12/CardImage.vue')
 const cardPresentation = read('../src/l12/cardPresentation.ts')
 const specialAssets = read('../src/l12/specialAssets.ts')
-const gameBoard = read('../src/l12/game/GameBoard.vue')
+const gameBoard = `${read('../src/l12/game/GameBoard.vue')}\n${read('../src/l12/game/GameBoard.mobile.css')}`
 const serviceWorker = read('../public/sw.js')
 const generator = read('./build-l12-card-cdn.mjs')
 const auditor = read('./audit-l12-card-cdn.mjs')
@@ -52,9 +121,9 @@ const consumers = [
   '../src/l12/game/PlayerMat.vue',
   '../src/l12/game/PromptOverlay.vue',
   '../src/l12/game/GmPanel.vue',
-  '../src/l12/game/SandboxCardPicker.vue',
+  '../src/l12/SingleCardPicker.vue',
   '../src/l12/game/MasterOverlay.vue',
-  '../src/l12/site/AdminPage.vue',
+  '../src/l12/site/AdminEffectsPage.vue',
   '../src/l12/site/DeckConstructionBrowser.vue',
 ]
 const consumerSource = consumers.map(read).join('\n')
@@ -63,12 +132,13 @@ const styledCardImageConsumers = [
   '../src/style.css',
   '../src/l12/L12DeckEditor.vue',
   '../src/l12/game/GameBoard.vue',
+  '../src/l12/game/GameBoard.mobile.css',
   '../src/l12/game/GmPanel.vue',
   '../src/l12/game/MasterOverlay.vue',
   '../src/l12/game/PlayerMat.vue',
   '../src/l12/game/PromptOverlay.vue',
-  '../src/l12/game/SandboxCardPicker.vue',
-  '../src/l12/site/AdminPage.vue',
+  '../src/l12/SingleCardPicker.vue',
+  '../src/l12/site/AdminEffectsPage.vue',
   '../src/l12/site/DeckLibraryPage.vue',
 ]
 const disasterRoundIds = [
@@ -97,13 +167,16 @@ const contracts = [
   [s1.length === 133 && s2.length === 115 && st.length === 76 && cards.length === 324 && ids.size === 324, 'S01/S02/ST 必须保持 133+115+76=324 张唯一卡号'],
   [cardAssets.includes('card-assets.manifest.json') && cardAssets.includes('resolveCardAsset') && !cardAssets.includes("kind: 'legacy'") && !cardAssets.includes("{ kind: 'legacy'"), '必须按逻辑卡号解析完整内容寻址图库，且不得重新请求已退役的 /cards 旧卡图'],
   [cardAssets.includes('missingEntryRefreshAfter') && cardAssets.includes('loadCardAssetManifest(true)') && cardAssets.includes("cache: force ? 'reload' : 'no-cache'") && cardAssets.includes('if (manifestPromise)'), '已加载旧清单但缺少新卡号时必须共享一次强制刷新，避免旧页面永久显示占位图或并发重复请求'],
+  [cardAssets.includes("CARD_IMAGE_PLACEHOLDER = deploymentPath('/assets/l12/card-back-official.png')")
+    && !cardAssets.includes('CARD IMAGE') && !cardAssets.includes('data:image/svg+xml'), '缺图与隐藏卡的唯一降级图必须是主牌库官方卡背，不得向玩家显示 XII/CARD IMAGE 诊断占位图'],
   [cardAssets.includes('explicitCdnBaseUrl') && cardAssets.includes('manifestCdnBaseUrl') && cardAssets.indexOf("sourceFor('sameOrigin'") < cardAssets.indexOf("!explicitCdnBaseUrl && manifestCdnBaseUrl") && cardAssets.includes('placeholder'), '未显式启用 CDN 时必须优先使用同源优化资源，清单 CDN 仅作后备'],
   [cardImage.includes('<picture') && cardAssets.includes('detailAvif') && cardAssets.includes('thumbWebp') && cardAssets.includes('boardWebp'), '公共卡图组件必须支持 240/480/960 WebP 与详情 AVIF'],
-  [cardImage.includes("props.intent === 'thumb' && resolved.value.orientation === 'landscape'") && cardImage.includes("'landscape-thumbnail-image': landscapeThumbnail") && cardImage.includes(":data-orientation=\"resolved.orientation || 'unknown'\"") && cardImage.includes('rotate(90deg)'), '横版资源必须由公共卡图组件按清单方向仅在缩略图顺时针旋转，详情保持原始横向'],
+  [cardImage.includes("resolved.value.orientation === 'landscape'") && cardImage.includes("'l12-card-image--landscape': landscapeImage") && cardImage.includes(":data-orientation=\"resolved.orientation || 'unknown'\"") && !cardImage.includes('rotate(90deg)'), '横版资源必须由公共卡图组件按清单方向保持自然横向，缩略图与详情不得各自旋转'],
+  [!read('../src/l12/site/DeckConstructionBrowser.vue').includes('rotate(') && !read('../src/l12/site/DeckConstructionBrowser.vue').includes('isHorizontalCardType') && !read('../src/l12/site/DeckLibraryPage.vue').includes('landscape-thumbnail'), '公开牌库构筑不得再按卡牌类型自设横向比例或保留页面级旋转回退，横卡方向只以公共 CardImage 资源清单为准'],
   [[['ST06-S1', 'trial'], ['ST-DS01', 'destruction'], ['ST-DS02', 'destruction'], ['ST-DS03', 'destruction']].every(([id, type]) => st.some(card => card.id === id && card.cardType === type)) && cardPresentation.includes("'destruction'") && cardPresentation.includes("'trial'"), '四张 ST 横版卡必须进入统一横卡类型规则'],
   [cardImage.includes(":loading=\"eager ? 'eager' : 'lazy'\"") && cardImage.includes('decoding="async"') && cardImage.includes('@error'), '公共卡图组件必须懒加载、异步解码并处理失败降级'],
   [cardImage.includes('failedUrl') && cardImage.includes('activeUrls.includes(failedUrl)') && !cardImage.includes('type="image/webp" :srcset="imageUrl"'), '失败降级必须忽略旧图片节点的迟到事件，且不得用重复 WebP source 跳过同源候选'],
-  [cardAssets.includes('peekCardAsset') && cardImage.includes('resolutionComplete') && cardImage.includes('v-if="imageReady"') && cardImage.includes('l12-card-image__resolving'), 'manifest 已缓存时必须同步使用真实卡图；未解析时只保留稳定暗色框，不得先闪现 XII 占位图'],
+  [cardAssets.includes('peekCardAsset') && cardImage.includes('resolutionComplete') && cardImage.includes('v-if="imageReady"') && cardImage.includes('l12-card-image__resolving'), 'manifest 已缓存时必须同步使用真实卡图；未解析时只保留稳定暗色框，不得先闪现卡背'],
   [consumers.every(path => read(path).includes('CardImage')), '全部 L12 卡图消费入口必须迁移到公共 CardImage'],
   [styledCardImageConsumers.every(path => read(path).includes('.l12-card-image')), '迁移后的 scoped/global 尺寸、横卡旋转与状态滤镜必须命中 CardImage 根节点'],
   [!read('../src/l12/L12DeckEditor.vue').includes('<span v-else>XII</span>'), '牌库编辑器迁移 CardImage 后不得残留失去相邻 v-if 的旧图片兜底分支'],
@@ -114,19 +187,19 @@ const contracts = [
   [gameBoard.includes('disasterRoundUrl(card.cardId, card.imageUrl)') && gameBoard.includes('destructionRoundBackUrl') && gameBoard.includes('intent="detail"'), '本局天灾圆形序列必须使用专用圆图，未知卡使用圆形卡背，详情仍使用高清完整卡面'],
   [read('../src/l12/site/deckShare.ts').includes('resolveCardAssetUrls') && read('../src/l12/site/deckShare.ts').includes('for (const url of candidates)'), 'Canvas 牌库图必须逐个尝试 resolver 候选且单图失败可回落'],
   [serviceWorker.includes("caches.delete('l12-images-v1')") && !serviceWorker.includes("request.destination !== 'image'"), '旧广域图片 Service Worker 必须退役并只清理自身缓存'],
-  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedPlayableCardCount = 324') && generator.includes('expectedPresentationCardCount = 38'), '生成器必须默认同源内容寻址路径并严格区分324张可玩卡与38张展示版本'],
-  [productInclusions.cards?.length === 355 && new Set(productInclusions.cards.map(card => card.cardId)).size === 355 && productInclusions.products?.length === 13, '收录产品目录必须保持355个唯一实体编号和13项产品'],
+  [generator.includes("baseUrl = (args.get('--base-url') || '/card-assets'") && generator.includes('expectedPlayableCardCount = 324') && generator.includes('expectedPresentationCardCount = 42'), '生成器必须默认同源内容寻址路径并严格区分324张可玩卡与42张展示版本'],
+  [productInclusions.cards?.length === 359 && new Set(productInclusions.cards.map(card => card.cardId)).size === 359 && productInclusions.products?.length === 14 && new Set(productInclusions.products).size === 14 && productInclusions.products.includes('黄金的理想乡'), '收录产品目录必须保持359个唯一实体编号及含黄金的理想乡的14项唯一产品'],
   [productInclusions.cards.find(card => card.cardId === 'S01-0002')?.products.includes('第2季|伟大试炼'), '佣兵部队必须收录于第2季|伟大试炼'],
   [starterMoraleVersions.every(([id, product]) => productInclusions.cards.find(card => card.cardId === id)?.products.includes(product)), '六张st后缀士气必须分别映射到对应阵营预组，且不改写无后缀默认士气'],
   [starterMoraleVersions.every(([id]) => !productInclusions.cards.some(card => card.cardId === id.slice(0, -2))), '六张st后缀预组士气必须与无st后缀的默认士气保持独立实体编号'],
   [starterMoraleVersions.every(([id, , baseCardId]) => baseCardId === id.slice(0, -2) && ids.has(baseCardId)), '六张st后缀展示卡必须以去掉st后的ST士气为直接异画基底'],
-  [archiveAssets.cards?.length === 38 && archiveAssets.cards.every(card => ids.has(card.baseCardId)), '38张卡查展示版本必须全部指向现有可玩规则基底'],
+  [archiveAssets.cards?.length === 42 && archiveAssets.cards.every(card => ids.has(card.baseCardId)), '42张卡查展示版本必须全部指向现有可玩规则基底'],
   [newlyCompletedPresentationVersions.every(([id, baseCardId]) => archiveAssets.cards.some(card => card.id === id && card.baseCardId === baseCardId)), '新增典藏与预组士气展示版本必须使用正确规则基底'],
   [decks.includes('archiveBaseCardId?: string') && decks.includes('archiveBaseCardId: asset.baseCardId') && archiveVersions.includes("moraleVersionIdentity.get(card.archiveBaseCardId ?? '')"), '卡查必须按展示版本的直接基底归并异画，不得把st版本渲染为独立逻辑卡'],
   [generator.includes("card.presentationOnly ? 'presentation' : 'playable'") && generator.includes("card.baseCardId || ''") && auditor.includes('entry.baseCardId !== presentationDefinition.baseCardId') && auditor.includes("entry.presentationOnly ? 'presentation' : 'playable'") && auditor.includes("entry.baseCardId || ''"), '卡图资源版本与审计必须包含展示身份和baseCardId，禁止映射变化时复用旧manifest'],
   [serverDeploy.includes("card.presentationOnly ? 'presentation' : 'playable'") && serverDeploy.includes("card.baseCardId || ''") && serverDeploy.includes('presentationCount !== manifest.presentationCardCount') && serverDeploy.includes('playableCount !== manifest.playableCardCount'), '服务器资源校验必须与生成器同源聚合展示身份和baseCardId，并复核可玩/展示数量'],
   [windowsDeploy.includes("PSObject.Properties['cardAssetsHash']") && windowsDeploy.includes("PSObject.Properties['cardAssetsArchive']") && windowsDeploy.includes("PSObject.Properties['cardAssetsSha256']") && windowsDeploy.includes('拒绝退回旧卡图链路'), '发布清单必须显式包含完整优化卡图，禁止退回旧 imageUrl 链路'],
-  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 362'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
+  [windowsDeploy.includes('cardAssetsHash') && serverDeploy.includes('static_card_assets_dir') && serverDeploy.includes('validate_card_assets_tree') && serverDeploy.includes('manifest.cardCount !== 366'), '发布流程必须独立校验并复用完整的内容寻址优化卡图包'],
   [serverDeploy.includes('mv -Tn "$stage_card_assets_dir" "$card_assets_target"') && serverDeploy.includes('[[ -d "$card_assets_target" && ! -L "$card_assets_target" && ! -e "$stage_card_assets_dir" ]]') && serverDeploy.includes('dist/card-assets') && serverDeploy.includes('nginx -T'), '服务端必须在验证完成后以拒绝覆盖的原子移动发布优化资产、核验最终目录，并仅在 Nginx 缓存片段已接入时切换'],
   [serverDeploy.includes("(?:S\\d{2}|ST\\d{2}|ST)-[A-Za-z0-9]+") && !serverDeploy.includes("(?:S\\d{2}|ST\\d{2}|ST)-[A-Z0-9]+"), '服务器发布校验必须接受清单中的小写异画后缀，且继续拒绝路径字符'],
   [!existsSync(new URL('../public/cards', import.meta.url)) && !windowsDeploy.includes('opcgpro-vue/public/cards') && serverDeploy.includes('旧版 /cards 卡图链路已退役') && !serverDeploy.includes('ln -s "$cards_target"'), '仓库与发布流程必须彻底退役 public/cards 旧卡图副本，仅保留内容寻址优化图库'],

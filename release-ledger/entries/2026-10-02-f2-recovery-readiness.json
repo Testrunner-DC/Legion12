@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-02-f2-recovery-readiness",
+  "date": "2026-10-02",
+  "audience": "internal",
+  "reason": "私人牌库对象写启用前的隔离恢复核验、同版本默认关闭回退及丢响应重试验收；内部开关仍关闭，无生产启用配置，恢复副本只读验证不修复源库。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.StorageRecoveryValidation.cs"]
+}

@@ -38,7 +38,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "萧何：是否返还1张士气，使手牌中的〈韩信〉活跃登场？",
                         Modes(canUse)),
                     StarterStep("target-morale", "returnCost", "萧何：选择要返还的1张士气",
-                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use"),
+                        player.Morale.Select(card => card.InstanceId), requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("hand-card", "entryCard", "萧何：选择手牌中的1张〈韩信〉",
                         hanXin, requiredChoice: "mode:use"),
                     StarterStep("unused-slot", "entrySlot", "萧何：选择〈韩信〉活跃登场的位置",
@@ -56,7 +56,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "胡夫：是否弃置我方1张〈陵墓守卫〉，使对方1张军团本回合兵力-4000？",
                         Modes(canUse)),
                     StarterStep("field-legion", "discardCost", "胡夫：选择要弃置的1张〈陵墓守卫〉",
-                        guards, requiredChoice: "mode:use"),
+                        guards, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("field-legion", "enemyTarget", "胡夫：选择本回合兵力-4000的对方军团",
                         enemy, requiredChoice: "mode:use"),
                 ];
@@ -88,7 +88,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "乔泽：是否弃置我方战场上1张军团，使对方1张军团本回合兵力-2000？",
                         Modes(canUse)),
                     StarterStep("field-legion", "discardCost", "乔泽：选择要弃置的我方军团",
-                        costs, requiredChoice: "mode:use"),
+                        costs, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("field-legion", "enemyTarget", "乔泽：选择本回合兵力-2000的对方军团",
                         enemy, requiredChoice: "mode:use"),
                 ];
@@ -106,7 +106,7 @@ public sealed partial class L12GameEngine
                     StarterStep("option", "mode", "弗蕾迪斯：是否弃置1张手牌，将墓地1张【阿斯加德】军团加入手牌？",
                         Modes(canUse)),
                     StarterStep("hand-card", "discardCost", "弗蕾迪斯：选择要弃置的1张手牌",
-                        costs, requiredChoice: "mode:use"),
+                        costs, requiredChoice: "mode:use", isCostSelection: true),
                     StarterStep("grave-card", "recoverTarget", "弗蕾迪斯：选择要加入手牌的【阿斯加德】军团",
                         recover, requiredChoice: "mode:use"),
                 ];
@@ -130,27 +130,6 @@ public sealed partial class L12GameEngine
                         entries, requiredChoice: "mode:use"),
                     StarterStep("unused-slot", "entrySlot", "珀涅罗珀：选择该军团活跃登场的位置",
                         slots, requiredChoice: "mode:use"),
-                ];
-                break;
-            }
-            case "antinous-ready":
-            {
-                if (!player.HandDiscardedByMasterThisTurn)
-                {
-                    RemoveUnstackedTriggerCandidate(candidate,
-                        "〈安提诺乌斯〉登场前，本回合尚未因主宰弃置过手牌");
-                    return true;
-                }
-                candidate.Data["starterConditionLocked"] = "true";
-                var restedOlympus = PublicLegions(player)
-                    .Where(card => card.Tapped && L12StructuredCardRules.HasFaction(player, card, "olympus"))
-                    .Select(card => card.InstanceId).ToList();
-                steps =
-                [
-                    StarterStep("option", "mode", "安提诺乌斯：是否将我方1张休整的【奥林匹斯】军团转为活跃？",
-                        Modes(restedOlympus.Count > 0)),
-                    StarterStep("field-legion", "readyTarget", "安提诺乌斯：选择要转为活跃的【奥林匹斯】军团",
-                        restedOlympus, requiredChoice: "mode:use"),
                 ];
                 break;
             }
@@ -188,7 +167,7 @@ public sealed partial class L12GameEngine
                     StarterSelectionStep("field-legion", "enemyTarget",
                         "莫德雷德：选择对方1张兵力不高于2000的军团击杀",
                         killTargets, required, 1, targetPlayerIndex: opponent.PlayerIndex,
-                        autoSelectWhenExact: true),
+                        autoSelectWhenExact: killTargets.Count == 0),
                 ];
                 break;
             }
@@ -217,7 +196,7 @@ public sealed partial class L12GameEngine
     }
 
     private static L12ActivationSelectionStep StarterStep(string kind, string key, string text,
-        IEnumerable<string> choices, string? requiredChoice = null) => new()
+        IEnumerable<string> choices, string? requiredChoice = null, bool isCostSelection = false) => new()
     {
         Kind = kind,
         DeclarationKey = key,
@@ -227,6 +206,9 @@ public sealed partial class L12GameEngine
         MaxChoose = 1,
         CancellationPolicy = L12ActivationCancellationPolicy.WhenNoExplicitDecline,
         RequiredDeclaredChoice = requiredChoice,
+        IsCostSelection = isCostSelection,
+        IsResponsePresentationTarget = !isCostSelection
+            && kind is ("field-legion" or "enemy-legion" or "field-card"),
         ChoiceLabels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             ["mode:none"] = "不发动",
@@ -248,6 +230,7 @@ public sealed partial class L12GameEngine
         TargetPlayerIndex = targetPlayerIndex,
         AutoSelectWhenExact = autoSelectWhenExact,
         RequiredDeclaredChoice = requiredChoice,
+        IsResponsePresentationTarget = kind is "field-legion" or "enemy-legion" or "field-card",
         CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed,
         ChoiceLabels = labels ?? [],
     };
@@ -263,7 +246,7 @@ public sealed partial class L12GameEngine
 
         var mode = activation.DeclaredValues.GetValueOrDefault("mode", []).SingleOrDefault();
         var isOptionalActivation = plan is "xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
-            or "george-debuff" or "freydis-recover" or "penelope-summon" or "antinous-ready";
+            or "george-debuff" or "freydis-recover" or "penelope-summon";
         if (isOptionalActivation && mode != "mode:use")
         {
             CleanupPublicTriggerReservation(candidate);
@@ -340,14 +323,6 @@ public sealed partial class L12GameEngine
                     error = "珀涅罗珀选择的神力、手牌军团或登场位置已失效；未支付神力且效果未入栈";
                 break;
             }
-            case "antinous-ready":
-                if (candidate.Data.GetValueOrDefault("starterConditionLocked") != "true"
-                    || FindOnField(player,
-                        activation.DeclaredValues.GetValueOrDefault("readyTarget", []).SingleOrDefault(), out _, out _)
-                        is not { Tapped: true } readyTarget
-                    || !L12StructuredCardRules.HasFaction(player, readyTarget, "olympus"))
-                    error = "安提诺乌斯选择的休整【奥林匹斯】军团已失效；效果未入栈";
-                break;
             case "elizabeth-lock-morale":
             {
                 var moraleTargets = activation.DeclaredValues.GetValueOrDefault("moraleTargets", []);
@@ -431,7 +406,7 @@ public sealed partial class L12GameEngine
         var flow = item.Data.GetValueOrDefault("atomicFlow");
         if (flow is not ("xiaohe-summon" or "khufu-debuff" or "snake-charmer-summon"
             or "george-debuff" or "freydis-recover" or "penelope-summon" or "khufu-counter-protection"
-            or "antinous-ready" or "elizabeth-derived-cost" or "elizabeth-lock-morale"
+            or "elizabeth-derived-cost" or "elizabeth-lock-morale"
             or "mordred-enter-choice" or "mordred-death-kill" or "boudica-immortal"))
             return false;
 
@@ -447,7 +422,7 @@ public sealed partial class L12GameEngine
             case "snake-charmer-summon":
             case "penelope-summon":
                 _ = TrySummonFromAnyPrivateZone(player, item.Controller, One("entryCard") ?? string.Empty,
-                    One("entrySlot") ?? string.Empty, tapped: false);
+                    One("entrySlot") ?? string.Empty, tapped: false, presentationOwner: item);
                 break;
             case "khufu-debuff":
             case "george-debuff":
@@ -457,8 +432,8 @@ public sealed partial class L12GameEngine
                     AddTimedModifier(enemy, delta, 0, State.TurnSerial, item.SourceName);
                     AddEvent("effect", item.Controller, $"〈{enemy.Name}〉本回合兵力{delta}", enemy);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    $"〈{item.SourceName}〉选择的对方军团已离场，本次兵力变化未生效");
+                else RecordTargetSettlementFailure(item, One("enemyTarget"),
+                    $"〈{item.SourceName}〉选择的对方军团已离场或不再符合条件，本次兵力变化未生效");
                 break;
             case "freydis-recover":
             {
@@ -473,19 +448,8 @@ public sealed partial class L12GameEngine
                         $"弗蕾迪斯展示〈{recover.Name}〉并将其加入手牌",
                         "ST03-03", "grave-hit");
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "弗蕾迪斯选择的墓地军团已离开墓地，本次回收未生效");
-                break;
-            }
-            case "antinous-ready":
-            {
-                var target = FindOnField(player, One("readyTarget"), out _, out _);
-                var source = FindOnField(player, item.SourceInstanceId, out _, out _)
-                    ?? item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
-                if (target is { Tapped: true } && L12StructuredCardRules.HasFaction(player, target, "olympus"))
-                    ReadyCardByEffect(item.Controller, source, target, $"{target.Name}因安提诺乌斯效果转为活跃");
-                else AddEvent("effect-cancelled", item.Controller,
-                    "安提诺乌斯选择的军团已不再是休整的【奥林匹斯】军团，本次转为活跃未生效");
+                else RecordTargetSettlementFailure(item, One("recoverTarget"),
+                    "弗蕾迪斯选择的墓地军团已离开墓地或不再符合回收条件，本次回收未生效");
                 break;
             }
             case "elizabeth-derived-cost":
@@ -493,19 +457,23 @@ public sealed partial class L12GameEngine
             case "elizabeth-lock-morale":
             {
                 var opponent = State.Players[1 - item.Controller];
-                foreach (var targetId in Many("moraleTargets"))
+                var declared = Many("moraleTargets");
+                var resolved = 0;
+                foreach (var targetId in declared)
                 {
                     var morale = opponent.Morale.FirstOrDefault(card => card.InstanceId == targetId && card.Tapped);
-                    if (morale is null)
-                    {
-                        AddEvent("effect-cancelled", item.Controller,
-                            "伊丽莎白一世选择的士气已不再休整，本次限制未生效");
-                        continue;
-                    }
+                    if (morale is null) continue;
                     morale.CannotUntapUntilRound = Math.Max(morale.CannotUntapUntilRound, State.Round + 1);
                     AddEvent("effect", item.Controller,
                         "所选士气下个重置阶段无法转为活跃");
+                    resolved++;
                 }
+                if (resolved == 0 && declared.Length > 0)
+                    RecordTargetSettlementFailure(item, string.Join('|', declared),
+                        "伊丽莎白一世选择的士气已不再休整，本次限制未生效");
+                else if (resolved < declared.Length)
+                    AddEvent("effect", item.Controller,
+                        $"〈{item.SourceName}〉有{declared.Length - resolved}张已声明士气在逆结算后失效；其余对象继续结算");
                 break;
             }
             case "mordred-enter-choice":
@@ -529,9 +497,9 @@ public sealed partial class L12GameEngine
                 if (targetId is not null && DeclaredEnemyTarget(item.Controller, targetId,
                         card => card.Troops <= 2000) is not null)
                     KillTarget(item, targetId, "被莫德雷德阵亡时效果击杀");
-                else if (targetId is not null)
-                    AddEvent("effect-cancelled", item.Controller,
-                        "莫德雷德选择的军团兵力已高于2000或已离场，本次击杀未生效");
+                else
+                    RecordTargetSettlementFailure(item, targetId,
+                        "莫德雷德选择的军团兵力已高于2000、已离场或不再是军团，本次击杀未生效");
                 break;
             }
             case "boudica-immortal":
@@ -543,8 +511,8 @@ public sealed partial class L12GameEngine
                     AddEvent("effect", item.Controller,
                         $"〈{target.Name}〉直到下个我方回合开始前获得一次免死", target);
                 }
-                else AddEvent("effect-cancelled", item.Controller,
-                    "布狄卡选择的【彼界】军团已离场，本次免死未生效");
+                else RecordTargetSettlementFailure(item, One("immortalTarget"),
+                    "布狄卡选择的【彼界】军团已离场或不再符合条件，本次免死未生效");
                 break;
             }
         }

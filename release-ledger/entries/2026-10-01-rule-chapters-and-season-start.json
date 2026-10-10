@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-01-rule-chapters-and-season-start",
+  "date": "2026-10-01",
+  "audience": "players",
+  "title": "规则手册与新赛季",
+  "changes": [
+    {
+      "category": "rules",
+      "text": "规则手册左侧新增按章节生成的目录，可直接跳到对应章节；规则正文中的示意图会按屏幕宽度完整显示。",
+      "paths": [
+        "opcgpro-vue/src/l12/data/ruleCenterData.ts",
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    },
+    {
+      "category": "ranking",
+      "text": "新赛季从北京时间10月2日00:00开始计算；此前过渡期排位成绩作废，段位与七曜值重置，隐藏匹配分保留。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+        "服务端WebSocket/TwelveLegions/L12RankedIntegrity.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs"
+      ]
+    }
+  ]
+}

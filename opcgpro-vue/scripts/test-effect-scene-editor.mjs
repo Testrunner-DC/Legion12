@@ -73,7 +73,7 @@ const ability = {
   text: '打出时 依次处理三个段落，并根据公开选择进入对应分支。', trigger: 'play',
   atoms: [], migrationStatus: 'verified', hasLegacyFallback: false,
   mappingSource: 'fixture', confidence: 1, executionModel: 'fixture-only',
-  reviewStatus: 'confirmed', reviewSource: 'fixture', presentations: scenes,
+  reviewStatus: 'confirmed', reviewSource: 'fixture', structureHash: 'fixture-structure-hash-1', presentations: scenes,
 }
 const genericOnlyAbility = {
   ...ability, abilityId: 'QA-0001:ability:2', sequence: 2,
@@ -108,6 +108,27 @@ l12State.status = 'offline'
 adminApi.effects = async () => ({ items: [structuredClone(fixture)], total: 1, page: 1, pageSize: 50, coverage })
 adminApi.effectAtoms = async () => []
 adminApi.effect = async () => structuredClone(fixture)
+adminApi.effectWorkbenchStyles = async () => [
+  { id: 'standard', name: '标准强调', description: '标准能力呈现', applicableScenes: '按钮、弹框、日志、回放', legendTitle: '标准强调', legendBody: '卡名\n能力文本', legendTone: 'cyan', desktopPreview: '居中卡牌 + 右侧文本', mobilePreview: '紧凑卡牌 + 下方文本' },
+  { id: 'reveal', name: '卡面展示', description: '公开卡牌呈现', applicableScenes: '卡面动画、公开弹框', legendTitle: '卡面展示', legendBody: '公开〈卡牌名称〉', legendTone: 'gold', desktopPreview: '完整卡图 + 说明栏', mobilePreview: '缩略卡图 + 两行说明' },
+]
+const workbenchDraft = {
+  effectText: fixture.effectText, baseProduct: 'QA', includedProducts: ['QA'], effectiveScope: 'new-matches',
+  styleId: 'standard', publicLevel: 'public', errata: [],
+  abilities: [ability, genericOnlyAbility].map(item => ({ abilityId: item.abilityId, structureHash: item.structureHash, trigger: item.trigger, optional: false, costText: '', resolutionText: item.text, responseBoundary: '不创建额外响应窗口', targetSummary: '无显式目标', branchSummary: '公开测试分支' })),
+  scenes: scenes.map(item => ({ sceneId: item.sceneId, text: item.effectiveText, styleId: 'standard', publicLevel: 'public' })),
+}
+const workbenchResult = () => ({
+  cardId: fixture.cardId, cardName: fixture.name, version: 1, status: 'validated', sourceStructureHash: 'fixture-card-hash',
+  draft: structuredClone(workbenchDraft), validation: { valid: true, requiresDevelopment: false, errors: [], warnings: [] },
+  previews: ['archive','button','dialog','animation','log','replay'].map(channel => ({ channel, label: channel, text: fixture.effectText, publicLevel: 'public', styleId: 'standard' })), history: [],
+})
+adminApi.effectWorkbench = async () => workbenchResult()
+adminApi.saveEffectWorkbench = async () => workbenchResult()
+adminApi.validateEffectWorkbench = async () => workbenchResult()
+adminApi.reviewEffectWorkbench = async () => workbenchResult()
+adminApi.publishEffectWorkbench = async () => workbenchResult()
+adminApi.rollbackEffectWorkbench = async () => workbenchResult()
 adminApi.saveEffectPresentation = async (cardId, sceneId, text) => {
   window.__effectSceneSaveCalls.push({ cardId, sceneId, text })
   const scene = scenes.find(item => item.sceneId === sceneId)
@@ -166,9 +187,17 @@ try {
     await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1'
       ? route.continue() : route.abort())
     await page.goto(`http://127.0.0.1:${address.port}/__effect_scene_editor__`)
-    await page.getByRole('button', { name: /卡效原子化/ }).click()
+    if (viewport.width <= 850) await page.getByLabel('选择后台模块').selectOption('effects')
+    else await page.getByRole('button', { name: /卡效统一工作台/ }).click()
     await page.getByRole('button', { name: /QA-0001/ }).click()
+    await page.locator('[data-ui-contract="effect-workbench"]').waitFor()
     await page.locator('[data-ui-contract="effect-presentation-editor"]').first().waitFor()
+
+    assert.equal(await page.locator('[data-ui-contract="effect-workbench-preview"] article').count(), 6)
+    assert.equal(await page.getByText('草稿', { exact: false }).count() > 0, true)
+    assert.equal(await page.getByText('结构校验', { exact: false }).count() > 0, true)
+    assert.equal(await page.getByText('场景预演', { exact: false }).count() > 0, true)
+    assert.equal(await page.getByText('人工复核', { exact: false }).count() > 0, true)
 
     assert.equal(await page.locator('.presentation-scene').count(), 8)
     assert.equal(await page.locator('[data-ui-contract="effect-presentation-branch"]').count(), 3)
@@ -178,8 +207,8 @@ try {
     assert.equal(await page.getByText('第 2/3 段', { exact: true }).count(), 1)
     assert.equal(await page.getByText('第 3/3 段', { exact: true }).count(), 1)
 
-    assert.equal(await page.getByText('旧通用场景', { exact: true }).count(), 0)
-    assert.equal(await page.getByText('仅整体效果', { exact: true }).count(), 1)
+    assert.equal(await page.locator('[data-ui-contract="effect-presentation-editor"]').getByText('旧通用场景', { exact: true }).count(), 0)
+    assert.equal(await page.locator('[data-ui-contract="effect-presentation-editor"]').getByText('仅整体效果', { exact: true }).count(), 1)
     const nullableOldScene = page.locator('.presentation-scene').first()
     assert.equal(await nullableOldScene.locator('[data-ui-contract="effect-presentation-segment"]').count(), 0)
     assert.equal(await nullableOldScene.locator('[data-ui-contract="effect-presentation-branch"]').count(), 0)

@@ -6,9 +6,19 @@ public sealed partial class L12GameEngine
     {
         var program = L12VerifiedAtomicPrograms.Find(item.SourceCardId, item.Trigger);
         if (program is null) return false;
-        var source = FindSource(item);
+        var simpleSelfBuff = L12SimpleSelfTroopBuffTriggerEffects.Find(item.SourceCardId, item.Trigger);
+        var source = simpleSelfBuff is null
+            ? FindSource(item)
+            : FindOnField(State.Players[item.Controller], item.SourceInstanceId, out _, out _);
         if (source is null)
         {
+            if (simpleSelfBuff is not null)
+            {
+                item.Data["effectResultStatus"] = "failed";
+                AddEvent("effect-failed", item.Controller,
+                    $"〈{simpleSelfBuff.Name}〉已离开战场；兵力增加未生效",
+                    item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId));
+            }
             FinishStackItem(item);
             return true;
         }
@@ -19,6 +29,10 @@ public sealed partial class L12GameEngine
         {
             var atom = program.Atoms[atomIndex];
             item.Step = atomIndex + 1;
+            // 细原子程序保留真实 Cost 供卡文、响应弹框、审计和回放读取；
+            // prepaid 标记表示费用已由入栈前的权威声明事务支付，结算不得重复执行。
+            if (atom.Stage == "cost" && atom.Parameters.GetValueOrDefault("prepaid") == "true")
+                continue;
             switch (atom.Kind)
             {
                 case L12AtomKinds.Trigger:
@@ -28,6 +42,10 @@ public sealed partial class L12GameEngine
                         && !CheckVerifiedAtomicCondition(atom.Parameters.GetValueOrDefault("expression"), item.Data,
                             source, controller, opponent))
                     {
+                        if (atom.Parameters.GetValueOrDefault("failureResult") == "failed")
+                            RecordTargetSettlementFailure(item, source.InstanceId,
+                                atom.Parameters.GetValueOrDefault("failureReason")
+                                ?? $"〈{source.Name}〉的结算条件已失效");
                         FinishStackItem(item);
                         return true;
                     }
@@ -97,13 +115,35 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source, controller.SpecialZones.Runes - before);
                     break;
                 }
+                case L12AtomKinds.FlipMorale:
+                {
+                    var targetId = PublicTriggerDeclared(item, "moraleTarget");
+                    var target = controller.Morale.FirstOrDefault(card =>
+                        card.InstanceId == targetId && CanFlipMoraleToGodPower(card));
+                    if (target is null)
+                    {
+                        RecordTargetSettlementFailure(item, source.InstanceId,
+                            $"〈{source.Name}〉声明的士气目标在结算时已失效");
+                        FinishStackItem(item);
+                        return true;
+                    }
+                    L12S2ZoneOps.FlipMoraleFace(controller, _catalog.MoraleIdentities,
+                        target.InstanceId, toGodPower: true);
+                    EmitVerifiedAtomicEvent(atom, item.Controller, source, 1);
+                    break;
+                }
                 case L12AtomKinds.AdvanceTrial:
                     AdvanceTrial(item.Controller, AtomicInt(atom, "amount"), source);
                     break;
                 case L12AtomKinds.Draw:
                 {
                     var amount = AtomicInt(atom, "amount");
-                    var drawPlayer = atom.Parameters.GetValueOrDefault("target") == "opponent" ? opponent : controller;
+                    var drawPlayer = atom.Parameters.GetValueOrDefault("target") switch
+                    {
+                        "opponent" => opponent,
+                        "source-owner" when source.OwnerIndex is >= 0 and <= 1 => State.Players[source.OwnerIndex.Value],
+                        _ => controller,
+                    };
                     var succeeded = Draw(drawPlayer, amount);
                     if (!succeeded)
                     {
@@ -136,9 +176,11 @@ public sealed partial class L12GameEngine
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
                     break;
                 case L12AtomKinds.ModifyTroops when atom.Parameters.GetValueOrDefault("operation") == "add":
-                    AddTimedModifier(source, AtomicInt(atom, "value"), item.Controller,
+                    AddTimedModifier(source, AtomicInt(atom, "value"), cost: 0,
                         ExpiryAtNextOwnEnd(item.Controller), source.Name);
                     EmitVerifiedAtomicEvent(atom, item.Controller, source);
+                    break;
+                case L12AtomKinds.Duration:
                     break;
                 case L12AtomKinds.CompositeFlow:
                     item.Data["atomicFlow"] = atom.Parameters.GetValueOrDefault("flow") ?? source.Name;
@@ -160,6 +202,8 @@ public sealed partial class L12GameEngine
             "controller.hand<=5" => controller.Hand.Count <= 5,
             "controller.hand<=4" => controller.Hand.Count <= 4,
             "controller.hand<=opponent.hand" => controller.Hand.Count <= opponent.Hand.Count,
+            "opponent.hand>=6" => opponent.Hand.Count >= 6,
+            "controller.god-power>=1" => controller.Morale.Any(card => card.IsGodPower),
             "controller.morale<=7" => controller.Morale.Count <= 7,
             "controller.hp<=opponent.hp" => controller.Hp <= opponent.Hp,
             "controller.hp<=7" => controller.Hp <= 7,
@@ -169,6 +213,7 @@ public sealed partial class L12GameEngine
                 || candidate.InstanceId == source.InstanceId || !IsFieldLegion(candidate)),
             "source.row=back" => FindOnField(controller, source.InstanceId, out var row, out _) is not null && row == 1,
             "source.hidden=true" => source.Hidden,
+            "source.field-hidden=true" => FindOnField(controller, source.InstanceId, out _, out _) is { Hidden: true },
             "item.killed=true" => data.GetValueOrDefault("killed") == "true",
             "controller.field-troops<opponent.field-troops" =>
                 controller.Field.SelectMany(row => row).Where(card => card is not null && IsFieldLegion(card)).Sum(card => card!.Troops)

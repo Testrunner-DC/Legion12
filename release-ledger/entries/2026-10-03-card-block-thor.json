@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-03-card-block-thor",
+  "date": "2026-10-03",
+  "audience": "players",
+  "title": "抵挡与索尔授予登场效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "佣兵部队、绝对防御和空城的抵挡现在可触发地主的胁迫及狮心王理查的额外弃牌要求；未支付要求时抵挡失效，原先已支付的费用不返还。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs", "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs", "服务端WebSocket/TwelveLegions/L12MoraleReturns.cs"]
+    },
+    {
+      "category": "card-effects",
+      "text": "雷神索尔赋予军团的登场时获得冲锋效果现在可以被落穴陷阱或绝对防御无效；与军团自身的登场效果同时触发时，可分别安排顺序。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12CardEffects.cs", "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs", "服务端WebSocket/TwelveLegions/L12GmCommands.cs", "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"]
+    }
+  ]
+}

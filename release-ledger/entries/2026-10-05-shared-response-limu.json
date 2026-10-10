@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-shared-response-limu",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "响应时机与李牧效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "伏击、绝对防御和乾坤·阴可在对方进攻时发动，也可响应对方已发动的卡牌效果，包括迦具土的效果；没有合法响应可能时仍自动继续。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "李牧的展示、免费打出或放底、随后抽牌作为一项完整效果响应；被无效时整项停止。免费打出的战术完成自身处理后，才继续随后抽牌。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs"
+      ]
+    }
+  ]
+}

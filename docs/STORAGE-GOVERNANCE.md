@@ -1,5 +1,48 @@
 # Legion12 本地存储治理
 
+## 2026-10-03 15:14：当前候选额外Debug输出清理
+
+完整Release首轮活动预算阻断，服务端bin约1059.7MiB、平台测试bin约1070.9MiB超过各600MiB预算；规则bin540.6MiB未超。未调整阈值，逐项验证无运行构建、Git忽略且无源文件/数据库/失败证据、普通路径无联接后，仅删除服务端及平台测试的两份bin/Debug，Release保留。260文件逻辑1117721221B，D空闲57010913280→58129289216B，约增加1.04GiB；本项未独立采NTFS分配量，盘面差额可能含其他进程，不能冒称精确物理释放。candidate-extra-debug-cleanup.json完成、源码不变；同8fbd候选随后完整Release通过。与旧18目录3.34GiB不重复，合计盘面约4.38GiB；源码/旧脏树/分支/私有副本/正式与回退制品继续保护。
+
+## 2026-10-03 15:00：旧后台脏树归档后清理可重建输出
+
+两棵旧树`admin-optimization-p1-1`与`admin-optimization-p1-1-final`各22项未提交文件独立归档。保留各自HEAD/分支/暂存和未暂存补丁、工作文件SHA与压缩源文件；解包22/22哈希核对，并用独立临时Git索引验证补丁可恢复当前内容。两棵仅18/22文件相同，不能视为同一冗余副本。归档在`D:\GPT\Legion12\archives\storage-20261003-admin-diffs-v3`，原源码、索引、Git及分支不移除、不重置。两次归档工具错误均发生在源文件变更前，原过程目录保留，只有v3 completed=true是成功证据。
+
+Main逐项复核18个旧树`bin/obj/dist`及Vite测试临时输出：Git忽略且无受跟踪文件、无数据库/PINNED/凭据、全路径及后代无reparse、无指向旧树的进程、所有文件可独占读。当前候选和正式/回退/测试包不在白名单；node_modules联接不遍历、不删除。实际清理18目录、1620文件，逻辑3579049769字节，独立去硬链接/读取NTFS分配量3582333400字节；清理期间D空闲增加3582545920字节，约3.34GiB，C无变化。盘面差额可能含其他进程变化，分配量才是所删文件口径；归档产生的额外占用单列不抵消或重复此前清理。
+
+清理后两棵HEAD、索引/状态及44个源码哈希再次与归档相等。源码差异可从归档恢复，删除的输出可重新构建，不保留另一套大构建副本。证据`artifacts/rules-backend-closure-20261003/old-admin-generated-before.json`与`old-admin-generated-cleanup.json`（completed/sourcesPreserved=true）。旧失败测试根、F2私有副本、事故证据、最近两份UI报告、未知目录及公共运行库继续保留；没有清空工作树或全局Codex数据。
+
+## 2026-10-03发布后实际盘点与有界优化
+
+本次正式发布和维护解除实际完成后，Main按物理根目录遍历，跳过每个reparse目录/文件，使用卷序号+文件索引去重硬链接，并读取文件实际分配量（压缩/稀疏文件使用GetCompressedFileSize）。两次扫描错误0、重复硬链接0；目录联接只记录目标、不重复遍历。此口径不包含NTFS元数据，也不能推断项目根之外的硬链接归属。
+
+| 项目目录 | 优化前逻辑/分配 GiB | 优化后逻辑/分配 GiB |
+| --- | --- | --- |
+| C盘旧项目根 | 23.253 / 23.539 | 22.356 / 22.640 |
+| D盘项目物理根 | 149.197 / 149.530 | 142.098 / 132.444 |
+
+分步实际空闲变化：9处旧NuGet packages与保留的cache/primary/nuget/packages逐文件SHA256一致，清理后C盘+0.90GiB、D盘+7.13GiB；197个旧query-bounds合成夹具文件采用可逆NTFS压缩，197/197内容哈希保持、删除0，D盘另+9.97GiB。以上不重复计入此前10个bin释放的C2.61/D10.44GiB。最后实际空闲约C18.07、D55.51GiB；外部进程占用会造成少量波动，不把盘面全部变化归因于本次清理。恢复旧依赖可按清单从主缓存复制或重新restore，压缩夹具可逐文件compact /u还原；不可回写运行数据库。
+
+证据均在D盘artifacts：storage-audit-20261003.json、storage-temp-audit-20261003.json、storage-audit-after-20261003.json、cleanup-duplicate-packages-20261003.json（逐文件恢复SHA256）及compress-closed-query-fixtures-20261003.json（逐文件前后SHA256）。具体操作脚本同目录；没有修改通用治理脚本、业务代码或热缓存默认策略。
+
+实际膨胀来源及仍保护的范围：
+
+- 优化前D盘cache约87.02GiB，primary/temp约46.13GiB，其中match analytics约20.36GiB、lc02约5.61、lc01约5.11。MatchAnalyticsTests.TestDirectory每次生成独立目录，query-bounds用5万行合成数据但没有目录清理；长链夹具有finally删除，却可能因SQLite池/句柄失败而残留。上述是源码和目录相互核对，不把所有目录视作可删成功证据。本次只压缩闲置旧查询库，最新和失败内容均保留。
+- D盘app约24.85GiB、worktrees约20.38GiB；C盘tmp约13.33GiB，多套历史验证树和各自构建/依赖副本叠加。规范app脏树、公共Git、.runtime、未收口及未知工作树全部保留；未删除分支或重置规范工作树。应先按提交归属归档未提交差异，再另定逐树白名单，不执行整根清空。
+- 历史NuGet副本是实际复制，不是硬链接虚计。只删了与主缓存同哈希的9个packages子目录，父目录、源码、HTTP日志、报告、备份仍保留。当前主缓存、最新编译、运行库和Codex/Adobe进程未终止或压缩。
+- 正式45b65e47、回退d1659fa3、测试934a68c6发布包、卡图依赖、校验备份、F2真实隔离副本及损坏拒绝/失败证据全部保护。全局Codex会话和跨项目运行文件没有处理。
+- 现有旧容量预算将热运行库/历史事故数据与可重建缓存混计，不能因OVER就直接删。后续建议分别预算源码、当前运行、依赖、成功证据、事故保留及隔离副本；逐测试补清理责任、SQLite池释放与有界重试，失败夹具保留最小复现和哈希。此段只是建议，不自动立项、改测试或削弱门禁。
+
+## 2026-10-03第二步执行及防复发边界
+
+两棵已关闭、无脏差异且提交已进入主线的C盘验证树已归档，归档哈希、Git恢复引用和非强制移除回执在 `D:\GPT\Legion12\archives\storage-20261003\closure.json`：C盘实际释放约0.213GiB，D盘归档成本约0.171GiB。第三棵后台验证树实际仍有22项暂存差异，未删除。
+
+旧 `server-backups` 和 `.cache` 已逐文件核对后迁至D盘，在原精确路径保留兼容联接；两次操作合计C盘空闲增加约3.561GiB、D盘占用增加约3.633GiB。这是转移而非总容量释放。第二项曾因复制原目录所有者权限失败，在确认目标为空、来源完整之后，仅恢复有效访问权限并完成全部内容哈希核验；未盲目重跑删除。回执为 `artifacts/relocate-c-legacy-storage-20261003.json`。
+
+当前候选三个项目的可重建 `bin/Debug` 已逐文件记录后删除，同项目 `bin/Release` 和源码保留，D盘实际释放约1.57GiB；证据 `artifacts/clean-candidate-debug-builds-20261003.json`。恢复方式是从保留源码重新构建Debug，不是旧文件备份。
+
+测试入口开始使用单次自有临时根：只有实际测试进程退出，且本次TRX证明总数大于0、全部执行通过、失败和跳过均为0，才可删除该根。失败、空运行、丢失证据、目录联接或锁定情况均保留；TEMP/TMP/TMPDIR一致，规则与平台真实测试宿主核对隔离。CI保持完整两个测试项目，不削减门禁。成功记录小型计数回执；Release原有完整TRX按原预算保留。本地合成生命周期8场景、容量审计11项、清理及发布门禁专项已通过；完整Batch与干净Release以最终回执为准，不能据此宣称已发布。
+
 ## 唯一物理根目录
 
 所有项目文件统一位于 `D:\GPT\Legion12`。迁移完成后的结构为：
@@ -11,9 +54,9 @@
 | `source-library` | 原始卡图、表格、规则资料、TTS 脚本 | 永久；按来源归档 |
 | `references` | GrandUMI、HeroRush 等只读参考 | 仅保留当前参考版本 |
 | `tools` | .NET、NuGet、迁移辅助工具 | 同版本只保留一份 |
-| `cache` | 可重建依赖缓存 | 超预算即可删除 |
-| `temp` | 临时文件 | 最后一次目录及文件写入满24小时，且未被进程使用 |
-| `artifacts` | 测试、网络计量、部署制品 | 测试至少2份；部署保留线上、回滚、待发布和最近2份的并集 |
+| `cache` | 当前依赖、任务临时目录及历史夹具 | 超预算只触发审查；未知、失败、仍使用内容不能删除 |
+| `temp` | 有明确归属的临时文件 | 必须有成功关闭证据、足够保留期且未被进程使用；仅年龄不构成清理授权 |
+| `artifacts` | 测试、网络计量、部署制品 | 成功测试至少2份；失败/未知/PINNED保留；部署保护正式、回退、测试、待发布和最近2份并集 |
 | `archives` | 旧脏工作树的必要恢复资料 | 保存补丁、清单、哈希，不保存完整依赖/构建物 |
 
 ## 容量门禁
@@ -26,6 +69,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-storage.ps1 -Strict
 
 默认预算重点限制：活动工作区 2.2 GiB、卡图 650 MiB、`node_modules` 220 MiB、测试产物 500 MiB、部署产物 700 MiB、缓存 1.2 GiB。保留当前开发工作区的一份 `dist/bin/obj` 热构建，以支持增量编译和正在运行的预览；不批量删除它们。`dist` 上限100 MiB，包含约60 MiB从public复制的官方桌垫、卡背等素材，原5 MiB上限不适用于完整产物。
 
+以上为默认Inventory总量盘点；历史总量仍可能超标，不能删除保护数据来刷绿。开发门禁另用 `-Scope Active -CandidateRoot <精确候选>`：源码、候选前端依赖（共享联接按唯一真实目标计量）、共享包及HTTP/npm/corepack缓存、任务temp/dotnet-home、三个项目bin/obj、两个前端dist、自有测试临时与回执分别预算。每个项目bin600MiB基于单一热配置约530–541MiB实测；同时保留Debug+Release超限。普通源码和清理输入拒绝联接，依赖联接的只读计量不构成目标清理授权。
+
 卡图只保留两类永久数据：`source-library`中的原始归档，以及`D:\L12-assets\published\current`当前完整内容寻址版本。Git当前树、前端`public/cards`、发布包和服务器运行目录均不得再保存旧PNG副本；Git历史不做破坏性改写。服务器只在新版本线上校验通过后清理非活动内容哈希版本和旧`/cards`目录。
 
 清理先预览，确认后执行：
@@ -33,11 +78,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\audit-l12-storage.ps1 -Strict
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\clean-l12-generated.ps1
 # 核对服务器 deployment-info.txt 后，填写完整40位哈希；不能沿用上次发布值。
-.\scripts\clean-l12-generated.ps1 -ProductionCommit <线上提交> -RollbackCommit <上一回滚提交>
+.\scripts\clean-l12-generated.ps1 -ProductionCommit <线上提交> -RollbackCommit <上一回滚提交> -TestCommit <测试服提交>
 # 审查本次精确列表后，同样参数加 -Apply。待发布版本通过 -PendingCommits 显式保护。
 ```
 
-脚本只处理 `D:\GPT\Legion12` 内明确的可再生目录：拒绝任意祖先/子孙目录联接；无法读取进程信息时停止；活跃文件跳过；应用前再次核验。默认没有提供线上/回滚哈希就跳过全部部署包清理。保留包及其卡图依赖先核对哈希，未引用的旧卡图压缩包才可删除。每次删除在 `artifacts/cleanup` 保存文件路径、大小、SHA256和执行状态；这些日志用于核对，不是文件备份，旧二进制需从对应提交与原素材重新生成。
+脚本只处理 `D:\GPT\Legion12` 内明确的可再生目录：拒绝任意祖先/子孙目录联接；无法读取进程信息时停止；活跃文件跳过；应用前再次核验。没有完整正式/回退/测试哈希即跳过部署包清理，保护包及卡图依赖必须先验证清单和哈希。只删除已被完整合法旧清单引用、且不再受保护的卡图包；孤立未知包、残缺暂存目录不删。成功证据要求非空阶段全部显式通过，未知/失败/PINNED仍保护。每次删除在 `artifacts/cleanup` 保存文件路径、大小、SHA256和执行状态；这些日志用于核对，不是文件备份，旧二进制需从对应提交与原素材重新生成。
 
 旧独立验证目录只接受显式 `-ObsoleteVerificationDirectory verify-日期-名称`，必须已人工确认过期、超过24小时且只包含JSON和归档包。不自动删除源码、运行数据库、secrets、会话文件、原始卡图、其他工作区、依赖和热缓存。根目录严格使用实际物理目录，不能传入兼容联接。
 

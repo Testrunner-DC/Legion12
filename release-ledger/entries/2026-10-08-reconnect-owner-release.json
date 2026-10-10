@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "reconnect-owner-release-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "对局重连",
+  "changes": [{
+    "category": "battle",
+    "text": "修复快速重连时旧连接退出可能误断新连接的问题；登录会话失效后会提示重新登录并关闭旧连接，不再继续推送对局信息，新连接仍保留当前对局与恢复进度。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12WebSocketServer.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.DeploymentDrain.cs", "服务端WebSocket/TwelveLegions/L12OutboundConnection.cs"]
+  }]
+}

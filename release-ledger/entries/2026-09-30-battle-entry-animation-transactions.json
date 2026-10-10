@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-battle-entry-animation-transactions",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "卡牌登场与移动动画更加稳定",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "卡牌登场、区域移动和活跃／休整变化现在共用同一权威动画事务；一次动作只播放一次动画，旧动画结束不会再干扰后续动画，也不会让正在结算效果的卡牌重复飞入或闪烁消失。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/authoritativeCardVisibility.ts",
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"
+      ]
+    }
+  ]
+}

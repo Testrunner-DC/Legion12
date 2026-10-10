@@ -5,6 +5,19 @@ namespace TwelveLegions.Tests;
 
 public sealed class RankedPlatformTests
 {
+    [Fact]
+    public void PlayerOperationsPolicyUsesNaturalSeasonNameWithoutMutatingAdminConfiguration()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-player-season-display",
+            Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var admin = store.Login("Admin", "L12master").Account!;
+
+        Assert.Equal("S01", store.OperationsConfig(admin).Config.Season.Name);
+        Assert.Equal("当前赛季", store.EffectiveOperationsPolicy().Season.Name);
+        Assert.Equal("S01", store.OperationsConfig(admin).Config.Season.Name);
+    }
+
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     [Fact]
@@ -16,7 +29,10 @@ public sealed class RankedPlatformTests
 
         var identity = store.RankedBattleIdentity(account.Id, 0);
 
-        Assert.Equal(string.Empty, identity.RankLabel);
+        Assert.Equal(string.Empty, identity.Faction);
+        Assert.Null(identity.Rank);
+        Assert.Equal(string.Empty, identity.Tier);
+        Assert.Null(identity.PlacementTitle);
         Assert.Null(identity.MasterTitle);
     }
 
@@ -44,7 +60,7 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
-    public void FactionChangeResetsVisibleSeasonProgressButKeepsHiddenRating()
+    public void FactionChangeResetsVisibleSeasonProgressButKeepsHiddenRatingAndHistoryFinalOnly()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-switch", Guid.NewGuid().ToString("N"));
         var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
@@ -61,9 +77,7 @@ public sealed class RankedPlatformTests
         Assert.Equal(0, changed.PlacementPlayed);
         Assert.Equal(0, changed.SevenValue);
         Assert.Equal(hidden, store.HiddenRating(first.Id));
-        var history = Assert.Single(store.RankedOverview(first.Id).History);
-        Assert.Equal("秩序", history.Faction);
-        Assert.Equal(1, history.PlacementPlayed);
+        Assert.Empty(store.RankedOverview(first.Id).History);
     }
 
     [Fact]
@@ -160,7 +174,11 @@ public sealed class RankedPlatformTests
         var selected = store.SelectRankedMasterTitle(amaterasu.Id, "最强天照");
         Assert.Equal("最强天照", selected.SelectedMasterTitle);
         var battleIdentity = store.RankedBattleIdentity(amaterasu.Id, 0);
-        Assert.Equal(selected.RankLabel, battleIdentity.RankLabel);
+        Assert.Equal("秩序", battleIdentity.Faction);
+        Assert.False(battleIdentity.HighestTier);
+        Assert.Null(battleIdentity.Rank);
+        Assert.Equal(selected.Tier, battleIdentity.Tier);
+        Assert.Equal(selected.PlacementTitle, battleIdentity.PlacementTitle);
         Assert.Equal("最强天照", battleIdentity.MasterTitle);
         Assert.Throws<ArgumentException>(() => store.SelectRankedMasterTitle(amaterasu.Id, "未获得的称号"));
 
@@ -220,19 +238,265 @@ public sealed class RankedPlatformTests
             "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
         Assert.Contains("最强天照", store.RankedProfile(champion.Id).Titles);
         Assert.Empty(store.RankedSeasonHonors());
+        var championFinalValue = store.RankedProfile(champion.Id).SevenValue;
+        var rivalFinalValue = store.RankedProfile(rival.Id).SevenValue;
 
         var admin = store.Login("Admin", "L12master").Account!;
         var current = store.OperationsConfig(admin);
-        store.ApplyOperationsConfig(admin, current.Config with
-        {
-            Season = new L12SeasonConfig("S-history-next", "下一赛季", "active", null, null),
-        }, current.Version, "验证赛季荣誉归档", new L12AdminAuditContext("ranked-season-honor-test"));
+        ActivateDraft(store, admin, "S-history-next", "下一赛季", "验证赛季荣誉归档");
 
         var honor = Assert.Single(store.RankedSeasonHonors(), item => item.Username == champion.Username);
         Assert.Equal(current.Config.Season.Id, honor.SeasonId);
         Assert.Equal(current.Config.Season.Name, honor.SeasonName);
         Assert.Contains("最强天照", honor.Titles);
         Assert.Equal($"七曜值 {honor.SevenValue:N0}", honor.DisplayValue);
+
+        var history = Assert.Single(store.RankedOverview(champion.Id).History);
+        Assert.Equal(current.Config.Season.Id, history.SeasonId);
+        Assert.Equal("历史赛季", history.SeasonName);
+        Assert.Equal(honor.Tier, history.Tier);
+        Assert.Equal(honor.DisplayValue, history.DisplayValue);
+        Assert.Equal(100d, history.WinRate);
+        Assert.Null(history.FactionTitle);
+        Assert.Contains("最强天照", history.MasterTitles);
+        Assert.Contains("最强天照", history.Titles);
+
+        var strongest = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
+        Assert.Equal("历史赛季", strongest.SeasonName);
+        Assert.Equal("S01-04M1", strongest.MasterId);
+        Assert.Equal(champion.Username, Assert.Single(strongest.Winners).Username);
+        Assert.Equal("秩序", Assert.Single(strongest.Winners).Faction);
+        Assert.Equal(new[] { "MasterId", "SeasonName", "Title", "Winners" }, strongest.GetType()
+            .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());
+        Assert.Equal(new[] { "Faction", "Username" }, Assert.Single(strongest.Winners).GetType()
+            .GetProperties().Select(property => property.Name).OrderBy(name => name).ToArray());
+
+        var rankedConfig = store.RankedConfig(admin);
+        var renamedFactions = rankedConfig.Factions.Select(faction => faction.Id == "order"
+            ? faction with { Name = "秩序新名" }
+            : faction).ToArray();
+        store.UpdateRankedConfig(admin, rankedConfig with { Factions = renamedFactions },
+            "验证历史荣誉派系名冻结", new L12AdminAuditContext("honor-faction-name-snapshot"));
+        var afterFactionRename = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
+        Assert.Equal("秩序", Assert.Single(afterFactionRename.Winners).Faction);
+        var frozenTotals = Assert.Single(store.RankedSeasonHistory().FactionTotals);
+        Assert.Equal("历史赛季", frozenTotals.SeasonName);
+        Assert.Equal(new[] { "秩序", "混沌", "命运" }, frozenTotals.Factions.Select(row => row.Faction));
+        Assert.Equal(championFinalValue,
+            Assert.Single(frozenTotals.Factions, row => row.Faction == "秩序").Value);
+        Assert.Equal(rivalFinalValue,
+            Assert.Single(frozenTotals.Factions, row => row.Faction == "混沌").Value);
+        Assert.Equal(0, Assert.Single(frozenTotals.Factions, row => row.Faction == "命运").Value);
+        var playerJson = System.Text.Json.JsonSerializer.Serialize(store.RankedSeasonHistory());
+        Assert.DoesNotContain("AwardedAt", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Provenance", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("EvidenceFingerprint", playerJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("SeasonId", playerJson, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void HistoricalHonorDisplayUsesFrozenNamesAndKeepsDisabledOrDeletedAwardsPrivate()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-season-honor-privacy",
+            Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var champion = store.Register("thonorold01", "Password123!").Account!;
+        var rival = store.Register("thonorriv02", "Password123!").Account!;
+        store.SelectRankedFaction(champion.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"honor-privacy-{index}", champion.Id, rival.Id, 0,
+                "S01-04M1", "S02-03M1");
+        store.ImportRankedMasterTitleFacts(TitleFacts("honor-privacy-title", champion.Id,
+            "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
+        var admin = store.Login("Admin", "L12master").Account!;
+        ActivateDraft(store, admin, "S-history-privacy", "隐私回归赛季", "验证历史获奖者隐私");
+
+        var renamed = store.SelfServiceChangeUsername(champion.Id, "Password123!", "thonornew03");
+        Assert.True(renamed.Success, renamed.Message);
+        var afterRename = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
+        Assert.Equal(champion.Username, Assert.Single(afterRename.Winners).Username);
+
+        store.SetAccountDisabled(admin, champion.Id, true, "验证历史获奖事实不随禁用消失",
+            new L12AdminAuditContext("honor-history-disable"), apply: true);
+        var afterDisable = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
+        Assert.Equal(champion.Username, Assert.Single(afterDisable.Winners).Username);
+        var totalsBeforeDelete = Assert.Single(store.RankedSeasonHistory().FactionTotals);
+
+        store.SetAccountDisabled(admin, champion.Id, false, "准备注销隐私回归账号",
+            new L12AdminAuditContext("honor-history-enable"), apply: true);
+        store.DeleteAccountPersonalData(admin, champion.Id, "honor-history-privacy",
+            new L12AdminAuditContext("honor-history-delete"), apply: true);
+        var afterDelete = Assert.Single(store.RankedSeasonHonorHistory(), row => row.Title == "最强天照");
+        Assert.Equal("已注销玩家", Assert.Single(afterDelete.Winners).Username);
+        Assert.DoesNotContain("deleted-", System.Text.Json.JsonSerializer.Serialize(afterDelete),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(totalsBeforeDelete),
+            System.Text.Json.JsonSerializer.Serialize(
+                Assert.Single(store.RankedSeasonHistory().FactionTotals)));
+    }
+
+    [Fact]
+    public void HistoricalHonorDisplayGroupsEachTitlePerSeasonAndOrdersSeasonsNewestFirst()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-season-honor-groups",
+            Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var first = store.Register("thonorgrp01", "Password123!").Account!;
+        var second = store.Register("thonorgrp02", "Password123!").Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"honor-groups-first-{index}", first.Id, second.Id, 0,
+                "S01-04M1", "S02-03M1");
+        store.ImportRankedMasterTitleFacts(TitleFacts("honor-groups-first-title", first.Id,
+            "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
+        ActivateDraft(store, admin, "S-history-groups-2", "历史荣誉第二季", "冻结首季荣誉分组");
+
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"honor-groups-second-{index}", first.Id, second.Id, 0,
+                "S01-04M1", "S02-03M1");
+        store.ImportRankedMasterTitleFacts(TitleFacts("honor-groups-second-title", first.Id,
+            "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
+        ActivateDraft(store, admin, "S-history-groups-3", "历史荣誉第三季", "冻结次季荣誉分组");
+
+        var rows = store.RankedSeasonHonorHistory().Where(row => row.Title == "最强天照").ToArray();
+        Assert.Equal(2, rows.Length);
+        Assert.Equal("历史荣誉第二季", rows[0].SeasonName);
+        Assert.Equal("历史赛季", rows[1].SeasonName);
+        Assert.All(rows, row => Assert.True(row.Winners.Count >= 1));
+        Assert.Equal(new[] { "历史荣誉第二季", "历史赛季" },
+            store.RankedSeasonHistory().FactionTotals.Select(row => row.SeasonName));
+    }
+
+    [Fact]
+    public void ApprovedGradientWaitsForNextSeasonAndKeepsHiddenRating()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-gradient-next-season",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "platform.json");
+        var store = new L12PlatformStore(path);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var player = store.Register("tgradie08f9", "Password123!").Account!;
+        var rival = store.Register("tgradie7ea1", "Password123!").Account!;
+        store.SelectRankedFaction(player.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        var before = store.RankedConfig(admin);
+        Assert.Equal(200, before.Factions[0].Tiers[0].BaseDelta);
+        Assert.NotNull(before.PendingGradient);
+        Assert.Equal(3800, before.PendingGradient!.Tiers[0].BaseDelta);
+        Assert.Equal(1200, before.PendingGradient.Tiers[4].BaseDelta);
+        Assert.Equal(100, before.PendingGradient.Tiers[4].WinStreakCap);
+        Assert.Equal(0, before.PendingGradient.Tiers[4].LossProtectionCap);
+        Assert.Equal(400, before.PendingGradient.Tiers[4].StreakTerminationReward);
+
+        store.SettleRankedMatch("gradient-hidden", player.Id, rival.Id, 0);
+        var hidden = store.HiddenRating(player.Id);
+        ActivateDraft(store, admin, "S-gradient-next", "梯度新赛季", "验证下赛季梯度原子切换");
+
+        var after = store.RankedConfig(admin);
+        Assert.Null(after.PendingGradient);
+        Assert.Equal(3800, after.Factions[0].Tiers[0].BaseDelta);
+        Assert.Equal(1200, after.Factions[0].Tiers[4].BaseDelta);
+        Assert.Equal(100, after.Factions[0].Tiers[4].WinStreakCap);
+        Assert.Equal(0, after.Factions[0].Tiers[4].LossProtectionCap);
+        Assert.Equal(400, after.Factions[0].Tiers[4].StreakTerminationReward);
+        Assert.Equal(hidden, store.HiddenRating(player.Id));
+        Assert.Contains(store.AdminAudit(category: "operations"), audit =>
+            audit.Action == "season-activate");
+
+        var reloaded = new L12PlatformStore(path);
+        Assert.Equal(3800, reloaded.RankedConfig(admin).Factions[0].Tiers[0].BaseDelta);
+        Assert.Null(reloaded.RankedConfig(admin).PendingGradient);
+    }
+
+    [Fact]
+    public void BattleIdentityKeepsRankTierFactionTitleAndMasterTitleAsSeparateFields()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-battle-identity",
+            Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var leader = store.Register("tidenti2ca9", "Password123!").Account!;
+        var rival = store.Register("tidentifda7", "Password123!").Account!;
+        store.SelectRankedFaction(leader.Id, "order");
+        store.SelectRankedFaction(rival.Id, "chaos");
+        for (var index = 0; index < 5; index++)
+            store.SettleRankedMatch($"identity-placement-{index}", leader.Id, rival.Id, 0,
+                "S01-04M1", "ST03-M1");
+        for (var index = 0; index < 150 && store.RankedProfile(leader.Id).TierIndex < 4; index++)
+            store.SettleRankedMatch($"identity-climb-{index}", leader.Id, rival.Id, 0,
+                "S01-04M1", "ST03-M1");
+        store.ImportRankedMasterTitleFacts(TitleFacts("identity-master", leader.Id,
+            "S01-04M1", "ST03-M1", DateTimeOffset.UtcNow));
+        store.SelectRankedMasterTitle(leader.Id, "最强天照");
+
+        var identity = store.RankedBattleIdentity(leader.Id, 0);
+
+        Assert.Equal(1, identity.Rank);
+        Assert.True(identity.HighestTier);
+        Assert.Equal("冠冕", identity.Tier);
+        Assert.Equal("秩序冠首", identity.PlacementTitle);
+        Assert.Equal("最强天照", identity.MasterTitle);
+    }
+
+    [Fact]
+    public void BattleIdentityUsesEachFactionsHighestTierInsteadOfItsDisplayName()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-battle-highest-tier",
+            Guid.NewGuid().ToString("N"));
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"));
+        var admin = store.Login("Admin", "L12master").Account!;
+        var config = store.RankedConfig(admin);
+        var highestTierNames = new[] { "秩序天冠", "混沌魔冠", "命运星冠" };
+        var factions = config.Factions.Select((faction, factionIndex) => faction with
+        {
+            Tiers = faction.Tiers.Select((tier, tierIndex) => tier with
+            {
+                Name = tierIndex == 4 ? highestTierNames[factionIndex] : tier.Name,
+                Minimum = tierIndex * 1_000,
+                BaseDelta = 1_000,
+                WinStreakCap = 0,
+                LossProtectionCap = 0,
+                RatingGapCap = 0,
+                StreakTerminationReward = 0,
+            }).ToArray(),
+        }).ToArray();
+        store.UpdateRankedConfig(admin, config with
+        {
+            PlacementMatches = 1,
+            PlacementMaximum = 500,
+            Factions = factions,
+        }, "验证各派系最高段权威身份", new L12AdminAuditContext("ranked-battle-highest-tier"));
+
+        var factionIds = new[] { "order", "chaos", "fate" };
+        for (var factionIndex = 0; factionIndex < factionIds.Length; factionIndex++)
+        {
+            var leader = store.Register($"thigh{factionIndex}lead", "Password123!").Account!;
+            var rival = store.Register($"thigh{factionIndex}rival", "Password123!").Account!;
+            store.SelectRankedFaction(leader.Id, factionIds[factionIndex]);
+            store.SelectRankedFaction(rival.Id, factionIds[factionIndex]);
+            for (var match = 0; match < 20 && store.RankedProfile(leader.Id).TierIndex < 4; match++)
+                store.SettleRankedMatch($"highest-{factionIndex}-{match}", leader.Id, rival.Id, 0);
+
+            var highest = store.RankedBattleIdentity(leader.Id, factionIndex);
+            Assert.True(highest.HighestTier);
+            Assert.NotNull(highest.Rank);
+            Assert.Equal(highestTierNames[factionIndex], highest.Tier);
+            Assert.NotNull(highest.PlacementTitle);
+
+            var lower = store.RankedBattleIdentity(rival.Id, factionIndex + 3);
+            Assert.False(lower.HighestTier);
+            Assert.Null(lower.Rank);
+            Assert.NotEqual(highestTierNames[factionIndex], lower.Tier);
+            Assert.Null(lower.PlacementTitle);
+        }
     }
 
     [Fact]
@@ -374,6 +638,50 @@ public sealed class RankedPlatformTests
     }
 
     [Fact]
+    public void DisabledAccountsAndTheirMatchesAreExcludedFromRankedStatistics()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-disabled-statistics",
+            Guid.NewGuid().ToString("N"));
+        var catalog = Catalog;
+        var store = new L12PlatformStore(Path.Combine(directory, "platform.json"),
+            catalog.PresetDecks, officialCards: catalog.Cards);
+        var admin = store.Login("Admin", "L12master").Account!;
+        var firstRegistration = store.Register("tdissta01", "Password123!");
+        var secondRegistration = store.Register("tdisstb02", "Password123!");
+        Assert.True(firstRegistration.Success, firstRegistration.Message);
+        Assert.True(secondRegistration.Success, secondRegistration.Message);
+        var first = firstRegistration.Account!;
+        var second = secondRegistration.Account!;
+        store.SelectRankedFaction(first.Id, "order");
+        store.SelectRankedFaction(second.Id, "chaos");
+        var config = store.RankedConfig(admin);
+        store.UpdateRankedConfig(admin, config with { PlacementMatches = 1 },
+            "缩短测试定级", new L12AdminAuditContext("disabled-statistics-config"));
+        store.SettleRankedMatch("disabled-statistics-match", first.Id, second.Id, 0);
+        var now = DateTimeOffset.UtcNow;
+        var source = new[]
+        {
+            new L12RankingMatch("disabled-statistics-match", first.Username, second.Username,
+                now.AddMinutes(-10).ToString("O"), now.AddMinutes(-2).ToString("O"), 0,
+                "天照大神", "西芙", 0, "S01-04M1", "ST03-M1", first.Id, second.Id),
+        };
+        Assert.Equal(1, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.Contains(store.RankedLeaderboard(), row => row.Username == first.Username);
+
+        store.SetAccountDisabled(admin, first.Id, true, "排除恶性账号统计",
+            new L12AdminAuditContext("disabled-statistics"), apply: true);
+
+        Assert.Contains(first.Id, store.StatisticsExcludedAccountIds());
+        Assert.Equal(0, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.DoesNotContain(store.RankedLeaderboard(), row => row.Username == first.Username);
+
+        store.SetAccountDisabled(admin, first.Id, false, "复核后恢复账号",
+            new L12AdminAuditContext("enabled-statistics"), apply: true);
+        Assert.Equal(1, store.RankedAnalytics(source, "7d").Summary.Matches);
+        Assert.Contains(store.RankedLeaderboard(), row => row.Username == first.Username);
+    }
+
+    [Fact]
     public async Task RepeatedOpponentMatchesAllSettleAndConcurrentReplayIsIdempotentButConflictsFailClosed()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-ranked-replay", Guid.NewGuid().ToString("N"));
@@ -503,6 +811,21 @@ public sealed class RankedPlatformTests
             Assert.Throws<L12OperationsConfigException>(() => reloaded.UpdateRankedConfig(admin,
                 reloaded.RankedConfig(admin) with { Broadcast = invalid }, "非法广播范围",
                 new L12AdminAuditContext("ranked-broadcast-invalid")));
+    }
+
+    private static L12SeasonActivationView ActivateDraft(L12PlatformStore store, L12AccountView admin,
+        string seasonId, string name, string reason)
+    {
+        var seasons = store.SeasonCatalog(admin);
+        var draft = seasons.Next ?? store.CreateSeasonDraft(admin, seasons.Current.Revision,
+            $"创建 {name} 草稿", new L12AdminAuditContext($"create-{seasonId}"));
+        var updated = store.UpdateSeasonDraft(admin, draft.DefinitionId,
+            new L12SeasonDefinitionDraft(seasonId, name, null, null, draft.Configuration),
+            draft.Revision, reason, new L12AdminAuditContext($"prepare-{seasonId}"));
+        return store.ActivateSeason(admin, updated.DefinitionId, seasons.Current.Revision,
+            updated.Revision, reason,
+            new L12RankedSeasonCutoverReadiness(seasons.Current.SeasonId, 0, 0, 0, 0),
+            new L12AdminAuditContext($"activate-{seasonId}"));
     }
 
     private static L12RankedMasterTitleMatchFact[] TitleFacts(string prefix, string accountId,

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "consumed-lethal-state-20261008",
+  "date": "2026-10-08",
+  "audience": "players",
+  "title": "致命代替",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "修复近藤勇等致命代替效果成功后，受保护军团因下一次无关操作再次阵亡的问题；重连后仍保留本次代替结果，后来发生的独立伤害或新减兵力效果仍正常结算。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"
+      ]
+    }
+  ]
+}

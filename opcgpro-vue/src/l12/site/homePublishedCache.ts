@@ -28,12 +28,14 @@ function parse(value: string | null): SiteHomePayload | null {
 }
 
 export function loadPublishedHomeCache(storage: Pick<Storage, 'getItem'> = localStorage) {
-  const current = parse(storage.getItem(CACHE_KEY))
-  if (current) return current
-  for (const key of LEGACY_KEYS) {
-    const legacy = parse(storage.getItem(key))
-    if (legacy) return legacy
-  }
+  try {
+    const current = parse(storage.getItem(CACHE_KEY))
+    if (current) return current
+    for (const key of LEGACY_KEYS) {
+      const legacy = parse(storage.getItem(key))
+      if (legacy) return legacy
+    }
+  } catch { /* Storage restrictions cannot block the public home request. */ }
   return null
 }
 

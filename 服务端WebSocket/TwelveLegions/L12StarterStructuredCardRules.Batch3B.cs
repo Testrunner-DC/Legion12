@@ -6,7 +6,7 @@ namespace TwelveLegions.Server;
 /// </summary>
 public static partial class L12StructuredCardRules
 {
-    internal const string StarterTakedaShingenCardId = "S01-0403";
+    internal const string StarterTakedaShingenCardId = "S02-0401";
 
     internal static string? StarterHandPlayPlanId(string cardId) => cardId switch
     {
@@ -39,9 +39,6 @@ public static partial class L12StructuredCardRules
 
     internal static bool HasDedicatedEndTurnDiscardRoute(string cardId)
         => cardId == "S02-0523";
-
-    internal static bool IsReversibleOlympusMorale(string cardId)
-        => cardId is "S02-05C1" or "S02-05C1A" or "ST05-C1";
 
     internal static string? StarterRemainingPlan(string cardId, string trigger)
         => (cardId, trigger) switch
@@ -305,7 +302,7 @@ public static partial class L12StructuredCardRules
                 new(L12AtomKinds.PayMorale, "消耗1士气", "cost", new() { ["amount"] = "1", ["mode"] = "morale-and-discard-legions" }),
                 Select("选择弃置的2张我方军团", "controller.field", "legion=true;count=2;mode=morale-and-discard-legions"),
                 new(L12AtomKinds.Discard, "弃置所选2张军团", "cost", new() { ["amount"] = "2", ["mode"] = "morale-and-discard-legions" }),
-                Select("选择墓地目标", "controller.graveyard", "faction=taiyangcheng;legion=true;base-troops<=2000"),
+                Select("选择墓地目标", "controller.graveyard", "faction=taiyangcheng;legion=true;current-troops<=2000"),
                 Select("选择登场位置", "controller.field.empty-slot", "empty=true"), Move("controller.graveyard", "controller.field", "rested"))],
             "ST03-08" => [new("continuous", "continuous", "「位于墓地」可最多视为3张【阿斯加德】军团。",
                 [new(L12AtomKinds.SetState, "在墓地计算为最多3张阿斯加德军团", "continuous", new() { ["key"] = "source.grave-faction-legion-copies", ["value"] = "3" })],

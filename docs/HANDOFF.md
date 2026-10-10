@@ -1,5 +1,1181 @@
 # 十二军团简短交接
 
+- **2026-10-09 04:34 当前源码完整Batch r2已过，未部署**：规则6721/平台1191均全执行、失败跳过0，Main独立核九源码SHA与两success监督回执；D盘`disaster-pending-work-20261009/main-complete-batch-r2-acceptance.json`绑定最终武田公开步骤版本。r1的16失败/原TRX不覆盖、不删除。按两独立根因有界提交，接一次干净完整Release/最终包存储出口及Git精确读回；尚非发布完成。启用开关后重启旧版的初始建议已被补充审查否定，未执行；当前新历史终态精确识别/单次首次升级边界仍待人类批准，不能因503而忽略历史记录。正式发布成功独立核验后才解除当前维护并继续剩余，测试部署未授权。
+
+- **完整Batch首轮16失败已保留并有界收口，重新跑完整门禁**：6721/6705/16/0skip不是通过。idle guard/近藤stale清理/取消声明续办真回归已修；Egil保死亡+冻结事实全维度，武田改完整真实Handle链，天廷按来源完成当前哮天犬再选阵营恢复，旧测试字节和诊断保留。154同族与武田双向全公开2过；当前产品仍三路径，Fixture三路径新增准确守卫。完整r2/clean Release/Git/新包出口待，正式未部署。新历史终态识别/单次首次升级审批另待，不能因维护和部署授权绕过旧记录阻断。
+
+- **最新本地专项120全绿，完整门禁接续**：无额外死亡触发的土方续段真实RED补pump checkpoint；committed parent Finish/后续孤儿实RED补整次reconcile scope，裸orphan四对照不翻灾。原错误期望与夹具对照保留，产品三路径/测试三路径冻结。当前完整Batch/clean Release/最终包出口/Git未完成，不能借a320或Focused部署；正式仍2da维护，首次升级历史终态识别新边界待人类。本次只授权正式成功核验后解除当前维护，不含测试或失败提前解除。
+
+- **2026-10-09当前批准批，未部署**：a320完整Release/冻结316功能出口/Git已接受；阿伊/底层天灾新dirty批109/23及补5秒旁路后103专项过，完整Batch/clean Release/新包出口待；两轮土方cost/阈值夹具失败保留，合法四例实际绿，恢复边界正在独立验证。用户授权本次正式部署后解除当前维护、继续剩余；03:26fresh正式2da预约02–07维护/策略94、专用会话撤销，排空接口503；限定启用与额外重启另待人类，不执行旧脚本。Main与独立恢复测试租约不重叠/构建串行，聊天部署后再指导。当前事实读D盘`card-ui-closeout-20261008/latest-status.json`和`release-20261009-authorized`，下方均历史。
+
+- **2026-10-09 01:16 提交前完整分域Batch已过，未部署**：Main平台1191/1191、0 fail/skip/test-248a success；最终6browser与busy并发false，原RED保持。前端r1旧广播路径静态合同失败已纠正到真实public/At/Object调用链并加6负例，r2完整355UI/49rule/144feedback/163账本/324+42/类型双构建通过。当前授权变化按根因提交，随后干净完整Release、真正316/schema8同包退出读回、Git精确同步；尚不称其已完成。唯一最终候选以外部A2回执为准，不由文档触发部署。
+
+- **2026-10-09 01:00 当前继续，未部署**：存储最终316功能出口DC5F已接受；新广播十源冻、1191/1191及独立复核过，Main平台Batch运行，真正316/schema8 reader仍待Run。Bug第四组正式同DLL三轮18/4227，五报告闭环经原BCC0固定计数缺陷及只读6A15派生核对，累计36实际关闭/568未关（00:44），无重复PATCH或维护写。A3原355链及44保留，用户批准共享卡池失败缓存已Node/六browser绿；再批准独立发布busy已49Node/五源冻，最后browser/前端Batch/干净Release/Git待。所有子写/构建租约已退，Main唯一构建者；当前HEAD316dirty不借旧绿。唯一事实仍读 `card-ui-closeout-20261008/latest-status.json` 和绑定回执，下方是历史。
+
+- **2026-10-08 22:38 当前继续，未部署**：按用户顺序已完成316最终包Windows存储功能出口（真6增长+6冻结2da旧reader、六非空WAL、逐阶段墓碑/正文、25历史/精确2真实API锁、8→7→8、三测试产品/两生命周期复制产品/双库镜像），唯一总回执 `deck-final-package-exit-20261008/main-final-functional-exit-acceptance.json` SHA DC5F5B24。真实Linux/目标并发/4小时7日/iOS仍待，不安装Linux、不读新私有副本。广播schema9八路径关键代理已授写/Focused.NET，Main仅独立记录与Bug只读准备，无重叠；新源不借316旧绿，完整Batch/Release/Git随后统一。不部署、不改维护、不提前fixed关闭未上线Bug。下方为对应时点历史。
+
+- **2026-10-08 提交级Release准备缺口已修正，正式仍未部署**：386候选实际6684规则/1164平台/排空消费者通过，但隔离前端遗漏公开`preset-decks.s1.json`，首次完整Release失败；原TRX/五阶段failure timings A630DEBD/完整日志保留，不称386已接受。仅门禁工具补S1/S2两预组JSON，原门禁新增真实AST数据依赖/缺项/错Target反例，原全部合同通过；Main新独立隔离目录按真实copylist/allCS/账本装载，完整UI355/反馈144/卡图/类型双前端构建已实际通过。产品91源未改，只有工具两源、内部账本与本三记录增量；冻结新干净候选后完整Release重跑，再Git，不部署或维护。最终94源闭包按真实绑定计，F2不使用旧91/386或伪称Linux包包含Win native，仍须最终真实包/Windows测试native分离来源绑定。
+
+- **2026-10-08 20:54 提交前最终证据：整体期限与来源守卫完整 Batch 已接受，Release/Git 待，未部署**：91冻结路径源码前后漂移0；第二轮实际6684规则/1164平台全执行、失败跳过0，355UI/144反馈/159玩家账本/324+42卡图/类型双前端通过。唯一绑定 `replay-user-match-20261008/main-complete-batch-r2-acceptance.json` 引用原完整日志5D968B5D及两个success监督；原成功Batch的临时TRX按既定合同消费，最终Release另留原TRX。62同族专项B9403B05与独立最后只读复核无新阻断；旧单场期限仍无法证明、不能恢复，未知I/O/格式错误不泛吞。此行为提交前历史证据：提交/远端/发布级验收的最终状态只看 `card-ui-closeout-20261008/latest-status.json` 与其绑定回执，不据本段猜最终SHA。按连接/庆典/Hammer/名称/隐私/期限逐根因提交，再一次完整干净Release/Git；没有部署或维护授权，不提前关闭新修复反馈。F2最终同包六案与广播/真实长期容量仍待，不安装Linux。
+
+- **2026-10-08 当前增量：独立最终审查拦截内部类型冒用，已补同族守卫，第二轮完整 Batch 待**：刚才6684/1139绿色绑定的是修正前源码，不能当最终源门禁。三保留类型 authority/preference/auto-close 原只按type分发，玩家/GM被拒命令可能被重放为内部命令；Main实际15旧例12RED/3对照绿，actor+accepted共享守卫同时接录制fallback、detail、friendly tail、ranked及其预解析、管理员draw摘要。新增17来源/两假draw、8GM/preference/auto-close延时生产者，62同族全绿（B9403B05）；第一green-r1六失败因测试越过120秒turn后恢复，本地夹具改20秒，原失败保持、产品计时不动。独立只读子无写/build租约，Main即将冻结新完整Batch，最终预计平台1164但以实际TRX为准。未commit/Release/Git/部署/维护，新旧原证据都保；下面20:22及更早为对应源历史事实。
+
+- **2026-10-08 20:22 当前：共享期限整体修复完整 Batch 通过，提交级 Release 待，未部署**：Main 新冻结 89 路径前后 SHA 漂移 0，完整规则 6684 / 平台 1139 全执行，失败跳过 0；两监督 success receipt 分别 `test-8fc5608535c64280b2fe986bbba53626` / `test-f227ffb853f248fb9b52e0499af9d0a4`。UI355、反馈144、159账本、卡图324+42、类型与双前端构建通过，完整日志 `replay-user-match-20261008/main-complete-clock-batch-r1.log` SHA `7C4BE4A67024B05C63189D5FA990D0053DCA2732B526C88E9646D0178A386364`；Main Root18专项通过。普通/GM/设置/自动关闭生产者与 detail/friendly-tail/ranked 消费者统一权威执行时刻，恢复后回到当前时钟。旧单场首76原期限缺可信同lease事实，不能完整还原；受控409不绕过原哈希。当前 f5 基础 dirty，最后完整接受/远端仍02f；各根因分别提交后跑一次最终干净 Release/Git。两服、维护及新修复反馈均不写，F2最终同包六案仍待，不能引用旧六案称新包通过。下方19:55及更早段为历史过程。
+
+- **2026-10-08 19:55当前：共享期限整体修复专项已绿，完整门禁准备，未部署**：用户正式自身回放500已精确同2daDLL/9卡池/授权单场FDAF定位首76普通命令deadline时刻不一致；独立全期限分类另外发现friendly tail缺recorded time与ranked返回后冻结historical clock。同根8产品scope/ticket/3reader已实现；原10双向/时差/两恢复Main正式8RED2绿→当前10绿，原19/71绿，Main三真实HTTP54D762CC原500→F4FA10C5三路绿且鉴权/隐私/health/摘要保持。旧本場lease无可信记录，r3/r4误借cp96已safe-r5纠正并保，不能声称恢复。子产品/.NET租约已归还，Main独占；原10源码F427/CE69已归档再加五票据/异常保护，Root18专项进行中。159日志待验、完整Batch/clean Release/Git待，开发f5基础dirty，最后完整接受/remote02f；F2最终六案仅七文件硬锁准备完成，不能Run旧f5。29关闭/572待办不变；裁判GM仅后续低优先。没有新部署/维护权限。
+
+- **2026-10-08 19点后新增真实回放阻断，本地取证不部署**：隐私限定Batch1121平台0失败跳过及全前端/双构建/158账本已过；E02/E04/E07/E08补证独立核源0漂移，原后台回放权限/游标/字节/沙盒13绿。但用户报告正式自己的播放500，Main精确SSH匹配b3bcd719… Journal.cs:396命令重放校验失败，真实当日正式2da局478命令/16检查点，不能称回放专项完好或归旧版本。用户授权仅单场D盘私有隔离诊断，FDAF95FB输入、原正式65FCAF包/0E73DLL/9卡池现场hash精确；同子仅artifact诊断/.NET独占，Root无修复租约，禁止泄漏隐藏信息或跳过P3校验。新问题只读定因/方案待，不擅自修复。裁判GM仅低优先accepted-deferred；29关闭/572待办保持。f5基础dirty，最后完整接受/远端02f，clean Release/Git仍待，没有新部署/维护授权。
+
+- **2026-10-08 18:40最新，仅本地不部署**：旧新基线69路径完整Batch6683规则/1117平台0失败跳过、正常前端/双构建/324+42通过；之后新增Journal精确尾部失败关闭并Main Root5绿，最终clean Release尚待。新用户回放全项审计已子Frozen首轮，牌库名按直接隐私要求完成Main三Recorder玩家投影+子五前端/合同；Main16平台/15原规则/4真实producer，子与MainNode4及原24/51，实际Edge下载→同文件导入及权威2帧实链通过，C53C2E+12图、源前后相同、5541监听0。原r1/r2夹具准备错/Journal三错/首浏览器宿主错均保持。回放整体不称全无Bug：E01重复保存/F05sandbox合同矛盾待人类；E06本地重开/1024策略不自动Bug，四未验前端例已恢复同代理artifact-only补齐。158玩家账本仅本地，初次审批因实链未完拒写后已实际补证再录；新隐私限定Batch与clean Release/Git继续，所有Root写租约已退。第三批4真实后台关闭56F40056，会话撤销/正式2da维护false实核，累计29，实时888历史572待办，原导入887/571和新增1待导入分开。F2最终包六案、广播/长期容量未完；用户新裁判GM暂停/改场/补时只入低优先级后续队列，未实施。最后完整接受/远端仍02f，当前f5基础dirty，没有追加部署或维护权限。
+
+- **2026-10-08 17:35 最新，本地接续不部署**：f5基础dirty，最后完整接受/远端02f。Main独立329卡效/名称、80平台连接+29规则延迟、合同118及原导出17+7、当前DLL真实旧V2两案均通过；初始新Batch28失败6253过及temp保留，旧Hammer族/私区实例断言冲突已修正且78/686分母不减。名称36维护文本76处统一为湮灭，旧字命中0；五快照显示字段经旧A55/新959A输出精确比较后更新黄金，权威初始/命令后状态不变，原Journal失败关闭不绕过。两新真实V2例已进入Root，下一完整Batch/clean Release/Git仍待，不借Focused称通过。自然到期/terminal原RED保留；庆典/Hammer/Editor/排序等未上线报告不fixed。第三批4具名正式DLL原场景各三轮过，runner仅准备，实际Bug仍25关闭/575待办。F2最终闭包已漂移，须新accepted同包完整六案，不运行旧f5单案稿；广播schema9/真实长期容量待。两服务维护无写，最后15:30现场只是历史；实时以A2/绑定回执核验。
+
+- **2026-10-08 16:05 最新，停止同步而非停止任务**：f5四族Batch6650/1089全过，但clean Release规则6650过/平台1088一真实WS快速重连失败，原19FB037C/TRX/timings/temp保留；完整接受/远端仍02f，当前新修复dirty。Main和独立只读定位old finally非原子删account可误删new owner，用户已批准三cleanup原子条件删除；Root另落实获批庆典两筛选权威阵营（真实9红/2绿），子雷神之锤卡名回合一次（真实17/11红）用原稳定卡名注册表、兼容仍存在的旧键，通用区重置不改。两写者/子持Focused.NET，Main只静态/记录；返槽后Main独立专项→Batch→clean Release/Git，不以独立WS12绿掩盖原失败。新F2 sibling静态稿绑定f5但所有Run被pending阻断，最终包accepted SHA后重绑；原六案保留。唯一实时状态在`card-ui-closeout-20261008/latest-status.json`，测试428fff25/正式2da/维护false为15:30只读观测，无任何服务或维护写。新增报告未fixed关闭，schema9/真实长期容量继续排队。
+
+- **2026-10-08 15:20 本批完整Batch通过，提交级Release待，未部署**：本多/迦具土共享候选入口、近藤共享致死事件保护、Editor基础保存与赛季提示解耦、主宰百分比排序四族均独立验收；统一Batch实际6650规则/1089平台、失败跳过0、UI355/反馈144/卡图324+42/类型及双前端构建通过，完整日志`kagutsuchi-attack-factory-fix-20261008/main-combined-batch-r1.log`，两监督success receipts保留。15:18 fetch本地/origin仍精确02f，无远端冲突，四族与各自玩家账本分别提交后跑clean Release；当前开发dirty不能借旧02f绿色声称新提交已验。最终唯一事实读`artifacts/card-ui-closeout-20261008/latest-status.json`及release-status，不由文档触发部署。F2保持02f六规模证据，最终包补10000-unique同包8→7→8/25历史/双赛事锁/旧2da逐玩家存储哈希校验；只有存储/API/catalog/build closure未变才复用，其漂移或新案失败升级六案。两个子租约已结束，无其他构建。Bug25实际关闭/575待办不变，新修复报告不提前fixed；广播schema9及真实长期/容量仍待，过期部署权限不复用，两服和维护不写。
+
+- **13:47实际增量，未部署**：完整已验/同步应用仍02f0fd65；13:47 fresh A2确认GitHub同02f、本地新近藤两源dirty、测试428fff25/正式2da/两维护false。F2最终六组合Windows纯合成功能退出已Main独立517F7801验收：同A55包DLL、8→7→8、25历史、2真实API锁引用，旧2da DLL自己的存储哈希逐玩家关联、四完整投影/DB-WAL镜像不变；旧r1–r7/reader失败保留，绝对容量/真实Linux/长期未验，不安装Linux。D实际38.19GiB足够后才运行，本轮没有人工清理，不虚报释放。Bug逐项唯一工作清单现887历史/575待办，两轮25条实际终态读回与会话撤销，第二轮B0A25FDE；重复5关联主反馈但不修改它们，乾坤阳/戒指庆典继续排查。两个批准写管线：free_action_card_audit仅引擎近藤共享替代+新规则测试，独占.NET；原牌库界面优化只Editor保存公开季限制解耦/Rankings百分比排序及指定Node守卫，不抢完整构建。Main仅记录/闭环/独立复核，不第三产品写者；各族Focused→独立行为→Batch/clean Release/Git，不部署或维护。原本多4为待定因RED；梅杰德post-r5夹具修正未执行，不能称产品缺陷/通过。广播及真实容量长期仍未完成。
+
+- **三个限定根因本地提交完成，最终状态只读绑定回执，未部署**：后台`1cd5628b`、归组`f95c9307`、反馈入口`09e859f2`独立提交（8/5/28路径），未混根因。分段Batch6601规则/1089平台/完整前端实过；首平台旧watchdog Dispose占用失败保持，未确定持有者，不冒称根治。Main组合实证`admin-ui-closeout-20261008/pre-release-acceptance.json` SHA0EA279B4绑定原failure及success receipts/最终浏览器，三个产品源冻结，剩余本记录与4状态文档提交后才完整clean Release。实际最终SHA/Release/TRX/同包/Git结果由`D:/GPT/Legion12/artifacts/admin-ui-closeout-20261008/latest-status.json`及`node scripts/release-status.mjs --json`查询，不把下方提交前状态当实时读数。禁止文档/回执更新触发发布；两服维护不写。F2 Run起始D>8GiB与旧reader candidate输入适配为下一安全前置，不能跑旧bfa或降预算；当前约6GiB，失败/PINNED保留，无私有新用途授权或Linux安装。
+
+- **最新准备提交/完整Release，未部署**：原Batch规则6601通过，平台1088/1089一旧watchdog清理matches.db占用失败（持有者未定）；原fail test-c836...保留，源码不改同源watchdog15过，再平台+完整前端域r2实际exit0，1089全执行/失败跳过0、UI355/feedback144/Group14/原private177+UI模板24/public76/B1/类型双构建/324+42。R1规则success test-884d.../R2平台success test-7169...均持久receipt，TRX按成功合同消耗；最终Release另留raw。归组normal2FF333F2/verify836E0083已Main精确接回并独立14过，原9 browser仅Focused，不加入C路径CI依赖；stage355旧守卫都保。后台7源与B4C28F87产品没有变化，两子全冻；5291/5297自有服务2进程已按精确命令行结束，监听0。先逐族3提交，再记录汇总/clean Release/Git，不部署/维护/关闭Bug。只读F2预检已接：growth旧bfa硬锁须重绑最终包；旧reader缺candidate-input，纯合成可补；D实际约6不足Run8GiB门槛，不降2GiB余量/6GiB累计预算，不删失败/PINNED、不往C跑，private新用途先核权限，Linux/长期缺口保持。
+
+- **2026-10-08 最新三限定批冻结准备门禁，未部署**：当前HEAD仍4b2，主树dirty（5卡统计产品+2平台测试、排位归组Panel/实际9测试、设置反馈UI与合同/三独立账本），两子已Frozen，Main是唯一写入/构建者。Main完整平台1089fail/skip0、TRX546BF6DA/产品B4C28F87；归组9/9正常链，UI355/反馈144及原21轻消费者通过。实际浏览器最终D盘`feedback-settings-main-20261008`六尺寸、SiteShell两尺寸可见焦点、真实surrender/leaveRoom、移动回放返回、宽屏回放控制、Editor三短屏21全绿；原离屏focus和tracked夹具假定隐藏More三失败都保留。拒接改写历史玩家日志；新UI玩家账本与后台internal账本独立，不混根因。Source5处与子不同为保留4b2与旧日志，另helper/Global/scroll守卫由Main自有回归改进，子284图哈希0坏但不冒称新源已全验。下一完整Batch/逐族提交/干净Release/Git精确读回；无测试/正式部署、维护或线上Bug关闭。已启两本机临时5291/5297验收服务，必须确认结束；完整构建单槽，D实际约6GiB，失败/PINNED证据不删除。
+
+- **2026-10-08 02:46 私人族完整验收/同步已完成，后台独立新批接续，未部署**：应用`4b2a431fc7998f22bfa4836f03f96112a0830894`实际干净Release6601规则/1067平台全部执行、失败跳过0、八stage和原TRX/类型/双前端/324+42；独立从压缩包直接核实DLL3050DF6E与两个测试宿主相同，包942A928F，玩家累计4项/58源覆盖正式2da基线。唯一`deck-private-lookup-20261007/accepted-release-4b2a431f.json` SHA521D938C，Git本地/origin/ls-remote精确读回。随后新7卡统计源限定diff+新4文件已按冻结LF逐一接回，Main树现在dirty；不能引用先前clean声称新源已全验。后台首批26平台/45同族原TRX与7源hash已独立核，完整Main平台待；归组2源Main真实9已独立重跑但未接Root，用户接口仍limit300/50人工选择。反馈界面子26路径+新辅助/Focus浏览器已交284图，Main尚未整合/独立复验；六项移动比例转述来源时间无法独立核验，未授新几何写。Root只做有界前台/后台接收，没有部署/维护/线上Bug关闭。Release测试结束自动清理约5GiB临时数据，D实际恢复6GiB，并未手工删除未知/失败目录；先前“约1GiB”只为运行中峰值。最新公网/Git综合读数因本轮限制网络返回unknown，不能用历史2da/428fff25冒充实时读数。
+
+- **2026-10-08 02:12 提交前最终独立审查完成**：导入补文档代际，路径A-B-A即使输入/身份不变也不能保存迟到请求，metadata21→22；最终完整前端域r8 exit0，正常private177+UI模板24共201、原所有门禁和类型/双构建保持。最终唯一提交前回执改为`main-pre-release-acceptance-r2.json`，旧41C916B1回执保留为当时r7证据、不覆盖。后台1067源码未变仍有效，Editor31/Selector18最终源码绑定不变；新后台及反馈界面未接Main。02:05及更早条目仅历史过程，准备clean Release。
+
+- **2026-10-08 02:05 私人消费者族分段Batch已验，准备提交级Release**：完整平台实际1067/1067、失败跳过0，监督success且临时TRX按合同消耗，原批总exit1因前端旧消费谓词/调度检测，不能写为整段绿色。最终完整前端域r7实际exit0：UI354/反馈144/类型/双构建/324+42，private正常链176+UI内模板24共200，模板不在private链重复执行。五轮原前端失败与原截图失败保持；同步缓存/草稿准备和有界读取分层，cap3不变；三动作/签到/发布锁旧叶等价迁移并扩反例，四类型窄边界修正不削校验。最新真实Edge Editor31/六尺寸（browser-r10）、Selector18/六尺寸（selector-browser-r3）前后hash已绑最终Core/platform源，非真机/真实SQLite。唯一pre-release证据`deck-private-lookup-20261007/main-pre-release-acceptance.json`；完整已验/已同步应用仍8b，当前待commit/clean Release/Git，未部署。后台卡数据7源/归组2源已独立Frozen71/9，未接Main；界面专项已恢复原隔离静态写/Node租约，Main独占完整构建，暂无子浏览器/完整build/.NET槽。
+
+- **2026-10-08 01:20 主私人消费者族冻结，准备完整 Batch，未部署**：正常构建新增 private chain 194 个 Focused（请求27/读取43/模式34/编辑器30/四轻量消费者21/命名来源21/模板18），原 UI354 保持；原快照12谓词增加复制pending锁两负例至53，不删原保护。真实 Edge 编辑器29场景/六尺寸、原生 WebLock/localStorage/合成HTTP修订冲突、另存页外同名及删除后消息均通过；选择器18/六尺寸含短屏整块滚动通过。最终产品 hash 见各浏览器report，非真iOS或真实SQLite。r6/r7/advanced-r1截图超时保留，不把它们改写成功；显式活跃标签页及两稳定帧后最终r8完整通过，原超时根因未确证。最新唯一完整已验应用仍8b，新族未Batch/Release/同步。后台独立慢查询源已冻，26平台/45规则Focused和真实native预算/忙锁通过，已释放.NET；待Main独立接回，不同族不混同回执。界面入口新请求已交「L12-移动对战互动区修复」只读盘点，无第三写者/构建；当前两服/维护无写。
+
+- **23:40接续仅本地**：用户已批准共享请求代际/409最小修复，Main真实27专项通过，platform72DAB068/新测试D6922599，B25F6189回执，原RED均保留；尚未整族type/Batch/Release。CU5-A Main独立34通过已核冻结hash，Editor B Main直接两源旧实际全量GET红测30CA9569→30Focused绿，原workspace12/draft绿，真实浏览器/WebLock/CAS仍待。关键代理仅C四产品+一测试，Main不重叠；最多两写者，构建串行。8b仍唯一完整已验同步应用，当前新源dirty，两服不部署/维护不写。23:24 Bug885只读终稿`bug-queue-readonly-20261007/final-r2`已回执，无自动修或关。继续B浏览器/C剩余轻量入口与命名来源、整批门禁/同包出口，广播和真实容量长期仍待。
+
+- **22:00最新接续，未部署**：C-U4三路径9361DBC7/deltaDBDB1EAA已逐原基线/raw/LF/冻结与live核后精确接回，Main集成回执8EF5DDEB；独立Private43、Main最新PublicSummary43/Read65通过。旧counter缺loadMineDirectory闭包、route同步epoch监听字符串及新增反例的Vue script offset失败均保留；Main只改旧测试缝和一监听器AST谓词，原65保护不删，新增真实目录失败/坏metadata/三迟回及监听正反例11项，最终counter76/76（日志D5C145A5，测试源364546F5）。这仍为Focused，未跑新整族type/browser/Batch/Release，不拿8b绿色覆盖新源。43的持久化/锁部分使用真实调用函数配受控navigator/commit seam，不等于实际浏览器WebLock/真实存储CAS，补证仍待。共享platform.ts两处真实r4问题已提问人类、源4F5FCD81未改，只有这项最终验收挂起。CU5-A关键代理四路径在Main树继续：BattleHub/Sandbox/SavedDeckSelector/新test-private-deck-mode-consumers；实际两mount GET全正文/metadata被body校验的RED25693274已Main实读，Core3路径不与它重叠。Root可写验收/旧测试，C-U4子已停止写，最多两代码写者、轻量Focused/共享build串行。完整已验/同步应用仍8b、两服未部署、维护无写；B编辑器/C赛事轻量消费者/最终同包规模/反迁移/旧reader/广播/容量长期仍未完成。
+
+- **当前新增独立待批准依赖，其他本地工作不暂停**：CU4已真实旧mount RED（4BED60F9）；中间导出私牌SummaryQuery/Page与`loadPrivateDeckSummaryPage`、`loadPrivateDeckBody({id,revision},current?)`仅协议声明、未最终验收。Main真实platformRequest/Vue/协调器合成复现旧401同token ABA注销新A和409 currentRevision丢失，r4日志C2622BAC；首三准备失败保留，platform.ts未改。已向用户请求最小共享前端补强，只挂起该依赖；子三路径其他实现继续，不借stub声称真实wire/所有ABA完成。CU5只读调用盘点已独立核对，A大厅+Sandbox+SavedDeckSelector、B编辑器、C赛事及轻量来源消费者分片，暂不盲信当前赛季legal可用于所有模式，也不凭当前页否定既有选择。Main取证Focused回执2AAD907B，18真实同步谓词正反例通过。应用完整已验/已同步仍8b；正式2da/测试428fff25不动，无新部署或维护权限。
+
+- **2026-10-07 20:44公开读取族已完整验收/同步，未部署；下批已接续**：唯一应用`8b1536c0117147f2a8baa3c15207adb5d3912d6b`，干净Release实际6601规则/1053平台全执行、失败跳过0、八stage/UI354/反馈144/双构建/324+42；五新增类76项逐一含于平台总数。包内B869A4E2与两测试宿主DLL相同，实际Program两场2行10041ms、两停机0/监听0、未知证据保留。唯一`deck-summary-ui-20261007/accepted-release-8b1536c0.json` SHA033CD3ED绑定原TRX/timings/包/日志；Git三处精确读回，20:44 A2实读树干净、测试428fff25/正式2da、两维护false，无部署/维护写。r3/r4原锚点图经Main诊断不能作区域视觉证据；r5同步稳定几何12实位置/六尺寸42图已复核且绑定最终回执，原失败取景保留。接续原牌库聊天C-U4三路径decks.ts/Library/新Focused测试已明确写租约、关键档，先真实全量GET旧mount RED；保单id/revision读取与最新缓存锁/CAS、账号ABA、B1/五scope/草稿/Quota，guest及CU5未迁入口不动，无共享build。Main独占共享记录与原详情取证脚本，六尺寸48图/28实位置下一批Focused已过；本条和这些守卫为新差异，不借8b的clean断言称现在仍干净。私人消费者/最终同包规模/最新反迁移/旧reader、广播和真实容量长期仍待，两整套未全收口。
+
+- **2026-10-07 20:22整族分段验收完成，准备干净提交级Release，未部署**：Main同最终后台15源规则6601/平台1053全执行、失败跳过0；原联合Batch因前端fan-out预算失败exit1保持原记录，未提阈值/加豁免。初始化与身份变化改为摘要→原三源分阶段，真实mount三场景及原15+7预算反例通过、max fan-out仍3。完整前端域Batch r6 exit0，summary43/read65/原counter65全部进入正常build链，UI354/反馈144/类型/双环境/324+42卡图及原B1保护保持。真实Vue详情六尺寸42截图、加载生命周期12场景/12图错误0；合成接口/卡图，不是真iOS或CDN验收。唯一`deck-summary-ui-20261007/main-independent-cu-family-acceptance.json` SHA 7DAA3304绑定Main最终源与日志；成功私有监督TRX已按合同消耗清理，最终Release另留原TRX。20:20 fetch本地/origin精确2d50451c，无冲突；新48路径尚未提交/Release/同步。19:26实时读数测试428fff25/正式2da、两维护false，无部署/维护写。两子已冻结，CU4仅只读三路径预检，最终完整Release及Git回执后再授租约；私人消费者、最终同包规模/最新反迁移/旧reader、广播及真实容量长期仍未完成。此前19:17与更早条目仅历史过程。
+
+- **2026-10-07 19:17整族冻结，准备完整门禁，未部署**：C-write四源及AE0E产品/1554测试DLL已核，子22/同族171全过，Main独立22全过，`deck-query-content-write-20261007/main-independent-focused-r1/receipt.json` 2C8DD929。C-U3八源manifest7a0e3c0c/delta94abd91f按精确LF基线接回，`deck-summary-ui-20261007/main-cu3-integration.json` EABD04A5。Main补两处type可空边界后，独立65读取+65计数+42目录再次通过，完整type r2通过；真实六尺寸内容/权限/匿名统计r2通过42图，正在补滚动稳定取证，非真机/CDN验收。原354UI/统计11/浏览20/B1、动作56与原83模板+7可用性通过。原pending表达式/捕获publish key、B1旧初始化及旧reference夹具失败保留，原风险仅等价迁移，不删断言；summary/read纳正常build链。两子均冻结，无并行写/构建；完整Batch/干净Release/Git待，底座2d。两整套、私人消费者/最终同包出口/广播/真实容量长期仍待，无追加部署/维护写。
+
+- **18:35租约明确**：前端C-U3八路径（原六+Library仅publish及原ContentEditor），详情页保持只读，草稿/迟回/tokenepoch/明确刷新与保存回归必要；薄PUT后台四路径首轮22实际通过，尚待同族/冻结回执，Main不借旧1031作新write验收。两写者/.NET串行保持，没有部署或维护授权。
+
+- **2026-10-07 18:27本地接续，未同步/部署新批**：Main完整平台实际1031/1031、失败跳过0，含pin/reference23与statistics31全部新项；唯一`deck-query-statistics-20261007/main-independent-acceptance.json` C662371F绑定12源/380B产品DLL/7017测试DLL及原TRX。匿名90日/每组3场、105组分页与原过滤口径保持，平台捕获后释放锁聚合、完成复核，不声称跨库原子性。C-U2七源已精确接回并Main独立42+原65通过，`deck-summary-ui-20261007/main-focused-acceptance.json` 0DB8A28E；首次Node参数/日志夹具失败保留。C-U3六前端路径仍在原牌库聊天（50+标准65中间Focused）；C-write关键子任务四后端/测试路径独占.NET，旧380B真实PUT旧content=200含历史/统计、新current=404 RED已取，薄保存wire已转交，不借1031历史绿色覆盖新增write源。两代码写者，Main只读复核/记录，整族Batch/干净Release/Git待。08正式已开放不反转，无新增两服部署/维护写；两完整方案、最终同包出口及真实容量长期仍待。
+
+- **2026-10-07 17:14本地接续，未同步/部署新源**：pin/reference前置8源（7新片+1旧合成排序夹具适配）已Main逐raw SHA/两个程序集/原TRX核验并独立同族118/118全执行、失败跳过0、含23新项；唯一`deck-query-pin-reference-20261007/main-independent-acceptance.json` SHA A423319CEFAC69BE784AD4CD1994701FF6B46D635F9A9B06C75DE776A616388F。严格name/time/head/权限/代际守卫未放宽；原编译、observer/引用比较、旧夹具和native失败均保留且不写成线上事故。目录pin逐页、官方null/计数不失效、owner≤100本人proof、单次catalog hash和no-store保持。新整批尚未全平台/Batch/Release/Git，不借2d旧绿色。C-U2七前端源34consumer+原65为中间Focused，社区详情pin交接须C-U3，不能默回旧全详情/假统计。C-stat关键子任务仅5后端/测试路径及D盘artifact、独占.NET，先ACC6真实404，再有界90日/3场组统计、平台捕获—释放锁聚合—复核和匿名分页；Main仅记录/复核，仍两个代码写者。正式/测试和维护无写，整套/最终同包出口/广播/容量长期仍待。
+
+- **2026-10-07 16:41接续，仅本地**：已验收应用仍`2d50451c`，下列新记录/实施不借旧绿色。`deck_pin_reference`真实冻结ACC6发布DLL的摘要HTTP200缺pin、本人引用GET404两项RED已保存；首native依赖夹具失败保留、不计产品RED。新wire已冻结：摘要末尾nullable readToken；本人≤100 distinct repeated publicationId返回`{status:"available",items:[{id,publicCode,publicationVersion,ownerId}]}`，无命中可空，但未知SQL格式/代际503，权限401/开关503。后端六路径/.NET单槽继续；原牌库聊天C-U2独立七前端路径及轻量Node租约已正式下发，公开/官方分页及稳定官方ID、本人的页外proof均需独立验收，禁止假正文/全库pin/Generation冒token。全球两个代码写者，Main仅记录/复核，完整构建串行；未部署、未更改维护。最终C-U/统计/同包规模与旧reader/广播/真实容量长期仍待。
+
+- **2026-10-07 16:19已完整验收/同步，未部署**：应用候选`2d50451c18ad2940f76b2d81205b28ab3847472a`干净Release实际6601规则/977平台、失败跳过0、八stage、UI354/反馈144/双构建/324+42卡图；原TRX/timings/包286C5559及真实包内DLL ACC6C54B与测试DLL相同。Windows同包Program两场正常退出0、未知证据保留、两监听0。Git本地/origin/ls-remote精确读回，唯一D盘`deck-counter-ui-20261007/accepted-release-2d50451c.json`。16:19独立release-status实读测试428fff25/正式2da、两维护false，未部署；本行及下列接续记录进入新批docs差异，不据历史clean推定现在仍干净。原牌库聊天已收C-U1回执，U2暂无写租约。关键子任务`deck_pin_reference`仅六后台产品/测试路径+D盘artifact写/Focussed.NET，先旧同包真实RED，再摘要本页readToken及认证owner≤100轻量reference proof；Main独占记录，最多两写者/.NET串行。原实时方案/剩余C-U/统计/最终同包规模与旧reader/广播/真实容量长期未全收口；不复用过期部署或维护权限。
+
+- **2026-10-07 15:46限定片本地验收完成，未同步/未部署**：CQ3-read六源完整Batch6601/977保持；C-U1两源加载世代修正已按e6ce2901/2b2f93cd精确接回，Main实际65行为、52动作锁、354UI、全B1、235字符golden及完整前端type/双环境/324+42通过。真实详情6尺寸40截图、真实加载12场景/12截图/错误0/动作锁最终释放通过，源码17项前后精确未变。唯一`deck-counter-ui-20261007/main-independent-acceptance.json`组合分段实证，明确原main-green-2外层因夹具把b当heading失败，后续离开页template夹具失败均保留；不伪称原整段exit0。首次GET迟回及真实Vue raw/proxy两类RED保留，正常计数恰一次。新源未提交/Release/Git，Main准备按一个读取/消费者生命周期族收口。U2只读已识别摘要generation非body pin、页外私人公开引用需按ID轻量出口、官方stable ID需唯一匹配，暂无U2写租约；统计/其余C-U/最终同包规模和旧reader/广播仍待。没有两服部署或维护写。
+
+- **2026-10-07 14:58本地接续，未部署**：CQ3-read完整Batch已于14:27实际6601规则/977平台全部执行、失败跳过0；唯一`deck-query-read-20261007/main-complete-batch.json`，不是待跑。C-U1七源normalized逐一相等，Main43实际Node/20浏览合同通过；完整前端首轮因旧写法谓词失败，原四轮日志在`deck-counter-ui-20261007`保留。Main仅迁移动作锁一谓词与UI浏览一leaf，保354及其余断言；B1旧queued-copy夹具改为执行真实counter guard/helper和7标量结果，原全部测试通过。独立只读审查发现首次GET期间先换页/卸载、后捕获guard的竞态，尚非线上事故；原牌库聊天仅详情页/Focused两源补加载世代与真实RED/GREEN，其他七源保持。完整前端/浏览器及新提交级Release/Git仍待，不能借bfa的绿色覆盖新源。Main独占三合同/记录，子两源写/Node，无并行构建；两方案C-U、统计、最终规模/旧reader、广播及长期容量仍未全部收口。08开放不反转，无追加部署/维护权限。
+
+- **14:14接续，不部署**：CQ3-read六源Main独立977/977全部执行/失败跳过0、41新项逐条过，唯一`deck-query-read-20261007/main-independent-acceptance.json`；当前Main明确新产品+记录差异，应用已同步底座bfa的完整Release不自动覆盖新源。Main完整Batch41895源冻结。C-U1只counter前端7路径在原牌库聊天写/static，轻量Node可做，禁止完整build；B1/五scope/正文/history/guide/stats/官方/样式均冻结。growth另一代理三artifact仅同包/准确TRX复用/tracked-source安全准备，新CQ3使bfa Run拒绝，最终接受候选须重新显式绑定。两写者、构建串行；两服仍13:45fresh读回2da/428fff25且维护false，无新部署权限。C-U其他片、广播、最终规模/旧reader、真实容量长期仍待。
+
+- **2026-10-07 13:45已验收/已同步，未部署**：应用候选 `bfa63dc6addefb0d52aea60ab11e63de2745ae2f` 完整干净Release6601规则/936平台全部执行、失败跳过0，八stage/UI354/反馈144/双前端/324+42卡图及schema3实包通过。Main实读原TRX/八stage/包6A3C97F1与内DLL409E3966；同包真实Program两场2行10038ms、停机均0、监听0、未知目录保留。唯一`storage-availability-bounded-20261007/accepted-release-bfa63dc6.json`，Git精确读回且13:45源干净；本行加入之后为下一批记录差异，勿据历史读数推定仍干净。fresh两服仍测试428fff25/正式2da、维护false，无部署/维护写。D盘精确SHA相同已结束编译副本改硬链接，所有路径/字节/独有程序集/日志/TRX/失败数据保留，两个apply实际可用空间增量约9.7GiB。CQ3-read六源41静态已冻，原牌库聊天独占.NET做真实GET404 RED/同族Focused；growth三artifact已冻，仅补tracked-source隐私守卫静态，不读忽略runtime，不.NET。下一C-U/广播/最终同包规模与旧读/真实容量长期仍待；整套和生产启用不冒称完成。没有新的两服部署授权。
+
+- **2026-10-07 13:09本地完整Batch完成，未部署**：CQ2、owned-v1归档/精确清理及counter scalar三源已接回；Main完整Batch实际6601规则/936平台，全部执行、失败跳过0、exit0。唯一组合节点见D盘`storage-availability-bounded-20261007/main-batch-cq2-metrics-counter.json`；成功监督临时TRX按合同清理，不能当作仍存文件，最终Release须保留原TRX。当前这些差异尚未提交/Release/同步，底座仍9f4；两服与维护没有追加写入。Main准备独立特性提交和干净Release；原牌库聊天下一片仅CQ3 current/单历史版本按需读取六源写/静态，growth代理仅三artifact静态准备，最多两写者/.NET由Main串行。历史/C-U、广播、最终同包规模/旧读、真实容量与长期仍待，不称完整两方案收口。
+
+- **2026-10-07 12:43本地节点**：精确owned-v1采样/删除安全六源已Main接回，独立组合平台921/921 fail/skip0与Main真实336328E2冻结DLL生命周期通过，唯一 `process-metric-archive-20261007/main-independent-acceptance.json`。实际2行10024ms、两停机0/监听0/未知内容保留；Main外层错用LASTEXITCODE导致原shell1仍保留，独立receipt校验成功，不写成原命令绿色。原旧guard真实RED与最终74、R1—R6所有失败、Missing proof与审批拒绝保持；R5非零根因未定，真实Linux/7日长期未证。当前Main新差异未提交/Release/同步，两服与维护不变、08开放不反转，正式启用需新授权。counter scalar三源在既有牌库聊天，独占.NET先真实冻结3363缺路由RED再全同族Focused；其他26源冻结，Main仅记录。后续历史/C-U/广播/最终规模/同包旧读/容量长期仍待，两整套不冒称全收口。
+
+- **2026-10-07 12:20本地继续，不部署**：已同步唯一干净底座9f4d7ad7（完整6601规则/840平台/八阶段）不重测旧批；当前Main CQ2十源为新未提交差异，逐一normalized相等、独立完整平台r2实际877/877失败跳过0。唯一技术回执 `deck-query-public-20261007/main-independent-acceptance.json`；子精确301权限真实四红已修，最终431同源全过。Main首自定义artifacts输出导致启动合同无法找到源码、子首260/264长夹具恢复错误，全部失败证据保留，均仅修验收夹具位置重跑原范围、不改产品或删断言。CQ2完整Release/Git待。.NET已授Archive语义安全RED/GREEN及带实际退出码的真实Program诊断，未零退出不集成启动；其余牌库管线仅三源counter scalar写/static，历史接口另片。最多两写者、构建串行；08正式已开放，两服/维护无追加写入，整套/C-U/广播/最终规模/同候选旧读/真实长期仍未完成。
+
+- **2026-10-07 10:54本地接续，不部署**：08开服已按时收口，正式2da/测试428fff25不变，09:58fresh正式健康/维护false。五限定特性已保存为本地提交，当前HEAD `2fe0f9857a0aa5b7a6dbbad2baae39a3b42cd32c`，远端仍2da；CQ1十源已精确接回，Main独立完整平台840/840、fail/skip0，39源/DLL/TRX绑定见`deck-query-private-20261007/main-independent-acceptance.json` SHA `A6A1018BC9D06CC6EC9CDA615516BF60333DA5A13E49A1DD81A73AD0BCA352E6`。旧/新41golden逐字节一致、子394全过，旧WS观察竞态只修测试；原失败留存。此前6601规则及纠正后前端域已验，初Batch19557前端旧字样失败不伪称成功；CQ1之后干净Release/Git待。CQ2已授精确10源写/静态，实现公开+官方同代全库摘要/唯一CardPool环境；Archive2独占.NET，首次59为49过/10失败、原证据保留，UTC日解析共同问题定位修复中，未接Main或Program。两写者/构建串行，两完整方案、CQ3/C-U/广播/最终规模/长期仍未全收口。
+
+- **08:41本地接续，不部署**：08开服已实际收口、两服不变。旧镜像夹具单文件最终10/10，Main失效规则域Batch80068已08:28:10实际6601/6601 fail/skip0，监督success/cleanup1；成功临时TRX已按合同删除，不把日志打印路径当仍存文件。原92787失败、首修失败保留；平台779及未变前端/ops证据保持，完整干净Release/Git未做。08:37fetch实际本地/origin均2da，Main63路径dirty。C-R静态8来源/12case与大计数在线展开预算小片在既有牌库聊天中，现独占.NET，首冻结编译0/0，不预称测试通过；两完整方案仍未完成。另一个旧readerartifact仅Plan/12资产/PS/XML/hash准备通过、未Build/Run，已冻结归还写租约，C归还槽后Main才接运行；Windows同版本原生逻辑不冒称Linux、合成SQL锁牌引用不冒称真实赛事API。最新准备回执`deck-old-reader-20261007/receipts/preparation.json` SHA `0CF1F41489AC9D80D2AB8B54CDE79726EDBDEB255C29859269CC46216C4EA4B9`，仍待Root最终源复核及运行。广播只读矩阵已接收，C-R共享出口冻结后串行接线，暂不授共享写。未完本地继续，正式/测试部署需新授权。
+
+- **08:13本地门禁接续**：完整Batch92787实际exit1，规则6599/6600唯一失败为旧`DuplicateLegacySceneRows...`夹具在DB仍在时同Version改镜像期待覆盖，与A拒漂移保护冲突；原TRX/监督目录保留，不放宽产品。子代理单规则测试文件迁为真正新路径首次旧数据导入、保原较新文本断言，加同代拒覆盖/版本/mirror健康对照，全类Focused执行后Main规则域复验及干净Release/Git。C-R另一独立树写者继续；旧readerartifact准备已暂停，无第三写者。正式08开服回执保持，不因本地失败重维护/部署。
+
+- **2026-10-07 08:01正式开服已实际收口**：本次预约在08:00自然失效；08:00:54新日期工具成功、08:01:26 Main另行fresh公开HTTP读回正式2da/health ok/maintenance false、policy92 open/active false/entryBlocked false/immediate false。同PID1465526、重启0、三围栏missing、匿名WS正常；控制面仍off、精确认证503仅记录disabled_verified_no_fence，不冒称原子发布链线上启用。没有追加正式/测试部署或维护配置写入，专用会话已撤销。实际`maintenance-open-20261007/maintenance-open-receipt.json` SHA `40C838C35516F441F6F39D46785C60B6E5113586FE05AB1C4171A09A25DFA33B`及`independent-opening-readback.json`已生成，08一次回访已工具删除，不重复Apply。后续本地继续：Main完整Batch92787源码冻结；C-R13路径已授既有牌库子聊天复用A稀疏树写/静态，artifact-only旧reader验证准备由另一代理承担，两写入者、禁止并行构建，均不动正式。
+
+- **07:54接续**：Main A14独立完整平台755及A/最终身份6合并完整平台779均实际全过、失败跳过0；身份SourceOrder两等价回归含于最终24专项，六路径逐一normalized相等已接回，租约归还。主树完整Batch92787运行，源码冻结；最终TRX与实际acceptance在`deck-payload-a-20261007/main-full-platform`及`committed-ranked-identity-20261007/main-integrated-platform`。本批未提交/推送/追加部署。两只读预检（旧reader Windows替代和广播对象事务）不占写入/构建；C仍未实施。07:50fresh正式仍2da、策略92预约08结束、即时false；08点优先实核开放，普通本地测试不延期。下方07:36“正在60906/身份暂未构建”仅过程历史。
+
+- **2026-10-07 07:36当前，08点不因本地验收延期**：07:20已实际保存`maintenance-open-20261007/decision-0720.json`，两完整方案未达退出条件，明确不追加正式部署，保留已独立核验正式`2da4344e`，测试`428fff25`不动。预约92在08:00自然结束；08工具43/43及SHA冻结、专用账号与三围栏检查保持，实际开服回执尚待08现场核验。五条具名Bug闭环已完成，不重复写。B0/B1和冻结ops consumer已集成，最终前端域Batch31966退出0（UI354、反馈144、卡图324+42、类型及双环境构建、codec/storage/authority守卫通过）；三处旧固定字符串叶保留风险并改成等价新合同，原失败日志不删。A14已逐路径集成，子完整平台755/755失败跳过0，Main正在主树独立完整平台60906，不能借子结果称主树Release通过。身份6路径原focused22/22，Main发现完全并列排序需保留旧列表ordinal，子仅原6路径修正和补行为回归，暂不构建，原22绿色不绑定新修改。C真正按需、广播、采样/7日留存、目标容量与长期仍未完成；开服后继续已授权本地工作，构建串行，不提交失败候选、不部署局部完成片。
+
+- **2026-10-07 06:43增量，未追加部署**：06:39实际公开HTTP再次读回正式`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`、配置92、即时维护false，预约02:00至08:00。08:00开服为独立硬截止，两完整方案尚未完成，不以局部候选赶部署。B1的16路径与B0六路径已集成；Main独立26缓存/authority专项及子任务六尺寸24故障/36图证据绑定，缺specialIds仅修合成GET夹具，保留现行free-move守卫。ops consumer已冻结，严格gate、72故障/6执行器、SQLite30、Python28独立通过；原合并Batch因testrun专项停滞后中断exit1，日志保留，不能称完整Batch/Release通过。06:37 fresh同专项64949现实际退出0，完整隔离/目标/回退/储存收敛保持；本次停滞根因仍未知，顺序stdout/stderr读取只是已定位的风险。正常权限复核已恢复。A迁移9路径在D盘稀疏树，产品编译通过、测试项目先因同源linked源缺失及init-only夹具编译失败，修正/真实focused接续；非空赛事full-JSON回退证明仍须补齐。committed身份片在另一D盘树精确6路径实施、不构建。两代码写入者、共享构建串行，Main统一完整验收/Git；A/C、广播、采样、目标容量和长期尚未完成，不能称整套收口。08工具43项及SHA冻结证据保持，当前仅预约到期保障，尚无实际开服收据。
+
+- **2026-10-07 05:25增量**：五条具名报告已实际关闭读回（92具名最终TRX、正式2da绑定），不是待关闭。正式仍已验收`2da4344e`、测试仍`428fff25`；主树现有B0六路径及ops/文档差异，不能称当前开发树干净或已同步。B0 Main独立708 codec/短码/QR通过；B1缓存接线及9个Vue错误/迟到消费在独立牌库子聊天中，ops consumer另一写入管线正在完整故障专项，A/C和广播/身份/真实容量长期仍未完成。全球两写入者、构建串行，Main统一验收/同步。08开服新工具独立43/43通过并冻结；唯一绑定`maintenance-open-20261007/main-independent-acceptance.json`，不是已开服收据。预约92在08自然失效，07:20/08一次回访有效；未完成两整套则不追加发布，08仍实核开放，普通本地工作绝不延期维护。其后历史时点的“B0未集成/待关闭/待租约”不再代表当前进度。
+
+- **2026-10-07 04:20当前**：正式服已经成功部署并独立核验`2da4344ee3d776cc8396fcf5a0466cc9da1270f4`，本地/GitHub同源，测试仍`428fff25`。正式唯一完成收据为D盘`release-20261007-approved/retry-2/release-closure.json`，完整6600规则/745平台、失败跳过0，旧失败和最新数据库保护证据保留；下方待发布条目均为历史。用户新授权：先闭环五条具名Bug，再并行优先完成牌库存储A/B/C和完整正式服对局保障。正式预约92结束08:00；07:20停止新风险、07:30判断，只有两整套方案完整验收并留足安全余量才追加正式部署，否则不部署但仍08:00开服。一次性07:20/08:00回访已建立，新开服回执目录`D:/GPT/Legion12/artifacts/maintenance-open-20261007`；不运行过期部署/解除脚本、不部署测试服。B0 codec仅冻结专项/类型通过未集成，不等于B1/A/C完成；外部发布consumer、广播/身份、采样及真实容量/长期仍有缺口。不把Windows合成、历史9条friendly及1条waived例外冒称完整排空许可。
+
+- **本批停服proof限定修复已通过专项和完整ops Batch，接续干净Release/受控发布**。最终SQLite30（旧15全保留）、6实际执行器、53发布故障场景及架构锁通过；Main独立30复验和最终FC374619源码的服务器Python3.12.3/SQLite3.45.1合成微库GREEN通过，主库和非空WAL严格不变。仅known空WAL比较规范化、300/310有界预算及固定安全reason/stage，不删文件、不checkpoint、不减少完整性检查。两子测试租约归还，无并行构建；新候选/七阶段/TRX/同包/Git只认D盘runtime-proof-gate-20261007/acceptance.json实际内容。此前卡效bc1f完整Release6600/745已同步但两次正式尝试失败，新程序未启动、旧c858已标准恢复/核验，维护92原样；本次失败围栏已核对归属，不能手动清未知fence。当前新当批部署/元数据/首次升级/校验器修复及验收后受控重试授权有效；不测试部署、不解除维护、不回写旧库。当前发布结果只认D盘release-20261007-approved/retry-2的实际production-release/independent-verification收据，缺失不是已部署；root和retry-1失败及快照原样保留。
+
+- **本批首次干净Release仅隔离测试依赖缺失失败，未同步/部署**：c878完整规则6600/平台745及UI354/反馈144通过；新增免费位移Node测试原放根scripts，隔离前端构建未复制该依赖，frontend-build明确失败，原日志/七阶段部分timings/TRX保留。仅将该测试迁入标准opcgpro-vue/scripts并修相对源路径/package调用，不改产品/发布协议、不删守卫；本批保存新候选后重新完整Release，最终只认D盘本批acceptance.json的成功绑定。
+
+- **卡效插入批实施冻结，接续提交级验收/同步，不部署**：本批最终447专项、24真实组件三尺寸/双方点击、20函数行为通过；完整Batch规则6600/平台745失败跳过0，旧希波吕忒前端卡号合同阻断保留，替换为权威许可/格位/同move保护后前端域Batch实际退出0、UI354/反馈144/类型/双构建/324+42卡图通过，后端产品源无再改。两个获准规则族与三项未复现守卫详见TASK-LEDGER本批。最终候选/包/七阶段/Git绑定只认D盘artifacts/card-effects-intake-20261007/acceptance.json实际内容，当前版本/维护用release-status只读；不存在该回执不得推定Release/同步完成。原反馈未线上复测，不提前关闭；本批无部署/解除维护/生产扩读授权，02:00计划不动。
+
+- **2026-10-07卡效插入批，本地验收中，未部署**：e829完整准备是历史冻结制品，当前主树有新差异，不能称干净。用户批准卡诺匹斯箱/四罐整项一次响应及来源离圣物区不重复自弃、天下布武0士气权威免费入口。首轮382中2夹具失败保留，修正后398通过；随后新增区位/LKI、首窗/隐私、手牌重置及真实组件验收接续。伊西斯/孙武8实际合成、拉格纳18组合候选DLL均符合，原现场未复现，不改正确规则、不提前关单。D盘artifacts/card-effects-intake-20261007，详见TASK-LEDGER。子任务已归还写入/构建租约，Main串行验收。02:00计划未改，无当批部署/解除/私有生产扩读授权，旧10月6日执行脚本禁用。
+
+- **10月6日下午继续本地，禁止部署**：上一入口片87fc4c19实际完整Release6477／707、167发布保护专项和七阶段／同包／GitHub精确读回，最终D盘deployment-drain-integration-20261006/acceptance.json已生成；两服17:04:59仍428fff25／c85819f0、维护false。当前新片10源码差异已集成，不能称主树仍干净：进程内许可消费／默认关闭启动开关／fresh第五控制路由，r3完整745通过失败跳过0；Cancel清fence时transport竞态已有r2两实际RED与最小修复，r1稀疏缺AssemblyInfo编译错误留存。主树Batch／干净Release／同包／同步接续，真实外部stop消费者未接，不冒称跨进程保护。用户维护及两服不操作，下一保护消费者→广播／身份→采样。
+
+- **16:40首轮干净Release被旧验证句式拦下，未推送／未部署**：43ac29f1实际规则6477／平台707通过；UI354中的匹配恢复合同仍要求直接return Task，与本批为保留排空租约而新增的return await冲突。Main只将该叶改为明确要求await，保留其余恢复／迟到消息／唯一串行发送保护及实际707平台证据；不把这一句式调整称A3迁移或删断言。原失败timings／TRX／日志保留，定向前端Batch及修正后完整干净Release待。
+
+- **2026-10-06 16:21，全入口／控制协议片本地Batch通过，未部署**：Main已在主验收树接回冻结35路径并核对一致，完整Batch实际6477规则／707平台失败跳过0；当前HEAD及origin仍c72b5316，本批差异待保存为干净候选、完整Release／同包及Git精确读回。默认不启用，Program和标准停服消费者未接；独立复核指出返回permit后Cancel的外部停服竞态，下一片须先原子消费并阻止同进程重开，再接真实工具。用户再次明确错过时限不部署；两服、维护、生产与Bug状态不写。最后14:26只读测试428fff25／正式c85819f0、两维护false。下一仍按保护消费者→广播／身份→10秒采样／7日留存推进，不安装Linux。
+
+- **10月6日15:50控制协议完整平台已通过，接续完整门禁／Git，未部署**。integration树最终r6实际707/707、失败跳过0，源清单`D:/GPT/Legion12/artifacts/deployment-drain-integration-20261006/platform-r6-source.json`与原TRX／监督回执保留；实际sandbox正常投降在Draining完成、terminal只改transport不新增checkpoint、控制401/403不写DB、同owner幂等permit、unknown/锁忙/取消/异常及epoch竞态均通过。r4为Main局部变量编译错误，r5两失败为隔离quarantine缺父FK和DELETE锁夹具未清自己的旧pooled WAL句柄；只修测试、直接核DELETE模式，原失败保留。只读架构锁与127账本通过；稀疏源码缺前端/CI导致最初检查失败，只补已有小源文件，不复制卡图、不删除守卫。Program/标准stop消费者仍不启用，尚不宣称正式全模式发布门可用；最新禁止部署继续生效。
+
+- **10月6日下午接续：本地推进，禁止补做超时部署**。用户再次明确“先不部署，已错过时间”；本次不部署两服、不改维护、不生产写入。已接受底座`c72b5316`完整Release6477／611、同程序集／实包／GitHub精确一致，唯一回执D盘`live-match-atomic-drain-20261006/acceptance.json`存在，冻结权威树干净。真实WS/HTTP/Room/平台／后台入口接线在D盘`deployment-drain-integration-20261006`稀疏树，r3完整平台679/679失败跳过0；r1十失败及r2一失败为新夹具，原TRX、失败临时树与r1程序集保留。HTTP大小写/尾斜杠与直接对象/媒体/审计写入口已补保护。随后Main新增同epoch控制器、四鉴权管理路由及三个public赛事时钟guard，属于未测新差异，不能沿用679绿色；限定子任务仅写两个控制器测试文件，Main统一构建。Program与标准deploy/rollback消费者仍未接入，正式服没有新stop permit，历史unfinished/waived不忽略。下一控制协议完整验收及实际stop消费者，继而广播／身份与10秒采样／7日留存。
+- **牌库存储B0接收状态**：冻结六路径三Node专项Main独立通过（缓存708检查／现行235字符黄金值），完整Vue消费者`vue-tsc --noEmit`实际退出0；Main仅补齐稀疏树已有273KB JSON，依赖目录只读，无产品差异扩大。完整前端Batch／Git接收仍待串行执行，不称已同步、缓存已切换或真实存储节约。不得新增失效旧码兼容／长期双格式双写；已有账号与游客数据保护保留，B1/A/C均无新写租约。
+
+- **10月6日下午发布保护底座Batch完成，接续干净Release／同步，未部署**。Main最终专项71/71（含真实直接junction拒绝），初轮完整规则6477／平台609及最后精确三路径平台域Batch611/611均失败跳过0；最后三路径只改MatchRecorder核对与夹具，协调器／入站源未变，规则证据未冒称同新DLL。最终完整提交级Release仍必跑，唯一最终提交／包／Git回执见D盘live-match-atomic-drain-20261006/acceptance.json实际生成后的事实。新底座默认不启用、没有服务器控制路由或发布工具消费者，不提供实际可用停服许可。数组／草稿等既有产品源与两服未变。另一聊天B0只在独立D盘稀疏树做分享codec兼容抽离及未接入的缓存codec，禁止切换缓存、改后端／共享记录或自行完整构建，Main继续优先真实全入口接线。
+
+- **10月6日下午接续：全模式发布保护本地实施，未部署**。用户已手动解除维护；Main只读核验正式仍c85819f0、维护false。今天08:00发布窗口已过，未执行发布，过期l12回访已删除，不补部署或再改维护。冻结1c2185ee完整Release6477／540及同包证据保持；新树正在新增协调器、入站在途租约与单事务只读耐久核对，不能沿用旧证据称新树已验收。顺序为全模式admission/drain/seal→广播／平台隔离→10秒进程采样和7日有界留存，Main与一个限定子任务两写入者，共享构建串行。历史未结束／waived不会自动忽略或清理，未知／锁忙／待恢复／待结算均拒绝停服许可。E4真机、F2真实容量和长期缺口保留。
+
+- **10月6日06:15候选冻结准备，未部署**：有界指标完整Batch6477规则／540平台失败跳过0；目录与停服备份证明最终ops Batch退出0，实际46发布故障场景、15真实SQLite/WAL校验、测试目录容量／失败证据保护及选择器通过。两旧失败日志和自有夹具仍保留，后续缩短夹具路径只影响测试，不改产品。最终独立审查runtime-proof-final-review.md已接收；本批仅内部指标／目录保护，不新增玩家日志，原26项累计日志保持。Main接续唯一干净提交级完整Release与同包验收，完成前不称已同步或已部署。首次升级授权已记录，平台扩读请求仍单独待答；不绕过权限或排空检查，不现在部署。
+
+- **10月6日05:52当前接续，未部署**：b5cf7afc完整验收及精确远端不变；本轮指标Focused和完整Batch均6477规则／540平台、失败跳过0，尚待干净提交级Release。目录r1/r2已冻结接收，Main集成系统盘10GiB前门及测试逻辑容量、失败/PINNED保护，正式14GiB上传／4GiB备份上限／8GiB余量不降低，活跃DB仍/opt原地。只读最新DB/WAL与备份证明15合成通过，已接入停服→快照→120秒proof→安装链；实际发布行为及最终独立审查接续。05:10用户已批准本次旧版首次升级既有流程，9历史friendly及1已放弃结算保留；平台待命令数量和历史集合摘要扩读另待明确授权，不绕过。今天发布28／维护27合成控制通过；**不现在部署，07:30冻结已验收候选，08:00前一次正式发布，无测试部署，成功独立核验即解维护、08:30失败兜底除实际事务**。当前两服部署、维护、生产数据及线上Bug写入0。下方05:05等均过程历史。
+
+- **10月6日05:05最新接续**：C1/C2与自动响应恢复批已实际完整验收并精确同步`b5cf7afc465a8e13e722fd50bcfbcd6ea7c996db`，完整干净Release6477规则／528平台失败跳过0，同实包DLL478FEC0A57BD4A0FBCDE2084F8F78303DE78A8453DB6913C9717297587DEEDBE真实30秒阻塞下pong0.6282ms、健康房先完成且一次权威终局、两结算耐久、原子检查点失败/重试控制通过；最终D盘live-match-isolation-acceptance-20261006/acceptance.json实际存在。其后Main只集成固定15-stage有界指标核心及12回归，新差异正在Focused；不把新树称已验收。运行/储存目录最小4脚本暂存由独立子任务处理，正式DB仍/opt/legion12-runtime，正式release/备份沿实际/www/legion12，不搬库、不改测试运行或配额。用户最新要求**不现在部署，8点前统一部署已修且验收通过内容，目录安排优先**，07:30冻结最近实际可部署候选。04:47已获本次正式DB只读汇总授权；05:02完整只读结果9条历史friendly未结束、ranked active/quarantine0、outbox待解释1且pending0，runtime活跃0；不是稳定stop permit，不清历史。05:00已有预约维护现已生效，Main未设置它。旧版无全模式seal的本次首次升级替代流程另待用户批准，该事项单独挂起，其他本地工作继续。今天发布与08:30维护兜底沿D盘release-20261006-0800-0830授权/回访执行，部署/维护/生产数据/Bug写入仍0。
+
+- **10月6日04:30，当前接续与今天发布授权**：C1/C2及自动响应恢复批完整Batch实际规则6477／平台528，失败跳过0，04:24监督进程退出0；Debug真实协议GREEN及原失败证据保持。Main接续本批干净提交级Release、同发布包协议核验与精确Git同步，最终唯一回执为D盘live-match-isolation-acceptance-20261006/acceptance.json，生成前不预称通过。下一片隔离指标12＋只读advisory68共80测试实际全过，100k有界/争用/慢sink探针通过；未集成产品，advisory绝不授予停服许可。用户新授权**仅今天10月6日一次正式部署，全部完成即可，最迟08:00使用最近完整验收可部署候选；成功独立核验即解除维护，失败/未部署08:30兜底，真正部署/安全恢复中才延后**。l12已用正常工具更新并实际读回ACTIVE；不要求逐次答复，不执行测试服部署，不复用10月3/5日脚本。今天执行与幂等收据目录D:/GPT/Legion12/artifacts/release-20261006-0800-0830；07:20停止新风险片、07:30冻结已验收候选，预留安全发布时间。旧正式无all-mode seal不能自动绕过安全门；没有私有DB新读取、Linux安装或资源扩容权限。当前部署/维护/线上Bug写入0，未完本地工作发布后持续推进。
+
+- **10月6日04:08，当前接续**：用户明确批准完整《正式服对局保障优化方案》，常规本地实施／验收继续，不逐片停下。当前C1/C2及自动响应恢复有界批完整平台第三轮528/528，失败跳过0；已实际读监督回执test-465020b3f2714e82b00c81d4e0711da9，历史失败保留。独立真实协议驱动首跑在场景前因夹具缺SQLite初始化失败，已只修自有artifact夹具并重跑，同一Debug DLL SHA5572C565A066764366032FDCB266B65F4041A2A5A3C50C5147F26AFC54813056；未预称协议GREEN。完整Batch／干净Release／Git尚待，根源产品冻结。指标与纯只读advisory在独立暂存片接续，最多两写入者和共享构建串行。两服部署、维护、资源和线上Bug状态写入0；旧限时发布授权不复用。
+
+- **10月6日03:51，当前接续**：用户批准完整《正式服对局保障优化方案》，包括新发现自动关闭响应时间一致性的限定修复；依阶段本地实施／验收继续，不等每片重新批准。第二轮完整平台518项512通过／6失败／跳过0，原TRX与日志保留：新有限预约维护busy跨EndsAt实际RED、两双5秒响应Journal哈希RED，以及三夹具错误（未AttachCatalog、两精确构筑被删掉起手实例）。Main已修夹具及维护延期事实；自动关闭仅在TryExpire同步链内用已记录observed时刻生成新deadline，finally归还物理clock，两个消费者沿原严格parser，不改receivedUtc、schema或正常命令。新/旧键×单/双5秒真实恢复补证及独立只读复核中，尚未宣布通过。旧时间事实若缺精确值仍hash拒绝，不冒称全旧录像可修。完整Batch／干净Release／Git待；指标／发布保护／第三阶段按后续独立片接续。两服部署／维护／资源／Bug状态写入0，旧限时授权不复用。
+
+- **10月6日03:26，当前权威**：C0已完成干净完整Release（规则6477／平台482，失败跳过0）、同一实包4场景独立核验并精确同步`3e166ae6465b1e8bec80dbea171effa5362172ec`，最终回执`D:/GPT/Legion12/artifacts/live-match-c0-20261006/acceptance.json`实际存在；下方C0待Release仅过程历史。随后批准的C1／C2为新本地差异，首轮完整平台503项500通过／3失败／跳过0，失败证据保留。代际测试要求恢复提交前失效，Main校正原认领边界，不改变产品安全合同；另外两项实际复现responseAutoClose大写写出／小写读取的旧恢复缺陷，用户另行批准限定兼容修复，独立租约实施中。新增真实字节超限／长requestId／断线中耐久提交守卫尚待执行，完整门禁待。指标、第三阶段和发布保护独立不混本批；两只读报告已冻结，旧正式首次引导不得自动绕过新保护协议。部署／维护／资源／Bug状态写入0，不使用10月5日过期权限。
+
+- **10月6日02:54：普罗米修斯已同步；正式服对局保障C0完整Batch通过，未部署**。卡效最终精确 `cbe5ede5c29b1367ff84920dab75940908ed66c0`，干净完整Release6477规则／442平台及同包独立验收已实际绑定D盘prometheus-main-acceptance-20261006/acceptance.json，两服未变。用户将完整对局保障方案提升为最高优先，A3暂存族让位。C0仅已提交会话索引与真实提交后注销通知：Main独立4场景GREEN，受控保存等待中的查询0.3964／0.0016ms；完整平台第二轮和Batch均482通过／失败跳过0，首轮4个超长测试账号名错误及原失败证据保留，产品未因此修改。精确范围和接续见LIVE-MATCH-AVAILABILITY-PROGRESS-20261006.md；干净Release／Git尚待，不预称已同步。真实当前C0树同连接心跳／跨房计时仍各等待30秒，退出2是RED非通过；两处限定本地修复与验收已获用户批准，C1／C2独立暂存实施，不写冻结候选；指标核心独立暂存准备，不抢先集成。部署／维护／资源／Bug状态写入0，不使用10月5日过期发布授权。
+
+- **10月6日当前：普罗米修斯完整Batch通过，干净Release／同步接续，未部署**。仅顶三张显式展示及新回归，不扩大合法选择／公开边界。子Debug及Main实际Batch均规则6477、失败跳过0；Main独立78检查／4场景／10次V2恢复及实际弹框372检查／12场景／24截图通过，绑定D盘prometheus-main-acceptance-20261006/focused-20261006-015254/binding.json。图形合成，不声称真机／完整战场；旧夹具失败保留。最终候选、门禁与远端以D盘同目录acceptance.json实际生成后的事实为准。A3规则中心暂存完成未集成。用户新要求本批后全力推进正式服对局保障方案，允许并行：C0五源码暂存实施／Main验收；另一子准备同连接ping及跨房时钟真实RED，暂不修产品。只修已获明确批准边界，不称全部房间／心跳隔离；不部署／不调资源／不改维护／不提前resolved。下方待批准仅历史。
+
+- **当前接续：A3/E1并行实施和独立专项完成，最终干净Release／同步中，未部署**。起点94b36966，A3回放模板12旧谓词迁9个AST谓词、51正反例；E1排行榜六尺寸731项／24图、60前后几何文案检查点一致，Main新增14合同反例接入原链。10月6日00:22合并前端域Batch退出0；两实施租约结束。最终范围见A3-E1-PARALLEL-CLOSEOUT-20261006.md，唯一最终提交／门禁／Git事实将见D盘a3-e1-parallel-closeout-20261006/acceptance.json，未生成不预称完整Release或推送成功。后端源码未变，不把前端Batch算完整后端门禁。
+- **接续优先级：正式现有对局保障 C0**。用户已从“检查服务器状态”交办高优先计划，Main已回执并读完；只读评审交付共享平台锁、同连接Dispatch等待、逐房计时等待及真实提交／刷新／回滚出口，尚未负载复现或实施。会话索引单片不能承诺动作／计时全部隔离，保留权限、即时撤销、代际及失败关闭；先受控阻塞RED，不重启、不调资源、不改维护。新荆轲原场景正式／94候选各4命令组合已补证，候选通过但未上线；普罗米修斯顶三张预览已复现、最小方案待批准。最新只读864条／new582／resolved186／closed96，无新Bug写入；真机和F2容量缺口仅各自挂起。
+- **上一响应／李牧批已实际完成**：94b36966完整Batch与干净完整Release6469/442、失败跳过0，Focused240及前端/包通过，Git精确读回。最终D盘response-ruling-20261005/acceptance.json已生成；下方“接续/未生成”均历史，不再待办。未部署、未改维护，不复用过期限时授权。
+
+- **本批完整Batch已通过，接续干净提交级Release与同步**：6469规则／442平台，失败跳过0，原声明／区域事务／全卡池／架构与账本门禁保持；实际监督receipt为D盘cache/primary/test-evidence下test-80c3fe1d和test-62a5f84c。最终Focused240及独立只读复核无阻断。旧李牧独立段文字同时从状态表、权威逐卡表、历史索引、矩阵与生成器撤销，其他矩阵行保留不顺手重生成。仅本批拥有20路径，完整发布与实际Git结果以D盘response-ruling-20261005/acceptance.json为唯一回执；生成前不预称Release／推送通过。未部署、不改维护，下条“Batch待”为该时点历史。
+
+- **10月5日晚响应／李牧有界批，最终门禁接续，未部署**：用户确认伏击“对方进攻／对方发动效果”为独立入口，李牧展示与随后抽牌是一整项效果；无合法发动可能仍跳过窗口，匿名判断不能泄露盖牌。Main共享修复三张同型卡伏击／绝对防御／乾坤·阴，排除天灾、权威事件与续段载体；李牧用既有单次响应计划，免费战术先完成再继续抽牌，旧独立段裁定已撤销。最终Focused240/240、失败跳过0，含32真实李牧路线及两旧检查点；当前六产品文件为新差异，完整Batch／干净Release／Git尚待，唯一最终回执将见D盘response-ruling-20261005/acceptance.json。原RED及r2失败保留。没有改整套CombatTimeline调度或响应后优先权。21:40两条天照／伪造密令正式与44eb实际程序集各1920组合通过后已实际closed/rejected，共十条压力未复现收口，读回859/new577/resolved186/closed96、会话撤销200；勿重复关闭Apply。两服部署／维护写入0，旧晨间发布授权已过期。
+
+- **10月5日20时接续，先已批准滚动，随后优先卡效**：A3操作锁批已实际完整Release6262规则/442平台、失败跳过0及前端/制品通过，并精确同步`6633704e`，最终实际回执D盘a3-action-pending-20261005/acceptance.json；下方19时“Release待”仅历史。用户拒绝短屏反馈新入口，保持隐藏；另明确接受窄桌面/短屏中间筛选与卡池整体纵向滚动。Main只改编辑器7行限定样式、独立浏览器回归及玩家账本；12尺寸×3卡图240检查和精确四路径前端Batch退出0，最终脚本隔离守卫补强及提交级门禁接续。没有改保存/草稿/统计起手逻辑、战区或全站反馈规则。卡效优先核对梅杰德及用户新确认的信仰狂热者费用/上限/天灾弃牌不触发裁定；非卡效建议仍先取得接受。两服部署/维护写入0。
+
+- **10月5日19时续办：A3操作锁模板批Batch通过，继续Bug分诊，不部署**。只改三脚本，四旧字串谓词迁四AST组，83正反例及原44/354通过，精确前端域Batch退出0、反馈144/卡图324+42/类型和双构建保持。原实际运行锁/身份/权限/CSS保护保留，P0—P3及产品源不变；Main准备干净提交级Release和同步，最终只读D盘a3-action-pending-20261005/acceptance.json实际回执。19:25最新只读队列858/new581/resolved186/closed91，较前852新增6条；专用会话撤销200，Bug/配置/维护写入0。新增报告继续核对，不自动实施未经批准修复。已有待裁定或真机项仅各自挂起，不挡其他授权工作。
+- **血鹰已于15:57完整验收及同步**：干净候选cda931ab及远端精确一致；独立完整Release规则6262/平台442失败跳过0，最终发布包同DLL400压力/1360恢复通过。具名44新回归/132同族和正式400组合80失败复现均绑定D盘blood-eagle-decline-20261005/acceptance.json，未部署不提前resolved。原只读子任务容量失败Main已接管18反击扫描，不持续等待。
+- **上一A3批确已完整验收同步**：9e3ddcf2干净Release6218规则/442平台失败跳过0、前端/包及精确远端读回；D盘a3-deck-consumers-closeout-20261005.json为实际回执，当前血鹰差异不可混称该提交已验收。15:24实际正式c858/测试428fff25、两维护false，本轮部署/维护0。共5条仅closed/rejected未复现收口，四待部署Bug与匹配产品选择仍保留。
+- **E1补证完成**：32ArticleBlockEditor节点已证明未被应用消费，保留文件不挂当前缺陷；Shell/总结六尺寸145/12图及原竞态通过，原焦点和蒙版键盘关闭可用。不是全站状态都已统一；E4真实iOS/微信输入法/安全区与F2真实容量/长期及Update预算缺口不冒称完成。下方各时点“门禁待/卡名待核”只保留历史，不再作为当前结论。
+
+- **10月5日14:41 Batch已通过，提交级Release接续**：仅六测试脚本/五事实记录，无82dc产品差异；精确11路径前端域Batch退出0，UI354、51/40、反馈144、类型/卡图/双构建通过。普通fetch后起点HEAD/origin同80b979，无远端冲突；保存本批后按规定跑干净Release再同步，不推送失败树。不新增玩家日志条目或部署，四待上线Bug保持；最终提交和完整门禁只读D盘a3-deck-consumers-closeout-20261005.json实际回执，不沿用旧门禁称新提交已通过。
+- **10月5日14:39当前接续，未部署**：嫦娥/山河图真实消费者压力对照最终每边24组合1640断言/12图0异常，正式公開资源身份匹配；两ID已实际closed/rejected而非修复，原字段保持、专用会话撤销，队列852/new575/resolved186/closed91，勿重跑D盘display-card-pressure-20261005关闭Apply。加前三项共5条压力未复现收口；四待部署与两个待裁定保持。A3快照51/公开40和真实公开页面六尺寸40图已冻结，六测试脚本加五记录无产品变更，最后Batch和提交级Release接续，Git尚待；不把门禁待写成部署。下方14时“展示正在跑”为该时点历史。
+- **10月5日14时续办，门禁中，未部署**：A3第二公开构筑族5旧合同组/17子谓词→3 AST组、40反例通过，Main补重复消费者/锚点RED并接管容量中断的租约；真实页面六尺寸40图0异常，权限/业务/CSS保护均保留。加上快照51例构成同一六脚本有界批，最终Batch/干净Release/Git待，不将前轮82dc证据称本轮测试头已过完整发布。嫦娥/山河图诊断扩大到效果展示层，正式公开manifest资产版本和三卡资源身份已只读确认与本地受控资产一致；未读原场、未部署/改维护、未提前关闭待上线四Bug。
+- **10月5日13:41后续实际进展，未部署**：神妙行军a9266bc3正式c858/候选82dc各2880压力组合0失败，Main按授权关闭为closed/rejected而非修复，队列852/new577/resolved186/closed89；见D盘march-pressure-20261005/acceptance.md和实际关闭回执，勿重复Apply。A3构筑快照12谓词/4组/51例独立接收，权限/CSS和产品未改；公开牌库消费下一整族正在限定四脚本租约，最终前端Batch/同步待。当前Git头80b979是此前干净记录头，不再称实施中的工作树干净；完整产品Release仍绑定82dc。F2三报告与35产品源0差异的只读复核收口，Update预算和真实环境缺口保留。嫦娥/山河图展示继续诊断，四已批准未部署Bug仍不提前resolved。过期发布授权不复用，新部署/维护不操作。
+
+- **10月5日11:43 本批验收同步及两项未复现关闭，未部署**：应用82dc91f9已干净完整Release6218规则/442平台、失败跳过0及前端/包通过，GitHub精确读回，见D盘continuation-20261005-receipt.json。A3只迁1旧谓词/24例，已批准导航焦点六尺寸107/107，原赛季通知六组竞态通过，不称全站或全历史完成。用户新增授权压力未复现就关闭；正式c858同哈希发布包与候选各1200场/3000恢复0失败，Main只将81b7f6a6、7d82522f关闭为closed/rejected（压力未复现、证据不足，非已修复），字段保留、读回及会话注销200。原失败/错标DLL夹具保留，只用强绑定最终报告；详见D盘bug-pressure-closeout-20261005/acceptance.md及online-closure-receipt.json。此时队列852/new578/resolved186/closed88，另新增1条正在独立补采，前次7外部关闭不是Main写入。两服未部署、维护未变；A3全历史/E1全站/E4真机/F2缺口继续。后续状态记录提交不改变82dc应用与包绑定。
+
+- **10月5日10:28同步完成，未部署**：测试批d9a62ac74c5943b5054dc3e16cb2f409296f9b97本地/Git精确读回，工作树干净；相对原5e3873e9只有4份测试脚本和3份记录变化。测试428fff25/正式c85819f0维护均false。下面“同步中”是本批提交前的历史时点；应用完整Release仍绑定5e3873e9，不将本片的前端Batch当新HEAD完整Release。此次纯状态记录后续提交不改变产品及验收源。
+
+- **10月5日赛事提示限定片已验收，同步中，未部署**：只迁一个历史组件字串谓词，新增5组17语义保护，39原组保持、赛事门禁44/44及C3 22通过。Main真实SiteShell/Detail四尺寸101断言/12图、七源SHA不变，前端域Batch退出0、UI354/反馈144/卡图324+42/类型及双构建通过；未重跑没有变化的6218/442后端，复用5e3873e9绑定证据，不称新HEAD完整Release。A3/E1不是全量收口，真实iOS及F2缺口保持。详见A3-E1-TOURNAMENT-NOTICE-ACCEPTANCE-20261005.md。
+
+- **2026-10-05 10:12 发布超时，维护已独立核验解除，继续本地任务**：本次回访实际到达10:01，Main核时已10:03，超过07:30截止；production-release.json不存在，正式仍c85819f0，未超时补部署。10:08按既有兜底授权解除06:00预约维护，配置87→88，其余八类配置不变；工具在成功解除后因空时间字段生成回执报错，原partial回执保留、不重跑。Main另行登录只读复核预约/即时均false、health ok、WS通过、服务active、部署锁可用且无失败/阻塞围栏，会话撤销，证据maintenance-independent-readback.json。回访错过窗口原因尚未确认，不称发布完成。过期l12回访已正常工具暂停（删除被审批拒绝，采用允许的暂停）；剩余本地授权不取消。A3赛事提示脚本唯一旧谓词迁移与新增保真保护已给限定租约，Main负责真实SiteShell验收，产品/权限/CSS不改。新部署需新的明确授权。
+
+- **03:55 发布候选准备，未部署**：完整产品Batch6218规则/442平台、失败跳过0及前端全部通过；追加工具Batch-r3正确三路径数组退出0，真实执行器6场景及服务器41故障场景通过，r1错误数组不计。四个产品族已分别保存4bc07d4c/1f38646c/26b8860d/b426b900，Main限定发布工具与共用回执提交后跑干净完整Release再推送。D盘本次两执行工具解析/Plan-only通过，已修实际操作07:30时限、切换不自动重试、全程远端维护锁及写回执异常的finally释放。06:00计划实际已保存，尚未运行Apply；正式c85819f0/测试428fff25为最近采样，需发布时实时核对。成功核验后立即解除本次维护，剩余已授权工作继续，真机/长期/预算缺口不冒称完成。
+
+- **03:42 产品Batch完成、追加发布安全工具验收中**：规则6218/平台442失败跳过0、UI354/实际反馈144/卡图324+42/双构建通过，Main实读两监督receipt。独立发布复核发现最终SSH255可能重复切换，已限定NoRetry并补真实函数4回归、接原41故障场景；追加三路径Batch-r2运行，r1外部PS数组拼串未触发专项不计通过。D盘本次发布/解除工具已增加当前窗口再检、全程远端flock及认证前partial回执；尚未运行Apply。Main有界提交、干净Release/Git待；没有线上部署或即时维护变更。
+
+- **2026-10-05 03:19 产品最终冻结，门禁开始**：Main独立移动手势40结果/9布局exit0（惯性点选保护已补），Prompt源57EEF270不变，三实际截图目检；反馈144脚本/150浏览器与后端3/16/26定向证据保持。子任务全部释放写入/构建租约，Main串行完整Batch、提交级Release及Git；F2仅诊断收口，性能/真实环境及E4真机缺口保留。06:00预约维护已设置，正式最多本次一次，最迟07:30安全候选；成功核验后立即解除维护，剩余已授权任务继续。没有本次测试部署授权。
+
+- **2026-10-05 03:17 独立接收**：移动子任务最终源57EEF270已冻结并释放租约，Main独立复验手势/9布局和补强即时惯性tap断言；只改回归脚本，不改产品。F2第四阶段4×40合成Update诊断已完成，35产品源/原证据SHA0差异；完整gzip回滚缓存段约0.54→4.71–5.23ms、40→299KB，另26.4ms提交慢点原因未知，1.72x预算缺口保持，不称性能收口；CPU/.NET租约释放。证据见TASK-LEDGER，完整最终Batch/干净Release/Git/正式发布待。成功部署核验后立即解除本次维护，再继续未完已授权任务。
+
+- **2026-10-05 本地续办最新**：后端准备计时/侵略如火身份Focused监督规则6218/平台442失败跳过0，Main实读receipt；整次退出1是反馈冻结上下文触发旧route.path字串UI契约，已保留白名单及三版本保护改为实际组件执行回归，独立354契约通过。反馈最终15场景144脚本断言、26浏览器组合150项，生产源E55AB107保持，含令牌更新及诊断中账号切回。旧原TRX已被监督器清理，不冒称当前可读；后端子任务释放.NET/写入租约，仅独立只读。移动比例子任务仍在，完整最终Batch/Release/Git/部署待；用户要求发布及解除维护后剩余已授权任务继续，不取消。
+
+- **2026-10-05 用户最新补充，解除维护提前**：正式服本次部署成功并通过服务、健康、WebSocket和入口安全核验后立即解除本次维护，不等08:30；08:30仅为失败、阻塞或未部署的最晚兜底，实际活跃部署仍须安全结束再解除。已更新同一l12回访，不新增调度；普通回访仅处理新增结果和受影响验收，无需用户每次答复。需要新授权/裁定的单项挂起，其余继续。06:00前仅本地、一次正式部署及其他权限边界不变。下方08:30措辞为此前时点，以本条为准。
+
+- **2026-10-05 02:16 提前续办另行授权已设置**：用户明确批准“02:30至05:30每半小时回访，仅本地推进与验收”。已更新同一l12 heartbeat并实际读回ACTIVE，02:30—08:30本次13个节点；06:00以前禁止两服部署、维护/运营配置修改、生产写入和线上Bug关闭。此前扩大回访被拒绝的记录仅历史，现有直接授权后通过正常自动化工具设置成功，未绕过审批。06:00维护/最迟07:30唯一正式部署/08:30解除（实际部署进行中待安全结束）边界不变。仅改调度和本地记录，未再次改变服务器或开始部署。
+
+- **2026-10-05 02:09 新授权与发布窗口，实施中**：用户批准持续推进既定四阶段，阻塞只挂起该项；今天北京时间06:00正式维护，最迟07:30部署最近干净且完整验收的可部署版本，08:30无论发布成功失败解除本次维护，实际活跃部署中待事务安全结束再解除。maintenance分区正常预览/保存/读回成功，revision5→6，startsAt=2026-10-05T06:00:00+08:00、endsAt=null；其余八类配置及即时维护保持，会话已撤销。证据D盘artifacts/release-20261005-0600-0830/maintenance-plan.json。l12同线程06:00至08:30回访已启用；额外02:00起多次回访申请被安全审批拒绝，未生效，不绕过；当前手动持续推进不受影响。没有本次测试服部署授权，旧10月3日execute-0500不得复用。
+- **当前租约与门禁**：实际工作树D盘lubu-pingyang-20261001，起点HEAD4b4e8387/应用8a21b064，正式c85819f0未切换。卡效对抗测试独占.NET及准备计时/Batch3B身份专项，必要同族扩租仅L12RankedClock.SetupDecisionLimit增加Initiative、StructuredHandCostLifecycleProfileTests两处ST04-10身份。移动端选择弹框深度治理只PromptOverlay及独立verify-mobile-disaster-gesture脚本。最多两代码写入者，Main负责验收/账本/同步/发布；反馈旧请求清新草稿方案由本次推进批准，等待租约释放再实施。新未知组合/规则裁定/真机缺口挂起，不扩大；本批新候选尚无最终Release，旧门禁不能替代随后补丁。
+
+- **2026-10-05 01:37 最终同步完成，未部署**：本批应用8a21b064干净Release规则6216/平台442失败跳过0及UI354/Profile95/卡图324+42/双前端/包全部通过，两原TRX及包SHA0552edcb…c46ca64已Main核对，Git精确读回且干净。实时测试428fff25、正式c85819f0、两maintenance=false，本批不部署或调维护。详细截图/证据/剩余边界见[D盘最终回执](D:/GPT/Legion12/artifacts/four-scope-continuation-receipt-20261005.md)。A3/E1全量仍续办；E4真机、F2真实环境及性能缺口保持。新反馈pending关闭重开清草稿RED待独立批准；Bug原子对话直接human扩围授权及7条关闭另案已接收，非自动修复/已复测。本条之后纯文档回执不改变应用绑定，下方过程待验收文字仅历史。
+
+- **最终Batch退出0，待提交级完整Release和Git同步**：当前仅拥有的19文件差异，原候选49b3623f与远端精确一致，F2独立测试已停止。纯前端Batch已通过类型/UI354/Profile95/路由48/卡图324+42/双构建，不能代替尚未执行的新候选干净Release；本轮部署与维护0。下方“最终门禁待”是过程中间时点。
+
+- **2026-10-05 主任务续办，未部署**：49b3623f后的A3 Profile模板两组51+44、E1外置消费者六尺寸295/旧Shell204、E4组合415/23源均已Main独立验收；用户批准的反馈窄屏最小修复已纳入本批，业务/权限/画布不变。F2补256人八轮平台流程1024裁判结果/16恢复一次通过，99实体SHA独立一致，真实引擎games=0及其他容量缺口保留。实际源仍有本批拥有差异，最终Batch/干净Release/Git待，不能据上批f771门禁推断本批通过。当前唯一详表见TASK-LEDGER顶部；本轮不部署、不改维护、不自动修/关850条Bug。A3全历史、E1全站及E4真机/F2真实环境仍未全部收口。
+
+- **2026-10-05 00:20 最终回执，未部署**：应用候选 `f771810929714d47751ef96373a7c96061d45d9b` 已完成最终Batch及00:10:03干净Release，规则6216/平台442、失败跳过0，UI354、邀请17/Prompt30、卡图324+42、双前端及制品通过；Main实读原TRX、success timings和包SHA `f53f4be939cb88dbe587454845e28d889f07e5a3e0a0879a3c9a1ba4007e60fe`。00:20:25 Git远端精确同一候选、工作树干净；测试仍428fff25、正式c85819f0，两maintenance=false，本轮无部署/维护操作。随后纯文档回执不改变应用/制品绑定。A3/E1仍只是限定片完成，E1最终库存84 Vue/1700源码候选节点、90源SHA独立一致，不是缺陷数或全站统一；E4真实iOS/微信输入法/安全区及F2 Linux/真实长期/八轮引擎赛事等缺口仍保留。
+
+- **最新Bug只读任务已接收**：“L12-后台优化实施”实际于10月4日23:57:23采样正式服c85819f0，完整850条/850唯一ID：new585、resolved186、closed79，较前次新增18条。Main逐条核对原标题/描述/状态与文本哈希，差异0，最终七实体清单哈希一致；专用账号会话已注销200。17个新未解决项疑似复发仅作候选（最佳高1/中7/低9），API无附件字段故附件存在性未验证，265个结束项仅26具齐四项关闭证据。原文完整保留在D盘受限报告，不进入Git；未改Bug状态或自动启动修复。子任务已回执冻结，详见[摘要](D:/GPT/Legion12/artifacts/bug-queue-readonly-20261005/bug-queue-summary.md)及[850条原文明细](D:/GPT/Legion12/artifacts/bug-queue-readonly-20261005/bug-queue-detailed-restricted.md)。下方待验收/待同步均为过程历史。
+
+- **2026-10-04 23:53 四项剩余范围**：E1普通站点状态首片204浏览器/8路由/8外置组件/21组件通过；A3库存452组/1270候选，已选邀请与Prompt模板两片17+30反例通过，CSS/权威/权限保留。E4最终415/19源一致，真实iOS/微信输入法/安全区待。F2原428fff产品四容量轴、256赛事首轮恢复、两次365合成日已补证，原基准1.113倍绿/额外Update1.72倍未达预算、第三重复中止/43.8GB累计分配保留；Linux、真实长期、八轮引擎对局/全服务并发仍缺，不安装Linux。最终前端Batch/干净Release/Git待，当前事实见台账和对应报告；不将小片完成当全量收口。23:47实时Git/测试428fff、正式c858，两维护false，本轮未部署/维护。最新Bug只读整理已交“L12-后台优化实施”并答复其回执，队列结果待，子对话不改状态。
+
+- **2026-10-04 16:39 C3本地收口**：最终Batch规则6216/平台442、UI354/匿名handler22/卡图324+42/类型/双前端全部通过，失败跳过0；专项134浏览器/14图/7HTTP与独立复核通过。两处P1已有红测及修正；Main接续提交级干净Release、Git精确读回及一次测试部署。实际发布唯一见[D盘C3验收报告](D:/GPT/Legion12/artifacts/c3-public-browsing-acceptance-20261004.md)。16:39尚未提交/推送/部署，正式与维护不动，不扩大到未选目标。
+
+- **2026-10-04 C3 接续**：当前实际基线为本地/GitHub/测试65ae4853、正式c85819f0（15:55读回）。用户已批准C3公开浏览及全部验收后一次测试部署；公开页面134项、原登录14图、请求22项、HTTP7项及独立复核通过，两处凭码回跳/登录名单旁路已消除，最终完整Batch正在运行，干净Release/Git/部署待。实际发布唯一回执为[D盘C3验收报告](D:/GPT/Legion12/artifacts/c3-public-browsing-acceptance-20261004.md)，当前任务见TASK-LEDGER顶部，旧段落均为当时时点。正式及维护不动，iOS真机限制保留。
+
+- **2026-10-04 14:06 页签修复本地验收完成**：用户批准的统计/起手切换分支已归一，实际handler12组合、浏览器415项和纯前端Batch全通过，18源与runner匹配。接续提交级Release及Git同步，未部署/未改维护；以TASK-LEDGER顶部和[D盘本批回执](D:/GPT/Legion12/artifacts/e4-insights-click-receipt-20261004.md)记录实际结果。真机iOS/微信输入法/非零安全区限制仍保持，不开展未选任务。
+
+- **2026-10-04 14:02 新批接续**：此前E4/动画候选cee38aa已授权测试部署完成，正式/维护未动，事实见D盘发布回执。用户新增移动编辑器统计/起手无响应并批准修复，一条件分支归一content→stats，handler12组合通过，完整编辑器及新增真实触屏矩阵进行中。具体当前状态见TASK-LEDGER顶部和BUGFIX-REGISTRY的UI-20261004-E4-INSIGHTS；本批没有部署授权，尚未提交/推送，真机边界保留。
+
+- **2026-10-04 08:38 本地收口索引**：完整Batch r3通过6216规则/435平台，失败跳过0、UI354/卡图324+42/双构建通过；最终E4组合源码331和动画四链/交接/447矩阵通过，真机限制保留。Main保存有界提交后执行干净Release、Git读回及一次测试部署。当前证据见TASK-LEDGER；后续实际发布唯一回执为[D盘发布回执](D:/GPT/Legion12/artifacts/e4-animation-test-release-receipt-20261004.md)，正式及维护不动。08:38尚未提交推送部署，下方记录为过程历史。
+
+- **2026-10-04 08:27 状态索引**：Batch r2后端全通过、前端空值类型阻断已限定修正并重验四链/交接；最终Batch r3进行中，完整门禁未通过前不部署。当前证据仅见[任务台账](D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/docs/TASK-LEDGER.md)。尚未提交推送部署，最终仅测试服一次，正式/维护不动。
+
+- **2026-10-04 08:06 状态索引**：专项技术验收完成，完整Batch复验中，未提交/同步/部署；当前证据与剩余门禁只见[任务台账](D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/docs/TASK-LEDGER.md)。仅全部本地验收后一次测试服部署，正式及维护不动；iOS输入法/非零安全区仍明确未验证。下方中间进度为历史。
+
+- **2026-10-04 06:54 状态索引**：本批公共状态、宽屏71项及移动181项已限定验收；剩余同类移动结论与完整发布门禁待收口，尚未提交/推送/部署。只授权全部验收后一次测试服部署，正式及维护不动。当前进度唯一摘要见[任务台账](D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/docs/TASK-LEDGER.md)，下方旧时间条目保留为过程历史。
+
+- **2026-10-04 04:40 中间片核验**：entry过早认领已最小修复，Zone冻结A19F432…1AAB2、guard40FAC30…18FB6；三具名受控GREEN分别15/15/14项，Main逐份实读报告及全部7源SHA，运行前后稳定且与当前磁盘匹配0差异。第二项仅组件解码前受控取消，合成entry-result不证明真实新增引擎链/真实modal宿主接线。144偏好矩阵与39边界运行中，最终独立接收待完成。后续进攻、费用、效果状态、轮次批、资源与恢复消费者仍在同一批准生命周期批内，不能称全族收口。为减少重复构建，中间片以具名专项/真实画面/源码绑定/独立复核技术接收，最终全族冻结后统一完整Batch/干净Release；门禁不删减。本批全部验收后的测试部署授权已记录，不含正式/维护，尚未部署。
+
+- **2026-10-04 04:24 最新**：用户新增本批全部验收后一次测试服部署授权，不包含正式/维护。旧两准备死锁已源码解除，独立复核又确认entry ownership过早登记会在预取失败或解码前modal取消后误吞full-card fallback，专项正在仅Zone/guard/verifier租约内修登记时点并补三RED；完整Batch47488中断退出1、旧144测试中断作废，失败/中断证据保留。须重冻结源码、完整矩阵与门禁，继续全族状态生产者，不以首片代替全部根治；Main仍负责最终验收/同步/条件满足后测试部署。
+
+- **2026-10-04 04:15 当前核验，未同步或部署**：E4 浏览器本地331项及独立复核保持通过，真实 iOS Safari/微信输入法和非零安全区仍未验证。第二次完整 Batch 为规则6189项中6177通过、12失败、0跳过；12项均是既有反射测试未适配召回 owner 参数/重载，Main保留原业务断言并增加事实引用断言后，具名98项全部通过，监督回执 `test-bfbb354ede434b83a9a66f3ece6bd2c8/receipt.json` 已实读。成功监督流程已回收该临时树，不能再声称其中 TRX 仍存在。完整 Batch 尚须从头重跑。动画独立复核新增阻断：资源永久等待、未获准 reservation 被同步取消均可能使准备流水线不收敛；专项正在有界等待/取消租约内补修及受控测试。旧243断言仅有限首片且未绑定全部当前前端源码，不构成全偏好/全族通过；新矩阵必须绑定实际装载前后源码。无提交、推送、部署、维护或线上 Bug 关闭。
+
+- **2026-10-04 03:50 本地最终专项**：E4标准模式36组331通过/0失败/异常，18源SHA稳定且独立读回匹配；最后仅编辑器select明确44px，选择不同主宰焦点已保持。1项非零安全区明确未验证、iOS Safari/微信输入法未真机验收。报告docs/l12/E4-PORTRAIT-DECK-EDITOR-LOCAL-ACCEPTANCE-20261004.md，证据19-41-42-280Z。动画首片v6三端24结果243断言/0错误、图片延迟/失败/等待同步取消通过，Main实读原报告/hash及解码接管实现；60处Tapped/22文件未全部迁移，不能称全族根治。首次完整Batch静态旧签名阻断已保留并适配成事务+owner更强保护，重跑进行中。所有源码冻结，无提交、同步、部署或维护操作。
+
+- **2026-10-04 最新授权与实施**：用户“均批准”已批准 E4 编辑器限定自然竖屏及动画共用事实方案，起点 `4899380d` 干净。Main 实施编辑器，原动画专项实施公共事件/展示层，精确租约分离、两写入者、构建串行；本轮无部署/维护授权。E4 真机 IME 未验证，动画真实旧 Journal hash 与完整同族矩阵尚未通过，不宣称已根治。台账顶部为当前状态，下方等待批准为历史。
+- **03:18 本地验收进展**：E4 已补账号/异步/面板滚动/焦点/公开选卡图回归，quick82通过、0失败/异常、18源稳定，保存与遥测均只本地模拟。完整36组随后实抓平板偏好CSS编译失效4红，修复后重验中；Edge不支持非零刘海安全区模拟，明确1项未验证，真机Safari/微信输入法亦未验证。动画首片46后端专项及真正d26e旧Journal两链hash对照通过，v6复活两次/反制绑定已Main读回；实际卡面浏览器再抓解码前隐藏权威卡空窗，区域层最小修复及延迟/失败/取消测试进行中，其他区域/状态全族未完成。最终门禁/同步未执行，无部署、维护或线上Bug关闭。
+
+- **2026-10-04 01:00验收同步完成，未部署**：鲍斯修复79241e86、E4研究方案d26e5570；干净应用候选d26e55704c6bf956b0a9e1bbae01cf4090233f48完整Release6185规则/435平台失败跳过0、UI354/卡图324+42/前端与测试前端复用构建/制品通过，两原始TRX与success timings实读，包SHA a5555b13…3d882一致，origin/main精确读回。证据artifacts/bors-cost-release-20261004.log及deploy/verification-evidence/d26e5570…/20261003T164734Z-15b9ed1f2eb8486c9cd836fce7ae67df。动画宽屏真实链已确认区域飞行1次后seq21同实例结果全卡再展示，95C40B…报告持续可见帧与截图已Main目检；不是区域重复移动，也未见该链响应前结果。覆盖仍有限且素材回退卡背，不算卡图正确/全部状态通过；共享最小方案待审核，生产只读。真实取消schema3新文件Main已串行生成，两处skip均accepted/墓地保持/无残留，旧schema2的不可取消声明作废。E4仅研究评审，iOS/Safari/微信输入法组合确认，真机/正式图目检未完成，产品实施未批准。无部署/维护操作，下面待门禁/未同步为历史；后续仅状态文档回执不改变应用绑定。
+
+- **2026-10-04接收1/2并行，未部署**：基线5472673a，Main推进E4真机试用准备及限定P4评审，生产前端不改；详细方案docs/l12/E4-PORTRAIT-DECK-EDITOR-IMPLEMENTATION-PLAN-20261004.md，真实设备/IME及实施批准待完成。鲍斯费用受监督6项4绿2红，Main实读TRX/卡文：戒指映射的盖伏战术错误被计作彼界军团，6费报价为5且5费playCard被接受，V2保持。用户已批准最小修复，租约仅L12StructuredCardRules.cs相应legion计数条件与新专用测试；保留戒指阵营，不新增正面裁定。全池扫描/绿回归/冻结交付进行中，子任务持有.NET锁，Main独立及完整门禁待做。上批测试7d6b7cf6、正式c858为上次采样，本批无部署/维护操作；详见TASK-LEDGER最新项。
+
+- **23:45最终验收/测试服部署回执**：修复应用7d6b7cf66719152487d0c7e0a0b0058cd2508ff9（伤害9339d640、木马7d6b7cf6），完整Batch及23:39:56干净Release规则6178/平台435失败跳过0，UI354/卡图324+42/双前端/制品通过；原始两TRX与success timings实读，包SHA84998930…bde2d。GitHub精确读回同一候选，用户新增一次测试服部署授权后执行成功，23:45:29公网测试7d6b7cf6/maintenance=false，正式仍c85819f0/false，两WS通过，正式ActiveEnterTimestampMonotonic=1140145077921/NRestarts=0与部署前一致。测试旧程序07fcbf85及消费包例行回收304153786B，22份运行快照不删、忙碌旧卡图缓存保留。证据artifacts/trojan-disaster-clean-release-20261003.log、deploy/verification-evidence/7d6b7cf6…/20261003T152736Z-6a15c739fa3548448dfeeb3992ef87b5、trojan-testrun-deploy-20261003.log和before/after-status。E4仅浏览器研究交付，真机IME及P4实施批准仍待；S02-0605只记候选。规则专项已最终回执冻结，未部署正式服/改维护/后台发布/关闭Bug。下方未同步/未部署均为过程历史；后续纯文档回执不改变应用与测试版本绑定。
+
+- **最终Batch通过，待干净Release/同步，未部署**：trojan-disaster-final-batch-20261003.log exit0，规则6178/平台435失败跳过0，UI354/卡图324+42/双前端通过。Main实读receipt test-1ba0f560f5f242cf8b383d99e203cd56及test-ce646c26fc2d4cfeb4baba8844830e7d，临时树首次清理成功；源码SHA保持冻结。E4报告独立1472fd57，真机与P4实施仍待；新伤害/木马分别保存有界提交后完整Release，不部署、不改维护。
+
+- **木马专项冻结，Main独立125通过，最终完整门禁接续**：三根因真实红3失败，修后新3/同族70全部通过；Main最终125/125失败跳过0，源SHA匹配。自然双方endTurn、V2、腐秽后排、仅敌方宿主减兵、军团/盖伏不可顶替及到期抽1均有实际断言。构建锁已移交Main，最终Batch/干净Release/Git仍待；旧中间Batch不能替代。本轮无部署/维护操作。S02-0605费用计数只登记独立候选，不扩改；详见BUGFIX-REGISTRY及TASK-LEDGER顶部。
+
+- **木马三根因已实查获准修复**：隐藏己方盖伏木马错误被持续减兵计数、-1期限误到期、任意空位误用军团后排天灾过滤；Main已核对三源，用户批准，专项在当前构建锁释放后实施四源及真实出牌/endTurn/恢复红绿，不扩大未批准卡效。伤害子33+1、Main149失败跳过0，当前完整Batch规则6175已通过，平台/双前端随后完成；木马修改后旧Batch仅记录中间版本，最终源需重验。未部署/维护。
+
+- **新裁定正在替换旧伤害算法，木马核查排队，未部署**：强攻/百鬼先增伤，血戒在确认后尝试变2且不能削弱不可规避天灾；仅强攻/仅百鬼为2，两者同效3。旧4e96ee7a伤害口径已撤回，下面旧验收只作历史，禁止据其部署。复用规则子任务四源一测试租约，具名真实红已取得，构建独占；Main同步FAQ/有效说明/未发布账本，新恢复/Journal矩阵仍在验收。规则中心已回执新口径暂停。木马仅排队只读检查，不猜测修复。
+
+- **E4浏览器研究交付，真机IME待验证，未改编辑器/未部署**：实际App/Editor隔离路由12组84任务、8键盘模型/8滑动/70图，页面异常/API写0，八份前端SHA不变。旋转/短屏失焦跳变/手机弹框越界/指定卡池手势问题实测，自然竖屏仅可行性，不是生产实现；768两列和短屏头仍需设计。详见docs/l12/E4-PORTRAIT-DECK-EDITOR-RESEARCH-20261003.md及D盘run-03。真机和独立P4实施批准仍待完成，不把模型PASS称E4收口。
+
+- **旧规则批历史验收，伤害裁定已撤回，不可部署该算法**：4e96ee7a曾于21:40:53完成Release6170规则/435平台失败跳过0、双构建/包并推送；这些TRX、包及日志是历史执行证据，不证明符合用户刚确认的新裁定。奥西里斯准确首段/勘误产品成果保留。历史证据deploy/verification-evidence/4e96ee7a…/20261003T132826Z-264b9f06d063462e8a9aa75b3082f2f6、osiris-priority-release-20261003.log及失败不删；新伤害批需重新验收。未部署、不改维护、不后台发布。
+- **计时批已完成验收与推送，未部署**：20:25:53干净Release6152规则/435平台，失败跳过0，UI354/卡图324+42/双构建及制品通过；origin/main精确2ebf796e，已发专项最终回执暂停。证据deploy/verification-evidence/2ebf796e…/20261003T121326Z-32cc0cd63bdf47ca817534a4f279037d；包SHA1ebc38ad…618ac。下列等待Release/推送属于过程历史，不覆盖当前事实。
+
+- **计时Batch已通过，待干净Release/同步**：clock667-batch-20261003.log exit0，UI354、卡图324+42、双前端及发布门禁回归通过。Main浏览器最终72场景/10动作证据保持；源冻结，不改容器位置尺寸、战场比例或规则。最新规则确认与赛事草案仅文档，不改伤害逻辑或后台发布。提交后再运行干净Release，成功才推送，当前未部署。
+
+- **计时Main独立浏览器已通过，完整门禁中**：72场景/10动作，真实滚轮与触屏0→68→0；667默认/上限逐钟目检可读，裁切重叠0/几何delta0。最终证据D盘artifacts/clock667-main-final-touch-20261003，CSS98a8b1…a6e2/探针bc059879…dc43，保留原tools自然滚动限定及RED，不扩大布局；Batch运行中，Release/Git待做，不部署。下方尚待独立验收为历史。
+
+- **2026-10-03规则确认/草案回执**：奥西里斯采用用户原文“我方 若圣物区存在5张名字包含<卡诺匹斯>的圣物，可将此主宰替换<伊西斯>登场。”，不再拟议、不自行加字；主动入口已存在，展示旧字仍待同步核验。FAQ回合末保留伤害条目为8月28日Codex工程注记，未找到用户原话支撑且同日BUG150已恢复清伤；本地纠正文档，不改当前正确实现。血戒组合当前2/旧问答3的冲突详细列入docs/l12/RULE-CLARIFICATIONS-20261003.md；赛事通则已拟定、待确认处`*`占位，未发布。原计时专项已收到冻结交付回执，Main独立验收待做；无新部署/维护授权。
+
+- **2026-10-03计时文字最小修正已获用户批准，实施/独立验收中，未同步/部署**：基线ebeb738d，复用原移动对抗专项，只租约MobileBattleDock.css内部计时文字及专用探针；位置/容器/战场比例不动。12尺寸×6状态真实基线，当前候选仍需区分字形裁切与tools原有可滚动区域的正常视口遮挡，逐钟实际滚动访问验证后才可称通过，不为绿灯删除祖先保护或改父级。Main已向规则中心发送状态澄清并收到暂停回执，122草稿/4问答+3案例冻结不代表需要122次裁定。详见TASK-LEDGER顶部；下方“计时待答复”是历史过程，没有新部署/维护授权。
+
+- **2026-10-03 E2/E3已验收同步，未部署**：应用195dcbb063d044a470c65d2d06f99c84c94d4932（E2独立e7c2ab4e、E3独立195dcbb0）于18:20:43完成干净Release，规则6152/平台435失败跳过0，UI354/卡图324+42/双前端/制品通过；成功timings与两TRX独立核对，发布包SHA48e4861f4fe31fa901b08a836112c9b8be8f0217a2b87b6184ae4aa605dc1229。origin/main精确读回195dcbb0。证据deploy/verification-evidence/195dcbb0…/20261003T100843Z-e91114a8001145c5957fad575648fad9，完整日志artifacts/e2-e3-release-final-20261003.log；此次只同步代码，正式c858/测试934a68c6于18:08:53只读采样，两服维护false，本轮部署/维护操作0。667×375合法计时文字裁切待用户答复、未修，按要求跳过继续；不能将E2容器稳定计为文字全量通过。下列待Release等为历史过程。本段后的纯文档回执提交不改变应用/制品绑定。
+
+- **18:08 E2/E3统一Batch通过，待干净Release/精确同步，未部署**：e2-e3-batch-final-20261003.log exit0、UI354/卡图324+42/双构建通过。E2最终独立哈希绑定证据e2-action-main-bound-final-20261003-1806，10尺寸/10操作；同源真实动画20组144及额外圣物6组30再验通过；E3 330/29/7与源哈希保持。首轮静态计数误判修正为明确纯展示块+原权限风险保护，失败保留。计时667×375待用户裁定仍跳过。源码与两个玩家账本条目冻结，Git远端39b89700与本地基线无分歧；下一步保存两个有界提交、完整Release并推送，不部署/维护。
+
+- **2026-10-03 E2/E3本地验收，待统一Batch/干净Release/同步，未部署**：前置对战39b89700已收口。E2最终源码由原移动对抗子任务冻结，Main独立10尺寸/10实操通过（e2-action-main-review-20261003-1756，矩形位移/碰撞0），移动居中再验16场景/6实操保持最大偏差1px、最小左侧间距2.02px；不新增动画所有者、不改规则/隐私/命令。E3 Main实现及36单元、7尺寸29场景330浏览器断言通过（home-revisit-2026-10-03T09-53-59.679Z）；真实首页已发布内容保持，未发布时移除样例、游客个人入口关闭、账号切换/本机缓存异常/赛事mine恢复/手动继续对局通过，后台预览未改。首轮浏览器测试入口与JS路径冲突，失败证据保留，修正夹具后重跑，不冒称产品加载故障。667×375合法默认/上限计时文字裁切另项已询问用户、未批准不改，按用户要求跳过继续，不计通过。测试目录时间片仅run名；目前没有新部署/维护授权。
+
+- **2026-10-03 17:17对战专项验收同步完成，未部署**：应用39b89700c1fe7a091805c8801e25e70cb2d2055b完整干净Release规则6152/平台435失败跳过0、UI354/卡图324+42/双前端/制品通过，origin/main精确读回同一提交；发布包SHA38da948d606404076916a269745bf06cd3f4c895a7fd4b7991d7f1efae905387。成功证据artifacts/deploy/verification-evidence/39b89700…/20261003T090508Z-287c88b30aab42429fff1cda29b60d61，独立TRX计数与timings实读。动画子任务已最终回执释放；E2已正式租约移动对抗原子任务，只改既有行动层级/纯展示，不动规则或刚修动画所有者；E3依次接续，Main只读准备。无部署/维护授权，下文未Release等为过程历史，不覆盖本行。
+
+- **2026-10-03对战专项最终冻结，未部署**：511cb7f0初始批后追加同族extraRelics collector漏项；Main独立额外圣物6组30、原真实链20组144、移动16场景6交互、试炼45/5尺寸通过，综合447补充通过，projection74/motion33/UI354及最新Batch双构建exit0。便携完整v5夹具SHA5c7ca151…5da6，新旧verifier可默认运行，真实RED/失败/中止均保留。干净提交级Release与Git同步仍待执行，不据此推定已上线；两个旧子专项完全冻结、租约释放。用户批准当前专项收口后E2→E3，逐项阻塞留待答复，其余持续推进；本轮无部署或维护操作授权。
+
+- **2026-10-03 15:27续办收口，未部署**：应用候选`8fbd59b74c9bd8c2fed6eb5ccae7907f356af5e8`完整Release规则6152/平台435全部通过、失败跳过0，UI354、卡图324+42、双前端及制品通过；发布包SHA`3a4ceb2ad48190b1646892f1cc212b216e35a9966abaca245214a4962266c090`，GitHub精确读回同一候选。成功证据`deploy/verification-evidence/8fbd59b7…/20261003T071427Z-61019576ba674c76ba2a1ae1ed26d507`；首轮活动预算红灯未删，移除当前服务端/平台两份额外Debug输出后同候选完整重跑，不调整预算。旧18目录实际分配释放3.34GiB；两额外Debug目录盘面增加约1.04GiB，原源码/索引不变。正式c858/测试934a68c6于15:09核对维护false，未部署/重启/改维护；Linux容量按用户拒绝安装略过，仍未验证。61条Q&A后续7条纯内容已交付，待Main独立验收和最新后台去重保存。试炼卡背/重复视觉专项接续原动画子对话：专用素材完整，本方hidden错误回退；限定四文件卡背修复已解锁，动画仅真实快照诊断，取得共享根因后另给租约。状态变化须实际生效后只呈现一次，取消/无效不提前转；不能以447合成夹具PASS替代本次真实链验收。后续纯文档提交不改变8fbd应用验收绑定；下方均过程历史。
+
+- **2026-10-03 15:03续办收口中（不部署）**：用户拒绝本机Linux/WSL，真实Linux容量略过但不标通过、不降正式额度。规则增量105条已仅一次保存后台草稿32→33，总115 pending/现有行保护，公开8条和rules.center不变，专用会话注销；新61条Q&A覆盖核对另排。两旧后台各22源文件独立归档恢复验证，18可重建输出目录清理3.34GiB，原源码/索引/分支及失败/PINNED不动。A3两长链夹具仅成功路径去无用Atomic快照和诊断，443专项、九深链指纹/持久化大小一致、独立关键复核无阻断；最终Batch规则6152/6152失败跳过0、TEMP首次清理成功。待干净提交级完整Release与Git精确同步，不部署、不改维护。详细回执在artifacts/rules-backend-closure-20261003及TASK-LEDGER顶部；下方均历史。
+
+- **2026-10-03 13:55 F2最小内存优化已验收同步，未部署**：干净候选`b1a571b7f61a98305af69d35ec4964f0143febd8`完整Release规则6150/平台435（失败跳过0）、UI354、卡图324+42、双前端及发布包通过；额外隔离部署失败保护41场景通过。GitHub已精确读回同一候选，工作树干净。验收包SHA9bd6640a…，证据`deploy/verification-evidence/b1a571b7…/20261003T054248Z-90bb52792c824c94892a03295c5f68e9`，唯一成功日志release-memory-optimized-retry.log。首轮内部账本漏登阻断、随后Node -1073741819异常退出及其完整失败日志/TRX均保留；独立失效点+完整双前端复验通过后，以同源码/断言重新完整Release通过，不冒称Node根因已修。7场景对照和缓存-90.69%边界沿用专项报告。本批生产写0、部署0、维护操作0；正式c858/测试934a68c6仍为上一轮带时间读数，未联网核验。Linux1GiB/cgroup及长期容量尚未收口，不能回调线上额度。当前正式状态不得从本地Git推断；本次后续纯文档回执不改变应用候选验收绑定。
+
+- **2026-10-03 13:20 F2最小优化本地已验收，待干净Release/Git同步，未部署**：完整gzip缓存+SHA头/普通恢复去重复水合/UTF8流式等价哈希保持P3合同；原损坏缓存读污染P1已补统一状态屏障，独立只读复核无新增P0/P1。最终专项128、完整Batch规则6150/平台435，失败跳过0。同真实派生prepared副本7独立场景全部通过，source/prepared不变、生产写0；cache68393722→6367453B（-90.69%），创建private峰837.16→734.96MiB、提交前失败792.01→695.60MiB，本轮约-12%；编码后故障完整回退通过。报告windows-managed-comparison-20261003T051718-221bac0fe2e04a2683f429917787b728.json/SHA0AB06A97…，私有证据780837254B<=1GiB。Windows1536MiB预筛不是Linux1GiB容量通过，正式c858/测试934a68c6不变且本轮未联网/部署/维护。详细绑定/红灯/边界见PLATFORM-STORAGE-OBJECT-MEASUREMENT顶部；下方实施中/待批准为历史。
+
+- **F2最小内存优化已获用户批准，正在本地实现/验收**：仅改完整内存回滚缓存为流式gzip字节、沿用同一归一化后恢复且不重复SQL水合、分块UTF-8等价哈希；SQLite/磁盘镜像/事务/CAS格式不变。Main独占源码和构建，关键档只读复核；新增编码完成后提交前故障保护。首轮专项旧保护通过，新夹具用户名超长与无效Unicode发现碰撞已修正并保留红灯；不得将过程计为容量通过。本批无部署或维护操作授权。下方“等待批准”是历史。
+
+- **本轮F2测量已验收，容量仍未收口**：正式包c858同DLL、原source保护及脚本绑定通过；三独立1536MiB托管预筛均通过，private采样峰721.19/870.71/900.59MiB，最终报告FB801E…在artifacts/f2-memory-20261003。创建操作累计分配316.10MiB，完整编码附近65.28MiB、失败恢复91.48MiB为区间分配，不是单方法或OOM首throw。早期runner错误全部保留；Windows不等同Linux，1GiB/cgroup仍未验收。子任务已冻结；最小流式完整回滚缓存/去重复水合/哈希方案已请求用户明确批准，本轮暂未改产品或部署。下方“测量实施中”为历史过程；两Bug及规则本地草案完成情况保留，后台去重/保存/发布未做。
+
+- **2026-10-03 12:21续办**：狮心王/佣兵原目标9000吕布四项（付/不付额外弃牌、V2恢复）及旧对照两项6/6通过，产品与正式c858包同字节；BUG-20261002-93b912f3已resolved。初次回填误写修复提交字段，Main只经CAS校正为c858，保留原错误回执/备注/分派/验证时间，最终correction回执与会话注销已核验。规则105条本地草案复验接收，两内容阻断解除、13来源及7绑定校对；8 held/7 metadata/后台去重和发布边界保持。F2父子测量脚本已成，安全拦截后用户明确授权D盘派生副本本地写入，三场景1536MiB托管预筛实施中，尚无容量通过，不等同Linux。应用/维护没有变化；Git状态与最终測量另收口，不把这里当部署回执。
+
+- **2026-10-03发布后收口顺序（当前推进）**：用户批准F2容量根因→Bug逐条闭环→规则草案验收→剩余存储归档→门禁耗时精细优化；两现有子任务仅独立只读取证，Main负责共享记录和集成，不新增部署/维护授权。11:35正式c85819f0/维护false、测试934a68c6/false，Git与干净候选200f3c1a。11:42地主/佣兵BUG-20261002-7d433183已按具名Release回归和线上版本回填resolved，会话注销；狮心王原目标吕布与现用例武则天差异待补，不关闭。规则首检两候选表述阻断和5处来源哈希过期，草案未写后台/未发布。中央候选总表已前置当前状态与五项顺序，旧回执明确历史；详情见TASK-LEDGER的MAIN-20261003-POSTRELEASE。
+
+- **2026-10-03 11:20正式部署与维护解除已完成（最新回执）**：应用 `c85819f0aacd1477f4f771fb3fdcfa0ac99acc91` 完整Batch与干净Release均通过，规则6150/6150、平台411/411、失败/跳过0，UI354、卡图324+42、双前端与41隔离部署故障场景通过；GitHub精确读回后只部署正式服一次。北京时间11:20即时维护配置85→86，最终HTTP/WS正常、maintenance=false、两独立部署围栏不存在，专用会话已注销；测试服保持934a68c6。本次新增日志2条目/3项行为，与同日既有历史累计保留。最新正式服务启动03:19:51 UTC，NRestarts=0、发布后OOM/启动失败匹配0，1536MiB临时内存上限保留，容量根因不冒称已修。实际回执 `artifacts/card-recurrence-20261003/formal-publication.json`、`production-live.json`、`maintenance-receipt.json`、`release-state-after.json`；完整Release证据在deploy/verification-evidence/c85819f0…/20261003T030254Z-a10820274d2c4c458db6c48dd5e9a22f。用户最新指令：先部署及开服，再处理Bug清单；本次反馈操作0、未关闭任何Bug，后续逐条回填不得自动批量关闭。首次Release因本机MSYS CreateProcessW errno13失败，原日志保留；未改断言/源码，诊断41及随后原始完整Release均通过。下方未部署/待验证叙述均为过程历史；后续文档同步不代表另一次应用部署，脏规范app不重置。
+
+- **最新完整Batch通过，提交级Release待执行（未部署）**：最后冻结候选规则6150/6150、平台411/411、失败/跳过0，两项目实际TEMP清理均一次成功；UI354、卡图324+42、正式/测试双前端构建、41部署故障场景及全部静态保护通过。batch-frozen.log为唯一完整成功日志；规则test-d1f798099dae4da38d36d2ff1ae98bf4、平台test-41790e5e43b24591b9241f478b826c96，专项365源码绑定不变。按存储/排行榜/通知/卡效四组提交后，对唯一干净提交完整Release、精确推送读回，才执行本次已授权正式部署与解除维护。测试服不部署，规范app脏树不重置。
+
+- **10:10最终365项冻结（未部署）**：旧绝防展示夹具最小迁移后子149/149、Main扩展365/365通过；清单用既有渲染方法Release生成后，关闭更新标志正常断言24/24。仅新增6项具名抵挡证据及两指纹，能力686/档案78分母和完成数不变，不人工改表、不降低断言。最终TRX/source-binding在artifacts/card-recurrence-20261003/focused-final-df85788aed8e4af08636d074ed7b6b29，test-abc6fb21b69c4c1b99cf1ec68ac5bd0b；重新完整Batch日志batch-frozen.log。此前6150的3失败及嬴政7失败均保留为红灯历史，尚待完整Batch/干净Release/同步/正式验收。
+
+- **最新完整Batch未通过（3项剩余证据修正，尚未部署）**：batch-accepted.log全规则6150项中6147通过/3失败/跳过0；opponent-attack绝防展示夹具没有场上攻方/PendingDefense且旧期望根Negated，正按真实交战及defense权威绑定最小迁移，active无效分支不改；另2项为具名测试证据变化后的库存/完成矩阵指纹过期，将用既有渲染器重生成并在无更新标志下复验，不放宽断言。Main已保留失败TRX，两次退出TEMP815文件逐SHA归档，删除/释放字节均0，archive回执在artifacts/card-recurrence-20261003。完整Batch和干净Release尚未完成，正式维护不变；下方09:42/09:20为过程历史。
+
+- **2026-10-03 09:42最新实际验收（尚未部署）**：完整Batch实际发现7项嬴政登场费用回归，已中止并保留batch-complete.log及独立7失败/3通过红灯。根因是普通军团也被送入新增候选批次，绕过原公共费用声明；Actions/GM现仅有Thor/Grail补充候选时共批，无补充恢复QueueOrPush旧入口。新增真实无Thor嬴政具名守卫，子最终50/50，Main最终227/227、失败/跳过0，源码/TRX绑定artifacts/card-recurrence-20261003/focused-final-b538a988c1a04186bd05c561f6a05419。完整Batch重新执行，之后仍须干净Release/远端读回；旧216/117及中断Batch不构成最终通过。正式45b65e47维护true，本批尚未推送/部署，测试服不动。
+
+- **09:20最终补丁冻结**：旧空城费用续程/空CombatId兼容35项通过，Main最终具名合集216/216、失败/跳过0；原嵌套和3项旧邻例实际执行，关键只读复核确认原阻断解除、未发现新P0/P1。源码冻结绑定及TRX在artifacts/card-recurrence-20261003/focused-final-1dff2068484945c797f6ff60657e8f3f。新的完整Batch日志batch-final.log正在生成，旧batch.log为主动中断不算通过。三子任务已冻结，Main独占实际构建。仅在完整Batch/干净Release及精确同步后部署正式并解除维护，测试服不动；此前实施中叙述为历史。
+- **2026-10-03卡效紧急批当前状态**：用户明确验收后仅部署正式并解除维护，不部署测试服。索尔授予冲锋已冻结，登场/腐秽/美狄亚34项通过；Main初轮117通过。关键复核随后发现旧V2空城费用续程漏迁抵挡事件及CombatId缺失风险，Batch在实际全规则运行前停止，抵挡子任务接续最小恢复补丁，尚未最终冻结。嵌套回归实际类名StackResponseChoiceRegressionTests及3项旧相邻测试必须补最终具名复跑；117不能冒称覆盖它们。阿喀琉斯/腐秽/美狄亚未复现，引擎不臆改，用户无需原录像、不新增定位功能。首页通知新旧资讯地址解析3/3冻结，已发布校验保留、不写配置。08:43北京时间公网正式45b65e47/maintenance=true，测试934a68c6/false；本批尚未部署。下方时间点均为历史回执。
+- **本地完整门禁当前阻塞**：短路径Batch规则6102/平台408自身全通过，但平台结束后共享编译器持有TEMP分析器导致清理失败，整体不通过；已保存失败现场并补UseSharedCompilation=false。8项生命周期及11项活动预算专项已过，仍需真实重验及最终完整门禁。排行榜实际浏览器13项已过，尚未同步；存储治理不是完成部署的证明。
+
+- **2026-10-03新增本地续办及界面请求**：当前源码20ab1d25上有本地存储监督/预算/清理和排行榜低样本显示未提交改动；完整Batch使用独立短D盘cache/sg3串行验收。首次长路径部署合成测试失败现场保留，不计通过。排行榜13浏览器场景及宽窄屏目检通过，但尚未推送/部署。两棵C干净旧树归档后移除，D旧后台树22暂存修改保护；C备份/缓存迁D并校验联接，三份本候选Debug输出清理但Release保留，实际回执与空间口径见台账和STORAGE-GOVERNANCE。Bug子任务全量只读832条、开放569，其中最新7天44，原文保留且去结构化身份；正文一致3组只人工候选，未关闭反馈。首页通知已交新后台子任务只读取证，没有源码写租约。本批无部署或维护授权，正式45b65e47、测试934a68c6不因此变化。
+
+- **2026-10-03 05:16正式发布实际完成**：唯一应用45b65e4748e2bef1a675a0acc44621d77e0ba8d2仅部署正式服一次，累计玩家日志7项随包发布；测试服仍934a68c6，本批未部署测试服。完整Batch/干净Release规则6101、平台407、失败/跳过0，UI354、卡图324+42、41部署故障场景与反击104专项已绑定。部署后首次F2临时牌库创建遇到托管OOM，后续登录/登出503；不是全程无异常。保留同候选及最新数据库，以独立systemd drop-in将原1GiB服务上限临时提高至1536MiB并重启，三轮object/sqlite/可写/镜像健康、CRUD、同ID改名、409、重新登录、删除和专用会话清理通过，原6副牌库不变。恢复后峰值1519792128字节，无内核oom/oom_kill和新OOM日志；不能称根因已修。即时及当前预约维护均false，配置83→84，部署fence不存在，公网HTTP/WS身份核验通过。未回退数据库、未自动撤销F2、未重复部署；初始阻塞回执保留。l12一次性调度已暂停。实际回执D盘artifacts/f2-production-rehearsal-20261003/release-0500.json、production-live.json及maintenance-complete-20261003.json，实时版本以artifacts/release-state-20261003-0516.json及后续A2读回为准；下方待发布描述为历史。
+
+- **新增发布风险（未根治）**：完整快照序列化和异常恢复反序列化在生产原1GiB额度下OOM，本地5333副本预演没有复现同cgroup内存约束；提高额度只用于本次可用性恢复。后续需资源约束下取证和独立批准的热路径修复，不可仅据health成功或当前内存低冒称容量验收完成，不自动开展未选F4或取消事务/镜像/回退保护。
+
+- **发布后存储盘点完成**：无联接遍历/硬链接重复计量，C旧项目23.54→22.64GiB、D物理项目149.53→132.44GiB实际分配。9处旧依赖同哈希清理，分步释放C0.90/D7.13GiB；197个闲置合成查询夹具仅可逆压缩，197/197哈希不变、删除0，D另释放9.97GiB。当前空闲约C18.07/D55.51GiB。来源、保护和剩余建议见STORAGE-GOVERNANCE.md及D盘JSON回执；此前10个历史bin释放不重复计算，未清空脏树/分支或全局Codex数据。
+
+- **2026-10-03 03:27最终Batch已通过，提交级Release待执行**：F2正式副本再次完整预演通过，反击最终104专项及规则6101／平台407、UI354、卡图324＋42、双构建和41部署故障场景通过，失败／跳过0。05:00发布前还须干净提交级Release、正式基线累计日志覆盖、远端读回及最终F2提交绑定；此处不是已部署／已启用／已解除维护回执。
+- **2026-10-03 05:00正式部署最新授权**：用户要求先完成F2正式数据隔离副本迁移／恢复／同版本关闭回退预演，再实施门禁耗时优化；与反击战术一次性资格修复统一验收。北京时间今天05:00仅部署干净、完整门禁通过并同步的候选，完成后解除正式维护；若任何部署阻塞，保留原版本但仍解除维护，不以时间目标绕过门禁。已复用一次性heartbeat `l12` 负责05:00回访，避免重复部署。正式数据只读采集到D盘受限隔离目录，不回写生产。完成发布／维护回执后深度盘点并优化本地存储。此授权替代本页此前“本批无部署／维护授权”，历史回执不改写。
+
+- **2026-10-03 反击战术一次性响应资格专项验收中**：用户要求子任务处理、Main验收，并明确覆盖全部特殊时机而非只离场。多个事件可以各自询问，拒绝后保留资格，合法发动后同一盖伏反击不得再问；不得以整批/回合去重替代来源资格。基线4d31ceb9已验收推送未部署；18卡扫描、声明红绿灯、旧候选／恢复和木马边界聚焦通过，待Main独立复核与完整门禁。子任务无部署/维护权限；Main按上方05:00最新授权统一发布，不能部署仍解除维护。具体状态见任务台账，下方是历史。
+
+- **2026-10-03 用户复验纠错批**：原验收3未通过；预组入口遗漏/草稿借用新revision/游客无CAS均已修正，扩展同名、删除互斥、旧schema公开旁路及模式选择迁移。真实Vue account+guest双页/旧草稿/删除/明确另存/预组复制通过；排行榜口径改刷新左侧按钮与弹框，原统计8场景+5尺寸通过，独立只读复核已报P1/P2未决0。最终Batch与干净提交Release以D盘本批回执和中央候选总表为准，首轮Batch不可代替随后补丁结果。本批没有部署或维护授权，两服仍为前次版本，线上验收3需新版本部署后复验。只清10个历史bin约13GiB，源码/Git/备份/证据保留；详情见最新台账/registry，推荐不自动立项。
+
+- **2026-10-02 E1/D3与F2受控测试启用已部署**：唯一应用934a68c678fc47eaa276ff4b6d06f24a75dc26f4完成完整Release与Git精确读回，规则6076／平台407、失败／跳过0，UI354、统计合同12及双构建／发布包通过；测试服北京时间23:37启动，公网HTTP／WS与真实牌库六场景通过，F2实际object／sqlite／可写／镜像健康，6副预置牌库不变。正式服仍d1659fa3、维护false且启动时间2026-10-01 21:58:08 UTC不变，没有正式部署或维护操作。验收脚本BOM与种子基线保护补强及回执另同步，不代表应用再次部署。F2真实生产副本预演／生产启用未完成；线上重启／关闭回退不冒称已测。E1首批、D3已收口本次测试部署；C1/C2延期，B3/D2拒绝，F4不启动。详见两份本批验收报告和任务台账；以下均历史，实时状态继续由A2独立读取。
+
+- **2026-10-02 E1/D3与F2受控测试启用候选（门禁完成，尚未部署）**：Main最终规则6076/6076、平台407/407、失败／跳过0；前端Batch双构建、UI354、卡图324+42及测试部署失败保留自测通过。页面专项与独立复核证据见E1-D3报告；F2新增一次捕获环境开关及权限只读实际模式，默认false、测试service显式true、正式service未改。用户明确授权仅测试服部署；分开界面质量／存储提交后统一完整Release，再同步和部署，不改变正式服或维护。C1/C2延期，B3/D2拒绝，F4不启动；中央20编号进度总表仍在D盘候选方案。下方各条是历史过程，实际部署状态由A2独立读回：测试a24dc8fd、正式d1659fa3、维护false；正式service启动时间2026-10-01 21:58:08 UTC，将在测试部署后核对不变。
+
+- **2026-10-02 F2 启用前演练／D1 定位已验收同步（最新应用状态，未部署）**：F2 `0241412a`、D1 `6f47b417bb795f73d09c6d220de198a87994780b` 已分开提交，在同一干净候选通过完整Release及发布包，推送 `origin/main` 并精确读回。规则6076/6076、平台381/381、失败／跳过0，UI354、正式／测试双构建与卡图324+42通过。F2恢复／关闭回退／丢响应相邻90/90，默认内部开关仍关闭且无生产入口；D1四桌面尺寸、旧蒙版矩阵、移动禁播及独立复核均通过，玩家日志已入账。B3、D2明确拒绝，不实施。本轮没有部署或维护操作，文档回执只前移Git头部，应用验收绑定不变。详见台账与存储报告；下方实施／待验证条目都是过程历史。
+
+- **2026-10-02 F2 恢复收口／D1 回放定位等待提交级验证（未部署）**：F2 `0241412a` 已完成19专项、相邻90/90及完整平台381/381；对象路径仍内部默认false，无生产配置入口。D1回合／关键事件定位通过四桌面尺寸和旧蒙版／移动禁播回归，独立复核两项兼容问题已修正，P0—P3未决0，最终前端Batch通过。两项分开提交后统一干净Release及远端同步，不借此部署或改维护。B3、D2明确拒绝，均不实施。证据与实际版本见任务台账；下方实施中条目保留为过程历史。
+
+- **范围限制**：用户再次明确拒绝 B3、D2，两项不实施、不进入目标；D1 仅桌面既有回放定位，移动禁播合同保留。
+
+- **2026-10-02 新批次实施中：F2 启用前演练＋D1 回放定位**：用户批准推荐项 1 和 3，明确拒绝 B3。基于干净 `dc84c641`，存储子任务补隔离恢复校验、关闭回退与丢响应重试，Main 推进逐帧授权信息上的回合／关键事件跳转。内部对象开关继续默认关闭，不新增生产启用入口；录像协议和普通／裁判／管理员视角边界不变。两个源码租约不重叠、构建串行，尚未验收或推送；本次不部署、不操作维护。较早批次状态保留为历史，下方 Git 同步回执不表示本批完成。
+
+- **2026-10-02 贯穿维护批已验收同步（最新Git应用状态，未部署）**：应用提交 `bbee79a41880f270b7a7e379a61dfbac45a26b29` 已完成完整Batch、干净提交级Release及发布包构建，推送 `origin/main` 并精确读回。Main独立聚焦10/10，规则6076/6076、平台362/362、失败／跳过0，UI契约354项、前端正式／测试双构建、卡图324+42与发布守卫通过。贯穿不再绕过暴怒目标优先，百鬼等适用伤害增益使用普通进攻公共计算，迷雾阈值与“不触发进攻方进攻时”例外均保留；原生与授予来源共用唯一入口。玩家更新日志已入账，本轮没有部署或维护操作；19:49北京时间只读线上仍为测试服 `a24dc8fd`、正式服 `d1659fa3`、正式服维护=false，该读数有独立采样时间。对象写内部开关仍默认关闭。文档回执只前移Git头部，不改变本应用验收绑定。下一阶段建议尚未自动进入目标或执行队列。
+
+- **2026-10-02 F2 普通保存 CAS 已验收同步（未部署）**：应用提交 `b051e73b5a545b908b6b3dc5dafa7c73eb0ced8b` 已通过完整 Batch、干净提交级 Release 和发布包构建，推送 `origin/main` 并精确读回；规则 6070/6070、平台 362/362、失败与跳过 0，UI 契约 354 项及正式／测试双构建通过。专项 48/48、独立只读审查通过，最终源码重新测量 20／1200 行保存 P95 中位 7.249／8.830 ms、牌库 SQL 与影响行零斜率。原待授权状态失效，普通保存安全阻塞已关闭；对象写内部开关仍默认关闭且没有生产启用入口，不能称线上对象写已启用。本轮未部署、未动维护。文档回执仅前移 Git 头部，不改变应用验收版本。
+
+- **贯穿候选接收证据（已由上方最终回执收口）**：独立工作树 `D:\GPT\Legion12\worktrees\piercing-normal-attack-20261002` 基于 `837cd58a`，子对话三文件已冻结且构建租约释放。真实暴怒／百鬼红灯有效，子对话最终聚焦7/7、四来源具名路径4/4通过；用户明确保留“不触发进攻方进攻时效果”。Main在干净 `994efb4f` 上以限定补丁集成三个文件，LF归一化内容与冻结候选逐字一致。原历史“贯穿绕过暴怒”裁定已由本次最新规则替代；理查专项验证合法授予状态下的消费者，不冒称本輪执行授予动作本身。
+
+- **2026-10-02 B2 已验收同步／F2 默认关闭（未部署）**：应用提交 `98b53e5e806a270a58c8f608a30517c7a934f2e4` 完成完整 Batch、干净提交级 Release及发布包构建，推送 `origin/main` 并精确读回。规则 6070/6070、平台 333/333、UI 契约 354 项、前端正式／测试双构建通过；本批玩家日志覆盖 16 个相关源码文件。B2 稳定 ID/revision、旧库可恢复迁移、编辑器／模式选择、公开复制和赛事签到严格来源已收口。F2 私人对象写已形成合成测量、双读和故障候选，内部开关默认关闭；普通全量保存从陈旧实例反向覆盖对象写的风险尚未关闭，通用保存 CAS 语义被自动审批要求用户单独授权。文档回执会使 Git 头部前移，应用源码验收绑定上述提交。详见任务台账与两个专项报告；本批未执行任何部署或维护操作。
+
+- **2026-10-02 A3／F3／跨赛季排行与“我的”页面测试服回执（当前状态）**：D 盘应用提交 `a24dc8fd84f5d02956c2c1123d81e758f4e49de2` 完成门禁去重与 UI 行为分层、Snapshot 四视角全排列取证、近 7／30 天跨赛季玩家／主宰／对阵统计及个人页三分区合并；B2/F2 仅形成前置盘点，不做迁移。完整 Batch 与干净提交级 Release 通过：规则 6070／6070、平台 301／301、前端 UI 354 项和正式／测试构建；排行榜 1280／390px、个人页 14 档、A3 五档真实浏览器及 F3 专项通过。该提交推送 `origin/main` 并精确读回；2026-10-02 13:59（北京时间）**仅部署测试服**，公网健康、页面和 WebSocket 均读回通过。正式服保持 `d1659fa3`，维护状态未操作；部署后状态脚本独立核验 `maintenance=false`。测试制品清理释放约 306 MB，运行快照未自动删除。详情见任务台账、`docs/A3-GATE-LAYERING-20261002.md`、`docs/F3-SNAPSHOT-READ-ORDER-20261002.md`、`docs/B2-F2-PREREQUISITES-20261002.md`。
+
+- **2026-10-02 A1／A2／B1／F1 最终发布回执（本文件最新权威状态）**：A1 `4364dd2c`、A2 `77280561`、B1／F1 `d1659fa3d293a1e274f0f48a5a2e2fc391135194` 已纳入同一干净候选并推送 `origin/main`。完整 Batch、提交级 Release 和绑定正式服基线 `300d6e34` 的发布验证通过：规则 6065／6065、平台 297／297、前端双环境构建、牌库草稿专项、发布账本和 12 视口布局验收。正式服已部署 `d1659fa3`，本机及公网 HTTP／WebSocket 探针通过；玩家更新日志本次区间 2 项、累计历史 8 天。按用户本次明确授权，预约维护配置版本 80→81，最终公网健康接口为 `serverVersion=d1659fa3…`、`maintenance=false`。测试服仍为 `07fcbf85`，本次没有测试服部署。制品盘两组旧运行快照及历史赛季修复数据库备份均在逐份 SHA256／字节校验后迁往 `/opt/legion12-deployment/runtime-backups`，原 `/www` 副本已移除；刚生成的回滚快照 `/www/legion12/runtime-backups/runtime-before-d1659fa3d293-20261001T215606Z.tar.gz` 保留。最终 `/www` 可用 `18,311,131,136` 字节。F1 是合成增长基线，不含生产数据或存储改造，精确 SQL 计数明确未测得。以下较早“未部署／维护开启”条目仅为当时过程状态，由本回执覆盖。
+
+- **2026-10-02 F1 平台存储增长基线候选（未部署）**：D 盘纯合成 10／50／150 账号矩阵、20／200／1200 私人牌库行，登录／保存／点赞／后台写入每项 100 次，另测 4 线程锁等待、镜像与数据库大小及恢复读回。三档牌库更新 P95 为 8.37／12.83／34.60 ms；精确 SQL 语句数未测得，仅给透明下界，未做存储架构变更。详见 `docs/PLATFORM-STORAGE-GROWTH-BASELINE-20261002.md`。与 B1 待统一门禁及同步；正式服维护不变。
+
+- **2026-10-02 B1 本地草稿候选（未部署）**：牌库编辑器可暂存和恢复未完成构筑；新建、切换牌库、删除当前牌库、路由离开及页面关闭保护尚未保存修改，账号／访客草稿隔离，保存正式牌库不会清除另一构筑的草稿。浏览器验收覆盖暂存、恢复、离开取消／确认、账号切换及 390px 操作入口；既有 12 视口 103 项布局验收通过。等待 F1 与统一门禁，未推送或部署，正式服维护未变。
+
+- **2026-10-02 A2 发布状态来源已推送（未部署）**：新增 `scripts/release-status.mjs`，从当前 Git、实时远端引用、测试服与正式服健康接口生成同源机读／人可读回执，维护单独由正式服健康读取。04:07 北京时间旧只读实测：`origin/main=4364dd2c`、测试服 `07fcbf85`、正式服 `300d6e34` 且维护开启；后续必须重新读取。A1 GitHub CI 遗留整类过滤一并清除并锁入回归。完整 Batch／Release 通过，提交 `77280561` 已推送并远端读回；没有部署或维护命令。
+
+- **2026-10-02 A1 测试门禁选择器已推送（未部署）**：在 D 盘隔离工作树修正分级选择器：平台代码不再只触发规则测试，共享／未知源码保守双门禁；迁回有效账号与录像匿名化测试，当前产品平台项目不再使用整类过滤。专项2/2、完整 Batch 平台297/297、提交级 Release、选择器及发布／部署行为自测通过；提交 `4364dd2c` 已推送并远端读回。不能把此候选视为已部署，维护状态未操作。
+
+- **2026-10-02 历史展示独立批（未部署）**：应用提交 `1dba5533a3df7939f5e46e845b6896bded33c5cd` 已完成完整 Batch 和提交级 Release，推送 `origin/main` 并读回同一提交、工作树干净；规则6065/6065、平台295/295、前端正式／测试双构建与发布包通过。历史荣誉 1280/390/360、个人资料 14 档浏览器验收通过。此批只同步 Git，未部署测试服或正式服，正式服维护状态不变。用户另提供深度评估报告，要求本批完成后仅拆解可选择的详细任务方案；不得直接实施报告建议。
+
+- **2026-10-02 凌晨统一候选待最终 Release／推送／正式部署，维护保持开启**：Main 已在 D 盘隔离工作树整合卡效（吕布费用时点、平阳昭公主／杨戬非致命伤害）、规则手册章节目录及五类后台子板块管理、后台 Bug 分类关闭、T01 精确开季时间，并独立修正新规则版本协议误伤旧内容命令。完整平台 304/304、赛季修复 15/15、旧路由 2/2 通过；子任务规则 6065/6065，规则中心 8+6 视口／32 图，Bug 关闭 14 视口通过。发布账本对当前正式服 `c36a0f63` 到候选 `07478aac` 的 32 个玩家相关源码覆盖通过，生成玩家条目4项；按用户要求吕布此次调整不写玩家更新日志，对局记录和费用事实保持常规显示。正式服 T01 开始时间目标为北京时间 2026-10-02 00:00，必须在正式部署后的维护停写状态下按 `docs/T01-RANKED-TRANSITION-WAIVER.md` 执行预览、指纹核对、一次性修复和读回；代码通过不代表线上数据已调整。当前尚未推送或部署；用户授权所有当前任务验收完成后正式服部署，**不得解除维护**。
+
+- **2026-09-30 当前唯一候选已完成三项新增独立验收，待最终 Release／推送／双环境部署**：候选 `391f6c4d` 在远端 `fb54ac32` 上新增天灾值 before/after 权威记录与旧数据诚实降级、瑞士轮六级排名规则说明、移动对局记录弹框避让，以及完整玩家发布账本。天灾记录经历四轮独立验收，关闭同序号事实丢失、回合组吞记录、跨组元数据嫁接、跨卡身份顺序依赖；移动端19场景确认记录与 dock、计时、返回／投降和主操作零交叠；赛事说明与服务端比较器一致且不外显账号 ID。发布区间账本为玩家条目22项、93个源码路径全覆盖。用户已授权最终门禁通过后依次部署测试服和正式服，并要求不改变现有维护状态；正式服维护计划 v69 已按用户在后台专项的直接命令启用，计划 23:00 开始、无自动结束时间。当前尚未推送或部署。
+
+- **2026-09-30 Stage4C-1 与规则中心高密度批已完成 Release、Git 同步和远端读回，未部署**：统一候选 `fb54ac32cdbf2b74bf14d1dc27a8f33ed33a10ad` 已推送至 `Testrunner-DC/Legion12.git`，`HEAD = origin/main`、工作树干净 `0/0`。完整 Release 通过规则 `6019/6019`、平台 `257/257`、UI 合同 `353`、提示文案 `125`、动效投影 `69/69`、赛事合同 `38/38`、正式与 testrun 前端构建及服务端发布包。首次运行因 C 盘只剩约 80 MB 在编译阶段失败；仅清理六个明确候选中的可重建 `bin/obj/dist` 后，同一候选完整通过，门禁后 C 盘约 11.77 GB 可用，源码、Git 与验收证据未删除。本次没有部署或维护操作；对战玩家信息总计划仍须继续完成其余阶段。
+
+- **2026-09-30 对战玩家信息 Stage4C-1 已通过 Main 与独立复验，待 Release／推送，未部署**：当公开效果被无效且服务端提供与唯一公开来源实例精确匹配的结构化费用回执时，折叠记录显示“费用已支付”，展开后显示实际付款内容；费用不会因效果被无效而被误写成返还。旧记录、空或纯空白回执、隐藏来源、重复来源和错来源均诚实降级，不从审计文本、当前棋盘或卡牌正文反推。首轮独立验收发现空回执仍进入展开详情的 P2 后已统一摘要／详情判定并补齐反例；R2 无 P0—P3。定向后端、日志投影、审计脚本、UI353、Vue 类型及双方／中立／裁判／管理员八组桌面与移动浏览器场景通过；完整 Release 与 Git 同步由 Main 串行执行，没有部署或维护操作。
+
+- **2026-09-30 规则中心高密度浏览与已发布只读隔离已通过独立验收，待 Release／推送，未部署**：前台内容在超宽屏使用 1680px 上限居中，产品按权威收录顺序新品优先，默认显示四项并可展开／收起；被深链选中的产品始终可见，当前搜索、分类、主题和产品筛选可集中查看并一键清除。后台草稿继续就近编辑、保存和发布；已发布／已排期对象只显示状态、生效时间、玩家端预览及相邻“退回修改”，不会直接挂载编辑控件、保存或再次发布，退回后自动切到草稿并定位对象。独立验收 P0—P3 无发现；玩家8档、后台6档共24图、规则合同、Vue类型、两请求／按需卡目录、图鉴详情、卡号逆序、深链历史和无打印／PDF契约通过。完整 Release 与 Git 同步由 Main 串行执行，没有部署或维护操作。
+
+- **2026-09-30 对战玩家信息 Stage3B-1 已通过独立验收，待统一推送，未部署**：公开卡效演出现在按权威结果区分完成、跳过、未能完成、被无效和选择不发动；公开安全原因只在来源实例精确匹配时显示，空牌库不再误写为“无合法处理对象”，隐藏来源、私区信息和旧回放不补造。公开演出按服务端单调事件序号再次在真实入队点去重，同批重复、补发和重连不会重复播放，不同序号的合法事件仍逐一展示。1440×900、568×320、667×375、844×390、390×844 长文几何、真实 ReplayPage 控件、三视角引擎投影、后端34/34、UI352和Vue类型均通过独立复验；唯一测试真实性P3已关闭。Stage3B-2 的弹框文案精简仍为后续独立批，不属于本条；没有部署或维护操作。
+
+- **2026-09-29 异画到账通知与全后台账号候选收口已完成 Batch，待 Main 接收，未部署**：到账弹框固定为“获得异画！”和“恭喜你获得〈卡名 编号〉”，仅在管理员原因非空时追加该原因，不再外显使用权、原画、编辑器选用或来源说明。异画直派、活动名单、对局档案与排位完整性查询复用同一管理员账号模糊选择器及既有 `/api/admin/accounts` 权限边界，按用户名片段或完整ID筛选，候选显示用户名、唯一玩家ID及禁用／删除状态，最终只提交唯一玩家ID；活动名单逐项候选、去重并由服务端逐项校验。普通模糊列表筛选、账号列表深链和赛事限定候选无需替换。多实例候选弹层使用唯一 ARIA 控件ID；普通管理员可派发，普通玩家越权失败，账号切换会清空并重载候选。真实浏览器覆盖 1440×900、390×844、844×390 的重名、多候选、无结果、键盘操作和移动弹层安全区；补充专项32/32、Vue类型、最终 Batch 规则5768/5768、平台214/214、UI合同351与正式／testrun双构建通过。系统资产模型、普通玩家权益、公开画廊与对手可见性未改；未推送 main、未部署。
+
+- **2026-09-29 最终发布已完成（最新权威状态）**：唯一应用提交 `e1e561ad7ba9c741b5901be7955142ce02c580d8` 已进入 `origin/main`，并部署至测试服和正式服。完整 Batch／Release 通过规则 5768/5768、平台 212、UI 350、卡图 324+42，以及正式／测试构建；双环境健康、324 张卡、HTTP、WebSocket、服务端与引擎身份均已读回。正式服线上验收后只解除一次即时维护，运营配置 64→65；预约维护=false、即时维护=false、有效策略=open、`entryBlocked=false`。正式服本次使用 `/opt` 制品根，切换前快照为 `/opt/legion12-deployment/runtime-backups/runtime-before-e1e561ad7ba9-20260928T223545Z.tar.gz`；`/www` 旧制品和受保护备份保留，未删除。原定 08:00 的一次性重复部署自动任务已暂停。后续文档回执提交可使 GitHub 头部前移，但不改变该业务部署版本；下方 2026-09-29 标为“候选／未部署”的条目，其发布状态均由本回执覆盖，功能与验收细节继续保留为历史证据。
+
+- **2026-09-29 对战垫格位短标签已由 Main 独立验收，进入统一候选，未部署**：独立界面批仅将双方前后排空格位内部显示改为“左格／中格／右格”；目标弹框、确认摘要、对局记录及无障碍名称继续保留完整我方／对方与前后排方位。有卡格位、战场几何和权威位置不变。UI 合同 350 项、Vue 类型、桌面／3440 宽屏／手机横屏空满场、11 档宽屏几何及真实 `ReplayPage` 权限矩阵均通过；20 个回放场景无错误，管理员手机回放按既有合同阻断且零数据请求。本批未部署，也不修改维护状态。
+
+- **2026-09-29 裁判实时视角与管理员档案回放已完成 Release 并同步主线，未部署**：`origin/main=42af0496d9bdf336b3e0f6c5a1b15731421f2852`，远端读回 0／0。赛事授权裁判只读查看双方完整手牌、仍保持覆盖状态的卡牌正面和完整天灾；管理员对局档案回放使用独立后台显示投影。普通观战、玩家／对手、公开／玩家回放不变，牌库顺序、私密 Prompt／事件、实时能力可执行状态、合法动作与 GM 工具均不开放。房间初始、混合广播、恢复、重连和撤权后续快照按权威 assignment 重新鉴权；后台保存撤权不会回收已经合法显示的信息，但不会再产生新披露。独立验收拦截并修复了裁判投影携带实时 abilities 以及裁判会话污染普通回放两项越权。平台221／221、长链439／439、隐私／Prompt／架构76／76、UI350、真实浏览器矩阵、类型检查和完整 Batch／Release 均通过；正式服尚未部署。
+
+- **2026-09-28 历史开发候选（已由上方 2026-09-29 状态覆盖）**：当时 `origin/main=d2206cc274e3a3618830ba637383071124807529`，候选为 `f836026d`；保留本条仅用于追溯，不再代表当前主线或待集成状态。
+
+- **2026-09-28 对战玩家信息优化计划已进入实施，身份显示仍不是总计划完成**：`battle-player-information-execution-plan-20260928.md` 的阶段0/1与阶段2通用选择弹框首批已完成并进入当前主线候选；阶段2其余内容及阶段3—6继续排队。已完成的身份信息子批保留55场景／95张截图基线；后续任何提示、记录和信息密度调整都必须同时通过桌面、320—430px竖屏及极限横屏移动端验收，不得侵入战场、计时、记录、互动区或依赖页面横向滚动。
+
+- **2026-09-28 单卡裁定身份、卡图、产品归属与卡号逆序已由 Main 验收接收，未部署**：单卡／勘误标题由关联 `cardIds` 的规范卡号和卡名稳定派生，无关联旧记录明确显示“待补关联”且不猜正文；展开后才挂载卡图，点击复用图鉴既有详情。产品归属在前端选择／保存以及服务端保存、发布、公开读取时均按权威收录表重算，多卡取并集。卡号按数值逆序稳定展示，多卡裁定取最高卡号，未知／无关联条目置后且搜索不改变顺序。完整候选门禁通过规则 5661/5661、平台 211/211、UI 合同 350 项、正式／testrun 各 456 模块；Main 独立复核直达、刷新、懒加载和排序矩阵通过。
+
+- **2026-09-28 对战名次已改为各派系最高段权威判断，未部署**：删除前端对“冠冕”文字的硬编码；服务端按玩家所属派系最后一级段位决定是否投影全服名次。最高段有派系称号时显示“N名／段位称号／主宰称号”，无称号时显示“N名／本派系最高段位／主宰称号”，非最高段不显示名次。Main 合并后服务端 22/22、UI 合同全链 350 项与 Vue 类型检查通过。
+
+- **2026-09-28 试炼事件族结构化日志首批已由 Main 接收，未部署**：推进试炼、完成试炼和复合行动不再依赖解析审计文本；新事件保留日志组、时机、决定与效果段，实时及录像公开投影不会泄露未完成试炼身份。旧回放继续使用兼容解析。Main 合并后独立复跑服务端语义／隐私 17/17、前端日志投影 69 项通过。
+
+- **2026-09-28 李牧免费复合战术同步完成卡死已由 Main 接收，未部署**：根因不是《神妙行军》单卡，而是声明可在首个提示中同步完成并移除激活，调用方随后才反查补写父堆叠等上下文。现统一在激活进入集合和产生提示前原子初始化 committed 上下文，复合战术与效果生成军团免费登场移除返回后回捞，同时保留旧入口反射兼容。覆盖《神妙行军》《乾坤·阳》《倪克斯的陨星》《海拉的凝视》无首段目标及两处检查点恢复；Main 独立 28/28、243/243 通过，来源完整 Batch 5666/5666、324卡、legacy 0。
+
+- **2026-09-28 热门卡组逐行暂停与宽屏放大已完成并进入主线，未部署**：两条轮播分别维护鼠标、键盘和触控暂停状态，操作一行不会再打断另一行；宽屏卡片高度78px→102px，宽度、头像和间距同步放大约30%，700px及以下继续保持原230×74px紧凑尺寸。真实浏览器覆盖1920×1080、1366×768、430×932、390×844及减少动态，逐行暂停、双循环、方向、速度、路由与几何全部通过；牌库合同、UI350、Vue类型和更新日志账本23项通过。最终应用提交 `05da6a54` 已进入主线；没有部署或维护命令。
+
+- **2026-09-28 历史发布回执（已由 2026-09-29 顶置回执覆盖）**：唯一应用提交 `23833cc8e414ab482a70100af82746be5b3d29c2` 已同步 `origin/main` 并完成两轮正式绑定门禁；规则5661/5661、平台210/210、UI350、卡图324+42、正式／测试各456模块全绿。测试服与正式服均已原子部署该提交，公网HTTP、WebSocket协议1、服务端／引擎提交身份精确读回；测试服与正式服部署后分别释放301,915,319和215,676,265字节旧制品。移动图鉴短高度横屏裁切已按共享紧凑边界根治并通过10档横竖屏对抗验收；LC-06完成18/18深链、相邻67/67且生产代码零改动。正式更新日志以 `74fdfc7 → 23833cc8` 精确区间生成，覆盖50个玩家相关源码。正式服部署及线上验收成功后仅执行一次预约维护解除，运营配置62→63；预约维护=false、即时维护=false、有效策略open且entryBlocked=false，最终健康为 `ok / maintenance=false`。
+
+- **2026-09-28 当前统一候选四批已完成 Main 验收、Release、Git 同步与远端读回**：热门牌库移除外层框与自动播放文案，严格保持双行独立轮播，速度降为原来的70%，点击只进入具备稳定公开短码的对应牌库页；赛事中心只调整玩家／主办／裁判工作区的视觉层级、密度与移动响应式，6个业务组件的脚本区与原候选逐字节一致；LC-05A把实时快照和玩家回放统一到同一套接收者可见性规则，后续公开不会反写历史帧；规则中心默认改为资料首页，保留全部既有公开功能并按常见问题／单卡问答、主分类／子分类、产品系列重组，后台改为四个对象就近操作工作区，打印／PDF入口删除。主候选提交为`e917962b`、`4a8f000a`、`aeb0afac`、`1ca2928c`，Main另补“全部展开含关联卡牌问答”按需加载卡名目录的同源入口及浏览器断言。专项分别通过5档牌库、14档赛事、LC-05A两轮矩阵＋33项相邻测试＋7项架构锁，以及规则中心5档11图；统一Release通过规则5659／5659、平台210／210、UI350、卡图324＋42、正式与测试各456模块及发布制品构建。最终远端提交以本次 Main 验收回执为准；没有部署或维护命令。
+
+- **2026-09-28 对战玩家身份展示优先级已完成专项验收**：宽屏玩家信息与移动详情弹框共用同一判定；存在派系段位称号时不再并列展示普通段位，只有冠冕级别显示全服名次，非冠冕即使收到 rank 也不外显，冠冕已有名次时继续隐藏重复的“冠冕”文字。UI合同350项、Vue类型、性能／P0—P4架构锁及桌面3档＋移动4档×5类身份共35个真实浏览器场景通过；本批未部署。
+
+- **2026-09-28 牌库热门双行轮播与盒式卡片已由 Main 接收**：公开牌库新增严格两行、方向相反的热门牌库连续轮播；悬停、键盘焦点和触控按压均会暂停，减少动态偏好下停止动画并降级为横向滚动。公开／个人牌库盒子按名称、作者、主宰、构筑摘要、统计、赛季状态和操作分区，复用既有视觉组件，不改变 Batch A 的入口、分页、详情或编辑器。1920×1080、1366×768、430×932、390×844及减少动态场景无横向溢出；分页／导入、公开流程、我的牌库操作、类型、牌库合同、UI350和双构建专项均通过。应用提交 `dc6f088d` 已进入统一候选，等待与移动弹框、B1 提示一并跑最终 Release、推送；未部署。
+
+- **2026-09-28 移动选择弹框密度治理与 B1 共享目标提示已由 Main 接收**：移动端 Prompt、主宰／阵营、墓地、士气支付、单卡选择和天灾池统一采用安全画布内的可读字号、44px 命中区、同级等尺寸及正文独立滚动；4 档手机、安全区、125%／150% 字号与 2 档桌面对照共 151／151 场景通过，UI 契约 350 项。B1 最后一批为 `PromptEnemyByTroops` 的 4 种不同语义显式传入叙事，覆盖图特摩斯登场与进攻／阵亡、埃吉尔已支付后的减兵、格拉墨已弃牌后的可放弃置底，不按 action 猜测文案且不改变控制流；规则 5657／5657 通过。候选提交为 `1477005a`、`ef211bc9`，正在同一干净候选上补台账和统一 Release；未推送、未部署。
+
+- **2026-09-28 牌库管理入口与独立分页已推送，未部署**：公开牌库成为默认入口，“我的牌库”深链仍可恢复；导入牌库码改为按需弹框；公开与个人列表各自独立按最多 30 项分页，切页、筛选和标签切换不会串页。桌面／移动浏览器矩阵与完整 Release 通过：规则 5649／5649、平台 210／210、UI 契约 350、正式／测试各 454 模块；`origin/main` 已读回 `257396b431a7e28d33eca8e3591812a276d0267b`。热门牌库双行反向轮播与盒式卡片布局作为独立 Batch B 继续推进，不混入本条。
+
+- **2026-09-27 LC-03C-2七风险族长链正确性已由Main接收**：4条具名卡效深链和1条真实请求时序链覆盖响应／无效／同时触发、私密检索与牌序、叠放／转移／最后已知状态、限时／持续来源失效、天灾／试炼、跨回合清理及请求至多一次七族。每条卡效链至少65条命令、两个非初始检查点，并完成A／B／C权威状态、事件、CardFact、随机状态、Journal和四类投影比较。Main复跑性能1/1、七族17/17、失败关闭22/22、架构7/7；统一脚本58秒。等待Release与同步，不部署；LC-03至此完成计划内A／B／C验收，LC-04须另发租约。
+
+- **2026-09-27 区域移动、状态切换与响应目标高亮已由 Main 接收**：Main 以最新主线依次整合牌库／墓地公开正面移动、活跃／休整动画连续性及响应对象持续高亮，并人工合并重叠的浏览器夹具。牌库弃置和墓地回牌库不再错误飞卡背；状态转换不再出现 ghost 与权威卡牌同时隐藏的空白帧；响应目标在弹框展开、最小化和恢复时均按真实实例持续高亮，对象离场即停止且不泄露盖伏身份。motion20/20、投影41/41、UI350、Vue类型、11档视口及合并动画289项／34帧通过；等待统一Batch／Release和Git同步，不部署。
+
+- **2026-09-27 LC-03C-1长链性能基线已由Main接收**：只新增64／256／1024命令的Journal增长、检查点损坏恢复、恢复后追加和资源预算测试，不修改产品或格式。Main复跑性能1/1与相邻恢复38/38通过，专项58.3秒；等待统一Batch／Release和Git同步，不部署，LC-03C-2仍关闭。
+
+- **2026-09-27 牌库编辑器左栏分区与移动选择弹框（Batch已通过）**：桌面左侧栏恢复为约5:2的卡牌详情／已保存牌库显式网格，详情、长效果文本和长牌库列表各自纵向滚动，杜绝隐式网格行导致的遮挡。移动端隐藏常驻牌库列表，通过竖屏工作区入口或横屏详情入口打开约占可用画面七成的安全区弹框，支持当前态、长列表滚动、选择关闭、外部点击与Escape关闭。桌面5档＋移动7档共103项和12张截图通过；完整Batch为UI合同350项、牌库合同、卡图324+42、正式／测试双构建454模块全绿。提交级Release与同步结果以本批最终回执为准；不部署。
+
+- **2026-09-27 异画系统资产模型纠正（Batch已通过，待部署）**：用户明确管理员上传异画归系统后台资产，上传账号只作审计来源，不自动获得个人使用权。服务端已移除创建者隐式拥有；图鉴已拆分管理员全部启用资产预览与普通玩家显式权益，并补身份恢复／账号切换刷新及迟到响应隔离。上传后管理员不能用于构筑或对战，除非另行派发；公开画廊、对手对战卡面和公开牌库原画边界不变。真实浏览器4类权限场景、Focused／Batch规则5570/5570、平台210/210、UI350、卡图42项／324张和双构建454模块均通过；提交级Release与同步待完成。用户已明确授权本批完成后依次部署测试服和正式服，但未授权修改任何维护状态。此条明确取代2026-09-26“上传者自动拥有自主上传异画”的旧产品口径。
+
+- **2026-09-27 特洛伊木马占位修复（已验收推送，未部署）**：已确认玩家报告的“木马突然不见”共享根因：普通军团、新反击战术与效果生成军团只按反击类型判断可顶替，没有校验覆盖状态和所有者。三条路径已收敛到唯一“己方后排、己方所有、仍在覆盖”规则，合法顶替按真实所有者入墓。木马响应／置入／-1000／到期弃置抽牌主链不变。聚焦回归237/237；Batch／Release 规则5564/5564、平台210/210、UI349、双前端各454模块通过。应用提交 `8010cc3786da8cda0ad82ba14d2c907176017ebc` 已推送并从 `origin/main` 读回；本批未部署、未改维护状态。
+
+- **2026-09-27 当前部署前候选（最新）**：Main 已在 `origin/main@b24c83d` 之上统一接收四批：LC-03B Journal损坏／截断失败关闭、赛事创建快照与赛事房间等待／恢复、BUG `010fc531`〈乾坤·阳〉空目标仍进入独立抽牌段、后台维护计划“预览通过但无法保存”的语义指纹修复。来源提交均未自行推送或部署；Main聚焦复核已通过赛事31/31、乾坤·阳6/6、维护计划真实浏览器全流程及状态版本不兼容失败关闭1/1。当前正在补正式发布账本、共享状态文档和完整 Batch／Release；完成后只同步 GitHub 与规范工作区，不自动部署。
+
+- **2026-09-27 发布与维护边界**：正式服当前仍以 `6d934d24cb4f5625c3bfba3e492a36c62fb362c5` 为已知实际版本、最近读回维护为关闭；测试服最近已知版本为 `91a14bd`。本轮没有新的部署授权，也没有维护开启或解除授权。正式部署的玩家更新日志必须由 `release-ledger` 从 `6d934d2 → 最终候选` 精确生成；测试服／正式服部署及任何维护状态修改均等待用户新的明确命令。
+
+- **2026-09-26 后台卡牌数据、卡图稳定性与LC-03A已由Main验收推送，未部署（历史批状态）**：Main在`origin/main@1609c6a`上依次整合卡图无闪烁切换、后台动态异画／共享主宰矩阵／共享构筑查看器，以及只含测试和报告的真实WebSocket恢复对抗批；远端读回为`1eb212e5c12db7d23707d5c4c00ca77a1bfbdc4a`。最终Release规则5532/5532、平台210/210、UI349、卡图324+42、正式／测试前端各451模块和制品生成通过。后台上传异画可进入授权用户完整卡池；相同卡图刷新不再重建节点，高清预载失败不清空已显示像素；LC-03A真实覆盖双玩家与普通观战的连接代际、基线恢复、delta仲裁、幂等和隐私收敛。此条当时列出的LC-03B与`010fc531`缺口已由上方2026-09-27候选接管；真实裁判viewer role、LC-03C及部署后Bug复测仍属后续。本批没有部署或维护命令。
+
+- **2026-09-26 全卡长链恢复、回放与隐私对抗路线（仅规划，未实施）**：L12-main已基于`d543530`完成只读评审，确认A不中断/B多切点恢复/C Journal V2回放三线及四接收者投影矩阵符合P0—P4边界。用户新增硬门：每批开始前必须先询问L12-main并记录main提交、工作树/租约、在途任务、架构风险、复用端口、门禁规模和非范围；未回复不得实施，状态实质变化须重问。第一批LC-01只做合同冻结和最小确定性驱动器，覆盖六风险族与上一批15张历史失败卡，不改规则、不修红灯、不做324全卡长链、不做真实WebSocket竞态、不部署。详见`docs/L12-LONG-CHAIN-RECOVERY-REPLAY-PRIVACY-PLAN.md`；LC-01真正开工前仍须重新问询Main。
+
+- **2026-09-26 正式服 Bug 关闭批（最新）**：正式服健康为 `ok`、324张卡、维护关闭，实际服务端/引擎版本均为 `6d934d2`；该版本包含 `a772582`、`d37e59b` 与 `b522f72`。具名规则专项508/508和移动响应式合同通过。使用仓库外DPAPI保护的本机正式服专用入口，24条候选dry-run 24/24、正式关闭24/24并逐条读回，独立复拉为closed 24/new 8且证据字段完整。仍开放01、07、12、17、21（专项线上呈现）和10、16、22（真机）。`Aimin` 仅属测试服。本批没有部署或维护命令。
+
+- **2026-09-26 全卡敌对协议与恢复一致性（已由Main验收并推送，未部署）**：324张权威卡的交互遍历由三策略扩为四策略，新增错误玩家、非法候选、检查点恢复后同命令和重复提交。首轮1297项中15项失败，统一根因为 `L12CardInstance.Clone()` 浅拷贝让事件、最后已知状态、Prompt审计和玩家投影与权威卡共享可变集合；公共深快照修复后逐卡1297/1297，连同隔离测试1298/1298。L12-main独立验收并推送`2204ae2`；提交级Release规则5091/5091、平台205/205、UI349、卡图324+42及双前端构建通过，工作树与远端对齐。本批未部署。
+
+- **2026-09-26 历史发布回执（已由 2026-09-29 顶置回执覆盖）**：应用提交 `6d934d24cb4f5625c3bfba3e492a36c62fb362c5` 已同步 `origin/main`，完整 Batch 与干净提交级 Release 通过。测试服与正式服均已原子部署该提交，公网主页、324张卡、HTTP版本／引擎身份与WebSocket协议1通过；测试服部署后释放298,358,057字节，正式服释放208,566,989字节。正式发布包以 `08cd7af → 6d934d2` 为精确区间生成并上线三组详细玩家更新日志：双方计时右侧镜像安全轨、弹框同级选项等尺寸、自主上传异画进入完整卡池并可逐副本切换。线上包已逐句读回。正式服部署与线上验收成功后，只调用一次预约维护解除命令；运营配置57→58，预约维护与即时维护均为关闭，最终健康为 `ok / maintenance=false`。下方“当前发布候选／维护开启”均为发布前历史，不再代表当前状态。
+
+- **2026-09-26 当前发布候选（覆盖下方已部署状态）**：在 `08cd7af` 正式版本之后纠正桌面计时整体左移、对战弹框同级文本按钮仍不等尺寸、自主上传异画未进入上传者拥有权三项根因。专项已通过平台23/23、异画真实浏览器、计时956项／36图、弹框252项／5图、UI契约349项和Vue TypeScript；正在执行更新日志账本、完整Batch与提交级Release。用户明确授权本批依次部署测试服和正式服，并仅在正式部署与线上验收成功后解除一次正式服维护；失败必须保持维护。
+
+- **2026-09-26 历史权威出口（已由 2026-09-29 顶置回执覆盖）**：当时正式服已部署 `08cd7af644106ce8c723d24af5230c05c4db437a`，公网健康、首页、卡牌页、WebSocket 和生产更新日志注入通过。维护状态按当时要求保持 `true`，没有调用解除预约维护或结束即时维护。测试服当时为 `b7d9f6306b9b6b518ce948325e7ed7ee01b2c485`。本条所写“25+3+3+1”是 32 项 Bug 的旧分桶，不是额外待办；最新状态为 24 条已关闭、8 条待专项线上或真机证据。下方历史“待推送／待部署”不再表示当前状态。
+
+- **2026-09-26 正式部署回执**：第一次部署在上传前被真实生产更新日志注入合同拦截；根因是开发态文件为 `null` 占位而生产态注入对象，合同却硬性要求仍为 `null`。提交 `08cd7af` 改为验证稳定类型赋值，同时继续强制未登记源码和内部术语失败；UI 348、发布账本和发布门禁回归、规则 4766/4766、平台 205/205、正式／测试各 440 modules 重新通过。第二次部署创建并校验运行数据快照，复用卡图缓存，HTTP/WS 精确匹配新提交，清理旧制品释放 208,356,422 字节。
+
+- **2026-09-26 计时器外置与弹框同级尺寸根治（已正式发布）**：桌面双方计时器不再各占独立纵向网格行，而是共用 196px 左侧外置轨道，与各自手牌同一行且明确锁定同一网格列，均不侵入战垫；移动端显式恢复五行战斗结构，避免继承桌面三行后战垫高度归零。效果选项、横／竖卡候选、响应目标、放置、支援／抵挡、士气支付、主宰／阵营能力、工具菜单、战斗动作和页脚按钮统一同级 hit-box。Main 复跑计时 844/844（36图）、弹框 203/203、UI 348，并随 `08cd7af` 正式发布；对应两条玩家更新日志已在线上 bundle 读回。
+
+- **2026-09-26 最新对战收口**：非战斗离场不再因同批视觉事件被吞掉，主宰效果卡图与区域移动按权威序号统一播放；勇士比约恩墓地加权多选不再让“不发动”占用序号，支付后按声明位置登场，位置后被占用时留墓且不退费。移动选择弹框和计时模块已纳入对抗验收：顺序协调7/7、离场投影28/28、动画浏览器51项/10帧；最新计时矩阵已由上条 844/844 结果覆盖，服务端完整4766/4766。
+
+- **2026-09-25 极限短屏战况覆盖与结算居中**：移动端右侧“对局记录”入口从玩家信息卡中拆出并固定为上下文槽底层，不参与临时内容高度计算；交战摘要绝对覆盖且可穿透打开记录，支援／抵挡最小化仍可点击，其他临时操作按统一层级覆盖。568×320、640×360及原四档战斗流程通过；结算页所有玩家信息居中并移除对局编号。由 Main 统一提交推送并部署测试服，正式服只设置2026-09-26 02:00维护计划。
+
+- **2026-09-25 对战界面跨比例对抗根治批次**：桌面移除战场／牌堆负位移并允许舞台按可用宽高等比放大；移动端卡宽同时受高度、完整横向轨道及左右栏约束，主宰区明确分配手牌数、卡面和标记三行，防御操作固定进入主操作槽且最小化按钮真实可见，结束态移除重复路由控件。固定状态555张、基础弹框48张、安全区18张、随机连续性32组、4:3专项6档、移动互动16组、动作停靠10档、弹层全流程412张及桌面12档×7交互态84组均通过，覆盖3440×1440、2560×1080和667×320等极端比例。独立对抗复核无产品阻断；完整 Batch、正式／测试双构建通过。由 Main 统一推送，本批未部署。
+
+- **2026-09-25 移动资讯图片与页面空白根治批次**：资讯列表、详情头图和正文均按自然比例完整显示，商品／视频独立比例不变；路由慢加载、超时和普通懒加载失败均有可见恢复面，版本模块不一致继续使用一次性恢复。Edge 已连续覆盖主／对战侧栏 11 个入口，并以 320、360、390、430、700 五档宽度验证带左右边缘标记的资讯图不裁切；动态模块 4 类、普通错误 9 类、UI 契约348项、连接恢复25/25、规则4764/4764、平台205/205、Vue 类型检查及完整Batch／Release通过，双路径各构建439模块。待统一推送，本批不部署；随后另开宽屏＋移动端全量对抗验收任务。
+
+- **2026-09-25 免死及同类状态替代记录已完成，待 Main 验收，未推送、未部署**：新增由规则入口提供的公开日志语义，明确来源、动作、对象与终态；免死显示“〈卡名〉触发 免死，兵力变为1000”。同批覆盖后排进攻兵力设定、远程战斗伤害修正、平阳昭公主伤害替换，以及湖中仙女、阿喀琉斯、霍列姆赫布、海伦、近藤勇致命代替。旧回放的“设为／视为”不再误记为增加，隐藏来源保持隐藏。Focused、Batch 均通过，其中规则测试4764/4764、UI契约344项、对局记录投影69行、双构建各432模块；独立工作树 `tmp/log-semantic-authority`，由 L12-main 验收后统一合并推送。
+
+- **2026-09-25 赛事中心收口（Main 已验收）**：报名不再提交牌库，赛前签到才校验并锁定构筑；新赛事对局复用排位权威计时和重启恢复，旧运行赛事保留原截止时间。移除玩家、禁报、主办交接、权限失效、赛果事务outbox、规则／牌库快照及资源推送已整合。Main 补强了交接接受时资格复验，并禁止公开接口暴露处置原因、禁报状态与交接历史。赛事专项30/30、平台204/204、规则4759/4759、资源同步21/21、连接恢复25/25、UI342和双构建378模块通过；Batch退出码0。已纳入统一候选，未部署。
+
+- **2026-09-25 公开牌库版本对局匿名统计（Main 已验收）**：范围只在公开牌库版本详情及公开API，不属于后台。最近90天按不可变版本和双方主宰聚合场次、胜率、胜／负／平；公开模型已移除单局、录像、账号和玩家字段，少于3场的主宰组合只显示“样本不足”。前端保留“版本对局”标题且不展示内部解释。Main 独立复跑规则4759/4759、平台189/189、后端定向16/16、牌库11/11、匿名统计9/9、UI342、类型、六档40图与双构建；完整Batch通过。已纳入统一候选，未部署。
+
+- **2026-09-25 对战动效一致性维护（Main 已验收）**：补丁已重放至 `origin/main@d1e9f941a5b65c66df2c964e8f6719f4193ad248`。权威状态即时更新不变；活跃↔休整由更新前卡面连续交接，跨区/同帧多卡/叠放按实例身份从真实来源或明确区域锚点飞行，结构化真实卡效双方共用来源卡面队列，阻塞弹框期间未开始项等待、已开始项撤去且不重播。新动效复用既有全局时长、缓动、卡面比例、阴影、移动方式和 reduced-motion。Main 独立复跑模型17/17、动效契约18/18、UI342、规则中心123块/98空字段、回放保留24项、效果展示44场景、Vue类型检查、桌面/移动真实浏览器37项与8帧证据及完整Batch均通过；正式/测试路径各构建377模块。已纳入统一候选，未部署。
+
+## 当前状态（2026-09-25，覆盖下方过程记录）
+
+- **回放播放器遮挡修复已由 Main 验收并整合**：根因是棋盘 Teleport 宿主自身位于 `z-index:100000`，宿主外的回放控件即使设为3200也无法越过；原 scoped `:deep()` 又无法匹配已传送节点。现把回放专属控件、结果与加载层移入同一宿主，让普通提示/卡面/详情低于播放器、真正阻塞弹框继续高于播放器。四分辨率×三缩放及加载、播放、暂停、倍速、前后步、进度、动画、详情、普通提示、阻塞弹框、结束态真实浏览器通过，移动禁用与实时对战共享层未改；整批门禁通过。证据 `artifacts/replay-controls-overlay-20260925`，等待所有任务收口后的统一部署。
+
+- **2026-09-25 当前实施批**：宽屏对战玩家信息不再重复展示当前主宰卡与血量，移动玩家详情保留该信息；测试服验收包升级为`acceptance-v2`，增加18名多派系/多段位玩家、100+场不落录像库的排位验收投影、主宰排行/对阵、历史荣誉及 Aimin 个人战绩。牌库专项已完成本批回传并由 Main 通过流程23项、收口18项、二维码2/2、Vue类型检查和六档浏览器证据验收，现已合入统一候选。后台、规则中心、赛事中心的只读复核完成，依赖顺序确定为后台公共框架→规则版本与生效契约→赛事闭环；当前未提交、未推送、未部署。
+
+- **P0—P4架构锁已接入**：`docs/ARCHITECTURE-LOCK.md`固化卡效出口、内核写入、接收者投影、Journal/检查点、规则发布与路由级移动画布边界；`scripts/check-l12-architecture-lock.mjs`同时进入本地分级验证和GitHub main工作流。它允许在既有端口内扩展，不把架构退出变成禁止迭代。当前有效任务状态和依赖排期统一见`docs/CURRENT-DELIVERY-PLAN.md`；历史交接中的“实施中/待接收”不再单独作为当前状态。
+
+- **上一轮牌库、移动对战、沙盒入口与测试服验收数据候选**：当时牌库11项、移动士气/玩家信息/主宰圆标、沙盒前置页和桌面身份布局已由 Main 接收，测试服场景只含牌库且不含排位统计。该状态已被2026-09-25当前实施批取代；历史合同、二维码、移动127组、沙盒32组和身份28组证据继续保留。
+
+- **架构P4已按项目现状完成退出**：规则中心同页七个子页、管理员逐项审核发布、来源/版本/日期缺失披露、`visualViewport`逻辑横向画布、移动布局自动/开启/关闭设置、路由级旋转/Teleport隔离以及桌面宽屏隔离均已具备。未为退出强加第二套内容模型、布局或虚构生效日期。站点内容平台专项18/18、UI契约341项（连接恢复25/25）通过；历史移动证据覆盖11档视口、127组主状态、64+12+36组弹框/安全区/焦点、四档工具弹层与五档桌面隔离。本批仅更新架构目标与记录，不部署。
+
+- **架构P1—P3已完成实现与阶段证据收口**：P1补齐Prompt/PendingActivation/恢复/隐私/读取顺序黄金夹具，建立命令、投影、检查点端口及快照大小/恢复P95预算；历史平台常量下沉后，59个内核局部源码对平台存储、HTTP、房间、SQLite、录像和文件系统保持零反向依赖。原审计17组有条件加入手牌路径全部收口，已公开路径不会重复动画。P2将房间的玩家/观战/裁判输出统一收敛到`L12KernelProjection`，传输层不持有隐私裁剪或状态写入规则。P3集中状态/Journal/检查点兼容契约，保留唯一Journal V2、请求去重、哈希、outbox和查询投影体系；不兼容旧回放失败关闭，不以新规则反算历史结果。专项13/13、P3证据83/83、相关卡效460/460、隔离部署行为41场景已通过；最终Release和远端同步结果以本批提交回执为准，本批不部署。
+
+- **低卡顿最终收口已完成并只部署测试服**：提交`6953e44c4687797779dbddcf73b519960894e9e7`已快进推送`origin/main`；Release规则4743/4743、平台171/171、UI341及正式/测试333模块构建通过。`https://legion-12.com/testrun/`本机/公网健康和WebSocket精确匹配该提交；60秒窗口25样本（读20、写5）平均44.4ms、P95≤300ms，慢请求/429/5xx均0。正式服未变。
+
+- **低卡顿性能治理第6批（最终收口）已完成Main对抗补强，待最终Release/推送/测试服验收**：公开牌库列表/详情和全站在线玩家好友写操作统一按账号与对象接入共享门闩；同一牌库的点赞、复制、删除和内容保存不会并发覆盖，复制到本地成功后远端计数失败也不会误报复制失败，账号切换后的迟到响应不再污染新账号提示或状态。赛事中心由全页单锁改为同一赛事串行、不同赛事互不阻塞；快照以请求起点版本合并，既不允许旧响应覆盖已确认写入，也会正确移除服务端已删除或新账号不可见的赛事。赛事首屏5路并发拆为3+2，删除对应性能豁免；动作门闩与快照合并行为进入机器门禁。上一批测试服性能脚本已补入隔离Release输入闭包。不涉及邮箱验证；最终只部署一次测试服，正式服不变。
+- **移动双侧栏与场面比例复核（本批同步）**：主宰成为移动战场统一尺寸基准；左栏至少130%，右栏宽于主宰，三连工具移到左栏底部；圣物/主宰=0.9、牌库墓地/主宰=0.7。双方信息常驻展开，当前卡牌动作贴在结束回合上方，选中手牌不再被战场框裁切。移动127组、弹框64+12+36组、11档视口、四档工具弹层与五档桌面隔离均通过；完整Batch的性能架构15/15、请求可靠性32/32、玩家动作门闩20/20、HTTP流量可靠性13/13、资源同步18/18、UI341、类型检查和双路径332模块构建通过。由本批统一提交推送，提交号见最终回执；未部署。
+- **移动互动区后续修复（已由 Main 接收）**：已移除士气标题遗留阵营图，移动右栏改为双方完整姓名常驻并在安全区详情展示可用排位/主宰事实，桌面信息按名次、段位/称号、主宰称号分行；双方主宰标记0—5等大居中且图片完整显示；`/sandbox`补齐逻辑移动头部、设置、滚动、换牌库和底部操作。移动对局、身份28组和沙盒固定/连续尺寸真实浏览器验收通过；等待统一候选 Release、推送与测试服部署。
+- **低卡顿性能治理第5批已由Main对抗补强并推送，未部署**：最终提交 `68872819e9a54a5351c22f6851c5d1044253d832`。API增加固定容量的最近60秒运行时性能窗口，不可变分桶代际和桶内原子快照避免轮换污染与撕裂读取；管理员页展示有效读取/写入样本、独立诊断请求、在途/峰值、平均/P95延迟档、慢请求、429、真实5xx、计划性503和499。状态页刷新不进入验收分母；上线门禁要求至少20个有效样本（读取10、写入2）、75秒内快照且运行版本精确等于目标40位提交，慢请求不高于5%、真实5xx不高于1%、429不高于20%，并生成不可覆盖验收回执。本批不涉及邮箱验证。
+
+- **公开牌库详情内容批已按 Main 首轮对抗复核修正，待最终接收，未部署**：既有详情页补齐指南、按敌方主宰的对局建议、全部长期版本与逐卡差异、权威版本对局空态和不落库的随机 6 张起手。SQLite v5 对作者内容做限长纯文本校验、正文哈希去重与追加修订引用；内容正文/修订和全部构筑版本均不自动删除。没有可靠的“公开版本—对局”绑定时明确空置，不拿作者总战绩替代。点赞、复制和浏览计数的局部响应均保留已加载详情；对局建议的敌方目标由前后端共同限定为官方目录中的主宰或神祇主宰，拒绝未知编号、普通卡和重复项。专项后端4/4、完整平台167/167、Batch规则4742/4742、请求可靠性30/30、UI341、正式/测试构建各323模块及六档视口12张截图通过；范围、迁移与回滚见 `docs/PUBLIC-DECK-DETAIL-CONTENT.md`。
+
+- **牌库编辑器参考流程与公开详情收口已由 Main 接收，未部署**：Gallery / Stats / Hand / 公开内容使用同一当前构筑，公开内容保存后重开可恢复；移动端使用卡池、牌表、统计/起手、公开内容单任务入口，844×390 保留编辑区与牌表两栏。详情的构筑、指南、对局建议、版本、对局与随机起手保持同页锚点；横置卡统一自然横向，卡池筛选统一单按钮抽屉，侧栏消费共享宽度令牌。我的牌库逐项删除带确认，只删除本地引用并明确不会删除公开版本；全部牌库正文和全部公开版本继续长期保留，不按版本数、时间或引用状态自动清理。只有公开牌库生成牌库图时绘制稳定详情链接二维码。专项牌库合同、两条真实公开链接扫码、生产/测试构建和六档浏览器矩阵 22 张截图均通过；等待统一候选 Release、推送与测试服部署。
+
+- **正式服 Bug 清单已完成工程收口、尚未做后台关闭**：25项修复已在主线等待正式部署复测，3项需移动真机复测，3项无需代码，1项转入性能治理。只有具名回归、正式版本部署及原场景线上复测齐全后才可关闭后台记录；编号和证据见 `docs/PRODUCTION-BUG-CLOSEOUT-20260924.md`。
+- **公开牌库核心浏览闭环实施中、未部署**：牌库列表新增可组合筛选、URL恢复和滚动恢复；独立详情路由与单条读取接口已接通，完整构筑与卡牌详情复用共享组件。范围与回滚见 `docs/PUBLIC-DECK-BROWSER.md`；完成完整门禁后由 Main 统一推送。
+
+- **牌库存储基础阶段已完成，未部署**：SQLite v4 已把账号、公开版本与赛事报名牌表收口为内容寻址正文；主牌/士气/额外区以卡号＋数量规范化，同构筑只保存一次，异画不进入规则哈希。平台快照与 JSON 镜像不再携带完整牌表，公开浏览/复制/点赞改为局部原子 SQL；删除只隐藏引用，不自动清理正文、公开历史或赛事引用。旧数据在事务切换前生成唯一压缩备份并逐条核验三类活动引用数量与哈希，回滚路径见 `docs/DECK-STORAGE-FOUNDATION.md`。专项4/4、迁移相邻11/11、平台完整162/162、Batch规则4742/4742、Batch平台153/153已通过；待统一Release、推送，不部署。
+
+- **战斗小结防御语义修复（已由 Main 接收整合）**：未抵挡主宰受伤不再显示为“抵挡”；抵挡/支援无效、完成抵挡、完成支援分别显示，成功抵挡保留全部公开弃置卡。击破只认防守目标实例，支援者或进攻者离场不会误报击破，`attack-ended` 后事件不再串入上一场战斗。日志投影 69 行及 UI 340 项已通过；本批统一推送后生效，未部署。
+
+- **正式服反馈裁定批次实施中**：公开目标高亮、触发真实结算序号、防御部署实际卡名、iPhone安全区坐标、主宰榜排序与构筑卡池多选已进入同一批；免死按最新裁定改为清除本次伤害并把当前兵力设为1000，〈猎杀时刻〉与〈图特摩斯三世〉以现有正确流程加固回归。本批完成门禁后统一推送，不部署。
+
+- **玩家战报必要状态补回（已推送）**：保留批次 G 的强过滤/压缩，不恢复失败、取消、堆叠、响应或服务端原文；补回资源/手牌、试炼进度、公开卡牌区域、效果目标状态、天灾值和额外回合。彼界阵营结果改为 `runes` 权威事件，通常试炼行动与进度合并显示；战场军团移动只显示“已移动”，不显示格数或坐标。日志投影 63 行、UI 340、Vue 类型检查、彼界定向 2/2及完整规则 4742/4742 均通过；仅有 `NU1900` 环境警告。已由 Main 以提交 `d50a3d6` 统一推送，未部署。
+- **低卡顿性能治理第1批已由 Main 完成对抗复核并推送**：以 TypeScript AST 锁定新增轮询、裸业务 `fetch`、超3路页面扇出、过期与陈旧豁免；门禁进入前端构建、分级验证和 GitHub main 工作流。原隔离提交 `e63d379` 经 Main 补齐隔离构建输入后形成 `48b4e3d`、`dfb3f9b`、`9c59584`，最终 `origin/main = 9c595847d4441d05d423efbe440c3df301fa5f7c`；Release 规则4742/4742、平台149/149、UI341、性能12/12、正式/测试构建315模块均通过，未部署。
+- **低卡顿性能治理第2批已由 Main 对抗复核并推送、未部署**：页面轮询改为 WebSocket 资源版本/变化推送。在线状态直接推送查看者快照；好友改为定向失效通知加单个聚合概览，排位完整性、异画权益、运营策略按受影响范围通知；断线满60秒才启用统一低频兜底，隐藏页静默并保留最后确认数据。Main 修正“切换账号后旧请求的 finally 可能清空新账号进行中请求”竞态后，以 `e7f13d31fba540bc8369b56985f6e9de4f618f95` 推送；资源同步18/18、规则4742/4742、平台154/154、UI341、连接25/25、正式/测试构建各320模块全绿，不包含邮箱验证。
+- **低卡顿性能治理第3批已由 Main 完成对抗复核并推送测试服**：平台唯一 HTTP 出口新增4并发上限、覆盖排队/重试等待/响应解析的总截止时间、同账号安全读取在途合并及有限弱网/429重试。读取总预算10秒且最多2次尝试；普通写入20秒、媒体60秒，调用方只能收紧预算，写入无论配置均不自动重试或通用合并，避免吞掉玩家连续执行的真实操作。读取合并键仅保存不可逆摘要，不驻留令牌、查询参数或业务头原文；账号切换前后的旧请求均失败关闭，认证刷新禁止与通用读取形成嵌套重试。Main 以 `f179acdbb478113fd48c06d154dc63e22afb99db` 推送并按其会话中的新增授权部署独立测试服；专项30/30、性能架构13/13、资源同步18/18、连接恢复25/25、UI341、规则4742/4742、平台154/154、正式/测试构建各321模块、健康与公网 WebSocket 全绿，正式服未触碰。
+- **低卡顿性能治理第4批 Main 对抗复核结论**：服务端新增覆盖全部 `/api` 的分级频率守门和统一异常边界。匿名读取120次/分钟、账号读取240次/分钟、普通写入60次/分钟、匿名认证与遥测各30次/分钟、高成本后台写操作10次/分钟；登录流量另设每客户端1200次读取、300次写入的高阈值总量，阻断账号轮换绕过且不优先误伤共享网络。Main 补强429不自动重试、普通后台读取不误判、分区原子准入、预映射路由覆盖、日志原文脱敏。好友操作按玩家对象隔离门闩并在卸载时清理，避免不同玩家互相阻塞。专项基线：真实HTTP 8/8、完整平台175/175、动作门闩20/20、服务端架构13/13、请求可靠性32/32、资源同步18/18；本批不部署、不增加邮箱验证机制。
+
+- **两阶段交付已进入第二阶段**：P0—P6 提交 `117a3b45cd20b3df09ad2a8b819cdf24207496f5` 已推送并通过第一次测试服部署，测试服健康、版本与 WebSocket 正常，正式服未变。后台卡效统一工作台现已完成代码与专项验收，等待完整 Release、统一提交推送及第二次测试服部署。
+- **卡效工作台边界**：复用既有原子目录、能力结构哈希、呈现场景与开局冻结快照；支持资料/产品/勘误、Cost/目标/响应/分支检查、场景文本、公开等级、带图例样式、草稿—校验—预演—复核—发布—回退和审计。禁止新建影子原子、卡号特判或用自由文本越过运行时，语义漂移明确退回“待开发”。
+
+- **效果一致性最终收口**：324张卡、686能力段、78生命周期档案、0未归属，自动矩阵78/78；最终提交 `117a3b45` 已由 Main 统一推送并完成第一次测试服部署与健康验收。
+- **本批关键修复与回执**：普通主动、公开触发、手牌打出补齐共享协议代表矩阵，同时保留逐能力精确映射；修正4项对象区域污染及太阳城守卫墓地对象跨区召回。最终提交级Release规则4740/4740、平台149/149、UI340、连接23/23、资源/牌库各9/9、卡图324+42、正式/测试路径构建与发布包全部通过。
+- **固定交付顺序**：第一次部署已完成；当前只剩工作台完整 Release、统一推送和第二次测试服部署。正式服不在本任务范围内。
+
+- 需求批次 `09-批次G-对局记录简洁化改造.md` 已完成，未部署。玩家日志改为白名单纯投影：失败/取消/流程噪声隐藏，费用并入效果，进攻链收拢为可展开小结，公开加入手牌显示来源与可点卡名，隐私入手和隐藏身份不外泄；同一组件自动用于对局与回放。公开入手新增卡面飞入手牌和来源横幅，旧 `search` 死分支删除。投影专项、UI 340 项、生产/测试路径构建、宽屏日志与四档移动端战斗矩阵通过；后端只读审计的 17 组待统一出口路径见 `docs/HAND-ADD-PUBLICITY-AUDIT.md`。
+
+- 需求批次 `08-批次E-全局组件与风格收敛.md` 已完成，未部署。站点图片上传取消像素和比例硬拦截，仅保留单行建议比例，后端格式/签名/体积安全线不变；GM、后台卡牌数据、异画、构筑限制和沙盒天灾已统一使用唯一 `SingleCardPicker`。普通站点新增以主页/图鉴为基准的共享视觉令牌，并严格排除对战、回放和牌库编辑器几何。图片专项18/18、平台149/149、UI339、卡图41项/324张、生产与测试路径构建及浏览器矩阵通过；见 `docs/UI-DESIGN-SYSTEM.md`。
+
+- 需求批次 `07-批次F-微信分享.md` 已完成，未部署。主页和资讯详情的首个 HTML 现由服务端注入 title/description/Open Graph/canonical；文章严格读取已发布快照，摘要取正文纯文本约 80 字，图片按封面、正文首图、站点 Logo 降级。正式与测试路径的 Nginx 接线及可回滚部署启用步骤已入库，静态资源/API/WebSocket 不受影响。专项 6/6（含真实 HTTP）、完整规则 4589/4589、平台 149/149、UI 337、生产/测试路径构建以及部署行为门禁通过；JSSDK 因没有已核验的认证公众号配置而未启用，详见 `docs/WECHAT-SHARE-CARDS.md`。
+
+- 需求批次 `04-附件-卡牌数据指标口径.md` 与 `04-批次B-后台数据与卡牌分析.md` 已按同一边界收口，未部署。后台现有全局日统计、主宰分析与服务端排序分页的卡牌数据；单卡核心口径为精确覆盖的GIH/GNS/IWD，指标定义已固化在 `docs/CARD-ANALYTICS-METRICS.md`。完整规则4510/4510、平台门禁退出码0、UI契约334项、卡图41项/324张、数据页真实浏览器验收及正式/测试路径构建均通过。
+
+- 需求批次 `03-批次C-异画体系.md` 已完成并按单文件边界统一推送，未部署。后台已登记异画不再首屏全量加载，改为名称/编号/原卡查询与分页；玩家获得权益会收到可确认的持久通知，“我的”展示编号、原卡与获得时间；构筑器允许同一原卡的各副本分别选用原画或已拥有异画，并由服务端统一校验共享张数上限和对局逐张卡图。功能提交 `91d2d8b` 的 Batch 与 Release 均通过：规则 4508/4508、平台 143/143、UI 契约 334 项、卡图契约 41 项/324 张及生产/测试路径构建成功。
+
+- 需求批次 `02-批次D-公开牌库与玩家榜.md` 已完成并按单文件边界统一提交，未部署。玩家榜由服务端固定裁剪为前 50 + 登录本人，任意 `limit` 参数不能扩大返回范围；本人在前 50 内不重复、在外保留真实名次。公开牌库只保留最多复制/点赞/浏览/最新发布四项排序，并可叠加“仅看符合本赛季”；合规性读取当前运营禁限卡与公共构筑校验。专项 2/2、规则 4506/4506、平台 140/140、UI 331、卡图 41 项/324 张以及正式/测试路径前端构建均通过。
+
+- 2026-09-23 本地未同步成果已统一收口：旧自适应工作树与 `D:/GPT/Legion12/repo` 的有效差异经内容哈希确认已在主线；UI 批次 A 已由 `5e4fc58` 合入，效果生命周期完成矩阵已由 `eeabec6` 合入。提交级 Release 通过：规则 4506/4506、平台 138/138、UI 契约 331 项、卡图契约 41 项/324 张，生产与测试路径前端均构建成功。测试服 `https://legion-12.com/testrun/` 已完成独立部署和 HTTP/WebSocket 验收，未重复上传未变化卡图；管理员 `Aimin` 已在测试服独立建立并通过实际登录、角色核验，明文密码未写入仓库或文档。正式服版本与维护状态均未变更。协作者 UI 工作树的已同步改动已转为可恢复 Git 存档，生成缓存已清理，当前登记工作树无未提交改动。
+
+- 当前本地批次未提交、未部署：`D:/GPT/Legion12/app`已快进到`origin/main@f5dfb39`并完成P0台账归属推进两波（10族75段，详见TASK-LEDGER的`EFFECT-20260922-P0-ATTRIBUTION-WAVE`/`-WAVE-2`与路线图置顶）——共用规则归属168→401、待核对237→1（P0归属清点收口，众神之乡#1按裁定保留）、总段数686→682；运行时改动四处（ST四卡与S01位移两卡结构化迁移、反应族资格收敛、天灾持续规则查询层），另完成风暴乱象裁定修正（先身份后阻断，含许可后排攻主宰，前后端卡文同步）。台账17/17、归属专项134/134+、骑兵矩阵32/32、响应族333/333、天灾族55/55、天灾不触发裁定7/7、完整规则4499/4499、平台147/147、UI契约与卡图资产门禁通过，失败0、跳过0。**两项裁定已落实**：众神之乡为主城卡种（未实装，费用+1存档为实装验收项，不修）；风暴乱象收窄为远程军团限定（已修，含经效果许可的后排攻主宰阻断）；「天灾不触发任何效果」裁定落实（五缺口补齐）。待Codex验收后同批提交、提交级Release与main同步；五项统一修复批已由`fd0d602`进入main，与移动批次一并待统一部署。
+
+- 移动对战样式物理隔离已由 `1224adaf7a5ab4504db2ca67540102b2d0f94bed` 推送 `origin/main`，未部署。`GameBoard.vue` 中1174行移动覆盖已按原有顺序迁入独立 `GameBoard.mobile.css`，宽屏基线留在组件内；所有尺寸和层叠保持不变。门禁现在会拒绝把 `.mobile-landscape-board` 重新写回宽屏组件。固定状态555张、弹框48张、安全区18张、随机连续尺寸32组及桌面3档隔离通过；提交级Release规则4432/4432、平台138/138、UI契约331项、卡图324张及隔离生产构建全部通过。证据目录为 `artifacts/mobile-style-isolation-20260922`，Release回执为 `D:/GPT/Legion12/artifacts/deploy/1224adaf7a5ab4504db2ca67540102b2d0f94bed/l12-release-1224adaf7a5ab4504db2ca67540102b2d0f94bed.json`。
+
+- 移动弹框内部自适应已由 `a53e7e2aa330b431151f06aa5e3b36d5625a00aa` 推送 `origin/main`，未部署。卡牌选择与墓地卡列现在保持完整卡图并显式显示完整卡名；单卡/少量卡在可用区居中，多卡自然横向滑动且不显示滚动条。主宰、阵营、卡牌效果的卡图与正文作为整体均匀分布，士气/符文选择在剩余内容区横纵居中，操作区稳定守底。四档12类共48张弹框截图、三组安全区18张和桌面3档隔离通过；提交级Release规则4432/4432、平台138/138、UI契约331项、卡图324张及隔离生产构建全部通过。证据目录为 `artifacts/mobile-dialog-content-adaptive-final3` 与 `artifacts/mobile-dialog-content-adaptive-final-safe`，Release回执为 `D:/GPT/Legion12/artifacts/deploy/a53e7e2aa330b431151f06aa5e3b36d5625a00aa/l12-release-a53e7e2aa330b431151f06aa5e3b36d5625a00aa.json`。
+
+- 移动对战标准弹框等比框架已由 `238820201dfe5af6c7cac79fdeb35406a56cf149` 推送 `origin/main`，未部署。宽、高占用各以安全画布 `75%` 为上限，并保持约 `16:9`，超宽手机与4:3平板只做等比 contain，不再随设备比例压扁或拉长；长内容在框内滚动。Prompt/等待、墓地、主宰、阵营与卡牌效果、记录、士气和设置共用；卡牌详情抽屉、底部支付条与战场直选条排除。四档48张弹框截图、三组安全区18张、桌面3档隔离通过；提交级Release规则4432/4432、平台138/138、UI331、卡图324张和隔离生产构建全过。截图证据位于 `artifacts/mobile-dialog-75-ratio-all` 与 `artifacts/mobile-dialog-75-ratio-quick`，Release回执为 `D:/GPT/Legion12/artifacts/deploy/238820201dfe5af6c7cac79fdeb35406a56cf149/l12-release-238820201dfe5af6c7cac79fdeb35406a56cf149.json`。
+
+- 对战视口布局根治已由 `aee34749b1331e286b0e515f2c9f83df58fc6018` 推送 `origin/main`，未部署。`GameBoard.vue` 内的移动判定、紧凑判定、桌面舞台缩放、GM侧栏预留和三套视口监听已收口为可独立测试的 `battleViewportLayout.ts`；根节点显式标记桌面/移动布局，短桌面不再有机会被后续修改误判为移动结构。数值门禁覆盖宽屏、短桌面、GM与5档移动画布，并已加入常规UI契约；真实浏览器11组逻辑视口、Prompt最小化/恢复、动态操作、牌库输入保持，以及桌面3档/移动7档隔离通过。提交级Release规则4432/4432、平台138/138、UI331项、卡图40项/324张及隔离生产构建全部通过。9月8日旧响应式脚本仍包含“桌面手牌与牌堆必须同尺寸”的过期断言，本批未改卡牌尺寸，不据此回退桌面视觉；需另批建立现行桌面黄金基线。下一步为移动样式物理拆分与历史重复覆盖清理。
+
+- 当前开发批次未部署且不得在本任务部署：绝对防御、戏法师的傀儡、芬尼亚传奇、锡瓦的卡巴、阿尔忒弥斯五项统一性修复已完成。绝对防御候选/匿名池/提交资格同源且只响应对方；傀儡登场是冒号前Cost、无效后休整留场；芬尼亚每1符文/1目标/1独立堆叠并在离栈后重复；卡巴无效或占位失败按单卡特例入墓；阿尔忒弥斯神力只消耗不翻面且目标不限费用。阿尔忒弥斯卡图已通过既有流水线更新本地归档，未上传；芬尼亚/卡巴仅写入后台待审核草稿，玩家页不公开。Focused规则187/187、生命周期台账16/16、后台契约6/6、完整Batch规则4432/4432、UI331、连接23/23、资源与牌库各9/9、卡图40项/324张、静态审计及生产构建均通过，最终退出码0。Main下一步执行提交级Release、main同步、一次部署和健康核验，成功后解除维护。
+
+- 当前开发批次未部署：自适应布局根治第一批已完成。移动布局设置支持自动/启用/宽屏并随账号持久化，且与逻辑画布旋转解耦；卡牌费用/兵力/天灾等级使用卡牌自身宽度连续缩放，对战桌文字改为缓和缩放。移动端左栏按“当前天灾卡图 → 当前天灾值 → 本局四枚天灾圆图”排列，当前天灾旁不再显示名称。完整规则4426/4426、平台147/147、UI契约330项、Vue类型检查、生产构建与11组真实浏览器视口通过；长期目标见 `docs/ADAPTIVE-LAYOUT-TARGET.md`。
+
+- 当前开发批次未部署：对战、牌库编辑器与沙盒已改为按 `visualViewport` 长宽比选择逻辑横向画布，不再读取触摸能力或请求物理方向锁定；仅路由画布与专用Teleport宿主旋转，普通页面及桌面宽屏隔离。11组视口、弹框点击反算/最小化恢复、牌库输入跨比例保持、移动7档和桌面3档隔离验收、UI契约329项、后端4426/4426及完整Batch均已通过；测试服存储别名判断增加内部路径解析测试入口，Windows可验证测试/生产别名边界而不依赖junction权限，Linux仍走真实符号链接；另修正4项卡效运行/声明审计脚本对中文源码路径或中文断言的宿主编码依赖。待提交级Release与main同步。
+
+- 全项目整合分支 `codex/project-integration-20260921` 已从 `origin/main@4c2ad5a` 建立：补入此前未进入主线的完整移动端对战改造 `80f87db`、测试服临时存储 `245c576`、测试服目标配置 `1ee32c1`，以及统一卡效出口集成门槛 `e520f4e`、架构目标 `728ff99` 两份长期文档；本批尚未部署。
+- 已对权威工作树 `D:/GPT/Legion12/app` 的 69 个未提交项执行三方整合审计：其余差异均已存在于当前主线、被上述完整移动端实现覆盖，或属于会破坏现行 UI 契约的旧草稿；没有遗漏的独立源码需要继续合入。旧 `D:/GPT/Legion12/repo` 中指向 `legion12.grand-umi.com`、`/opt/legion12-test` 和旧自动回滚流程的部署草稿已判定过期，不纳入当前项目。
+- 其他历史工作树的脏文件已逐项按内容比对：卡效相关源码与测试均已由后续主线实现覆盖；仅保留历史台账/交接快照，不将过时中间状态倒灌。完整 Batch/Release 已通过：规则4426/4426、平台138/138、UI契约329项、卡图324张+42个展示版本及隔离生产构建均通过。整合结果已同步 `origin/main@4bd5407`，未部署。
+- 61个登记工作树已复核为0个脏工作树。权威目录 `D:/GPT/Legion12/app` 与旧根目录 `D:/GPT/Legion12/repo` 均已对齐并跟踪 `origin/main`；被主线覆盖的历史差异、生成缓存与过期部署草稿保存为16份带 `project-integration-audit-20260921-` 前缀的可恢复stash，没有直接删除。
+- GitHub 根目录 README 已按当前项目重写：卡池基线更新为324张可玩卡+42个画廊展示版本，删除排位/好友/赛事/排行榜“尚未接入”、248张卡、旧测试数和“香港测试服”等过期信息；补齐线上入口、现有功能地图、权威架构、本地启动、三级验证、关键文档和正式服发布说明。本批仅文档与路由台账，不部署。
+- 正式服已部署 `e6f582d53f115e21d6b8058aaa1660a9db1b5328`：本机/公网 HTTP、WebSocket、提交版本和卡图缓存均核验通过，`legion12-test.service` 为 active、`NRestarts=0`，发布围栏已清除。稳定入口指向 `/www/legion12/releases/e6f582d53f115e21d6b8058aaa1660a9db1b5328-20260921T053610Z`；前一版本为 `01ea484584bc113a17ed8f6be83b834bf95e8573-20260920T222601Z`。部署流程没有调用解除维护；用户随后已手动解除，最新公网健康接口为 `maintenance: false`。
+- 本次回滚快照：`/www/legion12/runtime-backups/runtime-before-e6f582d53f11-20260921T053610Z.tar.gz`，SHA256 `6ceed35143ad3e4c01b5821ee4aaca1157ca9118b7daec2afd1da68ae4e42212`。发布包 SHA256 `f617b3a364f811e9e90762443f014840b22ffd821b417122ec2c958123a7ce19`，卡图缓存哈希 `3881cc1616eac1e3a02c5bd363b8c4fde6091adc35eeaf87b97dc3a151cc8cc6`；卡图未变化时必须复用，不重复上传。
+- 部署后存储：系统盘 58G、已用9.4G、可用49G（17%）；`/www` 数据盘20G、已用2.5G、可用17G（14%）；运行数据约2.6G、运行快照约1.7G。固定连接、指纹、目录和最短部署命令已收口到 `docs/DEPLOY-HK.md`，不记录密码、私钥或临时控制台地址。
+- 16条已批准生产Bug已完成并包含于上述正式版本：`e492b3c`关闭同刻调度3条，`e308d79d`关闭效果击杀/战斗续程2条，其余资格/结构化/移动端同族由后续提交收口；完整发布验证最终为规则4420/4420、平台147/147、UI契约329及全部恢复/资源/资产/构建门禁通过。
+- 当前进行中、未部署：印刷战斗关键词定义15项已分为挑衅4、冲锋3、震击2、强攻2、贯穿2、免死2个公共档案。关键词定义与父效果Cost/响应分离；贯穿印刷身份、击杀候选与S2结算消费者已从卡号表改读结构化引用，仍只允许进攻军团的最原始战斗击杀触发。专项9/9、生成器16/16、补充贯穿193/193、相邻427/427、补齐代码后的完整Batch规则4289/4289通过，失败0、跳过0、退出0；共用归属93→108、待核对302→287。待同批提交与Release。
+- 手牌自伤减费族已由`2d6bee25d74b67f4897e8738c31995ff90355c96`同步main、未部署：六张卡档案完成，干净Release规则4286/4286、平台138/138、UI328及全部门禁通过，main精确读回；回执位于`D:/GPT/Legion12/artifacts/deploy/2d6bee25d74b67f4897e8738c31995ff90355c96/`。
+- 主动休整公共Cost档案已由`6c1673e26362e6aab3041e5a314655592d0d7fdd`同步main、未部署：27个印刷段/31个运行能力只关闭运行身份、按钮、休整提交、支付回执和响应入栈的公共归属，不吞掉逐卡候选/其他费用/结算缺口。干净Release规则4284/4284、平台138/138、UI328及全部门禁通过，main精确读回；回执位于`D:/GPT/Legion12/artifacts/deploy/6c1673e26362e6aab3041e5a314655592d0d7fdd/`。
+- 付费扩展射程已由`d78e26ad89cfa9ed0ed1d2e19ab75d34a202183a`同步main、未部署：攻城投石车/养由基2项精确档案完成，干净Release规则4282/4282、平台138/138、UI328及全部门禁通过，main精确读回；回执位于`D:/GPT/Legion12/artifacts/deploy/d78e26ad89cfa9ed0ed1d2e19ab75d34a202183a/`。
+- 主动休整全族已由`34952bc69e17ea858a6b934ccb167bc310c6e013`同步main、未部署：27张印刷来源/31项运行能力全部交叉检查；白起结果分类和凯恩权威能力/虚假成功日志已修复。干净Release规则4281/4281、平台138/138、UI328及完整发布门禁通过，main精确读回；回执位于`D:/GPT/Legion12/artifacts/deploy/34952bc69e17ea858a6b934ccb167bc310c6e013/`。
+- 主动休整私有区对象族已由`6b00c446de324d3277023856747dfb3429038bb4`同步main、未部署：13/13入口完成取证，修复黄金圣甲虫、克利奥帕特拉、希波吕忒与凌霄宝殿复活分段的具体实例/位置事务。干净Release规则4265/4265、平台138/138、UI328及完整发布门禁通过，main精确读回。
+- 主动休整公开军团目标族已由`d6ba31c235b595f9955e65e116d4778cd786145a`同步main、未部署：由27张来源/31项运行能力登记反查，精确命中8张来源卡/9项能力。敌我单目标统一复验当前公开状态、军团身份、控制方和专属门槛；梅林、光之剑、凌霄宝殿不再静默失效，已付主动休整/符文/弃牌/返还士气不退。干净Release规则4256/4256、平台138/138、UI328及完整门禁通过，main精确读回。当前进入主动休整私有区对象族，不部署。
+- 双方私密同时选择族已由`e20952e38e34adac7d3b5f76e0d5d8bc31d1b19f`同步main、未部署：邪眼末日、迷雾绝境、神之天平、天启默示录、黑胡子蒂奇5条入口共用暂存/最终提交事务；邪眼双方视图/等待态、V2恢复、重复提交、对象失效、单方无目标及迷雾跨恢复已补。干净Release规则4252/4252、平台138/138、UI328及全部发布门禁通过，main精确读回。后继批次见本节首条。
+- 当前开发批次未部署：辅助线索第二批18项已逐项取证；冲田反击误打、草薙剑伪阵亡候选、触发排序逆结算提示、“挑衅”错字及腐秽大地下李靖后排旁路为真实残留并已修复。天灾禁选、李牧翻到绝对防御和卡诺匹斯族由当前真实流程正反例关闭。用户最新裁定“主动休整是Cost、无效不恢复活跃”已提升到公共主动入栈边界。完整Focused/Batch规则4249/4249、UI328、连接23/23、资源投影9/9、卡牌资产40项/324张及前端生产构建通过；首轮Batch仅为空缓存网络阻断，授权环境原样重跑通过。下一步显式退出码回执→统一提交→提交级Release/main同步，不部署且不因Release停止。
+- 对战/回放选中卡牌详情同源修复已通过Release、未部署：桌面左栏与移动端抽屉已移除两套手写旧模板，直接复用图鉴`CardDetailContent`；收录产品及刊物/勘误记录统一隐藏，对局当前数值与状态保留。共享详情图鉴/构筑5档、对战1920/1440/1280/760/390及移动横屏844×390真实浏览器验收通过，移动抽屉产品区0、横向溢出0；整合最新main后，Release规则4222/4222、平台138/138、UI契约326项、连接恢复23/23、资源投影9/9、卡图324+42及正式构建通过，退出0。待main同步。
+- 辅助报告19项已建立逐项闭环表，附带玩家线索也全部进入持续队列；外部结论不直接继承。16项由当前具名证据确认，戏法师的傀儡“被无效后进墓地”因违反冒号Cost规则驳回；十字军东征第三项提前弃牌与暴怒之罪错误阻断贯穿两项真实残留已由`f006e7e`同步main。干净Release规则4222/4222、平台138/138、UI326及完整发布构建通过，未部署。下一步从智慧法典卷一来源/区域生命周期开始复现附带线索，不把本批门禁当停止点。
+- 回放卡面节奏与天灾展示修复已通过Release、未部署：本批只给回放传入倍速，卡面揭示/区域移动/交战动画缩短且播放器等待动画完成再前进；普通对局的时长与推进分支不变。回放模型恢复当前天灾和本局4枚天灾圆形图，并兼容缺少直出字段的旧JSON，未知天灾仍显示背面。整合最新main后，规则4218/4218、平台138/138、回放契约18项、UI契约326项、连接恢复23/23、资源投影9/9、卡图324+42及隔离正式构建通过，Release退出0；未部署。
+- 本批已整合最新main并同步、未部署：回放打开本地JSON后直接播放且不进入历史列表，播放器不显示双方卡组名，导出命名为日期+对局编号，列表改为“对局回放”并展示7天/10场与版本兼容说明；同时包含画廊42张内置异画闭环、“我的”战绩/主宰战绩整理、结算页内部说明移除，以及排位完整性审计终态处置从待复核队列移出。干净Release规则4209/4209、平台138/138、UI契约326项、卡图324+42及正式发布构建通过；未部署。
+- 玩家回放与长期分析最小存储已并入最新main候选、未部署：服务端正文为7天内最近10场，玩家可导出紧凑JSON并本地导入；格式/兼容版本不匹配显示“版本已更新”。录像载荷清理后仍保留赛果、双方/主宰、构筑、先后手、规则/策略/赛季/卡效/分析版本、命令摘要及卡牌紧凑汇总；玩家总体、排位和按主宰统计不依赖回放。Bug完整录像只为7天内人工confirmed/in-progress且明确绑定对局的工单保护；new/resolved/closed、自动诊断模糊关联和陈旧报告不再拦截清理。最新main候选Batch已通过：规则4193/4193、平台146/146、UI契约325项、移动端响应式、连接恢复、回放、资源支付及生产构建全通过。待更新日志定稿、提交级Release、推送、部署后再执行线上强清理。
+- 公开【进攻时】我方军团目标复验族开发中、未部署：全族仅阿伊、稻姬两条。阿伊补当前军团/前排/兵力门槛，稻姬从错误取消改为结算失败；前批登场专用出口已提升到规则内核，登场8类与进攻2类共享。新增4项初始4/4红，修复后4/4、相邻89/89通过；下一步Focused、Batch、隔离Release/main同步，不改响应范围。
+- 公开登场我方军团目标复验族已同步、未部署：`428ad5a85fc389f09825c69c57ee2c2e948e24b6`完整扫描Batch6JA命中墨子、拉美西斯、安卡神碑、卡诺匹斯罐一/四、安倍晴明、稻姬、井伊直虎。统一单/多目标出口在响应后重验当前场区、军团类型、有效阵营和各卡门槛；全失效失败、部分失效继续、不补位、已付Cost不退，稻姬不再把失败写成取消。初始9/9红；专项9/9、相邻141/141、开发Focused/Batch规则4187/4187；干净Release规则4186/4186、平台144/144、UI325及完整门禁通过，main精确读回。不改响应窗口，未部署。
+- 全卡池响应/无效范围与S1换行等待用户回传人工表。该输入门不阻塞其他确定规则族，但任何窗口拆分继续暂停，禁止由“随后”、对象声明时点、原子数或当前代码段数自动推断。
+- GrandUMI 遗留清理已完成并同步：`809145f15b116e770c61586107ead719b6de98a2`删除1,292个旧运行时、专属测试与说明文件（102,322行），平台/后台测试迁入`TwelveLegions.Platform.Tests`，发布门禁不再依赖名称筛选。仅含本批差异的隔离验证为规则4078/4078、平台144/144、生产发布成功，origin/main精确读回；未部署。完整说明见`docs/ARCHITECTURE-CLEANUP-20260919.md`。
+
+- 反击战术身份与公共禁用族已同步main、未部署：`35c32332234a159fe6d201eb767884cbd5ceabb4`将18张反击战术统一为`tactic + isCounterTactic`并删除前后端运行时卡号表；同时完成离场去重、奈芙蒂斯候选预占/拒绝释放及宫廷魔术师普通响应/匿名盖伏/触发入队/声明前重验。初始分类1红、禁用4红；专项137/137，干净Release规则4087/4087、平台144/144、UI325、连接23/23、牌库同步9/9、排序10/10、卡图324+42和生产构建均通过。下一批在该分类基础上核对宫廷魔术师休整及同型主动休整入口；不部署。
+- 宫廷魔术师主动休整与反击保护作用域已同步main、未部署：`31c67f8fd226b5059f7a65cb597561f75e9bdfed`锁定休整支付/被无效不退款、V2恢复和到期、重新活跃后再次发动；三张保护军团不再清空整个反击窗口，结构参数区分直接影响所响应效果的反击，破败仪式混合分支结算期复验。干净Release规则4102/4102、平台144/144、UI325、连接23/23、牌库同步9/9、布局10/10、卡图324+42及生产构建通过，main精确读回。下一族复核试炼军团等卡号白名单是否可由结构属性替代。
+- 试炼军团结构化身份族已同步main、未部署：`78d1bdd70cdcf571a5f7b56f8735192fa7a5eea7`将S02八张+ST06三张共11张统一为`cardType=legion && TrialValue>0`；能力按钮、通常试炼行动、阿麦金与十字军东征候选/提交/结算/恢复同源，响应后对象失效保留已付符文并明确失败。干净Release规则4130/4130、平台144/144、UI325、连接23/23、牌库同步9/9、布局10/10、卡图324+42及构建通过，main精确读回。下一族核对结构化AttackRule的运行时消费者。
+- 结构化战斗限制消费者族已同步main、未部署：`575ba166ed12f35dcb6459ebd7931421d3895095`使侍从骑士、5张不能进攻、2张不能支援、汉尼拔及阿麦金读取公共`AttackRule`，按钮、提交、支援、恢复和状态展示同源。专项12/12、相邻38/38；干净Release规则4142/4142、平台144/144、UI325及全部发布门禁通过。下一族受控复核必中对攻击阻断型反击的公共资格；外部审计结论不直接继承。
+- 必中与攻击阻断响应族已同步main、未部署：`300ce8c8665a9110192a32b0afb1f10a66da9cca`将佣兵部队、绝对防御、空城计3张统一为`blocksAttack`响应，真实候选、匿名可用性、提交和V2恢复同源；战斗至黎明保留，绝对防御仍可无效独立进攻时效果。干净Release规则4145/4145、平台144/144、UI325及全部发布门禁通过。下一族受控复核“无法因效果转为活跃”的公共资格。
+- “无法因效果转为活跃”族已同步main、未部署：`dcf6e36937f55dccb764b26bdabada5abb6b042c`使公共资格覆盖可选择对象与`effect-ready`响应后结算；芬尼亚、井伊直虎、芬恩不再直接写活跃状态。冒号前Cost与后段效果保持分离，费用合法即可发动，禁止状态只让转活跃段跳过/失败且不退款。干净Release规则4153/4153、平台144/144、UI325及全部发布门禁通过，main精确读回。下一族受控复核条件/类型限定。
+- 条件/类型限定族已同步main、未部署：`5020ba441ea646691caaf1c519569e6bc04f9706`使月读两项【高天原】移动触发改读公共有效阵营；孙武无需新增分支，统一战术身份已使暗度陈仓合法，且结算会重验当前费用。侍从骑士与试炼军团外部条目确认为已闭合。干净Release规则4158/4158、平台144/144、UI325及全部门禁通过。下一族受控复核多段效果逐段声明。
+
+- 严格手牌军团登场结算已完成并同步：`fce630232593877516f3cdc581c4dc2486fc9316`统一刘备、西施、锡瓦的卡巴三条跨响应路径，定向51/51，Batch/干净Release规则4078/4078、平台119/119、UI325及全部发布门禁通过，main精确读回；回执位于`D:/GPT/Legion12/artifacts/deploy/fce630232593877516f3cdc581c4dc2486fc9316/l12-release-fce630232593877516f3cdc581c4dc2486fc9316.json`，未部署。
+- 外部辅助审计继续受控复核：文档中的19项与建议diff仅作线索；首个反击共同根因族已经当前源码、红测和完整回归确认，下一族仍须重新取证。无规则待答。
+
+- 私密手牌反击战术→后排登场族已同步main：完整扫描仅〈防御部署〉S02-0009与〈上杉谦信〉S01-0403；二者共用候选和逐对象结算复验，不补选失效手牌，合法同伴独立继续。防御部署正常/部分失效/零选择独立抽牌/实际无效/重复/V2恢复与上杉谦信正常/失效真实指令流，定向140/140；仅含本族13文件的隔离规则4070/4070、失败0、跳过0，平台、界面契约、连接恢复、资产和构建门禁均通过。提交`d7c7ad0dc74979114b0b3235f843383a215d4a16`已精确读回main，回执：`D:/GPT/Legion12/artifacts/deploy/d7c7ad0dc74979114b0b3235f843383a215d4a16/l12-release-d7c7ad0dc74979114b0b3235f843383a215d4a16.json`；未部署。
+
+- 私有区已选手牌军团登场复验已完成：`5a4ceec7df9e0a13b83782f9e26f246140fbd2ef`干净Release通过并精确同步main，未部署。全池同型唯一命中〈沙漠君临〉；候选与结算共用当前状态谓词，不得以另一张手牌补位。真实指令流21/21、规则4063/4063、平台119/119、UI325、连接23/23、排序10/10及构建均通过。回执见`D:/GPT/Legion12/artifacts/deploy/5a4ceec7df9e0a13b83782f9e26f246140fbd2ef/l12-release-5a4ceec7df9e0a13b83782f9e26f246140fbd2ef.json`；原开发目录的无关前端/UI修改保留。
+
+- 触发型我方军团目标复验已完成：`442b9c8427a4340d9660364f26e7aa48815dfc12`干净Release验证通过并精确同步main，未部署。月读位移后进攻加成、迦具土固定目标增兵现改读当前我方军团；类型变化与相邻119/119、Batch全门禁通过。
+
+- 复合效果我方军团目标复验已完成：`ca2692f8098a0818f8e7f7d5ad29a31e3deb4d83`干净Release验证通过并精确同步main，未部署。战略转移回手/增兵、神妙行军增兵两条已接入当前我方军团出口；花魁、圆桌领域等相邻正确路径保持。类型改变、独立对象失效和V2恢复定向相邻103/103、Batch全门禁通过。
+
+- 复合效果敌方军团目标复验已完成：`c9a17f58ed812efe19b13dd4d974d445f977e012`干净Release验证通过并精确同步main，未部署。全池映射只余万箭齐发单目标减兵力与伪造密令位移两条旧直连战场入口；均改读当前敌方军团，伪造密令提交期同步拒绝非军团。响应后类型改变与万箭齐发V2恢复后同实例替换定向相邻137/137、Batch全门禁通过。
+
+- 公开进攻敌方军团目标复验已完成：`6ff81fdb47e1cbf5bc3f497b60a00fe381adddf6`干净Release验证通过并精确同步main，未部署。土方岁三/高杉晋作仅两条声明入口，均迁入`DeclaredEnemyTarget`提交与结算复验；目标在响应后变为圣物时不再处理、已付士气保留。新红测与V2恢复/旧响应重复提交定向72/72、Batch通过。
+
+- 公开登场敌方军团目标在响应后状态/门槛复验已完成：`3cd573007881e6193c50f1a925c70ba495a84b87`干净Release验证通过并精确同步main，未部署。14个声明入口中11条旧直连结算迁入共用出口；多目标部分失效、V2恢复、旧响应重复和克劳迪娅已支付符文均已覆盖，定向152/152与Batch通过。下一步盘点公开进攻敌方目标入口；开发目录的异画/后台/录像修改不纳入效果批次。
+
+- 本批已完成并同步：a83ed3c4b2ce2e686576cf238b973d939b59c744，干净Release3990规则/116平台/UI323/连接23/排序行为10、资产324+42及构建通过，退出0；main精确读回，未部署。保留现有加入手牌后窗口。隔离树在该提交干净、无运行进程，原有无关修改未纳入；验证后置顶回执为本地文档差异，下一相关批次归档。按用户要求向L12-Main反馈一次，不要求其并行修改。整体P0—P6仍未退出，唯一进度见路线图顶部。
+
+- 最新裁定已关闭：用户明确保留现有“加入手牌后”的响应窗口，不前移或删除；第一段只描述检索规则，不提前查看/公开隐藏牌。此前相反讨论不再执行，FAQ/OPEN-QUESTIONS已同步。排序Batch3990/3990和前端构建通过，补强实际入手后窗口/恢复断言后定向108/108通过；准备干净提交Release与同步，不部署。远端仍2f17cf9。
+
+- 最新：试炼2f17cf9干净Release3943/116/UI323/连接23及构建通过、main精确读回，不部署。当前牌库整理族新47例/相邻347与前端10例通过；隔离树基于2f17cf9，仅含本族规则/前端/测试，不含原有其他修改。进入Batch。
+
+- 试炼开发验证完成：全5卡新22例、相邻144/144、Batch3943/3943零失败/跳过退出0、静态全过；待提交Release/main。下一族排序仅新增前端红测脚本，不混入试炼提交。
+
+- 58dd03c自伤Cost已干净Release通过：规则3921/平台116/UI323/连接23、资产与前后端构建通过，退出0，main精确读回一致；未部署。
+- 当前处理用户补充的试炼规则翻面与触发分离；下一族是查看牌顶后行动/回顶/回底弹框统一及卡死。进度只在路线图顶部就地更新。隔离树已结束Release，可在58dd03c继续本族验证。原有UI/异画/平台/战斗日志差异保留，不纳入。
+
+## 2026-09-18 进度入口与下一族
+
+- 自伤Cost最终开发门禁：Batch3921/3921零失败/跳过退出0、静态全过。旧Hp=1不足夹具迁移后定向56/56；隔离树已排除无关L12Actions战斗日志措辞。提交须用隔离树的Engine与Actions最小diff暂存，不能整文件纳入canonical已有改动；其他本族文件hash一致。
+
+- 当前自伤Cost族已实施：9个运行文件含新L12MasterDamageCosts，加LethalSelfDamageCostTests新36例，相邻379/379通过，待Batch。主引擎仅三处本族小补丁（命令尾部终局保护、预览共用支付资格、SetWinner清理声明/触发队列）；隔离引擎不含canonical异画改动，提交时须只暂存这三处，不可git add整个主引擎。
+
+- 前批最终：d3e90b06a8bea39b0bfe53370c18d869cc8e91c7干净Release规则3885/平台116/UI323/连接23/卡图324+42及构建全过、退出0，main精确读回，未部署。隔离树在该提交干净；保留一份已测差异stash（preserve tested grave-split d3e90b0 before clean release），内容已进提交，不需再应用。无运行进程；当前进入自伤Cost族审计，代码未改。
+
+- 下一族裁定已答：允许支付最后1血作为自伤Cost，立即判败，后续效果不执行。FAQ已记，尚未更改该族运行。与本批墓地对象复验分开；隔离副本正在d3e90b0干净提交进行Release，不能把本地新裁定记录复制进去打脏验证树。
+
+- 用户要求P0—P6表持续置顶更新；唯一当前状态已放在EFFECT-LIFECYCLE-ROADMAP.md标题后。开始批次、范围变化、验证、同步、阻塞时就地更新；历史过程放下方，不覆盖或挤走总览。
+- 当前族：瓦尔基里/复仇血鹰墓地独立去向，新增34例、相邻143/143、Batch3885/3885零失败/跳过、退出0及全池静态门禁通过，待干净提交Release/main同步。详细当前状态只读路线图置顶；魔龙待合并补充一并归档，当前无待答、不部署。
+
+## 2026-09-18 最新裁定：魔龙空列仍回库
+
+- 最终补充证据：定向54/54零失败/跳过退出0。开发目录留注释、测试及裁定记录；隔离副本在035990e上仅有L12Disasters.cs注释和NewSystemsTests.cs测试差异，无运行进程。下批必须保留并合入，不误以为隔离树仍干净。未单独提交/推送/部署。
+
+- 用户已答：继续执行回库，这里应没有“随后”，作为魔龙降世特例。原运行符合，只加注释及明确空战场/双方完整回库/中途V2恢复回归；不更改通用随后规则或固定4张门槛。当前无待答，覆盖下方历史待答状态。
+- 本项补充随下一生命周期族合并，不独立提交或Release；开发/远端仍035990e，未部署。所有原有UI/平台/异画改动保持。
+
+## 2026-09-18 当前批次：固定数量回库
+
+- 最终状态：035990eaa2ff67f8564bbf905b38173071f6b940干净Release退出0，规则3850/平台116/UI323/连接23/卡图324+42及构建全部通过，已推送main且精确读回，未部署。隔离树干净停在该提交，无活动测试进程；本地仅本回执/待答记录及原有无关改动。以下待提交/Release均由本条覆盖。下一族需要回答魔龙空列是否满足“随后”，不要重问已经明确的固定数量回库规则或已有推送授权。
+
+- 新待答：魔龙掷中空列、0张卡移入墓地时是否执行随后回库，已询问；现有“继续”保持不变，见OPEN-QUESTIONS。该问题是下一族“空集合与随后依赖”边界，不改变本批已确定数量语义。
+
+- 开发验收：Batch3848/3848零失败/跳过退出0，静态门禁全过；随后只补两项旧Prompt存档测试，相邻225/225、累计新40例。运行代码未变，最终干净Release将覆盖3850项。待提交/同步，不部署。
+
+- 当前验证：新增38例，相邻223/223零失败/跳过，Batch待跑。补齐强制回库对象失效/孤立Prompt的安全退出；实际取消事件已断言，自动取消命令可返回确认不视为效果成功。
+
+- 用户最终更正：固定N张而非最多N张时，不足整次不回；洛基仍可发动且回血。覆盖前批已推送记录里的“应回尽回”，FAQ已改正，当前无待答。
+- 前批ad4ec31ee234d6047ccc40a845cf5ec57e341f48干净Release及main精确同步完成，规则3810/平台116/UI323/连接23/卡图324+42及构建通过，未部署。
+- 当前洛基普通/免费、猎杀时刻和魔龙降世共用固定数量墓地效果校验；魔龙使用现有选择协议和堆叠身份绑定，保留双人同时选择与异常收尾。初13红，当前定向49/49通过；完整Batch/Release/同步待执行，不部署。
+- 修改范围规则7文件（ActiveAbilities、PublicActiveEffectPlans、S1FactionEffects、CompositeEffectPlans、RuleKernelIntegration、Disasters、PromptTransactions），测试FaithZealotMasterAuditRegressionTests和NewSystemsTests，以及状态/规则记录。无关原有差异未改。
+
+## 2026-09-17 当前批次：引用文本边界
+
+- 更新：用户已裁定洛基不足2张墓地仍可发动、应回尽回且回血；下一族按此实施，尚未改运行代码。首次Release在历史“未决队列必须为空”门禁处退出1；用户及时答复后如实关闭待答项再重验，不修改/绕过该门禁。以下待答均由本条覆盖。
+
+- 最终Batch3810/3810、零失败/跳过、退出0，静态门禁全通过；定向247/247。待提交级Release/main同步，未部署。下一族洛基不足2张墓地时的回库/回血边界已异步询问用户；未修改其运行实现，见OPEN-QUESTIONS。以下无待答/待Batch为过程状态，由本条覆盖。
+
+- 基线f7a5a94；本批AtomicEffects共用语法遮罩保护引用，22个新增测试及相邻247/247通过。6卡合并8个误拆片段：孟婆、图特摩斯三世、拉美西斯二世、上杉谦信、源博雅、腐秽大地。目录已由原脚本导出为324/684段，待归属337；不是8项生命周期完成。
+- 修改仅AtomicEffects.cs、新ReferencedTimingBoundaryTests.cs、自动台账及4份状态文档。隔离副本counter-lifecycle-20260917与开发目录范围一致；原有UI/平台/异画差异不纳入。待Batch/干净Release/main同步，不部署。
+- 下一族核对S1主宰主动结构（孟婆仍无显式主动结构，引用修复不等于分支费用/呈现已迁移）。当前没有规则裁定疑问。
+
+## 2026-09-17 当前批次：卡名共享次数与选发提交
+
+- 最终状态：f7a5a9419c964290e72331e246bb9c7e57538835干净Release退出0，规则3788/平台116/UI323/连接23/卡图324+42和前后端构建通过，已推送main且精确读回一致，未部署。隔离副本干净位于该提交；没有活动验证进程。回执留本地随下批归档，下列待验证/推送均为历史过程；当前无待答规则或新增授权需求。
+
+- 最终开发验收：Batch3788/3788、零失败/跳过、退出0，全池静态门禁通过；定向82/82。首次Batch唯一旧海伦夹具期望已按新裁定更新，证据见路线图。本条覆盖下方待Batch过程状态；待干净提交级Release及精确main同步，不部署。
+
+- 用户裁定已闭合：拒绝发动不扣次；点名卡名的限次是同名共享特例，覆盖BQ-20260830-01旧实例裁定。免费主宰不占正常次数、本体结算后选主宰并独立响应均保留。
+- 全池命中信仰狂热者/密米尔之泉2张，共用名称次数身份；信仰进入原公共声明流程，确认才扣次，弹框读结构段。初10红，定向81/81已过；完整Batch/干净Release/main同步待完成，不部署。
+- 隔离目录仍counter-lifecycle-20260917，前基线484b6f7；本批未碰Engine/Models等原有平台、异画、UI差异。只提交规则5文件、测试4文件、静态守卫与对应文档；新文件另计L12CardNameUsageRules/CardNameUsageLimitTests。
+
+## 2026-09-17 当前批次：触发型主宰次数重置
+
+- 最终状态：484b6f7636bce2a89f363ba7fa8edf5b7b7e59d8已干净Release退出0，规则3769/平台116/UI323/连接23/卡图324+42及构建全通过，main已精确读回一致，未部署。证据在对应artifacts/deploy版本目录；以下待验证/推送为历史过程状态，由本条覆盖。回执留本地随下一批归档，不单独提交。
+- 当前仅等待信仰狂热者本体是否先选发、拒绝不占次的裁定；保留后置选择主宰与分别响应规则，未改待答部分。无活动构建/验证进程；原有平台/异画/UI差异保留，不需要重新请求已有推送授权或询问部署。
+
+- 最终Batch3769/3769零失败/跳过退出0、全池静态门禁通过，待提交级Release与main同步。下一族已询问信仰狂热者本体是否先选发、拒绝不计次；保留本体结算后选主宰效果及分别响应裁定，未改待答部分。不部署。
+
+- 前批0f4c19282510a9b719806b53d885b9cd8805fb31已干净Release退出0并精确同步main：规则3712、平台116、UI323/连接23、卡图324+42和构建全部通过；未部署，回执位于对应artifacts/deploy目录。
+- 当前8主宰9触发段补齐神农鼎次数候选；触发读写与重置共用保留原值的键定义，文本取原结构段。声明改为已有option类型，避免新能力ID被当卡牌实例误拒绝；不改其他对象校验/前端布局。
+- 初9红→补候选后8项提交红→修复后新57与相邻195/195通过。待Batch/干净Release/精确main同步。异画等无关差异保留；Engine仍只选取神农鼎资格一行，不整文件提交。
+
+## 2026-09-17 当前批次：主动次数必须明示
+
+- 最终开发验证：新增130例，Batch3712/3712零失败/跳过退出0，所有静态门禁通过；首次十字军旧位置守卫已迁移并加强三分支检查。待干净提交级Release与main同步，未部署。下一族是神农鼎对触发型主宰限次的候选遗漏，不据本批声称所有重置已完成；信仰狂热者保留既有物理实例裁定。
+
+- 用户已确认全池统一原则，覆盖下方历史“等待裁定”。111实际入口（61限次/50无限，含版本别名）已逐项登记和回归；新49项规范限次参数供资格、扣次、共享分支及神农鼎重置共用。没有明示规则不写入或拦截一次键；休整、Cost、合法目标和网络去重仍独立执行。
+- 定向155/155通过，待Batch/干净提交级Release与精确main同步。上个远端a884a9a；本批尚未提交/推送，继续不部署。计划详见EFFECT-LIFECYCLE-ROADMAP.md；工作区无关平台/后台/异画/UI差异保留，Engine只纳入神农鼎候选一处改动。
+
+## 2026-09-17 当前批次：印刷远程持续能力归属
+
+- 最终状态：a884a9a3c3bd6ce080321017bda781610051a48e同提交完整Release重跑退出0，规则3582/平台116/UI323/连接23/卡图324+42与前后端构建通过。main精确读回一致，未部署。证据位于artifacts/deploy/a884a9a3c3bd6ce080321017bda781610051a48e/l12-release-a884a9a3c3bd6ce080321017bda781610051a48e.json；后列“未推送/重跑中”是过程记录，由此覆盖。本地回执留下一批集中归档。
+- 当前只等待全池未明示限次原则的用户裁定；索尔未改。工作区原有平台/后台/异画/UI等差异保留，没有并入上述两个提交。不重复索要部署授权，用户已明确先不部署。
+
+- 当前提交a884a9a3c3bd6ce080321017bda781610051a48e首轮Release退出1：规则3582/平台116/UI323/连接23通过，npm在ranking-refresh附近原生退出-1073741819。单项独立3次通过，未改代码/门禁，完整重跑中；尚未推送本提交，main仍5c228ea，未部署。重复环境异常根因未定位，回执本地随下批归档。
+
+- 前批5c228ea185e28b8343dfe5f19624f5855d8439fe已干净Release通过并推送main读回一致，规则3530/平台116/UI323/连接23/卡图324+42和构建通过；未部署。
+- 本批47段精确远程身份归属及适用性，51新例（47前后排/V2候选+4真实战斗）与相邻156/156、台账9/9、Batch3582/3582零失败/跳过、退出0，全池静态门禁通过。代表源义经伤害预期曾忽略视为2000，已按卡文修正；未修改运行规则。待归属344，59能力100引用。
+- 这批不把持续规则档案当完成状态，不把预览测试当伤害/堆叠恢复证明。整族和提交级验证未完成，不能沿用前批3530通过数。
+- 新裁定问题：雷神索尔无回合1次卡文，但代码有一次键。已异步询问是否全池按明示次数规则处理（包含无效后再次支付），等待答复；未改索尔。当前已确定的远程归属批次继续验证/归档，不部署。
+
+## 2026-09-17 当前批次：后排付费扩展与主动支付取消
+
+- 用户已答复按卡文允许攻城投石车重复发动，次数问题不再待答；继续工作且先不部署。上一批1158bbe5072ec7f9fc54d724c2551f09e3ff1c29已通过干净Release并推送main精确读回：规则3509、平台116、UI323/连接23、卡图324+42及构建通过。
+- 两卡统一参数与明确active段/单段结果；投石车不写一次键，两卡忽略旧无效一次键；养由基仅开放后排，独立nullable权限覆盖恢复/到期/离场/晋升，来源不在我方战场或非军团则failed。共用主动消耗/返还费用Prompt增加取消，效果阶段返还不受影响。
+- 最终相邻287/287、台账8/8、Batch3530/3530及前端构建退出0；新增21例，初12例11红，之后返还取消/消耗取消各1红。首轮Batch的单段呈现清单遗漏与UI旧固定取消文字检查已补齐，未豁免断言。Release/同步未完成。目录324/692、391待归属，12能力49引用，不冒称全部生命周期完成。
+- 隔离副本仍counter-lifecycle-20260917。切勿整文件暂存/复制L12GameEngine.cs、Models.cs、GameBoard.vue、check-effect-presentation-contracts.mjs、check-ui-contracts.mjs；这5文件存在独立旧改动，已在隔离副本精确应用本批小补丁，应从隔离diff生成仅本批补丁暂存。其余原有平台/UI/异画改动保留。
+
+## 2026-09-17 当前批次：远程基础能力身份
+
+- 用户最新指令：继续推进，先不部署，需要答疑/新授权前持续；不得沿用上一交接的部署询问作为当前任务。
+- 修正范围为47张印刷远程卡的基础段唯一性，22张实际变更、19重复段删除，324卡/692段、391待归属；不是19项生命周期完成。代码只改AtomicEffects.cs及L12StructuredCardRules.cs，加RangedAbilityIdentityTests.cs和自动清单；原有UI/平台/Models/异画等未纳入。
+- 初始51例26失败；最终相邻140/140、台账8/8、Batch3509/3509、零失败/跳过、退出0及静态全池门禁通过。两例合成反例的宿主动效依赖已修正，非产品失败。下一步提交级干净Release与main同步；使用原隔离副本。
+- 需要裁定：攻城投石车卡文未写回合1次，旧记录20260831-170和现行代码却有一次键。不要自行移除/补卡文；下批询问以卡文无限次为准，还是保留一次限制。养由基扩展权限共用后排/主宰字段也是下批待复现检查点，当前未修、未计通过。
+
+## 2026-09-17 用户插入优先项：试炼推进日志隐私
+
+- 最终回执：8112a9c228e7630e1a468b2e3d82bc0e2d9a0a51（父提交b79870f）同提交干净Release重跑退出0；规则3454/3454、平台116/116、UI323、连接23、卡图324+42及前后端构建通过。已推送origin/main并精确读回该完整SHA，未部署。证据见artifacts/deploy/8112a9c228e7630e1a468b2e3d82bc0e2d9a0a51/l12-release-8112a9c228e7630e1a468b2e3d82bc0e2d9a0a51.json。以下待验证/同步为过程状态，由此覆盖；回执留本地随下一批归档，不独立提交或重复Release。
+- 保留失败记录：首次Release在npm构建ranking-refresh附近以-1073741819退出，Release退出1，当时未推送。Node v22.18.0，无测试断言失败输出；同项独立连续3次通过。未改业务代码、未跳过门禁后重跑完整Release通过；原生进程异常未能复现，不声称已定位环境根因。
+- 下一步：需要本批明确部署授权才能使试炼隐私修复上线；未部署前不关闭线上Bug。效果一致性整体未完成，P0待归属410项，之后继续按能力族核对真实入口及缺失矩阵，不能把待归属当作未实现。
+
+- 骑兵归属批次保留，先修试炼进度公共事件泄露名称/附卡。共享输出过滤器接到实时快照与MatchRecorder玩家回放；旧原始存档/哈希保留，完成试炼公开不变。见BUG-20260917-TRIAL-PROGRESS-PRIVACY。
+- 新文件L12TrialProgressVisibility.cs、TrialProgressPrivacyTests.cs；MatchRecorder.cs局部加入回放过滤；L12GameEngine.cs只新增FilterDisasterEvent的一行，提交时不得带入已有异画修改。隔离副本相同一行已单独应用，不能从开发目录整体复制引擎。
+- 试炼相邻49/49退出0（包含真实V2重放）；骑兵相邻58/58、台账8/8退出0。两项分别有界记录，准备最终Batch；干净Release和同步尚未完成，不得登记为已部署。
+- 集成Batch已完成3454/3454、零失败/跳过、退出0，全卡静态门禁通过。代码按两项分开提交，最终提交树一次Release后精确推送，避免重复发布验证。引擎补丁产物cache/primary/trial-privacy-engine-8554994.patch仅含一行，目标blob=42bab4db2d72b9a37f06b560f7faec4568768eb5。
+- 骑兵归属提交b79870fc33f024ba967739eb5578504b4ea3defd；试炼代码随后单独提交。远端在提交前仍为8554994，最终Release通过后才一起同步；本批没有生产部署授权，必须询问后才可上线。
+
+## 2026-09-17 当前批次：原生骑兵规则动作归属
+
+- 当前基线8554994；全池5段原生骑兵位移已准备精确生命周期档案及逐卡矩阵，不重写既有正确结算。29项红测24通过、5项按钮/命令拒绝文案不同，已改为共用判断；完整验证与同步待完成。
+- 使用原隔离副本验证，原有UI/平台/异画差异不纳入；路线图记录范围和退出条件。档案不是新增原子，具名引用不代替执行回执。
+
+## 2026-09-17 当前批次：所有抽弃逐张执行，日志合并
+
+- 最终状态：8554994cb31d8dcd34b1ee4587656f4f4199fa72干净Release退出0，规则3419/3419、平台116/116、UI323、连接23、卡图324+42和前后端构建通过；已推送main且精确读回，未部署。隔离副本已干净定位同一提交。以下“待完成/基线d2134b9”为过程记录，最终由此项覆盖；回执留本地随下一批归档。
+- 继续方向：P0按共享能力族核对入口及证据，而非重写所有待归属项。415项owner-unreviewed中186项static、47项active；待归属不等于未实现，不得批量将其标为已验收。生命周期整体P0—P6仍未完成，按路线图推进。
+
+- 用户已裁定剩1抽2先抽1再因下一张空库判败；所有抽牌弃牌本质逐张进行。后补充：允许合并日志，不做逐张刷屏；结算与呈现分离。
+- 当前Draw/Mill共用逐张移区回调，保留已完成卡牌，汇总实际完成数量后判败；主引擎只改Draw/SetWinner局部，原异画差异未纳入。Cost完整资格预检查继续保留。最终相邻146/146、Batch3419/3419，零失败/跳过、退出0，全池静态门禁通过；提交级Release与同步待完成。
+- 隔离工作副本仍为D:\GPT\Legion12\worktrees\counter-lifecycle-20260917，基线d2134b9。注意后续提交L12GameEngine.cs必须仅暂存本批精确差异，不得整体加入开发目录的异画变更；可从隔离副本产生该文件补丁暂存。
+- 前批d2134b917e727722c64d7f97c0d39991e9deb601干净Release退出0，规则3391/3391、平台116/116、UI323、连接23、卡图324+42与构建通过，main精确读回一致，未部署；回执路径见路线图。
+
+## 2026-09-17 当前批次：反击结算条件与所有者
+
+- 最终隔离Batch3391/3391、零失败/跳过、退出0，全池静态门禁通过；最终相邻149/149、台账6/6通过。以下“待最终Batch”为过程记录，由本项覆盖；接下来提交级Release及同步。
+
+- 上一批efccebdb52645f8c2e52147b7e03356d9f7940bc已通过干净Release并推送main精确读回，未部署；规则3359/3359、平台116/116、UI323、连接23、卡图324+42和构建通过。证据路径见路线图。
+- 本批共同处理战斗至黎明/空城计的结算时条件抽牌与真实失败结果；空城原进攻消失不能成功；粮草掠夺回到实际所有者牌库，保留匿名日志并同步弹框/场景。正式规则的执行空牌库判败已覆盖两项条件抽牌，未选择和条件失效不判败。
+- 新17场景原10失败含2个夹具预期错误，真正8个错误已修复；加全池匹配和基础区域操作守卫后相邻92/92、台账6/6通过。最终Batch/Release待执行；使用上批隔离副本验证，不覆盖开发工作区独立账号/UI修改。
+- 同批已补嵌套反击原始事件绑定：9个真实选择/恢复场景4红→全绿，加3个旧存档例后相邻149/149、台账6/6通过，最终Batch待重验（前版3379/3379已过）。台账324卡/711段、5能力13组引用不等于5能力已完整验收。
+- 继续项已获裁定：用户确认所有抽牌弃牌逐张进行，牌库剩1而抽2时先抽1再在下一次遇空库判败；下一批统一Draw/Mill/手牌弃置和部分完成事件。旧整批不足则不移动基线不再适用。Cost完整可支付的资格检查仍保留，不足不能先扣部分。此后继续P0归属。
+
+## 2026-09-17 当前批次：反击能力身份与具名证据
+
+- 本批修复S1的11张反击能力被误切/误分类，反击身份来自共用`L12CounterTacticRules`，人工结构分段优先。卡牌数量324不变；目录719→711是移除8个假段，不是删除卡效。
+- 新回归修复前12/12失败；修复后相邻125/125和台账6/6通过，整批验证中。四种公共反击已绑定准确能力哈希、具名参数化用例和结构化响应事件；仅声明阶段证据，尚不代表完整结算矩阵。
+- 原有未提交UI/平台/房间/卡图相关工作保留；本批只集中反击身份、证据工具、测试和记录。下一步补反击结算阶段矩阵并继续主动族归属，路线图为唯一进度入口。
+- 同批追加三反击结算修复：破败仪式选定手牌/军团失效failed；粮草掠夺和毒药发作前段失败/无效时随后段skipped。新增13个恢复场景7红→全绿，相邻86/86；五种反击已挂接具名引用。最终隔离Batch3359/3359、零跳过、退出0及全池静态门禁通过，待干净Release和同步。隔离副本以e17b46a加本批15文件建立，绕开未纳入本批的账号代码AccountRow.UpdatedAt编译错误，原文件保留。
+
+## 2026-09-17 当前批次：P0逐能力台账基线
+
+- 上一P2批次79dfdce已验证并推送，未部署，详见路线图最终回执。
+- 当前新增`EffectLifecycleInventoryTests`和`export-l12-effect-lifecycle-inventory.ps1`，从运行目录生成`docs/l12/EFFECT-ABILITY-INVENTORY.md`：324卡/719段，7张无能力卡；87细原子定义、200复合定义、432入口待核对。不是719段已全部审查，测试维度不自动算通过。
+- 定向5/5、Batch 3333/3333和全卡静态门禁通过，退出码0；集中提交后做干净Release与同步。下一步按共享族补能力级用例引用、适用性和入口归属，P0-P6仍以路线图为唯一进度入口。
+- 没有改游戏运行规则、原子或界面；原有UI/平台修改及本轮出现的L12PlatformStore.cs修改均保留。
+- 最终回执：e17b46a干净Release退出0（规则3333/3333、平台116/116、UI323、连接23、卡图324+42及前后端构建），main已精确读回完整`e17b46a9eb033b96071ee1d09e66ec2027c86e91`；产物路径见路线图。未部署。回执留本地随下一批集中归档，不再单独提交/重跑Release。
+
+## 2026-09-17 当前批次：P2对象与公共转活跃区域复验
+
+- 先看`docs/EFFECT-LIFECYCLE-ROADMAP.md`顶部状态表。按用户新要求，同族相关实现/回归/文档集中提交，避免每个入口及回执独立发布验证；AGENTS已同步。
+- 本地增加ST目标结果迁移、雅典娜全/部分失效与公共转活跃field/relic/morale原区域绑定；定向64/64、Focused 3327/3327、补充无目标后的Batch 3328/3328均取得退出码0，静态全卡审计通过。
+- 用户确认无并行任务，但原有UI/平台未提交改动仍保留；本批仅涉及效果文件、两份规则回归、规范和进度记录。从bffb72a创建一个集中提交，随后在干净副本运行一次Release再同步；本地同步回执随下一批集中归档，未部署。
+- 最终回执：`79dfdcee4eb450c67c14a4e6b15ffa3e52008eca`干净Release退出0，规则3328/3328、平台116/116、UI323、连接23、卡图324+42及前后端构建通过，main已精确读回一致。证据在`artifacts/deploy/79dfdcee4eb450c67c14a4e6b15ffa3e52008eca/l12-release-79dfdcee4eb450c67c14a4e6b15ffa3e52008eca.json`。未部署；下一批先补P0逐能力台账，不把卡级覆盖当能力级完成。
+
+## 2026-09-17 抽牌后强制弃牌全卡池防回归（提交级Release通过，已同步）
+
+- 以印刷完整句型扫描S1/S2/ST，精确命中黑胡子蒂奇、传奇的拉格纳、奥拉夫二世、洛基、雷神之锤、赫拉克勒斯6项；全部已进入同一`draw-discard-draw-1/2 → draw-discard-discard`计划，无新增旁路。
+- 新增回归守卫固定两段共享Flow、`RequiresPreviousSuccess`、同一能力场景和无`Legacy`回退；洛基按能力段核验，不误用同卡另一主动能力导致的卡级汇总状态。功能提交`ef5dd2a`；定向18/18、Focused、Batch与提交级Release通过，证据`D:\GPT\Legion12\artifacts\deploy\ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991\l12-release-ef5dd2ad4c3c75a776ee9ceadd6d287a49fa8991.json`；待同步，未部署。
+- 同步回执：`ef5dd2a`和`f80d6e5`已推送至`origin/main`并精确读回；上一项中的“待同步”为执行前状态，现由本项覆盖，未部署。
+
+## 2026-09-17 支援阵亡与进攻方击杀事实分离（提交级Release通过，已同步）
+
+- 支援军团显式按`Defeat`离场：自身【阵亡时】继续进入通用候选；不会写入交战`Defeated*InstanceId`或产生`kill-source`，所以进攻军团不触发【击杀时】。
+- 新增武则天支援、源义经进攻的V2恢复端到端回归：支援者入墓后抽牌并治疗，攻击方没有任何击杀来源。功能提交`e01cd28`、文档提交`0dc7cff`、发布回执`c4fc92a`已推送；战斗时间线、类型化击杀、协防/近藤相邻126/126、Focused/Batch/提交级Release规则3302/3302、平台116/116、UI323、连接23、卡图324+42和前后端生产构建通过。证据`D:\GPT\Legion12\artifacts\deploy\0dc7cff87820defba7fe50f154617b68226af69e\l12-release-0dc7cff87820defba7fe50f154617b68226af69e.json`；未部署。
+
+## 2026-09-17 天灾开场/主动触发来源分离（提交级Release通过，已同步）
+
+- PendingDisasterTriggerSource 在越过天灾阈值时保存来源：结束阶段自然增长为 turn-phase，军团登场/卡牌效果为 card-effect，GM为 gm。延后排程、堆叠数据、日志和V2恢复均保留来源；旧检查点仍可读取旧 opening。
+- 〈诸神黄昏〉现在任何回合阶段自然触发均为开场分支（双方各抽2）；只有军团/卡效主动触发才执行其余玩家抽2、结束当前回合与追加回合。功能提交`0a384b7`、文档提交`db0847c`；天灾相关105/105、Focused规则3301/3301、Batch全池审计和提交级Release（平台116/116、UI323、连接23、卡图324+42及前后端生产构建）通过。证据`D:\GPT\Legion12\artifacts\deploy\db0847c696675eeed82bddfed95a4773ba659806\l12-release-db0847c696675eeed82bddfed95a4773ba659806.json`；已同步，未部署。
+
+## 2026-09-14 进攻时自身单段兵力增益统一协议
+
+- 功能提交`d0034f66236cd5875cf02440adfb9e91268078c1`：贝奥武夫、古斯塔夫一世、奥德修斯、彭忒西勒亚、斯巴达勇士、帕西瓦尔6项由`L12SimpleSelfTroopBuffTriggerEffects`统一卡牌/能力、声明计划、Cost、增益、按钮、响应、日志与单段场景；旧逐卡增益分支删除。
+- 冒号前Cost继续响应前预付，细原子以`prepaid=true`公开保存但不二次执行。不能支付不建立发动，错误选择可取消整次发动；被无效保留已付Cost但不增益，来源离场记`failed`，重复提交与V2恢复只结算一次。
+- 专项161/161、Focused/Batch规则3300/3300、全池248张/577项能力审计通过；原子覆盖128程序/110卡、复合180路由/148卡、待迁移89卡、无权威入口0。未部署。下一批按用户新裁定处理天灾触发来源：回合阶段增长=开场触发；天灾军团/卡牌造成=主动触发。
+
+## 2026-09-14 单目标军团状态触发统一协议
+
+- 功能提交`122f458aac8d9057d930d1825a98477abe1e712d`：尼托克丽丝、神箭奥德尔、疯狂的爱丽丝、安提诺乌斯4项由`L12SimpleCardStateTriggerEffects`统一驱动候选、模式/目标、once、响应、逆序复核、状态提交、日志、场景和恢复；旧登场、6I-B、S2及ST逐卡分支删除。
+- 非固定战场对象即使唯一仍需点击；无目标静默、拒绝不入栈、目标失效`failed`、被无效不改状态。`effect-ready`在独立响应结束时再次验证目标仍在原区域且仍为休整，并接管单段唯一结果，消除“上层先记成功、子事件再失败”。
+- 专项166/166、Focused/Batch/Release规则3280/3280、平台116/116、UI323、连接23、卡图324+42、全池248张/577项能力审计和前后端生产构建通过；原子覆盖122程序/108卡，待迁移90卡，无权威入口0。证据`D:\GPT\Legion12\artifacts\deploy\122f458aac8d9057d930d1825a98477abe1e712d\l12-release-122f458aac8d9057d930d1825a98477abe1e712d.json`。未部署；下一批继续扫描单结果状态修改。
+
+## 2026-09-14 登场获得符文统一协议
+
+- 功能提交`bab5457f1b8d9630997f38911caaf8a445cd346f`：梅林、帕西瓦尔、高文、阿麦金、伊丽莎白·都铎、加雷斯、纯白的灵鹿共7项登场获得1符文由`L12SimpleResourceTriggerEffects`接管；4项必发直接响应，3项选发先声明，手写程序和旧6I-A重复职责已删除。
+- 无模式/目标/费用的必发资源段不会创建空`PendingActivation`；共享协议覆盖逐卡正例、拒绝、无效、V2恢复、重复提交、结果事件和唯一场景。原子审计脚本已补计规格生成来源，当前119程序/105卡、待迁移91卡、无权威入口0。
+- Release通过规则3268/3268、平台116/116、UI323、连接23、卡图324+42、全池248张/577项能力审计和前后端生产构建；证据`D:\GPT\Legion12\artifacts\deploy\bab5457f1b8d9630997f38911caaf8a445cd346f\l12-release-bab5457f1b8d9630997f38911caaf8a445cd346f.json`。未部署；下一批扫描单结果转活跃/休整。
+
+## 2026-09-14 单段资源触发统一协议
+
+- 功能提交`85f770e9b5d437c3f61ab92ce9716a4b7bb80258`：九项追加休整士气/翻转士气/获得符文触发改由`L12SimpleResourceTriggerEffects`统一驱动候选、选择、次数、响应、逆序复验、结算、日志、场景与恢复；旧逐卡资源resolver删除。孙悟空后续资源段仍归属其离场返回能力，不伪造新卡面效果。
+- 后台分段同步纠正为莫瑞甘2项、安格斯3项、〈寻找圣杯之旅〉2项；李牧/哮天犬主宰返还触发键统一，新增可执行翻转士气原子。协议专项5/5、相邻400/400、Focused与Batch规则3268/3268均通过。
+- 干净提交Release通过规则3268/3268、平台116/116、UI契约323、连接23、卡图324+42和前后端生产构建；证据`D:\GPT\Legion12\artifacts\deploy\85f770e9b5d437c3f61ab92ce9716a4b7bb80258\l12-release-85f770e9b5d437c3f61ab92ce9716a4b7bb80258.json`。尚未部署；下一批按单结果形态继续扫描资源状态变化。
+
+## 2026-09-14 触发Cost回执与无冒号效果结算
+
+- 公开触发现在由公共声明边界捕获支付前后状态差，生成实际`Cost（已支付）`；叠放费用、实际卡名和资源数量均可恢复。响应效果栏读取真实能力段，并在存在回执时剥离重复的冒号前费用文字。
+- 全卡池248张/577项能力及所有入栈前状态写入已复核。吕布、高文、芬尼亚传奇因没有语义冒号Cost，资源变化已移回效果结算；被无效不支付，结算时对象或支付条件失效则整条失败。古斯塔夫、理查德等真实Cost保持预付，并新增实际名称/数量回执。
+- 功能提交`5346f70deeee82034c6ed330ccb44119fcc9a1aa`通过专项、Focused、Batch与Release规则3263/3263、全池审计0疑点；平台116/116、UI323、连接23、卡图324+42和生产构建通过。证据`D:\GPT\Legion12\artifacts\deploy\d18a18f83bbbb7ad2be7d318a639b0309baf35d3\l12-release-d18a18f83bbbb7ad2be7d318a639b0309baf35d3.json`，未部署。
+
+## 2026-09-14 主动Cost回执归并
+
+- 天照、洛基、英灵殿、花魁、努阿达的6处单卡`paidCostSummary`已删除，统一由支付前后权威状态差生成。回执现在保留真实弃牌/回库卡名、休整来源和实际资源数量。
+- 阿麦金的已锁定牌顶展示是唯一非状态差主动Cost，继续显式记录；英灵殿、花魁、努阿达的费用回执已验证V2恢复后不漂移。
+- 功能提交`00de3c6fbcefa683bfc3be1de8f5193ffd33c807`通过相关85/85、Focused/Release规则3260/3260、平台116/116、UI323、连接23、卡图324+42和生产构建；证据为`D:\GPT\Legion12\artifacts\deploy\00de3c6fbcefa683bfc3be1de8f5193ffd33c807\l12-release-00de3c6fbcefa683bfc3be1de8f5193ffd33c807.json`，未部署。
+
+## 2026-09-14 全时点冒号Cost边界
+
+- 结构目录现在只将冒号前最后子句里的真实支付动作归类为Cost；“进攻时：”、骰点分支和“选择一项：”不再误报。全目录155个语义Cost全部可读，缺失和假Cost均为0。
+- 本批补齐18项进攻/阵亡/登场/打出/符文类遗漏，清除3项旧误报；18个具名正例、5个时点/分支反例和全目录守卫已固定。
+- 功能提交`daf0b14b1e1714ac3c5c2c0f6a84eab19e193c36`通过专项97/97、Focused/Release规则3260/3260、平台116/116、UI323、连接23、卡图324+42和生产构建；证据为`D:\GPT\Legion12\artifacts\deploy\daf0b14b1e1714ac3c5c2c0f6a84eab19e193c36\l12-release-daf0b14b1e1714ac3c5c2c0f6a84eab19e193c36.json`，未部署。
+
+## 2026-09-14 主动效果实际Cost回执
+
+- 主动能力入栈时从支付前后权威状态生成`Cost（已支付）`，不再依靠单卡手写摘要或重新猜卡文。真实支付的士气/临时士气/神力/符文、主宰伤害、休整和区域移动都保留实际数量与卡名；0费减免不显示虚假Cost。
+- 阿麦金的“休整+展示牌顶”现在于响应前完成并锁牌，被无效时也保留已支付状态。雷神之锤、荷鲁斯、希芙、雅典娜、努阿达的结构化冒号Cost已恢复；全目录测试会拒绝任何同类新遗漏。
+- 功能提交`999133a073b90c36a23e51039b66d239691d02ac`通过相关386/386、Focused/Release规则3231/3231、平台116/116、UI323、连接23、卡图324+42和生产构建；证据为`D:\GPT\Legion12\artifacts\deploy\999133a073b90c36a23e51039b66d239691d02ac\l12-release-999133a073b90c36a23e51039b66d239691d02ac.json`。未部署。
+
+## 2026-09-14 响应弹框费用/效果与墓地查看
+
+- 已支付Cost由结算入口写入堆叠结构元数据，对手响应弹框统一显示`Cost（已支付）：…`与`效果：…`，不从卡文推断、不展示未支付费用，也不额外说明无效后的退款规则。单响应多段效果展开该次响应覆盖的所有已启用段。
+- 嬴政成功支付时公开实际弃置的8费军团和完整后续效果；无8费分支没有Cost行。天照第二能力公开实际弃牌，并完整说明士气转活跃及【高天原】+1000。共享记录器也接管既有复合支付入口。
+- 阻塞弹框最小化后可查看双方墓地及卡牌详情，但处于纯查看模式，不能发动墓地能力或特殊胜利；关闭后继续原Prompt。提交`fb50b52374ca5fe3bd82443b785f3cc2d0eed2d5`通过专项27/27及Release规则3228/3228、平台116、UI323、连接23、卡图与生产构建；证据为`D:\GPT\Legion12\artifacts\deploy\fb50b52374ca5fe3bd82443b785f3cc2d0eed2d5\l12-release-fb50b52374ca5fe3bd82443b785f3cc2d0eed2d5.json`，未部署。
+
+## 2026-09-14 对方单张弃牌协议与贯穿角色裁定
+
+- 纳芙蒂蒂、血斧艾瑞克、海伦、鲍斯、佐佐木小次郎已归并为同一受影响方弃牌协议；触发条件、受影响玩家、私密选择、结算移区、展示文本和单段场景均由一个规格生成。鲍斯缺失的阵亡入口已经补齐；〈毒药〉属于复合“无效随后弃牌”，未误合并。
+- 五项有合法手牌时由对方明确点击，唯一对象不自动选；原始无对象静默，响应后对象消失为`failed`，被无效不泄露手牌，V2恢复与旧Prompt重复提交安全。首轮全量测试发现的场景目录、旧continuation、冒号原子断言和旧迁移程序身份4项均已同步为结构化契约。
+- 贯穿只接受“来源是本次进攻军团”的权威战斗击杀。赵云或帕西瓦尔作为被进攻方反杀时不建立贯穿候选；进攻方正常贯穿仍以当前剩余兵力进攻主宰并禁止该次进攻触发“进攻时”。该限制不影响其他防守方击杀效果或击杀后转活跃。
+- 功能提交`995b04d98da7f3c3b2f9037b5825a2f5f7fde653`通过专项22/22、Release规则3226/3226、平台116/116、UI323、连接23、卡图324+42、原子审计110程序/96卡与生产构建；产物在`D:\GPT\Legion12\artifacts\deploy\995b04d98da7f3c3b2f9037b5825a2f5f7fde653\l12-release-995b04d98da7f3c3b2f9037b5825a2f5f7fde653.json`，未部署。
+
+## 2026-09-14 全卡池结算、移动端与详细玩家日志已正式发布
+
+- 已把`086f6f7`正式版本后的54个主线提交与移动端横屏修复安全整合；应用提交`815771d6d204651076a9db77bc68b0dad52d276a`已推送`origin/main`并部署正式服。2026-09-14玩家日志写入左侧原“更新日志”弹框，按移动端、登场/牌库顶、资源/装备、军团主动/位移、公开触发/取消、阵亡/击杀、多对象七组列出全部玩家可见结果，不发布资讯，也不包含管理、审核、存储或内部诊断内容。
+- 上一期2026-09-13日志已固定为其真实线上版本`086f6f796d52bd7eefa09217da8e8bffe9e74e57`，只有本期使用构建版本，避免历史日志随新部署漂移。UI契约扩展至323项并固定两期版本归属、全部涉及卡名、一屏适配与玩家语义边界。
+- 六组1280×720、1280×480、390×844、375×667、844×390、740×360浏览器视口通过；提交级Release规则3203/3203、平台116/116、UI323、连接23、卡图324+42、前后端生产构建通过，证据为`D:\GPT\Legion12\artifacts\deploy\815771d6d204651076a9db77bc68b0dad52d276a\l12-release-815771d6d204651076a9db77bc68b0dad52d276a.json`。
+- 正式活动链接、本机/公网health与engine均为`815771d`；本机/公网WebSocket协议1通过，服务active/running/enabled、ExecMainStatus=0、NRestarts=0。schema v3卡图清单完整366项，版本`3881cc1616eac1e3a02c5bd363b8c4fde6091adc35eeaf87b97dc3a151cc8cc6`；公网包包含本期标题、完整版本、移动端说明、阵亡恢复等代表条目，公开资讯列表没有旧误发ID或本期资讯文章。有效运营策略v41保持`enabled=true`、`active=true`、`entryBlocked=true`维护态。
+- 首次调用误用脚本默认`/opt`，在新版本启动前发现40GB runtime与根盘余量不匹配并安全中止；旧`086f6f7`链接、HTTP和WebSocket恢复后，精确清除仅属于本次中止的partial、上传包、staging、未完成卡图缓存及发布围栏。为满足正确`/www/legion12`的14GiB硬门槛，将已校验的最老`5c2c7d0`快照连同sidecar迁移至`/opt/legion12-deployment/runtime-backups`并再次校验SHA256，未删除该备份；外置盘保留`923caee`、`086f6f7`及本次`815771d`三份完整快照。
+
+## 2026-09-14 阵亡时单一试炼推进统一协议
+
+- 全卡池按原子形态扫描“阵亡时且完整结算仅为试炼推进”，精确命中侍从骑士与费奥纳的骑士；前者推进当前控制者试炼1点，后者推进2点。ST06-10虽同为试炼+2但时点为打出，其他试炼效果带登场、选项、费用或额外结果，不误并入。
+- 两项由同一规格生成能力序号、时点、推进值、结算文案和第1/1段场景。均为必发且无选择：无未完成试炼时静默完成；有多张试炼时只推进第一张未完成试炼；进度封顶8；被无效不推进。
+- 功能提交`9ae755eadcee90c025e86afebf3c5de0ebf96224`通过专项/相邻136/136、Focused/Batch/Release规则3210/3210、平台116/116、UI321、连接23、卡图324+42与前后端生产构建；覆盖控制者归属、+1/+2、多试炼、封顶、无对象、无效、V2响应恢复和旧Prompt重复拒绝。证据位于`D:\GPT\Legion12\artifacts\deploy\9ae755eadcee90c025e86afebf3c5de0ebf96224\l12-release-9ae755eadcee90c025e86afebf3c5de0ebf96224.json`，未部署。
+- 推送前发现远端已新增移动端发布链`43fa901`、`815771d`、`c9be6cd`，已用普通合并提交`04dc860913dc75027cde850364055830b2278d74`无损整合；冲突仅涉及本文件与任务台账的顶端记录，双方内容均保留。合并树再次通过Release规则3210/3210、平台116/116、UI323、连接23、卡图324+42与前后端生产构建，证据位于`D:\GPT\Legion12\artifacts\deploy\04dc860913dc75027cde850364055830b2278d74\l12-release-04dc860913dc75027cde850364055830b2278d74.json`；本批效果仍未部署。
+
+## 2026-09-14 阵亡时单一主宰恢复统一协议
+
+- 全卡池按原子形态扫描“阵亡时且完整结算仅为主宰恢复生命”，精确命中金发哈拉尔与圣女贞德；前者只恢复控制者主宰1点，后者分别为双方主宰恢复1点。武则天、纳芙蒂蒂、格温莉安和阿肯那顿因另有抽牌、伤害、分支或弃牌Cost，不误并入。
+- 两项由同一结构规格生成能力序号、时点、恢复对象、数值、结算文案和日志原因，并生成同一个细粒度程序形态与第1/1段场景。均为必发且无选择：满血时静默完成；双方恢复时逐方应用各自禁疗状态，一方受阻不阻断另一方；被无效不恢复。
+- 功能提交`f6a8d50c3b6e11faedb2e459b0f3914146e714c1`通过专项/相邻120/120、Focused/Batch/Release规则3203/3203、平台116/116、UI321、连接23、卡图324+42与前后端生产构建；V2响应中恢复只结算一次，已完成Prompt重复提交拒绝。证据位于`D:\GPT\Legion12\artifacts\deploy\f6a8d50c3b6e11faedb2e459b0f3914146e714c1\l12-release-f6a8d50c3b6e11faedb2e459b0f3914146e714c1.json`，未部署。
+
+## 2026-09-14 阵亡时单抽牌统一协议
+
+- 全卡池“阵亡时且完整结果仅抽取1张牌”精确命中无名的渗透者、墨子、贝奥武夫、布伦希尔德、哈特谢普苏特、井伊直虎、埃涅阿斯共7张；武则天的抽牌＋治疗、诸葛亮的查看/加入＋圣物登场、格温莉安的分支及抽后弃牌均不误并入。
+- 7项由同一结构规格生成条件、选发、抽牌接收者、空库判负、日志和第1/1段动效。渗透者与墨子必发；前者由卡牌所有者抽牌，后者由控制者抽牌；其余5项选发，布伦希尔德在触发时锁定双方血量条件。放弃不入栈，成功/无效/恢复后结算共享同一场景身份。
+- 无名的渗透者与墨子补齐按印刷顺序排列的3项权威能力，修正墨子“即将阵亡时”免死注释曾被误作抽牌段的问题；渗透者双方支付2士气击杀自身的主动能力同步获得单段呈现。功能提交`1338dc8fe0d354a6b8efad0f11c278db2ae85bb9`通过专项/相邻24/24、Focused 3195/3195、Batch/Release规则3196/3196、平台116/116、UI321、连接23、卡图324+42与前后端生产构建；证据位于`D:\GPT\Legion12\artifacts\deploy\1338dc8fe0d354a6b8efad0f11c278db2ae85bb9\l12-release-1338dc8fe0d354a6b8efad0f11c278db2ae85bb9.json`，未部署。
+
+## 2026-09-14 阵亡时手牌军团登场统一协议
+
+- 坂本龙马、亚瑟王共用“手牌候选→私密选择→公开空位→一次响应→逆序复核→登场”的结构化规格。坂本是必发且在效果内选择0至1张，不再错误显示“不发动”；亚瑟王保留明确选发与提交前取消。唯一合法军团仍须点击。
+- 结算只接受仍位于手牌且当前费用、有效阵营/特征仍合法的同一实体，并重验位置；目标移到墓地/牌库、费用变化或位置被占均`failed`且不改选。坂本休整登场，亚瑟活跃登场；无合法手牌目标或无空位静默。功能提交`d61f9c26c476810b4396cfd3dc105f7b810ad08f`通过专项80/80、Focused/Batch/Release规则3184/3184、平台116、UI321、连接23、卡图324+42与前后端生产构建；证据位于`D:\GPT\Legion12\artifacts\deploy\d61f9c26c476810b4396cfd3dc105f7b810ad08f\l12-release-d61f9c26c476810b4396cfd3dc105f7b810ad08f.json`，未部署。
+
+## 2026-09-14 阵亡时墓地军团登场统一协议
+
+- 尼托克丽丝、血斧艾瑞克、陵墓圣武士共用“必发候选→墓地军团选择→我方空位选择→一次响应→逆序复核→活跃登场”的结构化规格与结算器。三张卡均无“可”，不能跳过；即使唯一目标也必须点击。无合法军团或无空位时静默跳过。
+- 结算重验所选实体仍在墓地、当前费用/有效阵营/卡名仍合法且位置仍为空；失败不改选、不覆盖。墓地展示全部卡，非法对象灰置。陵墓守卫虽不能进入手牌/牌库，仍能按规则从墓地登场，统一协议没有误套入手限制。功能提交`f7b7f14788a87ccae7558c9c4e0838609b0e00ef`通过专项86/86、Focused/Batch/Release规则3173/3173、平台116、UI321、连接23、卡图324+42与前后端生产构建；证据位于`D:\GPT\Legion12\artifacts\deploy\f7b7f14788a87ccae7558c9c4e0838609b0e00ef\l12-release-f7b7f14788a87ccae7558c9c4e0838609b0e00ef.json`，未部署。
+
+## 2026-09-14 阵亡时墓地单卡回手统一协议
+
+- 孙武、阿尔维达、忒修斯改为读取同一份墓地回手规格：候选、Prompt、入栈校验、逆序结算复核、公开展示、入手权威事件、日志与单段动效不再由三个结算器分别实现。
+- 发动性质按原文保留：孙武与忒修斯是选发，可明确不发动；阿尔维达没有“可”，有合法对象时必发并强制玩家点击目标，即使仅有1张也不自动选择。三者无合法对象时均静默跳过，不建立空候选或空堆叠。
+- 墓地弹框展示整个墓地，只有合法对象可选；选发后的目标步骤保留“取消整次发动”事务兜底。入栈后对象离开墓地或不再符合当前费用/有效阵营/晋升者条件时记为`failed`，被无效记为`negated`，均不改选。功能提交`890967c510525f368622c59bc1eb199e52f44d68`通过专项68/68、Focused/Batch/Release规则3164/3164、平台116、UI321、连接23、卡图324+42与前后端生产构建；证据位于`D:\GPT\Legion12\artifacts\deploy\890967c510525f368622c59bc1eb199e52f44d68\l12-release-890967c510525f368622c59bc1eb199e52f44d68.json`。全池扫描另有复仇血鹰的双卡双去向效果，因协议不同未错误合并；未部署。
+
+## 2026-09-14 抽牌后弃牌效果统一协议
+
+- 黑胡子蒂奇、传奇的拉格纳、奥拉夫二世、雷神之锤、赫拉克勒斯与洛基统一使用“抽牌段→抽牌后私密强制弃牌段”，整项只开放一次响应；第二段没有`skip`，被无效或抽牌失败时不再错误建立弃牌弹框。
+- 洛基普通支付与〈信仰狂热者〉免费发动共享同一计划；修复了多段主动效果后续声明把主宰误判为“离开结算区”的公共来源规则，并在段间保留能力/免费发动身份。
+- 全池文本扫描命中上述6项；〈神之天平〉是双方先弃后抽，山河社稷图与孟婆是独立能力，不混入本协议。功能提交`5071f07ceba0c95819d1dfb01b7f4bd21926374d`、`6f2bca41c4aa9e4297e80dd51f91860bce7f13d6`；Release规则3150、平台116、UI321、连接23、卡图324+42与前后端生产构建通过，证据位于`D:\GPT\Legion12\artifacts\deploy\6f2bca41c4aa9e4297e80dd51f91860bce7f13d6\l12-release-6f2bca41c4aa9e4297e80dd51f91860bce7f13d6.json`，未部署。
+
+## 2026-09-14 公共触发取消语义
+
+- 首步可选效果仍显示“不发动”；选择发动后的费用/对象步骤统一显示“取消整次发动”，取消不支付、不入栈。
+- “最多1张”选择0张继续结算与取消是两条不同路径；荆轲已作为真实回归样本。功能提交`cee790d93a2678f0ed0ae0d71c3e7d218280e69b`通过规则3131、平台116、UI321、连接23、卡图及生产构建，未部署。
+
+## 2026-09-14 阵亡单段触发与爱丽丝击杀时点
+
+- 哈拉尔、奥德尔、哮天犬·稚、阿塔兰忒的阵亡时单段结果已绑定印刷能力场景；唯一目标仍需点击，奥德尔/哮天犬明确不发动发布`declined`且不建空堆叠。
+- 爱丽丝由`after-attack`迁移为`after-kill`，只消费权威战斗击杀事实；once预留、放弃释放、成功转活跃、重复提交和结构化结果已覆盖。
+- 功能提交`323f181e126e4b33d3fb746a2424fa3cfec694c9`通过定向115/115、规则3130/3130、平台116、UI321、连接23、卡图与生产构建；发布证据在同哈希目录，未部署。
+
+## 2026-09-13 事件触发语义键第二批
+
+- 月读三项位移能力已分别使用`friendly-back-to-front`、`friendly-front-to-back`、`friendly-legion-moves`，同一移动的多触发仍由一个TriggerBatch排序。
+- 孙悟空返回后的士气分支使用`master-legion-returned`并仅展示未结算的士气段；天廷主动追加活跃士气与归零恢复分别接入`single-active`、`single-trigger`，权威结构不再依赖卡文推断。
+- 放弃/成功/无效/失效、费用和once、重复提交及恢复沿公共协议。功能提交`9d48da58cc721ecddf1bf457bf6efd5260b698e8`通过定向109/109、规则3124/3124、平台116、UI321、连接23、卡图与生产构建；发布证据在同哈希产物目录，未部署。
+
+## 2026-09-13 事件触发语义键第一批
+
+- 五项事件候选已移出`active`：安德华拉诺特=`master-damaged`、玛格丽特=`master-damaged-by-effect`、阿尔忒弥斯=`friendly-ranged-death`、圣杯=`friendly-round-table-enter`、安格斯=`tactic-effect-resolved`。
+- 前三项可选单段触发共享`single-trigger`的放弃/成功/无效/失败场景；玛格丽特继续两段复合结算，安格斯继续强制试炼推进。全部发布`effect-trigger`而非`effect-activation`。
+- 专项105/105、Focused/Batch/Release规则3122/3122、平台116、UI321、连接23、卡图与生产构建通过。功能提交`9a8c12be3a7a0556729e9aff87c42e5058d96019`，发布证据位于同哈希产物目录，未部署。下一批为月读三项、孙悟空返回后士气与天廷零士气恢复。
+
+## 2026-09-13 驱魔道士单段公开触发
+
+- 新增`single-trigger`协议；驱魔道士陆瑛能力1绑定`s2-after-opponent-tactic`第1/1段，选择发动后才进入响应堆叠。
+- 放弃=`declined`且无空堆叠，正常返手=`resolved`，被无效=`negated`，来源响应中离场=`failed`；全部读取同一场景身份。
+- 正常、放弃、旧Prompt、失效、无效与V2恢复专项8/8，Focused/Batch/Release规则3114/3114、平台116/116、UI321项、连接23项、卡图与生产构建及全池审计通过。功能提交`edad5d003dda232095d2991d23fb8dfb5b706ee7`已推送并精确读回，本批不部署。
+
+## 2026-09-13 骑兵位移规则动作一致性
+
+- 5张印刷“每回合1次位移”能力已改为`rule-action`：不入堆叠、不响应，旧主动整段遗留归零。
+- 所有有效骑兵从服务端快照读取按钮资格、禁用原因和合法位置，命令提交复用同一判断；〈腐秽大地〉只允许前排空位，前端不再显示服务端必拒绝的目标。
+- 带场景身份的单一`move`事件供日志、位移动画、动作条和回放共享；V2恢复与重复提交已覆盖。专项71/71、Focused/Batch/Release规则3109/3109、平台116/116、UI321项、连接23项、卡图与生产构建及全池248卡/577能力审计通过。功能提交`2dd4595c942d50eae95c27005801f5d89dba1e5e`已推送并精确读回，本批不部署。
+
+## 2026-09-13 荷鲁斯主动效果一致性
+
+- 两种冒号前Cost保持响应前支付；墓地目标与位置进入能力1的单段结构结算，普通路径和信仰狂热者免费复制共享同一结果定义。
+- 目标离开墓地、当前兵力超过2000、失去太阳城特征或位置被占用=`failed`，不再从手牌等其他私区错误登场；被无效不返还Cost。9张非“原本兵力”同型卡已核对，荷鲁斯全入口改读当前兵力。
+- 专项/相邻156/156、Focused/Batch/Release规则3100/3100，平台116/116、UI320、连接23、卡图审计与生产构建通过；旧主动场景6→5且余项全为位移动作。功能提交`a737d585341cea01ce1bd7cee4c8bbea2f1ec167`已推送并精确读回，本批未部署。
+
+## 2026-09-13 无眠之夜时点分类一致性
+
+- 〈无眠之夜〉严格分为天灾触发与持续监听两项；“主动休整时”不再形成自身主动按钮或旧主动场景。普通主动不会误触发，真实主动休整仍造成1点中立非致命伤害。
+- 同句型全池扫描只另有〈虚构的圣杯〉且原分类正确。专项75/75，Focused/Batch/Release规则3093/3093，平台116、UI320、连接23、卡图和生产构建通过；彼界/天灾108项、全池248卡/577能力，旧主动场景7→6。功能提交`6efa5df64ce7d22d8407f4f7d73ff534d6367b0b`已推送并精确读回，本批未部署。
+
+## 2026-09-13 银臂努阿达主动效果一致性
+
+- 能力2拆为士气转活跃与试炼+2两个实际结果段，共用一次响应；2符文为响应前Cost，被无效后两段均停止且不退款。
+- 0士气目标首段`skipped`；部分失效继续、全部失效=`failed`；无未完成试炼时次段`skipped`。符文消耗触发、V2恢复与旧Prompt重复提交已覆盖。
+- 专项/相邻11/11、Focused/Batch/Release规则3091/3091，平台116、UI320、连接23、卡图和生产构建通过；旧主动场景8→7。功能提交`bc036f16b3678a689868388d4d987466ce66e7c9`已推送并精确读回，本批未部署。
+
+## 2026-09-13 服部半藏翻正一致性
+
+- 主动翻正已接入能力3下单段结算；来源自身按权威场上实例重验，不能再用堆叠快照虚假结算。
+- 响应期间离场或已翻正=`failed`，被无效保持覆盖，正常翻正保留原登场回合；V2恢复及旧响应Prompt重复提交已覆盖。
+- 结构/相邻69/69、Focused/Batch/Release规则3084/3084，平台116、UI320、连接23、卡图和生产构建通过；旧主动场景9→8。功能提交`a620dd5282c24960876c619c4c2f3a59bfb9e51d`已推送并精确读回，本批未部署。
+
+## 2026-09-13 奈芙蒂斯弃置效果一致性
+
+- 能力2已接入第1/1结构段。卡文没有冒号，因此战场军团弃置是效果而非Cost：发动时只声明，响应后才逐张重验并弃置。
+- 被无效不丢军团、不加折扣；部分对象失效仍弃置其余合法对象并按实际入墓数量减费，全部失效=`failed`。取消、V2恢复、旧Prompt重复提交及下一张符合条件军团消费折扣均有回归。
+- 同类扫描确认只有奈芙蒂斯属于无冒号战场弃置；带冒号的荷鲁斯等仍预付Cost。专项及相邻13/13、Focused/Batch/Release规则3078/3078，平台116、UI320、连接23、卡图与生产构建通过；旧主动场景10→9。功能提交`0d12d9b5249bba5389524f95311d4bc5b3d2cc43`已推送并精确读回，本批未部署。
+
+## 2026-09-13 孙悟空变身生命周期一致性
+
+- 变身能力已接入能力1下第1/1结构段。返还2至8士气是冒号前Cost，前排位置是公开效果对象；任一步可在支付前取消，全部声明完成后才返还士气并开放响应。
+- 响应后位置不再合法=`failed`，不覆盖、不改选且不退Cost/次数；被无效不登场且不退款。正常结算按冻结返还数量设置兵力并允许登场回合进攻；V2恢复只执行一次并拒绝旧Prompt。
+- 既有任意离场回主宰区与条件追加休整士气矩阵保持通过。定向及离场相邻24/24、Focused、Batch与提交级Release规则均3071/3071，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动场景11→10。功能提交`914491398ba99f55f4103919e2caf24d0b1a724e`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 阿尔忒弥斯主动效果一致性
+
+- 支付界面固定显示神力/弃牌/取消；不可用支付灰置并显示原因，弃牌具体卡另行选择。权威`option`步骤现在可校验任意稳定协议值，修复`pay:`/`buff:`提交后被误当实例导致无事发生的公共问题。
+- 神力或弃牌在响应前支付；目标按当前军团类型、公开状态、有效【奥林匹斯】和费用3至6重验，失效=`failed`且不退款，被无效不赋予。强攻/震击为能力2下同一第1/1段的两个结果分支；取消、V2恢复和重复提交已覆盖。专项及声明绑定相邻21/21、Focused、Batch与提交级Release规则均3065/3065，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动场景12→11。功能提交`a75122aa62532f5a158c2be9f0cbda60174eef49`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 击杀后转活跃共享协议
+
+- 匠神锻造炉两模式已拆为能力2下独立场景；莫瑞甘主动效果也接入独立能力2场景。两张卡冻结目标并在响应后重验当前军团类型、公开状态和有效阵营，锻造炉额外要求非【晋升者】。
+- 主动休整/士气/符文均为响应前Cost；目标失效=`failed`且不退款，被无效不赋予，取消、无资源、V2恢复和重复提交已覆盖。全池赋予入口只有这两处，消费继续统一进入击杀来源事件。专项/相邻13/13、Focused、Batch与提交级Release规则均3058/3058，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动场景13→12。功能提交`eebc8eeed92e8c3d23add9b4f0efdb48b5d30113`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 八尺琼勾玉双主动一致性
+
+- 赋予骑兵位移与赋予免死已拆为能力2下两个独立第1/1段；两项均在完整选择后支付主动休整，响应后按当前军团状态、位移历史及目的地合法性重验，失败不改选、不退Cost。
+- 取消、无效、目标/目的地失效、V2恢复和重复提交均已覆盖；正常赋予位移仍不占对象自身骑兵次数并继续通知月读。同型语义全池各仅此一处。专项/相邻14/14、Focused、Batch与提交级Release规则均3051/3051，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动场景14→13。功能提交`1175279b10f72bf35c62a41b62ffecc92f8c8386`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 黄泉之门墓地回收一致性
+
+- 主动回收接入第1/1段；候选/提交/结算统一校验墓地位置、有效【高天原】特征和手牌可进入性。响应后失效=`failed`且主动休整不回退，被无效不移动目标。
+- 万物统御之戒与衍生特殊卡边界、V2恢复及重复提交已覆盖；专项8/8、Focused、Batch与提交级Release规则均3043/3043，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动场景15→14。功能提交`c62669b3f163e2a60d9c3761dda734b61c9dd7d8`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 墓地到底部Cost与神剑格拉墨一致性
+
+- 神剑格拉墨`gramDamage`接入第1/1段；主动休整和墓地4份【阿斯加德】军团在响应前支付，被无效不造成伤害且不退款，V2恢复与重复提交受同一堆叠身份约束。
+- 按钮、候选、提交统一要求卡牌能合法进入牌库并精确凑4；渴求死亡的勇士仍由玩家指定代表张数，万物统御之戒不会让衍生特殊卡绕过区域禁入。格拉墨改走共享牌库事务，直接墓地删除+牌库添加旁路归零。
+- 全池9项同类Cost已核对，并修正奥拉夫/古斯塔夫初始资格误计特殊卡。具名12/12、相邻66/66、Focused、Batch与提交级Release规则均3038/3038，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过；旧主动整段场景16→15。功能提交`adc6482e1cc9daf403d4ca7bcf03ea26a746f3cb`已推送`origin/main`并精确读回，本批未部署。
+
+## 2026-09-13 安卡神碑双主动分支一致性
+
+- 安卡神碑同一印刷能力的`ankhReady`与`ankhDraw`分别接入第1/1段并映射回原子能力序号2，实际分支不再共用旧主动整段结果。
+- 转活跃模式的弃1手牌是冒号前Cost：空手牌在目标Prompt前拒绝，支付前可取消；响应后冻结的陵墓守卫若离场或已非休整则`failed`，不改选、不退弃牌或来源休整。抽牌模式的陵墓守卫转休整在响应前支付；被无效不抽牌，空库=`failed`并败北，两项休整Cost都保留。
+- 全池44条同型冒号Cost已复核；专项10/10、Focused、Batch与提交级Release规则均3030/3030，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过。旧主动整段场景17→16。直接位移动作精确目录为5项，早期4项摘要已纠正。功能提交`f1b99595ce70e776b7ed26110710dfb3a66b4b75`已推送`origin/main`并精确读回；本批未部署。
+
+## 2026-09-13 阿麦金单张牌库顶分支一致性
+
+- 阿麦金主动休整已接入第1/1段，实际加入手牌/返回顶部/返回底部各有结构分支；仅彼界判定继续统一读取有效特征，符合时三种去向均可选，不符合时只有顶部/底部。
+- Cost响应前支付；空库、冻结实例消失或加入手牌资格变化为`failed`，不改选、不移动其他卡、不退休整；被无效不揭示。V2恢复和旧Prompt重复提交已覆盖，私区移动走共享事务，直接移除计数41→40。
+- 单张顶部展示全池扫描命中李靖、李牧、平阳昭公主、乾坤·阴、冲田总司和阿麦金；不同后句保留独立协议。旧主动整段场景18→17，专项14/14、Focused、Batch与提交级Release规则3023/3023，平台116/116、UI契约320项、连接恢复23/23、卡图及生产构建通过。功能提交`495b7065a054cf14d3241e05fbecfb82db53bd27`已推送`origin/main`并精确读回；本批未部署。
+
+## 2026-09-13 顶部牌库私区主动事务一致性
+
+- 山河社稷图的抽牌/顶部3张分支、普罗米修斯、特勒马科斯已接入独立结构段；野外扎营与花魁的馈赠作为同类已结构化手牌效果同步复核。五项顶部3张事务统一在响应后才读取私区并使用相同卡牌布局和排序控件。
+- 有合法卡时必须由玩家点击，即使唯一也没有`skip`；没有合法卡直接排列全部展示牌，空库=`skipped`，冻结对象失效=`failed`且不回退Cost。山河抽牌空库=`failed`；普罗米修斯被无效不揭示顶部且神力保持已消耗。升级前无命中`skip`可恢复，有合法对象的旧`skip`不能绕过规则。
+- 精确目录门禁显示未结构化主动能力21→18，其中5项为位移动作。具名/同类22/22、跨模块369/369、Focused、Batch与提交级Release规则3017/3017，平台116/116、UI契约320项、连接恢复23/23、卡图324+42项及生产构建通过。功能提交`41a3cf813c9b751f35b1a2a7896fc9e01ad68436`已推送`origin/main`并精确读回；本批未部署。
+## 2026-09-13 移动端横屏一屏适配已本地验收
+
+- 紧凑对战不再强制最低`0.7`缩放或使用双轴滚动；舞台同时按自动旋转后的逻辑宽高等比缩放并居中，一屏覆盖双方手牌、战场、侧栏与操作区。实战和回放共用修复，牌库与弹框的独立滚动不变。
+- 六组1280×720、1280×480、390×844、375×667、844×390、740×360真实浏览器视口均断言舞台四边位于棋盘范围内且无页面级滚动；旋转点击、Body Teleport、Prompt恢复、输入和牌库横屏继续通过。Focused与Batch通过，UI契约321项、278模块生产构建通过。
+- 当前仅本地完成，待按长期授权同步`origin/main`，未部署；下次正式部署须把玩家可见变化追加到左侧原“更新日志”，不发布资讯。
+
+## 2026-09-13 双条件击杀与强制后段终态统一
+
+- 全池扫描确认双阈值击杀只有英灵殿、土方岁三、黄泉之门。英灵殿与土方现按宽/严阈值形成两个实际结果段但整项只响应一次；声明角色冻结，逆序结算时按当前兵力/费用分别重验，一侧失效不阻断另一侧。土方仍是一个最多选2张的标准场面弹框，旧整段检查点继续兼容。
+- 英灵殿墓地2张回牌库底为响应前Cost；完全无对象两段`skipped`，单侧有对象即可结算。黄泉的可选击杀不选择为`declined`。天照强制随后击杀有费用0对象时必须点选，只有确无对象才继续并记`skipped`。
+- 定向/相邻165/165、Focused、Batch与提交级Release规则均3008/3008；248卡/578能力、原子324卡、公开声明、私区事务、平台、UI契约、连接恢复、卡图及生产构建门禁通过，legacy case/text inference/no runtime entrance均0。功能提交`5908070ae682f10364dcea2b15e9adc3060ce42a`已推送`origin/main`并精确读回；本批未部署。
+
+## 2026-09-13 双公开对象效果的独立结算结果
+
+- 全池扫描确认吉原的花魁是唯一尚未结构化的“同一主动效果预选敌我各一张公开对象”；草薙剑属于互斥分支。花魁现按敌军-1000、己军+1000拆为两个实际结算段，但整项只响应一次，主动休整Cost不回退。
+- 每段独立复验并发布`resolved/failed`；一侧失效不阻断另一侧，两侧失效不伪记成功，被无效停止整项。日志只写实际发生的段。
+- 具名及目录8/8、相邻116/116通过，含升级前在途堆叠兼容；Focused/Batch/Release规则均2997/2997，平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张及生产构建通过。功能提交`31a808d4aec69032877238321dbb73e50851656f`已推送`origin/main`并精确读回；旧主动整段场景23→22，本批未部署。
+
+## 2026-09-13 结算时士气翻转对象生命周期统一
+
+- 奥林匹斯`olympusMoraleFlip`本体/异画目录接入`single-active`第1/1段；支付与翻转对象分开，Cost响应前提交，结算后才选择仍合法的士气面，被无效不生成对象Prompt且不返还Cost。
+- 公共士气选择器现区分：原有候选在响应后消失/已选对象失效=`failed`，发动时无对象=`skipped`，可选效果跳过=`declined`。服务端事件与玩家日志共同支持`effect-declined=未发动`。
+- 具名6/6、同类与相邻261/261、Focused/Batch/Release规则均2990/2990；平台116/116、UI契约320项、连接恢复23/23、卡图40项/324张、前端效果契约及生产构建通过。功能提交`c1a1ada9b3824d2d0c1279f629c12c86f1c13cf1`已推送`origin/main`并精确读回；旧主动整段场景25→23，下一批处理敌我双目标效果的部分结算；本批未部署。
+
+## 2026-09-13 无对象抽牌主动效果结果同源
+
+- 奥林匹斯神力`godPowerDraw`、其同规则异画目录与西芙`sifCycle`接入`single-active`第1/1段；Cost继续在响应前提交，被无效不返还，正常抽牌、无效和检查点恢复使用同一场景身份。
+- 结算时牌库为空现发布`failed`并执行既有败北，不再因直接`FinishStackItem`被记成`resolved`。真实回归覆盖正常、无效、空库、恢复、旧Prompt和重复发动；具名7/7、相邻280/280、Focused与Batch规则均2985/2985通过。
+- 旧主动整段场景28→25，5项直接位移动作仍归动作协议。提交级Release规则2985/2985、平台116/116、UI320、连接23/23、卡图40项/324张及生产构建通过；功能提交`487184e16191749214c2a4b7afaaf92886fe7987`已推送`origin/main`并精确读回。下一批处理奥林匹斯士气翻转的结算时目标声明；本批未部署。
+
+## 2026-09-13 九月十日起效果一致性复核与三项漏源修复
+
+- 已按用户要求回看2026-09-10 00:00至`038c911`的一方主线48个提交、157个去重路径，不以单卡专项代替跨源验收。完整口径见`SEPT10-EFFECT-CONSISTENCY-AUDIT.md`。
+- 嬴政根因是通用效果登场/权威置入等入口绕开登场前8费军团Cost；现统一由触发网关拦截，候选与提交都按当前费用=8判断，并补齐候选失效重选、来源离场和旧Prompt重复提交兜底。无合法支付对象只展示手牌，不执行击杀、返还士气或追加限制。
+- 天照第二能力已验证实际+1000持续状态，覆盖后入场/换排、被无效、V2快照、检查点恢复和回合结束；新增权威状态标签及实际结算事件。孙悟空服务端已更新但图鉴lookup遗漏，现三处逐字一致并加入生产构建交叉来源门禁。
+- 定向8/8、Focused与Batch均2979/2979零失败零跳过；248卡/578效果段0待判断，原子审计324卡且旧卡号分支/文本推断/无运行入口均0；UI320、连接23/23、卡图40项/324张及生产构建通过。功能提交`8d1d873efe830956fc410c1b6270174a1c680dce`已使用完整schema v3卡图版本`3881cc…cc8cc6`通过干净提交Release，推送`origin/main`并由`git ls-remote`精确读回；本批未部署，生产部署仍需本次明确授权。
+
+## 2026-09-13 历史排位结果修复与相邻卡效批次已发布
+
+- 功能提交`086f6f796d52bd7eefa09217da8e8bffe9e74e57`已推送`origin/main`并部署正式服。正式数据只读核对确认所选五场旧定级赛仍属于当前同赛季/派系结算链，但其后已有正常结算，因此不能安全回滚中间档案。
+- 新实现允许把历史所选收益标为无效并继续证据、可选限制、通知和申诉流程，同时保持双方当前七曜值、定级进度、胜负/连段、最高阶状态和隐藏分；只有共同最新后缀才精确回滚。确认后的撤销会恢复收益状态且仍不改写后续档案。断链、跨赛季/派系、已有修正链等继续失败关闭。
+- 玩家更新日志已改为2026-09-13一期，完整纳入相邻任务从`923caee..54c468f`的玩家变化：结构化实际结算状态、主动/响应/多段与跨回合卡效、对象重验、诸神巅、冒号费用/对象、孙悟空与典藏异画，并按卡名列清；不含运营、审核、存储或内部诊断。2026-09-10误发一期仍在原更新日志，资讯文章已由用户手动撤下。
+- 发布门禁补齐相邻批次遗漏：六个新增`mode:*`状态获得中文玩家标签，卡牌完整分支文案仍优先；内层Release宿主修正为PowerShell 7。最终Release规则2971/2971、平台116/116、UI契约320项、部署行为41场景、展示/录像检查和生产构建通过。
+- 正式服活动版本、公网健康与远端main均核对为`086f6f7`；本机/公网WebSocket通过，schema v3卡图366项（324可玩+42展示）版本`3881cc1616eac1e3a02c5bd363b8c4fde6091adc35eeaf87b97dc3a151cc8cc6`。两期更新日志均在正式前端包，误发资讯ID已不在公开列表。排位活跃/待结算/未结束隔离/活跃沙盒均0，数据库quick_check正常；正式服继续保持维护和入口阻断，不得为发布强退真人对局。
+- 容量门禁前精确删除最老`04fb70c`运行快照及残留旧卡图上传包，保留最近`5c2c7d0`、`923caee`两份快照；本次另创建并校验`runtime-before-086f6f796d52-20260913T024200Z.tar.gz`。服务器临时预检/核验脚本已删除。
+
+## 2026-09-13 诸神巅多分支生命周期与可选随后段
+
+- 诸神巅4项印刷能力已显式结构化，翻士气/消耗2神力分支/主动休整免晋升神力分别绑定第1/2/3段，开场追加2士气为第4段；6000伤害场景已从错误的第3段纠正到第2段。
+- 六份伤害在结算时逐份重验：零对象`skipped`、全部失效`failed`、部分有效只结算合法份数并保留失效日志；翻士气候选被上层响应清空时为`failed`。被无效及结算失败不退2神力、主动休整或次数。
+- 公共组合计划只为明确预选不发动的随后段发布`declined`；同类扫描命中诸神巅与不朽之礼，互斥未选分支保持无结果。专项8/8、同类兼容280/280，Focused与Batch均2970/2970；全池逐能力248卡/578项，原子审计324卡且无旧卡号分支、文本推断或无运行入口。功能提交`4318f4a5ab7b0ae701c884bfb7751fa8ebc2b526`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 公开对象主动状态效果结算重验
+
+- 黄金圣甲虫`scarabDebuff`与神农鼎`shennongReset`接入`single-active`第1/1段；响应后重新确认已声明军团或已使用主宰能力，不改选、不退已支付Cost。
+- 黄金圣甲虫0目标=`skipped`、全部对象失效=`failed`、部分对象仍合法=`resolved`并只处理合法对象；神农鼎目标次数已被上层响应重置时=`failed`。被无效均为`negated`且保留弃牌/返还士气/主动休整。
+- 8个真实类别回归与呈现目录68/68，Focused与Batch均2962/2962，原子审计324卡、卡号条件分支186；旧主动整段场景36→34。功能提交`907e548f5584dd7b31b8e6dc649d7c0a7f39fa6c`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 无目标主动状态效果结果同源
+
+- 雷神索尔`thorCharge`与《探寻天空之城》`skyCityDiscount`接入`single-active`第1/1段；两项无需目标，成功与被无效分别发布`resolved/negated`，已支付Cost和回合次数不回退。
+- 真实回归覆盖雷神索尔正常/无效及2士气不退，天空之城V2检查点恢复、旧响应Prompt重复提交和重复发动拒绝。诸神巅免晋升神力能力被唯一场景门禁拒绝，已保留给组合计划，不作错误单段登记。
+- 专项与呈现63/63、Focused与Batch均2954/2954通过，原子审计324卡、卡号条件分支186；旧主动整段场景38→36。功能提交`373dc1e03c273239ca76f76808cf272635434d89`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 主动私区登场结果同源
+
+- 运行时重新盘点出42个`active`旧整段场景；排除直接位移动作后，克利奥帕特拉七世、黄金圣甲虫、雷神之锤与希波吕忒四项共享私区对象/公开位置/费用/响应/登场重验事务，现均接入`single-active`第1/1段。
+- 实际成功、响应后对象/格位失效和被无效分别投影`resolved/failed/negated`；取消仍不支付，已提交费用及休整状态不回退。检查点恢复、旧Prompt重复提交、无对象和位置失效均由真实入口覆盖。
+- 跨模块112/112、Focused与Batch规则均2951/2951通过，卡号条件分支保持186；旧主动整段场景由42降至38。功能提交`db260b212b7180062806b4f1cc2888efd8caa639`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 特洛伊木马跨回合生命周期结构化
+
+- 特洛伊木马的进攻后置入已接入第1/1段结构场景；声明的对方空位在响应逆结算后重新校验，格位被占或盖伏来源失效时为`failed`，不改选、不覆盖。战场持续-1000保留为权威区域状态层。
+- 所有者下个回合结束时改为不可响应的弃置第1/2段与依赖抽牌第2/2段；弃置失败时抽牌段`skipped`，牌库为空则抽牌段`failed`。到期实例先预留再逐个入栈，两个同时到期木马各只结算一次。
+- 真实回归覆盖正常置入/到期、响应后格位失效、V2检查点恢复、旧Prompt重复提交、弃置失败阻断随后抽牌及多实例去重。专项6/6、Focused与Batch规则均2950/2950通过，原子审计324卡且卡号条件分支保持186。
+- 功能提交`3169e2bda3c3d1b8ca5ce37509b3bc398d250700`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 乾坤·阴分段与响应内同栈续段
+
+- 乾坤·阴接入`response:S02-0106`两段计划：第1段只在合法结算时展示牌库顶并记录“符合弃置/不符合置底”，命中后第2段才以`post-hidden-reveal`建立我方军团选择；未命中不创建空弹框，无我方军团时第2段明确`skipped`。
+- 修复共享逆序顺序：已经完成一次响应的复合效果，其内部“随后”段不再进入当前堆叠关闭后的延迟队列，而是继续压在原被响应效果之上；延迟选目标期间冻结下层结算，选择完成、拒绝或失效后才恢复下层。失败/拒绝建立自己的终态段，不会用`effect-cancelled`误标下层效果。
+- 跨段数据只显式保留乾坤·阴的费用/兵力增益，后段会清除前段`presentationFlow`，避免日志/动效沿用展示分支。命中成功、未命中、无对象、被无效、目标失效、重复提交、检查点恢复和下层结算顺序均有真实回归；最终相关回归133/133，Batch规则2947/2947零失败零跳过，卡号条件分支由187降至186。复合旧响应体只剩特洛伊木马；本批未部署。
+- 功能提交`5f06d695eb4e275ba8113aaed1cf59105ada800e`已推送`origin/main`，并由`git ls-remote origin refs/heads/main`精确读回同一哈希；本批未部署。
+
+## 2026-09-13 逆序结算重验与地主的胁迫结构化
+
+- 用户裁定已落实为共享终态：发动/声明时存在合法对象，但响应逆序结算后对象离场、换区或不再满足兵力/费用/状态条件时，该效果段为`failed`；发动时原本没有合法对象的必发段才是`skipped`；玩家明确不发动为`declined`；被无效为`negated`。已支付Cost不因后续失败返还。
+- 共享结算结果映射不再把历史`effect-cancelled`误解释成“玩家选择不发动”；已声明对象失效统一投影为失败。组合续段在前段/响应后重验对象与非预付Cost，失败时建立带原段/场景身份的失败结算项，避免静默越过；空目标的组合声明改记`effect-noop`。
+- 真实神妙行军回归固定：选择兵力6000目标并返还2士气后，目标因先结算效果升至7000，击杀段失败、目标存活且士气不返还。莫德雷德的2000→3000旧入口也固定为失败而非主动放弃。此前不朽之礼/切腹仪式“已选择对象结算前失效”的当前口径由`skipped`更正为`failed`，发动时无对象仍为`skipped`。
+- 地主的胁迫接入`response:S02-0015`第1/1段和等待/额外弃牌/抵挡失效三种稳定场景；声明、按钮结果、动效、日志、回放与重连共用分支身份，公开事件不泄露对方弃置手牌实例。成功两分支、重复提交、检查点恢复和被无效均走真实战斗链。聚焦136/136、完整Batch规则2943/2943零失败零跳过；复合旧响应体剩余2个：乾坤·阴、特洛伊木马。本批未部署。
+- 功能提交`07c08ce07e6d0aa3501a68df8fb1bb0809684840`已推送`origin/main`，并从远端引用精确读回一致。
+
+## 2026-09-13 多段反击部分结算：不朽之礼与切腹仪式
+
+- 不朽之礼与切腹仪式均接入“整项能力一次响应、内部两段顺序结算”的稳定组合计划；前者为抽牌→可选守卫登场，后者为抽牌→已声明军团费用-2。声明、实际分段结果、动效、日志、回放与检查点共用同一场景身份。
+- 公共续段器修复了段级状态污染：后续段不再继承上一段的`effectResultPublished/effectResultStatus/presentationSceneId`。因此首段成功、后段已选择目标失效时现准确记录`resolved + failed`；不朽之礼主动不登场为`resolved + declined`；首段抽牌失败为`failed`并停止后段；首段被无效时整项停止。
+- 切腹仪式无合法军团仍按必发效果抽牌，再以`skipped`结束目标段；有唯一对象仍必须点击。不朽之礼的旧整段StackItem继续走兼容结算，升级后恢复旧对局不会丢失登场子句。
+- 专项111/111、完整Batch规则2940/2940零失败零跳过；功能提交`96e2919`已推送`origin/main`并从远端精确读回。本批未部署。复合旧响应体剩余3个：地主的胁迫、乾坤·阴、特洛伊木马。
+
+## 2026-09-13 私有手牌登场响应
+
+- 摄政皇权与暗度陈仓各自接入第1/1段组合场景；私密手牌实例不进入公开场景定义，声明、结算结果、动效、日志和回放共享稳定段身份。
+- 入栈前复验继续保证无部分支付；入栈后手牌对象/战场/位置失效统一为`failed`。暗度陈仓已返还士气不退，`mode:none`不支付不揭示，旧Prompt重复提交拒绝，重连保持原目标和场景。
+- 聚焦84/84、完整Batch规则2930/2930零失败零跳过；功能提交`be36def`已推送`origin/main`并从远端精确读回。本批未部署。剩余5个复合旧响应体，下一批为不朽之礼与切腹仪式。
+
+## 2026-09-13 复合响应分支首批
+
+- 绝对防御按实际选中的堆叠目标区分“抵挡本次进攻”与“无效该效果”，不沿响应链误借根时点；两分支仍共用原弃牌Cost与无效运行协议，但声明/结算结果使用各自稳定场景。
+- 拼死反抗把单体-2000/全体-1000声明冻结入栈并在重连后保持同一场景；单体已选目标失效记`failed`，全体结算时无休整对象记`skipped`，自身被无效记`negated`。
+- 聚焦54/54、跨模块189/189、完整Batch规则2922/2922零失败零跳过；功能提交`25a9cef`已推送`origin/main`并从远端精确读回。本轮未部署。剩余7个复合旧响应体，下一批优先摄政皇权与暗度陈仓的私有手牌选择、位置复验、取消和重连协议。
+
+## 2026-09-12 单段响应运行映射首批
+
+- 已显式连接印刷能力与真实响应堆叠触发：佣兵部队`response-block`、落穴陷阱`response-negate`、伏击`reaction`、戏法师的傀儡`response-retarget-master`。四项使用第1/1段实际结果，未改变原资格、候选、费用或响应优先权。
+- 佣兵/落穴/伏击已选目标失效及傀儡预选位置失效当前均为`failed`，响应自身被无效为`negated`；费用与来源状态不回退。真实测试覆盖成功、无对象、无效和检查点恢复。
+- 聚焦196/196、完整Batch规则2915/2915零失败零跳过；功能提交`e0524cf`已推送`origin/main`并从远端精确读回，未部署。全响应盘点后仍有9个复合旧响应体，下一批从绝对防御的“抵挡/无效”分支和拼死反抗模式开始建立组合计划。
+
+## 2026-09-12 单段主动实际结算首批
+
+- 全池旧整段场景盘点为原子时点44个主动能力+1个反应能力；本批用显式目录迁移8个单段单结果主动：白起、奥尔加、宫廷魔术师、伊姆何泰普、亚里士多德、彼界阿瓦隆、绿洲舞女、克里斯蒂娜。声明/结果共用第1/1段场景，实际成功、无效与跳过进入同一动效、日志和回放协议。
+- 奥尔加Cost可付但无合法目标时仍自弃并响应，真实结算现记录`skipped`；目标存在时仍须点击。重连选择、重复提交、被无效且费用不退继续由真实链路固定。
+- 聚焦61/61、完整Batch规则2912/2912零失败零跳过，全卡池声明、私区、原子及逐能力门禁通过；功能提交`530d6e1`已推送`origin/main`并从远端精确读回，未部署。剩余36个旧主动能力按移动/状态、私区、多分支、多段和复合资源分批处理；旧响应体需建立运行触发到印刷能力的显式映射，不能按时点名猜测。
+
+## 2026-09-12 结构化效果结算结果投影
+
+- 已把已有 `Flow` 的主动/反击/复合效果声明与实际结算接成同一场景链：声明记录能力、段、分支和 `declared`，完成时唯一发布 `effect-result`，区分 `resolved/negated/skipped/failed/declined`。
+- 场景ID、待定结果与结果去重标记保存在StackItem数据中，重连恢复后继续使用冻结文案；录像不再丢失 `EffectText` 和结果元数据。前端动效跳过结构化声明，只播放实际结果；战报标为“结算”。
+- 专项42/42、最终Batch规则2910/2910零失败零跳过、效果呈现契约、UI契约320项与生产构建全部通过。本批不覆盖旧整卡场景，下一步继续主动/反击余项的场景结构化及部分结算口径。
+- 功能提交 `0a73df9` 已推送 `origin/main` 并与远端引用精确一致；当前未部署。
+
+## 2026-09-12 冒号费用/对象续批与孙悟空更新
+
+- 用户要求同类全查。本批登场公开声明统一“Cost可付即可发动；冒号后有对象必须点、无对象跳过”，覆盖吕布、武则天、墨子、埃吉尔、格拉墨、克劳迪娅、井伊直虎、珀尔修斯、赫拉克勒斯·晋升，并补查修正刘备、布伦希尔德、海拉的凝视。土方改为一个弹框最多选择2张，选择2张时至少1张费用不高于1且所有对象费用不高于2；唯一对象仍明确选择。
+- 孙悟空所有军团离场共用回主宰区和落后士气可选补充；嬴政无8费军团改用真实出牌链回归；天照补齐第二效果按钮全文，梅林无符文显示两项灰置分支与原因，墓地选择显示完整墓地但只允许合法对象。
+- 6张新图已逐哈希写入`D:\L12-assets\original`，孙悟空旧本体/旧异画由同名文件覆盖；五张异画登记`第2季|典藏版`。新图库`D:\L12-assets\cdn-build-20260912-batch308`已按原脚本全量生成366项并审计通过，资源版本`3881cc1616eac1e3a02c5bd363b8c4fde6091adc35eeaf87b97dc3a151cc8cc6`；未上传、未部署。
+- 特征统一为“有效阵营特征+附加特征”：六阵营和通用、圆桌骑士、晋升者、杨戬专属、哪吒专属及未来“专属”字段属于特征，职介与试炼值不属于特征。阿麦金和十字军共用单一彼界判断，万物统御之戒把通用有效特征转换为持有者阵营。
+- 槲寄生符咒可支付3符文降至0费并打出，自然馈赠进入0费筛选；客户端、服务端快照、日志和回放中的费用/血量/兵力最低显示0。最终Batch规则2900/2900零失败零跳过、UI契约320项、卡图架构40项、发布/部署行为门禁与生产构建全部通过；规则测试入口补齐串行集合参数，消除Windows SQLite夹具并行清理的随机假红。旧“无对象静默跳过”回归名单已移除刘备/布伦希尔德，二者改由Cost可付但无后段对象仍发动的回归覆盖。
+- 画廊同类编号规则由写死`M1A`修为任意`M数字A`，因此梅杰德、洛基、须佐之男等异画不会在资源已收录时被界面漏掉；画廊契约固定41张登记展示资源+历史特例S02-05C1A=42张。
+- 后续继续主动/进攻/阵亡/试炼的结果与展示投影，不得把本批解释为全部卡效生命周期完成。功能提交`44ee003`已推送并从`origin/main`精确读回；工作区干净，本批未部署。
+
+## 2026-09-11 更新日志发布路径纠正
+
+- 用户确认上一轮协作者把版本更新错误发布为“资讯”，要求恢复左下角原有“更新日志”弹框，并把误发的一期迁回；后续玩家日志只写页面、卡效与对战逻辑，不公开后台、审计、处置、存储维护及内部诊断。
+- 已确认正式服误发文章为 `12b54ec2cb1c4e40992ca189c487d014`，标题《9月10日更新：卡效结算、完整响应提示、移动端与排位完整性》，对应线上版本 `5c2c7d0a7771f7d87af22c456f2b73795953c05a`。代码已把该期玩家可感知内容迁入 `SiteShell.vue`；本次最新日志按用户补充要求覆盖从 `5c2c7d0` 之后到待部署提交的全部玩家可感知修改，详细列出主动效果费用与候选、冒号费用边界、奥尔加与六张自伤减费军团、支付取消、罗洛及落穴响应；`04fb70c` 的旧日志不再错误跟随当前构建号。
+- 新增 UI 契约固定两期日志的版本、分组、点名卡牌及内部词排除；`AGENTS.md` 明确版本日志不得作为资讯文章发布，除非用户另行要求。UI 契约当前 316/316 通过。
+- 完整 Release 的规则与平台测试在并行集合间出现 Windows 临时 SQLite 文件锁、目录链接和 HTTP 夹具竞争，涉及用例单独合跑均通过；使用 xUnit 官方串行集合参数后规则 2864/2864、平台 116/116 零跳过通过。`verify-l12.ps1` 已为两组门禁固定该参数，后续发布不再依靠反复碰运气通过环境型门禁。
+- 后续状态（2026-09-13）：误发文章已由用户手动撤下；迁移条目仍保留在原更新日志弹框，本次更新日志已补齐相邻卡效批次，统一Release、推送与部署结果见顶部最新交接。
+
+## 2026-09-11 历史定级赛后台处置修复进行中
+
+- 用户报告五场历史定级赛被“缺少安全反算依据”统一拦截，并已批准修复。根因是这些旧场次没有BATCH307新增的档案前后快照，代码在执行既有严格账本校验前提前返回。
+- 已移除该提前拦截；旧定级赛只有在同赛季同派系、当前档案与完整账本一致、选择双方最新连续结算后缀且隐藏分可精确反算时才可处置。新快照仍优先使用，断链和不可逆边界继续拒绝。
+- 两项新增回归由红转绿，完整排位处置类12/12、隔离Batch规则2860/2860零跳过通过。现有其他卡效/UI脏文件均保留且不重叠；尚需提交级Release与同步。用户已明确本次不部署，未执行线上账号处罚。
+- 后续状态（2026-09-13）：所选五场在正式数据中不是双方当前最新后缀，顶部新批次已改为作废所选收益但保护后续正常档案，并增加确认/撤销回归；以顶部交接为准。
+
+## 2026-09-11 后置阶段已纳入：后台卡效工作台
+
+- 效果一致性完成后建设后台卡效工作台：统一管理原子能力、卡文、勘误、收录产品、按钮/弹框/日志/回放文案和发动呈现样式；样式选项必须自带图例或可播放范例及桌面/移动预览。
+- 必须使用版本化Schema与草稿→校验→预演→复核→差异→发布/回退流程，旧对局冻结原版本；无法由受约束原子表达的规则标记待开发，禁止自由文本直接变成服务端逻辑。
+- 同期建立后台设计系统和多宽度视觉门禁。新增按钮需统一层级、尺寸、间距、颜色和交互状态；近期“改选派系”类入口的视觉问题作为反例约束。该阶段已写入`EFFECT-LIFECYCLE-ROADMAP.md`，当前不改变对战可靠性优先级。
+
+## 2026-09-11 六张自伤减费卡完成逐能力同源
+
+- S01-0303/0304/0308/0310/0314与S02-0303均已有独立`hand-play`自伤减费段；旧卡号身份集合已删除。同卡其他能力单独建段，冒号只在当前段含Cost原子时切分；艾瑞克的伤害触发冒号不会被误判为费用。
+- 打出资格、血量阈值、减费数值、手牌最低费用、Prompt、实际伤害和日志读取同一结构规则；自伤Cost现先于离开手牌、`play`事件和登场流程支付。哈拉尔/艾瑞克的必发对象效果保留“有对象必须点击、无对象跳过”。
+- 相关138/138、完整Batch静态门禁及最终Release规则2858/2858零跳过通过。中间环境失败已由隔离7/7和干净完整复跑闭环。功能提交`5ab6124`已推送`origin/main`；无前端改动、未部署。下一批继续从高风险多段/响应效果中选同类入口，不把六卡完成扩大解释为全卡池完成。
+
+## 2026-09-11 奥尔加三段能力与 Cost 作用域
+
+- 用户进一步裁定：冒号边界按单个能力段解释，不能把一张卡上某段的 Cost 扩散到其他段。奥尔加现明确为静态远程、手牌自伤减费、场上主动自弃减兵三段；原子目录不再用“合并前两段后再补远程”的错误结构凑成三项。
+- 三段结构成为运行时共同来源：远程规则不再依赖奥尔加旧卡号覆盖，自伤减费资格读取 hand-play 段的费用语义，主动按钮读取带 `olgaDebuff` 身份的结构段。原子 API 逐能力输出 `costText/resolutionText`，后台按“冒号前 Cost / 冒号后效果”分栏显示。
+- 新增奥尔加能力分段守卫；相关回归105/105、完整规则2848/2848零跳过、前端类型检查、UI313及生产构建通过。功能提交 `e714ed8` 已推送并从远端 `main` 精确读回，未部署。后续按同一模式迁移其余五张自伤减费卡及更多多能力卡，不宣称全卡池已完成结构化。
+
+## 2026-09-11 裁定：冒号费用与效果对象分离
+
+- 用户明确每段冒号前是Cost，效果无对象不等价费用不足；唯一效果对象必须点击。奥尔加无目标自弃入栈后跳过减兵，未新增登场触发。公共IsCostSelection及自动选择护栏阻止唯一效果对象自动跳过，零对象跳过与纯支付保留；伊西斯三守卫费用显式标注。
+- 嬴政既有费用支付成功/不能支付展示手牌分支具名测试已确认，无重复修补。莫德雷德唯一目标必须选择后才进入响应；旧测试已按裁定增加点击。
+- 专项30/30及六种对象角色守卫，完整Batch2846/2846零跳过和全池静态门禁通过，未部署。后续仍需逐段迁移其他无目标发动门槛，不宣称全卡文自动编译或全部流程已同源。
+
+## 2026-09-10 效果同源第三批：旧单步调用归并
+
+- 奥尔加、众神之乡回牌、安卡抽牌接入公共单步评估；天照原双目标声明保留，删除已被前置流程覆盖的单目标分支。PromptActiveTarget仅剩公共开始函数调用；不宣称其他主动/反击/展示迁移完成。
+- 专项17/17，完整Batch2840/2840零跳过及全池静态门禁通过；无前端改动、无部署。下一批按EFFECT-LIFECYCLE-ROADMAP推进四种PublicResponsePlans评估，注意匿名手牌和响应时点。
+- 前两批0ea8ae1、f6be4d6已推送main；本批同步依长期授权，具体提交/推送以最终回执为准。
+
+## 2026-09-10 效果同源第二批：单步主动候选
+
+- 五个主入口效果共用 SingleActiveSelection，按钮与发动入口共享候选和无候选拒绝原因，仍复用原支付/响应/结算事务。范围及下一批方案见 EFFECT-LIFECYCLE-ROADMAP.md。
+- 专项10/10（真实检查点恢复、重复提交、无效不退费），最终Batch规则2833/2833零跳过和全池静态门禁通过。首轮仅排位测试清理matches.db文件占用失败；独立失败项+专项11/11及未修改生产源码的完整复跑通过，未豁免断言。
+- 用户已明确长期授权验收后推送origin/main；本批未部署，前端未改。首批0ea8ae1已推送；第二批提交/推送以最终回执为准。
+
+## 2026-09-10 效果同源首批：主动士气报价
+
+- 用户批准推进效果生命周期及卡文/按钮/动效/日志同源；本批只完成主动士气报价，未宣称其他链路已迁移。
+- QuoteActiveMorale 复用于提交和已有正基础士气费按钮，包含免耗及傲慢附加费；荷鲁斯替代支付/未映射费用保持既有路径。4个组合测试通过，Batch规则2823/2823零跳过及全池静态门禁通过；未改前端。
+- 已 fetch 并快进至5c2c7d0；部署脚本原本地内容与该提交一致，另存为 preserve-user-deploy-script-before-effect-quote-integration 的 stash，未删除。同步与部署状态以本批最终回执为准。
+
 ## 2026-09-10 正式发布完成（覆盖下方准备状态）
 
 - 已拉取并部署远端 main 应用 `5c2c7d0a7771f7d87af22c456f2b73795953c05a`，包含 `2af7ecc` 应用基线与正式地址修正。部署记录时间 `2026-09-10T05:32:15Z`；此后的交接提交仅为文档，不是新的已部署程序。
@@ -281,3 +1457,198 @@
 - 本次仅完善工具与交接；新产品需求从新批次开始。旧台账存在历史滞后记录，未逐条重新验收，不能仅因旧行写“未部署”就重发已上线功能。
 - 会话历史保留；下一任务携带本文件和具体目标即可，无需全文粘贴历史消息。当前无用户要求的新任务创建或定时清理授权，不自动创建。
 - 2026-09-08 存储治理已提交并推送 `origin/main`：提交 `71c6396`（连同此前测试服基础提交，远端由 `eac1ec9` 前进至 `71c6396`）。v2 动作审计只持久化卡号/实例号引用；单卡事实在赛果终局生成紧凑汇总，详细事实 30 天后小批清理且仪表盘结果保持一致。与沙盒 v2 子表原子清理、64 MiB WAL 留存上限及 v2 `state_json='{}'` 双护栏合并后，专项 52/52、完整 Focused 与 Batch 2538/2538、diff 检查通过；尚未部署，当前内部测试服务仍是 `a1061e3...`，公网 DNS/TLS 未激活。
+
+## 2026-09-11 支付死锁与临时军团类型批次已验收
+
+- 打出前墓地、罗洛代表值、符文和人工士气选择均可取消；取消与其他项混交会在消费Prompt前拒绝。罗洛候选按当前资源筛选，7费场景不再出现勇士“视为1张”；最终不足会返回可取消的重选Prompt，刷新恢复后仍可取消且不支付。
+- 印刷类型、当前赋予状态和实际区域已分开。落穴只响应权威场上军团的登场效果：草薙剑/孙悟空在圣物/主宰区不合法，实际成为场上军团后合法。`FindSource`优先权威实例，避免孙悟空场上状态被虚拟主宰来源覆盖。
+- 取消按钮只复用既有支付控制条和Prompt底栏次级动作；UI契约固定位置，不新增临时浮层或独立样式。最终Batch规则2864/2864零跳过、UI314、Vue类型检查和Vite 278模块构建通过。
+- 历史定级赛处置提交 `d25f963` 已按统一发布要求作为本批父提交保留；本批对战可靠性提交为 `052ec9d`，已于2026-09-11推送 `origin/main`。提交级Release通过并生成对应发布包；本任务未执行部署，交由统一发布任务继续。
+
+## 2026-09-12 效果一致性续批：公共反击声明评估
+
+- 战斗至黎明、空城计、破败仪式、粮草掠夺已共用无副作用资格/候选评估；响应列表、匿名理论响应、声明Prompt和提交前复验不再各自维护条件。
+- 无费用或无效果对象时不显示不可发动的响应；声明后条件失效则保持盖伏、不支付、不入栈并恢复原优先权。破败仪式只把仍在场的权威军团作为无效分支对象。
+- 新增四计划恢复/重复提交及无对象/过期目标回归，相关定向72/72、完整Batch规则2873/2873零跳过及全卡静态门禁通过。未修改`SiteShell.vue`、更新日志入口或任何按钮位置；提交推送和部署状态待本批收尾。
+
+## 2026-09-17 已声明目标的逆结算失效协议（效果一致性续批）
+
+- 根因：多个旧卡效在目标已被前序堆叠改变、离场或不再满足兵力/特征条件后，只是不执行实际操作，却仍以普通完成结束；多目标效果也会把一个失效对象错误地拖累其余独立对象。
+- 公共协议：`ResolveDeclaredEnemyTargets` 统一区分“未声明对象＝跳过”“所有已声明对象失效＝结算失败”“部分对象失效＝公开说明后继续结算其余合法对象”。单对象定向减益/击杀统一记录明确失败原因；没有把失效误写成玩家选择不发动或效果被无效。
+- 已迁移并扫描同类入口：佐佐木小次郎、光明之剑、乱箭齐发、乾阳、汉尼拔，以及武则天、墨子、荆轲、狩猎时刻、残酷哈拉尔、图特摩斯三世、槲寄生之灾、圆桌增益、阿瓦隆减益等登场、阵亡、攻击、反击和多目标路径。场上军团判断使用当前权威区域与当前军团状态，临时成为军团的牌不会因印刷身份而越界。
+- 回归：新增`DeclaredTargetSettlementLifecycleTests`，覆盖乱箭齐发部分失效仍继续、小次郎/乾阳全失效明确失败、汉尼拔两目标中己方先离场而敌方减益继续。定向4/4；相关回归270/270；隔离工作树的Focused与Batch均通过，Batch原子审计为324张卡、legacy入口0、无运行时入口卡0。
+- 本批实现、交接与回归断言提交`e621756`、`4529644`、`5a3b9b8`已于2026-09-17推送`origin/main`，远端已读回为`5a3b9b81ca07680d59acb3df962650dbd0275635`。原开发目录有运行中的本地服务锁住Debug输出，因此没有中断服务；验证改在干净隔离工作树完成。提交级Release已通过；本任务未部署，部署仍须另获当批授权。
+
+## 2026-09-17 P2 启动卡组目标复验子批
+
+- 胡夫、乔泽、弗蕾迪斯、伊丽莎白一世、莫德雷德、布狄卡已迁移到统一的结算时对象结果：无声明对象跳过，全部已声明对象失效为`effect-failed`，独立多对象部分失效继续。费用已经支付的路径不退款。
+- 莫德雷德修正为“没有候选时自动跳过；有且仅有一个军团候选时仍显示并等待玩家点击”。伊丽莎白不再逐张写模糊取消，改为汇总全失效或公开部分失效后继续。
+- 新增定向20/20；Focused和Batch规则3311/3311，全卡原子审计为324卡、legacy入口0、无运行入口卡0。实现候选提交`040fc807386a56f1df1f062768f98fe86adf16ee`尚待Release、推送；未部署。P2总体未完成，后续严格依据`docs/EFFECT-CONSISTENCY-COMPLETION-PLAN.md`分阶段推进。
+
+## 2026-09-18 移动端真实方向与紧凑密度（进行中，未部署）
+
+- 已移除旧的整页 CSS `rotate(90deg)` 坐标方案：横屏按浏览器真实宽高渲染；竖屏进入对局/回放时提供横置引导，不能自动锁定的浏览器仍可手动横置。
+- 已落地的玩家侧适配：图鉴与公开牌库竖屏只保留搜索和“筛选”，完整条件进入底部面板；规则栏目由横向拖动改为两列换行；首页、资讯、牌库、个人页、规则中心、对战大厅、排行榜、赛事中心、好友和账号找回页在 ≤520px 以同一比例同步收缩标题、说明、卡片/表格行高、缩略图、按钮和面板间距，而非只缩小文字。排行榜矩阵和赛事赛程保留必要的局部横向滚动。
+- 防遮挡：移动/矮横屏的 Bug 反馈由浮动按钮改为导航入口；牌库错误提示在移动端回到内容流中，不再盖住卡片操作。对局侧保留士气大面板入口、所选卡牌操作置于结束回合上方、对局记录可全屏查看的前序实现。
+- 已完成本机视觉验收：320×640 竖屏首页与图鉴首屏，844×390 横屏真实方向；逐项确认导航、筛选入口、容器和文字比例、反馈弹窗开关及无横向页面溢出。图鉴/公开牌库的实卡数据，以及受账号保护的大厅、好友、赛事、排行榜和实战操作，仍需在带后端数据及真实对局状态的集成环境复验。
+- 验证：`node scripts/check-mobile-responsive-layouts.mjs`、`npx vue-tsc --noEmit --skipLibCheck`、主题契约与 `git diff --check` 通过；以隔离临时输出目录完成 Vite 生产包（294 模块）。完整 `npm run build` 的回放焦点自检会因共享 `.vite-temp` 文件锁而中断，默认 `dist` 同样由并行任务占用，均未强行清理；临时构建目录已删除。本批未提交、未推送、未部署；不得把本机 `Failed to fetch`（未启动本地后端）描述为线上功能故障。
+
+## 2026-09-19 后台规则/异画与玩家资料批次（待整合，未部署）
+
+- 已实现规则中心同级导航与真正的逐项公开快照；异画选择复用筛选单卡组件，名称锁定原卡，产品可复用/新建并真实落库，启用后即进入画廊。
+- 已定位改名误判为前端账号切换时复用旧状态，登录刷新、账号ID监听和退出清理均已补齐。
+- 新增`/api/me/statistics`，从对局摘要和参与者快照生成总体、排位、先后手、各主宰统计，不依赖已清理的录像命令载荷；“我的”页已按信息层次重排。
+- 定向后端测试与Vue类型检查通过；完整UI契约仍被现有移动端对战三条未收口断言阻断。工作树包含其他任务的大量修改，当前未提交/推送，禁止把这些改动拆坏或误部署。
+## 2026-09-19 多段效果逐段声明同族（当前批次，未部署）
+
+- 独立后段不再在整卡打出前预选/预付。共享`DeclareAtSegmentStart`协议在前段完成后按当前状态生成模式、目标和费用，费用提交后才进入该段响应；后段不可支付只跳过本段，前段不回退。
+- 本批迁移荣耀之路、倪克斯的陨星、野外扎营、黑色莲花、乾坤阳、圆桌领域、符文之力、祭天仪式、观星、密米尔之泉；复核前线侦查、神妙行军、花魁的馈赠。符文之力两个印刷能力改为两个响应窗口。
+- 13项结构守卫禁止独立后段与`PreStackCost`并存。同族42/42、受影响九类444/444、能力清单生成12/12、最终完整规则4178/4178均失败0、跳过0、退出0。`a84c63e`干净Release规则4177/4177、平台144/144、UI325与完整门禁通过；`origin/main=98ba781`父链包含本批，未部署。
+- 保留未纳入本批的平台、移动端、后台、玩家统计与排位/UI工作区修改，不得误纳入提交；不部署。宫廷魔术师休整仍位于反击/主动战术分类规整之后，不回退顺序。
+
+## 2026-09-21 排位处置稳定性、账号群反刷与统计排除（整批门禁通过，待部署）
+
+- 已修复截图中的`最高阶 False/True`处置阻断：最高阶状态不再受广播开关控制；历史链按结算时档案快照核验，缺旧快照时只核对版本稳定字段。真实Before/After断链、胜负计数漂移、跨赛季/派系与修正链仍失败关闭。
+- 新增对刷分拖时的人工复核证据：24小时重复配对、同一赢家占比、4至12分钟低操作/低回合重复结算，以及同一获益账号面对多个网络或浏览器关联失败账号。IP和浏览器摘要单独不处罚；新模式不自动扣分/封禁，仍由管理员勾选具体对局后处置。
+- 浏览器哈希和终局回合进入排位outbox与完整性审计。旧`EvidenceVersion=0`记录不比对新增字段，保证旧applied outbox升级可读；不保存原始IP、Cookie或硬件指纹。
+- 违规对局、禁用/删除账号统一退出玩家战绩、主宰战绩、排行榜、派系排名、最强主宰、公开排位分析和后台单卡分析；撤销处置/恢复账号后重新纳入。确认处置和账号状态变更会立即失效分析缓存。
+- 验证：排位处置/新监控20项、禁用账号与三类统计专项通过；首次完整后端4420项发现8项旧导入账号兼容回归，修复后从头重跑Debug与Batch Release配置均为4420/4420；平台147/147、UI契约329项、Vue类型、卡图324张、原子遗留入口0及前端生产构建全部通过。阶段工作树为`tmp/ranked-integrity-monitor`，分支`codex/ranked-integrity-monitor-20260921`；后续已由 `e6f582d53f115e21d6b8058aaa1660a9db1b5328` 完成正式部署。
+# 2026-09-21 移动对战逻辑几何收口
+
+- 当前开发树在 `488f022b0315bac7833529cd1806971b373991ef` 之后继续收口移动端逻辑几何；未部署。
+- 左侧纵列已统一分配详情开关、双方额外区、当前天灾、天灾值和本局天灾圆图，固定详情开关有对应布局占位，不再挤压或覆盖天灾内容。
+- 已删除依赖物理屏幕高度的手机/平板分叉；真实横屏和竖屏自动旋转在相同逻辑画布上必须得到相同的关键区域尺寸。
+- 浏览器验收新增关键区域逐项几何对比、三大纵列/双方战场/手牌/每方四组功能区的包含与互斥断言，以及双方各三张额外区卡牌的双方向压力场景；UI契约330项、类型检查和完整前端生产构建均通过。逻辑几何收口与全区防侵入门禁均已推送；不部署。
+- 后续批次已将“返回大厅”固定为居中 `2+2` 换行，并为其他移动操作按钮启用均衡换行；路由按钮、GM入口及GM面板进入逻辑安全视口。战场四组区域按实际剩余宽度计算间距并限制最大断层。完整视觉矩阵为固定状态525张、弹框48张、安全区18张、随机连续性32组及桌面隔离3档，全部通过；UI契约330项、类型检查及完整前端生产构建通过，已由 `558d6c5` 推送，不部署。
+- 当前续批把状态图标、关键词、附着卡入口、主宰血量、牌堆数字、士气摘要和动态操作栏收口到卡牌/逻辑画布局部比例令牌；新增逐项包含与比例断言，并把移动令牌严格限定在移动根节点，桌面保留原尺寸。扩充后的固定状态555张、弹框48张、安全区18张、随机连续性32组、桌面隔离3档和逻辑视口11组全部通过；UI契约331项、类型检查及生产构建通过，未部署。
+
+## 2026-09-21 站点竖屏根治第四批（第一阶段）
+
+- 公共构筑查看器与规则中心已采用“窄屏只留搜索、其他条件展开”的共用筛选面板；面板支持键盘关闭并遵守横向安全区。700px以上仍使用桌面筛选，未把移动样式混入桌面结构。
+- 排行榜三类线性榜单在850px以下改为字段清晰的信息卡，移除手机/竖屏平板的表格横向拖动；主宰对阵矩阵因二维关系保留局部滚动。
+- `scripts/verify-site-portrait-filters.mjs`覆盖7档连续宽度、筛选打开态/关闭态、FAQ辅助筛选和三类榜单，共50张截图；输出目录为`artifacts/site-portrait-filters-b4`。本批尚未部署，下一步继续个人页和后台复杂区域。
+
+## 2026-09-21 站点竖屏第四批续交接
+
+- 第一阶段构筑/规则筛选和三类排行榜已经推送；第二阶段已完成“我的”和后台复杂区域。
+- 后台手机入口只显示一个模块选择器，桌面侧栏不变。模块选择统一走 `switchAdminTab`，账号/Bug/卡效/发布/安全/审计等需要加载的模块不会因入口变化漏载。
+- 窄屏账号行使用字段标签，卡效与内容工作台工具栏按容器重排；不要恢复旧的移动双列/单列全量侧栏，否则正文会再次被推到数屏之后。
+- `npm run verify:profile-admin-responsive` 生成并检查 7 档、33 张截图；证据在 `artifacts/profile-admin-b4`。此验证与静态 `check-mobile-responsive-layouts.mjs`、TypeScript、完整前端构建应共同执行。
+- 本批没有生产部署授权；完成提交推送后仍保持未部署状态。
+
+## 2026-09-24 排位梯度与对战身份批次
+
+- 用户确认的新梯度已实现为下一赛季原子生效的版本化配置；本赛季不变，隐藏匹配分不重置。准确参数、模拟口径与结果见 `docs/RANKED-GRADIENT-PROPOSAL.md`。
+- 对战身份接口不再用一个标签混装段位和称号，现分别提供全服名次、段位/定级进度、派系段位称号、主宰称号；缺失可选项不渲染。
+- 移动端身份采用独立安全框，并与返回/投降、对局记录、计时和回合操作建立几何互斥守卫。28张验收图在 `artifacts/ranked-battle-identity-20260924`（工作区外层验收目录，不纳入Git）。
+- 异画到账标题已改为“获得异画！”。图鉴按需加载、deck list异画横幅、通知正文精简及后台账号模糊候选已登记为下一独立批次。
+- 本批已通过排位专项21/21、后端完整4589/4589、UI契约335、Vue类型检查、生产/测试服前端构建、Batch253视觉门禁及28图几何/字段顺序验收。只允许一次统一提交推送；本批无部署授权。
+
+## 2026-09-24 对战身份补充验收与图鉴还原
+
+- 对战玩家信息改为严格单列：名次、非重复段位/定级、派系称号、主宰称号各占一行。已有全服名次时不再重复显示“冠冕”，其他段位仍显示；桌面与移动字号、间距同步收紧，不改动战场几何。
+- 7档比例×4种身份缺省组合共28张重新生成；自动断言所有身份项纵向不重叠、不裁切，且移动右栏与返回/投降、记录、计时、回合操作互不侵入。总览图由验收脚本自动合成。
+- 图鉴已撤回分组标题、分组跳转、60张分批截断与回顶按钮，恢复原来的连续卡位、排序、筛选、版本切换与详情交互。仅移动/粗指针设备延迟创建屏幕外卡图；DOM始终保留完整卡池，滚动后按需继续加载。
+- 验证：UI契约336项、Vue类型检查、生产/测试服构建、Batch253真实浏览器验收、移动图鉴完整DOM/首屏延迟/滚动增量三项断言及移动图鉴滚动截图通过。未部署。
+
+## 2026-09-24 `codex需求批次` 全部完成
+
+- 01—10已按文件顺序实现、验证并分别进入统一推送流程；最后一批为全量动效收口。
+- 动效新增集中在 `opcgpro-vue/src/l12/motion.css`，重排基础设施为 `opcgpro-vue/src/l12/useFlip.ts`。后续不得在页面内重新定义另一套时长或缓动，也不得用动效改动桌面/移动牌桌几何。
+- `scripts/check-motion-contracts.mjs`保护动效比例、关闭模式、路由过渡、手牌FLIP、公开入手分支、飞牌落位和受击反馈。修改相关链路必须继续跑完整 Release。
+- 下一步只允许：把本批推送后的提交部署到独立测试服 `https://legion-12.com/testrun/` 并做公网读回；测试服验收后再只读拉取正式服后台 Bug 清单，整理正确性与拟处理顺序，不自动修改或关闭正式 Bug。
+
+## 2026-09-24 测试服发布前置修复
+
+- `cb835f6` 的首次测试服部署没有进入版本切换：路径激活器执行 `nginx -t` 时发现文章分享正则路由使用了 Nginx 禁止的带 URI `proxy_pass`，激活器自动恢复配置并退出。
+- 三份分享路由模板现统一保存原请求路径、内部重写到 `/_l12/share-page`，再使用无 URI 的上游地址；部署行为测试增加精确反回归断言。
+- 后续必须基于包含该修复的新干净提交重新生成 schema 3 Release，再部署测试服；不得复用 `cb835f6` 的旧发布包。
+
+## 2026-09-24 对局记录可读性批次交接
+
+- 原始交接工作树：`C:\Users\neptu\Documents\ChatGPT\Legion12\tmp\match-log-fix`；来源提交 `45650ad`。Main 已将其重放到包含低卡顿性能治理的最新主线，保留移动对战操作停靠与服务端流量守门改动。
+- 范围：服务端 ActionEvent 分组和回放持久化、自动回合公开变化、公共天灾值、议和选择/抽牌、试炼推进和被无效终态；前端统一聚合文本、排序与去重。没有修改游戏结算数值、牌库规则、统计或桌面/移动布局。
+- 已通过：`scripts/verify-l12-change.ps1 -Level Batch` 全绿，包括静态卡池/声明/原子审计、Release 规则 4743/4743、UI 契约 341 项、Vue TypeScript、正式与测试服前端构建。首次完整后端发现的16项反射签名兼容/事件计数回归已修复并由最终 Batch 覆盖。
+- Main 复核补强：回合分隔与自动变化行使用不同序号；重连同序号的新旧副本优先采用含权威分组元数据的版本；来源军团费用归属需精确匹配；未公开响应来源不得因分组元数据提前显示。由 Main 统一提交推送，本批不部署。
+
+## 2026-09-25 牌库正式发布候选
+
+- 本批在 `517369f25a50fd1ee2162293ecd3fe5ad6a70a86` 上整合牌库七项验收纠错及公开牌库不可变版本对局绑定；来源工作树没有提交、推送或部署，Main 已核对补丁哈希、范围与验收证据后接收。
+- 玩家侧重点：公开详情桌面为左统计／中构筑正文／右图鉴同源详情，移动端使用安全区详情；构筑和起手均单击查看；我的牌库保留三项明确操作；二维码只属于已公开稳定网址；对局建议使用主宰 Profile 头像。
+- 服务端重点：平台 schema 5 升 6，账号牌库增加可空公开来源；对局库新增最小版本绑定表并与开局事务原子写入。旧版本可忽略新字段和表，禁止用作者、名称或当前版本反推历史绑定。
+- 玩家更新日志以正式线上提交 `fd0d602eee5baef29adcae07b42e45b1ae274b36` 为基线整理于 `SiteShell.vue`，详细列出这次发布之间所有玩家可感知变化，不写后台、存储或内部实现说明；上一期日志版本已固定为其真实发布提交。
+- 发布纪律：正式服已于 2026-09-25 02:00 进入维护。只在提交级 Release、推送、服务器版本／HTTP／WebSocket读回全部成功后确认部署完成；遵从用户最新指令，部署后继续保持维护，不调用解除维护。
+
+## 2026-09-25 分块恢复与部署后空间收敛
+
+- 前端已增加严格限定的版本分块恢复：只接管动态JS/CSS分块加载失败，相同发布版本与路径只自动恢复一次；第二次失败保持稳定提示，普通接口和业务错误不刷新页面。
+- 生产与测试部署脚本在新版本HTTP、WebSocket、版本身份及Nginx全部通过后，才清理受管上传／暂存、保留当前与两个回滚版本，并移除没有被保留版本引用的内容寻址卡图；任何路径、联接或引用可信度检查失败均停止清理。
+- 运行备份只补充SHA-256旁证，自动删除默认关闭；未经用户另行授权不得开启。专项、正式部署行为41场景、测试部署隔离／回滚／收敛及完整Batch均已通过。
+- 当前总发布纪律以 `artifacts/reports/DEPLOYMENT-BARRIER-20260925.md` 为准：所有在途任务须先完整实现、由Main验收并统一推送；随后先部署并验收测试服，再部署并验收正式服，正式服健康读回成功后解除维护。本文较早的单批部署或“保持维护”记录均是当时历史状态，不再作为当前执行指令。
+
+## 2026-09-25 后台优化 P1-1 接收说明
+
+- Main 已在 `9b3616c` 基线上接收后台优化补丁，范围只包含后台危险操作、权限呈现、审计恢复方法、运营预览指纹、临时密码及相应门禁；没有部署，也没有夹带玩家对战或公开牌库改动。
+- 必须保留 Main 补强：`L12PlatformStore.AdminControlPlane.cs` 在写入管理员命令结果前对 `L12AdminPasswordResetView` 脱敏。首个 HTTP 成功响应可带一次性临时密码，但平台文件和同幂等键重放必须为 `temporaryPassword: null`。
+- 后续修改后台危险操作时必须继续复用 `AdminRiskActionDialog.vue` 与 `useAdminRiskAction.ts`，不得恢复各面板各自实现的确认框；同时执行后台安全契约、UI 契约、Vue 类型检查和真实浏览器响应式验收。
+- 本批通过最终完整 Batch 并由 Main 统一提交推送后，才可释放赛事中心后续批次；仍遵守总发布屏障，不因后台批次完成而单独部署。
+
+## 2026-09-25 根因审计交接与部署权限更新
+
+- 当前根因批次位于 `tmp/effect-root-audit`。共享检索谓词、历史状态写入者守卫、异质资源结构化状态与移动圆图原有状态／独立勾选呈现已实现；不外显“活跃／休整”文字。完整 Batch 已通过：规则 4764/4764、UI 契约 346 项、正式／测试构建各 379 模块；详细结论见 `artifacts/reports/ROOT-CAUSE-AUDIT-20260925.md`。
+- 后续验收必须保留：检索对象同时满足原查看集合与原谓词；主宰弃牌等状态只能从权威入口写入；异质资源必须由玩家按实例选择，以既有圆图视觉区分活跃、休整、不可用和已选择，不添加状态文字。
+- 部署权限以用户最新指令为准：任何测试服或正式服部署都必须收到当次明确部署命令。完成代码、门禁、提交和推送不构成部署授权，也不得沿用本文或旧屏障中的自动部署安排。
+
+## 2026-09-25 后台与赛事中心完整方案交接
+
+- Main 已将后台基础提交、后台零遗留收尾与赛事中心零遗留收尾统一合并；不要再恢复单一 `/admin?section=...` 聚合页、`AdminModulePage.vue` 或 `TournamentCenterPage.vue`。旧 `?section=` 仅允许作为兼容重定向入口。
+- 后台新增功能必须挂在 `adminSections.ts` 的六领域权限矩阵和独立子路由下；危险操作继续复用统一风险确认，Bug 关闭必须由服务端复验修复提交、回归测试、部署版本、复测人与复测时间，或关联真实重复编号。
+- 赛事新增功能必须沿用服务端版本校验、原子牌库快照、房间命令持久化与幂等赛果回填；主办能力与裁判能力不可合并，利益冲突人员不可被分派案件。
+- 本批 Main 验收基线：服务端 210/210、UI 344、赛事 15/15、12 视口、性能扇出 3、324 张卡图及生产／testrun 双构建。部署范围仅为用户本轮明确要求的测试服。
+
+## 2026-09-26 加权墓地多选专项交接
+
+- 工作树：`tmp/bjorn-weighted-selection`；基线 `6bbbcec`。子任务只提交到自身分支，不推送、不部署，由 Main 统一出口。
+- 核心改动：`PromptOverlay` 的拒绝项／实体项互斥、有效候选投影和完整提示身份重置；比约恩成功复活、加权费用及声明格失效不退款回归。
+- Main 验收重点：先“不发动”后选卡、先选卡后“不发动”、同 prompt 多步骤／候选刷新、`minChoose=0` 空选、全部拒绝哨兵，以及目标格被更晚效果占用后比约恩留墓和失败日志。
+- 详细报告：`artifacts/reports/RETURN-20260926-BJORN-WEIGHTED-SELECTION.md`。
+
+## 2026-09-26 全站移动适配与宽屏对战最终收口
+
+- 本批关闭移动对抗报告的 M-01—M-05：图鉴窄屏网格、低高度横屏导航、移动对战记录入口命中、选择卡图比例、宽屏计时轨定位。
+- 宽屏计时器的锁定边界是战区垫右边界与右侧栏左边界之间的实际间隙；对方贴战区垫上沿、我方贴下沿，二者右侧基准一致。不得恢复负边距、固定页面坐标、侵入战区垫或侵入右侧栏的实现。
+- 移动模式按实际几何判定：除宽度断点外，可用高度不超过 640px 的横向页面也使用紧凑抽屉。不得改回手机型号或物理方向判断。
+- 卡图候选保持竖卡 5:7、横卡 8:5；移动操作坞的记录入口拥有独立顶槽；图鉴隐藏详情栏时网格只能保留一列工作区。
+- 自动化证据包括非对战 123 张首屏、长页滚动、后台/个人 12 视口、移动弹框 555 张固定截图、宽屏对战 84 状态、计时 1068 项和牌桌网格 11 视口。后续改动必须继续运行对应专项与完整 Release。
+
+## 2026-09-27 卡牌区域移动动画交接
+
+- 区域动画事实由 `visualTransitionProjection.ts` 统一认领，身份键必须包含 sequence、事件内卡序、实例和起止区域；禁止恢复仅按实例或相邻序号判断的启发式去重。
+- `mill` 的多张卡必须按权威 `event.cards` 顺序串行；牌库起点永久使用 `card-back-official.png`。墓地返回牌库必须由公共顶部／底部入口逐张发布唯一 `return`，调用方不得再次补发。
+- 修改 watcher、事件投影、墓地／牌库移动或表现协调器时，至少运行 `ZoneMovementPresentationEventTests`、移动投影、效果表现合同和真实浏览器区域动画专项，再跑完整 Batch／Release。
+- 主线应用提交 `3be0213`；本批未部署，服务器版本与维护状态均未改变。
+
+## 2026-09-28 对战玩家信息阶段0/1与阶段2首批
+
+- 当前主线候选提交：`40e688e1`；尚未推送，未部署。
+- 阶段0/1已建立126处Prompt调用、324张卡／686个能力／757个展示场景的可重复清单，并记录移动、持续状态、跳过、被无效及攻防结果五类既有日志缺口；清单只作后续迁移依据，不提前声称产品行为已完成。
+- 阶段2首批只改共享选择弹框及“已展示但不合法”对象的权威原因，不改变合法选择集合、费用、响应、结算或隐私投影。前端不得自行推断退款或未来结果；旧检查点缺少原因字段时保留中性不可选状态。
+- Main独立复验：相关规则类543/543；提示合同、战场目标展示、移动弹框比例门禁通过；1280×720、320／360／390／430竖屏及568×320、667×375横屏七档浏览器交互7/7通过，真实触摸滚动、同级按钮尺寸、焦点恢复、无页面横向溢出及战场几何不漂移。
+- 完整服务端历史运行5693例中出现1个长链Journal用例单次失败，单独重跑15/15通过；当前不得把完整套件记作全绿。下一步先完成阶段2界面侧剩余项，响应时序改造须等待卡牌实例离场重置专项完成，避免两个写入者同时改动对战核心状态机。
+
+## 2026-09-29 卡牌实例重置收口与玩家信息 Stage2A 交接
+
+- 主候选已顺序合并 `bfeba921` 和 `6a03b0fd`；前者是服务端卡牌实例跨区重置，后者是调度／准备／对战计时 Stage2A。两批均从独立工作树收口，子对话没有推送或部署。
+- 实例规则保护：私有区边界必须重置；战场／主宰区／圣物区之间保留实例；晋升支付失败必须在任何重置或移动前返回；悟空保存实例的休整状态是公开状态，但实例 ID 不得泄露。
+- Stage2A 保护：调度零选择提交空列表，一选提交唯一实例，待处理时阻止重复提交；对战计时的行动方以 `rankedClock.players[].acting` 为准；移动收起按钮必须保留可见且不误导的 min/max 选择语义，不得通过 `overflow:hidden` 隐藏失败。
+- 验收证据：卡牌实例 68/68，相关 S2／状态 351/351，两份独立审查接受；Stage2A 七档真实交互、五类收起语义共35组、提示合同 10/10、UI 350 项、Vue 类型通过，独立验收最终接受。组合 Batch 首轮只发现悟空主宰实例两条直接转活跃写入未在全局守卫具名；精确补入守卫后专项与守卫 69/69，最终完整规则 5761/5761、UI 350、动效 24/24、视觉投影 69/69及正式／测试构建全绿。
+- 下一步：提交守卫与记录，在干净主候选上串行跑 Release 后统一推送；随后回到原“对战玩家信息”子对话发放 Stage2B 文件租约。不部署；任何测试服或正式服部署都必须等待用户本次明确命令。
+
+## 2026-09-29 对战玩家信息 Stage2B-1 交接
+
+- 工作树：`tmp/battle-player-info-stage2b-20260929`，基线与当时 `origin/main` 均为 `5ed90358`；子对话没有提交、推送或部署。
+- 行为：高杉晋作及三张奥林匹斯翻士气登场效果在首个对手响应前完成公开对象声明；响应文字保留选择时的公开名称／位置／费用或士气状态，目标失效不改选。高杉无目标仍抽1且不能取消必做抽牌；翻士气三卡保留“不发动”。
+- 展示：响应期间只高亮被选择的士气实例，同面资源不串亮；最小化／恢复保持，实例离开或窗口结束清除。观战／裁判只有服务端堆叠投影字段，没有新增可见堆叠 UI。
+- 验收：独立验收先拦截高杉可取消缺陷，修正后最终接受；相关服务端399/399、独立定向74/74、UI350、Vue类型和12档 Edge 通过。完整 Focused 首轮 5766 项中只有能力台账／完成矩阵两份派生指纹过期，项目生成器重建后完整 Batch 通过：规则5766/5766、UI350、正式与 testrun 双构建。待提交级 Release 后推送。
+- 排队下一批：赛事授权裁判实时观战与管理员对局档案回放可见双方完整手牌和盖伏卡正面，但仍是只读视角，不开放牌库顺序、私密交互、私密事件、合法动作或GM面板；普通观战／回放隐私不变。该权限批不得与 Stage2B-1 混写或在未提交候选上并行修改核心投影。
+- 部署：无测试服或正式服部署授权。

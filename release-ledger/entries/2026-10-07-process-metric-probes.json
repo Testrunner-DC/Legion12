@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-process-metric-probes",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "为既有十五阶段统计添加非破坏且不等待的同代快照，新增进程与Linux-v2字段可用性探针；同来源事件增量和文本读取严格有界，不输出路径、身份或异常正文。当前片尚未接定时采样、七日留存或Program，不作为完整对局保障或部署证明，也不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs",
+    "服务端WebSocket/TwelveLegions/L12ProcessMetricSampling.cs"
+  ]
+}

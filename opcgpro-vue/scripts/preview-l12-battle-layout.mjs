@@ -11,7 +11,18 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
+// Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
+// only affects the synthetic preview, allowing it to exercise the production
+// touch-landscape branch without changing application runtime detection.
+if(params.has('mobile')){
+ const nativeMatchMedia=window.matchMedia.bind(window)
+ window.matchMedia=query=>query==='(pointer: coarse) and (hover: none)'
+  ? {matches:true,media:query,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){},dispatchEvent(){return false}}
+  : nativeMatchMedia(query)
+}
+l12State.gmEnabled=params.has('gm')
+if(params.has('referee')){l12State.spectating=true;l12State.observerView='referee'}
 const trialCount=Math.max(0,Math.min(2,Number(params.get('trials')||0)))
 const myTrialCount=Math.max(0,Math.min(1,Number(params.get('myTrials')||0)))
 const showcaseHandCount=Math.max(1,Math.min(40,Number(params.get('hand')||6)))
@@ -24,6 +35,232 @@ const relicCards=catalog.filter(cardDefinition=>cardDefinition.cardType==='artif
 if(relicCards.length){
  players[0].relic=card(relicCards[0],'relic-showcase-my')
  players[1].relic=card(relicCards[1]||relicCards[0],'relic-showcase-opponent')
+}
+const fieldFixture=params.get('field')
+if(fieldFixture==='empty')for(const player of players)player.field=[[null,null,null],[null,null,null]]
+if(fieldFixture==='full'||fieldFixture==='tapped')for(const player of players){
+ player.field=[0,1].map(row=>[0,1,2].map((_,slot)=>({...card(legions[(player.playerIndex*2+row+slot)%legions.length],'b3-field-'+player.playerIndex+'-'+row+'-'+slot),tapped:fieldFixture==='tapped'})))
+}
+const pileFixture=params.get('piles')
+if(pileFixture!==null){
+ const count=Math.max(0,Math.min(40,Number(pileFixture)||0))
+ for(const player of players){
+  player.libraryCount=count
+  player.libraryTop=count?card(legions[0],'b3-library-'+player.playerIndex):null
+  player.graveyard=count?Array.from({length:count},(_,index)=>card(legions[index%legions.length],'b3-grave-'+player.playerIndex+'-'+index)):[]
+  player.graveyardCount=count
+ }
+}
+const markerFixture=params.get('markers')
+if(markerFixture!==null){
+ const count=Math.max(0,Math.min(5,Number(markerFixture)||0))
+ for(const player of players){
+  player.faction=player.playerIndex===0?'taiyangcheng':'gaotianyuan'
+  player.specialZones.canopicTrack=Array.from({length:count},(_,index)=>({...card(legions[index%legions.length],'b3-marker-'+player.playerIndex+'-'+index),completed:index<Math.ceil(count/2)}))
+ }
+}
+const runeFixture=params.get('runes')
+if(runeFixture!==null){
+ const count=Math.max(0,Math.min(5,Number(runeFixture)||0))
+ players[0].faction='otherworld'
+ players[0].specialZones.runes=count
+}
+if(params.has('modalFixture')){
+ for(const player of players){
+  player.factionEffect={
+   cardId:'S02-06S1', imageUrl:'/assets/l12/card-back-disaster.png', name:'太阳城的长篇阵营效果验证标题',
+   effectText:'这是用于移动端安全弹框验证的完整长文本。它包含多行说明、触发条件、选择限制与结算结果。\\n在小屏横向视口中，卡图、标题、正文与按钮必须分别拥有可读空间；正文过长时只能在弹框内部滚动，不能遮住关闭、最小化或返回按钮。\\n再次补充一段文本，用于验证滚动末端与操作区仍保持明确间距。',
+   abilities:[
+    { id:'fixture-one', label:'发动第一段完整阵营效果：选择一张军团并获得增益。' },
+    { id:'fixture-two', label:'发动第二段完整阵营效果：支付士气后公开额外信息。' },
+    { id:'fixture-three', label:'发动第三段完整阵营效果：确认后进入后续选择。' },
+   ],
+  }
+  player.master.effectText='这是主宰弹框的长文本验证内容。主宰能力说明必须在内部滚动，卡图与血量信息不可被控制轨遮挡。\\n第二段：确认主宰弹框在电话和平板横屏中的关闭、最小化和恢复操作。'
+  player.graveyard=Array.from({length:8},(_,index)=>card(legions[index%legions.length],player.playerIndex+'-grave-modal-'+index))
+  player.graveyardCount=player.graveyard.length
+ }
+ const abilityFixture=players[0].field.flat().find(Boolean)
+ if(abilityFixture){
+  abilityFixture.name='移动端长篇卡牌效果验证军团'
+  abilityFixture.effectText='这是用于验证真实卡牌效果弹框的长文本。卡图、标题、正文、发动按钮以及关闭和最小化按钮必须各自保持可读、可点，并且不得超出安全边界。'
+  abilityFixture.abilities=[
+   {id:'fixture-card-one',label:'发动第一段完整卡牌效果：选择一个合法目标并继续结算。'},
+   {id:'fixture-card-two',label:'发动第二段完整卡牌效果：支付费用后查看后续选项。'},
+   {id:'fixture-card-three',label:'发动第三段完整卡牌效果：确认后进入目标选择。'},
+  ]
+ }
+}
+if(params.has('support')){
+ const attacker=players[1].field[0][0],target=players[0].field[0][0]
+ players[0].field[1][0]={...card(legions[1], 'fixture-support-back-row'), tapped:false, troops:Math.max(4000,legions[1].troops||0), activeKeywords:['协防']}
+ l12State.game.phase='Defense';l12State.game.activePlayer=1;l12State.game.prompts=[]
+ l12State.game.pendingDefense={attackerPlayer:1,attackerInstanceId:attacker.instanceId,target:{type:'legion',instanceId:target.instanceId},stage:'DefenseChoice',attackValue:attacker.troops||3000}
+}
+if(params.has('defense')){
+ const attacker=players[1].field[0][0]
+ l12State.game.phase='Defense';l12State.game.activePlayer=1;l12State.game.prompts=[]
+ l12State.game.pendingDefense={attackerPlayer:1,attackerInstanceId:attacker.instanceId,target:{type:'master'},stage:'DefenseChoice',attackValue:attacker.troops||3000}
+}
+if(params.has('richard-tax')&&l12State.game.pendingDefense)l12State.game.pendingDefense.richardDefenseTaxActive=true
+if(params.has('easy-defense')&&l12State.game.pendingDefense)l12State.game.pendingDefense.attackValue=1000
+if(params.has('combat-stage')){
+ const attacker=players[1].field[0][0],target=players[0].field[0][0]
+ const stage=params.get('combat-stage')||'AttackerAttackTiming'
+ l12State.game.phase='Defense';l12State.game.activePlayer=1;l12State.game.prompts=[]
+ l12State.game.pendingDefense={attackerPlayer:1,attackerInstanceId:attacker.instanceId,target:{type:'legion',instanceId:target.instanceId},stage,attackValue:4500}
+ const nextSequence=Math.max(0,...l12State.game.recentEvents.map(event=>event.sequence))+1
+ l12State.game.recentEvents=[...l12State.game.recentEvents,
+  {sequence:nextSequence,type:'attack',playerIndex:1,text:'〈'+attacker.name+'〉4500 vs 〈'+target.name+'〉'+target.troops,cards:[attacker,target]},
+  {sequence:nextSequence+1,type:'combat',playerIndex:1,text:'进攻者以冻结进攻值 4500 造成 4500 点战斗伤害',cards:[attacker,target]},
+ ]
+}
+if(params.has('game-over')){
+ l12State.game.phase='GameOver';l12State.game.winner=params.get('game-over')==='loss'?1:0
+ l12State.game.winnerReason='达成胜利条件。结果将保留在此处，点击返回后才离开本局。双方都离开后关闭房间，最长保留30分钟。服务器保留对局状态。'
+ l12State.rankedSettlement={matchId:l12State.game.matchId,accountId:'fixture-account',faction:'太阳城',won:true,placement:false,placementPlayed:5,placementRequired:5,before:1680,after:1718,delta:38,tierBefore:'辉曜 III',tierAfter:'辉曜 II',components:[{kind:'result',label:'胜负结果',value:24},{kind:'initiative',label:'先后手修正',value:6},{kind:'opponent',label:'对手强度',value:8}],settledAt:new Date().toISOString(),rewardStatus:'applied'}
+}
+if(params.has('card-choice')){
+ const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||6)))
+ const choiceCards=Array.from({length:choiceCount},(_,index)=>params.has('mixed-orientation')&&index%2===1?disasters[index%disasters.length]:legions[index%legions.length])
+ const choices=choiceCards.map((cardDefinition,index)=>'choice-'+index)
+ const mixedAvailability=params.has('mixed-availability')
+ const data={uiPattern:'card-choice',...(mixedAvailability?{cardSelection:'true',displayCardIds:choices.join('|')}:{})}
+ for(const [index,cardDefinition] of choiceCards.entries()){const key='choice-'+index;data[key+':cardId']=cardDefinition.id;data[key+':name']=(index%3===0?'完整长卡名·': '')+cardDefinition.nameZh;data[key+':cardType']=cardDefinition.cardType;data[key+':effect']=cardDefinition.effect||''}
+ const validChoices=mixedAvailability?choices.filter((_,index)=>index%3!==1):choices
+ l12State.game.prompts=[{promptId:'fixture-card-choice',playerIndex:0,kind:'option',text:'从候选卡牌中选择 1 张',validChoices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
+}
+if(params.has('option-fixture')){
+ const choices=['short','long','disabled','skip']
+ l12State.game.prompts=[{promptId:'fixture-equal-options',playerIndex:0,kind:'option',text:'请选择一个语义平行的处理方式',validChoices:choices,minChoose:0,maxChoose:1,choiceLabels:{short:'发动',long:'发动这项文字明显更长但仍然属于同级的效果选项',disabled:'当前条件不足的同级选项',skip:'不发动'},data:{uiPattern:'effect-options','disabledChoice:disabled':'当前条件不足，保持尺寸但不可选择'},createdRevision:1,controller:0}]
+}
+if(params.has('opponent-confirm-fixture')){
+ const choices=['yes','refuse']
+ l12State.game.prompts=[{promptId:'fixture-opponent-confirm',playerIndex:0,kind:'opponent-confirm',text:'是否同意《议和谈判》？',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{yes:'同意',refuse:'不同意'},data:{},createdRevision:1,controller:0}]
+}
+if(params.has('response-fixture')){
+ const choices=['stack-a','stack-b','stack-c']
+ l12State.game.prompts=[{promptId:'fixture-response-targets',playerIndex:0,kind:'response-target',text:'选择要响应的效果',validChoices:choices,minChoose:1,maxChoose:1,choiceLabels:{},data:{'stack-a':'短来源','stack-b':'同名来源：第二段\\n公开目标：长名称军团与附加状态','stack-c':'第三个来源：包含更多语义说明但尺寸必须一致'},createdRevision:1,controller:0}]
+}
+if(params.has('invalid-response-fixture')){
+ const serverNow=new Date(),deadline=new Date(serverNow.getTime()+5000)
+ l12State.game.prompts=[{promptId:'fixture-invalid-response',playerIndex:0,kind:'response',text:'当前堆叠中有未结算效果',validChoices:['pass'],minChoose:1,maxChoose:1,choiceLabels:{pass:'不响应'},data:{choiceMode:'instant'},createdRevision:1,controller:0,stackItemId:'fixture-stack',autoClose:{reason:'no-valid-response',deadlineUtc:deadline.toISOString(),serverNowUtc:serverNow.toISOString()}}]
+}
+if(params.has('information-contract')){
+ l12State.game.phase='Main';l12State.game.activePlayer=1
+ for(const player of players)player.field=[0,1].map(row=>[0,1,2].map((_,slot)=>({...card(legions[0],'info-'+player.playerIndex+'-'+row+'-'+slot),name:'同名测试军团',troops:6000-(row*1000+slot*500),tapped:slot===1})))
+ const first=players[0].field[0][0].instanceId,unavailable=players[0].field[0][1].instanceId,opponent=players[1].field[1][2].instanceId
+ const data={cardSelection:'true',displayCardIds:[first,unavailable,opponent].join('|'),allowCancel:'true'}
+ data['disabledChoice:'+unavailable]='该军团已休整，不能成为本次效果目标'
+ l12State.game.prompts=[{
+  promptId:'fixture-information-contract',playerIndex:0,kind:'card',
+  text:'〈测试来源〉发动时选择目标',validChoices:[first,opponent,'skip','cancel'],
+  minChoose:1,maxChoose:1,
+  choiceLabels:{[first]:'同名测试军团',[unavailable]:'同名测试军团',[opponent]:'同名测试军团',skip:'不发动',cancel:'取消整次发动'},
+  data,createdRevision:1,controller:0,
+  presentation:{
+   title:'〈测试来源〉选择本次效果目标',
+   situation:'〈测试来源〉发动后需要决定处理对象。当前由我方玩家操作；本次选择只影响指定的一张军团。下段效果是否能完成仍以结算时的合法状态为准。'.repeat(2),
+   instruction:'从双方战场选择1张仍合法的军团；同名卡按位置与当前兵力区分。确认前可查看详情或收起弹框。',
+   waitingSummary:'我方玩家正在选择效果对象',
+   choiceConsequences:{[first]:'选择此军团作为本次效果对象；确认后继续结算。',[opponent]:'选择对方军团作为本次效果对象；确认后继续结算。',skip:'本次效果不发动。',cancel:'取消整次发动，已支付的费用不会自动返还。'},
+   paymentStatus:'paid',paymentSummary:'已支付2士气；本次选择取消或目标之后失效时，费用不会自动返还。',
+   submissionConsequence:'确认后锁定所选对象并继续结算；实际结果以权威结算为准。',
+  },
+ }]
+}
+if(params.has('order-direction-fixture')){
+ const mode=params.get('order-direction-fixture')
+ const names=['甲号测试卡','乙号测试卡','丙号测试卡']
+ l12State.game.phase='Main';l12State.game.activePlayer=0
+ if(mode==='trigger-order'){
+  const choices=names.map((_,index)=>'fixture-trigger-'+index)
+  l12State.game.prompts=[{promptId:'fixture-trigger-direction',playerIndex:0,kind:'trigger-order',
+   text:'同一时点有多个效果触发，请按发动先后排列（后发动的先结算）',validChoices:choices,
+   minChoose:3,maxChoose:3,choiceLabels:Object.fromEntries(choices.map((id,index)=>[id,names[index]+'的触发效果'])),
+   data:{choiceMode:'ordered'},createdRevision:1,controller:0}]
+ }else if(['split-top-bottom','all-top-bottom','all-bottom'].includes(mode)){
+  const cards=players[0].hand.slice(0,3).map((entry,index)=>({...entry,name:names[index]}))
+  players[0].hand=cards;players[0].handCount=cards.length
+  const choices=cards.map(entry=>entry.instanceId)
+  l12State.game.prompts=[{promptId:'fixture-library-direction-'+mode,playerIndex:0,kind:'order',
+   text:'排列查看的三张牌',validChoices:choices,minChoose:3,maxChoose:3,
+   choiceLabels:Object.fromEntries(choices.map((id,index)=>[id,names[index]])),
+   data:{placementMode:mode,displayCardIds:choices.join('|'),layout:'single-row'},createdRevision:1,controller:0}]
+ }
+}
+window.__l12State=l12State
+if(params.has('disaster-choice')){
+ const choiceCount=Math.max(1,Math.min(20,Number(params.get('choice-count')||8)))
+ const choiceCards=Array.from({length:choiceCount},(_,index)=>disasters[index%disasters.length])
+ const choices=choiceCards.map((_,index)=>'disaster-choice-'+index)
+ const mixedAvailability=params.has('mixed-availability')
+ const kind=params.has('disaster-pick')?'disaster-pick':'disaster-ban'
+ const data={uiPattern:'card-choice',cardSelection:'true',displayCardIds:choices.join('|')}
+ for(const [index,cardDefinition] of choiceCards.entries()){const key=choices[index];data[key+':cardId']=cardDefinition.id;data[key+':name']=(index%3===0?'完整长天灾名称·': '')+cardDefinition.nameZh;data[key+':cardType']=cardDefinition.cardType;data[key+':effect']=cardDefinition.effect||''}
+ const validChoices=mixedAvailability?choices.filter((_,index)=>index%3!==1):choices
+ const action=kind==='disaster-ban'?'禁用':'选择'
+ l12State.game.prompts=[{promptId:'fixture-'+kind,playerIndex:0,kind,text:'从候选天灾中'+action+' 1 张',validChoices,minChoose:1,maxChoose:1,choiceLabels:Object.fromEntries(choices.map((choice,index)=>[choice,choiceCards[index].nameZh])),data,createdRevision:1,controller:0}]
+}
+if(params.has('morale-payment')){
+ const runeChoices=Array.from({length:Math.max(0,Math.min(players[0].specialZones.runes||0,Number(params.get('rune-usable')||0)))},(_,index)=>'rune:'+(index+1))
+ const validChoices=[...runeChoices,...players[0].morale.slice(0,5).map(item=>item.instanceId),...(params.has('payment-actions')?['skip','cancel']:[])]
+ const returning=params.has('payment-return')
+ l12State.game.prompts=[{promptId:'fixture-morale-payment',playerIndex:0,kind:returning?'resource-return':'resource-payment',text:returning?'选择2枚士气返还':'选择2枚士气支付',validChoices,minChoose:2,maxChoose:2,choiceLabels:{skip:'不发动',cancel:'取消打出'},data:{choiceMode:returning?'resource-return':'resource-payment'},...(params.has('inline-rich')?{presentation:{title:returning?'返还士气':'支付士气',situation:'〈同名测试军团〉的效果正在等待处理。',instruction:returning?'选择要返还的2枚士气。':'选择要支付的2枚士气。',waitingSummary:'等待操作玩家处理士气',choiceConsequences:{skip:'本次不发动',cancel:'取消本次打出'},paymentStatus:params.has('payment-paid')?'paid':'pending',paymentSummary:'2枚士气',submissionConsequence:returning?'所选士气将返还。':'所选士气将作为本次费用支付。'}}:{}) ,createdRevision:1,controller:0}]
+}
+if(params.has('action-fixture')){
+ l12State.game.phase='Main';l12State.game.activePlayer=0;l12State.game.prompts=[]
+ const attacker=players[0].field[0][0]
+ const target=players[1].field[0][0]
+ if(attacker){attacker.tapped=false;attacker.summonRound=1;attacker.abilities=[{id:'fixture-active',label:'发动：获得测试增益',enabled:true}]}
+ players[0].field[1][2]=null
+ const handCard=players[0].hand[0]
+ if(handCard){handCard.cost=0;handCard.currentCost=0;handCard.playCost=0;handCard.playBlockedReason=''}
+ l12State.game.legalAttackTargets=attacker&&target?{[attacker.instanceId]:[target.instanceId,'master']}:{ }
+}
+if(params.has('disaster-chain')){
+ const current={...card(disasters[0],'fixture-disaster-current'),name:'黯陨晨星灾变',hidden:false}
+ const incoming={...card(disasters[1]||disasters[0],'fixture-disaster-incoming'),hidden:false}
+ l12State.game.activeDisaster=current
+ l12State.game.sessionDisasters=[current,incoming,...disasters.slice(2,4).map((definition,index)=>({...card(definition,'fixture-disaster-rest-'+index),hidden:false}))]
+ l12State.game.removedDisasters=[]
+ let disasterSequence=Math.max(0,...l12State.game.recentEvents.map(event=>event.sequence))
+ const setPrompt=visible=>{
+  l12State.game.prompts=visible?[{
+   promptId:'fixture-disaster-obstruction',playerIndex:0,kind:'option',text:'天灾结算前的选择',validChoices:['yes','no'],minChoose:1,maxChoose:1,
+   choiceLabels:{yes:'确认',no:'不发动'},data:{uiPattern:'effect-decision',effectText:'这是用于验证天灾动画等待与中断的真实交互弹框。'},createdRevision:1,controller:0,
+  }]:[]
+ }
+ window.__disasterFixture={
+  currentId:current.instanceId,
+  incomingId:incoming.instanceId,
+  openPrompt(){setPrompt(true)},
+  closePrompt(){setPrompt(false)},
+  emitReveal(triggered=false){
+   l12State.game.activeDisaster=incoming
+   const reveal={sequence:++disasterSequence,type:'disaster-reveal',playerIndex:null,text:'公开天灾〈'+incoming.name+'〉',cards:[incoming]}
+   const events=[reveal]
+   if(triggered)events.push({sequence:++disasterSequence,type:'effect-trigger',playerIndex:null,text:'〈'+incoming.name+'〉的天灾效果触发',effectText:'天灾效果开始结算。',cards:[incoming],effectResultStatus:'resolved'})
+   l12State.game.recentEvents=[...l12State.game.recentEvents,...events]
+   return events.map(event=>event.sequence)
+  },
+ }
+}
+if(params.has('board-target')){
+ const mixedReal=params.has('target-mixed-real')
+ const targetCards=(mixedReal?[players[0].field[0][0]]:[players[0].field[0][0],players[1].field[0][2],players[0].field[1][1]]).filter(Boolean)
+ if(params.has('inline-rich'))targetCards.forEach(card=>{card.name='同名测试军团'})
+ const choices=targetCards.map(card=>card.instanceId)
+ const mixed=params.has('target-mixed')||mixedReal
+ const resourceChoices=mixed?players[0].morale.slice(0,mixedReal&&!params.has('target-mixed-unique')?2:1).map(item=>item.instanceId):[]
+ const validChoices=[...choices,...resourceChoices,'skip',...(params.has('target-mixed-cancel')?['cancel']:[])]
+ const lockedChoice=mixedReal&&params.has('target-mixed-unique')?resourceChoices[0]:params.has('target-locked')?choices[0]:null
+ const data={choiceMode:mixed?'mixed-board-payment':'board-target',...(lockedChoice?{lockedChoices:lockedChoice}:{})}
+ l12State.game.prompts=[{promptId:'fixture-board-target',playerIndex:0,kind:'target',text:mixedReal?'选择2项战场费用':'选择 1–2 个战场目标',validChoices,minChoose:mixedReal?2:1,maxChoose:2,choiceLabels:{skip:'不发动',...(params.has('target-mixed-cancel')?{cancel:'取消选择'}:{})},data,...(params.has('inline-rich')?{presentation:{title:mixed?'选择战场费用':'指定效果目标',situation:params.has('inline-long')?'〈同名测试军团〉的效果正在等待处理；请选择合法战场对象并在确认前核对费用与后果。'.repeat(8):'〈同名测试军团〉的效果正在等待处理。',instruction:mixed?'选择要支付的战场对象。':'选择1至2个战场目标。',waitingSummary:'等待操作玩家指定目标',choiceConsequences:{skip:'本次不发动',...(params.has('target-mixed-cancel')?{cancel:'取消本次费用'}:{})},paymentStatus:mixed?'pending':null,paymentSummary:mixed?(mixedReal?'2项战场费用':'1至2个战场对象'):null,submissionConsequence:mixed?'所选对象将作为费用提交。':'将以所选对象继续处理效果。'}}:{}) ,createdRevision:1,controller:0}]
+}
+if(params.has('board-slot')){
+ const opponent=params.has('slot-opponent')
+ l12State.game.prompts=[{promptId:'fixture-board-slot',playerIndex:0,kind:'slot',text:'选择空格位',validChoices:['0:1','1:2','skip'],minChoose:1,maxChoose:1,choiceLabels:{skip:'取消'},data:{choiceMode:'board-slot',targetPlayerIndex:opponent?'1':'0'},...(params.has('inline-rich')?{presentation:{title:'选择登场格位',situation:'〈同名测试军团〉等待登场。',instruction:'在高亮空格中选择登场位置。',waitingSummary:'等待操作玩家指定格位',choiceConsequences:{skip:'取消本次登场'},submissionConsequence:'选中格位后立即提交登场位置。'}}:{}) ,createdRevision:1,controller:0}]
 }
 if(trialCount){
  players[1].specialZones.trials=Array.from({length:trialCount},(_,index)=>({
@@ -47,6 +284,13 @@ if(params.has('fieldIndicators')){
 }
 if(params.has('rankedClock')){
  const receivedAtMs=Date.now()
+ const totalMs=Math.max(0,Number(params.get('totalMs')||754000))
+ const operationMs=Math.max(0,Number(params.get('operationMs')||68000))
+ const reconnectMs=Math.max(0,Number(params.get('reconnectMs')||119000))
+ const disconnectedPlayer=params.get('disconnected')===null?-1:Number(params.get('disconnected'))
+ const clockPhase=params.get('clockPhase')
+ if(clockPhase)l12State.game.phase=clockPhase
+ if(params.get('activePlayer')!==null)l12State.game.activePlayer=Number(params.get('activePlayer'))||0
  l12State.rankedClock={
   serverUtcMs:receivedAtMs,
   receivedAtMs,
@@ -54,9 +298,15 @@ if(params.has('rankedClock')){
   operationLimitMs:90000,
   reconnectLimitMs:120000,
   players:[
-   {playerIndex:0,totalRemainingMs:754000,operationRemainingMs:68000,acting:true,connected:true},
-   {playerIndex:1,totalRemainingMs:821000,operationRemainingMs:90000,acting:false,connected:true},
+   {playerIndex:0,totalRemainingMs:totalMs,operationRemainingMs:operationMs,reconnectRemainingMs:disconnectedPlayer===0?reconnectMs:null,acting:l12State.game.activePlayer===0,connected:disconnectedPlayer!==0},
+   {playerIndex:1,totalRemainingMs:Math.max(totalMs,821000),operationRemainingMs:90000,reconnectRemainingMs:disconnectedPlayer===1?reconnectMs:null,acting:l12State.game.activePlayer===1,connected:disconnectedPlayer!==1},
   ],
+ }
+ window.__clockFixture={
+  setPhase(phase,activePlayer=0){l12State.game.phase=phase;l12State.game.activePlayer=activePlayer;for(const player of l12State.rankedClock.players)player.acting=player.playerIndex===activePlayer;l12State.rankedClock.receivedAtMs=Date.now()},
+  disconnect(playerIndex,reconnectRemainingMs=119000){const player=l12State.rankedClock.players.find(item=>item.playerIndex===playerIndex);if(player){player.connected=false;player.reconnectRemainingMs=reconnectRemainingMs;l12State.rankedClock.receivedAtMs=Date.now()}},
+  reconnect(playerIndex){const player=l12State.rankedClock.players.find(item=>item.playerIndex===playerIndex);if(player){player.connected=true;player.reconnectRemainingMs=null;l12State.rankedClock.receivedAtMs=Date.now()}},
+  setDurations(totalRemainingMs,operationRemainingMs){const player=l12State.rankedClock.players[0];player.totalRemainingMs=totalRemainingMs;player.operationRemainingMs=operationRemainingMs;l12State.rankedClock.receivedAtMs=Date.now()},
  }
 }
 const deathMode=params.get('death')
@@ -70,7 +320,16 @@ if(deathMode!==null)setTimeout(()=>{
  if(deathMode!=='effect')events.push({sequence:102,type:'combat',playerIndex:0,text:'进攻者以冻结进攻值 3000 造成 3000 点战斗伤害；防守军团以当前兵力 2000 反击',cards:[attacker,defeated]})
  l12State.game.recentEvents=[...l12State.game.recentEvents,...events]
 },800)
+if(params.has('canvas'))window.__battleDockFixture={state:l12State}
 const previewState={game:l12State.game,room:l12State.room,socket:l12State.socket,rankedClock:l12State.rankedClock}
+window.__osirisFixture={start({gameOver=false}={}){
+ const current=previewState.game
+ const sequence=Math.max(0,...(current.recentEvents||[]).map(event=>event.sequence||0))+1
+ const next={...current,phase:gameOver?'GameOver':current.phase,winner:gameOver?0:current.winner,
+  recentEvents:[...(current.recentEvents||[]),{sequence,type:'special-victory',playerIndex:0,
+   text:'〈复苏的奥西里斯〉达成特殊胜利',cards:[{cardId:'S01-02M2',instanceId:'fixture-osiris-victory',name:'复苏的奥西里斯'}]}]}
+ previewState.game=next;l12State.game=next
+}}
 if(import.meta.hot){
  let previewReloadScheduled=false
  import.meta.hot.on('vite:beforeUpdate',()=>{
@@ -86,13 +345,10 @@ window.setInterval(()=>{
  l12State.status='online'
  l12State.pendingAction=false
  if(previewState.rankedClock){
-  const now=Date.now()
-  previewState.rankedClock.receivedAtMs=now
-  previewState.rankedClock.serverUtcMs=now
   l12State.rankedClock=previewState.rankedClock
  }
 },200)
-const app=createApp({render:()=>h(GamePage)})
+const app=createApp({setup(){ if(params.has('canvas'))useLandscapeViewport(viewportRef(true)); return ()=>params.has('canvas')?h('div',{class:'l12-landscape-surface'},[h(GamePage),h(GlobalBugFeedback)]):h(GamePage) }})
 app.use(createRouter({history:createMemoryHistory(),routes:[]}))
 app.mount('#app')
 `
@@ -103,6 +359,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`Invali
 
 const server = await createServer({
   root,
+  // Avoid the bundled config temporary-file path.  That directory can be held by
+  // a concurrent local dev server during visual QA on Windows.
+  configLoader: 'runner',
   server: { host: '127.0.0.1', port, strictPort: true },
   plugins: [{
     name: 'l12-battle-layout-preview',
@@ -112,7 +371,7 @@ const server = await createServer({
       devServer.middlewares.use((request, response, next) => {
         if (!request.url?.match(/^\/__l12_battle_preview__(\?|$)/)) { next(); return }
         response.setHeader('Content-Type', 'text/html; charset=utf-8')
-        response.end('<div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__l12_battle_preview__.js"></script>')
+        response.end('<div id="l12-landscape-teleports"></div><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__l12_battle_preview__.js"></script>')
       })
     },
   }],

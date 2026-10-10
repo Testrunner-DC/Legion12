@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-rule-center-density-readonly",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "规则中心浏览体验优化",
+  "changes": [
+    {
+      "category": "rules",
+      "text": "规则中心的产品筛选按新到旧排列并支持展开、收起和一键清除当前筛选；超宽屏内容保持合理阅读宽度，移动端和短横屏不会出现页面横向滚动。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/RuleCenterPage.vue"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-05-blood-eagle-decline",
+  "date": "2026-10-05",
+  "audience": "players",
+  "title": "复仇血鹰的发动选择",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "复仇血鹰在墓地不足两张可回收的阿斯加德卡牌时，仍可选择不发动；选择发动时只结算减兵力，不会强迫选择不存在的回收目标。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"]
+    }
+  ]
+}

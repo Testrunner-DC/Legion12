@@ -132,6 +132,54 @@ public sealed class PromptCardPresentationSnapshotTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "prompt-card:graveyard-selection-shows-complete-zone-and-disables-illegal")]
+    public void GraveyardSelectionDisplaysEveryCardButKeepsOnlyLegalTargetsSelectable()
+    {
+        var game = Create();
+        var legal = Card("S01-0104", "grave-legal");
+        var illegal = Card("S01-0003", "grave-illegal");
+        game.State.Players[0].Graveyard.AddRange([legal, illegal]);
+
+        CreatePrompt(game, "grave-card", [legal.InstanceId]);
+        var prompt = SnapshotPrompt(game);
+        var data = prompt.GetProperty("data");
+
+        Assert.Equal(string.Join('|', legal.InstanceId, illegal.InstanceId),
+            data.GetProperty("displayCardIds").GetString());
+        Assert.Equal("graveyard", data.GetProperty("sourceZone").GetString());
+        Assert.Equal([legal.InstanceId], prompt.GetProperty("validChoices").EnumerateArray()
+            .Select(item => item.GetString()!).ToArray());
+        AssertCardMetadata(prompt, legal, "墓地");
+        AssertCardMetadata(prompt, illegal, "墓地");
+        Assert.False(data.TryGetProperty($"disabledChoice:{legal.InstanceId}", out _));
+        Assert.Equal("该卡不符合本次效果的选择条件",
+            data.GetProperty($"disabledChoice:{illegal.InstanceId}").GetString());
+        Assert.Empty(JsonSerializer.SerializeToElement(game.SnapshotFor(1), JsonOptions)
+            .GetProperty("prompts").EnumerateArray());
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "prompt-card:legacy-checkpoint-without-reasons-remains-readable")]
+    public void OldPromptCheckpointWithoutDisabledReasonsKeepsItsChoicesAndDisplay()
+    {
+        var game = new L12GameEngine(Catalog, "legacy-prompt-reason", "LEGACY-REASON", 20904,
+            ["甲", "乙"], [0, 0], skipPreparation: true, stateFormatVersion: 2);
+        var legal = Card("S01-0104", "legacy-legal");
+        var illegal = Card("S01-0003", "legacy-illegal");
+        game.State.Players[0].Graveyard.AddRange([legal, illegal]);
+        var original = CreatePrompt(game, "grave-card", [legal.InstanceId]);
+        original.Data.Remove($"disabledChoice:{illegal.InstanceId}");
+
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence);
+        var prompt = Assert.Single(restored.State.PendingPrompts);
+        Assert.Equal([legal.InstanceId], prompt.ValidChoices);
+        Assert.Equal(string.Join('|', legal.InstanceId, illegal.InstanceId), prompt.Data["displayCardIds"]);
+        Assert.False(prompt.Data.ContainsKey($"disabledChoice:{illegal.InstanceId}"));
+        Assert.Equal("true", prompt.Data["cardSelection"]);
+    }
+
+    [Fact]
     [Trait("L12Evidence", "prompt-card:trial-order-is-card-order-trigger-order-is-not")]
     public void OrderingKindsUseCardEvidenceInsteadOfBlindKindMatching()
     {

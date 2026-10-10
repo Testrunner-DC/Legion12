@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-season-activation-atomic-cutover",
+  "date": "2026-09-29",
+  "audience": "internal",
+  "reason": "后台赛季草稿新增人工原子启用链路：切换前强制确认排位对局、持久化运行态和结算异常均已清空；成功后一次性冻结旧赛季历史，并保留玩家当前段位、积分、连胜、定级进度和隐藏匹配分。该批不启用定时自动切季，不改变排位加减分算法。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedMasterTitles.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12RankedIntegrity.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.RankedPersistence.cs"
+  ]
+}

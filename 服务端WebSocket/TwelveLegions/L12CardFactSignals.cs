@@ -95,11 +95,21 @@ public sealed partial class L12GameEngine
                 });
         }
 
-        if (type is not ("effect-failed" or "effect-cancelled" or "effect-noop")) return;
+        if (type is not ("effect-failed" or "effect-cancelled" or "effect-noop" or "effect-declined")) return;
         var currentStack = State.EffectStack.LastOrDefault();
         if (currentStack is not null)
         {
             _fizzledAnalyticsStackItems.Add(currentStack.StackItemId);
+            currentStack.Data["effectResultStatus"] = type switch
+            {
+                "effect-noop" => "skipped",
+                "effect-declined" => "declined",
+                // Historical resolvers used effect-cancelled for an object, source,
+                // slot or payment state that became invalid while settling.  That is
+                // a failed settlement, not the player's explicit decision to decline.
+                "effect-cancelled" => "failed",
+                _ => "failed",
+            };
             return;
         }
         foreach (var card in cards)
@@ -107,26 +117,33 @@ public sealed partial class L12GameEngine
                 data: new Dictionary<string, string> { ["eventType"] = type });
     }
 
-    private void TrackStackCompletion(L12StackItem item)
+    private string TrackStackCompletion(L12StackItem item)
     {
         if (item.Negated)
         {
             TrackStackFact("negate", item);
             _fizzledAnalyticsStackItems.Remove(item.StackItemId);
-            return;
+            return "negated";
         }
-        if (_fizzledAnalyticsStackItems.Remove(item.StackItemId))
+        var recordedStatus = item.Data.GetValueOrDefault("effectResultStatus");
+        var recordedFizzle = _fizzledAnalyticsStackItems.Remove(item.StackItemId);
+        if (!string.IsNullOrWhiteSpace(recordedStatus) || recordedFizzle)
         {
-            TrackStackFact("fizzle", item, "partial");
-            return;
+            var status = string.IsNullOrWhiteSpace(recordedStatus) ? "failed" : recordedStatus;
+            TrackStackFact("fizzle", item, "partial", new Dictionary<string, string>
+            {
+                ["resultStatus"] = status,
+            });
+            return status;
         }
         TrackStackFact("resolve", item);
+        return "resolved";
     }
 
     private void TrackMasterDamageFact(int targetPlayerIndex, int amount, int? declaredSourcePlayer,
-        bool neutralSource, bool combatDamage)
+        bool neutralSource, bool combatDamage, L12StackItem? declaredSourceItem = null)
     {
-        var source = State.EffectStack.LastOrDefault();
+        var source = declaredSourceItem ?? State.EffectStack.LastOrDefault();
         var sourcePlayer = ResolveDamageSourcePlayer(declaredSourcePlayer, neutralSource);
         var data = new Dictionary<string, string>(StringComparer.Ordinal)
         {

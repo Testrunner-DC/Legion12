@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-canopic-whole-entry-effect",
+  "date": "2026-10-07",
+  "audience": "players",
+  "title": "卡诺匹斯登场效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "卡诺匹斯箱及四种卡诺匹斯罐的登场效果只响应一次；被绝对防御等效果无效后，不再执行后续弃置或回血，卡牌保留在圣物区。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    }
+  ]
+}

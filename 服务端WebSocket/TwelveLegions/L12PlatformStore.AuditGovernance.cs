@@ -249,6 +249,7 @@ public sealed partial class L12PlatformStore
     private L12AuditArchiveSegmentView WriteAuditArchiveSegment(DateTimeOffset from,
         DateTimeOffset until, IReadOnlyList<AuditArchiveEvent> events)
     {
+        using var deployment = EnterDeploymentMutation();
         var id = Guid.NewGuid().ToString("N");
         var createdAt = DateTimeOffset.UtcNow;
         var fileName = $"audit-{until:yyyyMMddHHmmss}-{id}.jsonl";

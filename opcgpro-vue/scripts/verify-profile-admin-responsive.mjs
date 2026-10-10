@@ -1,0 +1,368 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/profile-admin-responsive')
+const require = createRequire(import.meta.url)
+const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+fs.mkdirSync(output, { recursive: true })
+
+const entry = `
+import {createApp,h} from 'vue'
+import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
+import '/src/style.css'
+import '/src/l12/site/uiSystem.css'
+
+const permissions=['admin.accounts.read','admin.accounts.status.write','admin.sessions.read','admin.sessions.revoke','admin.bugs.read','admin.bugs.write','admin.effects.read','admin.effects.review','admin.audit.read','admin.security.read','admin.runtime.read','admin.analytics.read']
+localStorage.setItem('l12-auth-token','qa-token')
+localStorage.setItem('l12-account',JSON.stringify({id:'qa-admin',username:'移动端验收管理员',role:'admin',createdAt:'2026-09-21T00:00:00Z',publicHistory:true,permissions,permissionVersion:8}))
+const platform=await import('/src/l12/platform.ts')
+platform.platformState.token='qa-token'
+platform.platformState.account={id:'qa-admin',username:'移动端验收管理员',role:'admin',createdAt:'2026-09-21T00:00:00Z',publicHistory:true,permissions,permissionVersion:8}
+platform.authState.initialized=true
+platform.authState.verified=true
+platform.authState.refreshing=false
+const integrity=await import('/src/l12/rankedIntegrity.ts')
+window.__qaIntegrityReads={notifications:0,appeals:0}
+integrity.integrityApi.notifications=async()=>{
+ window.__qaIntegrityReads.notifications++
+ return {items:[{id:'private-penalty',decisionId:'decision-1',matchIds:['fixture-match'],outcome:'restricted',reason:'仅本人可见的验收判罚',decidedAt:'2026-09-25T08:00:00Z',scoreDelta:0,appealGuidance:'可申诉',acknowledged:true}],nextCursor:null}
+}
+integrity.integrityApi.appeals=async()=>{window.__qaIntegrityReads.appeals++;return {items:[],nextCursor:null}}
+
+const stat=(games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins)=>({games,wins,losses,draws,firstGames,firstWins,secondGames,secondWins})
+platform.playerApi.statistics=async(range='season')=>{
+ const empty=new URLSearchParams(location.search).get('qaEmpty')==='1'
+ const values=empty?{games:0,wins:0,ranked:0,masterGames:[]}:
+  range==='7d'?{games:7,wins:4,ranked:5,masterGames:[4,3]}:
+  range==='30d'?{games:30,wins:18,ranked:21,masterGames:[16,14]}:
+  {games:128,wins:77,ranked:86,masterGames:[65,63]}
+ const overall=stat(values.games,values.wins,Math.max(0,values.games-values.wins),0,Math.ceil(values.games/2),Math.ceil(values.wins/2),Math.floor(values.games/2),Math.floor(values.wins/2))
+ return {range,fromUtc:range==='7d'?'2026-09-18T08:00:00Z':range==='30d'?'2026-08-26T08:00:00Z':'2026-07-01T00:00:00Z',untilUtc:'2026-09-25T08:00:00Z',seasonId:range==='season'?'S2026-2':undefined,
+  overall,ranked:stat(values.ranked,Math.min(values.wins,values.ranked),Math.max(0,values.ranked-values.wins),0,Math.ceil(values.ranked/2),Math.ceil(Math.min(values.wins,values.ranked)/2),Math.floor(values.ranked/2),Math.floor(Math.min(values.wins,values.ranked)/2)),updatedAt:'2026-09-21T08:00:00Z',
+  masters:values.masterGames.map((games,index)=>({masterId:['S01-01M1','S01-02M1'][index],masterName:['梅杰德','阿斯加德'][index],overall:stat(games,Math.ceil(games*.6),Math.floor(games*.4),0,Math.ceil(games/2),Math.ceil(games*.3),Math.floor(games/2),Math.floor(games*.3)),ranked:stat(Math.max(0,games-1),Math.ceil(games*.5),Math.max(0,Math.floor(games*.5)-1),0,Math.ceil(games/2),Math.ceil(games*.25),Math.floor(games/2),Math.floor(games*.25))}))}
+}
+platform.rankedApi.overview=async()=>({
+ profile:{accountId:'qa-admin',username:'移动端验收管理员',seasonId:'S2026-2',faction:'秩序',sevenValue:2380,displayValue:'七曜值 2380',placementPlayed:10,placementWins:7,placed:true,wins:52,losses:33,winStreak:3,lossStreak:0,tier:'璀璨群星',tierIndex:6,factionRank:3,titles:['秩序先锋','最强梅杰德'],rankLabel:'璀璨群星 · 秩序第 3',selectedMasterTitle:'最强梅杰德',masterTitles:['最强梅杰德','最强阿斯加德']},
+ factionTotals:{秩序:36},config:{placementMatches:10,placementMaximum:10,broadcastEnabled:true,factions:[],masterTitles:[],timeControl:{totalTimeSeconds:1500,operationTimeSeconds:240,reconnectGraceSeconds:240,disasterDecisionSeconds:60,mulliganDecisionSeconds:60},broadcast:{displaySeconds:16,lobbyDelaySeconds:3,intervalSeconds:15,winStreakThreshold:5,streakEndedThreshold:5,minimumTierIndex:0,winStreakEnabled:true,streakEndedEnabled:true,highestTierEnabled:true,factionTitleEnabled:true,masterTitleEnabled:true}},history:[
+  {seasonId:'S2026-1',seasonName:'群星归位赛季',seasonMonth:'2026年9月',faction:'秩序',sevenValue:123456,displayValue:'七曜值 123,456',placementPlayed:10,placementWins:8,wins:46,losses:14,winStreak:5,archivedAt:'2026-10-01T08:00:00Z',tier:'冠冕',winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],factionRank:1,overallRank:2,placed:true,placementRequired:10,rankLabel:'冠冕'},
+  {seasonId:'S2025-4',seasonName:'旧版历史赛季',faction:'混沌',sevenValue:8200,displayValue:'七曜值 8,200',placementPlayed:5,placementWins:3,wins:12,losses:9,winStreak:1,archivedAt:'2025-12-20T08:00:00Z',tier:'进阶',winRate:57.1,factionTitle:null,masterTitles:[],titles:[],factionRank:null,overallRank:null,placed:null,placementRequired:null,rankLabel:null}
+ ]
+})
+let seasonSummaryNotifications=[{id:'summary-1',seasonId:'S2026-1',seasonName:'群星归位远征纪念特别长名称极限宽屏短高度赛季第三十六期最终章特别纪念版本',faction:'秩序',placed:true,rankLabel:'冠冕',factionRank:1,overallRank:2,sevenValue:123456,displayValue:'七曜值 123,456',wins:46,losses:14,winRate:76.7,factionTitle:'秩序冠首',masterTitles:['最强梅杰德'],titles:['秩序冠首','最强梅杰德'],availableAt:'2026-09-20T08:00:00Z'}]
+platform.rankedApi.selectTitle=async(title)=>({...((await platform.rankedApi.overview()).profile),selectedMasterTitle:title||null})
+platform.seasonSummaryApi.notifications=async()=>seasonSummaryNotifications
+platform.seasonSummaryApi.acknowledge=async(id)=>{seasonSummaryNotifications=seasonSummaryNotifications.filter(item=>item.id!==id)}
+platform.sessionApi.list=async()=>[
+ {id:'session-current-long-identifier',createdAt:'2026-09-20T09:00:00Z',expiresAt:'2026-10-20T09:00:00Z',current:true,authStrength:'password',permissionVersion:8},
+ {id:'session-tablet-long-identifier',createdAt:'2026-09-19T09:00:00Z',expiresAt:'2026-10-19T09:00:00Z',current:false,authStrength:'password',permissionVersion:8}
+]
+platform.usernameChangeApi.status=async()=>({freeRenameAvailable:true,freeRenameUsed:0})
+platform.emailApi.capability=async()=>({enabled:false,mailConfigured:false})
+
+const sampleAccount=(id,username,disabled=false,deleted=false)=>({id,username,role:'player',createdAt:'2026-09-01T00:00:00Z',publicHistory:true,permissionVersion:3,disabled,deleted,disabledReason:disabled?'异常对局复核中':''})
+platform.adminApi.accounts=async()=>[
+ sampleAccount('account-001','长昵称玩家一号'),sampleAccount('account-002','长昵称玩家二号',true),sampleAccount('account-003','已删除玩家',false,true)
+]
+platform.adminApi.account=async id=>(await platform.adminApi.accounts()).find(item=>item.id===id)
+platform.adminApi.resetAccountPassword=async()=>({applied:true,account:{...sampleAccount('account-001','长昵称玩家一号'),mustChangePassword:true},revokedSessions:2,temporaryPassword:'7F1A5C9E2D4B8A6031CE97B5420D8F6A'})
+platform.adminApi.bugs=async()=>[{id:'BUG-20260921-001',reporterName:'验收玩家',title:'移动端弹框在极窄屏幕下信息显示不完整',description:'用于验证较长问题标题、描述与管理操作在窄屏不会互相侵入。',page:'/battle/room/qa',roomCode:'QA001',version:'2026.09.21',status:'retest',priority:'high',assignee:'维护者',adminNotes:'',fixCommit:'abc1234',regressionTest:'MobileAdminEvidenceRegression',deployedVersion:'2026.09.25',verifiedBy:'验收管理员',verifiedAt:'2026-09-25T04:00:00Z',history:[],createdAt:'2026-09-21T08:00:00Z',updatedAt:'2026-09-25T04:00:00Z'}]
+platform.adminApi.effects=async()=>({items:[{cardId:'S01-02C1',name:'移动端长名称卡效验收卡牌',product:'第一弹',faction:'秩序',cardType:'legion',isCounterTactic:false,effectText:'我方 回合1次：支付1士气，执行一项移动端验收效果。',abilities:[],migrationStatus:'declarative-ready',atomCount:3,executableAtomCount:3,legacyAtomCount:0,atomKinds:['cost.morale'],reviewStatus:'confirmed',reviewSource:'qa'}],total:1,page:1,pageSize:50,coverage:{totalCards:324,cardsWithText:280,totalAbilities:510,totalAtoms:1160,declarativeReadyAbilities:480,verifiedAbilities:420,legacyBackedAbilities:12,byStatus:{},byAtomKind:{}}})
+platform.adminApi.effectAtoms=async()=>[]
+platform.adminApi.sessions=async()=>platform.sessionApi.list()
+platform.adminApi.audit=async()=>[{id:'audit-1',actorId:'qa-admin',actorName:'验收管理员',category:'account',action:'status',target:'account-001',createdAt:'2026-09-25T03:00:00Z'}]
+platform.adminApi.workbenchSummary=async()=>({sampledAt:'2026-09-25T04:00:00Z',pending:[{id:'bugs',kind:'bug',label:'Bug 闭环',detail:'1 条需要确认、处理或验证',path:'/admin/users/bugs',severity:'attention',count:1}],anomalies:[{id:'storage-unavailable',kind:'storage',label:'存储容量',detail:'该摘要暂时不可用；关联 ID：6d8e5e83-77ab-4a39-a9f2-d1a54d7683b8',path:'/admin/system/storage',severity:'unavailable'}],recentActivities:[{id:'audit-1',kind:'account',label:'status',detail:'验收管理员 · account-001',path:'/admin/system/audit',severity:'neutral',occurredAt:'2026-09-25T03:00:00Z'}],partial:true,unavailableSections:['storage']})
+platform.adminApi.globalAnalytics=async()=>({fromDate:'2026-08-27',toDate:'2026-09-25',days:[{date:'2026-09-25',dailyActiveUsers:26,weeklyActiveUsers:91,monthlyActiveUsers:184,dailyMatches:13,weeklyMatches:76,monthlyMatches:304,averageOnline:5.2,peakOnline:12,peakOnlineAt:'2026-09-25T03:30:00Z',newUsers:3,returningUsers:23,pageViews:208}],pageViews:[]})
+platform.adminApi.serverStorage=async()=>({observedAt:'2026-09-25T04:00:00Z',workingSetBytes:268435456,health:'warning',conclusion:'存储容量需要关注，最高卷已使用 84%',impact:'短期仍可运行，但应在下一次运营窗口检查增长来源。',recommendedAction:'检查增长趋势与占用分类，提前安排容量。',thresholds:{warningPercent:80,criticalPercent:90,source:'服务端容量治理策略'},trendScope:'current-process',trendDescription:'本次服务进程内的真实采样，重启后重新累计，最多保留 24 小时 / 120 个样本',sampleState:'partial',unavailableSourceCount:1,volumes:[{id:'volume-1',label:'系统卷',totalBytes:1000000000,usedBytes:840000000,freeBytes:160000000}],categories:[{id:'matches-db',label:'对局数据库',bytes:104857600,available:true},{id:'logs',label:'系统日志',bytes:0,available:false}],trend:[{observedAt:'2026-09-25T03:30:00Z',workingSetBytes:250000000,volumeUsedPercent:{'volume-1':82}},{observedAt:'2026-09-25T04:00:00Z',workingSetBytes:268435456,volumeUsedPercent:{'volume-1':84}}]})
+
+const mode=new URLSearchParams(location.search).get('mode')||'profile'
+const AdminShell=(await import('/src/l12/site/AdminPage.vue')).default
+const AdminWorkbench=(await import('/src/l12/site/AdminWorkbenchPage.vue')).default
+const AdminAccounts=(await import('/src/l12/site/AdminAccountsPage.vue')).default
+const AdminAccountDetail=(await import('/src/l12/site/AdminAccountDetailPage.vue')).default
+const AdminBugs=(await import('/src/l12/site/AdminBugsPage.vue')).default
+const AdminEffects=(await import('/src/l12/site/AdminEffectsPage.vue')).default
+const AdminStorage=(await import('/src/l12/site/AdminServerStoragePanel.vue')).default
+const Profile=(await import('/src/l12/site/ProfilePage.vue')).default
+const SeasonSummary=(await import('/src/l12/site/SeasonSummaryNotice.vue')).default
+const Empty={template:'<section class="qa-empty">当前模块不在本次截图范围</section>'}
+const moduleRoutes=[
+ ['users/renames','username-requests'],['content/site','content'],['content/rules','rules'],['content/alternate-arts','alternate-arts'],
+ ['matches/archive/:matchId?','matches'],['matches/governance','match-governance'],['matches/integrity','integrity'],['matches/tournaments','tournaments'],
+ ['operations/config','operations'],['operations/global','global-data'],['operations/cards','card-analytics'],['system/releases','releases'],
+ ['system/security','security'],['system/storage','storage'],['system/commands','commands'],['system/audit','audit'],
+].map(([path,adminSection])=>({path,component:adminSection==='storage'?AdminStorage:Empty,meta:{adminSection}}))
+const router=createRouter({history:createMemoryHistory(),routes:[
+ {path:'/me',component:Profile},
+ {path:'/season-summary',component:SeasonSummary},
+ {path:'/admin',component:AdminShell,children:[
+  {path:'',component:AdminWorkbench,meta:{adminSection:'overview'}},
+  {path:'users/accounts',component:AdminAccounts,meta:{adminSection:'accounts'}},
+  {path:'users/accounts/:accountId',component:AdminAccountDetail,meta:{adminSection:'accounts'}},
+  {path:'users/bugs/:bugId?',component:AdminBugs,meta:{adminSection:'bugs'}},
+  {path:'content/effects/:cardId?',component:AdminEffects,meta:{adminSection:'effects'}},
+  ...moduleRoutes,
+ ]},
+]})
+const app=createApp({render:()=>h('div',{class:'site-shell'},h('main',{class:'site-content'},h(RouterView)))});app.use(router);await router.push(mode==='admin'?'/admin':mode==='summary'?'/season-summary':'/me?section=performance');await router.isReady();app.mount('#app')
+window.__qaRouter=router
+`
+
+let browser
+const server = await createServer({
+  root,
+  configLoader: 'runner',
+  cacheDir: path.join(root, '.tmp', 'vite-profile-admin-responsive'),
+  server: { host: '127.0.0.1', port: 0, strictPort: false },
+  plugins: [{
+    name: 'profile-admin-responsive-fixture',
+    resolveId(id) { if (id === '/__profile_admin__.js') return id },
+    load(id) { if (id === '/__profile_admin__.js') return entry },
+    configureServer(devServer) {
+      devServer.middlewares.use((request, response, next) => {
+        if (request.url?.match(/^\/__profile_admin__(\?|$)/)) {
+          response.setHeader('Content-Type', 'text/html')
+          response.end('<style>html,body,#app{margin:0;min-height:100%;background:#080d11;color:#eee}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__profile_admin__.js"></script>')
+          return
+        }
+        next()
+      })
+    },
+  }],
+})
+
+const viewports = [
+  { width: 320, height: 700 },
+  { width: 360, height: 780 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 430, height: 932 },
+  { width: 768, height: 1024 },
+  { width: 851, height: 900 },
+  { width: 1024, height: 320 },
+  { width: 1024, height: 768 },
+  { width: 1280, height: 800 },
+  { width: 1280, height: 720 },
+  { width: 1366, height: 768 },
+  { width: 1440, height: 900 },
+  { width: 1920, height: 1080 },
+]
+const suffix = viewport => `${viewport.width}x${viewport.height}`
+const overflow = page => page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)
+const summaryEvidenceViewport = viewport => [
+  '390x844',
+  '430x932',
+  '844x390',
+  '1024x320',
+  '1366x768',
+  '1920x1080',
+].includes(suffix(viewport))
+const shortSummaryViewport = viewport => ['844x390', '1024x320'].includes(suffix(viewport))
+
+try {
+  await server.listen()
+  const port = server.httpServer.address().port
+  browser = await chromium.launch({ headless: true, channel: 'msedge' })
+  const page = await browser.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  const report = []
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    const compactAdmin = viewport.width <= 850
+
+    await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=profile`)
+    await page.locator('.master-records').waitFor()
+    await page.locator('.master-records').evaluate(element => { element.open = true })
+    await page.locator('.master-records article').first().waitFor()
+    assert.equal(await overflow(page), false, `profile page overflows at ${suffix(viewport)}`)
+    assert.equal(await page.locator('.profile-section-nav button').count(), 3,
+      `profile navigation is not three sections at ${suffix(viewport)}`)
+    assert.equal(await page.getByRole('button', { name: '排位与战绩', exact: true }).getAttribute('aria-current'), 'page',
+      `legacy performance URL does not reach merged page at ${suffix(viewport)}`)
+    assert.deepEqual(await page.evaluate(() => window.__qaIntegrityReads), { notifications: 0, appeals: 0 },
+      `merged page fetched private penalty history before expansion at ${suffix(viewport)}`)
+    assert.equal(await page.locator('.master-records').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `profile master records overflow at ${suffix(viewport)}`)
+    await page.screenshot({ path: path.join(output, `profile-${suffix(viewport)}.png`), fullPage: true })
+    await page.locator('.title-manager-controls select').selectOption('最强阿斯加德')
+    await page.getByRole('button',{name:'保存称号',exact:true}).click()
+    await page.locator('.notice').getByText('对战称号已更新',{exact:true}).waitFor()
+    await page.evaluate(()=>window.scrollTo(0,document.documentElement.scrollHeight))
+    const noticeBounds=await page.locator('.notice').evaluate(e=>{const b=e.getBoundingClientRect();return{position:getComputedStyle(e).position,left:b.left,right:b.right,top:b.top,bottom:b.bottom,width:innerWidth,height:innerHeight}})
+    assert.equal(noticeBounds.position,'fixed','real operation feedback stays fixed')
+    assert(noticeBounds.left>=-1&&noticeBounds.right<=noticeBounds.width+1&&noticeBounds.top>=-1&&noticeBounds.bottom<=noticeBounds.height+1,`fixed operation notice escapes viewport at ${suffix(viewport)}`)
+    await page.screenshot({path:path.join(output,`profile-fixed-notice-${suffix(viewport)}.png`)})
+    await page.getByRole('button',{name:'账号与安全',exact:true}).click()
+    await page.locator('.session-manager').waitFor()
+    await page.locator('.session-manager').evaluate(element => { element.open = true })
+    await page.locator('.session-row').first().waitFor()
+    assert.equal(await overflow(page), false, `profile account controls overflow at ${suffix(viewport)}`)
+    await page.screenshot({ path: path.join(output, `profile-account-${suffix(viewport)}.png`), fullPage: true })
+
+    if (summaryEvidenceViewport(viewport)) {
+      await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=profile`)
+      await page.getByRole('button', { name: '排位与战绩', exact: true }).click()
+      await page.getByRole('heading', { name: '赛季历史' }).waitFor()
+      assert.equal(await overflow(page), false, `season history overflows at ${suffix(viewport)}`)
+      const unified = page.locator('.ranked-season-panel')
+      assert.equal(await unified.locator(':scope > .rank-overview, :scope > .statistics-range-panel, :scope > .season-stats, :scope > .season-history').count(), 4,
+        `current rank, selected-range record and finalized history are not one continuous panel at ${suffix(viewport)}`)
+      assert.equal(await unified.evaluate(element => element.scrollWidth > element.clientWidth + 1), false,
+        `unified season panel overflows at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.season-history-list>article').first().locator(':scope > span').count(), 8, `season history is not eight columns at ${suffix(viewport)}`)
+      assert.equal(await page.getByText('2026年9月', { exact: true }).isVisible(), true, `season history shows archive month instead of season month at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.season-stats article').count(), 4, `season statistics not grouped at ${suffix(viewport)}`)
+      assert.equal(await unified.getByRole('button', { name: '最强称号规则' }).count(), 1,
+        `master-title management missing at ${suffix(viewport)}`)
+      assert.equal(await page.getByRole('heading', { name: '总体战绩 · 本赛季' }).isVisible(), true,
+        `selected statistics range is missing at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `season-history-${suffix(viewport)}.png`), fullPage: true })
+      if (viewport.width === 390 || viewport.width === 1920) {
+        await page.getByRole('button', { name: '近 7 天', exact: true }).click()
+        assert.equal(await page.locator('.season-stats article').first().locator('b').textContent(), '7')
+        assert.equal(await page.getByRole('heading', { name: '本赛季排位' }).isVisible(), true)
+        await page.screenshot({ path: path.join(output, `season-range-7d-${suffix(viewport)}.png`), fullPage: true })
+        await page.getByRole('button', { name: '近 30 天', exact: true }).click()
+        assert.equal(await page.locator('.season-stats article').first().locator('b').textContent(), '30')
+      }
+      assert.equal(await page.locator('.penalty-history').count(), 0,
+        `private penalty history mounted before expansion at ${suffix(viewport)}`)
+      await page.locator('.penalty-history-shell > summary').click()
+      await page.getByText('仅本人可见的验收判罚', { exact: true }).waitFor()
+      assert.deepEqual(await page.evaluate(() => window.__qaIntegrityReads), { notifications: 1, appeals: 1 },
+        `private penalty history did not load exactly once after expansion at ${suffix(viewport)}`)
+      await page.getByRole('button', { name: '收藏与偏好', exact: true }).click()
+      await page.locator('.alternate-art-collection').waitFor()
+      assert.equal(await page.locator('.public-settings').count(), 1,
+        `privacy preference missing at ${suffix(viewport)}`)
+      assert.equal(await page.locator('.ranked-season-panel').count(), 0,
+        `collection duplicates ranked section at ${suffix(viewport)}`)
+      assert.equal(await overflow(page), false, `collection overflows at ${suffix(viewport)}`)
+
+      await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=summary`)
+      await page.getByRole('dialog').waitFor()
+      assert.equal(await overflow(page), false, `season summary overflows at ${suffix(viewport)}`)
+      assert.equal(await page.getByRole('dialog').evaluate(element => element.scrollWidth > element.clientWidth + 1), false, `season summary dialog overflows at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `season-summary-${suffix(viewport)}.png`), fullPage: true })
+      if (shortSummaryViewport(viewport)) {
+        const confirm = page.getByRole('dialog').getByRole('button', { name: '保存并确认' })
+        await confirm.scrollIntoViewIfNeeded()
+        assert.equal(await confirm.evaluate(element => {
+          const rect = element.getBoundingClientRect()
+          return rect.top >= -1 && rect.bottom <= innerHeight + 1
+        }), true, `season summary confirmation is unreachable at ${suffix(viewport)}`)
+        await page.screenshot({ path: path.join(output, `season-summary-confirm-${suffix(viewport)}.png`), fullPage: true })
+        await confirm.click()
+        await page.getByRole('dialog').waitFor({ state: 'detached' })
+        assert.equal(await overflow(page), false, `season summary page overflows after confirmation at ${suffix(viewport)}`)
+      }
+    }
+
+    await page.goto(`http://127.0.0.1:${port}/__profile_admin__?mode=admin`)
+    await page.locator('.admin-shell').waitFor()
+    await page.getByRole('heading', { name: '全局数据概览' }).waitFor()
+    await page.getByRole('heading', { name: '活跃趋势' }).waitFor()
+    assert.equal(await page.locator('.workbench .metric-switch button').count(), 11, `workbench trend switch incomplete at ${suffix(viewport)}`)
+    await page.getByText(/部分摘要暂时不可用/).waitFor()
+    const adminBase = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth > innerWidth + 1,
+      mobileVisible: getComputedStyle(document.querySelector('.admin-mobile-navigation')).display !== 'none',
+      sidebarVisible: getComputedStyle(document.querySelector('.admin-sidebar')).display !== 'none',
+    }))
+    assert.equal(adminBase.overflow, false, `admin overview overflows at ${suffix(viewport)}`)
+    assert.equal(adminBase.mobileVisible, compactAdmin, `admin mobile picker breakpoint mismatch at ${suffix(viewport)}`)
+    assert.equal(adminBase.sidebarVisible, !compactAdmin, `admin desktop sidebar breakpoint mismatch at ${suffix(viewport)}`)
+    await page.screenshot({ path: path.join(output, `admin-overview-${suffix(viewport)}.png`), fullPage: true })
+
+    if (compactAdmin) {
+      const picker = page.locator('.admin-mobile-navigation select')
+      const bounds = await page.locator('.admin-mobile-navigation').evaluate(element => {
+        const rect = element.getBoundingClientRect()
+        return { left: rect.left, right: rect.right, width: rect.width }
+      })
+      assert(bounds.left >= -1 && bounds.right <= viewport.width + 1, `admin picker leaves safe viewport at ${suffix(viewport)}`)
+      await picker.selectOption('/admin/users/accounts')
+      await page.getByRole('heading', { name: '账号、权限与会话' }).waitFor()
+      assert.equal(await overflow(page), false, `admin accounts overflow at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `admin-accounts-${suffix(viewport)}.png`), fullPage: true })
+      await page.locator('.actions input').first().fill('浏览器安全验收')
+      await page.getByRole('button',{name:'重置密码',exact:true}).first().click()
+      await page.getByRole('dialog').getByRole('button', { name: '生成并撤销会话' }).click()
+      await page.locator('.secret code').waitFor()
+      assert.equal((await page.locator('.secret code').textContent())?.length, 32, `temporary password length mismatch at ${suffix(viewport)}`)
+      await page.getByRole('dialog').getByRole('button', { name: '我已安全保存' }).click()
+      await picker.selectOption('/admin/users/bugs')
+      await page.getByRole('heading', { name: 'Bug 分诊与证据闭环' }).waitFor()
+      assert.equal(await overflow(page), false, `admin bugs overflow at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `admin-bugs-${suffix(viewport)}.png`), fullPage: true })
+      if (viewport.width === 390) {
+        await page.getByRole('button', { name: '关闭反馈', exact: true }).click()
+        const closure = page.locator('.closure-panel')
+        await page.getByLabel('关闭类型').selectOption('fixed_verified')
+        await page.getByText('复测人与时间会由系统自动记录。').waitFor()
+        assert.equal(await closure.locator('input').count(), 3, `fixed closure fields mismatch at ${suffix(viewport)}`)
+        assert.equal(await closure.locator('textarea').count(), 0, `fixed closure shows rejection reason at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('duplicate')
+        assert.equal(await closure.locator('input').count(), 1, `duplicate closure fields mismatch at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('rejected')
+        assert.equal(await closure.locator('input').count(), 0, `rejected closure shows evidence inputs at ${suffix(viewport)}`)
+        assert.equal(await closure.locator('textarea').count(), 1, `rejected closure reason missing at ${suffix(viewport)}`)
+        await page.getByLabel('关闭类型').selectOption('fixed_verified')
+        assert.equal(await overflow(page), false, `admin bug closure overflows at ${suffix(viewport)}`)
+        await closure.screenshot({ path: path.join(output, `admin-bugs-close-${suffix(viewport)}.png`) })
+      }
+      if (viewport.width === 390 || viewport.width === 768) {
+        await picker.selectOption('/admin/content/effects')
+        await page.getByRole('heading', { name: '卡效原子化与发布工作台' }).first().waitFor()
+        assert.equal(await overflow(page), false, `admin effects overflow at ${suffix(viewport)}`)
+        await page.screenshot({ path: path.join(output, `admin-effects-${suffix(viewport)}.png`), fullPage: true })
+      }
+    }
+    if (viewport.width === 1440) {
+      await page.evaluate(()=>window.__qaRouter.push('/admin/users/bugs'))
+      await page.getByRole('heading', { name: 'Bug 分诊与证据闭环' }).waitFor()
+      await page.getByRole('button', { name: '关闭反馈', exact: true }).click()
+      const closure = page.locator('.closure-panel')
+      await page.getByLabel('关闭类型').selectOption('fixed_verified')
+      await page.getByText('复测人与时间会由系统自动记录。').waitFor()
+      assert.equal(await closure.locator('input').count(), 3, `fixed closure fields mismatch at ${suffix(viewport)}`)
+      assert.equal(await closure.locator('textarea').count(), 0, `fixed closure shows rejection reason at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('duplicate')
+      assert.equal(await closure.locator('input').count(), 1, `duplicate closure fields mismatch at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('rejected')
+      assert.equal(await closure.locator('input').count(), 0, `rejected closure shows evidence inputs at ${suffix(viewport)}`)
+      assert.equal(await closure.locator('textarea').count(), 1, `rejected closure reason missing at ${suffix(viewport)}`)
+      await page.getByLabel('关闭类型').selectOption('fixed_verified')
+      assert.equal(await overflow(page), false, `admin bug closure overflows at ${suffix(viewport)}`)
+      await closure.screenshot({ path: path.join(output, `admin-bugs-close-${suffix(viewport)}.png`) })
+    }
+    if (viewport.width === 390 || viewport.width === 1440) {
+      await page.evaluate(()=>window.__qaRouter.push('/admin/users/accounts/account-001?tab=sessions'))
+      await page.getByRole('heading',{name:'长昵称玩家一号'}).waitFor()
+      assert.equal(await overflow(page), false, `admin account detail overflows at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `admin-account-detail-${suffix(viewport)}.png`), fullPage: true })
+      await page.evaluate(()=>window.__qaRouter.push('/admin/system/storage'))
+      await page.getByRole('heading',{name:'服务器状态与存储'}).waitFor()
+      assert.equal(await overflow(page), false, `admin storage overflows at ${suffix(viewport)}`)
+      const storageText = await page.locator('.storage-panel').innerText()
+      assert.equal(storageText.includes('/runtime/'), false, `admin storage leaks category path at ${suffix(viewport)}`)
+      assert.equal(storageText.includes('进程 42'), false, `admin storage leaks process id at ${suffix(viewport)}`)
+      assert.equal(storageText.includes('D:'), false, `admin storage leaks mount point at ${suffix(viewport)}`)
+      await page.screenshot({ path: path.join(output, `admin-storage-${suffix(viewport)}.png`), fullPage: true })
+    }
+    report.push({ viewport, admin: adminBase })
+  }
+
+  assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, errors }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, errors }, null, 2))
+} finally {
+  await browser?.close()
+  await server.close()
+}

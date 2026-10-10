@@ -1,14 +1,24 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { ActionEvent, Card, DisasterCardView, GameState, Phase } from '../types'
-import { isHorizontalCardType } from '../cardPresentation'
-import { destructionRoundBackUrl, disasterRoundUrl } from '../specialAssets'
+import MobileBattleDock from './MobileBattleDock.vue'
+import BattleDockPortal from './BattleDockPortal.vue'
+import BattleOverlayPortal from './BattleOverlayPortal.vue'
+import { provideMobileBattleDock } from './mobileBattleDock'
+provideMobileBattleDock()
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ActionEvent, Card, DisasterCardView, GameState, Phase, Prompt } from '../types'
+import { promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
+import { isCounterTacticCard, isHorizontalCardType } from '../cardPresentation'
+import { blackLotusLogoUrl, destructionRoundBackUrl, disasterRoundUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import { gameAction, gmAction, l12State, sandboxAction } from '../net'
 import GameActions from './GameActions.vue'
+import DefenseDecisionExplanation from './DefenseDecisionExplanation.vue'
 import BattleEventLog from './BattleEventLog.vue'
 import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
+import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
+import { cardEffectPresentationCards, effectResultPresentationFactContinuation, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
+import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
 import GraveyardOverlay from './GraveyardOverlay.vue'
 import HandArea from './HandArea.vue'
@@ -17,13 +27,19 @@ import MasterOverlay from './MasterOverlay.vue'
 import PhaseTrack from './PhaseTrack.vue'
 import PlayerMat from './PlayerMat.vue'
 import PlayerTurnClock from './PlayerTurnClock.vue'
+import BattlePlayerIdentity from './BattlePlayerIdentity.vue'
 import PhasePlayback from './PhasePlayback.vue'
 import PromptOverlay from './PromptOverlay.vue'
-import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
+import { battlefieldSlotLabel, battlefieldTargetLabel } from './battlefieldTargetPresentation'
+import { battleActionActorPresentation, battleActionDirectSubmitStatus, battleActionSelectionRange, battleActionSelectionStatus } from './battleActionPresentation'
+import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
-import RankedIdentityBadge from '../RankedIdentityBadge.vue'
+import CardDetailContent from '../CardDetailContent.vue'
+import type { DeckCard } from '../decks'
 import { getFactionPresentation } from '../factionPresentation'
-import { visibleViewport, viewportRect } from '../mobileViewport'
+import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
+import { useBattleViewportLayout } from './battleViewportLayout'
+import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -34,15 +50,80 @@ type GmPlacementRequest = {
   cardType: string
   triggerEffects: boolean
 }
-const props = withDefaults(defineProps<{ game: GameState; readOnly?: boolean; replayFocusCard?: Card | null; gmPlacement?: GmPlacementRequest | null; gmPanelOpen?: boolean }>(), { readOnly: false, replayFocusCard: null, gmPlacement: null, gmPanelOpen: false })
-const emit = defineEmits<{ gmPlacementResolved: []; settings: [] }>()
-const scale = ref(1)
+const props = withDefaults(defineProps<{
+  game: GameState
+  readOnly?: boolean
+  revealBothHands?: boolean
+  refereeLiveView?: boolean
+  spectatorLiveView?: boolean
+  replayFocusCard?: Card | null
+  replayPlaybackSpeed?: number | null
+  gmPlacement?: GmPlacementRequest | null
+  gmPanelOpen?: boolean
+}>(), { readOnly: false, revealBothHands: false, refereeLiveView: false, spectatorLiveView: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
+const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
+const neutralLogView = computed(() => props.spectatorLiveView || props.refereeLiveView
+  || props.revealBothHands || (!props.readOnly && l12State.gmEnabled))
+// Preserve the desktop hierarchy while allowing the whole board to become
+// genuinely denser on smaller canvases. Full inverse scaling made text remain
+// physically constant and therefore grow out of proportion to cards/zones.
+const adaptiveBoardToken = (base: number, currentScale: number) => {
+  const safeScale = Math.max(.1, Math.min(1, currentScale))
+  const minimumScreenSize = base >= 13 ? 8 : base >= 11 ? 7 : 6
+  return Math.max(base / Math.sqrt(safeScale), minimumScreenSize / safeScale)
+}
 const stageSize = computed(() => l12State.gmEnabled
   ? { width: 2304, height: 1296 }
-  : { width: 2048, height: 1152 })
-const compactViewport = ref(false)
+  // The two 350px battlefield halves plus their protected centre seam need 754px
+  // after the felt's own border and padding.  Keep that room in the outer stage
+  // rather than shrinking the six fixed battlefield cells.
+  : { width: 2048, height: 1264 })
+const {
+  scale,
+  compactViewport,
+  mobileLandscapeViewport,
+} = useBattleViewportLayout({
+  stageSize,
+  gmPanelOpen: () => props.gmPanelOpen,
+  afterUpdate: () => window.requestAnimationFrame(updateInspectorFloatRect),
+})
+const mobileRecordOpen = ref(false)
+const mobileRecordMinimized = ref(false)
+const mobilePlayerDetailsOpen = ref(false)
+const mobilePlayerDetailsFocus = ref<number | null>(null)
+const mobileMoralePickerOpen = ref(false)
+const mobileMoralePickerMinimized = ref(false)
+const mobileMoraleReason = ref('')
+// On phones the card face stays intentionally compact. The independent left
+// drawer is opened only through its persistent handle, keeping a card tap safe.
+const mobileInspectorOpen = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
+const focusDetailCard = computed<DeckCard | null>(() => {
+  const card = focusCard.value
+  if (!card) return null
+  const master = card.cardType === 'master'
+    ? props.game.players.find(player => player.master.masterId === card.cardId)?.master
+    : undefined
+  return {
+    id: card.cardId,
+    number: card.cardId,
+    nameZh: card.name,
+    cardType: card.cardType,
+    isCounterTactic: card.isCounterTactic,
+    product: '',
+    faction: card.faction,
+    imageUrl: card.imageUrl,
+    cost: card.hasPrintedCost === false ? undefined : (card.currentCost ?? card.cost),
+    hp: master?.hp,
+    troops: card.cardType === 'legion' ? card.troops : undefined,
+    disasterLevel: card.disasterLevel || undefined,
+    trialValue: card.trialValue || undefined,
+    traits: card.traits ?? [],
+    profession: card.profession,
+    effect: card.effectText,
+  }
+})
 const inspectorAnchor = ref<HTMLElement | null>(null)
 const inspectorFloatStyle = ref<Record<string, string>>({})
 watch(() => props.replayFocusCard, card => {
@@ -58,9 +139,52 @@ const playArmed = ref(false)
 const masterPlayerIndex = ref<number | null>(null)
 const boardTargetIds = ref<string[]>([])
 const paymentResourceIds = ref<string[]>([])
+const boardControlMinimized = ref(false)
+const inlinePromptInfoOpen = ref(false)
+const inlinePromptInfoTrigger = ref<HTMLButtonElement | null>(null)
+const inlinePromptInfoClose = ref<HTMLButtonElement | null>(null)
+function openInlinePromptInfo() {
+  inlinePromptInfoOpen.value = true
+  void nextTick(() => inlinePromptInfoClose.value?.focus())
+}
+function closeInlinePromptInfo() {
+  inlinePromptInfoOpen.value = false
+  void nextTick(() => inlinePromptInfoTrigger.value?.focus())
+}
+const combatDecisionMinimized = ref(false)
+const combatDecisionInfoOpen = ref(false)
+const combatInfoTrigger = ref<HTMLButtonElement | null>(null)
+const combatInfoClose = ref<HTMLButtonElement | null>(null)
+async function toggleCombatDecisionInfo() {
+  combatDecisionInfoOpen.value = !combatDecisionInfoOpen.value
+  await nextTick()
+  const focusTarget = combatDecisionInfoOpen.value ? combatInfoClose.value : combatInfoTrigger.value
+  focusTarget?.focus()
+}
+async function closeCombatDecisionInfo() {
+  if (!combatDecisionInfoOpen.value) return
+  combatDecisionInfoOpen.value = false
+  await nextTick()
+  combatInfoTrigger.value?.focus()
+}
+const inspectionLayerMinimized = computed(() => promptMinimized.value || boardControlMinimized.value || mobileMoralePickerMinimized.value || combatDecisionMinimized.value)
 const phasePlaybackPhase = ref<Phase | null>(null)
 const hiddenRevealCard = ref<Card | null>(null)
-const publicReveal = ref<{ sequence: number; cards: Card[]; text: string } | null>(null)
+type PublicRevealPresentation = {
+  sequence: number
+  cards: Card[]
+  text: string
+  kind: 'full-card' | 'entry-continuation' | 'fact-continuation'
+  transactionKey?: string
+}
+type PublicRevealQueueItem = {
+  sequence: number
+  cards: Card[]
+  text: string
+  event: ActionEvent
+  reservation: PresentationReservation
+}
+const publicReveal = ref<PublicRevealPresentation | null>(null)
 const diceReveal = ref<{ sequence: number; values: number[]; animatedValues: number[]; text: string; settled: boolean } | null>(null)
 const customDisasterSlot = ref<number | null>(null)
 const promptMinimized = ref(false)
@@ -69,13 +193,73 @@ const hasBlockingPrompt = computed(() => Boolean((props.game.prompts?.length ?? 
 const lastHiddenRevealSequence = ref(0)
 const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
-const publicRevealQueue: Array<{ sequence: number; cards: Card[]; text: string }> = []
+const publicRevealQueue: PublicRevealQueueItem[] = []
 const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
+const replayZonePresentationBusy = ref(false)
+const replaySequencePresentationBusy = ref(false)
+const replayCombatPresentationBusy = ref(false)
+const cardPresentationCoordinator = createPresentationSequenceCoordinator(busy => { replaySequencePresentationBusy.value = busy })
+let publicRevealWaiting = false
+let publicRevealWaitingReservation: PresentationReservation | null = null
+let publicRevealRelease: (() => void) | null = null
 let hiddenRevealTimer: ReturnType<typeof setTimeout> | null = null
 let publicRevealTimer: ReturnType<typeof setTimeout> | null = null
 let diceRollTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 let diceHideTimer: ReturnType<typeof setTimeout> | null = null
+let presentationEpoch = 0
+function resetCardPresentations() {
+  presentationEpoch++
+  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
+  if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  if (diceRollTimer) clearInterval(diceRollTimer)
+  if (diceSettleTimer) clearTimeout(diceSettleTimer)
+  if (diceHideTimer) clearTimeout(diceHideTimer)
+  hiddenRevealTimer = null
+  publicRevealTimer = null
+  diceRollTimer = null
+  diceSettleTimer = null
+  diceHideTimer = null
+  hiddenRevealCard.value = null
+  publicReveal.value = null
+  diceReveal.value = null
+  publicRevealRelease?.()
+  publicRevealRelease = null
+  publicRevealWaitingReservation?.cancel()
+  publicRevealWaitingReservation = null
+  publicRevealWaiting = false
+  for (const item of publicRevealQueue) item.reservation.cancel()
+  publicRevealQueue.length = 0
+  diceRevealQueue.length = 0
+  cardPresentationCoordinator.reset()
+  const baseline = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
+  lastHiddenRevealSequence.value = baseline
+  lastPublicRevealSequence.value = baseline
+  lastDiceSequence.value = baseline
+}
+const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
+  hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
+)))
+const synchronizingAuthoritySnapshot = computed(() => !props.replayPlaybackSpeed
+  && l12State.status === 'connecting' && l12State.recoveryPhase !== 'snapshot-acknowledged')
+let presentationBoundaryMatchId = props.game.matchId
+let presentationBoundaryRevision = props.game.revision
+watch(() => [props.game.matchId, props.game.revision, synchronizingAuthoritySnapshot.value,
+  props.replayPlaybackSpeed] as const, ([matchId, revision, synchronizing, playbackSpeed]) => {
+  const resetFacts = matchId !== presentationBoundaryMatchId || synchronizing
+    || Boolean(playbackSpeed && revision < presentationBoundaryRevision)
+  if (resetFacts) {
+    resetCardPresentations()
+  }
+  presentationBoundaryMatchId = matchId
+  presentationBoundaryRevision = revision
+}, { flush: 'sync' })
+watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
+
+function cardRevealDuration() {
+  if (!props.replayPlaybackSpeed) return l12AnimationDuration(3000, 700)
+  return Math.max(300, Math.round(l12AnimationDuration(1600, 420) / props.replayPlaybackSpeed))
+}
 const controlledPlayerIndex = computed(() => {
   if (props.readOnly || !l12State.gmEnabled) return props.game.you
   const pendingPrompt = props.game.prompts?.[0]
@@ -91,12 +275,29 @@ const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value]
 // The sandbox actor may change for prompts, but the observing player's board orientation never changes.
 const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
+const showBothHands = computed(() => props.readOnly && (props.revealBothHands || props.refereeLiveView))
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
 const absentIdentityLabels = new Set(['未定级', '暂无段位', '无段位', '未评级', '暂无称号', '无称号', '未获得称号', '暂无'])
 function identityLabel(value: string | null | undefined) {
   const label = value?.trim() ?? ''
   return absentIdentityLabels.has(label) ? '' : label
+}
+type BattleIdentityBadge = {
+  rank?: number | null
+  tier?: string | null
+  placementTitle?: string | null
+  highestTier?: boolean | null
+}
+function battleRank(badge: BattleIdentityBadge | null | undefined) {
+  return badge?.highestTier === true ? badge?.rank ?? null : null
+}
+function battleTierLabel(badge: BattleIdentityBadge | null | undefined) {
+  const label = identityLabel(badge?.tier)
+  // A placement title is the more specific player-facing identity. Players
+  // without one keep their faction-specific tier name on its own row.
+  if (identityLabel(badge?.placementTitle)) return ''
+  return label
 }
 const playerConnection = (playerIndex: number) => {
   const timed = l12State.rankedClock?.players.find(player => player.playerIndex === playerIndex)
@@ -108,6 +309,10 @@ const connectionLabel = (playerIndex: number) => {
   return connected === null ? (props.readOnly ? '记录快照' : '状态同步中') : connected ? '在线' : '已断开'
 }
 const factionLabel = (faction: string) => getFactionPresentation(faction).label
+function openMobilePlayerDetails(playerIndex: number) {
+  mobilePlayerDetailsFocus.value = playerIndex
+  mobilePlayerDetailsOpen.value = true
+}
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
@@ -118,13 +323,7 @@ const activeMorale = computed(() =>
   + (props.game.activePlayer === me.value.playerIndex
     ? me.value.field.flat().filter(card => card?.cardId === 'S01-0212' && !card.tapped && !card.hidden).length : 0)),
 )
-const counterIds = new Set([
-  'S01-0016', 'S01-0017', 'S01-0018', 'S01-0019', 'S01-0020', 'S01-0021',
-  'S01-0120', 'S01-0223', 'S01-0224', 'S01-0320', 'S01-0420',
-  'S02-0015', 'S02-0016', 'S02-0017', 'S02-0018',
-  'S02-0523',
-])
-const isCounter = (card?: Card | null) => Boolean(card && (card.cardType === 'counter-tactic' || counterIds.has(card.cardId)))
+const isCounter = (card?: Card | null) => isCounterTacticCard(card)
 const isInfiltrator = (card?: Card | null) => card?.cardId === 'S01-0004'
 const promotionFoundationIdsFor = (card: Card) => me.value.promotionOptions?.[card.instanceId] ?? []
 const canPromote = (card: Card) => promotionFoundationIdsFor(card).length > 0
@@ -169,6 +368,11 @@ const boardTargetPrompt = computed(() => {
   }) ?? null
 })
 const boardTargetableIds = computed(() => boardTargetPrompt.value?.validChoices.filter(id => id !== 'skip') ?? [])
+const boardTargetSelectionSummary = computed(() => {
+  const prompt = boardTargetPrompt.value
+  if (!prompt) return ''
+  return inlinePromptSelectionSummary(prompt, boardTargetIds.value)
+})
 const boardSlotPrompt = computed(() => props.game.prompts?.find(prompt =>
   (prompt.kind === 'slot' || prompt.data?.choiceMode === 'board-slot')
   && prompt.validChoices.some(id => id !== 'skip')
@@ -185,19 +389,192 @@ const resourceSelectionPrompt = computed(() => props.game.prompts?.find(prompt =
   || prompt.data?.choiceMode === 'resource-selection' || prompt.data?.choiceMode === 'board-selection'
   || prompt.kind === 'target-morale',
 ) ?? null)
-const paymentChoiceIds = computed(() => (resourceSelectionPrompt.value
+function promptActionText(prompt: Prompt) {
+  return promptInstructionCopy(prompt, prompt.text)
+}
+function promptChoiceText(prompt: Prompt, choice: string, fallback: string) {
+  return prompt.choiceLabels?.[choice]?.trim()
+    || fallback
+}
+function inlinePromptTitle(prompt: Prompt) {
+  return prompt.presentation?.title?.trim() || prompt.text.trim()
+}
+function inlinePromptInstruction(prompt: Prompt) {
+  const instruction = promptActionText(prompt)
+  return instruction === inlinePromptTitle(prompt) ? '' : instruction
+}
+function inlinePromptRange(prompt: Prompt) {
+  return battleActionSelectionRange(prompt.minChoose, prompt.maxChoose)
+}
+function inlinePromptActor(prompt: Prompt) {
+  return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).label
+}
+function inlinePromptActorState(prompt: Prompt) {
+  return battleActionActorPresentation(prompt.playerIndex, controlledPlayerIndex.value).state
+}
+function inlinePromptPayment(prompt: Prompt) {
+  return promptPaymentCopy(prompt)
+}
+function inlinePromptSelectedLabel(prompt: Prompt, id: string) {
+  const battlefield = battlefieldTargetLabel(props.game, controlledPlayerIndex.value, id, prompt.choiceLabels?.[id])
+  if (battlefield) return battlefield
+  const label = prompt.choiceLabels?.[id]?.trim() || prompt.data?.[id]?.trim()
+  if (label) return label
+  if (/^rune:\d+$/.test(id)) return `彼界符文 ${Number(id.split(':')[1])}`
+  const resource = mobileMoraleChoices.value.find(choice => choice.id === id)
+  return resource ? `${resource.label}（${resource.detail}）` : ''
+}
+function inlinePromptSelectionSummary(prompt: Prompt, selectedIds: string[]) {
+  const count = `已选择 ${selectedIds.length}/${prompt.maxChoose}`
+  const labels = selectedIds.map(id => inlinePromptSelectedLabel(prompt, id)).filter(Boolean)
+  return labels.length ? `${count}：${labels.join('、')}` : count
+}
+const boardSlotChoices = computed(() => {
+  const prompt = boardSlotPrompt.value
+  if (!prompt) return ''
+  const side = boardSlotTargetPlayerIndex.value === controlledPlayerIndex.value ? 'self' : 'opponent'
+  return prompt.validChoices.filter(choice => choice !== 'skip').map(choice => {
+    const [row, slot] = choice.split(':').map(Number)
+    return battlefieldSlotLabel(side, row, slot)
+  }).filter(Boolean).join('、')
+})
+const minimizedBoardTask = computed(() => {
+  const prompt = boardTargetPrompt.value ?? boardSlotPrompt.value ?? resourceSelectionPrompt.value
+  if (!prompt) return '恢复当前选择'
+  return `${inlinePromptBrief(prompt)}；${inlinePromptRange(prompt)}${inlinePromptPayment(prompt) ? `；${inlinePromptPayment(prompt)}` : ''}`
+})
+const minimizedMoraleTask = computed(() => mobilePaymentPrompt.value
+  ? `${inlinePromptBrief(mobilePaymentPrompt.value)}；${inlinePromptRange(mobilePaymentPrompt.value)}${inlinePromptPayment(mobilePaymentPrompt.value) ? `；${inlinePromptPayment(mobilePaymentPrompt.value)}` : ''}`
+  : '恢复士气查看')
+const inlineInfoPrompt = computed(() => boardTargetPrompt.value ?? boardSlotPrompt.value ?? resourceSelectionPrompt.value)
+function inlinePromptCurrentSummary(prompt: Prompt) {
+  if (prompt.promptId === boardTargetPrompt.value?.promptId) return boardTargetSelectionSummary.value
+  if (prompt.promptId === boardSlotPrompt.value?.promptId) return `可选格位：${boardSlotChoices.value}`
+  return inlinePromptSelectionSummary(prompt, paymentResourceIds.value)
+}
+function inlinePromptBrief(prompt: Prompt) {
+  const selected = prompt.promptId === boardTargetPrompt.value?.promptId ? boardTargetIds.value.length
+    : prompt.promptId === resourceSelectionPrompt.value?.promptId ? paymentResourceIds.value.length : null
+  const status = selected === null
+    ? battleActionDirectSubmitStatus()
+    : battleActionSelectionStatus(selected, prompt.maxChoose)
+  return `${inlinePromptActor(prompt)} · ${inlinePromptTitle(prompt)} · ${status}`
+}
+function inlinePromptExitSummary(prompt: Prompt, choice: string) {
+  const label = prompt.choiceLabels?.[choice]?.trim() || (choice === 'skip' ? '不发动' : '取消')
+  const consequence = promptConsequenceCopy(prompt, choice, label)
+  return consequence && consequence !== label ? `${label}：${consequence}` : label
+}
+function inlinePromptConsequenceLead(prompt: Prompt) {
+  return prompt.promptId === boardSlotPrompt.value?.promptId ? '选中后' : '确认后'
+}
+const mobilePaymentPrompt = computed(() => resourceSelectionPrompt.value
   ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null))
-  ?.validChoices.filter(id => id !== 'skip') ?? [])
-const activeBoardPromptId = computed(() => boardTargetPrompt.value?.promptId
-  ?? boardSlotPrompt.value?.promptId ?? resourceSelectionPrompt.value?.promptId ?? null)
-const passivePresentationPaused = computed(() => Boolean(
-  publicReveal.value || diceReveal.value || hiddenRevealCard.value || activeBoardPromptId.value,
-))
-const modalInspectorVisible = computed(() => Boolean(!promptMinimized.value && focusCard.value && (
-  graveyardPlayer.value !== null || masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
-  || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
-  || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
+const mixedBoardPayment = computed(() => mobilePaymentPrompt.value?.data?.choiceMode === 'mixed-board-payment')
+const selectedPaymentIds = computed(() => mixedBoardPayment.value ? boardTargetIds.value : paymentResourceIds.value)
+const paymentChoiceIds = computed(() => mobilePaymentPrompt.value
+  ?.validChoices.filter(id => id !== 'skip' && id !== 'cancel') ?? [])
+// The compact resource strip is always a readable entry point on a phone.  A
+// real resource prompt additionally turns the same large sheet into a selector;
+// merely viewing morale never changes game state.
+const mobileMoralePickerEnabled = computed(() => mobileLandscapeViewport.value)
+const mobileMoraleInteractive = computed(() => Boolean(mobilePaymentPrompt.value))
+type MobileMoraleCandidate = {
+  id: string
+  label: string
+  detail: string
+  iconUrl: string
+  state: 'rune' | 'morale' | 'god-power' | 'black-lotus' | 'temporary'
+  activity: 'active' | 'rested' | 'fixed'
+  selectable: boolean
+  disabledReason: string
+}
+const mobileRuneChoices = computed<MobileMoraleCandidate[]>(() => {
+  if (viewMe.value.faction !== 'otherworld') return []
+  const runeIds = paymentChoiceIds.value.filter(id => /^rune:\d+$/.test(id))
+  const runeCount = Math.max(0, viewMe.value.specialZones?.runes ?? 0)
+  const highestPromptRune = Math.max(0, ...runeIds.map(id => Number(id.split(':')[1]) || 0))
+  const slotCount = Math.max(runeCount, highestPromptRune)
+  return Array.from({ length: slotCount }, (_, offset) => {
+    const index = offset + 1
+    const id = `rune:${index}`
+    const owned = index <= runeCount
+    const selectable = mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id)
+    return {
+      id,
+      label: `彼界符文 ${index}`,
+      detail: selectable ? '可用于当前选择' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '当前拥有；需要符文时可选择',
+      iconUrl: roundCardUrl('S02-06S1') ?? '',
+      state: 'rune' as const,
+      activity: 'fixed' as const,
+      selectable,
+      disabledReason: selectable ? '' : !owned ? '尚未获得这枚符文' : mobileMoraleInteractive.value ? '当前支付不能使用这枚符文' : '查看状态时无需选择',
+    }
+  })
+})
+const mobileMoraleChoices = computed<MobileMoraleCandidate[]>(() => {
+  const choiceIds = mobileMoraleInteractive.value
+    ? paymentChoiceIds.value
+    : viewMe.value.morale.map(resource => resource.instanceId)
+  return choiceIds.flatMap<MobileMoraleCandidate>(id => {
+  if (id.startsWith('temporary-morale:')) return [{
+    id,
+    label: '临时士气',
+    detail: '休整时消失',
+     iconUrl: siteBrandIconUrl,
+     state: 'temporary' as const,
+     activity: 'active' as const,
+     selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
+     disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? '当前支付不能使用这枚临时士气' : '查看状态时无需选择',
+  }]
+  const owner = [viewMe.value, viewEnemy.value].find(player => player.morale.some(resource => resource.instanceId === id))
+  const resource = owner?.morale.find(item => item.instanceId === id)
+  if (!owner || !resource) return []
+  const godPower = Boolean(resource.isGodPower)
+  const blackLotus = resource.resourceType === 'black-lotus'
+  return [{
+    id,
+    label: godPower ? '神力' : blackLotus ? '黑色莲花' : '士气',
+    detail: `${blackLotus ? '专属士气' : getFactionPresentation(owner.faction).label} · ${resource.tapped ? '休整' : '活跃'}`,
+     iconUrl: godPower ? godPowerLogoUrl : blackLotus ? blackLotusLogoUrl : (factionLogoUrls[owner.faction] ?? ''),
+     state: godPower ? 'god-power' as const : blackLotus ? 'black-lotus' as const : 'morale' as const,
+     activity: resource.tapped ? 'rested' as const : 'active' as const,
+     selectable: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id),
+     disabledReason: mobileMoraleInteractive.value && paymentChoiceIds.value.includes(id) ? '' : mobileMoraleInteractive.value ? (resource.tapped ? '这枚士气正在休整' : '当前支付不能使用这枚士气') : '查看状态时无需选择',
+  }]
+  })
+})
+const activeBoardPromptIds = computed(() => [
+  boardTargetPrompt.value?.promptId,
+  boardSlotPrompt.value?.promptId,
+  resourceSelectionPrompt.value?.promptId,
+].filter((promptId): promptId is string => Boolean(promptId)))
+const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
+watch(activeBoardPromptId, () => { boardControlMinimized.value = false; inlinePromptInfoOpen.value = false })
+watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
+  combatDecisionMinimized.value = false
+  combatDecisionInfoOpen.value = false
+  if (props.game.pendingDefense) playArmed.value = false
+})
+const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.value && focusCard.value && (
+  graveyardPlayer.value !== null || !promptMinimized.value && (
+    masterPlayerIndex.value !== null || props.game.phase === 'Mulligan'
+    || props.game.phase === 'DisasterPreparation' || props.game.phase === 'Disaster'
+    || (props.game.prompts?.length ?? 0) > 0 || props.game.waitingPrompt
+  )
 )))
+const modalPresentationPaused = computed(() => Boolean(
+  activeBoardPromptId.value
+  // PromptOverlay is a modal while it is expanded. Card presentations that
+  // arrive with its prompt stay queued until the player closes or minimizes it.
+  || (hasBlockingPrompt.value && !promptMinimized.value)
+  || graveyardPlayer.value !== null || masterPlayerIndex.value !== null
+  || customDisasterSlot.value !== null || mobileRecordOpen.value || mobileMoralePickerOpen.value
+  || modalInspectorVisible.value,
+))
+const passivePresentationPaused = computed(() => Boolean(
+  publicReveal.value || diceReveal.value || hiddenRevealCard.value || modalPresentationPaused.value,
+))
 function updateInspectorFloatRect() {
   if (!modalInspectorVisible.value || !inspectorAnchor.value) return
   const rect = viewportRect(inspectorAnchor.value)
@@ -210,10 +587,10 @@ function updateInspectorFloatRect() {
     width: `${logicalWidth}px`,
     height: `${logicalHeight}px`,
     transform: `scale(${floatScale})`,
-    '--l12-board-copy': `${13 / Math.min(1, floatScale)}px`,
-    '--l12-board-meta': `${11 / Math.min(1, floatScale)}px`,
-    '--l12-board-micro': `${9 / Math.min(1, floatScale)}px`,
-    '--l12-effect-copy': `${13 / Math.min(1, floatScale)}px`,
+    '--l12-board-copy': `${adaptiveBoardToken(13, floatScale)}px`,
+    '--l12-board-meta': `${adaptiveBoardToken(11, floatScale)}px`,
+    '--l12-board-micro': `${adaptiveBoardToken(9, floatScale)}px`,
+    '--l12-effect-copy': `${adaptiveBoardToken(13, floatScale)}px`,
   }
 }
 watch(modalInspectorVisible, visible => {
@@ -241,12 +618,16 @@ function sessionDisasterState(card: DisasterCardView | null) {
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
+function isCurrentTrial(trials: Array<{ instanceId: string; trialCompleted?: boolean; trialProgress?: number }> | undefined, trial: { instanceId: string }) {
+  return trials?.find(candidate => !candidate.trialCompleted
+    && (candidate.trialProgress ?? 0) < 8)?.instanceId === trial.instanceId
+}
 function focusSessionDisaster(card: DisasterCardView, index?: number) {
   if (isVisibleDisasterCard(card)) focusCard.value = card
   if (index !== undefined && props.game.disasterMode === 'custom' && l12State.gmEnabled && !props.readOnly && index < 3)
     customDisasterSlot.value = index
 }
-function replaceCustomDisaster(card: SandboxCatalogCard) {
+function replaceCustomDisaster(card: SingleCardPickerItem) {
   if (customDisasterSlot.value === null) return
   gmAction({ type: 'replaceDisaster', targetPlayer: controlledPlayerIndex.value, slot: customDisasterSlot.value, cardId: card.id })
   customDisasterSlot.value = null
@@ -260,6 +641,7 @@ const boardSlotPreview = computed<Card | null>(() => {
     cardId: prompt.data?.[`${id}:cardId`] ?? '',
     name: prompt.data?.[id] ?? '展示牌',
     cardType: prompt.data?.[`${id}:cardType`] ?? '',
+    isCounterTactic: prompt.data?.[`${id}:isCounterTactic`] === 'true',
     faction: prompt.data?.[`${id}:faction`] ?? '',
     traits: prompt.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
     profession: prompt.data?.[`${id}:profession`] || undefined,
@@ -275,7 +657,7 @@ const boardSlotPreview = computed<Card | null>(() => {
 })
 watch(() => boardTargetPrompt.value?.promptId, () => {
   boardTargetIds.value = boardTargetPrompt.value?.data?.lockedChoices?.split('|').filter(Boolean) ?? []
-})
+}, { immediate: true })
 function clearOrdinaryInteractionState() {
   selectedId.value = null
   mode.value = 'play'
@@ -297,7 +679,13 @@ watch(activeBoardPromptId, promptId => {
   focusCard.value = null
   customDisasterSlot.value = null
 })
-watch(() => resourceSelectionPrompt.value?.promptId, () => { paymentResourceIds.value = [] })
+watch(() => mobilePaymentPrompt.value?.promptId, () => {
+  paymentResourceIds.value = []
+  mobileMoralePickerOpen.value = false
+})
+watch(mobileMoralePickerEnabled, enabled => {
+  if (!enabled) mobileMoralePickerOpen.value = false
+})
 watch(controlledPlayerIndex, () => {
   selectedId.value = null
   focusCard.value = null
@@ -318,7 +706,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   lastHiddenRevealSequence.value = event.sequence
   hiddenRevealCard.value = event.cards[0]
   if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
-  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, l12AnimationDuration(3000, 700))
+  hiddenRevealTimer = setTimeout(() => { hiddenRevealCard.value = null }, cardRevealDuration())
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const specialVictory = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'special-victory'
@@ -326,27 +714,62 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
   if (!specialVictory) return
   graveyardPlayer.value = null
   masterPlayerIndex.value = null
-  focusCard.value = null
+  if (!mobileLandscapeViewport.value || !mobileInspectorOpen.value) focusCard.value = null
   promptMinimized.value = false
 })
-function showNextPublicReveal() {
-  if (publicReveal.value || !publicRevealQueue.length) return
-  publicReveal.value = publicRevealQueue.shift() ?? null
-  if (!publicReveal.value) return
+async function showNextPublicReveal() {
+  if (publicReveal.value || publicRevealWaiting || !publicRevealQueue.length || modalPresentationPaused.value) return
+  const next = publicRevealQueue.shift()
+  if (!next) return
+  const epoch = presentationEpoch
+  publicRevealWaiting = true
+  publicRevealWaitingReservation = next.reservation
+  next.reservation.setPaused(modalPresentationPaused.value)
+  const release = await next.reservation.waitUntilGranted()
+  if (epoch !== presentationEpoch) {
+    release()
+    return
+  }
+  publicRevealWaiting = false
+  publicRevealWaitingReservation = null
+  publicRevealRelease = release
+  const entryTransactionKey = entryEffectContinuationTransaction(next.event,
+    cardPresentationCoordinator.ownsEntryMovementTransaction)
+  const presentationFacts = effectResultPresentationFactContinuation(next.event,
+    cardPresentationCoordinator.ownsPresentationFact)
+  const continuation = Boolean(entryTransactionKey || presentationFacts)
+  publicReveal.value = {
+    sequence: next.sequence,
+    cards: continuation ? [] : next.cards,
+    text: next.text,
+    kind: presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
+    transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
+  }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
   publicRevealTimer = setTimeout(() => {
+    if (epoch !== presentationEpoch) return
     publicReveal.value = null
     publicRevealTimer = null
-    showNextPublicReveal()
-  }, l12AnimationDuration(3000, 700))
+    publicRevealRelease?.()
+    publicRevealRelease = null
+    void showNextPublicReveal()
+  }, cardRevealDuration())
 }
 function publicRevealText(event: ActionEvent) {
+  if (event.type === 'effect-result') return effectResultPresentationText(event, presentationCards(event)[0])
   const override = event.effectText?.trim()
   if (override) return override
   const text = event.text.trim()
   const card = event.cards?.[0]
   if (card && /花魁的馈赠/.test(text)) return `花魁的馈赠将〈${card.name}〉加入手牌`
   return text
+}
+// Disaster reveals have their own authoritative back-to-face movement.  Keep
+// them out of the secondary public-card overlay so the two animations cannot
+// cover or cancel each other.
+function isDisasterRevealEvent(event: ActionEvent) { return event.type === 'disaster-reveal' }
+function presentationCards(event: ActionEvent) {
+  return cardEffectPresentationCards(event)
 }
 function diceValuesFromEvent(event: ActionEvent) {
   const result = event.text.match(/结果为\s*([1-6])/)?.[1]
@@ -355,7 +778,7 @@ function diceValuesFromEvent(event: ActionEvent) {
   return [...rollText.matchAll(/(?:^|\s)([1-6])(?=，|,|。|$)/g)].map(match => Number(match[1])).slice(-2)
 }
 function showNextDiceReveal() {
-  if (diceReveal.value || !diceRevealQueue.length) return
+  if (diceReveal.value || !diceRevealQueue.length || modalPresentationPaused.value || replayZonePresentationBusy.value) return
   const next = diceRevealQueue.shift()
   if (!next) return
   const values = next.values.length ? next.values : [1]
@@ -379,22 +802,92 @@ function showNextDiceReveal() {
 }
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
-    .filter(event => event.cards?.length && event.sequence > lastPublicRevealSequence.value
-      && (event.type === 'disaster-reveal' || event.playerIndex === null || event.playerIndex !== props.game.you)
-      && (event.type === 'effect-trigger' || event.type === 'effect-response' || event.type === 'effect-activation'
-        || event.type === 'reveal' || event.type === 'disaster-reveal' || event.text.includes('展示')
-        || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))
+    .filter(event => !isDisasterRevealEvent(event) && event.cards?.length && event.sequence > lastPublicRevealSequence.value
+      && (isCardEffectPresentationEvent(event)
+        || ((event.playerIndex === null || event.playerIndex !== props.game.you)
+          && (event.type === 'reveal' || event.text.includes('展示')
+            || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
+    if (event.sequence <= lastPublicRevealSequence.value) continue
+    const reservation = cardPresentationCoordinator.reserve(event.sequence, 10)
+    reservation.setPaused(modalPresentationPaused.value)
     publicRevealQueue.push({
       sequence: event.sequence,
-      cards: event.cards ?? [],
+      cards: presentationCards(event),
       text: publicRevealText(event),
+      event,
+      reservation,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
-  showNextPublicReveal()
+  void showNextPublicReveal()
+})
+function openMobileMoralePicker() {
+  mobileMoralePickerMinimized.value = false
+  mobileMoraleReason.value = ''
+  inlinePromptInfoOpen.value = false
+  mobileMoralePickerOpen.value = true
+}
+function chooseMobileMorale(choice:MobileMoraleCandidate){
+  if(!choice.selectable){mobileMoraleReason.value=choice.disabledReason||'当前不能选择';return}
+  mobileMoraleReason.value=''
+  togglePaymentResource(choice.id)
+}
+function inspectDialogCard(card: Card) {
+  focusCard.value = card
+  // Selecting an object only updates the persistent inspector content.
+}
+function inspectMasterCard(playerIndex: number) {
+  const player = props.game.players[playerIndex]
+  if (!player) return
+  const card:Card={
+    instanceId: `master-${playerIndex}`,
+    cardId: player.master.masterId,
+    name: player.master.masterName,
+    cardType: 'master',
+    faction: player.faction,
+    imageUrl: player.master.masterImageUrl,
+    effectText: player.master.effectText,
+    cost: 0,
+    baseTroops: 0,
+    troops: 0,
+    disasterLevel: 0,
+    tapped: Boolean(player.master.tapped),
+    summonRound: 0,
+    abilities: player.master.abilities,
+  }
+  inspectDialogCard(card)
+}
+function focusMasterCard(playerIndex:number){
+  const player=props.game.players[playerIndex]
+  if(!player)return
+  focusCard.value={instanceId:`master-${playerIndex}`,cardId:player.master.masterId,name:player.master.masterName,cardType:'master',faction:player.faction,imageUrl:player.master.masterImageUrl,effectText:player.master.effectText,cost:0,baseTroops:0,troops:0,disasterLevel:0,tapped:Boolean(player.master.tapped),summonRound:0,abilities:player.master.abilities}
+}
+watch([modalPresentationPaused, replayZonePresentationBusy], ([modalPaused, zoneBusy], [wasModalPaused]) => {
+  for (const item of publicRevealQueue) item.reservation.setPaused(modalPaused)
+  publicRevealWaitingReservation?.setPaused(modalPaused)
+  if (modalPaused && !wasModalPaused) {
+    // A presentation that was already visible yields permanently to a newly
+    // opened modal.  It is never pushed back into the queue for replay.
+    if (publicRevealTimer) clearTimeout(publicRevealTimer)
+    publicRevealTimer = null
+    publicReveal.value = null
+    publicRevealRelease?.()
+    publicRevealRelease = null
+    if (diceRollTimer) clearInterval(diceRollTimer)
+    if (diceSettleTimer) clearTimeout(diceSettleTimer)
+    if (diceHideTimer) clearTimeout(diceHideTimer)
+    diceRollTimer = null
+    diceSettleTimer = null
+    diceHideTimer = null
+    diceReveal.value = null
+  }
+  if (!modalPaused) {
+    void showNextPublicReveal()
+    if (!zoneBusy) showNextDiceReveal()
+  }
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const fresh = (props.game.recentEvents ?? [])
@@ -421,11 +914,23 @@ const combat = computed(() => {
   return {
     attacker, target, attackerOwner, targetOwner, supports, stage: pending.stage,
     attackValue: pending.attackValue > 0 ? pending.attackValue : attacker.troops,
-    attackUnit: pending.attackValue > 0 ? '冻结进攻值' : '兵力',
+    attackUnit: pending.attackValue > 0 ? '进攻值' : '兵力',
     targetName: target?.name ?? targetOwner.master.masterName,
     targetValue: target ? target.troops + supports.reduce((sum, card) => sum + card.troops, 0) : targetOwner.master.hp,
     targetUnit: target ? '兵力' : '血量',
   }
+})
+const combatStageLabel = computed(() => {
+  const stage = props.game.pendingDefense?.stage
+  if (stage === 'AttackerAttackTiming') return '进攻宣告'
+  if (stage === 'DefenderAttackTiming') return '进攻响应'
+  if (stage === 'DefenseChoice') return '抵挡与支援'
+  if (stage === 'CombatDamage') return '伤害结算'
+  if (stage === 'KillTriggers' || stage === 'DefenderKillTriggers') return '击杀结算'
+  if (stage === 'AttackerDeathTriggers' || stage === 'DefenderDeathTriggers' || stage === 'FinalizeDeaths') return '阵亡结算'
+  if (stage === 'AttackerAfterAttack' || stage === 'DefenderAfterAttack') return '进攻后结算'
+  if (stage === 'Complete') return '战斗完成'
+  return '战斗结算'
 })
 const eligibleSupportIds = computed(() => {
   if (defenseTargetType.value !== 'legion') return []
@@ -447,39 +952,14 @@ const supportReady = computed(() => {
   return combat.value.targetValue >= combat.value.attackValue
 })
 
-function updateScale() {
-  const viewport = visibleViewport()
-  compactViewport.value = viewport.width < 820 || viewport.height < 600
-  // The hand fan and left utility dock paint about 42 logical pixels beyond the stage's
-  // nominal 16:9 box. Because the stage is vertically centered below the 52px site bar,
-  // reserve that overflow on both edges so every control stays visible at exact 16:9.
-  const availableHeight = Math.max(1, viewport.height - 124)
-  const availableWidth = Math.max(1, viewport.width - (props.gmPanelOpen && !compactViewport.value ? 344 : 0))
-  scale.value = compactViewport.value
-    ? Math.max(.7, Math.min(1, availableHeight / stageSize.value.height))
-    : Math.min(availableWidth / stageSize.value.width, availableHeight / stageSize.value.height)
-  window.requestAnimationFrame(updateInspectorFloatRect)
-}
-watch(stageSize, updateScale)
-watch(() => props.gmPanelOpen, updateScale)
 onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
-  updateScale()
-  window.addEventListener('resize', updateScale)
-  window.addEventListener('l12-viewport-change', updateScale)
-  window.visualViewport?.addEventListener('resize', updateScale)
 })
 onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateScale)
-  window.removeEventListener('l12-viewport-change', updateScale)
-  window.visualViewport?.removeEventListener('resize', updateScale)
-  if (hiddenRevealTimer) clearTimeout(hiddenRevealTimer)
-  if (publicRevealTimer) clearTimeout(publicRevealTimer)
-  if (diceRollTimer) clearInterval(diceRollTimer)
-  if (diceSettleTimer) clearTimeout(diceSettleTimer)
-  if (diceHideTimer) clearTimeout(diceHideTimer)
+  resetCardPresentations()
+  emit('replayPresentationChange', false)
 })
 
 function withPromptBinding(extra: Record<string, unknown>) {
@@ -503,8 +983,8 @@ function command(type: string, extra: Record<string, unknown> = {}) {
   if (type === 'resolvePrompt') extra = withPromptBinding(extra)
   if (type === 'mulligan') extra.cardInstanceIds = mulliganIds.value
   if (type === 'resolveDefense') {
-    extra.cardInstanceIds = defenseIds.value
-    if (defenseTargetType.value === 'legion') extra.cardInstanceIds = [...supportIds.value]
+    if (!Object.hasOwn(extra, 'cardInstanceIds'))
+      extra.cardInstanceIds = defenseTargetType.value === 'legion' ? [...supportIds.value] : [...defenseIds.value]
   }
   if (l12State.gmEnabled) sandboxAction(controlledPlayerIndex.value, { type, ...extra })
   else gameAction({ type, ...extra })
@@ -515,22 +995,26 @@ function toggle(list: string[], id: string) {
   if (index >= 0) list.splice(index, 1); else list.push(id)
 }
 function selectedHandIdsFor(playerIndex: number) {
+  if (props.readOnly) return []
   if (!isControlledPlayer(playerIndex)) return []
   if (props.game.phase === 'Mulligan') return mulliganIds.value
   if (props.game.phase === 'Defense' && props.game.pendingDefense?.stage === 'DefenseChoice') return defenseIds.value
   return selectedId.value ? [selectedId.value] : []
 }
 function playableHandIdsFor(playerIndex: number) {
-  return isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
+  return !props.readOnly && isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
 }
 function selectHandFor(playerIndex: number, card: Card) {
+  if (props.readOnly) { focusCard.value = card; return }
   if (isControlledPlayer(playerIndex)) selectHand(card)
   else focusCard.value = card
 }
 function playFromHandFor(playerIndex: number, card: Card) {
+  if (props.readOnly) return
   if (isControlledPlayer(playerIndex)) playFromHand(card)
 }
 function slotFor(playerIndex: number, row: number, slot: number, card: Card | null) {
+  if (card) focusCard.value = card
   if (props.gmPlacement && props.gmPlacement.targetPlayer === playerIndex) {
     if (card) { focusCard.value = card; return }
     gmAction({
@@ -565,6 +1049,10 @@ function selectPublicCardFor(playerIndex: number, card: Card) {
   focusCard.value = card
   if (isControlledPlayer(playerIndex)) selectPublicCard(card)
 }
+function inspectActiveDisaster() {
+  if (!props.game.activeDisaster) return
+  focusCard.value = props.game.activeDisaster
+}
 function targetableIdsFor(playerIndex: number) {
   if (boardTargetPrompt.value) return boardTargetableIds.value
   if (isControlledPlayer(playerIndex) && props.game.phase === 'Defense' && defenseTargetType.value === 'legion')
@@ -583,7 +1071,7 @@ function selectHand(card: Card) {
   if (props.game.phase === 'Defense' && defenseTargetType.value === 'master') return toggle(defenseIds.value, card.instanceId)
   selectedId.value = selectedId.value === card.instanceId ? null : card.instanceId
   mode.value = 'play'
-  playArmed.value = selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
+  playArmed.value = !mobileLandscapeViewport.value && selectedId.value === card.instanceId && (card.cardType === 'legion' || isCounter(card)) && playableIds.value.includes(card.instanceId)
 }
 function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number) {
   const prompt = boardSlotPrompt.value
@@ -641,10 +1129,9 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   playArmed.value = false
 }
 function togglePaymentResource(instanceId: string) {
-  const prompt = resourceSelectionPrompt.value
-    ?? (boardTargetPrompt.value?.data?.choiceMode === 'mixed-board-payment' ? boardTargetPrompt.value : null)
+  const prompt = mobilePaymentPrompt.value
   if (!prompt || !paymentChoiceIds.value.includes(instanceId)) return
-  const selected = prompt.data?.choiceMode === 'mixed-board-payment' ? boardTargetIds.value : paymentResourceIds.value
+  const selected = selectedPaymentIds.value
   if (prompt.data?.lockedChoices?.split('|').includes(instanceId)) return
   const index = selected.indexOf(instanceId)
   if (index >= 0) selected.splice(index, 1)
@@ -660,6 +1147,24 @@ function confirmResourcePayment(skip = false) {
   }
   if (paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
   command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
+}
+function cancelResourcePayment() {
+  const prompt = resourceSelectionPrompt.value
+  if (!prompt?.validChoices.includes('cancel')) return
+  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+}
+function confirmMobileMoralePayment(skip = false) {
+  if (mixedBoardPayment.value) resolveBoardTarget(skip)
+  else confirmResourcePayment(skip)
+  mobileMoralePickerOpen.value = false
+}
+function cancelMobileMoralePayment() {
+  if (mixedBoardPayment.value) {
+    const prompt = mobilePaymentPrompt.value
+    if (prompt?.validChoices.includes('cancel'))
+      command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+  } else cancelResourcePayment()
+  mobileMoralePickerOpen.value = false
 }
 function enemySlot(row: number, slot: number, card: Card | null) {
   if (card) focusCard.value = card
@@ -691,6 +1196,7 @@ function selectBoardTarget(card: Card) {
   const prompt = boardTargetPrompt.value
   if (!prompt || !boardTargetableIds.value.includes(card.instanceId)) return
   focusCard.value = card
+  if (prompt.data?.lockedChoices?.split('|').includes(card.instanceId)) return
   const index = boardTargetIds.value.indexOf(card.instanceId)
   if (index >= 0) boardTargetIds.value.splice(index, 1)
   else if (prompt.maxChoose === 1) boardTargetIds.value = [card.instanceId]
@@ -791,12 +1297,30 @@ function statusTexts(card: Card) {
 </script>
 
 <template>
-  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'read-only-board': readOnly, 'gm-panel-docked': gmPanelOpen && !compactViewport }">
-    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${13 / Math.min(1, scale)}px`, '--l12-board-meta': `${11 / Math.min(1, scale)}px`, '--l12-board-micro': `${9 / Math.min(1, scale)}px`, '--l12-effect-copy': `${13 / Math.min(1, scale)}px` }">
+  <div class="board-viewport" :class="{ 'compact-viewport': compactViewport, 'mobile-landscape-board': mobileLandscapeViewport, 'read-only-board': readOnly, 'referee-both-hands': readOnly && refereeLiveView && showBothHands, 'gm-panel-docked': gmPanelOpen && !compactViewport, 'board-target-active': Boolean(gmPlacement || boardTargetPrompt), 'board-slot-active': Boolean(boardSlotPrompt), 'board-control-expanded': !boardControlMinimized && Boolean(gmPlacement || boardTargetPrompt || boardSlotPrompt) }" :data-l12-battle-layout="mobileLandscapeViewport ? 'mobile' : 'desktop'" :data-l12-mobile-landscape="mobileLandscapeViewport ? 'true' : undefined">
+    <MobileBattleDock v-if="mobileLandscapeViewport" />
+    <Teleport :to="landscapeTeleportTarget()">
+      <button v-if="mobileLandscapeViewport" type="button" class="mobile-card-inspector-handle mobile-card-inspector-handle-global" :class="{ open: mobileInspectorOpen }" :aria-expanded="mobileInspectorOpen" @click="mobileInspectorOpen = !mobileInspectorOpen">{{ mobileInspectorOpen ? '收起详情' : '展开卡牌详情' }}</button>
+    </Teleport>
+    <div class="board-stage" :style="{ width: `${stageSize.width}px`, height: `${stageSize.height}px`, transform: `scale(${scale})`, '--l12-board-copy': `${adaptiveBoardToken(13, scale)}px`, '--l12-board-meta': `${adaptiveBoardToken(11, scale)}px`, '--l12-board-micro': `${adaptiveBoardToken(9, scale)}px`, '--l12-effect-copy': `${adaptiveBoardToken(13, scale)}px` }">
       <div class="stage-layout">
         <aside class="board-rail left-rail">
-          <div v-if="sessionDisasters.length" class="left-disaster-row">
-            <section class="grand-panel session-disaster-panel" aria-label="本局天灾">
+          <span v-if="mobileLandscapeViewport" class="mobile-detail-handle-reservation" aria-hidden="true" />
+          <section v-if="mobileLandscapeViewport && viewEnemy.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-opponent" aria-label="对手额外区">
+            <small>对手额外区</small>
+            <div>
+              <button v-for="trial in viewEnemy.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
+                :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
+                :disabled="trial.hidden" :title="trial.hidden ? '对手未揭示的试炼' : trial.name"
+                @mouseenter="!trial.hidden && (focusCard = trial)" @click.stop="!trial.hidden && selectPublicCardFor(viewEnemy.playerIndex, trial)">
+                <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="对手未揭示的试炼" />
+                <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
+                <b v-if="isCurrentTrial(viewEnemy.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewEnemy.specialZones?.trialLevel ?? 0 }}</b>
+              </button>
+            </div>
+          </section>
+          <div v-if="sessionDisasters.length || game.activeDisaster" class="left-disaster-row">
+            <section v-if="sessionDisasters.length" class="grand-panel session-disaster-panel" aria-label="本局天灾">
               <h3>本局天灾</h3>
               <div class="session-disaster-strip">
                 <button v-for="(card, index) in sessionDisasterSlots" :key="card?.instanceId ?? `hidden-disaster-${index}`"
@@ -808,30 +1332,41 @@ function statusTexts(card: Card) {
               </div>
             </section>
             <section class="grand-panel current-disaster-panel" data-ui-contract="left-current-disaster">
-                <button type="button" class="current-disaster-card" :disabled="!game.activeDisaster"
-                  @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="game.activeDisaster && (focusCard = game.activeDisaster)">
+                <button type="button" class="current-disaster-card" data-l12-zone="disaster" :disabled="!game.activeDisaster"
+                  @mouseenter="game.activeDisaster && (focusCard = game.activeDisaster)" @click="inspectActiveDisaster">
                   <CardImage v-if="game.activeDisaster" :card-id="game.activeDisaster.cardId" :legacy-url="game.activeDisaster.imageUrl" :alt="game.activeDisaster.name" intent="board" eager />
                   <img v-else src="/assets/l12/card-back-disaster.png" alt="天灾牌背" />
+                  <span class="mobile-current-disaster-copy"><b>当前天灾</b><i>{{ game.activeDisaster?.name || '尚未揭示' }}</i></span>
                 </button>
             </section>
+            <section v-if="mobileLandscapeViewport" class="mobile-current-disaster-value" aria-label="当前天灾值">
+              <img src="/assets/l12/disaster-icon-source.png" alt="" />
+              <span>天灾值</span><b>{{ game.disasterValue }}</b>
+            </section>
           </div>
+          <section v-if="mobileLandscapeViewport && viewMe.specialZones?.trials?.length" class="mobile-extra-zone mobile-extra-zone-my" aria-label="我方额外区">
+            <small>我方额外区</small>
+            <div>
+              <button v-for="trial in viewMe.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
+                :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
+                :title="trial.hidden ? '我方未揭示的试炼' : trial.name"
+                @mouseenter="focusCard = trial" @click.stop="selectPublicCardFor(viewMe.playerIndex, trial)">
+                <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="我方未揭示的试炼" />
+                <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
+                <b v-if="isCurrentTrial(viewMe.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewMe.specialZones?.trialLevel ?? 0 }}</b>
+              </button>
+            </div>
+          </section>
           <div class="left-detail-layout">
             <div class="left-card-column">
               <div ref="inspectorAnchor" class="card-inspector-anchor" data-ui-contract="selected-card-inspector-anchor">
-              <Teleport to="body" :disabled="!modalInspectorVisible">
+              <Teleport :to="landscapeTeleportTarget()" :disabled="!modalInspectorVisible">
                 <div class="board-rail inspector-style-scope">
-                <section class="grand-panel card-inspector" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
+                <section class="grand-panel card-inspector archive-detail" data-ui-contract="selected-card-inspector" :style="modalInspectorVisible ? inspectorFloatStyle : undefined" :class="{ 'card-inspector-floating': modalInspectorVisible, 'horizontal-inspector': focusCard && isHorizontalCardType(focusCard.cardType) }">
                   <i class="corner tl"/><i class="corner tr"/><i class="corner bl"/><i class="corner br"/>
-                  <h3>选中卡牌</h3>
-                  <template v-if="focusCard">
-                    <CardImage class="inspector-card-image" :card-id="focusCard.cardId" :legacy-url="focusCard.imageUrl" :alt="focusCard.name" intent="detail" eager />
-                    <h2>{{ focusCard.name }}</h2>
-                    <div v-if="focusCard.traits?.length || focusCard.profession" class="inspector-card-tags">
-                      <span v-for="trait in focusCard.traits" :key="trait">{{ trait }}</span><span v-if="focusCard.profession">{{ focusCard.profession }}</span>
-                    </div>
-                    <div v-if="focusCard.trialValue" class="inspector-card-tags"><span>试炼值 {{ focusCard.trialValue }}</span></div>
-                    <p class="inspector-effect l12-effect-body l12-effect-body--compact">{{ focusCard.effectText || '无效果文字' }}</p>
-                    <ul v-if="statusTexts(focusCard).length" class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul>
+                  <template v-if="focusCard && focusDetailCard">
+                    <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
+                    <section v-if="statusTexts(focusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul></section>
                   </template>
                   <div v-else class="empty-inspector">悬停或选择卡牌<br/>查看数值</div>
                 </section>
@@ -839,7 +1374,7 @@ function statusTexts(card: Card) {
               </Teleport>
               </div>
               <div class="selected-card-utility-slot" data-ui-contract="selected-card-utility-dock">
-                <BattleUtilityDock @settings="emit('settings')" />
+                <BattleDockPortal lane="utility"><BattleUtilityDock @settings="emit('settings')" /></BattleDockPortal>
               </div>
             </div>
           </div>
@@ -851,21 +1386,23 @@ function statusTexts(card: Card) {
         </section>
 
         <main class="board-center" :class="{ 'timed-board': Boolean(l12State.rankedClock) }" data-l12-game-stage>
-          <HandArea v-if="l12State.gmEnabled" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
+          <HandArea v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else class="opponent-hand" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
-          <div class="board-status-lane opponent-status-lane" data-ui-contract="opponent-status-safe-lane">
+          <div class="board-status-lane opponent-status-lane" data-ui-contract="shared-external-clock-track">
             <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
               :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
           <div class="felt-board" data-l12-game-board data-ui-contract="persistent-board-safe-layout">
+            <span class="presentation-zone-anchor" data-l12-zone="resolving" aria-hidden="true" />
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
+              :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
@@ -873,20 +1410,21 @@ function statusTexts(card: Card) {
               :selection-mode="selectionModeFor(viewEnemy.playerIndex)" :targetable-ids="targetableIdsFor(viewEnemy.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewEnemy.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewEnemy.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewEnemy.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []"
+              :selected-target-ids="boardTargetIds" :response-target-ids="responseTargetIds"
               :can-activate-osiris="isControlledPlayer(viewEnemy.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewEnemy.playerIndex ? combat.attacker.instanceId : null"
               :combat-target-id="combat?.targetOwner.playerIndex === viewEnemy.playerIndex ? combat.target?.instanceId : null"
               :combat-target-master="combat?.targetOwner.playerIndex === viewEnemy.playerIndex && !combat.target"
-              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="mobileLandscapeViewport ? selectedPaymentIds : paymentResourceIds"
+              :mobile-morale-picker="mobileMoralePickerEnabled"
               :master-targetable="!isControlledPlayer(viewEnemy.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewEnemy.playerIndex, row, slot, card)" @master="masterFor(viewEnemy.playerIndex)"
-              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewEnemy.playerIndex, action, card)"
               @ability="(card, ability) => activateAbilityFor(viewEnemy.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewEnemy.playerIndex, ability)"
-              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" />
+              @select-card="card => selectPublicCardFor(viewEnemy.playerIndex, card)" @payment-resource="togglePaymentResource" @open-morale-payment="openMobileMoralePicker" />
             <div class="board-seam" data-ui-contract="phase-safe-track">
               <span class="board-midline-anchor" aria-hidden="true" />
             </div>
@@ -894,12 +1432,25 @@ function statusTexts(card: Card) {
             <ActionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" :player-names="game.players.map(player => player.name)"
               :paused="passivePresentationPaused" />
             <ZoneMovementPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :viewer-player-index="game.you" :paused="passivePresentationPaused" />
-            <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId" />
-            <Teleport to="body">
+              :players="game.players" :prompts="game.prompts ?? []" :revision="game.revision"
+              :synchronizing="synchronizingAuthoritySnapshot"
+              :paused="modalPresentationPaused"
+              :viewer-player-index="game.you" :playback-speed="replayPlaybackSpeed"
+              :sequence-coordinator="cardPresentationCoordinator"
+              @busy-change="replayZonePresentationBusy = $event" />
+            <CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []" :match-id="game.matchId" :revision="game.revision"
+              :synchronizing="synchronizingAuthoritySnapshot"
+              :paused="modalPresentationPaused"
+              :playback-speed="replayPlaybackSpeed" :sequence-coordinator="cardPresentationCoordinator" />
+            <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
+              :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
+            <Teleport :to="landscapeTeleportTarget()">
               <Transition name="public-reveal">
-                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation" data-ui-contract="public-card-reveal-animation">
-                  <div class="public-reveal-cards">
+                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"
+                  :class="{ 'public-reveal-animation--entry-continuation': publicReveal.kind === 'entry-continuation' }"
+                  data-ui-contract="public-card-reveal-animation" :data-presentation-kind="publicReveal.kind"
+                  :data-entry-transaction-key="publicReveal.transactionKey">
+                  <div v-if="publicReveal.cards.length" class="public-reveal-cards">
                     <CardImage v-for="card in publicReveal.cards" :key="card.instanceId" :card-id="card.cardId" :legacy-url="card.imageUrl" :alt="card.name" intent="detail" eager
                       :class="{ horizontal: isHorizontalCardType(card.cardType) }" />
                   </div>
@@ -915,36 +1466,48 @@ function statusTexts(card: Card) {
                 </div>
               </Transition>
             </Teleport>
-            <div v-if="mode === 'attack' && selectedId && !combat && !hasBlockingPrompt" class="board-mode-hint" data-ui-contract="cancel-local-attack-selection">
+            <BattleDockPortal lane="context"><div v-if="mode === 'attack' && selectedId && !combat && !hasBlockingPrompt" class="board-mode-hint" data-ui-contract="cancel-local-attack-selection">
               <span>请选择进攻对象</span><button type="button" @click="cancelLocalAttackSelection">取消</button>
-            </div>
-            <div v-if="combat && !activeBoardPromptId" class="combat-presentation">
+            </div></BattleDockPortal>
+            <BattleDockPortal lane="context"><div v-if="combat && !activeBoardPromptId" class="combat-presentation" :class="{ 'combat-presentation--passive': game.pendingDefense?.stage !== 'DefenseChoice' }">
               <i class="combat-trace"/>
               <div class="combat-versus">
+                <small v-if="mobileLandscapeViewport" class="combat-stage-label">{{ combatStageLabel }}</small>
                 <span :class="combat.attackerOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.attackerOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.attacker.name }}</span>
                 <b>{{ combat.attackValue }}<small>{{ combat.attackUnit }}</small></b>
                 <em>⚔</em>
                 <span :class="combat.targetOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.targetOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.targetName }}</span>
                 <b>{{ combat.targetValue }}<small>{{ combat.targetUnit }}</small></b>
               </div>
-              <div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly" class="combat-resolution-panel">
-                <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
-                  :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-                  :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
-              </div>
-            </div>
+              <button v-if="mobileLandscapeViewport && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized"
+                class="combat-decision-minimize" type="button" aria-label="最小化支援或抵挡选择" @click="combatDecisionMinimized = true; combatDecisionInfoOpen = false">−</button>
+              <BattleDockPortal lane="primary"><div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
+                  <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+                    :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
+                    :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
+                </div></BattleDockPortal>
+            </div></BattleDockPortal>
+            <BattleDockPortal lane="tools"><button v-if="combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized && isControlledPlayer(1 - game.pendingDefense.attackerPlayer)"
+              ref="combatInfoTrigger" class="combat-decision-info-trigger" type="button" :aria-expanded="combatDecisionInfoOpen" @click="toggleCombatDecisionInfo">{{ combatDecisionInfoOpen ? '关闭说明' : '操作说明' }}</button></BattleDockPortal>
+            <BattleOverlayPortal><div v-if="combatDecisionInfoOpen && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && isControlledPlayer(1 - game.pendingDefense.attackerPlayer)" class="combat-decision-info-panel" role="dialog" aria-label="抵挡或支援操作说明" @keydown.esc="closeCombatDecisionInfo">
+              <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" />
+              <button ref="combatInfoClose" type="button" @click="closeCombatDecisionInfo">返回选择</button>
+            </div></BattleOverlayPortal>
+            <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && combatDecisionMinimized"
+              class="combat-decision-restore" type="button" @click="combatDecisionMinimized = false">恢复支援/抵挡</button></BattleDockPortal>
             <PlayerMat class="battlefield-half my-half" :player="viewMe" side="my" :controllable="isControlledPlayer(viewMe.playerIndex)"
+              :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"
               :attackable-ids="isControlledPlayer(viewMe.playerIndex) ? attackableIds : []" :response-playable-ids="isControlledPlayer(viewMe.playerIndex) ? responsePlayableIds : []"
-              :selected-target-ids="boardTargetIds" :response-target-ids="promptMinimized ? responseTargetIds : []" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="paymentResourceIds"
+              :selected-target-ids="boardTargetIds" :response-target-ids="responseTargetIds" :payment-choice-ids="paymentChoiceIds" :payment-selected-ids="mobileLandscapeViewport ? selectedPaymentIds : paymentResourceIds" :mobile-morale-picker="mobileMoralePickerEnabled"
               :can-activate-osiris="isControlledPlayer(viewMe.playerIndex) && canActivateOsiris"
               :osiris-victory-disabled-reason="osirisVictoryDisabledReason"
               :combat-attacker-id="combat?.attackerOwner.playerIndex === viewMe.playerIndex ? combat.attacker.instanceId : null"
@@ -952,143 +1515,292 @@ function statusTexts(card: Card) {
               :combat-target-master="combat?.targetOwner.playerIndex === viewMe.playerIndex && !combat.target"
               :master-targetable="!isControlledPlayer(viewMe.playerIndex) && !combat && selectedAttackTargets.includes('master')"
               @slot="(row, slot, card) => slotFor(viewMe.playerIndex, row, slot, card)" @master="masterFor(viewMe.playerIndex)"
-              @focus="focusCard = $event" @graveyard="!hasBlockingPrompt && (graveyardPlayer = $event)"
+              @focus="focusCard = $event" @inspect="inspectDialogCard" @graveyard="(!hasBlockingPrompt || inspectionLayerMinimized) && (graveyardPlayer = $event)"
               @card-action="(action, card) => fieldActionFor(viewMe.playerIndex, action, card)"
               @select-card="card => selectPublicCardFor(viewMe.playerIndex, card)"
               @ability="(card, ability) => activateAbilityFor(viewMe.playerIndex, card, ability)"
               @faction-ability="ability => activateFactionAbilityFor(viewMe.playerIndex, ability)"
-              @payment-resource="togglePaymentResource" />
+              @payment-resource="togglePaymentResource" @open-morale-payment="openMobileMoralePicker" />
           </div>
-          <div class="board-status-lane my-status-lane" data-ui-contract="player-status-safe-lane">
+          <div class="board-status-lane my-status-lane" data-ui-contract="shared-external-clock-track">
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
-          <HandArea v-if="l12State.spectating" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
+          <HandArea v-if="spectatorLiveView && !showBothHands" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
           <HandArea v-else :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
         </main>
 
         <aside class="board-rail right-rail">
-          <section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
-            <article class="player-summary opponent-summary">
-              <div class="player-summary-primary"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></div>
-              <div class="player-summary-meta">
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(enemyBadge?.rankLabel)" />
-                <RankedIdentityBadge v-if="identityLabel(enemyBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(enemyBadge?.masterTitle)" />
-                <span class="connection-state" :class="{ online: playerConnection(viewEnemy.playerIndex) }"><i/>{{ connectionLabel(viewEnemy.playerIndex) }}</span>
-              </div>
-            </article>
-            <hr/>
-            <article class="player-summary my-summary">
-              <div class="player-summary-primary"><b>我方</b><strong class="mine">{{ viewMe.name || '未命名玩家' }}</strong></div>
-              <div class="player-summary-meta">
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.rankLabel)" class="rank-badge" variant="tier" compact :label="identityLabel(myBadge?.rankLabel)" />
-                <RankedIdentityBadge v-if="identityLabel(myBadge?.masterTitle)" class="title-badge" variant="title" compact :label="identityLabel(myBadge?.masterTitle)" />
-                <span class="connection-state" :class="{ online: playerConnection(viewMe.playerIndex) }"><i/>{{ connectionLabel(viewMe.playerIndex) }}</span>
-              </div>
-            </article>
-          </section>
+          <!-- Phone status lanes are intentionally not over the hands.  A timed
+               match instead receives its own reserved pair of compact clocks in
+               this otherwise unused section of the right rail. -->
+          <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
+            <div v-if="mobileLandscapeViewport" class="mobile-player-name-strip" aria-label="双方玩家">
+              <button type="button" class="mobile-player-name opponent" :aria-label="`查看对方玩家详情：${viewEnemy.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewEnemy.playerIndex)"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></button>
+              <button type="button" class="mobile-player-name mine" :aria-label="`查看我方玩家详情：${viewMe.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewMe.playerIndex)"><b>我方</b><strong>{{ viewMe.name || '未命名玩家' }}</strong></button>
+            </div>
+            <template v-else>
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
+                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
+                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)" />
+              <hr/>
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
+                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
+                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)" />
+            </template>
+          </section></BattleDockPortal>
+          <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger" @click="mobileRecordOpen = true; mobileRecordMinimized = false">对局记录</button></BattleDockPortal>
+          <BattleDockPortal lane="tools"><section v-if="mobileLandscapeViewport && l12State.rankedClock" class="mobile-timed-clocks" aria-label="双方对局计时">
+            <PlayerTurnClock class="mobile-rail-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
+              :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
+            <PlayerTurnClock class="mobile-rail-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
+              :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
+          </section></BattleDockPortal>
           <section class="grand-panel log-panel record-log"><h3>对局记录</h3>
-            <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" @focus="focusCard = $event" />
+            <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />
           </section>
-          <section v-if="!combat && !readOnly" class="grand-panel action-panel"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
-            :mulligan-count="mulliganIds.length" :defense-count="defenseIds.length" :defense-target-type="defenseTargetType"
-            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section>
+          <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
+            :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
+            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section></BattleDockPortal>
         </aside>
       </div>
+      <Teleport :to="landscapeTeleportTarget()">
+        <section v-if="mobileLandscapeViewport && mobilePlayerDetailsOpen" class="mobile-player-details-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="双方玩家详情" @click.self="mobilePlayerDetailsOpen = false">
+          <div class="mobile-player-details-dialog">
+            <header><div><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
+            <div class="mobile-player-details-list">
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
+                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
+                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)"
+                show-master-details
+                :class="{ focused: mobilePlayerDetailsFocus === viewEnemy.playerIndex }" />
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
+                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
+                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)"
+                show-master-details
+                :class="{ focused: mobilePlayerDetailsFocus === viewMe.playerIndex }" />
+            </div>
+          </div>
+        </section>
+        <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
+          <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
+          <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />
+        </section>
+      </Teleport>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && mobileRecordMinimized" class="mobile-record-restore" type="button" @click="mobileRecordOpen = true; mobileRecordMinimized = false">恢复对局记录</button></BattleDockPortal>
+      <Teleport :to="landscapeTeleportTarget()">
+        <Transition name="mobile-card-inspector">
+          <aside v-if="mobileLandscapeViewport && mobileInspectorOpen" class="mobile-card-inspector mobile-safe-overlay" role="dialog" aria-modal="false" aria-label="卡牌详情">
+            <header><div><small>卡牌详情</small><h2>{{ focusCard?.name || '选择一张卡牌' }}</h2></div><button type="button" @click="mobileInspectorOpen = false">收起</button></header>
+            <div v-if="focusCard && focusDetailCard" class="archive-detail mobile-card-detail-body">
+              <CardDetailContent :card="focusDetailCard" :show-catalog-only="false" />
+              <section v-if="statusTexts(focusCard).length" class="archive-effect battle-card-status"><b>当前状态</b><ul class="inspector-statuses"><li v-for="text in statusTexts(focusCard)" :key="text">{{ text }}</li></ul></section>
+            </div>
+            <p v-else class="mobile-inspector-empty">点击手牌、场上卡牌、圣物、试炼或当前天灾，即可在此查看完整信息。</p>
+          </aside>
+        </Transition>
+      </Teleport>
+      <Teleport :to="landscapeTeleportTarget()">
+        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
+          <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${selectedPaymentIds.length}/${mobilePaymentPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
+          <div v-if="mobilePaymentPrompt" class="mobile-morale-prompt inline-prompt-copy">
+            <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(mobilePaymentPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(mobilePaymentPrompt) }}</small><strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong></div>
+            <div class="inline-prompt-legal"><span v-if="promptSituationCopy(mobilePaymentPrompt)">{{ promptSituationCopy(mobilePaymentPrompt) }}</span><span v-if="inlinePromptInstruction(mobilePaymentPrompt)">{{ inlinePromptInstruction(mobilePaymentPrompt) }}</span><span>{{ inlinePromptRange(mobilePaymentPrompt) }}</span></div>
+            <div class="inline-prompt-pending"><span role="status">{{ inlinePromptSelectionSummary(mobilePaymentPrompt, selectedPaymentIds) }}</span></div>
+            <div v-if="inlinePromptPayment(mobilePaymentPrompt)" class="inline-prompt-payment" :data-payment-status="mobilePaymentPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(mobilePaymentPrompt) }}</span></div>
+            <div v-if="promptSubmissionCopy(mobilePaymentPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(mobilePaymentPrompt) }}</span></div>
+          </div>
+          <p v-else class="mobile-morale-prompt">这里展示当前士气状态；需要支付或返还时会自动变为可选择面板。</p>
+          <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
+            <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
+              <div v-if="mobileRuneChoices.length">
+                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                  <img :src="choice.iconUrl" alt="" />
+                </button>
+              </div>
+            </section>
+            <section class="mobile-resource-row" aria-label="普通士气与特殊士气">
+              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                <img :src="choice.iconUrl" alt="" />
+              </button>
+            </section>
+            <p v-if="mobileMoraleReason" class="mobile-morale-reason" role="status">{{ mobileMoraleReason }}</p>
+            <p v-if="!mobileMoraleChoices.length">{{ mobileMoraleInteractive ? '当前提示没有可选择的士气。' : '当前没有士气。' }}</p>
+          </div>
+          <footer v-if="mobilePaymentPrompt" class="mobile-morale-actions" data-ui-contract="equal-action-group">
+            <button v-if="mobilePaymentPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">{{ promptChoiceText(mobilePaymentPrompt, 'skip', '不发动') }}</button>
+            <button v-if="mobilePaymentPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">{{ promptChoiceText(mobilePaymentPrompt, 'cancel', '取消打出') }}</button>
+            <button class="primary" type="button" :disabled="selectedPaymentIds.length < mobilePaymentPrompt.minChoose || selectedPaymentIds.length > mobilePaymentPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ mixedBoardPayment ? '确认费用' : mobilePaymentPrompt.kind === 'resource-return' || mobilePaymentPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : mobilePaymentPrompt.kind === 'resource-payment' || mobilePaymentPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+          </footer>
+        </section>
+      </Teleport>
+      <BattleDockPortal lane="context"><button v-if="mobileMoralePickerEnabled && mobileMoralePickerMinimized" class="mobile-morale-restore" type="button" :title="minimizedMoraleTask" @click="openMobileMoralePicker">{{ minimizedMoraleTask }}</button></BattleDockPortal>
+      <Teleport :to="landscapeTeleportTarget()">
+        <section v-if="mobileLandscapeViewport && !readOnly && inlinePromptInfoOpen && inlineInfoPrompt" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay inline-prompt-info-overlay" role="dialog" aria-modal="false" aria-label="当前选择说明">
+          <header><h2>{{ inlinePromptTitle(inlineInfoPrompt) }}</h2><button ref="inlinePromptInfoClose" type="button" @click="closeInlinePromptInfo">返回选择</button></header>
+          <div class="inline-prompt-info-body">
+            <p class="inline-info-operation" :data-actor-state="inlinePromptActorState(inlineInfoPrompt)"><strong>{{ inlinePromptActor(inlineInfoPrompt) }}</strong></p>
+            <p class="inline-info-legal"><span v-if="promptSituationCopy(inlineInfoPrompt)">{{ promptSituationCopy(inlineInfoPrompt) }}</span><span v-if="inlinePromptInstruction(inlineInfoPrompt)">{{ inlinePromptInstruction(inlineInfoPrompt) }}</span><span>{{ inlinePromptRange(inlineInfoPrompt) }}</span></p>
+            <p class="inline-info-pending"><span>{{ inlineInfoPrompt.promptId === boardSlotPrompt?.promptId ? battleActionDirectSubmitStatus() : inlinePromptCurrentSummary(inlineInfoPrompt) }}</span></p>
+            <p v-if="inlinePromptPayment(inlineInfoPrompt)" class="inline-info-payment" :data-payment-status="inlineInfoPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(inlineInfoPrompt) }}</span></p>
+            <p v-if="promptSubmissionCopy(inlineInfoPrompt)" class="inline-info-result"><span>{{ inlinePromptConsequenceLead(inlineInfoPrompt) }}：{{ promptSubmissionCopy(inlineInfoPrompt) }}</span></p>
+            <p v-if="inlineInfoPrompt.validChoices.includes('skip')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'skip') }}</p>
+            <p v-if="inlineInfoPrompt.validChoices.includes('cancel')">{{ inlinePromptExitSummary(inlineInfoPrompt, 'cancel') }}</p>
+          </div>
+        </section>
+      </Teleport>
       <GraveyardOverlay v-if="graveyardPlayer !== null" :players="[viewMe, viewEnemy]" :initial-player="graveyardPlayer"
-        :own-player-index="game.you" :can-activate-osiris="canActivateOsiris"
-        @close="graveyardPlayer = null" @focus="focusCard = $event" @ability="activateAbility" />
+        :actor-player-index="controlledPlayerIndex" :can-activate-osiris="canActivateOsiris" :inspection-only="hasBlockingPrompt"
+        :mobile-layout="mobileLandscapeViewport"
+        @close="graveyardPlayer = null" @focus="focusCard = $event" @inspect="inspectDialogCard" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
-        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" @close="masterPlayerIndex = null" @activate="activateMaster" />
-      <div v-if="gmPlacement && !readOnly" class="board-target-controls gm-placement-controls">
+        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" :mobile-layout="mobileLandscapeViewport" @close="masterPlayerIndex = null" @activate="activateMaster" @focus="focusMasterCard(masterPlayerIndex)" @inspect="inspectMasterCard(masterPlayerIndex)" />
+      <BattleDockPortal lane="context"><div v-if="gmPlacement && !readOnly && !boardControlMinimized" class="board-target-controls gm-placement-controls">
         <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>
+        <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button @click="emit('gmPlacementResolved')">取消</button>
-      </div>
-      <div v-if="boardTargetPrompt && !readOnly" class="board-target-controls">
-        <strong>{{ boardTargetPrompt.text }}</strong><span>已选择 {{ boardTargetIds.length }}/{{ boardTargetPrompt.maxChoose }}</span>
-        <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">不发动</button>
-        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认发动' }}</button>
-      </div>
-      <div v-if="boardSlotPrompt && !readOnly" class="board-target-controls board-slot-controls">
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="boardTargetPrompt && !readOnly && !boardControlMinimized" class="board-target-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(boardTargetPrompt) }}</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(boardTargetPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(boardTargetPrompt) }}</small><strong>{{ inlinePromptTitle(boardTargetPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(boardTargetPrompt)">{{ promptSituationCopy(boardTargetPrompt) }}</span><span v-if="inlinePromptInstruction(boardTargetPrompt)">{{ inlinePromptInstruction(boardTargetPrompt) }}</span><span>{{ inlinePromptRange(boardTargetPrompt) }}</span></div>
+          <div class="inline-prompt-pending"><span role="status">{{ boardTargetSelectionSummary }}</span></div>
+          <div v-if="inlinePromptPayment(boardTargetPrompt)" class="inline-prompt-payment" :data-payment-status="boardTargetPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(boardTargetPrompt) }}</span></div>
+          <div v-if="promptSubmissionCopy(boardTargetPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(boardTargetPrompt) }}</span></div>
+        </div>
+        <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
+        <button v-if="boardTargetPrompt.validChoices.includes('skip')" @click="resolveBoardTarget(true)">{{ promptChoiceText(boardTargetPrompt, 'skip', '不发动') }}</button>
+        <button class="primary" :disabled="boardTargetIds.length < boardTargetPrompt.minChoose || boardTargetIds.length > boardTargetPrompt.maxChoose" @click="resolveBoardTarget(false)">{{ boardTargetPrompt.data?.choiceMode === 'mixed-board-payment' ? '确认费用' : '确认目标' }}</button>
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="boardSlotPrompt && !readOnly && !boardControlMinimized" class="board-target-controls board-slot-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(boardSlotPrompt) }}</span>
         <CardImage v-if="boardSlotPreview" :card-id="boardSlotPreview.cardId" :legacy-url="boardSlotPreview.imageUrl" :alt="boardSlotPreview.name" intent="board" eager
           @mouseenter="focusCard = boardSlotPreview" @click="focusCard = boardSlotPreview" />
-        <strong>{{ boardSlotPrompt.text }}</strong><span>直接点击绿色高亮空位</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(boardSlotPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(boardSlotPrompt) }}</small><strong>{{ inlinePromptTitle(boardSlotPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(boardSlotPrompt)">{{ promptSituationCopy(boardSlotPrompt) }}</span><span v-if="inlinePromptInstruction(boardSlotPrompt)">{{ inlinePromptInstruction(boardSlotPrompt) }}</span><span>{{ inlinePromptRange(boardSlotPrompt) }}；可选：{{ boardSlotChoices }}</span></div>
+          <div class="inline-prompt-pending direct-submit"><span class="inline-prompt-action">{{ battleActionDirectSubmitStatus() }}</span></div>
+          <div v-if="promptSubmissionCopy(boardSlotPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(boardSlotPrompt) }}</span></div>
+        </div>
+        <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
-          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">取消</button>
-      </div>
-      <div v-if="resourceSelectionPrompt && !readOnly" class="board-target-controls resource-payment-controls">
-        <strong>{{ resourceSelectionPrompt.text }}</strong>
-        <span>已选择 {{ paymentResourceIds.length }}/{{ resourceSelectionPrompt.maxChoose }}</span>
-        <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">不发动</button>
-        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose"
+          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls">
+        <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(resourceSelectionPrompt) }}</span>
+        <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
+          <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(resourceSelectionPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(resourceSelectionPrompt) }}</small><strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong></div>
+          <div class="inline-prompt-legal"><span v-if="promptSituationCopy(resourceSelectionPrompt)">{{ promptSituationCopy(resourceSelectionPrompt) }}</span><span v-if="inlinePromptInstruction(resourceSelectionPrompt)">{{ inlinePromptInstruction(resourceSelectionPrompt) }}</span><span>{{ inlinePromptRange(resourceSelectionPrompt) }}</span></div>
+          <div class="inline-prompt-pending"><span role="status">{{ inlinePromptSelectionSummary(resourceSelectionPrompt, paymentResourceIds) }}</span></div>
+          <div v-if="inlinePromptPayment(resourceSelectionPrompt)" class="inline-prompt-payment" :data-payment-status="resourceSelectionPrompt.presentation?.paymentStatus"><span>{{ inlinePromptPayment(resourceSelectionPrompt) }}</span></div>
+          <div v-if="promptSubmissionCopy(resourceSelectionPrompt)" class="inline-prompt-result"><span>{{ promptSubmissionCopy(resourceSelectionPrompt) }}</span></div>
+        </div>
+        <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
+        <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
+        <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', resourceSelectionPrompt.data?.cancel ?? '取消打出') }}</button>
+        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose"
           @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
             ? '确认返还'
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
-      </div>
-      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible"
+      </div></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
+      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
-  <SandboxCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽堙灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
+  <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽湮灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>
 </template>
 
 <style scoped>
 .board-stage{aspect-ratio:16/9}
 .board-viewport.gm-panel-docked{right:344px}
-.stage-layout{display:grid;grid-template-columns:340px 92px minmax(0,1fr) 320px;align-items:stretch;gap:8px}
+.stage-layout{display:grid;grid-template-columns:340px 8px 92px 8px minmax(0,1fr) 320px;align-items:stretch;gap:0}
 .stage-layout>.board-rail{width:auto;min-width:0}
+.board-viewport:not(.mobile-landscape-board) .left-rail{grid-column:1}.board-viewport:not(.mobile-landscape-board) .phase-column{grid-column:3}.board-viewport:not(.mobile-landscape-board) .board-center{grid-column:5}.board-viewport:not(.mobile-landscape-board) .right-rail{grid-column:6}
 .left-rail{display:flex}.left-detail-layout{display:flex;min-height:0;flex:1}.left-card-column{display:flex;width:100%;min-width:0;min-height:0;flex-direction:column;gap:10px}.left-rail>.grand-panel,.left-card-column>.grand-panel,.left-card-column>.card-inspector-anchor{box-sizing:border-box;width:100%}.right-rail{display:grid;grid-template-rows:auto minmax(0,1fr) auto;align-items:stretch}
-.current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:242px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
-.board-center{--l12-hand-lane-height:160px;display:grid;min-height:0;grid-template-rows:var(--l12-hand-lane-height) 70px minmax(0,1fr) 70px var(--l12-hand-lane-height);align-items:stretch;gap:6px}
-.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(-10px)}
-.board-center>.opponent-hand{grid-row:1}.opponent-status-lane{grid-row:2}.felt-board{grid-row:3}.my-status-lane{grid-row:4}.board-center>.l12-hand:last-child{grid-row:5}
-.board-viewport{top:52px}.board-status-lane{height:70px!important;min-height:70px!important;flex-shrink:0}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
+.current-disaster-panel{display:grid;flex:none;grid-template-columns:minmax(0,1fr);align-items:center;padding:10px!important}.current-disaster-card{width:100%;padding:0;overflow:hidden;border:1px solid rgba(240,239,229,.72);background:#080a0b}.current-disaster-card:disabled{cursor:default}.current-disaster-card img,.current-disaster-card :deep(.l12-card-image){display:block;width:100%;height:auto;aspect-ratio:8/5;object-fit:contain}.phase-column{display:flex;min-width:0;min-height:0;margin-block:166px;flex-direction:column;gap:8px;padding:8px 5px!important;overflow:hidden}.phase-disaster-value{display:flex;min-height:64px;align-items:center;justify-content:center;gap:6px;padding:5px 3px;border:1px solid rgba(238,238,228,.34);background:rgba(7,10,11,.68);color:#fff}.phase-disaster-value img{width:30px;height:32px;object-fit:contain;filter:invert(1)}.phase-disaster-value b{font-size:max(30px,var(--l12-board-copy,13px));line-height:1}.phase-column :deep(.l12-phase-track.vertical){flex:1;min-height:0}
+.board-center{--l12-hand-lane-height:160px;--l12-clock-track-width:196px;display:grid;min-height:0;grid-template-columns:minmax(0,1fr);grid-template-rows:var(--l12-hand-lane-height) minmax(0,1fr) var(--l12-hand-lane-height);align-items:stretch;gap:0}
+.board-center>.l12-hand,.board-center>.felt-board{grid-column:1}.board-center>.board-status-lane{grid-column:1;width:var(--l12-clock-track-width);justify-self:end}
+.board-center>.l12-hand{position:relative;z-index:40;box-sizing:border-box;width:calc(100% - 400px);height:var(--l12-hand-lane-height)!important;min-height:var(--l12-hand-lane-height);padding-right:0;align-self:stretch;justify-self:center;transform:translateX(64px)}
+.board-center.timed-board>.l12-hand{width:calc(100% - 424px);transform:none}
+.board-center>.opponent-hand{grid-row:1}.felt-board{grid-row:2}.board-center>.l12-hand:last-child{grid-row:3}
+.board-viewport{top:52px}.player-summary :is(.player-summary-primary,.player-summary-meta,.connection-state){font-size:var(--l12-board-copy,13px)!important}
 .right-rail{width:auto}.right-rail .record-log{display:flex;flex:1;flex-direction:column;min-height:150px}.right-rail .action-panel{max-height:300px;overflow:auto}.right-rail .action-panel :deep(.l12-actions>p){display:none}.board-rail .card-inspector{overflow:auto}.session-disaster-strip span{white-space:normal!important;overflow-wrap:anywhere}
+.card-inspector.archive-detail{display:block;box-sizing:border-box;border-left:1px solid rgba(240,239,229,.2)}.card-inspector :deep(.card-detail-copy){min-width:0}.card-inspector :deep(.archive-tags){flex-wrap:wrap}.card-inspector :deep(.archive-effect p){white-space:pre-wrap;overflow-wrap:anywhere}.battle-card-status{margin-top:2px}.battle-card-status>ul{margin-top:7px}
 .felt-board{
   --l12-board-seam-safe-height:44px;
+  --l12-battlefield-half-height:350px;
   box-sizing:border-box;
   width:100%;
+  min-height:calc(var(--l12-battlefield-half-height) * 2 + var(--l12-board-seam-safe-height) + 10px);
   display:grid;
-  grid-template-rows:minmax(0,1fr) var(--l12-board-seam-safe-height) minmax(0,1fr);
+  grid-template-rows:minmax(var(--l12-battlefield-half-height),1fr) var(--l12-board-seam-safe-height) minmax(var(--l12-battlefield-half-height),1fr);
   justify-self:center;
   align-items:stretch;
 }
-.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:70px;min-height:70px;justify-content:flex-end;overflow:visible;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto}.opponent-status-lane{order:0;align-items:flex-end}.my-status-lane{order:0;align-items:flex-start}
-.player-panel{box-sizing:border-box;height:auto!important;min-height:144px;flex:none;overflow:hidden!important}
-.player-summary{display:grid;min-width:0;gap:7px}.player-summary-primary{display:grid;min-width:0;grid-template-columns:max-content minmax(0,1fr);align-items:center;column-gap:6px}.player-summary-primary>b{color:#d2525b;font-size:var(--l12-board-copy,13px);white-space:nowrap}.my-summary .player-summary-primary>b{color:#58bdc5}.player-summary-primary>strong{min-width:0;overflow:hidden!important;font-size:max(15px,var(--l12-board-copy,13px))!important;line-height:1.35!important;text-overflow:ellipsis!important;white-space:nowrap!important}.player-summary-meta{display:flex;min-width:0;align-items:center;column-gap:4px;color:#aeb7b5;font-size:var(--l12-board-copy,13px);line-height:1.35}.player-summary-meta>.rank-badge,.player-summary-meta>.title-badge{min-width:max-content;max-width:none;flex:none}.player-summary-meta>.connection-state{min-width:0;max-width:100%!important;justify-content:flex-end;margin-left:auto!important;font-size:clamp(9px,var(--l12-board-micro,9px),11px)!important;overflow:hidden!important;text-overflow:ellipsis!important}
-.connection-state{display:flex!important;width:max-content;max-width:none!important;align-items:center;gap:4px;margin:0!important;color:#b76570!important;font-size:var(--l12-board-copy,13px)!important;font-weight:900;line-height:1!important;overflow:visible!important;white-space:nowrap!important;text-overflow:clip!important}.connection-state.online{color:#58c99a!important}.connection-state i{width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 6px currentColor}
+.presentation-zone-anchor{position:absolute;z-index:-1;left:50%;top:50%;width:72px;height:101px;transform:translate(-50%,-50%);visibility:hidden;pointer-events:none}
+.board-status-lane{position:relative;z-index:38;display:flex;box-sizing:border-box;height:auto;min-height:0;justify-content:flex-end;overflow:hidden;pointer-events:none}.board-player-clock{position:relative;right:auto;top:auto;bottom:auto;width:100%;max-width:var(--l12-clock-track-width);transform:none}.opponent-status-lane{grid-row:1;align-self:stretch;align-items:flex-end}.my-status-lane{grid-row:3;align-self:stretch;align-items:flex-start}.opponent-status-lane,.my-status-lane{order:0}
+.player-panel{display:grid;box-sizing:border-box;height:auto!important;min-height:0;flex:none;gap:8px;overflow:hidden!important}.player-panel :deep(.battle-player-identity){padding:2px}.player-panel :deep(.battle-player-identity__facts>div){grid-template-columns:64px minmax(0,1fr)}.player-panel :deep(.battle-player-identity__name>strong){font-size:max(14px,calc(var(--l12-board-copy,13px) - 1px))}.player-panel :deep(.battle-player-identity dd){font-size:calc(var(--l12-board-copy,13px) - 1px)}.player-panel :deep(.battle-player-identity .ranked-identity-badge){max-width:100%}.player-panel :deep(.battle-player-identity .ranked-identity-badge>span){min-width:0;overflow-wrap:anywhere;white-space:normal}
 .player-panel>hr{margin:9px 0!important}
 .right-rail .record-log{min-height:120px;overflow:hidden}.right-rail .record-log>.event-list{min-height:0;overflow-y:auto}
-.battlefield-half{position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}
-.battlefield-half::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
-.battlefield-half.opponent-half::before{border-color:rgba(196,40,50,.34)}
-.battlefield-half.my-half::before{inset:0;border-color:rgba(57,171,181,.4)}
-.battlefield-half.opponent-half{grid-row:1}
+.felt-board :deep(.battlefield-half){position:relative;box-sizing:border-box;width:100%;min-height:0;align-self:stretch;justify-self:center}
+.felt-board :deep(.battlefield-half)::before{content:'';position:absolute;z-index:1;inset:0;box-sizing:border-box;border:1px solid rgba(238,238,228,.18);pointer-events:none}
+.felt-board :deep(.battlefield-half.opponent-half)::before{border-color:rgba(196,40,50,.34)}
+.felt-board :deep(.battlefield-half.my-half)::before{inset:0;border-color:rgba(57,171,181,.4)}
+.felt-board :deep(.battlefield-half.opponent-half){grid-row:1}
 .board-seam{z-index:12;grid-row:2;box-sizing:border-box;height:var(--l12-board-seam-safe-height);min-height:var(--l12-board-seam-safe-height);isolation:isolate;pointer-events:none}
 .board-midline-anchor{position:absolute;left:0;right:0;top:50%;height:1px;background:linear-gradient(90deg,transparent,rgba(238,238,228,.35),transparent)}
-.battlefield-half.my-half{grid-row:3}
+.felt-board :deep(.battlefield-half.my-half){grid-row:3}
 .felt-board :deep(.formation){width:100%;height:350px;grid-template-columns:repeat(3,173px);grid-template-rows:repeat(2,173px);justify-content:end;gap:4px 8px}
 .felt-board :deep(.formation-slot .card-tile),.felt-board :deep(.formation-slot .card-tile.tapped){width:114.4px;height:160.6px;flex-basis:114.4px}
 .felt-board :deep(.formation-slot .field-actions){bottom:calc(50% + 86.5px)}
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:var(--l12-board-copy,13px);font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
-.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
+.public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-animation--entry-continuation{min-width:0}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
 .combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
+.combat-decision-info-trigger{position:absolute;top:calc(50% + 38px);left:calc(50% + 205px);z-index:22;min-height:38px;padding:4px 8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}
+.combat-decision-info-panel{position:fixed;top:50%;left:50%;z-index:2147483600;box-sizing:border-box;width:min(390px,calc(100vw - 24px));max-height:min(70vh,450px);padding:10px;overflow-y:auto;border:1px solid #d7ad62;background:#111819;box-shadow:0 12px 30px #000;color:#fff;transform:translate(-50%,-50%);pointer-events:auto}
+.combat-decision-info-panel>button{display:block;width:100%;min-height:38px;margin-top:8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-weight:900}
 .record-log .event-list p{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:5px;margin:0 0 7px}.record-log .event-list p.event-turn-start{display:block;padding:4px 0;text-align:center}.record-log .event-message{min-width:0;white-space:normal;overflow-wrap:anywhere;word-break:break-word}.turn-divider{color:#e0b641;font-size:var(--l12-board-copy,13px);white-space:nowrap}.event-tag{flex:none;padding:2px 4px;border:1px solid #5c4a86;color:#cbaaff;font-size:var(--l12-board-copy,13px);line-height:1.25}.event-play .event-tag,.event-put .event-tag{border-color:#126f82;color:#5fd5e2}.event-attack .event-tag,.event-combat .event-tag{border-color:#8d2942;color:#ff6687}.event-response .event-tag,.event-defense .event-tag,.event-support .event-tag{border-color:#9a501b;color:#f0a45e}.event-disaster .event-tag,.event-disaster-active .event-tag,.event-disaster-value .event-tag{border-color:#9e722b;color:#efc15b}.event-damage .event-tag,.event-leave .event-tag{border-color:#813c40;color:#dd7c81}.event-move .event-tag{border-color:#26757c;color:#65cbd0}
-.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:var(--l12-board-copy,13px)}.board-target-controls span{color:#8f9894;font-size:var(--l12-board-copy,13px)}.board-target-controls button{padding:7px 12px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.board-target-controls{position:fixed;z-index:2147483500;left:50%;top:76px;display:flex;align-items:center;gap:10px;max-width:760px;padding:10px 13px;border:1px solid #70d7df;background:#091011;box-shadow:0 14px 36px #000;transform:translateX(-50%)}.board-target-controls strong{max-width:430px;color:#fff;font-size:var(--l12-board-copy,13px)}.board-target-controls span{color:#8f9894;font-size:var(--l12-board-copy,13px)}.board-target-controls button{box-sizing:border-box;width:112px;min-width:112px;max-width:112px;height:44px;min-height:44px;max-height:44px;padding:6px 8px;border:1px solid #999;background:#1b2020;color:#fff;font-weight:900;line-height:1.2;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.board-target-controls button.primary{border-color:#72e09a;background:#174d2d}.board-target-controls button:disabled{opacity:.38}
+.inline-prompt-controls{box-sizing:border-box;width:min(860px,calc(100vw - 20px));max-width:calc(100vw - 20px)}
+.inline-prompt-copy{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;gap:2px;max-height:116px;overflow:auto;overflow-wrap:anywhere;line-height:1.35}
+.inline-prompt-copy strong{max-width:none;color:#fff}
+.inline-prompt-copy span{color:#c7d3ce}
+.inline-prompt-copy .inline-prompt-action{color:#72e09a;font-weight:900}
+.inline-prompt-copy>div{display:flex;min-width:0;flex-wrap:wrap;gap:2px 8px;align-items:baseline}.inline-prompt-operation{padding-bottom:3px;border-bottom:1px solid rgba(238,238,228,.18)}.inline-prompt-actor-badge{padding:2px 5px;border:1px solid #5a6964;background:#101718;color:#c9d3ce;font-size:var(--l12-board-micro,9px);font-weight:900;white-space:nowrap}.inline-prompt-operation[data-actor-state="self"]>.inline-prompt-actor-badge{border-color:#4d9e72;color:#79e4a3}.inline-prompt-operation[data-actor-state="opponent"]>.inline-prompt-actor-badge{border-color:#8f454b;color:#ef9297}.inline-prompt-legal{flex-direction:column}.inline-prompt-pending{padding:2px 6px;border-left:3px solid #e2bd60;background:rgba(226,189,96,.08)}.inline-prompt-pending.direct-submit{border-left-color:#72e09a;background:rgba(82,213,138,.08)}.inline-prompt-payment[data-payment-status="paid"]>span{color:#f4d994}.inline-prompt-payment[data-payment-status="pending"]>span{color:#efb771}
+.mobile-morale-prompt.inline-prompt-copy{flex:0 1 auto;max-height:112px;margin:7px 0 6px}
+.inline-prompt-brief{min-width:0;color:#e7ece6!important;font-weight:900;overflow-wrap:anywhere}
+.inline-prompt-info-overlay{z-index:2147483602}
+.inline-prompt-info-body{min-height:0;overflow:auto;padding:8px 2px;color:#edf1ec;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.inline-prompt-info-body p{margin:0 0 7px}
+.inline-prompt-info-body p{display:flex;flex-direction:column;gap:3px;padding:7px 8px;border-left:3px solid #3e5552;background:#0b1213}.inline-prompt-info-body .inline-info-operation{display:inline-flex;width:max-content;max-width:100%;padding:4px 8px;border:1px solid #67dca0;background:#0d1c15;color:#79e4a3}.inline-prompt-info-body .inline-info-operation[data-actor-state="opponent"]{border-color:#e06d75;color:#ef9297}.inline-prompt-info-body .inline-info-pending{border-left-color:#e2bd60}.inline-prompt-info-body .inline-info-payment[data-payment-status="paid"]{border-left-color:#f4d994;color:#f4d994}
 .board-slot-controls .l12-card-image{width:52px;height:72px;background:#050708;cursor:pointer}.board-slot-controls span{color:#72e09a;font-weight:900}
 .inspector-statuses{display:grid;gap:4px;margin:8px 0 0;padding:0;list-style:none}.inspector-statuses li{padding:4px 6px;border-left:2px solid #70d7df;background:rgba(112,215,223,.08);color:#d9ddd7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}
 .inspector-card-tags{display:flex;box-sizing:border-box;width:max-content;max-width:100%;align-self:center;justify-content:center;flex-wrap:wrap;gap:5px;margin:0 auto 7px}.inspector-card-tags span{flex:0 0 auto;padding:2px 6px;border:1px solid #4f5e5b;background:#111819;color:#8fdad7;font-size:var(--l12-board-copy,13px);font-weight:900;white-space:nowrap}
 .left-disaster-row{display:grid;width:100%;grid-template-columns:132px minmax(0,1fr);gap:8px;flex:none}.left-disaster-row>.grand-panel{box-sizing:border-box;width:100%;min-width:0;min-height:178px}.session-disaster-panel{display:grid;align-content:center;justify-items:center;padding:8px!important}.session-disaster-panel h3{width:100%;margin:0 0 8px}.session-disaster-strip{display:grid;width:max-content;grid-template-columns:repeat(2,51.2px);gap:8px}.session-disaster-strip button{width:51.2px;min-width:51.2px;height:51.2px;padding:0;overflow:hidden;border:2px solid #c8b978;border-radius:50%;background:#070a0b}.session-disaster-strip button.hidden,.session-disaster-strip button.unrevealed{border-color:#49504e;filter:grayscale(1) brightness(.58)}.session-disaster-strip button.revealed{border-color:#69716f;filter:grayscale(.85) brightness(.58)}.session-disaster-strip button.resolved{border-color:#76508f;box-shadow:0 0 8px rgba(133,75,174,.28);filter:grayscale(.35) brightness(.64) saturate(.82)}.session-disaster-strip button.active{border-color:#bc6cff;box-shadow:0 0 13px rgba(187,87,255,.72),inset 0 0 0 1px rgba(231,202,255,.42);filter:none}.session-disaster-strip img,.session-disaster-strip .l12-card-image{width:100%;height:100%;border-radius:50%;transform:scale(1.09)}.session-disaster-strip button:not(.hidden):hover{border-color:#d49aff;box-shadow:0 0 11px rgba(190,102,255,.52)}.left-disaster-row>.current-disaster-panel{display:grid;place-items:center;padding:10px!important}
 .session-disaster-panel h3{text-align:center}
-.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.inspector-card-image{display:block;width:168px;height:235px;max-width:100%;flex:0 0 235px;margin:4px auto 10px;object-fit:contain;background:#050708}.card-inspector.horizontal-inspector .inspector-card-image{width:100%;max-width:239px;height:auto;flex-basis:auto;aspect-ratio:8/5}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}.card-inspector-floating .inspector-card-image{width:min(168px,100%);max-width:100%;height:auto;aspect-ratio:5/7}.card-inspector-floating.horizontal-inspector .inspector-card-image{aspect-ratio:8/5}
+.card-inspector-anchor{display:flex;flex:1;min-height:0}.card-inspector-anchor>.card-inspector{width:100%}.selected-card-utility-slot{box-sizing:border-box;width:100%;height:60px;flex:none}.card-inspector :deep(.archive-detail-image){width:207px;max-width:100%}.card-inspector :deep(.archive-detail-image.horizontal){width:250px}.card-inspector-floating{position:fixed!important;z-index:1600!important;box-sizing:border-box;overflow:auto!important;transform-origin:left top;pointer-events:none}
 .inspector-style-scope{display:contents!important}
 .session-disaster-strip button.replaceable{cursor:pointer}.session-disaster-strip button.replaceable:hover{border-color:#e6bd4a;box-shadow:0 0 12px #d49c3d80}
 .dice-reveal-animation{position:fixed;z-index:2147483001;left:50%;top:45%;display:grid;justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.dice-reveal-values{display:flex;gap:14px}.dice-reveal-values b{display:grid;width:76px;height:76px;place-items:center;border:3px solid #e3c36d;border-radius:15px;background:#f1eee2;box-shadow:0 12px 30px #000,0 0 22px rgba(227,195,109,.35);color:#111;font-size:max(44px,var(--l12-board-copy,13px));line-height:1;animation:l12-dice-roll .18s infinite alternate}.dice-reveal-animation.settled .dice-reveal-values b{animation:l12-dice-land .32s ease-out}.dice-reveal-animation strong{max-width:min(720px,82vw);padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.92);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center}.dice-reveal-enter-active,.dice-reveal-leave-active{transition:opacity .2s ease,filter .2s ease}.dice-reveal-enter-from,.dice-reveal-leave-to{opacity:0;filter:blur(5px)}@keyframes l12-dice-roll{from{transform:rotate(-10deg) scale(.94)}to{transform:rotate(10deg) scale(1.06)}}@keyframes l12-dice-land{0%{transform:scale(1.35) rotate(20deg)}100%{transform:scale(1) rotate(0)}}
 .public-reveal-animation{z-index:903}.dice-reveal-animation{z-index:904}.board-target-controls{z-index:3000}.card-inspector-floating{z-index:3100!important}
+@media (max-width:900px) and (max-height:400px) and (orientation:landscape){.public-reveal-animation{top:calc((100dvh - 64px)/2);width:min(560px,calc(100vw - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}.public-reveal-cards .l12-card-image{width:80px;height:112px}.public-reveal-cards .l12-card-image.horizontal{width:80px;height:auto}.public-reveal-animation strong{max-height:calc(100dvh - 88px);overflow-y:auto}}
+@media (max-width:900px) and (max-height:400px) and (orientation:landscape){.public-reveal-animation--entry-continuation{width:min(420px,calc(100vw - 180px));grid-template-columns:minmax(0,1fr)}}
+@media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation){top:calc((100dvw - 64px)/2);width:min(560px,calc(100dvh - 180px));min-width:0;max-width:none;grid-template-columns:80px minmax(0,1fr);align-items:center;justify-items:stretch;gap:8px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image){width:80px;height:112px}:global(html[data-l12-rotated=true] .public-reveal-cards .l12-card-image.horizontal){width:80px;height:auto}:global(html[data-l12-rotated=true] .public-reveal-animation strong){max-height:calc(100dvw - 88px);overflow-y:auto}}
+@media (max-width:430px) and (min-height:700px) and (orientation:portrait){:global(html[data-l12-rotated=true] .public-reveal-animation--entry-continuation){width:min(420px,calc(100dvh - 180px));grid-template-columns:minmax(0,1fr)}}
 .battle-title{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}.battle-title b,.battle-title i{padding:3px 6px;border:1px solid #82663a;border-radius:3px;background:#261b0c;color:#f2d27a;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.battle-title i{border-color:#75509a;background:#1b1028;color:#dfbdff}
+
 </style>
+<style scoped src="./GameBoard.mobile.css"></style>

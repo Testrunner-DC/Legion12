@@ -22,9 +22,16 @@ $composite = Read-Source 'L12CompositeEffectPlans.cs'
 $faction = Read-Source 'L12S2FactionEffects.cs'
 $s1Extended = Read-Source 'L12S1ExtendedEffects.cs'
 $s1Faction = Read-Source 'L12S1FactionEffects.cs'
+$activeAbilities = Read-Source 'L12ActiveAbilities.cs'
 $s2Universal = Read-Source 'L12S2UniversalEffects.cs'
 $atomicPrograms = Read-Source 'AtomicEffects.cs'
 $atomicRuntime = Read-Source 'L12AtomicRuntimeIntegration.cs'
+$simpleDrawTriggers = Read-Source 'L12SimpleDrawTriggerEffects.cs'
+$simpleMasterHealTriggers = Read-Source 'L12SimpleMasterHealTriggerEffects.cs'
+$simpleTrialAdvanceTriggers = Read-Source 'L12SimpleTrialAdvanceTriggerEffects.cs'
+$simpleCardStateTriggers = Read-Source 'L12SimpleCardStateTriggerEffects.cs'
+$simpleSelfTroopBuffTriggers = Read-Source 'L12SimpleSelfTroopBuffTriggerEffects.cs'
+$simpleResourceTriggers = Read-Source 'L12SimpleResourceTriggerEffects.cs'
 $trialAdvancePlans = Read-Source 'L12TrialAdvanceEffectPlans.cs'
 $attackPlans = Read-Source 'L12AttackPublicTriggerPlans.cs'
 $entryPlans = Read-Source 'L12EnterPublicTriggerPlans.cs'
@@ -38,6 +45,7 @@ $zones = Read-Source 'L12AuthoritativeCardZones.cs'
 $cardEffects = Read-Source 'L12CardEffects.cs'
 $continuations = Read-Source 'L12EffectContinuations.cs'
 $remaining = Read-Source 'L12S2RemainingEffects.cs'
+$starterRemaining = Read-Source 'L12StarterRemainingEffects.cs'
 $runtimeDirectory = (Get-ChildItem -LiteralPath $ProjectRoot -Filter 'L12PublicTriggerEffectPlans.cs' -Recurse -File |
     Select-Object -First 1).Directory.FullName
 $allRuntime = (@(Get-ChildItem -LiteralPath $runtimeDirectory -Filter '*.cs' -File | ForEach-Object {
@@ -47,10 +55,14 @@ $remainingPromptTokenCount = [regex]::Matches($allRuntime, '\bCreatePrompt\(').C
 # This is a pre-payment response declaration, not a resolution-time effect choice.
 # Keep the exemption exact and single-site; other new prompts still hit the ratchet.
 $responseTargetDeclarationCount = [regex]::Matches($prompts,
-    'CreatePrompt\(playerIndex, "response-target", "选择本次响应的效果对象", targets\.Select\(item => item\.StackItemId\)\.Append\("cancel"\),\s*1, 1, "stack-response-target", isPrivate: true, data: data\);').Count
+    'CreatePrompt\(playerIndex,\s*"response-target"').Count
 if ($responseTargetDeclarationCount -ne 1) {
     throw 'Expected exactly one explicit stack-target pre-payment declaration prompt.'
 }
+Assert-Contains $prompts 'targets.Select(item => item.StackItemId).Append("cancel")' `
+    'The stack-target pre-payment declaration must retain its explicit cancel choice.'
+Assert-Contains $prompts '1, 1, "stack-response-target", isPrivate: true, data: data);' `
+    'The stack-target pre-payment declaration must remain private and single-choice.'
 $remainingPromptTokenCount -= $responseTargetDeclarationCount
 if ($remainingPromptTokenCount -gt 136) {
     throw "Resolution prompt inventory regressed above the ruling-closure ratchet: $remainingPromptTokenCount > 136"
@@ -61,17 +73,60 @@ foreach ($cardId in @(
     'S01-0105', 'S01-0207', 'S01-0208', 'S01-0309', 'S01-0021', 'S01-0213',
     'S01-0223', 'S01-0320', 'S01-0224', 'S02-0202', 'S02-0203', 'S02-0205', 'S01-0206', 'S01-0407',
     'S01-0204', 'S01-0414', 'S01-0417',
-    'S02-0304', 'S02-0305', 'S02-05M1', 'S02-06M1', 'S02-0102', 'S02-06S4'
+    'S02-0304', 'S02-0305', 'S02-0102'
 )) {
     Assert-Contains $plans $cardId "Public trigger declaration plan is missing card $cardId."
 }
+foreach ($semanticTrigger in @(
+    '("S02-0304", "master-damaged-by-effect", "margaretMasterDamage", _)',
+    '("S02-0305", "master-damaged", "anderstorpRingDraw", _)',
+    'new("S02-05M1", 1, "friendly-ranged-death"',
+    'new("S02-06S4", 2, "friendly-round-table-enter"',
+    '("S02-06M2", "tactic-effect-resolved", "angusTacticTrial", _)',
+    '("S02-04M1", "friendly-legion-moves", "tsukuyomiFollowMove", _)',
+    '("S02-04M1", "friendly-front-to-back", "tsukuyomiReadyMorale", _)',
+    'new("S02-01M1", 2, "master-legion-returned"',
+    'new("S01-01C1", 2, "morale-returned-to-zero"',
+    'new("S02-0002", 2, "after-kill"'
+)) {
+    Assert-Contains ($plans + "`n" + $trialAdvancePlans + "`n" + $simpleResourceTriggers + "`n" + $simpleCardStateTriggers) $semanticTrigger `
+        "An event-triggered effect lost its semantic runtime trigger: $semanticTrigger"
+}
+foreach ($legacyRuntimeTrigger in @(
+    '("S02-0304", "active", "margaretMasterDamage", _)',
+    '("S02-0305", "active", "anderstorpRingDraw", _)',
+    '("S02-05M1", "active", "artemisDeathFlip", _)',
+    '("S02-06S4", "active", "grailRoundTableRune", _)',
+    '("S02-06M2", "active", "angusTacticTrial", _)',
+    '("S02-04M1", "active", "tsukuyomiFollowMove", _)',
+    '("S02-04M1", "active", "tsukuyomiReadyMorale", _)',
+    'S02-01M1|active|wukongReturnMorale',
+    'S01-01C1|active|factionZeroRecovery',
+    'S02-0002|after-attack'
+)) {
+    if (($plans + "`n" + $trialAdvancePlans).IndexOf($legacyRuntimeTrigger, [StringComparison]::Ordinal) -ge 0) {
+        throw "Event-triggered effect regressed to a legacy runtime key: $legacyRuntimeTrigger"
+    }
+}
+Assert-Contains $remaining 'master, "friendly-back-to-front"' `
+    'Tsukuyomi back-to-front listener must retain its semantic trigger.'
+Assert-Contains $remaining 'returnedSnapshot, "master-legion-returned"' `
+    'Wukong return follow-up must retain its semantic trigger.'
+Assert-Contains $starterRemaining 'faction, "morale-returned-to-zero"' `
+    'The immediate Tianting zero-morale path must retain its semantic trigger.'
+Assert-Contains $prompts 'faction, "morale-returned-to-zero"' `
+    'The resumed Tianting zero-morale path must retain its semantic trigger.'
 
-foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012', 'S02-01M1', 'S01-01C1')) {
+foreach ($cardId in @('S01-0101', 'S01-0108', 'S01-0311', 'S02-0001', 'S02-0012')) {
     Assert-Contains $plans $cardId "Batch 6J-B public trigger declaration plan is missing card $cardId."
 }
 Assert-Contains $plans 'Batch6JBPublicTriggerPlans' 'Batch 6J-B triggers need one shared data-driven declaration table.'
 Assert-Contains $plans 'PrepareBatch6JBPublicTriggerCandidate' 'Batch 6J-B public conditions and once reservations need one shared candidate filter.'
-Assert-Contains $kernel '.Where(PrepareBatch6JBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6J-B candidates before ordering.'
+Assert-Contains $kernel 'private bool PrepareTriggerCandidateForDeclaration' 'Every TriggerBatch entry needs one shared candidate preparation gate.'
+Assert-Contains $kernel '&& PrepareBatch6JBPublicTriggerCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6J-B candidates.'
+Assert-Contains $kernel 'candidate.Data[DeferredTriggerQualification] = "true";' 'Every queued TriggerBatch candidate must defer mutable qualification until declaration.'
+Assert-Contains $kernel 'candidate.Data.Remove(DeferredTriggerQualification)' 'The declaration turn must consume the deferred qualification marker exactly once.'
+Assert-Contains $kernel '&& !PrepareTriggerCandidateForDeclaration(candidate))' 'Deferred TriggerBatch candidates must use the shared preparation gate at declaration time.'
 Assert-Contains $kernel 'activation.TriggerCandidateId == candidate.CandidateId' 'A trigger candidate with an open declaration must not create duplicate PendingActivations.'
 Assert-Contains $plans 'PublicTriggerStep("target-morale", "returnCost"' 'Lu Bu must declare the exact four-morale cost before stack entry.'
 Assert-Contains $plans 'MoveGraveToLibraryBottom(player, physicalCosts)' 'Gustav must commit his ordered grave cost before stack entry.'
@@ -114,13 +169,17 @@ foreach ($legacy6JBAction in @(
 
 foreach ($cardId in @(
     'S01-0001', 'S01-0112', 'S01-0115', 'S01-0207', 'S01-0210', 'S01-0303',
-    'S01-0304', 'S01-0306', 'S01-0313', 'S01-0403', 'S01-0407', 'S02-0002',
-    'S02-01S1', 'S02-0301', 'S02-0508', 'S02-0518', 'S02-0601', 'S02-0615'
+    'S01-0304', 'S01-0306', 'S01-0403', 'S01-0407',
+    'S02-0301', 'S02-0518', 'S02-0601', 'S02-0615'
 )) {
     Assert-Contains $plans ('["' + $cardId + '|') "Batch 6I-B public trigger plan is missing card $cardId."
 }
 Assert-Contains $plans 'PrepareBatch6IBPublicTriggerCandidate' 'Batch 6I-B needs one shared pre-batch candidate filter.'
-Assert-Contains $kernel '.Where(PrepareBatch6IBPublicTriggerCandidate)' 'Every TriggerBatch entry must filter Batch 6I-B candidates before ordering.'
+Assert-Contains $kernel '&& PrepareBatch6IBPublicTriggerCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6I-B candidates.'
+Assert-Contains $plans 'requiredChoice is not null' `
+    'Steps after an explicit activation decision must use the distinct whole-activation cancellation policy.'
+Assert-Contains $plans 'L12ActivationCancellationPolicy.SeparateChoice' `
+    'Public trigger follow-up selection must label cancellation separately from choosing not to activate.'
 Assert-Contains $plans 'candidate.Data["return-morale-prepaid"] = "true"' 'Jing Ke must prepay the exact declared morale before stack entry.'
 Assert-Contains $plans 'candidate.Data["cleanupReservation"] = pendingKey' 'Alice must reserve her once-per-turn use while declaration is pending.'
 Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Alice must finalize her once-per-turn use before stack entry.'
@@ -152,13 +211,21 @@ foreach ($cardId in @(
     'S02-0509', 'S02-0511', 'S02-0517', 'S02-0519', 'S02-0605', 'S02-0606', 'S02-0607',
     'S02-0608', 'S02-0612', 'S02-0617'
 )) {
-    Assert-Contains $attackPlans ('["' + $cardId + '"]') "Attack public trigger plan is missing card $cardId."
+    Assert-Contains ($attackPlans + "`n" + $simpleSelfTroopBuffTriggers) ('"' + $cardId + '"') "Attack public trigger plan is missing card $cardId."
 }
 Assert-Contains $attackPlans 'AttackPublicTriggerPlans' 'Attack declarations need a shared data-driven plan table.'
+Assert-Contains $attackPlans 'foreach (var spec in L12SimpleSelfTroopBuffTriggerEffects.All)' `
+    'Simple self-buff attack declarations must be generated from the shared effect specification.'
+Assert-Contains $attackPlans 'new AttackPublicTriggerPlan(spec.PlanId, spec.CostKind)' `
+    'Simple self-buff attack declarations must preserve their declared plan and cost contracts.'
 Assert-Contains $attackPlans 'TryQueueAttackPublicTriggerCandidates' 'Attack triggers must share one candidate entry.'
 Assert-Contains $attackPlans 'CreateTriggerCandidate(controller, source, trigger, candidateText, candidateData, source)' 'Attack candidates must retain a last-known source snapshot.'
 Assert-Contains $attackPlans 'PayAttackPublicCost(candidate, activation, plan, player, source, costIds)' 'Attack colon costs must commit before stack entry.'
-Assert-Contains $attackPlans 'PublicLegions(player).Select(card => card.InstanceId), requiredChoice: required)' 'Menes must be allowed to declare itself as the legion discard cost.'
+if (-not [regex]::IsMatch($attackPlans,
+    'case "discard-own-legion":\s*steps\.Add\(PublicTriggerStep\("field-legion",\s*"cost",.*?PublicLegions\(player\)\.Select\(card => card\.InstanceId\),\s*requiredChoice:\s*required,\s*isCostSelection:\s*true\)\);\s*break;',
+    [Text.RegularExpressions.RegexOptions]::Singleline)) {
+    throw 'Menes must be allowed to declare itself as the legion discard cost, and the selection must remain explicitly marked as a cost.'
+}
 Assert-Contains $attackPlans '"discard-own-legion" => PublicLegions(player).Any(),' 'Menes must remain activatable when it is the only friendly legion.'
 if ($attackPlans.IndexOf('sacrifice.InstanceId == candidate.SourceInstanceId', [StringComparison]::Ordinal) -ge 0) {
     throw 'Menes self-discard cost must not be rejected during declaration commit.'
@@ -204,7 +271,12 @@ if ($trialAdvancePlans.IndexOf('TrialCompleted = true', [StringComparison]::Ordi
 }
 Assert-Contains $plans 'TryConsumeSelectedResources(player, 1' 'Tsukuyomi must commit its declared resource before stack entry.'
 Assert-Contains $plans 'ReturnSelectedMoraleById(player, [costId], 1)' 'Liu Bei must return the declared morale before stack entry.'
-Assert-Contains $plans 'DamageMaster(candidate.Controller, 1,' 'Brynhild must pay the known master-damage cost before stack entry.'
+$masterDamageCosts = Read-Source 'L12MasterDamageCosts.cs'
+Assert-Contains $plans 'if (!PayMasterDamageCostAndCanContinue(candidate.Controller, 1,' `
+    'Brynhild must pay before stack entry and stop its declaration after lethal payment.'
+Assert-Contains $masterDamageCosts 'player.Hp >= amount' 'The final health point must remain payable as a cost.'
+Assert-Contains $masterDamageCosts 'DamageMaster(playerIndex, amount, reason);' 'Shared damage costs must keep the authoritative damage and replacement path.'
+Assert-Contains $masterDamageCosts 'return State.Phase != L12Phase.GameOver;' 'Shared damage costs must report terminal payment to stop downstream operations.'
 Assert-Contains $plans 'candidate.Data["preserveIndependentStack"] = "true"' 'Immortal Gift must preserve its independent draw segment when summon declaration is absent.'
 Assert-Contains $plans 'activation.DeclaredValues["entryCard"] = ["mode:none"]' 'Immortal Gift invalid summon segment must cancel independently.'
 Assert-Contains $plans 'Batch6GAPublicTriggerPlan' 'Batch 6G-A triggers need one shared data-driven declaration route.'
@@ -212,20 +284,110 @@ Assert-Contains $plans 'VerifiedAtomicOptionalTriggerPlan' 'Verified atomic Opti
 Assert-Contains $plans 'PrepareVerifiedAtomicOptionalCandidate' 'Verified atomic Optional conditions must be checked before candidate admission.'
 Assert-Contains $plans 'TakeWhile(atom => atom.Kind != L12AtomKinds.Optional)' 'Only public conditions before Optional may gate candidate creation.'
 Assert-Contains $plans 'candidate.Data["verifiedAtomicConditionLocked"] = "true"' 'Verified atomic trigger-time conditions must be immutable after candidate creation.'
-Assert-Contains $kernel '.Where(PrepareVerifiedAtomicOptionalCandidate)' 'Every TriggerBatch entry must filter verified Optional candidates through the common condition gate.'
+Assert-Contains $kernel '&& PrepareVerifiedAtomicOptionalCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter verified Optional candidates.'
 Assert-Contains $atomicRuntime 'PublicTriggerDeclared(item, "mode") != "mode:use"' 'Verified atomic resolution must consume only the immutable declared mode.'
 Assert-Contains $atomicRuntime 'item.Data.GetValueOrDefault("verifiedAtomicConditionLocked") != "true"' 'Verified atomic resolution must not re-evaluate a trigger-time condition locked before stack entry.'
+Assert-Contains $atomicRuntime 'atom.Stage == "cost" &&' `
+    'Prepaid attack costs must be recognized from their explicit atomic stage.'
+Assert-Contains $atomicRuntime 'atom.Parameters.GetValueOrDefault("prepaid") == "true"' `
+    'Prepaid attack costs must not be charged again during atomic resolution.'
 foreach ($verifiedOptionalProgram in @(
     'Program("S01-0413", "enter"', 'Program("S01-0405", "attack"',
     'Program("S01-0409", "after-attack"', 'Program("S01-0115", "enter"',
-    'Program("S01-0301", "death"', 'Program("S01-0304", "enter"',
-    'Program("S01-0309", "death"', 'Program("S02-0104", "enter"',
-    'Program("S02-0203", "death"', 'Program("S02-0402", "death"',
-    'Program("S02-0512", "death"', 'Program("S02-0507", "enter"',
-    'Program("S02-0507", "promotion-enter"', 'Program("S02-0616", "enter"'
+    'Program("S01-0304", "enter"', 'Program("S02-0104", "enter"',
+    'Program("S02-0507", "enter"',
+    'Program("S02-0507", "promotion-enter"'
 )) {
     Assert-Contains $atomicPrograms $verifiedOptionalProgram "Verified atomic Optional inventory is missing: $verifiedOptionalProgram"
 }
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));' `
+    'Simple death-draw effects must be generated from their shared definition.'
+foreach ($simpleDrawSpec in @(
+    'new("S01-0004", 3, "death"', 'new("S01-0110", 3, "death"',
+    'new("S01-0301", 4, "death"', 'new("S01-0309", 3, "death"',
+    'new("S02-0203", 3, "death"', 'new("S02-0402", 2, "death"',
+    'new("S02-0512", 4, "death"'
+)) {
+    Assert-Contains $simpleDrawTriggers $simpleDrawSpec "Simple death-draw inventory is missing: $simpleDrawSpec"
+}
+Assert-Contains $simpleDrawTriggers 'DrawRecipient: "source-owner"' `
+    'Infiltrator death draw must retain the source-owner recipient policy.'
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));' `
+    'Simple death-heal effects must be generated from their shared definition.'
+foreach ($simpleHealSpec in @('new("S01-0302", 3, "death"', 'new("S02-0613", 3, "death"')) {
+    Assert-Contains $simpleMasterHealTriggers $simpleHealSpec "Simple death-heal inventory is missing: $simpleHealSpec"
+}
+Assert-Contains $simpleMasterHealTriggers 'HealRecipient: "both"' `
+    'Joan death heal must retain the both-masters recipient policy.'
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));' `
+    'Simple death trial-advance effects must be generated from their shared definition.'
+foreach ($simpleTrialSpec in @('new("S02-0609", 3, "death"', 'new("ST06-06", 2, "death"')) {
+    Assert-Contains $simpleTrialAdvanceTriggers $simpleTrialSpec "Simple death trial-advance inventory is missing: $simpleTrialSpec"
+}
+Assert-Contains $atomicPrograms 'programs.AddRange(L12SimpleCardStateTriggerEffects.All.Select(SimpleCardStateProgram));' `
+    'Single-card ready/rest triggers must be generated from their shared definition.'
+foreach ($simpleCardStateSpec in @(
+    'new("S01-0210", 2, "enter"', 'new("S01-0313", 3, "death"',
+    'new("S02-0002", 2, "after-kill"', 'new("ST05-07", 1, "enter"'
+)) {
+    Assert-Contains $simpleCardStateTriggers $simpleCardStateSpec "Single-card state trigger inventory is missing: $simpleCardStateSpec"
+}
+Assert-Contains $kernel '&& PrepareSimpleCardStateTriggerCandidate(candidate)' `
+    'Every trigger batch must pass through the shared card-state candidate gate.'
+Assert-Contains $plans 'TryBeginSimpleCardStateTriggerDeclaration' `
+    'Single-card state triggers must declare mode and exact public targets before stack entry.'
+Assert-Contains $plans 'TryCompleteSimpleCardStateTriggerDeclaration' `
+    'Single-card state declarations must share one atomic commit route.'
+Assert-Contains $prompts 'TryResolveSimpleCardStateTrigger(item)' `
+    'Single-card state triggers must share one settlement route.'
+foreach ($legacyStatePlan in @(
+    '["S01-0210|enter"] = "nitocris"',
+    '["S01-0313|death"] = "oddr-rest"',
+    '["S02-0002|after-kill"] = "alice-ready"',
+    '("ST05-07", "enter") => "antinous-ready"'
+)) {
+    if ($allRuntime.IndexOf($legacyStatePlan, [StringComparison]::Ordinal) -ge 0) {
+        throw "Legacy per-card state trigger plan returned: $legacyStatePlan"
+    }
+}
+Assert-Contains $atomicPrograms '.Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));' `
+    'Standalone single-segment resource abilities must be generated from their shared definition.'
+foreach ($simpleResourceSpec in @(
+    'new("S02-0603", 2, "enter"', 'new("S02-0606", 2, "enter"',
+    'new("S02-0607", 1, "enter"', 'new("S02-0616", 2, "enter"',
+    'new("S02-0618", 3, "enter"', 'new("ST06-03", 1, "enter"',
+    'new("ST06-08", 1, "enter"',
+    'new("S02-01S1", 2, "death"', 'new("S02-0508", 2, "death"',
+    'new("S02-05M1", 1, "friendly-ranged-death"',
+    'new("S02-06M1", 1, "morrigan-enemy-death"',
+    'new("S02-0102", 1, "master-morale-return"',
+    'new("S02-06S4", 2, "friendly-round-table-enter"',
+    'new("S02-06M2", 2, "trial-advance"',
+    'new("S02-01M1", 2, "master-legion-returned"',
+    'new("S01-01C1", 2, "morale-returned-to-zero"'
+)) {
+    Assert-Contains $simpleResourceTriggers $simpleResourceSpec "Single-segment resource trigger inventory is missing: $simpleResourceSpec"
+}
+Assert-Contains $kernel '&& PrepareSimpleResourceTriggerCandidate(candidate)' `
+    'Every trigger batch must pass through the shared resource candidate gate.'
+Assert-Contains $plans 'TryBeginSimpleResourceTriggerDeclaration' `
+    'Resource triggers must declare optional mode and exact morale targets before stack entry.'
+Assert-Contains $plans 'TryCompleteSimpleResourceTriggerDeclaration' `
+    'Resource declarations must share one atomic commit route.'
+Assert-Contains $plans 'if (steps.Count == 0)' `
+    'Mandatory resource effects without a mode or target must not create an empty PendingActivation.'
+Assert-Contains $prompts 'TryResolveSimpleResourceTrigger(item)' `
+    'Resource triggers must settle through the shared resolver before card-specific dispatch.'
+Assert-Contains $simpleResourceTriggers 'var target = player.Morale.FirstOrDefault' `
+    'Declared morale targets must be looked up again at reverse-order settlement.'
+Assert-Contains $simpleResourceTriggers '&& CanFlipMoraleToGodPower(card,' `
+    'Declared morale targets must revalidate through the shared morale-face eligibility rule.'
+Assert-Contains $allRuntime 'private bool CanFlipMoraleToGodPower(L12MoraleCard card' `
+    'The shared morale-face eligibility rule must remain available to declarations and settlement.'
+Assert-Contains $allRuntime '=> !card.IsGodPower' `
+    'Declared morale targets must still be ordinary morale at reverse-order settlement.'
+Assert-Contains $simpleResourceTriggers 'OwnsStandaloneAtomicAbility: false' `
+    'Wukong resource follow-up must remain a child segment of its printed leave replacement ability.'
 if ($atomicRuntime.IndexOf('CreatePrompt(', [StringComparison]::Ordinal) -ge 0) {
     throw 'Verified atomic runtime must not create any resolution-time Optional prompt.'
 }
@@ -234,7 +396,7 @@ if ($allRuntime.IndexOf('verified-atomic-optional', [StringComparison]::Ordinal)
 }
 Assert-Contains $plans '("S02-0102", "enter", _, _) => "limu-enter"' 'Li Mu enter must use the public trigger declaration route.'
 Assert-Contains $plans 'PublicTriggerStep("option", "revealMode"' 'Li Mu reveal opt-in must be declared before stack entry.'
-Assert-Contains $plans 'PublicTriggerStep("option", "drawMode"' 'Li Mu independent draw opt-in must be declared before stack entry.'
+Assert-Contains $plans 'PublicTriggerStep("option", "drawMode"' 'Li Mu subsequent draw opt-in must be declared before the single effect enters stack.'
 Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0102:enter"' 'Li Mu must skip disabled segments before creating its first real stack item.'
 Assert-Contains $composite '["trigger:S02-0102:enter"]' 'Li Mu enter needs one shared composite trigger plan.'
 Assert-Contains $composite 'RequiredDeclarationKey: "revealMode"' 'Li Mu reveal segment must consume its immutable declaration key.'
@@ -247,7 +409,9 @@ Assert-Contains $plans 'margaretMasterDamage' 'Margaret damage trigger must pred
 Assert-Contains $allRuntime 'margaret-heal-lock' 'Margaret heal and heal-lock sentences must remain independent stack segments.'
 Assert-Contains $plans 'cleanupReservation' 'Optional once-per-turn triggers must reserve pending state before player declaration.'
 Assert-Contains $plans 'player.UsedAbilities.Add(onceKey)' 'Committed optional triggers must consume their once before stack entry.'
-Assert-Contains $plans 'card.Tapped && !card.IsGodPower' 'Artemis must declare an exact rested ordinary morale target.'
+Assert-Contains $plans 'player.Morale.Where(card => CanFlipMoraleToGodPower(card,' 'Resource target declarations must use the shared morale-face eligibility rule.'
+Assert-Contains $plans 'onlyTapped: spec.TargetFilter == L12SimpleResourceTriggerEffects.RestedMorale' `
+    'Artemis must declare an exact rested ordinary morale target through the shared eligibility rule.'
 Assert-Contains $kernel 'SourceSnapshot = CaptureLastKnownSourceSnapshot(sourceSnapshot ?? card)' 'Every generated trigger candidate must carry a last-known source snapshot.'
 Assert-Contains $kernel 'FindAuthoritativeCard(candidate.SourceInstanceId)' 'Trigger declarations must resolve sources through the internal authoritative lookup.'
 Assert-Contains $plans 'owner-unused-slot' 'Tomb Construct must declare owner battlefield slots before stack entry.'
@@ -267,12 +431,24 @@ if ($zones.IndexOf('Library.Insert(0, sourceSnapshot)', [StringComparison]::Ordi
 }
 
 Assert-Contains $counter 'var revealed = player.Library[0];' 'Cosmos Yin must inspect the hidden library top only during legal resolution.'
-Assert-Contains $counter 'CreateDelayedPublicResolutionPrompt(item' 'Cosmos Yin must declare its public target only after the hidden reveal.'
-Assert-Contains $plans 'data["declarationTiming"] = "post-hidden-reveal"' 'Delayed public resolution prompts need an explicit post-reveal timing marker.'
-Assert-Contains $prompts 'or "S02-0106")' 'Cosmos Yin responses must route to their own effect instead of generic negate handling.'
+Assert-Contains $composite '["response:S02-0106"]' 'Cosmos Yin must use the structured response plan.'
+Assert-Contains $composite 'new("cosmos-yin-buff"' 'Cosmos Yin must declare its public target as a delayed second segment.'
+Assert-Contains $composite 'DeclarationTiming: "post-hidden-reveal"' 'Cosmos Yin needs an explicit post-reveal timing declaration.'
+Assert-Contains $composite 'prompt.Data["declarationTiming"] = segment.DeclarationTiming' 'Delayed public resolution prompts must project their configured timing marker.'
+Assert-Contains $prompts 'data?.GetValueOrDefault("sameStackContinuation") == "true"' 'Response continuations must stay above their underlying stack item.'
+Assert-Contains $prompts 'UsesSpecialResponsePlan(response.CardId, "s2-counter")' 'Cosmos Yin responses must route through the structured special-response registry instead of generic negate handling.'
 if ($plans.IndexOf('"S02-0106"', [StringComparison]::Ordinal) -ge 0) {
     throw 'Cosmos Yin must not be placed in the pre-reveal public trigger planner.'
 }
+Assert-Contains $composite '["trigger:S02-0523:trojan-after-attack"]' 'Trojan Horse placement must use a structured trigger segment.'
+Assert-Contains $plans 'CompositeFirstSegmentData("trigger:S02-0523:trojan-after-attack"' 'Trojan Horse declaration must attach its structured placement identity before stack entry.'
+Assert-Contains $remaining 'RecordTargetSettlementFailure(item, destination' 'Trojan Horse must report a declared slot invalidated during reverse settlement as failed.'
+Assert-Contains $composite '["trigger:S02-0523:trojan-expiry"]' 'Trojan Horse expiry must use a structured delayed plan.'
+Assert-Contains $composite 'new("trojan-expiry-draw",' 'Trojan Horse expiry must retain its independent draw segment.'
+Assert-Contains $composite 'RequiresPreviousSuccess: true)' 'Trojan Horse draw must depend on successful expiry discard.'
+Assert-Contains $remaining 'horse.DiscardAtEndOfTurnUntilTurn = -1;' 'Trojan Horse expiry must reserve the exact delayed instance before queueing.'
+Assert-Contains $remaining 'PushEffect(endingPlayer, horse, "trojan-expiry"' 'Trojan Horse expiry must enter the shared effect lifecycle instead of resolving inline.'
+Assert-Contains $cardEffects 'case "trojan-expiry": ResolveS2TrojanHorseExpiry(item); break;' 'Trojan Horse expiry needs a structured resolver dispatch.'
 foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
     if ($hiddenCardId -eq 'S02-0403' -and $plans.IndexOf('"' + $hiddenCardId + '"', [StringComparison]::Ordinal) -ge 0) {
         throw "Hidden-information effect $hiddenCardId must remain outside the pre-reveal public trigger planner."
@@ -281,7 +457,7 @@ foreach ($hiddenCardId in @('S01-0103', 'S02-0401', 'S02-0403')) {
 
 foreach ($cardId in @(
     'S01-0101','S01-0102','S01-0103','S01-0108','S01-0110','S01-0111','S01-0112',
-    'S01-0201','S01-0202','S01-0205','S01-0210','S01-0215','S01-0217','S01-0220',
+    'S01-0201','S01-0202','S01-0205','S01-0215','S01-0217','S01-0220',
     'S01-0313','S01-0316','S01-0317','S01-0402','S01-0403','S01-0406','S01-0408',
     'S01-0411','S01-0412','S01-0416','S01-0417','S02-0003','S02-0008','S02-0204',
     'S02-0303','S02-0401','S02-0402','S02-0404','S02-0501','S02-0502','S02-0505',
@@ -298,15 +474,45 @@ foreach ($contract in @(
 )) {
     Assert-Contains $entryPlans $contract "Batch 6J-A public entry contract is missing: $contract"
 }
-Assert-Contains $kernel '.Where(PrepareBatch6JAEnterCandidate)' 'Every TriggerBatch entry must filter Batch 6J-A enter candidates.'
+Assert-Contains $kernel '&& PrepareBatch6JAEnterCandidate(candidate)' 'The shared TriggerBatch preparation gate must filter Batch 6J-A enter candidates.'
 foreach ($obsoleteTakedaSplit in @('batch6JAFollowup', 'takeda-followup', 'case "enter-followup"')) {
     if ($allRuntime.IndexOf($obsoleteTakedaSplit, [StringComparison]::Ordinal) -ge 0) {
         throw "Takeda must resolve as one stack item; obsolete split route returned: $obsoleteTakedaSplit"
     }
 }
 Assert-Contains $composite '["trigger:S01-0111:enter"]' 'Zhuge reveal and disaster adjustment must remain independent stack segments.'
-Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One target and discard must remain independent stack segments.'
-Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four target and discard must remain independent stack segments.'
+Assert-Contains $composite '["trigger:S01-0217:enter"]' 'Canopic Jar One must preserve its internal target/discard settlement clauses.'
+Assert-Contains $composite '["trigger:S01-0220:enter"]' 'Canopic Jar Four must preserve its internal target/discard settlement clauses.'
+$singleResponsePlans = [regex]::Match($composite, '(?s)SingleResponseEffectPlans.*?\{(?<plans>.*?)\};').Groups['plans'].Value
+foreach ($cardId in @('S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220')) {
+    Assert-Contains $singleResponsePlans ('"trigger:' + $cardId + ':enter"') 'Each Canopic entry must keep its approved whole-effect response boundary.'
+}
+foreach ($drawDiscardPlan in @(
+    'trigger:S01-0001:death', 'trigger:S01-0303:death',
+    'trigger:S01-0306:death', 'trigger:S02-0301:death',
+    'trigger:S02-0502:enter', 'active:S01-03M2:lokiCycle'
+)) {
+    Assert-Contains $composite ('["' + $drawDiscardPlan + '"]') `
+        "Draw-then-discard effect lost its structured plan: $drawDiscardPlan"
+    Assert-Contains $composite ('"' + $drawDiscardPlan + '",') `
+        "Draw-then-discard effect lost its single-response registration: $drawDiscardPlan"
+}
+Assert-Contains $composite 'DeclarationTiming: "post-draw-private"' `
+    'Draw-then-discard triggers must choose the exact private hand card only after drawing.'
+Assert-Contains $composite 'discard.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;' `
+    'The mandatory discard after a chosen draw effect must not expose a cancellation escape.'
+Assert-Contains $composite 'TryResolveDrawDiscardSegment' `
+    'All draw-then-discard effects must share one settlement implementation.'
+Assert-Contains $composite 'context?.PlanId.StartsWith("active:"' `
+    'Delayed active segments must retain a valid authoritative source or immutable printed snapshot.'
+Assert-Contains $composite 'pair.Key is "ability" or "freeMasterActivation" or "freeMasterSource"' `
+    'Active composite continuations must preserve their ability and free-activation identity.'
+Assert-Contains $entryPlans 'CompositeFirstSegmentData("trigger:S02-0502:enter"' `
+    'Heracles must attach the shared draw-then-discard plan before entering the stack.'
+Assert-Contains $s1Faction 'CompositeFirstSegmentData("active:S01-03M2:lokiCycle"' `
+    'Normal Loki cycle activation must attach the shared draw-then-discard plan.'
+Assert-Contains $activeAbilities '=> "active:S01-03M2:lokiCycle"' `
+    'Faith Zealot Loki cycle must attach the same shared draw-then-discard plan.'
 foreach ($legalHiddenPrompt in @('s2-ring-search','s2-magatama-search','s2-takeda-search','s2-robin-summon-squire')) {
     Assert-Contains $entryPlans $legalHiddenPrompt "Legal post-reveal hidden prompt is missing: $legalHiddenPrompt"
 }

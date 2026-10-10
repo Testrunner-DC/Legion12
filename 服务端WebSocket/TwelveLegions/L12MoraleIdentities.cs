@@ -97,6 +97,10 @@ public sealed class L12MoraleIdentityCatalog
                 || _byGodPowerCardId.TryGetValue(cardId, out identity))
             && identity.Faction.Equals(faction, StringComparison.OrdinalIgnoreCase);
 
+    public bool CanUseGodPowerFace(string cardId)
+        => _byVersionCardId.TryGetValue(cardId, out var identity)
+            && !string.IsNullOrWhiteSpace(identity.GodPowerCardId);
+
     private static string FactionName(string faction) => faction switch
     {
         "tianting" => "天廷",

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-04-revive-presentation-facts",
+  "date": "2026-10-04",
+  "audience": "players",
+  "title": "对战动画",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "雷神之锤等军团召回、佣兵部队抵挡及傀儡登场成功后，同一次移动不再重复展示卡图；费用支付与效果导致的休整、活跃变化在实际生效后展示。修复孙悟空转动后返回主宰区时卡图隐藏的问题；卡图加载期间保留场上卡牌，弹框、重连和切换对局不再遗留旧动画。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+        "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12PaidCostPresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12SimpleCardStateTriggerEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialAdvanceEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectGeneratedPlay.cs",
+        "服务端WebSocket/TwelveLegions/L12GraveLegionSummonTriggerEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterTargetedEffectPlans.cs",
+        "opcgpro-vue/src/l12/types.ts",
+        "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts",
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useMobileBattleDock } from './mobileBattleDock'
+const mobileDock = useMobileBattleDock()
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { gameAction, l12State, sandboxAction } from '../net'
@@ -7,15 +9,21 @@ import { masterProfileUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
+import { landscapeTeleportTarget } from '../mobileViewport'
+import { battlefieldTargetIds, battlefieldTargetLabel, findBattlefieldTarget } from './battlefieldTargetPresentation'
+import { mulliganCopy, promptConsequenceCopy, promptInstructionCopy, promptPaymentCopy, promptSituationCopy, promptSubmissionCopy } from './promptPlayerCopy'
+import { battleActionActorPresentation, battleActionSelectionRange, battleActionSelectionStatus } from './battleActionPresentation'
 
 const props = withDefaults(defineProps<{
   game: GameState
   mulliganSelectedIds?: string[]
   busy?: boolean
   suppressedPromptId?: string | null
+  suppressedPromptIds?: string[]
   suppressDefenseWait?: boolean
   readOnly?: boolean
   inspectorVisible?: boolean
+  mobileLayout?: boolean
 }>(), { mulliganSelectedIds: () => [], busy: false, suppressDefenseWait: false, readOnly: false, inspectorVisible: false })
 const emit = defineEmits<{
   mulliganToggle: [id: string]
@@ -25,7 +33,13 @@ const emit = defineEmits<{
   responseTargetsChange: [ids: string[]]
 }>()
 
-const prompt = computed(() => props.game.prompts?.find(item => item.promptId !== props.suppressedPromptId) ?? null)
+const prompt = computed(() => {
+  const suppressed = new Set([
+    ...(props.suppressedPromptIds ?? []),
+    ...(props.suppressedPromptId ? [props.suppressedPromptId] : []),
+  ])
+  return props.game.prompts?.find(item => !suppressed.has(item.promptId)) ?? null
+})
 const waitingPrompt = computed(() => prompt.value ? null : props.game.waitingPrompt ?? null)
 const sandboxActorIndex = computed(() => {
   if (!l12State.gmEnabled) return props.game.you
@@ -48,8 +62,34 @@ const isInitiative = computed(() => displayKind.value === 'initiative')
 const isDisasterChoice = computed(() => ['disaster-ban', 'disaster-pick'].includes(prompt.value?.kind ?? ''))
 const visible = computed(() => Boolean(prompt.value || waitingPrompt.value || waitingDefense.value || isMulliganPhase.value || isDisasterPreparation.value))
 const selected = ref<string[]>([])
+function currentValidSelection(values = selected.value) {
+  const valid = new Set(prompt.value?.validChoices ?? [])
+  return values.filter((choice, index) => valid.has(choice) && values.indexOf(choice) === index)
+}
+const activeSelected = computed(() => currentValidSelection())
 const hoveredChoice = ref<string | null>(null)
 const minimized = ref(false)
+const expandButton = ref<HTMLElement | null>(null)
+let focusBeforePrompt: HTMLElement | null = null
+async function minimizePrompt() {
+  minimized.value = true
+  await nextTick()
+  expandButton.value?.focus()
+}
+async function expandPrompt() {
+  minimized.value = false
+  await nextTick()
+  document.querySelector<HTMLElement>('.l12-prompt-overlay .prompt-minimize')?.focus()
+}
+watch(visible, async (open, wasOpen) => {
+  if (open && !wasOpen)
+    focusBeforePrompt = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  else if (!open && wasOpen) {
+    await nextTick()
+    if (focusBeforePrompt?.isConnected) focusBeforePrompt.focus()
+    focusBeforePrompt = null
+  }
+})
 const placementTop = ref<string[]>([])
 const placementBottom = ref<string[]>([])
 const placementSelected = ref<string | null>(null)
@@ -59,6 +99,30 @@ const animatedRolls = ref([1, 1])
 const diceSettled = ref(false)
 let diceTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
+const autoCloseRemainingMs = ref(0)
+let autoCloseTimer: ReturnType<typeof setTimeout> | null = null
+let autoCloseBaselineAt = 0
+let autoCloseBaselineMs = 0
+const autoCloseSeconds = computed(() => Math.max(0, Math.ceil(autoCloseRemainingMs.value / 1000)))
+const autoCloseMessage = computed(() => prompt.value?.autoClose
+  ? `当前没有有效响应，将在 ${autoCloseSeconds.value} 秒后自动关闭` : '')
+function updateAutoCloseCountdown() {
+  autoCloseRemainingMs.value = Math.max(0,
+    autoCloseBaselineMs - (performance.now() - autoCloseBaselineAt))
+  if (autoCloseRemainingMs.value > 0)
+    autoCloseTimer = setTimeout(updateAutoCloseCountdown, 100)
+  else autoCloseTimer = null
+}
+watch(() => prompt.value?.autoClose
+  ? `${prompt.value.promptId}:${prompt.value.autoClose.deadlineUtc}:${prompt.value.autoClose.serverNowUtc}` : '', key => {
+  if (autoCloseTimer) clearTimeout(autoCloseTimer)
+  autoCloseTimer = null
+  if (!key || !prompt.value?.autoClose) { autoCloseRemainingMs.value = 0; return }
+  autoCloseBaselineMs = Math.max(0, Date.parse(prompt.value.autoClose.deadlineUtc)
+    - Date.parse(prompt.value.autoClose.serverNowUtc))
+  autoCloseBaselineAt = performance.now()
+  updateAutoCloseCountdown()
+}, { immediate: true })
 const dieFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 function dieFace(value: number) { return dieFaces[Math.max(1, Math.min(6, value)) - 1] }
 function startInitiativeDice() {
@@ -77,9 +141,17 @@ function startInitiativeDice() {
 watch(() => `${isInitiative.value}:${props.game.matchId}:${props.game.initiativeRolls.join(',')}`, () => {
   if (isInitiative.value) startInitiativeDice()
 }, { immediate: true })
-onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer) })
+onBeforeUnmount(() => { if (diceTimer) clearInterval(diceTimer); if (diceSettleTimer) clearTimeout(diceSettleTimer); if (autoCloseTimer) clearTimeout(autoCloseTimer) })
 
-watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mulliganDone}`, () => {
+watch(() => JSON.stringify([
+  prompt.value?.promptId ?? '',
+  prompt.value?.activationId ?? '',
+  prompt.value?.step ?? -1,
+  prompt.value?.createdRevision ?? -1,
+  prompt.value?.validChoices ?? [],
+  props.game.phase,
+  me.value.mulliganDone,
+]), () => {
   selected.value = []
   hoveredChoice.value = null
   minimized.value = false
@@ -88,13 +160,13 @@ watch(() => `${prompt.value?.promptId ?? ''}:${props.game.phase}:${me.value.mull
   placementSelected.value = null
   draggedChoice.value = null
   placementOrder.value = (prompt.value?.validChoices ?? []).filter(id => id !== 'skip')
-})
+}, { immediate: true })
 watch(minimized, value => emit('minimizedChange', value), { immediate: true })
 const responseTargetIds = computed(() => {
-  if (!minimized.value || !visible.value || !prompt.value) return []
+  if (!visible.value || !prompt.value) return []
   const data = prompt.value.data
   const keys = prompt.value.kind === 'response-target'
-    ? (selected.value.length ? selected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
+    ? (activeSelected.value.length ? activeSelected.value : prompt.value.validChoices).map(id => `${id}:responseTargetIds`)
     : ['responseTargetIds']
   const ids = new Set<string>()
   for (const key of keys) {
@@ -103,9 +175,13 @@ const responseTargetIds = computed(() => {
       if (Array.isArray(parsed)) for (const id of parsed) if (typeof id === 'string') ids.add(id)
     } catch { /* Malformed optional presentation metadata grants no highlight. */ }
   }
-  return props.game.players.flatMap(player => player.field.flat())
-    .filter((card): card is Card => Boolean(card && !card.hidden && ids.has(card.instanceId)))
-    .map(card => card.instanceId)
+  // Only currently public battlefield cards and morale resources may be highlighted.
+  // IDs are supplied by the server's response presentation, never inferred here.
+  for (const id of activeSelected.value) ids.add(id)
+  const field = battlefieldTargetIds(props.game, ids)
+  const morale = props.game.players.flatMap(player => player.morale)
+    .filter(resource => ids.has(resource.instanceId)).map(resource => resource.instanceId)
+  return [...new Set([...field, ...morale])]
 })
 watch(responseTargetIds, ids => emit('responseTargetsChange', ids), { immediate: true })
 onBeforeUnmount(() => emit('responseTargetsChange', []))
@@ -133,14 +209,14 @@ function disasterEventOwner(card: Card, type: string, fallback: string) {
   const event = props.game.recentEvents?.find(item => item.type === type && item.cards?.some(entry => entry.instanceId === card.instanceId))
   return event?.playerIndex === undefined || event.playerIndex === null
     ? fallback
-    : `${props.game.players[event.playerIndex]?.name ?? `玩家${event.playerIndex + 1}`}选用`
+    : `${event.playerIndex === props.game.you ? '你' : '对手'}选用`
 }
 function isVisibleDisasterCard(card: DisasterCardView): card is Card {
   return !card.hidden && Boolean(card.cardId && card.name && card.cardType)
 }
 function disasterOwnerLabel(card: DisasterCardView) {
   if (card.ownerIndex === undefined || card.ownerIndex < 0) return '玩家已选用'
-  return `${props.game.players[card.ownerIndex]?.name ?? `玩家${card.ownerIndex + 1}`}选用`
+  return `${card.ownerIndex === props.game.you ? '你' : '对手'}选用`
 }
 const disasterHistory = computed(() => [
   {
@@ -179,6 +255,10 @@ function withPromptBinding(p: Prompt, command: Record<string, unknown> = {}) {
   }
 }
 function safeChoiceFallback(id: string) {
+  if (id === 'skip' || id === 'mode:none' || id === 'no') return '不发动'
+  if (id === 'cancel') return '取消'
+  if (id === 'pass') return '不响应'
+  if (id === 'yes') return '发动'
   const position = prompt.value?.validChoices.indexOf(id) ?? -1
   return position >= 0 ? `效果选项 ${position + 1}` : '效果选项'
 }
@@ -189,35 +269,59 @@ function naturalChoiceLabel(value: string | undefined, id: string) {
 function label(id: string) {
   if (prompt.value?.kind === 'response-target') return naturalChoiceLabel(prompt.value.data?.[id], id)
     ?? naturalChoiceLabel(prompt.value.choiceLabels?.[id], id) ?? safeChoiceFallback(id)
-  if (isPureEffectDecision.value) return isDeclineChoice(id) ? '不发动' : '发动'
-  if (isEffectDecision.value) {
-    if (['yes', 'mode:use'].includes(id.toLowerCase())) return '发动'
-    if (['no', 'mode:none'].includes(id.toLowerCase())) return '不发动'
-  }
   const base = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
     ?? cardFor(id)?.name
     ?? naturalChoiceLabel(prompt.value?.data?.[`${id}:name`], id)
     ?? naturalChoiceLabel(prompt.value?.data?.[id], id)
     ?? safeChoiceFallback(id)
   const zone = naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location) return battlefieldTargetLabel(props.game, sandboxActorIndex.value, id, base)
   return zone ? `${base} · ${zone}` : base
+}
+function choiceConsequence(id: string) {
+  return prompt.value ? promptConsequenceCopy(prompt.value, id, label(id)) : ''
 }
 function imageFor(id: string) { return prompt.value?.data?.[`${id}:image`] ?? cardFor(id)?.imageUrl }
 function cardIdFor(id: string) {
   return cardFor(id)?.cardId ?? prompt.value?.data?.[`${id}:cardId`] ?? (/^(?:S\d{2}|ST\d{2}|ST)-/.test(id) ? id : '')
 }
 function cardName(id: string) {
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location?.card.hidden && location.playerIndex !== sandboxActorIndex.value) return location.label
   return naturalChoiceLabel(prompt.value?.data?.[`${id}:name`], id)
     ?? cardFor(id)?.name
     ?? label(id)
 }
 function selectionHint(id: string) {
+  const orderHint = triggerOrderHint(id)
+  if (orderHint) return orderHint
   const value = naturalChoiceLabel(prompt.value?.choiceLabels?.[id], id)
   return value?.startsWith('当前') ? value : ''
 }
+const isTriggerOrder = computed(() => prompt.value?.kind === 'trigger-order'
+  && prompt.value?.data?.choiceMode === 'ordered')
+function triggerOrderHint(id: string) {
+  if (!isTriggerOrder.value) return ''
+  const declarationIndex = activeSelected.value.indexOf(id)
+  if (declarationIndex < 0) return ''
+  const resolutionOrder = (prompt.value?.maxChoose ?? activeSelected.value.length) - declarationIndex
+  return `第${declarationIndex + 1}个发动 · 第${resolutionOrder}个结算`
+}
+const triggerResolutionPreview = computed(() => isTriggerOrder.value
+  && activeSelected.value.length === prompt.value?.maxChoose
+  ? [...activeSelected.value].reverse() : [])
 function cardMeta(id: string) {
-  return naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
+  const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
+  if (location) {
+    if (location.card.hidden && location.playerIndex !== sandboxActorIndex.value) return location.label
+    const troops = Number.isFinite(location.card.troops) ? `兵力 ${location.card.troops}` : ''
+    return [location.label, troops, location.card.tapped ? '休整' : '活跃'].filter(Boolean).join(' · ')
+  }
+  const zone = naturalChoiceLabel(prompt.value?.data?.[`${id}:zone`], id)
     ?? (prompt.value?.kind === 'opponent-hand-card' && !cardIdFor(id) ? '匿名手牌' : '')
+  const cost = numberData(id, 'cost')
+  return [zone, cost === undefined ? '' : `费用 ${cost}`].filter(Boolean).join(' · ')
 }
 function numberData(id: string, key: string) {
   const value = prompt.value?.data?.[`${id}:${key}`]
@@ -240,14 +344,15 @@ function detailFor(id: string | null) {
     imageUrl,
     effectText: card?.effectText ?? prompt.value?.data?.[`${id}:effect`] ?? '',
     cardType: card?.cardType ?? prompt.value?.data?.[`${id}:cardType`] ?? '',
+    isCounterTactic: card?.isCounterTactic ?? booleanData(id, 'isCounterTactic') ?? false,
     traits: card?.traits ?? prompt.value?.data?.[`${id}:traits`]?.split('|').filter(Boolean) ?? [],
     profession: (card?.profession ?? prompt.value?.data?.[`${id}:profession`]) || undefined,
     hasPrintedCost: card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost'),
     cost: (card?.hasPrintedCost ?? booleanData(id, 'hasPrintedCost')) === false
       ? undefined
-      : card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost'),
-    troops: card?.troops ?? numberData(id, 'troops'),
-    baseTroops: card?.baseTroops ?? numberData(id, 'baseTroops'),
+      : Math.max(0, card?.playCost ?? card?.currentCost ?? card?.cost ?? numberData(id, 'cost') ?? 0),
+    troops: Math.max(0, card?.troops ?? numberData(id, 'troops') ?? 0),
+    baseTroops: Math.max(0, card?.baseTroops ?? numberData(id, 'baseTroops') ?? 0),
     disasterLevel: card?.disasterLevel ?? numberData(id, 'disasterLevel'),
   }
 }
@@ -261,6 +366,7 @@ function cardObjectFor(id: string): Card | null {
     cardId: detail.cardId,
     name: detail.name,
     cardType: detail.cardType,
+    isCounterTactic: detail.isCounterTactic,
     faction: prompt.value?.data?.[`${id}:faction`] ?? '',
     traits: detail.traits,
     profession: detail.profession,
@@ -268,8 +374,8 @@ function cardObjectFor(id: string): Card | null {
     effectText: detail.effectText,
     cost: detail.cost ?? 0,
     hasPrintedCost: detail.hasPrintedCost ?? detail.cost !== undefined,
-    baseTroops: detail.baseTroops ?? detail.troops ?? 0,
-    troops: detail.troops ?? detail.baseTroops ?? 0,
+    baseTroops: Math.max(0, detail.baseTroops ?? detail.troops ?? 0),
+    troops: Math.max(0, detail.troops ?? detail.baseTroops ?? 0),
     disasterLevel: detail.disasterLevel ?? 0,
     tapped: false,
     summonRound: 0,
@@ -297,7 +403,8 @@ const previewCardId = computed(() => prompt.value?.data?.previewCardId ?? null)
 const previewPresentation = computed(() => prompt.value?.data?.previewPresentation ?? '')
 const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
-const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline'])
+const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])
+declineChoices.add('refuse')
 function isDeclineChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
@@ -307,6 +414,7 @@ function isDirectActivationChoice(choice: string) {
   const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
   return directActivationChoices.has(choice.trim().toLowerCase()) || explicitLabel === '发动'
 }
+const selectedActionChoices = computed(() => activeSelected.value.filter(choice => !isDeclineChoice(choice)))
 const orderedEffectChoices = computed(() => [
   ...currentChoices.value.filter(choice => !isDeclineChoice(choice)),
   ...currentChoices.value.filter(isDeclineChoice),
@@ -318,24 +426,164 @@ const isPureEffectDecision = computed(() => Boolean(isEffectDecision.value
   && currentChoices.value.some(choice => isDirectActivationChoice(choice))
   && currentChoices.value.every(choice => isDeclineChoice(choice) || isDirectActivationChoice(choice))))
 const displayCardIds = computed(() => prompt.value?.data?.displayCardIds?.split('|').filter(Boolean) ?? [])
+const displayChoiceIds = computed(() => prompt.value?.data?.displayChoiceIds?.split('|').filter(Boolean) ?? [])
 const displayedChoices = computed(() => {
   if (displayCardIds.value.length) return displayCardIds.value
+  if (displayChoiceIds.value.length) return displayChoiceIds.value
   if (prompt.value?.kind === 'option') return orderedEffectChoices.value
   if (showPreviewCard.value && previewCardId.value && !currentChoices.value.length) return [previewCardId.value]
   return currentChoices.value
 })
+const focusedCandidate = computed(() => {
+  const id = hoveredChoice.value ?? activeSelected.value[0]
+  return id && displayedChoices.value.includes(id) && detailFor(id) ? id : null
+})
+const focusedCandidateDetail = computed(() => {
+  const id = focusedCandidate.value
+  if (!id) return null
+  return {
+    name: cardName(id),
+    meta: cardMeta(id),
+    consequence: choiceConsequence(id),
+    unavailable: prompt.value?.data?.cardSelection === 'true' && !prompt.value.validChoices.includes(id),
+    unavailableReason: disabledChoiceReason(id),
+  }
+})
+function disabledChoiceReason(choice: string) {
+  return prompt.value?.data?.[`disabledChoice:${choice}`] ?? ''
+}
+function updateCardStripEdges(element: HTMLElement) {
+  const overflow = element.scrollWidth > element.clientWidth + 2
+  element.dataset.overflow = overflow ? 'true' : 'false'
+  element.dataset.moreStart = overflow && element.scrollLeft > 2 ? 'true' : 'false'
+  element.dataset.moreEnd = overflow && element.scrollLeft + element.clientWidth < element.scrollWidth - 2 ? 'true' : 'false'
+}
+function cardStripEventTarget(event: Event) {
+  const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>('.prompt-card-strip') : null
+  return target
+}
+function onCardStripScroll(event: Event) {
+  const element = cardStripEventTarget(event)
+  if (element) updateCardStripEdges(element)
+}
+function onCardStripWheel(event: WheelEvent) {
+  const element = cardStripEventTarget(event)
+  if (!element || element.scrollWidth <= element.clientWidth + 2) return
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY
+  if (!delta) return
+  event.preventDefault()
+  element.scrollLeft += delta
+  updateCardStripEdges(element)
+}
+function refreshCardStrips() {
+  nextTick(() => document.querySelectorAll<HTMLElement>('.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip').forEach(updateCardStripEdges))
+}
+let cardStripDrag: { element: HTMLElement; pointerId: number; startX: number; startScroll: number; moved: boolean } | null = null
+function onCardStripPointerDown(event: PointerEvent) {
+  // Touch is owned by native scrolling in landscape, or by the rotated
+  // choice-body gesture below. Pointer dragging remains mouse/pen-only.
+  if (!props.mobileLayout || event.button !== 0 || event.pointerType === 'touch'
+    || event.target instanceof Element && event.target.closest('[draggable="true"]')) return
+  const element = cardStripEventTarget(event)
+  if (!element || element.scrollWidth <= element.clientWidth + 2) return
+  // Do not capture a simple tap: pointer capture retargets the eventual click
+  // to the strip and makes the card itself impossible to select. Capture only
+  // after the gesture has crossed the drag threshold.
+  cardStripDrag = { element, pointerId:event.pointerId,
+    startX: document.documentElement.dataset.l12Rotated === 'true' ? event.clientY : event.clientX,
+    startScroll:element.scrollLeft, moved:false }
+}
+function onCardStripPointerMove(event: PointerEvent) {
+  if (!cardStripDrag || cardStripDrag.pointerId !== event.pointerId) return
+  const position = document.documentElement.dataset.l12Rotated === 'true' ? event.clientY : event.clientX
+  if (!cardStripDrag.moved && Math.abs(position - cardStripDrag.startX) < 5) return
+  if (!cardStripDrag.moved) {
+    cardStripDrag.moved = true
+    cardStripDrag.element.setPointerCapture?.(event.pointerId)
+  }
+  event.preventDefault()
+  cardStripDrag.element.scrollLeft = cardStripDrag.startScroll - (position - cardStripDrag.startX)
+  updateCardStripEdges(cardStripDrag.element)
+}
+function endCardStripPointer(event: PointerEvent) {
+  if (!cardStripDrag || cardStripDrag.pointerId !== event.pointerId) return
+  if (cardStripDrag.element.hasPointerCapture?.(event.pointerId)) cardStripDrag.element.releasePointerCapture?.(event.pointerId)
+  updateCardStripEdges(cardStripDrag.element)
+  cardStripDrag = null
+}
+let rotatedBodyTouch: {
+  identifier: number; startX: number; startY: number; bodyScroll: number; body: HTMLElement
+  horizontal: HTMLElement | null; horizontalScroll: number; axis: 'vertical' | 'horizontal' | null
+} | null = null
+function onChoiceBodyTouchStart(event: TouchEvent) {
+  if (!props.mobileLayout || document.documentElement.dataset.l12Rotated !== 'true'
+    || event.target instanceof Element && event.target.closest(
+      '.placement-workspace,.all-placement-workspace,.response-target-list')) return
+  const touch = event.changedTouches[0]
+  const body = event.currentTarget
+  if (!touch || !(body instanceof HTMLElement) || event.touches.length !== 1) return
+  const target = event.target instanceof Element ? event.target : null
+  const horizontal = target?.closest<HTMLElement>('.prompt-card-strip:not(.placement-row):not(.all-placement-row),.disaster-preparation-history > section > div') ?? null
+  rotatedBodyTouch = {
+    identifier: touch.identifier, startX: touch.clientX, startY: touch.clientY,
+    bodyScroll: body.scrollTop, body,
+    horizontal: horizontal && horizontal.scrollWidth > horizontal.clientWidth + 2 ? horizontal : null,
+    horizontalScroll: horizontal?.scrollLeft ?? 0, axis: null,
+  }
+}
+function onChoiceBodyTouchMove(event: TouchEvent) {
+  if (!rotatedBodyTouch || event.touches.length !== 1) return
+  const touch = Array.from(event.touches).find(candidate => candidate.identifier === rotatedBodyTouch?.identifier)
+  if (!touch) return
+  // The canvas is rotated 90 degrees: physical X is logical vertical,
+  // physical Y is logical horizontal. Lock one owner after a real drag so a
+  // diagonal swipe cannot scroll both the body and its nested card row.
+  const vertical = touch.clientX - rotatedBodyTouch.startX
+  const horizontal = touch.clientY - rotatedBodyTouch.startY
+  if (!rotatedBodyTouch.axis) {
+    if (Math.max(Math.abs(vertical), Math.abs(horizontal)) < 6) return
+    if (Math.abs(vertical) < 12 && Math.abs(vertical) * 1.15 < Math.abs(horizontal)) {
+      if (!rotatedBodyTouch.horizontal) return
+      rotatedBodyTouch.axis = 'horizontal'
+    } else if (Math.abs(horizontal) < 12 || Math.abs(vertical) >= Math.abs(horizontal) * 1.15) {
+      rotatedBodyTouch.axis = 'vertical'
+    } else if (Math.max(Math.abs(vertical), Math.abs(horizontal)) >= 12) {
+      rotatedBodyTouch.axis = rotatedBodyTouch.horizontal && Math.abs(horizontal) > Math.abs(vertical)
+        ? 'horizontal' : 'vertical'
+    } else return
+  }
+  if (event.cancelable) event.preventDefault()
+  if (rotatedBodyTouch.axis === 'vertical')
+    rotatedBodyTouch.body.scrollTop = rotatedBodyTouch.bodyScroll + vertical
+  else if (rotatedBodyTouch.horizontal) {
+    rotatedBodyTouch.horizontal.scrollLeft = rotatedBodyTouch.horizontalScroll - horizontal
+    updateCardStripEdges(rotatedBodyTouch.horizontal)
+  }
+}
+function onChoiceBodyTouchEnd(event: TouchEvent) {
+  if (rotatedBodyTouch && Array.from(event.changedTouches).some(touch => touch.identifier === rotatedBodyTouch?.identifier))
+    rotatedBodyTouch = null
+}
+watch(() => `${prompt.value?.promptId ?? ''}:${visible.value}:${minimized.value}:${displayedChoices.value.length}`, () => {
+  rotatedBodyTouch = null
+  cardStripDrag = null
+  refreshCardStrips()
+}, { immediate: true })
+onBeforeUnmount(() => { rotatedBodyTouch = null; cardStripDrag = null })
 const primaryChoices = computed(() => (hasCardChoices.value || (isEffectDecision.value && !isPureEffectDecision.value))
   ? displayedChoices.value.filter(id => !isDeclineChoice(id)) : displayedChoices.value)
 const supplementalChoices = computed(() => currentChoices.value
   .filter(id => !primaryChoices.value.includes(id)))
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
-const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : selected.value)
+const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : activeSelected.value)
 const hasCardChoices = computed(() => displayCardIds.value.length > 0 || (!isEffectDecision.value
   && (showPreviewCard.value || displayedChoices.value.some(id => Boolean(detailFor(id)))))
 )
 const isEffectOptionList = computed(() => (isEffectDecision.value || prompt.value?.kind === 'option')
   && !hasCardChoices.value && !isInitiative.value)
+const isUniformTextOptionList = computed(() => !hasCardChoices.value && !isInitiative.value
+  && prompt.value?.kind !== 'response-target')
 const displayedCardsAreAllFromHand = computed(() => {
   const handIds = new Set(props.game.players.flatMap(player => (player.hand ?? []).map(card => card.instanceId)))
   const cards = displayedChoices.value.filter(id => Boolean(detailFor(id)))
@@ -346,12 +594,73 @@ const isSingleCardRow = computed(() => prompt.value?.data?.layout === 'single-ro
   || displayedCardsAreAllFromHand.value
   || placementMode.value === 'single-top-bottom')
 const unassignedChoices = computed(() => currentChoices.value.filter(id => !placementTop.value.includes(id) && !placementBottom.value.includes(id)))
+function legacyPromptTitle(p: Prompt) {
+  const sourceName = p.data?.sourceName?.trim()
+  if (sourceName) return sourceName
+  const separator = p.text.indexOf('：')
+  if (separator > 0) return p.text.slice(0, separator).trim()
+  if (p.kind.includes('disaster')) return '天灾准备'
+  if (p.kind.includes('trial')) return '试炼安排'
+  if (p.kind.includes('slot')) return '选择战场位置'
+  if (p.kind.includes('resource') || p.kind.includes('cost') || p.kind.includes('morale')) return '选择支付方式'
+  if (p.kind.includes('target')) return '选择效果对象'
+  if (p.kind.includes('card') || ['discard', 'search', 'order'].includes(p.kind)) return '选择卡牌'
+  if (p.kind === 'initiative') return '决定先后攻'
+  if (p.kind === 'response') return '响应确认'
+  if (['optional', 'option'].includes(p.kind)) return '效果确认'
+  return '操作确认'
+}
+function legacyPromptInstruction(p: Prompt) {
+  if (p.data?.uiPattern === 'effect-decision' || ['optional', 'option'].includes(p.kind)) return '请决定是否执行本次效果。'
+  if (p.kind === 'response') return '请决定是否响应当前效果。'
+  if (p.kind.includes('slot')) return '请选择一个合法的战场位置。'
+  if (p.kind.includes('target')) return '请选择本次效果的合法对象。'
+  if (p.kind.includes('resource') || p.kind.includes('cost') || p.kind.includes('morale')) return '请选择本次操作要支付或返还的资源。'
+  return `请选择 ${p.minChoose} 至 ${p.maxChoose} 项并确认。`
+}
+const promptTitle = computed(() => prompt.value?.presentation?.title?.trim()
+  || (prompt.value ? legacyPromptTitle(prompt.value) : ''))
+const promptSituation = computed(() => prompt.value ? promptSituationCopy(prompt.value) : '')
+const promptInstruction = computed(() => prompt.value
+  ? promptInstructionCopy(prompt.value, legacyPromptInstruction(prompt.value)) : '')
+const promptActor = computed(() => {
+  return battleActionActorPresentation(prompt.value?.playerIndex, sandboxActorIndex.value, props.readOnly)
+})
+const promptSelectionRange = computed(() => {
+  const current = prompt.value
+  if (!current) return ''
+  return battleActionSelectionRange(current.minChoose, current.maxChoose)
+})
+const promptPendingSelection = computed(() => prompt.value
+  ? battleActionSelectionStatus(activeSelected.value.length, prompt.value.maxChoose) : '')
+const minimizedTask = computed(() => {
+  if (!prompt.value) return isMulligan.value
+    ? props.mulliganSelectedIds.length ? `调度：已选 ${props.mulliganSelectedIds.length} 张待换` : '调度：未选牌，确认后保留全部'
+    : overlayTitle.value
+  return [promptActor.value.label, promptSelectionRange.value,
+    prompt.value.presentation?.paymentStatus === 'paid' ? '费用已支付' : prompt.value.presentation?.paymentStatus === 'pending' ? '费用待支付' : '',
+    promptInstruction.value,
+    prompt.value.presentation?.paymentSummary?.trim()].filter(Boolean).join('；')
+})
+const minimizedMobileLabel = computed(() => {
+  if (isMulligan.value)
+    return props.mulliganSelectedIds.length ? `已选\n${props.mulliganSelectedIds.length}张` : '保留\n全部'
+  const current = prompt.value
+  if (!current) return '当前\n待办'
+  if (current.presentation?.paymentStatus === 'pending') return '支付\n费用'
+  if (current.maxChoose === 0) return '确认\n信息'
+  if (current.minChoose === current.maxChoose) return `选择\n${current.maxChoose}项`
+  if (current.minChoose === 0) return `至多\n${current.maxChoose}项`
+  return `选择\n${current.minChoose}-${current.maxChoose}项`
+})
+const minimizedButtonText = computed(() => props.mobileLayout ? minimizedMobileLabel.value : '展开')
 const overlayTitle = computed(() => {
-  if (prompt.value) return isEffectDecision.value ? (prompt.value.data?.sourceName || prompt.value.text) : prompt.value.text
-  if (isMulligan.value) return '选择需要调度的起始手牌'
-  if (isMulliganPhase.value) return '等待对手完成调度'
+  if (prompt.value) return promptTitle.value
+  if (isMulligan.value) return '选择要换掉的起始手牌'
+  if (isMulliganPhase.value) return props.readOnly ? '等待玩家完成调度' : '已确认调度，等待对手'
   return waitingText()
 })
+const mulliganInstruction = computed(() => mulliganCopy(props.mulliganSelectedIds.length, (l12State.rankedClock?.operationLimitMs ?? 0) > 0))
 const setupClockPlayerIndex = computed(() => {
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
@@ -365,19 +674,23 @@ function setupRoleLabel(playerIndex: number | null) {
   return `${props.game.firstPlayer === playerIndex ? '先攻' : '后攻'}玩家准备`
 }
 const decisionEffectText = computed(() => {
-  const text = prompt.value?.data?.effectText?.trim() || prompt.value?.text || ''
-  const context = prompt.value?.data?.responseContext?.trim()
-  return context && !text.includes(context) ? `${text}\n${context}` : text
+  return prompt.value ? promptSituationCopy(prompt.value) : ''
 })
 
 function toggle(id: string) {
   const p = prompt.value
   if (!p || !p.validChoices.includes(id)) return
+  if (id === 'cancel' && p.data?.allowCancel === 'true') { resolveChoice(id); return }
   if (p.data?.choiceMode === 'instant' || isPureEffectDecision.value) { resolveChoice(id); return }
+  selected.value = currentValidSelection()
   const index = selected.value.indexOf(id)
   if (index >= 0) { selected.value.splice(index, 1); return }
-  if (p.maxChoose === 1) selected.value = [id]
-  else if (selected.value.length < p.maxChoose) selected.value.push(id)
+  if (isDeclineChoice(id) || p.maxChoose === 1) {
+    selected.value = [id]
+    return
+  }
+  selected.value = selected.value.filter(choice => !isDeclineChoice(choice))
+  if (selected.value.length < p.maxChoose) selected.value.push(id)
 }
 function resolveChoice(choice: string) {
   const p = prompt.value
@@ -386,13 +699,16 @@ function resolveChoice(choice: string) {
 }
 function confirm() {
   const p = prompt.value
-  if (!p || selected.value.length < p.minChoose || selected.value.length > p.maxChoose) return
-  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value] }), p.playerIndex)
+  if (!p) return
+  const choices = currentValidSelection()
+  if (choices.length < p.minChoose || choices.length > p.maxChoose
+      || choices.some(isDeclineChoice) && choices.length > 1) return
+  sendAction(withPromptBinding(p, { cardInstanceIds: choices }), p.playerIndex)
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
   const p = prompt.value
-  if (!p || selected.value.length !== 1) return
-  sendAction(withPromptBinding(p, { cardInstanceIds: [...selected.value], destination }), p.playerIndex)
+  if (!p || activeSelected.value.length !== 1) return
+  sendAction(withPromptBinding(p, { cardInstanceIds: [...activeSelected.value], destination }), p.playerIndex)
 }
 function removePlacement(id: string) {
   placementTop.value = placementTop.value.filter(choice => choice !== id)
@@ -470,11 +786,29 @@ function confirmAllPlacement(destination: 'top' | 'bottom') {
   }), p.playerIndex)
 }
 const isInfoConfirm = computed(() => ['disaster-reveal', 'disaster-trigger'].includes(prompt.value?.kind ?? ''))
+const promptConfirmLabel = computed(() => {
+  const kind = prompt.value?.kind ?? ''
+  if (isInfoConfirm.value) return '确认信息'
+  if (kind === 'resource-return' || prompt.value?.data?.choiceMode === 'resource-return') return '确认返还'
+  if (kind.includes('resource') || kind.includes('cost') || kind.includes('morale')) return '确认支付'
+  if (kind.includes('target')) return '确认目标'
+  if (kind.includes('slot')) return '确认位置'
+  if (kind.includes('card') || ['discard', 'search'].includes(kind)) return '确认卡牌'
+  return '确认选择'
+})
 const usesDetailCardImages = computed(() => isDisasterChoice.value || isInfoConfirm.value)
 function waitingText() {
-  if (waitingDefense.value) return `${props.game.players[1 - props.game.you].name} 正在选择是否支援或抵挡`
+  if (waitingDefense.value) return '对手正在选择是否支援或抵挡'
   const waiting = waitingPrompt.value
   if (!waiting) return ''
+  const authoritativeSummary = waitingPrompt.value?.waitingSummary?.trim()
+  if (authoritativeSummary) {
+    const action = authoritativeSummary.slice(authoritativeSummary.lastIndexOf('正在'))
+    return authoritativeSummary.includes('正在') ? `对手${action}` : legacyWaitingSummary(waiting)
+  }
+  return legacyWaitingSummary(waiting)
+}
+function legacyWaitingSummary(waiting: NonNullable<GameState['waitingPrompt']>) {
   const action: Record<string, string> = {
     initiative: '正在选择先攻或后攻',
     'disaster-ban': '正在禁用天灾',
@@ -490,40 +824,54 @@ function waitingText() {
     card: '正在选择卡牌', cards: '正在选择卡牌', search: '正在查看并选择卡牌',
     discard: '正在选择弃置卡牌', order: '正在排列卡牌', slot: '正在选择战场位置',
   }
-  return `${waiting.playerName} ${action[waiting.kind] ?? '正在处理选择'}`
+  return `对手${action[waiting.kind] ?? '正在完成当前操作'}`
 }
 function kindLabel() {
-  if (isEffectDecision.value) return 'OPTION'
+  if (isEffectDecision.value) return '效果确认'
   if (isInitiative.value) return '先后攻决定'
   if (isDisasterChoice.value) return prompt.value?.kind === 'disaster-ban' ? '天灾禁用' : '天灾选择'
   if (prompt.value?.kind === 'disaster-reveal') return '随机公开天灾'
   if (prompt.value?.kind === 'disaster-trigger') return '天灾触发'
-  return prompt.value?.kind ?? ''
+  return prompt.value ? legacyPromptTitle(prompt.value) : '操作确认'
 }
 </script>
 
 <template>
-  <Teleport to="body">
-    <div v-if="visible" class="l12-prompt-overlay"
-      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible }">
+  <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
+    <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
+      @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
+      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
-        <button :aria-label="`展开：${overlayTitle}`" :title="overlayTitle" @click="minimized = false">展开</button>
+        <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">{{ minimizedButtonText }}</button>
+        <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>
+        <span v-if="autoCloseMessage" class="prompt-auto-close" role="timer" :aria-label="autoCloseMessage" :title="autoCloseMessage">{{ mobileLayout ? `${autoCloseSeconds}秒` : autoCloseMessage }}</span>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel" :class="{ 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="prompt.text">
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
-          <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ isEffectDecision ? (prompt.data?.sourceName || prompt.text) : prompt.text }}</h2>
-          <p v-if="isEffectDecision" class="effect-decision-text l12-effect-body">{{ decisionEffectText }}</p>
-          <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
+          <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
+          <p v-if="promptSituation" class="effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
+          <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
+        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
+          @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
+        <div class="prompt-task-context" :data-actor-state="promptActor.state"><span class="prompt-actor">{{ promptActor.label }}</span><span v-if="!isPureEffectDecision && prompt.data?.choiceMode !== 'instant'" class="prompt-selection-range" role="status">{{ promptSelectionRange }} · {{ promptPendingSelection }}</span><span v-else class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
+        <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
+        <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
+          :data-payment-status="prompt.presentation.paymentStatus">{{ promptPaymentCopy(prompt) }}</p>
+        <p v-if="promptSubmissionCopy(prompt)" class="prompt-submit-consequence">{{ promptSubmissionCopy(prompt) }}</p>
+        <p v-for="choice in supplementalChoices.filter(item => choiceConsequence(item))" :key="`exit-${choice}`" class="prompt-exit-consequence">
+          {{ label(choice) }}：{{ choiceConsequence(choice) }}
+        </p>
+        <p v-if="autoCloseMessage" class="prompt-auto-close" role="timer" aria-live="polite">{{ autoCloseMessage }}</p>
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
             <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>
@@ -531,9 +879,10 @@ function kindLabel() {
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
             <div><button v-for="entry in group.entries" :key="entry.card.instanceId" :class="{ hidden: entry.card.hidden }"
+              :aria-label="`${entry.card.name || '未揭示天灾'}，${group.label}，${entry.note}`"
               @click="focusHistoryCard(entry.card)" @mouseenter="focusHistoryCard(entry.card)">
               <img v-if="entry.card.hidden" src="/assets/l12/card-back-disaster.png" alt="未揭示天灾"/>
-               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
+               <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><em>{{ group.label }}</em><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
         </div>
@@ -543,23 +892,26 @@ function kindLabel() {
             intent="detail" size="featured" @focus="focusChoice(previewCardId)" @select="focusChoice(previewCardId)"/>
         </div>
         <div v-if="placementMode === 'all-top-bottom' || placementMode === 'all-bottom'" class="all-placement-workspace">
-          <strong class="placement-edge top-edge">{{ placementMode === 'all-bottom' ? '先放到底' : '靠顶' }}</strong>
+          <strong class="placement-edge top-edge">左侧先抽到</strong>
           <div class="prompt-card-strip all-placement-row">
-            <PromptCardCandidate v-for="choice in placementOrder" :key="choice"
+            <PromptCardCandidate v-for="(choice, index) in placementOrder" :key="choice"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+              :selection-order="index + 1"
               draggable="true" @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="reorderAll(choice)"
               @focus="focusChoice(choice)" @select="selectSwapChoice(choice)"/>
           </div>
-          <strong class="placement-edge bottom-edge">{{ placementMode === 'all-bottom' ? '后放到底' : '靠底' }}</strong>
+          <strong class="placement-edge bottom-edge">右侧后抽到</strong>
+          <p class="placement-direction-hint">从左到右是最终相对牌序。放回顶部时左侧最靠牌库顶；放回底部时须先抽完牌库中的其他牌，之后才从左侧依次抽到。</p>
         </div>
         <div v-else-if="placementMode === 'split-top-bottom'" class="placement-workspace">
           <section class="placement-destination top" @dragover.prevent @drop="dropPlacement('top')">
-            <header><strong>靠顶</strong><small>从左到右，最左侧最靠牌库顶</small></header>
+            <header><strong>放回顶部</strong><small>从左到右：左侧最靠顶，也最先抽到</small></header>
             <div class="prompt-card-strip placement-row">
-              <PromptCardCandidate v-for="choice in placementTop" :key="choice" size="compact"
+              <PromptCardCandidate v-for="(choice, index) in placementTop" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+                :selection-order="index + 1"
                 removable draggable="true"
                 @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="dropPlacement('top', choice)"
                 @focus="focusChoice(choice)" @select="selectSplitSwap(choice)" @remove="returnToUnassigned(choice)"/>
@@ -577,18 +929,19 @@ function kindLabel() {
                 @select="placementSelected = choice; focusChoice(choice)"/>
               <p v-if="!unassignedChoices.length">全部卡牌均已安排</p>
             </div>
-            <div class="placement-buttons">
+            <div class="placement-buttons" data-ui-contract="equal-option-group">
               <button :disabled="!placementSelected" @click="assignPlacement('top')">放回顶部</button>
               <button :disabled="!placementSelected" @click="assignPlacement('bottom')">放回底部</button>
             </div>
           </section>
 
           <section class="placement-destination bottom" @dragover.prevent @drop="dropPlacement('bottom')">
-            <header><strong>靠底</strong><small>从左到右，最左侧最先到达牌库底</small></header>
+            <header><strong>放回底部</strong><small>其他牌抽完后，从左到右依次抽到；右侧最靠底</small></header>
             <div class="prompt-card-strip placement-row">
-              <PromptCardCandidate v-for="choice in placementBottom" :key="choice" size="compact"
+              <PromptCardCandidate v-for="(choice, index) in placementBottom" :key="choice" size="compact"
                 :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
                 :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="placementSelected === choice"
+                :selection-order="index + 1"
                 removable draggable="true"
                 @dragstart="draggedChoice = choice" @dragover.prevent @drop.stop.prevent="dropPlacement('bottom', choice)"
                 @focus="focusChoice(choice)" @select="selectSplitSwap(choice)" @remove="returnToUnassigned(choice)"/>
@@ -596,90 +949,115 @@ function kindLabel() {
             </div>
           </section>
         </div>
-        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'response-target-list': prompt.kind === 'response-target' }">
+        <div v-else class="prompt-choices" :class="{ 'prompt-card-strip': hasCardChoices, 'effect-option-list': isEffectOptionList, 'uniform-text-option-list': isUniformTextOptionList, 'response-target-list': prompt.kind === 'response-target' }"
+          :data-ui-contract="hasCardChoices ? 'equal-card-option-group' : 'equal-option-group'">
           <template v-for="choice in primaryChoices" :key="choice">
-            <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: selected.includes(choice) }">
-              <button class="response-target-select l12-effect-body" :aria-pressed="selected.includes(choice)" :disabled="l12State.pendingAction" @click="toggle(choice)">{{ label(choice) }}</button>
-              <button v-if="detailFor(choice)" class="response-target-detail" :aria-label="`查看${cardName(choice)}来源详情`" @click="focusChoice(choice)">来源详情</button>
+            <article v-if="prompt.kind === 'response-target'" class="response-target-row" :class="{ selected: activeSelected.includes(choice) }">
+              <button class="response-target-select l12-effect-body" :aria-pressed="activeSelected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)"
-              :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="selected.includes(choice)"
+              :consequence="choiceConsequence(choice)" :unavailable-reason="disabledChoiceReason(choice)"
+              :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="activeSelected.includes(choice)"
               :unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"
               :intent="usesDetailCardImages ? 'detail' : 'thumb'" :size="isInfoConfirm ? 'featured' : 'standard'"
-              :selection-order="selected.includes(choice) && prompt.maxChoose > 1 ? selected.indexOf(choice) + 1 : undefined"
+              :selection-order="!isTriggerOrder && selectedActionChoices.includes(choice) && prompt.maxChoose > 1 ? selectedActionChoices.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
-            <button v-else :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+            <button v-else :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
+              :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
+              <small v-if="choiceConsequence(choice)" class="choice-consequence">{{ choiceConsequence(choice) }}</small>
+              <small v-if="triggerOrderHint(choice)" class="trigger-order-hint">{{ triggerOrderHint(choice) }}</small>
+              <small v-if="disabledChoiceReason(choice)">{{ disabledChoiceReason(choice) }}</small>
             </button>
           </template>
         </div>
-        <footer v-if="!isPureEffectDecision" class="prompt-action-footer">
+        <section v-if="triggerResolutionPreview.length" class="trigger-resolution-preview" aria-label="确认前的实际结算顺序">
+          <strong>结算顺序（先 → 后）</strong>
+          <ol><li v-for="choice in triggerResolutionPreview" :key="choice">{{ label(choice) }}</li></ol>
+        </section>
+        <section v-if="focusedCandidateDetail" class="prompt-choice-detail" aria-live="polite">
+          <strong>{{ focusedCandidateDetail.name }}</strong>
+          <span v-if="focusedCandidateDetail.meta">{{ focusedCandidateDetail.meta }}</span>
+          <span v-if="focusedCandidateDetail.consequence">选择后：{{ focusedCandidateDetail.consequence }}</span>
+          <span v-if="focusedCandidateDetail.unavailable" class="unavailable-reason">当前不可选择<span v-if="focusedCandidateDetail.unavailableReason">：{{ focusedCandidateDetail.unavailableReason }}</span></span>
+        </section>
+        </main>
+        <footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
-              :class="{ selected: selected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
+              :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
               :disabled="l12State.pendingAction"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
               @click="toggle(choice)">{{ label(choice) }}</button>
           </template>
           <template v-if="placementMode === 'single-top-bottom'">
             <span>先选择 1 张手牌，再决定放回位置</span>
-            <button :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveSinglePlacement('top')">放回顶部</button>
-            <button class="primary" :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveSinglePlacement('bottom')">放回底部</button>
+            <button :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveSinglePlacement('top')">放回顶部</button>
+            <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveSinglePlacement('bottom')">放回底部</button>
           </template>
           <template v-else-if="placementMode === 'split-top-bottom'">
-            <span>靠顶 {{ placementTop.length }} / 靠底 {{ placementBottom.length }} / 待安排 {{ unassignedChoices.length }}；已安排的牌可依次点击两张交换位置</span>
+            <span class="order-final-preview">顶部先抽到：{{ placementTop.map(cardName).join(' → ') || '无' }}；底部待其他牌抽完后：{{ placementBottom.map(cardName).join(' → ') || '无' }}。待安排 {{ unassignedChoices.length }} 张；每组均按左到右的顺序。</span>
             <button class="primary" :disabled="l12State.pendingAction || unassignedChoices.length > 0" @click="confirmSplitPlacement">
               {{ l12State.pendingAction ? '处理中…' : '确认排列' }}
             </button>
           </template>
           <template v-else-if="placementMode === 'all-top-bottom'">
-            <span>依次点击两张牌交换位置，然后将全部卡牌放回同一端</span>
+            <span class="order-final-preview">最终相对牌序（左侧先抽到）：{{ placementOrder.map(cardName).join(' → ') }}。再选择全部放回顶部或底部。</span>
             <button :disabled="l12State.pendingAction" @click="confirmAllPlacement('top')">全部放回顶部</button>
             <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">全部放回底部</button>
           </template>
           <template v-else-if="placementMode === 'all-bottom'">
-            <span>依次点击两张牌交换位置；左侧卡牌先放回牌库底部</span>
-            <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">确认顺序并全部放回底部</button>
+            <span class="order-final-preview">其他牌抽完后依次抽到：{{ placementOrder.map(cardName).join(' → ') }}。可依次点击两张牌交换位置。</span>
+            <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">全部放回底部</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'optional-add'">
             <span>选择后，将在下一步排列其余展示牌返回牌库底部的顺序</span>
             <button :disabled="l12State.pendingAction" @click="resolveChoice('skip')">不加入手牌</button>
-            <button class="primary" :disabled="l12State.pendingAction || selected.length !== 1" @click="resolveChoice(selected[0])">加入手牌</button>
+            <button class="primary" :disabled="l12State.pendingAction || activeSelected.length !== 1" @click="resolveChoice(activeSelected[0])">加入手牌</button>
           </template>
           <template v-else-if="prompt.data?.choiceMode === 'instant'">
-            <span>点击选项后立即结算</span>
+            <span>点击即确认</span>
+          </template>
+          <template v-else-if="isTriggerOrder">
+            <span class="order-final-preview" data-ui-contract="trigger-order-lifo-hint">{{ triggerResolutionPreview.length ? `确认后实际结算（先 → 后）：${triggerResolutionPreview.map(label).join(' → ')}` : '后选择的效果先结算；每个选项角标显示实际结算顺序。' }}</span>
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length !== prompt.maxChoose" @click="confirm">
+              {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
+            </button>
           </template>
           <template v-else>
-            <span>{{ isEffectDecision ? '请选择是否发动本次效果' : isInfoConfirm ? '双方均确认后继续' : `选择 ${prompt.minChoose}–${prompt.maxChoose} 项` }}</span>
+            <span v-if="isInfoConfirm">双方均确认后继续</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
-            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || selected.length < prompt.minChoose || selected.length > prompt.maxChoose" @click="confirm">
-              {{ l12State.pendingAction ? '处理中…' : (isInfoConfirm ? '确认信息' : '确认选择') }}
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
+              {{ l12State.pendingAction ? '处理中…' : promptConfirmLabel }}
             </button>
           </template>
         </footer>
       </section>
 
-      <section v-else-if="isMulligan" class="prompt-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
+      <section v-else-if="isMulligan" class="prompt-panel prompt-choice-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
         <header>
-          <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择需要调度的起始手牌</h2>
-          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimized = true">—</button>
+          <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择要换掉的起始手牌</h2>
+          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
-        <div class="prompt-choices prompt-card-strip">
+        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
+           <p class="prompt-instruction">{{ mulliganInstruction }}</p>
+          <div class="prompt-choices prompt-card-strip">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
             :horizontal="isHorizontalCardType(card.cardType)" :selected="mulliganSelectedIds.includes(card.instanceId)"
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
-        </div>
-        <footer><span>已选择 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : '确认调度' }}</button></footer>
+          </div>
+        </main>
+        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
-        <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimized = true">—</button>
+        <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
@@ -693,12 +1071,12 @@ function kindLabel() {
         <div v-if="isInitiative" class="initiative-race" :class="{ settled: diceSettled }">
           <article v-for="player in initiativePlayers" :key="player.playerIndex" :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
             <img :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div><strong>{{ player.name }}</strong><span>{{ player.master.masterName }}</span></div>
+            <div><strong>{{ player.playerIndex === game.you ? '你' : '对手' }}</strong><span>{{ player.master.masterName }}</span></div>
             <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
           </article>
         </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
-        <h2>{{ isMulliganPhase ? '等待对手完成调度' : waitingText() }}</h2>
+        <h2>{{ isMulliganPhase ? overlayTitle : waitingText() }}</h2>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <i/><i/><i/>
@@ -709,26 +1087,30 @@ function kindLabel() {
 
 <style scoped>
 .prompt-choices.response-target-list{display:flex;flex-direction:column;align-items:stretch;gap:8px;overflow:auto}
-.response-target-row{display:flex;flex:none;align-items:stretch;gap:8px;border:1px solid #52615d;background:#10191a}
+.response-target-row{display:flex;box-sizing:border-box;height:70px;min-height:70px;max-height:70px;flex:none;align-items:stretch;gap:8px;border:1px solid #52615d;background:#10191a;overflow:hidden}
 .response-target-row.selected{border-color:#79d2ce;box-shadow:inset 0 0 0 1px #79d2ce}
-.response-target-select{flex:1;min-width:0;padding:12px;border:0;background:transparent;color:#eee;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
-.response-target-detail{flex:none;align-self:center;margin:8px;padding:8px;border:1px solid #52615d;background:#162629;color:#b9e7e5}
+.response-target-select{flex:1;min-width:0;padding:12px;border:0;background:transparent;color:#eee;text-align:left;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere}
 .initiative-race{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.initiative-race article{display:grid;grid-template-columns:52px 1fr 58px;grid-template-rows:auto auto;align-items:center;gap:3px 9px;padding:10px;border:2px solid #4c5553;background:#0c1112}.initiative-race article.winner{border-color:#e4bd58;box-shadow:0 0 18px rgba(228,189,88,.35)}.initiative-race img{grid-row:1/3;width:52px;height:73px;object-fit:contain}.initiative-race div{display:grid}.initiative-race strong{color:#fff;font-size:var(--l12-board-copy,13px)}.initiative-race span{color:#89928e;font-size:var(--l12-board-copy,13px)}.initiative-race b{grid-column:3;grid-row:1/3;color:#fff;font-size:max(52px,var(--l12-board-copy,13px));line-height:1;animation:dice-shake .18s infinite alternate}.initiative-race.settled b{animation:dice-land .32s ease-out}.initiative-race em{grid-column:3;grid-row:2;color:#e6c15e;font-size:var(--l12-board-copy,13px);font-style:normal;text-align:center;transform:translateY(14px)}@keyframes dice-shake{from{transform:rotate(-9deg) scale(.94)}to{transform:rotate(9deg) scale(1.05)}}@keyframes dice-land{0%{transform:scale(1.35) rotate(18deg)}100%{transform:scale(1) rotate(0)}}
 .l12-prompt-overlay{position:fixed!important;z-index:2147483600!important;inset:0;box-sizing:border-box;display:flex!important;width:100vw;height:100vh;align-items:center!important;justify-content:center!important;padding:18px;background:rgba(2,4,5,.48)!important;backdrop-filter:blur(3px)}
 .l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:clamp(118px,19vw,258px);padding-left:var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 18px)}
 .prompt-panel{position:relative;width:min(760px,calc(100vw - 36px));max-height:calc(100vh - 36px);margin:auto;padding:16px;overflow-x:hidden;overflow-y:auto}
 .prompt-panel header{position:relative;padding-right:44px}.prompt-minimize{position:absolute;right:0;top:0;width:32px;height:27px;border:1px solid #8b918d;background:#111718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px));line-height:18px}.prompt-minimize:hover{border-color:#70d7df;background:#174e54}
+@media(min-width:761px){.prompt-panel>header{padding-left:44px;padding-right:0}.prompt-panel>header .prompt-minimize{left:0;right:auto}}
 .l12-prompt-overlay.initiative .prompt-panel{width:min(480px,calc(100vw - 32px));padding:24px}.l12-prompt-overlay.initiative .prompt-choices{display:grid;grid-template-columns:1fr 1fr;min-height:112px;align-items:stretch}.l12-prompt-overlay.initiative .prompt-choices>button{width:100%;max-width:none;min-height:92px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(18px,var(--l12-board-copy,13px))}.l12-prompt-overlay.initiative .prompt-choices>button:hover,.l12-prompt-overlay.initiative .prompt-choices>button.selected{border-color:#7de1e7;background:#1b6f77;color:#fff}
 .prompt-panel.has-card-choices{width:min(920px,calc(100vw - 36px))}.prompt-card-strip{display:flex;min-width:0;max-width:100%;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:8px;padding:10px 3px;overflow-x:auto;overflow-y:hidden;scrollbar-color:#65706d #111516;scrollbar-width:thin}.prompt-choices.prompt-card-strip{max-height:none}.featured-card-strip{justify-content:center;margin:2px auto}
 .prompt-choices.effect-option-list{display:grid;max-width:100%;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));align-items:stretch;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}.prompt-choices.effect-option-list>button{width:100%;min-width:0;max-width:none;min-height:54px;padding:10px 16px;border:2px solid #d9d8cf;background:#101516;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.55;text-align:left;white-space:normal}.prompt-choices.effect-option-list>button:hover,.prompt-choices.effect-option-list>button.selected{border-color:#70d7df;background:#174e54;color:#fff}
+.prompt-choices.effect-option-list>button{position:relative}.trigger-order-hint{position:absolute;left:4px;top:4px;display:block;margin:0;padding:2px 5px;border:1px solid #f2d56d;background:#241b07;color:#ffe78d;font-size:var(--l12-board-micro,9px);font-weight:900;line-height:1.2}
 .prompt-choices>button.decline-action,.prompt-action-footer>button.decline-action{box-sizing:border-box;min-width:112px!important;min-height:44px!important;padding:9px 16px!important;font-size:var(--l12-board-copy,13px)!important;line-height:1.35}
 .effect-decision-header h2{margin-bottom:8px}.effect-decision-text{margin:0;padding:11px 13px;border:1px solid #3b4542;background:#0b1011;color:#eef0eb;font-size:var(--l12-board-copy,13px);line-height:1.75;white-space:pre-wrap}.prompt-panel.effect-decision .prompt-choices.effect-option-list{max-width:520px}.prompt-panel.effect-decision .prompt-choices.effect-option-list>button{text-align:center;font-size:var(--l12-board-copy,13px)}
+.prompt-instruction,.prompt-payment-state,.prompt-submit-consequence{margin:6px 3px;padding:5px 8px;border-left:3px solid #425551;background:#0b1112;color:#cfd8d3;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.45}.choice-consequence{display:block;margin-top:4px;color:#9fb8b4;font-size:var(--l12-board-micro,9px);line-height:1.3}
+.prompt-exit-consequence{margin:6px 3px;color:#d3ded8;font-size:var(--l12-board-copy,13px);line-height:1.45}.prompt-payment-state[data-payment-status="paid"]{border-left-color:#f4d994;color:#f4d994}.prompt-payment-state[data-payment-status="pending"]{border-left-color:#d69b58}.prompt-minimized-task{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prompt-auto-close{margin:8px 3px;padding:8px 10px;border-left:3px solid #d5b85e;background:#211c0f;color:#f1d77d;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.45}.prompt-minimized-bar .prompt-auto-close{max-width:min(360px,calc(100vw - 32px));margin:0;box-shadow:0 12px 35px #000}
 .prompt-panel.single-card-row{width:min(920px,calc(100vw - 36px))}.l12-prompt-overlay.information-confirm .prompt-panel{width:min(850px,calc(100vw - 36px));overflow-y:auto}.l12-prompt-overlay.information-confirm .prompt-card-strip{justify-content:center}.mulligan-panel{width:min(920px,calc(100vw - 36px))!important}.l12-prompt-overlay.disaster-choice .prompt-panel{width:min(980px,calc(100vw - 36px))}
-.placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
+.placement-workspace{display:grid;grid-template-columns:1fr 1.1fr 1fr;gap:8px;min-height:166px;margin:9px 3px;padding:8px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.placement-workspace>section{min-width:0;padding:7px;border:1px solid #39413f;background:#101516}.placement-workspace>section>header{display:block;min-height:32px;padding:0 0 5px;border-bottom:1px solid #323a38}.placement-workspace>section>header strong{display:block;color:#fff;font-size:var(--l12-board-copy,13px)}.placement-workspace>section>header small{display:block;margin-top:2px;color:#7f8884;font-size:var(--l12-board-copy,13px);line-height:1.35}.placement-destination.top{border-color:#3b9da5}.placement-destination.bottom{border-color:#9c3f46}.placement-row{min-height:124px;align-items:center;gap:4px;padding:5px 1px}.placement-row>p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px);line-height:1.5;text-align:center}.placement-buttons{display:grid;grid-template-columns:1fr 1fr;gap:5px}.placement-buttons button{box-sizing:border-box;height:44px;min-height:44px;max-height:44px;padding:5px 3px;border:1px solid #dcd8cc;background:#1a2020;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.placement-buttons button:first-child{border-color:#5cbac1}.placement-buttons button:last-child{border-color:#ba555c}.placement-buttons button:disabled{opacity:.38}
 .all-placement-workspace{display:grid;grid-template-columns:62px minmax(0,1fr) 62px;align-items:center;gap:8px;margin:10px 3px;padding:10px;border:1px solid rgba(238,238,228,.28);background:#090d0e}.all-placement-row{min-width:0;padding:5px}.placement-edge{color:#fff;font-size:max(18px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.28em;text-align:center;writing-mode:vertical-rl}.top-edge{color:#70d7df}.bottom-edge{color:#d76069}
 .prompt-card-detail{display:grid;min-height:112px;grid-template-columns:130px 1fr;gap:14px;margin:0 3px 10px;padding:10px;border:1px solid rgba(238,238,228,.32);background:#090d0e}.prompt-card-detail>.l12-card-image{width:130px;height:108px;background:#050708}.prompt-card-detail small{color:#70d7df;font-size:var(--l12-board-copy,13px);letter-spacing:.12em}.prompt-card-detail h3{margin:3px 0 5px;color:#fff;font-size:max(16px,var(--l12-board-copy,13px))}.prompt-card-detail dl{display:flex;gap:12px;margin:0}.prompt-card-detail dl div{display:flex;gap:4px}.prompt-card-detail dt{color:#777f7c;font-size:var(--l12-board-copy,13px)}.prompt-card-detail dd{margin:0;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900}.prompt-card-detail p{max-height:48px;margin:5px 0 0;overflow:auto;color:#c9cdc7;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.55;white-space:pre-wrap}
 .prompt-panel footer button.primary{border:2px solid #fff!important;background:#f2eee3!important;color:#090c0d!important}.prompt-panel footer button.primary:disabled{border-color:#646966!important;background:#2a2e2d!important;color:#929792!important}.l12-prompt-overlay.waiting{background:rgba(2,4,5,.3)!important;backdrop-filter:blur(2px)}.waiting-panel{position:relative;width:min(430px,calc(100vw - 32px));padding:25px;text-align:center}.waiting-panel>.prompt-minimize{right:10px;top:10px}.waiting-panel small{color:#73d7de;font-size:var(--l12-board-copy,13px);letter-spacing:.16em}.waiting-panel h2{margin:10px 0;color:#fff;font-size:max(21px,var(--l12-board-copy,13px))}.waiting-panel p{color:#c0c5bf;font-size:var(--l12-board-copy,13px)}.waiting-panel i{display:inline-block;width:7px;height:7px;margin:10px 4px 0;border-radius:50%;background:#70d7df;animation:waiting-pulse 1.2s infinite}.waiting-panel i:nth-of-type(2){animation-delay:.2s}.waiting-panel i:nth-of-type(3){animation-delay:.4s}@keyframes waiting-pulse{0%,70%,100%{opacity:.25;transform:translateY(0)}35%{opacity:1;transform:translateY(-4px)}}
-.l12-prompt-overlay.minimized{z-index:2147483600;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:grid;gap:6px;pointer-events:auto}.prompt-minimized-bar button{padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;box-shadow:0 12px 35px #000}
+.l12-prompt-overlay.minimized{z-index:2147483600;inset:auto 16px 66px auto;width:auto;height:auto;padding:0;background:transparent!important;backdrop-filter:none;pointer-events:none}.prompt-minimized-bar{display:grid;grid-template-columns:minmax(0,1fr);min-width:0;gap:6px;pointer-events:auto}.prompt-minimized-bar button{box-sizing:border-box;width:100%;padding:7px 12px;border:1px solid #70d7df;background:#174e54;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;box-shadow:0 12px 35px #000}
 @media(max-width:760px){.l12-prompt-overlay.minimized{right:10px;bottom:60px}}
 @media(max-width:520px){.l12-prompt-overlay.inspector-active:not(.minimized){--inspector-safe-lane:92px;padding:8px 8px 8px var(--inspector-safe-lane)}.l12-prompt-overlay.inspector-active:not(.minimized) .prompt-panel{max-width:calc(100vw - var(--inspector-safe-lane) - 8px);padding:10px}}
 /* 天灾卡是横版；所有天灾准备、公开、触发与详情场景共用同一比例。 */
@@ -741,14 +1123,72 @@ function kindLabel() {
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
 .initiative-race img{width:58px;height:58px;object-fit:cover;border:2px solid #666;border-radius:2px}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
+.l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
+/* Natural landscape belongs to the browser. Rotated candidate/history rows
+   belong to the single touch owner above; neither direction may be stolen by
+   the old pan-x rule. Keep placement workspaces' drag behavior unchanged. */
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-panel .prompt-card-strip:not(.placement-row):not(.all-placement-row)),
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .disaster-preparation-history > section > div){touch-action:auto!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport][data-l12-rotated="true"] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-panel .prompt-card-strip:not(.placement-row):not(.all-placement-row)),
+:global(html[data-l12-mobile="true"][data-l12-viewport][data-l12-rotated="true"] .l12-prompt-overlay.mobile-safe-overlay .disaster-preparation-history > section > div){touch-action:none!important}
+/* Only battle choice dialogs grow with the available logical canvas. Keep
+   their text/options in proportion while the footer remains a real touch
+   target after the optional 90-degree canvas transform. */
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel){
+  --l12-dialog-copy:clamp(14px,calc(var(--l12-viewport-width)*.021),16px);
+  --l12-dialog-title:clamp(14px,calc(var(--l12-viewport-width)*.022),17px);
+  --l12-dialog-action-w:clamp(72px,calc(var(--l12-viewport-width)*.14),104px);
+  --l12-dialog-card-w:clamp(110px,calc(var(--l12-mobile-dialog-width)*.30),160px);
+  --l12-dialog-card-h:clamp(160px,calc(var(--l12-mobile-dialog-height)*.75),220px);
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel > header .prompt-minimize){left:auto!important;right:0!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport="landscape"] #l12-landscape-teleports .l12-prompt-overlay.mobile-safe-overlay:not(.minimized) .prompt-panel.prompt-choice-panel){
+  height:min(calc(var(--l12-viewport-height) - 16px),calc(var(--l12-mobile-dialog-height)*1.2))!important;
+  max-height:min(calc(var(--l12-viewport-height) - 16px),calc(var(--l12-mobile-dialog-height)*1.2))!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured)){
+  grid-template-columns:minmax(0,1fr)!important;justify-items:stretch!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured) .l12-card-image){
+  width:100%!important;height:100%!important;max-width:100%;max-height:100%;aspect-ratio:auto!important;
+}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate:not(.size-featured) .l12-card-image__img){object-fit:contain!important}
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-panel.prompt-choice-panel .prompt-card-candidate__name){width:100%!important;min-width:0}
 /* Center short candidate groups without hiding the start of overflowing rows. */
 .prompt-choices.prompt-card-strip{justify-content:safe center}
-.prompt-choices.effect-option-list{display:flex;width:100%;flex-wrap:wrap;justify-content:center}
-.prompt-choices.effect-option-list>button{flex:0 1 220px;text-align:center}
-.prompt-choices.effect-option-list>button.decline-action{min-height:54px!important}
-.prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr;align-items:stretch;justify-content:center}
+.prompt-choices.effect-option-list>button{box-sizing:border-box;width:100%;height:auto;min-height:82px!important;max-height:none;overflow:visible;text-align:center}
+.prompt-choices.effect-option-list>button>span{display:block;overflow:visible;overflow-wrap:anywhere}
+.prompt-choices.effect-option-list>button.decline-action{height:auto;min-height:82px!important;max-height:none}
+.prompt-choices.uniform-text-option-list{display:grid;width:100%;max-width:520px;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));grid-auto-rows:1fr;align-items:stretch;justify-content:center;gap:8px;margin:12px auto;padding:2px 1px 8px;overflow:visible}
+.prompt-choices.uniform-text-option-list>button,.prompt-choices.uniform-text-option-list>button.decline-action{box-sizing:border-box;width:100%;min-width:0!important;max-width:none;height:auto;min-height:82px!important;max-height:none;padding:10px 16px!important;overflow:visible;font-size:var(--l12-board-copy,13px)!important;line-height:1.45;text-align:center;white-space:normal;text-wrap:balance}
+.prompt-choices.uniform-text-option-list>button>span{display:block;overflow:visible;overflow-wrap:anywhere}
+.prompt-choices.effect-option-list>button.unavailable-choice{border-color:#4b504e;background:#202423;color:#858b88;cursor:not-allowed;opacity:.72}.prompt-choices.effect-option-list>button.unavailable-choice small{display:block;margin-top:5px;color:#a56f73;font-size:var(--l12-board-micro,9px)}
+.prompt-panel .prompt-action-footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:8px}
 .prompt-action-footer>span{order:-1;flex:1 1 160px;min-width:0;overflow-wrap:anywhere}
-.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:112px;min-width:112px;min-height:44px;padding:9px 12px;font-size:var(--l12-board-copy,13px);line-height:1.35;text-align:center}
+.prompt-action-footer>button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;flex:0 0 132px;padding:7px 10px;font-size:var(--l12-board-copy,13px);line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}.prompt-action-footer>.prompt-footer-choice,.prompt-action-footer>.prompt-confirm-choice{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;font-size:var(--l12-board-copy,13px);line-height:1.25;text-align:center}
 .prompt-action-footer>.prompt-footer-choice.selected{border-color:#70d7df;background:#174e54;color:#fff}
 @media(max-width:520px){.prompt-action-footer>span{flex-basis:100%}}
+.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto max(8px,calc(100vw - var(--l12-viewport-left,0px) - var(--l12-viewport-width,100vw) + 8px)) max(8px,calc(100vh - var(--l12-viewport-top,0px) - var(--l12-viewport-height,100vh) + 8px)) auto!important}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="false"][data-more-end="true"]{box-shadow:inset -16px 0 14px -13px #7adce5}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="false"]{box-shadow:inset 16px 0 14px -13px #7adce5}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip[data-more-start="true"][data-more-end="true"]{box-shadow:inset 16px 0 14px -13px #7adce5,inset -16px 0 14px -13px #7adce5}
+.prompt-task-context{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}.prompt-task-context>span{padding:4px 8px;border:1px solid #43504d;background:#0c1213}.prompt-task-context .prompt-selection-range{min-width:0;flex:1 1 180px;color:#e8e2cc}.prompt-task-context[data-actor-state="self"] .prompt-actor{border-color:#4d9e72;background:#0d1c15;color:#79e4a3}.prompt-task-context[data-actor-state="opponent"] .prompt-actor{border-color:#8f454b;background:#1d1012;color:#ef9297}
+.prompt-information-panel{display:flex;flex-direction:column;overflow:hidden}
+.prompt-information-panel>.prompt-choice-body{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto}
+.prompt-information-panel>.prompt-action-footer{flex:0 0 auto}
+.prompt-actor,.prompt-selection-range{overflow-wrap:anywhere}
+.prompt-choice-detail{display:flex;flex-direction:column;gap:3px;min-width:0;margin:7px 3px 10px;padding:8px 10px;border:1px solid #598c8c;background:#0a1b1e;color:#e9f2ed;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
+.prompt-choice-detail strong{color:#fff}.prompt-choice-detail .unavailable-reason{color:#ffb7ba}
+.prompt-minimized-bar{max-width:min(360px,calc(var(--l12-viewport-width,100vw) - var(--l12-viewport-left,0px) - 16px))}
+.prompt-minimized-task{box-sizing:border-box;display:block;max-width:100%;max-height:4.5em;overflow:auto;padding:5px 8px;border:1px solid #598c8c;background:#10191b;color:#fff;font-size:var(--l12-board-copy,13px);line-height:1.35;white-space:normal;overflow-wrap:anywhere;box-shadow:0 12px 35px #000}
+.l12-prompt-overlay.mobile-safe-overlay .prompt-minimize,.l12-prompt-overlay.mobile-safe-overlay .prompt-minimized-bar button{min-width:44px;min-height:44px}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized{max-height:min(100%,calc(var(--l12-viewport-height,100vh) - var(--l12-viewport-top,0px) - 8px))!important;overflow:auto!important}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar{max-width:100%}
+:global(#l12-landscape-teleports .mobile-battle-dock__context) .l12-prompt-overlay.mobile-safe-overlay.minimized .prompt-minimized-bar button{min-height:44px!important}
+.placement-direction-hint{grid-column:1/-1;margin:0;color:#d2dbd6;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
+.trigger-resolution-preview{margin:8px 3px;padding:8px 10px;border:1px solid #a58a46;background:#211c0e;color:#f7ead0;font-size:var(--l12-board-copy,13px);line-height:1.45}
+.trigger-resolution-preview ol{display:flex;flex-wrap:wrap;gap:4px 18px;margin:5px 0 0;padding-left:23px}
+.trigger-resolution-preview li{max-width:100%;overflow-wrap:anywhere}
+.prompt-action-footer>.order-final-preview{max-height:4.4em;overflow:auto;line-height:1.4;overflow-wrap:anywhere}
 </style>

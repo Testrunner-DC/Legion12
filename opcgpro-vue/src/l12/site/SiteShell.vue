@@ -1,17 +1,343 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { usesSiteUiStates } from './siteUiStateScope'
 import { useRoute, useRouter } from 'vue-router'
 import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
-import { friendApi, login, platformState, register, type PlatformPresence } from '@/l12/platform'
+import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
 import L12SettingsModal from './L12SettingsModal.vue'
+import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './bugFeedbackEntry'
 import MaintenanceTicker from './MaintenanceTicker.vue'
+import CardImage from '@/l12/CardImage.vue'
+import SeasonSummaryNotice from './SeasonSummaryNotice.vue'
+import { useActionGate } from '@/l12/useActionGate'
+import { generatedPlayerRelease, generatedPlayerReleaseHistory } from './generatedPlayerRelease'
 
 const siteBrandIcon = '/favicon.png'
-const releaseVersion = String(import.meta.env.VITE_APP_VERSION || 'dev')
-const updateEntries = [
+const legacyUpdateEntries = [
   {
-    date: '2026-09-09', title: '卡效分段结算、反击响应与动效文案更新', version: releaseVersion,
+    date: '2026-09-25', title: '移动端对战、牌库社区、排位展示与对局记录更新', version: '97cc764b9a567449489e6a26cc819859766beb90',
+    sections: [
+      { title: '移动端与自适应布局', items: [
+        '对战和牌库编辑器会按实际可用画面比例判断是否使用移动布局，不再依赖手机是否物理横屏；设置中可选择自动、始终启用或关闭移动布局，桌面宽屏继续使用独立布局。',
+        '移动对战改用统一逻辑画布等比布局，刘海、灵动岛、圆角和底部手势区会纳入安全边界；长屏、短屏及非标准比例不再暴力拉伸卡图、战场或弹框。',
+        '双方主宰、圣物、牌库、墓地、战场格与手牌按同一尺寸基准缩放；战场格连续排列并充分利用中央空间，手牌过多时可横向滑动并轻微叠放，不再被战场或画面边缘裁切。',
+        '左侧工具栏、天灾列、右侧对局操作区和底部手牌重新分区：对局记录、当前天灾、计时器、返回大厅、投降及结束回合均保留独立位置，不再互相覆盖。',
+        '当前天灾恢复为可点卡图并显示当前天灾值；双方额外区位于天灾列上下，试炼值随试炼卡移动，对手手牌数量和限时对局计时会在对应区域持续显示。',
+        '士气标题、数量和士气圆形图区均可打开同一选择面板；彼界符文位于第一排并同时显示可用与置灰状态。支付面板、墓地、选择列表和记录面板可最小化，关闭前仍可检查场面。',
+        '移动端弹框采用稳定比例并控制在可用画面的约四分之三，卡名和卡图尽量完整展示；超出数量的卡牌自然横向滑动，弹框与画面边缘保留安全距离。',
+        '移动沙盒的进入页面、牌库更换、设置与底部操作已补齐横屏适配；移动端回放入口会明确提示到电脑端查看，避免在手机上进入不可用的播放器。',
+      ] },
+      { title: '对战操作与玩家信息', items: [
+        '点击手牌或场上卡牌后，可执行的打出、进攻、发动等操作集中显示在结束回合按钮上方；未选中对象时不显示无关操作，操作区不会超出右侧安全边界。',
+        '移动端双方信息默认完整显示玩家姓名，点击后再查看排名、段位与称号详情；信息区固定在对局记录上方。桌面端按名次、段位／段位称号、主宰称号分行展示，不再重复显示当前主宰卡和血量。',
+        '主宰周围的阵营标记、士气与其他圆形状态统一以主宰尺寸为基准，0至5枚均保持等大、居中和完整，不再被战场覆盖或与外框错位。',
+        '卡牌详情在移动端由常驻入口展开或收起；只选中卡牌不会自行展开。详情复用图鉴的卡图、数值与效果文字，并隐藏只属于图鉴的产品和刊物记录。',
+        '防守与支援提示只保留“确认抵挡／不抵挡”和“确认支援／不支援”等玩家操作；目标高亮只落在本次真正被进攻或被选择的对象，不再让其他战场位置同时亮起。选择面板最小化后，已选且仍在公开战场的对象会继续高亮，但不会因此增加可选目标；同一时点只显示真实结算顺序，并明确后选择的效果先结算。',
+      ] },
+      { title: '牌库编辑器与我的牌库', items: [
+        '牌库编辑器重新整理为卡池、牌表、统计／起手和公开内容几个工作区；左右详情栏沿用图鉴宽度，卡池卡图和起手卡保持可读，编号与长卡名会在一行内省略而不挤坏布局。',
+        '“卡池”条件收进统一筛选按钮，类型、阵营等条件在弹框中选择；主宰始终使用正确术语，不再与未来可能加入的“主城”模式混淆。',
+        '已保存牌库保留唯一入口和列表，不再重复显示；每个牌库都可直接执行“复制牌库”“复制牌库码”“删除”，删除前会再次确认且不会删除已经公开的历史版本。',
+        '异画可按同一原卡的不同副本分别选择，牌表横幅会显示实际使用的异画；选择和保存仍由服务器统一检查拥有权与同名卡数量。',
+        '生成牌库图时会重新安排卡牌和文字；只有已经公开、拥有稳定详情网址的牌库才绘制可扫描二维码，未公开牌库不会生成无效二维码。',
+      ] },
+      { title: '公开牌库与构筑内容', items: [
+        '公开牌库支持按卡牌、主宰、合规状态和排序组合筛选，单卡筛选沿用卡查组件；筛选条件、返回位置和滚动位置会随网址恢复。玩家榜只公开前50名并保留登录玩家自己的真实名次。',
+        '公开牌库详情把构筑、指南、对局建议、公开版本、版本对局和随机起手放在同一页，顶部按钮会滚动到对应位置；作者未填写的指南或建议会自动隐藏。',
+        '桌面构筑区采用左侧统计、中间卡表、右侧图鉴同源详情栏；单击构筑卡或起手卡即可更新右侧详情，不需要双击。移动端以安全区详情面板呈现同样内容。',
+        '对局建议使用对应主宰的 Profile 头像而不是整张主宰卡图；横置卡、卡牌详情宽度与效果文本统一使用图鉴规则。编辑入口简化为“编辑牌库”。',
+        '公开内容保存后可再次编辑；所有公开版本和逐卡变化长期保留。对局只在开局时已有明确公开编号、版本和完整来源时才归入对应版本，后来公开、复制构筑或旧记录不会被猜测关联。',
+        '公开牌库详情里的“版本对局”只展示近90天按我方主宰与对方主宰汇总的场次、胜负和胜率；不会显示玩家身份、具体对局或回放入口，样本不足时也不会公开可被反推的分组。作废对局、统计排除账号和完整性复核中的对局会同步排除。',
+      ] },
+      { title: '赛事中心', items: [
+        '报名时不再要求提交牌库；赛前签到时再选择账号牌库，通过本场构筑规则校验后锁定。正式开赛只计入已完成赛前签到的玩家。',
+        '已准备桌可以先开始，不会被其他迟到桌阻塞；新赛事对局使用与排位一致的累计操作、单次操作、断线重连、天灾选择和起手调度计时，补时会直接加入对应桌。',
+        '参赛者只能进入自己当前的赛事桌，本场主办者和裁判可进入观战；断线后回到赛事中心仍可恢复进行中的对局。',
+        '主办者可移除违反赛事要求的玩家并决定是否禁止其再次报名；主办交接必须由指定接任者确认，交接后原主办者不再自动保留管理权限。',
+      ] },
+      { title: '异画、画廊与获得提示', items: [
+        '画廊只展示异画；新上传并公开的异画会使用独立编号和所绑定原卡出现在画廊。图鉴仍保持原有浏览方式，不因移动端优化一次加载全部大图。',
+        '异画到账提示精简为“获得异画！”，展示卡名、异画编号和随附的发放原因；玩家确认后仍可在“我的”收藏中查看。',
+        '异画权益支持逐张副本使用并贯穿牌库保存、对局构筑和卡图显示；没有权益、归属不符或数量超限时会由同一规则拒绝。',
+      ] },
+      { title: '排位、战绩与称号', items: [
+        '排位成长梯度重新校准：赛季开始后保留原有连胜，但较高连胜只降低额外收益；第5段位继续使用原有“冠冕”段位称号，冠冕以上再进入名次竞争。',
+        '对战、排行榜和个人页共用同一套派系段位／称号样式与最强主宰标识；名次直接显示为“N名”，不再在名次后重复添加“冠冕”。',
+        '“我的”页面的“战绩”和“主宰战绩”分别展示总体、排位、先后手及各主宰表现；禁用账号、作废或复核排除的恶性对局不会继续污染这些统计。',
+      ] },
+      { title: '对局记录与回放', items: [
+        '对局记录会把同一次打出、支付、选择、抽牌、弃牌、试炼推进、天灾值变化和最终结果合并展示；《议和谈判》会完整显示对方是否同意及双方实际抽牌数，回合开始的抽牌、士气变化、公开区域移动和额外回合也不再遗漏。',
+        '进攻小结会区分未抵挡、完成抵挡、完成支援、抵挡／支援失效与实际击破；防守者、支援者或进攻者离场后不会把后续事件串进上一场战斗。',
+        '重连和回放继续使用相同记录，并保护私密手牌与未公开身份；断线前后的同一动作不会重复显示，公开入手卡牌仍可点开查看。',
+        '导入本地 JSON 会直接进入播放而不会加入服务器列表；导出文件名使用日期和对局编号，播放器不显示双方牌库名称。回放卡面动画会随播放速度缩短并在完成后推进，当前天灾与天灾圆形图已恢复。',
+      ] },
+      { title: '天灾与持续规则', items: [
+        '天灾造成的伤害、弃置、位移、加入手牌及军团离场均不会触发任何效果；孙悟空作为军团因天灾离场时仍返回主宰区，但不会发动其离场时追加士气的效果。',
+        '《风暴乱象》现在只阻止具有远程身份的军团发动远程进攻；仅在前排临时增加进攻距离、但不属于远程军团的卡可以正常进攻。远程军团经其他效果允许从后排进攻主宰时，仍会受到限制。',
+        '《众神之乡》会让我方战场上当前仍为《陵墓守卫》的军团同时获得兵力+1000、当前费用+1；手牌不受影响，离开战场后修正清除，其他读取当前费用的效果也会看到这项+1。',
+        '免死会清除本次致命伤害，并把该军团当前兵力准确设为1000；同一次结算不会再次套用此前已有的持续增减，后续新的状态变化仍会正常影响兵力。',
+      ] },
+      { title: '开场、衍生卡与状态', items: [
+        '《哮天犬·稚》现在和《王者之剑》一样属于Limit 1衍生卡：无需放入牌库即可由对应效果生成，也不能作为普通军团加入主牌库；生成时会遵守各自的Limit 1。',
+        '《阿尔忒弥斯》第一项效果现在可以选择活跃或休整的合法士气；翻转只改变士气正反面，不改变其活跃／休整状态。其第二项能力仍按上一期已经公布的勘误执行。',
+        '使用任意主神的玩家都会在开场追加2张活跃士气；每项只执行一次，重连后保持当前士气状态，不再依赖少数固定主神名单。',
+        '《彼界 阿瓦隆》携带的试炼会按卡面规则以已完成状态开始，并在重连后保持一致。',
+        '军团已经获得本回合“必中”时，战场会在生效期间正确显示，并在到期或离场后清除；这不会把对军团有效的必中扩大为对主宰进攻的必中。',
+      ] },
+      { title: '发动、目标与位置', items: [
+        '太阳城阵营效果结算时，原先选择的同一张《陵墓守卫》必须仍在我方墓地，且原先选择的位置仍为空；任一条件失效时效果失败，不改选、不跨区域召唤，已经支付的士气不返还。',
+        '晋升登场进入同名基础军团选择后可以取消；取消时不支付神力，晋升卡、基础军团和场上位置都保持不变。',
+        '主动休整能力只能由活跃的来源发动；来源已经休整时，按钮会明确不可用，直接提交也会被同样拒绝，不会支付费用或占用次数。',
+        '墓地中《雷神之锤》的主动效果只会在我方主宰为《雷神索尔》、且原卡仍位于我方墓地时显示并接受发动；按钮与实际提交结果一致，重连不能绕过条件。',
+        '费用区域不再干扰效果目标：《黄金圣甲虫》选择对方场上军团，《无畏刺杀》选择我方前排【太阳城】军团，《雷神之怒》选择对方场上军团，《乾坤·阴》选择我方场上军团。',
+        '《防御部署》选择两张反击战术后，后排位置提示会直接写明当前要放置的卡名；如果该卡已经离开手牌，本次放置不会进入结算。',
+      ] },
+      { title: '实际分支与公开信息', items: [
+        '《天下布武》《沙漠君临》《兰斯洛特》《康斯坦丝》《芬恩》和《彼界 阿瓦隆》会按本次真正选择或完成的分支显示卡面动画与对局记录；《沙漠君临》会显示实际弃置0至3张及对应登场结果，不再固定按3张显示。',
+        '亚里士多德、忒修斯、匠神锻造炉和上杉谦信等单段效果会显示各自实际结算内容，不再重复整张卡的全部效果文字。',
+        '杜阿特之门、众神之乡、英灵殿、诸神巅、智慧法典、复仇血鹰、黄泉之门、彼界 阿瓦隆、十字军东征、珀尔修斯、伊姆何泰普和湖中仙女的馈赠按条件把卡牌加入手牌时，会先向双方公开实际加入的卡牌。',
+        '诸葛亮、阿麦金和冲田总司已经展示过的卡牌只会展示一次，不再重复播放加入手牌动画。',
+      ] },
+      { title: '页面体验与连接稳定性', items: [
+        '主页、图鉴、牌库、排行榜、个人页和内容页统一移动端比例、筛选折叠、按钮换行与安全区域；竖屏优先纵向排布，避免页面级横向滚动。',
+        '站点导航、图片灯箱、横卡显示、卡牌详情和操作反馈使用同一套组件；点击期间会显示明确状态并阻止重复提交，失败后可以安全重试。',
+        '在线玩家、好友、排位完整性、异画权益和运营状态改为服务端资源变化通知；断线较久时才启用低频兜底，隐藏页面不再持续请求。',
+        '平台读取增加统一并发、超时和有限弱网重试；写入操作不会自动重复，账号切换后的旧响应也不会覆盖新账号页面，从而降低卡顿与误操作。',
+        '主页和资讯详情补齐可分享的标题、摘要、封面与规范网址；分享失败不会影响正常浏览。',
+      ] },
+      { title: '回放与对局动效', items: [
+        '电脑端回放的播放、暂停、倍速和进度操作会始终位于回放画面与提示层之上，不再被蒙版挡住；移动端仍提示前往电脑端查看。',
+        '军团在活跃与休整之间切换、场上移动、跨区域登场和叠放时会沿真实来源与目标平滑过渡，不再突然闪到最终位置。',
+        '卡牌效果进入结算时会补充对应卡面展示；由牌库、手牌、墓地等区域拉出的军团会等移动完成后稳定落位，避免短暂闪现或提前显示下一状态。',
+      ] },
+    ],
+  },
+  {
+    date: '2026-09-22', title: '移动端对战、全卡池结算、卡牌勘误与个人资料更新', version: 'fd0d602eee5baef29adcae07b42e45b1ae274b36',
+    sections: [
+      { title: '卡牌效果与勘误', items: [
+        '《绝对防御》只会响应对方的进攻或发动效果，不会再响应自己发动的效果；手牌选择、盖伏反击与实际提交采用相同判定。',
+        '《戏法师的傀儡》从手牌休整登场于前排属于发动费用：效果被无效时仍会留在前排并保持休整，只有本次进攻目标变更不生效。',
+        '《芬尼亚传奇》的触发效果改为每次消耗1符文、选择对方1张军团使其本回合兵力-3000；一次结算完成后可再次发动，也可以重复选择仍然合法的同一军团。其“我方回合1次”转为活跃效果不变。',
+        '《锡瓦的卡巴》从手牌发动的登场效果被无效，或原先选择的前排位置在结算前被占用时，会进入墓地且不再执行后续效果。',
+        '《阿尔忒弥斯》更新卡图与卡牌文字：第二项能力改为消耗1神力或弃置1张手牌，不再翻转神力，也不再限制所选【奥林匹斯】军团的费用；获得的强攻或震击仍持续至本回合结束。',
+      ] },
+      { title: '移动端横屏与对局操作', items: [
+        '手机横屏对局会使用完整画面空间：双方战场保留原有格位尺寸，外层区域会随可用高度收口；圣物休整后会在圣物区域内自动适配，不再超出容器。',
+        '士气在横屏时可点开大尺寸选择面板，原位置仍持续显示实时数量；每行数量会随画面比例安排，点击时不再受小格子限制。',
+        '点选手牌或场上军团后，可执行操作会集中显示在结束回合按钮上方；场上军团的进攻与主动休整不会再被缩放战场裁掉，未选中卡牌时不会出现无关操作。',
+        '《宫廷魔术师》等需要选择对方反击战术的提示改为整行点选并同时显示来源信息，不再由额外详情按钮挤占或遮挡移动端选择区域。',
+        '对局记录改为可展开查看，默认不再挤占战场；展开后仍可完整阅读行动与结算结果。主宰、墓地、士气和记录等面板会在移动端安全区域内打开。',
+        '点击手牌、战场卡、圣物、试炼或当前天灾后，左侧卡牌详情抽屉会显示完整卡图、数值和效果文字；展开／收起按钮常驻于天灾列顶部，弹框出现时也会为详情留出安全位置。',
+        '手牌在手机横屏不再扇形展开；常规数量保持间距，数量较多时才轻微叠放。对手手牌数、当前天灾、双方额外区、试炼进度及限时对局计时会在各自专用位置显示，不再与战场或手牌互相遮挡。',
+        '士气标题、数量和下方整片士气区都可打开同一个大面板；查看状态时不会改变游戏，支付或返还时才能选择真实士气。支付面板可最小化，便于同时检查场面。',
+        '进攻后的选择只显示“确认抵挡／不抵挡”或“确认支援／不支援”。战斗信息使用“进攻值”等玩家可读名称，不再显示内部状态词；取消或未选择时不会被当作已执行动作。',
+      ] },
+      { title: '天灾与卡面呈现', items: [
+        '没有额外触发效果的天灾公开时，也会从牌背翻出对应卡面。展开中的选择、墓地、主宰、记录或士气面板会让尚未开始的卡面动画等待；已经开始的动画会自然结束，不会在关闭面板后重复播放。',
+        '天灾因回合阶段自然触发和因军团或卡牌效果主动触发会按各自规则结算；《诸神黄昏》的开场与主动分支不再混用，公开、结算与后续触发顺序也会保持一致。',
+        '试炼达到完成条件时，先完成试炼翻面这一规则步骤，再处理翻面后出现的效果。对局记录、重连后的画面和回放会显示相同顺序，不会把尚未公开的信息提前带出。',
+      ] },
+      { title: '发动、费用与对局结束', items: [
+        '主动能力、手牌打出和反击的费用会按卡面所属能力分别判定；同一张卡的其他能力不会误带入相邻能力的费用或减费。已确认支付的资源在后续被无效、目标失效或未完成时，仍按卡面规则处理。',
+        '远程、后排、骑兵位移和主宰能力会同时检查当前来源、位置、射程、次数与资源。不能发动时会给出对应原因；骑兵的每回合位移仍是直接移动，不会额外进入响应。',
+        '写明“每回合一次”或同名共享次数的能力，会在正确的回合与来源上重置。《信仰狂热者》选择不发动不会消耗次数；《密米尔之泉》等同名限制不会因换区、重连或不同入口被绕开。',
+        '需要支付自身生命的登场费用可以支付最后1点生命；主宰降至0后，对局会立即结束，不会再继续后续抽牌、登场或触发。',
+      ] },
+      { title: '卡牌效果与结算', items: [
+        '《贝奥武夫》《古斯塔夫一世》《奥德修斯》《彭忒西勒亚》《斯巴达勇士》《帕西瓦尔》的进攻时兵力提升，及《尼托克丽丝》《神箭奥德尔》《疯狂的爱丽丝》《安提诺乌斯》的单目标状态效果，都会按结算时仍合法的对象处理；被无效、对象失效或没有对象会显示正确结果。',
+        '《梅林》《帕西瓦尔》《高文》《阿麦金》《伊丽莎白·都铎》《加雷斯》《纯白的灵鹿》登场获得符文，以及九项获得或翻转士气、符文的触发，统一按实际发生的结果结算；一项没有可处理对象时，不会吞掉同一效果中仍可完成的其他部分。',
+        '《纳芙蒂蒂》《血斧艾瑞克》《海伦》《鲍斯》《佐佐木小次郎》的弃手牌效果逐张完成后再记录；《赵云》《帕西瓦尔》的贯穿只会由本次进攻方造成的战斗击杀触发。反击战术会使用正确的观察时点，并在对象或条件变化后重新核对。',
+        '《洛基》《猎杀时刻》《魔龙降世》涉及固定数量墓地卡牌时，数量不足不会只处理一部分；《洛基》仍可照常发动并恢复生命。需要支付自身生命的费用可支付最后1点生命，主宰降至0后立即结束对局，不会继续执行后续效果。',
+        '《野外扎营》《山河社稷图》《观星》《法老王的庆典》《众神之乡》《无骨者伊瓦尔》《花魁的馈赠》《武运在天 铠甲在前》《柏拉图》《普罗米修斯》《符文之力》《特勒马科斯》的牌库顶查看、选择和回顶／回底会在重连后保持可继续操作；非法、过期或已不在原位的选择不会让对局卡住，也不会自动改选另一张牌。',
+        '《野外扎营》会按当前有效阵营识别《万物统御之戒》赋予的阵营特征；《梅林》的检索会把《自然馈赠》等没有印刷费用的合法主动战术按0费筛选，但不会改变其实际打出规则。',
+        '《月读》选择的另一张军团没有相邻空位时会跳过位移并继续使其本回合费用-1；已声明位置后来失效时也不会改选其他位置或其他军团。',
+        '《王者之剑》统一登记为限1的专属衍生牌，不计入普通主牌数量，也不能作为普通军团加入主牌库。',
+        '试炼已达8但尚未翻面时，后续仍可推进的试炼会继续获得进度；最终天灾造成的伤害不会错误触发圣物抽牌。只有一种实际支付结果的同类资源会自动支付，不同支付后果仍交由玩家选择。',
+        '从牌库检索并实际加入手牌后，原有的响应窗口会保留；首次提示不会提前公开隐藏牌。多段效果会按“已结算、被无效、已跳过、未完成或已放弃”分别记录，卡面动画、对局记录、重连与回放不会把发动声明误写成成功结算。',
+        '明确写有次数限制的能力会按卡面规则记录次数；《信仰狂热者》拒绝发动不占用次数，《密米尔之泉》等同名限制会正确共享。远程、骑兵位移、后排主动与主宰次数也会按当前来源、位置和卡面条件判断。',
+      ] },
+      { title: '目标、连锁与实际结果', items: [
+        '单一合法对象仍需要玩家明确点选；没有合法对象时会跳过对应效果段，而不是生成无法完成的空选择。选择后对象离区、数值改变、位置被占或效果被无效时，会以实际结果结束，不会偷偷替换目标。',
+        '同一次效果中包含多个对象、先后步骤或不同分支时，每一部分会独立复核。前一部分成功不代表后一部分必定成功；一侧对象失效也不会阻止另一侧仍合法的结算。',
+        '反击与响应效果会绑定本次实际响应的对象和时点。响应期间场面改变后重新核对，不会错误套用更早的一次进攻、另一张卡或先前的目标。',
+        '登场、进攻及复合效果中声明的敌我军团，都会在响应结束时再核对同一张卡仍在正确阵营和军团区，并仍满足前排、兵力、费用、阵营或活跃／休整限制。多个目标中部分失效时只跳过失效对象，不补选也不撤销已支付费用。',
+      ] },
+      { title: '反击、试炼与战斗限制', items: [
+        '反击战术统一按真实卡牌身份判定；〈防御部署〉与〈上杉谦信〉从手牌选择后排登场时，会逐张重新核对卡牌仍在手牌、仍为反击战术且原后排仍有空位，不会用另一张手牌补位。',
+        '〈宫廷魔术师〉的反击限制覆盖普通响应、匿名盖伏和触发候选；主动休整按正确费用、被无效、重新活跃和断线恢复状态记录。保护型效果只排除直接影响当前响应效果的反击，不再误禁整个响应窗口。',
+        '试炼军团统一按“军团且具有正试炼值”识别，通常试炼操作、〈阿麦金〉与〈十字军东征〉的选择、支付和恢复使用同一规则。试炼翻面先完成公开步骤，再进入可响应的效果。',
+        '不能进攻、不能支援、必中、攻击阻断及“无法因效果转为活跃”均使用公共规则；按钮、可选对象、响应资格、结算和重连后状态保持一致。',
+      ] },
+      { title: '规则中心与卡牌收藏', items: [
+        '规则中心改为按基础规则、对局流程、关键词、常见问答、单卡裁定、赛事规则和版本记录浏览；赛事内容与玩家规则放在同一规则页的不同子页，可按关键词检索。',
+        '规则资料只会在确认发布后向玩家显示，避免未定内容影响对局理解。单卡裁定、关键词说明与版本记录会保留各自的浏览入口。',
+        '获得使用权的异画可在牌库编辑时为对应卡牌选择，并可在个人收藏中确认已拥有的样式。异画只改变本人对局中看到的卡图，不改变卡牌规则、牌库合法性或其他玩家的显示。',
+        '卡牌画廊现在只展示异画：新登记并公开的异画会立即出现，并带有独立编号、名称和所绑定原卡；浏览画廊不需要先拥有该异画。',
+      ] },
+      { title: '账号、战绩、回放与个人页面', items: [
+        '“我的”页面现在可直接完成一次昵称修改；再次修改时可填写原因提交申请，结果会在个人页面显示。改名成功后，其他已登录设备会按安全规则重新验证身份。',
+        '“我的”页面整合总体、排位和各主宰的独立战绩，可查看场次、胜负、胜率和先后手表现。段位、派系称号与最强主宰称号在排行榜、个人页和对战中使用同一套主题样式，最强标识改用十二军团 Logo。',
+        '玩家服务端回放调整为7天内最近10场；到期前可导出紧凑JSON长期自存，之后在本地导入播放。回放过期不会删除赛果、构筑、排位结果或个人战绩。',
+      ] },
+      { title: '排位战绩与数据一致性', items: [
+        '已确认无效的排位对局会从个人战绩、主宰战绩、排行榜、胜率与先后手数据中同步剔除，不再继续影响玩家可见的数据；复核恢复后，相关结果也会同步恢复。',
+        '账号状态发生变化时，排行榜与对局数据会及时重新计算，避免已经不再参与统计的记录继续占据名次或影响主宰数据。',
+        '卡牌使用率与胜率会使用相同的有效对局范围，个人战绩、主宰战绩、排行榜和卡牌数据不再因统计口径不同而出现相互矛盾的结果。',
+      ] },
+      { title: '历史排位结果', items: [
+        '修正版本更新或赛季段位配置变化后，历史排位结果可能无法被准确纠正的问题；历史对局会以结算当时保存的结果为准，不再套用当前赛季配置反算。',
+        '历史结果被纠正时只调整对应对局实际产生的排位影响，之后正常完成的对局与当前进度会受到保护。',
+      ] },
+    ],
+  },
+  {
+    date: '2026-09-14', title: '移动端一屏适配与全卡池效果结算更新', version: '815771d6d204651076a9db77bc68b0dad52d276a',
+    sections: [
+      { title: '移动端对战页面', items: [
+        '手机进入对战、回放后自动横屏时，棋盘会同时按可用宽度和高度等比缩放并居中；双方手牌、战场、侧栏和操作区会完整收进一屏，不再因为固定最低缩放而裁掉底部或出现页面级滚动。',
+        '较矮横屏、竖屏自动旋转和不同长宽比共用同一套适配；卡牌点选、动效坐标、选择弹框、输入框与退出后的页面方向保持对应，牌库和弹框内部仍可独立滚动。',
+      ] },
+      { title: '登场费用、牌库顶与持续效果', items: [
+        '《嬴政》的登场前支付会覆盖所有真实登场入口，并按结算时当前费用寻找8费军团；候选变化时可重新选择，没有合法支付对象时不会误做击杀、返还士气或追加限制。',
+        '《天照》的持续强化会真实为后续登场、换排后的对应军团增加1000兵力；强制随后击杀存在0费对象时必须选择，确实无对象才跳过。《孙悟空》的变身、离场返回及卡面能力文字现在保持一致。',
+        '《山河社稷图》《普罗米修斯》《特勒马科斯》《野外扎营》《花魁的馈赠》的牌库顶查看、选择与排序会在效果真正结算时进行；唯一合法卡也需要确认，空牌库、无命中、对象变化和被无效会分别给出准确结果。',
+        '《阿麦金》公开牌库顶后会按实际是否满足条件进入对应分支；命中后的军团选择、未命中的置底以及响应期间候选变化都不会混用结果。',
+      ] },
+      { title: '士气、符文与主动装备', items: [
+        '奥林匹斯神力的抽牌与《西芙》的循环抽牌会记录真实成功、被无效或空牌库失败；响应前已经支付的费用不会因后续失败返还。奥林匹斯士气翻转会在响应结束后再选择仍合法的士气，区分没有对象、对象失效和主动不发动。',
+        '《安卡神碑》的转活跃与抽牌两个主动分支各自显示真实结果：弃手牌或休整陵墓守卫属于发动费用，响应后对象失效或能力被无效时不返还；没有可处理对象时不会生成空选择。',
+        '《神剑格拉墨》会严格使用墓地中可合法回到牌库底的4份阿斯加德军团支付费用；《渴求死亡的勇士》仍可指定代表份数，特殊衍生卡不能绕过区域限制，支付后被无效也不会退还。',
+        '《黄泉之门》的墓地回手、《八尺琼勾玉》的赋予位移/免死、《匠神锻造炉》与《莫瑞甘》的击杀后转活跃、《阿尔忒弥斯》的神力/弃牌支付与强攻/震击，都将在响应后复核原对象；对象或位置失效不改选，已支付的主动休整、符文、神力、士气或手牌不回退。',
+      ] },
+      { title: '军团主动、位移与时点', items: [
+        '《孙悟空》变身会先完成士气返还与位置选择再开放响应，结算时按实际返还数量设置兵力；位置被占、来源失效或被无效时不会覆盖军团，也不会重复发动。',
+        '《奈芙蒂斯》弃置我方军团属于效果而非发动费用：响应后只弃置仍合法的对象，并按实际进入墓地的数量产生折扣；被无效时不会弃置或获得折扣。',
+        '《服部半藏》的主动翻正会复核其仍是场上同一张盖伏军团；已经离场或翻正时显示未完成。《银臂努阿达》的士气转活跃和试炼+2分为两个实际结果段，一段无对象不会抹掉另一段结果。',
+        '《无眠之夜》只在真实“主动休整”时造成伤害，不再错误生成自身主动按钮。《荷鲁斯》的墓地登场会按当前兵力、太阳城特征、墓地区域与空位复核，普通发动和免费发动采用同一判定。',
+        '具有“每回合1次位移”的骑兵改为直接规则动作，不进入响应堆叠；按钮、不可用原因与合法位置以当前场面为准，《腐秽大地》下只允许移至前排空位。',
+      ] },
+      { title: '公开触发与发动取消', items: [
+        '《驱魔道士陆瑛》会在对方战术结算后的正确时点询问是否发动；返手成功、来源失效、被无效与主动不发动会分别显示实际结果。',
+        '《安德华拉诺特》《玛格丽特》《阿尔忒弥斯》《圣杯》《安格斯·麦·奥格》，以及《月读》三项位移触发、《孙悟空》返回后的士气分支和天廷相关触发，均按真实事件出现，不再被误作普通主动能力；同一事件产生的多个触发仍可排序结算。',
+        '可选触发的第一步统一显示“不发动”；已经选择发动后的费用或对象步骤显示“取消整次发动”，取消不会支付也不会入栈。“最多1张”选择0张继续结算与取消整次发动会得到不同结果。',
+      ] },
+      { title: '阵亡与击杀触发', items: [
+        '《哈拉尔》《奥德尔》《哮天犬·稚》《阿塔兰忒》的阵亡单段效果会对应到各自实际能力；唯一合法对象仍需点击，可选效果不发动时不会留下空响应。《爱丽丝》改为只在真实战斗击杀后询问转活跃。',
+        '《黑胡子蒂奇》《传奇的拉格纳》《奥拉夫二世》《雷神之锤》《赫拉克勒斯》《洛基》的抽牌后强制弃牌统一为一次响应内的连续结算；抽牌失败或整项被无效时不会再弹出弃牌选择，免费发动与普通发动不会串台。',
+        '《孙武》《阿尔维达》《忒修斯》的阵亡墓地回手会展示完整墓地并只允许点击合法卡；可选与必发性质、唯一对象确认、取消整次发动以及对象离开墓地后的未完成结果均按原文处理。',
+        '《尼托克丽丝》《血斧艾瑞克》《陵墓圣武士》的阵亡墓地登场会强制选择合法军团和空位并活跃登场；《坂本龙马》《亚瑟王》的阵亡手牌登场分别保留“最多1张”和明确选发语义，费用、阵营、特征或位置变化时不会换选或覆盖。',
+        '《无名的渗透者》《墨子》《贝奥武夫》《布伦希尔德》《哈特谢普苏特》《井伊直虎》《埃涅阿斯》的阵亡抽1张牌，以及《金发哈拉尔》《圣女贞德》的阵亡恢复主宰生命，均按各自必发/选发、所有者/控制者和双方恢复规则结算；满血或禁疗不会让另一方的合法恢复失效。',
+      ] },
+      { title: '多对象与连续结算', items: [
+        '《吉原的花魁》一次选择敌我各一张军团后，敌军-1000与己军+1000会独立复核和记录；一侧对象失效不妨碍另一侧完成，两侧失效不会误记为成功。',
+        '《英灵殿》与《土方岁三》的两个兵力/费用阈值会在同一次响应后分别按当前数值复核；一侧不再符合不会阻断另一侧。《黄泉之门》的可选击杀仍可明确不发动。',
+        '所有本批效果继续区分已结算、被无效、已跳过、未完成和已放弃；唯一对象仍需明确点选，响应期间对象离区、数值变化或空位被占不会偷偷改选，重连、回放、日志和卡牌动效会保持同一实际结果。',
+      ] },
+    ],
+  },
+  {
+    date: '2026-09-13', title: '卡效结算状态、跨段响应与历史排位结果更新', version: '086f6f796d52bd7eefa09217da8e8bffe9e74e57',
+    sections: [
+      { title: '页面与对战操作', items: [
+        '打出卡牌时需要手动选择士气、陵墓守卫、符文或墓地费用的步骤，现在都可以直接“取消打出”；取消后手牌、场上格位和各类资源保持原样。',
+        '取消入口统一显示在资源支付控制条或选择弹框底部，并会立即单独提交，不会被误算成已选择的资源或卡牌。',
+        '费用条件变化、重连恢复或旧选择失效时，不再吞掉选择弹框或让对局卡住，而是回到仍可取消的正确选择步骤。',
+        '主动效果按钮与实际提交现在使用同一份士气费用：主宰效果免耗、〈傲慢之罪〉附加费用等变化会同时反映在按钮可用性和最终支付上。',
+        '需要单个对象或位置的主动效果，在没有合法候选时会直接置灰并显示与提交一致的原因；选择完成前不会先扣费，重连后仍可继续，重复提交也不会再次支付。',
+        '已经分段的卡牌效果会在真正结算后再播放对应分支的卡牌动效；发动声明不会重复播放。被无效、没有合法处理对象或未能完成时，对局记录会显示实际结果，重连和回放后仍保持一致。',
+      ] },
+      { title: '主动效果与费用判定', items: [
+        '《须佐之男》的前排强化与《草薙剑》置入前排、《山河社稷图》的弃牌检索、《草薙剑》的降费与强攻两个分支，都会按当前场面列出真实可选对象；没有对象或位置时不再出现可点但必然失败的按钮。',
+        '《奥尔加》《众神之乡》《安卡神碑》的单目标主动效果同样按当前前排、兵力、衍生卡与休整状态筛选；选择在恢复对局后仍有效，目标过期时不会误扣士气。',
+        '每个能力中的冒号只分隔该能力自己的费用与效果。唯一效果对象存在时必须由玩家明确点选；没有效果对象时只跳过无对象的效果段，不再被当作费用无法支付。',
+        '《奥尔加》的远程进攻无损、手牌自伤减费、场上弃置减兵三个能力已完全分开：没有敌方前排时仍会支付“弃置此军团”的费用，但不会生成无目标的减兵步骤。',
+        '《传奇的拉格纳》《无情者哈拉尔》《血斧艾瑞克》《齐格鲁德》《奥尔加》《卡纽特大帝》的自伤减费只属于各自的手牌打出能力；选择发动时会先对我方主宰造成1点伤害，再让登场费用-1，之后才让军团离开手牌并进入登场流程。',
+        '上述军团的其他登场、阵亡、伤害后、位移与进攻能力不再被自伤费用影响；《无情者哈拉尔》和《血斧艾瑞克》的必选对象在存在合法对象时必须点选，没有对象时才跳过对应效果。',
+        '《莫德雷德》等只有一个合法效果对象的能力不会自动略过选择；《伊西斯》选择三张陵墓守卫的步骤明确作为费用处理，费用对象和后续效果对象不会再混淆。',
+      ] },
+      { title: '打出费用与响应判定', items: [
+        '《步行者罗洛》只提供当前确实付得起的墓地代表数量；费用不足或选择过期时不会扣除士气，也不会让卡牌离开手牌。',
+        '《槲寄生符咒》可以消耗3符文把费用减至0并正常打出；符文支付也可以在确认前取消，取消后不会消耗符文或打出卡牌。',
+        '《落穴陷阱》只响应真实位于战场的军团登场效果：《草薙剑》仍在圣物区、孙悟空仍在主宰区时不会被误判；它们实际成为场上军团后才按军团登场处理。',
+        '《土方岁三》的登场效果改为一次选择最多2个对象：选择2个时至少一个费用不高于1，另一个费用不高于2；只有一个合法对象时仍由玩家明确选择。',
+        '《阿麦金》的“仅具有【彼界】单一特征”会把阵营和附加特征分别判断：圆桌骑士、晋升者、杨戬专属及哪吒专属均属于额外特征，职介和试炼值不属于特征。',
+        '装备《万物统御之戒》后，通用特征会随持有者改为当前阵营特征；因此只有这一项有效特征的通用卡可按对应单一阵营处理。',
+        '费用筛选中的0费会包含《自然馈赠》等没有印刷费用的非主宰卡；卡牌费用、主宰血量和军团兵力最低显示为0，不会出现负数。',
+      ] },
+      { title: '结算结果与响应顺序', items: [
+        '卡牌效果现在统一记录“已结算、被无效、已跳过、未完成、已放弃”五类实际结果；声明、动效、对局记录、断线恢复和录像会指向同一次结算，不再把已支付费用误写成效果成功。',
+        '《白起》《奥尔加》《宫廷魔术师》《伊姆何泰普》《亚里士多德》《彼界阿瓦隆》《绿洲舞女》《克里斯蒂娜》的单段主动效果已接入实际结果：没有合法对象会跳过，声明后对象失效会显示未完成，被反击无效则显示被无效。',
+        '《佣兵部队》《落穴陷阱》《伏击》《戏法师的傀儡》在响应结算时会重新核对对象与位置；对象过期显示未完成，被无效显示被无效，声明时已经支付的费用不会返还。',
+        '同一效果产生的后续段会留在原效果的响应层级内，先完成选择、放弃或失败结果，再轮到更早入栈的效果；不会因插入新步骤而越过下方效果。',
+      ] },
+      { title: '反击战术与多段效果', items: [
+        '《绝对防御》会按当前响应对象进入正确分支：响应进攻时抵挡进攻，响应效果时无效该效果，不再沿响应链误取最早的进攻。',
+        '《拼死反抗》声明时固定所选分支：单体军团-2000或对方全体军团-1000。单体对象在结算前失效会显示未完成；全体分支没有可处理军团时显示已跳过。',
+        '《摄政皇权》《暗度陈仓》从私密手牌选择军团登场时，只公开玩家已经提交的效果，不会提前公开手牌身份；手牌、格位或场面条件过期时显示未完成，取消选择不会支付费用。',
+        '《不朽之礼》先抽牌，再由玩家选择是否让陵墓守卫登场；《切腹仪式》先抽牌，再让所选军团本回合费用-2。前段成功后，后段可以分别显示已结算、未完成、已跳过或已放弃，前段失败或整段被无效时不会继续后段。',
+      ] },
+      { title: '对象重验与连续结算', items: [
+        '效果声明时没有合法对象会显示已跳过；已经声明的对象在响应后不再合法会显示未完成；玩家明确选择不发动才显示已放弃。已经支付的士气、返还的士气、休整或弃牌不会因后段失败而回退。',
+        '《神妙行军》返还2士气后，会按结算时兵力重新核对所选击杀对象；对象从6000升至7000时击杀未完成，已返还的士气不回退。《莫德雷德》的所选对象从2000升至3000时同样显示未完成。',
+        '《地主的胁迫》的弃牌、额外弃牌与防御分支会分别保留自己的对象和结果；对局中的公开事件不会泄露被弃置的手牌身份。',
+        '《乾坤·阴》先公开牌库顶牌：命中时弃置并继续选择我方军团，未命中时置于牌库底；未命中不再出现空选择，我方没有合法军团时后段显示已跳过。',
+      ] },
+      { title: '跨回合与主动状态', items: [
+        '《特洛伊木马》在进攻后的放置阶段会重新核对原定对方格位，格位已占用或来源失效时显示未完成，不会覆盖卡牌或改选位置；持续的-1000兵力仍保留。持有者下个回合结束时先弃置再抽牌，弃置失败会跳过抽牌，多张木马各自只处理一次。',
+        '《雷神索尔》的充能与《探寻天空之城》的减费已纳入无对象主动结算；被无效时仍保留已经支付的2士气和本回合使用次数，断线恢复后不会重复发动。',
+        '《克利奥帕特拉七世》《黄金圣甲虫》《雷神之锤》《希波吕忒》的私密区域主动登场会在提交后重验卡牌与格位；取消不会支付，提交后已产生的士气、休整或次数不会因对象过期而返还。',
+        '《黄金圣甲虫》的减兵会逐个重验已声明军团：没有对象时跳过，全部失效时未完成，部分仍合法时只处理合法对象。《神农鼎》会重验所选军团本回合已使用的主宰能力次数，条件被更早响应改变时显示未完成。',
+      ] },
+      { title: '诸神巅能力结算', items: [
+        '《诸神巅》的翻面获得士气、消耗2神性、主动休整和开局获得2士气四个能力分别记录自己的费用、分支和结果；未选择的互斥分支不会被误记为放弃。',
+        '造成6000伤害归入实际伤害段；多次伤害分配会逐个重新核对对象，没有目标时跳过、全部失效时未完成、部分有效时只结算有效对象。翻面获得士气的候选在响应后全部失效时显示未完成。',
+        '《诸神巅》的能力被无效或后段未完成时，不会返还已经消耗的2神性、主动休整状态或本回合使用次数；只有玩家明确拒绝可选后段时才显示已放弃。',
+      ] },
+      { title: '登场对象、操作提示与卡图', items: [
+        '《吕布》《武则天》《墨子》《埃吉尔》《格拉墨》《克劳迪娅》《井伊直虎》《珀尔修斯》《赫拉克勒斯·晋升》等登场能力统一按“冒号前费用、冒号后效果”处理；费用可支付时可以声明，没有效果对象则只跳过效果段，有对象则必须明确选择。',
+        '《孙悟空》以军团身份离开任意军团区后都会回到主宰区，并在士气落后时提供可选士气；《嬴政》没有8费军团时改用真实打出流程，《天照》第二个操作显示完整能力文本。',
+        '《梅林》没有符文时仍显示两个不可用分支及具体原因；墓地选择会展示完整墓地，但只有当前合法卡牌可以点击。《刘备》《布伦希尔德》《海拉的凝视》等唯一对象能力也会要求明确选择。',
+        '《孙悟空》更新主卡图；《杨戬》《梅杰德》《洛基》《须佐之男》《孙悟空》新增或更新第2季典藏异画，图鉴、构筑和对战会按准确卡号显示对应版本。',
+      ] },
+      { title: '排位结果与申诉', items: [
+        '历史异常对局被确认无效时，即使之后已有正常对局，也能记录该场无效结果并向相关玩家发送原因与申诉入口；为保护后续正常结算，当前七曜值、定级进度和隐藏分保持不变。',
+      ] },
+    ],
+  },
+  {
+    date: '2026-09-10', title: '卡效结算、完整响应提示、移动端与牌库更新', version: '5c2c7d0a7771f7d87af22c456f2b73795953c05a',
+    sections: [
+      { title: '卡牌效果与对战规则', items: [
+        '《草薙剑》等费用上限判断不再把无费用军团当作0费；真正0费和合法减费对象仍正常处理。',
+        '《雷神之锤》发动入口与墓地代表份数一致，《渴求死亡的勇士》可以代表复数费用；同质士气自动支付，不同支付后果仍保留选择。',
+        '《梅杰德》按对方回合触发；《西施》可使用支付自身后腾出的合法位置；《嫦娥》与天廷阵营效果独立排入同次时点，并保留发生时的零士气资格。',
+        '《孟婆》两个主动分支共用回合次数；多张《亚里士多德》的减费累计；《诸葛亮》会先让操作者看到下一张天灾，再决定后续调整，不向对方泄露。',
+        '《杨戬》私密返牌不再通过对局记录泄露身份；《佣兵部队》声明时支付弃置费用，被无效后不会返还。',
+        '《陵墓构造体》战斗阵亡后正确处理原有守卫与3个休整守卫；《孙悟空》作为军团离场时始终回到主宰区。',
+        '《黯陨晨星》选择的免费主动战术状态持续本回合，但不免除效果正文另列的费用；天灾伤害不受玩家卡牌的伤害增减或替换影响。',
+        '同时触发的效果可按发动顺序入栈并逆序结算；响应可以声明任意合法堆叠对象，同方连续发动后再让过，不局限于栈顶。反击战术仍不能响应天灾。',
+      ] },
+      { title: '对战页面与恢复', items: [
+        '响应说明会显示发动方、完整独立效果、公开目标及所在格位；最小化后以金色高亮实际目标实例，多张同名军团也能区分，费用选择期间仍保留上下文。',
+        '《宫廷魔术师》等公共场上选择可以直接点选战场盖伏位置，同时不会公开盖牌身份。',
+        '修复短画面底部裁切；窄屏对战、回放与牌库编辑器共用横屏适配，弹框、点击和动效坐标同步，输入和退出页面可恢复正常布局。',
+        '读取对局存档时会正确还原双方战场；异常存档不再默认为空场继续运行。',
+        '手牌与军团尺寸、装饰框、圣物横卡框和试炼数字空间完成调整；对局记录保留实际变化和可点卡名、区分我方与对方，并删除重复流程文本。',
+        '胜负结算会保留到玩家主动返回大厅，双方可独立离开并继续开局；房主退出不会带走另一方的结算页面。',
+      ] },
+      { title: '牌库、排行与大厅', items: [
+        '牌库保存和删除以服务器成功结果为准，登录或其他标签页的旧缓存不再覆盖新结果；额外区列表与主牌库风格统一，横卡详情不会超出容器。',
+        '公共牌库与对局档案共用构筑查看，包含额外区、主动与反击标签，并支持复制码、导出牌库图和复制到我的牌库。',
+        '排行榜会纳入已结算的新格式对局并自动刷新；没有段位或称号时不再显示占位文字。',
+        '预约维护提示与提前广播会同时开始；撤回好友邀请后对应弹框自动失效，其他邀请不受影响。',
+        '《安格斯·麦·奥格》的第二张试炼可以按具体卡牌实例打开操作，进度变化后已打开的操作面板会同步刷新。',
+      ] },
+    ],
+  },
+  {
+    date: '2026-09-09', title: '卡效分段结算、反击响应与动效文案更新', version: '04fb70c6cc1f8f17b2e37394442b8b6f9bbfc891',
     sections: [
       { title: '卡牌效果与结算顺序', items: [
         '《花魁的馈赠》先完成检索，再选择是否活跃士气；支付这张牌后刚变为休整的士气也可选择。拒绝后段、目标失效或后段被无效，不会撤销已完成的检索或退回已支付费用。',
@@ -69,7 +395,7 @@ const updateEntries = [
       { title: '卡牌效果与结算', items: [
         '《符文之力》结算时先获得1符文，再由玩家决定是否消耗1士气查看牌库顶部3张；存在不同士气支付结果时使用统一资源选择，不会重复收费或生成空选择。',
         '《兰斯洛特》的击杀时窗口补齐实际效果选项；《高杉晋作》改为先抽牌，再在仍有合法目标时选择费用降低对象，没有目标也不会吞掉抽牌或卡死结算。',
-        '《雷神之锤》允许墓地中的《渴求死亡的勇士》分别代表复数费用；《阿麦金》公开牌库顶卡，只有印刷特征仅为【彼界】时才可加入手牌。',
+        '《雷神之锤》允许墓地中的《渴求死亡的勇士》分别代表复数费用；《阿麦金》公开牌库顶卡，只有按当前规则仅具有【彼界】单一特征时才可加入手牌。',
         '所有可选公开触发在条件不成立或没有候选时由框架安静跳过，不再生成无法操作的空弹框；反击战术不会获得响应天灾的窗口，普通合法响应仍按原规则处理。',
       ] },
       { title: '排位、赛事与账号', items: [
@@ -262,10 +588,20 @@ const updateEntries = [
   },
 ]
 
+const updateEntries = generatedPlayerReleaseHistory.length
+  ? [...generatedPlayerReleaseHistory, ...legacyUpdateEntries]
+  : generatedPlayerRelease
+    ? [generatedPlayerRelease, ...legacyUpdateEntries]
+    : legacyUpdateEntries
+
 const route = useRoute()
 const router = useRouter()
 const mobileOpen = ref(false)
+const mobileMenuButton = ref<HTMLButtonElement | null>(null)
+const mobileDrawer = ref<HTMLElement | null>(null)
+let bodyOverflowBeforeDrawer = ''
 const modal = ref<'settings' | 'updates' | 'online' | null>(null)
+const settingsOpener = ref<HTMLElement | null>(null)
 const invitationMinimized = ref(false)
 const outgoingInvitationMinimized = ref(false)
 watch(() => l12State.friendInvitation?.invitationId, () => { invitationMinimized.value = false })
@@ -290,6 +626,7 @@ const battleNav = [
   { to: '/battle/records', icon: 'records', label: '对局' },
 ]
 const nav = computed(() => route.meta.section === 'battle' ? battleNav : mainNav)
+const siteUiStates = computed(() => usesSiteUiStates(route.meta))
 const accountGate = computed(() => route.meta.requiresAccount === true && !platformState.account)
 const authMode = ref<'login' | 'register'>('login')
 const auth = reactive({ username: '', password: '' })
@@ -308,11 +645,37 @@ async function submitAuth() {
   } finally { authBusy.value = false }
 }
 
-const onlinePlayers = ref<PlatformPresence[]>([])
+const onlinePlayers = computed(() => l12State.presence as PlatformPresence[])
 const onlineCount = computed(() => onlinePlayers.value.length)
 const incomingRequestCount = computed(() => onlinePlayers.value.filter(player => player.friendStatus === 'pending' && player.friendDirection === 'incoming').length)
-const onlineActionBusy = ref('')
+const { isPending: onlineActionPending, run: runOnlineAction } = useActionGate()
 const onlineNotice = ref('')
+const onlineFriendActionKey = (playerId: string, accountId = platformState.account?.id ?? 'anonymous') =>
+  `online-friend:${accountId}:${playerId}`
+const alternateArtNotifications = ref<AlternateArtGrantNotification[]>([])
+const currentAlternateArtNotification = computed(() => alternateArtNotifications.value[0] ?? null)
+let alternateArtReading = false
+let alternateArtDirty = false
+async function refreshAlternateArtNotifications() {
+  if (!platformState.account || !platformState.token) { alternateArtNotifications.value = []; return }
+  if (alternateArtReading) { alternateArtDirty = true; return }
+  const accountId = platformState.account.id
+  alternateArtReading = true
+  alternateArtDirty = false
+  try { alternateArtNotifications.value = await alternateArtApi.notifications() }
+  catch { /* Preserve the last confirmed notifications on a transient failure. */ }
+  finally {
+    alternateArtReading = false
+    if (alternateArtDirty && accountId === platformState.account?.id && !document.hidden)
+      void refreshAlternateArtNotifications()
+  }
+}
+async function closeAlternateArtNotification() {
+  const current = currentAlternateArtNotification.value
+  if (!current) return
+  alternateArtNotifications.value = alternateArtNotifications.value.filter(item => item.id !== current.id)
+  try { await alternateArtApi.acknowledgeNotification(current.id) } catch { /* 下次登录再次提示，避免静默丢失权益通知。 */ }
+}
 const connectionLabel = computed(() => {
   if (l12State.connectionIssue === 'authentication') return '登录状态失效'
   if (l12State.connectionIssue === 'superseded') return '已由其他页面接管'
@@ -322,36 +685,80 @@ const connectionLabel = computed(() => {
   return l12State.connectionIssue === 'websocket' ? '对战连接中断' : '未连接'
 })
 
-watch(() => route.fullPath, () => { mobileOpen.value = false })
+function openMobileNav() { mobileOpen.value = true }
+function closeMobileNav(restoreFocus = true) {
+  mobileOpen.value = false
+  if (restoreFocus) void nextTick(() => mobileMenuButton.value?.focus())
+}
+function toggleMobileNav() {
+  if (mobileOpen.value) closeMobileNav()
+  else openMobileNav()
+}
+function openSiteModal(next: 'settings' | 'updates' | 'online', event?: Event) {
+  if (next === 'settings') settingsOpener.value = rememberSettingsOpener(event)
+  closeMobileNav(false)
+  modal.value = next
+}
+function closeSiteSettings() {
+  void closeSettingsAndRestore(() => { modal.value = null }, settingsOpener.value, mobileMenuButton.value)
+}
+function openSiteFeedback() {
+  void openBugFeedbackFromSettings(() => { modal.value = null }, settingsOpener.value, mobileMenuButton.value)
+}
+function closeSiteModal() {
+  if (modal.value === 'settings') closeSiteSettings()
+  else modal.value = null
+}
+function onMobileNavKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && mobileOpen.value) closeMobileNav()
+}
+watch(mobileOpen, async open => {
+  if (open) {
+    bodyOverflowBeforeDrawer = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    await nextTick()
+    const firstAction = Array.from(mobileDrawer.value?.querySelectorAll<HTMLElement>('a[href],button:not(:disabled)') ?? [])
+      .find(element => element.tabIndex >= 0 && element.getClientRects().length > 0
+        && getComputedStyle(element).visibility === 'visible'
+        && element.getAttribute('aria-disabled') !== 'true' && !element.closest('[hidden],[inert]'))
+    firstAction?.focus()
+  } else {
+    document.body.style.overflow = bodyOverflowBeforeDrawer
+  }
+})
+
+watch(() => route.fullPath, () => {
+  closeMobileNav(false)
+  void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
+}, { immediate: true })
 function enterFriendRoom() { void router.push('/battle') }
-let presenceTimer = 0
 async function refreshPresence() {
   if (!platformState.account || !platformState.token) {
-    onlinePlayers.value = []
+    l12State.presence = []
     return
   }
-  try { onlinePlayers.value = await friendApi.presence() } catch { onlinePlayers.value = [] }
+  try { l12State.presence = await friendApi.presence() } catch { /* Keep the last confirmed presence snapshot. */ }
 }
 const activityLabel = (player: PlatformPresence) => ({ idle: '在线 · 空闲', inRoom: '在线 · 房间中', playing: '在线 · 对局中', spectating: '在线 · 观战中' }[player.activity])
 async function addOnlineFriend(player: PlatformPresence) {
-  onlineActionBusy.value = player.accountId
-  onlineNotice.value = ''
-  try {
-    const result = await friendApi.request(player.accountId)
-    onlineNotice.value = result.message
-    await refreshPresence()
-  } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
-  finally { onlineActionBusy.value = '' }
+  const accountId = platformState.account?.id
+  await runOnlineAction(onlineFriendActionKey(player.accountId, accountId), async () => {
+    onlineNotice.value = ''
+    try {
+      const result = await friendApi.request(player.accountId)
+      if (accountId === platformState.account?.id) onlineNotice.value = result.message
+    } catch (error) { if (accountId === platformState.account?.id) onlineNotice.value = error instanceof Error ? error.message : '好友申请发送失败' }
+  })
 }
 async function resolveOnlineFriend(player: PlatformPresence, accept: boolean) {
-  onlineActionBusy.value = player.accountId
-  onlineNotice.value = ''
-  try {
-    const result = await friendApi.resolve(player.accountId, accept)
-    onlineNotice.value = result.message
-    await refreshPresence()
-  } catch (error) { onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
-  finally { onlineActionBusy.value = '' }
+  const accountId = platformState.account?.id
+  await runOnlineAction(onlineFriendActionKey(player.accountId, accountId), async () => {
+    onlineNotice.value = ''
+    try {
+      const result = await friendApi.resolve(player.accountId, accept)
+      if (accountId === platformState.account?.id) onlineNotice.value = result.message
+    } catch (error) { if (accountId === platformState.account?.id) onlineNotice.value = error instanceof Error ? error.message : '好友申请处理失败' }
+  })
 }
 function inviteOnlinePlayer(player: PlatformPresence) {
   onlineNotice.value = ''
@@ -377,26 +784,40 @@ function cancelOutgoingInvitation() {
   const invitationId = l12State.outgoingFriendInvitation?.invitationId
   if (invitationId) cancelFriendInvitation(invitationId)
 }
-watch(() => platformState.account?.id, () => void refreshPresence())
+function onPresenceResource(event: Event) {
+  if ((event as CustomEvent).detail?.fallback === true && l12State.status !== 'online') void refreshPresence()
+}
+function onAlternateArtResource() { void refreshAlternateArtNotifications() }
+watch(() => platformState.account?.id, () => {
+  onlineNotice.value = ''
+  alternateArtNotifications.value = []
+  void refreshAlternateArtNotifications()
+})
 onMounted(() => {
+  window.addEventListener('keydown', onMobileNavKeydown)
   window.addEventListener('l12-friend-room-created', enterFriendRoom)
-  void refreshPresence()
-  presenceTimer = window.setInterval(() => void refreshPresence(), 15_000)
+  void refreshAlternateArtNotifications()
+  window.addEventListener('l12-resource-presence', onPresenceResource)
+  window.addEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onMobileNavKeydown)
+  document.body.style.overflow = bodyOverflowBeforeDrawer
   window.removeEventListener('l12-friend-room-created', enterFriendRoom)
-  window.clearInterval(presenceTimer)
+  window.removeEventListener('l12-resource-presence', onPresenceResource)
+  window.removeEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
 })
 </script>
 
 <template>
-  <div class="site-shell">
-    <header class="site-mobile-head">
+  <div class="site-shell" data-l12-ui-system="site-v1">
+    <header class="site-mobile-head ui-state-scope">
       <router-link class="mobile-brand" to="/" title="返回主页"><img :src="siteBrandIcon" alt="十二军团"/></router-link>
-      <button aria-label="打开导航" @click="mobileOpen = !mobileOpen">{{ mobileOpen ? '×' : '☰' }}</button>
+      <button ref="mobileMenuButton" :aria-expanded="mobileOpen" aria-controls="site-mobile-drawer" :aria-label="mobileOpen ? '关闭导航' : '打开导航'" @click="toggleMobileNav">{{ mobileOpen ? '×' : '☰' }}</button>
     </header>
 
-    <aside class="site-sidebar" :class="{ open: mobileOpen }">
+    <button v-if="mobileOpen" class="site-drawer-backdrop" type="button" aria-label="关闭导航" @click="closeMobileNav()"/>
+    <aside id="site-mobile-drawer" ref="mobileDrawer" class="site-sidebar ui-state-scope" :class="{ open: mobileOpen }" :role="mobileOpen ? 'dialog' : undefined" :aria-modal="mobileOpen ? 'true' : undefined">
       <router-link class="site-brand" to="/" title="十二军团官方网站">
         <img :src="siteBrandIcon" alt="十二军团"/>
       </router-link>
@@ -408,22 +829,22 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="site-utilities">
-        <button title="设置" @click="modal = 'settings'"><SiteIcon name="settings"/><span>设置</span></button>
-        <button title="更新日志" @click="modal = 'updates'"><SiteIcon name="updates"/><span>更新日志</span></button>
-        <button :class="{ 'has-unread': incomingRequestCount > 0 }" :title="incomingRequestCount ? `在线玩家 · ${incomingRequestCount} 个未读好友申请` : '在线人数'" @click="modal = 'online'"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><span>在线人数</span><b v-if="incomingRequestCount" class="utility-unread" :aria-label="`${incomingRequestCount} 个未读好友申请`">{{ incomingRequestCount }}</b></button>
+        <button title="设置" @click="openSiteModal('settings', $event)"><SiteIcon name="settings"/><span>设置</span></button>
+        <button title="更新日志" @click="openSiteModal('updates')"><SiteIcon name="updates"/><span>更新日志</span></button>
+        <button :class="{ 'has-unread': incomingRequestCount > 0 }" :title="incomingRequestCount ? `在线玩家 · ${incomingRequestCount} 个未读好友申请` : '在线人数'" @click="openSiteModal('online')"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><span>在线人数</span><b v-if="incomingRequestCount" class="utility-unread" :aria-label="`${incomingRequestCount} 个未读好友申请`">{{ incomingRequestCount }}</b></button>
         <button class="connection" :class="l12State.status" :title="connectionLabel"><span class="utility-icon"><SiteIcon name="connection"/><i/></span><span>{{ connectionLabel }}</span></button>
       </div>
     </aside>
 
-    <main class="site-content"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
+    <main class="site-content" :class="{ 'ui-state-scope': siteUiStates }"><MaintenanceTicker v-if="route.meta.section === 'battle'"/><slot /></main>
 
-    <div v-if="modal" class="site-modal-mask" @click.self="modal = null">
-      <L12SettingsModal v-if="modal === 'settings'" @close="modal = null"/>
+    <div v-if="modal" class="site-modal-mask ui-state-scope" @click.self="closeSiteModal">
+      <L12SettingsModal v-if="modal === 'settings'" @close="closeSiteSettings" @feedback="openSiteFeedback"/>
 
       <section v-else-if="modal === 'updates'" class="site-modal update-modal">
         <header><div><small>CHANGELOG</small><h2>更新日志</h2></div><button @click="modal = null">×</button></header>
-        <article v-for="entry in updateEntries.slice(0, 10)" :key="`${entry.date}-${entry.version}`">
-          <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code>{{ entry.version }}</code>
+        <article v-for="(entry, index) in updateEntries" :key="`${entry.date}-${entry.version}-${index}`">
+          <time>{{ entry.date }}</time><h3>{{ entry.title }}</h3><code v-if="entry.version">{{ entry.version }}</code>
           <section v-for="section in entry.sections" :key="section.title" class="update-section">
             <h4>{{ section.title }}</h4>
             <ul><li v-for="item in section.items" :key="item">{{ item }}</li></ul>
@@ -438,13 +859,13 @@ onBeforeUnmount(() => {
           <i/><div class="online-identity"><b>{{ player.username }}</b><span>{{ player.accountId === platformState.account?.id ? '在线 · 当前账号' : activityLabel(player) }}</span><em v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'" class="online-unread">新好友申请</em></div>
           <div v-if="player.friendStatus !== 'self'" class="online-actions">
             <template v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'">
-              <button class="quiet" :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, false)">拒绝</button>
-              <button :disabled="onlineActionBusy === player.accountId" @click="resolveOnlineFriend(player, true)">{{ onlineActionBusy === player.accountId ? '处理中' : '接受' }}</button>
+              <button class="quiet" :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="resolveOnlineFriend(player, false)">拒绝</button>
+              <button :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="resolveOnlineFriend(player, true)">{{ onlineActionPending(onlineFriendActionKey(player.accountId)) ? '处理中' : '接受' }}</button>
             </template>
             <template v-else>
               <button v-if="player.friendStatus === 'accepted'" class="quiet" :disabled="!player.canInvite" :title="player.actionReason || '邀请好友直接建立房间'" @click="inviteOnlinePlayer(player)">好友 · 邀战</button>
               <button v-else-if="player.friendStatus === 'pending'" disabled>好友 · 已申请</button>
-              <button v-else :disabled="onlineActionBusy === player.accountId" @click="addOnlineFriend(player)">{{ onlineActionBusy === player.accountId ? '发送中' : '添加好友' }}</button>
+              <button v-else :disabled="onlineActionPending(onlineFriendActionKey(player.accountId))" @click="addOnlineFriend(player)">{{ onlineActionPending(onlineFriendActionKey(player.accountId)) ? '发送中' : '添加好友' }}</button>
             </template>
             <button v-if="player.activity === 'playing'" :disabled="!player.canSpectate" :title="player.actionReason || '进入该玩家的对局观战'" @click="watchOnlinePlayer(player)">观战</button>
           </div>
@@ -453,7 +874,7 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="accountGate" class="site-modal-mask account-gate">
+    <div v-if="accountGate" class="site-modal-mask account-gate ui-state-scope">
       <section class="site-modal auth-modal">
         <header><div><small>BATTLE ACCOUNT</small><h2>登录后进入对战</h2></div><button title="返回主页" @click="router.push('/')">×</button></header>
         <p>对战、赛事、好友、排行榜和个人对局记录使用同一账号身份。</p>
@@ -467,7 +888,17 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack">
+    <div v-if="currentAlternateArtNotification" class="site-modal-mask alternate-art-notification-mask ui-state-scope">
+      <section class="site-modal alternate-art-notification" role="dialog" aria-modal="true" aria-labelledby="alternate-art-notification-title">
+        <header><div><h2 id="alternate-art-notification-title">获得异画！</h2></div></header>
+        <div class="alternate-art-reward"><CardImage :card-id="currentAlternateArtNotification.cardImageId || currentAlternateArtNotification.baseCardId" :legacy-url="currentAlternateArtNotification.builtIn ? undefined : (currentAlternateArtNotification.imageUrl || currentAlternateArtNotification.thumbnailUrl)" :alt="currentAlternateArtNotification.displayName" intent="detail"/><div><p>恭喜你获得〈{{ currentAlternateArtNotification.displayName }} {{ currentAlternateArtNotification.artCode }}〉</p><p v-if="currentAlternateArtNotification.reason.trim()" class="alternate-art-reason">{{ currentAlternateArtNotification.reason }}</p></div></div>
+        <button class="alternate-art-confirm" type="button" @click="closeAlternateArtNotification">确认</button>
+      </section>
+    </div>
+
+    <SeasonSummaryNotice :suspended="Boolean(currentAlternateArtNotification)"/>
+
+    <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack ui-state-scope">
       <div v-if="l12State.outgoingFriendInvitation" class="outgoing-invitation-gate" :class="{ minimized: outgoingInvitationMinimized }">
         <button v-if="outgoingInvitationMinimized" class="invitation-minimized" @click="outgoingInvitationMinimized = false">已发送对战邀请 · 展开</button>
         <section v-else class="site-modal invitation-modal outgoing-invitation-modal" role="status" aria-label="已发送好友对战邀请">
@@ -493,13 +924,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.site-shell{--nav-w:92px;width:100vw;height:100vh;background:radial-gradient(circle at 80% 10%,rgba(18,101,108,.12),transparent 34%),radial-gradient(circle at 12% 84%,rgba(121,22,32,.13),transparent 35%),#060a0d;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.site-sidebar{position:fixed;z-index:40;inset:0 auto 0 0;width:var(--nav-w);display:flex;flex-direction:column;border-right:1px solid rgba(232,227,213,.16);background:#0d1318}.site-brand{display:flex;height:96px;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#f3eee1;text-decoration:none}.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.site-nav{display:flex;flex:1;min-height:0;flex-direction:column;overflow-y:auto}.site-nav a,.site-utilities button{position:relative;display:flex;min-height:58px;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;background:transparent;color:#7d8991;text-decoration:none}.site-nav a:hover,.site-nav a.router-link-active{background:linear-gradient(90deg,rgba(48,181,190,.2),transparent);color:#f4f1e9}.site-nav a.router-link-active::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;background:#51c5cc;box-shadow:0 0 12px #51c5cc}.site-nav b,.site-utilities b{font-size:15px}.site-nav span,.site-utilities span{font-size:14px;font-weight:900}.site-utilities{display:flex;flex-direction:column;gap:8px;padding:8px 0;border-top:1px solid rgba(232,227,213,.12)}.site-utilities button{width:100%;min-height:48px}.site-utilities .connection i{width:8px;height:8px;border-radius:50%;background:#6b7272}.site-utilities .connection.online i{background:#55c99a;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting i{background:#d7b15f}.site-content{position:absolute;inset:0 0 0 var(--nav-w);overflow:auto}.site-mobile-head{display:none}.site-modal-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,7,.75);backdrop-filter:blur(10px)}.site-modal{width:min(560px,94vw);max-height:min(720px,90vh);overflow:auto;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;padding:24px}.site-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}.site-modal header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}.site-modal h2{margin:4px 0 0;font-size:24px}.site-modal header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.setting-row b,.setting-row span{display:block}.setting-row span{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle{min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.setting-note{color:#7e898f;font-size:14px;line-height:1.7}.update-modal article{padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.update-modal time{color:#d6ad59;font-size:14px;font-weight:900}.update-modal h3{margin:6px 0;font-size:15px}.update-modal code{display:inline-block;padding:3px 6px;border:1px solid #6f602e;color:#e5c866;font-size:14px}.update-modal li{margin:7px 0;color:#a8b0b3;font-size:14px;line-height:1.6}.online-entry{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:#0a1118}.online-entry>i{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#55c99a;box-shadow:0 0 8px #55c99a}.online-identity{min-width:0;flex:1}.online-entry b,.online-entry span{display:block}.online-entry span{margin-top:3px;color:#718088;font-size:14px}.online-actions{display:flex;flex:0 0 auto;gap:7px}.online-actions button{min-width:82px;padding:8px 10px;border:1px solid #d2b35f;background:#29220f;color:#f0d478;font-size:14px;font-weight:900}.online-actions button:disabled{border-color:#3f484e;background:#121920;color:#68747a;cursor:not-allowed}.online-notice{margin:12px 0 0;padding:9px 11px;border-left:3px solid #51c5cc;background:#0a151b;color:#9fd5d8;font-size:14px}.modal-empty{margin-top:18px;padding:38px 20px;border:1px dashed #39444b;color:#738089;text-align:center;font-size:14px;line-height:1.7}
-@media(max-width:760px){.site-shell{--nav-w:0px}.site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}.mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand b{display:grid;width:30px;height:30px;place-items:center;border:1px solid #d8b362;font:900 14px Georgia}.mobile-brand span{font-weight:900}.site-mobile-head button{width:38px;height:38px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}.site-sidebar{top:58px;width:min(310px,84vw);transform:translateX(-105%);transition:transform .2s}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}.site-nav a,.site-utilities button{min-height:52px;flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span,.site-utilities span{font-size:14px}.site-utilities{display:grid;grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px}.site-content{top:58px}.site-modal{padding:18px}.setting-row{align-items:flex-start;flex-direction:column}.setting-row select,.toggle{width:100%}}
+.site-shell{--nav-w:92px;--mobile-head-h:58px;width:100vw;height:100vh;height:100dvh;background:radial-gradient(circle at 80% 10%,rgba(18,101,108,.12),transparent 34%),radial-gradient(circle at 12% 84%,rgba(121,22,32,.13),transparent 35%),#060a0d;color:#f2f0e9;font-family:'Microsoft YaHei','微软雅黑',system-ui,sans-serif}.site-sidebar{position:fixed;z-index:40;inset:0 auto 0 0;width:var(--nav-w);display:flex;flex-direction:column;border-right:1px solid rgba(232,227,213,.16);background:#0d1318}.site-brand{display:flex;height:96px;flex-direction:column;align-items:center;justify-content:center;gap:5px;color:#f3eee1;text-decoration:none}.site-brand img{width:44px;height:44px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.site-nav{display:flex;flex:1;min-height:0;flex-direction:column;overflow-y:auto}.site-nav a,.site-utilities button{position:relative;display:flex;min-height:58px;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;background:transparent;color:#7d8991;text-decoration:none}.site-nav a:hover,.site-nav a.router-link-active{background:linear-gradient(90deg,rgba(48,181,190,.2),transparent);color:#f4f1e9}.site-nav a.router-link-active::before{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;background:#51c5cc;box-shadow:0 0 12px #51c5cc}.site-nav b,.site-utilities b{font-size:15px}.site-nav span,.site-utilities span{font-size:14px;font-weight:900}.site-utilities{display:flex;flex-direction:column;gap:8px;padding:8px 0;border-top:1px solid rgba(232,227,213,.12)}.site-utilities button{width:100%;min-height:48px}.site-utilities .connection i{width:8px;height:8px;border-radius:50%;background:#6b7272}.site-utilities .connection.online i{background:#55c99a;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting i{background:#d7b15f}.site-content{position:absolute;inset:0 0 0 var(--nav-w);overflow:auto}.site-mobile-head{display:none}.site-modal-mask{position:fixed;z-index:100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(1,4,7,.75);backdrop-filter:blur(10px)}.site-modal{width:min(560px,94vw);max-height:min(720px,90vh);overflow:auto;border:1px solid rgba(235,230,216,.28);background:#111923;box-shadow:0 28px 90px #000;padding:24px}.site-modal>header{display:flex;align-items:center;justify-content:space-between;padding-bottom:15px;border-bottom:1px solid rgba(235,230,216,.14)}.site-modal header small{color:#51c5cc;font:900 14px monospace;letter-spacing:.18em}.site-modal h2{margin:4px 0 0;font-size:24px}.site-modal header button{width:34px;height:34px;border:1px solid #48545c;background:#0a1016;color:#fff}.setting-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.setting-row b,.setting-row span{display:block}.setting-row span{margin-top:5px;color:#7f8b93;font-size:14px}.setting-row select,.toggle{min-width:118px;padding:10px;border:1px solid #52606a;background:#081018;color:#fff;font-weight:900}.toggle.on{border-color:#54b48f;color:#7ee2b9}.setting-note{color:#7e898f;font-size:14px;line-height:1.7}.update-modal article{padding:18px 0;border-bottom:1px solid rgba(235,230,216,.1)}.update-modal time{color:#d6ad59;font-size:14px;font-weight:900}.update-modal h3{margin:6px 0;font-size:15px}.update-modal code{display:inline-block;padding:3px 6px;border:1px solid #6f602e;color:#e5c866;font-size:14px}.update-modal li{margin:7px 0;color:#a8b0b3;font-size:14px;line-height:1.6}.online-entry{display:flex;align-items:center;gap:12px;margin-top:12px;padding:14px;background:#0a1118}.online-entry>i{flex:0 0 auto;width:9px;height:9px;border-radius:50%;background:#55c99a;box-shadow:0 0 8px #55c99a}.online-identity{min-width:0;flex:1}.online-entry b,.online-entry span{display:block}.online-entry span{margin-top:3px;color:#718088;font-size:14px}.online-actions{display:flex;flex:0 0 auto;gap:7px}.online-actions button{min-width:82px;padding:8px 10px;border:1px solid #d2b35f;background:#29220f;color:#f0d478;font-size:14px;font-weight:900}.online-actions button:disabled{border-color:#3f484e;background:#121920;color:#68747a;cursor:not-allowed}.online-notice{margin:12px 0 0;padding:9px 11px;border-left:3px solid #51c5cc;background:#0a151b;color:#9fd5d8;font-size:14px}.modal-empty{margin-top:18px;padding:38px 20px;border:1px dashed #39444b;color:#738089;text-align:center;font-size:14px;line-height:1.7}
+@media(max-width:700px){.site-shell{--nav-w:0px}.site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}.mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand b{display:grid;width:30px;height:30px;place-items:center;border:1px solid #d8b362;font:900 14px Georgia}.mobile-brand span{font-weight:900}.site-mobile-head button{width:38px;height:38px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}.site-sidebar{top:58px;width:min(310px,84vw);transform:translateX(-105%);transition:transform .2s}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}.site-nav a,.site-utilities button{min-height:52px;flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span,.site-utilities span{font-size:14px}.site-utilities{display:grid;grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px}.site-content{top:58px}.site-modal{padding:18px}.setting-row{align-items:flex-start;flex-direction:column}.setting-row select,.toggle{width:100%}}
 .utility-icon{position:relative;display:grid;place-items:center}.utility-icon>i{position:absolute;top:-7px;right:-9px;display:grid!important;min-width:15px!important;width:auto!important;height:15px!important;place-items:center;padding:0 3px;border-radius:8px!important;background:#71303a;color:#fff;font:900 14px monospace!important;font-style:normal}.site-utilities .connection .utility-icon>i{top:auto;right:-5px;bottom:-3px;width:7px!important;min-width:7px!important;height:7px!important;padding:0;border-radius:50%!important;background:#6b7272}.site-utilities .connection.online .utility-icon>i{background:#55c99a!important;box-shadow:0 0 8px #55c99a}.site-utilities .connection.connecting .utility-icon>i{background:#d7b15f!important}
 .site-utilities .utility-unread{position:absolute;right:6px;top:4px;display:grid;min-width:18px;height:18px;place-items:center;padding:0 3px;border-radius:10px;background:#be3340;color:#fff;font:900 12px/1 monospace}.site-utilities button.has-unread{color:#f2d478}.online-unread{display:inline-block!important;margin-top:5px!important;padding:2px 6px;border:1px solid #a93642;background:#2d1117;color:#ef9ca5!important;font-size:12px!important;font-style:normal;font-weight:900}.online-actions{flex-wrap:wrap;justify-content:flex-end}
 .audio-setting{display:flex;align-items:center;gap:12px}.audio-setting input{width:150px}
-@media(max-width:760px){.mobile-brand img{width:30px;height:30px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.mobile-brand b{display:none}}
+@media(max-width:700px){.mobile-brand img{width:30px;height:30px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.mobile-brand b{display:none}}
 .auth-modal>p{color:#87939a;font-size:14px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:14px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
+.alternate-art-notification-mask{z-index:180}.alternate-art-notification{width:min(660px,92vw)}.alternate-art-reward{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:center;gap:24px;margin-top:18px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){width:100%;max-height:330px;object-fit:contain;background:#050708}.alternate-art-reward p{margin:0;color:#f2d77e;font-size:18px;font-weight:900;line-height:1.75}.alternate-art-reward span,.alternate-art-reward small{display:block;margin-top:10px;color:#8e9ba0}.alternate-art-confirm{width:100%;margin-top:20px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}@media(max-width:700px){.alternate-art-notification-mask{align-items:center;padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.alternate-art-notification{width:min(520px,100%);border:1px solid #526067}.alternate-art-reward{grid-template-columns:110px minmax(0,1fr);gap:14px}.alternate-art-reward p{font-size:15px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){max-height:190px}}
 .invitation-stack{position:fixed;z-index:160;right:18px;bottom:18px;display:flex;width:min(430px,calc(100vw - 36px));max-height:calc(100vh - 36px);flex-direction:column;gap:10px;overflow:auto;pointer-events:none}.invitation-gate,.outgoing-invitation-gate{width:100%;flex:0 0 auto;pointer-events:none}.invitation-modal{box-sizing:border-box;width:100%;max-height:min(620px,calc(100vh - 36px));padding:20px;pointer-events:auto}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invitation-minimized{padding:10px 14px;border:1px solid #e1c16c;background:#231c0d;color:#f0d478;box-shadow:0 12px 34px #000;font-weight:900;pointer-events:auto}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:14px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:14px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}.outgoing-invitation-modal{border-color:rgba(81,197,204,.42)}.outgoing-invite-actions{grid-template-columns:1fr}
 .online-actions button.quiet{border-color:#4b565c;background:#0b1217;color:#9ba5aa}
 .update-modal{width:min(680px,94vw)}
@@ -508,4 +940,30 @@ onBeforeUnmount(() => {
 .update-section h4{margin:0 0 8px;padding-left:9px;border-left:3px solid #d6ad59;color:#f0ede5;font-size:14px}
 .update-modal ul{margin:0;padding-left:20px}
 .update-modal li{margin:8px 0;color:#b2b9bc;line-height:1.75}
+@media(max-width:700px){.site-content{right:0;bottom:0;overflow-x:clip;overscroll-behavior-y:contain;padding-bottom:env(safe-area-inset-bottom)}.site-modal-mask{align-items:end;padding:0;background:rgba(1,4,7,.82)}.site-modal{width:100%;max-height:min(92dvh,760px);padding:18px max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-right:0;border-bottom:0;border-left:0}.site-modal>header{padding-top:0}.online-entry{align-items:flex-start;flex-wrap:wrap}.online-actions{width:100%}.online-actions button{flex:1}.update-modal{max-height:92dvh}.setting-row{gap:10px}}
+.site-drawer-backdrop{display:none}
+@media(max-width:700px){
+  .site-shell{--mobile-head-h:calc(58px + env(safe-area-inset-top,0px))}
+  .site-mobile-head{box-sizing:border-box;height:var(--mobile-head-h);padding:env(safe-area-inset-top,0px) max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px))}
+  .site-mobile-head button{min-width:44px;min-height:44px}
+  .site-sidebar{top:var(--mobile-head-h);bottom:0;z-index:55;padding-bottom:env(safe-area-inset-bottom,0px);overscroll-behavior:contain}
+  .site-nav{justify-content:center}
+  .site-content{top:var(--mobile-head-h)}
+  .site-drawer-backdrop{position:fixed;z-index:50;inset:var(--mobile-head-h) 0 0;display:block;border:0;background:#020609b8;backdrop-filter:blur(7px)}
+  .site-nav a,.site-utilities button{min-height:var(--l12-site-hit,44px)}
+}
+/* A low usable height is the same interaction constraint as a narrow phone.
+   Switch to the drawer by viewport geometry, not by physical orientation. */
+@media(max-height:640px){
+  .site-shell{--nav-w:0px;--mobile-head-h:calc(58px + env(safe-area-inset-top,0px))}
+  .site-mobile-head{position:fixed;z-index:60;top:0;left:0;right:0;box-sizing:border-box;height:var(--mobile-head-h);display:flex;align-items:center;justify-content:space-between;padding:env(safe-area-inset-top,0px) max(14px,env(safe-area-inset-right,0px)) 0 max(14px,env(safe-area-inset-left,0px));border-bottom:1px solid rgba(232,227,213,.16);background:#0d1318}
+  .mobile-brand{display:flex;align-items:center;gap:9px;color:#fff;text-decoration:none}.mobile-brand img{width:30px;height:30px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.mobile-brand b{display:none}.mobile-brand span{font-weight:900}.site-mobile-head button{width:44px;height:44px;border:1px solid #46525a;background:#111a22;color:#fff;font-size:20px}
+  .site-sidebar{top:var(--mobile-head-h);bottom:0;z-index:55;width:min(310px,84vw);padding-bottom:env(safe-area-inset-bottom,0px);transform:translateX(-105%);transition:transform .2s;overscroll-behavior:contain}.site-sidebar.open{transform:none;box-shadow:18px 0 50px #000}.site-brand{display:none}
+  .site-nav{justify-content:center}.site-nav a,.site-utilities button{min-height:var(--l12-site-hit,44px);flex-direction:row;justify-content:flex-start;padding:0 24px;gap:15px}.site-nav span,.site-utilities span{font-size:14px}
+  .site-utilities{display:grid;grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px}
+  .site-content{top:var(--mobile-head-h);right:0;bottom:0;overflow-x:clip;overscroll-behavior-y:contain;padding-bottom:env(safe-area-inset-bottom)}
+  .site-drawer-backdrop{position:fixed;z-index:50;inset:var(--mobile-head-h) 0 0;display:block;border:0;background:#020609b8;backdrop-filter:blur(7px)}
+  .site-modal-mask{align-items:end;padding:0;background:rgba(1,4,7,.82)}.site-modal{width:100%;max-height:min(92dvh,760px);padding:18px max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-right:0;border-bottom:0;border-left:0}.site-modal>header{padding-top:0}.setting-row{align-items:flex-start;flex-direction:column;gap:10px}.setting-row select,.toggle{width:100%}.online-entry{align-items:flex-start;flex-wrap:wrap}.online-actions{width:100%}.online-actions button{flex:1}.update-modal{max-height:92dvh}
+}
 </style>
+

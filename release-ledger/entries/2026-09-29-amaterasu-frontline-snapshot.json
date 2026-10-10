@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-amaterasu-frontline-snapshot",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "天照前排强化效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "《天照》的前排强化改为在效果结算时确定对象：只让当时位于我方前排的【高天原】军团本回合兵力+1000。之后进入前排或后来获得【高天原】的军团不会补获得强化；已经获得强化的军团换到后排或失去阵营特征时，本回合修正仍会保留。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs"
+      ]
+    }
+  ]
+}

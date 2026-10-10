@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, watch } from 'vue'
 import { l12AnimationDuration } from '../audioPreferences'
-import { viewportRect } from '../mobileViewport'
+import { landscapeTeleportElement, viewportLayoutRect, viewportRect } from '../mobileViewport'
 import type { ActionEvent, Card } from '../types'
 
-const props = defineProps<{ events: ActionEvent[]; matchId: string }>()
+const props = withDefaults(defineProps<{ events: ActionEvent[]; matchId: string; playbackSpeed?: number | null }>(), { playbackSpeed: null })
+const emit = defineEmits<{ busyChange: [busy: boolean] }>()
 
 type CardSnapshot = { ghost: HTMLElement; rect: DOMRect }
 type CapturedCard = CardSnapshot & { card: Card }
@@ -18,9 +19,22 @@ const overlays = new Set<HTMLElement>()
 const fieldSnapshots = new Map<string, CardSnapshot>()
 const defeatedInstances = new Set<string>()
 
+function presentationDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
+  if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)
+  return Math.max(replayMinimumMs, Math.round(l12AnimationDuration(standardMs, replayMinimumMs) / props.playbackSpeed))
+}
+
+function notifyBusy() {
+  emit('busyChange', Boolean(props.playbackSpeed && animations.size))
+}
+
 function cardElement(instanceId?: string) {
   if (!instanceId) return null
   return document.querySelector(`[data-l12-game-stage] .formation-slot [data-card-instance-id="${CSS.escape(instanceId)}"]`)
+}
+
+function cardSnapshotRect(element: HTMLElement) {
+  return viewportLayoutRect(element)
 }
 
 function zoneElement(zone: string, playerIndex: number) {
@@ -29,7 +43,11 @@ function zoneElement(zone: string, playerIndex: number) {
 
 function remember(animation: Animation) {
   animations.add(animation)
-  const cleanup = () => animations.delete(animation)
+  notifyBusy()
+  const cleanup = () => {
+    animations.delete(animation)
+    notifyBusy()
+  }
   animation.addEventListener('finish', cleanup, { once: true })
   animation.addEventListener('cancel', cleanup, { once: true })
 }
@@ -40,7 +58,7 @@ function refreshFieldSnapshots() {
     if (!(element instanceof HTMLElement)) continue
     const instanceId = element.dataset.cardInstanceId
     if (!instanceId) continue
-    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: viewportRect(element) })
+    fieldSnapshots.set(instanceId, { ghost: element.cloneNode(true) as HTMLElement, rect: cardSnapshotRect(element) })
     defeatedInstances.delete(instanceId)
   }
 }
@@ -49,34 +67,13 @@ function captureCards(event: ActionEvent) {
   return (event.cards ?? []).flatMap(card => {
     const live = cardElement(card.instanceId)
     if (live instanceof HTMLElement) {
-      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: viewportRect(live) }
+      const snapshot = { ghost: live.cloneNode(true) as HTMLElement, rect: cardSnapshotRect(live) }
       fieldSnapshots.set(card.instanceId, snapshot)
       return [{ card, ghost: snapshot.ghost.cloneNode(true) as HTMLElement, rect: snapshot.rect }]
     }
     const snapshot = fieldSnapshots.get(card.instanceId)
     return snapshot ? [{ card, ghost: snapshot.ghost.cloneNode(true) as HTMLElement, rect: snapshot.rect }] : []
   })
-}
-
-function animateAttack(event: ActionEvent) {
-  const attacker = cardElement(event.cards?.[0]?.instanceId)?.closest('.formation-slot') as HTMLElement | null
-  if (!attacker) return
-  const source = viewportRect(attacker)
-  const targetCard = cardElement(event.cards?.[1]?.instanceId)
-  const targetPlayer = event.playerIndex === undefined ? undefined : 1 - event.playerIndex
-  const targetElement = targetCard ?? (targetPlayer === undefined ? null : zoneElement('master', targetPlayer))
-  const target = targetElement ? viewportRect(targetElement) : null
-  if (!target) return
-  const dx = target.left + target.width / 2 - (source.left + source.width / 2)
-  const dy = target.top + target.height / 2 - (source.top + source.height / 2)
-  const distance = Math.max(1, Math.hypot(dx, dy))
-  const step = Math.min(18, distance * .09)
-  const animation = attacker.animate([
-    { transform: 'translate3d(0,0,0)' },
-    { transform: `translate3d(${dx / distance * step}px,${dy / distance * step}px,0)`, offset: .48 },
-    { transform: 'translate3d(0,0,0)' },
-  ], { duration: l12AnimationDuration(360, 24), easing: 'cubic-bezier(.25,.72,.35,1)' })
-  remember(animation)
 }
 
 function animatePowerBadge(element: HTMLElement) {
@@ -86,7 +83,7 @@ function animatePowerBadge(element: HTMLElement) {
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
     { transform: 'translateX(-50%) scale(1.14)', filter: 'brightness(1.55)', offset: .45 },
     { transform: 'translateX(-50%) scale(1)', filter: 'brightness(1)' },
-  ], { duration: l12AnimationDuration(280, 80), easing: 'ease-out' })
+  ], { duration: presentationDuration(280, 80), easing: 'ease-out' })
   remember(animation)
 }
 
@@ -108,6 +105,15 @@ function defeatLabel(event: ActionEvent, index: number) {
   const damage = combatDamageValue(event, index)
   if (damage !== null) return `-${damage}`
   return /击杀|消灭/.test(`${event.text ?? ''} ${event.effectText ?? ''}`) ? '击杀' : '阵亡'
+}
+
+function defeatOwner(event: ActionEvent, card: Card, index: number) {
+  if (card.ownerIndex !== undefined) return card.ownerIndex
+  // Combat cards are ordered attacker, defender. Public event snapshots do
+  // not always carry ownerIndex, so the defender belongs to the other player;
+  // a standalone leave event already names its owning player.
+  if (event.type === 'combat' && index === 1 && event.playerIndex !== undefined) return 1 - event.playerIndex
+  return event.playerIndex ?? 0
 }
 
 function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number) {
@@ -140,15 +146,15 @@ function animateDefeat(captured: CapturedCard, event: ActionEvent, index: number
     lineHeight: '1', textAlign: 'center', transform: 'translateX(-50%)',
   })
   wrapper.append(ghost, damage)
-  document.body.appendChild(wrapper)
+  landscapeTeleportElement()?.appendChild(wrapper)
   overlays.add(wrapper)
 
-  const owner = captured.card.ownerIndex ?? event.playerIndex ?? 0
+  const owner = defeatOwner(event, captured.card, index)
   const graveElement = zoneElement('graveyard', owner)
   const graveRect = graveElement ? viewportRect(graveElement) : null
   const dx = graveRect ? graveRect.left + graveRect.width / 2 - (captured.rect.left + captured.rect.width / 2) : 0
   const dy = graveRect ? graveRect.top + graveRect.height / 2 - (captured.rect.top + captured.rect.height / 2) : 18
-  const duration = l12AnimationDuration(920, 260)
+  const duration = presentationDuration(920, 260, 160)
   const animation = wrapper.animate([
     { transform: 'translate3d(0,0,0) scale(1)', opacity: 1, filter: 'grayscale(0) brightness(1)' },
     { transform: 'translate3d(0,0,0) scale(1.06)', opacity: 1, filter: 'grayscale(0) brightness(1.45)', offset: .14 },
@@ -197,6 +203,7 @@ function reset() {
   defeatedInstances.clear()
   initialized = false
   lastSequence = 0
+  notifyBusy()
 }
 
 watch(() => props.matchId, reset, { flush: 'sync' })
@@ -213,7 +220,8 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
     .flatMap(event => (event.cards ?? []).map(card => card.instanceId)))
   const jobs: DefeatJob[] = []
   for (const event of fresh) {
-    if (event.type === 'attack') animateAttack(event)
+    // The state layer owns a normal attack as one combined lunge/rest
+    // transaction. This layer only presents damage and confirmed defeats.
     if (event.type === 'combat' || isDefeatLeave(event)) jobs.push({ event, captured: captureCards(event), confirmedDefeatIds })
     lastSequence = Math.max(lastSequence, event.sequence)
   }
@@ -228,15 +236,14 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
   })
 }, { immediate: true, flush: 'pre' })
 function viewportChanged() {
-  const consumed = lastSequence
-  const wasInitialized = initialized
-  reset()
-  lastSequence = consumed
-  initialized = wasInitialized
+  // Motion overlays live in the transformed logical-canvas host, so browser
+  // toolbar/safe-area jitter moves the host and the board together. Cancelling
+  // active WAAPI jobs here caused a visible blink and could discard a queued
+  // defeat; only refresh snapshots for later authoritative events.
   void nextTick().then(refreshFieldSnapshots)
 }
 onMounted(() => { window.addEventListener('l12-viewport-change', viewportChanged); void nextTick().then(refreshFieldSnapshots) })
-onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset() })
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false) })
 </script>
 
 <template></template>

@@ -4,9 +4,11 @@ public sealed partial class L12GameEngine
 {
     private bool CanUseS2CounterAtStack(string cardId, int playerIndex, L12StackItem top)
     {
-        if (cardId == "S02-0106")
+        if (L12StructuredCardSemantics.UsesSpecialResponsePlan(cardId, "s2-counter"))
             return top.Controller != playerIndex
-                && top.Trigger is not ("s2-reaction" or "disaster" or "authority-event");
+                && (top.Trigger == "opponent-attack"
+                    ? State.PendingDefense?.AttackerPlayer == 1 - playerIndex
+                    : IsRespondableCardEffectActivation(top));
         var timing = ResponseTimingContext(top);
         if (timing.Trigger != "authority-event" || timing.Controller == playerIndex) return false;
         var eventType = timing.Data.GetValueOrDefault("eventType");
@@ -40,17 +42,30 @@ public sealed partial class L12GameEngine
         item.Targets.Add(targetStackId);
         if (data is not null)
             foreach (var pair in data) item.Data[pair.Key] = pair.Value;
+        var planId = $"response:{response.CardId}";
+        if (L12CompositeEffectPlans.InitialResponseDeclaration(planId) is { } declaration)
+        {
+            foreach (var pair in CompositeFirstSegmentData(planId, declaration))
+                item.Data[pair.Key] = pair.Value;
+        }
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
-        State.ResponseWindow = new L12ResponseWindow { PriorityPlayer = playerIndex };
+        State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
 
     private void ResolveS2CounterEffect(L12StackItem item)
     {
-        if (item.SourceCardId == "S02-0106")
+        if (AtomicFlowKey(item) is "cosmos-yin-reveal" or "cosmos-yin-buff")
         {
+            if (AtomicFlowKey(item) == "cosmos-yin-reveal") ResolveS2CosmosYin(item);
+            else ResolveS2CosmosYinBuff(item);
+            return;
+        }
+        if (L12StructuredCardSemantics.UsesSpecialResponsePlan(item.SourceCardId, "s2-counter"))
+        {
+            // Compatibility for a checkpoint created before the segmented response plan.
             ResolveS2CosmosYin(item);
             return;
         }
@@ -63,20 +78,37 @@ public sealed partial class L12GameEngine
         switch (AtomicFlowKey(item))
         {
             case "地主的胁迫":
+            case "landlord-coercion":
             {
-                if (target is null) { FinishStackItem(item); return; }
+                if (target is null)
+                {
+                    RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                        "原抵挡/支援权威事件已经离开堆叠");
+                    FinishStackItem(item);
+                    return;
+                }
                 var excluded = target.Data.GetValueOrDefault("blockIds", string.Empty)
                     .Split('|', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var choices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId))
-                    .Select(card => card.InstanceId).ToList();
+                var handChoices = affected.Hand.Where(card => !excluded.Contains(card.InstanceId)).ToList();
+                var choices = handChoices.Select(card => card.InstanceId).ToList();
                 choices.Add("decline");
+                var actionLabel = target.Data.GetValueOrDefault("action") == "support" ? "支援" : "抵挡";
+                var consequences = handChoices.ToDictionary(card => card.InstanceId,
+                    card => $"弃置〈{card.Name}〉，本次{actionLabel}继续有效。",
+                    StringComparer.OrdinalIgnoreCase);
+                consequences["decline"] = $"不弃置手牌，本次{actionLabel}无效。";
                 CreatePrompt(affectedPlayer, "discard-or-decline", "地主的胁迫：额外弃置1张手牌，否则本次抵挡/支援无效",
                     choices, 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-                    data: new Dictionary<string, string>
-                    {
-                        ["action"] = "s2-landlord-extra-discard", ["targetStackId"] = target.StackItemId,
-                        ["choiceMode"] = "instant", ["decline"] = "不弃置，本次抵挡/支援无效",
-                    });
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string>
+                        {
+                            ["action"] = "s2-landlord-extra-discard", ["targetStackId"] = target.StackItemId,
+                            ["choiceMode"] = "instant", ["decline"] = "放弃抵挡/支援",
+                        },
+                        new("地主的胁迫",
+                            $"对方发动〈地主的胁迫〉，要求你为本次{actionLabel}额外弃置1张未用于{actionLabel}的手牌，否则本次{actionLabel}无效。",
+                            "请选择一张其余手牌弃置，或选择“放弃抵挡/支援”。",
+                            L12PromptWaitingAction.CardSelection, consequences)));
                 return;
             }
             case "破败仪式":
@@ -88,15 +120,22 @@ public sealed partial class L12GameEngine
                     var selected = CompositeDeclared(item, "handTarget").SingleOrDefault();
                     if (selected is not null && affected.Hand.Any(card => card.InstanceId == selected))
                         MoveHandToGrave(affected, selected, causedByEffect: true);
+                    else RecordTargetSettlementFailure(item, selected, "已选择的匿名对象不再位于对方手牌中");
                     FinishStackItem(item);
                     return;
                 }
-                if (mode == "mode:suppress" && target is not null)
+                var entered = target is null ? null : FindOnField(affected, target.SourceInstanceId, out _, out _);
+                if (mode == "mode:suppress" && target is not null
+                    && target.Data.GetValueOrDefault("eventType") == "non-hand-entry"
+                    && entered is not null && IsAuthoritativeFieldLegion(entered)
+                    && !IsProtectedFromCounterTactics(target))
                 {
                     target.Data["suppressEnter"] = "true";
-                    var entered = FindOnField(affected, target.SourceInstanceId, out _, out _);
-                    if (entered is not null) AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
+                    AddTimedModifier(entered, -3000, 0, State.TurnSerial, "破败仪式");
                 }
+                else RecordResolutionFailure(item, IsProtectedFromCounterTactics(target ?? item)
+                    ? "登场军团不受反击战术效果影响"
+                    : "原登场事件或对应的场上军团已失效，无法无效登场效果或减少兵力");
                 FinishStackItem(item);
                 return;
             }
@@ -107,10 +146,11 @@ public sealed partial class L12GameEngine
                 var selected = affected.Hand.FirstOrDefault(card => card.InstanceId == selectedId);
                 if (selected is not null)
                 {
-                    affected.Hand.Remove(selected);
-                    affected.Library.Insert(0, selected);
+                    ResetCardForPrivateZone(selected);
+                    L12LibraryOps.PutOnTop(affected, CardOwner(selected, affected), [selected]);
                     AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
                 }
+                else RecordTargetSettlementFailure(item, selectedId, "已选择的匿名对象不再位于对方手牌中");
                 FinishStackItem(item);
                 return;
             }
@@ -121,13 +161,24 @@ public sealed partial class L12GameEngine
             case "毒药发作":
             case "poison-negate":
                 if (target is not null) NegateEffectReadyBatch(target);
+                else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(), "原转活跃权威事件已经离开堆叠");
                 FinishStackItem(item);
                 return;
             case "poison-discard":
                 if (affected.Hand.Count == 0) { FinishStackItem(item); return; }
+                var poisonChoices = affected.Hand.ToArray();
                 CreatePrompt(affectedPlayer, "hand-card", "毒药发作：弃置1张手牌",
-                    affected.Hand.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId, isPrivate: true,
-                    data: new Dictionary<string, string> { ["action"] = "s2-poison-discard" });
+                    poisonChoices.Select(card => card.InstanceId), 1, 1, "card-effect", item.StackItemId,
+                    isPrivate: true,
+                    data: WithPromptNarrative(
+                        new Dictionary<string, string> { ["action"] = "s2-poison-discard" },
+                        new("毒药发作",
+                            "〈毒药发作〉的强制弃牌效果正在结算，受影响的玩家必须弃置1张手牌。",
+                            "请选择1张手牌弃置；本次没有拒绝选项。",
+                            L12PromptWaitingAction.CardSelection,
+                            poisonChoices.ToDictionary(card => card.InstanceId,
+                                card => $"弃置〈{card.Name}〉，并完成〈毒药发作〉的强制弃牌。",
+                                StringComparer.OrdinalIgnoreCase))));
                 return;
             default:
                 FinishStackItem(item);
@@ -141,6 +192,8 @@ public sealed partial class L12GameEngine
         if (player.Library.Count == 0)
         {
             SetWinner(1 - item.Controller, "〈乾坤·阴〉展示牌库顶部时牌库为空");
+            RecordResolutionFailure(item, "展示牌库顶部时牌库为空",
+                "牌库为空，无法展示牌库顶部卡牌");
             FinishStackItem(item);
             return;
         }
@@ -152,37 +205,42 @@ public sealed partial class L12GameEngine
         {
             player.Library.RemoveAt(0);
             player.Library.Add(revealed);
+            DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:return");
+            item.Data.Remove("presentationSceneId");
             AddEvent("return", item.Controller, $"〈{revealed.Name}〉置于牌库底部", revealed);
             FinishStackItem(item);
             return;
         }
 
         player.Library.RemoveAt(0);
+        ResetCardForPrivateZone(revealed);
         player.Graveyard.Add(revealed);
+        DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:hit");
+        item.Data.Remove("presentationSceneId");
+        item.Data["bonusTroops"] = revealed.Troops.ToString();
+        item.Data["bonusCost"] = revealed.CurrentCost.ToString();
         AddEvent("discard", item.Controller, $"〈乾坤·阴〉从牌库弃置〈{revealed.Name}〉", revealed);
-        var choices = PublicLegions(player).Select(card => card.InstanceId).ToList();
-        if (choices.Count == 0)
+        FinishStackItem(item);
+    }
+
+    private void ResolveS2CosmosYinBuff(L12StackItem item)
+    {
+        var targetId = CompositeDeclared(item, "buffTarget").SingleOrDefault();
+        var target = FindOnField(State.Players[item.Controller], targetId, out _, out _);
+        if (target is not null && IsFieldLegion(target))
         {
-            FinishStackItem(item);
-            return;
+            _ = int.TryParse(item.Data.GetValueOrDefault("bonusTroops"), out var troops);
+            _ = int.TryParse(item.Data.GetValueOrDefault("bonusCost"), out var cost);
+            AddTimedModifier(target, troops, cost, State.TurnSerial, "乾坤·阴");
         }
-        var data = new Dictionary<string, string>
-        {
-            ["bonusTroops"] = revealed.Troops.ToString(),
-            ["bonusCost"] = revealed.CurrentCost.ToString(),
-        };
-        foreach (var card in PublicLegions(player)) AddPromptCardData(data, card);
-        CreateDelayedPublicResolutionPrompt(item, "field-legion",
-            "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
-            choices, "s2-cosmos-yin-target", data);
+        else RecordTargetSettlementFailure(item, targetId, "所选我方军团已离场或不再是军团");
+        FinishStackItem(item);
     }
 
     private L12StackItem? TargetAuthorityStackItem(L12StackItem response)
     {
-        var target = State.EffectStack.FirstOrDefault(candidate => candidate.StackItemId == response.Targets.FirstOrDefault());
-        if (target is null) return null;
-        var timing = ResponseTimingContext(target);
-        return timing.Trigger == "authority-event" ? timing : null;
+        var timing = DeclaredResponseTimingTarget(response);
+        return timing?.Trigger == "authority-event" ? timing : null;
     }
 
     private void NegateEffectReadyBatch(L12StackItem target)
@@ -222,13 +280,33 @@ public sealed partial class L12GameEngine
             case "s2-landlord-extra-discard":
                 if (chosen[0] == "decline")
                 {
+                    DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:invalidate");
+                    item.Data.Remove("presentationSceneId");
                     if (target is not null) target.Data["invalid"] = "true";
+                    else RecordTargetSettlementFailure(item, item.Targets.FirstOrDefault(),
+                        "原抵挡/支援权威事件已经离开堆叠");
                 }
-                else MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                else
+                {
+                    if (MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true))
+                    {
+                        DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:discard");
+                        item.Data.Remove("presentationSceneId");
+                    }
+                    else
+                    {
+                        DeclarePresentationBranch(item.Data, "landlord-coercion", "mode", "mode:invalidate");
+                        item.Data.Remove("presentationSceneId");
+                        if (target is not null) target.Data["invalid"] = "true";
+                        RecordTargetSettlementFailure(item, chosen[0],
+                            "所选额外弃置手牌已离开手牌区，本次抵挡/支援无效");
+                    }
+                }
                 FinishStackItem(item);
                 return true;
             case "s2-poison-discard":
-                MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true);
+                if (!MoveHandToGrave(State.Players[prompt.PlayerIndex], chosen[0], causedByEffect: true))
+                    RecordTargetSettlementFailure(item, chosen[0], "所选手牌已离开手牌区，无法执行强制弃置");
                 FinishStackItem(item);
                 return true;
             default:

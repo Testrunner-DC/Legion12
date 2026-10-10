@@ -18,28 +18,51 @@ public sealed partial class L12GameEngine
             ["choiceMode"] = "resource-payment",
         };
         if (extra is not null) foreach (var pair in extra) data[$"payment:{pair.Key}"] = pair.Value;
-        CreateResourcePaymentPrompt(item.Controller, cost, "card-effect", item.StackItemId, data);
+        CreateResourcePaymentPrompt(item.Controller, cost, "card-effect", item.StackItemId, data,
+            allowCancel: true);
     }
 
     private void ContinueEffectMoralePayment(L12StackItem item, L12Prompt prompt, IReadOnlyCollection<string> selectedIds)
     {
+        if (selectedIds.Count == 1 && selectedIds.Single().Equals("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            FinishStackItem(item);
+            return;
+        }
         var cost = int.TryParse(prompt.Data.GetValueOrDefault("cost"), out var parsedCost) ? parsedCost : 0;
         var player = State.Players[item.Controller];
-        if (!TryConsumeSelectedResources(player, cost, selectedIds)) { FinishStackItem(item); return; }
+        if (!TryConsumeSelectedResources(player, cost, selectedIds))
+        {
+            if (ActiveResourceCount(player) < cost)
+            {
+                FinishStackItem(item);
+                return;
+            }
+            var retryData = new Dictionary<string, string>(prompt.Data)
+            {
+                ["retryReason"] = "上次选择的支付资源已失效，请重新选择或取消后续效果",
+            };
+            CreateResourcePaymentPrompt(item.Controller, cost, "card-effect", item.StackItemId,
+                retryData, allowCancel: true);
+            return;
+        }
         var extra = prompt.Data.Where(pair => pair.Key.StartsWith("payment:", StringComparison.Ordinal))
             .ToDictionary(pair => pair.Key[8..], pair => pair.Value);
         CompleteEffectMoralePayment(item, prompt.Data.GetValueOrDefault("afterPayment") ?? string.Empty, extra);
     }
 
-    private bool CanUseTombGuardsAsResource(L12PlayerState player)
-        // 〈陵墓守卫〉的文字只要求“我方回合”且其处于我方战场；跨控制后仍由当前
-        // 控制者使用该公开资源，不能再以控制者阵营作额外限制。
-        => State.ActivePlayer == player.PlayerIndex;
+    private bool CanUseFieldMoraleResource(L12PlayerState player, L12CardInstance card)
+    {
+        var rule = L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId);
+        if (rule is null) return false;
+        // 公开战场、当前军团与当前控制者均由 PublicLegions(player) 的调用方保证；
+        // 这里仅解释该资源能力自身的回合与活跃条件，不再按卡号追加旁路。
+        return (!rule.ControllerTurnOnly || State.ActivePlayer == player.PlayerIndex)
+            && (!rule.RequiresActive || !card.Tapped);
+    }
 
-    private IEnumerable<L12CardInstance> ActiveTombGuardResources(L12PlayerState player)
-        => CanUseTombGuardsAsResource(player)
-            ? PublicLegions(player).Where(card => card.CardId == "S01-0212" && !card.Tapped)
-            : [];
+    private IEnumerable<L12CardInstance> SpendableFieldMoraleResources(L12PlayerState player)
+        => PublicLegions(player).Where(card => CanUseFieldMoraleResource(player, card));
 
     private static IEnumerable<string> TemporaryMoralePaymentChoices(L12PlayerState player,
         int temporaryMoraleReserve = 0)
@@ -65,12 +88,19 @@ public sealed partial class L12GameEngine
         var morale = player.Morale.FirstOrDefault(card => card.InstanceId.Equals(
             choiceId, StringComparison.OrdinalIgnoreCase) && !card.Tapped);
         if (morale is not null)
-            return $"morale:{morale.CardId}:{morale.IsGodPower}:{morale.CannotUntapUntilRound}";
+        {
+            var resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(morale.CardId)?.ResourceType
+                ?? (morale.IsGodPower ? "god-power" : "morale");
+            var canonicalCardId = _catalog.MoraleIdentities.CanonicalDeckCardId(morale.CardId);
+            return $"morale:{resourceType}:{canonicalCardId}:{morale.CannotUntapUntilRound}";
+        }
         // 场上陵墓守卫的位置、兵力及附加状态都可能影响后续效果；即使同名也不能
         // 自动替玩家选定其中一张。
-        var guard = ActiveTombGuardResources(player).FirstOrDefault(card => card.InstanceId.Equals(
+        var guard = SpendableFieldMoraleResources(player).FirstOrDefault(card => card.InstanceId.Equals(
             choiceId, StringComparison.OrdinalIgnoreCase));
-        return guard is null ? null : $"tomb-guard:{guard.InstanceId}";
+        if (guard is null) return null;
+        var rule = L12StructuredCardSemantics.FieldMoraleResourceRule(guard.CardId);
+        return rule is null ? null : $"field-morale:{rule.ResourceType}:{guard.InstanceId}";
     }
 
     private bool NeedsManualOrdinaryResourcePayment(L12PlayerState player, int totalCost,
@@ -79,7 +109,7 @@ public sealed partial class L12GameEngine
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
         var temporary = TemporaryMoralePaymentChoices(player, temporaryMoraleReserve).ToArray();
         var morale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
-        var guards = ActiveTombGuardResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
+        var guards = SpendableFieldMoraleResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
         var candidateCount = temporary.Length + morale.Length + guards.Length;
         // 所有公开资源都必须支付时没有选择空间；直接支付可避免只有一个合法答案的空弹框。
         if (candidateCount <= totalCost) return false;
@@ -96,34 +126,86 @@ public sealed partial class L12GameEngine
 
     private void CreateResourcePaymentPrompt(int playerIndex, int totalCost, string continuation, string? stackItemId,
         Dictionary<string, string> data, IReadOnlyCollection<string>? excludedResourceIds = null,
-        int temporaryMoraleReserve = 0)
+        int temporaryMoraleReserve = 0, bool allowCancel = false)
     {
         var player = State.Players[playerIndex];
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
         var availableTemporaryMorale = TemporaryMoralePaymentChoices(player, temporaryMoraleReserve).ToArray();
         var availableMorale = player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
-        var availableGuards = ActiveTombGuardResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
-        var choices = availableTemporaryMorale
+        var availableGuards = SpendableFieldMoraleResources(player).Where(card => !excluded.Contains(card.InstanceId)).ToArray();
+        IEnumerable<string> choices = availableTemporaryMorale
             .Concat(availableMorale.Select(card => card.InstanceId))
-            .Concat(availableGuards.Select(card => card.InstanceId))
-            .ToArray();
+            .Concat(availableGuards.Select(card => card.InstanceId));
+        if (allowCancel)
+        {
+            choices = choices.Append("cancel");
+            data["allowCancel"] = "true";
+            data["cancel"] = continuation switch
+            {
+                "active-morale-choice" => "不发动",
+                "card-effect" => "不发动后续效果",
+                _ => "取消打出",
+            };
+        }
         data["cost"] = totalCost.ToString();
         data["visibleCost"] = totalCost.ToString();
         data["choiceMode"] = "resource-payment";
         foreach (var choiceId in availableTemporaryMorale)
+        {
             data[$"{choiceId}:resourceType"] = "temporary-morale";
+            data[$"{choiceId}:activityState"] = "active";
+        }
         foreach (var morale in availableMorale)
-            data[$"{morale.InstanceId}:resourceType"] = morale.IsGodPower ? "god-power" : "morale";
+        {
+            data[$"{morale.InstanceId}:resourceType"] = L12StructuredCardSemantics
+                .MoraleZoneResourceRule(morale.CardId)?.ResourceType
+                ?? (morale.IsGodPower ? "god-power" : "morale");
+            data[$"{morale.InstanceId}:activityState"] = "active";
+        }
         foreach (var guard in availableGuards)
-            data[$"{guard.InstanceId}:resourceType"] = "tomb-guard";
+        {
+            data[$"{guard.InstanceId}:resourceType"] = L12StructuredCardSemantics
+                .FieldMoraleResourceRule(guard.CardId)!.ResourceType;
+            data[$"{guard.InstanceId}:activityState"] = guard.Tapped ? "rested" : "active";
+        }
         var resourceNames = new List<string>();
         if (availableTemporaryMorale.Length > 0) resourceNames.Add("临时士气");
-        if (availableMorale.Any(card => !card.IsGodPower)) resourceNames.Add("士气");
+        if (availableMorale.Any(card => !card.IsGodPower
+                && L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId) is null))
+            resourceNames.Add("士气");
         if (availableMorale.Any(card => card.IsGodPower)) resourceNames.Add("神力");
-        if (availableGuards.Length > 0) resourceNames.Add("陵墓守卫");
+        resourceNames.AddRange(availableMorale
+            .Select(card => L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.DisplayName)
+            .OfType<string>().Distinct(StringComparer.Ordinal));
+        resourceNames.AddRange(availableGuards
+            .Select(guard => L12StructuredCardSemantics.FieldMoraleResourceRule(guard.CardId)!.DisplayName)
+            .Distinct(StringComparer.Ordinal));
         var promptText = $"请选择支付费用的{string.Join("、", resourceNames)}";
+        var sourceName = stackItemId is null
+            ? data.GetValueOrDefault("cardInstanceId") is { Length: > 0 } sourceInstanceId
+                ? FindPromptCard(playerIndex, sourceInstanceId)?.Name
+                : null
+            : State.EffectStack.Concat(State.DeferredEffectStack)
+                .FirstOrDefault(item => item.StackItemId == stackItemId)?.SourceName;
+        sourceName = string.IsNullOrWhiteSpace(sourceName) ? "当前操作" : sourceName;
+        var consequences = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (allowCancel)
+            consequences["cancel"] = continuation switch
+            {
+                "active-morale-choice" => "不发动当前主动效果，不支付任何资源。",
+                "card-effect" => "不发动当前后续效果，不支付任何资源。",
+                _ => "取消整次打出，不支付任何资源。",
+            };
         CreatePrompt(playerIndex, "resource-payment", promptText, choices,
-            totalCost, totalCost, continuation, stackItemId, isPrivate: true, data: data);
+            totalCost, totalCost, continuation, stackItemId, isPrivate: true,
+            data: WithPromptNarrative(data,
+                new(sourceName, $"〈{sourceName}〉需要支付{totalCost}份资源才能继续。可用资源为{string.Join("、", resourceNames)}。",
+                    allowCancel
+                        ? $"请选择恰好{totalCost}份可用资源并确认；也可以取消当前操作。"
+                        : $"请选择恰好{totalCost}份可用资源并确认。",
+                    L12PromptWaitingAction.CostPayment, consequences,
+                    "pending", $"{totalCost}份资源（{string.Join("、", resourceNames)}）",
+                    $"支付所选的{totalCost}份资源。")));
     }
 
     private bool TryConsumeSelectedResources(L12PlayerState player, int totalCost, IReadOnlyCollection<string> selectedIds,
@@ -135,7 +217,7 @@ public sealed partial class L12GameEngine
         var selected = selectedIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var morale = player.Morale.Where(card => selected.Contains(card.InstanceId) && !card.Tapped
             && !excluded.Contains(card.InstanceId)).ToArray();
-        var guards = ActiveTombGuardResources(player)
+        var guards = SpendableFieldMoraleResources(player)
             .Where(card => selected.Contains(card.InstanceId) && !excluded.Contains(card.InstanceId)).ToArray();
         player.TemporaryMorale -= temporary;
         foreach (var card in morale) card.Tapped = true;
@@ -158,7 +240,7 @@ public sealed partial class L12GameEngine
         var selected = selectedIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
         var morale = player.Morale.Where(card => selected.Contains(card.InstanceId)
             && !card.Tapped && !excluded.Contains(card.InstanceId)).ToArray();
-        var guards = ActiveTombGuardResources(player).Where(card => selected.Contains(card.InstanceId)
+        var guards = SpendableFieldMoraleResources(player).Where(card => selected.Contains(card.InstanceId)
             && !excluded.Contains(card.InstanceId)).ToArray();
         return selectedTemporary.Length + morale.Length + guards.Length == totalCost;
     }
@@ -170,7 +252,7 @@ public sealed partial class L12GameEngine
         return TemporaryMoralePaymentChoices(player, temporaryMoraleReserve)
             .Concat(player.Morale.Where(card => !card.Tapped && !excluded.Contains(card.InstanceId))
             .Select(card => card.InstanceId)
-            .Concat(ActiveTombGuardResources(player)
+            .Concat(SpendableFieldMoraleResources(player)
                 .Where(card => !excluded.Contains(card.InstanceId))
                 .Select(card => card.InstanceId)))
             .Take(totalCost).ToArray();
@@ -182,7 +264,7 @@ public sealed partial class L12GameEngine
         var excluded = excludedResourceIds?.ToHashSet(StringComparer.Ordinal) ?? [];
         return Math.Max(0, player.TemporaryMorale - temporaryMoraleReserve)
             + player.Morale.Count(card => !card.Tapped && !excluded.Contains(card.InstanceId))
-            + ActiveTombGuardResources(player).Count(card => !excluded.Contains(card.InstanceId));
+            + SpendableFieldMoraleResources(player).Count(card => !excluded.Contains(card.InstanceId));
     }
 
     private void CompleteEffectMoralePayment(L12StackItem item, string afterPayment, IReadOnlyDictionary<string, string> data)

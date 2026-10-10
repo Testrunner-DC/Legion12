@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-metrics-storage-internal",
+  "date": "2026-10-06",
+  "audience": "internal",
+  "reason": "固定阶段有界指标、非等待诊断与运行/制品目录容量保护，以及停服最新数据库/WAL与备份只读证明。仅工程诊断和发布安全，保持活跃库原地和最新数据，测试容量代码未授权测试服部署；不向玩家发布内部存储与诊断细节。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs",
+    "TwelveLegions.Platform.Tests/PerformanceMetricWindowTests.cs",
+    "ops/server/deploy-l12-release.sh",
+    "ops/server/deploy-l12-testrun-release.sh",
+    "ops/server/verify-l12-runtime-backup.py",
+    "ops/windows/deploy-l12.ps1",
+    "scripts/test-l12-runtime-backup.py",
+    "scripts/test-l12-deploy-behavior.ps1",
+    "scripts/test-l12-testrun-deploy-behavior.ps1",
+    "scripts/test-l12-release-gate.ps1",
+    "scripts/verify-l12-change.ps1"
+  ]
+}

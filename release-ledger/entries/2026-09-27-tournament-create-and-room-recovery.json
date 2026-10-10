@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-tournament-create-and-room-recovery",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "赛事创建规则快照与房间恢复修正",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "赛事模板、自定义草稿、预演与正式创建统一规范赛制字段；创建时重新读取并冻结当前天灾池与权威计时，单败淘汰不再携带无效的瑞士轮或Cut设置。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/TournamentCreateWizard.vue",
+        "opcgpro-vue/src/l12/tournamentCreatePolicy.ts"
+      ]
+    },
+    {
+      "category": "tournaments",
+      "text": "进入赛事桌次时会区分等待对手、正在同步、断线恢复和确实失败；正常等待不再被显示成空白或加载失败，失败后可主动重试权威同步。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/tournamentRoomLoadingState.ts"
+      ]
+    }
+  ]
+}

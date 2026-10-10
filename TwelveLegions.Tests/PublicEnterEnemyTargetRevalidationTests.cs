@@ -1,0 +1,391 @@
+using System.Reflection;
+using System.Text.Json;
+using TwelveLegions.Server;
+using Xunit;
+
+namespace TwelveLegions.Tests;
+
+/// <summary>
+/// Public entry declarations name a current enemy legion, not merely an instance that happened
+/// to be on the battlefield at declaration time. These fixtures intentionally change that
+/// state after the response window has opened.
+/// </summary>
+public sealed class PublicEnterEnemyTargetRevalidationTests
+{
+    private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+
+    private static L12GameEngine Create(int seed)
+    {
+        var game = new L12GameEngine(Catalog, "entry-target-revalidation", "ENTRY-TARGET", seed,
+            ["甲", "乙"], [0, 1], skipPreparation: true,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        game.State.ActivePlayer = 0;
+        game.State.Phase = L12Phase.Main;
+        game.State.Round = 2;
+        game.State.TurnSerial = 3;
+        foreach (var player in game.State.Players)
+        {
+            player.Field[0] = new L12CardInstance?[3];
+            player.Field[1] = new L12CardInstance?[3];
+            player.Hand.Clear(); player.Library.Clear(); player.Graveyard.Clear(); player.Morale.Clear();
+        }
+        return game;
+    }
+
+    private static L12CardInstance Card(string cardId, string instanceId, int cost = 1,
+        int troops = 1000, int disasterLevel = 1, string? cardType = null)
+    {
+        var definition = Catalog.Cards[cardId];
+        return new L12CardInstance
+        {
+            InstanceId = instanceId, CardId = definition.Id, Name = definition.NameZh,
+            CardType = cardType ?? definition.CardType, Faction = definition.Faction, ImageUrl = definition.ImageUrl,
+            Cost = cost, EffectText = definition.Effect, Traits = [.. definition.Traits],
+            Profession = definition.Profession, BaseTroops = troops, Troops = troops,
+            DisasterLevel = disasterLevel,
+        };
+    }
+
+    private static void QueueEnter(L12GameEngine game, L12CardInstance source)
+        => typeof(L12GameEngine).GetMethod("QueueOrPushTriggeredEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [0, source, "enter", "公开登场目标复验", null, new Dictionary<string, string>()]);
+
+    private static void Resolve(L12GameEngine game, string targetId)
+    {
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var result = game.Handle(prompt.PlayerIndex,
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: [targetId]));
+        Assert.True(result.Accepted, result.Error);
+    }
+
+    private static void PassResponses(L12GameEngine game)
+    {
+        for (var guard = 0; guard < 12 && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; guard++)
+        {
+            var prompt = game.State.PendingPrompts[0];
+            var result = game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass"));
+            Assert.True(result.Accepted, result.Error);
+        }
+    }
+
+    private static L12GameEngine RestoreAsV2(L12GameEngine game)
+    {
+        var random = game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint, random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "player-log:hidden-result-receipt")]
+    public void HiddenSourceDoesNotPublishNewReasonOrPaidCostToAnyViewer()
+    {
+        var game = Create(9120);
+        var source = Card("S01-0001", "covered-result-source");
+        source.Hidden = true;
+        game.State.Players[0].Field[1][0] = source;
+        var item = new L12StackItem
+        {
+            StackItemId = "covered-result-stack", Controller = 0,
+            SourceInstanceId = source.InstanceId, SourceCardId = source.CardId,
+            SourceName = source.Name, SourceSnapshot = source,
+            Trigger = "response", Text = "隐藏来源测试",
+        };
+        item.Data["effectPlayerReason"] = "私区原因标记";
+        item.Data["paidCostSummary"] = "私区费用标记";
+        var publish = typeof(L12GameEngine).GetMethod("AddEffectResultEvent",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        publish.Invoke(game, [item, "failed"]);
+        publish.Invoke(game, [item, "failed"]);
+
+        Assert.Single(game.State.Events, entry => entry.Type == "effect-result");
+        Assert.Equal("true", item.Data["effectResultPublished"]);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+        {
+            var result = Assert.Single(events, entry => entry.Type == "effect-result");
+            Assert.Null(result.PlayerLogSemantic);
+            Assert.DoesNotContain("私区原因标记", JsonSerializer.Serialize(result), StringComparison.Ordinal);
+            Assert.DoesNotContain("私区费用标记", JsonSerializer.Serialize(result), StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData("S01-0201", 9101)] // 图特摩斯三世：兵力不高于5000
+    [InlineData("S01-0402", 9102)] // 织田信长：费用不高于4
+    [InlineData("S01-0403", 9103)] // 上杉谦信：费用不高于X
+    [InlineData("S01-0412", 9104)] // 立花誾千代：对方军团
+    [Trait("L12Evidence", "entry:public-enemy-legion-current-state")]
+    public void DeclaredEnemyLegionThatChangesToArtifactDuringResponsesIsNotResolved(string sourceId, int seed)
+    {
+        var game = Create(seed);
+        var source = Card(sourceId, $"entry-source-{sourceId}");
+        var target = Card("S01-0001", $"entry-target-{sourceId}");
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+        if (sourceId == "S01-0403")
+            game.State.Players[1].Field[1][0] = Card("S01-0019", "entry-uesugi-counter");
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        Assert.Single(game.State.EffectStack);
+
+        var transformed = Card("S01-0001", target.InstanceId, cardType: "artifact");
+        game.State.Players[1].Field[0][0] = transformed;
+        PassResponses(game);
+
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]);
+        Assert.Equal(0, transformed.CostModifier);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains("原因：", result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Contains("所选公开军团已离场或不再符合当前条件",
+            result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Null(result.PlayerLogSemantic?.TargetInstanceId);
+        foreach (var events in new[] { game.SnapshotFor(0).RecentEvents,
+                     game.SnapshotFor(1).RecentEvents, game.SnapshotForSpectator().RecentEvents })
+            Assert.Contains(events, entry => entry.Sequence == result.Sequence
+                && entry.PlayerLogSemantic?.OutcomeLabel.Contains("所选公开军团已离场或不再符合当前条件",
+                    StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-current-threshold")]
+    public void ThutmoseDoesNotKillATargetWhoseTroopsExceedTheDeclaredThresholdDuringResponses()
+    {
+        var game = Create(9105);
+        var source = Card("S01-0201", "entry-thutmose");
+        var target = Card("S01-0001", "entry-thutmose-target", troops: 5000);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        target.Troops = 5001;
+        PassResponses(game);
+
+        Assert.Same(target, game.State.Players[1].Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-current-cost")]
+    public void NobunagaDoesNotKillATargetWhoseCurrentCostExceedsFourDuringResponses()
+    {
+        var game = Create(9106);
+        var source = Card("S01-0402", "entry-nobunaga");
+        var target = Card("S01-0001", "entry-nobunaga-target", cost: 4);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        target.CostModifier = 1;
+        PassResponses(game);
+
+        Assert.Same(target, game.State.Players[1].Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-current-dynamic-threshold")]
+    public void UesugiDoesNotKillWhenTheCurrentBackRowTacticCountDropsDuringResponses()
+    {
+        var game = Create(9107);
+        var source = Card("S01-0403", "entry-uesugi");
+        var target = Card("S01-0001", "entry-uesugi-target", cost: 1);
+        var counter = Card("S01-0019", "entry-uesugi-counter");
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Field[1][0] = counter;
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        game.State.Players[1].Field[1][0] = null;
+        game.State.Players[1].Graveyard.Add(counter);
+        PassResponses(game);
+
+        Assert.Same(target, game.State.Players[1].Field[0][0]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-multi-target-partial")]
+    public void WuzetianResolvesEachDeclaredTargetAgainstItsCurrentState()
+    {
+        var game = Create(9108);
+        var source = Card("S01-0102", "entry-wuzetian");
+        var first = Card("S01-0001", "entry-wuzetian-first");
+        var second = Card("S01-0002", "entry-wuzetian-second");
+        first.Tapped = true;
+        second.Tapped = true;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].Morale.Add(new L12MoraleCard { InstanceId = "entry-wuzetian-morale", CardId = "S01-01C1" });
+        game.State.Players[1].Field[0][0] = first;
+        game.State.Players[1].Field[0][1] = second;
+
+        QueueEnter(game, source);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:use")).Accepted);
+        Resolve(game, "entry-wuzetian-morale");
+        var targets = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: targets.PromptId,
+            CardInstanceIds: [first.InstanceId, second.InstanceId])).Accepted);
+
+        var response = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("response", response.Kind);
+        Assert.Equal(new[] { first.InstanceId, second.InstanceId },
+            JsonSerializer.Deserialize<string[]>(response.Data["responseTargetIds"]));
+        var restored = RestoreAsV2(game);
+        Assert.Equal(response.Data["responseTargetIds"],
+            Assert.Single(restored.State.PendingPrompts).Data["responseTargetIds"]);
+
+        var transformed = Card("S01-0002", second.InstanceId, cardType: "artifact");
+        transformed.Tapped = true;
+        game.State.Players[1].Field[0][1] = transformed;
+        PassResponses(game);
+
+        Assert.Equal(game.State.Round + 1, first.CannotUntapUntilRound);
+        Assert.Equal(0, transformed.CannotUntapUntilRound);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("已声明对象在逆结算后失效", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectResultStatus == "failed");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "player-result:public-target-success-and-prestack-decline")]
+    public void PublicEntrySuccessAndDeclinedDeclarationDoNotInventFailureOrPayment()
+    {
+        var game = Create(9122);
+        var source = Card("S01-0201", "result-thutmose-success");
+        var target = Card("S01-0001", "result-thutmose-success-target", troops: 1000);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        PassResponses(game);
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId)
+            && entry.EffectResultStatus == "failed");
+
+        var declined = Create(9123);
+        var player = declined.State.Players[0];
+        var optional = Card("S02-0402", "result-iio-declined");
+        var readyTarget = Card("S02-0401", "result-iio-declined-target");
+        readyTarget.Tapped = true;
+        var handCost = Card("S01-0001", "result-iio-declined-cost");
+        player.Field[0][0] = optional;
+        player.Field[0][1] = readyTarget;
+        player.Hand.Add(handCost);
+        QueueEnter(declined, optional);
+        var mode = Assert.Single(declined.State.PendingPrompts);
+        Assert.Contains("mode:none", mode.ValidChoices);
+        Assert.True(declined.Handle(0, new L12Command("resolvePrompt",
+            PromptId: mode.PromptId, Choice: "mode:none")).Accepted);
+        Assert.Contains(handCost, player.Hand);
+        Assert.DoesNotContain(declined.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == optional.InstanceId));
+        Assert.DoesNotContain(declined.State.Events, entry => entry.Type == "cost"
+            && entry.Cards.Any(card => card.InstanceId == optional.InstanceId));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-0003")]
+    [Trait("L12Evidence", "response-presentation:explicit-covered-target")]
+    public void CourtMagicianResponseHighlightsCoveredTargetForBothPlayersWithoutRevealingIdentity()
+    {
+        var game = Create(9111);
+        var source = Card("S02-0003", "entry-court-magician");
+        var covered = Card("S01-0019", "entry-covered-counter", cardType: "tactic");
+        covered.Hidden = true;
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[1][1] = covered;
+
+        QueueEnter(game, source);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0,
+            new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:use")).Accepted);
+        Resolve(game, covered.InstanceId);
+
+        for (var viewer = 0; viewer < 2; viewer++)
+        {
+            var response = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal(viewer, response.PlayerIndex);
+            Assert.Equal(new[] { covered.InstanceId },
+                JsonSerializer.Deserialize<string[]>(response.Data["responseTargetIds"]));
+            Assert.Contains($"{(viewer == 0 ? "对手的" : "你的")}后排中格盖伏卡牌", response.Text);
+            Assert.DoesNotContain(covered.Name, JsonSerializer.Serialize(response));
+            Assert.True(game.Handle(viewer,
+                new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass")).Accepted);
+        }
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-v2-recovery")]
+    public void RestoredResponseWindowStillRevalidatesTheDeclaredTargetAndRejectsRepeatSubmission()
+    {
+        var game = Create(9109);
+        var source = Card("S01-0402", "entry-nobunaga-restore");
+        var target = Card("S01-0001", "entry-nobunaga-restore-target", cost: 4);
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[1].Field[0][0] = target;
+
+        QueueEnter(game, source);
+        Resolve(game, target.InstanceId);
+        var responseId = Assert.Single(game.State.PendingPrompts).PromptId;
+        game = RestoreAsV2(game);
+        var transformed = Card("S01-0001", target.InstanceId, cardType: "artifact");
+        game.State.Players[1].Field[0][0] = transformed;
+        PassResponses(game);
+
+        Assert.Same(transformed, game.State.Players[1].Field[0][0]);
+        Assert.False(game.Handle(0, new L12Command("resolvePrompt", PromptId: responseId, Choice: "pass")).Accepted);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == source.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains("所选公开军团已离场或不再符合当前条件",
+            result.PlayerLogSemantic?.OutcomeLabel);
+        Assert.Equal(1, game.State.Events.Count(entry => entry.Sequence == result.Sequence));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "entry:public-enemy-legion-cost-paid-after-state-change")]
+    public void ClaudiaPaysHerDeclaredRuneCostButDoesNotModifyATargetThatIsNoLongerALegion()
+    {
+        var game = Create(9110);
+        var source = Card("S02-0619", "entry-claudia");
+        var target = Card("S01-0001", "entry-claudia-target");
+        game.State.Players[0].Field[0][0] = source;
+        game.State.Players[0].SpecialZones.Runes = 1;
+        game.State.Players[1].Field[0][0] = target;
+
+        QueueEnter(game, source);
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: mode.PromptId, Choice: "mode:use")).Accepted);
+        var runeCost = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: runeCost.PromptId, Choice: "rune-count:1")).Accepted);
+        Resolve(game, target.InstanceId);
+
+        var transformed = Card("S01-0001", target.InstanceId, cardType: "artifact");
+        game.State.Players[1].Field[0][0] = transformed;
+        PassResponses(game);
+
+        Assert.Equal(0, game.State.Players[0].SpecialZones.Runes);
+        Assert.Equal(1000, transformed.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+    }
+}

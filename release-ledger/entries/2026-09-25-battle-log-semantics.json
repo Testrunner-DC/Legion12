@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-25-battle-log-semantics",
+  "date": "2026-09-25",
+  "audience": "players",
+  "title": "对局记录语义修正",
+  "changes": [
+    {
+      "category": "replays",
+      "text": "对局记录改为依据实际结算结果显示免死、兵力设定、远程伤害修正、主宰伤害替换和致命代替，不再把“兵力变为指定数值”误写成兵力增加；隐藏卡牌仍会在公开前保持隐藏。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/logViewModel.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs"
+      ]
+    }
+  ]
+}

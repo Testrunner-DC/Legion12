@@ -238,7 +238,7 @@ public sealed partial class MatchRecorder
     private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
         L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
-        bool stateChangedOnRejection)
+        bool stateChangedOnRejection, L12ResponsePreferenceOutboxEnvelope? responsePreference)
     {
         if (sequence <= 0)
             throw new ArgumentOutOfRangeException(nameof(sequence), sequence,
@@ -253,7 +253,6 @@ public sealed partial class MatchRecorder
         var stateHash = engine.ComputeStateHash();
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
-        var occurredUtc = _utcNow().ToUniversalTime().ToString("O");
         await using var connection = await OpenWriteConnectionAsync();
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var transactionStartedAt = L12PerformanceMetrics.Start();
@@ -288,10 +287,22 @@ public sealed partial class MatchRecorder
                     throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
                 if (rankedSettlement is not null)
                     await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
+                if (responsePreference is not null)
+                    await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
                 await transaction.CommitAsync();
+                engine.DiscardRecordedCommandTiming();
                 return;
             }
         }
+
+        var authorityConclusion = playerIndex == -1 && result.Accepted
+                                  && IsAuthorityConclusionCommand(commandJson);
+        var recordedTiming = authorityConclusion
+            ? null : engine.TakeRecordedCommandTiming(result, validateResult: journalV2);
+        if (authorityConclusion) engine.DiscardRecordedCommandTiming();
+        if (journalV2 && !authorityConclusion && recordedTiming is null)
+            throw new InvalidOperationException("v2 对局命令缺少权威执行时刻，拒绝持久化");
+        var occurredUtc = (recordedTiming?.OccurredUtc ?? _utcNow().ToUniversalTime()).ToString("O");
 
         if (journalV2 && !lightweightRejection)
         {
@@ -443,6 +454,8 @@ public sealed partial class MatchRecorder
             if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
                 await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
         }
+        if (responsePreference is not null)
+            await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
         if (journalV2)
         {
             await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,
@@ -472,6 +485,24 @@ public sealed partial class MatchRecorder
                 _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
             engine.MarkEventsPersisted(engine.State.EventSequence);
             engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+        }
+    }
+
+    private static bool IsAuthorityConclusionCommand(string commandJson)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(commandJson);
+            var root = document.RootElement;
+            var type = root.TryGetProperty("type", out var lowerType) ? lowerType
+                : root.TryGetProperty("Type", out var upperType) ? upperType : default;
+            return type.ValueKind == JsonValueKind.String
+                   && string.Equals(type.GetString(), "authorityConclusion",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 
@@ -629,6 +660,7 @@ public sealed partial class MatchRecorder
                     if (player.Field[row][slot] is { } card)
                         AddCard(result, player.PlayerIndex, $"field:{row}:{slot}", card);
             if (player.Relic is { } relic) AddCard(result, player.PlayerIndex, "relic", relic);
+            if (player.MasterLegionState is { } master) AddCard(result, player.PlayerIndex, "master", master);
             AddCards(result, player.PlayerIndex, "extra-relic", player.ExtraRelics);
             AddCards(result, player.PlayerIndex, "resolving", player.Resolving);
             AddCards(result, player.PlayerIndex, "graveyard", player.Graveyard);
@@ -663,6 +695,9 @@ public sealed partial class MatchRecorder
                 if (TryProperty(player, "Relic", "relic", out var relic)
                     && relic.ValueKind == JsonValueKind.Object)
                     AddJsonCard(result, playerIndex, "relic", relic);
+                if (TryProperty(player, "MasterLegionState", "masterLegionState", out var master)
+                    && master.ValueKind == JsonValueKind.Object)
+                    AddJsonCard(result, playerIndex, "master", master);
                 if (TryProperty(player, "Field", "field", out var field)
                     && field.ValueKind == JsonValueKind.Array)
                 {
@@ -740,6 +775,7 @@ public sealed partial class MatchRecorder
         IEnumerable<L12CardInstance> roots = player.Library.Concat(player.Hand)
             .Concat(player.Field.SelectMany(row => row).OfType<L12CardInstance>())
             .Concat(player.Relic is null ? [] : [player.Relic])
+            .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState])
             .Concat(player.ExtraRelics).Concat(player.Resolving).Concat(player.Graveyard).Concat(player.Removed)
             .Concat(player.SpecialZones.GodPower).Concat(player.SpecialZones.Trials)
             .Concat(player.SpecialZones.CanopicProgress);

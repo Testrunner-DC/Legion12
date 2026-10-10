@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-27-alternate-art-system-assets",
+  "date": "2026-09-27",
+  "audience": "players",
+  "title": "异画资产与使用权修正",
+  "changes": [
+    {
+      "category": "content",
+      "text": "管理员上传并启用的异画统一作为系统画廊资产管理；管理员可在图鉴全卡池预览全部启用版本，玩家只有获得对应使用权后才能在自己的全卡池、构筑和对战中切换使用。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardArchive.vue",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"
+      ]
+    }
+  ]
+}

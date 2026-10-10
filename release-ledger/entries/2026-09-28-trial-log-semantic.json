@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-28-trial-log-semantic",
+  "date": "2026-09-28",
+  "audience": "players",
+  "title": "试炼对局记录表达优化",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "试炼推进、完成及相关登场效果现在会按真实动作和进度变化准确记录；对手、观战和录像不会暴露尚未完成的试炼身份。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialCompletionTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialProgressVisibility.cs",
+        "opcgpro-vue/src/l12/game/logViewModel.ts"
+      ]
+    }
+  ]
+}

@@ -125,6 +125,8 @@ public sealed class Bq20260907_263RegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "presentation-consumers")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "presentation-consumers")]
     public void SolarCityFactionPromptsAndPublicPresentationDoNotBorrowImmortalGiftText()
     {
         var game = Create(26301, firstMasterId: "S01-02M1");
@@ -148,6 +150,41 @@ public sealed class Bq20260907_263RegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("S01-02C1:ability:static:91802cda49d575fb", "target-invalidated")]
+    [L12AbilityEvidence("ST02-C1:ability:static:f2b97501194b5c40", "target-invalidated")]
+    public void SolarGuardDoesNotReplaceADeclaredGuardThatLeavesTheGraveBeforeSettlement()
+    {
+        var game = Create(263011, autoPassEmptyResponses: false, firstMasterId: "S01-02M1");
+        var player = game.State.Players[0];
+        var guard = Card("S01-0212", "bq263-stale-sun-guard");
+        guard.OwnerIndex = 0;
+        player.Graveyard.Add(guard);
+        player.TemporaryMorale = 2;
+        var opponent = game.State.Players[1];
+        var counter = Card("S01-0019", "bq263-stale-response");
+        counter.Hidden = true;
+        counter.SetRound = 0;
+        opponent.Field[1][2] = counter;
+        opponent.Field[0][2] = Card("S01-0004", "bq263-stale-response-target");
+
+        Assert.True(game.Handle(0,
+            new L12Command("activateAbility", "faction-0", Ability: "sunGuard")).Accepted);
+        Choose(game, guard.InstanceId);
+        Choose(game, "0:0");
+        Assert.Single(game.State.EffectStack);
+        player.Graveyard.Remove(guard);
+        player.Hand.Add(guard);
+
+        PassResponses(game);
+
+        Assert.Null(player.Field[0][0]);
+        Assert.Contains(guard, player.Hand);
+        Assert.Equal(0, player.TemporaryMorale);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("失效", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void RagnarEntryResponseNamesTheCompleteTriggeredEffectWithoutReminderText()
     {
         var game = Create(26302, autoPassEmptyResponses: false);
@@ -159,7 +196,7 @@ public sealed class Bq20260907_263RegressionTests
 
         Assert.Equal("登场时 若我方主宰血量不高于7，获得冲锋。", Assert.Single(game.State.EffectStack).Text);
         Assert.Equal(
-            "选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n我方使用〈传奇的拉格纳〉\n时点：登场时\n效果：登场时 若我方主宰血量不高于7，获得冲锋。\n（效果原文中的我方／对方以发动者为准）\n是否响应？",
+            "你使用〈传奇的拉格纳〉\n时点：登场时\n效果：登场时 若我方主宰血量不高于7，获得冲锋。\n是否响应？",
             Prompt(game).Text);
     }
 
@@ -176,7 +213,7 @@ public sealed class Bq20260907_263RegressionTests
     public void NonKeywordTrailingRuleParenthesesRemainInTriggeredEffectText()
     {
         var uesugi = Card("S01-0403", "bq263-uesugi");
-        Assert.Equal("登场时 击杀对方1张费用不高于X的军团。（X=双方战场<反击战术>合计数量）",
+        Assert.Equal("登场时 击杀对方1张费用不高于X的军团。（X=双方战场<反击战术>合计数量）。",
             L12GameEngine.ResolveTriggeredEffectDisplayText(uesugi, "enter", "【登场时】效果"));
 
         var custom = new L12CardInstance
@@ -279,7 +316,7 @@ public sealed class Bq20260907_263RegressionTests
 
         Assert.Equal("芬尼亚传奇：第2个目标本回合兵力-3000",
             Assert.Single(game.State.EffectStack).Text);
-        Assert.Equal("选择响应卡牌；可响应任意符合卡面条件的未结算效果。\n我方使用〈芬尼亚传奇〉\n时点：完成试炼时\n效果：芬尼亚传奇：第2个目标本回合兵力-3000\n（效果原文中的我方／对方以发动者为准）\n是否响应？",
+        Assert.Equal("你使用〈芬尼亚传奇〉\n时点：完成试炼时\n效果：芬尼亚传奇：第2个目标本回合兵力-3000\n是否响应？",
             Prompt(game).Text);
     }
 
@@ -433,11 +470,13 @@ public sealed class Bq20260907_263RegressionTests
         ChooseMany(game, first.InstanceId, second.InstanceId);
         var firstCount = Prompt(game);
         Assert.Equal(first.InstanceId, firstCount.Data["graveRepresentationEntityId"]);
-        Assert.Equal(3, firstCount.ValidChoices.Count);
+        Assert.Equal(4, firstCount.ValidChoices.Count);
+        Assert.Contains("cancel", firstCount.ValidChoices);
         Choose(game, RepresentationChoice(firstCount, 1));
         var secondCount = Prompt(game);
         Assert.Equal(second.InstanceId, secondCount.Data["graveRepresentationEntityId"]);
-        Assert.Equal(3, secondCount.ValidChoices.Count);
+        Assert.Equal(4, secondCount.ValidChoices.Count);
+        Assert.Contains("cancel", secondCount.ValidChoices);
         Choose(game, RepresentationChoice(secondCount, 3));
 
         Assert.Same(rollo, player.Field[0][0]);

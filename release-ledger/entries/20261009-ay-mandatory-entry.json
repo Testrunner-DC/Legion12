@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261009-ay-mandatory-entry",
+  "date": "2026-10-09",
+  "audience": "players",
+  "title": "阿伊登场效果",
+  "changes": [{
+    "category": "card-effects",
+    "text": "阿伊登场时，有可登场的陵墓守卫及合法空位就必须完成召唤，不能取消；没有合法对象时正常结束。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"]
+  }]
+}

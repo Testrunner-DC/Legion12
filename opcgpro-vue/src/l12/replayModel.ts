@@ -1,9 +1,10 @@
-import type { ActionEvent, Card, GameState, Phase, PlayerView } from './types'
+import type { ActionEvent, Card, DisasterCardView, GameState, Phase, PlayerView } from './types'
 
 export interface ReplayCardDefinition {
   id: string
   nameZh: string
   cardType: string
+  isCounterTactic?: boolean
   faction: string
   imageUrl?: string
   effect?: string
@@ -56,21 +57,69 @@ export interface AdminReplaySource {
 }
 
 let importedReplay: MatchDetail | null = null
+export const replayFormatVersion = 1
+export const replayCompatibilityVersion = 1
 
 export function rememberImportedReplay(detail: MatchDetail) { importedReplay = detail }
 export function consumeImportedReplay() { return importedReplay }
 
+function withoutPrivateReplayDeckNames(detail: MatchDetail): MatchDetail {
+  const commands = detail.commands.map(command => {
+    const state = command.state
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return command
+    let projectedState: Record<string, any> | undefined
+    for (const key of ['Players', 'players'] as const) {
+      const players = state[key]
+      if (!Array.isArray(players)) continue
+      let changed = false
+      const projectedPlayers = players.map(player => {
+        if (!player || typeof player !== 'object' || Array.isArray(player)) return player
+        const hasPascalName = Object.hasOwn(player, 'DeckName')
+        const hasCamelName = Object.hasOwn(player, 'deckName')
+        if (!hasPascalName && !hasCamelName) return player
+        changed = true
+        return {
+          ...player,
+          ...(hasPascalName ? { DeckName: '' } : {}),
+          ...(hasCamelName ? { deckName: '' } : {}),
+        }
+      })
+      if (!changed) continue
+      projectedState ??= { ...state }
+      projectedState[key] = projectedPlayers
+    }
+    return projectedState ? { ...command, state: projectedState } : command
+  })
+  return {
+    ...detail,
+    match: { ...detail.match, deck0: '', deck1: '' },
+    commands,
+  }
+}
+
 export function parseReplayPayload(raw: unknown): MatchDetail {
-  const candidate = (raw as any)?.format === 'legion12-replay' ? (raw as any).detail : raw
+  const envelope = raw as any
+  if (envelope?.format !== 'legion12-replay') {
+    if (envelope?.match?.matchId && Array.isArray(envelope.commands)) throw new Error('版本已更新')
+    throw new Error('文件不是有效的十二军团回放')
+  }
+  if (envelope.version !== replayFormatVersion
+    || (envelope.compatibilityVersion ?? 1) !== replayCompatibilityVersion)
+    throw new Error('版本已更新')
+  const candidate = envelope.detail
   if (!candidate?.match?.matchId || !Array.isArray(candidate.commands))
     throw new Error('文件不是有效的十二军团回放')
   if (candidate.commands.some((command: any) => !command || typeof command.state !== 'object'))
     throw new Error('回放缺少可播放的对局状态')
-  return candidate as MatchDetail
+  return withoutPrivateReplayDeckNames(candidate as MatchDetail)
 }
 
 export function exportReplayPayload(detail: MatchDetail) {
-  return { format: 'legion12-replay', version: 1, exportedAt: new Date().toISOString(), detail }
+  return {
+    format: 'legion12-replay', version: replayFormatVersion,
+    compatibilityVersion: replayCompatibilityVersion, exportedAt: new Date().toISOString(),
+    detail: withoutPrivateReplayDeckNames(detail),
+  }
 }
 
 export function adminReplayDetail(source: AdminReplaySource): MatchDetail {
@@ -84,8 +133,8 @@ export function adminReplayDetail(source: AdminReplaySource): MatchDetail {
       roomCode: value(firstState, 'RoomCode', 'roomCode', ''),
       player0: source.summary.players[0]?.displayName || '玩家1',
       player1: source.summary.players[1]?.displayName || '玩家2',
-      deck0: source.summary.players[0]?.deckName || '',
-      deck1: source.summary.players[1]?.deckName || '',
+      deck0: '',
+      deck1: '',
       startedUtc: source.summary.startedUtc,
       endedUtc: source.summary.endedUtc,
       winner: winner >= 0 ? winner : null,
@@ -113,16 +162,65 @@ function replayCard(raw: any): Card | null {
     traits, profession: value(raw, 'Profession', 'profession', undefined), imageUrl: value(raw, 'ImageUrl', 'imageUrl', undefined),
     effectText: value(raw, 'EffectText', 'effectText', undefined), cost: value(raw, 'Cost', 'cost', 0),
     hasPrintedCost: value(raw, 'HasPrintedCost', 'hasPrintedCost', !derivedSpecial),
-    currentCost: value(raw, 'CurrentCost', 'currentCost', value(raw, 'Cost', 'cost', 0)),
-    baseTroops: value(raw, 'BaseTroops', 'baseTroops', 0), troops: value(raw, 'Troops', 'troops', 0),
+    currentCost: Math.max(0, value(raw, 'CurrentCost', 'currentCost', value(raw, 'Cost', 'cost', 0))),
+    baseTroops: Math.max(0, value(raw, 'BaseTroops', 'baseTroops', 0)), troops: Math.max(0, value(raw, 'Troops', 'troops', 0)),
     disasterLevel: value(raw, 'DisasterLevel', 'disasterLevel', 0), trialValue: value(raw, 'TrialValue', 'trialValue', 0),
     attachedCards: value<any[]>(raw, 'AttachedCards', 'attachedCards', []).map(replayCard).filter(Boolean) as Card[],
     tapped: value(raw, 'Tapped', 'tapped', false), hidden: value(raw, 'Hidden', 'hidden', false),
+    ownerIndex: value(raw, 'OwnerIndex', 'ownerIndex', undefined),
     identityKnown: value(raw, 'IdentityKnown', 'identityKnown', false), summonRound: value(raw, 'SummonRound', 'summonRound', 0),
     hasCharge: value(raw, 'HasCharge', 'hasCharge', false), hasStrongAttack: value(raw, 'HasStrongAttack', 'hasStrongAttack', false),
     hasSureHit: value(raw, 'HasSureHit', 'hasSureHit', false), cannotAttack: value(raw, 'CannotAttack', 'cannotAttack', false),
     cannotSupport: value(raw, 'CannotSupport', 'cannotSupport', false), immortalUses: value(raw, 'ImmortalUses', 'immortalUses', 0),
   }
+}
+
+function replayDisasterView(raw: any): DisasterCardView | null {
+  if (!raw) return null
+  const instanceId = value(raw, 'InstanceId', 'instanceId', '')
+  if (!instanceId) return null
+  const hidden = value(raw, 'Hidden', 'hidden', false)
+  const cardId = value(raw, 'CardId', 'cardId', '')
+  if (hidden || !cardId) return {
+    instanceId,
+    hidden: true,
+    ownerIndex: value(raw, 'OwnerIndex', 'ownerIndex', undefined),
+  }
+  return replayCard(raw)
+}
+
+function replayActiveDisasterAt(detail: MatchDetail, step: number, raw: any) {
+  const hasExplicit = Object.prototype.hasOwnProperty.call(raw ?? {}, 'ActiveDisaster')
+    || Object.prototype.hasOwnProperty.call(raw ?? {}, 'activeDisaster')
+  if (hasExplicit) return replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null))
+  for (let index = step; index >= 0; index--) {
+    const events = value<any[]>(detail.commands[index]?.state, 'Events', 'events', [])
+    const latest = [...events].reverse().find(event => ['disaster-reveal', 'disaster-removed'].includes(
+      value<string>(event, 'Type', 'type', ''),
+    ))
+    if (!latest) continue
+    if (value<string>(latest, 'Type', 'type', '') === 'disaster-removed') return null
+    return replayCard(value<any[]>(latest, 'Cards', 'cards', [])[0])
+  }
+  return null
+}
+
+function replaySessionDisasters(raw: any, activeDisaster: Card | null): DisasterCardView[] {
+  const recorded = value<any[]>(raw, 'SessionDisasters', 'sessionDisasters', [])
+    .map(replayDisasterView).filter(Boolean) as DisasterCardView[]
+  if (recorded.length) return recorded
+  const known = [
+    ...value<any[]>(raw, 'RevealedDisasters', 'revealedDisasters', []),
+    ...value<any[]>(raw, 'ChosenDisasters', 'chosenDisasters', []),
+    ...value<any[]>(raw, 'RemovedDisasters', 'removedDisasters', []),
+    ...(activeDisaster ? [activeDisaster] : []),
+  ].map(replayDisasterView).filter((card): card is DisasterCardView => Boolean(card && !card.hidden))
+    .filter((card, index, cards) => cards.findIndex(candidate => candidate.instanceId === card.instanceId) === index)
+  const ordinary = known.filter(card => card.cardId !== 'S01-DS10').slice(0, 3)
+  while (ordinary.length < 3) ordinary.push({ instanceId: `replay-hidden-disaster-${ordinary.length}`, hidden: true })
+  const final = known.find(card => card.cardId === 'S01-DS10')
+    ?? { instanceId: 'replay-hidden-final-disaster', hidden: true }
+  return [...ordinary, final]
 }
 
 function replayAbility(raw: any) {
@@ -145,13 +243,13 @@ function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefiniti
   const rawFactionAbilities = value<any[]>(factionRaw, 'Abilities', 'abilities', [])
   return {
     playerIndex: value(raw, 'PlayerIndex', 'playerIndex', 0), name: value(raw, 'Name', 'name', '玩家'),
-    deckName: value(raw, 'DeckName', 'deckName', ''), faction: value(raw, 'Faction', 'faction', ''),
+    deckName: '', faction: value(raw, 'Faction', 'faction', ''),
     master: {
       masterId, masterName: value(raw, 'MasterName', 'masterName', masterDefinition?.nameZh ?? '主宰'),
       masterImageUrl: value(raw, 'MasterImageUrl', 'masterImageUrl', masterDefinition?.imageUrl),
       effectText: value(raw, 'MasterEffectText', 'masterEffectText', masterDefinition?.effect),
       abilities: rawMasterAbilities.length ? rawMasterAbilities.map(replayAbility) : undefined,
-      hp: value(raw, 'Hp', 'hp', 0),
+      hp: Math.max(0, value(raw, 'Hp', 'hp', 0)),
       maxHp: value(raw, 'MaxHp', 'maxHp', 0), tapped: value(raw, 'MasterTapped', 'masterTapped', false),
     },
     factionEffect: factionRaw ? {
@@ -170,6 +268,7 @@ function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefiniti
     })),
     morale: value<any[]>(raw, 'Morale', 'morale', []).map(card => ({
       instanceId: value(card, 'InstanceId', 'instanceId', ''), cardId: value(card, 'CardId', 'cardId', ''),
+      resourceType: value(card, 'ResourceType', 'resourceType', undefined),
       tapped: value(card, 'Tapped', 'tapped', false),
     })),
     field: [0, 1].map(row => [0, 1, 2].map(slot => replayCard(fieldRaw?.[row]?.[slot]))),
@@ -198,11 +297,102 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
   if (!raw) return null
   const rawPhase = value<any>(raw, 'Phase', 'phase', 'Main')
   const defense = value<any>(raw, 'PendingDefense', 'pendingDefense', null)
-  const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => ({
+  const activeDisaster = replayActiveDisasterAt(detail, step, raw)
+  const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => {
+    const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
+    const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
+    const movement = value<any>(event, 'PlayerBattlefieldMovement', 'playerBattlefieldMovement', undefined)
+    const placement = value<any>(event, 'PlayerPublicPlacement', 'playerPublicPlacement', undefined)
+    const troopsModifier = value<any>(event, 'PlayerTroopsModifier', 'playerTroopsModifier', undefined)
+    const selectedTargets = value<any>(event, 'PlayerSelectedTargets', 'playerSelectedTargets', undefined)
+    const disasterValue = value<any>(event, 'PlayerDisasterValue', 'playerDisasterValue', undefined)
+    // Generic replay-card defaults are presentation placeholders, not recorded target identity.
+    const troopsTargetId = value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined)
+    const troopsTargets = troopsModifier ? value<any[]>(event, 'Cards', 'cards', [])
+      .filter(card => value(card, 'InstanceId', 'instanceId', undefined) === troopsTargetId) : []
+    const troopsTargetName = troopsTargets.length === 1
+      ? value<unknown>(troopsTargets[0], 'Name', 'name', undefined) : undefined
+    const hasRecordedTroopsTargetName = typeof troopsTargetName === 'string' && troopsTargetName.trim().length > 0
+    return ({
     sequence: value(event, 'Sequence', 'sequence', 0), type: value(event, 'Type', 'type', ''),
     playerIndex: value(event, 'PlayerIndex', 'playerIndex', undefined), text: value(event, 'Text', 'text', ''),
+    effectText: value(event, 'EffectText', 'effectText', undefined),
+    effectSceneId: value(event, 'EffectSceneId', 'effectSceneId', undefined),
+    effectAbilityId: value(event, 'EffectAbilityId', 'effectAbilityId', undefined),
+    effectSegmentId: value(event, 'EffectSegmentId', 'effectSegmentId', undefined),
+    effectSegmentIndex: value(event, 'EffectSegmentIndex', 'effectSegmentIndex', undefined),
+    effectSegmentCount: value(event, 'EffectSegmentCount', 'effectSegmentCount', undefined),
+    effectBranchId: value(event, 'EffectBranchId', 'effectBranchId', undefined),
+    effectBranchLabel: value(event, 'EffectBranchLabel', 'effectBranchLabel', undefined),
+    effectResultStatus: value(event, 'EffectResultStatus', 'effectResultStatus', undefined),
+    playerLogGroupId: value(event, 'PlayerLogGroupId', 'playerLogGroupId', undefined),
+    playerLogTiming: value(event, 'PlayerLogTiming', 'playerLogTiming', undefined),
+    playerLogDecisionLabel: value(event, 'PlayerLogDecisionLabel', 'playerLogDecisionLabel', undefined),
+    playerLogSemantic: semantic ? {
+      actionLabel: value(semantic, 'ActionLabel', 'actionLabel', ''),
+      outcomeLabel: value(semantic, 'OutcomeLabel', 'outcomeLabel', ''),
+      sourceInstanceId: value(semantic, 'SourceInstanceId', 'sourceInstanceId', undefined),
+      sourceName: value(semantic, 'SourceName', 'sourceName', undefined),
+      targetInstanceId: value(semantic, 'TargetInstanceId', 'targetInstanceId', undefined),
+      targetName: value(semantic, 'TargetName', 'targetName', undefined),
+    } : undefined,
+    playerCombat: combat ? {
+      combatId: value(combat, 'CombatId', 'combatId', undefined),
+      eventKind: value(combat, 'EventKind', 'eventKind', undefined),
+      outcomeCode: value(combat, 'OutcomeCode', 'outcomeCode', undefined),
+      publicReasonCode: value(combat, 'PublicReasonCode', 'publicReasonCode', undefined),
+      attackerInstanceId: value(combat, 'AttackerInstanceId', 'attackerInstanceId', undefined),
+      targetInstanceId: value(combat, 'TargetInstanceId', 'targetInstanceId', undefined),
+      attackerTroops: value(combat, 'AttackerTroops', 'attackerTroops', undefined),
+      defenderTroops: value(combat, 'DefenderTroops', 'defenderTroops', undefined),
+      masterDamage: value(combat, 'MasterDamage', 'masterDamage', undefined),
+    } : undefined,
+    playerBattlefieldMovement: movement ? {
+      facts: value<any[]>(movement, 'Facts', 'facts', []).map(fact => ({
+        instanceId: value(fact, 'InstanceId', 'instanceId', undefined),
+        battlefieldPlayerIndex: value(fact, 'BattlefieldPlayerIndex', 'battlefieldPlayerIndex', undefined),
+        fromRow: value(fact, 'FromRow', 'fromRow', undefined),
+        fromSlot: value(fact, 'FromSlot', 'fromSlot', undefined),
+        toRow: value(fact, 'ToRow', 'toRow', undefined),
+        toSlot: value(fact, 'ToSlot', 'toSlot', undefined),
+      })),
+    } : undefined,
+    playerTroopsModifier: troopsModifier && hasRecordedTroopsTargetName ? {
+      targetInstanceId: value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined),
+      targetControllerPlayerIndex: value(troopsModifier, 'TargetControllerPlayerIndex', 'targetControllerPlayerIndex', undefined),
+      troopsDelta: value(troopsModifier, 'TroopsDelta', 'troopsDelta', undefined),
+      durationCode: value(troopsModifier, 'DurationCode', 'durationCode', undefined),
+    } : undefined,
+    playerSelectedTargets: selectedTargets && typeof selectedTargets === 'object' ? {
+      sourceInstanceId: value(selectedTargets, 'SourceInstanceId', 'sourceInstanceId', ''),
+      facts: value<any[]>(selectedTargets, 'Facts', 'facts', []).map(fact => ({
+        id: value(fact, 'Id', 'id', ''),
+        owner: value(fact, 'Owner', 'owner', -1),
+        zone: value(fact, 'Zone', 'zone', ''),
+        row: value(fact, 'Row', 'row', -1),
+        slot: value(fact, 'Slot', 'slot', -1),
+        publicName: value(fact, 'PublicName', 'publicName', null),
+        currentCost: value(fact, 'CurrentCost', 'currentCost', null),
+        tapped: value(fact, 'Tapped', 'tapped', false),
+        isGodPower: value(fact, 'IsGodPower', 'isGodPower', null),
+      })),
+    } : undefined,
+    playerDisasterValue: disasterValue && typeof disasterValue === 'object' ? {
+      before: value(disasterValue, 'Before', 'before', undefined),
+      after: value(disasterValue, 'After', 'after', undefined),
+    } : undefined,
+    playerPublicPlacement: placement ? {
+      instanceId: value(placement, 'InstanceId', 'instanceId', undefined),
+      ownerPlayerIndex: value(placement, 'OwnerPlayerIndex', 'ownerPlayerIndex', undefined),
+      controllerPlayerIndex: value(placement, 'ControllerPlayerIndex', 'controllerPlayerIndex', undefined),
+      row: value(placement, 'Row', 'row', undefined),
+      slot: value(placement, 'Slot', 'slot', undefined),
+      tapped: value(placement, 'Tapped', 'tapped', undefined),
+      durationCode: value(placement, 'DurationCode', 'durationCode', undefined),
+    } : undefined,
     cards: value<any[]>(event, 'Cards', 'cards', []).map(replayCard).filter(Boolean) as Card[],
-  }))
+    })
+  })
   return {
     matchId: value(raw, 'MatchId', 'matchId', detail.match.matchId),
     roomCode: value(raw, 'RoomCode', 'roomCode', detail.match.roomCode),
@@ -212,7 +402,14 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     phase: typeof rawPhase === 'number' ? phaseNames[rawPhase] ?? 'Main' : rawPhase,
     round: value(raw, 'Round', 'round', 1), disasterMode: value(raw, 'DisasterMode', 'disasterMode', 'all'),
     disasterValue: value(raw, 'DisasterValue', 'disasterValue', 0),
-    activeDisaster: replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null)),
+    activeDisaster,
+    disasterDeck: value<any[]>(raw, 'DisasterDeck', 'disasterDeck', []).map(() => ({ hidden: true })),
+    bannedDisasters: value<any[]>(raw, 'BannedDisasters', 'bannedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    removedDisasters: value<any[]>(raw, 'RemovedDisasters', 'removedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    revealedDisasters: value<any[]>(raw, 'RevealedDisasters', 'revealedDisasters', []).map(replayCard).filter(Boolean) as Card[],
+    chosenDisasters: value<any[]>(raw, 'ChosenDisasters', 'chosenDisasters', []).map(replayDisasterView).filter(Boolean) as DisasterCardView[],
+    sessionDisasters: replaySessionDisasters(raw, activeDisaster),
+    disasterPreparationStep: value(raw, 'DisasterPreparationStep', 'disasterPreparationStep', 0),
     players: value<any[]>(raw, 'Players', 'players', []).map(player => replayPlayer(player, catalog)),
     pendingDefense: defense ? {
       attackerPlayer: value(defense, 'AttackerPlayer', 'attackerPlayer', 0),
@@ -253,6 +450,7 @@ function publicReplayCards(game: GameState): Card[] {
 function replayDefinitionCard(definition: ReplayCardDefinition, instanceId: string): Card {
   return {
     instanceId, cardId: definition.id, name: definition.nameZh, cardType: definition.cardType,
+    isCounterTactic: definition.isCounterTactic,
     faction: definition.faction, imageUrl: definition.imageUrl, effectText: definition.effect,
     cost: 0, baseTroops: 0, troops: 0, disasterLevel: 0, tapped: false, summonRound: 0,
   }

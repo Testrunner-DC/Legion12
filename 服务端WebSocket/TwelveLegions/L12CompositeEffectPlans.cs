@@ -13,7 +13,13 @@ internal sealed record L12CompositeEffectSegmentSpec(
     string[]? PublicTargetKeys = null,
     bool PreStackCost = false,
     string? RequiredDeclarationKey = null,
-    bool DeclareAtSegmentStart = false);
+    bool DeclareAtSegmentStart = false,
+    string? DeclarationTiming = null,
+    bool RequiresPreviousSuccess = false,
+    string? DeclinedMode = null,
+    string? DeclinedDeclarationKey = null,
+    bool WaitForStateCheckTriggers = false,
+    bool SkipWhenNoLegalTargets = false);
 
 /// <summary>
 /// 多段卡效的权威计划。卡牌差异只存在于这份声明数据；通用运行时负责在计划指定的
@@ -28,12 +34,50 @@ internal static partial class L12CompositeEffectPlans
     {
         "trigger:S01-0001:enter",
         "trigger:S02-0101:enter",
+        "trigger:S02-0102:enter",
+        "trigger:S01-0223:reaction",
+        "trigger:S01-0420:reaction",
+        "response:S02-0106",
         "active:S01-04M1:amaterasuReady",
-        "S02-0620",
+        "active:S01-03D1:valhallaKill",
+        "trigger:S01-0406:enter",
+        "trigger:S01-0001:death",
+        "trigger:S01-0303:death",
+        "trigger:S01-0306:death",
+        "trigger:S01-0216:enter",
+        "trigger:S01-0217:enter",
+        "trigger:S01-0218:enter",
+        "trigger:S01-0219:enter",
+        "trigger:S01-0220:enter",
+        "trigger:S02-0301:death",
+        "trigger:S02-0502:enter",
+        "active:S01-03M2:lokiCycle",
+        "starter-oiran-active",
+        "starter-nuada-active",
     };
 
     internal static bool UsesSingleResponseEffect(string? planId)
         => !string.IsNullOrWhiteSpace(planId) && SingleResponseEffectPlans.Contains(planId);
+
+    private static readonly IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>>
+        ResponseInitialDeclarations =
+            new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["response:S02-0015"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["mode"] = "mode:pending",
+                },
+                ["response:S02-0106"] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["revealMode"] = "mode:pending",
+                },
+            };
+
+    internal static Dictionary<string, List<string>>? InitialResponseDeclaration(string planId)
+        => ResponseInitialDeclarations.TryGetValue(planId, out var declaration)
+            ? declaration.ToDictionary(pair => pair.Key, pair => new List<string> { pair.Value },
+                StringComparer.OrdinalIgnoreCase)
+            : null;
 
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> HandPlayPlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
@@ -51,10 +95,10 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("camp-search", "查看牌库顶部3张牌，选择军团并排列其余牌"),
                 new("camp-heal", "消耗1士气：我方主宰增加1点血量",
-                    "mode:heal", "ordinary-payment", "campHealCost", 1, PreStackCost: true,
-                    RequiredDeclarationKey: "campMode"),
+                    "mode:heal", "ordinary-payment", "campHealCost", 1,
+                    RequiredDeclarationKey: "campMode", DeclareAtSegmentStart: true),
                 new("camp-draw", "消耗1士气：抽取1张牌",
-                    "mode:draw", "ordinary-payment", "campDrawCost", 1, PreStackCost: true,
+                    "mode:draw", "ordinary-payment", "campDrawCost", 1,
                     RequiredDeclarationKey: "campMode"),
             ],
             ["S01-0009"] =
@@ -76,13 +120,13 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("scout-reveal", "查看对方所有手牌"),
                 new("scout-shuffle-effect", "消耗1士气：令对方选择1张手牌洗回牌库",
-                    "mode:use", "ordinary-payment", "scoutCost", 1, PreStackCost: true,
+                    "mode:use", "ordinary-payment", "scoutCost", 1,
                     DeclareAtSegmentStart: true),
             ],
             ["S01-0014"] =
             [
                 new("ritual-draw", "抽取1张牌"),
-                new("ritual-disaster", "将天灾值增加或减少已声明的数值"),
+                new("ritual-disaster", "将天灾值增加或减少最多2点", DeclareAtSegmentStart: true),
             ],
             ["S01-0015"] =
             [
@@ -95,13 +139,14 @@ internal static partial class L12CompositeEffectPlans
                     PublicTargetKeys: ["buffTarget"]),
                 new("march-kill-segment", "返还2士气：击杀对方1张兵力不高于6000的军团",
                     "mode:use", "morale-return", "marchReturnCost", 2,
-                    PublicTargetKeys: ["killTarget"], PreStackCost: true,
+                    PublicTargetKeys: ["killTarget"],
                     RequiredDeclarationKey: "marchMode", DeclareAtSegmentStart: true),
             ],
             ["S01-0119"] =
             [
                 new("observing-stars-reorder", "查看并排列牌库顶部5张牌"),
-                new("observing-stars-morale", "从士气牌库追加1张活跃士气", "mode:morale"),
+                new("observing-stars-morale", "从士气牌库追加1张活跃士气", "mode:morale",
+                    DeclareAtSegmentStart: true),
             ],
             ["S01-0221"] =
             [
@@ -140,7 +185,8 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("black-lotus-disaster", "将天灾值增加或减少已声明的数值"),
                 new("black-lotus-morale", "消耗3士气：将此战术休整置入士气区",
-                    "mode:morale", "ordinary-payment", "lotusCost", 3, PreStackCost: true),
+                    "mode:morale", "ordinary-payment", "lotusCost", 3,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0011"] =
             [
@@ -155,7 +201,8 @@ internal static partial class L12CompositeEffectPlans
             ["S02-0306"] =
             [
                 new("mimir-recover-draw", "我方主宰增加1点血量并抽取1张牌"),
-                new("mimir-mill", "弃置我方牌库顶部2张牌", "mode:mill"),
+                new("mimir-mill", "弃置我方牌库顶部2张牌", "mode:mill",
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0405"] =
             [
@@ -164,32 +211,40 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S02-0522"] =
             [
-                new("nyx-primary", "选择对方1张军团，本回合兵力-3000"),
+                new("nyx-primary", "选择对方1张军团，本回合兵力-3000",
+                    PublicTargetKeys: ["primaryTarget"]),
                 new("nyx-secondary", "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
-                    "mode:second", "god-power-flip", "secondCost", 1),
+                    "mode:second", "god-power-flip", "secondCost", 1,
+                    PublicTargetKeys: ["secondaryTarget"], DeclareAtSegmentStart: true),
             ],
             ["S02-0105"] =
             [
-                new("qianyang-kill", "击杀对方1张原本兵力不高于3000的军团"),
+                new("qianyang-kill", "击杀对方1张原本兵力不高于3000的军团",
+                    PublicTargetKeys: ["killTarget"], SkipWhenNoLegalTargets: true),
                 new("qianyang-draw", "返还1士气：抽取1张牌",
-                    "mode:draw", "morale-return", "drawCost", 1),
+                    "mode:draw", "morale-return", "drawCost", 1,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0521"] =
             [
                 new("glory-flip", "翻转最多3张士气"),
                 new("glory-search", "消耗并翻转2神力：检索1张【奥林匹斯】卡牌",
-                    "mode:search", "god-power-flip", "searchCost", 2),
+                    "mode:search", "god-power-flip", "searchCost", 2,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0620"] =
             [
                 new("rune-gain", "获得1符文"),
-                new("rune-search-choice", "可消耗1士气：查看牌库顶部3张牌"),
+                new("rune-search-choice", "消耗1士气：查看牌库顶部3张牌并处理符合条件的【彼界】卡牌",
+                    "mode:search", "ordinary-payment", "runeSearchCost", 1,
+                    DeclareAtSegmentStart: true),
             ],
             ["S02-0621"] =
             [
                 new("round-table-search", "检索1张【圆桌骑士】军团"),
                 new("round-table-buff", "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
-                    "mode:buff", "ordinary-payment", "buffCost", 1),
+                    "mode:buff", "ordinary-payment", "buffCost", 1,
+                    PublicTargetKeys: ["buffTarget"], DeclareAtSegmentStart: true),
             ],
             ["S02-0207"] =
             [
@@ -212,6 +267,13 @@ internal static partial class L12CompositeEffectPlans
     private static readonly IReadOnlyDictionary<string, L12CompositeEffectSegmentSpec[]> ActivePlans =
         new Dictionary<string, L12CompositeEffectSegmentSpec[]>(StringComparer.OrdinalIgnoreCase)
         {
+            ["active:S01-03M2:lokiCycle"] =
+            [
+                new("draw-discard-draw-1", "洛基：抽取1张牌"),
+                new("draw-discard-discard", "洛基：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
             ["active:S01-02D1:sunTopThree"] =
             [
                 new("sun-top-three-search", "众神之乡：公开并处理牌库顶部3张牌"),
@@ -224,17 +286,32 @@ internal static partial class L12CompositeEffectPlans
                 new("valhalla-recover", "英灵殿：随后将已声明的墓地阿斯加德卡牌加入手牌",
                     "mode:recover", PublicTargetKeys: ["graveCard"], RequiredDeclarationKey: "recoverMode"),
             ],
+            ["active:S01-03D1:valhallaKill"] =
+            [
+                new("valhalla-kill-broad", "英灵殿：击杀已声明的兵力不高于5000军团",
+                    PublicTargetKeys: ["broadTarget"]),
+                new("valhalla-kill-low", "英灵殿：击杀已声明的另一张兵力不高于1000军团",
+                    PublicTargetKeys: ["lowTarget"]),
+            ],
             ["active:S01-0105:searchBrothers"] =
             [
                 new("liubei-search", "刘备：检索〈关羽〉或〈张飞〉，展示并加入手牌"),
                 new("liubei-shuffle", "刘备：随后重洗牌库"),
+            ],
+            ["active:S01-0117:artifactDraw"] =
+            [
+                new("shanhe-draw", "山河社稷图：抽取1张牌"),
+            ],
+            ["active:S01-0117:artifactSearch"] =
+            [
+                new("shanhe-top-three", "山河社稷图：查看牌库顶部3张牌，选择1张【天廷】卡牌加入手牌，并排列其余牌"),
             ],
             ["active:S01-0116:xishiExchange"] =
             [
                 new("xishi-summon", "西施：将已声明的其他军团活跃登场",
                     "mode:summon", PublicTargetKeys: ["entryCard", "entrySlot"],
                     RequiredDeclarationKey: "summonMode"),
-                new("xishi-draw", "西施：随后抽取1张牌"),
+                new("xishi-draw", "西施：随后抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["active:S01-01M1:drawCycle"] =
             [
@@ -254,12 +331,29 @@ internal static partial class L12CompositeEffectPlans
                     "mode:revive", PublicTargetKeys: ["entryCard", "entrySlot"],
                     RequiredDeclarationKey: "reviveMode"),
             ],
+            ["active:S01-0215:ankhReady"] =
+            [
+                new("ankh-ready-guard", "安卡神碑：将已选择的休整〈陵墓守卫〉转为活跃"),
+            ],
+            ["active:S01-0215:ankhDraw"] =
+            [
+                new("ankh-draw", "安卡神碑：抽取1张牌"),
+            ],
+            ["active:S01-0317:gramDamage"] =
+            [
+                new("gram-nonlethal-damage", "神剑格拉墨：对对方主宰造成1点非致命伤害"),
+            ],
             ["active:S01-04D1:yomiSweep"] =
             [
                 new("yomi-draw", "黄泉之门：抽取1张牌"),
                 new("yomi-cost-debuff", "黄泉之门：对方所有军团本回合费用-1"),
                 new("yomi-kill3", "黄泉之门：结算已声明的费用不高于3击杀目标"),
                 new("yomi-kill1", "黄泉之门：结算已声明的费用不高于1击杀目标"),
+            ],
+            ["active:S01-04D1:yomiRecover"] =
+            [
+                new("yomi-grave-recover", "黄泉之门：将已选择的墓地【高天原】卡牌加入手牌",
+                    PublicTargetKeys: ["graveCard"], RequiredDeclarationKey: "graveCard"),
             ],
             ["active:S01-04M1:amaterasuKill"] =
             [
@@ -274,13 +368,65 @@ internal static partial class L12CompositeEffectPlans
                     PublicTargetKeys: ["moraleTargets"]),
                 new("amaterasu-front-buff", "天照大神：我方前排所有【高天原】军团本回合兵力+1000"),
             ],
+            ["active:S02-01M1:wukongTransform"] =
+            [
+                new("wukong-transform-entry", "孙悟空：将此主宰作为兵力等于已返还士气数量×1000的【斗士】军团在已声明的我方前排位置活跃登场",
+                    CostKind: "morale-return", CostKey: "returnCost", PublicTargetKeys: ["entrySlot"],
+                    PreStackCost: true, RequiredDeclarationKey: "entrySlot"),
+            ],
+            ["active:S02-02M1:nephthysSacrifice"] =
+            [
+                new("nephthys-sacrifice-discount", "奈芙蒂斯：弃置仍合法的已声明我方军团，并按实际弃置数量使本回合我方下一张带有天灾等级的【太阳城】军团登场费用降低",
+                    PublicTargetKeys: ["sacrificeTargets"], RequiredDeclarationKey: "sacrificeTargets"),
+            ],
+            ["active:S02-0404:magatamaMove"] =
+            [
+                new("magatama-cavalry-move", "八尺琼勾玉：使已选择的我方活跃军团进行1次骑兵位移",
+                    PublicTargetKeys: ["moveTarget", "moveDestination"], RequiredDeclarationKey: "moveTarget"),
+            ],
+            ["active:S02-0404:magatamaImmortal"] =
+            [
+                new("magatama-immortal", "八尺琼勾玉：使已选择的本回合位移过的军团本回合获得免死",
+                    PublicTargetKeys: ["immortalTarget"], RequiredDeclarationKey: "immortalTarget"),
+            ],
+            ["active:S02-0520:forgePromotionDiscount"] =
+            [
+                new("forge-promotion-discount", "匠神锻造炉：本回合下一次晋升登场消耗并翻转的神力-1"),
+            ],
+            ["active:S02-0520:forgeReadyOnKill"] =
+            [
+                new("forge-ready-after-kill", "匠神锻造炉：使已选择的军团本回合下一次击杀对方军团后转为活跃",
+                    PublicTargetKeys: ["readyTarget"], RequiredDeclarationKey: "readyTarget"),
+            ],
+            ["active:S02-05M1:artemisBuff"] =
+            [
+                new("artemis-grant", "阿尔忒弥斯：使已选择的【奥林匹斯】军团本回合获得已声明能力",
+                    PublicTargetKeys: ["buffTarget"], RequiredDeclarationKey: "buffTarget"),
+            ],
+            ["active:S02-06M1:morriganReadyOnKill"] =
+            [
+                new("morrigan-ready-after-kill", "莫瑞甘：使已选择的【彼界】军团本回合下一次击杀对方军团后转为活跃",
+                    PublicTargetKeys: ["readyTarget"], RequiredDeclarationKey: "readyTarget"),
+            ],
             ["active:S02-05D1:divinityRecover"] =
             [
                 new("divinity-recover", "奥林匹斯 诸神巅：将已声明的墓地卡牌加入手牌",
                     PublicTargetKeys: ["recoverCard"]),
-                new("divinity-entry", "奥林匹斯 诸神巅：随后令已声明的军团活跃登场",
-                    RequiredMode: "mode:entry", PublicTargetKeys: ["entryCard", "entrySlot"],
-                    RequiredDeclarationKey: "entryMode"),
+                new("divinity-entry", "奥林匹斯 诸神巅：随后可令已声明的军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entrySlot"], DeclinedMode: "mode:none",
+                    DeclinedDeclarationKey: "entryMode"),
+            ],
+            ["active:S02-05M2:prometheusTopThree"] =
+            [
+                new("prometheus-top-three", "普罗米修斯：查看牌库顶部3张牌，选择1张【奥林匹斯】卡牌加入手牌，并排列其余牌"),
+            ],
+            ["active:S02-0616:amakineTop"] =
+            [
+                new("amakine-top-card", "阿麦金：处理已展示的牌；若其只拥有【彼界】特征，可将其加入手牌，否则将其返回牌库顶部或底部"),
+            ],
+            ["active:ST05-06:telemachusTopThree"] =
+            [
+                new("telemachus-top-three", "特勒马科斯：查看牌库顶部3张牌，选择1张【远程】军团或【奥林匹斯】战术卡加入手牌，并排列其余牌"),
             ],
         };
 
@@ -291,13 +437,15 @@ internal static partial class L12CompositeEffectPlans
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
                 new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
-                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true,
+                    WaitForStateCheckTriggers: true),
             ],
             ["trigger:S01-0201:death"] =
             [
                 new("thutmose-debuff", "图特摩斯三世：对方所有军团本回合兵力-1000"),
                 new("thutmose-kill", "图特摩斯三世：随后击杀1张当前兵力不高于1000的军团",
-                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true),
+                    PublicTargetKeys: ["killTarget"], DeclareAtSegmentStart: true,
+                    WaitForStateCheckTriggers: true),
             ],
             ["trigger:S01-0401:attack"] =
             [
@@ -325,17 +473,97 @@ internal static partial class L12CompositeEffectPlans
                 new("teach-enter-discard", "黑胡子蒂奇：双方各弃置合计2张手牌"),
                 new("teach-enter-draw", "黑胡子蒂奇：随后我方抽取2张牌，对方抽取1张牌"),
             ],
+            ["trigger:S01-0001:death"] =
+            [
+                new("draw-discard-draw-2", "黑胡子蒂奇：抽取2张牌"),
+                new("draw-discard-discard", "黑胡子蒂奇：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S01-0303:death"] =
+            [
+                new("draw-discard-draw-1", "传奇的拉格纳：抽取1张牌"),
+                new("draw-discard-discard", "传奇的拉格纳：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S01-0306:death"] =
+            [
+                new("draw-discard-draw-2", "奥拉夫二世：抽取2张牌"),
+                new("draw-discard-discard", "奥拉夫二世：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S02-0301:death"] =
+            [
+                new("draw-discard-draw-1", "雷神之锤：抽取1张牌"),
+                new("draw-discard-discard", "雷神之锤：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
+            ["trigger:S02-0502:enter"] =
+            [
+                new("draw-discard-draw-2", "赫拉克勒斯：抽取2张牌"),
+                new("draw-discard-discard", "赫拉克勒斯：并弃置1张手牌",
+                    DeclareAtSegmentStart: true, DeclarationTiming: "post-draw-private",
+                    RequiresPreviousSuccess: true),
+            ],
             ["response:S01-0020"] =
             [
                 new("battle-until-dawn-buff", "我方所有军团本回合兵力+1000"),
                 new("battle-until-dawn-draw", "若墓地卡牌数量不低于5，可抽取1张牌",
                     "mode:draw", RequiredDeclarationKey: "drawMode"),
             ],
+            ["trigger:S01-0021:reaction"] =
+            [
+                new("regency-entry", "从我方手牌中将已声明的1张费用不高于3的军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"]),
+            ],
+            ["trigger:S01-0223:reaction"] =
+            [
+                new("immortal-gift-draw", "抽取1张牌"),
+                new("immortal-gift-summon", "随后可将墓地1张〈陵墓守卫〉活跃登场",
+                    PublicTargetKeys: ["entryCard", "entryBattlefield", "entrySlot"],
+                    DeclinedMode: "mode:none", DeclinedDeclarationKey: "entryMode"),
+            ],
+            ["trigger:S01-0420:reaction"] =
+            [
+                new("seppuku-draw", "抽取1张牌"),
+                new("seppuku-cost", "令已声明的对方军团直到下个我方回合结束前费用-2",
+                    PublicTargetKeys: ["costTarget"]),
+            ],
+            ["trigger:ST01-10:reaction"] =
+            [
+                new("hidden-pass-summon", "从我方手牌中将已声明的1张费用不高于4的【天廷】军团活跃登场",
+                    PublicTargetKeys: ["entryCard", "entrySlot"]),
+            ],
             ["response:S01-0120"] =
             [
                 new("empty-city-block", "返还1士气：抵挡本次进攻"),
                 new("empty-city-draw", "若我方前排没有军团，可抽取1张牌",
                     "mode:draw", RequiredDeclarationKey: "drawMode"),
+            ],
+            ["response:S02-0015"] =
+            [
+                new("landlord-coercion", "对方需额外弃置1张手牌，否则本次抵挡/支援无效"),
+            ],
+            ["response:S02-0106"] =
+            [
+                new("cosmos-yin-reveal", "展示牌库顶部1张牌并按条件弃置或置于牌库底部"),
+                new("cosmos-yin-buff", "选择我方1张军团，本回合增加因此效果弃置军团的费用和兵力",
+                    "mode:hit", PublicTargetKeys: ["buffTarget"],
+                    RequiredDeclarationKey: "revealMode", DeclareAtSegmentStart: true,
+                    DeclarationTiming: "post-hidden-reveal"),
+            ],
+            ["trigger:S02-0523:trojan-after-attack"] =
+            [
+                new("trojan-place", "将此战术置入已声明的对方战场空位，直到下个我方回合结束",
+                    PublicTargetKeys: ["slot"]),
+            ],
+            ["trigger:S02-0523:trojan-expiry"] =
+            [
+                new("trojan-expiry-discard", "期限结束后弃置此战术"),
+                new("trojan-expiry-draw", "随后抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["wisdom-reward:S01-0224"] =
             [
@@ -370,6 +598,13 @@ internal static partial class L12CompositeEffectPlans
                 new("zhuge-disaster", "诸葛亮：随后将天灾值增加或减少1",
                     RequiredMode: "mode:use", RequiredDeclarationKey: "disasterMode", DeclareAtSegmentStart: true),
             ],
+            ["trigger:S01-0406:enter"] =
+            [
+                new("hijikata-kill-broad", "土方岁三：击杀已声明的费用不高于2军团",
+                    PublicTargetKeys: ["broadTarget"]),
+                new("hijikata-kill-low", "土方岁三：击杀已声明的费用不高于1军团",
+                    PublicTargetKeys: ["lowTarget"]),
+            ],
             ["trigger:S01-0217:enter"] =
             [
                 new("canopic-one", "卡诺匹斯罐一：使已选择的太阳城军团本回合兵力+2000并获得强攻"),
@@ -386,18 +621,22 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["response:S02-0017"] =
             [
-                new("supply-plunder-return", "将所选的1张对方手牌返回牌库顶部"),
-                new("supply-plunder-draw", "随后我方抽取1张牌"),
+                new("supply-plunder-return", "将所选的1张对方手牌返回所有者牌库顶部"),
+                new("supply-plunder-draw", "随后我方抽取1张牌", RequiresPreviousSuccess: true),
             ],
             ["response:S02-0018"] =
             [
                 new("poison-negate", "令本次因效果转为活跃无效"),
-                new("poison-discard", "随后受影响玩家弃置1张手牌"),
+                new("poison-discard", "随后受影响玩家弃置1张手牌", RequiresPreviousSuccess: true),
             ],
         };
 
     private static readonly HashSet<string> HandPlayPlansWithoutControllerDeclaration =
-        new(StringComparer.OrdinalIgnoreCase) { "S01-0013", "S01-0015", "S01-0419", "S02-0405", "S02-0620" };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0007", "S01-0013", "S01-0014", "S01-0015", "S01-0119", "S01-0419",
+            "S02-0306", "S02-0405", "S02-0620", "S02-0621",
+        };
 
     public static bool HasHandPlayPlan(string cardId)
         => HandPlayPlans.ContainsKey(cardId)
@@ -438,6 +677,10 @@ public sealed partial class L12GameEngine
     private CommandResult BeginCommittedCompositeEffectDeclaration(int playerIndex, L12CardInstance source,
         L12StackItem parent, string completion)
     {
+        var playerLogGroupId = State.LastAction is { Type: "play" } play
+            && play.Cards.Any(card => card.InstanceId == source.InstanceId)
+            ? play.PlayerLogGroupId
+            : null;
         if (!L12CompositeEffectPlans.RequiresHandPlayDeclaration(source.CardId))
         {
             var direct = new L12PendingActivation
@@ -452,25 +695,25 @@ public sealed partial class L12GameEngine
                 PlayCardInstanceId = source.InstanceId,
                 CommittedParentStackItemId = parent.StackItemId,
                 CommittedCompletion = completion,
+                PlayerLogGroupId = playerLogGroupId,
             };
             CompleteCommittedCompositeEffectDeclaration(direct);
             return CommandResult.Ok();
         }
-        var result = BeginCompositeDeclaration(playerIndex, source, "composite-committed-play", effectOnlyRepeat: false);
-        if (!result.Accepted) return result;
-        var activation = State.PendingActivations.Last(candidate => candidate.Controller == playerIndex
-            && candidate.SourceInstanceId == source.InstanceId
-            && candidate.Ability == "composite-committed-play");
-        activation.CommittedParentStackItemId = parent.StackItemId;
-        activation.CommittedCompletion = completion;
-        return result;
+        return BeginCompositeDeclaration(playerIndex, source, "composite-committed-play", effectOnlyRepeat: false,
+            activation =>
+            {
+                activation.CommittedParentStackItemId = parent.StackItemId;
+                activation.CommittedCompletion = completion;
+                activation.PlayerLogGroupId = playerLogGroupId;
+            });
     }
 
     private CommandResult BeginRepeatedCompositeEffectDeclaration(int playerIndex, L12CardInstance source)
         => BeginCompositeDeclaration(playerIndex, source, "composite-repeated-effect", effectOnlyRepeat: true);
 
     private CommandResult BeginCompositeDeclaration(int playerIndex, L12CardInstance source, string ability,
-        bool effectOnlyRepeat)
+        bool effectOnlyRepeat, Action<L12PendingActivation>? initialize = null)
     {
         var player = State.Players[playerIndex];
         var opponent = State.Players[1 - playerIndex];
@@ -499,24 +742,7 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S01-0007":
-            {
-                var canPay = ActiveResourceCount(player) >= 1;
-                steps.Add(CompositeStep("option", "campMode", "野外扎营：选择是否消耗1士气，并选择主宰增加血量或抽牌",
-                    canPay ? ["mode:none", "mode:heal", "mode:draw"] : ["mode:none"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看牌库顶部3张牌，选择1张同阵营军团展示并加入手牌，其余置入牌库底部",
-                        ["mode:heal"] = "消耗1士气：我方主宰增加1点血量",
-                        ["mode:draw"] = "消耗1士气：抽取1张牌",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
-                    "野外扎营：预先选择治疗段消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:heal", autoSelectEquivalentOrdinaryMorale: true));
-                steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
-                    "野外扎营：选择抽取1张牌所消耗的1份资源", CompositeOrdinaryPaymentChoices(player), 1,
-                    requiredChoice: "mode:draw", autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S01-0009":
                 steps.Add(CompositeStep("field-legion", "returnTarget", "战略转移：预先选择回到手牌的我方军团",
@@ -531,7 +757,7 @@ public sealed partial class L12GameEngine
                 {
                     if (FindOnField(opponent, card.InstanceId, out var row, out var slot) is null) return false;
                     return opponent.Field[1 - row][slot] is null
-                        && !(State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1);
+                        && !(L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && 1 - row == 1);
                 }).Select(card => card.InstanceId);
                 steps.Add(CompositeStep("enemy-legion", "moveTargets", "伪造密令：预先选择最多2张要位移的对方军团",
                     movable, 1, 2));
@@ -555,8 +781,6 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0014":
-                steps.Add(CompositeStep("option", "disasterValue", "祭天仪式：选择将天灾值增加或减少最多2点",
-                    ["-2", "-1", "0", "1", "2"], 1, 1));
                 break;
 
             case "S01-0118":
@@ -572,17 +796,7 @@ public sealed partial class L12GameEngine
             }
 
             case "S01-0119":
-            {
-                var modes = new List<string> { "mode:none" };
-                if (player.MoraleDeck.Count > 0) modes.Add("mode:morale");
-                steps.Add(CompositeStep("option", "mode", "观星：选择是否从士气牌库追加1张活跃士气",
-                    modes, 1, 1, new()
-                    {
-                        ["mode:none"] = "查看牌库顶部5张牌，自选顺序放回牌库顶部或底部",
-                        ["mode:morale"] = "从士气牌库追加1张活跃士气",
-                    }));
                 break;
-            }
 
             case "S01-0221":
             {
@@ -641,33 +855,20 @@ public sealed partial class L12GameEngine
 
             case "S02-0009":
                 steps.Add(CompositeStep("hand-cards", "entryCards", "防御部署：私密选择手牌中最多2张反击战术",
-                    player.Hand.Where(card => card.InstanceId != source.InstanceId && IsCounterTactic(card.CardId))
+                    player.Hand.Where(card => IsCounterDeploymentCandidate(card, source.InstanceId))
                         .Select(card => card.InstanceId), 0, 2));
-                steps.Add(CompositeStep("composite-defense-slot", "entrySlot1", "防御部署：公开声明第1张反击战术的后排位置",
+                steps.Add(CompositeStep("composite-defense-slot", "entrySlot1", "防御部署：选择反击战术的后排位置",
                     Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).Select(slot => $"1:{slot}"), 1,
-                    referenceKey: "entryCards", minimumReferenceCount: 1));
-                steps.Add(CompositeStep("composite-defense-slot", "entrySlot2", "防御部署：公开声明第2张反击战术的后排位置",
+                    referenceKey: "entryCards", minimumReferenceCount: 1, referenceChoiceIndex: 0));
+                steps.Add(CompositeStep("composite-defense-slot", "entrySlot2", "防御部署：选择反击战术的后排位置",
                     Enumerable.Range(0, 3).Where(slot => player.Field[1][slot] is null).Select(slot => $"1:{slot}"), 1,
-                    referenceKey: "entryCards", minimumReferenceCount: 2));
+                    referenceKey: "entryCards", minimumReferenceCount: 2, referenceChoiceIndex: 1));
                 break;
 
             case "S02-0010":
-            {
-                var modes = new List<string> { "mode:none" };
-                if (ActiveResourceCount(player) >= 3) modes.Add("mode:morale");
                 steps.Add(CompositeStep("option", "disasterMode", "黑色莲花：预先声明天灾值调整",
                     ["-1", "0", "1"], 1, 1));
-                steps.Add(CompositeStep("option", "mode", "黑色莲花：选择是否消耗3士气，将此战术休整置入士气区",
-                    modes, 1, 1, new()
-                    {
-                        ["mode:none"] = "调整天灾值后置入墓地",
-                        ["mode:morale"] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
-                    }));
-                steps.Add(CompositeStep("composite-ordinary-payment", "lotusCost", "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
-                    CompositeOrdinaryPaymentChoices(player), 3, 3, requiredChoice: "mode:morale",
-                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S02-0011":
                 steps.Add(CompositeStep("enemy-legion", "killTargets", "纷乱箭：预先选择最多3张原本兵力不高于2000的军团",
@@ -682,86 +883,34 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0306":
-                steps.Add(CompositeStep("option", "mode", "密米尔之泉：选择是否弃置我方牌库顶部2张牌",
-                    ["mode:none", "mode:mill"], 1, 1, new()
-                    {
-                        ["mode:none"] = "我方主宰增加1点血量，抽取1张牌",
-                        ["mode:mill"] = "弃置我方牌库顶部2张牌",
-                    }));
                 break;
 
             case "S02-0522":
-                steps.Add(CompositeStep("option", "mode", "倪克斯的陨星：选择是否消耗并翻转1神力，使对方1张军团本回合兵力-2000",
-                    ["mode:none", "mode:second"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "选择对方1张军团，本回合兵力-3000",
-                        ["mode:second"] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
-                    }));
-                steps.Add(CompositeStep("enemy-legion", "primaryTarget", "倪克斯的陨星：选择本回合兵力-3000的目标",
-                    PublicLegions(opponent).Select(card => card.InstanceId), 1));
-                steps.Add(CompositeStep("target-morale", "secondCost", "倪克斯的陨星：选择为兵力-2000效果消耗并翻转的1神力",
-                    player.Morale.Where(card => card.IsGodPower && !card.Tapped).Select(card => card.InstanceId), 1,
-                    requiredChoice: "mode:second"));
-                steps.Add(CompositeStep("enemy-legion", "secondaryTarget", "倪克斯的陨星：选择本回合兵力-2000的目标",
-                    PublicLegions(opponent).Select(card => card.InstanceId), 1, requiredChoice: "mode:second"));
+            {
+                var firstSegment = L12CompositeEffectPlans.Segments(source.CardId)[0];
+                steps.Add(CompositeTargetOrSkipStep(firstSegment, "enemy-legion", "primaryTarget",
+                    "倪克斯的陨星：选择本回合兵力-3000的目标",
+                    PublicLegions(opponent).Select(card => card.InstanceId)));
                 break;
+            }
 
             case "S02-0105":
-                steps.Add(CompositeStep("option", "mode", "乾坤 阳：预先声明是否发动返还士气并抽牌",
-                    ["mode:none", "mode:draw"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "击杀对方1张原本兵力不高于3000的军团",
-                        ["mode:draw"] = "返还1士气：抽取1张牌",
-                    }));
-                steps.Add(CompositeStep("enemy-legion", "killTarget", "乾坤 阳：预先选择击杀目标",
+            {
+                var firstSegment = L12CompositeEffectPlans.Segments(source.CardId)[0];
+                steps.Add(CompositeTargetOrSkipStep(firstSegment, "enemy-legion", "killTarget",
+                    "乾坤 阳：预先选择击杀目标",
                     PublicLegions(opponent).Where(card => card.DisplayBaseTroops <= 3000 && !card.Hidden)
-                        .Select(card => card.InstanceId), 1));
-                steps.Add(CompositeStep("resource-return", "drawCost", "乾坤 阳：预先选择返还的1张士气",
-                    player.Morale.Select(card => card.InstanceId), 1, requiredChoice: "mode:draw"));
+                        .Select(card => card.InstanceId)));
                 break;
+            }
 
             case "S02-0521":
-                steps.Add(CompositeStep("option", "mode", "荣耀之路：预先声明是否发动神力检索段",
-                    ["mode:none", "mode:search"], 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "翻转最多3张士气",
-                        ["mode:search"] = "消耗并翻转2神力：查看牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库",
-                    }));
                 steps.Add(CompositeStep("target-morale", "flipTargets", "荣耀之路：预先选择最多3张要翻转的士气",
-                    player.Morale.Where(card => !card.IsGodPower).Select(card => card.InstanceId), 0, 3));
-                steps.Add(CompositeStep("composite-glory-god-power-cost", "searchCost",
-                    "荣耀之路：预先选择检索段消耗并翻转的2张神力", ["dynamic:1", "dynamic:2"], 2, 2,
-                    requiredChoice: "mode:search"));
+                    player.Morale.Where(card => CanFlipMoraleToGodPower(card)).Select(card => card.InstanceId), 0, 3));
                 break;
 
             case "S02-0621":
-            {
-                var roundTableTargets = PublicLegions(player)
-                    .Where(card => card.HasTrait("圆桌骑士"))
-                    .Select(card => card.InstanceId)
-                    .ToArray();
-                var roundTablePayments = CompositeOrdinaryPaymentChoices(player).ToArray();
-                var roundTableModes = roundTableTargets.Length > 0 && roundTablePayments.Length > 0
-                    ? new[] { "mode:none", "mode:buff" }
-                    : ["mode:none"];
-                steps.Add(CompositeStep("option", "mode", "圆桌领域：选择是否消耗1士气使军团本回合兵力+2000",
-                    roundTableModes, 1, 1,
-                    new()
-                    {
-                        ["mode:none"] = "查看牌库，选择1张【圆桌骑士】军团展示并加入手牌，随后重洗牌库",
-                        ["mode:buff"] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
-                    }));
-                steps.Add(CompositeStep("field-legion", "buffTarget", "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
-                    roundTableTargets, 1,
-                    requiredChoice: "mode:buff"));
-                steps.Add(CompositeStep("composite-ordinary-payment", "buffCost", "圆桌领域：预先选择支付的1份资源",
-                    roundTablePayments, 1, requiredChoice: "mode:buff",
-                    autoSelectEquivalentOrdinaryMorale: true));
                 break;
-            }
 
             case "S02-0207":
                 steps.Add(CompositeStep("field-legion", "discardTargets", "沙漠君临：预先选择最多3张要弃置的我方军团",
@@ -773,9 +922,17 @@ public sealed partial class L12GameEngine
                 break;
 
             case "S02-0307":
-                steps.Add(CompositeStep("enemy-legion", "curseTarget", "海拉：预先选择兵力-3000的对方军团",
-                    PublicLegions(opponent).Where(card => !card.Hidden).Select(card => card.InstanceId), 1));
+            {
+                var targets = PublicLegions(opponent).Where(card => !card.Hidden)
+                    .Select(card => card.InstanceId).ToArray();
+                if (targets.Length > 0)
+                    steps.Add(CompositeStep("enemy-legion", "curseTarget", "海拉：预先选择兵力-3000的对方军团",
+                        targets, 1));
+                else
+                    steps.Add(CompositeStep("effect-skip", "curseTarget", "海拉：当前没有合法目标，效果部分跳过",
+                        [], 0, 0, autoSelectWhenExact: true));
                 break;
+            }
 
             case "S02-0206":
                 steps.Add(CompositeStep("field-legion", "buffTarget", "无畏的刺杀：预先选择我方前排1张【太阳城】军团",
@@ -861,7 +1018,8 @@ public sealed partial class L12GameEngine
             return CommandResult.Ok();
         }
         return BeginPendingActivationSequence(playerIndex, source, ability, steps,
-            triggerCandidateId: null, playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
+            triggerCandidateId: null, playCardInstanceId: source.InstanceId, responseTargetStackItemId: null,
+            initialize);
     }
 
     private static L12ActivationSelectionStep CompositeStep(string kind, string key, string text,
@@ -886,11 +1044,23 @@ public sealed partial class L12GameEngine
             AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
         };
 
+    private static L12ActivationSelectionStep CompositeTargetOrSkipStep(
+        L12CompositeEffectSegmentSpec segment, string kind, string key, string text,
+        IEnumerable<string> choices)
+    {
+        var available = choices.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return available.Length == 0 && segment.SkipWhenNoLegalTargets
+            ? CompositeStep("effect-skip", key,
+                $"{text}；当前没有合法目标，仅跳过此效果段", [], 0, 0,
+                autoSelectWhenExact: true)
+            : CompositeStep(kind, key, text, available, 1);
+    }
+
     private IEnumerable<string> CompositeOrdinaryPaymentChoices(L12PlayerState player)
     {
         foreach (var temporary in TemporaryMoralePaymentChoices(player)) yield return temporary;
         foreach (var morale in player.Morale.Where(card => !card.Tapped)) yield return morale.InstanceId;
-        foreach (var guard in ActiveTombGuardResources(player)) yield return guard.InstanceId;
+        foreach (var fieldResource in SpendableFieldMoraleResources(player)) yield return fieldResource.InstanceId;
     }
 
     private void CompleteCompositeHandPlayDeclaration(L12PendingActivation activation)
@@ -928,10 +1098,19 @@ public sealed partial class L12GameEngine
         }
         var data = CompositeFirstSegmentData(source.CardId, activation.DeclaredValues)
             ?? new Dictionary<string, string>();
+        RecordCompositePreResponseCosts(source.CardId, activation.DeclaredValues, data);
         data["effectGeneratedPlay"] = "free";
         data["originZone"] = "library";
-        PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
+        if (!string.IsNullOrWhiteSpace(activation.PlayerLogGroupId))
+        {
+            data["playerLogGroupId"] = activation.PlayerLogGroupId;
+            data["playerLogTiming"] = "play";
+        }
+        var child = PushEffect(activation.Controller, source, "play", $"由其他效果免费打出的〈{source.Name}〉战术效果",
             CompositeFirstSegmentTargets(source.CardId, activation.DeclaredValues), data);
+        var parent = State.EffectStack.FirstOrDefault(item =>
+            item.StackItemId == activation.CommittedParentStackItemId);
+        if (parent is not null) parent.Data["compositeGeneratedChildStackId"] = child.StackItemId;
         ResumeCommittedCompositeParent(activation);
     }
 
@@ -960,7 +1139,7 @@ public sealed partial class L12GameEngine
         if (source is not null)
         {
             player.Resolving.Remove(source);
-            ResetCardAfterLeavingField(source);
+            ResetCardForPrivateZone(source);
             player.Graveyard.Add(source);
         }
         AddEvent("ability-rejected", activation.Controller, reason);
@@ -1010,26 +1189,25 @@ public sealed partial class L12GameEngine
             return PublicLegions(opponent).Any(target => target.InstanceId == id && !target.Hidden
                 && (predicate?.Invoke(target) ?? true));
         }
+        bool EnemyOrSkippableEmpty(string key, Func<L12CardInstance, bool>? predicate = null)
+        {
+            if (Enemy(key, predicate)) return true;
+            var first = L12CompositeEffectPlans.Segments(card.CardId).FirstOrDefault();
+            return first?.SkipWhenNoLegalTargets == true
+                && first.PublicTargetKeys?.Contains(key, StringComparer.OrdinalIgnoreCase) == true
+                && declared.GetValueOrDefault(key, []).Count == 0
+                && !PublicLegions(opponent).Any(target => !target.Hidden
+                    && (predicate?.Invoke(target) ?? true));
+        }
         bool Own(string key, Func<L12CardInstance, bool>? predicate = null)
         {
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
             return PublicLegions(player).Any(target => target.InstanceId == id && (predicate?.Invoke(target) ?? true));
         }
-        bool GodPowerCost(string key, int count)
-        {
-            var ids = declared.GetValueOrDefault(key, []);
-            return ids.Count == count && ids.Distinct(StringComparer.OrdinalIgnoreCase).Count() == count
-                && ids.All(id => player.Morale.Any(resource => resource.InstanceId == id && resource.IsGodPower && !resource.Tapped));
-        }
         bool OrdinaryCost(string key)
         {
             var id = declared.GetValueOrDefault(key, []).SingleOrDefault();
             return id is not null && CanConsumeSelectedResources(player, 1, [id]);
-        }
-        bool OrdinaryCosts(string key, int count)
-        {
-            var ids = declared.GetValueOrDefault(key, []);
-            return CanConsumeSelectedResources(player, count, ids);
         }
         bool EnemyMany(string key, int maximum, Func<L12CardInstance, bool>? predicate = null)
         {
@@ -1060,10 +1238,7 @@ public sealed partial class L12GameEngine
                 && (volleyMode != "mode:single" || Enemy("singleTarget")),
             "S01-0006" => effectOnlyRepeat || declared.GetValueOrDefault("discardCost", []) is [var discardId]
                 && discardId != card.InstanceId && player.Hand.Any(candidate => candidate.InstanceId == discardId),
-            "S01-0007" => declared.GetValueOrDefault("campMode", []).SingleOrDefault() is { } campMode
-                && campMode is "mode:none" or "mode:heal" or "mode:draw"
-                && (effectOnlyRepeat || campMode != "mode:heal" || OrdinaryCost("campHealCost"))
-                && (effectOnlyRepeat || campMode != "mode:draw" || OrdinaryCost("campDrawCost")),
+            "S01-0007" => declared.Count == 0,
             "S01-0009" => Own("returnTarget") && Own("buffTarget"),
             "S01-0010" => ValidateForgedOrdersDeclaration(opponent, declared),
             "S01-0011" => declared.GetValueOrDefault("lockTarget", []).SingleOrDefault() is { } lockTarget
@@ -1071,14 +1246,12 @@ public sealed partial class L12GameEngine
                     || opponent.Morale.Any(target => target.InstanceId == lockTarget)),
             "S01-0013" => mode is "mode:none" or "mode:use"
                 && (mode != "mode:use" || opponent.Hand.Count > 0 && (effectOnlyRepeat || OrdinaryCost("scoutCost"))),
-            "S01-0014" => declared.GetValueOrDefault("disasterValue", []).SingleOrDefault()
-                is "-2" or "-1" or "0" or "1" or "2",
+            "S01-0014" => declared.Count == 0,
             "S01-0015" => declared.Count == 0,
             "S01-0118" => declared.GetValueOrDefault("buffTarget", []).SingleOrDefault() is { } marchTarget
                 && (marchTarget == "mode:none" || Own("buffTarget", target =>
                     FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0)),
-            "S01-0119" => mode is "mode:none" or "mode:morale"
-                && (mode == "mode:none" || player.MoraleDeck.Count > 0),
+            "S01-0119" => declared.Count == 0,
             "S01-0221" => declared.GetValueOrDefault("duatMode", []).SingleOrDefault() is { } duatMode
                 && duatMode is "mode:kill" or "mode:recover"
                 && (duatMode != "mode:kill" || Enemy("killTarget", target => target.Troops <= 5000))
@@ -1095,35 +1268,26 @@ public sealed partial class L12GameEngine
                     && player.Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped)),
             "S01-0418" => Enemy("killTarget", target => L12StructuredCardRules.CurrentCostAtMost(target, 7)),
             "S02-0009" => ValidateDefenseDeploymentDeclaration(player, card, declared),
-            "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1"
-                && (mode is "mode:none" or "mode:morale")
-                && (effectOnlyRepeat || mode == "mode:none" || OrdinaryCosts("lotusCost", 3)),
+            "S02-0010" => declared.GetValueOrDefault("disasterMode", []).SingleOrDefault() is "-1" or "0" or "1",
             "S02-0011" => EnemyMany("killTargets", 3, target => target.DisplayBaseTroops <= 2000),
             "S02-0013" => declared.GetValueOrDefault("artifactTarget", []).SingleOrDefault() is { } artifactId
                 && new[] { opponent.Relic }.Concat(opponent.ExtraRelics)
                     .Any(target => target?.InstanceId == artifactId && target.CardType == "artifact"),
             "S02-0306" => (effectOnlyRepeat || player.MasterDamageTakenThisTurn >= 2
-                && !player.UsedAbilities.Contains("s2-mimir-used"))
-                && mode is "mode:none" or "mode:mill",
-            "S02-0522" => mode is "mode:none" or "mode:second"
-                && Enemy("primaryTarget")
-                && (mode == "mode:none" || (effectOnlyRepeat || GodPowerCost("secondCost", 1)) && Enemy("secondaryTarget")),
-            "S02-0105" => mode is "mode:none" or "mode:draw"
-                && Enemy("killTarget", target => target.DisplayBaseTroops <= 3000)
-                && (mode == "mode:none" || effectOnlyRepeat || declared.GetValueOrDefault("drawCost", []).SingleOrDefault() is { } moraleId
-                    && player.Morale.Any(resource => resource.InstanceId == moraleId)),
-            "S02-0521" => mode is "mode:none" or "mode:search"
-                && declared.GetValueOrDefault("flipTargets", []).Count <= 3
+                && !L12CardNameUsageRules.HasUsed(player, card.CardId))
+                && declared.Count == 0,
+            "S02-0522" => EnemyOrSkippableEmpty("primaryTarget"),
+            "S02-0105" => EnemyOrSkippableEmpty("killTarget", target => target.DisplayBaseTroops <= 3000),
+            "S02-0521" => declared.GetValueOrDefault("flipTargets", []).Count <= 3
                 && declared.GetValueOrDefault("flipTargets", []).Distinct(StringComparer.OrdinalIgnoreCase).Count()
                     == declared.GetValueOrDefault("flipTargets", []).Count
-                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.IsGodPower))
-                && (effectOnlyRepeat || mode == "mode:none" || ValidateGloryPlannedCost(player, declared)),
+                && declared.GetValueOrDefault("flipTargets", []).All(id => player.Morale.Any(resource =>
+                    resource.InstanceId == id && CanFlipMoraleToGodPower(resource))),
             "S02-0620" => declared.Count == 0,
-            "S02-0621" => mode is "mode:none" or "mode:buff"
-                && (mode == "mode:none" || Own("buffTarget", target => target.HasTrait("圆桌骑士"))
-                    && (effectOnlyRepeat || OrdinaryCost("buffCost"))),
+            "S02-0621" => declared.Count == 0,
             "S02-0207" => ValidateDesertDeclaration(player, card, declared, effectOnlyRepeat),
-            "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1) && Enemy("curseTarget"),
+            "S02-0307" => (effectOnlyRepeat || player.Library.Count >= 1)
+                && (declared.GetValueOrDefault("curseTarget", []).Count == 0 || Enemy("curseTarget")),
             "S02-0206" => Own("buffTarget", target => L12StructuredCardRules.HasFaction(player, target, "taiyangcheng")
                 && FindOnField(player, target.InstanceId, out var row, out _) is not null && row == 0),
             "S02-0406" => mode is "mode:row-cost" or "mode:front-attack" or "mode:free-move"
@@ -1135,21 +1299,8 @@ public sealed partial class L12GameEngine
 
     private static bool ValidateHuntingMomentGraveEffect(L12PlayerState player,
         IReadOnlyDictionary<string, List<string>> declared)
-    {
-        var eligible = player.Graveyard.Where(CanEnterHandOrLibrary).ToArray();
-        var canReturnFour = eligible.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= 4;
-        var selectedIds = declared.GetValueOrDefault("graveEffect", []);
-        var representation = declared.GetValueOrDefault("graveEffectCopies", []).SingleOrDefault();
-        if (!canReturnFour)
-            return selectedIds.Count == 0 && string.IsNullOrWhiteSpace(representation);
-        if (selectedIds.Count is < 1 or > 4
-            || selectedIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() != selectedIds.Count)
-            return false;
-        var selected = selectedIds.Select(id => eligible.FirstOrDefault(card => card.InstanceId == id))
-            .OfType<L12CardInstance>().ToArray();
-        return selected.Length == selectedIds.Count
-            && L12StructuredCardRules.IsExactGraveCardRepresentation(player, selected, representation, 4);
-    }
+        => ValidateFixedGraveEffectDeclaration(player, declared.GetValueOrDefault("graveEffect", [])
+            .Concat(declared.GetValueOrDefault("graveEffectCopies", [])), 4);
 
     private bool ValidateForgedOrdersDeclaration(L12PlayerState opponent,
         IReadOnlyDictionary<string, List<string>> declared)
@@ -1161,9 +1312,9 @@ public sealed partial class L12GameEngine
         {
             var target = FindOnField(opponent, targets[index], out var row, out var slot);
             var declaredSlot = declared.GetValueOrDefault($"moveSlot{index + 1}", []).SingleOrDefault();
-            if (target is null || target.Hidden || declaredSlot != $"{1 - row}:{slot}"
+            if (target is null || target.Hidden || !IsFieldLegion(target) || declaredSlot != $"{1 - row}:{slot}"
                 || opponent.Field[1 - row][slot] is not null
-                || State.ActiveDisaster?.CardId == "S01-DS03" && 1 - row == 1) return false;
+                || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId) && 1 - row == 1) return false;
         }
         return true;
     }
@@ -1191,6 +1342,7 @@ public sealed partial class L12GameEngine
             var result = L12LibraryOps.Mill(player, 1);
             if (!result.Success) return false;
             var discarded = result.Cards[0];
+            ResetCardForPrivateZone(discarded);
             AddEvent("cost", controller, $"〈{source.Name}〉弃置牌库顶部1张牌作为发动费用", source, discarded);
             NotifyCardDiscarded(player, discarded, "library", causedByEffect: false);
         }
@@ -1220,18 +1372,9 @@ public sealed partial class L12GameEngine
         var first = segments.FirstOrDefault(segment => CompositeSegmentEnabled(segment, declaration));
         if (preStackCosts.Length == 0 && first is not null
             && !TryPayCompositeDeclaredCost(controller, source, first, declaration)) return false;
-        if (source.CardId == "S02-0306") player.UsedAbilities.Add("s2-mimir-used");
+        if (source.CardId == "S02-0306" && !L12CardNameUsageRules.TryUse(player, source.CardId))
+            return false;
         return true;
-    }
-
-    private static bool ValidateGloryPlannedCost(L12PlayerState player,
-        IReadOnlyDictionary<string, List<string>> declared)
-    {
-        var flipIds = declared.GetValueOrDefault("flipTargets", []).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var costIds = declared.GetValueOrDefault("searchCost", []);
-        return costIds.Count == 2 && costIds.Distinct(StringComparer.OrdinalIgnoreCase).Count() == 2
-            && costIds.All(id => player.Morale.Any(resource => resource.InstanceId == id && !resource.Tapped
-                && (resource.IsGodPower || flipIds.Contains(id))));
     }
 
     private bool ValidateDesertDeclaration(L12PlayerState player, L12CardInstance source,
@@ -1280,6 +1423,26 @@ public sealed partial class L12GameEngine
         if (L12CompositeEffectPlans.UsesSingleResponseEffect(cardId))
             data["compositeResponseScope"] = "single-effect";
         foreach (var pair in declared) data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+        var first = segments[firstIndex];
+        if (first.SkipWhenNoLegalTargets && first.PublicTargetKeys is { Length: > 0 } targetKeys
+            && targetKeys.All(key => declared.GetValueOrDefault(key, []).Count == 0))
+        {
+            data["skipCompositeSettlement"] = "true";
+            data["effectResultStatus"] = "skipped";
+            data["effectFailureReason"] = $"首个效果段“{first.Text}”没有合法目标；仅跳过该段";
+            data["effectPlayerReason"] = "开始处理该段时没有合法对象";
+            data["unrespondable"] = "true";
+            data["preserveSourceSnapshot"] = "true";
+        }
+        // 沙漠君临的公开效果分支由“冒号前实际支付的弃置数量”决定；托勒密重复
+        // 效果则由玩家声明同一数量。两条入口必须投影为同一个公开分支身份，避免
+        // 结算器正确执行但按钮、动效、日志和回放无法定位到权威能力段。
+        if (cardId.Equals("S02-0207", StringComparison.OrdinalIgnoreCase)
+            && !data.ContainsKey("declared:desertRepeatCount"))
+        {
+            var discardCount = declared.GetValueOrDefault("discardTargets", []).Count;
+            data["declared:desertRepeatCount"] = $"count:{discardCount}";
+        }
         return data;
     }
 
@@ -1327,8 +1490,21 @@ public sealed partial class L12GameEngine
         => item.Data.Where(pair =>
                 pair.Key.StartsWith("composite", StringComparison.OrdinalIgnoreCase)
                 || pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase)
-                || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan")
+                || pair.Key.StartsWith(CompositePaidCostReceiptPrefix, StringComparison.Ordinal)
+                || pair.Key is "playerLogGroupId" or "playerLogTiming" or PaidCostSummaryDataKey
+                || pair.Key is "bonusTroops" or "bonusCost"
+                || pair.Key is "repeatedEffectOnly" or "effectGeneratedPlay" or "originZone" or "attackPlan"
+                || pair.Key is "ability" or "freeMasterActivation" or "freeMasterSource")
             .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+    private static bool CompositeSegmentAlreadyDeclaredAsDisabled(
+        L12CompositeEffectSegmentSpec segment, L12StackItem item)
+    {
+        if (segment.RequiredMode is null) return false;
+        var declared = CompositeDeclared(item, segment.RequiredDeclarationKey ?? "mode");
+        return declared.Length > 0
+            && !declared.Contains(segment.RequiredMode, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static void CopyCompositeContinuationData(L12StackItem source, L12StackItem destination)
     {
@@ -1336,6 +1512,11 @@ public sealed partial class L12GameEngine
         destination.Data["compositeOriginTrigger"] =
             source.Data.GetValueOrDefault("compositeOriginTrigger") ?? source.Trigger;
     }
+
+    private static bool CompositeUsesSingleSettlementWindow(L12StackItem item, string? planId = null)
+        => item.Data.GetValueOrDefault("compositeResponseScope") is "single-effect" or "unrespondable-effect"
+            || L12CompositeEffectPlans.UsesSingleResponseEffect(planId
+                ?? item.Data.GetValueOrDefault("compositePlan"));
 
     private bool TryBuildCompositeSegmentDeclarationSteps(int controller, L12StackItem item,
         L12CompositeEffectSegmentSpec segment, out List<L12ActivationSelectionStep> steps)
@@ -1346,6 +1527,145 @@ public sealed partial class L12GameEngine
         var targetKey = segment.PublicTargetKeys?.SingleOrDefault();
         switch (segment.Flow)
         {
+            case "ritual-disaster":
+                steps.Add(CompositeStep("option", "disasterValue",
+                    "祭天仪式：选择将天灾值增加或减少最多2点",
+                    ["-2", "-1", "0", "1", "2"], 1, 1));
+                return true;
+            case "observing-stars-morale":
+            {
+                if (player.MoraleDeck.Count == 0) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:morale";
+                steps.Add(CompositeStep("option", "mode",
+                    "观星：选择是否从士气牌库追加1张活跃士气",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续追加士气效果",
+                        [requiredMode] = "从士气牌库追加1张活跃士气",
+                    }));
+                return true;
+            }
+            case "mimir-mill":
+            {
+                var requiredMode = segment.RequiredMode ?? "mode:mill";
+                steps.Add(CompositeStep("option", "mode",
+                    "密米尔之泉：选择是否弃置我方牌库顶部2张牌",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续弃牌效果",
+                        [requiredMode] = "弃置我方牌库顶部2张牌",
+                    }));
+                return true;
+            }
+            case "camp-heal":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && resources.Length < segment.Cost) return false;
+                steps.Add(CompositeStep("option", "campMode",
+                    "野外扎营：选择是否消耗1士气，并选择主宰增加血量或抽牌",
+                    ["mode:none", "mode:heal", "mode:draw"], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果",
+                        ["mode:heal"] = "消耗1士气：我方主宰增加1点血量",
+                        ["mode:draw"] = "消耗1士气：抽取1张牌",
+                    }));
+                if (!repeatedEffectOnly)
+                {
+                    steps.Add(CompositeStep("composite-ordinary-payment", "campHealCost",
+                        "野外扎营：选择治疗段消耗的1份资源", resources, 1,
+                        requiredChoice: "mode:heal", autoSelectEquivalentOrdinaryMorale: true));
+                    steps.Add(CompositeStep("composite-ordinary-payment", "campDrawCost",
+                        "野外扎营：选择抽牌段消耗的1份资源", resources, 1,
+                        requiredChoice: "mode:draw", autoSelectEquivalentOrdinaryMorale: true));
+                }
+                return true;
+            }
+            case "black-lotus-morale":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && resources.Length < segment.Cost) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:morale";
+                steps.Add(CompositeStep("option", "mode",
+                    "黑色莲花：是否消耗3士气，将此战术休整置入士气区？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果，此战术结算后置入墓地",
+                        [requiredMode] = "消耗3士气：将此战术休整置入士气区并视为1张士气",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "lotusCost",
+                        "黑色莲花：选择将此战术置入士气区所消耗的3份资源",
+                        resources, segment.Cost, segment.Cost, requiredChoice: requiredMode,
+                        autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
+            case "qianyang-draw":
+            {
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && !CanReturnMorale(player, segment.Cost)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:draw";
+                steps.Add(CompositeStep("option", "mode",
+                    "乾坤 阳：是否返还1士气，发动独立的抽牌效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续抽牌效果",
+                        [requiredMode] = "返还1士气：抽取1张牌",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("resource-return", segment.CostKey ?? "drawCost",
+                        "乾坤 阳：选择返还的1张士气",
+                        player.Morale.Select(card => card.InstanceId), segment.Cost, segment.Cost,
+                        requiredChoice: requiredMode));
+                return true;
+            }
+            case "round-table-buff":
+            {
+                var targets = PublicLegions(player).Where(card => card.HasTrait("圆桌骑士"))
+                    .Select(card => card.InstanceId).ToArray();
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (targets.Length == 0 || !repeatedEffectOnly && resources.Length < segment.Cost
+                    || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:buff";
+                steps.Add(CompositeStep("option", "mode",
+                    "圆桌领域：是否消耗1士气，使我方1张【圆桌骑士】军团本回合兵力+2000？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续强化效果",
+                        [requiredMode] = "消耗1士气：选择我方1张【圆桌骑士】军团，本回合兵力+2000",
+                    }));
+                steps.Add(CompositeStep("field-legion", targetKey,
+                    "圆桌领域：选择本回合兵力+2000的【圆桌骑士】军团",
+                    targets, 1, requiredChoice: requiredMode));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "buffCost",
+                        "圆桌领域：选择支付的1份资源", resources, segment.Cost, segment.Cost,
+                        requiredChoice: requiredMode, autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
+            case "rune-search-choice":
+            {
+                var resources = CompositeOrdinaryPaymentChoices(player).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (player.Library.Count == 0 || !repeatedEffectOnly && resources.Length < segment.Cost)
+                    return false;
+                var requiredMode = segment.RequiredMode ?? "mode:search";
+                steps.Add(CompositeStep("option", "mode",
+                    "符文之力：是否消耗1士气，发动独立的牌库查看效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续牌库查看效果",
+                        [requiredMode] = "消耗1士气：查看牌库顶部3张牌并处理符合条件的【彼界】卡牌",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("composite-ordinary-payment", segment.CostKey ?? "runeSearchCost",
+                        "符文之力：选择牌库查看段消耗的1份资源",
+                        resources, segment.Cost, segment.Cost, requiredChoice: requiredMode,
+                        autoSelectEquivalentOrdinaryMorale: true));
+                return true;
+            }
             case "zhuge-disaster":
                 steps.Add(CompositeStep("option", "disasterMode", "诸葛亮：是否调整天灾值？",
                     ["mode:none", "mode:use"], 1, 1, new() { ["mode:none"] = "不发动", ["mode:use"] = "发动" }));
@@ -1406,6 +1726,51 @@ public sealed partial class L12GameEngine
                     targets, 1));
                 return true;
             }
+            case "nyx-secondary":
+            {
+                var targets = PublicLegions(opponent).Select(card => card.InstanceId).ToArray();
+                var powers = player.Morale.Where(card => card.IsGodPower && !card.Tapped)
+                    .Select(card => card.InstanceId).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (targets.Length == 0 || !repeatedEffectOnly && powers.Length < segment.Cost
+                    || string.IsNullOrWhiteSpace(targetKey)) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:second";
+                steps.Add(CompositeStep("option", "mode",
+                    "倪克斯的陨星：是否消耗并翻转1神力，发动独立的兵力-2000效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续效果",
+                        [requiredMode] = "消耗并翻转1神力：选择对方1张军团，本回合兵力-2000",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("target-morale", segment.CostKey ?? "secondCost",
+                        "倪克斯的陨星：选择消耗并翻转的1张当前活跃神力",
+                        powers, segment.Cost, segment.Cost, requiredChoice: requiredMode));
+                steps.Add(CompositeStep("enemy-legion", targetKey,
+                    "倪克斯的陨星：选择本回合兵力-2000的目标",
+                    targets, 1, requiredChoice: requiredMode));
+                return true;
+            }
+            case "glory-search":
+            {
+                var powers = player.Morale.Where(card => card.IsGodPower && !card.Tapped)
+                    .Select(card => card.InstanceId).ToArray();
+                var repeatedEffectOnly = item.Data.GetValueOrDefault("repeatedEffectOnly") == "true";
+                if (!repeatedEffectOnly && powers.Length < segment.Cost) return false;
+                var requiredMode = segment.RequiredMode ?? "mode:search";
+                steps.Add(CompositeStep("option", "mode",
+                    "荣耀之路：是否消耗并翻转2神力，发动独立的牌库检索效果？",
+                    ["mode:none", requiredMode], 1, 1, new()
+                    {
+                        ["mode:none"] = "不发动后续检索效果",
+                        [requiredMode] = "消耗并翻转2神力：查看牌库，选择1张【奥林匹斯】卡牌展示并加入手牌，随后重洗牌库",
+                    }));
+                if (!repeatedEffectOnly)
+                    steps.Add(CompositeStep("target-morale", segment.CostKey ?? "searchCost",
+                        "荣耀之路：选择检索段消耗并翻转的2张当前活跃神力",
+                        powers, segment.Cost, segment.Cost, requiredChoice: requiredMode));
+                return true;
+            }
             case "march-kill-segment":
             {
                 var targets = PublicLegions(opponent).Where(card => card.Troops <= 6000)
@@ -1433,6 +1798,25 @@ public sealed partial class L12GameEngine
                     targets, 1, requiredChoice: requiredMode));
                 return true;
             }
+            case "cosmos-yin-buff":
+            {
+                var targets = PublicLegions(player).Select(card => card.InstanceId).ToArray();
+                if (targets.Length == 0 || string.IsNullOrWhiteSpace(targetKey)) return false;
+                steps.Add(CompositeStep("field-legion", targetKey,
+                    "乾坤·阴：选择我方1张军团获得被弃置军团的费用与兵力",
+                    targets, 1));
+                return true;
+            }
+            case "draw-discard-discard":
+            {
+                if (player.Hand.Count == 0) return false;
+                var discard = CompositeStep("hand-card", "discardTarget",
+                    $"{item.SourceName}：抽牌完成后选择必须弃置的1张手牌",
+                    player.Hand.Select(card => card.InstanceId), 1);
+                discard.CancellationPolicy = L12ActivationCancellationPolicy.NotAllowed;
+                steps.Add(discard);
+                return true;
+            }
             default:
                 return false;
         }
@@ -1443,14 +1827,20 @@ public sealed partial class L12GameEngine
     {
         if (!TryBuildCompositeSegmentDeclarationSteps(item.Controller, item, segment, out var steps))
         {
-            AddEvent("effect-cancelled", item.Controller,
-                $"〈{source.Name}〉的“{segment.Text}”当前没有合法对象；仅跳过该段", source);
-            return false;
+            return QueueSkippedCompositeSettlementSegment(item, source, segmentIndex, segment,
+                $"〈{source.Name}〉的“{segment.Text}”在声明时没有合法对象；仅跳过该段",
+                "开始处理该段时没有合法对象");
         }
 
+        var continuationData = CompositeContinuationData(item);
+        if (L12CompositeEffectPlans.UsesSingleResponseEffect(planId))
+        {
+            continuationData["sameStackContinuation"] = "true";
+            continuationData["unrespondable"] = "true";
+        }
         var context = new CompositeSegmentDeclarationContext(planId, segmentIndex,
             item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger,
-            CompositeContinuationData(item));
+            continuationData);
         var result = BeginPendingActivationSequence(item.Controller, source,
             CompositeSegmentDeclarationAbility, steps, triggerCandidateId: null,
             playCardInstanceId: source.InstanceId, responseTargetStackItemId: null);
@@ -1472,6 +1862,10 @@ public sealed partial class L12GameEngine
             return false;
         }
         activation.CommittedCompletion = JsonSerializer.Serialize(context);
+        if (!string.IsNullOrWhiteSpace(segment.DeclarationTiming))
+            foreach (var prompt in State.PendingPrompts.Where(prompt =>
+                         prompt.Data.GetValueOrDefault("activationId") == activation.ActivationId))
+                prompt.Data["declarationTiming"] = segment.DeclarationTiming;
         return true;
     }
 
@@ -1506,16 +1900,54 @@ public sealed partial class L12GameEngine
         if (context?.PlanId.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
             return FindAuthoritativeCard(activation.SourceInstanceId)
                 ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        // 主动效果已经合法发动并完成首段后，后续段不应因为来源不是一张位于
+        // Resolving 区的手牌（主宰、场上军团与圣物均如此）而被误判中断。
+        // 优先继续使用权威区域实例；若来源已经离区，则使用其印刷身份作为结算快照。
+        if (context?.PlanId.StartsWith("active:", StringComparison.OrdinalIgnoreCase) == true)
+            return FindAuthoritativeCard(activation.SourceInstanceId)
+                ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
         return State.Players[activation.Controller].Resolving.FirstOrDefault(card =>
             card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
     }
 
-    private void AbortCompositeSegmentDeclaration(L12PendingActivation activation, string reason)
+    private void AbortCompositeSegmentDeclaration(L12PendingActivation activation, string reason,
+        string resultStatus = "failed")
     {
-        _ = TryReadCompositeSegmentDeclarationContext(activation, out var context);
+        var hasContext = TryReadCompositeSegmentDeclarationContext(activation, out var context);
         var player = State.Players[activation.Controller];
-        var source = CompositeSegmentDeclarationSource(activation, context)
+        var source = CompositeSegmentDeclarationSource(activation, hasContext ? context : null)
             ?? CreateCard(activation.SourceCardId, activation.SourceInstanceId);
+        if (hasContext)
+        {
+            var segments = L12CompositeEffectPlans.Segments(context.PlanId);
+            if (context.SegmentIndex >= 0 && context.SegmentIndex < segments.Count)
+            {
+                var carrier = new L12StackItem
+                {
+                    StackItemId = activation.ActivationId,
+                    Controller = activation.Controller,
+                    SourceInstanceId = activation.SourceInstanceId,
+                    SourceCardId = activation.SourceCardId,
+                    SourceName = source.Name,
+                    SourceSnapshot = CaptureLastKnownSourceSnapshot(source),
+                    Trigger = context.OriginTrigger,
+                    Text = segments[context.SegmentIndex].Text,
+                };
+                foreach (var pair in context.Data) carrier.Data[pair.Key] = pair.Value;
+                foreach (var step in activation.SelectionSteps)
+                    if (!string.IsNullOrWhiteSpace(step.DeclarationKey))
+                        carrier.Data.Remove($"declared:{step.DeclarationKey}");
+                foreach (var pair in activation.DeclaredValues)
+                    carrier.Data[$"declared:{pair.Key}"] = string.Join('|', pair.Value);
+                carrier.Data["compositePlan"] = context.PlanId;
+                carrier.Data["compositeOriginTrigger"] = context.OriginTrigger;
+                QueueCompositeSettlementTerminal(carrier, source, context.SegmentIndex,
+                    segments[context.SegmentIndex], resultStatus,
+                    $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退",
+                    "本段无法继续处理；之前完成的效果和已支付费用仍然有效");
+                return;
+            }
+        }
         var resolving = player.Resolving.FirstOrDefault(card =>
             card.InstanceId == activation.SourceInstanceId && card.CardId == activation.SourceCardId);
         if (resolving is not null
@@ -1523,10 +1955,10 @@ public sealed partial class L12GameEngine
             && State.DeferredEffectStack.All(item => item.SourceInstanceId != resolving.InstanceId))
         {
             player.Resolving.Remove(resolving);
-            ResetCardAfterLeavingField(resolving);
+            ResetCardForPrivateZone(resolving);
             player.Graveyard.Add(resolving);
         }
-        AddEvent("effect-cancelled", activation.Controller,
+        AddEvent("ability-rejected", activation.Controller,
             $"〈{source.Name}〉的后续效果段{reason}；此前完成的效果段与费用均不回退", source);
         ResumeAfterPostResolutionGeneratedInteraction();
     }
@@ -1556,7 +1988,7 @@ public sealed partial class L12GameEngine
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase);
         if (!CompositeSegmentEnabled(segment, declared))
         {
-            AbortCompositeSegmentDeclaration(activation, "由玩家选择不发动");
+            AbortCompositeSegmentDeclaration(activation, "由玩家选择不发动", "declined");
             return;
         }
 
@@ -1582,12 +2014,21 @@ public sealed partial class L12GameEngine
             AbortCompositeSegmentDeclaration(activation, "因目标已失效而取消");
             return;
         }
+        var hpBeforePayment = State.Players[activation.Controller].Hp;
         if (data.GetValueOrDefault("repeatedEffectOnly") != "true"
             && !TryPayCompositeSegmentCost(activation.Controller, source, segment, validationItem))
         {
-            AbortCompositeSegmentDeclaration(activation, "因费用对象已失效而取消，且未发生部分支付");
+            CopyCompositePaidCostReceipts(validationItem, data);
+            activation.CommittedCompletion = JsonSerializer.Serialize(context with { Data = data });
+            AbortCompositeSegmentDeclaration(activation,
+                State.Players[activation.Controller].Hp < hpBeforePayment
+                    ? "支付主宰伤害费用后对局结束"
+                    : "因费用对象已失效而取消，且未发生部分支付");
             return;
         }
+        // The payment was committed on validationItem. PushEffect consumes data, so copy
+        // only its public receipt fields across this declaration boundary.
+        CopyCompositePaidCostReceipts(validationItem, data);
 
         data["compositePlan"] = context.PlanId;
         data["compositeSegment"] = context.SegmentIndex.ToString();
@@ -1603,13 +2044,40 @@ public sealed partial class L12GameEngine
         var planId = item.Data.GetValueOrDefault("compositePlan");
         if (source is null && planId?.StartsWith("trigger:", StringComparison.OrdinalIgnoreCase) == true)
             source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
+        if (source is null && item.Data.GetValueOrDefault("skipCompositeSettlement") == "true")
+            source = item.SourceSnapshot ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         if (source is null || string.IsNullOrWhiteSpace(planId)
             || !int.TryParse(item.Data.GetValueOrDefault("compositeSegment"), out var current)) return false;
-        var singleResponseEffect = item.Data.GetValueOrDefault("compositeResponseScope") == "single-effect"
-            || L12CompositeEffectPlans.UsesSingleResponseEffect(planId);
+        var singleResponseEffect = CompositeUsesSingleSettlementWindow(item, planId);
         // 整项能力只响应一次：首段被无效时，后续只是同一效果内部的结算子句，
         // 必须一并停止，不能再创建一个看似独立的新效果。
         if (singleResponseEffect && item.Negated) return false;
+        if (singleResponseEffect && item.Data.Remove("compositeGeneratedChildStackId", out var childId))
+        {
+            var deferredIndex = State.DeferredEffectStack.FindIndex(candidate => candidate.StackItemId == childId);
+            var stackedIndex = State.EffectStack.FindIndex(candidate => candidate.StackItemId == childId);
+            if (deferredIndex >= 0 || stackedIndex >= 0)
+            {
+                // “免费打出”生成的卡牌效果必须完成自身响应及所有子段，才继续父能力的
+                // “随后”子句。复用可恢复的状态检查屏障，放在该子效果之下；不能把父
+                // 续段直接压回当前栈顶，让它抢在 Deferred 子效果之前结算。
+                var barrier = new L12StackItem
+                {
+                    StackItemId = $"stack-{++State.StackSequence}", Controller = item.Controller,
+                    SourceInstanceId = item.SourceInstanceId, SourceCardId = item.SourceCardId,
+                    SourceName = item.SourceName, SourceSnapshot = CaptureLastKnownSourceSnapshot(source),
+                    Trigger = "composite-continuation", Text = "继续处理已发动效果",
+                };
+                CopyCompositeContinuationData(item, barrier);
+                barrier.Data["atomicFlow"] = "composite-state-check-barrier";
+                barrier.Data["atomicContinuation"] = "true";
+                barrier.Data["compositeStateCheckBarrier"] = "true";
+                barrier.Data["unrespondable"] = "true";
+                if (deferredIndex >= 0) State.DeferredEffectStack.Insert(deferredIndex, barrier);
+                else State.EffectStack.Insert(stackedIndex, barrier);
+                return true;
+            }
+        }
         if (singleResponseEffect && item.Trigger != "authority-event")
         {
             // 若本段产生“因效果转为活跃”的权威时点，必须先让这些时点全部完成响应，
@@ -1630,11 +2098,24 @@ public sealed partial class L12GameEngine
         for (var nextIndex = current + 1; nextIndex < segments.Count; nextIndex++)
         {
             var next = segments[nextIndex];
+            if (next.RequiresPreviousSuccess
+                && item.Data.GetValueOrDefault("effectResultStatus") is { Length: > 0 } priorStatus
+                && !priorStatus.Equals("resolved", StringComparison.OrdinalIgnoreCase))
+            {
+                return QueueSkippedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的前一效果段未成功结算；不执行“{next.Text}”",
+                    "前一段未能完成，因此跳过本段");
+            }
             if (next.DeclareAtSegmentStart)
             {
+                // 有些后续段的分支要在前段揭示/结算后才能确定。若前段已经明确写入
+                // 不匹配分支（例如乾坤·阴未命中），不要再建立一个永远不应出现的
+                // 目标声明；尚未声明分支的计划仍可进入本段自己的模式选择。
+                if (CompositeSegmentAlreadyDeclaredAsDisabled(next, item)) continue;
                 // 兵力变化可先产生状态检查与阵亡触发。用一个无响应的延迟载体把声明
                 // 排在整批触发之后，保证目标集合来自所有必要状态动作完成后的场面。
-                if (item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
+                if (next.WaitForStateCheckTriggers
+                    && item.Data.GetValueOrDefault("compositeStateCheckBarrier") != "true"
                     && (State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0))
                 {
                     var barrier = new L12StackItem
@@ -1670,18 +2151,26 @@ public sealed partial class L12GameEngine
                 continue;
             }
             if (!CompositeSegmentEnabled(next, item)) continue;
+            if (next.DeclinedMode is { } declinedMode
+                && CompositeDeclared(item, next.DeclinedDeclarationKey ?? "mode")
+                    .Contains(declinedMode, StringComparer.OrdinalIgnoreCase))
+            {
+                return QueueDeclinedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉已明确选择不发动“{next.Text}”",
+                    "玩家选择不发动本段");
+            }
             if (!ValidateCompositeSegmentTargets(item.Controller, next.Flow, item))
             {
-                AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因目标已失效而取消；其余效果继续结算", source);
-                continue;
+                return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的“{next.Text}”已声明对象在前段及响应逆结算后不再符合条件；此前效果不回退",
+                    "已选择的对象在处理本段时不再符合条件；之前完成的效果仍然有效");
             }
             if (item.Data.GetValueOrDefault("repeatedEffectOnly") != "true"
                 && !next.PreStackCost && !TryPayCompositeSegmentCost(item.Controller, source, next, item))
             {
-                AddEvent("effect-cancelled", item.Controller,
-                    $"〈{source.Name}〉的“{next.Text}”因费用对象或目标失效而取消；未发生部分支付，其余效果继续结算", source);
-                continue;
+                return QueueFailedCompositeSettlementSegment(item, source, nextIndex, next,
+                    $"〈{source.Name}〉的“{next.Text}”已声明费用对象在结算前失效；未发生部分支付，此前效果不回退",
+                    "本段所选费用对象不再可用；本段未支付费用，之前完成的效果仍然有效");
             }
             var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
             {
@@ -1689,9 +2178,27 @@ public sealed partial class L12GameEngine
                 ["atomicFlow"] = next.Flow,
                 ["atomicContinuation"] = "true",
             };
+            // 结算结果与场景身份属于单个效果段，绝不能沿用上一段。否则下一段虽然
+            // 实际完成了结算，却会因 effectResultPublished=true 静默丢失结果日志，
+            // 并把首段动效文本误当作后续段的展示来源。
+            data.Remove("effectResultPublished");
+            data.Remove("effectResultStatus");
+            data.Remove("presentationSceneId");
+            data.Remove("presentationFlow");
+            data.Remove("skipCompositeSettlement");
+            data.Remove("effectFailureReason");
+            data.Remove("effectPlayerReason");
+            data.Remove(EffectProcessedPublicTargetIdDataKey);
+            data.Remove(EffectProcessedPublicTargetNameDataKey);
+            data.Remove("unrespondable");
+            data.Remove("sameStackContinuation");
             // 首段已经完成双方响应；后续子句只继续结算，不再重复询问或允许
             // 对同一项能力中的单个句子另行无效。
-            if (singleResponseEffect) data["unrespondable"] = "true";
+            if (singleResponseEffect)
+            {
+                data["unrespondable"] = "true";
+                data["sameStackContinuation"] = "true";
+            }
             // The Wisdom Codex reward belongs to the exact stack item whose cost was paid.
             // A semantic follow-up is a new effect and must not inherit that one-shot marker.
             data.Remove("wisdomRewards");
@@ -1705,14 +2212,59 @@ public sealed partial class L12GameEngine
         return false;
     }
 
+    private bool QueueFailedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "failed", reason, playerReason);
+
+    private bool QueueSkippedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "skipped", reason, playerReason);
+
+    private bool QueueDeclinedCompositeSettlementSegment(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string reason, string playerReason)
+        => QueueCompositeSettlementTerminal(item, source, segmentIndex, segment, "declined", reason, playerReason);
+
+    private bool QueueCompositeSettlementTerminal(L12StackItem item, L12CardInstance source,
+        int segmentIndex, L12CompositeEffectSegmentSpec segment, string resultStatus, string reason, string playerReason)
+    {
+        var data = new Dictionary<string, string>(item.Data, StringComparer.OrdinalIgnoreCase)
+        {
+            ["compositeSegment"] = segmentIndex.ToString(),
+            ["atomicFlow"] = segment.Flow,
+            ["atomicContinuation"] = "true",
+            ["skipCompositeSettlement"] = "true",
+            ["effectResultStatus"] = resultStatus,
+            ["effectFailureReason"] = reason,
+            ["effectPlayerReason"] = playerReason,
+            ["unrespondable"] = "true",
+            ["preserveSourceSnapshot"] = "true",
+        };
+        data.Remove("effectResultPublished");
+        data.Remove("presentationSceneId");
+        data.Remove("presentationFlow");
+        data.Remove(EffectProcessedPublicTargetIdDataKey);
+        data.Remove(EffectProcessedPublicTargetNameDataKey);
+        data.Remove("wisdomRewards");
+        if (CompositeUsesSingleSettlementWindow(item))
+            data["sameStackContinuation"] = "true";
+        var trigger = item.Data.GetValueOrDefault("compositeOriginTrigger") ?? item.Trigger;
+        PushEffect(item.Controller, source, trigger, segment.Text,
+            CompositeSegmentTargets(segment, item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
+                    .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase)), data);
+        return true;
+    }
+
     private bool ValidateCompositeSegmentTargets(int controller, string flow, L12StackItem item)
         => flow switch
         {
+            "draw-discard-discard" => CompositeDeclared(item, "discardTarget").SingleOrDefault() is { } discard
+                && State.Players[controller].Hand.Any(card => card.InstanceId == discard),
             "nyx-secondary" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "secondaryTarget").SingleOrDefault()) is not null,
             "round-table-buff" => FindOnField(State.Players[controller],
                     CompositeDeclared(item, "buffTarget").SingleOrDefault(), out _, out _) is { } target
-                && target.HasTrait("圆桌骑士"),
+                && IsFieldLegion(target) && !target.Hidden && target.HasTrait("圆桌骑士"),
             "march-kill-effect" or "march-kill-segment" => DeclaredEnemyTarget(controller,
                 CompositeDeclared(item, "killTarget").SingleOrDefault(), target => target.Troops <= 6000) is not null,
             "yomi-kill3" => CompositeDeclared(item, "kill3Target").SingleOrDefault() is { } kill3
@@ -1726,8 +2278,7 @@ public sealed partial class L12GameEngine
                     card => L12StructuredCardRules.CurrentCostEquals(card, 0)) is not null),
             "wisdom-recover" => CompositeDeclared(item, "recoverTarget").SingleOrDefault() is { } wisdom
                 && State.Players[controller].Graveyard.Any(card => card.InstanceId == wisdom
-                    && card.InstanceId != item.SourceInstanceId && L12StructuredCardRules.CurrentCostAtMost(card, 3)
-                    && card.CardType is "tactic" or "artifact"),
+                    && IsWisdomCodexRecoveryCandidate(card)),
             "blood-eagle-recover" => CompositeDeclared(item, "graveOrder") is [var handCard, var bottomCard]
                 && !handCard.Equals(bottomCard, StringComparison.OrdinalIgnoreCase)
                 && new[] { handCard, bottomCard }.Any(id => State.Players[controller].Graveyard.Any(card =>
@@ -1736,6 +2287,26 @@ public sealed partial class L12GameEngine
                     && L12StructuredCardRules.HasFaction(State.Players[controller], card, "asgard"))),
             "oiran-ready-morale" => CompositeDeclared(item, "moraleTarget").SingleOrDefault() is { } moraleTarget
                 && State.Players[controller].Morale.Any(card => card.InstanceId == moraleTarget && card.Tapped),
+            "oiran-enemy-debuff" => DeclaredEnemyTarget(controller,
+                CompositeDeclared(item, "enemyTarget").SingleOrDefault()) is not null,
+            "oiran-own-buff" => FindOnField(State.Players[controller],
+                    CompositeDeclared(item, "ownTarget").SingleOrDefault(), out _, out _) is { } oiranOwn
+                && IsFieldLegion(oiranOwn),
+            "valhalla-kill-low" => CompositeDeclared(item, "lowTarget").SingleOrDefault() is { } valhallaLow
+                && (valhallaLow == "mode:none" || DeclaredEnemyTarget(controller, valhallaLow,
+                    card => card.Troops <= 1000) is not null),
+            "valhalla-kill-broad" => CompositeDeclared(item, "broadTarget").SingleOrDefault() is { } valhallaBroad
+                && (valhallaBroad == "mode:none" || DeclaredEnemyTarget(controller, valhallaBroad,
+                    card => card.Troops <= 5000) is not null),
+            "hijikata-kill-broad" => CompositeDeclared(item, "broadTarget").SingleOrDefault() is { } hijikataBroad
+                && (hijikataBroad == "mode:none" || DeclaredEnemyTarget(controller, hijikataBroad,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 2)) is not null),
+            "hijikata-kill-low" => CompositeDeclared(item, "lowTarget").SingleOrDefault() is { } hijikataLow
+                && (hijikataLow == "mode:none" || DeclaredEnemyTarget(controller, hijikataLow,
+                    card => L12StructuredCardRules.CurrentCostAtMost(card, 1)) is not null),
+            "cosmos-yin-buff" => CompositeDeclared(item, "buffTarget").SingleOrDefault() is { } cosmosTarget
+                && FindOnField(State.Players[controller], cosmosTarget, out _, out _) is { } cosmosLegion
+                && IsFieldLegion(cosmosLegion),
             "palace-exchange-revive" => CompositeDeclared(item, "entryCard").SingleOrDefault() is { } palaceCard
                 && CompositeDeclared(item, "entryBattlefield").SingleOrDefault() == $"battlefield:{controller}"
                 && CompositeDeclared(item, "entrySlot").SingleOrDefault() is { } palaceSlot
@@ -1748,6 +2319,34 @@ public sealed partial class L12GameEngine
             _ => true,
         };
 
+    private bool TryResolveDrawDiscardSegment(L12StackItem item, L12CardInstance card)
+    {
+        var flow = AtomicFlowKey(item, card);
+        if (flow is "draw-discard-draw-1" or "draw-discard-draw-2")
+        {
+            var drawCount = flow.EndsWith("-2", StringComparison.Ordinal) ? 2 : 1;
+            if (!Draw(State.Players[item.Controller], drawCount))
+            {
+                AddEvent("effect-failed", item.Controller,
+                    $"〈{item.SourceName}〉抽取{drawCount}张牌时牌库数量不足", card);
+                SetWinner(1 - item.Controller, $"{item.SourceName}效果抽牌时牌库为空");
+            }
+            FinishStackItem(item);
+            return true;
+        }
+        if (flow != "draw-discard-discard") return false;
+
+        var player = State.Players[item.Controller];
+        var discardId = CompositeDeclared(item, "discardTarget").SingleOrDefault();
+        var target = player.Hand.FirstOrDefault(candidate => candidate.InstanceId == discardId);
+        if (target is null)
+            RecordTargetSettlementFailure(item, discardId, "已选择的手牌不再位于手牌中");
+        else
+            MoveHandToGrave(player, target.InstanceId, causedByEffect: true, card);
+        FinishStackItem(item);
+        return true;
+    }
+
     private bool TryPayCompositeSegmentCost(int controller, L12CardInstance source,
         L12CompositeEffectSegmentSpec segment, L12StackItem item)
     {
@@ -1755,7 +2354,33 @@ public sealed partial class L12GameEngine
         var declared = item.Data.Where(pair => pair.Key.StartsWith("declared:", StringComparison.OrdinalIgnoreCase))
             .ToDictionary(pair => pair.Key["declared:".Length..], pair => pair.Value
                 .Split('|', StringSplitOptions.RemoveEmptyEntries).ToList(), StringComparer.OrdinalIgnoreCase);
-        return TryPayCompositeDeclaredCost(controller, source, segment, declared);
+        var hpBefore = State.Players[controller].Hp;
+        var canContinue = TryPayCompositeDeclaredCost(controller, source, segment, declared);
+        var actualDamage = Math.Max(0, hpBefore - State.Players[controller].Hp);
+        if (segment.CostKind == "conditional-master-damage" && actualDamage > 0)
+            RecordCompositeSegmentPaidCost(item, segment.Flow,
+                $"对我方主宰造成{actualDamage}点伤害");
+        if (!canContinue) return false;
+        var publicSummary = segment.CostKind switch
+        {
+            "god-power-flip" => $"消耗并翻转{segment.Cost}神力",
+            "morale-return" => $"返还{segment.Cost}士气",
+            "ordinary-payment" => $"消耗{segment.Cost}士气",
+            "discard-hand" => $"弃置{segment.Cost}张手牌",
+            "grave-bottom" => $"将墓地卡牌按效果合计{segment.Cost}张置于牌库底部",
+            _ => null,
+        };
+        if (publicSummary is not null)
+            RecordCompositeSegmentPaidCost(item, segment.Flow, publicSummary);
+        return true;
+    }
+
+    private static void CopyCompositePaidCostReceipts(L12StackItem item, Dictionary<string, string> destination)
+    {
+        foreach (var pair in item.Data.Where(pair =>
+                     pair.Key == PaidCostSummaryDataKey
+                     || pair.Key.StartsWith(CompositePaidCostReceiptPrefix, StringComparison.Ordinal)))
+            destination[pair.Key] = pair.Value;
     }
 
     private bool TryPayCompositeDeclaredCost(int controller, L12CardInstance source,
@@ -1794,13 +2419,17 @@ public sealed partial class L12GameEngine
                     && card.InstanceId != source.InstanceId).ToArray();
                 if (costs.Length != segment.Cost || costs.Select(card => card.InstanceId)
                         .Distinct(StringComparer.OrdinalIgnoreCase).Count() != segment.Cost) return false;
-                foreach (var cost in costs) MoveHandToGrave(player, cost.InstanceId, causedByEffect: false);
+                // 费用在入栈前支付，此时还没有可供 MoveHandToGrave 反查的结算堆叠。
+                // 必须显式携带来源，才能让“本回合因主宰弃置过手牌”这类条件读取到
+                // 阿尔忒弥斯等经公共复合费用协议支付的真实主宰弃牌。
+                foreach (var cost in costs)
+                    MoveHandToGrave(player, cost.InstanceId, causedByEffect: false, source);
                 AddEvent("cost", controller, $"〈{source.Name}〉弃置{segment.Cost}张手牌作为发动费用",
                     [source, .. costs]);
                 return true;
             }
             case "conditional-master-damage":
-                if (player.Hp > 5) DamageMaster(controller, segment.Cost, $"〈{source.Name}〉的发动费用");
+                if (player.Hp > 5) return PayMasterDamageCostAndCanContinue(controller, segment.Cost, $"〈{source.Name}〉的发动费用");
                 else AddEvent("cost", controller, $"〈{source.Name}〉的主宰伤害费用因血量不高于5而不减少血量", source);
                 return State.Phase != L12Phase.GameOver;
             case "grave-bottom":

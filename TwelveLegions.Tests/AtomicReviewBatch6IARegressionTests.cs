@@ -23,15 +23,12 @@ public sealed class AtomicReviewBatch6IARegressionTests
         ("S02-0512", "death"),
         ("S02-0507", "enter"),
         ("S02-0507", "promotion-enter"),
-        ("S02-0616", "enter"),
         ("ST01-02", "after-attack"),
         ("ST02-04", "enter"),
         ("ST05-04", "enter"),
-        ("ST06-03", "enter"),
         ("ST06-05", "enter"),
         ("ST06-05", "attack"),
         ("ST06-06", "enter"),
-        ("ST06-08", "enter"),
     ];
 
     private static L12GameEngine Create(int seed)
@@ -179,6 +176,10 @@ public sealed class AtomicReviewBatch6IARegressionTests
     {
         var actual = L12VerifiedAtomicPrograms.All
             .Where(program => program.Atoms.Any(atom => atom.Kind == L12AtomKinds.Optional))
+            .Where(program => !L12SimpleResourceTriggerEffects.All.Any(spec =>
+                spec.CardId == program.CardId && spec.Trigger == program.Trigger))
+            .Where(program => L12SimpleCardStateTriggerEffects.Find(program.CardId, program.Trigger) is null)
+            .Where(program => L12SimpleSelfTroopBuffTriggerEffects.Find(program.CardId, program.Trigger) is null)
             .Select(program => (program.CardId, program.Trigger))
             .OrderBy(program => program.CardId, StringComparer.Ordinal)
             .ThenBy(program => program.Trigger, StringComparer.Ordinal)
@@ -318,15 +319,17 @@ public sealed class AtomicReviewBatch6IARegressionTests
         var first = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", first.Continuation);
         ResolveOnlyPrompt(game, "mode:use");
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassResponses(game);
         var second = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("pending-activation", second.Continuation);
         ResolveOnlyPrompt(game, "mode:use");
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        PassResponses(game);
 
-        Assert.Equal(2, game.State.EffectStack.Count);
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "enter"
-            && item.Data.GetValueOrDefault("declared:mode") == "mode:use");
-        Assert.Contains(game.State.EffectStack, item => item.Trigger == "promotion-enter"
-            && item.Data.GetValueOrDefault("declared:mode") == "mode:use");
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(2, game.State.Players[0].Hand.Count);
+        Assert.Empty(game.State.PendingTriggerBatches);
     }
 
     [Fact]

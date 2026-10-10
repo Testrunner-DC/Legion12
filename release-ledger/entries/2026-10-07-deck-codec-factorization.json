@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-deck-codec-factorization",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "提取既有L12D2公开编码并引入独立无损本机牌库codec；公开协议不变，不把内部格式或样本节约写入玩家日志。玩家可感知的同步保护与异常提示由同批独立条目记录。",
+  "paths": [
+    "opcgpro-vue/src/l12/deckCodeCodec.ts",
+    "opcgpro-vue/src/l12/deckCacheCodec.ts",
+    "opcgpro-vue/src/l12/site/deckShare.ts"
+  ]
+}

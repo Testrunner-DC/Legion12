@@ -22,13 +22,113 @@ internal sealed record L12JournalRecoveryState(
     L12GameEngine Engine, long CommandSequence,
     IReadOnlyList<L12PersistedActionRequest> ProcessedRequests);
 
+internal sealed record L12StoredCheckpointRow(
+    long Sequence,
+    long Revision,
+    string StateHash,
+    string StateEncoding,
+    byte[] StateBlob,
+    int UncompressedBytes,
+    long RandomDrawCount,
+    long CardFactSignalSequence,
+    bool AutoPassEmptyResponses,
+    bool ConcealHiddenResponseAvailability,
+    int RandomStateVersion,
+    byte[]? RandomStateBlob);
+
+internal readonly record struct L12JournalDurableBounds(
+    long? EventSequence,
+    long? RequestSequence,
+    long? ActionEventSequence,
+    long? CheckpointSequence)
+{
+    internal long UpperBound => new[]
+    {
+        EventSequence ?? 0,
+        RequestSequence ?? 0,
+        ActionEventSequence ?? 0,
+        CheckpointSequence ?? 0,
+    }.Max();
+}
+
+internal sealed record L12ReplayIncompatibilityEvidence(
+    string Reason,
+    long? Sequence,
+    string? CommandType,
+    string Dimension);
+
 public sealed partial class MatchRecorder
 {
-    internal const int JournalStorageVersion = 2;
+    private const string ReplayIncompatibleMarker = "l12.replay-incompatible";
+    private const string ReplayIncompatibleReason = "l12.replay-incompatible.reason";
+    private const string ReplayIncompatibleSequence = "l12.replay-incompatible.sequence";
+    private const string ReplayIncompatibleCommandType = "l12.replay-incompatible.command-type";
+    private const string ReplayIncompatibleDimension = "l12.replay-incompatible.dimension";
+    internal const int JournalStorageVersion = L12PersistenceContract.CurrentJournalStorageVersion;
     internal const int CheckpointInterval = 32;
     private readonly object _journalCatalogGate = new();
     private L12Catalog? _journalCatalog;
     private bool _journalCatalogExplicitlyAttached;
+
+    internal static bool TryGetReplayIncompatibility(Exception error,
+        out L12ReplayIncompatibilityEvidence? evidence)
+    {
+        evidence = null;
+        if (error is not InvalidDataException
+            || error.Data[ReplayIncompatibleMarker] is not true) return false;
+        evidence = new L12ReplayIncompatibilityEvidence(
+            SafeReplayIncompatibilityReason(error.Data[ReplayIncompatibleReason] as string),
+            error.Data[ReplayIncompatibleSequence] is long sequence ? sequence : null,
+            SafeReplayCommandType(error.Data[ReplayIncompatibleCommandType] as string),
+            SafeReplayIncompatibilityDimension(error.Data[ReplayIncompatibleDimension] as string));
+        return true;
+    }
+
+    private static void MarkReplayIncompatible(InvalidDataException error, string reason,
+        long? sequence, string? commandType, string dimension)
+    {
+        error.Data[ReplayIncompatibleMarker] = true;
+        error.Data[ReplayIncompatibleReason] = SafeReplayIncompatibilityReason(reason);
+        if (sequence is not null) error.Data[ReplayIncompatibleSequence] = sequence.Value;
+        if (!string.IsNullOrWhiteSpace(commandType))
+            error.Data[ReplayIncompatibleCommandType] = SafeReplayCommandType(commandType)!;
+        error.Data[ReplayIncompatibleDimension] = SafeReplayIncompatibilityDimension(dimension);
+    }
+
+    private static string SafeReplayIncompatibilityReason(string? reason)
+        => reason is "checkpoint-load" or "checkpoint-validation" or "command-sequence"
+            or "command-type" or "command-replay" or "command-validation"
+            ? reason : "journal-reconstruction";
+
+    private static string SafeReplayIncompatibilityDimension(string? dimension)
+        => dimension is "checkpoint" or "sequence" or "command-payload" or "accepted"
+            or "revision" or "state-hash"
+            ? dimension : "stored-record";
+
+    private static string? SafeReplayCommandType(string? commandType)
+    {
+        if (commandType is null) return null;
+        if (string.Equals(commandType, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+            return "authorityConclusion";
+        if (string.Equals(commandType, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
+            return "setResponsePreference";
+        if (string.Equals(commandType, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
+            return "responseAutoClose";
+        return commandType switch
+        {
+            "resolvePrompt" or "mulligan" or "advancePhase" or "playCard" or "attack"
+                or "resolveDefense" or "move" or "cavalryMove" or "activateAbility"
+                or "flipHidden" or "endTurn" or "surrender"
+                or "addCard" or "placeCard" or "moveHandCard" or "playHandCard"
+                or "destroyCard" or "returnCardToHand" or "resetCardEffects"
+                or "setCardState" or "setTroops" or "startAttack" or "readyAll"
+                or "restAll" or "destroyAll" or "addMorale" or "readyMorale"
+                or "restMorale" or "draw" or "mill" or "shuffleLibrary" or "setLife"
+                or "setDisaster" or "triggerDisaster" or "replaceDisaster" or "setPhase"
+                or "nextPhase" => commandType,
+            _ => "unknown",
+        };
+    }
 
     internal void AttachCatalog(L12Catalog catalog)
     {
@@ -143,6 +243,35 @@ public sealed partial class MatchRecorder
     {
         foreach (var actionEvent in engine.UnpersistedEvents)
         {
+            var journalEvent = new Dictionary<string, object?>
+            {
+                ["Sequence"] = actionEvent.Sequence,
+                ["Type"] = actionEvent.Type,
+                ["PlayerIndex"] = actionEvent.PlayerIndex,
+                ["Text"] = actionEvent.Text,
+                ["Cards"] = actionEvent.Cards.Select(card => new
+                {
+                    card.CardId,
+                    card.InstanceId,
+                }).ToArray(),
+            };
+            static void AddOptional(Dictionary<string, object?> values, string key, object? value)
+            {
+                if (value is not null) values[key] = value;
+            }
+            AddOptional(journalEvent, "EffectText", actionEvent.EffectText);
+            AddOptional(journalEvent, "EffectSceneId", actionEvent.EffectSceneId);
+            AddOptional(journalEvent, "EffectAbilityId", actionEvent.EffectAbilityId);
+            AddOptional(journalEvent, "EffectSegmentId", actionEvent.EffectSegmentId);
+            AddOptional(journalEvent, "EffectSegmentIndex", actionEvent.EffectSegmentIndex);
+            AddOptional(journalEvent, "EffectSegmentCount", actionEvent.EffectSegmentCount);
+            AddOptional(journalEvent, "EffectBranchId", actionEvent.EffectBranchId);
+            AddOptional(journalEvent, "EffectBranchLabel", actionEvent.EffectBranchLabel);
+            AddOptional(journalEvent, "EffectResultStatus", actionEvent.EffectResultStatus);
+            AddOptional(journalEvent, "PlayerLogGroupId", actionEvent.PlayerLogGroupId);
+            AddOptional(journalEvent, "PlayerLogTiming", actionEvent.PlayerLogTiming);
+            AddOptional(journalEvent, "PlayerLogDecisionLabel", actionEvent.PlayerLogDecisionLabel);
+            AddOptional(journalEvent, "PlayerLogSemantic", actionEvent.PlayerLogSemantic);
             var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText = """
@@ -155,19 +284,7 @@ public sealed partial class MatchRecorder
             insert.Parameters.AddWithValue("$command", commandSequence);
             insert.Parameters.AddWithValue("$revision", engine.State.Revision);
             insert.Parameters.AddWithValue("$json", ApplyIdentityReplacements(
-                JsonSerializer.Serialize(new
-                {
-                    actionEvent.Sequence,
-                    actionEvent.Type,
-                    actionEvent.PlayerIndex,
-                    actionEvent.Text,
-                    Cards = actionEvent.Cards.Select(card => new
-                    {
-                        card.CardId,
-                        card.InstanceId,
-                    }).ToArray(),
-                    actionEvent.EffectText,
-                }), identityReplacements));
+                JsonSerializer.Serialize(journalEvent), identityReplacements));
             insert.Parameters.AddWithValue("$utc", occurredUtc);
             await insert.ExecuteNonQueryAsync();
         }
@@ -284,6 +401,12 @@ public sealed partial class MatchRecorder
         CancellationToken cancellationToken = default)
     {
         var catalog = ResolveJournalCatalog();
+        long? incompatibleSequence = null;
+        string? incompatibleCommandType = null;
+        var incompatibleReason = "checkpoint-load";
+        var incompatibleDimension = "checkpoint";
+        try
+        {
         // 账号匿名化会按隐私要求改写历史快照中的显示名。旧 hash 仍作为脱敏前的
         // 审计锚点保留，但不能再用来验证已明确标记过的脱敏副本。
         var verifyStateHashes = !await IsIdentityScrubbedAsync(connection, matchId, cancellationToken);
@@ -305,9 +428,11 @@ public sealed partial class MatchRecorder
                 throw new InvalidDataException("v2 对局缺少可用检查点");
             initial = await ReadCheckpointAsync(reader, cancellationToken);
         }
+        incompatibleSequence = initial.Sequence;
+        incompatibleReason = "checkpoint-validation";
         var engine = L12GameEngine.RestoreCheckpoint(catalog, initial.StateJson,
             initial.RandomState, initial.CardFactSignalSequence,
-            initial.AutoPassEmptyResponses, initial.ConcealHiddenResponseAvailability);
+            initial.AutoPassEmptyResponses, initial.ConcealHiddenResponseAvailability, _utcNow);
         if (engine.State.Revision != initial.Revision
             || (verifyStateHashes
                 && !string.Equals(engine.ComputeStateHash(), initial.StateHash, StringComparison.Ordinal)))
@@ -330,27 +455,53 @@ public sealed partial class MatchRecorder
         {
             cancellationToken.ThrowIfCancellationRequested();
             var sequence = rows.GetInt64(0);
+            incompatibleSequence = sequence;
+            incompatibleCommandType = null;
+            incompatibleReason = "command-sequence";
+            incompatibleDimension = "sequence";
             if (sequence != ++expectedSequence) throw new InvalidDataException("v2 命令序号不连续");
             var commandJson = rows.GetString(3);
+            var receivedUtc = DateTimeOffset.Parse(rows.GetString(1));
             using var commandDocument = JsonDocument.Parse(commandJson);
             var commandRoot = commandDocument.RootElement;
             var type = commandRoot.TryGetProperty("type", out var lowerType)
                 ? lowerType.GetString()
                 : commandRoot.TryGetProperty("Type", out var upperType) ? upperType.GetString() : null;
+            incompatibleReason = "command-type";
+            incompatibleDimension = "command-payload";
             if (string.IsNullOrWhiteSpace(type)) throw new InvalidDataException("v2 命令缺少类型");
-            var outcome = ReplayJournalCommand(engine, rows.GetInt32(2), type, commandRoot);
+            incompatibleCommandType = type;
+            incompatibleReason = "command-replay";
+            incompatibleDimension = "command-payload";
             var accepted = rows.GetInt32(4) == 1;
+            var outcome = ReplayJournalCommand(engine, rows.GetInt32(2), type, commandRoot,
+                receivedUtc, accepted);
             var revision = rows.GetInt64(6);
             var stateHash = rows.GetString(7);
-            if (outcome.Accepted != accepted || engine.State.Revision != revision
-                || (verifyStateHashes
-                    && !string.Equals(engine.ComputeStateHash(), stateHash, StringComparison.Ordinal)))
+            var acceptedMatches = outcome.Accepted == accepted;
+            var revisionMatches = engine.State.Revision == revision;
+            var hashMatches = !verifyStateHashes
+                              || string.Equals(engine.ComputeStateHash(), stateHash,
+                                  StringComparison.Ordinal);
+            if (!acceptedMatches || !revisionMatches || !hashMatches)
+            {
+                incompatibleReason = "command-validation";
+                incompatibleDimension = !acceptedMatches ? "accepted"
+                    : !revisionMatches ? "revision" : "state-hash";
                 throw new InvalidDataException($"v2 命令重放校验失败：{sequence}");
+            }
             result.Add(new L12RecordedCommand(sequence, rows.GetString(1), rows.GetInt32(2),
                 commandRoot.Clone(), accepted, rows.IsDBNull(5) ? null : rows.GetString(5),
                 revision, stateHash, JsonSerializer.SerializeToElement(engine.State)));
         }
         return result;
+        }
+        catch (InvalidDataException error)
+        {
+            MarkReplayIncompatible(error, incompatibleReason, incompatibleSequence,
+                incompatibleCommandType, incompatibleDimension);
+            throw;
+        }
     }
 
     internal async Task<L12JournalRecoveryState?> LoadJournalEngineAsync(string matchId,
@@ -362,73 +513,273 @@ public sealed partial class MatchRecorder
         if (await ReadStorageVersionAsync(connection, matchId, cancellationToken) < JournalStorageVersion)
             return null;
         var verifyStateHashes = !await IsIdentityScrubbedAsync(connection, matchId, cancellationToken);
-        var checkpoint = await LoadLatestCheckpointAsync(matchId, cancellationToken)
-            ?? throw new InvalidDataException("v2 对局缺少状态检查点");
-        var engine = L12GameEngine.RestoreCheckpoint(catalog, checkpoint.StateJson,
-            checkpoint.RandomState, checkpoint.CardFactSignalSequence,
-            checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability);
-        if (engine.State.Revision != checkpoint.Revision
-            || (verifyStateHashes
-                && !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash, StringComparison.Ordinal)))
-            throw new InvalidDataException("v2 恢复检查点哈希不一致");
+        var bounds = await ReadJournalDurableBoundsAsync(connection, matchId, cancellationToken);
+        ValidateJournalDurableBounds(bounds);
+        var durableUpperBound = bounds.UpperBound;
+        var beforeSequence = long.MaxValue;
+        Exception? latestCheckpointDamage = null;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stored = await LoadStoredCheckpointBeforeAsync(connection, matchId, beforeSequence,
+                cancellationToken);
+            if (stored is null) break;
+            beforeSequence = stored.Sequence;
+
+            // Storage/random/state format incompatibility is a contract boundary, not physical damage.
+            // It must fail explicitly instead of being hidden by an older checkpoint.
+            ValidateCheckpointCompatibility(stored);
+            L12PersistedCheckpoint checkpoint;
+            L12GameEngine engine;
+            try
+            {
+                checkpoint = await DecodeStoredCheckpointAsync(stored, cancellationToken);
+                engine = L12GameEngine.RestoreCheckpoint(catalog, checkpoint.StateJson,
+                    checkpoint.RandomState, checkpoint.CardFactSignalSequence,
+                    checkpoint.AutoPassEmptyResponses, checkpoint.ConcealHiddenResponseAvailability,
+                    _utcNow);
+                if (engine.State.Revision != checkpoint.Revision
+                    || (verifyStateHashes
+                        && !string.Equals(engine.ComputeStateHash(), checkpoint.StateHash,
+                            StringComparison.Ordinal)))
+                    throw new InvalidDataException("v2 恢复检查点哈希不一致");
+            }
+            catch (Exception error) when (IsRecoverableCheckpointDamage(error))
+            {
+                latestCheckpointDamage ??= error;
+                continue;
+            }
+
+            var recoveredSequence = await ReplayJournalTailAsync(connection, matchId, checkpoint.Sequence,
+                durableUpperBound, engine, verifyStateHashes, cancellationToken);
+            RegisterRecoveredEngine(engine);
+            return new L12JournalRecoveryState(engine, recoveredSequence,
+                await LoadProcessedActionRequestsThroughAsync(connection, matchId, recoveredSequence,
+                    cancellationToken));
+        }
+
+        throw new InvalidDataException("v2 对局没有可验证的状态检查点", latestCheckpointDamage);
+    }
+
+    private static async Task<L12JournalDurableBounds> ReadJournalDurableBoundsAsync(
+        SqliteConnection connection, string matchId, CancellationToken cancellationToken)
+    {
         var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT sequence,player_index,command_json,accepted,revision,state_hash
-            FROM match_events WHERE match_id=$match AND sequence>$after ORDER BY sequence;
+            SELECT
+                (SELECT MAX(sequence) FROM match_events WHERE match_id=$match),
+                (SELECT MAX(command_sequence) FROM match_action_requests WHERE match_id=$match),
+                (SELECT MAX(command_sequence) FROM match_action_events WHERE match_id=$match),
+                (SELECT MAX(sequence) FROM match_state_checkpoints WHERE match_id=$match);
             """;
         command.Parameters.AddWithValue("$match", matchId);
-        command.Parameters.AddWithValue("$after", checkpoint.Sequence);
-        var expectedSequence = checkpoint.Sequence;
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+            throw new InvalidDataException("v2 对局无法读取耐久已提交边界");
+        return new L12JournalDurableBounds(
+            reader.IsDBNull(0) ? null : reader.GetInt64(0),
+            reader.IsDBNull(1) ? null : reader.GetInt64(1),
+            reader.IsDBNull(2) ? null : reader.GetInt64(2),
+            reader.IsDBNull(3) ? null : reader.GetInt64(3));
+    }
+
+    private static void ValidateJournalDurableBounds(L12JournalDurableBounds bounds)
+    {
+        var eventUpperBound = bounds.EventSequence ?? 0;
+        if ((bounds.RequestSequence ?? 0) > eventUpperBound
+            || (bounds.ActionEventSequence ?? 0) > eventUpperBound
+            || (bounds.CheckpointSequence ?? 0) > eventUpperBound
+                && (bounds.CheckpointSequence ?? 0) > 0)
+            throw new InvalidDataException("v2 日志缺少耐久已提交边界对应的命令记录");
+    }
+
+    private static async Task<L12StoredCheckpointRow?> LoadStoredCheckpointBeforeAsync(
+        SqliteConnection connection, string matchId, long beforeSequence,
+        CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence,revision,state_hash,state_encoding,state_blob,uncompressed_bytes,
+                   random_draw_count,card_fact_signal_sequence,auto_pass_empty_responses,
+                   conceal_hidden_response_availability,random_state_version,random_state_blob
+            FROM match_state_checkpoints
+            WHERE match_id=$match AND sequence<$before
+            ORDER BY sequence DESC LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$before", beforeSequence);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        return new L12StoredCheckpointRow(
+            reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2), reader.GetString(3),
+            (byte[])reader[4], reader.GetInt32(5), reader.GetInt64(6), reader.GetInt64(7),
+            reader.GetInt32(8) == 1, reader.GetInt32(9) == 1, reader.GetInt32(10),
+            reader.IsDBNull(11) ? null : (byte[])reader[11]);
+    }
+
+    private static void ValidateCheckpointCompatibility(L12StoredCheckpointRow checkpoint)
+    {
+        if (!string.Equals(checkpoint.StateEncoding, "json-br-v1", StringComparison.Ordinal))
+            throw new InvalidDataException("对局检查点编码版本不受支持");
+        if (checkpoint.RandomStateVersion != L12DeterministicRandom.StateVersion)
+            throw new InvalidDataException("随机状态版本不受支持");
+    }
+
+    private static async Task<L12PersistedCheckpoint> DecodeStoredCheckpointAsync(
+        L12StoredCheckpointRow checkpoint, CancellationToken cancellationToken)
+    {
+        if (checkpoint.UncompressedBytes < 0)
+            throw new InvalidDataException("对局检查点长度校验失败");
+        var stateJson = await DecompressStateAsync(checkpoint.StateBlob,
+            checkpoint.UncompressedBytes, cancellationToken);
+        if (checkpoint.RandomStateBlob is null)
+            throw new InvalidDataException("随机状态载荷缺失");
+        var randomState = L12DeterministicRandom.DecodeState(checkpoint.RandomStateVersion,
+            checkpoint.RandomStateBlob, checkpoint.RandomDrawCount);
+        return new L12PersistedCheckpoint(checkpoint.Sequence, checkpoint.Revision,
+            checkpoint.StateHash, stateJson, checkpoint.RandomDrawCount, randomState,
+            checkpoint.CardFactSignalSequence, checkpoint.AutoPassEmptyResponses,
+            checkpoint.ConcealHiddenResponseAvailability);
+    }
+
+    private static bool IsRecoverableCheckpointDamage(Exception error)
+        => error is JsonException
+            || error is InvalidDataException invalidData
+                && !string.Equals(invalidData.Message, L12PersistenceContract.ExpiredReplayMessage,
+                    StringComparison.Ordinal);
+
+    private static async Task<long> ReplayJournalTailAsync(SqliteConnection connection,
+        string matchId, long checkpointSequence, long durableUpperBound, L12GameEngine engine,
+        bool verifyStateHashes, CancellationToken cancellationToken)
+    {
+        if (checkpointSequence > durableUpperBound)
+            throw new InvalidDataException("v2 检查点超出耐久已提交边界");
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT sequence,received_utc,player_index,command_json,accepted,revision,state_hash
+            FROM match_events
+            WHERE match_id=$match AND sequence>$after AND sequence<=$upper
+            ORDER BY sequence;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$after", checkpointSequence);
+        command.Parameters.AddWithValue("$upper", durableUpperBound);
+        var expectedSequence = checkpointSequence;
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
             var sequence = reader.GetInt64(0);
             if (sequence != ++expectedSequence) throw new InvalidDataException("v2 恢复尾部命令序号不连续");
-            using var document = JsonDocument.Parse(reader.GetString(2));
-            var root = document.RootElement;
-            var type = root.TryGetProperty("type", out var lowerType) ? lowerType.GetString()
-                : root.TryGetProperty("Type", out var upperType) ? upperType.GetString() : null;
-            if (string.IsNullOrWhiteSpace(type)) throw new InvalidDataException("v2 恢复命令缺少类型");
-            var outcome = ReplayJournalCommand(engine, reader.GetInt32(1), type, root);
-            if (outcome.Accepted != (reader.GetInt32(3) == 1)
-                || engine.State.Revision != reader.GetInt64(4)
-                || (verifyStateHashes
-                    && !string.Equals(engine.ComputeStateHash(), reader.GetString(5), StringComparison.Ordinal)))
-                throw new InvalidDataException($"v2 恢复尾部校验失败：{sequence}");
+            JsonDocument document;
+            try
+            {
+                document = JsonDocument.Parse(reader.GetString(3));
+            }
+            catch (JsonException error)
+            {
+                throw new InvalidDataException($"v2 恢复命令 JSON 损坏：{sequence}", error);
+            }
+            using (document)
+            {
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                    throw new InvalidDataException($"v2 恢复命令 JSON 结构无效：{sequence}");
+                var typeElement = root.TryGetProperty("type", out var lowerType) ? lowerType
+                    : root.TryGetProperty("Type", out var upperType) ? upperType : default;
+                var type = typeElement.ValueKind == JsonValueKind.String
+                    ? typeElement.GetString()
+                    : null;
+                if (string.IsNullOrWhiteSpace(type))
+                    throw new InvalidDataException("v2 恢复命令缺少类型");
+                var receivedUtc = DateTimeOffset.Parse(reader.GetString(1));
+                var outcome = ReplayJournalCommand(engine, reader.GetInt32(2), type, root,
+                    receivedUtc, reader.GetInt32(4) == 1);
+                if (outcome.Accepted != (reader.GetInt32(4) == 1)
+                    || engine.State.Revision != reader.GetInt64(5)
+                    || (verifyStateHashes
+                        && !string.Equals(engine.ComputeStateHash(), reader.GetString(6),
+                            StringComparison.Ordinal)))
+                    throw new InvalidDataException($"v2 恢复尾部校验失败：{sequence}");
+            }
         }
-        RegisterRecoveredEngine(engine);
-        return new L12JournalRecoveryState(engine, expectedSequence,
-            await LoadProcessedActionRequestsAsync(matchId, cancellationToken: cancellationToken));
+        if (expectedSequence != durableUpperBound)
+            throw new InvalidDataException("v2 恢复尾链未达到耐久已提交边界");
+        return expectedSequence;
+    }
+
+    private static async Task<IReadOnlyList<L12PersistedActionRequest>>
+        LoadProcessedActionRequestsThroughAsync(SqliteConnection connection, string matchId,
+            long recoveredSequence, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT player_index,request_id,accepted,error,revision
+            FROM match_action_requests
+            WHERE match_id=$match AND command_sequence<=$sequence
+            ORDER BY command_sequence DESC,player_index DESC,request_id DESC LIMIT 256;
+            """;
+        command.Parameters.AddWithValue("$match", matchId);
+        command.Parameters.AddWithValue("$sequence", recoveredSequence);
+        var result = new List<L12PersistedActionRequest>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(new L12PersistedActionRequest(reader.GetInt32(0), reader.GetString(1),
+                reader.GetInt32(2) == 1, reader.IsDBNull(3) ? null : reader.GetString(3),
+                reader.GetInt64(4)));
+        result.Reverse();
+        return result;
     }
 
     private static CommandResult ReplayJournalCommand(L12GameEngine engine, int playerIndex,
-        string type, JsonElement commandRoot)
+        string type, JsonElement commandRoot, DateTimeOffset receivedUtc, bool accepted)
     {
-        if (string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+        var internalCommand = L12RecordedCommandOrigin.AllowsInternalReplay(type, playerIndex, accepted);
+        if (internalCommand && string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase))
         {
-            var winner = commandRoot.TryGetProperty("winner", out var winnerElement)
-                && winnerElement.ValueKind == JsonValueKind.Number ? winnerElement.GetInt32() : (int?)null;
-            var reason = commandRoot.TryGetProperty("reason", out var reasonElement)
-                ? reasonElement.GetString() ?? "服务端权威裁决" : "服务端权威裁决";
-            var agreedDraw = commandRoot.TryGetProperty("agreedDraw", out var drawElement)
-                && drawElement.ValueKind == JsonValueKind.True;
-            if (agreedDraw) engine.ConcludeAgreedDrawByAuthority(reason);
-            else engine.ConcludeByAuthority(winner, reason);
-            return CommandResult.Ok();
+            var recorded = L12ResponseAutoCloseRecordedCommand.Parse(commandRoot);
+            return engine.ReplayRecordedCommand(recorded.ObservedAtUtc, () =>
+            {
+                engine.TryExpireResponseAutoClose(recorded.PromptId, recorded.StackItemId,
+                    recorded.PriorityPlayer, recorded.DeadlineUtc, recorded.ObservedAtUtc);
+                return CommandResult.Ok();
+            });
         }
-        if (playerIndex == -1)
+
+        return engine.ReplayRecordedCommand(receivedUtc, () =>
         {
-            var gm = commandRoot.Deserialize<L12GmCommand>(new JsonSerializerOptions
+            if (internalCommand && string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
+            {
+                var winner = commandRoot.TryGetProperty("winner", out var winnerElement)
+                    && winnerElement.ValueKind == JsonValueKind.Number
+                    ? winnerElement.GetInt32() : (int?)null;
+                var reason = commandRoot.TryGetProperty("reason", out var reasonElement)
+                    ? reasonElement.GetString() ?? "服务端权威裁决" : "服务端权威裁决";
+                var agreedDraw = commandRoot.TryGetProperty("agreedDraw", out var drawElement)
+                    && drawElement.ValueKind == JsonValueKind.True;
+                if (agreedDraw) engine.ConcludeAgreedDrawByAuthority(reason);
+                else engine.ConcludeByAuthority(winner, reason);
+                return CommandResult.Ok();
+            }
+            if (internalCommand && string.Equals(type, "setResponsePreference", StringComparison.OrdinalIgnoreCase))
+            {
+                var mode = commandRoot.TryGetProperty("responseMode", out var modeElement)
+                    ? modeElement.GetString() : null;
+                return engine.ApplyResponsePreference(playerIndex, mode);
+            }
+            if (playerIndex == -1)
+            {
+                var gm = commandRoot.Deserialize<L12GmCommand>(new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                }) ?? throw new InvalidDataException("v2 GM 命令载荷为空");
+                return engine.HandleGm(gm);
+            }
+            var gameCommand = commandRoot.Deserialize<L12Command>(new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
-            }) ?? throw new InvalidDataException("v2 GM 命令载荷为空");
-            return engine.HandleGm(gm);
-        }
-        var gameCommand = commandRoot.Deserialize<L12Command>(new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-        }) ?? throw new InvalidDataException("v2 对局命令载荷为空");
-        return engine.Handle(playerIndex, gameCommand);
+            }) ?? throw new InvalidDataException("v2 对局命令载荷为空");
+            return engine.Handle(playerIndex, gameCommand);
+        });
     }
 
     private static async Task<int> ReadStorageVersionAsync(SqliteConnection connection,

@@ -1,5 +1,20 @@
 namespace TwelveLegions.Server;
 
+public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
+public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, int Threshold = 0,
+    string? Faction = null, string? ReferenceCardId = null);
+public sealed record L12HandPlayBlockRule(string BlockedCardType, bool AllowsSameCardId, int Priority,
+    string Reason);
+public sealed record L12OpponentTurnFieldRule(int CostAdjustment, int FrontRowTroopsBonus);
+public sealed record L12FieldMoraleResourceRule(string ResourceType, string DisplayName,
+    bool ControllerTurnOnly, bool RequiresActive);
+public sealed record L12MoraleZoneResourceRule(string ResourceType, string DisplayName,
+    bool ReturnsToOwnerGraveyard);
+public sealed record L12MasterAbilityGateRule(string AbilityId, string RequiredMasterId,
+    string DisabledReason);
+public sealed record L12MasterFieldAuraRule(string TargetCardId, int TroopsAdjustment, int CostAdjustment);
+public sealed record L12SpecialResponseCapability(string Timing, string SourceZone, string CommitPlan);
+
 /// <summary>
 /// Runtime identity predicates backed by the structured card rule layer.
 /// Keeping these identities here prevents presentation and lifecycle consumers
@@ -17,11 +32,108 @@ public static class L12StructuredCardSemantics
     private const string KusanagiCardId = "S01-0417";
     private const string TombGuardCardId = "S01-0212";
     private const string ProliferatingScarabCardId = "S02-0201";
-    private static readonly HashSet<string> ExtendedRangeActiveCards = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, L12ExtendedRangeRule> ExtendedRangeRules = new(StringComparer.OrdinalIgnoreCase)
     {
-        "S01-0003",
-        "S01-0113",
+        ["S01-0003"] = new("位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。", "消耗2士气", 2, 0, true),
+        ["S01-0113"] = new("「位于后排」可返还1士气：此军团本回合可进攻对方后排。", "返还1士气", 0, 1, false),
     };
+    private static readonly Dictionary<string, L12PrintedEntryCostRule> PrintedEntryCostRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-0104"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0107"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0114"] = new("controller-morale-less-than-opponent", -1),
+            ["S01-0202"] = new("controller-field-card-absent", -2, ReferenceCardId: "S01-0212"),
+            ["S01-0301"] = new("grave-faction-legions-per-threshold", -1, 4, "asgard"),
+            ["S01-0302"] = new("friendly-field-legion-count", -1),
+            ["S01-0305"] = new("controller-hp-at-most", -1, 6),
+            ["S01-0306"] = new("controller-hp-at-most", -1, 6),
+            ["S02-0202"] = new("named-legions-left-this-turn", -1),
+            ["S02-0203"] = new("controller-field-card-absent", -1, ReferenceCardId: "S01-0212"),
+        };
+    private static readonly Dictionary<string, L12HandPlayBlockRule> HandPlayBlockRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0305"] = new("artifact", false, 0, "〈安德华拉诺特〉使我方无法从手牌打出圣物"),
+            ["S02-0205"] = new("artifact", true, 1, "〈黄金圣甲虫〉位于我方圣物区，我方无法从手牌打出其他圣物"),
+        };
+    private static readonly HashSet<string> SummonTurnCounterTacticProtectionCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0201", "S01-0202", "ST02-01",
+        };
+    private static readonly HashSet<string> RelicZoneLimitExemptCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220",
+        };
+    private static readonly HashSet<string> OutOfDeckGraveyardLifecycleCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            TombGuardCardId, ProliferatingScarabCardId,
+        };
+
+    // Non-standard response identity shared by eligibility, anonymous availability,
+    // declaration, paid-state retention and settlement.
+    private static readonly Dictionary<string, L12SpecialResponseCapability> SpecialResponseCapabilities =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0005"] = new("opponent-attacks-master", "hand", "rest-enter-front-and-retarget"),
+            ["S02-0106"] = new("opponent-attack-or-effect", "covered-field", "s2-counter"),
+        };
+    private static readonly HashSet<string> CompletedTrialSetupCards =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "S02-06D1",
+        };
+
+    // 特殊响应能力身份注册：绝对防御型（响应对方进攻/效果，抵挡或无效，弃置1手牌）、
+    // 落穴型（无效对方军团登场效果）、佣兵部队型（对方进攻我方军团时从手牌弃置自身抵挡）。
+    // 候选枚举、公开卡池判定、提交与费用分支全部改读此注册表；新增同型响应卡只在此登记，
+    // 禁止在引擎中新增卡号分支。
+    public static bool IsAbsoluteDefenseResponse(string cardId) => cardId == "S01-0016";
+    public static bool IsPitfallEntryNegationResponse(string cardId) => cardId == "S01-0018";
+    public static bool IsMercenaryHandBlockResponse(string cardId) => cardId == "S01-0002";
+    public static L12SpecialResponseCapability? SpecialResponseCapability(string cardId)
+        => SpecialResponseCapabilities.GetValueOrDefault(cardId);
+    public static bool UsesSpecialResponsePlan(string cardId, string commitPlan)
+        => SpecialResponseCapability(cardId)?.CommitPlan == commitPlan;
+    public static IReadOnlyCollection<string> SpecialResponseCardIds
+        => SpecialResponseCapabilities.Keys;
+    public static bool StartsWithCompletedTrials(string cardId)
+        => CompletedTrialSetupCards.Contains(cardId);
+    private static readonly Dictionary<string, L12OpponentTurnFieldRule> OpponentTurnFieldRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [TombGuardCardId] = new(1, 1000),
+        };
+    private static readonly Dictionary<string, L12FieldMoraleResourceRule> FieldMoraleResourceRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            [TombGuardCardId] = new("tomb-guard", "陵墓守卫", ControllerTurnOnly: true, RequiresActive: true),
+        };
+    private static readonly Dictionary<string, L12MoraleZoneResourceRule> MoraleZoneResourceRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0010"] = new("black-lotus", "黑色莲花", ReturnsToOwnerGraveyard: true),
+        };
+    private static readonly Dictionary<string, int> DerivedSpecialCardLimits =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-01S1"] = 1,
+            [KingsSwordCardId] = 1,
+        };
+    private static readonly Dictionary<string, L12MasterFieldAuraRule> MasterFieldAuraRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S01-02D1"] = new(TombGuardCardId, 1000, 1),
+        };
+    private static readonly Dictionary<string, L12MasterAbilityGateRule> MasterAbilityGateRules =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["S02-0301"] = new("thorHammerRevive", "S02-03M1",
+                "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果"),
+        };
     private static readonly HashSet<string> AttachedStrongAttackCards = new(StringComparer.OrdinalIgnoreCase)
     {
         KingsSwordCardId,
@@ -40,11 +152,66 @@ public static class L12StructuredCardSemantics
     public static bool IsKingsSword(string? cardId)
         => string.Equals(cardId, KingsSwordCardId, StringComparison.OrdinalIgnoreCase);
 
+    public static int DerivedSpecialCardLimit(string? cardId)
+        => cardId is null ? 0 : DerivedSpecialCardLimits.GetValueOrDefault(cardId);
+
+    public static bool IsDerivedSpecialCard(string? cardId)
+        => DerivedSpecialCardLimit(cardId) > 0;
+
+    public static L12MasterFieldAuraRule? MasterFieldAuraRule(string? masterId)
+        => masterId is null ? null : MasterFieldAuraRules.GetValueOrDefault(masterId);
+
     public static bool IsMedjed(string? cardId)
         => string.Equals(cardId, MedjedCardId, StringComparison.OrdinalIgnoreCase);
 
     public static bool HasBackRowExtendedRangeActive(string? cardId)
-        => cardId is not null && ExtendedRangeActiveCards.Contains(cardId);
+        => ExtendedRangeRule(cardId) is not null;
+
+    public static L12ExtendedRangeRule? ExtendedRangeRule(string? cardId)
+        => cardId is null ? null : ExtendedRangeRules.GetValueOrDefault(cardId);
+
+    public static L12PrintedEntryCostRule? PrintedEntryCostRule(string? cardId)
+        => cardId is null ? null : PrintedEntryCostRules.GetValueOrDefault(cardId);
+
+    public static L12HandPlayBlockRule? HandPlayBlockRule(string? cardId)
+        => cardId is null ? null : HandPlayBlockRules.GetValueOrDefault(cardId);
+
+    public static bool HasSummonTurnCounterTacticProtection(string? cardId)
+        => cardId is not null && SummonTurnCounterTacticProtectionCards.Contains(cardId);
+
+    public static bool IgnoresRelicZoneLimit(string? cardId)
+        => cardId is not null && RelicZoneLimitExemptCards.Contains(cardId);
+
+    public static bool HasOutOfDeckGraveyardLifecycle(string? cardId)
+        => cardId is not null && OutOfDeckGraveyardLifecycleCards.Contains(cardId);
+
+    public static L12OpponentTurnFieldRule? OpponentTurnFieldRule(string? cardId)
+        => cardId is null ? null : OpponentTurnFieldRules.GetValueOrDefault(cardId);
+
+    public static L12FieldMoraleResourceRule? FieldMoraleResourceRule(string? cardId)
+        => cardId is null ? null : FieldMoraleResourceRules.GetValueOrDefault(cardId);
+
+    public static L12MoraleZoneResourceRule? MoraleZoneResourceRule(string? cardId)
+        => cardId is null ? null : MoraleZoneResourceRules.GetValueOrDefault(cardId);
+
+    public static L12MasterAbilityGateRule? MasterAbilityGate(string? cardId, string? abilityId)
+    {
+        if (cardId is null || abilityId is null
+            || !MasterAbilityGateRules.TryGetValue(cardId, out var rule)
+            || !string.Equals(rule.AbilityId, abilityId, StringComparison.OrdinalIgnoreCase))
+            return null;
+        return rule;
+    }
+
+    public static string? MasterAbilityGateFailureReason(L12PlayerState player, string? cardId,
+        string? abilityId)
+    {
+        var rule = MasterAbilityGate(cardId, abilityId);
+        return rule is not null
+            && !string.Equals(player.MasterId, rule.RequiredMasterId, StringComparison.OrdinalIgnoreCase)
+                ? rule.DisabledReason
+                : null;
+    }
 
     public static bool IsGram(string? cardId)
         => string.Equals(cardId, GramCardId, StringComparison.OrdinalIgnoreCase);

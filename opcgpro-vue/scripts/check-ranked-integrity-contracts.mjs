@@ -13,7 +13,12 @@ assert.ok(admin.includes('formGeneration') && admin.includes("flush: 'sync'"), '
 assert.ok(admin.includes('v-model.number="form.days"') && admin.includes('step="1"') && admin.includes('max="3650"'))
 assert.ok(notice.includes('notifications(undefined, true)') && notice.includes('integrityApi.acknowledge(item.id)'))
 assert.ok(notice.includes('account !== platformState.account?.id') && notice.includes('generation++'))
-assert.ok(app.includes('<RankedIntegrityNotice />') && profile.includes('<RankedPenaltyHistory />'))
+assert.ok(app.includes('<RankedIntegrityNotice />')
+  && profile.includes('class="penalty-history-shell" @toggle="showPenaltyHistory"')
+  && profile.includes('if ((event.currentTarget as HTMLDetailsElement).open) visitedPerformance.value = true')
+  && profile.includes('<RankedPenaltyHistory v-if="visitedPerformance" />')
+  && profile.includes('visitedPerformance.value = false'),
+  'private penalty history must remain reachable after user expansion without a default-page read')
 assert.ok(history.includes('加载更多记录') && history.includes('加载更多申诉') && history.includes('appeal.reply'))
 assert.ok(appeal.includes('requestIds.get(key)') && appeal.includes('maxlength="1000"'))
 assert.ok(api.includes("'/api/ranked/integrity/appeals'") && !/notifications.*accountId/.test(api), 'player API must infer own account')

@@ -8,7 +8,106 @@ export interface ActionEvent {
   playerIndex?: number
   text: string
   effectText?: string
+  effectSceneId?: string
+  effectAbilityId?: string
+  effectSegmentId?: string
+  effectSegmentIndex?: number
+  effectSegmentCount?: number
+  effectBranchId?: string
+  effectBranchLabel?: string
+  effectResultStatus?: 'declared' | 'resolved' | 'negated' | 'skipped' | 'failed' | 'declined' | 'unavailable'
+  playerLogGroupId?: string
+  playerLogTiming?: string
+  playerLogDecisionLabel?: string
+  playerLogSemantic?: PlayerLogSemantic
+  playerCombat?: PlayerCombatPresentation
+  playerBattlefieldMovement?: PlayerBattlefieldMovementPresentation
+  playerPublicPlacement?: PlayerPublicPlacement
+  playerTroopsModifier?: PlayerTroopsModifier
+  playerSelectedTargets?: PlayerSelectedTargets
+  playerDisasterValue?: PlayerDisasterValue
+  playerCardStateTransition?: PlayerCardStateTransition
+  playerPresentationFactSequences?: number[]
   cards?: Card[]
+}
+
+export interface PlayerCardStateTransition {
+  instanceId: string
+  fromTapped: boolean
+  toTapped: boolean
+}
+
+export interface PlayerBattlefieldMovementFact {
+  instanceId?: string
+  battlefieldPlayerIndex?: number
+  fromRow?: number
+  fromSlot?: number
+  toRow?: number
+  toSlot?: number
+}
+
+export interface PlayerBattlefieldMovementPresentation {
+  facts?: PlayerBattlefieldMovementFact[]
+}
+
+export interface PlayerTroopsModifier {
+  targetInstanceId?: string
+  targetControllerPlayerIndex?: number
+  troopsDelta?: number
+  durationCode?: string
+}
+
+export interface PlayerSelectedTargetFact {
+  id: string
+  owner: number
+  zone: string
+  row: number
+  slot: number
+  publicName?: string | null
+  currentCost?: number | null
+  tapped: boolean
+  isGodPower?: boolean | null
+}
+
+export interface PlayerSelectedTargets {
+  sourceInstanceId: string
+  facts: PlayerSelectedTargetFact[]
+}
+
+export interface PlayerDisasterValue {
+  before?: number
+  after?: number
+}
+
+export interface PlayerPublicPlacement {
+  instanceId?: string
+  ownerPlayerIndex?: number
+  controllerPlayerIndex?: number
+  row?: number
+  slot?: number
+  tapped?: boolean
+  durationCode?: string
+}
+
+export interface PlayerCombatPresentation {
+  combatId?: string
+  eventKind?: string
+  outcomeCode?: string
+  publicReasonCode?: string
+  attackerInstanceId?: string
+  targetInstanceId?: string
+  attackerTroops?: number
+  defenderTroops?: number
+  masterDamage?: number
+}
+
+export interface PlayerLogSemantic {
+  actionLabel: string
+  outcomeLabel: string
+  sourceInstanceId?: string
+  sourceName?: string
+  targetInstanceId?: string
+  targetName?: string
 }
 
 export type CardStatusIconKind = 'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'
@@ -24,6 +123,7 @@ export interface Card {
   cardId: string
   name: string
   cardType: string
+  isCounterTactic?: boolean
   faction: string
   imageUrl?: string
   effectText?: string
@@ -55,6 +155,7 @@ export interface Card {
   playCost?: number
   minimumPlayCost?: number
   playBlockedReason?: string
+  spendableResourceType?: string
   tapped: boolean
   summonRound: number
   cannotAttack?: boolean
@@ -65,6 +166,7 @@ export interface Card {
   suppressDeathUntilTurn?: number
   timedModifiers?: Array<{ troopsDelta: number; costDelta: number; expiresAfterTurn: number; source: string }>
   abilities?: Array<{ id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }>
+  ruleActions?: Array<{ id: string; label: string; text: string; enabled?: boolean; disabledReason?: string; presentationSceneId?: string; targetKeys?: string[] }>
   attachedCards?: Card[]
 }
 
@@ -88,7 +190,7 @@ export interface PlayerView {
   handCount?: number
   moraleDeck?: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean }>
   moraleDeckCount?: number
-  morale: Array<{ instanceId: string; cardId: string; tapped: boolean; isGodPower?: boolean; cannotUntapUntilRound?: number }>
+  morale: Array<{ instanceId: string; cardId: string; resourceType?: string; tapped: boolean; isGodPower?: boolean; cannotUntapUntilRound?: number }>
   field: Array<Array<Card | null>>
   relic?: Card | null
   extraRelics?: Card[]
@@ -138,7 +240,7 @@ export interface GameState {
   chosenDisasters?: DisasterCardView[]
   sessionDisasters?: DisasterCardView[]
   disasterPreparationStep?: number
-  waitingPrompt?: { playerIndex: number; playerName: string; kind: string } | null
+  waitingPrompt?: { playerIndex: number; playerName: string; kind: string; waitingSummary?: string | null } | null
   prompts?: Prompt[]
   effectStack?: StackItem[]
   pendingDefense?: {
@@ -149,12 +251,13 @@ export interface GameState {
       | 'KillTriggers' | 'DefenderKillTriggers' | 'AttackerDeathTriggers' | 'DefenderDeathTriggers' | 'FinalizeDeaths'
       | 'AttackerAfterAttack' | 'DefenderAfterAttack' | 'Complete'
     attackValue: number
+    richardDefenseTaxActive?: boolean
   } | null
   winner?: number | null
   winnerReason?: string | null
   matchGovernance?: MatchGovernanceClientState
   players: PlayerView[]
-  playerBadges?: Array<{ playerIndex: number; rankLabel: string; masterTitle?: string }>
+  playerBadges?: Array<{ playerIndex: number; faction?: string; rank?: number; tier: string; placementTitle?: string; masterTitle?: string; highestTier?: boolean }>
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]
   legalAttackTargets?: Record<string, string[]>
@@ -171,12 +274,31 @@ export interface Prompt {
   maxChoose: number
   data: Record<string, string>
   choiceLabels: Record<string, string>
+  presentation?: PromptPresentation | null
+  autoClose?: PromptAutoCloseView | null
   activationId?: string | null
   sourceInstanceId?: string | null
   sourceCardId?: string | null
   step?: number | null
   createdRevision?: number | null
   controller?: number | null
+}
+
+export interface PromptAutoCloseView {
+  reason: 'no-valid-response'
+  deadlineUtc: string
+  serverNowUtc: string
+}
+
+export interface PromptPresentation {
+  title: string
+  situation: string
+  instruction: string
+  waitingSummary: string
+  choiceConsequences: Record<string, string>
+  paymentStatus?: 'pending' | 'paid' | null
+  paymentSummary?: string | null
+  submissionConsequence?: string | null
 }
 
 export interface StackItem {

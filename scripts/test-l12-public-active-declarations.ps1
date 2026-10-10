@@ -62,4 +62,31 @@ foreach ($legacy in @(
     }
 }
 
+$availability = Read-Source 'L12ActionAvailability.cs'
+$usage = Read-Source 'L12ActiveUsageRules.cs'
+Assert-Contains $availability 'L12ActiveUsageRules.Find(canonical, ability) is not null' 'Usage gates must opt in to explicit limits.'
+Assert-Contains $active 'L12ActiveUsageRules.UsageKey(sourceInstanceId, sourceCardId, ability)' 'Shared usage keys must come from the reviewed registry.'
+foreach ($source in @($active, $s1, $s2, $s2Faction)) {
+    Assert-Contains $source 'RecordLimitedActiveAbilityUse(player, source, ability)' 'Active costs must use the shared usage writer.'
+    if ($source.Contains('player.UsedAbilities.Add(onceKey);')) {
+        throw 'A raw active once-key write bypasses explicit usage rules.'
+    }
+}
+if ($usage -match 'Regex\.|\.Effect|EffectText') { throw 'Usage policy must not infer live rules from prose.' }
+$universal = Read-Source 'L12S2UniversalEffects.cs'
+Assert-Contains $universal 'UsedMasterUsageResetChoices(player)' 'Reset candidates must include explicit active and triggered limits.'
+Assert-Contains $universal 'UsedMasterAbilityUsageKey(player, targetAbility)' 'Reset settlement must use the same grouped key.'
+Assert-Contains $universal 'Kind = "option", Text = ' 'Master usage choices must be typed options, not card instance targets.'
+Assert-Contains $availability '_catalog.AtomicEffects.Find(rule.CardId)!.Abilities' 'Triggered reset labels must come from effect segments.'
+$triggerUsageSources = $s1 + $s2 + $s2Faction + (Read-Source 'L12PublicTriggerEffectPlans.cs') +
+    (Read-Source 'L12S1ExtendedEffects.cs') + (Read-Source 'L12StarterRemainingEffects.cs')
+foreach ($ability in @('medjedDamageResponse', 'nephthysScarab', 'tsukuyomiFollowMove', 'artemisDeathFlip',
+    'morriganEnemyDeathRune', 'angusTrialAdvanceRune', 'angusTacticTrial', 'changeRestedMorale', 'kagutsuchiBuff')) {
+    Assert-Contains $triggerUsageSources ('L12MasterTriggeredUsageRules.Key("' + $ability + '"') 'Trigger producers and reset must share the persisted key definition.'
+}
+foreach ($rawKey in @('"trigger:medjedDamageResponse"', '$"s2-nephthys-scarab:', '$"s2-morrigan-rune:',
+    '$"trigger:angus-tactic:', '$"trigger:angus-trial-rune:', '$"trigger:artemis-ranged-death:',
+    '$"trigger:starter-change:', '$"trigger:starter-kagutsuchi:', ':tsukuyomiFollowMove"')) {
+    if ($triggerUsageSources.Contains($rawKey)) { throw "Raw master trigger usage key returned: $rawKey" }
+}
 Write-Host 'Public active declaration guard passed.'

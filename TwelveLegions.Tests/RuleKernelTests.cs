@@ -68,7 +68,7 @@ public sealed class RuleKernelTests
             "S01-0409", "S01-0411", "S01-0416", "S01-04M1", "S01-04M2", "S02-0004",
             "S02-0007", "S02-0016", "S02-0103", "S02-0205", "S02-0206", "S02-0307",
             "S02-0403", "S02-0406", "S02-04M1", "S02-0503", "S02-0507", "S02-0509",
-            "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0522", "S02-0523",
+            "S02-0511", "S02-0516", "S02-0517", "S02-0519", "S02-0522", "S02-0523", "S02-05M1",
             "S02-0603", "S02-0606", "S02-0607", "S02-0608", "S02-0612", "S02-0615",
             "S02-0619", "S02-0621", "S02-0622", "S02-06D1", "S02-06S2", "S02-06S5",
             "ST-DS02", "ST02-01", "ST02-02", "ST02-05", "ST02-06", "ST02-07", "ST03-10",
@@ -78,11 +78,37 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void DrawIsAtomicWhenLibraryIsTooSmall()
+    public void DrawKeepsCompletedCardsWhenTheNextDrawFindsAnEmptyLibrary()
     {
         var player = Player(); player.Library.Add(Card("a"));
         var result = L12LibraryOps.Draw(player, 2);
-        Assert.False(result.Success); Assert.Single(player.Library); Assert.Empty(player.Hand);
+        Assert.False(result.Success); Assert.Empty(player.Library);
+        Assert.Equal("a", Assert.Single(player.Hand).InstanceId);
+        Assert.Equal("a", Assert.Single(result.Cards).InstanceId);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LibraryTopTransferSeparatesSourceFromDestinationWithoutDuplicatingCards(bool samePlayer)
+    {
+        var source = Player();
+        var destination = samePlayer ? source : Player();
+        var first = Card("return-first");
+        var second = Card("return-second");
+        source.Hand.Add(first);
+        source.Graveyard.Add(second);
+        destination.Library.Add(Card("original-top"));
+        Assert.False(L12LibraryOps.PutOnTop(source, destination, [first, first]));
+        Assert.Single(source.Hand);
+        Assert.Single(source.Graveyard);
+        Assert.Equal("original-top", Assert.Single(destination.Library).InstanceId);
+        Assert.True(L12LibraryOps.PutOnTop(source, destination, [second, first]));
+        Assert.Empty(source.Hand);
+        Assert.Empty(source.Graveyard);
+        Assert.Equal(new[] { "return-second", "return-first", "original-top" },
+            destination.Library.Select(card => card.InstanceId));
+        if (!samePlayer) Assert.Empty(source.Library);
     }
 
     [Fact]
@@ -102,11 +128,13 @@ public sealed class RuleKernelTests
     }
 
     [Fact]
-    public void MillIsAtomicAndMovesCardsToGraveyard()
+    public void MillKeepsEachDiscardBeforeTheNextOperationFindsAnEmptyLibrary()
     {
         var player = Player(); player.Library.AddRange([Card("a"), Card("b")]);
-        Assert.False(L12LibraryOps.Mill(player, 3).Success); Assert.Equal(2, player.Library.Count);
-        Assert.True(L12LibraryOps.Mill(player, 2).Success); Assert.Empty(player.Library); Assert.Equal(2, player.Graveyard.Count);
+        var result = L12LibraryOps.Mill(player, 3);
+        Assert.False(result.Success); Assert.Empty(player.Library);
+        Assert.Equal(new[] { "a", "b" }, result.Cards.Select(card => card.InstanceId));
+        Assert.Equal(new[] { "a", "b" }, player.Graveyard.Select(card => card.InstanceId));
     }
 
     [Fact]

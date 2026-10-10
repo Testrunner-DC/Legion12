@@ -16,12 +16,15 @@ assert.deepEqual(compiled.errors, [])
 const render = new Function('Vue', compiled.code)(Vue)
 async function view({ turn, attacker, seat, target = 'legion', stage = 'DefenseChoice', busy = false }) {
   const state = {
-    game: { phase: 'Defense', activePlayer: turn, you: seat, pendingDefense: { attackerPlayer: attacker, stage } },
-    me: { playerIndex: seat }, defenseTargetType: target, defenseCount: 1,
+    game: { phase: 'Defense', activePlayer: turn, you: seat, pendingDefense: { attackerPlayer: attacker, stage, attackValue: 3000, target: { type: target } } },
+    me: { playerIndex: seat }, defenseTargetType: target, defenseIds: [], blockReady: false,
     supportIds: ['support'], canSupport: true, supportReady: true, busy,
     l12State: { rankedClock: null },
   }
-  return renderToString(Vue.createSSRApp({ setup: () => state, render }))
+  return renderToString(Vue.createSSRApp({
+    components: { DefenseDecisionExplanation: { render: () => null } },
+    setup: () => state, render,
+  }))
 }
 let checks = 0
 for (const turn of [0, 1]) for (const attacker of [0, 1]) for (const seat of [0, 1]) {

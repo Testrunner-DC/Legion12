@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "exceptions": [
+    {
+      "id": "PERF-LEGACY-FETCH-001",
+      "rule": "raw-fetch",
+      "path": "src/pages/ReplayPage.vue",
+      "allowedValue": 1,
+      "owner": "旧回放入口",
+      "reason": "旧M6回放页仍直接读取jsonl，迁移到统一下载出口前锁定现状，禁止增加第二处",
+      "expiresAt": "2026-10-31"
+    },
+    {
+      "id": "PERF-LEGACY-FETCH-002",
+      "rule": "raw-fetch",
+      "path": "src/l12/game/GmPanel.vue",
+      "allowedValue": 1,
+      "owner": "沙盒记录导出",
+      "reason": "JSON文件下载尚未进入统一请求层，迁移前锁定单一出口",
+      "expiresAt": "2026-10-31"
+    },
+    {
+      "id": "PERF-POLL-001",
+      "rule": "interval",
+      "path": "src/components/home/PlayerListPanel.vue",
+      "allowedValue": 1,
+      "owner": "遗留在线玩家面板",
+      "reason": "4秒玩家列表轮询待事件驱动同步批次移除",
+      "expiresAt": "2026-10-15"
+    }
+  ]
+}

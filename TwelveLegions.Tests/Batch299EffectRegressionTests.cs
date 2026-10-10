@@ -7,6 +7,19 @@ namespace TwelveLegions.Tests;
 
 public sealed class Batch299EffectRegressionTests
 {
+    public static IEnumerable<object[]> ColonCostEntryCards()
+    {
+        yield return ["S01-0101", "enter"];
+        yield return ["S01-0102", "enter"];
+        yield return ["S01-0110", "enter"];
+        yield return ["S01-0316", "enter"];
+        yield return ["S01-0317", "enter"];
+        yield return ["S02-0402", "enter"];
+        yield return ["S02-0501", "promotion-enter"];
+        yield return ["S02-0506", "enter"];
+        yield return ["S02-0619", "enter"];
+    }
+
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
     private static L12GameEngine Create(string master = "S01-04M1", int stateFormatVersion = 0)
     {
@@ -50,45 +63,582 @@ public sealed class Batch299EffectRegressionTests
         Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
     }
 
+    private static void ResolveAmaterasuReady(L12GameEngine game, string discardInstanceId, int controller = 0)
+    {
+        var activation = game.Handle(controller, new L12Command("activateAbility", $"master-{controller}",
+            Ability: "amaterasuReady"));
+        Assert.True(activation.Accepted, activation.Error);
+        Resolve(game, discardInstanceId);
+        if (game.State.PendingPrompts.FirstOrDefault()?.Kind != "response") Resolve(game);
+        Pass(game);
+    }
+
     [Fact]
-    public void AmaterasuBuffTracksFrontPositionAndLaterEntriesUntilTurnEnds()
+    public void AmaterasuBuffSnapshotsOnlyCurrentFriendlyFrontTakamagaharaLegions()
     {
         var game = Create();
         var owner = game.State.Players[0];
+        var opponent = game.State.Players[1];
         var discard = Card(game, "S01-0003", "cost");
-        var legion = Card(game, "S01-0404", "front");
-        owner.Hand.Add(discard); owner.Field[0][0] = legion;
-        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0", Ability: "amaterasuReady")).Accepted);
+        var resolvedFront = Card(game, "S01-0404", "resolved-front");
+        var resolvedBack = Card(game, "S01-0404", "resolved-back");
+        var enemyFront = Card(game, "S01-0404", "enemy-front");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = resolvedFront;
+        owner.Field[1][0] = resolvedBack;
+        opponent.Field[0][0] = enemyFront;
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+
+        Assert.Equal(resolvedFront.BaseTroops + 1000, resolvedFront.Troops);
+        Assert.Equal(resolvedBack.BaseTroops, resolvedBack.Troops);
+        Assert.Equal(enemyFront.BaseTroops, enemyFront.Troops);
+
+        owner.Field[0][0] = resolvedBack;
+        owner.Field[1][0] = resolvedFront;
+        Call(game, "RecalculateContinuousTroops");
+        var lateFront = Card(game, "S01-0404", "late-front");
+        owner.Field[0][1] = lateFront;
+        Call(game, "RecalculateContinuousTroops");
+
+        Assert.Equal(resolvedFront.BaseTroops + 1000, resolvedFront.Troops);
+        Assert.Equal(resolvedBack.BaseTroops, resolvedBack.Troops);
+        Assert.Equal(lateFront.BaseTroops, lateFront.Troops);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void AmaterasuBuffUsesTheResolvingControllerSnapshot(int controller)
+    {
+        var game = Create();
+        game.State.ActivePlayer = controller;
+        var owner = game.State.Players[controller];
+        var opponent = game.State.Players[1 - controller];
+        var discard = Card(game, "S01-0003", $"controller-{controller}-cost");
+        var friendly = Card(game, "S01-0404", $"controller-{controller}-friendly");
+        var enemy = Card(game, "S01-0404", $"controller-{controller}-enemy");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = friendly;
+        opponent.Field[0][0] = enemy;
+
+        ResolveAmaterasuReady(game, discard.InstanceId, controller);
+
+        Assert.Equal(friendly.BaseTroops + 1000, friendly.Troops);
+        Assert.Equal(enemy.BaseTroops, enemy.Troops);
+    }
+
+    [Fact]
+    public void AmaterasuBuffKeepsTheResolutionSnapshotAfterEffectiveFactionIsLost()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "lost-faction-cost");
+        var universal = Card(game, "S01-0001", "lost-faction-universal");
+        var ring = Card(game, "S02-0008", "lost-faction-ring");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = universal;
+        owner.ExtraRelics.Add(ring);
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+        Assert.Equal(universal.BaseTroops + 1000, universal.Troops);
+
+        owner.ExtraRelics.Remove(ring);
+        Call(game, "RecalculateContinuousTroops");
+        Assert.Equal(universal.BaseTroops + 1000, universal.Troops);
+    }
+
+    [Fact]
+    public void AmaterasuBuffDoesNotReachALegionThatGainsFactionAfterResolution()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "gained-faction-cost");
+        var universal = Card(game, "S01-0001", "gained-faction-universal");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = universal;
+
+        ResolveAmaterasuReady(game, discard.InstanceId);
+        Assert.Equal(universal.BaseTroops, universal.Troops);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("结算时", StringComparison.Ordinal)
+            && entry.Text.Contains("0张【高天原】军团", StringComparison.Ordinal));
+
+        owner.ExtraRelics.Add(Card(game, "S02-0008", "gained-faction-ring"));
+        Call(game, "RecalculateContinuousTroops");
+        Assert.Equal(universal.BaseTroops, universal.Troops);
+        Assert.DoesNotContain(owner.UsedAbilities, key => key.StartsWith("amaterasu-front-aura:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AmaterasuBuffStacksPerResolutionAndUsesExistingZoneResetRules()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var firstDiscard = Card(game, "S01-0003", "stack-cost-1");
+        var secondDiscard = Card(game, "S01-0003", "stack-cost-2");
+        var legion = Card(game, "S01-0404", "stack-front");
+        owner.Hand.AddRange([firstDiscard, secondDiscard]);
+        owner.Field[0][0] = legion;
+
+        ResolveAmaterasuReady(game, firstDiscard.InstanceId);
+        owner.UsedAbilities.Remove("active:master-0:amaterasuReady");
+        ResolveAmaterasuReady(game, secondDiscard.InstanceId);
+
+        Assert.Equal(legion.BaseTroops + 2000, legion.Troops);
+        Assert.Equal(2, legion.TimedModifiers.Count(modifier => modifier.Source == "天照大神"
+            && modifier.TroopsDelta == 1000 && modifier.ExpiresAfterTurn == game.State.TurnSerial));
+
+        var moved = Assert.IsType<bool>(Call(game, "MoveFieldCardToZone", owner, legion,
+            "hand", "因测试回到手牌", false));
+        Assert.True(moved);
+        Assert.Contains(legion, owner.Hand);
+        Assert.Equal(legion.BaseTroops, legion.Troops);
+        Assert.Empty(legion.TimedModifiers);
+    }
+
+    [Fact]
+    public void AmaterasuFrontBuffIsVisibleAndAuthoritativeInV2SnapshotsAndReconnect()
+    {
+        var game = Create(stateFormatVersion: 2);
+        var owner = game.State.Players[0];
+        var discard = Card(game, "S01-0003", "amaterasu-v2-cost");
+        var front = Card(game, "S01-0404", "amaterasu-v2-front");
+        owner.Hand.Add(discard);
+        owner.Field[0][0] = front;
+
+        Assert.True(game.Handle(0, new L12Command("activateAbility", "master-0",
+            Ability: "amaterasuReady")).Accepted);
         Resolve(game, discard.InstanceId);
         if (game.State.PendingPrompts.FirstOrDefault()?.Kind != "response") Resolve(game);
         Pass(game);
-        Assert.Equal(legion.BaseTroops + 1000, legion.Troops);
-        owner.Field[0][0] = null; owner.Field[1][0] = legion;
-        Call(game, "RecalculateContinuousTroops");
-        Assert.Equal(legion.BaseTroops, legion.Troops);
-        var late = Card(game, "S01-0404", "late"); owner.Field[0][1] = late;
-        Call(game, "RecalculateContinuousTroops");
-        Assert.Equal(late.BaseTroops + 1000, late.Troops);
-        game.State.TurnSerial++;
-        Call(game, "RecalculateContinuousTroops");
-        Assert.Equal(late.BaseTroops, late.Troops);
+
+        static JsonElement VisibleCard(L12GameEngine current)
+        {
+            var json = JsonSerializer.SerializeToElement(current.SnapshotFor(0),
+                new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return json.GetProperty("players")[0].GetProperty("field")[0][0];
+        }
+
+        Assert.Equal(front.BaseTroops + 1000, VisibleCard(game).GetProperty("troops").GetInt32());
+        Assert.Contains(VisibleCard(game).GetProperty("statusEffects").EnumerateArray(), status =>
+            status.GetProperty("source").GetString() == "天照大神"
+            && status.GetProperty("label").GetString() == "临时兵力+1000");
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("结算时", StringComparison.Ordinal)
+            && entry.Text.Contains("1张【高天原】军团", StringComparison.Ordinal));
+        Assert.DoesNotContain($"amaterasu-front-aura:{game.State.TurnSerial}", owner.UsedAbilities);
+        Assert.Contains(front.TimedModifiers, modifier => modifier.Source == "天照大神"
+            && modifier.TroopsDelta == 1000 && modifier.ExpiresAfterTurn == game.State.TurnSerial);
+
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(),
+            game.RandomState!.Value, game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.Equal(front.BaseTroops + 1000, VisibleCard(restored).GetProperty("troops").GetInt32());
+        Assert.Contains(VisibleCard(restored).GetProperty("statusEffects").EnumerateArray(), status =>
+            status.GetProperty("source").GetString() == "天照大神");
+        Assert.Contains(restored.State.Events, entry => entry.Type == "effect"
+            && entry.Text.Contains("天照大神结算时为我方前排的1张【高天原】军团", StringComparison.Ordinal));
+
+        var restoredOwner = restored.State.Players[0];
+        var restoredFront = Assert.IsType<L12CardInstance>(restoredOwner.Field[0][0]);
+        restoredOwner.Field[0][0] = null;
+        restoredOwner.Field[1][0] = restoredFront;
+        Call(restored, "RecalculateContinuousTroops");
+        Assert.Equal(front.BaseTroops + 1000, restoredFront.Troops);
+
+        L12DerivedStats.ResetForCompletedTurn(restoredFront, restored.State.TurnSerial);
+        restored.State.TurnSerial++;
+        Call(restored, "RecalculateContinuousTroops");
+        var restoredBack = JsonSerializer.SerializeToElement(restored.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            .GetProperty("players")[0].GetProperty("field")[1][0];
+        Assert.Equal(front.BaseTroops, restoredBack.GetProperty("troops").GetInt32());
+        Assert.DoesNotContain(restoredBack.GetProperty("statusEffects").EnumerateArray(), status =>
+            status.TryGetProperty("source", out var source) && source.GetString() == "天照大神");
     }
 
     [Fact]
     public void YingzhengWithoutEightCostOnlyRevealsAndDoesNotKillReturnOrRestrict()
     {
         var game = Create(); var owner = game.State.Players[0];
-        var emperor = Card(game, "S02-0101", "emperor"); owner.Field[0][0] = emperor;
+        var emperor = Card(game, "S02-0101", "emperor"); owner.Hand.Add(emperor);
         var enemy = Card(game, "S01-0003", "enemy"); game.State.Players[1].Field[0][0] = enemy;
         owner.Hand.Add(Card(game, "S01-0003", "not-eight"));
-        owner.Morale.Add(new L12MoraleCard { InstanceId = "morale", CardId = "S01-01C1" });
-        Call(game, "BeginYingzhengEnterActivation", 0, emperor);
+        for (var i = 0; i < 8; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"morale-{i}", CardId = "S01-01C1" });
+        var play = game.Handle(0, new L12Command("playCard", emperor.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
         Pass(game);
+        Assert.Same(emperor, owner.Field[0][0]);
         Assert.Same(enemy, game.State.Players[1].Field[0][0]);
-        Assert.Single(owner.Morale);
+        Assert.Equal(8, owner.Morale.Count);
         Assert.Contains(game.State.Events, entry => entry.Text.Contains("未满足发动条件"));
         Assert.DoesNotContain(game.State.Events, entry => entry.Text.Contains("并限制本回合"));
         Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void EgilPaysColonCostAndSkipsEmptyTargetEffect()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var egil = Card(game, "S01-0316", "egil-empty"); owner.Hand.Add(egil);
+        owner.Library.Add(Card(game, "S01-0003", "egil-mill-a"));
+        owner.Library.Add(Card(game, "S01-0003", "egil-mill-b"));
+        for (var i = 0; i < 2; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"egil-morale-{i}", CardId = "S01-01C1" });
+        var hpBefore = owner.Hp;
+
+        var play = game.Handle(0, new L12Command("playCard", egil.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        var decision = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:use", decision.ValidChoices);
+        Resolve(game, "mode:use");
+        Pass(game);
+
+        Assert.Equal(hpBefore - 1, owner.Hp);
+        Assert.Empty(owner.Library);
+        Assert.Equal(2, owner.Graveyard.Count(card => card.InstanceId.StartsWith("egil-mill-", StringComparison.Ordinal)));
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [InlineData("S01-0316", 0)]
+    [InlineData("S01-0316", 1)]
+    [InlineData("S01-0317", 0)]
+    [InlineData("S01-0317", 1)]
+    public void SequentialDiscardDoesNotPartiallyPayAnUnaffordableEntryCost(string cardId, int available)
+    {
+        var game = Create(stateFormatVersion: 2);
+        var player = game.State.Players[0];
+        var source = Card(game, cardId, "unaffordable-library-cost");
+        player.Hand.Add(source);
+        for (var index = 0; index < available; index++)
+            player.Library.Add(Card(game, "S01-0003", $"unpaid-top-{index}"));
+        for (var index = 0; index < source.Cost; index++)
+            player.Morale.Add(new L12MoraleCard { InstanceId = $"summon-cost-{index}", CardId = "S01-01C1" });
+        var hp = player.Hp;
+        var result = game.Handle(0, new L12Command("playCard", source.InstanceId, Row: 0, Slot: 0));
+        Assert.True(result.Accepted, result.Error);
+        Pass(game);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Equal(available, player.Library.Count);
+        Assert.DoesNotContain(player.Graveyard, card => card.InstanceId.StartsWith("unpaid-top-", StringComparison.Ordinal));
+        Assert.Equal(hp, player.Hp);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.Events, entry => entry.Type == "mill"
+            && entry.Cards.Any(card => card.InstanceId.StartsWith("unpaid-top-", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void EgilWithOneLegalTargetStillRequiresPlayerTargetSelection()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var egil = Card(game, "S01-0316", "egil-target"); owner.Hand.Add(egil);
+        owner.Library.Add(Card(game, "S01-0003", "egil-target-mill-a"));
+        owner.Library.Add(Card(game, "S01-0003", "egil-target-mill-b"));
+        for (var i = 0; i < 2; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"egil-target-morale-{i}", CardId = "S01-01C1" });
+        // Use a 4000-troop target so the assertion observes the timed modifier itself;
+        // a 2000-troop target correctly reaches 0 and is moved to the graveyard.
+        var target = Card(game, "S01-0107", "egil-only-target");
+        game.State.Players[1].Field[0][0] = target;
+        Call(game, "RecalculateContinuousTroops");
+        var troopsBefore = target.Troops;
+
+        var play = game.Handle(0, new L12Command("playCard", egil.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        Resolve(game, "mode:use");
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("enemy-legion", targetPrompt.Kind);
+        Assert.Contains(target.InstanceId, targetPrompt.ValidChoices);
+        Assert.Contains("skip", targetPrompt.ValidChoices);
+        Assert.Equal(troopsBefore, target.Troops);
+        Resolve(game, target.InstanceId);
+        Pass(game);
+        Assert.Equal(troopsBefore - 2000, target.Troops);
+    }
+
+    [Fact]
+    public void MerlinWithoutRunesShowsBothBranchesDisabledAndCanDecline()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var merlin = Card(game, "S02-0603", "merlin-disabled"); owner.Field[0][0] = merlin;
+
+        var begin = game.Handle(0, new L12Command("activateAbility", merlin.InstanceId, Ability: "merlinRune"));
+        Assert.True(begin.Accepted, begin.Error);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("effect-decision", prompt.Data["uiPattern"]);
+        Assert.Equal("mode:debuff|mode:search|skip", prompt.Data["displayChoiceIds"]);
+        Assert.Equal("需要消耗1符文", prompt.Data["disabledChoice:mode:debuff"]);
+        Assert.Equal("需要消耗1符文", prompt.Data["disabledChoice:mode:search"]);
+        Assert.Equal(["skip"], prompt.ValidChoices);
+        Resolve(game, "skip");
+        Assert.False(merlin.Tapped);
+        Assert.Empty(game.State.EffectStack);
+        Assert.DoesNotContain(owner.UsedAbilities, key => key.Contains("merlinRune", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HijikataWithOneEligibleLegionRequiresThatSelectionAndSkipsTheOtherKill()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-single"); owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"hijikata-morale-{i}", CardId = "S01-01C1" });
+        var target = Card(game, "S01-0116", "hijikata-only-target");
+        game.State.Players[1].Field[0][0] = target;
+
+        var play = game.Handle(0, new L12Command("playCard", hijikata.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        var targetPrompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(target.InstanceId, targetPrompt.ValidChoices);
+        Assert.DoesNotContain("skip", targetPrompt.ValidChoices);
+        Assert.Same(target, game.State.Players[1].Field[0][0]);
+        Resolve(game, target.InstanceId);
+        Pass(game);
+
+        Assert.DoesNotContain(target, game.State.Players[1].Field.SelectMany(row => row));
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void HijikataWithOnlyOneCostTwoLegionStillRequiresAndResolvesThatKill()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-cost-two-single"); owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"hijikata-cost-two-morale-{i}", CardId = "S01-01C1" });
+        var target = Card(game, "S01-0004", "hijikata-cost-two-target");
+        game.State.Players[1].Field[0][0] = target;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", hijikata.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal([target.InstanceId], prompt.ValidChoices);
+        Resolve(game, target.InstanceId);
+        Pass(game);
+
+        Assert.Contains(target, game.State.Players[1].Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void HijikataUsesOnePromptToSelectTheCostOneAndCostTwoTargetsTogether()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-pair"); owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"hijikata-pair-morale-{i}", CardId = "S01-01C1" });
+        var strict = Card(game, "S01-0116", "hijikata-cost-one");
+        var broad = Card(game, "S01-0004", "hijikata-cost-two");
+        game.State.Players[1].Field[0][0] = strict;
+        game.State.Players[1].Field[0][1] = broad;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", hijikata.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, prompt.MinChoose);
+        Assert.Equal(2, prompt.MaxChoose);
+        Assert.Contains(strict.InstanceId, prompt.ValidChoices);
+        Assert.Contains(broad.InstanceId, prompt.ValidChoices);
+        Assert.DoesNotContain("skip", prompt.ValidChoices);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [broad.InstanceId, strict.InstanceId])).Accepted);
+        Pass(game);
+
+        Assert.Contains(strict, game.State.Players[1].Graveyard);
+        Assert.Contains(broad, game.State.Players[1].Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void HijikataRejectsTwoCostTwoTargetsWithoutClosingTheSinglePrompt()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-two-broad"); owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"hijikata-two-broad-morale-{i}", CardId = "S01-01C1" });
+        var firstTarget = Card(game, "S01-0004", "hijikata-broad-a");
+        var secondTarget = Card(game, "S01-0114", "hijikata-broad-b");
+        game.State.Players[1].Field[0][0] = firstTarget;
+        game.State.Players[1].Field[0][1] = secondTarget;
+
+        Assert.True(game.Handle(0, new L12Command("playCard", hijikata.InstanceId, Row: 0, Slot: 0)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(firstTarget.InstanceId, prompt.ValidChoices);
+        Assert.Contains(secondTarget.InstanceId, prompt.ValidChoices);
+        Assert.DoesNotContain("skip", prompt.ValidChoices);
+        var invalidPair = game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [firstTarget.InstanceId, secondTarget.InstanceId]));
+        Assert.False(invalidPair.Accepted);
+        Assert.Contains("至少1张", invalidPair.Error);
+        Assert.Same(prompt, Assert.Single(game.State.PendingPrompts));
+        Resolve(game, firstTarget.InstanceId);
+        Pass(game);
+
+        Assert.Contains(firstTarget, game.State.Players[1].Graveyard);
+        Assert.DoesNotContain(secondTarget, game.State.Players[1].Graveyard);
+        Assert.Same(secondTarget, game.State.Players[1].Field[0][1]);
+    }
+
+    [Fact]
+    public void HijikataRechecksBothCostRolesAfterResponsesAndKeepsTheLegalPartialKill()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var hijikata = Card(game, "S01-0406", "hijikata-recheck");
+        owner.Hand.Add(hijikata);
+        for (var i = 0; i < hijikata.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"hijikata-recheck-morale-{i}",
+                CardId = "S01-01C1",
+            });
+        var broad = Card(game, "S01-0004", "hijikata-recheck-broad");
+        var low = Card(game, "S01-0116", "hijikata-recheck-low");
+        game.State.Players[1].Field[0][0] = broad;
+        game.State.Players[1].Field[0][1] = low;
+        game.State.Players[1].Library.Add(Card(game, "S01-0003", "hijikata-death-draw"));
+
+        Assert.True(game.Handle(0, new L12Command("playCard", hijikata.InstanceId,
+            Row: 0, Slot: 0)).Accepted);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: [broad.InstanceId, low.InstanceId])).Accepted);
+        Assert.Equal("response", Assert.Single(game.State.PendingPrompts).Kind);
+        var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+        game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+            game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        broad = Assert.Single(game.State.Players[1].Field.SelectMany(row => row),
+            card => card?.InstanceId == broad.InstanceId)!;
+        low = Assert.Single(game.State.Players[1].Field.SelectMany(row => row),
+            card => card?.InstanceId == low.InstanceId)!;
+        low.CostModifier++;
+
+        Pass(game);
+
+        Assert.Contains(broad, game.State.Players[1].Graveyard);
+        Assert.Same(low, game.State.Players[1].Field[0][1]);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("土方岁三", StringComparison.Ordinal)
+            && entry.Text.Contains("不再符合条件", StringComparison.Ordinal));
+        var results = game.State.Events.Where(entry => entry.Type == "effect-result"
+                && entry.Cards.Any(card => card.InstanceId == hijikata.InstanceId))
+            .OrderBy(entry => entry.EffectSegmentIndex).ToArray();
+        Assert.True(results.Length == 2, string.Join("\n", game.State.Events.Select(entry =>
+            $"{entry.Type}|{entry.Text}|{entry.EffectSceneId}|{entry.EffectSegmentIndex}|{entry.EffectResultStatus}|{string.Join(',', entry.Cards.Select(card => card.InstanceId))}")));
+        Assert.Equal([1, 2], results.Select(entry => entry.EffectSegmentIndex));
+        Assert.Equal(["resolved", "failed"], results.Select(entry => entry.EffectResultStatus));
+    }
+
+    [Fact]
+    public void CostHealthAndTroopsNeverProjectBelowZero()
+    {
+        var game = Create();
+        var player = game.State.Players[0];
+        var card = Card(game, "S01-0004", "non-negative-projection");
+        card.CostModifier = -99;
+        card.Troops = -3000;
+        player.Field[0][0] = card;
+        player.Hp = -4;
+
+        Assert.Equal(0, card.CurrentCost);
+        Assert.Equal(0, card.CurrentTroops);
+        var promptData = new Dictionary<string, string>();
+        Call(game, "AddPromptCardData", promptData, card);
+        Assert.Equal("0", promptData[$"{card.InstanceId}:cost"]);
+        Assert.Equal("0", promptData[$"{card.InstanceId}:troops"]);
+
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(0, snapshot.GetProperty("players")[0].GetProperty("master").GetProperty("hp").GetInt32());
+        Assert.Equal(0, snapshot.GetProperty("players")[0].GetProperty("field")[0][0]
+            .GetProperty("troops").GetInt32());
+    }
+
+    [Fact]
+    public void HelaPaysColonCostAndSkipsEffectWhenNoEnemyLegionExists()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var hela = Card(game, "S02-0307", "hela-no-target"); owner.Hand.Add(hela);
+        var milled = Card(game, "S01-0003", "hela-cost-card"); owner.Library.Add(milled);
+        for (var i = 0; i < hela.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"hela-morale-{i}", CardId = "S01-01C1" });
+
+        var play = game.Handle(0, new L12Command("playCard", hela.InstanceId));
+        Assert.True(play.Accepted, play.Error);
+        Assert.Contains(milled, owner.Graveyard);
+        Assert.Empty(owner.Library);
+        Pass(game);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Contains(game.State.Events, entry => entry.Type == "cost"
+            && entry.Text.Contains("海拉", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void LiuBeiCanPayColonCostWithoutBrotherAndSkipsSummonEffect()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var liubei = Card(game, "S01-0105", "liubei-no-brother"); owner.Hand.Add(liubei);
+        for (var i = 0; i < liubei.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"liubei-base-{i}", CardId = "S01-01C1" });
+        var effectCost = new L12MoraleCard { InstanceId = "liubei-effect-cost", CardId = "S01-01C1" };
+        owner.Morale.Add(effectCost);
+
+        var play = game.Handle(0, new L12Command("playCard", liubei.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        Resolve(game, "mode:use");
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(effectCost.InstanceId, payment.ValidChoices);
+        Resolve(game, effectCost.InstanceId);
+        Pass(game);
+
+        Assert.DoesNotContain(effectCost, owner.Morale);
+        Assert.Same(liubei, owner.Field[0][0]);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Fact]
+    public void BrynhildCanPayColonCostWithoutSigurdAndSkipsSummonEffect()
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        var brynhild = Card(game, "S01-0309", "brynhild-no-sigurd"); owner.Hand.Add(brynhild);
+        for (var i = 0; i < brynhild.Cost; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"brynhild-base-{i}", CardId = "S01-01C1" });
+        var hpBefore = owner.Hp;
+
+        var play = game.Handle(0, new L12Command("playCard", brynhild.InstanceId, Row: 0, Slot: 0));
+        Assert.True(play.Accepted, play.Error);
+        Resolve(game, "mode:use");
+        Pass(game);
+
+        Assert.Equal(hpBefore - 1, owner.Hp);
+        Assert.Same(brynhild, owner.Field[0][0]);
+        Assert.Empty(game.State.PendingPrompts);
+    }
+
+    [Theory]
+    [MemberData(nameof(ColonCostEntryCards))]
+    public void ColonCostEntryFamilyKeepsActivationAvailableWithoutPostColonTarget(string cardId, string trigger)
+    {
+        var game = Create(); var owner = game.State.Players[0];
+        for (var i = 0; i < 4; i++)
+            owner.Morale.Add(new L12MoraleCard { InstanceId = $"family-morale-{i}", CardId = "S01-01C1" });
+        owner.SpecialZones.Runes = 2;
+        owner.Library.Add(Card(game, "S01-0003", "family-library-a"));
+        owner.Library.Add(Card(game, "S01-0003", "family-library-b"));
+        owner.Hand.Add(Card(game, "S01-0003", "family-hand"));
+        var source = Card(game, cardId, $"family-source-{cardId}-{trigger}");
+
+        Call(game, "QueueOrPushTriggeredEffect", 0, source, trigger,
+            "冒号费用同类扫描", null, new Dictionary<string, string>());
+
+        var mode = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("mode:use", mode.ValidChoices);
+        Assert.Empty(game.State.EffectStack);
     }
 
     [Fact]
@@ -169,6 +719,7 @@ public sealed class Batch299EffectRegressionTests
     [Theory]
     [InlineData(false, 2)]
     [InlineData(true, 1)]
+    [Trait("L12Evidence", "ability:aristotleDiscount")]
     public void AristotleDiscountAccumulatesOnlySuccessfulEffects(bool negateSecond, int expected)
     {
         var game = Create(); var owner = game.State.Players[0];
@@ -285,6 +836,11 @@ public sealed class Batch299EffectRegressionTests
         Pass(game);
         Assert.Same(mercenary, Assert.Single(owner.Graveyard));
         Assert.Empty(game.State.EffectStack);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal("negated", result.EffectResultStatus);
+        Assert.Equal(1, result.EffectSegmentIndex);
+        Assert.Equal(1, result.EffectSegmentCount);
     }
 
     [Theory]
@@ -341,6 +897,44 @@ public sealed class Batch299EffectRegressionTests
         Resolve(game, "1");
         Pass(game);
         Assert.Equal(before + 1, game.State.DisasterValue);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:zhuge-effect-generated-artifact-entry")]
+    public void ZhugePlayingRevealedLandscapeScrollTriggersItsEntryMorale()
+    {
+        var game = Create();
+        var owner = game.State.Players[0];
+        var zhuge = Card(game, "S01-0111", "zhuge-artifact-source");
+        var landscape = Card(game, "S01-0117", "zhuge-landscape-scroll");
+        var defender = Card(game, "S01-0003", "zhuge-artifact-defender");
+        owner.Field[0][0] = zhuge;
+        zhuge.SummonRound = -1;
+        game.State.Players[1].Field[0][0] = defender;
+        defender.SummonRound = -1;
+        owner.Library.Add(landscape);
+        owner.Morale.Add(new L12MoraleCard
+        {
+            InstanceId = "zhuge-entry-cost-morale",
+            CardId = "S01-01C1",
+        });
+
+        var attack = game.Handle(0, new L12Command("attack", zhuge.InstanceId,
+            Target: new L12AttackTarget("legion", defender.InstanceId)));
+        Assert.True(attack.Accepted, attack.Error);
+        Pass(game);
+        Resolve(game, "yes");
+        Pass(game);
+        var artifactChoice = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("play", artifactChoice.ValidChoices);
+        Resolve(game, "play");
+        Pass(game);
+
+        Assert.Same(landscape, owner.Relic);
+        Assert.Single(owner.Morale);
+        Assert.False(owner.Morale[0].Tapped);
+        Assert.Contains(game.State.Events,
+            entry => entry.Text.Contains("山河社稷图从士气牌库追加", StringComparison.Ordinal));
     }
 
     [Theory]

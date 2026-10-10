@@ -79,6 +79,7 @@ public sealed class StarterMissingEffectsRegressionTests
         {
             ["killed"] = "true",
             ["combatKillConfirmed"] = "true",
+            ["sourceWasAttackingLegion"] = "true",
         });
         Choose(zhaoGame, "mode:use");
         Choose(zhaoGame, "zhao-piercing-morale");
@@ -116,6 +117,30 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "entry:effect-ready-restriction-crossbow")]
+    public void CrossbowMayPayItsCostButItsReadySegmentFailsWhileBlocked()
+    {
+        var game = Create(207141);
+        var player = game.State.Players[0];
+        var crossbow = Card("ST01-07", "blocked-crossbow");
+        crossbow.Tapped = true;
+        crossbow.CannotReadyByEffectUntilTurn = game.State.TurnSerial;
+        player.Field[1][0] = crossbow;
+        player.Morale.Add(new L12MoraleCard { CardId = "ST01-C1", InstanceId = "blocked-crossbow-morale" });
+
+        QueueTrigger(game, crossbow, "after-attack");
+
+        Choose(game, "mode:use");
+        Choose(game, "blocked-crossbow-morale");
+        Assert.Empty(player.Morale);
+        PassResponses(game);
+        Assert.True(crossbow.Tapped);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("无法因效果转为活跃", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:kaneMillOne")]
     public void NieYinniangAndKaneReachTheirSharedVerifiedRuntimeFlows()
     {
         var nieGame = Create(20716);
@@ -272,6 +297,9 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Contains(ranged.InstanceId, choice.ValidChoices);
         Assert.Contains(tactic.InstanceId, choice.ValidChoices);
         Assert.DoesNotContain(invalid.InstanceId, choice.ValidChoices);
+        Assert.Equal("只能选择【远程】军团或【奥林匹斯】战术卡",
+            choice.Data[$"disabledChoice:{invalid.InstanceId}"]);
+        Assert.False(choice.Data.ContainsKey($"disabledChoice:{ranged.InstanceId}"));
         var choiceSnapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
         var choiceData = choiceSnapshot.GetProperty("prompts")[0].GetProperty("data");
@@ -296,6 +324,10 @@ public sealed class StarterMissingEffectsRegressionTests
             TopCardInstanceIds: [], BottomCardInstanceIds: [invalid.InstanceId, ranged.InstanceId]));
         Assert.True(result.Accepted, result.Error);
         Assert.Equal([invalid.InstanceId, ranged.InstanceId], player.Library.Select(card => card.InstanceId));
+        var resultEvent = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == telemachus.InstanceId));
+        Assert.Equal("resolved", resultEvent.EffectResultStatus);
+        Assert.Equal((1, 1), (resultEvent.EffectSegmentIndex, resultEvent.EffectSegmentCount));
 
         var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
             new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -324,6 +356,11 @@ public sealed class StarterMissingEffectsRegressionTests
         Choose(game, entrant.InstanceId);
         Choose(game, "0:0");
 
+        var stack = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.Equal("trigger:ST01-10:reaction", stack.Data["compositePlan"]);
+        Assert.Equal("hidden-pass-summon", stack.Data["atomicFlow"]);
+        Assert.False(string.IsNullOrWhiteSpace(stack.Data["presentationSceneId"]));
         Assert.DoesNotContain(morale, player.Morale);
         Assert.Contains(morale, player.MoraleDeck);
         Assert.DoesNotContain(hiddenPass, player.Field.SelectMany(row => row));
@@ -333,9 +370,83 @@ public sealed class StarterMissingEffectsRegressionTests
         Assert.Same(entrant, player.Field[0][0]);
         Assert.False(entrant.Tapped);
         Assert.Contains(hiddenPass, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == hiddenPass.InstanceId));
+        Assert.Equal("resolved", result.EffectResultStatus);
+        Assert.Equal("从我方手牌中将已声明的1张费用不高于4的【天廷】军团活跃登场", result.EffectText);
     }
 
     [Fact]
+    public void HiddenPassSettlementFailureKeepsItsPrepaidMoraleAndPublishesFailed()
+    {
+        var game = Create(207031);
+        var player = game.State.Players[0];
+        var hiddenPass = Card("ST01-10", "hidden-pass-failed");
+        hiddenPass.Hidden = true;
+        player.Field[1][0] = hiddenPass;
+        var entrant = Card("ST01-05", "hidden-pass-failed-entrant");
+        player.Hand.Add(entrant);
+        var morale = new L12MoraleCard { CardId = "ST01-C1", InstanceId = "hidden-pass-failed-morale" };
+        player.Morale.Add(morale);
+
+        QueueTrigger(game, hiddenPass, "reaction");
+        Choose(game, "mode:use");
+        Choose(game, morale.InstanceId);
+        Choose(game, entrant.InstanceId);
+        Choose(game, "0:0");
+        player.Field[0][0] = Card("ST01-04", "hidden-pass-slot-occupant");
+
+        PassResponses(game);
+
+        Assert.DoesNotContain(morale, player.Morale);
+        Assert.Contains(morale, player.MoraleDeck);
+        Assert.Contains(entrant, player.Hand);
+        Assert.Contains(hiddenPass, player.Graveyard);
+        var result = Assert.Single(game.State.Events, entry => entry.Type == "effect-result"
+            && entry.Cards.Any(card => card.InstanceId == hiddenPass.InstanceId));
+        Assert.Equal("failed", result.EffectResultStatus);
+        Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
+            && entry.Text.Contains("已返还的士气不返还", StringComparison.Ordinal));
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+    }
+
+    [Fact]
+    public void DecliningHiddenPassDoesNotPayOrRevealAndCreatesNoStack()
+    {
+        var game = Create(207032);
+        var player = game.State.Players[0];
+        var hiddenPass = Card("ST01-10", "hidden-pass-declined");
+        hiddenPass.Hidden = true;
+        player.Field[1][0] = hiddenPass;
+        player.Hand.Add(Card("ST01-05", "hidden-pass-declined-entrant"));
+        var morale = new L12MoraleCard { CardId = "ST01-C1", InstanceId = "hidden-pass-declined-morale" };
+        player.Morale.Add(morale);
+
+        QueueTrigger(game, hiddenPass, "reaction");
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        var command = new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none");
+        Assert.True(game.Handle(0, command).Accepted);
+        Assert.False(game.Handle(0, command).Accepted);
+
+        Assert.Contains(morale, player.Morale);
+        Assert.Empty(player.MoraleDeck);
+        Assert.Same(hiddenPass, player.Field[1][0]);
+        Assert.True(hiddenPass.Hidden);
+        Assert.DoesNotContain(game.State.EffectStack,
+            item => item.SourceInstanceId == hiddenPass.InstanceId);
+        Assert.Contains(game.SnapshotFor(0).RecentEvents, entry => entry.Type == "ability-cancelled"
+            && !entry.Cards.Any());
+        Assert.DoesNotContain(game.SnapshotFor(1).RecentEvents,
+            entry => entry.Type is "ability-cancelled" or "activation-declare");
+        Assert.DoesNotContain(game.SnapshotForSpectator().RecentEvents,
+            entry => entry.Type is "ability-cancelled" or "activation-declare");
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "ability:oasisDancerBuff")]
     public void OasisDancerRestsAndBuffsEveryTaiyangchengLegionForTheTurn()
     {
         var game = Create(20704);
@@ -356,6 +467,7 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [Trait("L12Evidence", "ability:christinaFreeTactic")]
     public void ChristinaReplacesOnlyTheNextEligibleActiveTacticCostWithOneMasterDamage()
     {
         var game = Create(20705);
@@ -474,6 +586,10 @@ public sealed class StarterMissingEffectsRegressionTests
     }
 
     [Fact]
+    [L12AbilityEvidence("ST-DS01:ability:disaster:0c65265cbaf95168",
+        "normal", "reconnect", "presentation-consumers")]
+    [L12AbilityEvidence("ST-DS03:ability:disaster:e661737a9a1faebe",
+        "normal", "duplicate-submit", "reconnect", "presentation-consumers", "single-candidate-choice")]
     public void StarterTriggeredDisastersResolveForBothBoardsWithoutDeathTriggers()
     {
         var mountainGame = Create(20711);
@@ -494,6 +610,17 @@ public sealed class StarterMissingEffectsRegressionTests
             .Invoke(mountainGame, [mountainItem]);
         Assert.Contains(lowFront, mountainGame.State.Players[0].Graveyard);
         Assert.Same(highFront, mountainGame.State.Players[1].Field[0][0]);
+        Assert.Empty(mountainGame.State.PendingTriggerBatches);
+        var mountainView = JsonSerializer.SerializeToElement(mountainGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains("mountain-low", mountainView.GetRawText(), StringComparison.Ordinal);
+        var mountainRandom = mountainGame.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        mountainGame = L12GameEngine.RestoreCheckpoint(Catalog,
+            mountainGame.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), mountainRandom,
+            mountainGame.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        Assert.Contains(mountainGame.State.Players[0].Graveyard,
+            card => card.InstanceId == lowFront.InstanceId);
         Assert.Empty(mountainGame.State.PendingTriggerBatches);
 
         var eyeGame = Create(20712);
@@ -519,14 +646,210 @@ public sealed class StarterMissingEffectsRegressionTests
             Assert.Equal("post-hidden-reveal", prompt.Data["declarationTiming"]);
         });
         var firstPrompt = eyeGame.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 0);
-        Assert.True(eyeGame.Handle(0, new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
-            Choice: first.InstanceId)).Accepted);
-        Assert.Same(first, eyeGame.State.Players[0].Field[0][0]);
         var secondPrompt = eyeGame.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 1);
-        Assert.True(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: secondPrompt.PromptId,
+        var firstView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var secondView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(1),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        var firstVisiblePrompt = Assert.Single(firstView.GetProperty("prompts").EnumerateArray());
+        var secondVisiblePrompt = Assert.Single(secondView.GetProperty("prompts").EnumerateArray());
+        Assert.Equal(firstPrompt.PromptId, firstVisiblePrompt.GetProperty("promptId").GetString());
+        Assert.Equal(secondPrompt.PromptId, secondVisiblePrompt.GetProperty("promptId").GetString());
+        Assert.Equal([first.InstanceId], firstVisiblePrompt.GetProperty("validChoices").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray());
+        Assert.Equal([second.InstanceId], secondVisiblePrompt.GetProperty("validChoices").EnumerateArray()
+            .Select(value => value.GetString()!).ToArray());
+        Assert.DoesNotContain(secondPrompt.PromptId, firstVisiblePrompt.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain(firstPrompt.PromptId, secondVisiblePrompt.GetRawText(), StringComparison.Ordinal);
+
+        var firstCommand = new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
+            Choice: first.InstanceId);
+        Assert.True(eyeGame.Handle(0, firstCommand).Accepted);
+        Assert.False(eyeGame.Handle(0, firstCommand).Accepted);
+        Assert.Same(first, eyeGame.State.Players[0].Field[0][0]);
+
+        var waitingView = JsonSerializer.SerializeToElement(eyeGame.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Equal(0, waitingView.GetProperty("prompts").GetArrayLength());
+        Assert.Equal(1, waitingView.GetProperty("waitingPrompt").GetProperty("playerIndex").GetInt32());
+        Assert.DoesNotContain(second.InstanceId, waitingView.GetProperty("waitingPrompt").GetRawText(),
+            StringComparison.Ordinal);
+
+        var random = eyeGame.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        eyeGame = L12GameEngine.RestoreCheckpoint(Catalog,
+            eyeGame.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), random,
+            eyeGame.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        var restoredSecondPrompt = Assert.Single(eyeGame.State.PendingPrompts);
+        Assert.Equal(secondPrompt.PromptId, restoredSecondPrompt.PromptId);
+        Assert.True(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: restoredSecondPrompt.PromptId,
             Choice: second.InstanceId)).Accepted);
-        Assert.Contains(first, eyeGame.State.Players[0].Graveyard);
-        Assert.Contains(second, eyeGame.State.Players[1].Graveyard);
+        Assert.False(eyeGame.Handle(1, new L12Command("resolvePrompt", PromptId: restoredSecondPrompt.PromptId,
+            Choice: second.InstanceId)).Accepted);
+        Assert.Contains(eyeGame.State.Players[0].Graveyard, card => card.InstanceId == first.InstanceId);
+        Assert.Contains(eyeGame.State.Players[1].Graveyard, card => card.InstanceId == second.InstanceId);
         Assert.Empty(eyeGame.State.PendingTriggerBatches);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST-DS03:ability:disaster:e661737a9a1faebe", "target-invalidated")]
+    public void StarterEvilEyeRevalidatesBothDeclaredInstancesAndDoesNotDeadlockWhenOneVanished()
+    {
+        var game = Create(20714);
+        var first = Card("ST01-05", "eye-stale-first");
+        var second = Card("ST02-09", "eye-stale-second");
+        second.OwnerIndex = 1;
+        game.State.Players[0].Field[0][0] = first;
+        game.State.Players[1].Field[0][0] = second;
+        var eye = Card("ST-DS03", "eye-stale-disaster");
+        game.State.ActiveDisaster = eye;
+        var item = new L12StackItem
+        {
+            StackItemId = "eye-stale-stack", Controller = 0, SourceInstanceId = eye.InstanceId,
+            SourceCardId = eye.CardId, SourceName = eye.Name, Trigger = "disaster", Text = eye.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+        typeof(L12GameEngine).GetMethod("ResolveDisasterEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [item]);
+
+        var firstPrompt = game.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 0);
+        var secondPrompt = game.State.PendingPrompts.Single(prompt => prompt.PlayerIndex == 1);
+        Assert.True(game.Handle(0, new L12Command("resolvePrompt", PromptId: firstPrompt.PromptId,
+            Choice: first.InstanceId)).Accepted);
+        game.State.Players[1].Field[0][0] = null;
+        game.State.Players[1].Graveyard.Add(second);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: secondPrompt.PromptId,
+            Choice: second.InstanceId)).Accepted);
+
+        Assert.Contains(first, game.State.Players[0].Graveyard);
+        Assert.Single(game.State.Players[1].Graveyard, card => card.InstanceId == second.InstanceId);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST-DS03:ability:disaster:e661737a9a1faebe", "no-target")]
+    public void StarterEvilEyeSkipsTheEmptyBoardAndStillResolvesTheOtherPlayersChoice()
+    {
+        var game = Create(20715);
+        var onlyLegion = Card("ST01-05", "eye-only-legion");
+        onlyLegion.OwnerIndex = 1;
+        game.State.Players[1].Field[0][0] = onlyLegion;
+        var eye = Card("ST-DS03", "eye-empty-board-disaster");
+        game.State.ActiveDisaster = eye;
+        var item = new L12StackItem
+        {
+            StackItemId = "eye-empty-board-stack", Controller = 0,
+            SourceInstanceId = eye.InstanceId, SourceCardId = eye.CardId,
+            SourceName = eye.Name, Trigger = "disaster", Text = eye.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+        typeof(L12GameEngine).GetMethod("ResolveDisasterEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [item]);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(1, prompt.PlayerIndex);
+        Assert.Equal([onlyLegion.InstanceId], prompt.ValidChoices);
+        Assert.True(game.Handle(1, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            Choice: onlyLegion.InstanceId)).Accepted);
+
+        Assert.Contains(onlyLegion, game.State.Players[1].Graveyard);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("ST-DS01:ability:disaster:0c65265cbaf95168", "no-target")]
+    public void StarterMountainDisasterSilentlyCompletesWhenNoFrontLegionQualifies()
+    {
+        var game = Create(20716);
+        var highFront = Card("ST01-01", "mountain-no-target-high");
+        game.State.Players[0].Field[0][0] = highFront;
+        var mountain = Card("ST-DS01", "mountain-no-target");
+        game.State.ActiveDisaster = mountain;
+        var item = new L12StackItem
+        {
+            StackItemId = "mountain-no-target-stack", Controller = 0,
+            SourceInstanceId = mountain.InstanceId, SourceCardId = mountain.CardId,
+            SourceName = mountain.Name, Trigger = "disaster", Text = mountain.EffectText ?? string.Empty,
+        };
+        game.State.EffectStack.Add(item);
+
+        typeof(L12GameEngine).GetMethod("ResolveDisasterEffect", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(game, [item]);
+
+        Assert.Same(highFront, game.State.Players[0].Field[0][0]);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.DoesNotContain(game.State.EffectStack, stack => stack.StackItemId == item.StackItemId);
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S01-DS02:ability:turn-end:9d632a451357ff71",
+        "normal", "no-target", "duplicate-submit", "reconnect", "presentation-consumers")]
+    public void HundredGhostsEndHandPromptRestoresReturnsExactCardsAndRejectsDuplicateSubmission()
+    {
+        var noTargetGame = Create(20717);
+        noTargetGame.State.ActiveDisaster = Card("S01-DS02", "hundred-ghosts-at-limit");
+        for (var index = 0; index < 5; index++)
+            noTargetGame.State.Players[0].Hand.Add(Card("ST01-05", $"at-limit-{index}"));
+        typeof(L12GameEngine).GetMethod("ResolveEndPhaseDisasterEffect",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(noTargetGame, [0]);
+        Assert.Empty(noTargetGame.State.PendingPrompts);
+
+        var game = Create(20718);
+        game.State.ActiveDisaster = Card("S01-DS02", "hundred-ghosts");
+        var player = game.State.Players[0];
+        for (var index = 0; index < 7; index++)
+            player.Hand.Add(Card("ST01-05", $"excess-hand-{index}"));
+        var selected = player.Hand.Take(2).Select(card => card.InstanceId).ToList();
+        typeof(L12GameEngine).GetMethod("ResolveEndPhaseDisasterEffect",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(game, [0]);
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.True(prompt.IsPrivate);
+        Assert.Equal(2, prompt.MinChoose);
+        Assert.Equal(2, prompt.MaxChoose);
+        var ownerView = JsonSerializer.SerializeToElement(game.SnapshotFor(0),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains(prompt.PromptId, ownerView.GetRawText(), StringComparison.Ordinal);
+
+        var random = game.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        var restored = Assert.Single(game.State.PendingPrompts);
+        var command = new L12Command("resolvePrompt", PromptId: restored.PromptId,
+            CardInstanceIds: selected);
+        Assert.True(game.Handle(0, command).Accepted);
+        Assert.False(game.Handle(0, command).Accepted);
+        Assert.Equal(5, game.State.Players[0].Hand.Count);
+        Assert.Equal(selected, game.State.Players[0].Library.TakeLast(2).Select(card => card.InstanceId));
+    }
+
+    [Fact]
+    [L12AbilityEvidence("S01-DS10:ability:turn-start:a790e35d0012c86f",
+        "normal", "reconnect", "presentation-consumers")]
+    public void FinalDisasterTurnStartDamagePersistsAndItsTurnLatchSurvivesReconnect()
+    {
+        var game = Create(20719);
+        game.State.ActiveDisaster = Card("S01-DS10", "final-disaster-lifecycle");
+        var before = game.State.Players.Select(player => player.Hp).ToArray();
+        typeof(L12GameEngine).GetMethod("ResolveTurnStartDisasterEffectIfNeeded",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(game, null);
+        Assert.Equal(before[0] - 1, game.State.Players[0].Hp);
+        Assert.Equal(before[1] - 1, game.State.Players[1].Hp);
+        var view = game.SnapshotFor(0);
+        Assert.Contains(view.RecentEvents, entry => entry.Type == "damage"
+            && entry.Text.Contains("湮灭", StringComparison.Ordinal));
+
+        var random = game.RandomState ?? new L12RandomState(1, 2, 3, 4, 5, 0);
+        game = L12GameEngine.RestoreCheckpoint(Catalog,
+            game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,"), random,
+            game.CardFactSignalSequence, autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false);
+        typeof(L12GameEngine).GetMethod("ResolveTurnStartDisasterEffectIfNeeded",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(game, null);
+        Assert.Equal(before[0] - 1, game.State.Players[0].Hp);
+        Assert.Equal(before[1] - 1, game.State.Players[1].Hp);
     }
 }

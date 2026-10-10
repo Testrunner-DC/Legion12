@@ -5,7 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
 
-public sealed partial class L12GameEngine
+public sealed partial class L12GameEngine : IL12MatchKernel
 {
     internal const int MaximumSnapshotEvents = 128;
 
@@ -27,6 +27,7 @@ public sealed partial class L12GameEngine
     private readonly Random _random;
     private readonly bool _autoPassEmptyResponses;
     private readonly bool _concealHiddenResponseAvailability;
+    private readonly Func<DateTimeOffset> _utcNow;
     private long _cachedHashRevision = long.MinValue;
     private int _cachedHashEventCount = -1;
     private string? _cachedStateHash;
@@ -66,10 +67,14 @@ public sealed partial class L12GameEngine
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
-        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null,
+        Func<DateTimeOffset>? utcNow = null,
+        IReadOnlyList<string>? responseModes = null)
         : this(catalog, matchId, roomCode, seed, playerNames,
             deckIndexes.Select(catalog.DeckAt).ToArray(), skipPreparation, disasterMode, autoPassEmptyResponses,
-            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot)
+            concealHiddenResponseAvailability, operationsPolicy, stateFormatVersion, effectPresentationSnapshot,
+            alternateArtUrls, utcNow, responseModes)
     {
     }
 
@@ -86,19 +91,24 @@ public sealed partial class L12GameEngine
         bool? concealHiddenResponseAvailability = null,
         L12OperationsPolicySnapshot? operationsPolicy = null,
         int stateFormatVersion = 0,
-        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null)
+        IReadOnlyList<L12FrozenEffectPresentation>? effectPresentationSnapshot = null,
+        IReadOnlyDictionary<string, string>[]? alternateArtUrls = null,
+        Func<DateTimeOffset>? utcNow = null,
+        IReadOnlyList<string>? responseModes = null)
     {
         if (playerNames.Length != 2 || decks.Length != 2)
             throw new ArgumentException("十二军团对战需要两名玩家和两副牌库");
         _catalog = catalog;
-        _random = stateFormatVersion >= 2
+        _random = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion
             ? new L12DeterministicRandom(seed)
             : new Random(seed);
         _autoPassEmptyResponses = autoPassEmptyResponses ?? AutoPassEmptyResponsesByDefault;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability ?? !skipPreparation;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         State = new L12GameState
         {
             StateFormatVersion = stateFormatVersion,
+            PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -111,9 +121,13 @@ public sealed partial class L12GameEngine
             FirstPlayer = 0,
             Players =
             [
-                BuildPlayer(0, playerNames[0], decks[0]),
-                BuildPlayer(1, playerNames[1], decks[1]),
+                BuildPlayer(0, playerNames[0], decks[0], alternateArtUrls?.ElementAtOrDefault(0)),
+                BuildPlayer(1, playerNames[1], decks[1], alternateArtUrls?.ElementAtOrDefault(1)),
             ],
+            PlayerResponseModes = responseModes is { Count: 2 }
+                && responseModes.Any(mode => mode != DefaultResponseMode)
+                ? responseModes.Select(mode => IsValidResponseMode(mode) ? mode : DefaultResponseMode).ToArray()
+                : null,
         };
 
         RollInitiative();
@@ -138,7 +152,7 @@ public sealed partial class L12GameEngine
 
     private L12GameEngine(L12Catalog catalog, L12GameState state, L12RandomState randomState,
         long cardFactSignalSequence, bool autoPassEmptyResponses,
-        bool concealHiddenResponseAvailability)
+        bool concealHiddenResponseAvailability, Func<DateTimeOffset>? utcNow)
     {
         _catalog = catalog;
         State = state;
@@ -146,25 +160,96 @@ public sealed partial class L12GameEngine
         _cardFactSignalSequence = cardFactSignalSequence;
         _autoPassEmptyResponses = autoPassEmptyResponses;
         _concealHiddenResponseAvailability = concealHiddenResponseAvailability;
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
     }
 
     internal static L12GameEngine RestoreCheckpoint(L12Catalog catalog, string stateJson,
         L12RandomState randomState, long cardFactSignalSequence,
-        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true)
+        bool autoPassEmptyResponses = true, bool concealHiddenResponseAvailability = true,
+        Func<DateTimeOffset>? utcNow = null)
     {
         var state = JsonSerializer.Deserialize<L12GameState>(stateJson, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
             PreferredObjectCreationHandling = JsonObjectCreationHandling.Populate,
         }) ?? throw new InvalidDataException("对局检查点状态为空");
-        if (state.StateFormatVersion < 2)
-            throw new InvalidDataException("历史状态不能绕过命令重放直接恢复");
+        L12PersistenceContract.EnsureCheckpointRecoverySupported(state.StateFormatVersion);
         if (state.Players is null || state.Players.Length != 2 || state.Players.Any(player => player is null
             || player.Field is null || player.Field.Length != 2
             || player.Field.Any(row => row is null || row.Length != 3)))
             throw new InvalidDataException("对局检查点战场结构无效，不能以空战场恢复");
+        ValidateCheckpointCardInstances(state);
         return new L12GameEngine(catalog, state, randomState, cardFactSignalSequence,
-            autoPassEmptyResponses, concealHiddenResponseAvailability);
+            autoPassEmptyResponses, concealHiddenResponseAvailability, utcNow);
+    }
+
+    private static void ValidateCheckpointCardInstances(L12GameState state)
+    {
+        var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Add(L12CardInstance card, string zone)
+        {
+            if (!locations.TryAdd(card.InstanceId, zone))
+                throw new InvalidDataException(
+                    $"对局检查点存在重复卡牌实例 {card.InstanceId}（{locations[card.InstanceId]} / {zone}）");
+            foreach (var attached in card.AttachedCards)
+                Add(attached, $"{zone}:attached:{card.InstanceId}");
+        }
+
+        foreach (var player in state.Players)
+        {
+            var prefix = $"player:{player.PlayerIndex}";
+            foreach (var card in player.Library) Add(card, $"{prefix}:library");
+            foreach (var card in player.Hand) Add(card, $"{prefix}:hand");
+            for (var row = 0; row < player.Field.Length; row++)
+            for (var slot = 0; slot < player.Field[row].Length; slot++)
+                if (player.Field[row][slot] is { } card) Add(card, $"{prefix}:field:{row}:{slot}");
+            if (player.Relic is { } relic) Add(relic, $"{prefix}:relic");
+            if (player.MasterLegionState is { } master) Add(master, $"{prefix}:master");
+            foreach (var card in player.ExtraRelics) Add(card, $"{prefix}:extra-relic");
+            foreach (var card in player.Resolving) Add(card, $"{prefix}:resolving");
+            foreach (var card in player.Graveyard) Add(card, $"{prefix}:graveyard");
+            foreach (var card in player.Removed) Add(card, $"{prefix}:removed");
+            foreach (var card in player.SpecialZones.GodPower) Add(card, $"{prefix}:god-power");
+            foreach (var card in player.SpecialZones.Trials) Add(card, $"{prefix}:trials");
+            foreach (var card in player.SpecialZones.CanopicProgress) Add(card, $"{prefix}:canopic");
+        }
+    }
+
+    public const string DefaultResponseMode = "default";
+    public const string ValidOnlyResponseMode = "valid-only";
+    public const string InvalidFiveSecondsResponseMode = "invalid-five-seconds";
+
+    public static bool IsValidResponseMode(string? mode)
+        => mode is DefaultResponseMode or ValidOnlyResponseMode or InvalidFiveSecondsResponseMode;
+
+    public string ResponseModeFor(int playerIndex)
+    {
+        if (playerIndex is < 0 or > 1) throw new ArgumentOutOfRangeException(nameof(playerIndex));
+        return State.PlayerResponseModes?.ElementAtOrDefault(playerIndex) is { } mode
+               && IsValidResponseMode(mode) ? mode : DefaultResponseMode;
+    }
+
+    internal CommandResult ApplyResponsePreference(int playerIndex, string? mode)
+        => ExecuteRecordedCommand(() => ApplyResponsePreferenceCore(playerIndex, mode));
+
+    private CommandResult ApplyResponsePreferenceCore(int playerIndex, string? mode)
+    {
+        if (playerIndex is < 0 or > 1 || !IsValidResponseMode(mode))
+            return CommandResult.Reject("响应设置无效");
+        if (ResponseModeFor(playerIndex) == mode) return CommandResult.Ok();
+        var modes = State.PlayerResponseModes is { Length: 2 }
+            ? [.. State.PlayerResponseModes]
+            : new[] { DefaultResponseMode, DefaultResponseMode };
+        modes[playerIndex] = mode!;
+        State.PlayerResponseModes = modes.All(item => item == DefaultResponseMode) ? null : modes;
+        State.Revision++;
+        return CommandResult.Ok();
+    }
+
+    internal void RestoreResponsePreference(string[]? playerResponseModes, long revision)
+    {
+        State.PlayerResponseModes = playerResponseModes is null ? null : [.. playerResponseModes];
+        State.Revision = revision;
     }
 
     internal void MarkEventsPersisted(long throughSequence)
@@ -172,11 +257,14 @@ public sealed partial class L12GameEngine
 
     internal void MarkCardFactsPersisted(long throughSequence)
     {
-        if (State.StateFormatVersion < 2) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion) return;
         _cardFactSignals.RemoveAll(item => item.Sequence <= throughSequence);
     }
 
     public CommandResult Handle(int playerIndex, L12Command command)
+        => ExecuteRecordedCommand(() => HandleCore(playerIndex, command));
+
+    private CommandResult HandleCore(int playerIndex, L12Command command)
     {
         if (playerIndex is < 0 or > 1) return CommandResult.Reject("无效玩家");
         if (State.Phase == L12Phase.GameOver) return CommandResult.Reject("对局已经结束");
@@ -184,7 +272,7 @@ public sealed partial class L12GameEngine
             && !string.IsNullOrWhiteSpace(command.PromptId)
             && State.PendingPrompts.Any(prompt => prompt.PromptId == command.PromptId
                 && prompt.PlayerIndex == playerIndex);
-        var reconciledPendingTransactions = ReconcilePendingActivationTransactions();
+        var reconciledPendingTransactions = WithinEffectWorkDispatch(ReconcilePendingActivationTransactions);
         if (reconciledPendingTransactions) State.Revision++;
 
         // Capture this before resolving the command: a disaster prompt/stack item may be
@@ -196,33 +284,47 @@ public sealed partial class L12GameEngine
                 && State.PendingPrompts.Any(prompt => prompt.PromptId == command.PromptId
                     && prompt.Continuation == "disaster-effect"));
 
-        var result = command.Type switch
+        // State-based deaths and resource triggers caused by this command are
+        // still current effect work. Publish the next stack/disaster boundary
+        // only after these producers have registered all of their successors,
+        // and before the command revision is incremented.
+        var result = WithinEffectWorkDispatch(() =>
         {
-            // If authoritative reconciliation invalidated the exact prompt that this
-            // player was submitting, the requested choice can no longer have an effect.
-            // Treat that stale acknowledgement as idempotently accepted: the orphan was
-            // already removed and its combat/stack continuation was safely resumed.
-            "resolvePrompt" when ownedPromptBeforeReconcile
-                && State.PendingPrompts.All(prompt => prompt.PromptId != command.PromptId) => CommandResult.Ok(),
-            "resolvePrompt" => ResolvePrompt(playerIndex, command),
-            "mulligan" => Mulligan(playerIndex, command.CardInstanceIds ?? []),
-            "advancePhase" => CommandResult.Reject("触发天灾至主要阶段由服务器自动结算"),
-            "playCard" => PlayCard(playerIndex, command),
-            "attack" => Attack(playerIndex, command),
-            "resolveDefense" => ResolveDefense(playerIndex, command),
-            "move" => Move(playerIndex, command),
-            "cavalryMove" => CavalryMove(playerIndex, command),
-            "activateAbility" => ActivateAbility(playerIndex, command),
-            "flipHidden" => FlipHidden(playerIndex, command.CardInstanceId),
-            "endTurn" => EndTurn(playerIndex),
-            "surrender" => Surrender(playerIndex),
-            _ => CommandResult.Reject("未知操作"),
-        };
+            var dispatched = command.Type switch
+            {
+                // If authoritative reconciliation invalidated the exact prompt that this
+                // player was submitting, the requested choice can no longer have an effect.
+                // Treat that stale acknowledgement as idempotently accepted: the orphan was
+                // already removed and its combat/stack continuation was safely resumed.
+                "resolvePrompt" when ownedPromptBeforeReconcile
+                    && State.PendingPrompts.All(prompt => prompt.PromptId != command.PromptId) => CommandResult.Ok(),
+                "resolvePrompt" => ResolvePrompt(playerIndex, command),
+                "mulligan" => Mulligan(playerIndex, command.CardInstanceIds ?? []),
+                "advancePhase" => CommandResult.Reject("触发天灾至主要阶段由服务器自动结算"),
+                "playCard" => PlayCard(playerIndex, command),
+                "attack" => Attack(playerIndex, command),
+                "resolveDefense" => ResolveDefense(playerIndex, command),
+                "move" => Move(playerIndex, command),
+                "cavalryMove" => CavalryMove(playerIndex, command),
+                "activateAbility" => ActivateAbility(playerIndex, command),
+                "flipHidden" => FlipHidden(playerIndex, command.CardInstanceId),
+                "endTurn" => EndTurn(playerIndex),
+                "surrender" => Surrender(playerIndex),
+                _ => CommandResult.Reject("未知操作"),
+            };
 
+            if (dispatched.Accepted)
+            {
+                if (State.Phase != L12Phase.GameOver)
+                {
+                    ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
+                    FlushStarterResourceTriggerBatches();
+                }
+            }
+            return dispatched;
+        });
         if (result.Accepted)
         {
-            ResolveStateBasedLegionDeaths(suppressStateDeathTriggers);
-            FlushStarterResourceTriggerBatches();
             State.Revision++;
             CheckWinner();
         }
@@ -230,64 +332,88 @@ public sealed partial class L12GameEngine
         return result;
     }
 
-    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: false, revealAllHands: false);
+    public L12GameSnapshot SnapshotFor(int viewer) => SnapshotForInternal(viewer, spectator: false, L12RecipientVisibility.Policy.Player);
 
-    public L12GameSnapshot SnapshotForGm(int viewer) => SnapshotForInternal(viewer, spectator: false, revealAllDisasters: true, revealAllHands: true);
+    public L12GameSnapshot SnapshotForGm(int viewer) => SnapshotForInternal(viewer, spectator: false, L12RecipientVisibility.Policy.Gm);
 
-    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: false, revealAllHands: false);
+    public L12GameSnapshot SnapshotForSpectator() => SnapshotForInternal(-1, spectator: true, L12RecipientVisibility.Policy.PublicSpectator);
 
-    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, revealAllDisasters: true, revealAllHands: false);
+    public L12GameSnapshot SnapshotForReferee() => SnapshotForInternal(-1, spectator: true, L12RecipientVisibility.Policy.Referee);
 
-    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, bool revealAllDisasters, bool revealAllHands)
+    private L12GameSnapshot SnapshotForInternal(int viewer, bool spectator, L12RecipientVisibility.Policy visibility)
     {
-        if (ReconcilePendingActivationTransactions()) State.Revision++;
-        if (State.StateFormatVersion < 2) RecalculateContinuousTroops();
+        if (WithinEffectWorkDispatch(ReconcilePendingActivationTransactions)) State.Revision++;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion)
+            RecalculateContinuousTroops();
         else PrepareV2ProjectionState();
-        var players = State.Players.Select((player, index) => !spectator && (index == viewer || revealAllHands)
+        var players = State.Players.Select((player, index) => !spectator && (index == viewer || visibility.DeckOrder)
             ? (object)new
             {
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
-                hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck, player.Morale,
-                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters),
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
+                hand = SnapshotHand(index), promotionOptions = BuildS2PromotionOptions(player), player.MoraleDeck,
+                morale = SnapshotMorale(player),
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), player.Removed, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters),
                 player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+            }
+            : visibility.BothHands ? (object)new
+            {
+                player.PlayerIndex, player.Name, player.DeckName, player.Faction,
+                master = MasterSnapshotCore(player, includeActions: false), factionEffect = FactionEffectSnapshotCore(player, includeActions: false),
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) && player.Library.FirstOrDefault() is { } visibleTop ? SnapshotDisplayOnlyCard(visibleTop) : null,
+                hand = SnapshotObserverHand(index), handCount = player.Hand.Count,
+                moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
+                field = SnapshotFieldCore(player, viewer, visibility.CoveredBattlefieldIdentity, includeActions: false),
+                Relic = player.Relic is null ? null : SnapshotDisplayOnlyCard(player.Relic),
+                ExtraRelics = player.ExtraRelics.Select(SnapshotDisplayOnlyCard).ToArray(),
+                Resolving = player.Resolving.Select(SnapshotDisplayOnlyCard).ToArray(),
+                Graveyard = SnapshotGraveyardCore(player, includeActions: false),
+                graveyardCount = player.Graveyard.Count, removedCount = player.Removed.Count,
+                specialZones = SpecialZonesSnapshotCore(player, index, viewer, visibility.AllDisasters, includeActions: false),
+                player.TemporaryMorale, player.MulliganDone,
             }
             : new
             {
                 player.PlayerIndex, player.Name, player.DeckName, player.Faction,
                 master = MasterSnapshot(player),
                 factionEffect = FactionEffectSnapshot(player),
-                libraryCount = player.Library.Count, libraryTop = State.ActiveDisaster?.CardId == "S02-DS01" ? player.Library.FirstOrDefault() : null,
+                libraryCount = player.Library.Count, libraryTop = L12ActiveDisasterRules.LibraryFlipped(State.ActiveDisaster?.CardId) ? player.Library.FirstOrDefault() : null,
                 handCount = player.Hand.Count,
-                moraleDeckCount = player.MoraleDeck.Count, player.Morale,
-                field = SnapshotField(player, viewer, revealAllHands), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
-                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, revealAllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
+                moraleDeckCount = player.MoraleDeck.Count, morale = SnapshotMorale(player),
+                field = SnapshotField(player, viewer, visibility.CoveredBattlefieldIdentity), player.Relic, player.ExtraRelics, player.Resolving, Graveyard = SnapshotGraveyard(player), graveyardCount = player.Graveyard.Count,
+                removedCount = player.Removed.Count, specialZones = SpecialZonesSnapshot(player, index, viewer, visibility.AllDisasters), player.TemporaryMorale, spendableResourceCount = ActiveResourceCount(player), player.NextLegionChargeMaxCost, player.NextLegionEntryDiscount, player.NextS2PromotionGodPowerDiscount, player.MulliganDone,
             }).ToArray();
 
+        var projectionNow = _utcNow().ToUniversalTime();
         var prompts = State.PendingPrompts
-            .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || revealAllHands))
+            .Where(prompt => !spectator && (prompt.PlayerIndex == viewer || visibility.PrivatePrompts))
             .Select(prompt => (object)new
             {
                 prompt.PromptId, prompt.PlayerIndex, prompt.Kind, prompt.Text, prompt.ValidChoices,
                 prompt.MinChoose, prompt.MaxChoose, prompt.Data, prompt.ChoiceLabels,
+                prompt.Presentation,
+                autoClose = ResponseAutoCloseView(prompt, projectionNow),
                 prompt.ActivationId, prompt.SourceInstanceId, prompt.SourceCardId,
                 prompt.Step, prompt.CreatedRevision, prompt.Controller,
             }).ToArray();
         // 对手正在处理任何选择时都给出不泄露私密候选内容的等待状态。
-        var waitingPromptSource = revealAllHands
+        var waitingPromptSource = visibility.PrivatePrompts
             ? null
-            : State.PendingPrompts.FirstOrDefault(prompt => spectator || prompt.PlayerIndex != viewer);
+            : State.PendingPrompts.FirstOrDefault(prompt => (spectator || prompt.PlayerIndex != viewer)
+                && !prompt.Data.ContainsKey(PrivateTriggerDeclaration));
         object? waitingPrompt = waitingPromptSource is null ? null : new
         {
             waitingPromptSource.PlayerIndex,
             playerName = State.Players[waitingPromptSource.PlayerIndex].Name,
             waitingPromptSource.Kind,
+            waitingSummary = waitingPromptSource.Presentation?.WaitingSummary,
         };
         var stack = State.EffectStack.Select(item =>
         {
             var privateHandCard = item.Data.GetValueOrDefault("eventType") == "effect-hand-add";
+            var publicTargets = PublicResponseTargets(item, spectator ? -1 : viewer).ToArray();
             return (object)new
             {
                 item.StackItemId, item.Controller,
@@ -297,37 +423,66 @@ public sealed partial class L12GameEngine
                 item.Trigger,
                 Text = item.Text,
                 item.Negated, Targets = privateHandCard ? [] : item.Targets,
+                publicTargetLabels = publicTargets.Select(target => target.Label).ToArray(),
+                publicTargetIds = publicTargets.Where(target => target.OnField
+                        && IsCurrentPublicResponseTarget(target.Id))
+                    .Select(target => target.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             };
         }).ToArray();
 
         var recentEvents = State.Events
             .TakeLast(MaximumSnapshotEvents)
-            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, revealAllDisasters, revealAllHands))
+            .Where(actionEvent => L12RecipientVisibility.CanSeeActionEvent(actionEvent, viewer, visibility.PrivateHandEvents))
+            .Select(actionEvent => FilterDisasterEvent(actionEvent, viewer, visibility.AllDisasters, visibility.PrivateHandEvents))
+            .ToArray();
+        var recipientEvents = recentEvents.ToDictionary(actionEvent => actionEvent.Sequence);
+        recentEvents = recentEvents
+            .Select(actionEvent => L12RecipientVisibility.ProjectPresentationFactReferences(actionEvent, recipientEvents))
             .ToArray();
         var lastAction = State.LastAction is null
+            || !L12RecipientVisibility.CanSeeActionEvent(State.LastAction, viewer, visibility.PrivateHandEvents)
             ? null
-            : FilterDisasterEvent(State.LastAction, viewer, revealAllDisasters, revealAllHands);
+            : FilterDisasterEvent(State.LastAction, viewer, visibility.AllDisasters, visibility.PrivateHandEvents);
+        if (lastAction is not null)
+            lastAction = L12RecipientVisibility.ProjectPresentationFactReferences(lastAction, recipientEvents);
 
+        var displayOnlyCards = spectator && visibility.BothHands;
         return new L12GameSnapshot(
             State.MatchId, State.RoomCode, State.OperationsPolicy.Version, spectator ? 0 : viewer,
             State.Revision, State.ActivePlayer,
             State.FirstPlayer, State.DiceWinner, State.InitiativeRolls, State.Phase, State.Round, State.TurnSerial,
-            State.DisasterMode, State.DisasterValue, State.ActiveDisaster, State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
-            State.BannedDisasters.Cast<object>().ToArray(), State.RemovedDisasters.Cast<object>().ToArray(),
-            State.RevealedDisasters.Cast<object>().ToArray(), BuildChosenDisasterSnapshot(viewer, revealAllDisasters),
-            BuildSessionDisasterSnapshot(viewer, revealAllDisasters),
+            State.DisasterMode, State.DisasterValue,
+            displayOnlyCards && State.ActiveDisaster is { } active ? SnapshotDisplayOnlyCard(active) : State.ActiveDisaster,
+            State.DisasterDeck.Select(CardBackSnapshot).ToArray(),
+            State.BannedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            State.RemovedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            State.RevealedDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray(),
+            BuildChosenDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
+            BuildSessionDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
             State.DisasterPreparationStep,
             waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
-            recentEvents, spectator ? [] : BuildLegalAttackTargets(revealAllHands ? State.ActivePlayer : viewer), ComputeStateHash());
+            recentEvents, spectator || !visibility.LegalActions ? [] : BuildLegalAttackTargets(visibility.DeckOrder ? State.ActivePlayer : viewer), ComputeStateHash());
     }
 
-    private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll)
-        => State.ChosenDisasters.Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll)).ToArray();
+    private L12PromptAutoCloseView? ResponseAutoCloseView(L12Prompt prompt, DateTimeOffset serverNowUtc)
+    {
+        var window = State.ResponseWindow;
+        if (window?.AutoCloseDeadlineUtc is not { } deadline
+            || window.AutoClosePromptId != prompt.PromptId
+            || window.AutoCloseStackItemId != prompt.StackItemId
+            || window.AutoClosePriorityPlayer != prompt.PlayerIndex
+            || window.PriorityPlayer != prompt.PlayerIndex)
+            return null;
+        return new L12PromptAutoCloseView("no-valid-response", deadline, serverNowUtc);
+    }
 
-    private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll)
+    private object[] BuildChosenDisasterSnapshot(int viewer, bool revealAll, bool displayOnlyCards = false)
+        => State.ChosenDisasters.Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll, displayOnlyCards)).ToArray();
+
+    private object[] BuildSessionDisasterSnapshot(int viewer, bool revealAll, bool displayOnlyCards = false)
     {
         if (State.DisasterMode == "custom" && State.CustomDisasters.Count == 4)
-            return State.CustomDisasters.Cast<object>().ToArray();
+            return State.CustomDisasters.Select(card => (object)(displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card)).ToArray();
 
         // 这一区域只表达“玩家目前知道哪些牌”，绝不能用亮/暗位置泄露洗混后的牌序。
         // 前三格先紧凑排列已知的非最终天灾，再补未知牌背；公开的最终天灾固定在第四格。
@@ -339,7 +494,7 @@ public sealed partial class L12GameEngine
             .DistinctBy(card => card.InstanceId)
             .ToArray();
         var visible = all.Where(card => card.CardId != "S01-DS10")
-            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll))
+            .Select(card => DisasterVisibilitySnapshot(card, viewer, revealAll, displayOnlyCards))
             .Where(IsVisibleDisasterSnapshot)
             .Take(3)
             .ToList();
@@ -348,53 +503,25 @@ public sealed partial class L12GameEngine
 
         var final = all.FirstOrDefault(card => card.CardId == "S01-DS10")
             ?? (_catalog.Cards.ContainsKey("S01-DS10") ? CreateCard("S01-DS10", "session-final-disaster") : null);
-        if (final is not null) visible.Add(final);
+        if (final is not null) visible.Add(displayOnlyCards ? SnapshotDisplayOnlyCard(final) : final);
         return visible.ToArray();
     }
 
     private static bool IsVisibleDisasterSnapshot(object snapshot) => snapshot is L12CardInstance;
 
-    private object DisasterVisibilitySnapshot(L12CardInstance card, int viewer, bool revealAll)
+    private object DisasterVisibilitySnapshot(L12CardInstance card, int viewer, bool revealAll,
+        bool displayOnlyCards = false)
     {
-        var alreadyRevealed = State.ActiveDisaster?.InstanceId == card.InstanceId
-            || State.RemovedDisasters.Any(item => item.InstanceId == card.InstanceId)
-            || State.RevealedDisasters.Any(item => item.InstanceId == card.InstanceId);
         var owner = State.ChosenDisasterOwners.GetValueOrDefault(card.InstanceId, card.OwnerIndex ?? -1);
-        if (revealAll || alreadyRevealed || (viewer >= 0 && owner == viewer)) return card;
+        if (L12RecipientVisibility.CanSeeDisaster(State, card, viewer, revealAll))
+            return displayOnlyCards ? SnapshotDisplayOnlyCard(card) : card;
         return new { card.InstanceId, hidden = true, ownerIndex = owner };
     }
 
     private L12ActionEvent FilterDisasterEvent(L12ActionEvent actionEvent, int viewer, bool revealAll,
         bool revealAllHands = false)
-    {
-        if (actionEvent.Type == "private-return")
-            return revealAllHands || actionEvent.PlayerIndex == viewer
-                ? actionEvent with { Type = "return" }
-                : new L12ActionEvent(actionEvent.Sequence, "return", actionEvent.PlayerIndex, "放回1张牌", []);
-        if (!revealAll && actionEvent.Type == "private-disaster-reveal"
-            && actionEvent.PlayerIndex != viewer)
-        {
-            var viewingPlayerName = actionEvent.PlayerIndex is >= 0 and <= 1
-                ? State.Players[actionEvent.PlayerIndex.Value].Name
-                : "玩家";
-            return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type,
-                actionEvent.PlayerIndex, $"{viewingPlayerName}查看了下一张天灾", []);
-        }
-        if (revealAll || actionEvent.Type != "disaster-selected" || actionEvent.Cards.Length == 0)
-            return actionEvent;
-
-        var visibleCards = actionEvent.Cards
-            .Where(card => ReferenceEquals(DisasterVisibilitySnapshot(card, viewer, revealAll), card))
-            .Select(card => card.Clone())
-            .ToArray();
-        if (visibleCards.Length == actionEvent.Cards.Length) return actionEvent;
-
-        var playerName = actionEvent.PlayerIndex is >= 0 and <= 1
-            ? State.Players[actionEvent.PlayerIndex.Value].Name
-            : "玩家";
-        return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type, actionEvent.PlayerIndex,
-            $"{playerName} 已完成天灾选择", visibleCards);
-    }
+        => L12RecipientVisibility.ProjectActionEvent(State, actionEvent, viewer, revealAll,
+            revealAllHands);
 
     private Dictionary<string, string[]> BuildLegalAttackTargets(int viewer)
     {
@@ -406,7 +533,8 @@ public sealed partial class L12GameEngine
         for (var slot = 0; slot < 3; slot++)
         {
             var attacker = player.Field[row][slot];
-            if (attacker is null || attacker.CannotAttack || attacker.Tapped || attacker.Hidden
+            if (attacker is null || L12StructuredCardRules.CannotAttack(attacker, row)
+                || attacker.Tapped || attacker.Hidden
                 || !CanAttackFromRow(attacker, row)) continue;
             var targets = new List<string>();
             for (var targetRow = 0; targetRow < 2; targetRow++)
@@ -428,7 +556,9 @@ public sealed partial class L12GameEngine
 
     private static object CardBackSnapshot(L12CardInstance _) => new { hidden = true };
 
-    private object MasterSnapshot(L12PlayerState player)
+    private object MasterSnapshot(L12PlayerState player) => MasterSnapshotCore(player, includeActions: true);
+
+    private object MasterSnapshotCore(L12PlayerState player, bool includeActions)
     {
         _catalog.Cards.TryGetValue(player.MasterId, out var card);
         var deployedAsLegion = PublicLegions(player)
@@ -440,18 +570,23 @@ public sealed partial class L12GameEngine
             masterImageUrl = deployedAsLegion ? null : player.MasterImageUrl,
             deployedAsLegion,
             effectText = card?.Effect,
-            tapped = player.MasterTapped,
-            player.Hp,
+            // 孙悟空军团返回主宰区后仍保留同一公开实例的休整状态；再次按卡文
+            // “活跃登场”时会在成功落场边界转为活跃。这里不公开实例本身。
+            tapped = player.MasterLegionState?.Tapped ?? player.MasterTapped,
+            Hp = Math.Max(0, player.Hp),
             player.MaxHp,
             statusIcons = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial ? new[] { "shield" } : Array.Empty<string>(),
             statusEffects = player.MasterCannotBeAttackedUntilTurn >= State.TurnSerial
                 ? new[] { new L12StatusEffectView("shield", "主宰暂时不可被进攻") }
                 : Array.Empty<L12StatusEffectView>(),
-            abilities = BuildAbilityViews(player, player.MasterId, $"master-{player.PlayerIndex}"),
+            abilities = includeActions ? BuildAbilityViews(player, player.MasterId, $"master-{player.PlayerIndex}") : [],
         };
     }
 
     private object FactionEffectSnapshot(L12PlayerState player)
+        => FactionEffectSnapshotCore(player, includeActions: true);
+
+    private object FactionEffectSnapshotCore(L12PlayerState player, bool includeActions)
     {
         var identity = _catalog.MoraleIdentities.ForFaction(player.Faction);
         if (identity.GodPowerCardId is { Length: > 0 } godPowerCardId
@@ -459,7 +594,7 @@ public sealed partial class L12GameEngine
             && _catalog.Cards.TryGetValue(godPowerCardId, out var godPowerFace))
         {
             var samePrintedCard = moraleFace.Id.Equals(godPowerFace.Id, StringComparison.OrdinalIgnoreCase);
-            var abilities = samePrintedCard
+            var abilities = !includeActions ? [] : samePrintedCard
                 ? BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}").ToArray()
                 : BuildAbilityViews(player, moraleFace.Id, $"faction-{player.PlayerIndex}")
                     .Concat(BuildAbilityViews(player, godPowerFace.Id, $"faction-{player.PlayerIndex}"))
@@ -478,10 +613,14 @@ public sealed partial class L12GameEngine
         var moraleId = identity.CanonicalCardId;
         if (moraleId is null || !_catalog.Cards.TryGetValue(moraleId, out var card))
             return new { cardId = string.Empty, name = "阵营效果", imageUrl = (string?)null, effectText = string.Empty, abilities = Array.Empty<L12AbilityView>() };
-        return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") };
+        return new { cardId = card.Id, name = card.NameZh, imageUrl = card.ImageUrl, effectText = card.Effect, abilities = includeActions ? BuildAbilityViews(player, card.Id, $"faction-{player.PlayerIndex}") : [] };
     }
 
     private object SpecialZonesSnapshot(L12PlayerState player, int ownerIndex, int viewer, bool revealAll)
+        => SpecialZonesSnapshotCore(player, ownerIndex, viewer, revealAll, includeActions: true);
+
+    private object SpecialZonesSnapshotCore(L12PlayerState player, int ownerIndex, int viewer, bool revealAll,
+        bool includeActions)
     {
         string[] canopicIds = ["S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220"];
         var completedCanopicIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
@@ -502,8 +641,8 @@ public sealed partial class L12GameEngine
         {
             if (revealAll || viewer == ownerIndex || card.TrialCompleted)
             {
-                var snapshot = card.Clone();
-                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+                var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
+                if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
                 return (object)snapshot;
             }
             return new { card.InstanceId, cardId = "hidden-trial", name = "未揭示试炼", cardType = "trial", hidden = true,
@@ -524,7 +663,9 @@ public sealed partial class L12GameEngine
         return new
         {
             player.SpecialZones.Runes, player.SpecialZones.TrialLevel, player.SpecialZones.TrialCapacity,
-            godPower, trials, canopicProgress = player.SpecialZones.CanopicProgress, canopicTrack,
+            godPower, trials,
+            canopicProgress = includeActions ? player.SpecialZones.CanopicProgress : player.SpecialZones.CanopicProgress.Select(SnapshotDisplayOnlyCard).ToList(),
+            canopicTrack,
         };
     }
 
@@ -546,11 +687,12 @@ public sealed partial class L12GameEngine
                     ? view.Id == "skyCityDiscount"
                     : view.Id == "completeTrial")
                 .ToList();
-        if (_catalog.Cards.GetValueOrDefault(cardId) is { CardType: "legion", TrialValue: > 0 } definition
+        if (_catalog.Cards.GetValueOrDefault(cardId) is { } definition
+            && L12StructuredCardRules.IsTrialLegion(definition)
             && views.All(view => view.Id != "trialAdvance"))
         {
             views.Insert(0, new L12AbilityView("trialAdvance",
-                $"试炼 休整此军团：增加{definition.TrialValue.Value}点试炼进度。"));
+                $"试炼 休整此军团：增加{definition.TrialValue.GetValueOrDefault()}点试炼进度。"));
         }
 
         return views.Select(view =>
@@ -577,12 +719,10 @@ public sealed partial class L12GameEngine
                     return view with { Enabled = false, DisabledReason = "该军团因卡牌效果本回合无法再次发动试炼" };
             }
             if (L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
-                && (FindOnField(player, sourceInstanceId, out _, out _) is { Tapped: true }
-                    || player.Relic is { Tapped: true } relic && relic.InstanceId == sourceInstanceId
-                    || player.ExtraRelics.Any(extraRelic => extraRelic.InstanceId == sourceInstanceId && extraRelic.Tapped)))
+                && availabilitySource is not null
+                && IsActiveRestSourceRested(player, availabilitySource))
                 return view with { Enabled = false, DisabledReason = $"{_catalog.Cards.GetValueOrDefault(cardId)?.NameZh ?? "该卡牌"}必须为活跃状态" };
-            if (!L12StructuredCardRules.IsActiveRestAbility(cardId, view.Id)
-                && player.UsedAbilities.Contains(ActiveAbilityUsageKey(sourceInstanceId, cardId, view.Id)))
+            if (HasUsedLimitedActiveAbility(player, cardId, sourceInstanceId, view.Id))
                 return view with { Enabled = false, DisabledReason = "该效果本回合已经发动" };
             if (availabilitySource is not null
                 && ActiveAbilityUnavailableReason(player, availabilitySource, view.Id) is { } availabilityReason)
@@ -591,17 +731,21 @@ public sealed partial class L12GameEngine
                 return view with { Enabled = false, DisabledReason = "我方士气为0张时触发", TriggerOnly = true };
             if (view.Id == "godPowerDraw" && !player.Morale.Any(card => card.IsGodPower && !card.Tapped))
                 return view with { Enabled = false, DisabledReason = "需要1张活跃神力" };
-            if (view.Id == "olympusMoraleFlip" && !player.Morale.Any(card => !card.IsGodPower))
+            if (view.Id == "olympusMoraleFlip" && !player.Morale.Any(card => CanFlipMoraleToGodPower(card)))
                 return view with { Enabled = false, DisabledReason = "没有可翻转为神力的士气" };
             if (view.Id == "isisVictory")
             {
                 if (!TryGetIsisVictorySource(player, out _, out var error))
                     return view with { Enabled = false, DisabledReason = error };
             }
+            if (availabilitySource is not null
+                && L12StructuredCardSemantics.MasterAbilityGateFailureReason(
+                    player, availabilitySource.CardId, view.Id) is { } masterGateReason)
+                return view with { Enabled = false, DisabledReason = masterGateReason };
             if (view.Id == "thorHammerRevive")
             {
-                if (player.MasterId != "S02-03M1" || !player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
-                    return view with { Enabled = false, DisabledReason = "仅〈雷神索尔〉可发动墓地中〈雷神之锤〉的效果" };
+                if (!player.Graveyard.Any(card => card.InstanceId == sourceInstanceId))
+                    return view with { Enabled = false, DisabledReason = "〈雷神之锤〉必须位于我方墓地" };
                 if (player.Graveyard.Where(card => card.InstanceId != sourceInstanceId && CanEnterHandOrLibrary(card))
                     .Sum(L12StructuredCardRules.StarterGraveCardCopies) < 3)
                     return view with { Enabled = false, DisabledReason = "墓地中其他可返回牌库的卡牌需合计能视为3张" };
@@ -611,6 +755,17 @@ public sealed partial class L12GameEngine
             if (view.Id == "galahadGrailReward"
                 && !player.SpecialZones.Trials.Any(card => card.CardId == "S02-06S4" && card.TrialCompleted))
                 return view with { Enabled = false, DisabledReason = "试炼《寻找圣杯之旅》尚未完成" };
+            // Horus has alternative payments; its dedicated availability check owns
+            // that choice. Other mapped morale costs use the submission quote.
+            if (availabilitySource is not null && view.Id != "horusRevive")
+            {
+                var quote = QuoteActiveMorale(player, availabilitySource, view.Id);
+                if (quote.BaseCost > 0)
+                    return ActiveResourceCount(player) < quote.Total
+                        ? view with { Enabled = false, DisabledReason = $"需要{quote.Total}张活跃士气" }
+                        : view;
+            }
+            // Unmigrated ability-specific payments retain the existing fallback.
             var match = System.Text.RegularExpressions.Regex.Match(view.Label, @"消耗\s*(\d+)\s*士气");
             if (view.Id != "horusRevive" && match.Success
                 && int.TryParse(match.Groups[1].Value, out var cost) && ActiveResourceCount(player) < cost)
@@ -626,6 +781,8 @@ public sealed partial class L12GameEngine
     /// </summary>
     private string? ActiveAbilityUnavailableReason(L12PlayerState player, L12CardInstance source, string ability)
     {
+        if (EvaluateSingleActiveSelection(player, source, ability) is { } selection)
+            return selection.UnavailableReason;
         var enemy = State.Players[1 - player.PlayerIndex];
         var emptySlotExists = EmptySlots(player).Any();
         var ownLegions = PublicLegions(player).ToArray();
@@ -633,8 +790,8 @@ public sealed partial class L12GameEngine
         if (ability == "sunDraw" && player.Hand.Count > 3)
             return "我方手牌需不高于3张";
         if (ability == "extendedRange" && L12StructuredCardSemantics.HasBackRowExtendedRangeActive(source.CardId)
-            && (FindOnField(player, source.InstanceId, out var rangeRow, out _) is null || rangeRow != 1))
-            return "该效果只能在后排发动";
+            && ExtendedRangeSourceUnavailableReason(player, source) is { } rangeError)
+            return rangeError;
         if (ability == "gramReady" && L12StructuredCardSemantics.IsGram(source.CardId) && !source.Tapped)
             return "神剑格拉墨需为休整";
         if (ability == "revealHidden" && L12StructuredCardSemantics.IsHattoriHanzo(source.CardId) && !source.Hidden)
@@ -657,8 +814,7 @@ public sealed partial class L12GameEngine
             return "士气需少于对方，且需弃置1张手牌";
         if (ability == "shennongReset")
         {
-            var hasUsedMasterAbility = GetAbilities(player.MasterId)
-                .Any(view => player.UsedAbilities.Contains($"active:master-{player.PlayerIndex}:{view.Id}"));
+            var hasUsedMasterAbility = UsedMasterUsageResetChoices(player).Length > 0;
             if (!hasUsedMasterAbility) return "我方主宰没有已使用的效果次数";
         }
         if (ability == "sunGuard" || ability == "cleopatraGuard")
@@ -691,10 +847,10 @@ public sealed partial class L12GameEngine
         if (ability == "gramDamage")
         {
             var grave = player.Graveyard.Where(card => card.CardType == "legion"
-                    && L12StructuredCardRules.HasFaction(player, card, "asgard")).ToArray();
-            var minimum = grave.Any(card => L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard") >= 3)
-                ? 2 : 4;
-            if (grave.Length < minimum) return "墓地没有足够的【阿斯加德】军团";
+                    && L12StructuredCardRules.HasFaction(player, card, "asgard")
+                    && CanEnterHandOrLibrary(card)).ToArray();
+            if (grave.Sum(card => L12StructuredCardRules.StarterGraveFactionLegionCopies(player, card, "asgard")) < 4)
+                return "墓地没有可合法返回牌库底部、合计视为4张的【阿斯加德】军团";
         }
         if (ability == "sifCycle"
             && player.Graveyard.Where(card => L12StructuredCardRules.HasFaction(player, card, "asgard")
@@ -711,9 +867,8 @@ public sealed partial class L12GameEngine
             return "我方战场没有可选择的【彼界】军团";
         if (ability == "artemisBuff")
         {
-            if (!ownLegions.Any(card => L12StructuredCardRules.HasFaction(player, card, "olympus")
-                    && card.CurrentCost is >= 3 and <= 6))
-                return "没有费用3至6的【奥林匹斯】军团";
+            if (!ownLegions.Any(card => L12StructuredCardRules.HasFaction(player, card, "olympus")))
+                return "没有【奥林匹斯】军团";
             if (!player.Morale.Any(card => card.IsGodPower && !card.Tapped) && player.Hand.Count == 0)
                 return "没有可支付的神力或手牌";
         }
@@ -725,13 +880,13 @@ public sealed partial class L12GameEngine
         if (ability == "horusRevive")
         {
             var field = ownLegions.ToArray();
-            var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.BaseTroops <= 2000
+            var graveTarget = player.Graveyard.Any(card => card.CardType == "legion" && card.CurrentTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
-            var prospectiveTarget = graveTarget || field.Any(card => card.BaseTroops <= 2000
+            var prospectiveTarget = graveTarget || field.Any(card => card.CurrentTroops <= 2000
                 && L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"));
             var visibleCost = player.MasterMoraleWaiverUntilTurn >= State.TurnSerial ? 0 : 1;
             var resources = player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
-                + ActiveTombGuardResources(player).Count();
+                + SpendableFieldMoraleResources(player).Count();
             var canUseTombGuardCost = field.Count(card =>
                 L12StructuredCardSemantics.IsTombGuard(card.CardId)) >= 2;
             var canUseMoraleLegionCost = field.Length >= 2 && resources >= visibleCost;
@@ -742,14 +897,22 @@ public sealed partial class L12GameEngine
     }
 
     private L12CardInstance[] SnapshotGraveyard(L12PlayerState player)
+        => SnapshotGraveyardCore(player, includeActions: true);
+
+    private L12CardInstance[] SnapshotGraveyardCore(L12PlayerState player, bool includeActions)
         => player.Graveyard.Select(card =>
         {
-            var snapshot = card.Clone();
-            snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+            var snapshot = includeActions ? card.Clone() : SnapshotDisplayOnlyCard(card);
+            snapshot.Troops = snapshot.CurrentTroops;
+            if (includeActions) snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
             return snapshot;
         }).ToArray();
 
     private object?[][] SnapshotField(L12PlayerState player, int viewer, bool revealAllHidden)
+        => SnapshotFieldCore(player, viewer, revealAllHidden, includeActions: true);
+
+    private object?[][] SnapshotFieldCore(L12PlayerState player, int viewer, bool revealAllHidden,
+        bool includeActions)
         => player.Field.Select((row, rowIndex) => row.Select(card =>
         {
             if (card is null) return null;
@@ -763,8 +926,13 @@ public sealed partial class L12GameEngine
                 // enabled state can depend on live trial/resource state and therefore
                 // cannot safely reuse the ability list captured when the card instance
                 // was created.
-                snapshot.Troops = Math.Max(0, snapshot.Troops);
-                snapshot.Abilities = BuildAbilityViews(player, card.CardId, card.InstanceId);
+                snapshot.Troops = snapshot.CurrentTroops;
+                snapshot.SpendableResourceType = includeActions && CanUseFieldMoraleResource(player, card)
+                    ? L12StructuredCardSemantics.FieldMoraleResourceRule(card.CardId)?.ResourceType
+                    : null;
+                if (!includeActions) StripDisplayOnlyActions(snapshot);
+                snapshot.Abilities = includeActions ? BuildAbilityViews(player, card.CardId, card.InstanceId) : [];
+                snapshot.RuleActions = includeActions ? BuildRuleActionViews(player, card, rowIndex) : [];
                 snapshot.ActiveKeywords = BuildActiveKeywords(player, card, rowIndex);
                 snapshot.StatusEffects = BuildStatusEffects(player, card, rowIndex);
                 snapshot.StatusIcons = snapshot.StatusEffects.Select(effect => effect.Kind)
@@ -797,7 +965,7 @@ public sealed partial class L12GameEngine
         var keywords = new List<string>();
         if (L12StructuredCardSemantics.HasEffectiveStrongAttack(card)) keywords.Add("强攻");
         if (HasActiveImmortal(card, row)) keywords.Add("免死");
-        if (card.HasSureHit) keywords.Add("必中");
+        if (HasActiveSureHitKeyword(card)) keywords.Add("必中");
         if (L12StructuredCardRules.HasTaunt(card, row) && !IsTauntSuppressed(controller)) keywords.Add("挑衅");
         if (L12StructuredCardRules.HasCooperativeSupport(card, row)) keywords.Add("协防");
         if (card.HasCharge && card.SummonRound >= State.Round) keywords.Add("冲锋");
@@ -805,6 +973,9 @@ public sealed partial class L12GameEngine
         if (controller.UsedAbilities.Contains($"crusade-piercing:{card.InstanceId}:{State.TurnSerial}")) keywords.Add("贯穿");
         return keywords;
     }
+
+    private bool HasActiveSureHitKeyword(L12CardInstance card)
+        => card.HasSureHit || card.SureHitAgainstLegionsUntilTurn >= State.TurnSerial;
 
     private List<L12StatusEffectView> BuildStatusEffects(L12PlayerState controller, L12CardInstance card, int row)
     {
@@ -819,8 +990,8 @@ public sealed partial class L12GameEngine
             effects.Add(new("power-down", $"临时兵力{negative}", string.Join('、', activeTimed.Where(item => item.TroopsDelta < 0).Select(item => item.Source).Distinct())));
         if (card.CannotUntapUntilRound >= State.Round || card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
             effects.Add(new("lock", "暂时无法转为活跃"));
-        if (card.CannotAttack) effects.Add(new("disabled", "无法进攻"));
-        if (card.CannotSupport) effects.Add(new("disabled", "无法支援"));
+        if (L12StructuredCardRules.CannotAttack(card, row)) effects.Add(new("disabled", "无法进攻"));
+        if (L12StructuredCardRules.CannotSupport(card, row)) effects.Add(new("disabled", "无法支援"));
         if (row == 1 && controller.BackRowCannotSupport) effects.Add(new("disabled", "后排军团无法支援"));
         if (card.CannotRespondUntilRound >= State.Round) effects.Add(new("disabled", "无法响应或发动效果"));
         if (HasActiveImmortal(card, row))
@@ -829,11 +1000,12 @@ public sealed partial class L12GameEngine
             effects.Add(new("shield", "〈王者之剑〉可代替承受致命进攻或效果", "湖中仙女的馈赠"));
         if (IsProtectedByRestedAmakine(controller, card))
             effects.Add(new("shield", "暂时不可被进攻", "阿麦金"));
-        if (L12StructuredCardSemantics.IsHannibal(card.CardId) && !card.Tapped)
-            effects.Add(new("shield", "活跃时不可被进攻", "汉尼拔"));
+        if (L12StructuredCardRules.CannotBeAttacked(card, row))
+            effects.Add(new("shield", "活跃时不可被进攻", card.Name));
         if (card.DiscardAtEndOfTurnUntilTurn >= State.TurnSerial)
             effects.Add(new("discard-end", "回合结束时弃置"));
         if (card.CanAttackBackAndMasterUntilTurn >= State.TurnSerial
+            || card.CanAttackBackUntilTurn >= State.TurnSerial
             || card.CanAttackMasterOnSummonUntilTurn >= State.TurnSerial
             || card.CanAttackLegionsOnSummonUntilTurn >= State.TurnSerial)
             effects.Add(new("extra-attack", "本回合获得额外进攻对象权限"));
@@ -846,7 +1018,7 @@ public sealed partial class L12GameEngine
     }
 
     private bool IsTauntSuppressed(L12PlayerState controller)
-        => State.ActiveDisaster?.CardId == "S02-DS02"
+        => L12ActiveDisasterRules.TauntSuppressed(State.ActiveDisaster?.CardId)
             || controller.UsedAbilities.Contains($"starter-taunt-disabled:{State.TurnSerial}");
 
     public string SerializeFullState()
@@ -874,14 +1046,15 @@ public sealed partial class L12GameEngine
 
     private void PrepareV2ProjectionState()
     {
-        if (State.StateFormatVersion < 2 || _preparedProjectionRevision == State.Revision) return;
+        if (State.StateFormatVersion < L12PersistenceContract.MinimumCheckpointRecoveryVersion
+            || _preparedProjectionRevision == State.Revision) return;
         RecalculateContinuousTroops();
         _preparedProjectionRevision = State.Revision;
         // 持续修正可能在该 revision 第一次序列化前才物化；之后的持久化和所有视角复用同一哈希。
         _cachedStateHash = null;
     }
-
-    private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck)
+    private L12PlayerState BuildPlayer(int index, string name, L12PresetDeckDefinition deck,
+        IReadOnlyDictionary<string, string>? alternateArtUrls = null)
     {
         var master = _catalog.Cards[deck.MasterId];
         // 正式主宰必须消费目录中的权威血量；少量规则单元测试会临时把普通卡
@@ -897,17 +1070,22 @@ public sealed partial class L12GameEngine
             Faction = master.Faction,
             MasterId = master.Id,
             MasterName = master.NameZh,
-            MasterImageUrl = master.ImageUrl,
+            MasterImageUrl = ResolveAlternateArtUrl(master.Id, master.ImageUrl, alternateArtUrls),
             Hp = masterHp,
             MaxHp = masterHp,
         };
         player.SpecialZones.TrialCapacity = L12SpecialDeckRules.TrialCapacity(master);
         var mainDeckIndex = 0;
+        var cardAppearanceIndexes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var startingGraveyardCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var cardId in deck.CardIds)
         {
             var definition = _catalog.Cards[cardId];
             var card = CreateCard(cardId, $"p{index}-c{++mainDeckIndex}");
+            var appearanceIndex = cardAppearanceIndexes.GetValueOrDefault(cardId) + 1;
+            cardAppearanceIndexes[cardId] = appearanceIndex;
+            card.ImageUrl = ResolveAlternateArtUrl($"{card.CardId}#{appearanceIndex}",
+                ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls), alternateArtUrls);
             if (L12SpecialDeckRules.StartsInGraveyard(definition))
             {
                 player.Graveyard.Add(card);
@@ -922,7 +1100,16 @@ public sealed partial class L12GameEngine
                 CardId = _catalog.MoraleIdentities.CanonicalDeckCardId(deck.MoraleIds[i]),
             });
         for (var i = 0; i < deck.SpecialIds.Count; i++)
-            player.SpecialZones.Trials.Add(CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}"));
+        {
+            var card = CreateCard(deck.SpecialIds[i], $"p{index}-special-{i + 1}");
+            card.ImageUrl = ResolveAlternateArtUrl(card.CardId, card.ImageUrl, alternateArtUrls);
+            if (L12SpecialDeckRules.StartsTrialsCompleted(master))
+            {
+                card.TrialProgress = Math.Max(card.TrialProgress, 8);
+                card.TrialCompleted = true;
+            }
+            player.SpecialZones.Trials.Add(card);
+        }
         player.TrialOrderDone = player.SpecialZones.Trials.Count <= 1;
         if (player.Faction == "taiyangcheng" && _catalog.Cards.ContainsKey("S01-0212"))
         {
@@ -936,6 +1123,11 @@ public sealed partial class L12GameEngine
         return player;
     }
 
+    private static string? ResolveAlternateArtUrl(string cardId, string? originalUrl,
+        IReadOnlyDictionary<string, string>? alternateArtUrls)
+        => alternateArtUrls is not null && alternateArtUrls.TryGetValue(cardId, out var url)
+            && !string.IsNullOrWhiteSpace(url) ? url : originalUrl;
+
     private static string NormalizeDisasterMode(string? mode) => mode switch
     {
         "random" => "random",
@@ -945,24 +1137,46 @@ public sealed partial class L12GameEngine
         _ => "all",
     };
 
+    private const string DisasterTriggerSourceTurnPhase = "turn-phase";
+    private const string DisasterTriggerSourceCardEffect = "card-effect";
+    private const string DisasterTriggerSourceGm = "gm";
+
     private bool DisastersEnabled => State.DisasterMode != "none";
 
-    private void SetDisasterValue(int value, int? playerIndex = null, string? text = null)
+    private void SetDisasterValue(int value, int? playerIndex = null, string? text = null,
+        bool recordAdjustment = false)
     {
-        State.DisasterValue = !DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10"
+        var before = State.DisasterValue;
+        State.DisasterValue = !DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId)
             ? 0
             : Math.Max(0, value);
-        if (!string.IsNullOrWhiteSpace(text))
-            AddEvent("disaster-value", playerIndex, text.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal));
+        if ((recordAdjustment || !string.IsNullOrWhiteSpace(text))
+            && (before != State.DisasterValue || recordAdjustment))
+        {
+            var item = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+            var reason = text?.Replace("{value}", State.DisasterValue.ToString(), StringComparison.Ordinal)
+                ?? "天灾值调整";
+            AddEventCoreWithTroopsModifier("disaster-value", null,
+                $"{reason}；天灾值 {before} → {State.DisasterValue}", null, null,
+                item?.Data.GetValueOrDefault("playerLogGroupId"),
+                item?.Data.GetValueOrDefault("playerLogTiming") ?? item?.Trigger,
+                null, null, null, null, null, null,
+                new L12PlayerDisasterValue(before, State.DisasterValue), null);
+        }
     }
 
     private void AdjustDisasterValue(int delta, int? playerIndex = null, string? text = null)
     {
-        SetDisasterValue(State.DisasterValue + delta, playerIndex, text);
-        // 所有卡效都经由这一入口调整天灾值。达到现行“超过 8”阈值后只登记一次，
-        // 由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
+        SetDisasterValue(State.DisasterValue + delta, playerIndex, text,
+            recordAdjustment: true);
+        // 所有卡效都经由这一入口调整天灾值。首次越过现行“超过 8”阈值的来源
+        // 必须随状态保存；由 AfterStackSettled 在当前效果、衍生触发和响应事务全部关闭后翻开下一张天灾。
         if (DisastersEnabled && State.DisasterValue > 8)
+        {
+            if (!State.CheckDisasterAfterStack)
+                State.PendingDisasterTriggerSource ??= DisasterTriggerSourceCardEffect;
             State.CheckDisasterAfterStack = true;
+        }
     }
 
     private L12CardInstance CreateCard(string cardId, string instanceId)
@@ -974,6 +1188,7 @@ public sealed partial class L12GameEngine
             CardId = card.Id,
             Name = card.NameZh,
             CardType = card.CardType,
+            IsCounterTactic = card.IsCounterTactic,
             Faction = card.Faction,
             ImageUrl = card.ImageUrl,
             EffectText = card.Effect,
@@ -987,10 +1202,10 @@ public sealed partial class L12GameEngine
             Profession = card.Profession,
             EffectiveProfession = card.Profession,
             Abilities = GetAbilities(card.Id),
-            CannotAttack = card.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
-            CannotSupport = card.Id == "S02-0201",
+            CannotAttack = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.Id, "cannotAttack"),
+            CannotSupport = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.Id, "cannotSupport"),
         };
-        if (instance.TrialValue > 0 && instance.CardType == "legion"
+        if (L12StructuredCardRules.IsTrialLegion(instance)
             && instance.Abilities.All(view => view.Id != "trialAdvance"))
             instance.Abilities.Insert(0, new L12AbilityView("trialAdvance", $"发动试炼（试炼值{instance.TrialValue}）"));
         return instance;
@@ -1007,6 +1222,7 @@ public sealed partial class L12GameEngine
         foreach (var card in chosen)
         {
             player.Hand.Remove(card);
+            ResetCardForPrivateZone(card);
             player.Library.Add(card);
         }
         Draw(player, chosen.Count);
@@ -1021,8 +1237,10 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         ExpireEffectsAtPlayerTurnStart(playerIndex);
-        AddEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合");
+        AddPlayerLogEvent("turn-start", playerIndex, $"第 {State.Round} 回合 · {player.Name} 回合",
+            playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Disaster;
         AddEvent("phase", playerIndex, "执行触发天灾");
@@ -1030,7 +1248,10 @@ public sealed partial class L12GameEngine
         if (DisastersEnabled && State.DisasterValue > 8)
         {
             State.ResumeTurnStartAfterStack = true;
-            BeginDisasterTrigger(opening: State.Round == 1, atTurnStart: true);
+            // 回合阶段的自然增长永远是“开场触发”，不取决于这是第几回合。
+            State.CheckDisasterAfterStack = false;
+            State.PendingDisasterTriggerSource = null;
+            BeginDisasterTrigger(DisasterTriggerSourceTurnPhase, atTurnStart: true);
             // Effects may settle synchronously.  In that case AfterStackSettled
             // has already resumed (or ended) the turn-start sequence; continuing
             // here would execute Reset/Draw/Morale a second time.
@@ -1049,6 +1270,7 @@ public sealed partial class L12GameEngine
     {
         var playerIndex = State.ActivePlayer;
         var player = State.Players[playerIndex];
+        var playerLogGroupId = $"turn:{State.TurnSerial}";
         if (State.Phase == L12Phase.GameOver) return;
 
         State.Phase = L12Phase.Reset;
@@ -1071,22 +1293,32 @@ public sealed partial class L12GameEngine
         AddEvent("phase", playerIndex, "执行抽牌阶段");
         if (player.MasterId == "S01-03M1")
         {
-            Mill(player, 2, "瓦尔基里的抽牌阶段替代效果");
+            MillWithPlayerLog(player, 2, "瓦尔基里的抽牌阶段替代效果",
+                playerLogGroupId, "turn-start");
             AddEvent("phase-detail", playerIndex, "瓦尔基里将抽牌阶段改为弃置牌库顶部2张牌");
         }
         else if (State.Round == 1 && playerIndex == State.FirstPlayer)
-            AddEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌");
+            AddPlayerLogEvent("draw-skipped", playerIndex, "先手玩家首回合不抽牌",
+                playerLogGroupId, "turn-start");
         else if (!Draw(player, 1))
         {
             SetWinner(1 - playerIndex, "抽牌阶段牌库为空");
             return;
         }
-        else AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+        else
+        {
+            AddEvent("phase-detail", playerIndex, "从牌库抽取 1 张牌");
+            AddPlayerLogEvent("draw", playerIndex, "回合开始时抽取 1 张牌",
+                playerLogGroupId, "turn-start");
+        }
 
         State.Phase = L12Phase.Morale;
         AddEvent("phase", playerIndex, "执行士气阶段");
         var moraleAdded = AddMorale(player, State.Round == 1 && playerIndex == State.FirstPlayer ? 1 : 2);
         AddEvent("phase-detail", playerIndex, $"从士气牌库追加 {moraleAdded} 张士气");
+        if (moraleAdded > 0)
+            AddPlayerLogEvent("morale", playerIndex, $"回合开始时追加 {moraleAdded} 张士气",
+                playerLogGroupId, "turn-start");
 
         State.Phase = L12Phase.Main;
         AddEvent("phase", playerIndex, "进入主要阶段");
@@ -1115,7 +1347,7 @@ public sealed partial class L12GameEngine
     private void CompleteEndTurn(int playerIndex)
     {
         var current = State.Players[playerIndex];
-        ResolveS2DelayedEndTurnCards(playerIndex);
+        if (ResolveS2DelayedEndTurnCards(playerIndex)) return;
         if (State.Phase == L12Phase.GameOver) return;
         ReturnWukongMasterLegions(current, "我方回合结束", resumeEndTurn: true);
         if (State.PendingPrompts.Count > 0 || State.PendingActivations.Count > 0
@@ -1143,10 +1375,12 @@ public sealed partial class L12GameEngine
             ResetTemporaryCardState(player, State.TurnSerial, playerIndex);
             player.UsedAbilities.Clear();
         }
-        if (!DisastersEnabled || State.ActiveDisaster?.CardId == "S01-DS10")
+        if (!DisastersEnabled || L12ActiveDisasterRules.DisasterValueLocked(State.ActiveDisaster?.CardId))
             SetDisasterValue(0);
         else
         {
+            if (State.DisasterValue + 1 > 8)
+                State.PendingDisasterTriggerSource = DisasterTriggerSourceTurnPhase;
             AdjustDisasterValue(1, playerIndex, "天灾值增加至 {value}");
         }
         AddEvent("end-turn", playerIndex, $"{current.Name} 结束回合");
@@ -1174,23 +1408,25 @@ public sealed partial class L12GameEngine
 
     private bool Draw(L12PlayerState player, int count, bool logEffectDraw = true)
     {
-        var result = L12LibraryOps.Draw(player, count);
-        if (!result.Success) return false;
-        foreach (var card in result.Cards)
-            TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
-        if (State.IsResolvingStack && State.EffectStack.LastOrDefault() is { } origin)
+        if (State.Phase == L12Phase.GameOver) return false;
+        var origin = State.IsResolvingStack ? State.EffectStack.LastOrDefault() : null;
+        var result = L12LibraryOps.Draw(player, count, card =>
         {
-            if (logEffectDraw && result.Cards.Count > 0)
-            {
-                var source = FindSource(origin);
-                AddEvent("draw", player.PlayerIndex,
-                    $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
-                    source is null ? [] : [source]);
-            }
-            foreach (var card in result.Cards)
+            ResetCardForPrivateZone(card);
+            TrackCardFact("draw", player.PlayerIndex, card, "library", "hand");
+            if (origin is not null)
                 NotifyCardAddedToHandByEffect(player, card, "library", $"{player.Name}因效果将{card.Name}加入手牌");
+        });
+        if (origin is not null && logEffectDraw && result.Cards.Count > 0)
+        {
+            var source = FindSource(origin);
+            AddPlayerLogEvent("draw", player.PlayerIndex,
+                $"〈{origin.SourceName}〉使{player.Name}抽取 {result.Cards.Count} 张牌",
+                origin.Data.GetValueOrDefault("playerLogGroupId"),
+                origin.Data.GetValueOrDefault("playerLogTiming") ?? origin.Trigger, null,
+                source is null ? [] : [source]);
         }
-        return true;
+        return CompleteLibrarySequence(player, result, count, origin, origin?.SourceName ?? "抽牌");
     }
 
     private int AddMorale(L12PlayerState player, int count, bool tapped = false, bool fromFactionEffect = false)
@@ -1216,7 +1452,7 @@ public sealed partial class L12GameEngine
 
     private int ActiveResourceCount(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped)
-            + ActiveTombGuardResources(player).Count();
+            + SpendableFieldMoraleResources(player).Count();
 
     private static int ActiveMoraleCountWithoutTombGuards(L12PlayerState player)
         => player.TemporaryMorale + player.Morale.Count(card => !card.Tapped);
@@ -1231,10 +1467,10 @@ public sealed partial class L12GameEngine
         var temporary = Math.Min(cost, player.TemporaryMorale);
         player.TemporaryMorale -= temporary;
         var remaining = cost - temporary;
-        allowTombGuards = allowTombGuards && CanUseTombGuardsAsResource(player);
+        allowTombGuards = allowTombGuards && SpendableFieldMoraleResources(player).Any();
         if (allowTombGuards && preferTombGuards)
         {
-            var guards = ActiveTombGuardResources(player).Take(remaining).ToList();
+            var guards = SpendableFieldMoraleResources(player).Take(remaining).ToList();
             foreach (var guard in guards) guard.Tapped = true;
             remaining -= guards.Count;
         }
@@ -1242,8 +1478,12 @@ public sealed partial class L12GameEngine
         foreach (var card in available) card.Tapped = true;
         remaining -= available.Count;
         if (allowTombGuards && remaining > 0)
-            foreach (var guard in ActiveTombGuardResources(player).Take(remaining)) guard.Tapped = true;
-        return true;
+        {
+            var guards = SpendableFieldMoraleResources(player).Take(remaining).ToList();
+            foreach (var guard in guards) guard.Tapped = true;
+            remaining -= guards.Count;
+        }
+        return remaining == 0;
     }
 
     private static bool CanReturnMorale(L12PlayerState player, int count) => player.Morale.Count >= count;
@@ -1310,7 +1550,7 @@ public sealed partial class L12GameEngine
 
     private void ReturnMoraleCardToDestination(L12PlayerState player, L12MoraleCard card)
     {
-        if (card.CardId == "S02-0010")
+        if (L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId) is { ReturnsToOwnerGraveyard: true })
         {
             var lotus = CreateCard(card.CardId, card.InstanceId);
             player.Graveyard.Add(lotus);
@@ -1320,13 +1560,33 @@ public sealed partial class L12GameEngine
         player.MoraleDeck.Add(card);
     }
 
+    private static object[] SnapshotMorale(L12PlayerState player)
+        => player.Morale.Select(card => (object)new
+        {
+            card.InstanceId,
+            card.CardId,
+            card.Tapped,
+            card.IsGodPower,
+            card.CannotUntapUntilRound,
+            resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.ResourceType
+                ?? (card.IsGodPower ? "god-power" : "morale"),
+        }).ToArray();
+
+    private bool CanFlipMoraleToGodPower(L12MoraleCard card, bool onlyTapped = false)
+        => !card.IsGodPower
+            && (!onlyTapped || card.Tapped)
+            && _catalog.MoraleIdentities.CanUseGodPowerFace(card.CardId);
+
+    private bool CanToggleMoraleFace(L12MoraleCard card)
+        => _catalog.MoraleIdentities.CanUseGodPowerFace(card.CardId);
+
     private void DiscardAttachedCards(L12CardInstance host, string reason)
     {
         var fallbackOwner = CardOwner(host, State.Players[0]);
         foreach (var attached in host.AttachedCards.ToArray())
         {
             var owner = CardOwner(attached, fallbackOwner);
-            ResetCardAfterLeavingField(attached);
+            ResetCardForPrivateZone(attached);
             if (L12SpecialDeckRules.VanishesWhenLeavingField(attached))
             {
                 AddEvent("derived-vanished", owner.PlayerIndex,
@@ -1364,7 +1624,7 @@ public sealed partial class L12GameEngine
         foreach (var foundation in foundations)
         {
             var owner = CardOwner(foundation, fallbackOwner);
-            ResetCardAfterLeavingField(foundation);
+            ResetCardForPrivateZone(foundation);
             switch (destination)
             {
                 case "hand":
@@ -1399,11 +1659,15 @@ public sealed partial class L12GameEngine
             foreach (var card in row)
                 if (card is not null && card.CannotUntapUntilRound < State.Round) card.Tapped = false;
         if (player.Relic is not null && player.Relic.CannotUntapUntilRound < State.Round) player.Relic.Tapped = false;
+        if (player.MasterLegionState is { } master && master.CannotUntapUntilRound < State.Round)
+            master.Tapped = false;
     }
 
     private static void ResetTemporaryCardState(L12PlayerState player, int completedTurn, int completedPlayer)
     {
-        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
+        var cards = player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
+            .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]);
+        foreach (var card in cards)
         {
             L12DerivedStats.ResetForCompletedTurn(card, completedTurn);
             card.HasStrongAttack = false;
@@ -1421,6 +1685,7 @@ public sealed partial class L12GameEngine
             card.MasterAttackDamageBonus = 0;
             card.MasterAttackDamageBonusUntilTurn = -1;
             card.CanAttackBackAndMasterUntilTurn = card.CanAttackBackAndMasterUntilTurn <= completedTurn ? -1 : card.CanAttackBackAndMasterUntilTurn;
+            if (card.CanAttackBackUntilTurn <= completedTurn) card.CanAttackBackUntilTurn = null;
             card.TauntUntilTurn = card.TauntUntilTurn <= completedTurn ? -1 : card.TauntUntilTurn;
             if (card.TauntExpiresAtPlayerTurnEnd == completedPlayer && completedTurn > card.TauntGrantedTurnSerial)
             {
@@ -1444,7 +1709,8 @@ public sealed partial class L12GameEngine
     private void ExpireEffectsAtPlayerTurnStart(int playerIndex)
     {
         foreach (var player in State.Players)
-        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>())
+        foreach (var card in player.Field.SelectMany(row => row).Where(card => card is not null).Cast<L12CardInstance>()
+                     .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]))
         {
             if (card.TauntExpiresAtPlayerTurnStart == playerIndex)
             {
@@ -1508,8 +1774,15 @@ public sealed partial class L12GameEngine
         return null;
     }
 
-    private static bool IsFieldLegion(L12CardInstance card)
+    private static bool HasCurrentLegionState(L12CardInstance card)
         => !card.Hidden && (card.CardType == "legion" || card.CardId == "S01-0417" || card.IsMasterLegion);
+
+    private static bool IsFieldLegion(L12CardInstance card)
+        => HasCurrentLegionState(card);
+
+    private bool IsAuthoritativeFieldLegion(L12CardInstance card)
+        => IsFieldLegion(card) && State.Players.Any(player => player.Field
+            .SelectMany(row => row).Any(candidate => candidate?.InstanceId == card.InstanceId));
 
     private L12CardInstance? FindPublicCard(string? instanceId, out int owner)
     {
@@ -1532,6 +1805,9 @@ public sealed partial class L12GameEngine
         bool bypassLethalReplacement = false, bool deferGraveyard = false)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
+        var departureOwner = CardOwner(card, player);
+        if (toGraveyard && ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
         if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
         if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason))
@@ -1542,12 +1818,12 @@ public sealed partial class L12GameEngine
         if (isDefeat && HasActiveImmortal(card, row))
         {
             card.ImmortalUses--;
-            L12DerivedStats.SetUntilTurnEnd(card, 1000, State.TurnSerial);
-            RecalculateContinuousTroops();
-            AddEvent("effect", player.PlayerIndex,
-                $"{card.Name} 的免死生效，兵力设定为 1000 后重算持续修正，当前为 {card.Troops}", card);
-            if (card.Troops > 0) return false;
-            AddEvent("effect", player.PlayerIndex, $"{card.Name} 在持续兵力修正重算后兵力仍不高于 0", card);
+            L12DerivedStats.ClearDamageAndSetCurrentUntilTurnEnd(card, 1000, State.TurnSerial);
+            AddSemanticPlayerLogEvent("effect", player.PlayerIndex,
+                $"{card.Name} 的免死生效，清除本次伤害并将当前兵力设为 1000",
+                new("触发 免死", "兵力变为1000", card.InstanceId, card.Name,
+                    card.InstanceId, card.Name), card);
+            return false;
         }
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
@@ -1566,7 +1842,6 @@ public sealed partial class L12GameEngine
                 var promotionFoundations = DetachPromotionFoundations(card);
                 if (card.AttachedCards.Count > 0) DiscardAttachedCards(card, $"{card.Name}离场");
                 var returnsToMaster = ReturnsToMasterZoneOnDeparture(card);
-                ResetCardAfterLeavingField(card);
                 if (returnsToMaster)
                 {
                     CompleteMasterLegionDeparture(owner, card);
@@ -1574,12 +1849,14 @@ public sealed partial class L12GameEngine
                 }
                 else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
                 {
+                    ResetCardForPrivateZone(card);
                     AddEvent("derived-vanished", owner.PlayerIndex,
                         $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
                     MovePromotionFoundationsToZone(promotionFoundations, owner, "vanished", $"{card.Name}离场");
                 }
                 else
                 {
+                    ResetCardForPrivateZone(card);
                     owner.Graveyard.Add(card);
                     MovePromotionFoundationsToZone(promotionFoundations, owner, "graveyard", $"{card.Name}离场");
                     if (owner.PlayerIndex != player.PlayerIndex)
@@ -1616,20 +1893,22 @@ public sealed partial class L12GameEngine
     /// </summary>
     private bool TryApplyLakeLadySwordReplacement(L12PlayerState controller, L12CardInstance card, string reason)
     {
-        if (card.CardId != "S02-0601"
-            || !controller.SpecialZones.Trials.Any(trial => trial.CardId == "S02-06S3" && trial.TrialCompleted))
+        var trial = controller.SpecialZones.Trials
+            .FirstOrDefault(candidate => candidate.CardId == "S02-06S3" && candidate.TrialCompleted);
+        if (card.CardId != "S02-0601" || trial is null)
             return false;
         var sword = card.AttachedCards.FirstOrDefault(attached => attached.CardId == "S02-06S2");
         if (sword is null) return false;
 
         card.AttachedCards.Remove(sword);
         var owner = CardOwner(sword, controller);
-        ResetCardAfterLeavingField(sword);
+        ResetCardForPrivateZone(sword);
         owner.Graveyard.Add(sword);
         RecalculateContinuousTroops();
-        AddEvent("replacement", controller.PlayerIndex,
+        AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
             $"《湖中仙女的馈赠》的持续效果移除《王者之剑》，代替〈{card.Name}〉承受本次致命{(reason.Contains("进攻", StringComparison.Ordinal) ? "进攻" : "效果")}",
-            card, sword);
+            new("触发 致命代替", $"移除〈{sword.Name}〉，〈{card.Name}〉未阵亡",
+                trial.InstanceId, trial.Name, card.InstanceId, card.Name), trial, card, sword);
         return true;
     }
 
@@ -1647,8 +1926,7 @@ public sealed partial class L12GameEngine
     private bool TryOfferEffectLethalReplacement(L12PlayerState controller, L12CardInstance card, string reason)
     {
         // 天灾结算拥有最高优先级，不建立通常的替代/阵亡/离场响应窗口。
-        if (State.Phase == L12Phase.Disaster
-            || State.EffectStack.Any(item => item.Trigger == "disaster")) return false;
+        if (IsDisasterAuthorityActive()) return false;
         if (TryOfferCardLethalSubstitution(controller, card, "effect-lethal-replacement", reason))
             return true;
         if (!CanUseAchillesLethalReplacement(controller, card))
@@ -1674,12 +1952,20 @@ public sealed partial class L12GameEngine
         var player = State.Players[playerIndex];
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
-        if (card is null) return;
+        if (card is null)
+        {
+            ResumeEffectKillContinuation(prompt);
+            return;
+        }
         if (prompt.Data.ContainsKey("replacementKind"))
         {
-            if (ResolveEffectCardLethalSubstitution(player, card, prompt, choice)) return;
-            RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
-                bypassLethalReplacement: true);
+            if (!ResolveEffectCardLethalSubstitution(player, card, prompt, choice))
+            {
+                var removed = RemoveFromField(player, card, true,
+                    prompt.Data.GetValueOrDefault("reason", "阵亡"), bypassLethalReplacement: true);
+                if (removed) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
+            }
+            ResumeEffectKillContinuation(prompt);
             return;
         }
         player.UsedAbilities.Remove($"pending:{AchillesReplacementKey(card)}");
@@ -1690,18 +1976,26 @@ public sealed partial class L12GameEngine
             player.UsedAbilities.Add(AchillesReplacementKey(card));
             card.Troops = int.Parse(prompt.Data["preservedTroops"]);
             card.Tapped = prompt.Data["preservedTapped"] == "true";
-            AddEvent("replacement", playerIndex,
-                $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态", card);
+            AddSemanticPlayerLogEvent("replacement", playerIndex,
+                $"{card.Name}消耗并翻转1神力，代替承受致命效果并保持当时状态",
+                new("触发 致命代替", "消耗并翻转1神力，未阵亡且保持原状态",
+                    card.InstanceId, card.Name, card.InstanceId, card.Name), card);
+            ResumeEffectKillContinuation(prompt);
             return;
         }
-        RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
+        var defeated = RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
             bypassLethalReplacement: true);
+        if (defeated) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
+        ResumeEffectKillContinuation(prompt);
     }
 
     private bool MoveFieldCardToZone(L12PlayerState player, L12CardInstance card, string destination, string reason,
         bool queueLeaveTrigger = true)
     {
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
+        var departureOwner = CardOwner(card, player);
+        if (ReturnsToMasterZoneOnDeparture(card)
+            && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         CaptureLastKnownFieldState(card, row);
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
@@ -1709,6 +2003,8 @@ public sealed partial class L12GameEngine
         var owner = CardOwner(card, player);
         var promotionFoundations = DetachPromotionFoundations(card);
         var finalDestination = destination;
+        if (card.AttachedCards.Count > 0)
+            DiscardAttachedCards(card, $"{card.Name}离场");
 
         if (ReturnsToMasterZoneOnDeparture(card))
         {
@@ -1718,9 +2014,7 @@ public sealed partial class L12GameEngine
         else if (L12SpecialDeckRules.VanishesWhenLeavingField(card))
         {
             finalDestination = "vanished";
-            if (card.AttachedCards.Count > 0)
-                DiscardAttachedCards(card, $"{card.Name}离场");
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             AddEvent("derived-vanished", owner.PlayerIndex,
                 $"衍生卡〈{card.Name}〉离场时消灭，不进入其他区域", card);
         }
@@ -1728,28 +2022,26 @@ public sealed partial class L12GameEngine
         else if (L12SpecialDeckRules.AlwaysReturnsToOwnerGraveyard(card))
         {
             finalDestination = "graveyard";
-            ResetCardAfterLeavingField(card);
+            ResetCardForPrivateZone(card);
             owner.Graveyard.Add(card);
             AddEvent("replacement", owner.PlayerIndex, $"{card.Name}以任何形式离场，改为置入所有者墓地", card);
         }
         else switch (destination)
         {
             case "hand":
-                ResetCardAfterLeavingField(card);
+                ResetCardForPrivateZone(card);
                 if (State.IsResolvingStack || State.EffectStack.Count > 0)
                     AddCardToHandByEffect(owner, card, "field", $"{card.Name}因效果加入所有者手牌");
                 else owner.Hand.Add(card);
                 break;
-            case "library-top": ResetCardAfterLeavingField(card); owner.Library.Insert(0, card); break;
-            case "library-bottom": ResetCardAfterLeavingField(card); owner.Library.Add(card); break;
-            case "removed": ResetCardAfterLeavingField(card); owner.Removed.Add(card); break;
-            default: ResetCardAfterLeavingField(card); owner.Graveyard.Add(card); break;
+            case "library-top": ResetCardForPrivateZone(card); owner.Library.Insert(0, card); break;
+            case "library-bottom": ResetCardForPrivateZone(card); owner.Library.Add(card); break;
+            case "removed": ResetCardForPrivateZone(card); owner.Removed.Add(card); break;
+            default: ResetCardForPrivateZone(card); owner.Graveyard.Add(card); break;
         }
 
         MovePromotionFoundationsToZone(promotionFoundations, owner, finalDestination, $"{card.Name}离场");
 
-        if (card.AttachedCards.Count > 0)
-            DiscardAttachedCards(card, $"{card.Name}离场");
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueLeaveTrigger)
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
@@ -1761,12 +2053,32 @@ public sealed partial class L12GameEngine
 
     private void RecordFieldLegionDeparture(L12PlayerState controller, L12CardInstance card)
     {
-        if (State.ActivePlayer != controller.PlayerIndex || !IsFieldLegion(card)
+        // 调用点位于移出阵地之后，因此只检查离场前保留在实例上的当前军团状态。
+        if (State.ActivePlayer != controller.PlayerIndex || !HasCurrentLegionState(card)
             || !card.Name.Contains("陵墓", StringComparison.Ordinal)) return;
         controller.TombNamedLegionsLeftThisTurn++;
-        AddEvent("continuous", controller.PlayerIndex,
-            $"本回合已有{controller.TombNamedLegionsLeftThisTurn}张卡名包含〈陵墓〉的我方军团离场；〈陵墓圣武士〉登场费用相应降低",
-            card);
+        var text = $"本回合已有{controller.TombNamedLegionsLeftThisTurn}张卡名包含〈陵墓〉的我方军团离场；〈陵墓圣武士〉登场费用相应降低";
+        if (card.Hidden || string.IsNullOrWhiteSpace(card.InstanceId) || string.IsNullOrWhiteSpace(card.Name))
+            AddEvent("continuous", controller.PlayerIndex, text, card);
+        else
+            AddSemanticPlayerLogEvent("continuous", controller.PlayerIndex, text,
+                new L12PlayerLogSemantic("离场", $"本回合含〈陵墓〉名称的军团离场累计{controller.TombNamedLegionsLeftThisTurn}张，〈陵墓圣武士〉登场费用相应降低",
+                    SourceInstanceId: card.InstanceId), card);
+    }
+
+    private void ResetCardForPrivateZone(L12CardInstance card)
+    {
+        foreach (var player in State.Players)
+            player.UsedAbilities.RemoveWhere(key => IsCardInstanceRuntimeKey(key, card));
+        ResetCardAfterLeavingField(card);
+    }
+
+    private void ResetCardForFieldEntry(L12CardInstance card)
+    {
+        ResetCardForPrivateZone(card);
+        card.LastKnownEffectiveProfession = null;
+        card.LastKnownWasRanged = false;
+        card.LastKnownAttachedCardIds.Clear();
     }
 
     private static void ResetCardAfterLeavingField(L12CardInstance card)
@@ -1774,6 +2086,9 @@ public sealed partial class L12GameEngine
         card.CostModifier = 0;
         card.ContinuousCostModifier = 0;
         card.PlayCost = null;
+        card.MinimumPlayCost = null;
+        card.PlayBlockedReason = null;
+        card.SpendableResourceType = null;
         card.Troops = card.BaseTroops;
         card.ContinuousTroopsModifier = 0;
         card.ContinuousTroopsBonusGranted = 0;
@@ -1814,9 +2129,10 @@ public sealed partial class L12GameEngine
         card.AttacksThisTurn = 0;
         card.TrialProgress = 0;
         card.TrialCompleted = false;
-        card.CannotAttack = card.CardId is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603";
-        card.CannotSupport = card.CardId == "S02-0201";
+        card.CannotAttack = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.CardId, "cannotAttack");
+        card.CannotSupport = L12StructuredCardRules.HasUnconditionalAttackRestriction(card.CardId, "cannotSupport");
         card.CanAttackBackAndMasterUntilTurn = -1;
+        card.CanAttackBackUntilTurn = null;
         card.CanAttackMasterOnSummonUntilTurn = -1;
         card.CanAttackLegionsOnSummonUntilTurn = -1;
         card.TauntUntilTurn = -1;
@@ -1830,7 +2146,21 @@ public sealed partial class L12GameEngine
         card.ImmortalExpiresAtPlayerTurnStart = -1;
         card.SuppressDeathUntilTurn = -1;
         card.EffectiveProfession = card.Profession;
+        card.IdentityKnown = false;
+        card.IsMasterLegion = false;
+        card.ActiveKeywords.Clear();
+        card.StatusIcons.Clear();
+        card.StatusEffects.Clear();
+        card.RuleActions.Clear();
         card.TimedModifiers.Clear();
+    }
+
+    private static bool IsCardInstanceRuntimeKey(string key, L12CardInstance card)
+    {
+        // UsedAbilities 的实例维度统一使用冒号分隔 token。只匹配完整 token，既能覆盖
+        // SimpleCardState 等数据驱动前缀，也不会把卡名、主宰、全局或相似实例 ID 误删。
+        return key.Split(':').Any(token =>
+            token.Equals(card.InstanceId, StringComparison.OrdinalIgnoreCase));
     }
 
     private static void CaptureLastKnownFieldState(L12CardInstance card, int row)
@@ -1850,11 +2180,40 @@ public sealed partial class L12GameEngine
         return false;
     }
 
+    private static L12CardInstance SnapshotDisplayOnlyCard(L12CardInstance card)
+    {
+        var snapshot = card.Clone();
+        StripDisplayOnlyActions(snapshot);
+        return snapshot;
+    }
+
+    private static void StripDisplayOnlyActions(L12CardInstance card)
+    {
+        card.PlayCost = null;
+        card.MinimumPlayCost = null;
+        card.PlayBlockedReason = null;
+        card.SpendableResourceType = null;
+        card.Abilities = [];
+        card.RuleActions = [];
+        foreach (var attached in card.AttachedCards) StripDisplayOnlyActions(attached);
+    }
+
+    private L12CardInstance[] SnapshotObserverHand(int playerIndex)
+        => State.Players[playerIndex].Hand.Select(card =>
+        {
+            var snapshot = SnapshotDisplayOnlyCard(card);
+            snapshot.Troops = snapshot.CurrentTroops;
+            return snapshot;
+        }).ToArray();
+
     private L12CardInstance[] SnapshotHand(int playerIndex)
         => State.Players[playerIndex].Hand.Select(card =>
         {
             var snapshot = card.Clone();
-            var selfDamageDiscount = HasOptionalSelfDamageEntryDiscount(card) && State.Players[playerIndex].Hp > 1;
+            snapshot.Troops = snapshot.CurrentTroops;
+            var selfDamageRule = SelfDamageEntryDiscount(card);
+            var selfDamageDiscount = selfDamageRule is not null
+                && CanPayMasterDamageCost(State.Players[playerIndex], selfDamageRule.DamageAmount);
             var spentRunes = card.CardId == "S02-0622"
                 ? Math.Min(State.Players[playerIndex].SpecialZones.Runes, (card.Cost + 1) / 2)
                 : 0;
@@ -1888,12 +2247,12 @@ public sealed partial class L12GameEngine
                     .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
                     .Cast<L12CardInstance>()
                     .Where(card => !IsPendingCombatDeath(card.InstanceId))
-                    .Where(card => !player.UsedAbilities.Contains(CurrentLethalEventProtectionKey(card)))
+                    .Where(card => !HasCurrentLethalEventProtection(player, card))
                     .Select(card => (Controller: player.PlayerIndex, Card: card)))
                 .ToArray();
             if (defeated.Length == 0)
             {
-                ClearCurrentLethalEventProtections();
+                ClearStaleLethalEventProtections();
                 ClearPendingStateBasedKillSources();
                 return;
             }
@@ -1910,7 +2269,7 @@ public sealed partial class L12GameEngine
             ResolvePendingStateBasedKillSources(removed);
             if (removed.Count == 0)
             {
-                ClearCurrentLethalEventProtections();
+                ClearStaleLethalEventProtections();
                 return;
             }
         }
@@ -1929,6 +2288,7 @@ public sealed partial class L12GameEngine
 
     private void SetWinner(int winner, string reason)
     {
+        if (State.Phase == L12Phase.GameOver) return;
         State.Winner = winner;
         State.WinnerReason = reason;
         State.Phase = L12Phase.GameOver;
@@ -1937,17 +2297,27 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Clear();
         State.EffectStack.Clear();
         State.DeferredEffectStack.Clear();
+        State.PendingActivations.Clear();
+        State.PendingTriggerBatches.Clear();
+        State.PendingTriggerStackCandidates.Clear();
         State.IsResolvingStack = false;
         State.ResponseWindow = null;
         AddEvent("game-over", winner, $"{State.Players[winner].Name} 获胜：{reason}");
     }
 
-    private void ClearCurrentLethalEventProtections()
+    private void ClearStaleLethalEventProtections()
     {
-        var suffix = $":{State.Revision}";
         foreach (var player in State.Players)
-            player.UsedAbilities.RemoveWhere(key => key.StartsWith("lethal-event-protected:", StringComparison.Ordinal)
-                && key.EndsWith(suffix, StringComparison.Ordinal));
+        {
+            var current = player.Field.SelectMany(row => row)
+                .Where(card => card is not null && IsFieldLegion(card) && card.Troops <= 0)
+                .Cast<L12CardInstance>()
+                .Select(CurrentLethalEventProtectionKey)
+                .ToHashSet(StringComparer.Ordinal);
+            player.UsedAbilities.RemoveWhere(key => key.StartsWith(LethalEventProtectionPrefix,
+                    StringComparison.Ordinal)
+                && !current.Contains(key));
+        }
     }
 
     internal void ConcludeByAuthority(int? winner, string reason)
@@ -1980,30 +2350,51 @@ public sealed partial class L12GameEngine
         return sourceItem is null || sourceItem.Trigger == "disaster" ? null : sourceItem.Controller;
     }
 
-    private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer, bool neutralSource)
+    private int ApplyOutgoingMasterDamageOverride(int targetPlayerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem = null)
     {
         var resolvedSourcePlayer = ResolveDamageSourcePlayer(sourcePlayer, neutralSource);
         if (resolvedSourcePlayer is not (0 or 1) || resolvedSourcePlayer == targetPlayerIndex) return amount;
-        var sourceItem = State.EffectStack.LastOrDefault();
+        var sourceItem = declaredSourceItem ?? State.EffectStack.LastOrDefault();
         var source = State.Players[resolvedSourcePlayer.Value];
         if (sourceItem?.Controller != resolvedSourcePlayer || sourceItem.SourceCardId != source.MasterId
             || source.NextMasterDamageToOpponentBecomesTwoUntilTurn != State.TurnSerial)
             return amount;
 
         source.NextMasterDamageToOpponentBecomesTwoUntilTurn = -1;
-        AddEvent("effect", resolvedSourcePlayer,
-            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2");
+        var target = State.Players[targetPlayerIndex];
+        AddSemanticPlayerLogEvent("effect", resolvedSourcePlayer,
+            "平阳昭公主使主宰对对方主宰造成的这次伤害变为2",
+            new("触发 主宰效果", $"〈{target.MasterName}〉受到的本次伤害变为2",
+                SourceName: "平阳昭公主", TargetName: target.MasterName));
         return 2;
+    }
+
+    private int ResolveMasterDamageAmount(int playerIndex, int amount, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem = null,
+        int declaredDisasterMasterDamageBonus = 0)
+    {
+        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem);
+        // 中立天灾伤害不受玩家卡牌的伤害替换影响。
+        if (!neutralSource)
+            amount = AdjustAnderstorpRingDamage(State.Players[playerIndex], amount,
+                Math.Clamp(declaredDisasterMasterDamageBonus, 0, 1));
+        return Math.Max(0, amount);
     }
 
     private void DamageMaster(int playerIndex, int amount, string source, int? sourcePlayer = null,
         bool neutralSource = false, bool combatDamage = false)
+        => DamageMasterWithDeclaredDisasterBonus(playerIndex, amount, source, sourcePlayer,
+            neutralSource, combatDamage, 0);
+
+    private void DamageMasterWithDeclaredDisasterBonus(int playerIndex, int amount, string source,
+        int? sourcePlayer, bool neutralSource, bool combatDamage, int declaredDisasterMasterDamageBonus)
     {
         var player = State.Players[playerIndex];
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
-        // 中立天灾伤害不受玩家卡牌的伤害替换影响。
-        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
-        player.Hp -= amount;
+        amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredDisasterMasterDamageBonus: declaredDisasterMasterDamageBonus);
+        player.Hp = Math.Max(0, player.Hp - amount);
         player.MasterDamageTakenThisTurn += Math.Max(0, amount);
         TrackMasterDamageFact(playerIndex, amount, sourcePlayer, neutralSource, combatDamage);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {amount} 点血量");
@@ -2015,18 +2406,48 @@ public sealed partial class L12GameEngine
         }
     }
 
-    private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null, bool neutralSource = false)
+    /// 裁定（2026-09-23）：天灾不会触发任何效果。天灾结算或天灾持续规则生效期间，
+    /// 伤害与卡牌移动不得排队任何卡牌触发、替代弹框或响应窗。
+    private bool IsDisasterAuthorityActive()
+        => State.Phase == L12Phase.Disaster || State.EffectStack.Any(item => item.Trigger == "disaster");
+
+    private void DamageMasterNonLethal(int playerIndex, int amount, string source, int? sourcePlayer = null,
+        bool neutralSource = false)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null,
+            allowDamageTriggeredRelicEffects: true);
+
+    private void DamageMasterNonLethalWithoutDamageTriggeredRelics(int playerIndex, int amount, string source,
+        int? sourcePlayer = null, bool neutralSource = false)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourcePlayer, neutralSource, null,
+            allowDamageTriggeredRelicEffects: false);
+
+    private void DamageMasterNonLethalFromEffect(L12StackItem sourceItem, int playerIndex, int amount, string source)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, sourceItem.Controller,
+            neutralSource: false, sourceItem, allowDamageTriggeredRelicEffects: true);
+
+    private void DamageMasterNonLethalFromDisaster(int playerIndex, int amount, string source)
+        => DamageMasterNonLethalCore(playerIndex, amount, source, null, neutralSource: true, null,
+            allowDamageTriggeredRelicEffects: false, fromDisaster: true);
+
+    private void DamageMasterNonLethalCore(int playerIndex, int amount, string source, int? sourcePlayer,
+        bool neutralSource, L12StackItem? declaredSourceItem, bool allowDamageTriggeredRelicEffects,
+        bool fromDisaster = false)
     {
         var player = State.Players[playerIndex];
-        amount = ApplyOutgoingMasterDamageOverride(playerIndex, amount, sourcePlayer, neutralSource);
-        if (!neutralSource) amount = AdjustAnderstorpRingDamage(player, amount);
-        var actual = Math.Min(amount, Math.Max(0, player.Hp - 1));
+        amount = ResolveMasterDamageAmount(playerIndex, amount, sourcePlayer, neutralSource,
+            declaredSourceItem);
+        // 非致命伤害只决定“整次数值能否结算”，不能把原本的伤害值缩小后再造成。
+        // 例如平阳昭公主把杨戬的1点非致命伤害替换为2时，2血主宰不能因此改受1点。
+        var actual = amount < player.Hp ? amount : 0;
         if (actual == 0) return;
         player.Hp -= actual;
         player.MasterDamageTakenThisTurn += actual;
-        TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false);
+        TrackMasterDamageFact(playerIndex, actual, sourcePlayer, neutralSource, combatDamage: false,
+            declaredSourceItem);
         AddEvent("damage", playerIndex, $"{player.Name} 的主宰因{source}失去 {actual} 点非致命伤害");
-        QueueS1MasterDamageReaction(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource), effectDamage: true);
+        if (!fromDisaster && !IsDisasterAuthorityActive())
+            QueueS1MasterDamageReactionCore(playerIndex, ResolveDamageSourcePlayer(sourcePlayer, neutralSource),
+                effectDamage: true, allowDamageTriggeredRelicEffects);
     }
 
     private void HealMaster(int playerIndex, int amount, string source, bool legionEffect = false)
@@ -2048,17 +2469,232 @@ public sealed partial class L12GameEngine
         AddEvent("heal", playerIndex, $"{player.Name} 的主宰因{source}增加 {actual} 点血量");
     }
 
-    private void AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
-        => AddEventCore(type, playerIndex, text, null, cards);
+    private long AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
+    {
+        AddEventCore(type, playerIndex, text, null, cards);
+        return State.EventSequence;
+    }
+
+    private void AttachPlayerCardStateTransitionToLastEvent(string expectedType,
+        L12CardInstance card, bool fromTapped, bool toTapped)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || fromTapped == toTapped
+            || State.LastAction is null
+            || State.LastAction.Type != expectedType
+            || State.LastAction.Cards.Count(candidate => candidate.InstanceId == card.InstanceId
+                && !candidate.Hidden && !string.IsNullOrWhiteSpace(candidate.Name)) != 1)
+            return;
+        var updated = State.LastAction with
+        {
+            PlayerCardStateTransition = new(card.InstanceId, fromTapped, toTapped),
+        };
+        State.LastAction = updated;
+        if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
+            State.Events[^1] = updated;
+        if (_unpersistedEvents.Count > 0 && _unpersistedEvents[^1].Sequence == updated.Sequence)
+            _unpersistedEvents[^1] = updated;
+    }
+
+    private long AddPlayerCardStateTransitionEvent(int playerIndex, L12CardInstance card,
+        bool fromTapped, bool toTapped, string text)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || fromTapped == toTapped
+            || card.Tapped != toTapped
+            || card.Hidden
+            || string.IsNullOrWhiteSpace(card.InstanceId)
+            || string.IsNullOrWhiteSpace(card.Name))
+            return 0;
+        AddEvent("state", playerIndex, text, card);
+        AttachPlayerCardStateTransitionToLastEvent("state", card, fromTapped, toTapped);
+        return State.EventSequence;
+    }
+
+    private void RegisterPresentationFact(L12StackItem item, long sequence)
+    {
+        if (!State.PresentationFactProtocolEnabled || sequence <= 0) return;
+        item.PresentationFactSequences ??= [];
+        if (!item.PresentationFactSequences.Contains(sequence))
+            item.PresentationFactSequences.Add(sequence);
+    }
+
+    private void AttachPresentationFactsToLastEvent(L12StackItem item)
+    {
+        if (!State.PresentationFactProtocolEnabled
+            || item.PresentationFactSequences is not { Count: > 0 }
+            || State.LastAction is null) return;
+        AttachPresentationFactSequencesToLastEvent(item.PresentationFactSequences);
+    }
+
+    private void AttachPresentationFactSequencesToLastEvent(IEnumerable<long> sequences)
+    {
+        if (!State.PresentationFactProtocolEnabled || State.LastAction is null) return;
+        var facts = sequences.Where(sequence => sequence > 0).Distinct().Order().ToArray();
+        if (facts.Length == 0) return;
+        var updated = State.LastAction with { PlayerPresentationFactSequences = facts };
+        State.LastAction = updated;
+        if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
+            State.Events[^1] = updated;
+        if (_unpersistedEvents.Count > 0 && _unpersistedEvents[^1].Sequence == updated.Sequence)
+            _unpersistedEvents[^1] = updated;
+    }
+
+    private void AddPlayerLogEvent(string type, int? playerIndex, string text,
+        string? playerLogGroupId, string? playerLogTiming = null, string? playerLogDecisionLabel = null,
+        params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, null, null,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, cards);
+
+    private void AddStructuredPlayerLogEvent(string type, int? playerIndex, string text,
+        string? playerLogGroupId, string? playerLogTiming,
+        L12PlayerLogSemantic playerLogSemantic, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,
+            playerLogGroupId, playerLogTiming, null, playerLogSemantic, cards);
+
+    private void AddSemanticPlayerLogEvent(string type, int? playerIndex, string text,
+        L12PlayerLogSemantic playerLogSemantic, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, null, null,
+            null, null, null, playerLogSemantic, cards);
+
+    private void AddPlayerCombatEvent(string type, int? playerIndex, string text,
+        L12PlayerCombatPresentation combat, params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, null, null,
+            null, null, null, null, combat, null, cards);
+
+    private void AddPlayerBattlefieldMovementEvent(string type, int? playerIndex, string text,
+        L12PlayerBattlefieldMovement movement, params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, null, null,
+            null, null, null, null, null, movement, cards);
+
+    private void AddPlayerPublicPlacementEvent(int? playerIndex, string text,
+        L12CardInstance card, int ownerPlayerIndex, int controllerPlayerIndex,
+        int row, int slot, string? durationCode = null)
+        => AddEventCoreWithPlacement("put", playerIndex, text, null, null,
+            null, null, null, null, null, null,
+            new L12PlayerPublicPlacement(card.InstanceId, ownerPlayerIndex,
+                controllerPlayerIndex, row, slot, card.Tapped, durationCode), card);
+
+    // Callers have already revalidated the target and explicitly supply its controller.
+    // Keep the existing modifier write unchanged; never recover provenance from board/text.
+    private void ApplyPlayerThisTurnTroopsModifier(L12CardInstance target, int troops,
+        int targetController, string source)
+    {
+        AddTimedModifier(target, troops, 0, State.TurnSerial, source);
+        if (target.Hidden || string.IsNullOrWhiteSpace(target.InstanceId)
+            || string.IsNullOrWhiteSpace(target.Name)) return;
+        AddEventCoreWithTroopsModifier("troops-modifier", targetController,
+            $"〈{target.Name}〉本回合兵力修正{troops:+0;-0;0}", null, null,
+            null, null, null, null, null, null, null,
+            new L12PlayerTroopsModifier(target.InstanceId, targetController, troops, "this-turn"),
+            null, null, target);
+    }
+
+    private void AddPlayerSelectedTargetsEvent(L12StackItem item, L12CardInstance source,
+        L12PlayerSelectedTargetFact[] facts)
+        => AddEventCoreWithTroopsModifier("target-selected", item.Controller,
+            "已选公开目标", null, null,
+            item.Data.GetValueOrDefault("playerLogGroupId"),
+            item.Data.GetValueOrDefault("playerLogTiming"),
+            null, null, null, null, null, null, null,
+            new L12PlayerSelectedTargets(source.InstanceId, facts), source);
+
+    private static L12PlayerBattlefieldMovementFact BattlefieldMovementFact(
+        L12CardInstance card, int battlefieldPlayerIndex, int fromRow, int fromSlot,
+        int toRow, int toSlot)
+        => new(card.InstanceId, battlefieldPlayerIndex, fromRow, fromSlot, toRow, toSlot);
 
     private void AddEventCore(string type, int? playerIndex, string text, string? effectText,
         params L12CardInstance[] cards)
+        => AddEventCoreWithEffectMetadata(type, playerIndex, text, effectText, null, cards);
+
+    private void AddEventCoreWithEffectMetadata(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLog(type, playerIndex, text, effectText, effectMetadata,
+            null, null, null, cards);
+
+    private void AddEventCoreWithPlayerLog(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, params L12CardInstance[] cards)
+        => AddEventCoreWithPlayerLogSemantic(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, null, cards);
+
+    private void AddEventCoreWithPlayerLogSemantic(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        params L12CardInstance[] cards)
+        => AddEventCoreWithCombat(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic, null, null, cards);
+
+    private void AddEventCoreWithCombat(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement, params L12CardInstance[] cards)
+        => AddEventCoreWithPlacement(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
+            playerCombat, playerBattlefieldMovement, null, cards);
+
+    private void AddEventCoreWithPlacement(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement,
+        L12PlayerPublicPlacement? playerPublicPlacement, params L12CardInstance[] cards)
+        => AddEventCoreWithTroopsModifier(type, playerIndex, text, effectText, effectMetadata,
+            playerLogGroupId, playerLogTiming, playerLogDecisionLabel, playerLogSemantic,
+            playerCombat, playerBattlefieldMovement, playerPublicPlacement, null, null, null, cards);
+
+    private void AddEventCoreWithTroopsModifier(string type, int? playerIndex, string text, string? effectText,
+        L12EffectEventMetadata? effectMetadata, string? playerLogGroupId, string? playerLogTiming,
+        string? playerLogDecisionLabel, L12PlayerLogSemantic? playerLogSemantic,
+        L12PlayerCombatPresentation? playerCombat,
+        L12PlayerBattlefieldMovement? playerBattlefieldMovement,
+        L12PlayerPublicPlacement? playerPublicPlacement,
+        L12PlayerTroopsModifier? playerTroopsModifier,
+        L12PlayerDisasterValue? playerDisasterValue,
+        L12PlayerSelectedTargets? playerSelectedTargets, params L12CardInstance[] cards)
     {
         State.EventSequence++;
         State.LastAction = new L12ActionEvent(State.EventSequence, type, playerIndex, text,
-            cards.Select(card => card.Clone()).ToArray()) { EffectText = effectText };
+            cards.Select(card =>
+            {
+                var snapshot = card.Clone();
+                snapshot.Troops = snapshot.CurrentTroops;
+                return snapshot;
+            }).ToArray())
+        {
+            EffectText = effectText,
+            EffectSceneId = effectMetadata?.SceneId,
+            EffectAbilityId = effectMetadata?.AbilityId,
+            EffectSegmentId = effectMetadata?.SegmentId,
+            EffectSegmentIndex = effectMetadata?.SegmentIndex,
+            EffectSegmentCount = effectMetadata?.SegmentCount,
+            EffectBranchId = effectMetadata?.BranchId,
+            EffectBranchLabel = effectMetadata?.BranchLabel,
+            EffectResultStatus = effectMetadata?.ResultStatus ?? type switch
+            {
+                "effect-rejected" or "ability-rejected" => "unavailable",
+                "effect-cancelled" => "failed",
+                "effect-negated" => "negated",
+                "effect-noop" => "skipped",
+                "effect-declined" => "declined",
+                "effect-failed" => "failed",
+                _ => null,
+            },
+            PlayerLogGroupId = playerLogGroupId,
+            PlayerLogTiming = playerLogTiming,
+            PlayerLogDecisionLabel = playerLogDecisionLabel,
+            PlayerLogSemantic = playerLogSemantic,
+            PlayerCombat = playerCombat,
+            PlayerBattlefieldMovement = playerBattlefieldMovement,
+            PlayerPublicPlacement = playerPublicPlacement,
+            PlayerTroopsModifier = playerTroopsModifier,
+            PlayerDisasterValue = playerDisasterValue,
+            PlayerSelectedTargets = playerSelectedTargets,
+        };
         State.Events.Add(State.LastAction);
-        if (State.StateFormatVersion >= 2)
+        if (State.StateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion)
         {
             _unpersistedEvents.Add(State.LastAction);
             if (State.Events.Count > MaximumSnapshotEvents) State.Events.RemoveAt(0);

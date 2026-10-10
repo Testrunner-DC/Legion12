@@ -1,0 +1,45 @@
+import fs from 'node:fs'
+
+const read = relative => fs.readFileSync(new URL(relative, import.meta.url), 'utf8')
+const editor = read('../src/l12/L12DeckEditor.vue')
+const decks = read('../src/l12/decks.ts')
+const models = read('../../服务端WebSocket/TwelveLegions/Models.cs')
+const storage = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs')
+const payloadReferences = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.DeckPayloadReferences.cs')
+const store = read('../../服务端WebSocket/TwelveLegions/L12PlatformStore.cs')
+const validator = read('../../服务端WebSocket/TwelveLegions/L12DeckValidator.cs')
+
+const checks = [
+  ['牌库 / 统计 / 起手使用同一编辑器工作区', ['>牌库</button>', '>统计</button>', '>起手</button>'].every(value => editor.includes(value))],
+  ['编辑器仅保留指定英文标题，其余工作区标签中文化', editor.includes('<small>DECK EDITOR</small>') && !['Gallery 卡池', 'Stats 统计', 'Hand 起手', 'CARD POOL', 'DECK STATS', 'OPENING HAND', 'DECK LIST'].some(value => editor.includes(value))],
+  ['工作区使用 v-show 保留卡池筛选与滚动节点', ['workspace === \'gallery\'', 'workspace === \'stats\'', 'workspace === \'hand\''].every(value => editor.includes(`v-show="${value}"`))],
+  ['起手从共享合法候选的当前逐副本构筑抽取且不写后台', editor.includes('normalOpeningHandCopies') && editor.includes('eligibleMainDeckCopies') && editor.includes('samplePublicDeckOpeningHand(eligibleMainDeckCopies.value.map(copy => copy.key))') && editor.includes('不修改牌库或生成对局记录')],
+  ['移动端为卡池、牌表、统计/起手单任务入口', ['setMobilePane(\'pool\')', 'setMobilePane(\'deck\')', 'setMobilePane(\'insights\')'].every(value => editor.includes(value))],
+  ['卡池按钮与类型等筛选同排，其余筛选始终可见', editor.includes('class="catalog-filter-bar"') && editor.indexOf('class="product-filter-control"') > editor.indexOf('class="catalog-filter-bar"') && editor.includes('v-if="poolSelectorOpen" class="product-filter"') && !editor.includes('mobileFiltersOpen') && !editor.includes('卡池（可多选）')],
+  ['卡池覆盖名称效果、阵营、类型、产品、费用、兵力、天灾、禁限与排序', ['query', 'factionFilter', 'typeFilter', 'productFilters', 'costFilter', 'troopsFilter', 'disasterFilter', 'legalityFilter', 'sortMode'].every(value => editor.includes(value))],
+  ['主宰、主牌、士气、额外区、备选区独立分区', ['data-deck-section="master"', 'data-deck-section="main"', 'data-deck-section="morale"', 'data-deck-section="extra"', 'data-deck-section="bench"'].every(value => editor.includes(value)) && editor.includes('<span>主宰</span>')],
+  ['主宰候选排除未实装 divinity 模式', editor.includes("card.cardType === 'master'") && !editor.match(/card\.cardType === 'master'\s*\|\|\s*card\.cardType === 'divinity'/)],
+  ['桌面已保存牌库位于详情下方，移动端通过弹框选择', editor.includes('class="saved-decks-panel grand-panel"') && editor.includes('class="saved-list"') && editor.includes('<DeckProfile compact') && editor.includes('detailCollapsed') && editor.includes('class="mobile-saved-decks-dialog"') && editor.includes('chooseMobileSavedDeck') && !editor.includes('<label>已保存牌库<select')],
+  ['起手完整展示逐副本卡面、名称、编号与单次概率说明', editor.includes('fit="contain"') && editor.includes('openingHandMeta(copy,index)') && editor.includes('{{ copy.card.number }} · {{ copy.label }}') && editor.includes('等概率、不放回') && editor.includes('overflow-wrap:anywhere')],
+  ['移动端次要操作收进更多操作菜单', editor.includes('class="more-actions-trigger"') && editor.includes('class="secondary-actions"')],
+  ['分区折叠状态持久保留', editor.includes('l12-deck-editor-sections-v1') && editor.includes('watch(collapsedSections')],
+  ['基础硬错误与本赛季排位禁限提示分别显示', editor.includes('entryIssue(entry.card, entry.count)')
+    && editor.includes('seasonEntryIssue(entry.card)') && editor.includes('data-season-advisory')
+    && editor.includes('const validation = computed(() => validateDeck(construction.value, catalog.value))')
+    && editor.includes('validateDeck(construction.value, catalog.value, operationsRestrictions.value)')
+    && editor.includes('return effectiveDeckLimit(card, masterId.value)')
+    && !editor.includes('Math.min(effectiveDeckLimit(card, masterId.value), restrictionFor')],
+  ['备选区可从卡池加入并移回主牌，右侧主牌不设置备卡按钮', ['addToBench(entry.card)', 'moveBenchToMain(entry.card)'].every(value => editor.includes(value)) && !editor.includes('moveMainToBench')],
+  ['右侧牌表不显示逐副本原画异画文字或备卡按钮', editor.includes('alternate-art-banner') && !editor.includes('class="deck-copy-labels"') && !editor.includes('aria-label="移入备选区"')],
+  ['备选区不计主牌数量与合法性', editor.includes('备选区') && editor.includes('不计入主牌数量与合法性') && !editor.match(/validateDeck\([\s\S]{0,300}benchIds/)],
+  ['私人牌库类型与无损缓存保留 benchIds（真实迁移由test-deck-sync-authority验证）', decks.includes('benchIds?: string[]') && decks.includes('return decodeDeckCache(encodeDeckCache(deck))')],
+  ['服务端输入与私人牌库视图支持 BenchIds', models.includes('public List<string> BenchIds') && store.includes('IReadOnlyList<string>? BenchIds = null')],
+  ['备选区在账号牌库行使用紧凑数量 JSON，只在详情边界展开', storage.includes('bench_cards_json') && storage.includes('"$bench", DeckBenchJson(deck)') && storage.includes('BenchJson = reader.GetString(5)') && payloadReferences.includes('row.BenchIds.Count > 0 ? CompactDeckCardsJson(row.BenchIds) : row.BenchJson') && store.includes('ExpandCards(DeckBenchJson(row))')],
+  ['备选区不进入公开构筑正文哈希', !storage.match(/NormalizeDeckPayload\([^\n]*BenchIds/) && store.includes('row.BenchIds = deck.BenchIds.ToList()')],
+  ['服务端限制未知、异阵营、非主牌与超大备选区', ['备选区最多保存 200 张卡牌', '备选区包含未知卡牌', '不能放入备选区', '与主宰阵营不符'].every(value => validator.includes(value))],
+  ['竖屏不再强制提示旋转设备', !editor.includes('横屏编辑更完整') && !editor.includes('orientation:portrait')],
+  ['未加入自动保存、撤销重做或离线队列', !/auto.?save|undo|redo|offline.?queue/i.test(editor)],
+]
+
+for (const [label, passed] of checks) if (!passed) throw new Error(`牌库编辑器参考流程合同失败：${label}`)
+console.log(`牌库编辑器参考流程合同通过：${checks.length} 项`)

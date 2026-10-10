@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-public-target-before-response",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "公开对象先选定再响应",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "高杉晋作、亚里士多德、忒修斯和《匠神锻造炉》的相关登场效果，现在先选定要处理的公开军团或士气，再让对手响应。响应提示会显示已选对象并高亮对应位置；对象失效时不会另选替代。高杉晋作没有合法对象或对象随后失效时，仍正常执行抽1张牌。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PlayerMat.vue",
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12ResponsePresentation.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-29-attack-rest-single-motion",
+  "date": "2026-09-29",
+  "audience": "players",
+  "title": "进攻与休整动画去重",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "军团进攻时会在费用和目标确认完成后正确转为休整，并只播放一次连贯的进攻与休整动画；取消进攻、支付未完成或进攻来源已离场时不再错误闪动或改变状态。重新连接、重复收到同一画面以及回放回退时，也不会补播或重复播放该动画。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue",
+        "opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts"
+      ]
+    }
+  ]
+}

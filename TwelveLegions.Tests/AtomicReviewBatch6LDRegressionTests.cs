@@ -15,10 +15,10 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             ["S02-0609"] = 3, ["S02-0610"] = 3, ["S02-0611"] = 5, ["S02-0612"] = 4,
             ["S02-0613"] = 3, ["S02-0614"] = 5, ["S02-0615"] = 3, ["S02-0616"] = 3,
             ["S02-0617"] = 4, ["S02-0618"] = 3, ["S02-0619"] = 2, ["S02-0620"] = 2,
-            ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 2, ["S02-06D1"] = 4,
-            ["S02-06M1"] = 3, ["S02-06M2"] = 2, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
-            ["S02-06S3"] = 3, ["S02-06S4"] = 3, ["S02-06S5"] = 2, ["S02-06S6"] = 1,
-            ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 3, ["S02-DS04"] = 2,
+            ["S02-0621"] = 2, ["S02-0622"] = 2, ["S02-06C1"] = 1, ["S02-06D1"] = 5,
+            ["S02-06M1"] = 2, ["S02-06M2"] = 3, ["S02-06S1"] = 1, ["S02-06S2"] = 1,
+            ["S02-06S3"] = 3, ["S02-06S4"] = 2, ["S02-06S5"] = 2, ["S02-06S6"] = 1,
+            ["S02-DS01"] = 1, ["S02-DS02"] = 2, ["S02-DS03"] = 2, ["S02-DS04"] = 2,
             ["S02-DS05"] = 3, ["S02-DS06"] = 2,
         };
 
@@ -125,8 +125,10 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     public void S2OtherworldAndDisasterAuditFreezesEveryCardAndAbility()
     {
         Assert.Equal(38, AuditedAbilityCounts.Count);
-        // EFFECT294 adds Angus's independent trial-progress trigger; the other 37 cards are unchanged.
-        Assert.Equal(109, AuditedAbilityCounts.Values.Sum());
+        // Preserve Angus's two distinct triggers, Morrigan's two printed effects, and Sleepless Night's two segments.
+        // S02-06C1 的「阵营效果」裸标签段已并入真实能力段（atomicReference 分段修正），段数 2→1。
+        // 阿瓦隆与全部主城共用“主神开场追加2张额外士气”的 setup 规则段，4→5。
+        Assert.Equal(107, AuditedAbilityCounts.Values.Sum());
         Assert.All(AuditedAbilityCounts, pair =>
         {
             var card = Assert.Contains(pair.Key, Catalog.Cards);
@@ -134,6 +136,31 @@ public sealed class AtomicReviewBatch6LDRegressionTests
             Assert.False(string.IsNullOrWhiteSpace(card.Effect));
             Assert.Equal(pair.Value, Catalog.AtomicEffects.Find(pair.Key)?.Abilities.Count);
         });
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "card:S02-DS03")]
+    [Trait("L12Evidence", "entry:sleepless-night-trigger-classification")]
+    public void SleeplessNightIsOneDisasterTriggerAndOneContinuousListener()
+    {
+        var card = Catalog.AtomicEffects.Find("S02-DS03");
+        Assert.NotNull(card);
+        Assert.Collection(card.Abilities.OrderBy(ability => ability.Sequence),
+            trigger =>
+            {
+                Assert.Equal("disaster", trigger.Trigger);
+                Assert.Equal("triggered", trigger.ExecutionModel);
+                Assert.Equal("触发 双方弃置各自战场上所有原本兵力不高于2000的军团。", trigger.Text);
+            },
+            listener =>
+            {
+                Assert.Equal("continuous", listener.Trigger);
+                Assert.Equal("continuous", listener.ExecutionModel);
+                Assert.Equal("持续 当玩家使用主动休整时，对其主宰造成1点非致命伤害。", listener.Text);
+                Assert.Contains(listener.Atoms, atom => atom.Kind == L12AtomKinds.DamageMaster
+                    && atom.Parameters.GetValueOrDefault("nonlethal") == "true");
+            });
+        Assert.DoesNotContain(card.Abilities, ability => ability.Trigger == "active");
     }
 
     [Fact]
@@ -170,6 +197,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06S4")]
     [Trait("L12Evidence", "entry:trial-completion-hidden-library-existence")]
+    [L12AbilityEvidence("S02-06S4:ability:trial-complete:f95fed6f3ff0efc0", "no-target")]
     public void GrailCompletionOffersPublicUseModeWithoutPeekingForAHiddenMatch()
     {
         var game = Create(8703);
@@ -205,6 +233,28 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         var hidden = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("trial-completion-library-search", hidden.Data["action"]);
         Assert.Contains(universal.InstanceId, hidden.ValidChoices);
+    }
+
+    [Fact]
+    [Trait("L12Evidence", "auxiliary:grail-journey-searches-mordred")]
+    public void GrailCompletionCanSearchStarterMordredAsAnOtherworldLegion()
+    {
+        var game = Create(8711);
+        var player = game.State.Players[0];
+        var mordred = Card("ST06-04", "batch6ld-grail-mordred");
+        player.Library.Add(mordred);
+
+        BeginCompletion(game, "S02-06S4", "batch6ld-grail-mordred-trial");
+        Resolve(game, "mode:use");
+        PassResponses(game);
+
+        var search = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("trial-completion-library-search", search.Data["action"]);
+        Assert.Contains(mordred.InstanceId, search.ValidChoices);
+        Resolve(game, mordred.InstanceId);
+
+        Assert.Contains(mordred, player.Hand);
+        Assert.DoesNotContain(mordred, player.Library);
     }
 
     [Fact]
@@ -244,6 +294,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "cards:S02-06S5,S02-0008")]
+    [Trait("L12Evidence", "invariant:fenianReady-unchanged-by-completion-trigger-errata")]
     public void FenianReadyIncludesARingUniversalLegionWithPrintedTroopsAtMostFourThousand()
     {
         var game = Create(8706);
@@ -287,6 +338,8 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         Assert.Equal(1, player.SpecialZones.Runes);
         Resolve(game, "mode:search");
         Assert.All(player.Morale, morale => Assert.True(morale.Tapped));
+        Assert.Equal("rune-search-choice", game.State.EffectStack[^1].Data["atomicFlow"]);
+        PassResponses(game);
         var hidden = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("s2-rune-power-pick", hidden.Data["action"]);
         Assert.Contains(universal.InstanceId, hidden.ValidChoices);
@@ -324,7 +377,7 @@ public sealed class AtomicReviewBatch6LDRegressionTests
 
     [Fact]
     [Trait("L12Evidence", "cards:S02-06S6,S02-0008")]
-    public void CrusadeOnlyOtherworldRecoveryDoesNotTreatARingUniversalCardAsOnlyOtherworld()
+    public void CrusadeOnlyOtherworldRecoveryTreatsARingConvertedUniversalCardAsOnlyOtherworld()
     {
         var game = Create(8711);
         var player = game.State.Players[0];
@@ -332,17 +385,22 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         trial.TrialCompleted = true;
         player.SpecialZones.Trials.Add(trial);
         player.Relic = Card("S02-0008", "batch6ld-crusade-only-ring");
-        player.Hand.Add(Card("S02-0401", "batch6ld-crusade-only-discard"));
+        var discardCost = Card("S02-0401", "batch6ld-crusade-only-discard");
+        player.Hand.Add(discardCost);
         player.Graveyard.Add(Card("S02-0003", "batch6ld-crusade-only-universal"));
         player.SpecialZones.Runes = 2;
 
         var begin = game.Handle(0,
             new L12Command("activateAbility", trial.InstanceId, Ability: "crusadeRecover"));
 
-        Assert.False(begin.Accepted);
-        Assert.Contains("只有【彼界】特征", begin.Error);
+        Assert.True(begin.Accepted, begin.Error);
         Assert.Equal(2, player.SpecialZones.Runes);
         Assert.Single(player.Hand);
+        var discard = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains(discardCost.InstanceId, discard.ValidChoices);
+        Resolve(game, discardCost.InstanceId);
+        var recover = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("batch6ld-crusade-only-universal", recover.ValidChoices);
     }
 
     [Fact]
@@ -379,6 +437,10 @@ public sealed class AtomicReviewBatch6LDRegressionTests
         Assert.Null(player.Field[0][0]);
         Assert.Contains(galahad, player.Graveyard);
         var stackItem = Assert.Single(game.State.EffectStack);
+        var response = Assert.Single(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        Assert.Equal($"弃置战场上的〈{galahad.Name}〉", response.Data["responsePaidCostSummary"]);
+        Assert.Contains($"Cost（已支付）：弃置战场上的〈{galahad.Name}〉", response.Text,
+            StringComparison.Ordinal);
         stackItem.Negated = true;
         PassResponses(game);
 

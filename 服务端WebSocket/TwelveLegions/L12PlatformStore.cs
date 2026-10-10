@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace TwelveLegions.Server;
 
 public sealed record L12AudioPreferencesView(bool MusicEnabled = true, double MusicVolume = 0.35,
-    bool SfxEnabled = true, double SfxVolume = 0.7, string CardSize = "auto", string Animation = "standard");
+    bool SfxEnabled = true, double SfxVolume = 0.7, string CardSize = "auto", string Animation = "standard",
+    string MobileLayout = "auto");
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt,
     bool PublicHistory, int PermissionVersion = 1, bool Disabled = false,
     DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
@@ -23,9 +24,38 @@ public sealed record L12AuthenticatedSession(L12AccountView Account, string Sess
 public sealed record L12SessionRevocationResult(bool Found, string? SessionId, int RevokedCount,
     bool AlreadyRevoked, IReadOnlyList<string> RevokedSessionIds);
 public sealed record L12AccountDeckView(string Name, string MasterId, IReadOnlyList<string> CardIds,
-    IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt);
-public sealed record L12PublishedDeckView(string Id, string OwnerId, string Author, L12AccountDeckView Deck,
-    int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    IReadOnlyList<string> MoraleIds, IReadOnlyList<string> SpecialIds, DateTimeOffset UpdatedAt,
+    IReadOnlyDictionary<string, string>? AlternateArtSelections = null,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? AlternateArtCopies = null,
+    IReadOnlyList<string>? BenchIds = null, string? PublicationId = null, int? PublicationVersion = null,
+    string Id = "", long Revision = 0);
+public sealed record L12DeckMutationResult(string Status, L12AccountDeckView? Deck = null,
+    long? CurrentRevision = null)
+{
+    public bool Success => string.Equals(Status, "ok", StringComparison.Ordinal);
+}
+public sealed record L12PublishedDeckView(string Id, string PublicCode, string OwnerId, string Author, L12AccountDeckView Deck,
+    int Views, int Likes, int Copies, bool Liked, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
+    bool SeasonCompliant = true, string? SeasonComplianceReason = null,
+    L12PublicDeckDetailsView? Details = null);
+public sealed record L12PublicDeckGuideView(string BuildIdea, string Opening, string KeyCards,
+    string CommonSequence, string Substitutions);
+public sealed record L12PublicDeckMatchupView(string OpponentMasterId, string Notes, string KeyCards,
+    string SuggestedSwaps);
+public sealed record L12PublicDeckVersionChangeView(string Section, string CardId, int PreviousQuantity,
+    int CurrentQuantity);
+public sealed record L12PublicDeckVersionView(int Version, string Name, L12AccountDeckView Deck,
+    DateTimeOffset CreatedAt, IReadOnlyList<L12PublicDeckVersionChangeView> Changes);
+public sealed record L12PublicDeckVersionStatisticView(int Version, string MasterId, string OpponentMasterId,
+    int Games, int Wins, int Losses, int Draws, double WinRate);
+public sealed record L12PublicDeckMatchStatisticsView(DateTimeOffset From, DateTimeOffset To, int RecentDays,
+    int Games, string SampleStatus, IReadOnlyList<L12PublicDeckVersionStatisticView> Groups);
+public sealed record L12PublicDeckDetailsView(L12PublicDeckGuideView Guide,
+    IReadOnlyList<L12PublicDeckMatchupView> Matchups, int ContentRevision, DateTimeOffset? ContentUpdatedAt,
+    IReadOnlyList<L12PublicDeckVersionView> Versions, L12PublicDeckMatchStatisticsView MatchStatistics,
+    string MatchBindingStatus, string MatchBindingMessage);
+public sealed record L12PublicDeckContentInput(L12PublicDeckGuideView? Guide,
+    IReadOnlyList<L12PublicDeckMatchupView>? Matchups);
 public sealed record L12BugDiagnosticView(DateTimeOffset CapturedAt, string? MatchId, string? RoomCode,
     string? Phase, int? Round, int? TurnSerial, int? ActivePlayer, long? Revision, long? CommandSequence,
     IReadOnlyList<string> Stack, IReadOnlyList<string> Prompts, IReadOnlyList<string> RecentEventTypes);
@@ -42,9 +72,15 @@ public sealed record L12BugReportView(string Id, string? ReporterId, string Repo
     string? AdminNotes, IReadOnlyList<L12BugAuditView> History, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     L12BugDiagnosticView? Diagnostic = null, string? ClientVersion = null, string? ServerVersion = null,
     string? EngineVersion = null, L12ClientConnectionDiagnosticView? ClientDiagnostic = null,
-    L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null);
+    L12ConnectionClaimDiagnosticView? ConnectionDiagnostic = null, string? FixCommit = null,
+    string? RegressionTest = null, string? DeployedVersion = null, string? VerifiedBy = null,
+    DateTimeOffset? VerifiedAt = null, string? DuplicateOf = null, string? ClosureDisposition = null);
 public sealed record L12BugAuditView(string Id, string? ActorId, string ActorName, string Action,
     string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt);
+public sealed class L12BugClosureValidationException(string code, string message) : ArgumentException(message)
+{
+    public string Code { get; } = code;
+}
 public sealed record L12AdminAuditView(string Id, string ActorId, string ActorName, string Category, string Action,
     string Target, string? FromValue, string? ToValue, string? Comment, DateTimeOffset CreatedAt,
     string? CorrelationId = null, string Outcome = "succeeded", string? Permission = null, string? Reason = null,
@@ -58,6 +94,9 @@ public sealed record L12EffectReviewView(string CardId, string? AbilityId, strin
 
 public sealed partial class L12PlatformStore
 {
+    private const string PublicDeckCodeAlphabet = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
+    private const int PublicDeckCodeLength = 12;
+
     private sealed class AccountRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -77,6 +116,7 @@ public sealed partial class L12PlatformStore
         public DateTimeOffset? EmailVerifiedAt { get; set; }
         public bool MustChangePassword { get; set; }
         public bool MustChangeUsername { get; set; }
+        public int SelfServiceUsernameChangeCount { get; set; }
         public bool Deleted { get; set; }
         public bool MusicEnabled { get; set; } = true;
         public double MusicVolume { get; set; } = 0.35;
@@ -84,6 +124,9 @@ public sealed partial class L12PlatformStore
         public double SfxVolume { get; set; } = 0.7;
         public string CardSize { get; set; } = "auto";
         public string Animation { get; set; } = "standard";
+        public string MobileLayout { get; set; } = "auto";
+        public string ResponseMode { get; set; } = L12GameEngine.DefaultResponseMode;
+        public string? ResponseModeOperationId { get; set; }
         public DateTimeOffset? DeletedAt { get; set; }
         public string? DeletedByAccountId { get; set; }
         public string? DeletedReason { get; set; }
@@ -107,6 +150,13 @@ public sealed partial class L12PlatformStore
         public string Priority { get; set; } = "normal";
         public string? Assignee { get; set; }
         public string? AdminNotes { get; set; }
+        public string? FixCommit { get; set; }
+        public string? RegressionTest { get; set; }
+        public string? DeployedVersion { get; set; }
+        public string? VerifiedBy { get; set; }
+        public DateTimeOffset? VerifiedAt { get; set; }
+        public string? DuplicateOf { get; set; }
+        public string? ClosureDisposition { get; set; }
         public L12BugDiagnosticView? Diagnostic { get; set; }
         public L12ClientConnectionDiagnosticView? ClientDiagnostic { get; set; }
         public L12ConnectionClaimDiagnosticView? ConnectionDiagnostic { get; set; }
@@ -164,6 +214,7 @@ public sealed partial class L12PlatformStore
         public long Version { get; set; }
         public string? PublishedVersionId { get; set; }
         public string? RollbackVersionId { get; set; }
+        public Dictionary<string, int> RuleItemSequences { get; set; } = new(StringComparer.Ordinal);
     }
 
     private sealed class EffectReviewRow
@@ -201,24 +252,38 @@ public sealed partial class L12PlatformStore
 
     private sealed class DeckRow
     {
+        public string PayloadHash { get; set; } = string.Empty;
+        public string BenchJson { get; set; } = "[]";
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public long Revision { get; set; } = 1;
+        public string? PublicationId { get; set; }
+        public int? PublicationVersion { get; set; }
         public string AccountId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string MasterId { get; set; } = string.Empty;
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public List<string> BenchIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> AlternateArtCopies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 
     private sealed class PublishedDeckRow
     {
+        public string PayloadHash { get; set; } = string.Empty;
+        public int Version { get; set; }
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string PublicCode { get; set; } = string.Empty;
         public string OwnerId { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string MasterId { get; set; } = string.Empty;
         public List<string> CardIds { get; set; } = [];
         public List<string> MoraleIds { get; set; } = [];
         public List<string> SpecialIds { get; set; } = [];
+        public Dictionary<string, string> AlternateArtSelections { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public Dictionary<string, List<string>> AlternateArtCopies { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         public List<string> LikedByAccountIds { get; set; } = [];
         public int Views { get; set; }
         public int Copies { get; set; }
@@ -249,6 +314,7 @@ public sealed partial class L12PlatformStore
         public List<AccountRow> Accounts { get; set; } = [];
         public List<SessionRow> Sessions { get; set; } = [];
         public List<DeckRow> Decks { get; set; } = [];
+        public Dictionary<string, CompactDeckPayloadFact> DeckPayloads { get; set; } = new(StringComparer.Ordinal);
         public List<PublishedDeckRow> PublishedDecks { get; set; } = [];
         public List<FriendRow> Friends { get; set; } = [];
         public List<BlockedAccountRow> BlockedAccounts { get; set; } = [];
@@ -259,9 +325,16 @@ public sealed partial class L12PlatformStore
         public List<ContentRow> ContentEntries { get; set; } = [];
         public List<ArticleRow> Articles { get; set; } = [];
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
+        public List<AlternateArtProductRow> AlternateArtProducts { get; set; } = [];
+        public List<AlternateArtRow> AlternateArts { get; set; } = [];
+        public List<AlternateArtGrantRow> AlternateArtGrants { get; set; } = [];
+        public List<AlternateArtAwardRuleRow> AlternateArtAwardRules { get; set; } = [];
+        public List<UsernameChangeRequestRow> UsernameChangeRequests { get; set; } = [];
         public List<SiteCategoryRow> SiteCategories { get; set; } = [];
         public List<EffectReviewRow> EffectReviews { get; set; } = [];
         public List<EffectPresentationOverrideRow> EffectPresentationOverrides { get; set; } = [];
+        public List<EffectWorkbenchRow> EffectWorkbenchDrafts { get; set; } = [];
+        public List<EffectWorkbenchVersionRow> EffectWorkbenchVersions { get; set; } = [];
         public List<AdminAuditRow> AdminAudit { get; set; } = [];
         public List<AdminCommandRow> AdminCommands { get; set; } = [];
         public List<AdminApprovalRow> AdminApprovals { get; set; } = [];
@@ -277,11 +350,18 @@ public sealed partial class L12PlatformStore
         public OperationsConfigRow? OperationsConfig { get; set; }
         public List<OperationsConfigVersionRow> OperationsConfigHistory { get; set; } = [];
         public RankedConfigRow? RankedConfig { get; set; }
+        public int RankedGradientVersion { get; set; }
+        public RankedPendingGradientRow? RankedPendingGradient { get; set; }
+        public int SeasonLifecycleMigrationVersion { get; set; }
+        public List<SeasonDefinitionRow> SeasonDefinitions { get; set; } = [];
+        public List<SeasonArchiveRow> SeasonArchives { get; set; } = [];
         public List<RankedProfileRow> RankedProfiles { get; set; } = [];
+        public List<RankedSeasonResetRepairRow> RankedSeasonResetRepairs { get; set; } = [];
         public List<RankedProfileHistoryRow> RankedProfileHistory { get; set; } = [];
         public List<RankedSettlementRow> RankedSettlements { get; set; } = [];
         public List<RankedBroadcastRow> RankedBroadcasts { get; set; } = [];
         public List<RankedBroadcastDeliveryRow> RankedBroadcastDeliveries { get; set; } = [];
+        public long RankedBroadcastGeneration { get; set; }
         public DateTimeOffset? RankedBroadcastDeliveryCutover { get; set; }
         public List<RankedMasterRecordRow> RankedMasterRecords { get; set; } = [];
         public List<string> RankedMasterRecordedMatchIds { get; set; } = [];
@@ -295,13 +375,99 @@ public sealed partial class L12PlatformStore
         public List<RankedIntegrityAppealRow> RankedIntegrityAppeals { get; set; } = [];
     }
 
+    private sealed class AlternateArtRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string ArtCode { get; set; } = string.Empty;
+        public string BaseCardId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public string MediaAssetId { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtProductRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string Name { get; set; } = string.Empty;
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtGrantRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AccountId { get; set; } = string.Empty;
+        public string AlternateArtId { get; set; } = string.Empty;
+        public string SourceKind { get; set; } = "manual";
+        public string SourceReference { get; set; } = string.Empty;
+        public string RecipientReason { get; set; } = string.Empty;
+        public string GrantedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset GrantedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? NotificationSeenAt { get; set; }
+        public DateTimeOffset? RevokedAt { get; set; }
+        public string? RevokedByAccountId { get; set; }
+    }
+
+    private sealed class AlternateArtAwardRuleRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AlternateArtId { get; set; } = string.Empty;
+        /// <summary>rank-reached / season-final / master-champion-season-final / event</summary>
+        public string Kind { get; set; } = string.Empty;
+        public string SeasonId { get; set; } = string.Empty;
+        public string EventId { get; set; } = string.Empty;
+        public string MasterId { get; set; } = string.Empty;
+        public int MinimumTierIndex { get; set; }
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class UsernameChangeRequestRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string AccountId { get; set; } = string.Empty;
+        public string CurrentUsername { get; set; } = string.Empty;
+        public string RequestedUsername { get; set; } = string.Empty;
+        public string Reason { get; set; } = string.Empty;
+        public string Status { get; set; } = "pending";
+        public string? ReviewedByAccountId { get; set; }
+        public string? ReviewNote { get; set; }
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset? ReviewedAt { get; set; }
+    }
+
     private readonly object _gate = new();
     private readonly string _path;
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
+    private readonly IReadOnlyDictionary<string, L12OfficialAlternateArtDefinition> _officialAlternateArts;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _officialCardProducts;
     private readonly IL12EmailSender _emailSender;
     private readonly bool _emailFeatureEnabled;
-    private DataFile _data;
+    private DataFile _state = null!;
+    private bool _rollbackViewUnavailable;
+    // A failed rollback must never publish the partially mutated object. This
+    // guard applies to every state-backed read/auth/write, not just persistence.
+    private DataFile _data
+    {
+        get => _rollbackViewUnavailable
+            ? throw new L12PlatformStorageUnavailableException("平台已提交状态不可恢复")
+            : _state;
+        set
+        {
+            if (_rollbackViewUnavailable)
+                throw new L12PlatformStorageUnavailableException("平台已提交状态不可恢复");
+            _state = value;
+        }
+    }
 
     public event Action<IReadOnlyList<string>>? SessionsRevoked;
 
@@ -314,21 +480,30 @@ public sealed partial class L12PlatformStore
         IL12MfaCredentialProtector? mfaCredentialProtector = null,
         IReadOnlyDictionary<string, L12CardDefinition>? officialCards = null,
         IL12EmailSender? emailSender = null,
-        bool? emailFeatureEnabled = null)
+        bool? emailFeatureEnabled = null,
+        IReadOnlyList<L12OfficialAlternateArtDefinition>? officialAlternateArts = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? officialCardProducts = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
+        _officialAlternateArts = (officialAlternateArts ?? []).ToDictionary(row => row.Id,
+            StringComparer.OrdinalIgnoreCase);
+        _officialCardProducts = officialCardProducts ??
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
         _emailSender = emailSender ?? L12SmtpEmailSender.FromEnvironment();
         _emailFeatureEnabled = emailFeatureEnabled ?? L12EmailFeature.EnabledFromEnvironment();
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         _databasePath = PlatformDatabasePath(path);
         _data = LoadTransactionalState();
+        PublishCommittedSessionActivity(PrepareCommittedSessionActivity(_data, _lastCommittedSnapshot));
         EnsureRootAdmin();
         EnsureUsernameModeration();
+        EnsureUsernameChangeState();
         EnsureOperationsState();
         EnsureRankedState();
+        EnsureSeasonLifecycleState();
         EnsureArticleState();
         EnsureSiteContentState();
     }
@@ -421,18 +596,20 @@ public sealed partial class L12PlatformStore
     }
 
     public bool IsSessionActive(string sessionId)
-    {
-        lock (_gate)
-        {
-            var now = DateTimeOffset.UtcNow;
-            return _data.Sessions.Any(row => row.Id == sessionId && row.RevokedAt is null && row.ExpiresAt > now
-                && _data.Accounts.Any(account => account.Id == row.AccountId && !account.Disabled && !account.Deleted));
-        }
-    }
+        => ReadCommittedSessionActivity(sessionId);
 
     public bool AccountExists(string accountId)
     {
         lock (_gate) return _data.Accounts.Any(row => row.Id == accountId);
+    }
+
+    public IReadOnlyCollection<string> StatisticsExcludedAccountIds()
+    {
+        lock (_gate)
+        {
+            return _data.Accounts.Where(row => row.Disabled || row.Deleted)
+                .Select(row => row.Id).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        }
     }
 
     public IReadOnlyList<L12SessionView> Sessions(string accountId, string? currentSessionId = null)
@@ -454,6 +631,10 @@ public sealed partial class L12PlatformStore
     public L12SessionRevocationResult RevokeOwnSessions(L12AuthenticatedSession actor,
         L12AdminAuditContext? context = null, bool dryRun = false)
         => RevokeSessionsCore(actor.Account, actor.Account.Id, context, dryRun);
+
+    public L12SessionRevocationResult RevokeOtherOwnSessions(L12AuthenticatedSession actor,
+        L12AdminAuditContext? context = null, bool dryRun = false)
+        => RevokeSessionsCore(actor.Account, actor.Account.Id, context, dryRun, actor.SessionId);
 
     public L12SessionRevocationResult RevokeAccountSession(L12AccountView actor, string accountId, string sessionId,
         L12AdminAuditContext? context = null, bool dryRun = false)
@@ -554,9 +735,40 @@ public sealed partial class L12PlatformStore
             row.SfxVolume = Math.Clamp(value.SfxVolume, 0, 1);
             row.CardSize = value.CardSize is "small" or "medium" or "large" ? value.CardSize : "auto";
             row.Animation = value.Animation is "off" or "fast" ? value.Animation : "standard";
+            row.MobileLayout = value.MobileLayout is "on" or "off" ? value.MobileLayout : "auto";
             Save();
             return new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
-                row.CardSize, row.Animation);
+                row.CardSize, row.Animation, row.MobileLayout);
+        }
+    }
+
+    public string ResponsePreference(string accountId)
+    {
+        lock (_gate)
+        {
+            var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Deleted && !item.Disabled);
+            return row is not null && L12GameEngine.IsValidResponseMode(row.ResponseMode)
+                ? row.ResponseMode : L12GameEngine.DefaultResponseMode;
+        }
+    }
+
+    internal string ApplyResponsePreference(string accountId, string mode, string operationId)
+    {
+        if (!L12GameEngine.IsValidResponseMode(mode) || string.IsNullOrWhiteSpace(operationId))
+            throw new ArgumentException("响应设置投递载荷无效");
+        lock (_gate)
+        {
+            var row = _data.Accounts.First(item => item.Id == accountId && !item.Deleted && !item.Disabled);
+            if (row.ResponseModeOperationId == operationId)
+            {
+                if (!string.Equals(row.ResponseMode, mode, StringComparison.Ordinal))
+                    throw new InvalidOperationException("响应设置幂等键与既有载荷冲突");
+                return row.ResponseMode;
+            }
+            row.ResponseMode = mode;
+            row.ResponseModeOperationId = operationId;
+            Save();
+            return row.ResponseMode;
         }
     }
 
@@ -696,8 +908,15 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12AccountDeckView> Decks(string accountId)
     {
-        lock (_gate) return _data.Decks.Where(row => row.AccountId == accountId)
-            .OrderByDescending(row => row.UpdatedAt).Select(ToView).ToArray();
+        lock (_gate)
+        {
+            var data = _data;
+            var rows = data.Decks.Where(row => row.AccountId == accountId)
+                .OrderByDescending(row => row.UpdatedAt).ToArray();
+            PreflightRuntimeDeckProjection(data, rows.Select(row =>
+                (CaptureDeckPayload(data, row), (string?)DeckBenchJson(row))));
+            return rows.Select(ToView).ToArray();
+        }
     }
 
     public L12AccountDeckView UpsertDeck(string accountId, L12PresetDeckDefinition deck)
@@ -705,20 +924,89 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
-                && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
+                && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal));
+            var created = row is null;
+            var expectedRevision = row?.Revision;
             if (row is null)
             {
                 row = new DeckRow { AccountId = accountId, Name = deck.Name };
                 _data.Decks.Add(row);
             }
-            row.Name = deck.Name;
-            row.MasterId = deck.MasterId;
-            row.CardIds = deck.CardIds.ToList();
-            row.MoraleIds = deck.MoraleIds.ToList();
-            row.SpecialIds = deck.SpecialIds.ToList();
-            row.UpdatedAt = DateTimeOffset.UtcNow;
-            Save();
+            else row.Revision++;
+            ApplyDeck(row, accountId, deck);
+            try
+            {
+                if (created) SavePrivateDeckCreate(row);
+                else SavePrivateDeckUpdate(row, expectedRevision!.Value);
+            }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                throw new L12PlatformStorageConflictException(error);
+            }
             return ToView(row);
+        }
+    }
+
+    public L12DeckMutationResult CreateDeck(string accountId, L12PresetDeckDefinition deck)
+    {
+        lock (_gate)
+        {
+            if (_data.Decks.Any(item => item.AccountId == accountId
+                    && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
+                return new("name_conflict");
+            var row = new DeckRow { AccountId = accountId, Name = deck.Name, Revision = 1 };
+            ApplyDeck(row, accountId, deck);
+            _data.Decks.Add(row);
+            try { SavePrivateDeckCreate(row); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok", ToView(row));
+        }
+    }
+
+    public L12DeckMutationResult UpdateDeck(string accountId, string deckId, long expectedRevision,
+        L12PresetDeckDefinition deck)
+    {
+        lock (_gate)
+        {
+            var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, deckId, StringComparison.Ordinal));
+            if (row is null) return new("not_found");
+            if (row.Revision != expectedRevision) return new("revision_conflict", CurrentRevision: row.Revision);
+            if (_data.Decks.Any(item => item.AccountId == accountId && item != row
+                    && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
+                return new("name_conflict");
+            row.Revision++;
+            ApplyDeck(row, accountId, deck);
+            try { SavePrivateDeckUpdate(row, expectedRevision); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok", ToView(row));
+        }
+    }
+
+    public L12DeckMutationResult DeleteDeck(string accountId, string deckId, long expectedRevision)
+    {
+        lock (_gate)
+        {
+            var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
+                && string.Equals(item.Id, deckId, StringComparison.Ordinal));
+            if (row is null) return new("not_found");
+            if (row.Revision != expectedRevision) return new("revision_conflict", CurrentRevision: row.Revision);
+            _data.Decks.Remove(row);
+            try { SavePrivateDeckDelete(accountId, deckId, expectedRevision); }
+            catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
+            catch (L12PrivateDeckMutationConflictException error)
+            {
+                return new(error.Status, CurrentRevision: error.CurrentRevision);
+            }
+            return new("ok");
         }
     }
 
@@ -726,11 +1014,37 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var removed = _data.Decks.RemoveAll(row => row.AccountId == accountId
-                && string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase)) > 0;
-            if (removed) Save();
-            return removed;
+            var row = _data.Decks.SingleOrDefault(item => item.AccountId == accountId
+                && string.Equals(DeckNameKey(item.Name), DeckNameKey(name), StringComparison.Ordinal));
+            if (row is not null)
+            {
+                _data.Decks.Remove(row);
+                try { SavePrivateDeckDelete(accountId, row.Id, row.Revision); }
+                catch (L12PrivateDeckMutationConflictException error)
+                {
+                    throw new L12PlatformStorageConflictException(error);
+                }
+            }
+            return row is not null;
         }
+    }
+
+    private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck)
+    {
+        row.PayloadHash = string.Empty;
+        row.BenchJson = "[]";
+        row.Name = deck.Name;
+        row.MasterId = deck.MasterId;
+        row.CardIds = deck.CardIds.ToList();
+        row.MoraleIds = deck.MoraleIds.ToList();
+        row.SpecialIds = deck.SpecialIds.ToList();
+        row.BenchIds = deck.BenchIds.ToList();
+        var binding = ResolvePublicDeckBinding(accountId, deck, deck.PublicationId, deck.PublicationVersion);
+        row.PublicationId = binding?.PublicationId;
+        row.PublicationVersion = binding?.Version;
+        row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
+        row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
+        row.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
     public bool SetRole(L12AccountView actor, string accountId, string role, L12AdminAuditContext? context = null)
@@ -783,30 +1097,93 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12PublishedDeckView> PublishedDecks(string? viewerAccountId)
     {
-        lock (_gate) return _data.PublishedDecks
-            .OrderByDescending(row => row.UpdatedAt)
-            .Select(row => ToView(row, viewerAccountId)).ToArray();
+        lock (_gate)
+        {
+            var data = _data;
+            var rows = data.PublishedDecks.OrderByDescending(row => row.UpdatedAt).ToArray();
+            PreflightRuntimeDeckProjection(data, rows.Select(row =>
+                (CaptureDeckPayload(data, row), (string?)null)));
+            return rows.Select(row => ToView(row, viewerAccountId)).ToArray();
+        }
+    }
+
+    private PublishedDeckRow? FindPublishedDeck(string? reference)
+    {
+        var value = reference?.Trim();
+        if (string.IsNullOrEmpty(value)) return null;
+        var byId = _data.PublishedDecks.FirstOrDefault(item => item.Id == value);
+        if (byId is not null) return byId;
+        var code = value.Replace("-", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        return code.Length == PublicDeckCodeLength && code.All(PublicDeckCodeAlphabet.Contains)
+            ? _data.PublishedDecks.FirstOrDefault(item => string.Equals(item.PublicCode, code,
+                StringComparison.OrdinalIgnoreCase))
+            : null;
+    }
+
+    public L12PublishedDeckView? PublishedDeckByPublicCode(string publicCode, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var code = publicCode.Trim().Replace("-", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+            if (code.Length != PublicDeckCodeLength || !code.All(PublicDeckCodeAlphabet.Contains)) return null;
+            var row = _data.PublishedDecks.FirstOrDefault(item => string.Equals(item.PublicCode, code,
+                StringComparison.OrdinalIgnoreCase));
+            return row is null ? null : ToView(row, viewerAccountId);
+        }
+    }
+
+    private static string CreateUniquePublicDeckCode(IEnumerable<string> existing)
+    {
+        var used = existing.Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.ToUpperInvariant()).ToHashSet(StringComparer.Ordinal);
+        for (var attempt = 0; attempt < 64; attempt++)
+        {
+            var code = string.Create(PublicDeckCodeLength, 0, static (span, _) =>
+            {
+                for (var index = 0; index < span.Length; index++)
+                    span[index] = PublicDeckCodeAlphabet[RandomNumberGenerator.GetInt32(PublicDeckCodeAlphabet.Length)];
+            });
+            if (used.Add(code)) return code;
+        }
+        throw new InvalidOperationException("无法分配不重复的公开牌库短码");
+    }
+
+    public L12PublishedDeckView? PublishedDeck(string publicationId, string? viewerAccountId)
+    {
+        lock (_gate)
+        {
+            var row = FindPublishedDeck(publicationId);
+            return row is null ? null : ToView(row, viewerAccountId);
+        }
     }
 
     public L12PublishedDeckView? PublishDeck(string accountId, L12PresetDeckDefinition deck, string? publicationId)
     {
         lock (_gate)
         {
-            var row = string.IsNullOrWhiteSpace(publicationId) ? null
-                : _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId && item.OwnerId == accountId);
+            var row = string.IsNullOrWhiteSpace(publicationId) ? null : FindPublishedDeck(publicationId);
+            if (row is not null && row.OwnerId != accountId) row = null;
             if (!string.IsNullOrWhiteSpace(publicationId) && row is null) return null;
             row ??= _data.PublishedDecks.FirstOrDefault(item => item.OwnerId == accountId
                 && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
             if (row is null)
             {
-                row = new PublishedDeckRow { OwnerId = accountId, CreatedAt = DateTimeOffset.UtcNow };
+                row = new PublishedDeckRow
+                {
+                    OwnerId = accountId,
+                    PublicCode = CreateUniquePublicDeckCode(_data.PublishedDecks.Select(item => item.PublicCode)),
+                    CreatedAt = DateTimeOffset.UtcNow,
+                };
                 _data.PublishedDecks.Add(row);
             }
+            row.PayloadHash = string.Empty;
             row.Name = deck.Name;
             row.MasterId = deck.MasterId;
             row.CardIds = deck.CardIds.ToList();
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
+            row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
+            row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row, accountId);
@@ -817,44 +1194,53 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
-            var removed = _data.PublishedDecks.RemoveAll(row => row.Id == publicationId && row.OwnerId == accountId) > 0;
-            if (removed) Save();
+            var target = FindPublishedDeck(publicationId);
+            var removed = target is not null && target.OwnerId == accountId && _data.PublishedDecks.Remove(target);
+            if (removed)
+            {
+                Save();
+            }
             return removed;
         }
     }
 
     public L12PublishedDeckView? TogglePublishedDeckLike(string accountId, string publicationId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            if (!row.LikedByAccountIds.Remove(accountId)) row.LikedByAccountIds.Add(accountId);
-            Save();
+            var liked = ToggleStoredPublishedDeckLike(accountId, row.Id);
+            if (liked)
+            {
+                if (!row.LikedByAccountIds.Contains(accountId)) row.LikedByAccountIds.Add(accountId);
+            }
+            else row.LikedByAccountIds.Remove(accountId);
             return ToView(row, accountId);
         }
     }
 
     public L12PublishedDeckView? RecordPublishedDeckCopy(string publicationId, string? viewerAccountId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            row.Copies++;
-            Save();
+            row.Copies = IncrementStoredPublishedDeckCounter(row.Id, "copies");
             return ToView(row, viewerAccountId);
         }
     }
 
     public L12PublishedDeckView? RecordPublishedDeckView(string publicationId, string? viewerAccountId)
     {
+        using var deployment = EnterDeploymentMutation();
         lock (_gate)
         {
-            var row = _data.PublishedDecks.FirstOrDefault(item => item.Id == publicationId);
+            var row = FindPublishedDeck(publicationId);
             if (row is null) return null;
-            if (row.Views < int.MaxValue) row.Views++;
-            Save();
+            row.Views = IncrementStoredPublishedDeckCounter(row.Id, "views");
             return ToView(row, viewerAccountId);
         }
     }
@@ -903,18 +1289,41 @@ public sealed partial class L12PlatformStore
     }
 
     public L12BugReportView? UpdateBug(L12AccountView actor, string id, string? status, string? priority,
-        string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null)
+        string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null,
+        string? fixCommit = null, string? regressionTest = null, string? deployedVersion = null,
+        string? duplicateOf = null, string? closureDisposition = null, bool validateOnly = false)
     {
         lock (_gate)
         {
             var row = _data.BugReports.FirstOrDefault(item => item.Id == id);
             if (row is null) return null;
+            var nextStatus = IsBugStatus(status) ? status! : row.Status;
+            var nextFixCommit = NormalizeBugEvidence(fixCommit, row.FixCommit);
+            var nextRegressionTest = NormalizeBugEvidence(regressionTest, row.RegressionTest);
+            var nextDeployedVersion = NormalizeBugEvidence(deployedVersion, row.DeployedVersion);
+            var nextDuplicateOf = NormalizeBugEvidence(duplicateOf, row.DuplicateOf);
+            var nextClosureDisposition = NormalizeBugEvidence(closureDisposition, row.ClosureDisposition);
+            var wasTerminal = IsTerminalBugStatus(row.Status);
+            var willBeTerminal = IsTerminalBugStatus(nextStatus);
+            var enteringClosure = willBeTerminal
+                && (!wasTerminal || !string.Equals(row.ClosureDisposition, nextClosureDisposition,
+                    StringComparison.Ordinal));
+
+            if (!willBeTerminal && closureDisposition is not null
+                && !string.IsNullOrWhiteSpace(nextClosureDisposition))
+                throw new L12BugClosureValidationException("bug_closure_disposition_without_closure",
+                    "只有关闭反馈时才能选择关闭类型。");
+            if (willBeTerminal && (!wasTerminal || row.ClosureDisposition is not null
+                    || closureDisposition is not null))
+                ValidateBugClosure(row, nextClosureDisposition, nextFixCommit, nextRegressionTest,
+                    nextDeployedVersion, nextDuplicateOf, comment, enteringClosure);
+            if (validateOnly) return ToView(row);
+
             var changed = false;
-            if (status is "new" or "confirmed" or "in-progress" or "resolved" or "closed"
-                && row.Status != status)
+            if (IsBugStatus(status) && row.Status != status)
             {
                 row.History.Add(NewBugAudit(actor, "status", row.Status, status, null));
-                row.Status = status;
+                row.Status = status!;
                 changed = true;
             }
             if (priority is "low" or "normal" or "high" or "critical"
@@ -944,6 +1353,35 @@ public sealed partial class L12PlatformStore
                     comment.Trim()[..Math.Min(comment.Trim().Length, 2000)]));
                 changed = true;
             }
+            changed |= UpdateBugEvidence(row, actor, "fix-commit", row.FixCommit, fixCommit, value => row.FixCommit = value);
+            changed |= UpdateBugEvidence(row, actor, "regression-test", row.RegressionTest, regressionTest, value => row.RegressionTest = value);
+            changed |= UpdateBugEvidence(row, actor, "deployed-version", row.DeployedVersion, deployedVersion, value => row.DeployedVersion = value);
+            changed |= UpdateBugEvidence(row, actor, "duplicate-of", row.DuplicateOf, duplicateOf, value => row.DuplicateOf = value);
+            var appliedDisposition = willBeTerminal ? nextClosureDisposition : null;
+            var requestedDisposition = appliedDisposition ?? (row.ClosureDisposition is null ? null : string.Empty);
+            changed |= UpdateBugEvidence(row, actor, "closure-disposition", row.ClosureDisposition,
+                requestedDisposition, value => row.ClosureDisposition = value);
+            if (enteringClosure && string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
+            {
+                var verifiedAt = DateTimeOffset.UtcNow;
+                changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, actor.Username,
+                    value => row.VerifiedBy = value);
+                row.History.Add(NewBugAudit(actor, "verified-at", row.VerifiedAt?.ToString("O"),
+                    verifiedAt.ToString("O"), null));
+                row.VerifiedAt = verifiedAt;
+                changed = true;
+            }
+            else if (!willBeTerminal || !string.Equals(appliedDisposition, "fixed_verified", StringComparison.Ordinal))
+            {
+                changed |= UpdateBugEvidence(row, actor, "verified-by", row.VerifiedBy, string.Empty,
+                    value => row.VerifiedBy = value);
+                if (row.VerifiedAt is not null)
+                {
+                    row.History.Add(NewBugAudit(actor, "verified-at", row.VerifiedAt.Value.ToString("O"), null, null));
+                    row.VerifiedAt = null;
+                    changed = true;
+                }
+            }
             if (!changed) return ToView(row);
             row.UpdatedAt = DateTimeOffset.UtcNow;
             AddAdminAudit(actor, "bug", "update", row.Id, null, row.Status,
@@ -953,12 +1391,75 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    private void ValidateBugClosure(BugRow row, string? disposition, string? fixCommit,
+        string? regressionTest, string? deployedVersion, string? duplicateOf, string? comment,
+        bool enteringClosure)
+    {
+        if (disposition is not ("fixed_verified" or "duplicate" or "rejected"))
+            throw new L12BugClosureValidationException("bug_closure_disposition_required",
+                "请选择关闭类型：修复已复测、重复反馈或不成立或证据不足。");
+        if (disposition == "fixed_verified")
+        {
+            if (string.IsNullOrWhiteSpace(fixCommit) || string.IsNullOrWhiteSpace(regressionTest)
+                || string.IsNullOrWhiteSpace(deployedVersion))
+                throw new L12BugClosureValidationException("bug_closure_evidence_required",
+                    "修复已复测需要填写修复提交、命名回归测试和当前已上线版本。");
+            if (!string.IsNullOrWhiteSpace(duplicateOf))
+                throw new L12BugClosureValidationException("bug_closure_evidence_conflict",
+                    "修复已复测不能同时标记为重复反馈。");
+            return;
+        }
+        if (disposition == "duplicate")
+        {
+            if (string.IsNullOrWhiteSpace(duplicateOf)
+                || string.Equals(duplicateOf, row.Id, StringComparison.OrdinalIgnoreCase)
+                || !_data.BugReports.Any(item => string.Equals(item.Id, duplicateOf,
+                    StringComparison.OrdinalIgnoreCase)))
+                throw new L12BugClosureValidationException("bug_duplicate_target_invalid",
+                    "重复反馈必须关联到另一个真实存在的 Bug 编号。");
+            return;
+        }
+        if (!string.IsNullOrWhiteSpace(duplicateOf))
+            throw new L12BugClosureValidationException("bug_closure_evidence_conflict",
+                "不成立或证据不足不能同时标记为重复反馈。");
+        if (enteringClosure && string.IsNullOrWhiteSpace(comment))
+            throw new L12BugClosureValidationException("bug_closure_reason_required",
+                "请用一句话说明不成立或证据不足的原因。");
+    }
+
+    private static bool IsBugStatus(string? status)
+        => status is "new" or "decision" or "implementation" or "retest" or "deploy" or "closed"
+            or "confirmed" or "in-progress" or "resolved";
+
+    private static bool IsTerminalBugStatus(string? status) => status is "closed" or "resolved";
+
+    private static string? NormalizeBugEvidence(string? requested, string? current)
+    {
+        if (requested is null) return current;
+        var trimmed = requested.Trim();
+        return trimmed.Length == 0 ? null : trimmed[..Math.Min(trimmed.Length, 500)];
+    }
+
+    private static bool UpdateBugEvidence(BugRow row, L12AccountView actor, string action,
+        string? current, string? requested, Action<string?> apply)
+    {
+        if (requested is null) return false;
+        var next = string.IsNullOrWhiteSpace(requested) ? null : requested.Trim()[..Math.Min(requested.Trim().Length, 500)];
+        if (string.Equals(current, next, StringComparison.Ordinal)) return false;
+        row.History.Add(NewBugAudit(actor, action, current, next, null));
+        apply(next);
+        return true;
+    }
+
     public string GetContent(string key, string fallback = "")
     {
         lock (_gate)
         {
             var entry = _data.ContentEntries.FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase));
-            return entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
+            var stored = entry?.PublishedValue ?? _data.Content.GetValueOrDefault(key, fallback);
+            var projected = ProjectEffectiveRuleContent(key, stored, DateTimeOffset.UtcNow);
+            return string.Equals(key, "rules.center", StringComparison.OrdinalIgnoreCase)
+                ? HydrateRuleCenterMedia(projected) : projected;
         }
     }
 
@@ -966,6 +1467,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            value = NormalizeRuleRulingProducts(key, value);
             _data.Content[key] = value;
             var entry = EnsureContentEntry(key);
             entry.DraftValue = value;
@@ -989,12 +1491,16 @@ public sealed partial class L12PlatformStore
     }
 
     public L12ContentEntryView SaveContentDraft(L12AccountView actor, string key, string value,
-        L12AdminAuditContext? context = null)
+        L12AdminAuditContext? context = null, long? expectedVersion = null)
     {
         lock (_gate)
         {
             if (!IsContentKeyAllowed(key)) throw new ArgumentException($"内容键不在白名单中：{key}");
             var canonical = ContentKeys().First(item => string.Equals(item, key.Trim(), StringComparison.OrdinalIgnoreCase));
+            var existing = FindContentEntry(canonical);
+            if (expectedVersion.HasValue && expectedVersion.Value != (existing?.Version ?? 0))
+                throw new L12ContentStateConflictException("内容草稿已被其他管理员修改，请刷新后重试");
+            value = NormalizeRuleRulingProducts(canonical, value);
             ValidateSiteContentValue(canonical, value, false);
             var row = EnsureContentEntry(canonical);
             var previous = row.DraftValue;
@@ -1293,7 +1799,7 @@ public sealed partial class L12PlatformStore
     }
 
     private L12SessionRevocationResult RevokeSessionsCore(L12AccountView actor, string accountId,
-        L12AdminAuditContext? context, bool dryRun)
+        L12AdminAuditContext? context, bool dryRun, string? excludedSessionId = null)
     {
         L12SessionRevocationResult result;
         lock (_gate)
@@ -1313,6 +1819,7 @@ public sealed partial class L12PlatformStore
 
             var now = DateTimeOffset.UtcNow;
             var active = _data.Sessions.Where(row => row.AccountId == accountId
+                && (excludedSessionId is null || row.Id != excludedSessionId)
                 && row.RevokedAt is null && row.ExpiresAt > now).ToArray();
             if (dryRun)
             {
@@ -1324,7 +1831,8 @@ public sealed partial class L12PlatformStore
 
             foreach (var session in active) session.RevokedAt = now;
             var revokedIds = active.Select(row => row.Id).ToArray();
-            AddAdminAudit(actor, "session", "revoke-all", account.Username, active.Length.ToString(), "0",
+            var action = excludedSessionId is null ? "revoke-all" : "revoke-others";
+            AddAdminAudit(actor, "session", action, account.Username, active.Length.ToString(), "0",
                 active.Length == 0 ? "already-revoked" : context?.Reason,
                 active.Length == 0 ? audit with { Reason = "already-revoked" } : audit);
             Save();
@@ -1337,8 +1845,7 @@ public sealed partial class L12PlatformStore
     private void NotifySessionsRevoked(IReadOnlyList<string> sessionIds)
     {
         if (sessionIds.Count == 0) return;
-        try { SessionsRevoked?.Invoke(sessionIds); }
-        catch { }
+        if (!DeferSessionRevocations(sessionIds)) DispatchCommittedSessionRevocations(sessionIds);
     }
 
     private void PruneSessions(DateTimeOffset now)
@@ -1378,7 +1885,7 @@ public sealed partial class L12PlatformStore
         row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
         row.MustChangePassword, row.MustChangeUsername, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
         new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
-            row.CardSize, row.Animation));
+            row.CardSize, row.Animation, row.MobileLayout));
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
         var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);
@@ -1392,22 +1899,34 @@ public sealed partial class L12PlatformStore
     private FriendRow? FindFriendRow(string firstAccountId, string secondAccountId)
         => _data.Friends.FirstOrDefault(row => (row.RequesterId == firstAccountId && row.AddresseeId == secondAccountId)
             || (row.RequesterId == secondAccountId && row.AddresseeId == firstAccountId));
-    private static L12AccountDeckView ToView(DeckRow row) => new(row.Name, row.MasterId, row.CardIds.ToArray(),
-        row.MoraleIds.ToArray(), row.SpecialIds.ToArray(), row.UpdatedAt);
+    private L12AccountDeckView ToView(DeckRow row)
+    {
+        var payload = ExpandRuntimeDeckPayload(_data, CaptureDeckPayload(_data, row), DeckBenchJson(row));
+        return new(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards, payload.SpecialCards, row.UpdatedAt,
+            new Dictionary<string, string>(row.AlternateArtSelections ?? [], StringComparer.OrdinalIgnoreCase),
+            (row.AlternateArtCopies ?? []).ToDictionary(item => item.Key,
+                item => (IReadOnlyList<string>)item.Value.ToArray(), StringComparer.OrdinalIgnoreCase),
+            ExpandCards(DeckBenchJson(row)), row.PublicationId, row.PublicationVersion, row.Id, row.Revision);
+    }
     private L12PublishedDeckView ToView(PublishedDeckRow row, string? viewerAccountId)
     {
         var owner = _data.Accounts.FirstOrDefault(account => account.Id == row.OwnerId);
         var author = owner is null ? "已注销玩家" : PublicUsername(owner);
-        var deck = new L12AccountDeckView(row.Name, row.MasterId, row.CardIds.ToArray(), row.MoraleIds.ToArray(),
-            row.SpecialIds.ToArray(), row.UpdatedAt);
-        return new L12PublishedDeckView(row.Id, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
+        var payload = ExpandRuntimeDeckPayload(_data, CaptureDeckPayload(_data, row));
+        var deck = new L12AccountDeckView(row.Name, row.MasterId, payload.MainCards, payload.MoraleCards,
+            payload.SpecialCards, row.UpdatedAt,
+            PublicationId: viewerAccountId == row.OwnerId ? row.Id : null,
+            PublicationVersion: viewerAccountId == row.OwnerId ? row.Version : null);
+        return new L12PublishedDeckView(row.Id, row.PublicCode, row.OwnerId, author, deck, row.Views, row.LikedByAccountIds.Count, row.Copies,
             viewerAccountId is not null && row.LikedByAccountIds.Contains(viewerAccountId), row.CreatedAt, row.UpdatedAt);
     }
     private static L12BugReportView ToView(BugRow row) => new(row.Id, row.ReporterId, row.ReporterName, row.Title, row.Description,
         row.Page, row.RoomCode, row.MatchId, row.Version, row.Status, row.Priority, row.Assignee, row.AdminNotes,
         row.History.OrderByDescending(item => item.CreatedAt).Select(ToView).ToArray(), row.CreatedAt, row.UpdatedAt,
         row.Diagnostic, row.ClientVersion ?? row.Version, row.ServerVersion ?? "legacy-unknown",
-        row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic);
+        row.EngineVersion ?? "legacy-unknown", row.ClientDiagnostic, row.ConnectionDiagnostic, row.FixCommit,
+        row.RegressionTest, row.DeployedVersion, row.VerifiedBy, row.VerifiedAt, row.DuplicateOf,
+        row.ClosureDisposition);
 
     private static L12ClientConnectionDiagnosticView? NormalizeClientDiagnostic(
         L12ClientConnectionDiagnosticView? value, string page, string? roomCode, string? matchId)

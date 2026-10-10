@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-09-30-tournament-ranking-explanation",
+  "date": "2026-09-30",
+  "audience": "players",
+  "title": "赛事排名规则说明补全",
+  "changes": [
+    {
+      "category": "tournaments",
+      "text": "瑞士轮赛事的排名与规则页面现在完整说明胜场、对手胜场和、对手的对手胜场和、最近直接交锋、种子及最终稳定顺序；轮空计胜但不产生对手。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/TournamentDetailPage.vue"
+      ]
+    }
+  ]
+}

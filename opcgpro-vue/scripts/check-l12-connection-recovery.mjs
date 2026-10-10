@@ -99,6 +99,7 @@ class FakeWebSocket {
 function installBrowserEnvironment(initialStorage = {}) {
   const timers = new FakeTimers()
   const storage = new MemoryStorage(initialStorage)
+  const events = []
   globalThis.localStorage = storage
   globalThis.location = { protocol: 'https:', host: 'legion-12.com', hostname: 'legion-12.com' }
   globalThis.window = {
@@ -108,7 +109,7 @@ function installBrowserEnvironment(initialStorage = {}) {
     clearInterval: timers.clearInterval,
     addEventListener() {},
     removeEventListener() {},
-    dispatchEvent() {},
+    dispatchEvent(event) { events.push(event) },
   }
   globalThis.CustomEvent = class { constructor(type, options) { this.type = type; this.detail = options?.detail } }
   globalThis.__viteEnv = {}
@@ -116,7 +117,7 @@ function installBrowserEnvironment(initialStorage = {}) {
   globalThis.__l12NetState = { endpoint: 'wss://legion-12.com/ws', nickname: '' }
   FakeWebSocket.instances = []
   globalThis.WebSocket = FakeWebSocket
-  return { timers, storage }
+  return { timers, storage, events }
 }
 
 async function flushPromises(turns = 12) {
@@ -146,6 +147,8 @@ async function importJavaScript(source, label) {
 
 async function loadPlatformModule() {
   const filename = join(sourceRoot, 'platform.ts')
+  const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
+  const reliabilitySource = compile(readFileSync(reliabilityFilename, 'utf8'), reliabilityFilename)
   let source = readFileSync(filename, 'utf8')
   source = source
     .replace("import { computed, reactive } from 'vue'", `
@@ -156,6 +159,18 @@ async function loadPlatformModule() {
       const l12State = globalThis.__l12NetState
       const disconnect = () => { globalThis.__l12DisconnectCalls += 1 }
     `)
+    .replace("import { endpointHttpBase } from './deploymentBase'", `
+      const endpointHttpBase = endpoint => {
+        const url = new URL(endpoint)
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
+        return url.toString().replace(/\\/$/, '')
+      }
+    `)
+  source = source.replace(
+    "import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'",
+    reliabilitySource,
+  )
   return importJavaScript(compile(source, filename), 'l12-platform-recovery-test')
 }
 
@@ -171,6 +186,15 @@ async function loadNetModule() {
         dispose: () => {},
       })
     `)
+    .replace("import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'", `
+      const deploymentWebSocketPath = () => '/ws'
+      const endpointHttpBase = endpoint => {
+        const url = new URL(endpoint)
+        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
+        return url.toString().replace(/\\/$/, '')
+      }
+    `)
     .replaceAll('import.meta.env.VITE_WS_URL', 'globalThis.__viteEnv.VITE_WS_URL')
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')
 }
@@ -183,6 +207,7 @@ async function loadRouteGuard(platform) {
   globalThis.__l12Guard = null
   await importJavaScript(compile(`
     const { canAccessAdmin, platformState, authState, refreshCurrentAccount } = globalThis.__l12GuardPlatform
+    const beginRouteNavigation = () => {}
     const router = { beforeEach: guard => { globalThis.__l12Guard = guard } }
     ${body}
   `, filename), 'l12-route-guard')
@@ -399,7 +424,7 @@ const tests = [
       () => response(200, account),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /simulated offline network/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     assert.equal(platform.authState.initialized, true)
     assert.equal(platform.authState.verified, false)
     assert.equal(storage.getItem('l12-auth-token'), 'retry-token', 'a network failure must preserve the retryable token')
@@ -419,7 +444,7 @@ const tests = [
       () => response(200, account),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /first request failed/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     await platform.initializeAuth()
     assert.equal(calls.length, 2, 'initialized=false must not be the only path that can verify a retained token')
     assert.equal(platform.authState.verified, true)
@@ -472,7 +497,7 @@ const tests = [
       () => response(401, { message: 'expired' }),
     ])
     const platform = await loadPlatformModule()
-    await assert.rejects(platform.initializeAuth(), /temporary network failure/)
+    await assert.rejects(platform.initializeAuth(), error => error.code === 'network_error')
     await timers.advance(platform.AUTH_REFRESH_RETRY_BASE_MS)
     assert.equal(storage.getItem('l12-auth-token'), null)
     assert.equal(platform.authState.verified, false)
@@ -720,6 +745,50 @@ const tests = [
       changes: [{ path: ['state', 'revision'], value: 6, remove: false }] })
     assert.equal(net.l12State.game.revision, 5)
     assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, syncBefore + 1)
+    net.disconnect()
+  }],
+
+  ['resource revisions reject stale messages and a new server epoch accepts a lower revision', async () => {
+    const { events } = installBrowserEnvironment({ 'l12-auth-token': 'resource-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'resource-session', accountId: 'account-1', name: '测试玩家', connectionGeneration: 91 })
+    socket.receive({ type: 'resourceVersions', epoch: 'epoch-a', revisions: { friends: 5, presence: 2, rankedIntegrity: 1,
+      alternateArtNotifications: 3, operationsPolicy: 4 } })
+    socket.receive({ type: 'presenceSnapshot', epoch: 'epoch-a', revision: 2,
+      items: [{ accountId: 'account-1', username: '测试玩家', online: true }] })
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-a', revision: 6 })
+    const friendEvents = () => events.filter(event => event.type === 'l12-resource-friends').length
+    const afterCurrent = friendEvents()
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-a', revision: 5 })
+    socket.receive({ type: 'presenceSnapshot', epoch: 'epoch-a', revision: 1, items: [] })
+    assert.equal(friendEvents(), afterCurrent, 'a stale resource event must not trigger a read')
+    assert.equal(net.l12State.presence.length, 1, 'an older presence snapshot must not erase confirmed state')
+    socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-b', revision: 1 })
+    assert.equal(friendEvents(), afterCurrent + 1, 'a restarted server epoch must accept its lower revision')
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 91 })
+    await connected
+    net.disconnect()
+  }],
+
+  ['resource fallback stays silent online and starts only after the WebSocket is unavailable for 60 seconds', async () => {
+    const { timers, events } = installBrowserEnvironment({ 'l12-auth-token': 'fallback-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 92)
+    await connected
+    await timers.advance(50_000)
+    const fallbackEvents = () => events.filter(event => event.type === 'l12-resource-changed' && event.detail?.fallback).length
+    assert.equal(fallbackEvents(), 0, 'online steady state must not poll HTTP resources')
+    socket.emitClose(1006, 'network unavailable')
+    await timers.advance(59_999)
+    assert.equal(fallbackEvents(), 0)
+    await timers.advance(1)
+    assert.equal(fallbackEvents(), 7,
+      'offline fallback must coalesce to one signal per resource after 60 seconds')
     net.disconnect()
   }],
 ]

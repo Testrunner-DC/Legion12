@@ -22,6 +22,7 @@ public static class L12AtomKinds
     public const string Draw = "operation.draw";
     public const string AddMorale = "operation.add-morale";
     public const string GainRune = "operation.gain-rune";
+    public const string FlipMorale = "operation.flip-morale";
     public const string AdvanceTrial = "operation.advance-trial";
     public const string ModifyTroops = "operation.modify-troops";
     public const string MoveZone = "operation.move-zone";
@@ -100,6 +101,14 @@ public sealed record L12AtomicAbility(
     string LegacyAbilityId = "")
 {
     public IReadOnlyList<L12EffectPresentationScene> Presentations { get; init; } = [];
+
+    // Printed cost/effect clauses are derived inside the current ability only. A colon in
+    // another ability on the same card must never reclassify this ability's text.
+    public string? CostText
+        => L12StructuredCardRules.SplitAbilityText(Text, Atoms.Any(atom => atom.Stage == "cost")).CostText;
+
+    public string ResolutionText
+        => L12StructuredCardRules.SplitAbilityText(Text, Atoms.Any(atom => atom.Stage == "cost")).ResolutionText;
 }
 
 public sealed record L12AtomicCardEffect(
@@ -108,6 +117,7 @@ public sealed record L12AtomicCardEffect(
     string Product,
     string Faction,
     string CardType,
+    bool IsCounterTactic,
     string? ImageUrl,
     string EffectText,
     IReadOnlyList<L12AtomicAbility> Abilities,
@@ -117,7 +127,11 @@ public sealed record L12AtomicCardEffect(
     int LegacyAtomCount,
     string[] AtomKinds,
     string ReviewStatus = "unreviewed",
-    string ReviewSource = "automatic");
+    string ReviewSource = "automatic")
+{
+    public bool BlocksAttack { get; init; }
+    public IReadOnlyList<L12ResponseScopeDefinition> ResponseScopes { get; init; } = [];
+}
 
 public sealed record L12AtomicCoverage(
     int TotalCards,
@@ -203,13 +217,26 @@ public static class L12EffectPresentationScenes
         {
             Presentations = Build(ability, tombConstructSharedBody),
         }).ToArray();
-        return L12EffectPresentationVariants.Attach(
-            L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached));
+        return L12SingleSegmentResponseEffectPresentations.Attach(
+            L12SingleSegmentTriggeredEffectPresentations.Attach(
+                L12SingleSegmentEffectPresentations.Attach(
+                    L12EffectPresentationVariants.Attach(
+                        L12EffectPresentationSceneCatalog.AttachExplicitScenes(attached)))));
     }
 
     public static IReadOnlyList<L12EffectPresentationScene> Build(L12AtomicAbility ability,
         string? tombConstructSharedBody = null)
     {
+        if (IsCavalryMoveRuleAction(ability))
+        {
+            return
+            [
+                new($"{ability.AbilityId}:presentation:rule-action-cavalry-move",
+                    ability.CardId, ability.AbilityId, "cavalry-move", ability.Text,
+                    EventType: "rule-action", Label: "骑兵位移",
+                    Flow: "rule-action:cavalry-move"),
+            ];
+        }
         if (!IsAnimated(ability)) return [];
 
         var defaultText = ability.CardId == "S01-0204" && ability.Trigger == "death"
@@ -229,6 +256,13 @@ public static class L12EffectPresentationScenes
 
         return scenes;
     }
+
+    internal static bool IsCavalryMoveRuleAction(L12AtomicAbility ability)
+        => ability.Trigger == "active"
+            && ability.Atoms.Any(atom => atom.Kind == L12AtomKinds.Move
+                && atom.Parameters.GetValueOrDefault("operation") == "cavalry-move")
+            && ability.Atoms.All(atom => atom.Kind is L12AtomKinds.Trigger
+                or L12AtomKinds.Condition or L12AtomKinds.Move or L12AtomKinds.Duration);
 
     private static bool IsAnimated(L12AtomicAbility ability)
         => ability.Trigger is not "static" and not "continuous"
@@ -297,6 +331,7 @@ public static class L12EffectAtomRegistry
             [L12AtomKinds.Draw] = new(L12AtomKinds.Draw, "牌库", "抽牌", "从牌库顶抽牌；空牌库按规则判负。", true, "LibraryOps.Draw"),
             [L12AtomKinds.AddMorale] = new(L12AtomKinds.AddMorale, "结算", "追加士气", "从士气牌库追加活跃或休整士气。", true, "MoraleOps.Add"),
             [L12AtomKinds.GainRune] = new(L12AtomKinds.GainRune, "专属资源", "获得符文", "在彼界专属区域获得指定数量的符文。", true, "L12S2ZoneOps.GainRunes"),
+            [L12AtomKinds.FlipMorale] = new(L12AtomKinds.FlipMorale, "专属资源", "翻转士气", "将已声明且结算时仍合法的普通士气翻转为神力。", true, "L12S2ZoneOps.FlipMoraleFace"),
             [L12AtomKinds.AdvanceTrial] = new(L12AtomKinds.AdvanceTrial, "专属资源", "推进试炼", "推进当前未完成试炼，并同步公开进度与对局记录。", true, "AdvanceTrial"),
             [L12AtomKinds.ModifyTroops] = new(L12AtomKinds.ModifyTroops, "数值", "修改兵力", "通过派生兵力层叠加临时、持续或设定值修正。", true, "DerivedStats"),
             [L12AtomKinds.MoveZone] = new(L12AtomKinds.MoveZone, "区域", "移动区域", "在手牌、牌库、墓地、战场、圣物区、额外区和移出区之间移动。", true, "ZoneMove"),
@@ -328,6 +363,15 @@ public sealed class L12AtomicEffectCatalog
     private static readonly Regex AbilityBoundaryPattern = new(
         @"登场时|阵亡时|离场时|进攻时|进攻后|击杀时|受到伤害时|造成伤害时|回合开始时|回合结束时|天灾触发时|主动休整|主动翻回正面|主动\s|盖伏|反击",
         RegexOptions.CultureInvariant);
+
+    // 引用的时点/卡牌类型是当前效果的正文，不是来源卡自己的新时点。
+    // 保留等长位置，分段仍切原文，不能把被引用的卡文丢掉或改写。
+    private static readonly Regex ReferencedTimingPattern = new(
+        @"「[^」]*」|『[^』]*』|“[^”]*”|〈[^〉]*〉|《[^》]*》|【[^】]*】|<[^>]*>|反击战术|(?:登场时|阵亡时|离场时|进攻时|击杀时)效果",
+        RegexOptions.CultureInvariant);
+
+    private static string MaskTimingReferences(string text)
+        => ReferencedTimingPattern.Replace(text, match => new string(' ', match.Length));
 
     private static readonly string[] TimingTokens =
     [
@@ -393,16 +437,24 @@ public sealed class L12AtomicEffectCatalog
             : L12StructuredCardRules.TryGetStructuredAbilities(card, out var structured)
                 ? structured.Select((ability, index) => BuildStructuredAbility(card, ability, index + 1)).ToList()
                 : SplitDatabaseAtomicReference(card.AtomicReference) is { Count: > 0 } databaseAbilities
-                    ? databaseAbilities.Select((clause, index) => BuildAbility(card, clause, index + 1) with
+                    ? databaseAbilities.Select(clause => RemoveSharedDivinitySetupText(card, clause))
+                        .Where(clause => !string.IsNullOrWhiteSpace(clause))
+                        .Select((clause, index) => BuildAbility(card, clause, index + 1) with
                     {
                         MappingSource = "database-atomic-reference+registry",
                         ReviewStatus = "human-assisted",
                         ReviewSource = "product-database",
                     }).ToList()
-                    : SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+                    : L12CounterTacticRules.FallbackTrigger(card) is { } responseTrigger
+                        ? [BuildAbility(card, text, 1, responseTrigger)]
+                    : BuildFallbackAbilities(card, RemoveSharedDivinitySetupText(card, text));
+        if (card.CardType == "divinity" && sourceAbilities.All(ability => ability.Trigger != "setup"))
+            sourceAbilities.Add(BuildStructuredAbility(card, L12StructuredCardRules.SharedDivinitySetupAbility(),
+                sourceAbilities.Count + 1));
         foreach (var overlay in L12StructuredCardRules.GetCombatOverlayAbilities(card.Id))
         {
-            if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text)) continue;
+            if (sourceAbilities.Any(ability => ability.Trigger == overlay.Trigger && ability.Text == overlay.Text
+                || L12StructuredCardRules.MatchesRangedOverlay(ability.Text, ability.ExecutionModel, overlay))) continue;
             sourceAbilities.Add(BuildStructuredAbility(card, overlay, sourceAbilities.Count + 1));
         }
         var abilities = L12EffectPresentationScenes.AttachCardContext(sourceAbilities
@@ -418,10 +470,15 @@ public sealed class L12AtomicEffectCatalog
             : "partially-atomized";
         var reviewStatus = L12EffectReviewAggregation.CardStatus(abilities);
         var reviewSource = L12EffectReviewAggregation.CardSource(abilities);
-        return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType, card.ImageUrl,
+        return new L12AtomicCardEffect(card.Id, card.NameZh, card.Product, card.Faction, card.CardType,
+            card.IsCounterTactic, card.ImageUrl,
             text, abilities, status, atomCount, executable, legacy,
             abilities.SelectMany(ability => ability.Atoms).Select(atom => atom.Kind).Distinct(StringComparer.Ordinal).Order().ToArray(),
-            reviewStatus, reviewSource);
+            reviewStatus, reviewSource)
+        {
+            BlocksAttack = card.BlocksAttack,
+            ResponseScopes = L12ResponseScopeRules.Build(card),
+        };
     }
 
     private static IReadOnlyList<string> SplitDatabaseAtomicReference(string? reference)
@@ -445,7 +502,15 @@ public sealed class L12AtomicEffectCatalog
     private static L12AtomicAbility BuildStructuredAbility(
         L12CardDefinition card, L12StructuredAbilityTemplate template, int sequence)
     {
-        if (L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger, template.Text) is { } verified)
+        var verified = L12VerifiedAtomicPrograms.Find(card.Id, template.Trigger, template.Text);
+        var verifiedOnlyDispatchesCompositeFlow = verified is not null
+            && verified.Atoms.Where(atom => atom.Kind != L12AtomKinds.Trigger)
+                .All(atom => atom.Kind == L12AtomKinds.CompositeFlow);
+        // A composite runtime route is the execution endpoint, not a replacement for the
+        // reviewed condition / target / cost / resolution definition.  Keeping both is
+        // especially important for colon costs: response prompts and the admin editor must
+        // still see the printed pre-colon clause even though resolution is delegated.
+        if (verified is not null && !verifiedOnlyDispatchesCompositeFlow)
             return verified.ToAbility(card, template.Text, sequence) with
             {
                 ExecutionModel = template.ExecutionModel,
@@ -465,15 +530,16 @@ public sealed class L12AtomicEffectCatalog
                 source.Parameters, descriptor.RuntimeExecutable,
                 "shared-structured-rule", source.Stage));
         }
+        EnsurePrintedCostBoundaryAtom(atoms, template.Text, "shared-structured-rule");
         var route = template.RuntimeRouteOwner
-            ? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
+            ? verified ?? L12RuntimeEffectRoutes.FindProgram(card.Id, template.Trigger)
             : null;
         if (route is not null)
         {
             var routeAtom = route.Atoms.Single(atom => atom.Kind == L12AtomKinds.CompositeFlow);
             atoms.Add(routeAtom with { AtomId = $"atom-{atoms.Count + 1}", Order = atoms.Count + 1 });
         }
-        else
+        else if (template.ExecutionModel != "rule-action")
         {
             var legacyDescriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Legacy);
             atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", L12AtomKinds.Legacy, "调用现有权威卡效分支", atoms.Count + 1,
@@ -482,18 +548,40 @@ public sealed class L12AtomicEffectCatalog
                     ["reason"] = "人工结构已审查，尚未完成逐卡运行时等价迁移",
                 }), legacyDescriptor.RuntimeExecutable, "migration-guard", "resolution"));
         }
+        var isRuleAction = template.ExecutionModel == "rule-action";
         return new L12AtomicAbility($"{card.Id}:ability:{sequence}", card.Id, sequence, template.Text,
-            template.Trigger, atoms, route is null ? "partially-atomized" : "verified", route is null,
-            route is null ? "shared-structured-rule+legacy-runtime" : "shared-structured-rule+verified-composite-flow",
+            template.Trigger, atoms, route is null && !isRuleAction ? "partially-atomized" : "verified",
+            route is null && !isRuleAction,
+            isRuleAction ? "shared-structured-rule+rule-action"
+                : route is null ? "shared-structured-rule+legacy-runtime"
+                : "shared-structured-rule+verified-composite-flow",
             1m, template.ExecutionModel,
             template.ReviewStatus, template.ReviewSource);
     }
 
-    private static string[] SplitAbilities(string text)
+    private static List<L12AtomicAbility> BuildFallbackAbilities(L12CardDefinition card, string text)
+    {
+        // Extract only an already registered, exact printed prefix. Never infer a new
+        // combat rule from a substring inside a cost, temporary grant or other effect.
+        var prefix = L12StructuredCardRules.GetCombatOverlayAbilities(card.Id)
+            .FirstOrDefault(overlay => L12StructuredCardRules.IsBasicRangedOverlay(overlay)
+                && text.StartsWith(overlay.Text, StringComparison.Ordinal));
+        if (prefix is null)
+            return SplitAbilities(text).Select((clause, index) => BuildAbility(card, clause, index + 1)).ToList();
+        var result = new List<L12AtomicAbility> { BuildStructuredAbility(card, prefix, 1) };
+        var remaining = text[prefix.Text.Length..].Trim();
+        result.AddRange(SplitAbilities(remaining, preserveLeadingSubject: true)
+            .Select((clause, index) => BuildAbility(card, clause, index + 2)));
+        return result;
+    }
+
+    private static string[] SplitAbilities(string text, bool preserveLeadingSubject = false)
     {
         if (string.IsNullOrWhiteSpace(text)) return [];
         var normalized = text.Replace("\r", string.Empty).Replace("\n", "。").Trim();
-        var starts = AbilityBoundaryPattern.Matches(normalized).Select(match => match.Index).Where(index => index > 0).Distinct().Order().ToArray();
+        var starts = AbilityBoundaryPattern.Matches(MaskTimingReferences(normalized)).Select(match => match.Index)
+            .Where(index => index > 0 && !(preserveLeadingSubject && normalized[..index].Trim() is "我方" or "对方"))
+            .Distinct().Order().ToArray();
         var segments = new List<string>();
         var cursor = 0;
         foreach (var start in starts)
@@ -504,7 +592,7 @@ public sealed class L12AtomicEffectCatalog
         }
         var tail = normalized[cursor..].Trim(' ', '。', '；', ';');
         if (tail.Length > 0) segments.Add(tail);
-        var chunks = segments.SelectMany(segment => Regex.Split(segment, @"(?<=[。；;])"))
+        var chunks = segments.SelectMany(SplitUnquotedSentences)
             .Select(chunk => chunk.Trim(' ', '。', '；', ';')).Where(chunk => chunk.Length > 0).ToList();
         if (chunks.Count == 0) return [text];
         var abilities = new List<string>();
@@ -518,9 +606,21 @@ public sealed class L12AtomicEffectCatalog
         return abilities.ToArray();
     }
 
-    private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence)
+    private static IEnumerable<string> SplitUnquotedSentences(string text)
     {
-        var trigger = DetectTrigger(card, text);
+        var cursor = 0;
+        foreach (Match separator in Regex.Matches(MaskTimingReferences(text), @"[。；;]"))
+        {
+            yield return text[cursor..(separator.Index + 1)];
+            cursor = separator.Index + 1;
+        }
+        if (cursor < text.Length) yield return text[cursor..];
+    }
+
+    private static L12AtomicAbility BuildAbility(L12CardDefinition card, string text, int sequence,
+        string? triggerOverride = null)
+    {
+        var trigger = triggerOverride ?? DetectTrigger(card, text);
         if (L12VerifiedAtomicPrograms.Find(card.Id, trigger, text) is { } verified)
             return verified.ToAbility(card, text, sequence);
         var atoms = new List<L12EffectAtom>();
@@ -532,10 +632,15 @@ public sealed class L12AtomicEffectCatalog
             Add(atoms, L12AtomKinds.SelectTarget, "声明合法对象", new() { ["text"] = text }, "inferred");
         if (ContainsAny(text, "选择以下", "选择1项", "选择一项", "或：", "或使"))
             Add(atoms, L12AtomKinds.SelectMode, "选择以下一项", new() { ["text"] = text }, "inferred");
-        if (text.Contains("消耗") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.PayMorale, text, "支付士气");
+        // “无需消耗费用”描述的是费用豁免，不是 Cost。不能因为同一能力后文还出现
+        // “休整的士气”就跨句拼出一个不存在的支付士气原子。
+        if (text.Contains("消耗") && text.Contains("士气")
+            && !text.Contains("无需消耗费用", StringComparison.Ordinal))
+            AddNumeric(atoms, L12AtomKinds.PayMorale, text, "支付士气");
         if (text.Contains("返还") && text.Contains("士气")) AddNumeric(atoms, L12AtomKinds.ReturnMorale, text, "返还士气");
         if (text.Contains("主动休整")) Add(atoms, L12AtomKinds.RestSource, "休整能力来源", new(), "inferred");
-        if (text.Contains("弃置")) AddNumeric(atoms, L12AtomKinds.Discard, text, "弃置卡牌");
+        if (text.Contains("弃置")) AddNumeric(atoms, L12AtomKinds.Discard, text, "弃置卡牌",
+            PrintedOperationStage(text, "弃置"));
         if (text.Contains("抽") && text.Contains("牌")) AddNumeric(atoms, L12AtomKinds.Draw, text, "抽牌");
         if (ContainsAny(text, "受到伤害", "造成伤害", "对主宰造成")) AddNumeric(atoms, L12AtomKinds.DamageMaster, text, "主宰受到伤害");
         if (ContainsAny(text, "恢复", "生命+")) AddNumeric(atoms, L12AtomKinds.HealMaster, text, "恢复生命");
@@ -558,6 +663,8 @@ public sealed class L12AtomicEffectCatalog
         if (card.CardType is "disaster" or "destruction" or "trial" || ContainsAny(text, "晋升", "神力", "试炼", "符文", "卡诺匹斯", "陵墓守卫", "天灾"))
             Add(atoms, L12AtomKinds.Special, "进入专属规则内核", new() { ["domain"] = DetectDomain(card, text) }, "inferred");
 
+        EnsurePrintedCostBoundaryAtom(atoms, text, "printed-colon-boundary");
+
         var route = L12RuntimeEffectRoutes.FindProgram(card.Id, trigger);
         if (route is not null)
         {
@@ -577,14 +684,35 @@ public sealed class L12AtomicEffectCatalog
             ExecutionModelFor(trigger, text));
     }
 
-    private static void Add(List<L12EffectAtom> atoms, string kind, string label, Dictionary<string, string> parameters, string source)
+    private static void Add(List<L12EffectAtom> atoms, string kind, string label, Dictionary<string, string> parameters,
+        string source, string? stage = null)
     {
         var descriptor = L12EffectAtomRegistry.Get(kind);
         atoms.Add(new L12EffectAtom($"atom-{atoms.Count + 1}", kind, label, atoms.Count + 1,
-            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, StageFor(kind)));
+            new ReadOnlyDictionary<string, string>(parameters), descriptor.RuntimeExecutable, source, stage ?? StageFor(kind)));
     }
 
-    private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label)
+    private static void EnsurePrintedCostBoundaryAtom(List<L12EffectAtom> atoms, string text, string source)
+    {
+        if (atoms.Any(atom => atom.Stage == "cost") || !L12StructuredCardRules.HasPrintedCostBoundary(text)) return;
+        var separator = text.IndexOfAny(['：', ':']);
+        var costText = text[..separator].Trim();
+        var descriptor = L12EffectAtomRegistry.Get(L12AtomKinds.Special);
+        var insertion = atoms.FindIndex(atom => atom.Stage is "resolution" or "duration");
+        if (insertion < 0) insertion = atoms.Count;
+        atoms.Insert(insertion, new L12EffectAtom(string.Empty, L12AtomKinds.Special,
+            "执行冒号前印刷Cost", 0,
+            new ReadOnlyDictionary<string, string>(new Dictionary<string, string>
+            {
+                ["semantic"] = "printed-colon-cost",
+                ["text"] = costText,
+            }), descriptor.RuntimeExecutable, source, "cost"));
+        for (var index = 0; index < atoms.Count; index++)
+            atoms[index] = atoms[index] with { AtomId = $"atom-{index + 1}", Order = index + 1 };
+    }
+
+    private static void AddNumeric(List<L12EffectAtom> atoms, string kind, string text, string label,
+        string? stage = null)
     {
         var pattern = kind switch
         {
@@ -601,12 +729,37 @@ public sealed class L12AtomicEffectCatalog
         var match = Regex.Match(text, pattern);
         var value = match.Groups["value"].Success ? match.Groups["value"].Value : match.Groups["value2"].Value;
         Add(atoms, kind, string.IsNullOrEmpty(value) ? label : $"{label} {value}",
-            new() { ["amount"] = string.IsNullOrEmpty(value) ? "dynamic" : value, ["text"] = text }, "inferred");
+            new() { ["amount"] = string.IsNullOrEmpty(value) ? "dynamic" : value, ["text"] = text }, "inferred", stage);
+    }
+
+    private static string RemoveSharedDivinitySetupText(L12CardDefinition card, string text)
+        => card.CardType == "divinity"
+            ? text.Replace(L12StructuredCardRules.SharedDivinitySetupText, string.Empty,
+                    StringComparison.Ordinal)
+                .Trim(' ', '\r', '\n', '。')
+            : text;
+
+    // 费用边界只由有效冒号决定。相同的“弃置/消耗/返还”动词位于冒号后或整段无冒号时，
+    // 是效果结算而不是 Cost；不能再由动词种类本身推导费用阶段。
+    private static string PrintedOperationStage(string text, params string[] requiredTokens)
+    {
+        for (var separator = 0; separator < text.Length; separator++)
+        {
+            if (text[separator] is not ('：' or ':')) continue;
+            var before = text[..separator];
+            var clauseStart = before.LastIndexOfAny(['。', '；', ';', '\n', '\r']) + 1;
+            var clause = text[clauseStart..separator].Trim(' ', '·', '-', '—');
+            if (!requiredTokens.All(token => clause.Contains(token, StringComparison.Ordinal))) continue;
+            if (L12StructuredCardRules.HasPrintedCostBoundary($"{clause}：执行效果")) return "cost";
+        }
+        return "resolution";
     }
 
     private static bool ContainsAny(string value, params string[] tokens) => tokens.Any(value.Contains);
     private static string DetectTrigger(L12CardDefinition card, string text)
-        => text.Contains("登场时") ? "enter"
+    {
+        text = MaskTimingReferences(text);
+        return text.Contains("登场时") ? "enter"
             : text.Contains("阵亡时") ? "death"
             : text.Contains("离场时") ? "leave"
             : text.Contains("进攻后") || text.Contains("击杀时") ? "after-attack"
@@ -617,6 +770,7 @@ public sealed class L12AtomicEffectCatalog
             : card.CardType is "disaster" or "destruction" && text.StartsWith("触发", StringComparison.Ordinal) ? "disaster"
             : card.CardType == "tactic" ? "play"
             : "static";
+    }
     private static string ExtractCondition(string text) => text.Length <= 80 ? text : text[..80] + "…";
     private static string ExtractDuration(string text) => new[] { "本次进攻", "本回合", "下个回合", "本局" }.FirstOrDefault(text.Contains) ?? "持续";
     private static string ExecutionModelFor(string trigger, string text)
@@ -624,6 +778,7 @@ public sealed class L12AtomicEffectCatalog
         {
             "enter" or "death" or "leave" or "after-attack" or "attack" or "turn-start" or "turn-end" or "disaster" => "triggered",
             "active" or "play" => "activated",
+            "reaction" or "s2-reaction" => "reaction",
             "promotion" => "summon-flow",
             "static" when ContainsAny(text, "作为代替", "代替承受", "代替阵亡") => "replacement",
             "static" => "continuous",
@@ -691,7 +846,7 @@ public static class L12VerifiedAtomicPrograms
 
     private static Dictionary<string, L12VerifiedAtomicProgram> Build()
     {
-        var programs = new[]
+        var programs = new List<L12VerifiedAtomicProgram>
         {
             Program("S01-0012", "play",
                 Atom(L12AtomKinds.SetState, "记录下一张军团的冲锋条件", ("key", "controller.nextLegionChargeMaxCost"), ("value", "6"), ("event", "本回合下一张费用不高于 6 的军团获得冲锋"))),
@@ -724,11 +879,6 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Condition, "我方士气不高于 7 张", ("expression", "controller.morale<=7")),
                 OptionalDraw("荆轲"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "荆轲登场效果抽牌时牌库为空"), ("event", "荆轲抽取 1 张牌"))),
-            Program("S01-0301", "death",
-                OptionalDraw("贝奥武夫"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "贝奥武夫阵亡效果抽牌时牌库为空"), ("event", "贝奥武夫阵亡时抽取 1 张牌"))),
-            Program("S01-0302", "death",
-                Atom(L12AtomKinds.HealMaster, "我方主宰增加 1 点血量", ("amount", "1"), ("reason", "金发哈拉尔阵亡效果"))),
             Program("S01-0302", "attack",
                 Atom(L12AtomKinds.Condition, "我方主宰血量不高于 6", ("expression", "controller.hp<=6")),
                 Atom(L12AtomKinds.Keyword, "本回合获得强攻", ("keyword", "strong-attack"), ("event", "{source} 本回合获得强攻"))),
@@ -740,22 +890,9 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.Optional, "可对对方主宰造成 1 点伤害",
                     ("prompt", "无情者哈拉尔：是否对对方主宰造成1点伤害？"), ("yes", "对对方主宰造成1点伤害"), ("no", "不发动")),
                 Atom(L12AtomKinds.DamageMaster, "对方主宰受到 1 点伤害", ("amount", "1"), ("target", "opponent"), ("reason", "无情者哈拉尔登场效果"))),
-            Program("S01-0309", "death",
-                Atom(L12AtomKinds.Condition, "我方主宰血量不高于对方", ("expression", "controller.hp<=opponent.hp")),
-                OptionalDraw("布伦希尔德"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "布伦希尔德阵亡效果抽牌时牌库为空"), ("event", "布伦希尔德阵亡时抽取 1 张牌"))),
             Program("S02-0104", "enter",
                 OptionalDraw("神农鼎"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "神农鼎登场效果抽牌时牌库为空"), ("event", "神农鼎抽取 1 张牌"))),
-            Program("S02-0203", "death",
-                OptionalDraw("哈特谢普苏特"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "哈特谢普苏特阵亡效果抽牌时牌库为空"), ("event", "哈特谢普苏特阵亡时抽取 1 张牌"))),
-            Program("S02-0402", "death",
-                OptionalDraw("井伊直虎"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "井伊直虎阵亡效果抽牌时牌库为空"), ("event", "井伊直虎阵亡时抽取 1 张牌"))),
-            Program("S02-0512", "death",
-                OptionalDraw("埃涅阿斯"),
-                Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "埃涅阿斯阵亡效果抽牌时牌库为空"), ("event", "埃涅阿斯阵亡时抽取 1 张牌"))),
             Program("S02-0507", "enter",
                 OptionalDraw("阿塔兰忒·晋升"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "阿塔兰忒·晋升登场效果抽牌时牌库为空"), ("event", "阿塔兰忒·晋升因登场抽取 1 张牌"))),
@@ -763,7 +900,10 @@ public static class L12VerifiedAtomicPrograms
                 OptionalDraw("阿塔兰忒·晋升"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "阿塔兰忒·晋升的晋升登场效果抽牌时牌库为空"), ("event", "阿塔兰忒·晋升因晋升登场抽取 1 张牌"))),
             Program("S01-0415", "active",
-                Atom(L12AtomKinds.Condition, "服部半藏当前为覆盖状态", ("expression", "source.hidden=true")),
+                Atom(L12AtomKinds.Condition, "服部半藏仍在我方战场且为覆盖状态",
+                    ("expression", "source.field-hidden=true"),
+                    ("failureResult", "failed"),
+                    ("failureReason", "服部半藏在逆序结算时已离场或不再为覆盖状态")),
                 Atom(L12AtomKinds.SetState, "翻回正面并恢复为军团，不重置原登场回合",
                     ("key", "source.hidden"), ("value", "false"), ("preserveSummonRound", "true"),
                     ("event", "{source} 主动翻回正面，恢复为军团"))),
@@ -794,24 +934,8 @@ public static class L12VerifiedAtomicPrograms
                 Atom(L12AtomKinds.SetState, "本回合可进攻对方军团",
                     ("key", "source.canAttackLegionsOnSummonUntilTurn"), ("value", "current-turn"),
                     ("event", "{source} 本回合可进攻对方军团"))),
-            Program("S02-0603", "enter",
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
-            Program("S02-0606", "enter",
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
-            Program("S02-0607", "enter",
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
-            Program("S02-0618", "enter",
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
-            Program("S02-0609", "death",
-                Atom(L12AtomKinds.AdvanceTrial, "试炼 +1", ("amount", "1"))),
-            Program("S02-0613", "death",
-                Atom(L12AtomKinds.HealMaster, "双方主宰增加 1 点血量", ("amount", "1"), ("target", "both"), ("reason", "圣女贞德阵亡时效果"))),
             Program("S02-0612", "enter",
                 Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
-            Program("S02-0616", "enter",
-                Atom(L12AtomKinds.Optional, "可获得 1 符文",
-                    ("prompt", "阿麦金：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             StarterTargetedProgram("ST01-03", "enter", "xiaohe-summon"),
             StarterTargetedProgram("ST01-01", "enter", "zhaoyun-enter-charge"),
             StarterTargetedProgram("ST01-01", "after-attack", "zhaoyun-kill-piercing"),
@@ -825,7 +949,6 @@ public static class L12VerifiedAtomicPrograms
             StarterTargetedProgram("ST02-06", "enter", "george-debuff"),
             StarterTargetedProgram("ST03-03", "enter", "freydis-recover"),
             StarterTargetedProgram("ST05-03", "enter", "penelope-summon"),
-            StarterTargetedProgram("ST05-07", "enter", "antinous-ready"),
             StarterTargetedProgram("ST06-01", "continuous", "elizabeth-derived-cost"),
             StarterTargetedProgram("ST06-01", "enter", "elizabeth-lock-morale"),
             StarterTargetedProgram("ST06-04", "enter", "mordred-enter-choice"),
@@ -885,10 +1008,6 @@ public static class L12VerifiedAtomicPrograms
                     ("event", "{source} 本回合可进攻对方主宰"))),
             Program("ST05-08", "enter",
                 Atom(L12AtomKinds.Keyword, "获得冲锋", ("keyword", "charge"), ("event", "{source} 获得冲锋"))),
-            Program("ST06-03", "enter",
-                Atom(L12AtomKinds.Optional, "可获得 1 符文",
-                    ("prompt", "加雷斯：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("ST06-05", "enter",
                 OptionalDraw("栖木猎鹰"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "栖木猎鹰登场效果抽牌时牌库为空"), ("event", "栖木猎鹰因登场抽取 1 张牌"))),
@@ -898,12 +1017,6 @@ public static class L12VerifiedAtomicPrograms
             Program("ST06-06", "enter",
                 OptionalDraw("费奥纳的骑士"),
                 Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"), ("emptyLossReason", "费奥纳的骑士登场效果抽牌时牌库为空"), ("event", "费奥纳的骑士抽取 1 张牌"))),
-            Program("ST06-06", "death",
-                Atom(L12AtomKinds.AdvanceTrial, "试炼 +2", ("amount", "2"))),
-            Program("ST06-08", "enter",
-                Atom(L12AtomKinds.Optional, "可获得 1 符文",
-                    ("prompt", "纯白的灵鹿：是否获得1符文？"), ("yes", "获得1符文"), ("no", "不发动")),
-                Atom(L12AtomKinds.GainRune, "获得 1 符文", ("amount", "1"), ("eventType", "runes"), ("event", "{source}使我方获得{value}符文"))),
             Program("ST06-10", "play",
                 Atom(L12AtomKinds.AdvanceTrial, "试炼 +2", ("amount", "2"))),
             StarterTargetedProgram("ST-DS02", "continuous", "starter-lust-disaster"),
@@ -914,7 +1027,6 @@ public static class L12VerifiedAtomicPrograms
             StarterTargetedProgram("ST03-08", "continuous", "starter-grave-asgard-copies"),
             StarterTargetedProgram("ST03-10", "play", "legendary-bloodline"),
             StarterTargetedProgram("ST03-M1", "active", "sif-cycle"),
-            StarterTargetedProgram("ST04-02", "attack", "kojiro-discard"),
             StarterTargetedProgram("ST04-02", "death", "kojiro-death-kill"),
             StarterTargetedProgram("ST04-04", "enter", "kai-master-waiver"),
             StarterTargetedProgram("ST04-05", "opponent-turn-lethal", "kondo-lethal-substitution"),
@@ -935,6 +1047,14 @@ public static class L12VerifiedAtomicPrograms
             Program("S02-DS05", "disaster",
                 Atom(L12AtomKinds.DamageMaster, "双方主宰各受到 1 点非致命伤害", ("amount", "1"), ("target", "both"), ("lethal", "false"), ("neutralSource", "true"), ("reason", "〈暴怒之罪〉"))),
         };
+        programs.AddRange(L12SimpleDrawTriggerEffects.All.Select(SimpleDrawProgram));
+        programs.AddRange(L12SimpleMasterHealTriggerEffects.All.Select(SimpleMasterHealProgram));
+        programs.AddRange(L12SimpleTrialAdvanceTriggerEffects.All.Select(SimpleTrialAdvanceProgram));
+        programs.AddRange(L12SimpleCardStateTriggerEffects.All.Select(SimpleCardStateProgram));
+        programs.AddRange(L12SimpleSelfTroopBuffTriggerEffects.All.Select(SimpleSelfTroopBuffProgram));
+        programs.AddRange(L12SimpleResourceTriggerEffects.All
+            .Where(spec => spec.OwnsStandaloneAtomicAbility).Select(SimpleResourceProgram));
+        programs.AddRange(L12OpponentHandDiscardTriggerEffects.All.Select(OpponentHandDiscardProgram));
         return programs.ToDictionary(program => program.ProgramId, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -949,7 +1069,7 @@ public static class L12VerifiedAtomicPrograms
         {
             AtomId = $"atom-{index + 1}",
             Order = index + 1,
-            Stage = atom.Kind switch
+            Stage = atom.Parameters.GetValueOrDefault("role") == "cost" ? "cost" : atom.Kind switch
             {
                 L12AtomKinds.Trigger => "trigger",
                 L12AtomKinds.Condition or L12AtomKinds.Optional => "condition",
@@ -967,6 +1087,133 @@ public static class L12VerifiedAtomicPrograms
     private static L12VerifiedAtomicProgram StarterTargetedProgram(string cardId, string trigger, string flow)
         => Program(cardId, trigger,
             Atom(L12AtomKinds.CompositeFlow, "执行 ST 带目标军团效果", ("flow", flow)));
+
+    private static L12VerifiedAtomicProgram SimpleDrawProgram(L12SimpleDrawTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.Condition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查抽牌触发条件", ("expression", spec.Condition)));
+        if (spec.Optional) operations.Add(OptionalDraw(spec.Name));
+        operations.Add(Atom(L12AtomKinds.Draw, "抽取 1 张牌", ("amount", "1"),
+            ("target", spec.DrawRecipient), ("emptyLossReason", spec.EmptyLossReason),
+            ("event", spec.EventText)));
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
+
+    private static L12VerifiedAtomicProgram SimpleMasterHealProgram(L12SimpleMasterHealTriggerSpec spec)
+        => Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.HealMaster, spec.SettlementText,
+                ("amount", spec.Amount.ToString()), ("target", spec.HealRecipient),
+                ("reason", spec.Reason)));
+
+    private static L12VerifiedAtomicProgram SimpleTrialAdvanceProgram(L12SimpleTrialAdvanceTriggerSpec spec)
+        => Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.AdvanceTrial, spec.SettlementText,
+                ("amount", spec.Amount.ToString())));
+
+    private static L12VerifiedAtomicProgram SimpleResourceProgram(L12SimpleResourceTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.CandidateCondition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查资源触发条件",
+                ("expression", spec.CandidateCondition)));
+        if (spec.Optional)
+            operations.Add(Atom(L12AtomKinds.Optional, "可发动单段资源效果",
+                ("prompt", $"{spec.Name}：是否发动{spec.SettlementText}"),
+                ("yes", "发动"), ("no", "不发动")));
+        if (spec.TargetFilter is not null)
+            operations.Add(Atom(L12AtomKinds.SelectTarget, "选择1张合法士气",
+                ("zone", "controller.morale"), ("filter", spec.TargetFilter),
+                ("min", "1"), ("max", "1"), ("presentation", "direct-board")));
+        operations.Add(spec.Operation switch
+        {
+            L12SimpleResourceTriggerEffects.AddRestedMorale =>
+                Atom(L12AtomKinds.AddMorale, spec.SettlementText,
+                    ("amount", spec.Amount.ToString()), ("tapped", "true"),
+                    ("event", spec.EventText)),
+            L12SimpleResourceTriggerEffects.GainRunes =>
+                Atom(L12AtomKinds.GainRune, spec.SettlementText,
+                    ("amount", spec.Amount.ToString()), ("event", spec.EventText)),
+            L12SimpleResourceTriggerEffects.FlipMoraleToGodPower =>
+                Atom(L12AtomKinds.FlipMorale, spec.SettlementText,
+                    ("operation", "flip-selected-to-god-power"),
+                    ("amount", spec.Amount.ToString()), ("event", spec.EventText)),
+            _ => throw new InvalidOperationException($"未知单段资源操作：{spec.Operation}"),
+        });
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
+
+    private static L12VerifiedAtomicProgram SimpleCardStateProgram(L12SimpleCardStateTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.CandidateCondition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查军团状态触发条件",
+                ("expression", spec.CandidateCondition)));
+        if (spec.Optional)
+            operations.Add(Atom(L12AtomKinds.Optional, "可发动单段军团状态效果",
+                ("prompt", spec.PromptText), ("yes", "发动"), ("no", "不发动")));
+        if (spec.TargetScope != L12SimpleCardStateTriggerEffects.Source)
+            operations.Add(Atom(L12AtomKinds.SelectTarget, "选择1张合法军团",
+                ("zone", spec.TargetScope),
+                ("cardId", spec.RequiredCardId ?? string.Empty),
+                ("faction", spec.RequiredFaction ?? string.Empty),
+                ("requiredState", spec.Operation == L12SimpleCardStateTriggerEffects.Ready ? "tapped" : "active"),
+                ("min", "1"), ("max", "1"), ("presentation", "direct-board")));
+        operations.Add(Atom(spec.Operation == L12SimpleCardStateTriggerEffects.Ready
+                ? L12AtomKinds.Ready : L12AtomKinds.Rest,
+            spec.SettlementText, ("target", spec.TargetScope), ("event", spec.EventText)));
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
+
+    private static L12VerifiedAtomicProgram SimpleSelfTroopBuffProgram(
+        L12SimpleSelfTroopBuffTriggerSpec spec)
+    {
+        var cost = spec.CostKind switch
+        {
+            "master-damage" => Atom(L12AtomKinds.DamageMaster, "对我方主宰造成1点伤害",
+                ("role", "cost"), ("prepaid", "true"), ("amount", "1"),
+                ("target", "controller-master")),
+            "grave-bottom-two" => Atom(L12AtomKinds.MoveZone, "墓地2张卡牌自选顺序返回牌库底部",
+                ("role", "cost"), ("prepaid", "true"), ("from", "controller.graveyard"),
+                ("to", "controller.library-bottom"), ("amount", "2"), ("ordered", "true")),
+            "show-hand-tactic" => Atom(L12AtomKinds.Visibility, "展示手牌中的1张战术卡",
+                ("role", "cost"), ("prepaid", "true"), ("zone", "controller.hand"),
+                ("filter", "card-type=tactic"), ("amount", "1"),
+                ("visibility", "both-players"), ("presentation", "battlefield-overlay-no-mask"),
+                ("durationMs", "3000"), ("opponentConfirmation", "none"),
+                ("log", "public-card-link")),
+            "god-power" => Atom(L12AtomKinds.FlipMorale, "消耗并翻转1神力",
+                ("role", "cost"), ("prepaid", "true"), ("amount", "1"),
+                ("from", "active-god-power"),
+                ("to", "rested-morale")),
+            "discard-hand" => Atom(L12AtomKinds.Discard, "弃置1张手牌",
+                ("role", "cost"), ("prepaid", "true"),
+                ("from", "controller.hand"), ("amount", "1")),
+            _ => throw new InvalidOperationException($"未知单段自身兵力费用：{spec.CostKind}"),
+        };
+        return Program(spec.CardId, spec.Trigger,
+            Atom(L12AtomKinds.Optional, "可发动单段自身兵力效果",
+                ("prompt", spec.PromptText), ("yes", "发动"), ("no", "不发动")),
+            cost,
+            Atom(L12AtomKinds.ModifyTroops, spec.SettlementText,
+                ("target", "source"), ("operation", "add"),
+                ("value", spec.Amount.ToString()), ("event", spec.EventText)),
+            Atom(L12AtomKinds.Duration, "持续至本回合结束", ("duration", "this-turn")));
+    }
+
+    private static L12VerifiedAtomicProgram OpponentHandDiscardProgram(
+        L12OpponentHandDiscardTriggerSpec spec)
+    {
+        var operations = new List<L12EffectAtom>();
+        if (spec.Condition is not null)
+            operations.Add(Atom(L12AtomKinds.Condition, "检查令对方弃牌的触发条件",
+                ("expression", spec.Condition)));
+        operations.Add(Atom(L12AtomKinds.CompositeFlow, spec.SettlementText,
+            ("flow", L12OpponentHandDiscardTriggerEffects.Flow),
+            ("chooser", "opponent"), ("amount", "1"),
+            ("from", "opponent.hand"), ("to", "opponent.graveyard")));
+        return Program(spec.CardId, spec.Trigger, [.. operations]);
+    }
 
     private static L12EffectAtom Atom(string kind, string label, params (string Key, string Value)[] parameters)
     {

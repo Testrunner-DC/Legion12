@@ -6,6 +6,18 @@ namespace TwelveLegions.Server;
 /// </summary>
 public sealed partial class L12GameEngine
 {
+    /// <summary>
+    /// 双方私密同时选择共用的提交边界。当前提交只写入堆叠项目，最后一个同族
+    /// Prompt 提交后才允许调用方统一结算，避免先提交玩家的选择提前改变公开状态。
+    /// </summary>
+    private bool CommitSimultaneousPrivateSelection(L12StackItem item, L12Prompt prompt,
+        string action, string storagePrefix, IReadOnlyCollection<string> chosen, char separator = ',')
+    {
+        item.Data[$"{storagePrefix}:{prompt.PlayerIndex}"] = string.Join(separator, chosen);
+        return !State.PendingPrompts.Any(candidate => candidate.StackItemId == item.StackItemId
+            && candidate.Data.GetValueOrDefault("action") == action);
+    }
+
     private bool TryGetBoundPendingActivation(L12Prompt prompt, L12Command command,
         out L12PendingActivation activation, out string error)
     {
@@ -98,7 +110,7 @@ public sealed partial class L12GameEngine
 
     private bool ReconcilePendingActivationTransactions()
     {
-        var changed = false;
+        var changed = ReconcileLibraryPlacementPrompts();
         var activationSnapshot = State.PendingActivations.ToArray();
         foreach (var activation in activationSnapshot)
         {
@@ -142,6 +154,21 @@ public sealed partial class L12GameEngine
             || string.IsNullOrWhiteSpace(activation.SourceCardId)
             || activation.CurrentStep < 0 || activation.CurrentStep >= activation.SelectionSteps.Count)
             return false;
+
+        if (activation.Ability == FixedGraveReturnResolutionAbility)
+        {
+            var step = activation.SelectionSteps[0];
+            var owner = State.Players[activation.Controller];
+            var remaining = owner.Graveyard.Where(card => CanEnterHandOrLibrary(card)
+                && step.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase)).ToArray();
+            return step.RepresentedCount is > 0 and var required
+                && remaining.Sum(L12StructuredCardRules.StarterGraveCardCopies) >= required
+                && activation.DeclaredValues.GetValueOrDefault("graveEffect", [])
+                    .All(id => remaining.Any(card => card.InstanceId == id))
+                && State.EffectStack.Any(item => !item.Negated && item.StackItemId == activation.CommittedCompletion
+                && item.SourceInstanceId == activation.SourceInstanceId
+                && item.SourceCardId == activation.SourceCardId);
+        }
 
         if (activation.TriggerCandidateId is not null)
         {

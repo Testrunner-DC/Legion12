@@ -1,0 +1,281 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/public-deck-detail-content')
+const require = createRequire(import.meta.url)
+const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+fs.mkdirSync(output, { recursive: true })
+
+const entry = `
+import {createApp,h} from 'vue'
+import {createMemoryHistory,createRouter,RouterView} from 'vue-router'
+import PublicDeckDetailPage from '/src/l12/site/PublicDeckDetailPage.vue'
+import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
+import {publicDeckApi,publicDeckReadApi,platformState} from '/src/l12/platform.ts'
+import '/src/style.css'
+platformState.account={id:'author',username:'验收作者',role:'player'}
+const catalog=await loadDeckCatalog()
+const placeholder='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 250 350"><rect width="250" height="350" fill="#18252b"/><path d="M30 40h190v270H30z" fill="none" stroke="#9f8750" stroke-width="5"/><text x="125" y="180" fill="#e8d59c" text-anchor="middle" font-size="28">十二军团</text></svg>')
+catalog.forEach(card=>{card.imageUrl=placeholder})
+const preset=(await loadOfficialPresetDecks())[0]
+const changed=[...preset.cardIds]
+changed.splice(0,1,changed.find(id=>id!==changed[0])||changed[0])
+const masters=catalog.filter(card=>card.cardType==='master')
+const now='2026-09-24T06:00:00Z'
+const fixture={id:'qa',publicCode:'qa',ownerId:'author',author:'用于验证长作者名称不会破坏版式的示例牌库作者',deck:{...preset,name:'用于验证超长公开牌库标题在宽屏与移动端都不会裁切的构筑方案',specialIds:preset.specialIds||[],updatedAt:now},views:128,likes:32,copies:19,liked:false,createdAt:'2026-09-20T06:00:00Z',updatedAt:now,seasonCompliant:true,details:{guide:{buildIdea:'通过低费军团建立前排，再利用关键战术保护核心单位并逐步扩大资源差。',opening:'优先保留两张低费军团与一张可互动战术；缺少前排时应积极调度。',keyCards:'核心主宰能力负责资源转换，关键军团提供持续站场，反制牌留给对手的主要展开。',commonSequence:'第一回合建立前排，第二回合补充资源并保留响应窗口，第三回合根据对手区域决定推进或控场。',substitutions:'环境偏快时增加低费军团；控制较多时替换为具备进场价值或墓地价值的牌。'},matchups:masters.slice(0,3).map((master,index)=>({opponentMasterId:master.id,notes:'观察对手第 '+(index+1)+' 回合资源，避免把全部单位投入同一轮交换。',keyCards:'保留即时互动与能跨过主战线的关键牌。',suggestedSwaps:'后手可减少一张高费牌，换入低费保护。'})),contentRevision:3,contentUpdatedAt:now,versions:[{version:3,name:preset.name,deck:{...preset,specialIds:preset.specialIds||[],updatedAt:now},createdAt:now,changes:[{section:'main',cardId:preset.cardIds[0],previousQuantity:1,currentQuantity:2}]},{version:2,name:preset.name,deck:{...preset,cardIds:changed,specialIds:preset.specialIds||[],updatedAt:'2026-09-22T06:00:00Z'},createdAt:'2026-09-22T06:00:00Z',changes:[{section:'main',cardId:preset.cardIds[0],previousQuantity:0,currentQuantity:1}]},{version:1,name:preset.name,deck:{...preset,specialIds:preset.specialIds||[],updatedAt:'2026-09-20T06:00:00Z'},createdAt:'2026-09-20T06:00:00Z',changes:[]}],matches:[],matchBindingStatus:'unavailable',matchBindingMessage:'尚无可证明绑定到该公开牌库版本的对局记录；不会用作者总战绩替代。'}}
+fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:18,sampleStatus:'available',groups:[{version:3,masterId:preset.masterId,opponentMasterId:masters[0].id,games:12,wins:7,losses:4,draws:1,winRate:0.5833},{version:2,masterId:preset.masterId,opponentMasterId:masters[1].id,games:6,wins:3,losses:3,draws:0,winRate:0.5}]}
+fixture.details.matchBindingStatus='available'
+fixture.details.matchBindingMessage='过去 90 天，仅展示开局时已绑定公开版本的匿名聚合统计。'
+delete fixture.details.matches
+const fixtureQuery=new URL(location.href).searchParams
+if(fixtureQuery.has('empty')){fixture.details.guide={buildIdea:'',opening:'',keyCards:'',commonSequence:'',substitutions:''};fixture.details.matchups=[];fixture.details.contentRevision=0;delete fixture.details.contentUpdatedAt}
+if(fixtureQuery.has('emptyStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'empty',groups:[]};fixture.details.matchBindingStatus='empty';fixture.details.matchBindingMessage='过去 90 天暂无可核验的公开版本对局统计。'}
+if(fixtureQuery.has('smallStats')){fixture.details.matchStatistics={from:'2026-06-26T06:00:00Z',to:now,recentDays:90,games:0,sampleStatus:'insufficient',groups:[]};fixture.details.matchBindingStatus='insufficient';fixture.details.matchBindingMessage='样本不足：过去 90 天各主宰组合均不足 3 场，暂不展示胜率。'}
+const generation={id:fixture.id,publicCode:fixture.publicCode,readToken:'a'.repeat(64),catalogVersion:'synthetic-catalog',policyVersion:1}
+const owner=!fixtureQuery.has('guest')
+if(!owner)platformState.account=null
+function bodyFor(deck,version){return {...deck,publicationId:owner?fixture.id:null,publicationVersion:owner?version:null}}
+function countsFor(deck){return {main:deck.cardIds.length,uncountedMain:0,morale:deck.moraleIds.length,special:deck.specialIds.length,bench:deck.benchIds?.length||0}}
+function metadataFor(version){return {version:version.version,name:version.name,masterId:version.deck.masterId,createdAt:version.createdAt,
+  counts:countsFor(version.deck),legal:true,legalityReason:null,environment:{status:'known',value:'2.5',reason:null},changes:version.changes}}
+function readCurrentFixture(){return {summary:{id:fixture.id,source:'public',name:fixture.deck.name,masterId:fixture.deck.masterId,
+  masterName:catalog.find(card=>card.id===fixture.deck.masterId)?.nameZh||'主宰',faction:'synthetic',author:fixture.author,
+  publicCode:fixture.publicCode,publicationVersion:owner?3:null,createdAt:fixture.createdAt,updatedAt:fixture.updatedAt,
+  counts:countsFor(fixture.deck),legal:true,legalityReason:null,environment:{status:'known',value:'2.5',reason:null},
+  views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:false,canEdit:owner,readToken:null},
+  version:3,deck:bodyFor(fixture.deck,3),guide:fixture.details.guide,matchups:fixture.details.matchups,
+  contentRevision:fixture.details.contentRevision,contentUpdatedAt:fixture.details.contentUpdatedAt||null,
+  readToken:generation.readToken,catalogVersion:generation.catalogVersion,policyVersion:generation.policyVersion}}
+publicDeckApi.get=async()=>{throw Error('Legacy full detail must not be requested')}
+publicDeckReadApi.current=async()=>readCurrentFixture()
+publicDeckReadApi.versions=async(_reference,page,pageSize,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact body pin')
+  return {...generation,items:fixture.details.versions.slice((page-1)*pageSize,page*pageSize).map(metadataFor),
+    total:fixture.details.versions.length,page,pageSize,canEdit:owner}
+}
+publicDeckReadApi.version=async(_reference,version,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact selected-body pin')
+  const selected=fixture.details.versions.find(item=>item.version===version)
+  if(!selected)throw Error('Unknown synthetic version')
+  return {...generation,metadata:metadataFor(selected),deck:bodyFor(selected.deck,version),canEdit:owner}
+}
+publicDeckReadApi.statistics=async(_reference,page,pageSize,pin)=>{
+  if(pin!==generation.readToken)throw Error('Missing exact statistics pin')
+  const statistics=fixture.details.matchStatistics
+  return {...generation,...statistics,groups:statistics.groups.slice((page-1)*pageSize,page*pageSize),
+    total:statistics.groups.length,page,pageSize}
+}
+publicDeckApi.counter=async(_reference,kind)=>{
+  if(kind!=='view')throw new Error('这个页面夹具只授权浏览计数')
+  return {id:fixture.id,publicCode:fixture.publicCode,views:fixture.views,likes:fixture.likes,copies:fixture.copies,viewerLiked:fixture.liked,canEdit:owner}
+}
+const nativeFetch=window.fetch.bind(window)
+window.fetch=(input,init)=>{
+  const url=String(input)
+  if(url.includes('/api/alternate-arts'))return Promise.resolve(new Response('[]',{status:200,headers:{'Content-Type':'application/json'}}))
+  if(url.includes('/api/public-decks/qa'))return Promise.resolve(new Response(JSON.stringify(fixture),{status:200,headers:{'Content-Type':'application/json'}}))
+  return nativeFetch(input,init)
+}
+const router=createRouter({history:createMemoryHistory(),routes:[{name:'public-deck-detail',path:'/decks/:deckId',component:PublicDeckDetailPage},{path:'/decks',component:{template:'<div>decks</div>'}}]})
+await router.push('/decks/qa')
+await router.isReady()
+createApp({render:()=>h(RouterView)}).use(router).mount('#app')
+`
+
+let browser
+const server = await createServer({
+  root, configLoader: 'runner', cacheDir: path.join(root, '.tmp', 'vite-public-deck-detail-content'),
+  server: { host: '127.0.0.1', port: 0, strictPort: false },
+  plugins: [{
+    name: 'public-deck-detail-content-fixture',
+    resolveId(id) { if (id === '/__public_deck_detail__.js') return id },
+    load(id) { if (id === '/__public_deck_detail__.js') return entry },
+    configureServer(devServer) {
+      devServer.middlewares.use((request, response, next) => {
+        if (request.url?.match(/^\/__public_deck_detail__(\?|$)/)) {
+          response.setHeader('Content-Type', 'text/html')
+          response.end('<style>html,body,#app{margin:0;min-height:100%;background:#080d11}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__public_deck_detail__.js"></script>')
+          return
+        }
+        next()
+      })
+    },
+  }],
+})
+
+const viewports = [
+  { width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 },
+  { width: 360, height: 780 }, { width: 390, height: 844 }, { width: 844, height: 390 },
+]
+const suffix = viewport => `${viewport.width}x${viewport.height}`
+
+try {
+  await server.listen()
+  const port = server.httpServer.address().port
+  browser = await chromium.launch({ headless: true, channel: 'msedge' })
+  const page = await browser.newPage()
+  await page.addInitScript(() => localStorage.setItem('l12-account', JSON.stringify({ id: 'author', username: '验收作者', role: 'player', createdAt: '', publicHistory: true })))
+  const errors = []
+  const failedRequests = []
+  const waitForSection = async section => page.waitForFunction(id => {
+    const element = document.getElementById(`public-deck-${id}`)
+    if (!element) return false
+    const bounds = element.getBoundingClientRect()
+    const states = window.__l12ContentAnchorStates ||= {}
+    if (bounds.top < -1 || bounds.top >= innerHeight || bounds.bottom <= 0) {
+      delete states[id]
+      return false
+    }
+    const state = states[id]
+    if (!state || Math.abs(state.top - bounds.top) > 0.5) {
+      states[id] = { top: bounds.top, at: performance.now() }
+      return false
+    }
+    return performance.now() - state.at >= 200
+  }, section, { timeout: 5000 })
+  const anchoredCaptures = []
+  const captureSection = async (section, viewport, filename) => {
+    const bounds = await page.locator(`[data-detail-section="${section}"]`).boundingBox()
+    assert(bounds && bounds.y >= -1 && bounds.y < viewport.height,
+      `${section} must actually be in the screenshot viewport at ${suffix(viewport)}`)
+    anchoredCaptures.push({ section, viewport, bounds })
+    await page.screenshot({ path: path.join(output, filename), fullPage: false })
+  }
+  page.on('pageerror', error => errors.push(error.message))
+  page.on('requestfailed', request => failedRequests.push(`${request.method()} ${request.url()}: ${request.failure()?.errorText || 'failed'}`))
+  await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+  const report = []
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__`)
+    await page.getByRole('button', { name: '指南', exact: true }).waitFor().catch(async error => {
+      throw new Error(`公开牌库详情未完成渲染：${errors.join(' | ') || await page.locator('body').innerText()}${failedRequests.length ? `\n失败请求：${failedRequests.join(' | ')}` : ''}\n${error.message}`)
+    })
+    assert.equal(await page.getByRole('button',{name:'编辑牌库',exact:true}).count(),1)
+    const desktop=viewport.width>1000
+    const sidebar=page.locator('.public-card-detail')
+    const construction=page.locator('.construction-browser')
+    const filterRail=page.locator('#public-deck-construction-filters .construction-filter-rail')
+    const summary=page.locator('.deck-layout>aside').first().locator('section').nth(1)
+    assert.doesNotMatch(await summary.innerText(),/试炼\/额外|(?:额外|自动额外)\s*0/,'摘要不单列试炼且隐藏零数量类别')
+    assert.equal(await construction.locator(':scope>header').count(),0,'公开详情不保留构筑标题行')
+    assert.equal(await construction.locator(':scope>nav').count(),0,'公开详情不保留原筛选行')
+    assert.equal(await filterRail.count(),1,'筛选控件移入左侧摘要栏')
+    const filterControls=[filterRail.getByRole('searchbox',{name:'搜索卡名或编号'}),filterRail.getByRole('combobox',{name:'按区域筛选'}),filterRail.getByRole('combobox',{name:'按类型筛选'})]
+    const filterBoxes=await Promise.all(filterControls.map(control=>control.boundingBox()))
+    assert.ok(filterBoxes.every(Boolean),`筛选控件均可见 ${suffix(viewport)}`)
+    assert.ok(filterBoxes[0].y+filterBoxes[0].height<=filterBoxes[1].y && filterBoxes[1].y+filterBoxes[1].height<=filterBoxes[2].y,`筛选控件必须从上至下排列 ${suffix(viewport)}`)
+    const initialCardCount=await construction.locator('.construction-grid>button').count()
+    await filterControls[0].fill('不存在的卡牌')
+    assert.equal(await construction.locator('.construction-grid>button').count(),0,'移动后的搜索框仍驱动卡表筛选')
+    await filterControls[0].fill('')
+    assert.equal(await construction.locator('.construction-grid>button').count(),initialCardCount,'清空搜索后恢复全部卡牌')
+    assert.equal(await sidebar.isVisible(),desktop)
+    if(desktop){
+      const boxes=await Promise.all([page.locator('.deck-layout>aside').first(),construction,sidebar].map(item=>item.boundingBox()))
+      assert.ok(boxes[0].x+boxes[0].width<=boxes[1].x && boxes[1].x+boxes[1].width<=boxes[2].x,'三栏互不侵入')
+      assert.equal(Math.round(boxes[2].width),274,'图鉴同宽详情栏')
+      assert.ok(Math.abs(boxes[0].y-boxes[1].y)<=1,'删除原行后卡表与左侧栏顶部对齐')
+      const firstCardBox=await construction.locator('.construction-grid>button').first().boundingBox()
+      assert.ok(Math.abs(firstCardBox.y-boxes[1].y)<=1,'卡片直接占用已删除标题和筛选行的位置')
+    }
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`构筑筛选布局无横向溢出 ${suffix(viewport)}`)
+    for(const source of ['.construction-grid>button','.opening-hand .hand-card']){
+      const card=page.locator(source).first()
+      const expectedName=await card.locator(source.includes('construction')?'span':'b').innerText()
+      await card.click()
+      if(desktop){assert.equal(await page.locator('.catalog-detail-dialog').count(),0);await page.waitForFunction(()=>{const rect=document.querySelector('.public-card-detail').getBoundingClientRect();return rect.top>=-1 && rect.top<innerHeight},{},{timeout:3000});const box=await sidebar.boundingBox();assert.ok(box.y>=-1 && box.y<viewport.height,`点击起手后详情侧栏仍在视口 ${JSON.stringify({viewport,source,box})}`)}
+      else {await page.locator('.catalog-detail-dialog').waitFor();assert.equal(await page.locator('.catalog-detail-dialog').count(),1)}
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false)
+      const target=desktop?sidebar:page.locator('.catalog-detail-dialog')
+      assert.ok((await target.innerText()).includes(expectedName),'详情必须更新为单击的那张卡')
+      assert.ok((await target.innerText()).trim().length>20,'详情包含卡名及效果文本')
+      assert.equal(await target.evaluate(el=>el.scrollWidth>el.clientWidth+1),false,'详情无横向溢出')
+      await page.screenshot({path:path.join(output,`${source.includes('construction')?'construction':'hand'}-detail-${suffix(viewport)}.png`),fullPage:true})
+      if(!desktop){
+        const effect=target.locator('.archive-effect').first()
+        if(await effect.count()){
+          await effect.scrollIntoViewIfNeeded()
+          assert.ok((await effect.innerText()).trim().length>2,'卡效文本可滚动读取')
+          await page.screenshot({path:path.join(output,`${source.includes('construction')?'construction':'hand'}-effect-${suffix(viewport)}.png`),fullPage:true})
+        }
+        await page.getByRole('button',{name:'关闭卡牌详情',exact:true}).click();assert.equal(await page.locator('.catalog-detail-dialog').count(),0)
+      }
+    }
+    for (const tab of ['指南', '对局建议', '版本', '对局', '起手']) {
+      await page.getByRole('button', { name: tab, exact: true }).click()
+      await waitForSection({ 指南: 'guide', 对局建议: 'matchups', 版本: 'versions', 对局: 'matches', 起手: 'hands' }[tab])
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false,
+        `${tab} page overflows at ${suffix(viewport)}`)
+    }
+    await page.getByRole('button', { name: '指南', exact: true }).click()
+    await waitForSection('guide')
+    assert.match(await page.locator('[data-detail-section="guide"]').innerText(), /构筑思路[\s\S]*起手建议[\s\S]*常见展开/)
+    await captureSection('guide', viewport, `guide-${suffix(viewport)}.png`)
+    await page.getByRole('button', { name: '对局建议', exact: true }).click()
+    await waitForSection('matchups')
+    assert.equal(await page.locator('.matchup-city .deck-profile__portrait').count(), 3, `matchup avatar count mismatch at ${suffix(viewport)}`)
+    await captureSection('matchups', viewport, `matchups-${suffix(viewport)}.png`)
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    await waitForSection('matches')
+    const statistics = await page.locator('[data-detail-section="matches"]').innerText()
+    assert.match(statistics, /最近 90 天[\s\S]*版本 3[\s\S]*场次[\s\S]*12[\s\S]*胜率[\s\S]*58\.3%/)
+    assert.equal(await page.locator('.match-stat-list article').count(), 2)
+    assert.equal(await page.locator('[data-detail-section="matches"] a').count(), 0, '匿名统计不得提供单局或录像入口')
+    assert.doesNotMatch(statistics, /match-|bind|author|验收作者|账号|录像|回放/)
+    await captureSection('matches', viewport, `statistics-${suffix(viewport)}.png`)
+    await page.getByRole('button', { name: '起手', exact: true }).click()
+    await waitForSection('hands')
+    assert.equal(await page.locator('.opening-hand article').count(), 6, `opening hand count mismatch at ${suffix(viewport)}`)
+    await captureSection('hands', viewport, `hands-${suffix(viewport)}.png`)
+    report.push({ viewport, guideHeight: await page.locator('[data-detail-section="guide"]').evaluate(element => element.scrollHeight) })
+  }
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?empty=1`)
+    await page.getByRole('button', { name: '构筑', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '指南', exact: true }).count(), 0, '空指南不应生成导航锚点')
+    assert.equal(await page.getByRole('button', { name: '对局建议', exact: true }).count(), 0, '空对局建议不应生成导航锚点')
+    assert.equal(await page.locator('[data-detail-section="guide"]').count(), 0, '空指南不应生成内容区')
+    assert.equal(await page.locator('[data-detail-section="matchups"]').count(), 0, '空对局建议不应生成内容区')
+    await page.screenshot({ path: path.join(output, `empty-${suffix(viewport)}.png`), fullPage: true })
+  }
+  for (const scenario of ['emptyStats', 'smallStats']) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?${scenario}=1`)
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    await waitForSection('matches')
+    const statistics = page.locator('[data-detail-section="matches"]')
+    assert.equal(await statistics.locator('.match-stat-list article').count(), 0)
+    const copy = await statistics.innerText()
+    if (scenario === 'smallStats') assert.match(copy, /样本不足[\s\S]*3 场/)
+    else assert.match(copy, /(?:过去|最近) 90 天暂无可核验/)
+    assert.equal(await statistics.locator('a').count(), 0)
+    await captureSection('matches', { width: 390, height: 844 }, `statistics-${scenario}-390x844.png`)
+  }
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport)
+    await page.goto(`http://127.0.0.1:${port}/__public_deck_detail__?guest=1`)
+    await page.getByRole('button', { name: '构筑', exact: true }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '编辑牌库', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '删除公开牌库', exact: true }).count(), 0)
+    await page.getByRole('button', { name: '对局', exact: true }).click()
+    await page.locator('.match-stat-list article').first().waitFor()
+    await waitForSection('matches')
+    assert.equal(await page.locator('.match-stat-list article').count(), 2, 'Guest retains public anonymous statistics')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
+    await captureSection('matches', viewport, `guest-statistics-${suffix(viewport)}.png`)
+  }
+  assert.equal(errors.length, 0, `page errors: ${errors.join(' | ')}`)
+  assert.equal(anchoredCaptures.length, 28, 'All guide, matchup, statistics and hand captures require live bounds')
+  fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify({ status: 'passed', viewports, report, anchoredCaptures, errors }, null, 2))
+  console.log(JSON.stringify({ status: 'passed', output, viewports: viewports.length, screenshots: fs.readdirSync(output).filter(name => name.endsWith('.png')).length }, null, 2))
+} finally {
+  await browser?.close()
+  await server.close()
+}

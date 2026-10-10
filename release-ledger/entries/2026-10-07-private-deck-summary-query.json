@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-private-deck-summary-query",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "新增账号本人牌库的计数摘要和稳定ID全文读取接口，权限、修订与代际检查在全文展开前完成；原全量接口与保存删除合同不变，计数校验与原数组入口共用同一规则。公开摘要、环境与前端按需接线另片实施，本条不代表完整方案或部署完成。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12DeckValidator.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueryContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSummaries.cs"
+  ]
+}

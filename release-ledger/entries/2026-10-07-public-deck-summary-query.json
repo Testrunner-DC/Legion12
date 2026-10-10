@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-07-public-deck-summary-query",
+  "date": "2026-10-07",
+  "audience": "internal",
+  "reason": "新增公开与官方预组的同代计数摘要查询，筛选、排序、分页与统计在完整候选集合上完成；环境只使用现有产品收录源的CardPool，不展开无关牌表。匿名及其他玩家不获得作者专用发布版本，失效会话仍拒绝。旧详情与写入接口不变，前端按需消费者尚未接线；本条不表示完整储存方案或线上发布完成。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/L12Catalog.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryContracts.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryQueries.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryProjection.cs",
+    "服务端WebSocket/TwelveLegions/L12DeckEnvironment.cs"
+  ]
+}

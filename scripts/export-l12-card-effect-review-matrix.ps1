@@ -7,15 +7,13 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'lib/l12-card-runtime-evidence.ps1')
 $sourcePath = Join-Path $ProjectRoot '服务端WebSocket/TwelveLegions'
 $dataPath = Join-Path $sourcePath 'Data'
-$atomicSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'AtomicEffects.cs'), [System.Text.Encoding]::UTF8)
 $routeSource = [System.IO.File]::ReadAllText((Join-Path $sourcePath 'L12RuntimeEffectRoutes.cs'), [System.Text.Encoding]::UTF8)
 $cardIdPattern = '(?:S\d{2}|ST(?:\d{2})?)-[A-Za-z0-9]+'
-$programMatches = [regex]::Matches($atomicSource,
-    'Program\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
+$programMatches = @(Get-L12FineAtomicProgramMatches -SourcePath $sourcePath)
 $routeMatches = [regex]::Matches($routeSource,
     'new\("(?<id>' + $cardIdPattern + ')"\s*,\s*"(?<trigger>[^"]+)"')
 
-function Group-TriggersByCard([System.Text.RegularExpressions.MatchCollection]$matches) {
+function Group-TriggersByCard([System.Collections.IEnumerable]$matches) {
     $grouped = @{}
     foreach ($match in $matches) {
         $id = $match.Groups['id'].Value
@@ -31,6 +29,20 @@ $cards = New-Object System.Collections.Generic.List[object]
 foreach ($fileName in @('cards.s1.json', 'cards.s2.json', 'cards.st.json')) {
     $decoded = [System.IO.File]::ReadAllText((Join-Path $dataPath $fileName), [System.Text.Encoding]::UTF8) | ConvertFrom-Json
     foreach ($card in $decoded) { $cards.Add($card) }
+}
+$auditStatusByCard = @{}
+foreach ($fileName in @(
+    'S01-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md', 'S01-SUN-CITY-ASGARD-ABILITY-AUDIT.md',
+    'S01-TAKAMAGAHARA-ABILITY-AUDIT.md', 'S02-UNIVERSAL-HEAVEN-ABILITY-AUDIT.md',
+    'S02-SUN-CITY-ASGARD-ABILITY-AUDIT.md', 'S02-TAKAMAGAHARA-OLYMPUS-ABILITY-AUDIT.md',
+    'S02-OTHERWORLD-DISASTER-ABILITY-AUDIT.md'
+)) {
+    $text = [System.IO.File]::ReadAllText(
+        (Join-Path $ProjectRoot "docs/l12/$fileName"), [System.Text.Encoding]::UTF8)
+    foreach ($match in [regex]::Matches($text,
+        '(?m)^\| (?<id>S\d{2}-[A-Za-z0-9]+) [^|\r\n]+ \| \d+ \|.*?\| (?<status>[^|\r\n]+) \|\r?$')) {
+        $auditStatusByCard[$match.Groups['id'].Value] = $match.Groups['status'].Value.Trim()
+    }
 }
 $runtimeEvidence = Get-L12CardRuntimeEvidence -ProjectRoot $ProjectRoot -Cards $cards
 $batch6HReviewedCardIds = @(
@@ -189,7 +201,7 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
         $review += '；6G-A可选触发声明、次数预留与独立段已验收'
     }
     if ($batch6GBReviewedCardIds -contains $card.id) {
-        $review += '；6G-B隐藏展示延迟与独立抽牌段已验收'
+        $review += '；李牧隐藏展示延迟保留，2026-10-05整项单响应裁定已更新（旧独立抽牌规则撤销）'
     }
     if ($batch6IAReviewedCardIds -contains $card.id) {
         $review += '；6I-A原子可选触发公开声明与条件快照已验收'
@@ -262,6 +274,17 @@ $rows = foreach ($card in ($cards | Sort-Object id)) {
     }
     if ($batch6MFixedCardIds -contains $card.id) {
         $review += '（6M最终交叉审查明确错误已修复）'
+    }
+    # Route topology is generated, while semantic rulings come from the seven authoritative
+    # per-card audit tables. Historical batch arrays may retain superseded classifications;
+    # normalize those suffixes and then project the current ruling without rewriting it.
+    $review = [regex]::Replace($review,
+        '（[^）]*(?:明确错误已修复|有疑点，见OPEN-QUESTIONS)[^）]*）', '')
+    $auditStatus = $auditStatusByCard[$card.id]
+    if ($auditStatus -eq '明确错误→已修复') {
+        $review += '（逐卡审查明确错误已修复）'
+    } elseif ($auditStatus -and $auditStatus.StartsWith('有疑点', [StringComparison]::Ordinal)) {
+        $review += '（逐卡审查有疑点，见OPEN-QUESTIONS）'
     }
     [pscustomobject]@{
         Id = $card.id

@@ -1,8 +1,11 @@
 <script setup lang="ts">
+import BattleDockPortal from './BattleDockPortal.vue'
+import BattleOverlayPortal from './BattleOverlayPortal.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { gmAction, l12State } from '@/l12/net'
+import { endpointHttpBase } from '@/l12/deploymentBase'
 import type { Card, GameState } from '@/l12/types'
-import SandboxCardPicker, { type SandboxCatalogCard } from './SandboxCardPicker.vue'
+import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 
 const props = defineProps<{ game: GameState }>()
@@ -21,7 +24,7 @@ const emit = defineEmits<{
 const open = ref(true)
 watch(open, value => emit('openChange', value), { immediate: true })
 const targetMode = ref<'self' | 'opponent'>('self')
-const selectedCatalogCard = ref<SandboxCatalogCard | null>(null)
+const selectedCatalogCard = ref<SingleCardPickerItem | null>(null)
 const pickerOpen = ref(false)
 const destination = ref('hand')
 const handDestination = ref('graveyard')
@@ -85,7 +88,7 @@ function playHandCard() {
   }
   run('playHandCard', { cardInstanceId: card.instanceId, triggerEffects: triggerEffects.value })
 }
-function selectCatalogCard(card: SandboxCatalogCard) { selectedCatalogCard.value = card; pickerOpen.value = false }
+function selectCatalogCard(card: SingleCardPickerItem) { selectedCatalogCard.value = card; pickerOpen.value = false }
 function onKeydown(event: KeyboardEvent) {
   if (event.key.toLowerCase() !== 't' || event.ctrlKey || event.metaKey || event.altKey) return
   if ((event.target as HTMLElement | null)?.closest('input,select,textarea,button')) return
@@ -93,8 +96,7 @@ function onKeydown(event: KeyboardEvent) {
 }
 async function exportRecord() {
   try {
-    const ws = new URL(l12State.endpoint)
-    const url = `${ws.protocol === 'wss:' ? 'https:' : 'http:'}//${ws.host}/api/matches/${props.game.matchId}`
+    const url = `${endpointHttpBase(l12State.endpoint)}/api/matches/${props.game.matchId}`
     const response = await fetch(url)
     if (!response.ok) throw new Error('读取对局记录失败')
     const data = await response.json()
@@ -115,8 +117,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>
-  <button v-if="!open" class="gm-open" title="打开 GM 面板（T）" @click="open = true">GM</button>
-  <aside v-else class="gm-panel">
+  <BattleDockPortal lane="context"><button v-if="!open" class="gm-open" title="打开 GM 面板（T）" @click="open = true">GM</button></BattleDockPortal>
+  <BattleOverlayPortal><aside v-if="open" class="gm-panel">
     <header><div><small>TEST AUTHORITY</small><b>GM 调试面板</b></div><button @click="open = false">×</button></header>
     <p class="security">仅本次单人沙盒有效 · 所有操作由服务端校验并记录</p>
 
@@ -137,8 +139,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <section><h3>士气、抽牌与牌库</h3><div class="number-row"><input v-model.number="count" type="number" min="1" max="20"/><button @click="run('addMorale', { value: count })">追加活跃士气</button></div><div class="two"><button @click="run('readyMorale')">全部士气活跃</button><button @click="run('restMorale')">全部士气休整</button><button @click="run('draw', { value: count })">抽取 {{ count }} 张</button><button @click="run('mill', { value: count })">弃置牌库顶 {{ count }} 张</button></div><button class="wide" @click="run('shuffleLibrary')">洗切牌库</button></section>
 
     <footer><button @click="exportRecord">导出可复现 JSON</button><span>快捷键 T</span></footer>
-  </aside>
-  <SandboxCardPicker v-if="pickerOpen" title="选择要执行 GM 操作的卡片" @select="selectCatalogCard" @close="pickerOpen = false"/>
+  </aside></BattleOverlayPortal>
+  <SingleCardPicker v-if="pickerOpen" title="选择要执行 GM 操作的卡片" @select="selectCatalogCard" @close="pickerOpen = false"/>
 </template>
 
 <style scoped>

@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-06-deployment-drain-foundation-internal",
+  "date": "2026-10-06",
+  "audience": "internal",
+  "reason": "增加尚未启用的全模式发布协调器、可选入站在途租约、固定文件围栏及只读耐久核对底座；实际服务器入口和发布消费者尚未接线，不改变玩家行为，不提供可用停服许可。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12DeploymentDrainCoordinator.cs",
+    "服务端WebSocket/TwelveLegions/L12DeploymentFileFenceStore.cs",
+    "服务端WebSocket/TwelveLegions/L12InboundConnection.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DeploymentReadiness.cs"
+  ]
+}
