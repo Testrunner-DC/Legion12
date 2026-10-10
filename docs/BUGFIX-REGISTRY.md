@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261010-RESTORE-REHEARSAL｜存储故障后的备份恢复证据
+
+- 现场SSH恢复但正式应用health503，统一状态读取屏障报“平台已提交状态不可恢复”。扫描`_rollbackViewUnavailable|RestoreLastCommittedSnapshot|平台已提交状态不可恢复`，对应TransactionalStorage、主Store与SessionActivity；既有STORAGE-20261003-ROLLBACK-MEMORY保护继续保持。未捕获最初cache/database双失败的完整内层异常，不推断为数据库损坏，也不把cgroup触顶106次当作已证实OOM根因。
+- 用户授权五步恢复流程。本批只做版本同步、数据备份和隔离演练，没有业务代码修改、规则裁定变更或线上Bug关闭。P2/P3哈希、事务、结算outbox、历史waived与权限不变量保持。
+- 已验证程序`0e49a749`/DLL SHA256 `656f90ef4dd6c013cbf6b18fd2649cdfd5fda4947433898105727600d02d3cbb`；独立Linux目录、PrivateNetwork和生产目录不可访问，真实账号登录/牌组与战绩/排行、私人牌组创建改名/旧revision409、正常重启读回通过。首次超长合成用户名400保留，未改产品断言。
+- 原1175账号凭据/角色和8733牌组行未改变，排名/结算/审计/内容比较通过。停写后的最终数据库再次精确恢复，HTTP及WS协议1通过；3210运行局、3211结算outbox、18响应偏好outbox与恢复前内容相同，没有重复结算。具名证据在受限备份目录rehearsal及final/rehearsal，不将玩家私有数据提交Git。
+- 正式旧进程停止时发生存储异常，20秒后被systemd超时结束；先记录MainPID0/无业务监听，再重新导出并校验SQLite。该异常退出没有被记作正常停止。机外最终校验及重装接续状态见OPS-20261010-RECOVERY。
+- 回退守卫：不以旧JSON、旧schema或旧历史快照覆盖当前权威库；新系统选择性恢复配置、正确设置数据所有权，不携带旧WAL/SHM。原数据目录与两份备份保留；真实生产上线未验收前不解除维护、不宣称最初503诱因已根治。
+
 ## RULE-20261009-AY-COMPLETE-WORK｜必发与共享天灾顺序
 
 - **最终当前源码完整Batch r2通过**：6721规则/1191平台、失败跳过0，独立九源SHA及两success回执绑定D盘`main-complete-batch-r2-acceptance.json`；原r1的16失败、诊断过程与旧三测试字节原样保留。按根因提交后clean Release/最终同包出口待，本批多段Bug未上线仍不resolved。
