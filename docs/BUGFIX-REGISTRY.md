@@ -2,6 +2,9 @@
 
 ## OPS-20261010-RESTORE-REHEARSAL｜存储故障后的备份恢复证据
 
+- **2026-10-10重装恢复已验收，故障根因未确认**：新Ubuntu恢复原正式0e49a749/测试428fff25；四库首次打开前精确SHA及完整性/外键全过，保留数据盘1828文件逐项校验通过。初次启动与整机重启后的129项业务内容哈希比较均0差异，正式1175账号/8733私牌/4938对局/3211结算outbox保持，历史waived未删。三轮真实登录、原牌组、排行、历史和认证WS通过；公网页面/静态/卡图/TLS通过。18:05核对并归档旧部署围栏后按策略96→97解除立即维护，预约配置不变，正式health恢复ok/maintenance=false。原503诱因仍未知，无业务修复、无Bug关闭；恢复成功不能作为根因已消除的证据。
+- 恢复回归守卫及边界：新系统保留自身引导/网络，选择性恢复配置；不混旧WAL/SHM、不覆盖权威库为旧JSON，SSH使用用户接受的新专用信任记录。补齐原dotnet链接、恢复/opt标准遍历权限并以实际服务账户检查；数据盘首轮字段误读、测试卡图探针路径错误、开服DTO读取错误均保留失败记录并准确修正验收脚本，未放宽产品断言。具名证据见TASK-LEDGER OPS-20261010-RECOVERY与受限final/restored-server；上线短时cgroup max/oom/oom_kill0不等于长期内存风险已根治。
+
 - 现场SSH恢复但正式应用health503，统一状态读取屏障报“平台已提交状态不可恢复”。扫描`_rollbackViewUnavailable|RestoreLastCommittedSnapshot|平台已提交状态不可恢复`，对应TransactionalStorage、主Store与SessionActivity；既有STORAGE-20261003-ROLLBACK-MEMORY保护继续保持。未捕获最初cache/database双失败的完整内层异常，不推断为数据库损坏，也不把cgroup触顶106次当作已证实OOM根因。
 - 用户授权五步恢复流程。本批只做版本同步、数据备份和隔离演练，没有业务代码修改、规则裁定变更或线上Bug关闭。P2/P3哈希、事务、结算outbox、历史waived与权限不变量保持。
 - 已验证程序`0e49a749`/DLL SHA256 `656f90ef4dd6c013cbf6b18fd2649cdfd5fda4947433898105727600d02d3cbb`；独立Linux目录、PrivateNetwork和生产目录不可访问，真实账号登录/牌组与战绩/排行、私人牌组创建改名/旧revision409、正常重启读回通过。首次超长合成用户名400保留，未改产品断言。
