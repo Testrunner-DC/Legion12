@@ -13,6 +13,9 @@
 - 服务商控制台已登录，已选择Ubuntu-24.04.1-x64并勾选已完成备份；页面未承诺保留数据盘，最终确认框截图留在受限final/reinstall-confirmation.jpg。因浏览器工具要求永久删除在动作当时确认，已请求最终清盘确认，尚未点击确定；未重装、覆盖原库或解除维护。正式/测试保持停止，最终快照后禁止开启写入再沿用该快照作为最终备份。重装还须核对实际清盘范围及新SSH信任；接续清单位于受限目录restore-plan.txt。
 - 15:56 UTC+8最终只读复核四业务/演练单位均PID0，8083/8084/18083无监听，Nginx仍active。Git批次仅本三记录，产品与0e49a749一致，未为文档重复运行游戏门禁；文档diff/冲突守卫及原始恢复回执独立核验通过，提交和推送的精确回执写入受限final/git-receipt.json。
 
+- **16:53 UTC+8补齐全部数据盘文件**：原七包仅纳入/www的card-assets目录、web-assets及maintenance，未覆盖三份旧release、五份历史运行备份和暂存目录，不能称完整数据盘备份。完整扫描/dev/vdb1→/www后新增5402449654字节补包，源前后相同；本机SHA与服务器一致，全部1828文件内容逐一SHA核对、125目录/6链接及权限归属核对通过，源文件合计5482939825字节。六个链接的/opt实体已有原包覆盖，证据data-disk-link-target-coverage.json。
+- 合并备份集合为8包9040340486字节，位于既有受限final目录；原manifest/verification保持，新增backup-set-manifest.json、BACKUP-SET-SHA256SUMS.txt、data-disk-manifest.json和data-disk-verification.json，最终备份回执已明确原范围缺口及补齐结果。只读核对16:53:54双业务PID0，补包任务success/inactive；未重装或开放写入。P2/P3不改，旧release/历史快照只保留，不切换或覆盖当前已验证数据库。仅更新本三记录，复核diff及备份原始证据，不重跑无关游戏构建；提交/推送回执追加final/git-receipt.json。
+
 ## MAIN-20261009-AY-DISASTER-RELEASE｜必发与完整工作闭包
 
 - **04:34最终同源完整Batch r2已接受**：6721规则/1191平台、失败跳过0，九源码实际SHA0漂移；两监督success与8191CE49日志绑定D盘`main-complete-batch-r2-acceptance.json`。154专项和最后武田2专项只作过程证据，r2覆盖最后版本；r1确实16失败仍保留。随后按阿伊/共享work两根因提交、一次clean Release/同包冻结reader/Git。尚未部署、维护未改、未关闭本批反馈。
