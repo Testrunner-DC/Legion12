@@ -317,7 +317,7 @@ public sealed partial class L12GameEngine
             && card.AttachedCards.Count > 0)
             DiscardAttachedCards(card, $"{card.Name}阵亡");
         var candidates = BuildS1LeaveReactionCandidates(controller, card,
-            includeTombConstruct: false).ToList();
+            includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(card)).ToList();
         if (HasDeathTrigger(card))
             candidates.Add(CreateDeathTriggerCandidate(controller, card,
                 new Dictionary<string, string> { ["cause"] = "combat", ["combatTiming"] = "death" }));

@@ -1874,7 +1874,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (queueDeathTrigger)
         {
             var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
-                includeTombConstruct: !isDefeat).ToList();
+                includeTombConstruct: !isDefeat || IsDeathTriggerSuppressedForCurrentTurn(sourceSnapshot)).ToList();
             if (isDefeat && HasDeathTrigger(sourceSnapshot))
                 candidates.Add(CreateDeathTriggerCandidate(player.PlayerIndex, sourceSnapshot,
                     new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }));

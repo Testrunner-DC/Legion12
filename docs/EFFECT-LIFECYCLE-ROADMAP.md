@@ -1,5 +1,11 @@
 # 效果一致性实施计划
 
+## 2026-10-12 最新增量：三批同步后，孟婆抑制与独立离场
+
+- NEXT-RESET、反击物理副本与拉美西斯顺序已经完整Release7048/1268及9阶段通过并推送3ce1dbea，未部署。实际最终回执E1397AEB位于D盘ramses-selection-order/implementation/final-acceptance.json，原Batch失败及旧Journal严格拒绝证据不删除；后文待发布状态为历史。
+- 孟婆限定修复已冻结：当前改前真实付费双方/恢复4RED、正常与无效回退4GREEN，另旧DLL战斗/同时阵亡8RED；只补真实离场三生产者的抑制资格，保原所有权/单实例/检查点及天灾守卫，不另建队列。44新增及关联186绿，Main接独立审查/完整Batch/Release，未完成不提前称收口。全池与借用阵亡路径证据见mengpo-tomb-construct/implementation。
+- 孟婆本地最终增量：Main44复跑、764恢复、389文件指纹与独立审查通过；完整Batch7092/1268失败跳过0，日志86A6F65F。后续干净Release、提交和远端以该目录final-acceptance.json实际回执为准，未生成不提前称完成，不部署。就绪清单r5为33待回填而非33已关闭；线上92/512保持。
+
 ## 2026-10-12 当前接续：下一重置期限与反击物理实例
 
 - 最终本地增量：拉美西斯原完整Batch7047过/1旧反射参数失败/0跳过已保留；只补测试默认null后原整类+拉美西斯87通过，产品冻结不变。旧Journal两已完成链严格等价、两待登记尾严格拒绝，不能称全旧录像兼容。三个本地修复提交随后统一干净Release，全部通过才推送；最终实际提交/门禁/远端见D盘ramses-selection-order/implementation/final-acceptance.json，未生成不提前称完成。线上未部署、31待回填不当已关闭；下一6条Bug仅离线准备，首条傀儡独立取证，不混入本批产品。

@@ -1752,7 +1752,7 @@ public sealed partial class L12GameEngine
         var candidates = materializedDeaths.SelectMany(entry =>
         {
             var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.SourceSnapshot,
-                includeTombConstruct: false).ToList();
+                includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(entry.SourceSnapshot)).ToList();
             if (HasDeathTrigger(entry.SourceSnapshot))
                 sameTime.Add(CreateDeathTriggerCandidate(entry.Controller, entry.SourceSnapshot,
                     new Dictionary<string, string> { ["cause"] = "effect" }));
@@ -2126,6 +2126,11 @@ public sealed partial class L12GameEngine
             data["presentationSceneId"] = sceneId;
         AddPresentationEventByIdWithPlayerLog(eventType, controller, text, sceneId, data, source);
     }
+
+    // A suppressed death does not suppress an independent leave trigger. Use this only
+    // at actual-departure producers; borrowed death effects are not leave events.
+    private bool IsDeathTriggerSuppressedForCurrentTurn(L12CardInstance card)
+        => card.SuppressDeathUntilTurn >= State.TurnSerial;
 
     private bool HasDeathTrigger(L12CardInstance card)
         => card.SuppressDeathUntilTurn < State.TurnSerial && (card.CardId is "S01-0102" or "S01-0108"
