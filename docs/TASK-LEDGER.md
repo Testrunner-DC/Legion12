@@ -10,12 +10,14 @@
 - 当前26ac未改产品基线已实跑8项：额外回合4 RED、普通回合对照4 GREEN、跳过0；六卡共享修复已冻结，22规则/1平台/34关联专项均过。Main逐核24源及3TRX，独立324卡复核同族6卡/8路径/9写点无遗漏。桌面及移动横竖屏组件验收有限通过，手机旧锁图标微小重叠保留，不称iOS真机。旧0e实际Journal四例中已生效int锁两例继续相等；待结算旧尾两例按原P3合同严格拒绝，明确不称全部历史回放兼容。Main完整Batch进行中，证据main-focused-acceptance.json；Release/Git/部署未完成。
 - 最终组合Batch验收：6982规则/1268平台全部通过、失败跳过0；前端原npm环境失败保留，未改源补跑完整npm build退出0，UI355/反馈144/卡图42与324卡、类型及双环境构建通过。账本Focused另补齐发布状态/门禁回归；初次缩短PATH漏python失败保留，补已验证进程路径后通过，不改系统PATH或产品。监督器按原规则校验成功TRX后保留计数回执并清除私有proof，不称全量TRX仍在；显式Focused/失败TRX保持。Main验收及27源绑定见main-composed-batch-acceptance.json（40BCC344），后续精确提交/Release/推送另记；本批未部署。
 
-## EFFECT-20261012-COUNTER-COPIES｜反击战术按每张物理卡独立响应（已批准，排在NEXT-RESET后）
+## EFFECT-20261012-COUNTER-COPIES｜反击战术按每张物理卡独立响应（本地Batch已验，Release待）
 
-- 用户明确批准“每张独立响应一次的限定修复”；保留同一张卡发动后不能再次响应的消费守卫，仅本地修复与同类检查，不部署、不改维护。共享L12S1ExtendedEffects.cs必须等上一批冻结后接租约，当前仅只读preflight。
+- 用户明确批准“每张独立响应一次的限定修复”；保留同一张卡发动后不能再次响应的消费守卫，仅本地修复与同类检查，不部署、不改维护。NEXT-RESET在完整组合Batch通过后已本地提交a19c02c4；现给执行者仅L12S1ExtendedEffects.cs和新CounterTacticPhysicalSourceMultiplicityRegressionTests.cs租约，Focused共享构建串行。Main仅写记录/独立审查，拉美西斯仅机外固定DLL守卫准备，不并写。
 - BUG-20260921-d0a089a5原述纷乱箭杀三陵墓守卫后不朽之礼两次结算；冻结正式0e真实付费盖伏/打出/响应链10场中，8个单实例相关场景不复现重复结算，另两席双实例各仅第一张获得响应。旧报告未说明副本数，不能混称原反馈完全还原；双实例新发现现已获得规则确认与修复批准。
 - Main独立核产品/9卡池/探针与报告SHA、逐提示和最终清链；第二张从未进入候选，静态FirstOrDefault指向遗漏根因。证据 D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/chaotic-arrows-three-guards-gift/main-acceptance.json。当前开发RED与实现仍待，不能借旧正式探针声称已修好或提前线上关闭。
 - 当前源码补证：独立D盘固定Release DLL8A714142预检7项全部预期RED，三候选仅first、真实双Gift链双方×V2仅发动1次；Main已逐读失败断言与TRX。初稿List参数编译失败另保留，不算产品RED。范围18反击中其余15已逐实例遍历；只修不朽之礼/复仇血鹰/摄政皇权三枚举，共同单实例消费守卫不改。正式repo实施仍待上一批完整门禁结束，证据current-release-red/main-red-acceptance.json。
+
+- 上一反击批收口增量：三枚举仅改L12S1ExtendedEffects，不改共同消费生命周期；完整18反击同型扫描确认其余15已逐实例。新15回归连同旧关联87/87通过，旧单方法只增加双来源真实排序及两次独立拒绝，原已发动/被无效/隐藏/重新盖伏断言保留。Main完整Batch6997规则/0失败/0跳过、进程退出0；该规则域Batch按既有选择器未重复平台/前端，最终Release会全跑。证据为chaotic-arrows-three-guards-gift/implementation/main-focused-acceptance.json及main-batch-acceptance.json。完整success计数由监督器实际TRX解析，私有proof按原存储策略清除；显式87专项TRX仍保留。原初稿/夹具失败不删，未上线、不提前resolved。
 
 ## EFFECT-20261012-RAMSES-ORDER｜所选登场效果统一顺序（已批准，排在前两批后）
 
@@ -23,6 +25,7 @@
 - 冻结正式0e真实引擎收到该命令后，公共候选与直接Deferred分流，先处理C/A再声明B。三尺寸各两恢复分支、10条命令均清链且V2一致；A/C真实resolve但收益为零，不混称三卡收益成功。卡文要求自选顺序发动；用户批准统一现有候选体系逐项声明，保留各自响应、子链、天灾最后结算和恢复保护，不建立第二调度模型。
 - 当前仅证据与方案准备，尚未改产品；先完成NEXT-RESET，再完成COUNTER-COPIES，然后本批。证据D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/ramses-selection-order。只本地验收，不部署、不改维护、不提前关原反馈。
 - 当前冻结8A714142 DLL的双方×逐命令V2四条真实付费链均在指定声明顺序断言RED，全直接响应/清链对照1 GREEN、0跳过；Main独立重算18产物哈希并读实际TRX/成对恢复事实。没有改产品，证据current-red/main-red-acceptance.json；子效果、天灾与来源失效仍需实施批补齐，不能用本5条代替。
+- 独立补证：真实付费兵临城下→托勒密重复→墨子阵亡/抽牌子链，双方×V2四条子链顺序RED，四条天灾最后且恰一次GREEN；旧PendingBatch/Deferred父兄弟四条显式合成V2边界RED，不冒称自然卡路。Main核69产物SHA/12终态/全部接受命令，guard-preflight/main-preflight-acceptance.json（BF57B71B）。r2设计复核0364EEF4选原队列持久terminal边界，仅5产品触点；保每项声明/响应/子链、最后delegate、旧父队列原序、无marker原分支及完整哈希校验。按用户本地批准继续，未部署。
 
 ## MAIN-20261011-LAG｜获准本地共享读取隔离与分配治理，Batch已验，最终同步以唯一回执为准
 

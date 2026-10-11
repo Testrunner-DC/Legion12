@@ -434,6 +434,18 @@ public sealed class CounterTacticTriggerConsistencyTests
             .ToArray();
         Assert.Equal(2, oldLifecycleCandidates.Length);
 
+        var firstOrder = OnlyPrompt(game);
+        Assert.Equal("trigger-order", firstOrder.Kind);
+        Assert.Equal(2, firstOrder.ValidChoices.Count);
+        var firstCounterChoice = Assert.Single(firstOrder.ValidChoices,
+            id => firstOrder.Data[$"sourceInstance:{id}"] == counter.InstanceId);
+        var firstIndependentChoice = Assert.Single(firstOrder.ValidChoices,
+            id => firstOrder.Data[$"sourceInstance:{id}"] == independent.InstanceId);
+        var ordered = game.Handle(firstOrder.PlayerIndex, new L12Command("resolvePrompt",
+            PromptId: firstOrder.PromptId,
+            CardInstanceIds: [firstIndependentChoice, firstCounterChoice]));
+        Assert.True(ordered.Accepted, ordered.Error);
+
         ResolveChoice(game, "mode:use");
         if (game.State.EffectStack.Count == 0)
             ResolveChoice(game, "mode:none");
@@ -452,6 +464,25 @@ public sealed class CounterTacticTriggerConsistencyTests
         stacked.Negated = true;
 
         PassAllResponses(game);
+        var independentOpportunities = 0;
+        for (var safety = 0; game.State.PendingPrompts.Count > 0; safety++)
+        {
+            Assert.True(safety < 10, "独立物理来源的后续机会未在有界次数内清空");
+            var decision = OnlyPrompt(game);
+            if (decision.Kind == "response")
+            {
+                ResolveChoice(game, "pass");
+                continue;
+            }
+            var activation = Assert.Single(game.State.PendingActivations,
+                item => item.ActivationId == decision.ActivationId
+                    || item.ActivationId == decision.Data.GetValueOrDefault("activationId"));
+            Assert.Equal(independent.InstanceId, activation.SourceInstanceId);
+            Assert.Contains("mode:none", decision.ValidChoices);
+            independentOpportunities++;
+            ResolveChoice(game, "mode:none");
+        }
+        Assert.Equal(2, independentOpportunities);
 
         Assert.DoesNotContain(player.Field.SelectMany(row => row), card => card?.InstanceId == counter.InstanceId);
         Assert.Contains(player.Graveyard, card => card.InstanceId == counter.InstanceId);

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-counter-physical-copies",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "反击战术多张盖伏的响应机会",
+  "changes": [{
+    "category": "card-effects",
+    "text": "盖伏多张不朽之礼、复仇血鹰或摄政皇权时，符合条件的每张卡都可分别响应；同一张卡发动后不会因后续触发再次获得响应机会。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs"]
+  }]
+}

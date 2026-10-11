@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261012-COUNTER-COPIES｜三反击候选遗漏同名第二实例（本地Batch已验，未部署）
+
+- 用户批准每张物理卡独立一次；原BUG-20260921-d0a089a5没有说明副本数，冻结正式付费链单实例8例未复现重复，双实例两席均遗漏第二张，不把相邻缺陷冒称原录像已还原。当前开发基线7项预期RED全部保留。
+- 根因和全池扫描：18种反击中，普通11种与进攻后4种已逐实例；GetMasterDamagedTriggerCandidates、GetAlliedLegionLeaveTriggerCandidates仅对摄政皇权/复仇血鹰/不朽之礼取FirstOrDefault。改这三处为全部物理实例枚举；不动Controller+InstanceId+CardId共同消费守卫，发动被无效仍已消费，拒绝保持盖伏，其他合法副本仍可声明。
+- 新15与旧关联87专项全过；真实付费双不朽之礼/纷乱箭/三守卫双方×逐提示V2证明各一次、抽2/拉2并清链；首张失效三变体不影响第二张，两张失效不造空窗，隐藏身份不泄露。摄政走真实杨戬伤害；复仇血鹰使用明确标记的合成GM阵亡入口，不冒称自然战斗。旧消费测试只适配实际出现的双来源排序和独立拒绝，原断言不减。
+- Main完整Batch6997规则/0失败/0跳过、退出0，产品/测试SHA与87Focused绑定相同；平台和前端将在最终Release统一核。证据D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/chaotic-arrows-three-guards-gift/implementation。原失败保留、无部署/维护/线上Bug写；不称已上线或已关闭反馈。
+
 ## BUG-20261012-RAMSES-ORDER｜所选登场效果跨队列顺序（已复现、获准、待实施）
 
 - 原BUG-20260923-3cb9b35c，经实际组件三尺寸实点与冻结正式0e引擎衔接，UI调整和提交B,C,A均成立；QueueOrPush分流直接Deferred与公共候选，真实先C/A后B，恢复相同。并非凭源码推定或玩家记忆，初始移动端脚本假设失败也保留。

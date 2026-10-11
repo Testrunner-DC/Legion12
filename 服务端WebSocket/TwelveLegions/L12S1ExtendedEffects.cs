@@ -1364,9 +1364,10 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[damagedPlayer];
         var candidates = new List<L12TriggerCandidate>();
-        var counter = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0021" });
-        if (counter is not null)
-            candidates.Add(CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术"));
+        candidates.AddRange(player.Field[1]
+            .Where(card => card is { CardId: "S01-0021" })
+            .Cast<L12CardInstance>()
+            .Select(counter => CreateTriggerCandidate(damagedPlayer, counter, "reaction", "【主宰受到伤害时】反击战术")));
         if (player.MasterId == "S01-02M3" && State.ActivePlayer == 1 - damagedPlayer
             && sourcePlayer == 1 - damagedPlayer
             && !player.UsedAbilities.Contains(L12MasterTriggeredUsageRules.Key("medjedDamageResponse", player.PlayerIndex, State.TurnSerial))
@@ -1397,12 +1398,16 @@ public sealed partial class L12GameEngine
         if (includeTombConstruct && left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
             candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;
-        var bloodEagle = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0320" });
-        if (bloodEagle is not null) candidates.Add(CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术"));
+        candidates.AddRange(player.Field[1]
+            .Where(card => card is { CardId: "S01-0320" })
+            .Cast<L12CardInstance>()
+            .Select(bloodEagle => CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术")));
         if (left.CurrentCost > 2 && State.ActivePlayer != owner)
         {
-            var gift = player.Field[1].FirstOrDefault(card => card is { CardId: "S01-0223" });
-            if (gift is not null) candidates.Add(CreateTriggerCandidate(owner, gift, "reaction", "【我方高费用军团离场时】反击战术"));
+            candidates.AddRange(player.Field[1]
+                .Where(card => card is { CardId: "S01-0223" })
+                .Cast<L12CardInstance>()
+                .Select(gift => CreateTriggerCandidate(owner, gift, "reaction", "【我方高费用军团离场时】反击战术")));
         }
         return candidates;
     }
