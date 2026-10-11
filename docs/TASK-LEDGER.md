@@ -19,13 +19,17 @@
 
 - 上一反击批收口增量：三枚举仅改L12S1ExtendedEffects，不改共同消费生命周期；完整18反击同型扫描确认其余15已逐实例。新15回归连同旧关联87/87通过，旧单方法只增加双来源真实排序及两次独立拒绝，原已发动/被无效/隐藏/重新盖伏断言保留。Main完整Batch6997规则/0失败/0跳过、进程退出0；该规则域Batch按既有选择器未重复平台/前端，最终Release会全跑。证据为chaotic-arrows-three-guards-gift/implementation/main-focused-acceptance.json及main-batch-acceptance.json。完整success计数由监督器实际TRX解析，私有proof按原存储策略清除；显式87专项TRX仍保留。原初稿/夹具失败不删，未上线、不提前resolved。
 
-## EFFECT-20261012-RAMSES-ORDER｜所选登场效果统一顺序（已批准，排在前两批后）
+## EFFECT-20261012-RAMSES-ORDER｜所选登场效果统一顺序（本地组合验收完成，干净Release/Git待）
 
 - BUG-20260923-3cb9b35c：Main真实Edge三尺寸实点B,A,C→取消A→重选A，显示和单次命令均为B,C,A，移动端有序卡名在现有“任务说明”中可查看。首轮误要求紧凑栏展示全卡名的脚本失败保留，未改产品迎合测试。
 - 冻结正式0e真实引擎收到该命令后，公共候选与直接Deferred分流，先处理C/A再声明B。三尺寸各两恢复分支、10条命令均清链且V2一致；A/C真实resolve但收益为零，不混称三卡收益成功。卡文要求自选顺序发动；用户批准统一现有候选体系逐项声明，保留各自响应、子链、天灾最后结算和恢复保护，不建立第二调度模型。
-- 当前仅证据与方案准备，尚未改产品；先完成NEXT-RESET，再完成COUNTER-COPIES，然后本批。证据D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/ramses-selection-order。只本地验收，不部署、不改维护、不提前关原反馈。
+- 按NEXT-RESET本地a19c02c4→COUNTER-COPIES本地fbdda63c顺序后实施本批。五产品触点以原候选/批队列的单项与结束标记保存完整子链边界，登记早于父项Finish；新子批先于下一个所选项，末项结束仍保留边界，旧父队列保持原序。主公开入口和旧ramses-repeat共用；目标/费用晚检查、来源快照、继承反击保护、各自响应、天灾最后及完整V2/hash不变。只本地验收，不部署、不改维护、不提前关原反馈。
 - 当前冻结8A714142 DLL的双方×逐命令V2四条真实付费链均在指定声明顺序断言RED，全直接响应/清链对照1 GREEN、0跳过；Main独立重算18产物哈希并读实际TRX/成对恢复事实。没有改产品，证据current-red/main-red-acceptance.json；子效果、天灾与来源失效仍需实施批补齐，不能用本5条代替。
 - 独立补证：真实付费兵临城下→托勒密重复→墨子阵亡/抽牌子链，双方×V2四条子链顺序RED，四条天灾最后且恰一次GREEN；旧PendingBatch/Deferred父兄弟四条显式合成V2边界RED，不冒称自然卡路。Main核69产物SHA/12终态/全部接受命令，guard-preflight/main-preflight-acceptance.json（BF57B71B）。r2设计复核0364EEF4选原队列持久terminal边界，仅5产品触点；保每项声明/响应/子链、最后delegate、旧父队列原序、无marker原分支及完整哈希校验。按用户本地批准继续，未部署。
+- 最终专项218/218、失败跳过0（51新增/167旧关联），实际TRX09DC0D55；原17、47阶段与r2/r3失败保留。Main独立重核225绑定、45终态和10组逐命令恢复的40事实/事件数组，独立源码审查3BCBC5E8无阻断；末项真实无目标、父旧Deferred释放、拒绝/取消/失效、无marker原优先级、五损坏标记拒绝均具名。全324卡/有无主副戒指静态费用交集检查保留，不把反射或合成边界称为自然出牌证据。完整Batch运行，Release/Git/旧Journal跨版结果待实际核验。
+- 独立残余：两个旧PendingTriggerStackCandidates在完全无本标记的合成状态也卡住，双方2RED已保存；尚未证明自然卡路可达，未获独立修复范围，单独挂起，不改通用调度、也不宣称已根治该拓扑。新版本逐命令V2通过不等于全部旧Journal兼容；旧尾链不等价仍按P3严格拒绝。
+- 跨版旧Journal已实际核查：冻结旧8A714142 writer生成四条合成SQLite记录、自身4/4严格恢复；当前冻结674A621C reader读取独立副本，链已结束后两条完整哈希相等；待登记旧尾两条在sequence1均因状态哈希变化严格拒绝，accepted/revision相同。Main重核8原库/副本、加载DLL与真正LoadJournalEngineAsync入口；不改旧库、不以诊断重放代替恢复成功，不称全历史兼容。证据old-journal/current-reader/main-reader-acceptance.json及实际报告A8C8CF1A。
+- Main首轮完整Batch7048全执行，7047通过、仅旧CourtMagicianRechecksAQueuedCounterBeforeDeclaration反射零参数与新增可选参数不匹配，0跳过；失败/TRX保留。全库只有此一旧反射入口，Main仅补(object?)null，4原断言与布置不动，产品5源保持原冻结SHA；随后全部拉美西斯/反击一致性87/87通过。组合回执main-composed-local-acceptance.json明确原Batch退出1，未运行到的平台/前端不借旧绿色；干净Release将完整全跑后才push，最终提交/Release/同步统一读同目录final-acceptance.json。无部署/维护/线上Bug写。
 
 ## MAIN-20261011-LAG｜获准本地共享读取隔离与分配治理，Batch已验，最终同步以唯一回执为准
 

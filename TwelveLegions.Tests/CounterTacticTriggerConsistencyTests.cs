@@ -1018,7 +1018,7 @@ public sealed class CounterTacticTriggerConsistencyTests
         game.State.CounterTacticsDisabledUntilTurnSerial = int.MaxValue;
         game.State.CounterTacticsDisabledExpiresAtPlayerTurnStart = 1;
 
-        Invoke(game, "AdvancePendingTriggerStackCandidates");
+        Invoke(game, "AdvancePendingTriggerStackCandidates", (object?)null);
 
         Assert.Empty(game.State.PendingTriggerStackCandidates);
         Assert.Empty(game.State.PendingActivations);

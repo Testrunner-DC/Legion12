@@ -7,10 +7,14 @@
 - 新15与旧关联87专项全过；真实付费双不朽之礼/纷乱箭/三守卫双方×逐提示V2证明各一次、抽2/拉2并清链；首张失效三变体不影响第二张，两张失效不造空窗，隐藏身份不泄露。摄政走真实杨戬伤害；复仇血鹰使用明确标记的合成GM阵亡入口，不冒称自然战斗。旧消费测试只适配实际出现的双来源排序和独立拒绝，原断言不减。
 - Main完整Batch6997规则/0失败/0跳过、退出0，产品/测试SHA与87Focused绑定相同；平台和前端将在最终Release统一核。证据D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/chaotic-arrows-three-guards-gift/implementation。原失败保留、无部署/维护/线上Bug写；不称已上线或已关闭反馈。
 
-## BUG-20261012-RAMSES-ORDER｜所选登场效果跨队列顺序（已复现、获准、待实施）
+## BUG-20261012-RAMSES-ORDER｜所选登场效果跨队列顺序（本地专项已验，完整门禁中）
 
 - 原BUG-20260923-3cb9b35c，经实际组件三尺寸实点与冻结正式0e引擎衔接，UI调整和提交B,C,A均成立；QueueOrPush分流直接Deferred与公共候选，真实先C/A后B，恢复相同。并非凭源码推定或玩家记忆，初始移动端脚本假设失败也保留。
-- 用户已批准限定统一现有候选顺序，P0/P1/P3的响应、子效果、天灾尾部、恢复哈希及来源失效保护不变。排在下一重置与反击副本批之后；尚未实施或关闭，证据ramses-selection-order/main-ui-r2.json与三resume报告。
+- 用户批准后已按前两批之后实施：五产品触点共用原PendingTriggerBatches单项与内部结束标记，登记早于Finish；子批排在下一项/终点之前，旧Deferred/Pending实例暂存其ID边界并最终按原规则释放。末项无目标或拒绝仍用既有推进泵收口；不新增模型/持久化格式/第二套调度。公开/旧两入口共同修复，P0/P1/P3响应、子效果、天灾尾部、完整恢复哈希及来源保护不变。
+- 全S1/S2/ST文案与两真实入口检索，自选多军团登场效果仅拉美西斯；有无主/副戒指的全卡资格检查无预付登场费用交集。当前218专项全部通过、失败跳过0，45完整终态及10组事实/事件/终态恢复配对一致；Main225绑定与40数组独立重算通过，独立源码审查无阻断。完整Batch/Release/Git仍待，证据D盘ramses-selection-order/implementation/complete-manifest-r5.json（D0C9118B）。不部署、不提前关闭原反馈。
+- 回滚守卫：真实付费B,C,A顺序、托勒密真实战术/墨子子链、天灾恰一次且最后、末项无目标、来源失效/拒绝/取消、单旧Pending及双旧Deferred/多旧Batch原序、标记不产生玩家事件/响应、损坏元数据严格拒绝及逐指令V2。原r2/r3双旧Pending合成死区保留，已证明无marker也失败、自然可达未证，未纳入本修复成功范围；跨版旧Journal另验，不跳过哈希。
+- 跨版实测边界：旧8A714142 writer四合成Journal自身全过；新674A621C reader对已完成链两条哈希等价恢复，对待登记尾两条在sequence1按原P3严格拒绝。8原库/副本SHA不变、未读生产数据、未改历史。旧顺序尾链不等价不能冒称成功；报告old-journal/current-reader/current-reader-report.json（A8C8CF1A）与Main独立回执已存。
+- 完整门禁原记录：首Batch规则7047过/1旧反射夹具失败/0跳过，原TRX与失败回执保留；测试调用只增加显式默认null、原四空队列断言不变，产品源不改，随后整类及拉美西斯87项全绿。以组合本地证据推进提交级完整Release，不将原失败命令改写为成功；最终Release和Git实际结果读implementation/final-acceptance.json。发布仍需另行授权。
 
 ## BUG-20261012-NEXT-RESET｜额外回合与受影响玩家下一重置期限（本地Batch已验，未部署）
 

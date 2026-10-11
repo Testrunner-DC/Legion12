@@ -579,20 +579,12 @@ public sealed partial class L12GameEngine
             {
                 var inheritsCounterProtection = source is not null
                     && L12StructuredCardRules.HasSummonTurnCounterTacticProtection(source, State.Round);
+                var targets = chosen.Where(id => id != "skip")
+                    .Select(id => FindOnField(player, id, out _, out _))
+                    .OfType<L12CardInstance>().Where(target => HasImmediateEffect(target, "enter"))
+                    .Select(target => (target, "拉美西斯二世再次发动的【登场时】效果")).ToArray();
+                RegisterRamsesDelegateContinuation(item, targets, inheritsCounterProtection);
                 FinishStackItem(item);
-                foreach (var id in chosen.Where(id => id != "skip").Reverse())
-                {
-                    var target = FindOnField(player, id, out _, out _);
-                    if (target is null || !HasImmediateEffect(target, "enter")) continue;
-                    QueueOrPushTriggeredEffect(item.Controller, target, "enter", "拉美西斯二世再次发动的【登场时】效果",
-                        data: inheritsCounterProtection
-                            ? new Dictionary<string, string>
-                            {
-                                ["inheritedCounterTacticProtection"] = "true",
-                                ["counterTacticProtectionSourceInstanceId"] = source!.InstanceId,
-                            }
-                            : null);
-                }
                 return true;
             }
             case "horemheb-charge":

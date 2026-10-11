@@ -618,11 +618,9 @@ public sealed partial class L12GameEngine
                         "发动时没有选择其他太阳城军团",
                         "所选对象已离场、不再是军团、不再具有太阳城阵营或与来源同名")
                     .Where(target => HasImmediateEffect(target, "enter")).ToArray();
+                RegisterRamsesDelegateContinuation(item, targets.Select(target =>
+                    (target, $"{source.Name}再次发动{target.Name}的登场时效果")).ToArray(), inherited);
                 FinishStackItem(item);
-                foreach (var target in targets.Reverse())
-                    QueueOrPushTriggeredEffect(item.Controller, target, "enter", $"{source.Name}再次发动{target.Name}的登场时效果",
-                        data: inherited ? new() { ["inheritedCounterTacticProtection"] = "true",
-                            ["counterTacticProtectionSourceInstanceId"] = source.InstanceId } : null);
                 return true;
             }
             case "horemheb": if (FindOnField(player, item.SourceInstanceId, out _, out _) is { } horemheb) horemheb.HasCharge = true; break;

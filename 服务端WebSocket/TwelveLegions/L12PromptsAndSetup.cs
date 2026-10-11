@@ -2804,6 +2804,7 @@ public sealed partial class L12GameEngine
             return;
         }
         State.IsResolvingStack = false;
+        if (TryAdvanceRamsesAheadOfHeldDeferred()) return;
         if ((State.PendingTriggerBatches.Count > 0 || State.PendingTriggerStackCandidates.Count > 0)
             && State.DeferredEffectStack.LastOrDefault()?.Data.GetValueOrDefault("atomicFlow")
                 == "composite-state-check-barrier")

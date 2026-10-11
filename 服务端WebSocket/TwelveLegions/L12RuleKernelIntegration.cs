@@ -1808,17 +1808,20 @@ public sealed partial class L12GameEngine
             ? plannedBatches
             : plannedBatches.Where(batch => batch.Count > 1)
                 .Concat(plannedBatches.Where(batch => batch.Count == 1).Reverse()).ToArray();
+        var batches = new List<L12TriggerBatch>();
         foreach (var planned in orderedPlans)
         {
             if (timingGroup is not null && planned.Count == 1)
                 planned[0].Data[TriggerOrderResolved] = "true";
-            State.PendingTriggerBatches.Add(new L12TriggerBatch
+            batches.Add(new L12TriggerBatch
             {
                 BatchId = $"batch-{++State.TriggerBatchSequence}",
                 Controller = planned[0].Controller,
                 Candidates = planned.ToList(),
             });
         }
+        if (!InsertPlannedBatchesBeforeRamsesContinuation(batches))
+            State.PendingTriggerBatches.AddRange(batches);
         if (!State.IsResolvingStack && State.EffectStack.Count == 0 && State.ResponseWindow is null)
             AdvanceTriggerBatches();
     }
@@ -2133,8 +2136,10 @@ public sealed partial class L12GameEngine
     private void AdvanceTriggerBatches()
     {
         if (State.PendingPrompts.Any(prompt => prompt.Continuation == "trigger-batch-order")) return;
-        AdvancePendingTriggerStackCandidates();
-        if (State.PendingTriggerStackCandidates.Count > 0
+        var continuation = FindActiveRamsesContinuationEnd();
+        var held = continuation is { } end ? HeldRamsesIds(end.Marker, RamsesHeldPendingCandidateIds) : null;
+        AdvancePendingTriggerStackCandidates(held);
+        if (State.PendingTriggerStackCandidates.Any(candidate => held is null || !held.Contains(candidate.CandidateId))
             || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
         if (!State.IsResolvingStack && State.EffectStack.Count > 0)
         {
@@ -2145,12 +2150,20 @@ public sealed partial class L12GameEngine
         while (State.PendingTriggerBatches.Count > 0)
         {
             var batch = State.PendingTriggerBatches[0];
+            if (continuation is { } terminal && ReferenceEquals(batch, terminal.Batch))
+            {
+                TryReleaseRamsesContinuationEnd(batch, terminal.Marker);
+                return;
+            }
             State.PendingTriggerBatches.RemoveAt(0);
             if (batch.Candidates.Count == 1)
             {
-                State.PendingTriggerStackCandidates.Add(batch.Candidates[0]);
-                AdvancePendingTriggerStackCandidates();
-                if (State.PendingTriggerStackCandidates.Count > 0
+                var heldIndex = held is null ? -1
+                    : State.PendingTriggerStackCandidates.FindIndex(candidate => held.Contains(candidate.CandidateId));
+                if (heldIndex < 0) State.PendingTriggerStackCandidates.Add(batch.Candidates[0]);
+                else State.PendingTriggerStackCandidates.Insert(heldIndex, batch.Candidates[0]);
+                AdvancePendingTriggerStackCandidates(held);
+                if (State.PendingTriggerStackCandidates.Any(candidate => held is null || !held.Contains(candidate.CandidateId))
                     || State.PendingActivations.Any(activation => activation.TriggerCandidateId is not null)) return;
                 if (!State.IsResolvingStack && State.EffectStack.Count > 0)
                 {
@@ -2242,11 +2255,12 @@ public sealed partial class L12GameEngine
         AdvanceTriggerBatches();
     }
 
-    private void AdvancePendingTriggerStackCandidates()
+    private void AdvancePendingTriggerStackCandidates(IReadOnlySet<string>? stopBeforeCandidateIds = null)
     {
         while (State.PendingTriggerStackCandidates.Count > 0)
         {
             var candidate = State.PendingTriggerStackCandidates[0];
+            if (stopBeforeCandidateIds?.Contains(candidate.CandidateId) == true) return;
             if (CounterTacticsAreDisabled() && IsCounterTactic(candidate.SourceCardId))
             {
                 CleanupPublicTriggerReservation(candidate);

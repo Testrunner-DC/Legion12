@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-ramses-selected-entry-order",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "拉美西斯二世的效果顺序",
+  "changes": [{
+    "category": "card-effects",
+    "text": "拉美西斯二世选择多个登场效果时，按你选定的顺序逐项发动；前一项及其后续效果处理完毕后，再处理下一项，天灾仍在所有堆叠处理完后结算。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12RamsesContinuation.cs",
+      "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+      "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+      "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+      "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"
+    ]
+  }]
+}
