@@ -4,16 +4,17 @@ import './test-prompt-player-copy.mjs'
 import './test-a3-prompt-template-contract.mjs'
 import { promptFooterContract } from './prompt-template-contract.mjs'
 import {readFileSync} from 'node:fs'
-const source=readFileSync(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url),'utf8')
-const playerCopy=readFileSync(new URL('../src/l12/game/promptPlayerCopy.ts',import.meta.url),'utf8')
-const board=readFileSync(new URL('../src/l12/game/GameBoard.vue',import.meta.url),'utf8')
+const readSource=url=>readFileSync(url,'utf8').replace(/\r\n?/g, '\n')
+const source=readSource(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url))
+const playerCopy=readSource(new URL('../src/l12/game/promptPlayerCopy.ts',import.meta.url))
+const board=readSource(new URL('../src/l12/game/GameBoard.vue',import.meta.url))
 const serverRoot=new URL('../../服务端WebSocket/TwelveLegions/',import.meta.url)
 // Stage 3B-2 regression scope. The future-card, repository-wide gate is deferred
 // until the whole player-information programme has passed Stage 6 acceptance.
 const serverSources=[
  'L12RuleKernelIntegration.cs','L12MoralePayments.cs',
  'L12PromptsAndSetup.cs','L12ResponsePresentation.cs',
-].map(file=>({file,text:readFileSync(new URL(file,serverRoot),'utf8')}))
+].map(file=>({file,text:readSource(new URL(file,serverRoot))}))
 const forbiddenPlayerPromptTemplates=[
  /(?:实际结果|实际支付|后续结果).{0,30}权威(?:处理|结算|确定)/,
  /(?:继续|结束|提交|处理)本次声明|本次声明到此结束|后续声明按步骤继续/,

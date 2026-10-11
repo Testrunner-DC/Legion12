@@ -28,6 +28,8 @@ class MemoryStorage {
 }
 
 globalThis.localStorage = new MemoryStorage()
+// 隔离 Node 实验性 Web Locks；共享锁排序由下方确定性夹具单独覆盖。
+Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {} })
 const platformState = reactive({ account: null, token: '' })
 let requestHandler = async () => { throw new Error('Unexpected platform request') }
 globalThis.__deckAuthorityTestPlatform = {

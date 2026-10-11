@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const read = file => fs.readFileSync(path.join(root, file), 'utf8')
+const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n?/g, '\n')
 const motion = read('src/l12/motion.css')
 const main = read('src/main.ts')
 const app = read('src/App.vue')

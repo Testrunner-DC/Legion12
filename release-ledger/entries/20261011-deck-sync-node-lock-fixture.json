@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-deck-sync-node-lock-fixture",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "牌组同步测试显式隔离Node实验性Web Locks，保留确定性共享锁排序和陈旧写入拒绝断言，消除测试运行时同步抛错后的锁滞留。产品逻辑不变。",
+  "paths": [
+    "opcgpro-vue/scripts/test-deck-sync-authority.mjs",
+    "opcgpro-vue/scripts/test-private-deck-mode-consumers.mjs"
+  ]
+}

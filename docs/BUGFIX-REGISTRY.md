@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## TEST-20261011-FRONTEND-LINE-ENDINGS｜展示合同的换行误报与漏报
+
+- 原49c9d22完整Release后端8164项全过，前端check-motion-contracts四项失败；被检Vue/TS实际为CRLF，源码具备断言要求的代际取消、decode先行、超时回收与fact reset。
+- 读取层统一CRLF/CR为LF，39项原展示断言不改。全scripts扫描readFileSync/readFile与多行includes，发现check-l12-prompt-presentation及check-mobile-responsive-layouts两处否定断言会漏报，同批补正；无产品源码改动，不改变P0—P4。
+- 回归：原四项RED保留；三脚本LF/CRLF/CR正常输入9项、禁止选择后果充当按钮文案/全局body旋转的负例6项均符合预期。复核仅输入归一化，无断言删减。回滚守卫为原合同及机外line-ending-fixtures-r2.json。
+- 后续test-deck-sync-authority退出13：Node24.15实验Web Locks在预期陈旧保存同步抛错后仍持锁，删除操作排队且无活动句柄。独立最小复现及禁用原生navigator的整脚本对照通过；仅测试显式空navigator，原共享锁确定性夹具/拒绝断言不减。扫描同类deck测试，其余已有独立navigator/锁stub。后续提交级Release与部署独立验收，唯一最终回执为D盘login-memory-20261011/final-acceptance.json。
+- 补充完整执行型扫描：private-deck-mode-consumers的Quota拒写同步异常也继承同一Node原生锁，仅该第二入口补显式navigator；其余完整模块、抽取锁路径与注入回调的测试分别已有独立环境。原mode退出13、精确内存改动后34/34，主任务完整private-deck-consumers链通过，原173/模式34等断言保持。原缺qrcode环境失败也保留，按未改锁文件npm ci补齐；后续完整前端Batch另验。
+- 最终完整前端Batch r4退出0：全部合同/平台前端消费者、卡图、类型检查和生产/testrun构建通过；五脚本diff独立复核无阻断，存储八源SHA绑定未变。回执batch-frontend-gates-r4.log；此前三次失败完整保留，新提交级Release不借旧提交绿色。
+
 ## TEST-20261011-WS-REPLACEMENT-READ｜连接恢复门禁的旧连接收包互等
 
 - 原始证据：57d42055干净Release完整规则6959项中6958通过、1失败，零跳过；唯一失败为`RealWebSocketReconnectReplayAndRecipientProjectionsConvergeWithoutPrivateLeaks`的第二玩家接管。冻结DLL单独重跑仍在旧连接读取通知时失败，原TRX保留。

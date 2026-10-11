@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-motion-contract-line-endings",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "源码合同读取时统一换行，消除Windows CRLF导致的四项展示合同误报，同时补齐提示和移动布局否定断言的同型漏报。原断言和产品源码保持。",
+  "paths": [
+    "opcgpro-vue/scripts/check-motion-contracts.mjs",
+    "opcgpro-vue/scripts/check-l12-prompt-presentation.mjs",
+    "opcgpro-vue/scripts/check-mobile-responsive-layouts.mjs"
+  ]
+}

@@ -1,5 +1,13 @@
 # 十二军团任务台账
 
+## TEST-20261011-FRONTEND-LINE-ENDINGS｜登录修复发布检查跨平台补正
+
+- 49c9d22干净Release规则6959/6959、平台1205/1205，失败跳过0；前端四项展示源码合同因CRLF与多行LF字面比较误报，原失败日志保留。仅在读取层统一行尾，产品源码与原断言保持，P0—P4不变。
+- 扫描全部前端scripts，补齐提示文案、移动body旋转两个否定断言的同型漏报。三脚本在LF/CRLF/孤立CR下9项正常与6项故意违规内存输入共15项通过；只转换被测前端文本，初版夹具误改关联C#扫描器输入的失败单独保留。
+- 完整前端Batch进一步发现test-deck-sync-authority的未完成顶层await；独立最小复现为Node24.15实验Web Locks同步抛错后锁仍held，下一次同名请求无法结束。仅在测试入口显式空navigator，保留原确定性锁夹具及所有陈旧保存/删除排序断言，单脚本通过。其他private-deck读/轻量测试已有独立navigator夹具，无产品逻辑修改。不以局部绿替代完整发布；最终验证、提交、远端与部署状态见D盘login-memory-20261011/final-acceptance.json。
+- 完整执行型扫描再补private-deck-mode-consumers的Quota拒写同型入口，共两处测试环境隔离；其余完整模块/函数抽取入口已有stub或不走锁。主任务完整private-deck-consumers链通过，独立最终diff复核无阻断。缺qrcode的环境准备失败通过原锁文件npm ci补齐，锁文件未改，前端完整Batch接续。
+- 12:35最终完整前端Batch r4退出0，全部合同/类型/两环境构建通过；旧Release和中间环境失败均保留。存储八源SHA未变，准备有界提交和完整干净Release，未提前部署或关闭线上Bug。
+
 ## TEST-20261011-WS-REPLACEMENT-READ｜登录修复发布门禁收口
 
 - 57d42055完整Release规则6958/6959，唯一旧socket通知失败已用同DLL独立复现。只读审查定位测试先等新握手、后读积压旧socket的互等；单点提前读取2秒GREEN。三处玩家/观战者同型迁移至受管读取任务，握手失败清理socket，不改变生产协议与原严格断言，P0—P4保持。

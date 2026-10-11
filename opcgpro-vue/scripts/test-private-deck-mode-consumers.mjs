@@ -72,6 +72,8 @@ class MemoryStorage {
 }
 
 globalThis.localStorage = new MemoryStorage()
+// 拒写与重试只验证牌库语义，避免继承 Node 实验性 Web Locks 的锁滞留。
+Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: {} })
 const platformState = { account: { id: 'mode-consumer-account', username: '认证玩家' }, token: 'mode-consumer-token' }
 const platformWatchers = []
 let requestHandler = async requestPath => { throw new Error(`Unexpected platform request ${requestPath}`) }
