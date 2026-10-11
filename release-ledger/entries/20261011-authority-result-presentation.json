@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-authority-result-presentation",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "合法无卡牌来源的GM权威时点不生成卡牌效果结果展示；保留真实入手事件、结算推进及有来源异常的严格校验。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12GameEngine.EffectPresentations.cs"]
+}

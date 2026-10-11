@@ -52,18 +52,23 @@ public sealed partial class L12GameEngine
             && !PublicLegions(State.Players[candidate.Controller]).Any(card =>
                 L12StructuredCardRules.HasFaction(State.Players[candidate.Controller], card, "taiyangcheng")))
         {
-            var compositePlan = $"trigger:{candidate.SourceCardId}:enter";
-            candidate.Data["compositePlan"] = compositePlan;
-            if (L12CompositeEffectPlans.UsesSingleResponseEffect(compositePlan))
-                candidate.Data["compositeResponseScope"] = "single-effect";
-            candidate.Data["compositeSegment"] = "1";
-            candidate.Data["atomicFlow"] = plan == "canopic-one" ? "canopic-one-discard" : "canopic-four-discard";
-            candidate.Data["atomicContinuation"] = "true";
-            candidate.Data["stackText"] = plan == "canopic-one"
-                ? "卡诺匹斯罐一：随后弃置此圣物" : "卡诺匹斯罐四：随后弃置此圣物";
-            candidate.Data["declaration-complete"] = "true";
+            PrepareCanopicDiscardOnlyCandidate(candidate, plan);
         }
         return true;
+    }
+
+    private static void PrepareCanopicDiscardOnlyCandidate(L12TriggerCandidate candidate, string plan)
+    {
+        var compositePlan = $"trigger:{candidate.SourceCardId}:enter";
+        candidate.Data["compositePlan"] = compositePlan;
+        if (L12CompositeEffectPlans.UsesSingleResponseEffect(compositePlan))
+            candidate.Data["compositeResponseScope"] = "single-effect";
+        candidate.Data["compositeSegment"] = "1";
+        candidate.Data["atomicFlow"] = plan == "canopic-one" ? "canopic-one-discard" : "canopic-four-discard";
+        candidate.Data["atomicContinuation"] = "true";
+        candidate.Data["stackText"] = plan == "canopic-one"
+            ? "卡诺匹斯罐一：随后弃置此圣物" : "卡诺匹斯罐四：随后弃置此圣物";
+        candidate.Data["declaration-complete"] = "true";
     }
 
     private bool TryBeginBatch6JAEnterDeclaration(L12TriggerCandidate candidate, L12CardInstance source)
@@ -189,10 +194,11 @@ public sealed partial class L12GameEngine
                 own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId)); break;
             case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：选择本回合兵力+2000并获得强攻的太阳城军团",
                 own.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
-                    .Select(card => card.InstanceId)); break;
-            case "canopic-four": Many("field-legion", "targets", "卡诺匹斯罐四：预先选择1至2张太阳城军团",
+                    .Select(card => card.InstanceId), allowCancel: false); break;
+            case "canopic-four": steps.Add(PublicTriggerStep("field-legion", "targets",
+                "卡诺匹斯罐四：选择最多2张太阳城军团获得免死",
                 own.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
-                    .Select(card => card.InstanceId), 1, 2); break;
+                    .Select(card => card.InstanceId), 0, 2, allowCancel: false)); break;
             case "oddr": Optional("神箭奥德尔：预先声明是否承受1点主宰伤害并抽1张牌"); break;
             case "egil":
                 if (player.Library.Count < 2) break;
@@ -461,7 +467,19 @@ public sealed partial class L12GameEngine
         else if (plan == "canopic-one")
             foreach (var pair in CompositeFirstSegmentData("trigger:S01-0217:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
         else if (plan == "canopic-four")
-            foreach (var pair in CompositeFirstSegmentData("trigger:S01-0220:enter", activation.DeclaredValues)) candidate.Data[pair.Key] = pair.Value;
+        {
+            // Zero is a valid target declaration, not cancellation of the whole entry ability.
+            // Reuse the no-target path so only the subsequent discard clause enters the
+            // canonical single-effect response window; Absolute Defense still negates it.
+            if (activation.DeclaredValues.GetValueOrDefault("targets", []).Count == 0)
+            {
+                PrepareCanopicDiscardOnlyCandidate(candidate, plan);
+                RefreshDeclaredPresentationSceneId(candidate, source);
+            }
+            else
+                foreach (var pair in CompositeFirstSegmentData("trigger:S01-0220:enter", activation.DeclaredValues))
+                    candidate.Data[pair.Key] = pair.Value;
+        }
         else if (plan == "heracles")
         {
             foreach (var pair in CompositeFirstSegmentData("trigger:S02-0502:enter", activation.DeclaredValues))

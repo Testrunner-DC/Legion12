@@ -61,7 +61,9 @@ public sealed partial class L12GameEngine
         }
         if (publicSource) FreezeAndRecordPublicResponseTargets(item, source);
 
-        if (State.IsResolvingStack)
+        // An authority event must not replace a response window whose parent is still pending.
+        // Reuse the existing deferred queue and let its normal continuation open the next window.
+        if (State.IsResolvingStack || State.ResponseWindow is not null)
         {
             State.DeferredEffectStack.Add(item);
             if (publicSource) AddEvent("authority-event", actorPlayer, $"{text}已登记，将在当前堆叠关闭后处理", source);

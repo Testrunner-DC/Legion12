@@ -93,6 +93,13 @@ public sealed partial class L12GameEngine
     private void AddEffectResultEvent(L12StackItem item, string resultStatus)
     {
         if (item.Data.GetValueOrDefault("effectResultPublished") == "true") return;
+        // Source-free authority timings retain their own committed fact and stack lifecycle.
+        // They are not card effects, so do not invent a card identity for result presentation.
+        // Partial/unknown card sources and LKI snapshots still follow the strict existing path.
+        if (item.Trigger == "authority-event"
+            && string.IsNullOrEmpty(item.SourceCardId)
+            && string.IsNullOrEmpty(item.SourceInstanceId)
+            && item.SourceSnapshot is null) return;
         var source = FindSource(item) ?? item.SourceSnapshot
             ?? CreateCard(item.SourceCardId, item.SourceInstanceId);
         var sceneId = item.Data.GetValueOrDefault("presentationSceneId");

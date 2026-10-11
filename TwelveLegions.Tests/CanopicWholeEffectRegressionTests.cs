@@ -139,6 +139,355 @@ public sealed class CanopicWholeEffectRegressionTests
         return game;
     }
 
+    public static IEnumerable<object[]> CanopicFourZeroCases()
+    {
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var negate in new[] { false, true })
+        foreach (var extraRelic in new[] { false, true })
+            yield return [actor, recover, negate, extraRelic];
+    }
+
+    [Theory]
+    [MemberData(nameof(CanopicFourZeroCases))]
+    [Trait("L12Evidence", "ruling:canopic-four-zero-target-20261011")]
+    public void CanopicFourZeroTargetsSkipsOnlyTheTargetClauseAndPreservesWholeEffectNegation(
+        int actor, bool recover, bool negate, bool extraRelic)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        if (extraRelic) player.Relic = Card("S01-0117", "existing-relic", actor);
+        player.Field[0][0] = Card("S01-0203", "zero-unused-target", actor);
+        player.Hand.Add(Card("S01-0220", "zero-canopic", actor));
+        player.Hand.Add(Card("S01-0003", "private-zero-hand", actor));
+        player.Library.Add(Card("S01-0003", "private-zero-library", actor));
+        SetAbsoluteDefense(game, 1 - actor);
+        Handle(game, actor, new L12Command("playCard", "zero-canopic"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Equal(0, declaration.MinChoose);
+        Assert.Equal(1, declaration.MaxChoose); // actual public candidate count clamps printed 2
+        Assert.Contains("zero-unused-target", declaration.ValidChoices);
+        Assert.DoesNotContain("skip", declaration.ValidChoices);
+        Assert.DoesNotContain("mode:none", declaration.ValidChoices);
+        var privateView = JsonSerializer.Serialize(game.SnapshotFor(1 - actor));
+        Assert.DoesNotContain("private-zero-hand", privateView, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-zero-library", privateView, StringComparison.Ordinal);
+        var zero = new L12Command("resolvePrompt", PromptId: declaration.PromptId, CardInstanceIds: []);
+        Handle(game, actor, zero);
+        Assert.False(game.Handle(actor, zero).Accepted);
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("trigger:S01-0220:enter", first.Data["compositePlan"]);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+        Assert.Equal("1", first.Data["compositeSegment"]);
+        Assert.Equal("canopic-four-discard", first.Data["atomicFlow"]);
+        Assert.Equal(string.Empty, first.Data.GetValueOrDefault("declared:targets"));
+        Assert.DoesNotContain(game.State.Events, e => e.Type == "effect-trigger"
+            && e.EffectSegmentIndex == 1 && e.Cards.Any(c => c.InstanceId == "zero-canopic"));
+        game = Restore(game, recover);
+        if (negate) game = Negate(game, actor, recover);
+        else PassOneWindow(game);
+        player = game.State.Players[actor];
+        Assert.Equal(0, player.Field[0][0]!.ImmortalUses);
+        Assert.DoesNotContain(game.State.Events, e => e.EffectResultStatus == "failed"
+            && e.Cards.Any(c => c.InstanceId == "zero-canopic"));
+        Assert.Equal(extraRelic, player.Relic?.InstanceId == "existing-relic");
+        var relicCount = player.ExtraRelics.Count(c => c.InstanceId == "zero-canopic")
+            + (player.Relic?.InstanceId == "zero-canopic" ? 1 : 0);
+        Assert.Equal(negate ? 1 : 0, relicCount);
+        Assert.Equal(negate ? 0 : 1, player.Graveyard.Count(c => c.InstanceId == "zero-canopic"));
+        Assert.Equal(1, player.Hand.Concat(player.Library).Concat(player.Graveyard)
+            .Concat(player.ExtraRelics).Count(c => c.InstanceId == "zero-canopic")
+            + (player.Relic?.InstanceId == "zero-canopic" ? 1 : 0));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.ResponseWindow);
+        _ = Restore(game, true);
+    }
+
+    public static IEnumerable<object[]> CanopicFourZeroSourceLeftCases()
+    {
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var extraRelic in new[] { false, true })
+        foreach (var destination in new[] { "hand", "library-bottom" })
+            yield return [actor, recover, extraRelic, destination];
+    }
+
+    [Theory]
+    [MemberData(nameof(CanopicFourZeroSourceLeftCases))]
+    [Trait("L12Evidence", "canopic-four-zero-source-zone")]
+    public void CanopicFourZeroTargetSourceReturnedBeforeSettlementIsNotDiscardedAgain(
+        int actor, bool recover, bool extraRelic, string destination)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        if (extraRelic) player.Relic = Card("S01-0117", "existing-relic", actor);
+        player.Field[0][0] = Card("S01-0203", "zero-unused-target", actor);
+        player.Hand.Add(Card("S01-0220", "zero-returned-canopic", actor));
+        Handle(game, actor, new L12Command("playCard", "zero-returned-canopic"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Handle(game, actor, new L12Command("resolvePrompt", PromptId: declaration.PromptId, CardInstanceIds: []));
+        Assert.Equal("canopic-four-discard", Assert.Single(game.State.EffectStack).Data["atomicFlow"]);
+        var returned = game.HandleGm(new L12GmCommand("returnCardToHand", actor,
+            CardInstanceId: "zero-returned-canopic"));
+        Assert.True(returned.Accepted, returned.Error);
+        if (destination == "library-bottom")
+        {
+            var moved = game.HandleGm(new L12GmCommand("moveHandCard", actor,
+                CardInstanceId: "zero-returned-canopic", Destination: destination));
+            Assert.True(moved.Accepted, moved.Error);
+        }
+        game = Restore(game, recover);
+        PassOneWindow(game);
+        player = game.State.Players[actor];
+        Assert.DoesNotContain(player.Graveyard, c => c.InstanceId == "zero-returned-canopic");
+        Assert.DoesNotContain(player.ExtraRelics, c => c.InstanceId == "zero-returned-canopic");
+        Assert.NotEqual("zero-returned-canopic", player.Relic?.InstanceId);
+        Assert.Equal(extraRelic, player.Relic?.InstanceId == "existing-relic");
+        var remaining = destination == "hand" ? player.Hand : player.Library;
+        Assert.Single(remaining, c => c.InstanceId == "zero-returned-canopic");
+        Assert.Equal(1, player.Hand.Concat(player.Library).Concat(player.Graveyard)
+            .Concat(player.ExtraRelics).Count(c => c.InstanceId == "zero-returned-canopic")
+            + (player.Relic?.InstanceId == "zero-returned-canopic" ? 1 : 0));
+        Assert.Equal(0, player.Field[0][0]!.ImmortalUses);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.ResponseWindow);
+        _ = Restore(game, true);
+    }
+
+    public static IEnumerable<object[]> CanopicFourRejectedChoiceCases()
+    {
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var method in new[] { "skip", "mode:none", "over-limit", "foreign-target" })
+            yield return [actor, recover, method];
+    }
+
+    [Theory]
+    [MemberData(nameof(CanopicFourRejectedChoiceCases))]
+    [Trait("L12Evidence", "canopic-four-zero-declaration-binding")]
+    public void CanopicFourRejectsRemovedDeclineAndOutOfRangeChoicesWithoutCancellingDeclaration(
+        int actor, bool recover, string method)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        for (var slot = 0; slot < 3; slot++)
+            player.Field[0][slot] = Card("S01-0203", $"zero-target-{slot}", actor);
+        game.State.Players[1 - actor].Field[0][0] = Card("S01-0203", "foreign-target", 1 - actor);
+        player.Hand.Add(Card("S01-0220", "zero-choice-canopic", actor));
+        Handle(game, actor, new L12Command("playCard", "zero-choice-canopic"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        var activationId = Assert.Single(game.State.PendingActivations).ActivationId;
+        Assert.Equal(0, declaration.MinChoose);
+        Assert.Equal(2, declaration.MaxChoose);
+        var invalid = method == "over-limit"
+            ? new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+                CardInstanceIds: ["zero-target-0", "zero-target-1", "zero-target-2"])
+            : new L12Command("resolvePrompt", PromptId: declaration.PromptId, Choice: method);
+        Assert.False(game.Handle(actor, invalid).Accepted);
+        Assert.Equal(declaration.PromptId, Assert.Single(game.State.PendingPrompts).PromptId);
+        Assert.Equal(activationId, Assert.Single(game.State.PendingActivations).ActivationId);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(1, game.State.Players[actor].ExtraRelics.Count(c => c.InstanceId == "zero-choice-canopic")
+            + (game.State.Players[actor].Relic?.InstanceId == "zero-choice-canopic" ? 1 : 0));
+        game = Restore(game, recover);
+        declaration = Assert.Single(game.State.PendingPrompts);
+        Handle(game, actor, new L12Command("resolvePrompt", PromptId: declaration.PromptId, CardInstanceIds: []));
+        PassOneWindow(game);
+        Assert.Single(game.State.Players[actor].Graveyard, c => c.InstanceId == "zero-choice-canopic");
+        Assert.All(game.State.Players[actor].Field[0], card => Assert.Equal(0, card!.ImmortalUses));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+    }
+
+    public static IEnumerable<object[]> CanopicOneMandatoryTargetCases()
+    {
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var negate in new[] { false, true })
+            yield return [actor, recover, negate];
+    }
+
+    [Theory]
+    [MemberData(nameof(CanopicOneMandatoryTargetCases))]
+    [Trait("L12Evidence", "ruling:canopic-one-mandatory-single-target-20261011")]
+    public void CanopicOneRequiresSingleTargetAndRejectsWholeAbilityDecline(
+        int actor, bool recover, bool negate)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        player.Field[0][0] = Card("S01-0203", "canopic-legion-target", actor);
+        player.Hand.Add(Card("S01-0217", "mandatory-canopic-one", actor));
+        SetAbsoluteDefense(game, 1 - actor);
+        Handle(game, actor, new L12Command("playCard", "mandatory-canopic-one"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        var activationId = Assert.Single(game.State.PendingActivations).ActivationId;
+        Assert.Equal(1, declaration.MinChoose);
+        Assert.Equal(1, declaration.MaxChoose);
+        Assert.DoesNotContain("skip", declaration.ValidChoices);
+        Assert.DoesNotContain("mode:none", declaration.ValidChoices);
+        Assert.False(game.Handle(actor, new L12Command("resolvePrompt",
+            PromptId: declaration.PromptId, Choice: "skip")).Accepted);
+        Assert.Equal(declaration.PromptId, Assert.Single(game.State.PendingPrompts).PromptId);
+        Assert.Equal(activationId, Assert.Single(game.State.PendingActivations).ActivationId);
+        Assert.False(game.Handle(actor, new L12Command("resolvePrompt",
+            PromptId: declaration.PromptId, CardInstanceIds: [])).Accepted);
+        Assert.Equal(declaration.PromptId, Assert.Single(game.State.PendingPrompts).PromptId);
+        Assert.Equal(activationId, Assert.Single(game.State.PendingActivations).ActivationId);
+        Assert.Empty(game.State.EffectStack);
+        Resolve(game, "canopic-legion-target");
+        game = Restore(game, recover);
+        if (negate) game = Negate(game, actor, recover);
+        else PassOneWindow(game);
+        player = game.State.Players[actor];
+        Assert.Equal(!negate, player.Field[0][0]!.HasStrongAttack);
+        Assert.Equal(negate ? 1 : 0, player.ExtraRelics.Count(c => c.InstanceId == "mandatory-canopic-one")
+            + (player.Relic?.InstanceId == "mandatory-canopic-one" ? 1 : 0));
+        Assert.Equal(negate ? 0 : 1, player.Graveyard.Count(c => c.InstanceId == "mandatory-canopic-one"));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.ResponseWindow);
+    }
+
+    public static IEnumerable<object[]> CanopicFourTwoTargetCases()
+    {
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var recover in new[] { false, true })
+        foreach (var negate in new[] { false, true })
+            yield return [actor, recover, negate];
+    }
+
+    [Theory]
+    [MemberData(nameof(CanopicFourTwoTargetCases))]
+    [Trait("L12Evidence", "canopic-four-two-target-control")]
+    public void CanopicFourTwoTargetsStillShareTheWholeEffectResponse(
+        int actor, bool recover, bool negate)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        player.Field[0][0] = Card("S01-0203", "two-target-0", actor);
+        player.Field[0][1] = Card("S01-0203", "two-target-1", actor);
+        player.Hand.Add(Card("S01-0220", "two-target-canopic", actor));
+        SetAbsoluteDefense(game, 1 - actor);
+        Handle(game, actor, new L12Command("playCard", "two-target-canopic"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(0, declaration.MinChoose);
+        Assert.Equal(2, declaration.MaxChoose);
+        Handle(game, actor, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            CardInstanceIds: ["two-target-0", "two-target-1"]));
+        var first = Assert.Single(game.State.EffectStack);
+        Assert.Equal("single-effect", first.Data["compositeResponseScope"]);
+        Assert.Equal("0", first.Data["compositeSegment"]);
+        Assert.Equal("canopic-four", first.Data["atomicFlow"]);
+        game = Restore(game, recover);
+        if (negate) game = Negate(game, actor, recover);
+        else PassOneWindow(game);
+        player = game.State.Players[actor];
+        Assert.Equal(negate ? 0 : 1, player.Field[0][0]!.ImmortalUses);
+        Assert.Equal(negate ? 0 : 1, player.Field[0][1]!.ImmortalUses);
+        Assert.Equal(negate ? 1 : 0, player.ExtraRelics.Count(c => c.InstanceId == "two-target-canopic")
+            + (player.Relic?.InstanceId == "two-target-canopic" ? 1 : 0));
+        Assert.Equal(negate ? 0 : 1, player.Graveyard.Count(c => c.InstanceId == "two-target-canopic"));
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.ResponseWindow);
+    }
+
+    [Theory]
+    [InlineData(0, false)] [InlineData(0, true)]
+    [InlineData(1, false)] [InlineData(1, true)]
+    [Trait("L12Evidence", "canopic-four-settlement-target-revalidation")]
+    public void CanopicFourTargetLeavingBeforeSettlementDoesNotGainImmortalityOrBlockDiscard(
+        int actor, bool recover)
+    {
+        var game = Create("S01-02M1", actor);
+        var player = game.State.Players[actor];
+        player.Field[0][0] = Card("S01-0203", "left-target", actor);
+        player.Field[0][1] = Card("S01-0203", "retained-target", actor);
+        player.Hand.Add(Card("S01-0220", "target-leave-canopic", actor));
+        SetAbsoluteDefense(game, 1 - actor);
+        Handle(game, actor, new L12Command("playCard", "target-leave-canopic"));
+        game = Restore(game, recover);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Handle(game, actor, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            CardInstanceIds: ["left-target", "retained-target"]));
+        var originalWindow = JsonSerializer.Serialize(game.State.ResponseWindow);
+        var originalPrompt = JsonSerializer.Serialize(Assert.Single(game.State.PendingPrompts));
+        var returned = game.HandleGm(new L12GmCommand("returnCardToHand", actor,
+            CardInstanceId: "left-target"));
+        Assert.True(returned.Accepted, returned.Error);
+        game = Restore(game, recover);
+        var canopicStack = Assert.Single(game.State.EffectStack, item => item.SourceInstanceId == "target-leave-canopic");
+        var handAddStack = Assert.Single(game.State.DeferredEffectStack, item => item.Trigger == "authority-event");
+        Assert.Equal("effect-hand-add", handAddStack.Data["eventType"]);
+        Assert.Equal("left-target", handAddStack.Data["targetInstanceId"]);
+        Assert.Equal("field", handAddStack.Data["originZone"]);
+        Assert.Equal("hand", handAddStack.Data["destinationZone"]);
+        var canopicStackId = canopicStack.StackItemId;
+        var handAddStackId = handAddStack.StackItemId;
+        Assert.Equal(originalWindow, JsonSerializer.Serialize(game.State.ResponseWindow));
+        Assert.Equal(originalPrompt, JsonSerializer.Serialize(Assert.Single(game.State.PendingPrompts)));
+        Assert.All(game.State.PendingPrompts, prompt =>
+        {
+            Assert.Equal("response", prompt.Kind);
+            Assert.Equal("stack-response", prompt.Continuation);
+            Assert.Equal(canopicStackId, prompt.StackItemId);
+        });
+        // Finish the whole jar entry before the deferred field-to-hand authority window opens.
+        // Each window remains distinct; do not blindly pass unknown prompts.
+        foreach (var expectedStackId in new[] { canopicStackId, handAddStackId })
+        {
+            for (var pass = 0; pass < 2; pass++)
+            {
+                Assert.Equal(expectedStackId, game.State.EffectStack[^1].StackItemId);
+                Assert.All(game.State.PendingPrompts, prompt =>
+                {
+                    Assert.Equal("response", prompt.Kind);
+                    Assert.Equal("stack-response", prompt.Continuation);
+                    Assert.Contains(prompt.StackItemId, new[] { canopicStackId, handAddStackId });
+                });
+                var priority = game.State.ResponseWindow!.PriorityPlayer;
+                var response = game.State.PendingPrompts.Last(prompt =>
+                    prompt.StackItemId == expectedStackId && prompt.PlayerIndex == priority);
+                Assert.Contains("pass", response.ValidChoices);
+                Handle(game, priority, new L12Command("resolvePrompt", PromptId: response.PromptId, Choice: "pass"));
+                game = Restore(game, recover);
+            }
+            Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == expectedStackId);
+            if (expectedStackId == canopicStackId)
+            {
+                Assert.Equal(handAddStackId, Assert.Single(game.State.EffectStack).StackItemId);
+                Assert.Empty(game.State.DeferredEffectStack);
+                Assert.Equal(1, game.State.Players[actor].Field[0][1]!.ImmortalUses);
+            }
+        }
+        player = game.State.Players[actor];
+        Assert.Null(player.Field[0][0]);
+        Assert.Equal(0, Assert.Single(player.Hand, c => c.InstanceId == "left-target").ImmortalUses);
+        Assert.Equal(1, player.Field[0][1]!.ImmortalUses);
+        Assert.Single(player.Graveyard, c => c.InstanceId == "target-leave-canopic");
+        Assert.Null(player.Relic);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack);
+        Assert.Null(game.State.ResponseWindow);
+    }
+
     public static IEnumerable<object[]> CanopicCases()
     {
         foreach (var card in Canopics)

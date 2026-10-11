@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-authority-event-deferred-window",
+  "date": "2026-10-11",
+  "audience": "players",
+  "title": "响应中的后续时点",
+  "changes": [{
+    "category": "battle",
+    "text": "响应期间由入手、转为活跃或抵挡产生的后续响应，会等当前响应结束后再处理，避免覆盖原来的选择。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs"]
+  }]
+}

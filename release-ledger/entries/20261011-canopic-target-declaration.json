@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-canopic-target-declaration",
+  "date": "2026-10-11",
+  "audience": "players",
+  "title": "卡诺匹斯罐目标选择",
+  "changes": [{
+    "category": "card-effects",
+    "text": "卡诺匹斯罐四可选择0至2张太阳城军团；选择0张仍继续弃置此圣物。卡诺匹斯罐一有合法目标时必须选择1张，不能取消整项效果。两者的登场效果被无效后仍留在圣物区。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs"]
+  }]
+}
