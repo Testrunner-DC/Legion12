@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-watchdog-fixture-ownership",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "测试夹具保留限时Tick任务并在释放门后排空；业务异常与清理异常分别保留。原业务期限、断言及删除守卫不变，未知临时数据库占用仍单独保留证据，不作为产品修复或玩家更新发布。",
+  "paths": ["TwelveLegions.Platform.Tests/RankedWatchdogIsolationTests.cs"]
+}

@@ -1,10 +1,12 @@
 using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
@@ -12,203 +14,245 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class RankedWatchdogIsolationTests
 {
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
+    private readonly ITestOutputHelper _output;
+
+    public RankedWatchdogIsolationTests(ITestOutputHelper output) => _output = output;
 
     [Fact]
     public async Task ThirtySecondBusyRoomDoesNotDelayHealthyDurableConclusionAndLateRoomConcludesOnce()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var ordered = Rooms(fixture.Manager).ToArray();
-        var blocked = ordered[0];
-        var healthy = ordered[1];
-        var blockedMatch = fixture.Matches.Single(match => match.RoomCode == Code(blocked));
-        var healthyMatch = fixture.Matches.Single(match => match.RoomCode == Code(healthy));
-        fixture.Manager.Disconnect(blockedMatch.FirstSession);
-        fixture.Manager.Disconnect(healthyMatch.FirstSession);
-        var baseline = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(blockedMatch.MatchId))!;
-        var gate = Gate(blocked);
-        await gate.WaitAsync();
-        var held = Stopwatch.StartNew();
-        Task<IReadOnlyList<OutgoingMessage>>? tick = null;
-        try
+        await RunFixtureAsync(async fixture =>
         {
-            fixture.Now += TimeSpan.FromMinutes(5);
-            tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
-            var messages = await tick.WaitAsync(TimeSpan.FromSeconds(1));
+            var ordered = Rooms(fixture.Manager).ToArray();
+            var blocked = ordered[0];
+            var healthy = ordered[1];
+            var blockedMatch = fixture.Matches.Single(match => match.RoomCode == Code(blocked));
+            var healthyMatch = fixture.Matches.Single(match => match.RoomCode == Code(healthy));
+            fixture.Manager.Disconnect(blockedMatch.FirstSession);
+            fixture.Manager.Disconnect(healthyMatch.FirstSession);
+            var baseline = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(blockedMatch.MatchId))!;
+            var gate = Gate(blocked);
+            await gate.WaitAsync();
+            var held = Stopwatch.StartNew();
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now += TimeSpan.FromMinutes(5);
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                var messages = await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                await AssertConcludedOnceAsync(fixture, healthyMatch);
+                Assert.Contains(messages, message => JsonSerializer.SerializeToElement(message.Payload, WireJson)
+                    .TryGetProperty("type", out var type) && type.GetString() == "gameState");
+                Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+                Assert.Equal(baseline.CheckpointGeneration,
+                    (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(blockedMatch.MatchId))!.CheckpointGeneration);
+                var remaining = TimeSpan.FromSeconds(30) - held.Elapsed;
+                if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
+                Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+            }, async () =>
+            {
+                gate.Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            fixture.Now += TimeSpan.FromSeconds(30);
+            await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => fixture.Manager.TickRankedClocksAsync(fixture.Now)));
+            await AssertConcludedOnceAsync(fixture, blockedMatch);
             await AssertConcludedOnceAsync(fixture, healthyMatch);
-            Assert.Contains(messages, message => JsonSerializer.SerializeToElement(message.Payload, WireJson)
-                .TryGetProperty("type", out var type) && type.GetString() == "gameState");
-            Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
-            Assert.Equal(baseline.CheckpointGeneration,
-                (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(blockedMatch.MatchId))!.CheckpointGeneration);
-            var remaining = TimeSpan.FromSeconds(30) - held.Elapsed;
-            if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
-            Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
-        }
-        finally { gate.Release(); if (tick is not null) await tick.WaitAsync(TimeSpan.FromSeconds(5)); }
-        fixture.Now += TimeSpan.FromSeconds(30);
-        await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => fixture.Manager.TickRankedClocksAsync(fixture.Now)));
-        await AssertConcludedOnceAsync(fixture, blockedMatch);
-        await AssertConcludedOnceAsync(fixture, healthyMatch);
-        await using var reopened = new MatchRecorder(fixture.MatchPath);
-        await reopened.InitializeAsync();
-        var restored = new L12RoomManager(fixture.Catalog, reopened, fixture.Platform, () => fixture.Now);
-        await restored.RestoreRankedRoomsAsync();
-        Assert.Equal(0, await reopened.CountPendingRankedSettlementsAsync());
-        foreach (var match in fixture.Matches)
-            Assert.Single((await reopened.GetMatchAsync(match.MatchId))!.Commands,
-                command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+            await using var reopened = new MatchRecorder(fixture.MatchPath);
+            await reopened.InitializeAsync();
+            var restored = new L12RoomManager(fixture.Catalog, reopened, fixture.Platform, () => fixture.Now);
+            await restored.RestoreRankedRoomsAsync();
+            Assert.Equal(0, await reopened.CountPendingRankedSettlementsAsync());
+            foreach (var match in fixture.Matches)
+                Assert.Single((await reopened.GetMatchAsync(match.MatchId))!.Commands,
+                    command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+        });
     }
 
     [Fact]
     public async Task DeferredCohortSuppressesWholeOrdinaryCheckpointUntilBothRoomsAreReady()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var before = await fixture.GenerationsAsync();
-        var blocked = Rooms(fixture.Manager).First();
-        var commits = 0;
-        fixture.Recorder.StorageFailureInjector = phase =>
+        await RunFixtureAsync(async fixture =>
         {
-            if (phase == "before-ranked-runtime-batch-commit") Interlocked.Increment(ref commits);
-        };
-        await Gate(blocked).WaitAsync();
-        try
-        {
-            fixture.Now += TimeSpan.FromSeconds(1);
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            Assert.Equal(0, commits);
-            Assert.Equal(before, await fixture.GenerationsAsync());
-        }
-        finally { Gate(blocked).Release(); }
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        Assert.Equal(1, commits);
-        var after = await fixture.GenerationsAsync();
-        Assert.All(Enumerable.Range(0, after.Length), index => Assert.True(after[index] > before[index]));
+            var before = await fixture.GenerationsAsync();
+            var blocked = Rooms(fixture.Manager).First();
+            var commits = 0;
+            fixture.Recorder.StorageFailureInjector = phase =>
+            {
+                if (phase == "before-ranked-runtime-batch-commit") Interlocked.Increment(ref commits);
+            };
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await Gate(blocked).WaitAsync();
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now += TimeSpan.FromSeconds(1);
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                Assert.Equal(0, commits);
+                Assert.Equal(before, await fixture.GenerationsAsync());
+            }, async () =>
+            {
+                Gate(blocked).Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            Assert.Equal(1, commits);
+            var after = await fixture.GenerationsAsync();
+            Assert.All(Enumerable.Range(0, after.Length), index => Assert.True(after[index] > before[index]));
+        });
     }
 
     [Fact]
     public async Task SkippedRoomKeepsItsBaselineAndNextTickChargesAccumulatedUtcExactlyOnce()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var room = Rooms(fixture.Manager).First();
-        var match = fixture.Matches.Single(candidate => candidate.RoomCode == Code(room));
-        var before = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!;
-        var actor = Enumerable.Range(0, 2).First(index => before.Acting[index]);
-        Assert.True(before.OperationRemainingMs[actor] > 5000);
-        var clock = room.GetType().GetProperty("RankedClock")!.GetValue(room)!;
-        await Gate(room).WaitAsync();
-        try
+        await RunFixtureAsync(async fixture =>
         {
-            fixture.Now += TimeSpan.FromSeconds(2);
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            Assert.Equal(before.LastSettledAt, clock.GetType().GetProperty("LastSettledAt")!.GetValue(clock));
-            Assert.Equal(before.OperationRemainingMs,
-                (long[])clock.GetType().GetProperty("OperationRemainingMs")!.GetValue(clock)!);
-        }
-        finally { Gate(room).Release(); }
-        fixture.Now += TimeSpan.FromSeconds(3);
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        var caughtUp = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!;
-        Assert.Equal(before.OperationRemainingMs[actor] - 5000, caughtUp.OperationRemainingMs[actor]);
-        Assert.Equal(fixture.Now, caughtUp.LastSettledAt);
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        Assert.Equal(caughtUp.OperationRemainingMs,
-            (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!.OperationRemainingMs);
+            var room = Rooms(fixture.Manager).First();
+            var match = fixture.Matches.Single(candidate => candidate.RoomCode == Code(room));
+            var before = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!;
+            var actor = Enumerable.Range(0, 2).First(index => before.Acting[index]);
+            Assert.True(before.OperationRemainingMs[actor] > 5000);
+            var clock = room.GetType().GetProperty("RankedClock")!.GetValue(room)!;
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await Gate(room).WaitAsync();
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now += TimeSpan.FromSeconds(2);
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                Assert.Equal(before.LastSettledAt, clock.GetType().GetProperty("LastSettledAt")!.GetValue(clock));
+                Assert.Equal(before.OperationRemainingMs,
+                    (long[])clock.GetType().GetProperty("OperationRemainingMs")!.GetValue(clock)!);
+            }, async () =>
+            {
+                Gate(room).Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            fixture.Now += TimeSpan.FromSeconds(3);
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            var caughtUp = (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!;
+            Assert.Equal(before.OperationRemainingMs[actor] - 5000, caughtUp.OperationRemainingMs[actor]);
+            Assert.Equal(fixture.Now, caughtUp.LastSettledAt);
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            Assert.Equal(caughtUp.OperationRemainingMs,
+                (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(match.MatchId))!.OperationRemainingMs);
+        });
     }
 
     [Fact]
     public async Task CompleteCohortBatchFailureLeavesBothDurableGenerationsUnchangedAndRetryAdvancesBoth()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var before = await fixture.GenerationsAsync();
-        fixture.Now += TimeSpan.FromSeconds(1);
-        var failures = 0;
-        fixture.Recorder.StorageFailureInjector = phase =>
+        await RunFixtureAsync(async fixture =>
         {
-            if (phase != "before-ranked-runtime-batch-commit") return;
-            Interlocked.Increment(ref failures);
-            throw new IOException("synthetic all-room checkpoint failure");
-        };
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        Assert.Equal(1, failures);
-        Assert.Equal(before, await fixture.GenerationsAsync());
-        await using (var reopened = new MatchRecorder(fixture.MatchPath))
-        {
-            await reopened.InitializeAsync();
-            foreach (var pair in fixture.Matches.OrderBy(match => match.MatchId, StringComparer.Ordinal)
-                         .Select((match, index) => (match, index)))
-                Assert.Equal(before[pair.index],
-                    (await reopened.GetRankedRuntimeCheckpointAsync(pair.match.MatchId))!.CheckpointGeneration);
-        }
-        fixture.Recorder.StorageFailureInjector = null;
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        var after = await fixture.GenerationsAsync();
-        Assert.All(Enumerable.Range(0, after.Length), index => Assert.True(after[index] > before[index]));
+            var before = await fixture.GenerationsAsync();
+            fixture.Now += TimeSpan.FromSeconds(1);
+            var failures = 0;
+            fixture.Recorder.StorageFailureInjector = phase =>
+            {
+                if (phase != "before-ranked-runtime-batch-commit") return;
+                Interlocked.Increment(ref failures);
+                throw new IOException("synthetic all-room checkpoint failure");
+            };
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            Assert.Equal(1, failures);
+            Assert.Equal(before, await fixture.GenerationsAsync());
+            await using (var reopened = new MatchRecorder(fixture.MatchPath))
+            {
+                await reopened.InitializeAsync();
+                foreach (var pair in fixture.Matches.OrderBy(match => match.MatchId, StringComparer.Ordinal)
+                             .Select((match, index) => (match, index)))
+                    Assert.Equal(before[pair.index],
+                        (await reopened.GetRankedRuntimeCheckpointAsync(pair.match.MatchId))!.CheckpointGeneration);
+            }
+            fixture.Recorder.StorageFailureInjector = null;
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            var after = await fixture.GenerationsAsync();
+            Assert.All(Enumerable.Range(0, after.Length), index => Assert.True(after[index] > before[index]));
+        });
     }
 
     [Fact]
     public async Task OverlappingSweepReturnsWithoutQueueingAndLaterSweepCanCommitAgain()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        using var entered = new ManualResetEventSlim();
-        using var release = new ManualResetEventSlim();
-        var commits = 0;
-        fixture.Recorder.StorageFailureInjector = phase =>
+        await RunFixtureAsync(async fixture =>
         {
-            if (phase != "before-ranked-runtime-batch-commit") return;
-            if (Interlocked.Increment(ref commits) != 1) return;
-            entered.Set();
-            if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic checkpoint hold");
-        };
-        fixture.Now += TimeSpan.FromSeconds(1);
-        var first = Task.Factory.StartNew(() => fixture.Manager.TickRankedClocksAsync(fixture.Now),
-            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
-        try
-        {
-            Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
-            Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1)));
-            Assert.Equal(1, commits);
-        }
-        finally { release.Set(); await first.WaitAsync(TimeSpan.FromSeconds(3)); }
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        Assert.Equal(2, commits);
+            using var entered = new ManualResetEventSlim();
+            using var release = new ManualResetEventSlim();
+            var commits = 0;
+            fixture.Recorder.StorageFailureInjector = phase =>
+            {
+                if (phase != "before-ranked-runtime-batch-commit") return;
+                if (Interlocked.Increment(ref commits) != 1) return;
+                entered.Set();
+                if (!release.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("synthetic checkpoint hold");
+            };
+            fixture.Now += TimeSpan.FromSeconds(1);
+            Task<IReadOnlyList<OutgoingMessage>>? overlappingTick = null;
+            var first = Task.Factory.StartNew(() => fixture.Manager.TickRankedClocksAsync(fixture.Now),
+                CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default).Unwrap();
+            await RunFixturePhaseAsync(async () =>
+            {
+                Assert.True(entered.Wait(TimeSpan.FromSeconds(2)));
+                overlappingTick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                Assert.Empty(await overlappingTick.WaitAsync(TimeSpan.FromSeconds(1)));
+                Assert.Equal(1, commits);
+            }, async () =>
+            {
+                await RunFixturePhaseAsync(async () =>
+                {
+                    release.Set();
+                    await first.WaitAsync(TimeSpan.FromSeconds(3));
+                }, () => DrainOwnedTickAsync(overlappingTick));
+            });
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            Assert.Equal(2, commits);
+        });
     }
 
     [Fact]
     public async Task HealthyDurableConclusionAndPendingOutboxSurviveDeferredBatchAndRecovery()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var ordered = Rooms(fixture.Manager).ToArray();
-        var blocked = ordered[0];
-        var healthy = fixture.Matches.Single(match => match.RoomCode == Code(ordered[1]));
-        fixture.Manager.Disconnect(healthy.FirstSession);
-        fixture.Platform.StorageFailureInjector = phase =>
+        await RunFixtureAsync(async fixture =>
         {
-            if (phase == "before-commit") throw new IOException("synthetic platform settlement failure");
-        };
-        await Gate(blocked).WaitAsync();
-        try
-        {
-            fixture.Now += TimeSpan.FromMinutes(5);
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            var detail = (await fixture.Recorder.GetMatchAsync(healthy.MatchId))!;
-            Assert.NotNull(detail.Match.EndedUtc);
-            Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
-            Assert.Equal("completed", (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(healthy.MatchId))!.Status);
-            Assert.Equal(1, await fixture.Recorder.CountPendingRankedSettlementsAsync());
-            Assert.Null(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.First.Id));
-        }
-        finally { Gate(blocked).Release(); fixture.Platform.StorageFailureInjector = null; }
-        await using var reopened = new MatchRecorder(fixture.MatchPath);
-        await reopened.InitializeAsync();
-        var restored = new L12RoomManager(fixture.Catalog, reopened, fixture.Platform, () => fixture.Now);
-        await restored.RestoreRankedRoomsAsync();
-        await restored.TickRankedClocksAsync(fixture.Now);
-        Assert.Equal(0, await reopened.CountPendingRankedSettlementsAsync());
-        Assert.Equal("completed", (await reopened.GetRankedRuntimeCheckpointAsync(healthy.MatchId))!.Status);
-        Assert.Single((await reopened.GetMatchAsync(healthy.MatchId))!.Commands,
-            command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
-        Assert.NotNull(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.First.Id));
-        Assert.NotNull(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.Second.Id));
+            var ordered = Rooms(fixture.Manager).ToArray();
+            var blocked = ordered[0];
+            var healthy = fixture.Matches.Single(match => match.RoomCode == Code(ordered[1]));
+            fixture.Manager.Disconnect(healthy.FirstSession);
+            fixture.Platform.StorageFailureInjector = phase =>
+            {
+                if (phase == "before-commit") throw new IOException("synthetic platform settlement failure");
+            };
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await Gate(blocked).WaitAsync();
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now += TimeSpan.FromMinutes(5);
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                var detail = (await fixture.Recorder.GetMatchAsync(healthy.MatchId))!;
+                Assert.NotNull(detail.Match.EndedUtc);
+                Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+                Assert.Equal("completed", (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(healthy.MatchId))!.Status);
+                Assert.Equal(1, await fixture.Recorder.CountPendingRankedSettlementsAsync());
+                Assert.Null(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.First.Id));
+            }, async () =>
+            {
+                Gate(blocked).Release();
+                fixture.Platform.StorageFailureInjector = null;
+                await DrainOwnedTickAsync(tick);
+            });
+            await using var reopened = new MatchRecorder(fixture.MatchPath);
+            await reopened.InitializeAsync();
+            var restored = new L12RoomManager(fixture.Catalog, reopened, fixture.Platform, () => fixture.Now);
+            await restored.RestoreRankedRoomsAsync();
+            await restored.TickRankedClocksAsync(fixture.Now);
+            Assert.Equal(0, await reopened.CountPendingRankedSettlementsAsync());
+            Assert.Equal("completed", (await reopened.GetRankedRuntimeCheckpointAsync(healthy.MatchId))!.Status);
+            Assert.Single((await reopened.GetMatchAsync(healthy.MatchId))!.Commands,
+                command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+            Assert.NotNull(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.First.Id));
+            Assert.NotNull(fixture.Platform.RankedSettlement(healthy.MatchId, healthy.Second.Id));
+        });
     }
 
     [Theory]
@@ -216,40 +260,50 @@ public sealed class RankedWatchdogIsolationTests
     [InlineData(true)]
     public async Task ScheduledMaintenanceStillInvalidatesButImmediateOverrideStillProtectsRunningRooms(bool immediate)
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var ordered = Rooms(fixture.Manager).ToArray();
-        var blocked = ordered[0];
-        var healthy = fixture.Matches.Single(match => match.RoomCode == Code(ordered[1]));
-        var admin = fixture.Platform.Login("Admin", "L12master").Account!;
-        var current = fixture.Platform.OperationsConfig(admin);
-        var scheduled = fixture.Platform.ApplyOperationsConfig(admin, current.Config with
+        await RunFixtureAsync(async fixture =>
         {
-            Maintenance = new L12MaintenanceConfig(true, "synthetic scheduled maintenance",
-                fixture.Now.AddSeconds(-1), null, 2, 2),
-        }, current.Version, "C2 synthetic schedule", Context("c2-schedule")).Current;
-        if (immediate)
-            fixture.Platform.BeginImmediateMaintenance(admin, 3, scheduled.Version,
-                "C2 protect existing rooms", Context("c2-immediate"));
-        await Gate(blocked).WaitAsync();
-        try
-        {
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            var detail = (await fixture.Recorder.GetMatchAsync(healthy.MatchId))!;
-            if (immediate) Assert.Null(detail.Match.EndedUtc);
-            else
+            var ordered = Rooms(fixture.Manager).ToArray();
+            var blocked = ordered[0];
+            var healthy = fixture.Matches.Single(match => match.RoomCode == Code(ordered[1]));
+            var admin = fixture.Platform.Login("Admin", "L12master").Account!;
+            var current = fixture.Platform.OperationsConfig(admin);
+            var scheduled = fixture.Platform.ApplyOperationsConfig(admin, current.Config with
             {
-                Assert.NotNull(detail.Match.EndedUtc);
-                Assert.Null(detail.Match.Winner);
-                Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+                Maintenance = new L12MaintenanceConfig(true, "synthetic scheduled maintenance",
+                    fixture.Now.AddSeconds(-1), null, 2, 2),
+            }, current.Version, "C2 synthetic schedule", Context("c2-schedule")).Current;
+            if (immediate)
+                fixture.Platform.BeginImmediateMaintenance(admin, 3, scheduled.Version,
+                    "C2 protect existing rooms", Context("c2-immediate"));
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await Gate(blocked).WaitAsync();
+            await RunFixturePhaseAsync(async () =>
+            {
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                var detail = (await fixture.Recorder.GetMatchAsync(healthy.MatchId))!;
+                if (immediate) Assert.Null(detail.Match.EndedUtc);
+                else
+                {
+                    Assert.NotNull(detail.Match.EndedUtc);
+                    Assert.Null(detail.Match.Winner);
+                    Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+                }
+            }, async () =>
+            {
+                Gate(blocked).Release();
+                await DrainOwnedTickAsync(tick);
+                _output.WriteLine("fixture-lifetime: immediate={0}; owned tick drained={1}",
+                    immediate, tick?.IsCompletedSuccessfully ?? true);
+            });
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            foreach (var match in fixture.Matches)
+            {
+                var detail = (await fixture.Recorder.GetMatchAsync(match.MatchId))!;
+                Assert.Equal(immediate, detail.Match.EndedUtc is null);
             }
-        }
-        finally { Gate(blocked).Release(); }
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        foreach (var match in fixture.Matches)
-        {
-            var detail = (await fixture.Recorder.GetMatchAsync(match.MatchId))!;
-            Assert.Equal(immediate, detail.Match.EndedUtc is null);
-        }
+            _output.WriteLine("fixture-lifetime: immediate={0}; all original business assertions completed", immediate);
+        });
     }
 
     [Theory]
@@ -259,159 +313,259 @@ public sealed class RankedWatchdogIsolationTests
     [InlineData("frozen")]
     public async Task BusyRoomDoesNotLoseObservedScheduledInvalidationAfterFiniteMaintenanceEnds(string laterPolicy)
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var blocked = Rooms(fixture.Manager).First();
-        var blockedMatch = fixture.Matches.Single(match => match.RoomCode == Code(blocked));
-        var healthy = fixture.Matches.Single(match => match.RoomCode != Code(blocked));
-        var admin = fixture.Platform.Login("Admin", "L12master").Account!;
-        var current = fixture.Platform.OperationsConfig(admin);
-        fixture.Platform.ApplyOperationsConfig(admin, current.Config with
+        await RunFixtureAsync(async fixture =>
         {
-            Maintenance = new L12MaintenanceConfig(true, "synthetic finite scheduled maintenance",
-                fixture.Now.AddSeconds(-1), fixture.Now.AddSeconds(1), 2, 2),
-        }, current.Version, "C2 finite schedule", Context("c2-finite-schedule"));
-        await Gate(blocked).WaitAsync();
-        try
-        {
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            Assert.NotNull((await fixture.Recorder.GetMatchAsync(healthy.MatchId))!.Match.EndedUtc);
-            Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
-            fixture.Now += TimeSpan.FromSeconds(2);
-            // The old awaited gate retained the already-observed active policy;
-            // later disabling/overriding it did not cancel that in-flight fact.
-            if (laterPolicy == "disabled")
+            var blocked = Rooms(fixture.Manager).First();
+            var blockedMatch = fixture.Matches.Single(match => match.RoomCode == Code(blocked));
+            var healthy = fixture.Matches.Single(match => match.RoomCode != Code(blocked));
+            var admin = fixture.Platform.Login("Admin", "L12master").Account!;
+            var current = fixture.Platform.OperationsConfig(admin);
+            fixture.Platform.ApplyOperationsConfig(admin, current.Config with
             {
-                var latest = fixture.Platform.OperationsConfig(admin);
-                fixture.Platform.ApplyOperationsConfig(admin, latest.Config with
-                {
-                    Maintenance = latest.Config.Maintenance with { Enabled = false },
-                }, latest.Version, "C2 disable after observation", Context("c2-disable-observed"));
-            }
-            else if (laterPolicy == "immediate")
-            {
-                var latest = fixture.Platform.OperationsConfig(admin);
-                fixture.Platform.BeginImmediateMaintenance(admin, 3, latest.Version,
-                    "C2 override after observation", Context("c2-override-observed"));
-            }
-            else if (laterPolicy == "frozen")
-            {
-                // This is the scheduler's explicit transient-frozen state,
-                // not a claimed fault-injection/reconnect integration route.
-                blocked.GetType().GetProperty("Closed")!.SetValue(blocked, true);
-            }
-        }
-        finally { Gate(blocked).Release(); }
-        if (laterPolicy == "frozen")
-        {
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-            Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+                Maintenance = new L12MaintenanceConfig(true, "synthetic finite scheduled maintenance",
+                    fixture.Now.AddSeconds(-1), fixture.Now.AddSeconds(1), 2, 2),
+            }, current.Version, "C2 finite schedule", Context("c2-finite-schedule"));
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
             await Gate(blocked).WaitAsync();
-            try { blocked.GetType().GetProperty("Closed")!.SetValue(blocked, false); }
-            finally { Gate(blocked).Release(); }
-        }
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        var detail = (await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!;
-        Assert.NotNull(detail.Match.EndedUtc);
-        Assert.Null(detail.Match.Winner);
-        Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion"
-            && command.Command.GetProperty("reason").GetString() == "服务器维护开始，当前对局无效");
-        await using var reopened = new MatchRecorder(fixture.MatchPath);
-        await reopened.InitializeAsync();
-        reopened.AttachCatalog(fixture.Catalog);
-        var rebuilt = (await reopened.GetMatchAsync(blockedMatch.MatchId))!;
-        Assert.NotNull(rebuilt.Match.EndedUtc);
-        Assert.Single(rebuilt.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+            await RunFixturePhaseAsync(async () =>
+            {
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                Assert.NotNull((await fixture.Recorder.GetMatchAsync(healthy.MatchId))!.Match.EndedUtc);
+                Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+                fixture.Now += TimeSpan.FromSeconds(2);
+                // The old awaited gate retained the already-observed active policy;
+                // later disabling/overriding it did not cancel that in-flight fact.
+                if (laterPolicy == "disabled")
+                {
+                    var latest = fixture.Platform.OperationsConfig(admin);
+                    fixture.Platform.ApplyOperationsConfig(admin, latest.Config with
+                    {
+                        Maintenance = latest.Config.Maintenance with { Enabled = false },
+                    }, latest.Version, "C2 disable after observation", Context("c2-disable-observed"));
+                }
+                else if (laterPolicy == "immediate")
+                {
+                    var latest = fixture.Platform.OperationsConfig(admin);
+                    fixture.Platform.BeginImmediateMaintenance(admin, 3, latest.Version,
+                        "C2 override after observation", Context("c2-override-observed"));
+                }
+                else if (laterPolicy == "frozen")
+                {
+                    // This is the scheduler's explicit transient-frozen state,
+                    // not a claimed fault-injection/reconnect integration route.
+                    blocked.GetType().GetProperty("Closed")!.SetValue(blocked, true);
+                }
+            }, async () =>
+            {
+                Gate(blocked).Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            if (laterPolicy == "frozen")
+            {
+                await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                Assert.Null((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+                await Gate(blocked).WaitAsync();
+                try { blocked.GetType().GetProperty("Closed")!.SetValue(blocked, false); }
+                finally { Gate(blocked).Release(); }
+            }
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            var detail = (await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!;
+            Assert.NotNull(detail.Match.EndedUtc);
+            Assert.Null(detail.Match.Winner);
+            Assert.Single(detail.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion"
+                && command.Command.GetProperty("reason").GetString() == "服务器维护开始，当前对局无效");
+            await using var reopened = new MatchRecorder(fixture.MatchPath);
+            await reopened.InitializeAsync();
+            reopened.AttachCatalog(fixture.Catalog);
+            var rebuilt = (await reopened.GetMatchAsync(blockedMatch.MatchId))!;
+            Assert.NotNull(rebuilt.Match.EndedUtc);
+            Assert.Single(rebuilt.Commands, command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+        });
     }
 
     [Fact]
     public async Task BusySettlementRoomCannotDelayHealthyConclusionOrExtendItsRetentionStart()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var blockedMatch = fixture.Matches[0];
-        var healthyMatch = fixture.Matches[1];
-        await fixture.Manager.HandleActionAsync(blockedMatch.FirstSession,
-            JsonSerializer.SerializeToElement(new { type = "surrender" }, WireJson));
-        Assert.NotNull((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
-        var blocked = Rooms(fixture.Manager).Single(room => Code(room) == blockedMatch.RoomCode);
-        var retentionStarted = blocked.GetType().GetProperty("SettlementStartedAt")!.GetValue(blocked);
-        fixture.Manager.Disconnect(healthyMatch.FirstSession);
-        await Gate(blocked).WaitAsync();
-        try
+        await RunFixtureAsync(async fixture =>
         {
-            fixture.Now += TimeSpan.FromMinutes(5);
-            await fixture.Manager.TickRankedClocksAsync(fixture.Now).WaitAsync(TimeSpan.FromSeconds(1));
-            await AssertConcludedOnceAsync(fixture, healthyMatch);
-            Assert.Equal(retentionStarted, blocked.GetType().GetProperty("SettlementStartedAt")!.GetValue(blocked));
-        }
-        finally { Gate(blocked).Release(); }
-        fixture.Now += TimeSpan.FromMinutes(26);
-        var messages = await fixture.Manager.TickRankedClocksAsync(fixture.Now);
-        Assert.Contains(messages, message => message.SessionId == blockedMatch.FirstSession
-            && JsonSerializer.SerializeToElement(message.Payload, WireJson).GetProperty("type").GetString() == "roomClosed");
-        Assert.DoesNotContain(Rooms(fixture.Manager), room => Code(room) == blockedMatch.RoomCode);
+            var blockedMatch = fixture.Matches[0];
+            var healthyMatch = fixture.Matches[1];
+            await fixture.Manager.HandleActionAsync(blockedMatch.FirstSession,
+                JsonSerializer.SerializeToElement(new { type = "surrender" }, WireJson));
+            Assert.NotNull((await fixture.Recorder.GetMatchAsync(blockedMatch.MatchId))!.Match.EndedUtc);
+            var blocked = Rooms(fixture.Manager).Single(room => Code(room) == blockedMatch.RoomCode);
+            var retentionStarted = blocked.GetType().GetProperty("SettlementStartedAt")!.GetValue(blocked);
+            fixture.Manager.Disconnect(healthyMatch.FirstSession);
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await Gate(blocked).WaitAsync();
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now += TimeSpan.FromMinutes(5);
+                tick = fixture.Manager.TickRankedClocksAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                await AssertConcludedOnceAsync(fixture, healthyMatch);
+                Assert.Equal(retentionStarted, blocked.GetType().GetProperty("SettlementStartedAt")!.GetValue(blocked));
+            }, async () =>
+            {
+                Gate(blocked).Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            fixture.Now += TimeSpan.FromMinutes(26);
+            var messages = await fixture.Manager.TickRankedClocksAsync(fixture.Now);
+            Assert.Contains(messages, message => message.SessionId == blockedMatch.FirstSession
+                && JsonSerializer.SerializeToElement(message.Payload, WireJson).GetProperty("type").GetString() == "roomClosed");
+            Assert.DoesNotContain(Rooms(fixture.Manager), room => Code(room) == blockedMatch.RoomCode);
+        });
     }
 
     [Fact]
     public async Task ThirtySecondBusyResponseRoomKeepsOriginalDeadlineWhileHealthyExpiryIsDurable()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var blocked = await fixture.AddResponseRoomAsync();
-        var healthy = await fixture.AddResponseRoomAsync();
-        var originalBlocked = Game(blocked.Room).CaptureResponseAutoCloseLease()!;
-        var originalHealthy = Game(healthy.Room).CaptureResponseAutoCloseLease()!;
-        fixture.Now = originalHealthy.DeadlineUtc.AddMilliseconds(-1);
-        await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-        Assert.Equal(originalBlocked, Game(blocked.Room).CaptureResponseAutoCloseLease());
-        Assert.Empty((await fixture.Recorder.GetMatchAsync(healthy.MatchId))!.Commands);
-        await Gate(blocked.Room).WaitAsync();
-        var held = Stopwatch.StartNew();
-        Task<IReadOnlyList<OutgoingMessage>>? tick = null;
-        try
+        await RunFixtureAsync(async fixture =>
         {
-            fixture.Now = originalHealthy.DeadlineUtc;
-            tick = fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-            await tick.WaitAsync(TimeSpan.FromSeconds(1));
-            Assert.Equal(1, await CountCloseAsync(fixture.Recorder, healthy.MatchId, originalHealthy.PromptId));
+            var blocked = await fixture.AddResponseRoomAsync();
+            var healthy = await fixture.AddResponseRoomAsync();
+            var originalBlocked = Game(blocked.Room).CaptureResponseAutoCloseLease()!;
+            var originalHealthy = Game(healthy.Room).CaptureResponseAutoCloseLease()!;
+            fixture.Now = originalHealthy.DeadlineUtc.AddMilliseconds(-1);
+            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
             Assert.Equal(originalBlocked, Game(blocked.Room).CaptureResponseAutoCloseLease());
-            var remaining = TimeSpan.FromSeconds(30) - held.Elapsed;
-            if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
-            Assert.Equal(originalBlocked.DeadlineUtc, Game(blocked.Room).CaptureResponseAutoCloseLease()!.DeadlineUtc);
-            Assert.Equal(0, await CountCloseAsync(fixture.Recorder, blocked.MatchId, originalBlocked.PromptId));
-        }
-        finally { Gate(blocked.Room).Release(); if (tick is not null) await tick.WaitAsync(TimeSpan.FromSeconds(5)); }
-        fixture.Now += TimeSpan.FromSeconds(30);
-        await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => fixture.Manager.TickResponseWindowsAsync(fixture.Now)));
-        Assert.Equal(1, await CountCloseAsync(fixture.Recorder, blocked.MatchId, originalBlocked.PromptId));
-        Assert.Equal(1, await CountCloseAsync(fixture.Recorder, healthy.MatchId, originalHealthy.PromptId));
-        var restored = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(blocked.MatchId));
-        Assert.Equal(Game(blocked.Room).CaptureResponseAutoCloseLease(), restored.Engine.CaptureResponseAutoCloseLease());
+            Assert.Empty((await fixture.Recorder.GetMatchAsync(healthy.MatchId))!.Commands);
+            await Gate(blocked.Room).WaitAsync();
+            var held = Stopwatch.StartNew();
+            Task<IReadOnlyList<OutgoingMessage>>? tick = null;
+            await RunFixturePhaseAsync(async () =>
+            {
+                fixture.Now = originalHealthy.DeadlineUtc;
+                tick = fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+                await tick.WaitAsync(TimeSpan.FromSeconds(1));
+                Assert.Equal(1, await CountCloseAsync(fixture.Recorder, healthy.MatchId, originalHealthy.PromptId));
+                Assert.Equal(originalBlocked, Game(blocked.Room).CaptureResponseAutoCloseLease());
+                var remaining = TimeSpan.FromSeconds(30) - held.Elapsed;
+                if (remaining > TimeSpan.Zero) await Task.Delay(remaining);
+                Assert.Equal(originalBlocked.DeadlineUtc, Game(blocked.Room).CaptureResponseAutoCloseLease()!.DeadlineUtc);
+                Assert.Equal(0, await CountCloseAsync(fixture.Recorder, blocked.MatchId, originalBlocked.PromptId));
+            }, async () =>
+            {
+                Gate(blocked.Room).Release();
+                await DrainOwnedTickAsync(tick);
+            });
+            fixture.Now += TimeSpan.FromSeconds(30);
+            await Task.WhenAll(Enumerable.Range(0, 16).Select(_ => fixture.Manager.TickResponseWindowsAsync(fixture.Now)));
+            Assert.Equal(1, await CountCloseAsync(fixture.Recorder, blocked.MatchId, originalBlocked.PromptId));
+            Assert.Equal(1, await CountCloseAsync(fixture.Recorder, healthy.MatchId, originalHealthy.PromptId));
+            var restored = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(blocked.MatchId));
+            Assert.Equal(Game(blocked.Room).CaptureResponseAutoCloseLease(), restored.Engine.CaptureResponseAutoCloseLease());
+        });
     }
 
     [Fact]
     public async Task ResponseCommitFailureRestoresOriginalLeaseAndRetryExpiresThatLeaseExactlyOnce()
     {
-        await using var fixture = await Fixture.CreateAsync();
-        var response = await fixture.AddResponseRoomAsync();
-        var original = Game(response.Room).CaptureResponseAutoCloseLease()!;
-        fixture.Now = original.DeadlineUtc;
-        var failures = 0;
-        fixture.Recorder.StorageFailureInjector = phase =>
+        await RunFixtureAsync(async fixture =>
         {
-            if (phase != "before-match-command-commit") return;
-            Interlocked.Increment(ref failures);
-            throw new IOException("synthetic response commit failure");
-        };
-        await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-        Assert.Equal(1, failures);
-        Assert.Equal(original, Game(response.Room).CaptureResponseAutoCloseLease());
-        Assert.Equal(0, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
-        var recovered = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
-        Assert.Equal(original, recovered.Engine.CaptureResponseAutoCloseLease());
-        fixture.Recorder.StorageFailureInjector = null;
-        await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-        await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-        Assert.Equal(1, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+            var response = await fixture.AddResponseRoomAsync();
+            var original = Game(response.Room).CaptureResponseAutoCloseLease()!;
+            fixture.Now = original.DeadlineUtc;
+            var failures = 0;
+            fixture.Recorder.StorageFailureInjector = phase =>
+            {
+                if (phase != "before-match-command-commit") return;
+                Interlocked.Increment(ref failures);
+                throw new IOException("synthetic response commit failure");
+            };
+            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            Assert.Equal(1, failures);
+            Assert.Equal(original, Game(response.Room).CaptureResponseAutoCloseLease());
+            Assert.Equal(0, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+            var recovered = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+            Assert.Equal(original, recovered.Engine.CaptureResponseAutoCloseLease());
+            fixture.Recorder.StorageFailureInjector = null;
+            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            Assert.Equal(1, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+        });
+    }
+
+    [Fact]
+    public async Task FixturePhaseKeepsTheOriginalBusinessFailureWhenCleanupSucceeds()
+    {
+        var business = new TimeoutException("synthetic original business deadline");
+        var cleaned = false;
+        var error = await Assert.ThrowsAsync<TimeoutException>(() => RunFixturePhaseAsync(
+            () => Task.FromException(business), () => { cleaned = true; return Task.CompletedTask; }));
+        Assert.Same(business, error);
+        Assert.True(cleaned);
+    }
+
+    [Fact]
+    public async Task FixturePhasePreservesBothBusinessAndCleanupFailures()
+    {
+        var business = new InvalidOperationException("synthetic original business assertion");
+        var cleanup = new IOException("synthetic fixture file cleanup");
+        var error = await Assert.ThrowsAsync<AggregateException>(() => RunFixturePhaseAsync(
+            () => Task.FromException(business), () => Task.FromException(cleanup)));
+        Assert.Equal(new Exception[] { business, cleanup }, error.InnerExceptions);
+    }
+
+    [Fact]
+    public async Task OneSecondTickTimeoutStillFailsAfterGateReleaseAndSuccessfulDrainEvenIfDisposalFails()
+    {
+        using var gate = new SemaphoreSlim(0, 1);
+        var tick = Task.Run(async () => await gate.WaitAsync());
+        var cleanup = new IOException("synthetic fixture file cleanup after tick drain");
+        Exception? deadline = null;
+        var error = await Assert.ThrowsAsync<AggregateException>(() => RunFixturePhaseAsync(
+            () => RunFixturePhaseAsync(async () =>
+            {
+                try { await tick.WaitAsync(TimeSpan.FromSeconds(1)); }
+                catch (TimeoutException observed) { deadline = observed; throw; }
+            }, async () =>
+            {
+                gate.Release();
+                await tick.WaitAsync(TimeSpan.FromSeconds(5));
+            }), () => Task.FromException(cleanup)));
+        Assert.IsType<TimeoutException>(deadline);
+        Assert.Equal(new Exception[] { deadline!, cleanup }, error.InnerExceptions);
+        Assert.True(tick.IsCompletedSuccessfully);
+    }
+
+    private async Task RunFixtureAsync(Func<Fixture, Task> body)
+    {
+        var fixture = await Fixture.CreateAsync();
+        await RunFixturePhaseAsync(async () =>
+        {
+            await body(fixture);
+            _output.WriteLine("fixture-lifetime: all original business assertions completed");
+        }, async () =>
+        {
+            await fixture.DisposeAsync();
+            _output.WriteLine("fixture-lifetime: fixture cleanup completed");
+        });
+    }
+
+    private async Task DrainOwnedTickAsync(Task? tick)
+    {
+        if (tick is not null) await tick.WaitAsync(TimeSpan.FromSeconds(5));
+        _output.WriteLine("fixture-lifetime: owned tick drained={0}", tick?.IsCompletedSuccessfully ?? true);
+    }
+
+    private static async Task RunFixturePhaseAsync(Func<Task> body, Func<Task> cleanup)
+    {
+        Exception? businessFailure = null;
+        try { await body(); }
+        catch (Exception error) { businessFailure = error; }
+        try { await cleanup(); }
+        catch (Exception cleanupFailure)
+        {
+            if (businessFailure is not null)
+                throw new AggregateException("Watchdog fixture phase and cleanup both failed",
+                    businessFailure, cleanupFailure);
+            throw;
+        }
+        if (businessFailure is not null) ExceptionDispatchInfo.Capture(businessFailure).Throw();
     }
 
     private static async Task<int> CountCloseAsync(MatchRecorder recorder, string matchId, string promptId)
