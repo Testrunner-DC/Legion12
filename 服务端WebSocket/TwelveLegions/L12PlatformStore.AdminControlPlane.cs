@@ -134,7 +134,9 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var outer = _adminTransactionDepth == 0;
-            var snapshot = JsonSerializer.Serialize(_data);
+            // 每层保存进入该层时的完整状态；内层回滚不能丢弃外层尚未提交的修改。
+            // 直接写压缩流，避免同时保留整份 UTF-8 缓冲与 UTF-16 JSON 字符串。
+            var snapshot = SerializeCompleteInMemoryState(_data);
             var committedAtEntry = Volatile.Read(ref _committedSessionActivity);
             var revocationCountAtEntry = _pendingSessionRevocations.Count;
             var saveRequestedAtEntry = _adminTransactionSaveRequested;
@@ -158,7 +160,7 @@ public sealed partial class L12PlatformStore
                 try
                 {
                     if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
-                        _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                        RestoreAdminTransactionSnapshot(snapshot);
                 }
                 finally
                 {
@@ -191,7 +193,7 @@ public sealed partial class L12PlatformStore
             catch
             {
                 if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
-                    _data = JsonSerializer.Deserialize<DataFile>(snapshot) ?? new DataFile();
+                    RestoreAdminTransactionSnapshot(snapshot);
                 throw;
             }
             finally
@@ -203,6 +205,21 @@ public sealed partial class L12PlatformStore
         }
         DispatchCommittedSessionRevocations(committedRevocations);
         return result;
+    }
+
+    private void RestoreAdminTransactionSnapshot(byte[] snapshot)
+    {
+        try
+        {
+            // 原样还原进入事务时的状态，不归一化未提交数据或导入另一代数据库。
+            _data = DeserializeCompleteInMemoryState(snapshot);
+        }
+        catch (Exception error)
+        {
+            MarkRollbackViewUnavailable();
+            ReportStorageFailure("后台事务回滚", error);
+            throw new L12PlatformStorageUnavailableException("后台事务回滚失败", error);
+        }
     }
 
     internal L12StoredAdminCommand? FindAdminCommand(string actorId, string idempotencyKey)

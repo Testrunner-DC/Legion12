@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-login-storage-memory",
+  "date": "2026-10-11",
+  "audience": "players",
+  "title": "登录与连接稳定性",
+  "changes": [{
+    "category": "accounts",
+    "text": "修复服务运行期间因内存不足而出现“暂时无法保存”、无法登录或连接中断的一类问题；保留保存失败后的数据回滚和重试保护。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+      "TwelveLegions.Platform.Tests/AdminTransactionMemoryTests.cs"
+    ]
+  }]
+}

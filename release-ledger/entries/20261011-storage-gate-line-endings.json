@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-storage-gate-line-endings",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "源码合同读取时统一CRLF/LF，原共享SQL筛选片段数量与调用断言保持，修正Windows检出换行造成的误报。无产品行为变化。",
+  "paths": ["TwelveLegions.Platform.Tests/PublicDeckStatisticsConsistencyTests.cs"]
+}

@@ -1,5 +1,13 @@
 # 十二军团任务台账
 
+## STORAGE-20261011-ADMIN-SNAPSHOT｜登录503与后台事务内存峰值（已批准，Batch已验）
+
+- 用户在只读诊断后明确要求“帮我修复”。本批保护P2/P3，保持SQLite权威、完整回滚、CAS、会话撤销和失败关闭，不回写旧库或删除历史结算。原始现场存于受限server-backups/20261010-recovery/final/incident-20261011。
+- 08:39 UTC+8正式0e49a749的后台Bug更新在ExecuteAdminTransaction第137行完整JSON字符串序列化发生托管OOM，随后08:39:14进入不可恢复屏障；2GiB上限未根治。平台库快速校验ok，1179账号/8762私人牌组；原双回滚最内层错误未落日志，不冒称已确定每个失败点。
+- 变更前本地4b0b3ca树干净；fetch发现远端独立卡效/测试提交，已安全快进f60ba18保留其结果。本批仅修改共享平台快照与故障诊断、平台回归和发布记录；卡效源码无新修改。完整Batch平台1200/1200、失败跳过0，监督回执test-9dc55bbf662d41d78365cf6ead9cb647；提交级Release及Linux容量对照另行验收，不借专项绿灯称上线完成。
+- 同类扫描：`rg -n 'JsonSerializer\.(Serialize|Deserialize).*(_data|snapshot)|SerializeSnapshot\(_data\)' 服务端WebSocket/TwelveLegions -g 'L12PlatformStore*.cs'`。后台唯一入口两回滚出口共用；嵌套管理员命令、赛季管理、导入、排位修复均覆盖。持久JSON格式不改，既有压缩已提交缓存保持完整域。
+- 本批最终开发提交、远端同步、Release、容量对照与正式版本分别以`D:/GPT/Legion12/artifacts/login-memory-20261011/final-acceptance.json`的实测回执记录，不因代码提交自动视为已部署。原始库、备份及真实数据演练日志只在受限incident目录，禁止加入Git。
+
 ## MAIN-20261011 最新状态｜本地验收与线上闭环分离
 
 - 唯一实时事实读D盘bug-closure-continuation-20261011/current-status.json；以下旧阶段91/513、实施中等标签仅历史。用户批准范围：罐一必选1/罐四可0且后弃置；合法无来源authority-event不造卡效结果；当前响应存在时复用Deferred，不清提示/改期限/第二状态。P0/P1/P3保持。

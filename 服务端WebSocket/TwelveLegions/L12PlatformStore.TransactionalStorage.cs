@@ -363,6 +363,7 @@ public sealed partial class L12PlatformStore
         }
         catch (Exception error)
         {
+            ReportStorageFailure("平台事务提交", error);
             RestoreLastCommittedSnapshot();
             _storageIssue = $"平台事务提交失败：{error.Message}";
             throw new L12PlatformStorageUnavailableException(_storageIssue, error);
@@ -1222,13 +1223,7 @@ public sealed partial class L12PlatformStore
         try
         {
             var snapshot = _lastCommittedSnapshot;
-            if (snapshot.Length <= 32 || !CryptographicOperations.FixedTimeEquals(
-                    snapshot.AsSpan(0, 32), SHA256.HashData(snapshot.AsSpan(32))))
-                throw new InvalidDataException("完整回滚缓存校验失败");
-            using var bytes = new MemoryStream(snapshot, 32, snapshot.Length - 32, writable: false);
-            using var compressed = new GZipStream(bytes, CompressionMode.Decompress);
-            var restored = JsonSerializer.Deserialize<DataFile>(compressed, PlatformSnapshotJsonOptions)
-                ?? throw new InvalidDataException("完整回滚缓存为空");
+            var restored = DeserializeCompleteInMemoryState(snapshot);
             restored = NormalizeDeserializedData(restored);
             ValidateCompactRuntimeDeckDomain(restored);
             var replacement = snapshot;
@@ -1284,12 +1279,10 @@ public sealed partial class L12PlatformStore
             }
             catch (Exception databaseError)
             {
-                _rollbackViewUnavailable = true;
-                PublishCommittedSessionActivity(UnavailableSessionActivity);
-                _storageWritable = false;
-                _storageMode = "unavailable";
-                _storageIssue = "完整回滚缓存恢复失败";
-                throw new L12PlatformStorageUnavailableException(_storageIssue,
+                MarkRollbackViewUnavailable();
+                ReportStorageFailure("完整回滚缓存", cacheError);
+                ReportStorageFailure("权威数据库恢复", databaseError);
+                throw new L12PlatformStorageUnavailableException("完整回滚缓存恢复失败",
                     new AggregateException(cacheError, databaseError));
             }
         }
@@ -1312,6 +1305,11 @@ public sealed partial class L12PlatformStore
     private static byte[] SerializeRollbackState(DataFile data)
     {
         CompactRuntimeDeckDomain(data);
+        return SerializeCompleteInMemoryState(data);
+    }
+
+    private static byte[] SerializeCompleteInMemoryState(DataFile data)
+    {
         using var bytes = new MemoryStream();
         using (var compressed = new GZipStream(bytes, CompressionLevel.Fastest, leaveOpen: true))
             JsonSerializer.Serialize(compressed, data, PlatformMigrationJsonOptions);
@@ -1320,6 +1318,51 @@ public sealed partial class L12PlatformStore
         SHA256.HashData(payload, snapshot.AsSpan(0, 32));
         payload.CopyTo(snapshot.AsSpan(32));
         return snapshot;
+    }
+
+    private static DataFile DeserializeCompleteInMemoryState(byte[] snapshot)
+    {
+        if (snapshot.Length <= 32 || !CryptographicOperations.FixedTimeEquals(
+                snapshot.AsSpan(0, 32), SHA256.HashData(snapshot.AsSpan(32))))
+            throw new InvalidDataException("完整回滚缓存校验失败");
+        using var bytes = new MemoryStream(snapshot, 32, snapshot.Length - 32, writable: false);
+        using var compressed = new GZipStream(bytes, CompressionMode.Decompress);
+        return JsonSerializer.Deserialize<DataFile>(compressed, PlatformMigrationJsonOptions)
+            ?? throw new InvalidDataException("完整回滚缓存为空");
+    }
+
+    private void MarkRollbackViewUnavailable()
+    {
+        _rollbackViewUnavailable = true;
+        PublishCommittedSessionActivity(UnavailableSessionActivity);
+        _storageWritable = false;
+        _storageMode = "unavailable";
+        _storageIssue = "完整回滚缓存恢复失败";
+    }
+
+    internal static string StorageFailureSummary(string stage, Exception error)
+    {
+        // 只记录类型和调用位置，不输出可能含账号、令牌或业务正文的异常消息。
+        var result = new StringBuilder("[平台存储故障] ").Append(stage);
+        var pending = new Queue<Exception>();
+        pending.Enqueue(error);
+        for (var count = 0; pending.Count > 0 && count < 8; count++)
+        {
+            var current = pending.Dequeue();
+            result.AppendLine().Append(current.GetType().FullName);
+            if (current.StackTrace is { } trace)
+                foreach (var line in trace.Split('\n').Take(16)) result.AppendLine().Append(line.TrimEnd());
+            if (current is AggregateException aggregate)
+                foreach (var inner in aggregate.InnerExceptions.Take(8)) pending.Enqueue(inner);
+            else if (current.InnerException is { } inner) pending.Enqueue(inner);
+        }
+        return result.ToString();
+    }
+
+    private static void ReportStorageFailure(string stage, Exception error)
+    {
+        try { Console.Error.WriteLine(StorageFailureSummary(stage, error)); }
+        catch { /* 诊断失败不能替换原异常，也不能改变失败关闭状态。 */ }
     }
 
     private static string PlatformDatabasePath(string legacyPath)

@@ -125,7 +125,7 @@ public sealed class PublicDeckStatisticsConsistencyTests
     public void LegacyAndPagedQueriesShareOneAuthoritativeFilterFragment()
     {
         var source = File.ReadAllText(RepositoryFile("服务端WebSocket", "TwelveLegions",
-            "MatchRecorder.PublicDecks.cs"));
+            "MatchRecorder.PublicDecks.cs")).ReplaceLineEndings("\n");
         Assert.Equal(2, Occurrences(source, "AND COALESCE(m.mode_id,'legacy')<>'sandbox'\n"));
         Assert.Equal(1, Occurrences(source, "AND NOT EXISTS(SELECT 1 FROM json_each($accounts)"));
         Assert.True(Occurrences(source, "PublicDeckStatisticsGroupedSql") >= 4);
