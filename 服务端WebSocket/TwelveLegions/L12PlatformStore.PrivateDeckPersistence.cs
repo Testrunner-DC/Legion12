@@ -339,7 +339,7 @@ public sealed partial class L12PlatformStore
     }
 
     private static void UpsertSnapshotCas(SqliteConnection connection, SqliteTransaction transaction,
-        string snapshotJson, string snapshotChecksum, string mirrorChecksum, DataFile data,
+        CoreSnapshot snapshot, string snapshotChecksum, string mirrorChecksum, DataFile data,
         long expectedStorageRevision, bool privateDeckObjectWrite)
     {
         using (var command = connection.CreateCommand())
@@ -350,7 +350,7 @@ public sealed partial class L12PlatformStore
                     schema_version=$schema,
                     storage_revision=$revision,
                     business_version=$business,
-                    snapshot_json=$json,
+                    snapshot_json=CAST($json AS TEXT),
                     snapshot_sha256=$checksum,
                     updated_utc=$updated
                 WHERE singleton_id=1 AND storage_revision=$expected;
@@ -358,7 +358,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
             command.Parameters.AddWithValue("$revision", data.Version);
             command.Parameters.AddWithValue("$business", data.BusinessVersion ?? data.Version);
-            command.Parameters.AddWithValue("$json", snapshotJson);
+            command.Parameters.AddWithValue("$json", snapshot.JsonValue);
             command.Parameters.AddWithValue("$checksum", snapshotChecksum);
             command.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
             command.Parameters.AddWithValue("$expected", expectedStorageRevision);

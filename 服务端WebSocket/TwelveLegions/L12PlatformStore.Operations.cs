@@ -824,45 +824,52 @@ public sealed partial class L12PlatformStore
 
     public L12OperationsPolicySnapshot CaptureOperationsPolicy()
     {
-        lock (_gate) return ToPolicySnapshot(RequireOperationsConfig());
+        // Synchronous command owners retain their staged authority; unrelated readers never wait.
+        if (Monitor.IsEntered(_gate)) return ToPolicySnapshot(RequireOperationsConfig());
+        return ReadCommittedGameplayReads().Policy
+            ?? throw new L12PlatformStorageUnavailableException("平台已提交运营配置不可恢复");
     }
 
     public L12EffectiveOperationsPolicyView EffectiveOperationsPolicy(DateTimeOffset? observedAt = null)
     {
         var now = observedAt ?? DateTimeOffset.UtcNow;
-        lock (_gate)
-        {
-            var policy = ToPolicySnapshot(RequireOperationsConfig());
-            var playerSeason = policy.Season with
-            {
-                Name = HistoricalSeasonDisplayNameLocked(policy.Season.Id, policy.Season.Name,
-                    fallback: "当前赛季"),
-            };
-            var immediateActive = policy.ImmediateMaintenance?.Enabled == true;
-            var scheduledActive = policy.IsMaintenanceActive(now);
-            var entryBlocked = policy.IsNewGameEntryBlocked(now);
-            return new L12EffectiveOperationsPolicyView(
-                policy.Version,
-                playerSeason,
-                policy.DisasterCardIds.ToArray(),
-                policy.MatchModes.ToArray(),
-                policy.DefaultRoomConfig,
-                policy.IsSeasonDisasterModeAvailable(now),
-                policy.CardRestrictions.ToArray(),
-                policy.DefaultPresetDeckIds.ToArray(),
-                new L12EffectiveMaintenanceView(policy.Maintenance.Enabled || immediateActive,
-                    scheduledActive || immediateActive,
-                    entryBlocked,
-                    scheduledActive || immediateActive ? "maintenance" : entryBlocked ? "upcoming" : "open",
-                    policy.Maintenance.Message,
-                    immediateActive ? policy.ImmediateMaintenanceBroadcastMessage()
-                        : policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
-                    policy.Maintenance.StartsAt, policy.Maintenance.EndsAt,
-                    policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours,
-                    immediateActive, policy.ImmediateMaintenance?.StartedAt,
-                    immediateActive ? policy.ImmediateMaintenance?.ExpectedDurationHours : null),
-                policy.ActiveAnnouncements(now));
-        }
+        var staged = Monitor.IsEntered(_gate);
+        var reads = staged ? null : ReadCommittedGameplayReads();
+        var policy = staged ? ToPolicySnapshot(RequireOperationsConfig()) : reads!.Policy
+            ?? throw new L12PlatformStorageUnavailableException("平台已提交运营配置不可恢复");
+        return ProjectEffectiveOperationsPolicy(policy, staged
+            ? HistoricalSeasonDisplayNameLocked(policy.Season.Id, policy.Season.Name, fallback: "当前赛季")
+            : reads!.SeasonDisplayName, now);
+    }
+
+    private static L12EffectiveOperationsPolicyView ProjectEffectiveOperationsPolicy(
+        L12OperationsPolicySnapshot policy, string seasonName, DateTimeOffset now)
+    {
+        var playerSeason = policy.Season with { Name = seasonName };
+        var immediateActive = policy.ImmediateMaintenance?.Enabled == true;
+        var scheduledActive = policy.IsMaintenanceActive(now);
+        var entryBlocked = policy.IsNewGameEntryBlocked(now);
+        return new L12EffectiveOperationsPolicyView(
+            policy.Version,
+            playerSeason,
+            policy.DisasterCardIds.ToArray(),
+            policy.MatchModes.ToArray(),
+            policy.DefaultRoomConfig,
+            policy.IsSeasonDisasterModeAvailable(now),
+            policy.CardRestrictions.ToArray(),
+            policy.DefaultPresetDeckIds.ToArray(),
+            new L12EffectiveMaintenanceView(policy.Maintenance.Enabled || immediateActive,
+                scheduledActive || immediateActive,
+                entryBlocked,
+                scheduledActive || immediateActive ? "maintenance" : entryBlocked ? "upcoming" : "open",
+                policy.Maintenance.Message,
+                immediateActive ? policy.ImmediateMaintenanceBroadcastMessage()
+                    : policy.IsMaintenanceBroadcastVisible(now) ? policy.MaintenanceBroadcastMessage() : string.Empty,
+                policy.Maintenance.StartsAt, policy.Maintenance.EndsAt,
+                policy.Maintenance.AdvanceBroadcastHours, policy.Maintenance.ExpectedDurationHours,
+                immediateActive, policy.ImmediateMaintenance?.StartedAt,
+                immediateActive ? policy.ImmediateMaintenance?.ExpectedDurationHours : null),
+            policy.ActiveAnnouncements(now));
     }
 
     private void EnsureOperationsState()

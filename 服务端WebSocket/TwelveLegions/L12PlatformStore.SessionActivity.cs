@@ -8,11 +8,12 @@ public sealed partial class L12PlatformStore
     private sealed record CommittedSessionActivity(long Revision, byte[] RollbackSnapshot,
         FrozenDictionary<string, DateTimeOffset> Sessions, bool Available,
         L12DeploymentPlatformReadiness DeploymentReadiness,
-        CommittedRankedIdentity? RankedIdentity);
+        CommittedRankedIdentity? RankedIdentity,
+        CommittedGameplayReads? GameplayReads);
 
     private static readonly CommittedSessionActivity UnavailableSessionActivity = new(-1, [],
         FrozenDictionary<string, DateTimeOffset>.Empty, false,
-        L12DeploymentPlatformReadiness.Unknown("committed_generation_unavailable"), null);
+        L12DeploymentPlatformReadiness.Unknown("committed_generation_unavailable"), null, null);
     private CommittedSessionActivity _committedSessionActivity = UnavailableSessionActivity;
     private readonly List<string> _pendingSessionRevocations = [];
 
@@ -31,7 +32,8 @@ public sealed partial class L12PlatformStore
         }
         var prepared = new CommittedSessionActivity(data.Version, rollbackSnapshot,
             sessions.ToFrozenDictionary(StringComparer.Ordinal), true,
-            PrepareCommittedDeploymentReadiness(data), PrepareCommittedRankedIdentity(data));
+            PrepareCommittedDeploymentReadiness(data), PrepareCommittedRankedIdentity(data),
+            PrepareCommittedGameplayReads(data));
         StorageFailureInjector?.Invoke("after-session-index-build");
         return prepared;
     }

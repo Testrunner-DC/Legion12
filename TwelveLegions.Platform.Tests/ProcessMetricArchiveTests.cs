@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -13,9 +14,15 @@ public sealed class ProcessMetricArchiveTests
     private const string MarkerText = "l12-process-metrics-owned-v1\n";
     private static readonly Guid InstanceA = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid InstanceB = Guid.Parse("22222222-2222-4222-8222-222222222222");
+    private static readonly JsonSerializerOptions LegacyV1JsonOptions = new()
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        WriteIndented = false,
+    };
 
     [Fact]
-    public void CompactEntryContainsFifteenStagesButNoHistogramOrPrivateSource()
+    public void CompactV2EntryUsesFixedOrdinalStagesButNoHistogramOrPrivateSource()
     {
         const string sourceSentinel = "/private/account-room-token/cgroup";
         var sample = Sample(sourceSentinel);
@@ -29,11 +36,65 @@ public sealed class ProcessMetricArchiveTests
         Assert.DoesNotContain(sourceSentinel, text, StringComparison.Ordinal);
         Assert.DoesNotContain("account-room-token", text, StringComparison.Ordinal);
         using var json = JsonDocument.Parse(serialized.Json);
-        Assert.Equal(15, json.RootElement.GetProperty("stages").GetArrayLength());
-        Assert.Contains("duration.action.engine", json.RootElement.GetProperty("stages")
-            .EnumerateArray().Select(row => row.GetProperty("stage").GetString()));
+        Assert.Equal(2, json.RootElement.GetProperty("v").GetInt32());
+        var stages = json.RootElement.GetProperty("stages");
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount, stages.GetArrayLength());
+        Assert.All(stages.EnumerateArray(), row =>
+        {
+            Assert.Equal(JsonValueKind.Array, row.ValueKind);
+            Assert.Equal(7, row.GetArrayLength());
+        });
+        var actionOrdinal = PerformanceMetricWindow.FixedStageNames.ToList()
+            .IndexOf("duration.action.engine");
+        Assert.True(actionOrdinal >= 0);
+        Assert.Equal(1, stages.EnumerateArray().ElementAt(actionOrdinal)
+            .EnumerateArray().First().GetInt64());
+        Assert.DoesNotContain("\"stage\":", text, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(50, json.RootElement.GetProperty("linux").GetProperty("eventsTotal")
             .GetProperty("OomKill").GetInt64());
+    }
+
+    [Fact]
+    public void ExactLegacyV1EntryRemainsValidButMissingOrUnknownLegacyStageIsRejected()
+    {
+        var sample = Sample("private-source");
+        var legacy = LegacyV1(sample, InstanceA);
+        Assert.True(L12CompactProcessMetricEncoder.TryValidateEncodedLine(legacy, Commit,
+            InstanceA.ToString("N"), out var commit, out var instance, out var archiveUtc));
+        Assert.Equal(Commit, commit);
+        Assert.Equal(InstanceA.ToString("N"), instance);
+        Assert.Equal(sample.ObservedAt.ToUnixTimeMilliseconds(), archiveUtc);
+
+        var missing = JsonNode.Parse(legacy)!.AsObject();
+        missing["stages"]!.AsArray().RemoveAt(0);
+        Assert.False(Validate(missing));
+
+        var unknown = JsonNode.Parse(legacy)!.AsObject();
+        unknown["stages"]!.AsArray()[0]!["stage"] = "duration.platform.synthetic";
+        Assert.False(Validate(unknown));
+    }
+
+    [Fact]
+    public void V2RejectsWrongLengthsUnknownVersionNonNumericAndNegativeValues()
+    {
+        AssertRejected(root => root["stages"]!.AsArray().RemoveAt(0));
+        AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray().RemoveAt(6));
+        AssertRejected(root => root["v"] = 3);
+        AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray()[1] = "not-a-number");
+        AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray()[0] = -1);
+    }
+
+    [Fact]
+    public void WorstRepresentableFixedWindowStillFitsTheExistingEightKiBLineBudget()
+    {
+        var sample = ExtremeSample();
+        Assert.True(L12CompactProcessMetricEncoder.TryEncode(sample,
+            new(Commit, InstanceA.ToString("N")), sample.ObservedAt, long.MaxValue, long.MaxValue,
+            out var serialized, out var reason), reason.ToString());
+        Assert.NotNull(serialized);
+        Assert.InRange(serialized!.Json.Length + 1, 1, L12ProcessMetricCollector.MaximumLineBytes);
+        Assert.True(L12CompactProcessMetricEncoder.TryValidateEncodedLine(serialized.Json, Commit,
+            InstanceA.ToString("N"), out _, out _, out _));
     }
 
     [Fact]
@@ -45,7 +106,8 @@ public sealed class ProcessMetricArchiveTests
             out var invalid, out var invalidReason));
         Assert.Null(invalid);
         Assert.Equal(L12ProcessMetricArchiveReason.InvalidMetadata, invalidReason);
-        var stages = Enumerable.Range(0, 15).Select(index => new PerformanceMetricSummary(
+        var stages = Enumerable.Range(0, PerformanceMetricWindow.FixedStageCount)
+            .Select(index => new PerformanceMetricSummary(
             "duration.synthetic-" + index, "ms", sample.ObservedAt, sample.ObservedAt,
             1, 1, 1, false, Array.AsReadOnly(new long[21]), null, null, 0, 0)).ToArray();
         var nonFixed = sample with
@@ -384,7 +446,7 @@ public sealed class ProcessMetricArchiveTests
         var negativeEvents = root.WriteOwnedDay(day.AddDays(-22), InstanceB,
             raw: negativeEventsRaw);
         var negativeStageCountRaw = MutatedLine(day.AddDays(-23), root =>
-            root["stages"]!.AsArray()[0]!["count"] = -1);
+            root["stages"]!.AsArray()[0]!.AsArray()[0] = -1);
         var negativeStageCount = root.WriteOwnedDay(day.AddDays(-23), InstanceB,
             raw: negativeStageCountRaw);
         var availableMissingValueRaw = MutatedLine(day.AddDays(-24), root =>
@@ -702,6 +764,82 @@ public sealed class ProcessMetricArchiveTests
         var sample = Sample("private-source");
         return new(() => time.GetUtcNow(), runtime ?? (() => sample.Runtime),
             () => sample.Linux, () => (true, sample.PerformanceWindow));
+    }
+
+    private static bool Validate(JsonObject root) =>
+        L12CompactProcessMetricEncoder.TryValidateEncodedLine(
+            Encoding.UTF8.GetBytes(root.ToJsonString()), Commit, InstanceA.ToString("N"),
+            out _, out _, out _);
+
+    private static void AssertRejected(Action<JsonObject> mutate)
+    {
+        var root = JsonNode.Parse(Entry(UtcDay(), 1, InstanceA).Json)!.AsObject();
+        mutate(root);
+        Assert.False(Validate(root));
+    }
+
+    private static byte[] LegacyV1(L12ProcessMetricSample sample, Guid instance)
+    {
+        var performance = Assert.IsType<PerformanceMetricBatch>(sample.PerformanceWindow);
+        var rows = performance.Series.ToDictionary(row => row.Stage, StringComparer.Ordinal);
+        var stages = PerformanceMetricWindow.LegacyFixedStageNames.Select(stage =>
+        {
+            var row = rows[stage];
+            return new L12CompactStageMetric(row.Stage, row.Count, row.Total, row.Maximum,
+                row.OverflowCount, row.DroppedContentionTotal, CompactBand(row.P95), CompactBand(row.P99));
+        }).ToArray();
+        var dto = new L12CompactProcessMetricV1(1, Commit, instance.ToString("N"),
+            sample.ObservedAt.ToUnixTimeMilliseconds(), sample.ObservedAt.ToUnixTimeMilliseconds(),
+            sample.ClockAvailability,
+            new(sample.Runtime.Availability, sample.Runtime.WorkingSetBytes,
+                sample.Runtime.PrivateMemoryBytes, sample.Runtime.ManagedMemoryBytes,
+                sample.Runtime.GcPauseTotalMilliseconds, sample.Runtime.ThreadPoolPendingWorkItems,
+                sample.Runtime.ThreadPoolThreadCount),
+            new(sample.Linux.MemoryCurrentAvailability, sample.Linux.MemoryCurrentBytes,
+                sample.Linux.MemoryMaximum.Availability, sample.Linux.MemoryMaximum.Bytes,
+                sample.Linux.MemoryMaximum.Unlimited, sample.Linux.SwapCurrentAvailability,
+                sample.Linux.SwapCurrentBytes, sample.Linux.SwapMaximum.Availability,
+                sample.Linux.SwapMaximum.Bytes, sample.Linux.SwapMaximum.Unlimited,
+                sample.Linux.Events.Availability, sample.Linux.Events.Scope,
+                sample.Linux.Events.Cumulative, sample.EventDeltaStatus, sample.EventDeltas,
+                sample.Linux.Pressure.Availability, sample.Linux.Pressure.Value),
+            sample.PerformanceWindowAvailability, performance.Diagnostics, stages);
+        return JsonSerializer.SerializeToUtf8Bytes(dto, LegacyV1JsonOptions);
+    }
+
+    private static L12CompactBand? CompactBand(PerformanceMetricBand? band) => band is null ? null
+        : new(band.LowerExclusive, band.UpperInclusive, band.Overflow, band.LowerInclusive);
+
+    private static L12ProcessMetricSample ExtremeSample()
+    {
+        var now = UtcDay();
+        var maximumMetric = long.MaxValue / 1000d;
+        var stages = PerformanceMetricWindow.FixedStageNames.Select(stage =>
+        {
+            var bandLow = stage.StartsWith("bytes.", StringComparison.Ordinal) ? 268435456d
+                : stage.StartsWith("duration.", StringComparison.Ordinal) ? 60000d : 64d;
+            var band = new PerformanceMetricBand(bandLow, null, true);
+            return new PerformanceMetricSummary(stage,
+                stage.StartsWith("duration.", StringComparison.Ordinal) ? "ms"
+                    : stage.StartsWith("bytes.", StringComparison.Ordinal) ? "legacy-bytes" : "value",
+                now, now, long.MaxValue, maximumMetric, maximumMetric, true,
+                Array.AsReadOnly(new[] { long.MaxValue }), band, band, long.MaxValue, long.MaxValue);
+        }).ToArray();
+        var maximumEvents = new L12CgroupMemoryEvents(long.MaxValue, long.MaxValue, long.MaxValue,
+            long.MaxValue, long.MaxValue, long.MaxValue);
+        var linux = new L12LinuxProcessMetrics(L12MetricAvailabilityReason.Available, long.MaxValue,
+            new(long.MaxValue, false, L12MetricAvailabilityReason.Available),
+            L12MetricAvailabilityReason.Available, long.MaxValue,
+            new(long.MaxValue, false, L12MetricAvailabilityReason.Available),
+            new(L12MetricAvailabilityReason.Available, L12CgroupEventScope.Hierarchical, maximumEvents),
+            new(L12MetricAvailabilityReason.Available,
+                new(double.MaxValue, long.MaxValue, double.MaxValue, long.MaxValue)));
+        return new(now, L12MetricAvailabilityReason.Available,
+            new(L12MetricAvailabilityReason.Available, long.MaxValue, long.MaxValue, long.MaxValue,
+                double.MaxValue, long.MaxValue, int.MaxValue), linux, maximumEvents,
+            L12CgroupEventDeltaStatus.Available, false, L12MetricAvailabilityReason.Available,
+            new PerformanceMetricBatch(stages,
+                new(long.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue, long.MaxValue)));
     }
 
     private static L12ProcessMetricSample Sample(string source)

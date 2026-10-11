@@ -31,6 +31,7 @@ public sealed partial class L12RoomManager
 
     private static bool CanRetireSettlement(Room room)
         => room.CompletionRecorded
+           && (room.Game?.State.EndedByAgreedDraw != true || room.DrawGovernanceFinalized)
            && (!string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase) || room.RankedResultReported)
            && (room.TournamentId is null || room.TournamentResultReported);
 

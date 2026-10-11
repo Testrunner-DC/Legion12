@@ -744,12 +744,14 @@ public sealed partial class L12PlatformStore
 
     public string ResponsePreference(string accountId)
     {
-        lock (_gate)
+        if (Monitor.IsEntered(_gate))
         {
             var row = _data.Accounts.FirstOrDefault(item => item.Id == accountId && !item.Deleted && !item.Disabled);
             return row is not null && L12GameEngine.IsValidResponseMode(row.ResponseMode)
                 ? row.ResponseMode : L12GameEngine.DefaultResponseMode;
         }
+        return ReadCommittedGameplayReads().ResponseModes.GetValueOrDefault(accountId,
+            L12GameEngine.DefaultResponseMode);
     }
 
     internal string ApplyResponsePreference(string accountId, string mode, string operationId)

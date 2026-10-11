@@ -1196,16 +1196,20 @@ public sealed partial class L12PlatformStore
 
     private string RankedRewardStatusLocked(string matchId)
     {
-        if (IsT01TransitionWaivedMatchLocked(matchId)) return "voided";
         var hasHold = _data.RankedHeldRewards.Any(row => row.MatchId.Equals(matchId,
             StringComparison.OrdinalIgnoreCase));
         var latest = _data.RankedIntegrityDecisions.Where(row => row.MatchIds.Contains(matchId,
                 StringComparer.OrdinalIgnoreCase) && !IsDecisionRevokedLocked(row.Id))
             .OrderByDescending(row => row.Revision).FirstOrDefault();
-        if (latest?.Disposition is "confirmed" or "system-error") return "voided";
-        if (latest?.Disposition == "review" && hasHold) return "held";
-        if (hasHold && latest?.Disposition is "normal" or "insufficient") return "released";
-        if (hasHold && latest is null) return "held";
+        return ProjectRankedRewardStatus(IsT01TransitionWaivedMatchLocked(matchId), hasHold, latest?.Disposition);
+    }
+
+    private static string ProjectRankedRewardStatus(bool waived, bool hasHold, string? disposition)
+    {
+        if (waived || disposition is "confirmed" or "system-error") return "voided";
+        if (disposition == "review" && hasHold) return "held";
+        if (hasHold && disposition is "normal" or "insufficient") return "released";
+        if (hasHold && disposition is null) return "held";
         return "applied";
     }
 

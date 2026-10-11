@@ -1,5 +1,19 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261011-GAMEPLAY-READ-ISOLATION｜已批准本地修复，完整Batch通过，最终同步以唯一回执为准
+
+- 根因：正式同源运营策略、和局申请及结算读取与全量平台保存共用_gate；和局到期/已结束读投影还会保存。关键读取同族扫描包含Capture/Effective policy、RankedSettlement、MatchDrawRequestForClient、ResponsePreference及BroadcastGame/Recovery链。正式GC8.39%–11.62%与28.19秒快照只是先前只读取证，不据源码认定泄漏。
+- Main新CommittedGameplayReads与既有SessionActivity同原子发布，staged命令可重入读，外部读不等_gate；同一broadcast双方徽章/和局/奖励保持同代际，Frozen/Immutable及本人/参与者范围保持。过期只投影，指令expiry仍写权威审计。平局completion在durable后重试，已终局接受不被辅助expiry清掉；治理未完成时双离开不丢owner，周期成功再关。缺配置/nullable子字段在Ensure前不可用，partial损坏fail-closed。
+- 分配实测后仅改后台原始staged回滚表示为流式GZip+SHA校验；默认JSON逐值等价、每层嵌套仍单独捕获staged，ReferenceEquals conflict-refresh分支原样，所有事务/版本/镜像/磁盘格式/完整回退保护不变。历史结算不变则复用整个只读子域；变化重新准备相应事实，删除仍按完整集合对账。
+- 有效RED r2为8成功/失败屏障超时+1读取写版本；集成99/扩展107/最新生命周期18均Passed，无跳过。真实两房30秒平台屏障不挡health/sync/pong；4MiB空事务分配8.45MB→0.172MB、1000关键读56KB、10k历史不变索引0.97MB。旧r1夹具失败及green-r1并行中段编译失败保留，不能写成红灯或新实现失败。
+- 指标子任务固定4操作/5阶段/2锁/4失败，39固定stage经既有有界window与v2位置数组输出；v1原15精确校验继续，未知/坏长/坏数/负数拒绝；最坏8KiB回归已过，失败采样不改变业务结果，嵌套字节不可相加为净分配。整合8893d3c3远端四提交后的121专项通过、0失败跳过；新增六项RED与旧失败证据不覆盖。旧MasterTitles、TransitionMatchIds与SeasonDefinitions/Archives在Ensure前不可用，修复确实Save/重发并两次重开恢复；损坏派系使全bundle不可用而不抛入广播。完整平台、规则、Release尚待；仅本地，不部署、不关正式反馈。
+- 核心减分配增量：仅五热写调用PrepareCoreSnapshot，在同事务内先查PRAGMA encoding；UTF-8直接生成同JSON字节与原SHA，INSERT/CAS显式CAST仍为TEXT。UTF16/未知在序列化前走原string，不双重准备，不改schema、旧reader与反迁移pending。核心4MiB分配8,452,768→4,227,408B（约50%），时间3.375→3.561ms无收益承诺；12MiB预算、Unicode/NUL等价、真实三编码平台bootstrap/普通保存/私人CAS/两次重开及before-commit回滚专项10/10过。原6959规则/1256平台证据属于增量前；最终新源完整Batch/Release另验，不能复用旧绿色覆盖新增代码。
+- 最终新源完整Batch6959规则/1265平台、失败跳过0，supervisor19dd20fd与d8aa2ef9及main-core-complete-batch-r6.log实际通过；原失败回执不覆盖。独立源复核未见产品阻断，其唯一历史UTF16证据缺口已由le/be9→8→9、真实pending rename失败重试与两次重开补齐，core-compatibility-migration-r3共12项通过；补证未改产品20源。提交级完整Release、Git及远端结果统一读D:/GPT/Legion12/artifacts/production-lag-fix-20261011/final-acceptance.json，不据此段阶段摘要提前认定完成。
+- 已知未迁移：赛事observer完整权限/构筑assignment仍可能等平台锁；显式持久化写入口与真实正式GC长期指标未收口。不得称全部Broadcast脱锁、正式容量通过或卡顿已全根治。证据production-lag-fix-20261011，独立复核问题及原失败回执均保留；本批不部署、不关闭线上反馈。
+
+
+## 协作者历史回执（保留原证据，不代表本批最终状态）
+
 ## TEST-20261011-FRONTEND-LINE-ENDINGS｜展示合同的换行误报与漏报
 
 - 原49c9d22完整Release后端8164项全过，前端check-motion-contracts四项失败；被检Vue/TS实际为CRLF，源码具备断言要求的代际取消、decode先行、超时回收与fact reset。
@@ -36,11 +50,12 @@
 - 独立只读关键审查未发现嵌套状态、权威刷新、撤销事件或失败关闭语义回归；Linux同最新副本、同2GiB限制的50次嵌套保存及故障注入容量对照仍待，不以合成压缩率或Windows线程分配预算替代生产容量证明。
 - 临时恢复：10:17停服后复制1223文件共4752277293B，源/副本逐文件SHA一致、platform/matches quick_check均ok；停止结果core-dump如实保留。10:19以原0e版/原2GiB限制启动，13项公网HTTP、真实登录/牌组/排行/历史、认证WSS通过，专用会话已撤销。当前仅临时恢复，补丁尚未部署；受限原始数据/回执在server-backups/20261010-recovery/final/incident-20261011，普通验证在artifacts/login-memory-20261011。
 
-## 2026-10-11 最新技术回执｜原失败保留，不部署
+## 2026-10-11 最新技术回执｜批准共享入队已同步，卡顿只读取证
 
-- 下面三个获准根因的早期RED/实施段为历史。最终共享权威入队及两卡声明同族621/621通过，原513同例不漏、新增108窗口覆盖，Main独立DDE1B72E与最终289A8354绑定六源/程序集/PDB；原RED24、52及513/505/8均保留。原池324同型5圣物S01-0216..0220，公开军团目标仅罐一/四，P0/P1/P3不变。
-- Main Batch组合06A05C5C：相同六规则源6959/6959、后续平台1194/1194及全前端355/144/324+42/type/双构建。原r2平台清理失败不是通过；测试同族9任务生命周期及3异常保真守卫只属基础设施，原73断言/期限/删除守卫不减。18/18后17/18及晚24.5秒RM空名单保留，未知占用没有被判成产品根治。同步和完整clean Release待。
-- 实际Bug累计92、待办512；cohort08六条独立证据已备，但0012预览失败且未写，撤销失败，不能称完成闭环。正式登录再次storage_unavailable（14d1d3bb…），只读连接暂不可用，未实施新的生产修复或改维护。候选/压力报告与真正关闭回执严格分开；新罐反馈66115482仍未上线不关。
+- 三个获准根因已在f60ba182经Main完整clean Release验收及Git同步：罐一1..1/罐四0..2后续弃置，合法空来源authority-event不造卡效结果，已有ResponseWindow时新权威时点进入原Deferred。621同族/6959完整规则/1194完整平台/八阶段及完整前端通过，独立31D1D6B1绑定包/DLL/TRX；未部署，原RED24/52和513/505/8均保留。
+- 测试基础设施只保存9限时Tick所有权和3业务/清理异常守卫，原断言/期限/删除规则保持；原共享占用失败、晚24.5秒RM空名单及原r2失败均保留，未知占用持有者没有被判成产品根治。
+- Bug92实际闭环/512待办不变，13条独立核验待线上回填；原0012未写且撤销失败，不能包装完成。Main猎杀108原条件补证和七条9B4DD31F接受均为既有正式656F证据，不借新f60提前关闭罐反馈66115482。
+- 10/11 21:00北京时间只读已精确重新核实正式0e49a749/DLL656F90EF/HTTP200/maintenance=false，旧503/d020f8a6保留为历史；写API未复验，历史存储首异常仍未确认。用户报告卡顿本轮读取2411同实例数字采样：当前3GiB未触顶/OOM0，GC暂停8.39%–11.62%/小时，快照最慢28.19秒；同一时点WS63–70ms但health1.6–6.4秒，共用平台读取锁等待有源码和现场支持。关键共享读取在health运营策略、快照平局治理及排位结算；平台全量序列化/水合/回滚仍为分配候选，具体持锁和分配调用栈未采。回执D盘production-lag-readonly-20261011/report.json（FD97D6AF），只读采样不是压力/容量验收，不新增修复或关单；无服务/数据库/维护/部署写。唯一实时事实仍见D盘bug-closure-continuation-20261011/current-status.json。
 
 
 ## EFFECT-20261011-CANOPIC-TARGET-COUNT｜零目标不是整项取消（获准，本地验收中）

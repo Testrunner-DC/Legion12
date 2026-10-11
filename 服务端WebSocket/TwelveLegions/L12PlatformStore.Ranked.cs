@@ -367,9 +367,17 @@ public sealed partial class L12PlatformStore
                 changed = true;
             }
             _data.RankedProfiles ??= [];
-            _data.RankedSeasonResetRepairs ??= [];
+            if (_data.RankedSeasonResetRepairs is null)
+            {
+                _data.RankedSeasonResetRepairs = [];
+                changed = true;
+            }
             foreach (var repair in _data.RankedSeasonResetRepairs)
-                repair.TransitionMatchIds ??= [];
+                if (repair.TransitionMatchIds is null)
+                {
+                    repair.TransitionMatchIds = [];
+                    changed = true;
+                }
             _data.RankedProfileHistory ??= [];
             foreach (var history in _data.RankedProfileHistory)
             {
@@ -389,7 +397,11 @@ public sealed partial class L12PlatformStore
             _data.RankedIntegrityCorrections ??= [];
             _data.RankedIntegrityNotifications ??= [];
             _data.RankedIntegrityAppeals ??= [];
-            _data.RankedConfig.MasterTitles ??= [];
+            if (_data.RankedConfig.MasterTitles is null)
+            {
+                _data.RankedConfig.MasterTitles = [];
+                changed = true;
+            }
             if (_data.RankedConfig.TimeControl is null)
             {
                 _data.RankedConfig.TimeControl = DefaultRankedTimeControl();
@@ -779,13 +791,17 @@ public sealed partial class L12PlatformStore
 
     private string HistoricalSeasonDisplayNameLocked(string seasonId, string? frozenName,
         int? ordinal = null, string fallback = "历史赛季")
+        => HistoricalSeasonDisplayName(_data, seasonId, frozenName, ordinal, fallback);
+
+    private static string HistoricalSeasonDisplayName(DataFile data, string seasonId, string? frozenName,
+        int? ordinal = null, string fallback = "历史赛季")
     {
         var name = frozenName?.Trim();
         if (!string.IsNullOrWhiteSpace(name) && !LooksLikeInternalSeasonCode(name)) return name;
-        var archive = _data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
+        var archive = data.SeasonArchives.FirstOrDefault(row => SeasonIdsEqual(row.SeasonId, seasonId));
         name = archive?.Name?.Trim();
         if (!string.IsNullOrWhiteSpace(name) && !LooksLikeInternalSeasonCode(name)) return name;
-        ordinal ??= archive?.SeasonOrdinal ?? _data.SeasonDefinitions.FirstOrDefault(row =>
+        ordinal ??= archive?.SeasonOrdinal ?? data.SeasonDefinitions.FirstOrDefault(row =>
             SeasonIdsEqual(row.SeasonId, seasonId))?.SeasonOrdinal;
         return ordinal is { } value ? $"第{value}赛季" : fallback;
     }
@@ -1099,11 +1115,12 @@ public sealed partial class L12PlatformStore
 
     public L12RankedSettlementView? RankedSettlement(string matchId, string accountId)
     {
-        lock (_gate)
+        if (Monitor.IsEntered(_gate))
         {
             var row = _data.RankedSettlements.FirstOrDefault(item => item.MatchId == matchId && item.AccountId == accountId);
             return row is null ? null : ToView(row);
         }
+        return ReadCommittedGameplayReads().Settlements.GetValueOrDefault((matchId, accountId));
     }
 
     public IReadOnlyList<L12RankedBroadcastView> RankedBroadcasts(int limit = 30)
@@ -2279,11 +2296,17 @@ public sealed partial class L12PlatformStore
     private L12RankedSettlementView ToView(RankedSettlementRow row)
     {
         var rewardStatus = RankedRewardStatusLocked(row.MatchId);
+        return ProjectRankedSettlement(row, FactionFor(row.Faction).Name, rewardStatus, row.Components.ToArray());
+    }
+
+    private static L12RankedSettlementView ProjectRankedSettlement(RankedSettlementRow row,
+        string factionName, string rewardStatus, IReadOnlyList<L12RankedSettlementComponent> components)
+    {
         var effectiveDelta = rewardStatus is "applied" or "released" ? row.Delta : 0;
         var pendingDelta = rewardStatus == "held" ? row.Delta : 0;
-        return new(row.MatchId, row.AccountId, FactionFor(row.Faction).Name, row.Outcome,
+        return new(row.MatchId, row.AccountId, factionName, row.Outcome,
             row.Won, row.Placement, row.PlacementPlayed, row.PlacementRequired, row.Before,
-            row.After, row.Delta, row.TierBefore, row.TierAfter, row.Components.ToArray(),
+            row.After, row.Delta, row.TierBefore, row.TierAfter, components,
             row.SettledAt, rewardStatus, effectiveDelta, pendingDelta);
     }
     private static L12RankedBroadcastView ToView(RankedBroadcastRow row) => new(row.Id, row.MatchId,

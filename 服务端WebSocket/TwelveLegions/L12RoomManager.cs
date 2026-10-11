@@ -80,6 +80,7 @@ public sealed partial class L12RoomManager
         public bool IsMatchmaking { get; init; }
         public bool RankedResultReported { get; set; }
         public bool CompletionRecorded { get; set; }
+        public bool DrawGovernanceFinalized { get; set; }
         public DateTimeOffset? SettlementStartedAt { get; set; }
         public bool[] SettlementLeft { get; } = [false, false];
         public bool[] ResponsePreferenceSyncPending { get; } = [false, false];
@@ -824,6 +825,9 @@ public sealed partial class L12RoomManager
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
+            if (room.TournamentId is null && room.Game?.State.Phase == L12Phase.GameOver
+                && room.Game.State.EndedByAgreedDraw)
+                await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
             if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
@@ -858,6 +862,9 @@ public sealed partial class L12RoomManager
                 if (room.Game?.State.Phase == L12Phase.GameOver)
                     await CompleteTournamentRoomGameAsync(room);
             }
+            if (room.TournamentId is null && room.Game?.State.Phase == L12Phase.GameOver
+                && room.Game.State.EndedByAgreedDraw)
+                await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
             if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
@@ -1944,7 +1951,8 @@ public sealed partial class L12RoomManager
         Guid[] spectators;
         lock (room.Spectators) spectators = [.. room.Spectators];
         var rankedClock = RankedClockView(room);
-        var playerBadges = RankedPlayerBadges(room);
+        var platformView = GamePlatformView(room);
+        var playerBadges = platformView?.Badges ?? [];
         var state = room.Game!.State;
         var replaceable = !forceCritical && state.Phase != L12Phase.GameOver;
         var messages = room.Sessions.Select(id =>
@@ -1952,7 +1960,7 @@ public sealed partial class L12RoomManager
             var viewer = _sessions[id];
             var snapshot = L12KernelProjection.ForPlayer(room.Game!, _sessions[id].PlayerIndex!.Value,
                 revealAllForGm: room.IsSandbox && room.GmControllerSessionId == id);
-            var matchGovernance = MatchGovernanceForClient(room, viewer);
+            var matchGovernance = MatchGovernanceForClient(room, viewer, platformView);
             var immediateInteraction = SnapshotRequiresCriticalDelivery(snapshot)
                                        || matchGovernance.DrawRequest?.ViewerCanRespond == true;
             var payload = new
@@ -1970,9 +1978,7 @@ public sealed partial class L12RoomManager
                     confirmedMode = room.Game.ResponseModeFor(viewer.PlayerIndex.Value),
                     syncPending = room.ResponsePreferenceSyncPending[viewer.PlayerIndex.Value],
                 },
-                rankedSettlement = room.Options.MatchModeId == "ranked" && _platform is not null
-                    ? _platform.RankedSettlement(room.Game!.State.MatchId,
-                        viewer.AccountId ?? string.Empty) : null,
+                rankedSettlement = platformView?.Settlements.GetValueOrDefault(viewer.AccountId ?? string.Empty),
             };
             return new OutgoingMessage(id, payload,
                 replaceable && id != requestSessionId && !immediateInteraction,
@@ -2074,17 +2080,20 @@ public sealed partial class L12RoomManager
     }
 
     private IReadOnlyList<L12RankedBattleIdentityView> RankedPlayerBadges(Room room)
+        => GamePlatformView(room)?.Badges ?? [];
+
+    private L12CommittedGamePlatformView? GamePlatformView(Room room)
     {
-        if (_platform is null) return [];
-        var result = new List<L12RankedBattleIdentityView>();
+        if (_platform is null) return null;
+        var viewers = new List<(string AccountId, int PlayerIndex)>();
         foreach (var id in room.Sessions)
         {
             if (!_sessions.TryGetValue(id, out var session) || session.PlayerIndex is null
                 || string.IsNullOrWhiteSpace(session.AccountId)) continue;
-            try { result.Add(_platform.RankedBattleIdentity(session.AccountId, session.PlayerIndex.Value)); }
-            catch (Exception error) when (error is InvalidOperationException or KeyNotFoundException) { }
+            viewers.Add((session.AccountId, session.PlayerIndex.Value));
         }
-        return result;
+        return _platform.ReadCommittedGamePlatformView(room.Game?.State.MatchId ?? string.Empty,
+            viewers, _utcNow(), room.Options.MatchModeId == "ranked");
     }
 
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
@@ -2145,6 +2154,17 @@ public sealed partial class L12RoomManager
             {
                 return $"排位结算待重试：{error.Message}";
             }
+        }
+        // Lifecycle reconciliation, never snapshot projection. Retry a transient governance
+        // failure only after the authoritative conclusion is durable, including friendly recovery.
+        if (room.Game.State.EndedByAgreedDraw)
+        {
+            try
+            {
+                _platform?.FinalizeAgreedDrawFromSettlement(room.Game.State.MatchId, _utcNow());
+                room.DrawGovernanceFinalized = true;
+            }
+            catch (Exception error) { return $"平局记录同步待重试：{error.Message}"; }
         }
         if (room.TournamentId is null || room.TournamentMatchId is null || room.TournamentResultReported)
             return null;

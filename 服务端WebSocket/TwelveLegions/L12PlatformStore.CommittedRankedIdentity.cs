@@ -57,7 +57,8 @@ public sealed partial class L12PlatformStore
     private CommittedRankedIdentity PrepareCommittedRankedIdentity(DataFile data)
     {
         StorageFailureInjector?.Invoke("before-ranked-identity-index-build");
-        if (data.OperationsConfig?.Season is null || data.RankedConfig is null)
+        if (data.OperationsConfig?.Season is null || data.RankedConfig is not { MasterTitles: not null }
+            || data.RankedSeasonResetRepairs is null)
         {
             StorageFailureInjector?.Invoke("after-ranked-identity-index-build");
             return UnavailableRankedIdentity;

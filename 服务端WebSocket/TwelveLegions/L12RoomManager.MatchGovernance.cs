@@ -88,7 +88,8 @@ public sealed partial class L12RoomManager
             try
             {
                 validation = _platform.ValidateMatchDrawResolution(room.Game?.State.MatchId ?? string.Empty,
-                    clientRequestId, responder.Id, accept, now);
+                    clientRequestId, responder.Id, accept, now,
+                    authorityAlreadyDurable: room.CompletionRecorded && room.Game?.State.EndedByAgreedDraw == true);
             }
             catch (Exception error) when (error is ArgumentException or L12MatchGovernanceConflictException)
             {
@@ -111,6 +112,14 @@ public sealed partial class L12RoomManager
             }
             if (room.Game is null || room.Game.State.Phase == L12Phase.GameOver)
             {
+                if (accept && room.Game?.State.EndedByAgreedDraw == true)
+                {
+                    var warning = await CompleteTournamentRoomGameAsync(room);
+                    var completed = BroadcastGame(room).ToList();
+                    completed.Add(MatchGovernanceResult(sessionId, "resolve-draw", clientRequestId,
+                        "accepted", validation.Id, warning ?? "双方已同意，本局权威结束为平局"));
+                    return completed;
+                }
                 _platform.CancelOpenMatchDrawRequests(validation.MatchId, now, "对局已结束");
                 return MatchGovernanceFailure(sessionId, "resolve-draw", clientRequestId,
                     "对局已经结束，平局申请已取消");
@@ -168,6 +177,7 @@ public sealed partial class L12RoomManager
                 try
                 {
                     _platform.FinalizeAgreedDrawFromSettlement(validation.MatchId, _utcNow());
+                    room.DrawGovernanceFinalized = true;
                 }
                 catch (Exception finalizeError)
                 {
@@ -265,7 +275,8 @@ public sealed partial class L12RoomManager
         finally { room.Gate.Release(); }
     }
 
-    private L12MatchGovernanceClientProjection MatchGovernanceForClient(Room room, Session viewer)
+    private L12MatchGovernanceClientProjection MatchGovernanceForClient(Room room, Session viewer,
+        L12CommittedGamePlatformView? platformView)
     {
         if (_platform is null || room.Game is null || string.IsNullOrWhiteSpace(viewer.AccountId))
             return new(false, null, null, false, "当前服务端不支持对局治理", false,
@@ -274,21 +285,14 @@ public sealed partial class L12RoomManager
             out var opponent, out var reportReason);
         var drawAvailable = TryGovernanceOpponent(room, viewer, requireOngoingGame: true,
             out _, out var drawReason);
-        L12MatchDrawRequestClientView? request;
-        try
+        if (platformView?.Available != true)
         {
-            if (room.Game.State.EndedByAgreedDraw)
-                _platform.FinalizeAgreedDrawFromSettlement(room.Game.State.MatchId, _utcNow());
-            request = _platform.MatchDrawRequestForClient(room.Game.State.MatchId,
-                viewer.AccountId, _utcNow());
-        }
-        catch (Exception error)
-        {
-            Console.Error.WriteLine($"Match governance projection ({room.Code}): {error.Message}");
             return new(false, hasOpponent ? opponent.AccountId : null,
                 hasOpponent ? opponent.Name : null, false, "平局申请记录暂时不可用",
                 false, "对局举报服务暂时不可用", null);
         }
+        // Completion/recovery owns finalization; snapshot projection never persists or expires rows.
+        var request = platformView.DrawRequests.GetValueOrDefault(viewer.AccountId);
         if (request is not null)
         {
             drawAvailable = false;

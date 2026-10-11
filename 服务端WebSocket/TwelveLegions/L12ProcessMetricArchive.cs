@@ -277,20 +277,17 @@ internal sealed class L12ProcessMetricCollector : IL12ProcessMetricCollectorLife
 
 internal static class L12CompactProcessMetricEncoder
 {
-    private static readonly HashSet<string> FixedStages = new(StringComparer.Ordinal)
-    {
-        "bytes.persistence.checkpoint-json", "bytes.persistence.command-state-json",
-        "bytes.websocket.delta-payload", "bytes.websocket.full-payload", "bytes.websocket.sent-payload",
-        "duration.action.engine", "duration.persistence.checkpoint-serialize",
-        "duration.persistence.serialize-and-hash", "duration.persistence.total",
-        "duration.persistence.transaction", "duration.snapshot.build", "duration.websocket.send",
-        "duration.websocket.serialize", "persistence.v2-state-json-anomaly", "websocket.queue-depth",
-    };
+    private const int CurrentVersion = 2;
+    private static readonly HashSet<string> LegacyFixedStages =
+        new(PerformanceMetricWindow.LegacyFixedStageNames, StringComparer.Ordinal);
+    private static readonly HashSet<string> FixedStages =
+        new(PerformanceMetricWindow.FixedStageNames, StringComparer.Ordinal);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         WriteIndented = false,
+        Converters = { new L12CompactStageMetricV2JsonConverter() },
     };
 
     internal static bool TryEncode(L12ProcessMetricSample sample, L12ProcessMetricArchiveIdentity identity,
@@ -306,10 +303,12 @@ internal static class L12CompactProcessMetricEncoder
                 && (performance.Series.Count != FixedStages.Count
                     || !FixedStages.SetEquals(performance.Series.Select(row => row.Stage))))
             { reason = L12ProcessMetricArchiveReason.InvalidSample; return false; }
-            var stages = sample.PerformanceWindow?.Series.Select(row => new L12CompactStageMetric(
-                row.Stage, row.Count, row.Total, row.Maximum, row.OverflowCount,
-                row.DroppedContentionTotal, Band(row.P95), Band(row.P99))).ToArray();
-            var dto = new L12CompactProcessMetric(1, identity.Commit, identity.Instance,
+            var stages = sample.PerformanceWindow?.Series
+                .OrderBy(row => row.Stage, StringComparer.Ordinal)
+                .Select(row => new L12CompactStageMetricV2(row.Count, row.Total, row.Maximum,
+                    row.OverflowCount, row.DroppedContentionTotal, Band(row.P95), Band(row.P99)))
+                .ToArray();
+            var dto = new L12CompactProcessMetricV2(CurrentVersion, identity.Commit, identity.Instance,
                 sample.ObservedAt.ToUnixTimeMilliseconds(), archiveUtc.ToUnixTimeMilliseconds(),
                 sample.ClockAvailability,
                 new(sample.Runtime.Availability, sample.Runtime.WorkingSetBytes,
@@ -350,31 +349,80 @@ internal static class L12CompactProcessMetricEncoder
         archiveUtcMilliseconds = 0;
         try
         {
-            var dto = JsonSerializer.Deserialize<L12CompactProcessMetric>(json, JsonOptions);
-            if (dto is null || dto.Version != 1 || dto.Process is null || dto.Linux is null
-                || !ValidIdentity(dto.Commit) || !ValidInstance(dto.Instance)
-                || expectedCommit is not null && !string.Equals(dto.Commit, expectedCommit, StringComparison.Ordinal)
-                || expectedInstance is not null && !string.Equals(dto.Instance, expectedInstance, StringComparison.Ordinal)
-                || !ValidMetricValues(dto)
-                || (dto.PerformanceAvailability == L12MetricAvailabilityReason.Available)
-                    != (dto.Diagnostics is not null && dto.Stages is not null)
-                || dto.Stages is not null && (dto.Stages.Count != FixedStages.Count
-                    || !FixedStages.SetEquals(dto.Stages.Select(stage => stage.Stage)))) return false;
-            var canonical = JsonSerializer.SerializeToUtf8Bytes(dto, JsonOptions);
-            if (!json.SequenceEqual(canonical)) return false;
-            commit = dto.Commit;
-            instance = dto.Instance;
-            archiveUtcMilliseconds = dto.ArchiveUtcMilliseconds;
-            return true;
+            if (!TryReadVersion(json, out var version)) return false;
+            return version switch
+            {
+                1 => TryValidateV1(json, expectedCommit, expectedInstance,
+                    out commit, out instance, out archiveUtcMilliseconds),
+                CurrentVersion => TryValidateV2(json, expectedCommit, expectedInstance,
+                    out commit, out instance, out archiveUtcMilliseconds),
+                _ => false,
+            };
         }
         catch { return false; }
     }
 
-    private static bool ValidMetricValues(L12CompactProcessMetric metric) =>
-        Defined(metric.Clock) && ValidRuntime(metric.Process) && ValidLinux(metric.Linux)
-        && Defined(metric.PerformanceAvailability)
-        && (metric.Diagnostics is null || ValidDiagnostics(metric.Diagnostics))
-        && (metric.Stages is null || metric.Stages.All(ValidStage));
+    private static bool TryReadVersion(ReadOnlySpan<byte> json, out int version)
+    {
+        version = 0;
+        var reader = new Utf8JsonReader(json);
+        return reader.Read() && reader.TokenType == JsonTokenType.StartObject
+            && reader.Read() && reader.TokenType == JsonTokenType.PropertyName && reader.ValueTextEquals("v")
+            && reader.Read() && reader.TryGetInt32(out version);
+    }
+
+    private static bool TryValidateV1(ReadOnlySpan<byte> json, string? expectedCommit,
+        string? expectedInstance, out string? commit, out string? instance, out long archiveUtcMilliseconds)
+    {
+        commit = instance = null;
+        archiveUtcMilliseconds = 0;
+        var dto = JsonSerializer.Deserialize<L12CompactProcessMetricV1>(json, JsonOptions);
+        if (dto is null || dto.Version != 1 || !ValidEnvelope(dto.Commit, dto.Instance, dto.Clock,
+                dto.Process, dto.Linux, dto.PerformanceAvailability, dto.Diagnostics,
+                expectedCommit, expectedInstance)
+            || (dto.PerformanceAvailability == L12MetricAvailabilityReason.Available)
+                != (dto.Diagnostics is not null && dto.Stages is not null)
+            || dto.Stages is not null && (dto.Stages.Count != LegacyFixedStages.Count
+                || !LegacyFixedStages.SetEquals(dto.Stages.Select(stage => stage.Stage))
+                || !dto.Stages.All(ValidStage))) return false;
+        var canonical = JsonSerializer.SerializeToUtf8Bytes(dto, JsonOptions);
+        if (!json.SequenceEqual(canonical)) return false;
+        commit = dto.Commit;
+        instance = dto.Instance;
+        archiveUtcMilliseconds = dto.ArchiveUtcMilliseconds;
+        return true;
+    }
+
+    private static bool TryValidateV2(ReadOnlySpan<byte> json, string? expectedCommit,
+        string? expectedInstance, out string? commit, out string? instance, out long archiveUtcMilliseconds)
+    {
+        commit = instance = null;
+        archiveUtcMilliseconds = 0;
+        var dto = JsonSerializer.Deserialize<L12CompactProcessMetricV2>(json, JsonOptions);
+        if (dto is null || dto.Version != CurrentVersion || !ValidEnvelope(dto.Commit, dto.Instance, dto.Clock,
+                dto.Process, dto.Linux, dto.PerformanceAvailability, dto.Diagnostics,
+                expectedCommit, expectedInstance)
+            || (dto.PerformanceAvailability == L12MetricAvailabilityReason.Available)
+                != (dto.Diagnostics is not null && dto.Stages is not null)
+            || dto.Stages is not null && (dto.Stages.Count != FixedStages.Count
+                || !dto.Stages.All(ValidStage))) return false;
+        var canonical = JsonSerializer.SerializeToUtf8Bytes(dto, JsonOptions);
+        if (!json.SequenceEqual(canonical)) return false;
+        commit = dto.Commit;
+        instance = dto.Instance;
+        archiveUtcMilliseconds = dto.ArchiveUtcMilliseconds;
+        return true;
+    }
+
+    private static bool ValidEnvelope(string commit, string instance, L12MetricAvailabilityReason clock,
+        L12CompactRuntimeMetric process, L12CompactLinuxMetric linux,
+        L12MetricAvailabilityReason performanceAvailability, PerformanceMetricDiagnostics? diagnostics,
+        string? expectedCommit, string? expectedInstance) =>
+        process is not null && linux is not null && ValidIdentity(commit) && ValidInstance(instance)
+        && (expectedCommit is null || string.Equals(commit, expectedCommit, StringComparison.Ordinal))
+        && (expectedInstance is null || string.Equals(instance, expectedInstance, StringComparison.Ordinal))
+        && Defined(clock) && ValidRuntime(process) && ValidLinux(linux) && Defined(performanceAvailability)
+        && (diagnostics is null || ValidDiagnostics(diagnostics));
 
     private static bool ValidRuntime(L12CompactRuntimeMetric metric)
     {
@@ -456,6 +504,12 @@ internal static class L12CompactProcessMetricEncoder
         && (stage.P95 is null || ValidBand(stage.P95))
         && (stage.P99 is null || ValidBand(stage.P99));
 
+    private static bool ValidStage(L12CompactStageMetricV2 stage) => stage is not null
+        && stage.Count >= 0 && NonNegativeFinite(stage.Total) && NonNegativeFinite(stage.Maximum)
+        && stage.OverflowCount >= 0 && stage.ContentionDrops >= 0
+        && (stage.P95 is null || ValidBand(stage.P95))
+        && (stage.P99 is null || ValidBand(stage.P99));
+
     private static bool ValidBand(L12CompactBand band) => NonNegativeFinite(band.Low)
         && (band.Overflow ? band.High is null
             : band.High is { } high && NonNegativeFinite(high) && high >= band.Low);
@@ -474,7 +528,7 @@ internal static class L12CompactProcessMetricEncoder
         && string.Equals(value, parsed.ToString("N"), StringComparison.Ordinal);
 }
 
-internal sealed record L12CompactProcessMetric(
+internal sealed record L12CompactProcessMetricV1(
     [property: JsonPropertyName("v")] int Version,
     [property: JsonPropertyName("commit")] string Commit,
     [property: JsonPropertyName("instance")] string Instance,
@@ -486,6 +540,19 @@ internal sealed record L12CompactProcessMetric(
     [property: JsonPropertyName("performance")] L12MetricAvailabilityReason PerformanceAvailability,
     [property: JsonPropertyName("diagnostics")] PerformanceMetricDiagnostics? Diagnostics,
     [property: JsonPropertyName("stages")] IReadOnlyList<L12CompactStageMetric>? Stages);
+
+internal sealed record L12CompactProcessMetricV2(
+    [property: JsonPropertyName("v")] int Version,
+    [property: JsonPropertyName("commit")] string Commit,
+    [property: JsonPropertyName("instance")] string Instance,
+    [property: JsonPropertyName("observedUtcMs")] long ObservedUtcMilliseconds,
+    [property: JsonPropertyName("archiveUtcMs")] long ArchiveUtcMilliseconds,
+    [property: JsonPropertyName("clock")] L12MetricAvailabilityReason Clock,
+    [property: JsonPropertyName("process")] L12CompactRuntimeMetric Process,
+    [property: JsonPropertyName("linux")] L12CompactLinuxMetric Linux,
+    [property: JsonPropertyName("performance")] L12MetricAvailabilityReason PerformanceAvailability,
+    [property: JsonPropertyName("diagnostics")] PerformanceMetricDiagnostics? Diagnostics,
+    [property: JsonPropertyName("stages")] IReadOnlyList<L12CompactStageMetricV2>? Stages);
 
 internal sealed record L12CompactRuntimeMetric(
     [property: JsonPropertyName("availability")] L12MetricAvailabilityReason Availability,
@@ -530,6 +597,104 @@ internal sealed record L12CompactStageMetric(
     [property: JsonPropertyName("contentionDrops")] long ContentionDrops,
     [property: JsonPropertyName("p95")] L12CompactBand? P95,
     [property: JsonPropertyName("p99")] L12CompactBand? P99);
+
+/// <summary>V2 stage identity is its ordinal in PerformanceMetricWindow.FixedStageNames.</summary>
+internal sealed record L12CompactStageMetricV2(long Count, double Total, double Maximum,
+    long OverflowCount, long ContentionDrops, L12CompactBand? P95, L12CompactBand? P99);
+
+internal sealed class L12CompactStageMetricV2JsonConverter : JsonConverter<L12CompactStageMetricV2>
+{
+    public override L12CompactStageMetricV2 Read(ref Utf8JsonReader reader, Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException("stage must be an array");
+        var count = ReadInt64(ref reader);
+        var total = ReadDouble(ref reader);
+        var maximum = ReadDouble(ref reader);
+        var overflowCount = ReadInt64(ref reader);
+        var contentionDrops = ReadInt64(ref reader);
+        ReadNext(ref reader);
+        var p95 = ReadBand(ref reader);
+        ReadNext(ref reader);
+        var p99 = ReadBand(ref reader);
+        ReadNext(ref reader);
+        if (reader.TokenType != JsonTokenType.EndArray) throw new JsonException("stage has unexpected values");
+        return new(count, total, maximum, overflowCount, contentionDrops, p95, p99);
+    }
+
+    public override void Write(Utf8JsonWriter writer, L12CompactStageMetricV2 value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStartArray();
+        writer.WriteNumberValue(value.Count);
+        writer.WriteNumberValue(value.Total);
+        writer.WriteNumberValue(value.Maximum);
+        writer.WriteNumberValue(value.OverflowCount);
+        writer.WriteNumberValue(value.ContentionDrops);
+        WriteBand(writer, value.P95);
+        WriteBand(writer, value.P99);
+        writer.WriteEndArray();
+    }
+
+    private static long ReadInt64(ref Utf8JsonReader reader)
+    {
+        ReadNext(ref reader);
+        return reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var value)
+            ? value : throw new JsonException("stage integer is invalid");
+    }
+
+    private static double ReadDouble(ref Utf8JsonReader reader)
+    {
+        ReadNext(ref reader);
+        return reader.TokenType == JsonTokenType.Number && reader.TryGetDouble(out var value)
+            ? value : throw new JsonException("stage number is invalid");
+    }
+
+    private static L12CompactBand? ReadBand(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        if (reader.TokenType != JsonTokenType.StartArray) throw new JsonException("band must be an array");
+        var low = ReadDouble(ref reader);
+        ReadNext(ref reader);
+        double? high = reader.TokenType switch
+        {
+            JsonTokenType.Null => null,
+            JsonTokenType.Number when reader.TryGetDouble(out var value) => value,
+            _ => throw new JsonException("band upper bound is invalid"),
+        };
+        ReadNext(ref reader);
+        if (reader.TokenType is not (JsonTokenType.True or JsonTokenType.False))
+            throw new JsonException("band overflow flag is invalid");
+        var overflow = reader.GetBoolean();
+        ReadNext(ref reader);
+        if (reader.TokenType is not (JsonTokenType.True or JsonTokenType.False))
+            throw new JsonException("band lower-bound flag is invalid");
+        var lowInclusive = reader.GetBoolean();
+        ReadNext(ref reader);
+        if (reader.TokenType != JsonTokenType.EndArray) throw new JsonException("band has unexpected values");
+        return new(low, high, overflow, lowInclusive);
+    }
+
+    private static void WriteBand(Utf8JsonWriter writer, L12CompactBand? band)
+    {
+        if (band is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+        writer.WriteStartArray();
+        writer.WriteNumberValue(band.Low);
+        if (band.High is { } high) writer.WriteNumberValue(high); else writer.WriteNullValue();
+        writer.WriteBooleanValue(band.Overflow);
+        writer.WriteBooleanValue(band.LowInclusive);
+        writer.WriteEndArray();
+    }
+
+    private static void ReadNext(ref Utf8JsonReader reader)
+    {
+        if (!reader.Read()) throw new JsonException("stage ended early");
+    }
+}
 
 internal sealed class L12ProcessMetricFileArchive : IL12ProcessMetricArchiveSink, IAsyncDisposable
 {

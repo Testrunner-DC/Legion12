@@ -129,11 +129,14 @@ public sealed partial class L12PlatformStore
     }
 
     internal L12MatchDrawRequestView ValidateMatchDrawResolution(
-        string matchId, string requestId, string responderId, bool accept, DateTimeOffset now)
+        string matchId, string requestId, string responderId, bool accept, DateTimeOffset now,
+        bool authorityAlreadyDurable = false)
     {
         lock (_gate)
         {
-            ExpireMatchDrawRequestsLocked(matchId, now);
+            // The room completion owner may prove an already durable agreed draw. Expiry
+            // must not erase its unfinished auxiliary acceptance while retrying that lifecycle.
+            if (!authorityAlreadyDurable) ExpireMatchDrawRequestsLocked(matchId, now);
             var row = RequireDrawRequestLocked(matchId, requestId);
             if (row.ResponderId != responderId)
                 throw new L12MatchGovernanceConflictException("draw_response_forbidden",
@@ -251,17 +254,19 @@ public sealed partial class L12PlatformStore
     internal L12MatchDrawRequestClientView? MatchDrawRequestForClient(
         string matchId, string viewerAccountId, DateTimeOffset now)
     {
-        lock (_gate)
+        if (Monitor.IsEntered(_gate))
         {
-            ExpireMatchDrawRequestsLocked(matchId, now);
             var row = _data.MatchDrawRequests.LastOrDefault(item => item.MatchId == matchId);
             if (row is null || viewerAccountId != row.RequesterId && viewerAccountId != row.ResponderId)
                 return null;
+            var expired = row.Status is "pending" or "accepting" && row.ExpiresAt <= now;
+            var status = expired ? "expired" : row.Status;
             return new L12MatchDrawRequestClientView(row.Id, row.MatchId, row.RequesterName,
-                row.ResponderName, row.Reason, row.Status, viewerAccountId == row.RequesterId,
-                viewerAccountId == row.ResponderId && row.Status == "pending", row.RequestedAt,
-                row.ExpiresAt, row.RespondedAt);
+                row.ResponderName, row.Reason, status, viewerAccountId == row.RequesterId,
+                viewerAccountId == row.ResponderId && status == "pending", row.RequestedAt,
+                row.ExpiresAt, expired ? row.ExpiresAt : row.RespondedAt);
         }
+        return ProjectCommittedDrawRequest(ReadCommittedGameplayReads(), matchId, viewerAccountId, now);
     }
 
     internal L12PlayerMatchReportView CreatePlayerMatchReport(

@@ -271,8 +271,16 @@ public sealed partial class L12PlatformStore
         lock (_gate)
         {
             var changed = false;
-            _data.SeasonDefinitions ??= [];
-            _data.SeasonArchives ??= [];
+            if (_data.SeasonDefinitions is null)
+            {
+                _data.SeasonDefinitions = [];
+                changed = true;
+            }
+            if (_data.SeasonArchives is null)
+            {
+                _data.SeasonArchives = [];
+                changed = true;
+            }
             foreach (var definition in _data.SeasonDefinitions)
                 definition.FactionFinalTotals ??= [];
             foreach (var archive in _data.SeasonArchives)

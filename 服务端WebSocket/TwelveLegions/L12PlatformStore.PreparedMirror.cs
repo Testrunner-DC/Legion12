@@ -147,7 +147,10 @@ internal sealed class L12PreparedPlatformMirror
 public sealed partial class L12PlatformStore
 {
     private static L12PreparedPlatformMirror PrepareFallbackMirror(DataFile data)
-        => L12PreparedPlatformMirror.Create(data, typeof(DataFile), PlatformMirrorJsonOptions);
+    {
+        using var metric = L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.MirrorSerialize);
+        return L12PreparedPlatformMirror.Create(data, typeof(DataFile), PlatformMirrorJsonOptions);
+    }
 
     private void WriteFallbackMirror(L12PreparedPlatformMirror mirror)
     {

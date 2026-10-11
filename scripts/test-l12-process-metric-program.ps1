@@ -351,10 +351,24 @@ try {
         if ($lines.Count -lt 2 -or $null -eq $segment) { throw 'two canonical metric lines were not produced' }
         $first = $lines[0] | ConvertFrom-Json
         $second = $lines[1] | ConvertFrom-Json
-        if ($first.v -ne 1 -or $second.v -ne 1 -or
+        if ($first.v -ne 2 -or $second.v -ne 2 -or
             $first.commit -cne $Commit -or $second.commit -cne $Commit -or
             $first.instance -cne $second.instance -or
             $segment.BaseName -cne $first.instance) { throw 'canonical metric identity validation failed' }
+        # The current writer is strictly v2; owned-v1 markers describe directory ownership,
+        # not the JSON schema. Legacy v1 read/retention compatibility is tested independently.
+        foreach ($line in $lines[0..1]) {
+            if ([System.Text.Encoding]::UTF8.GetByteCount($line) + 1 -gt 8192) {
+                throw 'canonical metric line exceeded the unchanged 8KiB budget'
+            }
+            $metric = $line | ConvertFrom-Json
+            if ($metric.stages.Count -ne 39) { throw 'canonical v2 fixed stage count changed' }
+            foreach ($stage in $metric.stages) {
+                if ($stage -isnot [array] -or $stage.Count -ne 7) {
+                    throw 'canonical v2 stage was not the fixed seven-field array'
+                }
+            }
+        }
         $spacing = [long] $second.archiveUtcMs - [long] $first.archiveUtcMs
         if ($spacing -lt 8000 -or $spacing -gt 20000) { throw 'canonical metric interval was outside the bounded range' }
         $dayDirectory = $segment.Directory.FullName

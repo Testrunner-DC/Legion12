@@ -457,7 +457,7 @@ internal static class RankedIdentityTestState
         var type = current.GetType();
         var constructor = type.GetConstructors(BindingFlags.Instance | BindingFlags.Public
                 | BindingFlags.NonPublic)
-            .Single(item => item.GetParameters().Length == 6);
+            .Single(item => item.GetParameters().Length == 7);
         var damaged = constructor.Invoke(new[]
         {
             type.GetProperty("Revision")!.GetValue(current),
@@ -466,6 +466,7 @@ internal static class RankedIdentityTestState
             type.GetProperty("Available")!.GetValue(current),
             type.GetProperty("DeploymentReadiness")!.GetValue(current),
             null,
+            type.GetProperty("GameplayReads")!.GetValue(current),
         });
         typeof(L12PlatformStore).GetField("_committedSessionActivity", PrivateInstance)!
             .SetValue(store, damaged);

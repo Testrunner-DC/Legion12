@@ -11,11 +11,21 @@ internal static class L12PerformanceMetrics
     private static readonly Timer SummaryTimer = new(_ => Flush(), null,
         TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
 
+    internal static void EnsureInitialized()
+    {
+        GC.KeepAlive(Window);
+        GC.KeepAlive(SummaryTimer);
+    }
     internal static long Start() => Stopwatch.GetTimestamp();
     internal static void Duration(string stage, long startedAt)
     {
         try { Window.Duration(stage, Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds); }
         catch { } // Metrics must not replace a business outcome.
+    }
+    internal static void Duration(string stage, double milliseconds)
+    {
+        try { Window.Duration(stage, milliseconds); }
+        catch { }
     }
     internal static void Bytes(string stage, long bytes)
     {
@@ -74,6 +84,55 @@ internal sealed record PerformanceMetricBatch(IReadOnlyList<PerformanceMetricSum
 internal sealed class PerformanceMetricWindow
 {
     private enum Kind { Duration, Bytes, Value }
+    private static readonly (Kind Kind, string Stage)[] LegacyDefinitions =
+    [
+        (Kind.Duration, "action.engine"), (Kind.Duration, "snapshot.build"),
+        (Kind.Duration, "websocket.serialize"), (Kind.Duration, "websocket.send"),
+        (Kind.Duration, "persistence.serialize-and-hash"), (Kind.Duration, "persistence.checkpoint-serialize"),
+        (Kind.Duration, "persistence.transaction"), (Kind.Duration, "persistence.total"),
+        (Kind.Bytes, "websocket.full-payload"), (Kind.Bytes, "websocket.delta-payload"),
+        (Kind.Bytes, "websocket.sent-payload"), (Kind.Bytes, "persistence.command-state-json"),
+        (Kind.Bytes, "persistence.checkpoint-json"), (Kind.Value, "websocket.queue-depth"),
+        (Kind.Value, "persistence.v2-state-json-anomaly"),
+    ];
+    private static readonly (Kind Kind, string Stage)[] Definitions =
+    [
+        .. LegacyDefinitions,
+        (Kind.Duration, L12PlatformOperationMetrics.LockWaitStage),
+        (Kind.Duration, L12PlatformOperationMetrics.LockHoldStage),
+        (Kind.Duration, L12PlatformOperationMetrics.AdminTransactionStage),
+        (Kind.Duration, L12PlatformOperationMetrics.TransactionalSaveStage),
+        (Kind.Duration, L12PlatformOperationMetrics.SeasonFinalizationStage),
+        (Kind.Duration, L12PlatformOperationMetrics.RecoveryStage),
+        (Kind.Duration, L12PlatformOperationMetrics.SnapshotSerializeStage),
+        (Kind.Duration, L12PlatformOperationMetrics.MirrorSerializeStage),
+        (Kind.Duration, L12PlatformOperationMetrics.RollbackGzipStage),
+        (Kind.Duration, L12PlatformOperationMetrics.HydrationStage),
+        (Kind.Duration, L12PlatformOperationMetrics.CommittedIndexPrepareStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.AdminTransactionStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.TransactionalSaveStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.SeasonFinalizationStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.RecoveryStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.SnapshotSerializeStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.MirrorSerializeStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.RollbackGzipStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.HydrationStage),
+        (Kind.Bytes, L12PlatformOperationMetrics.CommittedIndexPrepareStage),
+        (Kind.Value, L12PlatformOperationMetrics.AdminTransactionFailureStage),
+        (Kind.Value, L12PlatformOperationMetrics.TransactionalSaveFailureStage),
+        (Kind.Value, L12PlatformOperationMetrics.SeasonFinalizationFailureStage),
+        (Kind.Value, L12PlatformOperationMetrics.RecoveryFailureStage),
+    ];
+    private static readonly IReadOnlyList<string> LegacyStageNames = Array.AsReadOnly(
+        LegacyDefinitions.Select(FullStageName).OrderBy(stage => stage, StringComparer.Ordinal).ToArray());
+    private static readonly IReadOnlyList<string> CurrentStageNames = Array.AsReadOnly(
+        Definitions.Select(FullStageName).OrderBy(stage => stage, StringComparer.Ordinal).ToArray());
+
+    internal static IReadOnlyList<string> LegacyFixedStageNames => LegacyStageNames;
+    internal static IReadOnlyList<string> FixedStageNames => CurrentStageNames;
+    internal static int LegacyFixedStageCount => LegacyStageNames.Count;
+    internal static int FixedStageCount => CurrentStageNames.Count;
+
     private sealed class Series
     {
         internal readonly object Gate = new();
@@ -106,19 +165,8 @@ internal sealed class PerformanceMetricWindow
 
     internal PerformanceMetricWindow()
     {
-        var definitions = new (Kind Kind, string Stage)[]
-        {
-            (Kind.Duration, "action.engine"), (Kind.Duration, "snapshot.build"),
-            (Kind.Duration, "websocket.serialize"), (Kind.Duration, "websocket.send"),
-            (Kind.Duration, "persistence.serialize-and-hash"), (Kind.Duration, "persistence.checkpoint-serialize"),
-            (Kind.Duration, "persistence.transaction"), (Kind.Duration, "persistence.total"),
-            (Kind.Bytes, "websocket.full-payload"), (Kind.Bytes, "websocket.delta-payload"),
-            (Kind.Bytes, "websocket.sent-payload"), (Kind.Bytes, "persistence.command-state-json"),
-            (Kind.Bytes, "persistence.checkpoint-json"), (Kind.Value, "websocket.queue-depth"),
-            (Kind.Value, "persistence.v2-state-json-anomaly"),
-        };
         var known = new Dictionary<(Kind Kind, string Stage), Series>();
-        foreach (var definition in definitions)
+        foreach (var definition in Definitions)
         {
             var prefix = definition.Kind == Kind.Duration ? "duration." : definition.Kind == Kind.Bytes ? "bytes." : "";
             var unit = definition.Kind == Kind.Duration ? "ms" : definition.Kind == Kind.Bytes ? "legacy-bytes" : "value";
@@ -129,6 +177,10 @@ internal sealed class PerformanceMetricWindow
         _series = known.Values.OrderBy(series => series.Stage, StringComparer.Ordinal).ToArray();
         _fullNames = _series.ToFrozenDictionary(series => series.Stage, StringComparer.Ordinal);
     }
+
+    private static string FullStageName((Kind Kind, string Stage) definition)
+        => definition.Kind == Kind.Duration ? "duration." + definition.Stage
+            : definition.Kind == Kind.Bytes ? "bytes." + definition.Stage : definition.Stage;
 
     internal void Duration(string stage, double milliseconds) => Record(Resolve(Kind.Duration, stage), milliseconds);
     internal void Bytes(string stage, long bytes) => Record(Resolve(Kind.Bytes, stage), bytes);

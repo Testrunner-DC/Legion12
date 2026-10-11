@@ -80,7 +80,7 @@ public sealed class ProcessMetricSamplingTests
     }
 
     [Fact]
-    public void SamplerUsesInjectedRuntimeAndKeepsTheFifteenStageSnapshotNonDestructive()
+    public void SamplerUsesInjectedRuntimeAndKeepsTheExpandedFixedStageSnapshotNonDestructive()
     {
         var window = new PerformanceMetricWindow();
         window.Value("websocket.queue-depth", 9);
@@ -97,10 +97,22 @@ public sealed class ProcessMetricSamplingTests
         var sample = Assert.IsType<L12ProcessMetricSample>(captured);
         Assert.Same(runtime, sample.Runtime);
         Assert.Equal(L12MetricAvailabilityReason.Available, sample.PerformanceWindowAvailability);
-        Assert.Equal(15, sample.PerformanceWindow!.Series.Count);
+        Assert.Equal(39, sample.PerformanceWindow!.Series.Count);
+        Assert.Equal(15, PerformanceMetricWindow.LegacyFixedStageCount);
+        Assert.Equal(PerformanceMetricWindow.FixedStageNames.OrderBy(stage => stage, StringComparer.Ordinal),
+            sample.PerformanceWindow.Series.Select(row => row.Stage).OrderBy(stage => stage, StringComparer.Ordinal));
+        foreach (var legacy in PerformanceMetricWindow.LegacyFixedStageNames)
+            Assert.Single(sample.PerformanceWindow.Series, row => row.Stage == legacy);
         Assert.Equal(9, Row(sample.PerformanceWindow, "websocket.queue-depth").Total);
 
         Assert.True(sampler.TryCapture(out var second));
+        foreach (var row in second!.PerformanceWindow!.Series)
+        {
+            var previous = Row(sample.PerformanceWindow, row.Stage);
+            Assert.True(row.EndedAt >= previous.EndedAt); // Observation time advances without draining samples.
+            Assert.Equal(JsonSerializer.Serialize(previous),
+                JsonSerializer.Serialize(row with { EndedAt = previous.EndedAt }));
+        }
         Assert.Equal(9, Row(second!.PerformanceWindow!, "websocket.queue-depth").Total);
         PerformanceMetricBatch? flushed = null;
         Assert.True(window.TryFlush(batch => flushed = batch));

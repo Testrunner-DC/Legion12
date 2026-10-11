@@ -196,14 +196,14 @@ public sealed partial class L12PlatformStore
         {
             WriteDeckMigrationBackup(data);
             L12PreparedPlatformMirror preparedMirror;
-            string snapshotJson;
+            CoreSnapshot snapshot;
             using var transaction = connection.BeginTransaction();
             PersistDeckDomainSnapshot(connection, transaction, data);
             VerifyDeckDomainSnapshot(connection, transaction, data);
             SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
-            snapshotJson = SerializeSnapshot(data);
+            snapshot = PrepareCoreSnapshot(data, connection, transaction);
             preparedMirror = PrepareFallbackMirror(data);
-            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), preparedMirror.Checksum, data);
+            UpsertSnapshot(connection, transaction, snapshot, snapshot.Checksum, preparedMirror.Checksum, data);
             transaction.Commit();
             _lastCommittedSnapshot = SerializeRollbackState(data);
             try
@@ -255,15 +255,15 @@ public sealed partial class L12PlatformStore
         WriteDeckIdentityMigrationMap(data);
         if (stateActive && !hasInvalidActiveIdentity) return;
         L12PreparedPlatformMirror preparedMirror;
-        string snapshotJson;
+        CoreSnapshot snapshot;
         using (var transaction = connection.BeginTransaction())
         {
             PersistDeckDomainSnapshot(connection, transaction, data);
             VerifyDeckDomainSnapshot(connection, transaction, data);
             SetStorageMeta(connection, transaction, DeckIdentityStateKey, DeckIdentityActiveState);
-            snapshotJson = SerializeSnapshot(data);
+            snapshot = PrepareCoreSnapshot(data, connection, transaction);
             preparedMirror = PrepareFallbackMirror(data);
-            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), preparedMirror.Checksum, data);
+            UpsertSnapshot(connection, transaction, snapshot, snapshot.Checksum, preparedMirror.Checksum, data);
             transaction.Commit();
         }
         _lastCommittedSnapshot = SerializeRollbackState(data);

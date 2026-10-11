@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-platform-allocation-metrics",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "固定平台操作、锁等待/持有、分段耗时与同线程分配指标，经既有有界窗口及兼容v1的v2位置数组归档；后台原始暂存回滚采用等价压缩流，五条热写核心快照仅在UTF8数据库以同字节缓冲准备，UTF16或未知编码在准备前沿用原字符串路径。SQLite仍存原JSON TEXT及同SHA，旧reader与8/9反迁移、事务、冲突刷新、嵌套回滚、会话与结算守卫不变。内部诊断及表示不外显。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformOperationMetrics.cs",
+    "服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs",
+    "服务端WebSocket/TwelveLegions/L12ProcessMetricArchive.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PreparedMirror.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs"
+  ]
+}

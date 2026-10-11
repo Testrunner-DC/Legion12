@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-gameplay-platform-read-isolation",
+  "date": "2026-10-11",
+  "audience": "players",
+  "title": "对局同步体验",
+  "changes": [{
+    "category": "battle",
+    "text": "对局同步、重连同步和响应设置读取不再等待无关的设置保存；平局申请到期后不能继续响应，平局记录暂时保存失败时可继续重试同步。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedGameplayReads.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedRankedIdentity.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.SessionActivity.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.Operations.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.Seasons.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.MatchGovernance.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+      "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+      "服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs",
+      "服务端WebSocket/TwelveLegions/L12RoomManager.MatchGovernance.cs"
+    ]
+  }]
+}

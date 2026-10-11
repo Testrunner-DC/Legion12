@@ -18,7 +18,9 @@ public sealed class PerformanceMetricWindowTests
         window.Value("duration.action.engine", 5);
         for (var index = 0; index < 10000; index++) window.Value("synthetic-unknown-" + index, 1);
         var batch = Capture(window);
-        Assert.Equal(15, batch.Series.Count);
+        Assert.Equal(15, PerformanceMetricWindow.LegacyFixedStageCount);
+        Assert.Equal(39, PerformanceMetricWindow.FixedStageCount);
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount, batch.Series.Count);
         Assert.Equal(4, batch.Series.Sum(row => row.Count));
         Assert.Equal(10000, batch.Diagnostics.UnknownStages);
         Assert.Equal(50, Row(batch, "duration.snapshot.build").Maximum);
@@ -260,7 +262,7 @@ public sealed class PerformanceMetricWindowTests
         var batch = Capture(window);
         Assert.Equal(4, batch.Diagnostics.UnknownStages);
         Assert.Equal(0, batch.Series.Sum(row => row.Count));
-        Assert.Equal(15, batch.Series.Count);
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount, batch.Series.Count);
     }
 
     [Fact]
@@ -271,7 +273,8 @@ public sealed class PerformanceMetricWindowTests
 
         Assert.True(window.TrySnapshot(out var first));
         Assert.True(window.TrySnapshot(out var second));
-        Assert.Equal(15, Assert.IsType<PerformanceMetricBatch>(first).Series.Count);
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount,
+            Assert.IsType<PerformanceMetricBatch>(first).Series.Count);
         Assert.Equal(7, Row(first!, "websocket.queue-depth").Total);
         Assert.Equal(7, Row(Assert.IsType<PerformanceMetricBatch>(second), "websocket.queue-depth").Total);
 
@@ -279,6 +282,24 @@ public sealed class PerformanceMetricWindowTests
         Assert.Equal(1, Row(flushed, "websocket.queue-depth").Count);
         Assert.True(window.TrySnapshot(out var afterFlush));
         Assert.Equal(0, Row(Assert.IsType<PerformanceMetricBatch>(afterFlush), "websocket.queue-depth").Count);
+    }
+
+    [Fact]
+    public void PlatformStagesUseOnlyTheFixedDurationBytesAndFailureSeries()
+    {
+        var window = new PerformanceMetricWindow();
+        window.Duration(L12PlatformOperationMetrics.SnapshotSerializeStage, 12.5);
+        window.Bytes(L12PlatformOperationMetrics.SnapshotSerializeStage, 2048);
+        window.Value(L12PlatformOperationMetrics.TransactionalSaveFailureStage, 1);
+        window.Duration("platform.phase.synthetic", 1);
+        window.Bytes("platform.phase.synthetic", 1);
+        window.Value("platform.failure.synthetic", 1);
+
+        var batch = Capture(window);
+        Assert.Equal(12.5, Row(batch, "duration.platform.phase.snapshot-serialize").Total);
+        Assert.Equal(2048, Row(batch, "bytes.platform.phase.snapshot-serialize").Total);
+        Assert.Equal(1, Row(batch, "platform.failure.transactional-save").Total);
+        Assert.Equal(3, batch.Diagnostics.UnknownStages);
     }
 
     [Fact]

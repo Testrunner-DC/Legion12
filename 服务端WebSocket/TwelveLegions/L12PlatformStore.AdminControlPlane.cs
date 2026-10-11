@@ -127,84 +127,127 @@ public sealed partial class L12PlatformStore
 
     internal T ExecuteAdminTransaction<T>(Func<T> action)
     {
-        // Includes the outer durable commit and post-commit revocation dispatch.
-        using var deployment = EnterDeploymentMutation();
-        IReadOnlyList<string> committedRevocations = [];
-        T result;
-        lock (_gate)
+        var operationMetric = L12PlatformOperationMetrics.Begin();
+        var waitMetric = default(L12PlatformMetricMeasurement);
+        var waitSample = default(L12PlatformMetricSample);
+        var holdSample = default(L12PlatformMetricSample);
+        var outerMeasured = false;
+        var operationSucceeded = false;
+        try
         {
-            var outer = _adminTransactionDepth == 0;
-            // 每层保存进入该层时的完整状态；内层回滚不能丢弃外层尚未提交的修改。
-            // 直接写压缩流，避免同时保留整份 UTF-8 缓冲与 UTF-16 JSON 字符串。
-            var snapshot = SerializeCompleteInMemoryState(_data);
-            var committedAtEntry = Volatile.Read(ref _committedSessionActivity);
-            var revocationCountAtEntry = _pendingSessionRevocations.Count;
-            var saveRequestedAtEntry = _adminTransactionSaveRequested;
-            var businessChangedAtEntry = _adminTransactionBusinessChanged;
-            if (outer)
+            // Includes the outer durable commit and post-commit revocation dispatch.
+            using var deployment = EnterDeploymentMutation();
+            IReadOnlyList<string> committedRevocations = [];
+            T result;
+            waitMetric = L12PlatformOperationMetrics.Begin();
+            lock (_gate)
             {
-                _adminTransactionSaveRequested = false;
-                _adminTransactionBusinessChanged = false;
-                _pendingSessionRevocations.Clear();
-                revocationCountAtEntry = 0;
-            }
-
-            _adminTransactionDepth++;
-            try
-            {
-                result = action();
-            }
-            catch
-            {
-                _adminTransactionDepth--;
+                var outer = _adminTransactionDepth == 0;
+                var holdMetric = default(L12PlatformMetricMeasurement);
+                if (outer)
+                {
+                    outerMeasured = true;
+                    waitSample = waitMetric.Stop();
+                    holdMetric = L12PlatformOperationMetrics.Begin();
+                }
                 try
                 {
-                    if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
-                        RestoreAdminTransactionSnapshot(snapshot);
+                    byte[] snapshot;
+                    using (L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.SnapshotSerialize))
+                        snapshot = SerializeCompleteInMemoryState(_data);
+                    var committedAtEntry = Volatile.Read(ref _committedSessionActivity);
+                    var revocationCountAtEntry = _pendingSessionRevocations.Count;
+                    var saveRequestedAtEntry = _adminTransactionSaveRequested;
+                    var businessChangedAtEntry = _adminTransactionBusinessChanged;
+                    if (outer)
+                    {
+                        _adminTransactionSaveRequested = false;
+                        _adminTransactionBusinessChanged = false;
+                        _pendingSessionRevocations.Clear();
+                        revocationCountAtEntry = 0;
+                    }
+
+                    _adminTransactionDepth++;
+                    try
+                    {
+                        result = action();
+                    }
+                    catch
+                    {
+                        _adminTransactionDepth--;
+                        try
+                        {
+                            if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                            {
+                                using var hydration = L12PlatformOperationMetrics.Measure(
+                                    L12PlatformOperationPhase.Hydration);
+                                RestoreAdminTransactionSnapshot(snapshot);
+                            }
+                        }
+                        finally
+                        {
+                            _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
+                            _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
+                            TrimPendingSessionRevocations(revocationCountAtEntry);
+                        }
+                        throw;
+                    }
+
+                    _adminTransactionDepth--;
+                    if (!outer) return result;
+                    try
+                    {
+                        var preparedRevocations = PreparePendingSessionRevocations();
+                        if (_adminTransactionSaveRequested)
+                        {
+                            PersistData(_adminTransactionBusinessChanged);
+                            committedRevocations = preparedRevocations;
+                        }
+                    }
+                    catch (L12PlatformStorageUnavailableException error) when (
+                        error is L12SeasonFinalizationStaleWriteException or L12PlatformStorageConflictException
+                            or L12PlatformStorageRefreshException)
+                    {
+                        // PersistTransactionalData 已从 SQLite 刷新到包含赛季结算事实的最新快照。
+                        // 保留该刷新结果，但仍向调用方明确返回可重试失败；绝不自动重放原命令。
+                        throw;
+                    }
+                    catch
+                    {
+                        if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
+                        {
+                            using var hydration = L12PlatformOperationMetrics.Measure(
+                                L12PlatformOperationPhase.Hydration);
+                            RestoreAdminTransactionSnapshot(snapshot);
+                        }
+                        throw;
+                    }
+                    finally
+                    {
+                        _adminTransactionSaveRequested = false;
+                        _adminTransactionBusinessChanged = false;
+                        _pendingSessionRevocations.Clear();
+                    }
                 }
                 finally
                 {
-                    _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
-                    _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
-                    TrimPendingSessionRevocations(revocationCountAtEntry);
-                }
-                throw;
-            }
-
-            _adminTransactionDepth--;
-            if (!outer) return result;
-            try
-            {
-                var preparedRevocations = PreparePendingSessionRevocations();
-                if (_adminTransactionSaveRequested)
-                {
-                    PersistData(_adminTransactionBusinessChanged);
-                    committedRevocations = preparedRevocations;
+                    if (outer) holdSample = holdMetric.Stop();
                 }
             }
-            catch (L12PlatformStorageUnavailableException error) when (
-                error is L12SeasonFinalizationStaleWriteException or L12PlatformStorageConflictException
-                    or L12PlatformStorageRefreshException)
+            DispatchCommittedSessionRevocations(committedRevocations);
+            operationSucceeded = true;
+            return result;
+        }
+        finally
+        {
+            if (outerMeasured)
             {
-                // PersistTransactionalData 已从 SQLite 刷新到包含赛季结算事实的最新快照。
-                // 保留该刷新结果，但仍向调用方明确返回可重试失败；绝不自动重放原命令。
-                throw;
-            }
-            catch
-            {
-                if (ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committedAtEntry))
-                    RestoreAdminTransactionSnapshot(snapshot);
-                throw;
-            }
-            finally
-            {
-                _adminTransactionSaveRequested = false;
-                _adminTransactionBusinessChanged = false;
-                _pendingSessionRevocations.Clear();
+                L12PlatformOperationMetrics.RecordLockWait(waitSample);
+                L12PlatformOperationMetrics.RecordLockHold(holdSample);
+                L12PlatformOperationMetrics.RecordOperation(operationMetric.Stop(),
+                    L12PlatformOperationKind.AdminTransaction, !operationSucceeded);
             }
         }
-        DispatchCommittedSessionRevocations(committedRevocations);
-        return result;
     }
 
     private void RestoreAdminTransactionSnapshot(byte[] snapshot)
@@ -354,6 +397,7 @@ public sealed partial class L12PlatformStore
             Save(false);
         }
     }
+
 
     internal void RecordApprovalOutcome(L12AccountView reviewer, L12AdminCommandView command,
         L12AdminAuditContext context, string outcome, string? reason)
