@@ -195,20 +195,20 @@ public sealed partial class L12PlatformStore
         if (!string.Equals(state, DeckDomainActiveState, StringComparison.Ordinal))
         {
             WriteDeckMigrationBackup(data);
-            string mirrorJson;
+            L12PreparedPlatformMirror preparedMirror;
             string snapshotJson;
             using var transaction = connection.BeginTransaction();
             PersistDeckDomainSnapshot(connection, transaction, data);
             VerifyDeckDomainSnapshot(connection, transaction, data);
             SetStorageMeta(connection, transaction, DeckDomainStateKey, DeckDomainActiveState);
             snapshotJson = SerializeSnapshot(data);
-            mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
-            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
+            preparedMirror = PrepareFallbackMirror(data);
+            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), preparedMirror.Checksum, data);
             transaction.Commit();
             _lastCommittedSnapshot = SerializeRollbackState(data);
             try
             {
-                WriteFallbackMirror(mirrorJson);
+                WriteFallbackMirror(preparedMirror);
                 _fallbackMirrorHealthy = true;
             }
             catch (Exception error)
@@ -254,7 +254,7 @@ public sealed partial class L12PlatformStore
         WriteDeckIdentityFullBackup(data);
         WriteDeckIdentityMigrationMap(data);
         if (stateActive && !hasInvalidActiveIdentity) return;
-        string mirrorJson;
+        L12PreparedPlatformMirror preparedMirror;
         string snapshotJson;
         using (var transaction = connection.BeginTransaction())
         {
@@ -262,14 +262,14 @@ public sealed partial class L12PlatformStore
             VerifyDeckDomainSnapshot(connection, transaction, data);
             SetStorageMeta(connection, transaction, DeckIdentityStateKey, DeckIdentityActiveState);
             snapshotJson = SerializeSnapshot(data);
-            mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
-            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
+            preparedMirror = PrepareFallbackMirror(data);
+            UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), preparedMirror.Checksum, data);
             transaction.Commit();
         }
         _lastCommittedSnapshot = SerializeRollbackState(data);
         try
         {
-            WriteFallbackMirror(mirrorJson);
+            WriteFallbackMirror(preparedMirror);
             _fallbackMirrorHealthy = true;
         }
         catch (Exception error)

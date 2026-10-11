@@ -295,7 +295,7 @@ public sealed partial class L12PlatformStore
             throw new L12PlatformStorageUnavailableException(_storageIssue ?? "事务存储处于只读回退模式");
         }
 
-        string mirrorJson;
+        L12PreparedPlatformMirror preparedMirror;
         try
         {
             using var connection = OpenDatabase(_databasePath, readOnly: false);
@@ -328,9 +328,9 @@ public sealed partial class L12PlatformStore
             var snapshotJson = SerializeSnapshot(_data);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
             StorageFailureInjector?.Invoke("before-mirror-serialize");
-            mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
+            preparedMirror = PrepareFallbackMirror(_data);
             var snapshotChecksum = Sha256(snapshotJson);
-            var mirrorChecksum = Sha256(mirrorJson);
+            var mirrorChecksum = preparedMirror.Checksum;
             UpsertSnapshotCas(connection, transaction, snapshotJson, snapshotChecksum,
                 mirrorChecksum, _data, expectedRevision, privateDeckObjectWrite);
             StorageFailureInjector?.Invoke("before-audit-append");
@@ -372,7 +372,7 @@ public sealed partial class L12PlatformStore
         try
         {
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-mirror");
-            WriteFallbackMirror(mirrorJson);
+            WriteFallbackMirror(preparedMirror);
             _fallbackMirrorHealthy = true;
         }
         catch (Exception error)
@@ -478,9 +478,9 @@ public sealed partial class L12PlatformStore
                 _data.BusinessVersion++;
                 SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
                 var snapshotJson = SerializeSnapshot(_data);
-                var mirrorJson = JsonSerializer.Serialize(_data, PlatformMirrorJsonOptions);
+                var preparedMirror = PrepareFallbackMirror(_data);
                 UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson),
-                    Sha256(mirrorJson), _data);
+                    preparedMirror.Checksum, _data);
                 AppendIndependentAudit(connection, transaction, _data.AdminAudit);
                 mutation.BeforeCommit?.Invoke(_data.Version);
                 StorageFailureInjector?.Invoke("before-season-finalization-commit");
@@ -493,7 +493,7 @@ public sealed partial class L12PlatformStore
                 _storageIssue = null;
                 try
                 {
-                    WriteFallbackMirror(mirrorJson);
+                    WriteFallbackMirror(preparedMirror);
                     _fallbackMirrorHealthy = true;
                 }
                 catch (Exception mirrorError)
@@ -541,8 +541,8 @@ public sealed partial class L12PlatformStore
         SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, data,
             allowLegacyDeliveryImport: initialLegacyProjection);
         var snapshotJson = SerializeSnapshot(data);
-        var mirrorJson = JsonSerializer.Serialize(data, PlatformMirrorJsonOptions);
-        UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), Sha256(mirrorJson), data);
+        var preparedMirror = PrepareFallbackMirror(data);
+        UpsertSnapshot(connection, transaction, snapshotJson, Sha256(snapshotJson), preparedMirror.Checksum, data);
         AppendIndependentAudit(connection, transaction, data.AdminAudit);
         var rollbackSnapshot = SerializeRollbackState(data);
         var sessionActivity = PrepareCommittedSessionActivity(data, rollbackSnapshot);
@@ -551,7 +551,7 @@ public sealed partial class L12PlatformStore
         PublishCommittedSessionActivity(sessionActivity);
         try
         {
-            WriteFallbackMirror(mirrorJson);
+            WriteFallbackMirror(preparedMirror);
             _fallbackMirrorHealthy = true;
         }
         catch (Exception error)
@@ -1286,14 +1286,6 @@ public sealed partial class L12PlatformStore
                     new AggregateException(cacheError, databaseError));
             }
         }
-    }
-
-    private void WriteFallbackMirror(string json)
-    {
-        var temp = _path + ".tmp";
-        File.WriteAllText(temp, json);
-        File.Move(temp, _path, true);
-        RecordSyntheticMirrorWrite(json);
     }
 
     private static string SerializeSnapshot(DataFile data)

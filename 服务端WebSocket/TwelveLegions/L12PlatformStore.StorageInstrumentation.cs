@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 
@@ -136,10 +135,10 @@ public sealed partial class L12PlatformStore
         raw.sqlite3_profile(handle, SyntheticStorageProfileCallback, state);
     }
 
-    private static void RecordSyntheticMirrorWrite(string json)
+    private static void RecordSyntheticMirrorWrite(long byteCount)
     {
         var session = SyntheticStorageMeasurement.Value;
-        if (session is not null) session.MirrorBytes += Encoding.UTF8.GetByteCount(json);
+        if (session is not null) session.MirrorBytes += byteCount;
     }
 
     private static void OnSyntheticStorageProfile(object context, string sql, long elapsedNanoseconds)

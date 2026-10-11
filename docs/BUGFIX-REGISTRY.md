@@ -2,6 +2,14 @@
 
 ## STORAGE-20261011-ADMIN-SNAPSHOT｜后台完整字符串快照导致登录存储保护（已批准，验证中）
 
+- 最终共享mirror修复：新增PreparedMirror统一UTF8流式序列化、增量SHA/字节计数和gzip；五条兼容镜像调用全迁移。JSON字节/缩进与旧格式一致，预提交不写镜像磁盘；commit后从压缩体解压到GUID temp，验证长度/SHA后替换。原子事务、回滚/session发布时点、CAS胜败及镜像非权威降级不变；schema8反向迁移完整备份/pending写前持久化语义另属协议，保持原实现。
+- 最终回归：PlatformMirrorMemoryTests覆盖12MiB分配预算、Unicode旧字节/哈希、gzip/校验损坏、precommit/CAS loser不落盘和postcommit真实目录冲突仍可从SQLite恢复；5新项、226相关与完整平台1205项均过、0失败跳过。Main独立审查五路径与全部diff接受。旧Admin运行时RED、新Mirror类型缺失编译RED、被取消的中间Release和环境准备失败均保留。
+- 容量边界：最终机外Windows .NET10以同发布DLL、Windows SQLite原生库、显式1.5GiB GC预算/4堆重跑两版50轮；峰1655197696→1429958656B，平均分配1083655019→908136487B，耗时1609.5→1686.1ms，双库快速及FK过。最新原失败结算副本仅调用既有drain/verify正常applied、payload不变、二次确认0重复，并能鉴权。最终Linux r2为保护宿主余量主动停止，不能冒称该补丁已完成Linux长期容量验收；3GiB容量补偿与减峰修复共同降低本次已知风险，不自动关闭其他未验证Bug。
+
+- 增量故障证据：10:44:41/47原0e的排位outbox重放出现平台提交OOM，10:44:51双回滚失败；58c89b7仅减少后台入口，尚不能覆盖共享Save。共享路径先生成snapshot完整字符串、再生成缩进mirror完整字符串，并让mirror跨commit存活到写盘，与完整压缩回滚准备重叠。独立审查要求镜像文件IO仍在commit后、SQLite权威成功不可因镜像失败回滚。主任务停止未完成的58c89b7 Release并补强共享mirror，后续完整门禁另验。
+- 真实Linux同数据/2GiB的50次嵌套保存、故障回滚和登录：原版与58c89b7均过；峰1763098624→1358983168B，平均分配918067310→795383946B，平均耗时5948→6822ms。不得写成已复现并消除全部Linux OOM。10:50最新停写备份后3GiB容量补偿使原失败结算同payload正常applied，公网13项/认证WSS过，原2GiB临时恢复仅持续约25分钟。
+- 机外备份复验：10:17归档SHA通过，1222/1223文件与停写清单一致；唯一matches.db-shm为只读WAL校验重建的共享索引。原失败逐文件回执保留，另在新隔离目录只复制相同db+WAL、重建SHM，两库integrity_check与foreign_key_check均通过。10:47新增备份在校验后重新生成归档清单，避免把可重建SHM字节变化误写成业务数据变化。
+
 - 现场与边界：正式0e49在2026-10-11 08:39 UTC+8连续五次后台更新发生System.OutOfMemoryException，堆栈指向ExecuteAdminTransaction入口完整JsonSerializer.Serialize(_data)，随后进入统一不可恢复屏障。08:14赛季协调器已出现OOM，双回滚内层异常此前未落日志，因此不能把该入口写成全部长期故障的唯一诱因。
 - 修复：每层后台事务入口直接序列化为完整gzip+SHA内存快照；回滚按该层入口精确还原，不归一化外层未提交内容、不重读另一代SQLite。复用原完整缓存编码/解码，磁盘schema9/快照/镜像不变。回滚损坏仍统一关闭状态访问、鉴权和写入。首次提交及双恢复失败只记录异常类型/调用栈，不记录可能含凭据或正文的异常消息。
 - 同型扫描：`JsonSerializer.Serialize(_data)`与对应Deserialize两个回滚出口、全仓ExecuteAdminTransaction调用覆盖管理员命令、赛季、导入及排位修复；已提交缓存仍保留完整域。显式旧格式导出及SQLite/镜像最终JSON格式保持，未改历史结算或牌库身份。

@@ -2,6 +2,11 @@
 
 ## STORAGE-20261011-ADMIN-SNAPSHOT｜登录503与后台事务内存峰值（已批准，Batch已验）
 
+- 最终实现补齐五条兼容mirror生产者：普通Save、赛季、初始快照、牌库域和稳定ID迁移。预提交UTF8流式SHA/计数→gzip，只保留压缩准备体；提交后解压、限长/校验、GUID临时文件原子替换，失败只清本次temp且不撤销SQLite已提交。schema8反向迁移的持久pending备份保持原协议。代码/新回归由有界子任务实施，主任务独立复核并串行验收；五源码清单64aad061与最终八源source-binding-r2绑定。
+- 验证：新增mirror5项、相关226项、完整Batch平台1205/1205，失败跳过0，回执test-c4d737d7d36641bc90e9294104a61198。新契约最初编译RED与原生产OOM分别记录；不把缺类型编译失败说成运行时复现。机外相同1.5GiB GC/4堆、同Linux发布DLL+Windows SQLite native的50轮旧/新对照均过；峰下降13.61%、平均分配下降16.20%、耗时增加4.76%，真实失败结算副本重放/幂等/登录与双库校验过。Linux r2因宿主available约582MiB主动停试以保生产，未得最终容量结论。
+
+- 新证据与同一故障补强：10:44原2GiB服务在Ranked outbox replay的共享Save再次OOM，并非只有后台入口。58c89b7干净Release主动中断、未推送；其已过1200平台证据仍只绑定原补丁。10:50以最新停写副本留存后提高到3GiB启动原0e，13项公网/认证WSS及原失败结算payload不变而pending→applied已验。继续实施共享mirror压缩流准备，提交前不引入镜像写盘，提交后解压到唯一临时文件/原子替换；不拆SQLite/CAS/audit/settlement事务，不提前ack outbox。容量补偿仍须观察宿主余量、swap及托管OOM，不能称永久根治。
+
 - 用户在只读诊断后明确要求“帮我修复”。本批保护P2/P3，保持SQLite权威、完整回滚、CAS、会话撤销和失败关闭，不回写旧库或删除历史结算。原始现场存于受限server-backups/20261010-recovery/final/incident-20261011。
 - 08:39 UTC+8正式0e49a749的后台Bug更新在ExecuteAdminTransaction第137行完整JSON字符串序列化发生托管OOM，随后08:39:14进入不可恢复屏障；2GiB上限未根治。平台库快速校验ok，1179账号/8762私人牌组；原双回滚最内层错误未落日志，不冒称已确定每个失败点。
 - 变更前本地4b0b3ca树干净；fetch发现远端独立卡效/测试提交，已安全快进f60ba18保留其结果。本批仅修改共享平台快照与故障诊断、平台回归和发布记录；卡效源码无新修改。完整Batch平台1200/1200、失败跳过0，监督回执test-9dc55bbf662d41d78365cf6ead9cb647；提交级Release及Linux容量对照另行验收，不借专项绿灯称上线完成。
