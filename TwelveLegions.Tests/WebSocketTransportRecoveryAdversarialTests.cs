@@ -128,8 +128,9 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
 
-            await using var firstReplacement = await WireClient.ConnectAsync(endpoint, firstToken);
-            var supersededFirst = await first.ReceiveTypeAsync("sessionSuperseded");
+            var firstReconnection = await WireClient.ReplaceAsync(first, endpoint, firstToken);
+            await using var firstReplacement = firstReconnection.Replacement;
+            var supersededFirst = firstReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededFirst["reason"]?.GetValue<string>());
             Assert.True(firstReplacement.Session!["recovered"]!.GetValue<bool>());
             Assert.Equal(first.ConnectionGeneration + 1, firstReplacement.ConnectionGeneration);
@@ -167,8 +168,9 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
 
-            await using var secondReplacement = await WireClient.ConnectAsync(endpoint, secondToken);
-            var supersededSecond = await second.ReceiveTypeAsync("sessionSuperseded");
+            var secondReconnection = await WireClient.ReplaceAsync(second, endpoint, secondToken);
+            await using var secondReplacement = secondReconnection.Replacement;
+            var supersededSecond = secondReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededSecond["reason"]?.GetValue<string>());
             Assert.True(secondReplacement.Session!["recovered"]!.GetValue<bool>());
             Assert.Equal(second.ConnectionGeneration + 1, secondReplacement.ConnectionGeneration);
@@ -232,8 +234,9 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             AssertSpectatorPrivacy(spectatorFinal, firstPrivateIds, secondPrivateIds);
 
             var staleSpectatorDelta = Assert.IsType<byte[]>(spectator.LastDeltaPayload);
-            await using var spectatorReplacement = await WireClient.ConnectAsync(endpoint, spectatorToken);
-            var supersededSpectator = await spectator.ReceiveTypeAsync("sessionSuperseded");
+            var spectatorReconnection = await WireClient.ReplaceAsync(spectator, endpoint, spectatorToken);
+            await using var spectatorReplacement = spectatorReconnection.Replacement;
+            var supersededSpectator = spectatorReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededSpectator["reason"]?.GetValue<string>());
             Assert.True(spectatorReplacement.Session!["recovered"]!.GetValue<bool>());
             Assert.Equal(spectator.ConnectionGeneration + 1, spectatorReplacement.ConnectionGeneration);
@@ -409,27 +412,58 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token)
         {
             var client = new WireClient();
-            await client._socket.ConnectAsync(endpoint, CancellationToken.None);
-            await client.SendBeforeRecoveryAsync(new
+            try
             {
-                type = "hello",
-                authToken = token,
-                capabilities = new { requestIds = true, deltaGameState = true },
-            });
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-            for (var attempt = 0; attempt < 80 && client.Recovery is null; attempt++)
-            {
-                var message = await client.ReceiveMessageAsync(timeout.Token);
-                var type = message.Node["type"]?.GetValue<string>();
-                if (type is not null) client.RecoveryMessageTypes.Add(type);
-                client.ApplyGameMessage(message.Bytes, message.Node);
-                if (type == "session") client.Session = message.Node;
-                if (type == "recoveryComplete") client.Recovery = message.Node;
+                await client._socket.ConnectAsync(endpoint, CancellationToken.None);
+                await client.SendBeforeRecoveryAsync(new
+                {
+                    type = "hello",
+                    authToken = token,
+                    capabilities = new { requestIds = true, deltaGameState = true },
+                });
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                for (var attempt = 0; attempt < 80 && client.Recovery is null; attempt++)
+                {
+                    var message = await client.ReceiveMessageAsync(timeout.Token);
+                    var type = message.Node["type"]?.GetValue<string>();
+                    if (type is not null) client.RecoveryMessageTypes.Add(type);
+                    client.ApplyGameMessage(message.Bytes, message.Node);
+                    if (type == "session") client.Session = message.Node;
+                    if (type == "recoveryComplete") client.Recovery = message.Node;
+                }
+                Assert.NotNull(client.Session);
+                Assert.NotNull(client.Recovery);
+                client.RecoveryReadyForWrites = true;
+                return client;
             }
-            Assert.NotNull(client.Session);
-            Assert.NotNull(client.Recovery);
-            client.RecoveryReadyForWrites = true;
-            return client;
+            catch
+            {
+                client._socket.Dispose();
+                throw;
+            }
+        }
+
+        internal static async Task<(WireClient Replacement, JsonObject Superseded)> ReplaceAsync(
+            WireClient previous, Uri endpoint, string token)
+        {
+            using var cancellation = new CancellationTokenSource();
+            // 真实客户端持续收包；先读旧连接，避免通知被积压状态帧阻塞而与新握手互等。
+            var superseded = previous.ReceiveTypeAsync("sessionSuperseded", cancellation.Token);
+            WireClient? replacement = null;
+            try
+            {
+                replacement = await ConnectAsync(endpoint, token);
+                return (replacement, await superseded);
+            }
+            catch
+            {
+                cancellation.Cancel();
+                // 新握手失败时仍观察旧读取任务，任何失败都不遗留成功建立的新连接。
+                try { await superseded; }
+                catch { }
+                replacement?._socket.Dispose();
+                throw;
+            }
         }
 
         internal async Task SendAsync(object payload)
@@ -452,9 +486,11 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             await _socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
-        internal async Task<JsonObject> ReceiveTypeAsync(string expectedType)
+        internal async Task<JsonObject> ReceiveTypeAsync(string expectedType,
+            CancellationToken cancellationToken = default)
         {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
             for (var attempt = 0; attempt < 100; attempt++)
             {
                 var message = await ReceiveMessageAsync(timeout.Token);

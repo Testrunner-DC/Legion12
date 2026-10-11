@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261011-websocket-gate-reader",
+  "date": "2026-10-11",
+  "audience": "internal",
+  "reason": "连接恢复门禁模拟旧客户端持续收包，消除旧队列通知与新握手的测试互等，并补齐失败任务观察和socket释放。原恢复、幂等、通知与隐私断言保持，产品行为不变。",
+  "paths": ["TwelveLegions.Tests/WebSocketTransportRecoveryAdversarialTests.cs"]
+}

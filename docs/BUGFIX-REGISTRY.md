@@ -1,7 +1,17 @@
 # Legion12 Bug 修复记录
 
+## TEST-20261011-WS-REPLACEMENT-READ｜连接恢复门禁的旧连接收包互等
+
+- 原始证据：57d42055干净Release完整规则6959项中6958通过、1失败，零跳过；唯一失败为`RealWebSocketReconnectReplayAndRecipientProjectionsConvergeWithoutPrivateLeaks`的第二玩家接管。冻结DLL单独重跑仍在旧连接读取通知时失败，原TRX保留。
+- 根因：重复requestId会向双方发送不可合并的完整状态；测试旧客户端暂停读取，先等新连接完成握手再读取旧连接通知。新握手同步等待旧出站队列发送通知，积压状态帧触发5秒发送超时并Abort，形成测试制造的背压互等。只提前启动失败点的旧连接读取即在2秒内通过；不是存储源码回归，不修改生产发送期限或允许忽略通知。
+- 同型扫描：`rg -n 'ConnectAsync\(endpoint|ReceiveTypeAsync\("sessionSuperseded"' TwelveLegions.Tests/WebSocketTransportRecoveryAdversarialTests.cs`匹配第一玩家、第二玩家和观战者三处，统一使用拥有取消/异常观察责任的ReplaceAsync。握手失败释放局部socket；旧读取失败也释放已建立的新连接。
+- 回滚守卫：保留原通知原因、generation、完整恢复顺序、幂等、私密信息和陈旧增量拒绝断言，不改产品协议或卡池。专项及完整Batch/Release的最终结果以login-memory-20261011/final-acceptance.json为准，不把原失败覆盖成绿色。
+- 最终三项WebSocket专项通过，独立只读复核确认三条任务/资源所有权路径闭合，无新增阻断；完整Batch与提交级Release接续。11:50已从停写副本唯一识别失败探测窗口的Admin测试会话，经正式接口精确撤销并独立读回，再撤销清理会话；原503失败回执继续保留，未触碰其他会话。
+- 最终完整Batch规则6959/6959、失败跳过0，监督回执test-3589c3838bb344fda57fd983e25ce272；原失败保留。存储八源逐SHA无漂移，原完整平台1205结果仍仅绑定该存储源码。提交级Release与正式上线另验。
+
 ## STORAGE-20261011-ADMIN-SNAPSHOT｜后台完整字符串快照导致登录存储保护（已批准，验证中）
 
+- 11:27原0e/3GiB再次进入不可恢复屏障，最新HTTP登录曾成功但认证WSS超时、专用会话撤销503；旧版没有记录原始双回滚异常，不能直接认定本次一定是OOM。11:31停服结果timeout但PID0，完整保留1225文件4752487571B，双库quick_check通过；11:34原0e/原3GiB新PID17934恢复，随后13项公网及认证WSS通过，本次新会话已撤销。失败测试会话的先前撤销失败仍保留。此结果再次证明容量补偿只属临时恢复，补丁尚未部署。
 - 最终共享mirror修复：新增PreparedMirror统一UTF8流式序列化、增量SHA/字节计数和gzip；五条兼容镜像调用全迁移。JSON字节/缩进与旧格式一致，预提交不写镜像磁盘；commit后从压缩体解压到GUID temp，验证长度/SHA后替换。原子事务、回滚/session发布时点、CAS胜败及镜像非权威降级不变；schema8反向迁移完整备份/pending写前持久化语义另属协议，保持原实现。
 - 最终回归：PlatformMirrorMemoryTests覆盖12MiB分配预算、Unicode旧字节/哈希、gzip/校验损坏、precommit/CAS loser不落盘和postcommit真实目录冲突仍可从SQLite恢复；5新项、226相关与完整平台1205项均过、0失败跳过。Main独立审查五路径与全部diff接受。旧Admin运行时RED、新Mirror类型缺失编译RED、被取消的中间Release和环境准备失败均保留。
 - 容量边界：最终机外Windows .NET10以同发布DLL、Windows SQLite原生库、显式1.5GiB GC预算/4堆重跑两版50轮；峰1655197696→1429958656B，平均分配1083655019→908136487B，耗时1609.5→1686.1ms，双库快速及FK过。最新原失败结算副本仅调用既有drain/verify正常applied、payload不变、二次确认0重复，并能鉴权。最终Linux r2为保护宿主余量主动停止，不能冒称该补丁已完成Linux长期容量验收；3GiB容量补偿与减峰修复共同降低本次已知风险，不自动关闭其他未验证Bug。
