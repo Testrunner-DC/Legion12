@@ -1719,21 +1719,21 @@ public sealed class PromptNarrativeMatrixTests
 
         game.State.PendingPrompts.Remove(prompt);
         ContinueS2Faction(game, perseusCase.Item, prompt, perseusCase.FirstTarget.InstanceId);
-        Assert.Equal(game.State.Round + 1, perseusCase.FirstTarget.CannotUntapUntilRound);
-        Assert.True(perseusCase.SecondTarget.CannotUntapUntilRound < game.State.Round + 1);
+        Assert.True(perseusCase.FirstTarget.CannotUntapAtNextReset);
+        Assert.False(perseusCase.SecondTarget.CannotUntapAtNextReset);
 
         var declineCase = BeginPerseusPromotionPrompt(202609371 + controller, controller, "decline");
         declineCase.Game.State.PendingPrompts.Remove(declineCase.Prompt);
         ContinueS2Faction(declineCase.Game, declineCase.Item, declineCase.Prompt, "skip");
-        Assert.True(declineCase.FirstTarget.CannotUntapUntilRound < declineCase.Game.State.Round + 1);
-        Assert.True(declineCase.SecondTarget.CannotUntapUntilRound < declineCase.Game.State.Round + 1);
+        Assert.False(declineCase.FirstTarget.CannotUntapAtNextReset);
+        Assert.False(declineCase.SecondTarget.CannotUntapAtNextReset);
 
         var staleCase = BeginPerseusPromotionPrompt(202609373 + controller, controller, "stale");
         staleCase.Game.State.Players[1 - controller].Field[0][0] = null;
         staleCase.Game.State.PendingPrompts.Remove(staleCase.Prompt);
         ContinueS2Faction(staleCase.Game, staleCase.Item, staleCase.Prompt,
             staleCase.FirstTarget.InstanceId);
-        Assert.True(staleCase.SecondTarget.CannotUntapUntilRound < staleCase.Game.State.Round + 1);
+        Assert.False(staleCase.SecondTarget.CannotUntapAtNextReset);
         Assert.Empty(staleCase.Game.State.PendingPrompts);
     }
 

@@ -121,9 +121,15 @@ function moraleState(card: MoraleResource) {
 function isBlackLotusMorale(card: MoraleResource) {
   return card.resourceType === 'black-lotus'
 }
-function moraleLocked(card: MoraleResource) {
+function moraleLockLabel(card: MoraleResource) {
+  if (card.cannotUntapAtNextReset) return '下个重置阶段无法转为活跃'
   const lockedUntilRound = card.cannotUntapUntilRound ?? 0
   return lockedUntilRound > 0 && lockedUntilRound >= (props.round ?? 0)
+    ? '重置阶段无法转为活跃'
+    : null
+}
+function moraleLocked(card: MoraleResource) {
+  return moraleLockLabel(card) !== null
 }
 function moraleLabel(card: MoraleResource) {
   const state = moraleState(card)
@@ -134,7 +140,8 @@ function moraleLabel(card: MoraleResource) {
     'rested-god-power': '休整神力',
   }
   const label = isBlackLotusMorale(card) ? `黑色莲花（${card.tapped ? '休整' : '活跃'}）` : labels[state]
-  return moraleLocked(card) ? `${label}；本轮重置阶段无法转为活跃` : label
+  const lockLabel = moraleLockLabel(card)
+  return lockLabel ? `${label}；${lockLabel}` : label
 }
 const temporaryMoraleCount = computed(() => Math.max(0, Math.floor(props.player.temporaryMorale ?? 0)))
 const activeMorale = computed(() => props.player.morale.filter(card => !card.tapped).length + temporaryMoraleCount.value)
@@ -492,7 +499,7 @@ function beginCardAbility(card: Card) {
         <img v-else-if="isBlackLotusMorale(morale)" class="black-lotus-logo" :src="blackLotusLogoUrl" alt="黑色莲花" />
         <img v-else-if="factionLogoUrls[player.faction]" :src="factionLogoUrls[player.faction]" :alt="player.faction" />
         <span v-if="moraleLocked(morale)" class="morale-lock-icon" data-ui-contract="active-morale-lock"
-          role="img" title="本轮重置阶段无法转为活跃" aria-label="本轮重置阶段无法转为活跃"></span>
+          role="img" :title="moraleLockLabel(morale) ?? undefined" :aria-label="moraleLockLabel(morale) ?? undefined"></span>
       </button>
       <!-- On a phone the entire visible morale block opens one picker.  Individual
            on-board circles no longer make an immediate payment selection. -->

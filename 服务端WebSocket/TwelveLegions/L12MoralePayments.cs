@@ -92,7 +92,7 @@ public sealed partial class L12GameEngine
             var resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(morale.CardId)?.ResourceType
                 ?? (morale.IsGodPower ? "god-power" : "morale");
             var canonicalCardId = _catalog.MoraleIdentities.CanonicalDeckCardId(morale.CardId);
-            return $"morale:{resourceType}:{canonicalCardId}:{morale.CannotUntapUntilRound}";
+            return $"morale:{resourceType}:{canonicalCardId}:{morale.CannotUntapAtNextReset}:{morale.CannotUntapUntilRound}";
         }
         // 场上陵墓守卫的位置、兵力及附加状态都可能影响后续效果；即使同名也不能
         // 自动替玩家选定其中一张。

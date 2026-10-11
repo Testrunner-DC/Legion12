@@ -2510,7 +2510,7 @@ public sealed partial class L12GameEngine
                 if (chosen[0] != "skip")
                 {
                     var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                    if (target is { Tapped: true }) target.CannotUntapUntilRound = Math.Max(target.CannotUntapUntilRound, State.Round + 1);
+                    if (target is { Tapped: true }) LockUntilNextReset(target);
                 }
                 FinishStackItem(item);
                 return true;

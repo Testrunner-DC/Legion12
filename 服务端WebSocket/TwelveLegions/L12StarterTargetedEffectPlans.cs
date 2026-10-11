@@ -463,7 +463,7 @@ public sealed partial class L12GameEngine
                 {
                     var morale = opponent.Morale.FirstOrDefault(card => card.InstanceId == targetId && card.Tapped);
                     if (morale is null) continue;
-                    morale.CannotUntapUntilRound = Math.Max(morale.CannotUntapUntilRound, State.Round + 1);
+                    LockUntilNextReset(morale);
                     AddEvent("effect", item.Controller,
                         "所选士气下个重置阶段无法转为活跃");
                     resolved++;

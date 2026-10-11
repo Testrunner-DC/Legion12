@@ -173,7 +173,8 @@ public sealed class AtomicReviewBatch6KBRegressionTests
             Tapped = true,
         };
         player.Morale.Add(morale);
-        var beforeLock = morale.CannotUntapUntilRound;
+        var beforeNextResetLock = morale.CannotUntapAtNextReset;
+        var beforeLegacyLock = morale.CannotUntapUntilRound;
         var item = new L12StackItem
         {
             StackItemId = $"batch6kb-kaba-stack-{staleBeforeSettlement}",
@@ -200,14 +201,16 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         {
             Assert.Contains(kaba, player.Graveyard);
             Assert.Null(player.Field[0][0]);
-            Assert.Equal(beforeLock, morale.CannotUntapUntilRound);
+            Assert.Equal(beforeNextResetLock, morale.CannotUntapAtNextReset);
+            Assert.Equal(beforeLegacyLock, morale.CannotUntapUntilRound);
             Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
                 && entry.Text.Contains("不执行下个重置阶段的士气锁定", StringComparison.Ordinal));
         }
         else
         {
             Assert.Same(kaba, player.Field[0][0]);
-            Assert.Equal(game.State.Round + 1, morale.CannotUntapUntilRound);
+            Assert.True(morale.CannotUntapAtNextReset);
+            Assert.Equal(beforeLegacyLock, morale.CannotUntapUntilRound);
         }
     }
 

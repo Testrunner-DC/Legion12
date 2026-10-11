@@ -324,9 +324,9 @@ public sealed partial class L12GameEngine
             {
                 var targetId = CompositeDeclared(item, "lockTarget").SingleOrDefault();
                 var legion = FindOnField(enemy, targetId, out _, out _);
-                if (legion is not null) legion.CannotUntapUntilRound = State.Round + 1;
+                if (legion is not null) LockUntilNextReset(legion);
                 var morale = enemy.Morale.FirstOrDefault(candidate => candidate.InstanceId == targetId);
-                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
+                if (morale is not null) LockUntilNextReset(morale);
                 FinishStackItem(item);
                 return true;
             }
@@ -1224,7 +1224,7 @@ public sealed partial class L12GameEngine
                             candidate => candidate.CardId == "S01-0213"))
                     {
                         var lockedMorale = player.Morale.FirstOrDefault(card => card.Tapped);
-                        if (lockedMorale is not null) lockedMorale.CannotUntapUntilRound = State.Round + 1;
+                        if (lockedMorale is not null) LockUntilNextReset(lockedMorale);
                     }
                     else
                     {

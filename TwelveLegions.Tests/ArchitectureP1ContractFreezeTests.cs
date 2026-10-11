@@ -32,6 +32,26 @@ public sealed class ArchitectureP1ContractFreezeTests
     }
 
     [Fact]
+    public void NextResetMoraleFlagIsTheOnlyAdditiveChangeToThePriorPostCommandProjection()
+    {
+        var game = CreateEngine();
+        CompleteMulligan(game);
+        var snapshotJson = JsonSerializer.Serialize(game.SnapshotFor(0), WireJson);
+        using var snapshot = JsonDocument.Parse(snapshotJson);
+        var morale = snapshot.RootElement.GetProperty("players").EnumerateArray()
+            .SelectMany(player => player.GetProperty("morale").EnumerateArray()).ToArray();
+        Assert.NotEmpty(morale);
+        Assert.All(morale, token => Assert.False(token.GetProperty("cannotUntapAtNextReset").GetBoolean()));
+
+        // This golden scenario has no applied lock. Prove the approved wire extension
+        // leaves every prior byte intact; do not weaken the full manifest assertion.
+        const string additiveFalseFlag = ",\"cannotUntapAtNextReset\":false";
+        var priorProjection = snapshotJson.Replace(additiveFalseFlag, "", StringComparison.Ordinal);
+        Assert.Equal(morale.Length, (snapshotJson.Length - priorProjection.Length) / additiveFalseFlag.Length);
+        Assert.Equal("e6225a4394171267613382279fa6a8af5f1de97d685b729db4093cbd94015ec7", Sha256(priorProjection));
+    }
+
+    [Fact]
     public void CheckpointRestoreKeepsTheSameStateEventsAndRecipientProjections()
     {
         var game = CreateEngine();

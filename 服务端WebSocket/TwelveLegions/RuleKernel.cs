@@ -385,6 +385,7 @@ public static class L12S2ZoneOps
         promoted.SummonRound = foundation.SummonRound;
         promoted.LastMovedTurn = foundation.LastMovedTurn;
         promoted.LastCavalryMoveTurn = foundation.LastCavalryMoveTurn;
+        promoted.CannotUntapAtNextReset |= foundation.CannotUntapAtNextReset;
         promoted.CannotUntapUntilRound = Math.Max(promoted.CannotUntapUntilRound, foundation.CannotUntapUntilRound);
         promoted.CannotRespondUntilRound = Math.Max(promoted.CannotRespondUntilRound, foundation.CannotRespondUntilRound);
         promoted.SetRound = foundation.SetRound;

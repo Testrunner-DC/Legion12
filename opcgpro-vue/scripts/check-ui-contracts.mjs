@@ -597,15 +597,20 @@ const contracts = [
     && board.includes('font-size:var(--l12-mobile-pile-count-font) !important')
     && board.includes('font-size:var(--l12-mobile-resource-font) !important')
     && board.includes('min-height:var(--l12-mobile-action-h) !important'), '移动主宰血量、牌堆数字、士气摘要与场面操作按钮必须从卡牌或逻辑视口比例令牌取值，不得恢复为各自固定尺寸'],
-  [l12Types.includes('cannotUntapUntilRound?: number')
+  [l12Types.includes('cannotUntapAtNextReset?: boolean')
+    && l12Types.includes('cannotUntapUntilRound?: number')
+    && playerMat.includes('function moraleLockLabel(card: MoraleResource)')
+    && playerMat.includes('if (card.cannotUntapAtNextReset)')
     && playerMat.includes('function moraleLocked(card: MoraleResource)')
     && playerMat.includes('lockedUntilRound > 0 && lockedUntilRound >= (props.round ?? 0)')
     && playerMat.includes('data-ui-contract="active-morale-lock"')
     && playerMat.includes('v-if="moraleLocked(morale)"')
-    && playerMat.includes('本轮重置阶段无法转为活跃')
+    && playerMat.includes('下个重置阶段无法转为活跃')
+    && playerMat.includes('重置阶段无法转为活跃')
+    && playerMat.includes(':title="moraleLockLabel(morale) ?? undefined"')
     && playerMat.includes('pointer-events:none')
     && playerMat.includes('.morale-orb.selected .morale-lock-icon')
-    && playerMat.includes('.morale-orb.payable .morale-lock-icon'), '士气锁图标必须使用现有轮次投影只显示当前仍有效的 CannotUntapUntilRound，不拦截点击且不得覆盖支付高亮'],
+    && playerMat.includes('.morale-orb.payable .morale-lock-icon'), '士气锁图标必须优先显示下一实际重置锁，同时保留旧轮次锁投影，不拦截点击且不得覆盖支付高亮'],
   [prompt.includes("const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])")
     && prompt.includes("explicitLabel === '不响应' || explicitLabel === '不发动'")
     && prompt.includes(':data-ui-contract="isDeclineChoice(choice) ? \'minimum-decline-action\' : undefined"')

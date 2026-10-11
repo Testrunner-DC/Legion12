@@ -204,6 +204,9 @@ public sealed class L12CardInstance
     /// <summary>本回合该军团进攻主宰时追加的伤害。</summary>
     public int MasterAttackDamageBonus { get; set; }
     public int MasterAttackDamageBonusUntilTurn { get; set; } = -1;
+    /// <summary>只阻止所属玩家的下一个实际重置阶段；不阻止效果使其转为活跃。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CannotUntapAtNextReset { get; set; }
     public int CannotUntapUntilRound { get; set; }
     public int CannotRespondUntilRound { get; set; }
     public int SetRound { get; set; }
@@ -328,6 +331,9 @@ public sealed class L12MoraleCard
     // 奥林匹斯士气的卡面与活跃/休整是两个独立维度：
     // false = 士气面，true = 神力面；Tapped 只描述活跃/休整。
     public bool IsGodPower { get; set; }
+    /// <summary>只阻止所属玩家的下一个实际重置阶段。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CannotUntapAtNextReset { get; set; }
     public int CannotUntapUntilRound { get; set; }
 }
 

@@ -222,15 +222,15 @@ public sealed class StarterTargetedBatch2BRegressionTests
         second.Tapped = false;
         PassResponses(game);
 
-        Assert.Equal(game.State.Round + 1, first.CannotUntapUntilRound);
-        Assert.Equal(0, second.CannotUntapUntilRound);
+        Assert.True(first.CannotUntapAtNextReset);
+        Assert.False(second.CannotUntapAtNextReset);
+        Assert.Equal(0, first.CannotUntapUntilRound);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("其余对象继续结算", StringComparison.Ordinal));
         first.Tapped = true;
-        game.State.Round = first.CannotUntapUntilRound;
         Invoke(game, "Untap", opponent);
         Assert.True(first.Tapped);
-        game.State.Round++;
+        Assert.False(first.CannotUntapAtNextReset);
         Invoke(game, "Untap", opponent);
         Assert.False(first.Tapped);
 
@@ -242,7 +242,7 @@ public sealed class StarterTargetedBatch2BRegressionTests
         Queue(one, oneSource);
         ChooseMany(one, only.InstanceId);
         PassResponses(one);
-        Assert.Equal(one.State.Round + 1, only.CannotUntapUntilRound);
+        Assert.True(only.CannotUntapAtNextReset);
     }
 
     [Fact]
@@ -261,6 +261,7 @@ public sealed class StarterTargetedBatch2BRegressionTests
         morale.Tapped = false;
         PassResponses(game);
 
+        Assert.False(morale.CannotUntapAtNextReset);
         Assert.Equal(0, morale.CannotUntapUntilRound);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect-failed"
             && entry.Text.Contains("伊丽莎白一世", StringComparison.Ordinal)

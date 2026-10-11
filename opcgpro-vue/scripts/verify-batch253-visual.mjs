@@ -441,7 +441,7 @@ try {
      return {pointerEvents:style.pointerEvents,title:element.getAttribute('title'),overlapsIcon:lockRect.left<iconRect.right&&lockRect.right>iconRect.left&&lockRect.top<iconRect.bottom&&lockRect.bottom>iconRect.top}
     })
     assert.equal(geometry.pointerEvents,'none',scenario.name+' lock must not intercept morale clicks')
-    assert.equal(geometry.title,'本轮重置阶段无法转为活跃',scenario.name+' lock tooltip must describe reset-phase behavior')
+    assert.equal(geometry.title,'重置阶段无法转为活跃',scenario.name+' legacy round lock tooltip must describe reset-phase behavior')
     assert.equal(geometry.overlapsIcon,false,scenario.name+' lock must not cover the morale symbol')
    }
   }

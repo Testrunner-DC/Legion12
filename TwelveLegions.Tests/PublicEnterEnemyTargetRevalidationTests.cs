@@ -253,8 +253,9 @@ public sealed class PublicEnterEnemyTargetRevalidationTests
         game.State.Players[1].Field[0][1] = transformed;
         PassResponses(game);
 
-        Assert.Equal(game.State.Round + 1, first.CannotUntapUntilRound);
-        Assert.Equal(0, transformed.CannotUntapUntilRound);
+        Assert.True(first.CannotUntapAtNextReset);
+        Assert.False(transformed.CannotUntapAtNextReset);
+        Assert.Equal(0, first.CannotUntapUntilRound);
         Assert.Contains(game.State.Events, entry => entry.Type == "effect"
             && entry.Text.Contains("已声明对象在逆结算后失效", StringComparison.Ordinal));
         Assert.DoesNotContain(game.State.Events, entry => entry.Type == "effect-result"

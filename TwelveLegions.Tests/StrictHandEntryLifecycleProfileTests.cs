@@ -402,7 +402,7 @@ public sealed class StrictHandEntryLifecycleProfileTests
         PassResponses(game);
         player = game.State.Players[0];
         Assert.Equal(kaba.InstanceId, player.Field[0][0]?.InstanceId);
-        Assert.Equal(game.State.Round + 1, Assert.Single(player.Morale).CannotUntapUntilRound);
+        Assert.True(Assert.Single(player.Morale).CannotUntapAtNextReset);
     }
 
     [Fact]

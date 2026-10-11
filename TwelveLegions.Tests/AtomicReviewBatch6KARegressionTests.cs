@@ -611,19 +611,17 @@ public sealed class AtomicReviewBatch6KARegressionTests
         player.Hand.Add(plague);
         opponent.Morale.Add(target);
         AddReadyMorale(player, plague.CurrentCost);
-        var resolvingRound = game.State.Round;
-
         var play = game.Handle(0, new L12Command("playCard", plague.InstanceId));
         Assert.True(play.Accepted, play.Error);
         Resolve(game, target.InstanceId);
         PassResponses(game);
 
-        Assert.Equal(resolvingRound + 1, target.CannotUntapUntilRound);
-        game.State.Round = resolvingRound + 1;
+        Assert.True(target.CannotUntapAtNextReset);
+        Assert.Equal(0, target.CannotUntapUntilRound);
         Invoke(game, "Untap", opponent);
         Assert.True(target.Tapped);
+        Assert.False(target.CannotUntapAtNextReset);
 
-        game.State.Round = resolvingRound + 2;
         Invoke(game, "Untap", opponent);
         Assert.False(target.Tapped);
     }

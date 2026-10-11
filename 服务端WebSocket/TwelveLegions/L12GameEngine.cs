@@ -988,8 +988,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             effects.Add(new("power-up", $"临时兵力+{positive}", string.Join('、', activeTimed.Where(item => item.TroopsDelta > 0).Select(item => item.Source).Distinct())));
         if (negative < 0)
             effects.Add(new("power-down", $"临时兵力{negative}", string.Join('、', activeTimed.Where(item => item.TroopsDelta < 0).Select(item => item.Source).Distinct())));
-        if (card.CannotUntapUntilRound >= State.Round || card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
-            effects.Add(new("lock", "暂时无法转为活跃"));
+        if (card.CannotUntapAtNextReset)
+            effects.Add(new("lock", "下个重置阶段无法转为活跃"));
+        else if (card.CannotUntapUntilRound >= State.Round)
+            effects.Add(new("lock", "重置阶段无法转为活跃"));
+        if (card.CannotReadyByEffectUntilTurn >= State.TurnSerial)
+            effects.Add(new("lock", "本回合无法因效果转为活跃"));
         if (L12StructuredCardRules.CannotAttack(card, row)) effects.Add(new("disabled", "无法进攻"));
         if (L12StructuredCardRules.CannotSupport(card, row)) effects.Add(new("disabled", "无法支援"));
         if (row == 1 && controller.BackRowCannotSupport) effects.Add(new("disabled", "后排军团无法支援"));
@@ -1494,7 +1498,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (count <= 0 || eligible.Length <= count) return false;
         // 返还对象会恢复为活跃并清除 CannotUntap 锁；但若候选卡号或锁定状态不同，
         // 自动替玩家选牌会改变“哪一张未返还士气仍留在场上”的后续结果，必须询问。
-        return eligible.Select(card => $"{card.Tapped}:{card.IsGodPower}:{card.CardId}:{card.CannotUntapUntilRound}")
+        return eligible.Select(card => $"{card.Tapped}:{card.IsGodPower}:{card.CardId}:{card.CannotUntapAtNextReset}:{card.CannotUntapUntilRound}")
             .Distinct(StringComparer.Ordinal).Skip(1).Any();
     }
 
@@ -1531,6 +1535,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             player.Morale.Remove(card);
             card.Tapped = false;
             card.IsGodPower = false;
+            card.CannotUntapAtNextReset = false;
             card.CannotUntapUntilRound = 0;
             ReturnMoraleCardToDestination(player, card);
         }
@@ -1567,6 +1572,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             card.CardId,
             card.Tapped,
             card.IsGodPower,
+            card.CannotUntapAtNextReset,
             card.CannotUntapUntilRound,
             resourceType = L12StructuredCardSemantics.MoraleZoneResourceRule(card.CardId)?.ResourceType
                 ?? (card.IsGodPower ? "god-power" : "morale"),
@@ -1654,12 +1660,12 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     {
         player.MasterTapped = false;
         foreach (var morale in player.Morale)
-            if (morale.CannotUntapUntilRound < State.Round) morale.Tapped = false;
+            if (CanUntapDuringReset(morale)) morale.Tapped = false;
         foreach (var row in player.Field)
             foreach (var card in row)
-                if (card is not null && card.CannotUntapUntilRound < State.Round) card.Tapped = false;
-        if (player.Relic is not null && player.Relic.CannotUntapUntilRound < State.Round) player.Relic.Tapped = false;
-        if (player.MasterLegionState is { } master && master.CannotUntapUntilRound < State.Round)
+                if (card is not null && CanUntapDuringReset(card)) card.Tapped = false;
+        if (player.Relic is not null && CanUntapDuringReset(player.Relic)) player.Relic.Tapped = false;
+        if (player.MasterLegionState is { } master && CanUntapDuringReset(master))
             master.Tapped = false;
     }
 
@@ -2123,6 +2129,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         card.AttackOnlyTroopsBonusUntilTurn = -1;
         card.MasterAttackDamageBonus = 0;
         card.MasterAttackDamageBonusUntilTurn = -1;
+        card.CannotUntapAtNextReset = false;
         card.CannotUntapUntilRound = 0;
         card.CannotRespondUntilRound = 0;
         card.SetRound = 0;

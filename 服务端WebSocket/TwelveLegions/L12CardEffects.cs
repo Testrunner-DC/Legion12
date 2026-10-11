@@ -412,7 +412,7 @@ public sealed partial class L12GameEngine
                 if (State.ActivePlayer == item.Controller) { FinishStackItem(item); return; }
                 var targetId = PublicTriggerDeclared(item, "moraleTarget");
                 var morale = State.Players[1 - item.Controller].Morale.FirstOrDefault(card => card.InstanceId == targetId);
-                if (morale is not null) morale.CannotUntapUntilRound = State.Round + 1;
+                if (morale is not null) LockUntilNextReset(morale);
                 else AddEvent("effect-cancelled", item.Controller,
                     "花木兰已声明的对方士气目标在结算时失效；仅取消该段", card);
                 FinishStackItem(item); return;
