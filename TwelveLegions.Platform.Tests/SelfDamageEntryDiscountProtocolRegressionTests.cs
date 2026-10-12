@@ -34,9 +34,10 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
         var root = Path.Combine(Path.GetTempPath(), "l12-self-damage-protocol",
             $"{cardId}-{actor}-{restore}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
+        MatchRecorder? recorder = null;
         try
         {
-            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
             var manager = new L12RoomManager(Catalog, recorder, utcNow: () => Now,
                 maintenanceSandboxFenceActive: () => false);
@@ -117,8 +118,7 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            await CleanupFixtureAsync(root, recorder);
         }
     }
 
@@ -130,9 +130,10 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
         var root = Path.Combine(Path.GetTempPath(), "l12-self-damage-thor-protocol",
             $"{actor}-{restore}-{choice}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(root);
+        MatchRecorder? recorder = null;
         try
         {
-            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
             await recorder.InitializeAsync();
             var manager = new L12RoomManager(Catalog, recorder, utcNow: () => Now,
                 maintenanceSandboxFenceActive: () => false);
@@ -222,10 +223,138 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            if (Directory.Exists(root)) Directory.Delete(root, true);
+            await CleanupFixtureAsync(root, recorder);
         }
     }
+
+    [Fact]
+    public async Task FixtureCleanupRetriesTransientIoFailureAndThenSucceeds()
+    {
+        var attempts = 0;
+        var delays = new List<TimeSpan>();
+        await DeleteOwnedFixtureDirectoryAsync(OwnedFixturePath("l12-self-damage-protocol"),
+            _ => true,
+            (_, _) =>
+            {
+                attempts++;
+                if (attempts < 3) throw new IOException("synthetic transient handle");
+            },
+            delay => { delays.Add(delay); return Task.CompletedTask; });
+
+        Assert.Equal(3, attempts);
+        Assert.Equal([TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(80)], delays);
+    }
+
+    [Fact]
+    public async Task FixtureCleanupRethrowsPersistentIoFailureOnFifthAttempt()
+    {
+        var attempts = 0;
+        var delays = new List<TimeSpan>();
+        var error = await Assert.ThrowsAsync<IOException>(() =>
+            DeleteOwnedFixtureDirectoryAsync(OwnedFixturePath("l12-self-damage-thor-protocol"),
+                _ => true,
+                (_, _) => { attempts++; throw new IOException($"synthetic persistent handle {attempts}"); },
+                delay => { delays.Add(delay); return Task.CompletedTask; }));
+
+        Assert.Equal("synthetic persistent handle 5", error.Message);
+        Assert.Equal(5, attempts);
+        Assert.Equal([TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(80),
+            TimeSpan.FromMilliseconds(120), TimeSpan.FromMilliseconds(160)], delays);
+    }
+
+    [Fact]
+    public async Task FixtureCleanupDoesNotRetryOrSwallowNonIoFailure()
+    {
+        var attempts = 0;
+        var delays = 0;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            DeleteOwnedFixtureDirectoryAsync(OwnedFixturePath("l12-self-damage-protocol"),
+                _ => true,
+                (_, _) => { attempts++; throw new UnauthorizedAccessException("synthetic authorization failure"); },
+                _ => { delays++; return Task.CompletedTask; }));
+
+        Assert.Equal(1, attempts);
+        Assert.Equal(0, delays);
+    }
+
+    [Fact]
+    public async Task FixtureCleanupRejectsOutOfScopePathBeforeInspectingOrDeletingIt()
+    {
+        var inspections = 0;
+        var deletes = 0;
+        var outside = Path.Combine(Path.GetTempPath(), "l12-self-damage-protocol-unowned",
+            $"case-{Guid.NewGuid():N}");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            DeleteOwnedFixtureDirectoryAsync(outside,
+                _ => { inspections++; return true; },
+                (_, _) => deletes++,
+                _ => Task.CompletedTask));
+
+        Assert.Equal(0, inspections);
+        Assert.Equal(0, deletes);
+    }
+
+    private static async Task CleanupFixtureAsync(string root, MatchRecorder? recorder)
+    {
+        var target = ValidateOwnedFixtureRoot(root);
+        if (recorder is not null) await recorder.DisposeAsync();
+        using var ownedPool = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(target, "matches.db"),
+        }.ToString());
+        SqliteConnection.ClearPool(ownedPool);
+        await DeleteOwnedFixtureDirectoryAsync(target);
+    }
+
+    private static async Task DeleteOwnedFixtureDirectoryAsync(string root,
+        Func<string, bool>? directoryExists = null,
+        Action<string, bool>? deleteDirectory = null,
+        Func<TimeSpan, Task>? delayAsync = null)
+    {
+        var target = ValidateOwnedFixtureRoot(root);
+        directoryExists ??= Directory.Exists;
+        deleteDirectory ??= Directory.Delete;
+        delayAsync ??= Task.Delay;
+        if (!directoryExists(target)) return;
+
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                deleteDirectory(target, true);
+                return;
+            }
+            catch (IOException) when (attempt < 4)
+            {
+                await delayAsync(TimeSpan.FromMilliseconds(40 * (attempt + 1)));
+            }
+        }
+    }
+
+    private static string ValidateOwnedFixtureRoot(string root)
+    {
+        var target = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
+        var parent = Directory.GetParent(target)?.FullName;
+        var temp = Path.GetFullPath(Path.GetTempPath());
+        var ownedParents = new[]
+        {
+            Path.GetFullPath(Path.Combine(temp, "l12-self-damage-protocol")),
+            Path.GetFullPath(Path.Combine(temp, "l12-self-damage-thor-protocol")),
+        };
+        var leaf = Path.GetFileName(target);
+        var separator = leaf.LastIndexOf('-');
+        var suffix = separator >= 0 ? leaf[(separator + 1)..] : string.Empty;
+        if (parent is null
+            || !ownedParents.Contains(parent, StringComparer.OrdinalIgnoreCase)
+            || suffix.Length != 32
+            || suffix.Any(character => !Uri.IsHexDigit(character)))
+            throw new InvalidOperationException("self-damage protocol fixture cleanup scope mismatch");
+        return target;
+    }
+
+    private static string OwnedFixturePath(string parent)
+        => Path.Combine(Path.GetTempPath(), parent, $"synthetic-{Guid.NewGuid():N}");
 
     private static void AssertActorPromptCount(IReadOnlyList<OutgoingMessage> messages,
         Guid actorSession, int expected)

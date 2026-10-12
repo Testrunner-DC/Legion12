@@ -2,6 +2,8 @@
 
 ## BUG-20261012-SELF-DAMAGE-CANCEL｜自伤减费首层取消与拒绝后提示同步（本地Batch已验，提交级状态见唯一回执）
 
+- Release首轮06028997规则7192过，平台1299过1失败0跳过：S01-0304/seat0/direct新测试所有行为断言后，finally删除matches.db触发IOException。只修该测试资源清理：显式Dispose、精确DataSource ClearPool、当前Temp下两个精确父目录及GUID叶子守卫，40/80/120/160ms有界重试，最终与非IO异常仍传播。不重试卡效或断言、不改产品。4保护及完整类36两轮通过，Main独立4与6证据重核通过；原失败日志F0227A9B、TRX6D8C7D81和DB BE4EE171保留，真实持有者未知。需要新完整Release，不称产品泄漏根治。
+
 - 原反馈BUG-20260921-27118d48。匹配旧AUDIT-20260920-HAND-PLAY-SELF-DAMAGE-DISCOUNT及9月11日六卡结构同源修复：旧证据覆盖可拒绝自伤、最后1血和第二层士气付款取消，却未覆盖第一层normal-cost付不起后的房间广播。Main原版同DLL独立4场：索尔1血6士气，no移除询问却Revision1→1，RoomManager只有actionRejected、0gameState；现网net.ts拒绝分支不更新game。直接引擎后发endTurn能继续，不能用来否定原卡窗报告。
 - 用户明确批准支付前取消及6卡同类核查。沿原play-cost-choice追加独立cancel，保留no正常费用；失败且仍可出牌时复用原RetryPrePlay，生成可取消的权威提示并正常增加Revision、广播；整个打出已因来源／格位／资源失效不能继续时，合法结束过期选择并广播清理，不再Reject后遗留不可见状态变化。未改RoomManager/net.ts、Journal格式、费用或已付不返规则。
 - 全324卡独立文本扫描“可对我方主宰造成1点伤害：此军团登场费用-1”，命中S01-0303传奇的拉格纳、0304无情者哈拉尔、0308血斧艾瑞克、0310齐格鲁德、0314奥尔加、S02-0303卡纽特大帝；运行入口由原SelfDamageEntryDiscount结构语义识别，不新增卡号表。扫描命令与原子封闭集合并用，不把文本扫描当逐卡运行证据。
@@ -9,7 +11,7 @@
 - 原版新规则24失败／12正常对照、平台24失败；当前关联规则134及平台32实跑通过，包含具名索尔最后1血yes/no双方及恢复8场。最终额外边界／浏览器、完整Batch／干净Release／Git仍待，不把中间Focused当整批收口。证据D盘bug-closure-continuation-20261012/next-six-evidence/group-b；Main原r7后置DTO字段误读已纠正并保留原输出，不计产品失败。不部署、不改维护、无线上Bug关闭。
 - 最终专项增量为136规则／32平台均零失败跳过；新规则44包含三种合成失效、旧形状恢复及错玩家／混合取消／陈旧ID纯拒绝。Main实际三尺寸组件点击已过，35文件重核、独立源码复核通过；原UI定位失败和DTO夹具Data路径失败均保留，非产品失败。平台是真实RoomManager与SQLite写入、合成场面注入，不是完整WebSocket／durable旧库恢复。旧Journal接受性或哈希不等价仍严格拒绝，不新增迁移或豁免。完整Batch及提交级Release／Git仍以group-b/final-acceptance.json实际生成内容为准。
 
-- 完整Batch实际7192规则／1300平台、失败跳过0、退出0；Main五源重核无漂移，主日志07BED8E0，规则／平台success监督回执均真实读回。Batch临时TRX由既有成功清理逻辑移除，专项TRX和计数回执保留；提交级Release全TRX另保存。最终Release与Git只认group-b/final-acceptance.json真实记录；UI是组件实点加真实DTO，不是网络端到端，旧Journal未证明的兼容范围不扩大。
+- 完整Batch实际7192规则／1300平台、失败跳过0、退出0；Main五源重核无漂移，主日志07BED8E0，规则／平台success监督回执均真实读回。Batch临时TRX由既有成功清理逻辑移除，专项TRX和计数回执保留；本轮Release按原可选证据预算运行所有必需测试，失败TRX保留，不能称全TRX均归档。最终Release与Git只认group-b/final-acceptance.json真实记录；UI是组件实点加真实DTO，不是网络端到端，旧Journal未证明的兼容范围不扩大。
 
 ## BUG-20261012-PROJECTED-COST｜天照与黄泉预声明费用维度（已批准，本地验收中）
 

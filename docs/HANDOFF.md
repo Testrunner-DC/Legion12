@@ -1,6 +1,11 @@
 # 十二军团简短交接
 
-## 2026-10-12 当前接续｜自伤减费完整Batch已验，提交级Release及Git接续
+## 2026-10-12 当前接续｜自伤减费Release原失败保留，测试清理补正后重验
+
+- 06028997首轮干净Release实际7192规则通过、平台1299通过1失败0跳过，后续阶段未执行；唯一失败在新协议测试finally删除matches.db，行为断言已完成。日志F0227A9B、失败TRX6D8C7D81、原数据库BE4EE171原样保留，未证明具体句柄持有者，不称产品连接泄漏已修复；该提交未推送。
+- 仅新测试夹具改显式Dispose、精确自身DataSource清池、校验独占临时目录与GUID叶子、IOException最多5次有界清理，最后失败及其他异常仍抛出，业务断言不重试。专项4及完整类36两轮通过，Main独立4通过、6证据重核和最终差异复核通过。产品源码未改；提交后重跑完整Release，实际最终结果仍以group-b/final-acceptance.json为准。不部署、不改维护。
+
+## 2026-10-12 历史接续｜自伤减费完整Batch已验，提交级Release及Git接续
 
 - 卡纽特及五同族的支付前取消／normal-cost不足提示重建已限定实现，正常费用、最后1血即判负、已付不撤销不变。五产品／测试源冻结，44新规则及关联136／32平台、Main三尺寸9次实点、35证据重核和独立源码复核通过。完整Batch实际7192规则／1300平台、失败跳过0、退出0，日志07BED8E0；旧失败和兼容限制保留。
 - Main现在只做干净提交级Release与授权Git，最终精确提交／包／远端结果统一读取D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/next-six-evidence/group-b/final-acceptance.json；该回执生成前不称完成。用户只批准本地修复验收，本轮不部署、不改维护、不提前关闭该Bug。当前状态仍在D盘current-status.json。

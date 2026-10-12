@@ -2,6 +2,8 @@
 
 ## EFFECT-20261012-SELF-DAMAGE-CANCEL｜自伤减费支付前取消与拒绝同步（本地Batch已验，提交级状态见唯一回执）
 
+- 最新增量：06028997首轮干净Release规则7192通过、平台1299通过1失败0跳过，失败只在新增夹具finally清理文件占用，完整门禁未通过、未推送。旧日志/TRX/数据库保留。仅本类测试清理补正，4保护及完整36两轮、Main独立4通过；产品不变，具体文件占用者未证。重跑完整干净Release后才同步，不能把专项绿色当整批通过。
+
 - 原反馈BUG-20260921-27118d48。ca4dec95引擎8场可继续不等于客户端可退出：实际RoomManager双方×恢复4场，选择normal-cost后费用不足，询问1→0但Revision1→1，仅actionRejected而无gameState；现网net.ts拒绝分支不更新game，旧弹框可能残留。原绿色引擎证据保留，不用来关闭本条。
 - 用户批准共享流程限定修复及同类6卡核查：支付前明确取消；支付不足不丢失询问或留下旧弹框；正常费用出牌、支付最后1血立即判负、已支付不撤回不变。P0/P1/P3不改：使用原typed prompt取消及权威命令/恢复，不以房间层盲目广播掩盖拒绝变异，不改Journal格式或绕过哈希。
 - 干净基线ca4dec952ee21c9daa863bcbe60324f009fcd64e；子任务仅L12Actions.cs、L12PromptsAndSetup.cs与两个新增Cancellation/Protocol回归文件写租约及串行Focused构建。Main持共享记录、独立审查/验收、Batch/Release/Git。证据D盘bug-closure-continuation-20261012/next-six-evidence/group-b；首交付RED/全池扫描，最终同源绿测后再收口。不部署、不改维护、不提前关闭。
