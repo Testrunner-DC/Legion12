@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261013-recovery-fanout",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "对局恢复与观战传输优化",
+  "changes": [{
+    "category": "battle",
+    "text": "减少断线恢复和开始观战时的重复传输，保留双方最新对局状态、完整恢复和旧客户端兼容。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12RoomManager.cs"]
+  }]
+}

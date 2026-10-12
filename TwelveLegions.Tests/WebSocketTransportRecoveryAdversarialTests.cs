@@ -74,6 +74,22 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(initialRevision, Revision(spectatorInitial));
             Assert.Equal(StateHash(firstInitial), StateHash(spectatorInitial));
 
+            // Real sender must commit the ordinary spectator's first packet baseline.
+            // A player's stable sync remains reliable for all, but only that player is full.
+            Assert.Equal(1, spectator.FullGameStateCount);
+            var firstFullBeforeSync = first.FullGameStateCount;
+            var secondFullBeforeSync = second.FullGameStateCount;
+            await first.SendAsync(new { type = "syncState" });
+            _ = await first.ReceiveTypeAsync("recoveryComplete");
+            secondInitial = await second.ReceiveGameAsync(state => Revision(state) == initialRevision);
+            spectatorInitial = await spectator.ReceiveGameAsync(state => Revision(state) == initialRevision);
+            Assert.Equal(firstFullBeforeSync + 1, first.FullGameStateCount);
+            Assert.Equal(secondFullBeforeSync, second.FullGameStateCount);
+            Assert.True(second.DeltaGameStateCount > 0);
+            Assert.Equal(1, spectator.FullGameStateCount);
+            Assert.Equal(1, spectator.DeltaGameStateCount);
+            Assert.Equal(StateHash(firstInitial), StateHash(spectatorInitial));
+
             var prepared = await AdvancePreparationToMulliganAsync(first, second, spectator,
                 firstInitial, secondInitial, spectatorInitial);
             firstInitial = prepared.First;

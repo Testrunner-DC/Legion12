@@ -830,7 +830,8 @@ public sealed partial class L12RoomManager
                 await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
-            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true,
+                forceFullSessionId: sessionId));
             return tournamentStartBlocked
                 ? messages.Concat(MaintenanceBlocked(sessionId, CaptureOperationsPolicy())).ToArray()
                 : messages.ToArray();
@@ -867,7 +868,8 @@ public sealed partial class L12RoomManager
                 await CompleteTournamentRoomGameAsync(room);
             var messages = BroadcastRoom(room).ToList();
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
-            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true));
+            if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true,
+                forceFullSessionId: sessionId));
             if (tournamentStartBlocked)
                 messages.AddRange(MaintenanceBlocked(sessionId, CaptureOperationsPolicy()));
             messages.Add(RecoveryComplete(session, recovered, room));
@@ -1105,7 +1107,7 @@ public sealed partial class L12RoomManager
             type = "gameState",
             spectating = true,
             state = L12KernelProjection.ForSpectator(room.Game),
-        })];
+        }, IsGameState: true, ForceFullGameState: true)];
     }
 
     public IReadOnlyList<OutgoingMessage> JoinRoom(Guid sessionId, string? roomCode)
@@ -1945,7 +1947,7 @@ public sealed partial class L12RoomManager
         => room.Sessions.Select(id => RoomStateForViewer(room, _sessions[id])).ToArray();
 
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room, bool forceCritical = false,
-        Guid? requestSessionId = null, string? requestId = null)
+        Guid? requestSessionId = null, string? requestId = null, Guid? forceFullSessionId = null)
     {
         var snapshotStartedAt = L12PerformanceMetrics.Start();
         Guid[] spectators;
@@ -1985,12 +1987,16 @@ public sealed partial class L12RoomManager
                 IsGameState: true,
                 // Reliable queue delivery and wire encoding are independent. An actionable
                 // state must not be merged/dropped, but its receiver can reconstruct a delta
-                // from its own last successfully sent baseline. Explicit sync boundaries stay full.
-                ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
+                // from its own last successfully sent baseline. Recovery is reliable for the
+                // whole room, but only its requester has an explicit full-snapshot boundary.
+                ForceFullGameState: RequiresFull(id));
         })
             .Concat(SpectatorMessages()).ToArray();
         L12PerformanceMetrics.Duration("snapshot.build", snapshotStartedAt);
         return messages;
+
+        bool RequiresFull(Guid id) => state.Phase == L12Phase.GameOver
+            || forceCritical && (forceFullSessionId is null || forceFullSessionId == id);
 
         IEnumerable<OutgoingMessage> SpectatorMessages()
         {
@@ -2044,9 +2050,8 @@ public sealed partial class L12RoomManager
                     continue;
                 }
                 yield return new OutgoingMessage(id, SpectatorPayload(referee), replaceable,
-                    IsGameState: true, ForceFullGameState: room.TournamentId is not null
-                        && room.TournamentMatchId is not null || forceCritical
-                        || state.Phase == L12Phase.GameOver);
+                    IsGameState: true, ForceFullGameState: RequiresFull(id)
+                        || room.TournamentId is not null && room.TournamentMatchId is not null);
             }
         }
     }

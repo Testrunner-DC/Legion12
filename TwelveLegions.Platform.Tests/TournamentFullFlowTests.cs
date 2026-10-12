@@ -552,6 +552,15 @@ public sealed class TournamentFullFlowTests
                 viewedPlayer => Assert.False(viewedPlayer.TryGetProperty("hand", out _)));
 
             var mixedBroadcast = await rooms.RecoveryStateWithAckAsync(hostSession);
+            Assert.All(mixedBroadcast.Where(message => message.IsGameState), message =>
+                Assert.False(message.ReplaceableGameState));
+            Assert.True(mixedBroadcast.Single(message => message.IsGameState
+                && message.SessionId == hostSession).ForceFullGameState);
+            Assert.False(mixedBroadcast.Single(message => message.IsGameState
+                && message.SessionId == playerSession).ForceFullGameState);
+            Assert.All(mixedBroadcast.Where(message => message.IsGameState
+                && (message.SessionId == refereeSession || message.SessionId == outsiderSession)),
+                message => Assert.True(message.ForceFullGameState)); // Tournament protection unchanged.
             Assert.Equal("referee", mixedBroadcast.Where(message => message.SessionId == refereeSession
                     && MessageType(message.Payload) == "gameState")
                 .Select(message => JsonSerializer.SerializeToElement(message.Payload))

@@ -489,6 +489,95 @@ public sealed class RankedWatchdogIsolationTests
         });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecoveryExpiryReliablyUpdatesPeerDeltaIncludingPersistenceFailureReload(bool failCommit)
+    {
+        await RunFixtureAsync(async fixture =>
+        {
+            var response = await fixture.AddResponseRoomAsync();
+            var sessions = ((IEnumerable<Guid>)response.Room.GetType().GetProperty("Sessions")!
+                .GetValue(response.Room)!).ToArray();
+            var original = Game(response.Room).CaptureResponseAutoCloseLease()!;
+            fixture.Now = original.DeadlineUtc.AddMilliseconds(-1);
+            var initial = (await fixture.Manager.RecoveryStateWithAckAsync(sessions[0]))
+                .Single(message => message.IsGameState && message.SessionId == sessions[1]);
+            var codec = RecoverySnapshotFanoutTests.Codec();
+            var first = await RecoverySnapshotFanoutTests.SendAsync(codec, initial);
+            var beforeRevision = Game(response.Room).State.Revision;
+            if (failCommit) fixture.Recorder.StorageFailureInjector = phase =>
+            {
+                if (phase == "before-match-command-commit") throw new IOException("synthetic recovery commit failure");
+            };
+            fixture.Now = original.DeadlineUtc;
+            var recovered = await fixture.Manager.RecoveryStateWithAckAsync(sessions[0]);
+            var games = recovered.Where(message => message.IsGameState).ToArray();
+            Assert.Equal(2, games.Length);
+            Assert.All(games, message => Assert.False(message.ReplaceableGameState));
+            Assert.True(games.Single(message => message.SessionId == sessions[0]).ForceFullGameState);
+            var peer = games.Single(message => message.SessionId == sessions[1]);
+            Assert.False(peer.ForceFullGameState);
+            var wire = await RecoverySnapshotFanoutTests.SendAsync(codec, peer);
+            Assert.True(wire.IsDelta);
+            var rebuilt = L12SnapshotWireCodec.ApplyDelta(System.Text.Json.Nodes.JsonNode.Parse(first.Payload)!.AsObject(), wire.Payload);
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
+                System.Text.Json.Nodes.JsonNode.Parse(RecoverySnapshotFanoutTests.Queue(peer).FullPayload), rebuilt));
+            Assert.Equal(failCommit ? 0 : 1, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+            if (failCommit)
+            {
+                Assert.Equal(beforeRevision, Game(response.Room).State.Revision);
+                Assert.Equal(original, Game(response.Room).CaptureResponseAutoCloseLease());
+            }
+            else Assert.True(Game(response.Room).State.Revision > beforeRevision);
+            fixture.Recorder.StorageFailureInjector = null;
+            var restored = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+            Assert.Equal(Game(response.Room).SerializeFullState(), restored.Engine.SerializeFullState());
+        });
+    }
+
+    [Fact]
+    public async Task RecoveryRefreshesPendingPreferenceForPeerAtTheSameRevisionWithoutFullFanout()
+    {
+        await RunFixtureAsync(async fixture =>
+        {
+            var response = await fixture.AddResponseRoomAsync();
+            var sessions = ((IEnumerable<Guid>)response.Room.GetType().GetProperty("Sessions")!
+                .GetValue(response.Room)!).ToArray();
+            var sessionMap = (IDictionary)typeof(L12RoomManager).GetField("_sessions",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(fixture.Manager)!;
+            var peerAccount = (string)sessionMap[sessions[1]]!.GetType().GetProperty("AccountId")!
+                .GetValue(sessionMap[sessions[1]])!;
+            var game = Game(response.Room);
+            var applied = game.ApplyResponsePreference(1, L12GameEngine.ValidOnlyResponseMode);
+            var envelope = new L12ResponsePreferenceOutboxEnvelope("pending-fanout", response.MatchId, 1,
+                peerAccount, 1, L12GameEngine.ValidOnlyResponseMode, fixture.Now);
+            await fixture.Recorder.AppendResponsePreferenceAsync(game, 1, 1,
+                JsonSerializer.Serialize(new { type = "setResponsePreference", responseMode = envelope.TargetMode }),
+                applied, envelope, null, "pending-fanout");
+            response.Room.GetType().GetProperty("CommandSequence")!.SetValue(response.Room, 1L);
+            var baseline = (IReadOnlyList<OutgoingMessage>)typeof(L12RoomManager).GetMethod("BroadcastGame",
+                BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(fixture.Manager, [response.Room, false, null, null, null])!;
+            var peerBefore = baseline.Single(message => message.SessionId == sessions[1]);
+            Assert.False(JsonSerializer.SerializeToElement(peerBefore.Payload, WireJson)
+                .GetProperty("responsePreference").GetProperty("syncPending").GetBoolean());
+            var codec = RecoverySnapshotFanoutTests.Codec();
+            var first = await RecoverySnapshotFanoutTests.SendAsync(codec, peerBefore);
+            var revision = game.State.Revision;
+            var peer = (await fixture.Manager.RecoveryStateAsync(sessions[0]))
+                .Single(message => message.IsGameState && message.SessionId == sessions[1]);
+            Assert.Equal(revision, game.State.Revision);
+            Assert.False(peer.ForceFullGameState);
+            Assert.False(peer.ReplaceableGameState);
+            var wire = await RecoverySnapshotFanoutTests.SendAsync(codec, peer);
+            Assert.True(wire.IsDelta);
+            var rebuilt = L12SnapshotWireCodec.ApplyDelta(System.Text.Json.Nodes.JsonNode.Parse(first.Payload)!.AsObject(), wire.Payload);
+            Assert.True(rebuilt["responsePreference"]!["syncPending"]!.GetValue<bool>());
+            Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
+                System.Text.Json.Nodes.JsonNode.Parse(RecoverySnapshotFanoutTests.Queue(peer).FullPayload), rebuilt));
+        });
+    }
+
     [Fact]
     public async Task FixturePhaseKeepsTheOriginalBusinessFailureWhenCleanupSucceeds()
     {

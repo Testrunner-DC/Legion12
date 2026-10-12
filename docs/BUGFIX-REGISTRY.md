@@ -1,6 +1,18 @@
 # Legion12 Bug 修复记录
 
+## NET-20261013-RECOVERY-FANOUT｜恢复全房强制全量与普通观战冷基线（批准限定本地修复）
+
+- 完整Batch7219规则/1356平台零失败跳过；产品未再变更，追加四模式真实WebSocket首包后实际同步wire断言4/4通过，包含requester新增full、peer不新增full、冷观战next仅delta以及共享hash。独立审查CLEAR，干净Release/Git/同包绑定接续，原11RED和所有既有守卫保留。
+
+- 原因：两个Recovery入口以forceCritical把可靠通知和全房full绑定；普通Spectate初包没有IsGameState，使真实发送后的codec不建立基线。修前匿名5接收者1.987MB全房full、普通观战连续full及14专项11RED均留存，非历史51GB/线上CPU归因。
+- 修复：BroadcastGame末尾可选forceFullSessionId只在两个Recovery入口传请求者；全房replaceable仍false，仅该接收者full，终局/默认forceCritical旧语义不变。Spectate初包仅补IsGameState=true/ForceFull=true，发送成功后基线沿原sender提交。赛事public/referee持续full并重新鉴权，不共享私密baseline。
+- 同型扫描覆盖全部23 forceCritical调用、3 Outgoing full构造和3测试反射：仅两Recovery收窄full，其余调用保持默认null；反射参数显式补齐，codec/队列/投影/Journal/哈希没有修改。专项19平台/28规则含真实WS通过；新增14例、expiry成功/失败重载、pending偏好sameRevision、clock sameRevision/终局、赛事flags/撤权、legacy/cold/失败首发。独立审查要求补赛事另一玩家flag，Main已补，接续复验。
+- 130普通真实位移之后匿名2～5接收者编码/逐人重建和FullState/RNG/事实不变，5人稳定同步1full+4delta约398608B；普通观战396783B首full后的普通帧490B。阶段40B54050DLL仅开发证据，最终包必须另绑定复验；不拿稳定夹具涵盖所有expiry/真实网络容量，不宣称根治或已上线。
+- 回滚守卫：保留独立可靠队列、原32/4096/90%、首包/未知基线/发送失败/旧客户端/终局与赛事观战保护；不得省略全房恢复时真实状态变化。完整Batch/干净Release/Git待最终回执，不部署、不改维护、线上Bug写0。
+
 ## NET-20261012-EVENT-WINDOW｜显式协商的完整历史窗口传输（已批准，本地完整门禁接续）
+
+- 最终7bb已验收同步：7217规则/1339平台零失败跳过、8阶段、同包8D02879F的264真实命令/严格恢复和40帧240消费组等价；包6D1596FC/双入口版本/累计14玩家项52源核验，回执AB321145。下方旧阶段796测量及待Release是历史，下一同步/观战两项已批准并另立本批。
 
 - 用户要求持续处理流量根因，并明确批准限定本地eventWindowDeltaV1实现/验收，不部署。未获批准的首个补丁被拦截且未落盘；先完成机外40帧/30窗口等价/8形状预算再取新授权。原264普通位移证据证明127→128整数组回退全量、固定128窗产生387历史变更；不是线上169KB分布或51GB历史归因。
 - 协议仅在hello双方确认deltaGameState及eventWindowDeltaV1时启用，旧客户端原形保持。服务端在接收者投影之后，仅复用与新prefix逐项JSON等价的旧suffix；baseSequences/removeFirst/完整append/resultSequences约束正安全整数、允许合法隐私间隙。零交集、历史事实引用/天灾隐私投影改变均走原diff/full。前端完整重建后才提交game，失败sync，不改变LastAction、冻结卡牌任意字段/数组多重顺序、权威State/Journal/哈希。

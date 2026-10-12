@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-13 当前接续｜事件窗口7bb已同步，批准的恢复／观战批本地验收
+
+- 恢复／观战完整Batch7219/1356零失败跳过，之后只补四模式真实WS首包next/sync实际wire及hash断言4/4过，独立复审CLEAR；Main接提交级Release。音乐Main独立raw B125B533复现退役继续下载（Edge/no-store），另待用户答复，未改产品或混入当前批。
+
+- 当前已验收产品唯一7bbd8d5806c6a20b3b1922f0a159fbcf95dcd8b0：Release7217规则/1339平台零失败跳过、8阶段，最终包8D02879F复验264命令/40帧/240消费者等价，远端精确读回；回执D盘event-window-actual/final-acceptance.json（AB321145）。不部署，旧2f/ee状态为历史。
+- 用户已批准恢复仅请求者full、全房可靠通知，及普通观战初包正确baseline。Main一处RoomManager产品源；14修前11RED、修后19平台/28规则WS通过，expiry/失败重载/sameRevision偏好与时钟/终局/赛事隐私覆盖。审查补同桌非请求玩家full=false断言；完整Batch/提交级Release及最终包待，不用开发40B54050DLL冒称最终包。
+- 匿名5接收者稳定同步约1.987MB→0.399MB、冷观战次帧490B只是可复现机制。赛事永久full/其他恢复边界/历史51GB/CPU仍不冒称根治。本轮不部署/维护/线上Bug写入，不恢复已取消自动化；其他任务仅既有授权。下方为历史。
+
 ## 2026-10-12 流量根因接续｜窗口本地通过，提交级Release待，部署暂停
 
 - 用户明确批准协商eventWindowDeltaV1限定本地实现。四产品仅codec/window helper/server hello/net；事件卡全部字段、顺序、LastAction、权威/恢复/隐私、可靠发送和全量回退不变。35后端窗口、四真实WS重连组合及计数、32实际net/27生命周期过；审查零交集边界已修并显式覆盖空基线，限定静态CLEAR。

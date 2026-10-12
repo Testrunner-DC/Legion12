@@ -45,6 +45,45 @@ public sealed class RankedClockAndIntegrityTests
         Assert.Contains(audit.Signals, signal => signal.Code == "abnormal-timeout");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RecoveryClockChangesReachPeerDeltaButTimeoutConclusionIsFullForAll(bool timeout)
+    {
+        await using var fixture = await RankedFixture.CreateAsync("recovery-wire-clock");
+        var initial = (await fixture.Manager.RecoveryStateWithAckAsync(fixture.FirstSession))
+            .Single(message => message.IsGameState && message.SessionId == fixture.SecondSession);
+        var codec = new L12SnapshotWireCodec(); codec.SetDeltaEnabled(true, true);
+        L12QueuedPayload Queue(OutgoingMessage message) => new(JsonSerializer.SerializeToUtf8Bytes(message.Payload, WebJson),
+            message.IsGameState, message.ForceFullGameState);
+        var baseline = codec.Prepare(Queue(initial)); baseline.Commit();
+        var before = MessageJson(initial);
+        fixture.Clock.UtcNow += timeout ? TimeSpan.FromMinutes(4) : TimeSpan.FromSeconds(5);
+        var messages = await fixture.Manager.RecoveryStateWithAckAsync(fixture.FirstSession);
+        var games = messages.Where(message => message.IsGameState).ToArray();
+        Assert.Equal(2, games.Length);
+        Assert.All(games, message => Assert.False(message.ReplaceableGameState));
+        Assert.True(games.Single(message => message.SessionId == fixture.FirstSession).ForceFullGameState);
+        var peer = games.Single(message => message.SessionId == fixture.SecondSession);
+        Assert.Equal(timeout, peer.ForceFullGameState);
+        var sent = codec.Prepare(Queue(peer));
+        Assert.Equal(!timeout, sent.IsDelta);
+        var rebuilt = sent.IsDelta ? L12SnapshotWireCodec.ApplyDelta(
+            System.Text.Json.Nodes.JsonNode.Parse(baseline.Payload)!.AsObject(), sent.Payload)
+            : System.Text.Json.Nodes.JsonNode.Parse(sent.Payload)!.AsObject();
+        Assert.True(System.Text.Json.Nodes.JsonNode.DeepEquals(
+            System.Text.Json.Nodes.JsonNode.Parse(Queue(peer).FullPayload), rebuilt));
+        Assert.NotEqual(before.GetProperty("rankedClock").GetRawText(), MessageJson(peer).GetProperty("rankedClock").GetRawText());
+        if (timeout)
+        {
+            Assert.Equal("GameOver", MessageJson(peer).GetProperty("state").GetProperty("phase").GetString());
+            Assert.Single((await fixture.Recorder.GetMatchAsync(fixture.MatchId))!.Commands,
+                command => command.Command.GetProperty("type").GetString() == "authorityConclusion");
+        }
+        else Assert.Equal(before.GetProperty("state").GetProperty("revision").GetInt64(),
+            MessageJson(peer).GetProperty("state").GetProperty("revision").GetInt64());
+    }
+
     [Fact]
     public async Task TotalWatchdogUsesTheTwentyFiveMinutePlayerBudget()
     {
