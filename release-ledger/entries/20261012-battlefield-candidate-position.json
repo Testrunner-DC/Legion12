@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-battlefield-candidate-position",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "战场目标选择",
+  "changes": [{
+    "category": "battle",
+    "text": "战场卡牌候选现在显示完整格位说明，便于区分同名卡，并修正说明文字裁切。",
+    "paths": [
+      "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+      "opcgpro-vue/src/l12/game/PromptCardCandidate.vue",
+      "opcgpro-vue/src/l12/mobileViewport.css"
+    ]
+  }]
+}

@@ -311,6 +311,9 @@ function triggerOrderHint(id: string) {
 const triggerResolutionPreview = computed(() => isTriggerOrder.value
   && activeSelected.value.length === prompt.value?.maxChoose
   ? [...activeSelected.value].reverse() : [])
+function positionFor(id: string) {
+  return findBattlefieldTarget(props.game, sandboxActorIndex.value, id)?.label ?? ''
+}
 function cardMeta(id: string) {
   const location = findBattlefieldTarget(props.game, sandboxActorIndex.value, id)
   if (location) {
@@ -957,7 +960,7 @@ function kindLabel() {
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
-              :badge="selectionHint(choice)"
+              :badge="selectionHint(choice)" :position-label="positionFor(choice)"
               :consequence="choiceConsequence(choice)" :unavailable-reason="disabledChoiceReason(choice)"
               :horizontal="isHorizontalCardType(detailFor(choice)?.cardType)" :selected="activeSelected.includes(choice)"
               :unavailable="isCardSelectionPrompt && !prompt.validChoices.includes(choice)"

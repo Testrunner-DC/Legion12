@@ -8,6 +8,7 @@ const props = withDefaults(defineProps<{
   legacyUrl?: string
   name: string
   meta?: string
+  positionLabel?: string
   horizontal?: boolean
   selected?: boolean
   unavailable?: boolean
@@ -22,6 +23,7 @@ const props = withDefaults(defineProps<{
   cardId: '',
   legacyUrl: undefined,
   meta: '',
+  positionLabel: '',
   horizontal: false,
   selected: false,
   unavailable: false,
@@ -51,7 +53,7 @@ const stateLabel = computed(() => [
 ].filter(Boolean).join(' · '))
 const accessibleLabel = computed(() => [
   props.name,
-  props.meta,
+  props.meta || props.positionLabel,
   props.selectionOrder ? `本组相对顺序第 ${props.selectionOrder} 张` : '',
   props.badge,
   stateLabel.value,
@@ -64,7 +66,7 @@ const accessibleLabel = computed(() => [
   <div
     class="prompt-card-candidate"
     data-ui-contract="equal-card-option"
-    :class="[`size-${size}`, { horizontal, selected, unavailable }]"
+    :class="[`size-${size}`, { horizontal, selected, unavailable, 'has-battlefield-position': Boolean(positionLabel) }]"
     role="button"
     tabindex="0"
     :aria-disabled="unavailable"
@@ -86,7 +88,10 @@ const accessibleLabel = computed(() => [
       eager
     />
     <span class="prompt-card-candidate__name">{{ name }}</span>
-    <small class="prompt-card-candidate__meta" :class="{ empty: !meta }" :aria-hidden="!meta">{{ meta }}</small>
+    <small class="prompt-card-candidate__meta" :class="{ empty: !meta && !positionLabel }" :aria-hidden="!meta && !positionLabel">
+      <span class="prompt-card-candidate__meta-copy">{{ meta || positionLabel }}</span>
+      <span v-if="positionLabel" class="prompt-card-candidate__position">{{ positionLabel }}</span>
+    </small>
     <em class="prompt-card-candidate__state" :class="{ empty: !stateLabel }" :aria-hidden="!stateLabel">{{ stateLabel }}</em>
     <strong v-if="badge" class="prompt-card-candidate__badge">{{ badge }}</strong>
     <b v-if="selectionOrder" class="prompt-card-candidate__order">{{ selectionOrder }}</b>
@@ -100,6 +105,7 @@ const accessibleLabel = computed(() => [
 .prompt-card-candidate:hover,.prompt-card-candidate.selected{border-color:#70d7df;background:#174e54;color:#fff}.prompt-card-candidate.unavailable{border-color:#a65b63;background:#1b1416;cursor:not-allowed}.prompt-card-candidate.unavailable:hover{background:#1b1416;box-shadow:none}.prompt-card-candidate.unavailable .l12-card-image{filter:grayscale(.85);opacity:.42}.prompt-card-candidate.unavailable .prompt-card-candidate__name{color:#d4b8bc}.prompt-card-candidate.unavailable .prompt-card-candidate__meta{color:#bd8a90}
 .prompt-card-candidate .l12-card-image{width:96px;height:134px;margin:0 auto;object-fit:contain}.prompt-card-candidate__name{display:-webkit-box;box-sizing:border-box;width:100%;height:34px;min-height:34px;overflow:hidden;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;line-height:17px;text-align:center;white-space:normal;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}.prompt-card-candidate__meta{display:block;width:100%;overflow:hidden;color:#8edce2;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:11px;text-align:center;text-overflow:ellipsis;white-space:nowrap}
 .prompt-card-candidate.horizontal{flex-basis:116px;width:116px;min-width:116px}.prompt-card-candidate.horizontal .l12-card-image{width:96px;height:134px;aspect-ratio:auto;object-fit:contain}
+.prompt-card-candidate.has-battlefield-position{gap:3px}.prompt-card-candidate.has-battlefield-position .prompt-card-candidate__meta{flex-shrink:0;font-size:var(--l12-board-meta,11px);line-height:1.3}.prompt-card-candidate__position{display:none}
 .prompt-card-candidate.size-compact{flex-basis:80px;width:80px;min-width:80px;height:172px;min-height:172px;max-height:172px;padding:3px;border-width:1px}.prompt-card-candidate.size-compact .l12-card-image{width:70px;height:98px}.prompt-card-candidate.size-compact .prompt-card-candidate__name{height:24px;min-height:24px;font-size:var(--l12-board-copy,13px);line-height:12px}.prompt-card-candidate.size-compact.horizontal{flex-basis:80px;width:80px;min-width:80px}.prompt-card-candidate.size-compact.horizontal .l12-card-image{width:70px;height:98px;aspect-ratio:auto;object-fit:contain}
 .prompt-card-candidate.size-featured{flex-basis:min(616px,calc(100vw - 100px));width:min(616px,calc(100vw - 100px));max-width:616px;height:auto;min-height:0;max-height:none;overflow:visible}.prompt-card-candidate.size-featured .l12-card-image{width:min(588px,calc(100vw - 140px));height:min(368px,48vh)}.prompt-card-candidate.size-featured.horizontal .l12-card-image{width:min(588px,calc(100vw - 140px));height:auto;max-height:48vh;aspect-ratio:8/5}
 .prompt-card-candidate__order{position:absolute;right:3px;top:3px;display:grid;min-width:20px;height:20px;padding:0 4px;place-items:center;border-radius:50%;background:#70d7df;color:#071012;font-size:var(--l12-board-copy,13px)}

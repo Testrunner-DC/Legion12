@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UI-20261012-CANDIDATE-POSITION｜战场候选格位与字形完整展示（已批准，本地验收中）
+
+- 来源是霍列姆赫布双守卫完整战场验收中的独立展示缺陷，不是替死卡效错误：09e原命令直接/strict恢复正确，但移动通用样式把候选meta全部隐藏，桌面13px字形塞入11px行高并裁切。六尺寸双席12组修前位置可见强断言全部RED，原红/截图在D盘position-label-fix/red-r1；用户明确接受限定格位说明修复。
+- 共用PromptOverlay主候选从现有findBattlefieldTarget读取当前公开位置并传positionLabel，不从卡文/卡名/旧标签猜测；只标记战场候选。PromptCardCandidate保持桌面原meta，用元信息字号和完整行高；移动端仅此类候选显示格位行，内部四行在原固定宽高内分配，非战场meta继续原隐藏规则。命令、费用、响应、区域、规则与画布/弹框外部布局不变。
+- 同型扫描`rg -n 'PromptCardCandidate|cardMeta|findBattlefieldTarget|prompt-card-candidate__meta' opcgpro-vue/src/l12`覆盖七个组件调用：主候选共用适配，手牌/牌库排序及信息展示调用没有战场格位；文本响应目标与棋盘确认已用共享位置标记，不改服务端324卡或增加卡号分支。原双方24格/隐藏身份/旧位置回归保留，并补真实positionFor8例及元信息模板SSR/移动作用域守卫。
+- 修后真实GamePage/GameBoard/PromptOverlay六尺寸双席12组格位字形全部可见无裁切；12个普通私区展示对照仍不生成位置行、紧凑规则保持、卡片外宽高差<1px。12份原命令在直接/strict恢复24条中仍只令所选守卫替死，重复拒绝。初次普通对照误按hasTouch判断1024短屏，被现有P4实际作用域反证；只修机外断言读取实际根属性，green-r2失败保留，green-r3全过，产品三源未变。
+- 证据D盘position-label-fix/green-r1、green-r3及horemheb-actual/replay-position-r1-*。控制初态为匿名展示夹具，不是真实手牌操作、完整WebSocket或物理iOS；原667触控起手易用性缺口不在本批。标准Batch/干净Release/Git最终只认本批final-acceptance.json实际生成，未部署/未改维护/线上关闭0；回退需配套三产品与回归，不恢复格位隐藏或裁切。
+
 ## UI-20261012-EDITOR-STATS-SCROLL｜短横屏统计区滚动恢复（Main浏览器限定通过，完整门禁接续）
 
 - BUG-20260926-9fb406cd；用户批准仅恢复统计区纵滚。原844×390与1024×600等非竖屏媒体层盖掉了基础overflow:auto；只在同一max-width1180/max-height640层恢复原deck-insight-panel的overflow-y:auto，不动自然竖屏、曲线174px、布局、保存/草稿/起手概率或战场。
