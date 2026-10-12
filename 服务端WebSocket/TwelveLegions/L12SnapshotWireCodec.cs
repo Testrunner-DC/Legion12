@@ -16,7 +16,9 @@ internal sealed class L12SnapshotWireCodec
     private const int MaximumChanges = 4096;
     private readonly object _gate = new();
     private bool _enabled;
-    private JsonObject? _baseline;
+    // Outbound payloads are immutable UTF-8 bytes. Retain only the successfully
+    // sent bytes; do not hydrate a complete mutable card tree for every connection.
+    private byte[]? _baseline;
     private int _sinceFull;
 
     internal void SetDeltaEnabled(bool enabled)
@@ -36,19 +38,22 @@ internal sealed class L12SnapshotWireCodec
         lock (_gate)
         {
             if (!_enabled) return new(queued.FullPayload, static () => { }, false);
-            var current = JsonNode.Parse(queued.FullPayload)?.AsObject()
-                ?? throw new InvalidDataException("gameState 载荷不是 JSON 对象");
-            var matchId = current["state"]?["matchId"]?.GetValue<string>() ?? string.Empty;
-            var revision = current["state"]?["revision"]?.GetValue<long>() ?? -1;
-            var baselineMatch = _baseline?["state"]?["matchId"]?.GetValue<string>() ?? string.Empty;
-            var baseRevision = _baseline?["state"]?["revision"]?.GetValue<long>() ?? -1;
-            if (queued.ForceFullGameState || _baseline is null || _sinceFull >= FullSnapshotInterval - 1
-                || !string.Equals(matchId, baselineMatch, StringComparison.Ordinal))
-                return Full(current, queued.FullPayload);
+            using var currentDocument = JsonDocument.Parse(queued.FullPayload);
+            var current = currentDocument.RootElement;
+            if (current.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("gameState 载荷不是 JSON 对象");
+            if (queued.ForceFullGameState || _baseline is null || _sinceFull >= FullSnapshotInterval - 1)
+                return Full(queued.FullPayload);
+            using var baselineDocument = JsonDocument.Parse(_baseline);
+            var previous = baselineDocument.RootElement;
+            var (matchId, revision) = Identity(current);
+            var (baselineMatch, baseRevision) = Identity(previous);
+            if (!string.Equals(matchId, baselineMatch, StringComparison.Ordinal))
+                return Full(queued.FullPayload);
 
             var changes = new JsonArray();
-            BuildChanges(_baseline, current, [], changes);
-            if (changes.Count > MaximumChanges) return Full(current, queued.FullPayload);
+            BuildChanges(previous, current, [], changes);
+            if (changes.Count > MaximumChanges) return Full(queued.FullPayload);
             var delta = new JsonObject
             {
                 ["type"] = "gameStateDelta",
@@ -59,60 +64,82 @@ internal sealed class L12SnapshotWireCodec
             };
             var encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
             if (encoded.Length >= queued.FullPayload.Length * 9 / 10)
-                return Full(current, queued.FullPayload);
+                return Full(queued.FullPayload);
             return new L12PreparedWirePayload(encoded, () =>
             {
                 lock (_gate)
                 {
-                    _baseline = current;
+                    _baseline = queued.FullPayload;
                     _sinceFull++;
                 }
             }, true);
         }
     }
 
-    private L12PreparedWirePayload Full(JsonObject current, byte[] bytes)
+    private static (string MatchId, long Revision) Identity(JsonElement root)
+    {
+        if (!root.TryGetProperty("state", out var state) || state.ValueKind == JsonValueKind.Null)
+            return (string.Empty, -1);
+        var match = state.TryGetProperty("matchId", out var matchId) ? matchId.GetString() : null;
+        var revision = state.TryGetProperty("revision", out var value) && value.ValueKind != JsonValueKind.Null
+            ? value.GetInt64() : -1;
+        return (match ?? string.Empty, revision);
+    }
+
+    private L12PreparedWirePayload Full(byte[] bytes)
         => new(bytes, () =>
         {
             lock (_gate)
             {
-                _baseline = current;
+                _baseline = bytes;
                 _sinceFull = 0;
             }
         }, false);
 
-    private static void BuildChanges(JsonNode? previous, JsonNode? current,
+    private static void BuildChanges(JsonElement previous, JsonElement current,
         IReadOnlyList<object> path, JsonArray changes)
     {
         if (changes.Count > MaximumChanges) return;
-        if (JsonNode.DeepEquals(previous, current)) return;
-        if (previous is JsonObject previousObject && current is JsonObject currentObject)
+        if (JsonElement.DeepEquals(previous, current)) return;
+        if (previous.ValueKind == JsonValueKind.Object && current.ValueKind == JsonValueKind.Object)
         {
-            foreach (var key in previousObject.Select(pair => pair.Key)
-                         .Union(currentObject.Select(pair => pair.Key), StringComparer.Ordinal))
+            // Existing properties first, then additions: keep the previous wire change order.
+            foreach (var property in previous.EnumerateObject())
             {
+                var key = property.Name;
+                var hasCurrent = current.TryGetProperty(key, out var currentValue);
+                if (hasCurrent && JsonElement.DeepEquals(property.Value, currentValue)) continue;
                 var next = path.Append(key).ToArray();
-                if (!currentObject.ContainsKey(key))
+                if (!hasCurrent)
                 {
                     changes.Add(Change(next, null, remove: true));
-                    continue;
                 }
-                BuildChanges(previousObject[key], currentObject[key], next, changes);
+                else
+                    BuildChanges(property.Value, currentValue, next, changes);
                 if (changes.Count > MaximumChanges) return;
             }
-            return;
-        }
-        if (previous is JsonArray previousArray && current is JsonArray currentArray
-            && previousArray.Count == currentArray.Count)
-        {
-            for (var index = 0; index < currentArray.Count; index++)
+            foreach (var property in current.EnumerateObject())
             {
-                BuildChanges(previousArray[index], currentArray[index], path.Append(index).ToArray(), changes);
+                var key = property.Name;
+                if (previous.TryGetProperty(key, out _)) continue;
+                // A new property with explicit null must be added, not treated as missing.
+                changes.Add(Change(path.Append(key).ToArray(), JsonSerializer.SerializeToNode(property.Value), remove: false));
                 if (changes.Count > MaximumChanges) return;
             }
             return;
         }
-        changes.Add(Change(path, current?.DeepClone(), remove: false));
+        if (previous.ValueKind == JsonValueKind.Array && current.ValueKind == JsonValueKind.Array
+            && previous.GetArrayLength() == current.GetArrayLength())
+        {
+            for (var index = 0; index < current.GetArrayLength(); index++)
+            {
+                if (JsonElement.DeepEquals(previous[index], current[index])) continue;
+                BuildChanges(previous[index], current[index], path.Append(index).ToArray(), changes);
+                if (changes.Count > MaximumChanges) return;
+            }
+            return;
+        }
+        changes.Add(Change(path, JsonSerializer.SerializeToNode(current), remove: false));
     }
 
     private static JsonObject Change(IReadOnlyList<object> path, JsonNode? value, bool remove)

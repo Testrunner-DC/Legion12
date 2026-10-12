@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-critical-snapshot-delta",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "对战同步优化",
+  "changes": [{
+    "category": "battle",
+    "text": "对战行动与效果询问减少重复数据传输，操作提示和断线恢复保持完整。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+      "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs"
+    ]
+  }]
+}

@@ -101,7 +101,8 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             var firstConcurrentReplay = await first.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             Assert.Equal(firstMulliganId, first.CurrentPayload!["requestId"]?.GetValue<string>());
             Assert.True(JsonNode.DeepEquals(firstAfterMulligan, firstConcurrentReplay),
-                "当前连接代连续双发的同载荷请求没有收敛到同一权威投影");
+                "当前连接代连续双发的同载荷请求没有收敛到同一权威投影：" +
+                DescribeDifferences(firstAfterMulligan, firstConcurrentReplay));
             var secondAfterFirst = await second.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             var spectatorAfterFirst = await spectator.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             Assert.Equal(StateHash(firstAfterMulligan), StateHash(secondAfterFirst));
@@ -206,6 +207,8 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
 
             var activePlayer = firstMain["activePlayer"]!.GetValue<int>();
             var actor = activePlayer == 0 ? firstReplacement : secondReplacement;
+            var nextActor = activePlayer == 0 ? secondReplacement : firstReplacement;
+            var nextActorDeltaCount = nextActor.DeltaGameStateCount;
             const string endTurnId = "lc03a-end-turn";
             await actor.SendAsync(new
             {
@@ -225,6 +228,8 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             var spectatorFinal = await spectator.ReceiveGameAsync(state => Revision(state) == finalRevision);
             Assert.Equal(StateHash(firstFinal), StateHash(secondFinal));
             Assert.Equal(StateHash(firstFinal), StateHash(spectatorFinal));
+            Assert.True(nextActor.DeltaGameStateCount > nextActorDeltaCount,
+                "取得正常行动机会的玩家应保留可靠交付并使用可重建的增量状态");
             Assert.True(firstReplacement.DeltaGameStateCount + secondReplacement.DeltaGameStateCount
                         + spectator.DeltaGameStateCount > 0,
                 "真实 WebSocket 链没有产生可校验的增量状态");
@@ -388,6 +393,22 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
     }
 
     private static long Revision(JsonObject state) => state["revision"]!.GetValue<long>();
+
+    private static string DescribeDifferences(JsonNode? expected, JsonNode? actual, string path = "state")
+    {
+        if (JsonNode.DeepEquals(expected, actual)) return string.Empty;
+        if (expected is JsonObject left && actual is JsonObject right)
+            return string.Join("; ", left.Select(pair => pair.Key).Union(right.Select(pair => pair.Key))
+                .Select(key => left.ContainsKey(key) != right.ContainsKey(key)
+                    ? $"{path}.{key}: expectedPresent={left.ContainsKey(key)}, actualPresent={right.ContainsKey(key)}"
+                    : DescribeDifferences(left[key], right[key], path + "." + key))
+                .Where(value => value.Length > 0).Take(12));
+        if (expected is JsonArray leftArray && actual is JsonArray rightArray && leftArray.Count == rightArray.Count)
+            return string.Join("; ", Enumerable.Range(0, leftArray.Count)
+                .Select(index => DescribeDifferences(leftArray[index], rightArray[index], $"{path}[{index}]"))
+                .Where(value => value.Length > 0).Take(12));
+        return $"{path}: expected={expected?.ToJsonString() ?? "null"}, actual={actual?.ToJsonString() ?? "null"}";
+    }
     private static string Phase(JsonObject state) => state["phase"]!.GetValue<string>();
     private static string MatchId(JsonObject state) => state["matchId"]!.GetValue<string>();
     private static string StateHash(JsonObject state) => state["stateHash"]!.GetValue<string>();

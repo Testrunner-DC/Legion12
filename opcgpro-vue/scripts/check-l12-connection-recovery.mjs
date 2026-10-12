@@ -735,10 +735,15 @@ const tests = [
       changes: [
         { path: ['state', 'revision'], value: 5, remove: false },
         { path: ['state', 'players', 0, 'hp'], value: 19, remove: false },
+        { path: ['state', 'prompts'], value: [{ promptId: 'delta-prompt', kind: 'optional' }], remove: false },
+        { path: ['state', 'players', 0, 'readyAfterNextKillSourceName'], value: null, remove: false },
       ] })
     assert.equal(net.l12State.game.revision, 5)
     assert.equal(net.l12State.game.players[0].hp, 19)
     assert.deepEqual(net.l12State.game.players[0].hand, ['private-card'])
+    assert.equal(net.l12State.game.prompts[0].promptId, 'delta-prompt')
+    assert.equal(Object.hasOwn(net.l12State.game.players[0], 'readyAfterNextKillSourceName'), true)
+    assert.equal(net.l12State.game.players[0].readyAfterNextKillSourceName, null)
 
     const syncBefore = socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
     socket.receive({ type: 'gameStateDelta', matchId: 'delta-match', baseRevision: 3, revision: 6,

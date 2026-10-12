@@ -1983,8 +1983,10 @@ public sealed partial class L12RoomManager
             return new OutgoingMessage(id, payload,
                 replaceable && id != requestSessionId && !immediateInteraction,
                 IsGameState: true,
-                ForceFullGameState: forceCritical || immediateInteraction
-                                                    || state.Phase == L12Phase.GameOver);
+                // Reliable queue delivery and wire encoding are independent. An actionable
+                // state must not be merged/dropped, but its receiver can reconstruct a delta
+                // from its own last successfully sent baseline. Explicit sync boundaries stay full.
+                ForceFullGameState: forceCritical || state.Phase == L12Phase.GameOver);
         })
             .Concat(SpectatorMessages()).ToArray();
         L12PerformanceMetrics.Duration("snapshot.build", snapshotStartedAt);

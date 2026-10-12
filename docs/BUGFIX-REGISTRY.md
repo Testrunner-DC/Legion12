@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## NET-20261012-CRITICAL-DELTA｜按现有取证条件处理对局流量放大（本地验收中，未部署）
+
+- 用户确认“你按目前的条件处理”，本轮在D盘独立工作树实施。P2接入/投影边界和P3 Journal/状态哈希/规则结算不变。正式历史截图总量92.23GB/WS51.46GB尚无原日志，不能认定攻击、全部流量来源或当前CPU根因。
+- 根因：BroadcastGame将当前行动方、Prompt/防御/和局询问的可靠队列分类同时作为强制全量编码理由。只解除后者，非合并/不可丢屏障保持；首包、显式sync/recovery、终局、赛事观战及旧客户端继续全量，32次/4096变更/90%回退不变。
+- 相邻共享缺陷：真实WebSocket的天灾展开增加null字段时，旧BuildChanges把missing与null当成相等，8个新字段遗漏。新增null/移除null红例与原严格重建失败均保留；按字段存在性准确建立变更，未删除原强断言。
+- 减分配：差量比较改为Prepare内using JsonDocument只读比较，只保留同连接最后成功发送的UTF-8字节，Commit不持有已释放文档。生产字节来自非池化SerializeToUtf8Bytes且只读；失败/合并/丢包不提交。完整构建/序列化仍存在，不能称全局CPU或内存问题已解决。
+- 同族扫描：`rg -n 'ForceFullGameState|SnapshotRequiresCriticalDelivery|BroadcastGame\(|L12QueuedPayload|SendDirectAsync|gameStateDelta|baseRevision' 服务端WebSocket/TwelveLegions TwelveLegions.Tests opcgpro-vue/src/l12`。覆盖唯一队列/codec、所有BroadcastGame及前端恢复消费者；不改规则/卡池、压缩协议、接收方权限或事件留存。
+- 实际原红：6例5失败1通过；优化暴露的missing/null独立与WS两例失败保留。最终专项52/52，真实net.ts消费者25/25；JSON语义矩阵覆盖缺失/空值、对象、数组顺序/长度、数字等价、Unicode及特殊键，双方当前/非当前Prompt、隐私、发送失败、旧客户端、真实WS重连/幂等/陈旧增量拒绝均保持。独立只读审查CLEAR；防御/和局依靠未改分类与关联守卫，没有新增完整客户端生命周期声明。
+- 证据：D:/GPT/Legion12/artifacts/traffic-delivery-20261012。64条单标量变化/席的合成序列2,644,025→92,464B（含2次全量/62次增量）；同输入旧JsonNode增量编码分配20,585,872→368,120B。该数值不代表真实操作频率、历史节省比例或Linux容量；单轮Windows耗时波动，不承诺CPU比例改善。完整Batch/干净Release/Git以final-acceptance.json实际生成为准，未生成前不称同步完成。
+- 回滚守卫：整体回退RoomManager与codec，保留原可靠队列和完整恢复协议；不能通过删Prompt、合并关键消息、共享私密baseline或降低重建校验省流量。本轮不部署、不改维护、不关闭线上Bug。
+
 ## BUG-20261012-SELF-DAMAGE-CANCEL｜自伤减费首层取消与拒绝后提示同步（本地Batch已验，提交级状态见唯一回执）
 
 - Release首轮06028997规则7192过，平台1299过1失败0跳过：S01-0304/seat0/direct新测试所有行为断言后，finally删除matches.db触发IOException。只修该测试资源清理：显式Dispose、精确DataSource ClearPool、当前Temp下两个精确父目录及GUID叶子守卫，40/80/120/160ms有界重试，最终与非IO异常仍传播。不重试卡效或断言、不改产品。4保护及完整类36两轮通过，Main独立4与6证据重核通过；原失败日志F0227A9B、TRX6D8C7D81和DB BE4EE171保留，真实持有者未知。需要新完整Release，不称产品泄漏根治。
