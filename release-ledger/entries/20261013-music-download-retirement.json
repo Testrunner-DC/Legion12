@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261013-music-download-retirement",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "背景音乐资源释放",
+  "changes": [{
+    "category": "ui",
+    "text": "切换或关闭背景音乐后及时停止旧音轨的下载，保留同曲连续播放、音量控制和切曲淡入淡出。",
+    "paths": ["opcgpro-vue/src/l12/backgroundMusic.ts"]
+  }]
+}

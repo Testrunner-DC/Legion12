@@ -23,6 +23,7 @@ export class BackgroundMusicController {
   private active: ActiveTrack | null = null
   private generation = 0
   private fades = new Map<HTMLAudioElement, number>()
+  private released = new WeakSet<HTMLAudioElement>()
 
   setTarget(target: BackgroundMusicTarget | null) {
     const generation = ++this.generation
@@ -57,13 +58,10 @@ export class BackgroundMusicController {
 
   destroy() {
     this.generation++
-    for (const [audio, timer] of this.fades) {
-      window.clearInterval(timer)
-      audio.pause()
-    }
-    this.fades.clear()
-    this.active?.audio.pause()
+    const audios = new Set(this.fades.keys())
+    if (this.active) audios.add(this.active.audio)
     this.active = null
+    for (const audio of audios) this.release(audio)
   }
 
   private bindEnded(track: ActiveTrack, callback?: () => void) {
@@ -71,6 +69,18 @@ export class BackgroundMusicController {
       if (this.active !== track || track.generation !== this.generation || track.audio.loop) return
       callback?.()
     }
+  }
+
+  private release(audio: HTMLAudioElement) {
+    const timer = this.fades.get(audio)
+    if (timer !== undefined) window.clearInterval(timer)
+    this.fades.delete(audio)
+    if (this.released.has(audio)) return
+    this.released.add(audio)
+    audio.onended = null
+    audio.pause()
+    audio.removeAttribute('src')
+    audio.load()
   }
 
   private fade(audio: HTMLAudioElement, target: number, generation: number, retire = false) {
@@ -83,10 +93,7 @@ export class BackgroundMusicController {
       if (timer !== undefined) window.clearInterval(timer)
       this.fades.delete(audio)
       audio.volume = target
-      if (retire) {
-        audio.pause()
-        audio.onended = null
-      }
+      if (retire) this.release(audio)
     }
     if (Math.abs(from - target) < .005) { finish(); return }
     const timer = window.setInterval(() => {

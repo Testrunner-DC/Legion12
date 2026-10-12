@@ -1,6 +1,16 @@
 # 十二军团任务台账
 
+## NET-20261013-MUSIC-RETIRE｜旧音乐退役继续下载（明确批准，本地实施验收）
+
+- Main实际产品Node22行为/5场景、真实Edge三个4.5秒观察组通过；标准Batch前端完整守卫/类型/324+42卡图/双环境构建退出0，后端未变更按A1映射未在Batch重跑。提交级Release仍全量兜底，不能把上批7219/1356借为新提交门禁。
+
+- Main实际合入唯一backgroundMusic产品源：真正retire和destroy清onended/pause/remove src/load；WeakSet幂等释放，活跃同src仍复用、520ms淡出/旧generation收口/loop与音量不变。原src SHA EFDA30B1，当前7B9B7BCE；未改App、音效、路由、音乐文件或线上NGINX。
+- 修前真实MP3/Edge冷no-store，Main raw B125B533证明switch700ms/destroy250ms后旧响应仍1.147/1.278MB；机外清源对照0B。实际产品Main三轮raw8791CFC3复验对应边界后均0B，Node22、原TypeScript、外部请求/页面错误0；探针监听器警告保留，不是产品内存泄漏证明。
+- 原音乐行为检查保留并增强，另把5场景519/520ms、自然A-B-A、null/null/re-enable、同src loop/onEnded更新与destroy幂等守卫接入check:ui-contracts。专项通过，独立静态review无产品阻断；完整Batch/提交级Release/Git及包绑定接续。不冒称iOS/历史12GB或整个流量根治，不部署、不改维护、线上Bug写0。
+
 ## NET-20261013-RECOVERY-FANOUT｜同步请求者全量／普通观战首包（已批准，本地验收中）
+
+- 最终5b89cb646087ad9218f9bbbcbdad73548dedddde已完整干净Release7219/1356零失败跳过、8阶段/UI356/双前端、最终B35AB58F同包扇出及264命令/40帧240消费者复验，远端精确读回；回执fanout-fix/final-acceptance.json（D44F3DD9）。首次机外旧DLL缓存被SHA守卫拒绝并保留，新独立工具输出后通过，未修改产品或降低守卫。以下待Release/待包是历史。
 
 - 完整Batch7219规则/1356平台零失败跳过及架构/前端守卫通过；随后仅补四模式真实WS首包后的同期sync断言（请求者full、同行及普通观战delta、状态hash等价），专项4/4通过。独立限定复审CLEAR，产品一源冻结，接干净提交级Release/Git/最终同包复验。
 - 机外音乐取证另外复现旧音轨退役后继续传输；Main独立3轮同样switch/destroy后1.147/1.278MB、清src/load对照0B，raw B125B533保存。仅Edge/no-store冷传输，不是12GB历史归因；另问限定释放修复，待答不改音乐、不混入本批。

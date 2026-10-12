@@ -1,6 +1,16 @@
 # Legion12 Bug 修复记录
 
+## NET-20261013-MUSIC-RETIRE｜暂停旧音乐未终止未完成下载（已批准，实际产品本地验收）
+
+- 旧生命周期只pause/清onended，未卸载src；两个独立Edge/no-store回合实际range响应在520ms淡出后/立即destroy后仍写入约1MB，Main原始逐块B125B533保留，而不是凭paused或代码猜测。用户明确批准限定释放，不部署。
+- 共享BackgroundMusicController新增WeakSet及release，先停对应fade timer/删除map，再幂等清回调、pause、移除src和load。destroy先清active、收集fades/current去重后释放，retire在原finish时释放。same-src活跃支路、520/40ms与generation陈旧收口规则保持；原职责注释保留，P4无布局/路由改动。
+- 同型扫描`rg -n 'new Audio|BackgroundMusicController|\.pause\(|\.destroy\(' opcgpro-vue/src`确认当前App单一BGM控制器及route/preference/unmount入口闭合；未路由的legacy useAudio/useGameAudio不是当前L12 BGM，不在本批改写，音效不动。原音乐行为guard增强但旧断言保留，独立5场景接UI门禁。
+- 实际产品Main源7B9B7BCE，Node22/TypeScript/Edge三轮raw8791CFC3，switch700ms/destroy250ms边界后旧body-write0B、外部尝试/页面错误0。影子37B5B9A9只作准备不代产品集成，二者逐行等价、原始字节含行尾差；浏览器currentSrc可能仍报告旧URL，验收依src detach/网络及响应关闭，不依据fake currentSrc保证。探针listener警告保留，不裁定产品泄漏。
+- 回滚守卫保留同曲无新Audio、loop/callback/低音量、519/520边界、自然A-B-A、null/null/re-enable、旧ended不改变新曲、交叠fade及二次destroy load计数不增长。不用清缓存或停止当前音轨代替卸载旧资源；完整Batch/Release/Git/最终包待，不称物理iOS/历史12GB或全站流量已根治。
+
 ## NET-20261013-RECOVERY-FANOUT｜恢复全房强制全量与普通观战冷基线（批准限定本地修复）
+
+- 最终实际5b已验收同步：7219/1356零失败跳过、8阶段、B35AB58F同包扇出及264严格命令/40帧240消费者等价、累计15玩家项52源和双入口核验，远端精确读回；回执D44F3DD9。机外旧DLL加载被哈希拒绝的原失败保留，后续新输出同包通过；下方开发阶段或待Release为历史。
 
 - 完整Batch7219规则/1356平台零失败跳过；产品未再变更，追加四模式真实WebSocket首包后实际同步wire断言4/4通过，包含requester新增full、peer不新增full、冷观战next仅delta以及共享hash。独立审查CLEAR，干净Release/Git/同包绑定接续，原11RED和所有既有守卫保留。
 

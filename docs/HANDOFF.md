@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-13 当前接续｜流量5b已同步，音乐批准修复实际合入验收
+
+- 音乐实际产品专项与三组Edge绿色、标准前端Batch完整通过（后端未变更未在Batch重跑），Main接干净提交级全量Release；不复用5b门禁冒称新提交通过，最终只认音乐final-acceptance.json实际生成结果。
+
+- 当前已验收产品唯一5b89cb646087ad9218f9bbbcbdad73548dedddde：Release7219规则/1356平台零失败跳过、8阶段、同包B35AB58F扇出与264命令/40帧240消费者、累计15玩家项52源及双入口核验/远端精确读回，回执fanout-fix/final-acceptance.json（D44F3DD9）。旧机外DLL哈希拒绝保留，不减守卫。
+- 用户明确批准音乐真retire/destroy释放；Main实际一产品源7B9B7BCE，保留同曲/520淡出/loop/volume/generation，原行为守卫＋5场景入UI门禁。Main真实Node22/Edge三轮raw8791CFC3边界后旧流0B；修前B125B533约1MB保留，影子仅准备。完整Batch/干净Release/Git接续，不冒称iOS/历史12GB/整体根治。
+- 最新匿名公网health仍0e，maintenance=true，2026-10-12T16:37:03Z，音乐无明确freshness；没有Main维护/生产/Bug写，不据health推定入口/围栏，当前不部署。剩余full路径和指标口径只读audit344C7FFC，未批准修复不自动实施，下方为历史。
+
 ## 2026-10-13 当前接续｜事件窗口7bb已同步，批准的恢复／观战批本地验收
 
 - 恢复／观战完整Batch7219/1356零失败跳过，之后只补四模式真实WS首包next/sync实际wire及hash断言4/4过，独立复审CLEAR；Main接提交级Release。音乐Main独立raw B125B533复现退役继续下载（Edge/no-store），另待用户答复，未改产品或混入当前批。
