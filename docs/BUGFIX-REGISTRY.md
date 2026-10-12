@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261012-AUDIO-CACHE｜固定名称音乐的有界缓存（本地已验收，未启用线上）
+
+- 用户批准按现有条件处理流量。两条正式公共HEAD实际7.22MB/7.89MB且无显式freshness；ETag/Last-Modified/Range存在，不称浏览器完全没有缓存。PNG卡背约2.7/2.9MB已有一年immutable，本轮不改卡图。
+- 仅既有NGINX片段增加/audio/严格404及expires 1d，保持当前静态根和ETag。expires生成一天max-age且不覆盖继承安全头，固定名称不使用永久immutable；缺失音频不返回SPA HTML，206/304沿NGINX原生路径。原音源、音量、切换及range逻辑不变。
+- 最终72本地合成发布场景通过，新增有界缓存与404/ETag守卫通过；原备份/排空/失败保护未减少。本地未运行真实NGINX或HTTP音频缓存验证，未来授权发布后须读取200/206/304及404响应头，不能据合成称线上已生效。
+- 首轮未创建夹具目录及长路径tar失败日志保留，改用D盘短受管夹具路径后通过。整批实际7214规则/1304平台零失败跳过；原Batch前端PATH环境失败保留，仅以精简当前进程PATH续跑前端，UI355/卡图324+42/类型及双构建通过，同源后端验收不重复。组合回执D:/GPT/Legion12/artifacts/traffic-delivery-20261012/composed-batch-acceptance.json。提交级Release/Git仍以final-acceptance.json实际生成内容为准；不部署、不改维护。
+
 ## NET-20261012-CRITICAL-DELTA｜按现有取证条件处理对局流量放大（本地验收中，未部署）
 
 - 用户确认“你按目前的条件处理”，本轮在D盘独立工作树实施。P2接入/投影边界和P3 Journal/状态哈希/规则结算不变。正式历史截图总量92.23GB/WS51.46GB尚无原日志，不能认定攻击、全部流量来源或当前CPU根因。

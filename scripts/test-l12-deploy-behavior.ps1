@@ -117,6 +117,15 @@ try {
         "正式 /assets 缺失资源仍可能回退到 HTML。"
     Assert-True ($webAssetsNginxSource.Contains('max-age=31536000, immutable') -and $webAssetsNginxSource.Contains('location = /index.html') -and $webAssetsNginxSource.Contains('Cache-Control "no-cache"')) `
         "正式哈希资源或 HTML 缓存策略不符合兼容边界。"
+    $audioLocation = [regex]::Match($webAssetsNginxSource, 'location\s+\^~\s+/audio/\s*\{(?<body>.*?)\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+    Assert-True ($audioLocation.Success -and $audioLocation.Groups['body'].Value.Contains('root /opt/legion12-test/opcgpro-vue/dist;') -and
+        $audioLocation.Groups['body'].Value.Contains('try_files $uri =404;') -and $audioLocation.Groups['body'].Value.Contains('etag on;')) `
+        "正式音乐必须由当前静态目录提供，保留校验标记且缺失时返回404。"
+    Assert-True ($audioLocation.Groups['body'].Value.Contains('expires 1d;') -and
+        -not $audioLocation.Groups['body'].Value.Contains('add_header ') -and
+        -not $audioLocation.Groups['body'].Value.Contains('immutable') -and
+        -not $audioLocation.Groups['body'].Value.Contains('index.html')) `
+        "固定名称音乐必须使用一天有界缓存，不能永久缓存或回退HTML。"
     Assert-True ($serverDeploySource.Contains('find "${static_web_assets_dir}/${public_prefix}" -type d -exec chmod 0755 {} +')) `
         "正式发布没有规范多级 UTF-8 前端资源目录的 Web 读取权限。"
     Assert-True ($serverDeploySource.Contains('chmod 0755 "$prefix_path"') -and $serverDeploySource.Contains('for component in "${prefix_components[@]}"')) `

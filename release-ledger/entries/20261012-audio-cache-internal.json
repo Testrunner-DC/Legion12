@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-audio-cache-internal",
+  "date": "2026-10-12",
+  "audience": "internal",
+  "reason": "音乐固定文件名增加一天有界缓存，沿用原音源与页面功能；不外显运维配置细节。",
+  "paths": ["ops/server/nginx-l12-web-assets.conf", "scripts/test-l12-deploy-behavior.ps1"]
+}
