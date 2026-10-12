@@ -245,7 +245,7 @@ public sealed partial class L12GameEngine
             var normalCost = GetPlayCost(playerIndex, card, useSelfDamageDiscount: false);
             var discountedCost = GetPlayCost(playerIndex, card, useSelfDamageDiscount: true);
             if (ActiveResourceCount(player) < discountedCost) return CommandResult.Reject("活跃士气不足");
-            CreatePrompt(playerIndex, "optional", $"{card.Name}：是否发动「{selfDamageRule!.CostText}：{selfDamageRule.ResolutionText}」？", ["yes", "no"], 1, 1,
+            CreatePrompt(playerIndex, "optional", $"{card.Name}：是否发动「{selfDamageRule!.CostText}：{selfDamageRule.ResolutionText}」？", ["yes", "no", "cancel"], 1, 1,
                 "play-cost-choice", data: WithPromptNarrative(
                     new Dictionary<string, string>
                     {
@@ -256,8 +256,10 @@ public sealed partial class L12GameEngine
                         ["normalCost"] = normalCost.ToString(),
                         ["discountedCost"] = discountedCost.ToString(),
                         ["choiceMode"] = "instant",
-                        ["yes"] = "发动减费效果",
+                        ["allowCancel"] = "true",
+                        ["yes"] = "发动",
                         ["no"] = "按通常费用打出",
+                        ["cancel"] = "取消打出",
                     },
                     new(card.Name, $"你正在打出〈{card.Name}〉，可以选择“{selfDamageRule.CostText}”来降低本次费用。",
                         "请选择是否发动减费效果；确认后将按所选方式支付费用。",
@@ -266,6 +268,7 @@ public sealed partial class L12GameEngine
                         {
                             ["yes"] = $"{selfDamageRule.CostText}，随后支付{discountedCost}士气并继续打出。",
                             ["no"] = $"不发动减费效果，支付{normalCost}士气并继续打出。",
+                            ["cancel"] = "取消本次打出，不支付主宰伤害或士气。",
                         })));
             return CommandResult.Ok();
         }

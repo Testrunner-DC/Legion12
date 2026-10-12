@@ -1,5 +1,18 @@
 # 十二军团简短交接
 
+## 2026-10-12 当前接续｜自伤减费完整Batch已验，提交级Release及Git接续
+
+- 卡纽特及五同族的支付前取消／normal-cost不足提示重建已限定实现，正常费用、最后1血即判负、已付不撤销不变。五产品／测试源冻结，44新规则及关联136／32平台、Main三尺寸9次实点、35证据重核和独立源码复核通过。完整Batch实际7192规则／1300平台、失败跳过0、退出0，日志07BED8E0；旧失败和兼容限制保留。
+- Main现在只做干净提交级Release与授权Git，最终精确提交／包／远端结果统一读取D:/GPT/Legion12/artifacts/bug-closure-continuation-20261012/next-six-evidence/group-b/final-acceptance.json；该回执生成前不称完成。用户只批准本地修复验收，本轮不部署、不改维护、不提前关闭该Bug。当前状态仍在D盘current-status.json。
+- 并行起手抽卡反馈仅验证真实卡池和两个已有消费者，不改产品。离线就绪44仍非线上关闭；实际92关闭／512待办未变。14:26匿名health五秒超时，当前生产版本与维护未知，不归咎供应商；其余生产操作不重试。
+
+## 2026-10-12 当前接续｜费用投影已同步，卡纽特跨层卡窗获准修复
+
+- 天照／黄泉实际收口ca4dec952ee21c9daa863bcbe60324f009fcd64e，完整7148规则／1268平台零失败跳过，8阶段干净Release与远端精确读回。实际最终回执projected-cost-target-fix-20261012/final-acceptance.json；下方待Release为历史。未部署。
+- 下一6条已Main独立验收其中5条限定场景20场／188命令／116严格检查点，离线就绪r10为44，不是线上关闭。实际92关闭／512待办保持；正式health本轮5秒连接超时，当前版本／维护未知，不推定供应商责任。
+- 卡纽特1血6士气：直接引擎可继续的8场不能代表客户端；RoomManager双席／恢复4场均拒绝normal-cost时移除询问却Revision不变，只发actionRejected、不发gameState，现网net.ts不更新game。用户已批准共享支付前取消和拒绝一致性，6张同类核查。子任务2产品／2新增测试租约与串行Focused，Main独立验收及完整门禁/Git；见台账EFFECT-20261012-SELF-DAMAGE-CANCEL。原RED和引擎绿色都保留，不关闭该Bug，不部署／改维护。
+- C0聊天仍只读准备，原部署依赖未证明；不因本轮继续任务自动实施。唯一实时状态current-status.json及就绪closure-ready-index-r10.json在D盘原目录。
+
 ## 2026-10-12 当前接续｜孟婆已同步，天照／黄泉限定费用投影修复
 
 - 当前已验收同步基线93bec1803a7b7de48ae54ba2b1008fe605fc273d：规则7092/平台1268、失败跳过0，8阶段干净Release及远端精确读回；最终回执D盘bug-closure-continuation-20261012/mengpo-tomb-construct/implementation/final-acceptance.json。未部署，下文孟婆“待Release”为历史过程。

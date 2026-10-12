@@ -1,5 +1,15 @@
 # 十二军团任务台账
 
+## EFFECT-20261012-SELF-DAMAGE-CANCEL｜自伤减费支付前取消与拒绝同步（本地Batch已验，提交级状态见唯一回执）
+
+- 原反馈BUG-20260921-27118d48。ca4dec95引擎8场可继续不等于客户端可退出：实际RoomManager双方×恢复4场，选择normal-cost后费用不足，询问1→0但Revision1→1，仅actionRejected而无gameState；现网net.ts拒绝分支不更新game，旧弹框可能残留。原绿色引擎证据保留，不用来关闭本条。
+- 用户批准共享流程限定修复及同类6卡核查：支付前明确取消；支付不足不丢失询问或留下旧弹框；正常费用出牌、支付最后1血立即判负、已支付不撤回不变。P0/P1/P3不改：使用原typed prompt取消及权威命令/恢复，不以房间层盲目广播掩盖拒绝变异，不改Journal格式或绕过哈希。
+- 干净基线ca4dec952ee21c9daa863bcbe60324f009fcd64e；子任务仅L12Actions.cs、L12PromptsAndSetup.cs与两个新增Cancellation/Protocol回归文件写租约及串行Focused构建。Main持共享记录、独立审查/验收、Batch/Release/Git。证据D盘bug-closure-continuation-20261012/next-six-evidence/group-b；首交付RED/全池扫描，最终同源绿测后再收口。不部署、不改维护、不提前关闭。
+- 同批另外5条限定证据已Main独立复跑20场/188命令/116严格检查点，原报告信息不足及浏览器未验证限制保留；只进入离线收口候选，不是新增产品修复或线上终态。实际关闭92/待办512不变。
+- 最终五源冻结、子任务租约归还：136关联规则（44新）／32房间协议实际通过，独立源码审查无阻断；Main重核35证据文件零差异，并用真实同DLL DTO完成1920×1080、844×390、390×844三尺寸实际组件点击，取消与no不足后再取消均清窗。UI原r1严格按钮名定位失败保留，r2通过；预览状态注入不是端到端WebSocket，也不是真实iOS。旧形状检查点为合成数据，不冒称旧Journal迁移。Main完整Batch正在执行，最终提交级Release／Git只认group-b/final-acceptance.json实际回执，未生成前不称完成。
+
+- 14:34完整Batch最终规则7192／平台1300、失败跳过0、退出0，五源SHA与专项及UI证据一致。main-batch-acceptance.json绑定实际success监督回执和日志07BED8E0；Batch私有TRX按既有脚本成功后清理，计数回执保留，不能声称原TRX仍在。接干净提交级Release及授权Git，最终提交、全阶段与远端精确读回只认group-b/final-acceptance.json。不部署、不关闭这条尚未上线的缺陷。
+
 ## EFFECT-20261012-PROJECTED-COST｜天照／黄泉候选与提交统一费用维度（本地Batch已验，提交级状态见唯一回执）
 
 - 用户分别明确批准两项限定修复；基线93bec1803a7b7de48ae54ba2b1008fe605fc273d干净，孟婆批已完整Release7092规则/1268平台、零失败跳过并同步，不部署。前批实际结果见D盘mengpo-tomb-construct/implementation/final-acceptance.json，下方“Release待”为历史过程。

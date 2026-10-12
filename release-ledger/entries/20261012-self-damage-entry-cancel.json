@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-self-damage-entry-cancel",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "自伤减费出牌的取消与选择",
+  "changes": [{
+    "category": "card-effects",
+    "text": "卡纽特大帝、传奇的拉格纳、无情者哈拉尔、血斧艾瑞克、齐格鲁德和奥尔加选择自伤减费时，支付前可以取消打出；不减血但士气不足时，可以重新选择或取消，不再卡在旧弹框。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12Actions.cs",
+      "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"
+    ]
+  }]
+}

@@ -1,0 +1,343 @@
+using System.Collections;
+using System.Reflection;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using TwelveLegions.Server;
+using Xunit;
+
+namespace TwelveLegions.Platform.Tests;
+
+[Collection("Platform environment")]
+public sealed class SelfDamageEntryDiscountProtocolRegressionTests
+{
+    private static readonly JsonSerializerOptions Wire = new(JsonSerializerDefaults.Web);
+    private static readonly L12Catalog Catalog = L12Catalog.Load(
+        Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+    private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-12T14:00:00+08:00");
+
+    public static IEnumerable<object[]> ProtocolCases()
+        => Catalog.Cards.Values
+            .Where(card => L12StructuredCardRules.SelfDamageEntryDiscount(card.Id) is not null)
+            .OrderBy(card => card.Id, StringComparer.Ordinal)
+            .SelectMany(card => new[] { 0, 1 }.SelectMany(actor => new[] { false, true }
+                .Select(restore => new object[] { card.Id, actor, restore })));
+
+    public static IEnumerable<object[]> ExactThorCanuteCases()
+        => new[] { 0, 1 }.SelectMany(actor => new[] { false, true }.SelectMany(restore =>
+            new[] { "yes", "no" }.Select(choice => new object[] { actor, restore, choice })));
+
+    [Theory]
+    [MemberData(nameof(ProtocolCases))]
+    public async Task InsufficientNormalCostPublishesReplacementPromptThenExplicitCancelPublishesItsRemoval(
+        string cardId, int actor, bool restore)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-self-damage-protocol",
+            $"{cardId}-{actor}-{restore}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(Catalog, recorder, utcNow: () => Now,
+                maintenanceSandboxFenceActive: () => false);
+            var host = Guid.NewGuid();
+            var guest = Guid.NewGuid();
+            manager.Connect(host, $"{cardId}-{actor}-account-a", "Synthetic A");
+            manager.Connect(guest, $"{cardId}-{actor}-account-b", "Synthetic B");
+            var created = manager.CreateRoom(host);
+            var roomCode = Payload(created[0]).GetProperty("roomCode").GetString()!;
+            manager.JoinRoom(guest, roomCode);
+            await manager.SetReadyAsync(host, true);
+            await manager.SetReadyAsync(guest, true);
+
+            var room = RuntimeRoom(manager, roomCode);
+            var gameProperty = room.GetType().GetProperty("Game",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
+            var started = (L12GameEngine)gameProperty.GetValue(room)!;
+            var game = CreateExact(cardId, actor, started.State.MatchId, roomCode,
+                88400 + actor + cardId[^1]);
+            var player = game.State.Players[actor];
+            var card = Assert.Single(player.Hand);
+            Accept(game.Handle(actor,
+                new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)));
+            var first = Assert.Single(game.State.PendingPrompts);
+            if (restore)
+            {
+                var state = game.SerializeFullState();
+                var random = game.RandomState;
+                var facts = game.CardFactSignalSequence;
+                game = L12GameEngine.RestoreCheckpoint(Catalog, state, random!.Value, facts,
+                    autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+                    utcNow: () => Now);
+                Assert.Equal(state, game.SerializeFullState());
+                Assert.Equal(random, game.RandomState);
+                Assert.Equal(facts, game.CardFactSignalSequence);
+            }
+            else
+            {
+                game.MarkEventsPersisted(game.State.EventSequence);
+                game.MarkCardFactsPersisted(game.CardFactSignalSequence);
+            }
+            gameProperty.SetValue(room, game);
+            player = game.State.Players[actor];
+            var actorSession = actor == 0 ? host : guest;
+
+            var beforeNo = game.State.Revision;
+            var noMessages = await manager.HandleActionAsync(actorSession,
+                JsonSerializer.SerializeToElement(new L12Command("resolvePrompt",
+                    PromptId: first.PromptId, Choice: "no"), Wire),
+                $"{cardId}-{actor}-{restore}-no");
+
+            Assert.Equal(beforeNo + 1, game.State.Revision);
+            Assert.DoesNotContain(noMessages, message => Type(message) == "actionRejected");
+            Assert.Contains(noMessages, message => Type(message) == "gameState");
+            var retry = Assert.Single(game.State.PendingPrompts);
+            Assert.NotEqual(first.PromptId, retry.PromptId);
+            Assert.Contains("士气不足", retry.Data["retryReason"]);
+            AssertActorPromptCount(noMessages, actorSession, 1);
+            Assert.Equal(10, player.Hp);
+            Assert.Contains(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+            Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+
+            var beforeCancel = game.State.Revision;
+            var cancelMessages = await manager.HandleActionAsync(actorSession,
+                JsonSerializer.SerializeToElement(new L12Command("resolvePrompt",
+                    PromptId: retry.PromptId, Choice: "cancel"), Wire),
+                $"{cardId}-{actor}-{restore}-cancel");
+
+            Assert.Equal(beforeCancel + 1, game.State.Revision);
+            Assert.DoesNotContain(cancelMessages, message => Type(message) == "actionRejected");
+            Assert.Contains(cancelMessages, message => Type(message) == "gameState");
+            AssertActorPromptCount(cancelMessages, actorSession, 0);
+            Assert.Empty(game.State.PendingPrompts);
+            Assert.Equal(10, player.Hp);
+            Assert.Contains(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+            Assert.All(player.Morale, morale => Assert.False(morale.Tapped));
+            Assert.All(player.Field.SelectMany(row => row), Assert.Null);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ExactThorCanuteCases))]
+    public async Task ExactThorLastHealthCanutePreservesLethalYesAndMakesUnaffordableNoRecoverable(
+        int actor, bool restore, string choice)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-self-damage-thor-protocol",
+            $"{actor}-{restore}-{choice}-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(Catalog, recorder, utcNow: () => Now,
+                maintenanceSandboxFenceActive: () => false);
+            var host = Guid.NewGuid();
+            var guest = Guid.NewGuid();
+            manager.Connect(host, $"thor-{actor}-account-a", "Synthetic A");
+            manager.Connect(guest, $"thor-{actor}-account-b", "Synthetic B");
+            var created = manager.CreateRoom(host);
+            var roomCode = Payload(created[0]).GetProperty("roomCode").GetString()!;
+            manager.JoinRoom(guest, roomCode);
+            await manager.SetReadyAsync(host, true);
+            await manager.SetReadyAsync(guest, true);
+
+            var room = RuntimeRoom(manager, roomCode);
+            var gameProperty = room.GetType().GetProperty("Game",
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
+            var started = (L12GameEngine)gameProperty.GetValue(room)!;
+            var game = CreateExact("S02-0303", actor, started.State.MatchId, roomCode,
+                88500 + actor, hp: 1, moraleCount: 6);
+            var card = Assert.Single(game.State.Players[actor].Hand);
+            Accept(game.Handle(actor,
+                new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)));
+            var first = Assert.Single(game.State.PendingPrompts);
+            if (restore)
+            {
+                var state = game.SerializeFullState();
+                var random = game.RandomState;
+                var facts = game.CardFactSignalSequence;
+                game = L12GameEngine.RestoreCheckpoint(Catalog, state, random!.Value, facts,
+                    autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+                    utcNow: () => Now);
+                Assert.Equal(state, game.SerializeFullState());
+                Assert.Equal(random, game.RandomState);
+                Assert.Equal(facts, game.CardFactSignalSequence);
+            }
+            else
+            {
+                game.MarkEventsPersisted(game.State.EventSequence);
+                game.MarkCardFactsPersisted(game.CardFactSignalSequence);
+            }
+            gameProperty.SetValue(room, game);
+            var player = game.State.Players[actor];
+            var actorSession = actor == 0 ? host : guest;
+            var before = game.State.Revision;
+
+            var messages = await manager.HandleActionAsync(actorSession,
+                JsonSerializer.SerializeToElement(new L12Command("resolvePrompt",
+                    PromptId: first.PromptId, Choice: choice), Wire),
+                $"thor-{actor}-{restore}-{choice}");
+
+            Assert.Equal(before + 1, game.State.Revision);
+            Assert.DoesNotContain(messages, message => Type(message) == "actionRejected");
+            Assert.Contains(messages, message => Type(message) == "gameState");
+            if (choice == "yes")
+            {
+                AssertActorPromptCount(messages, actorSession, 0);
+                Assert.Equal(0, player.Hp);
+                Assert.Equal(1 - actor, game.State.Winner);
+                Assert.Equal(L12Phase.GameOver, game.State.Phase);
+                Assert.Contains(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+                Assert.DoesNotContain(player.Field.SelectMany(row => row),
+                    candidate => candidate?.InstanceId == card.InstanceId);
+                Assert.Empty(game.State.PendingPrompts);
+                Assert.Empty(game.State.PendingTriggerBatches);
+                Assert.Empty(game.State.PendingTriggerStackCandidates);
+                Assert.Empty(game.State.EffectStack);
+                Assert.Empty(game.State.DeferredEffectStack);
+            }
+            else
+            {
+                AssertActorPromptCount(messages, actorSession, 1);
+                var retry = Assert.Single(game.State.PendingPrompts);
+                Assert.NotEqual(first.PromptId, retry.PromptId);
+                Assert.Contains("士气不足", retry.Data["retryReason"]);
+                Assert.Equal(1, player.Hp);
+                Assert.Equal(6, player.Morale.Count(morale => !morale.Tapped));
+                Assert.Contains(player.Hand, candidate => candidate.InstanceId == card.InstanceId);
+
+                var cancelMessages = await manager.HandleActionAsync(actorSession,
+                    JsonSerializer.SerializeToElement(new L12Command("resolvePrompt",
+                        PromptId: retry.PromptId, Choice: "cancel"), Wire),
+                    $"thor-{actor}-{restore}-cancel");
+                Assert.DoesNotContain(cancelMessages, message => Type(message) == "actionRejected");
+                AssertActorPromptCount(cancelMessages, actorSession, 0);
+                Assert.Empty(game.State.PendingPrompts);
+            }
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    private static void AssertActorPromptCount(IReadOnlyList<OutgoingMessage> messages,
+        Guid actorSession, int expected)
+    {
+        var gameState = messages.Single(message => message.SessionId == actorSession
+            && Type(message) == "gameState");
+        Assert.Equal(expected, Payload(gameState).GetProperty("state").GetProperty("prompts").GetArrayLength());
+    }
+
+    private static string Type(OutgoingMessage message)
+        => Payload(message).GetProperty("type").GetString()!;
+
+    private static JsonElement Payload(OutgoingMessage message)
+        => JsonSerializer.SerializeToElement(message.Payload, Wire);
+
+    private static object RuntimeRoom(L12RoomManager manager, string roomCode)
+    {
+        var rooms = (IEnumerable)typeof(L12RoomManager)
+            .GetField("_rooms", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(manager)!;
+        foreach (var entry in rooms)
+        {
+            var type = entry!.GetType();
+            if (string.Equals((string?)type.GetProperty("Key")!.GetValue(entry), roomCode,
+                    StringComparison.OrdinalIgnoreCase))
+                return type.GetProperty("Value")!.GetValue(entry)!;
+        }
+        throw new InvalidOperationException("runtime room not found");
+    }
+
+    private static L12GameEngine CreateExact(string cardId, int actor, string matchId,
+        string roomCode, int seed, int hp = 10, int? moraleCount = null)
+    {
+        var baseDeck = Catalog.DeckAt(0);
+        var thor = new L12PresetDeckDefinition
+        {
+            Name = "protocol-explicit-thor",
+            MasterId = "S02-03M1",
+            CardIds = [.. baseDeck.CardIds],
+            MoraleIds = [.. baseDeck.MoraleIds],
+            SpecialIds = [.. baseDeck.SpecialIds],
+        };
+        var decks = actor == 0 ? new[] { thor, baseDeck } : new[] { baseDeck, thor };
+        var game = new L12GameEngine(Catalog, matchId, roomCode, seed,
+            ["Synthetic A", "Synthetic B"], decks, skipPreparation: true,
+            disasterMode: "none", autoPassEmptyResponses: false,
+            concealHiddenResponseAvailability: false, stateFormatVersion: 2,
+            utcNow: () => Now);
+        game.State.PendingPrompts.Clear();
+        game.State.ActivePlayer = actor;
+        game.State.FirstPlayer = actor;
+        game.State.Round = 2;
+        game.State.TurnSerial = 4;
+        game.State.Phase = L12Phase.Main;
+        game.State.ActiveDisaster = null;
+        game.State.DisasterDeck.Clear();
+        foreach (var owner in game.State.Players)
+        {
+            owner.Field[0] = new L12CardInstance?[3];
+            owner.Field[1] = new L12CardInstance?[3];
+            owner.Hand.Clear();
+            owner.Library.Clear();
+            owner.Graveyard.Clear();
+            owner.Removed.Clear();
+            owner.Resolving.Clear();
+            owner.Relic = null;
+            owner.ExtraRelics.Clear();
+            owner.Morale.Clear();
+            owner.MoraleDeck.Clear();
+            owner.UsedAbilities.Clear();
+            owner.SpecialZones.CanopicProgress.Clear();
+            owner.SpecialZones.GodPower.Clear();
+            owner.SpecialZones.Trials.Clear();
+            owner.TemporaryMorale = 0;
+            owner.FreeTacticCount = 0;
+        }
+        var player = game.State.Players[actor];
+        player.Hp = hp;
+        var card = Card(cardId, $"protocol-{cardId}-seat{actor}", actor);
+        for (var index = 0; index < (moraleCount ?? card.Cost - 1); index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                CardId = "S02-03C1",
+                InstanceId = $"protocol-{cardId}-seat{actor}-morale-{index}",
+            });
+        player.Hand.Add(card);
+        return game;
+    }
+
+    private static L12CardInstance Card(string cardId, string instanceId, int owner)
+    {
+        var definition = Catalog.Cards[cardId];
+        return new L12CardInstance
+        {
+            InstanceId = instanceId,
+            CardId = definition.Id,
+            Name = definition.NameZh,
+            OwnerIndex = owner,
+            CardType = definition.CardType,
+            Faction = definition.Faction,
+            Cost = definition.Cost ?? 0,
+            HasPrintedCost = definition.Cost.HasValue,
+            EffectText = definition.Effect,
+            BaseTroops = definition.Troops ?? 0,
+            Troops = definition.Troops ?? 0,
+            Traits = [.. definition.Traits],
+            Profession = definition.Profession,
+            ImageUrl = definition.ImageUrl,
+            DisasterLevel = definition.DisasterLevel ?? 0,
+            TrialValue = definition.TrialValue ?? 0,
+            SummonRound = -1,
+        };
+    }
+
+    private static void Accept(CommandResult result) => Assert.True(result.Accepted, result.Error);
+}

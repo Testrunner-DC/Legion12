@@ -1234,8 +1234,18 @@ public sealed partial class L12GameEngine
                 break;
             case "play-cost-choice":
             {
+                if (isExplicitCancellation) break;
                 var result = ResolvePlayCostChoice(prompt, chosen[0]);
-                if (!result.Accepted) return result;
+                if (!result.Accepted)
+                {
+                    var retry = RetryPrePlayAfterRejectedSelection(prompt, result);
+                    // If intervening state invalidated the entire play (for example the
+                    // card left hand or its slot became occupied), the old prompt is no
+                    // longer actionable. Complete its removal authoritatively instead of
+                    // rejecting after already consuming it.
+                    if (retry.Accepted) return retry;
+                    break;
+                }
                 break;
             }
             case "play-morale-choice":

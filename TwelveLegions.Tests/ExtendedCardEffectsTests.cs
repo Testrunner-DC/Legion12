@@ -1117,7 +1117,7 @@ public sealed class ExtendedCardEffectsTests
         Assert.True(game.Handle(0, new L12Command("playCard", card.InstanceId, Row: 0, Slot: 0)).Accepted);
         var prompt = Assert.Single(game.State.PendingPrompts);
         Assert.Equal("play-cost-choice", prompt.Continuation);
-        Assert.Equal(["yes", "no"], prompt.ValidChoices);
+        Assert.Equal(["yes", "no", "cancel"], prompt.ValidChoices);
         var rule = Assert.IsType<L12SelfDamageEntryDiscountRule>(
             L12StructuredCardRules.SelfDamageEntryDiscount(cardId));
         Assert.Contains(rule.CostText, prompt.Text, StringComparison.Ordinal);
