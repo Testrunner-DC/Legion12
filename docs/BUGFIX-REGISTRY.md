@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI-20261012-EDITOR-STATS-SCROLL｜短横屏统计区滚动恢复（Main浏览器限定通过，完整门禁接续）
+
+- BUG-20260926-9fb406cd；用户批准仅恢复统计区纵滚。原844×390与1024×600等非竖屏媒体层盖掉了基础overflow:auto；只在同一max-width1180/max-height640层恢复原deck-insight-panel的overflow-y:auto，不动自然竖屏、曲线174px、布局、保存/草稿/起手概率或战场。
+- 同型扫描`rg -n 'deck-insight-panel|data-editor-workspace="(stats|hand)"|deck-cost-curve' opcgpro-vue/src/l12`：统计/起手共用此容器，原卡池滚动守卫保留。新增回滚合同保原355风险；CSS/合同两源固定32805FC5/737D5908，原两源既有差异未覆盖。
+- Main独立真实Edge六尺寸×鼠标/触控12组统计、108数量可见断言通过，反向/横向/保存与卡池控制及存储不变检查保留，844×390与390×844截图目检通过。原完整脚本实际exit1：唯一667×375触控起手在16次短滑内不可达，同原基线已有；没有删除此断言或把全脚本改绿。Main另独立40上限控制30次短滑可达、exit0，只证明可达，不承诺易用或真iOS。
+- 回执在D盘editor-stats-scroll-fix/main-full-r1及main-667-control-r2，机外脚本仅校正当前f618元数据，行为断言未改。完整Batch/干净Release/Git仍以本批final-acceptance.json实际生成为准，不借浏览器子检查提前称发布或关闭反馈。原失败/截图保留；本轮不部署、不改维护。
+
 ## OPS-20261012-AUDIO-CACHE｜固定名称音乐的有界缓存（本地已验收，未启用线上）
 
 - 用户批准按现有条件处理流量。两条正式公共HEAD实际7.22MB/7.89MB且无显式freshness；ETag/Last-Modified/Range存在，不称浏览器完全没有缓存。PNG卡背约2.7/2.9MB已有一年immutable，本轮不改卡图。

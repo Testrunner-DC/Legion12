@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-editor-statistics-scroll",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "牌库编辑器统计显示",
+  "changes": [{
+    "category": "decks",
+    "text": "修复短横屏下牌库编辑器统计内容无法向下查看的问题。",
+    "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue"]
+  }]
+}

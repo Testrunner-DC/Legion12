@@ -1064,6 +1064,11 @@ const contracts = [
     && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营和士气数必须与牌表数量合并置于右侧牌表头部，中间卡池不得再重复展示'],
   [deckEditor.includes("import DeckCostCurve from './DeckCostCurve.vue'") && deckEditor.includes('<DeckCostCurve :values="curve" expanded/>')
     && !deckEditor.includes('class="cost-curve"'), '费用曲线必须复用共享组件，保持等列、上对齐且不得超出统计容器'],
+  [(() => {
+    const shortLandscape = deckEditor.match(/@media\(max-width:1180px\),\(max-height:640px\)\{([\s\S]*?)\n\}/)?.[1] ?? ''
+    return shortLandscape.includes('.deck-builder-shell:not(.portrait-editor) .deck-center-column>.deck-insight-panel.grand-panel{overflow-y:auto}')
+      && shortLandscape.includes('.deck-builder-shell:not(.portrait-editor) .deck-center-column>.deck-catalog.grand-panel{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}')
+  })(), '非竖屏短/窄编辑器统计与起手必须恢复自己的纵滚出口，保留原卡池与自然竖屏滚动归属'],
   [deckEditor.includes('alternate-art-banner') && !deckEditor.includes('class="deck-copy-labels"')
     && !deckEditor.includes('aria-label="移入备选区"') && !deckEditor.includes('aria-label="移至备选区"'), '右侧牌表必须按基础卡与异画独立 banner 展示，不得显示原画/异画复制标签或备卡按钮'],
   [(deckEditor.match(/class="deck-entry-row"/g)?.length ?? 0) >= 3

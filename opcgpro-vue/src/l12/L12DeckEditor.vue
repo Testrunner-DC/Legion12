@@ -1371,6 +1371,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
    a second shrinking card-grid scroller lets the filters consume its viewport. */
 @media(max-width:1180px),(max-height:640px){
   .deck-builder-shell:not(.portrait-editor) .deck-center-column>.deck-catalog.grand-panel{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}
+  .deck-builder-shell:not(.portrait-editor) .deck-center-column>.deck-insight-panel.grand-panel{overflow-y:auto}
   .deck-builder-shell:not(.portrait-editor) .deck-catalog>.catalog-filter-bar{flex:none;max-height:none;overflow:visible}
   .deck-builder-shell:not(.portrait-editor) .deck-catalog>.deck-card-grid{flex:none;max-height:none;overflow:visible}
 }
