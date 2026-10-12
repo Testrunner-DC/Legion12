@@ -1504,7 +1504,8 @@ public sealed partial class L12RoomManager
             }
             if (clockConcluded || responseExpired)
                 return BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
-                    requestId: requestId);
+                    requestId: requestId,
+                    allowCriticalDelta: responseExpired && !clockConcluded);
             if (room.Game.State.Phase == L12Phase.GameOver)
             {
                 var reportError = await CompleteTournamentRoomGameAsync(room);

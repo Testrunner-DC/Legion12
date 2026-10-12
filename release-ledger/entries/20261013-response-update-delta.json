@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261013-response-update-delta",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "响应状态传输优化",
+  "changes": [{
+    "category": "ui",
+    "text": "调整响应设置或自动结束响应时，保留原有响应期限、操作确认和实时状态更新，减少不必要的重复全量传输。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12RoomManager.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs"]
+  }]
+}

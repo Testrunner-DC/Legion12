@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## NET-20261013-RESPONSE-UPDATE｜响应更新误强制全房全量（明确批准，本地验收）
+
+- 完整Batch实际7219/1376、失败跳过0、退出0，当前全部新测试含后补偏好fallback均已执行；实际静态复审CLEAR。Main接提交级Release/同包三源复验与Git，当前不部署或关单。Batch-r1的Release-only参数拒绝保留，r2只纠正调用，无门禁减免。
+
+
+- Main同源预检C6C85DA4证明真实偏好/五秒时点分别改变权威与Journal；原53687B及同载荷反事实4954B是机外预算，不是上线出口。用户随后明确批准三入口限定修复，不改响应规则或期限。
+- 原SetResponsePreference提交后、Tick成功expiry、HandleAction非clockConcluded的responseExpired均forceCritical可靠且强制full。只新增三处allowCriticalDelta，调用端条件保护clockConcluded，默认full、GameOver及赛事观战OR保护保持，32/4096/90%等编解码阈值与成功发送才Commit均不改。
+- 扫描全仓BroadcastGame/forceCritical及ResponsePreferences：本批只改三源，其余SetupBroadcastPending、治理、终局及未证明路径不自动迁移。P2扩展，不改P0/P1单局语义、P3记录/去重/事务或P4消费者。
+- 修前4RED证据保留，修后53平台专项与偏好match-commit/account-sync两失败守卫通过；涵盖冻结当前lease、后续窗口新设置、deadline恰五秒、strict恢复、未知action不入Journal/processed、确认仅请求者、codec逐席等价、cold/legacy/noCommit full和提交失败不广播/重试仅一次。新增空手夹具隐私仅shape，不冒称非空秘密或真实WS证据；完整门禁及最终包待。
+- 上批328a完整Release实际7219/1371零失败跳过8阶段已同步，最终6E7838BB；本批不部署、不改维护、不关闭未上线反馈。回滚禁止删可靠通知、降低失败恢复/全量回退或把合成字节当历史流量根治。
+
+
 ## NET-20261013-ACCEPTED-RETRY｜成功重复请求把可靠投递误绑定全量（已批准，限定修复验收）
 
 - 完整Batch7219/1371零失败跳过、UI356/类型/324+42及双前端构建通过，独立review-r2 CLEAR 6C5B25DB；Main接提交级Release/最终包精确绑定，未上线、不提前关闭反馈。既有全部Full边界矩阵9B9B6ECA共20路径，额外响应3源另获批准机外准备，其他未证full边界不冒称Bug或自动修改。

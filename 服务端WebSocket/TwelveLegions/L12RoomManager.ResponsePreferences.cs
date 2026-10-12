@@ -107,7 +107,7 @@ public sealed partial class L12RoomManager
 
             var accountSynced = await DrainResponsePreferenceOutboxAsync(session.AccountId);
             room.ResponsePreferenceSyncPending[player] = !accountSynced;
-            var messages = BroadcastGame(room, forceCritical: true).ToList();
+            var messages = BroadcastGame(room, forceCritical: true, allowCriticalDelta: true).ToList();
             messages.Add(ResponsePreferenceResult(sessionId, true, accountSynced,
                 room.Game.ResponseModeFor(player), !accountSynced, requestId));
             return messages;
@@ -209,7 +209,7 @@ public sealed partial class L12RoomManager
             {
                 if (room.Closed || room.Game is null) continue;
                 if (await ExpireResponseWindowLockedAsync(room, now))
-                    messages.AddRange(BroadcastGame(room, forceCritical: true));
+                    messages.AddRange(BroadcastGame(room, forceCritical: true, allowCriticalDelta: true));
             }
             catch (Exception exception)
             {

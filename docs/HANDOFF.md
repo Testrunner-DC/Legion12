@@ -1,5 +1,16 @@
 # 十二军团简短交接
 
+## 2026-10-13 接续｜328a已同步，批准响应更新与Bug证据并行
+
+- 本批完整Batch实际7219/1376零失败跳过退出0，最终测试文件全部断言已跑，独立实源复审CLEAR；Main接干净提交级Release/同包三源/Git，最终精确版本统一认D盘response-update-actual/final-acceptance.json实际生成结果，不借用328a门禁。前端未改按Batch映射不复跑双构建，Release完整兜底。
+- Bug45/下一12指纹及4条证据Main回执822C1D4A已生成；嬴政赠礼最新包60例仍待（当前多实体源码静态兼容），不增加线上关闭数。响应工具原准备的偏好Journal-request“不变”预期错误，Main新副本精确验证偏好只新增该已记录requestId、expiry仍不增，原源保留，不改产品去迎合工具。
+
+
+- 当前已验收产品唯一328a5166dd67b370000c4656a49e10761ed0f30e：Release7219/1371零失败跳过8阶段、最终包F6C1B9DD/DLL8FD0B4A9、17玩家项53源/双入口核验，origin/main精确读回；duplicate-full-fix/final-acceptance.json（6E7838BB）。下面待Release保留为历史。
+- Main实际三处响应可靠delta，两产品源，4RED→53专项通过，并补偏好commit/outbox失败2项通过；完整Batch/干净Release/Git与同包三源复验待。严格deadline/Journal/未知action不继续执行与requester-only确认保持；private shape不冒称非空牌证据。不部署/维护/Bug线上写。
+- Bug子任务只读复核四条已测试无复现证据；Main已实际核45就绪项及12下一项证据SHA，12fixed/4duplicate/29rejected均不是已关。历史92/512不作当前在线计数，线上版本/ETag/CAS/独立读回缺口保留。另一路只在D盘准备同包响应工具，无共享源码/build租约。权威状态仍D盘current-status.json。
+
+
 ## 2026-10-13 接续｜音乐8103已同步，三入口重复请求限定批
 
 - 三dup完整Batch实际7219/1371零失败跳过、UI356/类型/卡图/双前端通过；独立review-r2 CLEAR6C5B25DB，Main接干净提交级Release及同包3模式机外复验。next response3源已获批但仅D盘prepare；Bug只读清单lane并行，不拥有源码或共享build/线上close租约。20路径full矩阵9B9B6ECA保留必要保护和未证边界，不说整体根治。

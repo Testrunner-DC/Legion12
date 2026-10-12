@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
@@ -421,6 +422,229 @@ public sealed class RankedWatchdogIsolationTests
     }
 
     [Fact]
+    public async Task BothPreferenceChangesKeepTheCurrentLeaseAndUseReliableRecipientDeltas()
+    {
+        await RunFixtureAsync(async fixture =>
+        {
+            var response = await fixture.AddResponseRoomAsync();
+            var sessions = SessionIds(response.Room);
+            var game = Game(response.Room);
+            var originalLease = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
+            Assert.Equal(TimeSpan.FromSeconds(5), originalLease.DeadlineUtc - fixture.Now);
+            var frozenModes = Assert.IsType<string[]>(game.State.ResponseWindow!.FrozenPlayerResponseModes).ToArray();
+            var transport = await PrimeRecipientsAsync(fixture.Manager, response.Room, sessions);
+            var updatedModes = new[]
+            {
+                L12GameEngine.DefaultResponseMode,
+                L12GameEngine.ValidOnlyResponseMode,
+            };
+
+            for (var player = 0; player < sessions.Length; player++)
+            {
+                var beforeRevision = game.State.Revision;
+                var requestId = $"response-preference-delta-{player}";
+                var messages = await fixture.Manager.SetResponsePreferenceAsync(
+                    sessions[player], updatedModes[player], requestId);
+                var games = messages.Where(message => message.IsGameState).ToArray();
+                Assert.Equal(2, games.Length);
+                Assert.All(games, message =>
+                {
+                    Assert.False(message.ReplaceableGameState);
+                    Assert.False(message.ForceFullGameState);
+                });
+                foreach (var message in games)
+                {
+                    await AssertRecipientDeltaAsync(transport, sessions, message);
+                    await AssertFullFallbacksAsync(transport.Messages[message.SessionId], message);
+                }
+                var result = JsonSerializer.SerializeToElement(messages.Single(message =>
+                    message.SessionId == sessions[player] && !message.IsGameState).Payload, WireJson);
+                Assert.Equal("responsePreferenceResult", result.GetProperty("type").GetString());
+                Assert.True(result.GetProperty("matchApplied").GetBoolean());
+                Assert.Equal(updatedModes[player], result.GetProperty("confirmedMode").GetString());
+                Assert.Equal(requestId, result.GetProperty("requestId").GetString());
+                Assert.Equal(beforeRevision + 1, game.State.Revision);
+                Assert.Equal(originalLease, game.CaptureResponseAutoCloseLease());
+                Assert.Equal(frozenModes, game.State.ResponseWindow!.FrozenPlayerResponseModes);
+            }
+
+            Assert.Equal(updatedModes, new[] { game.ResponseModeFor(0), game.ResponseModeFor(1) });
+            var restored = Assert.IsType<L12JournalRecoveryState>(
+                await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+            Assert.Equal(game.SerializeFullState(), restored.Engine.SerializeFullState());
+            Assert.Equal(updatedModes, restored.Engine.State.PlayerResponseModes);
+
+            game.State.PendingPrompts.Clear();
+            game.State.EffectStack.Clear();
+            game.State.ResponseWindow = null;
+            var next = new L12StackItem
+            {
+                StackItemId = "preference-next-window", Controller = 1,
+                SourceInstanceId = "source-next", SourceCardId = "S01-0103",
+                SourceName = "next response source", Trigger = "reaction", Text = "下一响应时点",
+            };
+            game.State.ActivePlayer = 0;
+            game.State.EffectStack.Add(next);
+            typeof(L12GameEngine).GetMethod("BeginResponseWindow",
+                BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(game, [next]);
+            Assert.Equal(updatedModes, game.State.ResponseWindow!.FrozenPlayerResponseModes);
+            Assert.Null(game.CaptureResponseAutoCloseLease());
+        });
+    }
+
+    [Theory]
+    [InlineData("timer")]
+    [InlineData("action")]
+    public async Task ResponseExpiryOriginsStayReliableAndUseRecipientDeltasWithStrictRecovery(string origin)
+    {
+        await RunFixtureAsync(async fixture =>
+        {
+            var response = await fixture.AddResponseRoomAsync();
+            var sessions = SessionIds(response.Room);
+            var game = Game(response.Room);
+            var original = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
+            Assert.Equal(TimeSpan.FromSeconds(5), original.DeadlineUtc - fixture.Now);
+            var transport = await PrimeRecipientsAsync(fixture.Manager, response.Room, sessions);
+            var beforeRevision = game.State.Revision;
+            var beforeSequence = RoomCommandSequence(response.Room);
+            var beforeDetail = Assert.IsType<L12MatchDetail>(
+                await fixture.Recorder.GetMatchAsync(response.MatchId));
+            Assert.Empty(beforeDetail.Commands);
+            const string actionRequestId = "response-expiry-action";
+            fixture.Now = original.DeadlineUtc;
+
+            var messages = origin == "timer"
+                ? await fixture.Manager.TickResponseWindowsAsync(fixture.Now)
+                : await fixture.Manager.HandleActionAsync(sessions[0],
+                    JsonSerializer.SerializeToElement(new { type = "ignored-after-response-expiry" }, WireJson),
+                    actionRequestId);
+            Assert.Equal(2, messages.Count);
+            var games = messages.Where(message => message.IsGameState).ToArray();
+            Assert.Equal(messages.Count, games.Length);
+            Assert.All(games, message =>
+            {
+                Assert.False(message.ReplaceableGameState);
+                Assert.False(message.ForceFullGameState);
+                var payload = JsonSerializer.SerializeToElement(message.Payload, WireJson);
+                var acknowledgement = payload.TryGetProperty("requestId", out var requestId)
+                    && requestId.ValueKind != JsonValueKind.Null ? requestId.GetString() : null;
+                Assert.Equal(origin == "action" && message.SessionId == sessions[0]
+                    ? actionRequestId : null, acknowledgement);
+            });
+            Assert.Equal(beforeRevision + 1, game.State.Revision);
+            Assert.Equal(beforeSequence + 1, RoomCommandSequence(response.Room));
+            var detail = Assert.IsType<L12MatchDetail>(
+                await fixture.Recorder.GetMatchAsync(response.MatchId));
+            var recorded = Assert.Single(detail.Commands);
+            Assert.Equal("responseAutoClose", recorded.Command.GetProperty("type").GetString());
+            Assert.Equal(1, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+            var processed = (IDictionary)response.Room.GetType().GetProperty("ProcessedActionRequests")!
+                .GetValue(response.Room)!;
+            Assert.DoesNotContain($"0:{actionRequestId}", processed.Keys.Cast<string>());
+            var nextLease = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
+            Assert.NotEqual(original.PromptId, nextLease.PromptId);
+            Assert.Equal(1, nextLease.PriorityPlayer);
+            Assert.Equal(fixture.Now.AddSeconds(5), nextLease.DeadlineUtc);
+            var restored = Assert.IsType<L12JournalRecoveryState>(
+                await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+            Assert.Equal(game.SerializeFullState(), restored.Engine.SerializeFullState());
+            Assert.DoesNotContain(restored.ProcessedRequests,
+                request => request.RequestId == actionRequestId);
+
+            foreach (var message in games)
+            {
+                await AssertRecipientDeltaAsync(transport, sessions, message);
+                await AssertFullFallbacksAsync(transport.Messages[message.SessionId], message);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData("match-commit")]
+    [InlineData("account-sync")]
+    public async Task PreferenceFailurePublishesOnlyCommittedStateAndRetainsRetryableOutbox(string phase)
+    {
+        await RunFixtureAsync(async fixture =>
+        {
+            var response = await fixture.AddResponseRoomAsync();
+            var sessions = SessionIds(response.Room);
+            var game = Game(response.Room);
+            var beforeState = game.SerializeFullState();
+            var beforeRevision = game.State.Revision;
+            var beforeSequence = RoomCommandSequence(response.Room);
+            var lease = game.CaptureResponseAutoCloseLease();
+            var transport = await PrimeRecipientsAsync(fixture.Manager, response.Room, sessions);
+            if (phase == "match-commit") fixture.Recorder.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-match-command-commit") throw new IOException("synthetic preference commit failure");
+            };
+            else fixture.Platform.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-commit") throw new IOException("synthetic preference account sync failure");
+            };
+            try
+            {
+                var messages = await fixture.Manager.SetResponsePreferenceAsync(sessions[0],
+                    L12GameEngine.DefaultResponseMode, "failed-preference-delta");
+                var result = JsonSerializer.SerializeToElement(messages.Single(message => !message.IsGameState).Payload, WireJson);
+                Assert.Equal("responsePreferenceResult", result.GetProperty("type").GetString());
+                Assert.Equal("failed-preference-delta", result.GetProperty("requestId").GetString());
+                Assert.False(result.GetProperty("accountSynced").GetBoolean());
+                if (phase == "match-commit")
+                {
+                    Assert.False(result.GetProperty("matchApplied").GetBoolean());
+                    Assert.Single(messages);
+                    Assert.Equal(beforeState, game.SerializeFullState());
+                    Assert.Equal(beforeSequence, RoomCommandSequence(response.Room));
+                    Assert.Empty((await fixture.Recorder.GetMatchAsync(response.MatchId))!.Commands);
+                    Assert.Empty(await fixture.Recorder.ListPendingResponsePreferencesAsync());
+                }
+                else
+                {
+                    Assert.True(result.GetProperty("matchApplied").GetBoolean());
+                    Assert.True(result.GetProperty("syncPending").GetBoolean());
+                    Assert.Equal(beforeRevision + 1, game.State.Revision);
+                    Assert.Equal(beforeSequence + 1, RoomCommandSequence(response.Room));
+                    var pending = Assert.Single(await fixture.Recorder.ListPendingResponsePreferencesAsync());
+                    Assert.Equal(L12GameEngine.DefaultResponseMode, pending.Payload!.TargetMode);
+                    var games = messages.Where(message => message.IsGameState).ToArray();
+                    Assert.Equal(2, games.Length);
+                    foreach (var message in games)
+                    {
+                        Assert.False(message.ReplaceableGameState);
+                        Assert.False(message.ForceFullGameState);
+                        await AssertRecipientDeltaAsync(transport, sessions, message);
+                    }
+                }
+                Assert.Equal(lease, game.CaptureResponseAutoCloseLease());
+                var restored = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+                Assert.Equal(game.SerializeFullState(), restored.Engine.SerializeFullState());
+            }
+            finally
+            {
+                fixture.Recorder.StorageFailureInjector = null;
+                fixture.Platform.StorageFailureInjector = null;
+            }
+            if (phase == "match-commit")
+            {
+                var retry = await fixture.Manager.SetResponsePreferenceAsync(sessions[0],
+                    L12GameEngine.DefaultResponseMode, "failed-preference-delta");
+                Assert.Equal(2, retry.Count(message => message.IsGameState));
+                Assert.Single((await fixture.Recorder.GetMatchAsync(response.MatchId))!.Commands);
+            }
+            else
+            {
+                var retriedSync = await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+                Assert.DoesNotContain(retriedSync, message => message.IsGameState);
+                var state = JsonSerializer.SerializeToElement(Assert.Single(retriedSync).Payload, WireJson);
+                Assert.Equal("responsePreferenceState", state.GetProperty("type").GetString());
+                Assert.False(state.GetProperty("syncPending").GetBoolean());
+            }
+            Assert.Empty(await fixture.Recorder.ListPendingResponsePreferencesAsync());
+        });
+    }
+
+    [Fact]
     public async Task ThirtySecondBusyResponseRoomKeepsOriginalDeadlineWhileHealthyExpiryIsDurable()
     {
         await RunFixtureAsync(async fixture =>
@@ -462,12 +686,15 @@ public sealed class RankedWatchdogIsolationTests
     }
 
     [Fact]
-    public async Task ResponseCommitFailureRestoresOriginalLeaseAndRetryExpiresThatLeaseExactlyOnce()
+    public async Task ResponseCommitFailureNotifiesNobodyRestoresOriginalLeaseAndRetryExpiresExactlyOnce()
     {
         await RunFixtureAsync(async fixture =>
         {
             var response = await fixture.AddResponseRoomAsync();
-            var original = Game(response.Room).CaptureResponseAutoCloseLease()!;
+            var game = Game(response.Room);
+            var original = game.CaptureResponseAutoCloseLease()!;
+            var beforeRevision = game.State.Revision;
+            var beforeState = game.SerializeFullState();
             fixture.Now = original.DeadlineUtc;
             var failures = 0;
             fixture.Recorder.StorageFailureInjector = phase =>
@@ -476,16 +703,31 @@ public sealed class RankedWatchdogIsolationTests
                 Interlocked.Increment(ref failures);
                 throw new IOException("synthetic response commit failure");
             };
-            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            var failed = await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            Assert.Empty(failed);
             Assert.Equal(1, failures);
-            Assert.Equal(original, Game(response.Room).CaptureResponseAutoCloseLease());
+            var reloadedGame = Game(response.Room);
+            Assert.Equal(beforeRevision, reloadedGame.State.Revision);
+            Assert.Equal(beforeState, reloadedGame.SerializeFullState());
+            Assert.Equal(original, reloadedGame.CaptureResponseAutoCloseLease());
             Assert.Equal(0, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
             var recovered = Assert.IsType<L12JournalRecoveryState>(await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
             Assert.Equal(original, recovered.Engine.CaptureResponseAutoCloseLease());
             fixture.Recorder.StorageFailureInjector = null;
-            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
-            await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            var retry = await fixture.Manager.TickResponseWindowsAsync(fixture.Now);
+            var games = retry.Where(message => message.IsGameState).ToArray();
+            Assert.Equal(2, games.Length);
+            Assert.All(games, message =>
+            {
+                Assert.False(message.ReplaceableGameState);
+                Assert.False(message.ForceFullGameState);
+            });
+            Assert.DoesNotContain(await fixture.Manager.TickResponseWindowsAsync(fixture.Now),
+                message => message.IsGameState);
             Assert.Equal(1, await CountCloseAsync(fixture.Recorder, response.MatchId, original.PromptId));
+            var afterRetry = Assert.IsType<L12JournalRecoveryState>(
+                await fixture.Recorder.LoadJournalEngineAsync(response.MatchId));
+            Assert.Equal(Game(response.Room).SerializeFullState(), afterRetry.Engine.SerializeFullState());
         });
     }
 
@@ -657,6 +899,80 @@ public sealed class RankedWatchdogIsolationTests
         if (businessFailure is not null) ExceptionDispatchInfo.Capture(businessFailure).Throw();
     }
 
+    private static Guid[] SessionIds(object room)
+        => ((IEnumerable<Guid>)room.GetType().GetProperty("Sessions")!.GetValue(room)!).ToArray();
+    private static long RoomCommandSequence(object room)
+        => (long)room.GetType().GetProperty("CommandSequence")!.GetValue(room)!;
+
+    private static IReadOnlyList<OutgoingMessage> BroadcastForTransport(L12RoomManager manager, object room)
+        => (IReadOnlyList<OutgoingMessage>)typeof(L12RoomManager).GetMethod("BroadcastGame",
+            BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(manager, [room, false, null, null, null, false])!;
+
+    private static async Task<RecipientBaselines> PrimeRecipientsAsync(L12RoomManager manager,
+        object room, IReadOnlyList<Guid> sessions)
+    {
+        var messages = BroadcastForTransport(manager, room).Where(message => message.IsGameState)
+            .ToDictionary(message => message.SessionId);
+        Assert.Equal(sessions.Count, messages.Count);
+        var codecs = sessions.ToDictionary(session => session, _ => RecoverySnapshotFanoutTests.Codec());
+        var payloads = new Dictionary<Guid, JsonObject>();
+        foreach (var session in sessions)
+        {
+            var wire = await RecoverySnapshotFanoutTests.SendAsync(codecs[session], messages[session]);
+            Assert.False(wire.IsDelta);
+            payloads[session] = JsonNode.Parse(wire.Payload)!.AsObject();
+        }
+        return new(codecs, messages, payloads);
+    }
+
+    private static async Task AssertRecipientDeltaAsync(RecipientBaselines transport,
+        IReadOnlyList<Guid> sessions, OutgoingMessage message)
+    {
+        var wire = await RecoverySnapshotFanoutTests.SendAsync(transport.Codecs[message.SessionId], message);
+        Assert.True(wire.IsDelta);
+        var rebuilt = L12SnapshotWireCodec.ApplyDelta(transport.Payloads[message.SessionId], wire.Payload);
+        Assert.True(JsonNode.DeepEquals(
+            JsonNode.Parse(RecoverySnapshotFanoutTests.Queue(message).FullPayload), rebuilt));
+        AssertRecipientPrivacy(rebuilt, Array.IndexOf(sessions.ToArray(), message.SessionId));
+        transport.Payloads[message.SessionId] = rebuilt;
+    }
+
+    private static async Task AssertFullFallbacksAsync(OutgoingMessage baseline, OutgoingMessage message)
+    {
+        var expected = RecoverySnapshotFanoutTests.Queue(message).FullPayload;
+
+        var legacy = new L12SnapshotWireCodec();
+        Assert.False((await RecoverySnapshotFanoutTests.SendAsync(legacy, baseline)).IsDelta);
+        var legacyWire = await RecoverySnapshotFanoutTests.SendAsync(legacy, message);
+        Assert.False(legacyWire.IsDelta);
+        Assert.Equal(expected, legacyWire.Payload);
+
+        var cold = RecoverySnapshotFanoutTests.Codec();
+        var coldWire = await RecoverySnapshotFanoutTests.SendAsync(cold, message);
+        Assert.False(coldWire.IsDelta);
+        Assert.Equal(expected, coldWire.Payload);
+
+        var noCommit = RecoverySnapshotFanoutTests.Codec();
+        Assert.False(noCommit.Prepare(RecoverySnapshotFanoutTests.Queue(baseline)).IsDelta);
+        var noCommitWire = await RecoverySnapshotFanoutTests.SendAsync(noCommit, message);
+        Assert.False(noCommitWire.IsDelta);
+        Assert.Equal(expected, noCommitWire.Payload);
+    }
+
+    private static void AssertRecipientPrivacy(JsonObject payload, int recipient)
+    {
+        Assert.InRange(recipient, 0, 1);
+        var state = payload["state"]!.AsObject();
+        Assert.Equal(recipient, state["you"]!.GetValue<int>());
+        var players = state["players"]!.AsArray();
+        var self = players[recipient]!.AsObject();
+        var opponent = players[1 - recipient]!.AsObject();
+        Assert.True(self.ContainsKey("hand"));
+        Assert.False(opponent.ContainsKey("hand"));
+        Assert.True(opponent.ContainsKey("handCount"));
+    }
+
     private static async Task<int> CountCloseAsync(MatchRecorder recorder, string matchId, string promptId)
         => (await recorder.GetMatchAsync(matchId))!.Commands.Count(command =>
             command.Command.GetProperty("type").GetString() == "responseAutoClose"
@@ -683,6 +999,8 @@ public sealed class RankedWatchdogIsolationTests
     }
     private static string Code(object room) => (string)room.GetType().GetProperty("Code")!.GetValue(room)!;
     private static SemaphoreSlim Gate(object room) => (SemaphoreSlim)room.GetType().GetProperty("Gate")!.GetValue(room)!;
+    private sealed record RecipientBaselines(Dictionary<Guid, L12SnapshotWireCodec> Codecs,
+        Dictionary<Guid, OutgoingMessage> Messages, Dictionary<Guid, JsonObject> Payloads);
 
     private sealed record Match(L12AccountView First, L12AccountView Second,
         Guid FirstSession, Guid SecondSession, string MatchId, string RoomCode);

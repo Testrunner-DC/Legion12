@@ -1,5 +1,17 @@
 # 十二军团任务台账
 
+## NET-20261013-RESPONSE-UPDATE｜响应更新可靠差量（明确批准，本地实施验收）
+
+- 标准完整Batch实际7219规则/1376平台零失败跳过，退出0；当前测试文件全部断言已实际执行，独立实际复审CLEAR与专项出处见main-focused-and-review-r1.json（B6F7F6B8）。前端源未改，按A1映射未在Batch复跑双构建；干净提交级Release仍完整兜底。Main接最终包/Git，不部署。
+- Bug并行四条有界非复现证据复审已Main接受，822C1D4A回执；嬴政赠礼60例与当前多实体源码静态兼容，但最新包运行仍待，不增加已关数量。其最小离线复验方案已交付；共享构建仍Main串行，子任务不关单。
+
+
+- 上批328a5166已完整Release7219/1371零失败跳过8阶段并精确推送，最终回执duplicate-full-fix/final-acceptance.json（6E7838BB）；下方待Release是历史。不部署，正式old0e维护true仅16:37UTC匿名历史观测，不代表当前入口。
+- 本批用户已批准SetResponsePreference提交成功、Tick五秒自动关闭、HandleAction仅responseExpired且非clockConcluded三处允许有效基线delta；forceCritical可靠通知、请求者确认、显式恢复目标/终局/赛事观战full及cold/legacy/noCommit回退保留。P2仅传输编排扩展，P0/P1/P3/P4不变。
+- Main独占两产品源及RankedWatchdogIsolationTests共享构建；修前4/4失败（red-r1），修后53专项、偏好提交/账号outbox失败及重试2专项通过。新增回归证明未知action不继续执行、唯一AutoClose命令/sequence、requester-only确认、strict恢复和期限不变；空手夹具隐私仅shape，非空隐私仍由既有守卫承担。完整Batch/干净Release/最终包与Git待。
+- Bug并行只读复核：Main实际核45就绪ID/原文摘要/历史版本及证据文件SHA，12fixed/4duplicate/29rejected均非已关；另12证据绑定通过。子任务复核4条已查无复现证据，不改源/构建/线上状态。线上最新原文/版本/ETag/条件写及独立读回仍缺，92/512仅10月11历史，不冒称清单已经减少。
+
+
 ## NET-20261013-ACCEPTED-RETRY｜三入口成功请求重试全量放大（明确批准，本地验收中）
 
 - 完整标准Batch7219规则/1371平台零失败跳过、UI356/类型/卡图324+42/双前端全部通过；独立复审r2 CLEAR（6C5B25DB）。Main接干净提交级Release及最终包/Git绑定，未部署；下方首轮夹具失败为保留历史。
