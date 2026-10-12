@@ -1,5 +1,12 @@
 # 效果一致性实施计划
 
+## 2026-10-12 当前批：天照／黄泉预声明费用投影
+
+- 孟婆批已完整Release并同步93bec1803a7b7de48ae54ba2b1008fe605fc273d，尚未部署；前文“待”状态为过程记录。用户新批准两卡候选/提交修复，统一原费用维度谓词，不改最终结算或检索例外。当前8条真实命令级RED已保存，专项/完整门禁接续。
+- 继续保持候选、正常/免费提交和最终权威结算一致；费用与次数只能在完整合法声明后支付，已支付后目标失效不退款、不改选。范围和实际证据见台账EFFECT-20261012-PROJECTED-COST及D盘projected-cost-target-fix-20261012。
+- 当前专项408、Main独立56和466严格检查点通过，153冻结证据重核无漂移，独立审查CLEAR；完整Batch/干净Release/Git接续，最终以final-acceptance.json真实回执为准，不部署。
+- 完整Batch实际7148规则/1268平台零失败跳过，5源无漂移，main-batch-acceptance.json已绑定；干净Release及授权Git以同目录final-acceptance.json实际结果收口，仍不部署。
+
 ## 2026-10-12 最新增量：三批同步后，孟婆抑制与独立离场
 
 - NEXT-RESET、反击物理副本与拉美西斯顺序已经完整Release7048/1268及9阶段通过并推送3ce1dbea，未部署。实际最终回执E1397AEB位于D盘ramses-selection-order/implementation/final-acceptance.json，原Batch失败及旧Journal严格拒绝证据不删除；后文待发布状态为历史。

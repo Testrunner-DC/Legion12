@@ -1,5 +1,14 @@
 # 十二军团任务台账
 
+## EFFECT-20261012-PROJECTED-COST｜天照／黄泉候选与提交统一费用维度（本地Batch已验，提交级状态见唯一回执）
+
+- 用户分别明确批准两项限定修复；基线93bec1803a7b7de48ae54ba2b1008fe605fc273d干净，孟婆批已完整Release7092规则/1268平台、零失败跳过并同步，不部署。前批实际结果见D盘mengpo-tomb-construct/implementation/final-acceptance.json，下方“Release待”为历史过程。
+- 已确认无印刷费用不等于0费。天照第一段仍可选择无费用军团；第二段以及黄泉两个费用阈值候选、正常提交、信仰狂热者免费入口共用同一投影谓词，保留真正0费、合法减费和最终结算复核。不得削弱最终CurrentCostEquals/AtMost，也不改变牌库检索的既有例外。
+- P0/P1/P3保持：不改状态模型、费用、次数、响应、区域、检查点与哈希协议，只统一预结算合法性。先当前源红测，再双方/伪造与失效提交/支付/免费入口/恢复绿测，Main独立全池核查与验收后统一Batch、干净Release及Git，不操作正式服或维护。
+- 子任务唯一写租约为四产品文件与新ProjectedCostTargetRegressionTests.cs，共享Focused构建串行；Main记录与只读审查。证据根D:/GPT/Legion12/artifacts/projected-cost-target-fix-20261012。原普通目标点击反馈不因本项自动视为修复；线上39条仅离线就绪，92实际闭环/512待办计数不变。
+- 子任务写入/构建租约已归还；408专项及Main56独立实跑通过，466检查点和8组成对终态一致，独立审查CLEAR。Main正在串行完整Batch，之后干净提交级Release及Git；实际提交/包/远端以该目录final-acceptance.json生成后内容为准，未生成不称完成。
+- 上条Batch状态已收口：2026-10-12 12:43规则7148/平台1268、失败跳过0、退出0，监督d702ff64/4518dc0d为success，5冻结源无漂移；main-batch-acceptance.json保存实际绑定。接干净Release/授权Git，最终结果仍统一读final-acceptance.json，不自动部署或关闭线上反馈。
+
 ## EFFECT-20261012-MENGPO-LEAVE｜阵亡抑制不吞独立离场（本地Batch已验，提交级Release待）
 
 - 用户批准“限定修复与同类核查”；原反馈 BUG-20260921-d1e22956。先完成三冻结批的完整Release及Git同步，再实施本项；不部署、不改维护、不提前关闭。

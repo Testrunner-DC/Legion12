@@ -1098,7 +1098,7 @@ public sealed partial class L12GameEngine
             {
                 var ids = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 bool ValidTarget(string id, int maximum) => id == "mode:none"
-                    || DeclaredEnemyTarget(playerIndex, id, card => card.CurrentCost - 1 <= maximum) is not null;
+                    || DeclaredEnemyTarget(playerIndex, id, card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card, -1, maximum)) is not null;
                 if (ids.Length != 2 || !ValidTarget(ids[0], 3) || !ValidTarget(ids[1], 1)
                     || ids[0] != "mode:none" && ids[0].Equals(ids[1], StringComparison.OrdinalIgnoreCase))
                     return CommandResult.Reject("黄泉之门的公开击杀目标声明已失效");
@@ -1120,12 +1120,12 @@ public sealed partial class L12GameEngine
                 var declared = (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var debuff = declared.Length == 2 ? DeclaredEnemyTarget(playerIndex, declared[0]) : null;
                 var kill = declared.Length == 2 && declared[1] != "mode:none"
-                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
-                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
+                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card,
+                        card.InstanceId == debuff?.InstanceId ? -1 : 0, 0))
                     : null;
                 var hasRequiredKill = debuff is not null && PublicLegions(State.Players[1 - playerIndex])
-                    .Any(card => Math.Max(0, card.CurrentCost
-                        - (card.InstanceId == debuff.InstanceId ? 1 : 0)) == 0);
+                    .Any(card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card,
+                        card.InstanceId == debuff.InstanceId ? -1 : 0, 0));
                 if (debuff is null || kill is null
                     && (declared[1] != "mode:none" || hasRequiredKill))
                     return CommandResult.Reject("天照大神声明的费用降低或击杀目标已失效");

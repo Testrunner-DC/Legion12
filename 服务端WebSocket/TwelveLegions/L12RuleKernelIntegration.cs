@@ -818,7 +818,7 @@ public sealed partial class L12GameEngine
         {
             var threshold = step.CostThreshold ?? 0;
             var choices = PublicLegions(State.Players[1 - activation.Controller])
-                .Where(card => card.CurrentCost - 1 <= threshold
+                .Where(card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card, -1, threshold)
                     && !activation.DeclaredTargets.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
                 .Select(card => card.InstanceId).ToList();
             choices.Insert(0, "mode:none");
@@ -833,7 +833,8 @@ public sealed partial class L12GameEngine
                 ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
                 : null;
             var choices = PublicLegions(State.Players[1 - activation.Controller])
-                .Where(card => Math.Max(0, card.CurrentCost - (card.InstanceId == debuffTarget ? 1 : 0)) == 0)
+                .Where(card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card,
+                    card.InstanceId == debuffTarget ? -1 : 0, 0))
                 .Select(card => card.InstanceId).ToList();
             if (choices.Count == 0) choices.Add("mode:none");
             step.ValidChoices.Clear();

@@ -702,12 +702,12 @@ public sealed partial class L12GameEngine
             {
                 var debuff = declared.Length == 2 ? DeclaredEnemyTarget(playerIndex, declared[0]) : null;
                 var kill = declared.Length == 2 && declared[1] != "mode:none"
-                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => Math.Max(0, card.CurrentCost
-                        - (card.InstanceId == debuff?.InstanceId ? 1 : 0)) == 0)
+                    ? DeclaredEnemyTarget(playerIndex, declared[1], card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card,
+                        card.InstanceId == debuff?.InstanceId ? -1 : 0, 0))
                     : null;
                 var hasRequiredKill = debuff is not null && PublicLegions(State.Players[1 - playerIndex])
-                    .Any(card => Math.Max(0, card.CurrentCost
-                        - (card.InstanceId == debuff.InstanceId ? 1 : 0)) == 0);
+                    .Any(card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card,
+                        card.InstanceId == debuff.InstanceId ? -1 : 0, 0));
                 return debuff is not null && (kill is not null
                         || declared[1] == "mode:none" && !hasRequiredKill)
                     ? null : "天照大神声明的费用降低或击杀目标已失效";
@@ -757,7 +757,7 @@ public sealed partial class L12GameEngine
             case ("S01-04D1", "yomiSweep"):
             {
                 bool ValidTarget(string id, int maximum) => id == "mode:none"
-                    || DeclaredEnemyTarget(playerIndex, id, card => card.CurrentCost - 1 <= maximum) is not null;
+                    || DeclaredEnemyTarget(playerIndex, id, card => L12StructuredCardRules.ProjectedCurrentCostAtMost(card, -1, maximum)) is not null;
                 return declared.Length == 2 && ValidTarget(declared[0], 3) && ValidTarget(declared[1], 1)
                     && (declared[0] == "mode:none"
                         || !declared[0].Equals(declared[1], StringComparison.OrdinalIgnoreCase))

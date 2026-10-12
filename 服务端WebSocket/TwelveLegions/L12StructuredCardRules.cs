@@ -81,6 +81,9 @@ public static partial class L12StructuredCardRules
     public static bool CurrentCostEquals(L12CardInstance card, int value)
         => card.HasPrintedCost && card.CurrentCost == value;
 
+    public static bool ProjectedCurrentCostAtMost(L12CardInstance card, int modifierDelta, int maximum)
+        => card.HasPrintedCost && Math.Max(0, card.CurrentCost + modifierDelta) <= maximum;
+
     /// <summary>
     /// 牌库检索按费用筛选时，未印刷费用的卡按0处理；这不会赋予其0费打出能力。
     /// </summary>

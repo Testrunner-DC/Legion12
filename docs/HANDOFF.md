@@ -1,5 +1,14 @@
 # 十二军团简短交接
 
+## 2026-10-12 当前接续｜孟婆已同步，天照／黄泉限定费用投影修复
+
+- 当前已验收同步基线93bec1803a7b7de48ae54ba2b1008fe605fc273d：规则7092/平台1268、失败跳过0，8阶段干净Release及远端精确读回；最终回执D盘bug-closure-continuation-20261012/mengpo-tomb-construct/implementation/final-acceptance.json。未部署，下文孟婆“待Release”为历史过程。
+- 用户分别批准天照第二段和黄泉两阈值的无费用目标候选/提交限定修复。四产品/一新测试已冻结，408专项及Main独立56/466检查点通过，独立审查CLEAR；Main全324卡审计仅8投影点需修，8条当前未改产品RED已保留。不缩窄天照首段，不改变检索例外和最终AtMost/Equals。
+- 12:43完整Batch实际规则7148/平台1268、失败跳过0、退出0，5源无漂移，日志31E7790A。提交级干净Release/Git接续，最终精确提交、包及远端统一认D:/GPT/Legion12/artifacts/projected-cost-target-fix-20261012/final-acceptance.json生成后的实际回执，不能据本段推定已完成。
+- 聊天方案C0只读合同已交回，不获产品/构建租约；其原正式部署验收依赖尚未证明满足。下一6条卡效只读准备也已收回，范围与证据在本批chat-coordination-receipt.json及next-six-readonly-preparation.json，不混入本批源码或线上关闭。
+- 唯一实时状态仍D盘bug-closure-continuation-20261011/current-status.json，闭环就绪索引closure-ready-index-r9.json。39仅本地就绪，不等于实际关闭；线上累计92/512待办未变。卡纽特/武田4合成场和32实际记录投影未复现，只作限定信息不足证据，未称原录像或浏览器验证。
+- 本批仅本地验收和授权Git，不部署、不改维护、无线上Bug写；现有生产连接失败是此前观测，不从中推定维护、内存或供应商责任。
+
 ## 2026-10-12 最新接续｜三批已验收同步，孟婆独立离场修复推进，未部署
 
 - 04:53完整干净Release实际7048规则/1268平台、失败跳过0、9阶段成功；schema3包SHA DA233E79，包内DLL795A4CCE。04:56:35本地/远端精确3ce1dbea，已同步NEXT-RESET/COUNTER-COPIES/RAMSES三批。最终实际回执D盘ramses-selection-order/implementation/final-acceptance.json（E1397AEB）；下面“Release/Git待”为历史过程，旧失败保留。
