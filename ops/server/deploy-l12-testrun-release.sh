@@ -663,22 +663,27 @@ PY
 validate_archive() {
   local archive="$1"
   local archive_kind="$2"
-  python3 - "$archive" "$archive_kind" <<'PY'
+  local expected_commit="${3:-}"
+  python3 - "$archive" "$archive_kind" "$expected_commit" <<'PY'
+import json
+import re
 import sys
 import tarfile
 from pathlib import PurePosixPath
 
-archive, kind = sys.argv[1:]
+archive, kind, expected_commit = sys.argv[1:]
+capability_name = ".deployment-drain-capability.json"
 allowed_roots = {
-    "release": (".deployment-commit", "publish", "opcgpro-vue", "scripts"),
+    "release": (".deployment-commit", capability_name, "publish", "opcgpro-vue", "scripts"),
     "card-assets": ("card-assets.manifest.json", "card-assets.preload.json", "cards"),
 }[kind]
 required = {
-    "release": {".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs"},
+    "release": {".deployment-commit", capability_name, "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs"},
     "card-assets": {"card-assets.manifest.json", "card-assets.preload.json", "cards"},
 }[kind]
 seen = set()
 total = 0
+capability_member = None
 with tarfile.open(archive, "r:gz") as bundle:
     members = bundle.getmembers()
     if not members or len(members) > 50000:
@@ -701,8 +706,14 @@ with tarfile.open(archive, "r:gz") as bundle:
         seen.add(normalized)
         if path.parts[0] not in allowed_roots:
             raise SystemExit(f"archive contains an unexpected root: {path.parts[0]}")
+        if path.parts[0] == capability_name and normalized != capability_name:
+            raise SystemExit(f"deployment capability marker cannot contain child members: {normalized}")
         if not (member.isdir() or member.isfile()):
             raise SystemExit(f"archive links and special files are forbidden: {normalized}")
+        if normalized == capability_name:
+            if member.isfile() and member.size > 4096:
+                raise SystemExit("deployment capability marker is too large")
+            capability_member = member
         if member.isfile():
             total += member.size
             if member.size > 512 * 1024 * 1024:
@@ -712,6 +723,44 @@ with tarfile.open(archive, "r:gz") as bundle:
         raise SystemExit("archive is incomplete: " + ", ".join(missing))
     if total > 1024 * 1024 * 1024:
         raise SystemExit("archive expands beyond 1 GiB")
+    if kind == "release":
+        if capability_member is None or not capability_member.isfile():
+            raise SystemExit("deployment capability marker must be a regular file")
+        if not re.fullmatch(r"[0-9a-f]{40}", expected_commit):
+            raise SystemExit("deployment capability expected commit is invalid")
+
+        def reject_duplicate_keys(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate key: {key}")
+                result[key] = value
+            return result
+
+        try:
+            stream = bundle.extractfile(capability_member)
+            if stream is None:
+                raise ValueError("marker cannot be read")
+            raw = stream.read()
+            capability = json.loads(raw.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+        except (UnicodeDecodeError, ValueError) as error:
+            raise SystemExit(f"deployment capability marker is invalid: {error}") from error
+        expected_keys = {
+            "schema", "protocolVersion", "requiresExternalStopPermit",
+            "runtimeDataCompatibility", "runtimeSourceCompatibility", "commit",
+        }
+        if (type(capability) is not dict
+                or set(capability) != expected_keys
+                or type(capability.get("schema")) is not int
+                or capability["schema"] != 1
+                or type(capability.get("protocolVersion")) is not int
+                or capability["protocolVersion"] != 1
+                or capability.get("requiresExternalStopPermit") is not True
+                or capability.get("runtimeDataCompatibility") != "l12-runtime-v1"
+                or type(capability.get("runtimeSourceCompatibility")) is not str
+                or not re.fullmatch(r"[0-9a-f]{64}", capability["runtimeSourceCompatibility"])
+                or capability.get("commit") != expected_commit):
+            raise SystemExit("deployment capability marker is invalid")
 PY
 }
 
@@ -899,7 +948,7 @@ self_test
 mkdir -p "$incoming_dir" "$releases_dir" "$static_card_assets_dir" "$static_web_assets_dir/assets" "$static_web_assets_dir/testrun/assets"
 [[ -f "$release_archive" && ! -L "$release_archive" ]] || fail "release archive is missing or unsafe"
 [[ "$(sha256sum "$release_archive" | awk '{print $1}')" == "$release_sha256" ]] || fail "release archive SHA256 differs"
-validate_archive "$release_archive" release
+validate_archive "$release_archive" release "$commit"
 layout="$(release_layout_bytes "$release_archive")" || fail "release layout budget projection failed"
 read -r release_unpacked_bytes hydrate_logical_bytes new_web_cache_bytes <<< "$layout"
 for value in "$release_unpacked_bytes" "$hydrate_logical_bytes" "$new_web_cache_bytes"; do

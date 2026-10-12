@@ -28,6 +28,115 @@ function Require-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) { throw "Missing command: $Name" }
 }
 
+function Test-ExactJsonInteger {
+    param(
+        [AllowNull()][object]$Value,
+        [Parameter(Mandatory = $true)][long]$Expected
+    )
+    return (($Value -is [int32] -or $Value -is [int64]) -and [long]$Value -eq $Expected)
+}
+
+function Test-DeploymentManifestContract {
+    param([Parameter(Mandatory = $true)][object]$Manifest)
+    foreach ($name in @('schema', 'deploymentDrainProtocol', 'requiresExternalStopPermit', 'runtimeDataCompatibility', 'runtimeSourceCompatibility')) {
+        if (-not $Manifest.PSObject.Properties[$name]) { return $false }
+    }
+    return ((Test-ExactJsonInteger -Value $Manifest.schema -Expected 3) -and
+        (Test-ExactJsonInteger -Value $Manifest.deploymentDrainProtocol -Expected 1) -and
+        $Manifest.requiresExternalStopPermit -is [bool] -and $Manifest.requiresExternalStopPermit -and
+        [string]$Manifest.runtimeDataCompatibility -ceq 'l12-runtime-v1' -and
+        [string]$Manifest.runtimeSourceCompatibility -cmatch '^[a-f0-9]{64}$')
+}
+
+function Read-StreamExactly {
+    param(
+        [Parameter(Mandatory = $true)][IO.Stream]$Stream,
+        [Parameter(Mandatory = $true)][byte[]]$Buffer,
+        [Parameter(Mandatory = $true)][int]$Count
+    )
+    $offset = 0
+    while ($offset -lt $Count) {
+        $read = $Stream.Read($Buffer, $offset, $Count - $offset)
+        if ($read -eq 0) { break }
+        $offset += $read
+    }
+    return $offset
+}
+
+function Get-TarRegularFileSize {
+    param(
+        [Parameter(Mandatory = $true)][string]$Archive,
+        [Parameter(Mandatory = $true)][string]$Member
+    )
+    $file = [IO.File]::Open($Archive, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    $gzip = [IO.Compression.GZipStream]::new($file, [IO.Compression.CompressionMode]::Decompress, $true)
+    try {
+        $header = [byte[]]::new(512)
+        $skipBuffer = [byte[]]::new(8192)
+        while ($true) {
+            if ((Read-StreamExactly -Stream $gzip -Buffer $header -Count $header.Length) -ne $header.Length) {
+                throw "Release deployment capability marker metadata is unavailable."
+            }
+            $nonZero = $false
+            foreach ($value in $header) { if ($value -ne 0) { $nonZero = $true; break } }
+            if (-not $nonZero) { throw "Release deployment capability marker metadata is unavailable." }
+
+            $nameLength = 0
+            while ($nameLength -lt 100 -and $header[$nameLength] -ne 0) { $nameLength++ }
+            $name = [Text.Encoding]::ASCII.GetString($header, 0, $nameLength)
+            $prefixLength = 0
+            while ($prefixLength -lt 155 -and $header[345 + $prefixLength] -ne 0) { $prefixLength++ }
+            if ($prefixLength -gt 0) {
+                $prefix = [Text.Encoding]::ASCII.GetString($header, 345, $prefixLength)
+                $name = "$prefix/$name"
+            }
+            while ($name.StartsWith('./', [StringComparison]::Ordinal)) { $name = $name.Substring(2) }
+            $name = $name.TrimEnd('/')
+
+            $typeFlag = $header[156]
+            $isRegular = $typeFlag -eq 0 -or $typeFlag -eq [byte][char]'0'
+            $isDirectory = $typeFlag -eq [byte][char]'5'
+            if (-not $isRegular -and -not $isDirectory) {
+                throw "Release archive uses an unsupported tar extension before deployment capability metadata."
+            }
+
+            $sizeText = [Text.Encoding]::ASCII.GetString($header, 124, 12).Trim([char[]]@([char]0, [char]' '))
+            if ($sizeText.Length -gt 0 -and $sizeText -cnotmatch '^[0-7]+$') {
+                throw "Release archive contains an unsupported tar size encoding."
+            }
+            [long]$size = 0
+            foreach ($character in $sizeText.ToCharArray()) {
+                $digit = [int]$character - [int][char]'0'
+                if ($size -gt ([long]::MaxValue - $digit) / 8) { throw "Release archive tar size overflows." }
+                $size = ($size * 8) + $digit
+            }
+
+            if ($name -ceq $Member) {
+                if (-not $isRegular) {
+                    throw "Release deployment capability marker must be a regular file."
+                }
+                return $size
+            }
+
+            if ($size -gt [long]::MaxValue - 511) { throw "Release archive tar size overflows." }
+            [long]$remaining = $size
+            $padding = $remaining % 512
+            if ($padding -ne 0) { $remaining += 512 - $padding }
+            while ($remaining -gt 0) {
+                $chunk = [int][Math]::Min([long]$skipBuffer.Length, $remaining)
+                if ((Read-StreamExactly -Stream $gzip -Buffer $skipBuffer -Count $chunk) -ne $chunk) {
+                    throw "Release archive is truncated while reading member metadata."
+                }
+                $remaining -= $chunk
+            }
+        }
+    }
+    finally {
+        $gzip.Dispose()
+        $file.Dispose()
+    }
+}
+
 function Resolve-TestrunEndpoint {
     param([Parameter(Mandatory = $true)][string]$RemoteServer)
     $match = [regex]::Match($RemoteServer, '\Aroot@(?<host>[^\s@:/]+)\z', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
@@ -92,7 +201,7 @@ function Get-NormalizedTarMembers {
         }
     }
     $allowedRoots = if ($Kind -eq "release") {
-        @(".deployment-commit", "publish", "opcgpro-vue", "scripts")
+        @(".deployment-commit", ".deployment-drain-capability.json", "publish", "opcgpro-vue", "scripts")
     } else { @("card-assets.manifest.json", "card-assets.preload.json", "cards") }
     $seen = @{}
     $normalized = [Collections.Generic.List[string]]::new()
@@ -108,7 +217,11 @@ function Get-NormalizedTarMembers {
         if ($seen.ContainsKey($member)) { throw "$Kind archive contains a duplicate member: $member" }
         $seen[$member] = $true
         $root = $member.Split('/')[0]
-        if ($allowedRoots -notcontains $root) { throw "$Kind archive contains an unexpected root: $root" }
+        if ($allowedRoots -cnotcontains $root) { throw "$Kind archive contains an unexpected root: $root" }
+        if ($Kind -eq "release" -and $root -ceq ".deployment-drain-capability.json" -and
+            $member -cne ".deployment-drain-capability.json") {
+            throw "Release deployment capability marker cannot contain child members: $member"
+        }
         $normalized.Add($member)
     }
     return $normalized.ToArray()
@@ -126,7 +239,7 @@ function Read-ValidatedArtifact {
     $releaseHash = [string]$manifest.releaseSha256
     $assetHash = [string]$manifest.cardAssetsHash
     $assetArchiveHash = [string]$manifest.cardAssetsSha256
-    if ($manifest.schema -ne 3 -or $commit -notmatch '^[0-9a-f]{40}$' -or
+    if (-not (Test-DeploymentManifestContract -Manifest $manifest) -or $commit -cnotmatch '^[0-9a-f]{40}$' -or
         $releaseHash -notmatch '^[0-9a-f]{64}$' -or $assetHash -notmatch '^[0-9a-f]{64}$' -or
         $assetArchiveHash -notmatch '^[0-9a-f]{64}$') { throw "Artifact manifest identity fields are invalid." }
     $releaseArchive = if ([IO.Path]::IsPathRooted([string]$manifest.releaseArchive)) {
@@ -146,8 +259,8 @@ function Read-ValidatedArtifact {
     if ((Get-FileHash -LiteralPath $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $releaseHash) { throw "Release archive SHA256 differs." }
     if ((Get-FileHash -LiteralPath $assetArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $assetArchiveHash) { throw "Card asset archive SHA256 differs." }
     $releaseMembers = @(Get-NormalizedTarMembers -Archive $releaseArchive -Kind release)
-    foreach ($required in @(".deployment-commit", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs")) {
-        if ($releaseMembers -notcontains $required) { throw "Release archive is incomplete: $required" }
+    foreach ($required in @(".deployment-commit", ".deployment-drain-capability.json", "publish/GrandUMIServer.dll", "opcgpro-vue/dist/index.html", "opcgpro-vue/dist-testrun/index.html", "opcgpro-vue/testrun-shared-files.txt", "scripts/ws-smoke.mjs")) {
+        if ($releaseMembers -cnotcontains $required) { throw "Release archive is incomplete: $required" }
     }
     foreach ($forbidden in @("publish/runtime", "opcgpro-vue/dist/card-assets", "opcgpro-vue/dist/cards")) {
         if ($releaseMembers | Where-Object { $_ -eq $forbidden -or $_.StartsWith("$forbidden/", [StringComparison]::Ordinal) }) {
@@ -157,6 +270,29 @@ function Read-ValidatedArtifact {
     $marker = (& tar -xOzf $releaseArchive "./.deployment-commit" 2>$null) -join ''
     if ($LASTEXITCODE -ne 0) { $marker = (& tar -xOzf $releaseArchive ".deployment-commit" 2>$null) -join '' }
     if ($LASTEXITCODE -ne 0 -or $marker.Trim() -ne $commit) { throw "Release commit marker differs from the manifest." }
+    $capabilityMarkerSize = Get-TarRegularFileSize -Archive $releaseArchive -Member ".deployment-drain-capability.json"
+    if ($capabilityMarkerSize -gt 4096) { throw "Release deployment capability marker is too large." }
+    $capabilityMarkerLines = @(& tar -xOzf $releaseArchive "./.deployment-drain-capability.json" 2>$null)
+    $capabilityMarkerExitCode = $LASTEXITCODE
+    if ($capabilityMarkerExitCode -ne 0) {
+        $capabilityMarkerLines = @(& tar -xOzf $releaseArchive ".deployment-drain-capability.json" 2>$null)
+        $capabilityMarkerExitCode = $LASTEXITCODE
+    }
+    if ($capabilityMarkerExitCode -ne 0 -or $capabilityMarkerLines.Count -ne 1) {
+        throw "Release deployment capability marker must contain exactly one canonical line."
+    }
+    $capabilityMarker = [string]$capabilityMarkerLines[0]
+    $expectedCapabilityMarker = [ordered]@{
+        schema = 1
+        protocolVersion = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = [string]$manifest.runtimeSourceCompatibility
+        commit = $commit
+    } | ConvertTo-Json -Compress
+    if (-not [string]::Equals($capabilityMarker, $expectedCapabilityMarker, [StringComparison]::Ordinal)) {
+        throw "Release deployment capability marker differs from the manifest contract."
+    }
     $assetMembers = @(Get-NormalizedTarMembers -Archive $assetArchive -Kind card-assets)
     foreach ($required in @("card-assets.manifest.json", "card-assets.preload.json", "cards")) {
         if (-not ($assetMembers | Where-Object { $_ -eq $required -or $_.StartsWith("$required/", [StringComparison]::Ordinal) })) {

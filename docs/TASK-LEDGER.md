@@ -1,7 +1,18 @@
 # 十二军团任务台账
 
+## OPS-20261013-TESTRUN-CAPABILITY｜标准发布能力标记两端兼容（已批准，实施验收）
+
+- 本地专项已收口：Main独立完整测试服行为专项及release-gate专项均退出0，真实532f标准包artifact-only退出0并明确无远端连接。两端各20个新增marker/成员拒绝场景加原unknown/hash/隔离/回滚/保留行为通过；坏包不触发停服、切换、解压staging或新增备份/失败现场。冻结三源SHA932E011C/573468C6/79E37FC5，所有中间合成失败目录保留。仅Windows/MSYS伪服务，不冒称Linux/systemd现场验证。
+- Windows在读取前限普通marker≤4096字节；marker之前PAX/GNU等扩展失败关闭，单行canonical六键与当前生成器/manifest绑定；多行非法JSON不拼接，server以拒绝重复键的JSON解析校验类型/字段。不是任意第三方tar或语义等价JSON支持。部署流程已固化DEPLOY-HK，新工具提交级完整Release/Git及现场部署仍待。
+- 新鲜本地 `-ValidateArtifactOnly` 实际拒绝532f完整发布包的 `.deployment-drain-capability.json`；原错误由工具返回，首次Tee未生成日志，第二次独立子进程真实RED保存为D盘deploy-traffic-20261013/testrun-artifact-only-r2.log，不伪称原r1日志存在。此模式在SSH/SCP/Git及任何远端动作前退出，没有线上改动。
+- 根因独立审查确认：标准生成器已无条件打包根级具名普通文件，测试服Windows/server两层白名单均未更新；没有其他新增合法根。用户明确批准两端严格兼容及部署，禁止删除标记、放开未知根或换旧入口。
+- 三文件限定租约：ops/windows/deploy-l12-testrun.ps1、ops/server/deploy-l12-testrun-release.sh、scripts/test-l12-testrun-deploy-behavior.ps1。核具名普通文件、六键结构、schema/protocol/许可/runtime/commit；保留原SHA、路径逃逸、重复、链接/特殊文件、大小、必需/禁止路径与生产隔离守卫。新incoming合同不会清改旧活跃或回退版本。
+- Main负责独立验收、实际源码绑定、提交级完整Release与Git。此批触及发布边界而非P0—P4产品语义；回滚不可剥离标记、绕过真实排空/数据保护。新批未验完之前唯一已验收产品仍532f，现场访问仍挂起，不假报部署或Bug关闭。
+
 ## RELEASE-20261013-TRAFFIC｜最后响应批验收与两服部署（用户明确授权）
 
+- 实际最终532f7d5f完整Release7219规则/1381平台零失败跳过、8阶段/UI356/双前端/卡图通过；最终同包4A30F5B0三源六接收者重建/非空隐私/冷旧未提交full通过，累计18玩家项54源，Git精确读回。最终response-update-actual/final-acceptance.json（99E968A4）实际生成，旧待Release为历史；尚未部署或改维护。
+- 用户已报告内置浏览器管理账号登录并要求自行处理/记住流程；Main已重试控制接口但在页面读取前kernel资产初始化路径缺失，现有公钥仍认证拒绝，不误称用户登录失败。只读隔离指纹未被独立核验成部署信任；DEPLOY-HK顶部保存可复用流程，A2及D盘中央总表更新，审批两服成功后解当前维护不重复询问。
 - 用户要求“完成最后一批验收并部署正式服和测试服”，并确认正式核验成功后结束当前维护；保留未来独立计划及其他配置。测试先、正式后，先精确核对活动/待恢复/待结算/待命令、许可、最新数据备份及两环境隔离，不复用10月9日失败执行器或旧数据库。
 - 上一阶段141b两次失败原证据保留：首轮Node22原生退出；第二轮规则7219通过/平台1375通过1失败，旧HTTP测试在宿主Dispose之前删除自己的matches.db。仅测试生命周期修正：先server→recorder异步析构，再精确池及直属GUID根有界清理；5次IOException最终仍抛，业务失败保留数据。原HTTP鉴权/计时/native取消断言不变，无产品改动/P0—P4迁移。
 - 同型扫描本类全部StopAsync/ClearPool/Directory.Delete及原C2受管清理；新增路径、持久占用及大小写敏感守卫。最终全类22通过、原失败HTTP再独立执行3轮均通过；Windows不冒称执行非Windows负例。独立静态CLEAR，保留Stop/Dispose同时出错可能覆盖旧异常的C#既有限制，不称找到原瞬时句柄持有者。

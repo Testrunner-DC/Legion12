@@ -3,6 +3,7 @@ param([string]$FixtureBase = "")
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$script:OwnedFixtureRoot = ""
 
 function Assert-True {
     param([bool]$Condition, [string]$Message)
@@ -12,6 +13,161 @@ function Assert-True {
 function Write-Utf8NoBom {
     param([string]$Path, [AllowEmptyString()][string]$Content)
     [IO.File]::WriteAllText($Path, $Content, [Text.UTF8Encoding]::new($false))
+}
+
+function Set-DeploymentCapabilityFixture {
+    param(
+        [Parameter(Mandatory = $true)][string]$ReleaseRoot,
+        [Parameter(Mandatory = $true)][string]$Commit,
+        [Parameter(Mandatory = $true)][string]$RuntimeSourceCompatibility,
+        [string]$Fault = "valid"
+    )
+    if ([string]::IsNullOrWhiteSpace($script:OwnedFixtureRoot)) { throw "Capability fixture ownership root is unavailable." }
+    $comparison = if ([IO.Path]::DirectorySeparatorChar -eq '\') { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+    $resolvedReleaseRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ReleaseRoot).Path)
+    $expectedReleaseRoot = [IO.Path]::GetFullPath((Join-Path $script:OwnedFixtureRoot "artifacts\release"))
+    if (-not [string]::Equals($resolvedReleaseRoot, $expectedReleaseRoot, $comparison)) {
+        throw "Refusing to mutate an unowned capability fixture root: $resolvedReleaseRoot"
+    }
+    $releaseItem = Get-Item -LiteralPath $resolvedReleaseRoot -Force
+    $artifactItem = Get-Item -LiteralPath (Split-Path $resolvedReleaseRoot -Parent) -Force
+    $fixtureItem = Get-Item -LiteralPath $script:OwnedFixtureRoot -Force
+    foreach ($item in @($releaseItem, $artifactItem, $fixtureItem)) {
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Capability fixture path is not an owned regular directory: $($item.FullName)"
+        }
+    }
+    $marker = Join-Path $ReleaseRoot ".deployment-drain-capability.json"
+    $unexpected = Join-Path $ReleaseRoot "unexpected-capability-root.json"
+    if (Test-Path -LiteralPath $marker) {
+        $markerItem = Get-Item -LiteralPath $marker -Force
+        if ($markerItem.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            throw "Refusing to remove a reparse-point capability fixture item: $marker"
+        }
+        elseif ($markerItem.PSIsContainer) {
+            $children = @(Get-ChildItem -LiteralPath $marker -Force)
+            if ($children.Count -gt 1 -or ($children.Count -eq 1 -and
+                    ($children[0].Name -cne "child.json" -or $children[0].PSIsContainer -or
+                        ($children[0].Attributes -band [IO.FileAttributes]::ReparsePoint)))) {
+                throw "Refusing to remove unexpected capability fixture contents: $marker"
+            }
+            if ($children.Count -eq 1) { Remove-Item -LiteralPath $children[0].FullName -Force }
+            Remove-Item -LiteralPath $marker -Force
+        }
+        else { Remove-Item -LiteralPath $marker -Force }
+    }
+    if (Test-Path -LiteralPath $unexpected) {
+        $unexpectedItem = Get-Item -LiteralPath $unexpected -Force
+        if ($unexpectedItem.PSIsContainer -or ($unexpectedItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to remove an unsafe capability fault item: $unexpected"
+        }
+        Remove-Item -LiteralPath $unexpected -Force
+    }
+    if ($Fault -eq "missing") { return }
+    if ($Fault -eq "directory") {
+        New-Item -ItemType Directory -Path $marker -Force | Out-Null
+        return
+    }
+    if ($Fault -eq "child") {
+        New-Item -ItemType Directory -Path $marker -Force | Out-Null
+        Write-Utf8NoBom (Join-Path $marker "child.json") "{}"
+        return
+    }
+
+    $capability = [ordered]@{
+        schema = 1
+        protocolVersion = 1
+        requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"
+        runtimeSourceCompatibility = $RuntimeSourceCompatibility
+        commit = $Commit
+    }
+    switch ($Fault) {
+        "wrong-commit" { $capability.commit = "0" * 40 }
+        "schema-bool" { $capability.schema = $true }
+        "schema-fraction" { $capability.schema = 1.5 }
+        "protocol-bool" { $capability.protocolVersion = $true }
+        "protocol-string" { $capability.protocolVersion = "1" }
+        "permit-false" { $capability.requiresExternalStopPermit = $false }
+        "runtime-data" { $capability.runtimeDataCompatibility = "l12-runtime-v2" }
+        "source-invalid" { $capability.runtimeSourceCompatibility = "g" * 64 }
+        "source-mismatch" { $capability.runtimeSourceCompatibility = "e" * 64 }
+        "extra-key" { $capability["unexpected"] = $true }
+        "duplicate-key" {
+            $raw = '{"schema":1,"schema":1,"protocolVersion":1,"requiresExternalStopPermit":true,"runtimeDataCompatibility":"l12-runtime-v1","runtimeSourceCompatibility":"' + $RuntimeSourceCompatibility + '","commit":"' + $Commit + '"}'
+            Write-Utf8NoBom $marker ($raw + "`n")
+            return
+        }
+        "literal-newline" {
+            $raw = '{"schema":1,"protocolVersion":1,"requiresExternalStopPermit":true,"runtimeDataCompatibility":"l12-' + "`n" + 'runtime-v1","runtimeSourceCompatibility":"' + $RuntimeSourceCompatibility + '","commit":"' + $Commit + '"}'
+            Write-Utf8NoBom $marker ($raw + "`n")
+            return
+        }
+        "oversized" {
+            Write-Utf8NoBom $marker ("x" * 4097)
+            return
+        }
+        "unknown-root" { Write-Utf8NoBom $unexpected "forbidden" }
+        "valid" { }
+        default { throw "Unknown deployment capability fixture fault: $Fault" }
+    }
+    Write-Utf8NoBom $marker (($capability | ConvertTo-Json -Compress) + "`n")
+}
+
+function New-CapabilityTarMemberFault {
+    param(
+        [Parameter(Mandatory = $true)][string]$Python,
+        [Parameter(Mandatory = $true)][string]$SourceArchive,
+        [Parameter(Mandatory = $true)][string]$DestinationArchive,
+        [Parameter(Mandatory = $true)][ValidateSet("symlink", "hardlink", "fifo", "duplicate")][string]$Fault,
+        [Parameter(Mandatory = $true)][string]$MarkerJson
+    )
+    $builder = @'
+import io
+import sys
+import tarfile
+
+source_path, destination_path, fault, marker_json = sys.argv[1:]
+marker_name = ".deployment-drain-capability.json"
+with tarfile.open(source_path, "r:gz") as source, tarfile.open(destination_path, "w:gz") as destination:
+    for member in source.getmembers():
+        normalized = member.name
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        normalized = normalized.rstrip("/")
+        if normalized == marker_name or normalized.startswith(marker_name + "/"):
+            continue
+        stream = source.extractfile(member) if member.isfile() else None
+        try:
+            destination.addfile(member, stream)
+        finally:
+            if stream is not None:
+                stream.close()
+    marker = tarfile.TarInfo("./" + marker_name)
+    marker.mode = 0o644
+    marker.mtime = 0
+    if fault == "duplicate":
+        payload = (marker_json + "\n").encode("utf-8")
+        for _ in range(2):
+            duplicate = tarfile.TarInfo("./" + marker_name)
+            duplicate.mode = marker.mode
+            duplicate.mtime = marker.mtime
+            duplicate.size = len(payload)
+            destination.addfile(duplicate, io.BytesIO(payload))
+    else:
+        marker.size = 0
+        if fault == "symlink":
+            marker.type = tarfile.SYMTYPE
+            marker.linkname = ".deployment-commit"
+        elif fault == "hardlink":
+            marker.type = tarfile.LNKTYPE
+            marker.linkname = ".deployment-commit"
+        elif fault == "fifo":
+            marker.type = tarfile.FIFOTYPE
+        destination.addfile(marker)
+'@
+    $result = Invoke-NativeCapture $Python @("-c", $builder, $SourceArchive, $DestinationArchive, $Fault, $MarkerJson)
+    if ($result.ExitCode -ne 0) { throw "Capability tar fault builder failed for '$Fault': $($result.Output)" }
 }
 
 function ConvertTo-MsysPath {
@@ -66,6 +222,7 @@ $base = if ([string]::IsNullOrWhiteSpace($FixtureBase)) { [IO.Path]::GetTempPath
 $base = [IO.Path]::GetFullPath($base).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $fixture = Join-Path $base "l12-testrun-deploy-behavior-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
+$script:OwnedFixtureRoot = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $fixture).Path)
 $suitePassed = $false
 
 try {
@@ -159,11 +316,13 @@ try {
     $commitA = "a" * 40
     $commitB = "b" * 40
     $assetHash = "c" * 64
+    $runtimeSourceCompatibility = "f" * 64
     $artifactRoot = Join-Path $fixture "artifacts"
     $releaseRoot = Join-Path $artifactRoot "release"
     $assetRoot = Join-Path $artifactRoot "assets"
     New-Item -ItemType Directory -Path (Join-Path $releaseRoot "publish"), (Join-Path $releaseRoot "opcgpro-vue\dist"), (Join-Path $releaseRoot "opcgpro-vue\dist\assets"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun"), (Join-Path $releaseRoot "opcgpro-vue\dist-testrun\assets"), (Join-Path $releaseRoot "scripts"), (Join-Path $assetRoot "cards") -Force | Out-Null
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") $commitB
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility
     Write-Utf8NoBom (Join-Path $releaseRoot "publish\GrandUMIServer.dll") "binary"
     Write-Utf8NoBom (Join-Path $releaseRoot "opcgpro-vue\dist\index.html") "html"
     New-Item -ItemType Directory -Path (Join-Path $releaseRoot "opcgpro-vue\dist\assets") -Force | Out-Null
@@ -190,6 +349,8 @@ try {
     $manifestPath = Join-Path $artifactRoot "l12-release-$commitB.json"
     $manifest = [ordered]@{
         schema = 3; commit = $commitB; releaseArchive = $releaseArchive
+        deploymentDrainProtocol = 1; requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"; runtimeSourceCompatibility = $runtimeSourceCompatibility
         releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
         cardAssetsHash = $assetHash; cardAssetsArchive = $assetArchive
         cardAssetsSha256 = (Get-FileHash $assetArchive -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -210,7 +371,63 @@ try {
     Assert-True ($badMember.ExitCode -ne 0 -and $badMember.Output.Contains('unexpected root')) "Archive with an unexpected root was accepted."
 
     Remove-Item -LiteralPath (Join-Path $releaseRoot "unexpected.txt") -Force
+    $capabilityFaults = @(
+        @{ Name = "missing"; Expected = "Release archive is incomplete: .deployment-drain-capability.json" },
+        @{ Name = "directory"; Expected = "Release deployment capability marker must be a regular file" },
+        @{ Name = "child"; Expected = "Release deployment capability marker cannot contain child members" },
+        @{ Name = "wrong-commit"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "schema-bool"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "schema-fraction"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "protocol-bool"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "protocol-string"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "permit-false"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "runtime-data"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "source-invalid"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "source-mismatch"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "extra-key"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "duplicate-key"; Expected = "Release deployment capability marker differs from the manifest contract" },
+        @{ Name = "literal-newline"; Expected = "Release deployment capability marker must contain exactly one canonical line" },
+        @{ Name = "oversized"; Expected = "Release deployment capability marker is too large" }
+    )
+    foreach ($fault in $capabilityFaults) {
+        Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility -Fault $fault.Name
+        & $tar -czf $releaseArchive -C $releaseRoot .
+        Assert-True ($LASTEXITCODE -eq 0) "Capability fault archive creation failed: $($fault.Name)"
+        $manifest.releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+        Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json)
+        $rejected = Invoke-NativeCapture $powerShell.Source @("-NoProfile", "-File", $windowsDeploy, "-ArtifactManifest", $manifestPath, "-ValidateArtifactOnly")
+        Assert-True ($rejected.ExitCode -ne 0 -and $rejected.Output.Contains($fault.Expected)) `
+            "Windows artifact gate accepted capability fault '$($fault.Name)': $($rejected.Output)"
+    }
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility
     & $tar -czf $releaseArchive -C $releaseRoot .
+    Assert-True ($LASTEXITCODE -eq 0) "Restored release fixture archive creation failed."
+    $manifest.releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json)
+    $validReleaseArchive = Join-Path $artifactRoot "valid-l12-release-$commitB.tar.gz"
+    Copy-Item -LiteralPath $releaseArchive -Destination $validReleaseArchive -Force
+    $validCapabilityJson = [ordered]@{
+        schema = 1; protocolVersion = 1; requiresExternalStopPermit = $true
+        runtimeDataCompatibility = "l12-runtime-v1"; runtimeSourceCompatibility = $runtimeSourceCompatibility
+        commit = $commitB
+    } | ConvertTo-Json -Compress
+    $capabilityMemberFaults = @(
+        @{ Name = "symlink"; Expected = "archive contains a link or special file" },
+        @{ Name = "hardlink"; Expected = "archive contains a link or special file" },
+        @{ Name = "fifo"; Expected = "archive contains a link or special file" },
+        @{ Name = "duplicate"; Expected = "archive contains a duplicate member" }
+    )
+    foreach ($fault in $capabilityMemberFaults) {
+        New-CapabilityTarMemberFault -Python $python -SourceArchive $validReleaseArchive -DestinationArchive $releaseArchive -Fault $fault.Name -MarkerJson $validCapabilityJson
+        $manifest.releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+        Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json)
+        $rejected = Invoke-NativeCapture $powerShell.Source @("-NoProfile", "-File", $windowsDeploy, "-ArtifactManifest", $manifestPath, "-ValidateArtifactOnly")
+        Assert-True ($rejected.ExitCode -ne 0 -and $rejected.Output.Contains($fault.Expected)) `
+            "Windows artifact gate accepted capability member fault '$($fault.Name)': $($rejected.Output)"
+    }
+    Copy-Item -LiteralPath $validReleaseArchive -Destination $releaseArchive -Force
+    $manifest.releaseSha256 = (Get-FileHash $releaseArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    Write-Utf8NoBom $manifestPath ($manifest | ConvertTo-Json)
     $root = Join-Path $fixture "server"
     $rootPosix = ConvertTo-MsysPath $root
     $oldRelease = Join-Path $root "opt\legion12-testrun-releases\$commitA-old"
@@ -317,6 +534,75 @@ exit 0
     try {
         $archiveServerPath = "$rootPosix/opt/legion12-testrun-deployment/incoming/l12-testrun-release-$commitB.tar.gz"
         $launcher = 'export PATH="$L12_TEST_FAKE_BIN:/usr/bin:/bin:$L12_TEST_NODE_DIR"; /usr/bin/sh "$1" "${@:2}"'
+        $readCapabilityIsolation = {
+            $activeEntry = Get-Content -LiteralPath (Join-Path $root "opt\legion12-testrun") -Raw
+            [pscustomobject]@{
+                ActiveEntry = $activeEntry
+                ActiveCommit = Get-Content -LiteralPath (Join-Path $oldRelease ".deployment-commit") -Raw
+                Releases = (@(Get-ChildItem -LiteralPath (Join-Path $root "opt\legion12-testrun-releases") -Force | Sort-Object FullName | ForEach-Object FullName) -join "`n")
+                Staging = (@(Get-ChildItem -LiteralPath (Join-Path $root "opt") -Directory -Filter "legion12-testrun-staging-*" -Force | Sort-Object FullName | ForEach-Object FullName) -join "`n")
+                Backups = if (Test-Path -LiteralPath (Join-Path $root "opt\legion12-testrun-deployment\runtime-backups")) {
+                    @(Get-ChildItem -LiteralPath (Join-Path $root "opt\legion12-testrun-deployment\runtime-backups") -Recurse -Force | Sort-Object FullName | ForEach-Object FullName) -join "`n"
+                } else { "" }
+                Failures = if (Test-Path -LiteralPath (Join-Path $root "opt\legion12-testrun-deployment\failures")) {
+                    @(Get-ChildItem -LiteralPath (Join-Path $root "opt\legion12-testrun-deployment\failures") -Recurse -Force | Sort-Object FullName | ForEach-Object FullName) -join "`n"
+                } else { "" }
+            }
+        }
+        $capabilityIsolationBefore = & $readCapabilityIsolation
+        $assertCapabilityIsolation = {
+            param([string]$Label)
+            $after = & $readCapabilityIsolation
+            Assert-True ($after.ActiveEntry -ceq $capabilityIsolationBefore.ActiveEntry) "$Label changed the active testrun entry."
+            Assert-True ($after.ActiveCommit -ceq $capabilityIsolationBefore.ActiveCommit) "$Label changed the active testrun commit."
+            Assert-True ($after.Releases -ceq $capabilityIsolationBefore.Releases) "$Label created or changed a managed release entry."
+            Assert-True ($after.Staging -ceq $capabilityIsolationBefore.Staging) "$Label reached release staging/extraction."
+            Assert-True ($after.Backups -ceq $capabilityIsolationBefore.Backups) "$Label created runtime backup state."
+            Assert-True ($after.Failures -ceq $capabilityIsolationBefore.Failures) "$Label created deployment failure state."
+        }
+        $serverCapabilityFaults = @($capabilityFaults | Where-Object { $_.Name -ne "source-mismatch" }) + @(
+            @{ Name = "unknown-root"; Expected = "archive contains an unexpected root" }
+        )
+        foreach ($fault in $serverCapabilityFaults) {
+            Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility -Fault $fault.Name
+            & $tar -czf $releaseArchive -C $releaseRoot .
+            Assert-True ($LASTEXITCODE -eq 0) "Server capability fault archive creation failed: $($fault.Name)"
+            Copy-Item -LiteralPath $releaseArchive -Destination (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Force
+            if (Test-Path -LiteralPath $commandLog) { Remove-Item -LiteralPath $commandLog -Force }
+            $rejected = Invoke-NativeCapture $shell @("-c", $launcher, "capability-$($fault.Name)", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitB, (Get-FileHash (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Algorithm SHA256).Hash.ToLowerInvariant(), $archiveServerPath, $assetHash, "-", "-")
+            $serverExpected = if ($fault.Name -eq "missing") { "archive is incomplete: .deployment-drain-capability.json" } `
+                elseif ($fault.Name -eq "directory") { "deployment capability marker must be a regular file" } `
+                elseif ($fault.Name -eq "child") { "deployment capability marker cannot contain child members" } `
+                elseif ($fault.Name -eq "oversized") { "deployment capability marker is too large" } `
+                elseif ($fault.Name -eq "unknown-root") { "archive contains an unexpected root" } `
+                else { "deployment capability marker is invalid" }
+            Assert-True ($rejected.ExitCode -ne 0 -and $rejected.Output.Contains($serverExpected)) `
+                "Server artifact gate accepted capability fault '$($fault.Name)': $($rejected.Output)"
+            $rejectedCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+            Assert-True (-not $rejectedCommands.Contains("systemctl stop")) "Capability fault '$($fault.Name)' reached service stop."
+            Assert-True ((Get-Content -LiteralPath (Join-Path $runtime "sentinel.txt") -Raw) -eq "preserve") "Capability fault '$($fault.Name)' changed testrun runtime."
+            Assert-True (Test-Path -LiteralPath (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -PathType Leaf) "Capability fault '$($fault.Name)' deleted incoming evidence."
+            & $assertCapabilityIsolation "Capability fault '$($fault.Name)'"
+        }
+        foreach ($fault in $capabilityMemberFaults) {
+            New-CapabilityTarMemberFault -Python $python -SourceArchive $validReleaseArchive -DestinationArchive $releaseArchive -Fault $fault.Name -MarkerJson $validCapabilityJson
+            Copy-Item -LiteralPath $releaseArchive -Destination (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Force
+            if (Test-Path -LiteralPath $commandLog) { Remove-Item -LiteralPath $commandLog -Force }
+            $rejected = Invoke-NativeCapture $shell @("-c", $launcher, "capability-member-$($fault.Name)", (ConvertTo-MsysPath $serverDeploy), "deploy", $commitB, (Get-FileHash (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Algorithm SHA256).Hash.ToLowerInvariant(), $archiveServerPath, $assetHash, "-", "-")
+            $serverExpected = if ($fault.Name -eq "duplicate") { "archive contains duplicate member" } else { "archive links and special files are forbidden" }
+            Assert-True ($rejected.ExitCode -ne 0 -and $rejected.Output.Contains($serverExpected)) `
+                "Server artifact gate accepted capability member fault '$($fault.Name)': $($rejected.Output)"
+            $rejectedCommands = if (Test-Path -LiteralPath $commandLog) { Get-Content -LiteralPath $commandLog -Raw } else { "" }
+            Assert-True (-not $rejectedCommands.Contains("systemctl stop")) "Capability member fault '$($fault.Name)' reached service stop."
+            Assert-True ((Get-Content -LiteralPath (Join-Path $runtime "sentinel.txt") -Raw) -eq "preserve") "Capability member fault '$($fault.Name)' changed testrun runtime."
+            Assert-True (Test-Path -LiteralPath (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -PathType Leaf) "Capability member fault '$($fault.Name)' deleted incoming evidence."
+            & $assertCapabilityIsolation "Capability member fault '$($fault.Name)'"
+        }
+        Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitB -RuntimeSourceCompatibility $runtimeSourceCompatibility
+        & $tar -czf $releaseArchive -C $releaseRoot .
+        Assert-True ($LASTEXITCODE -eq 0) "Restored server release fixture archive creation failed."
+        Copy-Item -LiteralPath $releaseArchive -Destination (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Force
+        if (Test-Path -LiteralPath $commandLog) { Remove-Item -LiteralPath $commandLog -Force }
         foreach ($budgetFault in @(
             @{ Name = "program-over-512mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](512MB + 1) }; Reason = "program budget exceeds 512 MiB" },
             @{ Name = "data-over-256mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string](256MB + 1) }; Reason = "data budget exceeds 256 MiB" },
@@ -366,6 +652,7 @@ exit 0
 
     $commitC = "c" * 40
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitC`n"
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitC -RuntimeSourceCompatibility $runtimeSourceCompatibility
     $successArchive = Join-Path $incoming "l12-testrun-release-$commitC.tar.gz"
     & $tar -czf $successArchive -C $releaseRoot .
     $releaseBase = Join-Path $root "opt\legion12-testrun-releases"
@@ -431,6 +718,7 @@ exit 0
 
     $commitD = "6" * 40
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitD`n"
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitD -RuntimeSourceCompatibility $runtimeSourceCompatibility
     $repeatArchive = Join-Path $incoming "l12-testrun-release-$commitD.tar.gz"
     & $tar -czf $repeatArchive -C $releaseRoot .
     $repeatEnvironment = $environment.Clone()
@@ -458,6 +746,7 @@ exit 0
 
     $findFailureCommit = "7" * 40
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$findFailureCommit`n"
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $findFailureCommit -RuntimeSourceCompatibility $runtimeSourceCompatibility
     $findFailureArchive = Join-Path $incoming "l12-testrun-release-$findFailureCommit.tar.gz"
     & $tar -czf $findFailureArchive -C $releaseRoot .
     $findFailureEnvironment = $environment.Clone()
@@ -477,6 +766,7 @@ exit 0
 
     $grepFailureCommit = "8" * 40
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$grepFailureCommit`n"
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $grepFailureCommit -RuntimeSourceCompatibility $runtimeSourceCompatibility
     $grepFailureArchive = Join-Path $incoming "l12-testrun-release-$grepFailureCommit.tar.gz"
     & $tar -czf $grepFailureArchive -C $releaseRoot .
     $grepFailureEnvironment = $environment.Clone()
@@ -501,6 +791,7 @@ exit 0
     Write-Utf8NoBom (Join-Path $unknownRelease "partial.txt") "writer ownership is not proved"
     $commitE = "9" * 40
     Write-Utf8NoBom (Join-Path $releaseRoot ".deployment-commit") "$commitE`n"
+    Set-DeploymentCapabilityFixture -ReleaseRoot $releaseRoot -Commit $commitE -RuntimeSourceCompatibility $runtimeSourceCompatibility
     $unknownArchive = Join-Path $incoming "l12-testrun-release-$commitE.tar.gz"
     & $tar -czf $unknownArchive -C $releaseRoot .
     $unknownEnvironment = $environment.Clone()

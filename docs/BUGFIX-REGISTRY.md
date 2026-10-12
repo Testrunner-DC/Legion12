@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261013-TESTRUN-CAPABILITY｜测试服归档合同落后于标准发布能力标记（已批准）
+
+- 实际冻结三源932E011C/573468C6/79E37FC5，Main完整测试服行为及release-gate各退出0、真实标准532f包只读本地预检通过。新增两端20/20 marker和成员拒绝，原guard全部保留；Windows/MSYS mock不是线上Linux/systemd，原三失败夹具留存。新完整Release及部署仍以本批实际回执为准。
+- 读取前普通marker大小≤4096；Windows不支持marker前扩展tar头，遇到便失败关闭，且仅接受当前生成器单行canonical顺序/无额外空白，不拼接非法换行。server JSON拒绝重键、精确六键/类型/commit/runtime字段。Main审查的过早整块读入与多行拼接边界已补正，未开放未知根或迁移生产数据。
+- 实际532f标准包在本地Windows测试服 `ValidateArtifactOnly` 被拒绝 `unexpected root: .deployment-drain-capability.json`；D盘r2子进程真实捕获日志保留。首次终止异常未被Tee写入日志，只保留工具返回，不补造原日志。前置校验尚未SSH/SCP或触碰服务器。
+- 全同型扫描生成器、Windows测试服入口、server validate_archive、正式能力校验与测试夹具：只有具名根遗漏，标准包无其他新增根；仅修Windows会在server再次拒绝。正式能力标记承载commit/runtime/停服协议的校验，不可移除它迎合旧工具。
+- 用户已明确批准只接纳该普通文件并严格核对结构/提交/能力字段，保留原SHA、路径、重复、链接/特殊文件、大小与生产隔离，负例必须在解压/停服/切换前拒绝。限定三文件实施验收中，无产品卡效/数据库迁移；最终结果待Main实际回执，不把新工具修改冒称532f已验收源码。
+
 ## TEST-20261013-HTTP-FIXTURE-LIFETIME｜发布验收夹具在完整释放前清理（仅本地测试）
 
 - 来源：141b Release第二轮唯一失败在CardAnalyticsRequestLifecycleTests的finally删除matches.db，原鉴权/响应头/真实宿主停止/原生查询中止已通过；失败TRX5BF60172、日志2094D400、退出后现存合成主库52A37144均留在D盘，不删除或称原始快照完整。
