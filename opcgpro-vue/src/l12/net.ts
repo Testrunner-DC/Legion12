@@ -66,6 +66,7 @@ let snapshotRecoveryAttempt = 0
 let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 let negotiatedRequestIds = false
+let negotiatedEventWindowDelta = false
 let pendingActionEnvelope: null | Record<string, unknown> = null
 let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
@@ -140,14 +141,19 @@ function cancelPendingAction() {
 }
 
 function rebuildDeltaGameState(delta: any) {
+  try {
   const baseline = lastGameStateEnvelope
   if (!baseline || baseline.type !== 'gameState'
     || String(baseline.state?.matchId || '') !== String(delta.matchId || '')
     || Number(baseline.state?.revision ?? -1) !== Number(delta.baseRevision ?? -2)
     || !Array.isArray(delta.changes)) return null
   const rebuilt = JSON.parse(JSON.stringify(baseline))
+  const hasWindow = Object.hasOwn(delta, 'eventWindow')
+  if (hasWindow && !negotiatedEventWindowDelta) return null
   for (const change of delta.changes) {
     if (!Array.isArray(change?.path) || change.path.length === 0) return null
+    if (hasWindow && change.path[0] === 'state'
+      && (change.path.length === 1 || change.path[1] === 'recentEvents')) return null
     let target: any = rebuilt
     for (const segment of change.path.slice(0, -1)) {
       if (target == null || !(segment in target)) return null
@@ -157,8 +163,40 @@ function rebuildDeltaGameState(delta: any) {
     if (change.remove) delete target[key]
     else target[key] = change.value
   }
+  if (hasWindow) {
+    // Rebuild the original recipient array before all animations/log/replay consumers.
+    // Privacy gaps are legitimate; no consecutive numbering or live catalog refill.
+    const window = delta.eventWindow
+    const events = rebuilt.state?.recentEvents
+    const sequences = (items: any): number[] | null => {
+      if (!Array.isArray(items) || items.length > 128) return null
+      const result: number[] = []
+      for (const item of items) {
+        const sequence = item?.sequence
+        if (!item || typeof item !== 'object' || Array.isArray(item)
+          || !Number.isSafeInteger(sequence) || sequence <= 0
+          || (result.length > 0 && sequence <= result[result.length - 1]!)) return null
+        result.push(sequence)
+      }
+      return result
+    }
+    const equals = (actual: number[] | null, expected: any) => actual !== null
+      && Array.isArray(expected) && actual.length === expected.length
+      && actual.every((value, index) => value === expected[index])
+    if (!window || typeof window !== 'object' || Array.isArray(window)
+      || !equals(sequences(events), window.baseSequences)
+      || !Number.isSafeInteger(window.removeFirst) || window.removeFirst < 0
+      || window.removeFirst >= events.length || sequences(window.append) === null) return null
+    const next = [...events.slice(window.removeFirst), ...JSON.parse(JSON.stringify(window.append))]
+    if (!equals(sequences(next), window.resultSequences)) return null
+    rebuilt.state.recentEvents = next
+  }
   if (Number(rebuilt.state?.revision ?? -1) !== Number(delta.revision ?? -2)) return null
   return rebuilt
+  } catch {
+    // Bad paths or shapes must request authoritative full recovery, not partially publish a window.
+    return null
+  }
 }
 
 function clearReconnectTimer() {
@@ -431,6 +469,7 @@ export function connect(): Promise<void> {
       socket.close(4000, 'websocket recovery required')
     }
 
+    negotiatedEventWindowDelta = false
     try { socket = new WebSocket(l12State.endpoint) }
     catch (error) {
       clearHeartbeat()
@@ -469,7 +508,7 @@ export function connect(): Promise<void> {
       socket.send(JSON.stringify({
         type: 'hello',
         authToken,
-        capabilities: { requestIds: true, deltaGameState: true },
+        capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -491,6 +530,8 @@ export function connect(): Promise<void> {
       if (message.type === 'session') {
         cancelResourceFallback()
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
+        negotiatedEventWindowDelta = message.capabilities?.deltaGameState === true
+          && message.capabilities?.eventWindowDeltaV1 === true
         claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
         l12State.accountId = String(message.accountId || '')
@@ -851,6 +892,7 @@ export function disconnect() {
   l12State.gmEnabled = false
   cancelPendingAction()
   negotiatedRequestIds = false
+  negotiatedEventWindowDelta = false
   lastGameStateEnvelope = null
   l12State.matchmaking = null
   l12State.matchFound = null

@@ -252,6 +252,55 @@ function sendSuccessfulHandshake(socket, generation) {
 }
 
 const tests = [
+  ['event window failure keeps private state atomic and requests full sync', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'window-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'window-session', connectionGeneration: 83,
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true } })
+    socket.receive({ type: 'roomState', roomCode: 'WINDOW', yourPlayerIndex: 0, started: true, players: [] })
+    const event = sequence => ({ sequence, type: 'move', cards: [{ instanceId: `frozen-${sequence}`, effectText: '旧文本', tapped: false }] })
+    socket.receive({ type: 'gameState', state: { matchId: 'window-match', roomCode: 'WINDOW', revision: 1, phase: 'Main',
+      players: [{ hand: ['private'] }, { handCount: 1 }], recentEvents: [1, 4, 8].map(event), lastAction: null } })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 83, roomCode: 'WINDOW', matchId: 'window-match', recoveryRevision: 1 })
+    await connected
+    socket.receive({ type: 'gameStateDelta', matchId: 'window-match', baseRevision: 1, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 }],
+      eventWindow: { baseSequences: [1, 4, 8], removeFirst: 1, append: [event(12)], resultSequences: [4, 8, 12] } })
+    assert.deepEqual(net.l12State.game.recentEvents, [4, 8, 12].map(event))
+    assert.deepEqual(net.l12State.game.players[0].hand, ['private'])
+    assert.equal(net.l12State.game.lastAction, null)
+    const prior = JSON.stringify(net.l12State.game), syncBefore = socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+    socket.receive({ type: 'gameStateDelta', matchId: 'window-match', baseRevision: 2, revision: 3,
+      changes: [{ path: ['state', 'revision'], value: 3 }],
+      eventWindow: { baseSequences: [1, 4, 8], removeFirst: 1, append: [event(16)], resultSequences: [8, 12, 16] } })
+    assert.equal(JSON.stringify(net.l12State.game), prior)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, syncBefore + 1)
+    net.disconnect()
+  }],
+  ['event window support is not inherited by an unnegotiated replacement', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'window-old-server' })
+    const net = await loadNetModule(), connected = net.connect(), first = FakeWebSocket.instances[0]
+    first.open()
+    first.receive({ type: 'session', sessionId: 'window-old-1', connectionGeneration: 84,
+      capabilities: { deltaGameState: true, eventWindowDeltaV1: true } })
+    first.receive({ type: 'recoveryComplete', connectionGeneration: 84 })
+    await connected
+    first.emitClose(1006, 'reconnect')
+    await timers.advance(1000)
+    const replacement = FakeWebSocket.instances[1]
+    replacement.open()
+    replacement.receive({ type: 'session', sessionId: 'window-old-2', connectionGeneration: 85, capabilities: { deltaGameState: true } })
+    replacement.receive({ type: 'gameState', state: { matchId: 'window-old-match', revision: 1, phase: 'Main', players: [], recentEvents: [{ sequence: 1, text: 'frozen' }] } })
+    replacement.receive({ type: 'recoveryComplete', connectionGeneration: 85 })
+    const prior = JSON.stringify(net.l12State.game)
+    replacement.receive({ type: 'gameStateDelta', matchId: 'window-old-match', baseRevision: 1, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 }],
+      eventWindow: { baseSequences: [1], removeFirst: 0, append: [{ sequence: 2 }], resultSequences: [1, 2] } })
+    assert.equal(JSON.stringify(net.l12State.game), prior)
+    assert.equal(net.l12State.recoveryPhase, 'snapshot-mismatch')
+    net.disconnect()
+  }],
   ['a half-open socket with no server replies is retried without requiring a close event', async () => {
     const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'heartbeat-token' })
     const net = await loadNetModule()
@@ -530,7 +579,7 @@ const tests = [
     socket.open()
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
-      capabilities: { requestIds: true, deltaGameState: true },
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261012-event-window-delta",
+  "date": "2026-10-12",
+  "audience": "players",
+  "title": "对局网络传输优化",
+  "changes": [{
+    "category": "battle",
+    "text": "减少对局历史记录在每次行动时的重复传输，保留完整动作、卡牌展示和断线恢复；旧客户端继续兼容。",
+    "paths": [
+      "服务端WebSocket/TwelveLegions/L12RecentEventWindowDelta.cs",
+      "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs",
+      "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+      "opcgpro-vue/src/l12/net.ts"
+    ]
+  }]
+}

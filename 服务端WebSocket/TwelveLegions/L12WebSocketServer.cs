@@ -21,7 +21,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
-    private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState);
+    private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState, bool EventWindowDeltaV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -4410,7 +4410,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 }
                 _socketCapabilities[sessionId] = capabilities;
                 if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
-                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState);
+                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
                 claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
                     authenticated.Account.Username,
@@ -4439,6 +4439,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 {
                     requestIds = capabilities.RequestIds,
                     deltaGameState = capabilities.DeltaGameState,
+                    eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
@@ -4518,10 +4519,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .Where(item => item.ValueKind == JsonValueKind.String)
                 .Select(item => item.GetString())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"));
+            return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
+                requested.Contains("eventWindowDeltaV1"));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
-        return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false));
+        return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
+            GetBool(value, "eventWindowDeltaV1", false));
     }
 
     private IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, JsonElement deckElement)

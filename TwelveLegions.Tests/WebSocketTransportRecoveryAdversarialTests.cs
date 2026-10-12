@@ -11,8 +11,12 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
 {
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
 
-    [Fact]
-    public async Task RealWebSocketReconnectReplayAndRecipientProjectionsConvergeWithoutPrivateLeaks()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RealWebSocketReconnectReplayAndRecipientProjectionsConvergeWithoutPrivateLeaks(bool eventWindows, bool replacementWindows)
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-lc03a-ws", Guid.NewGuid().ToString("N"));
         var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
@@ -35,9 +39,9 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         {
             var http = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" };
             var endpoint = new UriBuilder(http.Uri) { Scheme = "ws", Path = "/ws" }.Uri;
-            await using var first = await WireClient.ConnectAsync(endpoint, firstToken);
-            await using var second = await WireClient.ConnectAsync(endpoint, secondToken);
-            await using var spectator = await WireClient.ConnectAsync(endpoint, spectatorToken);
+            await using var first = await WireClient.ConnectAsync(endpoint, firstToken, eventWindows);
+            await using var second = await WireClient.ConnectAsync(endpoint, secondToken, eventWindows);
+            await using var spectator = await WireClient.ConnectAsync(endpoint, spectatorToken, eventWindows);
 
             await first.SendAsync(new
             {
@@ -129,7 +133,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
 
-            var firstReconnection = await WireClient.ReplaceAsync(first, endpoint, firstToken);
+            var firstReconnection = await WireClient.ReplaceAsync(first, endpoint, firstToken, replacementWindows);
             await using var firstReplacement = firstReconnection.Replacement;
             var supersededFirst = firstReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededFirst["reason"]?.GetValue<string>());
@@ -169,7 +173,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
 
-            var secondReconnection = await WireClient.ReplaceAsync(second, endpoint, secondToken);
+            var secondReconnection = await WireClient.ReplaceAsync(second, endpoint, secondToken, replacementWindows);
             await using var secondReplacement = secondReconnection.Replacement;
             var supersededSecond = secondReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededSecond["reason"]?.GetValue<string>());
@@ -235,11 +239,17 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 "真实 WebSocket 链没有产生可校验的增量状态");
 
             AssertRecipientPrivacy(firstFinal, 0, firstPrivateIds, secondPrivateIds);
+            var windowCount = first.EventWindowDeltaCount + second.EventWindowDeltaCount + spectator.EventWindowDeltaCount;
+            if (eventWindows) Assert.True(windowCount > 0, "实际协商WebSocket未发送任何历史事件窗口增量");
+            else Assert.Equal(0, windowCount);
+            var replacementWindowCount = firstReplacement.EventWindowDeltaCount + secondReplacement.EventWindowDeltaCount;
+            if (replacementWindows) Assert.True(replacementWindowCount > 0, "新协议替代连接未实际发送窗口增量");
+            else Assert.Equal(0, replacementWindowCount);
             AssertRecipientPrivacy(secondFinal, 1, secondPrivateIds, firstPrivateIds);
             AssertSpectatorPrivacy(spectatorFinal, firstPrivateIds, secondPrivateIds);
 
             var staleSpectatorDelta = Assert.IsType<byte[]>(spectator.LastDeltaPayload);
-            var spectatorReconnection = await WireClient.ReplaceAsync(spectator, endpoint, spectatorToken);
+            var spectatorReconnection = await WireClient.ReplaceAsync(spectator, endpoint, spectatorToken, replacementWindows);
             await using var spectatorReplacement = spectatorReconnection.Replacement;
             var supersededSpectator = spectatorReconnection.Superseded;
             Assert.Equal("newer-connection-generation", supersededSpectator["reason"]?.GetValue<string>());
@@ -426,11 +436,12 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         internal byte[]? LastDeltaPayload { get; private set; }
         internal int FullGameStateCount { get; private set; }
         internal int DeltaGameStateCount { get; private set; }
+        internal int EventWindowDeltaCount { get; private set; }
         internal long ConnectionGeneration => Session!["connectionGeneration"]!.GetValue<long>();
         internal List<string> RecoveryMessageTypes { get; } = [];
         internal bool RecoveryReadyForWrites { get; private set; }
 
-        internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token)
+        internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token, bool eventWindows = false)
         {
             var client = new WireClient();
             try
@@ -440,7 +451,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 {
                     type = "hello",
                     authToken = token,
-                    capabilities = new { requestIds = true, deltaGameState = true },
+                    capabilities = new { requestIds = true, deltaGameState = true, eventWindowDeltaV1 = eventWindows },
                 });
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 for (var attempt = 0; attempt < 80 && client.Recovery is null; attempt++)
@@ -453,6 +464,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                     if (type == "recoveryComplete") client.Recovery = message.Node;
                 }
                 Assert.NotNull(client.Session);
+                Assert.Equal(eventWindows, client.Session["capabilities"]!["eventWindowDeltaV1"]!.GetValue<bool>());
                 Assert.NotNull(client.Recovery);
                 client.RecoveryReadyForWrites = true;
                 return client;
@@ -465,7 +477,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         }
 
         internal static async Task<(WireClient Replacement, JsonObject Superseded)> ReplaceAsync(
-            WireClient previous, Uri endpoint, string token)
+            WireClient previous, Uri endpoint, string token, bool eventWindows = false)
         {
             using var cancellation = new CancellationTokenSource();
             // 真实客户端持续收包；先读旧连接，避免通知被积压状态帧阻塞而与新握手互等。
@@ -473,7 +485,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             WireClient? replacement = null;
             try
             {
-                replacement = await ConnectAsync(endpoint, token);
+                replacement = await ConnectAsync(endpoint, token, eventWindows);
                 return (replacement, await superseded);
             }
             catch
@@ -548,6 +560,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 ?? throw new InvalidDataException("增量到达前没有完整基线"), bytes);
             LastDeltaPayload = bytes.ToArray();
             DeltaGameStateCount++;
+            if (message.ContainsKey("eventWindow")) EventWindowDeltaCount++;
             return true;
         }
 

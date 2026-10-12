@@ -16,17 +16,23 @@ internal sealed class L12SnapshotWireCodec
     private const int MaximumChanges = 4096;
     private readonly object _gate = new();
     private bool _enabled;
+    private bool _eventWindowEnabled;
     // Outbound payloads are immutable UTF-8 bytes. Retain only the successfully
     // sent bytes; do not hydrate a complete mutable card tree for every connection.
     private byte[]? _baseline;
     private int _sinceFull;
 
     internal void SetDeltaEnabled(bool enabled)
+        => SetDeltaEnabled(enabled, false);
+
+    internal void SetDeltaEnabled(bool enabled, bool eventWindowDeltaV1)
     {
         lock (_gate)
         {
-            if (_enabled == enabled) return;
+            var windowEnabled = enabled && eventWindowDeltaV1;
+            if (_enabled == enabled && _eventWindowEnabled == windowEnabled) return;
             _enabled = enabled;
+            _eventWindowEnabled = windowEnabled;
             _baseline = null;
             _sinceFull = 0;
         }
@@ -52,7 +58,8 @@ internal sealed class L12SnapshotWireCodec
                 return Full(queued.FullPayload);
 
             var changes = new JsonArray();
-            BuildChanges(previous, current, [], changes);
+            var eventWindow = _eventWindowEnabled ? L12RecentEventWindowDelta.TryCreate(previous, current) : null;
+            BuildChanges(previous, current, [], changes, eventWindow is not null);
             if (changes.Count > MaximumChanges) return Full(queued.FullPayload);
             var delta = new JsonObject
             {
@@ -62,6 +69,7 @@ internal sealed class L12SnapshotWireCodec
                 ["revision"] = revision,
                 ["changes"] = changes,
             };
+            if (eventWindow is not null) delta["eventWindow"] = eventWindow;
             var encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
             if (encoded.Length >= queued.FullPayload.Length * 9 / 10)
                 return Full(queued.FullPayload);
@@ -97,7 +105,7 @@ internal sealed class L12SnapshotWireCodec
         }, false);
 
     private static void BuildChanges(JsonElement previous, JsonElement current,
-        IReadOnlyList<object> path, JsonArray changes)
+        IReadOnlyList<object> path, JsonArray changes, bool skipRecentEvents = false)
     {
         if (changes.Count > MaximumChanges) return;
         if (JsonElement.DeepEquals(previous, current)) return;
@@ -110,12 +118,14 @@ internal sealed class L12SnapshotWireCodec
                 var hasCurrent = current.TryGetProperty(key, out var currentValue);
                 if (hasCurrent && JsonElement.DeepEquals(property.Value, currentValue)) continue;
                 var next = path.Append(key).ToArray();
+                if (skipRecentEvents && next.Length == 2 && Equals(next[0], "state")
+                    && key == "recentEvents") continue;
                 if (!hasCurrent)
                 {
                     changes.Add(Change(next, null, remove: true));
                 }
                 else
-                    BuildChanges(property.Value, currentValue, next, changes);
+                    BuildChanges(property.Value, currentValue, next, changes, skipRecentEvents);
                 if (changes.Count > MaximumChanges) return;
             }
             foreach (var property in current.EnumerateObject())
@@ -134,7 +144,7 @@ internal sealed class L12SnapshotWireCodec
             for (var index = 0; index < current.GetArrayLength(); index++)
             {
                 if (JsonElement.DeepEquals(previous[index], current[index])) continue;
-                BuildChanges(previous[index], current[index], path.Append(index).ToArray(), changes);
+                BuildChanges(previous[index], current[index], path.Append(index).ToArray(), changes, skipRecentEvents);
                 if (changes.Count > MaximumChanges) return;
             }
             return;
@@ -155,12 +165,18 @@ internal sealed class L12SnapshotWireCodec
         var result = baseline.DeepClone().AsObject();
         var delta = JsonNode.Parse(deltaBytes)?.AsObject()
             ?? throw new InvalidDataException("增量载荷不是 JSON 对象");
+        var hasWindow = delta.ContainsKey("eventWindow");
         foreach (var changeNode in delta["changes"]?.AsArray() ?? [])
         {
             var change = changeNode?.AsObject() ?? throw new InvalidDataException("增量变更格式错误");
             var path = change["path"]?.AsArray() ?? throw new InvalidDataException("增量变更缺少路径");
+            if (hasWindow && L12RecentEventWindowDelta.OverlapsEvents(path))
+                throw new InvalidDataException("历史事件窗口与普通变更冲突");
             ApplyChange(result, path, change["value"], change["remove"]?.GetValue<bool>() == true);
         }
+        if (hasWindow)
+            L12RecentEventWindowDelta.Apply(result, delta["eventWindow"]?.AsObject()
+                ?? throw new InvalidDataException("历史事件窗口不是对象"));
         return result;
     }
 
