@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## TEST-20261013-HTTP-FIXTURE-LIFETIME｜发布验收夹具在完整释放前清理（仅本地测试）
+
+- 来源：141b Release第二轮唯一失败在CardAnalyticsRequestLifecycleTests的finally删除matches.db，原鉴权/响应头/真实宿主停止/原生查询中止已通过；失败TRX5BF60172、日志2094D400、退出后现存合成主库52A37144均留在D盘，不删除或称原始快照完整。
+- 代码确认Stop不等于Dispose：原await using在finally之外，删除先于宿主异步析构。将资源声明置于外try、停止保留内finally，外finally仅passed时在析构完成后清精确DataSource池和自有临时目录。具体原句柄持有者未证，不将测试修正冒称产品连接泄漏修复。
+- 清理仅允许temp直属l12-card-http-N格式GUID根、拒绝根联接；Windows不区分父目录大小写，其他系统严格大小写。仅IOException最多5次有界等待，最后仍报错，未知路径/非IO错误不忽略、不做全局ClearAllPools；正常业务不重试。
+- 全类最终22/22及原真实HTTP单例3次独立通过；新增3路径负例、持久独占锁最终失败与释放后清理、非Windows父目录大小写负例。Windows并未执行后者真实Linux分支。独立复审CLEAR；原业务断言保留，Stop/Dispose同时失败时原finally异常覆盖限制未扩改。完整Release及两服部署以本批实际回执为准。
+
 ## NET-20261013-RESPONSE-UPDATE｜响应更新误强制全房全量（明确批准，本地验收）
 
 - 完整Batch实际7219/1376、失败跳过0、退出0，当前全部新测试含后补偏好fallback均已执行；实际静态复审CLEAR。Main接提交级Release/同包三源复验与Git，当前不部署或关单。Batch-r1的Release-only参数拒绝保留，r2只纠正调用，无门禁减免。

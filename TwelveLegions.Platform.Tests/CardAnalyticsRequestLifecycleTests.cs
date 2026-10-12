@@ -457,62 +457,149 @@ public sealed class CardAnalyticsRequestLifecycleTests
         var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
         var catalog = L12Catalog.Load(System.IO.Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
         var path = System.IO.Path.Combine(root, "matches.db");
-        await using var recorder = new MatchRecorder(path);
-        await recorder.InitializeAsync();
-        var platform = new L12PlatformStore(System.IO.Path.Combine(root, "platform.json"), officialCards: catalog.Cards);
-        var login = platform.Login("Admin", "L12master");
-        Assert.True(login.Success);
-        var rooms = new L12RoomManager(catalog, recorder, platform);
-        await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
         var passed = false;
         try
         {
-            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
-            await server.StartAsync(0);
-            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
-            foreach (var suffix in new[] { "", "/synthetic-missing" })
+            await using var recorder = new MatchRecorder(path);
+            await recorder.InitializeAsync();
+            var platform = new L12PlatformStore(System.IO.Path.Combine(root, "platform.json"), officialCards: catalog.Cards);
+            var login = platform.Login("Admin", "L12master");
+            Assert.True(login.Success);
+            var rooms = new L12RoomManager(catalog, recorder, platform);
+            await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
+            try
             {
-                using var unauthorized = await client.GetAsync("/api/admin/analytics/cards" + suffix);
-                Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
-                // Existing global middleware emits app timing even for denied requests.
-                if (unauthorized.Headers.TryGetValues("Server-Timing", out var deniedValues))
-                    Assert.All(deniedValues, value => Assert.DoesNotContain("scope-total", value));
-                Assert.Equal(0, recorder.CardAnalyticsExecutionCounts.Active);
-                using var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/analytics/cards" + suffix);
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", login.Token);
-                using var response = await client.SendAsync(request);
-                Assert.Equal(suffix.Length == 0 ? HttpStatusCode.OK : HttpStatusCode.NotFound, response.StatusCode);
-                Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
-                Assert.True(response.Headers.TryGetValues("Server-Timing", out var values));
-                var header = string.Join(",", values);
-                Assert.Contains("scope-total;dur=", header);
-                Assert.Contains("total;dur=", header);
-                Assert.DoesNotContain("synthetic-missing", header);
+                Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+                await server.StartAsync(0);
+                using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+                foreach (var suffix in new[] { "", "/synthetic-missing" })
+                {
+                    using var unauthorized = await client.GetAsync("/api/admin/analytics/cards" + suffix);
+                    Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+                    // Existing global middleware emits app timing even for denied requests.
+                    if (unauthorized.Headers.TryGetValues("Server-Timing", out var deniedValues))
+                        Assert.All(deniedValues, value => Assert.DoesNotContain("scope-total", value));
+                    Assert.Equal(0, recorder.CardAnalyticsExecutionCounts.Active);
+                    using var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/analytics/cards" + suffix);
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", login.Token);
+                    using var response = await client.SendAsync(request);
+                    Assert.Equal(suffix.Length == 0 ? HttpStatusCode.OK : HttpStatusCode.NotFound, response.StatusCode);
+                    Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
+                    Assert.True(response.Headers.TryGetValues("Server-Timing", out var values));
+                    var header = string.Join(",", values);
+                    Assert.Contains("scope-total;dur=", header);
+                    Assert.Contains("total;dur=", header);
+                    Assert.DoesNotContain("synthetic-missing", header);
+                }
+                var app = (WebApplication)typeof(L12WebSocketServer).GetField("_app",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
+                using var stopping = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                    CancellationToken.None, app.Lifetime.ApplicationStopping);
+                using var started = new ManualResetEventSlim();
+                var task = recorder.ExecuteCardAnalyticsAsync("real-host-stop", recorder.AnalyticsCacheEpoch,
+                    stopping.Token, new CardAnalyticsRequestTiming(), execution => LongQuery(execution, started));
+                await WaitUntilAsync(() => started.IsSet);
+                var watch = Stopwatch.StartNew();
+                await server.StopAsync();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
+                await WaitUntilAsync(() => recorder.CardAnalyticsExecutionCounts.Active == 0);
+                Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), watch.Elapsed.ToString());
+                Assert.Equal(1, recorder.CardAnalyticsNativeInterruptions);
+                _output.WriteLine($"actual host stop + native owner drained: {watch.Elapsed.TotalMilliseconds:F2}ms");
+                passed = true;
             }
-            var app = (WebApplication)typeof(L12WebSocketServer).GetField("_app",
-                BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(server)!;
-            using var stopping = MatchRecorder.CreateCardAnalyticsRequestCancellation(
-                CancellationToken.None, app.Lifetime.ApplicationStopping);
-            using var started = new ManualResetEventSlim();
-            var task = recorder.ExecuteCardAnalyticsAsync("real-host-stop", recorder.AnalyticsCacheEpoch,
-                stopping.Token, new CardAnalyticsRequestTiming(), execution => LongQuery(execution, started));
-            await WaitUntilAsync(() => started.IsSet);
-            var watch = Stopwatch.StartNew();
-            await server.StopAsync();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
-            await WaitUntilAsync(() => recorder.CardAnalyticsExecutionCounts.Active == 0);
-            Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), watch.Elapsed.ToString());
-            Assert.Equal(1, recorder.CardAnalyticsNativeInterruptions);
-            _output.WriteLine($"actual host stop + native owner drained: {watch.Elapsed.TotalMilliseconds:F2}ms");
-            passed = true;
+            finally
+            {
+                await server.StopAsync();
+            }
         }
         finally
         {
-            await server.StopAsync();
-            using var pooled = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = path }.ToString());
-            SqliteConnection.ClearPool(pooled);
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
-            if (passed) Directory.Delete(root, true);
+            // Stop is a behavior assertion; lexical async disposal must finish before pool cleanup.
+            // A failed behavior test keeps its own data. No product or global pool is changed.
+            if (passed) await DeleteOwnedHttpFixtureAsync(root);
+        }
+    }
+
+    [Theory]
+    [InlineData("unowned", false)]
+    [InlineData("l12-card-http-not-a-guid", false)]
+    [InlineData("l12-card-http-", true)]
+    public async Task HttpFixtureCleanupRejectsUnownedPaths(string prefix, bool nested)
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "l12-card-http-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var target = nested ? System.IO.Path.Combine(root, prefix + Guid.NewGuid().ToString("N"))
+                : System.IO.Path.Combine(System.IO.Path.GetTempPath(), prefix);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => DeleteOwnedHttpFixtureAsync(target));
+            Assert.True(Directory.Exists(root));
+        }
+        finally { await DeleteOwnedHttpFixtureAsync(root); }
+    }
+
+    [Fact]
+    public async Task HttpFixtureCleanupCannotSuppressPersistentFileOwnershipFailure()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "l12-card-http-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var path = System.IO.Path.Combine(root, "matches.db");
+        try
+        {
+            using (var held = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+            {
+                held.WriteByte(73);
+                held.Flush();
+                if (OperatingSystem.IsWindows())
+                {
+                    await Assert.ThrowsAsync<IOException>(() => DeleteOwnedHttpFixtureAsync(root));
+                    Assert.True(Directory.Exists(root));
+                    Assert.True(File.Exists(path));
+                }
+            }
+            Assert.Equal(new byte[] { 73 }, await File.ReadAllBytesAsync(path));
+        }
+        finally { await DeleteOwnedHttpFixtureAsync(root); }
+        Assert.False(Directory.Exists(root));
+    }
+
+    [Fact]
+    public async Task HttpFixtureCleanupRejectsCaseChangedParentOnCaseSensitivePlatforms()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var temp = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())
+            .TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+        var alternate = temp.ToUpperInvariant();
+        if (alternate == temp) alternate = temp.ToLowerInvariant();
+        if (alternate == temp) return; // A numeric-only temp path has no case-distinct alias.
+        var target = System.IO.Path.Combine(alternate, "l12-card-http-" + Guid.NewGuid().ToString("N"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DeleteOwnedHttpFixtureAsync(target));
+    }
+
+    private static async Task DeleteOwnedHttpFixtureAsync(string directory)
+    {
+        var target = System.IO.Path.GetFullPath(directory);
+        var temp = System.IO.Path.GetFullPath(System.IO.Path.GetTempPath())
+            .TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
+        var name = System.IO.Path.GetFileName(target);
+        const string prefix = "l12-card-http-";
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(System.IO.Path.GetDirectoryName(target), temp, comparison)
+            || !name.StartsWith(prefix, StringComparison.Ordinal)
+            || !Guid.TryParseExact(name[prefix.Length..], "N", out _)
+            || (Directory.Exists(target) && (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidOperationException("synthetic HTTP fixture cleanup scope mismatch");
+        using (var pooled = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = System.IO.Path.Combine(target, "matches.db") }.ToString()))
+            SqliteConnection.ClearPool(pooled);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try { Directory.Delete(target, true); return; }
+            catch (IOException) when (attempt < 4) { await Task.Delay(40 * (attempt + 1)); }
         }
     }
 
