@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261013-accepted-request-retry-delta",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "操作重试传输优化",
+  "changes": [{
+    "category": "ui",
+    "text": "对局、沙盒和GM操作重复提交已成功请求时，保留操作确认与实时状态同步，减少不必要的重复全量传输；不重复执行操作。",
+    "paths": ["服务端WebSocket/TwelveLegions/L12RoomManager.cs"]
+  }]
+}

@@ -802,6 +802,43 @@ const tests = [
     net.disconnect()
   }],
 
+  ['same-revision duplicate deltas acknowledge only the matching pending request', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'duplicate-delta-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'duplicate-delta-session', name: '测试玩家',
+      connectionGeneration: 82, capabilities: { requestIds: true, deltaGameState: true } })
+    socket.receive({ type: 'roomState', roomCode: 'DUP001', yourPlayerIndex: 0, started: true, players: [] })
+    socket.receive({ type: 'gameState', requestId: null, state: {
+      matchId: 'duplicate-delta-match', roomCode: 'DUP001', revision: 4, phase: 'Main',
+      players: [{ hp: 20, hand: ['private-card'] }, { hp: 20, handCount: 1 }],
+    } })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 82,
+      roomCode: 'DUP001', matchId: 'duplicate-delta-match', recoveryRevision: 4 })
+    await connected
+    net.gameAction({ type: 'endTurn' })
+    const request = JSON.parse(socket.sent.at(-1))
+    const sameRevision = requestId => ({ type: 'gameStateDelta', matchId: 'duplicate-delta-match',
+      baseRevision: 4, revision: 4, changes: [{ path: ['requestId'], value: requestId, remove: false }] })
+    socket.receive(sameRevision('other-request'))
+    assert.equal(net.l12State.pendingAction, true)
+    assert.equal(net.l12State.game.revision, 4)
+    const syncBefore = socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+    socket.receive({ ...sameRevision(request.requestId), baseRevision: 3 })
+    assert.equal(net.l12State.pendingAction, true, 'invalid delta must not acknowledge the request')
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, syncBefore + 1)
+    socket.receive(sameRevision(request.requestId))
+    assert.equal(net.l12State.pendingAction, false)
+    assert.equal(net.l12State.game.revision, 4)
+    assert.deepEqual(net.l12State.game.players[0].hand, ['private-card'])
+    socket.receive(sameRevision(request.requestId))
+    assert.equal(net.l12State.pendingAction, false, 'repeated acknowledgement is idempotent')
+    assert.deepEqual(net.l12State.game.players[0].hand, ['private-card'])
+    net.disconnect()
+  }],
+
   ['resource revisions reject stale messages and a new server epoch accepts a lower revision', async () => {
     const { events } = installBrowserEnvironment({ 'l12-auth-token': 'resource-token' })
     const net = await loadNetModule()

@@ -118,7 +118,11 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             var firstAfterMulligan = await first.ReceiveGameAsync(state => Revision(state) > initialRevision);
             var afterFirstRevision = Revision(firstAfterMulligan);
             Assert.Equal(firstMulliganId, first.CurrentPayload!["requestId"]?.GetValue<string>());
+            var firstFullAfterAccepted = first.FullGameStateCount;
+            var firstDeltaAfterAccepted = first.DeltaGameStateCount;
             var firstConcurrentReplay = await first.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
+            Assert.Equal(firstFullAfterAccepted, first.FullGameStateCount);
+            Assert.Equal(firstDeltaAfterAccepted + 1, first.DeltaGameStateCount);
             Assert.Equal(firstMulliganId, first.CurrentPayload!["requestId"]?.GetValue<string>());
             Assert.True(JsonNode.DeepEquals(firstAfterMulligan, firstConcurrentReplay),
                 "当前连接代连续双发的同载荷请求没有收敛到同一权威投影：" +
@@ -127,6 +131,14 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
             var spectatorAfterFirst = await spectator.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
             Assert.Equal(StateHash(firstAfterMulligan), StateHash(secondAfterFirst));
             Assert.Equal(StateHash(firstAfterMulligan), StateHash(spectatorAfterFirst));
+            var peerFullAfterAccepted = second.FullGameStateCount;
+            var observerFullAfterAccepted = spectator.FullGameStateCount;
+            var peerReplay = await second.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
+            var observerReplay = await spectator.ReceiveGameAsync(state => Revision(state) == afterFirstRevision);
+            Assert.Equal(peerFullAfterAccepted, second.FullGameStateCount);
+            Assert.Equal(observerFullAfterAccepted, spectator.FullGameStateCount);
+            Assert.True(JsonNode.DeepEquals(secondAfterFirst, peerReplay));
+            Assert.True(JsonNode.DeepEquals(spectatorAfterFirst, observerReplay));
             Assert.Equal(preparationCommandCount + 1,
                 (await recorder.GetMatchAsync(matchId))!.Commands.Count);
             Assert.Single((await recorder.LoadJournalEngineAsync(matchId))!.ProcessedRequests,

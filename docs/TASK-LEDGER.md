@@ -1,5 +1,21 @@
 # 十二军团任务台账
 
+## NET-20261013-ACCEPTED-RETRY｜三入口成功请求重试全量放大（明确批准，本地验收中）
+
+- 完整标准Batch7219规则/1371平台零失败跳过、UI356/类型/卡图324+42/双前端全部通过；独立复审r2 CLEAR（6C5B25DB）。Main接干净提交级Release及最终包/Git绑定，未部署；下方首轮夹具失败为保留历史。
+- 下一批响应模式变化与5秒自动关闭（timer/action）已明确批准，机外C331原full53687B与同payload反事实4954B等价/隐私只是预算；只在D盘prepare，不混入当前冻结候选。Bug清单新增独立只读核对lane，无源码/构建/线上关闭租约。
+
+- 专项85平台/26规则真实WS/28真实net通过；之后仅补同ID异载荷flags与SQLite逐表规范内容SHA不变，新15项r4通过。加强断言r3两普通场景误用GetProperty读取观战省略requestId，已按既有missing/null语义修夹具并保留失败/TRX，产品未改；完整Batch/Release仍待。
+
+- 用户明确批准：全房可靠通知和请求确认不删，有效协商基线可delta，冷/旧/终局/校验失败及赛事观战保护保留；不部署。P2外围传输扩展，不改P0/P1权威、P3去重/Journal/数据库或P4布局。
+- Main独立最终5b DLL B35AB58F三入口9次/117不变量复验（F4ECE475），普通双连接、GM/沙盒单真实host均重复full，虚拟对手不计实际网络连接。主状态/RNG/事实/序列/记录/表计数全部不变；不是历史51GB归因。
+- 唯一产品源RoomManager：Broadcast末尾allowCriticalDelta默认false，仅普通/GM/沙盒accepted duplicate传true；forceCritical=true保证每位接收者不可合并，显式full target/终局及赛事full保持。全仓反射扫描补两固定调用的第六个false，其余默认语义不变。
+- 修前11新增回归5RED/6对照保留；修后新增15项及恢复/阈值/真实WS/真实net专项接续。首轮rejected三用例误读不存在code字段，按实际type协议修正夹具，原失败证据保留，不改产品错误协议或删除守卫。完整Batch/干净Release/Git/包绑定待真实回执，不据局部通过宣布根治。
+
+## 2026-10-13 音乐批最终收口
+
+- 8103e98cd582eaa74365707e0bbf24de2f1d7c19完整干净Release7219规则/1356平台零失败跳过、8阶段/UI356/双前端，实际包84348B30/DLL C331C6C8、累计16玩家项53源、双入口版本与退役代码核验，origin/main精确读回。D盘audio-retire-fix-proposal/final-acceptance.json（C526D2CA）为唯一最终回执，下方待Release是历史；未部署。
+
 ## NET-20261013-MUSIC-RETIRE｜旧音乐退役继续下载（明确批准，本地实施验收）
 
 - Main实际产品Node22行为/5场景、真实Edge三个4.5秒观察组通过；标准Batch前端完整守卫/类型/324+42卡图/双环境构建退出0，后端未变更按A1映射未在Batch重跑。提交级Release仍全量兜底，不能把上批7219/1356借为新提交门禁。

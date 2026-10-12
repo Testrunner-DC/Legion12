@@ -1491,7 +1491,7 @@ public sealed partial class L12RoomManager
             {
                 return duplicate.Accepted
                     ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
-                        requestId: requestId)
+                        requestId: requestId, allowCriticalDelta: true)
                     : Error(sessionId, duplicate.Error ?? "操作被拒绝", "actionRejected", requestId);
             }
             var clockConcluded = await ApplyRankedClockConclusionLockedAsync(room, _utcNow());
@@ -1612,7 +1612,7 @@ public sealed partial class L12RoomManager
             if (room.TryGetProcessedActionRequest(-1, requestId, out var duplicate))
                 return duplicate.Accepted
                     ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
-                        requestId: requestId)
+                        requestId: requestId, allowCriticalDelta: true)
                     : Error(sessionId, duplicate.Error ?? "GM 操作被拒绝", "actionRejected", requestId);
             L12GmCommand? command;
             try
@@ -1688,7 +1688,7 @@ public sealed partial class L12RoomManager
             if (room.TryGetProcessedActionRequest(actingPlayerIndex, requestId, out var duplicate))
                 return duplicate.Accepted
                     ? BroadcastGame(room, forceCritical: true, requestSessionId: sessionId,
-                        requestId: requestId)
+                        requestId: requestId, allowCriticalDelta: true)
                     : Error(sessionId, duplicate.Error ?? "沙盒操作被拒绝", "actionRejected", requestId);
             L12Command? command;
             try
@@ -1947,7 +1947,8 @@ public sealed partial class L12RoomManager
         => room.Sessions.Select(id => RoomStateForViewer(room, _sessions[id])).ToArray();
 
     private IReadOnlyList<OutgoingMessage> BroadcastGame(Room room, bool forceCritical = false,
-        Guid? requestSessionId = null, string? requestId = null, Guid? forceFullSessionId = null)
+        Guid? requestSessionId = null, string? requestId = null, Guid? forceFullSessionId = null,
+        bool allowCriticalDelta = false)
     {
         var snapshotStartedAt = L12PerformanceMetrics.Start();
         Guid[] spectators;
@@ -1996,7 +1997,11 @@ public sealed partial class L12RoomManager
         return messages;
 
         bool RequiresFull(Guid id) => state.Phase == L12Phase.GameOver
-            || forceCritical && (forceFullSessionId is null || forceFullSessionId == id);
+            // Accepted retries must still reliably acknowledge the request to its owner
+            // and notify the whole room, but do not themselves invalidate a sent baseline.
+            // An explicit recovery target and terminal snapshots remain full boundaries.
+            || forceCritical && (forceFullSessionId == id
+                || forceFullSessionId is null && !allowCriticalDelta);
 
         IEnumerable<OutgoingMessage> SpectatorMessages()
         {

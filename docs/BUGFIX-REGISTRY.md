@@ -1,5 +1,21 @@
 # Legion12 Bug 修复记录
 
+## NET-20261013-ACCEPTED-RETRY｜成功重复请求把可靠投递误绑定全量（已批准，限定修复验收）
+
+- 完整Batch7219/1371零失败跳过、UI356/类型/324+42及双前端构建通过，独立review-r2 CLEAR 6C5B25DB；Main接提交级Release/最终包精确绑定，未上线、不提前关闭反馈。既有全部Full边界矩阵9B9B6ECA共20路径，额外响应3源另获批准机外准备，其他未证full边界不冒称Bug或自动修改。
+
+- 专项85平台/26传输（含4真实WS）/28真实net过；新15用例再补所有SQLite表的规范内容摘要及同ID异载荷可靠/编码flags，r4全部通过。r3两ordinary失败是观战payload原本省略requestId，新断言错误按必有字段读取；改TryGetProperty映射缺失为null，不给观战者增加确认字段、不改产品、原失败保留。完整门禁接续。
+
+- 普通HandleAction、GM、沙盒代行三个去重accepted分支在未执行引擎、权威与记录完全不变时，以forceCritical同时强制每个接收者full；Main独立三模式9次重放/117不变量通过，修前11回归5RED/6对照留存，D盘duplicate-full-preflight/main-acceptance-r2.json（F4ECE475）。独立codec字节不是线上出口；GM/沙盒虚拟对手不能当连接计数。
+- 用户明确批准后仅三accepted分支追加allowCriticalDelta=true；Broadcast末尾默认false，RequiresFull保留显式目标full与终局全full，其余既有critical语义不改；可靠性仍由forceCritical保证不可替换，不删除peer/observer通知。未新增状态、缓存、去重表或新时钟；Rejected分支原错误返回保持。
+- 同型扫描全仓BroadcastGame/forceCritical及反射调用：两固定反射补第六个false，Recovery动态参数原样；其他critical恢复/expiry/偏好/暂停/开始/治理不自动迁移。每连接原成功发送才Commit及32/4096/90%、identity、cold、legacy保留，赛事每次资格与full保护保留。
+- 新增双方普通及观战、GM、双席沙盒三次等价重建/请求ID/私密卡/完整状态RNG事实序列记录及SQLite行数不变，legacy/cold/noCommit、三终局、显式fulltarget、三rejected及异载荷同ID守卫。真实WS四组合新增双方和观战重放full计数不增及投影等价；真实net新增sameRevision错ID/无效base/正确ID/重复ack。专项与完整门禁接续，不部署、不改维护、不关闭线上Bug。
+- 首轮新增rejected夹具误读code字段，现协议在type中返回actionRejected；只修新断言为type，保留原失败/TRX与全部边界，不改产品来迁就夹具。Rollback禁止跳过请求确认、失效baseline、旧客户端或赛事观战全量；不声称整体根治。
+
+## 2026-10-13 音乐批实际最终回执
+
+- 8103音乐已完整Release7219/1356零失败跳过8阶段、UI356/双前端、最终包84348B30和源7B9B7BCE核验、远端精确读回；audio-retire-fix-proposal/final-acceptance.json（C526D2CA）绑定实际浏览器raw8791CFC3。旧listener警告/一次构建字面量引号假设拒绝记录保留，后者按esbuild实际模板字符串核验，不改源或放松正式门禁。下方待验收为历史；未部署/非历史12GB或物理iOS证据。
+
 ## NET-20261013-MUSIC-RETIRE｜暂停旧音乐未终止未完成下载（已批准，实际产品本地验收）
 
 - 旧生命周期只pause/清onended，未卸载src；两个独立Edge/no-store回合实际range响应在520ms淡出后/立即destroy后仍写入约1MB，Main原始逐块B125B533保留，而不是凭paused或代码猜测。用户明确批准限定释放，不部署。

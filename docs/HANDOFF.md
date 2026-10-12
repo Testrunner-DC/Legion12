@@ -1,5 +1,15 @@
 # 十二军团简短交接
 
+## 2026-10-13 接续｜音乐8103已同步，三入口重复请求限定批
+
+- 三dup完整Batch实际7219/1371零失败跳过、UI356/类型/卡图/双前端通过；独立review-r2 CLEAR6C5B25DB，Main接干净提交级Release及同包3模式机外复验。next response3源已获批但仅D盘prepare；Bug只读清单lane并行，不拥有源码或共享build/线上close租约。20路径full矩阵9B9B6ECA保留必要保护和未证边界，不说整体根治。
+
+- 修后专项85平台/26传输4实际WS/28真实net及后续加强15全部通过；SQLite全表规范内容SHA不变、同ID异载荷wire flags补齐。观战缺requestId新断言假设r3失败保留，fixture-only修复，产品不变；Main接完整Batch，独立复核r2接续。
+
+- 音乐唯一已验收产品8103e98cd582eaa74365707e0bbf24de2f1d7c19，完整Release7219/1356零失败跳过8阶段、包84348B30/DLL C331C6C8、16玩家项53源/双入口与精确远端；C526D2CA回执实际生成。不部署，真实Edge源生命周期0B不是完整App/物理iOS/历史12GB。
+- 用户明确批准成功重试三入口可靠/delta分离；Main产品RoomManager一源末尾allowCriticalDelta默认false，仅accepted三个调用true。显式fulltarget/终局/赛事与可靠队列/去重/哈希不变，两反射机械补false。修前11项5RED/6对照保留；Main平台/真实WS/net专项接续，首轮新rejected夹具code/type误读修正并保留失败证据，完整Batch/Release与Git待。
+- D盘duplicate-full-preflight Main独立9次/117不变性F4ECE475，独立设计review B1B06CC8通过；虚拟对手不计网络。产品/共享build Main唯一writer，审查无write lease。正式old0e维护true仅16:37UTC匿名历史观测，当前不部署/维护/Bug写，不恢复取消回访。下方为历史。
+
 ## 2026-10-13 当前接续｜流量5b已同步，音乐批准修复实际合入验收
 
 - 音乐实际产品专项与三组Edge绿色、标准前端Batch完整通过（后端未变更未在Batch重跑），Main接干净提交级全量Release；不复用5b门禁冒称新提交通过，最终只认音乐final-acceptance.json实际生成结果。

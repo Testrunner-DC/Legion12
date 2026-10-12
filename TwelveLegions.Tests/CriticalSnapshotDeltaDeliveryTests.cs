@@ -178,5 +178,5 @@ public sealed class CriticalSnapshotDeltaDeliveryTests
     private static IReadOnlyList<OutgoingMessage> Broadcast(L12RoomManager manager, object room, bool force)
         => (IReadOnlyList<OutgoingMessage>)typeof(L12RoomManager)
             .GetMethod("BroadcastGame", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(manager, [room, force, null, null, null])!;
+            .Invoke(manager, [room, force, null, null, null, false])!;
 }

@@ -557,7 +557,7 @@ public sealed class RankedWatchdogIsolationTests
                 applied, envelope, null, "pending-fanout");
             response.Room.GetType().GetProperty("CommandSequence")!.SetValue(response.Room, 1L);
             var baseline = (IReadOnlyList<OutgoingMessage>)typeof(L12RoomManager).GetMethod("BroadcastGame",
-                BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(fixture.Manager, [response.Room, false, null, null, null])!;
+                BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(fixture.Manager, [response.Room, false, null, null, null, false])!;
             var peerBefore = baseline.Single(message => message.SessionId == sessions[1]);
             Assert.False(JsonSerializer.SerializeToElement(peerBefore.Payload, WireJson)
                 .GetProperty("responsePreference").GetProperty("syncPending").GetBoolean());
