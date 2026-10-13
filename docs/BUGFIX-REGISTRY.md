@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261013-ADMIN-GAMEPLAY-DIAG｜后台审计与前端播报遗留放大（已复现，修复待决定）
+
+- 用户本轮仅要求检查；未实现新产品修复，不部署/改维护/关线上反馈。基线47be9c30、实际线上仍c4f7499。完整来源/数值/失败夹具/边界见D盘post-deploy-observation-20261013/admin-gameplay-check/diagnosis.json（SHA367D1133），不能借上批流式核心准备绿色称完整保存/流量根治。
+- 本地同DLL614A00CF真实HTTP+WS：缓存命中统计计时0.16ms，但响应在后续RecordAdminRead→Save(false)的12s屏障下等待12.095s，新hello12.033s、另一认证API12.038s；已建立房sync1.36–1.50ms/pong0.16–1.08ms正常。4MiB分散高熵域每次读审计仍分配21.05–21.06MB。候选保护未削弱，非正式容量/延迟百分位。
+- 共因：成功查询后的同步审计不在6.25/7.5s查询预算内、完整平台事务/rollback/mirror/index继续执行；AuthenticateTokenSession直接取_gate；Bug全history扫描/投影无分页；每次AppendAuditLedger遍历至多5000兼容审计。赛事action/观战仍在room.Gate内取平台锁，尚未并发真实赛事复现；master/global取消预算缺口同样仅源码风险。
+- 当前SFC/函数真实代码经Vue/API/定时器替身执行：await settings期间卸载又将mounted置true；await claim期间卸载仍schedule；两种均遗留15s循环。hidden无守卫，60s内4settings+4claim；matchmakingFound之后即使服务端初始全量已入队仍先sync。GamePage手动重试额外sync、永久失配不断恢复、赛事观战永久full与卡数组重复静态字段仍为源码风险，不报为线上实测。
+- 已执行156平台专项、4真实WS四协商组合、28既有前端恢复全部通过；它们缺少上述生命周期/读审计预算守卫，不能因绿色关闭新问题。建议限定生命周期/冗余恢复批，再独立审计-only持久化与已提交鉴权/赛事读批；保持原审计、事务/版本/失败恢复、权限撤销、隐私和可靠/旧协议/终局全量保护。所有新增实施等待用户决定。
+
 ## PERF-20261013-EMPTY-BROADCAST-MEMORY｜空轮询全域重建与平台快照大缓冲（用户批准，本地修复）
 
 - 取证与授权：上线c4f7499后4条程序OOM（SerializeCoreSnapshot/JSON缓冲扩容）、GC停顿约11%、最近业务HTTP均4.44s，以及11635次完整回滚压缩均0.54s/分配约32MB；165次广播claim 503。用户批准依序修复，不授权本批部署/生产写入。原匿名统计、错误调用栈与口径限制见D盘post-deploy-observation-20261013/report.json；不归咎所有卡顿为此唯一根因。
