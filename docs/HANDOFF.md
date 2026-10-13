@@ -2,7 +2,9 @@
 
 ## 2026-10-14 当前｜30房长尾/突发写修复后重测（仅测试授权）
 
-- 用户最新明确授权正式部署；不因6次收尾确认超时冒称根治，但可发布已完整验收的e2应用包，剩余定位仍独立。准备现场正式c4、最初1场运行中，新局/停服沿标准v1原子排空，不强停。原工具误把记录提交e1当新应用，Main仅兼容具名3记录+Windows入口/验收脚本的M差异；应用/ledger/配置/服务器工具等任何差异、A/D/rename/分叉仍拒绝，HEAD精确remote和e2包身份/SHA不变。30真实Git用例和独立源审CLEAR，受影响部署工具验证接续；不能重复完整应用构建或测试切换。
+- 正式发布未切换：e2包已上传核验，标准v1排空实际DRAIN_TIMEOUT，原c4/PID30347/重启0仍运行，用户即时维护103保持；发布锁空闲、真实admission/sandbox/blocked围栏均无，专用会话已撤销。不盲重试同一超时或把本机授权伪作停服许可。唯一C盘formal-release-20261014/release-session-summary.json引用原标准日志和诊断回执。
+- 用户要求复核后更正“1场运行中”：06:03的3在线账号均idle，无playing/inRoom/观战；活跃进程打开的真实两库汇总中今天3友局+5沙盒均完成，旧未结束1休闲+11好友最后命令约64—69小时前。RuntimeStats的1只是未GameOver内存对象宽口径，不证明有当前玩家对战；精确残留房间仍未辨认，不能擅清局。两次有界自有诊断均真实遇OutstandingLeases，未取得room/durability字段，取消后Open/epoch19/owner空/未consume通过；不冒称实际已到历史或房间阻碍。
+- 用户已授权正式部署e2，不因6次收尾确认超时冒称根治。原工具误把记录提交e1当新应用，Main兼容具名3记录+Windows入口/验收脚本M差异；应用/ledger/配置/服务器工具等任何差异、A/D/rename/分叉仍拒绝，HEAD精确remote和e2包身份/SHA不变。30真实Git用例、72服务器故障、30SQLite/WAL、28consumer及独立源审通过；完整应用/测试切换不重复。下一先处理真正排空障碍，不能继续让玩家等待不存在的已证明当前对局。
 - e2cda3e5最终完整7219规则/1505平台零失败跳过、8阶段通过并精确推送，标准测试部署/Main独立DLL+静态+HTTP/WS通过，测试PID68165、正式c4/PID30347/重启0/维护false不动。C盘pressure-30rooms-trace-20261014/batch-closeout.json为本批终态，assessment SHA81C1F3CC；真实10/20/30各60s、每房play/attack及10外部账号保持，1479/1479命令、870读取200、delta0错、70注销及69自有逻辑删除成功。30房P95401.78/P99800.28/max906.79ms；站外P9580.91—278.15ms，auth/me app最大2.7ms而客户端282.46ms，不能归其平台锁等待。
 - 本轮仍NOT_FULLY_ACCEPTED：25终局及时确认/24房离开、5终局+1leave超时，原3s/10s和30并行未放宽。独立只读测试账本确认30投降/30结束/30final_hash全部存在；不是终局数据丢失，但不能把持久化成功冒称客户端及时确认。新total含Complete最大429.55ms、tx117.45ms、发送调用23.27ms、queue5；遗漏入站/房间锁/出站驻留/客户端解析各段，源码复核无确定漏发或requestId匹配缺陷，不猜网络/供应商、不盲改同步leave。
 - 实际55进程样本wholeGC0.985%，30阶段6样本/50.015s为1.276%（不是完整60s）；pending最大0，271守卫无停止/OOM/重启，峰cgroup312.76MiB。30阶段状态JSON约0.648MB/s、全类型0.673MB/s；cleanup full11.18MB/presence7.85MB，随机过程不同/旧轮没同类计数，不宣称因果降幅。后验active/WS/online0、5inactive保留；旧Admin401/临时诊断finally撤销后仅临时凭据文件删除。剩余定位方案见remaining-tail-source-review.json：同30并行/3s，不重试，固定脱敏里程碑与被动迟到窗；不自动正式部署或关闭Bug。
