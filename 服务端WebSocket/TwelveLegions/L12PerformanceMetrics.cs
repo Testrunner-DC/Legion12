@@ -98,7 +98,6 @@ internal sealed class PerformanceMetricWindow
     private static readonly (Kind Kind, string Stage)[] Definitions =
     [
         .. LegacyDefinitions,
-        (Kind.Duration, "persistence.append-gate-wait"),
         (Kind.Duration, L12PlatformOperationMetrics.LockWaitStage),
         (Kind.Duration, L12PlatformOperationMetrics.LockHoldStage),
         (Kind.Duration, L12PlatformOperationMetrics.AdminTransactionStage),

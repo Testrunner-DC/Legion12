@@ -22,6 +22,35 @@ public sealed class ProcessMetricArchiveTests
     };
 
     [Fact]
+    public void V2StageOrdinalsRemainExactlyThePersistedThirtyNineStageContract()
+    {
+        // V2 omits names: adding even one alphabetically earlier stage changes
+        // every following ordinal and makes owned historical archives unreadable.
+        string[] persistedV2Names =
+        [
+            "bytes.persistence.checkpoint-json", "bytes.persistence.command-state-json",
+            "bytes.platform.operation.admin-transaction", "bytes.platform.operation.recovery",
+            "bytes.platform.operation.season-finalization", "bytes.platform.operation.transactional-save",
+            "bytes.platform.phase.hydration", "bytes.platform.phase.index-prepare",
+            "bytes.platform.phase.mirror-serialize", "bytes.platform.phase.rollback-gzip",
+            "bytes.platform.phase.snapshot-serialize", "bytes.websocket.delta-payload",
+            "bytes.websocket.full-payload", "bytes.websocket.sent-payload", "duration.action.engine",
+            "duration.persistence.checkpoint-serialize", "duration.persistence.serialize-and-hash",
+            "duration.persistence.total", "duration.persistence.transaction", "duration.platform.lock-hold",
+            "duration.platform.lock-wait", "duration.platform.operation.admin-transaction",
+            "duration.platform.operation.recovery", "duration.platform.operation.season-finalization",
+            "duration.platform.operation.transactional-save", "duration.platform.phase.hydration",
+            "duration.platform.phase.index-prepare", "duration.platform.phase.mirror-serialize",
+            "duration.platform.phase.rollback-gzip", "duration.platform.phase.snapshot-serialize",
+            "duration.snapshot.build", "duration.websocket.send", "duration.websocket.serialize",
+            "persistence.v2-state-json-anomaly", "platform.failure.admin-transaction",
+            "platform.failure.recovery", "platform.failure.season-finalization",
+            "platform.failure.transactional-save", "websocket.queue-depth",
+        ];
+        Assert.Equal(persistedV2Names, PerformanceMetricWindow.FixedStageNames);
+    }
+
+    [Fact]
     public void CompactV2EntryUsesFixedOrdinalStagesButNoHistogramOrPrivateSource()
     {
         const string sourceSentinel = "/private/account-room-token/cgroup";
@@ -78,6 +107,7 @@ public sealed class ProcessMetricArchiveTests
     public void V2RejectsWrongLengthsUnknownVersionNonNumericAndNegativeValues()
     {
         AssertRejected(root => root["stages"]!.AsArray().RemoveAt(0));
+        AssertRejected(root => root["stages"]!.AsArray().Add(root["stages"]!.AsArray()[0]!.DeepClone()));
         AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray().RemoveAt(6));
         AssertRejected(root => root["v"] = 3);
         AssertRejected(root => root["stages"]!.AsArray()[0]!.AsArray()[1] = "not-a-number");
@@ -334,6 +364,31 @@ public sealed class ProcessMetricArchiveTests
         var segment = System.IO.Path.Combine(root.Day(day), InstanceA.ToString("N") + ".jsonl");
         Assert.True(File.Exists(segment));
         Assert.EndsWith("\n", File.ReadAllText(segment), StringComparison.Ordinal);
+        root.Success();
+    }
+
+    [Fact]
+    public async Task PersistedV2RootReopensForNewCommitWithoutRewritingItsOldOrdinalSegment()
+    {
+        using var root = new TestRoot();
+        var day = UtcDay();
+        var prior = new L12ProcessMetricFileArchive(root.Path, "old-commit", InstanceA,
+            1024 * 1024, 8 * 1024 * 1024, 4096);
+        Assert.True((await prior.WriteAsync(Entry(day, 1000, InstanceA, "old-commit"), default)).Succeeded);
+        await prior.DisposeAsync();
+        var oldPath = System.IO.Path.Combine(root.Day(day), InstanceA.ToString("N") + ".jsonl");
+        var original = File.ReadAllBytes(oldPath);
+        await using var current = Archive(root, InstanceB);
+        Assert.True((await current.WriteAsync(Entry(day.AddSeconds(10), 11000, InstanceB), default)).Succeeded);
+        await current.DisposeAsync();
+        Assert.Equal(original, File.ReadAllBytes(oldPath));
+        var currentPath = System.IO.Path.Combine(root.Day(day), InstanceB.ToString("N") + ".jsonl");
+        foreach (var path in new[] { oldPath, currentPath })
+        {
+            var line = File.ReadAllBytes(path);
+            Assert.True(L12CompactProcessMetricEncoder.TryValidateEncodedLine(line.AsSpan(0, line.Length - 1),
+                null, null, out _, out _, out _));
+        }
         root.Success();
     }
 

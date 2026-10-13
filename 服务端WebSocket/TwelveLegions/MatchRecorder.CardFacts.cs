@@ -253,11 +253,9 @@ public sealed partial class MatchRecorder
         var stateHash = engine.ComputeStateHash();
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
-        var gateWaitStartedAt = L12PerformanceMetrics.Start();
         await _appendWriteGate.WaitAsync();
         try
         {
-            L12PerformanceMetrics.Duration("persistence.append-gate-wait", gateWaitStartedAt);
             await using var connection = await OpenWriteConnectionAsync();
             await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
             var transactionStartedAt = L12PerformanceMetrics.Start();

@@ -3,6 +3,6 @@
   "id": "2026-10-14-persistence-admission-metric-internal",
   "date": "2026-10-14",
   "audience": "internal",
-  "reason": "固定指标目录新增对局写入异步准入等待项，区分排队和原事务耗时；保留15项旧入口及有界无动态标签。",
+  "reason": "保留进程指标V2的原39项顺序契约；撤回不兼容旧归档的新增等待项，异步准入优化保留，补跨提交旧目录追加及逐项顺序保护。",
   "paths": ["服务端WebSocket/TwelveLegions/L12PerformanceMetrics.cs"]
 }

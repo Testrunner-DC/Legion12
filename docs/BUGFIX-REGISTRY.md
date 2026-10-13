@@ -2,6 +2,9 @@
 
 ## PERF-20261014-30ROOM-WRITE-TAIL｜同库同步写锁争用与每次注销全保存（已授权，本地专项通过）
 
+- 真实5ea测试上线/压力已执行，旧文下方“未发布”为历史：7219/1494完整零失败跳过；70注销成功、30房P95405.74/max957.23、870读全200/守卫无停止，仍整体未完全接受，fixed目录assessment SHA874C58DE保存。不改正式/维护或关Bug。
+- 全路径核查发现新指标归档回归：V2阶段名不入行、按Sorted39序号，新增第40项导致旧root校验失败；实测16次ContentMismatch，完整测试root旧39样本6741+无available1、新40/5ea0。只撤新增等待项和两计时调用，保留异步gate，不删/迁旧日志、不放宽validator。新增冻结39名序（旧版RED）、跨提交旧root追加且原字节不变、40行负例；99原相关专项test-4c3014ed与最终49归档test-73ba76e通过，warm夹具首次独占句柄失败test-cf26f426保持。将固定名序视作V2格式契约，未来扩展须具名新版本兼容，不能仅修改计数。
+- 工具共因独立核对：cleanup未按requestId消费首次投降full，反而sync全房并再试另一端，使错误折叠且重复full；引擎终局强制full就是耐久确认，实际28leave超时不等于28服务端未执行。限定工具改为首次同ID full/reject、阶段错误、原3s与30并发保持；天地异变拒绝是正确规则，选牌只排除本人已暴露牌库顶部同兵种，不改卡效。原对照结果保存，修正后方法差异明示，不用它冒称字节完全相同或减负收益。
 - 起点7209f1b1/原测试cda。用户直接要求方案、修复、测试部署和原方法复测；正式不部署、不改维护或业务/Bug。原真实压力assessment SHA0381C910保持，30房P95 508.79ms/max1637.27，收尾69注销仅19成功/51HTTP499，线程池pending58；cgroup294MiB且无OOM，不误诊内存耗尽。health已读committed policy，不能声称其直接等平台锁。
 - 同类查询为rg RevokeOwnSession/RevokeOwnSessions/RevokeOtherOwnSessions/RevokeSessionCore/BeginTransactionAsync/AppendAsync/CompleteAsync。四自有撤销HTTP入口改await有界128项/5ms队列，初始staged同代重验actor/active session/role/version，仍按accountId限制目标；复用ExecuteAdminTransaction一批完整Save、失败整批回滚、commit后通知与鉴权发布。管理员命令、密码/禁用等旧同步事务不迁入此队列，权限没扩大。
 - MatchRecorder跨房Append及Complete共享SemaphoreSlim真正异步准入，state/hash在等待前，事务及commit后baseline都在finally保护范围；Microsoft.Data.Sqlite的同步busy等待不再为这些热点占用每个房间工作线程。JournalV2/32检查点/哈希/事实/请求去重/runtime/outbox/耐久ack全部保持，无跨房合并事务或降低synchronous。Start/其他维护writer仍沿原路径，不冒称全面异步化。新增固定append-gate-wait指标，Legacy15不变。

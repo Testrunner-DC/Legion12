@@ -246,11 +246,9 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
         var finalHash = engine.ComputeStateHash();
-        var gateWaitStartedAt = L12PerformanceMetrics.Start();
         await _appendWriteGate.WaitAsync();
         try
         {
-            L12PerformanceMetrics.Duration("persistence.append-gate-wait", gateWaitStartedAt);
             await using var connection = await OpenWriteConnectionAsync();
             await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
             var command = connection.CreateCommand();
