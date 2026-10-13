@@ -26,10 +26,12 @@ readonly service_name="legion12-testrun.service"
 readonly service_user="legion12"
 readonly web_user="www-data"
 readonly lock_file="${test_root}/run/lock/legion12-testrun-deploy.lock"
-readonly program_budget_bytes=$((512 * 1024 * 1024))
+# Explicitly approved 2026-10-13: retain logical accounting and every isolation
+# guard; the canonical release expansion alone exceeds the former 128 MiB temp cap.
+readonly program_budget_bytes=$((1024 * 1024 * 1024))
 readonly data_budget_bytes=$((256 * 1024 * 1024))
-readonly temporary_budget_bytes=$((128 * 1024 * 1024))
-readonly total_budget_bytes=$((1024 * 1024 * 1024))
+readonly temporary_budget_bytes=$((512 * 1024 * 1024))
+readonly total_budget_bytes=$((1536 * 1024 * 1024))
 readonly prune_runtime_backups_enabled="${L12_TESTRUN_PRUNE_RUNTIME_BACKUPS:-0}"
 readonly runtime_backup_keep_groups="${L12_TESTRUN_RUNTIME_BACKUP_KEEP_GROUPS:-2}"
 [[ "$prune_runtime_backups_enabled" =~ ^[01]$ ]] \
@@ -337,10 +339,10 @@ validate_testrun_storage_budget() {
   log "fixed-path storage report: program=${releases_dir},${static_card_assets_dir},${static_web_assets_dir}; data=${runtime_dir},${backup_dir},${failure_dir}; temporary=${incoming_dir},managed-staging"
   log "storage projection bytes: releaseLogical=${release_growth}; previousWebMissing=${previous_web_growth}; newWebTwoPrefixes=${new_web_growth}; runtimeBackupAllowance=${runtime_backup_growth}"
   log "storage budget bytes: programAfter=${program_after}/${program_budget_bytes}; dataAfter=${data_after}/${data_budget_bytes}; temporaryPeak=${temporary_peak}/${temporary_budget_bytes}; totalPeak=${total_peak}/${total_budget_bytes}; accounting=logical"
-  if (( program_after > program_budget_bytes )); then fail "testrun program budget exceeds 512 MiB; no cleanup was attempted"; return 1; fi
+  if (( program_after > program_budget_bytes )); then fail "testrun program budget exceeds 1 GiB; no cleanup was attempted"; return 1; fi
   if (( data_after > data_budget_bytes )); then fail "testrun data budget exceeds 256 MiB; runtime and evidence were retained"; return 1; fi
-  if (( temporary_peak > temporary_budget_bytes )); then fail "testrun temporary budget exceeds 128 MiB; incoming and evidence were retained"; return 1; fi
-  if (( total_peak > total_budget_bytes )); then fail "testrun total storage budget exceeds 1 GiB; no cleanup was attempted"; return 1; fi
+  if (( temporary_peak > temporary_budget_bytes )); then fail "testrun temporary budget exceeds 512 MiB; incoming and evidence were retained"; return 1; fi
+  if (( total_peak > total_budget_bytes )); then fail "testrun total storage budget exceeds 1.5 GiB; no cleanup was attempted"; return 1; fi
 }
 
 assert_cleanup_root() {
