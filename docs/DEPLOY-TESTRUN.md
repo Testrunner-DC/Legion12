@@ -94,6 +94,8 @@ pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
 
 ## 本地与上线验收
 
+2026-10-14实际cda118d5已用该唯一入口成功发布，部署日志C盘read-isolation-testrun-pressure-20261013/test-deployment-cda-r1.log；完整新Release/独立上线及2/4/8有界压力统一引用同目录final-acceptance.json，正式c4原PID未变。纯收口记录不重建/重部署这个包。该次既有资源新增计量修正可继续复用长期授权；没有新范围/数据风险，不逐项重问。压测启动参数必须服从工具自身下限（HTTP至少2000ms），机器可读ISO时间窗口取原字符串，不经PowerShell自动DateTime转本地显示再解析；本轮失败及修正已留痕，不把空指标当通过。
+
 部署链修改后至少运行：
 
 ```powershell

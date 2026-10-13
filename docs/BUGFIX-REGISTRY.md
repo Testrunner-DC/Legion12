@@ -2,6 +2,7 @@
 
 ## OPS-20261014-TESTRUN-CACHE-GROWTH｜测试发布重复估算已有静态资源（用户长期批准）
 
+- 已实际完成：cda118d5完整7219/1478八阶段、UI356/双前端并精确推送，包1E7ECFC0/DLL3D247472真实测试部署成功。program999400407/temporary494262424/total1344608025原预算内；独立HTTP/WS/静态/DLL/围栏和正式c4/PID30347不变核验。C盘read-isolation-testrun-pressure-20261013/final-acceptance.json SHA780A621B为新终态，旧失败不覆盖。2/4/8房实际压力210后台/183命令全成功、GC0.36%/无OOM重启；只限定测试域，不关闭未验线上Bug或宣称正式根治。
 - 真实标准e619发布停服前拒绝program1153590291>1GiB，总1401412548<1.5GiB。两服仍c4、PID15476/30347、重启0、围栏无；已上传包和激活测试路径/reload Nginx，不能称远端操作0。C盘read-isolation-testrun-pressure-20261013/test-deployment.log原失败保留，D盘local-acceptance.json DAE2BD5E对应性能批已完整7219/1478八阶段验收并推送，不是已上线。
 - 根因：release_layout_bytes第三值把完整production/testrun assets及所有hydrate再次算新增，实际install_web_assets_tree会复用等价现存目标；真实同包SHA证明已有128779470B，新缺3400562B，另非assets hydrate25410418B误入cache。仅第三值改为缺目标逻辑增长；release全部路径+hydrate前两值仍完整，两个缺公开路径各计一次，现存逐size/SHA相等才0，根/父/叶链接或类型/坏内容/逃逸/重复拒绝。
 - 用户已明确长期批准该计算修正，不重复询问；四预算/算式和包与HEAD绑定保持。此前祖先包复用提案被审批拒绝且未应用，不走旁路。同类扫描：release_layout_bytes/missing_web_cache_bytes/install_web_assets_tree及hydrate契约、存储投影/常量/冷热点与损坏路径；只server脚本和原行为专项，无业务/规则源改变。
@@ -9,8 +10,9 @@
 - 最终tools Batch/新提交标准Release/测试部署与压力回执接续，不能用只读审查或上述合成当线上已部署；原13预算边界和完整保全故障测试不删，未知/PINNED/失败/当前/回退保留逻辑不变。
 - 最终serverFCA04C64/testE997E244；完整原部署行为专项r4退出0，冷热/冲突/路径+13原边界及隔离、target pin、rollback、post-success保护收敛通过；剩余记录映射Batch退出0、账本195项通过。后续新干净提交标准Release保持，不复用祖先包越过HEAD绑定。Linux10原生证明与Windowslstat故障注入区分记录，均不是上线压力结果。
 
-## PERF-20261013-READ-AUDIT-ISOLATION｜纯读全域保存/首包与赛事卡锁/播报孤儿轮询（用户批准，本地修复验收中）
+## PERF-20261013-READ-AUDIT-ISOLATION｜纯读全域保存/首包与赛事卡锁/播报孤儿轮询（测试部署与限定压力完成）
 
+- 当前已收口至测试验收：最终cda标准新包上线独立通过、2/4/8真实房与后台mix210/210、命令183/183，详情见同目录统一回执。正式部署/维护/业务及Bug写入0；小域短时测试与强制sync比例不证明生产容量/自然流量。脚本首轮CLI参数1000<2000启动前失败，修启动器并补实际runner参数范围回归，6本地场景通过；指标初轮DateTime字符串转换错窗不采纳，按原始ISO固定精确窗口取得11实际样本。原失败守卫和旧RED保持。
 - 原诊断367D1133和新现场F1BD5477保留；用户已批准本批，下面“修复待决定”只表示当时历史。基线f56df0d6/已验产品47be9c30，实际正式c4f7499，生产写入/部署/维护/Bug关闭0。
 - 共享原因与扫描：RecordAdminRead→Save(false)仍遍历全平台/rollback/mirror；AuthenticateTokenSession、PresenceFor的Friends/FriendRequests/Accounts/AreFriends、CardAnalyticsQuery两个统计排除读、TournamentRoomAssignment行动/观战热点依赖_gate。扫描query为rg RecordAdminRead、AuthenticateTokenSession、TournamentRoomAssignment、PresenceFor、CardAnalyticsQuery；12 HTTP审计消费者、5类赛事资格热点全部迁移，旧staged resolver保持。没有卡效源变更，不增加卡号分支。
 - 独立账本只追加完整单行，原schema9、SHA及审计迁移触发器不变；commit前同bundle/revision/有效权限复验、1s有界事务及客户端/查询预算取消；失败不恢复或作废已提交业务缓存。全量保存和赛季收口在同事务吸收账本；SHA/列一致性、JSON主体筛选排序、归档精确ID、窗口外同ID异文拒绝均保留，不能由陈旧镜像冒称完整审计。
