@@ -228,9 +228,14 @@ internal sealed class PublicDeckReadFixture : IAsyncDisposable
     internal object Data => typeof(L12PlatformStore).GetProperty("_data", PrivateInstance)!.GetValue(Store)!;
     internal void Expire()
     {
-        var session = ((IEnumerable)Data.GetType().GetProperty("Sessions")!.GetValue(Data)!).Cast<object>()
-            .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == Viewer.SessionId);
-        session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+        Store.ExecuteAdminTransaction(() =>
+        {
+            var session = ((IEnumerable)Data.GetType().GetProperty("Sessions")!.GetValue(Data)!).Cast<object>()
+                .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == Viewer.SessionId);
+            session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+            RankedIdentityTestState.RequestSave(Store);
+            return true;
+        });
     }
     internal void SetFeature(bool enabled)
     {

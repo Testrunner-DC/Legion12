@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261013-READ-AUDIT-ISOLATION｜纯读全域保存/首包与赛事卡锁/播报孤儿轮询（用户批准，本地修复验收中）
+
+- 原诊断367D1133和新现场F1BD5477保留；用户已批准本批，下面“修复待决定”只表示当时历史。基线f56df0d6/已验产品47be9c30，实际正式c4f7499，生产写入/部署/维护/Bug关闭0。
+- 共享原因与扫描：RecordAdminRead→Save(false)仍遍历全平台/rollback/mirror；AuthenticateTokenSession、PresenceFor的Friends/FriendRequests/Accounts/AreFriends、CardAnalyticsQuery两个统计排除读、TournamentRoomAssignment行动/观战热点依赖_gate。扫描query为rg RecordAdminRead、AuthenticateTokenSession、TournamentRoomAssignment、PresenceFor、CardAnalyticsQuery；12 HTTP审计消费者、5类赛事资格热点全部迁移，旧staged resolver保持。没有卡效源变更，不增加卡号分支。
+- 独立账本只追加完整单行，原schema9、SHA及审计迁移触发器不变；commit前同bundle/revision/有效权限复验、1s有界事务及客户端/查询预算取消；失败不恢复或作废已提交业务缓存。全量保存和赛季收口在同事务吸收账本；SHA/列一致性、JSON主体筛选排序、归档精确ID、窗口外同ID异文拒绝均保留，不能由陈旧镜像冒称完整审计。
+- 同代不可变鉴权/在线/统计/赛事读扩展既有原子发布，不是TTL缓存；失效/自然过期/撤销/disable/delete/role/staff/participant/赛事终态、失败回滚、staged线程与外部旧代、历史首项绑定和可变返回值污染均覆盖。赛事牌库Main/Morale非空、null room、异画大小写兼容；同代participant payload去重，热点无牌库展开。
+- 前端generation/visibility/unmount ownership消除在途返还的孤儿timer；首包grace、每代最多4次状态同步、跨代退避不因连接打开清零，关键request和旧协议安全恢复保持。测试生命周期6/恢复32/重入6、原持久播报/账号隔离合同均由Main复验。
+- 最终主专项55+统计矩阵12通过，前轮真实新hello/后台链路RED均保留并推动共享修复；真实30s保存屏障新hello0.47ms、auth/me200、后台1.20s审计繁忙503、两房快照/pong正常。4MiB合成append均16152B/同二进制兼容full38069552B，只是Windows线程分配对照。完整Batch/干净Release/包/Git和最终源码绑定认D盘admin-gameplay-isolation-20261013/local-acceptance.json，不冒称线上已根治。
+- 全量发现11兼容失败：统计旧null不能在准备阶段抛异常，现独立Available=false，旧Ensure后才恢复有效；新2个回归同验staged/commit/reopen。审计两旧夹具不得重写已提交同ID正文，改seed新ID完整历史副本，原归档/恢复/防篡改断言保留；会话过期4夹具经实际事务提交，不让外部鉴权读取未提交假事实；牌库第二席预算原4 staged与新4 committed覆盖均保留零第一席展开/SQL/runtime/rollback不变。194项复验零失败跳过，独立审查CLEAR；没有删保护或放宽产品完整性。
+- 用户最新授权验收后部署测试服并真实压力测试；正式保持不动，不继续重复未更新线上采样。测试服务原隔离、存储/内存预算和优先级保持，压测合成独立账号与非排位房间，触及共享主机余量/正式健康守卫即停；真实Linux/公网结果待实际工具回执，不把本地模拟当部署验收。
+- 增量Batch平台1478全过，前端旧合同锁定requestMatchedState单参数字面量，新增失配恢复回调使等价安全链误伤；仅更新该签名与首包等待/缺失恢复锚点，保留加载态、迟到未排队消息、会话串行和排空租约全部原断言。原风险的替代行为证据为check-l12-connection-recovery真实net32项：首包抵达零额外sync、缺失800ms后恢复、重复found有界、撤销与断连清理、持续失配限次/退避。该模块仍在正常npm UI链内执行，不删保护或加豁免；原失败日志留存。
+
 ## PERF-20261013-ADMIN-GAMEPLAY-DIAG｜后台审计与前端播报遗留放大（已复现，修复待决定）
 
 - 用户本轮仅要求检查；未实现新产品修复，不部署/改维护/关线上反馈。基线47be9c30、实际线上仍c4f7499。完整来源/数值/失败夹具/边界见D盘post-deploy-observation-20261013/admin-gameplay-check/diagnosis.json（SHA367D1133），不能借上批流式核心准备绿色称完整保存/流量根治。

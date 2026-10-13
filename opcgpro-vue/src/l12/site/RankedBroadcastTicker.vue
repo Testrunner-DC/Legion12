@@ -14,26 +14,70 @@ import {
 
 let timer: number | undefined
 let mounted = false
+let lifecycleGeneration = 0
 let lobbyReadyAt = 0
+let lobbyDelayInitialized = false
 const route = useRoute()
 const animationStyle = computed(() => rankedBroadcastAnimationStyle())
 const visibleBroadcast = computed(() => rankedBroadcastPlayback.claim?.broadcast ?? null)
 
-function schedule(delay = rankedBroadcastIntervalMs()) {
-  if (timer) window.clearTimeout(timer)
-  timer = window.setTimeout(() => { void load() }, delay)
+function foregroundOwned(generation = lifecycleGeneration) {
+  return mounted && generation === lifecycleGeneration
+    && (typeof document === 'undefined' || !document.hidden)
 }
 
-async function load() {
-  try { configureRankedBroadcastPlayback(await rankedApi.broadcastSettings()) } catch { /* Keep safe defaults. */ }
+function clearScheduledLoad() {
+  if (timer !== undefined) window.clearTimeout(timer)
+  timer = undefined
+}
+
+function schedule(delay = rankedBroadcastIntervalMs(), generation = lifecycleGeneration, refreshSettings = true) {
+  clearScheduledLoad()
+  if (!foregroundOwned(generation)) return
+  timer = window.setTimeout(() => {
+    timer = undefined
+    if (foregroundOwned(generation)) void load(generation, refreshSettings)
+  }, delay)
+}
+
+async function load(generation = lifecycleGeneration, refreshSettings = true, initializeLobbyDelay = false) {
+  if (!foregroundOwned(generation)) return
+  if (refreshSettings) {
+    try {
+      const settings = await rankedApi.broadcastSettings()
+      if (!foregroundOwned(generation)) return
+      configureRankedBroadcastPlayback(settings)
+    } catch {
+      if (!foregroundOwned(generation)) return
+      // Keep safe defaults while this owned foreground cycle remains active.
+    }
+  }
+  if (initializeLobbyDelay) {
+    lobbyDelayInitialized = true
+    lobbyReadyAt = Date.now() + rankedBroadcastLobbyDelayMs()
+    const remaining = lobbyReadyAt - Date.now()
+    if (remaining > 0) {
+      schedule(remaining, generation, false)
+      return
+    }
+  }
   const claim = await claimNextRankedBroadcast()
-  if (!claim) schedule()
+  if (!foregroundOwned(generation)) return
+  if (!claim) schedule(rankedBroadcastIntervalMs(), generation)
 }
 
-function loadAfterLobbyDelay() {
+function restartLoading() {
+  lifecycleGeneration += 1
+  clearScheduledLoad()
+  const generation = lifecycleGeneration
+  if (!foregroundOwned(generation)) return
+  if (!lobbyDelayInitialized) {
+    void load(generation, true, true)
+    return
+  }
   const remaining = lobbyReadyAt - Date.now()
-  if (remaining > 0) schedule(remaining)
-  else void load()
+  if (remaining > 0) schedule(remaining, generation)
+  else void load(generation)
 }
 
 function complete(event: AnimationEvent) {
@@ -43,18 +87,25 @@ function complete(event: AnimationEvent) {
 }
 
 watch(() => `${authState.verified}:${platformState.account?.id ?? ''}`, () => {
-  if (mounted) loadAfterLobbyDelay()
+  if (mounted) restartLoading()
 })
 watch(() => visibleBroadcast.value?.id ?? '', (id, previous) => {
   if (!id && previous) schedule(rankedBroadcastIntervalMs())
 })
-onMounted(async () => {
-  try { configureRankedBroadcastPlayback(await rankedApi.broadcastSettings()) } catch { /* Keep safe defaults. */ }
+function handleVisibilityChange() { restartLoading() }
+onMounted(() => {
   mounted = true
-  lobbyReadyAt = route.path === '/lobby' ? Date.now() + rankedBroadcastLobbyDelayMs() : 0
-  loadAfterLobbyDelay()
+  lobbyReadyAt = 0
+  lobbyDelayInitialized = route.path !== '/lobby'
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', handleVisibilityChange)
+  restartLoading()
 })
-onBeforeUnmount(() => { mounted = false; if (timer) window.clearTimeout(timer) })
+onBeforeUnmount(() => {
+  mounted = false
+  lifecycleGeneration += 1
+  clearScheduledLoad()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', handleVisibilityChange)
+})
 </script>
 <template><div v-if="visibleBroadcast" class="ranked-ticker" aria-label="排位快讯"><b>排位快讯</b><div><span :key="visibleBroadcast.id" :style="animationStyle" @animationend="complete">📣 {{ visibleBroadcast.message }}</span></div></div></template>
 <style scoped>

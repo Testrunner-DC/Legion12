@@ -584,7 +584,9 @@ public sealed partial class L12PlatformStore
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
         var hash = HashToken(token.Trim());
-        lock (_gate)
+        // The owner of a synchronous transaction must still see its staged input.
+        // All other readers consume the one atomically published durable bundle.
+        if (Monitor.IsEntered(_gate))
         {
             var now = DateTimeOffset.UtcNow;
             var session = _data.Sessions.FirstOrDefault(item => item.TokenHash == hash
@@ -593,6 +595,7 @@ public sealed partial class L12PlatformStore
             return account is null || account.Disabled || account.Deleted
                 ? null : new L12AuthenticatedSession(ToView(account), session!.Id);
         }
+        return ReadCommittedAuthentication(hash);
     }
 
     public bool IsSessionActive(string sessionId)
@@ -1596,7 +1599,9 @@ public sealed partial class L12PlatformStore
     public IReadOnlyList<L12AdminAuditView> AdminAudit(string? category = null, int limit = 200,
         string? outcome = null, string? actorId = null, string? commandId = null, string? correlationId = null)
     {
-        lock (_gate) return QueryAdminAudit(category, limit, outcome, actorId, commandId, correlationId);
+        try { return QueryAdminAudit(category, limit, outcome, actorId, commandId, correlationId); }
+        catch (Microsoft.Data.Sqlite.SqliteException error)
+        { throw new L12PlatformStorageUnavailableException("完整审计账本当前不可读", error); }
     }
 
     public void RecordAuthorizationDenied(L12AccountView? actor, L12AdminAuditContext context,
@@ -1611,12 +1616,14 @@ public sealed partial class L12PlatformStore
     }
 
     public void RecordAdminRead(L12AccountView actor, L12Permission permission, string category,
-        string action, string target, L12AdminAuditContext context)
+        string action, string target, L12AdminAuditContext context, CancellationToken cancellationToken = default)
     {
         if (!L12Authorization.HasPermission(actor, permission))
             throw new UnauthorizedAccessException("当前账号没有读取该管理资源的权限");
-        lock (_gate)
+        cancellationToken.ThrowIfCancellationRequested();
+        if (Monitor.IsEntered(_gate))
         {
+            // An owning command keeps its staged audit and existing atomic commit.
             AddAdminAudit(actor, category, action, target, null, null, "read",
                 context with
                 {
@@ -1625,7 +1632,9 @@ public sealed partial class L12PlatformStore
                     Reason = "read",
                 });
             Save(false);
+            return;
         }
+        AppendCommittedReadAudit(actor, permission, category, action, target, context, cancellationToken);
     }
 
     public void RecordCommandOutcome(L12AccountView actor, L12AdminAuditContext context,

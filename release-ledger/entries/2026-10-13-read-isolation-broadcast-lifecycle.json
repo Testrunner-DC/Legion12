@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-13-read-isolation-broadcast-lifecycle",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "连接恢复与页面响应优化",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "离开页面或切到后台后停止新的排位播报轮询，已领取播报的播放与完成确认保持。",
+      "paths": ["opcgpro-vue/src/l12/site/RankedBroadcastTicker.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "匹配成功先等待初始对局状态，减少重复同步；多次状态失配时使用有界同步和退避重连，保留关键操作确认。",
+      "paths": ["opcgpro-vue/src/l12/net.ts", "opcgpro-vue/src/l12/GamePage.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "登录与连接鉴权读取已提交状态，减少后台保存时的等待；权限撤销和会话过期保护不变。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.SessionActivity.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedPresenceReads.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs"]
+    },
+    {
+      "category": "ui",
+      "text": "赛事操作和观战资格读取不再等待平台共用锁，保留参赛资格、裁判视角及赛事结束后的访问限制。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedTournamentReads.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.cs"]
+    }
+  ]
+}

@@ -1373,102 +1373,109 @@ public sealed partial class L12PlatformStore
     public L12TournamentRoomAssignment TournamentRoomAssignment(string accountId, string tournamentId,
         string matchId, bool spectate)
     {
-        lock (_gate)
-        {
-            var account = AccountById(accountId) ?? throw new L12TournamentScopeException("账号不存在");
-            if (account.Disabled) throw new L12TournamentScopeException("账号已禁用");
-            var tournament = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId
-                    || string.Equals(item.Code, tournamentId, StringComparison.OrdinalIgnoreCase))
-                ?? throw new KeyNotFoundException("赛事不存在");
-            var (round, match) = RequireMatch(tournament, matchId);
-            if (tournament.Status != "running" || round.Status != "running" || match.Status != "running")
-                throw new L12TournamentVersionConflictException("本桌赛事房间尚未启动或已结束");
-            var canPlay = match.PlayerAAccountId == accountId || match.PlayerBAccountId == accountId;
-            var canRefereeView = IsStaff(tournament, accountId)
-                || CanGloballyAccessTournaments(ToView(account));
-            var canSpectate = canRefereeView || tournament.Visibility == "public";
-            if (spectate ? !canSpectate : !canPlay)
-                throw new L12TournamentScopeException(spectate
-                    ? "该桌当前不可观战"
-                    : "仅本桌配对玩家可进入专属房间");
-            if (canPlay)
-            {
-                var participant = tournament.Participants.First(item => item.AccountId == accountId);
-                if (participant.Removed || participant.Dropped)
-                    throw new L12TournamentScopeException("参赛资格已失效，不能进入或恢复本桌");
-            }
-            var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
-                match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
-            var current = ToPolicySnapshot(RequireOperationsConfig());
-            var policy = current with
-            {
-                Version = tournament.Version,
-                VersionId = $"tournament:{tournament.Id}:{tournament.Rules.Hash}",
-                DisasterCardIds = tournament.Rules.DisasterCardIds.ToArray(),
-                CardRestrictions = tournament.Rules.CardRestrictions.ToArray(),
-                DefaultPresetDeckIds = [],
-                DefaultRoomConfig = new L12DefaultRoomConfig("tournament", "disabled", "request",
-                    tournament.Rules.DisasterMode),
-                MatchModes = [new L12MatchModeConfig("tournament", "赛事对局", true)],
-                Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
-            };
-            var roomTimeControl = NormalizeRankedTimeControl(tournament.TimeControl);
-            if (!tournament.UsesLegacyRoundClock && match.TimeExtensionMinutes > 0)
-            {
-                roomTimeControl = roomTimeControl with
-                {
-                    TotalTimeSeconds = Math.Min(7200,
-                        roomTimeControl.TotalTimeSeconds + match.TimeExtensionMinutes * 60),
-                };
-            }
-            return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id, match.RoomCode,
-                playerA, playerB, policy, tournament.Rules.DisasterMode, tournament.Rules.Hash,
-                roomTimeControl, match.Deadline, canPlay, canSpectate, match.Paused, match.PauseReason,
-                canRefereeView);
-        }
+        if (Monitor.IsEntered(_gate))
+            return ResolveStagedTournamentRoomAssignment(accountId, tournamentId, matchId, spectate);
+        return ReadCommittedTournamentRoomAssignment(accountId, tournamentId, matchId, spectate);
     }
 
     internal L12TournamentRoomAssignment TournamentRoomAssignmentByRoom(string roomCode)
     {
-        lock (_gate)
+        if (Monitor.IsEntered(_gate)) return ResolveStagedTournamentRoomAssignmentByRoom(roomCode);
+        return ReadCommittedTournamentRoomAssignmentByRoom(roomCode);
+    }
+
+    internal L12TournamentRoomAccess TournamentRoomAccess(string accountId, string tournamentId,
+        string matchId, bool spectate)
+    {
+        if (Monitor.IsEntered(_gate))
         {
-            foreach (var tournament in _data.Tournaments)
-            foreach (var round in tournament.Rounds)
-            {
-                var match = round.Matches.FirstOrDefault(item => string.Equals(item.RoomCode, roomCode,
-                    StringComparison.OrdinalIgnoreCase));
-                if (match is not null)
-                {
-                    var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
-                        match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
-                    var current = ToPolicySnapshot(RequireOperationsConfig());
-                    var policy = current with
-                    {
-                        Version = tournament.Version,
-                        VersionId = $"tournament:{tournament.Id}:{tournament.Rules.Hash}",
-                        DisasterCardIds = tournament.Rules.DisasterCardIds.ToArray(),
-                        CardRestrictions = tournament.Rules.CardRestrictions.ToArray(),
-                        DefaultPresetDeckIds = [],
-                        DefaultRoomConfig = new L12DefaultRoomConfig("tournament", "disabled", "request",
-                            tournament.Rules.DisasterMode),
-                        MatchModes = [new L12MatchModeConfig("tournament", "赛事对局", true)],
-                        Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
-                    };
-                    var roomTimeControl = NormalizeRankedTimeControl(tournament.TimeControl);
-                    if (!tournament.UsesLegacyRoundClock && match.TimeExtensionMinutes > 0)
-                        roomTimeControl = roomTimeControl with
-                        {
-                            TotalTimeSeconds = Math.Min(7200,
-                                roomTimeControl.TotalTimeSeconds + match.TimeExtensionMinutes * 60),
-                        };
-                    return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id,
-                        match.RoomCode, playerA, playerB, policy, tournament.Rules.DisasterMode,
-                        tournament.Rules.Hash, roomTimeControl, match.Deadline, false, false,
-                        match.Paused, match.PauseReason, false);
-                }
-            }
-            throw new KeyNotFoundException("赛事房间绑定不存在");
+            var assignment = ResolveStagedTournamentRoomAssignment(accountId, tournamentId, matchId, spectate);
+            return new L12TournamentRoomAccess(assignment.TournamentId, assignment.TournamentCode,
+                assignment.MatchId, assignment.RoomCode, assignment.CanPlay, assignment.CanSpectate,
+                assignment.CanRefereeView);
         }
+        return ReadCommittedTournamentRoomAccess(accountId, tournamentId, matchId, spectate);
+    }
+
+    private L12TournamentRoomAssignment ResolveStagedTournamentRoomAssignment(string accountId,
+        string tournamentId, string matchId, bool spectate)
+    {
+        var account = AccountById(accountId) ?? throw new L12TournamentScopeException("账号不存在");
+        if (account.Disabled || account.Deleted) throw new L12TournamentScopeException("账号已禁用或删除");
+        var tournament = _data.Tournaments.FirstOrDefault(item => item.Id == tournamentId
+                || string.Equals(item.Code, tournamentId, StringComparison.OrdinalIgnoreCase))
+            ?? throw new KeyNotFoundException("赛事不存在");
+        var (round, match) = RequireMatch(tournament, matchId);
+        if (tournament.Status != "running" || round.Status != "running" || match.Status != "running")
+            throw new L12TournamentVersionConflictException("本桌赛事房间尚未启动或已结束");
+        var canPlay = match.PlayerAAccountId == accountId || match.PlayerBAccountId == accountId;
+        var canRefereeView = IsStaff(tournament, accountId)
+            || CanGloballyAccessTournaments(ToView(account));
+        var canSpectate = canRefereeView || tournament.Visibility == "public";
+        if (spectate ? !canSpectate : !canPlay)
+            throw new L12TournamentScopeException(spectate
+                ? "该桌当前不可观战"
+                : "仅本桌配对玩家可进入专属房间");
+        if (canPlay)
+        {
+            var participant = tournament.Participants.First(item => item.AccountId == accountId);
+            if (participant.Removed || participant.Dropped)
+                throw new L12TournamentScopeException("参赛资格已失效，不能进入或恢复本桌");
+        }
+        var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
+            match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
+        var policy = StagedTournamentRoomPolicy(tournament);
+        var roomTimeControl = TournamentRoomTimeControl(tournament, match);
+        return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id, match.RoomCode,
+            playerA, playerB, policy, tournament.Rules.DisasterMode, tournament.Rules.Hash,
+            roomTimeControl, match.Deadline, canPlay, canSpectate, match.Paused, match.PauseReason,
+            canRefereeView);
+    }
+
+    private L12TournamentRoomAssignment ResolveStagedTournamentRoomAssignmentByRoom(string roomCode)
+    {
+        foreach (var tournament in _data.Tournaments)
+        foreach (var round in tournament.Rounds)
+        {
+            var match = round.Matches.FirstOrDefault(item => string.Equals(item.RoomCode, roomCode,
+                StringComparison.OrdinalIgnoreCase));
+            if (match is null) continue;
+            var (playerA, playerB) = RequireTournamentRoomPlayers(tournament, match.PlayerAAccountId,
+                match.PlayerADeckHash, match.PlayerBAccountId!, match.PlayerBDeckHash);
+            return new L12TournamentRoomAssignment(tournament.Id, tournament.Code, match.Id,
+                match.RoomCode, playerA, playerB, StagedTournamentRoomPolicy(tournament),
+                tournament.Rules.DisasterMode, tournament.Rules.Hash,
+                TournamentRoomTimeControl(tournament, match), match.Deadline, false, false,
+                match.Paused, match.PauseReason, false);
+        }
+        throw new KeyNotFoundException("赛事房间绑定不存在");
+    }
+
+    private L12OperationsPolicySnapshot StagedTournamentRoomPolicy(TournamentRow tournament)
+        => ToPolicySnapshot(RequireOperationsConfig()) with
+        {
+            Version = tournament.Version,
+            VersionId = $"tournament:{tournament.Id}:{tournament.Rules.Hash}",
+            DisasterCardIds = tournament.Rules.DisasterCardIds.ToArray(),
+            CardRestrictions = tournament.Rules.CardRestrictions.ToArray(),
+            DefaultPresetDeckIds = [],
+            DefaultRoomConfig = new L12DefaultRoomConfig("tournament", "disabled", "request",
+                tournament.Rules.DisasterMode),
+            MatchModes = [new L12MatchModeConfig("tournament", "赛事对局", true)],
+            Maintenance = new L12MaintenanceConfig(false, string.Empty, null, null),
+        };
+
+    private static L12RankedTimeControlConfig TournamentRoomTimeControl(TournamentRow tournament,
+        TournamentMatchRow match)
+    {
+        var timeControl = NormalizeRankedTimeControl(tournament.TimeControl);
+        return !tournament.UsesLegacyRoundClock && match.TimeExtensionMinutes > 0
+            ? timeControl with
+            {
+                TotalTimeSeconds = Math.Min(7200,
+                    timeControl.TotalTimeSeconds + match.TimeExtensionMinutes * 60),
+            }
+            : timeControl;
     }
 
     public L12TournamentView RecordTournamentGameResult(string tournamentId, string matchId,

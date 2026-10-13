@@ -376,7 +376,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                     "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
                     Outcome: "denied", Reason: "authentication-required"),
                 "admin.audit.read", "authentication-required");
-            AgeIndependentAuditEvents(store.TransactionalStoragePath, DateTimeOffset.UtcNow.AddDays(-60));
+            SeedAgedIndependentAuditCopies(store.TransactionalStoragePath, DateTimeOffset.UtcNow.AddDays(-60));
             var payload = store.CaptureAuditArchive(30);
 
             store.AuditAvailabilityProbeOverride = () => false;
@@ -426,7 +426,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                     "admin.audit.read", RequestMethod: "GET", RequestPath: "/api/admin/audit",
                     Outcome: "denied", Reason: "authentication-required"),
                 "admin.audit.read", "authentication-required");
-            AgeIndependentAuditEvents(store.TransactionalStoragePath, DateTimeOffset.UtcNow.AddDays(-60));
+            SeedAgedIndependentAuditCopies(store.TransactionalStoragePath, DateTimeOffset.UtcNow.AddDays(-60));
 
             var payload = store.CaptureAuditArchive(30);
             var dry = SubmitArchive(store, admin, payload, "audit-archive-dry", store.Version, true);
@@ -524,7 +524,7 @@ public sealed class ControlPlanePhaseSixSecurityTests
                 current.Payload, current.AuditContext, false)), L12AdminCommandRisk.High);
     }
 
-    private static void AgeIndependentAuditEvents(string databasePath, DateTimeOffset start)
+    private static void SeedAgedIndependentAuditCopies(string databasePath, DateTimeOffset start)
     {
         using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
@@ -543,22 +543,28 @@ public sealed class ControlPlanePhaseSixSecurityTests
         for (var index = 0; index < rows.Count; index++)
         {
             var createdAt = start.AddTicks(index);
+            // Seed separate synthetic historical events; never rewrite an already committed event's body.
+            var historicalId = "aged-fixture-" + Guid.NewGuid().ToString("N");
             var payload = JsonNode.Parse(rows[index].Payload)!.AsObject();
+            payload["Id"] = historicalId;
             payload["CreatedAt"] = createdAt;
             var payloadJson = payload.ToJsonString();
             var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payloadJson)))
                 .ToLowerInvariant();
             using var update = connection.CreateCommand();
             update.CommandText = """
-                UPDATE admin_audit_events
-                SET created_utc=$created,payload_json=$payload,payload_sha256=$checksum
+                INSERT INTO admin_audit_events
+                    (id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256)
+                SELECT $newid,$created,category,outcome,actor_id,command_id,correlation_id,$payload,$checksum
+                FROM admin_audit_events
                 WHERE id=$id;
                 """;
             update.Parameters.AddWithValue("$created", createdAt.ToString("O"));
+            update.Parameters.AddWithValue("$newid", historicalId);
             update.Parameters.AddWithValue("$payload", payloadJson);
             update.Parameters.AddWithValue("$checksum", checksum);
             update.Parameters.AddWithValue("$id", rows[index].Id);
-            update.ExecuteNonQuery();
+            Assert.Equal(1, update.ExecuteNonQuery());
         }
     }
 

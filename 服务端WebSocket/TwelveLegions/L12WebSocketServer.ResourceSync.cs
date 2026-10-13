@@ -55,29 +55,26 @@ public sealed partial class L12WebSocketServer
 
     private IReadOnlyList<object> PresenceFor(string accountId)
     {
-        var presence = _rooms.DescribeOnlinePresence(accountId);
-        var friends = _platform.Friends(accountId)
-            .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-        var pending = _platform.FriendRequests(accountId)
-            .ToDictionary(player => player.AccountId, player => player, StringComparer.OrdinalIgnoreCase);
-        return _platform.Accounts()
-            .Where(player => presence.ContainsKey(player.Id))
-            .OrderBy(player => player.Username)
+        var platform = _platform.ReadCommittedPresencePlatformView(accountId);
+        var presence = _rooms.DescribeOnlinePresence(accountId, platform.AcceptedFriendIds);
+        return platform.Usernames
+            .Where(player => presence.ContainsKey(player.Key))
+            .OrderBy(player => player.Value)
             .Select(player =>
             {
-                var state = presence[player.Id];
-                var relationship = friends.GetValueOrDefault(player.Id) ?? pending.GetValueOrDefault(player.Id);
+                var state = presence[player.Key];
+                var relationship = platform.Relationships.GetValueOrDefault(player.Key);
                 return (object)new
                 {
-                    accountId = player.Id,
-                    player.Username,
+                    accountId = player.Key,
+                    Username = player.Value,
                     online = true,
                     state.Activity,
                     state.RoomCode,
                     state.CanInvite,
                     state.CanSpectate,
                     state.ActionReason,
-                    friendStatus = player.Id == accountId ? "self" : relationship?.Status ?? "none",
+                    friendStatus = player.Key == accountId ? "self" : relationship?.Status ?? "none",
                     friendDirection = relationship?.Direction ?? "none",
                 };
             }).ToArray();

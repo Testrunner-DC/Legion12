@@ -233,7 +233,7 @@ public sealed partial class L12RoomManager
                     if (!source.IsSpectator && recoveredRoom.TournamentId is not null
                         && recoveredRoom.TournamentMatchId is not null)
                     {
-                        _ = _platform?.TournamentRoomAssignment(accountId, recoveredRoom.TournamentId,
+                        _ = _platform?.TournamentRoomAccess(accountId, recoveredRoom.TournamentId,
                             recoveredRoom.TournamentMatchId, source.IsSpectator);
                     }
                     await recoveredRoom.Gate.WaitAsync();
@@ -603,7 +603,8 @@ public sealed partial class L12RoomManager
             _rooms.Values.Count(room => room.Game is not null && room.Game.State.Phase != L12Phase.GameOver));
     }
 
-    public IReadOnlyDictionary<string, L12OnlinePresence> DescribeOnlinePresence(string viewerAccountId)
+    public IReadOnlyDictionary<string, L12OnlinePresence> DescribeOnlinePresence(string viewerAccountId,
+        IReadOnlySet<string>? committedFriendIds = null)
     {
         var viewerInRoom = _sessions.Values.Any(session => session.Connected && !session.IsVirtual
             && string.Equals(session.AccountId, viewerAccountId, StringComparison.OrdinalIgnoreCase)
@@ -620,7 +621,8 @@ public sealed partial class L12RoomManager
                     .ThenByDescending(candidate => candidate.RoomCode is not null)
                     .First();
                 var isSelf = string.Equals(group.Key, viewerAccountId, StringComparison.OrdinalIgnoreCase);
-                var friends = !isSelf && _platform?.AreFriends(viewerAccountId, group.Key) == true;
+                var friends = !isSelf && (committedFriendIds is not null
+                    ? committedFriendIds.Contains(group.Key) : _platform?.AreFriends(viewerAccountId, group.Key) == true);
                 if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
                     return new L12OnlinePresence(group.Key, "idle", null,
                         !maintenanceActive && !isSelf && friends && !viewerInRoom, false,
@@ -1243,10 +1245,10 @@ public sealed partial class L12RoomManager
             return Error(sessionId, "请先登录账号");
         if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
         if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
-        L12TournamentRoomAssignment assignment;
+        L12TournamentRoomAccess access;
         try
         {
-            assignment = _platform.TournamentRoomAssignment(session.AccountId,
+            access = _platform.TournamentRoomAccess(session.AccountId,
                 tournamentId?.Trim() ?? string.Empty, matchId?.Trim() ?? string.Empty, spectate: true);
         }
         catch (Exception error) when (error is L12TournamentScopeException or L12TournamentVersionConflictException
@@ -1254,9 +1256,9 @@ public sealed partial class L12RoomManager
         {
             return Error(sessionId, error.Message, "tournamentRoomRejected");
         }
-        if (!_rooms.TryGetValue(assignment.RoomCode, out var room) || room.Game is null)
+        if (!_rooms.TryGetValue(access.RoomCode, out var room) || room.Game is null)
             return Error(sessionId, "本桌对局尚未开始", "tournamentRoomRejected");
-        if (room.TournamentId != assignment.TournamentId || room.TournamentMatchId != assignment.MatchId)
+        if (room.TournamentId != access.TournamentId || room.TournamentMatchId != access.MatchId)
             return Error(sessionId, "赛事房间绑定冲突", "tournamentRoomRejected");
         lock (room.Spectators)
         {
@@ -1268,10 +1270,10 @@ public sealed partial class L12RoomManager
         return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
         {
             type = "gameState", spectating = true, gmEnabled = false,
-            observerView = assignment.CanRefereeView ? "referee" : "public",
+            observerView = access.CanRefereeView ? "referee" : "public",
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
-            state = assignment.CanRefereeView
+            state = access.CanRefereeView
                 ? L12KernelProjection.ForReferee(room.Game)
                 : L12KernelProjection.ForSpectator(room.Game),
         }, IsGameState: true, ForceFullGameState: true)];
@@ -1282,7 +1284,7 @@ public sealed partial class L12RoomManager
         if (room.TournamentId is null || room.TournamentMatchId is null) return true;
         try
         {
-            return _platform?.TournamentRoomAssignment(accountId, room.TournamentId,
+            return _platform?.TournamentRoomAccess(accountId, room.TournamentId,
                 room.TournamentMatchId, spectate: true).CanSpectate == true;
         }
         catch (Exception error) when (error is L12TournamentScopeException
@@ -1473,7 +1475,7 @@ public sealed partial class L12RoomManager
             {
                 try
                 {
-                    _ = _platform?.TournamentRoomAssignment(session.AccountId, room.TournamentId,
+                    _ = _platform?.TournamentRoomAccess(session.AccountId, room.TournamentId,
                         room.TournamentMatchId, spectate: false);
                 }
                 catch (Exception eligibilityError) when (eligibilityError is L12TournamentScopeException
@@ -2034,9 +2036,9 @@ public sealed partial class L12RoomManager
                     {
                         if (spectator.AccountId is null)
                             throw new L12TournamentScopeException("赛事观战账号缺失");
-                        var assignment = _platform?.TournamentRoomAssignment(spectator.AccountId,
+                        var access = _platform?.TournamentRoomAccess(spectator.AccountId,
                             room.TournamentId, room.TournamentMatchId, spectate: true);
-                        referee = assignment?.CanRefereeView == true;
+                        referee = access?.CanRefereeView == true;
                     }
                     catch (Exception error) when (error is L12TournamentScopeException
                                                   or L12TournamentVersionConflictException

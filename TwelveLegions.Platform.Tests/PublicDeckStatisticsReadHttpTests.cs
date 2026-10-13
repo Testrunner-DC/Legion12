@@ -499,10 +499,15 @@ internal sealed class PublicDeckStatisticsFixture : IAsyncDisposable
 
     internal void Expire()
     {
-        var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Store)!;
-        var session = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>()
-            .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == Viewer.SessionId);
-        session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+        Store.ExecuteAdminTransaction(() =>
+        {
+            var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(Store)!;
+            var session = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>()
+                .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == Viewer.SessionId);
+            session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+            RankedIdentityTestState.RequestSave(Store);
+            return true;
+        });
     }
 
     internal void Observe() => Store.DeckPayloadExpansionObserver = Expansions.Add;

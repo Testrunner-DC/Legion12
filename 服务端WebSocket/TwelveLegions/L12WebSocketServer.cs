@@ -258,7 +258,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 var page = await _recorder.ListAdminMatchesAsync(AdminMatchQuery(request));
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-list", "matches",
-                    AuditContext(request, permission));
+                    AuditContext(request, permission), request.HttpContext.RequestAborted);
                 return Results.Ok(page);
             }
             catch (ArgumentException error)
@@ -279,7 +279,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         request.HttpContext.RequestAborted))
                 {
                     _platform.RecordAdminRead(authenticated.Account, permission, "match",
-                        "read-replay-payload-expired", matchId, AuditContext(request, permission));
+                        "read-replay-payload-expired", matchId, AuditContext(request, permission), request.HttpContext.RequestAborted);
                     return ApiError(request, "replay_payload_expired",
                         "该休闲／好友房录像已按保留规则清理；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
@@ -295,7 +295,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     expired ? "read-sandbox-replay-expired"
                         : replayPayloadExpired ? "read-replay-payload-expired"
                         : includeReplay ? "read-replay" : "read-detail", matchId,
-                    AuditContext(request, permission));
+                    AuditContext(request, permission), request.HttpContext.RequestAborted);
                 if (expired)
                     return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
                         StatusCodes.Status410Gone);
@@ -316,7 +316,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (L12ReplayPayloadTooLargeException error)
             {
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-rejected",
-                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-too-large" });
+                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-too-large" }, request.HttpContext.RequestAborted);
                 return ApiError(request, "replay_too_large",
                     $"回放超过在线读取上限（最多 {error.MaximumCommands} 条命令或 {error.MaximumBytes / 1024 / 1024} MiB），已在反序列化前拒绝以保护服务。",
                     StatusCodes.Status413PayloadTooLarge);
@@ -334,7 +334,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         request.HttpContext.RequestAborted))
                 {
                     _platform.RecordAdminRead(authenticated.Account, permission, "match",
-                        "read-replay-payload-expired", matchId, AuditContext(request, permission));
+                        "read-replay-payload-expired", matchId, AuditContext(request, permission), request.HttpContext.RequestAborted);
                     return ApiError(request, "replay_payload_expired",
                         "该休闲／好友房录像已按保留规则清理；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
@@ -347,7 +347,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _platform.RecordAdminRead(authenticated.Account, permission, "match",
                     expired ? "read-sandbox-replay-expired"
                         : replayPayloadExpired ? "read-replay-payload-expired" : "read-replay-page",
-                    matchId, AuditContext(request, permission));
+                    matchId, AuditContext(request, permission), request.HttpContext.RequestAborted);
                 if (expired)
                     return ApiError(request, "sandbox_replay_expired", "沙盒录像已过期，Bug 报告仍已保留。",
                         StatusCodes.Status410Gone);
@@ -373,7 +373,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             catch (L12ReplayPayloadTooLargeException error)
             {
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-replay-page-rejected",
-                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-row-too-large" });
+                    matchId, AuditContext(request, permission) with { Outcome = "rejected", Reason = "replay-row-too-large" }, request.HttpContext.RequestAborted);
                 return ApiError(request, "replay_page_too_large",
                     $"单条回放状态超过分页上限（{error.MaximumBytes / 1024 / 1024} MiB），已在 JSON 反序列化前拒绝。",
                     StatusCodes.Status413PayloadTooLarge);
@@ -388,7 +388,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 var page = await _recorder.ListAdminMatchesForAccountAsync(accountId, AdminMatchQuery(request));
                 _platform.RecordAdminRead(authenticated.Account, permission, "match", "read-player-matches",
-                    accountId, AuditContext(request, permission));
+                    accountId, AuditContext(request, permission), request.HttpContext.RequestAborted);
                 return Results.Ok(page);
             }
             catch (ArgumentException error)
@@ -409,7 +409,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var page = await _recorder.ListCardAnalyticsAsync(CardAnalyticsQuery(request),
                     cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-list",
-                    "cards", AuditContext(request, permission));
+                    "cards", AuditContext(request, permission), cancellation.Token);
                 return Results.Ok(page);
             }
             catch (ArgumentException error)
@@ -445,7 +445,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var detail = await _recorder.GetCardAnalyticsAsync(cardId, CardAnalyticsQuery(request),
                     includeRecentMatches, cancellation.Token, timing);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-card-detail",
-                    cardId, AuditContext(request, permission));
+                    cardId, AuditContext(request, permission), cancellation.Token);
                 return detail is null ? Results.NotFound() : Results.Ok(detail);
             }
             catch (ArgumentException error)
@@ -475,7 +475,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 var report = await _recorder.ReadMasterAnalyticsAsync(CardAnalyticsQuery(request));
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-master-report",
-                    report.SelectedMasterId ?? "masters", AuditContext(request, permission));
+                    report.SelectedMasterId ?? "masters", AuditContext(request, permission), request.HttpContext.RequestAborted);
                 return Results.Ok(report);
             }
             catch (ArgumentException error)
@@ -498,7 +498,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var report = await _recorder.ReadGlobalAnalyticsAsync(from, to, _platform.Accounts(),
                     request.HttpContext.RequestAborted);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-global-report",
-                    $"{from:yyyy-MM-dd}:{to:yyyy-MM-dd}", AuditContext(request, permission));
+                    $"{from:yyyy-MM-dd}:{to:yyyy-MM-dd}", AuditContext(request, permission), request.HttpContext.RequestAborted);
                 return Results.Ok(report);
             }
             catch (ArgumentException error)
@@ -4833,6 +4833,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private L12CardAnalyticsQuery CardAnalyticsQuery(HttpRequest request)
     {
+        var exclusions = _platform.ReadCommittedStatisticsExclusions();
         var search = QueryValue(request, "search");
         var candidates = search is null ? null : _catalog.Cards.Values
             .Where(card => card.Id.Contains(search, StringComparison.OrdinalIgnoreCase)
@@ -4859,8 +4860,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             RulesVersion: QueryValue(request, "rulesVersion"),
             SeasonId: QueryValue(request, "seasonId"),
             EffectVersion: _recorder.ResolveAnalyticsEffectVersion(QueryValue(request, "effectVersion")),
-            ExcludedMatchIds: _platform.RankedIntegrityExcludedMatchIds().ToArray(),
-            ExcludedAccountIds: _platform.StatisticsExcludedAccountIds().ToArray());
+            ExcludedMatchIds: exclusions.MatchIds.ToArray(),
+            ExcludedAccountIds: exclusions.AccountIds.ToArray());
     }
 
     private static string? QueryValue(HttpRequest request, params string[] names)

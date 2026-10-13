@@ -77,9 +77,13 @@ requireContract(battleHub.includes('<RankedBroadcastTicker') && gamePage.include
   'BattleHub and GamePage must use the same module-level playback state')
 requireContract(platform.includes('broadcastSettings: ()')
   && ticker.includes('rankedApi.broadcastSettings()')
-  && ticker.includes("route.path === '/lobby' ? Date.now() + rankedBroadcastLobbyDelayMs() : 0")
+  && ticker.includes("lobbyDelayInitialized = route.path !== '/lobby'")
+  && ticker.includes('lobbyReadyAt = Date.now() + rankedBroadcastLobbyDelayMs()')
+  && ticker.includes('schedule(remaining, generation, false)')
   && playback.includes('settings.displaySeconds')
   && playback.includes('settings.intervalSeconds'),
   'backend broadcast timing must drive future display duration, lobby delay and item interval')
+
+await import('./test-ranked-broadcast-ticker-lifecycle.mjs')
 
 console.log('Ranked broadcast playback contracts passed: subscription freshness, claim-once, persistent background completion, multi-tab and route continuity.')

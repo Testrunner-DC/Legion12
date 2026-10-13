@@ -53,6 +53,8 @@ const initialEndpoint = location.protocol === 'https:' && !configuredEndpoint
   : (storedEndpoint || defaultEndpoint)
 
 export const CONNECTION_HANDSHAKE_TIMEOUT_MS = 10_000
+export const SNAPSHOT_RECOVERY_MAX_ATTEMPTS = 4
+const MATCHMAKING_INITIAL_STATE_GRACE_MS = 800
 let connectPromise: Promise<void> | null = null
 let cancelPendingConnect: ((reason?: string) => void) | null = null
 let connectionAttemptSerial = 0
@@ -216,14 +218,18 @@ function clearSnapshotRecovery() {
   snapshotRecoveryAttempt = 0
 }
 
-function requestSnapshotRecovery(socket: WebSocket) {
+function requestSnapshotRecovery(socket: WebSocket, onExhausted: () => void) {
   if (snapshotRecoveryTimer !== null || socket !== l12State.socket || socket.readyState !== WebSocket.OPEN) return
+  if (snapshotRecoveryAttempt >= SNAPSHOT_RECOVERY_MAX_ATTEMPTS) {
+    onExhausted()
+    return
+  }
   socket.send(JSON.stringify({ type: 'syncState' }))
   const delay = Math.min(1000 * (2 ** snapshotRecoveryAttempt++), 8000)
   snapshotRecoveryTimer = window.setTimeout(() => {
     snapshotRecoveryTimer = null
     if (socket === l12State.socket && l12State.recoveryPhase === 'snapshot-mismatch')
-      requestSnapshotRecovery(socket)
+      requestSnapshotRecovery(socket, onExhausted)
   }, delay)
 }
 
@@ -237,15 +243,18 @@ function clearMatchmakingRecovery() {
   matchmakingRecoveryTimer = null
 }
 
-function requestMatchedState(socket: WebSocket) {
-  if (socket.readyState !== WebSocket.OPEN) return
-  socket.send(JSON.stringify({ type: 'syncState' }))
+function requestMatchedState(socket: WebSocket, onExhausted: () => void) {
   clearMatchmakingRecovery()
+  if (socket !== l12State.socket || socket.readyState !== WebSocket.OPEN) return
   matchmakingRecoveryTimer = window.setTimeout(() => {
     matchmakingRecoveryTimer = null
-    if (l12State.matchFound && !l12State.game && socket === l12State.socket && socket.readyState === WebSocket.OPEN)
-      socket.send(JSON.stringify({ type: 'syncState' }))
-  }, 800)
+    if (l12State.matchFound && !l12State.game && socket === l12State.socket && socket.readyState === WebSocket.OPEN) {
+      l12State.recoveryPhase = 'snapshot-mismatch'
+      l12State.notice = '匹配初始状态尚未到达，正在请求完整权威状态…'
+      syncGameReentry()
+      requestSnapshotRecovery(socket, onExhausted)
+    }
+  }, MATCHMAKING_INITIAL_STATE_GRACE_MS)
 }
 
 function startMatchmakingPolling() {
@@ -272,13 +281,16 @@ function startHeartbeat(socket: WebSocket, onTimeout: () => void) {
   }, 25_000)
 }
 
-function scheduleReconnect() {
+function scheduleReconnect(reason = '') {
   if (!automaticConnectionEnabled || reconnectTimer !== null || !localStorage.getItem('l12-auth-token')) return
   const delay = Math.min(1_000 * (2 ** reconnectAttempts), 15_000)
   reconnectAttempts += 1
   l12State.retryCount = reconnectAttempts
   l12State.recoveryPhase = 'disconnected'
-  l12State.notice = `连接中断，${Math.ceil(delay / 1000)} 秒后自动重连…`
+  const detail = reason.trim().replace(/[。…]+$/, '')
+  l12State.notice = detail
+    ? `${detail}，${Math.ceil(delay / 1000)} 秒后自动重连…`
+    : `连接中断，${Math.ceil(delay / 1000)} 秒后自动重连…`
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null
     void connect().catch(() => undefined)
@@ -465,8 +477,11 @@ export function connect(): Promise<void> {
       l12State.recoveryPhase = 'disconnected'
       syncGameReentry()
       settle(new Error(reason))
-      scheduleReconnect()
+      scheduleReconnect(reason)
       socket.close(4000, 'websocket recovery required')
+    }
+    const replaceBrokenSnapshotConnection = () => {
+      failConnection('权威状态多次同步仍未完成')
     }
 
     negotiatedEventWindowDelta = false
@@ -520,7 +535,7 @@ export function connect(): Promise<void> {
         if (!rebuilt) {
           l12State.recoveryPhase = 'snapshot-mismatch'
           l12State.notice = '增量快照基线不匹配，正在请求完整权威状态…'
-          requestSnapshotRecovery(socket)
+          requestSnapshotRecovery(socket, replaceBrokenSnapshotConnection)
           return
         }
         message = rebuilt
@@ -677,17 +692,25 @@ export function connect(): Promise<void> {
         l12State.matchmaking = null
         l12State.matchFound = { mode: message.mode, roomCode: message.roomCode, matchId: message.matchId }
         l12State.notice = message.message || '匹配成功，正在建立对局'
-        requestMatchedState(socket)
+        requestMatchedState(socket, replaceBrokenSnapshotConnection)
       }
       else if (message.type === 'matchmakingRejected') {
+        const wasRecoveringMatch = Boolean(l12State.matchFound)
         clearMatchmakingPolling()
         clearMatchmakingRecovery()
+        if (wasRecoveringMatch) {
+          clearSnapshotRecovery()
+          if (l12State.status === 'online') l12State.recoveryPhase = 'snapshot-acknowledged'
+        }
         l12State.matchmaking = null
         l12State.matchFound = null
         l12State.notice = message.message || '匹配请求未能完成'
       }
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
         clearMatchmakingRecovery()
+        clearSnapshotRecovery()
+        if (l12State.status === 'online' && l12State.recoveryPhase === 'snapshot-mismatch')
+          l12State.recoveryPhase = 'snapshot-acknowledged'
         l12State.room = null
         l12State.game = null
         lastGameStateEnvelope = null
@@ -714,6 +737,9 @@ export function connect(): Promise<void> {
         const current = l12State.game
         // 同一对局只接受不低于当前 revision 的权威快照；新对局可从较小 revision 重新开始。
         if (!current || current.matchId !== incoming.matchId || incoming.revision >= current.revision) {
+          const resolvesOnlineSnapshotMismatch = l12State.status === 'online'
+            && l12State.recoveryPhase === 'snapshot-mismatch'
+            && (!incoming.roomCode || l12State.room?.roomCode === incoming.roomCode)
           l12State.game = incoming
           lastGameStateEnvelope = JSON.parse(JSON.stringify(message))
           l12State.rankedClock = message.rankedClock
@@ -726,9 +752,13 @@ export function connect(): Promise<void> {
           l12State.rankedSettlement = message.rankedSettlement || null
           if (message.responsePreference) l12State.responsePreference = message.responsePreference as ResponsePreferenceState
           if (l12State.status === 'connecting') l12State.recoveryPhase = 'snapshot-received'
+          else if (resolvesOnlineSnapshotMismatch) {
+            clearSnapshotRecovery()
+            l12State.recoveryPhase = 'snapshot-acknowledged'
+          }
           clearMatchmakingRecovery()
           l12State.matchFound = null
-          if (message.recovered || l12State.notice.includes('正在同步')) l12State.notice = ''
+          if (message.recovered || resolvesOnlineSnapshotMismatch || l12State.notice.includes('正在同步')) l12State.notice = ''
           syncGameReentry()
         }
       }
@@ -754,7 +784,7 @@ export function connect(): Promise<void> {
           l12State.recoveryPhase = 'snapshot-mismatch'
           l12State.notice = '权威恢复快照尚未完整到达，正在重新同步…'
           syncGameReentry()
-          requestSnapshotRecovery(socket)
+          requestSnapshotRecovery(socket, replaceBrokenSnapshotConnection)
           return
         }
         clearSnapshotRecovery()

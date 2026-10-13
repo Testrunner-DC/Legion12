@@ -457,6 +457,59 @@ public sealed class DeckLazyRuntimeTests
             var before = SqlFacts(store.TransactionalStoragePath);
             var rollback = RuntimeCache(store);
             var runtime = RuntimeFacts(store);
+            lock (RankedIdentityTestState.Gate(store))
+            {
+                Assert.Throws<L12PlatformStorageUnavailableException>(() => internalEntry
+                    ? store.TournamentRoomAssignmentByRoom(match.RoomCode)
+                    : store.TournamentRoomAssignment(owner.Id, tournament.Id, match.Id, false));
+            }
+            Assert.Empty(calls);
+            Assert.Equal(runtime, RuntimeFacts(store));
+            Assert.Equal(before, SqlFacts(store.TransactionalStoragePath));
+            Assert.Same(rollback, RuntimeCache(store));
+        });
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void CommittedRoomPairValidatesSecondPlayerBeforeExpandingFirst(bool objectWrite,
+        bool internalEntry)
+    {
+        InTournamentStore((store, owner, player, _) =>
+        {
+            store.PrivateDeckObjectPersistenceEnabled = objectWrite;
+            var tournament = LockedTournament(store, owner, player, "committed room preflight", "after");
+            tournament = store.StartTournament(owner, tournament.Id, tournament.Version,
+                new L12AdminAuditContext("committed-pair-start"), true);
+            tournament = store.CheckInTournament(owner, tournament.Id, 1,
+                new L12TournamentCheckInPayload(owner.Id, true), tournament.Version,
+                new L12AdminAuditContext("committed-pair-ready-a"), true);
+            tournament = store.CheckInTournament(player, tournament.Id, 1,
+                new L12TournamentCheckInPayload(null, true), tournament.Version,
+                new L12AdminAuditContext("committed-pair-ready-b"), true);
+            tournament = store.StartTournamentRound(owner, tournament.Id, 1, tournament.Version,
+                new L12AdminAuditContext("committed-pair-round"), true);
+            var match = Assert.Single(tournament.Rounds[0].Matches);
+            Assert.NotNull(store.TournamentRoomAssignment(owner.Id, tournament.Id, match.Id, false));
+
+            store.ExecuteAdminTransaction(() =>
+            {
+                var second = RuntimeTournamentDeck(store, tournament.Id, match.PlayerBAccountId!);
+                ReplaceRuntimeCompactBody(store, second, 100_001);
+                RankedIdentityTestState.RequestSave(store);
+                return true;
+            });
+
+            var calls = new List<string>();
+            ObserveExpansions(store, calls);
+            Assert.True(store.TournamentRoomAccess(owner.Id, tournament.Id, match.Id, false).CanPlay);
+            Assert.Empty(calls);
+            var before = SqlFacts(store.TransactionalStoragePath);
+            var rollback = RuntimeCache(store);
+            var runtime = RuntimeFacts(store);
             Assert.Throws<L12PlatformStorageUnavailableException>(() => internalEntry
                 ? store.TournamentRoomAssignmentByRoom(match.RoomCode)
                 : store.TournamentRoomAssignment(owner.Id, tournament.Id, match.Id, false));

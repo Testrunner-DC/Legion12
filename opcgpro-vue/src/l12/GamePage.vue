@@ -109,8 +109,12 @@ function returnToLobby() {
 async function retryGameLoad() {
   if (loadRetrying.value) return
   loadRetrying.value = true
-  l12State.notice = ''
-  try { await connect(); send({ type: 'syncState' }) }
+  const canRequestExistingState = l12State.socket?.readyState === WebSocket.OPEN
+    && l12State.status === 'online' && l12State.recoveryPhase === 'snapshot-acknowledged'
+  try {
+    await connect()
+    if (canRequestExistingState) send({ type: 'syncState' })
+  }
   catch { /* 连接层会提供可读失败和自动重连状态。 */ }
   finally { loadRetrying.value = false }
 }

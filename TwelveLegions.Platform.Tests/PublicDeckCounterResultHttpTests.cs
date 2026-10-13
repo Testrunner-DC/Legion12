@@ -50,10 +50,15 @@ public sealed class PublicDeckCounterResultHttpTests
         if (mode == "revoked") Assert.Equal(1, fixture.Store.RevokeOwnSession(fixture.Viewer, fixture.Viewer.SessionId).RevokedCount);
         if (mode == "expired")
         {
-            var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Store)!;
-            var session = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>()
-                .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == fixture.Viewer.SessionId);
-            session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+            fixture.Store.ExecuteAdminTransaction(() =>
+            {
+                var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(fixture.Store)!;
+                var session = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>()
+                    .Single(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)! == fixture.Viewer.SessionId);
+                session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+                RankedIdentityTestState.RequestSave(fixture.Store);
+                return true;
+            });
         }
         var token = mode == "invalid" ? "invalid-synthetic-token" : fixture.Token;
         Assert.Null(fixture.Store.AuthenticateSession("Bearer " + token));

@@ -25,6 +25,9 @@ public sealed class GameplayPlatformLockProtocolTests(ITestOutputHelper output)
         var httpUri = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" }.Uri;
         var wsUri = new UriBuilder(httpUri) { Scheme = "ws", Path = "/ws" }.Uri;
         using var http = new HttpClient { BaseAddress = httpUri, Timeout = TimeSpan.FromSeconds(2) };
+        var adminToken = fixture.Store.Login("Admin", "L12master").Token;
+        var newcomer = fixture.Store.Register("protocolnew", "Password123!");
+        Assert.True(newcomer.Success, newcomer.Message);
         var sockets = new List<ClientWebSocket>();
         var sessions = new List<Guid>();
         using var entered = new ManualResetEventSlim();
@@ -90,6 +93,32 @@ public sealed class GameplayPlatformLockProtocolTests(ITestOutputHelper output)
                         await Send(sockets[index], new { type = "ping" });
                         _ = await Receive(sockets[index], "pong", 1);
                     }
+                }
+                using (var me = new HttpRequestMessage(HttpMethod.Get, "api/auth/me"))
+                {
+                    me.Headers.Authorization = new("Bearer", newcomer.Token);
+                    using var response = await http.SendAsync(me);
+                    response.EnsureSuccessStatusCode();
+                }
+                var newSocket = new ClientWebSocket();
+                sockets.Add(newSocket);
+                await newSocket.ConnectAsync(wsUri, CancellationToken.None);
+                var helloWatch = Stopwatch.StartNew();
+                await Send(newSocket, new { type = "hello", authToken = newcomer.Token });
+                _ = await Receive(newSocket, "session", 1);
+                var presence = await Receive(newSocket, "presenceSnapshot", 1);
+                var presenceJson = presence.GetRawText();
+                Assert.DoesNotContain("email", presenceJson, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("deck", presenceJson, StringComparison.OrdinalIgnoreCase);
+                _ = await Receive(newSocket, "recoveryComplete", 1);
+                output.WriteLine("blocked_commit_new_hello_ms={0:F2}", helloWatch.Elapsed.TotalMilliseconds);
+                using (var cards = new HttpRequestMessage(HttpMethod.Get, "api/admin/analytics/cards"))
+                {
+                    cards.Headers.Authorization = new("Bearer", adminToken);
+                    var auditWatch = Stopwatch.StartNew();
+                    using var response = await http.SendAsync(cards);
+                    Assert.Equal(System.Net.HttpStatusCode.ServiceUnavailable, response.StatusCode);
+                    output.WriteLine("blocked_commit_read_audit_503_ms={0:F2}", auditWatch.Elapsed.TotalMilliseconds);
                 }
                 var remaining = TimeSpan.FromSeconds(30) - held.Elapsed;
                 if (remaining > TimeSpan.Zero) await Task.Delay(remaining);

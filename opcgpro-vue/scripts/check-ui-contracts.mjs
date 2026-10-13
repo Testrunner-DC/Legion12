@@ -439,12 +439,14 @@ const contracts = [
   [shell.includes("{ to: '/battle', icon: 'battle', label: '大厅' }") && !shell.includes("label: '对战主页'") && router.includes("{ path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue')") && router.includes("{ path: '/battle/lobby', redirect: '/battle' }"), '对战区域必须直接以大厅为主页，不得恢复多余的对战主页层级'],
   [l12Net.includes("matchFound: null as null") && l12Net.includes("type: 'syncState'")
     && l12Net.includes('if (!message.queued && l12State.matchFound) return')
-    && l12Net.includes('requestMatchedState(socket)') && l12Net.includes('l12State.matchFound = null')
+    && l12Net.includes('requestMatchedState(socket,') && l12Net.includes('l12State.matchFound = null')
+    && l12Net.includes('MATCHMAKING_INITIAL_STATE_GRACE_MS')
+    && l12Net.includes('requestSnapshotRecovery(socket, onExhausted)')
     && lobby.includes('data-ui-contract="match-found-state-recovery"')
     && wsServer.includes('ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections')
     && wsServer.includes('outbound.TryEnqueue(queued, message.ReplaceableGameState)') && wsServer.includes('"syncState" =>')
     && l12ServerSources.includes('session.RoomCode is not null')
-    && l12ServerSources.includes('return await RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息并主动恢复房间/对局快照；服务端发送必须按会话串行化，排空租约必须持续到恢复完成'],
+    && l12ServerSources.includes('return await RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息；先等待已排队首包，缺失时有界恢复房间/对局快照，服务端串行发送与排空租约保持'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
   [board.includes('data-ui-contract="persistent-board-safe-layout"') && board.includes('data-ui-contract="phase-safe-track"') && board.includes('--l12-board-seam-safe-height:44px') && board.includes('--l12-battlefield-half-height:350px') && board.includes('min-height:calc(var(--l12-battlefield-half-height) * 2 + var(--l12-board-seam-safe-height) + 10px)') && board.includes('grid-template-rows:minmax(var(--l12-battlefield-half-height),1fr) var(--l12-board-seam-safe-height) minmax(var(--l12-battlefield-half-height),1fr)') && board.includes('class="battlefield-half opponent-half"') && board.includes('class="battlefield-half my-half"'), '双方战场与中央镜像分隔必须使用明确三轨安全布局；外层必须为既定六格高度留足空间，不得依赖格子溢出显示'],
   [board.includes('? { width: 2304, height: 1296 }') && board.includes(': { width: 2048, height: 1264 }')

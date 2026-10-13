@@ -119,12 +119,17 @@ public sealed class PublicDeckSummaryHttpTests
                 Assert.Equal(1, store.RevokeOwnSession(ownerSession, ownerSession.SessionId).RevokedCount);
             if (viewerKind == "expired")
             {
-                // Expire only this synthetic session in the captured store;
+                // Commit expiration of this synthetic session through the normal transaction;
                 // no sleep, clock hook or product mutation API is introduced.
-                var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
-                var sessions = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>();
-                var session = sessions.Single(item => (string)item.GetType().GetProperty("Id")!.GetValue(item)! == ownerSession.SessionId);
-                session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+                store.ExecuteAdminTransaction(() =>
+                {
+                    var data = typeof(L12PlatformStore).GetProperty("_data", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(store)!;
+                    var sessions = ((IEnumerable)data.GetType().GetProperty("Sessions")!.GetValue(data)!).Cast<object>();
+                    var session = sessions.Single(item => (string)item.GetType().GetProperty("Id")!.GetValue(item)! == ownerSession.SessionId);
+                    session.GetType().GetProperty("ExpiresAt")!.SetValue(session, DateTimeOffset.UnixEpoch);
+                    RankedIdentityTestState.RequestSave(store);
+                    return true;
+                });
             }
             if (viewerKind is "revoked" or "expired") Assert.Null(store.AuthenticateSession("Bearer " + owner.Token));
             var expansions = new List<string>();

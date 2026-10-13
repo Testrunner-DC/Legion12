@@ -310,6 +310,7 @@ public sealed partial class L12PlatformStore
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
             using var transaction = connection.BeginTransaction(deferred: false);
+            MergeIndependentAudit(connection, _data, transaction);
             var completedFinalizationRevision = ReadLatestSeasonFinalizationRevision(connection, transaction);
             if (expectedRevision < completedFinalizationRevision)
                 throw new L12SeasonFinalizationStaleWriteException(
@@ -504,6 +505,7 @@ public sealed partial class L12PlatformStore
                     HydrateDeckDomain(connection, latest, transaction);
                     HydrateRankedBroadcastObjects(connection, latest, transaction);
                 }
+                MergeIndependentAudit(connection, latest, transaction);
                 _data = latest;
                 var mutation = action(connection, transaction);
                 if (!mutation.Changed)
@@ -654,51 +656,64 @@ public sealed partial class L12PlatformStore
     private static void AppendIndependentAudit(SqliteConnection connection, SqliteTransaction transaction,
         IEnumerable<AdminAuditRow> audits)
     {
-        foreach (var audit in audits)
+        var pending = audits.ToDictionary(row => row.Id, StringComparer.Ordinal);
+        var present = ValidateExistingAuditRows(connection, transaction, pending);
+        foreach (var audit in pending.Values)
         {
+            if (present.Contains(audit.Id)) continue;
             var payload = JsonSerializer.Serialize(audit, PlatformSnapshotJsonOptions);
-            using var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = """
-                INSERT OR IGNORE INTO admin_audit_events(
-                    id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256)
-                VALUES($id,$created,$category,$outcome,$actor,$command,$correlation,$payload,$checksum);
-                """;
-            command.Parameters.AddWithValue("$id", audit.Id);
-            command.Parameters.AddWithValue("$created", audit.CreatedAt.ToString("O"));
-            command.Parameters.AddWithValue("$category", audit.Category);
-            command.Parameters.AddWithValue("$outcome", audit.Outcome);
-            command.Parameters.AddWithValue("$actor", audit.ActorId);
-            command.Parameters.AddWithValue("$command", (object?)audit.CommandId ?? DBNull.Value);
-            command.Parameters.AddWithValue("$correlation", (object?)audit.CorrelationId ?? DBNull.Value);
-            command.Parameters.AddWithValue("$payload", payload);
-            command.Parameters.AddWithValue("$checksum", Sha256(payload));
-            command.ExecuteNonQuery();
+            using var command = CreateAuditInsert(connection, transaction, audit, payload, Sha256(payload), ignore: false);
+            if (command.ExecuteNonQuery() != 1)
+                throw new InvalidDataException("审计追加未写入唯一事件");
         }
+    }
+
+    private static HashSet<string> ValidateExistingAuditRows(SqliteConnection connection,
+        SqliteTransaction? transaction, IReadOnlyDictionary<string, AdminAuditRow> pending)
+    {
+        var present = new HashSet<string>(StringComparer.Ordinal);
+        using (var existing = connection.CreateCommand())
+        {
+            existing.Transaction = transaction;
+            existing.CommandText = """
+                SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256
+                FROM admin_audit_events WHERE id IN (SELECT value FROM json_each($ids));
+                """;
+            existing.Parameters.AddWithValue("$ids", JsonSerializer.Serialize(pending.Keys));
+            using var reader = existing.ExecuteReader();
+            while (reader.Read())
+            {
+                var previous = pending[reader.GetString(0)];
+                var row = ReadValidatedAudit(reader, previous);
+                if (!ReferenceEquals(row, previous)
+                    && JsonSerializer.Serialize(previous, PlatformSnapshotJsonOptions)
+                        != JsonSerializer.Serialize(row, PlatformSnapshotJsonOptions))
+                    throw new InvalidDataException("独立审计事件同一标识存在冲突正文");
+                present.Add(row.Id);
+            }
+        }
+        return present;
     }
 
     private IReadOnlyList<L12AdminAuditView> QueryAdminAudit(string? category, int limit, string? outcome,
         string? actorId, string? commandId, string? correlationId)
     {
-        if (!_storageWritable)
-            return _data.AdminAudit
-                .Where(row => string.IsNullOrWhiteSpace(category) || row.Category == category)
-                .Where(row => string.IsNullOrWhiteSpace(outcome) || row.Outcome == outcome)
-                .Where(row => string.IsNullOrWhiteSpace(actorId) || row.ActorId == actorId)
-                .Where(row => string.IsNullOrWhiteSpace(commandId) || row.CommandId == commandId)
-                .Where(row => string.IsNullOrWhiteSpace(correlationId) || row.CorrelationId == correlationId)
-                .OrderByDescending(row => row.CreatedAt).Take(Math.Clamp(limit, 1, 1000)).Select(ToView).ToArray();
+        if (!Volatile.Read(ref _storageWritable) || !Volatile.Read(ref _committedSessionActivity).Available)
+            throw new L12PlatformStorageUnavailableException("完整审计账本当前不可读");
 
         using var connection = OpenDatabase(_databasePath, readOnly: true);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT payload_json,payload_sha256 FROM admin_audit_events
-            WHERE ($category IS NULL OR category=$category)
-              AND ($outcome IS NULL OR outcome=$outcome)
-              AND ($actor IS NULL OR actor_id=$actor)
-              AND ($command IS NULL OR command_id=$command)
-              AND ($correlation IS NULL OR correlation_id=$correlation)
-            ORDER BY created_utc DESC, id DESC LIMIT $limit;
+            SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256
+            FROM admin_audit_events
+            WHERE (id != json_extract(payload_json,'$.Id')
+                OR NOT EXISTS(SELECT 1 FROM admin_audit_migrations WHERE event_id=json_extract(payload_json,'$.Id')))
+              AND ($category IS NULL OR category=$category OR json_extract(payload_json,'$.Category')=$category)
+              AND ($outcome IS NULL OR outcome=$outcome OR json_extract(payload_json,'$.Outcome')=$outcome)
+              AND ($actor IS NULL OR actor_id=$actor OR json_extract(payload_json,'$.ActorId')=$actor)
+              AND ($command IS NULL OR command_id=$command OR json_extract(payload_json,'$.CommandId')=$command)
+              AND ($correlation IS NULL OR correlation_id=$correlation OR json_extract(payload_json,'$.CorrelationId')=$correlation)
+            ORDER BY json_extract(payload_json,'$.CreatedAt') DESC, json_extract(payload_json,'$.Id') DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$category", string.IsNullOrWhiteSpace(category) ? DBNull.Value : category);
         command.Parameters.AddWithValue("$outcome", string.IsNullOrWhiteSpace(outcome) ? DBNull.Value : outcome);
@@ -710,11 +725,7 @@ public sealed partial class L12PlatformStore
         var result = new List<L12AdminAuditView>();
         while (reader.Read())
         {
-            var payload = reader.GetString(0);
-            if (!FixedEquals(reader.GetString(1), Sha256(payload)))
-                throw new InvalidDataException("独立审计事件校验和不匹配");
-            var row = JsonSerializer.Deserialize<AdminAuditRow>(payload, PlatformSnapshotJsonOptions)
-                ?? throw new InvalidDataException("独立审计事件无法反序列化");
+            var row = ReadValidatedAudit(reader);
             result.Add(ToView(row));
         }
         return result;
@@ -727,18 +738,22 @@ public sealed partial class L12PlatformStore
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT payload_json,payload_sha256 FROM admin_audit_events
+            SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256 FROM admin_audit_events
             ORDER BY created_utc DESC, id DESC LIMIT 5000;
             """;
-        using var reader = command.ExecuteReader();
         var existing = data.AdminAudit.ToDictionary(row => row.Id, StringComparer.Ordinal);
+        // Validate every staged identity before retention can remove an old conflict.
+        ValidateExistingAuditRows(connection, transaction, existing);
+        using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            var payload = reader.GetString(0);
-            if (!FixedEquals(reader.GetString(1), Sha256(payload)))
-                throw new InvalidDataException("独立审计事件校验和不匹配");
-            var row = JsonSerializer.Deserialize<AdminAuditRow>(payload, PlatformSnapshotJsonOptions);
-            if (row is not null) existing[row.Id] = row;
+            existing.TryGetValue(reader.GetString(0), out var previous);
+            var row = ReadValidatedAudit(reader, previous);
+            if (previous is not null && !ReferenceEquals(previous, row)
+                && JsonSerializer.Serialize(previous, PlatformSnapshotJsonOptions)
+                    != JsonSerializer.Serialize(row, PlatformSnapshotJsonOptions))
+                throw new InvalidDataException("独立审计事件同一标识存在冲突正文");
+            existing[row.Id] = row;
         }
         data.AdminAudit = existing.Values.OrderByDescending(row => row.CreatedAt).Take(5000).ToList();
     }

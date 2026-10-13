@@ -199,6 +199,24 @@ async function loadNetModule() {
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')
 }
 
+async function loadGamePageRetryModule(harness) {
+  const filename = join(sourceRoot, 'GamePage.vue')
+  const source = readFileSync(filename, 'utf8')
+  const match = source.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)
+  assert.ok(match, 'GamePage must keep a script setup block')
+  const parsed = ts.createSourceFile(filename, match[1], ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const retry = parsed.statements.find(statement => ts.isFunctionDeclaration(statement)
+    && statement.name?.text === 'retryGameLoad')
+  assert.ok(retry, 'GamePage must keep retryGameLoad as a named source function')
+  globalThis.__l12GamePageRetryHarness = harness
+  return importJavaScript(compile(`
+    const { l12State, connect, send, WebSocket } = globalThis.__l12GamePageRetryHarness
+    const loadRetrying = { value: false }
+    ${retry.getText(parsed)}
+    export { loadRetrying, retryGameLoad }
+  `, filename), 'l12-game-page-retry-test')
+}
+
 async function loadRouteGuard(platform) {
   const filename = join(frontendRoot, 'src', 'router', 'index.ts')
   const source = readFileSync(filename, 'utf8')
@@ -354,6 +372,198 @@ const tests = [
     await timers.advance(8_000)
     assert.equal(count(), 2, 'a valid snapshot must cancel pending retries')
     net.disconnect()
+  }],
+  ['queued matchmaking state suppresses eager sync while a missing initial snapshot recovers after grace', async () => {
+    {
+      const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'match-initial-token' })
+      const net = await loadNetModule()
+      const connected = net.connect()
+      const socket = FakeWebSocket.instances[0]
+      sendSuccessfulHandshake(socket, 42)
+      await connected
+      const syncCount = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+      socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH1', matchId: 'match-one' })
+      assert.equal(syncCount(), 0, 'the server-queued initial room/game batch must not race an eager sync')
+      await timers.advance(799)
+      assert.equal(syncCount(), 0)
+      socket.receive({ type: 'roomState', roomCode: 'MATCH1', yourPlayerIndex: 0, started: true, players: [] })
+      socket.receive({ type: 'gameState', state: {
+        matchId: 'match-one', roomCode: 'MATCH1', revision: 1, phase: 'Main', players: [],
+      } })
+      await timers.advance(1)
+      assert.equal(syncCount(), 0, 'the queued initial game state must cancel the grace recovery')
+      net.disconnect()
+    }
+
+    {
+      const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'match-missing-token' })
+      const net = await loadNetModule()
+      const connected = net.connect()
+      const socket = FakeWebSocket.instances[0]
+      sendSuccessfulHandshake(socket, 43)
+      await connected
+      const syncCount = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+      socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH2', matchId: 'match-two' })
+      socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH2', matchId: 'match-two' })
+      assert.equal(syncCount(), 0, 'duplicate match-found notifications must remain inside one grace window')
+      await timers.advance(800)
+      assert.equal(syncCount(), 1, 'a genuinely missing initial snapshot must request authoritative state')
+      socket.receive({ type: 'roomState', roomCode: 'MATCH2', yourPlayerIndex: 0, started: true, players: [] })
+      socket.receive({ type: 'gameState', state: {
+        matchId: 'match-two', roomCode: 'MATCH2', revision: 1, phase: 'Main', players: [],
+      } })
+      await timers.advance(8_000)
+      assert.equal(syncCount(), 1, 'a recovered initial snapshot must cancel the bounded retry timer')
+      assert.equal(net.l12State.recoveryPhase, 'snapshot-acknowledged')
+      socket.receive({ type: 'gameStateDelta', matchId: 'match-two', baseRevision: 0, revision: 2,
+        changes: [{ path: ['state', 'revision'], value: 2 }] })
+      assert.equal(syncCount(), 2, 'a later bad baseline must receive a fresh recovery budget')
+      net.disconnect()
+    }
+
+    {
+      const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'match-rejected-token' })
+      const net = await loadNetModule()
+      const connected = net.connect()
+      const socket = FakeWebSocket.instances[0]
+      sendSuccessfulHandshake(socket, 48)
+      await connected
+      const syncCount = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+      socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH3', matchId: 'match-three' })
+      await timers.advance(800)
+      assert.equal(syncCount(), 1)
+      socket.receive({ type: 'matchmakingRejected', message: '匹配已撤销' })
+      await timers.advance(15_000)
+      assert.equal(syncCount(), 1, 'an authoritative rejection must cancel the missing-initial-state retry')
+      assert.equal(socket.closeCalls.length, 0)
+      assert.equal(net.l12State.recoveryPhase, 'snapshot-acknowledged')
+      assert.equal(net.l12State.notice, '匹配已撤销')
+      net.disconnect()
+    }
+  }],
+  ['permanent snapshot mismatch is bounded and falls back to a fresh connection generation', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'bounded-snapshot-token' })
+    const net = await loadNetModule()
+    const pending = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 44)
+    await pending
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 44, roomCode: 'NEVER' })
+    const syncCount = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
+    assert.equal(syncCount(), 1)
+    await timers.advance(15_000)
+    assert.equal(syncCount(), net.SNAPSHOT_RECOVERY_MAX_ATTEMPTS,
+      'snapshot recovery must issue only its fixed attempt budget')
+    assert.equal(socket.closeCalls.at(-1)?.code, 4000,
+      'exhausted snapshot recovery must replace the broken connection generation')
+    assert.equal(net.l12State.status, 'offline')
+    await timers.advance(1_000)
+    assert.equal(FakeWebSocket.instances.length, 2, 'bounded recovery must retain automatic reconnect reliability')
+    net.disconnect()
+  }],
+  ['consecutive broken generations keep reconnect backoff and preserve a queued request until recovery succeeds', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'multi-generation-token' })
+    const net = await loadNetModule()
+    const firstConnect = net.connect()
+    const first = FakeWebSocket.instances[0]
+    first.open()
+    first.receive({ type: 'session', sessionId: 'multi-1', connectionGeneration: 45,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    first.receive({ type: 'roomState', roomCode: 'MULTI1', yourPlayerIndex: 0, started: true, players: [] })
+    first.receive({ type: 'gameState', state: {
+      matchId: 'multi-match', roomCode: 'MULTI1', revision: 1, phase: 'Main', players: [],
+    } })
+    first.receive({ type: 'recoveryComplete', connectionGeneration: 45,
+      roomCode: 'MULTI1', matchId: 'multi-match', recoveryRevision: 1 })
+    await firstConnect
+    net.gameAction({ type: 'endTurn' })
+    const queuedAction = JSON.parse(first.sent.at(-1))
+    assert.equal(net.l12State.pendingAction, true)
+
+    first.receive({ type: 'gameStateDelta', matchId: 'multi-match', baseRevision: 0, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 }] })
+    await timers.advance(15_000)
+    assert.equal(first.closeCalls.at(-1)?.code, 4000)
+    assert.equal(net.l12State.status, 'offline')
+    assert.equal(net.l12State.connectionIssue, 'websocket')
+    assert.match(net.l12State.notice, /权威状态/)
+    assert.equal(net.l12State.pendingAction, true, 'bounded replacement must retain the negotiated request envelope')
+    assert.equal(net.l12State.retryCount, 1)
+
+    await timers.advance(1_000)
+    const second = FakeWebSocket.instances[1]
+    second.open()
+    second.receive({ type: 'session', sessionId: 'multi-2', connectionGeneration: 46,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    second.receive({ type: 'recoveryComplete', connectionGeneration: 46,
+      roomCode: 'MULTI1', matchId: 'multi-match', recoveryRevision: 2 })
+    await timers.advance(net.CONNECTION_HANDSHAKE_TIMEOUT_MS)
+    assert.equal(second.closeCalls.at(-1)?.code, 4000)
+    assert.equal(net.l12State.status, 'offline')
+    assert.equal(net.l12State.pendingAction, true)
+    assert.equal(net.l12State.retryCount, 2,
+      'an unsuccessful replacement generation must not reset reconnect backoff')
+    await timers.advance(1_999)
+    assert.equal(FakeWebSocket.instances.length, 2)
+    await timers.advance(1)
+
+    const third = FakeWebSocket.instances[2]
+    third.open()
+    third.receive({ type: 'session', sessionId: 'multi-3', connectionGeneration: 47,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    third.receive({ type: 'roomState', roomCode: 'MULTI1', yourPlayerIndex: 0, started: true, players: [] })
+    third.receive({ type: 'gameState', state: {
+      matchId: 'multi-match', roomCode: 'MULTI1', revision: 2, phase: 'Main', players: [],
+    } })
+    third.receive({ type: 'recoveryComplete', connectionGeneration: 47,
+      roomCode: 'MULTI1', matchId: 'multi-match', recoveryRevision: 2 })
+    await flushPromises()
+    assert.equal(net.l12State.status, 'online')
+    assert.equal(net.l12State.retryCount, 0, 'only an authoritative recovery success may reset reconnect backoff')
+    const resent = third.sent.filter(item => JSON.parse(item).type === 'gameAction')
+    assert.equal(resent.length, 1)
+    assert.deepEqual(JSON.parse(resent[0]), queuedAction)
+    third.receive({ type: 'actionRejected', requestId: queuedAction.requestId, message: '权威响应' })
+    assert.equal(net.l12State.pendingAction, false)
+
+    third.emitClose(1006, 'post-recovery network loss')
+    assert.equal(net.l12State.retryCount, 1)
+    await timers.advance(999)
+    assert.equal(FakeWebSocket.instances.length, 3)
+    await timers.advance(1)
+    assert.equal(FakeWebSocket.instances.length, 4,
+      'successful recovery must restore the first reconnect delay')
+    net.disconnect()
+  }],
+  ['GamePage retry reuses automatic connection recovery and syncs only an already healthy socket', async () => {
+    const state = { socket: null, status: 'offline', recoveryPhase: 'disconnected', notice: 'old failure' }
+    const sends = []
+    let connectCalls = 0
+    const page = await loadGamePageRetryModule({
+      l12State: state,
+      WebSocket: FakeWebSocket,
+      connect: async () => {
+        connectCalls += 1
+        state.socket = { readyState: FakeWebSocket.OPEN }
+        state.status = 'online'
+        state.recoveryPhase = 'snapshot-acknowledged'
+      },
+      send: payload => sends.push(payload),
+    })
+    await page.retryGameLoad()
+    assert.equal(connectCalls, 1)
+    assert.equal(sends.length, 0, 'a new connection already completed its authoritative recovery')
+
+    await page.retryGameLoad()
+    assert.deepEqual(sends, [{ type: 'syncState' }],
+      'an already healthy connection with a missing view may request one manual sync')
+
+    state.recoveryPhase = 'snapshot-mismatch'
+    state.notice = '权威恢复快照尚未完整到达，正在重新同步…'
+    await page.retryGameLoad()
+    assert.equal(sends.length, 1, 'manual retry must not duplicate an active baseline-recovery loop')
+    assert.equal(state.notice, '权威恢复快照尚未完整到达，正在重新同步…',
+      'a retry that cannot improve active recovery must preserve the truthful error state')
   }],
   ['verified route changes preserve authentication and never force a healthy socket to reconnect', async () => {
     installBrowserEnvironment({ 'l12-auth-token': 'route-token' })

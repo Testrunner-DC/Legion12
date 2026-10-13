@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-13-read-audit-incremental-internal",
+  "date": "2026-10-13",
+  "audience": "internal",
+  "reason": "后台只读审计在既有SQLite账本独立追加，保留事务、权限代次、迁移和完整性校验；同类HTTP消费者贯穿取消。本项不进入玩家更新日志。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.ReadAuditPersistence.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedStatisticsReads.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+}
