@@ -14,12 +14,19 @@ function subscriptionFreshnessContract(wrapper, objects) {
   const claimEnd = objects.indexOf('private bool CompleteRankedBroadcastObject(', claimStart)
   if (claimStart < 0 || claimEnd <= claimStart) return false
   const claim = objects.slice(claimStart, claimEnd)
+  const sharedStart = objects.indexOf('private static RankedBroadcastRow? FindNextRankedBroadcast(')
+  if (sharedStart < 0) return false
+  const sharedEnd = objects.indexOf('\n    private ', sharedStart + 1)
+  const shared = objects.slice(sharedStart, sharedEnd < 0 ? objects.length : sharedEnd)
   return wrapper.includes('ClaimRankedBroadcastAt(accountId, subscriptionStartedAt, DateTimeOffset.UtcNow)')
     && /ClaimRankedBroadcastObject\(accountId, subscriptionStartedAt, now,\s*RankedBroadcastRealtimeWindow\)/.test(wrapper)
-    && claim.includes('var freshFloor = normalizedNow - realtimeWindow')
-    && claim.includes('if (requestedStart < freshFloor) requestedStart = freshFloor')
-    && claim.includes('if (requestedStart > normalizedNow) requestedStart = normalizedNow')
+    && /FindNextRankedBroadcast\(unchanged, accountId, subscriptionStartedAt,\s*now, realtimeWindow\)/.test(claim)
+    && /FindNextRankedBroadcast\(latest, accountId, subscriptionStartedAt,\s*normalizedNow, realtimeWindow\)/.test(claim)
+    && shared.includes('var freshFloor = normalizedNow - realtimeWindow')
+    && shared.includes('if (requestedStart < freshFloor) requestedStart = freshFloor')
+    && shared.includes('if (requestedStart > normalizedNow) requestedStart = normalizedNow')
     && !claim.includes('pending.ClaimToken = Guid.NewGuid()')
+    && !shared.includes('pending.ClaimToken = Guid.NewGuid()')
 }
 const server = read('../服务端WebSocket/TwelveLegions/L12WebSocketServer.cs')
 const battleHub = read('src/l12/site/BattleHubPage.vue')
@@ -40,6 +47,10 @@ for (const [label, wrapper, objects] of [
   ['missing future clamp', store, broadcastObjects.replace('if (requestedStart > normalizedNow) requestedStart = normalizedNow', '')],
   ['unfinished token refresh', store, broadcastObjects.replace('var freshFloor = normalizedNow - realtimeWindow', 'pending.ClaimToken = Guid.NewGuid(); var freshFloor = normalizedNow - realtimeWindow')],
   ['missing authoritative owner', store, broadcastObjects.replace('private L12RankedBroadcastClaimView? ClaimRankedBroadcastObject(', 'private L12RankedBroadcastClaimView? DetachedClaim(')],
+  ['missing shared owner', store, broadcastObjects.replace('private static RankedBroadcastRow? FindNextRankedBroadcast(', 'private static RankedBroadcastRow? DetachedFreshness(')],
+  ['fast path bypasses freshness', store, broadcastObjects.replace('FindNextRankedBroadcast(unchanged,', 'DetachedFreshness(unchanged,')],
+  ['refreshed path bypasses freshness', store, broadcastObjects.replace('FindNextRankedBroadcast(latest,', 'DetachedFreshness(latest,')],
+  ['fast path wrong window', store, broadcastObjects.replace('now, realtimeWindow) is null', 'now, TimeSpan.Zero) is null')],
 ]) requireContract(!subscriptionFreshnessContract(wrapper, objects), `subscription guard incorrectly accepted ${label}`)
 requireContract(server.includes('ClaimRankedBroadcast(account.Id, subscriptionStartedAt)'),
   'HTTP claim endpoint must forward the optional subscription time')

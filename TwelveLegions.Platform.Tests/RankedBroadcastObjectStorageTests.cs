@@ -96,6 +96,36 @@ public sealed class RankedBroadcastObjectStorageTests(ITestOutputHelper output)
         });
     }
 
+    [Theory]
+    [InlineData(-1, true)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    public void SharedFreshnessWindowIsReevaluatedOnTheWarmProjection(int offsetSeconds, bool eligible)
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var live = store.RankedBroadcasts().Single(row => row.MatchId == "broadcast-object-live");
+            var window = (TimeSpan)typeof(L12PlatformStore).GetField("RankedBroadcastRealtimeWindow", PrivateStatic)!.GetValue(null)!;
+            // Warm a negative result without consuming a token. A cached no-op is not a TTL result.
+            Assert.Null(store.ClaimRankedBroadcastAt(viewerId, DateTimeOffset.MinValue, live.CreatedAt.Add(window).AddMinutes(1)));
+            var claim = store.ClaimRankedBroadcastAt(viewerId, subscribedAt, live.CreatedAt.Add(window).AddSeconds(offsetSeconds));
+            if (eligible) Assert.Equal(live.Id, Assert.IsType<L12RankedBroadcastClaimView>(claim).Broadcast.Id);
+            else Assert.Null(claim);
+        });
+    }
+
+    [Fact]
+    public void WarmProjectionClampsFutureSubscriptionToAuthoritativeNow()
+    {
+        InLiveBroadcast((_, store, viewerId, _) =>
+        {
+            var live = store.RankedBroadcasts().Single(row => row.MatchId == "broadcast-object-live");
+            var window = (TimeSpan)typeof(L12PlatformStore).GetField("RankedBroadcastRealtimeWindow", PrivateStatic)!.GetValue(null)!;
+            Assert.Null(store.ClaimRankedBroadcastAt(viewerId, DateTimeOffset.MinValue, live.CreatedAt.Add(window).AddMinutes(1)));
+            Assert.Null(store.ClaimRankedBroadcastAt(viewerId, live.CreatedAt.AddMinutes(1), live.CreatedAt.AddSeconds(1)));
+        });
+    }
+
     [Fact]
     public void WarmAnchorFallsBackAfterRollbackRestoresDataInstance()
     {

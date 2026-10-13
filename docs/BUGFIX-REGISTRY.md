@@ -9,6 +9,7 @@
 - 具名红绿：EmptyClaimAndIdempotentCompleteKeepTheSameCommittedRollbackBuffer原失败（重新索引），ProductUtf8PreparationDoesNotRetainAWholeDocumentBuffer原失败（完整16MiB数组）均留存；初始广播16、加强79专项通过，完整Batch1395平台失败跳过0。后补WeakReference换实例/合法摘要同代改变/孤儿引用/跨实例新播报/UTF16慢回退与最终提交级Release以本批真实回执为准。验证完整核心/对象坏内容拒绝、跨实例禁用删除、16实例唯一领取/完成、45s后不重发、commit前分配失败、两遍内容改变/部分写入回滚及完整缓存/旧格式恢复。
 - Windows合成分配：16MiB准备16833584→31256B；同二进制4MiB域8次warm308992B vs强制刷新138057248B。不是常驻内存、流量或Linux正式容量；冷读/真正写入仍可能全域工作，超大单一JSON字段/长期并发尚不能凭这些测试宣称全部OOM根治。原Batch-r1仅长PATH导致cmd看不到node，短进程PATH/原有Node24/npm入口重跑，不改全局环境或门禁。
 - 第三阶段只读核查音乐/PNG/卡图/manifest真实200/206/304与缓存头正常；未证同浏览器重复下载，immutable命中无日志，共享日志也没有host/Range区间/连接时长。保留既有退役释放保护，不增加无证缓存修复；卡背冷载2.71/2.87MB为未选压缩候选。全部脱敏证据及最终同步见D盘local-acceptance.json；未部署、不关闭线上Bug。
+- 完整Release首次7219/1402均过，但旧check-ranked-broadcast-playback只取claim正文，等价移到共享helper的时钟限制被误伤。登记原风险：必须用权威now/实际实时窗口限制客户端时间回退和未来时间，未完成token不得重发；替代合同跟随fast/latest→唯一helper调用链，保留原6破坏负例并新增4断链/错窗，另加服务端真实窗口边界/未来时间场景。原freshness夹具错猜15秒且warm使用等于两分钟的合法边界，失败保留并改为读取原两分钟常量±1秒，不更改产品规则；本批新完整Release另验，不把第一次后端绿色冒称整批成功。
 
 ## OPS-20261013-TESTRUN-BUDGET｜标准包展开已超过测试发布临时预算（明确批准）
 
