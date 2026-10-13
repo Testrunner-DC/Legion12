@@ -1182,33 +1182,33 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.SessionsReadOwn, out var authenticated, out var failure)) return failure;
             return Results.Ok(_platform.Sessions(authenticated.Account.Id, authenticated.SessionId));
         });
-        _app.MapDelete("/api/auth/sessions/current", (HttpRequest request) =>
+        _app.MapDelete("/api/auth/sessions/current", async (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
-            var result = _platform.RevokeOwnSession(authenticated, authenticated.SessionId,
-                AuditContext(request, L12Permission.SessionsRevokeOwn));
-            return SessionRevocationResponse(request, result);
+            return await OwnedSessionRevocationResponse(request, () => _platform.RevokeOwnSessionAsync(
+                authenticated, authenticated.SessionId, AuditContext(request, L12Permission.SessionsRevokeOwn),
+                request.HttpContext.RequestAborted));
         });
-        _app.MapDelete("/api/auth/sessions/{sessionId}", (HttpRequest request, string sessionId) =>
+        _app.MapDelete("/api/auth/sessions/{sessionId}", async (HttpRequest request, string sessionId) =>
         {
             if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
-            var result = _platform.RevokeOwnSession(authenticated, sessionId,
-                AuditContext(request, L12Permission.SessionsRevokeOwn));
-            return SessionRevocationResponse(request, result);
+            return await OwnedSessionRevocationResponse(request, () => _platform.RevokeOwnSessionAsync(
+                authenticated, sessionId, AuditContext(request, L12Permission.SessionsRevokeOwn),
+                request.HttpContext.RequestAborted));
         });
-        _app.MapDelete("/api/auth/sessions", (HttpRequest request) =>
+        _app.MapDelete("/api/auth/sessions", async (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
-            var result = _platform.RevokeOwnSessions(authenticated,
-                AuditContext(request, L12Permission.SessionsRevokeOwn));
-            return SessionRevocationResponse(request, result);
+            return await OwnedSessionRevocationResponse(request, () => _platform.RevokeOwnSessionsAsync(authenticated,
+                context: AuditContext(request, L12Permission.SessionsRevokeOwn),
+                cancellationToken: request.HttpContext.RequestAborted));
         });
-        _app.MapDelete("/api/auth/sessions/others", (HttpRequest request) =>
+        _app.MapDelete("/api/auth/sessions/others", async (HttpRequest request) =>
         {
             if (!TryAuthorize(request, L12Permission.SessionsRevokeOwn, out var authenticated, out var failure)) return failure;
-            var result = _platform.RevokeOtherOwnSessions(authenticated,
-                AuditContext(request, L12Permission.SessionsRevokeOwn));
-            return SessionRevocationResponse(request, result);
+            return await OwnedSessionRevocationResponse(request, () => _platform.RevokeOwnSessionsAsync(authenticated, others: true,
+                context: AuditContext(request, L12Permission.SessionsRevokeOwn),
+                cancellationToken: request.HttpContext.RequestAborted));
         });
         _app.MapGet("/api/players", (HttpRequest request, string? search) =>
         {
@@ -4954,6 +4954,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private static void LogAdminReadFailure(HttpRequest request, string component, Exception error)
         => Console.Error.WriteLine($"[{CorrelationId(request)}] admin read failed: component={component}, "
             + $"errorType={error.GetType().FullName}");
+
+    private static async Task<IResult> OwnedSessionRevocationResponse(HttpRequest request,
+        Func<Task<L12SessionRevocationResult>> operation)
+    {
+        try { return SessionRevocationResponse(request, await operation()); }
+        catch (UnauthorizedAccessException) { return Results.Unauthorized(); }
+    }
 
     private static IResult SessionRevocationResponse(HttpRequest request, L12SessionRevocationResult result)
         => result.Found

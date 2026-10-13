@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-14-concurrent-match-and-session-response",
+  "date": "2026-10-14",
+  "audience": "players",
+  "title": "并发对局与注销响应优化",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "优化多房间同时操作和结束对局的响应处理，保留操作成功确认、重复提交保护及回放恢复。",
+      "paths": ["服务端WebSocket/TwelveLegions/MatchRecorder.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs"]
+    },
+    {
+      "category": "accounts",
+      "text": "优化多位玩家同时注销及管理自己的登录设备时的响应，注销成功后会话仍立即失效；保存失败不会误报注销成功。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.SessionRevocationQueue.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    }
+  ]
+}

@@ -16,6 +16,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     };
     private readonly string _connectionString;
     private readonly Func<DateTimeOffset> _utcNow;
+    private readonly SemaphoreSlim _appendWriteGate = new(1, 1);
     private readonly ConcurrentDictionary<string, Dictionary<string, CardLocation>> _factLocationBaselines =
         new(StringComparer.OrdinalIgnoreCase);
     internal int FactLocationBaselineCount => _factLocationBaselines.Count;
@@ -244,48 +245,58 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
-        await using var connection = await OpenWriteConnectionAsync();
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
         var finalHash = engine.ComputeStateHash();
-        var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash,first_player=$first
-            WHERE match_id=$id AND ended_utc IS NULL;
-            """;
-        var completedUtc = _utcNow().ToUniversalTime().ToString("O");
-        command.Parameters.AddWithValue("$utc", completedUtc);
-        command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
-        command.Parameters.AddWithValue("$hash", finalHash);
-        command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
-        command.Parameters.AddWithValue("$id", engine.State.MatchId);
-        var changed = await command.ExecuteNonQueryAsync() == 1;
-
-        if (!changed)
+        var gateWaitStartedAt = L12PerformanceMetrics.Start();
+        await _appendWriteGate.WaitAsync();
+        try
         {
-            var existing = connection.CreateCommand();
-            existing.Transaction = transaction;
-            existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
-            existing.Parameters.AddWithValue("$id", engine.State.MatchId);
-            await using var reader = await existing.ExecuteReaderAsync();
-            if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待结束的正式对局记录");
-            var recordedWinner = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
-            var recordedHash = reader.IsDBNull(1) ? null : reader.GetString(1);
-            if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
-                || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
-                throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+            L12PerformanceMetrics.Duration("persistence.append-gate-wait", gateWaitStartedAt);
+            await using var connection = await OpenWriteConnectionAsync();
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+            var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE matches SET ended_utc=$utc,winner=$winner,final_hash=$hash,first_player=$first
+                WHERE match_id=$id AND ended_utc IS NULL;
+                """;
+            var completedUtc = _utcNow().ToUniversalTime().ToString("O");
+            command.Parameters.AddWithValue("$utc", completedUtc);
+            command.Parameters.AddWithValue("$winner", (object?)engine.State.Winner ?? DBNull.Value);
+            command.Parameters.AddWithValue("$hash", finalHash);
+            command.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
+            command.Parameters.AddWithValue("$id", engine.State.MatchId);
+            var changed = await command.ExecuteNonQueryAsync() == 1;
+
+            if (!changed)
+            {
+                var existing = connection.CreateCommand();
+                existing.Transaction = transaction;
+                existing.CommandText = "SELECT winner,final_hash,ended_utc FROM matches WHERE match_id=$id;";
+                existing.Parameters.AddWithValue("$id", engine.State.MatchId);
+                await using var reader = await existing.ExecuteReaderAsync();
+                if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待结束的正式对局记录");
+                var recordedWinner = reader.IsDBNull(0) ? (int?)null : reader.GetInt32(0);
+                var recordedHash = reader.IsDBNull(1) ? null : reader.GetString(1);
+                if (reader.IsDBNull(2) || recordedWinner != engine.State.Winner
+                    || !string.Equals(recordedHash, finalHash, StringComparison.Ordinal))
+                    throw new InvalidOperationException("重复结束请求与已记录的正式赛果冲突");
+            }
+            if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
+                await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
+            if (!string.IsNullOrWhiteSpace(tournamentId) && !string.IsNullOrWhiteSpace(tournamentMatchId)
+                && engine.State.Winner is { } tournamentWinner)
+                await UpsertTournamentResultOutboxAsync(connection, transaction, engine.State.MatchId,
+                    tournamentId, tournamentMatchId, tournamentWinner, completedUtc);
+            StorageFailureInjector?.Invoke("before-match-complete-commit");
+            await transaction.CommitAsync();
+            _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+            InvalidateAnalyticsCache();
+            return changed;
         }
-        if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
-            await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
-        if (!string.IsNullOrWhiteSpace(tournamentId) && !string.IsNullOrWhiteSpace(tournamentMatchId)
-            && engine.State.Winner is { } tournamentWinner)
-            await UpsertTournamentResultOutboxAsync(connection, transaction, engine.State.MatchId,
-                tournamentId, tournamentMatchId, tournamentWinner, completedUtc);
-        StorageFailureInjector?.Invoke("before-match-complete-commit");
-        await transaction.CommitAsync();
-        _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
-        InvalidateAnalyticsCache();
-        return changed;
+        finally
+        {
+            _appendWriteGate.Release();
+        }
     }
 
     public async Task<IReadOnlyList<L12MatchSummary>> ListMatchesAsync(int limit = 50)
@@ -725,6 +736,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10),
         reader.GetInt32(11));
 
+    // Preserve the original recorder lifetime contract. Disposing the managed
+    // gate without a holder/waiter shutdown protocol can throw after a commit.
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     private static async Task EnsureColumnAsync(SqliteConnection connection, string table, string column,

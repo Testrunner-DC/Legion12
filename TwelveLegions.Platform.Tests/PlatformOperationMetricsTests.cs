@@ -28,8 +28,9 @@ public sealed class PlatformOperationMetricsTests
         Assert.Equal("platform.phase.index-prepare",
             L12PlatformOperationMetrics.PhaseStage(L12PlatformOperationPhase.CommittedIndexPrepare));
 
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageCount);
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(40, PerformanceMetricWindow.FixedStageCount);
+        Assert.Equal(40, PerformanceMetricWindow.FixedStageNames.Distinct(StringComparer.Ordinal).Count());
+        Assert.Contains("duration.persistence.append-gate-wait", PerformanceMetricWindow.FixedStageNames);
         Assert.DoesNotContain(PerformanceMetricWindow.FixedStageNames, stage =>
             stage.Contains('{') || stage.Contains('/') || stage.Contains('\\'));
     }

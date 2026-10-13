@@ -19,13 +19,17 @@ public sealed class PerformanceMetricWindowTests
         for (var index = 0; index < 10000; index++) window.Value("synthetic-unknown-" + index, 1);
         var batch = Capture(window);
         Assert.Equal(15, PerformanceMetricWindow.LegacyFixedStageCount);
-        Assert.Equal(39, PerformanceMetricWindow.FixedStageCount);
+        Assert.Equal(40, PerformanceMetricWindow.FixedStageCount);
         Assert.Equal(PerformanceMetricWindow.FixedStageCount, batch.Series.Count);
         Assert.Equal(4, batch.Series.Sum(row => row.Count));
         Assert.Equal(10000, batch.Diagnostics.UnknownStages);
         Assert.Equal(50, Row(batch, "duration.snapshot.build").Maximum);
         Assert.Equal(1024, Row(batch, "bytes.websocket.full-payload").Maximum);
         Assert.Equal(32, Row(batch, "websocket.queue-depth").Maximum);
+        window.Duration("persistence.append-gate-wait", 7);
+        var next = Capture(window);
+        Assert.Equal(7, Row(next, "duration.persistence.append-gate-wait").Maximum);
+        Assert.Equal(10000, next.Diagnostics.UnknownStages);
     }
 
     [Fact]

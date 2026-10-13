@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261014-30ROOM-WRITE-TAIL｜同库同步写锁争用与每次注销全保存（已授权，本地专项通过）
+
+- 起点7209f1b1/原测试cda。用户直接要求方案、修复、测试部署和原方法复测；正式不部署、不改维护或业务/Bug。原真实压力assessment SHA0381C910保持，30房P95 508.79ms/max1637.27，收尾69注销仅19成功/51HTTP499，线程池pending58；cgroup294MiB且无OOM，不误诊内存耗尽。health已读committed policy，不能声称其直接等平台锁。
+- 同类查询为rg RevokeOwnSession/RevokeOwnSessions/RevokeOtherOwnSessions/RevokeSessionCore/BeginTransactionAsync/AppendAsync/CompleteAsync。四自有撤销HTTP入口改await有界128项/5ms队列，初始staged同代重验actor/active session/role/version，仍按accountId限制目标；复用ExecuteAdminTransaction一批完整Save、失败整批回滚、commit后通知与鉴权发布。管理员命令、密码/禁用等旧同步事务不迁入此队列，权限没扩大。
+- MatchRecorder跨房Append及Complete共享SemaphoreSlim真正异步准入，state/hash在等待前，事务及commit后baseline都在finally保护范围；Microsoft.Data.Sqlite的同步busy等待不再为这些热点占用每个房间工作线程。JournalV2/32检查点/哈希/事实/请求去重/runtime/outbox/耐久ack全部保持，无跨房合并事务或降低synchronous。Start/其他维护writer仍沿原路径，不冒称全面异步化。新增固定append-gate-wait指标，Legacy15不变。
+- Main统一聚焦75/75零失败跳过，receipt test-0de447b7a4584091881a7ed904cf97af，含69真实HTTP/健康读、69store单批提交、取消/过期/禁用/角色变化/外部会话/容量128/重复、失败后继续，及30房Journal恢复/重复结束、Append/Complete争用和失败放锁。原三夹具失败保留：签名/反射成员、非法http用户名、固定指标计数；均修夹具/新增目录兼容，不删产品断言。只读队列审查CLEAR；Main审查持久化早return和事务边界，完整Release/实际部署/复测尚待。
+- 新轮工具C盘pressure-30rooms-fixed-20261014逐字复用原pressure DE58A5F7/runner829D9666/guardD9A7C5E6，仍10/20/30×60s、10独立外部、2s cadence、30结束/69logout集中突发，截止/资源守卫不变。真实效果以新终态为准，本地合成不能冒称正式卡顿或流量已根治。
+- 持久化独立审查发现并排除一处新风险：没有holder/waiter关闭协议时Dispose gate可能在已commit之后令finally Release抛异常。恢复Recorder原noop生命周期，并补在途holder+waiter/Dispose/两房耐久恢复回归；不为本次新增第二套shutdown框架。源审其他边界CLEAR，受影响专项和完整门禁接续。
+- 修正后Main仅复跑受影响持久化和固定目录8/8零失败跳过，receipt test-f47174b13efa41d48dfb73586cea5579；其他同源75专项证据保持。发布前统一完整Release，不把源审或聚焦当已上线。
+
 ## OPS-20261014-TESTRUN-CACHE-GROWTH｜测试发布重复估算已有静态资源（用户长期批准）
 
 - 已实际完成：cda118d5完整7219/1478八阶段、UI356/双前端并精确推送，包1E7ECFC0/DLL3D247472真实测试部署成功。program999400407/temporary494262424/total1344608025原预算内；独立HTTP/WS/静态/DLL/围栏和正式c4/PID30347不变核验。C盘read-isolation-testrun-pressure-20261013/final-acceptance.json SHA780A621B为新终态，旧失败不覆盖。2/4/8房实际压力210后台/183命令全成功、GC0.36%/无OOM重启；只限定测试域，不关闭未验线上Bug或宣称正式根治。

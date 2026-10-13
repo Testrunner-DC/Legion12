@@ -253,238 +253,248 @@ public sealed partial class MatchRecorder
         var stateHash = engine.ComputeStateHash();
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
-        await using var connection = await OpenWriteConnectionAsync();
-        await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
-        var transactionStartedAt = L12PerformanceMetrics.Start();
-        var identityReplacements = await ReadIdentityReplacementsAsync(
-            connection, transaction, engine.State);
-        if (identityReplacements.Count > 0)
+        var gateWaitStartedAt = L12PerformanceMetrics.Start();
+        await _appendWriteGate.WaitAsync();
+        try
         {
-            commandJson = ApplyIdentityReplacements(commandJson, identityReplacements);
-            stateJson = ApplyIdentityReplacements(stateJson, identityReplacements);
-        }
-        if (journalV2) ValidateJournalV2CommandStateJson(stateJson);
-
-        var duplicate = connection.CreateCommand();
-        duplicate.Transaction = transaction;
-        duplicate.CommandText = """
-            SELECT player_index,accepted,revision,state_hash,request_id
-            FROM match_events WHERE match_id=$match AND sequence=$sequence;
-            """;
-        duplicate.Parameters.AddWithValue("$match", engine.State.MatchId);
-        duplicate.Parameters.AddWithValue("$sequence", sequence);
-        await using (var reader = await duplicate.ExecuteReaderAsync())
-        {
-            if (await reader.ReadAsync())
+            L12PerformanceMetrics.Duration("persistence.append-gate-wait", gateWaitStartedAt);
+            await using var connection = await OpenWriteConnectionAsync();
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+            var transactionStartedAt = L12PerformanceMetrics.Start();
+            var identityReplacements = await ReadIdentityReplacementsAsync(
+                connection, transaction, engine.State);
+            if (identityReplacements.Count > 0)
             {
-                var same = reader.GetInt32(0) == playerIndex
-                    && (reader.GetInt32(1) == 1) == result.Accepted
-                    && reader.GetInt64(2) == engine.State.Revision
-                    && string.Equals(reader.GetString(3), stateHash, StringComparison.Ordinal)
-                    && string.Equals(reader.IsDBNull(4) ? null : reader.GetString(4), requestId,
-                        StringComparison.Ordinal);
-                if (!same)
-                    throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
-                if (rankedSettlement is not null)
-                    await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
-                if (responsePreference is not null)
-                    await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
-                await transaction.CommitAsync();
-                engine.DiscardRecordedCommandTiming();
-                return;
+                commandJson = ApplyIdentityReplacements(commandJson, identityReplacements);
+                stateJson = ApplyIdentityReplacements(stateJson, identityReplacements);
             }
-        }
+            if (journalV2) ValidateJournalV2CommandStateJson(stateJson);
 
-        var authorityConclusion = playerIndex == -1 && result.Accepted
-                                  && IsAuthorityConclusionCommand(commandJson);
-        var recordedTiming = authorityConclusion
-            ? null : engine.TakeRecordedCommandTiming(result, validateResult: journalV2);
-        if (authorityConclusion) engine.DiscardRecordedCommandTiming();
-        if (journalV2 && !authorityConclusion && recordedTiming is null)
-            throw new InvalidOperationException("v2 对局命令缺少权威执行时刻，拒绝持久化");
-        var occurredUtc = (recordedTiming?.OccurredUtc ?? _utcNow().ToUniversalTime()).ToString("O");
+            var duplicate = connection.CreateCommand();
+            duplicate.Transaction = transaction;
+            duplicate.CommandText = """
+                SELECT player_index,accepted,revision,state_hash,request_id
+                FROM match_events WHERE match_id=$match AND sequence=$sequence;
+                """;
+            duplicate.Parameters.AddWithValue("$match", engine.State.MatchId);
+            duplicate.Parameters.AddWithValue("$sequence", sequence);
+            await using (var reader = await duplicate.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync())
+                {
+                    var same = reader.GetInt32(0) == playerIndex
+                        && (reader.GetInt32(1) == 1) == result.Accepted
+                        && reader.GetInt64(2) == engine.State.Revision
+                        && string.Equals(reader.GetString(3), stateHash, StringComparison.Ordinal)
+                        && string.Equals(reader.IsDBNull(4) ? null : reader.GetString(4), requestId,
+                            StringComparison.Ordinal);
+                    if (!same)
+                        throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
+                    if (rankedSettlement is not null)
+                        await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
+                    if (responsePreference is not null)
+                        await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
+                    await transaction.CommitAsync();
+                    engine.DiscardRecordedCommandTiming();
+                    return;
+                }
+            }
 
-        if (journalV2 && !lightweightRejection)
-        {
-            var checkpointBoundary = connection.CreateCommand();
-            checkpointBoundary.Transaction = transaction;
-            checkpointBoundary.CommandText = """
-                SELECT COALESCE(MAX(sequence),0) FROM match_state_checkpoints
+            var authorityConclusion = playerIndex == -1 && result.Accepted
+                                      && IsAuthorityConclusionCommand(commandJson);
+            var recordedTiming = authorityConclusion
+                ? null : engine.TakeRecordedCommandTiming(result, validateResult: journalV2);
+            if (authorityConclusion) engine.DiscardRecordedCommandTiming();
+            if (journalV2 && !authorityConclusion && recordedTiming is null)
+                throw new InvalidOperationException("v2 对局命令缺少权威执行时刻，拒绝持久化");
+            var occurredUtc = (recordedTiming?.OccurredUtc ?? _utcNow().ToUniversalTime()).ToString("O");
+
+            if (journalV2 && !lightweightRejection)
+            {
+                var checkpointBoundary = connection.CreateCommand();
+                checkpointBoundary.Transaction = transaction;
+                checkpointBoundary.CommandText = """
+                    SELECT COALESCE(MAX(sequence),0) FROM match_state_checkpoints
+                    WHERE match_id=$match;
+                    """;
+                checkpointBoundary.Parameters.AddWithValue("$match", engine.State.MatchId);
+                var lastCheckpointSequence = Convert.ToInt64(
+                    await checkpointBoundary.ExecuteScalarAsync());
+                writeCheckpoint = engine.State.Phase == L12Phase.GameOver
+                                  || sequence - lastCheckpointSequence >= CheckpointInterval;
+                if (writeCheckpoint)
+                {
+                    var checkpointSerializationStartedAt = L12PerformanceMetrics.Start();
+                    checkpointStateJson = engine.SerializeFullState();
+                    checkpointStateJson = ApplyIdentityReplacements(
+                        checkpointStateJson, identityReplacements);
+                    L12PerformanceMetrics.Duration("persistence.checkpoint-serialize",
+                        checkpointSerializationStartedAt);
+                    L12PerformanceMetrics.Bytes("persistence.checkpoint-json", checkpointStateJson.Length);
+                }
+            }
+
+            string? previousStateJson = null;
+            Dictionary<string, CardLocation>? previousLocations = null;
+            long lastSignalSequence;
+            if (journalV2)
+            {
+                var context = connection.CreateCommand();
+                context.Transaction = transaction;
+                context.CommandText = "SELECT last_fact_signal_sequence FROM matches WHERE match_id=$match;";
+                context.Parameters.AddWithValue("$match", engine.State.MatchId);
+                var value = await context.ExecuteScalarAsync();
+                if (value is null) throw new KeyNotFoundException("找不到待追加的正式对局记录");
+                lastSignalSequence = Convert.ToInt64(value);
+                if (!_factLocationBaselines.TryGetValue(engine.State.MatchId, out previousLocations))
+                    throw new InvalidOperationException("追加日志缺少内存事实基线，必须先完成权威恢复");
+            }
+            else
+            {
+                var context = connection.CreateCommand();
+                context.Transaction = transaction;
+                context.CommandText = """
+                    SELECT COALESCE(
+                               (SELECT state_json FROM match_events
+                                WHERE match_id=$match ORDER BY sequence DESC LIMIT 1),
+                               initial_state_json,
+                               '{}'),
+                           last_fact_signal_sequence
+                    FROM matches WHERE match_id=$match;
+                    """;
+                context.Parameters.AddWithValue("$match", engine.State.MatchId);
+                await using var reader = await context.ExecuteReaderAsync();
+                if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待追加的正式对局记录");
+                previousStateJson = reader.IsDBNull(0) ? "{}" : reader.GetString(0);
+                lastSignalSequence = reader.GetInt64(1);
+            }
+
+            var append = connection.CreateCommand();
+            append.Transaction = transaction;
+            append.CommandText = """
+                INSERT INTO match_events(match_id, sequence, received_utc, player_index, command_json, accepted,
+                                         error, revision, state_hash, state_json,request_id)
+                VALUES($id,$seq,$utc,$player,$json,$accepted,$error,$revision,$hash,$state,$requestId);
+                """;
+            append.Parameters.AddWithValue("$id", engine.State.MatchId);
+            append.Parameters.AddWithValue("$seq", sequence);
+            append.Parameters.AddWithValue("$utc", occurredUtc);
+            append.Parameters.AddWithValue("$player", playerIndex);
+            append.Parameters.AddWithValue("$json", commandJson);
+            append.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
+            append.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
+            append.Parameters.AddWithValue("$revision", engine.State.Revision);
+            append.Parameters.AddWithValue("$hash", stateHash);
+            append.Parameters.AddWithValue("$state", stateJson);
+            append.Parameters.AddWithValue("$requestId", (object?)requestId ?? DBNull.Value);
+            await append.ExecuteNonQueryAsync();
+            if (requestId is not null)
+            {
+                var request = connection.CreateCommand();
+                request.Transaction = transaction;
+                request.CommandText = """
+                    INSERT INTO match_action_requests(
+                        match_id,player_index,request_id,command_sequence,accepted,error,revision,state_hash,created_utc)
+                    VALUES($match,$player,$request,$sequence,$accepted,$error,$revision,$hash,$utc);
+                    """;
+                request.Parameters.AddWithValue("$match", engine.State.MatchId);
+                request.Parameters.AddWithValue("$player", playerIndex);
+                request.Parameters.AddWithValue("$request", requestId);
+                request.Parameters.AddWithValue("$sequence", sequence);
+                request.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
+                request.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
+                request.Parameters.AddWithValue("$revision", engine.State.Revision);
+                request.Parameters.AddWithValue("$hash", stateHash);
+                request.Parameters.AddWithValue("$utc", occurredUtc);
+                await request.ExecuteNonQueryAsync();
+            }
+            StorageFailureInjector?.Invoke(rankedRuntime is null
+                ? "after-match-command-write" : "after-ranked-command-write");
+
+            var newSignals = engine.CardFactSignals.Where(signal => signal.Sequence > lastSignalSequence).ToArray();
+            var explicitFacts = newSignals
+                .Where(signal => signal.CardInstanceId is not null)
+                .Select(signal => (signal.Kind, signal.CardInstanceId!))
+                .ToHashSet();
+            if (!lightweightRejection)
+            {
+                foreach (var fact in ExtractDeltaFacts(
+                             previousLocations ?? CaptureLocations(previousStateJson!), engine.State, sequence, occurredUtc,
+                             explicitFacts))
+                    await InsertFactAsync(connection, transaction, fact);
+            }
+
+            foreach (var signal in newSignals)
+            {
+                await InsertFactAsync(connection, transaction, new PendingCardFact(
+                    engine.State.MatchId, $"signal:{signal.Sequence}", signal.Kind, sequence, signal.Revision,
+                    signal.Round, signal.Turn, signal.Phase, occurredUtc,
+                    signal.PlayerIndex, null, signal.CardId, signal.CardInstanceId, null, null,
+                    signal.SourceZone, signal.DestinationZone, signal.Amount, signal.Coverage,
+                    ApplyIdentityReplacements(
+                        JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>()),
+                        identityReplacements)));
+            }
+
+            var update = connection.CreateCommand();
+            update.Transaction = transaction;
+            update.CommandText = """
+                UPDATE matches SET first_player=$first,last_fact_signal_sequence=$signal
                 WHERE match_id=$match;
                 """;
-            checkpointBoundary.Parameters.AddWithValue("$match", engine.State.MatchId);
-            var lastCheckpointSequence = Convert.ToInt64(
-                await checkpointBoundary.ExecuteScalarAsync());
-            writeCheckpoint = engine.State.Phase == L12Phase.GameOver
-                              || sequence - lastCheckpointSequence >= CheckpointInterval;
-            if (writeCheckpoint)
-            {
-                var checkpointSerializationStartedAt = L12PerformanceMetrics.Start();
-                checkpointStateJson = engine.SerializeFullState();
-                checkpointStateJson = ApplyIdentityReplacements(
-                    checkpointStateJson, identityReplacements);
-                L12PerformanceMetrics.Duration("persistence.checkpoint-serialize",
-                    checkpointSerializationStartedAt);
-                L12PerformanceMetrics.Bytes("persistence.checkpoint-json", checkpointStateJson.Length);
-            }
-        }
-
-        string? previousStateJson = null;
-        Dictionary<string, CardLocation>? previousLocations = null;
-        long lastSignalSequence;
-        if (journalV2)
-        {
-            var context = connection.CreateCommand();
-            context.Transaction = transaction;
-            context.CommandText = "SELECT last_fact_signal_sequence FROM matches WHERE match_id=$match;";
-            context.Parameters.AddWithValue("$match", engine.State.MatchId);
-            var value = await context.ExecuteScalarAsync();
-            if (value is null) throw new KeyNotFoundException("找不到待追加的正式对局记录");
-            lastSignalSequence = Convert.ToInt64(value);
-            if (!_factLocationBaselines.TryGetValue(engine.State.MatchId, out previousLocations))
-                throw new InvalidOperationException("追加日志缺少内存事实基线，必须先完成权威恢复");
-        }
-        else
-        {
-            var context = connection.CreateCommand();
-            context.Transaction = transaction;
-            context.CommandText = """
-                SELECT COALESCE(
-                           (SELECT state_json FROM match_events
-                            WHERE match_id=$match ORDER BY sequence DESC LIMIT 1),
-                           initial_state_json,
-                           '{}'),
-                       last_fact_signal_sequence
-                FROM matches WHERE match_id=$match;
-                """;
-            context.Parameters.AddWithValue("$match", engine.State.MatchId);
-            await using var reader = await context.ExecuteReaderAsync();
-            if (!await reader.ReadAsync()) throw new KeyNotFoundException("找不到待追加的正式对局记录");
-            previousStateJson = reader.IsDBNull(0) ? "{}" : reader.GetString(0);
-            lastSignalSequence = reader.GetInt64(1);
-        }
-
-        var append = connection.CreateCommand();
-        append.Transaction = transaction;
-        append.CommandText = """
-            INSERT INTO match_events(match_id, sequence, received_utc, player_index, command_json, accepted,
-                                     error, revision, state_hash, state_json,request_id)
-            VALUES($id,$seq,$utc,$player,$json,$accepted,$error,$revision,$hash,$state,$requestId);
-            """;
-        append.Parameters.AddWithValue("$id", engine.State.MatchId);
-        append.Parameters.AddWithValue("$seq", sequence);
-        append.Parameters.AddWithValue("$utc", occurredUtc);
-        append.Parameters.AddWithValue("$player", playerIndex);
-        append.Parameters.AddWithValue("$json", commandJson);
-        append.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
-        append.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
-        append.Parameters.AddWithValue("$revision", engine.State.Revision);
-        append.Parameters.AddWithValue("$hash", stateHash);
-        append.Parameters.AddWithValue("$state", stateJson);
-        append.Parameters.AddWithValue("$requestId", (object?)requestId ?? DBNull.Value);
-        await append.ExecuteNonQueryAsync();
-        if (requestId is not null)
-        {
-            var request = connection.CreateCommand();
-            request.Transaction = transaction;
-            request.CommandText = """
-                INSERT INTO match_action_requests(
-                    match_id,player_index,request_id,command_sequence,accepted,error,revision,state_hash,created_utc)
-                VALUES($match,$player,$request,$sequence,$accepted,$error,$revision,$hash,$utc);
-                """;
-            request.Parameters.AddWithValue("$match", engine.State.MatchId);
-            request.Parameters.AddWithValue("$player", playerIndex);
-            request.Parameters.AddWithValue("$request", requestId);
-            request.Parameters.AddWithValue("$sequence", sequence);
-            request.Parameters.AddWithValue("$accepted", result.Accepted ? 1 : 0);
-            request.Parameters.AddWithValue("$error", (object?)result.Error ?? DBNull.Value);
-            request.Parameters.AddWithValue("$revision", engine.State.Revision);
-            request.Parameters.AddWithValue("$hash", stateHash);
-            request.Parameters.AddWithValue("$utc", occurredUtc);
-            await request.ExecuteNonQueryAsync();
-        }
-        StorageFailureInjector?.Invoke(rankedRuntime is null
-            ? "after-match-command-write" : "after-ranked-command-write");
-
-        var newSignals = engine.CardFactSignals.Where(signal => signal.Sequence > lastSignalSequence).ToArray();
-        var explicitFacts = newSignals
-            .Where(signal => signal.CardInstanceId is not null)
-            .Select(signal => (signal.Kind, signal.CardInstanceId!))
-            .ToHashSet();
-        if (!lightweightRejection)
-        {
-            foreach (var fact in ExtractDeltaFacts(
-                         previousLocations ?? CaptureLocations(previousStateJson!), engine.State, sequence, occurredUtc,
-                         explicitFacts))
-                await InsertFactAsync(connection, transaction, fact);
-        }
-
-        foreach (var signal in newSignals)
-        {
-            await InsertFactAsync(connection, transaction, new PendingCardFact(
-                engine.State.MatchId, $"signal:{signal.Sequence}", signal.Kind, sequence, signal.Revision,
-                signal.Round, signal.Turn, signal.Phase, occurredUtc,
-                signal.PlayerIndex, null, signal.CardId, signal.CardInstanceId, null, null,
-                signal.SourceZone, signal.DestinationZone, signal.Amount, signal.Coverage,
-                ApplyIdentityReplacements(
-                    JsonSerializer.Serialize(signal.Data ?? new Dictionary<string, string>()),
-                    identityReplacements)));
-        }
-
-        var update = connection.CreateCommand();
-        update.Transaction = transaction;
-        update.CommandText = """
-            UPDATE matches SET first_player=$first,last_fact_signal_sequence=$signal
-            WHERE match_id=$match;
-            """;
-        update.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
-        update.Parameters.AddWithValue("$signal", newSignals.Length == 0
-            ? lastSignalSequence : newSignals.Max(signal => signal.Sequence));
-        update.Parameters.AddWithValue("$match", engine.State.MatchId);
-        await update.ExecuteNonQueryAsync();
-        await TouchSandboxRecordingAsync(connection, transaction, engine.State.MatchId, occurredUtc);
-        StorageFailureInjector?.Invoke(rankedRuntime is null
-            ? "after-match-fact-write" : "after-ranked-fact-write");
-
-        if (rankedRuntime is not null)
-            await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
-        if (rankedSettlement is not null)
-        {
-            await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
-            if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
-                await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
-        }
-        if (responsePreference is not null)
-            await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
-        if (journalV2)
-        {
-            await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,
-                identityReplacements);
+            update.Parameters.AddWithValue("$first", engine.State.FirstPlayer);
+            update.Parameters.AddWithValue("$signal", newSignals.Length == 0
+                ? lastSignalSequence : newSignals.Max(signal => signal.Sequence));
+            update.Parameters.AddWithValue("$match", engine.State.MatchId);
+            await update.ExecuteNonQueryAsync();
+            await TouchSandboxRecordingAsync(connection, transaction, engine.State.MatchId, occurredUtc);
             StorageFailureInjector?.Invoke(rankedRuntime is null
-                ? "after-match-action-event-write" : "after-ranked-action-event-write");
-            if (writeCheckpoint)
+                ? "after-match-fact-write" : "after-ranked-fact-write");
+
+            if (rankedRuntime is not null)
+                await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
+            if (rankedSettlement is not null)
             {
-                await PersistCheckpointAsync(connection, transaction, engine, sequence, stateHash,
-                    checkpointStateJson!, occurredUtc);
+                await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
+                if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
+                    await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
+            }
+            if (responsePreference is not null)
+                await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
+            if (journalV2)
+            {
+                await PersistActionEventsAsync(connection, transaction, engine, sequence, occurredUtc,
+                    identityReplacements);
                 StorageFailureInjector?.Invoke(rankedRuntime is null
-                    ? "after-match-checkpoint-write" : "after-ranked-checkpoint-write");
+                    ? "after-match-action-event-write" : "after-ranked-action-event-write");
+                if (writeCheckpoint)
+                {
+                    await PersistCheckpointAsync(connection, transaction, engine, sequence, stateHash,
+                        checkpointStateJson!, occurredUtc);
+                    StorageFailureInjector?.Invoke(rankedRuntime is null
+                        ? "after-match-checkpoint-write" : "after-ranked-checkpoint-write");
+                }
+            }
+            StorageFailureInjector?.Invoke(rankedSettlement is null
+                ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
+                : "before-ranked-final-commit");
+            await transaction.CommitAsync();
+            L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
+            if (rankedSettlement is not null) InvalidateAnalyticsCache();
+            L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);
+            if (journalV2)
+            {
+                if (rankedSettlement is null)
+                    _factLocationBaselines[engine.State.MatchId] = CaptureLocations(engine.State);
+                else
+                    _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
+                engine.MarkEventsPersisted(engine.State.EventSequence);
+                engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
             }
         }
-        StorageFailureInjector?.Invoke(rankedSettlement is null
-            ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
-            : "before-ranked-final-commit");
-        await transaction.CommitAsync();
-        L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
-        if (rankedSettlement is not null) InvalidateAnalyticsCache();
-        L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);
-        if (journalV2)
+        finally
         {
-            if (rankedSettlement is null)
-                _factLocationBaselines[engine.State.MatchId] = CaptureLocations(engine.State);
-            else
-                _factLocationBaselines.TryRemove(engine.State.MatchId, out _);
-            engine.MarkEventsPersisted(engine.State.EventSequence);
-            engine.MarkCardFactsPersisted(engine.CardFactSignalSequence);
+            _appendWriteGate.Release();
         }
     }
 
