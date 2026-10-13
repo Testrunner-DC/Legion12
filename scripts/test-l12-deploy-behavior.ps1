@@ -105,6 +105,67 @@ try {
     if (-not $?) { throw 'Deployment retry behavior regression failed.' }
     . $targetHelper
 
+    # Load only the pure Git binding function, never the mutating deployment body.
+    $bindingTokens = $null
+    $bindingErrors = $null
+    $bindingAst = [Management.Automation.Language.Parser]::ParseFile($windowsDeploy,
+        [ref]$bindingTokens, [ref]$bindingErrors)
+    Assert-True ($bindingErrors.Count -eq 0) 'Deployment wrapper parse failed.'
+    $bindingFunction = @($bindingAst.FindAll({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq 'Test-L12AcceptedApplicationBinding'
+    }, $false))
+    Assert-True ($bindingFunction.Count -eq 1) 'Application binding function missing or ambiguous.'
+    Invoke-Expression $bindingFunction[0].Extent.Text
+    $bindingRoot = Join-Path $fixtureRoot 'application-binding'
+    New-Item -ItemType Directory -Path $bindingRoot | Out-Null
+    & git -C $bindingRoot init -q
+    if ($LASTEXITCODE -ne 0) { throw 'Binding fixture Git initialization failed.' }
+    & git -C $bindingRoot config user.name 'L12 synthetic verification'
+    & git -C $bindingRoot config user.email 'synthetic@example.invalid'
+    $bindingPaths = @('docs/HANDOFF.md','docs/TASK-LEDGER.md','docs/BUGFIX-REGISTRY.md',
+        'ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1',
+        'server.cs','opcgpro-vue/src/net.ts','release-ledger/entry.json','global.json',
+        'appsettings.json','ops/server/deploy-l12-release.sh','docs/ARCHITECTURE-LOCK.md')
+    foreach ($bindingPath in $bindingPaths) {
+        $file = Join-Path $bindingRoot $bindingPath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null
+        Write-Utf8NoBom $file 'base'
+    }
+    & git -C $bindingRoot add -- .
+    & git -C $bindingRoot commit -qm 'synthetic base'
+    if ($LASTEXITCODE -ne 0) { throw 'Binding fixture base commit failed.' }
+    $bindingBase = (& git -C $bindingRoot rev-parse HEAD).Trim()
+    Assert-True (Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingBase) 'Exact accepted application rejected.'
+    $bindingCases = 1
+    foreach ($bindingPath in $bindingPaths) {
+        Write-Utf8NoBom (Join-Path $bindingRoot $bindingPath) 'changed'
+        & git -C $bindingRoot add -- $bindingPath
+        & git -C $bindingRoot commit -qm 'synthetic scoped change'
+        if ($LASTEXITCODE -ne 0) { throw 'Binding fixture scoped commit failed.' }
+        $bindingHead = (& git -C $bindingRoot rev-parse HEAD).Trim()
+        $expectedBinding = $bindingPath -cin @('docs/HANDOFF.md','docs/TASK-LEDGER.md',
+            'docs/BUGFIX-REGISTRY.md','ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1')
+        Assert-True ((Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingHead) -eq $expectedBinding) "Wrong application binding: $bindingPath"
+        Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $bindingHead $bindingBase)) 'Non-ancestor binding accepted.'
+        $bindingCases += 2
+        # Return the synthetic file to its base content without reset or checkout.
+        Write-Utf8NoBom (Join-Path $bindingRoot $bindingPath) 'base'
+        & git -C $bindingRoot add -- $bindingPath
+        & git -C $bindingRoot commit -qm 'synthetic restore'
+        if ($LASTEXITCODE -ne 0) { throw 'Binding fixture restore commit failed.' }
+    }
+    foreach ($badCommit in @('', 'HEAD', ('0' * 40), ($bindingBase + ';echo'))) {
+        Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $badCommit $bindingBase)) 'Malformed/unknown binding accepted.'
+        $bindingCases++
+    }
+    & git -C $bindingRoot rm -q -- docs/HANDOFF.md
+    & git -C $bindingRoot commit -qm 'synthetic deletion'
+    $bindingHead = (& git -C $bindingRoot rev-parse HEAD).Trim()
+    Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingHead)) 'Record deletion accepted as metadata-only.'
+    $bindingCases++
+    Write-Host "Accepted application package binding: $bindingCases cases passed; no remote operations."
+
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
     $drainConsumerSource = Get-Content -LiteralPath $drainConsumer -Raw
     $webAssetsActivatorSource = Get-Content -LiteralPath $webAssetsActivator -Raw

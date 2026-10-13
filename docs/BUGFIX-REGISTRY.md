@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## DEPLOY-20261014-ACCEPTED-PACKAGE｜纯记录提交错误阻止原应用包复用
+
+- 用户本批已授权正式部署。旧Windows入口要求manifest.commit==HEAD，尽管e2完整7219/1505/八阶段且已测试，后续e1三记录提交仍迫使重复构建。共享修复仅允许e2为HEAD祖先，候选至HEAD每个净差异必须是具名三记录/当前Windows入口及它的验收脚本的M；A/D/rename、应用、前端、ledger、配置、服务器工具、未知路径均拒绝。HEAD仍clean且精确origin/main；原包commit/SHA/更新区间和外部停服许可/最新DB-WAL保护不改。
+- 新30真实Git判例覆盖同提交、12路径各正反、4坏SHA及删除，独立只读审查CLEAR；其余标准故障/数据库证据沿受影响验证，复用e2完整应用门禁。不把工具提交冒称上线应用，禁止盲重试或旧数据库恢复；正式现场是否切换以本次实际回执为准。
+
 ## PERF-20261014-30ROOM-WRITE-TAIL｜同库同步写锁争用与每次注销全保存（已授权，本地专项通过）
 
 - 最新e2cda3e5完整7219规则/1505平台及八阶段通过并真实测试上线，Main独立核验通过；C trace/batch-closeout.json与assessment SHA81C1F3CC保留真实未通过。1479权威命令/870外部读取/70注销/69逻辑删成功，30房P95401.78/max906.79ms，仍5终局+1leave确认超时，不能以账本30终局完整或资源271守卫无触发掩盖。后验active/WS/online0、5inactive保留，正式c4/30347不变/线上Bug写0。

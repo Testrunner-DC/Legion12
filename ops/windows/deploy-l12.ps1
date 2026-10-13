@@ -168,6 +168,36 @@ function Resolve-L12ProductionBaseCommit {
     return $baseCommit.ToLowerInvariant()
 }
 
+function Test-L12AcceptedApplicationBinding {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryRoot,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ApplicationCommit,
+        [Parameter(Mandatory)][AllowEmptyString()][string]$ToolCommit
+    )
+    if ($ApplicationCommit -cnotmatch '^[0-9a-f]{40}$' -or
+        $ToolCommit -cnotmatch '^[0-9a-f]{40}$') { return $false }
+    & git -C $RepositoryRoot merge-base --is-ancestor $ApplicationCommit $ToolCommit 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    if ($ApplicationCommit -ceq $ToolCommit) { return $true }
+    # The artifact keeps its original application identity and full Release proof.
+    # Only these existing records and this locally tested Windows wrapper may
+    # differ. No application, server-side tool, schema, config, ledger or asset
+    # can be silently deployed from an older tree. HEAD still equals origin/main.
+    $nonPayloadPaths = @(
+        'docs/HANDOFF.md', 'docs/TASK-LEDGER.md', 'docs/BUGFIX-REGISTRY.md',
+        'ops/windows/deploy-l12.ps1', 'scripts/test-l12-deploy-behavior.ps1'
+    )
+    $changes = @(& git -C $RepositoryRoot diff --name-status --no-renames --no-ext-diff `
+        $ApplicationCommit $ToolCommit -- 2>$null)
+    if ($LASTEXITCODE -ne 0) { return $false }
+    foreach ($change in $changes) {
+        $fields = $change -split "`t"
+        if ($fields.Count -ne 2 -or $fields[0] -cne 'M' -or
+            $fields[1] -cnotin $nonPayloadPaths) { return $false }
+    }
+    return $true
+}
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $targetHelper = Join-Path $PSScriptRoot "L12DeployTarget.ps1"
 . $targetHelper
@@ -254,7 +284,13 @@ try {
     }
     $commit = [string]$manifest.commit
     if ($commit -notmatch '^[0-9a-f]{40}$') { throw "发布包提交格式无效。" }
-    if (-not $Rollback -and $commit -ne $toolCommit) { throw "deploy 发布包提交与当前 main 不一致" }
+    if (-not $Rollback -and -not (Test-L12AcceptedApplicationBinding -RepositoryRoot $repoRoot `
+        -ApplicationCommit $commit -ToolCommit $toolCommit)) {
+        throw "deploy 发布包与当前 main 的应用源码不一致，或不是已知祖先；拒绝复用。"
+    }
+    if (-not $Rollback -and $commit -cne $toolCommit) {
+        Write-Host "[L12 部署] 复用完整验收的同一应用包：$commit；后续仅具名记录/Windows发布工具，工具HEAD：$toolCommit"
+    }
     if ($Rollback) {
         & git merge-base --is-ancestor $commit $productionBaseCommit
         if ($LASTEXITCODE -ne 0) {
