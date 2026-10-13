@@ -51,6 +51,8 @@ git push origin main
 
 ## 维护者：发布远端已验证版本
 
+维护者统一执行[部署标准：四步完成](DEPLOY-HK.md#部署标准四步完成)。以下仅为命令与边界参考，不是必须再跑一遍的独立流程；整批授权有效范围、集中提问、证据复用、维护解除和协作者已发布后的处理以该标准为准。
+
 部署电脑须具备 Git、PowerShell、Node.js、npm、tar、SSH，以及仓库 `global.json` 指定的 .NET SDK。`L12_CARD_ASSET_ROOT`（如设置）必须指向当前完整的 schema v3 卡图目录，清单应包含 324 张可玩卡和 42 张展示版本；不得为了通过门禁改用历史 schema v2 图库。先核对工具和 SDK：
 
 ```powershell
@@ -73,19 +75,19 @@ git rev-parse HEAD
 git rev-parse origin/main
 ```
 
-工作区必须干净，且两个提交号必须相同；否则停止。发布前运行 Release 门禁：
+工作区必须干净，且两个提交号必须相同；否则先保全并处理差异。应用候选尚无有效的提交级Release证据时运行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-l12-change.ps1 -Level Release
 ```
 
-通过后，用标准入口发布：
+已有同一提交／包的完整有效证据时直接复用，不再手工重跑。通过后，用标准入口发布：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1
 ```
 
-当根分区容量已触发警戒时，不能继续把运行包和完整备份堆在 `/opt`。新机已核验独立、持久、可写的 `/www` 分区；本批使用固定受管制品根：
+制品根依据本批实际容量和挂载结果选择，不沿用历史“本批”结论。默认 `/opt`；若该根容量不足且实际已核验独立、持久、可写的 `/www` 分区满足标准预算，可显式选择受管根：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -Server root@154.201.80.91 -ServerArtifactRoot /www/legion12
@@ -95,7 +97,7 @@ SSH仍由现有可信配置校验；`ServerArtifactRoot`只接受`/opt`或`/www/
 
 外置模式只新增`incoming/staging/releases/runtime-backups/card-assets`受管目录，不移动`/opt/legion12-runtime`和已有程序、备份、测试资源。稳定入口仍是`/opt/legion12-test`，相同哈希卡图可继续引用原`/opt`缓存。备份先写`.partial`，完成压缩流校验和SHA256后原子发布；已有文件或软链目标一律拒绝覆盖。跨根的程序保留总量及资源引用按`SERVER-STORAGE-MAINTENANCE.md`人工核对，不能分别保留两套无限累积。
 
-该脚本会再次同步远端、拒绝脏工作区或 `HEAD` 与 `origin/main` 不一致的版本，生成或复用经过校验的运行包，校验归档哈希后上传，并由服务器原子切换 release。它不会授权发布本身，也不应用于绕过本节门禁。只想验证传输与服务器前置条件而不切换版本时，可使用：
+该脚本负责实际切换前所需的Git／包／现场保护，复用已验收包；不要在其外再加一串相同检查。它不授予新的发布权限，执行的是用户已授权的批次。只想验证传输与服务器前置条件而不切换版本时，可使用：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -DryRun
@@ -103,7 +105,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 -DryRun
 
 ## 上线验收与记录
 
-部署脚本完成不等于验收完成。维护者应确认：
+部署脚本完成不等于独立验收完成。下列检查合并为标准第三阶段的一次验收，不逐项创建审批任务：
 
 - 公网主页和 `/health` 可访问，且 `/health` 返回的版本身份与本次部署提交一致；不要把文档中的历史提交号当作现场依据。
 - `wss://legion-12.com/ws` 的 WebSocket 探针通过。
