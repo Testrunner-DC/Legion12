@@ -2,6 +2,8 @@
 
 ## PERF-20261014-30ROOM-WRITE-TAIL｜同库同步写锁争用与每次注销全保存（已授权，本地专项通过）
 
+- 最新e2cda3e5完整7219规则/1505平台及八阶段通过并真实测试上线，Main独立核验通过；C trace/batch-closeout.json与assessment SHA81C1F3CC保留真实未通过。1479权威命令/870外部读取/70注销/69逻辑删成功，30房P95401.78/max906.79ms，仍5终局+1leave确认超时，不能以账本30终局完整或资源271守卫无触发掩盖。后验active/WS/online0、5inactive保留，正式c4/30347不变/线上Bug写0。
+- 最后只读完整路径复核：工具先装同ID waiter；终局给请求者ID且force full，GameOver leave先roomLeft后本次presence。未找到确定漏发/错配；Complete已计原39目录total最大429.55ms，发送调用23.27ms不涵盖FIFO/出站驻留及客户端。下一定位仅固定脱敏里程碑/被动短迟到窗，失败仍保留、不重试或放宽3s。新的39V2兼容和已部署presence治理通过，不再把6个剩余端到端超时归旧工具或全盘归供应商。
 - 实际7b全7219/1496八阶段/标准测试上线和独立通过，final压力1425成功命令/870读、30 P95372.49/max743.48、70注销成功、delta0错/guard0。但新的同requestId4终局和32离房超时仍真实存在，不能再称纯旧工具误判；auth/me3请求1.253s未分段，不能归因平台锁或供应商。新指标54样本GC0.70%/30采样段0.795%、pending最高1，证据final/assessment SHA B07208BC；4inactive保留/正式未动。
 - 剩余扫描NotifyPresenceChanged/PresenceSnapshotMessage/SendManyAsync/leaveRoom/disconnect/CompleteAsync：每leave与disconnect都全局按在线账号生成不可替换个性化presence，突发平方级扇出已证；Complete共享gate但旧persistence.total只计Append，26ms socket.send不含排队/Complete/解析，不能据此排除阻塞。补有界presence合并及生命周期、最新投影/隐私/并发/异常保护；Complete计入原total/transaction而不添V2 stage，39持久名序与validator仍严格。工具增加固定消息类型字节/cleanup与Server-Timing数值三段，不改压力/请求/截止；完整验收和真实部署复测待新包，不将理论降幅当实际收益。
 - 限定补丁Main独立源审/64实际专项test-39f0f0ce和11最终受影响test-f11298ef通过，首CS1525括号编译RED test-995dda7a保留。25ms单worker、target128/global支配、mid-emit request不丢、异常原批合回等后续request才试、Stop取消delay并等待emit、Stop后目标不枚举、多次释放/重启代际；真实WS双方关系/方向与epoch最新完整投影保留。固定39目录未变，socket/game事件可靠队列未混作可替换presence，正式/Bug写0；下一新包与真实trace回执为验收终态。
