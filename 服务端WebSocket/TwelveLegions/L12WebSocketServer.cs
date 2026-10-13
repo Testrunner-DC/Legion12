@@ -54,6 +54,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private Task? _rankedClockWatchdogTask;
     private readonly TimeSpan _sandboxReplayMaintenanceInterval;
     private readonly Func<DateTimeOffset> _seasonActivationUtcNow;
+    private readonly L12PresenceRefreshCoalescer _presenceRefreshCoalescer;
     private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
     private Task? _sandboxReplayMaintenanceTask;
     private WebApplication? _app;
@@ -87,6 +88,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             ? maintenanceInterval : TimeSpan.FromMinutes(5);
         _storageSnapshot = storageSnapshot ?? (() => L12ServerStorageMonitor.Read());
         _seasonActivationUtcNow = seasonActivationUtcNow ?? (() => DateTimeOffset.UtcNow);
+        _presenceRefreshCoalescer = new L12PresenceRefreshCoalescer(
+            FlushPresenceRefreshAsync,
+            onEmitFailure: error => Console.Error.WriteLine($"在线状态合并刷新失败：{error.GetType().Name}"));
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
@@ -94,6 +98,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     public async Task StartAsync(int port)
     {
+        if (!_presenceRefreshCoalescer.Start())
+            throw new InvalidOperationException("在线状态刷新器正在停止或已释放，不能启动服务");
         var host = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
         if (string.IsNullOrWhiteSpace(host)) host = "0.0.0.0";
         var builder = WebApplication.CreateSlimBuilder();
@@ -3882,6 +3888,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     public async Task StopAsync()
     {
+        await _presenceRefreshCoalescer.StopAsync();
         await StopSeasonActivationCoordinatorAsync();
         await StopRulesContentTransitionAsync();
         await StopOperationsTransitionAsync();
@@ -5860,6 +5867,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        await _presenceRefreshCoalescer.DisposeAsync();
         await StopSeasonActivationCoordinatorAsync();
         await StopRulesContentTransitionAsync();
         await StopSandboxReplayMaintenanceAsync();

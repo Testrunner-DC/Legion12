@@ -2,6 +2,9 @@
 
 ## 2026-10-14 当前｜30房长尾/突发写修复后重测（仅测试授权）
 
+- 7b368a1c完整7219规则/1496平台零失败跳过、8阶段通过且精确推送，标准测试部署/Main独立包内DLL+静态+HTTP/WS通过，PID61775，正式c4/PID30347不动。修正工具真实复测1425/1425命令成功、870读全200、满10/20/30且每房play/attack/10外部人，30 P95372.49/max743.48ms；70注销成功/守卫不触发。但4终局+32leave超时，30阶段3个auth/me约1.253s；wholeGC0.70%/30采样段0.795%/线程池pending最高1，后验active/WS/online0、4inactive房保留。C盘final目录assessment SHA B07208BC，整体仍NOT_FULLY_ACCEPTED。
+- 同轮独立复核确认新超时不再是旧工具误分类：leave/断开各触全局完整个性化presence扇出，集中退出存在平方级重复；源码原因已确定但本轮旧汇总未计presence，不把它冒称全部超时唯一原因。批准范围内补有界25ms全局/针对集合并，128针对溢出安全转全局、最新个性化full/关键确认/初次hello不改，生命周期Stop/Start/Dispose需回归。Main补Complete到既有persistence.total/transaction（39V2名序不动，新total含Append+Complete不直接比较旧avg），C trace工具补固定类型全字节及Server-Timing/header/body数值；无新增请求/负载/阈值。最终专项/完整新包/标准测试部署/同负载复测继续，原失败不覆盖，不需再问普通授权。
+- presence4文件代理租约已结束/Main接管；Main修默认lambda括号、停止预检、启动失败关闭，异常日志仅类型不含内容，真WS测试双方最新pending/outgoing/incoming。实际64专项test-39f0f0ce及最终11 test-f11298ef零失败跳过；首编译RED test-995dda7a保留。Main源审完成，单worker/target128/global优先/发射中追加/失败等后续新请求/停止等待在途/释放/重启代际受保护。下一统一新干净Release和trace同负载，不把本地绿写成收尾已根治。
 - 5ea3ee07实际完整Release7219规则/1494平台零失败跳过、8阶段通过并精确推送，标准测试部署成功/PID55307；正式c4/PID30347/重启0不动。原方法复测70注销全成功/守卫无停止、30房命令P95405.74ms（旧508.79）、max957.23ms（旧1637.27）；870读全200。整体仍completed-with-errors，不宣称根治：一次合法天地异变拒绝，20阶段19/20进攻覆盖，收尾6+28错误；后验活动/WS/online0、6inactive房保留。证据C盘pressure-30rooms-fixed-20261014/assessment.json SHA874C58DE，原件不覆盖。
 - 本轮诊断分清工具重复cleanup sync与产品指标回归。同requestId首次终局full已为确认，重复sync/换端重投会额外全房full并折叠错误；限定改工具等待，不放宽3s/10s或串行化30突发。天地异变只按本人已暴露libraryTop/兵种选合法军团，不改规则。新40固定项破坏旧V2 ordinal，实际ContentMismatch16；全测试指标root6742行、旧39项6741/无available1、新5ea/40行均0。撤新增计时项且保留异步gate，还原39逐项契约，99专项及49归档回归通过；冻结名序RED test-257c88e保留，warm夹具独占句柄RED test-cf26f426保留/关闭后复验test-73ba76e通过。新候选完整Release/标准测试部署/修正工具复测接续；旧5ea不能当完整接受。
 - 用户已批准方案、实现、测试服部署及原方法复测；正式不动。当前Main实现四自有会话撤销异步有界合批，复用既有完整事务/回滚/committed发布和提交后通知，不新建会话数据库或降低鉴权。128 outstanding/5ms准入窗口；一只读代理核对MatchRecorder热点，构建Main串行。

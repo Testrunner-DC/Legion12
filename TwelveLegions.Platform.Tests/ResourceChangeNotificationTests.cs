@@ -56,6 +56,22 @@ public sealed class ResourceChangeNotificationTests
             Assert.True(senderChange["revision"]!.GetValue<long>() > 0);
             Assert.True(recipientChange["revision"]!.GetValue<long>() > 0);
 
+            // The coalesced full snapshot must reflect the committed relationship,
+            // not merely deliver a friends invalidation or an older queued hello.
+            var senderPresence = await ReceiveUntilAsync(senderSocket, "presenceSnapshot", "presence",
+                message => message["items"]!.AsArray().Any(item =>
+                    item?["accountId"]?.GetValue<string>() == recipient.Account!.Id
+                    && item["friendStatus"]?.GetValue<string>() == "pending"
+                    && item["friendDirection"]?.GetValue<string>() == "outgoing"));
+            var recipientPresence = await ReceiveUntilAsync(recipientSocket, "presenceSnapshot", "presence",
+                message => message["items"]!.AsArray().Any(item =>
+                    item?["accountId"]?.GetValue<string>() == sender.Account!.Id
+                    && item["friendStatus"]?.GetValue<string>() == "pending"
+                    && item["friendDirection"]?.GetValue<string>() == "incoming"));
+            Assert.Equal(senderPresence["epoch"]!.GetValue<string>(), recipientPresence["epoch"]!.GetValue<string>());
+            Assert.True(senderPresence["revision"]!.GetValue<long>() > 0);
+            Assert.True(recipientPresence["revision"]!.GetValue<long>() > 0);
+
             using var overviewRequest = Authorized(HttpMethod.Get, "/api/friends/overview", recipient.Token!);
             using var overviewResponse = await client.SendAsync(overviewRequest);
             Assert.Equal(HttpStatusCode.OK, overviewResponse.StatusCode);
@@ -186,7 +202,7 @@ public sealed class ResourceChangeNotificationTests
     }
 
     private static async Task<JsonObject> ReceiveUntilAsync(ClientWebSocket socket, string type,
-        string? resource = null)
+        string? resource = null, Func<JsonObject, bool>? matches = null)
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var buffer = new byte[32 * 1024];
@@ -204,6 +220,7 @@ public sealed class ResourceChangeNotificationTests
             var message = JsonNode.Parse(Encoding.UTF8.GetString(stream.ToArray()))!.AsObject();
             if (message["type"]?.GetValue<string>() != type) continue;
             if (resource is not null && message["resource"]?.GetValue<string>() != resource) continue;
+            if (matches is not null && !matches(message)) continue;
             return message;
         }
     }

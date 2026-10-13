@@ -2,6 +2,9 @@
 
 ## PERF-20261014-30ROOM-WRITE-TAIL｜同库同步写锁争用与每次注销全保存（已授权，本地专项通过）
 
+- 实际7b全7219/1496八阶段/标准测试上线和独立通过，final压力1425成功命令/870读、30 P95372.49/max743.48、70注销成功、delta0错/guard0。但新的同requestId4终局和32离房超时仍真实存在，不能再称纯旧工具误判；auth/me3请求1.253s未分段，不能归因平台锁或供应商。新指标54样本GC0.70%/30采样段0.795%、pending最高1，证据final/assessment SHA B07208BC；4inactive保留/正式未动。
+- 剩余扫描NotifyPresenceChanged/PresenceSnapshotMessage/SendManyAsync/leaveRoom/disconnect/CompleteAsync：每leave与disconnect都全局按在线账号生成不可替换个性化presence，突发平方级扇出已证；Complete共享gate但旧persistence.total只计Append，26ms socket.send不含排队/Complete/解析，不能据此排除阻塞。补有界presence合并及生命周期、最新投影/隐私/并发/异常保护；Complete计入原total/transaction而不添V2 stage，39持久名序与validator仍严格。工具增加固定消息类型字节/cleanup与Server-Timing数值三段，不改压力/请求/截止；完整验收和真实部署复测待新包，不将理论降幅当实际收益。
+- 限定补丁Main独立源审/64实际专项test-39f0f0ce和11最终受影响test-f11298ef通过，首CS1525括号编译RED test-995dda7a保留。25ms单worker、target128/global支配、mid-emit request不丢、异常原批合回等后续request才试、Stop取消delay并等待emit、Stop后目标不枚举、多次释放/重启代际；真实WS双方关系/方向与epoch最新完整投影保留。固定39目录未变，socket/game事件可靠队列未混作可替换presence，正式/Bug写0；下一新包与真实trace回执为验收终态。
 - 真实5ea测试上线/压力已执行，旧文下方“未发布”为历史：7219/1494完整零失败跳过；70注销成功、30房P95405.74/max957.23、870读全200/守卫无停止，仍整体未完全接受，fixed目录assessment SHA874C58DE保存。不改正式/维护或关Bug。
 - 全路径核查发现新指标归档回归：V2阶段名不入行、按Sorted39序号，新增第40项导致旧root校验失败；实测16次ContentMismatch，完整测试root旧39样本6741+无available1、新40/5ea0。只撤新增等待项和两计时调用，保留异步gate，不删/迁旧日志、不放宽validator。新增冻结39名序（旧版RED）、跨提交旧root追加且原字节不变、40行负例；99原相关专项test-4c3014ed与最终49归档test-73ba76e通过，warm夹具首次独占句柄失败test-cf26f426保持。将固定名序视作V2格式契约，未来扩展须具名新版本兼容，不能仅修改计数。
 - 工具共因独立核对：cleanup未按requestId消费首次投降full，反而sync全房并再试另一端，使错误折叠且重复full；引擎终局强制full就是耐久确认，实际28leave超时不等于28服务端未执行。限定工具改为首次同ID full/reject、阶段错误、原3s与30并发保持；天地异变拒绝是正确规则，选牌只排除本人已暴露牌库顶部同兵种，不改卡效。原对照结果保存，修正后方法差异明示，不用它冒称字节完全相同或减负收益。

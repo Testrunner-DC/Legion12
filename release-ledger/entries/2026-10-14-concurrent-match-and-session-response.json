@@ -14,6 +14,11 @@
       "category": "accounts",
       "text": "优化多位玩家同时注销及管理自己的登录设备时的响应，注销成功后会话仍立即失效；保存失败不会误报注销成功。",
       "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.SessionRevocationQueue.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "合并多人进出房间、断线时的重复在线状态刷新，仍发送最新完整状态，不改变对局操作、终局和离房确认。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PresenceRefreshCoalescer.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs"]
     }
   ]
 }

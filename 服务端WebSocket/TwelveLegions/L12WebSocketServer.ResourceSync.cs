@@ -93,14 +93,18 @@ public sealed partial class L12WebSocketServer
     private void NotifyPresenceChanged(IEnumerable<string>? accountIds = null)
     {
         var revision = Interlocked.Increment(ref _presenceResourceRevision);
-        var targets = accountIds is null
-            ? _activeAccountSockets.Keys.ToArray()
-            : accountIds.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        _presenceRefreshCoalescer.Request(revision, accountIds);
+    }
+
+    private Task FlushPresenceRefreshAsync(L12PresenceRefreshBatch batch,
+        CancellationToken cancellationToken)
+    {
+        var targets = batch.AllAccounts ? _activeAccountSockets.Keys.ToArray() : batch.AccountIds;
         var messages = new List<OutgoingMessage>();
         foreach (var accountId in targets)
             if (_activeAccountSockets.TryGetValue(accountId, out var sessionId))
-                messages.Add(PresenceSnapshotMessage(sessionId, accountId, revision));
-        _ = SendManyAsync(messages, CancellationToken.None);
+                messages.Add(PresenceSnapshotMessage(sessionId, accountId, batch.Revision));
+        return SendManyAsync(messages, cancellationToken);
     }
 
     private void NotifyAccountResourceChanged(string resource, IEnumerable<string> accountIds)

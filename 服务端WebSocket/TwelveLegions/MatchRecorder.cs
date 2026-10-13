@@ -245,12 +245,15 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     {
         if (engine.State.Phase != L12Phase.GameOver)
             throw new InvalidOperationException("只能结束已经进入 GameOver 的正式对局记录");
+        var completionStartedAt = L12PerformanceMetrics.Start();
+        long? completionTransactionStartedAt = null;
         var finalHash = engine.ComputeStateHash();
         await _appendWriteGate.WaitAsync();
         try
         {
             await using var connection = await OpenWriteConnectionAsync();
             await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync();
+            completionTransactionStartedAt = L12PerformanceMetrics.Start();
             var command = connection.CreateCommand();
             command.Transaction = transaction;
             command.CommandText = """
@@ -293,6 +296,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         }
         finally
         {
+            // Reuse the persisted V2 catalog; total includes async admission and
+            // Complete as well as Append, so terminal tails are no longer invisible.
+            if (completionTransactionStartedAt is { } transactionStartedAt)
+                L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
+            L12PerformanceMetrics.Duration("persistence.total", completionStartedAt);
             _appendWriteGate.Release();
         }
     }
