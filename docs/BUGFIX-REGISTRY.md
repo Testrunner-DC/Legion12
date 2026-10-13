@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261014-TESTRUN-CACHE-GROWTH｜测试发布重复估算已有静态资源（用户长期批准）
+
+- 真实标准e619发布停服前拒绝program1153590291>1GiB，总1401412548<1.5GiB。两服仍c4、PID15476/30347、重启0、围栏无；已上传包和激活测试路径/reload Nginx，不能称远端操作0。C盘read-isolation-testrun-pressure-20261013/test-deployment.log原失败保留，D盘local-acceptance.json DAE2BD5E对应性能批已完整7219/1478八阶段验收并推送，不是已上线。
+- 根因：release_layout_bytes第三值把完整production/testrun assets及所有hydrate再次算新增，实际install_web_assets_tree会复用等价现存目标；真实同包SHA证明已有128779470B，新缺3400562B，另非assets hydrate25410418B误入cache。仅第三值改为缺目标逻辑增长；release全部路径+hydrate前两值仍完整，两个缺公开路径各计一次，现存逐size/SHA相等才0，根/父/叶链接或类型/坏内容/逃逸/重复拒绝。
+- 用户已明确长期批准该计算修正，不重复询问；四预算/算式和包与HEAD绑定保持。此前祖先包复用提案被审批拒绝且未应用，不走旁路。同类扫描：release_layout_bytes/missing_web_cache_bytes/install_web_assets_tree及hydrate契约、存储投影/常量/冷热点与损坏路径；只server脚本和原行为专项，无业务/规则源改变。
+- 执行差异保留：Windows初轮python3入口、Python3.12 tarstream TextIOWrapper seekable和Windows原生symlink权限三失败记录均保留。实际函数改为bounded byte readline严格UTF8；Windows link负例为明确lstat故障注入而非虚称原生。真实服务器独立owned/tmp合成10场景全过，含原生root/parent/leaf symlink，成功清除仅合成夹具，正式及测试业务写入0；证据C盘linux-growth-guard-proof.json，实际函数SHAacf6cd47。
+- 最终tools Batch/新提交标准Release/测试部署与压力回执接续，不能用只读审查或上述合成当线上已部署；原13预算边界和完整保全故障测试不删，未知/PINNED/失败/当前/回退保留逻辑不变。
+- 最终serverFCA04C64/testE997E244；完整原部署行为专项r4退出0，冷热/冲突/路径+13原边界及隔离、target pin、rollback、post-success保护收敛通过；剩余记录映射Batch退出0、账本195项通过。后续新干净提交标准Release保持，不复用祖先包越过HEAD绑定。Linux10原生证明与Windowslstat故障注入区分记录，均不是上线压力结果。
+
 ## PERF-20261013-READ-AUDIT-ISOLATION｜纯读全域保存/首包与赛事卡锁/播报孤儿轮询（用户批准，本地修复验收中）
 
 - 原诊断367D1133和新现场F1BD5477保留；用户已批准本批，下面“修复待决定”只表示当时历史。基线f56df0d6/已验产品47be9c30，实际正式c4f7499，生产写入/部署/维护/Bug关闭0。

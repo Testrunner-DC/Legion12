@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-13 接续｜e619性能批已验同步，测试部署预算计算修正获长期批准
+
+- e619fbf26e2c349e56a768eaa5e798264e251c11完整Release7219规则/1478平台零失败跳过、8阶段，UI356/双前端、包CC6EB9C4/DLL68FE91AC，origin/main精确读回。实际local-acceptance.json DAE2BD5E；原失败及最终proof计数回执保持，预算仅省可选重复TRX，没有跳过测试。
+- 标准测试部署先上传/受管路径激活并reload Nginx，随后停服前拒绝program1.15GB>1GiB；两原PID/版本仍c4，无切换/重启/blocked。同包真实cache诊断：128779470B已有等价，3400562B真正缺；旧计算还把非assets hydrate25410418B算进cache。正式服务/数据/维护不动，不继续旧版性能采样。
+- 用户已明确长期批准此类重复计量修正并要求不重复询问；DEPLOY-HK固定范围。只修server布局第三增长值及对应实际函数回归，四预算及包/HEAD绑定不变，Main统一工具新包标准Release。拟议祖先包复用被审批拒绝且未应用，不走旁路。
+- C盘read-isolation-testrun-pressure-20261013已有固定2/4/8房、16新合成玩家/后台mix、合法prompt/空mulligan/Main endTurn、精确临时账号清理及资源守卫。独立审查CLEAR，本机替身过；真实压力尚未执行，强制sync负载不能当自然full/delta比例。问题单独挂起，其余继续。
+- 工具最终serverFCA04C64/testE997E244，Main完整test-deployment-growth-focused-r4退出0：实际布局冷热/部分/坏内容/路径和13旧预算、隔离/回退/保全收敛通过；独立源复核CLEAR，真实Linux10/10含原生链接proofacf6cd47。剩余规则/长期授权/内部日志映射Batch退出0，195账本通过。Main冻结工具提交并跑新标准Release/测试切换；Windows三失败均保留，不安装Linux或提权。
+
 ## 2026-10-13 当前实施｜读隔离与播报修复，验收后部署测试服并压测（正式不动）
 
 - 用户已明确推进这批性能修复，并追加线上更卡反馈。Main实际21:31:05只读正式仍c4f7499、维护false/PID30347/重启0；最近15分钟GC暂停141166ms/15.77%，5次保存均4.13s、483次rollback均560ms，WS发送均0.014ms/队列最多5。新现场回执D盘admin-gameplay-isolation-20261013/fresh-production-lag-r1.json（F1BD5477）；不能据快速发送否认GC下的整进程卡顿。

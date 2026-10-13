@@ -256,10 +256,12 @@ try {
         'storage cleanup retained failed release evidence:',
         'storage cleanup refused: release may be incomplete or ownership is unknown:',
         '(( uncertain == 0 )) || return 1',
-        'newWebTwoPrefixes=${new_web_growth}',
+        'newWebMissing=${new_web_growth}',
         'accounting=logical',
         'release_logical + hydrate_logical',
-        'production_web + testrun_web + hydrate_logical',
+        'tarfile.open(archive, "r|gz")',
+        'new_web_cache_missing += missing_target_bytes',
+        'existing_sha256(target, metadata) != source_digest',
         'storage cleanup refused: failure receipt enumeration failed',
         'storage cleanup refused: failure receipt is partial, unsafe, or unowned:',
         'storage cleanup refused: failure receipt is incomplete or cannot be parsed exactly once:',
@@ -275,6 +277,160 @@ try {
     )) {
         Assert-True ($dailySource.Contains($contract)) "Missing minimal testrun retention contract: $contract"
     }
+
+    # Execute the actual release-layout projection against cold, hot, partial,
+    # conflicting, and unsafe cache trees. This locks the projection to the
+    # exact path/type/content decisions made before the service can be stopped.
+    $layoutFunction = [regex]::Match($dailySource, '(?ms)^release_layout_bytes\(\) \{\r?\n.*?^\}')
+    Assert-True ($layoutFunction.Success) "Actual release layout projection function is missing."
+    $layoutProbe = Join-Path $fixture "actual-release-layout-bytes.sh"
+    $layoutProbePreamble = @'
+set -eu
+static_web_assets_dir="$2"
+layout_python="$3"
+python3() { "$layout_python" "$@"; }
+'@
+    Write-Utf8NoBom $layoutProbe (($layoutProbePreamble, ($layoutFunction.Value -replace "`r", ''), 'release_layout_bytes "$1"') -join "`n")
+
+    $layoutRoot = Join-Path $fixture "release-layout-root"
+    $layoutProductionAssets = Join-Path $layoutRoot "opcgpro-vue\dist\assets"
+    $layoutTestrunAssets = Join-Path $layoutRoot "opcgpro-vue\dist-testrun\assets"
+    New-Item -ItemType Directory -Path $layoutProductionAssets, $layoutTestrunAssets, (Join-Path $layoutRoot "publish") -Force | Out-Null
+    $layoutSharedSource = Join-Path $layoutProductionAssets "shared.js"
+    $layoutProductionOnlySource = Join-Path $layoutProductionAssets "production.js"
+    $layoutTestrunOnlySource = Join-Path $layoutTestrunAssets "testrun.js"
+    $layoutNonAssetSource = Join-Path $layoutRoot "opcgpro-vue\dist\robots.txt"
+    $layoutManifest = Join-Path $layoutRoot "opcgpro-vue\testrun-shared-files.txt"
+    Write-Utf8NoBom $layoutSharedSource "shared-asset"
+    Write-Utf8NoBom $layoutProductionOnlySource "production-only"
+    Write-Utf8NoBom $layoutTestrunOnlySource "testrun-only"
+    Write-Utf8NoBom $layoutNonAssetSource "non-asset-hydrate"
+    Write-Utf8NoBom (Join-Path $layoutRoot "publish\GrandUMIServer.dll") "release-body"
+    Write-Utf8NoBom $layoutManifest "assets/shared.js`nrobots.txt`n"
+    $layoutArchive = Join-Path $fixture "release-layout.tar.gz"
+    & $tar -czf $layoutArchive -C $layoutRoot .
+    Assert-True ($LASTEXITCODE -eq 0) "Release layout fixture archive creation failed."
+
+    [int64]$layoutReleaseBytes = (Get-ChildItem -LiteralPath $layoutRoot -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    [int64]$layoutSharedBytes = (Get-Item -LiteralPath $layoutSharedSource).Length
+    [int64]$layoutProductionOnlyBytes = (Get-Item -LiteralPath $layoutProductionOnlySource).Length
+    [int64]$layoutTestrunOnlyBytes = (Get-Item -LiteralPath $layoutTestrunOnlySource).Length
+    [int64]$layoutNonAssetBytes = (Get-Item -LiteralPath $layoutNonAssetSource).Length
+    [int64]$layoutHydrateBytes = $layoutSharedBytes + $layoutNonAssetBytes
+    [int64]$layoutColdWebBytes = (2 * $layoutSharedBytes) + $layoutProductionOnlyBytes + $layoutTestrunOnlyBytes
+
+    $populateHotLayoutCache = {
+        param([string]$CacheRoot)
+        $productionCache = Join-Path $CacheRoot "assets"
+        $testrunCache = Join-Path $CacheRoot "testrun\assets"
+        New-Item -ItemType Directory -Path $productionCache, $testrunCache -Force | Out-Null
+        Copy-Item -LiteralPath $layoutSharedSource -Destination (Join-Path $productionCache "shared.js")
+        Copy-Item -LiteralPath $layoutProductionOnlySource -Destination (Join-Path $productionCache "production.js")
+        Copy-Item -LiteralPath $layoutSharedSource -Destination (Join-Path $testrunCache "shared.js")
+        Copy-Item -LiteralPath $layoutTestrunOnlySource -Destination (Join-Path $testrunCache "testrun.js")
+    }
+    $invokeLayoutProjection = {
+        param([string]$Archive, [string]$CacheRoot)
+        Invoke-NativeCapture $shell @((ConvertTo-MsysPath $layoutProbe), (ConvertTo-MsysPath $Archive), (ConvertTo-MsysPath $CacheRoot), (ConvertTo-MsysPath $python))
+    }
+
+    # Portable fault injection executes the actual lstat rejection branches even
+    # where Windows denies symlink creation. Native Linux symlinks are separately
+    # covered by the real-host preflight proof; do not call this a native-link test.
+    $layoutMetadataDriver = Join-Path $fixture "layout-link-metadata-driver.py"
+    Write-Utf8NoBom $layoutMetadataDriver @'
+import os, stat, sys
+fault = os.path.normcase(os.path.abspath(sys.argv[1]))
+sys.argv = ["-"] + sys.argv[3:]
+original_lstat = os.lstat
+def fault_lstat(path, *args, **kwargs):
+    metadata = original_lstat(path, *args, **kwargs)
+    if os.path.normcase(os.path.abspath(path)) == fault:
+        values = list(metadata)
+        values[0] = stat.S_IFLNK | 0o777
+        return os.stat_result(values)
+    return metadata
+os.lstat = fault_lstat
+exec(compile(sys.stdin.read(), "actual-release-layout-with-lstat-fault", "exec"))
+'@
+    $invokeLayoutLinkMetadataFault = {
+        param([string]$CacheRoot, [string]$FaultPath)
+        $ownedRoot = [IO.Path]::GetFullPath($fixture).TrimEnd('\', '/') + [IO.Path]::DirectorySeparatorChar
+        Assert-True ([IO.Path]::GetFullPath($FaultPath).StartsWith($ownedRoot, [StringComparison]::OrdinalIgnoreCase)) "lstat fault target escapes owned fixture."
+        $prefix = @'
+set -eu
+static_web_assets_dir="$2"
+layout_python="$3"
+layout_driver="$4"
+layout_fault="$5"
+python3() { "$layout_python" "$layout_driver" "$layout_fault" "$@"; }
+'@
+        $probe = Join-Path $fixture "actual-release-layout-link-metadata.sh"
+        Write-Utf8NoBom $probe (($prefix, ($layoutFunction.Value -replace "`r", ''), 'release_layout_bytes "$1"') -join "`n")
+        Invoke-NativeCapture $shell @((ConvertTo-MsysPath $probe), (ConvertTo-MsysPath $layoutArchive), (ConvertTo-MsysPath $CacheRoot),
+            (ConvertTo-MsysPath $python), (ConvertTo-MsysPath $layoutMetadataDriver), (ConvertTo-MsysPath $FaultPath))
+    }
+
+    $layoutColdCache = Join-Path $fixture "layout-cache-cold"
+    New-Item -ItemType Directory -Path $layoutColdCache -Force | Out-Null
+    $layoutCold = & $invokeLayoutProjection $layoutArchive $layoutColdCache
+    Assert-True ($layoutCold.ExitCode -eq 0) "Cold-cache release projection failed: $($layoutCold.Output)"
+    Assert-True ($layoutCold.Output.Trim() -eq "$($layoutReleaseBytes + $layoutHydrateBytes) $layoutHydrateBytes $layoutColdWebBytes") "Cold-cache projection did not count each install pathname or all logical hydration: $($layoutCold.Output)"
+
+    $layoutHotCache = Join-Path $fixture "layout-cache-hot"
+    & $populateHotLayoutCache $layoutHotCache
+    $layoutHot = & $invokeLayoutProjection $layoutArchive $layoutHotCache
+    Assert-True ($layoutHot.ExitCode -eq 0) "Hot-cache release projection failed: $($layoutHot.Output)"
+    Assert-True ($layoutHot.Output.Trim() -eq "$($layoutReleaseBytes + $layoutHydrateBytes) $layoutHydrateBytes 0") "SHA-identical hot-cache files were counted as new growth: $($layoutHot.Output)"
+
+    $layoutPartialCache = Join-Path $fixture "layout-cache-partial"
+    & $populateHotLayoutCache $layoutPartialCache
+    Remove-Item -LiteralPath (Join-Path $layoutPartialCache "assets\shared.js"), (Join-Path $layoutPartialCache "testrun\assets\shared.js") -Force
+    $layoutPartial = & $invokeLayoutProjection $layoutArchive $layoutPartialCache
+    Assert-True ($layoutPartial.ExitCode -eq 0) "Partial-cache release projection failed: $($layoutPartial.Output)"
+    Assert-True ($layoutPartial.Output.Trim() -eq "$($layoutReleaseBytes + $layoutHydrateBytes) $layoutHydrateBytes $($layoutSharedBytes * 2)") "Hydrated hard-link source was not counted once for each missing public pathname: $($layoutPartial.Output)"
+
+    $layoutConflictCache = Join-Path $fixture "layout-cache-conflict"
+    & $populateHotLayoutCache $layoutConflictCache
+    Write-Utf8NoBom (Join-Path $layoutConflictCache "assets\production.js") "PRODUCTION-ONLY"
+    Assert-True ((Get-Item -LiteralPath (Join-Path $layoutConflictCache "assets\production.js")).Length -eq $layoutProductionOnlyBytes) "Same-size conflict fixture changed size."
+    $layoutConflict = & $invokeLayoutProjection $layoutArchive $layoutConflictCache
+    Assert-True ($layoutConflict.ExitCode -ne 0 -and $layoutConflict.Output.Contains("shared web cache target conflicts")) "Same-size different-content cache target did not fail closed: $($layoutConflict.Output)"
+
+    $layoutDirectoryCache = Join-Path $fixture "layout-cache-leaf-directory"
+    & $populateHotLayoutCache $layoutDirectoryCache
+    Remove-Item -LiteralPath (Join-Path $layoutDirectoryCache "assets\production.js") -Force
+    New-Item -ItemType Directory -Path (Join-Path $layoutDirectoryCache "assets\production.js") | Out-Null
+    $layoutDirectory = & $invokeLayoutProjection $layoutArchive $layoutDirectoryCache
+    Assert-True ($layoutDirectory.ExitCode -ne 0 -and $layoutDirectory.Output.Contains("shared web cache target is unsafe")) "Directory cache leaf did not fail closed: $($layoutDirectory.Output)"
+
+    $layoutLeafLinkCache = Join-Path $fixture "layout-cache-leaf-link"
+    & $populateHotLayoutCache $layoutLeafLinkCache
+    $layoutLeafLink = Join-Path $layoutLeafLinkCache "assets\production.js"
+    $layoutLeafLinkResult = & $invokeLayoutLinkMetadataFault $layoutLeafLinkCache $layoutLeafLink
+    Assert-True ($layoutLeafLinkResult.ExitCode -ne 0 -and $layoutLeafLinkResult.Output.Contains("shared web cache target is unsafe")) "Symlink cache leaf did not fail closed: $($layoutLeafLinkResult.Output)"
+
+    $layoutParentLinkCache = Join-Path $fixture "layout-cache-parent-link"
+    & $populateHotLayoutCache $layoutParentLinkCache
+    $layoutParentLinkResult = & $invokeLayoutLinkMetadataFault $layoutParentLinkCache (Join-Path $layoutParentLinkCache "assets")
+    Assert-True ($layoutParentLinkResult.ExitCode -ne 0 -and $layoutParentLinkResult.Output.Contains("shared web cache parent is unsafe")) "Symlink cache parent did not fail closed: $($layoutParentLinkResult.Output)"
+
+    foreach ($badManifest in @(
+        @{ Name = "escape"; Body = "../escape.js`n"; Expected = "unsafe testrun shared-file path" },
+        @{ Name = "duplicate"; Body = "assets/shared.js`nassets/shared.js`n"; Expected = "duplicate testrun shared-file path" }
+    )) {
+        $badLayoutRoot = Join-Path $fixture "release-layout-$($badManifest.Name)"
+        Copy-Item -LiteralPath $layoutRoot -Destination $badLayoutRoot -Recurse
+        Write-Utf8NoBom (Join-Path $badLayoutRoot "opcgpro-vue\testrun-shared-files.txt") $badManifest.Body
+        $badLayoutArchive = Join-Path $fixture "release-layout-$($badManifest.Name).tar.gz"
+        & $tar -czf $badLayoutArchive -C $badLayoutRoot .
+        Assert-True ($LASTEXITCODE -eq 0) "Bad-manifest layout fixture archive creation failed for '$($badManifest.Name)'."
+        $badLayoutCache = Join-Path $fixture "layout-cache-bad-$($badManifest.Name)"
+        New-Item -ItemType Directory -Path $badLayoutCache | Out-Null
+        $badLayoutResult = & $invokeLayoutProjection $badLayoutArchive $badLayoutCache
+        Assert-True ($badLayoutResult.ExitCode -ne 0 -and $badLayoutResult.Output.Contains($badManifest.Expected)) "Bad manifest '$($badManifest.Name)' did not fail closed: $($badLayoutResult.Output)"
+    }
+    Write-Host "[L12 testrun deploy behavior] actual release-layout cold/hot/partial/content/path safety projection passed."
 
     # Execute the actual budget function and its actual four constants, not a
     # copied arithmetic implementation. Only byte enumeration is synthetic.
@@ -655,7 +811,7 @@ exit 0
                 L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](256MB + 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
             }; Reason = "total storage budget exceeds 1.5 GiB" },
-            @{ Name = "near-1gib-new-two-prefix-web"; Values = @{
+            @{ Name = "near-1gib-new-web-missing"; Values = @{
                 L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1GB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "2"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
             }; Reason = "program budget exceeds 1 GiB" },

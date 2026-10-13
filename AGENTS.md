@@ -2,6 +2,12 @@
 
 These rules apply to every change in this repository.
 
+## Permanent execution principles (user update 2026-10-13)
+
+- Every diagnostic or verification action must answer a concrete unresolved question or validate an affected risk. Do not repeat unchanged-version production sampling, whole-project scans or still-valid same-source checks merely for completeness. Old-version observations are not evidence that a local optimization worked; deploy the accepted candidate to the authorized isolated test environment and measure a real bounded workload. Necessary version, identity and availability checks for a cutover/shared-host safety guard are not performance-benefit claims.
+- Deployment and Bug closure are fixed workflows, not repeatedly reinvented plans. Fix a recurring shared cause, encode its regression and update the existing procedure before the next attempt. Reuse batch-wide and standing authorization for ordinary in-scope steps; do not ask again for command parameters, receipt names, retries proven before cutover or the same approved calculation correction. Consolidate materially new trust, scope or destructive-data risks into one decision; never interpret this rule as permission to bypass safety review or remove integrity protection.
+- Bug closure uses the existing dedicated queue workflow: original scenario/ruling, named evidence, exact deployed version and one preview/apply/readback sequence. Do not reopen the same work without new evidence, repeatedly ask the user to remember a player's report, or equate a merely related topic with an exact duplicate. Record accepted closures and bounded unreproduced/rejected reasons instead of indefinitely recycling verified items.
+
 ## Permanent visual baseline
 
 - Unless the user explicitly requests a typography exception, all rendered interface text uses the shared Chinese sans-serif (黑体) font stack; distinguish hierarchy with font weight and existing size, not decorative, serif, or monospace families. Text baked into card images and logos is not restyled.

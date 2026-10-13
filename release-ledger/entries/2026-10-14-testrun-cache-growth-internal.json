@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-14-testrun-cache-growth-internal",
+  "date": "2026-10-14",
+  "audience": "internal",
+  "reason": "测试发布只按实际缺失的两前缀缓存路径估算增长，现存目标必须大小与SHA完全一致；保留逻辑水合计量、四预算、隔离及包提交绑定，不进入玩家更新日志。",
+  "paths": ["ops/server/deploy-l12-testrun-release.sh"]
+}

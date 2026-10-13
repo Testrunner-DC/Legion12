@@ -183,53 +183,194 @@ archive_unpacked_bytes() {
 
 release_layout_bytes() {
   local archive="$1"
-  python3 - "$archive" <<'PY'
+  python3 - "$archive" "$static_web_assets_dir" <<'PY'
+import hashlib
+import os
+import stat
 import tarfile
 import sys
+from pathlib import PurePosixPath
 
-archive = sys.argv[1]
-files = {}
-members = {}
-with tarfile.open(archive, "r:gz") as bundle:
-    for member in bundle.getmembers():
-        name = member.name
-        while name.startswith("./"):
-            name = name[2:]
-        name = name.rstrip("/")
-        members[name] = member
-        if member.isfile():
-            files[name] = member.size
-    manifest_name = "opcgpro-vue/testrun-shared-files.txt"
-    member = members[manifest_name]
-    raw_manifest = bundle.extractfile(member).read().decode("utf-8", "strict")
-
-release_logical = sum(files.values())
+archive, cache_root = sys.argv[1:]
+manifest_name = "opcgpro-vue/testrun-shared-files.txt"
 production_prefix = "opcgpro-vue/dist/assets/"
 testrun_prefix = "opcgpro-vue/dist-testrun/assets/"
-production_web = sum(size for name, size in files.items() if name.startswith(production_prefix))
-testrun_web = sum(size for name, size in files.items() if name.startswith(testrun_prefix))
-hydrate_logical = 0
-seen = set()
-for raw in raw_manifest.splitlines():
-    relative = raw.rstrip("\r")
-    if (not relative or relative.startswith("/") or "\\" in relative
-            or "//" in relative or relative in (".", "..")
-            or "/./" in f"/{relative}/" or "/../" in f"/{relative}/"):
+files = {}
+asset_sources = {}
+manifest_entries = None
+release_logical = 0
+
+def normalized_member_name(raw):
+    if "\\" in raw or "\x00" in raw:
+        raise SystemExit("archive contains an unsafe member name in budget projection")
+    while raw.startswith("./"):
+        raw = raw[2:]
+    raw = raw.rstrip("/")
+    if not raw or raw == ".":
+        return None
+    path = PurePosixPath(raw)
+    if (path.is_absolute() or ".." in path.parts or "." in path.parts
+            or any(any(ord(character) < 32 or ord(character) == 127 for character in part)
+                   for part in path.parts)):
+        raise SystemExit("archive path escapes its root in budget projection")
+    return path.as_posix()
+
+def validate_manifest_path(relative):
+    parts = relative.split("/")
+    if (not relative or relative.startswith("/") or "\\" in relative or "//" in relative
+            or any(not part or part in (".", "..")
+                   or any(ord(character) < 32 or ord(character) == 127 for character in part)
+                   for part in parts)):
         raise SystemExit("unsafe testrun shared-file path in budget projection")
-    if relative in seen:
-        raise SystemExit("duplicate testrun shared-file path in budget projection")
-    seen.add(relative)
+    return parts
+
+def sha256_stream(stream):
+    digest = hashlib.sha256()
+    while True:
+        chunk = stream.read(1024 * 1024)
+        if not chunk:
+            return digest.hexdigest()
+        digest.update(chunk)
+
+seen_members = set()
+member_count = 0
+with tarfile.open(archive, "r|gz") as bundle:
+    for member in bundle:
+        member_count += 1
+        if member_count > 50000:
+            raise SystemExit("archive member count is invalid in budget projection")
+        name = normalized_member_name(member.name)
+        if name is None:
+            continue
+        if name in seen_members:
+            raise SystemExit("archive contains a duplicate member in budget projection")
+        seen_members.add(name)
+        if not (member.isdir() or member.isfile()):
+            raise SystemExit("archive links and special files are forbidden in budget projection")
+        if not member.isfile():
+            continue
+        files[name] = member.size
+        release_logical += member.size
+        if name == manifest_name:
+            stream = bundle.extractfile(member)
+            if stream is None:
+                raise SystemExit("testrun shared-file manifest cannot be read in budget projection")
+            manifest_entries = []
+            manifest_seen = set()
+            try:
+                # tar stream members do not expose seekable() on every supported Python runtime.
+                # Read bounded byte lines directly; decode each complete path strictly.
+                while True:
+                    raw = stream.readline(16385)
+                    if not raw:
+                        break
+                    if len(raw) > 16384:
+                        raise SystemExit("testrun shared-file path is too long in budget projection")
+                    relative = raw.decode("utf-8", "strict").rstrip("\r\n")
+                    validate_manifest_path(relative)
+                    if relative in manifest_seen:
+                        raise SystemExit("duplicate testrun shared-file path in budget projection")
+                    manifest_seen.add(relative)
+                    manifest_entries.append(relative)
+            except UnicodeDecodeError as error:
+                raise SystemExit("testrun shared-file manifest is not UTF-8 in budget projection") from error
+            finally:
+                stream.close()
+        elif name.startswith(production_prefix) or name.startswith(testrun_prefix):
+            stream = bundle.extractfile(member)
+            if stream is None:
+                raise SystemExit("web asset cannot be read in budget projection")
+            try:
+                asset_sources[name] = (member.size, sha256_stream(stream))
+            finally:
+                stream.close()
+
+if manifest_entries is None:
+    raise SystemExit("testrun shared-file manifest is missing in budget projection")
+
+hydrate_logical = 0
+candidates = []
+for name, source in asset_sources.items():
+    if name.startswith(production_prefix):
+        relative = name[len(production_prefix):]
+        candidates.append((("assets",), tuple(validate_manifest_path(relative)), source))
+    elif name.startswith(testrun_prefix):
+        relative = name[len(testrun_prefix):]
+        candidates.append((("testrun", "assets"), tuple(validate_manifest_path(relative)), source))
+
+for relative in manifest_entries:
     source = "opcgpro-vue/dist/" + relative
     target = "opcgpro-vue/dist-testrun/" + relative
-    if source not in files or target in files:
+    if source not in files or target in seen_members:
         raise SystemExit("testrun shared-file layout differs from hydrate contract")
     hydrate_logical += files[source]
+    if relative == "assets":
+        raise SystemExit("testrun shared asset path is invalid in budget projection")
+    if relative.startswith("assets/"):
+        if source not in asset_sources:
+            raise SystemExit("testrun shared web asset cannot be read in budget projection")
+        asset_relative = relative[len("assets/"):]
+        candidates.append((("testrun", "assets"), tuple(validate_manifest_path(asset_relative)), asset_sources[source]))
+
+try:
+    cache_metadata = os.lstat(cache_root)
+except OSError as error:
+    raise SystemExit("shared web cache root is missing in budget projection") from error
+if not stat.S_ISDIR(cache_metadata.st_mode) or stat.S_ISLNK(cache_metadata.st_mode):
+    raise SystemExit("shared web cache root is unsafe in budget projection")
+
+def existing_sha256(path, expected_metadata):
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as error:
+        raise SystemExit("shared web cache target cannot be read in budget projection") from error
+    with os.fdopen(descriptor, "rb") as handle:
+        opened_metadata = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(opened_metadata.st_mode)
+                or (expected_metadata.st_dev, expected_metadata.st_ino)
+                    != (opened_metadata.st_dev, opened_metadata.st_ino)):
+            raise SystemExit("shared web cache target changed during budget projection")
+        return sha256_stream(handle)
+
+def missing_target_bytes(prefix_parts, relative_parts, source_size, source_digest):
+    current = cache_root
+    for component in prefix_parts + relative_parts[:-1]:
+        current = os.path.join(current, component)
+        try:
+            metadata = os.lstat(current)
+        except FileNotFoundError:
+            return source_size
+        except OSError as error:
+            raise SystemExit("shared web cache parent cannot be inspected in budget projection") from error
+        if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+            raise SystemExit("shared web cache parent is unsafe in budget projection")
+    target = os.path.join(current, relative_parts[-1])
+    try:
+        metadata = os.lstat(target)
+    except FileNotFoundError:
+        return source_size
+    except OSError as error:
+        raise SystemExit("shared web cache target cannot be inspected in budget projection") from error
+    if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+        raise SystemExit("shared web cache target is unsafe in budget projection")
+    if metadata.st_size != source_size or existing_sha256(target, metadata) != source_digest:
+        raise SystemExit("shared web cache target conflicts in budget projection")
+    return 0
+
+new_web_cache_missing = 0
+seen_targets = set()
+for prefix_parts, relative_parts, source in candidates:
+    target_parts = prefix_parts + relative_parts
+    if target_parts in seen_targets:
+        raise SystemExit("duplicate shared web cache target in budget projection")
+    seen_targets.add(target_parts)
+    new_web_cache_missing += missing_target_bytes(prefix_parts, relative_parts, source[0], source[1])
 
 # The budget is deliberately logical, not allocated blocks. The hydrate target
-# is counted again even though ln creates a hard link, and both compatibility
-# prefixes are counted because install_web_assets_tree copies each path.
-new_web_cache_logical = production_web + testrun_web + hydrate_logical
-print(release_logical + hydrate_logical, hydrate_logical, new_web_cache_logical)
+# is counted again even though ln creates a hard link. Cache growth counts each
+# missing public pathname, while exact size-and-SHA matches consume no new bytes.
+print(release_logical + hydrate_logical, hydrate_logical, new_web_cache_missing)
 PY
 }
 
@@ -337,7 +478,7 @@ validate_testrun_storage_budget() {
   temporary_peak=$((temporary + release_growth + card_growth))
   total_peak=$((program + data + temporary + release_growth + card_growth + previous_web_growth + new_web_growth + runtime_backup_growth))
   log "fixed-path storage report: program=${releases_dir},${static_card_assets_dir},${static_web_assets_dir}; data=${runtime_dir},${backup_dir},${failure_dir}; temporary=${incoming_dir},managed-staging"
-  log "storage projection bytes: releaseLogical=${release_growth}; previousWebMissing=${previous_web_growth}; newWebTwoPrefixes=${new_web_growth}; runtimeBackupAllowance=${runtime_backup_growth}"
+  log "storage projection bytes: releaseLogical=${release_growth}; previousWebMissing=${previous_web_growth}; newWebMissing=${new_web_growth}; runtimeBackupAllowance=${runtime_backup_growth}"
   log "storage budget bytes: programAfter=${program_after}/${program_budget_bytes}; dataAfter=${data_after}/${data_budget_bytes}; temporaryPeak=${temporary_peak}/${temporary_budget_bytes}; totalPeak=${total_peak}/${total_budget_bytes}; accounting=logical"
   if (( program_after > program_budget_bytes )); then fail "testrun program budget exceeds 1 GiB; no cleanup was attempted"; return 1; fi
   if (( data_after > data_budget_bytes )); then fail "testrun data budget exceeds 256 MiB; runtime and evidence were retained"; return 1; fi
