@@ -17,6 +17,31 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
     private const BindingFlags PrivateStatic = BindingFlags.Static | BindingFlags.NonPublic;
 
     [Fact]
+    public void ProductUtf8PreparationDoesNotRetainAWholeDocumentBuffer()
+    {
+        using var fixture = new RankedIdentityFixture();
+        var data = Data(fixture.Store);
+        var part = new string('x', 64 * 1024);
+        for (var i = 0; i < 256; i++) Content(data)["synthetic-stream-part-" + i] = part;
+        using var connection = Open(fixture.Store.TransactionalStoragePath);
+        using var transaction = connection.BeginTransaction();
+        var expectedJson = LegacySnapshot(data);
+        var expectedBytes = Encoding.UTF8.GetByteCount(expectedJson);
+        var warm = PrepareCoreSnapshot(data, connection, transaction);
+        GC.KeepAlive(warm);
+        var started = GC.GetAllocatedBytesForCurrentThread();
+        var prepared = PrepareCoreSnapshot(data, connection, transaction);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - started;
+        output.WriteLine("stream_prepare_payload_bytes={0} allocated_bytes={1}", expectedBytes, allocated);
+        Assert.False(JsonValue(prepared) is byte[] or string,
+            "Product preparation must not retain a whole-document byte array or string");
+        Assert.Equal(LegacyChecksum(expectedJson), Checksum(prepared));
+        Assert.True(allocated < expectedBytes / 4,
+            $"Stream preparation allocated {allocated} bytes for {expectedBytes} document bytes");
+        transaction.Rollback();
+    }
+
+    [Fact]
     public void Utf8SnapshotIsByteExactWithLegacyWhileUtf16AndUnknownRemainStrings()
     {
         using var fixture = new RankedIdentityFixture();
@@ -42,6 +67,34 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
         }
 
         Assert.Equal(inputBefore, RawJson(data));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ChangedPayloadBetweenStreamingPassesRollsBackTheWholeSqliteWrite(bool changeLength)
+    {
+        using var fixture = new RankedIdentityFixture();
+        var data = Data(fixture.Store);
+        using var connection = Open(fixture.Store.TransactionalStoragePath);
+        var beforeJson = RequiredScalarText(connection, "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;");
+        var beforeHash = RequiredScalarText(connection, "SELECT snapshot_sha256 FROM platform_state WHERE singleton_id=1;");
+        var beforeMirror = RequiredScalarText(connection, "SELECT value FROM storage_meta WHERE key='fallback_json_sha256';");
+        Content(data)["synthetic-between-passes"] = "AAAA";
+        using (var transaction = connection.BeginTransaction())
+        {
+            var prepared = PrepareCoreSnapshot(data, connection, transaction);
+            Content(data)["synthetic-between-passes"] = changeLength ? new string('B', 1024 * 1024) : "BBBB";
+            var failure = Assert.Throws<TargetInvocationException>(() =>
+                typeof(L12PlatformStore).GetMethod("UpsertSnapshot", PrivateStatic)!
+                    .Invoke(null, [connection, transaction, prepared, Checksum(prepared), "synthetic-mirror", data]));
+            Assert.NotNull(failure.InnerException);
+            if (!changeLength) Assert.IsType<InvalidDataException>(failure.InnerException);
+            transaction.Rollback();
+        }
+        Assert.Equal(beforeJson, RequiredScalarText(connection, "SELECT snapshot_json FROM platform_state WHERE singleton_id=1;"));
+        Assert.Equal(beforeHash, RequiredScalarText(connection, "SELECT snapshot_sha256 FROM platform_state WHERE singleton_id=1;"));
+        Assert.Equal(beforeMirror, RequiredScalarText(connection, "SELECT value FROM storage_meta WHERE key='fallback_json_sha256';"));
     }
 
     [Fact]
@@ -95,7 +148,9 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
             Execute(connection, $"PRAGMA encoding='{databaseEncoding}';");
             Execute(connection, "CREATE TABLE snapshot(json TEXT NOT NULL, checksum TEXT NOT NULL);");
             using var transaction = connection.BeginTransaction();
-            var prepared = PrepareCoreSnapshot(data, connection, transaction);
+            // Retain the materialized formatter/encoding compatibility contract. Actual product
+            // streaming upserts and private-deck CAS are verified across two reopens below.
+            var prepared = SerializeCoreSnapshot(data, databaseEncoding);
             if (expectsBytes) Assert.IsType<byte[]>(JsonValue(prepared));
             else Assert.IsType<string>(JsonValue(prepared));
             Assert.Equal(expectedChecksum, Checksum(prepared));

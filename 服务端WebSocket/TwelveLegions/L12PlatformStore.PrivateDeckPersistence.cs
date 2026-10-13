@@ -345,12 +345,12 @@ public sealed partial class L12PlatformStore
         using (var command = connection.CreateCommand())
         {
             command.Transaction = transaction;
-            command.CommandText = """
+            command.CommandText = $"""
                 UPDATE platform_state SET
                     schema_version=$schema,
                     storage_revision=$revision,
                     business_version=$business,
-                    snapshot_json=CAST($json AS TEXT),
+                    snapshot_json={CoreSnapshotSqlValue(snapshot)},
                     snapshot_sha256=$checksum,
                     updated_utc=$updated
                 WHERE singleton_id=1 AND storage_revision=$expected;
@@ -358,7 +358,7 @@ public sealed partial class L12PlatformStore
             command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
             command.Parameters.AddWithValue("$revision", data.Version);
             command.Parameters.AddWithValue("$business", data.BusinessVersion ?? data.Version);
-            command.Parameters.AddWithValue("$json", snapshot.JsonValue);
+            command.Parameters.AddWithValue("$json", CoreSnapshotParameter(snapshot));
             command.Parameters.AddWithValue("$checksum", snapshotChecksum);
             command.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
             command.Parameters.AddWithValue("$expected", expectedStorageRevision);
@@ -371,6 +371,7 @@ public sealed partial class L12PlatformStore
             }
         }
 
+        WriteCoreSnapshotPayload(connection, snapshot);
         using var meta = connection.CreateCommand();
         meta.Transaction = transaction;
         meta.CommandText = """

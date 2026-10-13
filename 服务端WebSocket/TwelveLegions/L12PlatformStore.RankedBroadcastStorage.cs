@@ -16,6 +16,10 @@ public sealed partial class L12PlatformStore
     private const string RankedBroadcastSchemaEightPreviousMirrorHashKey =
         "ranked_broadcast_schema8_previous_mirror_sha256";
     private static readonly TimeSpan RankedBroadcastClaimLease = TimeSpan.FromSeconds(45);
+    private sealed record RankedBroadcastReadAnchor(string CoreChecksum, byte[] RollbackSnapshot,
+        WeakReference<DataFile> Authority);
+    private RankedBroadcastReadAnchor? _rankedBroadcastReadAnchor;
+    private string? _rankedBroadcastReadCoreChecksum;
 
     private static void InitializeRankedBroadcastObjectStorage(SqliteConnection connection,
         int? existingSchemaVersion)
@@ -565,25 +569,21 @@ public sealed partial class L12PlatformStore
             {
                 using var connection = OpenDatabase(_databasePath, readOnly: false);
                 using var transaction = connection.BeginTransaction(deferred: false);
+                if (TryReadUnchangedRankedBroadcastProjection(connection, transaction, out var unchanged)
+                    && FindNextRankedBroadcast(unchanged, accountId, subscriptionStartedAt,
+                        now, realtimeWindow) is null)
+                {
+                    transaction.Rollback();
+                    _storageIssue = null;
+                    return null;
+                }
                 var latest = ReadRankedBroadcastCommittedProjection(connection, transaction);
                 var account = latest.Accounts.FirstOrDefault(row => row.Id == accountId
                     && !row.Disabled && !row.Deleted)
                     ?? throw new KeyNotFoundException("账号不存在或不可用");
                 var normalizedNow = now.ToUniversalTime();
-                var cutoff = latest.RankedBroadcastDeliveryCutover ?? normalizedNow;
-                if (account.CreatedAt.ToUniversalTime() > cutoff) cutoff = account.CreatedAt.ToUniversalTime();
-                var freshFloor = normalizedNow - realtimeWindow;
-                var requestedStart = (subscriptionStartedAt ?? freshFloor).ToUniversalTime();
-                if (requestedStart > normalizedNow) requestedStart = normalizedNow;
-                if (requestedStart < freshFloor) requestedStart = freshFloor;
-                if (requestedStart > cutoff) cutoff = requestedStart;
-                var delivered = latest.RankedBroadcastDeliveries
-                    .Where(row => string.Equals(row.AccountId, accountId, StringComparison.OrdinalIgnoreCase))
-                    .Select(row => row.BroadcastId).ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var next = latest.RankedBroadcasts.Where(row => row.CreatedAt >= cutoff
-                        && !delivered.Contains(row.Id))
-                    .OrderBy(row => row.CreatedAt)
-                    .ThenBy(row => row.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                var next = FindNextRankedBroadcast(latest, accountId, subscriptionStartedAt,
+                    normalizedNow, realtimeWindow);
                 if (next is null)
                 {
                     PublishRankedBroadcastProjectionWithoutCommit(latest, transaction);
@@ -637,6 +637,23 @@ public sealed partial class L12PlatformStore
             {
                 using var connection = OpenDatabase(_databasePath, readOnly: false);
                 using var transaction = connection.BeginTransaction(deferred: false);
+                if (TryReadUnchangedRankedBroadcastProjection(connection, transaction, out var unchanged))
+                {
+                    var unchangedAccount = unchanged.Accounts.FirstOrDefault(row => row.Id == accountId
+                        && !row.Disabled && !row.Deleted);
+                    var unchangedDelivery = unchanged.RankedBroadcastDeliveries.FirstOrDefault(row =>
+                        string.Equals(row.AccountId, accountId, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(row.BroadcastId, broadcastId, StringComparison.OrdinalIgnoreCase));
+                    var validToken = unchangedDelivery is not null && !string.IsNullOrWhiteSpace(claimToken)
+                        && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(unchangedDelivery.ClaimToken),
+                            Encoding.UTF8.GetBytes(claimToken));
+                    if (unchangedAccount is null || !validToken || unchangedDelivery!.CompletedAt is not null)
+                    {
+                        transaction.Rollback();
+                        _storageIssue = null;
+                        return unchangedAccount is not null && validToken;
+                    }
+                }
                 var latest = ReadRankedBroadcastCommittedProjection(connection, transaction);
                 var account = latest.Accounts.FirstOrDefault(row => row.Id == accountId
                     && !row.Disabled && !row.Deleted);
@@ -705,6 +722,8 @@ public sealed partial class L12PlatformStore
     private DataFile ReadRankedBroadcastCommittedProjection(SqliteConnection connection,
         SqliteTransaction transaction)
     {
+        _rankedBroadcastReadAnchor = null;
+        _rankedBroadcastReadCoreChecksum = null;
         AssertRankedBroadcastObjectSchema(connection, transaction);
         var stored = ReadSnapshot(connection, transaction)
             ?? throw new InvalidDataException("排位广播事务缺少平台快照");
@@ -714,6 +733,7 @@ public sealed partial class L12PlatformStore
         HydrateDeckDomain(connection, latest, transaction);
         HydrateRankedBroadcastObjects(connection, latest, transaction);
         MergeIndependentAudit(connection, latest, transaction);
+        _rankedBroadcastReadCoreChecksum = stored.Checksum;
         return latest;
     }
 
@@ -722,12 +742,14 @@ public sealed partial class L12PlatformStore
     {
         var rollbackSnapshot = SerializeRollbackState(latest);
         var sessionActivity = PrepareCommittedSessionActivity(latest, rollbackSnapshot);
+        var readAnchor = PrepareRankedBroadcastReadAnchor(latest, rollbackSnapshot);
         StorageFailureInjector?.Invoke(failureStage);
         StorageFailureInjector?.Invoke("after-ranked-broadcast-rollback-serialize");
         transaction.Commit();
         _data = latest;
         _lastCommittedSnapshot = rollbackSnapshot;
         PublishCommittedSessionActivity(sessionActivity);
+        _rankedBroadcastReadAnchor = readAnchor;
         _storageIssue = null;
     }
 
@@ -736,11 +758,94 @@ public sealed partial class L12PlatformStore
     {
         var rollbackSnapshot = SerializeRollbackState(latest);
         var sessionActivity = PrepareCommittedSessionActivity(latest, rollbackSnapshot);
+        var readAnchor = PrepareRankedBroadcastReadAnchor(latest, rollbackSnapshot);
         transaction.Rollback();
         _data = latest;
         _lastCommittedSnapshot = rollbackSnapshot;
         PublishCommittedSessionActivity(sessionActivity);
+        _rankedBroadcastReadAnchor = readAnchor;
         _storageIssue = null;
+    }
+
+    private static RankedBroadcastRow? FindNextRankedBroadcast(DataFile data, string accountId,
+        DateTimeOffset? subscriptionStartedAt, DateTimeOffset now, TimeSpan realtimeWindow)
+    {
+        var account = data.Accounts.FirstOrDefault(row => row.Id == accountId && !row.Disabled && !row.Deleted)
+            ?? throw new KeyNotFoundException("账号不存在或不可用");
+        var normalizedNow = now.ToUniversalTime();
+        var cutoff = data.RankedBroadcastDeliveryCutover ?? normalizedNow;
+        if (account.CreatedAt.ToUniversalTime() > cutoff) cutoff = account.CreatedAt.ToUniversalTime();
+        var freshFloor = normalizedNow - realtimeWindow;
+        var requestedStart = (subscriptionStartedAt ?? freshFloor).ToUniversalTime();
+        if (requestedStart > normalizedNow) requestedStart = normalizedNow;
+        if (requestedStart < freshFloor) requestedStart = freshFloor;
+        if (requestedStart > cutoff) cutoff = requestedStart;
+        var delivered = data.RankedBroadcastDeliveries
+            .Where(row => string.Equals(row.AccountId, accountId, StringComparison.OrdinalIgnoreCase))
+            .Select(row => row.BroadcastId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return data.RankedBroadcasts.Where(row => row.CreatedAt >= cutoff && !delivered.Contains(row.Id))
+            .OrderBy(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+    }
+
+    private RankedBroadcastReadAnchor PrepareRankedBroadcastReadAnchor(DataFile data, byte[] snapshot)
+    {
+        var checksum = _rankedBroadcastReadCoreChecksum
+            ?? throw new InvalidDataException("排位广播已验证核心快照摘要缺失");
+        StorageFailureInjector?.Invoke("before-ranked-broadcast-read-anchor");
+        return new(checksum, snapshot, new(data));
+    }
+
+    // A validated same-generation no-op is not a platform write. Keep the original complete
+    // rollback buffer and committed read indexes; never substitute a stale cache for SQL authority.
+    private bool TryReadUnchangedRankedBroadcastProjection(SqliteConnection connection,
+        SqliteTransaction transaction, out DataFile unchanged)
+    {
+        unchanged = _data;
+        var anchor = _rankedBroadcastReadAnchor;
+        var committed = Volatile.Read(ref _committedSessionActivity);
+        if (anchor is null || _adminTransactionDepth != 0 || !committed.Available
+            || !anchor.Authority.TryGetTarget(out var authority) || !ReferenceEquals(authority, unchanged)
+            || committed.Revision != unchanged.Version
+            || !ReferenceEquals(anchor.RollbackSnapshot, _lastCommittedSnapshot)
+            || !ReferenceEquals(anchor.RollbackSnapshot, committed.RollbackSnapshot)) return false;
+        using (var encoding = connection.CreateCommand())
+        {
+            encoding.Transaction = transaction;
+            encoding.CommandText = "PRAGMA encoding;";
+            if (!string.Equals(encoding.ExecuteScalar() as string, "UTF-8", StringComparison.OrdinalIgnoreCase))
+                return false; // Preserve the legacy UTF-16 path rather than hash different on-disk bytes.
+        }
+        using (var header = connection.CreateCommand())
+        {
+            header.Transaction = transaction;
+            header.CommandText = "SELECT storage_revision,snapshot_sha256 FROM platform_state WHERE singleton_id=1;";
+            using var reader = header.ExecuteReader();
+            if (!reader.Read()) throw new InvalidDataException("排位广播事务缺少平台快照");
+            if (reader.GetInt64(0) != unchanged.Version || !FixedEquals(reader.GetString(1), anchor.CoreChecksum))
+                return false;
+        }
+        // Read the TEXT column incrementally in the held SQLite transaction. This still verifies
+        // every core byte, without allocating a full JSON string/array or hydrating all decks.
+        using (var blob = new SqliteBlob(connection, "platform_state", "snapshot_json", 1, readOnly: true))
+        {
+            var checksum = Convert.ToHexString(SHA256.HashData(blob)).ToLowerInvariant();
+            if (!FixedEquals(checksum, anchor.CoreChecksum))
+                throw new InvalidDataException("排位广播事务的平台快照校验和不匹配");
+        }
+        var probe = new DataFile { Accounts = unchanged.Accounts };
+        HydrateRankedBroadcastObjects(connection, probe, transaction);
+        if (probe.RankedBroadcastGeneration != unchanged.RankedBroadcastGeneration
+            || probe.RankedBroadcastDeliveryCutover != unchanged.RankedBroadcastDeliveryCutover
+            || probe.RankedBroadcasts.Count != unchanged.RankedBroadcasts.Count
+            || probe.RankedBroadcastDeliveries.Count != unchanged.RankedBroadcastDeliveries.Count) return false;
+        var definitions = unchanged.RankedBroadcasts.ToDictionary(row => row.Id, StringComparer.OrdinalIgnoreCase);
+        var deliveries = unchanged.RankedBroadcastDeliveries.ToDictionary(RankedBroadcastDeliveryKey,
+            StringComparer.OrdinalIgnoreCase);
+        return probe.RankedBroadcasts.All(row => definitions.TryGetValue(row.Id, out var old)
+                && row.Generation == old.Generation && RankedBroadcastDefinitionEquals(row, old))
+            && probe.RankedBroadcastDeliveries.All(row => deliveries.TryGetValue(RankedBroadcastDeliveryKey(row), out var old)
+                && row.ClaimToken == old.ClaimToken && row.LeaseExpiresAt == old.LeaseExpiresAt
+                && row.CompletedAt == old.CompletedAt && row.Generation == old.Generation);
     }
 
     private static string RankedBroadcastDefinitionDigest(string id, string matchId,

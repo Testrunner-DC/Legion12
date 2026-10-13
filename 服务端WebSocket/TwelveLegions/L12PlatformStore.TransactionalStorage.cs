@@ -626,10 +626,10 @@ public sealed partial class L12PlatformStore
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = """
+        command.CommandText = $"""
             INSERT INTO platform_state(singleton_id, schema_version, storage_revision, business_version,
                                        snapshot_json, snapshot_sha256, updated_utc)
-            VALUES(1,$schema,$revision,$business,CAST($json AS TEXT),$checksum,$updated)
+            VALUES(1,$schema,$revision,$business,{CoreSnapshotSqlValue(snapshot)},$checksum,$updated)
             ON CONFLICT(singleton_id) DO UPDATE SET
                 schema_version=excluded.schema_version,
                 storage_revision=excluded.storage_revision,
@@ -643,11 +643,12 @@ public sealed partial class L12PlatformStore
         command.Parameters.AddWithValue("$schema", PlatformStorageSchemaVersion);
         command.Parameters.AddWithValue("$revision", data.Version);
         command.Parameters.AddWithValue("$business", data.BusinessVersion ?? data.Version);
-        command.Parameters.AddWithValue("$json", snapshot.JsonValue);
+        command.Parameters.AddWithValue("$json", CoreSnapshotParameter(snapshot));
         command.Parameters.AddWithValue("$checksum", snapshotChecksum);
         command.Parameters.AddWithValue("$updated", DateTimeOffset.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$mirror", mirrorChecksum);
         command.ExecuteNonQuery();
+        WriteCoreSnapshotPayload(connection, snapshot);
     }
 
     private static void AppendIndependentAudit(SqliteConnection connection, SqliteTransaction transaction,
@@ -1379,6 +1380,13 @@ public sealed partial class L12PlatformStore
         encodingQuery.Transaction = transaction;
         encodingQuery.CommandText = "PRAGMA encoding;";
         var encoding = encodingQuery.ExecuteScalar() as string;
+        if (string.Equals(encoding, "UTF-8", StringComparison.Ordinal))
+        {
+            using var metric = L12PlatformOperationMetrics.Measure(L12PlatformOperationPhase.SnapshotSerialize);
+            using var measured = new CoreSnapshotHashStream();
+            JsonSerializer.Serialize(measured, data, PlatformSnapshotJsonOptions);
+            return new(new StreamedCoreSnapshot(data, checked((int)measured.Length)), measured.Checksum());
+        }
         return SerializeCoreSnapshot(data, encoding ?? string.Empty);
     }
 

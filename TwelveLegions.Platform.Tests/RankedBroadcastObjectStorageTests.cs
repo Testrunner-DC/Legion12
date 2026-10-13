@@ -5,14 +5,82 @@ using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace TwelveLegions.Platform.Tests;
 
 [Collection("Platform environment")]
-public sealed class RankedBroadcastObjectStorageTests
+public sealed class RankedBroadcastObjectStorageTests(ITestOutputHelper output)
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     private const BindingFlags PrivateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+    [Fact]
+    public void WarmEmptyPollAllocationIsBelowThirtyPercentOfForcedFullRefresh()
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            store.ExecuteAdminTransaction(() =>
+            {
+                var data = typeof(L12PlatformStore).GetProperty("_data", PrivateInstance)!.GetValue(store)!;
+                var content = (System.Collections.IDictionary)data.GetType().GetProperty("Content")!.GetValue(data)!;
+                var part = new string('x', 32 * 1024);
+                for (var i = 0; i < 128; i++) content["synthetic-poll-part-" + i] = part;
+                RankedIdentityTestState.RequestSave(store);
+                return true;
+            });
+            var anchor = typeof(L12PlatformStore).GetField("_rankedBroadcastReadAnchor", PrivateInstance)!;
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var warmStart = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 8; i++) Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var warmAllocated = GC.GetAllocatedBytesForCurrentThread() - warmStart;
+            var coldStart = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 8; i++)
+            {
+                anchor.SetValue(store, null); // Same binary/input; explicitly exercise the old full refresh path.
+                Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            }
+            var coldAllocated = GC.GetAllocatedBytesForCurrentThread() - coldStart;
+            output.WriteLine("empty_poll_8x_warm_allocated_bytes={0} forced_refresh_allocated_bytes={1}",
+                warmAllocated, coldAllocated);
+            Assert.True(coldAllocated > 4 * 1024 * 1024);
+            Assert.True(warmAllocated * 10 < coldAllocated * 3);
+        });
+    }
+    [Fact]
+    public void EmptyClaimAndIdempotentCompleteKeepTheSameCommittedRollbackBuffer()
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(
+                store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            // Warm the validated read anchor; the following calls must not rebuild global state.
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var field = typeof(L12PlatformStore).GetField("_lastCommittedSnapshot", PrivateInstance)!;
+            var beforeBuffer = Assert.IsType<byte[]>(field.GetValue(store));
+            var before = PlatformFacts(path, store, viewerId);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-session-index-build")
+                    throw new InvalidOperationException("no-op must not prepare global indexes");
+            };
+            try
+            {
+                for (var repeat = 0; repeat < 12; repeat++)
+                {
+                    Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                    Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+                    Assert.False(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, "wrong-token"));
+                    Assert.Same(beforeBuffer, field.GetValue(store));
+                }
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Equal(before, PlatformFacts(path, store, viewerId));
+        });
+    }
+
     [Fact]
     public void ClaimDoesNotRewritePlatformSnapshotRevisionDecksOrMirror()
     {
@@ -25,6 +93,186 @@ public sealed class RankedBroadcastObjectStorageTests
 
             Assert.Equal("broadcast-object-live", claim.Broadcast.MatchId);
             Assert.Equal(before, PlatformFacts(path, store, viewerId));
+        });
+    }
+
+    [Fact]
+    public void WarmAnchorFallsBackAfterRollbackRestoresDataInstance()
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var oldData = typeof(L12PlatformStore).GetProperty("_data", PrivateInstance)!.GetValue(store);
+            typeof(L12PlatformStore).GetMethod("RestoreLastCommittedSnapshot", PrivateInstance)!.Invoke(store, null);
+            Assert.NotSame(oldData, typeof(L12PlatformStore).GetProperty("_data", PrivateInstance)!.GetValue(store));
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-session-index-build") throw new InvalidOperationException("verified full refresh");
+            };
+            try
+            {
+                var failure = Assert.Throws<L12PlatformStorageUnavailableException>(() => store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                Assert.Contains("verified full refresh", failure.ToString());
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+        });
+    }
+
+    [Fact]
+    public void WarmAnchorSeesBroadcastCommittedByAnotherStore()
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var writer = new L12PlatformStore(path);
+            var first = writer.Accounts().Single(row => row.Username == "trobjfirst");
+            var second = writer.Accounts().Single(row => row.Username == "trobjsecond");
+            var fresh = DateTimeOffset.UtcNow;
+            writer.SettleRankedMatch("warm-anchor-new-broadcast", first.Id, second.Id, 0);
+            var next = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, fresh));
+            Assert.Equal("warm-anchor-new-broadcast", next.Broadcast.MatchId);
+            Assert.Null(writer.ClaimRankedBroadcast(viewerId, fresh));
+        });
+    }
+
+    [Theory]
+    [InlineData("UTF-16le")]
+    [InlineData("UTF-16be")]
+    public void Utf16WarmNoOpUsesLegacyRefresh(string encoding)
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-session-index-build") throw new InvalidOperationException("legacy encoding refresh");
+            };
+            try
+            {
+                var failure = Assert.Throws<L12PlatformStorageUnavailableException>(() => store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                Assert.Contains("legacy encoding refresh", failure.ToString());
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+        }, encoding);
+    }
+
+    [Theory]
+    [InlineData("definition")]
+    [InlineData("delivery")]
+    [InlineData("orphan")]
+    public void WarmAnchorDetectsDigestValidSameGenerationObjectRewrite(string kind)
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var field = typeof(L12PlatformStore).GetField("_lastCommittedSnapshot", PrivateInstance)!;
+            var beforeBuffer = field.GetValue(store);
+            var beforeGeneration = BroadcastGeneration(store);
+            using var connection = new SqliteConnection($"Data Source={store.TransactionalStoragePath};Pooling=False");
+            connection.Open();
+            using var query = connection.CreateCommand();
+            query.Parameters.AddWithValue("$id", claim.Broadcast.Id);
+            if (kind == "definition")
+            {
+                query.CommandText = "SELECT match_id,event_type,created_utc,row_generation FROM ranked_broadcast_definitions WHERE broadcast_id=$id;";
+                using var reader = query.ExecuteReader();
+                Assert.True(reader.Read());
+                var digest = typeof(L12PlatformStore).GetMethod("RankedBroadcastDefinitionDigest", PrivateStatic)!
+                    .Invoke(null, [claim.Broadcast.Id, reader.GetString(0), reader.GetString(1), "synthetic-rewritten",
+                        DateTimeOffset.Parse(reader.GetString(2)), reader.GetInt64(3)]);
+                reader.Close();
+                query.CommandText = "UPDATE ranked_broadcast_definitions SET message='synthetic-rewritten',row_digest=$digest WHERE broadcast_id=$id;";
+                query.Parameters.AddWithValue("$digest", digest!);
+                query.ExecuteNonQuery();
+                Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                Assert.NotSame(beforeBuffer, field.GetValue(store));
+                Assert.Equal("synthetic-rewritten", store.RankedBroadcasts().Single(row => row.Id == claim.Broadcast.Id).Message);
+            }
+            else
+            {
+                query.CommandText = "SELECT lease_expires_utc,completed_utc,row_generation FROM ranked_broadcast_deliveries WHERE broadcast_id=$id AND account_id=$account;";
+                query.Parameters.AddWithValue("$account", viewerId);
+                using var reader = query.ExecuteReader();
+                Assert.True(reader.Read());
+                var account = kind == "orphan" ? "synthetic-missing-account" : viewerId;
+                var digest = typeof(L12PlatformStore).GetMethod("RankedBroadcastDeliveryDigest", PrivateStatic)!
+                    .Invoke(null, [account, claim.Broadcast.Id, "synthetic-valid-token",
+                        DateTimeOffset.Parse(reader.GetString(0)), (DateTimeOffset?)DateTimeOffset.Parse(reader.GetString(1)), reader.GetInt64(2)]);
+                reader.Close();
+                query.CommandText = "UPDATE ranked_broadcast_deliveries SET account_id=$replacement,claim_token='synthetic-valid-token',row_digest=$digest WHERE broadcast_id=$id AND account_id=$account;";
+                query.Parameters.AddWithValue("$replacement", account);
+                query.Parameters.AddWithValue("$digest", digest!);
+                query.ExecuteNonQuery();
+                if (kind == "orphan")
+                    Assert.Throws<L12PlatformStorageUnavailableException>(() => store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                else
+                {
+                    Assert.False(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+                    Assert.NotSame(beforeBuffer, field.GetValue(store));
+                    Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, "synthetic-valid-token"));
+                }
+            }
+            Assert.Equal(beforeGeneration, BroadcastGeneration(store));
+        });
+    }
+
+    [Theory]
+    [InlineData("core-body")]
+    [InlineData("core-hash")]
+    [InlineData("definition")]
+    [InlineData("delivery")]
+    [InlineData("generation")]
+    public void WarmEmptyPollStillRejectsCorruptSqlAuthority(string corruption)
+    {
+        InLiveBroadcast((_, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            using var connection = new SqliteConnection($"Data Source={store.TransactionalStoragePath};Pooling=False");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = corruption switch
+            {
+                "core-body" => "UPDATE platform_state SET snapshot_json=snapshot_json||' ';",
+                "core-hash" => "UPDATE platform_state SET snapshot_sha256='corrupt';",
+                "definition" => "UPDATE ranked_broadcast_definitions SET message=message||'corrupt';",
+                "delivery" => "UPDATE ranked_broadcast_deliveries SET claim_token='corrupt';",
+                _ => "UPDATE storage_meta SET value='not-a-generation' WHERE key='ranked_broadcast_generation';",
+            };
+            command.ExecuteNonQuery();
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.Throws<L12PlatformStorageUnavailableException>(() => store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+        });
+    }
+
+    [Theory]
+    [InlineData("disable")]
+    [InlineData("delete")]
+    public void WarmNoOpAnchorCannotHideAnotherStoresAccountRevocation(string operation)
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            var writer = new L12PlatformStore(path);
+            var admin = writer.Login("Admin", "L12master").Account!;
+            var context = new L12AdminAuditContext("warm-poll-revocation");
+            if (operation == "disable") writer.SetAccountDisabled(admin, viewerId, true, "guard", context, true);
+            else writer.DeleteAccountPersonalData(admin, viewerId, "guard", context, true);
+            Assert.False(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            Assert.Throws<KeyNotFoundException>(() => store.ClaimRankedBroadcast(viewerId, subscribedAt));
         });
     }
 
@@ -278,6 +526,39 @@ public sealed class RankedBroadcastObjectStorageTests
         });
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ReadAnchorPreparationFailureCannotCommitClaimOrCompletion(bool complete)
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            L12RankedBroadcastClaimView? claim = complete
+                ? store.ClaimRankedBroadcast(viewerId, subscribedAt) : null;
+            var before = BroadcastGeneration(store);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-ranked-broadcast-read-anchor")
+                    throw new OutOfMemoryException("synthetic-read-anchor-allocation");
+            };
+            try
+            {
+                Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+                {
+                    if (complete) store.CompleteRankedBroadcast(viewerId, claim!.Broadcast.Id, claim.ClaimToken);
+                    else store.ClaimRankedBroadcast(viewerId, subscribedAt);
+                });
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Equal(before, BroadcastGeneration(store));
+            var reopened = new L12PlatformStore(path);
+            if (complete)
+                Assert.True(reopened.CompleteRankedBroadcast(viewerId, claim!.Broadcast.Id, claim.ClaimToken));
+            else
+                Assert.NotNull(reopened.ClaimRankedBroadcast(viewerId, subscribedAt));
+        });
+    }
+
     [Fact]
     public void FailedAndStaleFullSavesCannotEraseCommittedClaim()
     {
@@ -525,21 +806,30 @@ public sealed class RankedBroadcastObjectStorageTests
     }
 
     private static void InLiveBroadcast(
-        Action<string, L12PlatformStore, string, DateTimeOffset> action)
+        Action<string, L12PlatformStore, string, DateTimeOffset> action, string? databaseEncoding = null)
         => InLiveBroadcastAsync((path, store, viewerId, subscribedAt) =>
         {
             action(path, store, viewerId, subscribedAt);
             return Task.CompletedTask;
-        }).GetAwaiter().GetResult();
+        }, databaseEncoding).GetAwaiter().GetResult();
 
     private static async Task InLiveBroadcastAsync(
-        Func<string, L12PlatformStore, string, DateTimeOffset, Task> action)
+        Func<string, L12PlatformStore, string, DateTimeOffset, Task> action, string? databaseEncoding = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-ranked-broadcast-objects-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
             var path = Path.Combine(root, "platform.json");
+            if (databaseEncoding is not null)
+            {
+                Assert.Contains(databaseEncoding, new[] { "UTF-16le", "UTF-16be" });
+                using var seed = new SqliteConnection($"Data Source={Path.ChangeExtension(path, ".db")};Pooling=False");
+                seed.Open();
+                using var command = seed.CreateCommand();
+                command.CommandText = $"PRAGMA encoding='{databaseEncoding}'; CREATE TABLE encoding_guard(value TEXT);";
+                command.ExecuteNonQuery();
+            }
             var store = new L12PlatformStore(path);
             var first = store.Register("trobjfirst", "password-123").Account!;
             var second = store.Register("trobjsecond", "password-123").Account!;

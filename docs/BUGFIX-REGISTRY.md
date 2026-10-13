@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261013-EMPTY-BROADCAST-MEMORY｜空轮询全域重建与平台快照大缓冲（用户批准，本地修复）
+
+- 取证与授权：上线c4f7499后4条程序OOM（SerializeCoreSnapshot/JSON缓冲扩容）、GC停顿约11%、最近业务HTTP均4.44s，以及11635次完整回滚压缩均0.54s/分配约32MB；165次广播claim 503。用户批准依序修复，不授权本批部署/生产写入。原匿名统计、错误调用栈与口径限制见D盘post-deploy-observation-20261013/report.json；不归咎所有卡顿为此唯一根因。
+- 根因/共享修复：schema9广播领取即使没有新事件，重复/错误/已完成确认也全域读取、水合、压缩和发布索引。增加同事务严格内容证明的无变化路径：完整核心TEXT逐字节SHA、revision/快照引用/权威实例、广播代次/摘要/账户与定义引用/逐字段事实都匹配才复用旧buffer；实际变化、外层未提交或UTF16仍原仲裁/全刷新，不以TTL或元数据替代内容校验。anchor弱引用不强持旧完整域；所有新anchor分配在commit前，之后仅引用赋值。
+- 连续缓冲：UTF8准备不再保留整个JSON byte[]；同步持锁第一遍流式计数/SHA，第二遍同SQLite事务经SqliteBlob写既有TEXT并复验长度/SHA。普通Upsert/私人牌库CAS同出口，任何内容变化/部分写入失败原子回滚，UTF16/未知编码保留原字符串路径；无schema迁移/新文件/旧库回写/镜像取消。保留原materialized formatter兼容守卫和真实三编码两次reopen/反向迁移测试，不删旧保护。SQLite TEXT增量IO约束参考官方https://sqlite.org/c3ref/blob_open.html与Microsoft.Data.Sqlite Blob I/O。
+- 同族扫描：Claim/Complete所有无变化返回、ReadRankedBroadcastCommittedProjection/两Publish出口；所有PrepareCoreSnapshot、UpsertSnapshot/UpsertSnapshotCas及schema9→8→7、旧GetString、完整回滚/独立审计/镜像消费者。仅平台存储四源与两测试变动，无卡效、Journal、权限或协议更改。snapshot-serialize现在分两遍记录，阶段总量与操作总量才可做后续同比。
+- 具名红绿：EmptyClaimAndIdempotentCompleteKeepTheSameCommittedRollbackBuffer原失败（重新索引），ProductUtf8PreparationDoesNotRetainAWholeDocumentBuffer原失败（完整16MiB数组）均留存；初始广播16、加强79专项通过，完整Batch1395平台失败跳过0。后补WeakReference换实例/合法摘要同代改变/孤儿引用/跨实例新播报/UTF16慢回退与最终提交级Release以本批真实回执为准。验证完整核心/对象坏内容拒绝、跨实例禁用删除、16实例唯一领取/完成、45s后不重发、commit前分配失败、两遍内容改变/部分写入回滚及完整缓存/旧格式恢复。
+- Windows合成分配：16MiB准备16833584→31256B；同二进制4MiB域8次warm308992B vs强制刷新138057248B。不是常驻内存、流量或Linux正式容量；冷读/真正写入仍可能全域工作，超大单一JSON字段/长期并发尚不能凭这些测试宣称全部OOM根治。原Batch-r1仅长PATH导致cmd看不到node，短进程PATH/原有Node24/npm入口重跑，不改全局环境或门禁。
+- 第三阶段只读核查音乐/PNG/卡图/manifest真实200/206/304与缓存头正常；未证同浏览器重复下载，immutable命中无日志，共享日志也没有host/Range区间/连接时长。保留既有退役释放保护，不增加无证缓存修复；卡背冷载2.71/2.87MB为未选压缩候选。全部脱敏证据及最终同步见D盘local-acceptance.json；未部署、不关闭线上Bug。
+
 ## OPS-20261013-TESTRUN-BUDGET｜标准包展开已超过测试发布临时预算（明确批准）
 
 - 真实标准c860测试发布在停服前预算拒绝：单包逻辑展开206183074字节超过旧128MiB临时上限；程序投影955948853、临时302169136、总1081657307字节也超过旧各上限。两服原链接／PID836/848、重启0、无blocked围栏保留；上传和隔离路径配置已发生，不能写远端操作0。原失败日志2756BCF8、r7只读现场和专用会话撤销证明保留。

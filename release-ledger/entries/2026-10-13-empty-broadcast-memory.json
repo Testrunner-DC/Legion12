@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-13-empty-broadcast-memory",
+  "date": "2026-10-13",
+  "audience": "players",
+  "title": "页面响应与保存稳定性优化",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "减少没有新排位播报时的重复加载，改善页面响应。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.RankedBroadcastStorage.cs"]
+    },
+    {
+      "category": "decks",
+      "text": "减少保存时的大块内存分配，改善数据较多时的保存稳定性，原有版本冲突与失败恢复保护保持。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PrivateDeckPersistence.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.StreamedCoreSnapshot.cs"
+      ]
+    }
+  ]
+}
