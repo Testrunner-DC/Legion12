@@ -9,6 +9,7 @@
 - 新轮工具C盘pressure-30rooms-fixed-20261014逐字复用原pressure DE58A5F7/runner829D9666/guardD9A7C5E6，仍10/20/30×60s、10独立外部、2s cadence、30结束/69logout集中突发，截止/资源守卫不变。真实效果以新终态为准，本地合成不能冒称正式卡顿或流量已根治。
 - 持久化独立审查发现并排除一处新风险：没有holder/waiter关闭协议时Dispose gate可能在已commit之后令finally Release抛异常。恢复Recorder原noop生命周期，并补在途holder+waiter/Dispose/两房耐久恢复回归；不为本次新增第二套shutdown框架。源审其他边界CLEAR，受影响专项和完整门禁接续。
 - 修正后Main仅复跑受影响持久化和固定目录8/8零失败跳过，receipt test-f47174b13efa41d48dfb73586cea5579；其他同源75专项证据保持。发布前统一完整Release，不把源审或聚焦当已上线。
+- 首次完整候选2f42795b实际规则7219零失败/跳过，平台1494中1493通过、1个旧采样硬编码39计数失败，原Release日志/失败临时目录/TRX保留。同类补查rg Assert.Equal(39 与FixedStageCount；只补ProcessMetricSamplingTests使用权威固定目录数，并实际采样新等待项、保留15旧入口/全目录逐项/二次采样非破坏断言。无应用源或产品行为再改，修夹具后仍以新的干净提交标准完整Release验收，不伪造成功或复用失败包。
 
 ## OPS-20261014-TESTRUN-CACHE-GROWTH｜测试发布重复估算已有静态资源（用户长期批准）
 

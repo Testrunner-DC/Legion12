@@ -84,6 +84,7 @@ public sealed class ProcessMetricSamplingTests
     {
         var window = new PerformanceMetricWindow();
         window.Value("websocket.queue-depth", 9);
+        window.Duration("persistence.append-gate-wait", 7);
         var runtime = new L12ProcessRuntimeMetrics(L12MetricAvailabilityReason.Available,
             11, 12, 13, 14.5, 15, 16);
         var probe = new L12ProcessMetricProbe(
@@ -97,13 +98,14 @@ public sealed class ProcessMetricSamplingTests
         var sample = Assert.IsType<L12ProcessMetricSample>(captured);
         Assert.Same(runtime, sample.Runtime);
         Assert.Equal(L12MetricAvailabilityReason.Available, sample.PerformanceWindowAvailability);
-        Assert.Equal(39, sample.PerformanceWindow!.Series.Count);
+        Assert.Equal(PerformanceMetricWindow.FixedStageCount, sample.PerformanceWindow!.Series.Count);
         Assert.Equal(15, PerformanceMetricWindow.LegacyFixedStageCount);
         Assert.Equal(PerformanceMetricWindow.FixedStageNames.OrderBy(stage => stage, StringComparer.Ordinal),
             sample.PerformanceWindow.Series.Select(row => row.Stage).OrderBy(stage => stage, StringComparer.Ordinal));
         foreach (var legacy in PerformanceMetricWindow.LegacyFixedStageNames)
             Assert.Single(sample.PerformanceWindow.Series, row => row.Stage == legacy);
         Assert.Equal(9, Row(sample.PerformanceWindow, "websocket.queue-depth").Total);
+        Assert.Equal(7, Row(sample.PerformanceWindow, "duration.persistence.append-gate-wait").Total);
 
         Assert.True(sampler.TryCapture(out var second));
         foreach (var row in second!.PerformanceWindow!.Series)
