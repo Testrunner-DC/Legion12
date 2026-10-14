@@ -1,5 +1,9 @@
+using System.Collections;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 using System.Text.Json.Nodes;
 using TwelveLegions.Server;
@@ -11,6 +15,114 @@ public sealed class LatencyAndPersistenceRegressionTests
 {
     private static readonly JsonSerializerOptions WebJson = new(JsonSerializerDefaults.Web);
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+
+    [Fact]
+    public async Task 合成终局诊断区分出站驻留与发送且不改变关键消息顺序()
+    {
+        const string nonce = "abcdef0123456789abcdef0123456789";
+        var output = new ConcurrentQueue<string>();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}", output.Enqueue,
+            TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(10))!;
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(Stopwatch.GetTimestamp(), Stopwatch.GetTimestamp(), 1, 128, 0)));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var received = new List<string>();
+        await using var connection = new L12OutboundConnection(
+            async (payload, diagnostic, _) =>
+            {
+                var value = Assert.IsType<string>(payload);
+                received.Add(value);
+                if (value == "gate")
+                {
+                    entered.TrySetResult();
+                    await release.Task;
+                    return;
+                }
+                var prepareStartedAt = Stopwatch.GetTimestamp();
+                diagnostic?.Prepared(prepareStartedAt, Stopwatch.GetTimestamp(), 321, isDelta: false);
+                var sendStartedAt = Stopwatch.GetTimestamp();
+                await Task.Yield();
+                diagnostic?.Sent(sendStartedAt, Stopwatch.GetTimestamp());
+                diagnostic?.Committed(Stopwatch.GetTimestamp());
+            });
+
+        Assert.True(connection.TryEnqueue("gate"));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.True(connection.TryEnqueue("terminal", replaceableGameState: false, sample));
+        Assert.Equal(1, connection.QueuedCount);
+        await Task.Delay(20);
+        Assert.Empty(output); // Allocated/enqueued is not a completed sample.
+        release.TrySetResult();
+        await connection.CompleteAsync().WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(["gate", "terminal"], received);
+        var snapshot = Assert.Single(diagnostics.SnapshotForTests());
+        Assert.Equal((int)L12SyntheticTransportStatus.Sent, snapshot.Status);
+        Assert.Equal(1, snapshot.OutboundEnqueueDepth);
+        Assert.Equal(0, snapshot.OutboundDequeueDepth);
+        Assert.True(snapshot.OutboundQueueMicroseconds > 0);
+        Assert.Equal(321, snapshot.WireBytes);
+        Assert.Equal(0, snapshot.WireDelta);
+        Assert.True(SpinWait.SpinUntil(() => output.Count == 2, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public async Task 合成终局诊断分别记录真实房间Gate等待与持有时间()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-terminal-gate", Guid.NewGuid().ToString("N"));
+        await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+        await recorder.InitializeAsync();
+        var manager = new L12RoomManager(Catalog, recorder);
+        var session = Guid.NewGuid();
+        manager.Connect(session, "diagnostic-gate", "诊断玩家");
+        var created = await manager.CreateSandboxAsync(session, new L12SandboxRequest());
+        var roomCode = Payload(created.First(message =>
+            Payload(message).GetProperty("type").GetString() == "roomState"))
+            .GetProperty("roomCode").GetString()!;
+        var rooms = (IEnumerable)typeof(L12RoomManager)
+            .GetField("_rooms", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(manager)!;
+        var runtimeRoom = rooms.Cast<object>().Select(entry => entry.GetType().GetProperty("Value")!
+            .GetValue(entry)!).Single(room => string.Equals(
+            (string?)room.GetType().GetProperty("Code")!.GetValue(room), roomCode,
+            StringComparison.Ordinal));
+        var roomGate = (SemaphoreSlim)runtimeRoom.GetType().GetProperty("Gate")!.GetValue(runtimeRoom)!;
+        const string nonce = "1234567890abcdef1234567890abcdef";
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}", _ => { },
+            TimeSpan.FromSeconds(3), TimeSpan.FromMilliseconds(10))!;
+        var timestamp = Stopwatch.GetTimestamp();
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(timestamp, timestamp, 1, 256, 0)));
+
+        await roomGate.WaitAsync();
+        var released = false;
+        try
+        {
+            var action = manager.HandleActionAsync(session,
+                JsonSerializer.SerializeToElement(new { type = "surrender" }),
+                "gate-segmentation", sample);
+            await Task.Delay(75);
+            Assert.False(action.IsCompleted);
+            roomGate.Release();
+            released = true;
+            _ = await action.WaitAsync(TimeSpan.FromSeconds(3));
+        }
+        finally
+        {
+            if (!released) roomGate.Release();
+        }
+
+        var snapshot = Assert.Single(diagnostics.SnapshotForTests());
+        Assert.True(snapshot.GateWaitMicroseconds >= 50_000,
+            $"gate wait was only {snapshot.GateWaitMicroseconds}us");
+        Assert.True(snapshot.GateHoldMicroseconds > 0);
+        Assert.NotEqual(snapshot.GateWaitMicroseconds, snapshot.GateHoldMicroseconds);
+        sample.MissingReply();
+    }
 
     [Fact]
     public async Task 单连接发送队列只合并连续普通快照并保持关键消息顺序()

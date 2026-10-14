@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace TwelveLegions.Server;
@@ -1458,15 +1459,22 @@ public sealed partial class L12RoomManager
         finally { room.Gate.Release(); }
     }
 
-    public async Task<IReadOnlyList<OutgoingMessage>> HandleActionAsync(Guid sessionId,
+    public Task<IReadOnlyList<OutgoingMessage>> HandleActionAsync(Guid sessionId,
         JsonElement commandElement, string? requestId = null)
+        => HandleActionAsync(sessionId, commandElement, requestId, null);
+
+    internal async Task<IReadOnlyList<OutgoingMessage>> HandleActionAsync(Guid sessionId,
+        JsonElement commandElement, string? requestId,
+        L12SyntheticTransportSample? transportDiagnostic)
     {
         requestId = NormalizeActionRequestId(requestId);
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
         using var deployment = deploymentGuard;
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
+        transportDiagnostic?.GateWaitStarted(Stopwatch.GetTimestamp());
         await room.Gate.WaitAsync();
+        transportDiagnostic?.GateAcquired(Stopwatch.GetTimestamp());
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
@@ -1595,7 +1603,11 @@ public sealed partial class L12RoomManager
                 messages.AddRange(Error(sessionId, errorMessage, "tournamentResultPending", requestId));
             return messages;
         }
-        finally { room.Gate.Release(); }
+        finally
+        {
+            room.Gate.Release();
+            transportDiagnostic?.GateReleased(Stopwatch.GetTimestamp());
+        }
     }
 
     public async Task<IReadOnlyList<OutgoingMessage>> HandleGmActionAsync(Guid sessionId,

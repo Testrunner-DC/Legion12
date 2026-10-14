@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -10,6 +11,99 @@ namespace TwelveLegions.Tests;
 public sealed class WebSocketTransportRecoveryAdversarialTests
 {
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
+
+    [Fact]
+    public async Task MarkedSyntheticSurrenderKeepsLegacyFullGameOverAndUnmarkedTrafficUncollected()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-terminal-burst", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        var output = new ConcurrentQueue<string>();
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
+            var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
+            var identity = Guid.NewGuid().ToString("N")[..8];
+            var account = platform.Register($"td{identity}", "Password123!").Account!;
+            var token = platform.Login(account.Username, "Password123!").Token!;
+            using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+                $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}", output.Enqueue,
+                TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10))!;
+            var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
+            await recorder.InitializeAsync();
+            var manager = new L12RoomManager(catalog, recorder, platform);
+            var server = new L12WebSocketServer(manager, recorder, platform, catalog,
+                null, null, null, null, null, null, null, diagnostics);
+            await server.StartAsync(0);
+            try
+            {
+                var http = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" };
+                var endpoint = new UriBuilder(http.Uri) { Scheme = "ws", Path = "/ws" }.Uri;
+                await using var client = await WireClient.ConnectAsync(endpoint, token,
+                    deltaGameState: false);
+
+                await client.SendAsync(new { type = "createSandbox" });
+                _ = await client.ReceiveTypeAsync("roomState");
+                _ = await client.ReceiveGameAsync(_ => true);
+                await client.SendAsync(new
+                {
+                    type = "gameAction",
+                    requestId = "ordinary-terminal-request",
+                    command = new { type = "surrender" },
+                });
+                var ordinaryTerminal = await client.ReceiveGameAsync(state => Phase(state) == "GameOver");
+                Assert.Equal("GameOver", Phase(ordinaryTerminal));
+                Assert.Equal(0, diagnostics.AcceptedSamples);
+                Assert.Empty(output);
+
+                await client.SendAsync(new { type = "leaveRoom" });
+                _ = await client.ReceiveTypeAsync("roomLeft");
+                await client.SendAsync(new { type = "createSandbox" });
+                _ = await client.ReceiveTypeAsync("roomState");
+                _ = await client.ReceiveGameAsync(state => Phase(state) != "GameOver");
+                var markedRequestId = $"l12diag:{nonce}:0:{Guid.NewGuid():N}";
+                var fullBeforeTerminal = client.FullGameStateCount;
+                await client.SendAsync(new
+                {
+                    type = "gameAction",
+                    requestId = markedRequestId,
+                    command = new { type = "surrender" },
+                });
+                var markedTerminal = await client.ReceiveGameAsync(state => Phase(state) == "GameOver");
+
+                Assert.Equal("GameOver", Phase(markedTerminal));
+                Assert.Equal(fullBeforeTerminal + 1, client.FullGameStateCount);
+                Assert.Equal(0, client.DeltaGameStateCount);
+                Assert.Equal(markedRequestId, client.CurrentPayload!["requestId"]?.GetValue<string>());
+                Assert.True(SpinWait.SpinUntil(() => output.Count == 2, TimeSpan.FromSeconds(2)));
+                var rowLine = output.Single(line => JsonNode.Parse(line)!["kind"]!.GetValue<int>() == 1);
+                Assert.DoesNotContain(nonce, rowLine, StringComparison.Ordinal);
+                Assert.DoesNotContain(account.Id, rowLine, StringComparison.Ordinal);
+                Assert.DoesNotContain(token, rowLine, StringComparison.Ordinal);
+                var row = JsonNode.Parse(rowLine)!.AsObject();
+                Assert.Equal(0, row["slot"]!.GetValue<int>());
+                Assert.Equal((int)L12SyntheticTransportStatus.Sent, row["status"]!.GetValue<int>());
+                Assert.True(row["wire_bytes"]!.GetValue<int>() > 0);
+                Assert.Equal(0, row["wire_delta"]!.GetValue<int>());
+                Assert.True(row["server_total_us"]!.GetValue<long>() >= 0);
+            }
+            finally
+            {
+                try { await server.StopAsync(); }
+                finally
+                {
+                    await server.DisposeAsync();
+                    await recorder.DisposeAsync();
+                }
+            }
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
 
     [Theory]
     [InlineData(false, false)]
@@ -469,7 +563,8 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
         internal List<string> RecoveryMessageTypes { get; } = [];
         internal bool RecoveryReadyForWrites { get; private set; }
 
-        internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token, bool eventWindows = false)
+        internal static async Task<WireClient> ConnectAsync(Uri endpoint, string token,
+            bool eventWindows = false, bool deltaGameState = true)
         {
             var client = new WireClient();
             try
@@ -479,7 +574,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 {
                     type = "hello",
                     authToken = token,
-                    capabilities = new { requestIds = true, deltaGameState = true, eventWindowDeltaV1 = eventWindows },
+                    capabilities = new { requestIds = true, deltaGameState, eventWindowDeltaV1 = eventWindows },
                 });
                 using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 for (var attempt = 0; attempt < 80 && client.Recovery is null; attempt++)

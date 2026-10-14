@@ -13,6 +13,132 @@ public sealed class WebSocketInboundIsolationTests
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void TerminalBurstDiagnosticsStayOffAndFailClosedOutsideTheIsolatedProfile()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        Assert.Null(L12SyntheticTransportDiagnostics.Create(false, null));
+        Assert.Throws<InvalidOperationException>(() =>
+            L12SyntheticTransportDiagnostics.Create(true, "   "));
+        Assert.Throws<InvalidOperationException>(() =>
+            L12SyntheticTransportDiagnostics.Create(false, string.Empty));
+
+        var error = Assert.Throws<InvalidOperationException>(() =>
+            L12SyntheticTransportDiagnostics.Create(false,
+                $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}"));
+        Assert.DoesNotContain(nonce, error.Message, StringComparison.Ordinal);
+        Assert.Throws<InvalidOperationException>(() =>
+            L12SyntheticTransportDiagnostics.Create(true,
+                $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce.ToUpperInvariant()}"));
+
+        var disposed = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}")!;
+        disposed.Dispose();
+        Assert.Null(disposed.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}", default));
+
+        var callbackFault = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}",
+            _ => throw new InvalidOperationException("synthetic sink failure"))!;
+        Assert.NotNull(callbackFault.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(1, 2, 1, 100, 0)));
+        Assert.Null(Record.Exception(callbackFault.Dispose));
+    }
+
+    [Fact]
+    public void TerminalBurstDiagnosticsRequireExactNonceUniqueNumericSlotAndUuid()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        var lines = new ConcurrentQueue<string>();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:2:{nonce}", lines.Enqueue,
+            TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10))!;
+        var timing = new L12InboundQueueTiming(1, 2, 3, 400, 1);
+
+        Assert.Null(diagnostics.TryBegin(
+            $"l12diag:1123456789abcdef0123456789abcdef:0:{Guid.NewGuid():N}", timing));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:2:{Guid.NewGuid():N}", timing));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:00:{Guid.NewGuid():N}", timing));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid()}", timing));
+
+        var first = Assert.IsType<L12SyntheticTransportSample>(
+            diagnostics.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}", timing));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}", timing));
+        var second = Assert.IsType<L12SyntheticTransportSample>(
+            diagnostics.TryBegin($"l12diag:{nonce}:1:{Guid.NewGuid():N}", timing));
+        first.MissingReply();
+        second.MissingReply();
+
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 3, TimeSpan.FromSeconds(2)));
+        Assert.Equal(2, diagnostics.AcceptedSamples);
+        Assert.Equal(2, diagnostics.CompletedSamples);
+        Assert.All(lines, line =>
+        {
+            Assert.DoesNotContain(nonce, line, StringComparison.Ordinal);
+            using var document = JsonDocument.Parse(line);
+            Assert.All(document.RootElement.EnumerateObject(), property =>
+                Assert.Equal(JsonValueKind.Number, property.Value.ValueKind));
+        });
+    }
+
+    [Fact]
+    public void TerminalBurstDiagnosticsAreCappedAtThirtyTwoAndDoNotFlushOnAllocationAlone()
+    {
+        const string nonce = "fedcba9876543210fedcba9876543210";
+        var lines = new ConcurrentQueue<string>();
+        var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:32:{nonce}", lines.Enqueue,
+            TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(10))!;
+        var timing = new L12InboundQueueTiming(1, 2, 1, 100, 0);
+
+        for (var slot = 0; slot < L12SyntheticTransportDiagnostics.MaximumSamples; slot++)
+            Assert.NotNull(diagnostics.TryBegin(
+                $"l12diag:{nonce}:{slot}:{Guid.NewGuid():N}", timing));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:32:{Guid.NewGuid():N}", timing));
+        Assert.Empty(lines);
+
+        diagnostics.Dispose();
+        Assert.Equal(33, lines.Count);
+        Assert.Equal(32, lines.Count(line => JsonDocument.Parse(line).RootElement
+            .GetProperty("kind").GetInt32() == 1));
+    }
+
+    [Fact]
+    public async Task TerminalBurstDeadlineSealsIncompleteRowsAndLateCallbacksCannotDoubleOutput()
+    {
+        const string nonce = "00112233445566778899aabbccddeeff";
+        var lines = new ConcurrentQueue<string>();
+        var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.Mode}:2:{nonce}", lines.Enqueue,
+            TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(10))!;
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:1:{Guid.NewGuid():N}", new L12InboundQueueTiming(1, 2, 1, 100, 0)));
+
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        var row = lines.Select(line => JsonDocument.Parse(line)).Single(document =>
+            document.RootElement.GetProperty("kind").GetInt32() == 1);
+        using (row)
+        {
+            Assert.Equal(1, row.RootElement.GetProperty("slot").GetInt32());
+            Assert.Equal((int)L12SyntheticTransportStatus.Deadline,
+                row.RootElement.GetProperty("status").GetInt32());
+        }
+        using var summary = lines.Select(line => JsonDocument.Parse(line)).Single(document =>
+            document.RootElement.GetProperty("kind").GetInt32() == 2);
+        Assert.Equal(2, summary.RootElement.GetProperty("expected").GetInt32());
+        Assert.Equal(1, summary.RootElement.GetProperty("accepted").GetInt32());
+        Assert.Equal(0, summary.RootElement.GetProperty("completed").GetInt32());
+        Assert.Equal(1, summary.RootElement.GetProperty("missing").GetInt32());
+        Assert.Equal(1, summary.RootElement.GetProperty("deadline").GetInt32());
+        var countAtDeadline = lines.Count;
+        var sealedSnapshot = Assert.Single(diagnostics.SnapshotForTests());
+        sample.Committed(100);
+        diagnostics.Dispose();
+        await Task.Delay(60);
+        Assert.Equal(countAtDeadline, lines.Count);
+        Assert.Equal(sealedSnapshot, Assert.Single(diagnostics.SnapshotForTests()));
+        Assert.Equal((int)L12SyntheticTransportStatus.Deadline, sealedSnapshot.Status);
+    }
+
+    [Fact]
     public async Task BusinessQueueIsSingleConsumerFifo()
     {
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -47,6 +173,72 @@ public sealed class WebSocketInboundIsolationTests
 
             Assert.Equal(["first", "second", "third"], observed);
             Assert.Equal(1, maximumActive);
+            Assert.Equal(0, inbound.RetainedMessages);
+            Assert.Equal(0, inbound.RetainedBytes);
+        }
+        finally
+        {
+            release.TrySetResult();
+            inbound.StopAcceptingAndCancelPending();
+            await inbound.CompleteAsync(drain: false).WaitAsync(TimeSpan.FromSeconds(2));
+        }
+    }
+
+    [Fact]
+    public async Task TimedBusinessQueuePreservesFifoAndReportsAcceptedCapacity()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observed = new List<(string Json, L12InboundQueueTiming Timing)>();
+        await using var inbound = new L12InboundConnection(async (json, timing) =>
+        {
+            observed.Add((json, timing));
+            if (json != "first") return;
+            entered.TrySetResult();
+            await release.Task;
+        });
+
+        Assert.Equal(L12InboundEnqueueResult.Accepted, inbound.TryEnqueue("first"));
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        Assert.Equal(L12InboundEnqueueResult.Accepted, inbound.TryEnqueue("second"));
+        Assert.Equal(L12InboundEnqueueResult.Accepted, inbound.TryEnqueue("third"));
+        release.TrySetResult();
+        await inbound.CompleteAsync(drain: true).WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(["first", "second", "third"], observed.Select(item => item.Json));
+        Assert.Equal([1, 2, 3], observed.Select(item => item.Timing.AcceptedDepth));
+        Assert.All(observed, item => Assert.True(item.Timing.DequeuedAt >= item.Timing.EnqueuedAt));
+        Assert.Equal(0, inbound.RetainedMessages);
+        Assert.True(inbound.MaximumObservedMessages <= L12InboundConnection.MaximumRetainedMessages);
+    }
+
+    [Fact]
+    public async Task TimedBusinessQueueKeepsCapacityAndPendingCancellationSemantics()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var observed = new List<string>();
+        var inbound = new L12InboundConnection(async (json, _) =>
+        {
+            observed.Add(json);
+            entered.TrySetResult();
+            await release.Task;
+        });
+        try
+        {
+            Assert.Equal(L12InboundEnqueueResult.Accepted, inbound.TryEnqueue("executing"));
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(1));
+            for (var index = 1; index < L12InboundConnection.MaximumRetainedMessages; index++)
+                Assert.Equal(L12InboundEnqueueResult.Accepted, inbound.TryEnqueue($"pending-{index}"));
+            Assert.Equal(L12InboundEnqueueResult.MessageLimit, inbound.TryEnqueue("overflow"));
+            Assert.Equal(L12InboundConnection.MaximumRetainedMessages, inbound.RetainedMessages);
+
+            inbound.StopAcceptingAndCancelPending();
+            Assert.Equal(1, inbound.RetainedMessages);
+            Assert.Equal(L12InboundEnqueueResult.Completed, inbound.TryEnqueue("late"));
+            release.TrySetResult();
+            await inbound.CompleteAsync(drain: false).WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.Equal(["executing"], observed);
             Assert.Equal(0, inbound.RetainedMessages);
             Assert.Equal(0, inbound.RetainedBytes);
         }

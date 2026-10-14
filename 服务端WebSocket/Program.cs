@@ -23,6 +23,8 @@ var deploymentDrain = L12DeploymentDrainStartup.Create(deploymentDrainEnabled, r
 var ephemeralTestMatches = L12TestRunStorageProfile.Prepare(runtimePath,
     Environment.GetEnvironmentVariable(L12TestRunStorageProfile.EnvironmentKey),
     Environment.GetEnvironmentVariable("L12_PUBLIC_BASE_URL"));
+using var transportDiagnostics = L12SyntheticTransportDiagnostics.Create(ephemeralTestMatches,
+    Environment.GetEnvironmentVariable(L12SyntheticTransportDiagnostics.EnvironmentKey));
 if (ephemeralTestMatches)
     Console.WriteLine("Test-run match storage: ephemeral; previous match, replay and analytics data cleared.");
 
@@ -76,7 +78,8 @@ var importedRankedMasterTitleFacts = platform.ImportRankedMasterTitleFacts(ranke
 Console.WriteLine($"Ranked master title facts: authoritative={rankedMasterTitleFacts.Count}, "
                   + $"imported={importedRankedMasterTitleFacts}");
 platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
-await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog);
+await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog,
+    null, null, null, null, null, null, null, transportDiagnostics);
 
 Console.WriteLine("Twelve Legions online battle server");
 Console.WriteLine($"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");

@@ -1,4 +1,13 @@
+using System.Diagnostics;
+
 namespace TwelveLegions.Server;
+
+internal readonly record struct L12InboundQueueTiming(
+    long EnqueuedAt,
+    long DequeuedAt,
+    int AcceptedDepth,
+    long AcceptedRetainedBytes,
+    int RemainingQueuedMessages);
 
 internal enum L12InboundEnqueueResult
 {
@@ -27,16 +36,23 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     {
         private int _released;
 
-        internal PendingMessage(string json, int retainedBytes, L12DeploymentDrainLease? lease)
+        internal PendingMessage(string json, int retainedBytes, L12DeploymentDrainLease? lease,
+            long enqueuedAt, int acceptedDepth, long acceptedRetainedBytes)
         {
             Json = json;
             RetainedBytes = retainedBytes;
             Lease = lease;
+            EnqueuedAt = enqueuedAt;
+            AcceptedDepth = acceptedDepth;
+            AcceptedRetainedBytes = acceptedRetainedBytes;
         }
 
         internal string Json { get; }
         internal int RetainedBytes { get; }
         internal L12DeploymentDrainLease? Lease { get; }
+        internal long EnqueuedAt { get; }
+        internal int AcceptedDepth { get; }
+        internal long AcceptedRetainedBytes { get; }
 
         internal bool TryRelease() => Interlocked.Exchange(ref _released, 1) == 0;
     }
@@ -45,6 +61,7 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     private readonly Queue<PendingMessage> _queue = new();
     private readonly SemaphoreSlim _signal = new(0);
     private readonly Func<string, Task> _handler;
+    private readonly Func<string, L12InboundQueueTiming, Task>? _timedHandler;
     private readonly Action<Exception>? _onFault;
     private readonly Func<string, L12DeploymentDrainLease?>? _leaseAcquirer;
     private readonly Task _consumer;
@@ -59,6 +76,17 @@ internal sealed class L12InboundConnection : IAsyncDisposable
         Func<string, L12DeploymentDrainLease?>? leaseAcquirer = null)
     {
         _handler = handler;
+        _onFault = onFault;
+        _leaseAcquirer = leaseAcquirer;
+        _consumer = Task.Run(ConsumeAsync);
+    }
+
+    internal L12InboundConnection(Func<string, L12InboundQueueTiming, Task> handler,
+        Action<Exception>? onFault = null,
+        Func<string, L12DeploymentDrainLease?>? leaseAcquirer = null)
+    {
+        _handler = _ => Task.CompletedTask;
+        _timedHandler = handler;
         _onFault = onFault;
         _leaseAcquirer = leaseAcquirer;
         _consumer = Task.Run(ConsumeAsync);
@@ -115,10 +143,14 @@ internal sealed class L12InboundConnection : IAsyncDisposable
                 result = L12InboundEnqueueResult.RetainedByteLimit;
             else
             {
-                _queue.Enqueue(new PendingMessage(json, retainedBytes, lease));
+                var enqueuedAt = _timedHandler is null ? 0 : Stopwatch.GetTimestamp();
+                var acceptedDepth = _retainedMessages + 1;
+                var acceptedRetainedBytes = _retainedBytes + retainedBytes;
+                _queue.Enqueue(new PendingMessage(json, retainedBytes, lease, enqueuedAt,
+                    acceptedDepth, acceptedRetainedBytes));
                 lease = null; // PendingMessage now owns it.
-                _retainedMessages++;
-                _retainedBytes += retainedBytes;
+                _retainedMessages = acceptedDepth;
+                _retainedBytes = acceptedRetainedBytes;
                 UpdateMaximum(ref _maximumObservedMessages, _retainedMessages);
                 UpdateMaximum(ref _maximumObservedBytes, _retainedBytes);
                 _signal.Release();
@@ -177,9 +209,10 @@ internal sealed class L12InboundConnection : IAsyncDisposable
         {
             await _signal.WaitAsync();
             PendingMessage? pending;
+            var remainingQueuedMessages = 0;
             lock (_gate)
             {
-                if (_queue.TryDequeue(out pending)) { }
+                if (_queue.TryDequeue(out pending)) remainingQueuedMessages = _queue.Count;
                 else if (!_accepting) return;
                 else continue;
             }
@@ -189,7 +222,12 @@ internal sealed class L12InboundConnection : IAsyncDisposable
             {
                 if (pending.Lease?.Kind == L12DeploymentLeaseKind.Admission)
                     executionScope = pending.Lease.EnterExecutionScope();
-                await _handler(pending.Json);
+                if (_timedHandler is null)
+                    await _handler(pending.Json);
+                else
+                    await _timedHandler(pending.Json, new L12InboundQueueTiming(
+                        pending.EnqueuedAt, Stopwatch.GetTimestamp(), pending.AcceptedDepth,
+                        pending.AcceptedRetainedBytes, remainingQueuedMessages));
             }
             catch (Exception error)
             {

@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261014-TERMINAL-NUMERIC-TRACE｜测试专用终局链分段观察（批准，本地专项通过）
+
+- 用户批准默认关闭、仅测试服合成请求取证及测试发布复测，不改正式/规则/可靠确认/数据库或39项V2。五产品源（三连接/房间/server及启动）和三既有测试文件扩展P2/P3观察边界；真实ephemeralTestMatches才允许设置env，非隔离任意已设置值启动失败，非法设置不回显nonce。严格前缀/32位nonce/规范数字slot/UUID N，只有已认证surrender分配，重复slot不覆盖，最多32对象/单Timer。
+- 首合法请求后15s硬截止，全expected到终态后250ms封存；分配满不提前输出。入站FIFO/深度/字节、preGate/等待/持有、serialize、出站驻留/深度、codec准备/线字节、Send/Commit/服务总时间只输出数值，封存状态和summary同锁自洽，sink故障不改动作。默认null走旧构造，不新计时/采样/Timer；入队分配和计数失败原子性保持旧顺序，终局仍可靠full。
+- Main审查后补timed入站容量/取消、真实room Gate75ms、封存summary竞态；最终新Platform6、Tests3及原FIFO/fence/fanout21/原出站与full/delta25/39及8KiB3通过。Main独立Release配置专项6+2及准确补项3+1=12通过，首过滤方法名/项目错位真实仅命中8，不冒称12；保留日志，修正固定调用源并仅补缺项。最终完整Release仍待，未部署本观察代码。
+- C盘post-release-adversarial-20261014/transport-diagnostics-test：客户端仅现有requestId标记合成slot、30并行/3s/2s/10外部人保持；7+11+8及30真实本机迟到整合通过，迟到仍失败、不重试、不输出nonce/rawID。数值关联器10回归拒绝身份字段/重复slot/不一致summary/缺配对；有符号端到端余量不伪称纯网络时间，不把gate hold内子指标重复相加。提前环境核对仅服务/隔离/余量，不以旧正式性能采样替代验收；下一唯一干净Release/标准测试发布/原方法真实复测。
+
+## BUG-20261014-E2-NARROW-RERUN｜旧0e证据绑定缺口已消除，再收口5条
+
+- 用实际e2归档586BC507/DLL E3540216，仅重建隔离探针、改具名路径/产品SHA/报告元数据，逐字符确认场景与断言不变，旧目录/报告不覆盖。木马+阿喀琉斯84、阿尔忒弥斯/美狄亚/安提诺乌斯4、纷乱箭/风暴4、傀儡/绝防8实际全过；傀儡本轮68命令/58恢复，不抄旧66或旧TRX，不声称原玩家录像/浏览器。
+- 新5条按限定未复现各自预览/单CAS/独立读回关闭；本轮29真实终态（fixed7/rejected18/duplicate4），总899/new491/resolved239/closed169；统一清单累计本轮121已关，原文/历史保留、专用会话撤销。C盘bug-closeout-three-e2/two-e2与两main-acceptance及work-items-two-e2-reconciliation保留；下方24/27只是更早实测，不反复关闭。r12当前余22，缺场景/产品意见单项挂起，不自动修未批准新Bug。
+
 ## ADMIN-20261014-ALERT-TRUTH｜真实非终态待办、业务容量与不可读分类（本地验收，未部署）
 
 - 用户批准限定修复及对抗验收，不改80/90%阈值、不放宽备份权限、不删数据。实际初始899反馈中new520/resolved232/closed147；工作台752错误包含232已解决项，且仅为计数构建全history视图。OpenBugCount直接按既有终态判定计数，工作台和Bug页不再两套口径。待办是反馈数量，不等于已确认产品缺陷。

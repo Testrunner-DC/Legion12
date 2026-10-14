@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -12,6 +14,360 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace TwelveLegions.Server;
+
+internal enum L12SyntheticTransportStatus
+{
+    Pending = 0,
+    Sent = 1,
+    QueueRejected = 2,
+    Discarded = 3,
+    SendFault = 4,
+    Deadline = 5,
+    MissingReply = 6,
+}
+
+internal readonly record struct L12SyntheticTransportSnapshot(
+    int Slot,
+    int Status,
+    long InboundFifoMicroseconds,
+    int InboundAcceptedDepth,
+    long InboundAcceptedRetainedBytes,
+    int InboundRemainingDepth,
+    long PreGateMicroseconds,
+    long GateWaitMicroseconds,
+    long GateHoldMicroseconds,
+    long SerializeMicroseconds,
+    int OutboundEnqueueDepth,
+    int OutboundDequeueDepth,
+    long OutboundQueueMicroseconds,
+    long PrepareMicroseconds,
+    int WireBytes,
+    int WireDelta,
+    long SendMicroseconds,
+    long CommitMicroseconds,
+    long ServerTotalMicroseconds);
+
+/// <summary>
+/// A one-shot numeric probe for an explicitly isolated test-run profile. It deliberately does not
+/// feed the persisted 39-stage performance archive and never retains a request id or payload.
+/// </summary>
+internal sealed class L12SyntheticTransportDiagnostics : IDisposable
+{
+    internal const string EnvironmentKey = "L12_TESTRUN_TRANSPORT_DIAGNOSTICS";
+    internal const string Mode = "terminal-burst-v1";
+    internal const int MaximumSamples = 32;
+    private static readonly TimeSpan DefaultDeadline = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultQuietPeriod = TimeSpan.FromMilliseconds(250);
+
+    private readonly object _gate = new();
+    private readonly string _requestPrefix;
+    private readonly L12SyntheticTransportSample?[] _samples;
+    private readonly Action<string> _sink;
+    private readonly TimeSpan _deadline;
+    private readonly TimeSpan _quietPeriod;
+    private readonly Timer _timer;
+    private int _accepted;
+    private int _completed;
+    private int _duplicates;
+    private int _invalid;
+    private bool _started;
+    private bool _flushed;
+
+    private L12SyntheticTransportDiagnostics(int expected, string nonce, Action<string> sink,
+        TimeSpan deadline, TimeSpan quietPeriod)
+    {
+        ExpectedSamples = expected;
+        _requestPrefix = $"l12diag:{nonce}:";
+        _samples = new L12SyntheticTransportSample?[expected];
+        _sink = sink;
+        _deadline = deadline;
+        _quietPeriod = quietPeriod;
+        _timer = new Timer(static state => ((L12SyntheticTransportDiagnostics)state!).Flush(),
+            this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+    }
+
+    internal int ExpectedSamples { get; }
+    internal int AcceptedSamples { get { lock (_gate) return _accepted; } }
+    internal int CompletedSamples { get { lock (_gate) return _completed; } }
+
+    internal static L12SyntheticTransportDiagnostics? Create(bool ephemeralTestMatches,
+        string? setting, Action<string>? sink = null, TimeSpan? deadline = null,
+        TimeSpan? quietPeriod = null)
+    {
+        if (setting is null) return null;
+        if (!ephemeralTestMatches)
+            throw new InvalidOperationException(
+                "Synthetic transport diagnostics require the isolated ephemeral test-run profile.");
+
+        var parts = setting.Split(':', StringSplitOptions.None);
+        if (parts.Length != 3
+            || !string.Equals(parts[0], Mode, StringComparison.Ordinal)
+            || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var expected)
+            || expected is < 1 or > MaximumSamples
+            || parts[2].Length != 32
+            || parts[2].Any(character => character is not (>= '0' and <= '9')
+                                               and not (>= 'a' and <= 'f')))
+            throw new InvalidOperationException("Synthetic transport diagnostics configuration is invalid.");
+
+        var effectiveDeadline = deadline ?? DefaultDeadline;
+        var effectiveQuietPeriod = quietPeriod ?? DefaultQuietPeriod;
+        if (effectiveDeadline <= TimeSpan.Zero || effectiveQuietPeriod <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(deadline),
+                "Synthetic transport diagnostic timers must be positive.");
+        return new L12SyntheticTransportDiagnostics(expected, parts[2], sink ?? Console.Error.WriteLine,
+            effectiveDeadline, effectiveQuietPeriod);
+    }
+
+    internal L12SyntheticTransportSample? TryBegin(string? requestId, L12InboundQueueTiming inbound)
+    {
+        try
+        {
+            if (requestId is null || requestId.Length > 128
+                || !requestId.StartsWith(_requestPrefix, StringComparison.Ordinal))
+                return null;
+            var remainder = requestId.AsSpan(_requestPrefix.Length);
+            var separator = remainder.IndexOf(':');
+            if (separator <= 0 || remainder[(separator + 1)..].IndexOf(':') >= 0
+                || !int.TryParse(remainder[..separator], NumberStyles.None, CultureInfo.InvariantCulture,
+                    out var slot)
+                || slot < 0 || slot >= ExpectedSamples
+                || !remainder[..separator].SequenceEqual(slot.ToString(CultureInfo.InvariantCulture))
+                || !Guid.TryParseExact(remainder[(separator + 1)..], "N", out _))
+            {
+                lock (_gate) _invalid++;
+                return null;
+            }
+
+            lock (_gate)
+            {
+                if (_flushed) return null;
+                if (_samples[slot] is not null)
+                {
+                    _duplicates++;
+                    return null;
+                }
+                var sample = new L12SyntheticTransportSample(this, slot, inbound);
+                _samples[slot] = sample;
+                _accepted++;
+                if (!_started)
+                {
+                    _started = true;
+                    _timer.Change(_deadline, Timeout.InfiniteTimeSpan);
+                }
+                return sample;
+            }
+        }
+        catch
+        {
+            // Diagnostics are observational. A malformed marker or callback race must not affect play.
+            return null;
+        }
+    }
+
+    internal void Complete(L12SyntheticTransportSample sample, L12SyntheticTransportStatus status)
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (_flushed || !ReferenceEquals(_samples[sample.Slot], sample)) return;
+                if (!sample.TryComplete(status)) return;
+                _completed++;
+                if (_completed >= ExpectedSamples)
+                    _timer.Change(_quietPeriod, Timeout.InfiniteTimeSpan);
+            }
+        }
+        catch { }
+    }
+
+    internal IReadOnlyList<L12SyntheticTransportSnapshot> SnapshotForTests()
+    {
+        lock (_gate)
+            return _samples.Where(sample => sample is not null)
+                .Select(sample => sample!.Snapshot()).ToArray();
+    }
+
+    private void Flush()
+    {
+        L12SyntheticTransportSnapshot[] rows;
+        int accepted;
+        int completed;
+        int duplicates;
+        int invalid;
+        lock (_gate)
+        {
+            if (_flushed) return;
+            _flushed = true;
+            if (!_started) return;
+            foreach (var sample in _samples)
+                sample?.SealAtDeadline();
+            rows = _samples.Where(sample => sample is not null)
+                .Select(sample => sample!.Snapshot()).ToArray();
+            accepted = _accepted;
+            completed = rows.Count(row => row.Status != (int)L12SyntheticTransportStatus.Pending
+                                          && row.Status != (int)L12SyntheticTransportStatus.Deadline);
+            duplicates = _duplicates;
+            invalid = _invalid;
+        }
+
+        foreach (var row in rows)
+        {
+            var line = string.Create(CultureInfo.InvariantCulture,
+                $"{{\"schema\":1,\"kind\":1,\"slot\":{row.Slot},\"status\":{row.Status},\"in_fifo_us\":{row.InboundFifoMicroseconds},\"in_depth\":{row.InboundAcceptedDepth},\"in_bytes\":{row.InboundAcceptedRetainedBytes},\"in_remaining\":{row.InboundRemainingDepth},\"pre_gate_us\":{row.PreGateMicroseconds},\"gate_wait_us\":{row.GateWaitMicroseconds},\"gate_hold_us\":{row.GateHoldMicroseconds},\"serialize_us\":{row.SerializeMicroseconds},\"out_enq_depth\":{row.OutboundEnqueueDepth},\"out_deq_depth\":{row.OutboundDequeueDepth},\"out_queue_us\":{row.OutboundQueueMicroseconds},\"prepare_us\":{row.PrepareMicroseconds},\"wire_bytes\":{row.WireBytes},\"wire_delta\":{row.WireDelta},\"send_us\":{row.SendMicroseconds},\"commit_us\":{row.CommitMicroseconds},\"server_total_us\":{row.ServerTotalMicroseconds}}}");
+            try { _sink(line); }
+            catch { }
+        }
+        var summary = string.Create(CultureInfo.InvariantCulture,
+            $"{{\"schema\":1,\"kind\":2,\"expected\":{ExpectedSamples},\"accepted\":{accepted},\"completed\":{completed},\"missing\":{ExpectedSamples - accepted},\"deadline\":{accepted - completed},\"duplicate\":{duplicates},\"invalid\":{invalid}}}");
+        try { _sink(summary); }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        Flush();
+        _timer.Dispose();
+    }
+}
+
+internal sealed class L12SyntheticTransportSample
+{
+    private readonly L12SyntheticTransportDiagnostics _owner;
+    private readonly long _inboundEnqueuedAt;
+    private readonly long _inboundDequeuedAt;
+    private readonly int _inboundAcceptedDepth;
+    private readonly long _inboundAcceptedRetainedBytes;
+    private readonly int _inboundRemainingDepth;
+    private long _gateWaitStartedAt;
+    private long _gateAcquiredAt;
+    private long _gateReleasedAt;
+    private long _serializeStartedAt;
+    private long _serializeCompletedAt;
+    private long _outboundEnqueuedAt;
+    private long _outboundDequeuedAt;
+    private int _outboundEnqueueDepth;
+    private int _outboundDequeueDepth;
+    private long _prepareStartedAt;
+    private long _prepareCompletedAt;
+    private int _wireBytes;
+    private int _wireDelta;
+    private long _sendStartedAt;
+    private long _sendCompletedAt;
+    private long _commitCompletedAt;
+    private int _status;
+
+    internal L12SyntheticTransportSample(L12SyntheticTransportDiagnostics owner, int slot,
+        L12InboundQueueTiming inbound)
+    {
+        _owner = owner;
+        Slot = slot;
+        _inboundEnqueuedAt = inbound.EnqueuedAt;
+        _inboundDequeuedAt = inbound.DequeuedAt;
+        _inboundAcceptedDepth = inbound.AcceptedDepth;
+        _inboundAcceptedRetainedBytes = inbound.AcceptedRetainedBytes;
+        _inboundRemainingDepth = inbound.RemainingQueuedMessages;
+    }
+
+    internal int Slot { get; }
+
+    internal void GateWaitStarted(long timestamp)
+    {
+        if (IsPending) Volatile.Write(ref _gateWaitStartedAt, timestamp);
+    }
+    internal void GateAcquired(long timestamp)
+    {
+        if (IsPending) Volatile.Write(ref _gateAcquiredAt, timestamp);
+    }
+    internal void GateReleased(long timestamp)
+    {
+        if (IsPending) Volatile.Write(ref _gateReleasedAt, timestamp);
+    }
+    internal void Serialization(long startedAt, long completedAt)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _serializeStartedAt, startedAt);
+        Volatile.Write(ref _serializeCompletedAt, completedAt);
+    }
+    internal void OutboundEnqueued(long timestamp, int depth)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _outboundEnqueuedAt, timestamp);
+        Volatile.Write(ref _outboundEnqueueDepth, depth);
+    }
+    internal void OutboundDequeued(long timestamp, int depth)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _outboundDequeuedAt, timestamp);
+        Volatile.Write(ref _outboundDequeueDepth, depth);
+    }
+    internal void Prepared(long startedAt, long completedAt, int wireBytes, bool isDelta)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _prepareStartedAt, startedAt);
+        Volatile.Write(ref _prepareCompletedAt, completedAt);
+        Volatile.Write(ref _wireBytes, wireBytes);
+        Volatile.Write(ref _wireDelta, isDelta ? 1 : 0);
+    }
+    internal void Sent(long startedAt, long completedAt)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _sendStartedAt, startedAt);
+        Volatile.Write(ref _sendCompletedAt, completedAt);
+    }
+    internal void Committed(long timestamp)
+    {
+        if (!IsPending) return;
+        Volatile.Write(ref _commitCompletedAt, timestamp);
+        Complete(L12SyntheticTransportStatus.Sent);
+    }
+    internal void QueueRejected() => Complete(L12SyntheticTransportStatus.QueueRejected);
+    internal void Discarded() => Complete(L12SyntheticTransportStatus.Discarded);
+    internal void SendFault() => Complete(L12SyntheticTransportStatus.SendFault);
+    internal void MissingReply() => Complete(L12SyntheticTransportStatus.MissingReply);
+
+    private bool IsPending => Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Pending;
+
+    private void Complete(L12SyntheticTransportStatus status)
+    {
+        try { _owner.Complete(this, status); }
+        catch { }
+    }
+
+    internal bool TryComplete(L12SyntheticTransportStatus status)
+        => Interlocked.CompareExchange(ref _status, (int)status,
+            (int)L12SyntheticTransportStatus.Pending) == (int)L12SyntheticTransportStatus.Pending;
+
+    internal void SealAtDeadline()
+        => Interlocked.CompareExchange(ref _status, (int)L12SyntheticTransportStatus.Deadline,
+            (int)L12SyntheticTransportStatus.Pending);
+
+    internal L12SyntheticTransportSnapshot Snapshot() => new(
+        Slot,
+        Volatile.Read(ref _status),
+        ElapsedMicroseconds(_inboundEnqueuedAt, _inboundDequeuedAt),
+        _inboundAcceptedDepth,
+        _inboundAcceptedRetainedBytes,
+        _inboundRemainingDepth,
+        ElapsedMicroseconds(_inboundDequeuedAt, Volatile.Read(ref _gateWaitStartedAt)),
+        ElapsedMicroseconds(Volatile.Read(ref _gateWaitStartedAt), Volatile.Read(ref _gateAcquiredAt)),
+        ElapsedMicroseconds(Volatile.Read(ref _gateAcquiredAt), Volatile.Read(ref _gateReleasedAt)),
+        ElapsedMicroseconds(Volatile.Read(ref _serializeStartedAt), Volatile.Read(ref _serializeCompletedAt)),
+        Volatile.Read(ref _outboundEnqueueDepth),
+        Volatile.Read(ref _outboundDequeueDepth),
+        ElapsedMicroseconds(Volatile.Read(ref _outboundEnqueuedAt), Volatile.Read(ref _outboundDequeuedAt)),
+        ElapsedMicroseconds(Volatile.Read(ref _prepareStartedAt), Volatile.Read(ref _prepareCompletedAt)),
+        Volatile.Read(ref _wireBytes),
+        Volatile.Read(ref _wireDelta),
+        ElapsedMicroseconds(Volatile.Read(ref _sendStartedAt), Volatile.Read(ref _sendCompletedAt)),
+        ElapsedMicroseconds(Volatile.Read(ref _sendCompletedAt), Volatile.Read(ref _commitCompletedAt)),
+        ElapsedMicroseconds(_inboundEnqueuedAt, Volatile.Read(ref _commitCompletedAt)));
+
+    private static long ElapsedMicroseconds(long startedAt, long completedAt)
+    {
+        if (startedAt <= 0 || completedAt < startedAt) return 0;
+        return (long)(Stopwatch.GetElapsedTime(startedAt, completedAt).TotalMilliseconds * 1000);
+    }
+}
 
 public sealed partial class L12WebSocketServer : IAsyncDisposable
 {
@@ -54,6 +410,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private Task? _rankedClockWatchdogTask;
     private readonly TimeSpan _sandboxReplayMaintenanceInterval;
     private readonly Func<DateTimeOffset> _seasonActivationUtcNow;
+    private readonly L12SyntheticTransportDiagnostics? _transportDiagnostics;
     private readonly L12PresenceRefreshCoalescer _presenceRefreshCoalescer;
     private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
     private Task? _sandboxReplayMaintenanceTask;
@@ -69,6 +426,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         TimeSpan? sandboxReplayMaintenanceInterval = null,
         Func<L12ServerStorageView>? storageSnapshot = null,
         Func<DateTimeOffset>? seasonActivationUtcNow = null)
+        : this(rooms, recorder, platform, catalog, releaseControl, rankedIntegrityHmacKey,
+            rankedClockWatchdogInterval, modianImportClient, sandboxReplayMaintenanceInterval,
+            storageSnapshot, seasonActivationUtcNow, null)
+    {
+    }
+
+    internal L12WebSocketServer(L12RoomManager rooms, MatchRecorder recorder, L12PlatformStore platform,
+        L12Catalog catalog, IL12ReleaseControlAdapter? releaseControl,
+        string? rankedIntegrityHmacKey, TimeSpan? rankedClockWatchdogInterval,
+        IL12ModianImportClient? modianImportClient,
+        TimeSpan? sandboxReplayMaintenanceInterval,
+        Func<L12ServerStorageView>? storageSnapshot,
+        Func<DateTimeOffset>? seasonActivationUtcNow,
+        L12SyntheticTransportDiagnostics? transportDiagnostics)
     {
         _rooms = rooms;
         _recorder = recorder;
@@ -88,6 +459,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             ? maintenanceInterval : TimeSpan.FromMinutes(5);
         _storageSnapshot = storageSnapshot ?? (() => L12ServerStorageMonitor.Read());
         _seasonActivationUtcNow = seasonActivationUtcNow ?? (() => DateTimeOffset.UtcNow);
+        _transportDiagnostics = transportDiagnostics;
         _presenceRefreshCoalescer = new L12PresenceRefreshCoalescer(
             FlushPresenceRefreshAsync,
             onEmitFailure: error => Console.Error.WriteLine($"在线状态合并刷新失败：{error.GetType().Name}"));
@@ -3935,24 +4307,36 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var acceptedSocket = socket;
             var snapshotCodec = new L12SnapshotWireCodec();
             _snapshotCodecs[sessionId] = snapshotCodec;
-            var outbound = new L12OutboundConnection(
-                (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, payload, token),
-                error =>
-                {
-                    Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
-                    acceptedSocket.Abort();
-                }, SocketSendTimeout);
+            void OutboundFault(Exception error)
+            {
+                Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
+                acceptedSocket.Abort();
+            }
+            var outbound = _transportDiagnostics is null
+                ? new L12OutboundConnection(
+                    (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, payload, null, token),
+                    OutboundFault, SocketSendTimeout)
+                : new L12OutboundConnection(
+                    (payload, diagnostic, token) => SendDirectAsync(acceptedSocket, snapshotCodec,
+                        payload, diagnostic, token),
+                    OutboundFault, SocketSendTimeout);
             _outboundConnections[sessionId] = outbound;
             var deploymentDrain = _rooms.DeploymentDrain;
-            var inbound = new L12InboundConnection(
-                json => DispatchAsync(sessionId, json, CancellationToken.None),
-                error =>
-                {
-                    Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
-                    acceptedSocket.Abort();
-                }, deploymentDrain is null
-                    ? null
-                    : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json));
+            void InboundFault(Exception error)
+            {
+                Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
+                acceptedSocket.Abort();
+            }
+            Func<string, L12DeploymentDrainLease?>? leaseAcquirer = deploymentDrain is null
+                ? null
+                : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json);
+            var inbound = _transportDiagnostics is null
+                ? new L12InboundConnection(
+                    json => DispatchAsync(sessionId, json, CancellationToken.None),
+                    InboundFault, leaseAcquirer)
+                : new L12InboundConnection(
+                    (json, timing) => DispatchAsync(sessionId, json, CancellationToken.None, timing),
+                    InboundFault, leaseAcquirer);
             _inboundConnections[sessionId] = inbound;
             var businessPathEstablished = false;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
@@ -4040,7 +4424,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    private async Task DispatchAsync(Guid sessionId, string json, CancellationToken cancellationToken)
+    private async Task DispatchAsync(Guid sessionId, string json, CancellationToken cancellationToken,
+        L12InboundQueueTiming inboundTiming = default)
     {
         JsonDocument document;
         try { document = JsonDocument.Parse(json); }
@@ -4067,6 +4452,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 // receipt still fence the queued command before it reaches any room mutation.
                 if (!await ValidateAuthenticatedConnectionAsync(sessionId, cancellationToken)) return;
             }
+            L12SyntheticTransportSample? transportDiagnostic = null;
+            if (_transportDiagnostics is not null
+                && messageType == "gameAction"
+                && root.TryGetProperty("command", out var diagnosticCommand)
+                && diagnosticCommand.ValueKind == JsonValueKind.Object
+                && diagnosticCommand.TryGetProperty("type", out var diagnosticCommandType)
+                && diagnosticCommandType.ValueKind == JsonValueKind.String
+                && string.Equals(diagnosticCommandType.GetString(), "surrender", StringComparison.Ordinal))
+                transportDiagnostic = _transportDiagnostics.TryBegin(GetString(root, "requestId"), inboundTiming);
             try
             {
                 IReadOnlyList<OutgoingMessage> outgoing = messageType switch
@@ -4095,7 +4489,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         => SelectCustomDeck(sessionId, deckElement),
                     "ready" => await _rooms.SetReadyAsync(sessionId, GetBool(root, "ready", true)),
                     "gameAction" when root.TryGetProperty("command", out var command)
-                        => await _rooms.HandleActionAsync(sessionId, command, GetString(root, "requestId")),
+                        => await _rooms.HandleActionAsync(sessionId, command, GetString(root, "requestId"),
+                            transportDiagnostic),
                     "getResponsePreference" => await _rooms.GetResponsePreferenceAsync(sessionId),
                     "setResponsePreference" => await _rooms.SetResponsePreferenceAsync(sessionId,
                         GetString(root, "mode"), GetString(root, "requestId")),
@@ -4123,7 +4518,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     })],
                     _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
                 };
-                await SendManyAsync(outgoing, cancellationToken);
+                await SendManyAsync(outgoing, cancellationToken, transportDiagnostic, sessionId);
                 if (messageType is "hello" or "createRoom" or "createSandbox" or "joinMatchmaking"
                     or "cancelMatchmaking" or "joinRoom" or "enterTournamentMatch" or "spectateRoom"
                     or "spectateTournamentMatch" or "leaveRoom" or "ready" or "resolveFriendInvitation")
@@ -4583,23 +4978,31 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    private Task SendManyAsync(IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken)
+    private Task SendManyAsync(IReadOnlyList<OutgoingMessage> messages, CancellationToken cancellationToken,
+        L12SyntheticTransportSample? transportDiagnostic = null, Guid diagnosticSessionId = default)
     {
         var serializedByPayload = new Dictionary<object, byte[]>(ReferenceEqualityComparer.Instance);
+        var diagnosticAssigned = false;
         foreach (var message in messages)
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!_outboundConnections.TryGetValue(message.SessionId, out var outbound)) continue;
+            var messageDiagnostic = !diagnosticAssigned && transportDiagnostic is not null
+                                    && message.SessionId == diagnosticSessionId
+                ? transportDiagnostic : null;
+            if (messageDiagnostic is not null) diagnosticAssigned = true;
             if (!serializedByPayload.TryGetValue(message.Payload, out var bytes))
             {
                 var serializationStartedAt = L12PerformanceMetrics.Start();
                 bytes = JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions);
+                var serializationCompletedAt = messageDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
                 L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
+                messageDiagnostic?.Serialization(serializationStartedAt, serializationCompletedAt);
                 serializedByPayload[message.Payload] = bytes;
                 L12PerformanceMetrics.Bytes("websocket.full-payload", bytes.Length);
             }
             var queued = new L12QueuedPayload(bytes, message.IsGameState, message.ForceFullGameState);
-            if (outbound.TryEnqueue(queued, message.ReplaceableGameState))
+            if (outbound.TryEnqueue(queued, message.ReplaceableGameState, messageDiagnostic))
             {
                 L12PerformanceMetrics.Value("websocket.queue-depth", outbound.QueuedCount);
                 continue;
@@ -4608,6 +5011,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             // 队列中全是不可丢关键消息时，隔离此慢连接，绝不反压房间动作链。
             if (_sockets.TryGetValue(message.SessionId, out var slowSocket)) slowSocket.Abort();
         }
+        if (transportDiagnostic is not null && !diagnosticAssigned)
+            transportDiagnostic.MissingReply();
         return Task.CompletedTask;
     }
 
@@ -4625,19 +5030,29 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     }
 
     private static async Task SendDirectAsync(WebSocket socket, L12SnapshotWireCodec snapshotCodec,
-        object payload,
+        object payload, L12SyntheticTransportSample? transportDiagnostic,
         CancellationToken cancellationToken)
     {
-        if (socket.State != WebSocketState.Open) return;
+        if (socket.State != WebSocketState.Open)
+        {
+            transportDiagnostic?.SendFault();
+            return;
+        }
+        var prepareStartedAt = transportDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
         var prepared = snapshotCodec.Prepare((L12QueuedPayload)payload);
+        transportDiagnostic?.Prepared(prepareStartedAt, Stopwatch.GetTimestamp(), prepared.Payload.Length,
+            prepared.IsDelta);
         L12PerformanceMetrics.Bytes(prepared.IsDelta
             ? "websocket.delta-payload" : "websocket.sent-payload", prepared.Payload.Length);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(SocketSendTimeout);
         var sendStartedAt = L12PerformanceMetrics.Start();
         await socket.SendAsync(prepared.Payload.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
+        var sendCompletedAt = transportDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
         L12PerformanceMetrics.Duration("websocket.send", sendStartedAt);
+        transportDiagnostic?.Sent(sendStartedAt, sendCompletedAt);
         prepared.Commit();
+        transportDiagnostic?.Committed(Stopwatch.GetTimestamp());
     }
 
     private async Task RunRankedClockWatchdogAsync(CancellationToken cancellationToken)

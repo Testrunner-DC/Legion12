@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace TwelveLegions.Server;
 
 /// <summary>
@@ -8,15 +10,28 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
 {
     internal const int MaximumQueuedMessages = 32;
 
-    private sealed record PendingMessage(
-        object Payload,
-        bool ReplaceableGameState,
-        TaskCompletionSource? Delivered = null);
+    private sealed class PendingMessage
+    {
+        internal PendingMessage(object payload, bool replaceableGameState,
+            TaskCompletionSource? delivered = null, L12SyntheticTransportSample? diagnostic = null)
+        {
+            Payload = payload;
+            ReplaceableGameState = replaceableGameState;
+            Delivered = delivered;
+            Diagnostic = diagnostic;
+        }
+
+        internal object Payload { get; }
+        internal bool ReplaceableGameState { get; }
+        internal TaskCompletionSource? Delivered { get; }
+        internal L12SyntheticTransportSample? Diagnostic { get; }
+    }
 
     private readonly object _gate = new();
     private readonly LinkedList<PendingMessage> _queue = [];
     private readonly SemaphoreSlim _signal = new(0);
     private readonly Func<object, CancellationToken, Task> _sender;
+    private readonly Func<object, L12SyntheticTransportSample?, CancellationToken, Task>? _timedSender;
     private readonly Action<Exception>? _onFault;
     private readonly TimeSpan? _sendTimeout;
     private readonly CancellationTokenSource _stop = new();
@@ -36,6 +51,17 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         _senderLoop = Task.Run(SenderLoopAsync);
     }
 
+    internal L12OutboundConnection(
+        Func<object, L12SyntheticTransportSample?, CancellationToken, Task> sender,
+        Action<Exception>? onFault = null, TimeSpan? sendTimeout = null)
+    {
+        _sender = (_, _) => Task.CompletedTask;
+        _timedSender = sender;
+        _onFault = onFault;
+        _sendTimeout = sendTimeout;
+        _senderLoop = Task.Run(SenderLoopAsync);
+    }
+
     internal int QueuedCount
     {
         get { lock (_gate) return _queue.Count; }
@@ -48,10 +74,14 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
     internal bool TryEnqueue(object payload, bool replaceableGameState = false)
         => TryEnqueueCore(new PendingMessage(payload, replaceableGameState));
 
+    internal bool TryEnqueue(object payload, bool replaceableGameState,
+        L12SyntheticTransportSample? diagnostic)
+        => TryEnqueueCore(new PendingMessage(payload, replaceableGameState, diagnostic: diagnostic));
+
     internal async Task<bool> EnqueueAndWaitAsync(object payload, CancellationToken cancellationToken)
     {
         var delivered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!TryEnqueueCore(new PendingMessage(payload, ReplaceableGameState: false, delivered))) return false;
+        if (!TryEnqueueCore(new PendingMessage(payload, replaceableGameState: false, delivered))) return false;
         await delivered.Task.WaitAsync(cancellationToken);
         return true;
     }
@@ -71,9 +101,13 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
 
             _completed = true;
             _replaceableTail = null;
-            foreach (var queued in _queue) queued.Delivered?.TrySetCanceled();
+            foreach (var queued in _queue)
+            {
+                queued.Delivered?.TrySetCanceled();
+                queued.Diagnostic?.Discarded();
+            }
             _queue.Clear();
-            _queue.AddLast(new PendingMessage(payload, ReplaceableGameState: false, delivered));
+            _queue.AddLast(new PendingMessage(payload, replaceableGameState: false, delivered));
             UpdateMaximumDepth(_queue.Count);
 
             // One permit exposes the terminal frame; the second lets the sender observe the
@@ -90,13 +124,19 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
     {
         lock (_gate)
         {
-            if (_completed) return false;
+            if (_completed)
+            {
+                message.Diagnostic?.QueueRejected();
+                return false;
+            }
 
             if (message.ReplaceableGameState && _replaceableTail is not null)
             {
                 _replaceableTail.Value.Delivered?.TrySetCanceled();
+                _replaceableTail.Value.Diagnostic?.Discarded();
                 _replaceableTail.Value = message;
                 Interlocked.Increment(ref _mergedCount);
+                message.Diagnostic?.OutboundEnqueued(Stopwatch.GetTimestamp(), _queue.Count);
                 return true;
             }
 
@@ -109,6 +149,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 if (message.ReplaceableGameState)
                 {
                     Interlocked.Increment(ref _droppedCount);
+                    message.Diagnostic?.QueueRejected();
                     return false;
                 }
 
@@ -118,10 +159,12 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 if (discardable is null)
                 {
                     Interlocked.Increment(ref _droppedCount);
+                    message.Diagnostic?.QueueRejected();
                     return false;
                 }
                 if (ReferenceEquals(_replaceableTail, discardable)) _replaceableTail = null;
                 discardable.Value.Delivered?.TrySetCanceled();
+                discardable.Value.Diagnostic?.Discarded();
                 _queue.Remove(discardable);
                 Interlocked.Increment(ref _droppedCount);
                 reusedQueueSlot = true;
@@ -130,6 +173,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
             var node = _queue.AddLast(message);
             if (message.ReplaceableGameState) _replaceableTail = node;
             UpdateMaximumDepth(_queue.Count);
+            message.Diagnostic?.OutboundEnqueued(Stopwatch.GetTimestamp(), _queue.Count);
             if (!reusedQueueSlot) _signal.Release();
             return true;
         }
@@ -145,7 +189,11 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 _replaceableTail = null;
                 if (!drain)
                 {
-                    foreach (var message in _queue) message.Delivered?.TrySetCanceled();
+                    foreach (var message in _queue)
+                    {
+                        message.Delivered?.TrySetCanceled();
+                        message.Diagnostic?.Discarded();
+                    }
                     _queue.Clear();
                     _stop.Cancel();
                 }
@@ -162,6 +210,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         {
             await _signal.WaitAsync(_stop.Token);
             PendingMessage? message = null;
+            var remainingDepth = 0;
             lock (_gate)
             {
                 if (_queue.First is { } first)
@@ -169,6 +218,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                     message = first.Value;
                     if (ReferenceEquals(_replaceableTail, first)) _replaceableTail = null;
                     _queue.RemoveFirst();
+                    remainingDepth = _queue.Count;
                 }
                 else if (_completed)
                 {
@@ -177,21 +227,30 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
             }
 
             if (message is null) continue;
+            message.Diagnostic?.OutboundDequeued(Stopwatch.GetTimestamp(), remainingDepth);
             try
             {
                 using var sendTimeout = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
                 if (_sendTimeout is { } timeout) sendTimeout.CancelAfter(timeout);
-                await _sender(message.Payload, sendTimeout.Token);
+                if (_timedSender is null)
+                    await _sender(message.Payload, sendTimeout.Token);
+                else
+                    await _timedSender(message.Payload, message.Diagnostic, sendTimeout.Token);
                 message.Delivered?.TrySetResult();
             }
             catch (Exception error)
             {
                 message.Delivered?.TrySetException(error);
+                message.Diagnostic?.SendFault();
                 lock (_gate)
                 {
                     _completed = true;
                     _replaceableTail = null;
-                    foreach (var queued in _queue) queued.Delivered?.TrySetException(error);
+                    foreach (var queued in _queue)
+                    {
+                        queued.Delivered?.TrySetException(error);
+                        queued.Diagnostic?.Discarded();
+                    }
                     _queue.Clear();
                 }
                 try { _onFault?.Invoke(error); }
