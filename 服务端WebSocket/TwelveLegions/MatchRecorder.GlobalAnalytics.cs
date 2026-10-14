@@ -50,7 +50,9 @@ public sealed partial class MatchRecorder
             INSERT INTO analytics_online_samples(sample_minute,activity_day,online_count,observed_utc)
             VALUES($minute,$day,$online,$now)
             ON CONFLICT(sample_minute) DO UPDATE SET
-                online_count=MAX(online_count,excluded.online_count),observed_utc=excluded.observed_utc;
+                observed_utc=CASE WHEN excluded.online_count > analytics_online_samples.online_count
+                    THEN excluded.observed_utc ELSE analytics_online_samples.observed_utc END,
+                online_count=MAX(online_count,excluded.online_count);
             """;
         command.Parameters.AddWithValue("$minute", minute);
         command.Parameters.AddWithValue("$day", day);
@@ -154,7 +156,8 @@ public sealed partial class MatchRecorder
                 SumDaily(matchCounts, day.AddDays(-0), day), SumDaily(matchCounts, day.AddDays(-6), day),
                 SumDaily(matchCounts, day.AddDays(-29), day),
                 samples.Count == 0 ? 0 : Math.Round(samples.Average(sample => sample.Count), 2),
-                peak.Count, peak.At, newUsers, Math.Max(0, daily.Count - newUsers), pvCounts.GetValueOrDefault(day)));
+                peak.Count, peak.At, newUsers, Math.Max(0, daily.Count - newUsers), pvCounts.GetValueOrDefault(day),
+                samples.Count, createdByDay.GetValueOrDefault(day)?.Count ?? 0));
         }
         command = connection.CreateCommand();
         command.CommandText = """

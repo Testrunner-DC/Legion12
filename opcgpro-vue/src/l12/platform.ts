@@ -341,10 +341,12 @@ export interface AdminGlobalAnalyticsDay {
   date: string; dailyActiveUsers: number; weeklyActiveUsers: number; monthlyActiveUsers: number
   dailyMatches: number; weeklyMatches: number; monthlyMatches: number; averageOnline: number
   peakOnline: number; peakOnlineAt?: string | null; newUsers: number; returningUsers: number; pageViews: number
+  sampleMinutes?: number; newRegisteredUsers?: number
 }
 export interface AdminGlobalAnalyticsReport {
   fromDate: string; toDate: string; days: AdminGlobalAnalyticsDay[]
   pageViews: Array<{ path: string; views: number }>
+  timeZone?: 'UTC'
 }
 export interface AdminCommand {
   id: string; idempotencyKey?: string; type: string; actorId: string; actorName: string; requestedAt: string
@@ -1357,6 +1359,16 @@ function commandBody<T extends Record<string, unknown>>(prefix: string, body: T)
   return { ...body, idempotencyKey: body.idempotencyKey || commandKey(prefix) }
 }
 
+function analyticsUtcDate(value: string | undefined) {
+  if (!value?.trim()) return undefined
+  const day = value.trim()
+  const date = new Date(`${day}T00:00:00Z`)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day.startsWith('0000-')
+    || !Number.isFinite(date.getTime()) || date.toISOString().slice(0, 10) !== day)
+    throw new Error('统计日期必须为有效的 YYYY-MM-DD 自然日')
+  return day
+}
+
 function localDateBoundary(value: string | undefined, inclusiveEnd = false) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return value
   const [year, month, day] = value.split('-').map(Number)
@@ -1413,8 +1425,8 @@ export const adminApi = {
   },
   globalAnalytics: (query: { from?: string; to?: string } = {}) => {
     const params = new URLSearchParams()
-    const from = localDateBoundary(query.from); const to = localDateBoundary(query.to)
-    if (from) params.set('fromUtc', from); if (to) params.set('toUtc', to)
+    const from = analyticsUtcDate(query.from); const to = analyticsUtcDate(query.to)
+    if (from) params.set('fromDate', from); if (to) params.set('toDate', to)
     return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),

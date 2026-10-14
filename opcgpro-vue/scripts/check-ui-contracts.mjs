@@ -4,6 +4,7 @@ import { normalizeArticleBlockIds, serializeArticleBody } from '../src/l12/site/
 import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
 import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
 import './test-a3-site-shell-contract.mjs'
+import './test-admin-global-analytics-date-contract.mjs'
 import { hasProfileAuthTemplate, hasProfileStatusNoticeBeforeRank } from './profile-auth-template-contract.mjs'
 import './test-a3-profile-auth-template-contract.mjs'
 import { usesWhitelistedBugDiagnostic } from './test-feedback-draft-lifecycle.mjs'

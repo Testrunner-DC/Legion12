@@ -376,7 +376,9 @@ public sealed record L12GlobalAnalyticsDay(
     string? PeakOnlineAt,
     long NewUsers,
     long ReturningUsers,
-    long PageViews);
+    long PageViews,
+    int SampleMinutes = 0,
+    long NewRegisteredUsers = 0);
 
 public sealed record L12GlobalPageView(string Path, long Views);
 
@@ -384,4 +386,5 @@ public sealed record L12GlobalAnalyticsReport(
     string FromDate,
     string ToDate,
     IReadOnlyList<L12GlobalAnalyticsDay> Days,
-    IReadOnlyList<L12GlobalPageView> PageViews);
+    IReadOnlyList<L12GlobalPageView> PageViews,
+    string TimeZone = "UTC");

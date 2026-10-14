@@ -15,8 +15,8 @@ const report = ref<AdminGlobalAnalyticsReport | null>(null)
 const loading = ref(true)
 const error = ref('')
 const today = new Date()
-const dateText = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-const from = ref(dateText(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 29)))
+const dateText = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+const from = ref(dateText(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 29))))
 const to = ref(dateText(today))
 const latest = computed(() => report.value?.days.at(-1))
 const trendMetric = ref<TrendMetricKey>('dailyActiveUsers')
@@ -27,9 +27,9 @@ const trendMetrics: Array<{ key: TrendMetricKey; label: string; unit: string }> 
   { key: 'dailyMatches', label: '日对局', unit: '场' },
   { key: 'weeklyMatches', label: '周对局', unit: '场' },
   { key: 'monthlyMatches', label: '月对局', unit: '场' },
-  { key: 'averageOnline', label: '平均在线', unit: '人' },
+  { key: 'averageOnline', label: '采样分钟峰值均值', unit: '人' },
   { key: 'peakOnline', label: '最高在线', unit: '人' },
-  { key: 'newUsers', label: '新增用户', unit: '人' },
+  { key: 'newUsers', label: '新增活跃', unit: '人' },
   { key: 'returningUsers', label: '回访用户', unit: '人' },
   { key: 'pageViews', label: 'PV', unit: '次' },
 ]
@@ -43,7 +43,12 @@ function number(value?: number | null) {
   return value == null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value)
 }
 function dateTime(value?: string | null) {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '暂无样本'
+  return value ? `${new Date(value).toLocaleString('zh-CN', { hour12: false, timeZone: 'UTC' })} UTC` : '暂无样本'
+}
+function sampleCoverage(day: AdminGlobalAnalyticsDay) {
+  return typeof day.sampleMinutes === 'number'
+    ? `${day.sampleMinutes} / 1440 分钟（${(day.sampleMinutes / 1440 * 100).toFixed(1)}%）`
+    : '分钟覆盖未提供'
 }
 function barHeight(value: number | null) {
   if (value == null || maximum.value <= 0) return '0%'
@@ -66,7 +71,7 @@ onMounted(load)
 <template>
   <section class="analytics-summary" :class="{ compact }" aria-labelledby="global-summary-title">
     <header>
-      <div><h3 id="global-summary-title">{{ heading }}</h3><span v-if="report">{{ report.fromDate }} 至 {{ report.toDate }}</span></div>
+      <div><h3 id="global-summary-title">{{ heading }}</h3><span>UTC自然日（北京时间08:00至次日08:00），旧数据口径保持</span><span v-if="report">{{ report.fromDate }} 至 {{ report.toDate }}</span></div>
       <form class="filters" @submit.prevent="load">
         <label>开始<input v-model="from" type="date" required/></label>
         <label>结束<input v-model="to" type="date" required/></label>
@@ -78,8 +83,8 @@ onMounted(load)
     <div v-else-if="latest" class="metric-grid">
       <article title="当日有登录活动记录的去重账号"><small>DAU / WAU / MAU</small><b>{{ latest.dailyActiveUsers }} / {{ latest.weeklyActiveUsers }} / {{ latest.monthlyActiveUsers }}</b><span>日 / 近 7 日 / 近 30 日活跃账号</span></article>
       <article title="以对局结束日计数，仅含正常结束且无错误的对局"><small>日 / 周 / 月对局</small><b>{{ latest.dailyMatches }} / {{ latest.weeklyMatches }} / {{ latest.monthlyMatches }}</b><span>当日 / 近 7 日 / 近 30 日</span></article>
-      <article title="在线人数按每分钟最多保留一份样本"><small>平均 / 最高在线</small><b>{{ number(latest.averageOnline) }} / {{ latest.peakOnline }}</b><span>峰值发生：{{ dateTime(latest.peakOnlineAt) }}</span></article>
-      <article title="新增以账号注册日为准；回访为当日活跃且注册日更早的账号"><small>新增 / 回访 / PV</small><b>{{ latest.newUsers }} / {{ latest.returningUsers }} / {{ latest.pageViews }}</b><span>账号活动与页面访问分别计数</span></article>
+      <article title="均值只包括已采样分钟的峰值，不是全天时间加权平均，未采样分钟不补零"><small>采样分钟峰值均值 / 最高在线</small><b>{{ number(latest.averageOnline) }} / {{ latest.peakOnline }}</b><span>采样覆盖：{{ sampleCoverage(latest) }}</span><span>峰值时刻：{{ dateTime(latest.peakOnlineAt) }}</span></article>
+      <article title="新增活跃是当日注册且当日有活动的账号；新增注册按当前账号表统计，包括未活跃者，不含已删除账号"><small>新增活跃 / 回访 / PV</small><b>{{ latest.newUsers }} / {{ latest.returningUsers }} / {{ latest.pageViews }}</b><span>新增注册（当前账号表）：{{ number(latest.newRegisteredUsers) }}；账号活动与页面访问分别计数</span></article>
     </div>
     <p v-else class="state empty">所选日期没有逐日样本。</p>
     <section v-if="report" class="trend-panel">

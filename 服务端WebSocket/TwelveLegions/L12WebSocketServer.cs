@@ -871,10 +871,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try
             {
                 var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                var from = QueryDate(request, "fromUtc", "from") is { } parsedFrom
-                    ? DateOnly.FromDateTime(parsedFrom.UtcDateTime) : today.AddDays(-29);
-                var to = QueryDate(request, "toUtc", "to") is { } parsedTo
-                    ? DateOnly.FromDateTime(parsedTo.UtcDateTime) : today;
+                var from = QueryGlobalAnalyticsDate(request, "fromDate", "fromUtc", "from") ?? today.AddDays(-29);
+                var to = QueryGlobalAnalyticsDate(request, "toDate", "toUtc", "to") ?? today;
                 var report = await _recorder.ReadGlobalAnalyticsAsync(from, to, _platform.Accounts(),
                     request.HttpContext.RequestAborted);
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-global-report",
@@ -5325,6 +5323,28 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         if (value is null) return null;
         if (!int.TryParse(value, out var parsed)) throw new ArgumentException($"查询参数 {names[0]} 必须是整数");
         return parsed;
+    }
+
+    private static DateOnly? QueryGlobalAnalyticsDate(HttpRequest request, string dateName,
+        string legacyTimestampName, string legacyAlias)
+    {
+        var value = QueryValue(request, dateName);
+        if (value is not null)
+        {
+            if (!DateOnly.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                    System.Globalization.DateTimeStyles.None, out var date))
+                throw new ArgumentException($"查询参数 {dateName} 必须是有效的 YYYY-MM-DD 自然日");
+            return date;
+        }
+        // Preserve explicit legacy timestamp semantics; calendar dates must not
+        // pass through the server's local time zone and shift a selected day.
+        if (QueryValue(request, legacyTimestampName) is not null)
+            return DateOnly.FromDateTime(QueryDate(request, legacyTimestampName)!.Value.UtcDateTime);
+        value = QueryValue(request, legacyAlias);
+        if (value is null) return null;
+        if (DateOnly.TryParseExact(value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var calendarDate)) return calendarDate;
+        return DateOnly.FromDateTime(QueryDate(request, legacyAlias)!.Value.UtcDateTime);
     }
 
     private static DateTimeOffset? QueryDate(HttpRequest request, params string[] names)

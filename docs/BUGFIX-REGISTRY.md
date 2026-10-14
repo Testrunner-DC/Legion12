@@ -1,5 +1,24 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261014-UTC-PEAK / MASTER-REQUEST-SCOPE｜已批准限定修复，本地验收收口
+
+- 先检索既有卡牌统计、统计排除、只读审计/告警记录与当前diff；两产品写租约无重叠。用户保留UTC历史日及引擎构建＋卡池分组，不建行为版本、不回填。F2实际A→B乱序、旧finally清忙、范围ABA及卸载都能污染报告；F3本地日零点转UTC造成选择日期偏一天；F7同分钟后来的低/相同人数覆盖真正峰值时刻。
+- 修共享原因：Master查询完整scope/代际及卸载守卫；Global专用自然日参数与原时间戳兼容；SQL同分钟更高峰值才更新时刻。全同型查询rg覆盖adminApi.globalAnalytics/QueryDate/日期选择消费者、analytics_online_samples唯一upsert/峰值读取、Master所有load/排序/时段/版本/热门构筑及挂载卸载；其他逐场时间戳API不机械迁移。
+- metadata additive返回UTC/采样分钟/当前账号表新增注册，原newUsers/平均值算法不变；UI明确新增活跃、非时间加权均值、未采样不补零及跨版本观察边界。F1版本范围复用现有服务端current/all；F6只两个主宰选择器限定master，原分析卡选择仍全池。无新SQL重查询、数据库迁移、规则/隐私变化。
+- 原RED15后端中12失败/3通过及3时区RED保留；当前15后端GREEN/27日期函数/6组实际Vue行为/原12契约+12排序行为/全局与主宰宽窄浏览器GREEN。最终完整规则7255/平台1546失败跳过0、UI356/类型/两构建通过；C盘admin-report-fixes-20261014/local-acceptance.json SHA6D541F5F绑定最终16源及真实supervisor计数，不记已部署。
+- 回滚守卫：旧显式fromUtc/toUtc保留UTC语义、匿名401/普通玩家403、坏自然日400、同值峰值首次时间、恢复/原DAU/PV/均值数值、统计门槛和失败关闭不削弱。旧错峰时刻不反算恢复；共享Picker指针关闭新增观察单独挂起、键盘通过仅限该路径。
+
+## ADMIN-20261014-RELEASE-CAPABILITY / TEST-CLEANUP｜能力边界与验收保真
+
+- 报告F5：DisabledAdapter没有后台执行能力，不能把发布台账v0/空工件说成运行服务未部署。只改AdminReleasesPage及实际SFC回归，adapterConfigured/state/权限/兼容工件在按钮与handler共守卫；能力/权限/工件去而复返、在途预演不复活，回滚查自身环境。degraded真实探针失败如实展示，不冒称未接入或拦合法预演；原风险确认保留，后台/DTO/适配器/外部流程未改。
+- 原10组RED、新10组GREEN，Main1440/390/320未配置/配置六浏览器状态0越界/错，0真实/执行API。两旧caption断言误伤保留失败，改实际只读端口/合法v-model/运行态循环字段AST，7结构正反验证不被改标题、注册API、自报verified或静态伪快照蒙混；原接口/权限/事务守卫不降。只迁移这两谓词，未称全历史A3完成。
+- 首轮平台原隐私断言已完后finally删除合成matches.db占用1失败，原TRX和库保留。仅测试精确GUID根/精确Sqlite池与最多400ms IO等待，长占用最终仍失败、未知根拒绝，行为失败保留；4隐私+3清理实际通过，完整平台1546全过。占用者未知，不叫产品泄漏根治；规则同源7255复用，前端完整链单补，验收6D541F5F。
+
+## BUG-20261014-NEXT-FOUR-E2｜具名相关检查后实际关闭四项
+
+- BUG-20261011-71ed393a迦具土＋冲田原E354真实进攻12格全过；不是本多duplicate。BUG-20260907-715306f5不朽之礼CurrentCost/整体decline具名1与既有纳芙蒂蒂真实离场16格、BUG-20260907-e1c89ff5月读/源义经三次move+真实attack1、BUG-20260908-79592a74黑莲8→9双方/恢复4及4→5控制2均通过。仅有界规则说明/未复现，非新增fixed或原玩家录像。
+- 原探针缺元数据/晚设MSBuild/cache参数拆分失败保留，补原测试元数据及正确global单字符串参数，不删断言。最终EBE20A37与E254FD4D两验收；四项各一次预览/CAS/读回、原文/历史/专用会话撤销保持。56=10fixed/39rejected/7duplicate，总902/new467/resolved242/closed193、周期148。归集承接上一收据SHA链及4实际函数守卫；同期新收1条已独立导入，待办按真实读回计数，不按关闭次数推算净下降。两未部署共享阵亡仍开放。
+
 ## PERF-20261014-PRESENCE-DELTA / UI-SEQUENCE｜共享传输与展示边界验收（本地）
 
 - 用户批准presence条目增量仅本地。全入口核PresenceSnapshotMessage/SendMany/SendDirect、hello能力数组/对象、syncPresence及失效cleanup：唯一接收者投影后逐连接codec，不用可替换game队列；发送失败不推进、generation拒旧Prepared提交，终局RequiresFull保持。JSON坏revision类型曾抛异常，Main六格实际4RED/2GREEN后加Number守卫，全绿；不宽泛吞错。
