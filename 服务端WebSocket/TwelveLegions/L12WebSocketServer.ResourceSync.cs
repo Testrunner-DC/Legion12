@@ -88,7 +88,17 @@ public sealed partial class L12WebSocketServer
             epoch = _resourceEpoch,
             revision,
             items = PresenceFor(accountId),
-        });
+        }, IsPresenceSnapshot: true);
+
+    private IReadOnlyList<OutgoingMessage> SyncPresence(Guid sessionId)
+    {
+        if (!_socketPlatformSessions.TryGetValue(sessionId, out var binding))
+            return [new OutgoingMessage(sessionId, new { type = "authenticationRequired",
+                reason = "platform-session-revoked", message = "当前连接已失效，请重新连接" })];
+        var revision = Interlocked.Read(ref _presenceResourceRevision);
+        var message = PresenceSnapshotMessage(sessionId, binding.AccountId, revision);
+        return [message with { ForceFullPresence = true }];
+    }
 
     private void NotifyPresenceChanged(IEnumerable<string>? accountIds = null)
     {

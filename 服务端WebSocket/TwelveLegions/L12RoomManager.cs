@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace TwelveLegions.Server;
 
 public sealed record OutgoingMessage(Guid SessionId, object Payload, bool ReplaceableGameState = false,
-    bool IsGameState = false, bool ForceFullGameState = false);
+    bool IsGameState = false, bool ForceFullGameState = false, bool IsPresenceSnapshot = false,
+    bool ForceFullPresence = false);
 
 public sealed record L12OnlinePresence(
     string AccountId,

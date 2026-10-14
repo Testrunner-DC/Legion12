@@ -69,6 +69,9 @@ let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 let negotiatedRequestIds = false
 let negotiatedEventWindowDelta = false
+let negotiatedPresenceDelta = false
+let presenceRecoveryPending = false
+let presenceBaselineEpoch = ''
 let pendingActionEnvelope: null | Record<string, unknown> = null
 let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
@@ -88,12 +91,94 @@ function acceptResourceRevision(resource: string, epoch: unknown, revision: unkn
   if (nextEpoch && nextEpoch !== l12State.resourceEpoch) {
     l12State.resourceEpoch = nextEpoch
     l12State.resourceRevisions = {}
+    presenceBaselineEpoch = ''
   }
   const nextRevision = Number(revision || 0)
   const current = Number(l12State.resourceRevisions[resource] || 0)
   if (nextRevision < current || (!allowEqual && nextRevision === current && current !== 0)) return false
   l12State.resourceRevisions[resource] = nextRevision
   return true
+}
+
+function requestPresenceRecovery(socket: WebSocket) {
+  if (presenceRecoveryPending || socket !== l12State.socket || socket.readyState !== WebSocket.OPEN) return
+  presenceRecoveryPending = true
+  socket.send(JSON.stringify({ type: 'syncPresence' }))
+}
+
+function validPresenceItem(item: any) {
+  return item !== null && typeof item === 'object' && !Array.isArray(item)
+    && typeof item.accountId === 'string' && item.accountId.length > 0
+    && typeof item.username === 'string'
+    && typeof item.online === 'boolean'
+    && typeof item.activity === 'string'
+    && (item.roomCode === null || typeof item.roomCode === 'string')
+    && typeof item.canInvite === 'boolean'
+    && typeof item.canSpectate === 'boolean'
+    && (item.actionReason === null || typeof item.actionReason === 'string')
+    && typeof item.friendStatus === 'string'
+    && typeof item.friendDirection === 'string'
+}
+
+function validPresenceItems(items: any) {
+  if (!Array.isArray(items)) return false
+  const accountIds = new Set<string>()
+  for (const item of items) {
+    if (!validPresenceItem(item) || accountIds.has(item.accountId)) return false
+    accountIds.add(item.accountId)
+  }
+  return true
+}
+
+function validPresenceIdentity(message: any) {
+  return message?.resource === 'presence'
+    && typeof message.epoch === 'string' && message.epoch.length > 0
+    && typeof message.revision === 'number' && Number.isSafeInteger(message.revision)
+    && message.revision >= 0
+}
+
+function rebuildPresenceDelta(message: any) {
+  if (!negotiatedPresenceDelta || presenceRecoveryPending || !validPresenceIdentity(message)
+    || !presenceBaselineEpoch) return null
+  const epoch = message.epoch
+  const baseRevision = message.baseRevision
+  const revision = message.revision
+  const currentRevision = Number(l12State.resourceRevisions.presence || 0)
+  if (epoch !== l12State.resourceEpoch || epoch !== presenceBaselineEpoch
+    || typeof baseRevision !== 'number' || !Number.isSafeInteger(baseRevision) || baseRevision < 0
+    || baseRevision !== currentRevision || revision <= baseRevision
+    || !Array.isArray(message.removedAccountIds) || !Array.isArray(message.upserts)
+    || !Array.isArray(message.order) || !Array.isArray(l12State.presence)) return null
+
+  const entries = new Map<string, any>()
+  for (const item of l12State.presence) {
+    const accountId = typeof item?.accountId === 'string' ? item.accountId : ''
+    if (!accountId || entries.has(accountId)) return null
+    entries.set(accountId, item)
+  }
+  const removed = new Set<string>()
+  for (const value of message.removedAccountIds) {
+    if (typeof value !== 'string' || !value || removed.has(value) || !entries.has(value)) return null
+    removed.add(value)
+  }
+  const upserts = new Map<string, any>()
+  for (const item of message.upserts) {
+    if (!validPresenceItem(item)) return null
+    const accountId = item.accountId
+    if (removed.has(accountId) || upserts.has(accountId)) return null
+    upserts.set(accountId, item)
+  }
+  removed.forEach(accountId => entries.delete(accountId))
+  upserts.forEach((item, accountId) => entries.set(accountId, item))
+  const order = new Set<string>()
+  const rebuilt = []
+  for (const value of message.order) {
+    if (typeof value !== 'string' || !value || order.has(value) || !entries.has(value)) return null
+    order.add(value)
+    rebuilt.push(entries.get(value))
+  }
+  if (order.size !== entries.size) return null
+  return { items: rebuilt, epoch, revision }
 }
 
 function cancelResourceFallback() {
@@ -523,7 +608,7 @@ export function connect(): Promise<void> {
       socket.send(JSON.stringify({
         type: 'hello',
         authToken,
-        capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true },
+        capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -547,6 +632,9 @@ export function connect(): Promise<void> {
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         negotiatedEventWindowDelta = message.capabilities?.deltaGameState === true
           && message.capabilities?.eventWindowDeltaV1 === true
+        negotiatedPresenceDelta = message.capabilities?.presenceDeltaV1 === true
+        presenceRecoveryPending = false
+        presenceBaselineEpoch = ''
         claimedGeneration = Number(message.connectionGeneration || 0)
         l12State.sessionId = message.sessionId
         l12State.accountId = String(message.accountId || '')
@@ -621,6 +709,7 @@ export function connect(): Promise<void> {
         if (epoch && epoch !== l12State.resourceEpoch) {
           l12State.resourceEpoch = epoch
           l12State.resourceRevisions = {}
+          presenceBaselineEpoch = ''
         }
         for (const [resource, revision] of Object.entries(message.revisions || {}))
           l12State.resourceRevisions[resource] = Number(revision || 0)
@@ -633,9 +722,24 @@ export function connect(): Promise<void> {
           dispatchResourceChange(resource, { revision: message.revision })
       }
       else if (message.type === 'presenceSnapshot') {
-        if (acceptResourceRevision('presence', message.epoch, message.revision, true)) {
-          l12State.presence = Array.isArray(message.items) ? message.items : []
+        if (validPresenceIdentity(message) && validPresenceItems(message.items)
+          && acceptResourceRevision('presence', message.epoch, message.revision, true)) {
+          l12State.presence = message.items
+          presenceRecoveryPending = false
+          presenceBaselineEpoch = message.epoch
           dispatchResourceChange('presence', { revision: message.revision })
+        }
+        else if (!validPresenceIdentity(message) || !validPresenceItems(message.items))
+          requestPresenceRecovery(socket)
+      }
+      else if (message.type === 'presenceDelta') {
+        const rebuilt = rebuildPresenceDelta(message)
+        if (!rebuilt) requestPresenceRecovery(socket)
+        else {
+          l12State.presence = rebuilt.items
+          l12State.resourceEpoch = rebuilt.epoch
+          l12State.resourceRevisions.presence = rebuilt.revision
+          dispatchResourceChange('presence', { revision: rebuilt.revision })
         }
       }
       else if (message.type === 'operationsBlocked') {
@@ -847,6 +951,9 @@ export function connect(): Promise<void> {
         l12State.matchmaking = null
         l12State.socket = null
         lastGameStateEnvelope = null
+        negotiatedPresenceDelta = false
+        presenceRecoveryPending = false
+        presenceBaselineEpoch = ''
         l12State.status = 'offline'
         l12State.lastCloseCode = event.code || null
         l12State.lastCloseReason = String(event.reason || '').slice(0, 160)
@@ -923,6 +1030,9 @@ export function disconnect() {
   cancelPendingAction()
   negotiatedRequestIds = false
   negotiatedEventWindowDelta = false
+  negotiatedPresenceDelta = false
+  presenceRecoveryPending = false
+  presenceBaselineEpoch = ''
   lastGameStateEnvelope = null
   l12State.matchmaking = null
   l12State.matchFound = null

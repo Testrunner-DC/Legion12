@@ -377,7 +377,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
 
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
-    private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState, bool EventWindowDeltaV1 = false);
+    private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
+        bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -396,6 +397,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly ConcurrentDictionary<Guid, L12InboundConnection> _inboundConnections = new();
     private readonly ConcurrentDictionary<Guid, byte> _establishedInboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
+    private readonly ConcurrentDictionary<Guid, L12PresenceSnapshotWireCodec> _presenceSnapshotCodecs = new();
     private readonly ConcurrentDictionary<Guid, SocketPlatformBinding> _socketPlatformSessions = new();
     private readonly ConcurrentDictionary<Guid, ProtocolCapabilities> _socketCapabilities = new();
     private readonly ConcurrentDictionary<string, Guid> _activeAccountSockets =
@@ -4307,6 +4309,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var acceptedSocket = socket;
             var snapshotCodec = new L12SnapshotWireCodec();
             _snapshotCodecs[sessionId] = snapshotCodec;
+            var presenceSnapshotCodec = new L12PresenceSnapshotWireCodec();
+            _presenceSnapshotCodecs[sessionId] = presenceSnapshotCodec;
             void OutboundFault(Exception error)
             {
                 Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
@@ -4314,11 +4318,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             var outbound = _transportDiagnostics is null
                 ? new L12OutboundConnection(
-                    (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, payload, null, token),
+                    (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, presenceSnapshotCodec,
+                        payload, null, token),
                     OutboundFault, SocketSendTimeout)
                 : new L12OutboundConnection(
                     (payload, diagnostic, token) => SendDirectAsync(acceptedSocket, snapshotCodec,
-                        payload, diagnostic, token),
+                        presenceSnapshotCodec, payload, diagnostic, token),
                     OutboundFault, SocketSendTimeout);
             _outboundConnections[sessionId] = outbound;
             var deploymentDrain = _rooms.DeploymentDrain;
@@ -4418,6 +4423,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             _socketRankedDevices.TryRemove(sessionId, out _);
             _socketCapabilities.TryRemove(sessionId, out _);
             _snapshotCodecs.TryRemove(sessionId, out _);
+            _presenceSnapshotCodecs.TryRemove(sessionId, out _);
             if (_outboundConnections.TryRemove(sessionId, out var outbound))
                 await outbound.DisposeAsync();
             socket?.Dispose();
@@ -4472,6 +4478,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
                     "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
                     "syncState" => await _rooms.RecoveryStateWithAckAsync(sessionId, recovered: true),
+                    "syncPresence" => SyncPresence(sessionId),
                     "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
                     "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
                     "enterTournamentMatch" => await _rooms.EnterTournamentMatchAsync(sessionId,
@@ -4812,6 +4819,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _socketCapabilities[sessionId] = capabilities;
                 if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
                     snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1);
+                if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
+                    presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
                 claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
                     authenticated.Account.Username,
@@ -4841,6 +4850,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     requestIds = capabilities.RequestIds,
                     deltaGameState = capabilities.DeltaGameState,
                     eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
+                    presenceDeltaV1 = capabilities.PresenceDeltaV1,
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
@@ -4849,7 +4859,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 session,
                 EffectiveOperationsPolicyMessage(sessionId),
                 new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
-                PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision),
+                PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision)
+                    with { ForceFullPresence = true },
             }.Concat(recovery).ToArray();
         }
         catch (L12DeploymentBarrierClosedException)
@@ -4921,11 +4932,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .Select(item => item.GetString())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
-                requested.Contains("eventWindowDeltaV1"));
+                requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
-            GetBool(value, "eventWindowDeltaV1", false));
+            GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false));
     }
 
     private IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, JsonElement deckElement)
@@ -5001,7 +5012,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 serializedByPayload[message.Payload] = bytes;
                 L12PerformanceMetrics.Bytes("websocket.full-payload", bytes.Length);
             }
-            var queued = new L12QueuedPayload(bytes, message.IsGameState, message.ForceFullGameState);
+            var queued = new L12QueuedPayload(bytes, message.IsGameState, message.ForceFullGameState,
+                message.IsPresenceSnapshot, message.ForceFullPresence);
             if (outbound.TryEnqueue(queued, message.ReplaceableGameState, messageDiagnostic))
             {
                 L12PerformanceMetrics.Value("websocket.queue-depth", outbound.QueuedCount);
@@ -5030,7 +5042,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     }
 
     private static async Task SendDirectAsync(WebSocket socket, L12SnapshotWireCodec snapshotCodec,
-        object payload, L12SyntheticTransportSample? transportDiagnostic,
+        L12PresenceSnapshotWireCodec presenceSnapshotCodec, object payload,
+        L12SyntheticTransportSample? transportDiagnostic,
         CancellationToken cancellationToken)
     {
         if (socket.State != WebSocketState.Open)
@@ -5039,7 +5052,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return;
         }
         var prepareStartedAt = transportDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
-        var prepared = snapshotCodec.Prepare((L12QueuedPayload)payload);
+        var queued = (L12QueuedPayload)payload;
+        var prepared = queued.IsPresenceSnapshot
+            ? presenceSnapshotCodec.Prepare(queued)
+            : snapshotCodec.Prepare(queued);
         transportDiagnostic?.Prepared(prepareStartedAt, Stopwatch.GetTimestamp(), prepared.Payload.Length,
             prepared.IsDelta);
         L12PerformanceMetrics.Bytes(prepared.IsDelta

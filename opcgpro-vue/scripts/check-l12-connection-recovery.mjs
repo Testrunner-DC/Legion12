@@ -269,6 +269,11 @@ function sendSuccessfulHandshake(socket, generation) {
   socket.receive({ type: 'recoveryComplete', connectionGeneration: generation })
 }
 
+function presenceItem(accountId, username, activity = 'idle') {
+  return { accountId, username, online: true, activity, roomCode: null, canInvite: true,
+    canSpectate: false, actionReason: null, friendStatus: 'none', friendDirection: 'none' }
+}
+
 const tests = [
   ['event window failure keeps private state atomic and requests full sync', async () => {
     installBrowserEnvironment({ 'l12-auth-token': 'window-token' })
@@ -789,7 +794,7 @@ const tests = [
     socket.open()
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
-      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true },
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')
@@ -1059,7 +1064,7 @@ const tests = [
     socket.receive({ type: 'resourceVersions', epoch: 'epoch-a', revisions: { friends: 5, presence: 2, rankedIntegrity: 1,
       alternateArtNotifications: 3, operationsPolicy: 4 } })
     socket.receive({ type: 'presenceSnapshot', epoch: 'epoch-a', revision: 2,
-      items: [{ accountId: 'account-1', username: '测试玩家', online: true }] })
+      resource: 'presence', items: [presenceItem('account-1', '测试玩家')] })
     socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-a', revision: 6 })
     const friendEvents = () => events.filter(event => event.type === 'l12-resource-friends').length
     const afterCurrent = friendEvents()
@@ -1070,6 +1075,117 @@ const tests = [
     socket.receive({ type: 'resourceChanged', resource: 'friends', epoch: 'epoch-b', revision: 1 })
     assert.equal(friendEvents(), afterCurrent + 1, 'a restarted server epoch must accept its lower revision')
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 91 })
+    await connected
+    net.disconnect()
+  }],
+
+  ['presence delta rebuild is atomic and malformed packets request one full recovery', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'presence-delta-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'presence-delta-session', accountId: 'self', name: '测试玩家',
+      connectionGeneration: 93, capabilities: { presenceDeltaV1: true } })
+    socket.receive({ type: 'resourceVersions', epoch: 'presence-epoch', revisions: { presence: 1 } })
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'presence-epoch', revision: 1,
+      items: [presenceItem('a', 'A'), presenceItem('b', 'B')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 1, revision: 3,
+      removedAccountIds: ['a'], upserts: [presenceItem('b', 'B', 'room'), presenceItem('c', 'C')],
+      order: ['c', 'b'] })
+    assert.deepEqual(net.l12State.presence.map(item => [item.accountId, item.activity]), [['c', 'idle'], ['b', 'room']])
+    assert.equal(net.l12State.resourceRevisions.presence, 3, 'a targeted global revision gap is valid')
+
+    const beforeInvalid = JSON.stringify(net.l12State.presence)
+    const invalid = { type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 2, revision: 4,
+      removedAccountIds: ['c'], upserts: [presenceItem('x', 'private-leak')], order: ['b', 'x'] }
+    socket.receive(invalid)
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 3, revision: 4,
+      removedAccountIds: [], upserts: [presenceItem('b', 'B', 'playing')], order: ['c', 'b'] })
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'poison-epoch', revision: 99,
+      items: [presenceItem('duplicate', 'one'), presenceItem('duplicate', 'two')] })
+    assert.equal(JSON.stringify(net.l12State.presence), beforeInvalid, 'invalid deltas must not partially mutate presence')
+    assert.equal(net.l12State.resourceEpoch, 'presence-epoch', 'bad full must not poison the accepted epoch')
+    assert.equal(net.l12State.resourceRevisions.presence, 3)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 1,
+      'bad packets request only one full snapshot until recovery')
+
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'presence-epoch', revision: 3,
+      items: [presenceItem('c', 'C'), presenceItem('b', 'B', 'room')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 3, revision: 4,
+      removedAccountIds: ['missing'], upserts: [], order: ['c', 'b'] })
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 2,
+      'a nonexistent removal is rejected after full clears the recovery guard')
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'presence-epoch', revision: 3,
+      items: [presenceItem('c', 'C'), presenceItem('b', 'B', 'room')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 3,
+      revision: '4', removedAccountIds: [], upserts: [], order: ['c', 'b'] })
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 3,
+      'string revisions are not coerced')
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'presence-epoch', revision: 3,
+      items: [presenceItem('c', 'C'), presenceItem('b', 'B', 'room')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 7, baseRevision: 3,
+      revision: 4, removedAccountIds: [], upserts: [], order: ['c', 'b'] })
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 4,
+      'numeric epochs are not coerced')
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'presence-epoch', revision: 3,
+      items: [presenceItem('c', 'C'), presenceItem('b', 'B', 'room')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'presence-epoch', baseRevision: 3,
+      revision: true, removedAccountIds: [], upserts: [], order: ['c', 'b'] })
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 5,
+      'boolean revisions are not coerced')
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 93 })
+    await connected
+    net.disconnect()
+  }],
+
+  ['presence delta waits for one fully validated connection-local full baseline', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'presence-cold-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'presence-cold-session', accountId: 'self', name: '测试玩家',
+      connectionGeneration: 95, capabilities: { presenceDeltaV1: true } })
+    socket.receive({ type: 'resourceVersions', epoch: 'cold-epoch', revisions: { presence: 1 } })
+    const delta = { type: 'presenceDelta', resource: 'presence', epoch: 'cold-epoch', baseRevision: 1, revision: 2,
+      removedAccountIds: [], upserts: [presenceItem('self', '测试玩家', 'room')], order: ['self'] }
+    socket.receive(delta)
+    assert.deepEqual(net.l12State.presence, [])
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 1)
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'cold-epoch', revision: 1,
+      items: [presenceItem('self', '测试玩家'), presenceItem('self', '重复')] })
+    socket.receive(delta)
+    assert.deepEqual(net.l12State.presence, [], 'a duplicate-id full cannot unlock delta acceptance')
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 1)
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'cold-epoch', revision: 1,
+      items: [presenceItem('self', '测试玩家')] })
+    socket.receive(delta)
+    assert.equal(net.l12State.presence[0].activity, 'room')
+    assert.equal(net.l12State.resourceRevisions.presence, 2)
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 95 })
+    await connected
+    net.disconnect()
+  }],
+
+  ['legacy presence client keeps full state and refuses unsolicited deltas', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'presence-legacy-token' })
+    const net = await loadNetModule()
+    const connected = net.connect()
+    const socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'presence-legacy-session', accountId: 'legacy', name: '旧客户端',
+      connectionGeneration: 94, capabilities: {} })
+    socket.receive({ type: 'resourceVersions', epoch: 'legacy-epoch', revisions: { presence: 1 } })
+    socket.receive({ type: 'presenceSnapshot', resource: 'presence', epoch: 'legacy-epoch', revision: 1,
+      items: [presenceItem('legacy', '旧客户端')] })
+    socket.receive({ type: 'presenceDelta', resource: 'presence', epoch: 'legacy-epoch', baseRevision: 1, revision: 2,
+      removedAccountIds: [], upserts: [presenceItem('legacy', '旧客户端', 'room')],
+      order: ['legacy'] })
+    assert.equal(net.l12State.presence[0].activity, 'idle')
+    assert.equal(net.l12State.resourceRevisions.presence, 1)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncPresence').length, 1)
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 94 })
     await connected
     net.disconnect()
   }],

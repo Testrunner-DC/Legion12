@@ -113,7 +113,7 @@ public sealed partial class L12WebSocketServer
         => messageType switch
         {
             "ping" or "deploymentProbe" => L12DeploymentIngressKind.Bypass,
-            "hello" or "pollMatchmaking" or "syncState" or "enterTournamentMatch"
+            "hello" or "pollMatchmaking" or "syncState" or "syncPresence" or "enterTournamentMatch"
                 => L12DeploymentIngressKind.Mixed,
             "createRoom" or "updateRoomOptions" or "createSandbox" or "joinMatchmaking"
                 or "joinRoom" or "inviteFriend" or "selectDeck" or "selectCustomDeck"
@@ -207,6 +207,8 @@ public sealed partial class L12WebSocketServer
         _socketCapabilities.TryRemove(sessionId, out _);
         if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
             snapshotCodec.SetDeltaEnabled(false);
+        if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
+            presenceSnapshotCodec.SetDeltaEnabled(false);
         try { _ = _rooms.Disconnect(sessionId); }
         catch (L12DeploymentBarrierClosedException) { }
     }

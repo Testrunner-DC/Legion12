@@ -3,7 +3,8 @@ using System.Text.Json.Nodes;
 
 namespace TwelveLegions.Server;
 
-internal sealed record L12QueuedPayload(byte[] FullPayload, bool IsGameState, bool ForceFullGameState);
+internal sealed record L12QueuedPayload(byte[] FullPayload, bool IsGameState, bool ForceFullGameState,
+    bool IsPresenceSnapshot = false, bool ForceFullPresence = false);
 internal sealed record L12PreparedWirePayload(byte[] Payload, Action Commit, bool IsDelta);
 
 /// <summary>

@@ -1,5 +1,24 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261014-PRESENCE-DELTA / UI-SEQUENCE｜共享传输与展示边界验收（本地）
+
+- 用户批准presence条目增量仅本地。全入口核PresenceSnapshotMessage/SendMany/SendDirect、hello能力数组/对象、syncPresence及失效cleanup：唯一接收者投影后逐连接codec，不用可替换game队列；发送失败不推进、generation拒旧Prepared提交，终局RequiresFull保持。JSON坏revision类型曾抛异常，Main六格实际4RED/2GREEN后加Number守卫，全绿；不宽泛吞错。
+- 冷/旧/强制恢复/epoch/非递增/坏基线/差量不更小full；严格合法full才推进前端epoch/revision，delta增删/唯一ID/order完整性先核后原子提交，pending冻结且只请求一次恢复。永久PresenceSnapshotDeltaTests最终15实际通过，完整Batch7255规则/1528平台零失败跳过、前端35恢复及所有构建/合同通过。验收8F3AF28F绑定源码/日志/持续计数/具名TRX及只读源审；原误二次hello、日志参数/短PATH及元数据字段失败保留，不虚构子任务文件型日志。
+- 实际70项合成投影JSON：仅版本20391→1052B、一条20391→1341B、增删重排20392→1355B、全改20601→20601B回退，完整重建一致。不是线上/NIC/TLS或迟到归因；原同方法30房5终局+3leave仍超3s。本轮正式e2/测试7c90不动、不新部署或改维护。
+- 横幅原按kind+text跨sequence去重会吞合法新动作、同sequence冲突内容可重复。ActionPresentationLayer改为排序后的唯一sequence消费；实际浏览器5场/原观战校正101断言通过，永久实际watcher5场挂既有效果呈现链，旧源3红/新源全绿。源审/共同Batch通过，不新增卡区域事实或前端结算副本；源族与presence分开提交。
+
+## BUG-20261006-66115482｜罐四选择0仍弃置（已部署具名复验并闭环）
+
+- 原文SHA013e8bb1与裁定核对：S01-0220有目标时保留选0..2，0只跳过免死段仍随后弃置；S01-0217必须1，不能skip/空选。f60ba182修复是当前正式e2祖先，不把新835 DLL当线上。
+- E354原正式发布DLL/586BC归档/891CBmanifest/9卡表冻结，完整51B06E5测试源未改；两方法actor/恢复/否定及主/额外圣物位共24通过，TRX2E472D26、run-acceptance8B1E6722。实际无效保留圣物是正确对照，不冒称原玩家录像/UI或本次复测无合法目标分支。
+- 具名证据及12固定负守卫后，仅该1项一次预览/CAS/独立读回为fixed_verified，原文历史保留、专用会话撤销；bug-closeout-canopic-e2-24.json归入唯一清单。累计52=10fixed/35rejected/7duplicate，总901/new470/resolved242/closed189、周期144/r12旧48余0，两未上线格温仍开放。
+
+## BUG-20261014-R12-LAST-THREE｜实际消费者及合成存储后收口
+
+- 当前正式e2身份：原包586BC507/DLL E354，末3提议2CBEF9F5，经12真实起手流/6真实GameBoard合成props状态/两模式62合法洛基持久化及新进程复开/Main验收13B626C2和独立只读核对支持有界rejected，不记fixed。规范正文按字段及无序构筑集合比较，非原始JSON/抽牌排序/玩家原失踪原因；不新增数量阈值或产品规则。
+- 原探针SHA转置、显示标签重复误判物理副本、合成用户名12字符触发产品11上限及Windows文件名路径匹配失败皆具名保留；仅元数据/只读VNode key或合规夹具修正，当前e2字节及关键断言不改。
+- 三项一次预览/CAS/独立读回全成功，专用会话撤销；本轮累计51=9fixed/35rejected/7duplicate，new471/总901/resolved241/closed189、周期143，r12旧48余0。未处理全站所有471，两个本地835格温项仍待部署。presence9源当前实施/聚焦，不提前记验收；终局迟到/正式告警与服务状态不冒称根治或已上线。
+
 ## PERF/BUG-20261014-PRESENCE-PLAN-NEXT-SEVEN｜有界证据准确性及固定CAS后续
 
 - 当前正式e2 E354原包47实际探针通过、5项39归属；额外圣杯4在独立原文/既有后发动先结算规则核对后使用，荣耀4不用于新增关闭。source/probe/catalog冻结无漂移，Group初次RUN_ID失败发生场景前，原日志/输出缺席保留，r2不重建12格/24恢复哈希一致。scope clarification纠正山河社稷图名称、setup同模式3/跨模式0、草薙强攻→冲田及恢复5真实WS+1纯内存，原宽提议未执行，不改原报告。

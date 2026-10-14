@@ -1,5 +1,19 @@
 # 十二军团任务台账
 
+## PERF-20261014-PRESENCE-DELTA / UI-AUTHORITY-SEQUENCE｜本地验收，线上未变
+
+- P2内显式presenceDeltaV1：逐连接个性化full基线，发送成功提交/代际reset；新增、变化、删除与完整order严格重建，错误只一次请求full。冷/旧/重连/无效基线与无收益回退，FIFO、P0/P1/P3/P4、终局full不改。授权只本地实现与验收，未新增包/部署/维护操作。
+- Main revision严格Number守卫6格修改前4失败、修改后全通过；最终presence15、标准Batch7255规则/1528平台失败跳过0、前端35恢复及合同/类型/双构建完成，10应用/测试源前后SHA一致，永久watcher两测试文件在前端门禁执行。验收8F3AF28F与按生命周期族分开的git-sync.json为准。
+- 合成70项完整JSON的revision-only/单变化/增删重排分别1052/1341/1355B，对应原20391/20391/20392B；全变化20601B回退full。重建严格一致，不称线上带宽/卡顿收益；原客户端轴5终局+3leave的3s失败不改绿。新版本测试须真正协商并验证presenceDelta，不降低原30房/10用户方法或门槛。
+- 外部人类批准的ActionPresentationLayer单产品文件修复已独立接收：不同sequence同内容不能互吞，同sequence冲突载荷不能重复排队。真实浏览器5绿/观战校正101断言与永久actual-watcher5绿，原旧源3红保留；只加既有检查链回归，不新改区域/服务器事实或隐私。
+- Bug下一条罐四当前e2原包24格及单CAS读回完成：52=10fixed/35rejected/7duplicate，new470/总901/resolved242/closed189，周期144/r12余0。原文/历史/会话撤销保护；两个本地835新格温未部署不关，其他470不自动resolved。
+
+## BUG-20261014-R12-CLOSED / PERF-PRESENCE-LOCAL-IN-PROGRESS
+
+- 末3真实rejected CAS/读回完成，累计51（9fixed/35rejected/7duplicate）/new471，总901/resolved241/closed189；周期143，r12原48的remaining0。原文/历史/会话撤销保持，两个新格温未部署不关。
+- 实际e2原包12起手消费者流、6合成属性兵力显示状态、2持久化模式/62合法洛基牌库与新进程复开通过；13B626C2验收及子任务独立边界核对，不冒充真实主宰命令、浏览器丢失、真机概率或所有未来情况。
+- P2 presence本地9文件租约实现/聚焦中，Main已指出严格类型、坏full不污染状态、pending/cold和真实wire须补，P0/P1/P3/P4及终局full保持。Main结束本地构建/写入后，两独立代码写者为presence与人类批准的单一ActionPresentationLayer sequence修复；共享记录/Main、构建串行，不自行Git/部署。下个队列只读准备与独立源审继续，不以旧版本生产采样宣称收益。
+
 ## PERF/BUG-20261014-PRESENCE-PLAN-NEXT-SEVEN｜已批增量，48项实际闭环
 
 - 用户批准P2显式协商presenceDeltaV1条目增量限定本地实现与验收，不部署；P0/P1/P3/P4、权限投影、可靠FIFO及终局full不变。下一精确租约先完成记录同步，再实施独立连接基线/严格原子客户端重建/单次full恢复，发送失败不推进基线。原30房5终局+3leave仍未通过3s，不把减流量等同迟到根治。
