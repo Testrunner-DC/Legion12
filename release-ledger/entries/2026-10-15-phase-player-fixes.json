@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-15-phase-player-fixes",
+  "date": "2026-10-15",
+  "audience": "players",
+  "title": "卡牌效果与牌库使用修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "荆轲效果击杀与减兵力等数值效果导致的阵亡，按实际效果来源判断，不再因为仍处于战斗流程就误算成战斗阵亡。真正战斗致死、代阵亡与免死规则保持。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12CombatTimeline.cs", "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12KillSourceEvents.cs", "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs", "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "勇士比约恩等允许“不发动”的多选费用询问，单独选择“不发动”后可以确认；实际支付仍检查所需张数，不能与费用牌混选。",
+      "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"]
+    },
+    {
+      "category": "decks",
+      "text": "同一账号的牌库在另一端改名或删除重建后，本机陈旧的同名记录不再阻止打开当前牌库；未保存草稿和其他牌库保持，无法确认远端状态时仍提示重新核对。",
+      "paths": ["opcgpro-vue/src/l12/decks.ts"]
+    },
+    {
+      "category": "ui",
+      "text": "选牌窗口内打开卡牌详情时，关闭按钮可正常点击，并在关闭后回到原选择位置；普通卡牌详情行为保持。",
+      "paths": ["opcgpro-vue/src/l12/CatalogCardDetails.vue", "opcgpro-vue/src/l12/SingleCardPicker.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "效果播报结束后清理退役展示，减少旧播报保留造成的重复同步；关键操作与断线恢复仍可靠处理。",
+      "paths": ["opcgpro-vue/src/l12/game/ActionPresentationLayer.vue", "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs", "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs"]
+    },
+    {
+      "category": "accounts",
+      "text": "在线列表更新只传输实际变化，减少重复发送；重新连接或无法确认旧状态时仍完整恢复本人可见列表，不改变各玩家的可见范围。",
+      "paths": ["opcgpro-vue/src/l12/net.ts", "opcgpro-vue/src/l12/platform.ts", "服务端WebSocket/TwelveLegions/L12PresenceSnapshotWireCodec.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+    }
+  ]
+}

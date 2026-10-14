@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-15-phase-administration-internal",
+  "date": "2026-10-15",
+  "audience": "internal",
+  "reason": "后台F8账号/反馈/命令真正分页与草稿/CAS、统计UTC日期传输及版本说明、发布能力/赛事自身桌次回避、轻量已提交读取/审计与告警的限定改动；不把内部管理与诊断列入玩家日志。聊天C1A/B1仅未接入关系及队列原语，生产无caller，不开启聊天；真实Socket/外层事务/容量与原30房长尾仍待后续验证。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminAccountsPage.vue", "opcgpro-vue/src/l12/site/AdminBugsPage.vue", "opcgpro-vue/src/l12/site/AdminCommandsPage.vue", "opcgpro-vue/src/l12/site/PagedCollection.vue", "opcgpro-vue/src/l12/site/AdminGlobalAnalyticsSummary.vue", "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue", "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue", "opcgpro-vue/src/l12/site/AdminReleasesPage.vue", "opcgpro-vue/src/l12/site/AdminTournamentWorkbench.vue", "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue", "opcgpro-vue/src/l12/tournamentRulingPolicy.ts",
+    "服务端WebSocket/Program.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminAccountQueries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminBugQueries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminCommandQueries.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedPresenceReads.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.cs", "服务端WebSocket/TwelveLegions/L12WorkbenchRequestTiming.cs", "服务端WebSocket/TwelveLegions/MatchAnalyticsModels.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.GlobalAnalytics.cs", "服务端WebSocket/TwelveLegions/L12OutboundConnection.cs", "服务端WebSocket/TwelveLegions/L12InboundConnection.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.DeploymentDrain.cs", "服务端WebSocket/TwelveLegions/L12ServerStorageMonitor.cs"
+  ]
+}

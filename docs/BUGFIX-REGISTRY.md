@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 伊丽莎白／拉美西斯／单张不朽之礼原反馈收口
+
+- BUG-20260921-655d7a2d：正式e2/E354下NextResetLockLifecycleRegressionTests 22及持久化丢锁保留hash拒绝1，共23具名通过；a19c02c4确属正式祖先。双方×V2额外回合四格和普通回合四对照符合“受影响玩家下个实际重置”规则；独立CAS回执elizabeth-e2-23已resolved，旧待结算尾仍严格拒绝，不称全历史兼容。
+- BUG-20260923-3cb9b35c：RamsesSelected14/GeneratedChild8/ParentSibling29，共51绿、45原始证据694命令/45终态hash独立核；原3ce1dbea属正式e2。使用正式586BC原编译GameBoard/platform/mobileViewport与同E354真实付费生成投影，桌面1920×1080/横屏844×390/竖屏390×844实点B,A,C,A,A，显示/提交B,C,A与七绑定字段一致、API/真实WS/储存写0。ParentSibling插入边界及初盘/图像为合成，不称玩家原录像；入口点、skip、卡图清单、App画布缺失夹具失败保留，仅修夹具，未重复已绿51。已独立CAS读回resolved。
+- BUG-20260921-d0a089a5：原“纷乱箭杀三个守卫同一不朽之礼结算两次”以单物理实体双方×恢复4、先拒后用双方2、主宰加费双方2，共8绿/54次V2指纹。真实2费盖伏/交接/3费纷乱箭，使用/入墓/抽牌/召回均一次、物理区唯一及相关队列清空；按授权限定未复现closed，不记fixed或将相关双实体15测试当原反馈。未复投同一resolvePrompt、未断言全部Players.Resolving为空。原source541行除两注释/五身份与矩阵替换完全保留。
+- 共用关单流程77证据绑定、fixed12/rejected8负例后两项各仅一次preview/CAS/apply/独立读回，29138/29139、原字段历史保留、会话撤销，C盘bug-closeout-ramses-single-gift-e2.json；伊丽莎白先前单项回执另保留。唯一905总/459new/249resolved/197closed，65本方终态/周期157，不冒领外部2关闭。此处没有新产品改动、部署或维护写。
+
+## CHAT-C1B-20261015｜低优先级与发送起点基础的本地限定验收
+
+- 非Bug新功能基础，依据用户聊天协调授权及Main三源租约，扩P2原唯一sender而不改P0/P1/P3。无生产Configure caller，不开启聊天、Socket桥/会话/事务/观战仍下一B2；旧30房8个超过3秒不因单元测试消除。
+- 旧源码独立审BLOCKED两P1保留：一wake仅首项遗留ready预算、terminal/Complete尚未跨同步kickoff闸即可发布关闭。新ResumeReadyChat只剩ready且无permit时补一permit、next仍critical优先/all-paused无poll；关闭先queue准入/释放，再强制过connection start闸，fault/Dispose同守，实际send先赢可继续已起发帧、不持闸awaitwire、不嵌queue/start。queued/borrowed/inflight计全数组加512、释放payload后仅一次退款；512仅B1描述符/async owner，真实Socket/task/codec成本不已验。
+- Main完整三源审查接管（可选审查两次模型容量失败不作为CLEAR），实际首编译Barrier/Timeout隐式冲突、下一Q01名字预期排序错误失败保留。仅显式名绑定/原3秒/调整四名称预期顺序，未移除断言；原平台73中72通过＋修正Q01实际1、原关键队列/诊断/恢复规则27通过。完整Release/新包待，不提前记录整套绿色；C盘chat-b1-20261015/main-source-review-v2.json、main-compile-correction.json及main-focused-v4.ps1绑定原/新证据。
+
 ## BUG-20260921-d1e22956｜孟婆与陵墓构造体正式同版本验收并关单
 
 - 原反馈：孟婆会把陵墓构造体的离场效果一起移除；已批准限定修复93bec180，属于正式e2祖先而非原报告e6。保留正常阵亡/无效后的现行回退，不重新裁定所有双触发，也不改变其他卡文。
