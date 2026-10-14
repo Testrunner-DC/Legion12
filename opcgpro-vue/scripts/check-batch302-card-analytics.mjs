@@ -90,13 +90,13 @@ try {
   const masterName = (await minePicker.locator('.single-card-result-card>b').first().innerText()).trim()
   await minePicker.getByPlaceholder('搜索卡名、编号或效果文字').fill(masterName)
   assert.equal(await minePicker.locator('.single-card-result-card').count(), 1, 'master filter must support real shared search')
-  await minePicker.locator('.single-card-actions').first().getByRole('button', { name: '详情', exact: true }).click()
+  const detailTrigger = minePicker.locator('.single-card-actions').first().getByRole('button', { name: '详情', exact: true })
+  await detailTrigger.click()
   await page.getByRole('dialog', { name: masterName, exact: true }).waitFor()
-  // Existing shared picker/detail overlay blocks this close button's pointer.
-  // Verify the real keyboard path; this is not a mouse-close/layout claim.
-  await page.getByRole('button', { name: '关闭卡牌详情', exact: true }).focus()
-  await page.keyboard.press('Enter')
+  // Normal pointer interaction must hit the actual close control, without force.
+  await page.getByRole('button', { name: '关闭卡牌详情', exact: true }).click()
   await page.getByRole('dialog', { name: masterName, exact: true }).waitFor({ state: 'hidden' })
+  assert.equal(await detailTrigger.evaluate(el => el === document.activeElement), true, 'detail close returns focus to its exact picker trigger')
   await minePicker.locator('.single-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
   await page.getByRole('button', { name: '查询这张卡' }).click()
@@ -171,8 +171,8 @@ try {
   assert.equal(overflow, false, 'narrow single-card dashboard must not overflow the page')
   await page.screenshot({ path: path.join(out, 'single-narrow.png'), fullPage: true })
   assert.deepEqual(errors, [])
-  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ detailCalls: await page.evaluate(() => window.detailCalls), listCalls: await page.evaluate(() => window.listCalls), detailCloseInput: 'keyboard', pointerDetailCloseVerified: false, overflow, errors }, null, 2))
-  console.log('BATCH302 analytics full-card/master-only pickers, search/detail-keyboard/clear, actual filters, current/all, ranges, sorting, pagination and viewports passed; shared detail pointer-close unverified.')
+  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ detailCalls: await page.evaluate(() => window.detailCalls), listCalls: await page.evaluate(() => window.listCalls), detailCloseInput: 'pointer', pointerDetailCloseVerified: true, focusReturnedToTrigger: true, overflow, errors }, null, 2))
+  console.log('BATCH302 analytics full-card/master-only pickers, search/detail-pointer/focus/clear, actual filters, current/all, ranges, sorting, pagination and viewports passed.')
 } finally {
   await browser?.close()
   await server.close()

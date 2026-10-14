@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI-20261014-PICKER-DETAIL-OVERLAY｜选择器详情按钮被下层遮罩截获
+
+- 用户明确接受限定修复。先查既有SingleCardPicker/CatalogCardDetails与主宰选择器记录、干净930cd13基线及局部diff；实际RED显示关闭按钮中心命中选择器，根因为同宿主详情4500低于选择器5200，不是按钮提交或卡效问题。
+- 只为共享Picker内部详情传withinPicker，局部5300及挂载close焦点/卸载返回仍连接的原元素；普通详情默认false/4500不变，Escape事件、click.self、内容、尺寸、筛选/选择与逻辑画布Teleport原样保留。全同型查询：rg -n 'CatalogCardDetails|SingleCardPicker' opcgpro-vue/src/l12 -g '*.vue'；8共享消费者自动受益、5普通详情消费者不迁移，不逐页加补丁。
+- 回滚守卫：常规check-ui-contracts导入test-picker-detail-overlay.mjs，解析真实CSS/模板并实际执行SFC生命周期6组；脱离DOM的origin不聚焦、默认模式不偷焦点、监听卸载与重复挂载保留。浏览器body/逻辑宿主两宽度及两卡型24场实际按钮/Escape/遮罩关闭、4选择/默认层级对照通过；后台原范围/排序/分页链改为正常鼠标关闭并核焦点，既有断言不删除。
+- 最终标准前端Batch退出0、类型/两路径构建完成，无后台/规则改动不重复全量；宽窄实际截图核对，未验证真实iOS键盘/安全区或物理旋转。原RED及夹具歧义、旧报告keyboard标记保留，不能称失败产品被放宽；验收与Git见C盘artifacts/picker-detail-overlay-20261014。未部署、未关闭线上Bug、不改维护或权限。
+
 ## ADMIN-20261014-UTC-PEAK / MASTER-REQUEST-SCOPE｜已批准限定修复，本地验收收口
 
 - 先检索既有卡牌统计、统计排除、只读审计/告警记录与当前diff；两产品写租约无重叠。用户保留UTC历史日及引擎构建＋卡池分组，不建行为版本、不回填。F2实际A→B乱序、旧finally清忙、范围ABA及卸载都能污染报告；F3本地日零点转UTC造成选择日期偏一天；F7同分钟后来的低/相同人数覆盖真正峰值时刻。

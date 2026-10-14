@@ -116,7 +116,7 @@ const filtered = computed(() => {
       </section>
     </div>
   </Teleport>
-  <CatalogCardDetails v-if="detailCard" :card="detailCard" @close="detailCard = null"/>
+  <CatalogCardDetails v-if="detailCard" :card="detailCard" within-picker @close="detailCard = null"/>
 </template>
 
 <style scoped>
