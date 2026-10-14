@@ -6,7 +6,13 @@
 - 根因：RemoveFromField按当前PendingDefense判断cause，误将战斗中卡效击杀标combat。新增L12DefeatCause仅表达触发原因，不替换独立击杀来源体系；KillTarget与数值归零明确CardEffect，实际战斗/支援/战斗代阵亡明确Combat。替代Prompt保存typed cause并随V2恢复；缺字段仅兼容精确旧支援原因，其余旧入口CardEffect；未知字段在通用命令移除提示前及resolver支付前拒绝。保留旧八参数私有包装、无反射重载歧义，天灾/免死/湖中仙女/代阵亡守卫不变。
 - 全池扫描：cards.s1/s2/st的`因.{0,6}效果.{0,6}(阵亡|离场)`仅匹配S02-0615格温莉安；另逐个核RemoveFromField、KillTarget、QueueCombatDeathTriggers、QueueSimultaneousDeathTriggers与三个替代调用。不是把所有离场都当效果阵亡，不改弃置/真实战斗【击杀时】及来源卡归属。
 - 永久EffectDefeatCauseRegressionTests33格：核心4、双方/恢复四原因16、免死2、替代恢复2、旧字段4、未知字段1、阿喀琉斯双方×私有/真实Handle异常来源4。格温选择精确计数1/0，区域/治疗/抽牌/费用及恢复不重复；坏来源全序列化状态不变。首编译缺必填字段、免死夹具缺有效期限、静态审查发现真实入口先删提示的原失败均保留并限定修正，未删除断言。
-- 最终标准Batch规则7255/平台1513、失败/跳过0及架构/性能/卡池守卫通过，源审CLEAR；实际日志与最终源SHA认C盘post-release-adversarial-20261014/effect-death-cause-acceptance.json。本地修复，不部署、不改维护，不提前关闭b0177c6b/a2261e7e；线上仍formal e2/test7c90。
+- 最终标准Batch规则7255/平台1513、失败/跳过0及架构/性能/卡池守卫通过，源审CLEAR；实际日志、标准持久计数与补保留33具名TRX/最终源SHA认C盘effect-death-cause-acceptance.json AF2087B4。835504aa精确同步，本地修复，不部署、不改维护，不提前关闭b0177c6b/a2261e7e；线上仍formal e2/test7c90。
+
+## PERF/BUG-20261014-PATH-SCREEN-NEXT-TWO｜静态字节路径筛查完成，再收口2条
+
+- 同机TLS与公网TLS均30暖连接/13597924B、完整206/Content-Range/长度/前缀SHA，均零3s迟到；max74.483ms对2953ms，公网P952640ms。WindowsGetTickCount64分辨率15.625ms，不作亚毫秒归因。静态路径绕过WS/应用/代理升级且30连接不等于原60端，原9终局+1leave未根治，不能归罪供应商。原runner GUARD_NOT_READY在请求前由ReadAllLines读句柄拒共享写造成；三个真实本机守卫回归后FileShare.ReadWrite/完整行读取，发布每行关闭保证mtime；原失败及同机结果保留，仅补未启动外部臂。15guard/固定两PID提交/无OOM重启/guard正常结束；assessment85944A00不代替原30房结果。
+- 卡纽特/武田存活及预伤阵亡双方4场、真实projectLog公开32状态及原事件4对照全绿；真实e2回环恢复4组合+代际/绑定2控制全绿。只重建隔离探针，e2产品E3540216未重建；严格保留两权威UI rawCRLF与冻结LF各自SHA+逐字符归一化，原误要求raw相等的失败副本不删。不称原玩家录像/浏览器场景复现，未知断点报告不记fixed。
+- 两项具名提议/单CAS/独立读回与会话撤销完成，原字段/历史保留；真实本轮34=7fixed/23rejected/4duplicate，总901/new488/resolved239/closed174，周期126/r12余17。C盘bug-closeout-next-two-e2.json与next-two-e2/main-e2-acceptance.json为证据，不再重开已关反馈。共享效果阵亡两新项仍本地待上线验收，无部署或维护变更。
 
 ## PERF/BUG-20261014-MEASURED-CLOSEOUT｜取证已上线测试，非根治；三条限定检查后关闭
 
