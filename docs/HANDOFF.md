@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-15 正式19回放保存与短屏选牌收口｜74本方终态，450待办
+
+- 原正式发布与开服收据不变，不再部署或改维护，测试7c90保持。BUG-20261005-716ea799以正式19/BEC5编译App、7EC0权威引擎及记录器合成V2/viewer0已结束两帧，1具名夹具和3实际Edge案例通过：桌面真实JSON下载89825B后导入同一物理文件，无额外详情GET，棋盘1/2→2/2；844×390/390×844只验保存，私牌名空。按限定未复现closed，非fixed/duplicate/原玩家录像或真机；旧整项回放审计failed及E01/E06/LAYOUT/F05仍保留。
+- BUG-20261005-65222029以已部署44eb8b75修复resolved。旧36轮廓240项不重跑；当前正式编译App/router/editor在1024×600、1024×500、844×390从真实解码卡图和空白发起6格原生滚轮，全为同catalog+650/内grid0、末卡ST01-10可达、筛选INPUT可命中、旁栏不窜。Main独立131绑定/12图/92卡图实读；本地API端口接入和粗滚轮越过搜索框的r1/r2夹具失败不冒称产品失败、不覆盖。混合报告ff88deda不并入。
+- 20关闭负例后两项各一次preview/CAS/apply及独立终态读回（29205/29206），原文/负责人/历史保留、专用会话撤销。C盘formal-release-20261015/replay-save-main-independent-review.json、editor-scroll-main-independent-review.json与post-release-adversarial-20261014/bug-closeout-replay-editor-19.json为据；唯一phase-19-replay-editor-closed对账905总/450待办/254resolved/201closed，阶段74=22fixed/45rejected/7duplicate、周期166，外部2不计Main。
+- 孙悟空S02-01M1原1ade报告仍开放；独立相邻P1缺陷已证实：真实攻击后Tapped=true，仅SnapshotFor(0)经BuildAbilityViews把场上实例改为false并改变全量hash。4控制绿、8正常路径和导出红、UI10未执行，原true断言/失败TRX保留；只读投影不得改权威的限定修复等用户决定，不称已解释原“无法发动”或回放/性能全部根因。C盘wukong-projection-main-hold.json及D唯一状态已记录。
+- 继续先后手60秒旧反馈具名证据预检；聊天C1B2只有只读入口预检，未给写租约/启用。原30房3s终局长尾仍红，测试19/F8混合负载待明确环境授权，F5未启适配器、E4真iOS/微信输入法/安全区和F2长期容量仍待。无新增正式或测试部署。
+
 ## 2026-10-15 正式19之后继续三条具名收口｜72本方终态，452待办
 
 - 正式19已完成发布及开服，测试7c90不变，唯一原发布汇总不改、不重复部署或恢复40分钟回访。后续本批仅做原反馈限定核查和关单，无产品源码修改。

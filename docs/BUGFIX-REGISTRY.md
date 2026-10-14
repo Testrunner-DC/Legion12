@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 当前19回放保存/短屏选牌原反馈闭环与孙悟空相邻红灯
+
+- BUG-20261005-716ea799“无法保存回放”：原c858报告缺端/步骤，不向用户反复追问玩家记忆。正式19/BEC5包、7EC0 DLL/9公共Data和当前记录器权威生成合成已结束V2/viewer0两不同revision/hash帧；1具名夹具绿。真实正式编译页面Edge 1366×768保存一次详情GET，application/json真实89825B下载→同物理文件导入/battle/records/replay/json，无额外GET且真实棋盘1/2→2/2；844×390/390×844各真实保存，私牌名不泄漏。Main35引用及下载内容/字节/截图独立核验。按限定未复现rejected，不记fixed/duplicate；原玩家环境未还原、移动仅仿真保存，旧回放审计productAuditStatus=failed/E01/E06/LAYOUT/F05保持。
+- BUG-20261005-65222029“部分设备无法下滑选牌”：44eb8b75已属于正式19，原窄/短屏失败六格和36轮廓/240绿保留。当前正式App/router/editor16编译成员，在1024×600/1024×500/844×390×实际解码卡图/空白6格原生滚轮，catalog各+650，gridTop始终0；最后ST01-10可达、反向/小步校准后筛选INPUT真实命中、六类旁栏/祖先未窜。Main131引用（含12截图/92实际卡图与3冻结runner）独立核SHA和原始几何。当前r1本地API端口夹具超时与r2粗步越过搜索框失败保留，仅修夹具；无force/直接scrollTop、产品改动或旧240重跑。按已上线修复fixed_verified，未并含禁天灾/反馈入口的ff88deda，非真机/原玩家硬件。
+- 原因/防回滚：正式编译客户端可能使用独立本地API authority，测试只能显式配置owned本地端点或精确路由，真实外部/WS仍拦截；同一原生滚轮基准不能把“已滚到0”等同筛选已可命中，短面板需按真实可见交集判断。最终源码冻结并区别originalPath/snapshotPath，历史失败不以可变根路径伪称仍同源。播放器原5秒/hash兼容守卫和移动播放既定限制不变。
+- 关单20负例后各一次preview/CAS/写入/独立终态读回29205/29206，原文/负责人/说明/历史完整、专用会话撤销；C盘formal-release-20261015/replay-editor-reviewed-closure-proposal.json及post-release-adversarial-20261014/bug-closeout-replay-editor-19.json。实际905/450/254/201，阶段74=22fixed/45rejected/7duplicate、周期166。没有再次部署/维护写或性能根治声明。
+- 独立新风险/未修复：原孙悟空1ade“无法发动”尚未复原；当前19真实attack之后实例master-legion-0-10为Tapped=true/AttacksThisTurn1，单独SnapshotFor(0)后false/1，raw hash D05BA3E6…→F31E754B…。BuildAbilityViews683—684误把MasterTapped写入真实场上master类型来源，调用来自Field933；不是ReturnWukong重置。全池IsMasterLegion赋值仅悟空变身，仍需按全部真实来源区审纯读边界。原8正常路径及导出红、4控制绿、UI10未跑，原true断言和失败TRX均保留；只给临时主宰来源初始化的限定方案待用户批准，未修改产品/关原报告，也未称其为回放或流量全部根因。C盘wukong-projection-main-hold.json与diagnostic-r3真实失败为据。
+
 ## 2026-10-15 花魁／库丘林限定未复现与“格力”信息不足收口
 
 - BUG-20261014-bb9b2970“吉原的花魁无法主动攻击”：精确正式19/7EC0 DLL及9份同包公共Data，22真实命令流程场景绿；前排活跃旧回合双方×V2四格完整主宰伤害10→9、休整/次数1，另8不可攻击对照、主动双段4/取消4/无目标2。实际19编译GameBoard两owner×1920/844×390/390×844六指针攻击只有一次attack/oiran/master，8桌面对照入口隐藏；API/真实WS/脚本异常0。按限定未复现rejected关闭，不记产品修复/玩家原录像/真机；全池主动休整边界由既有结构化投影控制，不新增卡号旁路。
