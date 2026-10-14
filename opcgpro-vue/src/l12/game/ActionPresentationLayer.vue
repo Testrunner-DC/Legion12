@@ -65,12 +65,10 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
     return
   }
   for (const event of props.events.filter(item => item.sequence > lastSequence).sort((left, right) => left.sequence - right.sequence)) {
+    if (event.sequence <= lastSequence) continue
     const presentation = actionPresentationFromEvent(event)
-    const previous = queue.at(-1) ?? active.value
-    const repeatedPhase = presentation && previous && presentation.kind === previous.kind
-      && presentation.text === previous.text
-    if (presentation && !repeatedPhase) queue.push(presentation)
-    lastSequence = Math.max(lastSequence, event.sequence)
+    if (presentation) queue.push(presentation)
+    lastSequence = event.sequence
   }
   showNext()
 }, { immediate: true })

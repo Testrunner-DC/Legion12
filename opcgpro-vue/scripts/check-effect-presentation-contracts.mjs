@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import './test-effect-result-presentation.mjs'
+import './test-action-authority-sequence.mjs'
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const backendRoot = new URL('../../服务端WebSocket/TwelveLegions/', import.meta.url)
