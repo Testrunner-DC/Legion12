@@ -16,6 +16,7 @@ import './test-a3-public-deck-consumer-template-contract.mjs'
 import { publicDeckCounterBindingsContract } from './test-public-deck-counter-results.mjs'
 import { privateEditorSavedPanelsContract, privateModeLegalityContract } from './private-deck-template-contract.mjs'
 import './test-private-deck-template-contract.mjs'
+import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contract.mjs'
 
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
@@ -444,7 +445,7 @@ const contracts = [
     && l12Net.includes('requestSnapshotRecovery(socket, onExhausted)')
     && lobby.includes('data-ui-contract="match-found-state-recovery"')
     && wsServer.includes('ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections')
-    && wsServer.includes('outbound.TryEnqueue(queued, message.ReplaceableGameState)') && wsServer.includes('"syncState" =>')
+    && hasReliableQueuedPayloadDispatch(wsServer) && wsServer.includes('"syncState" =>')
     && l12ServerSources.includes('session.RoomCode is not null')
     && l12ServerSources.includes('return await RecoveryStateAsync(sessionId);'), '排位与休闲匹配成功后必须进入显式建局加载态，忽略迟到的未排队消息；先等待已排队首包，缺失时有界恢复房间/对局快照，服务端串行发送与排空租约保持'],
   [board.includes('Array.from({ length: 4 }'), '本局天灾必须固定为四个槽位'],
