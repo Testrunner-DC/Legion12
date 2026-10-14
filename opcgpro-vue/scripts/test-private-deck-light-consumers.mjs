@@ -17,6 +17,7 @@ const sources = Object.fromEntries([
   'src/l12/site/AdminTournamentWorkbench.vue',
   'src/l12/site/ProfilePage.vue',
   'src/l12/site/HomeRevisitActions.vue',
+  'src/l12/tournamentRulingPolicy.ts',
 ].map(relative => [relative, read(relative)]))
 
 class MemoryStorage {
@@ -109,6 +110,7 @@ const bypassesNormalDrawDeck = card => isDerivedDeckSpecialCard(card) || Boolean
 const isNormalOpeningHandCard = card => Boolean(card && NORMAL_OPENING_HAND_CARD_TYPES.has(card.cardType) && !bypassesNormalDrawDeck(card))
 const normalOpeningHandCopies = (copies, cardForCopy) => copies.filter(copy => isNormalOpeningHandCard(cardForCopy(copy)))`)
 const decks = await import(productionModuleUrl(executableDeckSource))
+const tournamentRulingPolicy = await import(productionModuleUrl(sources['src/l12/tournamentRulingPolicy.ts']))
 
 function importedBindings(compiled, modules, filename) {
   const file = ts.createSourceFile(filename, compiled, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
@@ -307,6 +309,7 @@ function tournamentDetailComponent() {
   return compileComponent('src/l12/site/TournamentAccountDetail.vue', {
     vue, 'vue-router': routeModule, '@/l12/decks': deckModule, '@/l12/net': netModule,
     '@/l12/platform': platformModule, '@/l12/tournamentLabels': noopLabels,
+    '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
     '@/l12/tournamentTime': timeModule, './TournamentJudgeDesk.vue': componentModule,
     './TournamentManagementPanel.vue': componentModule,
   })
@@ -317,6 +320,7 @@ function tournamentWorkbenchComponent() {
     './ConstructionRuleEditor.vue': componentModule, './DisasterPoolPicker.vue': componentModule,
     '@/l12/useActionGate': actionGateModule, '@/l12/tournamentSnapshotMerge': { mergeTournamentSnapshot: items => items },
     '@/l12/tournamentTime': timeModule, '@/l12/platform': platformModule,
+    '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
   })
 }
 function profileComponent() {

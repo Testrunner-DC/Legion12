@@ -224,10 +224,10 @@ public sealed class ControlPlanePhaseFourTournamentTests
             tournament = store.ExtendTournamentMatch(organizer, tournament.Id, match.Id,
                 new L12TournamentTimeExtensionPayload(5, "network delay"), tournament.Version,
                 Context("flow-extend"), true);
-            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+            tournament = store.ApplyTournamentRuling(admin, tournament.Id, match.Id,
                 new L12TournamentRulingPayload("penalty", player.Id, "warning", "slow play"),
                 tournament.Version, Context("flow-penalty"), true);
-            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+            tournament = store.ApplyTournamentRuling(admin, tournament.Id, match.Id,
                 new L12TournamentRulingPayload("result", null, "player-a", "signed result"),
                 tournament.Version, Context("flow-result"), true);
             tournament = store.CompleteTournament(organizer, tournament.Id, tournament.Version,

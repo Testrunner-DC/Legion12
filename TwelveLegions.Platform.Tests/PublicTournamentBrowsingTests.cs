@@ -107,7 +107,7 @@ public sealed class PublicTournamentBrowsingTests
         tournament = fixture.Store.StartTournament(fixture.Organizer, tournament.Id, tournament.Version,
             Context("staff-start"), true);
         var match = Assert.Single(tournament.Rounds[0].Matches);
-        tournament = fixture.Store.ApplyTournamentRuling(fixture.Organizer, tournament.Id, match.Id,
+        tournament = fixture.Store.ApplyTournamentRuling(fixture.Admin, tournament.Id, match.Id,
             new L12TournamentRulingPayload("result", null, "player-a", "confirmed public result"),
             tournament.Version, Context("staff-result"), true);
         tournament = fixture.Store.CompleteTournament(fixture.Organizer, tournament.Id, tournament.Version,
@@ -172,7 +172,7 @@ public sealed class PublicTournamentBrowsingTests
         Assert.Equal(JsonValueKind.Null, pendingMatch.GetProperty("result").ValueKind);
         Assert.NotEqual(JsonValueKind.Null, pendingMatch.GetProperty("playerAName").ValueKind);
 
-        tournament = fixture.Store.ApplyTournamentRuling(fixture.Organizer, tournament.Id, match.Id,
+        tournament = fixture.Store.ApplyTournamentRuling(fixture.Admin, tournament.Id, match.Id,
             new L12TournamentRulingPayload("result", null, "player-a", "confirmed result"),
             tournament.Version, Context("results-confirm"), true);
         tournament = fixture.Store.CompleteTournament(fixture.Organizer, tournament.Id, tournament.Version,
@@ -410,7 +410,7 @@ public sealed class PublicTournamentBrowsingTests
         }
 
         foreach (var match in swiss.Rounds[0].Matches)
-            swiss = fixture.Store.ApplyTournamentRuling(fixture.Organizer, swiss.Id, match.Id,
+            swiss = fixture.Store.ApplyTournamentRuling(fixture.Admin, swiss.Id, match.Id,
                 new L12TournamentRulingPayload("result", null, "player-a", "confirmed result"),
                 swiss.Version, Context($"staff-complete-{match.Table}"), true);
         swiss = fixture.Store.CompleteTournament(fixture.Organizer, swiss.Id, swiss.Version,

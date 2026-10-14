@@ -8,7 +8,8 @@ using Xunit;
 namespace TwelveLegions.Platform.Tests;
 
 // Local HTTP linkage of existing tournament producers and consumers.
-// Recusal assertions cover judge-case assign/resolve, NOT direct result rulings.
+// Direct ruling recusal has a separate named HTTP regression; this lifecycle
+// retains its existing independent referee for all recorded results.
 [Collection("Platform environment")]
 public sealed class TournamentHttpLifecycleTests
 {
@@ -141,8 +142,8 @@ public sealed class TournamentHttpLifecycleTests
             new TournamentActionRequest("th-r1-start", tournament.Version, false, "synthetic round start"), ct);
         Assert.All(tournament.Rounds[0].Matches, m => Assert.True(m.ReadyA && m.ReadyB));
 
-        // Match-local recusal is the existing judge-case rule. We do not
-        // incorrectly extend it to ApplyTournamentRuling (see boundary plan).
+        // Assignment/resolve remain match-local; a participating organizer
+        // can assign the case to the independent referee, never to themselves.
         var ownMatch = tournament.Rounds[0].Matches.Single(m =>
             m.PlayerAAccountId == organizer.Account.Id || m.PlayerBAccountId == organizer.Account.Id);
         var opponent = identities[ownMatch.PlayerAAccountId == organizer.Account.Id

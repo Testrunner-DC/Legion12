@@ -309,8 +309,7 @@ public sealed partial class L12PlatformStore
             if (!IsConfiguredStaff(row, assigneeId))
                 throw new L12TournamentScopeException("受理人必须是本场主办者或裁判");
             var match = RequireMatch(row, judgeCase.MatchId).Match;
-            if (match.PlayerAAccountId == assigneeId || match.PlayerBAccountId == assigneeId)
-                throw new L12TournamentScopeException("参赛工作人员不能处理自己的桌次争议");
+            RequireIndependentMatchStaff(assigneeId, match);
             _ = RequireText(payload.Reason, "分派理由", 500);
             return Mutate(actor, row, "judge-case-assign", judgeCase.Id, context, apply, working =>
             {
@@ -332,8 +331,7 @@ public sealed partial class L12PlatformStore
             RequireStaff(actor, row, L12Permission.TournamentRulingsWrite);
             var judgeCase = RequireJudgeCase(row, payload.CaseId);
             var match = RequireMatch(row, judgeCase.MatchId).Match;
-            if (match.PlayerAAccountId == actor.Id || match.PlayerBAccountId == actor.Id)
-                throw new L12TournamentScopeException("参赛工作人员不能处理自己的桌次争议");
+            RequireIndependentMatchStaff(actor.Id, match);
             if (judgeCase.AssigneeAccountId is not null && judgeCase.AssigneeAccountId != actor.Id
                 && row.OrganizerAccountId != actor.Id)
                 throw new L12TournamentScopeException("案件已分派给其他裁判");
@@ -524,7 +522,7 @@ public sealed partial class L12PlatformStore
         var match = RequireMatch(row, judgeCase.MatchId).Match;
         var requester = AccountById(judgeCase.RequesterAccountId);
         var assignee = judgeCase.AssigneeAccountId is null ? null : AccountById(judgeCase.AssigneeAccountId);
-        var conflict = match.PlayerAAccountId == viewer.Id || match.PlayerBAccountId == viewer.Id;
+        var conflict = IsTournamentMatchParticipant(viewer.Id, match);
         var canManage = configuredStaff && !conflict;
         return new L12TournamentJudgeCaseView(judgeCase.Id, judgeCase.RoundNumber, judgeCase.MatchId,
             match.Table, judgeCase.Category, judgeCase.Urgency, judgeCase.Status,

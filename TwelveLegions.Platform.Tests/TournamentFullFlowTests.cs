@@ -28,7 +28,7 @@ public sealed class TournamentFullFlowTests
                 {
                     var key = PairKey(match.PlayerAAccountId, match.PlayerBAccountId!);
                     Assert.True(pairings.Add(key), $"第 {roundNumber} 轮出现重复交手 {key}");
-                    tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                    tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                         new L12TournamentRulingPayload("result", null, "draw", "test result"),
                         tournament.Version, Context($"r{roundNumber}-{match.Id}"), true);
                 }
@@ -73,7 +73,7 @@ public sealed class TournamentFullFlowTests
             var firstRoundWinners = new HashSet<string>(
                 new[] { 1, 3, 5, 7 }.Select(seed => accountBySeed[seed]), StringComparer.Ordinal);
             foreach (var match in tournament.Rounds[0].Matches)
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null,
                         DecisionForWinner(match, firstRoundWinners), "seeded first round"),
                     tournament.Version, Context($"downfloat-r1-{match.Id}"), true);
@@ -87,7 +87,7 @@ public sealed class TournamentFullFlowTests
                 var isDraw = new[] { match.PlayerAAccountId, match.PlayerBAccountId! }
                     .ToHashSet(StringComparer.Ordinal).SetEquals(
                         new[] { accountBySeed[6], accountBySeed[8] });
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null,
                         isDraw ? "draw" : DecisionForWinner(match, secondRoundWinners), "shape downfloat"),
                     tournament.Version, Context($"downfloat-r2-{match.Id}"), true);
@@ -124,7 +124,7 @@ public sealed class TournamentFullFlowTests
                 byes.Add(bye.PlayerAAccountId);
                 var played = Assert.Single(round.Matches.Where(item => item.PlayerBAccountId is not null));
                 Assert.True(pairs.Add(PairKey(played.PlayerAAccountId, played.PlayerBAccountId!)));
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, played.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, played.Id,
                     new L12TournamentRulingPayload("result", null, "draw", "rotate bye"),
                     tournament.Version, Context($"bye-r{roundNumber}"), true);
                 if (roundNumber < 3)
@@ -173,7 +173,7 @@ public sealed class TournamentFullFlowTests
             tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
                 Context("cut-start"), true);
             foreach (var match in tournament.Rounds[0].Matches)
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "swiss result"),
                     tournament.Version, Context($"swiss-{match.Id}"), true);
 
@@ -196,7 +196,7 @@ public sealed class TournamentFullFlowTests
             {
                 semifinalWinners.Add(match.PlayerAAccountId);
                 semifinalLosers.Add(match.PlayerBAccountId!);
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "semifinal result"),
                     tournament.Version, Context($"semi-{match.Id}"), true);
             }
@@ -228,7 +228,7 @@ public sealed class TournamentFullFlowTests
             tournament = store.StartTournament(organizer, tournament.Id, tournament.Version,
                 Context("cut-drop-start"), true);
             foreach (var match in tournament.Rounds[0].Matches)
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "swiss result"),
                     tournament.Version, Context($"cut-drop-{match.Id}"), true);
 
@@ -267,7 +267,7 @@ public sealed class TournamentFullFlowTests
             {
                 semifinalWinners.Add(match.PlayerAAccountId);
                 semifinalLosers.Add(match.PlayerBAccountId!);
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "single semifinal"),
                     tournament.Version, Context($"single-semi-{match.Id}"), true);
             }
@@ -282,7 +282,7 @@ public sealed class TournamentFullFlowTests
             Assert.Contains(final.PlayerBAccountId!, semifinalWinners);
             Assert.DoesNotContain(final.PlayerAAccountId, semifinalLosers);
             Assert.DoesNotContain(final.PlayerBAccountId!, semifinalLosers);
-            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, final.Id,
+            tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, final.Id,
                 new L12TournamentRulingPayload("result", null, "player-b", "single final"),
                 tournament.Version, Context("single-final-result"), true);
             tournament = store.SetTournamentPhase(organizer, tournament.Id,
@@ -311,7 +311,7 @@ public sealed class TournamentFullFlowTests
                 Context("bracket-drop-start"), true);
             var semifinals = tournament.Rounds[0].Matches.ToArray();
             foreach (var match in semifinals)
-                tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+                tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "semifinal winner"),
                     tournament.Version, Context($"bracket-drop-{match.Id}"), true);
 
@@ -755,7 +755,7 @@ public sealed class TournamentFullFlowTests
                     Context($"ruling-race-ready-{account.Id}"), true);
             tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
                 Context("ruling-race-round"), true);
-            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+            tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                 new L12TournamentRulingPayload("result", null, "player-a", "staff adjudication"),
                 tournament.Version, Context("staff-result-first"), true);
 
@@ -810,7 +810,7 @@ public sealed class TournamentFullFlowTests
 
             var before = tournament.Version;
             Assert.Throws<L12TournamentVersionConflictException>(() =>
-                store.ApplyTournamentRuling(organizer, tournament.Id, second.Id,
+                store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, second.Id,
                     new L12TournamentRulingPayload("no-show", second.PlayerBAccountId, "no-show-b", "too early"),
                     tournament.Version, Context("early-no-show"), true));
             Assert.Equal(before, store.Tournament(organizer, tournament.Id)!.Version);
@@ -832,7 +832,7 @@ public sealed class TournamentFullFlowTests
             var match = Assert.Single(tournament.Rounds[0].Matches);
             tournament = store.StartTournamentRound(organizer, tournament.Id, 1, tournament.Version,
                 Context("zero-grace-start"), true);
-            tournament = store.ApplyTournamentRuling(organizer, tournament.Id, match.Id,
+            tournament = store.ApplyTournamentRuling(IndependentFixtureStaff(store), tournament.Id, match.Id,
                 new L12TournamentRulingPayload("no-show", match.PlayerBAccountId, "no-show-b", "grace elapsed"),
                 tournament.Version, Context("no-show-b"), true);
 
@@ -1252,6 +1252,11 @@ public sealed class TournamentFullFlowTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    // Result producers use a real independent staff account. Keep the organiser
+    // in the original roster, so pairing, deadlines and privacy assertions remain intact.
+    private static L12AccountView IndependentFixtureStaff(L12PlatformStore store)
+        => Assert.Single(store.Accounts().Where(account => account.Username == "Admin"));
 
     private static (L12PlatformStore Store, L12AccountView Organizer, L12AccountView[] Players)
         CreateStoreAndPlayers(string root, int totalPlayers, string prefix)

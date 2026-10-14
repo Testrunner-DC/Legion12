@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import ts from 'typescript'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { baseParse, parserOptions } from '@vue/compiler-dom'
 import { tournamentNoticeGroups, tournamentNoticeTemplateContract } from './tournament-notice-template-contract.mjs'
 
 const root = process.cwd()
@@ -20,6 +22,36 @@ const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
 const tournamentServer = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs')
 const visualSources = [detail, management, judge, summary, wizard, hub]
+function hasDangerRemoveAction(source) {
+  const parsed = parseSfc(source)
+  if (parsed.errors.length || !parsed.descriptor.template) return false
+  const ast = baseParse(parsed.descriptor.template.content, parserOptions)
+  let found = false
+  function visit(node) {
+    if (node.type === 1 && node.tag === 'button') {
+      const classes = node.props.find(prop => prop.type === 6 && prop.name === 'class')?.value?.content.split(/\s+/) ?? []
+      const click = node.props.find(prop => prop.type === 7 && prop.name === 'on'
+        && prop.arg?.isStatic && prop.arg.content === 'click')?.exp?.content.replace(/\s+/g, '')
+      if (classes.includes('danger') && click === 'remove(person,true)') found = true
+    }
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(ast)
+  return found
+}
+const dangerRemoveButton = detail.match(/<button\b[^>]*@click="remove\(person,true\)"[^>]*>[\s\S]*?<\/button>/)?.[0]
+if (!dangerRemoveButton) throw new Error('Actual dangerous removal button is required')
+for (const changedButton of [
+  dangerRemoveButton.replace('class="danger"', 'class="normal"'),
+  dangerRemoveButton.replace('@click="remove(person,true)"', '@click="remove(person,false)"'),
+  dangerRemoveButton.replace('@click="remove(person,true)"', '@mouseover="remove(person,true)"'),
+  dangerRemoveButton.replace('<button', '<div').replace('</button>', '</div>'),
+]) {
+  if (changedButton === dangerRemoveButton || hasDangerRemoveAction(detail.replace(dangerRemoveButton, changedButton)))
+    throw new Error('Dangerous-action semantic guard must reject missing danger/button/click/ban identity')
+}
+if (!hasDangerRemoveAction(detail.replace(dangerRemoveButton, dangerRemoveButton.replace('class="danger"', 'class="extra danger"'))))
+  throw new Error('Dangerous-action guard must allow additional visual classes')
 const standingComparator = tournamentServer.slice(tournamentServer.indexOf('private static int CompareStanding('))
 const appearsInOrder = (source, markers) => {
   let position = 0
@@ -87,7 +119,7 @@ const checks = [
   ['player tournament pages share the 700px compact boundary', visualSources.every(source => source.includes('@media(max-width:700px)')) && visualSources.every(source => !/@media\(max-width:(?:650|680|720|760|850)px\)/.test(source))],
   ['mobile tournament actions retain 44px targets', [detail, management, judge, wizard, hub].every(source => source.includes('min-height:44px'))],
   ['tournament states and roles retain text labels', summary.includes('tournamentStatusText(item.status)') && summary.includes('tournamentViewerRoleText(item.viewerRole)') && detail.includes('tournamentPhaseText(tournament.phase)') && detail.includes('tournamentRoundStatusText(round.status)')],
-  ['dangerous organizer actions are visually separated', management.includes('class="danger-zone"') && management.includes('class="danger" @click="cancel"') && detail.includes('class="danger" @click="remove(person,true)"')],
+  ['dangerous organizer actions are visually separated', management.includes('class="danger-zone"') && management.includes('class="danger" @click="cancel"') && hasDangerRemoveAction(detail)],
   ['responsive standings become labeled cards', detail.includes('class="standings-table"') && detail.includes('data-label="胜-负-平"') && detail.includes('.standings-table .thead{display:none}')],
   ['Swiss ranking explanation matches the authoritative comparator without exposing account IDs',
     detail.match(/class="ranking-method"/g)?.length === 2

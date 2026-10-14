@@ -887,6 +887,13 @@ public sealed partial class L12PlatformStore
             if (participant.Removed && (!payload.BanRegistration
                     || row.RegistrationBans.Any(item => item.AccountId == accountId && item.LiftedAt is null)))
                 return ToView(row, actor);
+            // Removal can implicitly award a result. Preflight the exact same
+            // unfinished opposing tables before changing any participant.
+            foreach (var round in row.Rounds.Where(item => item.Status != "completed"))
+                foreach (var match in round.Matches.Where(item => item.Status != "completed"
+                             && item.PlayerBAccountId is not null
+                             && (item.PlayerAAccountId == accountId || item.PlayerBAccountId == accountId)))
+                    RequireIndependentMatchStaff(actor.Id, match);
             return Mutate(actor, row, payload.BanRegistration ? "participant-remove-ban" : "participant-remove",
                 accountId, context, apply, working =>
             {
@@ -1260,6 +1267,7 @@ public sealed partial class L12PlatformStore
             var row = RequireTournament(tournamentId, expectedVersion);
             RequireStaff(actor, row, L12Permission.TournamentRulingsWrite);
             var (matchRound, match) = RequireMatch(row, matchId);
+            RequireIndependentMatchStaff(actor.Id, match);
             var kind = payload.Kind.Trim().ToLowerInvariant();
             if (kind is not ("result" or "penalty" or "no-show"))
                 throw new ArgumentException("裁决类型必须为 result、penalty 或 no-show");
@@ -2277,6 +2285,16 @@ public sealed partial class L12PlatformStore
             if (match is not null) return (round, match);
         }
         throw new KeyNotFoundException("赛事桌次不存在");
+    }
+
+    private static bool IsTournamentMatchParticipant(string accountId, TournamentMatchRow match)
+        => !string.IsNullOrWhiteSpace(accountId)
+           && (match.PlayerAAccountId == accountId || match.PlayerBAccountId == accountId);
+
+    private static void RequireIndependentMatchStaff(string accountId, TournamentMatchRow match)
+    {
+        if (string.IsNullOrWhiteSpace(accountId) || IsTournamentMatchParticipant(accountId, match))
+            throw new L12TournamentScopeException("参赛工作人员不能裁定自己的桌次，请由无利益冲突的工作人员处理");
     }
 
     private void RequireOrganizer(L12AccountView actor, TournamentRow tournament)

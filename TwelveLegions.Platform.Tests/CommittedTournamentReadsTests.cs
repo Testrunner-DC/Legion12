@@ -364,7 +364,7 @@ public sealed class CommittedTournamentReadsTests
                     Context("cancel"), true);
                 break;
             case "complete":
-                fixture.Tournament = fixture.Store.ApplyTournamentRuling(fixture.Organizer,
+                fixture.Tournament = fixture.Store.ApplyTournamentRuling(fixture.Referee,
                     fixture.Tournament.Id, fixture.Match.Id,
                     new L12TournamentRulingPayload("result", null, "player-a", "synthetic result"),
                     fixture.Tournament.Version, Context("result"), true);
@@ -372,7 +372,7 @@ public sealed class CommittedTournamentReadsTests
                     fixture.Tournament.Id, fixture.Tournament.Version, Context("complete"), true);
                 break;
             case "remove":
-                fixture.Tournament = fixture.Store.RemoveTournamentParticipant(fixture.Organizer,
+                fixture.Tournament = fixture.Store.RemoveTournamentParticipant(fixture.Admin,
                     fixture.Tournament.Id,
                     new L12TournamentRemoveParticipantPayload(fixture.Player.Id, false, "synthetic removal"),
                     fixture.Tournament.Version, Context("remove"), true);
