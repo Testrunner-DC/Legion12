@@ -7,7 +7,7 @@ assert.match(source, /import SingleCardPicker,[\s\S]*from '@\/l12\/SingleCardPic
   'analytics must reuse the shared card picker')
 assert.match(source, /<SingleCardPicker v-if="pickerOpen"[^>]*@select="chooseCard"/,
   'single-card selection must be wired to the shared picker')
-assert.doesNotMatch(source, /<SingleCardPicker[^>]*allowed-types/,
+assert.doesNotMatch(source.match(/<SingleCardPicker v-if="pickerOpen"[^>]*>/)?.[0] || '', /allowed-types|:items/,
   'analytics must allow the full catalog rather than narrowing picker card types')
 
 for (const range of ["applyRange('all')", "applyRange('7d')", "applyRange('30d')", "applyRange('season')"])
@@ -34,3 +34,4 @@ assert.match(source, /function observedPercent[\s\S]*coverageStatus === 'complet
   'usage-rate enrichment must preserve unknown coverage instead of fabricating zeroes')
 
 console.log('card analytics panel contract checks passed')
+await import('./test-admin-analytics-request-scope.mjs')

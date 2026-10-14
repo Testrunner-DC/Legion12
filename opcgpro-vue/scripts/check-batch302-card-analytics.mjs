@@ -26,7 +26,7 @@ adminApi.cardAnalyticsDetail=async(cardId,query)=>{window.detailCalls.push({card
 createApp({render:()=>h('main',{class:'fixture',style:{width:'100%',minHeight:'100vh'}},[h(Panel)])}).mount('#app')
 `
 
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0 }, plugins: [{
+const server = await createServer({ root, configLoader: 'runner', cacheDir: path.join(out, 'vite-cache'), server: { host: '127.0.0.1', port: 0 }, plugins: [{
   name: 'batch302-analytics-fixture',
   resolveId(id) { if (id === '/__batch302__.js') return id },
   load(id) { if (id === '/__batch302__.js') return entry },
@@ -82,11 +82,54 @@ try {
   await page.getByText('样本可靠性', { exact: true }).waitFor()
   await page.screenshot({ path: path.join(out, 'single-desktop.png'), fullPage: true })
 
-  const master = page.getByLabel('使用方主宰')
-  await master.selectOption({ index: 1 })
+  await page.getByRole('button', { name: '选择使用方主宰', exact: true }).click()
+  const minePicker = page.getByRole('dialog', { name: '选择使用方主宰', exact: true })
+  await minePicker.waitFor()
+  const typeValues = await minePicker.locator('.single-card-filters select').first().locator('option').evaluateAll(options => options.map(option => option.value))
+  assert.deepEqual(typeValues, ['all', 'master'], 'shared master picker must narrow only these filter entries')
+  const masterName = (await minePicker.locator('.single-card-result-card>b').first().innerText()).trim()
+  await minePicker.getByPlaceholder('搜索卡名、编号或效果文字').fill(masterName)
+  assert.equal(await minePicker.locator('.single-card-result-card').count(), 1, 'master filter must support real shared search')
+  await minePicker.locator('.single-card-actions').first().getByRole('button', { name: '详情', exact: true }).click()
+  await page.getByRole('dialog', { name: masterName, exact: true }).waitFor()
+  // Existing shared picker/detail overlay blocks this close button's pointer.
+  // Verify the real keyboard path; this is not a mouse-close/layout claim.
+  await page.getByRole('button', { name: '关闭卡牌详情', exact: true }).focus()
+  await page.keyboard.press('Enter')
+  await page.getByRole('dialog', { name: masterName, exact: true }).waitFor({ state: 'hidden' })
+  await minePicker.locator('.single-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
   await page.getByRole('button', { name: '查询这张卡' }).click()
   await page.getByText('样本可靠性', { exact: true }).waitFor()
+  const mineCall = await page.evaluate(() => window.detailCalls.at(-1))
+  assert.ok(mineCall.masterId)
+  assert.equal(mineCall.opponentMasterId, '')
+  assert.equal(await page.locator('.master-picker-filter').first().locator('.l12-card-image').count(), 1)
+  await page.getByRole('button', { name: '选择对方主宰', exact: true }).click()
+  const enemyPicker = page.getByRole('dialog', { name: '选择对方主宰', exact: true })
+  await enemyPicker.getByPlaceholder('搜索卡名、编号或效果文字').fill(masterName)
+  await enemyPicker.locator('.single-card-actions').first().getByRole('button', { name: '选择', exact: true }).click()
+  await page.getByRole('button', { name: '查询这张卡' }).click()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
+  const bothCall = await page.evaluate(() => window.detailCalls.at(-1))
+  assert.equal(bothCall.masterId, mineCall.masterId)
+  assert.equal(bothCall.opponentMasterId, mineCall.masterId)
+  await page.getByRole('button', { name: '清除使用方主宰筛选', exact: true }).click()
+  await page.getByRole('button', { name: '查询这张卡' }).click()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
+  const clearedMineCall = await page.evaluate(() => window.detailCalls.at(-1))
+  assert.equal(clearedMineCall.masterId, '')
+  assert.equal(clearedMineCall.opponentMasterId, mineCall.masterId)
+  await page.getByRole('button', { name: '清除对方主宰筛选', exact: true }).click()
+  await page.getByLabel('卡效版本', { exact: true }).selectOption('all')
+  await page.getByRole('button', { name: '查询这张卡' }).click()
+  await page.getByText('样本可靠性', { exact: true }).waitFor()
+  const allVersionCall = await page.evaluate(() => window.detailCalls.at(-1))
+  assert.equal(allVersionCall.effectVersion, 'all')
+  assert.equal(allVersionCall.masterId, '')
+  assert.equal(allVersionCall.opponentMasterId, '')
+  assert.equal(await page.locator('.version-note').filter({ hasText: '跨版本描述性观察' }).count(), 1)
+  await page.getByLabel('卡效版本', { exact: true }).selectOption('current')
 
   await page.getByRole('button', { name: '全部', exact: true }).click()
   await page.getByText('选择一张卡查看事实仪表盘').waitFor()
@@ -128,8 +171,8 @@ try {
   assert.equal(overflow, false, 'narrow single-card dashboard must not overflow the page')
   await page.screenshot({ path: path.join(out, 'single-narrow.png'), fullPage: true })
   assert.deepEqual(errors, [])
-  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ detailCalls: await page.evaluate(() => window.detailCalls), listCalls: await page.evaluate(() => window.listCalls), overflow, errors }, null, 2))
-  console.log('BATCH302 analytics picker, stale-state, ranges, complete sorting, pagination and viewports passed.')
+  fs.writeFileSync(path.join(out, 'report.json'), JSON.stringify({ detailCalls: await page.evaluate(() => window.detailCalls), listCalls: await page.evaluate(() => window.listCalls), detailCloseInput: 'keyboard', pointerDetailCloseVerified: false, overflow, errors }, null, 2))
+  console.log('BATCH302 analytics full-card/master-only pickers, search/detail-keyboard/clear, actual filters, current/all, ranges, sorting, pagination and viewports passed; shared detail pointer-close unverified.')
 } finally {
   await browser?.close()
   await server.close()
