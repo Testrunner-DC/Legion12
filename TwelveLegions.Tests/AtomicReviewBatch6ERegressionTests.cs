@@ -272,6 +272,64 @@ public sealed class AtomicReviewBatch6ERegressionTests
         Assert.Equal(1, CountInstance(game, second.InstanceId));
     }
 
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "card:S01-0305")]
+    [Trait("L12Evidence", "entry:bound-four-card-activation-cancel")]
+    public void BjornImmediateSkipBypassesFourCardMinimumAndSpendsNothing(int owner, bool restore)
+    {
+        var game = Create(79115 + owner);
+        game.State.ActivePlayer = owner;
+        var player = game.State.Players[owner];
+        var bjorn = Card("S01-0305", "batch6e-bjorn-cancel", owner);
+        var costs = Enumerable.Range(1, 4)
+            .Select(index => Card($"S01-000{index}", $"batch6e-cancel-cost-{index}", owner)).ToArray();
+        player.Field[0][0] = bjorn;
+        player.Graveyard.AddRange(costs);
+        var hpBefore = player.Hp;
+        Assert.True(game.HandleGm(new L12GmCommand("destroyCard", owner,
+            CardInstanceId: bjorn.InstanceId)).Accepted);
+        if (restore)
+        {
+            var checkpoint = game.SerializeFullState().Insert(1, "\"StateFormatVersion\":2,");
+            game = L12GameEngine.RestoreCheckpoint(Catalog, checkpoint,
+                game.RandomState ?? new L12RandomState(1, 1, 2, 3, 4, 0), game.CardFactSignalSequence,
+                autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+            player = game.State.Players[owner];
+        }
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(owner, prompt.PlayerIndex);
+        Assert.Equal(4, prompt.MinChoose);
+        Assert.Equal(4, prompt.MaxChoose);
+        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.NotNull(prompt.ActivationId);
+        Assert.Single(game.State.PendingActivations);
+        var before = game.SerializeFullState();
+        var invalid = game.Handle(owner, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: ["skip", costs[0].InstanceId]));
+        Assert.False(invalid.Accepted);
+        Assert.Equal(before, game.SerializeFullState());
+        var result = game.Handle(owner, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: ["skip"], ActivationId: prompt.ActivationId,
+            SourceInstanceId: prompt.SourceInstanceId, SourceCardId: prompt.SourceCardId,
+            Step: prompt.Step, CreatedRevision: prompt.CreatedRevision, Controller: prompt.Controller));
+        Assert.True(result.Accepted, result.Error);
+        Assert.Equal(hpBefore, player.Hp);
+        Assert.Equal(costs.Select(card => card.InstanceId).Append(bjorn.InstanceId),
+            player.Graveyard.Select(card => card.InstanceId));
+        Assert.Empty(player.Library);
+        Assert.Null(player.Field[0][0]);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(1, CountInstance(game, bjorn.InstanceId));
+        Assert.False(game.Handle(owner, new L12Command("resolvePrompt", PromptId: prompt.PromptId,
+            CardInstanceIds: ["skip"])).Accepted);
+    }
+
     [Fact]
     [Trait("L12Evidence", "card:S01-0305")]
     [Trait("L12Evidence", "entry:death-colon-cost-pre-stack")]

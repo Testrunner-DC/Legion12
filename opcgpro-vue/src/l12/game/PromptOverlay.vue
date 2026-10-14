@@ -408,9 +408,23 @@ const showPreviewCard = computed(() => Boolean(previewCardId.value)
   && ['handled-card', 'information-card'].includes(previewPresentation.value))
 const declineChoices = new Set(['no', 'mode:none', 'skip', 'pass', 'decline', 'cancel'])
 declineChoices.add('refuse')
-function isDeclineChoice(choice: string) {
-  const explicitLabel = naturalChoiceLabel(prompt.value?.choiceLabels?.[choice], choice)?.trim()
+function isDeclineChoiceForPrompt(p: Prompt | null | undefined, choice: string) {
+  const explicitLabel = naturalChoiceLabel(p?.choiceLabels?.[choice], choice)?.trim()
   return declineChoices.has(choice.trim().toLowerCase()) || explicitLabel === '不响应' || explicitLabel === '不发动'
+}
+function isDeclineChoice(choice: string) {
+  return isDeclineChoiceForPrompt(prompt.value, choice)
+}
+function isActivationCancellationSelection(p: Prompt | null | undefined, choices: readonly string[]) {
+  return Boolean(p?.activationId && p.validChoices.includes('skip')
+    && choices.length === 1 && choices[0] === 'skip')
+}
+function isPromptSelectionSubmittable(p: Prompt | null | undefined, choices: readonly string[]) {
+  if (!p || choices.length !== new Set(choices).size
+      || choices.some(choice => !p.validChoices.includes(choice))) return false
+  if (isActivationCancellationSelection(p, choices)) return true
+  return choices.length >= p.minChoose && choices.length <= p.maxChoose
+    && !(choices.some(choice => isDeclineChoiceForPrompt(p, choice)) && choices.length > 1)
 }
 const directActivationChoices = new Set(['yes', 'mode:use', 'activate', 'use'])
 function isDirectActivationChoice(choice: string) {
@@ -704,8 +718,7 @@ function confirm() {
   const p = prompt.value
   if (!p) return
   const choices = currentValidSelection()
-  if (choices.length < p.minChoose || choices.length > p.maxChoose
-      || choices.some(isDeclineChoice) && choices.length > 1) return
+  if (!isPromptSelectionSubmittable(p, choices)) return
   sendAction(withPromptBinding(p, { cardInstanceIds: choices }), p.playerIndex)
 }
 function resolveSinglePlacement(destination: 'top' | 'bottom') {
@@ -1033,7 +1046,7 @@ function kindLabel() {
           <template v-else>
             <span v-if="isInfoConfirm">双方均确认后继续</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
-            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length < prompt.minChoose || activeSelected.length > prompt.maxChoose || (activeSelected.some(isDeclineChoice) && activeSelected.length > 1)" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || !isPromptSelectionSubmittable(prompt, activeSelected)" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : promptConfirmLabel }}
             </button>
           </template>

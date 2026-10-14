@@ -28,6 +28,7 @@ import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contr
 const queryFixtureGlobals = ['Document', 'ShadowRoot'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
 await import('./test-admin-bug-server-pages.mjs')
 await import('./test-admin-command-server-pages.mjs')
+await import('./test-activation-cancellation-selection.mjs')
 for (const [key, before] of queryFixtureGlobals) {
   const after = Object.getOwnPropertyDescriptor(globalThis, key)
   if (['value', 'get', 'set', 'writable', 'enumerable', 'configurable'].some(field => before?.[field] !== after?.[field]))
