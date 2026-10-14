@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261014-alert-transport-diagnostics-internal",
+  "date": "2026-10-14",
+  "audience": "internal",
+  "reason": "后台待办及业务存储告警口径修正；仅隔离测试服默认关闭的合成终局数值取证，不改变卡效、可靠确认、数据格式或玩家展示。",
+  "paths": [
+    "服务端WebSocket/Program.cs",
+    "服务端WebSocket/TwelveLegions/L12InboundConnection.cs",
+    "服务端WebSocket/TwelveLegions/L12OutboundConnection.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12ServerStorageMonitor.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
