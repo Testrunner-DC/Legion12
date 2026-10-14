@@ -2805,6 +2805,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.Accounts());
         });
+        _app.MapGet("/api/admin/accounts/query", (HttpRequest request, int? page, int? pageSize,
+            string? search, bool? deleted) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_platform.QueryAccounts(page ?? 1, pageSize ?? 10, search,
+                deleted ?? false, request.HttpContext.RequestAborted)); }
+            catch (ArgumentException)
+            { return ApiError(request, "account_query_invalid", "账号搜索最多200个字符", StatusCodes.Status400BadRequest); }
+        });
         _app.MapGet("/api/admin/accounts/{accountId}", (HttpRequest request, string accountId) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminAccountsRead, out _, out var failure)) return failure;
@@ -3149,6 +3158,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         _app.MapGet("/api/admin/workbench/summary", (HttpRequest request) =>
         {
+            var timing = new L12WorkbenchRequestTiming();
             if (!TryAuthenticate(request, L12Permission.AdminRuntimeRead, out var authenticated, out var failure))
                 return failure;
             var account = authenticated.Account;
@@ -3162,14 +3172,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "permission_denied", "当前账号没有读取工作台摘要的权限",
                     StatusCodes.Status403Forbidden);
 
+            timing.EndAuthentication();
             var sampledAt = DateTimeOffset.UtcNow;
             var pending = new List<L12AdminWorkbenchItemView>();
             var anomalies = new List<L12AdminWorkbenchItemView>();
             var recent = new List<L12AdminWorkbenchItemView>();
             var unavailable = new List<string>();
-            void Capture(string id, string kind, string label, string path,
+            void Capture(L12WorkbenchStage stage, string id, string kind, string label, string path,
                 List<L12AdminWorkbenchItemView> target, Action read)
             {
+                using var measured = timing.Measure(stage);
                 try { read(); }
                 catch (Exception error)
                 {
@@ -3181,7 +3193,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminBugsRead))
             {
-                Capture("bugs", "bug", "Bug 闭环", "/admin/users/bugs", pending, () =>
+                Capture(L12WorkbenchStage.Bugs, "bugs", "bug", "Bug 闭环", "/admin/users/bugs", pending, () =>
                 {
                     var openBugs = _platform.OpenBugCount();
                     pending.Add(new("bugs", "bug", "Bug 闭环", openBugs == 0 ? "当前没有待处理 Bug" :
@@ -3191,7 +3203,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminAccountsRead))
             {
-                Capture("renames", "account", "改名审核", "/admin/users/renames", pending, () =>
+                Capture(L12WorkbenchStage.Renames, "renames", "account", "改名审核", "/admin/users/renames", pending, () =>
                 {
                     var renameCount = _platform.UsernameChangeRequests("pending").Count;
                     pending.Add(new("renames", "account", "改名审核", renameCount == 0 ? "当前没有待审核申请" :
@@ -3201,7 +3213,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminRuntimeRead))
             {
-                Capture("runtime", "runtime", "服务运行状态", "/admin/system/releases", anomalies, () =>
+                Capture(L12WorkbenchStage.Runtime, "runtime", "runtime", "服务运行状态", "/admin/system/releases", anomalies, () =>
                 {
                     var performance = _httpPerformance.Snapshot();
                     anomalies.Add(new("runtime", "runtime", "服务运行状态",
@@ -3212,13 +3224,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminSecurityRead))
             {
-                Capture("storage", "storage", "存储容量", "/admin/system/storage", anomalies, () =>
+                Capture(L12WorkbenchStage.Storage, "storage", "storage", "存储容量", "/admin/system/storage", anomalies, () =>
                 {
                     var storage = _storageSnapshot();
                     anomalies.Add(new("storage", "storage", "存储容量", storage.Conclusion,
                         "/admin/system/storage", storage.Health));
                 });
-                Capture("security", "security", "安全告警", "/admin/system/security", anomalies, () =>
+                Capture(L12WorkbenchStage.Security, "security", "security", "安全告警", "/admin/system/security", anomalies, () =>
                 {
                     var security = _platform.SecurityStatus(account);
                     var alertCount = security.Alerts.Sum(item => (long)item.Count);
@@ -3229,12 +3241,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             }
             if (L12Authorization.HasPermission(account, L12Permission.AdminAuditRead))
             {
-                Capture("audit", "audit", "最近活动", "/admin/system/audit", recent, () =>
+                Capture(L12WorkbenchStage.Audit, "audit", "audit", "最近活动", "/admin/system/audit", recent, () =>
                     recent.AddRange(_platform.AdminAudit(limit: 6).Select(item => new L12AdminWorkbenchItemView(
                         item.Id, item.Category, item.Action, $"{item.ActorName} · {item.Target}",
                         "/admin/system/audit", item.Outcome is "failed" or "denied" ? "warning" : "neutral",
                         OccurredAt: item.CreatedAt))));
             }
+            request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming();
             return Results.Ok(new L12AdminWorkbenchSummaryView(sampledAt, pending, anomalies, recent,
                 unavailable.Count > 0, unavailable));
         });

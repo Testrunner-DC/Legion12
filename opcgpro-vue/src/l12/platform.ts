@@ -12,6 +12,7 @@ export interface PlatformAccount {
   audioPreferences?: { musicEnabled: boolean; musicVolume: number; sfxEnabled: boolean; sfxVolume: number; cardSize: 'auto'|'small'|'medium'|'large'; animation: 'off'|'fast'|'standard'; mobileLayout: 'auto'|'on'|'off' }
 }
 export interface RoleCommandResult { accountId: string; role: 'player' | 'admin'; changed: boolean }
+export interface AdminAccountPage { items: PlatformAccount[]; page: number; pageSize: number; total: number; activeCount: number; deletedCount: number }
 export interface AccountStatusOperation { applied: boolean; account: PlatformAccount; revokedSessions: number; alreadyApplied: boolean }
 export interface PlatformSession {
   id: string; createdAt: string; expiresAt: string; current: boolean; authStrength: string; permissionVersion: number
@@ -1430,6 +1431,11 @@ export const adminApi = {
     return platformRequest<AdminGlobalAnalyticsReport>(`/api/admin/analytics/global${params.size ? `?${params}` : ''}`)
   },
   accounts: () => platformRequest<PlatformAccount[]>('/api/admin/accounts'),
+  accountsPage: (query: { page?: number; pageSize?: number; search?: string; deleted?: boolean } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminAccountPage>(`/api/admin/accounts/query${params.size ? `?${params}` : ''}`)
+  },
   account: (id: string) => platformRequest<PlatformAccount>(`/api/admin/accounts/${encodeURIComponent(id)}`),
   setRole: (id: string, role: 'player' | 'admin', expectedVersion?: number) => platformRequest<RoleCommandResult>(`/api/admin/accounts/${encodeURIComponent(id)}/role`, { method: 'PUT', body: JSON.stringify(commandBody('role', { role, expectedVersion })) }),
   setAccountStatus: (id: string, disabled: boolean, reason: string, expectedVersion?: number) => platformRequest<AccountStatusOperation>(`/api/admin/accounts/${encodeURIComponent(id)}/status`, {

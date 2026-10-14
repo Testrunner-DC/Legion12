@@ -1,5 +1,18 @@
 # 十二军团任务台账
 
+## ADMIN-20261014-F8-FIRST-SLICE / BUSINESS-HTTP-LINKS｜本地验收，未部署
+
+- 用户要求按规划推进后台报告及Bug收口。P2/P3只读查询与P4分页扩展，不改P0/P1或锁定架构：固定wb-auth/bugs/renames/runtime/storage/security/audit/total数值handler耗时、仅授权模块；原DTO/部分不可用/鉴权app计时和card计时保留，无身份/搜索/错误内容。合成100/20000审计行冷暖真实HTTP，受控25ms延迟、权限/异常与核心版本/镜像不变均验证；不当作正式慢请求根因。
+- 账号新QueryAccounts与/api/admin/accounts/query稳定CreatedAt+ordinal ID、page10/max100/搜索200字符、过滤四字段/删与未删分区、超页夹限、全局分区数及过滤total，只对本页ToView。旧Accounts和单账号入口保持，没新缓存/DB/隐藏牌库水合；仍有既有锁内全扫描/排序。前端只用服务端搜索分页、250ms防抖、seq+身份/token/权限版本ABA及卸载清退、失败不是空成功；危险操作仍理由/确认/CAS/root/self守卫。共享Paged旧模式不迁移。
+- 完整Batch7255规则/1567平台零失败跳过、完整前端UI356/类型/双环境构建通过；具名focused21与实际Vue/template13、1440/390浏览器正常点击/分页/风险取消/焦点/零越界、独立六源审CLEAR绑定最终源。新增切季只补一个测试文件并通过1格，11已验源字节不变，不重复全套、也不称1568全套新执行。最终12源验收74D0B4E1、保留原RED/夹具失败、旧Batch/报告不覆盖；证据C盘artifacts/admin-f8-next-20261014，Git精确结果认git-sync.json。
+- 四业务族5具名本地HTTP例：改名审批两结果及玩家回读、资讯draft/publish/withdraw/restore再发布与公开回读、异画grant/revoke及玩家自己的权益回读、切季definition preview/apply→activation-preview/权限拒绝→activate→公开policy/玩家ranked历史/archives/summary→同key幂等。切季由6次合成settlement准备事实，不是房间/WS或跨进程/自动时钟验证；治理预热统计失效和四人两轮赛事链仍待，不把局部已验store/outbox重复当全部业务完成。
+- F8仅首片完成；Bug/命令与其他全读分页、改版测试环境冷暖/端到端取证仍待，原数秒问题未根治。F5执行适配器不启用，不新增应用包或部署/维护。最新正式e2/测试7c90保持，原30房3s失败不改绿。
+
+## BUG-20261014-F8-NEXT-THREE-E2｜具名既有修复真实闭环
+
+- BUG-20260908-2bc1efa0天灾血戒、BUG-20260908-00df07cb草薙无费用对象、BUG-20260909-fe478ddd天照击杀狗：各原文/修复提交为e2祖先，E354正式原DLL及归档/manifest/卡表/具名源冻结，Main12例实际通过。草薙有效费用0/2/3并非印刷费用；天照4例仅yomi=false双方2格为原报告，yomi=true两格为对照，不冒称原录像。
+- proposal修正边界后一次预览/逐项CAS/独立读回全部fixed_verified，原15字段/历史保留、专用会话撤销与401确认。真实回执bug-closeout-f8-next-three-e2.json及唯一work-items归集；当前903/new465/resolved245/closed193，本阶段59=13fixed/39rejected/7duplicate、周期151，新增1反馈已导入。未上线新修复不关闭、不再追问用户记忆或重复旧终态。
+
 ## UI-20261014-PICKER-DETAIL-OVERLAY｜获批、本地验收完成，未部署
 
 - 用户接受仅修共享选择器与详情的层级/点击归属，保留布局、选择、键盘与焦点。P4内扩展：只有SingleCardPicker打开的详情启用withinPicker层级5300及关闭焦点归还；选择器5200、普通详情4500、Teleport目标与全部筛选/选择回调不变，不改P0—P3。

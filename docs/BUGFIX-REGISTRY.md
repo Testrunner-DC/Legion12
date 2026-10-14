@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261014-F8-FIRST-SLICE｜后台模块计时与账号真正分页（本地验收）
+
+- 先核后台审查报告/旧card cache取消/统计及分页记录和a82干净基线、现有diff；未重新采旧正式。工作台只有通用app耗时不能区分六模块，账号先拉完整集合再浏览器分页。仅扩既有查询/共享Paged，不加第二权威、缓存或全库投影。
+- 请求局部固定枚举和wb数值名字记录鉴权及六模块，异常读也计时；授权失败不出现wb，原部分不可用/日志/DTO保持。原RED5中2真实缺阶段头、3夹具误拒原app头的失败分别保留；修夹具为不含wb，真实HTTP7绿。100/20000合成审计行/25ms受控存储冷暖保持版本与镜像，handler不含序列化/传输/渲染，不说已定位原正式延迟。
+- 同型扫描：rg覆盖adminApi.accounts/Accounts/ToView及共享PagedCollection消费者；账号active/deleted新服务端搜索分页、仅本页映射，其他旧Accounts消费者/所有无server props的Paged旧slice与slot offset不变。旧排序/搜索四字段保留，稳定ordinal ID次序与max100/200字符/cancel加入实际权限/恶参/超页/分区/镜像回归10绿，保持原角色/会话/理由/CAS与root/self保护。客户端seq/身份/权限ABA/卸载与风险结果守卫，真实SFC13绿；Main严格safe integer/页完整性反例不放宽，首错误夹具total25/items1原失败保留、只改合成数据一致性。
+- 最终Main完整Batch7255规则/1567平台失败跳过0、UI356/全前端类型及双构建、两宽实际分页/搜索/风险取消/焦点零越界与六源审CLEAR通过，最终12源验收74D0B4E1。旧21 focused涵盖改名/资讯/异画4格；新切季1格只增加合成HTTP测试、产品11源不变，实际单独编译运行，不伪称全套1568已重跑。四业务族链接有证据、治理/赛事及真实线上写后回读没有本轮证据。
+- 回滚面：旧accounts接口仍可用；新前后端一起发布才可采用query。共享Paged未传serverPage/total时继续旧语义。F8全扫描锁和Bug/命令余分页仍未完成、原30房迟到未根治，本批不部署/重启/改维护，原审查/验收/失败保留。Git同步认同目录git-sync.json。
+
+## BUG-20261014-F8-NEXT-THREE-E2｜三条具名已上线卡效修复复验收口
+
+- 当前正式e2/E354原产品不重建：天灾始点伤害无反应1/戒指天灾与玩家对照4、草薙无费用排除及有效费用边界3、天照/黄泉正交目标4，共12实际具名TRX通过。三个修复提交3c13e7b/9d6c75f/ca4dec95均证实是e2祖先。天照仅两格属于该原文，其他是黄泉对照；草薙边界采用CostModifier后的有效0/2/3，原提议较宽说明保留并在Apply前更正。
+- 三原报告各一次preview/CAS/readback成为fixed_verified/resolved；原内容/分派/优先级/管理员备注/历史不丢、所有专用会话撤销。回执4111F4D3与唯一work-items/current-status归集，本阶段59=13fixed/39rejected/7duplicate，总903/new465/resolved245/closed193、周期151。期间新增1项已导入，未将本地未部署共享阵亡/新后台代码当正式修复关闭，其他待办继续固定流程。
+
 ## UI-20261014-PICKER-DETAIL-OVERLAY｜选择器详情按钮被下层遮罩截获
 
 - 用户明确接受限定修复。先查既有SingleCardPicker/CatalogCardDetails与主宰选择器记录、干净930cd13基线及局部diff；实际RED显示关闭按钮中心命中选择器，根因为同宿主详情4500低于选择器5200，不是按钮提交或卡效问题。
