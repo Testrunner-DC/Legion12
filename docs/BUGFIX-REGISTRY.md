@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## CHAT-C1A-20261015｜已提交关系点读的未接入基础
+
+- 来源用户授权聊天方案与Main两源lease，扩现有CommittedPresenceReads/同代holder，不新SQL、锁、状态格式或消费者。readonly三值关系快照无Session/Send权限；双方ActiveAccounts、首个unordered pair精确accepted及双方block检查，不从staged _data/公开PresenceFor取得暂存关系。
+- 关系有序ID/status不变重用Frozen索引，创建时间/名称/block更新不白重建pair；公共暂存投影跳过未使用chat index且原义不变。容忍原已保存的未知/重复/null字段行，不增加保存失败，只不能授权聊天。范围独立于私牌缓存修复。
+- Main完整源审与actual TRX74（新31/原presence3+session40），R01—R12覆首行/双方屏蔽、持锁及外部读屏障、提交/失败/嵌套/镜像/回滚、迁移冷启/冲突、账号/会话及失效旧值。10000热读0B/SQL0；4096行单index prepare534672B低于1114112B，未变化共享引用，非服务器容量或线上延迟结论。
+- 最终两源5475E4BA/FB66608C经Main完整平台1621零失败跳过及完整前端/类型/双构建通过，证据C盘chat-c1a-20261015/main-local-acceptance.json；原有效7259规则按映射不重复。本轮无新功能接入、部署/维护/在线关单；实际Send/字节优先级/观战合同以及原30房3s缺口仍待。
+
 ## BUG-20261014-15fefc34｜同名陈旧缓存阻塞（本地完整验收，未部署）
 
 - 前置核既有DECK-20261003-STALE-EDITOR、CU4薄目录/单体读取及账号Web Lock/CAS记录与本地diff；不覆盖并行C1A两源。原正式e2同源真实decks/cache/codec模块9格：两账号同名不串库；账号内远端改名或删除重建后旧ID占名，改大号名称也不能修小号缓存。证据C盘admin-f8-next-20261014/same-name-cache-e2/report.json，未读玩家本机缓存。

@@ -8,28 +8,86 @@ internal sealed record L12CommittedPresencePlatformView(
     IReadOnlyDictionary<string, L12FriendView> Relationships,
     IReadOnlySet<string> AcceptedFriendIds);
 
+// A relationship snapshot only: not session authentication or permission to start a send.
+internal readonly record struct L12CommittedChatRelationshipView(
+    long Revision, bool Available, bool AcceptedAndUnblocked);
+
 public sealed partial class L12PlatformStore
 {
     private sealed record CommittedPresenceFriend(string RequesterId, string AddresseeId,
         string Status, DateTimeOffset CreatedAt);
     private sealed record CommittedPresenceReads(FrozenDictionary<string, string> Usernames,
         ImmutableArray<CommittedPresenceFriend> Friends,
-        FrozenSet<(string AccountId, string BlockedAccountId)> Blocked);
+        FrozenSet<(string AccountId, string BlockedAccountId)> Blocked,
+        FrozenDictionary<(string FirstId, string SecondId), bool> ChatRelationships);
 
-    private static CommittedPresenceReads PrepareCommittedPresenceReads(DataFile data)
+    private CommittedPresenceReads PrepareCommittedPresenceReads(DataFile data, bool prepareChatIndex = true)
     {
         var names = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var account in data.Accounts) names.TryAdd(account.Id, PublicUsername(account));
-        return new(names.ToFrozenDictionary(StringComparer.Ordinal),
-            data.Friends.Select(row => new CommittedPresenceFriend(row.RequesterId,
-                row.AddresseeId, row.Status, row.CreatedAt)).ToImmutableArray(),
-            data.BlockedAccounts.Select(row => (row.AccountId, row.BlockedAccountId)).ToFrozenSet());
+        var friends = data.Friends.Select(row => new CommittedPresenceFriend(row.RequesterId,
+            row.AddresseeId, row.Status, row.CreatedAt)).ToImmutableArray();
+        var pairs = prepareChatIndex
+            ? PrepareCommittedChatPairs(friends, Volatile.Read(ref _committedSessionActivity).PresenceReads)
+            : FrozenDictionary<(string, string), bool>.Empty;
+        return new(names.ToFrozenDictionary(StringComparer.Ordinal), friends,
+            data.BlockedAccounts.Select(row => (row.AccountId, row.BlockedAccountId)).ToFrozenSet(), pairs);
+    }
+
+    private static FrozenDictionary<(string FirstId, string SecondId), bool> PrepareCommittedChatPairs(
+        ImmutableArray<CommittedPresenceFriend> friends, CommittedPresenceReads? previous)
+    {
+        if (previous is not null && SameOrderedChatFacts(friends, previous.Friends))
+            return previous.ChatRelationships;
+        if (friends.IsEmpty) return FrozenDictionary<(string, string), bool>.Empty;
+
+        var first = new Dictionary<(string, string), bool>(friends.Length);
+        foreach (var row in friends)
+        {
+            // Historical malformed/unknown rows remain saveable, but never authorize chat.
+            if (string.IsNullOrWhiteSpace(row.RequesterId) || string.IsNullOrWhiteSpace(row.AddresseeId)
+                || row.RequesterId == row.AddresseeId) continue;
+            first.TryAdd(ChatPair(row.RequesterId, row.AddresseeId), row.Status == "accepted");
+        }
+        return first.ToFrozenDictionary();
+    }
+
+    private static bool SameOrderedChatFacts(ImmutableArray<CommittedPresenceFriend> current,
+        ImmutableArray<CommittedPresenceFriend> previous)
+    {
+        if (current.Length != previous.Length) return false;
+        for (var index = 0; index < current.Length; index++)
+        {
+            var row = current[index];
+            var old = previous[index];
+            if (row.RequesterId != old.RequesterId || row.AddresseeId != old.AddresseeId
+                || row.Status != old.Status) return false;
+        }
+        return true;
+    }
+
+    private static (string FirstId, string SecondId) ChatPair(string firstId, string secondId)
+        => string.CompareOrdinal(firstId, secondId) <= 0 ? (firstId, secondId) : (secondId, firstId);
+
+    internal L12CommittedChatRelationshipView ReadCommittedChatRelationship(string senderId, string recipientId)
+    {
+        // Never take the public reader's staged _data branch, even if this caller owns _gate.
+        var committed = Volatile.Read(ref _committedSessionActivity);
+        var reads = committed.PresenceReads;
+        if (!committed.Available || reads is null) return new(committed.Revision, false, false);
+        var accepted = !string.IsNullOrWhiteSpace(senderId) && !string.IsNullOrWhiteSpace(recipientId)
+            && senderId != recipientId
+            && committed.ActiveAccounts.ContainsKey(senderId) && committed.ActiveAccounts.ContainsKey(recipientId)
+            && reads.ChatRelationships.TryGetValue(ChatPair(senderId, recipientId), out var related) && related
+            && !reads.Blocked.Contains((senderId, recipientId))
+            && !reads.Blocked.Contains((recipientId, senderId));
+        return new(committed.Revision, true, accepted);
     }
 
     internal L12CommittedPresencePlatformView ReadCommittedPresencePlatformView(string viewerId)
     {
         CommittedPresenceReads reads;
-        if (Monitor.IsEntered(_gate)) reads = PrepareCommittedPresenceReads(_data);
+        if (Monitor.IsEntered(_gate)) reads = PrepareCommittedPresenceReads(_data, prepareChatIndex: false);
         else
         {
             var committed = Volatile.Read(ref _committedSessionActivity);
