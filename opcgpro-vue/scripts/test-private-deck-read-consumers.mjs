@@ -222,7 +222,7 @@ function bodyRuntime(options = {}) {
     platformRequest: (url, init) => {
       const row = { url, init, ...(options.deferred ? deferred() : {}) }; calls.push(row)
       if (options.error) return Promise.reject(options.error)
-      return options.deferred ? row.promise : Promise.resolve(clone(requests))
+      return options.deferred ? row.promise : Promise.resolve(clone(options.responses?.[url] ?? requests))
     },
     normalizeSavedDeck: value => {
       if (!value || !Array.isArray(value.cardIds) || !Array.isArray(value.moraleIds) || !Array.isArray(value.specialIds))
@@ -244,7 +244,7 @@ function bodyRuntime(options = {}) {
   const functions = compileBlock('src/l12/decks.ts', [
     'selectedDeckStorageKey', 'scopedSelectedDeckStorageKey', 'sameDeckName', 'upsertCachedDeck', 'deckIdentityContent',
     'migrateDeckSelectionReferences', 'withGuestDeckMutation', 'commitSavedDecks',
-    'privateDeckText', 'privateDeckInteger', 'loadPrivateDeckBody',
+    'privateDeckText', 'privateDeckInteger', 'readPrivateDeckCollision', 'loadPrivateDeckBody',
   ], dependencies)
   async function call(target = { id: 'deck-A', revision: 2 }, guard = () => true) {
     const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
@@ -289,7 +289,9 @@ await check('a newer cached revision wins without being overwritten', async () =
 await check('another identity with the same name blocks merge and preserves both cached objects', async () => {
   const snapshot = { status: 'ready', raw: 'raw', owner: 'account:owner', generation: 'old', aliases: {},
     decks: { Old: body('deck-A', 1, 'Old'), '重命名牌库': body('deck-B', 8, '重命名牌库') } }
-  const runtime = bodyRuntime({ response: body(), snapshot }); await assert.rejects(runtime.call(), /另一副同名/)
+  const runtime = bodyRuntime({ response: body(), snapshot,
+    responses: { '/api/decks/by-id/deck-B?expectedRevision=8': body('deck-B', 8, '重命名牌库') } })
+  await assert.rejects(runtime.call(), /另一副同名/)
   assert.equal(runtime.commits(), 0); assert.equal(Object.keys(runtime.snapshot().decks).length, 2)
 })
 await check('merge re-reads the latest cache after the network reply and retains concurrent objects', async () => {
@@ -363,3 +365,4 @@ await check('authenticated library has no full-body directory fallback while leg
 })
 
 console.log(`C-U4 focused private read result: ${passed}/${passed}, failed=0, skipped=0`)
+await import('./test-private-deck-name-reconciliation.mjs')

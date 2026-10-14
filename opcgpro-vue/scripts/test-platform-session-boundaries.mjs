@@ -394,6 +394,41 @@ await check('refresh deduplication is generation-scoped and an old finally canno
   assert.equal(runtime.authState.refreshing, false)
 })
 
+for (const mode of ['single-attempt', 'independent-deadline']) await check(`same-path independent read preserves ${mode} beside a shared ordinary GET`, async () => {
+  const ordinaryReply = deferred()
+  const runtime = actualRuntime((_url, init) => {
+    if (runtime.fetchCalls.length === 1) return ordinaryReply.promise
+    if (mode === 'single-attempt') return json(503, { message: 'synthetic failure' })
+    return new Promise((_resolve, reject) => init.signal.addEventListener('abort',
+      () => reject(new DOMException('synthetic abort', 'AbortError')), { once: true }))
+  })
+  runtime.remember(account('A'), 'token-A')
+  const route = '/api/decks/by-id/collision?expectedRevision=1'
+  const ordinary = settle(runtime.platformRequest(route))
+  await until(() => runtime.fetchCalls.length === 1, 'ordinary read did not start')
+  const started = performance.now()
+  const limited = settle(runtime.platformRequest(route, { signal: new AbortController().signal,
+    reliability: { maxAttempts: 1, timeoutMs: mode === 'independent-deadline' ? 40 : 500 } }))
+  try {
+    await until(() => runtime.fetchCalls.length === 2, 'independent read was incorrectly merged')
+    const result = await limited
+    assert.equal(result.status, 'rejected')
+    if (mode === 'single-attempt') assert.equal(result.reason.status, 503)
+    else {
+      assert.equal(result.reason.code, 'request_timeout')
+      assert.ok(performance.now() - started < 1000, 'small independent deadline joined the ordinary timeout')
+      assert.equal(runtime.fetchCalls[1].init.signal.aborted, true)
+    }
+    assert.equal(runtime.fetchCalls.length, 2, 'limited read must not retry')
+    assert.equal(runtime.fetchCalls[0].init.signal.aborted, false, 'ordinary consumer may not be canceled')
+    assert.notEqual(runtime.fetchCalls[0].init.signal, runtime.fetchCalls[1].init.signal)
+  } finally {
+    ordinaryReply.resolve(json(200, { preserved: true }))
+    assert.equal((await ordinary).status, 'fulfilled')
+    await limited
+  }
+})
+
 const report = {
   schema: 1,
   source: platformFile.replaceAll('\\', '/'),

@@ -550,6 +550,46 @@ export async function loadPrivateDeckSummaryPage(query: PrivateDeckSummaryQuery 
   } catch (error) { throw operationError(error, context) }
 }
 
+async function readPrivateDeckCollision(collision: SavedL12Deck, name: string, current: () => boolean) {
+  if (!privateDeckText(collision.id) || !privateDeckInteger(collision.revision, 1))
+    throw new Error('本机已有另一副同名牌库，无法确认旧缓存身份；未覆盖任何缓存')
+  // At most two extra reads, with one shared monotonic budget. Never hold the cache lock over HTTP.
+  const deadline = performance.now() + 5_000
+  let revision = collision.revision
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
+    const remaining = Math.floor(deadline - performance.now())
+    if (remaining < 1) throw new Error('同名牌库核对超时，未覆盖任何缓存')
+    let response: unknown
+    try {
+      response = await platformRequest<unknown>(
+        `/api/decks/by-id/${encodeURIComponent(collision.id)}?expectedRevision=${revision}`,
+        { cache: 'no-store', signal: new AbortController().signal,
+          reliability: { maxAttempts: 1, timeoutMs: remaining } })
+    } catch (error) {
+      if (!current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
+      if (error && typeof error === 'object' && 'status' in error) {
+        if (error.status === 404) return null
+        if (attempt === 0 && error.status === 409 && 'code' in error && error.code === 'deck_revision_conflict'
+          && 'currentRevision' in error && privateDeckInteger(error.currentRevision, 1)
+          && error.currentRevision > revision) {
+          revision = error.currentRevision
+          continue
+        }
+      }
+      throw error
+    }
+    if (!current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
+    const confirmed = normalizeSavedDeck(response as SavedL12Deck)
+    if (confirmed.id !== collision.id || confirmed.revision !== revision)
+      throw new Error('同名牌库核对的身份或修订结果不一致，未覆盖任何缓存')
+    if (sameDeckName(confirmed.name, name)) throw new Error('本机已有另一副同名牌库，未覆盖任何缓存')
+    if (attempt === 0) throw new Error('同名牌库改名未能证明新修订，未覆盖任何缓存')
+    return confirmed
+  }
+  throw new Error('同名牌库已再次变化，请刷新后重试；未覆盖任何缓存')
+}
+
 export async function loadPrivateDeckBody(target: Pick<PrivateDeckSummary, 'id' | 'revision'>,
     current: () => boolean = () => true): Promise<SavedL12Deck> {
   const context = captureDeckStorageContext()
@@ -564,15 +604,31 @@ export async function loadPrivateDeckBody(target: Pick<PrivateDeckSummary, 'id' 
     const saved = normalizeSavedDeck(response as SavedL12Deck)
     if (saved.id !== target.id || saved.revision !== target.revision)
       throw new Error('服务器牌库身份或修订结果不一致')
+    const initial = currentDeckSnapshot(context)
+    const collisions = Object.values(initial.decks).filter(deck => deck.id !== saved.id && sameDeckName(deck.name, saved.name))
+    if (collisions.length > 1) throw new Error('本机存在多副同名牌库，请先检查缓存；未覆盖任何缓存')
+    const collision = collisions[0]
+    if (collision && Object.values(initial.decks).filter(deck => deck.id === collision.id).length !== 1)
+      throw new Error('旧牌库身份存在重复缓存，未覆盖任何缓存')
+    const corrected = collision ? await readPrivateDeckCollision(collision, saved.name,
+      () => isCurrentDeckStorageContext(context) && current()) : undefined
     return await withGuestDeckMutation(context, () => {
       if (!isCurrentDeckStorageContext(context) || !current()) throw new Error('账号或页面已切换，已忽略旧牌库正文')
       const previous = currentDeckSnapshot(context)
-      const sameIdentity = Object.values(previous.decks).find(deck => deck.id === saved.id)
-      if (sameIdentity?.revision && sameIdentity.revision > saved.revision!)
+      if (collision && previous.raw !== initial.raw) throw new Error('核对期间牌库缓存已更新，请刷新后重试；未覆盖任何缓存')
+      if (Object.values(previous.decks).some(deck => deck.id === saved.id && deck.revision && deck.revision > saved.revision!))
         throw new Error('本机已有更新修订，请刷新目录后重试')
-      const nameCollision = Object.values(previous.decks).find(deck => deck.id !== saved.id && sameDeckName(deck.name, saved.name))
-      if (nameCollision) throw new Error('本机已有另一副同名牌库，未覆盖任何缓存')
       const decks = { ...previous.decks }
+      if (collision) {
+        Object.keys(decks).filter(key => decks[key].id === collision.id).forEach(key => delete decks[key])
+        if (corrected) {
+          if (Object.values(decks).some(deck => deck.id !== corrected.id && deck.id !== saved.id && sameDeckName(deck.name, corrected.name)))
+            throw new Error('核对后的名称仍与其他缓存冲突，未覆盖任何缓存')
+          upsertCachedDeck(decks, corrected)
+        }
+      }
+      if (Object.values(decks).some(deck => deck.id !== saved.id && sameDeckName(deck.name, saved.name)))
+        throw new Error('本机已有另一副同名牌库，未覆盖任何缓存')
       upsertCachedDeck(decks, saved)
       const activity = markDeckCacheActivity(context)
       const committed = commitSavedDecks(context, previous, decks, activity)

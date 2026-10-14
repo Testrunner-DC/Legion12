@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-15 持续收口｜格拉墨已关，私牌片与C1A本地完整验收
+
+- 格拉墨BUG-20260910-6521b2b6原正式e2/E354恰好8墓地新增双方×V2四格及原族四例共8绿；一次preview/CAS/独立读回resolved，原文/历史保留、专用会话撤销。唯一队列与current-status已对账：904总/464new/246resolved/194closed，阶段61=14fixed/40rejected/7duplicate，周期153；同期新增1项所以待办净值未下降。回执C盘post-release-adversarial-20261014/bug-closeout-gram-exact-eight-e2.json与current-status-gram-reconciliation.json。
+- 新BUG-20261014-15fefc34已用与e2完全一致的私牌模块9格复现：不是跨账号串库，是账号内远端改名/删除重建后旧ID占名。用户批准后仅冲突时有界核旧ID，404才清陈旧条目、可信409/新修订才校正改名；普通1GET、额外最多2GET/共同5s/独立signal，不在Web Lock内HTTP，锁内raw CAS/账号页面/高修订保护不变。重复旧ID、同修订异名、未证明状态失败关闭，草稿/其他缓存保留。
+- 独立审查三阻断原件及高修订RED保留，修后CLEAR；真实模块28项、真实协调器29项，以及Edge切号后真实目录点击6格/纠偏后4组PUT→DELETE（8受控写，真实API0）绿。C盘admin-f8-next-20261014/same-name-cache-current/browser-r3为最终页面证据；r1夹具错误把新建名称期望空的失败保留。本地完整验收已通过，尚未部署/在线关本条。
+- 聊天方案C1A两源租约已归还并冻结，Main完整源审与实际TRX74（新31/原43）/预算证明核验完成：单已提交holder、首条无序pair精确accepted/双向block/ActiveAccounts；10000热读0B/SQL0，关系未变复用索引，4096行准备534672B低于1114112B。只是未接入关系基础，不是实际Send许可或性能根治；证据C盘chat-c1a-20261015/main-focused-review.json。
+- Main唯一cache-c1a-batch-r1实际完整平台1621失败/跳过0、前端UI356/反馈144/恢复35/卡图324+42/类型/双构建通过，6源零漂移；标准映射未选规则重跑，原7259有效证据保持，不冒称新跑规则。两独立验收为same-name-cache-local-acceptance.json与chat-c1a-20261015/main-local-acceptance.json，Git同步认后续git-sync实际回执。正式e2/测试7c90、维护与部署不动；原30房5终局+3leave超过3s、F8改版环境性能、E4真机/F2长期容量和聊天后续发送合同保持未完成。不得重跑旧部署回访或按本地修复提前关单。
+
 ## 2026-10-14 本人桌次回避收口｜本地通过，未部署
 
 - 用户已确认本人桌次不能直接裁定；服务端共用A/B guard覆盖result/penalty/no-show及管理移除隐式给本人赛果，全球角色不能绕过；案件原权限/隐私保持共享谓词。两个UI按钮和handler同挡，其他桌、补时/暂停/重赛/退赛/自动结果不改。原HTTP RED保留，旧正向结果夹具转真实独立工作人员，名单/配对/原断言不删。

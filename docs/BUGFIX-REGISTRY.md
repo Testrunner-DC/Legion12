@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261014-15fefc34｜同名陈旧缓存阻塞（本地完整验收，未部署）
+
+- 前置核既有DECK-20261003-STALE-EDITOR、CU4薄目录/单体读取及账号Web Lock/CAS记录与本地diff；不覆盖并行C1A两源。原正式e2同源真实decks/cache/codec模块9格：两账号同名不串库；账号内远端改名或删除重建后旧ID占名，改大号名称也不能修小号缓存。证据C盘admin-f8-next-20261014/same-name-cache-e2/report.json，未读玩家本机缓存。
+- 用户批准共享修复后仅遇碰撞才核本人旧ID：404证明已不存在、一次deck_revision_conflict明确更高修订后第二读精确ID/revision且异名才纠偏；普通只1GET，额外最多2、共5秒单调预算、各独立signal/maxAttempts1，HTTP在Web Lock外。锁内全raw CAS、来源/页面/账号代际、高修订保护；重复旧ID、第二冲突、同修订异名、无法证实、第三名称碰撞均失败关闭；一次原缓存提交保留未保存草稿和其他牌库。
+- 同类扫描：`rg -n 'loadPrivateDeckBody|currentDeckSnapshot|sameDeckName|upsertCachedDeck' opcgpro-vue/src/l12`，覆盖编辑器、私人牌库操作、Hub/沙盒与公开来源读取；DELETE/PUT均沿返回stable id/revision及原最新缓存复验，不按同名覆盖其他实体。游客不走本次账号核对，格式/整体校验守卫不变。
+- 独立只读审最初BLOCKED：重复旧ID高修订会降级、额外GET可能并入普通10秒/2次请求、首次同修订异名被当成改名；原证据保留。新增高修订真实RED→GREEN，三个根因守卫与实际平台协调器反例补齐，复核四源CLEAR。新真实模块28、平台请求29、Edge6实际切号/点选及4组纠偏后PUT→DELETE绿，8写仅localhost受控，无真实API。首次浏览器夹具将newDeck名误期望空的失败保留，仅校正为“新牌库”。
+- Main标准完整平台1621零失败跳过、UI356/反馈144/恢复35/卡图324+42、类型/双构建退出0，最终4源与审查/页面同源；验收same-name-cache-local-acceptance.json。标准映射只重跑受影响平台/前端，原规则7259证据复用，不声称本批新跑规则。该反馈仍new/本地已验待上线，正式e2/测试7c90不动；Git认独立同步回执。原30房尾延迟及E4真机/F2长期容量缺口与此修复独立。
+
+## BUG-20260910-6521b2b6｜格拉墨恰好8墓地真实闭环
+
+- 正式e2/E354原DLL和目录隔离运行，原族4例加双方×真实V2恢复4例共8绿；新增精确8合法阿斯加德实体、选择[6,1,7,4]、付款4归牌库底且余4留墓、tap/伤害/结果一次、旧prompt重放拒绝。修复adc6482e在正式e2祖先而不在报告旧04fb版本，不把相关取消UI当已修。
+- 唯一提议49证据及12负例自检后，一次preview/CAS/独立读回resolved，版本29068、preservedFieldsEqual、writeAttempts1、会话撤销。原收据EFE27F52与唯一队列/进度对账保留，904总/new464/resolved246/closed194，阶段61=14fixed/40rejected/7duplicate、周期153；新增1反馈独立导入，不据关单量虚称净降。比约恩新取消仍待上线，不附带关闭。
+
 ## ADMIN-20261014-OWN-TABLE-RULING｜本人桌次回避（本地完成，未部署）
 
 - 用户明确禁止组织者/裁判直接裁定本人桌次。共享服务端资格在原权限验证后、任何赛果/判罚/no-show写入前按真实A/B判断，全球权限同样不能豁免。管理移除会隐式给本桌赛果，故预检全部未结束、确有对手的受影响桌次后才更改参赛者；已完成/轮空/其他桌管理、主动退赛、补时、暂停、重赛、自动对局结果不新改。
