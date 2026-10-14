@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-15 当前19先后手三模式核查与两旧报告终态
+
+- 本片延续P1/P3唯一权威时钟/命令记录，没有产品源码或强制时限改变；当前19公开RoomManager/MatchRecorder API三完整路径通过，ranked边界/唯一结算/过期prompt拒绝及casual/friendly无钟保持、各自投降离开严格同模式再入均具名实测。完整Release原7条准备/恢复结果继续复用，不将普通响应23/旧字段19冒称先后手。
+- 95711ff5/bffccc61模式未确定，按信息不足检查后rejected，非全模式fixed/duplicate/原玩家浏览器或WS证明；当前休闲/好友仍等待是现行代码边界，不据此新增产品规则。Main接回后保留r1/r2纯工具失败，r3实际3绿及48文件核验、16关闭负例/2次单CAS终态/撤会话，C盘initiative-main-independent-review.json与bug-closeout-initiative-19.json为据。
+- 真实905总/448待办/254resolved/203closed、76阶段（22fixed/47rejected/7duplicate）/168周期，外部2不计Main；唯一workflow/current-status已按phase-19-initiative-closed对账。正式19/维护false、测试7c90未变，不新部署。孙悟空纯读新风险与测试19/F8新负载批准待答，其他既有队列继续，E4/F2/F5/30房尾延迟及聊天B2仍未收口。
+
 ## 2026-10-15 发布后回放/选牌原报告闭环｜74阶段终态
 
 - 无P0—P4产品源码改变；沿已部署19精确包与编译界面补当前证据，不重复有效完整Release/旧240。回放保存716ea799为1当前权威夹具+3实际Edge，真实下载并同文件导入推进，无私牌名/额外GET；按限定未复现closed，旧整项failed不消失。选牌滚动65222029为44eb8b75已上线根因、当前6原生滚轮格验证后resolved；不并混合ff88deda、不称真机。

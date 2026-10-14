@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-15 先后手旧报告限定收口｜76本方终态，448待办
+
+- BUG-20261004-95711ff5与bffccc61原模式均未注明，不猜fixed/duplicate、不向用户询问玩家记忆。Main接回C盘initiative-current-probe，复用原公开房间API执行器，以正式19/7EC0 DLL及同包9 Data实际运行三格：ranked59999ms不推进、60000ms一次自动先攻/一次setup-timeout；重复Tick不落第二次，旧prompt反向选择只新增拒绝记录且firstPlayer/revision/hash保持。casual/friendly无准备强制时钟，60001ms仍等待；三模式真实投降到GameOver→leave→同账号严格同模式重新开局全通过。无浏览器/WS/原玩家模式证明，不为此新增休闲/好友时限。
+- 当前正式Release中RankedSetupClockTests7具名绿继续引用未重跑；C执行器有main-r1参数拼接及r2局部命名冲突的纯工具失败、尚未产品执行，原冻结源/log/failure均保留。修后main-r3三格通过，Main完整新旧源审/48引用（源码/9Data/3本地库/manifest/记录）核SHA；8个独立MSBuild参数预检及严格同模式重入守卫，不以casual-fallback代通过。
+- 两旧报告按模式限定核查后信息不足rejected关闭，16负例及各一次preview/CAS/apply/终态读回29211/29212，原文/历史保留、会话撤销。C盘formal-release-20261015/initiative-main-independent-review.json与post-release-adversarial-20261014/bug-closeout-initiative-19.json；phase-19-initiative-closed唯一对账905总/448待办/254resolved/203closed，阶段76=22fixed/47rejected/7duplicate、周期168、外部2单列。
+- 正式19维护已解除/入口开放、测试7c90仍不变；本次授权唯一正式发布已完成，没有新的部署或维护写。孙悟空原报告及纯读改权威红灯继续挂起待限定修复批准，原8/导出失败和UI10未跑不变；测试19/F8/30房+外部用户负载另待环境决定。聊天C1B2未给实际Send写租约，E4真机/F2长期容量/F5及30房尾延迟缺口保持，后续按既定Bug队列继续，非所有448项已处理。
+
 ## 2026-10-15 正式19回放保存与短屏选牌收口｜74本方终态，450待办
 
 - 原正式发布与开服收据不变，不再部署或改维护，测试7c90保持。BUG-20261005-716ea799以正式19/BEC5编译App、7EC0权威引擎及记录器合成V2/viewer0已结束两帧，1具名夹具和3实际Edge案例通过：桌面真实JSON下载89825B后导入同一物理文件，无额外详情GET，棋盘1/2→2/2；844×390/390×844只验保存，私牌名空。按限定未复现closed，非fixed/duplicate/原玩家录像或真机；旧整项回放审计failed及E01/E06/LAYOUT/F05仍保留。

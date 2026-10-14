@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 先后手模式未注明旧反馈按当前19限定检查关闭
+
+- 原BUG-20261004-95711ff5“对手选先后攻不动、不会超时只能投降”与bffccc61“对手不选择先后手无法进行游戏”均c858、未注明模式。不得互标duplicate、据ranked证据称所有模式fixed或将玩家意见全盘转需求；按用户能确认则推进、不能确认检查后关闭原则，做当前精确三模式限定核查，不重复问记忆。
+- 正式19/7EC0 DLL/同包9份公共Data本地公开API三格：ranked59999ms剩余1、60000ms默认first/actor为先攻、一次setup-timeout耐久命令及事件，重复Tick0；旧prompt反向second被拒，只新增一次拒绝记录，原timeout/firstPlayer/revision/hash不变。casual/friendly原无RankedClock，60001ms仍原Initiative/prompt/revision；三模式均真实surrender到GameOver、roomLeft、同账号同模式新局开始，无跨模式fallback。七条正式RankedSetupClockTests仍有效，非新跑七条或响应23/兼容19替代证明。
+- Main完整新旧执行器源审及48来源/库/manifest绑定实读通过，r3实际退出0/三路径全部断言通过；无反射强制结束、网络、浏览器/WS、原玩家数据或线上性能声明。r1参数拼接/r2局部命名冲突均在运行产品前失败且冻结证据保留；新增独立八MSBuild属性预检，仅重命名工具局部量，不减边界/hash/重入断言。C盘formal-release-20261015/initiative-current-probe/run-main-r3与initiative-main-independent-review.json为据。
+- 两条按模式信息不足、完成限定核查后rejected关闭，非新修复或新增休闲/好友时限；原玩家端/模式仍未知，可有新准确复现后重开。16负例后各一次CAS独立终态读回29211/29212、原文负责人说明历史保持、会话撤销；C盘post-release-adversarial-20261014/bug-closeout-initiative-19.json及phase-19-initiative-closed。905/448/254/203，阶段76=22fixed/47rejected/7duplicate、周期168；正式19/测试7c90及维护未改，孙悟空新投影风险与性能长尾不据此次关闭转绿。
+
 ## 2026-10-15 当前19回放保存/短屏选牌原反馈闭环与孙悟空相邻红灯
 
 - BUG-20261005-716ea799“无法保存回放”：原c858报告缺端/步骤，不向用户反复追问玩家记忆。正式19/BEC5包、7EC0 DLL/9公共Data和当前记录器权威生成合成已结束V2/viewer0两不同revision/hash帧；1具名夹具绿。真实正式编译页面Edge 1366×768保存一次详情GET，application/json真实89825B下载→同物理文件导入/battle/records/replay/json，无额外GET且真实棋盘1/2→2/2；844×390/390×844各真实保存，私牌名不泄漏。Main35引用及下载内容/字节/截图独立核验。按限定未复现rejected，不记fixed/duplicate；原玩家环境未还原、移动仅仿真保存，旧回放审计productAuditStatus=failed/E01/E06/LAYOUT/F05保持。
