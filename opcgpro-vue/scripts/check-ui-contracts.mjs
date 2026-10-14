@@ -5,6 +5,7 @@ import { maintenanceCountdown } from '../src/l12/site/maintenanceCountdown.ts'
 import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
 import './test-a3-site-shell-contract.mjs'
 import './test-admin-global-analytics-date-contract.mjs'
+import { hasReadonlyReleaseArtifactSource, hasReadonlyReleaseRuntimeSnapshot } from './test-admin-release-capability.mjs'
 import { hasProfileAuthTemplate, hasProfileStatusNoticeBeforeRank } from './profile-auth-template-contract.mjs'
 import './test-a3-profile-auth-template-contract.mjs'
 import { usesWhitelistedBugDiagnostic } from './test-feedback-draft-lifecycle.mjs'
@@ -22,6 +23,7 @@ import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contr
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const shell = read('../src/l12/site/SiteShell.vue')
+const releasePage = read('../src/l12/site/AdminReleasesPage.vue')
 const generatedPlayerRelease = read('../src/l12/site/generatedPlayerRelease.ts')
 const releaseLedgerScript = read('../../scripts/release-ledger.mjs')
 const mainNav = shell.match(/const mainNav = \[[\s\S]*?\n\]/)?.[0] ?? ''
@@ -1451,7 +1453,7 @@ const contracts = [
   [platform.includes('/api/admin/v1/content/publish') && platform.includes('/api/admin/v1/content/rollback') && adminSiteContent.includes('直接发布') && adminSiteContent.includes('直接回滚') && !adminSiteContent.includes('双人审批'), '官网内容必须通过服务端批量命令直接发布与回滚，不得恢复前端逐键发布或双人审批'],
   [adminSiteContent.includes('previewContent') && adminSiteContent.includes('发布预览完成') && adminSiteContent.includes('wouldChange') && adminSiteContent.includes('未写入线上内容'), '内容后台必须展示不写入的发布预览与变化摘要'],
   [adminPage.includes('commandId: commandId.value') && adminPage.includes('correlationId: correlationId.value') && adminPage.includes('outcome: outcome.value'), '审计页必须可按结果、命令 ID 与关联 ID 筛选'],
-  [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && adminPage.includes('Web 端没有注册入口'), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
+  [platform.includes("releaseArtifacts: () => platformRequest<VerifiedReleaseArtifact[]>('/api/admin/v1/releases/artifacts')") && !platform.includes('registerReleaseArtifact') && hasReadonlyReleaseArtifactSource(releasePage), '发布后台只能读取适配器提供的已验证工件，不得提供客户端工件注册或自报 verified 入口'],
   [platform.includes('/api/admin/v1/releases/deploy') && platform.includes('/api/admin/v1/releases/rollback')
     && platform.includes("commandBody('release-deploy', { artifactId, environment, expectedVersion, dryRun, reason })")
     && platform.includes("commandBody('release-rollback', { targetRunId, expectedVersion, dryRun, reason })")
@@ -1462,7 +1464,7 @@ const contracts = [
     && adminPage.includes('releasePreviewKey.value === releaseInputKey.value')
     && adminPage.includes('rollbackPreviewKey.value !== rollbackInputKey(run)')
     && !adminPage.includes('adminApi.reviewApproval'), '发布与回滚必须验证权限并携带环境版本、幂等键、理由和dry-run；执行结果写入审计，前端不得恢复审批执行入口'],
-  [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && adminPage.includes('运行态只读快照') && adminPage.includes('WebSocket 冒烟') && adminPage.includes('发布、失败与回滚记录'), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
+  [platform.includes("releaseEnvironments: () => platformRequest<ReleaseEnvironment[]>('/api/admin/v1/releases/environments')") && hasReadonlyReleaseRuntimeSnapshot(releasePage), '运行态必须来自显式只读适配器快照，并展示健康、WS 冒烟、失败和回滚记录'],
   [platform.includes('disabled?: boolean') && platform.includes('/status`, {') && adminPage.includes('账号变更立即执行并完整审计') && adminPage.includes('撤销会话'), '账号禁用/启用必须直接执行、记录版本审计，并提供旧令牌与 WebSocket 会话撤销入口'],
   [platform.includes("securityStatus: () => platformRequest<SecurityStatus>('/api/admin/v1/security/status')") && platform.includes('/api/admin/v1/security/audit-archives') && adminPage.includes('高风险审计') && adminPage.includes('恢复演练'), '后台必须展示安全告警、独立审计归档 dry-run/复核与恢复演练入口'],
   [platform.includes("mfaCapability = () => platformRequest<MfaCapability>('/api/auth/mfa/capability')") && profilePage.includes('v-if="mfa?.enrollmentEnabled"') && !profilePage.includes('不会收集或保存 MFA 密钥'), 'MFA 未开放时必须隐藏工程提示，只有服务端明确开放注册能力后才显示入口'],
