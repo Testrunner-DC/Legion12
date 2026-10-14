@@ -23,6 +23,7 @@ public sealed class PlayerReplayDeckNamePrivacyTests
         var directory = Path.Combine(Path.GetTempPath(), "l12-replay-deck-name-privacy", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var path = Path.Combine(directory, "matches.db");
+        var completed = false;
         try
         {
             var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
@@ -105,11 +106,78 @@ public sealed class PlayerReplayDeckNamePrivacyTests
                         }, WireJson));
                 }
             }
+            completed = true;
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            if (completed) await DeleteOwnedReplayFixtureAsync(directory);
+            else Console.WriteLine("Failed synthetic replay privacy fixture retained: " + directory);
+        }
+    }
+
+    [Fact]
+    public async Task ReplayFixtureCleanupRejectsAnUnownedParent()
+    {
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DeleteOwnedReplayFixtureAsync(Path.GetTempPath()));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => DeleteOwnedReplayFixtureAsync(
+            Path.Combine(Path.GetTempPath(), "l12-replay-deck-name-privacy", "not-a-guid")));
+    }
+
+    [Fact]
+    public async Task ReplayFixtureCleanupWaitsOnlyForATransientOwnedFileLock()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var directory = NewCleanupFixture();
+        var path = Path.Combine(directory, "matches.db");
+        using (var held = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        {
+            var cleanup = DeleteOwnedReplayFixtureAsync(directory);
+            Assert.False(cleanup.IsCompleted);
+            held.Dispose();
+            await cleanup;
+        }
+        Assert.False(Directory.Exists(directory));
+    }
+
+    [Fact]
+    public async Task ReplayFixtureCleanupDoesNotHideAPersistentOwnedFileLock()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var directory = NewCleanupFixture();
+        var path = Path.Combine(directory, "matches.db");
+        using (var held = new FileStream(path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+        {
+            await Assert.ThrowsAsync<IOException>(() => DeleteOwnedReplayFixtureAsync(directory));
+            Assert.True(File.Exists(path));
+        }
+        await DeleteOwnedReplayFixtureAsync(directory);
+        Assert.False(Directory.Exists(directory));
+    }
+
+    private static string NewCleanupFixture()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "l12-replay-deck-name-privacy", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static async Task DeleteOwnedReplayFixtureAsync(string directory)
+    {
+        var target = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var expectedParent = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "l12-replay-deck-name-privacy"));
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(Path.GetDirectoryName(target), expectedParent, comparison)
+            || !Guid.TryParseExact(Path.GetFileName(target), "N", out _)
+            || (Directory.Exists(target) && (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0))
+            throw new InvalidOperationException("synthetic replay privacy fixture cleanup scope mismatch");
+        using (var pool = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = Path.Combine(target, "matches.db") }.ToString()))
+            SqliteConnection.ClearPool(pool);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            if (!Directory.Exists(target)) return;
+            try { Directory.Delete(target, recursive: true); return; }
+            catch (IOException) when (attempt < 4) { await Task.Delay(40 * (attempt + 1)); }
         }
     }
 
