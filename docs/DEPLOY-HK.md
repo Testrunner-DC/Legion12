@@ -1,5 +1,9 @@
 # Legion12 正式服快速部署
 
+> **2026-10-15实际终态**：正式应用19ea6cba42d3be6f42d8ef2d62dc5fa190ffc3e4/PID131988/重启0已独立HTTP/WS/DLL/静态/玩家日志核验，最新两库/WAL原proof持久通过；本次即时维护105→106结束，entryBlocked=false、v1 Open/围栏无。测试仍7c90/PID106958，没有测试部署。唯一C盘artifacts/formal-release-20261015/release-session-summary.json引用r4原始日志、独立与开服回执，不再部署成功环境或重解维护。
+>
+> 本次固定e2→19仅按整批授权退出一个已确认无Game/Match/命令/赛事的断线单人大厅，并保全完全同指纹的既有历史；没有消费/伪造v1许可或安装永久绕过。失败记录均保留，精确owned取消后才对账失败别名。受管临时脚本的实际执行位/自flock路径需在准备阶段核对，不只看bash-n；失败收尾可能消费删除incoming，复用先核存在与SHA，缺失时重新上传同包到独立路径不覆盖冲突。旧0e49程序清理但当前/前两版本及runtime快照保留。共享消费者覆盖原始错误码、普通大厅/readiness历史兼容仍是后续工具问题，不冒称已永久修复。
+
 > **2026-10-14 最新测试终态**：测试应用7c90f4e/PID106958独立版本/静态/HTTP/WS核验通过；正式仍e2/PID88174/维护false，没有再部署正式。测试取证/负载收口见C盘transport-diagnostics-test/release-session-summary.json A5C94FA7；9终局+1离房3s迟到，不能把发布成功冒称性能已治愈。
 
 > **2026-10-14 07:48实际终态**：两服应用e2cda3e5074a87558a2c695d08185ab2804ed24c；正式PID88174/重启0，独立HTTP/WS/DLL/静态/玩家日志通过，即时维护103→104结束，entryBlocked=false、v1 Open/围栏无。唯一汇总C盘artifacts/formal-release-20261014/release-session-summary.json引用原始发布/备份proof/独立验收/维护回执，不重复发布/解维护；下方cda/c4当前描述是历史。

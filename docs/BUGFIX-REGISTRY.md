@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 四条本地修复上线后原反馈闭环
+
+- BUG-20261014-15fefc34：6f0d399d已部署19，28同名协调专项/29真实请求/6真实Edge模块点击及账号、草稿、修订/CAS/迟到保护同源；仅原账号陈旧ID占名时有界确认纠偏，不将反馈表述当成账号串库事实。BUG-20260907-d4b28ad5：d5818d39已部署19，比约恩唯一合法skip绕过支付张数限制但实际支付仍足额；双方/V2取消四格、物理次序和当前6点击格验证取消/第一张再选保护。
+- BUG-20261014-a2261e7e及BUG-20261014-b0177c6b：835504aa已部署19，S02-0615格温莉安真实效果击杀在战斗仍存时按原因触发。JingKeEffectKillInAnUnfinishedCombatOffersGwenChoiceExactlyOnce四格、NumericEffectDeathsAndActualCombatKeepDistinctCausesAfterRestore十六格及整族33在最终19 rules.trx均Passed；普通战斗不触发保留。后者没写具体击杀段，不硬判重复或声称原玩家录像复现；两个反馈同一共享根因，不记作两次产品改动。
+- 四项48关单负例后各一次preview/CAS/apply/终态读回，29185—29188；当前19正式DLL/静态/服务/入口已独立验收及会话撤销，原文、负责人、说明和历史保留。回执C盘post-release-adversarial-20261014/bug-closeout-four-deployed-19.json，proposal在formal-release-20261015。真实队列905/new455/resolved253/closed197，阶段69/周期161。
+- 源码修复与未修复旧E2 RED分开；原30房尾延迟、聊天未启用及真机/长期容量不据此次上线闭环变绿。本次只关闭这四个精确原反馈，未批量关其他455。
+
 ## 2026-10-15 伊丽莎白／拉美西斯／单张不朽之礼原反馈收口
 
 - BUG-20260921-655d7a2d：正式e2/E354下NextResetLockLifecycleRegressionTests 22及持久化丢锁保留hash拒绝1，共23具名通过；a19c02c4确属正式祖先。双方×V2额外回合四格和普通回合四对照符合“受影响玩家下个实际重置”规则；独立CAS回执elizabeth-e2-23已resolved，旧待结算尾仍严格拒绝，不称全历史兼容。
