@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-15 孟婆具名反馈正式同源收口｜62本方终态，461待办
+
+- BUG-20260921-d1e22956按批准的孟婆抑制阵亡不抹除独立离场边界，用正式e2原E354 DLL/9卡表运行冻结44场景，14方法、零失败跳过。真实支付登场→孟婆→天诛双方/V2四格守卫2张登场、离场仅一次；战斗及正常/无效、失效目标、重复提交等对照保留。Main独立检查820命令及764检查点状态/RNG/事实序列；合成初盘/变异格不称玩家录像。
+- 49具名证据/12关单负例后一次preview/CAS/apply/独立读回resolved，29110版本、原文/历史保留、专用会话撤销；回执C盘post-release-adversarial-20261014/bug-closeout-mengpo-e2-44.json（8E51F602）。原93bec修复确已属于正式e2，不重复改产品或部署。
+- 最新904总/new461/resolved247/closed196。本方本阶段62=15fixed/40rejected/7duplicate、周期154；另外两条外部rejected终态原样读回、单列不算Main成果。唯一队列/current-status/bugQueue已一起CAS对账，凭C盘admin-f8-next-20261014/mengpo-e2-preparation/state-reconciliation.json，不能机械将三项净降都记作本轮关闭。
+- 私牌同名缓存仍本地已验待上线、聊天关系基础仍未接实际Send；正式e2/测试7c90及维护不动。原30房3s尾延迟与F8改版负载、F5、E4真机/F2长期容量不据此次关单消除；下批既有具名Bug并行只读选证据，避免重开已验证项。
+
 ## 2026-10-15 C1A独立收口｜关系基础本地验收，不开启聊天
 
 - 聊天方案的精确两源租约已归还，单Volatile已提交holder给readonly Revision/Available/AcceptedAndUnblocked，仅首条pair精确accepted且双方ActiveAccounts/无双向block；不是会话或实际发送许可。原公共暂存presence路径不改语义，不发布空chat索引。关系有序ID/status无变共享同Frozen索引，不加SQL/锁/定时器/网络或实际消费者。

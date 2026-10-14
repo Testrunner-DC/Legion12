@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-15 增量收口：孟婆原反馈已解决，外部终态独立归集
+
+- 已完成：BUG-20260921-d1e22956，原正式e2/E354冻结44例实际通过，Main独立核TRX、820命令、764检查点；一次CAS/独立读回resolved、会话撤销，原反馈及历史保全。无新产品改动/部署/维护。
+- 唯一清单实际904总、461待办、247已解决、196已关闭；本阶段Main62（15修复验证/40拒绝或限定未复现/7重复）、周期154。另外BUG-20261013-5be9c8ae与BUG-20261008-be095812为外部关闭读回，保留此前本地状态/原文，列terminal-preexisting，不冒领2项成果。
+- 证据及状态对账：C盘admin-f8-next-20261014/mengpo-e2-preparation/run-main-r1/acceptance.json及同准备根目录main-independent-review.json、state-reconciliation.json；正式关单回执post-release-adversarial-20261014/bug-closeout-mengpo-e2-44.json。私牌新片仍待上线、C1A未启功能，下一具名Bug只读证据准备继续。
+
 ## CHAT-C1A-20261015｜已提交关系点查基础独立验收
 
 - P2/P3同一既有已提交holder，不新增持久格式/会话许可。来源聊天方案C0-P获Main精确两源lease后实现；Main按契约接受，未知/自身/失效账号/双方block拒绝、首条历史pair状态保原规则，staged线程也只见已提交代。关系事实未变复用索引。
