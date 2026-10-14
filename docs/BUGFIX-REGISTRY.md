@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261014-F8-QUERY-PAGES｜限定分页与草稿/详情生命周期
+
+- 同型扫描：旧Bugs全history投影/客户端slice，AdminCommands Take200窗口/客户端slice；新增两个显式query共用旧谓词，原接口、状态、权限、actor强制范围和单项详情保留。page10/max100、过滤total、时间+ordinal ID、取消及夹限，仅本页映射，不新缓存/DB或删历史；未解决原gate内全扫描排序。
+- 反馈真正分页需要保未提交字段/评论/关闭草稿，原UI载入直接覆盖；新账号内字段草稿、原BusinessVersion CAS、query/actor/卸载代际守卫和明确放弃，不自动重存/关单。Main真实SFC追加RED证明关闭body遗漏assignee/adminNotes，旧replace API会将其清空；仅客户端显式回传确认值且清草稿须确是已提交值，不改服务端replace约定，不丢不同未提交编辑。14行为组及真实HTTP原文/历史/负责人摘要回归通过。
+- 操作记录11实际Vue/template组涵盖分页完整性、列表/详情乱序、关闭pending、scope/actor ABA、卸载/权限、误ID/错误非空成功及只读无执行；Main真实浏览器两页面两宽4格/零越界或真实API写通过。后端11Bug+7命令18具名及完整规则7255/平台1589零失败跳过。
+- 正常前端首次TLA兄弟夹具临时Document描述符寿命重叠使旧release测试赋值失败，原Batch1及日志保留；只测试链串行dynamic import+描述符恢复守卫修正，产品源不变，仅补完整前端Batch/类型/UI356/双构建通过，非重跑已有效后端或删除断言。14源验收query-local-acceptance.json 680FDA41及主/r15独立审查；旧宽窄夹具同步query DTO，未声称它的全部旧场景新执行。
+- 回滚：query前后端一起采用，旧全Bug/旧命令窗口与共享Paged旧模式留存；有草稿不能盲目切到全量重载。不是线上修复/原数秒根因，本片不部署/关单。最新60已读回终态/464待办不变；用户明确禁止本人桌次直接裁定的政策已解除待答，下一独立权限片处理，不把原案件回避扩称新直接裁定已实装。
+
 ## ADMIN-20261014-BUSINESS-LAST-LINKS｜治理统计与赛事HTTP（仅补验）
 
 - 没有新增产品Bug修复，只补两个现存业务消费者链接。治理public MatchRecorder生产者+Store合法结算准备2合成终局，不伪SQL/反射制造资格；真实HTTP同键重复读取、403、preview/confirmed、决定回读/重放和卡牌/主宰/玩家统计排除通过，原两场记录不删。旧场下游档案preserved与最新后缀rollback两格区分；三前置夹具错误原件保留，原统计及回滚守卫不变。

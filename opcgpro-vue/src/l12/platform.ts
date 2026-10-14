@@ -91,6 +91,7 @@ export interface BugReport {
   fixCommit?: string; regressionTest?: string; deployedVersion?: string; verifiedBy?: string; verifiedAt?: string; duplicateOf?: string
   closureDisposition?: 'fixed_verified' | 'duplicate' | 'rejected'
 }
+export interface AdminBugPage { items: BugReport[]; page: number; pageSize: number; total: number; platformVersion: number }
 export interface BugRuntimeDiagnostic {
   capturedAt: string; matchId?: string; roomCode?: string; phase?: string; round?: number; turnSerial?: number
   activePlayer?: number; revision?: number; commandSequence?: number; stack: string[]; prompts: string[]; recentEventTypes: string[]
@@ -776,6 +777,7 @@ export interface AuditArchiveRecovery {
   success: boolean; segments: number; events: number; error?: string; rehearsedAt: string
 }
 export interface AdminCommandAccepted { commandId: string; status: 'requested'; message: string; command: AdminCommand }
+export interface AdminCommandPage { items: AdminCommand[]; page: number; pageSize: number; total: number }
 export interface ContentBatchItem { key: string; previousValue: string; publishedValue: string; previousVersionId?: string; publishedVersionId: string }
 export interface ContentBatch { id: string; action: 'publish' | 'rollback' | 'rule-item-publish'; sourceBatchId?: string; status: string; actorId: string; actorName: string; createdAt: string; items: ContentBatchItem[] }
 export interface ContentPreviewItem { key: string; draftValue: string; publishedValue: string; entryVersion: number; wouldChange: boolean }
@@ -1456,6 +1458,11 @@ export const adminApi = {
     return platformRequest<BugReport[]>(`/api/admin/bugs${params.size ? `?${params}` : ''}`)
   },
   updateBug: (id: string, body: Partial<Pick<BugReport, 'status' | 'priority' | 'assignee' | 'adminNotes' | 'fixCommit' | 'regressionTest' | 'deployedVersion' | 'duplicateOf' | 'closureDisposition'>> & { comment?: string; expectedVersion?: number; dryRun?: boolean; reason?: string }) => platformRequest<BugReport>(`/api/admin/bugs/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(commandBody('bug', body)) }),
+  bugsPage: (query: { page?: number; pageSize?: number; status?: string; priority?: string; assignee?: string; search?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminBugPage>(`/api/admin/bugs/query${params.size ? `?${params}` : ''}`)
+  },
   getContent: (key: string) => platformRequest<ContentEntry>(`/api/admin/content/${encodeURIComponent(key)}`),
   articles: (query: { status?: string; category?: string; search?: string; kind?: SiteContentKind } = {}) => {
     const params = new URLSearchParams()
@@ -1591,6 +1598,11 @@ export const adminApi = {
     return platformRequest<AdminCommand[]>(`/api/admin/v1/commands${params.size ? `?${params}` : ''}`)
   },
   command: (id: string) => platformRequest<AdminCommand>(`/api/admin/v1/commands/${encodeURIComponent(id)}`),
+  commandsPage: (query: { page?: number; pageSize?: number; status?: string; type?: string; actorId?: string } = {}) => {
+    const params = new URLSearchParams()
+    Object.entries(query).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
+    return platformRequest<AdminCommandPage>(`/api/admin/v1/commands/query${params.size ? `?${params}` : ''}`)
+  },
   approvals: (status = 'requested') => platformRequest<AdminApproval[]>(`/api/admin/v1/approvals?status=${encodeURIComponent(status)}`),
   reviewApproval: (commandId: string, decision: 'approve' | 'reject', reason = '') => platformRequest<AdminCommand>(`/api/admin/v1/approvals/${encodeURIComponent(commandId)}`, { method: 'POST', body: JSON.stringify({ decision, reason }) }),
   securityStatus: () => platformRequest<SecurityStatus>('/api/admin/v1/security/status'),

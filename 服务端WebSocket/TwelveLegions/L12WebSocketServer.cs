@@ -3308,6 +3308,21 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminBugsRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.Bugs(status, priority, assignee, search));
         });
+        _app.MapGet("/api/admin/bugs/query", (HttpRequest request, int? page, int? pageSize,
+            string? status, string? priority, string? assignee, string? search) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminBugsRead, out _, out var failure)) return failure;
+            try
+            {
+                return Results.Ok(_platform.QueryBugs(page ?? 1, pageSize ?? 10, status, priority,
+                    assignee, search, request.HttpContext.RequestAborted));
+            }
+            catch (ArgumentException)
+            {
+                return ApiError(request, "invalid_bug_query", "Bug搜索最多200个字符",
+                    StatusCodes.Status400BadRequest);
+            }
+        });
         _app.MapPatch("/api/admin/bugs/{id}", (HttpRequest request, string id, BugUpdateRequest body) =>
         {
             const L12Permission permission = L12Permission.AdminBugsWrite;
@@ -4171,6 +4186,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var canReview = L12Authorization.HasPermission(authenticated.Account, L12Permission.AdminApprovalsRead);
             return Results.Ok(_platform.AdminCommands(status, type,
                 canReview ? actorId : authenticated.Account.Id, limit ?? 200));
+        });
+        _app.MapGet("/api/admin/commands/query", (HttpRequest request, int? page, int? pageSize,
+            string? status, string? type, string? actorId) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminCommandsRead, out var authenticated, out var failure))
+                return failure;
+            var canReview = L12Authorization.HasPermission(authenticated.Account, L12Permission.AdminApprovalsRead);
+            return Results.Ok(_platform.QueryAdminCommands(page ?? 1, pageSize ?? 10, status, type,
+                canReview ? actorId : authenticated.Account.Id, request.HttpContext.RequestAborted));
         });
         _app.MapGet("/api/admin/commands/{id}", (HttpRequest request, string id) =>
         {

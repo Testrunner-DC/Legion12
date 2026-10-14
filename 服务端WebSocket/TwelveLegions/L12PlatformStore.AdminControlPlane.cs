@@ -290,9 +290,7 @@ public sealed partial class L12PlatformStore
         string? actorId = null, int limit = 200)
     {
         lock (_gate) return _data.AdminCommands
-            .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status)
-            .Where(row => string.IsNullOrWhiteSpace(type) || row.Type == type)
-            .Where(row => string.IsNullOrWhiteSpace(actorId) || row.ActorId == actorId)
+            .Where(row => MatchesAdminCommandQuery(row, status, type, actorId))
             .OrderByDescending(row => row.RequestedAt).Take(Math.Clamp(limit, 1, 1000))
             .Select(ToView).ToArray();
     }

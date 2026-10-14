@@ -68,10 +68,14 @@ const sampleAccount=(id,username,disabled=false,deleted=false)=>({id,username,ro
 platform.adminApi.accounts=async()=>[
  sampleAccount('account-001','长昵称玩家一号'),sampleAccount('account-002','长昵称玩家二号',true),sampleAccount('account-003','已删除玩家',false,true)
 ]
+// These are local synthetic arrays, not fallbacks to the full production API.
+const qaPage=(items,query)=>{const size=query.pageSize||10;const page=Math.max(1,Math.min(query.page||1,Math.max(1,Math.ceil(items.length/size))));return{items:items.slice((page-1)*size,page*size),page,pageSize:size,total:items.length}}
+platform.adminApi.accountsPage=async(query={})=>{const all=await platform.adminApi.accounts();const matching=all.filter(item=>item.deleted===!!query.deleted&&(!query.search||item.username.includes(query.search)||item.id.includes(query.search)));return{...qaPage(matching,query),activeCount:all.filter(item=>!item.deleted).length,deletedCount:all.filter(item=>item.deleted).length}}
 platform.adminApi.account=async id=>(await platform.adminApi.accounts()).find(item=>item.id===id)
 platform.adminApi.resetAccountPassword=async()=>({applied:true,account:{...sampleAccount('account-001','长昵称玩家一号'),mustChangePassword:true},revokedSessions:2,temporaryPassword:'7F1A5C9E2D4B8A6031CE97B5420D8F6A'})
 platform.adminApi.bugs=async()=>[{id:'BUG-20260921-001',reporterName:'验收玩家',title:'移动端弹框在极窄屏幕下信息显示不完整',description:'用于验证较长问题标题、描述与管理操作在窄屏不会互相侵入。',page:'/battle/room/qa',roomCode:'QA001',version:'2026.09.21',status:'retest',priority:'high',assignee:'维护者',adminNotes:'',fixCommit:'abc1234',regressionTest:'MobileAdminEvidenceRegression',deployedVersion:'2026.09.25',verifiedBy:'验收管理员',verifiedAt:'2026-09-25T04:00:00Z',history:[],createdAt:'2026-09-21T08:00:00Z',updatedAt:'2026-09-25T04:00:00Z'}]
 platform.adminApi.effects=async()=>({items:[{cardId:'S01-02C1',name:'移动端长名称卡效验收卡牌',product:'第一弹',faction:'秩序',cardType:'legion',isCounterTactic:false,effectText:'我方 回合1次：支付1士气，执行一项移动端验收效果。',abilities:[],migrationStatus:'declarative-ready',atomCount:3,executableAtomCount:3,legacyAtomCount:0,atomKinds:['cost.morale'],reviewStatus:'confirmed',reviewSource:'qa'}],total:1,page:1,pageSize:50,coverage:{totalCards:324,cardsWithText:280,totalAbilities:510,totalAtoms:1160,declarativeReadyAbilities:480,verifiedAbilities:420,legacyBackedAbilities:12,byStatus:{},byAtomKind:{}}})
+platform.adminApi.bugsPage=async(query={})=>{const all=await platform.adminApi.bugs();const matching=all.filter(item=>(!query.status||item.status===query.status)&&(!query.priority||item.priority===query.priority)&&(!query.search||item.id.includes(query.search)||item.title.includes(query.search)));return{...qaPage(matching,query),platformVersion:1}}
 platform.adminApi.effectAtoms=async()=>[]
 platform.adminApi.sessions=async()=>platform.sessionApi.list()
 platform.adminApi.audit=async()=>[{id:'audit-1',actorId:'qa-admin',actorName:'验收管理员',category:'account',action:'status',target:'account-001',createdAt:'2026-09-25T03:00:00Z'}]

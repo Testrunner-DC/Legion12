@@ -1285,11 +1285,7 @@ public sealed partial class L12PlatformStore
     public IReadOnlyList<L12BugReportView> Bugs(string? status, string? priority = null, string? assignee = null, string? search = null)
     {
         lock (_gate) return _data.BugReports
-            .Where(row => string.IsNullOrWhiteSpace(status) || row.Status == status)
-            .Where(row => string.IsNullOrWhiteSpace(priority) || row.Priority == priority)
-            .Where(row => string.IsNullOrWhiteSpace(assignee)
-                || string.Equals(row.Assignee, assignee.Trim(), StringComparison.OrdinalIgnoreCase))
-            .Where(row => MatchesBugSearch(row, search))
+            .Where(row => MatchesBugQuery(row, status, priority, assignee, search))
             .OrderByDescending(row => row.CreatedAt).Select(ToView).ToArray();
     }
 

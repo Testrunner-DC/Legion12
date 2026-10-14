@@ -22,6 +22,18 @@ import { privateEditorSavedPanelsContract, privateModeLegalityContract } from '.
 import './test-private-deck-template-contract.mjs'
 import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contract.mjs'
 
+// These actual-template fixtures temporarily supply DOM constructors. Static
+// sibling imports with top-level await can overlap their restore lifetimes.
+// Run them after the original imports and serially; require exact restoration.
+const queryFixtureGlobals = ['Document', 'ShadowRoot'].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
+await import('./test-admin-bug-server-pages.mjs')
+await import('./test-admin-command-server-pages.mjs')
+for (const [key, before] of queryFixtureGlobals) {
+  const after = Object.getOwnPropertyDescriptor(globalThis, key)
+  if (['value', 'get', 'set', 'writable', 'enumerable', 'configurable'].some(field => before?.[field] !== after?.[field]))
+    throw new Error(`Query template fixture leaked global ${key}`)
+}
+
 // Git 在 Windows 工作区可能检出 CRLF；契约按语义比较换行，不改写被检查的源文件。
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const shell = read('../src/l12/site/SiteShell.vue')
