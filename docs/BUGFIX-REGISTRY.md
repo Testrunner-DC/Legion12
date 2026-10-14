@@ -1,8 +1,12 @@
 # Legion12 Bug 修复记录
 
-## RULE-20261014-EFFECT-LETHAL-CAUSE｜减数值效果致死属于效果阵亡（用户裁定，待具名复验）
+## RULE-20261014-EFFECT-LETHAL-CAUSE｜共享来源修复及恢复保护（本地验收，未部署）
 
-- 2026-10-14用户补充：“减数值效果导致的阵亡也算因效果阵亡”。核查范围为直接效果击杀、效果减兵力到0/持续減数值与真实战斗致死；不以是否处在战斗中判定阵亡原因。两条当前e2反馈b0177c6b/a2261e7e均指S02-0615格温莉安被荆轲阵亡效果击杀未触发，未实际新复现/未关闭。源码RemoveFromField使用PendingDefense推cause、既有Gwen测试仅手动传cause；状态检查QueueSimultaneousDeathTriggers已传effect，应保留。下一真实命令/双方/恢复对照，不能把源码风险或人工注入测试冒称玩家路径已测。
+- 用户明确裁定减数值效果致死属于效果阵亡，并批准共享来源修复。正式e2原包真实进攻→荆轲阵亡发动→格温莉安目标链，双方×恢复4格均RED；直接效果/数值归零/木马持续减值/真正战斗4对照GREEN。原report SHA7CE16BCD与原DLL E3540216保留，不覆盖为绿。核心的-1000/2000兵力是满足荆轲目标边界的合成夹具，不称还原玩家降兵来源。
+- 根因：RemoveFromField按当前PendingDefense判断cause，误将战斗中卡效击杀标combat。新增L12DefeatCause仅表达触发原因，不替换独立击杀来源体系；KillTarget与数值归零明确CardEffect，实际战斗/支援/战斗代阵亡明确Combat。替代Prompt保存typed cause并随V2恢复；缺字段仅兼容精确旧支援原因，其余旧入口CardEffect；未知字段在通用命令移除提示前及resolver支付前拒绝。保留旧八参数私有包装、无反射重载歧义，天灾/免死/湖中仙女/代阵亡守卫不变。
+- 全池扫描：cards.s1/s2/st的`因.{0,6}效果.{0,6}(阵亡|离场)`仅匹配S02-0615格温莉安；另逐个核RemoveFromField、KillTarget、QueueCombatDeathTriggers、QueueSimultaneousDeathTriggers与三个替代调用。不是把所有离场都当效果阵亡，不改弃置/真实战斗【击杀时】及来源卡归属。
+- 永久EffectDefeatCauseRegressionTests33格：核心4、双方/恢复四原因16、免死2、替代恢复2、旧字段4、未知字段1、阿喀琉斯双方×私有/真实Handle异常来源4。格温选择精确计数1/0，区域/治疗/抽牌/费用及恢复不重复；坏来源全序列化状态不变。首编译缺必填字段、免死夹具缺有效期限、静态审查发现真实入口先删提示的原失败均保留并限定修正，未删除断言。
+- 最终标准Batch规则7255/平台1513、失败/跳过0及架构/性能/卡池守卫通过，源审CLEAR；实际日志与最终源SHA认C盘post-release-adversarial-20261014/effect-death-cause-acceptance.json。本地修复，不部署、不改维护，不提前关闭b0177c6b/a2261e7e；线上仍formal e2/test7c90。
 
 ## PERF/BUG-20261014-MEASURED-CLOSEOUT｜取证已上线测试，非根治；三条限定检查后关闭
 

@@ -1809,14 +1809,22 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private bool RemoveFromField(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场",
         bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat,
         bool bypassLethalReplacement = false, bool deferGraveyard = false)
+        => RemoveFromFieldWithCause(player, card, toGraveyard, reason, queueDeathTrigger, leaveKind,
+            bypassLethalReplacement, deferGraveyard, L12DefeatCause.CardEffect);
+
+    private bool RemoveFromFieldWithCause(L12PlayerState player, L12CardInstance card, bool toGraveyard, string reason = "离场",
+        bool queueDeathTrigger = true, L12FieldLeaveKind leaveKind = L12FieldLeaveKind.Defeat,
+        bool bypassLethalReplacement = false, bool deferGraveyard = false,
+        L12DefeatCause defeatCause = L12DefeatCause.CardEffect)
     {
+        var triggerCause = DefeatTriggerCause(defeatCause);
         if (FindOnField(player, card.InstanceId, out var row, out var slot) is null) return false;
         var departureOwner = CardOwner(card, player);
         if (toGraveyard && ReturnsToMasterZoneOnDeparture(card)
             && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         var isDefeat = toGraveyard && leaveKind == L12FieldLeaveKind.Defeat;
         if (isDefeat && !bypassLethalReplacement && TryApplyLakeLadySwordReplacement(player, card, reason)) return false;
-        if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason))
+        if (isDefeat && !bypassLethalReplacement && TryOfferEffectLethalReplacement(player, card, reason, defeatCause))
         {
             AttachPendingStateBasedKillSourcesToCardLethalSubstitution(card);
             return false;
@@ -1877,7 +1885,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 includeTombConstruct: !isDefeat || IsDeathTriggerSuppressedForCurrentTurn(sourceSnapshot)).ToList();
             if (isDefeat && HasDeathTrigger(sourceSnapshot))
                 candidates.Add(CreateDeathTriggerCandidate(player.PlayerIndex, sourceSnapshot,
-                    new Dictionary<string, string> { ["cause"] = State.PendingDefense is null ? "effect" : "combat" }));
+                    new Dictionary<string, string> { ["cause"] = triggerCause }));
             if (isDefeat)
             {
                 var morrigan = BuildMorriganEnemyDeathCandidate(player.PlayerIndex);
@@ -1929,12 +1937,17 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             && !controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}")
             && controller.Morale.Any(morale => morale.IsGodPower && !morale.Tapped);
 
-    private bool TryOfferEffectLethalReplacement(L12PlayerState controller, L12CardInstance card, string reason)
+    private bool TryOfferEffectLethalReplacement(L12PlayerState controller, L12CardInstance card, string reason,
+        L12DefeatCause defeatCause)
     {
         // 天灾结算拥有最高优先级，不建立通常的替代/阵亡/离场响应窗口。
         if (IsDisasterAuthorityActive()) return false;
         if (TryOfferCardLethalSubstitution(controller, card, "effect-lethal-replacement", reason))
+        {
+            var substitution = EffectLethalReplacementPrompt(card.InstanceId);
+            if (substitution is not null) substitution.Data["defeatCause"] = defeatCause.ToString();
             return true;
+        }
         if (!CanUseAchillesLethalReplacement(controller, card))
             return controller.UsedAbilities.Contains($"pending:{AchillesReplacementKey(card)}");
         controller.UsedAbilities.Add($"pending:{AchillesReplacementKey(card)}");
@@ -1945,6 +1958,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             {
                 ["cardInstanceId"] = card.InstanceId,
                 ["reason"] = reason,
+                ["defeatCause"] = defeatCause.ToString(),
                 ["preservedTroops"] = card.Troops.ToString(),
                 ["preservedTapped"] = card.Tapped ? "true" : "false",
                 ["yes"] = "消耗并翻转1神力，保持当前兵力与活跃/休整状态",
@@ -1955,6 +1969,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private void ResolveEffectLethalReplacement(int playerIndex, L12Prompt prompt, string choice)
     {
+        // Validate restored provenance before clearing pending state or paying a replacement.
+        var defeatCause = EffectLethalDefeatCause(prompt);
         var player = State.Players[playerIndex];
         var cardId = prompt.Data.GetValueOrDefault("cardInstanceId");
         var card = FindOnField(player, cardId, out _, out _);
@@ -1965,10 +1981,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         }
         if (prompt.Data.ContainsKey("replacementKind"))
         {
-            if (!ResolveEffectCardLethalSubstitution(player, card, prompt, choice))
+            if (!ResolveEffectCardLethalSubstitution(player, card, prompt, choice, defeatCause))
             {
-                var removed = RemoveFromField(player, card, true,
-                    prompt.Data.GetValueOrDefault("reason", "阵亡"), bypassLethalReplacement: true);
+                var removed = RemoveFromFieldWithCause(player, card, true,
+                    prompt.Data.GetValueOrDefault("reason", "阵亡"), bypassLethalReplacement: true,
+                    defeatCause: defeatCause);
                 if (removed) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
             }
             ResumeEffectKillContinuation(prompt);
@@ -1989,8 +2006,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             ResumeEffectKillContinuation(prompt);
             return;
         }
-        var defeated = RemoveFromField(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
-            bypassLethalReplacement: true);
+        var defeated = RemoveFromFieldWithCause(player, card, true, prompt.Data.GetValueOrDefault("reason", "阵亡"),
+            bypassLethalReplacement: true, defeatCause: defeatCause);
         if (defeated) ResolveAttachedCardLethalKillSources(prompt, card.InstanceId);
         ResumeEffectKillContinuation(prompt);
     }
@@ -2269,7 +2286,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
                 FindOnField(State.Players[entry.Controller], entry.Card.InstanceId, out var row, out _);
                 CaptureLastKnownFieldState(entry.Card, row);
                 var sourceSnapshot = CaptureLastKnownSourceSnapshot(entry.Card);
-                if (RemoveFromField(State.Players[entry.Controller], entry.Card, true, "因兵力不高于0阵亡", queueDeathTrigger: false))
+                if (RemoveFromFieldWithCause(State.Players[entry.Controller], entry.Card, true, "因兵力不高于0阵亡",
+                        queueDeathTrigger: false, defeatCause: L12DefeatCause.CardEffect))
                     removed.Add((entry.Controller, entry.Card, sourceSnapshot));
             }
             if (!suppressDeathTriggers) QueueSimultaneousDeathTriggers(removed);

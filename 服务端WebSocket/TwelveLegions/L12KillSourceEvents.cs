@@ -1,5 +1,13 @@
 namespace TwelveLegions.Server;
 
+// 阵亡原因用于卡牌触发资格；是否产生印刷【击杀时】仍由 L12KillSourceEvent 单独决定。
+// “在战斗流程中”不是阵亡原因，战斗内的卡牌效果击杀仍是 CardEffect。
+internal enum L12DefeatCause
+{
+    CardEffect,
+    Combat,
+}
+
 internal enum L12KillSourceKind
 {
     CombatDamage,
@@ -26,6 +34,28 @@ internal sealed record L12PendingKillSourceEvent(L12KillSourceEvent Event);
 
 public sealed partial class L12GameEngine
 {
+    private static string DefeatTriggerCause(L12DefeatCause cause) => cause switch
+    {
+        L12DefeatCause.CardEffect => "effect",
+        L12DefeatCause.Combat => "combat",
+        _ => throw new ArgumentOutOfRangeException(nameof(cause)),
+    };
+
+    private static L12DefeatCause EffectLethalDefeatCause(L12Prompt prompt)
+    {
+        // 旧检查点没有该字段。唯一既有战斗规则入口是支援者阵亡，旧载荷保存
+        // 这一具名原因；其余本入口来自效果。不以当前 PendingDefense 推断来源。
+        if (!prompt.Data.TryGetValue("defeatCause", out var stored))
+            return prompt.Data.GetValueOrDefault("reason") == "作为支援军团阵亡"
+                ? L12DefeatCause.Combat : L12DefeatCause.CardEffect;
+        return stored switch
+        {
+            nameof(L12DefeatCause.CardEffect) => L12DefeatCause.CardEffect,
+            nameof(L12DefeatCause.Combat) => L12DefeatCause.Combat,
+            _ => throw new InvalidOperationException("致命替代检查点含有未知阵亡原因"),
+        };
+    }
+
     private const string PiercingAttackingLegionFact = "sourceWasAttackingLegion";
     private readonly List<L12PendingKillSourceEvent> _pendingKillSourceEvents = [];
     private readonly HashSet<string> _consumedGrantedKillSourceEvents = new(StringComparer.Ordinal);

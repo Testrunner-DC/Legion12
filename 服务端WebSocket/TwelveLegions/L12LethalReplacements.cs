@@ -161,13 +161,15 @@ public sealed partial class L12GameEngine
     }
 
     private bool ResolveEffectCardLethalSubstitution(
-        L12PlayerState controller, L12CardInstance protectedCard, L12Prompt prompt, string choice)
+        L12PlayerState controller, L12CardInstance protectedCard, L12Prompt prompt, string choice,
+        L12DefeatCause defeatCause)
     {
         controller.UsedAbilities.Remove(PendingCardLethalSubstitutionKey(protectedCard));
         if (choice == DeclineLethalSubstitution) return false;
         var kind = prompt.Data.GetValueOrDefault("replacementKind");
         if (!TryApplyCardLethalSubstitution(controller, protectedCard, kind, choice,
-                prompt.Data.GetValueOrDefault("reason", "阵亡"), deferFieldDeath: false, out var defeatedInstanceId))
+                prompt.Data.GetValueOrDefault("reason", "阵亡"), deferFieldDeath: false, out var defeatedInstanceId,
+                defeatCause: defeatCause))
             return false;
         if (defeatedInstanceId is not null)
             ResolveAttachedCardLethalKillSources(prompt, defeatedInstanceId);
@@ -266,17 +268,18 @@ public sealed partial class L12GameEngine
     }
 
     private bool TryApplyCardLethalSubstitution(L12PlayerState controller, L12CardInstance protectedCard,
-        string? kind, string substituteId, string reason, bool deferFieldDeath, out string? defeatedInstanceId)
+        string? kind, string substituteId, string reason, bool deferFieldDeath, out string? defeatedInstanceId,
+        L12DefeatCause defeatCause)
     {
         defeatedInstanceId = null;
         if (kind == "horemheb-field")
         {
             var substitute = FindOnField(controller, substituteId, out _, out _);
             if (substitute is null || substitute.CardId != "S01-0212") return false;
-            var removed = RemoveFromField(controller, substitute, true,
+            var removed = RemoveFromFieldWithCause(controller, substitute, true,
                 $"代替〈{protectedCard.Name}〉承受{reason}", queueDeathTrigger: !deferFieldDeath,
                 leaveKind: L12FieldLeaveKind.Defeat, bypassLethalReplacement: true,
-                deferGraveyard: deferFieldDeath);
+                deferGraveyard: deferFieldDeath, defeatCause: defeatCause);
             if (removed) defeatedInstanceId = substitute.InstanceId;
             AddSemanticPlayerLogEvent("replacement", controller.PlayerIndex,
                 $"〈{substitute.Name}〉代替〈{protectedCard.Name}〉承受原致命结果，并沿原阵亡动作进入所有者目的区",

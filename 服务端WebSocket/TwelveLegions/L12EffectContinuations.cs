@@ -193,7 +193,8 @@ public sealed partial class L12GameEngine
                 TriggersPrintedKillTiming: false,
                 CausedBySourceCard: true,
                 [target.InstanceId]);
-            if (!RemoveFromField(State.Players[owner], target, true, reason))
+            if (!RemoveFromFieldWithCause(State.Players[owner], target, true, reason,
+                    defeatCause: L12DefeatCause.CardEffect))
             {
                 // 湖中仙女之剑等同步替代不会建立弹框，属于本次动作已完成；
                 // 只有实际附着到待裁定弹框时，调用方才需要暂停。

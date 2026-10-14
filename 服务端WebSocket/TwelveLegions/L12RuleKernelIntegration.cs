@@ -1756,7 +1756,7 @@ public sealed partial class L12GameEngine
                 includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(entry.SourceSnapshot)).ToList();
             if (HasDeathTrigger(entry.SourceSnapshot))
                 sameTime.Add(CreateDeathTriggerCandidate(entry.Controller, entry.SourceSnapshot,
-                    new Dictionary<string, string> { ["cause"] = "effect" }));
+                    new Dictionary<string, string> { ["cause"] = DefeatTriggerCause(L12DefeatCause.CardEffect) }));
             return sameTime;
         }).ToList();
         foreach (var defeatedController in materializedDeaths.Select(entry => entry.Controller).Distinct())

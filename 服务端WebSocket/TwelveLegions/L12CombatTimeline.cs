@@ -320,7 +320,7 @@ public sealed partial class L12GameEngine
             includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(card)).ToList();
         if (HasDeathTrigger(card))
             candidates.Add(CreateDeathTriggerCandidate(controller, card,
-                new Dictionary<string, string> { ["cause"] = "combat", ["combatTiming"] = "death" }));
+                new Dictionary<string, string> { ["cause"] = DefeatTriggerCause(L12DefeatCause.Combat), ["combatTiming"] = "death" }));
         var morrigan = BuildMorriganEnemyDeathCandidate(controller);
         if (morrigan is not null) candidates.Add(morrigan);
         var nephthys = BuildNephthysOwnDeathCandidate(controller, card);

@@ -1106,6 +1106,9 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject($"必须选择{requiredResources}份可用士气资源和2张我方战场军团");
         }
 
+        // Reject corrupt restored lethal provenance before consuming the real player prompt.
+        if (prompt.Continuation == "effect-lethal-replacement")
+            _ = EffectLethalDefeatCause(prompt);
         State.PendingPrompts.Remove(prompt);
         if (string.Equals(command.Destination, RankedSetupTimeoutDestination, StringComparison.Ordinal))
             AddEvent("setup-timeout", playerIndex,

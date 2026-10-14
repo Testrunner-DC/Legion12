@@ -1314,8 +1314,8 @@ public sealed partial class L12GameEngine
                 pending.Stage = L12CombatStage.AttackerAfterAttack;
                 // 支援者自身以阵亡离场，故会建立其【阵亡时】；但不写入本次交战的
                 // Defeated*InstanceId，也不产生战斗击杀来源，进攻军团不得触发【击杀时】。
-                foreach (var support in supporters) RemoveFromField(defender, support, true, "作为支援军团阵亡",
-                    leaveKind: L12FieldLeaveKind.Defeat);
+                foreach (var support in supporters) RemoveFromFieldWithCause(defender, support, true, "作为支援军团阵亡",
+                    leaveKind: L12FieldLeaveKind.Defeat, defeatCause: L12DefeatCause.Combat);
                 AddPlayerCombatEvent("support", playerIndex, $"{string.Join('、', supporters.Select(card => card.Name))}联合支援{target.Name}，支援者阵亡；交战双方不损兵且不产生击杀",
                     new(pending.CombatId, "support", "supported", null,
                         attacker.InstanceId, target.InstanceId),
@@ -1356,7 +1356,8 @@ public sealed partial class L12GameEngine
         {
             var kind = CardLethalSubstitutionKind(defender, target);
             if (!TryApplyCardLethalSubstitution(defender, target, kind, targetSubstitute,
-                    "本次致命进攻", deferFieldDeath: true, out substituteDefenderDeath))
+                    "本次致命进攻", deferFieldDeath: true, out substituteDefenderDeath,
+                    defeatCause: L12DefeatCause.Combat))
             {
                 targetReplaced = false;
                 pending.LethalReplacementDecisions[target.InstanceId] = false;
@@ -1366,7 +1367,8 @@ public sealed partial class L12GameEngine
         {
             var kind = CardLethalSubstitutionKind(attackerPlayer, attacker);
             if (!TryApplyCardLethalSubstitution(attackerPlayer, attacker, kind, attackerSubstitute,
-                    "本次致命进攻", deferFieldDeath: true, out substituteAttackerDeath))
+                    "本次致命进攻", deferFieldDeath: true, out substituteAttackerDeath,
+                    defeatCause: L12DefeatCause.Combat))
             {
                 attackerReplaced = false;
                 pending.LethalReplacementDecisions[attacker.InstanceId] = false;
@@ -1377,11 +1379,12 @@ public sealed partial class L12GameEngine
             pending.TemporaryAttackerTroopsBonus = L12DerivedStats.ApplyTroopsDamage(attacker, targetTroops,
                 pending.TemporaryAttackerTroopsBonus);
 
-        var defenderDefeated = target.Troops <= 0 && RemoveFromField(defender, target, true, "阵亡（等待触发完成后进入墓地）",
-            queueDeathTrigger: false, bypassLethalReplacement: true, deferGraveyard: true);
-        var attackerDefeated = attacker.Troops <= 0 && RemoveFromField(attackerPlayer, attacker, true,
+        var defenderDefeated = target.Troops <= 0 && RemoveFromFieldWithCause(defender, target, true, "阵亡（等待触发完成后进入墓地）",
+            queueDeathTrigger: false, bypassLethalReplacement: true, deferGraveyard: true,
+            defeatCause: L12DefeatCause.Combat);
+        var attackerDefeated = attacker.Troops <= 0 && RemoveFromFieldWithCause(attackerPlayer, attacker, true,
             "阵亡（等待触发完成后进入墓地）", queueDeathTrigger: false,
-            bypassLethalReplacement: true, deferGraveyard: true);
+            bypassLethalReplacement: true, deferGraveyard: true, defeatCause: L12DefeatCause.Combat);
         if (defenderDefeated) pending.DefeatedDefenderInstanceId = target.InstanceId;
         else if (substituteDefenderDeath is not null) pending.DefeatedDefenderInstanceId = substituteDefenderDeath;
         var targetDefeated = defenderDefeated;
