@@ -2811,8 +2811,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 Capture("bugs", "bug", "Bug 闭环", "/admin/users/bugs", pending, () =>
                 {
-                    var openBugs = _platform.Bugs(null).Count(item => !string.Equals(item.Status, "closed",
-                        StringComparison.OrdinalIgnoreCase));
+                    var openBugs = _platform.OpenBugCount();
                     pending.Add(new("bugs", "bug", "Bug 闭环", openBugs == 0 ? "当前没有待处理 Bug" :
                         $"{openBugs} 条需要确认、处理或验证", "/admin/users/bugs",
                         openBugs == 0 ? "ok" : "attention", openBugs));

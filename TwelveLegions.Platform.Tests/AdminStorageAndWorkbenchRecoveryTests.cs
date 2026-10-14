@@ -88,6 +88,101 @@ public sealed class AdminStorageAndWorkbenchRecoveryTests
     }
 
     [Fact]
+    public void LinuxBusinessVolumesUseDeepestPersistentMountAndExcludePseudoDuplicates()
+    {
+        var capacities = new Dictionary<string, L12StorageVolumeSample>(StringComparer.Ordinal)
+        {
+            ["/"] = new(1_000, 400),
+            ["/opt/legion12-runtime"] = new(1_000, 400),
+            ["/opt/legion12-deployment"] = new(1_000, 400),
+            ["/www"] = new(2_000, 1_200),
+            ["/snap/core20/1434"] = new(65_011_712, 0),
+            ["/quota"] = new(100, 0),
+        };
+        var businessPaths = new[]
+        {
+            "/opt/legion12-runtime/matches.db",
+            "/opt/legion12-runtime/platform.db",
+            "/opt/legion12-deployment/runtime-backups",
+            "/www/legion12/releases",
+            "/snap/core20/1434",
+            "/quota/data",
+        };
+        var capacityReads = new List<string>();
+        var mounts = L12ServerStorageMonitor.ParseLinuxMountInfo(
+        [
+            "36 25 253:0 / / ro,relatime - ext4 /dev/vda1 rw",
+            "37 36 253:0 /opt/legion12-runtime /opt/legion12-runtime rw,relatime - ext4 /dev/vda1 rw",
+            "38 36 253:0 /opt/legion12-deployment /opt/legion12-deployment rw,relatime - ext4 /dev/vda1 rw",
+            "39 36 253:16 / /www ro,relatime - ext4 /dev/vdb1 rw",
+            "40 36 7:0 / /snap/core20/1434 ro,nodev - squashfs /dev/loop20 ro",
+            "41 36 253:32 / /quota rw,relatime - ext4 /dev/vdc1 rw,prjquota",
+            "42 36 0:5 / /proc rw,nosuid - proc proc rw",
+        ], businessPaths, mountPoint =>
+        {
+            capacityReads.Add(mountPoint);
+            return capacities.GetValueOrDefault(mountPoint);
+        });
+
+        var result = L12ServerStorageMonitor.SelectLinuxBusinessVolumes(mounts, businessPaths);
+
+        Assert.Equal(3, result.Volumes.Count);
+        Assert.Equal(new long[] { 100, 1_000, 2_000 },
+            result.Volumes.Select(volume => volume.TotalBytes).OrderBy(value => value));
+        Assert.Equal(3, result.UnavailableSourceCount);
+        Assert.DoesNotContain("/snap/core20/1434", capacityReads);
+        Assert.DoesNotContain("/proc", capacityReads);
+
+        var snapshot = L12ServerStorageMonitor.Read(new(
+            () => DateTimeOffset.UtcNow,
+            () => result,
+            _ => (0, true),
+            () => 256));
+        Assert.Equal("partial", snapshot.SampleState);
+        Assert.Equal("critical", snapshot.Health);
+    }
+
+    [Fact]
+    public void InaccessibleDirectoryChildKeepsKnownBytesButMarksCategoryUnavailable()
+    {
+        var fileSystem = new L12StorageDirectoryProbe(
+            path => false,
+            path => path is "/data" or "/data/blocked",
+            path => path switch
+            {
+                "/data" => ["/data/good.bin", "/data/blocked"],
+                "/data/blocked" => throw new UnauthorizedAccessException("simulated denied child"),
+                _ => [],
+            },
+            path => path is "/data" or "/data/blocked"
+                ? FileAttributes.Directory : FileAttributes.Normal,
+            path => path.EndsWith("good.bin", StringComparison.Ordinal) ? 128 : 0);
+
+        var result = L12ServerStorageMonitor.DirectoryBytes("/data", fileSystem);
+
+        Assert.Equal(128, result.Bytes);
+        Assert.False(result.Available);
+
+        var linkedRoot = L12ServerStorageMonitor.DirectoryBytes("/linked", new(
+            _ => false,
+            _ => true,
+            _ => throw new InvalidOperationException("reparse root must not be enumerated"),
+            _ => FileAttributes.Directory | FileAttributes.ReparsePoint,
+            _ => 0));
+        Assert.Equal(0, linkedRoot.Bytes);
+        Assert.False(linkedRoot.Available);
+
+        var linkedFile = L12ServerStorageMonitor.DirectoryBytes("/linked-file", new(
+            _ => true,
+            _ => false,
+            _ => throw new InvalidOperationException("reparse file must not be enumerated"),
+            _ => FileAttributes.ReparsePoint,
+            _ => throw new InvalidOperationException("reparse file target must not be read")));
+        Assert.Equal(0, linkedFile.Bytes);
+        Assert.False(linkedFile.Available);
+    }
+
+    [Fact]
     public async Task StorageFailureUses503CorrelationWhileWorkbenchKeepsOtherSections()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-admin-recovery-{Guid.NewGuid():N}");

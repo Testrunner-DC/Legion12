@@ -1,5 +1,10 @@
 # Legion12 正式服快速部署
 
+> **2026-10-14 07:48实际终态**：两服应用e2cda3e5074a87558a2c695d08185ab2804ed24c；正式PID88174/重启0，独立HTTP/WS/DLL/静态/玩家日志通过，即时维护103→104结束，entryBlocked=false、v1 Open/围栏无。唯一汇总C盘artifacts/formal-release-20261014/release-session-summary.json引用原始发布/备份proof/独立验收/维护回执，不重复发布/解维护；下方cda/c4当前描述是历史。
+
+本次共因并入四阶段、不另增审批：邀请按产品10分钟有效期而非过期原始总数；原生输入显式UTF-8/LF，中文配置/时间保留服务端原始表示，以完整快照SHA承接CAS，不跨Windows重序列化比字节；有界等待就绪，重复来源合并为真实屏障内唯一快照，不重复全堆扫描。最新备份proof/控制/独立核验不减少，不伪造许可，本次三旧房退休不转永久停止豁免。
+
+
 > **2026-10-14当前**：本批仅测试服cda118d5已标准发布、独立核验并通过2/4/8轻量压力；正式仍c4f7499/PID30347/maintenance=false，未改正式业务或维护。单一回执C盘`artifacts/read-isolation-testrun-pressure-20261013/final-acceptance.json`（SHA780A621B），当前A2及总表已更新；本轮不触发正式发布或线上Bug关闭。以下10-13发布及旧状态仅历史，纯记录同步不重建/部署。
 >
 > **2026-10-13历史收口**：当时正式与测试应用均为`c4f7499ae0a5a50e45b37f0e075e3b60147da166`；正式即时维护CAS101→102已结束，独立开服及未开局房间入口验收通过。该次现场回执为`D:\GPT\Legion12\artifacts\deploy-authorized-20261013\deploy-closure.json`；其“本次未找到旧A2”只描述当时工作目录，不代表当前状态索引缺失。

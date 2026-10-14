@@ -1293,6 +1293,11 @@ public sealed partial class L12PlatformStore
             .OrderByDescending(row => row.CreatedAt).Select(ToView).ToArray();
     }
 
+    internal int OpenBugCount()
+    {
+        lock (_gate) return _data.BugReports.Count(row => !IsTerminalBugStatus(row.Status));
+    }
+
     public L12BugReportView? UpdateBug(L12AccountView actor, string id, string? status, string? priority,
         string? assignee, string? notes, string? comment = null, L12AdminAuditContext? context = null,
         string? fixCommit = null, string? regressionTest = null, string? deployedVersion = null,

@@ -386,6 +386,10 @@ public sealed class ControlPlanePlatformStoreTests
 
             var admin = store.Login("Admin", "L12master");
             var workbenchBug = store.AddBug(admin.Account, "工作台待办", "验证聚合摘要", "/admin", null, null, "test");
+            var resolvedWorkbenchBug = store.AddBug(admin.Account, "工作台已终结", "不应计入待办", "/admin",
+                null, null, "test");
+            store.UpdateBug(admin.Account!, resolvedWorkbenchBug.Id, "resolved", null, null, null,
+                "证据不足，终结反馈", closureDisposition: "rejected");
             using (var supportBugs = Authorized(HttpMethod.Get, "/api/admin/bugs", owner.Token!, "support-bugs-1"))
             using (var response = await client.SendAsync(supportBugs))
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -422,7 +426,8 @@ public sealed class ControlPlanePlatformStoreTests
                 var summary = await response.Content.ReadFromJsonAsync<L12AdminWorkbenchSummaryView>();
                 Assert.NotNull(summary);
                 Assert.True(summary!.SampledAt <= DateTimeOffset.UtcNow);
-                Assert.Contains(summary.Pending, item => item.Id == "bugs" && item.Count >= 1);
+                var bugs = Assert.Single(summary.Pending, item => item.Id == "bugs");
+                Assert.Equal(1, bugs.Count);
                 Assert.Contains(summary.Anomalies, item => item.Id == "runtime");
                 Assert.Contains(summary.Anomalies, item => item.Id == "storage");
                 Assert.NotEmpty(summary.RecentActivities);

@@ -14,6 +14,14 @@ public sealed record L12ServerStorageView(DateTimeOffset ObservedAt, long Workin
 internal sealed record L12StorageVolumeSample(long TotalBytes, long FreeBytes);
 internal sealed record L12StorageVolumeProbeResult(
     IReadOnlyList<L12StorageVolumeSample> Volumes, int UnavailableSourceCount);
+internal sealed record L12StorageMountSample(string Identity, string MountPoint, string FileSystemType,
+    bool ReadOnly, bool HasUnverifiedQuota, L12StorageVolumeSample? Capacity);
+internal sealed record L12StorageDirectoryProbe(
+    Func<string, bool> FileExists,
+    Func<string, bool> DirectoryExists,
+    Func<string, IReadOnlyList<string>> ReadEntries,
+    Func<string, FileAttributes> ReadAttributes,
+    Func<string, long> ReadLength);
 internal sealed record L12ServerStorageProbe(
     Func<DateTimeOffset> UtcNow,
     Func<L12StorageVolumeProbeResult> ReadVolumes,
@@ -27,13 +35,19 @@ internal static class L12ServerStorageMonitor
     private static L12ServerStorageView? _cached;
     private static readonly List<L12StorageTrendPointView> Trend = [];
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromSeconds(30);
+    private static readonly HashSet<string> SupportedLinuxFileSystems = new(StringComparer.Ordinal)
+    {
+        "ext2", "ext3", "ext4", "xfs", "btrfs", "zfs", "f2fs", "jfs", "nilfs2", "bcachefs",
+        "fuseblk", "ntfs3",
+    };
 
     internal static L12ServerStorageView Read(L12ServerStorageProbe? probe = null)
     {
         lock (Gate)
         {
+            var categoryDefinitions = CategoryDefinitions();
             var usesSystemProbe = probe is null;
-            probe ??= SystemProbe();
+            probe ??= SystemProbe(categoryDefinitions.Select(item => item.Path).ToArray());
             var now = SafeRead(probe.UtcNow, DateTimeOffset.UtcNow, out _);
             if (usesSystemProbe && _cached is not null && now - _cached.ObservedAt < CacheLifetime) return _cached;
 
@@ -50,17 +64,6 @@ internal static class L12ServerStorageMonitor
             }).ToArray();
             if (volumes.Length == 0 && unavailable == 0) unavailable++;
 
-            var runtime = Environment.GetEnvironmentVariable("L12_RUNTIME_DIR") ?? "/opt/legion12-runtime";
-            var categoryDefinitions = new (string Id, string Label, string Path)[]
-            {
-                ("matches-db", "对局数据库", Path.Combine(runtime, "matches.db")),
-                ("platform-db", "平台数据库", Path.Combine(runtime, "platform.db")),
-                ("site-media", "站点媒体", Path.Combine(runtime, "site-media")),
-                ("releases", "发布版本", Environment.GetEnvironmentVariable("L12_RELEASES_DIR") ?? "/www/legion12/releases"),
-                ("runtime-backups", "运行备份", Environment.GetEnvironmentVariable("L12_RUNTIME_BACKUPS_DIR") ?? "/www/legion12/runtime-backups"),
-                ("deployment-backups", "部署遗留备份", "/opt/legion12-deployment/runtime-backups"),
-                ("logs", "系统日志", "/var/log"),
-            };
             var categories = categoryDefinitions.Select(item =>
             {
                 var result = SafeRead(() => probe.ReadCategory(item.Path), (0L, false), out var failed);
@@ -114,13 +117,35 @@ internal static class L12ServerStorageMonitor
         }
     }
 
-    private static L12ServerStorageProbe SystemProbe() => new(
+    private static (string Id, string Label, string Path)[] CategoryDefinitions()
+    {
+        var runtime = Environment.GetEnvironmentVariable("L12_RUNTIME_DIR") ?? "/opt/legion12-runtime";
+        return
+        [
+            ("matches-db", "对局数据库", Path.Combine(runtime, "matches.db")),
+            ("platform-db", "平台数据库", Path.Combine(runtime, "platform.db")),
+            ("site-media", "站点媒体", Path.Combine(runtime, "site-media")),
+            ("releases", "发布版本", Environment.GetEnvironmentVariable("L12_RELEASES_DIR") ?? "/www/legion12/releases"),
+            ("runtime-backups", "运行备份", Environment.GetEnvironmentVariable("L12_RUNTIME_BACKUPS_DIR") ?? "/www/legion12/runtime-backups"),
+            ("deployment-backups", "部署遗留备份", "/opt/legion12-deployment/runtime-backups"),
+            ("logs", "系统日志", "/var/log"),
+        ];
+    }
+
+    private static L12ServerStorageProbe SystemProbe(IReadOnlyList<string> businessPaths) => new(
         () => DateTimeOffset.UtcNow,
-        ReadSystemVolumes,
-        path => (DirectoryBytes(path, out var available), available),
+        () => ReadSystemVolumes(businessPaths),
+        path => DirectoryBytes(path),
         () => System.Diagnostics.Process.GetCurrentProcess().WorkingSet64);
 
-    private static L12StorageVolumeProbeResult ReadSystemVolumes()
+    private static L12StorageVolumeProbeResult ReadSystemVolumes(IReadOnlyList<string> businessPaths)
+    {
+        if (OperatingSystem.IsLinux()) return ReadLinuxVolumes(businessPaths);
+        if (OperatingSystem.IsWindows()) return ReadWindowsVolumes();
+        return new([], 1);
+    }
+
+    private static L12StorageVolumeProbeResult ReadWindowsVolumes()
     {
         var volumes = new List<L12StorageVolumeSample>();
         var unavailable = 0;
@@ -139,32 +164,169 @@ internal static class L12ServerStorageMonitor
         return new(volumes, unavailable);
     }
 
-    private static long DirectoryBytes(string path, out bool available)
+    private static L12StorageVolumeProbeResult ReadLinuxVolumes(IReadOnlyList<string> businessPaths)
     {
-        available = false;
+        string[] mountInfo;
+        DriveInfo[] drives;
         try
         {
-            if (File.Exists(path)) { available = true; return Math.Max(0, new FileInfo(path).Length); }
-            if (!Directory.Exists(path)) return 0;
-            available = true;
-            long total = 0;
-            var options = new EnumerationOptions
+            mountInfo = File.ReadAllLines("/proc/self/mountinfo");
+            drives = DriveInfo.GetDrives();
+        }
+        catch (Exception error) when (IsStorageAccessFailure(error)) { return new([], 1); }
+
+        var driveByMount = drives
+            .GroupBy(drive => NormalizeLinuxPath(drive.Name), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var mounts = ParseLinuxMountInfo(mountInfo, businessPaths, mountPoint =>
+        {
+            if (!driveByMount.TryGetValue(mountPoint, out var drive)) return null;
+            try
             {
-                RecurseSubdirectories = true,
-                IgnoreInaccessible = true,
-                AttributesToSkip = FileAttributes.ReparsePoint,
-            };
-            foreach (var file in Directory.EnumerateFiles(path, "*", options))
-            {
-                try { total = checked(total + Math.Max(0, new FileInfo(file).Length)); }
-                catch (Exception error) when (IsStorageAccessFailure(error)) { }
+                if (!drive.IsReady) return null;
+                return new L12StorageVolumeSample(drive.TotalSize, drive.AvailableFreeSpace);
             }
-            return total;
+            catch (Exception error) when (IsStorageAccessFailure(error)) { return null; }
+        });
+        return SelectLinuxBusinessVolumes(mounts, businessPaths);
+    }
+
+    internal static IReadOnlyList<L12StorageMountSample> ParseLinuxMountInfo(IEnumerable<string> lines,
+        IReadOnlyList<string> businessPaths, Func<string, L12StorageVolumeSample?> readCapacity)
+    {
+        var result = new List<L12StorageMountSample>();
+        foreach (var line in lines)
+        {
+            var fields = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var separator = Array.IndexOf(fields, "-");
+            if (separator < 6 || separator + 3 >= fields.Length) continue;
+            var mountPoint = NormalizeLinuxPath(DecodeMountInfoPath(fields[4]));
+            var readOnly = HasMountOption(fields[5], "ro") || HasMountOption(fields[separator + 3], "ro");
+            var fileSystemType = fields[separator + 1];
+            var capacityRelevant = SupportedLinuxFileSystems.Contains(fileSystemType)
+                && businessPaths.Any(path => IsPathWithinMount(NormalizeLinuxPath(path), mountPoint));
+            var hasUnverifiedQuota = HasQuotaOption(fields[5]) || HasQuotaOption(fields[separator + 3]);
+            result.Add(new(fields[2], mountPoint, fileSystemType, readOnly, hasUnverifiedQuota,
+                capacityRelevant ? readCapacity(mountPoint) : null));
+        }
+        return result;
+    }
+
+    internal static L12StorageVolumeProbeResult SelectLinuxBusinessVolumes(
+        IReadOnlyList<L12StorageMountSample> mounts, IReadOnlyList<string> businessPaths)
+    {
+        var selected = new Dictionary<string, L12StorageMountSample>(StringComparer.Ordinal);
+        var unavailable = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var rawPath in businessPaths.Distinct(StringComparer.Ordinal))
+        {
+            var path = NormalizeLinuxPath(rawPath);
+            var mount = mounts.Where(candidate => IsPathWithinMount(path, candidate.MountPoint))
+                .OrderByDescending(candidate => candidate.MountPoint.Length)
+                .FirstOrDefault();
+            if (mount is null)
+            {
+                unavailable.Add($"path:{path}");
+                continue;
+            }
+            if (!SupportedLinuxFileSystems.Contains(mount.FileSystemType)
+                || mount.Capacity is null || mount.Capacity.TotalBytes <= 0)
+            {
+                unavailable.Add($"mount:{mount.Identity}");
+                continue;
+            }
+            selected.TryAdd(mount.Identity, mount);
+            if (mount.ReadOnly || mount.HasUnverifiedQuota) unavailable.Add($"mount:{mount.Identity}");
+        }
+        return new(selected.Values.OrderBy(item => item.MountPoint, StringComparer.Ordinal)
+            .Select(item => item.Capacity!).ToArray(), unavailable.Count);
+    }
+
+    private static bool HasMountOption(string options, string expected)
+        => options.Split(',', StringSplitOptions.RemoveEmptyEntries).Contains(expected, StringComparer.Ordinal);
+
+    private static bool HasQuotaOption(string options)
+        => options.Split(',', StringSplitOptions.RemoveEmptyEntries).Any(option =>
+            option is "quota" or "usrquota" or "grpquota" or "prjquota" or "uquota" or "gquota" or "pquota"
+                || option.StartsWith("usrjquota=", StringComparison.Ordinal)
+                || option.StartsWith("grpjquota=", StringComparison.Ordinal)
+                || option.StartsWith("jqfmt=", StringComparison.Ordinal));
+
+    private static bool IsPathWithinMount(string path, string mountPoint)
+        => mountPoint == "/" || string.Equals(path, mountPoint, StringComparison.Ordinal)
+            || path.StartsWith(mountPoint + "/", StringComparison.Ordinal);
+
+    private static string NormalizeLinuxPath(string path)
+    {
+        var normalized = string.IsNullOrWhiteSpace(path) ? "/" : path;
+        while (normalized.Contains("//", StringComparison.Ordinal))
+            normalized = normalized.Replace("//", "/", StringComparison.Ordinal);
+        return normalized.Length > 1 ? normalized.TrimEnd('/') : normalized;
+    }
+
+    private static string DecodeMountInfoPath(string value)
+        => value.Replace("\\040", " ", StringComparison.Ordinal)
+            .Replace("\\011", "\t", StringComparison.Ordinal)
+            .Replace("\\012", "\n", StringComparison.Ordinal)
+            .Replace("\\134", "\\", StringComparison.Ordinal);
+
+    private static L12StorageDirectoryProbe SystemDirectoryProbe() => new(
+        File.Exists,
+        Directory.Exists,
+        path => Directory.GetFileSystemEntries(path, "*", new EnumerationOptions
+        {
+            RecurseSubdirectories = false,
+            IgnoreInaccessible = false,
+            AttributesToSkip = 0,
+            ReturnSpecialDirectories = false,
+        }),
+        File.GetAttributes,
+        path => new FileInfo(path).Length);
+
+    internal static (long Bytes, bool Available) DirectoryBytes(string path,
+        L12StorageDirectoryProbe? fileSystem = null)
+    {
+        fileSystem ??= SystemDirectoryProbe();
+        try
+        {
+            var rootIsFile = fileSystem.FileExists(path);
+            var rootIsDirectory = !rootIsFile && fileSystem.DirectoryExists(path);
+            if (!rootIsFile && !rootIsDirectory) return (0, false);
+            var rootAttributes = fileSystem.ReadAttributes(path);
+            if ((rootAttributes & FileAttributes.ReparsePoint) != 0) return (0, false);
+            if (rootIsFile) return (Math.Max(0, fileSystem.ReadLength(path)), true);
+            if ((rootAttributes & FileAttributes.Directory) == 0) return (0, false);
+
+            long total = 0;
+            var complete = true;
+            var pending = new Stack<string>();
+            pending.Push(path);
+            while (pending.Count > 0)
+            {
+                var current = pending.Pop();
+                IReadOnlyList<string> entries;
+                try { entries = fileSystem.ReadEntries(current); }
+                catch (Exception error) when (IsStorageAccessFailure(error))
+                {
+                    complete = false;
+                    continue;
+                }
+                foreach (var entry in entries)
+                {
+                    try
+                    {
+                        var attributes = fileSystem.ReadAttributes(entry);
+                        if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
+                        if ((attributes & FileAttributes.Directory) != 0) pending.Push(entry);
+                        else total = checked(total + Math.Max(0, fileSystem.ReadLength(entry)));
+                    }
+                    catch (Exception error) when (IsStorageAccessFailure(error)) { complete = false; }
+                }
+            }
+            return (total, complete);
         }
         catch (Exception error) when (IsStorageAccessFailure(error))
         {
-            available = false;
-            return 0;
+            return (0, false);
         }
     }
 

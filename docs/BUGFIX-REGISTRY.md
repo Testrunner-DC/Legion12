@@ -1,5 +1,23 @@
 # Legion12 Bug 修复记录
 
+## ADMIN-20261014-ALERT-TRUTH｜真实非终态待办、业务容量与不可读分类（本地验收，未部署）
+
+- 用户批准限定修复及对抗验收，不改80/90%阈值、不放宽备份权限、不删数据。实际初始899反馈中new520/resolved232/closed147；工作台752错误包含232已解决项，且仅为计数构建全history视图。OpenBugCount直接按既有终态判定计数，工作台和Bug页不再两套口径。待办是反馈数量，不等于已确认产品缺陷。
+- 同类扫描：Bugs/IsTerminalBugStatus、workbench Summary、ReadSystemVolumes/DriveInfo/mountinfo、DirectoryBytes/IgnoreInaccessible/ReparsePoint及AdminServerStoragePanel消费者。实际100%五卷精确对应只读squashfs Snap；真实业务ext4系统盘约19GiB、数据盘约12GiB可用。Linux按业务路径最深挂载及major:minor去重，排除伪卷但保留只读业务盘/未验证quota的真实容量与partial；未知来源不伪报健康。Windows原路径保留。
+- root读回两备份分类2548859005/6209246636B，legion12账号du权限拒绝；原available=true/0误报。目录显式逐层读取，任何不可读子项保留已知字节但Available=false，根文件/目录链接不追随。现有UI显示“当前不可用/—”，不扩大root0700权限，不移除备份保护。
+- 回归：原工作台RED expected1/actual2；新增深层rw-bind/ro根及业务盘/Snap重复/quota满盘/拒读子项/根目录及文件链接守卫，最终聚焦15通过。标准Batch规则7219、平台1507、失败/跳过0，架构/性能及32项事件窗口映射合同；日志C盘post-release-adversarial-20261014/admin-alert-batch-r2.log及固定源SHA绑定final-acceptance.json。首轮PATH无法定位node与子任务旧句柄清理失败原件保留，不删门禁。仅本地代码验收，两服应用仍e2，未将本修复冒称上线。
+
+## BUG-20261014-E2-CLOSEOUT｜具名证据与逐项CAS实际关闭24条
+
+- 正式e2部署/独立核验/维护解除后，9+10+5条各自预览、一次ETag/CAS、独立终态读回；原文/优先级/负责人/摘要保留，专用会话撤销。固定7、拒绝或限定未复现13、严格重复4；899总项new520→496/resolved239/closed164，既有统一清单历史本轮已关92→116。三原始回执bug-closeout-nine-r2/ten/five.json和work-items-next-five-reconciliation.json保留，不再重复这24条。
+- 新五条为荣耀之路、灵鹿/阿麦金、月读/勾玉、百鬼/血戒、不朽之礼/嬴政；原场景4/4/4/24/60具名旧证据逐引用核SHA，Main核tested ca4/328为e2祖先且对应玩法实现blob未变。未复现仅按已验范围关闭，不冒称原玩家录像、历史浏览器或压力执行；含时点排序建议的兰斯洛特反馈撤出，未批准产品建议不全盘采纳。r12旧48仅21条本轮已关，余27不伪称都待执行。
+
+## PERF-20261014-E2-PASSIVE-TAIL｜同规模真实复测仍有集中结束确认长尾
+
+- 已部署测试e2上10/20/30房各60s、10独立站外账号及每房真实play/attack，1648/1648命令、871读取200、delta重建0错；30房命令P95356.52/P99736.85/max939.54ms，站外P9564—179ms。原3s/10s、2s节奏与30并行结束不放宽：24及时终局/24离房、6终局迟到，10s被动窗30全收、最晚5602.75ms，仍NOT_FULLY_ACCEPTED，迟到不改绿。
+- 固定类型状态JSON767646B/s只是协议计量，非NIC/音乐/图片或历史总流量降幅。272守卫无停止/OOM/重启，whole GC0.51568%；客户端parse≤0.8912/rebuild≤0.0977ms、eventloop lag≤44.84ms。服务total≤304.02ms且Append/Complete均从共享gate等待前计时，不能再误判未包含gate；logout在30终局等待后，不能把后续平台Save大耗时归投降。剩余入站队列/房间锁、出站驻留、codec准备及传输分段未量，根因未定。
+- C盘post-release-adversarial-20261014/pressure-tail/assessment.json SHA E9272833为实际终态；工具动态30并行cleanup/3s/迟到仍失败/不重试回归通过。用户随后批准default-off测试专用数值取证及测试发布复测，仅合成请求、不采集身份/牌面，下一批准备；未改正式/维护，不用旧版生产采样冒称收益。
+
 ## DEPLOY-20261014-ACCEPTED-PACKAGE｜纯记录提交错误阻止原应用包复用
 
 - 用户本批已授权正式部署。旧Windows入口要求manifest.commit==HEAD，尽管e2完整7219/1505/八阶段且已测试，后续e1三记录提交仍迫使重复构建。共享修复仅允许e2为HEAD祖先，候选至HEAD每个净差异必须是具名三记录/当前Windows入口及它的验收脚本的M；A/D/rename、应用、前端、ledger、配置、服务器工具、未知路径均拒绝。HEAD仍clean且精确origin/main；原包commit/SHA/更新区间和外部停服许可/最新DB-WAL保护不改。
