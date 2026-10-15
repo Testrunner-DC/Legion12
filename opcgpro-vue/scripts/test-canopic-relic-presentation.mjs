@@ -117,27 +117,56 @@ app.mount('#app');window.ready=true
         const retained = await rail.locator('[data-card-instance-id]').evaluateAll(nodes => nodes.map(n => n.dataset.cardInstanceId))
         assert.deepEqual(retained.toSorted(), isis ? [] : f.canopicIds.toSorted(), f.id + ' retained instances')
         assert.equal(await mat.locator('.extra-relic').count(), 0, 'old overlapping cards must be retired')
-        const normal = mat.locator('.relic-zone [data-card-instance-id]')
+        const normal = mat.locator('.relic-zone > .card-tile[data-card-instance-id]')
         assert.equal(await normal.count(), f.normalId ? 1 : 0, f.id + ' primary slot')
+        const stackEvidence = { pointerEdgeIds: [], keyboardIds: [] }
         if (!isis) {
+          assert.equal(await mat.locator('.relic-zone > .retained-relics').count(), 1,
+            'retained cards must remain inside the relic zone, not in a separate bottom row')
           const zoneBox = await mat.locator('.relic-zone').boundingBox()
-          const railBox = await rail.boundingBox()
-          const rotated = await page.evaluate(() => document.documentElement.dataset.l12Rotated === 'true')
-          assert.ok(rotated ? railBox.x + railBox.width <= zoneBox.x + 1 : railBox.y >= zoneBox.y + zoneBox.height - 1,
-            'retained rail must be below the ordinary relic in the logical board coordinates')
           const fields = await mat.locator('.formation-slot').evaluateAll(nodes => nodes.map(n => {
             const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}
           }))
           assert.equal(fields.length, 6)
-          for(const field of fields) assert.ok(railBox.x + railBox.width <= field.x + 1 || field.x + field.width <= railBox.x + 1
-            || railBox.y + railBox.height <= field.y + 1 || field.y + field.height <= railBox.y + 1,
-            'retained rail must not overlap any of the six formation slots')
           for (const id of f.canopicIds) {
             const button = rail.locator(`[data-card-instance-id="${id}"]`)
-            await button.evaluate(node => node.scrollIntoView({ block: 'nearest', inline: 'center' }))
-            await button.click({ timeout: 3000 })
-            assert.equal(await page.evaluate(() => window.picked.at(-1)), id, 'real retained-card click event')
+            const geometry = await button.evaluate(node => {
+              const r=node.getBoundingClientRect(),m=new DOMMatrix(getComputedStyle(node).transform)
+              return {x:r.x,y:r.y,width:r.width,height:r.height,dx:m.m41,dy:m.m42}
+            })
+            assert.ok(geometry.dx > 0 && geometry.dx <= 6.1 && geometry.dy > 0 && geometry.dy <= 6.1,
+              'retained cards must shift only slightly toward the logical bottom right')
+            assert.ok(geometry.width >= zoneBox.width * .9 && geometry.height >= zoneBox.height * .9,
+              'retained cards must stack at relic-card size, not become a thumbnail rail')
+            for(const field of fields) assert.ok(geometry.x + geometry.width <= field.x + 1 || field.x + field.width <= geometry.x + 1
+              || geometry.y + geometry.height <= field.y + 1 || field.y + field.height <= geometry.y + 1,
+              'retained relic stack must not overlap any of the six formation slots')
+            // A stack exposes narrow card edges; click an actually exposed point,
+            // never force a click through the foreground ordinary relic.
+            const point = await button.evaluate(node => {
+              const r=node.getBoundingClientRect(),id=node.dataset.cardInstanceId
+              const hit=(x,y)=>document.elementFromPoint(x,y)?.closest('.retained-relic')?.dataset.cardInstanceId===id
+              for(const fraction of [.15,.5,.85])for(let d=.2;d<12;d+=.2) {
+                for(const [x,y] of [[r.right-d,r.top+r.height*fraction],[r.left+d,r.top+r.height*fraction],
+                  [r.left+r.width*fraction,r.bottom-d],[r.left+r.width*fraction,r.top+d]])
+                  if(hit(x,y))return {x,y}
+              }
+              return null
+            })
+            if (point) {
+              await page.mouse.click(point.x, point.y)
+              stackEvidence.pointerEdgeIds.push(id)
+            } else {
+              // Very narrow phone offsets can merge some individual hit strips.
+              // All real cards retain native keyboard access without lifting them
+              // over the ordinary relic or growing a second display lane.
+              await button.focus()
+              await page.keyboard.press('Enter')
+              stackEvidence.keyboardIds.push(id)
+            }
+            assert.equal(await page.evaluate(() => window.picked.at(-1)), id, 'real retained-card selection event')
           }
+          assert.ok(stackEvidence.pointerEdgeIds.length > 0, f.id + ' stack must expose a real pointer target')
         }
         if (f.normalId) {
           assert.equal(await normal.getAttribute('data-card-instance-id'), f.normalId)
@@ -152,9 +181,14 @@ app.mount('#app');window.ready=true
         }
         assert.deepEqual(errors, [], 'actual component runtime errors')
         assert.deepEqual(await page.evaluate(() => window.sent), [], 'presentation must not send game commands')
-        if (f.owner === 0 && f.view === 'owner' && !f.recover && f.scenario === 'five-extra')
+        if (f.owner === 0 && f.view === 'owner' && !f.recover && f.scenario === 'five-extra') {
           await page.screenshot({ path: path.join(output, `${viewport.width}x${viewport.height}-${isis ? 'isis' : 'sun-city'}.png`) })
-        report.results.push({ viewport, id: f.id, snapshotReachedRealComponent: true, passed: true })
+          const box=await mat.locator('.commander-zone').boundingBox(),size=page.viewportSize(),pad=14
+          const x=Math.max(0,Math.floor(box.x-pad)),y=Math.max(0,Math.floor(box.y-pad))
+          await page.screenshot({path:path.join(output,`${viewport.width}x${viewport.height}-${isis ? 'isis' : 'sun-city'}-detail.png`),
+            clip:{x,y,width:Math.min(size.width-x,Math.ceil(box.width+pad*2)),height:Math.min(size.height-y,Math.ceil(box.height+pad*2))}})
+        }
+        report.results.push({ viewport, id: f.id, snapshotReachedRealComponent: true, stackEvidence, passed: true })
       }
       // Continuous prop update on the SAME board/mat instances, using another
       // unmodified real engine snapshot with this owner's relic zone empty.
@@ -165,6 +199,7 @@ app.mount('#app');window.ready=true
         const before=await page.evaluate(index=>window.applyFixture(index),i)
         const oldUid=before.find(p=>p.owner===f.owner).uid
         const oldBoardUid=await page.evaluate(()=>window.boardUid)
+        const commanderBefore=await page.locator(`.l12-player-mat[data-player-index="${f.owner}"] .commander-zone`).boundingBox()
         const absent=fixtures.findIndex(a=>a.master===f.master&&a.owner===1-f.owner&&a.scenario===f.scenario&&!a.recover
           &&a.view===(f.view==='owner'?'opponent':'owner'))
         assert.ok(absent>=0)
@@ -176,8 +211,11 @@ app.mount('#app');window.ready=true
         assert.equal(await page.evaluate(()=>window.boardUid),oldBoardUid,'same GameBoard instance')
         assert.deepEqual(updated.presence,[],'absence snapshot must reach the real PlayerMat prop')
         const mat=page.locator(`.l12-player-mat[data-player-index="${f.owner}"]`)
+        const commanderAfter=await mat.locator('.commander-zone').boundingBox()
+        assert.ok(Math.abs(commanderBefore.width-commanderAfter.width)<.5 && Math.abs(commanderBefore.height-commanderAfter.height)<.5,
+          'retained cards must not add a row or enlarge the commander area')
         assert.equal(await mat.locator('.canopic-orb.completed').count(),0,'marker must extinguish on removal')
-        assert.equal(await mat.locator('.retained-relics').count(),0,'bottom rail must disappear on removal')
+        assert.equal(await mat.locator('.retained-relics').count(),0,'retained relic stack must disappear on removal')
         assert.equal(await mat.locator('[data-card-instance-id^="ui-canopic-"]').count(),0)
         assert.deepEqual(errors,[])
         assert.deepEqual(await page.evaluate(()=>window.sent),[])

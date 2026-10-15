@@ -347,7 +347,7 @@ function beginCardAbility(card: Card) {
 <template>
   <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active, 'action-guidance': actionGuidanceActive }]"
     :data-player-index="player.playerIndex">
-    <div class="commander-zone" :class="{ 'has-retained-relics': relicPresentation.retained.length > 0 }">
+    <div class="commander-zone">
       <span v-if="mobileMoralePicker" class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
@@ -383,16 +383,17 @@ function beginCardAbility(card: Card) {
         </button>
       </div>
 
-      <div class="relic-zone" data-l12-zone="relic" @mouseenter="relicPresentation.primary && emit('focus', relicPresentation.primary)" @click="relicPresentation.primary && selectZoneCard(relicPresentation.primary)">
+      <div class="relic-zone" :class="{ 'has-retained-relics': relicPresentation.retained.length > 0 }" data-l12-zone="relic" @mouseenter="relicPresentation.primary && emit('focus', relicPresentation.primary)" @click="relicPresentation.primary && selectZoneCard(relicPresentation.primary)">
+        <div v-if="relicPresentation.retained.length" class="retained-relics" role="group" aria-label="留在圣物区底层的圣物">
+          <button v-for="(relic, index) in relicPresentation.retained" :key="relic.instanceId" type="button" class="retained-relic"
+            :data-card-instance-id="relic.instanceId" :class="{ selected: isSelected(relic.instanceId) }" :title="relic.name" :aria-label="relic.name"
+            :style="{ '--retained-fraction': (index + 1) / relicPresentation.retained.length, zIndex: relicPresentation.retained.length - index }"
+            @mouseenter="emit('focus', relic)" @focus="emit('focus', relic)" @click.stop="selectZoneCard(relic)">
+            <CardImage :card-id="relic.cardId" :legacy-url="relic.imageUrl" :alt="relic.name" intent="board" fit="contain" eager />
+          </button>
+        </div>
         <CardTile v-if="relicPresentation.primary" :card="relicPresentation.primary" @focus-card="emit('focus', $event)" />
-        <div v-else class="zone-placeholder"><i>✦</i><span>圣物区</span></div>
-      </div>
-      <div v-if="relicPresentation.retained.length" class="retained-relics" role="group" aria-label="不占用圣物位置的留场圣物">
-        <button v-for="relic in relicPresentation.retained" :key="relic.instanceId" type="button" class="retained-relic"
-          :data-card-instance-id="relic.instanceId" :class="{ selected: isSelected(relic.instanceId) }" :title="relic.name" :aria-label="relic.name"
-          @mouseenter="emit('focus', relic)" @focus="emit('focus', relic)" @click.stop="selectZoneCard(relic)">
-          <CardImage :card-id="relic.cardId" :legacy-url="relic.imageUrl" :alt="relic.name" intent="thumb" fit="contain" eager />
-        </button>
+        <div v-else-if="!relicPresentation.retained.length" class="zone-placeholder"><i>✦</i><span>圣物区</span></div>
       </div>
     </div>
     <div class="special-lane" :class="{ visible: player.specialZones?.trials?.length }" data-ui-contract="mirrored-extra-zone">
@@ -607,9 +608,10 @@ function beginCardAbility(card: Card) {
 </style>
 
 <style scoped>
-.commander-zone.has-retained-relics{align-content:center;row-gap:6px}
-.retained-relics{grid-column:1/-1;box-sizing:border-box;display:flex;align-items:center;gap:4px;width:100%;min-width:0;max-width:100%;padding:2px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x}
-.retained-relic{box-sizing:border-box;display:grid;place-items:center;flex:0 0 44px;width:44px;height:61.6px;min-width:44px;padding:0;border:1px solid #8e865e;border-radius:2px;background:#0b1112;cursor:pointer}
+.relic-zone.has-retained-relics{--retained-spread:6px;overflow:visible;isolation:isolate}
+.relic-zone.has-retained-relics > :deep(.card-tile){position:relative;z-index:1}
+.retained-relics{position:absolute;z-index:0;inset:0;pointer-events:none}
+.retained-relic{position:absolute;inset:0;box-sizing:border-box;display:block;width:100%;height:100%;padding:0;border:1px solid #8e865e;border-radius:1px;background:#0b1112;transform:translate(calc(var(--retained-spread) * var(--retained-fraction)),calc(var(--retained-spread) * var(--retained-fraction)));pointer-events:auto;cursor:pointer}
 .retained-relic :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}
 .retained-relic.selected,.retained-relic:focus-visible{outline:2px solid #e1bd5e;outline-offset:-2px}
 .trial-card.own-concealed .l12-card-image{filter:grayscale(.85) brightness(.52)}
