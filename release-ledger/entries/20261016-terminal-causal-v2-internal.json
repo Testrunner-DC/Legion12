@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-terminal-causal-v2-internal",
+  "date": "2026-10-16",
+  "audience": "internal",
+  "reason": "仅隔离测试服默认关闭的合成因果数值取证：补接收、租约及同连接回执边界；不改游戏、可靠队列、卡效、持久化或玩家展示，不作为性能问题已解决的声明。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12InboundConnection.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
