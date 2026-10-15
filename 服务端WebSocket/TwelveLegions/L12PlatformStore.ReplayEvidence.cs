@@ -21,7 +21,8 @@ public sealed partial class L12PlatformStore
                 // A report protects replay payload only after human triage, only for an explicit
                 // top-level binding, and never beyond the short diagnostic window. Auto-captured
                 // diagnostics may describe a stale page/session and must not create fuzzy holds.
-                if (report.Status is not ("confirmed" or "in-progress")
+                if (report.Status is not ("confirmed" or "in-progress" or "decision"
+                        or "implementation" or "retest" or "deploy")
                     || report.CreatedAt.ToUniversalTime() < cutoff) continue;
                 Add(matches, report.MatchId);
                 Add(rooms, report.RoomCode);

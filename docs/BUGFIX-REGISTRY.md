@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261016-BUG-REPLAY-STAGES｜人工处理阶段的录像保护兼容（本地完成，未部署）
+
+- 只读审计EDC3F42E确认：UpdateBug已合法保存decision/implementation/retest/deploy，但ReplayEvidenceAt只认confirmed/in-progress。用户明确批准仅补四阶段，后续又持续授权按具体报告取证；不改7天、new不保护、终态释放、顶层精确绑定、隐私或正式数据。
+- 旧源实际9格为6RED/3控制绿，TRX BFD4E18F；Main仅扩一处原状态谓词，六活跃态、closed/resolved真实关闭/重开、精确7天及+1tick、诊断/client/claim诱饵、空顶层和仅标识输出共9/9通过。旧规则项目ReplayEvidenceProtectionTests字节F4C430ED不改，新回归落专用Platform；没有新schema、迁移、清理器或HTTP端点。
+- Main最终完整平台1735/1735零失败跳过，监督success且owned TEMP真实回收；独立critical审查CLEAR，产品47313437/测试01157370冻结。C盘replay-evidence-stage-20261016/main-local-acceptance.json SHA30563922绑定实际红/绿/完整TRX与监督回执，并复核前三批9源无漂移；未变前端Batch/双构建和7492内核证据复用，不重复。首日志父目录缺失、复制哈希不足64位均在测试前停止，保留为启动器失败，不冒称产品红灯。
+- 同证据生命周期固化BUG-MANAGEMENT-WORKFLOW：先核原绑定与命令/版本，按opaque cursor有界取原记录，原权威/hash后核真实UI，明确未提取/活动态/过期/不兼容/相关合成，不问用户记忆或因描述短跳过原载荷。持续取证授权只限关联报告，私密材料本地隔离加密、不共享、不改业务数据；正常登录/读取审计保留，无部署/关单授权扩张。
+- 不称已恢复旧录像或证明任何个案已因遗漏丢失；159e仍new、原始取证是独立后续，不能归咎于本批旧阶段。部署/维护/线上Bug变更0，真实iOS与原线上性能余量不因本批完成。
+
 ## UI-20261016-RANKING-EXPLICIT-REFRESH｜榜单显式刷新与摘要精简（本地完成，未部署）
 
 - 用户直接要求进入/切换项目/手动刷新时再读，不要分钟轮询或系统性提示。移除RankingsPage的60秒timer及visibilitychange监听，只保留mount、faction/range/tab切换和原刷新按钮；搜索/排序继续本地。请求仍单飞+只追最新一项，generation拒绝ABA中间结果、迟到错误和卸载后写入；失败保留原快照，等待明确重试，不新增自动循环。
