@@ -18,10 +18,12 @@ globalThis.document = { hidden: false }
 globalThis.__friendPlatformState = { account: { id: 'account-a' } }
 globalThis.__friendPlans = []
 globalThis.__friendCalls = 0
+globalThis.__friendChatState = { privacyRevision: 0 }
 
 const filename = join(frontendRoot, 'src', 'l12', 'friendResource.ts')
 let friendSource = readFileSync(filename, 'utf8')
   .replace("import { reactive } from 'vue'", 'const reactive = value => value')
+  .replace("import { chatResource } from './chatResource'", 'const chatResource = { state: globalThis.__friendChatState, acceptFriend: () => undefined }')
   .replace("import { friendApi, platformState, type PlatformFriend } from './platform'", `
     const platformState = globalThis.__friendPlatformState
     const friendApi = { overview: () => {
@@ -87,6 +89,18 @@ await Promise.resolve()
 await Promise.resolve()
 assert.equal(resource.friendResource.friends[0].accountId, 'latest')
 checks += 3
+
+const beforePrivacy = deferred(), afterPrivacy = deferred()
+globalThis.__friendPlans.push(beforePrivacy, afterPrivacy)
+const oldPrivacyRead = resource.refreshFriendResource()
+globalThis.__friendChatState.privacyRevision += 1
+beforePrivacy.resolve({ friends: [{ accountId: 'removed-during-get' }], requests: [], blocked: [] })
+await oldPrivacyRead
+assert.equal(resource.friendResource.friends[0].accountId, 'latest', 'an overview from before a privacy mutation cannot revive a removed friend')
+afterPrivacy.resolve({ friends: [], requests: [], blocked: [] })
+await Promise.resolve(); await Promise.resolve()
+assert.deepEqual(resource.friendResource.friends, [], 'one new generation overview reconciles the mutation')
+checks += 2
 
 const pollingFiles = [
   'opcgpro-vue/src/l12/site/FriendRequestNotifications.vue',

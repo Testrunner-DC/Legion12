@@ -317,6 +317,29 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         L12ChatPairRegistry registry, Func<long> clock, Func<string, string, bool> freshAdmission,
         Func<ArraySegment<byte>, CancellationToken, ValueTask> kickoff, Action? borrowedBarrier = null,
         Action? asyncOwnerProbe = null)
+        => ConfigureChatLaneCore(limits, budget, registry, clock,
+            (_, firstId, secondId) => freshAdmission(firstId, secondId), kickoff,
+            accountRegistry: null, scopedStart: null, borrowedBarrier, asyncOwnerProbe);
+
+    internal void ConfigureChatLane(L12ChatLaneLimits limits, L12ChatGlobalBudget budget,
+        L12ChatPairRegistry registry, Func<long> clock,
+        Func<L12ChatDeliveryMetadata, bool> freshAdmission,
+        Func<ArraySegment<byte>, CancellationToken, ValueTask> kickoff,
+        L12ChatAccountRegistry? accountRegistry,
+        Func<L12ChatDeliveryMetadata, Func<L12ChatQueueResult>, L12ChatQueueResult>? scopedStart = null,
+        Action? borrowedBarrier = null,
+        Action? asyncOwnerProbe = null)
+        => ConfigureChatLaneCore(limits, budget, registry, clock,
+            (metadata, _, _) => metadata is not null && freshAdmission(metadata), kickoff,
+            accountRegistry, scopedStart, borrowedBarrier, asyncOwnerProbe);
+
+    private void ConfigureChatLaneCore(L12ChatLaneLimits limits, L12ChatGlobalBudget budget,
+        L12ChatPairRegistry registry, Func<long> clock,
+        Func<L12ChatDeliveryMetadata?, string, string, bool> freshAdmission,
+        Func<ArraySegment<byte>, CancellationToken, ValueTask> kickoff,
+        L12ChatAccountRegistry? accountRegistry,
+        Func<L12ChatDeliveryMetadata, Func<L12ChatQueueResult>, L12ChatQueueResult>? scopedStart,
+        Action? borrowedBarrier, Action? asyncOwnerProbe)
     {
         ArgumentNullException.ThrowIfNull(limits);
         ArgumentNullException.ThrowIfNull(budget);
@@ -328,7 +351,8 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         {
             if (_completed || _chatLane is not null) throw new InvalidOperationException("Chat lane unavailable.");
             Volatile.Write(ref _chatLane,
-                new ChatLane(limits, budget, registry, clock, freshAdmission, kickoff, borrowedBarrier, asyncOwnerProbe));
+                new ChatLane(limits, budget, registry, clock, freshAdmission, kickoff, accountRegistry,
+                    scopedStart, borrowedBarrier, asyncOwnerProbe));
         }
     }
 
@@ -337,6 +361,14 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
 
     internal L12ChatQueueResult TryEnqueueChat(string senderId, string recipientId,
         ArraySegment<byte> bytes, long expiresAt)
+        => TryEnqueueChatCore(senderId, recipientId, metadata: null, bytes, expiresAt);
+
+    internal L12ChatQueueResult TryEnqueueChat(L12ChatDeliveryMetadata metadata,
+        ArraySegment<byte> bytes, long expiresAt)
+        => TryEnqueueChatCore(metadata.PairFirstId, metadata.PairSecondId, metadata, bytes, expiresAt);
+
+    private L12ChatQueueResult TryEnqueueChatCore(string firstId, string secondId,
+        L12ChatDeliveryMetadata? metadata, ArraySegment<byte> bytes, long expiresAt)
     {
         var lane = Volatile.Read(ref _chatLane);
         if (lane is null || bytes.Array is null || bytes.Count == 0) return L12ChatQueueResult.Suppressed;
@@ -344,8 +376,15 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         long charge = (long)bytes.Array.Length + lane.Limits.MetadataBytes;
         if (bytes.Count > lane.Limits.MaximumPacketBytes || charge > lane.Limits.MaximumRetainedBytes)
             return L12ChatQueueResult.QuotaRejected;
-        var pair = lane.Registry.TryAcquire(senderId, recipientId);
+        var pair = lane.Registry.TryAcquire(firstId, secondId);
         if (pair is null) return L12ChatQueueResult.QuotaRejected;
+        var accounts = metadata is null ? null : lane.AccountRegistry?.TryAcquire(
+            metadata.SenderAccountId, metadata.RecipientAccountId);
+        if (metadata is not null && lane.AccountRegistry is not null && accounts is null)
+        {
+            pair.Dispose();
+            return L12ChatQueueResult.QuotaRejected;
+        }
         long generation;
         lock (pair.Entry.StartGate)
         {
@@ -358,12 +397,14 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         }
         if (generation < 0)
         {
+            accounts?.Dispose();
             pair.Dispose();
             return L12ChatQueueResult.Paused;
         }
         var reservation = lane.Budget.TryReserve(charge);
         if (reservation is null)
         {
+            accounts?.Dispose();
             pair.Dispose();
             return L12ChatQueueResult.QuotaRejected;
         }
@@ -372,6 +413,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
             if (_completed || Volatile.Read(ref lane.Closed))
             {
                 reservation.Dispose();
+                accounts?.Dispose();
                 pair.Dispose();
                 return L12ChatQueueResult.Suppressed;
             }
@@ -379,10 +421,12 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 charge > lane.Limits.MaximumRetainedBytes - lane.RetainedBytes)
             {
                 reservation.Dispose();
+                accounts?.Dispose();
                 pair.Dispose();
                 return L12ChatQueueResult.QuotaRejected;
             }
-            var message = new ChatMessage(bytes, pair, reservation, generation,
+            var authorization = metadata is null ? null : new ChatAuthorization(metadata, accounts);
+            var message = new ChatMessage(bytes, authorization, pair, reservation, generation,
                 Volatile.Read(ref lane.Epoch), expiresAt, charge);
             lane.Queue.AddLast(message.Node);
             lane.RetainedItems++;
@@ -434,6 +478,8 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         var pair = message.Pair!.Entry;
         if (Volatile.Read(ref lane.Closed) || message.Epoch != Volatile.Read(ref lane.Epoch) ||
             message.Generation != Volatile.Read(ref pair.Generation) || message.ExpiresAt <= now) return true;
+        if (message.Authorization?.Accounts is { } accounts && lane.AccountRegistry is { } accountRegistry
+            && !accountRegistry.Ready(accounts)) return false;
         return Volatile.Read(ref pair.Pending) == 0 && !Volatile.Read(ref pair.RecoveryClosed);
     }
 
@@ -481,30 +527,41 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
             var result = L12ChatQueueResult.Suppressed;
             lock (lane.StartGate)
             {
-                var pair = message.Pair!.Entry;
-                lock (pair.StartGate)
+                L12ChatQueueResult StartCore()
                 {
-                    if (Volatile.Read(ref _completed) || lane.Closed || message.Epoch != lane.Epoch ||
-                        message.Generation != pair.Generation)
-                        result = L12ChatQueueResult.Suppressed;
-                    else if (message.ExpiresAt <= lane.Clock())
-                        result = L12ChatQueueResult.Expired;
-                    else if (pair.Pending != 0 || pair.RecoveryClosed)
-                        result = L12ChatQueueResult.Paused;
-                    else
+                    var pair = message.Pair!.Entry;
+                    lock (pair.StartGate)
                     {
+                        if (Volatile.Read(ref _completed) || lane.Closed || message.Epoch != lane.Epoch ||
+                            message.Generation != pair.Generation)
+                            return L12ChatQueueResult.Suppressed;
+                        if (message.ExpiresAt <= lane.Clock()) return L12ChatQueueResult.Expired;
+                        if (pair.Pending != 0 || pair.RecoveryClosed) return L12ChatQueueResult.Paused;
                         var allowed = false;
-                        try { allowed = lane.FreshAdmission(pair.FirstId, pair.SecondId); }
+                        try
+                        {
+                            allowed = lane.FreshAdmission(message.Authorization?.Metadata,
+                                pair.FirstId, pair.SecondId);
+                        }
                         catch { /* Unreadable authorization is a normal suppression, never an Abort. */ }
-                        if (allowed)
+                        if (!allowed) return L12ChatQueueResult.Suppressed;
+                        L12ChatQueueResult BeginTransport()
                         {
                             // The synchronous invocation, not ValueTask completion, is the start boundary.
                             wire = lane.Kickoff(message.Bytes, _stop.Token);
                             Interlocked.Increment(ref lane.Started);
-                            result = L12ChatQueueResult.ActuallyStarted;
+                            return L12ChatQueueResult.ActuallyStarted;
                         }
+                        return message.Authorization?.Metadata is { Scope: L12ChatDeliveryScope.Opponent } metadata
+                               && lane.ScopedStart is { } scopedStart
+                            ? scopedStart(metadata, BeginTransport)
+                            : BeginTransport();
                     }
                 }
+                result = message.Authorization?.Accounts is { } accounts
+                         && lane.AccountRegistry is { } accountRegistry
+                    ? accountRegistry.Start(accounts, StartCore)
+                    : StartCore();
             }
             if (result == L12ChatQueueResult.Paused)
             {
@@ -583,12 +640,15 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         // Clear the actual payload reference before refunding either retained-byte budget.
         message.Bytes = default;
         var pair = message.Pair;
+        var accounts = message.Authorization?.Accounts;
         var reservation = message.Reservation;
         message.Pair = null;
+        message.Authorization = null;
         message.Reservation = null;
         lock (_gate)
         {
             reservation!.Dispose();
+            accounts?.Dispose();
             pair!.Dispose();
             _chatLane!.RetainedItems--;
             _chatLane.RetainedBytes -= message.Charge;
@@ -597,13 +657,16 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
 
     private sealed class ChatMessage
     {
-        internal ChatMessage(ArraySegment<byte> bytes, L12ChatPairRegistry.PairLease pair,
+        internal ChatMessage(ArraySegment<byte> bytes, ChatAuthorization? authorization,
+            L12ChatPairRegistry.PairLease pair,
             L12ChatGlobalBudget.Reservation reservation, long generation, long epoch, long expiresAt, long charge)
         {
-            Bytes = bytes; Pair = pair; Reservation = reservation; Generation = generation;
+            Bytes = bytes; Authorization = authorization; Pair = pair;
+            Reservation = reservation; Generation = generation;
             Epoch = epoch; ExpiresAt = expiresAt; Charge = charge; Node = new(this);
         }
         internal ArraySegment<byte> Bytes;
+        internal ChatAuthorization? Authorization;
         internal L12ChatPairRegistry.PairLease? Pair;
         internal L12ChatGlobalBudget.Reservation? Reservation;
         internal readonly long Generation, Epoch, ExpiresAt, Charge;
@@ -611,15 +674,25 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         internal int Released;
     }
 
+    private sealed record ChatAuthorization(L12ChatDeliveryMetadata Metadata,
+        L12ChatAccountRegistry.AccountPairLease? Accounts);
+
     private sealed class ChatLane(L12ChatLaneLimits limits, L12ChatGlobalBudget budget,
-        L12ChatPairRegistry registry, Func<long> clock, Func<string, string, bool> freshAdmission,
-        Func<ArraySegment<byte>, CancellationToken, ValueTask> kickoff, Action? borrowedBarrier, Action? asyncOwnerProbe)
+        L12ChatPairRegistry registry, Func<long> clock,
+        Func<L12ChatDeliveryMetadata?, string, string, bool> freshAdmission,
+        Func<ArraySegment<byte>, CancellationToken, ValueTask> kickoff,
+        L12ChatAccountRegistry? accountRegistry,
+        Func<L12ChatDeliveryMetadata, Func<L12ChatQueueResult>, L12ChatQueueResult>? scopedStart,
+        Action? borrowedBarrier, Action? asyncOwnerProbe)
     {
         internal readonly L12ChatLaneLimits Limits = limits;
         internal readonly L12ChatGlobalBudget Budget = budget;
         internal readonly L12ChatPairRegistry Registry = registry;
+        internal readonly L12ChatAccountRegistry? AccountRegistry = accountRegistry;
+        internal readonly Func<L12ChatDeliveryMetadata, Func<L12ChatQueueResult>,
+            L12ChatQueueResult>? ScopedStart = scopedStart;
         internal readonly Func<long> Clock = clock;
-        internal readonly Func<string, string, bool> FreshAdmission = freshAdmission;
+        internal readonly Func<L12ChatDeliveryMetadata?, string, string, bool> FreshAdmission = freshAdmission;
         internal readonly Func<ArraySegment<byte>, CancellationToken, ValueTask> Kickoff = kickoff;
         internal readonly Action? BorrowedBarrier = borrowedBarrier;
         internal readonly Action? AsyncOwnerProbe = asyncOwnerProbe;

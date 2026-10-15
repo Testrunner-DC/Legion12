@@ -145,12 +145,24 @@ async function importJavaScript(source, label) {
   return import(`data:text/javascript;base64,${encoded}#${moduleSerial}`)
 }
 
+// Keep the actual new sidecar in the existing data-URI harness. Only the same
+// Vue adapter already used by this fixture is substituted; no chat method is
+// stubbed and every existing connection/recovery assertion still executes.
+function chatResourceModuleUrl() {
+  const filename = join(sourceRoot, 'chatResource.ts')
+  const source = readFileSync(filename, 'utf8').replace("import { reactive } from 'vue'", 'const reactive = value => value')
+  const output = compile(source, filename)
+  moduleSerial += 1
+  return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#chat-${moduleSerial}`
+}
+
 async function loadPlatformModule() {
   const filename = join(sourceRoot, 'platform.ts')
   const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
   const reliabilitySource = compile(readFileSync(reliabilityFilename, 'utf8'), reliabilityFilename)
   let source = readFileSync(filename, 'utf8')
   source = source
+    .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("import { computed, reactive } from 'vue'", `
       const reactive = value => value
       const computed = getter => ({ get value() { return getter() } })
@@ -178,6 +190,7 @@ async function loadNetModule() {
   const filename = join(sourceRoot, 'net.ts')
   let source = readFileSync(filename, 'utf8')
   source = source
+    .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("import { reactive } from 'vue'", 'const reactive = value => value')
     .replace("import { createGameReentryController } from './gameReentry'", `
       const createGameReentryController = () => ({
@@ -794,7 +807,7 @@ const tests = [
     socket.open()
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
-      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true },
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true, chatV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')

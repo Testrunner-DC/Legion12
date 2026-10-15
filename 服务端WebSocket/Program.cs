@@ -9,6 +9,8 @@ var privateDeckObjectPersistenceEnabled = L12PrivateDeckPersistenceStartup.Parse
     Environment.GetEnvironmentVariable(L12PrivateDeckPersistenceStartup.EnvironmentKey));
 var deploymentDrainEnabled = L12DeploymentDrainStartup.Parse(
     Environment.GetEnvironmentVariable(L12DeploymentDrainStartup.EnvironmentKey));
+var chatEnabled = L12ChatStartup.Parse(
+    Environment.GetEnvironmentVariable(L12ChatStartup.EnvironmentKey));
 
 var port = args.FirstOrDefault(argument => int.TryParse(argument, out _)) is { } portArgument
     && int.TryParse(portArgument, out var parsedPort) ? parsedPort : 8080;
@@ -79,7 +81,7 @@ Console.WriteLine($"Ranked master title facts: authoritative={rankedMasterTitleF
                   + $"imported={importedRankedMasterTitleFacts}");
 platform.ImportRankedMasterHistory(await recorder.ListRankingMatchesAsync(2000));
 await using var server = new L12WebSocketServer(rooms, recorder, platform, catalog,
-    null, null, null, null, null, null, null, transportDiagnostics);
+    null, null, null, null, null, null, null, transportDiagnostics, chatEnabled);
 
 Console.WriteLine("Twelve Legions online battle server");
 Console.WriteLine($"Loaded {catalog.Cards.Count} S1-S2 cards and {catalog.PresetDecks.Count} preset decks.");

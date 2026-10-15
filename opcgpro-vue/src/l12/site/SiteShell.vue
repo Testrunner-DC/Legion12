@@ -5,6 +5,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
 import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
+import SocialPopover from './SocialPopover.vue'
+import { chatResource } from '../chatResource'
 import L12SettingsModal from './L12SettingsModal.vue'
 import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './bugFeedbackEntry'
 import MaintenanceTicker from './MaintenanceTicker.vue'
@@ -601,6 +603,14 @@ const mobileMenuButton = ref<HTMLButtonElement | null>(null)
 const mobileDrawer = ref<HTMLElement | null>(null)
 let bodyOverflowBeforeDrawer = ''
 const modal = ref<'settings' | 'updates' | 'online' | null>(null)
+const socialOpen = ref(false)
+const socialAnchor = ref<HTMLElement | null>(null)
+const chatUnread = computed(() => Object.values(chatResource.state.threads).reduce((sum, item) => sum + item.unread, 0))
+function toggleSocial(event: Event) {
+  socialAnchor.value = event.currentTarget as HTMLElement
+  socialOpen.value = !socialOpen.value
+  closeMobileNav(false)
+}
 const settingsOpener = ref<HTMLElement | null>(null)
 const invitationMinimized = ref(false)
 const outgoingInvitationMinimized = ref(false)
@@ -695,6 +705,7 @@ function toggleMobileNav() {
   else openMobileNav()
 }
 function openSiteModal(next: 'settings' | 'updates' | 'online', event?: Event) {
+  socialOpen.value = false
   if (next === 'settings') settingsOpener.value = rememberSettingsOpener(event)
   closeMobileNav(false)
   modal.value = next
@@ -728,6 +739,7 @@ watch(mobileOpen, async open => {
 })
 
 watch(() => route.fullPath, () => {
+  socialOpen.value = false
   closeMobileNav(false)
   void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
 }, { immediate: true })
@@ -831,7 +843,7 @@ onBeforeUnmount(() => {
       <div class="site-utilities">
         <button title="设置" @click="openSiteModal('settings', $event)"><SiteIcon name="settings"/><span>设置</span></button>
         <button title="更新日志" @click="openSiteModal('updates')"><SiteIcon name="updates"/><span>更新日志</span></button>
-        <button :class="{ 'has-unread': incomingRequestCount > 0 }" :title="incomingRequestCount ? `在线玩家 · ${incomingRequestCount} 个未读好友申请` : '在线人数'" @click="openSiteModal('online')"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><span>在线人数</span><b v-if="incomingRequestCount" class="utility-unread" :aria-label="`${incomingRequestCount} 个未读好友申请`">{{ incomingRequestCount }}</b></button>
+        <button :class="{ 'has-unread': incomingRequestCount + chatUnread > 0 }" title="在线玩家与好友消息" :aria-expanded="socialOpen" @click="toggleSocial($event)"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><span>在线 / 消息</span><b v-if="incomingRequestCount + chatUnread" class="utility-unread" :aria-label="`${incomingRequestCount + chatUnread} 条待查看消息或申请`">{{ incomingRequestCount + chatUnread }}</b></button>
         <button class="connection" :class="l12State.status" :title="connectionLabel"><span class="utility-icon"><SiteIcon name="connection"/><i/></span><span>{{ connectionLabel }}</span></button>
       </div>
     </aside>
@@ -852,8 +864,9 @@ onBeforeUnmount(() => {
         </article>
       </section>
 
-      <section v-else class="site-modal online-modal">
-        <header><div><small>ONLINE</small><h2>在线玩家</h2></div><button @click="modal = null">×</button></header>
+    </div>
+    <SocialPopover v-if="socialOpen" :anchor="socialAnchor" initial-tab="online" @close="socialOpen = false">
+      <template #online>
         <p v-if="onlineNotice" class="online-notice">{{ onlineNotice }}</p>
         <div v-for="player in onlinePlayers" :key="player.accountId" class="online-entry">
           <i/><div class="online-identity"><b>{{ player.username }}</b><span>{{ player.accountId === platformState.account?.id ? '在线 · 当前账号' : activityLabel(player) }}</span><em v-if="player.friendStatus === 'pending' && player.friendDirection === 'incoming'" class="online-unread">新好友申请</em></div>
@@ -871,8 +884,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div v-if="onlinePlayers.length === 0" class="modal-empty">登录并连接服务器后可查看在线玩家。</div>
-      </section>
-    </div>
+      </template>
+    </SocialPopover>
 
     <div v-if="accountGate" class="site-modal-mask account-gate ui-state-scope">
       <section class="site-modal auth-modal">

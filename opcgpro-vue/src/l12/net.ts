@@ -5,6 +5,7 @@ import type { EffectiveOperationsPolicy, PlatformPresence, RankedSettlement } fr
 import type { MatchGovernanceResult } from './matchGovernance'
 import { createGameReentryController } from './gameReentry'
 import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
+import { chatResource } from './chatResource'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -553,6 +554,7 @@ export function connect(): Promise<void> {
     }
     const failConnection = (reason: string) => {
       if (!isCurrentAttempt() || failed) return
+      chatResource.disconnected()
       failed = true
       clearHeartbeat()
       clearSnapshotRecovery()
@@ -608,7 +610,7 @@ export function connect(): Promise<void> {
       socket.send(JSON.stringify({
         type: 'hello',
         authToken,
-        capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true },
+        capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true, chatV1: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -640,6 +642,10 @@ export function connect(): Promise<void> {
         l12State.accountId = String(message.accountId || '')
         l12State.nickname = message.name
         l12State.connectionGeneration = claimedGeneration
+        chatResource.connect(l12State.accountId, message.capabilities?.chatV1 === true, payload => {
+          if (!isCurrentAttempt() || failed || socket.readyState !== WebSocket.OPEN) return false
+          try { socket.send(JSON.stringify(payload)); return true } catch { return false }
+        }, message.chatServerUtcMs)
         l12State.recoveryPhase = 'session-claimed'
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         startHeartbeat(socket, () => failConnection('服务器长时间未响应心跳，正在自动重连。'))
@@ -681,11 +687,13 @@ export function connect(): Promise<void> {
         settle(new Error(l12State.notice))
         socket.close(4002, 'session superseded')
       }
+      else if (['chatAck', 'chatMessage', 'chatHistory', 'chatReadAck'].includes(message.type)) chatResource.receive(message)
       else if (message.type === 'pong') l12State.lastPongAt = new Date().toISOString()
       else if (message.type === 'roomState') {
         if (l12State.leavingRoom) return
         l12State.room = message
         if (!message.started) {
+          if (l12State.game) chatResource.retireOpponent(l12State.game.matchId)
           l12State.game = null
           l12State.rankedClock = null
           l12State.spectating = false
@@ -811,6 +819,7 @@ export function connect(): Promise<void> {
         l12State.notice = message.message || '匹配请求未能完成'
       }
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
+        if (l12State.game) chatResource.retireOpponent(l12State.game.matchId)
         clearMatchmakingRecovery()
         clearSnapshotRecovery()
         if (l12State.status === 'online' && l12State.recoveryPhase === 'snapshot-mismatch')
@@ -845,6 +854,8 @@ export function connect(): Promise<void> {
             && l12State.recoveryPhase === 'snapshot-mismatch'
             && (!incoming.roomCode || l12State.room?.roomCode === incoming.roomCode)
           l12State.game = incoming
+          if (current && current.matchId !== incoming.matchId) chatResource.retireOpponent(current.matchId)
+          if (incoming.phase === 'GameOver') chatResource.retireOpponent(incoming.matchId)
           lastGameStateEnvelope = JSON.parse(JSON.stringify(message))
           l12State.rankedClock = message.rankedClock
             ? { ...(message.rankedClock as RankedClockView), receivedAtMs: Date.now() }
@@ -942,6 +953,7 @@ export function connect(): Promise<void> {
     socket.onerror = () => failConnection('暂时无法连接服务器，正在自动重试。')
     socket.onclose = (event) => {
       if (isCurrentAttempt()) {
+        chatResource.disconnected()
         failed = true
         clearSnapshotRecovery()
         clearHandshakeTimer()
@@ -998,6 +1010,7 @@ export function stopAutomaticConnection() {
 }
 
 export function disconnect() {
+  chatResource.reset()
   automaticConnectionEnabled = false
   connectionAttemptSerial += 1
   clearReconnectTimer()

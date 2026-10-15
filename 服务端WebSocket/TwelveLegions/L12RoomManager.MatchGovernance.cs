@@ -207,7 +207,11 @@ public sealed partial class L12RoomManager
                         Console.Error.WriteLine($"Match draw acceptance rollback ({room.Code}): "
                                                 + abortError.Message);
                     }
-                    if (room.RankedClock is null) room.Closed = true;
+                    if (room.RankedClock is null)
+                    {
+                        room.Closed = true;
+                        WithdrawOpponentChatScopeLocked(room);
+                    }
                 }
                 else
                 {

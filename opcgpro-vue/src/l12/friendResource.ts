@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { friendApi, platformState, type PlatformFriend } from './platform'
+import { chatResource } from './chatResource'
 
 export const friendResource = reactive({
   accountId: '',
@@ -33,11 +34,14 @@ export function refreshFriendResource() {
   if (friendResource.accountId !== accountId) resetFriendResource(accountId)
   if (pending) return pending
   const expected = generation
+  const expectedPrivacy = chatResource.state.privacyRevision
   dirty = false
   let request: Promise<void>
   request = friendApi.overview().then(overview => {
     if (expected !== generation || accountId !== platformState.account?.id) return
+    if (expectedPrivacy !== chatResource.state.privacyRevision) { dirty = true; return }
     friendResource.friends = overview.friends
+    for (const friend of overview.friends) chatResource.acceptFriend(friend.accountId)
     friendResource.requests = overview.requests
     friendResource.blocked = overview.blocked
     friendResource.loaded = true

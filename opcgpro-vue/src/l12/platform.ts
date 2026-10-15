@@ -4,6 +4,7 @@ import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
 import { endpointHttpBase } from './deploymentBase'
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
+import { chatResource } from './chatResource'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -1890,12 +1891,22 @@ export const friendApi = {
   resolve: (requesterId: string, accept: boolean) => platformRequest<{ message: string }>(`/api/friends/requests/${encodeURIComponent(requesterId)}/resolve`, {
     method: 'POST', body: JSON.stringify({ accept }),
   }),
-  remove: (accountId: string) => platformRequest<void>(`/api/friends/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+  remove: (accountId: string) => withChatPrivacyMutation(accountId, false, () => platformRequest<void>(`/api/friends/${encodeURIComponent(accountId)}`, { method: 'DELETE' })),
   blocked: () => platformRequest<PlatformFriend[]>('/api/friends/blocked'),
-  block: (accountId: string) => platformRequest<{ message: string }>('/api/friends/blocked', {
+  block: (accountId: string) => withChatPrivacyMutation(accountId, true, () => platformRequest<{ message: string }>('/api/friends/blocked', {
     method: 'POST', body: JSON.stringify({ accountId }),
-  }),
-  unblock: (accountId: string) => platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' }),
+  })),
+  unblock: async (accountId: string) => {
+    const owner = platformState.account?.id
+    await platformRequest<void>(`/api/friends/blocked/${encodeURIComponent(accountId)}`, { method: 'DELETE' })
+    if (owner === platformState.account?.id) chatResource.unblock(accountId)
+  },
+}
+
+async function withChatPrivacyMutation<T>(peer: string, allScopes: boolean, action: () => Promise<T>): Promise<T> {
+  const complete = chatResource.suspend(peer, allScopes)
+  try { const result = await action(); complete(true); return result }
+  catch (error) { complete(error instanceof PlatformRequestError && error.status >= 400 && error.status < 500 && ![408, 425].includes(error.status) ? false : 'unknown'); throw error }
 }
 
 export const telemetryApi = {

@@ -466,6 +466,7 @@ public sealed partial class L12PlatformStore
             account.PermissionVersion++;
             AddAdminAudit(actor, "account", "logical-delete", account.Id, FingerprintValue(oldUsername),
                 account.Username, reason.Trim(), context with { Reason = reason.Trim() });
+            _pendingChatAccountDeletions.Add(account.Id);
             Save();
             result = new(true, ToView(account), revokedIds.Length, privateRecords);
         }

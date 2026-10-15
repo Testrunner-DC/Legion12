@@ -50,6 +50,7 @@ public sealed partial class L12RoomManager
             {
                 await _recorder.StartAsync(room.Game, room.Options.MatchModeId,
                     members[0].AccountId, members[1].AccountId, decks, bindings);
+                RefreshOpponentChatScopeLocked(room);
                 return;
             }
             if (members.Count != 2 || decks.Count != 2
@@ -62,6 +63,7 @@ public sealed partial class L12RoomManager
                 await _recorder.StartTimedAsync(room.Game, room.Options.MatchModeId,
                     members[0].AccountId!, members[1].AccountId!, decks,
                     CaptureRankedRuntime(room, _utcNow()), bindings);
+            RefreshOpponentChatScopeLocked(room);
         }
         finally
         {
@@ -214,6 +216,7 @@ public sealed partial class L12RoomManager
                 }
                 else
                 {
+                    RefreshOpponentChatScopeLocked(room);
                     restored++;
                 }
             }
@@ -455,6 +458,7 @@ public sealed partial class L12RoomManager
 
     private void RemoveRestoredRankedRoom(Room room)
     {
+        WithdrawOpponentChatScopeLocked(room);
         ((ICollection<KeyValuePair<string, Room>>)_rooms)
             .Remove(new KeyValuePair<string, Room>(room.Code, room));
         foreach (var id in room.Sessions) _sessions.TryRemove(id, out _);
@@ -576,9 +580,17 @@ public sealed partial class L12RoomManager
     private async Task<bool> ReloadRankedRoomFromRecorderAsync(Room room)
     {
         var matchId = room.Game?.State.MatchId;
-        if (string.IsNullOrWhiteSpace(matchId)) return false;
+        if (string.IsNullOrWhiteSpace(matchId))
+        {
+            WithdrawOpponentChatScopeLocked(room);
+            return false;
+        }
         var source = await _recorder.LoadActiveRankedMatchAsync(matchId);
-        if (source is null || source.LoadError is not null || source.Runtime is null) return false;
+        if (source is null || source.LoadError is not null || source.Runtime is null)
+        {
+            WithdrawOpponentChatScopeLocked(room);
+            return false;
+        }
         var engine = ReplayRankedEngine(source);
         _recorder.RegisterRecoveredEngine(engine);
         room.Game = engine;
@@ -594,6 +606,7 @@ public sealed partial class L12RoomManager
                 request.Accepted, request.Error, request.Revision);
         room.Closed = false;
         RestoreRankedClock(room, source.Runtime);
+        RefreshOpponentChatScopeLocked(room);
         return true;
     }
 

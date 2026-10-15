@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-chat-internal-boundaries",
+  "date": "2026-10-16",
+  "audience": "internal",
+  "reason": "仅测试服显式开启聊天；复用既有有界连接起发与已提交身份/好友事实，新增独立有界聊天领域持久化和同事务目标账户清理，保持正式默认关闭。此记录不等于已部署或性能容量结论。",
+  "paths": ["服务端WebSocket/Program.cs", "服务端WebSocket/TwelveLegions/L12OutboundConnection.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.ChatPersistence.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedPresenceReads.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AdminControlPlane.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.EmailAuth.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs", "ops/server/legion12-testrun.service"]
+}

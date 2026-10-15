@@ -281,6 +281,7 @@ public sealed partial class L12PlatformStore
     {
         var operationMetric = L12PlatformOperationMetrics.Begin();
         var operationSucceeded = false;
+        var chatAccountDeletions = _pendingChatAccountDeletions.ToArray();
         try
         {
         IDisposable? deployment;
@@ -330,6 +331,8 @@ public sealed partial class L12PlatformStore
                     throw new L12PrivateDeckStorageConflictException(expectedRevision, currentStorageRevision);
             }
             SynchronizeRankedBroadcastObjectsForFullSave(connection, transaction, _data);
+            if (objectWrite is null && chatAccountDeletions.Length != 0)
+                SynchronizeChatAccountDeletions(connection, transaction, _data, chatAccountDeletions);
             var snapshot = PrepareCoreSnapshot(_data, connection, transaction);
             if (privateDeckObjectWrite) StorageFailureInjector?.Invoke("before-private-deck-snapshot");
             StorageFailureInjector?.Invoke("before-mirror-serialize");
@@ -389,6 +392,8 @@ public sealed partial class L12PlatformStore
         }
         finally
         {
+            foreach (var accountId in chatAccountDeletions)
+                _pendingChatAccountDeletions.Remove(accountId);
             L12PlatformOperationMetrics.RecordOperation(operationMetric.Stop(),
                 L12PlatformOperationKind.TransactionalSave, !operationSucceeded);
         }
@@ -852,6 +857,7 @@ public sealed partial class L12PlatformStore
             CREATE INDEX IF NOT EXISTS ix_audit_archive_until ON audit_archive_segments(until_utc DESC);
             """;
         command.ExecuteNonQuery();
+        InitializeChatStorageSchema(connection);
         InitializeAuditLifecycleSchema(connection);
         try
         {

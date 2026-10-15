@@ -32,6 +32,8 @@
 
 ## F2 测试对象写
 
+聊天默认关闭；本次用户要求收口后部署测试服，测试 service 模板显式 `L12_CHAT_ENABLED=true`，环境文件中的显式 false 可关闭。仍复用原 `/testrun/ws`，不另开连接；正式 service 与正式环境不新增此项。部署后须实际读回 session 的 `chatV1` 能力并验证双方消息、历史和拒收，不能用 health 代替功能验收。此段为本批配置合同，不代表已经部署。
+
 2026-10-02 起，已获授权的测试service显式配置 `L12_PRIVATE_DECK_OBJECT_PERSISTENCE=true`；测试环境文件显式false可覆盖并在同版本重启后回到全量路径。正常正式service未配置，默认关闭。开关只在启动时捕获，变更需重启，不是运营配置热更新。受保护只读状态 `GET /api/admin/storage/private-deck-persistence` 必须读回 `configuredEnabled=true`、`effectiveMode=object`、`writable=true`；健康接口不披露内部模式。
 
 启用与回退不得用旧库覆盖最新数据。Main通过受控测试牌库CRUD／陈旧标签页冲突和重新登录读回验证；生产副本预演与生产启用另行批准。详情见 `F2-CONTROLLED-ENABLE-20261002.md`。

@@ -159,11 +159,13 @@ public sealed partial class L12PlatformStore
                     var revocationCountAtEntry = _pendingSessionRevocations.Count;
                     var saveRequestedAtEntry = _adminTransactionSaveRequested;
                     var businessChangedAtEntry = _adminTransactionBusinessChanged;
+                    var chatAccountDeletionsAtEntry = _pendingChatAccountDeletions.ToArray();
                     if (outer)
                     {
                         _adminTransactionSaveRequested = false;
                         _adminTransactionBusinessChanged = false;
                         _pendingSessionRevocations.Clear();
+                        _pendingChatAccountDeletions.Clear();
                         revocationCountAtEntry = 0;
                     }
 
@@ -189,6 +191,9 @@ public sealed partial class L12PlatformStore
                             _adminTransactionSaveRequested = outer ? false : saveRequestedAtEntry;
                             _adminTransactionBusinessChanged = outer ? false : businessChangedAtEntry;
                             TrimPendingSessionRevocations(revocationCountAtEntry);
+                            _pendingChatAccountDeletions.Clear();
+                            foreach (var accountId in chatAccountDeletionsAtEntry)
+                                _pendingChatAccountDeletions.Add(accountId);
                         }
                         throw;
                     }
@@ -227,6 +232,7 @@ public sealed partial class L12PlatformStore
                         _adminTransactionSaveRequested = false;
                         _adminTransactionBusinessChanged = false;
                         _pendingSessionRevocations.Clear();
+                        _pendingChatAccountDeletions.Clear();
                     }
                 }
                 finally

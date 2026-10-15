@@ -3,12 +3,16 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getResponsePreference, l12State, setResponsePreference, type ResponseMode } from '../net'
 import { friendApi } from '../platform'
 import { reportOpponent, requestMatchDraw, resolveMatchDraw } from '../matchGovernance'
-import FriendsPage from '../site/FriendsPage.vue'
+import SocialPopover from '../site/SocialPopover.vue'
+import { chatResource } from '../chatResource'
 import { landscapeTeleportTarget } from '../mobileViewport'
 
 defineEmits<{ settings: [] }>()
 
 const showFriends = ref(false)
+const friendsAnchor = ref<HTMLElement | null>(null)
+const chatUnread = computed(() => Object.values(chatResource.state.threads).reduce((sum, item) => sum + item.unread, 0))
+function toggleFriends(event: Event) { friendsAnchor.value = event.currentTarget as HTMLElement; showFriends.value = !showFriends.value }
 const showTools = ref(false)
 const responseOpen = ref(false)
 const toolView = ref<'menu' | 'draw' | 'report' | 'response'>('menu')
@@ -108,7 +112,7 @@ onBeforeUnmount(() => {
 async function blockOpponent() {
   const accountId = governance.value?.opponentAccountId
   const name = governance.value?.opponentName || '对手'
-  if (!accountId || !window.confirm(`屏蔽「${name}」后将不再接受其好友申请；不会影响当前对局或匹配。确定继续吗？`)) return
+  if (!accountId || !window.confirm(`屏蔽「${name}」后将不再接受其消息或好友申请；不会影响当前对局或匹配。确定继续吗？`)) return
   busy.value = true
   notice.value = ''
   try { notice.value = (await friendApi.block(accountId)).message }
@@ -171,25 +175,21 @@ function saveResponseSettings() {
 </script>
 
 <template>
-  <aside v-if="!l12State.spectating" class="battle-utility-dock" aria-label="对局通用功能">
+  <aside class="battle-utility-dock" :class="{ 'spectator-utilities': l12State.spectating }" aria-label="对局通用功能">
     <button type="button" title="设置" aria-label="打开对局设置" @click="$emit('settings')">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.2 4.9v-2.8l-2-.7a7 7 0 0 0-.7-1.6l.9-1.9-2-2-1.9.9a7 7 0 0 0-1.6-.7l-.7-2H9.4l-.7 2a7 7 0 0 0-1.6.7l-1.9-.9-2 2 .9 1.9a7 7 0 0 0-.7 1.6l-2 .7v2.8l2 .7c.2.6.4 1.1.7 1.6l-.9 1.9 2 2 1.9-.9c.5.3 1 .5 1.6.7l.7 2h2.8l.7-2c.6-.2 1.1-.4 1.6-.7l1.9.9 2-2-.9-1.9c.3-.5.5-1 .7-1.6l2-.7Z"/></svg>
     </button>
-    <button type="button" title="好友" aria-label="打开好友功能" @click="showFriends = true">
+    <button type="button" title="好友与聊天" aria-label="打开好友功能" :aria-expanded="showFriends" @click="toggleFriends($event)">
+      <span v-if="chatUnread" class="battle-chat-unread" :aria-label="`${chatUnread} 条未读消息`">{{ chatUnread }}</span>
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M8.2 11.2a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2Zm7.7-.9a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM1.8 20.8h12.8v-2.1c0-3.5-2.9-6.3-6.4-6.3s-6.4 2.8-6.4 6.3v2.1Zm13.8 0h6.6v-1.7c0-3.1-2.2-5.7-5.2-6.2a7.8 7.8 0 0 1-1.4 7.9Z"/></svg>
     </button>
-    <button type="button" title="对局工具" aria-label="打开对局工具" @click="showTools = true; toolView = 'menu'">
+    <button v-if="!l12State.spectating" type="button" title="对局工具" aria-label="打开对局工具" @click="showTools = true; toolView = 'menu'">
       <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>
     </button>
   </aside>
 
   <Teleport :to="landscapeTeleportTarget()">
-    <div v-if="showFriends" class="battle-modal-mask" @click.self="showFriends = false">
-      <section class="battle-dialog friends-shell" role="dialog" aria-modal="true" aria-labelledby="battle-friends-title">
-        <header><h2 id="battle-friends-title">好友</h2><button type="button" aria-label="关闭好友功能" @click="showFriends = false">×</button></header>
-        <FriendsPage />
-      </section>
-    </div>
+    <SocialPopover v-if="showFriends" :anchor="friendsAnchor" :opponent-id="!l12State.spectating ? governance?.opponentAccountId : undefined" :opponent-name="governance?.opponentName" :match-id="l12State.game?.matchId" :opponent-read-only="l12State.game?.phase === 'GameOver' || l12State.leavingRoom" @close="showFriends = false"/>
 
     <div v-if="showTools && !l12State.spectating" class="battle-modal-mask" @click.self="showTools = false">
       <section class="battle-dialog tools-dialog" role="dialog" aria-modal="true" aria-labelledby="battle-tools-title">
@@ -199,7 +199,7 @@ function saveResponseSettings() {
         <div v-if="toolView === 'menu'" class="tool-menu" data-ui-contract="equal-option-group">
           <button type="button" :disabled="busy" @click="openResponseSettings">响应设置<span>默认 / 仅有效响应 / 5秒关闭无效响应</span></button>
           <button type="button" :disabled="!governance?.canRequestDraw || busy" @click="toolView = 'draw'; notice = ''">申请平局<span>{{ governance?.drawUnavailableReason || '本局双方合计仅可申请一次' }}</span></button>
-          <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>仅屏蔽好友申请，不影响本局或匹配</span></button>
+          <button type="button" :disabled="!governance?.opponentAccountId || busy" @click="blockOpponent">屏蔽对手<span>拒收消息与好友申请，不影响本局或匹配</span></button>
           <button type="button" :disabled="!governance?.canReportOpponent || busy" @click="toolView = 'report'; notice = ''">举报对手<span>{{ governance?.reportUnavailableReason || '提交对手违规行为' }}</span></button>
           <button v-if="drawRequest?.viewerCanRespond" type="button" class="attention" @click="responseOpen = true">处理平局申请<span>{{ drawRequest.requesterName }} 正在等待答复</span></button>
           <p v-else-if="drawRequest?.status === 'pending'">平局申请等待 {{ drawRequest.responderName }} 处理。</p>
@@ -255,4 +255,7 @@ function saveResponseSettings() {
 .tool-menu>button{box-sizing:border-box;height:86px;min-height:86px;max-height:86px;overflow:hidden}.tool-menu>button span{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2}.tool-menu>button.attention{grid-column:auto}.tool-menu>p{grid-column:1/-1}
 .battle-dialog footer button{box-sizing:border-box;width:132px;min-width:132px;max-width:132px;height:48px;min-height:48px;max-height:48px;padding:7px 10px;line-height:1.25;text-align:center;white-space:normal;overflow:hidden;text-wrap:balance}
 .response-settings-form fieldset{display:grid;gap:8px;margin:0;padding:0;border:0}.response-settings-form fieldset>label{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid #485760;background:#0b141a;cursor:pointer}.response-settings-form input{width:18px;height:18px;accent-color:#d4b85f}.response-settings-form label span{display:grid;gap:3px}.response-settings-form label b{color:#fff}.response-settings-form label small{color:#93a0a5;font:400 13px 'Microsoft YaHei','微软雅黑';letter-spacing:0}
+</style>
+<style scoped>
+.battle-utility-dock.spectator-utilities{grid-template-columns:repeat(2,1fr)}.battle-utility-dock>button{position:relative}.battle-chat-unread{position:absolute;top:3px;right:3px;min-width:16px;padding:2px;border-radius:10px;background:#9b3341;color:#fff;font-size:11px}
 </style>

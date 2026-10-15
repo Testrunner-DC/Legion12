@@ -309,6 +309,7 @@ public sealed partial class L12RoomManager
                         }
                         // 冻结房间只有在权威重建和本次连接边界均已落盘后才能重新接收命令。
                         recoveredRoom.Closed = false;
+                        RefreshOpponentChatScopeLocked(recoveredRoom);
                     }
                     finally { recoveredRoom.Gate.Release(); }
                 }
@@ -1791,6 +1792,7 @@ public sealed partial class L12RoomManager
                     // Socket 已实际离线，不能回滚为 connected；冻结房间，避免继续在未落盘
                     // 的连接边界上接受命令。下次启动会从最后 1 秒 checkpoint 安全恢复。
                     room.Closed = true;
+                    WithdrawOpponentChatScopeLocked(room);
                     Console.Error.WriteLine($"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
                     return Error(sessionId, "排位断线状态无法持久化，房间已安全冻结");
                 }
@@ -2093,9 +2095,17 @@ public sealed partial class L12RoomManager
     private async Task<bool> ReloadJournalRoomFromRecorderAsync(Room room)
     {
         var matchId = room.Game?.State.MatchId;
-        if (string.IsNullOrWhiteSpace(matchId)) return false;
+        if (string.IsNullOrWhiteSpace(matchId))
+        {
+            WithdrawOpponentChatScopeLocked(room);
+            return false;
+        }
         var recovered = await _recorder.LoadJournalEngineAsync(matchId);
-        if (recovered is null) return false;
+        if (recovered is null)
+        {
+            WithdrawOpponentChatScopeLocked(room);
+            return false;
+        }
         room.Game = recovered.Engine;
         room.CommandSequence = recovered.CommandSequence;
         room.ProcessedActionRequests.Clear();
@@ -2104,6 +2114,7 @@ public sealed partial class L12RoomManager
             room.RememberProcessedActionRequest(request.PlayerIndex, request.RequestId,
                 request.Accepted, request.Error, request.Revision);
         room.Closed = false;
+        RefreshOpponentChatScopeLocked(room);
         return true;
     }
 
@@ -2127,6 +2138,7 @@ public sealed partial class L12RoomManager
     private async Task<string?> CompleteTournamentRoomGameAsync(Room room)
     {
         if (room.Game is null || room.Game.State.Phase != L12Phase.GameOver) return null;
+        WithdrawOpponentChatScopeLocked(room);
         room.SettlementStartedAt ??= _utcNow();
         if (!room.Game.State.EndedByAgreedDraw)
         {

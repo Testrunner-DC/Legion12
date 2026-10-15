@@ -378,7 +378,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
-        bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false);
+        bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -429,10 +429,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         IL12ModianImportClient? modianImportClient = null,
         TimeSpan? sandboxReplayMaintenanceInterval = null,
         Func<L12ServerStorageView>? storageSnapshot = null,
-        Func<DateTimeOffset>? seasonActivationUtcNow = null)
+        Func<DateTimeOffset>? seasonActivationUtcNow = null,
+        bool chatEnabled = false)
         : this(rooms, recorder, platform, catalog, releaseControl, rankedIntegrityHmacKey,
             rankedClockWatchdogInterval, modianImportClient, sandboxReplayMaintenanceInterval,
-            storageSnapshot, seasonActivationUtcNow, null)
+            storageSnapshot, seasonActivationUtcNow, null, chatEnabled)
     {
     }
 
@@ -443,7 +444,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         TimeSpan? sandboxReplayMaintenanceInterval,
         Func<L12ServerStorageView>? storageSnapshot,
         Func<DateTimeOffset>? seasonActivationUtcNow,
-        L12SyntheticTransportDiagnostics? transportDiagnostics)
+        L12SyntheticTransportDiagnostics? transportDiagnostics,
+        bool chatEnabled = false)
     {
         _rooms = rooms;
         _recorder = recorder;
@@ -470,6 +472,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _catalog = catalog;
         _cardCount = catalog.Cards.Count;
         _platform.SessionsRevoked += HandlePlatformSessionsRevoked;
+        InitializeChatRuntime(chatEnabled);
     }
 
     public async Task StartAsync(int port)
@@ -4384,6 +4387,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     (payload, diagnostic, token) => SendDirectAsync(acceptedSocket, snapshotCodec,
                         presenceSnapshotCodec, payload, diagnostic, token),
                     OutboundFault, SocketSendTimeout);
+            ConfigureChatOutbound(sessionId, acceptedSocket, outbound);
             _outboundConnections[sessionId] = outbound;
             var deploymentDrain = _rooms.DeploymentDrain;
             void InboundFault(Exception error)
@@ -4574,6 +4578,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "gmAction" when root.TryGetProperty("command", out var gmCommand)
                         => await _rooms.HandleGmActionAsync(sessionId, gmCommand,
                             GetString(root, "requestId")),
+                    "chatSend" => QueueChatSend(sessionId, root),
+                    "chatSync" => QueueChatSync(sessionId, root),
+                    "chatRead" => QueueChatRead(sessionId, root),
                     "getEffectiveOperationsPolicy" => [EffectiveOperationsPolicyMessage(sessionId)],
                     "ping" => [new OutgoingMessage(sessionId, new { type = "pong", utc = DateTimeOffset.UtcNow })],
                     "deploymentProbe" => [new OutgoingMessage(sessionId, new
@@ -4910,12 +4917,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
                 claim.RecoveryRevision,
                 protocolVersion = 2,
+                chatServerUtcMs = _chatEnabled && capabilities.ChatV1
+                    ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : (long?)null,
                 capabilities = new
                 {
                     requestIds = capabilities.RequestIds,
                     deltaGameState = capabilities.DeltaGameState,
                     eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
                     presenceDeltaV1 = capabilities.PresenceDeltaV1,
+                    chatV1 = _chatEnabled && capabilities.ChatV1,
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
@@ -4998,11 +5008,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .Select(item => item.GetString())
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
-                requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"));
+                requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"),
+                requested.Contains("chatV1"));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
-            GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false));
+            GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false),
+            GetBool(value, "chatV1", false));
     }
 
     private IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, JsonElement deckElement)
@@ -6277,16 +6289,23 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private L12AdminCommandResult<L12AccountStatusOperationView> ExecuteAccountStatus(L12AccountView actor,
         L12AccountStatusCommandPayload payload, L12AdminAuditContext audit, bool apply)
     {
+        L12ChatAccountRegistry.MutationLease? mutation = null;
         try
         {
+            if (apply && !TryBeginChatAccountMutation(payload.AccountId, out mutation))
+                return L12AdminCommandResult<L12AccountStatusOperationView>.Fail("chat_fence_busy",
+                    "账号聊天撤权栅栏正忙，请稍后重试", StatusCodes.Status503ServiceUnavailable);
             var operation = _platform.SetAccountDisabled(actor, payload.AccountId, payload.Disabled,
                 payload.Reason, audit, apply);
+            mutation?.Complete(operation.Applied
+                ? L12ChatMutationOutcome.Committed : L12ChatMutationOutcome.KnownRollback);
             if (operation.Applied) _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountStatusOperationView>.Ok(operation,
                 apply ? "账号状态已更新" : "干运行验证通过");
         }
         catch (L12SecurityPolicyException error)
         {
+            mutation?.Complete(L12ChatMutationOutcome.KnownRollback);
             var status = error.Code == "security_reason_required"
                 ? StatusCodes.Status400BadRequest
                 : StatusCodes.Status403Forbidden;
@@ -6294,9 +6313,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
         catch (KeyNotFoundException error)
         {
+            mutation?.Complete(L12ChatMutationOutcome.KnownRollback);
             return L12AdminCommandResult<L12AccountStatusOperationView>.Fail("account_not_found", error.Message,
                 StatusCodes.Status404NotFound);
         }
+        finally { FinishChatAccountMutation(mutation); }
     }
 
     private L12AdminCommandResult<L12AdminPasswordResetView> ExecuteAdminPasswordReset(L12AccountView actor,
@@ -6324,31 +6345,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private L12AdminCommandResult<L12AccountDeletionView> ExecuteAccountDeletion(L12AccountView actor,
         AccountDeletionCommandPayload payload, L12AdminAuditContext audit, bool apply)
     {
+        L12ChatAccountRegistry.MutationLease? mutation = null;
         try
         {
             var preview = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, false);
             if (!apply)
                 return L12AdminCommandResult<L12AccountDeletionView>.Ok(preview, "干运行验证通过");
+            if (!TryBeginChatAccountMutation(payload.AccountId, out mutation))
+                return L12AdminCommandResult<L12AccountDeletionView>.Fail("chat_fence_busy",
+                    "账号聊天撤权栅栏正忙，请稍后重试", StatusCodes.Status503ServiceUnavailable);
             var prior = _platform.Account(payload.AccountId)!;
             var cleanedMatches = _recorder.AnonymizeAccountAsync(prior.Id, prior.Username,
                 L12PlatformStore.DeletedAccountName(prior.Id)).GetAwaiter().GetResult();
             var operation = _platform.DeleteAccountPersonalData(actor, payload.AccountId, payload.Reason,
                 audit, true) with { CleanedMatchRecords = cleanedMatches };
+            mutation?.Complete(L12ChatMutationOutcome.Committed);
             _recorder.InvalidateAnalyticsCache();
             return L12AdminCommandResult<L12AccountDeletionView>.Ok(operation, "账号已逻辑删除并清理个人数据");
         }
         catch (L12SecurityPolicyException error)
         {
+            mutation?.Complete(L12ChatMutationOutcome.KnownRollback);
             return L12AdminCommandResult<L12AccountDeletionView>.Fail(error.Code, error.Message,
                 error.Code == "security_reason_required" ? StatusCodes.Status400BadRequest
                     : StatusCodes.Status403Forbidden);
         }
         catch (KeyNotFoundException error)
         {
+            mutation?.Complete(L12ChatMutationOutcome.KnownRollback);
             return L12AdminCommandResult<L12AccountDeletionView>.Fail("account_not_found", error.Message,
                 StatusCodes.Status404NotFound);
         }
+        finally { FinishChatAccountMutation(mutation); }
     }
 
     private L12AdminCommandResult<L12AuditArchiveOperationView> ExecuteAuditArchive(L12AccountView actor,
@@ -6432,6 +6461,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
+        if (_chatRuntime is not null) await _chatRuntime.DisposeAsync();
         await _presenceRefreshCoalescer.DisposeAsync();
         await StopSeasonActivationCoordinatorAsync();
         await StopRulesContentTransitionAsync();

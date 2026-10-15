@@ -37,6 +37,7 @@ public sealed partial class L12RoomManager
 
     private IReadOnlyList<OutgoingMessage> CloseSettlementLocked(Room room)
     {
+        WithdrawOpponentChatScopeLocked(room);
         room.Closed = true;
         _rooms.TryRemove(room.Code, out _);
         Guid[] spectators;

@@ -12,6 +12,15 @@ internal sealed record L12CommittedPresencePlatformView(
 internal readonly record struct L12CommittedChatRelationshipView(
     long Revision, bool Available, bool AcceptedAndUnblocked);
 
+internal readonly record struct L12CommittedChatPairView(
+    long Revision,
+    bool Available,
+    bool BothAccountsActive,
+    bool Unblocked,
+    bool AcceptedAndUnblocked,
+    string SenderName,
+    string RecipientName);
+
 public sealed partial class L12PlatformStore
 {
     private sealed record CommittedPresenceFriend(string RequesterId, string AddresseeId,
@@ -73,15 +82,40 @@ public sealed partial class L12PlatformStore
     {
         // Never take the public reader's staged _data branch, even if this caller owns _gate.
         var committed = Volatile.Read(ref _committedSessionActivity);
+        var pair = ReadCommittedChatPair(committed, senderId, recipientId);
+        return new(pair.Revision, pair.Available, pair.AcceptedAndUnblocked);
+    }
+
+    internal L12CommittedChatPairView ReadCommittedChatPair(string senderId, string recipientId)
+        => ReadCommittedChatPair(Volatile.Read(ref _committedSessionActivity), senderId, recipientId);
+
+    internal bool ReadCommittedChatAccountActive(string accountId)
+    {
+        var committed = Volatile.Read(ref _committedSessionActivity);
+        return committed.Available && !string.IsNullOrWhiteSpace(accountId)
+            && committed.ActiveAccounts.ContainsKey(accountId);
+    }
+
+    private static L12CommittedChatPairView ReadCommittedChatPair(CommittedSessionActivity committed,
+        string senderId, string recipientId)
+    {
         var reads = committed.PresenceReads;
-        if (!committed.Available || reads is null) return new(committed.Revision, false, false);
-        var accepted = !string.IsNullOrWhiteSpace(senderId) && !string.IsNullOrWhiteSpace(recipientId)
-            && senderId != recipientId
-            && committed.ActiveAccounts.ContainsKey(senderId) && committed.ActiveAccounts.ContainsKey(recipientId)
-            && reads.ChatRelationships.TryGetValue(ChatPair(senderId, recipientId), out var related) && related
-            && !reads.Blocked.Contains((senderId, recipientId))
+        if (!committed.Available || reads is null)
+            return new(committed.Revision, false, false, false, false, string.Empty, string.Empty);
+        var distinct = !string.IsNullOrWhiteSpace(senderId) && !string.IsNullOrWhiteSpace(recipientId)
+            && senderId != recipientId;
+        L12AccountView? sender = null;
+        L12AccountView? recipient = null;
+        var senderActive = distinct && committed.ActiveAccounts.TryGetValue(senderId, out sender);
+        var recipientActive = distinct && committed.ActiveAccounts.TryGetValue(recipientId, out recipient);
+        var both = senderActive && recipientActive;
+        var unblocked = both && !reads.Blocked.Contains((senderId, recipientId))
             && !reads.Blocked.Contains((recipientId, senderId));
-        return new(committed.Revision, true, accepted);
+        var accepted = unblocked
+            && reads.ChatRelationships.TryGetValue(ChatPair(senderId, recipientId), out var related) && related;
+        return new(committed.Revision, true, both, unblocked, accepted,
+            senderActive ? sender!.Username : string.Empty,
+            recipientActive ? recipient!.Username : string.Empty);
     }
 
     internal L12CommittedPresencePlatformView ReadCommittedPresencePlatformView(string viewerId)
