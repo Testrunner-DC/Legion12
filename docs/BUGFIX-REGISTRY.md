@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 三条已部署卡效逐项闭环｜91本方终态，437待办
+
+- 拉美西斯60d6cfe2：正式19 ThresholdDisasterWaitsForDelegatedDeclarationResponseAndResolution 六臂（双方/三恢复点）明确委托离场早于天灾；本多32e6ef52：HondaAndKagutsuchiResolveCompletelyInEitherDeclaredOrder 四臂明确独立减费与杀0，两项既有fix均0e49a749。奈芙蒂斯632bd568：NephthysReservesOneCandidatePerBatchAndDeclineReleasesTheReservation 一臂明确同批两死仅一询问、拒绝释放，fix35c32332；不将该一臂说成接受后召唤次数或双方矩阵。
+- 原文与原对局绑定新鲜核对不变，原录像分别replay_incompatible/replay_incompatible/replay_payload_expired，不冒称原局恢复通过；Main复用正式19完整7259中的11具名结果、三原19源码规范换行同内容及fix祖先，独立CLEAR，42CCB607为源审。原LF/工作区CRLF比较及proposal漏deployedVersion的纯离线预检失败保留；补实际格式后36关单负例通过，不改产品/测试期望、不重跑有效全门禁。
+- 三项各一次preview/CAS及终态独立读回29829—29831，全部resolved/fixed_verified、原文/优先级/备注/历史保持、会话撤销；bug-closeout-three-card-records-19.json为实际回执。新队列909/437new/261resolved/211closed，新增1单列；本方91=29fixed/55rejected/7duplicate、周期183，原159e只登记原局布局证据/待上线，不计关单。唯一清单与状态对账E1231061；无部署/维护变化。
+
+## BUG-20261015-159e5a22｜原局防守选择区取证（本地修复已验，未部署未关闭）
+
+- 依持续限定取证授权，原单场96检查点与97—103命令加密提取；正式19原DLL/9卡表/依赖对包匹配，Accepted、revision、hash及双遍RNG严格通过。102是要求原报告人player1操作的DefenseChoice，空栈／空提示不代表应自动推进；103投降正常接受，不能称引擎死锁。
+- 原SnapshotFor(1)/102完整未改注入实际GameBoard，旧19在390×844/844×390的“不抵挡”未disabled却完全裁切且无可用滚动；已批b1042135共享CSS下两格初始完整命中，原生触摸各一次正确resolveDefense。Main最终447B571A、权威41C42A07/UI85601F3B，先前相关合成不冒作本原局证据。
+- 本次新增产品改动0，不重跑仍有效1735平台/前端门禁；原真机尺寸、客户端瞬态、manager时钟与服务端ack未知，不把局部复现称原反馈唯一成因或线上已修。原材料与投影DPAPI隔离、无截图或私牌公开；正式分页503原因仍未明，原检查点替代只读提取不等于修复该503。反馈仍等待部署闭环。
+
 ## PLATFORM-20261016-BUG-REPLAY-STAGES｜人工处理阶段的录像保护兼容（本地完成，未部署）
 
 - 只读审计EDC3F42E确认：UpdateBug已合法保存decision/implementation/retest/deploy，但ReplayEvidenceAt只认confirmed/in-progress。用户明确批准仅补四阶段，后续又持续授权按具体报告取证；不改7天、new不保护、终态释放、顶层精确绑定、隐私或正式数据。
