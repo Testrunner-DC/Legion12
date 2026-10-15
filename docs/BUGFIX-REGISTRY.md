@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 cce8上线后精确收口｜159e、孙悟空原案、海拉目标、移动3708
+
+- 159e原102/实际接收者投影的两档移动裁切，已随b1042135进入正式cce8；原权威7命令/hash/双RNG与旧红新绿/两次原生resolveDefense保持，单CAS29887读回resolved/fixed_verified。边界仍非原真机/真实服务器ACK或唯一成因。bug-closeout-mobile159e-cce8.json全会话撤销。
+- 孙悟空BUG-20261011-1adecab5：原绑定已结束友局，认证API有界取235发动/236返还两张/237选格三条均接受，但237新增唯一拒绝事件的SHA精确对应〈傲慢之罪〉额外消耗1士气；8张士气全休整，排除返还预占后普通/临时/可支付公开场上资源均0，拒绝后8张保全。Main核DPAPI分析9075CE04、原页C5CC11F1及标准资源规则；这条按规则说明rejected，不能拿同包13/10/28/88普通链当原故障修复。直接已知cursor定位而非逐个opaque cursor的过程边界保留，无权限绕过/扩大对局或公开私牌。
+- 海拉BUG-20260928-3cd72435：fix58b439b0已在cce8。正式rules.trx E9AC9AE4具名HelaOrdinaryDeclarationKeepsTargetAndColonPaymentThroughResponseAndSettlement四臂全过（双方×恢复），最终响应prompt精确所选目标/前排中格、排除费用和诱饵，双方私密快照不泄漏；PromptOverlay→GameBoard→PlayerMat的既有通用链消费并高亮目标。独审CLEAR，fixed_verified，不处理混合0c66690c。
+- 两项分别CAS29890/29891并独立终态读回、原文历史保持、撤会话；wukong-hela-main-review-cce8.json 8CE875E4及bug-closeout-wukong-hela-cce8.json为实际证据。唯一909/434new/263resolved/212closed，阶段94=31fixed/56rejected/7duplicate、周期186，外部2单列；不新增产品修复/部署/维护写。下面的未上线文字是原历史阶段，不覆盖本节实际闭环。
+- BUG-20261002-3708d46b原移动滑动/确认字裁切：原局故障78有绑定，首张200/opaque下一页409及单关联日志确认第8条resolvePrompt/state-hash不兼容，旧录像未到原故障；私密材料只DPAPI。当前正式cce8保留已验六尺寸/八类/30自然滚动与五真实player目标可达，没有新复现；按检查未复现/历史信息不足rejected，非fixed/duplicate，不声称真机或原78通过。单CAS29898/读回/撤会话，F840423C回执及两份唯一对账；最新909/433new/263resolved/213closed、阶段95=31fixed/57rejected/7duplicate、周期187。P0—P4及产品源码不变，不为了到达旧故障放宽重放哈希。
+
 ## CHAT-20261016-FEATURE-CLOSEOUT｜好友私聊与本局对手聊天（测试服上线已验，正式未启）
 
 - 用户直接要求聊天收口并在完成后部署测试服，随后将正式发布限定为非聊天部分。默认不启用聊天；只测试服务的显式环境变量开启，正式包不携带本批新运行时/协议/持久化/界面。

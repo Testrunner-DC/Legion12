@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-16 接续95｜四条实际关单与固定流程收口
+
+- 159e/海拉3cd已按正式cce8和精确原场景/具名证据fixed_verified；孙悟空1ade原235—237是〈傲慢之罪〉额外1士气不足，原绑定记录说明关闭rejected，不叫产品修复。CAS29887/29890/29891全独立读回且撤会话；唯一909/434new/263resolved/212closed，阶段94=31fixed/56rejected/7duplicate、周期186，外部2不计。
+- Main关单证据在C盘post-release-adversarial-20261014的bug-closeout-mobile159e-cce8.json、bug-closeout-wukong-hela-cce8.json、wukong-hela-main-review-cce8.json（8CE875E4）及两个phase-cce8对账；孙悟空私料DPAPI，直接已知cursor单页取证而非opaque逐页的程序边界如实记录。混合0c66690c不自动关闭。
+- 移动3708原反馈有明确对局，但旧录像到第8条resolvePrompt即state-hash不兼容，无法到达报告78；首张/opaque下一页/单关联枚举日志有界检查后不再反复重试。当前正式共享CSS及六尺寸/八类/30自然滚动、五真实player目标证据未复现，限定按检查未复现且历史资料不足rejected，非fixed或duplicate，不称玩家错误。单CAS29898/独立读回/撤会话，原文历史保留；实际F840423C及两份phase-cce8-mobile3708对账，最新909/433new/263resolved/213closed，阶段95=31fixed/57rejected/7duplicate、周期187；上行94计数为历史。
+- 关单准备已共用15字段/原文及fixed三必填纯离线合同（3正12负）；现有preview/CAS/readback仍唯一写入路径，无新增审批或线上扫描。新疑问只挂关联项，继续下一条，当前两服已上线版本/维护均不变。
+
 ## 2026-10-16 当前实际版本与持续接续
 
 - 正式只用隔离干净cce8候选，不带主树新聊天：7492规则/1735平台0失败跳过，Node22原生堆损坏原失败保留；同源阶段续验完整前端与schema3包通过。包04487D49/DLL16622461，孙悟空同包13引擎/10真实SFC/28命令/88恢复已Main核F4F93D81并查看短横屏图，隐身租约新出口已修。
