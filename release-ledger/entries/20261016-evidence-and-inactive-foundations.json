@@ -3,6 +3,6 @@
   "id": "20261016-evidence-and-inactive-foundations",
   "date": "2026-10-16",
   "audience": "internal",
-  "reason": "兼容Bug人工处理四阶段的既有录像保护；已提交但未启用的聊天连接起发与退休基础守卫。未包含本轮新聊天协议、持久化、界面或启用配置。",
-  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.ReplayEvidence.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"]
+  "reason": "兼容Bug人工处理四阶段的既有录像保护；已提交但未启用的聊天连接起发与退休基础守卫；退役当前正式路由未使用的旧大厅4秒轮询及其过期例外，保留打开时读取。未包含本轮新聊天协议、持久化、界面或启用配置。",
+  "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.ReplayEvidence.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs", "opcgpro-vue/src/components/home/PlayerListPanel.vue"]
 }

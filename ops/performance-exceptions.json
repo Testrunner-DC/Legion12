@@ -18,15 +18,6 @@
       "owner": "沙盒记录导出",
       "reason": "JSON文件下载尚未进入统一请求层，迁移前锁定单一出口",
       "expiresAt": "2026-10-31"
-    },
-    {
-      "id": "PERF-POLL-001",
-      "rule": "interval",
-      "path": "src/components/home/PlayerListPanel.vue",
-      "allowedValue": 1,
-      "owner": "遗留在线玩家面板",
-      "reason": "4秒玩家列表轮询待事件驱动同步批次移除",
-      "expiresAt": "2026-10-15"
     }
   ]
 }

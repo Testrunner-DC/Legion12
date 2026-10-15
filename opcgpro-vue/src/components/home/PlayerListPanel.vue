@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from "vue";
+import { watch } from "vue";
 import { useRouter } from "vue-router";
 import { useStore } from "@/composables/useStore";
 import { useNetStore } from "@/store/netStore";
@@ -19,22 +19,9 @@ const STATUS_LABEL: Record<string, { text: string; cls: string }> = {
   playing:  { text: "对战中", cls: "text-red-400" },
 };
 
-let timer: ReturnType<typeof setInterval> | null = null;
-
-function startPolling() {
-  HomeRequest.requestPlayerList();
-  timer = setInterval(() => HomeRequest.requestPlayerList(), 4000);
-}
-
-function stopPolling() {
-  if (timer) { clearInterval(timer); timer = null; }
-}
-
 watch(() => props.open, (v) => {
-  if (v) startPolling(); else stopPolling();
+  if (v) HomeRequest.requestPlayerList();
 }, { immediate: true });
-
-onUnmounted(stopPolling);
 
 function handleInvite(p: { account: string }) {
   HomeRequest.invitePlayer(p.account);
