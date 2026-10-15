@@ -5098,13 +5098,17 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(SocketSendTimeout);
         var sendStartedAt = L12PerformanceMetrics.Start();
-        await socket.SendAsync(prepared.Payload.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
+        await StartPreparedTextSend(socket, prepared.Payload.AsMemory(), timeout.Token);
         var sendCompletedAt = transportDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
         L12PerformanceMetrics.Duration("websocket.send", sendStartedAt);
         transportDiagnostic?.Sent(sendStartedAt, sendCompletedAt);
         prepared.Commit();
         transportDiagnostic?.Committed(Stopwatch.GetTimestamp());
     }
+
+    internal static ValueTask StartPreparedTextSend(WebSocket socket, ReadOnlyMemory<byte> preparedPayload,
+        CancellationToken cancellationToken)
+        => socket.SendAsync(preparedPayload, WebSocketMessageType.Text, true, cancellationToken);
 
     private async Task RunRankedClockWatchdogAsync(CancellationToken cancellationToken)
     {

@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-15 CHAT-C1B2-S01最终验收｜同步中，未部署
+
+- P2保持唯一传输：仅WS薄同步起发入口与ChatSocketAdmissionBoundaryTests两源；Main读完整源/边界/113专项证据，冻结源F8B1681A/83D755E1。本地完整规则7437有效，夹具职责修正后完整平台1685/1685零失败跳过、实际退出/删除成功；C盘chat-c1b2-s01-20261015/main-local-acceptance.json绑定原失败、focused43C7EB66及最终TRX4C396BCB/receipt3D8D48A7。
+- 未修改聊天生产caller/协议/持久化，聊天仍OFF，不称卡顿或原4条终局长尾已修。夹具独立提交ca6f6651已推送，S01两源和本记录单独精确同步；S02维持只读提案，不自行追加代码或授权部署。
+
 ## 2026-10-15 TEST-FIXTURE-POSTEXIT｜本地验收完成，待同步
 
 - P3测试证据生命周期，不改产品：SelfDamageEntryDiscountProtocolRegressionTests仅在精确监督owned路径/普通目录祖先匹配时交由现有监督器退出后清理；非监督模式原严格删除、精确ClearPool及四类旧异常保护不变。全树链接/外部持锁/缺证明/业务失败仍整轮失败并留证，不清生产池、不增加等待、不改监督器。

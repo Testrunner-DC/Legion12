@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 CHAT-C1B2-S01最终验收｜真实Socket薄起发边界
+
+- 同一SendDirectAsync调用仅经非async internal ValueTask薄函数同步交给既有socket，原payload slice/Text/末帧/token及5秒界、等待、异常、指标和成功提交顺序不变；未配置生产聊天lane，未增加新发送器/协议/SQL。
+- 13新例+73平台邻居+27规则邻居共113专项通过，Main完整读源核SHA；原1671/1672失败保留，finally不能证明原try全过。限定夹具根因独立修正并推送ca6f6651后，新完整平台1685零失败跳过且监督首次实际删除；完整规则7437同产品源有效复用。C盘chat-c1b2-s01-20261015/main-local-acceptance.json、full-platform.trx4C396BCB、receipt3D8D48A7绑定两源F8B1681A/83D755E1。
+- 本地已验而非已部署，生产caller0/聊天OFF；HTTP撤权、外层事务与会话生命周期是后续S02等限定片，不称已覆盖或证明终局性能根治。
+
 ## 2026-10-15 TEST-FIXTURE-POSTEXIT｜仅测试owned目录移交退出后物理清理
 
 - 原全平台1672中既有自伤协议1例finally删除matches.db抛IOException，旧精确ClearPool及有界重试不能避免；原TRX1FC0A99C及失败TEMP保留。finally可覆盖try异常，不能据此声称原轮行为断言完成；旧偶发锁持有者未明。
