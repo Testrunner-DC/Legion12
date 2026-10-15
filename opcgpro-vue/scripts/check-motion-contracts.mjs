@@ -44,6 +44,9 @@ const checks = [
   ['hand FLIP anchors', hand.includes('useFlip') && hand.includes('data-flip-id')],
   ['public hand-add presentation preserved', movement.includes('publicHandAddCaption') && movement.includes("event.type === 'reveal' && /加入手牌/")],
   ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
+  ['template flights release their authority lease on finish and cancellation',
+    between(movement, '  const finish = () => {', '\n  try {').includes('if (!movement.visualOwner) revealTarget(movement)')
+    && between(movement, 'function cancelActiveMovement()', '\nfunction reset()').includes('if (movement && !movement.visualOwner) revealTarget(movement)')],
   ['attack lunge and rest share one visible transaction', statePreparation.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
     && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
     && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],

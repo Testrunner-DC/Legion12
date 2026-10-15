@@ -619,6 +619,10 @@ function showNext() {
     const destination = destinationElement(movement)
     if (destination instanceof HTMLElement) settleElementGeometry(destination)
     activeGhostWrapper = null
+    // Template-rendered flights have no prepared visual owner to release their
+    // destination lease. Cloned holders remain owned by the coordinator so a
+    // successor can take over without revealing authority between actions.
+    if (!movement.visualOwner) revealTarget(movement)
     const release = movement.presentationRelease
     movement.presentationRelease = undefined
     release?.(Boolean(movement.presentationStarted))
@@ -709,6 +713,7 @@ function cancelActiveMovement() {
     if (destination instanceof HTMLElement) settleElementGeometry(destination)
   }
   activeGhostWrapper = null
+  if (movement && !movement.visualOwner) revealTarget(movement)
   const release = movement?.presentationRelease
   if (movement) movement.presentationRelease = undefined
   release?.(Boolean(movement?.presentationStarted))

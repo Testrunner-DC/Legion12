@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 孙悟空完整UI链与备用区域动画租约收口（本地通过，待部署）
+
+- 用户要求收口原1ade孙悟空完整UI链。历史修复DLL13链与冻结19真实UI10链/28命令/88恢复已由Main独立核验，不把createBlock/createVNode夹具修正当产品修复。当前实际SFC、真实样式和同一未改公开DTO复验，首正常链三指令正确发出，但登场卡15秒后仍visibility:hidden；全部modal关闭、图片解码完成、动画节点已消失。只读取证栈确认唯一acquire来自ZoneMovement的模板备用分支coverDestination，未发生release。
+- 全库acquireAuthoritativeCardVisibility调用仅ZoneMovement与CardState；同型是没有可克隆来源/没有prepared visualOwner的区域动画，而非孙悟空卡名。只在ZoneMovement finish/cancel对无visualOwner的movement调用既有幂等revealTarget；有owner的连续交接仍完全交给coordinator，不提前显露真实卡，不改动画时点、命令、费用、卡效或规则。
+- 诊断r6/r8失败保留；最终无源码注入的当前组件10/10（双方、桌面/短横屏/竖屏、两类取消）28实际原生命令通过，motion46/coordinator36绿，独立只读审查CLEAR。C盘artifacts/chat-closeout-20261016/current-wukong-ui-r9-exact-source/report.json绑定真实源/原DTO和截图；只允许本机Vite开发WS，真实游戏WS/API/外网请求0。此证据不是当前DLL重放、线上ack或真iOS；完整候选Release/部署/原反馈关闭另认实际回执。
+
 ## 2026-10-16 三条已部署卡效逐项闭环｜91本方终态，437待办
 
 - 拉美西斯60d6cfe2：正式19 ThresholdDisasterWaitsForDelegatedDeclarationResponseAndResolution 六臂（双方/三恢复点）明确委托离场早于天灾；本多32e6ef52：HondaAndKagutsuchiResolveCompletelyInEitherDeclaredOrder 四臂明确独立减费与杀0，两项既有fix均0e49a749。奈芙蒂斯632bd568：NephthysReservesOneCandidatePerBatchAndDeclineReleasesTheReservation 一臂明确同批两死仅一询问、拒绝释放，fix35c32332；不将该一臂说成接受后召唤次数或双方矩阵。

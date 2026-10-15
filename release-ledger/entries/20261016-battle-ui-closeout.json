@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-battle-ui-closeout",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "对局操作、观战动画与卡牌展示修复",
+  "changes": [
+    { "category": "battle", "text": "修复观战中登场、移动、休整与活跃动画的重复、提前显示及衔接问题；修复部分登场动画结束后卡牌仍隐藏的问题。", "paths": ["opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue", "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue", "opcgpro-vue/src/l12/game/authoritativeCardVisualSnapshot.ts", "opcgpro-vue/src/l12/game/presentationSequenceCoordinator.ts", "opcgpro-vue/src/l12/game/visualTransitionProjection.ts", "opcgpro-vue/src/l12/game/GameBoard.vue"] },
+    { "category": "battle", "text": "减少没有求和申请时结束对局对其他功能保存的等待。", "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedGameplayReads.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.MatchGovernance.cs"] },
+    { "category": "ui", "text": "修复移动端防守、不抵挡、支援及选牌确认按钮被裁切的问题，保留原有选择与最小化操作。", "paths": ["opcgpro-vue/src/l12/game/GameBoard.mobile.css", "opcgpro-vue/src/l12/game/MobileBattleDock.css"] },
+    { "category": "ranking", "text": "榜单改为进入、切换项目或点击刷新后更新，不再自动轮询；精简摘要提示并明确本赛季已定级玩家。", "paths": ["opcgpro-vue/src/l12/site/RankingsPage.vue"] },
+    { "category": "card-effects", "text": "修复孙悟空变身后的休整状态被能力展示改写的问题；海拉的凝视、无畏的刺杀及荣耀的复合效果补齐公共目标展示。", "paths": ["服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs", "服务端WebSocket/TwelveLegions/L12CompositeEffectPlans.cs", "服务端WebSocket/TwelveLegions/L12PublicActiveEffectPlans.cs"] },
+    { "category": "card-effects", "text": "统一卡诺匹斯罐与箱被无效后真实留场、免占普通圣物容量及实际存在判定；伊西斯使用对应圆图，其他主宰在圣物区底层轻微错位展示，不覆盖普通圣物。", "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12CanopicRelicPresence.cs", "服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs", "opcgpro-vue/src/l12/game/PlayerMat.vue", "opcgpro-vue/src/l12/game/canopicRelicPresentation.ts"] }
+  ]
+}
