@@ -4463,6 +4463,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         catch (WebSocketException exception) { Console.WriteLine($"WebSocket {sessionId}: {exception.Message}"); }
         finally
         {
+            CloseChatStartsForTransport(sessionId);
             _sockets.TryRemove(sessionId, out _);
             _establishedInboundConnections.TryRemove(sessionId, out _);
             if (_inboundConnections.TryRemove(sessionId, out var inbound))
@@ -4659,6 +4660,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     binding = currentBinding;
                     break;
                 }
+                CloseChatStartsForTransport(sessionId);
                 if (!TryReleaseSocketPlatformBinding(_socketPlatformSessions, sessionId,
                         currentBinding))
                     return false;
@@ -4881,6 +4883,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
                     presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
+                // ConnectAsync advances the room connection generation before it returns. Fence
+                // the old transport first; a failed/unknown claim never reopens that old lane.
+                if (previousSocket is { } previousId && previousId != Guid.Empty && previousId != sessionId)
+                    CloseChatStartsForTransport(previousId);
                 claim = await _rooms.ConnectAsync(sessionId, authenticated.Account.Id,
                     authenticated.Account.Username,
                     _socketRankedNetworkFingerprints.GetValueOrDefault(sessionId),
@@ -4932,6 +4938,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private async Task SupersedeSocketAsync(Guid sessionId, string accountId,
         CancellationToken cancellationToken)
     {
+        CloseChatStartsForTransport(sessionId);
         if (_inboundConnections.TryGetValue(sessionId, out var inbound))
             inbound.StopAcceptingAndCancelPending();
         var payload = new
@@ -5098,6 +5105,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             && _sockets.TryGetValue(sessionId, out var slowSocket))
             slowSocket.Abort();
         return Task.CompletedTask;
+    }
+
+    private void CloseChatStartsForTransport(Guid sessionId)
+    {
+        if (_outboundConnections.TryGetValue(sessionId, out var outbound))
+            outbound.CloseChatStarts();
     }
 
     // Only the three direct top-level HTTP mutations above use this optional boundary.
@@ -6403,10 +6416,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         var revoked = sessionIds.ToHashSet(StringComparer.Ordinal);
         foreach (var mapping in _socketPlatformSessions.Where(item => revoked.Contains(item.Value.PlatformSessionId)).ToArray())
         {
+            if (!_socketPlatformSessions.TryGetValue(mapping.Key, out var currentBinding)
+                || currentBinding != mapping.Value) continue;
+            CloseChatStartsForTransport(mapping.Key);
             if (_inboundConnections.TryGetValue(mapping.Key, out var inbound))
                 inbound.StopAcceptingAndCancelPending();
-            if (_socketPlatformSessions.TryRemove(mapping.Key, out var binding))
-                TryReleaseActiveAccountSocket(_activeAccountSockets, binding.AccountId, mapping.Key);
+            if (!TryReleaseSocketPlatformBinding(_socketPlatformSessions, mapping.Key, mapping.Value))
+                continue;
+            TryReleaseActiveAccountSocket(_activeAccountSockets, mapping.Value.AccountId, mapping.Key);
             _rooms.RecordConnectionClaimRejection(mapping.Value.AccountId, "platform-session-revoked");
             if (_sockets.TryGetValue(mapping.Key, out var socket)) socket.Abort();
         }

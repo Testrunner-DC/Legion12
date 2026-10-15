@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-15 CHAT-C1B2-S03｜连接退休先关闭旧消息起发（本地验收完成）
+
+- 用户已准聊天共享边界，P2只扩既有CloseChatStarts：接管在RoomManager代际推进之前、会话过期在expected-binding退休之前、真实注销撤销在原子移除之前关闭旧transport；finally与Supersede为防御。无新claim等待/pair推进/重开，sameGuid重复hello原本拒绝且保持原有效lane，新Guid不受旧清理影响。生产ConfigureChatLane仍0、聊天OFF。
+- 真实host旧源三条逻辑围栏RED保留，不冒称Abort后的字节能到达。修后新增5+平台邻居6+规则邻居6=17通过：旧borrowed起发0/预算归零、新连接两次真实消息与ping、旧Supersede不删新owner、同/异身份重复hello对照。Main完整源审及所有TRX/源SHA核验；共同覆盖7491规则/1712平台见composite-targets-main-20261015/main-local-acceptance SHA53BC7DCC。原完整门禁失败与定点修正不改写，pwsh通过现有L12_TEST_FIXTURE_PWSH和实际PSHOME一次预检，不重复有效全套。
+- 两源FC8C9567/03B5A78B冻结，海拉独立提交58b439b0，本片独立同步；没有部署、维护、启聊天、容量或全部过期根治声明。无入站的自然过期尚须未来bridge用纯已提交会话/期限新鲜度守卫。观战重复休整/登场新用户任务已分派只读全链根因分析，现有写者归还后给最小RED/共享实现租约，不靠kind/text去重或关闭动画。
+
 ## 2026-10-15 COMPOSITE-PUBLIC-TARGETS（本地验收完成，待Git同步）
 
 - 已批范围：P0沿唯一组合段结构，P2/P3沿既有公共对象快照，只登记海拉S02-0307 curseTarget、无畏S02-0206 buffTarget、荣耀S02-0521 flipTargets。五组计划/声明/费用/结算交叉核查，其他费用/隐藏区域/行模式/全体效果及已有触发载体不改；不遍历全部declared键。
