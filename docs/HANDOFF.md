@@ -1,10 +1,16 @@
 # 十二军团简短交接
 
+## 2026-10-15 受监督夹具退出后清理收口｜完整平台1685通过
+
+- 原Chat-S01全平台1671/1672的finally占用失败保留，不能从finally栈证明原try全部业务断言完成。限定修正仅在真实监督TEMP、test-GUID根、两类具名父目录、GUID叶子及全祖先普通目录均匹配时，把物理删除交回既有监督器，在测试进程退出及完整TRX全过后实际回收；standalone仍严格立即删除，精确ClearPool保留，不改生产记录器/监督器、不吞IO或新增等待。
+- 持有真实FileShare.None句柄的确定性canary旧源1/1红；修后整类49/49、原监督器8类守卫通过。Main及独立只读审查CLEAR；本次新完整平台1685/1685零失败跳过，监督回执test-b8c447ce...成功且首次实际删除，原失败TEMP/TRX不动。C盘test-fixture-postexit-20261015/main-local-acceptance.json、full-platform.trx SHA4C396BCB、receipt SHA3D8D48A7为依据。未查明旧偶发锁持有者，不称原轮变绿。
+- 同一冻结Chat-S01产品/新测试源无漂移，新平台门禁也覆盖13新例；此前完整规则7437有效复用，不重复全规则。两根因按精确路径分批同步，未部署、聊天仍OFF。正式19/PID131988不动；终局探针首次启动竞态留证并安全OFF恢复，r2接批准的一次数值取证；赛事独占窗口等OFF/idle后交付。
+
 ## 2026-10-15 持续收口｜78本方终态，907总/448待办
 
 - 伏击785287ec以正式19/7EC0 DLL实际36场（32正例/4对照）、312命令/164严格恢复核到+2000和完整战斗末态，按限定未复现closed；非原玩家数值/浏览器/新修复。拉美西斯ce8原文仅问组合是否Bug、无具体异常，复用当前19具名40条互补证据后按信息不足规则说明closed，不冒称三委托+天启同一新场景或duplicate。两条均单次preview/CAS独立终态读回并撤会话，原文历史保持。
 - 同时新增2反馈，实际队列907总/448new/254resolved/205closed，阶段78=22fixed/49rejected/7duplicate、周期170，外部2不冒领；净待办未降不等于未关闭。唯一工作流/current-status已按phase-19-ramses-vague-closed对账；C盘formal-release-20261015的ambush-main-independent-review与ramses-vague-main-review、post-release-adversarial-20261014两实际回执为据。
-- 底层叠牌已独立验收并推送b67031f80730a669be5f864b8015156187b83b54/远端精确读回，无部署。Chat-S01完整规则7437全绿，完整平台1671过/1旧夹具删除matches.db文件锁失败；原TRX/Temp保留，独立受监督整类36绿只是范围核查，不当根治或一次全绿。该本地同步单项挂起资源清理审查，S02仍未授写/聊天OFF；其他任务不停止。
+- 底层叠牌已独立验收并推送b67031f80730a669be5f864b8015156187b83b54/远端精确读回，无部署。Chat-S01完整规则7437全绿，完整平台1671过/1旧夹具删除matches.db文件锁失败；原TRX/Temp保留，独立受监督整类36绿只是范围核查，不当根治或一次全绿。该本地同步单项挂起资源清理审查，S02仍未授写/聊天OFF；其他任务不停止。finally可遮盖原try异常，未声称失败原轮的行为断言均已完成。
 - 终局仅30房一次数值取证C执行器已首交，Main源审发现包DLL基线/启动ready/失败残留下重启三处具体风险，修工具后才本地小测/运行，不重做旧全量负载。32人赛事矩阵88项/39HTTP+2WS已接受为not_run，C-only单桌合法完赛驱动器准备中；先终局取证+defaultOFF再交赛事独占，当前无新部署/正式维护/赛事写。
 
 ## 2026-10-15 CHAT-C1B2-S01｜真实Socket薄起发边界，本地门禁中
@@ -12,7 +18,7 @@
 - 原SendDirectAsync仅把同一ReadOnlyMemory/Text/endOfMessage/token同步交给既有socket.SendAsync的那行抽成internal非async ValueTask方法；仍由原sender await、5秒linked CTS、指标与成功后codec commit处理，不增Socket/发送器、协议、聊天caller或SQL。生产ConfigureChatLane调用0，聊天OFF。
 - 两文件已冻结并归还构建，Main完整读6行产品diff及新测试全源，并逐核五源和三TRX/监督退出/临时目录不存在：新13、平台邻居73、规则邻居27共113无失败跳过。实际localhost旧host/socket验证原error字节及ping/pong；其余受控socket覆盖同步/异步异常/取消、真实slice、保留额度、先关闭不发、冷/差量只在发送成功后提交。C盘chat-c1b2-s01-20261015/focused-return.json 43C7EB66。
 - Main接正常映射规则/平台Batch，不重建或部署19包；最终以本片Main验收/Git回执为准。此片只是后续真实权限围栏的起发基础，不称聊天完成或4终局超3秒已修；S02只有精确HTTP三入口和首RED只读方案，未给写租约。底层叠牌另批已验，不能混用两根因提交。
-- Main Batch结果：规则7437零失败跳过；完整平台1672中1671过/1失败，失败在既有自伤协议测试finally删除matches.db（业务断言全部完成），非新S01例。原test-1851fc8e5981423da787a5c86666c24a保留；独立进程整类36绿不抵销旧失败，不增加400ms等待或重复全量撞绿。S01同步暂挂起，资源清理职责单项审查，终局/赛事工具准备继续。
+- Main Batch结果：规则7437零失败跳过；完整平台1672中1671过/1失败，栈定位既有自伤协议finally删除matches.db，非新S01例；finally可覆盖try异常，不能据该栈断言原轮业务全过。原test-1851fc8e5981423da787a5c86666c24a保留；独立进程整类36绿是另一轮行为证据，不抵销旧失败，不增加400ms等待或重复全量撞绿。S01同步暂挂起，资源清理职责单项审查，终局/赛事工具准备继续。
 
 ## 2026-10-15 卡诺匹斯底层展示纠正（本地验收完成，未部署）
 

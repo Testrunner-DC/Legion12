@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-15 TEST-FIXTURE-POSTEXIT｜本地验收完成，待同步
+
+- P3测试证据生命周期，不改产品：SelfDamageEntryDiscountProtocolRegressionTests仅在精确监督owned路径/普通目录祖先匹配时交由现有监督器退出后清理；非监督模式原严格删除、精确ClearPool及四类旧异常保护不变。全树链接/外部持锁/缺证明/业务失败仍整轮失败并留证，不清生产池、不增加等待、不改监督器。
+- 新13项+原36项实际49/49；故意持锁canary旧源1/1 IOException红，原监督控制8类全过。独立最终源审CLEAR，Main完整平台1685零失败跳过、进程退出0、owned TEMP首次删除成功，TRX4C396BCB/监督回执3D8D48A7/夹具源7CF8D582；C盘test-fixture-postexit-20261015/main-local-acceptance.json绑定最终源码、实际日志和旧RED。
+- 原1671/1672失败和独立36轮保留，不用finally异常推定原业务全过，不称真实锁持有者已找出。Chat-S01同冻结源码完整门禁由本轮补足，规则7437有效复用；本条不授权部署/开聊天/关闭Bug，终局4条超3秒仍未根治。
+
 ## 2026-10-15 两条原反馈收口与后续并行｜78阶段终态
 
 - 无P0—P4产品改动：785287ec伏击实际36场及四视角结算/末态已独立核51引用，原3秒/玩家初盘不在本片声明；按限定未复现关闭。ce8ff6ae原文未述错误现象，以正式19实际25天灾工作闭包+14三登场顺序+1三声明回归作互补核查，未新跑或冒称同一个三效果+天启场景，按信息不足/规则说明关闭。各8关单负例、一次CAS及独立终态/撤会话完成。
@@ -12,7 +18,7 @@
 - P2不新增传输或聊天协议：唯一既有SendDirectAsync委托internal ValueTask StartPreparedTextSend；不async包装/复制payload，保留原send timeout、等待、异常、指标和成功codec提交。只租WS源与新ChatSocketAdmissionBoundaryTests，其他来源/HTTP/鉴权/房间/持久化不动。
 - 实际13新例+73平台邻居+27规则邻居=113无失败跳过，Main完整源审/五源SHA/三TRX及三个监督回执退出与owned TEMP移除独立核对；原生产ConfigureChatLane仍0。C盘chat-c1b2-s01-20261015/focused-return.json 43C7EB66；Main正常映射Batch接续，尚无完整门禁/同步/部署声明。
 - 下一片S02仍只读，三条真实HTTP block/unblock/remove与旧消息被借出后重新交友的generation不可复活RED是计划，不冒称已执行；需本片同步后新租约。终局取证工具与32人赛事矩阵隔离，不能在赛事期间重启测试。
-- Main完整Batch实际7437规则全绿；平台1672实际1671过1失败，自伤协议case的全部业务断言后在finally删除matches.db遇占用。旧源已有精确ClearPool和40/80/120/160ms重试，不能再叠等待冒称根治；原TRX/Temp保留，隔离进程整类36通过只作为范围核查。S01暂不push、不授S02代码，独立只读核监督器进程退出后清理边界。
+- Main完整Batch实际7437规则全绿；平台1672实际1671过1失败，栈定位自伤协议finally删除matches.db遇占用，不能由此证明原轮try内全部业务断言完成。旧源已有精确ClearPool和40/80/120/160ms重试，不能再叠等待冒称根治；原TRX/Temp保留，隔离进程整类36通过只作为另一轮范围核查。S01暂不push、不授S02代码，独立只读核监督器进程退出后清理边界。
 
 ## 2026-10-15 CANOPIC-UNDERLAY｜原圣物区内底叠取代独立底轨
 

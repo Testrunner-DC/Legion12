@@ -228,6 +228,87 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
     }
 
     [Fact]
+    public async Task SupervisedFixtureHandsLockedDatabaseToPostExitCleanupWithoutDeletingItInHost()
+    {
+        var supervisedRoot = Environment.GetEnvironmentVariable("L12_TEST_TEMP_ROOT");
+        if (string.IsNullOrEmpty(supervisedRoot)) return;
+        var root = OwnedFixturePath("l12-self-damage-protocol");
+        Directory.CreateDirectory(root);
+        var database = Path.Combine(root, "matches.db");
+        // The live test host deliberately owns this handle. The existing outer
+        // supervisor may remove the owned tree only after this process exits
+        // and its current complete TRX proves every test passed.
+        using var held = new FileStream(database, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        held.WriteByte(1);
+
+        await CleanupFixtureAsync(root, recorder: null);
+
+        Assert.True(Directory.Exists(root));
+        Assert.True(File.Exists(database));
+        Assert.Equal(1, held.Length);
+        // No in-host deletion here: successful outer-supervisor cleanup is part
+        // of the acceptance, and failed test evidence must remain untouched.
+    }
+
+    [Theory]
+    [InlineData("l12-self-damage-protocol")]
+    [InlineData("l12-self-damage-thor-protocol")]
+    public void FixtureHandoffAcceptsOnlyItsExactSupervisedTempAndOwnedParent(string parent)
+    {
+        var owned = Path.Combine(Path.GetTempPath(), $"test-{Guid.NewGuid():N}");
+        var root = Path.Combine(owned, parent, $"synthetic-{Guid.NewGuid():N}");
+        var inspections = 0;
+        Assert.True(UsesPostExitFixtureCleanup(root, owned, owned,
+            _ => { inspections++; return FileAttributes.Directory; }));
+        Assert.True(inspections >= 3);
+    }
+
+    [Theory]
+    [InlineData("temp-mismatch")]
+    [InlineData("root-name")]
+    [InlineData("sibling-root")]
+    [InlineData("similar-parent")]
+    [InlineData("invalid-leaf")]
+    [InlineData("linked-fixture")]
+    [InlineData("linked-owner")]
+    [InlineData("linked-ancestor")]
+    [InlineData("not-directory")]
+    public void FixtureHandoffRejectsMismatchAndLinksInsteadOfRelaxingCleanup(string variant)
+    {
+        var owned = Path.Combine(Path.GetTempPath(), $"test-{Guid.NewGuid():N}");
+        if (variant == "root-name") owned += "-unowned";
+        var temp = variant == "temp-mismatch" ? owned + "-other" : owned;
+        var parent = variant == "similar-parent" ? "l12-self-damage-protocol-unowned" : "l12-self-damage-protocol";
+        var root = Path.Combine(variant == "sibling-root" ? owned + "-sibling" : owned,
+            parent, variant == "invalid-leaf" ? "synthetic-invalid" : $"synthetic-{Guid.NewGuid():N}");
+        var linked = variant switch
+        {
+            "linked-fixture" => root,
+            "linked-owner" => owned,
+            "linked-ancestor" => Directory.GetParent(owned)!.FullName,
+            _ => string.Empty,
+        };
+        Assert.Throws<InvalidOperationException>(() => UsesPostExitFixtureCleanup(root, owned, temp,
+            path => variant == "not-directory" ? FileAttributes.Normal
+                : string.Equals(path, linked, StringComparison.OrdinalIgnoreCase)
+                    ? FileAttributes.Directory | FileAttributes.ReparsePoint : FileAttributes.Directory));
+    }
+
+    [Fact]
+    public async Task FixtureWithoutSupervisorRetainsStrictImmediateDeletion()
+    {
+        var root = OwnedFixturePath("l12-self-damage-protocol");
+        var inspections = 0;
+        Assert.False(UsesPostExitFixtureCleanup(root, null, Path.GetTempPath(),
+            _ => { inspections++; throw new InvalidOperationException("must not inspect"); }));
+        Assert.Equal(0, inspections);
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "standalone.txt"), "synthetic");
+        await DeleteOwnedFixtureDirectoryAsync(root);
+        Assert.False(Directory.Exists(root));
+    }
+
+    [Fact]
     public async Task FixtureCleanupRetriesTransientIoFailureAndThenSucceeds()
     {
         var attempts = 0;
@@ -304,7 +385,36 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
             DataSource = Path.Combine(target, "matches.db"),
         }.ToString());
         SqliteConnection.ClearPool(ownedPool);
+        if (UsesPostExitFixtureCleanup(target,
+                Environment.GetEnvironmentVariable("L12_TEST_TEMP_ROOT"), Path.GetTempPath()))
+            return;
         await DeleteOwnedFixtureDirectoryAsync(target);
+    }
+
+    private static bool UsesPostExitFixtureCleanup(string root, string? supervisedRoot, string tempRoot,
+        Func<string, FileAttributes>? attributes = null)
+    {
+        if (string.IsNullOrEmpty(supervisedRoot)) return false;
+        var owned = Path.GetFullPath(supervisedRoot).TrimEnd(Path.DirectorySeparatorChar);
+        var actualTemp = Path.GetFullPath(tempRoot).TrimEnd(Path.DirectorySeparatorChar);
+        var name = Path.GetFileName(owned);
+        if (!string.Equals(owned, actualTemp, StringComparison.OrdinalIgnoreCase)
+            || name.Length != 37 || !name.StartsWith("test-", StringComparison.Ordinal)
+            || name.Skip(5).Any(character => !Uri.IsHexDigit(character)))
+            throw new InvalidOperationException("supervised fixture cleanup ownership mismatch");
+
+        var target = ValidateOwnedFixtureRoot(root, actualTemp);
+        attributes ??= File.GetAttributes;
+        for (DirectoryInfo? directory = new(target); directory is not null; directory = directory.Parent)
+        {
+            var value = attributes(directory.FullName);
+            if ((value & FileAttributes.ReparsePoint) != 0 || (value & FileAttributes.Directory) == 0)
+                throw new InvalidOperationException("supervised fixture cleanup linked path refused");
+        }
+        // Physical removal is NOT skipped: Invoke-L12TestRun must observe process
+        // exit, a current all-pass TRX, a plain complete tree and actual deletion.
+        // Any failure there retains the tree and fails the enclosing verification.
+        return true;
     }
 
     private static async Task DeleteOwnedFixtureDirectoryAsync(string root,
@@ -332,11 +442,11 @@ public sealed class SelfDamageEntryDiscountProtocolRegressionTests
         }
     }
 
-    private static string ValidateOwnedFixtureRoot(string root)
+    private static string ValidateOwnedFixtureRoot(string root, string? tempRoot = null)
     {
         var target = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar);
         var parent = Directory.GetParent(target)?.FullName;
-        var temp = Path.GetFullPath(Path.GetTempPath());
+        var temp = Path.GetFullPath(tempRoot ?? Path.GetTempPath());
         var ownedParents = new[]
         {
             Path.GetFullPath(Path.Combine(temp, "l12-self-damage-protocol")),

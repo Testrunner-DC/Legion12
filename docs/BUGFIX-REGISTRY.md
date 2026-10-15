@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 TEST-FIXTURE-POSTEXIT｜仅测试owned目录移交退出后物理清理
+
+- 原全平台1672中既有自伤协议1例finally删除matches.db抛IOException，旧精确ClearPool及有界重试不能避免；原TRX1FC0A99C及失败TEMP保留。finally可覆盖try异常，不能据此声称原轮行为断言完成；旧偶发锁持有者未明。
+- 本次只迁移两类具名夹具父路径：监督TEMP与实际TEMP相等、test-32hex根、GUID叶子及每级普通目录全部核准后，保留Dispose/精确ClearPool，把物理删除交回未改的Invoke-L12TestRun。监督器仍须观察退出、真实新鲜全过TRX、完整普通目录树并实际删除；失败/缺证/持锁/链接仍失败留证。standalone原严格删除不变，不改生产记录器或全局池，不吞异常或加等待。
+- 新持锁canary旧源1红；最终13新+36旧共49全过，8类现有监督守卫全过，独立审查CLEAR。Main新全平台1685/1685零失败跳过，退出0/首次清理成功且TEMP不存在，full-platform.trx4C396BCB、receipt3D8D48A7、源码7CF8D582；C盘test-fixture-postexit-20261015/main-local-acceptance.json。原失败不改为一次全绿，无部署。
+
 ## 2026-10-15 伏击实际增益与拉美西斯模糊组合反馈限定收口
 
 - BUG-20260929-785287ec原文“火神发动效果后，我伏击没法加攻击力”，不能套用旧机会列表报告当duplicate。正式19/7EC0原DLL实际32正例+4无伏击对照、312命令/164严格V2恢复：双方/进攻或防守迦具土/士气或弃牌Cost/战斗或另一军团，实际四视角看到+2000，支付不重复、伏击入墓一次、战斗及堆叠完整结束。合成数值分离以保留目标，不称未知原局、浏览器或网络；Main全源读审/51引用及36结果独立核，ambush-main-independent-review 7761E517、实际TRX03EF7DDD。按限定未复现closed，非新修复。
@@ -11,7 +17,7 @@
 - 非新增线上修复声明。沿用户已准聊天方案，先验证B1未来回调与真实Socket同一同步起发边界；原SendDirectAsync唯一send行改调非async internal ValueTask薄函数，传递原memory slice/Text/末帧/token、返回同一底层操作，不复制、调度或新开传输。
 - 新8方法展开13例，受控与真实localhost覆盖slice/同步与异步异常/已取消token、pending期间保留完整backing额度、legacy顺序、guard false/不可读不触达socket、game/presence冷/差量成功后才commit，以及真实既有host原error字节/ping/pong。平台邻居73/规则邻居27共113无失败跳过；Main独立读全源/核五源及三TRX/实际监督成功，原链未改。
 - C盘chat-c1b2-s01-20261015/focused-return.json 43C7EB66绑定证据；Main全规则/全平台映射Batch及Git尚待，不启用聊天或做压力收益声明。HTTP撤权、失效会话/离房生命周期与真实生产caller均属后续，原4条终局>3s保持未解决。
-- Main完整规则7437通过；完整平台1672中1671过/1旧自伤协议finally的matches.db IOException，所有该例业务断言已完成。原full失败test-1851fc8e...及TEMP不删，独立受监督整类36过不记根治/一次全量绿；本片同步暂挂资源清理职责审查。既有本注册441行精确ClearPool+有界重试已不能阻止复现，不重复提高等待或原样撞全量。
+- Main完整规则7437通过；完整平台1672中1671过/1旧自伤协议finally的matches.db IOException，finally异常可覆盖try，故不能由栈证明失败原轮所有业务断言已完成。原full失败test-1851fc8e...及TEMP不删，独立受监督整类36过是另一轮行为证据、不记根治/一次全量绿；本片同步暂挂资源清理职责审查。既有本注册441行精确ClearPool+有界重试已不能阻止复现，不重复提高等待或原样撞全量。
 
 ## 2026-10-15 CANOPIC-UNDERLAY｜依据用户纠正取消独立底轨
 
