@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续101｜落穴陷阱纳入与排除两条独立闭环
+
+- BUG-20260908-729749bb原文晋升不能落穴：最终共享04fb70c6晚于报告eac1、已在正式cce8；正式EffectBatch294精确S02-0503晋升/只无效所选项与Backend296 promotion-enter家族3项Passed，普通/晋升同军团登场家族，不等于圣物也纳入。
+- BUG-20260910-2d80dbfd原文圣物草薙剑被落穴：052ec9d5晚于报告5c2、已在cce8；正式草薙剑圣物排除/同实例场上军团纳入、圣物与中间栈边界、真实playCard圣物无落穴3项Passed。Main核共享CanPitfallRespondToCurrentEffect与6个精确TRX名称/两祖先；原私人对局未重放，不声称唯一成因。
+- 冻结E907B54E提案/F2B0B735证据经v2和真实执行器两SelfTest后，各一次preview/CAS29916、29917/独立终态读回/原文等保持、撤会话，实际7FBE718A。唯一90C8AC4B对账909/427new/267resolved/215closed；101=35fixed/58rejected/8duplicate、周期193，外部2另列。无新产品改动、部署或维护写。
+
 ## 2026-10-16 接续99｜血戒重复项与天照二技能实际终态
 
 - BUG-20260908-c882061e原文仅述安德华拉诺特Limit 1，与更早BUG-20260907-ff4c2c40同一卡S02-0305、同报告版本b522和同构筑限制；后者已检查后关闭rejected。4e3f9271本已是报告版本祖先，不写fixed。正式cce8具名LimitOne第二张、BloodRing一张/两张和完整Limit1集合4项均Passed，按duplicate绑定主项，一次CAS29911/独立读回。
