@@ -73,4 +73,63 @@ assert.ok(!css.includes('.bug-feedback-trigger') && !utility.includes("l12-open-
 assert.ok(settings.includes('class="feedback-entry"') && settings.includes("emit('feedback')") && gamePage.includes('@feedback="openBattleFeedback"'), 'battle feedback must open from the shared Settings modal')
 const runtime = read('scripts/verify-mobile-action-dock.mjs')
 for (const invariant of ['elementFromPoint','fieldOverlap','laneOverlap','setSafeAreaInsetsOverride','setPageScaleFactor','maximum-real-actions','commandIs','leftRatio','relicRatio','pileRatio','handSelectionVisible','playerDetailsVisible','markerGeometry','playerNamesAboveRecord','moraleLabels']) assert.ok(runtime.includes(invariant))
+
+function assertCombatDecisionLayout(styles) {
+  const parsed = postcss.parse(styles)
+  const base = '#l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel'
+  const declarations = selector => {
+    const values = new Map()
+    let count = 0
+    parsed.walkRules(rule => {
+      if (!rule.selectors.includes(selector)) return
+      count++
+      assert.equal(rule.parent.type, 'root', 'combat layout rule must not hide behind a media condition')
+      rule.walkDecls(declaration => values.set(declaration.prop, declaration.value))
+    })
+    assert.equal(count, 1, `combat layout must have one unambiguous rule: ${selector}`)
+    return values
+  }
+  const panel = declarations(base), actions = declarations(`${base} .l12-actions`)
+  const actor = declarations(`${base} .l12-actions > .action-actor-badge`)
+  const buttons = declarations(`${base} .l12-actions > button`)
+  const minimize = declarations('#l12-landscape-teleports .mobile-battle-dock .combat-decision-minimize')
+  assert.equal(panel.get('height'), 'auto', 'combat decision panel must grow for actor and decision rows')
+  assert.equal(panel.get('max-height'), 'none', 'combat decision panel must not clip its second row')
+  assert.equal(actions.get('height'), 'auto', 'combat action grid must size both content rows')
+  assert.equal(actions.get('grid-template-columns'), 'repeat(2,minmax(0,1fr))', 'combat decisions must remain equal peers')
+  assert.equal(actor.get('grid-column'), '1/-1', 'combat actor must own one complete row before both decisions')
+  assert.equal(buttons.get('grid-column'), 'auto', 'neither combat decision may consume the actor row')
+  assert.equal(buttons.get('height'), '36px', 'compact combat decisions must retain the existing hit-box height')
+  assert.equal(buttons.get('min-height'), buttons.get('height'), 'combat decision hit boxes must remain equal')
+  assert.equal(minimize.get('order'), '-1', 'combat minimize must precede long passive status in the bounded context')
+}
+assertCombatDecisionLayout(css)
+assert.throws(() => assertCombatDecisionLayout(css.replace('height:auto !important; max-height:none !important;', 'height:42px !important; max-height:42px !important;')), /must grow/)
+assert.throws(() => assertCombatDecisionLayout(css.replace('grid-column:1/-1; justify-self:start;', 'grid-column:auto; justify-self:start;')), /complete row/)
+assert.throws(() => assertCombatDecisionLayout(css.replace('width:auto !important; min-height:36px !important; height:36px !important;', 'width:auto !important; min-height:32px !important; height:36px !important;')), /remain equal/)
+assert.throws(() => assertCombatDecisionLayout(css.replace('order:-1; pointer-events:auto !important;', 'pointer-events:auto !important;')), /minimize must precede/)
+function assertContextScrollOwnership(styles) {
+  const selector = '#l12-landscape-teleports .mobile-battle-dock__context > :is(.card-context-actions,.board-target-controls,.board-mode-hint)'
+  const values = new Map()
+  let count = 0
+  postcss.parse(styles).walkRules(rule => {
+    if (rule.selector !== selector) return
+    count++
+    assert.equal(rule.parent.type, 'root', 'interactive context rule must apply without a media override')
+    rule.walkDecls(declaration => {
+      assert.equal(declaration.important, true, 'interactive context must override the shared clipping declaration')
+      values.set(declaration.prop, declaration.value)
+    })
+  })
+  assert.equal(count, 1, 'interactive context scroll ownership must have one exact rule')
+  assert.equal(values.get('max-height'), 'none', 'interactive context child must retain its intrinsic control height')
+  assert.equal(values.get('overflow'), 'visible', 'only the existing context may clip and scroll interactive controls')
+}
+assertContextScrollOwnership(css)
+assert.throws(() => assertContextScrollOwnership(css.replace('max-height:none !important; overflow:visible !important;', 'max-height:100% !important; overflow:hidden !important;')), /intrinsic control height/)
+for (const consumer of ['gm-placement-controls', 'inline-prompt-controls', 'board-slot-controls', 'resource-payment-controls'])
+  assert.ok(board.includes(consumer), `shared context regression must retain ${consumer}`)
+const interaction = read('scripts/verify-mobile-interaction-matrix.mjs')
+for (const invariant of ['visibleRatio', 'elementFromPoint', 'touchscreen.tap', 'actorAboveDecisions', 'sameHitBox', 'nativeContextReveal', 'mouse.wheel', 'scrollTop'])
+  assert.ok(interaction.includes(invariant), `combat runtime must preserve ${invariant}`)
 console.log('Mobile action dock contracts passed: single owners, safe canvas, flow lanes, restored prompts, Settings feedback and desktop isolation.')

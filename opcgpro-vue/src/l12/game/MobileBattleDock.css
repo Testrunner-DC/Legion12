@@ -74,6 +74,11 @@ html[data-l12-mobile=true] {
   display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px !important;
 }
 #l12-landscape-teleports .mobile-battle-dock__context > :is(.card-context-actions,.board-target-controls,.board-mode-hint,.combat-decision-restore) { margin-top:auto !important; }
+/* Interactive rows may exceed the lane; the existing context owns scrolling.
+   Capping the child clips confirm/cancel without creating a scrollable range. */
+#l12-landscape-teleports .mobile-battle-dock__context > :is(.card-context-actions,.board-target-controls,.board-mode-hint) {
+  max-height:none !important; overflow:visible !important;
+}
 #l12-landscape-teleports .mobile-battle-dock :is(.card-context-actions,.l12-actions) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.board-target-controls,.board-mode-hint) { grid-template-columns:minmax(0,1fr); }
 #l12-landscape-teleports .mobile-battle-dock :is(.card-context-actions,.l12-actions) > button:last-child { grid-column:1/-1; }
@@ -118,15 +123,18 @@ html[data-l12-mobile=true] {
 #l12-landscape-teleports .mobile-battle-dock .combat-decision-minimize {
   position:static !important; inset:auto !important; display:block; flex:none;
   width:100%; min-height:24px; height:24px; margin:0 0 4px; padding:0;
-  pointer-events:auto !important;
+  order:-1; pointer-events:auto !important;
 }
 #l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel {
-  position:relative !important; height:42px !important; max-height:42px !important;
+  position:relative !important; height:auto !important; max-height:none !important;
   padding:2px !important; overflow:hidden !important;
 }
 #l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel .l12-actions {
-  display:grid !important; box-sizing:border-box; height:36px !important;
+  display:grid !important; box-sizing:border-box; height:auto !important;
   grid-template-columns:repeat(2,minmax(0,1fr)) !important; gap:4px !important; padding:0 !important;
+}
+#l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel .l12-actions > .action-actor-badge {
+  grid-column:1/-1; justify-self:start; max-width:100%;
 }
 #l12-landscape-teleports .mobile-battle-dock__primary .combat-resolution-panel .l12-actions > button {
   grid-column:auto !important; width:auto !important; min-height:36px !important; height:36px !important;

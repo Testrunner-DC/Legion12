@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UI-20261016-MOBILE-ACTION-REACHABILITY｜防守按钮与共享选择区裁切（本地完成，未部署）
+
+- 正式19和本地4200真实SFC均复现：role badge占双按钮网格首格，固定42px父级裁掉第二行“不抵挡/不支援”，disabled=false却原始中心落在视口外。旧locator.tap会自动滚动hidden祖先，不能据其send1称初始可用；原生坐标RED22行496FF412及旧截图保留。
+- 两次用户批准范围均已实施：只在MobileBattleDock.css让角色独占一行、两枚原36px按钮等大同行，面板随内容；原最小化排在长被动文字前。另一个独立真实玩家Prompt确认仅露20%且滚动不可达，限定取消交互子节点max-height/overflow裁切，由现有context独占自然滚动。扫描card-context-actions/board-target-controls/board-mode-hint及GM/slot/resource消费者，不改GameActions、费用、响应、指令校验或桌面布局。
+- 防守55诊断行中的combat组通过；最终真实未改player目标5profile原生选择后自然滚动，完整可见/真实命中且一次resolvePrompt携原目标与完整绑定，报告59965B9E。仓内最终6尺寸8通用类通过，390/320额外GM和支付最小化/恢复/取消/2资源保留，30项原生滚动proof全ratio1/hit真、最多2步（上界8），71DBD956。固定高度/徽章/等大/最小化/overflow五反例守卫及ownership23保持；旧隐藏p的DOM数断言等义迁为可见p数0，原失败保留。
+- Main完整源码/原始结果/两截图独立核验，正常前端Batch含UI356、类型、卡图324/42及正式/测试两构建退出0；三源冻结42ABA0FF/6CE2EE0F/31F6B31D。C盘mobile-action-usability-20261016/final-handoff.json AB0650AE及公共Main回执1CC07D52为依据；浏览器/5413已关闭并归还租约。
+- 边界：防守手牌/支援为公开事实构造的消费者夹具；真实目标另用未改引擎player快照，均非真实服务器ack。CDP原生safe-area不可用，两原生安全区profile未验，C合成env probe单列；不称真iOS/微信输入法/全部按钮已验。不部署/不关159e5a22，原反馈原match尚未提取，不能拿相关裁切代替原案。
+
 ## PLATFORM-20261016-TERMINAL-NOOP-DRAW｜无待取消求和的终局脱离后台锁（本地完成，未部署）
 
 - 新方法使用同一进程真实WebSocket的普通、单连接发送屏障、无关平台提交屏障三臂，不重复旧30房压测。旧源第三臂在原3秒内收不到终局，前两臂通过，原TRX93F79234保留；根因是所有非议和终局在广播前无条件调用CancelOpenMatchDrawRequests，即使没有记录仍等共用_gate。
