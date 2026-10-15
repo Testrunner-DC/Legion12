@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-15 CHAT-C1B2-S02｜真实HTTP撤权与旧消息不可复活，本地完成
+
+- 用户已准聊天方案的限定S02：只在remove/block/unblock三条顶层HTTP入口使用可空registry，配额/预关闭先于Store权威调用；bool正常返回才Committed或KnownRollback，异常Dispose保留Unknown。成功/重复成功在通知与200前递增generation，旧借出消息不因重新交友复活；pair释放后最多唤醒两当前owner，禁止Store/await进入发送起发锁。生产registry默认null、ConfigureChatLane caller0、聊天仍OFF。
+- 原真实host/Socket旧消息复活2个RED保留；修后22新+3邻接通过。Main读完整差异/测试和五源SHA、独立critical审查CLEAR；标准映射7437规则+1707平台零失败跳过/退出0，两个owned TEMP首次实际回收，两源48E51CB2/941D0A7D无漂移。C盘chat-c1b2-s02-20261015/main-local-acceptance.json SHA39AE26AC绑定原RED与最终focused TRX、两个监督回执B71ECE23/F196084F及main-batch-r2.log。
+- 正常Batch私有TRX按既有监督策略完整验证后删除，持久counter/receipt有效，未伪造完整TRX哈希或为补原证重复全套。首launcher在构建前缺Git PATH失败保留，r2使用实际Get-Command路径先预检。无新的部署/维护/开聊天或性能根治声明；连接接管/自然到期/撤销S03目前仅只读提案，须本批同步后新精确租约。
+
 ## 2026-10-15 持续执行｜84阶段终态，907总/442待办
 
 - 校园移动网络df9原诊断虽HTTP/API200、WS open但停在authenticating，旧代际隔离不能证明恢复完成；无原网络/设备/DNS/TLS链，按用户既定检查后信息不足关闭，不称网络已修。8负例及一次CAS/终态读回29589、撤会话；累计84=26fixed/51rejected/7duplicate，周期176，907/442new/258resolved/207closed。唯一工作流1F36C2C1，campus-network-main-review与实际关单7F642656为据，其他性能超时继续。

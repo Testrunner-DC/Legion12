@@ -394,6 +394,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly Func<L12ServerStorageView> _storageSnapshot;
     private readonly ConcurrentDictionary<Guid, WebSocket> _sockets = new();
     private readonly ConcurrentDictionary<Guid, L12OutboundConnection> _outboundConnections = new();
+    // Explicit test-only wiring; no production chat lane or mutation registry is installed.
+    private L12ChatPairRegistry? _chatMutationRegistry = null;
     private readonly ConcurrentDictionary<Guid, L12InboundConnection> _inboundConnections = new();
     private readonly ConcurrentDictionary<Guid, byte> _establishedInboundConnections = new();
     private readonly ConcurrentDictionary<Guid, L12SnapshotWireCodec> _snapshotCodecs = new();
@@ -1654,9 +1656,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var removed = _platform.RemoveFriend(account.Id, friendId);
-            if (removed) NotifyFriendsChanged(account.Id, friendId);
-            return removed ? Results.Ok() : Results.NotFound();
+            if (!TryBeginChatRelationshipMutation(account.Id, friendId, out var mutation))
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            try
+            {
+                var removed = _platform.RemoveFriend(account.Id, friendId);
+                mutation?.Complete(removed ? L12ChatMutationOutcome.Committed : L12ChatMutationOutcome.KnownRollback);
+                if (removed) NotifyFriendsChanged(account.Id, friendId);
+                return removed ? Results.Ok() : Results.NotFound();
+            }
+            finally { FinishChatRelationshipMutation(mutation, account.Id, friendId); }
         });
         _app.MapGet("/api/friends/blocked", (HttpRequest request) =>
         {
@@ -1667,17 +1676,32 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var result = _platform.BlockAccount(account.Id, body.AccountId ?? string.Empty);
-            if (result.Success) NotifyFriendsChanged(account.Id, body.AccountId ?? string.Empty);
-            return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+            var targetId = body.AccountId ?? string.Empty;
+            if (!TryBeginChatRelationshipMutation(account.Id, targetId, out var mutation))
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            try
+            {
+                var result = _platform.BlockAccount(account.Id, targetId);
+                mutation?.Complete(result.Success ? L12ChatMutationOutcome.Committed : L12ChatMutationOutcome.KnownRollback);
+                if (result.Success) NotifyFriendsChanged(account.Id, targetId);
+                return result.Success ? Results.Ok(new { result.Message }) : Results.BadRequest(new { result.Message });
+            }
+            finally { FinishChatRelationshipMutation(mutation, account.Id, targetId); }
         });
         _app.MapDelete("/api/friends/blocked/{accountId}", (HttpRequest request, string accountId) =>
         {
             var account = _platform.Authenticate(request.Headers.Authorization);
             if (account is null) return Results.Unauthorized();
-            var removed = _platform.UnblockAccount(account.Id, accountId);
-            if (removed) NotifyFriendsChanged(account.Id, accountId);
-            return removed ? Results.Ok() : Results.NotFound();
+            if (!TryBeginChatRelationshipMutation(account.Id, accountId, out var mutation))
+                return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+            try
+            {
+                var removed = _platform.UnblockAccount(account.Id, accountId);
+                mutation?.Complete(removed ? L12ChatMutationOutcome.Committed : L12ChatMutationOutcome.KnownRollback);
+                if (removed) NotifyFriendsChanged(account.Id, accountId);
+                return removed ? Results.Ok() : Results.NotFound();
+            }
+            finally { FinishChatRelationshipMutation(mutation, account.Id, accountId); }
         });
         _app.MapGet("/api/decks", (HttpRequest request) =>
         {
@@ -5074,6 +5098,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             && _sockets.TryGetValue(sessionId, out var slowSocket))
             slowSocket.Abort();
         return Task.CompletedTask;
+    }
+
+    // Only the three direct top-level HTTP mutations above use this optional boundary.
+    // A null registry preserves the disabled path; these are not general transaction receipts.
+    private bool TryBeginChatRelationshipMutation(string firstId, string secondId,
+        out L12ChatPairRegistry.MutationLease? mutation)
+    {
+        mutation = null;
+        var registry = Volatile.Read(ref _chatMutationRegistry);
+        if (registry is null || string.IsNullOrWhiteSpace(firstId) || string.IsNullOrWhiteSpace(secondId)
+            || firstId == secondId) return true; // No valid chat pair can exist for these IDs.
+        // Capacity failure returns 503 before authority; never bypass the fence or Abort a socket.
+        mutation = registry.TryBeginMutation(firstId, secondId);
+        return mutation is not null;
+    }
+
+    private void FinishChatRelationshipMutation(L12ChatPairRegistry.MutationLease? mutation,
+        string firstId, string secondId)
+    {
+        if (mutation is null) return;
+        // An exceptional authority outcome stays Unknown. No catch/finally infers rollback from
+        // a visible relationship, a storage exception, or an inner Save return.
+        mutation.Dispose();
+        // Pair gates are released before these bounded owner lookups and sender wake hints.
+        WakeChatRelationshipAccount(firstId);
+        if (secondId != firstId) WakeChatRelationshipAccount(secondId);
+    }
+
+    private void WakeChatRelationshipAccount(string accountId)
+    {
+        if (_activeAccountSockets.TryGetValue(accountId, out var sessionId)
+            && _outboundConnections.TryGetValue(sessionId, out var outbound))
+            outbound.WakeChatLane();
     }
 
     private static async Task SendDirectAsync(WebSocket socket, L12SnapshotWireCodec snapshotCodec,
