@@ -1,5 +1,20 @@
 # 十二军团任务台账
 
+## 2026-10-15 阶段84｜校园旧反馈有限关闭，真实海拉目标红灯继续
+
+- 校园df9按检查后信息不足closed/rejected，非fixed或duplicate：原HTTP/API200及WS open/authenticating/retry3，旧代际fenced不能指明原因；当前19公共路径也不能冒称原校园已恢复。一次preview/CAS/终态/撤会话完成29589，C实际7F642656、刷新907/442，唯一workflow1F36C2C1。阶段84=26fixed/51rejected/7duplicate、周期176，外部2不冒领。
+- 海拉/梅杰德正式19原DLL8链实际4过/4失败：Medjed四格包含Cost/真实响应/位置及严格恢复全过；Hela四格responseTargetIds空。原4失败与源不改，先只读确诊，不据前一条海拉声明顺序resolved来合并显示报告。Medjed独立6格UI准备可并行，混合0c66690c仍不扩入。
+- Chat-S02两源冻结48E51CB2/941D0A7D，Main7437规则+1707平台全过、监督success/首次删除TEMP独立核。正常Batch私有TRX按原策略验证后删，仅完整counter/receipt持久；本批focused原RED2、最终22+3TRX都在，无伪造TRX/新增重复全量。主验收39AE26AC，待精确Git、不部署/开聊天。
+- 赛事单桌171正常动作终局/约69.8MiB全快照、工具拒绝NOT_NORMAL_HP_FINISH，owner只读桌completed并有game-result；实际HP/reason缺失，仍不是自然HP验收。固定19动态HP原因工具契约已限定修正、27纯测首交待Main审，旧03失败不覆盖、无新桌/32自动写。Main并行记录与独立Medjed UI准备；性能未测传输段不作供应商结论。
+
+## 2026-10-15 持续执行对账｜Bug83阶段终态，性能仍红
+
+- P0—P4产品不变的关单片：正式19已部署修复94df/1609的精确报告f372、d153、90c、62ef已逐项preview/CAS/独立读回且撤会话；宫廷2报告均以指定格位选择和对手响应投影/UI复核，不泛化整个混合主动战术建议。芬尼亚6d0dc前片信息不足关闭并保留范围。累计83=26fixed/50rejected/7duplicate、周期175；907总/443待办/258resolved/206closed，外部2不冒领。唯一work-items SHA68FF2565/current-status83已同步，不按净计数猜关闭量。
+- 完整原负载一次实际1621命令/864HTTP：5操作deadline、1榜单HTTP超时、1终局超过3秒，NOT_FULLY_ACCEPTED；不因30个server_total<375ms就把客户端3688.583ms剩余全归网络。测得服务端包含入队后JSON/鉴权；前置ReceiveText/部署lease与发送后链路尚缺。原失败、旧4长尾都保留，59条既有粗进程样本不作历史PID根因排除。
+- 原失败清理门未放宽；后续独立采30数值行、严格idle0、69账号逻辑删除/70会话撤销后，有界测试服务重启恢复默认OFF并独立核验。test19-full-trace-20261015/main-assessment-after-recovery 1F46B1F1、recovery A5CA51AB、independentOFF A53FFDEE；正式PID/版本/配置未写，诊断失败与安全恢复分开记录。下一步补区分缺段，不原样重压/采未改正式。
+- 聊天S02两个冻结源48E51CB2/941D0A7D，只围栏remove/block/unblock顶层真实HTTP；22新+3邻接通过/独立CLEAR，Main正常映射全规则/全平台门禁中，原RED2和首launcher PATH环境失败保留，未部署/聊天OFF。不把尚未验收源混入线上关单。
+- 赛事canary03的3普通身份/1赛事/2正式玩家/1桌29HTTP全成功，原网络EACCES、ACL身份差异、12字用户名工具拒绝均留证；改实际生成器为10字符并22纯测通过，旧私密目录不改权限/不复制。Main复审后授单桌自然HP玩法、原15分钟预算，Main32/88矩阵/87桌仍not_run。海拉/梅杰德8实际链准备C-only，构建待当前Main窗口归还；E4真机/F2长期容量/F8改版性能/F5未启适配器仍保留。
+
 ## 2026-10-15 CHAT-C1B2-S01最终验收｜同步中，未部署
 
 - P2保持唯一传输：仅WS薄同步起发入口与ChatSocketAdmissionBoundaryTests两源；Main读完整源/边界/113专项证据，冻结源F8B1681A/83D755E1。本地完整规则7437有效，夹具职责修正后完整平台1685/1685零失败跳过、实际退出/删除成功；C盘chat-c1b2-s01-20261015/main-local-acceptance.json绑定原失败、focused43C7EB66及最终TRX4C396BCB/receipt3D8D48A7。

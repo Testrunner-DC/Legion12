@@ -1,5 +1,20 @@
 # 十二军团简短交接
 
+## 2026-10-15 持续执行｜84阶段终态，907总/442待办
+
+- 校园移动网络df9原诊断虽HTTP/API200、WS open但停在authenticating，旧代际隔离不能证明恢复完成；无原网络/设备/DNS/TLS链，按用户既定检查后信息不足关闭，不称网络已修。8负例及一次CAS/终态读回29589、撤会话；累计84=26fixed/51rejected/7duplicate，周期176，907/442new/258resolved/207closed。唯一工作流1F36C2C1，campus-network-main-review与实际关单7F642656为据，其他性能超时继续。
+- 海拉/梅杰德原19实际8链已跑：Medjed4通过、Hela4在响应targetIds为空处失败（双方/恢复同样），原log/TRX和断言保持，不弱化8链门槛或先关报告。正只读区分共享目标投影与夹具来源；Medjed独立六UI准备继续，不让另一张的待修复阻断已过部分。
+- Chat-S02 Main标准Batch已真实7437规则/1707平台零失败跳过，两个owned TEMP均首次删除，完整源SHA不漂移；main-local-acceptance SHA39AE26AC。标准Batch按既有privateProof策略核新鲜TRX全过后删除原TRX，仅durable counters/receipt保留，不捏造完整TRX哈希或为补证重跑全套。独立CLEAR，产品两源待精确同步、聊天OFF、两服19不变。
+- 赛事最小单桌171正常动作/双方终局，但工具仅认固定原因文案，未留HP/reason，原03失败保留；一次owner只读确认桌completed/1权威game-result/无staff赛果，不能代替自然HP和exact双端记录绑定。三工具源限定修正27纯测已交待Main复核，禁止把03补成通过或自动扩Main32。新配置只读未见显式Nginx限速/当前qdisc丢包积压，仅当前共享配置线索，不作历史故障/供应商归责或性能已根治。
+
+## 2026-10-15 继续收口｜83阶段终态，907总/443待办
+
+- 新增具名终态4项：海拉f372先声明目标/再费用与响应（正式19原修复94df）；沙盒对方雷神之锤d153与宫廷魔术师90c/62ef目标展示（原修复1609）。海拉2具名正式TRX、雷锤4真实manager/SQLite链+6编译UI、宫廷8引擎链+12编译UI均由Main逐源/结果/截图SHA复核，限定实际场景而非原玩家录像、真机或全部主动战术。实际各一次preview/CAS/终态读回并撤会话，原文/历史保持；混合0c66690c及海拉另一显示报告不冒称已关。
+- 上批尚未写入本交接的芬尼亚6d0dc为信息不足/规则说明关闭；本方阶段累计83=26fixed/50rejected/7duplicate、周期175，队列907总/443new/258resolved/206closed、外部2单列。C盘formal-release-20261015的hela-declaration-main-review、thor-court-main-final-review及post-release-adversarial-20261014两实际回执；唯一D工作流SHA68FF2565/current-status已对账，非全队列完成。
+- 原10/20/30房各60秒+各10外围用户的同轮数值取证未通过：1621命令1616成功/5超时，864HTTP863成功/1榜单超时；30终局全部完整但29在3秒内/1迟到3688.583ms。30个测得服务端路径均<375ms，slot17实测367.118ms；未测3321.465ms不能直接归供应商。60终局全量13,414,771B；delta/presence重建错误0，无OOM/重启，非浏览器FPS/全部后台或长期容量证明。
+- 原lifecycle失败保留；实际收集30数值行后，在新严格idle与会话撤销/账号清理证明下仅恢复测试探针OFF并独立读回，测试PID169031→170354、正式131988不变。C盘test19-full-trace-20261015/main-assessment-after-recovery.json SHA1F46B1F1及独立OFF A53FFDEE为据。源审确认enqueue后的JSON/鉴权已包含在pre_gate；ReceiveText/lease入队前和send提交后到raw到达仍缺分段，59条10秒粗指标又未严格绑定历史PID，不当根因排除。禁止原样盲跑撞绿，旧4迟到和本轮5操作/1HTTP仍待定位。
+- 聊天S02限定三条HTTP撤权已交22新+3邻接及2真实旧消息复活RED，独立审查CLEAR；Main标准完整规则/平台Batch执行中，尚不称完成/已同步，生产注册器null/caller0/聊天OFF。赛事新root正常网络同SID的29步开桌已过，3普通账号/1独立赛事；只授一桌自然HP验证，未开始Main32/87桌验收，不与其他远端负载/重启并行。海拉/梅杰德目标显示C-only源准备与Main验收并行，最多两写者/构建串行；两服仍19，无新部署/维护。
+
 ## 2026-10-15 CHAT-C1B2-S01｜本地验收完成，未部署/未启聊天
 
 - S01两源最终F8B1681A/83D755E1无漂移：原SendDirectAsync唯一Socket.SendAsync调用抽为非async internal ValueTask薄入口，保持同一slice/Text/end/token、原5秒界/await/异常/指标/成功后codec提交，不加新传输或生产caller。新13+平台邻居73+规则邻居27=113已验，Main最终全规则7437与修正夹具后全平台1685零失败跳过，TRX4C396BCB及监督回执3D8D48A7为据。

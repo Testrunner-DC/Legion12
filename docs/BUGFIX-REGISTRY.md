@@ -1,5 +1,28 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 校园网络原环境不可重建｜有限信息不足关闭
+
+- BUG-20260907-df9afb0f原文只有“校园网（移动）连不上”。Main完整核原诊断：HTTP/API200、WS open、authenticating/retry3且无关闭码/心跳；服务器更早只是generation35相对34的重连接管与旧代际隔离。缺原设备/网络/DNS/TLS具体失败链，不能由任一片段认定玩家网络/服务商责任或恢复成功。当前19外部测试60连接只证明该公共路径，5操作/1HTTP/1终局失败仍在性能专项，不抹除。
+- 按用户不能重建则检查后关闭的原则rejected，非fixed_verified/duplicate，不反复问用户回忆。C盘campus-network-main-review，proposal36C2A401、8负例、单次CAS29589与实际关单7F642656、刷新及撤会话完成；原文/历史保留，具体新证据可重开。唯一队列907/442new/258resolved/207closed；84阶段=26fixed/51rejected/7duplicate、周期176。
+
+## 2026-10-15 海拉/梅杰德目标响应实证｜Hela4红，Medjed4绿，未关单
+
+- 正式19/7EC0原DLL经真实playCard/activateAbility完成8格controller0/1×恢复关开。梅杰德四格强力模式/墓卫休整Cost/敌方中格目标/真实AbsoluteDefense响应及最终2000/旧prompt拒绝全过；海拉四格在费用已付后的responseTargetIds应为所选中格却实际空数组，首TRX8总4过4失败零跳过/原断言保留。不能用前一条海拉声明先后顺序已修来吞掉当前对象显示报告。
+- C盘hela-medjed-target-current-probe/run-r1保留四Medjed结果、全部源/日志/TRX/failure。当前只读核是否共享声明目标投影遗漏，未先改产品/降断言；原全8浏览器入口不强行放行，Medjed可另建明确4绿基础/6UI限定入口。两原报告与混合0c66690c仍不关闭，待实际证据/新修复决定。
+
+## 2026-10-15 正式19具名目标显示与沙盒闭环｜新增4 resolved
+
+- BUG-20260928-f37221e1只针对海拉“先宣言目标再允许响应”：已部署94df5800原修复，正式19同源AtomicReviewBatch3两具名TRX通过，目标→费用/堆牌Cost→stack顺序及无Cost来源不付款守卫有效；不与3cd72435对象可视反馈合并。Main review SHA19395A43，实际单项关单81803F5B。
+- BUG-20260925-d15361df用正式19/7EC0原DLL真实sandbox manager/SQLite4链验证actor0/1×恢复：3张有序墓地Cost、格位、双方响应、唯一活跃雷锤、卡名回合一次及旧prompt/重复拒绝，6真实编译UI同实例完成30步点击；不是仅有按钮或单引擎。BUG-20260927-90c05ef5及BUG-20260926-62eff6e8用宫廷actual play→模式→选择两张同类盖伏中的中格→对方真实反击→最终唯一目标入墓8链，12实际UI/36图核位置文字、金框、最小化保持和对方隐藏身份不泄露。UI payload对照实际引擎命令，非重新网络提交/真iOS。原1609c6a1修复已部署，Main最终复核4A69D27A、实际3项关单7BBE2CC6。
+- 雷锤旧aliasOnly字段在6条有序Cost因键序误标，Main独立深规范化对照证实仅已声明别名转换，原字段/旧失败不覆盖；宫廷采用键序无关比较。真实组件用原公开父prop更新而非key重挂，UID/DOM保持。C盘declared-targets-current-probe r1依赖恢复在C盘不足前失败、Thor桥初版失败原样保留，不当产品RED；仅删除经精确路径核准的本次无验收cache，正式数据/接受证据不动，后续依赖与输出走D。
+- 四条各12关闭负例、各一次preview/CAS及终态读回、专用会话撤销完成，原文/历史不变。前片芬尼亚6d0dc按信息不足/规则说明关闭后，本方阶段83（26fixed/50rejected/7duplicate）/周期175；队列907/443new/258resolved/206closed，外部2单列。混合0c66690c仍开，海拉/梅杰德对象显示另8链准备，不用相关修复批量关闭。
+
+## 2026-10-15 测试19原完整负载数值取证｜未收口，安全恢复与验收分离
+
+- 原批准10/20/30房+10外围负载真实1621命令中5超时、864HTTP中1榜单超时；终局30完整/29及时/slot17迟到3688.583ms。serverTotal367.118ms、gatehold357.045ms、wire254683B、parse0.566ms；30服务器路径均<375ms并不能解释端到端其余3321.465ms。60终局全量13,414,771B，最大包279613B反而及时，不以大小相关性冒称根因。新旧失败均保持红。
+- 源审核EnqueuedAt→commit定义，dequeue之后JSON/鉴权在pre_gate内；接收分片/UTF8及部署lease入队前、提交后socket/TLS/proxy/网络/客户端原始到达尚缺。既有59条10秒采样虽pending均0、跨burst GC累计差93.753ms，但缺历史实例绑定且可能漏瞬时拥塞，不足以排除线程池/GC或归责供应商。
+- 失败lifecycle和5操作/1HTTP证据不改写。后续30数值行成功采出，再以严格idle/撤70会话/清69合成账号/固定DLL/部署锁，单独恢复测试默认OFF并独立核test170354/formal131988、两服19、围栏与owned配置；不回写库/改规则/降低3秒。C盘test19-full-trace-20261015的main-assessment-after-recovery 1F46B1F1、numeric D165BC40、recovery A5CA51AB、independentOFF A53FFDEE和main-source-boundary-review为据；无正式写、新部署或线上性能已修声明。
+
 ## 2026-10-15 CHAT-C1B2-S01最终验收｜真实Socket薄起发边界
 
 - 同一SendDirectAsync调用仅经非async internal ValueTask薄函数同步交给既有socket，原payload slice/Text/末帧/token及5秒界、等待、异常、指标和成功提交顺序不变；未配置生产聊天lane，未增加新发送器/协议/SQL。
