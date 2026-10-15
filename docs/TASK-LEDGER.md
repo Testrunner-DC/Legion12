@@ -1,5 +1,19 @@
 # 十二军团任务台账
 
+## 2026-10-15 两条原反馈收口与后续并行｜78阶段终态
+
+- 无P0—P4产品改动：785287ec伏击实际36场及四视角结算/末态已独立核51引用，原3秒/玩家初盘不在本片声明；按限定未复现关闭。ce8ff6ae原文未述错误现象，以正式19实际25天灾工作闭包+14三登场顺序+1三声明回归作互补核查，未新跑或冒称同一个三效果+天启场景，按信息不足/规则说明关闭。各8关单负例、一次CAS及独立终态/撤会话完成。
+- C盘bug-closeout-ambush-19与bug-closeout-ramses-vague-19及phase-19-ramses-vague-closed为实际依据；907总/448待办/254resolved/205closed，新增2与关闭2分别记账。阶段78（22fixed/49rejected/7duplicate）/周期170/外部2；唯一D工作流和current-status已对账，不机械夸大净降。
+- 新边观战边匹配是未接受产品建议，不自动实现；新芬尼亚疑似试炼反馈按原本兵力/有效阵营/休整与禁活跃/支付边界继续核查，不问用户玩家记忆、不按剩余4000直接判Bug。原沙盒对方墓地雷锤需实际actor/UI/成本/索尔/卡名次数链，未据引擎单侧按钮测试关闭。
+- Chat-S01完整规则7437绿、完整平台1671过1旧夹具收尾文件锁，原失败保留并单项审查，非功能或性能全收口；独立受监督自伤整类36绿不替代根因。终局C-only工具与赛事C-only驱动器两写者，Main只验收/记录；共享构建串行，测试服在终局defaultOFF确认后再交赛事独占，不在Swiss/Cut之间重启。
+
+## 2026-10-15 CHAT-C1B2-S01｜既有发送入口同步薄方法
+
+- P2不新增传输或聊天协议：唯一既有SendDirectAsync委托internal ValueTask StartPreparedTextSend；不async包装/复制payload，保留原send timeout、等待、异常、指标和成功codec提交。只租WS源与新ChatSocketAdmissionBoundaryTests，其他来源/HTTP/鉴权/房间/持久化不动。
+- 实际13新例+73平台邻居+27规则邻居=113无失败跳过，Main完整源审/五源SHA/三TRX及三个监督回执退出与owned TEMP移除独立核对；原生产ConfigureChatLane仍0。C盘chat-c1b2-s01-20261015/focused-return.json 43C7EB66；Main正常映射Batch接续，尚无完整门禁/同步/部署声明。
+- 下一片S02仍只读，三条真实HTTP block/unblock/remove与旧消息被借出后重新交友的generation不可复活RED是计划，不冒称已执行；需本片同步后新租约。终局取证工具与32人赛事矩阵隔离，不能在赛事期间重启测试。
+- Main完整Batch实际7437规则全绿；平台1672实际1671过1失败，自伤协议case的全部业务断言后在finally删除matches.db遇占用。旧源已有精确ClearPool和40/80/120/160ms重试，不能再叠等待冒称根治；原TRX/Temp保留，隔离进程整类36通过只作为范围核查。S01暂不push、不授S02代码，独立只读核监督器进程退出后清理边界。
+
 ## 2026-10-15 CANOPIC-UNDERLAY｜原圣物区内底叠取代独立底轨
 
 - 用户直接纠正布局，P4只改PlayerMat、mobile CSS和既有真实组件测试；权威存在列表/五卡身份/费用/整项无效/伊西斯圆图/普通圣物槽不改。原底轨成为历史方案，不再作为验收目标。
