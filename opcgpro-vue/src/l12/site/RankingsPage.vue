@@ -50,40 +50,30 @@ const headingScope = computed(() => tab.value === 'history' ? '已结算赛季'
 
 let disposed = false
 let reloadPending = false
-let refreshTimer: ReturnType<typeof setTimeout> | undefined
-const refreshIntervalMs = 60_000
-function scheduleRefresh() {
-  clearTimeout(refreshTimer)
-  if (!disposed && !document.hidden) refreshTimer = setTimeout(() => { void load() }, refreshIntervalMs)
-}
+let loadGeneration = 0
 async function load() {
   if (disposed) return
+  const generation = ++loadGeneration
   if (loading.value) { reloadPending = true; return }
-  clearTimeout(refreshTimer)
   const requestedFaction = faction.value
   const requestedRange = range.value
   loading.value = true
   error.value = ''
   try {
     const [response, historyResponse] = await Promise.all([rankedApi.leaderboard(requestedFaction, requestedRange), rankedApi.history()])
-    if (disposed || requestedFaction !== faction.value || requestedRange !== range.value) return
+    if (disposed || generation !== loadGeneration || requestedFaction !== faction.value || requestedRange !== range.value) return
     players.value = response.players as PlayerLeaderboardEntry[]
     analytics.value = response.analytics
     rangeLimited.value = Boolean(response.rangeLimited)
     hasAnalytics.value = true
     history.value = historyResponse
   } catch (cause) {
-    if (!disposed && requestedFaction === faction.value && requestedRange === range.value)
+    if (!disposed && generation === loadGeneration && requestedFaction === faction.value && requestedRange === range.value)
       error.value = cause instanceof Error ? cause.message : '排行榜加载失败'
   } finally {
     loading.value = false
     if (reloadPending && !disposed) { reloadPending = false; void load() }
-    else scheduleRefresh()
   }
-}
-function onVisibilityChange() {
-  clearTimeout(refreshTimer)
-  if (!document.hidden) void load()
 }
 
 const query = computed(() => search.value.trim().toLocaleLowerCase())
@@ -192,15 +182,13 @@ function scopeDate(value: Date) {
   return value.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
-watch([faction, range], load)
+watch([faction, range, tab], load)
 onMounted(() => {
-  document.addEventListener('visibilitychange', onVisibilityChange)
   void load()
 })
 onBeforeUnmount(() => {
   disposed = true
-  clearTimeout(refreshTimer)
-  document.removeEventListener('visibilitychange', onVisibilityChange)
+  loadGeneration++
 })
 </script>
 
@@ -213,10 +201,10 @@ onBeforeUnmount(() => {
 
     <p v-if="rangeLimited && tab !== 'history'" class="error" role="alert">本时间范围对局过多，暂无法显示完整排行。请切换本赛季。</p>
     <section v-if="hasAnalytics && !rangeLimited" class="summary-strip">
-      <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong><span>{{ analytics.range === 'season' ? '本赛季' : analytics.range === '7d' ? '近7天' : '近30天' }}</span></article>
-      <article><small>已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong><span>当前赛季</span></article>
-      <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong><span>统计范围内</span></article>
-      <article><small>最近计入对局</small><strong class="updated">{{ updatedAt }}</strong><span>页面可见时每分钟自动刷新</span></article>
+      <article><small>有效排位</small><strong>{{ analytics.summary.matches }}</strong></article>
+      <article><small>本赛季已定级玩家</small><strong>{{ analytics.summary.placedPlayers }}</strong></article>
+      <article><small>活跃主宰</small><strong>{{ analytics.summary.activeMasters }}</strong></article>
+      <article><small>最近计入对局</small><strong class="updated">{{ updatedAt }}</strong></article>
     </section>
 
     <section class="toolbar">

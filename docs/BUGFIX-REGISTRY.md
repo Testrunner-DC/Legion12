@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261016-RANKING-EXPLICIT-REFRESH｜榜单显式刷新与摘要精简（本地完成，未部署）
+
+- 用户直接要求进入/切换项目/手动刷新时再读，不要分钟轮询或系统性提示。移除RankingsPage的60秒timer及visibilitychange监听，只保留mount、faction/range/tab切换和原刷新按钮；搜索/排序继续本地。请求仍单飞+只追最新一项，generation拒绝ABA中间结果、迟到错误和卸载后写入；失败保留原快照，等待明确重试，不新增自动循环。
+- 按截图删除四个摘要副标题（本赛季、当前赛季、统计范围内、页面可见时每分钟自动刷新），将标题改“本赛季已定级玩家”。实际统计范围/样本说明/时区和榜单排序不改。rg全site/game的自动刷新说明仅余SiteShell历史更新条目，保留历史事实，不重写旧发布日志。
+- 原新增timer为0断言在旧实现实际RED；最终test-ranking-refresh验证无定时/可见性请求、显式item/manual读取、ABA、失败/卸载及原作用域；E1 14正负例与12实际组件排序邻居保持。Main正常前端Batch（UI356、类型、324卡/42资源、双构建）退出0，源DEE24E5F/F4E1194A未漂移；C盘performance-causal-isolation-20261016/main-local-acceptance.json 1CC07D52。该改动减少闲置查询，不冒称已解决全部性能超时；未部署/维护/线上关单。
+
 ## UI-20261016-MOBILE-ACTION-REACHABILITY｜防守按钮与共享选择区裁切（本地完成，未部署）
 
 - 正式19和本地4200真实SFC均复现：role badge占双按钮网格首格，固定42px父级裁掉第二行“不抵挡/不支援”，disabled=false却原始中心落在视口外。旧locator.tap会自动滚动hidden祖先，不能据其send1称初始可用；原生坐标RED22行496FF412及旧截图保留。
