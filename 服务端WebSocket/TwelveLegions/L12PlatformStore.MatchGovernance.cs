@@ -218,6 +218,21 @@ public sealed partial class L12PlatformStore
 
     internal void CancelOpenMatchDrawRequests(string matchId, DateTimeOffset now, string reason)
     {
+        // The committed gameplay bundle covers every persisted draw row, including legacy
+        // duplicate rows that the viewer projection collapses to one item per match. Avoid
+        // waiting for an unrelated platform writer when there is no open request to mutate.
+        // A transaction owner must inspect its staged _data instead of the older published bundle.
+        if (!Monitor.IsEntered(_gate) && matchId is not null)
+        {
+            try
+            {
+                if (!ReadCommittedGameplayReads().OpenDrawRequestMatchIds.Contains(matchId)) return;
+            }
+            catch (L12PlatformStorageUnavailableException)
+            {
+                // Preserve the authoritative locked path when the committed index is unavailable.
+            }
+        }
         lock (_gate)
         {
             var changed = false;

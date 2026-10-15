@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-16 终局无求和空写路径｜P2/P3本地验收完成，未部署
+
+- 用户已批无记录快返/真实记录保留权威写。真实本地三臂对照把旧3秒失败定位到终局取消求和的_gate等待，非静态HTTP或反复旧负载。沿原committed bundle添加全open Ordinal集合，legacy重复、事务内staged、不可用索引及失败恢复守卫齐全；同match room.Gate串行前提保持，独立CLEAR。
+- Main完整平台1726零失败跳过、TRX249B5806/监督54430A2A，最终三臂和新11格通过；原产品RED与一条新夹具审计顺序预期错误保留。C盘performance-causal-isolation-20261016/main-local-acceptance.json 1CC07D52绑定四源，内核未改复用7492规则，未新Release/部署。原5操作/1HTTP/线上终局外部3321ms缺口仍开，不把局部约3.6ms结果扩为线上根治。
+
 ## 2026-10-16 观战动画唯一可见持有者｜P2/P4本地验收完成，未部署
 
 - 用户已批共享根治范围：权威生效后每个动作一次表现，不按kind/text/水位合并或禁用动画；后端规则/网络/数据库不改。prepared owner统一准备/暂停/交接/终态，legacy排序与fact身份分离。Main补齐不同墓顶、动作末首姿态、换DOM节点租约、released后继清理与切局coherent tuple/same-ref matchId依赖；原RED和失败均保留。

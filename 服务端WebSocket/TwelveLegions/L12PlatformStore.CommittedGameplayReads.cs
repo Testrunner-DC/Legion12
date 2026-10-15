@@ -18,6 +18,7 @@ public sealed partial class L12PlatformStore
         string SeasonDisplayName,
         FrozenDictionary<string, string> ResponseModes,
         FrozenDictionary<string, CommittedDrawRequest> DrawRequests,
+        FrozenSet<string> OpenDrawRequestMatchIds,
         FrozenDictionary<(string MatchId, string AccountId), L12RankedSettlementView> Settlements);
 
     private CommittedGameplayReads PrepareCommittedGameplayReads(DataFile data)
@@ -39,16 +40,21 @@ public sealed partial class L12PlatformStore
             StorageFailureInjector?.Invoke("after-gameplay-read-index-build");
             return new(false, null, "当前赛季", FrozenDictionary<string, string>.Empty,
                 FrozenDictionary<string, CommittedDrawRequest>.Empty,
+                FrozenSet<string>.Empty,
                 FrozenDictionary<(string, string), L12RankedSettlementView>.Empty);
         }
         var policy = FreezeOperationsPolicy(ToPolicySnapshot(operations));
         var seasonName = HistoricalSeasonDisplayName(data,
             policy.Season.Id, policy.Season.Name, fallback: "当前赛季");
         var draws = new Dictionary<string, CommittedDrawRequest>(StringComparer.Ordinal);
+        var openDrawRequestMatchIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var row in data.MatchDrawRequests)
+        {
             draws[row.MatchId] = new(row.RequesterId, row.ResponderId,
                 new(row.Id, row.MatchId, row.RequesterName, row.ResponderName, row.Reason,
                     row.Status, false, false, row.RequestedAt, row.ExpiresAt, row.RespondedAt));
+            if (row.Status is "pending" or "accepting") openDrawRequestMatchIds.Add(row.MatchId);
+        }
 
         // One linear preparation, not one full integrity-history scan per settlement/read.
         var held = data.RankedHeldRewards.Select(row => row.MatchId)
@@ -100,7 +106,8 @@ public sealed partial class L12PlatformStore
             .ToFrozenDictionary(row => row.Id, row => L12GameEngine.IsValidResponseMode(row.ResponseMode)
                 ? row.ResponseMode : L12GameEngine.DefaultResponseMode, StringComparer.Ordinal);
         var prepared = new CommittedGameplayReads(true, policy, seasonName, modes,
-            draws.ToFrozenDictionary(StringComparer.Ordinal), settlements);
+            draws.ToFrozenDictionary(StringComparer.Ordinal),
+            openDrawRequestMatchIds.ToFrozenSet(StringComparer.Ordinal), settlements);
         StorageFailureInjector?.Invoke("after-gameplay-read-index-build");
         return prepared;
     }

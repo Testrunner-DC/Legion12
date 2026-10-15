@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PLATFORM-20261016-TERMINAL-NOOP-DRAW｜无待取消求和的终局脱离后台锁（本地完成，未部署）
+
+- 新方法使用同一进程真实WebSocket的普通、单连接发送屏障、无关平台提交屏障三臂，不重复旧30房压测。旧源第三臂在原3秒内收不到终局，前两臂通过，原TRX93F79234保留；根因是所有非议和终局在广播前无条件调用CancelOpenMatchDrawRequests，即使没有记录仍等共用_gate。
+- 用户批准后，既有CommittedGameplayReads同一次遍历/代际发布增加Ordinal FrozenSet，收集全部pending/accepting，包括旧重复行中被展示字典后行覆盖的open。仅外部非事务且可用索引证明无open时直接返回；事务owner、索引不可用、真实open保持原扫描/审计/Save/回滚。rg核两取消入口与申请创建；同match的创建和终局继续由同一room.Gate串行，不增加第二套锁、缓存、协议或数据库格式。
+- 原3秒三臂最终全过：提交屏障仍持有时双端约3.6ms终局，受控慢发送仅目标连接约1.115s，正常对手约4.2ms；这是局部因果控制，不是线上P99。新store11格覆盖四终态、重复pending/accepting、staged、不可用回锁、回滚重试与Ordinal；独立critical审查CLEAR。首13/14中一条新测试误把现有倒序历史当正序，仅改预期并保留原失败8A8F3188，产品字节未改；最终完整平台1726/1726零失败跳过，TRX249B5806/监督54430A2A且owned TEMP实际回收。
+- Main回执C盘performance-causal-isolation-20261016/main-local-acceptance.json SHA1CC07D52，四源冻结；未变内核复用7492规则证据，前端另批同源Batch通过。不复写旧失败，不降低3秒。原线上5操作/1HTTP失败及slot17服务端后3321.4654ms仍未解释，本缺陷发生在发送前，不能据此关闭那些报告。部署/维护/线上Bug写均0，真实待处理求和仍需权威持久化。
+
 ## 2026-10-16 观战登场/休整重复｜共享所有权本地验收完成，未部署
 
 - 根因：正式19真实ordinary delta/赛事full×entry/rest四臂RED0A3F116B，权威最终DOM提前转/显，后续表现层再重演；legacy变化绕统一排序、readonly无真实弹框却暂停、克隆IMG失解码状态导致合法动作吞失。同sequence重传原本不新增，不能误归全部为网络重发。原blank checker把空手牌容器当像素，旧blank0不作独立证据，最终按真实卡背/像素及精确WAAPI起播重验。
