@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-16 接续105｜423待办；终局诊断缩小范围而非宣称根治
+
+- 正式仍cce8/PID184743/开放/不含新聊天；测试3b7b/PID210129/临时诊断OFF。本轮仅一次读取原负载PID208589留存数字及当前代理具名配置，0新增业务请求、0部署/维护/网络配置写。85722608原分钟内persistence.total max341.41ms、transaction50.43ms、checkpoint serialize34.07ms，且相应总耗时无争用丢样；它们是分钟聚合，不能逐请求相加或解释完整1.86—3.40秒长尾。代理选定文件无显式limit_rate，但5个include未展开，qdisc仅fq_codel/mq/noqueue；1D702405不能证明供应商限速或完整代理无问题。
+- 本地真实WS+SQLite两房屏障2/2：A持recorder阶段时B已有独立room gate但终局未投递，健康ping仍可达；r2 A13F9516严格不把Receive未完成叫“未enqueue”，序列仅单轮观察，最终checkpoint/replay hash一致。合法大状态单房26条命令产生198390/189436B终局，raw15.377/16.296ms、server13.552ms，27命令/397600B checkpoint恢复通过；7E99EB9B为5DFD旧focused源，不是公网或30房证明。Main补receipt_after_send_valid严格断言和丢样即N/A正负例，6972C802最终源须认本轮正常Batch实际回执phase105-local-acceptance.json，不借旧focused绿当最终集成绿。仅测试文件，无产品数据路径优化。
+- Bug四条各独立闭环：33c5土方单目标按44ee/cce8具名2项fixed_verified；2b23槲寄生按正式引擎0/3符文和真实PromptOverlay AST空数组提交未复现rejected，不把0e49或8c6198冒称根因修复；209f绝防手牌Cost弃置信仰狂热者按用户裁定/精确费用回归rejected；922b李牧展示绝防按真实Reveal handler排除反击战术guard未复现rejected，不称私人整局重放。E85DED44及7E1CD5FC保存单CAS29920/29922/29926/29927、独立终态读回/原文历史保持与会话撤销。
+- 唯一清单909/423new/268resolved/218closed，阶段105=36fixed/61rejected/8duplicate、周期197，外部2仍单列。观星2698与5dcb缺“李牧免费打出观星+满士气”的同一真实链，不能拿拆开的绿合并或关闭；正准备双方/恢复交叉回归。佣兵来源区域及Tut结果分类仅各自挂起；性能继续最小大帧/并发发送—到达对照，不盲复跑整轮或改3秒门限。最终Git只认本轮实际同步回执；不新增正式发布或开启聊天。
+
 ## 2026-10-16 接续101｜原负载实际部分通过、终局4迟到继续定位
 
 - 当前正式仍cce8/PID184743/开放且不带新聊天。测试3b7b标准已发布状态保持；本轮只安装owned v2诊断、跑原10/20/30房各60秒+各10外围，结束后精确撤回并空闲重启，0246E96F移除收据/459944F6核测试PID210129/诊断OFF及两服健康，短期会话独立401失效，未追加部署或维护写。

@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续105｜土方、槲寄生与两条规则边界实际收口
+
+- BUG-20260911-33c5b6c5：原文只有一个合法目标的土方登场不能发动。正式cce8的44ee共享修复与Batch299两项HijikataWithOneEligibleLegionRequiresThatSelectionAndSkipsTheOtherKill/HijikataWithOnlyOneCostTwoLegionStillRequiresAndResolvesThatKill精确Passed，单一≤1或费用2军团仍必须明确选择并击杀；按fixed_verified，未重放私人原局。
+- BUG-20260907-2b23317f：原“寄生咒”按可消耗符文卡文归一S02-0622槲寄生符咒。正式零/三符文真实引擎回归Passed；冻结PromptOverlay AST执行min0/max2、空cardInstanceIds的resolvePrompt恰一次且不是cancel，当前未复现，closed/rejected。Main查明零符文测试由8c6198引入，0e49没改该测试，均不冒称历史根因fixCommit；不把当前绿叫原局复原。
+- BUG-20260916-209f0f0a：绝防把手牌信仰狂热者作为Cost弃置不触发，符合用户既有“手牌费用不算效果弃置”裁定。正式AbsoluteDefenseDiscardCostDoesNotTriggerFaithZealot精确覆盖弃牌方当前回合、真实stack-response-discard、入墓且无候选/提示/用次，按规则说明rejected，不改卡效。
+- BUG-20260916-922b45c5：李牧展示绝对防御，后者是反击而非合格主动战术；正式LiMuRevealingAbsoluteDefenseReturnsItToTheLibraryBottomWithoutOpeningAPlayFlow精确Passed，直接返牌库底且无Prompt/Activation/Stack或stack-push。仅真实Reveal handler guard级检查未复现关闭rejected，不叫整局/历史崩溃已复现或新fix。
+- C盘hijikata-mistletoe-cce8最终提案42D86DFD与faith-cost-limu-counter-cce8提案C3C84B59冻结后才执行；E85DED44、7E1CD5FC记录一次preview/CAS29920/29922/29926/29927、独立终态读回和撤会话。唯一909/423new/268resolved/218closed、阶段105=36fixed/61rejected/8duplicate、周期197，外部2单列；无部署/维护/产品写。
+- 性能仅新增诊断测试：两房recorder耦合与单房合法约198KB终局本机快速到达；原公网4终局超3秒保持红。Main加丢样即N/A和receipt-after-send有效位，最终平台族验收另认phase105-local-acceptance.json；一分钟聚合、before-commit callback、SendAsync完成均不能冒充逐请求fsync、远端到达或供应商根因。李牧+观星满士气交叉原场2698/5dcb尚缺，不关闭。
+
 ## 2026-10-16 接续101｜落穴陷阱纳入与排除两条独立闭环
 
 - BUG-20260908-729749bb原文晋升不能落穴：最终共享04fb70c6晚于报告eac1、已在正式cce8；正式EffectBatch294精确S02-0503晋升/只无效所选项与Backend296 promotion-enter家族3项Passed，普通/晋升同军团登场家族，不等于圣物也纳入。

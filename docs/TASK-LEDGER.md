@@ -1,5 +1,12 @@
 # 十二军团任务台账
 
+## 2026-10-16 接续105｜诊断测试族与四条已上线反馈核对
+
+- P2/P3不变量保持：新增TerminalRecorderCouplingTests两屏障和TerminalCausalIsolationTests合法大状态/指标完整性合同，只读观测真实WS、SQLite与恢复，不改产品命令、终局全量、可靠顺序、费用/卡效或存储格式。2+1 focused通过分别绑定DAFB/5DFD源；Main收紧receipt_after_send_valid和争用丢样N/A后最终6972源及原相邻平台，统一按正常Batch的phase105-local-acceptance.json认定；不重复未变规则/前端或作新Release/部署。
+- 真实旧负载数字85722608与Main9EFAAAFA只能证明写门有耦合但未解释全部3秒长尾；合法约198KB本机raw约16ms/请求server13.55ms仍不能扩成公网并发已治。代理只读1D702405未展开5 include，不作供应商归因。两服身份/版本/维护与默认诊断OFF保持。
+- 实际四条单次CAS/终态读回完成：土方33c5 fixed_verified；槲寄生2b23检查未复现、绝防费用209f规则预期、李牧绝防922b handler级未复现均rejected，原私局未重放不冒称唯一原因。E85DED44/7E1CD5FC及唯一双次状态对账为据，909/423new/268resolved/218closed、105=36/61/8、周期197、外部2不计；会话全撤销。
+- 下一有用缺口是李牧免费打出观星满士气的双方/恢复交叉链，以及有界大帧终局公网突发边界；不能仅凭同卡/独立组件绿关闭2698/5dcb或性能项。佣兵/Tut仅关联项待裁定；其他继续。最终源复核/Batch/Git由Main统一，禁止把测试变化当产品上线。
+
 ## 2026-10-16 当前接续101｜429→427；性能终局未收口
 
 - 落穴两条已部署修复以正式6个具名回归/共享源/祖先核准，一次CAS29916/29917+独立读回/撤会话；7FBE718A，唯一909/427new/267resolved/215closed，101=35fixed/58rejected/8duplicate、周期193。原局未重放边界保持，未实现新卡效或扩大关单。

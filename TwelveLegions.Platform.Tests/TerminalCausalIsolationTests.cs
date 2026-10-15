@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
 using Xunit.Abstractions;
@@ -16,6 +17,11 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
     private static readonly JsonSerializerOptions Wire = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan ThreeSeconds = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan SetupDeadline = TimeSpan.FromSeconds(10);
+    private const int LargeStateSelectionSeed = 20261016;
+    private const int MaximumAcceptedLargeStateCommands = 96;
+    private const int MinimumTerminalBytes = 169 * 1024;
+    private const int MaximumTerminalBytes = 300 * 1024;
+    private const int PreferredPreTerminalBytes = 180 * 1024;
 
     [Theory]
     [InlineData("normal")]
@@ -268,6 +274,546 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public async Task LocalhostLargeLegalTerminalSeparatesRecorderProjectionTransportAndRawArrival()
+    {
+        using var identity = new RankedIdentityFixture();
+        var actorRegistration = identity.Store.Register($"la{Guid.NewGuid():N}"[..10], "Password123!");
+        var opponentRegistration = identity.Store.Register($"lb{Guid.NewGuid():N}"[..10], "Password123!");
+        Assert.True(actorRegistration.Success);
+        Assert.True(opponentRegistration.Success);
+
+        var evidence = new ConcurrentQueue<string>();
+        var nonce = Guid.NewGuid().ToString("N");
+        using var diagnostics = Assert.IsType<L12SyntheticTransportDiagnostics>(
+            L12SyntheticTransportDiagnostics.Create(true,
+                $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", evidence.Enqueue,
+                ThreeSeconds, TimeSpan.FromMilliseconds(10)));
+        var databasePath = Path.Combine(Path.GetDirectoryName(identity.Path)!, "causal-large-state.db");
+        await using var recorder = new MatchRecorder(databasePath);
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(identity.Catalog, recorder, identity.Store);
+        await using var server = new L12WebSocketServer(rooms, recorder, identity.Store,
+            identity.Catalog, null, null, null, null, null, null, null, diagnostics);
+
+        SocketPeer? actor = null;
+        SocketPeer? opponent = null;
+        var beforeCommit = new ConcurrentQueue<BeforeCommitObservation>();
+        var beforeCommitOrdinal = 0;
+        var serverStarted = false;
+        try
+        {
+            await server.StartAsync(0).WaitAsync(SetupDeadline);
+            serverStarted = true;
+            var http = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" };
+            var endpoint = new UriBuilder(http.Uri) { Scheme = "ws", Path = "/ws" }.Uri;
+            actor = await SocketPeer.ConnectAsync(endpoint, actorRegistration.Token!);
+            opponent = await SocketPeer.ConnectAsync(endpoint, opponentRegistration.Token!);
+            var started = await StartLargeFriendlyGameAsync(actor, opponent);
+            var peersByPlayer = new SocketPeer[2];
+            var latestByPlayer = new ReceivedFrame[2];
+            BindPlayerFrame(actor, started.Actor, peersByPlayer, latestByPlayer);
+            BindPlayerFrame(opponent, started.Opponent, peersByPlayer, latestByPlayer);
+            Assert.All(peersByPlayer, peer => Assert.NotNull(peer));
+
+            var selector = new Random(LargeStateSelectionSeed);
+            var playedTurns = new HashSet<string>(StringComparer.Ordinal);
+            var commandTypes = new Dictionary<string, int>(StringComparer.Ordinal);
+            var acceptedCommands = 0;
+            while (acceptedCommands < MaximumAcceptedLargeStateCommands
+                   && latestByPlayer.Min(frame => frame.RawBytes) < PreferredPreTerminalBytes)
+            {
+                Assert.DoesNotContain(latestByPlayer,
+                    frame => IsGameOver(frame.Payload));
+                var selected = SelectLargeStateCommand(latestByPlayer, playedTurns, selector);
+                var sender = peersByPlayer[selected.PlayerIndex];
+                var other = peersByPlayer[1 - selected.PlayerIndex];
+                var revisionBefore = ReadInt64(
+                    latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state"), "revision");
+                var requestId = $"large-state-{acceptedCommands:D3}-{Guid.NewGuid():N}";
+                var confirmationTask = sender.ReceiveAsync(
+                    payload => ReadString(payload, "requestId") == requestId, SetupDeadline);
+                var peerTask = other.ReceiveAsync(
+                    payload => IsAdvancedGameState(payload, revisionBefore), SetupDeadline);
+                await sender.SendAsync(new
+                {
+                    type = "gameAction",
+                    requestId,
+                    command = selected.Command,
+                });
+                var confirmation = await confirmationTask;
+                Assert.Equal("gameState", ReadString(confirmation.Payload, "type"));
+                Assert.True(IsAdvancedGameState(confirmation.Payload, revisionBefore),
+                    $"accepted {selected.Type} did not advance the authoritative revision");
+                var peerFrame = await peerTask;
+                BindPlayerFrame(sender, confirmation, peersByPlayer, latestByPlayer);
+                BindPlayerFrame(other, peerFrame, peersByPlayer, latestByPlayer);
+                Assert.Equal(
+                    ReadInt64(latestByPlayer[0].Payload.GetProperty("state"), "revision"),
+                    ReadInt64(latestByPlayer[1].Payload.GetProperty("state"), "revision"));
+                if (selected.TurnKey is not null) playedTurns.Add(selected.TurnKey);
+                commandTypes[selected.Type] = commandTypes.GetValueOrDefault(selected.Type) + 1;
+                acceptedCommands++;
+            }
+
+            var preTerminalBytes = latestByPlayer.Select(frame => frame.RawBytes).ToArray();
+            var metricsBefore = PerformanceSnapshot();
+            var observationStartedAt = Stopwatch.GetTimestamp();
+            recorder.StorageFailureInjector = stage =>
+            {
+                var kind = stage switch
+                {
+                    "before-match-command-commit" => 1,
+                    "before-match-complete-commit" => 2,
+                    _ => 0,
+                };
+                if (kind != 0)
+                    beforeCommit.Enqueue(new BeforeCommitObservation(
+                        Interlocked.Increment(ref beforeCommitOrdinal), kind,
+                        ElapsedMicroseconds(observationStartedAt, Stopwatch.GetTimestamp())));
+            };
+
+            var terminalRequestId = $"l12diag:{nonce}:0:{Guid.NewGuid():N}";
+            var actorTerminalTask = actor.ReceiveAsync(
+                payload => IsGameOver(payload) && ReadString(payload, "requestId") == terminalRequestId,
+                ThreeSeconds);
+            var opponentTerminalTask = opponent.ReceiveAsync(IsGameOver, ThreeSeconds);
+            var terminalSentAt = Stopwatch.GetTimestamp();
+            await actor.SendAsync(new
+            {
+                type = "gameAction",
+                requestId = terminalRequestId,
+                command = new { type = "surrender" },
+            });
+            var terminalFrames = await Task.WhenAll(actorTerminalTask, opponentTerminalTask);
+            var terminalReceivedAt = terminalFrames.Max(frame => frame.ReceivedAt);
+            Assert.True(Stopwatch.GetElapsedTime(terminalSentAt, terminalReceivedAt) < ThreeSeconds,
+                "large-state localhost terminal delivery exceeded the original three-second boundary");
+
+            await actor.SendAsync(new
+            {
+                type = "ping",
+                diagnosticNonce = nonce,
+                diagnosticSlot = 0,
+            });
+            _ = await actor.ReceiveTypeAsync("pong", ThreeSeconds);
+            var diagnostic = await ReadDiagnosticRowAsync(evidence, SetupDeadline);
+            var metricsAfter = PerformanceSnapshot();
+            var durable = await AssertLargeDurableTerminalAsync(
+                recorder, databasePath, started.MatchId, terminalRequestId, acceptedCommands + 1);
+
+            var orderedCallbacks = beforeCommit.OrderBy(item => item.Ordinal).ToArray();
+            Assert.Equal(1, orderedCallbacks.Count(item => item.Kind == 1));
+            Assert.Equal(1, orderedCallbacks.Count(item => item.Kind == 2));
+            Assert.All(orderedCallbacks, item =>
+            {
+                Assert.True(item.RelativeMicroseconds >= 0);
+                Assert.True(item.RelativeMicroseconds <=
+                    ElapsedMicroseconds(observationStartedAt, terminalReceivedAt));
+            });
+            Assert.Equal(2, diagnostic.GetProperty("schema").GetInt32());
+            Assert.Equal((int)L12SyntheticTransportStatus.Sent,
+                diagnostic.GetProperty("status").GetInt32());
+            Assert.Equal(1, diagnostic.GetProperty("receive_valid").GetInt32());
+            Assert.Equal(1, diagnostic.GetProperty("receipt_valid").GetInt32());
+            Assert.Equal(1, diagnostic.GetProperty("receipt_after_send_valid").GetInt32());
+            Assert.Equal(0, diagnostic.GetProperty("wire_delta").GetInt32());
+            Assert.Equal(terminalFrames[0].RawBytes,
+                diagnostic.GetProperty("wire_bytes").GetInt32());
+
+            var terminalBytes = terminalFrames.Select(frame => frame.RawBytes).ToArray();
+            var globalMetrics = MetricDelta(metricsBefore, metricsAfter,
+            [
+                "duration.action.engine",
+                "duration.snapshot.build",
+                "duration.persistence.serialize-and-hash",
+                "duration.persistence.checkpoint-serialize",
+                "duration.persistence.transaction",
+                "duration.persistence.total",
+                "duration.websocket.serialize",
+                "duration.websocket.send",
+                "bytes.websocket.full-payload",
+            ]);
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                schema = 1,
+                scenario = "single-friendly-room-large-legal-command-history-localhost-terminal",
+                commandSelectionSeed = LargeStateSelectionSeed,
+                productRoomSeedBoundary = "real websocket room seed remains product-generated; no state or RNG injection",
+                maximumAcceptedCommands = MaximumAcceptedLargeStateCommands,
+                acceptedCommands,
+                commandTypes,
+                preferredPreTerminalBytes = PreferredPreTerminalBytes,
+                preTerminalBytes,
+                terminalRangeBytes = new { minimum = MinimumTerminalBytes, maximum = MaximumTerminalBytes },
+                terminalBytes,
+                terminalSendToRawMicroseconds = terminalFrames.Select(frame =>
+                    ElapsedMicroseconds(terminalSentAt, frame.ReceivedAt)).ToArray(),
+                originalThresholdMicroseconds = (long)(ThreeSeconds.TotalMilliseconds * 1000),
+                beforeCommitStageContract = new { append = 1, complete = 2 },
+                observedBeforeCommitSequence = orderedCallbacks.Select(item => item.Kind).ToArray(),
+                observedBeforeCommitRelativeMicroseconds = orderedCallbacks
+                    .Select(item => item.RelativeMicroseconds).ToArray(),
+                beforeCommitBoundary = "callbacks are pre-commit observations, not commit/fsync completion timestamps",
+                durability = durable,
+                requestDiagnostic = NumericDiagnostic(diagnostic),
+                globalMetricDelta = globalMetrics,
+                metricBoundary = "global stage rows are aggregate window deltas; request diagnostic is requester-only; SendAsync completion and receipt round-trip are not one-way public network time",
+            }));
+
+            Assert.All(terminalBytes, bytes => Assert.InRange(
+                bytes, MinimumTerminalBytes, MaximumTerminalBytes));
+            Assert.InRange(diagnostic.GetProperty("wire_bytes").GetInt32(),
+                MinimumTerminalBytes, MaximumTerminalBytes);
+        }
+        finally
+        {
+            recorder.StorageFailureInjector = null;
+            if (actor is not null) await actor.DisposeAsync();
+            if (opponent is not null) await opponent.DisposeAsync();
+            if (serverStarted) await server.StopAsync().WaitAsync(SetupDeadline);
+        }
+    }
+
+    private static async Task<StartedLargeRoom> StartLargeFriendlyGameAsync(
+        SocketPeer actor, SocketPeer opponent)
+    {
+        await actor.SendAsync(new
+        {
+            type = "createRoom",
+            options = new { matchModeId = "friendly" },
+        });
+        var created = await actor.ReceiveTypeAsync("roomState", SetupDeadline);
+        var roomCode = ReadString(created.Payload, "roomCode");
+        Assert.False(string.IsNullOrWhiteSpace(roomCode));
+
+        var actorJoined = actor.ReceiveTypeAsync("roomState", SetupDeadline);
+        var opponentJoined = opponent.ReceiveTypeAsync("roomState", SetupDeadline);
+        await opponent.SendAsync(new { type = "joinRoom", roomCode });
+        await Task.WhenAll(actorJoined, opponentJoined);
+
+        var actorReady = actor.ReceiveTypeAsync("roomState", SetupDeadline);
+        var opponentSeesReady = opponent.ReceiveTypeAsync("roomState", SetupDeadline);
+        await actor.SendAsync(new { type = "ready", ready = true });
+        await Task.WhenAll(actorReady, opponentSeesReady);
+
+        var actorStarted = actor.ReceiveTypeAsync("gameState", SetupDeadline);
+        var opponentStarted = opponent.ReceiveTypeAsync("gameState", SetupDeadline);
+        await opponent.SendAsync(new { type = "ready", ready = true });
+        var started = await Task.WhenAll(actorStarted, opponentStarted);
+        Assert.All(started, frame => Assert.False(IsGameOver(frame.Payload)));
+        var actorMatchId = ReadString(started[0].Payload.GetProperty("state"), "matchId");
+        var opponentMatchId = ReadString(started[1].Payload.GetProperty("state"), "matchId");
+        Assert.False(string.IsNullOrWhiteSpace(actorMatchId));
+        Assert.Equal(actorMatchId, opponentMatchId);
+        return new(actorMatchId!, started[0], started[1]);
+    }
+
+    private static void BindPlayerFrame(SocketPeer peer, ReceivedFrame frame,
+        SocketPeer[] peersByPlayer, ReceivedFrame[] latestByPlayer)
+    {
+        var state = frame.Payload.GetProperty("state");
+        var playerIndex = ReadInt32(state, "you");
+        Assert.InRange(playerIndex, 0, 1);
+        if (peersByPlayer[playerIndex] is not null)
+            Assert.Same(peer, peersByPlayer[playerIndex]);
+        peersByPlayer[playerIndex] = peer;
+        latestByPlayer[playerIndex] = frame;
+    }
+
+    private static SelectedLargeCommand SelectLargeStateCommand(
+        IReadOnlyList<ReceivedFrame> latestByPlayer, HashSet<string> playedTurns, Random selector)
+    {
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var state = latestByPlayer[playerIndex].Payload.GetProperty("state");
+            var prompts = state.GetProperty("prompts");
+            if (prompts.GetArrayLength() == 0) continue;
+            var prompt = prompts.EnumerateArray().First();
+            Assert.Equal(playerIndex, ReadInt32(prompt, "playerIndex"));
+            if (prompt.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Object
+                && data.TryGetProperty("placementMode", out var placementMode)
+                && placementMode.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+                throw new Xunit.Sdk.XunitException(
+                    "large-state legal selector reached an unsupported authoritative placement prompt");
+            var validChoices = prompt.GetProperty("validChoices").EnumerateArray()
+                .Select(choice => choice.GetString())
+                .Where(choice => !string.IsNullOrWhiteSpace(choice))
+                .Cast<string>().ToArray();
+            Assert.Equal(validChoices.Length, validChoices.Distinct(StringComparer.Ordinal).Count());
+            var minimum = ReadInt32(prompt, "minChoose");
+            var maximum = ReadInt32(prompt, "maxChoose");
+            Assert.InRange(minimum, 0, validChoices.Length);
+            Assert.InRange(maximum, minimum, validChoices.Length);
+            var command = new Dictionary<string, object?>
+            {
+                ["type"] = "resolvePrompt",
+                ["promptId"] = ReadString(prompt, "promptId"),
+                ["cardInstanceIds"] = validChoices.Take(minimum).ToArray(),
+            };
+            CopyPromptBinding(prompt, command, "activationId");
+            CopyPromptBinding(prompt, command, "sourceInstanceId");
+            CopyPromptBinding(prompt, command, "sourceCardId");
+            CopyPromptBinding(prompt, command, "step");
+            CopyPromptBinding(prompt, command, "createdRevision");
+            CopyPromptBinding(prompt, command, "controller");
+            return new(playerIndex, "resolvePrompt", command, null);
+        }
+
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var state = latestByPlayer[playerIndex].Payload.GetProperty("state");
+            if (!string.Equals(ReadString(state, "phase"), "Mulligan", StringComparison.Ordinal)) continue;
+            var own = PlayerView(state, playerIndex);
+            if (!own.GetProperty("mulliganDone").GetBoolean())
+                return new(playerIndex, "mulligan", new Dictionary<string, object?>
+                {
+                    ["type"] = "mulligan",
+                    ["cardInstanceIds"] = Array.Empty<string>(),
+                }, null);
+        }
+
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var state = latestByPlayer[playerIndex].Payload.GetProperty("state");
+            if (!string.Equals(ReadString(state, "phase"), "Defense", StringComparison.Ordinal)
+                || state.GetProperty("effectStack").GetArrayLength() != 0
+                || state.GetProperty("pendingDefense").ValueKind != JsonValueKind.Object)
+                continue;
+            var pending = state.GetProperty("pendingDefense");
+            if (ReadString(pending, "stage") == "DefenseChoice"
+                && ReadInt32(pending, "attackerPlayer") != playerIndex)
+                return new(playerIndex, "resolveDefense", new Dictionary<string, object?>
+                {
+                    ["type"] = "resolveDefense",
+                    ["cardInstanceIds"] = Array.Empty<string>(),
+                }, null);
+        }
+
+        for (var playerIndex = 0; playerIndex < 2; playerIndex++)
+        {
+            var state = latestByPlayer[playerIndex].Payload.GetProperty("state");
+            if (!string.Equals(ReadString(state, "phase"), "Main", StringComparison.Ordinal)
+                || ReadInt32(state, "activePlayer") != playerIndex
+                || state.GetProperty("prompts").GetArrayLength() != 0
+                || state.GetProperty("effectStack").GetArrayLength() != 0
+                || state.GetProperty("pendingDefense").ValueKind != JsonValueKind.Null
+                || state.GetProperty("waitingPrompt").ValueKind != JsonValueKind.Null)
+                continue;
+
+            var attacks = new List<(string Attacker, string Target)>();
+            foreach (var attack in state.GetProperty("legalAttackTargets").EnumerateObject())
+            foreach (var target in attack.Value.EnumerateArray())
+            {
+                var targetId = target.GetString();
+                if (!string.IsNullOrWhiteSpace(targetId)
+                    && !string.Equals(targetId, "master", StringComparison.OrdinalIgnoreCase))
+                    attacks.Add((attack.Name, targetId));
+            }
+            if (attacks.Count > 0)
+            {
+                var selected = attacks[selector.Next(attacks.Count)];
+                return new(playerIndex, "attack", new Dictionary<string, object?>
+                {
+                    ["type"] = "attack",
+                    ["cardInstanceId"] = selected.Attacker,
+                    ["target"] = new Dictionary<string, object?>
+                    {
+                        ["type"] = "legion",
+                        ["instanceId"] = selected.Target,
+                    },
+                }, null);
+            }
+
+            var own = PlayerView(state, playerIndex);
+            var turnKey = $"{playerIndex}:{ReadInt32(state, "turnSerial")}";
+            if (!playedTurns.Contains(turnKey))
+            {
+                var row = own.GetProperty("field")[0];
+                var slot = -1;
+                for (var index = 0; index < row.GetArrayLength(); index++)
+                    if (row[index].ValueKind == JsonValueKind.Null) { slot = index; break; }
+                if (slot >= 0)
+                {
+                    var budget = ReadInt32(own, "spendableResourceCount");
+                    var candidates = own.GetProperty("hand").EnumerateArray().Where(card =>
+                        string.Equals(ReadString(card, "cardType"), "legion", StringComparison.OrdinalIgnoreCase)
+                        && card.TryGetProperty("instanceId", out var instance)
+                        && instance.ValueKind == JsonValueKind.String
+                        && card.TryGetProperty("playCost", out var cost)
+                        && cost.ValueKind == JsonValueKind.Number
+                        && cost.TryGetInt32(out var playCost)
+                        && playCost >= 0 && playCost <= budget
+                        && (!card.TryGetProperty("playBlockedReason", out var blocked)
+                            || blocked.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
+                            || string.IsNullOrWhiteSpace(blocked.GetString()))).ToArray();
+                    if (candidates.Length > 0)
+                    {
+                        var card = candidates[selector.Next(candidates.Length)];
+                        return new(playerIndex, "playCard", new Dictionary<string, object?>
+                        {
+                            ["type"] = "playCard",
+                            ["cardInstanceId"] = ReadString(card, "instanceId"),
+                            ["row"] = 0,
+                            ["slot"] = slot,
+                            ["targetPlayerIndex"] = playerIndex,
+                            ["choice"] = "normal-entry",
+                        }, turnKey);
+                    }
+                }
+            }
+            return new(playerIndex, "endTurn", new Dictionary<string, object?>
+            {
+                ["type"] = "endTurn",
+            }, null);
+        }
+
+        var states = latestByPlayer.Select(frame => frame.Payload.GetProperty("state"))
+            .Select(state => new
+            {
+                phase = ReadString(state, "phase"),
+                revision = ReadInt64(state, "revision"),
+                activePlayer = ReadInt32(state, "activePlayer"),
+                prompts = state.GetProperty("prompts").GetArrayLength(),
+                stack = state.GetProperty("effectStack").GetArrayLength(),
+            }).ToArray();
+        throw new Xunit.Sdk.XunitException(
+            "no legal command selected from authoritative snapshots: " + JsonSerializer.Serialize(states));
+    }
+
+    private static JsonElement PlayerView(JsonElement state, int playerIndex) =>
+        state.GetProperty("players").EnumerateArray()
+            .Single(player => ReadInt32(player, "playerIndex") == playerIndex);
+
+    private static void CopyPromptBinding(JsonElement prompt,
+        IDictionary<string, object?> command, string property)
+    {
+        if (prompt.TryGetProperty(property, out var value)
+            && value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            command[property] = value.Clone();
+    }
+
+    private static bool IsAdvancedGameState(JsonElement payload, long revision) =>
+        ReadString(payload, "type") == "gameState"
+        && payload.TryGetProperty("state", out var state)
+        && ReadInt64(state, "revision") > revision;
+
+    private static int ReadInt32(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var value) && value.TryGetInt32(out var number)
+            ? number : throw new Xunit.Sdk.XunitException($"missing integer property {name}");
+
+    private static long ReadInt64(JsonElement payload, string name) =>
+        payload.TryGetProperty(name, out var value) && value.TryGetInt64(out var number)
+            ? number : throw new Xunit.Sdk.XunitException($"missing integer property {name}");
+
+    private static async Task<LargeDurabilityEvidence> AssertLargeDurableTerminalAsync(
+        MatchRecorder recorder, string databasePath, string matchId, string requestId,
+        int expectedCommandCount)
+    {
+        var detail = Assert.IsType<L12MatchDetail>(await recorder.GetMatchAsync(matchId));
+        Assert.Equal(expectedCommandCount, detail.Commands.Count);
+        var terminal = detail.Commands[^1];
+        Assert.Equal("surrender", ReadString(terminal.Command, "type"));
+        Assert.True(terminal.Accepted);
+        Assert.NotNull(detail.Match.EndedUtc);
+        Assert.NotNull(detail.Match.FinalHash);
+        Assert.Equal(terminal.StateHash, detail.Match.FinalHash);
+
+        var recovered = Assert.IsType<L12JournalRecoveryState>(
+            await recorder.LoadJournalEngineAsync(matchId));
+        Assert.Equal(terminal.Sequence, recovered.CommandSequence);
+        Assert.Equal(L12Phase.GameOver, recovered.Engine.State.Phase);
+        Assert.Equal(detail.Match.FinalHash, recovered.Engine.ComputeStateHash());
+        var processed = Assert.Single(recovered.ProcessedRequests,
+            item => item.RequestId == requestId);
+        Assert.True(processed.Accepted);
+        Assert.Equal(terminal.Revision, processed.Revision);
+
+        await using var connection = new SqliteConnection(
+            new SqliteConnectionStringBuilder { DataSource = databasePath }.ToString());
+        await connection.OpenAsync();
+        var checkpoint = connection.CreateCommand();
+        checkpoint.CommandText = """
+            SELECT sequence,state_hash,uncompressed_bytes
+            FROM match_state_checkpoints
+            WHERE match_id=$match
+            ORDER BY sequence DESC
+            LIMIT 1;
+            """;
+        checkpoint.Parameters.AddWithValue("$match", matchId);
+        await using var reader = await checkpoint.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal(terminal.Sequence, reader.GetInt64(0));
+        Assert.Equal(detail.Match.FinalHash, reader.GetString(1));
+        var checkpointBytes = reader.GetInt64(2);
+        Assert.True(checkpointBytes > 0);
+        Assert.False(await reader.ReadAsync());
+        return new(detail.Commands.Count, checkpointBytes, true, true);
+    }
+
+    [Fact]
+    public void LocalMetricDeltaRejectsContentionDropsInsteadOfClaimingCompleteEvidence()
+    {
+        const string stage = "duration.snapshot.build";
+        var observedAt = DateTimeOffset.UnixEpoch;
+        var prior = new PerformanceMetricSummary(stage, "ms", observedAt, observedAt,
+            1, 1, 1, false, [], null, null, 0, 0);
+        var diagnostics = new PerformanceMetricDiagnostics(0, 0, 0, 0, 0, 0);
+        var before = new PerformanceMetricBatch([prior], diagnostics);
+        var clean = prior with { Count = 2, Total = 2 };
+        Assert.True(MetricDelta(before, new([clean], diagnostics), [stage]).Available);
+
+        var dropped = clean with { DroppedContentionTotal = 1 };
+        var incomplete = MetricDelta(before, new([dropped], diagnostics), [stage]);
+        Assert.False(incomplete.Available);
+        Assert.Equal($"samples-dropped:{stage}", incomplete.Reason);
+        Assert.Null(incomplete.Stages);
+    }
+
+    private static PerformanceMetricBatch? PerformanceSnapshot() =>
+        L12PerformanceMetrics.TrySnapshot(out var batch) ? batch : null;
+
+    private static MetricDeltaEvidence MetricDelta(PerformanceMetricBatch? before,
+        PerformanceMetricBatch? after, IReadOnlyList<string> stages)
+    {
+        if (before is null || after is null)
+            return new(false, "snapshot-unavailable", null);
+        var prior = before.Series.ToDictionary(row => row.Stage, StringComparer.Ordinal);
+        var current = after.Series.ToDictionary(row => row.Stage, StringComparer.Ordinal);
+        var rows = new Dictionary<string, MetricStageDelta>(StringComparer.Ordinal);
+        foreach (var stage in stages)
+        {
+            if (!prior.TryGetValue(stage, out var first) || !current.TryGetValue(stage, out var last))
+                return new(false, $"stage-missing:{stage}", null);
+            if (first.StartedAt != last.StartedAt || last.Count < first.Count
+                || last.Total < first.Total
+                || last.DroppedContentionTotal < first.DroppedContentionTotal)
+                return new(false, $"window-changed:{stage}", null);
+            if (last.DroppedContentionTotal != first.DroppedContentionTotal)
+                return new(false, $"samples-dropped:{stage}", null);
+            rows[stage] = new(last.Count - first.Count, last.Total - first.Total,
+                last.Maximum, last.DroppedContentionTotal - first.DroppedContentionTotal, last.Unit);
+        }
+        return new(true, null, rows);
+    }
+
+    private static Dictionary<string, long> NumericDiagnostic(JsonElement diagnostic)
+    {
+        var names = new[]
+        {
+            "in_fifo_us", "in_depth", "in_bytes", "in_remaining", "pre_gate_us",
+            "gate_wait_us", "gate_hold_us", "serialize_us", "out_enq_depth",
+            "out_deq_depth", "out_queue_us", "prepare_us", "wire_bytes", "wire_delta",
+            "send_us", "commit_us", "server_total_us", "receive_to_enqueue_us",
+            "receive_valid", "lease_valid", "lease_start_rel_us", "lease_end_rel_us",
+            "enqueue_rel_us", "send_start_rel_us", "send_end_rel_us", "commit_rel_us",
+            "receipt_rel_us", "receipt_valid", "receipt_after_send_valid",
+        };
+        return names.ToDictionary(name => name,
+            name => diagnostic.GetProperty(name).GetInt64(), StringComparer.Ordinal);
+    }
+
     private static async Task StartFriendlyGameAsync(SocketPeer actor, SocketPeer opponent)
     {
         await actor.SendAsync(new
@@ -341,7 +887,17 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(target)!;
 
-    private sealed record ReceivedFrame(JsonElement Payload, long ReceivedAt);
+    private sealed record StartedLargeRoom(string MatchId, ReceivedFrame Actor, ReceivedFrame Opponent);
+    private sealed record SelectedLargeCommand(int PlayerIndex, string Type,
+        IReadOnlyDictionary<string, object?> Command, string? TurnKey);
+    private sealed record BeforeCommitObservation(int Ordinal, int Kind, long RelativeMicroseconds);
+    private sealed record LargeDurabilityEvidence(int CommandCount, long CheckpointUncompressedBytes,
+        bool CheckpointHashVerified, bool ReplayHashVerified);
+    private sealed record MetricStageDelta(long Count, double Total, double WindowMaximum,
+        long DroppedContention, string Unit);
+    private sealed record MetricDeltaEvidence(bool Available, string? Reason,
+        IReadOnlyDictionary<string, MetricStageDelta>? Stages);
+    private sealed record ReceivedFrame(JsonElement Payload, long ReceivedAt, int RawBytes);
 
     private sealed class SocketPeer : IAsyncDisposable
     {
@@ -415,7 +971,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             } while (!result.EndOfMessage);
             var receivedAt = Stopwatch.GetTimestamp();
             using var document = JsonDocument.Parse(message.ToArray());
-            return new(document.RootElement.Clone(), receivedAt);
+            return new(document.RootElement.Clone(), receivedAt, checked((int)message.Length));
         }
 
         public ValueTask DisposeAsync()
