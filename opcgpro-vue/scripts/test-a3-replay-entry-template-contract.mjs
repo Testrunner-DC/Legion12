@@ -198,6 +198,24 @@ reject('mobile detail content overridden', 'boardMobileInspectorDetails', change
 reject('opponent hand loses mobile layout model', 'boardMobileLayoutConsumers', changed('gameBoard',
   ':confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"',
   ':confirm-all-playable="mobileLandscapeViewport"'))
+accept('inline prompt mount condition remains semantically equivalent', changed('gameBoard',
+  'v-if="promptOverlayMounted"', 'v-if="!readOnly || game.phase === \'DisasterPreparation\'"'))
+accept('computed prompt mount allows expression parentheses', changed('gameBoard',
+  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  "computed(() => ( !props.readOnly || props.game.phase === 'DisasterPreparation' ))"))
+reject('computed prompt mount cannot be permanently hidden', 'boardMobileLayoutConsumers', changed('gameBoard',
+  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')", 'computed(() => false)'))
+reject('computed prompt mount keeps spectator preparation', 'boardMobileLayoutConsumers', changed('gameBoard',
+  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  "computed(() => !props.readOnly || props.game.phase === 'Main')"))
+reject('computed prompt mount cannot reverse player eligibility', 'boardMobileLayoutConsumers', changed('gameBoard',
+  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  "computed(() => props.readOnly || props.game.phase === 'DisasterPreparation')"))
+reject('unrelated prompt binding cannot borrow valid computed declaration', 'boardMobileLayoutConsumers', changed('gameBoard',
+  'v-if="promptOverlayMounted"', 'v-if="unrelatedPrompt"'))
+reject('prompt mount must use the imported computed function', 'boardMobileLayoutConsumers', changed('gameBoard',
+  "computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')",
+  "fakeComputed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')"))
 reject('prompt receives wrong mobile model', 'boardMobileLayoutConsumers', changed('gameBoard',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"',
   ':inspector-visible="modalInspectorVisible" :mobile-layout="compactViewport"'))

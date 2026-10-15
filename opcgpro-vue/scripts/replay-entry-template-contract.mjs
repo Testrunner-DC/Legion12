@@ -223,6 +223,21 @@ export function profileUsesAggregatedStatisticsWithoutReplayHistory(source) {
   return aggregatedStatisticsCalls === 1 && replayHistoryRequests === 0
 }
 
+function hasExactComputedBoolean(script, name, expected) {
+  if (!hasExactNamedImports(script, 'vue', ['computed'])) return false
+  const declarations = script.statements.filter(ts.isVariableStatement)
+    .flatMap(statement => [...statement.declarationList.declarations])
+    .filter(declaration => ts.isIdentifier(declaration.name) && declaration.name.text === name)
+  if (declarations.length !== 1) return false
+  const initializer = unwrap(declarations[0].initializer)
+  if (!initializer || !ts.isCallExpression(initializer)
+    || !ts.isIdentifier(initializer.expression) || initializer.expression.text !== 'computed'
+    || initializer.arguments.length !== 1) return false
+  const getter = unwrap(initializer.arguments[0])
+  return Boolean(getter && ts.isArrowFunction(getter) && getter.parameters.length === 0
+    && !ts.isBlock(getter.body) && expressionIs(getter.body.getText(script), expected))
+}
+
 const empty = {
   recordsHeaderAndImport: false,
   recordsReplayAvailability: false,
@@ -354,9 +369,14 @@ export function replayEntryTemplateContract(sources) {
   const playerMats = bound('PlayerMat', 'player-mat')
   const graveyard = bound('GraveyardOverlay', 'graveyard-overlay', { name: 'if', expected: 'graveyardPlayer !== null' })
   const master = bound('MasterOverlay', 'master-overlay', { name: 'if', expected: 'masterPlayerIndex !== null' })
-  const prompt = bound('PromptOverlay', 'prompt-overlay', {
-    name: 'if', expected: "!readOnly || game.phase === 'DisasterPreparation'",
-  })
+  const prompt = [
+    ...bound('PromptOverlay', 'prompt-overlay', {
+      name: 'if', expected: "!readOnly || game.phase === 'DisasterPreparation'",
+    }),
+    ...(hasExactComputedBoolean(board.script, 'promptOverlayMounted',
+      "!props.readOnly || props.game.phase === 'DisasterPreparation'")
+      ? bound('PromptOverlay', 'prompt-overlay', { name: 'if', expected: 'promptOverlayMounted' }) : []),
+  ]
   return {
     recordsHeaderAndImport: Boolean(recordsRoot && recordsHeader && heading && retention && fileActions && fileInput && importButton),
     recordsReplayAvailability: Boolean(selectedDetail && launch && cleared && desktopHint && exportButton && playButton

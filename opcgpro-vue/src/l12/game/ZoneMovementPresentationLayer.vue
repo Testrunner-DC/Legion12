@@ -5,8 +5,9 @@ import { landscapeTeleportElement, landscapeTeleportTarget, settleElementGeometr
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
-import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, resetMovementClaimState, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
-import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
+import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
+import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
+import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
 type AnchorRect = { x: number; y: number; width: number; height: number }
@@ -19,6 +20,7 @@ type Movement = {
   to: Zone
   sourceEvidence: MovementSourceEvidence
   card?: Card
+  publicPlacement?: ActionEvent['playerPublicPlacement']
   authoritativeFace: boolean
   concealed: boolean
   covered: boolean
@@ -27,12 +29,20 @@ type Movement = {
   fromRotation?: number
   toRotation?: number
   sourceGhost?: HTMLElement
+  sourceWasGenericBack?: boolean
+  preparedFaceGhost?: HTMLElement
   preparedImageUrl?: string
   disasterReveal?: boolean
   caption?: string
   attachment?: boolean
   entryTransactionKey?: string
-  presentationRelease?: () => void
+  presentationRelease?: (presented?: boolean) => void
+  presentationReservation?: PresentationReservation
+  holderWrapper?: HTMLElement
+  visualOwner?: PreparedVisualOwner
+  coveredTarget?: HTMLElement
+  releaseTargetVisibility?: () => void
+  presentationStarted?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -56,6 +66,7 @@ const movementClaims = createMovementClaimState()
 let timer: ReturnType<typeof setTimeout> | null = null
 let preparationCount = 0
 let viewportGeneration = 0
+let awaitingMatchBaseline = true
 let activePreparationToken = 0
 type PreparationBatch = { generation: number; controller: AbortController }
 const pendingPreparationBatches = new Set<PreparationBatch>()
@@ -63,6 +74,7 @@ const activeEventFaceReady = ref(false)
 const preparedImageUrls = new Map<string, string>()
 const sourceZoneHints = new Map<string, Zone>()
 const pendingReservations = new Set<PresentationReservation>()
+const pendingMovementHolders = new Set<Movement>()
 
 watch(() => props.prompts, prompts => {
   // 私密区域身份只在选择期间可见。保留本次选择的区域锚点，供紧随其后的权威移动事件使用。
@@ -187,11 +199,11 @@ async function prepareMovementImage(card: Card, parentSignal: AbortSignal) {
 }
 
 function waitForReservationGrant(reservation: PresentationReservation, signal: AbortSignal) {
-  return new Promise<(() => void) | null>(resolve => {
+  return new Promise<((presented?: boolean) => void) | null>(resolve => {
     let settled = false
-    const finish = (release: (() => void) | null) => {
+    const finish = (release: ((presented?: boolean) => void) | null) => {
       if (settled) {
-        release?.()
+        release?.(false)
         return
       }
       settled = true
@@ -203,7 +215,7 @@ function waitForReservationGrant(reservation: PresentationReservation, signal: A
     if (signal.aborted) aborted()
     else void reservation.waitUntilGranted().then(release => {
       if (signal.aborted) {
-        release()
+        release(false)
         finish(null)
       } else finish(release)
     })
@@ -251,6 +263,11 @@ function waitForDecodedImage(image: HTMLImageElement, timeoutMs = 1800) {
 async function waitForDecodedMovementFace(root: ParentNode) {
   const images = [...root.querySelectorAll('img')]
   return images.length === 0 || (await Promise.all(images.map(image => waitForDecodedImage(image)))).every(Boolean)
+}
+
+function movementFaceIsDecoded(root: ParentNode) {
+  const images = [...root.querySelectorAll('img')]
+  return images.length === 0 || images.every(image => image.complete && image.naturalWidth > 0)
 }
 
 function textSource(text: string): Zone {
@@ -348,6 +365,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
     to,
     sourceEvidence,
     card,
+    publicPlacement: event.playerPublicPlacement,
     authoritativeFace,
     concealed,
     covered: card?.hidden === true,
@@ -373,8 +391,13 @@ function elementRect(element: Element | null): AnchorRect | null {
 function cardElementInZone(instanceId: string | undefined, zone: Zone) {
   if (!instanceId) return null
   const root = document.querySelector('[data-l12-game-stage]')
-  return [...(root?.querySelectorAll(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? [])]
-    .find(element => element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone) ?? null
+  const boardMatches = [...(root?.querySelectorAll(`[data-card-instance-id="${CSS.escape(instanceId)}"]`) ?? [])]
+  const publicOverlayMatches = zone === 'graveyard'
+    ? [...document.querySelectorAll(`.graveyard-overlay [data-card-instance-id="${CSS.escape(instanceId)}"]`)]
+    : []
+  return [...boardMatches, ...publicOverlayMatches]
+    .find(element => element.closest('[data-l12-zone]')?.getAttribute('data-l12-zone') === zone
+      || (zone === 'graveyard' && Boolean(element.closest('.graveyard-overlay')))) ?? null
 }
 function attachmentElement(instanceId?: string) {
   if (!instanceId) return null
@@ -396,6 +419,26 @@ function zoneElement(zone: Zone, playerIndex: number) {
   return root?.querySelector(`[data-player-index="${playerIndex}"][data-l12-zone="${zone}"]`)
     ?? root?.querySelector(`[data-player-index="${playerIndex}"] [data-l12-zone="${zone}"]`)
     ?? null
+}
+
+function publicSourceHolder(zone: Zone, playerIndex: number) {
+  const sourceZone = zoneElement(zone, playerIndex)
+  if (!(sourceZone instanceof HTMLElement)) return null
+  // Spectator hands expose count-only card backs. Clone only that already
+  // public pixel source; never synthesize the newly public event face while it
+  // is still standing in for an unknown private hand instance.
+  if (zone === 'hand') return [...sourceZone.querySelectorAll<HTMLElement>(':scope > .card-back')].at(-1) ?? null
+  // The visible graveyard pile is a public face, not a generic back. It stays
+  // in the board through the pre-update capture even when a teleported public
+  // GraveyardOverlay child has already reconciled its card list.
+  if (zone === 'graveyard') return sourceZone.querySelector<HTMLElement>('.pile-card')
+  return sourceZone.querySelector<HTMLElement>('.card-back')
+}
+function genericPublicSourceGhost(zone: Zone) {
+  const ghost = document.createElement('div')
+  ghost.className = zone === 'graveyard' ? 'pile-card card-back' : 'card-back'
+  ghost.setAttribute('aria-hidden', 'true')
+  return ghost
 }
 function fallbackRect(zone: Zone, playerIndex: number): AnchorRect {
   const { width: innerWidth, height: innerHeight } = visibleViewport()
@@ -434,12 +477,98 @@ const motionStyle = computed(() => {
   }
 })
 
-let releaseTargetVisibility: (() => void) | null = null
 let activeGhostWrapper: HTMLElement | null = null
 let activeGhostAnimation: Animation | null = null
-function revealTarget() {
-  releaseTargetVisibility?.()
-  releaseTargetVisibility = null
+function revealTarget(movement: Movement | null = active.value) {
+  movement?.releaseTargetVisibility?.()
+  if (movement) {
+    movement.releaseTargetVisibility = undefined
+    movement.coveredTarget = undefined
+  }
+}
+function coverTarget(movement: Movement, target: HTMLElement) {
+  if (movement.coveredTarget === target && movement.releaseTargetVisibility) return
+  // A keyed battlefield card can receive a new DOM node after a row/slot move.
+  // Cover the replacement before releasing the old node so authority never
+  // flashes between a prepared holder and its eventual destination.
+  const releaseNext = acquireAuthoritativeCardVisibility(target)
+  const releasePrevious = movement.releaseTargetVisibility
+  movement.coveredTarget = target
+  movement.releaseTargetVisibility = releaseNext
+  releasePrevious?.()
+}
+
+function disposeMovementHolder(movement: Movement) {
+  if (movement.presentationReservation) movement.presentationReservation.cancel()
+  else movement.visualOwner?.dispose()
+}
+
+function createMovementHolder(movement: Movement, sourceGhost: HTMLElement) {
+  const host = landscapeTeleportElement()
+  if (!host || !movementFaceIsDecoded(sourceGhost)) return false
+  sourceGhost.classList.remove('tapped', 'selected')
+  Object.assign(sourceGhost.style, {
+    width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
+    visibility: 'visible', pointerEvents: 'none',
+  })
+  sourceGhost.removeAttribute('id')
+  sourceGhost.removeAttribute('data-card-instance-id')
+  sourceGhost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+  sourceGhost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
+  const source = movement.fromRect
+  const wrapper = document.createElement('div')
+  wrapper.className = 'l12-zone-flight-ghost'
+  wrapper.dataset.movementKey = movement.key
+  wrapper.dataset.movementInstanceId = movement.card?.instanceId ?? ''
+  wrapper.dataset.movementFrom = movement.from
+  wrapper.dataset.movementTo = movement.to
+  wrapper.dataset.movementFromX = `${source.x}`
+  wrapper.dataset.movementFromY = `${source.y}`
+  Object.assign(wrapper.style, {
+    position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
+    width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
+    visibility: 'hidden', transformOrigin: 'center', willChange: 'transform, opacity',
+    transform: `rotate(${movement.fromRotation ?? 0}deg)`,
+    filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
+  })
+  wrapper.appendChild(sourceGhost)
+  if (movement.caption) {
+    const caption = document.createElement('span')
+    caption.className = 'l12-zone-flight-caption'
+    caption.textContent = movement.caption
+    Object.assign(caption.style, {
+      position: 'absolute', left: '50%', bottom: 'calc(100% + 7px)', transform: 'translateX(-50%)',
+      width: 'max-content', maxWidth: '240px', padding: '3px 7px', border: '1px solid #8cc6d2',
+      background: 'rgba(7,16,20,.94)', color: '#eef6f5', fontSize: '12px', lineHeight: '1.35',
+      whiteSpace: 'normal', textAlign: 'center', overflowWrap: 'anywhere',
+    })
+    wrapper.appendChild(caption)
+  }
+  host.appendChild(wrapper)
+  movement.holderWrapper = wrapper
+  const visualKey = movement.card?.instanceId ?? movement.key
+  const owner: PreparedVisualOwner = {
+    show: () => {
+      const destination = destinationElement(movement)
+      if (destination instanceof HTMLElement) coverTarget(movement, destination)
+      wrapper.style.visibility = 'visible'
+    },
+    hide: () => {
+      wrapper.style.visibility = 'hidden'
+      revealTarget(movement)
+    },
+    dispose: () => {
+      revealTarget(movement)
+      wrapper.remove()
+      if (movement.holderWrapper === wrapper) movement.holderWrapper = undefined
+      if (movement.visualOwner === owner) movement.visualOwner = undefined
+      pendingMovementHolders.delete(movement)
+    },
+  }
+  movement.visualOwner = owner
+  pendingMovementHolders.add(movement)
+  movement.presentationReservation?.prepareVisualOwner(owner)
+  return true
 }
 
 function showNext() {
@@ -465,7 +594,7 @@ function showNext() {
     if (!ownsActivePresentation()) return false
     const destination = destinationElement(movement)
     if (!(destination instanceof HTMLElement)) return true
-    releaseTargetVisibility = acquireAuthoritativeCardVisibility(destination)
+    coverTarget(movement, destination)
     // The flight owns the visible transform. If a preceding state change left
     // this authority node mid-motion, finish it while covered for handoff.
     try {
@@ -480,16 +609,22 @@ function showNext() {
     if (!ownsActivePresentation()) return
     activePreparationToken++
     if (timer) clearTimeout(timer)
-    activeGhostAnimation?.cancel()
+    if (activeGhostAnimation) {
+      activeGhostAnimation.onfinish = null
+      activeGhostAnimation.oncancel = null
+      try { activeGhostAnimation.commitStyles() } catch { /* A cancelled animation has no frame to retain. */ }
+      activeGhostAnimation.cancel()
+    }
     activeGhostAnimation = null
-    activeGhostWrapper?.remove()
+    const destination = destinationElement(movement)
+    if (destination instanceof HTMLElement) settleElementGeometry(destination)
     activeGhostWrapper = null
-    revealTarget()
     const release = movement.presentationRelease
+    movement.presentationRelease = undefined
+    release?.(Boolean(movement.presentationStarted))
     active.value = null
     activeEventFaceReady.value = false
     timer = null
-    release?.()
     showNext()
     notifyBusy()
   }
@@ -498,44 +633,14 @@ function showNext() {
     if (ghost) {
       const source = movement.fromRect
       const target = movement.toRect
-      const wrapper = document.createElement('div')
-      wrapper.className = 'l12-zone-flight-ghost'
-      wrapper.dataset.movementKey = movement.key
-      wrapper.dataset.movementInstanceId = movement.card?.instanceId ?? ''
-      wrapper.dataset.movementFrom = movement.from
-      wrapper.dataset.movementTo = movement.to
-      wrapper.dataset.movementFromX = `${source.x}`
-      wrapper.dataset.movementFromY = `${source.y}`
+      const wrapper = movement.holderWrapper
+      if (!wrapper || !movement.visualOwner) { finish(); return }
       wrapper.dataset.movementToX = `${target.x}`
       wrapper.dataset.movementToY = `${target.y}`
-      Object.assign(wrapper.style, {
-        position: 'fixed', left: `${source.x - source.width / 2}px`, top: `${source.y - source.height / 2}px`,
-        width: `${source.width}px`, height: `${source.height}px`, zIndex: '902', pointerEvents: 'none',
-        visibility: 'hidden',
-        // Translation is center-to-center. Keep rotation and scale on that same
-        // invariant center or a rested card's quarter turn shifts the endpoint.
-        transformOrigin: 'center', willChange: 'transform, opacity', filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
-      })
-      ghost.classList.remove('tapped', 'selected')
-      Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
-      ghost.removeAttribute('id')
-      ghost.removeAttribute('data-card-instance-id')
-      ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
-      ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
-      wrapper.appendChild(ghost)
-      if (movement.caption) {
-        const caption = document.createElement('span')
-        caption.className = 'l12-zone-flight-caption'
-        caption.textContent = movement.caption
-        Object.assign(caption.style, {
-          position: 'absolute', left: '50%', bottom: 'calc(100% + 7px)', transform: 'translateX(-50%)',
-          width: 'max-content', maxWidth: '240px', padding: '3px 7px', border: '1px solid #8cc6d2',
-          background: 'rgba(7,16,20,.94)', color: '#eef6f5', fontSize: '12px', lineHeight: '1.35',
-          whiteSpace: 'normal', textAlign: 'center', overflowWrap: 'anywhere',
-        })
-        wrapper.appendChild(caption)
+      if (movement.preparedFaceGhost) {
+        ghost.replaceWith(movement.preparedFaceGhost)
+        movement.sourceGhost = movement.preparedFaceGhost
       }
-      landscapeTeleportElement()?.appendChild(wrapper)
       activeGhostWrapper = wrapper
       void waitForDecodedMovementFace(wrapper).then(decoded => {
         if (!ownsActivePresentation()) return
@@ -543,7 +648,6 @@ function showNext() {
           finish()
           return
         }
-        wrapper.style.visibility = 'visible'
         const dx = target.x - source.x
         const dy = target.y - source.y
         const scaleX = Math.max(.45, Math.min(1.8, target.width / Math.max(1, source.width)))
@@ -557,12 +661,10 @@ function showNext() {
           { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX * 1.04},${scaleY * 1.04}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1, offset: .85 },
           { transform: `translate3d(${dx}px,${dy}px,0) scale(${scaleX},${scaleY}) rotate(${movement.toRotation ?? 0}deg)`, opacity: 1 },
         ], { duration, easing: 'cubic-bezier(.22,1,.36,1)', fill: 'forwards' })
+        movement.presentationStarted = true
         registerStartedPresentation(movement)
         activeGhostAnimation.onfinish = finish
-        activeGhostAnimation.oncancel = () => {
-          activeGhostWrapper?.remove()
-          activeGhostWrapper = null
-        }
+        activeGhostAnimation.oncancel = finish
         timer = setTimeout(finish, duration + replayDuration(80, 20))
       }).catch(() => finish())
       return
@@ -581,6 +683,7 @@ function showNext() {
         return
       }
       activeEventFaceReady.value = true
+      active.value.presentationStarted = true
       registerStartedPresentation(active.value)
       timer = setTimeout(finish, duration + replayDuration(20, 10))
     }).catch(() => finish())
@@ -593,23 +696,37 @@ function cancelActiveMovement() {
   activePreparationToken++
   if (timer) clearTimeout(timer)
   timer = null
-  activeGhostAnimation?.cancel()
+  if (activeGhostAnimation) {
+    activeGhostAnimation.onfinish = null
+    activeGhostAnimation.oncancel = null
+    try { activeGhostAnimation.commitStyles() } catch { /* A cancelled animation has no frame to retain. */ }
+    activeGhostAnimation.cancel()
+  }
   activeGhostAnimation = null
-  activeGhostWrapper?.remove()
+  const movement = active.value
+  if (movement) {
+    const destination = destinationElement(movement)
+    if (destination instanceof HTMLElement) settleElementGeometry(destination)
+  }
   activeGhostWrapper = null
-  revealTarget()
-  const release = active.value?.presentationRelease
+  const release = movement?.presentationRelease
+  if (movement) movement.presentationRelease = undefined
+  release?.(Boolean(movement?.presentationStarted))
   active.value = null
   activeEventFaceReady.value = false
-  release?.()
   notifyBusy()
 }
 function reset() {
   viewportGeneration++
   cancelPreparationBatches()
   cancelActiveMovement()
-  for (const movement of queue) movement.presentationRelease?.()
+  for (const movement of queue) {
+    const release = movement.presentationRelease
+    movement.presentationRelease = undefined
+    release?.(false)
+  }
   queue.length = 0
+  for (const movement of [...pendingMovementHolders]) disposeMovementHolder(movement)
   resetMovementClaimState(movementClaims, Math.max(0, ...props.events.map(event => event.sequence)),
     props.revision, collectKnownCardZones(props.players))
   sourceZoneHints.clear()
@@ -622,8 +739,18 @@ function reset() {
   notifyBusy()
 }
 
-watch(() => props.matchId, reset, { flush: 'sync', immediate: true })
-watch(() => [props.revision, props.synchronizing, props.events.map(event => event.sequence).join(',')] as const, async ([revision, synchronizing]) => {
+watch(() => props.matchId, () => {
+  reset()
+  // reset cancels old work synchronously, but props.revision can still be the
+  // previous match's value here. Rebase once from the coherent pre-render tuple.
+  awaitingMatchBaseline = true
+}, { flush: 'sync', immediate: true })
+watch(() => [props.revision, props.synchronizing, props.events.map(event => event.sequence).join(','), props.matchId] as const, async ([revision, synchronizing]) => {
+  if (awaitingMatchBaseline) {
+    awaitingMatchBaseline = false
+    reset()
+    return
+  }
   if (synchronizing || (props.playbackSpeed && revision < movementClaims.zoneRevision)) {
     reset()
     return
@@ -667,9 +794,11 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     }
   }
   if (transactionBatch) finalizeMovementTransactionBatch(movementClaims, transactionBatch, authoritativeZones)
-  const reservations = drafts.map(({ event }) => {
-    const reservation = props.sequenceCoordinator.reserve(event.sequence, 20)
+  const reservations = drafts.map(({ event, draft }) => {
+    const visualKey = draft.card?.instanceId
+    const reservation = props.sequenceCoordinator.reserve(event.sequence, 20, { visualKey })
     reservation.setPaused(props.paused)
+    draft.presentationReservation = reservation
     pendingReservations.add(reservation)
     return reservation
   })
@@ -688,12 +817,32 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     const source = draft.disasterReveal || draft.authoritativeFace ? null
       : draft.from === 'attached' ? attachmentElement(draft.card?.instanceId)
       : cardElementInZone(draft.card?.instanceId, draft.from)
-    return {
-      rect: elementRect(source) ?? resolveRect(draft.from, draft.playerIndex,
+    const publicHolder = source instanceof HTMLElement ? source : publicSourceHolder(draft.from, draft.playerIndex)
+    const usesGraveyardAnchor = !(source instanceof HTMLElement) && draft.from === 'graveyard'
+      && publicHolder instanceof HTMLElement
+    // A closed graveyard only exposes its current pile top, which may be a
+    // different instance. Borrow that node's public geometry, never its face.
+    const sourceGhost = publicHolder instanceof HTMLElement
+      ? usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true) as HTMLElement
+      : undefined
+    if (sourceGhost && publicHolder instanceof HTMLElement && !usesGraveyardAnchor)
+      snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)
+    const start = {
+      rect: elementRect(publicHolder) ?? resolveRect(draft.from, draft.playerIndex,
         draft.disasterReveal || draft.authoritativeFace ? undefined : draft.card?.instanceId),
-      ghost: source instanceof HTMLElement ? source.cloneNode(true) as HTMLElement : undefined,
-      rotation: elementRotation(source),
+      ghost: sourceGhost,
+      rotation: elementRotation(publicHolder),
+      // Any zone-level fallback is only an anchor, even when the pile happens
+      // to expose a public face: the pile top may be a different grave card.
+      // Replace it with the authority event card before motion starts.
+      genericBack: !(source instanceof HTMLElement) && publicHolder instanceof HTMLElement,
     }
+    draft.fromRect = start.rect
+    draft.fromRotation = start.rotation
+    draft.sourceGhost = start.ghost
+    draft.sourceWasGenericBack = start.genericBack
+    if (start.ghost) createMovementHolder(draft, start.ghost)
+    return start
   })
   try {
     await nextTick()
@@ -716,18 +865,24 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
     // Keep the exact transaction-normalized from/to identity accepted above.
     // Re-deriving it after nextTick would read the final snapshot and collapse
     // a same-revision field→grave→field chain back into field→field.
-      const movement = starts[index] ? {
-        ...draft,
-        fromRect: starts[index]!.rect,
-        toRect: elementRect(destination)
-          ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId),
-      } : null
-      if (movement) movement.sourceGhost = starts[index]?.ghost
+      const movement = starts[index] ? draft : null
       if (movement) {
+        movement.fromRect = starts[index]!.rect
+        movement.toRect = elementRect(destination)
+          ?? resolveRect(draft.to, draft.playerIndex, draft.disasterReveal ? undefined : draft.card?.instanceId)
+        movement.sourceGhost = starts[index]?.ghost
         movement.fromRotation = starts[index]?.rotation ?? 0
-        movement.toRotation = elementRotation(destination)
+        movement.toRotation = movementTerminalTapped(movement.to, movement.card,
+          movement.publicPlacement, elementRotation(destination) === 90) ? 90 : 0
       }
-      if (movement && !movement.sourceGhost && !movement.concealed && movement.card && preparation) {
+      // Destination DOM only exists after the authoritative snapshot render.
+      // Refreshing the already-bound owner acquires the visibility lease only
+      // when this reservation is the current, unpaused visual owner.  An inline
+      // choice therefore keeps the real card visible and clickable.
+      if (movement?.holderWrapper && movement.visualOwner)
+        movement.presentationReservation?.prepareVisualOwner(movement.visualOwner)
+      if (movement && (!movement.sourceGhost || movement.sourceWasGenericBack)
+        && !movement.concealed && movement.card && preparation) {
         movement.preparedImageUrl = await prepareMovementImage(movement.card, preparation.controller.signal)
         if (generation !== viewportGeneration || preparation.controller.signal.aborted) {
           for (const reservation of reservations.slice(index)) {
@@ -740,13 +895,41 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
       // successfully presented authority fact. Keep the settled authority
       // card visible and let the later result use its conservative fallback.
         if (movement.preparedImageUrl === CARD_IMAGE_PLACEHOLDER) {
+          revealTarget(movement)
+          disposeMovementHolder(movement)
           reservations[index]?.cancel()
           if (reservations[index]) pendingReservations.delete(reservations[index]!)
           if (movement.card.instanceId) sourceZoneHints.delete(movement.card.instanceId)
           continue
         }
+        if (movement.sourceWasGenericBack && movement.sourceGhost) {
+          const preparedFace = movement.sourceGhost.cloneNode(false) as HTMLElement
+          preparedFace.classList.remove('card-back', 'tapped', 'selected')
+          Object.assign(preparedFace.style, {
+            width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
+            visibility: 'visible', pointerEvents: 'none',
+          })
+          const image = document.createElement('img')
+          image.className = 'l12-card-image'
+          image.src = movement.preparedImageUrl
+          image.alt = movement.card.name ?? ''
+          Object.assign(image.style, { width: '100%', height: '100%', objectFit: 'contain' })
+          preparedFace.appendChild(image)
+          if (!await waitForDecodedMovementFace(preparedFace)) {
+            revealTarget(movement)
+            disposeMovementHolder(movement)
+            reservations[index]?.cancel()
+            if (reservations[index]) pendingReservations.delete(reservations[index]!)
+            continue
+          }
+          movement.preparedFaceGhost = preparedFace
+        }
       }
       if (generation !== viewportGeneration || preparation?.controller.signal.aborted) {
+        if (movement) {
+          revealTarget(movement)
+          disposeMovementHolder(movement)
+        }
         for (const reservation of reservations.slice(index)) {
           reservation.cancel()
           pendingReservations.delete(reservation)
@@ -758,13 +941,16 @@ watch(() => [props.revision, props.synchronizing, props.events.map(event => even
         const release = await waitForReservationGrant(reservation, preparation.controller.signal)
         pendingReservations.delete(reservation)
         if (!release) {
+          revealTarget(movement)
+          disposeMovementHolder(movement)
           reservation.cancel()
           return
         }
-        if (generation !== viewportGeneration) release()
+        if (generation !== viewportGeneration) release(false)
         else {
           movement.presentationRelease = release
           queue.push(movement)
+          pendingMovementHolders.delete(movement)
           showNext()
         }
       } else {

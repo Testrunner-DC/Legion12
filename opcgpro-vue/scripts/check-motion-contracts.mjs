@@ -11,11 +11,24 @@ const movement = read('src/l12/game/ZoneMovementPresentationLayer.vue')
 const combat = read('src/l12/game/CombatMotionPresentationLayer.vue')
 const stateTransition = read('src/l12/game/CardStateTransitionLayer.vue')
 const visibilityLease = read('src/l12/game/authoritativeCardVisibility.ts')
+const sharedPixelCapture = read('src/l12/game/authoritativeCardVisualSnapshot.ts')
 const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
 const coordinator = read('src/l12/game/presentationSequenceCoordinator.ts')
 const mobileViewport = read('src/l12/mobileViewport.ts')
 const board = read('src/l12/game/GameBoard.vue')
 const tile = read('src/l12/CardTile.vue')
+const between = (source, start, end) => {
+  const first = source.indexOf(start)
+  const last = source.indexOf(end, first + start.length)
+  return first >= 0 && last > first ? source.slice(first, last) : ''
+}
+const statePreparation = between(stateTransition, 'function createPreparedTransition(', '\nfunction beginTransition(')
+const statePixelCapture = sharedPixelCapture
+const stateFinalization = between(stateTransition, 'function finalizeActive(', '\nfunction cancelActive(')
+const zonePreparation = between(movement, 'function createMovementHolder(', '\nfunction showNext(')
+const zoneTargetCover = between(movement, 'function coverTarget(', '\nfunction disposeMovementHolder(')
+const stateTargetCover = between(stateTransition, 'function coverTransitionTarget(', '\nlet wrapper:')
+const cloneStyleIsVisible = source => /Object\.assign\(sourceGhost\.style,\s*\{[^}]*visibility:\s*'visible'/.test(source)
 const stateLayerMarkup = board.slice(board.indexOf('<CardStateTransitionLayer'),
   board.indexOf('/>', board.indexOf('<CardStateTransitionLayer')) + 2)
 const zoneLayerMarkup = board.slice(board.indexOf('<ZoneMovementPresentationLayer'),
@@ -31,7 +44,7 @@ const checks = [
   ['hand FLIP anchors', hand.includes('useFlip') && hand.includes('data-flip-id')],
   ['public hand-add presentation preserved', movement.includes('publicHandAddCaption') && movement.includes("event.type === 'reveal' && /加入手牌/")],
   ['zone flight arc and settle', movement.includes('const lift =') && movement.includes('offset: .85')],
-  ['attack lunge and rest share one visible transaction', stateTransition.includes("wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
+  ['attack lunge and rest share one visible transaction', statePreparation.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
     && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
     && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],
   ['authoritative state layer solely owns ready and rest motion', !motion.includes('l12-rest-settle')
@@ -58,14 +71,23 @@ const checks = [
     && stateTransition.includes('const sourceGhost = source.cloneNode(true)') && stateTransition.includes('sourceGhost.style.visibility = \'visible\'')
     && stateTransition.includes('sourceRect: { left: sourceRect.left') && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')],
   ['zone movement clones never inherit a temporary hidden authority lease',
-    movement.includes("Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible'")
-    && movement.indexOf("visibility: 'hidden'") < movement.indexOf("ghost.classList.remove('tapped', 'selected')")
-    && movement.indexOf("visibility: 'visible'", movement.indexOf("ghost.classList.remove('tapped', 'selected')")) >= 0
-    && movement.indexOf("visibility: 'visible'", movement.indexOf("ghost.classList.remove('tapped', 'selected')"))
-      < movement.indexOf("wrapper.appendChild(ghost)")],
+    cloneStyleIsVisible(zonePreparation)
+    && zonePreparation.includes("sourceGhost.classList.remove('tapped', 'selected')")
+    && zonePreparation.indexOf("visibility: 'visible'") < zonePreparation.indexOf('wrapper.appendChild(sourceGhost)')
+    && zonePreparation.includes("visibility: 'hidden'")
+    && movement.includes('const sourceGhost = publicHolder instanceof HTMLElement')
+    && movement.includes('usesGraveyardAnchor ? genericPublicSourceGhost(draft.from) : publicHolder.cloneNode(true)')
+    && movement.includes('publicHolder instanceof HTMLElement && !usesGraveyardAnchor')
+    && movement.includes('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
+    && movement.indexOf('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)')
+      < movement.indexOf('if (start.ghost) createMovementHolder(draft, start.ghost)')],
   ['ready and rest never clone hidden target state', !stateTransition.includes('source: HTMLElement')
-    && stateTransition.indexOf('revealTarget()', stateTransition.indexOf('function finalizeActive('))
-      < stateTransition.indexOf('wrapper?.remove()', stateTransition.indexOf('function finalizeActive('))],
+    && stateTransition.includes("sourceGhost.style.visibility = 'visible'")
+    && cloneStyleIsVisible(statePreparation)
+    && statePreparation.includes('revealTransitionTarget(prepared)')
+    && statePreparation.indexOf('revealTransitionTarget(prepared)', statePreparation.indexOf('dispose:'))
+      < statePreparation.indexOf('holderWrapper.remove()', statePreparation.indexOf('dispose:'))
+    && stateFinalization.indexOf('settleElementGeometry(target)') < stateFinalization.indexOf('transition?.presentationRelease?.(')],
   ['ready and rest use revision-scoped authority transactions', board.includes(':revision="game.revision"')
     && board.includes(':events="game.recentEvents ?? []"')
     && stateTransition.includes('claimCardStateTransitions(stateClaims, revision, next, props.events)')
@@ -86,8 +108,10 @@ const checks = [
     && movement.includes('cardElementInZone(movement.card?.instanceId, movement.to)')
     && movement.includes('cardElementInZone(draft.card?.instanceId, draft.from)')],
   ['imperative motion shares the logical mobile canvas', mobileViewport.includes('export function landscapeTeleportElement()')
-    && stateTransition.includes('landscapeTeleportElement()?.appendChild(wrapper)')
-    && movement.includes('landscapeTeleportElement()?.appendChild(wrapper)')
+    && statePreparation.includes('const host = landscapeTeleportElement()')
+    && statePreparation.includes('host.appendChild(holderWrapper)')
+    && zonePreparation.includes('const host = landscapeTeleportElement()')
+    && zonePreparation.includes('host.appendChild(wrapper)')
     && combat.includes('landscapeTeleportElement()?.appendChild(wrapper)')],
   ['visual viewport jitter preserves claimed motion', !movement.includes("addEventListener('l12-viewport-change'")
     && combat.includes('function viewportChanged()')
@@ -113,7 +137,8 @@ const checks = [
   ['effect card art includes authority source only', board.includes('isCardEffectPresentationEvent(event)') && board.includes('presentationCards(event)') && visualProjection.includes('event.effectSceneId') && visualProjection.includes('event.cards?.slice(0, 1)')],
   ['overlapping presentation layers share one visibility lease', movement.includes("from './authoritativeCardVisibility'")
     && stateTransition.includes("from './authoritativeCardVisibility'")
-    && movement.includes('acquireAuthoritativeCardVisibility(destination)')
+    && movement.includes('coverTarget(movement, destination)')
+    && zoneTargetCover.includes('acquireAuthoritativeCardVisibility(target)')
     && stateTransition.includes('acquireAuthoritativeCardVisibility(target)')
     && !movement.includes('hiddenTargetVisibility') && !stateTransition.includes('hiddenTargetVisibility')
     && visibilityLease.includes('new WeakMap<HTMLElement, VisibilityLeaseState>()')
@@ -122,7 +147,8 @@ const checks = [
     && stateTransition.includes('generation !== activeGeneration')
     && stateTransition.includes('animation.oncancel = () => finalize(false)')
     && stateTransition.includes('settled.then(() => finalize(true), () => finalize(false))')
-    && movement.includes('activeGhostAnimation.oncancel = () => {')
+    && movement.includes('activeGhostAnimation.oncancel = finish')
+    && movement.includes('activeGhostAnimation.oncancel = null')
     && movement.includes('timer = setTimeout(finish')],
   ['entry effects continue one stable movement transaction without a second full card',
     visualProjection.includes('playerLogGroupId') && visualProjection.includes("timing !== 'enter' && timing !== 'promotion-enter'")
@@ -145,12 +171,26 @@ const checks = [
   ['blocking prompt cancels only started presentation while preparation retains sequence', stateTransition.includes('if (paused && active.value && animation) cancelActive()')
     && stateTransition.includes('await waitUntilUnpaused(preparation.signal)')
     && movement.includes('if (paused && active.value) cancelActiveMovement()')],
-  ['state transition never hides authority or registers a fact before decoded WAAPI starts',
+  ['state transition only grants decoded visual ownership and registers facts after actual WAAPI starts',
     stateTransition.includes('function waitForDecodedStateImage(image: HTMLImageElement, signal: AbortSignal, timeoutMs = 1800)')
-    && stateTransition.includes('await waitForDecodedStateFace(transition.sourceGhost, preparation.signal)')
+    && statePreparation.includes('prepared.visualReady = waitForDecodedStateFace(holderWrapper, visualPreparation.signal)')
+    && statePreparation.includes('if (!decoded || visualPreparation.signal.aborted)')
+    && statePreparation.indexOf('if (!decoded || visualPreparation.signal.aborted)')
+      < statePreparation.lastIndexOf('prepared.presentationReservation.prepareVisualOwner(visualOwner)')
+    && stateTransition.includes('const sourcePixelsReady = snapshotDecodedAuthoritativeCardVisual(source, sourceGhost)')
+    && stateTransition.includes("from './authoritativeCardVisualSnapshot'")
+    && movement.includes("from './authoritativeCardVisualSnapshot'")
+    && statePreparation.includes('if (sourcePixelsReady) {')
+    && statePreparation.includes('prepared.visualReady = Promise.resolve(true)')
+    && statePixelCapture.includes('!source.complete || source.naturalWidth <= 0 || source.naturalHeight <= 0')
+    && statePixelCapture.includes('const layoutWidth = source.offsetWidth')
+    && statePixelCapture.includes('const layoutHeight = source.offsetHeight')
+    && statePixelCapture.includes('context.drawImage(source, x, y, drawWidth, drawHeight)')
+    && statePixelCapture.includes('if (captures.some(capture => !capture)) return false')
+    && statePixelCapture.includes('capture!.clone.replaceWith(capture!.canvas)')
+    && stateTransition.includes('if (!await transition.visualReady)')
+    && stateTransition.indexOf('if (!await transition.visualReady)') < stateTransition.indexOf('animation = wrapper.animate(frames')
     && stateTransition.includes('if (!wrapper.isConnected || !stateFaceIsDecoded(wrapper)) { finalize(true); return }')
-    && stateTransition.indexOf('await waitForDecodedStateFace(transition.sourceGhost, preparation.signal)')
-      < stateTransition.indexOf('releaseTargetVisibility = acquireAuthoritativeCardVisibility(target)')
     && stateTransition.indexOf('animation = wrapper.animate(frames')
       < stateTransition.indexOf('props.sequenceCoordinator.registerPresentationFact(transition.presentationFactSequence)')
     && stateTransition.includes('activePreparation?.abort()')
@@ -191,6 +231,44 @@ const checks = [
     && board.includes('cardPresentationCoordinator.reset()')
     && coordinator.includes('presentationFacts.clear()')
     && coordinator.includes('entryMovementTransactions.clear()')],
+  ['legacy state changes share ordering without treating a watermark as an explicit fact',
+    stateTransition.includes('props.sequenceCoordinator.reserve(change.orderingSequence, 30,')
+    && stateTransition.includes('{ visualKey: instanceId }')
+    && visualProjection.includes('orderingSequence: event.sequence')
+    && visualProjection.includes('freshEvents.at(-1)?.sequence ?? state.lastEventSequence')
+    && visualProjection.includes('presentationFactSequence: event.sequence')
+    && !stateTransition.includes('if (!transition.presentationReservation)')],
+  ['visual successor inherits its lease before predecessor disposal and no motion is coalesced',
+    coordinator.includes('activeVisualOwners') && coordinator.includes('settleReleasedVisualOwner')
+    && coordinator.indexOf('owner.show()') < coordinator.indexOf('previous.owner.dispose()')
+    && coordinator.includes('current.item.released') && coordinator.includes('owner.dispose()')
+    && !coordinator.includes('presentedVisualTransactions') && !coordinator.includes('motionRequired')],
+  ['only actually mounted prompts block spectator card presentations',
+    board.includes("const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')")
+    && board.includes('const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value')
+    && board.includes('visibleBoardPromptId.value') && board.includes('|| visiblePromptModal.value')
+    && board.includes('<PromptOverlay v-if="promptOverlayMounted"')
+    && board.includes(':suppressed-prompt-ids="activeBoardPromptIds"')
+    && board.includes('const inlinePromptIds = new Set(activeBoardPromptIds.value)')
+    && board.includes('!inlinePromptIds.has(item.promptId)')
+    && board.includes('&& routedPromptModal.value && !promptMinimized.value')],
+  ['replacement DOM is covered before the prior target lease is released',
+    [zoneTargetCover, stateTargetCover].every(source => source.includes('coveredTarget === target')
+      && source.includes('const releaseNext = acquireAuthoritativeCardVisibility(target)')
+      && source.includes('const releasePrevious =') && source.includes('releasePrevious?.()')
+      && source.indexOf('acquireAuthoritativeCardVisibility(target)') < source.indexOf('releasePrevious?.()'))],
+  ['movement terminal posture belongs to its action and discarded successors cannot retain owners',
+    movement.includes('movement.toRotation = movementTerminalTapped(movement.to, movement.card,')
+    && visualProjection.includes('publicPlacement?.instanceId === eventCard.instanceId')
+    && visualProjection.includes('return placementTapped ?? eventCard?.tapped ?? destinationTapped')
+    && coordinator.includes('!item.cancelled && !item.released && item.visualKey === visualKey')],
+  ['match-only changes establish a coherent baseline before the next real action',
+    [stateTransition, movement].every(source => source.includes('let awaitingMatchBaseline = true')
+      && source.includes("props.events.map(event => event.sequence).join(','), props.matchId] as const")
+      && source.includes('if (awaitingMatchBaseline) {\n    awaitingMatchBaseline = false')
+      && source.indexOf('if (awaitingMatchBaseline) {') < source.indexOf('if (synchronizing ||'))
+    && stateTransition.includes('Cancel immediately; baseline only after the complete prop tuple arrives.')
+    && movement.includes('Rebase once from the coherent pre-render tuple.')],
 ]
 
 const failures = checks.filter(([, ok]) => !ok)

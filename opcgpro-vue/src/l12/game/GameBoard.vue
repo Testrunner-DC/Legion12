@@ -550,6 +550,18 @@ const activeBoardPromptIds = computed(() => [
   resourceSelectionPrompt.value?.promptId,
 ].filter((promptId): promptId is string => Boolean(promptId)))
 const activeBoardPromptId = computed(() => activeBoardPromptIds.value[0] ?? null)
+const promptOverlayMounted = computed(() => !props.readOnly || props.game.phase === 'DisasterPreparation')
+const visibleBoardPromptIds = computed(() => !props.readOnly && !boardControlMinimized.value
+  ? activeBoardPromptIds.value : [])
+const visibleBoardPromptId = computed(() => visibleBoardPromptIds.value[0] ?? null)
+const routedPromptModal = computed(() => {
+  const inlinePromptIds = new Set(activeBoardPromptIds.value)
+  const prompt = props.game.prompts?.find(item => !inlinePromptIds.has(item.promptId))
+  return Boolean(prompt || (!prompt && props.game.waitingPrompt)
+    || props.game.phase === 'Mulligan' || props.game.phase === 'DisasterPreparation')
+})
+const visiblePromptModal = computed(() => Boolean(promptOverlayMounted.value
+  && routedPromptModal.value && !promptMinimized.value))
 watch(activeBoardPromptId, () => { boardControlMinimized.value = false; inlinePromptInfoOpen.value = false })
 watch(() => [props.game.phase, props.game.pendingDefense?.stage, props.game.turnSerial], () => {
   combatDecisionMinimized.value = false
@@ -564,10 +576,10 @@ const modalInspectorVisible = computed(() => Boolean(!mobileLandscapeViewport.va
   )
 )))
 const modalPresentationPaused = computed(() => Boolean(
-  activeBoardPromptId.value
+  visibleBoardPromptId.value
   // PromptOverlay is a modal while it is expanded. Card presentations that
   // arrive with its prompt stay queued until the player closes or minimizes it.
-  || (hasBlockingPrompt.value && !promptMinimized.value)
+  || visiblePromptModal.value
   || graveyardPlayer.value !== null || masterPlayerIndex.value !== null
   || customDisasterSlot.value !== null || mobileRecordOpen.value || mobileMoralePickerOpen.value
   || modalInspectorVisible.value,
@@ -1446,7 +1458,7 @@ function statusTexts(card: Card) {
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
               <Transition name="public-reveal">
-                <div v-if="publicReveal && !activeBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"
+                <div v-if="publicReveal && !visibleBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"
                   :class="{ 'public-reveal-animation--entry-continuation': publicReveal.kind === 'entry-continuation' }"
                   data-ui-contract="public-card-reveal-animation" :data-presentation-kind="publicReveal.kind"
                   :data-entry-transaction-key="publicReveal.transactionKey">
@@ -1458,7 +1470,7 @@ function statusTexts(card: Card) {
                 </div>
               </Transition>
               <Transition name="dice-reveal">
-                <div v-if="diceReveal && !activeBoardPromptId" :key="diceReveal.sequence" class="dice-reveal-animation" :class="{ settled: diceReveal.settled }" data-ui-contract="dice-event-animation">
+                <div v-if="diceReveal && !visibleBoardPromptId" :key="diceReveal.sequence" class="dice-reveal-animation" :class="{ settled: diceReveal.settled }" data-ui-contract="dice-event-animation">
                   <div class="dice-reveal-values">
                     <b v-for="(value, index) in diceReveal.animatedValues" :key="index">{{ value }}</b>
                   </div>
@@ -1715,7 +1727,7 @@ function statusTexts(card: Card) {
               ? '确认支付' : '确认选择' }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
-      <PromptOverlay v-if="!readOnly || game.phase === 'DisasterPreparation'" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
+      <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>

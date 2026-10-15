@@ -1,7 +1,14 @@
 export type PresentationReservation = {
-  waitUntilGranted: () => Promise<() => void>
+  waitUntilGranted: () => Promise<(presented?: boolean) => void>
   setPaused: (paused: boolean) => void
   cancel: () => void
+  prepareVisualOwner: (owner: PreparedVisualOwner) => void
+}
+
+export type PreparedVisualOwner = {
+  show: () => void
+  hide: () => void
+  dispose: () => void
 }
 
 type PendingPresentation = {
@@ -11,7 +18,10 @@ type PendingPresentation = {
   ready: boolean
   paused: boolean
   cancelled: boolean
-  resolve: (release: () => void) => void
+  released: boolean
+  visualKey?: string
+  visualOwner?: PreparedVisualOwner
+  resolve: (release: (presented?: boolean) => void) => void
 }
 
 export type PresentationSequenceCoordinator = ReturnType<typeof createPresentationSequenceCoordinator>
@@ -20,10 +30,86 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
   const pending = new Set<PendingPresentation>()
   const entryMovementTransactions = new Set<string>()
   const presentationFacts = new Set<number>()
+  const activeVisualOwners = new Map<string, { item: PendingPresentation; owner: PreparedVisualOwner }>()
   let active: PendingPresentation | null = null
   let nextOrder = 0
   let scheduled = false
   let lastBusy = false
+
+  const orderedForVisualKey = (visualKey: string) => [...pending, ...(active ? [active] : [])]
+    .filter(item => !item.cancelled && !item.released && item.visualKey === visualKey)
+    .sort((left, right) => left.sequence - right.sequence || left.priority - right.priority || left.order - right.order)
+
+  const handoffVisualOwner = (item: PendingPresentation, disposePrevious: boolean) => {
+    const visualKey = item.visualKey
+    const owner = item.visualOwner
+    if (!visualKey || !owner) return
+    const previous = activeVisualOwners.get(visualKey)
+    if (previous?.item === item) {
+      owner.show()
+      return
+    }
+    // The successor acquires its lease and becomes visible first. The previous
+    // owner then releases/removes in the same stack, so no paint can observe a
+    // blank or the final authority between two ordered actions.
+    owner.show()
+    if (previous) {
+      if (disposePrevious) previous.owner.dispose()
+      else previous.owner.hide()
+    }
+    activeVisualOwners.set(visualKey, { item, owner })
+  }
+
+  const settleReleasedVisualOwner = (visualKey: string) => {
+    const current = activeVisualOwners.get(visualKey)
+    if (!current?.item.released) return
+    const successor = orderedForVisualKey(visualKey).find(candidate => candidate !== current.item)
+    // Only the actual next reservation may inherit the pixels. Skipping an
+    // unprepared predecessor would reorder two real authority actions merely
+    // because their image/DOM preparation finished differently. Keep the
+    // completed final holder until that successor can take the lease.
+    if (successor?.visualOwner) handoffVisualOwner(successor, true)
+    else if (!successor) {
+      activeVisualOwners.delete(visualKey)
+      current.owner.dispose()
+    }
+  }
+
+  const releaseVisualOwner = (item: PendingPresentation) => {
+    item.released = true
+    const visualKey = item.visualKey
+    const owner = item.visualOwner
+    if (!visualKey) return
+    const current = activeVisualOwners.get(visualKey)
+    if (current?.item !== item) owner?.dispose()
+    settleReleasedVisualOwner(visualKey)
+  }
+
+  const prepareVisualOwner = (item: PendingPresentation, owner: PreparedVisualOwner) => {
+    if (item.visualOwner === owner) {
+      const visualKey = item.visualKey
+      const current = visualKey ? activeVisualOwners.get(visualKey) : undefined
+      if (current?.item === item) owner.show()
+      else if (visualKey && (!current || current.item.released)
+        && orderedForVisualKey(visualKey)[0] === item) handoffVisualOwner(item, Boolean(current))
+      return
+    }
+    item.visualOwner?.dispose()
+    item.visualOwner = owner
+    if (item.cancelled || !item.visualKey) {
+      owner.dispose()
+      return
+    }
+    const current = activeVisualOwners.get(item.visualKey)
+    if (current) {
+      if (current.item.released && orderedForVisualKey(item.visualKey)[0] === item)
+        handoffVisualOwner(item, true)
+      else owner.hide()
+      return
+    }
+    if (orderedForVisualKey(item.visualKey)[0] === item) handoffVisualOwner(item, false)
+    else owner.hide()
+  }
 
   const notifyBusy = () => {
     const busy = Boolean(active || pending.size)
@@ -44,10 +130,12 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     if (!next || !next.ready || next.paused) return
     pending.delete(next)
     active = next
+    if (next.visualOwner) handoffVisualOwner(next, false)
     let released = false
-    next.resolve(() => {
+    next.resolve((_presented = true) => {
       if (released) return
       released = true
+      releaseVisualOwner(next)
       if (active === next) active = null
       notifyBusy()
       schedulePump()
@@ -64,9 +152,10 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
     setTimeout(pump, 0)
   }
 
-  const reserve = (sequence: number, priority = 50): PresentationReservation => {
-    let resolveGrant!: (release: () => void) => void
-    const granted = new Promise<() => void>(resolve => { resolveGrant = resolve })
+  const reserve = (sequence: number, priority = 50,
+    options: { visualKey?: string } = {}): PresentationReservation => {
+    let resolveGrant!: (release: (presented?: boolean) => void) => void
+    const granted = new Promise<(presented?: boolean) => void>(resolve => { resolveGrant = resolve })
     const item: PendingPresentation = {
       sequence,
       priority,
@@ -74,6 +163,8 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
       ready: false,
       paused: false,
       cancelled: false,
+      released: false,
+      visualKey: options.visualKey,
       resolve: resolveGrant,
     }
     pending.add(item)
@@ -87,17 +178,30 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
       },
       setPaused: paused => {
         item.paused = paused
+        if (item.visualKey && item.visualOwner) {
+          const current = activeVisualOwners.get(item.visualKey)
+          // A paused head keeps a static, pointer-transparent holder over the
+          // authoritative card. The real slot stays hit-testable underneath,
+          // while the final class cannot appear and then visibly rewind when
+          // the prompt releases.
+          if (current?.item === item) item.visualOwner.show()
+          else if ((!current || current.item.released)
+            && orderedForVisualKey(item.visualKey)[0] === item)
+            handoffVisualOwner(item, Boolean(current))
+        }
         schedulePump()
       },
       cancel: () => {
         if (item.cancelled) return
         item.cancelled = true
         pending.delete(item)
+        releaseVisualOwner(item)
         // An already granted presentation owns its release callback; callers
         // cancel the visual and release it through that normal path.
         notifyBusy()
         schedulePump()
       },
+      prepareVisualOwner: owner => prepareVisualOwner(item, owner),
     }
   }
 
@@ -118,10 +222,16 @@ export function createPresentationSequenceCoordinator(onBusyChange?: (busy: bool
   const clearPresentationFacts = () => presentationFacts.clear()
 
   const reset = () => {
+    const owners = new Set<PreparedVisualOwner>()
+    for (const item of pending) if (item.visualOwner) owners.add(item.visualOwner)
+    if (active?.visualOwner) owners.add(active.visualOwner)
+    for (const { owner } of activeVisualOwners.values()) owners.add(owner)
     for (const item of pending) item.cancelled = true
     pending.clear()
     entryMovementTransactions.clear()
     presentationFacts.clear()
+    for (const owner of owners) owner.dispose()
+    activeVisualOwners.clear()
     active = null
     notifyBusy()
   }

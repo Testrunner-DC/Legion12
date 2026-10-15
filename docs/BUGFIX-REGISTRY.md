@@ -1,5 +1,24 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 观战登场/休整重复｜共享所有权本地验收完成，未部署
+
+- 根因：正式19真实ordinary delta/赛事full×entry/rest四臂RED0A3F116B，权威最终DOM提前转/显，后续表现层再重演；legacy变化绕统一排序、readonly无真实弹框却暂停、克隆IMG失解码状态导致合法动作吞失。同sequence重传原本不新增，不能误归全部为网络重发。原blank checker把空手牌容器当像素，旧blank0不作独立证据，最终按真实卡背/像素及精确WAAPI起播重验。
+- 同型扫描rg覆盖CardStateTransitionLayer/ZoneMovementPresentationLayer/CombatMotionLayer/GameBoard、claimCardStateTransitions、全部reserve/visual lease及PlayerMat按格节点更新；只修共享表现，不逐卡或改结算。prepared owner先覆盖再等待、后继先接管再释前驱；静态指针透明holder保留真实选格。像素canvas快照、generic墓地身份、事件时点终角、换DOM先租新节点、discarded successor不留owner，均有旧/新具名边界对照；同水位不同revision合法动作不合并。
+- Main额外复现切局新matchId/旧revision半更新及same-ref仅换matchId吞首动作；sync立即abort/cancel，主pre完整tuple重基线并依赖matchId，旧异步不可复活。实际RED F211B6FA→GREEN41247573、decode取消及下局首动作E1EF7EA6；不是把失败夹具换名通过。独立最终只读审查CLEAR。
+- 最终真实公开entry→rest/activeRest普通/赛事四臂12EE2865、真实ready两臂10CA2497逐动作一次/重传0、无早显/空白/双owner。真实墓地链、玩家native确认一次、390×844恢复截图与正常战斗双阵亡邻居分别限定；合成换match标签、Vite内存旧行为对照与同文案新sequence控制不冒称另一条引擎轨迹。完整规则7492零失败跳过、前端最终Batch退出0/双构建、motion45/coordinator36/projection99/A3 replay58；旧字符串/AST失败和夹具失败保留，职责迁移不删断言。
+- 回滚守卫已进入正常check:ui-contracts；最小只读投影/隐私/checkpoint/RNG/hash实际引擎导出测试有效。最终15源冻结E698670A及Main回执092F6633位于C盘spectator-visual-main-20261015，D盘spectator-single-visual-owner-20261015保存原始报告。本地完成不等于上线：部署0/维护0/线上Bug写0，不称真iOS/全部combat组合/性能长尾或长期容量根治。
+
+## 2026-10-15 新建卡组卡死与滚动旧报告｜有限检查未复现收口
+
+- BUG-20261003-7fff2e92原文只有“新建卡组页面卡死，无法上下拉动”。复用本日已接受的正式19编译App/路由/编辑器证据：两桌面从无主宰/0张开始实际80次加牌、两次保存/刷新/重开不死；三短屏六次从解码卡图/空白起点原生滚轮，中部+650px/末卡ST01-10/筛选可点/侧栏不窜。对应manual report91D823FB、scroll Main review与11个原文件SHA绑定，不因报告ID不同重复运行相同浏览器，也不强行并为duplicate。合成游客本地保存不证明认证保存、原未知环境或真iOS。
+- C盘formal-release-20261015/editor-new-page-current-review/closure-proposal.json CB743B71与8负例通过；首次准备哈希关联字段写错在离线停止，纠正为原工作流title换行description整值，非产品RED。实际单次preview/CAS29723/独立终态读回8D800744、原文/优先级/备注/历史保持并撤会话，closed/rejected限定未复现，有新实证可重开。独立intake3AA49ADD同时纳入新报告159e5a22“动不了了”，未冒领为已验或重复；唯一清单E8018022最新908/439new/258resolved/211closed，本方88=26fixed/55rejected/7duplicate、周期180，外部2仍单列。
+
+## 2026-10-15 编辑器类型建议与手工组牌旧反馈｜有限实证收口
+
+- BUG-20260907-bdc9ac22要求左侧详情区分主动/反击战术。不是新增产品修复：正式19实际编译App/路由/编辑器在1440×900、1024×768中真实选取万箭齐发与绝对防御，4次分别显示正确类型、错误类型不存在；文字范围可见/未遮挡，查看前后保存牌库内容不变。共享CardDetailContent/cardPresentation三编译资源逐字节匹配19已验包，Main实看1024反击截图；本地合成游客与策略替身，不冒称真实iOS/原玩家回放或详情卡图解码。
+- C盘formal-release-20261015/editor-tactic-label-current-probe：report D3BE9ABA、proposal2E996254、8个离线负例；一次preview/CAS29660/独立读回552997F2且撤会话，按已有功能满足建议closed/rejected，非fixed或duplicate。唯一清单C58FC7E0：907总/440new/258resolved/209closed，86阶段=26fixed/53rejected/7duplicate、周期178。两服19/维护不变，海拉本地修复报告仍不提前关。
+- BUG-20260907-0897da2b只有“不能自己编牌库”。正式19实际编译界面在两个同尺寸从无主宰/0张真空白开始，实际选主宰、80次逐张加牌、分别命名保存/刷新重开，每行牌名张数、40张总数及压缩缓存持久字节一致；Main实看重开截图，decks编译消费者CB8D2144匹配19归档。r1把新压缩缓存当旧plain map检查失败保留，仅修夹具；最终r2 report91D823FB。仅合成游客本地存储，不冒称登录服务端保存/原未知环境/真机全覆盖。按有限检查未复现closed/rejected，proposal4A06033A、8负例、单CAS29693/撤会话/实际3D294269；最新唯一清单2B1BCC55：907/439new/258resolved/210closed，87=26fixed/54rejected/7duplicate、周期179。
+
 ## 2026-10-15 CHAT-C1B2-S03｜连接退休先关闭旧消息起发（本地验收完成）
 
 - 用户已准聊天共享边界，P2只扩既有CloseChatStarts：接管在RoomManager代际推进之前、会话过期在expected-binding退休之前、真实注销撤销在原子移除之前关闭旧transport；finally与Supersede为防御。无新claim等待/pair推进/重开，sameGuid重复hello原本拒绝且保持原有效lane，新Guid不受旧清理影响。生产ConfigureChatLane仍0、聊天OFF。

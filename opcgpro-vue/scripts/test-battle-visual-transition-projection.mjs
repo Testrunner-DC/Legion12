@@ -14,6 +14,18 @@ const card = (instanceId, cardId = 'S02-0609', tapped = false) => ({
 })
 const sourceCard = card('nuada', 'ST06-M1')
 const targetCard = card('target')
+assert.equal(model.movementTerminalTapped('field', sourceCard, undefined, true), false,
+  'a later rested destination cannot pull the preceding movement past its action-time active frame')
+assert.equal(model.movementTerminalTapped('field', { ...sourceCard, tapped:true }, undefined, false), true,
+  'an action-time rested public card remains the movement terminal state')
+assert.equal(model.movementTerminalTapped('field', sourceCard,
+  { instanceId:sourceCard.instanceId, tapped:true }, false), true,
+  'a matching authoritative public placement outranks the generic event-card clone')
+assert.equal(model.movementTerminalTapped('field', sourceCard,
+  { instanceId:'different-copy', tapped:true }, false), false,
+  'a placement for another instance cannot change this movement terminal state')
+assert.equal(model.movementTerminalTapped('graveyard', { ...sourceCard, tapped:true }, undefined, false), false,
+  'non-oriented destination piles keep their rendered destination orientation')
 const event = {
   sequence: 10, type: 'effect-trigger', playerIndex: 0, text: '银臂努阿达触发', effectSceneId: 'nuada-rune-buff',
   effectResultStatus: 'resolved', cards: [sourceCard, targetCard],
@@ -233,6 +245,16 @@ assert.deepEqual(model.claimCardStateTransitions(staleExplicitStateClaims, 71, a
   [{ ...restFact, sequence:399 }]).map(change => change.transactionKey), ['71:same:active>rested'],
   'an event at the recovery watermark is ignored and the current snapshot uses the legacy fallback once')
 
+const sharedWatermarkClaims = model.createCardStateClaimState()
+model.resetCardStateClaimState(sharedWatermarkClaims, 80, before, 500)
+const [watermarkRest] = model.claimCardStateTransitions(sharedWatermarkClaims, 81, after)
+const [watermarkReady] = model.claimCardStateTransitions(sharedWatermarkClaims, 82, before)
+assert.deepEqual([watermarkRest.orderingSequence, watermarkReady.orderingSequence], [500, 500],
+  'legacy rest and ready may legitimately share one accepted event watermark used only for ordering')
+assert.deepEqual([watermarkRest.transactionKey, watermarkReady.transactionKey],
+  ['81:same:active>rested', '82:same:rested>active'],
+  'different authority revisions remain distinct visual actions despite sharing an ordering watermark')
+
 const transactionClaims = model.createMovementClaimState()
 const handZones = new Map([['entrant', 'hand'], ['second-entrant', 'hand']])
 model.resetMovementClaimState(transactionClaims, 9, 40, handZones)
@@ -292,4 +314,4 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 92/92 assertions')
+console.log('Battle visual transition projection passed: 99/99 assertions')

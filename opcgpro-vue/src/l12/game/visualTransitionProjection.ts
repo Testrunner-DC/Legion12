@@ -2,6 +2,20 @@ import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 
 export type VisualZone = 'hand' | 'library' | 'field' | 'graveyard' | 'relic' | 'master' | 'center' | 'disaster' | 'resolving' | 'attached'
 
+export function movementTerminalTapped(to: VisualZone, eventCard: Pick<Card, 'instanceId' | 'tapped'> | undefined,
+  publicPlacement: ActionEvent['playerPublicPlacement'], destinationTapped: boolean) {
+  // AddEvent stores an action-time Card clone. A later authority revision can
+  // already contain a second rest/ready action by the time the movement layer
+  // resolves its destination DOM. Keep the first motion's terminal frame on
+  // its own public fact so the next state owner begins at the same angle.
+  if (to === 'field' || to === 'relic' || to === 'master' || to === 'attached') {
+    const placementTapped = eventCard?.instanceId && publicPlacement?.instanceId === eventCard.instanceId
+      ? publicPlacement.tapped : undefined
+    return placementTapped ?? eventCard?.tapped ?? destinationTapped
+  }
+  return destinationTapped
+}
+
 export function isCardEffectPresentationEvent(event: ActionEvent) {
   return Boolean(event.effectSceneId && event.effectResultStatus !== 'declared'
     && (event.type === 'effect-result' || event.type === 'effect-trigger'
@@ -296,6 +310,13 @@ export type CardStateTransitionClaim = {
   toTapped: boolean
   revision: number
   transactionKey: string
+  /**
+   * Orders the visual handoff without claiming that a legacy snapshot delta is
+   * an explicit presentation fact.  Explicit facts use their event sequence;
+   * the compatibility fallback uses the accepted event watermark for the same
+   * authority revision.
+   */
+  orderingSequence: number
   presentationFactSequence?: number
   attackSequence?: number
   attackTargetInstanceId?: string
@@ -356,6 +377,7 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
       fromTapped: fact.fromTapped,
       toTapped: fact.toTapped,
       revision,
+      orderingSequence: event.sequence,
       presentationFactSequence: event.sequence,
       transactionKey: `${event.sequence}:${fact.instanceId}:${fact.fromTapped ? 'rested' : 'active'}>${fact.toTapped ? 'rested' : 'active'}`,
     }
@@ -364,12 +386,16 @@ export function claimCardStateTransitions(state: CardStateClaimState, revision: 
     if (attack || change.fromTapped || !change.toTapped) pendingAttacks.delete(change.instanceId)
     cursor.set(fact.instanceId, { instanceId: fact.instanceId, tapped: fact.toTapped })
   }
-  const fallbackChanges = changedTappedStates(cursor, states).map(change => ({
-    ...change,
-    revision,
-    transactionKey: `${revision}:${change.instanceId}:${change.fromTapped ? 'rested' : 'active'}>${change.toTapped ? 'rested' : 'active'}`,
-    ...decorateAttack(change),
-  }))
+  const fallbackChanges = changedTappedStates(cursor, states).map(change => {
+    const orderingSequence = freshEvents.at(-1)?.sequence ?? state.lastEventSequence
+    return {
+      ...change,
+      revision,
+      orderingSequence,
+      transactionKey: `${revision}:${change.instanceId}:${change.fromTapped ? 'rested' : 'active'}>${change.toTapped ? 'rested' : 'active'}`,
+      ...decorateAttack(change),
+    }
+  })
   resetCardStateClaimState(state, revision, states, Math.max(state.lastEventSequence, highestEventSequence))
   return [...explicitChanges, ...fallbackChanges]
 }

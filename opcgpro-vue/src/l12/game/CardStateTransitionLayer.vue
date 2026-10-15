@@ -4,8 +4,9 @@ import { l12AnimationDuration } from '../audioPreferences'
 import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } from '../mobileViewport'
 import type { ActionEvent, PlayerView } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
+import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
 import { claimCardStateTransitions, collectVisualFieldState, createCardStateClaimState, resetCardStateClaimState } from './visualTransitionProjection'
-import type { PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
+import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Transition = {
   key: string
@@ -18,8 +19,15 @@ type Transition = {
   attackTargetInstanceId?: string
   attackTargetPlayerIndex?: number
   presentationFactSequence?: number
-  presentationReservation?: PresentationReservation
-  presentationRelease?: () => void
+  presentationReservation: PresentationReservation
+  presentationRelease?: (presented?: boolean) => void
+  holderWrapper: HTMLElement
+  visualOwner: PreparedVisualOwner
+  coveredTarget?: HTMLElement
+  releaseTargetVisibility?: () => void
+  presentationStarted?: boolean
+  visualPreparation: AbortController
+  visualReady: Promise<boolean>
 }
 
 const props = withDefaults(defineProps<{
@@ -36,9 +44,24 @@ const props = withDefaults(defineProps<{
 const active = ref<Transition | null>(null)
 const queue: Transition[] = []
 const stateClaims = createCardStateClaimState()
+let awaitingMatchBaseline = true
+
+function revealTransitionTarget(transition: Transition) {
+  transition.releaseTargetVisibility?.()
+  transition.releaseTargetVisibility = undefined
+  transition.coveredTarget = undefined
+}
+
+function coverTransitionTarget(transition: Transition, target: HTMLElement) {
+  if (transition.coveredTarget === target && transition.releaseTargetVisibility) return
+  const releaseNext = acquireAuthoritativeCardVisibility(target)
+  const releasePrevious = transition.releaseTargetVisibility
+  transition.coveredTarget = target
+  transition.releaseTargetVisibility = releaseNext
+  releasePrevious?.()
+}
 let wrapper: HTMLElement | null = null
 let animation: Animation | null = null
-let releaseTargetVisibility: (() => void) | null = null
 let finalizing = false
 let activeGeneration = 0
 let starting: Transition | null = null
@@ -60,14 +83,11 @@ function duration() {
   return l12AnimationDuration(standard, props.playbackSpeed ? 80 : 140)
 }
 
-function revealTarget() {
-  releaseTargetVisibility?.()
-  releaseTargetVisibility = null
-}
-
 function stateFaceIsDecoded(root: ParentNode) {
   const images = [...root.querySelectorAll('img')]
-  return images.length === 0 || images.every(image => image.complete && image.naturalWidth > 0)
+  if (images.length) return images.every(image => image.complete && image.naturalWidth > 0)
+  return Boolean(root.querySelector('canvas[data-l12-pixel-snapshot="true"]'))
+    && !root.querySelector('.l12-card-image__resolving')
 }
 
 function waitForDecodedStateImage(image: HTMLImageElement, signal: AbortSignal, timeoutMs = 1800) {
@@ -101,8 +121,8 @@ function waitForDecodedStateImage(image: HTMLImageElement, signal: AbortSignal, 
 
 async function waitForDecodedStateFace(root: ParentNode, signal: AbortSignal) {
   const images = [...root.querySelectorAll('img')]
-  return images.length === 0
-    || (await Promise.all(images.map(image => waitForDecodedStateImage(image, signal)))).every(Boolean)
+  return images.length > 0
+    && (await Promise.all(images.map(image => waitForDecodedStateImage(image, signal)))).every(Boolean)
 }
 
 function waitUntilUnpaused(signal: AbortSignal) {
@@ -138,23 +158,119 @@ function finalizeActive(generation: number, advance: boolean) {
   if (currentAnimation) {
     currentAnimation.onfinish = null
     currentAnimation.oncancel = null
+    try { currentAnimation.commitStyles() } catch { /* A cancelled animation has no frame to retain. */ }
     currentAnimation.cancel()
+  }
+  const transition = active.value
+  transition?.visualPreparation.abort()
+  const target = transition ? cardElement(transition.instanceId) : null
+  if (target instanceof HTMLElement) {
+    // Finish the authority CSS state while its holder still owns the pixels.
+    // Releasing the lease afterwards cannot trigger a second visible turn.
+    settleElementGeometry(target)
   }
   // Hand the final frame to the authoritative DOM before removing the ghost.
   // Both operations are synchronous, but this ordering prevents a blank frame
   // at the compositor boundary on slower/mobile renderers.
-  revealTarget()
-  wrapper?.remove()
   wrapper = null
-  active.value?.presentationRelease?.()
+  transition?.presentationRelease?.(Boolean(transition.presentationStarted))
   active.value = null
   finalizing = false
   if (advance) showNext()
 }
 
 function cancelActive() {
-  if (!active.value && !animation && !wrapper && !releaseTargetVisibility) return
+  if (!active.value && !animation && !wrapper) return
   finalizeActive(activeGeneration, false)
+}
+
+function createPreparedTransition(transition: Omit<Transition,
+  'holderWrapper' | 'visualOwner' | 'visualPreparation' | 'visualReady'>,
+  sourceGhost: HTMLElement, sourcePixelsReady: boolean): Transition | null {
+  const host = landscapeTeleportElement()
+  if (!host) return null
+  sourceGhost.removeAttribute('id')
+  sourceGhost.removeAttribute('data-card-instance-id')
+  sourceGhost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
+  sourceGhost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
+  sourceGhost.classList.remove('tapped', 'selected')
+  Object.assign(sourceGhost.style, {
+    width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none',
+    visibility: 'visible', pointerEvents: 'none',
+  })
+  const holderWrapper = document.createElement('div')
+  holderWrapper.className = 'l12-card-state-transition-ghost'
+  holderWrapper.dataset.visualTransitionKey = transition.key
+  holderWrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
+  holderWrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
+  holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'
+  if (transition.attackSequence !== undefined) holderWrapper.dataset.attackSequence = String(transition.attackSequence)
+  Object.assign(holderWrapper.style, {
+    position: 'fixed', left: `${transition.sourceRect.left}px`, top: `${transition.sourceRect.top}px`,
+    width: `${transition.sourceRect.width}px`, height: `${transition.sourceRect.height}px`,
+    zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
+    filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))', visibility: 'hidden',
+    transform: `rotate(${transition.fromTapped ? 90 : 0}deg)`,
+  })
+  holderWrapper.appendChild(sourceGhost)
+  host.appendChild(holderWrapper)
+  const prepared = transition as Transition
+  prepared.holderWrapper = holderWrapper
+  const visualOwner: PreparedVisualOwner = {
+    show: () => {
+      const target = cardElement(prepared.instanceId)
+      if (target instanceof HTMLElement) coverTransitionTarget(prepared, target)
+      holderWrapper.style.visibility = 'visible'
+    },
+    hide: () => {
+      holderWrapper.style.visibility = 'hidden'
+      revealTransitionTarget(prepared)
+    },
+    dispose: () => {
+      // Reveal the already-settled authority before removing its previous-state
+      // holder. Both mutations occur before the browser can paint a gap.
+      revealTransitionTarget(prepared)
+      holderWrapper.remove()
+    },
+  }
+  prepared.visualOwner = visualOwner
+  const visualPreparation = new AbortController()
+  prepared.visualPreparation = visualPreparation
+  if (sourcePixelsReady) {
+    prepared.presentationReservation.prepareVisualOwner(visualOwner)
+    prepared.visualReady = Promise.resolve(true)
+    return prepared
+  }
+  let paintBoundaryPassed = false
+  requestAnimationFrame(() => { paintBoundaryPassed = true })
+  // A detached clone reports its already-decoded source image as incomplete.
+  // Attach it hidden, then wait for the clone itself to decode. A predecessor
+  // owner (for example hand→field) remains visible while this happens. With no
+  // predecessor, never replay after a painted final authority state: expose the
+  // settled authority conservatively instead of turning it back to old pixels.
+  prepared.visualReady = waitForDecodedStateFace(holderWrapper, visualPreparation.signal).then(decoded => {
+    if (!decoded || visualPreparation.signal.aborted) {
+      holderWrapper.remove()
+      return false
+    }
+    const target = cardElement(prepared.instanceId)
+    const targetVisible = target instanceof HTMLElement
+      && getComputedStyle(target).display !== 'none'
+      && getComputedStyle(target).visibility !== 'hidden'
+      && target.getBoundingClientRect().width > 0 && target.getBoundingClientRect().height > 0
+    const targetAlreadyFinal = target instanceof HTMLElement
+      && target.classList.contains('tapped') === prepared.toTapped
+    if (paintBoundaryPassed && targetVisible && targetAlreadyFinal && !props.paused) {
+      holderWrapper.remove()
+      return false
+    }
+    prepared.presentationReservation.prepareVisualOwner(visualOwner)
+    return true
+  }).catch(() => {
+    holderWrapper.remove()
+    return false
+  })
+  return prepared
 }
 
 function beginTransition(transition: Transition) {
@@ -167,7 +283,14 @@ function beginTransition(transition: Transition) {
     if (generation !== activeGeneration || active.value?.key !== transition.key) return
     const finalize = (advance: boolean) => finalizeActive(generation, advance)
     try {
-      if (!await waitForDecodedStateFace(transition.sourceGhost, preparation.signal)) {
+      if (!await transition.visualReady) {
+        if (generation === activeGeneration && active.value?.key === transition.key) finalize(true)
+        return
+      }
+      // visualReady is the single decode gate. Re-running image.decode() after
+      // the holder has taken ownership can stall a fully decoded clone for
+      // seconds, leaving a static old state before the motion begins.
+      if (!stateFaceIsDecoded(transition.sourceGhost)) {
         if (generation === activeGeneration && active.value?.key === transition.key) finalize(true)
         return
       }
@@ -176,7 +299,6 @@ function beginTransition(transition: Transition) {
       if (activePreparation === preparation) activePreparation = null
       const target = cardElement(transition.instanceId)
       if (!(target instanceof HTMLElement)) { finalize(true); return }
-      releaseTargetVisibility = acquireAuthoritativeCardVisibility(target)
       const sourceRect = transition.sourceRect
       // The ghost owns the visible state turn. Finish the covered authority
       // node's transition and settle animation without waiting on CSS timers.
@@ -188,27 +310,12 @@ function beginTransition(transition: Transition) {
       const startY = sourceRect.top + sourceRect.height / 2 - height / 2
       const endX = targetRect.left + targetRect.width / 2 - width / 2
       const endY = targetRect.top + targetRect.height / 2 - height / 2
-      const ghost = transition.sourceGhost
-      ghost.removeAttribute('id')
-      ghost.removeAttribute('data-card-instance-id')
-      ghost.querySelectorAll('[id]').forEach(node => node.removeAttribute('id'))
-      ghost.querySelectorAll('[data-card-instance-id]').forEach(node => node.removeAttribute('data-card-instance-id'))
-      ghost.classList.remove('tapped', 'selected')
-      Object.assign(ghost.style, { width: '100%', height: '100%', margin: '0', transform: 'none', transition: 'none', visibility: 'visible', pointerEvents: 'none' })
-      wrapper = document.createElement('div')
-      wrapper.className = 'l12-card-state-transition-ghost'
-      wrapper.dataset.visualTransitionKey = transition.key
-      wrapper.dataset.stateFrom = transition.fromTapped ? 'rested' : 'active'
-      wrapper.dataset.stateTo = transition.toTapped ? 'rested' : 'active'
-      wrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'
-      if (transition.attackSequence !== undefined) wrapper.dataset.attackSequence = String(transition.attackSequence)
+      wrapper = transition.holderWrapper
       Object.assign(wrapper.style, {
         position: 'fixed', left: `${startX}px`, top: `${startY}px`, width: `${width}px`, height: `${height}px`,
         zIndex: '902', pointerEvents: 'none', transformOrigin: 'center', willChange: 'transform',
         filter: 'drop-shadow(0 8px 10px rgba(0,0,0,.72))',
       })
-      wrapper.appendChild(ghost)
-      landscapeTeleportElement()?.appendChild(wrapper)
       const fromAngle = transition.fromTapped ? 90 : 0
       const toAngle = transition.toTapped ? 90 : 0
       const dx = endX - startX
@@ -244,6 +351,7 @@ function beginTransition(transition: Transition) {
         easing: transition.attackSequence === undefined ? 'cubic-bezier(.22,1,.36,1)' : 'linear',
         fill: 'forwards',
       })
+      transition.presentationStarted = true
       const settled = animation.finished
       animation.onfinish = () => finalize(true)
       animation.oncancel = () => finalize(false)
@@ -261,15 +369,11 @@ function showNext() {
   if (active.value || starting || props.paused || !queue.length) return
   const transition = queue.shift()
   if (!transition) return
-  if (!transition.presentationReservation) {
-    beginTransition(transition)
-    return
-  }
   starting = transition
   transition.presentationReservation.setPaused(props.paused)
   void transition.presentationReservation.waitUntilGranted().then(release => {
     if (starting !== transition) {
-      release()
+      release(false)
       return
     }
     starting = null
@@ -279,19 +383,34 @@ function showNext() {
 }
 
 function cancelQueuedTransitions() {
-  starting?.presentationReservation?.cancel()
+  if (starting) {
+    starting.visualPreparation.abort()
+    starting.holderWrapper.remove()
+    starting.presentationReservation.cancel()
+  }
   starting = null
-  for (const transition of queue) transition.presentationReservation?.cancel()
+  for (const transition of queue) {
+    transition.visualPreparation.abort()
+    transition.holderWrapper.remove()
+    transition.presentationReservation.cancel()
+  }
   queue.length = 0
 }
 
 watch(() => props.matchId, () => {
   cancelActive(); cancelQueuedTransitions()
-  resetCardStateClaimState(stateClaims, props.revision, collectVisualFieldState(props.players),
-    Math.max(0, ...props.events.map(event => event.sequence)))
+  // sync prop watchers can see the new match id before the new revision.
+  // Cancel immediately; baseline only after the complete prop tuple arrives.
+  awaitingMatchBaseline = true
 }, { flush: 'sync', immediate: true })
 
-watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.players), props.events.map(event => event.sequence).join(',')] as const, ([revision, synchronizing, next]) => {
+watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.players), props.events.map(event => event.sequence).join(','), props.matchId] as const, ([revision, synchronizing, next]) => {
+  if (awaitingMatchBaseline) {
+    awaitingMatchBaseline = false
+    resetCardStateClaimState(stateClaims, revision, next,
+      Math.max(0, ...props.events.map(event => event.sequence)))
+    return
+  }
   // Recovery snapshots and backward replay seeks establish a new visual
   // baseline. Historical state must never be backfilled as live motion.
   if (synchronizing || (props.playbackSpeed && revision < stateClaims.revision)) {
@@ -314,7 +433,11 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
     // the target's temporary visibility:hidden into an invisible ghost.
     const sourceGhost = source.cloneNode(true) as HTMLElement
     sourceGhost.style.visibility = 'visible'
-    queue.push({
+    const sourcePixelsReady = snapshotDecodedAuthoritativeCardVisual(source, sourceGhost)
+    const presentationReservation = props.sequenceCoordinator.reserve(change.orderingSequence, 30,
+      { visualKey: instanceId })
+    presentationReservation.setPaused(props.paused)
+    const transition = createPreparedTransition({
       key: transitionKey,
       instanceId,
       fromTapped: change.fromTapped,
@@ -325,9 +448,10 @@ watch(() => [props.revision, props.synchronizing, collectVisualFieldState(props.
       attackTargetInstanceId: change.attackTargetInstanceId,
       attackTargetPlayerIndex: change.attackTargetPlayerIndex,
       presentationFactSequence: change.presentationFactSequence,
-      presentationReservation: change.presentationFactSequence === undefined
-        ? undefined : props.sequenceCoordinator.reserve(change.presentationFactSequence, 20),
-    })
+      presentationReservation,
+    }, sourceGhost, sourcePixelsReady)
+    if (transition) queue.push(transition)
+    else presentationReservation.cancel()
   }
   showNext()
 }, { flush: 'pre', immediate: true })

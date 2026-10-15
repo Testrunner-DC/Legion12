@@ -1,5 +1,22 @@
 # 十二军团简短交接
 
+## 2026-10-16 观战连续动作｜本地最终验收完成，未部署
+
+- 本批沿P2/P4唯一权威事实，统一区域移动与休整/活跃的prepared owner、后继交接和终态释放；legacy水位只排序不吞动作。墓地generic锚不借其他墓顶身份、动作终角用冻结event、公用像素快照免二次解码、换CardTile先租新节点后释旧、已released后继不留lease均闭合。旧正式19四臂RED及所有失败保留，不把重传原本不重复误称新修复。
+- Main实际补出切局两个边界RED：sync watcher可读到新matchId/旧revision；同refs仅换matchId又可能不触发主watch。两层立即取消、pre完整tuple重基线且主依赖含matchId，最终同ref GREEN41247573/慢decode取消及首动作GREEN E1EF7EA6；独立只读复核CLEAR。真实entry→rest/activeRest普通delta与赛事full四臂12EE2865、真实ready两臂10CA2497各动作恰一次/重传0，无早显/空白/双owner；玩家原生点击及移动最小化/恢复具名证据保持。
+- Main完整规则7492/7492零失败跳过（监督receipt69FCB2FC，后端字节未再变）+最终受影响前端Batch退出0，motion45/coordinator36/projection99/A3 replay58与双环境构建通过。原三条字符串及computed别名AST门禁失败保留，等义迁移加正负例不减职责；r4日志DF40B3C1是启动transcript，非全部npm输出。最终验收C盘spectator-visual-main-20261015/main-local-acceptance.json SHA092F6633，15源冻结E698670A；不重复有效全规则。
+- writer已返还所有租约，Main负责正常Git同步，结果另认实际回执；本批无部署/维护/线上关Bug，最近已知两服仍19、聊天OFF。908/439及阶段88不变；不宣称真iOS、全部战斗组合、性能长尾或Linux容量已完成。下列早期局部状态是历史阶段记录，以本节最终回执为准。
+
+## 2026-10-15 阶段88接续
+
+- 新建卡组卡死/纵向滚动旧反馈7fff2e92复用已验19真空白80加牌/两次保存重开与6原生滚轮，不重复相同浏览器；8负例/单CAS29723/独立终态读回8D800744及撤会话完成，限定未复现rejected而非fixed/duplicate。同期新增159e5a22仅称“动不了了”，独立进入核查；唯一清单E8018022为908总/439new/258resolved/211closed、88=26fixed/55rejected/7duplicate、周期180。
+- 观战首ordinary entry当前本地GREEN 066A2023无早显/双owner，非最终：Main发现blank checker误将空手牌容器当旧像素、created计数未严格证明WAAPI恰一次，要求增强；独立审查另拦住后继未prepared时Zone提前清release回调导致lease泄漏。修复与真实玩家点击/后续合法休整及活跃仍在writer租约中，未接受根治或部署。真实Handle导出focused1/1的TRX53CD83DD已独立核；后端规则不改。
+
+## 2026-10-15 阶段86—87接续
+
+- 海拉58b439b0/S03 243931e5已获用户纠正批准并实际推送，远端精确243931e5；无新部署/维护/聊天开启。战术详情四次点击与真空白手工组牌两尺寸80加牌/保存/重开分别限定CAS关闭，游客不冒称认证保存；唯一Bug清单907/439、87阶段/周期179，技术证据见registry及C盘editor-tactic-label-current-probe/editor-manual-current-probe。
+- Main与观战writer至多两写者、构建浏览器串行；真实引擎普通delta/赛事full四臂RED已核0A3F116B，当前五层共享表现修复/独立只读审查中，非验收完成。赛事差量测试工具后续校验被安全审查挂起，未授G1或扩大32；不重复旧负载或未改正式采样。原性能5操作/1HTTP/1终局失败、E4真机/F2长期/F8性能缺口保留。
+
 ## 2026-10-15 CHAT-C1B2-S03｜连接退休先关闭旧消息起发（本地验收完成）
 
 - 用户已准聊天共享边界，P2只扩既有CloseChatStarts：接管在RoomManager代际推进之前、会话过期在expected-binding退休之前、真实注销撤销在原子移除之前关闭旧transport；finally与Supersede为防御。无新claim等待/pair推进/重开，sameGuid重复hello原本拒绝且保持原有效lane，新Guid不受旧清理影响。生产ConfigureChatLane仍0、聊天OFF。

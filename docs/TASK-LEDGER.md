@@ -1,5 +1,24 @@
 # 十二军团任务台账
 
+## 2026-10-16 观战动画唯一可见持有者｜P2/P4本地验收完成，未部署
+
+- 用户已批共享根治范围：权威生效后每个动作一次表现，不按kind/text/水位合并或禁用动画；后端规则/网络/数据库不改。prepared owner统一准备/暂停/交接/终态，legacy排序与fact身份分离。Main补齐不同墓顶、动作末首姿态、换DOM节点租约、released后继清理与切局coherent tuple/same-ref matchId依赖；原RED和失败均保留。
+- 最终真实ordinary delta/赛事full四臂12EE2865及ready两臂10CA2497恰一次/重传0，无早显/空白/双owner；同ref reset41247573与decode取消/下局首动作E1EF7EA6通过，独立CLEAR。完整规则7492零失败跳过、最终前端Batch退出0/双构建，motion45/coordinator36/projection99/A3 replay58；只为受影响前端重验，不复跑未变规则。最终回执092F6633/源冻结E698670A，C盘spectator-visual-main-20261015。
+- 现有正常check:ui-contracts已接协调器守卫；字符串及computed别名合同迁移保留职责并增加正负例。玩家native slot确认一请求、390×844最小化/恢复及正常双阵亡邻居为具名局部证据，不扩称真机/所有战斗组合/性能根治。所有子写租约归还Main，Git结果认实际回执；本批部署0/维护0/线上Bug写0，908/439及阶段88不变。
+
+## 2026-10-15 阶段88｜复用有效同源证据收口新建牌库报告
+
+- P0—P4产品不变，7fff2e92原文“新建卡组页面卡死，无法上下拉动”无具体设备步骤。复用当前19真实编译App/路由/编辑器已有两桌面真空白80加牌/命名保存/刷新重开，以及1024×600/1024×500/844×390卡图/空白起点6次原生滚轮与末卡可达；不重跑同源浏览器，不将游客本地保存当认证服务端保存或真iOS。
+- C盘editor-new-page-current-review proposal CB743B71、8离线负例、实际bug-closeout-editor-new-page-19.json 8D800744：一次preview/CAS29723/终态读回/撤会话，rejected限定未复现而非fixed/duplicate。首次离线准备把工作流title+description哈希误当description哈希而停止，纠正关联字段，未发生线上写入或产品RED。独立intake3AA49ADD新增1条159e5a22，唯一清单E8018022已完整对账908/439待办，88=26fixed/55rejected/7duplicate、周期180。
+- 观战首臂GREEN仅阶段证据066A2023，具体早显/双owner已消失；Main仍要求修验证器旧source像素与精确起播次数、证明entry后真实休整未吞，并处理审查实见的released holder回调提前清空泄漏。真实Handle focused1/1 TRX53CD83DD独立核定，后端产品无改；当前局部不是根治/完整门禁，未新部署或维护。
+
+## 2026-10-15 阶段86—87｜编辑器旧反馈收口，观战单一视觉所有者专项
+
+- P0—P4产品不变：bdc9ac22以正式19实际编译界面4次选牌/两个桌面尺寸/可见命中/牌库不变检查收口，单CAS29660与撤会话完成。report D3BE9ABA、closure552997F2；唯一清单C58FC7E0，907/440待办、86=26fixed/53rejected/7duplicate、周期178，外部2不冒领。
+- 后续0897da2b真空白手工40张×两桌面保存/重开通过，r1夹具旧缓存假设失败保留，r2按实际压缩信封/重开逐行及字节核验，不假装认证服务端保存。report91D823FB、proposal4A06033A、单CAS29693/实际读回3D294269及撤会话；清单2B1BCC55最新907/439、87=26fixed/54rejected/7duplicate、周期179。
+- 用户更正误点后，海拉58b439b0及S03 243931e5一次正常push成功，独立ls-remote及origin/main精确243931e5，认composite-targets-main-20261015/git-sync；未部署、聊天OFF。赛事04真实单桌通过仍非32人，后续工具操作形状校验被安全审查拦截，单项挂起，不换方式绕过/G1扩大负载。
+- 观战新任务并行：原r1—r9夹具/不完整观察失败保留；新真实Handle attack/rest/ready导出6BA3CEF0含snapshot/checkpoint/RNG/hash/private-hand守卫，普通delta/赛事full×真实entry/rest最终4/4 RED（0A3F116B），重传+0/blank0，旧entry23帧双ghost且新rest先有终态旋转。Main实看/核SHA后授五层共享表现及可选visibility租约，独立深度只读审查；只做真实modal/legacy排序/单一prepared-current-handoff，不用水位或holder交接去重合法动作。实现/验收仍在进行，必须保留decode/取消/无空白及玩家合法目标可点，不称根治/上线。
+
 ## 2026-10-15 CHAT-C1B2-S03｜连接退休先关闭旧消息起发（本地验收完成）
 
 - 用户已准聊天共享边界，P2只扩既有CloseChatStarts：接管在RoomManager代际推进之前、会话过期在expected-binding退休之前、真实注销撤销在原子移除之前关闭旧transport；finally与Supersede为防御。无新claim等待/pair推进/重开，sameGuid重复hello原本拒绝且保持原有效lane，新Guid不受旧清理影响。生产ConfigureChatLane仍0、聊天OFF。
