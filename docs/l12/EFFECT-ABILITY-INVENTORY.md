@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`338e577901471dfbeedb73f0289fa2231d903c46a527c5955ba3da8ccd8875f7`。
+内容指纹：`1bc22719d9fa19ad593cc262c8bb194294e74ee86eccd899967caea8399b55eb`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -912,7 +912,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-0215:ability:mode-ready-guard:3e3294affff84b58 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
 | S01-0215:ability:mode-rest-and-draw:8c1a03af8e682c53 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-0215 | authoritative-consumer, per-card-branch |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.ANameContainingCanopicDoesNotExemptAnUnrelatedArtifact / S01-0216 | ordinary-artifact-replaces |
-| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EmptyPrimarySlotReceivesTheFirstExemptArtifact / S01-0216 | primary-empty |
+| S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.EmptyPrimarySlotRemainsFreeWhenTheFirstExemptArtifactEnters / S01-0216 | primary-empty |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0216 | duplicate-submit, normal, presentation-consumers, reconnect |
 | S01-0216:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.RelicZoneLimitExemptDefinitionsMatchTheClosedFamily / S01-0216 | exact-card-family, primary-occupied |
 | S01-0217:ability:static:bf632dc8776cd134 | TwelveLegions.Tests.RelicZoneLimitLifecycleProfileTests.HandPlayKeepsPrimaryRelicAndPlacesEveryExemptArtifactInExtraZone / S01-0217 | duplicate-submit, normal, presentation-consumers, reconnect |

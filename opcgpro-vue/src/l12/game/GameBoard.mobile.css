@@ -945,7 +945,10 @@
   aspect-ratio:5/7 !important;
 }
 .mobile-landscape-board :deep(.battlefield-half .relic-zone) { grid-column:2 !important; grid-row:2 !important; }
-.mobile-landscape-board :deep(.battlefield-half .extra-relic) { width:var(--l12-mobile-relic-w) !important; height:var(--l12-mobile-relic-h) !important; max-width:var(--l12-mobile-relic-w) !important; max-height:var(--l12-mobile-relic-h) !important; }
+.mobile-landscape-board :deep(.battlefield-half .commander-zone.has-retained-relics) { grid-template-rows:var(--l12-mobile-hand-count-h) var(--l12-mobile-card-h) 48px !important; height:calc(var(--l12-mobile-hand-count-h) + var(--l12-mobile-card-h) + 56px) !important; }
+.mobile-landscape-board :deep(.battlefield-half .retained-relics) { grid-column:1/-1 !important; grid-row:3 !important; width:100% !important; height:48px !important; min-height:0 !important; align-self:start !important; }
+.mobile-landscape-board :deep(.battlefield-half .retained-relic) { flex:0 0 44px !important; width:44px !important; min-width:44px !important; height:44px !important; min-height:44px !important; }
+.mobile-landscape-board :deep(.battlefield-half .retained-relic .l12-card-image) { width:auto !important; max-width:100% !important; height:100% !important; object-fit:contain !important; }
 .mobile-landscape-board :deep(.battlefield-half .mini-master>span:not(.master-away)) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-card-edge,1px) !important; left:var(--l12-card-edge,1px) !important; font-size:var(--l12-mobile-master-name-font) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-health) { right:var(--l12-card-edge,1px) !important; bottom:var(--l12-mobile-master-health-h) !important; min-width:0 !important; height:var(--l12-mobile-master-health-h) !important; padding:0 var(--l12-card-stat-pad-x,1px) !important; font-size:var(--l12-mobile-master-health-font) !important; line-height:var(--l12-mobile-master-health-h) !important; }
 .mobile-landscape-board :deep(.battlefield-half .master-health small) { font-size:var(--l12-mobile-master-health-small) !important; }

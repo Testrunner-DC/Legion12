@@ -47,8 +47,7 @@ public sealed partial class L12GameEngine
                 var guards = PublicLegions(player).Where(card => card.CardId == "S01-0212")
                     .Select(card => card.InstanceId).ToList();
                 if (guards.Count < 3) return CommandResult.Reject("战场需要3张陵墓守卫");
-                var completedIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var completedIds = CanopicRelicIdsInRelicZone(player);
                 var canopics = player.Graveyard.Where(card => card.Name.Contains("卡诺匹斯", StringComparison.Ordinal)
                         && card.CardType == "artifact" && !completedIds.Contains(card.CardId))
                     .Select(card => card.InstanceId).ToList();

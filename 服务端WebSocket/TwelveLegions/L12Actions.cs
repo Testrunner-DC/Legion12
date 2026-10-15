@@ -13,10 +13,17 @@ public sealed partial class L12GameEngine
         // 圣物的实际打出回合也是其入场回合；若同回合随后被规则视为军团，
         // 公共进攻合法性仍应据此施加召唤失调。
         card.SummonRound = State.Round;
-        if (L12StructuredCardSemantics.IgnoresRelicZoneLimit(card.CardId) && player.Relic is not null)
+        if (L12StructuredCardSemantics.IgnoresRelicZoneLimit(card.CardId))
         {
             player.ExtraRelics.Add(card);
             return;
+        }
+        // A checkpoint from an older build may keep an exempt relic in the primary slot.
+        // Preserve that real object only as part of this actual placement transaction.
+        if (player.Relic is { } existing && L12StructuredCardSemantics.IgnoresRelicZoneLimit(existing.CardId))
+        {
+            player.Relic = null;
+            player.ExtraRelics.Add(existing);
         }
         if (player.Relic is not null)
         {

@@ -7,6 +7,7 @@ import { computed, ref, watch } from 'vue'
 import CardTile from '../CardTile.vue'
 import type { Card, PlayerView } from '../types'
 import { battlefieldSlotLabel } from './battlefieldTargetPresentation'
+import { canopicRelicPresentation } from './canopicRelicPresentation'
 import { isCounterTacticCard } from '../cardPresentation'
 import { blackLotusLogoUrl, factionLogoUrls, godPowerLogoUrl, roundCardUrl, siteBrandIconUrl } from '../specialAssets'
 import CardImage from '../CardImage.vue'
@@ -87,6 +88,7 @@ watch(() => props.interactionPromptActive, active => {
   abilityCardOpen.value = null
   abilityCardMinimized.value = false
 })
+const relicPresentation = computed(() => canopicRelicPresentation(props.player))
 const currentMoraleLimit = computed(() => props.player.morale.length)
 const actionGuidanceActive = computed(() => Boolean(
   props.targetableIds?.length
@@ -345,7 +347,7 @@ function beginCardAbility(card: Card) {
 <template>
   <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active, 'action-guidance': actionGuidanceActive }]"
     :data-player-index="player.playerIndex">
-    <div class="commander-zone">
+    <div class="commander-zone" :class="{ 'has-retained-relics': relicPresentation.retained.length > 0 }">
       <span v-if="mobileMoralePicker" class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
         class="master-marker-track" :class="{ runes: player.faction === 'otherworld', canopic: Boolean(player.specialZones?.canopicTrack?.length) }">
@@ -381,13 +383,15 @@ function beginCardAbility(card: Card) {
         </button>
       </div>
 
-      <div class="relic-zone" data-l12-zone="relic" @mouseenter="player.relic && emit('focus', player.relic)" @click="player.relic && selectZoneCard(player.relic)">
-        <CardTile v-if="player.relic" :card="player.relic" @focus-card="emit('focus', $event)" />
+      <div class="relic-zone" data-l12-zone="relic" @mouseenter="relicPresentation.primary && emit('focus', relicPresentation.primary)" @click="relicPresentation.primary && selectZoneCard(relicPresentation.primary)">
+        <CardTile v-if="relicPresentation.primary" :card="relicPresentation.primary" @focus-card="emit('focus', $event)" />
         <div v-else class="zone-placeholder"><i>✦</i><span>圣物区</span></div>
-        <button v-for="(relic, index) in player.extraRelics ?? []" :key="relic.instanceId" class="extra-relic"
-          :style="{ transform: `translate(${(index + 1) * 12}px, ${(index + 1) * 7}px)` }"
-          @mouseenter="emit('focus', relic)" @click.stop="selectZoneCard(relic)">
-          <CardTile :card="relic" :selected="selectedId === relic.instanceId" @focus-card="emit('focus', $event)" />
+      </div>
+      <div v-if="relicPresentation.retained.length" class="retained-relics" role="group" aria-label="不占用圣物位置的留场圣物">
+        <button v-for="relic in relicPresentation.retained" :key="relic.instanceId" type="button" class="retained-relic"
+          :data-card-instance-id="relic.instanceId" :class="{ selected: isSelected(relic.instanceId) }" :title="relic.name" :aria-label="relic.name"
+          @mouseenter="emit('focus', relic)" @focus="emit('focus', relic)" @click.stop="selectZoneCard(relic)">
+          <CardImage :card-id="relic.cardId" :legacy-url="relic.imageUrl" :alt="relic.name" intent="thumb" fit="contain" eager />
         </button>
       </div>
     </div>
@@ -603,7 +607,11 @@ function beginCardAbility(card: Card) {
 </style>
 
 <style scoped>
-.extra-relic{position:absolute;z-index:2;inset:0;width:100%;height:100%;padding:0;border:0;background:transparent}.extra-relic :deep(.card-tile){width:100%;height:100%}
+.commander-zone.has-retained-relics{align-content:center;row-gap:6px}
+.retained-relics{grid-column:1/-1;box-sizing:border-box;display:flex;align-items:center;gap:4px;width:100%;min-width:0;max-width:100%;padding:2px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x}
+.retained-relic{box-sizing:border-box;display:grid;place-items:center;flex:0 0 44px;width:44px;height:61.6px;min-width:44px;padding:0;border:1px solid #8e865e;border-radius:2px;background:#0b1112;cursor:pointer}
+.retained-relic :deep(.l12-card-image){width:100%;height:100%;object-fit:contain}
+.retained-relic.selected,.retained-relic:focus-visible{outline:2px solid #e1bd5e;outline-offset:-2px}
 .trial-card.own-concealed .l12-card-image{filter:grayscale(.85) brightness(.52)}
 .trial-card .trial-progress{box-sizing:border-box;width:46px;min-width:46px;height:46px;min-height:46px;padding:0 7px;background:#102e17f2;font-size:max(20px,var(--l12-board-copy,13px));font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap;box-shadow:0 0 0 2px rgba(4,22,10,.7),0 0 14px rgba(49,135,63,.88)}
 .formation-slot.counter-dormant :deep(.card-tile),.formation-slot.hidden-dormant :deep(.card-tile){filter:brightness(.4) saturate(.55)}.formation-slot.counter-ready :deep(.card-tile){filter:brightness(1.08);box-shadow:0 0 0 2px #71e197,0 0 17px rgba(70,220,126,.7)}

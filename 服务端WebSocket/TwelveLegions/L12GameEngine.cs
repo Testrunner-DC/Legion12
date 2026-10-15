@@ -623,8 +623,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         bool includeActions)
     {
         string[] canopicIds = ["S01-0216", "S01-0217", "S01-0218", "S01-0219", "S01-0220"];
-        var completedCanopicIds = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var completedCanopicIds = CanopicRelicIdsInRelicZone(player);
         var canopicTrack = player.MasterId == "S01-02M1"
             ? canopicIds.Select(cardId =>
             {
@@ -664,7 +663,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             player.SpecialZones.Runes, player.SpecialZones.TrialLevel, player.SpecialZones.TrialCapacity,
             godPower, trials,
-            canopicProgress = includeActions ? player.SpecialZones.CanopicProgress : player.SpecialZones.CanopicProgress.Select(SnapshotDisplayOnlyCard).ToList(),
+            canopicProgress = includeActions ? CanopicRelicsInRelicZone(player).ToList() : CanopicRelicsInRelicZone(player).Select(SnapshotDisplayOnlyCard).ToList(),
             canopicTrack,
         };
     }
@@ -840,8 +839,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             if (ownLegions.Count(card => L12StructuredCardSemantics.IsTombGuard(card.CardId)) < 3)
                 return "战场需要3张陵墓守卫";
-            var completed = player.SpecialZones.CanopicProgress.Select(card => card.CardId)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var completed = CanopicRelicIdsInRelicZone(player);
             if (!player.Graveyard.Any(card => card.CardType == "artifact"
                     && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && !completed.Contains(card.CardId)))
                 return "墓地没有可置入圣物区的卡诺匹斯圣物";

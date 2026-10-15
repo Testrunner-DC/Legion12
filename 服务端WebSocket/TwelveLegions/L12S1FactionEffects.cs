@@ -1007,7 +1007,7 @@ public sealed partial class L12GameEngine
                     .FirstOrDefault(card => card.InstanceId == id && card.CardId == "S01-0212")).ToArray();
                 var canopic = declared.Length == 5 ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[3]
                     && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
-                    && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId)) : null;
+                    && !CanopicRelicIsPresent(player, card.CardId)) : null;
                 if (declared.Length != 5 || guards.Length != 3 || guards.Any(card => card is null)
                     || declared.Take(3).Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3 || canopic is null
                     || declared[4] is not ("mode:draw" or "mode:heal"))
@@ -1413,7 +1413,7 @@ public sealed partial class L12GameEngine
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
                 var canopic = declared.Length == 5 ? player.Graveyard.FirstOrDefault(card => card.InstanceId == declared[3]
                     && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
-                    && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId)) : null;
+                    && !CanopicRelicIsPresent(player, card.CardId)) : null;
                 if (canopic is null)
                 {
                     AddEvent("effect-cancelled", item.Controller, "伊西斯声明的卡诺匹斯圣物已失效");

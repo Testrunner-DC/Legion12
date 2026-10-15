@@ -631,7 +631,11 @@ public sealed class CanopicWholeEffectRegressionTests
         if (negate) game = Negate(game, actor, recover);
         else Pass(game);
         var player = game.State.Players[actor];
-        Assert.Equal(negate, player.Relic?.InstanceId == "no-target-canopic");
+        Assert.Null(player.Relic);
+        Assert.Equal(negate, player.ExtraRelics.Any(c => c.InstanceId == "no-target-canopic"));
+        Assert.Equal(negate ? 1 : 0, player.ExtraRelics.Count(c => c.InstanceId == "no-target-canopic"));
+        Assert.DoesNotContain(player.SpecialZones.CanopicProgress, c => c.InstanceId == "no-target-canopic");
+        Assert.True(L12StructuredCardSemantics.IgnoresRelicZoneLimit(card));
         Assert.Equal(!negate, player.Graveyard.Any(c => c.InstanceId == "no-target-canopic"));
         Assert.Empty(game.State.EffectStack);
         Assert.Empty(game.State.PendingPrompts);

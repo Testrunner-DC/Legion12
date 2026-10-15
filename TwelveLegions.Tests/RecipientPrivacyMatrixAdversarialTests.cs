@@ -44,7 +44,7 @@ public sealed class RecipientPrivacyMatrixAdversarialTests
         var relic = Card("S01-0103", "referee-relic", 0);
         var extraRelic = Card("S01-0103", "referee-extra-relic", 0);
         var resolving = Card("S01-0103", "referee-resolving", 0);
-        var canopic = Card("S01-0103", "referee-canopic", 0);
+        var canopic = Card("S01-0216", "referee-canopic", 0);
         var libraryTop = Card("S01-0103", "referee-library-top", 0);
         foreach (var card in new[] { fixture.Player0Hand, fixture.Player0Covered, fixture.Player0Trial,
                      graveyard, relic, extraRelic, resolving, canopic, libraryTop })

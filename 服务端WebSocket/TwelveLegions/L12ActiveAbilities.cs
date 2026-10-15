@@ -55,9 +55,7 @@ public sealed partial class L12GameEngine
     private bool TryGetIsisVictorySource(L12PlayerState player, out L12CardInstance? osiris, out string error)
     {
         osiris = player.Graveyard.FirstOrDefault(card => card.CardId == "S01-02M2");
-        var completed = player.SpecialZones.CanopicProgress
-            .Where(card => card.CardId is "S01-0216" or "S01-0217" or "S01-0218" or "S01-0219" or "S01-0220")
-            .Select(card => card.CardId).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        var completed = CanopicRelicIdsInRelicZone(player).Count;
         if (player.MasterId == "S01-02M1" && completed >= 5 && osiris is not null)
         {
             error = string.Empty;
@@ -336,7 +334,7 @@ public sealed partial class L12GameEngine
                     || declared.Take(3).Any(id => !PublicLegions(player).Any(card => card.InstanceId == id && card.CardId == "S01-0212"))
                     || !player.Graveyard.Any(card => card.InstanceId == declared[3]
                         && card.Name.Contains("卡诺匹斯", StringComparison.Ordinal) && card.CardType == "artifact"
-                        && !player.SpecialZones.CanopicProgress.Any(done => done.CardId == card.CardId))
+                        && !CanopicRelicIsPresent(player, card.CardId))
                     || declared[4] is not ("mode:draw" or "mode:heal"))
                     return "伊西斯选择的陵墓守卫、卡诺匹斯圣物或奖励选项已失效";
                 break;

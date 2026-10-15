@@ -81,7 +81,7 @@ public sealed class RelicZoneLimitLifecycleProfileTests
 
     [Fact]
     [L12AbilityEvidence("S01-0216:ability:static:bf632dc8776cd134", "primary-empty")]
-    public void EmptyPrimarySlotReceivesTheFirstExemptArtifact()
+    public void EmptyPrimarySlotRemainsFreeWhenTheFirstExemptArtifactEnters()
     {
         var game = Create(71401);
         var player = game.State.Players[0];
@@ -91,8 +91,8 @@ public sealed class RelicZoneLimitLifecycleProfileTests
         var result = game.Handle(0, new L12Command("playCard", canopic.InstanceId));
 
         Assert.True(result.Accepted, result.Error);
-        Assert.Same(canopic, player.Relic);
-        Assert.Empty(player.ExtraRelics);
+        Assert.Null(player.Relic);
+        Assert.Same(canopic, Assert.Single(player.ExtraRelics));
     }
 
     [Fact]
