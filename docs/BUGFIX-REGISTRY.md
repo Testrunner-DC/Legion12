@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 复合声明目标显式登记（海拉/无畏/荣耀，本地完成）
+
+- 根因：声明和结算已有curseTarget/buffTarget/flipTargets，组合首段缺PublicTargetKeys，普通、真实李牧免费及托勒密重复共同丢失既有公共目标展示。只登记三键，既有响应快照过滤与最终结算不改；荣耀资源仅公开Owner/区域/活动和面状态，名字/费用null，无卡号/卡效，后段searchCost仍是费用。
+- 全池同型交叉查询：五组HandPlay/Active/ResponseAndTrigger/StarterHandPlay/StarterContinuation，rg CompositeStep及CompositeFirstSegmentTargets/CompositeFirstSegmentData/CompleteCommittedCompositeEffectDeclaration、ResponsePresentationTargetIds/Capture/Set；文本候选逐项对声明与消费者人工分类，非324卡逐张运行。费用/私区/模式/整排及已有明确触发载体排除，禁止泛遍历declared。PublicTargetKeys参与首段Targets和独立后段键；SkipWhenNoLegalTargets及RequiresPreviousSuccess规则不改。
+- 原19海拉4红、无畏/荣耀8红，原77专项留证。Main补荣耀选0仍用已有2神力检索双方/V2四格、原同类清单只增0521→glory-search；最终54+乾坤族6=60绿。原完整7487/7486过1清单失败、平台1712/1707过5 pwsh启动失败不改写，分别定点60和5补验并按TRX复合身份对账7491/1712；C盘composite-targets-main-20261015/main-local-acceptance SHA53BC7DCC。新零目标夹具的快照/支付分类错误留证，产品三登记之外无改动；不重复有效全套。
+- 独立梅杰德原19目标报告5e3bea46：4真实引擎/6编译UI/18指令正确；初始竖屏截图裁切未据DOM过关，一次真实可信触摸使header0→101、完整目标句无遮挡，指令/唯一金框/费用排除保持，Main实看截图。按限定未复现rejected单CAS读回并撤会话（B3D0C19E），非fixed/duplicate。85阶段/周期177、907/441待办；海拉3cd72435和混合0c66690c不提前关，不宣称真iOS或所有滑动完美。
+
 ## 2026-10-15 CHAT-C1B2-S02｜真实HTTP撤权与旧消息不可复活，本地完成
 
 - 用户已准聊天方案的限定S02：只在remove/block/unblock三条顶层HTTP入口使用可空registry，配额/预关闭先于Store权威调用；bool正常返回才Committed或KnownRollback，异常Dispose保留Unknown。成功/重复成功在通知与200前递增generation，旧借出消息不因重新交友复活；pair释放后最多唤醒两当前owner，禁止Store/await进入发送起发锁。生产registry默认null、ConfigureChatLane caller0、聊天仍OFF。

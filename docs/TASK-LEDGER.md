@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-15 COMPOSITE-PUBLIC-TARGETS（本地验收完成，待Git同步）
+
+- 已批范围：P0沿唯一组合段结构，P2/P3沿既有公共对象快照，只登记海拉S02-0307 curseTarget、无畏S02-0206 buffTarget、荣耀S02-0521 flipTargets。五组计划/声明/费用/结算交叉核查，其他费用/隐藏区域/行模式/全体效果及已有触发载体不改；不遍历全部declared键。
+- 旧19海拉4红与同类8红留证；原50+27绿后，Main补荣耀0目标仍独立检索四格。新增类54+原乾坤族6实际60全绿，费用驱动只按真实prompt种类区分初始与后段支付。完整7487中的1清单失败定点修正，原7486有效；平台完整1712中的5 pwsh环境失败用现有执行器绑定复验，未删断言。最终逐身份覆盖7491/1712，实际共同回执53BC7DCC；不是新完整Release。
+- Bug原报告3cd72435等部署前不关闭。梅杰德5e3bea46另按当前19限定未复现关闭：4引擎/6UI/实际触摸可滚读，85阶段终态与907/441清单已真实对账；不称初始无裁切、真iOS或海拉已上线。本批不部署、不改维护。
+
 ## 2026-10-15 CHAT-C1B2-S02｜真实HTTP撤权与旧消息不可复活，本地完成
 
 - 用户已准聊天方案的限定S02：只在remove/block/unblock三条顶层HTTP入口使用可空registry，配额/预关闭先于Store权威调用；bool正常返回才Committed或KnownRollback，异常Dispose保留Unknown。成功/重复成功在通知与200前递增generation，旧借出消息不因重新交友复活；pair释放后最多唤醒两当前owner，禁止Store/await进入发送起发锁。生产registry默认null、ConfigureChatLane caller0、聊天仍OFF。

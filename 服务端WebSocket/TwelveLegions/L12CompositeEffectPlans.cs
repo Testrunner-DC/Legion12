@@ -227,7 +227,7 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S02-0521"] =
             [
-                new("glory-flip", "翻转最多3张士气"),
+                new("glory-flip", "翻转最多3张士气", PublicTargetKeys: ["flipTargets"]),
                 new("glory-search", "消耗并翻转2神力：检索1张【奥林匹斯】卡牌",
                     "mode:search", "god-power-flip", "searchCost", 2,
                     DeclareAtSegmentStart: true),
@@ -252,11 +252,13 @@ internal static partial class L12CompositeEffectPlans
             ],
             ["S02-0307"] =
             [
-                new("hela-curse", "海拉：使已声明的对方军团本回合兵力-3000"),
+                new("hela-curse", "海拉：使已声明的对方军团本回合兵力-3000",
+                    PublicTargetKeys: ["curseTarget"]),
             ],
             ["S02-0206"] =
             [
-                new("fearless-assassination", "无畏的刺杀：使已选择的我方前排【太阳城】军团本回合兵力+3000并获得必中"),
+                new("fearless-assassination", "无畏的刺杀：使已选择的我方前排【太阳城】军团本回合兵力+3000并获得必中",
+                    PublicTargetKeys: ["buffTarget"]),
             ],
             ["S02-0406"] =
             [

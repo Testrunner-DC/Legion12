@@ -131,6 +131,7 @@ public sealed class Bug010fc531QianYangEmptyTargetTests
         {
             ["S01-0118"] = "march-kill-segment",
             ["S02-0105"] = "qianyang-draw",
+            ["S02-0521"] = "glory-search",
             ["S02-0522"] = "nyx-secondary",
         };
         var scanned = L12CompositeEffectPlans.AllPresentationPlans()

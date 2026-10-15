@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-15 共享目标登记完成与85阶段终态（本地验收，未部署）
+
+- 用户已批海拉及同结构目标登记。P0/P2/P3只补海拉curseTarget、无畏buffTarget、荣耀flipTargets三项，普通/真实免费/重复入口共用；费用、私区、模式/整排不泛化。五既有计划组交叉核查，原19海拉4红、无畏/荣耀8红保留，77专项及Main最终54+独立后段6全绿。
+- Main完整规则7487实际7486过/1旧同类清单未含荣耀；仅补具名glory-search映射与0翻转仍用已有2神力独立检索四格。最终60受影响全过，其余有效规则复用；完整平台1712实际1707过/5均缺pwsh启动，绑定现有L12_TEST_FIXTURE_PWSH/实际PSHOME后5项全过。按TRX testId+精确显示名逐行对账覆盖7491规则/1712平台，不伪称新完整Release或改写原失败。共同验收C盘composite-targets-main-20261015/main-local-acceptance.json SHA53BC7DCC，S03源同时冻结且独立提交。
+- 梅杰德正式19四引擎/六UI及一次真实竖屏触摸补证：初始需滚阅，目标完整句可滚到、唯一金框/Cost排除保持；限定未复现单CAS读回29605并撤会话，实际回执B3D0C19E。85=26fixed/52rejected/7duplicate、周期177；907/441new/258resolved/208closed，唯一工作流6FA0FE31。海拉本地修复未上线，3cd72435及混合0c66690c仍开。
+- 赛事04一桌自然HP/150动作/同双端及权威赛果/双离桌已Main独立核，main-canary-04-independent-review SHA30C59344；不是32人/87桌。下一增量桥纯测审查发现路径段类型强制转换缺口，正在限定补守卫，G1无网络窗口。性能5操作/1榜单/1终局失败继续保留；两服19、维护和聊天OFF均不变。
+
 ## 2026-10-15 CHAT-C1B2-S02｜真实HTTP撤权与旧消息不可复活，本地完成
 
 - 用户已准聊天方案的限定S02：只在remove/block/unblock三条顶层HTTP入口使用可空registry，配额/预关闭先于Store权威调用；bool正常返回才Committed或KnownRollback，异常Dispose保留Unknown。成功/重复成功在通知与200前递增generation，旧借出消息不因重新交友复活；pair释放后最多唤醒两当前owner，禁止Store/await进入发送起发锁。生产registry默认null、ConfigureChatLane caller0、聊天仍OFF。
