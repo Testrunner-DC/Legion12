@@ -17,7 +17,7 @@
 
 - 明确输入是原始反馈数组还是唯一工作清单对象的 `items`；工作清单的原文哈希不能冒充API的15字段快照，后者仍绑定最新实际反馈。
 - 统一schema2 proposal合同先验有界唯一ID、完整15字段/原文指纹、处置及说明。`fixed_verified`必须同时包含具名`regressionTest`、精确`fixCommit`及已独立核验的`deployedVersion`，不能等SelfTest赋值或网络阶段才发现缺字段；rejected与duplicate分别按其合同校验。
-- 复用C盘既有关单执行根`post-release-adversarial-20261014/Test-ClosureProposalContract.ps1`的纯准备校验（3正/12负，零网络/写入），实际写入仍是原preview→一次CAS→独立终态读回，单个post-CAS队列快照直接复用本地对账。脚本变更先解析AST、再离线自检；派生脚本须字面替换，不让生成语言的替换元字符改变PowerShell内容。
+- 复用C盘既有关单执行根`post-release-adversarial-20261014/Test-ClosureProposalContract-v2.ps1`，其调用不可变的原15字段合同（3正/12负）并同轮预检服务字段归一化：fixCommit、regressionTest、deployedVersion、duplicateOf、closureDisposition均不超过500字符且无需trim；任一将被隐式截断/修剪就先离线拒绝（新增2正/10负），不等写后读回才发现差异。实际写入仍是原preview→一次CAS→独立终态读回，单个post-CAS队列快照直接复用本地对账。若已写成功而读回工具失败，只读核对该原写，不重交CAS、不改写失败收据。脚本变更先解析AST、再离线自检；派生脚本须字面替换，不让生成语言的替换元字符改变PowerShell内容。
 
 ## 有对局绑定时，先复用原记录
 
