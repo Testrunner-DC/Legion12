@@ -672,16 +672,18 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     private List<L12AbilityView> BuildAbilityViews(L12PlayerState player, string cardId, string sourceInstanceId)
     {
         var views = GetAbilities(cardId);
+        var masterZoneSource = sourceInstanceId == $"master-{player.PlayerIndex}" || sourceInstanceId == player.MasterId
+            ? CreateCard(player.MasterId, $"master-{player.PlayerIndex}")
+            : null;
+        if (masterZoneSource is not null)
+            masterZoneSource.Tapped = player.MasterTapped;
         var availabilitySource = FindOnField(player, sourceInstanceId, out _, out _)
             ?? (player.Relic?.InstanceId == sourceInstanceId ? player.Relic : null)
             ?? player.ExtraRelics.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
             ?? player.SpecialZones.Trials.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
             ?? player.Graveyard.FirstOrDefault(card => card.InstanceId == sourceInstanceId)
-            ?? (sourceInstanceId == $"master-{player.PlayerIndex}" || sourceInstanceId == player.MasterId
-                ? CreateCard(player.MasterId, $"master-{player.PlayerIndex}") : null)
+            ?? masterZoneSource
             ?? (sourceInstanceId == $"faction-{player.PlayerIndex}" ? CreateCard(cardId, sourceInstanceId) : null);
-        if (availabilitySource is not null && availabilitySource.CardType == "master")
-            availabilitySource.Tapped = player.MasterTapped;
         if (cardId == "ST06-S1" && availabilitySource is { CardType: "trial" } skyCity)
             views = views.Where(view => skyCity.TrialCompleted
                     ? view.Id == "skyCityDiscount"

@@ -1,5 +1,15 @@
 # 十二军团简短交接
 
+## 2026-10-15 测试19同包实测仍有终局长尾；孙悟空投影专项完成
+
+- 用户已批准测试19同包和原30房+10外围负载，及孙悟空共享只读投影本地修复。测试服已一次标准部署为19ea6cba/PID155570，并独立核DLL7EC0、原始index/JS、HTTP/匿名WS；正式19/PID131988/维护false不变。测试部署使用独立干净exact19检出，不含新的悟空修复；原正式发布汇总不改写。C盘test19-performance-20261015/release-session-summary.json SHA DA79BCACF721444B5AF18C07F328A40EB6008BD40590F5C1D86F5EF693507958。
+- 实际10/20/30房各60秒、每阶段10独立外围用户，1575/1575业务命令、870HTTP成功。30房P95/P99为276.95/495.27ms；60连接协商presenceDelta，4877增量重建/恢复错误0。集中终局30回应/60连接齐全但4条超原3秒，最长3715.75ms；仅26房/52连接正常leave，不能把其余4房未执行leave算通过。70会话/69合成账号清理，最终Game/WS/在线0，4空闲房原样保留。287守卫无OOM/重启/停止，峰内存386416640B；assessment-r2 E83CAB8D...84660为NOT_FULLY_ACCEPTED，原r1和准备失败均保留。不重复部署/重压测或降低3秒。
+- 本轮30房WS JSON43864947B，集中终局60份全量13739049B，presence增量1936937B/全量快照0；只是实测描述，不从不同随机场次总量推出因果收益。无同轮服务/Socket/代理分段证据；原后台混合覆盖统计/审计/鉴权/牌库/榜单/赛事详情，不冒称F8新反馈/命令分页、所有后台写或浏览器FPS已验。性能根治、F8专项和长期容量仍待。
+- 悟空两文件限定修复：BuildAbilityViews只初始化临时主宰来源Tapped，不写真实来源。冻结19新增7例为5RED/2控制绿；修后专项9/9（新7+旧进攻2），全池23主宰×5来源115只是私有解析器合成防御。双方/反向状态/四视角/重复读/V2原文hash、RNG/fact守卫通过；原无法发动报告仍开，原8最终休整/导出红、UI10未跑不抹掉。C盘wukong-readonly-fix-20261015/acceptance.json及main-independent-review.json；Main完整规则Batch正接续，结果以main-local-acceptance.json及Git回执为准，未部署本修复。
+- Main随后标准映射Batch实际退出0：完整规则7266无失败跳过，P0-P4/65源边界/性能/声明/原子审计通过。未重跑未改的平台/前端或重建19包，main-local-acceptance.json SHA A4C0A579...69804绑定两源/本地DLL F01FB215和实际监督回执A8F414C4；首PATH失败原log保留。原链只允许13引擎/export→冻结19界面UI10/新捕28命令→1原样checkpoint回验，C-only继续，不能将本地修复DLL称发布19或线上已修。
+- 原链补证已收口：本地F01引擎原8正向+4控制+1导出实际13/13绿，最终休整/连续checkpoint原断言保持，权威TRX579BB839/envelope22225F22。UI新尝试两次均首case未完成：初始桥和$data/$forceUpdate根状态已到但挂载子树未显示支付区，原因仍属待解夹具/状态传递链，不能据此断定正式19产品UI故障；完整UI0/10、实际28命令artifact0、回验0。保留r1/r2失败并按上限挂起，不做key-remount或新产品改动。original-chain-current/suspension.json AA7EC5AD...725E8为据，不重复13或阻断已验共享修复同步。
+- 卡诺匹斯真实留场/图标/免容量/底轨为另用户专项，首只读准备676E16BA...6C26F04已读，等本批冻结后授精确新基线租约；不与BuildAbilityViews同文件写者重叠。C1B2只读入口映射已交，无生产caller或聊天启用。Bug队列仍905/448待办、阶段76/周期168，本轮没有在线关单。
+
 ## 2026-10-15 先后手旧报告限定收口｜76本方终态，448待办
 
 - BUG-20261004-95711ff5与bffccc61原模式均未注明，不猜fixed/duplicate、不向用户询问玩家记忆。Main接回C盘initiative-current-probe，复用原公开房间API执行器，以正式19/7EC0 DLL及同包9 Data实际运行三格：ranked59999ms不推进、60000ms一次自动先攻/一次setup-timeout；重复Tick不落第二次，旧prompt反向选择只新增拒绝记录且firstPlayer/revision/hash保持。casual/friendly无准备强制时钟，60001ms仍等待；三模式真实投降到GameOver→leave→同账号严格同模式重新开局全通过。无浏览器/WS/原玩家模式证明，不为此新增休闲/好友时限。

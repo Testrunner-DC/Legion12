@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-15 BuildAbilityViews真实来源纯读修复（本地完整规则通过，未部署）
+
+- 用户已批相邻已证实共享原因，不将原孙悟空1ade无法发动直接等同该根因：旧19 SnapshotFor把真实战场master型军团Tapped覆盖为MasterTapped，改变SerializeFullState/hash。最小两文件修复只给新建masterZoneSource初始化Tapped，真实field/relic/extra-relic/trial/graveyard解析顺序不变；无整对象clone，不改ReturnWukong、卡文、Journal或恢复hash。
+- 扫描完整23主宰及IsMasterLegion=true、BuildAbilityViews所有caller/来源；实际合法受影响为孙悟空变身战场。23×5私有来源115组合是防御纯度守卫，不宣称115合法效果入口。新4双方反向态/四视角两轮及V2，2返回区控制，完整原文/SHA/hash/RNG/fact不变；保留两旧真实进攻/神农再变身Tapped=true。
+- 冻结19/7EC0 DLL最终新增7例5失败/2控制通过（TRX557551E2）；修后新7+旧2实际9/9无失败跳过（TRXC680AD96），Main完整源审/两源0E43F1F1及C0A84D77与TRX已核。证据C盘wukong-readonly-fix-20261015/acceptance.json SHA9A1672C4...399B、main-independent-review.json；完整规则Batch接续，最终认main-local-acceptance.json，不把仍有效平台/前端旧证据冒充新跑。
+- Main随后完整规则Batch7266全部通过、失败跳过0及映射守卫退出0；两源仍0E43F1F1/C0A84D77、本地DLL F01FB215，监督success计数回执A8F414C4，C盘main-local-acceptance.json A4C0A579...69804为最终本地规则验收。只有规则源/规则测试改动，未重跑未改平台/前端；不制造新的全量Release或部署。原链另C-only13引擎/export→冻结19编译UI10/新捕28原命令→1逐检查点回验，不改旧红记录。
+- 原链补充：本地修复DLL原8正向+4控制+1导出13/13通过，原最终Tapped=true/Attacks=1及检查点严格保持；r1 TRX579BB839与envelope22225F22。冻结19界面尝试r1/r2首case皆未完成支付展示，根状态守卫虽过但子树链未解，不能定正式产品故障或用强制remount冒充正常生命周期；UI完整0/10、28命令artifact0、replay0，按边界挂起。suspension.json AA7EC5AD...725E8和两次失败/截图保留；r2重复13不记新验收，无D修改或上线。
+- 原首次错误禁现返回态ID造成2假RED、D缓存沙箱权限未执行与Main首Batch进程PATH缺node失败均保留；只收紧夹具合法战场断言/使用已批准D缓存及预检短Windows进程PATH，不改系统PATH、不删测试或降低守卫。原8正常发动已观察到accepted但额外休整断言红/导出同红、原UI10未跑状态保留；原报告仍开。此次未部署新代码或在线关单，不据纯读修复宣称期限、回放、流量及终局长尾根治。
+
 ## 2026-10-15 先后手模式未注明旧反馈按当前19限定检查关闭
 
 - 原BUG-20261004-95711ff5“对手选先后攻不动、不会超时只能投降”与bffccc61“对手不选择先后手无法进行游戏”均c858、未注明模式。不得互标duplicate、据ranked证据称所有模式fixed或将玩家意见全盘转需求；按用户能确认则推进、不能确认检查后关闭原则，做当前精确三模式限定核查，不重复问记忆。
