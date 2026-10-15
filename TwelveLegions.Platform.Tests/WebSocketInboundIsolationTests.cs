@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Reflection;
 using System.Text.Json;
@@ -77,6 +78,15 @@ public sealed class WebSocketInboundIsolationTests
             Assert.All(document.RootElement.EnumerateObject(), property =>
                 Assert.Equal(JsonValueKind.Number, property.Value.ValueKind));
         });
+        using var legacyRow = lines.Select(line => JsonDocument.Parse(line)).First(document =>
+            document.RootElement.GetProperty("kind").GetInt32() == 1);
+        Assert.Equal(new[]
+        {
+            "schema", "kind", "slot", "status", "in_fifo_us", "in_depth", "in_bytes",
+            "in_remaining", "pre_gate_us", "gate_wait_us", "gate_hold_us", "serialize_us",
+            "out_enq_depth", "out_deq_depth", "out_queue_us", "prepare_us", "wire_bytes",
+            "wire_delta", "send_us", "commit_us", "server_total_us",
+        }, legacyRow.RootElement.EnumerateObject().Select(property => property.Name));
     }
 
     [Fact]
@@ -136,6 +146,213 @@ public sealed class WebSocketInboundIsolationTests
         Assert.Equal(countAtDeadline, lines.Count);
         Assert.Equal(sealedSnapshot, Assert.Single(diagnostics.SnapshotForTests()));
         Assert.Equal((int)L12SyntheticTransportStatus.Deadline, sealedSnapshot.Status);
+    }
+
+    [Fact]
+    public async Task TerminalBoundsV2IsCappedBoundToTransportAndPreservesEarlyReceiptOrdering()
+    {
+        const string nonce = "102132435465768798a9bacbdcedfe0f";
+        Assert.Throws<InvalidOperationException>(() => L12SyntheticTransportDiagnostics.Create(false,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}"));
+        Assert.Throws<InvalidOperationException>(() => L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:7:{nonce}"));
+
+        var lines = new ConcurrentQueue<string>();
+        var transport = Guid.NewGuid();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", lines.Enqueue,
+            TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(20))!;
+        Assert.True(diagnostics.IsBoundsMode);
+        Assert.True(diagnostics.AcceptsCommand("playCard"));
+        Assert.True(diagnostics.AcceptsCommand("endTurn"));
+        Assert.True(diagnostics.AcceptsCommand("surrender"));
+        Assert.False(diagnostics.AcceptsCommand("passResponse"));
+
+        var receiveCompletedAt = Stopwatch.GetTimestamp();
+        var leaseStartedAt = Stopwatch.GetTimestamp();
+        var leaseCompletedAt = Stopwatch.GetTimestamp();
+        var enqueuedAt = Stopwatch.GetTimestamp();
+        var dequeuedAt = Stopwatch.GetTimestamp();
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(enqueuedAt, dequeuedAt, 1, 128, 0,
+                receiveCompletedAt, leaseStartedAt, leaseCompletedAt), transport));
+
+        Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(Guid.NewGuid(),
+            $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+            Stopwatch.GetTimestamp()));
+        Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+            $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0.0}}",
+            Stopwatch.GetTimestamp()));
+        Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+            "{\"type\":\"ping\",\"diagnosticNonce\":\"ffffffffffffffffffffffffffffffff\",\"diagnosticSlot\":0}",
+            Stopwatch.GetTimestamp()));
+        Assert.True(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+            $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+            Stopwatch.GetTimestamp()));
+        Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+            $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+            Stopwatch.GetTimestamp()));
+        await Task.Delay(40);
+        Assert.Empty(lines); // A receipt alone cannot finish a sample before its send commits.
+
+        var sendStartedAt = Stopwatch.GetTimestamp();
+        var sendCompletedAt = Stopwatch.GetTimestamp();
+        sample.Sent(sendStartedAt, sendCompletedAt);
+        sample.Committed(Stopwatch.GetTimestamp());
+
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        var rowLine = lines.Single(line => JsonDocument.Parse(line).RootElement
+            .GetProperty("kind").GetInt32() == 1);
+        Assert.DoesNotContain(nonce, rowLine, StringComparison.Ordinal);
+        Assert.DoesNotContain(transport.ToString("N"), rowLine, StringComparison.OrdinalIgnoreCase);
+        using var row = JsonDocument.Parse(rowLine);
+        Assert.Equal(2, row.RootElement.GetProperty("schema").GetInt32());
+        Assert.Equal(1, row.RootElement.GetProperty("receive_valid").GetInt32());
+        Assert.Equal(1, row.RootElement.GetProperty("lease_valid").GetInt32());
+        Assert.Equal(1, row.RootElement.GetProperty("receipt_valid").GetInt32());
+        Assert.Equal(0, row.RootElement.GetProperty("receipt_after_send_valid").GetInt32());
+        Assert.True(row.RootElement.GetProperty("receipt_rel_us").GetInt64() >= 0);
+        Assert.All(row.RootElement.EnumerateObject(), property =>
+            Assert.Equal(JsonValueKind.Number, property.Value.ValueKind));
+    }
+
+    [Fact]
+    public async Task TerminalBoundsV2WaitsPastQuietPeriodAndHardDeadlineFlushesOnlyOnce()
+    {
+        const string nonce = "ffeeddccbbaa99887766554433221100";
+        var lines = new ConcurrentQueue<string>();
+        var transport = Guid.NewGuid();
+        var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", lines.Enqueue,
+            TimeSpan.FromMilliseconds(140), TimeSpan.FromMilliseconds(20))!;
+        var receiveCompletedAt = Stopwatch.GetTimestamp();
+        var enqueuedAt = Stopwatch.GetTimestamp();
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(enqueuedAt, Stopwatch.GetTimestamp(), 1, 128, 0,
+                receiveCompletedAt), transport));
+        var sendStartedAt = Stopwatch.GetTimestamp();
+        sample.Sent(sendStartedAt, Stopwatch.GetTimestamp());
+        sample.Committed(Stopwatch.GetTimestamp());
+
+        await Task.Delay(60);
+        Assert.Empty(lines); // v1's quiet-period flush must not truncate a v2 receipt window.
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        var rowLine = lines.Single(line => JsonDocument.Parse(line).RootElement
+            .GetProperty("kind").GetInt32() == 1);
+        using (var row = JsonDocument.Parse(rowLine))
+        {
+            Assert.Equal((int)L12SyntheticTransportStatus.Sent,
+                row.RootElement.GetProperty("status").GetInt32());
+            Assert.Equal(0, row.RootElement.GetProperty("receipt_valid").GetInt32());
+        }
+        using (var summary = JsonDocument.Parse(lines.Single(line => JsonDocument.Parse(line).RootElement
+                   .GetProperty("kind").GetInt32() == 2)))
+            Assert.Equal(1, summary.RootElement.GetProperty("receipt_missing").GetInt32());
+
+        var countAtDeadline = lines.Count;
+        Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+            $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+            Stopwatch.GetTimestamp()));
+        diagnostics.Dispose();
+        await Task.Delay(50);
+        Assert.Equal(countAtDeadline, lines.Count);
+    }
+
+    [Fact]
+    public async Task TerminalBoundsV2RejectsLateCompletionAndReceiptWhenTimerCallbackIsGateDelayed()
+    {
+        const string nonce = "01230123012301230123012301230123";
+        var lines = new ConcurrentQueue<string>();
+        var transport = Guid.NewGuid();
+        var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", lines.Enqueue,
+            TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(10))!;
+        var ownerGate = typeof(L12SyntheticTransportDiagnostics)
+            .GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(diagnostics)!;
+
+        lock (ownerGate)
+        {
+            var receiveCompletedAt = Stopwatch.GetTimestamp();
+            var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+                $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+                new L12InboundQueueTiming(Stopwatch.GetTimestamp(), Stopwatch.GetTimestamp(),
+                    1, 128, 0, receiveCompletedAt), transport));
+            Thread.Sleep(80); // Keep the timer callback behind the owner gate past the absolute cutoff.
+            var lateAt = Stopwatch.GetTimestamp();
+            sample.Sent(lateAt, lateAt);
+            sample.Committed(lateAt);
+            Assert.False(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+                $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+                lateAt));
+            Assert.Empty(lines);
+        }
+
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        using (var row = JsonDocument.Parse(lines.Single(line => JsonDocument.Parse(line).RootElement
+                   .GetProperty("kind").GetInt32() == 1)))
+        {
+            Assert.Equal((int)L12SyntheticTransportStatus.Deadline,
+                row.RootElement.GetProperty("status").GetInt32());
+            Assert.Equal(0, row.RootElement.GetProperty("receipt_valid").GetInt32());
+        }
+        using (var summary = JsonDocument.Parse(lines.Single(line => JsonDocument.Parse(line).RootElement
+                   .GetProperty("kind").GetInt32() == 2)))
+        {
+            Assert.Equal(0, summary.RootElement.GetProperty("completed").GetInt32());
+            Assert.Equal(1, summary.RootElement.GetProperty("deadline").GetInt32());
+            Assert.Equal(1, summary.RootElement.GetProperty("receipt_missing").GetInt32());
+        }
+        var flushedCount = lines.Count;
+        diagnostics.Dispose();
+        await Task.Delay(60);
+        Assert.Equal(flushedCount, lines.Count);
+    }
+
+    [Fact]
+    public async Task TerminalBoundsV2AcceptsPreDeadlineReceiptTimestampProcessedAfterCutoff()
+    {
+        const string nonce = "32103210321032103210321032103210";
+        var lines = new ConcurrentQueue<string>();
+        var transport = Guid.NewGuid();
+        var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", lines.Enqueue,
+            TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(10))!;
+        var ownerGate = typeof(L12SyntheticTransportDiagnostics)
+            .GetField("_gate", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(diagnostics)!;
+
+        lock (ownerGate)
+        {
+            var receiveCompletedAt = Stopwatch.GetTimestamp();
+            var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+                $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+                new L12InboundQueueTiming(Stopwatch.GetTimestamp(), Stopwatch.GetTimestamp(),
+                    1, 128, 0, receiveCompletedAt), transport));
+            var sentAt = Stopwatch.GetTimestamp();
+            sample.Sent(sentAt, sentAt);
+            sample.Committed(sentAt);
+            var receivedBeforeDeadline = Stopwatch.GetTimestamp();
+            Thread.Sleep(80); // Processing is late, but the server captured receipt time before cutoff.
+            Assert.True(diagnostics.TryAcceptAuthenticatedPingReceipt(transport,
+                $"{{\"type\":\"ping\",\"diagnosticNonce\":\"{nonce}\",\"diagnosticSlot\":0}}",
+                receivedBeforeDeadline));
+            Assert.Empty(lines);
+        }
+
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        using (var row = JsonDocument.Parse(lines.Single(line => JsonDocument.Parse(line).RootElement
+                   .GetProperty("kind").GetInt32() == 1)))
+        {
+            Assert.Equal((int)L12SyntheticTransportStatus.Sent,
+                row.RootElement.GetProperty("status").GetInt32());
+            Assert.Equal(1, row.RootElement.GetProperty("receipt_valid").GetInt32());
+            Assert.Equal(1, row.RootElement.GetProperty("receipt_after_send_valid").GetInt32());
+        }
+        var flushedCount = lines.Count;
+        diagnostics.Dispose();
+        await Task.Delay(60);
+        Assert.Equal(flushedCount, lines.Count);
     }
 
     [Fact]
@@ -208,8 +425,39 @@ public sealed class WebSocketInboundIsolationTests
         Assert.Equal(["first", "second", "third"], observed.Select(item => item.Json));
         Assert.Equal([1, 2, 3], observed.Select(item => item.Timing.AcceptedDepth));
         Assert.All(observed, item => Assert.True(item.Timing.DequeuedAt >= item.Timing.EnqueuedAt));
+        Assert.All(observed, item => Assert.Equal(0, item.Timing.ReceiveCompletedAt));
+        Assert.All(observed, item => Assert.Equal(0, item.Timing.LeaseStartedAt));
+        Assert.All(observed, item => Assert.Equal(0, item.Timing.LeaseCompletedAt));
         Assert.Equal(0, inbound.RetainedMessages);
         Assert.True(inbound.MaximumObservedMessages <= L12InboundConnection.MaximumRetainedMessages);
+    }
+
+    [Fact]
+    public async Task TimedBusinessQueueReportsReceiveLeaseAndEnqueueBoundariesInOrder()
+    {
+        var coordinator = new L12DeploymentDrainCoordinator(Guid.NewGuid().ToString("N"),
+            new string('a', 40), new OpenFenceStore());
+        var observed = new TaskCompletionSource<L12InboundQueueTiming>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var inbound = new L12InboundConnection((_, timing) =>
+        {
+            observed.TrySetResult(timing);
+            return Task.CompletedTask;
+        }, leaseAcquirer: _ => coordinator.TryAcquireAdmission(out var lease) ? lease : null);
+
+        var receiveCompletedAt = Stopwatch.GetTimestamp();
+        Assert.Equal(L12InboundEnqueueResult.Accepted,
+            inbound.TryEnqueue("timed", receiveCompletedAt));
+        var timing = await observed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await inbound.CompleteAsync(drain: true).WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Equal(receiveCompletedAt, timing.ReceiveCompletedAt);
+        Assert.True(timing.LeaseStartedAt >= timing.ReceiveCompletedAt);
+        Assert.True(timing.LeaseCompletedAt >= timing.LeaseStartedAt);
+        Assert.True(timing.EnqueuedAt >= timing.LeaseCompletedAt);
+        Assert.True(timing.DequeuedAt >= timing.EnqueuedAt);
+        Assert.Equal(0, coordinator.Snapshot().AdmissionLeases);
+        Assert.Equal(0, inbound.RetainedMessages);
     }
 
     [Fact]
@@ -1047,6 +1295,13 @@ public sealed class WebSocketInboundIsolationTests
 
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         if (target.Exists) target.Delete(recursive: true);
+    }
+
+    private sealed class OpenFenceStore : IL12DeploymentDrainFenceStore
+    {
+        public L12DeploymentDrainFenceLoadResult Load() => L12DeploymentDrainFenceLoadResult.Missing;
+        public bool TryWrite(L12DeploymentPersistedFence fence) => true;
+        public bool TryClear(string operationId, string targetCommit) => true;
     }
 
     private sealed record GateHolder(Task Entered, TaskCompletionSource Release, Task Completion);

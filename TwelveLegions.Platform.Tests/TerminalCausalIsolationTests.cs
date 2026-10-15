@@ -184,6 +184,90 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public async Task LocalhostBoundsReceiptUsesAuthenticatedPingWithoutChangingPongOrPeerDelivery()
+    {
+        using var identity = new RankedIdentityFixture();
+        var actorRegistration = identity.Store.Register($"va{Guid.NewGuid():N}"[..10], "Password123!");
+        var opponentRegistration = identity.Store.Register($"vb{Guid.NewGuid():N}"[..10], "Password123!");
+        var healthRegistration = identity.Store.Register($"vh{Guid.NewGuid():N}"[..10], "Password123!");
+        Assert.True(actorRegistration.Success);
+        Assert.True(opponentRegistration.Success);
+        Assert.True(healthRegistration.Success);
+
+        var evidence = new ConcurrentQueue<string>();
+        var nonce = Guid.NewGuid().ToString("N");
+        using var diagnostics = Assert.IsType<L12SyntheticTransportDiagnostics>(
+            L12SyntheticTransportDiagnostics.Create(true,
+                $"{L12SyntheticTransportDiagnostics.BoundsMode}:1:{nonce}", evidence.Enqueue,
+                ThreeSeconds, TimeSpan.FromMilliseconds(10)));
+        await using var recorder = new MatchRecorder(Path.Combine(
+            Path.GetDirectoryName(identity.Path)!, "causal-bounds.db"));
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(identity.Catalog, recorder, identity.Store);
+        await using var server = new L12WebSocketServer(rooms, recorder, identity.Store,
+            identity.Catalog, null, null, null, null, null, null, null, diagnostics);
+
+        SocketPeer? actor = null;
+        SocketPeer? opponent = null;
+        SocketPeer? healthy = null;
+        var serverStarted = false;
+        try
+        {
+            await server.StartAsync(0).WaitAsync(SetupDeadline);
+            serverStarted = true;
+            var http = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" };
+            var endpoint = new UriBuilder(http.Uri) { Scheme = "ws", Path = "/ws" }.Uri;
+            actor = await SocketPeer.ConnectAsync(endpoint, actorRegistration.Token!);
+            opponent = await SocketPeer.ConnectAsync(endpoint, opponentRegistration.Token!);
+            healthy = await SocketPeer.ConnectAsync(endpoint, healthRegistration.Token!);
+            await StartFriendlyGameAsync(actor, opponent);
+
+            var requestId = $"l12diag:{nonce}:0:{Guid.NewGuid():N}";
+            var actorTerminalTask = actor.ReceiveAsync(
+                frame => IsGameOver(frame) && ReadString(frame, "requestId") == requestId,
+                ThreeSeconds);
+            var opponentTerminalTask = opponent.ReceiveAsync(IsGameOver, ThreeSeconds);
+            await actor.SendAsync(new
+            {
+                type = "gameAction",
+                requestId,
+                command = new { type = "surrender" },
+            });
+            _ = await actorTerminalTask;
+            _ = await opponentTerminalTask;
+
+            await actor.SendAsync(new
+            {
+                type = "ping",
+                diagnosticNonce = nonce,
+                diagnosticSlot = 0,
+            });
+            var pong = await actor.ReceiveTypeAsync("pong", ThreeSeconds);
+            Assert.Equal(2, pong.Payload.EnumerateObject().Count());
+            Assert.True(pong.Payload.TryGetProperty("utc", out _));
+            Assert.False(pong.Payload.TryGetProperty("diagnosticNonce", out _));
+            Assert.False(pong.Payload.TryGetProperty("diagnosticSlot", out _));
+            await AssertHealthyAsync(healthy);
+
+            var diagnostic = await ReadDiagnosticRowAsync(evidence, SetupDeadline);
+            Assert.Equal(2, diagnostic.GetProperty("schema").GetInt32());
+            Assert.Equal((int)L12SyntheticTransportStatus.Sent,
+                diagnostic.GetProperty("status").GetInt32());
+            Assert.Equal(1, diagnostic.GetProperty("receive_valid").GetInt32());
+            Assert.Equal(1, diagnostic.GetProperty("receipt_valid").GetInt32());
+            Assert.InRange(diagnostic.GetProperty("receipt_after_send_valid").GetInt32(), 0, 1);
+            Assert.True(diagnostic.GetProperty("receipt_rel_us").GetInt64() >= 0);
+        }
+        finally
+        {
+            if (actor is not null) await actor.DisposeAsync();
+            if (opponent is not null) await opponent.DisposeAsync();
+            if (healthy is not null) await healthy.DisposeAsync();
+            if (serverStarted) await server.StopAsync().WaitAsync(SetupDeadline);
+        }
+    }
+
     private static async Task StartFriendlyGameAsync(SocketPeer actor, SocketPeer opponent)
     {
         await actor.SendAsync(new

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261016-TERMINAL-BOUNDS-V2｜限定测试因果取证，本地完成
+
+- 原30房+10外围负载5操作/1HTTP失败与终局外部3321.4654ms没有新因果证据，禁止归咎供应商或宣称已根治。本片只补观察缺段，复用P2既有单sender/认证ping，不改游戏、可靠确认、DB或卡效。
+- L12InboundConnection记录接收完成和lease起止；L12WebSocketServer在原ephemeral-only显式profile增加v2至多6样本，继续限制synthetic命令/nonce/slot/同连接，输出仅数值与valid标志。对象保守预算、v1上限/字段/阈值和原ping正文保持；扫描同类入站/发送/回执边界，无新增业务wiretype或第二条队列。
+- 原44专项绿后独审发现deadline仅Timer封口不够，确定性红TRX E6FAF9E8保持；加入绝对Stopwatch判断后2绿17E0DA6B、46绿0A1072A4。Main过时完整平台主动中止378/Aborted，原因明确保留；最终正常Batch7492/1760零失败跳过，两监督成功且TEMP回收。C盘performance-causal-isolation-20261016/terminal-bounds-v2/main-local-acceptance.json AD4C4E47及main-review-contract.json 289C3E47为据，四源9C958CB3/18AF769C/2D498F59/04BEC0C1冻结。
+- 观察器为有界保守观测，不保证截止前等待锁的回调必落账；missing/deadline属于未记录、不当丢包或业务根因，valid=false数值不解读为0ms。客户端callback不是首字节，不跨钟算单向网络。回滚面只关默认OFF的测试profile；不能为了采样改可靠队列/规则或删失败。尚未新Release/部署，旧cc333不含v2，不作线上验收。
+
 ## 2026-10-16 cce8上线后精确收口｜159e、孙悟空原案、海拉目标、移动3708
 
 - 159e原102/实际接收者投影的两档移动裁切，已随b1042135进入正式cce8；原权威7命令/hash/双RNG与旧红新绿/两次原生resolveDefense保持，单CAS29887读回resolved/fixed_verified。边界仍非原真机/真实服务器ACK或唯一成因。bug-closeout-mobile159e-cce8.json全会话撤销。

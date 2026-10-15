@@ -7,7 +7,10 @@ internal readonly record struct L12InboundQueueTiming(
     long DequeuedAt,
     int AcceptedDepth,
     long AcceptedRetainedBytes,
-    int RemainingQueuedMessages);
+    int RemainingQueuedMessages,
+    long ReceiveCompletedAt = 0,
+    long LeaseStartedAt = 0,
+    long LeaseCompletedAt = 0);
 
 internal enum L12InboundEnqueueResult
 {
@@ -30,6 +33,9 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     // preventing several maximum frames from accumulating on one connection.
     internal const int MaximumRetainedMessages = 8;
     internal const long MaximumRetainedBytes = 2_228_224;
+    // PendingMessage remains within this conservative x64 allowance after the three diagnostic
+    // timestamps: 16-byte header + two references + five Int64s + three Int32s <= 88 bytes before
+    // alignment. Keep the public retained-byte budget unchanged.
     private const int RetainedItemOverhead = 96;
 
     private sealed class PendingMessage
@@ -37,7 +43,8 @@ internal sealed class L12InboundConnection : IAsyncDisposable
         private int _released;
 
         internal PendingMessage(string json, int retainedBytes, L12DeploymentDrainLease? lease,
-            long enqueuedAt, int acceptedDepth, long acceptedRetainedBytes)
+            long enqueuedAt, int acceptedDepth, long acceptedRetainedBytes,
+            long receiveCompletedAt, long leaseStartedAt, long leaseCompletedAt)
         {
             Json = json;
             RetainedBytes = retainedBytes;
@@ -45,6 +52,9 @@ internal sealed class L12InboundConnection : IAsyncDisposable
             EnqueuedAt = enqueuedAt;
             AcceptedDepth = acceptedDepth;
             AcceptedRetainedBytes = acceptedRetainedBytes;
+            ReceiveCompletedAt = receiveCompletedAt;
+            LeaseStartedAt = leaseStartedAt;
+            LeaseCompletedAt = leaseCompletedAt;
         }
 
         internal string Json { get; }
@@ -53,6 +63,9 @@ internal sealed class L12InboundConnection : IAsyncDisposable
         internal long EnqueuedAt { get; }
         internal int AcceptedDepth { get; }
         internal long AcceptedRetainedBytes { get; }
+        internal long ReceiveCompletedAt { get; }
+        internal long LeaseStartedAt { get; }
+        internal long LeaseCompletedAt { get; }
 
         internal bool TryRelease() => Interlocked.Exchange(ref _released, 1) == 0;
     }
@@ -110,7 +123,9 @@ internal sealed class L12InboundConnection : IAsyncDisposable
     internal int MaximumObservedMessages => Volatile.Read(ref _maximumObservedMessages);
     internal long MaximumObservedBytes => Interlocked.Read(ref _maximumObservedBytes);
 
-    internal L12InboundEnqueueResult TryEnqueue(string json)
+    internal L12InboundEnqueueResult TryEnqueue(string json) => TryEnqueue(json, 0);
+
+    internal L12InboundEnqueueResult TryEnqueue(string json, long receiveCompletedAt)
     {
         ArgumentNullException.ThrowIfNull(json);
         var retainedBytes = checked(RetainedItemOverhead + json.Length * sizeof(char));
@@ -123,9 +138,15 @@ internal sealed class L12InboundConnection : IAsyncDisposable
         }
 
         L12DeploymentDrainLease? lease = null;
+        var leaseStartedAt = 0L;
+        var leaseCompletedAt = 0L;
         if (_leaseAcquirer is not null)
         {
+            if (_timedHandler is not null && receiveCompletedAt > 0)
+                leaseStartedAt = Stopwatch.GetTimestamp();
             lease = _leaseAcquirer(json);
+            if (_timedHandler is not null && receiveCompletedAt > 0)
+                leaseCompletedAt = Stopwatch.GetTimestamp();
             if (lease is null || !lease.IsOriginal || !lease.IsActive)
             {
                 lease?.Dispose();
@@ -147,7 +168,8 @@ internal sealed class L12InboundConnection : IAsyncDisposable
                 var acceptedDepth = _retainedMessages + 1;
                 var acceptedRetainedBytes = _retainedBytes + retainedBytes;
                 _queue.Enqueue(new PendingMessage(json, retainedBytes, lease, enqueuedAt,
-                    acceptedDepth, acceptedRetainedBytes));
+                    acceptedDepth, acceptedRetainedBytes, receiveCompletedAt,
+                    leaseStartedAt, leaseCompletedAt));
                 lease = null; // PendingMessage now owns it.
                 _retainedMessages = acceptedDepth;
                 _retainedBytes = acceptedRetainedBytes;
@@ -227,7 +249,9 @@ internal sealed class L12InboundConnection : IAsyncDisposable
                 else
                     await _timedHandler(pending.Json, new L12InboundQueueTiming(
                         pending.EnqueuedAt, Stopwatch.GetTimestamp(), pending.AcceptedDepth,
-                        pending.AcceptedRetainedBytes, remainingQueuedMessages));
+                        pending.AcceptedRetainedBytes, remainingQueuedMessages,
+                        pending.ReceiveCompletedAt, pending.LeaseStartedAt,
+                        pending.LeaseCompletedAt));
             }
             catch (Exception error)
             {
