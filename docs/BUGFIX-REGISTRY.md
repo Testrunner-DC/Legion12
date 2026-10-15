@@ -1,17 +1,17 @@
 # Legion12 Bug 修复记录
 
-## CHAT-20261016-FEATURE-CLOSEOUT｜好友私聊与本局对手聊天（本地候选，未部署）
+## CHAT-20261016-FEATURE-CLOSEOUT｜好友私聊与本局对手聊天（测试服上线已验，正式未启）
 
 - 用户直接要求聊天收口并在完成后部署测试服，随后将正式发布限定为非聊天部分。默认不启用聊天；只测试服务的显式环境变量开启，正式包不携带本批新运行时/协议/持久化/界面。
 - P2沿既有单socket/sender和已提交鉴权索引；未协商客户端静默不入队。实际起发逐层复验连接、账户、好友pair和本局scope代际；会话到期/接管/注销、账号禁用/删除、解除好友/屏蔽、对局结算/离场使旧帧失效。P3好友72小时/每会话200正文和独立限额表，不进全量平台快照；幂等回执在正文裁切后仍生效，账户删除同原事务目标化处理。对手只本局双方的有界内存，非观战或陌生人入口。
-- 独立审发现配额失败前先删旧正文与10分钟后面板重建空线程：已分别先校验prospective配额再提交、只读peek不创建并封闭刷新/已读/较早消息。无无限旧scope墓碑。保留原RED与首次markRead补守卫失败；最终19后端专项、66资源、23好友和9真实SFC已过，完整新候选门禁仍待。
+- 独立审发现配额失败前先删旧正文与10分钟后面板重建空线程：已分别先校验prospective配额再提交、只读peek不创建并封闭刷新/已读/较早消息。无无限旧scope墓碑。保留原RED与首次markRead补守卫失败；最终19专项/66资源/23好友、最终SFC9及完整cc3335fa Release7492规则/1754平台/9阶段通过，真实测试服11协议项通过。独立C423B255核入口/DLL对ECCD包、test Chat=true与formal cce8/PID184743/开放不变。原r1工具错误和唯一合成房清理另留证，不称正式聊天已启、30房性能已过或真iOS已验。
 - 同类扫描覆盖Program/RoomManager各终局与离场入口、实际WebSocket起发/注销/自然到期、三类好友HTTP变更和账号删除事务，以及SiteShell/FriendsPage/BattleUtilityDock三种共享UI消费者。新增net依赖使既有data-URI恢复夹具不能解析相对import，已接入真实chatResource、沿原Vue适配并保留35项全部断言，未用空stub替代聊天语义。正式版本、线上Bug状态和原性能长尾不因本地绿改变。
 
-## 2026-10-16 孙悟空完整UI链与备用区域动画租约收口（本地通过，待部署）
+## 2026-10-16 孙悟空完整UI链与备用区域动画租约收口（cce8正式上线已核，原反馈未自动关闭）
 
 - 用户要求收口原1ade孙悟空完整UI链。历史修复DLL13链与冻结19真实UI10链/28命令/88恢复已由Main独立核验，不把createBlock/createVNode夹具修正当产品修复。当前实际SFC、真实样式和同一未改公开DTO复验，首正常链三指令正确发出，但登场卡15秒后仍visibility:hidden；全部modal关闭、图片解码完成、动画节点已消失。只读取证栈确认唯一acquire来自ZoneMovement的模板备用分支coverDestination，未发生release。
 - 全库acquireAuthoritativeCardVisibility调用仅ZoneMovement与CardState；同型是没有可克隆来源/没有prepared visualOwner的区域动画，而非孙悟空卡名。只在ZoneMovement finish/cancel对无visualOwner的movement调用既有幂等revealTarget；有owner的连续交接仍完全交给coordinator，不提前显露真实卡，不改动画时点、命令、费用、卡效或规则。
-- 诊断r6/r8失败保留；最终无源码注入的当前组件10/10（双方、桌面/短横屏/竖屏、两类取消）28实际原生命令通过，motion46/coordinator36绿，独立只读审查CLEAR。C盘artifacts/chat-closeout-20261016/current-wukong-ui-r9-exact-source/report.json绑定真实源/原DTO和截图；只允许本机Vite开发WS，真实游戏WS/API/外网请求0。此证据不是当前DLL重放、线上ack或真iOS；完整候选Release/部署/原反馈关闭另认实际回执。
+- 诊断r6/r8失败保留；最终当前正式cce8同包13引擎/10实际SFC/28原生命令/88检查点恢复通过，F4F93D81绑定04487包/DLL16622461，motion46/coordinator36与Main短横屏实看保持。实际正式独立3E8B269C及AA7E86AA会话核同DLL/入口和维护解除；原反馈没有自动关闭。不把合成初盘、假socket和本地真实组件链说成原玩家录像重现、服务器ack或真iOS。
 
 ## 2026-10-16 三条已部署卡效逐项闭环｜91本方终态，437待办
 
