@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续118｜BUG-20260914-7b7f071d旧图替换完整链
+
+- 原文“场上有山河社稷图，用诸葛亮进攻时拉新的图没有追活费”。不沿用缺旧图前提的旧绿，新增ZhugeAttackReplacingExistingLandscapeStillAddsTheNewEntryMorale：真实attack/pay/play，旧图入墓、新图圣物区全区唯一、新登场恰追加1活跃士气，双方×V2恢复四格及真实防守结束/换回合全通过。最终804D6FBB，正常规则Batch7500/0fail/0skip。
+- 同一最终测试源码以独立测试程序集引用正式cce8同DLL16622461/9卡表实际4/4，D244E23C及C8B542BA；正式冻结树和产品未变，未重放私人原局。按当前版本有界未复现closed/rejected，不制造新增修复或fixCommit。
+- 单CAS29959、终态读回、原文历史保持及专用会话撤销完成，F7D674E2；909/410new/272resolved/227closed、阶段118=40/68/10、周期210，外部2不计。性能cohort仍在离线修正清理缺口，未将工具准备当线上通过。
+
 ## 2026-10-16 接续117｜格位、费用、天灾与排序原文精确闭环
 
 - BUG-20260926-334ff582：霍列姆赫布同名陵墓守卫格位，1609c6a1确实加入相对格位服务端标签及共享前端定位，正式cce8具名HoremhebSameNameSubstitutesHaveStableBattlefieldPositionLabels通过；实际PromptOverlay位置消费、候选元信息模板SSR及移动CSS更高优先级恢复meta/位置行也已进入同源fresh前端验收。Main核父元素未被继续隐藏；非原手机像素或私人局重放，按fixed_verified。
