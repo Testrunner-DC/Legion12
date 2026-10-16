@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261016-ANGUS-ADDITIONAL｜两UI与两成功反击反馈分别正式闭环
+
+- e7e16652精确match只读master_id证实安格斯，API503保留，不提手牌/牌库/姓名；复用正式cce8四AngusSecondTrialTests与真实桌面0→8/重开/一次指令，2af修复链核准。45d86e81绑定9d6新增46×46/min46/nowrap/tabular，Main正式完整页1366×768数字0在缩放23.44矩形内、scroll=client42/错误0；不是原设备、每个数字、全视觉脚本或原私局。D371提案8证据/15字段/两SelfTest12负例/独审CLEAR，CAS30521/30522、终态/原文历史/撤会话均过，54CB133E收据，各fixed_verified而非duplicate。
+- 07eb01cb/1116382b原04fb→9d6 response-negate修复→正式cce8。旧Batch299私FinishStackItem且S01-0020伪negate不作实际整链证据；新D隔离AngusCounterResponseTests用正式16622461 DLL/9表，真实盖放S01-0016付2费→对手打出付1费→响应弃1→negate及试炼0→1。双方×提交后V2恢复4格、反向0、墓地/费用/结果恰1、空队列及旧prompt重交raw/events/facts不变；r3两Trait日期已纠正，4绿/0失败跳过、输入不变，B6D32AFF/BD7E91DE，Main独审通过。不是原私局或全endTurn验收。
+- E8FD提案7证据/15字段/两SelfTest后单CAS30525/30526、终态/原文/历史/撤会话通过，74E5FAFF收据。已部署成功反击修复与本地新卡发动语义分开；唯一909/380new/285resolved/244closed、阶段148=53fixed/79rejected/16duplicate、周期240，本逻辑轮实际13条关闭，无部署/维护写。
+
+## RULE-20261016-CARD-VS-EFFECT-ACTIVATION｜通用裁定已登记，工程缺口另片
+
+- 用户明确卡的发动与效果的发动不同；安格斯同一次战术卡发动只触发一次不是特例。FAQ-RULINGS已记：不按效果/堆叠段数重复认定卡发动，纯效果复制不自动成为新卡发动，卡发动/效果发动/效果成功按各自卡文消费。
+- 本地c0ae复合段source-bound去重不等于全部完成：托勒密简单/复合repeatedEffectOnly仍经play载体误登记该标记，现有54战术分类未覆盖跨来源效果复制。自然完整链原战术先占once，通常无第二次公开进度，不能包装成已证P1。下一片应具名真实Handle负例+不增V2/Journal字段的通用临时分类；文案按原批准“发动战术时”同步精确能力身份与展示，不改人类图像原件或加外显次数注释。尚未实施/部署该下一片。
+
 ## UI-20261016-MOBILE-TRIAL-ENTRY｜移动额外区试炼漏发动入口
 
 - Main冻结正式cce8实际短横屏复现：移动CSS隐藏PlayerMat原试炼道，GameBoard另画的mobile-extra-card只走focus/selectPublicCardFor，详情仅文字，已8第二卡也无完成按钮。该重复入口efc838ae于9月20日引入，晚于原三条桌面反馈/2af修复，不混认旧根因。用户明确接受限定入口修复与同类验收。
