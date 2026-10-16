@@ -1,12 +1,20 @@
 # Legion12 Bug 修复记录
 
-## EFFECT-20261017-LEAVE-CAUSE｜阵亡反击按权威离场原因，本地验收中
+## CLOSEOUT-20261017-AFTER-MAINTENANCE110｜11条当前正式证据闭环
+
+- 正式本次70e发布在停服前actual-seal拒绝；独立核准旧cce8/PID184743/重启0未变、Open/无围栏后，当前维护109→110于03:43:11结束，HTTP/WS和新局入口恢复。失败原回执不改完成；0389692e不得借本地验收关闭。
+- 复用现行cce8具名证据，f84c3daa/6ad6d327/2bbf9d17/23d78e67/17981ac3/d7119892/2d46a9b4/05001187各按当前规则符合或有界未复现rejected，不互设duplicate；草薙、月神、赫拉克勒斯、瘟疫、伊丽莎白、猎鹰、原生骑兵移动及两张尼托的具体覆盖边界在冻结提案中保留，不冒称原私人场景全重放。
+- c637eedc/0d170895/87215dea各fixed_verified，分别绑定2d60eae3、9d6c75f1、b9b42423已部署日志修复；正式源/既有组件及桌面DOM证据如实复用，不将本地新代码当线上证据。合并提案18077658/11项原执行器自检通过，各单CAS30770—30780、独立终态及原文/非处置字段保持、专用会话撤销。实际D盘 `next-authority-batch-20261016/closeout/bug-closeout-current-wave11-14-maintenance110-cce8.json`。
+- 同次post-CAS快照对账909总/229new/356resolved/324closed，阶段299=124fixed/159rejected/16duplicate、周期391；本轮359起实际130（60fixed/70rejected）。无重复成功CAS、测试部署或聊天启用；7ebe/680a/R7、六条权限挂起和真机长期缺口保持。
+
+## EFFECT-20261017-LEAVE-CAUSE｜阵亡反击按权威离场原因，已验收未上线
 
 - BUG-20260911-0389692e：阿尔维达支付“弃置此军团”不属于阵亡，但正式cce8会给盖伏复仇血鹰建立“我方军团阵亡时”的发动询问。正式16622461 DLL及九Data逐SHA绑定，两控制者各三条真实Handle均接受，阿尔维达各恰一张入墓、自身death栈0，血鹰仍盖伏且立即出现其公开pending-activation询问；不是仅源码可达推断。结果`current-correctness-batch-20261017/alvida-blood-eagle-current-probe-result.json` SHA F8AC5B5B8A6D8FE6A2529E4C52A29DB485ADC2193256921DBC3B74FC21602C49，独审CLEAR。
 - 用户已批准共享资格修复与验收。根因是共享BuildS1LeaveReactionCandidates未接收真实离场原因；现要求调用者显式传入wasDefeated和原includeTombConstruct，仅血鹰阵亡候选依前者过滤。七生产入口全部迁移：普通移区、返手、返库和弃圣物为false，战斗/并发阵亡为true，RemoveFromField沿既有isDefeat。入墓不再被推断为阵亡；独立离场、陵墓构造体、每张实体各一次、孟婆抑制及天灾不响应边界保持，不加状态字段或卡号特例。
 - 全池查询IsCounterTactic及卡文“阵亡/离场”，并检索BuildS1LeaveReactionCandidates所有调用：324卡中的18种反击（S1 11/S2 6/ST 1）仅复仇血鹰S01-0320属军团阵亡、不朽之礼S01-0223属军团离场；不是只绕过阿尔维达。三份既有反射测试仅补显式原因参数，原断言不减；新LeaveReactionCauseBoundaryRegressionTests为双方×逐命令严格V2恢复32格，真实阿尔维达/GM返手/战斗/效果击杀/减至0及不朽之礼继续发动，另明确标记8格共享私有移区而非真实命令。
 - 原源码32格RED实际20个非阵亡误触发失败、12个真阵亡对照通过；修复后新32与原相邻132合计164/164、失败跳过0，focused.trx SHA 8693F2D50B0874B2FBA9EF2CCE0386D14815E2730A79192106CB4F29F44376F3；独审CLEAR。唯一标准Batch全规则7686/7686、全平台1790/1790、失败跳过0，11个C#输入前后一致、映射守卫全部通过；未变前端复用有效合同/构建而不重跑。原RED及显式Focused TRX保留D，标准测试按原存储策略保留计数回执并清理可选临时pass-proof，不冒称保留了全量TRX。0389692e仍未关闭；用户最新授权正式发布及成败后安全解除当前维护，待后续真实发布收据，不把本地通过记成上线。
 - 探针r1—r3是运行时/反射类型兼容失败，未进入Handle；Main修正if数组包装后r4实际拒绝误选等级1军团，不能算产品RED。按卡文明示改为正式目录等级2军团后成功；各失败及两份修正前脚本字节保留D，没有把失败改绿。仅公开合成初局，未走真实盖伏命令、未选择发动血鹰或验后续减兵/恢复，不冒称私人原局、完整回归或新产品修复；没有网络/数据库/构建/部署。
+- 5a999ae6产品家族已提交/推送，70e1986c发布候选含玩家日志；本次实际停服前拒绝，正式仍cce8，已按授权解除当前维护。修复保持本地验收未上线，0389692e未关；下次不能复用本次失败作为上线证明。
 
 ## CLOSEOUT-20261017-CURRENT-CONTINUATION｜按当前版本连续推进，已实际119条
 
