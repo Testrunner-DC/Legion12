@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "20261017-leave-cause-boundary",
+  "date": "2026-10-17",
+  "audience": "players",
+  "title": "阵亡与离场触发区分",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "《阿尔维达》弃置自身，以及军团被弃置、返回手牌或牌库时，不再误触发《复仇血鹰》的阵亡效果；真正的战斗、效果与兵力降至0导致的阵亡仍正常触发，《不朽之礼》等独立离场效果保持不变。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12AuthoritativeCardZones.cs",
+        "服务端WebSocket/TwelveLegions/L12CombatTimeline.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12GmCommands.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    }
+  ]
+}
