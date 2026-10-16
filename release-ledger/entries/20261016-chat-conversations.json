@@ -2,10 +2,24 @@
   "schemaVersion": 1,
   "id": "20261016-chat-conversations",
   "date": "2026-10-16",
-  "audience": "players",
-  "title": "好友消息与本局对话",
-  "changes": [
-    { "category": "ui", "text": "新增好友私聊：好友页可查看和发送消息，其他页面可从好友入口打开不遮挡操作的小浮窗。", "paths": ["opcgpro-vue/src/l12/chatResource.ts", "opcgpro-vue/src/l12/friendResource.ts", "opcgpro-vue/src/l12/site/ChatPanel.vue", "opcgpro-vue/src/l12/site/SocialPopover.vue", "opcgpro-vue/src/l12/site/FriendsPage.vue", "opcgpro-vue/src/l12/site/SiteShell.vue", "opcgpro-vue/src/l12/platform.ts"] },
-    { "category": "battle", "text": "新增仅本局双方可见的对手对话，不向观战者开放；对局结束或离场后，仅保留十分钟本机已接收消息供查看。", "paths": ["opcgpro-vue/src/l12/game/BattleUtilityDock.vue", "opcgpro-vue/src/l12/net.ts", "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.Chat.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.MatchGovernance.cs", "服务端WebSocket/TwelveLegions/L12WebSocketServer.Chat.cs"] }
+  "audience": "internal",
+  "reason": "本次正式发布保持聊天开关关闭；预置代码不作为已开放的玩家功能宣传，后续明确开放时另行发布对应玩家说明。",
+  "paths": [
+    "opcgpro-vue/src/l12/chatResource.ts",
+    "opcgpro-vue/src/l12/friendResource.ts",
+    "opcgpro-vue/src/l12/site/ChatPanel.vue",
+    "opcgpro-vue/src/l12/site/SocialPopover.vue",
+    "opcgpro-vue/src/l12/site/FriendsPage.vue",
+    "opcgpro-vue/src/l12/site/SiteShell.vue",
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/game/BattleUtilityDock.vue",
+    "opcgpro-vue/src/l12/net.ts",
+    "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.Chat.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.MatchGovernance.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.Chat.cs"
   ]
 }
