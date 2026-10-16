@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-EIGHT｜上线后八条当前证据收口
+
+- d185b0f2图坦双守卫按3806924c及16个真实Handle/双方/占格/恢复参数；5edd7f36万箭分支按04fb70c6及两具名公开分支回归；52576196罗洛按052ec9d5及费用/恢复过期提交/取消三回归，各自fixed_verified。修复均包含在实际已核验a355中；不把旧界面最小化/私人局像素链称已重放。
+- 73c4cf62/446e622c图坦32格、83eaa471李牧万箭先于天灾、418bb59e洛基合法返墓回血单正向、3099d40a绝防两分支内部提交/恢复，按用户“当前正确即可”授权各bounded rejected。每条说明真实检查范围，末项不称完整手牌Handle/UI；无历史根因不当作同卡duplicate。
+- 8FEB0EBD报告、3A76C1C0提案、原v2合同/八SelfTest有效；Main确认12函数及CAS/最终读回循环与原执行器相同，仅精确绑定新a355四收据、聊天true、PID259138及维护114。实际各一次CAS30825—30832、终态/原文历史/撤会话完成，D盘 `closeout/bug-closeout-current-eight-a355.json`（1CDFE6B8）。同次post-CAS快照一次对账909总/213待办/360resolved/336closed、阶段315=128fixed/171rejected/16duplicate、周期407；本批未新部署或改维护。
+
 ## CHAT-20261017-HOME-ENTRY｜正式启用接线与四图标入口，已上线
 
 - 用户要求优先上线聊天及主页四按钮去文字。此前70e已带聊天代码但正式开关缺省false；本批沿 `L12_CHAT_ENABLED` 的已有严格解析和唯一聊天通道，以独立正式环境文件接线，不改原凭据配置、不新建连接或轮询。`ops/server/legion12-chat-enabled.conf` 与 `.env.example` 仅是明确安装蓝本；没有执行安装或核准新进程前不得称正式开启。
