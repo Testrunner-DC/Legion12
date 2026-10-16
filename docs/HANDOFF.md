@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-17 接续235｜持续收口进行中，不重交在途批次
+
+- 本轮359起已实际关闭66条（wave01的4、wave02的13、wave03的25、两旧409单项各1、wave04的22），32fixed/34rejected；909/293待办/328resolved/288closed、阶段235=96fixed/123rejected/16duplicate、周期327已用各批同次快照对账，六专用会话均撤销。原源与当前检查边界保持，未部署。
+- wave04原23项的胡夫8f64f657在CAS前超时（writeAttempts=0，无两CAS标记），原partial收据不改，不计已关；外置公共reader只补精确零写超时分类，原单CAS/409/未知失败守卫保持，先RED后GREEN21例及独审CLEAR。`proposal-current-wave05-cce8.json`（F92B071C，16项8fixed/8rejected）已启动原执行器，先查closeout/bug-closeout-current-wave05-cce8.json，不重启。下一B分区8项FFE54008只冻结未执行；阿尔维达/血鹰0389692e当前疑点与7ebe89f4回放正常功能证据缺口单独挂起，其余并行继续。
+
 ## 2026-10-17 接续169｜旧反馈按当前版本收口
 
 - 最新用户口径已写入AGENTS及BUG-MANAGEMENT-WORKFLOW：复用当前具名证据，不为旧成因追私局/历史DAG；本轮实际18条各单CAS/终态/撤会话，8fixed与10rejected，909/359待办/296resolved/254closed、阶段169/周期261。完整分类及三真实收据见BUGFIX-REGISTRY的CURRENT-CORRECTNESS条目，同次快照已对账唯一状态。

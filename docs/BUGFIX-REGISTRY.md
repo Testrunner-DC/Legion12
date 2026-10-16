@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-CURRENT-CONTINUATION｜按当前版本连续推进，已实际66条
+
+- 复用正式cce8具名规则TRX及既有共享修复，不重跑全量、不追旧私人局；wave01的4项、wave02的13项、wave03的25项、两旧409单项各1及wave04的22项各一次成功CAS并独立终态读回，32fixed/34rejected。前两批409保持partial原收据，只对未变15字段的未成功项各派生一次单项续办，现均成功；成功项绝不重交。原文、非处置字段及历史保留，六专用会话均撤销。
+- 当前证据覆盖诸神黄昏开局分支、必中与空城计、月神/安提诺乌斯、比约恩、乾坤阳、魔术师傀儡、天空之城、月读、梅林目标、黑莲花与智慧法典等；具体原文及有限范围只维护在各冻结proposal，不把同卡名当duplicate。芬尼亚已补读既有“首段无效后仍提供后续段”负例，不用三次成功结果单独冒称无效边界；荷伦希布/尼克斯仅有界当前检查，不冒称原持续-5000完整私局成因。
+- wave04新增共享恢复/反击族，近藤持续致死保护、李牧整项无效、月神强攻、孙武回收等各按已部署修复独立fixed；规则正确/当前有限未复现各rejected，不混作duplicate。最后胡夫8f64f657是CAS前TaskCanceledException，writeAttempts=0且无expectedVersion/idempotencyKey，保留原失败并挂起，绝不算第23成功。
+- 本地公共reader原只接纳write1/409，导致不能吸收其他22成功项；精确补零写超时分支，仅允许未完成回执中的数值0、TaskCanceledException且六CAS/结果标记全缺，只跳过该项、不返回为verified。在线执行器保持写前持久化哨兵顺序不变；原reader按字节保留D，21例先RED后GREEN、四真实回执子集4/13/25/22核准及独审CLEAR。write1不确定、未知错误、伪成功和after-uncertain后缀仍拒绝，不伪改原partial完成。
+- 唯一909/293new/328resolved/288closed，阶段235=96fixed/123rejected/16duplicate、周期327，外部2不计。原closeout目录保留六真实收据及同次post-CAS快照；完整intake已由原执行器生成时直接复用，partial仅离线绑定，不再次登录拉取。下一16已执行中、后续8仅冻结；阿尔维达/血鹰0389692e当前疑点和7ebe89f4缺正常回放证明另挂，不用相近负例或仅500改409冒称功能已修。没有新产品修复、部署、维护或性能根治声明。
+
 ## CLOSEOUT-20261017-CURRENT-CORRECTNESS｜按现版本证据收口18条旧反馈
 
 - 用户更新为“当前版本正确就行”，固定流程已同步至AGENTS及BUG-MANAGEMENT-WORKFLOW；不再要求旧私局或报告至修复的完整历史DAG。8+6+4三批原执行器离线自检后，18条各一次preview/CAS/独立终态读回，原文及非处置字段保持、三会话均撤销。实际收据BE3052D4/4F8D3C65/A408E7DC位于D盘`bug-closure-continuation-20261011/next-authority-batch-20261016/closeout`；三提案及证据位于同级`current-correctness-batch-20261017`。
