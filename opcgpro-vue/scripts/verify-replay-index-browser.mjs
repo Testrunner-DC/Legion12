@@ -2,13 +2,22 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const origin = process.argv[2] || 'http://127.0.0.1:5197'
 const output = process.env.L12_REPLAY_INDEX_OUT || 'D:/GPT/Legion12/artifacts/replay-index-20261002'
+const storageGuard = spawnSync('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe',
+  ['-NoProfile', '-Command', ". 'D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/ops/windows/L12GeneratedStorage.ps1'; $null=Assert-L12GeneratedPath -Path $env:L12_REPLAY_INDEX_OUT -Purpose 'Replay browser acceptance'"],
+  { env: { ...process.env, L12_REPLAY_INDEX_OUT: output }, encoding: 'utf8', windowsHide: true })
+assert.equal(storageGuard.status, 0, 'browser output must resolve to governed D/E storage')
 fs.mkdirSync(output, { recursive: true })
 const account = { id: 'synthetic-index', username: '索引验收', role: 'admin', permissions: [], mustChangeUsername: false, mustChangePassword: false }
-const player = index => ({ PlayerIndex: index, Name: index ? '乙' : '甲', Faction: 'otherworld', MasterId: `master-${index}`, MasterName: '主宰', Hp: 8, MaxHp: 8, Hand: [], Library: [], Morale: [], MoraleDeck: [], Field: [[null, null, null], [null, null, null]], Graveyard: [], Resolving: [], ExtraRelics: [], SpecialZones: { Runes: 0, TrialLevel: 0, GodPower: [], Trials: [] }, MulliganDone: true })
+const resources = index => [false, true].flatMap(god => [false, true].map(tapped => ({
+  InstanceId: `resource-${index}-${god}-${tapped}`, CardId: 'MORALE', IsGodPower: god,
+  Tapped: tapped, CannotUntapAtNextReset: true, CannotUntapUntilRound: 0,
+})))
+const player = index => ({ PlayerIndex: index, Name: index ? '乙' : '甲', Faction: 'otherworld', MasterId: `master-${index}`, MasterName: '主宰', Hp: 8, MaxHp: 8, Hand: [], Library: [], Morale: resources(index), MoraleDeck: [], Field: [[null, null, null], [null, null, null]], Graveyard: [], Resolving: [], ExtraRelics: [], SpecialZones: { Runes: 0, TrialLevel: 0, GodPower: [], Trials: [] }, MulliganDone: true })
 const commands = Array.from({ length: 75 }, (_, step) => ({ sequence: step + 1, playerIndex: step % 2, command: { type: 'passPriority' }, accepted: true, revision: step + 1, stateHash: `synthetic-${step}`, state: { MatchId: 'index-fixture', RoomCode: 'INDEX', ActivePlayer: Math.floor(step / 10) % 2, FirstPlayer: 0, Phase: 'Main', Round: 1 + Math.floor(step / 10), Players: [player(0), player(1)], Events: [{ Sequence: step + 1, Type: step % 3 === 0 ? 'cost' : 'effect-result', EffectResultStatus: step % 3 === 1 ? 'negated' : 'resolved', Cards: [{ InstanceId: 'public-source', CardId: 'SYNTHETIC', Name: `公开来源${step + 1}`, Hidden: false }] }] } }))
 const match = { matchId: 'index-fixture', roomCode: 'INDEX', player0: '甲', player1: '乙', deck0: '', deck1: '', status: 'completed', startedUtc: '2026-10-02T00:00:00Z', endedUtc: '2026-10-02T01:00:00Z', commandCount: commands.length, winner: 0 }
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })
@@ -20,7 +29,7 @@ try {
     const page = await context.newPage()
     const errors = []
     const requests = []
-    let failNextPage = false
+    let failNextPage = true
     page.on('pageerror', error => errors.push(error.stack || error.message))
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url())
@@ -41,6 +50,14 @@ try {
       return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
     })
     await page.goto(`${origin}/battle/records/replay/index-fixture`, { waitUntil: 'networkidle' })
+    const assertResources = async () => {
+      for (const state of ['active-god-power', 'rested-god-power', 'active-morale', 'rested-morale'])
+        assert.equal(await page.locator(`.morale-orb.${state}`).count(), 2, `${state} survives the real replay-to-board chain`)
+      assert.equal(await page.locator('.morale-orb img.god-power-logo').count(), 4)
+      assert.equal(await page.locator('.morale-orb .morale-lock-icon').count(), 8)
+      assert(await page.locator('.morale-orb .morale-lock-icon').evaluateAll(items => items.every(item => item.getAttribute('aria-label') === '下个重置阶段无法转为活跃')))
+    }
+    await assertResources()
     await page.getByRole('button', { name: '播放', exact: true }).click()
     await page.getByRole('button', { name: '回放定位', exact: true }).click()
     await page.locator('.replay-index').waitFor()
@@ -73,7 +90,10 @@ try {
     assert.equal(await page.locator('.replay-index').count(), 0)
     await page.goto(`${origin}/admin/matches/index-fixture/replay`, { waitUntil: 'networkidle' })
     await page.locator('.replay-controls').waitFor()
-    assert.equal(requests.filter(url => url.startsWith('/api/admin/matches/index-fixture/replay')).length, 1, 'no eager full archive request')
+    await assertResources()
+    const initialPageReads = requests.filter(url => url.startsWith('/api/admin/matches/index-fixture/replay'))
+    assert(initialPageReads.length >= 2 && initialPageReads.length <= 7, 'initial page plus bounded next-page prefetch/retry only')
+    assert(initialPageReads.every(url => new URL(url, origin).searchParams.get('limit') === '50'), 'all archive reads stay paginated')
     await page.getByRole('button', { name: '回放定位', exact: true }).click()
     assert.match(await page.locator('.replay-index-note').textContent(), /50 \/ 75/)
     failNextPage = true
@@ -86,7 +106,7 @@ try {
     await page.locator('.replay-index-rounds button').first().click()
     assert.match(await page.locator('.replay-controls small').textContent(), /步骤 61 \/ 75/)
     assert.deepEqual(errors, [])
-    audits.push({ viewport, geometry, status: 'passed', cases: ['pause-and-seek', 'round', 'cost-search', 'exact-frame', 'keyboard-close', 'admin-incremental-index', '503-retry', 'loaded-playback-retained'] })
+    audits.push({ viewport, geometry, status: 'passed', cases: ['pause-and-seek', 'round', 'cost-search', 'exact-frame', 'keyboard-close', 'admin-incremental-index', '503-retry', 'loaded-playback-retained', 'player-and-admin-god-power-and-locks'] })
     await context.close()
   }
   fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({ status: 'passed', generatedAt: new Date().toISOString(), audits }, null, 2))

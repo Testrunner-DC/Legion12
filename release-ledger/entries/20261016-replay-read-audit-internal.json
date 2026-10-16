@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-replay-read-audit-internal",
+  "date": "2026-10-16",
+  "audience": "internal",
+  "reason": "管理读取的耐久审计竞争恢复、撤权边界和固定数值诊断属于后台可靠性设施，不进入普通玩家更新文案。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.ReadAuditPersistence.cs",
+    "服务端WebSocket/TwelveLegions/L12HttpReliability.cs"
+  ]
+}

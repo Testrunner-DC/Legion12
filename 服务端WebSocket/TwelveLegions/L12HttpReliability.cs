@@ -372,17 +372,26 @@ internal static class L12HttpExceptionBoundary
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "invalid_request", "请求格式无效", error.StatusCode);
         }
-        catch (L12PlatformStorageConflictException)
+        catch (L12PlatformStorageConflictException error)
         {
+            LogStorageFailure(context, error, "storage_conflict");
             context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status409Conflict;
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "storage_conflict", "数据已更新，请刷新后重试", StatusCodes.Status409Conflict);
         }
-        catch (L12PlatformStorageUnavailableException)
+        catch (L12PlatformStorageUnavailableException error)
         {
+            LogStorageFailure(context, error, "storage_unavailable");
             context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status503ServiceUnavailable;
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "storage_unavailable", "暂时无法保存，请稍后重试", StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (UnauthorizedAccessException error) when (error.Data[nameof(L12ReadAuditDiagnostic)] is L12ReadAuditDiagnostic)
+        {
+            context.Items[L12HttpPerformanceMonitor.OutcomeStatusItemName] = StatusCodes.Status403Forbidden;
+            LogStorageFailure(context, error, "forbidden");
+            if (context.Response.HasStarted) throw;
+            await WriteErrorAsync(context, "forbidden", "管理读取权限已变化，请重新登录", StatusCodes.Status403Forbidden);
         }
         catch (Exception error)
         {
@@ -395,6 +404,21 @@ internal static class L12HttpExceptionBoundary
             if (context.Response.HasStarted) throw;
             await WriteErrorAsync(context, "internal_error", "服务器暂时无法处理该请求", StatusCodes.Status500InternalServerError);
         }
+    }
+
+    private static void LogStorageFailure(HttpContext context, Exception error, string code)
+    {
+        // Fixed categories and numeric codes only: no URL values, SQL, exception messages,
+        // request bodies or replay/private-card contents in the diagnostic.
+        Microsoft.Data.Sqlite.SqliteException? sqlite = null;
+        for (Exception? cause = error; cause is not null; cause = cause.InnerException)
+            if (cause is Microsoft.Data.Sqlite.SqliteException found) { sqlite = found; break; }
+        var read = error.Data[nameof(L12ReadAuditDiagnostic)] as L12ReadAuditDiagnostic;
+        Console.Error.WriteLine($"[{CorrelationId(context)}] HTTP storage failure: code={code}; "
+            + $"phase={read?.Phase ?? "platform"}; type={error.GetType().Name}; "
+            + $"sqliteCode={sqlite?.SqliteErrorCode.ToString() ?? "none"}; "
+            + $"sqliteExtendedCode={sqlite?.SqliteExtendedErrorCode.ToString() ?? "none"}; "
+            + $"attempts={read?.Attempts ?? 0}; elapsedMs={read?.ElapsedMilliseconds ?? 0}");
     }
 
     private static async Task WriteErrorAsync(HttpContext context, string code, string message, int statusCode)

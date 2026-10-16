@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-replay-read-recovery",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "回放播放与神力显示",
+  "changes": [
+    {
+      "category": "replays",
+      "text": "回放1倍速调整为约3秒一步，2倍与3倍按此缩短，仍等待卡牌动画结束；正确显示神力及士气封锁状态。临时读取失败可重试继续，切换账号或离开页面后不再恢复旧画面，不兼容的旧录像仍会明确提示。",
+      "paths": [
+        "opcgpro-vue/src/l12/ReplayPage.vue",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/replayIndex.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/replayArchiveLoader.ts"
+      ]
+    }
+  ]
+}

@@ -189,7 +189,7 @@ function replayDisasterView(raw: any): DisasterCardView | null {
   return replayCard(raw)
 }
 
-function replayActiveDisasterAt(detail: MatchDetail, step: number, raw: any) {
+function replayActiveDisasterAt(detail: MatchDetail, step: number, raw: any, before?: Record<string, any> | null) {
   const hasExplicit = Object.prototype.hasOwnProperty.call(raw ?? {}, 'ActiveDisaster')
     || Object.prototype.hasOwnProperty.call(raw ?? {}, 'activeDisaster')
   if (hasExplicit) return replayCard(value(raw, 'ActiveDisaster', 'activeDisaster', null))
@@ -202,7 +202,7 @@ function replayActiveDisasterAt(detail: MatchDetail, step: number, raw: any) {
     if (value<string>(latest, 'Type', 'type', '') === 'disaster-removed') return null
     return replayCard(value<any[]>(latest, 'Cards', 'cards', [])[0])
   }
-  return null
+  return replayCard(before)
 }
 
 function replaySessionDisasters(raw: any, activeDisaster: Card | null): DisasterCardView[] {
@@ -270,6 +270,9 @@ function replayPlayer(raw: any, catalog?: ReadonlyMap<string, ReplayCardDefiniti
       instanceId: value(card, 'InstanceId', 'instanceId', ''), cardId: value(card, 'CardId', 'cardId', ''),
       resourceType: value(card, 'ResourceType', 'resourceType', undefined),
       tapped: value(card, 'Tapped', 'tapped', false),
+      isGodPower: value(card, 'IsGodPower', 'isGodPower', false),
+      cannotUntapAtNextReset: value(card, 'CannotUntapAtNextReset', 'cannotUntapAtNextReset', false),
+      cannotUntapUntilRound: value(card, 'CannotUntapUntilRound', 'cannotUntapUntilRound', 0),
     })),
     field: [0, 1].map(row => [0, 1, 2].map(slot => replayCard(fieldRaw?.[row]?.[slot]))),
     relic: replayCard(value(raw, 'Relic', 'relic', null)),
@@ -291,13 +294,14 @@ const phaseNames: Phase[] = [
   'Morale', 'Main', 'End', 'Defense', 'GameOver',
 ]
 
-export function replayGameAt(detail: MatchDetail, step: number, catalog?: ReadonlyMap<string, ReplayCardDefinition>): GameState | null {
+export function replayGameAt(detail: MatchDetail, step: number, catalog?: ReadonlyMap<string, ReplayCardDefinition>,
+  activeDisasterBefore?: Record<string, any> | null): GameState | null {
   const command = detail.commands[step]
   const raw = command?.state
   if (!raw) return null
   const rawPhase = value<any>(raw, 'Phase', 'phase', 'Main')
   const defense = value<any>(raw, 'PendingDefense', 'pendingDefense', null)
-  const activeDisaster = replayActiveDisasterAt(detail, step, raw)
+  const activeDisaster = replayActiveDisasterAt(detail, step, raw, activeDisasterBefore)
   const events: ActionEvent[] = value<any[]>(raw, 'Events', 'events', []).map(event => {
     const semantic = value<any>(event, 'PlayerLogSemantic', 'playerLogSemantic', undefined)
     const combat = value<any>(event, 'PlayerCombat', 'playerCombat', undefined)
@@ -500,9 +504,9 @@ function replayStructuredSource(game: GameState, instanceId: string,
 }
 
 export function replayFocusCardAt(detail: MatchDetail, step: number,
-  catalogDefinitions: readonly ReplayCardDefinition[] = []): Card | null {
+  catalogDefinitions: readonly ReplayCardDefinition[] = [], activeDisasterBefore?: Record<string, any> | null): Card | null {
   const catalog = new Map(catalogDefinitions.map(card => [card.id, card]))
-  const game = replayGameAt(detail, step, catalog)
+  const game = replayGameAt(detail, step, catalog, activeDisasterBefore)
   const recorded = detail.commands[step]
   if (!game || !recorded) return null
   const command = recorded.command ?? {}
@@ -517,7 +521,7 @@ export function replayFocusCardAt(detail: MatchDetail, step: number,
     .map(key => command[key] ?? command[key[0].toUpperCase() + key.slice(1)])
     ].find(value => typeof value === 'string' && value) as string | undefined
   if (explicitInstanceId) {
-    const previousGame = step > 0 ? replayGameAt(detail, step - 1, catalog) : null
+    const previousGame = step > 0 ? replayGameAt(detail, step - 1, catalog, activeDisasterBefore) : null
     const structured = replayStructuredSource(game, explicitInstanceId, catalogDefinitions, catalog)
       ?? (previousGame ? replayStructuredSource(previousGame, explicitInstanceId, catalogDefinitions, catalog) : null)
     if (structured) return structured

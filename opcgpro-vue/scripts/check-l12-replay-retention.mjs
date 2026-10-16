@@ -40,8 +40,10 @@ assert.equal(replayTemplate.replayBoardBinding, true,
   'replay speed and presentation completion must be connected to the unique read-only board')
 assert.doesNotMatch(replayPage, /setInterval|clearInterval/,
   'automatic replay must not advance on an interval that can overrun card presentation')
-assert.match(replayPage, /if \(replayPresentationBusy\.value\)[^]*setTimeout[^]*return[^]*selectedStep\.value = target/,
+assert.match(replayPage, /if \(replayPresentationBusy\.value\)[^]*setTimeout[^]*return[^]*selectStep\(target\)/,
   'automatic replay must wait until card presentation is idle before advancing')
+assert.match(replayPage, /function selectStep\(step: number\) \{ selectedStep\.value = step/,
+  'the shared step selector must update only the requested replay position')
 assert.match(gameBoard, /if \(!props\.replayPlaybackSpeed\) return l12AnimationDuration\(3000, 700\)[^]*l12AnimationDuration\(1600, 420\) \/ props\.replayPlaybackSpeed/,
   'only replay card reveals may use the accelerated duration')
 assert.match(zonePresentation, /if \(!props\.playbackSpeed\) return l12AnimationDuration\(standardMs, liveMinimumMs\)[^]*l12AnimationDuration\(standardMs, replayMinimumMs\) \/ props\.playbackSpeed/,
@@ -65,4 +67,4 @@ assert.match(gameBoard, /\.public-reveal-animation\{z-index:903\}\.dice-reveal-a
 assert.match(replayPage, /\.replay-loading\{position:fixed;z-index:3300/,
   'loading and error fullscreen layers may still cover the player controls')
 
-console.log('L12 replay-retention UI checks passed (24 assertions).')
+console.log('L12 replay-retention UI checks passed (25 assertions).')

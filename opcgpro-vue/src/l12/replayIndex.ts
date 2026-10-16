@@ -1,4 +1,4 @@
-import type { MatchDetail } from './replayModel'
+import type { MatchDetail, RecordedCommand } from './replayModel'
 
 export type ReplayIndexCategory = 'action' | 'cost' | 'effect' | 'disaster' | 'result'
 export interface ReplayRoundIndex { id: string; step: number; round: number; activePlayer: number }
@@ -38,12 +38,16 @@ function overlap(previous: string[], current: string[]): number {
   return Math.min(current.length, prefix.at(-1) ?? 0)
 }
 
-export function buildReplayIndex(detail: MatchDetail, privileged = false): ReplayIndex {
+export function createReplayIndexAccumulator(viewerPlayerIndex?: number | null, privileged = false) {
   const index: ReplayIndex = { rounds: [], events: [] }
   const seenSequences = new Set<number>()
   let previousKeys: string[] = []
   let previousTurn = ''
-  detail.commands.forEach((command, step) => {
+  let nextStep = 0
+  function append(commands: RecordedCommand[], start: number) {
+  if (start !== nextStep) throw new Error('回放索引页顺序不一致')
+  commands.forEach((command, offset) => {
+    const step = start + offset
     const raw = command.state
     if (!raw || typeof raw !== 'object') return
     const round = read(raw, 'Round', 'round')
@@ -69,7 +73,7 @@ export function buildReplayIndex(detail: MatchDetail, privileged = false): Repla
       } else if (position < shared) return
       const privateTo = read(event, 'PrivateTo', 'privateTo')
       // Privileged archive display does not make private prompts/events public index material.
-      if (privateTo != null && privateTo !== detail.viewerPlayerIndex) return
+      if (privateTo != null && privateTo !== viewerPlayerIndex) return
       const type = read(event, 'Type', 'type')
       const descriptor = Object.hasOwn(eventLabels, type) ? eventLabels[type] : undefined
       if (!descriptor) return
@@ -95,5 +99,13 @@ export function buildReplayIndex(detail: MatchDetail, privileged = false): Repla
     })
     previousKeys = keys
   })
-  return index
+  nextStep += commands.length
+  }
+  return { index, append }
+}
+
+export function buildReplayIndex(detail: MatchDetail, privileged = false): ReplayIndex {
+  const builder = createReplayIndexAccumulator(detail.viewerPlayerIndex, privileged)
+  builder.append(detail.commands, 0)
+  return builder.index
 }

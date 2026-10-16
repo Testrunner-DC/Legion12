@@ -1394,10 +1394,10 @@ export const adminApi = {
     return platformRequest<AdminMatchPage>(`/api/admin/matches${params.size ? `?${params}` : ''}`)
   },
   match: (matchId: string) => platformRequest<AdminMatchDetail>(`/api/admin/matches/${encodeURIComponent(matchId)}`),
-  replayPage: (matchId: string, cursor?: string, limit = 50) => {
+  replayPage: (matchId: string, cursor?: string, limit = 50, signal?: AbortSignal) => {
     const params = new URLSearchParams({ limit: String(Math.max(1, Math.min(100, limit))) })
     if (cursor) params.set('cursor', cursor)
-    return platformRequest<AdminReplayPage>(`/api/admin/matches/${encodeURIComponent(matchId)}/replay?${params}`)
+    return platformRequest<AdminReplayPage>(`/api/admin/matches/${encodeURIComponent(matchId)}/replay?${params}`, { signal })
   },
   playerMatches: (accountId: string, query: { cursor?: string; limit?: number; from?: string; to?: string; mode?: string; status?: string } = {}) => {
     const params = new URLSearchParams()

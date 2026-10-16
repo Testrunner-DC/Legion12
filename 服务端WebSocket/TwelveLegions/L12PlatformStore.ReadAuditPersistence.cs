@@ -1,7 +1,15 @@
 using System.Text.Json;
+using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 
 namespace TwelveLegions.Server;
+
+internal sealed class L12ReadAuditDiagnostic(string phase)
+{
+    internal string Phase { get; } = phase;
+    internal int Attempts { get; set; }
+    internal long ElapsedMilliseconds { get; set; }
+}
 
 public sealed partial class L12PlatformStore
 {
@@ -11,9 +19,16 @@ public sealed partial class L12PlatformStore
         string category, string action, string target, L12AdminAuditContext context,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        AdminAuditRow? row = null;
+        // Only a rolled-back busy/locked append or a changed local authority may retry.
+        // A stale instance, revoked permission, I/O failure or unknown commit outcome may not.
+        for (var attempt = 0; ; attempt++)
+        {
+        cancellationToken.ThrowIfCancellationRequested();
         var committed = Volatile.Read(ref _committedSessionActivity);
         var current = RequireCommittedAuditActor(committed, actor, permission);
-        var row = new AdminAuditRow
+        row ??= new AdminAuditRow
         {
             ActorId = current.Id, ActorName = current.Username, Category = category,
             Action = action, Target = target, Comment = "read",
@@ -23,7 +38,36 @@ public sealed partial class L12PlatformStore
             DryRun = context.DryRun, ExpectedVersion = context.ExpectedVersion,
             RequestMethod = context.RequestMethod, RequestPath = context.RequestPath,
         };
-        AppendCommittedReadAuditRow(committed, actor, permission, row, cancellationToken);
+        try
+        {
+            AppendCommittedReadAuditRow(committed, actor, permission, row, cancellationToken);
+            return;
+        }
+        catch (L12PlatformStorageUnavailableException error)
+        {
+            if (error.Data[nameof(L12ReadAuditDiagnostic)] is L12ReadAuditDiagnostic readError)
+            {
+                readError.Attempts = attempt + 1;
+                readError.ElapsedMilliseconds = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            }
+            var retryable = error.InnerException is SqliteException { SqliteErrorCode: 5 or 6 }
+                || ((error is L12PlatformStorageConflictException || error.Data[nameof(L12ReadAuditDiagnostic)] is L12ReadAuditDiagnostic { Phase: "generation" })
+                    && !ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committed));
+            if (attempt != 0 || !retryable) throw;
+            if (error.InnerException is SqliteException { SqliteErrorCode: 5 or 6 })
+            {
+                // The local authority gate is still occupied after the first
+                // busy result. Keep a single bounded SQLite attempt instead
+                // of spending another timeout on that same local contention.
+                // This is only a zero-wait retry hint, never commit permission;
+                // a retry still rechecks authority, authorization and revision.
+                if (!Monitor.TryEnter(_gate, 0)) throw;
+                Monitor.Exit(_gate);
+            }
+            StorageFailureInjector?.Invoke("before-read-audit-retry");
+            if (cancellationToken.WaitHandle.WaitOne(50)) cancellationToken.ThrowIfCancellationRequested();
+        }
+        }
     }
 
     private L12AccountView RequireCommittedAuditActor(CommittedSessionActivity committed,
@@ -34,7 +78,11 @@ public sealed partial class L12PlatformStore
         if (!committed.ActiveAccounts.TryGetValue(actor.Id, out var current)
             || current.PermissionVersion != actor.PermissionVersion || current.Role != actor.Role
             || !L12Authorization.HasPermission(current, permission))
-            throw new UnauthorizedAccessException("管理读取权限已变化，请重新登录");
+        {
+            var error = new UnauthorizedAccessException("管理读取权限已变化，请重新登录");
+            error.Data[nameof(L12ReadAuditDiagnostic)] = new L12ReadAuditDiagnostic("permission");
+            throw error;
+        }
         return current;
     }
 
@@ -45,13 +93,21 @@ public sealed partial class L12PlatformStore
         var checksum = Sha256(payload);
         cancellationToken.ThrowIfCancellationRequested();
         using var deployment = EnterDeploymentMutation();
+        var phase = "open";
         try
         {
+            StorageFailureInjector?.Invoke("before-read-audit-attempt");
             using var connection = OpenReadAuditDatabase();
+            phase = "lock";
             using var transaction = connection.BeginTransaction(deferred: false);
+            phase = "authority";
             var revision = ReadStorageRevision(connection, transaction);
             if (revision != committed.Revision)
-                throw new L12PlatformStorageConflictException(committed.Revision, revision);
+            {
+                var error = new L12PlatformStorageConflictException(committed.Revision, revision);
+                error.Data[nameof(L12ReadAuditDiagnostic)] = new L12ReadAuditDiagnostic(phase);
+                throw error;
+            }
             using (var schema = connection.CreateCommand())
             {
                 schema.Transaction = transaction;
@@ -60,14 +116,16 @@ public sealed partial class L12PlatformStore
                     throw new InvalidDataException("只读审计需要当前存储结构");
             }
             cancellationToken.ThrowIfCancellationRequested();
+            phase = "append";
             StorageFailureInjector?.Invoke("before-read-audit-append");
             using (var command = CreateAuditInsert(connection, transaction, row, payload, checksum, ignore: false))
                 if (command.ExecuteNonQuery() != 1)
                     throw new InvalidDataException("审计追加未写入唯一事件");
+            phase = "commit";
             StorageFailureInjector?.Invoke("before-read-audit-commit");
             cancellationToken.ThrowIfCancellationRequested();
             if (!ReferenceEquals(Volatile.Read(ref _committedSessionActivity), committed))
-                throw new L12PlatformStorageUnavailableException("已提交权限代次已变化，请重试");
+                throw ReadAuditUnavailable("generation");
             RequireCommittedAuditActor(committed, actor, permission);
             transaction.Commit();
             // No allocation, publication, callbacks or fallible work after commit.
@@ -78,8 +136,16 @@ public sealed partial class L12PlatformStore
         catch (Exception error) when (error is SqliteException or IOException or InvalidDataException or JsonException)
         {
             // This independent transaction cannot invalidate the business generation.
-            throw new L12PlatformStorageUnavailableException("读取审计暂时无法保存，请稍后重试", error);
+            throw ReadAuditUnavailable(phase, error);
         }
+    }
+
+    private static L12PlatformStorageUnavailableException ReadAuditUnavailable(string phase, Exception? inner = null)
+    {
+        // Keep the existing public exception contract; diagnostics never enter the response.
+        var error = new L12PlatformStorageUnavailableException("读取审计暂时无法保存，请稍后重试", inner);
+        error.Data[nameof(L12ReadAuditDiagnostic)] = new L12ReadAuditDiagnostic(phase);
+        return error;
     }
 
     private SqliteConnection OpenReadAuditDatabase()
