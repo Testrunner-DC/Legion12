@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-CURRENT-WAVE15｜主宰响应与六项当前正确性闭环
+
+- 4dc4f948真实attack(master)后可用手牌戏法师傀儡响应，普通/必中两正式TRX参数Passed，S2UniversalEffectsTests与cce8同blob；1FA4B9D7提案/8负例/单CAS30783/独立终态及撤会话核准，bounded rejected，不称旧UI或所有反击逐卡通过。
+- 01fed200按正式血戒四用例及实际伤害后单候选检查，7d1b552f按赵云真实防守击杀/战斗上下文清空具名用例，各current rejected；90b5dce2观战精确权限错误不重复notice，acd330f4编辑器两处详情已复用显示天灾等级组件，b3981be1临时士气/黑莲花资源分离。后三项按正式前端清单及构建合同核准，不冒称本轮像素验收，不接受新产品规则。
+- 96708f0f补真实正式16622461 DLL及九Data四格：双方×原/检查点恢复，sifCycle→真实skip/不发动→挂起与栈清空→同局endTurn，共12/12命令受理，区域/UsedAbilities/主宰状态不变且原/恢复两阶段hash成对一致。脚本B346A18B、结果E4CF6709；现行PromptOverlay及永久取消合同与cce8同blob，14判定/模板2通过（25994036日志）。仅合成引擎及SFC接线证明，非原私人局、旧UI或全浏览器验收；按当前正确性rejected，不造新修复/费用规则。
+- 合并六项053951FF提案/18证据/六SelfTest共48负例后各单CAS30786—30791/独立终态/原文与非处置字段保留/撤会话完成。真实D盘 `closeout/bug-closeout-current-master-attack-maintenance110-cce8.json` 与 `bug-closeout-current-wave15-six-maintenance110-cce8.json`；同次快照对账909/222new/356resolved/331closed、阶段306=124fixed/166rejected/16duplicate、周期398。本轮137实际关闭，当前发布未上线/维护已结束的状态不变；89fc4c42精确拒绝亡语后父效果缺口与其他hold继续保留。
+
 ## CLOSEOUT-20261017-AFTER-MAINTENANCE110｜11条当前正式证据闭环
 
 - 正式本次70e发布在停服前actual-seal拒绝；独立核准旧cce8/PID184743/重启0未变、Open/无围栏后，当前维护109→110于03:43:11结束，HTTP/WS和新局入口恢复。失败原回执不改完成；0389692e不得借本地验收关闭。
