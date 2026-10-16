@@ -475,6 +475,67 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         }
     }
 
+    [Fact]
+    public void LargeStateSelectorBuildsEveryAuthoritativePlacementWireCommand()
+    {
+        var scenarios = new (string Mode, int ChoiceCount, string[] Top, string[] Bottom,
+            string? Destination)[]
+        {
+            ("single-top-bottom", 1, [], [], "bottom"),
+            ("split-top-bottom", 2, ["choice-a", "choice-b"], [], null),
+            ("all-top-bottom", 2, ["choice-a", "choice-b"], [], null),
+            ("all-bottom", 2, [], ["choice-a", "choice-b"], null),
+        };
+        foreach (var scenario in scenarios)
+        {
+            var choices = new[] { "choice-a", "choice-b" }.Take(scenario.ChoiceCount).ToArray();
+            using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+            {
+                promptId = $"prompt-{scenario.Mode}",
+                playerIndex = 0,
+                validChoices = choices,
+                minChoose = scenario.ChoiceCount,
+                maxChoose = scenario.ChoiceCount,
+                activationId = "activation-contract",
+                data = new { placementMode = scenario.Mode, action = "contract-placement" },
+            }, Wire));
+
+            var command = BuildLargePromptCommand(document.RootElement);
+            Assert.Equal("resolvePrompt", command["type"]);
+            Assert.Equal($"prompt-{scenario.Mode}", command["promptId"]);
+            Assert.True(command.ContainsKey("activationId"));
+            if (scenario.Destination is not null)
+            {
+                Assert.Equal(choices, Assert.IsType<string[]>(command["cardInstanceIds"]));
+                Assert.Equal(scenario.Destination, command["destination"]);
+                Assert.False(command.ContainsKey("topCardInstanceIds"));
+                Assert.False(command.ContainsKey("bottomCardInstanceIds"));
+            }
+            else
+            {
+                Assert.Equal(scenario.Top, Assert.IsType<string[]>(command["topCardInstanceIds"]));
+                Assert.Equal(scenario.Bottom,
+                    Assert.IsType<string[]>(command["bottomCardInstanceIds"]));
+                Assert.False(command.ContainsKey("cardInstanceIds"));
+                Assert.False(command.ContainsKey("destination"));
+            }
+        }
+
+        using var unknown = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            promptId = "prompt-unknown",
+            playerIndex = 0,
+            validChoices = new[] { "choice-a" },
+            minChoose = 1,
+            maxChoose = 1,
+            data = new { placementMode = "future-placement", action = "future-action" },
+        }, Wire));
+        var rejection = Assert.Throws<Xunit.Sdk.XunitException>(
+            () => BuildLargePromptCommand(unknown.RootElement));
+        Assert.Contains("future-placement", rejection.Message, StringComparison.Ordinal);
+        Assert.Contains("future-action", rejection.Message, StringComparison.Ordinal);
+    }
+
     private static async Task<StartedLargeRoom> StartLargeFriendlyGameAsync(
         SocketPeer actor, SocketPeer opponent)
     {
@@ -531,34 +592,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             if (prompts.GetArrayLength() == 0) continue;
             var prompt = prompts.EnumerateArray().First();
             Assert.Equal(playerIndex, ReadInt32(prompt, "playerIndex"));
-            if (prompt.TryGetProperty("data", out var data)
-                && data.ValueKind == JsonValueKind.Object
-                && data.TryGetProperty("placementMode", out var placementMode)
-                && placementMode.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
-                throw new Xunit.Sdk.XunitException(
-                    "large-state legal selector reached an unsupported authoritative placement prompt");
-            var validChoices = prompt.GetProperty("validChoices").EnumerateArray()
-                .Select(choice => choice.GetString())
-                .Where(choice => !string.IsNullOrWhiteSpace(choice))
-                .Cast<string>().ToArray();
-            Assert.Equal(validChoices.Length, validChoices.Distinct(StringComparer.Ordinal).Count());
-            var minimum = ReadInt32(prompt, "minChoose");
-            var maximum = ReadInt32(prompt, "maxChoose");
-            Assert.InRange(minimum, 0, validChoices.Length);
-            Assert.InRange(maximum, minimum, validChoices.Length);
-            var command = new Dictionary<string, object?>
-            {
-                ["type"] = "resolvePrompt",
-                ["promptId"] = ReadString(prompt, "promptId"),
-                ["cardInstanceIds"] = validChoices.Take(minimum).ToArray(),
-            };
-            CopyPromptBinding(prompt, command, "activationId");
-            CopyPromptBinding(prompt, command, "sourceInstanceId");
-            CopyPromptBinding(prompt, command, "sourceCardId");
-            CopyPromptBinding(prompt, command, "step");
-            CopyPromptBinding(prompt, command, "createdRevision");
-            CopyPromptBinding(prompt, command, "controller");
-            return new(playerIndex, "resolvePrompt", command, null);
+            return new(playerIndex, "resolvePrompt", BuildLargePromptCommand(prompt), null);
         }
 
         for (var playerIndex = 0; playerIndex < 2; playerIndex++)
@@ -680,6 +714,76 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             }).ToArray();
         throw new Xunit.Sdk.XunitException(
             "no legal command selected from authoritative snapshots: " + JsonSerializer.Serialize(states));
+    }
+
+    private static IReadOnlyDictionary<string, object?> BuildLargePromptCommand(JsonElement prompt)
+    {
+        var validChoices = prompt.GetProperty("validChoices").EnumerateArray()
+            .Select(choice => choice.GetString())
+            .Where(choice => !string.IsNullOrWhiteSpace(choice))
+            .Cast<string>().ToArray();
+        Assert.Equal(validChoices.Length, validChoices.Distinct(StringComparer.Ordinal).Count());
+        var minimum = ReadInt32(prompt, "minChoose");
+        var maximum = ReadInt32(prompt, "maxChoose");
+        Assert.InRange(minimum, 0, validChoices.Length);
+        Assert.InRange(maximum, minimum, validChoices.Length);
+
+        string? placementMode = null;
+        string? placementAction = null;
+        if (prompt.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        {
+            placementAction = ReadString(data, "action");
+            if (data.TryGetProperty("placementMode", out var placement)
+                && placement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            {
+                placementMode = placement.ValueKind == JsonValueKind.String
+                    ? placement.GetString()
+                    : $"<{placement.ValueKind}>";
+                if (string.IsNullOrWhiteSpace(placementMode)) placementMode = "<empty>";
+            }
+        }
+
+        var selected = validChoices.Take(minimum).ToArray();
+        var command = new Dictionary<string, object?>
+        {
+            ["type"] = "resolvePrompt",
+            ["promptId"] = ReadString(prompt, "promptId"),
+        };
+        switch (placementMode)
+        {
+            case null:
+                command["cardInstanceIds"] = selected;
+                break;
+            case "single-top-bottom":
+                Assert.Equal(1, minimum);
+                command["cardInstanceIds"] = selected;
+                command["destination"] = "bottom";
+                break;
+            case "split-top-bottom":
+            case "all-top-bottom":
+                Assert.Equal(validChoices.Length, minimum);
+                Assert.Equal(validChoices.Length, maximum);
+                command["topCardInstanceIds"] = selected;
+                command["bottomCardInstanceIds"] = Array.Empty<string>();
+                break;
+            case "all-bottom":
+                Assert.Equal(validChoices.Length, minimum);
+                Assert.Equal(validChoices.Length, maximum);
+                command["topCardInstanceIds"] = Array.Empty<string>();
+                command["bottomCardInstanceIds"] = selected;
+                break;
+            default:
+                throw new Xunit.Sdk.XunitException(
+                    $"large-state legal selector reached unsupported authoritative placementMode " +
+                    $"'{placementMode}' for action '{placementAction ?? "<missing>"}'");
+        }
+        CopyPromptBinding(prompt, command, "activationId");
+        CopyPromptBinding(prompt, command, "sourceInstanceId");
+        CopyPromptBinding(prompt, command, "sourceCardId");
+        CopyPromptBinding(prompt, command, "step");
+        CopyPromptBinding(prompt, command, "createdRevision");
+        CopyPromptBinding(prompt, command, "controller");
+        return command;
     }
 
     private static JsonElement PlayerView(JsonElement state, int playerIndex) =>
