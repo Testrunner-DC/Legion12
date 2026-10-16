@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## TOOL-20261016-PRIVATE-FETCH｜本地私有方法被误算绕过统一请求层
+
+- 原因：性能AST检查按方法名后缀fetch直接计原生请求，把ReplayArchiveLoader内5处私有分页方法调用算为raw-fetch；实际方法调用注入read，ReplayPage仍绑定adminApi.replayPage。正常Batch原r2在完整规则前停止，不作为卡效失败。
+- 仅同一最近class内明确private、有body、非static的方法，且调用处this由实例member body/initializer继承时可不计外层调用；方法体继续完整遍历。普通函数/对象方法/访问器/构造器、静态/嵌套类/计算名称保持保守计数；类内直接赋值或已知this变异取消豁免，接收者/callee括号和类型包裹解包。无路径豁免，不修改预算/例外。
+- 真实误报1!=0、独审重赋值0!=1和包裹0!=1红灯保留；最终32新+原15/7全绿，完整性能合同链与实际339源15fetch/11interval/fanout3通过，98108DE0和独审CLEAR。产品/协议/数据库未动，不把工程检查修正冒称线上性能收益；新增12卡效回归独立验收，0部署/维护/线上关单。
+
 ## CARD-20261016-ANGUS-ACTIVATION｜战术发动而非成功结算登记试炼
 
 - 用户已明确批准“发动战术时，同一张战术只触发一次”；原卡文的回合1次保留。实际RED双方/恢复16格为4正常绿、4原战术被无效后试炼0红、8声明时尚未登记红；非原安格斯自身效果被无效的旧夹具。D artifacts/angus-activation-20261016/red-r3保留真实TRX，早期编译/过强legacy成功终态夹具失败不当产品红灯。

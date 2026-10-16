@@ -36,8 +36,57 @@ export function analyzeSource(source, filename = 'fixture.ts') {
     ts.forEachChild(node, collect)
   }
   collect(sourceFile)
+  const fetchRebindings = new WeakMap()
+  function hasFetchRebinding(owner) {
+    if (fetchRebindings.has(owner)) return fetchRebindings.get(owner)
+    let rebound = false
+    function scan(node) {
+      if (node !== owner && (ts.isClassDeclaration(node) || ts.isClassExpression(node))) return
+      if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+        && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+        const target = unwrap(node.left)
+        if ((ts.isPropertyAccessExpression(target) && target.name.text === 'fetch'
+          || ts.isElementAccessExpression(target) && ts.isStringLiteralLike(target.argumentExpression)
+            && target.argumentExpression.text === 'fetch')
+          && unwrap(target.expression)?.kind === ts.SyntaxKind.ThisKeyword) rebound = true
+      }
+      if (ts.isCallExpression(node) && unwrap(node.arguments[0])?.kind === ts.SyntaxKind.ThisKeyword
+        && ['Object.assign', 'Object.defineProperty', 'Object.defineProperties', 'Reflect.set'].includes(calledName(unwrap(node.expression)))) rebound = true
+      ts.forEachChild(node, scan)
+    }
+    scan(owner)
+    fetchRebindings.set(owner, rebound)
+    return rebound
+  }
+  function isOwnPrivateFetchCall(call) {
+    const expression = call.expression
+    if (!ts.isPropertyAccessExpression(expression) || expression.expression.kind !== ts.SyntaxKind.ThisKeyword
+      || expression.name.text !== 'fetch') return false
+    let child = call
+    let instanceMember = false
+    for (let current = call.parent; current; child = current, current = current.parent) {
+      if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) {
+        return instanceMember && !hasFetchRebinding(current) && current.members.some(member => ts.isMethodDeclaration(member)
+          && ts.isIdentifier(member.name) && member.name.text === 'fetch' && member.body
+          && member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.PrivateKeyword)
+          && !member.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword))
+      }
+      if (ts.isFunctionDeclaration(current) || ts.isFunctionExpression(current)
+        || ts.isGetAccessorDeclaration(current) || ts.isSetAccessorDeclaration(current)
+        || ts.isConstructorDeclaration(current) || ts.isClassStaticBlockDeclaration(current)) return false
+      if (ts.isMethodDeclaration(current) || ts.isPropertyDeclaration(current)) {
+        const inClass = ts.isClassDeclaration(current.parent) || ts.isClassExpression(current.parent)
+        const body = ts.isMethodDeclaration(current) ? current.body : current.initializer
+        if (!inClass || child !== body
+          || current.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.StaticKeyword)) return false
+        instanceMember = true
+      }
+    }
+    return false
+  }
   const unwrap = node => {
-    while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node))) node = node.expression
+    while (node && (ts.isParenthesizedExpression(node) || ts.isAsExpression(node) || ts.isNonNullExpression(node)
+      || ts.isTypeAssertionExpression(node) || ts.isSatisfiesExpression(node))) node = node.expression
     return node
   }
   function arraySize(node, seen = new Set()) {
@@ -103,7 +152,7 @@ export function analyzeSource(source, filename = 'fixture.ts') {
   function visit(node) {
     if (ts.isCallExpression(node)) {
       const name = calledName(node.expression)
-      if (name === 'fetch' || name.endsWith('.fetch')) result.rawFetch += 1
+      if ((name === 'fetch' || name.endsWith('.fetch')) && !isOwnPrivateFetchCall(node)) result.rawFetch += 1
       if (name === 'setInterval' || name.endsWith('.setInterval')) result.interval += 1
       if (['Promise.all', 'Promise.allSettled'].includes(name))
         result.maximumParallelPageLoad = Math.max(result.maximumParallelPageLoad, arraySize(node.arguments[0]))

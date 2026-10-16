@@ -82,3 +82,41 @@ for (const expression of [
 assert.equal(analyzeSource('async function init(){await loadOne();await loadTwo();await loadThree();await loadFour()}').maximumParallelPageLoad, 1)
 assert.equal(analyzeSource('async function init(){if(ok){loadOne();loadTwo()}else{loadThree();loadFour()}}').maximumParallelPageLoad, 2)
 console.log('Settled/background fan-out regression passed: 7/7')
+
+const privateFetchCases = [
+  ['private instance wrapper', 'class A { private fetch(){ return this.read() } go(){ return this.fetch() } }', 0],
+  ['native call in wrapper body', 'class A { private fetch(){ return globalThis.fetch("/api") } go(){ return this.fetch() } }', 1],
+  ['bare native call in wrapper body', 'class A { private fetch(){ return fetch("/api") } go(){ return this.fetch() } }', 1],
+  ['lexical arrow', 'class A { private fetch(){ return this.read() } go(){ return () => this.fetch() } }', 0],
+  ['instance field arrow', 'class A { private fetch(){ return this.read() } go = () => this.fetch() }', 0],
+  ['unknown instance', 'class A { go(){ return this.fetch() } }', 1],
+  ['unrelated client', 'client.fetch("/api")', 1],
+  ['public method', 'class A { fetch(){ return this.read() } go(){ return this.fetch() } }', 1],
+  ['protected method', 'class A { protected fetch(){ return this.read() } go(){ return this.fetch() } }', 1],
+  ['static declared fetch', 'class A { private static fetch(){ return this.read() } static go(){ return this.fetch() } }', 1],
+  ['getter fetch', 'class A { private get fetch(){ return this.read } go(){ return this.fetch() } }', 1],
+  ['inherited method', 'class A { private fetch(){ return this.read() } } class B extends A { go(){ return this.fetch() } }', 1],
+  ['nested class boundary', 'class A { private fetch(){ return this.read() } go(){ return class B { go(){ return this.fetch() } } } }', 1],
+  ['ordinary function boundary', 'class A { private fetch(){ return this.read() } go(){ return function(){ return this.fetch() } } }', 1],
+  ['object method boundary', 'class A { private fetch(){ return this.read() } go(){ return { go(){ return this.fetch() } } } }', 1],
+  ['static caller', 'class A { private fetch(){ return this.read() } static go(){ return this.fetch() } }', 1],
+  ['static block caller', 'class A { private fetch(){ return this.read() } static { this.fetch() } }', 1],
+  ['static field arrow', 'class A { private fetch(){ return this.read() } static go = () => this.fetch() }', 1],
+  ['accessor caller remains conservative', 'class A { private fetch(){ return this.read() } get value(){ return this.fetch() } }', 1],
+  ['computed method name', 'class A { private fetch(){ return this.read() } [this.fetch()](){} }', 1],
+  ['computed field name', 'class A { private fetch(){ return this.read() } [this.fetch()] = 1 }', 1],
+  ['browser fetch variants remain counted', 'fetch("/a"); window.fetch("/b"); globalThis.fetch("/c"); self.fetch("/d")', 4],
+  ['private method reassigned to native', 'class A { private fetch(){ return this.read() } go(){ this.fetch = globalThis.fetch; return this.fetch("/api") } }', 1],
+  ['private method reassigned by element', 'class A { private fetch(){ return this.read() } go(){ this["fetch"] = globalThis.fetch; return this.fetch("/api") } }', 1],
+  ['instance mutation through Object.assign', 'class A { private fetch(){ return this.read() } go(){ Object.assign(this, { fetch: globalThis.fetch }); return this.fetch("/api") } }', 1],
+  ['instance mutation through descriptor', 'class A { private fetch(){ return this.read() } go(){ Object.defineProperty(this, "fetch", { value: globalThis.fetch }); return this.fetch("/api") } }', 1],
+  ['wrapped assignment receiver', 'class A { private fetch(){ return this.read() } go(){ (this).fetch = globalThis.fetch; return this.fetch("/api") } }', 1],
+  ['cast assignment receiver', 'class A { private fetch(){ return this.read() } go(){ (this as A).fetch = globalThis.fetch; return this.fetch("/api") } }', 1],
+  ['wrapped mutator receiver', 'class A { private fetch(){ return this.read() } go(){ Object.assign((this), { fetch: globalThis.fetch }); return this.fetch("/api") } }', 1],
+  ['wrapped mutator callee and cast receiver', 'class A { private fetch(){ return this.read() } go(){ (Object.assign)(this as A, { fetch: globalThis.fetch }); return this.fetch("/api") } }', 1],
+  ['angle assertion receiver', 'class A { private fetch(){ return this.read() } go(){ (<A>this).fetch = globalThis.fetch; return this.fetch("/api") } }', 1],
+  ['non-null receiver', 'class A { private fetch(){ return this.read() } go(){ Object.assign(this!, { fetch: globalThis.fetch }); return this.fetch("/api") } }', 1],
+]
+for (const [name, source, expected] of privateFetchCases)
+  assert.equal(analyzeSource(source).rawFetch, expected, name)
+console.log(`Private wrapper/native fetch boundary regression passed: ${privateFetchCases.length}/${privateFetchCases.length}`)
