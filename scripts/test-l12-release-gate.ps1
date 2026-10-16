@@ -361,6 +361,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $fixtureRepo 'scripts/lib') -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/l12-test-storage.ps1') -Destination (Join-Path $fixtureRepo 'scripts/lib/l12-test-storage.ps1')
     Copy-Item -LiteralPath $cacheInitializer -Destination (Join-Path $fixtureRepo "ops\windows\Initialize-L12BuildEnvironment.ps1") -Force
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'ops/windows/L12GeneratedStorage.ps1') -Destination (Join-Path $fixtureRepo 'ops/windows/L12GeneratedStorage.ps1')
     Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
     Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force

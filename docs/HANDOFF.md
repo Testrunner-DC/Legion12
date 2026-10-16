@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-16 存储收口与输出落点｜无部署
+
+- 用户最新要求冗余直接删、不能无限搬E。已停止D:/CodexWork/test-output整包迁移，源日志/数据库原样保留；14个9月bin/obj+1个旧包缓存直接删除8.982GiB，E未完成重复副本4.224GiB同步清除。D盘面约+8.99/E+4.23GiB，精确路径及原SHA在D的storage-output-routing-20261016/redundant-legacy-deletion.json；可再生构建/依赖需重建或重取，不再归档另一大副本。
+- 实际验收已收齐：combined-acceptance.json（339B6F26）绑定17路径守卫、完整规则7508/平台1771均零失败/跳过；Batch-r2缺python后仅续跑缺失阶段，原共同执行器在规则通过后因预算不足主动拆分平台，独立平台通过。各原failed/中止记录不改；成功测试原生输出已被既有工具缓冲且未留日志，不捏造旧Transcript/TRX。产品源码未改，不重复完整测试或重扫全盘。
+- 上一轮完整迁移4组冷资料共33.417GiB到E、逐文件SHA/访问规则及原路径读回通过；清除15个9月份旧bin逻辑15.650GiB及NuGet HTTP缓存约315MiB。清理后曾观测C可用26.781GiB/D22.144GiB；不是全部物理释放量，不能把搬迁算净删除。原回执C的disk-cleanup-20261016/cleanup-completed.json保留。
+- 真实物理路径守卫接入构建初始化：C实际落点创建前拒绝，C经联接落D/E允许、D回C仍拒绝，扩展DOS/设备/UNC不能绕过；TEMP/TMP/TMPDIR及验收/归档根统一。C入口有短AGENTS引导，不因权限限制退写C。清除三份无占用Debug约1.578GiB、保留Release，任务独立temp/home共享依赖；不删历史夹具或放宽预算。
+- 整父目录改联接尚未实施：第一项C/artifacts重命名遭系统拒绝，原四入口均未切换，未强改ACL；未启用D暂存10个文件核原件相同后移除，失败执行器/回执留存在上述D目录。不能宣称旧C目录都已转向；当前使用显式D/E输出及物理守卫。全局会话约73.57GiB、私密/未知证据、唯一备份、原始卡图及运行库继续保留；不关闭Codex、不部署、不改维护/Bug状态。产品P0—P4与393待办保持，原性能/卡效后续队列未取消。
+
 ## 2026-10-16 聊天定位限定片｜左缘对齐设置；无正式聊天开关变更
 
 - 用户在既有“聊天方案”对话直接要求左对齐设置按钮。BattleUtilityDock只新增settingsAnchor并传给SocialPopover可选positionAnchor；定位读设置rect.left，关闭/外点/Escape仍用原好友按钮anchor，普通SiteShell未传新prop、原right定位/clamp保持。两叶35EDAC60/60785422、6增5删，未增加请求/监听/定时器/全局蒙版。

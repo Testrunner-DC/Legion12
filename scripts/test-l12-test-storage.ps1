@@ -55,7 +55,7 @@ try {
     try { Invoke-L12TestRun -Executable 'dotnet' -Arguments @('test') -TemporaryBase $temp -EvidenceBase (Join-Path $temp 'bad') } catch { $bad=$true }
     Assert $bad 'Nested evidence accepted'
     $initializer=Join-Path $PSScriptRoot '../ops/windows/Initialize-L12BuildEnvironment.ps1'
-    $names=@('TEMP','TMP','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME','L12_WORK_CACHE','L12_DEPENDENCY_CACHE','DOTNET_SKIP_FIRST_TIME_EXPERIENCE','DOTNET_CLI_TELEMETRY_OPTOUT','NUGET_XMLDOC_MODE','npm_config_update_notifier','npm_config_fund')
+    $names=@('TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME','L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','DOTNET_SKIP_FIRST_TIME_EXPERIENCE','DOTNET_CLI_TELEMETRY_OPTOUT','NUGET_XMLDOC_MODE','npm_config_update_notifier','npm_config_fund')
     $saved=@{}; foreach ($name in $names) { $saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process') }
     try {
         & $initializer -CacheRoot (Join-Path $fixture 'task-a') -DependencyCacheRoot (Join-Path $fixture 'shared') | Out-Null
@@ -65,6 +65,7 @@ try {
         Assert ($env:TEMP -ne $firstTemp) 'Task output isolation lost'
         Assert (-not (Test-Path -LiteralPath (Join-Path $fixture 'task-b/nuget'))) 'Task-local packages directory created'
     } finally { foreach ($name in $names) { [Environment]::SetEnvironmentVariable($name,$saved[$name],'Process') } }
+    & (Join-Path $PSScriptRoot 'test-l12-generated-storage.ps1') -EvidenceRoot (Join-Path $fixture 'generated-storage-evidence')
     $passed=$true
     Write-Host '[L12 test storage] 8 lifecycle scenarios + nested-evidence rejection + shared-cache isolation passed.'
 } finally {

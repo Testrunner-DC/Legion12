@@ -7,6 +7,8 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot 'L12GeneratedStorage.ps1')
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
@@ -28,6 +30,13 @@ if ([string]::IsNullOrWhiteSpace($DependencyCacheRoot)) {
         else { $resolvedCacheRoot }
 }
 $resolvedDependencyRoot = [IO.Path]::GetFullPath($DependencyCacheRoot)
+# Check actual junction targets before creating any directories. Never silently fall back to C.
+$null=Assert-L12GeneratedPath -Path $resolvedCacheRoot -Purpose 'build cache'
+$null=Assert-L12GeneratedPath -Path $resolvedDependencyRoot -Purpose 'dependency cache'
+$artifactRoot=if($env:L12_ARTIFACT_ROOT){$env:L12_ARTIFACT_ROOT}elseif(Test-Path -LiteralPath 'D:\GPT\Legion12'){'D:\GPT\Legion12\artifacts'}else{Join-Path $repoRoot 'artifacts'}
+$archiveRoot=if($env:L12_ARCHIVE_ROOT){$env:L12_ARCHIVE_ROOT}elseif(Test-Path -LiteralPath 'E:\'){'E:\Legion12-ColdStorage'}else{Join-Path $artifactRoot 'archives'}
+$null=Assert-L12GeneratedPath -Path $artifactRoot -Purpose 'acceptance evidence'
+$null=Assert-L12GeneratedPath -Path $archiveRoot -Purpose 'long-term archive'
 New-Item -ItemType Directory -Path $resolvedCacheRoot -Force | Out-Null
 
 $paths = @{
@@ -44,6 +53,7 @@ foreach ($path in $paths.Values) {
 
 $env:TEMP = $paths.Temp
 $env:TMP = $paths.Temp
+$env:TMPDIR = $paths.Temp
 $env:DOTNET_CLI_HOME = $paths.DotnetHome
 $env:NUGET_PACKAGES = $paths.NugetPackages
 $env:NUGET_HTTP_CACHE_PATH = $paths.NugetHttp
@@ -51,6 +61,8 @@ $env:npm_config_cache = $paths.Npm
 $env:COREPACK_HOME = $paths.Corepack
 $env:L12_WORK_CACHE = $resolvedCacheRoot
 $env:L12_DEPENDENCY_CACHE = $resolvedDependencyRoot
+$env:L12_ARTIFACT_ROOT = [IO.Path]::GetFullPath($artifactRoot)
+$env:L12_ARCHIVE_ROOT = [IO.Path]::GetFullPath($archiveRoot)
 $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE = "1"
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
 $env:NUGET_XMLDOC_MODE = "skip"
