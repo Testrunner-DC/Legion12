@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-NEXT-FIVE｜嬴政拒绝亡语完整续链与五项收口
+
+- 新增 `YingzhengDeathDeclineContinuationRegressionTests.DecliningAlliedSunWuDeathStillCompletesYingzhengAndFactionRecovery`：真实playCard/8费Cost/己方孙武合法死亡声明mode:none，随后嬴政返费和本回合限制、天廷恰一次追加2休整、空栈/提示及同局endTurn；双方×逐命令V2恢复4/4，raw/hash/fact sequence相等，每个旧提示重交拒绝且raw不变。正式a355 DLL 6B4DDC6D与九Data逐blob绑定；0F7FE598 TRX、F7BA0E90真实监督、4883DE10组合回执、独审CLEAR。没有产品变更，不冒称原私人局、UI、完整构筑初态或Journal请求幂等，89fc按当前有限未复现rejected。
+- 安格斯1ce按已部署c0ae、647三方法24参数结果fixed_verified；9fb曲线/主牌库折叠及87a/ced陨星逐段公开目标各按当前具名规则/前端合同rejected，后两独立处置不互设duplicate。B1B6B12A提案/29证据、原v2合同与五SelfTest通过，Main确认12函数及CAS/读回循环不变。实际CAS30838—30842、终态/历史保持/撤会话完成，CFFA6229收据，同次快照唯一909/208new/361resolved/340closed、阶段320=129/175/16、周期412，无部署/维护写。
+
+## CHECK-20261017-EDITOR-LONG-EFFECT｜当前短横屏详情入口缺失，待批准
+
+- 8f4b477b原生L12DeckEditor而非图鉴：1366×768真实选择S02-0401，详情外层0→393、正文0→74，末句完整可达；844×390已选同卡，但详情侧栏display:none/0×0且没有mobile-card-detail。不是简单文字滚动条不足：短横屏CSS隐藏侧栏，selectCard仅max-width820开启替代弹框，844落入两者空隙。
+- `editor-long-effect-current-20261017/report.json` SHA0D50939A9FCE54DEFDB3AEF0DC9BE0EF6E1DFDCE2FAFA8C6CE2907D9A58DBB0A，12源与正式a355同blob、sourceStable、页面错误0、线上API/WS0；真实两图保留。仅诊断、不修产品、不关闭反馈；已提出沿现有弹框补齐隐藏侧栏尺寸的限定方案，等人类答复，其余工作继续。非iOS/旧私人局证明。
+
 ## CLOSEOUT-20261017-A355-EIGHT｜上线后八条当前证据收口
 
 - d185b0f2图坦双守卫按3806924c及16个真实Handle/双方/占格/恢复参数；5edd7f36万箭分支按04fb70c6及两具名公开分支回归；52576196罗洛按052ec9d5及费用/恢复过期提交/取消三回归，各自fixed_verified。修复均包含在实际已核验a355中；不把旧界面最小化/私人局像素链称已重放。
