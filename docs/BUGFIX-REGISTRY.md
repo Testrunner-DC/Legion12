@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261016-ANGUS-SECOND｜原三条桌面反馈分别核准已部署修复
+
+- BUG-20260909-bf043963与BUG-20260908-f8130078/4fa296bb原文第二试炼无法点击，版本04fb/eac1均早于2af7ecc4（双试炼按实例重建能力与已开弹框随快照刷新），修复在正式cce8。精确正式rules.trx四AngusSecondTrialTests均Passed；Main冻结正式全GamePage/GameBoard/PlayerMat在1366×768原生点第二卡0禁用→同框8启用→关闭后已8下方卡重开→唯一second/completeTrial。不是只测PlayerMat或只读源码；f813元信息503仅保留，不称原私局/服务端执行或真机通过。
+- 三条各fixed_verified，非duplicate。F7C5A536六证据/15字段/三SelfTest12负例/独审CLEAR；bf/f813 CAS30470/30471成功，4fa第一次409原A7C9CB8F completed=false保留。完整post-CAS队列验证后只登记成功两条，4fa15字段不变才派生FFE577D9单项新preview/CAS30477，4F817608独立终态/撤会话成功，不重交已成功项。唯一909/384new/281resolved/244closed、阶段144=49/79/16、周期236；两次原文/非处置字段历史均保持。
+- 9月20日efc才引入移动横屏重复入口漏能力UI，时间上不是9月8—9日原因，已获独立限定修复批准并另片验收；不以此次关旧反馈称移动新缺口已上线。无新部署/维护变化。D盘angus-trial-second-20261016与原closeout目录保留原查询、实际点击、审查、partial和单项续办完整链。
+
 ## UI-20261016-PUBLIC-HAND-ORIGIN｜佣兵等公开弃牌事实的来源区域
 
 - 用户已批佣兵部队对手/观战视角把手牌弃置画成战场入墓的独立来源修复。共享MoveHandToGrave虽正确移区，文本缺少手牌且对手无私手历史时，显示器落field fallback；不将来源缺失与原680a全部重复播放混作根因。

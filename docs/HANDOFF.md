@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-16 接续144｜第二试炼三条正式闭环，384待办
+
+- bf043963/f8130078/4fa296bb分别按2af7ecc4双试炼共享修复fixed_verified，不互设duplicate。精确正式cce8四AngusSecondTrialTests Passed，桌面GamePage/GameBoard/PlayerMat原生0→8同框刷新、关闭后已8第二卡可点、一次second/completeTrial；f813元信息503不称原私局重放。报告9月8—9日早于修复，后来的efc移动遗漏另记。
+- F7C5A536提案独审/三SelfTest通过，前两单CAS30470/30471成功；第三确切409，A7C9CB8F原partial保持。复用同次完整队列只对账两条，不重交；第三15字段完全未变、派生FFE577D9单项/新preview后CAS30477成功，4F817608真实收据。三项原文历史/终态读回/撤会话核准，唯一909/384new/281resolved/244closed，阶段144=49fixed/79rejected/16duplicate、周期236、外部2不计，本轮实际9条。部分成功对账规则已固化现有Bug流程。
+- 新移动试炼两产品叶及专项回归已本地实现、子片7格绿；Main修正“隐藏对手”夹具空跑为明确存在且禁用，并已原生验844/667几何命中、最小化/重开/精确一次、completed主动能力、非Main/pending/trigger、对手及spectator/桌面9态，0页面error。仅新移动缺口获用户批准，不借旧反馈关掉它；最终前端整合门禁进行中，未部署。佣兵83e567fa已精确远端同步；原680a、庆典/小次郎新候选及性能R7各自保持。
+
 ## 2026-10-16 佣兵来源家族完整验收；试炼移动入口另片
 
 - 公开手牌弃置事实新增 nullable OriginZone，只有新建V2启用独立能力位；旧缺位false、空字段省略。共享成功移区后附hand，LastAction/Events/Journal一致，回放大小写映射和前端显式合法来源优先；费用、规则、隐私与动画去重协议不改。Main与独审CLEAR，15叶加合格spectator夹具增量受审。

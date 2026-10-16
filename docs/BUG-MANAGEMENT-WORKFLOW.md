@@ -18,7 +18,8 @@
 - 明确输入是原始反馈数组还是唯一工作清单对象的 `items`；工作清单的原文哈希不能冒充API的15字段快照，后者仍绑定最新实际反馈。
 - 统一schema2 proposal合同先验有界唯一ID、完整15字段/原文指纹、处置及说明。`fixed_verified`必须同时包含具名`regressionTest`、精确`fixCommit`及已独立核验的`deployedVersion`，不能等SelfTest赋值或网络阶段才发现缺字段；rejected与duplicate分别按其合同校验。
 - duplicate还必须在认证前绑定执行器实际使用的`primary.id`与完整15字段期望指纹；主项已按规则/未复现rejected的，保持其真实处置，不伪装fixed。Main只在writer明确交回租约后读取最终不可变提案并核SHA，避免边写边执行；同一已写CAS的恢复仍只读，不因工具交付差异重复写。
-- 复用C盘既有关单执行根`post-release-adversarial-20261014/Test-ClosureProposalContract-v2.ps1`，其调用不可变的原15字段合同（3正/12负）并同轮预检服务字段归一化：fixCommit、regressionTest、deployedVersion、duplicateOf、closureDisposition均不超过500字符且无需trim；任一将被隐式截断/修剪就先离线拒绝（新增2正/10负），不等写后读回才发现差异。实际写入仍是原preview→一次CAS→独立终态读回，单个post-CAS队列快照直接复用本地对账。若已写成功而读回工具失败，只读核对该原写，不重交CAS、不改写失败收据。脚本变更先解析AST、再离线自检；派生脚本须字面替换，不让生成语言的替换元字符改变PowerShell内容。
+- 复用现有关单执行根和`Test-ClosureProposalContract-v2.ps1`，其调用不可变的原15字段合同（3正/12负）并同轮预检服务字段归一化：fixCommit、regressionTest、deployedVersion、duplicateOf、closureDisposition均不超过500字符且无需trim；任一将被隐式截断/修剪就先离线拒绝（新增2正/10负），不等写后读回才发现差异。新输出根先解析祖先联接并核准物理D，C历史证据仅保留引用；本轮现有执行根为`D:/GPT/Legion12/artifacts/bug-closure-continuation-20261011/next-authority-batch-20261016/closeout`。实际写入仍是原preview→一次CAS→独立终态读回，单个post-CAS队列快照直接复用本地对账。若已写成功而读回工具失败，只读核对该原写，不重交CAS、不改写失败收据。脚本变更先解析AST、再离线自检；派生脚本须字面替换，不让生成语言的替换元字符改变PowerShell内容。
+- 部分成功时，按原收据的真实逐项终态子集计数，不等整批`completed=true`才登记。若执行器已返回完整post-CAS队列且会话已撤销，复用该快照与counts核对；现有`bind-existing-closure-snapshot.ps1`只生成离线快照绑定，明确区分“队列读取完成”和“源关单仍partial”，不补造原成功、不再次登录拉队列。409只针对未成功项检查新快照的原15字段；完全未变且原有有界续办授权有效时，派生单项新提案/新会话/新preview，保留旧失败，成功项绝不重交；状态或原文有变则单独挂起。
 
 ## 有对局绑定时，先复用原记录
 
