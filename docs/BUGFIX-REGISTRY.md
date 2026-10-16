@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续126｜宫廷魔术师/不朽之礼两项精确分流
+
+- BUG-20260918-8e9da249原文明确提前发动宫廷后不朽仍发动。报告3fb82f66→35c32332→正式cce8祖先实际核准，35c已统一反击身份及候选/声明封锁；正式CounterTacticTriggerConsistencyTests的S01-0223/leave和发动被无效/封锁到期回归均过。新增同正式DLL四格实链F65A3D66：成功封锁两方均0候选/声明/抽牌/召回，未封锁两方各3声明/1抽/1守卫登场，全命令V2 raw/hash/RNG/facts一致。仅测试夹具纠正，无新产品修复，旧私人局未重放；据已部署具名修复fixed_verified。
+- BUG-20260913-7b673978只说宫廷休整，无法证明封锁效果成功；既有费用先付且被无效不产生封锁的正式对照有效，不强称同fix或duplicate。按当前四格有界未复现及规则说明rejected。r1保留标识符编译失败、r2Data路径失败、r3对照误断言4次声明（真实唯一格位自动选择无需询问）；r4依PublicTriggerEffectPlans/RuleKernel/S1Extended权威源码仅更正两处4→3，E7964B5D四过，其他行为/恢复断言未减。
+- 提案7E86084A经独审；实际单CAS30040/30041、独立终态读回/非处置字段历史保持/会话撤销，唯一909/402new/273resolved/234closed，阶段126=41fixed/74rejected/11duplicate、周期218。性能server证据不足及产品待裁定项仍单独保留；不新增部署/维护写。
+
+## 2026-10-16 接续124｜雷神墓地查看与圣杯莫德雷德当前完整UI证据
+
+- BUG-20260911-4f280b29：正式cce8真实战斗阵亡建立与旧诊断相同hand-card/card-effect/s2-asgard-death-discard询问；双方分别桌面与844×390原生选牌/最小化/己方墓地inspection-only/返回/保留选择/确认各1次。2导出复用20AEDF5F、2UI报告1DC8058F、2回验TRX611074C0和08EFC27D接受；指令deepEqual、raw/hash/RNG/factSequence/revision、重复拒绝及恢复后endTurn均过。原923cae私人局未重放，不认唯一旧因，当前有界未复现rejected。首409/5E8A3E6D原样保留，新preview单CAS30031/4D099AE6才是真实完成；全队列hash未变从不当作全局CAS版本未变。
+- BUG-20260914-9ddb525d：同正式DLL执行completeTrial→mode:use，私密候选正确含ST06-04；真实GameBoard两座位/桌面与844×390均可见点选，确认一次，莫德雷德实际离库入手，前置对手隐私、严格checkpoint恢复及重复命令不变通过。2导出74BBABD5/2UI B2F2D66F/2回验9B93E1D7，6B2BE358接受及实际截图；r1 Controller/选择数错误的夹具前提与失败TRX保留，r2按真实card-effect栈绑定/空activation/合法skip纠正，不改产品。原815771及私人原局未回放，不造fixCommit，按当前有界未复现单CAS30035关闭并撤会话。
+- 两条关闭均保留原文/历史和非处置字段、15字段写前绑定与独立终态读回。唯一909/404new/272resolved/233closed，阶段124=40fixed/73rejected/11duplicate、周期216。Court/Gift两条仍待对照前提核准；本轮无新产品修复或部署。
+
 ## 2026-10-16 接续122｜中立挑衅搜索当前原生界面检查
 
 - BUG-20260915-06489af6原文的两个关键词和两中立卡均直接验证：正式cce8冻结组件/真实loadDeckCatalog，清空后原生输入“挑衅”与“挑”，两次各5项；S02-0004五费路易芒德兰、S02-0007一费重装士兵的卡文均含挑衅，原版DOM唯一且名称/编号可见。DA6070B7接受、86CF3DF0报告及D1245649/E4B66AE3截图；保存牌库deepEqual、两卡计数不变，0页面/控制台/请求错误及外网。
