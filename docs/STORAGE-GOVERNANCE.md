@@ -8,7 +8,7 @@
 
 新增输出的防复发入口是 `ops/windows/L12GeneratedStorage.ps1`：自建验收在创建前调用 `Assert-L12GeneratedPath`，解析所有祖先联接后拒绝物理C；扩展DOS路径先规范化，设备/UNC别名失败关闭，不能借前缀绕过。构建初始化对任务缓存、共享依赖、验收和归档根同样检查，统一TEMP/TMP/TMPDIR。只读源文件不受限制。17项限定对抗检查接入原存储生命周期回归，不能只看路径字母声称已迁移。
 
-旧C父目录自动改联接本轮未成功：系统拒绝第一项重命名，原四目录不动，不强改权限；目前必须显式使用D/E输出及上述守卫。证据在 `D:\GPT\Legion12\artifacts\storage-output-routing-20261016`：combined-acceptance.json绑定同源17项路径守卫、完整7508规则/1771平台零失败跳过及存储/发布工具回归。原预算、缺python和主动拆分执行器的失败回执保留；不把原失败改写成成功或为补日志重跑全部测试。
+旧C父目录已于2026-10-16 16:33在用户退出Codex后完成离线改向：artifacts/tmp/.tmp指D，outputs指E。真实回执 `offline-entry-routing-20261016T083347-3ba0a8169c2d4c46a886ac1910ff6fbc.json` SHA ADFAE72D，Main独立读回88根文件SHA、189历史联接及四个新任务的真实落点。历史子目录仍经联接引用C上的 `.c-preserved-20261016`，不能把这些原件当重复副本删除；旧子目录不是追加产物根，新任务用新目录并先过物理守卫。此次仅改入口、不整包复制、不额外声明释放容量。证据根 `D:\GPT\Legion12\artifacts\storage-output-routing-20261016` 的combined-acceptance.json另绑定同源17守卫/7508规则/1771平台零失败跳过；首次在线重命名、预算、缺python及拆分执行器的失败回执均保留，不反复运行已完成切换或全套测试。
 
 用户明确允许大容量长期文件放到 E 盘，并批准将 C 盘 `admin-f8-next-20261014`、`formal-release-20261015` 两批验收资料完整迁移、保留原路径。冷资料物理目标为 `E:\Legion12-ColdStorage\20261016`；此安排是下文旧“全部物理文件统一 D 盘”规则的明确例外，不改变活动源码、热依赖、最新发布资料或运行数据库的位置。
 
