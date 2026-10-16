@@ -126,7 +126,11 @@ public sealed partial class L12RoomManager
         else blockers["room_lock_busy"]++;
         if (Monitor.TryEnter(_friendInvitationGate))
         {
-            try { blockers["pending_invitations"] = _friendInvitations.Count; }
+            try
+            {
+                RemoveExpiredFriendInvitationsLocked(_utcNow());
+                blockers["pending_invitations"] = _friendInvitations.Count;
+            }
             finally { Monitor.Exit(_friendInvitationGate); }
         }
         else blockers["room_lock_busy"]++;

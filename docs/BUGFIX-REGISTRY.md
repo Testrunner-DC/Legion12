@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## DEPLOY-20261017-INVITATION-EXPIRY｜永久清理过期邀请，本地专项通过
+
+- 共享根因已由前次真实seal定位：超过十分钟的邀请只能被拒绝，未从内存字典移除；排空因原始数量误阻塞。全仓检索 `_friendInvitations` 与 `FriendInvitation`，唯一创建入口、接受/拒绝、撤销及排空读取全部核查，不涉及卡池或卡效。
+- 创建改用既有可注入时钟，并与接受/撤销共用原邀请门闩；创建、合法会话的响应及readiness在门闩内移除严格 `CreatedAt < now-10m` 的相同内存entry。恰十分钟仍有效，readiness争用仍立即失败关闭。只清无效邀请，不改房间、平台、数据库、历史记录、持久化守卫或许可生成。
+- D盘 `invitation-expiry-20261017` 保留RED13（7过期场景失败、6有效/并发对照通过）及最终green-r3 17/17零失败跳过，涵盖精确边界、接受/拒绝、替代、断线、重复接受、错收件人、排空内合法撤销、真实准备/进行中房间、门闩争用、已取得Admission的创建者和时钟倒退。两持锁测试使用独立线程持有/释放同一Monitor，清除阻塞等待警告；不改变原断言。独立审查CLEAR，完整平台/规则与正式上线仍待，不以专项绿冒充部署。
+
 ## DEPLOY-20261017-RETRY｜过期邀请阻塞与只读证明格式兼容
 
 - 用户明确要求排除阻碍继续部署。f828真实HTTP409/work_remaining仅pending_invitations=1，其余room/lease/待命令0；cce8唯一InviteFriend持Admission且检查维护，但Resolve超过10分钟仅返回失效、不移除字典，断连/定时器亦不清理，readiness原样数Count。不是新对局；首次bf95未保存的字段仍保持未知，不追称补得。

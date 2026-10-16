@@ -369,7 +369,7 @@ internal sealed class DeploymentDrainFixture : IAsyncDisposable
 
     internal static async Task<DeploymentDrainFixture> CreateAsync(
         Action<string>? observer = null, bool attachCoordinator = true,
-        IL12DeploymentDrainFenceStore? fenceStore = null)
+        IL12DeploymentDrainFenceStore? fenceStore = null, Func<DateTimeOffset>? utcNow = null)
     {
         Directory.CreateDirectory(ArtifactRoot);
         var root = Path.Combine(ArtifactRoot, Guid.NewGuid().ToString("N"));
@@ -381,11 +381,10 @@ internal sealed class DeploymentDrainFixture : IAsyncDisposable
                 "TwelveLegions", "Data"));
             var platform = new L12PlatformStore(Path.Combine(root, "platform.json"),
                 catalog.PresetDecks, officialCards: catalog.Cards);
-            recorder = new MatchRecorder(Path.Combine(root, "matches.db"),
-                () => DateTimeOffset.Parse("2026-10-06T00:00:00Z"));
+            var clock = utcNow ?? (() => DateTimeOffset.Parse("2026-10-06T00:00:00Z"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"), clock);
             await recorder.InitializeAsync();
-            var rooms = new L12RoomManager(catalog, recorder, platform,
-                () => DateTimeOffset.Parse("2026-10-06T00:00:00Z"));
+            var rooms = new L12RoomManager(catalog, recorder, platform, clock);
             var coordinator = new L12DeploymentDrainCoordinator(ProcessInstance, ActiveCommit,
                 fenceStore ?? new SyntheticDeploymentFenceStore());
             L12DeploymentDrainController? controller = null;

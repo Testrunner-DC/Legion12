@@ -54,7 +54,7 @@ public sealed partial class L12RoomManager
         public required string RoomCode { get; init; }
         public required string FromAccountId { get; init; }
         public required string ToAccountId { get; init; }
-        public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
+        public required DateTimeOffset CreatedAt { get; init; }
     }
 
     private sealed class Room
@@ -144,6 +144,7 @@ public sealed partial class L12RoomManager
     private readonly ConcurrentDictionary<string, Room> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, FriendInvitation> _friendInvitations = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _friendInvitationGate = new();
+    private static readonly TimeSpan FriendInvitationLifetime = TimeSpan.FromMinutes(10);
     private readonly object _tournamentRoomGate = new();
     private readonly object _matchmakingGate = new();
     private readonly SemaphoreSlim _sessionRecoveryGate = new(1, 1);
@@ -657,6 +658,11 @@ public sealed partial class L12RoomManager
     {
         if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
+        lock (_friendInvitationGate) return InviteFriendCore(sessionId, targetAccountId);
+    }
+
+    private IReadOnlyList<OutgoingMessage> InviteFriendCore(Guid sessionId, string? targetAccountId)
+    {
         if (!_sessions.TryGetValue(sessionId, out var sender) || sender.AccountId is null)
             return Error(sessionId, "会话不存在");
         var policy = CaptureOperationsPolicy();
@@ -669,12 +675,15 @@ public sealed partial class L12RoomManager
         if (recipients.Length == 0) return Error(sessionId, "该好友当前不在线");
         if (recipients.Any(session => session.RoomCode is not null)) return Error(sessionId, "该好友已在房间或对局中");
 
+        var now = _utcNow();
+        RemoveExpiredFriendInvitationsLocked(now);
         var invitation = new FriendInvitation
         {
             Id = Guid.NewGuid().ToString("N"),
             RoomCode = GenerateAvailableRoomCode(),
             FromAccountId = sender.AccountId,
             ToAccountId = targetId,
+            CreatedAt = now,
         };
         _friendInvitations[invitation.Id] = invitation;
         var payload = new
@@ -688,6 +697,16 @@ public sealed partial class L12RoomManager
                 type = "friendInvitationSent", invitationId = invitation.Id, invitation.RoomCode,
                 targetAccountId = targetId, message = $"邀请已发送，预留房间码 {invitation.RoomCode}",
             })).ToArray();
+    }
+
+    // All invitation writers and readiness share this gate. Remove only the same
+    // expired entry; at exactly ten minutes the original acceptance boundary remains valid.
+    private void RemoveExpiredFriendInvitationsLocked(DateTimeOffset now)
+    {
+        var cutoff = now - FriendInvitationLifetime;
+        foreach (var entry in _friendInvitations)
+            if (entry.Value.CreatedAt < cutoff)
+                _friendInvitations.TryRemove(entry);
     }
 
     public IReadOnlyList<OutgoingMessage> ResolveFriendInvitation(Guid sessionId, string? invitationId, bool accept)
@@ -721,6 +740,7 @@ public sealed partial class L12RoomManager
     {
         if (!_sessions.TryGetValue(sessionId, out var recipient) || recipient.AccountId is null)
             return Error(sessionId, "会话不存在");
+        RemoveExpiredFriendInvitationsLocked(_utcNow());
         L12OperationsPolicySnapshot? policy = null;
         if (accept)
         {
@@ -733,8 +753,7 @@ public sealed partial class L12RoomManager
         }
         var id = (invitationId ?? string.Empty).Trim();
         if (!_friendInvitations.TryGetValue(id, out var invitation)
-            || invitation.ToAccountId != recipient.AccountId
-            || invitation.CreatedAt < DateTimeOffset.UtcNow.AddMinutes(-10))
+            || invitation.ToAccountId != recipient.AccountId)
             return Error(sessionId, "邀请不存在或已失效");
         _friendInvitations.TryRemove(id, out _);
         var senders = _sessions.Values.Where(session => session.Connected

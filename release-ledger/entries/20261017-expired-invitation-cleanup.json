@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "20261017-expired-invitation-cleanup",
+  "date": "2026-10-17",
+  "audience": "internal",
+  "reason": "清除超过既有十分钟有效期的好友邀请内存项，防止无效项阻塞后续标准排空；有效邀请、真实房间、连接租约、持久化及许可守卫均保持。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.DeploymentDrain.cs"
+  ]
+}
