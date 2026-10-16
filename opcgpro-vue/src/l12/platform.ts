@@ -1790,6 +1790,9 @@ export const tournamentApi = {
   },
   startCheck: (id: string) => platformRequest<TournamentStartCheck>(`/api/tournaments/${encodeURIComponent(id)}/start-check`),
   exportCsv: (id: string) => platformRequest<Blob>(`/api/tournaments/${encodeURIComponent(id)}/export.csv`, { responseType: 'blob' }),
+  createContext: () => platformRequest<Pick<TournamentSummaryPage, 'platformVersion'>>('/api/tournaments/summaries?section=host&page=1&pageSize=1', {
+    cache: 'no-store', signal: new AbortController().signal,
+  }),
   create: (tournament: TournamentCreateInput, expectedVersion: number, dryRun = false) => platformRequest<Tournament>('/api/tournaments', {
     method: 'POST', body: JSON.stringify(commandBody('tournament-create', { tournament, expectedVersion, dryRun })),
   }),

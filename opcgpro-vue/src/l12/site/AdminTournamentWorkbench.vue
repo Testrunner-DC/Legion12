@@ -10,6 +10,7 @@ import { useActionGate } from '@/l12/useActionGate'
 import { mergeTournamentSnapshot } from '@/l12/tournamentSnapshotMerge'
 import { canDirectlyRuleTournamentMatch, canManageParticipantRemovalWithoutSelfRuling, tournamentSelfRulingMessage } from '@/l12/tournamentRulingPolicy'
 import { tournamentTimeControlLabel, tournamentTimeControlMinutes, tournamentTimeControlSeconds } from '@/l12/tournamentTime'
+import { createTournamentWithCurrentContext } from '@/l12/tournamentCreateFlow'
 import {
   friendApi, getEffectiveOperationsPolicy, hasPermission, platformState, tournamentApi,
   type LegacyTournamentInput, type PlatformFriend,
@@ -167,11 +168,11 @@ const transferCandidates = computed(() => {
   candidates.delete(accountId.value)
   return [...candidates].map(([accountId, username]) => ({ accountId, username }))
 })
-async function runAction(key: string, work: () => Promise<void>) {
+async function runAction(key: string, work: (isCurrent: () => boolean) => Promise<void>) {
   const account = platformState.account?.id, token = platformState.token, path = route.fullPath, actor = actorEpoch
   const current = () => actorIsCurrent(account, token, path, actor)
   await runGatedAction(key, async () => {
-    try { await work() } catch (error) { if (current()) notice.value = errorText(error) }
+    try { await work(current) } catch (error) { if (current()) notice.value = errorText(error) }
   })
 }
 async function loadFriends() {
@@ -237,7 +238,7 @@ function toggleStaffDraft(account: PlatformFriend) {
   if (index >= 0) staffDraft.value.splice(index, 1); else staffDraft.value.push(account.accountId)
 }
 
-function createTournament() { void runAction('tournament:create', async () => {
+function createTournament() { void runAction('tournament:create', async current => {
   if (!form.name.trim()) throw new Error('请输入赛事名称')
   const tournament: TournamentCreateInput = {
     name: form.name.trim(), format: form.format, visibility: form.visibility,
@@ -255,10 +256,11 @@ function createTournament() { void runAction('tournament:create', async () => {
     registrationVisibility: form.registrationVisibility,
     lateGraceMinutes: Math.max(0, Math.min(60, Number(form.lateGraceMinutes) || 0)),
   }
-  const created = await tournamentApi.create(tournament, platformVersion.value)
+  const created = await createTournamentWithCurrentContext(() => tournament, { isCurrent: current })
+  if (!current()) return
   detailId.value = created.id
   tab.value = 'mine'
-  await syncAfterWrite(created, `赛事 ${created.code} 已建立，请在赛前签到并锁定牌库`)
+  await syncAfterWrite(created, `赛事 ${created.code} 已建立，请在赛前签到并锁定牌库`, current)
 }) }
 function join(item: Tournament) { void runAction(tournamentActionKey(item), async () => {
   const existing = item.participants.find(person => person.accountId === accountId.value)

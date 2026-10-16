@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## TOUR-20261016-CREATE-CONTEXT｜赛事创建使用新鲜上下文而非旧页面版本
+
+- 用户直接要求解决赛事创建失败；原报错为资源版本变化。实际根因：TournamentHub直接创建分支不加载列表，向导收到版本0；从列表进入后又长期使用旧props。后台创建也使用旧platformVersion。真实localhost HTTP证明dry-run的只读审计不推进业务版本，最初“预检推进版本”假设及失败TRX保留，不作为产品根因。
+- 两入口共用createTournamentWithCurrentContext：提交前独立读取已认证的一项summary，冻结输入，向导预检/提交保持同一CAS；并发业务变化仍409，不自动重试写。保留草稿，账号/路由同步世代、卸载和重复点击守卫防止旧流程继续或清掉新草稿。服务器版本规则、权限、审计、幂等和数据库格式未改。
+- 验证：原1160向导在纠正后的实际版本模型0/7，当前实际script-setup12/12；后台5项加原轻量消费者21项全部26/26；真实HTTP3/3含旧版本拒绝与同键只创建一次。原44合同仅将1条强制旧props写法的谓词改成绑定真实导入/调用并接运行时回归，其余A3通知17谓词/5组、公开入口22保留，不代表全部历史A3完成。
+- 完整前端各合同与原消费者通过；独审P2路由ABA已修并CLEAR，最终受影响合同/类型/production及testrun实际新产物通过。第一次夹具漏新模块造成mount失败与连带未卸载污染，补模块后26全绿；中间外层返回0但testrun未更新的日志保留，不当成功双构建。联合完整规则7576/平台1774失败跳过0，分套监督成功且自有临时根已回收；D:/GPT/Legion12/artifacts/tournament-create-and-summon-20261016/local-batch-acceptance.json（D32793DB）绑定13源与原日志。无stdout的类型步骤另留真实退出码回执，不补造空日志；未部署、未关闭线上反馈。
+
+
 ## UI-20261016-CHAT-LEFT-ANCHOR｜对局聊天弹层与设置按钮左缘对齐
 
 - 直接用户请求的限定布局调整：原popover沿好友按钮right展开偏右；BattleUtilityDock新增设置锚点，只给对局SocialPopover传positionAnchor。新prop只用于place几何，关闭/Escape归还焦点/外点仍绑定好友按钮；未传prop的普通SiteShell原right定位和12px clamp不变，没有新网络/监听/定时器或蒙版。

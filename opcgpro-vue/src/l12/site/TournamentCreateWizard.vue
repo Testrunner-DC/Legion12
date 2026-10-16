@@ -1,16 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import {
-  friendApi, getEffectiveOperationsPolicy, tournamentApi,
+  friendApi, getEffectiveOperationsPolicy, platformState,
   type EffectiveOperationsPolicy, type PlatformFriend, type Tournament, type TournamentCreateInput,
 } from '@/l12/platform'
 import {
   buildTournamentCreateInput, normalizeTournamentFormatInPlace, tournamentDisasterSnapshot,
 } from '@/l12/tournamentCreatePolicy'
 import { tournamentTimeControlLabel, tournamentTimeControlMinutes, tournamentTimeControlSeconds } from '@/l12/tournamentTime'
+import { createTournamentWithCurrentContext } from '@/l12/tournamentCreateFlow'
 
-const props = defineProps<{ platformVersion: number }>()
-const emit = defineEmits<{ created: [value: Tournament]; version: [value: number] }>()
+const emit = defineEmits<{ created: [value: Tournament] }>()
 const step = ref(1)
 const busy = ref(false)
 const notice = ref('')
@@ -19,6 +20,9 @@ const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
 const policyLoading = ref(true)
 const policyError = ref('')
 const draftKey = 'l12-tournament-create-draft-v3'
+const route = useRoute()
+let createGeneration = 0
+let disposed = false
 const form = reactive<TournamentCreateInput>({
   name: '', format: 'swiss', visibility: 'public', maxPlayers: 16, startAt: undefined,
   ruleset: '现行规则', description: '', deckVisibility: 'after', disasterMode: 'season', banList: '',
@@ -58,20 +62,29 @@ async function loadOperationsPolicy() {
 function clearDraft() { localStorage.removeItem(draftKey); window.location.reload() }
 function toggleReferee(accountId: string) { const index = form.refereeAccountIds.indexOf(accountId); if (index >= 0) form.refereeAccountIds.splice(index, 1); else form.refereeAccountIds.push(accountId) }
 async function create() {
+  if (busy.value || disposed) return
   if (!form.name.trim()) { notice.value = '请填写赛事名称'; step.value = 1; return }
+  const generation = ++createGeneration
+  const isCurrent = () => !disposed && generation === createGeneration
+  const draft = JSON.stringify(form)
+  const submittedForm = JSON.parse(draft) as TournamentCreateInput
+  const submittedTimeControl = tournamentTimeControlSeconds({ ...timeControlMinutes })
   busy.value = true; notice.value = '正在执行开赛前校验…'
   try {
-    const policy = await getEffectiveOperationsPolicy()
-    operationsPolicy.value = policy
-    const input = buildTournamentCreateInput({ ...form }, tournamentTimeControlSeconds(timeControlMinutes), policy)
-    normalizeTournamentFormatInPlace(form)
-    form.disasterCardIds = [...input.disasterCardIds]
-    await tournamentApi.create(input, props.platformVersion, true)
-    const created = await tournamentApi.create(input, props.platformVersion)
-    localStorage.removeItem(draftKey); notice.value = '赛事已创建'; emit('created', created); emit('version', created.version)
-  } catch (error) { notice.value = error instanceof Error ? error.message : '创建失败' }
-  finally { busy.value = false }
+    const created = await createTournamentWithCurrentContext(async current => {
+      const policy = await getEffectiveOperationsPolicy()
+      if (!current()) throw new Error('页面或账号已变化，本次创建已停止')
+      const input = buildTournamentCreateInput(submittedForm, submittedTimeControl, policy)
+      return input
+    }, { preview: true, isCurrent })
+    if (!isCurrent()) return
+    if (JSON.stringify(form) === draft) localStorage.removeItem(draftKey)
+    notice.value = '赛事已创建'; emit('created', created)
+  } catch (error) { if (isCurrent()) notice.value = error instanceof Error ? error.message : '创建失败' }
+  finally { if (isCurrent()) busy.value = false }
 }
+watch([() => platformState.token, () => platformState.account?.id], () => { ++createGeneration; busy.value = false }, { flush: 'sync' })
+watch(() => route.fullPath, () => { ++createGeneration; busy.value = false }, { flush: 'sync' })
 watch(form, value => localStorage.setItem(draftKey, JSON.stringify(value)), { deep: true })
 watch(timeControlMinutes, value => Object.assign(form.timeControl, tournamentTimeControlSeconds(value)), { deep: true })
 watch(() => form.format, () => normalizeTournamentFormatInPlace(form))
@@ -83,6 +96,7 @@ onMounted(async () => {
   void friendApi.friends().then(value => { friends.value = value }).catch(() => undefined)
   await loadOperationsPolicy()
 })
+onBeforeUnmount(() => { disposed = true; ++createGeneration })
 </script>
 
 <template>

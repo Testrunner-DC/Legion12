@@ -18,10 +18,26 @@ const router = read('src/router/index.ts')
 const admin = read('src/l12/site/AdminTournamentWorkbench.vue')
 const time = read('src/l12/tournamentTime.ts')
 const createPolicy = read('src/l12/tournamentCreatePolicy.ts')
+await import('./test-tournament-create-flow.mjs')
 const gamePage = read('src/l12/GamePage.vue')
 const roomLoadingState = read('src/l12/tournamentRoomLoadingState.ts')
 const tournamentServer = read('../服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs')
 const visualSources = [detail, management, judge, summary, wizard, hub]
+function hasBoundCreateFlow(source, functionName) {
+  const setup = parseSfc(source).descriptor.scriptSetup
+  if (!setup) return false
+  const tree = ts.createSourceFile('create-flow.ts', setup.content, ts.ScriptTarget.Latest, true)
+  const binding = tree.statements.filter(ts.isImportDeclaration)
+    .filter(node => node.moduleSpecifier.text === '@/l12/tournamentCreateFlow')
+    .flatMap(node => node.importClause?.namedBindings?.elements ?? [])
+    .find(node => (node.propertyName ?? node.name).text === 'createTournamentWithCurrentContext')?.name.text
+  const fn = tree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === functionName)
+  if (!binding || !fn) return false
+  let found = false
+  function visit(node) { if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === binding) found = true; ts.forEachChild(node, visit) }
+  visit(fn)
+  return found
+}
 function hasDangerRemoveAction(source) {
   const parsed = parseSfc(source)
   if (parsed.errors.length || !parsed.descriptor.template) return false
@@ -155,7 +171,7 @@ const checks = [
   ['format switches remove mutually exclusive cut fields', createPolicy.includes("input.format === 'single'") && createPolicy.includes('swissRounds: 0, cutSize: undefined') && createPolicy.includes("input.format === 'swiss-cut'") && createPolicy.includes('cutSize: undefined')],
   ['single elimination hides the mutually exclusive swiss-round input', wizard.includes(`<label v-if="form.format !== 'single'">瑞士轮数`) && admin.includes(`<label v-if="form.format!=='single'">瑞士轮数`)],
   ['templates manual changes and restored drafts share format normalization', wizard.includes('normalizeTournamentFormatInPlace(form)') && wizard.includes('watch(() => form.format') && wizard.indexOf('Object.assign(form, saved)') < wizard.lastIndexOf('normalizeTournamentFormatInPlace(form)')],
-  ['dry-run and create share one frozen normalized input', wizard.includes('const input = buildTournamentCreateInput') && wizard.includes('tournamentApi.create(input, props.platformVersion, true)') && wizard.includes('tournamentApi.create(input, props.platformVersion)')],
+  ['player and admin creation bind the current-context flow; real script setup locks frozen input and preview version', hasBoundCreateFlow(wizard, 'create') && hasBoundCreateFlow(admin, 'createTournament')],
   ['disaster modes freeze authoritative policy and none stays empty', createPolicy.includes("if (mode === 'none') return []") && createPolicy.includes('policy.disasterCardIds') && createPolicy.includes('cardIds.length < 9 || cardIds.length > 64') && createPolicy.includes('TOURNAMENT_ANNIHILATION_CARD_ID') && wizard.includes('getEffectiveOperationsPolicy()')],
   ['empty or invalid operations disaster policy fails readably', createPolicy.includes('当前运营策略未提供可用天灾池') && createPolicy.includes('当前运营策略天灾池必须为 9–64 张') && wizard.includes('policyError')],
   ['server keeps strict disaster pool count and annihilation-last authority', tournamentServer.includes('normalizedDisasters.Length is < 9 or > 64') && tournamentServer.includes('normalizedDisasters[^1], L12ActiveDisasterRules.AnnihilationCardId') && tournamentServer.includes('天灾池须为 9–64 张（含湮灭），且湮灭固定在最后一张')],

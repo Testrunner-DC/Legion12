@@ -239,13 +239,24 @@ let permissions = new Set()
 let tournamentList = []
 let tournamentReads = []
 let preCheckIns = []
+let creationContexts = 0
+let creationRequests = []
+let creationContextBehavior = async () => ({ platformVersion: 20 })
+let creationBehavior = async (input, expectedVersion) => tournamentFixture({ id: 'created-tournament', name: input.name, version: expectedVersion + 1 })
 let tournamentListBehavior = async () => ({ platformVersion: 1, items: tournamentList })
 let preCheckInBehavior = async args => tournamentFixture({ id: args[0], version: args[1] + 1 })
 const tournamentApi = {
+  createContext: async () => { creationContexts++; return creationContextBehavior() },
+  create: async (...args) => { creationRequests.push(args); return creationBehavior(...args) },
   getByCode: async code => { tournamentReads.push(code); return tournamentList.find(item => item.code === code) ?? tournamentFixture({ code }) },
   list: (...args) => tournamentListBehavior(...args),
   preCheckIn: async (...args) => { preCheckIns.push(args); return preCheckInBehavior(args) },
 }
+globalThis.__deckAuthorityTestPlatform.tournamentApi = tournamentApi
+const tournamentCreateFlow = await import(productionModuleUrl(read('src/l12/tournamentCreateFlow.ts').replace(
+  "import { platformState, tournamentApi, type TournamentCreateInput } from './platform'",
+  'const { platformState, tournamentApi } = globalThis.__deckAuthorityTestPlatform',
+)))
 const platformModule = {
   platformState,
   hasPermission: permission => permissions.has(permission),
@@ -321,6 +332,7 @@ function tournamentWorkbenchComponent() {
     '@/l12/useActionGate': actionGateModule, '@/l12/tournamentSnapshotMerge': { mergeTournamentSnapshot: items => items },
     '@/l12/tournamentTime': timeModule, '@/l12/platform': platformModule,
     '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
+    '@/l12/tournamentCreateFlow': tournamentCreateFlow,
   })
 }
 function profileComponent() {
@@ -350,6 +362,12 @@ function resetIdentity(account = { id: 'account-A', username: 'Account A', permi
   authState.verified = verified
   localStorage.clear(); sessionStorage.clear(); permissions = new Set(); routerCalls.length = 0
   tournamentReads = []; preCheckIns = []; tournamentList = []
+  creationContexts = 0; creationRequests = []
+  creationContextBehavior = async () => ({ platformVersion: 20 })
+  creationBehavior = async (input, expectedVersion) => {
+    const created = tournamentFixture({ id: 'created-tournament', name: input.name, version: expectedVersion + 1 })
+    tournamentList = [created]; return created
+  }
   tournamentListBehavior = async () => ({ platformVersion: 1, items: tournamentList })
   preCheckInBehavior = async args => tournamentFixture({ id: args[0], version: args[1] + 1 })
   deckCatalogReads = 0
@@ -375,6 +393,45 @@ async function check(label, run) {
     failed += 1; failures.push(label); console.error(`FAIL ${passed + failed}: ${label}\n${error?.stack || error}`)
   }
 }
+
+await check('real admin creation reads fresh context instead of stale list version and guards double click', async () => {
+  resetIdentity()
+  const wait = deferred()
+  creationContextBehavior = () => wait.promise
+  tournamentListBehavior = async () => ({ platformVersion: 7, items: tournamentList })
+  const mounted = mount(tournamentWorkbenchComponent(), { adminMode: true })
+  try {
+    await flush(); mounted.state.form.name = 'Fresh admin creation'
+    mounted.state.createTournament(); mounted.state.createTournament(); await flush()
+    assert.equal(creationContexts, 1); assert.equal(creationRequests.length, 0)
+    wait.resolve({ platformVersion: 20 }); await flush()
+    assert.equal(creationRequests.length, 1); assert.equal(creationRequests[0][1], 20)
+    assert.equal(creationRequests[0][0].name, 'Fresh admin creation')
+    assert.match(mounted.state.notice, /已建立/)
+  } finally { mounted.unmount() }
+})
+await check('real admin creation preserves draft on genuine conflict without retry', async () => {
+  resetIdentity()
+  creationBehavior = async () => { throw new Error('资源版本已变化，请刷新后重试') }
+  const mounted = mount(tournamentWorkbenchComponent(), { adminMode: true })
+  try {
+    await flush(); mounted.state.form.name = 'Keep conflict draft'; mounted.state.createTournament(); await flush()
+    assert.equal(creationRequests.length, 1); assert.equal(creationContexts, 1)
+    assert.equal(mounted.state.form.name, 'Keep conflict draft'); assert.match(mounted.state.notice, /资源版本已变化/)
+  } finally { mounted.unmount() }
+})
+for (const boundary of ['unmount', 'account', 'route']) await check(`real admin creation stops after ${boundary} during context read`, async () => {
+  resetIdentity(); const wait = deferred(); creationContextBehavior = () => wait.promise
+  const mounted = mount(tournamentWorkbenchComponent(), { adminMode: true })
+  try {
+    await flush(); mounted.state.form.name = 'Pending admin creation'; mounted.state.createTournament(); await flush()
+    if (boundary === 'unmount') mounted.unmount()
+    else if (boundary === 'account') platformState.account = { id: 'account-B', username: 'B', permissions: [] }
+    else route.fullPath = '/other'
+    await flush(); wait.resolve({ platformVersion: 20 }); await flush()
+    assert.equal(creationRequests.length, 0)
+  } finally { if (boundary !== 'unmount') mounted.unmount() }
+})
 
 await check('authenticated TournamentAccountDetail mount reads one bounded summary page and never full deck bodies', async () => {
   resetIdentity(); tournamentList = [tournamentFixture()]

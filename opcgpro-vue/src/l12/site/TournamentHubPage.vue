@@ -75,7 +75,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++careerGeneration; windo
       <button class="primary create-button" type="button" @click="switchSection('create')">{{ identity ? '创建赛事' : '登录举办赛事' }}</button>
     </header>
     <nav class="section-tabs" :class="{ 'public-tabs': !identity }" aria-label="赛事分类"><button v-for="item in sectionOptions" :key="item[0]" :class="{active: section === item[0]}" :aria-current="section === item[0] ? 'page' : undefined" @click="switchSection(item[0])">{{ item[1] }}</button></nav>
-    <section v-if="section === 'create' && identity" class="panel create-panel"><TournamentCreateWizard :platform-version="result.platformVersion" @created="value => open(value.code)" /></section>
+    <section v-if="section === 'create' && identity" class="panel create-panel"><TournamentCreateWizard @created="value => open(value.code)" /></section>
     <template v-else>
       <template v-if="section === 'mine' && career">
         <section class="career" aria-label="赛事生涯概览"><article><small>参赛</small><b>{{ career.participated }}</b><span>累计赛事</span></article><article><small>主办</small><b>{{ career.organized }}</b><span>运营赛事</span></article><article><small>执裁</small><b>{{ career.refereed }}</b><span>裁判记录</span></article><article><small>总战绩</small><b>{{ career.wins }}胜 {{ career.losses }}负 {{ career.draws }}平</b><span>已完成对局</span></article></section>
