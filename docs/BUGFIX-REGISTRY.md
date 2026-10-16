@@ -1,5 +1,15 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续117｜格位、费用、天灾与排序原文精确闭环
+
+- BUG-20260926-334ff582：霍列姆赫布同名陵墓守卫格位，1609c6a1确实加入相对格位服务端标签及共享前端定位，正式cce8具名HoremhebSameNameSubstitutesHaveStableBattlefieldPositionLabels通过；实际PromptOverlay位置消费、候选元信息模板SSR及移动CSS更高优先级恢复meta/位置行也已进入同源fresh前端验收。Main核父元素未被继续隐藏；非原手机像素或私人局重放，按fixed_verified。
+- BUG-20260907-ef12ba06：宫本武藏真实attack生成唯一prompt/activation/candidate；不发动后恢复防御并完成不抵挡，正式两项Passed。测试早于原反馈，未找到可精确归属的后续卡牌修复，不伪造fix；按当前检查未复现rejected。
+- BUG-20260909-aeb2b261：草薙剑击杀无印刷费用哮天犬，9d6c75f1共享CurrentCostAtMost=HasPrintedCost且CurrentCost不超阈值；正式KusanagiExcludesCostlessButIncludesRealCostBoundary三格Passed，排犬、真0/2允许/3拒绝。仅登场候选路径具名检查，不冒称公共出牌整链或原私局，fixed_verified。
+- BUG-20260909-e08b9691：最终天灾误触发安德华拉诺特，完整反应抑制fix为3c13e7b1而非只改伤害倍率的早期提交。正式FinalDisasterTurnStartDamageQueuesNoDamageReactions验证S01-DS10仅失去1点且不排anderstorpRingDraw，加四格伤害来源对照Passed；Main核原天灾专用入口/抑制diff及祖先，fixed_verified，不声称原局唯一成因。
+- BUG-20260914-e1c749ce与BUG-20260919-1d33bdfc：仅原文明确的“完成圣杯、零符文、兰斯洛特登场先拿符文再付费冲锋”同场景duplicate到已终态BUG-20260920-ed13c6c3。正式CompletedGrailMayResolveBeforeLancelotRechecksAndPaysTheNewRune真实playCard/排序/得符文/付费/冲锋及恢复重复守卫通过，不泛化全部彼界时点。
+- BUG-20260914-7b7f071d：现有诸葛亮真实attack拉图具名回归虽绿，但夹具缺原文“场上已有山河社稷图”的替换前提，因此不关闭、不写fixed或未复现，下一片补原前提；未为凑数量拿相近路径代替。
+- 三批现有close-reviewed-cce8单CAS/独立终态读回、专用会话撤销及唯一队列对账全部实际完成；909/411new/272resolved/226closed，阶段117=40fixed/67rejected/10duplicate，周期209。仅治理记录，无新产品改动、部署或维护。原30房性能长尾仍开；新1+6数字与配置只读见HANDOFF和B803F000，不把小对照绿当根治。
+
 ## 2026-10-16 接续111｜李牧观星、后排与共享进攻原反馈收口
 
 - BUG-20260915-2698da3c与BUG-20260908-5dcb5d8e：新增LiMuFreePlayingObservingStarsAtFullMoraleCompletesEverySegment，真实出牌/免费牌顶观星、满士气五牌排序、无伪后段提示、父链完全结束及真实endTurn，双方×恢复本地4/4，正式cce8同DLL外部编译执行4/4。恢复保持状态hash、RNG和全部序列，未动产品；正常Batch7496全过。按当前检查未复现各自rejected，不以相关组件绿冒充整链，也不声称原私人局或历史根因已证明。
