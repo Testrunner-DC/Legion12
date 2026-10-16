@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-16 接续138｜智慧法典实际关单，390待办
+
+- 新WisdomCodexActualRecoveryChainRegressionTests（D91A5DDE）真实全军出击/支付→智慧法典→对方弃牌→原效果成功→独立奖励，双方×逐命令V2四格；候选排除来源与另一同名，强送同名拒绝且raw/hash/RNG/facts/revision不变，合法回收与抽牌恰1、重复及队列/唯一实例均核准。Main及关键档独审CLEAR；无新产品修复，不冒称私人原局或回收动画次数。
+- 当前标准Focused实际7634/7634、0失败/跳过；当前Release具名4格及同源独立程序集引用正式cce8/16622461 DLL/9卡表另4/4，TRX 2C1737CE。CE29140F本地组合回执明确复用原正常Release7630与未变平台1790/前端，不为层级名称再跑第二套全量；Batch只读映射不是实际新Release。初两夹具失败/继承长PATH工具失败全部保留。协作流程已明确子代理用具名专项、Main统一完整门禁，防止通用Focused又跑全套。
+- 17a8d14f按报告→75bde779→现行正式cce8祖先及实际健康身份核准，原执行器一次preview/CAS30397/独立resolved读回、非处置字段保持及专用会话撤销通过。与同次post-CAS队列对账909/390new/278resolved/241closed，阶段138=46fixed/76rejected/16duplicate、周期230，外部2不计；本轮实际3条而非只备证。D盘next-authority-batch-20261016/closeout/bug-closeout-wisdom-cce8.json为收据。
+- 佣兵来源区域只读共因已收齐：已有discard事实缺hand来源，需现有ActionEvent的可空OriginZone及新V2缺省false能力位，旧尾部不补字段；回放与独立事件日志映射同步。尚未写产品；R7真实接线原挂起继续保留，无新部署/维护写或正式聊天开启。
+
 ## 2026-10-16 接续137｜两条已验反馈实际关单，391待办
 
 - 刺杀尼托17a015d7与冲锋关羽6bf0963b的既有7630规则/正式同DLL12格证据复用；实际公网重新核正式cce8/ok/维护false后，原有preview→单CAS30367/30368→独立终态读回完成，两条均fixed_verified，专用会话已撤销。原文/分派/备注与历史保留，未重放私人原局、未新增产品修复或部署。

@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261016-WISDOM-ACTUAL｜智慧法典同名排除完整链及正式终态
+
+- BUG-20260919-17a8d14f原报告只要求不能回收同名；既有共享修复75bde779统一候选/声明/分段/结算的卡牌身份排除，报告3fb82→fix→正式cce8祖先核准。新增D91A5DDE测试从实际FullArmySortie和支付走到对方弃牌、成功后独立奖励；双方×V2共4格，来源与另一同名不在候选、强送另一同名拒绝并全状态不变，合法回收/抽牌各1及重复/队列/实例守卫通过。无新产品修复、未重放私人原局、不验动画次数。
+- 原夹具优先权/事件形状两轮4红及继承长PATH工具失败保留；最终当前Focused7634/0失败跳过，当前Release具名4及同源正式16622461 DLL/9表4/4，显式正式TRX 2C1737CE，Main与关键档独审CLEAR。CE29140F组合回执如实复用旧正常Release7630与未变平台/前端，未重跑第二套全量或冒充新完整Release。
+- 现行正式cce8/ok/维护false重新核准，原流程preview/单CAS30397/独立resolved/fixed_verified读回和撤会话成功；原文、优先级、分派、备注及历史保持。唯一909/390待办/278resolved/241closed，阶段138=46fixed/76rejected/16duplicate、周期230。D盘next-authority-batch-20261016/closeout/bug-closeout-wisdom-cce8.json；无部署/维护/正式聊天变更，佣兵与性能各自继续。
+
 ## CLOSEOUT-20261016-NITO-GUANYU｜正式身份核准及两项终态读回
 
 - 既有17a015d7/6bf0963b真实4+8格、正常7630与同源历史正式DLL证据均未变化，不重复构建。实际线上核正式cce8、引擎身份一致、ok及维护false；dcf6e369/300ce8c8均为正式祖先且晚于原报告。
