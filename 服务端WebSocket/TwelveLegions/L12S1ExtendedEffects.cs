@@ -1057,6 +1057,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name}发动〈{response.Name}〉", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
+        ObserveDeclaredTacticEffect(item, response);
         State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }

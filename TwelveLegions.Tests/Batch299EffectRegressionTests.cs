@@ -642,19 +642,23 @@ public sealed class Batch299EffectRegressionTests
     }
 
     [Fact]
-    public void SuccessfulCounterNegationOnOpponentTurnTriggersAngusTrial()
+    public void DeclaredCounterOnOpponentTurnRegistersAngusBeforeSettlement()
     {
         var game = Create("S02-06M2"); game.State.ActivePlayer = 1;
         var owner = game.State.Players[0];
         owner.SpecialZones.Trials.Add(Card(game, "S02-06S4", "trial"));
         var counter = Card(game, "S01-0020", "counter"); owner.Resolving.Add(counter);
-        var item = new L12StackItem { StackItemId = "counter-stack", Controller = 0,
-            SourceInstanceId = counter.InstanceId, SourceCardId = counter.CardId,
-            SourceName = counter.Name, Trigger = "response-negate", Text = "无效" };
-        game.State.EffectStack.Add(item);
-        Call(game, "FinishStackItem", item);
-        Assert.True(game.State.PendingPrompts.Count > 0 || game.State.EffectStack.Any(stack => stack.SourceCardId == "S02-06M2"),
-            "成功结算的反击战术必须产生安格斯的试炼推进");
+        // This legacy unit fixture must enter the shared declaration port rather
+        // than fabricate a completed stack item at the retired success timing.
+        // The new real-counter family separately covers public commands and costs.
+        var item = Assert.IsType<L12StackItem>(Call(game, "PushEffect", 0, counter,
+            "response-negate", "无效", Array.Empty<string>(), null));
+        Assert.Equal("0:counter", item.Data["compositeTacticActivationSource"]);
+        Assert.Contains("trigger:angus-tactic:3", owner.UsedAbilities);
+        Assert.Single(game.State.PendingTriggerBatches.SelectMany(batch => batch.Candidates),
+            candidate => candidate.SourceCardId == "S02-06M2"
+                && candidate.Data.GetValueOrDefault("ability") == "angusTacticTrial");
+        Assert.Equal(0, Assert.Single(owner.SpecialZones.Trials).TrialProgress);
     }
 
     [Fact]

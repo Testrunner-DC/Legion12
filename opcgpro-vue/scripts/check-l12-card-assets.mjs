@@ -87,7 +87,7 @@ if (aeneas?.troops !== 6000
   || JSON.stringify(aeneas) !== JSON.stringify(webAeneas)) {
   throw new Error('ST05-01 的 6000 兵力、2 神力晋升及前后端卡库必须一致')
 }
-const angusEffect = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。'
+const angusEffect = '规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方发动战术效果时，试炼+1。'
 if (st.find(card => card.id === 'ST04-M1')?.hp !== 8
   || webSt.find(card => card.id === 'ST04-M1')?.hp !== 8
   || s2.find(card => card.id === 'S02-06M2')?.effect !== angusEffect

@@ -1924,7 +1924,7 @@ public sealed partial class L12GameEngine
         var ability = data?.GetValueOrDefault("ability");
         string[] markers = ability switch
         {
-            "angusTacticTrial" => ["战术效果", "结算成功时"],
+            "angusTacticTrial" => ["发动战术效果时"],
             "grailRoundTableRune" => ["圆桌骑士", "登场时"],
             "artemisDeathFlip" => ["远程军团", "阵亡时"],
             "anderstorpRingDraw" => ["主宰受到伤害时"],
@@ -2345,6 +2345,7 @@ public sealed partial class L12GameEngine
             candidate.Data.GetValueOrDefault("presentationSceneId"), source);
         AddEvent("stack-push", candidate.Controller, $"〈{candidate.SourceName}〉的{stackText}进入同一时点触发批次",
             source);
+        ObserveDeclaredTacticEffect(item, source);
     }
 
     private void RevealSetReactionSourceWhenStacked(L12TriggerCandidate candidate)

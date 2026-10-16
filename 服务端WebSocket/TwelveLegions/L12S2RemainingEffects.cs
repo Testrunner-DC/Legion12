@@ -677,6 +677,22 @@ public sealed partial class L12GameEngine
     private static string[] SplitDeclared(string? target)
         => (target ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries);
 
+    private const string CompositeTacticActivationSource = "compositeTacticActivationSource";
+
+    private void ObserveDeclaredTacticEffect(L12StackItem item, L12CardInstance source)
+    {
+        if (source.CardType != "tactic"
+            || item.Trigger is not ("play" or "reaction" or "s2-reaction" or "response-negate" or "trojan-after-attack"))
+            return;
+        // Composite continuations carry this receipt through their existing data
+        // copy. Bind it to the real source, not a boolean: a generated child tactic
+        // may inherit its parent's data but is still a separate card activation.
+        var sourceIdentity = $"{item.Controller}:{source.InstanceId}";
+        if (item.Data.GetValueOrDefault(CompositeTacticActivationSource) == sourceIdentity) return;
+        item.Data[CompositeTacticActivationSource] = sourceIdentity;
+        QueueS2AngusTacticTrial(item.Controller, source);
+    }
+
     private void QueueS2AngusTacticTrial(int playerIndex, L12CardInstance tactic)
     {
         var player = State.Players[playerIndex];
@@ -684,7 +700,9 @@ public sealed partial class L12GameEngine
         if (player.MasterId != "S02-06M2" || !player.UsedAbilities.Add(key)) return;
         var master = CreateCard("S02-06M2", $"master-{playerIndex}");
         QueueTriggerCandidates([
-            CreateTriggerCandidate(playerIndex, master, "tactic-effect-resolved", "战术效果结算成功时效果",
+            // Keep the existing ability/plan route identity. Its notification is
+            // now registered at actual declaration, never successful settlement.
+            CreateTriggerCandidate(playerIndex, master, "tactic-effect-resolved", "战术效果发动时效果",
                 new Dictionary<string, string> { ["ability"] = "angusTacticTrial", ["tactic"] = tactic.CardId })
         ]);
     }

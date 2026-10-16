@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`1bc22719d9fa19ad593cc262c8bb194294e74ee86eccd899967caea8399b55eb`。
+内容指纹：`c139e82cc163298463e67b25f5226bd08c17a481736cf1bba56e9a145e1b642a`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1536,8 +1536,8 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-06M1:ability:active:08922e53e852b78f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06M1 | authoritative-consumer, per-card-branch |
 | S02-06M2:ability:rule:f86cd3914a10b001 | TwelveLegions.Tests.PipelineLifecycleProfileTests.TrialCapacitySegmentsBindToTheDeckRuleAndValidator / S02-06M2 | authoritative-consumer |
 | S02-06M2:ability:rule:f86cd3914a10b001 | TwelveLegions.Tests.TrialCapacityLifecycleProfileTests.TrialCapacityAndCompletedSetupUseTheSameAuthoritativeDeckRuleAcrossReconnect / S02-06M2 | normal, presentation-consumers, reconnect |
-| S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | TwelveLegions.Tests.AtomicReviewBatch6FRegressionTests.AngusTacticSuccessIsMandatoryAndNegationStillConsumesItsOnce / S02-06M2 | negated |
-| S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06M2 | authoritative-consumer, per-card-plan |
+| S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83 | TwelveLegions.Tests.AtomicReviewBatch6FRegressionTests.AngusTacticSuccessIsMandatoryAndNegationStillConsumesItsOnce / S02-06M2 | negated |
+| S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S02-06M2 | authoritative-consumer, per-card-plan |
 | S02-06S1:ability:static:75769d93e0ca669f | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S02-06S1 | authoritative-consumer, per-card-branch |
 | S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.KingsSwordAttachedLifecycleProfileTests.AttachedSwordProjectsTroopsAndStrongAttackFromTheSameCurrentRelationship / S02-06S2 | normal, presentation-consumers, reconnect |
 | S02-06S2:ability:static:0f86ac377c8c63ee | TwelveLegions.Tests.PipelineLifecycleProfileTests.KingsSwordAttachedSegmentBindsToTheContinuousTroopsAndStrongAttackOutlets / S02-06S2 | attached-source-current, authoritative-consumer |
@@ -2247,7 +2247,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S02-06M1 莫瑞甘 #2 | S02-06M1:ability:active:08922e53e852b78f | active/activated | shared-rule-owner | 我方 回合1次 可消耗2符文 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:special.domain → resolution:operation.ready → duration:duration.apply → duration:duration.apply → resolution:legacy.resolve | 2 | 我方 回合1次 可消耗2符文：选择我方1张【彼界】军团，在本回合其下一次击杀对方军团后转为活跃。 |
 | S02-06M2 安格斯·麦·奥格 #1 | S02-06M2:ability:rule:f86cd3914a10b001 | rule/rule | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → rule:special.domain → resolution:legacy.resolve | 1 | 规则上，可完成的试炼数量增加1张。 |
 | S02-06M2 安格斯·麦·奥格 #2 | S02-06M2:ability:trial-advance:2004cb55b3358ee5 | trial-advance/triggered | fine-definition | — | trigger:trigger.observe → condition:control.optional → resolution:operation.gain-rune | 1 | 我方 回合1次 推进试炼进度时，可获得1符文。 |
-| S02-06M2 安格斯·麦·奥格 #3 | S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92 | tactic-effect-resolved/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → duration:duration.apply → resolution:legacy.resolve | 1 | 回合1次 当我方成功发动战术效果时，试炼+1。 |
+| S02-06M2 安格斯·麦·奥格 #3 | S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83 | tactic-effect-resolved/triggered | shared-rule-owner | — | trigger:trigger.observe → resolution:operation.advance-trial → duration:duration.apply → resolution:legacy.resolve | 1 | 回合1次 当我方发动战术效果时，试炼+1。 |
 | S02-06S1 符文 #1 | S02-06S1:ability:static:75769d93e0ca669f | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1符文 | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → cost:special.domain → resolution:operation.draw → resolution:special.domain → resolution:legacy.resolve | 0 | 我方 回合1次 可消耗1符文：选择以下一项。·试炼+1。·抽取1张牌 |
 | S02-06S2 王者之剑 #1 | S02-06S2:ability:static:0f86ac377c8c63ee | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:condition.expression → resolution:operation.modify-troops → resolution:operation.keyword | 0 | 当&lt;王者之剑&gt;叠放在我方&lt;亚瑟王&gt;下方时，使其原本兵力+1000，并获得强攻 |
 | S02-06S3 湖中仙女的馈赠 #1 | S02-06S3:ability:static:3616e3ca17ffd729 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → resolution:operation.move-zone → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 触发 可从牌库或墓地将1张&lt;亚瑟王&gt;加入手牌。随后将墓地所有&lt;亚瑟王&gt;返回牌库并重洗。本回合&lt;亚瑟王&gt;登场的费用-3 |

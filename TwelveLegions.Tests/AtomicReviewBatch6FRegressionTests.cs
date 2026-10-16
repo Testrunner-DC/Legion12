@@ -465,7 +465,7 @@ public sealed class AtomicReviewBatch6FRegressionTests
     [Fact]
     [Trait("L12Evidence", "card:S02-06M2")]
     [Trait("L12Evidence", "entry:angus-mandatory-once-trigger")]
-    [L12AbilityEvidence("S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92", "negated")]
+    [L12AbilityEvidence("S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83", "negated")]
     public void AngusTacticSuccessIsMandatoryAndNegationStillConsumesItsOnce()
     {
         var game = Create(8040, "S02-06M2");

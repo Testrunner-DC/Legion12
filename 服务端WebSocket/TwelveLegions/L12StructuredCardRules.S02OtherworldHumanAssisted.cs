@@ -163,7 +163,7 @@ public static partial class L12StructuredCardRules
                     Atom(L12AtomKinds.Special, "可完成的试炼数量增加1张", "rule",
                         ("semantic", "additional-completable-trial"), ("amount", "1"))),
                 OH("trial-advance", "triggered", "我方 回合1次 推进试炼进度时，可获得1符文。"),
-                OH("tactic-effect-resolved", "triggered", "回合1次 当我方成功发动战术效果时，试炼+1。")),
+                OH("tactic-effect-resolved", "triggered", "回合1次 当我方发动战术效果时，试炼+1。")),
 
             "S02-06S4" => OtherworldCard(
                 OH("trial-complete", "triggered", "触发 可查看我方牌库，选择1张【彼界】军团展示并加入手牌。随后重洗牌库。"),

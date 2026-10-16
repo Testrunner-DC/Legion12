@@ -1856,6 +1856,7 @@ public sealed partial class L12GameEngine
         // 同一项已完成响应的复合效果，其内部后续段必须继续压在当前下层效果之上。
         // 若仍按普通“结算中产生的新效果”送入 DeferredEffectStack，响应效果的首段
         // 完成后会先错误结算原效果，再处理响应效果的“随后”子句，破坏逆序结算。
+        var beginsImmediately = false;
         if (State.IsResolvingStack && data?.GetValueOrDefault("sameStackContinuation") == "true")
         {
             State.EffectStack.Add(item);
@@ -1870,8 +1871,10 @@ public sealed partial class L12GameEngine
         {
             State.EffectStack.Add(item);
             AddEvent("stack-push", controller, $"〈{source.Name}〉的{stackText}进入堆叠", source);
-            BeginStackItem(item);
+            beginsImmediately = true;
         }
+        ObserveDeclaredTacticEffect(item, source);
+        if (beginsImmediately) BeginStackItem(item);
         return item;
     }
 
@@ -2542,6 +2545,7 @@ public sealed partial class L12GameEngine
         State.EffectStack.Add(item);
         AddEvent("response", playerIndex, $"{player.Name} 打出〈{response.Name}〉响应", response);
         PublishEffectPresentation("effect-response", playerIndex, response, item.Trigger, item.Text, item.Data);
+        ObserveDeclaredTacticEffect(item, response);
         State.ResponseWindow = CreateResponseWindow(playerIndex);
         OfferResponse();
     }
@@ -2747,8 +2751,6 @@ public sealed partial class L12GameEngine
         QueueTombConstructLeaveFallback(item);
         var queuedCompositeContinuation = QueueNextCompositeSegment(item, completedSource);
         QueueEffectBlockAuthorityEvent(item, completedSource ?? item.SourceSnapshot);
-        var queueAngusTrial = !queuedCompositeContinuation && !item.Negated && completedSource?.CardType == "tactic"
-            && item.Trigger is "play" or "reaction" or "s2-reaction" or "response-negate";
         var queueExorcistReturn = !queuedCompositeContinuation && !item.Negated
             && completedSource?.CardType == "tactic"
             && item.Trigger is "play" or "reaction";
@@ -2768,7 +2770,6 @@ public sealed partial class L12GameEngine
             if (TryBeginPostResolutionGeneratedInteraction(item)) return;
         }
         if (queueExorcistReturn) QueueS2ExorcistReturns(item.Controller, completedSource!);
-        if (queueAngusTrial) QueueS2AngusTacticTrial(item.Controller, completedSource!);
         // 延后到本段结算后才声明目标的“随后”子句，必须在玩家完成声明前冻结
         // 已经通过响应窗口的下层堆叠。声明完成后，新段会压回下层效果之上；声明
         // 失败时则由 AbortCompositeSegmentDeclaration 直接恢复下层逆序结算。

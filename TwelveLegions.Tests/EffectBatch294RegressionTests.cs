@@ -120,7 +120,7 @@ public sealed class EffectBatch294RegressionTests
     {
         Assert.Equal(8, Catalog.Cards["ST04-M1"].Hp);
         var angus = Catalog.Cards["S02-06M2"];
-        Assert.Equal("规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方成功发动战术效果时，试炼+1。",
+        Assert.Equal("规则上，可完成的试炼数量增加1张。\n我方 回合1次 推进试炼进度时，可获得1符文。\n回合1次 当我方发动战术效果时，试炼+1。",
             angus.Effect);
         Assert.Equal(2, L12SpecialDeckRules.TrialCapacity(angus));
     }

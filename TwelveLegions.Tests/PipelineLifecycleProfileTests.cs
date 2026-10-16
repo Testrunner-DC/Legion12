@@ -120,7 +120,7 @@ public sealed class PipelineLifecycleProfileTests
     [L12AbilityEvidence("S02-0304:ability:master-damaged-by-effect:31c5c76dff1c8e0b", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0305:ability:master-damaged:a4a2c92cad3ad28c", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S02-02M1:ability:friendly-legion-death:a366c9a7f75b5f29", "per-card-plan", "authoritative-consumer")]
-    [L12AbilityEvidence("S02-06M2:ability:tactic-effect-resolved:e802cc6dcf73fe92", "per-card-plan", "authoritative-consumer")]
+    [L12AbilityEvidence("S02-06M2:ability:tactic-effect-resolved:7869c48f01e64d83", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-02M3:ability:static:3a86c87f975d5851", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-02M3:ability:static:c339139cc1c9b00c", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S02-0103:ability:attack:607e6460eed6637b", "per-card-plan", "authoritative-consumer")]

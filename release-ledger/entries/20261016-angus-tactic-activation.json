@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-angus-tactic-activation",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "安格斯战术触发",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "《安格斯·麦·奥格》改为在我方发动战术效果时推进试炼，原战术被无效不再漏触发；卡图、图鉴、搜索和对战效果说明同步新卡文。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.S02OtherworldHumanAssisted.cs",
+        "服务端WebSocket/TwelveLegions/Data/cards.s2.json",
+        "opcgpro-vue/public/data/l12/cards.lookup.json"
+      ]
+    }
+  ]
+}
