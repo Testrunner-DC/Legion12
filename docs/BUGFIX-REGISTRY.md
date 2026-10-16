@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## VERIFY-20261016-NITO-GUANYU｜两条已部署共享修复补齐真实原场景
+
+- BUG-20260919-17a015d7（旧3fb82f66）原句“尼托可回正受无畏守卫”：新NitocrisDreadAssassinationActualChainRegressionTests实际支付/声明/结算无畏的刺杀，再打出两尼托；受限守卫无候选、强送被拒且raw/hash/RNG/facts/revision不变，未受影响守卫正常转活跃；费用、回合末弃置、单实例/重复拒绝及双方V2共4格。dcf6e369早于既定正式cce8且晚于报告，不靠直接设置限制字段证明。
+- BUG-20260916-6bf0963b（旧815771d6）原句“冲锋关羽必中被空城计挡”：新GuanYuChargeSureHitActualChainRegressionTests真实全军/关羽登场、当回合进攻付费后获必中；空城/抵挡型绝防不能进根时点、强送拒绝，黎明正常加兵和另张绝防只无效黎明均合法，真实战斗6000对3000/2000。天廷恢复真实mode:none恰1次、空墓不造无效抽牌步骤且手库不变，双方×恢复×分支8格；已知修复300ce8c8在cce8且晚于报告。
+- 两源独审CLEAR、正常Batch实际7630/0失败/0跳过；最终同源独立测试程序集直接引用历史正式16622461 DLL及9卡表，实际12/12、7.72秒、前后输入不变，完整结果身份TRX 9A494D12保留，4280A7BC绑定。未新增产品修复；原编译/漏支付/天廷额外询问/无抽牌模式夹具失败和Batch r1/r2保留，不当根因RED。历史包不是本次线上版本证明，线上终态仍待正常身份/preview/apply/readback，0关单/部署/维护写。
+
 ## TOOL-20261016-PRIVATE-FETCH｜本地私有方法被误算绕过统一请求层
 
 - 原因：性能AST检查按方法名后缀fetch直接计原生请求，把ReplayArchiveLoader内5处私有分页方法调用算为raw-fetch；实际方法调用注入read，ReplayPage仍绑定adminApi.replayPage。正常Batch原r2在完整规则前停止，不作为卡效失败。
