@@ -286,7 +286,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         player.Field[1][0] = gift;
 
         var discountedCandidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-            Invoke(game, "BuildS1LeaveReactionCandidates", 0, discounted, true)).ToArray();
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, discounted, true, false)).ToArray();
         Assert.DoesNotContain(discountedCandidates, item => item.SourceCardId == "S01-0223");
         Assert.Equal(3, discounted.Cost);
         Assert.Equal(1, discounted.CurrentCost);
@@ -294,7 +294,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         var boosted = Card("S01-0212", "batch6kb-gift-boosted");
         boosted.CostModifier = 3;
         var candidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-            Invoke(game, "BuildS1LeaveReactionCandidates", 0, boosted, true)).ToArray();
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, boosted, true, false)).ToArray();
         var candidate = Assert.Single(candidates, item => item.SourceCardId == "S01-0223");
         Assert.Equal(2, boosted.Cost);
         Assert.Equal(5, boosted.CurrentCost);
@@ -328,7 +328,7 @@ public sealed class AtomicReviewBatch6KBRegressionTests
         player.Library.Add(drawn);
 
         var candidate = Assert.Single(Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-            Invoke(game, "BuildS1LeaveReactionCandidates", 0, left, true)),
+            Invoke(game, "BuildS1LeaveReactionCandidates", 0, left, true, false)),
             item => item.SourceCardId == "S01-0223");
         Invoke(game, "QueueTriggerCandidates", (object)new[] { candidate });
         Resolve(game, "mode:use");

@@ -270,7 +270,7 @@ public sealed class CounterTacticPhysicalSourceMultiplicityRegressionTests
             }
             var left = Card("S01-0309", $"{cardId}-prune-leave", player.PlayerIndex);
             var built = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-                Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex, left, true))
+                Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex, left, true, true))
                 .Where(candidate => candidate.SourceCardId == cardId)
                 .ToArray();
             Invoke(game, "QueueTriggerCandidates", (object)built);
@@ -297,7 +297,7 @@ public sealed class CounterTacticPhysicalSourceMultiplicityRegressionTests
         left.CostModifier = 3;
 
         var candidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-            Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex, left, true))
+            Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex, left, true, true))
             .Where(candidate => candidate.SourceCardId == cardId)
             .ToArray();
 

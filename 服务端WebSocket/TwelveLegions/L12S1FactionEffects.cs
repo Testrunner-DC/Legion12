@@ -1800,7 +1800,8 @@ public sealed partial class L12GameEngine
                 $"衍生卡〈{relic.Name}〉离开圣物区时消灭，不进入其他区域", relic);
         else if (!owner.Graveyard.Contains(relic))
             owner.Graveyard.Add(relic);
-        QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
+        QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
+            includeTombConstruct: true, wasDefeated: false));
     }
 
     private void Mill(L12PlayerState player, int count, string source)

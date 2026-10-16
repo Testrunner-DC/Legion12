@@ -1753,7 +1753,8 @@ public sealed partial class L12GameEngine
         var candidates = materializedDeaths.SelectMany(entry =>
         {
             var sameTime = BuildS1LeaveReactionCandidates(entry.Controller, entry.SourceSnapshot,
-                includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(entry.SourceSnapshot)).ToList();
+                includeTombConstruct: IsDeathTriggerSuppressedForCurrentTurn(entry.SourceSnapshot),
+                wasDefeated: true).ToList();
             if (HasDeathTrigger(entry.SourceSnapshot))
                 sameTime.Add(CreateDeathTriggerCandidate(entry.Controller, entry.SourceSnapshot,
                     new Dictionary<string, string> { ["cause"] = DefeatTriggerCause(L12DefeatCause.CardEffect) }));

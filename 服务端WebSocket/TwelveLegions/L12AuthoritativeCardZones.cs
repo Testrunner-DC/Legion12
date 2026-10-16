@@ -153,7 +153,8 @@ public sealed partial class L12GameEngine
         if (location.Zone is "relic" or "extra")
         {
             AddEvent("leave", location.Host.PlayerIndex, $"{card.Name}{reason}", card);
-            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(location.Host.PlayerIndex, sourceSnapshot));
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(location.Host.PlayerIndex, sourceSnapshot,
+                includeTombConstruct: true, wasDefeated: false));
         }
         QueueReturnedToLibraryTopTrigger(fallbackOwner, sourceSnapshot);
         AddEvent("return", owner.PlayerIndex, $"{card.Name}返回所有者牌库顶部", card);

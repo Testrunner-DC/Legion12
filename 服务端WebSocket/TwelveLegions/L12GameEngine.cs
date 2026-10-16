@@ -1883,7 +1883,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (queueDeathTrigger)
         {
             var candidates = BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
-                includeTombConstruct: !isDefeat || IsDeathTriggerSuppressedForCurrentTurn(sourceSnapshot)).ToList();
+                includeTombConstruct: !isDefeat || IsDeathTriggerSuppressedForCurrentTurn(sourceSnapshot),
+                wasDefeated: isDefeat).ToList();
             if (isDefeat && HasDeathTrigger(sourceSnapshot))
                 candidates.Add(CreateDeathTriggerCandidate(player.PlayerIndex, sourceSnapshot,
                     new Dictionary<string, string> { ["cause"] = triggerCause }));
@@ -2068,7 +2069,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
         if (queueLeaveTrigger)
-            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot));
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
+                includeTombConstruct: true, wasDefeated: false));
         if (finalDestination == "library-top")
             QueueReturnedToLibraryTopTrigger(player.PlayerIndex, sourceSnapshot);
         RecalculateContinuousTroops();

@@ -291,7 +291,8 @@ public sealed partial class L12GameEngine
                 owner.Hand.Add(card);
                 AddEvent("leave", controllerIndex, $"{card.Name}被 GM 返回所有者手牌", card);
             }
-            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, sourceSnapshot));
+            QueueTriggerCandidates(BuildS1LeaveReactionCandidates(controllerIndex, sourceSnapshot,
+                includeTombConstruct: true, wasDefeated: false));
             RecalculateContinuousTroops();
         }
 

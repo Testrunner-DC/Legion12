@@ -122,7 +122,7 @@ public sealed class CounterTacticTriggerConsistencyTests
         foreach (var left in leftCards)
         {
             var candidates = Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
-                Invoke(game, "BuildS1LeaveReactionCandidates", 0, left, true));
+                Invoke(game, "BuildS1LeaveReactionCandidates", 0, left, true, true));
             Invoke(game, "QueueTriggerCandidates", (object)candidates.ToArray());
         }
         game.State.IsResolvingStack = false;
@@ -514,7 +514,7 @@ public sealed class CounterTacticTriggerConsistencyTests
             Assert.False(LifecycleCheck(game, "CanDeclareFreshSetCounterTacticTrigger", candidate)));
         var newLifecycleCandidate = Assert.Single(Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
             Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex,
-                Legion("new-lifecycle-leave"), true)),
+                Legion("new-lifecycle-leave"), true, true)),
             candidate => candidate.SourceInstanceId == counter.InstanceId);
         Assert.DoesNotContain(oldLifecycleCandidates,
             candidate => candidate.CandidateId == newLifecycleCandidate.CandidateId);
@@ -743,7 +743,7 @@ public sealed class CounterTacticTriggerConsistencyTests
         Assert.Same(first, player.Field[1][0]);
         var resetCandidate = Assert.Single(Assert.IsAssignableFrom<IEnumerable<L12TriggerCandidate>>(
             Invoke(game, "BuildS1LeaveReactionCandidates", player.PlayerIndex,
-                Legion("reset-lifecycle-leave"), true)),
+                Legion("reset-lifecycle-leave"), true, true)),
             candidate => candidate.SourceInstanceId == first.InstanceId);
         Assert.True(LifecycleCheck(game, "CanDeclareFreshSetCounterTacticTrigger", resetCandidate));
     }

@@ -1389,7 +1389,7 @@ public sealed partial class L12GameEngine
     }
 
     private IEnumerable<L12TriggerCandidate> BuildS1LeaveReactionCandidates(int owner, L12CardInstance left,
-        bool includeTombConstruct = true)
+        bool includeTombConstruct, bool wasDefeated)
     {
         var player = State.Players[owner];
         var candidates = new List<L12TriggerCandidate>();
@@ -1398,10 +1398,13 @@ public sealed partial class L12GameEngine
         if (includeTombConstruct && left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
             candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;
-        candidates.AddRange(player.Field[1]
-            .Where(card => card is { CardId: "S01-0320" })
-            .Cast<L12CardInstance>()
-            .Select(bloodEagle => CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术")));
+        // 入墓和离场都不等于阵亡；这里只消费调用方已有的权威阵亡事实。
+        // 独立离场效果仍走下面的原有条件，不随阵亡资格一并过滤。
+        if (wasDefeated)
+            candidates.AddRange(player.Field[1]
+                .Where(card => card is { CardId: "S01-0320" })
+                .Cast<L12CardInstance>()
+                .Select(bloodEagle => CreateTriggerCandidate(owner, bloodEagle, "reaction", "【我方军团阵亡时】反击战术")));
         if (left.CurrentCost > 2 && State.ActivePlayer != owner)
         {
             candidates.AddRange(player.Field[1]
