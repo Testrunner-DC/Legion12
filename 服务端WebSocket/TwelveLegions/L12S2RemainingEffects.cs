@@ -336,13 +336,11 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         switch (ability)
         {
-            case "thorHammerRevive" when source?.CardId == "S02-0301":
+            case "thorHammerRevive" when item.SourceCardId == "S02-0301":
             {
-                if (player.Graveyard.Contains(source) && EmptySlots(player).Contains(item.Data.GetValueOrDefault("slot")))
-                {
-                    _ = TrySummonFromAnyPrivateZone(player, player.PlayerIndex, source.InstanceId,
-                        item.Data["slot"], tapped: false, presentationOwner: item);
-                }
+                ResolveDeclaredGraveLegionSummons(item,
+                    [(item.SourceInstanceId, item.Data.GetValueOrDefault("slot", string.Empty))],
+                    candidate => candidate.CardId == item.SourceCardId);
                 FinishStackItem(item);
                 return true;
             }

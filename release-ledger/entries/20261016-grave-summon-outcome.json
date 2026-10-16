@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-grave-summon-outcome",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "墓地登场结果",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "图坦卡蒙、瓦尔基里、雷神之锤的已选墓地军团或格位失效时，正确显示结算失败，不覆盖、不改选、不退还费用；图坦卡蒙仍让其余合法对象继续登场，并兼容不朽之礼的旧结算记录。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2RemainingEffects.cs"
+      ]
+    }
+  ]
+}

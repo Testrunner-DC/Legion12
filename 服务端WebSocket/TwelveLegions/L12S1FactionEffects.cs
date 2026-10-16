@@ -134,16 +134,21 @@ public sealed partial class L12GameEngine
             }
             case "图坦卡蒙":
             {
-                if (PublicLegions(player).Count() >= PublicLegions(State.Players[1 - item.Controller]).Count()) { FinishStackItem(item); return true; }
                 var declaredGuards = PublicTriggerDeclared(item, "entryCards")
                     .Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (PublicLegions(player).Count() >= PublicLegions(State.Players[1 - item.Controller]).Count())
+                {
+                    if (declaredGuards.Length > 0)
+                        RecordTargetSettlementFailure(item, string.Join('|', declaredGuards),
+                            "声明后军团数量条件失效：我方军团数量不再少于对方；不执行登场，已支付费用不返还");
+                    FinishStackItem(item); return true;
+                }
                 if (declaredGuards.Length > 0)
                 {
                     var slots = new[] { PublicTriggerDeclared(item, "entrySlot1"), PublicTriggerDeclared(item, "entrySlot2") };
-                    for (var index = 0; index < declaredGuards.Length; index++)
-                        if (EmptySlots(player).Contains(slots[index], StringComparer.OrdinalIgnoreCase))
-                            SummonFromAnyPrivateZone(player, declaredGuards[index], slots[index],
-                                tapped: false, presentationOwner: item);
+                    ResolveDeclaredGraveLegionSummons(item,
+                        declaredGuards.Select((id, index) => (id, slots.ElementAtOrDefault(index) ?? string.Empty)),
+                        candidate => candidate.CardId == PublicTriggerTombGuardCard);
                     FinishStackItem(item); return true;
                 }
                 FinishStackItem(item); return true;
@@ -343,12 +348,9 @@ public sealed partial class L12GameEngine
             {
                 var targetId = CompositeDeclared(item, "entryCard").SingleOrDefault();
                 var slot = CompositeDeclared(item, "entrySlot").SingleOrDefault();
-                if (targetId is not null && slot is not null
-                    && player.Graveyard.Any(candidate => candidate.InstanceId == targetId && candidate.CardType == "legion"
-                        && L12StructuredCardRules.CurrentCostAtMost(candidate, 5) && L12StructuredCardRules.HasFaction(player, candidate, "asgard"))
-                    && EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
-                    SummonFromAnyPrivateZone(player, targetId, slot,
-                        tapped: false, presentationOwner: item);
+                ResolveDeclaredGraveLegionSummons(item, [(targetId ?? string.Empty, slot ?? string.Empty)],
+                    candidate => L12StructuredCardRules.CurrentCostAtMost(candidate, 5)
+                        && L12StructuredCardRules.HasFaction(player, candidate, "asgard"));
                 FinishStackItem(item);
                 return true;
             }
@@ -2069,6 +2071,37 @@ public sealed partial class L12GameEngine
             "card-effect", item.StackItemId,
             data: WithPromptNarrative(
                 new Dictionary<string, string> { ["action"] = action }, narrative));
+
+    private void ResolveDeclaredGraveLegionSummons(L12StackItem item,
+        IEnumerable<(string InstanceId, string Slot)> declarations, Func<L12CardInstance, bool> candidateRule)
+    {
+        var player = State.Players[item.Controller];
+        var declared = declarations.ToArray();
+        var previousStatus = item.Data.GetValueOrDefault("effectResultStatus");
+        var previouslyFizzled = _fizzledAnalyticsStackItems.Contains(item.StackItemId);
+        var resolved = 0;
+        foreach (var (instanceId, slot) in declared)
+        {
+            // Preserve the declared source zone and card rule; the shared transaction owns slot revalidation.
+            if (player.Graveyard.Any(card => card.InstanceId == instanceId && IsFieldLegion(card) && candidateRule(card))
+                && TrySummonFromAnyPrivateZone(player, item.Controller, instanceId, slot,
+                    tapped: false, presentationOwner: item))
+                resolved++;
+        }
+        if (resolved == 0)
+            RecordTargetSettlementFailure(item, string.Join('|', declared.Select(entry => entry.InstanceId)),
+                "所选墓地军团或登场位置在逆结算后失效；不覆盖、不改选，已支付费用不返还");
+        else if (resolved < declared.Length)
+        {
+            // A per-object cancellation must not turn a partially completed multi-object effect into total failure.
+            if (previousStatus is null) item.Data.Remove("effectResultStatus");
+            else item.Data["effectResultStatus"] = previousStatus;
+            if (!previouslyFizzled) _fizzledAnalyticsStackItems.Remove(item.StackItemId);
+            AddEvent("effect", item.Controller,
+                $"〈{item.SourceName}〉有{declared.Length - resolved}个已声明登场对象或位置失效；其余对象继续结算",
+                FindSource(item) is { } source ? [source] : []);
+        }
+    }
 
     private bool TrySummonFromAnyPrivateZone(L12PlayerState sourceOwner, int destinationPlayerIndex,
         string instanceId, string slotChoice, bool tapped, L12StackItem presentationOwner)

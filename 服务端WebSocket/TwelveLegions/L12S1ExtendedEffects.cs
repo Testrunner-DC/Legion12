@@ -1247,12 +1247,10 @@ public sealed partial class L12GameEngine
             case "不朽之礼":
                 if (!Draw(player, 1)) { FinishStackItem(item); return; }
                 var declaredGuard = PublicTriggerDeclared(item, "entryCard");
-                if (!string.IsNullOrWhiteSpace(declaredGuard) && declaredGuard != "mode:none"
-                    && player.Graveyard.Any(card => card.InstanceId == declaredGuard && card.CardId == "S01-0212")
-                    && EmptySlots(player).Contains(PublicTriggerDeclared(item, "entrySlot"), StringComparer.OrdinalIgnoreCase))
+                if (!string.IsNullOrWhiteSpace(declaredGuard) && declaredGuard != "mode:none")
                 {
-                    SummonFromAnyPrivateZone(player, declaredGuard, PublicTriggerDeclared(item, "entrySlot"),
-                        tapped: false, presentationOwner: item);
+                    ResolveDeclaredGraveLegionSummons(item, [(declaredGuard, PublicTriggerDeclared(item, "entrySlot"))],
+                        candidate => candidate.CardId == PublicTriggerTombGuardCard);
                     FinishStackItem(item); return;
                 }
                 if (item.Data.ContainsKey("declared:entryCard")) { FinishStackItem(item); return; }
