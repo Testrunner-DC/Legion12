@@ -1,16 +1,23 @@
 # Legion12 Bug 修复记录
 
-## CHAT-20261017-HOME-ENTRY｜正式启用接线与四图标入口，本地界面通过
+## CHAT-20261017-HOME-ENTRY｜正式启用接线与四图标入口，已上线
 
 - 用户要求优先上线聊天及主页四按钮去文字。此前70e已带聊天代码但正式开关缺省false；本批沿 `L12_CHAT_ENABLED` 的已有严格解析和唯一聊天通道，以独立正式环境文件接线，不改原凭据配置、不新建连接或轮询。`ops/server/legion12-chat-enabled.conf` 与 `.env.example` 仅是明确安装蓝本；没有执行安装或核准新进程前不得称正式开启。
 - SiteShell只从当前账号的好友未读线程选择最新会话，SocialPopover复用现有好友概览和ChatPanel，已切号缓存不作为选中会话；无未读仍从原在线页打开。四个utility按钮移除可见文字，保留完整title/aria-label、在线/未读数字及连接状态点，原updateEntries及消息资源不改。
 - 75项资源合同与11组真实Headless Edge组件矩阵通过，含最新未读直达、无未读原路径、四按钮44px命中、IME、屏蔽、账号切换及对局/普通观战原入口。最终D盘 `chat-home-utility-20261017/browser-r4-final/report.json` SHA D0C344B4，Main独立核源码并查看真实SiteShell截图；早期夹具失败保留。配置保护5项纯合成通过，不冒称线上聊天或真iOS验收；候选完整门禁和发布后真实协商仍待。
+- 最终正式a3558ebe/PID259138/重启0已核准：真实认证chatV1=true、独立环境文件true；公网桌面/移动四图标与命中通过。首轮移动坐标在抽屉过渡中读取而失败，原失败/桌面有效结果保留，仅用原生trial稳定等待补移动，不改产品。独立核验1A9AC3C4，07:08维护113→114/入口开放；真实汇总D盘 `chat-formal-release-20261017/release-session-summary.json`，不是新性能或真iOS结论。
 
-## DEPLOY-20261017-INVITATION-EXPIRY｜永久清理过期邀请，本地专项通过
+## TEST-20261017-LARGE-PLACEMENT｜大场面终局选择器补齐，不改产品
+
+- 完整Release平台1806/1807时，测试在提交前主动拒绝任何非空placementMode；原失败没有记录实际mode，不猜测是哪张卡触发。全仓按placementMode核对PromptsAndSetup、LibraryPlacementTransactions、ActiveAbilities与PromptOverlay，四种既有权威wire均有明确解析。
+- 仅TerminalCausalIsolationTests测试叶抽共享指令构造，single传cardInstanceIds/destination，split/all-top-bottom/all-bottom传完整上下牌序，原binding/最小最大张数/3秒/字节范围/随机种子/持久化断言均保留，未知mode仍拒绝并留mode/action。新四mode+未知反例及原真实WebSocket专项2/2，最终完整平台1808/1808零失败跳过；规则输入树未变，严格绑定原7686真实通过证据，不重复或伪造TRX。原完整失败保持。
+
+## DEPLOY-20261017-INVITATION-EXPIRY｜永久清理过期邀请，已上线
 
 - 共享根因已由前次真实seal定位：超过十分钟的邀请只能被拒绝，未从内存字典移除；排空因原始数量误阻塞。全仓检索 `_friendInvitations` 与 `FriendInvitation`，唯一创建入口、接受/拒绝、撤销及排空读取全部核查，不涉及卡池或卡效。
 - 创建改用既有可注入时钟，并与接受/撤销共用原邀请门闩；创建、合法会话的响应及readiness在门闩内移除严格 `CreatedAt < now-10m` 的相同内存entry。恰十分钟仍有效，readiness争用仍立即失败关闭。只清无效邀请，不改房间、平台、数据库、历史记录、持久化守卫或许可生成。
 - D盘 `invitation-expiry-20261017` 保留RED13（7过期场景失败、6有效/并发对照通过）及最终green-r3 17/17零失败跳过，涵盖精确边界、接受/拒绝、替代、断线、重复接受、错收件人、排空内合法撤销、真实准备/进行中房间、门闩争用、已取得Admission的创建者和时钟倒退。两持锁测试使用独立线程持有/释放同一Monitor，清除阻塞等待警告；不改变原断言。独立审查CLEAR，完整平台/规则与正式上线仍待，不以专项绿冒充部署。
+- 已进入a3558ebe正式发布并独立核验，最终7686规则同源复用/完整1808平台均通过，含17项邀请回归；严格十分钟边界、活跃房间/lease和数据/许可守卫不变。此为产品层永久修复，区别于上轮70e的一次历史工具兼容。
 
 ## DEPLOY-20261017-RETRY｜过期邀请阻塞与只读证明格式兼容
 
