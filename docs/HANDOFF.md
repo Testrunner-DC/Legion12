@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-16 移动试炼入口最终验收；384待办不变
+
+- 用户已批的移动额外区试炼入口完成：仍用现有ability身份/快照和activateAbility权威链，按player+instance重读最新能力，controlled/readOnly/Main/prompt/pending/enabled/triggerOnly双重守卫；支持最小化/重开和完成后主动能力，桌面PlayerMat不改。5张试炼共用入口，非五张各跑一套规则；两产品叶/专项回归/命名验证入口/玩家日志绑定。
+- 子片7格与Main九原生态（844/667真实命中、completed、三禁用、对手/spectator、桌面）通过；原脚本hidden断言空跑已明确修为真实masked对手/count1/disabled必断言，Main原生另证。Main发现离区后raw source会无框残留pause，改按当前card判暂停并null/readOnly关窗；最终原生remove→readd不自启、再点只发1及0→8同框不误关均通过，独审CLEAR。
+- 最终前端标准Batch r2全合同/类型/production+testrun新构建成功，4输入不变，F73E5558/FB5E81D1；源码未变的7637规则/1790平台有效证据复用，不重复后端或称新完整Release。8CB22F6E最终组合回执明确旧9态和最终生命周期增量，不冒充最终自动脚本整轮或真机/性能通过。线上仍既定正式cce8，0部署/维护/本新修复线上关单；原三桌面已关、384待办/阶段144/周期236保持。Git以最终同步收据为准，下一片只具名复现庆典library来源与小次郎冗余事实，原680a/R7分别保持。
+
 ## 2026-10-16 接续144｜第二试炼三条正式闭环，384待办
 
 - bf043963/f8130078/4fa296bb分别按2af7ecc4双试炼共享修复fixed_verified，不互设duplicate。精确正式cce8四AngusSecondTrialTests Passed，桌面GamePage/GameBoard/PlayerMat原生0→8同框刷新、关闭后已8第二卡可点、一次second/completeTrial；f813元信息503不称原私局重放。报告9月8—9日早于修复，后来的efc移动遗漏另记。

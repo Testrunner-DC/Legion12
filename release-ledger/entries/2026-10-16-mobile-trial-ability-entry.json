@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-mobile-trial-ability-entry",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "移动端试炼操作",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正移动横屏点击试炼卡时缺少发动入口的问题；第二张试炼达到条件后可正常完成，已完成试炼的主动能力也可操作，支持最小化后查看场面。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css"
+      ]
+    }
+  ]
+}

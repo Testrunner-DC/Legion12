@@ -50,6 +50,8 @@ type GmPlacementRequest = {
   cardType: string
   triggerEffects: boolean
 }
+type AbilityEntry = { id: string; label: string; enabled?: boolean; disabledReason?: string; triggerOnly?: boolean }
+type MobileTrialAbilitySource = { playerIndex: number; instanceId: string }
 const props = withDefaults(defineProps<{
   game: GameState
   readOnly?: boolean
@@ -97,6 +99,8 @@ const mobileMoraleReason = ref('')
 // On phones the card face stays intentionally compact. The independent left
 // drawer is opened only through its persistent handle, keeping a card tap safe.
 const mobileInspectorOpen = ref(false)
+const mobileTrialAbilitySource = ref<MobileTrialAbilitySource | null>(null)
+const mobileTrialAbilityMinimized = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
 const focusDetailCard = computed<DeckCard | null>(() => {
@@ -317,6 +321,63 @@ function isControlledPlayer(playerIndex: number) { return playerIndex === contro
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
 const isMyMain = computed(() => props.game.phase === 'Main' && props.game.activePlayer === controlledPlayerIndex.value)
+const mobileTrialAbilityCard = computed(() => {
+  const source = mobileTrialAbilitySource.value
+  if (!source) return null
+  const card = props.game.players.find(player => player.playerIndex === source.playerIndex)
+    ?.specialZones?.trials?.find(item => item.instanceId === source.instanceId)
+  return card?.hidden ? null : card ?? null
+})
+const mobileTrialAbilityEntries = computed<AbilityEntry[]>(() =>
+  (mobileTrialAbilityCard.value?.abilities ?? []).filter(entry => entry.id !== 'freeMove'))
+watch(mobileTrialAbilityCard, card => {
+  if (!card) closeMobileTrialAbility()
+})
+watch(() => props.readOnly, readOnly => {
+  if (readOnly) closeMobileTrialAbility()
+})
+const mobileTrialActionsEnabled = computed(() => {
+  const source = mobileTrialAbilitySource.value
+  return Boolean(mobileLandscapeViewport.value && source && !props.readOnly
+    && isControlledPlayer(source.playerIndex) && isMyMain.value
+    && !hasBlockingPrompt.value && !l12State.pendingAction)
+})
+function closeMobileTrialAbility() {
+  mobileTrialAbilitySource.value = null
+  mobileTrialAbilityMinimized.value = false
+}
+function selectMobileTrialFor(playerIndex: number, card: Card) {
+  selectPublicCardFor(playerIndex, card)
+  const entries = (card.abilities ?? []).filter(entry => entry.id !== 'freeMove')
+  if (!mobileLandscapeViewport.value || props.readOnly || !isControlledPlayer(playerIndex)
+    || card.hidden || hasBlockingPrompt.value || !entries.length) {
+    closeMobileTrialAbility()
+    return
+  }
+  mobileTrialAbilitySource.value = { playerIndex, instanceId: card.instanceId }
+  mobileTrialAbilityMinimized.value = false
+}
+function mobileTrialAbilityDisabled(entry: AbilityEntry) {
+  return !mobileTrialActionsEnabled.value || entry.enabled === false || entry.triggerOnly === true
+}
+function mobileTrialAbilityTitle(entry: AbilityEntry) {
+  if (entry.disabledReason) return entry.disabledReason
+  if (entry.triggerOnly) return '仅在触发时点发动'
+  if (props.readOnly || !mobileTrialAbilitySource.value
+    || !isControlledPlayer(mobileTrialAbilitySource.value.playerIndex)) return '当前仅可查看'
+  if (!isMyMain.value) return '仅在我方主要阶段可以发动'
+  if (hasBlockingPrompt.value) return '请先完成当前提示'
+  if (l12State.pendingAction) return '上一操作正在处理中'
+  return entry.label
+}
+function activateMobileTrialAbility(entry: AbilityEntry) {
+  const source = mobileTrialAbilitySource.value
+  const card = mobileTrialAbilityCard.value
+  const current = mobileTrialAbilityEntries.value.find(item => item.id === entry.id)
+  if (!source || !card || !current || mobileTrialAbilityDisabled(current)) return
+  activateAbilityFor(source.playerIndex, card, current.id)
+  closeMobileTrialAbility()
+}
 const activeMorale = computed(() =>
   me.value.spendableResourceCount ?? (me.value.morale.filter(card => !card.tapped).length
   + (me.value.temporaryMorale ?? 0)
@@ -582,6 +643,7 @@ const modalPresentationPaused = computed(() => Boolean(
   || visiblePromptModal.value
   || graveyardPlayer.value !== null || masterPlayerIndex.value !== null
   || customDisasterSlot.value !== null || mobileRecordOpen.value || mobileMoralePickerOpen.value
+  || Boolean(mobileTrialAbilityCard.value && !mobileTrialAbilityMinimized.value)
   || modalInspectorVisible.value,
 ))
 const passivePresentationPaused = computed(() => Boolean(
@@ -680,6 +742,7 @@ function clearOrdinaryInteractionState() {
   masterPlayerIndex.value = null
   focusCard.value = null
   customDisasterSlot.value = null
+  closeMobileTrialAbility()
 }
 watch(hasBlockingPrompt, blocking => {
   if (blocking) clearOrdinaryInteractionState()
@@ -711,6 +774,10 @@ watch(controlledPlayerIndex, () => {
   graveyardPlayer.value = null
   masterPlayerIndex.value = null
   promptMinimized.value = false
+  closeMobileTrialAbility()
+})
+watch(mobileLandscapeViewport, mobile => {
+  if (!mobile) closeMobileTrialAbility()
 })
 watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '', () => {
   const event = [...(props.game.recentEvents ?? [])].reverse().find(item => item.type === 'hidden-reveal' && item.cards?.length)
@@ -1324,7 +1391,7 @@ function statusTexts(card: Card) {
               <button v-for="trial in viewEnemy.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
                 :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
                 :disabled="trial.hidden" :title="trial.hidden ? '对手未揭示的试炼' : trial.name"
-                @mouseenter="!trial.hidden && (focusCard = trial)" @click.stop="!trial.hidden && selectPublicCardFor(viewEnemy.playerIndex, trial)">
+                @mouseenter="!trial.hidden && (focusCard = trial)" @click.stop="!trial.hidden && selectMobileTrialFor(viewEnemy.playerIndex, trial)">
                 <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="对手未揭示的试炼" />
                 <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
                 <b v-if="isCurrentTrial(viewEnemy.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewEnemy.specialZones?.trialLevel ?? 0 }}</b>
@@ -1362,7 +1429,7 @@ function statusTexts(card: Card) {
               <button v-for="trial in viewMe.specialZones.trials" :key="trial.instanceId" type="button" class="mobile-extra-card"
                 :class="{ concealed: trial.hidden, inactive: !trial.hidden && !trial.trialCompleted }"
                 :title="trial.hidden ? '我方未揭示的试炼' : trial.name"
-                @mouseenter="focusCard = trial" @click.stop="selectPublicCardFor(viewMe.playerIndex, trial)">
+                @mouseenter="focusCard = trial" @click.stop="selectMobileTrialFor(viewMe.playerIndex, trial)">
                 <img v-if="trial.hidden" class="trial-card-back" src="/assets/l12/trial-back.png" alt="我方未揭示的试炼" />
                 <CardImage v-else :card-id="trial.cardId" :legacy-url="trial.imageUrl" :alt="trial.name" intent="board" eager />
                 <b v-if="isCurrentTrial(viewMe.specialZones?.trials, trial)" aria-label="当前试炼进度">{{ trial.trialProgress ?? viewMe.specialZones?.trialLevel ?? 0 }}</b>
@@ -1614,6 +1681,29 @@ function statusTexts(card: Card) {
             <p v-else class="mobile-inspector-empty">点击手牌、场上卡牌、圣物、试炼或当前天灾，即可在此查看完整信息。</p>
           </aside>
         </Transition>
+      </Teleport>
+      <Teleport :to="landscapeTeleportTarget()">
+        <div v-if="mobileLandscapeViewport && mobileTrialAbilityCard" class="mobile-trial-ability-overlay mobile-safe-overlay" :class="{ minimized: mobileTrialAbilityMinimized }" @click.self="closeMobileTrialAbility">
+          <section v-if="mobileTrialAbilityMinimized" class="mobile-trial-ability-minimized">
+            <button type="button" :aria-label="`展开：${mobileTrialAbilityCard.name}`" :title="mobileTrialAbilityCard.name" @click="mobileTrialAbilityMinimized = false">展开 {{ mobileTrialAbilityCard.name }}</button>
+          </section>
+          <section v-else class="mobile-trial-ability-dialog" role="dialog" aria-modal="true" aria-label="试炼能力">
+            <button type="button" class="mobile-trial-ability-minimize" aria-label="最小化试炼能力" title="最小化以查看场面" @click="mobileTrialAbilityMinimized = true">—</button>
+            <button type="button" class="mobile-trial-ability-close" aria-label="关闭试炼能力" @click="closeMobileTrialAbility">×</button>
+            <CardImage :card-id="mobileTrialAbilityCard.cardId" :legacy-url="mobileTrialAbilityCard.imageUrl" :alt="mobileTrialAbilityCard.name" intent="detail" eager role="button" tabindex="0" aria-label="选择试炼卡牌" @mouseenter="focusCard = mobileTrialAbilityCard" @click="focusCard = mobileTrialAbilityCard" />
+            <div class="mobile-trial-ability-content">
+              <small>{{ mobileTrialAbilityCard.trialCompleted ? '已完成试炼' : `试炼进度 ${mobileTrialAbilityCard.trialProgress ?? 0}/8` }}</small>
+              <h2>{{ mobileTrialAbilityCard.name }}</h2>
+              <p v-if="!mobileTrialAbilityEntries.length" class="l12-effect-body">{{ mobileTrialAbilityCard.effectText || '暂无可发动能力' }}</p>
+              <div v-else class="mobile-trial-ability-actions" data-ui-contract="equal-option-group">
+                <button v-for="entry in mobileTrialAbilityEntries" :key="entry.id" type="button" class="l12-effect-body l12-effect-body--compact"
+                  :disabled="mobileTrialAbilityDisabled(entry)" :title="mobileTrialAbilityTitle(entry)"
+                  @click="activateMobileTrialAbility(entry)">{{ entry.label }}</button>
+              </div>
+              <span v-if="!mobileTrialActionsEnabled" class="mobile-trial-ability-hint">{{ hasBlockingPrompt ? '请先完成当前提示' : l12State.pendingAction ? '上一操作正在处理中' : '仅在我方主要阶段可以发动' }}</span>
+            </div>
+          </section>
+        </div>
       </Teleport>
       <Teleport :to="landscapeTeleportTarget()">
         <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">

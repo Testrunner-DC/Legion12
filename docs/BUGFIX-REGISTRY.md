@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UI-20261016-MOBILE-TRIAL-ENTRY｜移动额外区试炼漏发动入口
+
+- Main冻结正式cce8实际短横屏复现：移动CSS隐藏PlayerMat原试炼道，GameBoard另画的mobile-extra-card只走focus/selectPublicCardFor，详情仅文字，已8第二卡也无完成按钮。该重复入口efc838ae于9月20日引入，晚于原三条桌面反馈/2af修复，不混认旧根因。用户明确接受限定入口修复与同类验收。
+- 所有mobile-extra-zone trials走新展示入口，沿原公开快照abilities和activateAbilityFor→activateAbility→command；不造卡号条件或前端结算。弹框按player+instance每次取最新card/entry，点击二次核controlled/readOnly/Main/prompt/pending/enabled/triggerOnly。保留对手只查看/隐藏牌背、旧桌面、最小化/恢复；离区null或readOnly关窗，pause改认真实当前card，避免无框仍暂停。
+- loadDeckCatalog三来源精确查询列5试炼：湖中仙女的馈赠、寻找圣杯之旅、芬尼亚传奇、十字军东征、探寻天空之城，共用入口迁移，非五张独立规则全验。原无dialog RED与子片7绿保留；独审P2指出hidden对手条件断言空跑，Main补实际masked对象/count1/disabled/title必断言，并另以原生明确证真实隐藏对手禁用及0指令。
+- Main9原生UI含844×390/667×375按钮完整命中、0→8同框/最小化/重开/唯一second指令、completed主动能力、非Main/pending/trigger与对手/spectator/桌面。最终离区→重加同ID不自开、显式再点恰1/同ID更新8不误关增量通过；原7A57源9态不重标为最终整轮，E265源增量及独审CLEAR组合。标准前端Batch r2全合同/类型/双环境新构建成功，F73E5558/FB5E81D1、4输入不变；有效后端7637/1790复用。
+- D artifacts/bug-closure-continuation-20261011/angus-trial-second-20261016/local-mobile-final-r2.json为8CB22F6E；专用验证命令已注册、解析通过，原QA遮罩失败和r1/r2边界保持。不声称自动脚本最终全跑、原私局/真实iOS/卡效全矩阵/30房性能通过；0部署/维护/因本新修复线上关单。384待办保持，原三桌面实际闭环用正式cce8证据，不能用本新代码冒充上线。
+
 ## CLOSEOUT-20261016-ANGUS-SECOND｜原三条桌面反馈分别核准已部署修复
 
 - BUG-20260909-bf043963与BUG-20260908-f8130078/4fa296bb原文第二试炼无法点击，版本04fb/eac1均早于2af7ecc4（双试炼按实例重建能力与已开弹框随快照刷新），修复在正式cce8。精确正式rules.trx四AngusSecondTrialTests均Passed；Main冻结正式全GamePage/GameBoard/PlayerMat在1366×768原生点第二卡0禁用→同框8启用→关闭后已8下方卡重开→唯一second/completeTrial。不是只测PlayerMat或只读源码；f813元信息503仅保留，不称原私局/服务端执行或真机通过。
