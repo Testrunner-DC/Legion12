@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-pharaoh-festival-movement-origin",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "法老王的庆典入墓动画",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正法老王的庆典将所选牌库卡牌置入墓地时，对手与观战视角误画成从战场入墓的问题；选牌规则与余牌顺序保持不变。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    }
+  ]
+}

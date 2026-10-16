@@ -2502,13 +2502,20 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     }
 
     private void AttachPublicHandDiscardOriginToLastEvent(int playerIndex, L12CardInstance card)
+        => AttachPublicDiscardOriginToLastEvent(playerIndex, card, "hand");
+
+    private void AttachPublicDiscardOriginToLastEvent(int playerIndex, L12CardInstance card,
+        string originZone)
     {
         if (!State.MovementOriginProtocolEnabled
             || playerIndex < 0 || playerIndex >= State.Players.Length
+            || originZone is not ("hand" or "library")
             || card.OwnerIndex != playerIndex
             || card.Hidden
             || string.IsNullOrWhiteSpace(card.InstanceId)
             || string.IsNullOrWhiteSpace(card.Name)
+            || (originZone == "hand" ? State.Players[playerIndex].Hand : State.Players[playerIndex].Library)
+                .Any(candidate => candidate.InstanceId == card.InstanceId)
             || State.Players[playerIndex].Graveyard.Count(candidate =>
                 candidate.InstanceId == card.InstanceId) != 1
             || State.LastAction is not { Type: "discard", PlayerIndex: var eventPlayer } actionEvent
@@ -2518,7 +2525,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             || actionEvent.Cards[0].Hidden
             || string.IsNullOrWhiteSpace(actionEvent.Cards[0].Name))
             return;
-        var updated = actionEvent with { OriginZone = "hand" };
+        var updated = actionEvent with { OriginZone = originZone };
         State.LastAction = updated;
         if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
             State.Events[^1] = updated;

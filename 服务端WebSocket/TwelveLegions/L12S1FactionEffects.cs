@@ -1944,7 +1944,13 @@ public sealed partial class L12GameEngine
     {
         var player = State.Players[item.Controller];
         var selected = player.Library.FirstOrDefault(card => card.InstanceId == choice);
-        if (selected is not null) { player.Library.Remove(selected); ResetCardForPrivateZone(selected); player.Graveyard.Add(selected); AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected); }
+        if (selected is not null && player.Library.Remove(selected))
+        {
+            ResetCardForPrivateZone(selected);
+            player.Graveyard.Add(selected);
+            AddEvent("discard", item.Controller, $"法老王的庆典将 {selected.Name} 置入墓地", selected);
+            AttachPublicDiscardOriginToLastEvent(item.Controller, selected, "library");
+        }
         PromptPharaohFestivalOrder(item);
     }
 

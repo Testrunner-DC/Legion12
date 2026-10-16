@@ -1,5 +1,25 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-ISIS-EMPTY-LIBRARY｜空牌库特殊胜利具名闭环
+
+- 57a8ade9原文仅“伊西斯0牌罐子收齐后点特殊胜利判没牌输了”，无match。412b5632早于报告，只作既有入口背景；01ea→b0799465（三种真实圣物存储五种罐去重计数）→正式cce8精确祖先核准。外置只引用正式16622461 DLL/9Data，真实snapshot可用→Handle isisVictory，双方×严格V2四格全过：双方库0、五种真罐、墓地奥西里斯、唯一特殊胜利/对应winner、0draw、空队列；4D1E4B80/8F03CFB0、Main完整源/runner/提案独审CLEAR。仅合成初局，不称私人原局重放。
+- 5E1453D3单项提案/原SelfTest12负例后一次preview/CAS30556/独立终态/原文历史/撤会话核准，B7534868收据。原同次快照对账909/377new/288resolved/244closed，阶段151=56fixed/79rejected/16duplicate、周期243，本轮393起实际关闭16条。仅本片owned obj/bin/temp的561942406B已核边界删除，TRX/源码/receipt及正式原源保留，67961538清理收据；无部署或维护变更。
+
+## CLOSEOUT-20261017-CANOPIC-DECLINE｜两条已部署罐子取消语义分别闭环
+
+- e823b3e6原文“不发动后卡在圣物区”、5e558fd9“没有发动的强攻罐子未入墓”，各自fixed_verified而非duplicate；报告04fb/086f→a3f89cb3→正式cce8祖先精确核准，1dc/11fea整项无效留场边界仍保持。正式TRX移除decline16/零目标16/罐一必选8及真实playCard正常/无效对照通过，测试源与正式同blob；Main完整提案/七证据SHA/源码/祖先独审CLEAR。
+- 5e精确绑定原局元信息一次503/storage_unavailable，原130B响应加密、会话撤销，不重试或声称缺失/原录像通过；e823无match。20D38779提案经原执行器两SelfTest各12负例后，一次preview/CAS30548/30549/独立终态/原文历史保留及撤会话核准，FDB2ADCB收据。唯一909/378new/287resolved/244closed，阶段150=55fixed/79rejected/16duplicate、周期242；本逻辑轮从393实际关闭15条。原同次post-CAS快照直接对账，无新部署/维护写。
+
+## EFFECT-20261017-FESTIVAL-ORIGIN｜庆典牌库入墓公开来源，本地完整验收
+
+- 用户已批准限定来源修复。真实Handle庆典第二次选牌实际library→grave，旧公开discard缺来源使对手消费者画为field→grave。沿原成功移区事实补library；共享来源器只接受hand/library、真实来源已离开、墓地唯一公开同实例及唯一末事件，新V2能力位仍控制新增字段，旧缺位false不变。费用、世界之环筛选、私密选牌及余牌顺序不改。
+- 两产品叶及PharaohFestivalMovementOriginTests三叶冻结，9新回归、5来源/Journal、12既有庆典规则通过；Journal旧缺位测试仅为当前代码合成旧检查点，不冒称独立旧DLL。Main复核真实Handle消费者RED为field→grave，GREEN仅增library及派生hash，bindings/before/其余字段不变；1366×768/844×390×对手/普通观战四原生态各恰一真实library→graveyard节点、最终0活动/0页面错误。4FCC1B5F/2C74ADEC绑定证据，无注入动画提示或私牌。唯一标准Batch规则7654/7654、失败跳过0、11冻结输入不变及全部映射门禁通过，3DD25019/B422C045；未变平台1790及最终前端验收复用，不冒称重跑或新提交级Release。原受管临时281012585B已一次清除，必要日志/receipt保留D；不是原680a重复动画根治或上线。
+
+## RULE-20261017-TACTIC-EFFECT-CHECK｜最新安格斯裁定核查，产品无需改动
+
+- 最终正确测试-only叶70609D5F实际8/8（简单/复合战术×双方×每命令V2恢复），E3B7B57C/3D82C63F证实托勒密重复效果具有source-bound发动receipt、真实重复伤害/抽牌、费用/实体不重复，复合内部两段复用同一receipt。普通战术自然已消耗once，仍仅1进度/1通知；不清once，不把该场景冒称“托勒密本回合首次推进”的独立证据。
+- Main完整源审查：无临时分类enum、删“效果”、新能力身份或产品修复。先前错前提WIP以58369A24清单/AEE476A0补丁隔离并仅撤回其自有叶；首轮4/8为测试观察器误收非play辅助栈，原失败保留，非产品RED。原文/新版卡图及既有c0ae规则保持；无部署、维护写或因此线上关单。
+
 ## CLOSEOUT-20261016-ANGUS-ADDITIONAL｜两UI与两成功反击反馈分别正式闭环
 
 - e7e16652精确match只读master_id证实安格斯，API503保留，不提手牌/牌库/姓名；复用正式cce8四AngusSecondTrialTests与真实桌面0→8/重开/一次指令，2af修复链核准。45d86e81绑定9d6新增46×46/min46/nowrap/tabular，Main正式完整页1366×768数字0在缩放23.44矩形内、scroll=client42/错误0；不是原设备、每个数字、全视觉脚本或原私局。D371提案8证据/15字段/两SelfTest12负例/独审CLEAR，CAS30521/30522、终态/原文历史/撤会话均过，54CB133E收据，各fixed_verified而非duplicate。
@@ -9,7 +29,7 @@
 ## RULE-20261016-CARD-VS-EFFECT-ACTIVATION｜通用裁定已登记，工程缺口另片
 
 - 用户明确卡的发动与效果的发动不同；安格斯同一次战术卡发动只触发一次不是特例。FAQ-RULINGS已记：不按效果/堆叠段数重复认定卡发动，纯效果复制不自动成为新卡发动，卡发动/效果发动/效果成功按各自卡文消费。
-- 本地c0ae复合段source-bound去重不等于全部完成：托勒密简单/复合repeatedEffectOnly仍经play载体误登记该标记，现有54战术分类未覆盖跨来源效果复制。自然完整链原战术先占once，通常无第二次公开进度，不能包装成已证P1。下一片应具名真实Handle负例+不增V2/Journal字段的通用临时分类；文案按原批准“发动战术时”同步精确能力身份与展示，不改人类图像原件或加外显次数注释。尚未实施/部署该下一片。
+- 10月17日用户最终更正为“安格斯是发动战术效果时，托勒密可以触发”，覆盖稍早相反答复。故托勒密source-bound效果发动receipt本身不是已证Bug，不能将它误称新卡发动后再错误排除。现有c0ae的同源复合段标记需按“效果发动”理解；原自然完整链once通常挡住二次进度。未提交的纯CardActivation分类/删“效果”变更已要求隔离保留并只撤回自身改动，当前规范文本保留原图“发动战术效果时”；错前提8格RED与旧源50格GREEN不作产品成败证据。下一交付仅以正确托勒密简单/复合实际命令、费用/实体/恢复/内部续段及回合1次核查，不增协议、不改原图或加外显注释。庆典独立修复不受影响，未部署。
 
 ## UI-20261016-MOBILE-TRIAL-ENTRY｜移动额外区试炼漏发动入口
 
