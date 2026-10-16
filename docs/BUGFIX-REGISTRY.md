@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261016-CHAT-LEFT-ANCHOR｜对局聊天弹层与设置按钮左缘对齐
+
+- 直接用户请求的限定布局调整：原popover沿好友按钮right展开偏右；BattleUtilityDock新增设置锚点，只给对局SocialPopover传positionAnchor。新prop只用于place几何，关闭/Escape归还焦点/外点仍绑定好友按钮；未传prop的普通SiteShell原right定位和12px clamp不变，没有新网络/监听/定时器或蒙版。
+- 两叶35EDAC60/60785422，Main读6增5删并独立查看两图。原生合成GameBoard报告E36451AF，1440好友/对手与844×390左缘相对设置误差均<0.02px、视口内/mask0、Escape焦点/外点正确；API/外部/page错误0，2次WS尝试被阻断、真实连接0。普通页仅源码fallback核对，不冒称真实线上或真机矩阵；自有Vite/Edge均结束。
+- 已被877E40FC同源标准前端合同/类型/production和testrun构建覆盖，未因本布局改动重跑完整后端；与流量协议代码按家族分提交。没有部署、维护写、正式聊天开关或线上Bug状态变更。
+
 ## PERF-20261016-CARD-FRAME｜显式协商的full单包完整卡快照复用
 
 - 根因与范围：当前大终局的recentEvents/lastAction反复携带完全相同的整卡快照；沿既有L12SnapshotWireCodec扩展一次可协商编码，不改变任何权威卡牌/事件/日志字段。新增L12CardSnapshotFrame仅对已投影full envelope按完整原始JSON字典去重，按帧/连接隔离；客户端先完整验证和逐引用独立clone才交原消费者。最大2MiB/128事件/1024引用及至少1KiB且10%收益，否则原full；delta协议和原full baseline不变，失败send不提交。

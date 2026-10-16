@@ -4,7 +4,7 @@ import { chatResource } from '../chatResource'
 import { friendResource, refreshFriendResource } from '../friendResource'
 import { friendApi } from '../platform'
 import ChatPanel from './ChatPanel.vue'
-const props = defineProps<{ anchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean }>()
+const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const tab = ref(props.initialTab ?? 'friends')
 const selectedId = ref('')
@@ -18,8 +18,8 @@ function keydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.sto
 function outside(event: PointerEvent) { if (!panel.value?.contains(event.target as Node) && !props.anchor?.contains(event.target as Node)) close() }
 function place() {
   const width = Math.min(370, Math.max(180, innerWidth - 24)), height = Math.min(570, Math.max(160, innerHeight - 24))
-  const anchor = props.anchor?.getBoundingClientRect()
-  const left = Math.max(12, Math.min(anchor?.right ?? 12, innerWidth - width - 12))
+  const anchor = (props.positionAnchor ?? props.anchor)?.getBoundingClientRect()
+  const left = Math.max(12, Math.min((props.positionAnchor ? anchor?.left : anchor?.right) ?? 12, innerWidth - width - 12))
   const bottom = anchor && anchor.top > 180 ? Math.min(innerHeight - 172, innerHeight - anchor.top + 8) : 12
   position.value = { left: `${left}px`, bottom: `${Math.max(12, bottom)}px`, width: `${width}px`, maxHeight: `${Math.min(height, innerHeight - Math.max(12, bottom) - 12)}px` }
 }

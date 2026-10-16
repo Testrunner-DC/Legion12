@@ -10,6 +10,7 @@ import { landscapeTeleportTarget } from '../mobileViewport'
 defineEmits<{ settings: [] }>()
 
 const showFriends = ref(false)
+const settingsAnchor = ref<HTMLElement | null>(null)
 const friendsAnchor = ref<HTMLElement | null>(null)
 const chatUnread = computed(() => Object.values(chatResource.state.threads).reduce((sum, item) => sum + item.unread, 0))
 function toggleFriends(event: Event) { friendsAnchor.value = event.currentTarget as HTMLElement; showFriends.value = !showFriends.value }
@@ -176,7 +177,7 @@ function saveResponseSettings() {
 
 <template>
   <aside class="battle-utility-dock" :class="{ 'spectator-utilities': l12State.spectating }" aria-label="对局通用功能">
-    <button type="button" title="设置" aria-label="打开对局设置" @click="$emit('settings')">
+    <button ref="settingsAnchor" type="button" title="设置" aria-label="打开对局设置" @click="$emit('settings')">
       <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.2 4.9v-2.8l-2-.7a7 7 0 0 0-.7-1.6l.9-1.9-2-2-1.9.9a7 7 0 0 0-1.6-.7l-.7-2H9.4l-.7 2a7 7 0 0 0-1.6.7l-1.9-.9-2 2 .9 1.9a7 7 0 0 0-.7 1.6l-2 .7v2.8l2 .7c.2.6.4 1.1.7 1.6l-.9 1.9 2 2 1.9-.9c.5.3 1 .5 1.6.7l.7 2h2.8l.7-2c.6-.2 1.1-.4 1.6-.7l1.9.9 2-2-.9-1.9c.3-.5.5-1 .7-1.6l2-.7Z"/></svg>
     </button>
     <button type="button" title="好友与聊天" aria-label="打开好友功能" :aria-expanded="showFriends" @click="toggleFriends($event)">
@@ -189,7 +190,7 @@ function saveResponseSettings() {
   </aside>
 
   <Teleport :to="landscapeTeleportTarget()">
-    <SocialPopover v-if="showFriends" :anchor="friendsAnchor" :opponent-id="!l12State.spectating ? governance?.opponentAccountId : undefined" :opponent-name="governance?.opponentName" :match-id="l12State.game?.matchId" :opponent-read-only="l12State.game?.phase === 'GameOver' || l12State.leavingRoom" @close="showFriends = false"/>
+    <SocialPopover v-if="showFriends" :anchor="friendsAnchor" :position-anchor="settingsAnchor" :opponent-id="!l12State.spectating ? governance?.opponentAccountId : undefined" :opponent-name="governance?.opponentName" :match-id="l12State.game?.matchId" :opponent-read-only="l12State.game?.phase === 'GameOver' || l12State.leavingRoom" @close="showFriends = false"/>
 
     <div v-if="showTools && !l12State.spectating" class="battle-modal-mask" @click.self="showTools = false">
       <section class="battle-dialog tools-dialog" role="dialog" aria-modal="true" aria-labelledby="battle-tools-title">

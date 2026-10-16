@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-16 聊天左缘定位｜P4共享组件边界保持
+
+- 仅BattleUtilityDock/SocialPopover两叶35EDAC60/60785422添加可选定位锚点，保留原交互/关闭焦点锚点，普通页fallback完全原样。外部聊天对话的直接用户请求已核准，Main按2叶租约独立接受，不扩到开聊天/部署。
+- 原生合成GameBoard的两1440图和844×390：设置/弹层左缘误差均小于0.02px，无蒙版、视口内、Escape焦点与外点关闭通过；E36451AF，Main查看两图。0真实API/WS连接，2次WS被路由阻断，未跑普通页全浏览器矩阵。877E40FC同源前端完整续验有效，后端7508/1771不重复；本片独立提交，无线上操作。
+
 ## 2026-10-16 流量限定片｜P1/P2/P3保持；完整快照单包复用本地通过
 
 - gameStateCardFrameV1在权威接收者投影后执行，整卡原字节/仅包内字典、旧full及收益不足回退、原full基线成功send才提交；不改引擎写权、Journal、隐私、delta或128事件。坏包同连接一次plainFull/能力退役，恢复和同ID确认仍走原consumer。Main两次actual net RED/GREEN消除metadata早退与delta冒充plain门，最终37/37；纯合同25、真实双方/普通观战/cap-no-cap WS平台Focused7均通过，独审CLEAR。
