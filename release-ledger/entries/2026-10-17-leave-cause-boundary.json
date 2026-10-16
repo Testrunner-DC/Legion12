@@ -3,7 +3,7 @@
   "id": "20261017-leave-cause-boundary",
   "date": "2026-10-17",
   "audience": "players",
-  "title": "阵亡与离场触发区分",
+  "title": "卡效与对局传输修正",
   "changes": [
     {
       "category": "card-effects",
@@ -16,6 +16,15 @@
         "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs",
         "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
         "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "减少完整对局更新中相同卡牌信息的重复传输，保留完整卡牌内容、动画与日志；旧客户端及无法确认数据时仍使用原有完整更新。",
+      "paths": [
+        "opcgpro-vue/src/l12/gameStateCardFrame.ts",
+        "服务端WebSocket/TwelveLegions/L12CardSnapshotFrame.cs",
+        "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs"
       ]
     }
   ]
