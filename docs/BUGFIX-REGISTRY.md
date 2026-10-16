@@ -1,5 +1,23 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261016-CARD-FRAME｜显式协商的full单包完整卡快照复用
+
+- 根因与范围：当前大终局的recentEvents/lastAction反复携带完全相同的整卡快照；沿既有L12SnapshotWireCodec扩展一次可协商编码，不改变任何权威卡牌/事件/日志字段。新增L12CardSnapshotFrame仅对已投影full envelope按完整原始JSON字典去重，按帧/连接隔离；客户端先完整验证和逐引用独立clone才交原消费者。最大2MiB/128事件/1024引用及至少1KiB且10%收益，否则原full；delta协议和原full baseline不变，失败send不提交。
+- 恢复红绿：net最初按revision/hash去重会吞掉同ID ACK的rankedClock/settlement/preference等；Main要求删除旁路，actual net35/36红→36/36绿。又补在途delta不能充当plain-full，36/37红→37/37绿。坏包不ACK/不清last-good，一连接仅一次plainFull并退役编码；只有原wire gameState且真实发布后才可结束恢复、同ID原请求只重发一次，合法plain/ACK完整走原消费和baseline链。
+- 文件及回归：L12CardSnapshotFrame/L12SnapshotWireCodec/L12WebSocketServer、gameStateCardFrame/net、专用C#/Node与既有连接恢复/性能正常门禁。Focused7/7覆盖真实RoomManager双方及两普通观战投影、整envelope相等/隐藏Library不泄漏、真实cap/no-cap WS及plainFull后持续plain；纯合同25/25，actual net37/37，独立只读审查CLEAR。旧夹具r3空Hand失败与r4通过各自保留，不称真实旧版浏览器二进制或公网大帧断连验收。
+- 本地组合验收：规则7508、平台1771均0失败/0跳过，BA5EB2A2/BC84ADC6计数收据有效且owned测试临时树清理。原Batch047108F8前端启动exit1仍failed；14源与后端证据完全匹配后仅续前端877E40FC，标准npm全链/类型/双构建成功、源前后相同，不重复后端、不制造原整批完成。native输出未逐行落入Transcript的限制保留，未来执行已补Tee，不为补旧证重跑。仍未部署、不改变原30房3秒未通过结论、未关闭对应性能Bug。
+
+## 2026-10-16 接续135｜梅林响应目标两项按已部署修复闭环
+
+- BUG-20260924-610c8447和BUG-20260922-49985406均有明确梅林减兵目标不可见实例；报告fd0d602e→共享目标登记de3c2969→正式cce8祖先及BattlePlayerSelectedTargetsPresentationTests具名正式回归已核准。610c仅关闭其梅林实例，不泛化原文“很多选发”。没有新增产品修复。
+- 当前同16622461 DLL的真实激活/减兵目标声明、响应方绝防可用/费用、原生最小化/还原/一次放弃、最后目标5000→2000且邻格不变/梅林休整符文0，02B575E5接受；80192C62导出/66E3F34C两UI/2E7B7F5B严格命令回验，raw/hash/RNG/facts/revision、恢复和重复拒绝通过。r1因夹具漏“佣兵部队 · ”公开标签失败A6F69207原样保留；r2只修精确期望并复用restore。桌面展开目标句可读，移动展开未完全可见；两尺寸最小化后唯一目标高亮/标签可辨，还原后保留，不称真实iOS、live WS或私人原局。
+- 提案3334F792独审CLEAR；首实际7D05C394中610c的CAS30077成功，4998的30079明确409，原整批仍false。新E4B13559提案只含未变15字段/原历史的4998，新preview/单CAS30082及独立终态读回1B2AB5C2成功；成功项不重写，全部原文/非处置字段/历史保持，专用会话撤销。唯一909/393new/275resolved/241closed，阶段135=43fixed/76rejected/16duplicate、周期227、外部2不计。
+
+## ASSET-20261016-ANGUS｜安格斯新卡图本地归档，规则变更独立排队
+
+- 用户提供S02-06M2新图E08DD9E2（1240×1732/4415233字节），已替换权威原图档；旧BC4D8A51独立保留。沿既有单卡管线生成original/thumb240/board480/detail960 WebP及detail960 AVIF共5份1242860字节，E5CFC21B接受、Main逐文件字节/SHA核准。首轮仅StrictMode后检计数错误，生成结果复用，不重新编码，旧图在验证通过前未替换。
+- 新卡文为“回合1次 当我方发动战术效果时，试炼+1。”；对应用户已批准的“每张战术至多触发一次”规则批尚待共享发动入口/复合段/恢复验收，不以图片替换冒称规则完成。完整已发布清单729593E2未改，9EB1A623局部清单不得单独上传；旧不可变资源保留、无上传/部署/维护写。验收目录D:/L12-assets/updates/20261016-angus-e08dd9。
+
 ## 2026-10-16 接续133｜宫廷双方盖牌同时存在的三项分流
 
 - BUG-20260909-37671ebc的“双方都有战术，点不了对面”精确duplicate到既有BUG-20260909-abf3f49d；原主项处置为rejected、15字段原样绑定，不伪称fixed。BUG-20260909-e8634d86“优先显示/点掉己方”与BUG-20260908-e7e260a8“只显示一张绝防/掀己方”分别按当前有界未复现rejected，未拿同卡名泛化合并。

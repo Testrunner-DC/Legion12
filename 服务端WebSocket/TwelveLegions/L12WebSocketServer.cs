@@ -578,7 +578,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private sealed record SocketPlatformBinding(string PlatformSessionId, string AccountId,
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
-        bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false);
+        bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false,
+        bool GameStateCardFrameV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -4747,7 +4748,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "createSandbox" => await CreateSandboxAsync(sessionId, root),
                     "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
                     "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
-                    "syncState" => await _rooms.RecoveryStateWithAckAsync(sessionId, recovered: true),
+                    "syncState" => await SynchronizeStateAsync(sessionId, root),
                     "syncPresence" => SyncPresence(sessionId),
                     "cancelMatchmaking" => _rooms.CancelMatchmaking(sessionId),
                     "joinRoom" => _rooms.JoinRoom(sessionId, GetString(root, "roomCode")),
@@ -5092,7 +5093,10 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 }
                 _socketCapabilities[sessionId] = capabilities;
                 if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+                {
                     snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1);
+                    snapshotCodec.SetCardSnapshotFrameEnabled(capabilities.GameStateCardFrameV1);
+                }
                 if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
                     presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
@@ -5132,6 +5136,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
                     presenceDeltaV1 = capabilities.PresenceDeltaV1,
                     chatV1 = _chatEnabled && capabilities.ChatV1,
+                    gameStateCardFrameV1 = capabilities.GameStateCardFrameV1,
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
@@ -5215,12 +5220,28 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
                 requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"),
-                requested.Contains("chatV1"));
+                requested.Contains("chatV1"), requested.Contains(L12CardSnapshotFrame.Capability));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
             GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false),
-            GetBool(value, "chatV1", false));
+            GetBool(value, "chatV1", false), GetBool(value, L12CardSnapshotFrame.Capability, false));
+    }
+
+    private async Task<IReadOnlyList<OutgoingMessage>> SynchronizeStateAsync(Guid sessionId, JsonElement root)
+    {
+        if (GetBool(root, "plainFull", false))
+        {
+            // A decoder fault permanently retires this optional encoding for the current transport.
+            // Already queued game states are still original full bytes and will therefore also use
+            // the plain path when the per-connection sender prepares them.
+            if (_socketCapabilities.TryGetValue(sessionId, out var capabilities))
+                _socketCapabilities.TryUpdate(sessionId,
+                    capabilities with { GameStateCardFrameV1 = false }, capabilities);
+            if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+                snapshotCodec.SetCardSnapshotFrameEnabled(false);
+        }
+        return await _rooms.RecoveryStateWithAckAsync(sessionId, recovered: true);
     }
 
     private IReadOnlyList<OutgoingMessage> SelectCustomDeck(Guid sessionId, JsonElement deckElement)

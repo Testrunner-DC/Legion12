@@ -18,6 +18,7 @@ internal sealed class L12SnapshotWireCodec
     private readonly object _gate = new();
     private bool _enabled;
     private bool _eventWindowEnabled;
+    private bool _cardSnapshotFrameEnabled;
     // Outbound payloads are immutable UTF-8 bytes. Retain only the successfully
     // sent bytes; do not hydrate a complete mutable card tree for every connection.
     private byte[]? _baseline;
@@ -39,12 +40,28 @@ internal sealed class L12SnapshotWireCodec
         }
     }
 
+    internal void SetCardSnapshotFrameEnabled(bool enabled)
+    {
+        lock (_gate)
+        {
+            if (_cardSnapshotFrameEnabled == enabled) return;
+            _cardSnapshotFrameEnabled = enabled;
+            // A peer that rejected a packed frame must recover from an original full frame.
+            // Never carry its pre-recovery baseline across this capability boundary.
+            _baseline = null;
+            _sinceFull = 0;
+        }
+    }
+
     internal L12PreparedWirePayload Prepare(L12QueuedPayload queued)
     {
         if (!queued.IsGameState) return new(queued.FullPayload, static () => { }, false);
         lock (_gate)
         {
-            if (!_enabled) return new(queued.FullPayload, static () => { }, false);
+            if (!_enabled)
+                return _cardSnapshotFrameEnabled
+                    ? Full(queued.FullPayload)
+                    : new(queued.FullPayload, static () => { }, false);
             using var currentDocument = JsonDocument.Parse(queued.FullPayload);
             var current = currentDocument.RootElement;
             if (current.ValueKind != JsonValueKind.Object)
@@ -96,14 +113,20 @@ internal sealed class L12SnapshotWireCodec
     }
 
     private L12PreparedWirePayload Full(byte[] bytes)
-        => new(bytes, () =>
+    {
+        var payload = _cardSnapshotFrameEnabled && L12CardSnapshotFrame.TryEncode(bytes, out var packed)
+            ? packed : bytes;
+        return new(payload, () =>
         {
             lock (_gate)
             {
+                // Delta always compares against the original complete per-recipient projection,
+                // never against the frame-local dictionary representation sent on the wire.
                 _baseline = bytes;
                 _sinceFull = 0;
             }
         }, false);
+    }
 
     private static void BuildChanges(JsonElement previous, JsonElement current,
         IReadOnlyList<object> path, JsonArray changes, bool skipRecentEvents = false)

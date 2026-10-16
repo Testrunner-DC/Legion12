@@ -156,6 +156,13 @@ function chatResourceModuleUrl() {
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#chat-${moduleSerial}`
 }
 
+function gameStateCardFrameModuleUrl() {
+  const filename = join(sourceRoot, 'gameStateCardFrame.ts')
+  const output = compile(readFileSync(filename, 'utf8'), filename)
+  moduleSerial += 1
+  return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#card-frame-${moduleSerial}`
+}
+
 async function loadPlatformModule() {
   const filename = join(sourceRoot, 'platform.ts')
   const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
@@ -191,6 +198,7 @@ async function loadNetModule() {
   let source = readFileSync(filename, 'utf8')
   source = source
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
+    .replace("from './gameStateCardFrame'", `from '${gameStateCardFrameModuleUrl()}'`)
     .replace("import { reactive } from 'vue'", 'const reactive = value => value')
     .replace("import { createGameReentryController } from './gameReentry'", `
       const createGameReentryController = () => ({
@@ -288,6 +296,107 @@ function presenceItem(accountId, username, activity = 'idle') {
 }
 
 const tests = [
+  ['an in-flight delta cannot satisfy malformed card-frame plain recovery', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'card-frame-delta-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'card-frame-delta-session', connectionGeneration: 87,
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true,
+        gameStateCardFrameV1: true } })
+    socket.receive({ type: 'roomState', roomCode: 'FRAME2', yourPlayerIndex: 0, started: true, players: [] })
+    socket.receive({ type: 'gameState', state: { matchId: 'card-frame-delta-match', roomCode: 'FRAME2',
+      revision: 1, stateHash: 'card-frame-delta-1', phase: 'Main', players: [], recentEvents: [], lastAction: null } })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 87,
+      roomCode: 'FRAME2', matchId: 'card-frame-delta-match', recoveryRevision: 1 })
+    await connected
+
+    const malformed = { type: 'gameStateCardFrameV1',
+      payload: { type: 'gameState', state: { matchId: 'card-frame-delta-match', roomCode: 'FRAME2',
+        revision: 2, stateHash: 'card-frame-delta-2', phase: 'Main', players: [],
+        recentEvents: [{ sequence: 1, cards: null }], lastAction: null } },
+      eventCardRefs: [[1]], lastActionCardRefs: null,
+      cardSnapshots: [{ instanceId: 'only-synthetic-card' }] }
+    socket.receive(malformed)
+    assert.equal(socket.sent.map(item => JSON.parse(item)).filter(item => item.type === 'syncState' && item.plainFull === true).length, 1)
+    socket.receive({ type: 'gameStateDelta', matchId: 'card-frame-delta-match', baseRevision: 1, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 },
+        { path: ['state', 'stateHash'], value: 'card-frame-delta-2' }] })
+    assert.equal(net.l12State.game.revision, 2, 'the valid in-flight delta may still advance last-good state')
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 87,
+      roomCode: 'FRAME2', matchId: 'card-frame-delta-match', recoveryRevision: 2 })
+    assert.equal(socket.closeCalls.at(-1)?.code, 4000,
+      'recoveryComplete without an original plain gameState must replace the connection')
+    assert.equal(net.l12State.status, 'offline')
+    net.disconnect()
+  }],
+  ['malformed card frame recovers through the normal gameState path without dropping outer metadata', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'card-frame-recovery-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'card-frame-session', connectionGeneration: 86,
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true,
+        gameStateCardFrameV1: true } })
+    socket.receive({ type: 'roomState', roomCode: 'FRAME1', yourPlayerIndex: 0, started: true, players: [] })
+    const state = { matchId: 'card-frame-match', roomCode: 'FRAME1', revision: 7,
+      stateHash: 'card-frame-state-7', phase: 'Main', players: [], recentEvents: [], lastAction: null }
+    socket.receive({ type: 'gameState', state, rankedClock: { marker: 'initial-clock' },
+      rankedSettlement: { marker: 'initial-settlement' },
+      responsePreference: { confirmedMode: 'default', syncPending: false },
+      spectating: false, gmEnabled: false })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 86,
+      roomCode: 'FRAME1', matchId: 'card-frame-match', recoveryRevision: 7 })
+    await connected
+
+    net.gameAction({ type: 'endTurn' })
+    const originalAction = socket.sent.map(item => JSON.parse(item)).findLast(item => item.type === 'gameAction')
+    assert.ok(originalAction?.requestId)
+    const malformed = { type: 'gameStateCardFrameV1',
+      payload: { type: 'gameState', requestId: originalAction.requestId,
+        state: { ...state, phase: 'GameOver', recentEvents: [{ sequence: 1, cards: null }] },
+        rankedClock: { marker: 'must-not-publish' }, rankedSettlement: { marker: 'must-not-publish' } },
+      eventCardRefs: [[1]], lastActionCardRefs: null,
+      cardSnapshots: [{ instanceId: 'only-synthetic-card' }] }
+    socket.receive(malformed)
+    socket.receive(malformed)
+    assert.equal(socket.sent.map(item => JSON.parse(item)).filter(item => item.type === 'syncState' && item.plainFull === true).length, 1)
+    assert.equal(net.l12State.pendingAction, true, 'a malformed packed acknowledgement must not clear the request')
+    assert.equal(net.l12State.game.phase, 'Main', 'a malformed packed frame must not publish partial state')
+    assert.equal(net.l12State.rankedClock.marker, 'initial-clock', 'a malformed frame must retain last-good metadata')
+
+    socket.receive({ type: 'gameState', state, recovered: true,
+      rankedClock: { marker: 'plain-clock' }, rankedSettlement: { marker: 'plain-settlement' },
+      responsePreference: { confirmedMode: 'manual', syncPending: true },
+      spectating: false, gmEnabled: false })
+    assert.equal(net.l12State.pendingAction, true, 'the plain sync frame is not the same-id action acknowledgement')
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 86,
+      roomCode: 'FRAME1', matchId: 'card-frame-match', recoveryRevision: 7 })
+    const sentActions = socket.sent.map(item => JSON.parse(item)).filter(item => item.type === 'gameAction')
+    assert.equal(sentActions.length, 2, 'recovery must resend the original action exactly once on this attempt')
+    assert.deepEqual(sentActions[1], originalAction, 'recovery must retain the original request id and command')
+
+    socket.receive({ type: 'gameState', requestId: originalAction.requestId, state,
+      rankedClock: { marker: 'ack-clock' }, rankedSettlement: { marker: 'ack-settlement' },
+      responsePreference: { confirmedMode: 'auto-pass', syncPending: false },
+      spectating: true, observerView: 'referee', gmEnabled: true })
+    assert.equal(net.l12State.pendingAction, false)
+    assert.equal(net.l12State.rankedClock.marker, 'ack-clock')
+    assert.equal(net.l12State.rankedSettlement.marker, 'ack-settlement')
+    assert.deepEqual(net.l12State.responsePreference, { confirmedMode: 'auto-pass', syncPending: false })
+    assert.equal(net.l12State.spectating, true)
+    assert.equal(net.l12State.observerView, 'referee')
+    assert.equal(net.l12State.gmEnabled, true)
+
+    socket.receive({ type: 'gameStateDelta', matchId: 'card-frame-match', baseRevision: 7, revision: 8,
+      changes: [{ path: ['state', 'revision'], value: 8 },
+        { path: ['state', 'stateHash'], value: 'card-frame-state-8' }] })
+    assert.equal(net.l12State.game.revision, 8)
+    assert.equal(net.l12State.rankedClock.marker, 'ack-clock', 'delta must rebuild from the complete same-id ACK baseline')
+    assert.equal(net.l12State.rankedSettlement.marker, 'ack-settlement')
+    assert.deepEqual(net.l12State.responsePreference, { confirmedMode: 'auto-pass', syncPending: false })
+    assert.equal(net.l12State.spectating, true)
+    assert.equal(net.l12State.gmEnabled, true)
+    net.disconnect()
+  }],
   ['event window failure keeps private state atomic and requests full sync', async () => {
     installBrowserEnvironment({ 'l12-auth-token': 'window-token' })
     const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
@@ -807,7 +916,8 @@ const tests = [
     socket.open()
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
-      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true, chatV1: true },
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
+        chatV1: true, gameStateCardFrameV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')
