@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261016-NITO-GUANYU｜正式身份核准及两项终态读回
+
+- 既有17a015d7/6bf0963b真实4+8格、正常7630与同源历史正式DLL证据均未变化，不重复构建。实际线上核正式cce8、引擎身份一致、ok及维护false；dcf6e369/300ce8c8均为正式祖先且晚于原报告。
+- 原有schema2提案与15字段原文指纹、具名回归/精确修复/当前正式版本绑定通过，分别一次preview/CAS30367、30368及独立读回resolved/fixed_verified；非处置字段保持，最后队列与专用会话撤销通过。D盘next-authority-batch-20261016/closeout/bug-closeout-authority-two-cce8.json为实际收据，非私人原局重放、新修复或部署。
+- 唯一台账实际909总/391待办/277resolved/241closed，阶段137（45fixed/76rejected/16duplicate）、周期229。旧C历史根只读，新输出物理D；同一已完成intake在本地路径遮蔽失败后直接续用，未重复登录、拉取或提交。智慧法典及佣兵另片，性能原3秒门与其他未验边界保持。
+
 ## VERIFY-20261016-NITO-GUANYU｜两条已部署共享修复补齐真实原场景
 
 - BUG-20260919-17a015d7（旧3fb82f66）原句“尼托可回正受无畏守卫”：新NitocrisDreadAssassinationActualChainRegressionTests实际支付/声明/结算无畏的刺杀，再打出两尼托；受限守卫无候选、强送被拒且raw/hash/RNG/facts/revision不变，未受影响守卫正常转活跃；费用、回合末弃置、单实例/重复拒绝及双方V2共4格。dcf6e369早于既定正式cce8且晚于报告，不靠直接设置限制字段证明。
