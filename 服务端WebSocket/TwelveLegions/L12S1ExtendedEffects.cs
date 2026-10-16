@@ -890,6 +890,7 @@ public sealed partial class L12GameEngine
             && (authoritativeSource.CardType == "master" || authoritativeSource.CardId == player.MasterId))
             player.HandDiscardedByMasterThisTurn = true;
         AddEvent("discard", player.PlayerIndex, $"{player.Name}弃置{card.Name}", card);
+        AttachPublicHandDiscardOriginToLastEvent(player.PlayerIndex, card);
         discardPresentationSequence = State.EventSequence;
         NotifyCardDiscarded(player, card, "hand", causedByEffect);
         return true;

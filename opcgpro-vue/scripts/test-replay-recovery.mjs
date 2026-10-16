@@ -29,6 +29,19 @@ for(const camel of [false,true])for(const god of [false,true])for(const tapped o
   assert.equal(JSON.stringify(input),before)
  })
 }
+for(const camel of [false,true])await test(`movement origin replay mapping/${camel?'camel':'pascal'}`,()=>{
+ const raw=state(0,camel),event=Object.fromEntries(Object.entries({Sequence:7,Type:'discard',PlayerIndex:1,Text:'公开弃置',OriginZone:'hand',Cards:[]}).map(([k,v])=>[key(k,camel),v]))
+ raw[key('Events',camel)]=[event]
+ const input=detail([command(0,raw)]),before=JSON.stringify(input)
+ const movement=model.replayGameAt(input,0).recentEvents[0]
+ assert.equal(movement.originZone,'hand')
+ assert.equal(JSON.stringify(input),before)
+})
+await test('legacy replay event keeps missing movement origin undefined',()=>{
+ const raw=state(),event={Sequence:8,Type:'discard',PlayerIndex:1,Text:'历史公开弃置',Cards:[]}
+ raw.Events=[event]
+ assert.equal(model.replayGameAt(detail([command(0,raw)]),0).recentEvents[0].originZone,undefined)
+})
 const pageSource=source('ReplayPage.vue'),script=pageSource.match(/<script setup[^>]*>([\s\S]*?)<\/script>/)[1]
 const ast=ts.createSourceFile('ReplayPage.ts',script,ts.ScriptTarget.Latest,true,ts.ScriptKind.TS)
 const functions=names=>ast.statements.filter(n=>ts.isFunctionDeclaration(n)&&names.includes(n.name?.text)).map(n=>n.getText(ast)).join('\n')

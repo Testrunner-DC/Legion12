@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UI-20261016-PUBLIC-HAND-ORIGIN｜佣兵等公开弃牌事实的来源区域
+
+- 用户已批佣兵部队对手/观战视角把手牌弃置画成战场入墓的独立来源修复。共享MoveHandToGrave虽正确移区，文本缺少手牌且对手无私手历史时，显示器落field fallback；不将来源缺失与原680a全部重复播放混作根因。
+- L12ActionEvent nullable OriginZone/新V2独立MovementOriginProtocolEnabled，旧V2缺位false且不补开，null/default省略。成功真实移手、公开重置、入墓后核所有者/公开唯一实例与单卡discard，再同步LastAction/Events/unpersisted；Journal仅nonnull字段、replay双大小写，前端合法来源优先于cursor/hint/旧文本回退。无费用、卡效、可见性、日志身份或去重变化。
+- 全池5处直接discard与37 helper调用点分类：共享手牌路径全覆盖；海伦仍归CardOwner墓地/文本已有手牌，不套helper；乾坤阴文本已明确library。庆典独立牌库弃置缺来源及小次郎helper后第二discard另列候选，尚未具名证明可见问题，不扩本批也不冒称根治。
+- 有效行为RED与能力位结构RED分开记录，最终5服务端/5架构、103投影/67回放与Main四态原生UI通过；真实DOM节点计数不按key掩盖重复，spectator使用真实You0/无双方私手，夹具增量独审。正常Batch r2完整7637规则/1790平台零失败跳过，前端全合同/类型/双构建成功，16输入不变。D artifacts/mercenary-origin-20261016/local-batch-acceptance.json为2804464A，E8066270/5918EFE2日志，独审CLEAR。
+- 原r1子进程缺Python、viewer=-1及不足的key计数夹具失败保留。旧缺位兼容仅新代码合成旧检查点raw/hash自洽，不称独立历史DLL尾链或原私局/真实iOS通过。BUG-20260927-680a5928仍开；没有部署、维护变更或因本修复线上关单。
+
 ## CLOSEOUT-20261016-CLOCK-OVERLAP｜计时遮挡三条检查后关闭
 
 - BUG-20260925-89166112/b9c718a1/e4e6b8f0原文分别为等待回合标签/等待时间模块/时间界面挡士气，版本fdb73f84、诊断无viewport。原元信息精确读两503/storage_unavailable、第三200而回放409/replay_incompatible，已加密留证，不以失败证明资料不存在或原局通过。纯DOM几何无必要继续提取隐藏牌与命令，独立只读审查CLEAR。

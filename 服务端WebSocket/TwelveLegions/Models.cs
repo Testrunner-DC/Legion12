@@ -884,6 +884,8 @@ public sealed record L12ActionEvent(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EffectResultStatus { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OriginZone { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PlayerLogGroupId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? PlayerLogTiming { get; init; }
@@ -920,6 +922,12 @@ public sealed class L12GameState
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool PresentationFactProtocolEnabled { get; init; }
+    /// <summary>
+    /// 新建 V2 对局显式启用公开移动来源。旧 V2 检查点缺省为 false，
+    /// 其 Journal 重放不会生成新事件字段，因而保持历史 state_hash。
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool MovementOriginProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

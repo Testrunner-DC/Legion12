@@ -109,6 +109,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         {
             StateFormatVersion = stateFormatVersion,
             PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
+            MovementOriginProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -2498,6 +2499,31 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     {
         AddEventCore(type, playerIndex, text, null, cards);
         return State.EventSequence;
+    }
+
+    private void AttachPublicHandDiscardOriginToLastEvent(int playerIndex, L12CardInstance card)
+    {
+        if (!State.MovementOriginProtocolEnabled
+            || playerIndex < 0 || playerIndex >= State.Players.Length
+            || card.OwnerIndex != playerIndex
+            || card.Hidden
+            || string.IsNullOrWhiteSpace(card.InstanceId)
+            || string.IsNullOrWhiteSpace(card.Name)
+            || State.Players[playerIndex].Graveyard.Count(candidate =>
+                candidate.InstanceId == card.InstanceId) != 1
+            || State.LastAction is not { Type: "discard", PlayerIndex: var eventPlayer } actionEvent
+            || eventPlayer != playerIndex
+            || actionEvent.Cards.Length != 1
+            || actionEvent.Cards[0].InstanceId != card.InstanceId
+            || actionEvent.Cards[0].Hidden
+            || string.IsNullOrWhiteSpace(actionEvent.Cards[0].Name))
+            return;
+        var updated = actionEvent with { OriginZone = "hand" };
+        State.LastAction = updated;
+        if (State.Events.Count > 0 && State.Events[^1].Sequence == updated.Sequence)
+            State.Events[^1] = updated;
+        if (_unpersistedEvents.Count > 0 && _unpersistedEvents[^1].Sequence == updated.Sequence)
+            _unpersistedEvents[^1] = updated;
     }
 
     private void AttachPlayerCardStateTransitionToLastEvent(string expectedType,

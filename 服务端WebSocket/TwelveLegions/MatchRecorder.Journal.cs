@@ -259,6 +259,7 @@ public sealed partial class MatchRecorder
             {
                 if (value is not null) values[key] = value;
             }
+            AddOptional(journalEvent, "OriginZone", actionEvent.OriginZone);
             AddOptional(journalEvent, "EffectText", actionEvent.EffectText);
             AddOptional(journalEvent, "EffectSceneId", actionEvent.EffectSceneId);
             AddOptional(journalEvent, "EffectAbilityId", actionEvent.EffectAbilityId);

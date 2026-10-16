@@ -850,6 +850,17 @@ try {
   await privateHandPage.goto(`http://127.0.0.1:${port}/__battle-visual-transitions?viewer=0&private-hand=1`, { waitUntil:'networkidle' })
   await privateHandPage.waitForSelector('[data-l12-game-stage]')
   await privateHandPage.evaluate(() => window.__visualTransitionHarness.setReplay(8))
+  await resetMovementGeometryTrace(privateHandPage)
+  await invoke(privateHandPage, 'discardOpponentMercenaryWithOrigin')
+  const privateMercenaryMovement = await zoneMovementGeometry(privateHandPage,
+    'opponent-mercenary', 'hand', 'graveyard')
+  ok(privateMercenaryMovement.from === 'hand' && privateMercenaryMovement.to === 'graveyard',
+    'production-opponent-private-hand: structured origin must route the public discard from hand to graveyard')
+  await waitForMovementQueue(privateHandPage)
+  const privateMercenaryTrace = await privateHandPage.evaluate(() =>
+    window.__movementGeometryTrace.filter(item => item.instanceId === 'opponent-mercenary'))
+  ok(privateMercenaryTrace.length === 1,
+    `production-opponent-private-hand: retransmitted discard snapshot must animate exactly once; found ${privateMercenaryTrace.length}`)
   const privateReservationBaseline = Number(await privateHandPage.locator('[data-ui-contract="zone-movement-reservation-ledger"]').getAttribute('data-movement-reservation-count') ?? 0)
   await privateHandPage.evaluate(() => {
     window.__privateEntryTrace = { zone:[], effectCards:[], effectHints:[] }

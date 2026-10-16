@@ -6,7 +6,7 @@ import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
 import { snapshotDecodedAuthoritativeCardVisual } from './authoritativeCardVisualSnapshot'
-import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
+import { beginMovementTransactionBatch, claimFreshMovementEvents, claimMovementTransaction, collectKnownCardZones, collectPromptSourceZoneHints, createMovementClaimState, entryMovementTransactionKey, finalizeMovementTransactionBatch, isAuthoritativePublicFaceMovement, isCombatDefeatLeaveEvent, isMovementCardConcealed, isSupersededLeaveEvent, leaveMovementDestination, movementCardsForEvent, movementFactKey, movementTerminalTapped, resetMovementClaimState, resolveMovementSourceZone, type MovementSourceEvidence, type VisualZone } from './visualTransitionProjection'
 import type { PreparedVisualOwner, PresentationReservation, PresentationSequenceCoordinator } from './presentationSequenceCoordinator'
 
 type Zone = VisualZone
@@ -289,13 +289,12 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
   return source ? `〈${card.name}〉因〈${source}〉加入手牌` : `〈${card.name}〉加入手牌`
 }
 
-function authoritativeSourceZone(card: Card | undefined, fallback: Zone, batchCursor?: Map<string, VisualZone>) {
-  if (!card?.instanceId) return { zone:fallback, evidence:'fallback' as const }
-  const cursorZone = batchCursor?.get(card.instanceId) ?? movementClaims.zones.get(card.instanceId)
-  if (cursorZone) return { zone:cursorZone, evidence:'cursor' as const }
-  const hintedZone = sourceZoneHints.get(card.instanceId)
-  if (hintedZone) return { zone:hintedZone, evidence:'hint' as const }
-  return { zone:fallback, evidence:'fallback' as const }
+function authoritativeSourceZone(event: ActionEvent, card: Card | undefined, fallback: Zone,
+  batchCursor?: Map<string, VisualZone>) {
+  const instanceId = card?.instanceId
+  return resolveMovementSourceZone(event.originZone, instanceId, fallback,
+    instanceId ? batchCursor?.get(instanceId) ?? movementClaims.zones.get(instanceId) : undefined,
+    instanceId ? sourceZoneHints.get(instanceId) : undefined)
 }
 
 function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: AnchorRect, toRect: AnchorRect,
@@ -308,7 +307,7 @@ function movementFromEvent(event: ActionEvent, cardIndex: number, fromRect: Anch
   let label: string
   let sourceEvidence: MovementSourceEvidence = 'fallback'
   const sourceZone = (fallback: Zone) => {
-    const resolved = authoritativeSourceZone(selectedCard, fallback, batchCursor)
+    const resolved = authoritativeSourceZone(event, selectedCard, fallback, batchCursor)
     sourceEvidence = resolved.evidence
     return resolved.zone
   }

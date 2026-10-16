@@ -9,6 +9,7 @@ import { authoritativeCardVisibilityLeaseCount } from '../../src/l12/game/author
 const faceUrl = (cardId: string) => `/api/site/media/visual-transition/${cardId}.png`
 const harnessParams = new URLSearchParams(window.location.search)
 const initialViewer = Number(harnessParams.get('viewer') || 0)
+const spectatorPreview = harnessParams.get('spectator') === '1'
 const landscapeEnabled = ref(harnessParams.get('landscape') === '1')
 useLandscapeViewport(landscapeEnabled)
 const card = (instanceId: string, name: string, cardId: string, tapped = false, imageUrl?: string): Card => ({
@@ -32,6 +33,7 @@ const millCards = [
   card('mill-card-3', '磨牌三', 'S01-04M1', false, faceUrl('S01-04M1')),
 ]
 const duplicateCard = card('duplicate-discard', '佣兵部队', 'S01-04M2', false, faceUrl('S01-04M2'))
+const opponentMercenary = card('opponent-mercenary', '对手佣兵部队', 'S01-04M2', false, faceUrl('S01-04M2'))
 const pharaohFestival = { ...card('pharaoh-festival', '法老王的庆典', 'S01-0222', false, faceUrl('S01-0222')), cardType: 'tactic' }
 const festivalHandCard = card('festival-hand-card', '陵墓守卫', 'S01-0212', false, faceUrl('S01-0212'))
 const festivalGraveCard = card('festival-grave-card', '卡诺匹斯罐 一', 'S01-0208', false, faceUrl('S01-0208'))
@@ -61,8 +63,8 @@ function player(playerIndex: number): PlayerView {
     playerIndex, name: playerIndex ? '玩家B' : '玩家A', deckName: '', faction: 'otherworld',
     master: { masterId: playerIndex ? 'S02-06M1' : 'ST06-M1', masterName: playerIndex ? '莫瑞甘' : '银臂努阿达', hp: 8, maxHp: 8 },
     libraryCount: playerIndex ? 20 : 23, libraryTop: playerIndex ? libraryEntrant : null,
-    hand: playerIndex ? [plainEntrant, triggeredEntrant, negatedEntrant, freeEntrant, rapidEntrantA, rapidEntrantB, entryArtifact, missingTypeSource, masterPlaySource] : [handSquire, robinSquire, duplicateCard, pharaohFestival],
-    handCount: playerIndex ? 9 : 4,
+    hand: playerIndex ? [plainEntrant, triggeredEntrant, negatedEntrant, freeEntrant, rapidEntrantA, rapidEntrantB, entryArtifact, missingTypeSource, masterPlaySource, opponentMercenary] : [handSquire, robinSquire, duplicateCard, pharaohFestival],
+    handCount: playerIndex ? 10 : 4,
     morale: [], field: playerIndex
       ? [[restedDefender, activeDefender, null], [null, null, null]]
       : [[mover, swapper, host], [finn, null, null]],
@@ -81,6 +83,9 @@ if (harnessParams.has('private-hand')) {
   // Production opponent/spectator projection exposes only handCount. Keep the
   // count while removing every private instance before the board mounts.
   game.players[1].hand = []
+}
+if (spectatorPreview) {
+  for (const participant of game.players) participant.hand = []
 }
 const playbackSpeed = ref<number | null>(null)
 let sequence = 0
@@ -425,6 +430,22 @@ const api = {
       ]
     })
   },
+  discardOpponentMercenaryWithOrigin() {
+    const projectedPrivateHand = (game.players[1].hand?.length ?? 0) === 0
+      && (game.players[1].handCount ?? 0) > 0
+    game.players[1].hand = game.players[1].hand?.filter(card => card.instanceId !== opponentMercenary.instanceId)
+    game.players[1].handCount = projectedPrivateHand
+      ? Math.max(0, (game.players[1].handCount ?? 0) - 1)
+      : game.players[1].hand?.length
+    game.players[1].graveyard = [...(game.players[1].graveyard ?? []), opponentMercenary]
+    game.players[1].graveyardCount = game.players[1].graveyard.length
+    publish({ type:'discard', playerIndex:1, text:'玩家B弃置对手佣兵部队', originZone:'hand', cards:[opponentMercenary] })
+    queueMicrotask(() => {
+      // A retransmitted/re-materialized snapshot retains the same authority
+      // sequence and must not claim a second movement.
+      game.recentEvents = [...(game.recentEvents ?? [])]
+    })
+  },
   pharaohFestivalChain() {
     game.prompts = [prompt('festival-source-zones', {
       'pharaoh-festival:zone': '手牌',
@@ -495,6 +516,6 @@ Object.assign(window, { __visualTransitionHarness: api })
 <template>
   <div v-if="landscapeEnabled" id="l12-landscape-teleports" />
   <div :class="{ 'l12-landscape-surface': landscapeEnabled }" :data-l12-landscape-canvas="landscapeEnabled || undefined">
-    <GameBoard :game="game" read-only :replay-playback-speed="playbackSpeed" />
+    <GameBoard :game="game" read-only :spectator-live-view="spectatorPreview" :replay-playback-speed="playbackSpeed" />
   </div>
 </template>

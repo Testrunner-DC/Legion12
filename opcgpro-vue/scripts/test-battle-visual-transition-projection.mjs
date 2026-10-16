@@ -14,6 +14,14 @@ const card = (instanceId, cardId = 'S02-0609', tapped = false) => ({
 })
 const sourceCard = card('nuada', 'ST06-M1')
 const targetCard = card('target')
+assert.deepEqual(model.resolveMovementSourceZone('hand', sourceCard.instanceId, 'field', 'field', 'graveyard'),
+  { zone:'hand', evidence:'event' }, 'a valid event origin outranks stale cursor, hint and text fallback')
+assert.deepEqual(model.resolveMovementSourceZone('not-a-zone', sourceCard.instanceId, 'field', 'hand', 'graveyard'),
+  { zone:'hand', evidence:'cursor' }, 'an invalid event origin cannot displace the existing cursor contract')
+assert.deepEqual(model.resolveMovementSourceZone(undefined, sourceCard.instanceId, 'field', undefined, 'hand'),
+  { zone:'hand', evidence:'hint' }, 'an old event without the field keeps the existing source hint fallback')
+assert.deepEqual(model.resolveMovementSourceZone(undefined, undefined, 'field', 'hand', 'graveyard'),
+  { zone:'field', evidence:'fallback' }, 'a cardless legacy event cannot borrow another card source')
 assert.equal(model.movementTerminalTapped('field', sourceCard, undefined, true), false,
   'a later rested destination cannot pull the preceding movement past its action-time active frame')
 assert.equal(model.movementTerminalTapped('field', { ...sourceCard, tapped:true }, undefined, false), true,
@@ -314,4 +322,4 @@ assert.deepEqual([...interleavedBatch.cursor.entries()].sort(), [['other-unit', 
 model.finalizeMovementTransactionBatch(interleavedClaims, interleavedBatch, new Map([['returning-unit', 'field'], ['other-unit', 'field']]))
 assert.equal(interleavedClaims.zoneRevision, 81, 'finalization commits the batch revision only after ordered claims finish')
 
-console.log('Battle visual transition projection passed: 99/99 assertions')
+console.log('Battle visual transition projection passed: 103/103 assertions')

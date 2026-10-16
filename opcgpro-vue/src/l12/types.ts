@@ -16,6 +16,7 @@ export interface ActionEvent {
   effectBranchId?: string
   effectBranchLabel?: string
   effectResultStatus?: 'declared' | 'resolved' | 'negated' | 'skipped' | 'failed' | 'declined' | 'unavailable'
+  originZone?: string
   playerLogGroupId?: string
   playerLogTiming?: string
   playerLogDecisionLabel?: string

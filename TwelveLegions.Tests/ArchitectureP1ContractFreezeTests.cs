@@ -48,7 +48,11 @@ public sealed class ArchitectureP1ContractFreezeTests
         const string additiveFalseFlag = ",\"cannotUntapAtNextReset\":false";
         var priorProjection = snapshotJson.Replace(additiveFalseFlag, "", StringComparison.Ordinal);
         Assert.Equal(morale.Length, (snapshotJson.Length - priorProjection.Length) / additiveFalseFlag.Length);
-        Assert.Equal("e6225a4394171267613382279fa6a8af5f1de97d685b729db4093cbd94015ec7", Sha256(priorProjection));
+        const string expectedPriorProjectionHash = "cdd35edbbc18fd73fa03dabf820ffe17881fda1ce5315bdbc450a20d8e02e0e8";
+        var actualPriorProjectionHash = Sha256(priorProjection);
+        Assert.True(string.Equals(expectedPriorProjectionHash, actualPriorProjectionHash,
+                StringComparison.Ordinal),
+            $"P1 prior projection hash changed: {actualPriorProjectionHash}");
     }
 
     [Fact]

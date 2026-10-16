@@ -54,7 +54,27 @@ export function entryPresentationTransactionKey(event: ActionEvent) {
  * log identity matches a preceding authoritative play/put of the same source.
  * Missing metadata deliberately falls back to the existing full-card reveal.
  */
-export type MovementSourceEvidence = 'cursor' | 'hint' | 'play-contract' | 'fallback'
+export type MovementSourceEvidence = 'event' | 'cursor' | 'hint' | 'play-contract' | 'fallback'
+
+const visualZones = new Set<VisualZone>([
+  'hand', 'library', 'field', 'graveyard', 'relic', 'master', 'center', 'disaster', 'resolving', 'attached',
+])
+
+export function movementOriginZone(value: unknown): VisualZone | null {
+  return typeof value === 'string' && visualZones.has(value as VisualZone)
+    ? value as VisualZone : null
+}
+
+export function resolveMovementSourceZone(originZone: unknown, instanceId: string | undefined,
+  fallback: VisualZone, cursorZone?: VisualZone, hintedZone?: VisualZone):
+  { zone: VisualZone; evidence: MovementSourceEvidence } {
+  const explicit = movementOriginZone(originZone)
+  if (explicit) return { zone:explicit, evidence:'event' }
+  if (!instanceId) return { zone:fallback, evidence:'fallback' }
+  if (cursorZone) return { zone:cursorZone, evidence:'cursor' }
+  if (hintedZone) return { zone:hintedZone, evidence:'hint' }
+  return { zone:fallback, evidence:'fallback' }
+}
 
 export function entryMovementTransactionKey(event: ActionEvent, from: VisualZone, to: VisualZone,
   sourceEvidence: MovementSourceEvidence) {

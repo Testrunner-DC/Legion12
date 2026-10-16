@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using TwelveLegions.Server;
@@ -114,6 +115,32 @@ public sealed class PresentationFactAnimationRegressionTests
     private static L12ActionEvent HammerResult(L12GameEngine game, string instanceId)
         => game.State.Events.Last(item => item.Type == "effect-result"
             && item.Cards.Any(card => card.InstanceId == instanceId));
+
+    private static string? EventOriginZone(L12ActionEvent actionEvent)
+    {
+        var wire = JsonSerializer.SerializeToNode(actionEvent,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web))!.AsObject();
+        return wire["originZone"]?.GetValue<string>();
+    }
+
+    private static void AddSyntheticEvent(L12GameEngine game, string type, int playerIndex,
+        params L12CardInstance[] cards)
+    {
+        var method = typeof(L12GameEngine).GetMethods(
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .Single(candidate => candidate.Name == "AddEvent"
+                && candidate.GetParameters().Length == 4);
+        method.Invoke(game, [type, playerIndex, "movement-origin-guard", cards]);
+    }
+
+    private static void AttachPublicHandDiscardOrigin(L12GameEngine game, int playerIndex,
+        L12CardInstance card)
+    {
+        var method = typeof(L12GameEngine).GetMethod("AttachPublicHandDiscardOriginToLastEvent",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(method);
+        method.Invoke(game, [playerIndex, card]);
+    }
 
     [Fact]
     public void ResolvedHammerReferencesItsExactPutFactAndASecondLegalReviveGetsANewIdentity()
@@ -372,6 +399,147 @@ public sealed class PresentationFactAnimationRegressionTests
             recovered.Engine.SerializeFullState(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task LegacyV2JournalWithoutMovementOriginFlagReplaysRealMercenaryDiscardWithoutOrigin()
+    {
+        const string protocolFlag = "MovementOriginProtocolEnabled";
+        var created = Create("movement-origin-legacy-journal", 26100407);
+        var attacker = Card("S01-0001", "movement-origin-legacy-attacker");
+        var target = Card("S01-0102", "movement-origin-legacy-target", owner: 1);
+        var mercenary = Card("S01-0002", "movement-origin-legacy-source", owner: 1);
+        attacker.Troops = 9000;
+        target.Troops = 1000;
+        created.State.Players[0].Field[0][0] = attacker;
+        created.State.Players[1].Field[0][0] = target;
+        created.State.Players[1].Hand.Add(mercenary);
+
+        var legacyState = JsonNode.Parse(created.SerializeFullState())!.AsObject();
+        Assert.True(legacyState.Remove(protocolFlag));
+        var legacy = L12GameEngine.RestoreCheckpoint(Catalog, legacyState.ToJsonString(),
+            created.RandomState!.Value, created.CardFactSignalSequence,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+        Assert.DoesNotContain(protocolFlag, legacy.SerializeFullState(), StringComparison.Ordinal);
+
+        var directory = Path.Combine(Path.GetTempPath(), "l12-movement-origin-journal",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        recorder.AttachCatalog(Catalog);
+        await recorder.StartAsync(legacy, "sandbox");
+        long commandSequence = 0;
+
+        async Task RecordAsync(int playerIndex, L12Command command)
+        {
+            var result = legacy.Handle(playerIndex, command);
+            Assert.True(result.Accepted, result.Error);
+            commandSequence++;
+            await recorder.AppendAsync(legacy, commandSequence, playerIndex,
+                JsonSerializer.Serialize(command), result, $"movement-origin-{commandSequence}");
+        }
+
+        await RecordAsync(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId)));
+        for (var safety = 0; safety < 40 && legacy.State.PendingPrompts.Count > 0; safety++)
+        {
+            var prompt = Assert.Single(legacy.State.PendingPrompts);
+            var choice = prompt.ValidChoices.Contains(mercenary.InstanceId)
+                ? mercenary.InstanceId : "pass";
+            await RecordAsync(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+        }
+        Assert.Empty(legacy.State.PendingPrompts);
+        var discard = Assert.Single(legacy.State.Events, item => item.Type == "discard"
+            && item.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Null(EventOriginZone(discard));
+        Assert.DoesNotContain(protocolFlag, legacy.SerializeFullState(), StringComparison.Ordinal);
+        var expectedState = legacy.SerializeFullState();
+        var expectedHash = legacy.ComputeStateHash();
+
+        var recovered = Assert.IsType<L12JournalRecoveryState>(
+            await recorder.LoadJournalEngineAsync(legacy.State.MatchId));
+        Assert.Equal(commandSequence, recovered.CommandSequence);
+        Assert.Equal(expectedState, recovered.Engine.SerializeFullState());
+        Assert.Equal(expectedHash, recovered.Engine.ComputeStateHash());
+        var recoveredDiscard = Assert.Single(recovered.Engine.State.Events,
+            item => item.Sequence == discard.Sequence);
+        Assert.Null(EventOriginZone(recoveredDiscard));
+        Assert.DoesNotContain(protocolFlag, recovered.Engine.SerializeFullState(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CurrentV2JournalPersistsAndReplaysRealMercenaryDiscardOrigin()
+    {
+        var game = Create("movement-origin-current-journal", 26100471);
+        var attacker = Card("S01-0001", "movement-origin-current-attacker");
+        var target = Card("S01-0102", "movement-origin-current-target", owner: 1);
+        var mercenary = Card("S01-0002", "movement-origin-current-source", owner: 1);
+        attacker.Troops = 9000;
+        target.Troops = 1000;
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Hand.Add(mercenary);
+
+        var directory = Path.Combine(Path.GetTempPath(), "l12-movement-origin-current-journal",
+            Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(directory, "matches.db");
+        await using var recorder = new MatchRecorder(path);
+        await recorder.InitializeAsync();
+        recorder.AttachCatalog(Catalog);
+        await recorder.StartAsync(game, "sandbox");
+        long commandSequence = 0;
+
+        async Task RecordAsync(int playerIndex, L12Command command)
+        {
+            var result = game.Handle(playerIndex, command);
+            Assert.True(result.Accepted, result.Error);
+            commandSequence++;
+            await recorder.AppendAsync(game, commandSequence, playerIndex,
+                JsonSerializer.Serialize(command), result, $"movement-origin-current-{commandSequence}");
+        }
+
+        await RecordAsync(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId)));
+        for (var safety = 0; safety < 40 && game.State.PendingPrompts.Count > 0; safety++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var choice = prompt.ValidChoices.Contains(mercenary.InstanceId)
+                ? mercenary.InstanceId : "pass";
+            await RecordAsync(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice));
+        }
+        Assert.Empty(game.State.PendingPrompts);
+        var discard = Assert.Single(game.State.Events, item => item.Type == "discard"
+            && item.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal("hand", EventOriginZone(discard));
+
+        await using (var connection = new SqliteConnection($"Data Source={path}"))
+        {
+            await connection.OpenAsync();
+            var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT event_json FROM match_action_events
+                WHERE match_id=$match AND event_sequence=$sequence;
+                """;
+            command.Parameters.AddWithValue("$match", game.State.MatchId);
+            command.Parameters.AddWithValue("$sequence", discard.Sequence);
+            var journalEvent = JsonNode.Parse(Assert.IsType<string>(await command.ExecuteScalarAsync()))!
+                .AsObject();
+            Assert.Equal("hand", journalEvent["OriginZone"]?.GetValue<string>());
+        }
+
+        var expectedState = game.SerializeFullState();
+        var expectedHash = game.ComputeStateHash();
+        var recovered = Assert.IsType<L12JournalRecoveryState>(
+            await recorder.LoadJournalEngineAsync(game.State.MatchId));
+        Assert.Equal(commandSequence, recovered.CommandSequence);
+        Assert.Equal(expectedState, recovered.Engine.SerializeFullState());
+        Assert.Equal(expectedHash, recovered.Engine.ComputeStateHash());
+        Assert.Equal("hand", EventOriginZone(Assert.Single(recovered.Engine.State.Events,
+            item => item.Sequence == discard.Sequence)));
+    }
+
     [Theory]
     [InlineData("enter")]
     [InlineData("discard")]
@@ -399,6 +567,40 @@ public sealed class PresentationFactAnimationRegressionTests
         delivered[fact.Sequence] = fact with { Cards = [card.Clone(), card.Clone()] };
         Assert.Null(L12RecipientVisibility.ProjectPresentationFactReferences(result, delivered)
             .PlayerPresentationFactSequences);
+    }
+
+    [Fact]
+    public void MovementOriginGuardRejectsNonDiscardMultiCardHiddenAndMismatchedFacts()
+    {
+        var cases = new[] { "non-discard", "multi-card", "hidden", "mismatched" };
+        foreach (var scenario in cases)
+        {
+            var game = Create($"movement-origin-guard-{scenario}", 26100470 + Array.IndexOf(cases, scenario));
+            var card = Card("S01-0002", $"movement-origin-{scenario}", owner: 1);
+            game.State.Players[1].Graveyard.Add(card);
+            var eventCards = scenario switch
+            {
+                "multi-card" => new[]
+                {
+                    card,
+                    Card("S01-0003", $"movement-origin-{scenario}-second", owner: 1),
+                },
+                "mismatched" =>
+                [Card("S01-0003", $"movement-origin-{scenario}-other", owner: 1)],
+                _ => new[] { card },
+            };
+            if (scenario == "hidden") card.Hidden = true;
+            AddSyntheticEvent(game, scenario == "non-discard" ? "grave" : "discard", 1, eventCards);
+
+            AttachPublicHandDiscardOrigin(game, 1, card);
+
+            var action = Assert.IsType<L12ActionEvent>(game.State.LastAction);
+            Assert.Null(EventOriginZone(action));
+            Assert.Null(EventOriginZone(Assert.Single(game.State.Events,
+                item => item.Sequence == action.Sequence)));
+            Assert.Null(EventOriginZone(Assert.Single(game.UnpersistedEvents,
+                item => item.Sequence == action.Sequence)));
+        }
     }
 
     [Theory]
@@ -436,6 +638,13 @@ public sealed class PresentationFactAnimationRegressionTests
             && item.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
         var result = Assert.Single(game.State.Events, item => item.Type == "effect-result"
             && item.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal(expectedReference ? "hand" : null, EventOriginZone(discard));
+        if (expectedReference)
+            Assert.Equal("hand", EventOriginZone(Assert.Single(game.UnpersistedEvents,
+                item => item.Sequence == discard.Sequence)));
+        else
+            Assert.DoesNotContain(game.UnpersistedEvents,
+                item => item.Sequence == discard.Sequence && EventOriginZone(item) is not null);
         if (expectedReference)
             Assert.Equal([discard.Sequence], Assert.IsType<long[]>(result.PlayerPresentationFactSequences));
         else
@@ -446,6 +655,9 @@ public sealed class PresentationFactAnimationRegressionTests
                      game.SnapshotForSpectator(), game.SnapshotForReferee(),
                  })
         {
+            var projectedDiscard = Assert.Single(snapshot.RecentEvents,
+                item => item.Sequence == discard.Sequence);
+            Assert.Equal(expectedReference ? "hand" : null, EventOriginZone(projectedDiscard));
             var projected = Assert.Single(snapshot.RecentEvents, item => item.Sequence == result.Sequence);
             if (expectedReference)
                 Assert.Equal([discard.Sequence], Assert.IsType<long[]>(projected.PlayerPresentationFactSequences));

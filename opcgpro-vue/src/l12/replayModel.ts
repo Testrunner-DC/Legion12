@@ -329,6 +329,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     effectBranchId: value(event, 'EffectBranchId', 'effectBranchId', undefined),
     effectBranchLabel: value(event, 'EffectBranchLabel', 'effectBranchLabel', undefined),
     effectResultStatus: value(event, 'EffectResultStatus', 'effectResultStatus', undefined),
+    originZone: value(event, 'OriginZone', 'originZone', undefined),
     playerLogGroupId: value(event, 'PlayerLogGroupId', 'playerLogGroupId', undefined),
     playerLogTiming: value(event, 'PlayerLogTiming', 'playerLogTiming', undefined),
     playerLogDecisionLabel: value(event, 'PlayerLogDecisionLabel', 'playerLogDecisionLabel', undefined),

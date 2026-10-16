@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "20261016-mercenary-public-discard-origin",
+  "date": "2026-10-16",
+  "audience": "players",
+  "title": "手牌弃置动画来源",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修正佣兵部队等从手牌弃置时，对手与观战视角误画为从战场进入墓地的问题；回放保留正确的来源区域，旧录像继续按原有信息播放。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+        "opcgpro-vue/src/l12/types.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue",
+        "opcgpro-vue/src/l12/game/visualTransitionProjection.ts"
+      ]
+    }
+  ]
+}
