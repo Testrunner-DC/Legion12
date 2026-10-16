@@ -152,6 +152,18 @@ try {
   assert(panel.includes(':disabled="readOnly || thread.loading"')); checks += 5
   const popover = fs.readFileSync(new URL('../src/l12/site/SocialPopover.vue', import.meta.url), 'utf8')
   assert(popover.includes('aria-modal="false"')); assert(!popover.includes('inert') && !popover.includes('body.style') && !popover.includes('setInterval')); checks += 2
+  assert(popover.includes('initialPeerId?: string') && popover.includes("friend.accountId === props.initialPeerId"))
+  assert(popover.includes('friendResource.accountId === chatResource.state.accountId')); checks += 2
+  const shell = fs.readFileSync(new URL('../src/l12/site/SiteShell.vue', import.meta.url), 'utf8')
+  assert(shell.includes(".filter(item => item.scope === 'friend' && item.unread > 0)"))
+  assert(shell.includes('candidate.seq > item.readSeq') && shell.includes('Date.parse(entry.createdAt)'))
+  assert(shell.includes("socialInitialTab.value = socialInitialPeerId.value ? 'friends' : 'online'"))
+  assert(shell.includes(':initial-peer-id="socialInitialPeerId"')); checks += 4
+  const utilities = shell.match(/<div class="site-utilities">([\s\S]*?)<\/div>/)?.[1] ?? ''
+  assert.equal((utilities.match(/<button\b/g) ?? []).length, 4)
+  assert(!utilities.includes('<span>设置</span>') && !utilities.includes('<span>更新日志</span>') && !utilities.includes('<span>在线 / 消息</span>') && !utilities.includes('<span>{{ connectionLabel }}</span>'))
+  assert(utilities.includes('aria-label="设置"') && utilities.includes('aria-label="更新日志"')
+    && utilities.includes(':aria-label="socialLabel"') && utilities.includes(':aria-label="connectionLabel"')); checks += 3
   console.log(`Chat resource: ${checks} account, protocol, privacy, bounded memory and IME checks passed.`)
 } finally {
   resource.reset(); globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; delete globalThis.__l12ChatReactive

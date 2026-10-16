@@ -4,14 +4,16 @@ import { chatResource } from '../chatResource'
 import { friendResource, refreshFriendResource } from '../friendResource'
 import { friendApi } from '../platform'
 import ChatPanel from './ChatPanel.vue'
-const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean }>()
+const props = defineProps<{ anchor?: HTMLElement | null; positionAnchor?: HTMLElement | null; initialTab?: 'friends' | 'online' | 'opponent'; initialPeerId?: string; opponentId?: string; opponentName?: string; matchId?: string; opponentReadOnly?: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 const tab = ref(props.initialTab ?? 'friends')
-const selectedId = ref('')
+const selectedId = ref(props.initialPeerId ?? '')
 const panel = ref<HTMLElement>()
 const position = ref<Record<string, string>>({ left: '12px', bottom: '12px' })
 const notice = ref('')
-const selected = computed(() => friendResource.friends.find(friend => friend.accountId === selectedId.value))
+const selected = computed(() => friendResource.accountId === chatResource.state.accountId
+  ? friendResource.friends.find(friend => friend.accountId === selectedId.value)
+  : undefined)
 const unread = (id: string) => chatResource.state.threads[JSON.stringify(['friend', id, ''])]?.unread ?? 0
 function close(restore = false) { emit('close'); if (restore && props.anchor?.isConnected) props.anchor.focus() }
 function keydown(event: KeyboardEvent) { if (event.key === 'Escape') { event.stopPropagation(); close(true) } }
@@ -32,6 +34,7 @@ onMounted(async () => {
   place(); document.addEventListener('pointerdown', outside); document.addEventListener('keydown', keydown)
   window.addEventListener('resize', place); window.addEventListener('scroll', place, true)
   try { await refreshFriendResource() } catch { notice.value = '好友列表暂不可用。' }
+  if (!props.initialPeerId || !friendResource.friends.some(friend => friend.accountId === props.initialPeerId)) selectedId.value = ''
   await nextTick(); place()
 })
 onBeforeUnmount(() => {

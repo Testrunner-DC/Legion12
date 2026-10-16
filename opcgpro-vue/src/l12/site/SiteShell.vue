@@ -606,8 +606,22 @@ const modal = ref<'settings' | 'updates' | 'online' | null>(null)
 const socialOpen = ref(false)
 const socialAnchor = ref<HTMLElement | null>(null)
 const chatUnread = computed(() => Object.values(chatResource.state.threads).reduce((sum, item) => sum + item.unread, 0))
+const latestUnreadFriendId = computed(() => Object.values(chatResource.state.threads)
+  .filter(item => item.scope === 'friend' && item.unread > 0)
+  .map(item => {
+    const entry = [...item.entries].reverse().find(candidate => candidate.senderId !== chatResource.state.accountId
+      && candidate.seq > item.readSeq)
+    return { peerAccountId: item.peerAccountId, createdAt: entry ? Date.parse(entry.createdAt) : 0, seq: entry?.seq ?? 0 }
+  })
+  .sort((a, b) => b.createdAt - a.createdAt || b.seq - a.seq || a.peerAccountId.localeCompare(b.peerAccountId))[0]?.peerAccountId ?? '')
+const socialInitialTab = ref<'friends' | 'online'>('online')
+const socialInitialPeerId = ref('')
 function toggleSocial(event: Event) {
   socialAnchor.value = event.currentTarget as HTMLElement
+  if (!socialOpen.value) {
+    socialInitialPeerId.value = latestUnreadFriendId.value
+    socialInitialTab.value = socialInitialPeerId.value ? 'friends' : 'online'
+  }
   socialOpen.value = !socialOpen.value
   closeMobileNav(false)
 }
@@ -658,6 +672,8 @@ async function submitAuth() {
 const onlinePlayers = computed(() => l12State.presence as PlatformPresence[])
 const onlineCount = computed(() => onlinePlayers.value.length)
 const incomingRequestCount = computed(() => onlinePlayers.value.filter(player => player.friendStatus === 'pending' && player.friendDirection === 'incoming').length)
+const socialPendingCount = computed(() => incomingRequestCount.value + chatUnread.value)
+const socialLabel = computed(() => `在线玩家与好友消息：${onlineCount.value} 人在线${socialPendingCount.value ? `，${socialPendingCount.value} 条待查看消息或申请` : ''}`)
 const { isPending: onlineActionPending, run: runOnlineAction } = useActionGate()
 const onlineNotice = ref('')
 const onlineFriendActionKey = (playerId: string, accountId = platformState.account?.id ?? 'anonymous') =>
@@ -841,10 +857,10 @@ onBeforeUnmount(() => {
       </nav>
 
       <div class="site-utilities">
-        <button title="设置" @click="openSiteModal('settings', $event)"><SiteIcon name="settings"/><span>设置</span></button>
-        <button title="更新日志" @click="openSiteModal('updates')"><SiteIcon name="updates"/><span>更新日志</span></button>
-        <button :class="{ 'has-unread': incomingRequestCount + chatUnread > 0 }" title="在线玩家与好友消息" :aria-expanded="socialOpen" @click="toggleSocial($event)"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><span>在线 / 消息</span><b v-if="incomingRequestCount + chatUnread" class="utility-unread" :aria-label="`${incomingRequestCount + chatUnread} 条待查看消息或申请`">{{ incomingRequestCount + chatUnread }}</b></button>
-        <button class="connection" :class="l12State.status" :title="connectionLabel"><span class="utility-icon"><SiteIcon name="connection"/><i/></span><span>{{ connectionLabel }}</span></button>
+        <button type="button" title="设置" aria-label="设置" @click="openSiteModal('settings', $event)"><SiteIcon name="settings"/></button>
+        <button type="button" title="更新日志" aria-label="更新日志" @click="openSiteModal('updates')"><SiteIcon name="updates"/></button>
+        <button type="button" :class="{ 'has-unread': socialPendingCount > 0 }" :title="socialLabel" :aria-label="socialLabel" :aria-expanded="socialOpen" @click="toggleSocial($event)"><span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i></span><b v-if="socialPendingCount" class="utility-unread" :aria-label="`${socialPendingCount} 条待查看消息或申请`">{{ socialPendingCount }}</b></button>
+        <button type="button" class="connection" :class="l12State.status" :title="connectionLabel" :aria-label="connectionLabel"><span class="utility-icon"><SiteIcon name="connection"/><i/></span></button>
       </div>
     </aside>
 
@@ -865,7 +881,7 @@ onBeforeUnmount(() => {
       </section>
 
     </div>
-    <SocialPopover v-if="socialOpen" :anchor="socialAnchor" initial-tab="online" @close="socialOpen = false">
+    <SocialPopover v-if="socialOpen" :anchor="socialAnchor" :initial-tab="socialInitialTab" :initial-peer-id="socialInitialPeerId" @close="socialOpen = false">
       <template #online>
         <p v-if="onlineNotice" class="online-notice">{{ onlineNotice }}</p>
         <div v-for="player in onlinePlayers" :key="player.accountId" class="online-entry">

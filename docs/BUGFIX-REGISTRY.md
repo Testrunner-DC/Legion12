@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CHAT-20261017-HOME-ENTRY｜正式启用接线与四图标入口，本地界面通过
+
+- 用户要求优先上线聊天及主页四按钮去文字。此前70e已带聊天代码但正式开关缺省false；本批沿 `L12_CHAT_ENABLED` 的已有严格解析和唯一聊天通道，以独立正式环境文件接线，不改原凭据配置、不新建连接或轮询。`ops/server/legion12-chat-enabled.conf` 与 `.env.example` 仅是明确安装蓝本；没有执行安装或核准新进程前不得称正式开启。
+- SiteShell只从当前账号的好友未读线程选择最新会话，SocialPopover复用现有好友概览和ChatPanel，已切号缓存不作为选中会话；无未读仍从原在线页打开。四个utility按钮移除可见文字，保留完整title/aria-label、在线/未读数字及连接状态点，原updateEntries及消息资源不改。
+- 75项资源合同与11组真实Headless Edge组件矩阵通过，含最新未读直达、无未读原路径、四按钮44px命中、IME、屏蔽、账号切换及对局/普通观战原入口。最终D盘 `chat-home-utility-20261017/browser-r4-final/report.json` SHA D0C344B4，Main独立核源码并查看真实SiteShell截图；早期夹具失败保留。配置保护5项纯合成通过，不冒称线上聊天或真iOS验收；候选完整门禁和发布后真实协商仍待。
+
 ## DEPLOY-20261017-INVITATION-EXPIRY｜永久清理过期邀请，本地专项通过
 
 - 共享根因已由前次真实seal定位：超过十分钟的邀请只能被拒绝，未从内存字典移除；排空因原始数量误阻塞。全仓检索 `_friendInvitations` 与 `FriendInvitation`，唯一创建入口、接受/拒绝、撤销及排空读取全部核查，不涉及卡池或卡效。
