@@ -135,6 +135,190 @@ public sealed class AtomicReviewBatch6JCRegressionTests
         }
     }
 
+    private static L12GameEngine RestoreAndAssertStableSequences(L12GameEngine game)
+    {
+        var stateHash = game.ComputeStateHash();
+        var randomState = game.RandomState ?? throw new InvalidOperationException("V2 fixture requires deterministic RNG state");
+        var cardFactSignalSequence = game.CardFactSignalSequence;
+        var revision = game.State.Revision;
+        var eventSequence = game.State.EventSequence;
+        var promptSequence = game.State.PromptSequence;
+        var stackSequence = game.State.StackSequence;
+        var activationSequence = game.State.ActivationSequence;
+        var triggerBatchSequence = game.State.TriggerBatchSequence;
+        var authorityEventSequence = game.State.AuthorityEventSequence;
+
+        var restored = L12GameEngine.RestoreCheckpoint(Catalog, game.SerializeFullState(), randomState,
+            cardFactSignalSequence, autoPassEmptyResponses: false, concealHiddenResponseAvailability: false);
+
+        Assert.True(restored.RandomState.HasValue);
+        Assert.Equal(randomState, restored.RandomState.Value);
+        Assert.Equal(cardFactSignalSequence, restored.CardFactSignalSequence);
+        Assert.Equal(revision, restored.State.Revision);
+        Assert.Equal(eventSequence, restored.State.EventSequence);
+        Assert.Equal(promptSequence, restored.State.PromptSequence);
+        Assert.Equal(stackSequence, restored.State.StackSequence);
+        Assert.Equal(activationSequence, restored.State.ActivationSequence);
+        Assert.Equal(triggerBatchSequence, restored.State.TriggerBatchSequence);
+        Assert.Equal(authorityEventSequence, restored.State.AuthorityEventSequence);
+        Assert.Equal(stateHash, restored.ComputeStateHash());
+        return restored;
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(1, false)]
+    [InlineData(1, true)]
+    [Trait("L12Evidence", "entry:batch6jc-limu-observing-stars-full-morale-parent-close")]
+    [Trait("L12Evidence", "card:S02-0102")]
+    [Trait("L12Evidence", "card:S01-0119")]
+    public void LiMuFreePlayingObservingStarsAtFullMoraleCompletesEverySegment(int actor, bool restore)
+    {
+        var game = Create(970517 + actor * 2 + (restore ? 1 : 0));
+        game.State.ActivePlayer = actor;
+        game.State.FirstPlayer = actor;
+        var player = game.State.Players[actor];
+        var opponent = game.State.Players[1 - actor];
+        var liMuId = $"batch6jc-limu-observing-source-{actor}";
+        var observingStarsId = $"batch6jc-limu-observing-tactic-{actor}";
+        var liMu = Card("S02-0102", liMuId, actor);
+        var observingStars = Card("S01-0119", observingStarsId, actor);
+        var fillers = new[]
+        {
+            Card("S01-0101", $"batch6jc-observing-{actor}-1", actor),
+            Card("S01-0201", $"batch6jc-observing-{actor}-2", actor),
+            Card("S01-0301", $"batch6jc-observing-{actor}-3", actor),
+            Card("S01-0401", $"batch6jc-observing-{actor}-4", actor),
+            Card("S01-0002", $"batch6jc-observing-{actor}-5", actor),
+            Card("S01-0003", $"batch6jc-observing-{actor}-6", actor),
+        };
+        player.Hand.Add(liMu);
+        player.Library.Add(observingStars);
+        player.Library.AddRange(fillers);
+        opponent.Library.AddRange([
+            Card("S01-0101", $"batch6jc-next-player-{actor}-1", 1 - actor),
+            Card("S01-0201", $"batch6jc-next-player-{actor}-2", 1 - actor),
+            Card("S01-0301", $"batch6jc-next-player-{actor}-3", 1 - actor),
+        ]);
+        Assert.True(player.MoraleDeck.Count >= liMu.Cost);
+        foreach (var morale in player.MoraleDeck.ToArray())
+        {
+            player.MoraleDeck.Remove(morale);
+            morale.Tapped = false;
+            player.Morale.Add(morale);
+        }
+        var fullMoraleCount = player.Morale.Count;
+        var fullMoraleIds = player.Morale.Select(card => card.InstanceId).Order().ToArray();
+
+        var playLiMu = game.Handle(actor, new L12Command("playCard", liMuId, Row: 0, Slot: 0));
+        Assert.True(playLiMu.Accepted, playLiMu.Error);
+        player = game.State.Players[actor];
+        Assert.Equal(liMu.Cost, player.Morale.Count(card => card.Tapped));
+        var paidMoraleIds = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId)
+            .Order().ToArray();
+        Assert.Equal(fullMoraleIds, player.Morale.Select(card => card.InstanceId).Order());
+        Assert.Equal(observingStarsId, Assert.Single(player.Library, card => card.InstanceId == observingStarsId).InstanceId);
+
+        if (restore)
+        {
+            game = RestoreAndAssertStableSequences(game);
+            player = game.State.Players[actor];
+            Assert.Equal(paidMoraleIds,
+                player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).Order());
+            Assert.Equal(observingStarsId,
+                Assert.Single(player.Library, card => card.InstanceId == observingStarsId).InstanceId);
+        }
+
+        ResolveOnlyPrompt(game, "mode:use");
+        ResolveOnlyPrompt(game, "mode:none");
+        PassResponses(game);
+        var freePlay = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(actor, freePlay.PlayerIndex);
+        Assert.Equal("s2-limu-tactic", freePlay.Data["action"]);
+        Assert.Equal(observingStarsId, freePlay.Data["previewCardId"]);
+        var liMuParentId = Assert.Single(game.State.EffectStack,
+            item => item.SourceInstanceId == liMuId).StackItemId;
+
+        if (restore)
+        {
+            var freePlayPromptId = freePlay.PromptId;
+            game = RestoreAndAssertStableSequences(game);
+            player = game.State.Players[actor];
+            freePlay = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal(freePlayPromptId, freePlay.PromptId);
+            Assert.Equal(observingStarsId, freePlay.Data["previewCardId"]);
+            Assert.Contains(game.State.EffectStack, item => item.StackItemId == liMuParentId);
+        }
+
+        var commitFreePlay = game.Handle(actor,
+            new L12Command("resolvePrompt", PromptId: freePlay.PromptId, Choice: "play"));
+        Assert.True(commitFreePlay.Accepted, commitFreePlay.Error);
+        player = game.State.Players[actor];
+        var reorderStack = Assert.Single(game.State.EffectStack, item =>
+            item.SourceInstanceId == observingStarsId
+            && item.Data.GetValueOrDefault("atomicFlow") == "observing-stars-reorder");
+        Assert.Equal("free", reorderStack.Data.GetValueOrDefault("effectGeneratedPlay"));
+        Assert.Equal("library", reorderStack.Data.GetValueOrDefault("originZone"));
+        Assert.Contains(player.Resolving, card => card.InstanceId == observingStarsId);
+
+        PassResponses(game);
+        var reorder = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal(actor, reorder.PlayerIndex);
+        Assert.Equal("all-top-bottom", reorder.Data["placementMode"]);
+        var inspected = fillers.Take(5).Select(card => card.InstanceId).ToArray();
+        Assert.Equal(inspected, reorder.ValidChoices);
+
+        if (restore)
+        {
+            var reorderPromptId = reorder.PromptId;
+            game = RestoreAndAssertStableSequences(game);
+            player = game.State.Players[actor];
+            reorder = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal(reorderPromptId, reorder.PromptId);
+            Assert.Equal(inspected, reorder.ValidChoices);
+            Assert.Empty(player.MoraleDeck);
+        }
+
+        var bottom = inspected.Reverse().ToList();
+        var resolveReorder = game.Handle(actor, new L12Command("resolvePrompt", PromptId: reorder.PromptId,
+            TopCardInstanceIds: [], BottomCardInstanceIds: bottom));
+        Assert.True(resolveReorder.Accepted, resolveReorder.Error);
+        PassResponses(game);
+        player = game.State.Players[actor];
+
+        Assert.Empty(player.MoraleDeck);
+        Assert.Equal(fullMoraleCount, player.Morale.Count);
+        Assert.Equal(paidMoraleIds,
+            player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).Order());
+        Assert.Equal(bottom, player.Library.TakeLast(bottom.Count).Select(card => card.InstanceId));
+        Assert.Contains(player.Graveyard, card => card.InstanceId == observingStarsId);
+        Assert.DoesNotContain(player.Resolving, card => card.InstanceId == observingStarsId);
+        Assert.Contains(player.Field.SelectMany(row => row), card => card?.InstanceId == liMuId);
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.PendingActivations);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack);
+        Assert.Empty(game.State.PendingTriggerBatches);
+        Assert.Empty(game.State.PendingTriggerStackCandidates);
+        Assert.Null(game.State.ResponseWindow);
+        Assert.Null(game.State.PendingDefense);
+        Assert.Null(game.State.Winner);
+        Assert.DoesNotContain(game.State.EffectStack, item => item.StackItemId == liMuParentId);
+        Assert.DoesNotContain(game.State.DeferredEffectStack, item => item.StackItemId == liMuParentId);
+        Assert.DoesNotContain(game.State.PendingActivations,
+            activation => activation.CommittedParentStackItemId == liMuParentId);
+
+        var turnSerial = game.State.TurnSerial;
+        var endTurn = game.Handle(actor, new L12Command("endTurn"));
+        Assert.True(endTurn.Accepted, endTurn.Error);
+        Assert.Equal(1 - actor, game.State.ActivePlayer);
+        Assert.True(game.State.TurnSerial > turnSerial);
+        Assert.NotEqual(L12Phase.GameOver, game.State.Phase);
+        Assert.Null(game.State.Winner);
+        Assert.NotEmpty(game.State.Players[1 - actor].Library);
+    }
+
     [Fact]
     [Trait("L12Evidence", "entry:batch6jc-okita-slot-pending-activation")]
     public void OkitaLegionUsesPendingActivationAndMayCoverOwnCounterTactic()

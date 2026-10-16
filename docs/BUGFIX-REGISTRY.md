@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-16 接续111｜李牧观星、后排与共享进攻原反馈收口
+
+- BUG-20260915-2698da3c与BUG-20260908-5dcb5d8e：新增LiMuFreePlayingObservingStarsAtFullMoraleCompletesEverySegment，真实出牌/免费牌顶观星、满士气五牌排序、无伪后段提示、父链完全结束及真实endTurn，双方×恢复本地4/4，正式cce8同DLL外部编译执行4/4。恢复保持状态hash、RNG和全部序列，未动产品；正常Batch7496全过。按当前检查未复现各自rejected，不以相关组件绿冒充整链，也不声称原私人局或历史根因已证明。
+- BUG-20260921-1f4daf28：正式YoshitsuneUsesSharedBackRowRangeAndAttackTroopsWithoutPersistingTheSetValue真实后排attack，2500目标减为500、源义经回基础值；当前未复现rejected，未冒称客户端/私人局重放。BUG-20260921-56f7004f：正式ProjectedCostTargetRegressionTests天照分支2候选+8支付/免费/恢复实例均Passed；犬只排除后段当前费用0目标，不阻断第一段其他军团，按当前未复现rejected。
+- BUG-20260917-90341080：c2a5c702d74b85888c1d6ebb8d3631a923b64004真实共享builder修复，Main独立核报告815771→fix→正式cce8祖先及产品diff；HondaAndKagutsuchiResolveCompletelyInEitherDeclaredOrder双方/两排序四格全Passed，减1费后0费入墓、3费保留为2及迦具土加兵力。按fixed_verified，不因最初尚未定位fix而笼统记未复现。
+- BUG-20260916-c84eed60：NaturalRottenEarthRevealClearsRearLegionsBlocksNewOnesAndSetsCountersForFree及后排候选/李靖两个具名正式回归Passed；自然翻灾清既有后排，新军团后排入口直接拒绝且完整状态不变，反击盖伏和前排仍合法。当前未复现rejected，不臆造新修复。
+- 实际bug-closeout-limu-stars-yoshitsune-dog-cce8.json及bug-closeout-rotten-earth-honda-cce8.json保留6次单CAS29932—29935/29938—29939、独立终态读回/原文历史不变/会话撤销；唯一909/417new/269resolved/223closed，阶段111=37/66/8、周期203。性能原4迟到仍红，未知佣兵/Tut各自挂起；没有新产品写、发布或维护变更。
+
 ## 2026-10-16 接续105｜土方、槲寄生与两条规则边界实际收口
 
 - BUG-20260911-33c5b6c5：原文只有一个合法目标的土方登场不能发动。正式cce8的44ee共享修复与Batch299两项HijikataWithOneEligibleLegionRequiresThatSelectionAndSkipsTheOtherKill/HijikataWithOnlyOneCostTwoLegionStillRequiresAndResolvesThatKill精确Passed，单一≤1或费用2军团仍必须明确选择并击杀；按fixed_verified，未重放私人原局。
