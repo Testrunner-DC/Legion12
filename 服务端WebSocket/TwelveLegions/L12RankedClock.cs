@@ -259,7 +259,8 @@ public sealed partial class L12RoomManager
             {
                 await _recorder.AppendRankedAsync(room.Game, room.CommandSequence, playerIndex,
                     JsonSerializer.Serialize(command, RankedSetupCommandJson), result,
-                    CaptureRankedRuntime(room, now), settlement: null);
+                    CaptureRankedRuntime(room, now), settlement: null,
+                    disasterOrigin: L12DisasterDecisionOrigin.ServerSetupTimeout);
             }
             catch (Exception error)
             {

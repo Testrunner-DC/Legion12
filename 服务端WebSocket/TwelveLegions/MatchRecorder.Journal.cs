@@ -155,6 +155,7 @@ public sealed partial class MatchRecorder
 
     internal void RegisterRecoveredEngine(L12GameEngine engine)
     {
+        engine.ClearDisasterSetupObservations();
         if (!UsesJournalV2(engine)) return;
         _factLocationBaselines[engine.State.MatchId] = CaptureLocations(engine.State);
         engine.MarkEventsPersisted(engine.State.EventSequence);

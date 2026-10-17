@@ -273,6 +273,7 @@ public sealed partial class L12GameEngine
             Presentation = presentation,
         };
         State.PendingPrompts.Add(prompt);
+        if (continuation == "setup-initiative") ObserveDisasterCaptureStart();
         AddEvent(data.ContainsKey(PrivateTriggerDeclaration) ? "private-trigger-prompt" : "prompt",
             playerIndex, $"等待 {State.Players[playerIndex].Name}：{playerText}");
         return prompt;
@@ -1588,6 +1589,7 @@ public sealed partial class L12GameEngine
                 State.DisasterPool.Remove(publicCard);
                 State.SelectedDisasters.Add(publicCard);
                 State.RevealedDisasters.Add(publicCard);
+                ObserveDisasterPublic(publicCard);
                 AddEvent("disaster-public", null, $"随机公开天灾〈{publicCard.Name}〉", publicCard);
                 var data = new Dictionary<string, string>
                 {
@@ -1629,17 +1631,19 @@ public sealed partial class L12GameEngine
             card => card.InstanceId,
             card => $"禁用〈{card.Name}〉；这张天灾不会进入本局后续选择。",
             StringComparer.OrdinalIgnoreCase);
-        CreatePrompt(playerIndex, "disaster-ban", text,
+        var prompt = CreatePrompt(playerIndex, "disaster-ban", text,
             State.DisasterPool.Select(card => card.InstanceId), 1, 1, "setup-ban", isPrivate: false,
             data: WithPromptNarrative(data,
                 new("禁用天灾", $"{text}，本步骤需要从当前天灾池中禁用1张。",
                     "请选择1张天灾并确认；确认后该天灾会移出本局后续选择。",
                     L12PromptWaitingAction.SetupDecision, consequences)));
+        ObserveDisasterOffer(prompt);
     }
 
     private void ResolveDisasterBan(int playerIndex, string instanceId)
     {
         var card = State.DisasterPool.First(card => card.InstanceId == instanceId);
+        ObserveDisasterDecision(playerIndex, card);
         State.DisasterPool.Remove(card);
         State.BannedDisasters.Add(card);
         AddEvent("disaster-banned", playerIndex, $"{State.Players[playerIndex].Name} 禁用〈{card.Name}〉", card);
@@ -1660,17 +1664,19 @@ public sealed partial class L12GameEngine
             card => card.InstanceId,
             card => $"选择〈{card.Name}〉加入本局天灾构成；其余本步骤候选不会进入下一位玩家的候选池。",
             StringComparer.OrdinalIgnoreCase);
-        CreatePrompt(playerIndex, "disaster-pick", text, candidates.Select(card => card.InstanceId),
+        var prompt = CreatePrompt(playerIndex, "disaster-pick", text, candidates.Select(card => card.InstanceId),
             1, 1, continuation, isPrivate: true,
             data: WithPromptNarrative(data,
                 new("选择本局天灾", $"{text}；这些候选只向你展示。",
                     "请选择1张天灾并确认；未选择的本步骤候选也会离开后续候选池。",
                     L12PromptWaitingAction.SetupDecision, consequences)));
+        ObserveDisasterOffer(prompt);
     }
 
     private void ResolveDisasterPick(int playerIndex, string instanceId, L12Prompt prompt)
     {
         var card = State.DisasterPool.First(item => item.InstanceId == instanceId);
+        ObserveDisasterDecision(playerIndex, card);
         // 本步骤中随机抽到的候选牌全部离开后续候选池；未选择的牌也不能被下一位玩家抽到。
         State.DisasterPool.RemoveAll(item => prompt.ValidChoices.Contains(item.InstanceId));
         State.SelectedDisasters.Add(card);
@@ -1694,6 +1700,7 @@ public sealed partial class L12GameEngine
 
     private void PrepareAfterDisasterSelection(string eventText)
     {
+        ObserveDisasterComposition();
         SetDisasterValue(0);
         AddEvent("disaster-deck-ready", null, eventText);
         BeginOptionalS2Setup();

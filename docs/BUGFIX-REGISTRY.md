@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## FEATURE-DSC01A-DISASTER-SETUP-FACTS｜禁选事实独立留存，沿命令事务提交
+
+- 用户要求接入主宰先后手天灾分析，DSC-01合同已由Main采用。首期仅内部准备事实，不是卡效修复或已上线统计：seed冻结真实池/行为版本，offer/decision/public/无序composition沿唯一准备入口，观测不进State、玩家事件、RNG或旧fact游标；不复制结算。独立三表与schema component v1原子可重入，支持原生V2四模式，旧/晚录/skip不补造exact，不改变旧卡统计ranked-only样本。
+- 同类入口查询`ObserveDisaster|PrepareAfterDisasterSelection|StartRecordedGameAsync`与所有RoomManager新建引擎的stateFormatVersion核对：全局准备共用ban/pick/public/none/random，四模式沿StartAsync/StartRankedAsync/StartTimedAsync，不加卡号旁路或第二套落库。Start/Append/普通及排位终态同事务，提交后清缓冲，恢复注册清重放缓冲；准备外空观察快返，重复序号验证既存摘要/候选/操作者/结果，不用OR IGNORE吞冲突。可信timeout从真实时钟内部枚举传入，不信用户Destination。
+- 内部明细即使管理员也不给活跃局私密事实，结束后须AdminMatchesRead；覆盖诊断要求已提交排除集可用并保持一致快照，损坏失败关闭。random/none、unknown/incomplete分开，原录像/testrun清理不删事实且不延长录像期；该诊断不是可无限制公开或高频查询的第二期聚合接口。
+- Main已逐叶核实4CB17B06交付与实际6＋29专项TRX、日志及同73E6FAD3 DLL；关键档只读独审CLEAR。逐边界恢复、故障回滚、真实RoomManager伪造marker/并发Tick、真实两类清理与候选索引/有界增长按具名测试验证，不冒真实网络重连、所有旧协议黄金或公网容量。producer-r1仅测试nullable参数编译错误保留，不称产品RED。最终完整规则7846/平台1857均失败跳过0，11叶无漂移，67源架构边界及必要全卡审计通过；全量临时TRX由原监督清理、持久计数与实际收据保留，不冒称全TRX仍在。源级整合/同步认 `D:/GPT/Legion12/artifacts/disaster-setup-analytics-20261017/main-backend-batch.json`、main-final-acceptance及main-git-sync；未改前端，复用未失效通高侧栏完整前端。本片非Release/容量或正式展示，不部署、不回填、不变维护或线上Bug状态。
+
 ## UI-20261017-SIDEBAR-WIDTH｜通高侧栏整体横向收窄
 
 - 直接产品调整，最新人类裁定为收宽、不收高。前轮仅工具padding/gap不解决横向冗余；本轮先试内容高度面板，被用户澄清后全部撤回。最终只增共享宽度覆盖：桌面72px、移动/短屏min(184px,84vw)；旧通高/安全区、导航独立滚动、四工具桌面四竖/移动2×2、顺序/44px命中、隐藏文案及焦点围栏均不改。P4沿唯一SiteShell，正文左距复用同一--nav-w，不加页面分支。

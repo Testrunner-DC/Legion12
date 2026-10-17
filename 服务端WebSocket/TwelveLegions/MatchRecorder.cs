@@ -90,6 +90,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await EnsureColumnAsync(connection, "match_events", "request_id", "TEXT");
         await InitializeJournalSchemaAsync(connection);
         await InitializeAnalyticsSchemaAsync(connection);
+        await InitializeDisasterFactsAsync(connection);
         await InitializeRankedPersistenceSchemaAsync(connection);
         await InitializeSeasonIdentityMigrationSchemaAsync(connection);
         await InitializeSandboxRecordingSchemaAsync(connection, _utcNow());
@@ -180,6 +181,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         await command.ExecuteNonQueryAsync();
         await PersistMatchStartAnalyticsAsync(connection, transaction, state, decks, account0, account1,
             startedUtc, initialSignals);
+        await PersistDisasterStartAsync(connection, transaction, engine, normalizedMode);
         await PersistPublicDeckBindingsAsync(connection, transaction, state.MatchId, bindings);
         if (normalizedMode == "sandbox")
             await InsertSandboxRecordingAsync(connection, transaction, state.MatchId, startedUtc);
@@ -194,6 +196,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         StorageFailureInjector?.Invoke(rankedRuntime is null
             ? "before-match-start-commit" : "before-ranked-start-commit");
         await transaction.CommitAsync();
+        engine?.ClearDisasterSetupObservations();
         if (journalV2)
         {
             _factLocationBaselines[state.MatchId] = CaptureLocations(state);
@@ -212,9 +215,10 @@ public sealed partial class MatchRecorder : IAsyncDisposable
     internal Task AppendRankedAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint runtime,
         L12RankedSettlementEnvelope? settlement, string? requestId = null,
-        bool stateChangedOnRejection = false)
+        bool stateChangedOnRejection = false,
+        L12DisasterDecisionOrigin disasterOrigin = L12DisasterDecisionOrigin.Player)
         => AppendWithCardFactsAsync(engine, sequence, playerIndex, commandJson, result, runtime, settlement,
-            requestId, stateChangedOnRejection, null);
+            requestId, stateChangedOnRejection, null, disasterOrigin);
 
     internal Task AppendResponsePreferenceAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12ResponsePreferenceOutboxEnvelope envelope,
@@ -284,6 +288,7 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             }
             if (changed || !await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
                 await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, completedUtc);
+            await FinalizeDisasterCaptureAsync(connection, transaction, engine.State.MatchId);
             if (!string.IsNullOrWhiteSpace(tournamentId) && !string.IsNullOrWhiteSpace(tournamentMatchId)
                 && engine.State.Winner is { } tournamentWinner)
                 await UpsertTournamentResultOutboxAsync(connection, transaction, engine.State.MatchId,

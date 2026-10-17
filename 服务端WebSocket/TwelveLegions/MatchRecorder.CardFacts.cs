@@ -238,7 +238,8 @@ public sealed partial class MatchRecorder
     private async Task AppendWithCardFactsAsync(L12GameEngine engine, long sequence, int playerIndex,
         string commandJson, CommandResult result, L12RankedRuntimeCheckpoint? rankedRuntime,
         L12RankedSettlementEnvelope? rankedSettlement, string? requestId,
-        bool stateChangedOnRejection, L12ResponsePreferenceOutboxEnvelope? responsePreference)
+        bool stateChangedOnRejection, L12ResponsePreferenceOutboxEnvelope? responsePreference,
+        L12DisasterDecisionOrigin disasterOrigin = L12DisasterDecisionOrigin.Player)
     {
         if (sequence <= 0)
             throw new ArgumentOutOfRangeException(nameof(sequence), sequence,
@@ -288,11 +289,14 @@ public sealed partial class MatchRecorder
                             StringComparison.Ordinal);
                     if (!same)
                         throw new InvalidOperationException("同一对局命令序号的重复写入与已记录状态冲突");
+                    await PersistDisasterObservationsAsync(connection, transaction, engine, sequence,
+                        result.Accepted, disasterOrigin, duplicate: true);
                     if (rankedSettlement is not null)
                         await VerifyRankedCompletionAsync(connection, transaction, rankedSettlement, stateHash);
                     if (responsePreference is not null)
                         await InsertOrVerifyResponsePreferenceOutboxAsync(connection, transaction, responsePreference);
                     await transaction.CommitAsync();
+                    engine.ClearDisasterSetupObservations();
                     engine.DiscardRecordedCommandTiming();
                     return;
                 }
@@ -451,9 +455,12 @@ public sealed partial class MatchRecorder
 
             if (rankedRuntime is not null)
                 await UpsertRankedRuntimeAsync(connection, transaction, rankedRuntime);
+            await PersistDisasterObservationsAsync(connection, transaction, engine, sequence,
+                result.Accepted, disasterOrigin);
             if (rankedSettlement is not null)
             {
                 await CompleteRankedMatchAndEnqueueAsync(connection, transaction, engine, rankedSettlement);
+                await FinalizeDisasterCaptureAsync(connection, transaction, engine.State.MatchId);
                 if (!await HasCardFactCompactionAsync(connection, transaction, engine.State.MatchId))
                     await CompactCardFactsForMatchAsync(connection, transaction, engine.State.MatchId, occurredUtc);
             }
@@ -477,6 +484,7 @@ public sealed partial class MatchRecorder
                 ? rankedRuntime is null ? "before-match-command-commit" : "before-ranked-command-commit"
                 : "before-ranked-final-commit");
             await transaction.CommitAsync();
+            engine.ClearDisasterSetupObservations();
             L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
             if (rankedSettlement is not null) InvalidateAnalyticsCache();
             L12PerformanceMetrics.Duration("persistence.total", appendStartedAt);

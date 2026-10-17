@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## DSC-01A 天灾统计首期｜本地完整验收完成，未部署
+
+- 基线202f5020；“卡效对抗测试”按11叶租约交付并停止，Main实际回执、全部源码/DLL/TRX/log SHA核对一致。仅内部准备观察＋MatchRecorder三表增量迁移/原命令事务/重复冲突/恢复清缓冲/可信timeout来源及内部诊断查询，不接HTTP/WS/UI、不回填旧局、不改变单卡ranked口径。P1/P2/P3沿原权威体系，State/Journal/hash/RNG和旧事实序号保持。
+- producer-r3真实6/6、platform-r2真实29/29，Main独立核两TRX零失败/跳过与同73E6FAD3运行DLL；不累加旧5/26历史运行。producer-r1仅测试nullable RandomState编译错误，原日志保留，不称产品RED。关键档只读独审CLEAR覆盖11叶及事务/恢复/来源/隐私/排除集/留存，未冒充测试或未来高频API审查。
+- `D:/GPT/Legion12/artifacts/disaster-setup-analytics-20261017/delivery.json` 4CB17B06、main-independent-review.json及Main实际完整标准Batch为唯一首期证据。最终完整规则7846/平台1857均失败跳过0，67源架构边界及必要全卡入口审计通过，11源无漂移；成功临时TRX按既有监督清理，持久计数/收据保留，不称所有全量TRX仍在。前端未改，复用上一72px/184px通高侧栏完整验收。源级接受及精确Git同步以main-final-acceptance/main-git-sync/main-state-sync为准，非Release或线上；两服/维护/65待办不动，后台主宰/单局展示仍为下一期。
+
 ## 2026-10-17 侧栏横向收窄与天灾统计接入
 
 - 用户最终澄清“宽度收紧，高度保持通栏”。撤回本轮内容高度草案；其通过报告不作为当前样式证据。最终SiteShell仅桌面导航占宽/正文左距92→72px，移动及短屏抽屉310→184px且保留84vw上限；通高、顶部安全区、独立导航滚动、四工具桌面纵列/移动2×2、44px点击及顺序不变。沿P4共享组件，不复制路由或权限。
