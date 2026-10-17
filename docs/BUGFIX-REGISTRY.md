@@ -1,5 +1,59 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261017-GM-PANEL-HIT-AND-SUSANOO-LOG｜两个当前展示问题保留，不以规则通过关闭
+
+- 51d：9201D07B第一844×390态来源卡可选、按钮visible/enabled但物理中心不属按钮，目标未点击/命令0，后两态未执行。独立因果78511E9F明确中心(794,218.31)命中ASIDE.gm-panel内“对方”BUTTON，面板x516/y50/w320/h332、z2147483620；原生点击现有×收起后同一来源仍选中、按钮获命中，再原生目标发送唯一sandboxAction(actor0)/attack(0unit→1unit)，650ms无重复。15SHA/11产品blob同a355 Main复核，未改CSS/state/handler。对照core通过但整体仍因1settings拒连failed；不当3尺寸、actor1或引擎受理。窄屏进入默认收起/保留重开/桌面不变的限定修复已问，未批准不实施、不关51d。
+- bfb：正式SusanooFrontBuffAppliesToKusanagiLegionAttack具名1Passed证明真实能力/选牌/攻主宰5000→7000，raw event含须佐/+2000；L12Actions:886—890仅AddEvent且无PlayerLogSemantic，logViewModel:778—792丢raw text、只取目标卡和“发动效果”。Main实际Node调用当前projectLog，以该公开事件形状在己方/对方/中立三视角均得到〈草薙剑〉发动效果、无须佐/无+2000；这是实际formatter组合诊断，不称真实引擎到浏览器抓包。当前日志SHA44A471AB、Actions AB9974BD、Engine BF8822FA；既有语义入口可补来源/对象/结果，限定修复已问，bfb不关。
+
+## CLOSEOUT-20261017-A355-RESPONSE-COPY-TWO｜公开目标与黑莲花分段提示当前检查闭环
+
+- 0c宫廷双方盖伏位置/不泄身份、公开主动目标首响应前target-selected及前端“已选目标”记录消费者，e950黑莲花当前compositeSegment文案及两真实独立响应结算，均按具名当前组合证据bounded rejected；不是原私局/宫廷浏览器或双段像素重放。B4311928提案/E446F9EA执行器，10正式具名结果/13同a355源/2 SelfTest，原12函数与5字面替换保持；CAS31015—31016、BABEBA83两终态/原文历史/撤会话。唯一910/119new/367resolved/424closed、阶段410=135fixed/259rejected/16duplicate、周期502；bfb实际日志缺口与c599未明字段单挂，不因相关规则绿关闭。
+
+## CLOSEOUT-20261017-A355-ACTION-COST-AND-MOBILE-ATTACK｜十一项终态，核心与环境分段保真
+
+- action-cost-six-r2：44a/0b三尺寸手牌/结束回合六核心子例、719/139标准天灾Shuffle及知识投影、e9a梅杰德与共用取消具名三结果均bounded rejected；bf7按44ee0030已部署a355 fixed_verified。原文“自然的馈赠”实际对应ST06-10《自然馈赠》，只核编辑器费用筛选，不把无费用改成卡效0费。1320CBF6提案/83D3E12B执行器、6 SelfTest/22当前同blob及1正式专属Editor片/4具名结果；CAS30999—31004，F82B6E21六终态/撤会话。
+- mobile-attack-five：861/6d3/01c/c1c/b59按E22EE05B真实SFC原生触摸六核心子例有界未复现关闭，三物理尺寸各军团/主宰，真实hit owner/visible/enabled，目标前0、后及650ms恰1带requestId的attack，CD24D9EB Main全文/逐格/13SHA及9产品formal blob独核。4D014E89提案/FA777942执行器、5 SelfTest/12母函数及五字面替换不变；CAS31007—31011，77AB9A5B五终态/撤会话；唯一910/121new/367resolved/422closed、阶段408=135fixed/257rejected/16duplicate、周期500。
+- 进攻原工具整体failed/environment failed保留：14失败请求精确为settings拒连9/中止2、牌背图片中止3，console9/pageerror0；不吞错、不改零错误断言、不为标签复跑。上述只证明现行合法目标投影的触摸/序列化，不冒原设备、引擎受理、真机或双控制。51d明确自定义自己侧单独核查；原三排序/议和/胡夫/血鹰缺陷不借此关闭。
+- 状态更新器此前按SnapshotTag拼intake名，r2本地对账已成功但摘要找错文件；原失败保留，未重交CAS。限定新增显式IntakeReceiptPath，必须精确匹配已对账workflow.latestIntake路径与SHA；5C00636C，AST解析/1真实绑定正例/错路径与错SHA两反例通过，实际403/408摘要更新正常；未放宽原计数、SHA、会话或唯一源守卫。
+
+## CLOSEOUT-20261017-A355-CARD-FOUR-MIXED-SIX｜十项实际终态，当前组合与已部署手势修复
+
+- card-four：f074合法同列支援只使支援者阵亡、e8ce黑莲花士气段被绝防但天灾调整保留、622海拉真实四格经同一CardEffect致死桥/阿喀替死参数、f1c亡语伏击资格双方，各bounded rejected，不称海拉阿喀单一整链或莫德雷德真田原局。5B9C5821提案/71F56553执行器、11具名正式结果/13同blob源/四SelfTest，CAS30974—30977、F52BDFEA终态/原文历史/撤会话。
+- mixed-six：09e双绝防当前四格、9e8作者公开牌库详情现有删除、cb3圣杯/兰斯洛特排序与暴怒贯穿两种范围、71b真实六态滚动、ff88编辑器21项/设置六态均bounded rejected；70f按b426b900共享手势修复已部署a355 fixed_verified。8A533090提案/4FCCB712执行器，6 SelfTest/原v2合同/12函数与五字面绑定不变，CAS30990—30995、5895CE57全部终态/撤会话；唯一910/132new/366resolved/412closed、阶段397=134fixed/247rejected/16duplicate、周期489。原私局、统计随机性、真机或全站按钮均不冒称，未部署1ba不作证。
+- 手势同名报告不混拼：main-final实际SHA1771DE4F与final-verified实际40D47D20各40交互/9布局0失败，均有惯性tap selected=0；header-check另14/3不替代全量。报告路径/hash按真实逐份绑定，未改原结果。作者删除取PublicDeckDetailPage实际按钮/handler及权限/短码两个平台具名结果，不使用DeckLibraryPage未挂模板旧函数，也不冒独立可逆“关闭公开”开关。正式全套7686/1808与前端356同源复用，无新Release或部署。
+
+## CHECK-20261017-PUPPET-DOUBLE-ABSOLUTE｜完整双反击真实战斗，当前四格通过
+
+- 正式6B4 DLL/九Data，PuppetDoubleAbsoluteCurrentTests四格真实宫廷攻主宰→手牌傀儡选合法格→攻方绝防/弃牌→守方绝防明确选择第一张StackItemId/弃牌→双方按真实优先权pass→第二绝防无效第一张→傀儡完成改向→真实无支援战斗，傀儡恰一次入墓、主宰无伤、远程宫廷与对照支援留场。每格14Handle全受理，嵌套后strict V2保原hash/revision，同向direct/restore最终hash逐字相同。EA56EEF3组合/8E7E9BF2 TRX/98D30B66监督/45CAA843源码，Main全文独核与独审CLEAR。是当前合成链，不证明原玩家选了哪个目标或UI文案足够清楚。
+- r1路径尾斜杠、r2回合玩家先pass、r3漏真实stack-response-target、r4不同seed/instance配对校验均保留，非产品RED；r4语义四格过但runner正确拒绝错误hash对照，r5同初态配对通过。原问题09e已按本次有限未复现终态，不新增产品旁路。
+
+## CHECK-20261017-PROMPT-HOVER-HIT-OWNERSHIP｜首次详情引发布局跳动，修复待批准
+
+- Main新增一次纯命中诊断14C96CA5：真实1366×768排序五卡、产品各pin同a355，source初x329/y320.8125，hover后x449/y287.125；原点(341,332.8125)从真实IMG变成inspector-active遮罩，可信pointerdown/mousedown/up/click全部落遮罩，0命令/错误/外部请求。PromptOverlay的inspector-active仅详情出现时才加侧边留白，同时详情区增高导致居中位置改变；这解释前0AD67A7A无拖放事件，不再把它泛称输入技术未知。仍不证明原黑屏/丢牌全部根因，不因点击换位/重注入两态绿关闭原16b/2f7/434三条。
+- 全局查询inspector-active及placementMode，当前all-top-bottom/split-top-bottom/all-bottom共用PromptOverlay，single-top-bottom另有单张入口；只询问排序/牌库放置预留详情空间、稳定卡列/按钮的限定修复，保留详情/确认/恢复/规则，未批准不改产品。10月5日移动手势三卡排序绿不冒充本次桌面五卡首次hover；实际来源/设备/布局分别保真。
+
+## CHECK-20261017-MOBILE-CORE-ACTION-SUBCASES｜六子例已执行，整体工具失败保留
+
+- B83EA7DC原report-r1与FA4EB313脚本/42CD64B1运行器：真实GamePage/GameBoard/HandArea/GameActions十产品叶均同a355，844×390/667×375/390×844实际旋转，各手牌tap选中1/Play入口1/0命令；结束回合真实tap各只发1条带requestId的endTurn，300ms无重复。6个子例已通过全部自身断言后，末尾零console-error断言因4条ERR_CONNECTION_REFUSED失败；无pageerror/外部请求，记录7次本地settings GET但未采失败URL，不把四错误强行归因settings。
+- Main全文读脚本、复核十产品blob及六结果，985A0037分段评审与独审CLEAR只接受实际核心子例，不把overall failed改GREEN、不删断言、不为标签重跑；非服务器受理/实际出牌/真机/系统方向锁/自动全屏。原“自动打开全勤”不擅改词，44a/0b下一批按当前有限检查处置。结束租约后三专属cache共4344847B删除，当前单一热DLL及全部源/TRX/监督/失败报告保留D，既有current-correctness-batch的ended-diagnostic-cache-cleanup.json记实，不搬E再留副本。
+
+## CLOSEOUT-20261017-A355-SHARED-RESPONSE-TRIAL｜再十三项真实终态及批内新增对账
+
+- shared-seven：f24乔泽/图三依3970F306四格；071/3bc/a94/beb四移动按六态真实触摸20项；cfc/bef黑莲花标记/返还按当前权威源，各独立有界rejected。1D86F663提案/BA50B720执行器，单CAS30947—30953、D1AEEF35真实收据；不称原私局、所有真机或新增固定排序规则。
+- response-four：94c荆轲/伏击、afa公开主动战术目标、1ae公开进攻/目标三项CAS30960—30962终态；df3d在30963确切409，4192EEAF原partial及错误保持，只把三成功对账。期间新增09e一条，910/145不是只关闭2条。df原15字段、同UTC时刻与备注未变后，以新preview和另两试炼/天启项续办，CAS30967—30969、C3CDB54B三项终态/原文历史/撤会话；不重交已成功三项。
+- df当前spectator-hand公开数量SFC/正式356合同存在，非原浏览器像素；c4e当前仅五试炼，5个completeTrial及10个逐卡完成/奖励结果通过，十字军无印刷即时奖励，不把单一安格斯当五卡。210由已部署3c13e7b1共享修复fixed_verified：真实天启整手放底后各抽4，加风暴天灾入手抑制/普通效果正对照及同源天灾守卫，明确天启测试未单断AuthorityEvents。006F1FB7提案/E3C3F76E执行器通过18具名结果、17同blob源及三SelfTest。
+- 唯一910/142new/365resolved/403closed，阶段387=133fixed/238rejected/16duplicate、周期479，本次213起72、本轮359起218实际关闭。CF1C0F1F本地对账器仅区分冻结before与批中新到项，4正3负CF5A548B；原工具2717F32F保留，后置完整快照/唯一ID/原文/每项CAS和终态守卫不减少，线上执行器未改。无部署或维护写。
+
+## CHECK-20261017-PEACE-OWN-CODEX｜入手调度载体错误提供己方反击，修复待批准
+
+- BUG-e08cbd0b，正式a355同6B4 DLL/九Data真实议和支付/打出→对手同意；双方×嵌套后严格V2四格均在own-codex候选断言失败，43A021AF诊断/6A46608E TRX/540D921C测试。authority-event的Controller合法代表入手接收者，但Source保留原议和，原施放者因此看到自己的智慧法典。这里只证明错误候选已提供，未继续提交并结算错误反击；不是旧私局/UI。
+- L12S1ExtendedEffects.CanUseS1ReactionAtStack 对S01-0224只看FindSource的tactic/artifact，未使用L12PromptsAndSetup既有IsRespondableCardEffectActivation排除authority-event/composite-continuation等调度载体。全池共享反击检查中伏击已有分类器、进攻类另限进攻，智慧法典是本处原始类型回退；不把接收者Controller改为施放者。拟复用现有分类，保留真实战术/圣物效果（卡发动与效果发动不混淆）、正常入手触发和费用/恢复；已一次询问限定修复，未答复不改产品、不关报告。
+
+## CHECK-20261017-AMBUSH-AND-ORDER-UI｜真实响应绿与拖放诊断边界
+
+- 02D86D2A验收/1B3E1FE8 TRX/902A4F85测试，正式同DLL双方×逐命令V2四格：真实进攻击杀荆轲→伏击针对其已声明2000投石车→增兵4000→荆轲击杀段资格重验失败，伏击恰一次弃置/结算，最终目标存活、堆叠战斗排空。原r1四失败只是错误要求已盖伏反击再次支付盖放费用，原源/TRX/观察保留，不改产品或规则，不称旧私局/UI。
+- library-order-ui-current的4D886EB1：纯HTML原生拖放有/无setData两对照通过；实际SFC桌面1366×768与844×390五张点击换位、同一权威询问重注入及恰一次正确resolvePrompt通过。非服务端检查点恢复，不称所有顺序类型。0AD67A7A原生输入实际SFC全拖放事件0、顺序不变，但没有悬停稳定后的elementFromPoint/命中事实；仍是技术待定位，不等于原黑屏/卡死已证，也不能据此改产品。原dragTo/r1-r4及对照失败均保留，专属进程/监听/可再生缓存已结束清理，无外部HTTP/WS或产品改动。
+
 ## CLOSEOUT-20261017-A355-AUTHORITY-FIVE｜规则与费用链再五项闭环
 
 - 0939祭天权威声明/公开天灾值（不称原对手按钮展示）、ac64嬴政炸场后天廷恢复（不称孟婆原私局概率）、aa2f甲虫已选构筑才特殊开局入墓（不称自动加入）、3436精确卡纽特三组6参数费用/取消恢复、eded非百鬼实例禁用跨V2绑定：各bounded rejected。E8DF063C报告/E77A034E提案/3C1CFA8A执行器，27具名正式结果/15同blob源/五SelfTest/原v2合同与12函数保持，Main逐源核准后实际单CAS30938—30942/终态/原文历史/撤会话，268E7670真实收据。
