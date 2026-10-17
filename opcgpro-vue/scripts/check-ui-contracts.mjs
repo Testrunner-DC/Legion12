@@ -260,9 +260,12 @@ const contracts = [
     && battleNav.includes("{ to: '/battle/tournaments', icon: 'tournament', label: '赛事' }")
     && battleNav.includes("{ to: '/battle/rankings', icon: 'ranking', label: '排行' }")
     && battleNav.includes("{ to: '/battle/records', icon: 'records', label: '对局' }")
-    && shell.includes('.site-utilities{display:flex;flex-direction:column;gap:8px')
-    && shell.includes('grid-template-columns:1fr 1fr;column-gap:0;row-gap:8px'),
-    '官网与对战侧栏必须只缩短导航标签，底部四项工具按约8px纵向分隔且移动两列不扩大列间距'],
+    && shell.includes('.site-nav{display:flex;flex:1;min-height:0;flex-direction:column;justify-content:flex-start;overflow-y:auto}')
+    && shell.includes('.site-utilities{display:flex;flex:0 0 auto;flex-direction:column;align-items:center;gap:2px;padding:4px 0')
+    && shell.includes('.site-utilities button{position:relative;display:grid;width:44px;min-width:44px;height:44px;min-height:44px;place-items:center;padding:0')
+    && (shell.match(/grid-template-columns:repeat\(2,44px\);grid-auto-rows:44px;justify-content:center;gap:2px;padding:4px/g) ?? []).length === 2
+    && !shell.includes('grid-template-columns:repeat(4,') && !shell.includes('justify-content:center}.site-nav'),
+    '官网与对战侧栏必须只缩短导航标签；桌面保留四项纵列、移动和短屏保留两列，并移除图标按钮的旧文案留白'],
   [moraleIdentities.length === 6
     && moraleIdentities.every(identity => identity.displayName.startsWith('士气·') && !identity.canonicalCardId.startsWith('ST'))
     && moraleIdentities.find(identity => identity.faction === 'olympus')?.canonicalCardId === 'S02-05C1'

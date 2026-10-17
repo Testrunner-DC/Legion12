@@ -164,6 +164,11 @@ try {
   assert(!utilities.includes('<span>设置</span>') && !utilities.includes('<span>更新日志</span>') && !utilities.includes('<span>在线 / 消息</span>') && !utilities.includes('<span>{{ connectionLabel }}</span>'))
   assert(utilities.includes('aria-label="设置"') && utilities.includes('aria-label="更新日志"')
     && utilities.includes(':aria-label="socialLabel"') && utilities.includes(':aria-label="connectionLabel"')); checks += 3
+  const utilityOrder = ['aria-label="设置"', 'aria-label="更新日志"', ':aria-label="socialLabel"', ':aria-label="connectionLabel"']
+  const utilityOffsets = utilityOrder.map(marker => utilities.indexOf(marker))
+  assert(utilityOffsets.every(offset => offset >= 0)); assert.deepEqual([...utilityOffsets].sort((a, b) => a - b), utilityOffsets)
+  assert(utilities.includes('<span class="utility-icon"><SiteIcon name="online"/><i>{{ onlineCount }}</i><b v-if="socialPendingCount" class="utility-unread"'))
+  assert(shell.includes('socialAnchor.value = mobileOpen.value ? mobileMenuButton.value : (event.currentTarget as HTMLElement)')); checks += 4
   console.log(`Chat resource: ${checks} account, protocol, privacy, bounded memory and IME checks passed.`)
 } finally {
   resource.reset(); globalThis.setTimeout = realSet; globalThis.clearTimeout = realClear; delete globalThis.__l12ChatReactive
