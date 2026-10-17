@@ -26,6 +26,10 @@ internal enum L12SyntheticTransportStatus
     MissingReply = 6,
 }
 
+internal readonly record struct L12SyntheticRecorderSnapshot(int Count, int Valid,
+    long WaitStartedRelativeMicroseconds, long AcquiredRelativeMicroseconds,
+    long HoldEndedRelativeMicroseconds);
+
 internal readonly record struct L12SyntheticTransportSnapshot(
     int Slot,
     int Status,
@@ -57,7 +61,12 @@ internal readonly record struct L12SyntheticTransportSnapshot(
     long CommitCompletedRelativeMicroseconds,
     long ReceiptReceivedRelativeMicroseconds,
     int ReceiptValid,
-    int ReceiptAfterSendValid);
+    int ReceiptAfterSendValid,
+    long RoomGateAcquiredRelativeMicroseconds,
+    long OutboundEnqueuedRelativeMicroseconds,
+    long OutboundDequeuedRelativeMicroseconds,
+    L12SyntheticRecorderSnapshot RecorderAppend,
+    L12SyntheticRecorderSnapshot RecorderComplete);
 
 /// <summary>
 /// A one-shot numeric probe for an explicitly isolated test-run profile. It deliberately does not
@@ -68,6 +77,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     internal const string EnvironmentKey = "L12_TESTRUN_TRANSPORT_DIAGNOSTICS";
     internal const string Mode = "terminal-burst-v1";
     internal const string BoundsMode = "terminal-bounds-v2";
+    internal const string RecorderMode = "terminal-recorder-v3";
     internal const int MaximumSamples = 32;
     internal const int MaximumBoundsSamples = 6;
     private static readonly TimeSpan DefaultDeadline = TimeSpan.FromSeconds(15);
@@ -81,6 +91,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     private readonly TimeSpan _deadline;
     private readonly TimeSpan _quietPeriod;
     private readonly bool _boundsMode;
+    private readonly bool _recorderMode;
     private readonly Timer _timer;
     private int _accepted;
     private int _completed;
@@ -93,7 +104,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     private bool _flushed;
 
     private L12SyntheticTransportDiagnostics(int expected, string nonce, Action<string> sink,
-        TimeSpan deadline, TimeSpan quietPeriod, bool boundsMode)
+        TimeSpan deadline, TimeSpan quietPeriod, bool boundsMode, bool recorderMode)
     {
         ExpectedSamples = expected;
         _nonce = nonce;
@@ -102,7 +113,8 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         _sink = sink;
         _deadline = deadline;
         _quietPeriod = quietPeriod;
-        _boundsMode = boundsMode;
+        _boundsMode = boundsMode || recorderMode;
+        _recorderMode = recorderMode;
         _timer = new Timer(static state => ((L12SyntheticTransportDiagnostics)state!).Flush(),
             this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
@@ -111,6 +123,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     internal int AcceptedSamples { get { lock (_gate) return _accepted; } }
     internal int CompletedSamples { get { lock (_gate) return _completed; } }
     internal bool IsBoundsMode => _boundsMode;
+    internal bool IsRecorderMode => _recorderMode;
 
     internal static L12SyntheticTransportDiagnostics? Create(bool ephemeralTestMatches,
         string? setting, Action<string>? sink = null, TimeSpan? deadline = null,
@@ -124,12 +137,13 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         var parts = setting.Split(':', StringSplitOptions.None);
         var legacyMode = parts.Length == 3 && string.Equals(parts[0], Mode, StringComparison.Ordinal);
         var boundsMode = parts.Length == 3 && string.Equals(parts[0], BoundsMode, StringComparison.Ordinal);
+        var recorderMode = parts.Length == 3 && string.Equals(parts[0], RecorderMode, StringComparison.Ordinal);
         if (parts.Length != 3
-            || !legacyMode && !boundsMode
+            || !legacyMode && !boundsMode && !recorderMode
             || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var expected)
             || expected < 1
             || legacyMode && expected > MaximumSamples
-            || boundsMode && expected > MaximumBoundsSamples
+            || (boundsMode || recorderMode) && expected > MaximumBoundsSamples
             || parts[2].Length != 32
             || parts[2].Any(character => character is not (>= '0' and <= '9')
                                                and not (>= 'a' and <= 'f')))
@@ -141,7 +155,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
             throw new ArgumentOutOfRangeException(nameof(deadline),
                 "Synthetic transport diagnostic timers must be positive.");
         return new L12SyntheticTransportDiagnostics(expected, parts[2], sink ?? Console.Error.WriteLine,
-            effectiveDeadline, effectiveQuietPeriod, boundsMode);
+            effectiveDeadline, effectiveQuietPeriod, boundsMode, recorderMode);
     }
 
     internal bool AcceptsCommand(string? commandType) => _boundsMode
@@ -216,6 +230,21 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                     _timer.Change(_quietPeriod, Timeout.InfiniteTimeSpan);
                 else if (_boundsMode)
                     ScheduleBoundsFlushIfResolvedLocked();
+            }
+        }
+        catch { }
+    }
+
+    internal void RecordRecorderBoundary(L12SyntheticTransportSample sample, int operation,
+        int boundary, long timestamp)
+    {
+        try
+        {
+            lock (_gate)
+            {
+                if (!_recorderMode || _flushed || !ReferenceEquals(_samples[sample.Slot], sample)
+                    || RejectBoundsEventAtOrBeyondDeadlineLocked(timestamp)) return;
+                sample.RecordRecorderBoundaryCore(operation, boundary, timestamp);
             }
         }
         catch { }
@@ -350,6 +379,61 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
             return;
         }
 
+        if (_recorderMode)
+        {
+            foreach (var row in rows)
+            {
+                // A separate schema keeps both legacy strict numeric contracts unchanged.
+                var line = JsonSerializer.Serialize(new
+                {
+                    schema = 3, kind = 1, slot = row.Slot, status = row.Status,
+                    in_fifo_us = row.InboundFifoMicroseconds, in_depth = row.InboundAcceptedDepth,
+                    in_bytes = row.InboundAcceptedRetainedBytes, in_remaining = row.InboundRemainingDepth,
+                    pre_gate_us = row.PreGateMicroseconds, gate_wait_us = row.GateWaitMicroseconds,
+                    gate_hold_us = row.GateHoldMicroseconds, serialize_us = row.SerializeMicroseconds,
+                    out_enq_depth = row.OutboundEnqueueDepth, out_deq_depth = row.OutboundDequeueDepth,
+                    out_queue_us = row.OutboundQueueMicroseconds, prepare_us = row.PrepareMicroseconds,
+                    wire_bytes = row.WireBytes, wire_delta = row.WireDelta, send_us = row.SendMicroseconds,
+                    commit_us = row.CommitMicroseconds, server_total_us = row.ServerTotalMicroseconds,
+                    receive_to_enqueue_us = row.ReceiveToEnqueueMicroseconds,
+                    receive_valid = row.ReceiveTimelineValid, lease_valid = row.LeaseTimelineValid,
+                    lease_start_rel_us = row.LeaseStartedRelativeMicroseconds,
+                    lease_end_rel_us = row.LeaseCompletedRelativeMicroseconds,
+                    enqueue_rel_us = row.EnqueuedRelativeMicroseconds,
+                    send_start_rel_us = row.SendStartedRelativeMicroseconds,
+                    send_end_rel_us = row.SendCompletedRelativeMicroseconds,
+                    commit_rel_us = row.CommitCompletedRelativeMicroseconds,
+                    receipt_rel_us = row.ReceiptReceivedRelativeMicroseconds,
+                    receipt_valid = row.ReceiptValid, receipt_after_send_valid = row.ReceiptAfterSendValid,
+                    room_acquired_rel_us = row.RoomGateAcquiredRelativeMicroseconds,
+                    out_enqueued_rel_us = row.OutboundEnqueuedRelativeMicroseconds,
+                    out_dequeued_rel_us = row.OutboundDequeuedRelativeMicroseconds,
+                    append_count = row.RecorderAppend.Count, append_valid = row.RecorderAppend.Valid,
+                    append_wait_rel_us = row.RecorderAppend.WaitStartedRelativeMicroseconds,
+                    append_acquired_rel_us = row.RecorderAppend.AcquiredRelativeMicroseconds,
+                    append_hold_end_rel_us = row.RecorderAppend.HoldEndedRelativeMicroseconds,
+                    complete_count = row.RecorderComplete.Count, complete_valid = row.RecorderComplete.Valid,
+                    complete_wait_rel_us = row.RecorderComplete.WaitStartedRelativeMicroseconds,
+                    complete_acquired_rel_us = row.RecorderComplete.AcquiredRelativeMicroseconds,
+                    complete_hold_end_rel_us = row.RecorderComplete.HoldEndedRelativeMicroseconds,
+                });
+                try { _sink(line); }
+                catch { }
+            }
+            var summary = JsonSerializer.Serialize(new
+            {
+                schema = 3, kind = 2, expected = ExpectedSamples, accepted, completed,
+                missing = ExpectedSamples - accepted, deadline = accepted - completed,
+                duplicate = duplicates, invalid, receipts,
+                receipt_missing = rows.Count(row => row.ReceiptValid == 0
+                    && row.Status is (int)L12SyntheticTransportStatus.Sent or (int)L12SyntheticTransportStatus.Deadline),
+                receipt_duplicate = receiptDuplicates,
+            });
+            try { _sink(summary); }
+            catch { }
+            return;
+        }
+
         foreach (var row in rows)
         {
             var line = string.Create(CultureInfo.InvariantCulture,
@@ -402,6 +486,9 @@ internal sealed class L12SyntheticTransportSample
     private long _commitCompletedAt;
     private long _receiptReceivedAt;
     private int _status;
+    private readonly Action<int, int, long>? _recorderObserver;
+    private RecorderInterval _recorderAppend;
+    private RecorderInterval _recorderComplete;
 
     internal L12SyntheticTransportSample(L12SyntheticTransportDiagnostics owner, int slot,
         L12InboundQueueTiming inbound, Guid transportId)
@@ -417,10 +504,47 @@ internal sealed class L12SyntheticTransportSample
         _inboundAcceptedDepth = inbound.AcceptedDepth;
         _inboundAcceptedRetainedBytes = inbound.AcceptedRetainedBytes;
         _inboundRemainingDepth = inbound.RemainingQueuedMessages;
+        if (owner.IsRecorderMode)
+            _recorderObserver = (operation, boundary, timestamp) =>
+                owner.RecordRecorderBoundary(this, operation, boundary, timestamp);
     }
 
     internal int Slot { get; }
     internal Guid TransportId { get; }
+    internal Action<int, int, long>? RecorderObserver => _recorderObserver;
+
+    // Accessed only under the diagnostics owner gate, also used by SnapshotForTests/Flush.
+    private struct RecorderInterval
+    {
+        internal int Count, Phase;
+        internal long WaitStartedAt, AcquiredAt, HoldEndedAt;
+        internal void Record(int boundary, long timestamp)
+        {
+            if (boundary == L12SyntheticRecorderObservation.WaitStarted)
+            {
+                Count = Math.Min(2, Count + 1);
+                if (Count == 1 && Phase == 0) { WaitStartedAt = timestamp; Phase = 1; }
+                else Phase = -1;
+            }
+            else if (boundary == L12SyntheticRecorderObservation.Acquired && Phase == 1
+                     && timestamp >= WaitStartedAt) { AcquiredAt = timestamp; Phase = 2; }
+            else if (boundary == L12SyntheticRecorderObservation.HoldEnded && Phase == 2
+                     && timestamp >= AcquiredAt) { HoldEndedAt = timestamp; Phase = 3; }
+            else Phase = -1;
+        }
+        internal readonly L12SyntheticRecorderSnapshot Snapshot(long origin, long roomAcquiredAt, bool timedOut)
+            => new(Count, !timedOut && Count == 1 && Phase == 3 && origin > 0
+                && roomAcquiredAt >= origin && WaitStartedAt >= roomAcquiredAt ? 1 : 0,
+                RelativeMicroseconds(origin, WaitStartedAt), RelativeMicroseconds(origin, AcquiredAt),
+                RelativeMicroseconds(origin, HoldEndedAt));
+    }
+
+    internal void RecordRecorderBoundaryCore(int operation, int boundary, long timestamp)
+    {
+        if (!IsPending) return;
+        if (operation == L12SyntheticRecorderObservation.Append) _recorderAppend.Record(boundary, timestamp);
+        else if (operation == L12SyntheticRecorderObservation.Complete) _recorderComplete.Record(boundary, timestamp);
+    }
     internal bool IsBoundsResolved
     {
         get
@@ -556,7 +680,14 @@ internal sealed class L12SyntheticTransportSample
             RelativeMicroseconds(_receiveCompletedAt, commitCompletedAt),
             receiptValid ? ElapsedMicroseconds(_receiveCompletedAt, receiptReceivedAt) : 0,
             receiptValid ? 1 : 0,
-            receiptAfterSendValid ? 1 : 0);
+            receiptAfterSendValid ? 1 : 0,
+            RelativeMicroseconds(_receiveCompletedAt, Volatile.Read(ref _gateAcquiredAt)),
+            RelativeMicroseconds(_receiveCompletedAt, Volatile.Read(ref _outboundEnqueuedAt)),
+            RelativeMicroseconds(_receiveCompletedAt, Volatile.Read(ref _outboundDequeuedAt)),
+            _recorderAppend.Snapshot(_receiveCompletedAt, Volatile.Read(ref _gateAcquiredAt),
+                Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Deadline),
+            _recorderComplete.Snapshot(_receiveCompletedAt, Volatile.Read(ref _gateAcquiredAt),
+                Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Deadline));
     }
 
     private static long ElapsedMicroseconds(long startedAt, long completedAt)

@@ -436,7 +436,17 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
     [InlineData("normal")]
     [InlineData("holdAppend")]
     [InlineData("holdComplete")]
-    public async Task LocalhostLargeTwoRoomRecorderBarrierSeparatesActualOutboundEnqueue(string arm)
+    public Task LocalhostLargeTwoRoomRecorderBarrierSeparatesActualOutboundEnqueue(string arm)
+        => RunLargeTwoRoomRecorderBarrierAsync(arm, recorderV3: false);
+
+    [Theory]
+    [InlineData("normal")]
+    [InlineData("holdAppend")]
+    [InlineData("holdComplete")]
+    public Task TerminalRecorderV3MeasuresExactSharedWriteGateWaitBeforeOutbound(string arm)
+        => RunLargeTwoRoomRecorderBarrierAsync(arm, recorderV3: true);
+
+    private async Task RunLargeTwoRoomRecorderBarrierAsync(string arm, bool recorderV3)
     {
         var heldStage = arm switch
         {
@@ -453,7 +463,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         var nonce = Guid.NewGuid().ToString("N");
         using var diagnostics = Assert.IsType<L12SyntheticTransportDiagnostics>(
             L12SyntheticTransportDiagnostics.Create(true,
-                $"{L12SyntheticTransportDiagnostics.BoundsMode}:2:{nonce}", evidence.Enqueue,
+                $"{(recorderV3 ? L12SyntheticTransportDiagnostics.RecorderMode : L12SyntheticTransportDiagnostics.BoundsMode)}:2:{nonce}", evidence.Enqueue,
                 ThreeSeconds, TimeSpan.FromMilliseconds(10)));
         var databasePath = Path.Combine(Path.GetDirectoryName(identity.Path)!, $"causal-two-large-{arm}.db");
         await using var recorder = new MatchRecorder(databasePath);
@@ -538,6 +548,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             await bActor.SendAsync(new { type = "gameAction", requestId = requestB,
                 command = new { type = "surrender" } });
             OutboundTimeline? bWhileHeld = null;
+            L12SyntheticTransportSnapshot? bRecorderWhileHeld = null;
             if (heldStage is not null)
             {
                 Assert.True(await WaitForCausalConditionAsync(() => diagnostics.AcceptedSamples == 2
@@ -554,6 +565,20 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 Assert.False(aOpponentTerminal.IsCompleted);
                 Assert.False(bActorTerminal.IsCompleted);
                 Assert.False(bOpponentTerminal.IsCompleted);
+                if (recorderV3)
+                {
+                    Assert.True(await WaitForCausalConditionAsync(() =>
+                        diagnostics.SnapshotForTests().Single(row => row.Slot == 1)
+                            .RecorderAppend.Count == 1, TimeSpan.FromMilliseconds(750)),
+                        "room B never reached its precise recorder append wait");
+                    bRecorderWhileHeld = diagnostics.SnapshotForTests().Single(row => row.Slot == 1);
+                    Assert.True(bRecorderWhileHeld.Value.RecorderAppend.WaitStartedRelativeMicroseconds
+                        >= bRecorderWhileHeld.Value.RoomGateAcquiredRelativeMicroseconds);
+                    Assert.Equal(0, bRecorderWhileHeld.Value.RecorderAppend.AcquiredRelativeMicroseconds);
+                    Assert.Equal(0, bRecorderWhileHeld.Value.RecorderAppend.HoldEndedRelativeMicroseconds);
+                    Assert.Equal(0, bRecorderWhileHeld.Value.RecorderAppend.Valid);
+                    Assert.Equal(0, bRecorderWhileHeld.Value.RecorderComplete.Count);
+                }
             }
 
             var pingSentAt = Stopwatch.GetTimestamp();
@@ -603,7 +628,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             for (var slot = 0; slot < 2; slot++)
             {
                 var row = rows[slot];
-                Assert.Equal(2, row.GetProperty("schema").GetInt32());
+                Assert.Equal(recorderV3 ? 3 : 2, row.GetProperty("schema").GetInt32());
                 Assert.Equal((int)L12SyntheticTransportStatus.Sent, row.GetProperty("status").GetInt32());
                 Assert.Equal(1, row.GetProperty("receive_valid").GetInt32());
                 Assert.Equal(1, row.GetProperty("receipt_valid").GetInt32());
@@ -618,6 +643,37 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 if (heldStage is not null)
                     Assert.True(outbound[slot].EnqueuedAt >= Interlocked.Read(ref barrierExitedAt),
                         "actual terminal outbound enqueue preceded the recorder callback exit");
+                if (recorderV3)
+                {
+                    foreach (var operation in new[] { "append", "complete" })
+                    {
+                        Assert.Equal(1, row.GetProperty($"{operation}_count").GetInt32());
+                        Assert.Equal(1, row.GetProperty($"{operation}_valid").GetInt32());
+                        var wait = row.GetProperty($"{operation}_wait_rel_us").GetInt64();
+                        var acquired = row.GetProperty($"{operation}_acquired_rel_us").GetInt64();
+                        var holdEnd = row.GetProperty($"{operation}_hold_end_rel_us").GetInt64();
+                        Assert.True(wait >= row.GetProperty("room_acquired_rel_us").GetInt64());
+                        Assert.True(acquired >= wait);
+                        Assert.True(holdEnd >= acquired);
+                        Assert.True(row.GetProperty("out_enqueued_rel_us").GetInt64() >= holdEnd);
+                    }
+                    Assert.True(row.GetProperty("complete_wait_rel_us").GetInt64()
+                        >= row.GetProperty("append_hold_end_rel_us").GetInt64());
+                    Assert.True(row.GetProperty("out_dequeued_rel_us").GetInt64()
+                        >= row.GetProperty("out_enqueued_rel_us").GetInt64());
+                    Assert.True(row.GetProperty("send_start_rel_us").GetInt64()
+                        >= row.GetProperty("out_dequeued_rel_us").GetInt64());
+                    if (heldStage is not null && slot == 1)
+                    {
+                        var origin = ReadReceiveCompletedAt(diagnostics, slot);
+                        var barrierExit = ElapsedMicroseconds(origin, Interlocked.Read(ref barrierExitedAt));
+                        Assert.True(row.GetProperty("append_wait_rel_us").GetInt64() <= barrierExit);
+                        Assert.True(row.GetProperty("append_acquired_rel_us").GetInt64() >= barrierExit);
+                        var held = Assert.IsType<L12SyntheticTransportSnapshot>(bRecorderWhileHeld);
+                        Assert.Equal(held.RecorderAppend.WaitStartedRelativeMicroseconds,
+                            row.GetProperty("append_wait_rel_us").GetInt64());
+                    }
+                }
             }
             if (heldStage is not null)
             {
@@ -638,6 +694,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 schema = 1,
                 scenario = "two-friendly-rooms-large-legal-state-actual-outbound-enqueue",
                 arm,
+                transportDiagnosticSchema = recorderV3 ? 3 : 2,
                 commandSelectionSeed = LargeStateSelectionSeed,
                 productStateOrRngInjected = false,
                 maximumAcceptedCommandsPerRoom = MaximumAcceptedLargeStateCommands,
@@ -659,6 +716,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                     ElapsedMicroseconds(observationStartedAt, barrierExitedAt),
                 bOutboundEnqueuedWhileHeld = bWhileHeld is null ? (bool?)null : bWhileHeld.EnqueuedAt != 0,
                 bOutboundDequeuedWhileHeld = bWhileHeld is null ? (bool?)null : bWhileHeld.DequeuedAt != 0,
+                bRecorderWhileHeld,
                 outbound = outbound.Select((timing, slot) => new
                 {
                     slot,
@@ -667,11 +725,16 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                     dequeuedRelativeMicroseconds = ElapsedMicroseconds(observationStartedAt, timing.DequeuedAt),
                     queuedMicroseconds = ElapsedMicroseconds(timing.EnqueuedAt, timing.DequeuedAt),
                     requestDiagnostic = NumericDiagnostic(rows[slot]),
+                    recorderDiagnostic = recorderV3 ? rows[slot].EnumerateObject()
+                        .Where(property => property.Name.StartsWith("append_", StringComparison.Ordinal)
+                            || property.Name.StartsWith("complete_", StringComparison.Ordinal)
+                            || property.Name is "room_acquired_rel_us" or "out_enqueued_rel_us" or "out_dequeued_rel_us")
+                        .ToDictionary(property => property.Name, property => property.Value.GetInt64()) : null,
                 }).ToArray(),
                 durability = new[] { durableA, durableB },
                 exactTerminalFramesPerSeat = 1,
                 observedBeforeCommitSequence = callbacks.Select(item => item.Kind).ToArray(),
-                timingBoundary = "same-process Stopwatch; actual _outboundEnqueuedAt/_outboundDequeuedAt, not inbound enqueue_rel_us; barrier exit is pre-commit callback exit, not fsync completion; raw arrival is complete WS message before JSON parse, not native first byte or one-way network",
+                timingBoundary = "same-process Stopwatch; actual _outboundEnqueuedAt/_outboundDequeuedAt, not inbound enqueue_rel_us; recorder wait is immediately before WaitAsync through resumption; hold end is immediately before Release, not fsync; barrier exit is pre-commit callback exit; raw arrival is complete WS message before JSON parse, not native first byte or one-way network",
                 scopeBoundary = "controlled localhost two-room evidence only, not original 30+10 workload acceptance or production-tail root cause",
             }));
         }
@@ -695,6 +758,13 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         // occur after the complete frame and its authenticated receipt/pong, not during a send.
         return new(Field<long>(sample, "_outboundEnqueuedAt"),
             Field<long>(sample, "_outboundDequeuedAt"), Field<long>(sample, "_gateAcquiredAt"));
+    }
+
+    private static long ReadReceiveCompletedAt(L12SyntheticTransportDiagnostics diagnostics, int slot)
+    {
+        lock (Field<object>(diagnostics, "_gate"))
+            return Field<long>(Field<L12SyntheticTransportSample?[]>(diagnostics, "_samples")[slot]!,
+                "_receiveCompletedAt");
     }
 
     private static SemaphoreSlim CausalRoomGate(L12RoomManager manager, string roomCode)

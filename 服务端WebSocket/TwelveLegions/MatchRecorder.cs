@@ -1,10 +1,47 @@
 using Microsoft.Data.Sqlite;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace TwelveLegions.Server;
+
+// Test-only numeric observation; the recorder has no transport, request or rule dependency.
+// A disposed scope also fences inherited child ExecutionContexts from reporting later work.
+internal static class L12SyntheticRecorderObservation
+{
+    internal const int Append = 1, Complete = 2;
+    internal const int WaitStarted = 1, Acquired = 2, HoldEnded = 3;
+    private static readonly AsyncLocal<Scope?> Current = new();
+
+    internal static IDisposable? Begin(Action<int, int, long>? observer)
+    {
+        if (observer is null && Current.Value is null) return null;
+        var scope = new Scope(Current.Value, observer);
+        Current.Value = scope;
+        return scope;
+    }
+
+    internal static void Record(int operation, int boundary)
+    {
+        var scope = Current.Value;
+        if (scope?.Observer is not { } observer || Volatile.Read(ref scope.Disposed) != 0) return;
+        try { observer(operation, boundary, Stopwatch.GetTimestamp()); }
+        catch { } // An observer must never replace persistence or semaphore release.
+    }
+
+    private sealed class Scope(Scope? previous, Action<int, int, long>? observer) : IDisposable
+    {
+        internal readonly Action<int, int, long>? Observer = observer;
+        internal int Disposed;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref Disposed, 1) == 0 && ReferenceEquals(Current.Value, this))
+                Current.Value = previous;
+        }
+    }
+}
 
 public sealed partial class MatchRecorder : IAsyncDisposable
 {
@@ -252,7 +289,11 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         var completionStartedAt = L12PerformanceMetrics.Start();
         long? completionTransactionStartedAt = null;
         var finalHash = engine.ComputeStateHash();
+        L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Complete,
+            L12SyntheticRecorderObservation.WaitStarted);
         await _appendWriteGate.WaitAsync();
+        L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Complete,
+            L12SyntheticRecorderObservation.Acquired);
         try
         {
             await using var connection = await OpenWriteConnectionAsync();
@@ -306,6 +347,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             if (completionTransactionStartedAt is { } transactionStartedAt)
                 L12PerformanceMetrics.Duration("persistence.transaction", transactionStartedAt);
             L12PerformanceMetrics.Duration("persistence.total", completionStartedAt);
+            L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Complete,
+                L12SyntheticRecorderObservation.HoldEnded);
             _appendWriteGate.Release();
         }
     }

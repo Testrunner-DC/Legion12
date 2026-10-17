@@ -1746,6 +1746,8 @@ public sealed partial class L12RoomManager
         transportDiagnostic?.GateWaitStarted(Stopwatch.GetTimestamp());
         await room.Gate.WaitAsync();
         transportDiagnostic?.GateAcquired(Stopwatch.GetTimestamp());
+        using var recorderObservation = L12SyntheticRecorderObservation.Begin(
+            transportDiagnostic?.RecorderObserver);
         try
         {
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);

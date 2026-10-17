@@ -254,7 +254,11 @@ public sealed partial class MatchRecorder
         var stateHash = engine.ComputeStateHash();
         L12PerformanceMetrics.Duration("persistence.serialize-and-hash", serializationStartedAt);
         L12PerformanceMetrics.Bytes("persistence.command-state-json", stateJson.Length);
+        L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
+            L12SyntheticRecorderObservation.WaitStarted);
         await _appendWriteGate.WaitAsync();
+        L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
+            L12SyntheticRecorderObservation.Acquired);
         try
         {
             await using var connection = await OpenWriteConnectionAsync();
@@ -500,6 +504,8 @@ public sealed partial class MatchRecorder
         }
         finally
         {
+            L12SyntheticRecorderObservation.Record(L12SyntheticRecorderObservation.Append,
+                L12SyntheticRecorderObservation.HoldEnded);
             _appendWriteGate.Release();
         }
     }

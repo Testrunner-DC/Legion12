@@ -14,6 +14,170 @@ public sealed class WebSocketInboundIsolationTests
     private static readonly JsonSerializerOptions WireJson = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void TerminalRecorderV3StaysOffIsEphemeralCappedAndEmitsOnlySixNumericSlots()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        Assert.Null(L12SyntheticTransportDiagnostics.Create(false, null));
+        Assert.Throws<InvalidOperationException>(() => L12SyntheticTransportDiagnostics.Create(false,
+            $"{L12SyntheticTransportDiagnostics.RecorderMode}:6:{nonce}"));
+        Assert.Throws<InvalidOperationException>(() => L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.RecorderMode}:7:{nonce}"));
+        var lines = new ConcurrentQueue<string>();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.RecorderMode}:6:{nonce}", lines.Enqueue)!;
+        Assert.True(diagnostics.IsBoundsMode);
+        Assert.True(diagnostics.IsRecorderMode);
+        Assert.True(diagnostics.AcceptsCommand("surrender"));
+        Assert.True(diagnostics.AcceptsCommand("playCard"));
+        Assert.True(diagnostics.AcceptsCommand("endTurn"));
+        Assert.False(diagnostics.AcceptsCommand("attack"));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}", default));
+        var transport = Guid.NewGuid();
+        for (var slot = 0; slot < 6; slot++)
+        {
+            var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+                $"l12diag:{nonce}:{slot}:{Guid.NewGuid():N}", default, transport));
+            Assert.NotNull(sample.RecorderObserver);
+        }
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:6:{Guid.NewGuid():N}", default, transport));
+        Assert.Null(diagnostics.TryBegin($"l12diag:{nonce}:0:{Guid.NewGuid():N}", default, transport));
+        diagnostics.Dispose();
+        Assert.Equal(7, lines.Count);
+        Assert.All(lines, line =>
+        {
+            Assert.DoesNotContain(nonce, line, StringComparison.Ordinal);
+            Assert.DoesNotContain(transport.ToString("N"), line, StringComparison.OrdinalIgnoreCase);
+            using var document = JsonDocument.Parse(line);
+            Assert.Equal(3, document.RootElement.GetProperty("schema").GetInt32());
+            Assert.All(document.RootElement.EnumerateObject(), property =>
+                Assert.Equal(JsonValueKind.Number, property.Value.ValueKind));
+        });
+        Assert.Equal(Enumerable.Range(0, 6), diagnostics.SnapshotForTests().Select(row => row.Slot));
+    }
+
+    [Theory]
+    [InlineData("ordered", 1, 1)]
+    [InlineData("missing", 1, 0)]
+    [InlineData("duplicate", 2, 0)]
+    [InlineData("reversed", 1, 0)]
+    public void TerminalRecorderV3RequiresOneCompleteOrderedInterval(string arm, int count, int valid)
+    {
+        const string nonce = "102132435465768798a9bacbdcedfe0f";
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.RecorderMode}:1:{nonce}", _ => { })!;
+        var origin = Stopwatch.GetTimestamp();
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(origin, origin, 1, 128, 0, origin), Guid.NewGuid()));
+        sample.GateAcquired(origin + 1);
+        var observer = sample.RecorderObserver!;
+        observer(L12SyntheticRecorderObservation.Append, L12SyntheticRecorderObservation.WaitStarted, origin + 2);
+        if (arm != "missing")
+        {
+            observer(L12SyntheticRecorderObservation.Append, L12SyntheticRecorderObservation.Acquired,
+                arm == "reversed" ? origin + 1 : origin + 3);
+            observer(L12SyntheticRecorderObservation.Append, L12SyntheticRecorderObservation.HoldEnded, origin + 4);
+        }
+        if (arm == "duplicate")
+            observer(L12SyntheticRecorderObservation.Append, L12SyntheticRecorderObservation.WaitStarted, origin + 5);
+        var row = Assert.Single(diagnostics.SnapshotForTests());
+        Assert.Equal(count, row.RecorderAppend.Count);
+        Assert.Equal(valid, row.RecorderAppend.Valid);
+        Assert.Equal(0, row.RecorderComplete.Count);
+        Assert.Equal(0, row.RecorderComplete.Valid);
+    }
+
+    [Fact]
+    public async Task TerminalRecorderV3ScopeSeparatesParallelRequestsRestoresExceptionsAndFencesInheritedWork()
+    {
+        var observations = new ConcurrentQueue<(int Owner, int Boundary)>();
+        await Task.WhenAll(Enumerable.Range(0, 2).Select(owner => Task.Run(async () =>
+        {
+            using var scope = L12SyntheticRecorderObservation.Begin((_, boundary, _) =>
+                observations.Enqueue((owner, boundary)));
+            L12SyntheticRecorderObservation.Record(1, 1);
+            await Task.Yield();
+            L12SyntheticRecorderObservation.Record(1, 2);
+        })));
+        Assert.Equal(4, observations.Count);
+        foreach (var owner in Enumerable.Range(0, 2))
+            Assert.Equal(new[] { 1, 2 }, observations.Where(item => item.Owner == owner).Select(item => item.Boundary));
+        Assert.Throws<InvalidOperationException>((Action)(() =>
+        {
+            using var scope = L12SyntheticRecorderObservation.Begin((_, boundary, _) =>
+                observations.Enqueue((2, boundary)));
+            L12SyntheticRecorderObservation.Record(1, 1);
+            throw new InvalidOperationException("synthetic scope failure");
+        }));
+        L12SyntheticRecorderObservation.Record(1, 2);
+        Assert.Equal(new[] { 1 }, observations.Where(item => item.Owner == 2).Select(item => item.Boundary));
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task inherited;
+        using (L12SyntheticRecorderObservation.Begin((_, boundary, _) => observations.Enqueue((3, boundary))))
+        {
+            using (L12SyntheticRecorderObservation.Begin(null)) L12SyntheticRecorderObservation.Record(1, 1);
+            L12SyntheticRecorderObservation.Record(1, 2);
+            inherited = Task.Run(async () => { await release.Task; L12SyntheticRecorderObservation.Record(1, 3); });
+        }
+        release.SetResult();
+        await inherited;
+        Assert.Equal(new[] { 2 }, observations.Where(item => item.Owner == 3).Select(item => item.Boundary));
+        using (L12SyntheticRecorderObservation.Begin((_, _, _) => throw new InvalidOperationException("observer")))
+            Assert.Null(Record.Exception(() => L12SyntheticRecorderObservation.Record(1, 1)));
+    }
+
+    [Fact]
+    public async Task TerminalRecorderV3DeadlineInvalidatesIntervalsAndLateCallbacksCannotMutateSealedRows()
+    {
+        const string nonce = "2031425364758697a8b9cadbecfd0e1f";
+        var lines = new ConcurrentQueue<string>();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.RecorderMode}:1:{nonce}", lines.Enqueue,
+            TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(10))!;
+        var origin = Stopwatch.GetTimestamp();
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}",
+            new L12InboundQueueTiming(origin, origin, 1, 128, 0, origin), Guid.NewGuid()));
+        sample.GateAcquired(origin);
+        using (L12SyntheticRecorderObservation.Begin(sample.RecorderObserver))
+        {
+            L12SyntheticRecorderObservation.Record(1, 1);
+            L12SyntheticRecorderObservation.Record(1, 2);
+            L12SyntheticRecorderObservation.Record(1, 3);
+        }
+        Assert.Equal(1, Assert.Single(diagnostics.SnapshotForTests()).RecorderAppend.Valid);
+        Assert.True(SpinWait.SpinUntil(() => lines.Count == 2, TimeSpan.FromSeconds(2)));
+        var sealedRow = Assert.Single(diagnostics.SnapshotForTests());
+        Assert.Equal((int)L12SyntheticTransportStatus.Deadline, sealedRow.Status);
+        Assert.Equal(0, sealedRow.RecorderAppend.Valid);
+        sample.RecorderObserver!(2, 1, Stopwatch.GetTimestamp());
+        sample.RecorderObserver!(1, 1, origin); // Backdating cannot reopen a sealed owner.
+        await Task.Yield();
+        Assert.Equal(sealedRow, Assert.Single(diagnostics.SnapshotForTests()));
+        Assert.Equal(2, lines.Count);
+    }
+
+    [Theory]
+    [InlineData("terminal-burst-v1", 1)]
+    [InlineData("terminal-bounds-v2", 2)]
+    public void TerminalRecorderV3DoesNotChangeLegacySchemaOutput(string mode, int schema)
+    {
+        const string nonce = "30415263748596a7b8c9daebfc0d1e2f";
+        var lines = new ConcurrentQueue<string>();
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true, $"{mode}:1:{nonce}", lines.Enqueue)!;
+        var sample = Assert.IsType<L12SyntheticTransportSample>(diagnostics.TryBegin(
+            $"l12diag:{nonce}:0:{Guid.NewGuid():N}", default, Guid.NewGuid()));
+        Assert.Null(sample.RecorderObserver);
+        sample.MissingReply();
+        diagnostics.Dispose();
+        var expected = "{\"schema\":" + schema + ",\"kind\":1,\"slot\":0,\"status\":6,\"in_fifo_us\":0,\"in_depth\":0,\"in_bytes\":0,\"in_remaining\":0,\"pre_gate_us\":0,\"gate_wait_us\":0,\"gate_hold_us\":0,\"serialize_us\":0,\"out_enq_depth\":0,\"out_deq_depth\":0,\"out_queue_us\":0,\"prepare_us\":0,\"wire_bytes\":0,\"wire_delta\":0,\"send_us\":0,\"commit_us\":0,\"server_total_us\":0"
+            + (schema == 1 ? "}" : ",\"receive_to_enqueue_us\":0,\"receive_valid\":0,\"lease_valid\":0,\"lease_start_rel_us\":0,\"lease_end_rel_us\":0,\"enqueue_rel_us\":0,\"send_start_rel_us\":0,\"send_end_rel_us\":0,\"commit_rel_us\":0,\"receipt_rel_us\":0,\"receipt_valid\":0,\"receipt_after_send_valid\":0}");
+        Assert.Equal(expected, lines.First());
+        Assert.Equal(2, lines.Count);
+        Assert.All(lines, line => Assert.DoesNotContain("append_", line, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void TerminalBurstDiagnosticsStayOffAndFailClosedOutsideTheIsolatedProfile()
     {
         const string nonce = "0123456789abcdef0123456789abcdef";

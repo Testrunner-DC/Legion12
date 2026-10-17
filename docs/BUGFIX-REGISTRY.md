@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜性能取证v3：逐请求写门与真实出站分离，本地接受
+
+- 用户既有测试服限定取证授权的下一片，不宣称原卡顿已修好。扫描`_appendWriteGate.WaitAsync|AppendWithCardFactsAsync|CompleteAsync|HandleActionAsync|EnqueueOutgoing`，沿同一请求的AsyncLocal纯数值观察作用域记录Append/Complete写门等待、取得、释放前边界；独立room-acquired与真实out-enqueued/dequeued不再与入站enqueue混称。Recorder无传输/卡效/账号身份依赖，嵌套null抑制、异常恢复、迟到Scope退休围栏及观察异常不影响原结果。
+- 仅terminal-recorder-v3/schema3、ephemeral及最多6样本，缺失/重复/乱序/截止区间valid=0，未发生的Complete不捏造零耗时。旧schema1/2四格式逐字保持；Journal/39阶段持久指标/事务/可靠确认/游戏规则/3秒门槛均不改。57定向通过（含三个真实大局面双房臂及45原例），未做线上采样或配置启用。
+- 完整平台1930项实际1925过/5环境失败；五例均在创建Windows测试联接前因自定义短PATH缺pwsh失败，原EC3CC5FE留存。同一DFA02461/B8A2A693测试/服务DLL不重建，以绝对L12_TEST_FIXTURE_PWSH及短PATH预检补五例5/5，6BEB0853；组合1930不同测试通过，不冒单轮全绿。后续自定义运行入口须把当前原生PowerShell目录纳入短PATH并先实检，避免重复消耗整轮。Main独核9E9C461C/交付DF5B8572、完整六源及P0—P4/68内核边界；未变规则与前端有效证据复用。
+- 回滚面仅可选诊断观察与对应测试；默认关闭保持原业务路径。写门等待含await调度、holdEnd先于Release，预提交屏障退出不是commit/fsync，localhost完整消息非公网首字节。原30房＋10外围四条3045—3397ms尾延迟未解决；版本化采集/真实测试接线后才可归因并推进优化，不提前关性能反馈。
+
 ## 2026-10-18｜正式4325发布后五项闭环；部署租约与原proof共享修正
 
 - bfb38096须佐日志、a05e59b4保护误挡手牌军团、8dc4661d符文居中、cfebec86移动沙盒、fe7505de观战匹配，均复用已有具名当前验收、完整4325 Release7849/1915/9阶段和真实独立上线核验；原文/15字段/5×12反例、原12函数与逆替换通过，单CAS31467—31471、独立终态及撤会话成功。0CA3EBE0实际收据和唯一post-CAS快照对账，911/59new/380resolved/472closed、阶段471/周期563。51d自定义双控制未被此处收口。
