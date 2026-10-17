@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-accumulated-analytics-and-referee-internal",
+  "date": "2026-10-18",
+  "audience": "internal",
+  "reason": "补记已验收的天灾禁选事实与后台主宰/单局统计、赛事裁判观战控制、暂停补时和恢复记录支撑。仅补累计发布区间登记，不改变业务源码；工作人员操作、持久化和私密统计不写入玩家更新日志。",
+  "paths": [
+    "opcgpro-vue/src/l12/game/GmPanel.vue",
+    "opcgpro-vue/src/l12/game/TournamentRefereePanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMatchesPanel.vue",
+    "opcgpro-vue/src/l12/site/DisasterDecisionSummary.vue",
+    "服务端WebSocket/TwelveLegions/L12DisasterSetupFacts.cs",
+    "服务端WebSocket/TwelveLegions/L12GmCommands.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TournamentOperations.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Tournaments.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.RefereeControl.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.TournamentCommands.cs",
+    "服务端WebSocket/TwelveLegions/MatchAnalyticsModels.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.AdminQueries.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardAnalyticsCache.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterFacts.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.MasterAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.RankedPersistence.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.RefereeReceipts.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+  ]
+}

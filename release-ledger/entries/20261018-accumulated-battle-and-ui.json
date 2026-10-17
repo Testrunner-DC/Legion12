@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-accumulated-battle-and-ui",
+  "date": "2026-10-18",
+  "audience": "players",
+  "title": "对战规则与移动操作",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "复仇血鹰、拼死反抗、立花誾千代和切腹仪式的持续效果按卡文保留到下个己方回合结束，不再因回合交接或额外回合提前失效。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12LethalReplacements.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.StatusSemantics.cs",
+        "服务端WebSocket/TwelveLegions/L12PersistenceContract.cs",
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/RuleKernel.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "暗度陈仓、摄政皇权、不朽之礼的召唤可选择来源卡离场后腾出的原格；格位在响应中被占用时仍会重新检查，不覆盖其他军团。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12CounterTacticResponseLifecycle.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12RuleKernelIntegration.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "攻城投石车支付2士气后，登场回合也可进攻对方后排或主宰；不会因此获得其他冲锋能力。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "胡夫、图特摩斯、拉美西斯的反击战术保护不再拦截佣兵和戏法师傀儡的合法手牌响应；议和产生的入手时点不再被智慧法典误当作新战术效果响应。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "须佐之男、萨拉丁的进攻加兵力记录补齐效果来源、目标军团和实际加值。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "普通非赛事观战时可同时排队匹配，匹配成功后进入自己的对局；退出观战与取消匹配分别生效，设置中的牌库选择仍沿用原有合法性检查。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/SavedDeckSelector.vue",
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/L12SettingsModal.vue",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "排位和赛事的公开天灾确认增加倒计时，超时自动完成确认，断线恢复保留剩余时间；休闲和好友对局不新增强制确认时限。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12RankedClock.cs",
+        "服务端WebSocket/TwelveLegions/L12RecordedCommandTiming.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.RankedPersistence.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs",
+        "服务端WebSocket/TwelveLegions/L12TournamentResponseClock.cs",
+        "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "恢复天灾禁选弹框的最小化与展开；排序时悬停卡牌详情不再推移卡列，放得下的整组卡牌居中，溢出时仍可滚动查看首尾。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "移动沙盒底部手牌随当前受控玩家切换，仍只保留一条手牌区；窄屏GM面板默认收起，可从原按钮打开。",
+      "paths": [
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "侧栏保持通高并收紧宽度，压缩四个图标工具按钮周围的空位；从对战大厅进入牌库时保留对战导航。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SiteShell.vue"
+      ]
+    }
+  ]
+}
