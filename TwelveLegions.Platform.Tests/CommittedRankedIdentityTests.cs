@@ -317,6 +317,77 @@ public sealed class CommittedRankedIdentityTests
                 await query.WaitAsync(TimeSpan.FromSeconds(5));
         }
     }
+
+    [Fact]
+    public void FixtureCleanupRetriesTransientWindowsIOExceptionAndThenSucceeds()
+    {
+        var attempts = 0;
+        var delays = new List<int>();
+
+        RankedIdentityFixture.DeleteTemporaryDirectoryWithRetry(() =>
+        {
+            attempts++;
+            if (attempts < 3) throw new IOException("synthetic transient fixture lock");
+        }, windows: true, delays.Add);
+
+        Assert.Equal(3, attempts);
+        Assert.Equal([50, 100], delays);
+    }
+
+    [Fact]
+    public void FixtureCleanupRethrowsPermanentWindowsIOExceptionAfterEightAttempts()
+    {
+        var attempts = 0;
+        var delays = new List<int>();
+        var expected = new IOException("synthetic permanent fixture lock");
+
+        var actual = Assert.Throws<IOException>(() => RankedIdentityFixture.DeleteTemporaryDirectoryWithRetry(() =>
+        {
+            attempts++;
+            throw expected;
+        }, windows: true, delays.Add));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(8, attempts);
+        Assert.Equal([50, 100, 150, 200, 250, 300, 350], delays);
+    }
+
+    [Fact]
+    public void FixtureCleanupDoesNotRetryIOExceptionOutsideWindows()
+    {
+        var attempts = 0;
+        var delays = new List<int>();
+        var expected = new IOException("synthetic non-Windows fixture failure");
+
+        var actual = Assert.Throws<IOException>(() => RankedIdentityFixture.DeleteTemporaryDirectoryWithRetry(() =>
+        {
+            attempts++;
+            throw expected;
+        }, windows: false, delays.Add));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, attempts);
+        Assert.Empty(delays);
+    }
+
+    [Fact]
+    public void FixtureCleanupDoesNotRetryUnauthorizedAccess()
+    {
+        var attempts = 0;
+        var delays = new List<int>();
+        var expected = new UnauthorizedAccessException("synthetic fixture permission failure");
+
+        var actual = Assert.Throws<UnauthorizedAccessException>(() =>
+            RankedIdentityFixture.DeleteTemporaryDirectoryWithRetry(() =>
+            {
+                attempts++;
+                throw expected;
+            }, windows: true, delays.Add));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(1, attempts);
+        Assert.Empty(delays);
+    }
 }
 
 internal sealed class RankedIdentityFixture : IDisposable
@@ -357,7 +428,27 @@ internal sealed class RankedIdentityFixture : IDisposable
     {
         Store.StorageFailureInjector = null;
         SqliteConnection.ClearAllPools();
-        if (Directory.Exists(_root)) Directory.Delete(_root, true);
+        if (!Directory.Exists(_root)) return;
+        DeleteTemporaryDirectoryWithRetry(() => Directory.Delete(_root, true),
+            OperatingSystem.IsWindows(), Thread.Sleep);
+    }
+
+    internal static void DeleteTemporaryDirectoryWithRetry(Action delete, bool windows, Action<int> delay)
+    {
+        ArgumentNullException.ThrowIfNull(delete);
+        ArgumentNullException.ThrowIfNull(delay);
+        for (var attempt = 1; attempt <= 8; attempt++)
+        {
+            try
+            {
+                delete();
+                return;
+            }
+            catch (IOException) when (windows && attempt < 8)
+            {
+                delay(50 * attempt);
+            }
+        }
     }
 }
 
