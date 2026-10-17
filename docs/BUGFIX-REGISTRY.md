@@ -17,6 +17,18 @@
 - 51d5b553完整UI缺口现以--attack-only补齐：同一观察方向0、GM/custom沙盒，844×390分别actor0/actor1，各真实触摸源军团→进攻按钮→投影合法对侧目标，0/0/1指令、650ms不重复、唯一sandboxAction actor/source/target精确，页面/请求/外网错误均0。B4A3AA12/FAC52D00，Main全文及双actor截图独审；只用公开合成局面/既有精确卡图，不称真实服务端ACK或战斗结果。原7例/所有原断言保留，原159b默认收GM共享修复已在4325，未按玩家假设再改按钮布局。
 - 51d实际CAS31496/终态/原文保留/撤会话，18B08991及6C623D34同次快照对账最新911/46new/392resolved/473closed、阶段484/周期576；本次上线后18真实闭环（17fixed/1有界未复现）。D浏览器profile/自有预览均清理。花魁ae9023dd另有reveal/search双卡面线索待实际消费者取证，不借680a或51d泛关；排序卡列遮文及跨滚动观察分别保持。
 
+## 2026-10-18｜格位偏移与模糊公开展示旧单有界收口
+
+- 4c5940df仅报告“战场位置偏移”。当前正式4325同源GamePage/GameBoard真实合成预览，1024×768至3440×1440共11尺寸均保持3行、双方1/3行且等高、观察层不占格、页面无双向溢出；610052C8/68643ECF，Main数值/截图核准。只按现行有界未复现关闭，不称原设备、全状态或零页面错误；专属Vite缓存11文件1827981字节删除，源码/截图/数值保留。
+- a7c5ac0c原文只称“图拿的卡”。纠正旧triage把图坦卡蒙当已知身份，山河社稷图也仅是当前最直接匹配，不冒原卡确定。已核现行CompleteShanheSearch的公开reveal＋私密effect-hand-add，正式7849中ShanheShejituReusesObservingStarsAllTopBottomOrdering及ShanheSearchPublishesTheSharedEffectHandAddAuthorityEvent具名绿，另复用79108097真实公开reveal消费者（不是山河原局端到端）。按当前有界核查未复现rejected，不冒fixed_verified；花魁双事实重复整卡仍独立开放。
+- 两项原15字段/原文、schema2及各8反例后，实际单CAS31499/31500、终态/撤会话，D705D772与0C87E136同次快照对账；唯一911/44new/392resolved/475closed、阶段486/周期578，本次上线后20真实闭环。原命令缺参数仅在离线拒绝，未发生额外线上写；后续复用完整Mode/SelfTestEntryIndex/SnapshotTag/QueueSnapshotPath，不再猜参数缩写。
+
+## 2026-10-18｜赫拉克勒斯晋升双效果响应旧诉求当前检查通过
+
+- ebe1a62d提出绝对防御面对赫拉克勒斯·晋升两效果应分开时点。真实晋升、真实反击及弃牌费用补验发现当前已逐触发开两个独立响应窗口，不是同屏response-target两行；最初错误形态假设的RED保留，不当产品回归或为测试新造并发堆叠。
+- 新增HerculesPromotionResponseChoiceTests四例覆盖双方×首/第二窗、V2恢复PromptId/Text/StackItemId保持、仅选中效果无效而另一项通过目标与HP证明完成；保留反击至第二窗时明确顺序promotion-enter→enter和不同stack id，首窗用掉后无合法响应不强造空窗。r5 DA2DCCFC零失败跳过，规则源300E6548；运行DLL8E50/ProductVersion386明确为本地测试，不冒正式A21D。
+- 新增实际PromptOverlay/net消费者BDA3E49F，连续消费单一controller0/selected-enter真局两快照，1366×844两时点文案/候选完整可达、原生点击准确promptId/卡实例，2/2/页面错0（1B029806），Main全文/两截图独核90FB7040。十直接业务/卡表/UI源叶同正式4325；只有出站UI无服务器ACK，非原私局/真机。当前诉求已满足，无需新卡效修复；各8离线反例后单CAS31503/终态/撤会话，902890A9及36F953D5复用对账911/43new/392resolved/476closed、阶段487/周期579，本次上线后21真实闭环。
+
 ## 2026-10-18｜花魁公开展示重复：当前消费者RED，待限定修复裁定
 
 - ae9023dd原文哈希0200B4DC，未关闭。Main与只读核查沿真实生产者确认：花魁S01-0419以PubliclyRevealThenAddCardToHandByEffect生成reveal/reveal-add，随后另有search/search-add；入手的权威effect-hand-add与区域事实均合法，不得为去动画而删除。查询`PubliclyRevealThenAddCardToHandByEffect|search-add`覆盖全现有同族入口；当前GameBoard把两种公开事件分别入整卡队列，已有sequence去重只管相同事件重传。
