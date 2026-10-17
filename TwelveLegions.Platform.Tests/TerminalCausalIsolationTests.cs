@@ -310,53 +310,10 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             actor = await SocketPeer.ConnectAsync(endpoint, actorRegistration.Token!);
             opponent = await SocketPeer.ConnectAsync(endpoint, opponentRegistration.Token!);
             var started = await StartLargeFriendlyGameAsync(actor, opponent);
-            var peersByPlayer = new SocketPeer[2];
-            var latestByPlayer = new ReceivedFrame[2];
-            BindPlayerFrame(actor, started.Actor, peersByPlayer, latestByPlayer);
-            BindPlayerFrame(opponent, started.Opponent, peersByPlayer, latestByPlayer);
-            Assert.All(peersByPlayer, peer => Assert.NotNull(peer));
-
-            var selector = new Random(LargeStateSelectionSeed);
-            var playedTurns = new HashSet<string>(StringComparer.Ordinal);
-            var commandTypes = new Dictionary<string, int>(StringComparer.Ordinal);
-            var acceptedCommands = 0;
-            while (acceptedCommands < MaximumAcceptedLargeStateCommands
-                   && latestByPlayer.Min(frame => frame.RawBytes) < PreferredPreTerminalBytes)
-            {
-                Assert.DoesNotContain(latestByPlayer,
-                    frame => IsGameOver(frame.Payload));
-                var selected = SelectLargeStateCommand(latestByPlayer, playedTurns, selector);
-                var sender = peersByPlayer[selected.PlayerIndex];
-                var other = peersByPlayer[1 - selected.PlayerIndex];
-                var revisionBefore = ReadInt64(
-                    latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state"), "revision");
-                var requestId = $"large-state-{acceptedCommands:D3}-{Guid.NewGuid():N}";
-                var confirmationTask = sender.ReceiveAsync(
-                    payload => ReadString(payload, "requestId") == requestId, SetupDeadline);
-                var peerTask = other.ReceiveAsync(
-                    payload => IsAdvancedGameState(payload, revisionBefore), SetupDeadline);
-                await sender.SendAsync(new
-                {
-                    type = "gameAction",
-                    requestId,
-                    command = selected.Command,
-                });
-                var confirmation = await confirmationTask;
-                Assert.Equal("gameState", ReadString(confirmation.Payload, "type"));
-                Assert.True(IsAdvancedGameState(confirmation.Payload, revisionBefore),
-                    $"accepted {selected.Type} did not advance the authoritative revision");
-                var peerFrame = await peerTask;
-                BindPlayerFrame(sender, confirmation, peersByPlayer, latestByPlayer);
-                BindPlayerFrame(other, peerFrame, peersByPlayer, latestByPlayer);
-                Assert.Equal(
-                    ReadInt64(latestByPlayer[0].Payload.GetProperty("state"), "revision"),
-                    ReadInt64(latestByPlayer[1].Payload.GetProperty("state"), "revision"));
-                if (selected.TurnKey is not null) playedTurns.Add(selected.TurnKey);
-                commandTypes[selected.Type] = commandTypes.GetValueOrDefault(selected.Type) + 1;
-                acceptedCommands++;
-            }
-
-            var preTerminalBytes = latestByPlayer.Select(frame => frame.RawBytes).ToArray();
+            var grown = await GrowLargeFriendlyRoomAsync(actor, opponent, started);
+            var acceptedCommands = grown.AcceptedCommands;
+            var commandTypes = grown.CommandTypes;
+            var preTerminalBytes = grown.PreTerminalBytes;
             var metricsBefore = PerformanceSnapshot();
             var observationStartedAt = Stopwatch.GetTimestamp();
             recorder.StorageFailureInjector = stage =>
@@ -475,6 +432,295 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         }
     }
 
+    [Theory]
+    [InlineData("normal")]
+    [InlineData("holdAppend")]
+    [InlineData("holdComplete")]
+    public async Task LocalhostLargeTwoRoomRecorderBarrierSeparatesActualOutboundEnqueue(string arm)
+    {
+        var heldStage = arm switch
+        {
+            "normal" => null,
+            "holdAppend" => "before-match-command-commit",
+            "holdComplete" => "before-match-complete-commit",
+            _ => throw new ArgumentOutOfRangeException(nameof(arm)),
+        };
+        using var identity = new RankedIdentityFixture();
+        var registrations = Enumerable.Range(0, 5).Select(index =>
+            identity.Store.Register($"dq{index}{Guid.NewGuid():N}"[..10], "Password123!")).ToArray();
+        Assert.All(registrations, registration => Assert.True(registration.Success));
+        var evidence = new ConcurrentQueue<string>();
+        var nonce = Guid.NewGuid().ToString("N");
+        using var diagnostics = Assert.IsType<L12SyntheticTransportDiagnostics>(
+            L12SyntheticTransportDiagnostics.Create(true,
+                $"{L12SyntheticTransportDiagnostics.BoundsMode}:2:{nonce}", evidence.Enqueue,
+                ThreeSeconds, TimeSpan.FromMilliseconds(10)));
+        var databasePath = Path.Combine(Path.GetDirectoryName(identity.Path)!, $"causal-two-large-{arm}.db");
+        await using var recorder = new MatchRecorder(databasePath);
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(identity.Catalog, recorder, identity.Store);
+        await using var server = new L12WebSocketServer(rooms, recorder, identity.Store,
+            identity.Catalog, null, null, null, null, null, null, null, diagnostics);
+        var peers = new List<SocketPeer>();
+        using var barrierEntered = new ManualResetEventSlim();
+        using var barrierRelease = new ManualResetEventSlim();
+        using var barrierExited = new ManualResetEventSlim();
+        var barrierLimit = TimeSpan.FromSeconds(2);
+        var beforeCommit = new ConcurrentQueue<BeforeCommitObservation>();
+        var ordinal = 0;
+        var barrierClaimed = 0;
+        long barrierEnteredAt = 0, barrierReleaseRequestedAt = 0, barrierExitedAt = 0;
+        var serverStarted = false;
+        try
+        {
+            await server.StartAsync(0).WaitAsync(SetupDeadline);
+            serverStarted = true;
+            var http = new UriBuilder(Assert.Single(server.Addresses)) { Host = "127.0.0.1" };
+            var endpoint = new UriBuilder(http.Uri) { Scheme = "ws", Path = "/ws" }.Uri;
+            foreach (var registration in registrations)
+                peers.Add(await SocketPeer.ConnectAsync(endpoint, registration.Token!));
+            var aActor = peers[0];
+            var aOpponent = peers[1];
+            var bActor = peers[2];
+            var bOpponent = peers[3];
+            var healthy = peers[4];
+            var roomA = await StartLargeFriendlyGameAsync(aActor, aOpponent);
+            var roomB = await StartLargeFriendlyGameAsync(bActor, bOpponent);
+            var grownA = await GrowLargeFriendlyRoomAsync(aActor, aOpponent, roomA);
+            var grownB = await GrowLargeFriendlyRoomAsync(bActor, bOpponent, roomB);
+            foreach (var peer in peers) await AssertHealthyAsync(peer);
+            var gateB = CausalRoomGate(rooms, roomB.RoomCode);
+            Assert.Equal(1, gateB.CurrentCount);
+            var observationStartedAt = Stopwatch.GetTimestamp();
+            recorder.StorageFailureInjector = stage =>
+            {
+                var kind = stage switch
+                {
+                    "before-match-command-commit" => 1,
+                    "before-match-complete-commit" => 2,
+                    _ => 0,
+                };
+                if (kind != 0)
+                    beforeCommit.Enqueue(new(Interlocked.Increment(ref ordinal), kind,
+                        ElapsedMicroseconds(observationStartedAt, Stopwatch.GetTimestamp())));
+                if (heldStage is null || stage != heldStage
+                    || Interlocked.CompareExchange(ref barrierClaimed, 1, 0) != 0) return;
+                Interlocked.Exchange(ref barrierEnteredAt, Stopwatch.GetTimestamp());
+                barrierEntered.Set();
+                try
+                {
+                    if (!barrierRelease.Wait(barrierLimit))
+                        throw new TimeoutException("bounded large two-room recorder barrier timed out");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref barrierExitedAt, Stopwatch.GetTimestamp());
+                    barrierExited.Set();
+                }
+            };
+
+            var requestA = $"l12diag:{nonce}:0:{Guid.NewGuid():N}";
+            var requestB = $"l12diag:{nonce}:1:{Guid.NewGuid():N}";
+            var aActorTerminal = aActor.ReceiveAsync(
+                payload => IsGameOver(payload) && ReadString(payload, "requestId") == requestA, ThreeSeconds);
+            var aOpponentTerminal = aOpponent.ReceiveAsync(IsGameOver, ThreeSeconds);
+            var sentAAt = Stopwatch.GetTimestamp();
+            await aActor.SendAsync(new { type = "gameAction", requestId = requestA,
+                command = new { type = "surrender" } });
+            if (heldStage is not null)
+                Assert.True(await WaitForCausalConditionAsync(() => barrierEntered.IsSet,
+                    TimeSpan.FromSeconds(1)), "room A did not enter the selected recorder barrier");
+
+            var bActorTerminal = bActor.ReceiveAsync(
+                payload => IsGameOver(payload) && ReadString(payload, "requestId") == requestB, ThreeSeconds);
+            var bOpponentTerminal = bOpponent.ReceiveAsync(IsGameOver, ThreeSeconds);
+            var sentBAt = Stopwatch.GetTimestamp();
+            await bActor.SendAsync(new { type = "gameAction", requestId = requestB,
+                command = new { type = "surrender" } });
+            OutboundTimeline? bWhileHeld = null;
+            if (heldStage is not null)
+            {
+                Assert.True(await WaitForCausalConditionAsync(() => diagnostics.AcceptedSamples == 2
+                    && ReadActualOutboundTimeline(diagnostics, 1).GateAcquiredAt > 0
+                    && gateB.CurrentCount == 0,
+                    TimeSpan.FromMilliseconds(750)), "room B never acquired its independent room gate");
+                Assert.False(barrierExited.IsSet);
+                Assert.Equal(2, diagnostics.AcceptedSamples);
+                bWhileHeld = ReadActualOutboundTimeline(diagnostics, 1);
+                Assert.True(bWhileHeld.GateAcquiredAt >= sentBAt);
+                Assert.Equal(0, bWhileHeld.EnqueuedAt);
+                Assert.Equal(0, bWhileHeld.DequeuedAt);
+                Assert.False(aActorTerminal.IsCompleted);
+                Assert.False(aOpponentTerminal.IsCompleted);
+                Assert.False(bActorTerminal.IsCompleted);
+                Assert.False(bOpponentTerminal.IsCompleted);
+            }
+
+            var pingSentAt = Stopwatch.GetTimestamp();
+            await healthy.SendAsync(new { type = "ping" });
+            var healthyPong = await healthy.ReceiveTypeAsync("pong",
+                heldStage is null ? ThreeSeconds : TimeSpan.FromSeconds(1));
+            if (heldStage is not null)
+            {
+                Assert.False(barrierExited.IsSet, "healthy pong was only received after the barrier exited");
+                Assert.Equal(0, gateB.CurrentCount);
+                Interlocked.Exchange(ref barrierReleaseRequestedAt, Stopwatch.GetTimestamp());
+                barrierRelease.Set();
+                Assert.True(await WaitForCausalConditionAsync(() => barrierExited.IsSet,
+                    TimeSpan.FromSeconds(1)), "recorder barrier did not exit after its bounded release");
+            }
+
+            var terminalFrames = await Task.WhenAll(aActorTerminal, aOpponentTerminal,
+                bActorTerminal, bOpponentTerminal);
+            var sentAt = new[] { sentAAt, sentAAt, sentBAt, sentBAt };
+            for (var index = 0; index < terminalFrames.Length; index++)
+            {
+                Assert.True(Stopwatch.GetElapsedTime(sentAt[index], terminalFrames[index].ReceivedAt) < ThreeSeconds,
+                    $"large-state room peer {index} exceeded the original three-second terminal boundary");
+                Assert.InRange(terminalFrames[index].RawBytes, MinimumTerminalBytes, MaximumTerminalBytes);
+            }
+            Assert.Null(ReadString(terminalFrames[1].Payload, "requestId"));
+            Assert.Null(ReadString(terminalFrames[3].Payload, "requestId"));
+            // Receipts are sent only after complete terminal frames arrived. Pongs also drain
+            // each peer's existing sender before asserting one and only one terminal per seat.
+            for (var index = 0; index < 4; index++)
+            {
+                if (index is 0 or 2)
+                    await peers[index].SendAsync(new { type = "ping", diagnosticNonce = nonce,
+                        diagnosticSlot = index / 2 });
+                else await peers[index].SendAsync(new { type = "ping" });
+                _ = await peers[index].ReceiveTypeAsync("pong", ThreeSeconds);
+                Assert.Equal(1, peers[index].Received.Count(frame => IsGameOver(frame.Payload)));
+            }
+
+            var rows = new[] { await ReadDiagnosticRowAsync(evidence, SetupDeadline),
+                await ReadDiagnosticRowAsync(evidence, SetupDeadline) }.ToDictionary(
+                    row => row.GetProperty("slot").GetInt32());
+            Assert.Equal(new[] { 0, 1 }, rows.Keys.Order().ToArray());
+            Assert.Equal(2, diagnostics.CompletedSamples);
+            var outbound = new[] { ReadActualOutboundTimeline(diagnostics, 0),
+                ReadActualOutboundTimeline(diagnostics, 1) };
+            for (var slot = 0; slot < 2; slot++)
+            {
+                var row = rows[slot];
+                Assert.Equal(2, row.GetProperty("schema").GetInt32());
+                Assert.Equal((int)L12SyntheticTransportStatus.Sent, row.GetProperty("status").GetInt32());
+                Assert.Equal(1, row.GetProperty("receive_valid").GetInt32());
+                Assert.Equal(1, row.GetProperty("receipt_valid").GetInt32());
+                Assert.Equal(1, row.GetProperty("receipt_after_send_valid").GetInt32());
+                Assert.Equal(0, row.GetProperty("wire_delta").GetInt32());
+                Assert.Equal(terminalFrames[slot * 2].RawBytes, row.GetProperty("wire_bytes").GetInt32());
+                Assert.True(outbound[slot].EnqueuedAt >= sentAt[slot * 2]);
+                Assert.True(outbound[slot].DequeuedAt >= outbound[slot].EnqueuedAt);
+                Assert.True(outbound[slot].DequeuedAt <= terminalFrames[slot * 2].ReceivedAt);
+                Assert.Equal(ElapsedMicroseconds(outbound[slot].EnqueuedAt, outbound[slot].DequeuedAt),
+                    row.GetProperty("out_queue_us").GetInt64());
+                if (heldStage is not null)
+                    Assert.True(outbound[slot].EnqueuedAt >= Interlocked.Read(ref barrierExitedAt),
+                        "actual terminal outbound enqueue preceded the recorder callback exit");
+            }
+            if (heldStage is not null)
+            {
+                Assert.True(Interlocked.Read(ref barrierReleaseRequestedAt) >= Interlocked.Read(ref barrierEnteredAt));
+                Assert.True(Interlocked.Read(ref barrierExitedAt) >= Interlocked.Read(ref barrierReleaseRequestedAt));
+                Assert.InRange(ElapsedMilliseconds(barrierEnteredAt, barrierExitedAt), 0, barrierLimit.TotalMilliseconds);
+            }
+            var durableA = await AssertLargeDurableTerminalAsync(recorder, databasePath,
+                roomA.MatchId, requestA, grownA.AcceptedCommands + 1);
+            var durableB = await AssertLargeDurableTerminalAsync(recorder, databasePath,
+                roomB.MatchId, requestB, grownB.AcceptedCommands + 1);
+            var callbacks = beforeCommit.OrderBy(item => item.Ordinal).ToArray();
+            Assert.Equal(2, callbacks.Count(item => item.Kind == 1));
+            Assert.Equal(2, callbacks.Count(item => item.Kind == 2));
+
+            output.WriteLine(JsonSerializer.Serialize(new
+            {
+                schema = 1,
+                scenario = "two-friendly-rooms-large-legal-state-actual-outbound-enqueue",
+                arm,
+                commandSelectionSeed = LargeStateSelectionSeed,
+                productStateOrRngInjected = false,
+                maximumAcceptedCommandsPerRoom = MaximumAcceptedLargeStateCommands,
+                acceptedCommands = new[] { grownA.AcceptedCommands, grownB.AcceptedCommands },
+                commandTypes = new[] { grownA.CommandTypes, grownB.CommandTypes },
+                preTerminalBytes = new[] { grownA.PreTerminalBytes, grownB.PreTerminalBytes },
+                terminalBytes = terminalFrames.Select(frame => frame.RawBytes).ToArray(),
+                terminalRangeBytes = new { minimum = MinimumTerminalBytes, maximum = MaximumTerminalBytes },
+                originalThresholdMicroseconds = (long)(ThreeSeconds.TotalMilliseconds * 1000),
+                terminalSendToRawMicroseconds = terminalFrames.Select((frame, index) =>
+                    ElapsedMicroseconds(sentAt[index], frame.ReceivedAt)).ToArray(),
+                healthyPingMicroseconds = ElapsedMicroseconds(pingSentAt, healthyPong.ReceivedAt),
+                barrierApplicable = heldStage is not null,
+                barrierEnteredRelativeMicroseconds = heldStage is null ? (long?)null :
+                    ElapsedMicroseconds(observationStartedAt, barrierEnteredAt),
+                barrierReleaseRequestedRelativeMicroseconds = heldStage is null ? (long?)null :
+                    ElapsedMicroseconds(observationStartedAt, barrierReleaseRequestedAt),
+                barrierExitedRelativeMicroseconds = heldStage is null ? (long?)null :
+                    ElapsedMicroseconds(observationStartedAt, barrierExitedAt),
+                bOutboundEnqueuedWhileHeld = bWhileHeld is null ? (bool?)null : bWhileHeld.EnqueuedAt != 0,
+                bOutboundDequeuedWhileHeld = bWhileHeld is null ? (bool?)null : bWhileHeld.DequeuedAt != 0,
+                outbound = outbound.Select((timing, slot) => new
+                {
+                    slot,
+                    enqueuedRelativeMicroseconds = ElapsedMicroseconds(observationStartedAt, timing.EnqueuedAt),
+                    gateAcquiredRelativeMicroseconds = ElapsedMicroseconds(observationStartedAt, timing.GateAcquiredAt),
+                    dequeuedRelativeMicroseconds = ElapsedMicroseconds(observationStartedAt, timing.DequeuedAt),
+                    queuedMicroseconds = ElapsedMicroseconds(timing.EnqueuedAt, timing.DequeuedAt),
+                    requestDiagnostic = NumericDiagnostic(rows[slot]),
+                }).ToArray(),
+                durability = new[] { durableA, durableB },
+                exactTerminalFramesPerSeat = 1,
+                observedBeforeCommitSequence = callbacks.Select(item => item.Kind).ToArray(),
+                timingBoundary = "same-process Stopwatch; actual _outboundEnqueuedAt/_outboundDequeuedAt, not inbound enqueue_rel_us; barrier exit is pre-commit callback exit, not fsync completion; raw arrival is complete WS message before JSON parse, not native first byte or one-way network",
+                scopeBoundary = "controlled localhost two-room evidence only, not original 30+10 workload acceptance or production-tail root cause",
+            }));
+        }
+        finally
+        {
+            barrierRelease.Set();
+            recorder.StorageFailureInjector = null;
+            foreach (var peer in peers) await peer.DisposeAsync();
+            if (serverStarted) await server.StopAsync().WaitAsync(SetupDeadline);
+        }
+    }
+
+    private static OutboundTimeline ReadActualOutboundTimeline(
+        L12SyntheticTransportDiagnostics diagnostics, int slot)
+    {
+        L12SyntheticTransportSample sample;
+        lock (Field<object>(diagnostics, "_gate"))
+            sample = Assert.IsType<L12SyntheticTransportSample>(
+                Field<L12SyntheticTransportSample?[]>(diagnostics, "_samples")[slot]);
+        // Pending reads occur only while the recorder barrier prevents enqueue; final reads
+        // occur after the complete frame and its authenticated receipt/pong, not during a send.
+        return new(Field<long>(sample, "_outboundEnqueuedAt"),
+            Field<long>(sample, "_outboundDequeuedAt"), Field<long>(sample, "_gateAcquiredAt"));
+    }
+
+    private static SemaphoreSlim CausalRoomGate(L12RoomManager manager, string roomCode)
+    {
+        var rooms = Field<System.Collections.IEnumerable>(manager, "_rooms");
+        foreach (var entry in rooms)
+        {
+            var room = entry!.GetType().GetProperty("Value")!.GetValue(entry)!;
+            if (string.Equals((string)room.GetType().GetProperty("Code")!.GetValue(room)!, roomCode,
+                    StringComparison.OrdinalIgnoreCase))
+                return (SemaphoreSlim)room.GetType().GetProperty("Gate")!.GetValue(room)!;
+        }
+        throw new InvalidOperationException("missing large-state causal room");
+    }
+
+    private static async Task<bool> WaitForCausalConditionAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < timeout)
+        {
+            if (condition()) return true;
+            await Task.Delay(10);
+        }
+        return condition();
+    }
+
     [Fact]
     public void LargeStateSelectorBuildsEveryAuthoritativePlacementWireCommand()
     {
@@ -536,6 +782,59 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         Assert.Contains("future-action", rejection.Message, StringComparison.Ordinal);
     }
 
+    private static async Task<GrownLargeRoom> GrowLargeFriendlyRoomAsync(
+        SocketPeer actor, SocketPeer opponent, StartedLargeRoom started)
+    {
+        var peersByPlayer = new SocketPeer[2];
+        var latestByPlayer = new ReceivedFrame[2];
+        BindPlayerFrame(actor, started.Actor, peersByPlayer, latestByPlayer);
+        BindPlayerFrame(opponent, started.Opponent, peersByPlayer, latestByPlayer);
+        Assert.All(peersByPlayer, peer => Assert.NotNull(peer));
+
+        var selector = new Random(LargeStateSelectionSeed);
+        var playedTurns = new HashSet<string>(StringComparer.Ordinal);
+        var commandTypes = new Dictionary<string, int>(StringComparer.Ordinal);
+        var acceptedCommands = 0;
+        while (acceptedCommands < MaximumAcceptedLargeStateCommands
+               && latestByPlayer.Min(frame => frame.RawBytes) < PreferredPreTerminalBytes)
+        {
+            Assert.DoesNotContain(latestByPlayer,
+                frame => IsGameOver(frame.Payload));
+            var selected = SelectLargeStateCommand(latestByPlayer, playedTurns, selector);
+            var sender = peersByPlayer[selected.PlayerIndex];
+            var other = peersByPlayer[1 - selected.PlayerIndex];
+            var revisionBefore = ReadInt64(
+                latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state"), "revision");
+            var requestId = $"large-state-{acceptedCommands:D3}-{Guid.NewGuid():N}";
+            var confirmationTask = sender.ReceiveAsync(
+                payload => ReadString(payload, "requestId") == requestId, SetupDeadline);
+            var peerTask = other.ReceiveAsync(
+                payload => IsAdvancedGameState(payload, revisionBefore), SetupDeadline);
+            await sender.SendAsync(new
+            {
+                type = "gameAction",
+                requestId,
+                command = selected.Command,
+            });
+            var confirmation = await confirmationTask;
+            Assert.Equal("gameState", ReadString(confirmation.Payload, "type"));
+            Assert.True(IsAdvancedGameState(confirmation.Payload, revisionBefore),
+                $"accepted {selected.Type} did not advance the authoritative revision");
+            var peerFrame = await peerTask;
+            BindPlayerFrame(sender, confirmation, peersByPlayer, latestByPlayer);
+            BindPlayerFrame(other, peerFrame, peersByPlayer, latestByPlayer);
+            Assert.Equal(
+                ReadInt64(latestByPlayer[0].Payload.GetProperty("state"), "revision"),
+                ReadInt64(latestByPlayer[1].Payload.GetProperty("state"), "revision"));
+            if (selected.TurnKey is not null) playedTurns.Add(selected.TurnKey);
+            commandTypes[selected.Type] = commandTypes.GetValueOrDefault(selected.Type) + 1;
+            acceptedCommands++;
+        }
+
+        var preTerminalBytes = latestByPlayer.Select(frame => frame.RawBytes).ToArray();
+        return new(acceptedCommands, commandTypes, preTerminalBytes);
+    }
+
     private static async Task<StartedLargeRoom> StartLargeFriendlyGameAsync(
         SocketPeer actor, SocketPeer opponent)
     {
@@ -567,7 +866,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         var opponentMatchId = ReadString(started[1].Payload.GetProperty("state"), "matchId");
         Assert.False(string.IsNullOrWhiteSpace(actorMatchId));
         Assert.Equal(actorMatchId, opponentMatchId);
-        return new(actorMatchId!, started[0], started[1]);
+        return new(roomCode!, actorMatchId!, started[0], started[1]);
     }
 
     private static void BindPlayerFrame(SocketPeer peer, ReceivedFrame frame,
@@ -991,7 +1290,11 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         (T)target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(target)!;
 
-    private sealed record StartedLargeRoom(string MatchId, ReceivedFrame Actor, ReceivedFrame Opponent);
+    private sealed record StartedLargeRoom(string RoomCode, string MatchId,
+        ReceivedFrame Actor, ReceivedFrame Opponent);
+    private sealed record GrownLargeRoom(int AcceptedCommands,
+        IReadOnlyDictionary<string, int> CommandTypes, int[] PreTerminalBytes);
+    private sealed record OutboundTimeline(long EnqueuedAt, long DequeuedAt, long GateAcquiredAt);
     private sealed record SelectedLargeCommand(int PlayerIndex, string Type,
         IReadOnlyDictionary<string, object?> Command, string? TurnKey);
     private sealed record BeforeCommitObservation(int Ordinal, int Kind, long RelativeMicroseconds);

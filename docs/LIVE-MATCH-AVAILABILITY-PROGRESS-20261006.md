@@ -1,5 +1,13 @@
 # 十二军团正式服对局保障优化方案：执行进度
 
+## 2026-10-18 大状态双房实际出站时刻｜因果缩小，非根治
+
+- 正式4325已独立核验并于04:30解除当前维护，测试3b7未改；真实发布/恢复/最新数据库proof统一见formal-release-20261018/release-session-summary.json。部署成功不等于性能长尾验收通过，原30房＋10外围的4条3045—3397ms终局仍保持失败结论，不重采未变正式服。
+- 新测试仅扩既有TerminalCausalIsolationTests：两房各真实WS/合法命令长大状态，共享SQLite；normal/holdAppend/holdComplete与原单房4/4通过。四席183077—209237字节终局、原3秒、两房checkpoint/replay hash/唯一终局均保持；实际GrandUMIServer DLL仍A21DD027与4325包一致。
+- 正常双房最慢19.143ms；holdAppend35.274ms、holdComplete32.242ms，健康pong0.128—0.213ms。屏障期间B已持自己的房间门但真实_outboundEnqueuedAt/_outboundDequeuedAt仍为0，释放callback后才入队；不是把inbound enqueue_rel_us当出站。只证明recorder耦合发生在实际出站前、健康心跳独立；约20ms的受控屏障不是原公网3秒尾部成因证明。
+- 唯一紧凑report ACF2E089及原TRX/log位于D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-recorder-coupling/two-large-r1。R7公开监督/真实采集仍未完成，下一围绕大帧并发发送与实际持久化排队分离做可判定对照，不能用本地4例代替原30＋10或降低3秒门槛。
+- Main进一步排除“房间门只是被timer占用”的歧义：当前测试必须读到B精确请求_gateAcquiredAt，再检查屏障期间真实出站时间戳仍为0。3臂新实跑零失败跳过，normal最慢16.854ms、holdAppend48.466ms、holdComplete37.438ms，健康pong0.076—0.428ms；B833DB4F报告绑定CEC8341D。此前完整平台1918/1918已完成，1D832原测试源和整轮TRX保留；只此测试断言硬化后补跑3臂，不把它写成新完整Release，也不把受控几十毫秒延迟冒公网长尾根因。
+
 ## 2026-10-16 终局长尾本地因果缩小（不代表根治）
 
 - 原10/20/30负载的历史测试PID208589数字只读85722608显示终局分钟persistence.total max341.41ms/transaction50.43ms；它们并非逐请求关联。2房持锁实验2/2证实recorder耦合终局投递但不阻独立ping，不直接观测enqueue或确定FIFO。
