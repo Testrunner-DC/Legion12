@@ -1,5 +1,17 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261017-RESPONSE-ROLE-BOUNDARY｜效果角色与手牌军团资格，本地验收完成
+
+- 用户已批准e08议和/智慧法典及a05胡夫相邻共享修复。智慧法典原来仅凭来源仍是战术/圣物，把以入手接收者为Controller的authority-event载体误认新效果；现复用IsRespondableCardEffectActivation检查所选实际项，排除裸进攻、权威时点、续段屏障、天灾与不可响应项，真正战术/圣物效果保留。不倒置权威事件接收者、不追链借祖先、不新增分类体系。
+- LegalResponseSources原把反击战术免疫一并套到手牌军团。仅去掉佣兵/傀儡两个手牌分支的保护门槛，盖伏反击的逐卡过滤、匿名池、守方/进攻目标类型/空位/费用/提交前与结算重验及物理实体去重均不变。全池枚举3保护：图特摩斯、拉美西斯、胡夫；2军团：佣兵、戏法师傀儡。查询protectedFromCounters、CardType tactic/artifact回退及现有分类器；目录守卫冻结完整集合，而非只手查胡夫。
+- 新ResponseEligibilityRoleBoundaryRegressionTests实际35格：3保护×2军团×双方×直接/逐命令V2恢复24格，真实议和同意4格，战术/圣物角色6格及目录1格。RED34失败/1目录通过；最小产品补丁后最终35/35、相邻287项有效通过，反击仍不可用、军团真实支付/一次入墓、主宰生命不变、旧提示重交raw/hash/RNG/fact不变、空栈可继续。首编译夹具init-only错误与首GREEN生命初值误写8（真实10）均保留，未改产品去迎合夹具；独立只读审查CLEAR。
+- D盘response-role-boundary-fix-20261017保存实际TRX/源绑定；A55C3FE4 final-acceptance绑定FC4C2A24接续及90848DE3运行时附注：规则7738中原7735通过、3既有源码定位断言因离库输出找不到仓库失败，具名仓库入口仍指同一物理D缓存，相同测试DLL补原3断言通过，原失败不改、不重跑7735。平台实际完整1808零失败跳过、UI356/反馈144/卡图324+42/类型与双构建均通过；平台私有临时TRX由原监督器核计数后按原策略清除，持久成功收据/完整日志保留，不冒有Release全TRX。规则副本与平台重建输出分别绑定，不冒同包/Release。恢复仅称当前生成V2检查点逐步往返，不称历史旧尾已重放；未部署，e08/a05保持开放。
+
+## CLOSEOUT-20261017-A355-TROJAN-ONE｜无具体症状旧反馈按当前正确收口
+
+- 88874bc4仅称木马仍有Bug，按用户现行口径不追原私局、不再问记忆；复用正式a355同源24个具名Passed，Main读完PublicHost真实2费盖伏/攻后声明/敌场落位/宿主单侧减兵/恢复/重复拒绝/所有者下回合末一次弃置抽1链，另有无效、失位、占位与多实例边界。不冒原UI或历史全貌，不标fixed，不借四张TimedModifier待修期限；木马另有owner/endingPlayer专用过滤。
+- BD94F067提案/94CE574C执行器仅五绑定字面派生，12原执行函数逐字不变、原v2合同与1 SelfTest/8负例通过。单CAS31123、7343C79C实际终态/原文历史/撤会话；同次8DD3A2E快照唯一910/82new/374resolved/454closed、阶段447=142fixed/289rejected/16duplicate、周期539。本次213起132、本轮359起278真实关闭，无新部署或维护。
+
 ## FIX-20261017-DECKS-BATTLE-NAVIGATION｜大厅牌库保留对战导航，已验未部署
 
 - BUG-a3fb68f6当前原因：牌库链接已带from=/battle，SiteShell却只看route.meta.section；decks无battle元信息，进入即切mainNav，赛事入口消失。按人类批准，只在route.name===decks且from精确字符串/battle时沿用battleNav；原所有battle路由保持，主页直入、外部/未知/数组/近似from及公开详情均不继承，不改布局、权限或牌库功能。

@@ -2066,11 +2066,12 @@ public sealed partial class L12GameEngine
                 && HasAvailablePublicResponseDeclaration(playerIndex, card.CardId, top))
                 choices.Add(card.InstanceId);
         }
-        if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
+        // Counter-tactic immunity does not prohibit legion effects paid from hand.
+        if (top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "legion"
             && playerIndex == defendingPlayer)
             choices.AddRange(player.Hand.Where(card => L12StructuredCardSemantics.IsMercenaryHandBlockResponse(card.CardId)
                 && ResponseCardMayRespondToSelectedEffect(card.CardId, top)).Select(card => card.InstanceId));
-        if (!protectedFromCounters && top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
+        if (top.Trigger == "opponent-attack" && State.PendingDefense?.Target.Type == "master"
             && playerIndex == defendingPlayer
             && Enumerable.Range(0, 3).Any(slot => player.Field[0][slot] is null))
             choices.AddRange(player.Hand.Where(card => L12StructuredCardSemantics.UsesSpecialResponsePlan(

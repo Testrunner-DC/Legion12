@@ -1033,7 +1033,8 @@ public sealed partial class L12GameEngine
         return cardId switch
         {
             "S01-0020" or "S01-0120" => timing.Trigger == "opponent-attack" && playerIndex == defendingPlayer,
-            "S01-0224" => FindSource(top)?.CardType is "tactic" or "artifact",
+            "S01-0224" => IsRespondableCardEffectActivation(top)
+                && FindSource(top)?.CardType is "tactic" or "artifact",
             _ => false,
         };
     }
