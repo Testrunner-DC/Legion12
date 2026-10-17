@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261017-editor-short-landscape-card-detail",
+  "date": "2026-10-17",
+  "audience": "players",
+  "title": "牌库短横屏卡牌详情",
+  "changes": [{
+    "category": "decks",
+    "text": "修复短横屏牌库编辑器点击卡牌后无法查看详情的问题，可在详情弹框中滚动阅读完整卡效。",
+    "paths": ["opcgpro-vue/src/l12/L12DeckEditor.vue"]
+  }]
+}

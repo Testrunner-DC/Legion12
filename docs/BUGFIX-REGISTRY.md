@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261017-EDITOR-SHORT-DETAIL｜已批准入口复用，本地通过未部署
+
+- 根因与同型范围：详情侧栏只有≤820移动布局和821—900/高≤520短横屏隐藏；旧selectCard只处理前者。纯shouldOpenDeckEditorCardDetail统一这两个既有几何区间，沿同一selected/mobileDetailOpen和旧弹框，无设备身份、第二套详情渲染、布局/CSS或保存改动。全组件选择入口共用，普通桌面/窄桌面有侧栏时不新增弹框。
+- 两叶最终E44A356C/7199137F；原viewport门新增13几何边界/2接线断言，55 GREEN、05F048E0 RED保留。真实SFC八尺寸全过：1366/1024/901×520/844×521侧栏末句可达，844×390/900×520/390×844/820×861弹框末句可达、关闭重开/点击命中，844→1366同挂载节点/无残留弹框；0保存/线上API/WS，CA61DAC9及独审CLEAR。Main已查看前后实图。最终标准前端Batch完整合同/类型/两环境构建退出0，必要证据保留D，不机械重跑未变后端。
+- 原8f4b477b只完成本地修复与验收，未部署、不提前关单；不声称真iOS、原私人局或整个牌库所有尺寸已全部通过。玩家日志20261017-editor-short-landscape-card-detail已纳入账本，不新增资讯。
+
+## CLOSEOUT-20261017-A355-COMBAT-THREE｜当前进攻规则三项闭环
+
+- 68610392赵云贯穿复用正式真实attack/返费/击杀/贯穿/双方V2八格，当前条件不按被击杀者费用；079d5345全军冲锋复用真实下一合资格军团登场回合attack(master)一格及连弩兵3费目录；2a4643ae前排远程复用阿伊前排对前排真实承伤/阵亡及全池条件投影两格。各自明确具名测试对象边界，不冒称原一费重装、连弩逐卡或未知旧局UI，不互设duplicate。
+- F83FBA37提案/18证据、原合同/三SelfTest/Main独核12函数及具名结果后，实际CAS30847—30849各一次、独立终态/原文历史保留/会话撤销，2C0277EB收据与同次post-CAS快照复用。唯一909/205待办/361resolved/343closed、阶段323=129/178/16、周期415；无产品变更、部署或维护写。
+
 ## CLOSEOUT-20261017-A355-NEXT-FIVE｜嬴政拒绝亡语完整续链与五项收口
 
 - 新增 `YingzhengDeathDeclineContinuationRegressionTests.DecliningAlliedSunWuDeathStillCompletesYingzhengAndFactionRecovery`：真实playCard/8费Cost/己方孙武合法死亡声明mode:none，随后嬴政返费和本回合限制、天廷恰一次追加2休整、空栈/提示及同局endTurn；双方×逐命令V2恢复4/4，raw/hash/fact sequence相等，每个旧提示重交拒绝且raw不变。正式a355 DLL 6B4DDC6D与九Data逐blob绑定；0F7FE598 TRX、F7BA0E90真实监督、4883DE10组合回执、独审CLEAR。没有产品变更，不冒称原私人局、UI、完整构筑初态或Journal请求幂等，89fc按当前有限未复现rejected。

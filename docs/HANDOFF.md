@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-17 接续323｜短横屏详情本地收口；三条进攻反馈真实终态
+
+- 用户已批准详情入口限定修复：selectCard沿现有弹框，几何策略与原隐藏侧栏CSS严格一致（≤820，或821—900且高≤520）；CSS、保存/草稿/构筑/卡效不改。原0D50939A两尺寸失败保留，专项55 GREEN及8尺寸原生点击/末句滚动/关闭重开/844→1366同节点通过，CA61DAC9；Main查看844修复图、独审CLEAR，最终完整前端Batch实际退出0，全合同/类型/production及testrun构建绿，日志frontend-batch-r1.log（413D3F98），紧凑最终验收final-acceptance.json（680C0CBD）。不重复未变后端或声称新Release/上线；8f4b477b当前仍待本修复部署，不提前resolved。
+- 三条进攻旧反馈686/079/2a4按正式具名8+1+1+1回归和当前共享规则bounded rejected，各单CAS30847—30849/终态/原文历史/撤会话，2C0277EB收据 `closeout/bug-closeout-current-combat-three-a355.json`；同次快照对账909/205new/361resolved/343closed，阶段323=129fixed/178rejected/16duplicate、周期415，本轮359起154实际关闭。本轮共8关闭、213→205，不以待办净变化替代真实计数。
+- 后续仍继续Bug清单；Mozi/Forge和后排冲锋组合只缺当前最小命令链，勿强制追旧私局或再问人类记忆。性能R7/680a/原回放正常链及真机长期边界单独保持；正式a355/07:08已开服、测试3b7不变。新UI只本地验收与同步，没有新部署或维护动作。
+
 ## 2026-10-17 接续320｜五项真实终态；短横屏牌库详情缺口单挂
 
 - 安格斯1ce48584按已部署c0ae/647具名24参数结果fixed_verified；编辑器曲线/折叠9fb、陨星公开目标87a/ced各按当前有限检查rejected，不把源码合同称原像素重放或互设duplicate。嬴政89fc新增真实正式a355同DLL四格：双方×逐命令V2恢复，孙武合法亡语选择mode:none后父返费/限制、天廷恰一次2休整及同局endTurn完成；4/4、重复旧提示拒绝且raw不变、独审CLEAR，无产品改动或历史fix伪造。精确绑定 `yingzheng-death-decline-20261017/current-acceptance.json`（4883DE10）。

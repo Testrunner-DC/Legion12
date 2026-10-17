@@ -451,9 +451,12 @@ function redrawOpeningHand() {
 function toggleSection(section: DeckSection) {
   collapsedSections.value = { ...collapsedSections.value, [section]: !collapsedSections.value[section] }
 }
+function shouldOpenDeckEditorCardDetail(width: number, height: number) {
+  return width <= 820 || (width >= 821 && width <= 900 && height <= 520)
+}
 function selectCard(card: DeckCard) {
   selected.value = card
-  if (window.matchMedia('(max-width:820px)').matches) mobileDetailOpen.value = true
+  if (shouldOpenDeckEditorCardDetail(window.innerWidth, window.innerHeight)) mobileDetailOpen.value = true
 }
 
 async function chooseMobileSavedDeck(deck: EditorSavedDeck) {
