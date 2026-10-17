@@ -93,7 +93,7 @@ public sealed partial class MatchRecorder
 
     private static void ValidateRuntime(L12RankedRuntimeCheckpoint runtime)
     {
-        if (runtime.Version != 1 || string.IsNullOrWhiteSpace(runtime.MatchId)
+        if (!L12PersistenceContract.SupportsRankedRuntimeRecovery(runtime.Version) || string.IsNullOrWhiteSpace(runtime.MatchId)
             || string.IsNullOrWhiteSpace(runtime.RoomCode)
             || runtime.Status is not ("active" or "completed")
             || runtime.CheckpointGeneration <= 0

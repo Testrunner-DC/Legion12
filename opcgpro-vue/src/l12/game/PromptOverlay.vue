@@ -683,8 +683,8 @@ const mulliganInstruction = computed(() => mulliganCopy(props.mulliganSelectedId
 const setupClockPlayerIndex = computed(() => {
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
-  if (isDisasterChoice.value) return prompt.value?.playerIndex ?? null
-  if (['disaster-ban', 'disaster-pick'].includes(waitingPrompt.value?.kind ?? ''))
+  if (isDisasterChoice.value || prompt.value?.kind === 'disaster-reveal') return prompt.value?.playerIndex ?? null
+  if (['disaster-ban', 'disaster-pick', 'disaster-reveal'].includes(waitingPrompt.value?.kind ?? ''))
     return waitingPrompt.value?.playerIndex ?? null
   return null
 })

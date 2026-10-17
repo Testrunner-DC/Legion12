@@ -88,7 +88,7 @@ public sealed partial class L12RoomManager
         var players = Enumerable.Range(0, 2).Select(index => PlayerSession(room, index)
             ?? throw new InvalidOperationException("排位运行快照缺少玩家席位")).ToArray();
         var generation = checked(++room.RankedCheckpointGeneration);
-        return new L12RankedRuntimeCheckpoint(1, room.Game.State.MatchId, room.Code,
+        return new L12RankedRuntimeCheckpoint(L12PersistenceContract.CurrentRankedRuntimeVersion, room.Game.State.MatchId, room.Code,
             status ?? (room.Game.State.Phase == L12Phase.GameOver ? "completed" : "active"),
             generation, room.CommandSequence, room.Game.State.Revision, room.Game.ComputeStateHash(),
             room.StartedAt, room.MeaningfulCommandCount,
@@ -123,6 +123,14 @@ public sealed partial class L12RoomManager
             PausedAt = runtime.PausedAt,
         };
         Array.Copy(runtime.Acting, clock.Acting, 2);
+        if (runtime.Version == 1 && room.Game is { State.Phase: L12Phase.DisasterPreparation } game)
+        {
+            // V1 marked public-confirmation players as acting but never timed them, so its
+            // remainder belongs to an earlier step. Initialize only still-pending acknowledgements;
+            // the next durable capture is V2 and all subsequent recovery keeps the actual remainder.
+            foreach (var prompt in game.State.PendingPrompts.Where(prompt => prompt.Continuation == "setup-public-confirm"))
+                clock.OperationRemainingMs[prompt.PlayerIndex] = timeControl.DisasterDecisionSeconds * 1000L;
+        }
         room.RankedClock = clock;
         room.RankedCheckpointGeneration = runtime.CheckpointGeneration;
     }
@@ -231,7 +239,7 @@ public sealed partial class L12RoomManager
         if (room.RankedClock is not { } clock || room.Game is null
             || !IsRankedPreparationPhase(room.Game)) return false;
         var applied = false;
-        // At most two players can expire together (the simultaneous mulligan). Recompute after
+        // At most two players can expire together (mulligan or public confirmation). Recompute after
         // every accepted default because it can create the next preparation step and a fresh clock.
         for (var attempt = 0; attempt < 2; attempt++)
         {

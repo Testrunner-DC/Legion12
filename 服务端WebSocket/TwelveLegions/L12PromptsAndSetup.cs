@@ -1112,7 +1112,9 @@ public sealed partial class L12GameEngine
         State.PendingPrompts.Remove(prompt);
         if (string.Equals(command.Destination, RankedSetupTimeoutDestination, StringComparison.Ordinal))
             AddEvent("setup-timeout", playerIndex,
-                $"{State.Players[playerIndex].Name} 的准备步骤已超时，由服务器从当前合法候选中自动选择");
+                prompt.Continuation == "setup-public-confirm"
+                    ? $"{State.Players[playerIndex].Name} 的公开天灾确认已超时，由服务器自动确认"
+                    : $"{State.Players[playerIndex].Name} 的准备步骤已超时，由服务器从当前合法候选中自动选择");
 
         switch (prompt.Continuation)
         {
@@ -1715,7 +1717,7 @@ public sealed partial class L12GameEngine
             return !State.Players[playerIndex].MulliganDone;
         if (State.Phase != L12Phase.DisasterPreparation) return false;
         return State.PendingPrompts.Any(prompt => prompt.PlayerIndex == playerIndex
-            && prompt.Continuation is "setup-ban" or "setup-first-pick" or "setup-second-pick");
+            && prompt.Continuation is "setup-ban" or "setup-public-confirm" or "setup-first-pick" or "setup-second-pick");
     }
 
     internal bool TryCreateRankedSetupTimeoutCommand(int playerIndex, out L12Command command)
@@ -1748,10 +1750,18 @@ public sealed partial class L12GameEngine
 
         var prompt = State.PendingPrompts
             .Where(candidate => candidate.PlayerIndex == playerIndex
-                && candidate.Continuation is "setup-ban" or "setup-first-pick" or "setup-second-pick")
+                && candidate.Continuation is "setup-ban" or "setup-public-confirm" or "setup-first-pick" or "setup-second-pick")
             .OrderBy(candidate => candidate.PromptId, StringComparer.Ordinal)
             .FirstOrDefault();
         if (prompt is null) return false;
+        if (prompt.Continuation == "setup-public-confirm")
+        {
+            // A public-information acknowledgement chooses no cards. Keep it on the same
+            // authoritative/persisted command path as the other setup defaults.
+            command = new L12Command("resolvePrompt", CardInstanceIds: [], PromptId: prompt.PromptId,
+                Destination: RankedSetupTimeoutDestination);
+            return true;
+        }
         var choice = State.DisasterPool
             .Where(card => prompt.ValidChoices.Contains(card.InstanceId, StringComparer.OrdinalIgnoreCase))
             .OrderBy(card => card.CardId, StringComparer.Ordinal)

@@ -1759,6 +1759,8 @@ contracts.push(
     && seasonConfigurationEditor.includes('disasterDecisionSeconds') && seasonConfigurationEditor.includes('mulliganDecisionSeconds')
     && setupDecisionClock.includes("['DisasterPreparation', 'Mulligan'].includes(props.phase)")
     && setupDecisionClock.includes('operationRemainingMs') && setupDecisionClock.includes('receivedAtMs')
+    && prompt.includes("isDisasterChoice.value || prompt.value?.kind === 'disaster-reveal'")
+    && prompt.includes("['disaster-ban', 'disaster-pick', 'disaster-reveal'].includes(waitingPrompt.value?.kind ?? '')")
     && prompt.includes(':phase="game.phase"') && playerTurnClock.includes("props.phase")
     && gameActions.includes('game.firstPlayer === me.playerIndex')
     && !setupDecisionClock.includes('60_000') && !playerTurnClock.includes('60_000')

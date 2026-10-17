@@ -12,10 +12,17 @@ internal static class L12PersistenceContract
     internal const int CurrentStateFormatVersion = 2;
     internal const int CurrentJournalStorageVersion = 2;
     internal const int MinimumCheckpointRecoveryVersion = 2;
+    // Runtime V2 distinguishes real public-confirmation remainders from V1's
+    // unrelated leftover operation budget. This does not change game state/Journal formats.
+    internal const int CurrentRankedRuntimeVersion = 2;
+    internal const int MinimumRankedRuntimeRecoveryVersion = 1;
     internal const string ExpiredReplayMessage = "该版本已过期，回放无法生成";
 
     internal static bool SupportsCheckpointRecovery(int stateFormatVersion)
         => stateFormatVersion is >= MinimumCheckpointRecoveryVersion and <= CurrentStateFormatVersion;
+
+    internal static bool SupportsRankedRuntimeRecovery(int runtimeVersion)
+        => runtimeVersion is >= MinimumRankedRuntimeRecoveryVersion and <= CurrentRankedRuntimeVersion;
 
     internal static void EnsureCheckpointRecoverySupported(int stateFormatVersion)
     {

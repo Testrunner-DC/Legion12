@@ -154,6 +154,225 @@ public sealed class RankedSetupClockTests
         Assert.Single(afterDuplicateTick.Commands, command => TimeoutMarker(command.Command));
     }
 
+    [Theory]
+    [InlineData(60)]
+    [InlineData(75)]
+    public async Task PublicDisasterConfirmationTimesOutBothOnceAndStartsFreshPickBudget(int seconds)
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("public-both",
+            new L12RankedTimeControlConfig(1500, 240, 240, seconds, 60));
+        await fixture.AdvanceToPublicDisasterConfirmationAsync();
+        var before = await fixture.StateForAsync(0);
+        var publicDisaster = before.GetProperty("revealedDisasters").GetRawText();
+        var initialClock = await fixture.ClockForAsync();
+        Assert.Equal(seconds * 1000L, initialClock.GetProperty("operationLimitMs").GetInt64());
+        Assert.All(initialClock.GetProperty("players").EnumerateArray(), player =>
+        {
+            Assert.True(player.GetProperty("acting").GetBoolean());
+            Assert.Equal(seconds * 1000L, player.GetProperty("operationRemainingMs").GetInt64());
+        });
+
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(seconds * 1000L - 1);
+        Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.All(checkpoint.OperationRemainingMs, remaining => Assert.Equal(1, remaining));
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(1);
+        await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow)));
+
+        var after = await fixture.StateForAsync(0);
+        Assert.Equal(4, after.GetProperty("disasterPreparationStep").GetInt32());
+        Assert.Equal(publicDisaster, after.GetProperty("revealedDisasters").GetRawText());
+        var nextClock = await fixture.ClockForAsync();
+        Assert.Equal(seconds * 1000L, nextClock.GetProperty("players").EnumerateArray()
+            .Single(player => player.GetProperty("acting").GetBoolean())
+            .GetProperty("operationRemainingMs").GetInt64());
+        Assert.All(nextClock.GetProperty("players").EnumerateArray(), player =>
+            Assert.Equal(25 * 60_000, player.GetProperty("totalRemainingMs").GetInt64()));
+        var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        var timeouts = detail.Commands.Where(command => TimeoutMarker(command.Command)).ToArray();
+        Assert.Equal(2, timeouts.Length);
+        Assert.All(timeouts, command => Assert.Empty(command.Command.GetProperty("cardInstanceIds").EnumerateArray()));
+        Assert.Equal(2, timeouts.Select(command => command.Command.GetProperty("promptId").GetString()).Distinct().Count());
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        Assert.Equal(2, detail.Commands.Count(command => TimeoutMarker(command.Command)));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task PublicDisasterManualConfirmationPreservesOtherBudgetAndLateRequestCannotAdvance(int confirmingPlayer)
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("public-one");
+        await fixture.AdvanceToPublicDisasterConfirmationAsync();
+        var other = 1 - confirmingPlayer;
+        var stalePrompt = fixture.SinglePrompt(await fixture.StateForAsync(other), "disaster-reveal");
+        fixture.Clock.UtcNow += TimeSpan.FromSeconds(20);
+        await fixture.SubmitPromptAsync(confirmingPlayer,
+            fixture.SinglePrompt(await fixture.StateForAsync(confirmingPlayer), "disaster-reveal"), []);
+        var clock = await fixture.ClockForAsync();
+        Assert.False(clock.GetProperty("players")[confirmingPlayer].GetProperty("acting").GetBoolean());
+        Assert.True(clock.GetProperty("players")[other].GetProperty("acting").GetBoolean());
+        Assert.Equal(40_000, clock.GetProperty("players")[other].GetProperty("operationRemainingMs").GetInt64());
+        fixture.Manager.Disconnect(fixture.SessionFor(other));
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(39_999);
+        Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        Assert.Equal(3, (await fixture.StateForAsync(confirmingPlayer)).GetProperty("disasterPreparationStep").GetInt32());
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(1);
+        await Task.WhenAll(Enumerable.Range(0, 12)
+            .Select(_ => fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow)));
+        Assert.Equal(4, (await fixture.StateForAsync(confirmingPlayer)).GetProperty("disasterPreparationStep").GetInt32());
+        var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        var timeout = Assert.Single(detail.Commands, command => TimeoutMarker(command.Command));
+        Assert.Equal(stalePrompt.GetProperty("promptId").GetString(), timeout.Command.GetProperty("promptId").GetString());
+        var commandCount = detail.Commands.Count;
+        var beforeLate = detail.Commands[^1];
+        var rejected = await fixture.Manager.HandleActionAsync(fixture.SessionFor(other), JsonSerializer.SerializeToElement(new
+        {
+            type = "resolvePrompt", promptId = stalePrompt.GetProperty("promptId").GetString(), cardInstanceIds = Array.Empty<string>(),
+        }, WebJson));
+        Assert.Contains(rejected.Select(MessageJson), payload => payload.GetProperty("type").GetString() == "actionRejected");
+        detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        Assert.Equal(commandCount + 1, detail.Commands.Count);
+        var late = detail.Commands[^1];
+        Assert.False(late.Accepted);
+        Assert.Equal(beforeLate.Revision, late.Revision);
+        Assert.Equal(beforeLate.StateHash, late.StateHash);
+        Assert.Equal(beforeLate.State.GetRawText(), late.State.GetRawText());
+        Assert.Equal(4, (await fixture.StateForAsync(confirmingPlayer)).GetProperty("disasterPreparationStep").GetInt32());
+    }
+
+    [Fact]
+    public async Task PublicDisasterConfirmationRecoveryKeepsBothRemaindersAndReplaysAutomaticConfirmations()
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("public-restart");
+        await fixture.AdvanceToPublicDisasterConfirmationAsync();
+        fixture.Clock.UtcNow += TimeSpan.FromSeconds(17);
+        await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.All(checkpoint.OperationRemainingMs, remaining => Assert.Equal(43_000, remaining));
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(2);
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, fixture.ReloadPlatform(), fixture.Clock.Read);
+        var summary = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, summary.Restored);
+        Assert.Equal(0, summary.Invalidated);
+        var firstSession = Guid.NewGuid();
+        var secondSession = Guid.NewGuid();
+        await restored.ConnectAsync(firstSession, fixture.First.Id, fixture.First.Username);
+        await restored.ConnectAsync(secondSession, fixture.Second.Id, fixture.Second.Username);
+        var recovered = GameMessage(await restored.RecoveryStateWithAckAsync(firstSession, recovered: true), firstSession);
+        fixture.SinglePrompt(recovered.GetProperty("state"), "disaster-reveal");
+        Assert.All(recovered.GetProperty("rankedClock").GetProperty("players").EnumerateArray(), player =>
+        {
+            Assert.True(player.GetProperty("acting").GetBoolean());
+            Assert.Equal(43_000, player.GetProperty("operationRemainingMs").GetInt64());
+        });
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(42_999);
+        Assert.Empty(await restored.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        fixture.Clock.UtcNow += TimeSpan.FromMilliseconds(1);
+        await restored.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        Assert.Equal(4, GameMessage(await restored.RecoveryStateWithAckAsync(firstSession), firstSession)
+            .GetProperty("state").GetProperty("disasterPreparationStep").GetInt32());
+        var detail = Assert.IsType<L12MatchDetail>(await restoredRecorder.GetMatchAsync(fixture.MatchId));
+        Assert.Equal(2, detail.Commands.Count(command => TimeoutMarker(command.Command)));
+
+        await using var secondRecorder = new MatchRecorder(fixture.MatchPath);
+        await secondRecorder.InitializeAsync();
+        var secondRestore = new L12RoomManager(fixture.Catalog, secondRecorder, fixture.ReloadPlatform(), fixture.Clock.Read);
+        var secondSummary = await secondRestore.RestoreRankedRoomsAsync();
+        Assert.Equal(1, secondSummary.Restored);
+        Assert.Equal(0, secondSummary.Invalidated);
+        var replacement = Guid.NewGuid();
+        await secondRestore.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+        Assert.Equal(4, GameMessage(await secondRestore.RecoveryStateWithAckAsync(replacement), replacement)
+            .GetProperty("state").GetProperty("disasterPreparationStep").GetInt32());
+    }
+
+    [Fact]
+    public async Task CasualPublicDisasterConfirmationDoesNotAcquireARankedTimeout()
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("public-casual", mode: "casual");
+        await fixture.AdvanceToPublicDisasterConfirmationAsync();
+        var response = GameMessage(await fixture.Manager.RecoveryStateWithAckAsync(fixture.FirstSession), fixture.FirstSession);
+        Assert.Equal(JsonValueKind.Null, response.GetProperty("rankedClock").ValueKind);
+        fixture.Clock.UtcNow += TimeSpan.FromMinutes(5);
+        Assert.Empty(await fixture.Manager.TickRankedClocksAsync(fixture.Clock.UtcNow));
+        var after = await fixture.StateForAsync(0);
+        Assert.Equal(3, after.GetProperty("disasterPreparationStep").GetInt32());
+        fixture.SinglePrompt(after, "disaster-reveal");
+        var detail = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+        Assert.DoesNotContain(detail.Commands, command => TimeoutMarker(command.Command));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task LegacyPublicConfirmationRuntimeInitializesOnlyPendingBudgetOnceWithoutChangingJournal(int confirmedPlayer)
+    {
+        await using var fixture = await RankedSetupFixture.CreateAsync("public-legacy");
+        await fixture.AdvanceToPublicDisasterConfirmationAsync();
+        if (confirmedPlayer >= 0)
+            await fixture.SubmitPromptAsync(confirmedPlayer,
+                fixture.SinglePrompt(await fixture.StateForAsync(confirmedPlayer), "disaster-reveal"), []);
+        var checkpoint = Assert.IsType<L12RankedRuntimeCheckpoint>(
+            await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        var legacy = checkpoint with { Version = 1, CheckpointGeneration = checkpoint.CheckpointGeneration + 1,
+            OperationRemainingMs = [0, 17_000] };
+        await fixture.Recorder.PersistRankedRuntimeBatchAsync([legacy]);
+        Assert.Equal(1, (await fixture.Recorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId))!.Version);
+        var before = Assert.IsType<L12MatchDetail>(await fixture.Recorder.GetMatchAsync(fixture.MatchId));
+
+        await using var restoredRecorder = new MatchRecorder(fixture.MatchPath);
+        await restoredRecorder.InitializeAsync();
+        var restored = new L12RoomManager(fixture.Catalog, restoredRecorder, fixture.ReloadPlatform(), fixture.Clock.Read);
+        var summary = await restored.RestoreRankedRoomsAsync();
+        Assert.Equal(1, summary.Restored); Assert.Equal(0, summary.Invalidated);
+        var firstSession = Guid.NewGuid(); var secondSession = Guid.NewGuid();
+        await restored.ConnectAsync(firstSession, fixture.First.Id, fixture.First.Username);
+        await restored.ConnectAsync(secondSession, fixture.Second.Id, fixture.Second.Username);
+        var recovered = GameMessage(await restored.RecoveryStateWithAckAsync(firstSession), firstSession);
+        foreach (var player in recovered.GetProperty("rankedClock").GetProperty("players").EnumerateArray())
+        {
+            var index = player.GetProperty("playerIndex").GetInt32();
+            Assert.Equal(index != confirmedPlayer, player.GetProperty("acting").GetBoolean());
+            if (index != confirmedPlayer) Assert.Equal(60_000, player.GetProperty("operationRemainingMs").GetInt64());
+            Assert.Equal(25 * 60_000, player.GetProperty("totalRemainingMs").GetInt64());
+        }
+        var after = Assert.IsType<L12MatchDetail>(await restoredRecorder.GetMatchAsync(fixture.MatchId));
+        Assert.Equal(JsonSerializer.Serialize(before.Commands), JsonSerializer.Serialize(after.Commands));
+        fixture.Clock.UtcNow += TimeSpan.FromSeconds(17);
+        await restored.TickRankedClocksAsync(fixture.Clock.UtcNow);
+        var migrated = Assert.IsType<L12RankedRuntimeCheckpoint>(await restoredRecorder.GetRankedRuntimeCheckpointAsync(fixture.MatchId));
+        Assert.Equal(2, migrated.Version); Assert.Equal(legacy.StateHash, migrated.StateHash);
+        Assert.Equal(legacy.StateRevision, migrated.StateRevision); Assert.Equal(legacy.CommandSequence, migrated.CommandSequence);
+
+        await using var secondRecorder = new MatchRecorder(fixture.MatchPath);
+        await secondRecorder.InitializeAsync();
+        var second = new L12RoomManager(fixture.Catalog, secondRecorder, fixture.ReloadPlatform(), fixture.Clock.Read);
+        var secondSummary = await second.RestoreRankedRoomsAsync();
+        Assert.Equal(1, secondSummary.Restored); Assert.Equal(0, secondSummary.Invalidated);
+        var replacement = Guid.NewGuid();
+        await second.ConnectAsync(replacement, fixture.First.Id, fixture.First.Username);
+        var finalClock = GameMessage(await second.RecoveryStateWithAckAsync(replacement), replacement).GetProperty("rankedClock");
+        foreach (var player in finalClock.GetProperty("players").EnumerateArray())
+            if (player.GetProperty("playerIndex").GetInt32() != confirmedPlayer)
+                Assert.Equal(43_000, player.GetProperty("operationRemainingMs").GetInt64());
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, true)]
+    [InlineData(2, true)]
+    [InlineData(3, false)]
+    public void RankedRuntimeRecoveryVersionRemainsExplicitAndBounded(int version, bool supported)
+        => Assert.Equal(supported, L12PersistenceContract.SupportsRankedRuntimeRecovery(version));
+
     [Fact]
     public async Task SimultaneousMulliganBudgetsAreIndependentAndDisconnectedTimeoutKeepsTheHand()
     {
@@ -377,7 +596,7 @@ public sealed class RankedSetupClockTests
         private RankedSetupFixture(string directory) => _directory = directory;
 
         public static async Task<RankedSetupFixture> CreateAsync(string suffix,
-            L12RankedTimeControlConfig? timeControl = null)
+            L12RankedTimeControlConfig? timeControl = null, string mode = "ranked")
         {
             var directory = Path.Combine(Path.GetTempPath(), $"l12-ranked-setup-{suffix}-{Guid.NewGuid():N}");
             var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
@@ -403,8 +622,8 @@ public sealed class RankedSetupClockTests
             var secondSession = Guid.NewGuid();
             manager.Connect(firstSession, first.Id, first.Username);
             manager.Connect(secondSession, second.Id, second.Username);
-            await manager.JoinMatchmakingAsync(firstSession, "ranked", null);
-            var matched = await manager.JoinMatchmakingAsync(secondSession, "ranked", null);
+            await manager.JoinMatchmakingAsync(firstSession, mode, null);
+            var matched = await manager.JoinMatchmakingAsync(secondSession, mode, null);
             var game = matched.Where(message => message.SessionId == firstSession).Select(MessageJson)
                 .Single(payload => payload.GetProperty("type").GetString() == "gameState");
             return new RankedSetupFixture(directory)
@@ -457,12 +676,17 @@ public sealed class RankedSetupClockTests
             throw new InvalidOperationException("缺少先后手 Prompt");
         }
 
-        public async Task AdvanceToMulliganAsync()
+        public Task AdvanceToPublicDisasterConfirmationAsync() => AdvancePreparationAsync("DisasterPreparation", 3);
+
+        public Task AdvanceToMulliganAsync() => AdvancePreparationAsync("Mulligan", null);
+
+        private async Task AdvancePreparationAsync(string phase, int? disasterStep)
         {
             for (var step = 0; step < 40; step++)
             {
                 var states = new[] { await StateForAsync(0), await StateForAsync(1) };
-                if (states[0].GetProperty("phase").GetString() == "Mulligan") return;
+                if (states[0].GetProperty("phase").GetString() == phase
+                    && (disasterStep is null || states[0].GetProperty("disasterPreparationStep").GetInt32() == disasterStep)) return;
                 JsonElement prompt = default;
                 var owner = -1;
                 for (var player = 0; player < 2; player++)
@@ -488,7 +712,7 @@ public sealed class RankedSetupClockTests
                 };
                 await SubmitPromptAsync(owner, prompt, choices);
             }
-            throw new InvalidOperationException("准备流程未在有界步骤内进入调度");
+            throw new InvalidOperationException($"准备流程未在有界步骤内进入{phase}/{disasterStep}");
         }
 
         public async Task SubmitMulliganAsync(int playerIndex, IReadOnlyCollection<string> ids)
@@ -499,7 +723,7 @@ public sealed class RankedSetupClockTests
                 payload.GetProperty("type").GetString() == "actionRejected");
         }
 
-        private async Task SubmitPromptAsync(int playerIndex, JsonElement prompt, IReadOnlyCollection<string> choices)
+        public async Task SubmitPromptAsync(int playerIndex, JsonElement prompt, IReadOnlyCollection<string> choices)
         {
             var result = await Manager.HandleActionAsync(SessionFor(playerIndex),
                 JsonSerializer.SerializeToElement(new
