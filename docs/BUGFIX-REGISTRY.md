@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-FOLLOWING-ELEVEN｜当前正确性与三项产品裁定
+
+- 六个限定批实际11终态，全部rejected/current-correctness或产品拒绝，不冒新修复：1595bf28灾害/猎杀/中列支援、3a5c917d响应/支援、fcfe9012宫本/孟婆/主宰进攻、76a29f43牌库稳定ID及删除确认、b8ac0038投降、b90ac28f公开牌库默认、0731700f不新增ID排名查询、fb4e4c40图坦手选、ca044aea血量、7ebe89f4/e599bc7d回放500。用户明确确认后三项建议的产品边界；不设置仅同主题的duplicate，不给当前正确单伪造fixCommit。
+- 五项先行收据CD0B25F0/363C1FDD/A7350B62分别覆盖2/1/2项，正式具名13/7及牌库2平台/实际SFC证据按冻结提案逐项使用。猎杀墓地不足4不返牌属现规则；无可发动对象不造空响应窗；宫本从真实进攻/拒绝到DefenseChoice/受伤有限链。原中列私局、宫本＋孟婆整场UI/双计时、投降原设备ACK及整个当前Editor同正式等未执行边界均保留，不以共享消费者夸称逐卡全链。
+- 血量ca044aea补087CCF09 r4：隔离加载正式a355 GamePage主模块，net/GameBoard/PlayerMat/身份组件同正式blob；1366×768与844×390已挂载root/board/双方PlayerMat/血量节点收到合成公开gameState10→gameStateDelta7→gameState5，短屏原身份摘要也10→7→5、0重挂/0生产请求/0原生WS。正式MasterBlockAndUnblockedDamageCarryDifferentAuthoritativeOutcomes及UnblockedMasterAttackEndsGameAtZeroHp两Passed只证明权威伤害/终局，是另一组证据；不称同次引擎→真实服务→UI、原私局或真机。截图夹具缺完整全局样式，不能作为完整战场布局通过。
+- r1把CRLF原字节与Git LF混比先失败；r2/r3启动失败保留，Main实际Vue身份对照证实普通FakeSocket被代理而触发net现有连接身份围栏，最终只在合成Socket设置非代理标记，不修改net或产品。两次超时不是线上性能失败，也不把测试夹具错误当产品修复。完整源、日志、失败收据/截图及1CED28F9源pins保留D。
+- 两回放500按DDEF9924有限组合证据：历史f5e859记录页真实播放点击及保存同一文件后本地导入、现ReplayPage四桌面实际播放/定位，正式4个正常Recorder重建/私密牌库名不泄露及3个坏录像HTTP409/健康服务不500。Main读测试、runner和实际manifest；ReplayPage/loader/index冻源桥接及replayModel仅70字节可选originZone差异，记录页playSelected/按钮不变。旧整套productAuditStatus仍failed（E01/E06/1024小屏/F05），丰富12/75帧为schema UI夹具，Recorder真产物仅2帧，不冒当前单次端到端、所有历史兼容或全回放专项完成。
+- Main逐字反向核五组绑定、12原函数/原v2合同与新快照SelfTest；三建议CAS31265—31267、血量31274、回放31277/31278均独立终态/原文历史/撤会话。最新3B171D2B及同次post-CAS快照唯一911/68new/374resolved/469closed，阶段462=142fixed/304rejected/16duplicate、周期554，本次213起147/本轮359起293实际关闭。此片11条不含未部署新修复，P0—P4/两服/维护均不变；记录同步仅映射文档验证，不重跑有效全量或未变线上采样。
+
 ## FIX-20261017-ICON-UTILITY-COMPACTION｜四工具原布局，只收留白
 
 - 用户最后裁定优先：桌面四竖排、移动/短屏2×2和原顺序不改；不实施已撤回的桌面2×2/移动1×4提案。工具固定44px完整命中、gap2/padding4去旧文案留白，桌面容器191px、移动99px；92px桌面侧栏及内容左距保持。导航顶对齐可独立滚到首/尾，在线数、未读数、连接点、ARIA与Tab顺序均保留。
