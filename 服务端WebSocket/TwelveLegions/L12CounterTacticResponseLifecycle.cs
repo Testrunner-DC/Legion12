@@ -27,6 +27,39 @@ public sealed partial class L12GameEngine
             && IsCounterTactic(card.CardId));
     }
 
+    private string? FreshSetCounterSourceVacatedEntrySlot(L12TriggerCandidate candidate,
+        int targetPlayerIndex)
+    {
+        if (!State.SourceVacatedEntrySlotProtocolEnabled
+            || targetPlayerIndex < 0 || targetPlayerIndex >= State.Players.Length
+            || candidate.Controller != targetPlayerIndex
+            || !IsFreshSetCounterTacticTrigger(candidate)
+            || !CanDeclareFreshSetCounterTacticTrigger(candidate)) return null;
+
+        var battlefield = State.Players[targetPlayerIndex];
+        var source = FindOnField(battlefield, candidate.SourceInstanceId, out var row, out var slot);
+        if (source is not { Hidden: true, CardType: "tactic" }
+            || row != 1
+            || !source.InstanceId.Equals(candidate.SourceInstanceId, StringComparison.OrdinalIgnoreCase)
+            || !source.CardId.Equals(candidate.SourceCardId, StringComparison.OrdinalIgnoreCase)
+            || !IsCounterTactic(source.CardId)
+            || L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId))
+            return null;
+
+        return $"{row}:{slot}";
+    }
+
+    private List<string> FreshSetCounterEntrySlotsAfterSourceVacates(L12TriggerCandidate candidate,
+        int targetPlayerIndex)
+    {
+        if (targetPlayerIndex < 0 || targetPlayerIndex >= State.Players.Length) return [];
+        var slots = EmptySlots(State.Players[targetPlayerIndex]).ToList();
+        if (FreshSetCounterSourceVacatedEntrySlot(candidate, targetPlayerIndex) is { } sourceSlot
+            && !slots.Contains(sourceSlot, StringComparer.OrdinalIgnoreCase))
+            slots.Add(sourceSlot);
+        return slots;
+    }
+
     private static void MarkFreshSetCounterCandidateConsumed(L12TriggerCandidate candidate)
         => candidate.Data[CounterTacticResponseLifecycleConsumed] = "true";
 

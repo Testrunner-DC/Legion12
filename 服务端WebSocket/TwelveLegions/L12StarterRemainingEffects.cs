@@ -623,7 +623,8 @@ public sealed partial class L12GameEngine
                 var entries = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 4)
                         && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     .Select(card => card.InstanceId).ToList();
-                var slots = EmptySlots(player).ToList();
+                var sourceSlot = FreshSetCounterSourceVacatedEntrySlot(candidate, candidate.Controller);
+                var slots = FreshSetCounterEntrySlotsAfterSourceVacates(candidate, candidate.Controller);
                 var canUse = player.Morale.Count > 0 && entries.Count > 0 && slots.Count > 0;
                 steps.Add(StarterStep("option", "mode",
                     "暗度陈仓：是否返还1张士气，从我方手牌中将1张费用不高于4的【天廷】军团活跃登场？",
@@ -633,8 +634,24 @@ public sealed partial class L12GameEngine
                 steps.Add(StarterStep("hand-card", "entryCard",
                     "暗度陈仓：选择手牌中1张费用不高于4的【天廷】军团",
                     entries, requiredChoice: "mode:use"));
-                steps.Add(StarterStep("unused-slot", "entrySlot", "暗度陈仓：选择该军团活跃登场的位置",
-                    slots, requiredChoice: "mode:use"));
+                if (sourceSlot is null)
+                    steps.Add(StarterStep("unused-slot", "entrySlot", "暗度陈仓：选择该军团活跃登场的位置",
+                        slots, requiredChoice: "mode:use"));
+                else
+                    steps.Add(new L12ActivationSelectionStep
+                    {
+                        Kind = "prospective-entry-slot",
+                        DeclarationKey = "entrySlot",
+                        Text = "暗度陈仓：选择该军团活跃登场的位置",
+                        ValidChoices = slots,
+                        MinChoose = 1,
+                        MaxChoose = 1,
+                        TargetPlayerIndex = candidate.Controller,
+                        ReferenceDeclarationKey = "entryCard",
+                        IncludeSourceSlotAfterCost = true,
+                        RequiredDeclaredChoice = "mode:use",
+                        CancellationPolicy = L12ActivationCancellationPolicy.WhenNoExplicitDecline,
+                    });
                 break;
             }
             case "change-rested-morale":
@@ -892,11 +909,13 @@ public sealed partial class L12GameEngine
                 var returnCost = activation.DeclaredValues.GetValueOrDefault("returnCost", []);
                 var entryId = activation.DeclaredValues.GetValueOrDefault("entryCard", []).SingleOrDefault();
                 var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
-                if (returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
+                if (!IsFreshSetCounterTacticTrigger(candidate) || !CanDeclareFreshSetCounterTacticTrigger(candidate)
+                    || returnCost.Count != 1 || !CanReturnSelectedMoraleById(player, returnCost, 1)
                     || !player.Hand.Any(card => card.InstanceId == entryId && card.CardType == "legion"
                         && L12StructuredCardRules.CurrentCostAtMost(card, 4) && L12StructuredCardRules.HasFaction(player, card, "tianting"))
                     || string.IsNullOrWhiteSpace(slot)
-                    || !EmptySlots(player).Contains(slot, StringComparer.OrdinalIgnoreCase))
+                    || !FreshSetCounterEntrySlotsAfterSourceVacates(candidate, candidate.Controller)
+                        .Contains(slot, StringComparer.OrdinalIgnoreCase))
                     error = "暗度陈仓选择的士气、手牌军团或登场位置已失效；未返还士气且效果未入栈";
                 break;
             }

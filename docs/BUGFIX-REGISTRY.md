@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261017-FRESH-COUNTER-VACATED-SOURCE-SLOT｜来源离场腾空格位共用候选
+
+- 用户批准暗度陈仓共享格位修复。声明时盖伏来源尚占后排，原EmptySlots遗漏其必定离场腾出的格；完整现有入场/盖伏反击入口扫描同结构暗度陈仓、摄政皇权、不朽之礼，复用ProspectiveEntrySlots/IncludeSourceSlotAfterCost，不新建第二套召唤入口。
+- 新V2能力位下只认实际TriggerCandidateId绑定的fresh来源：同控制者、当前己方隐藏后排tactic、同实例/卡号、未消费且满足灾害规则；CanDeclare对非fresh会true，故先显式IsFresh。动态候选/提交再验，不借SourceSnapshot或祖先，不借对方战场；无TriggerCandidateId的阿尔维达/西施旧主动费用路径不改，旧缺位保留原prompt和候选。真实移出仍在声明提交后，最终结算只认当时EmptySlots，不覆盖响应新占位、不改选、不退已付费用。
+- 14新例纳入组合368通过：暗度真实进攻/双方/严格V2四格、两占位结算、旧缺位与五资格守卫；另两卡覆盖选择/提交/来源真实入栈，最终结算以共享源码审查补边界，未冒各自端到端。r3四有效缺原格RED保留，早两轮攻击/字段夹具及首GREEN漏skip失败不算产品RED；独审CLEAR。B3BFC976统一源级接受，未部署，不提前关闭d38；回退只此共享候选族及能力位。
+
 ## FIX-20261017-ATTACK-BUFF-PLAYER-LOG｜来源、对象与数值沿既有玩家语义
 
 - 用户批准须佐之男及同结构进攻加值日志。全池/执行入口检索AddEvent与temporaryAttackerTroopsBonus，四处天下布武/须佐之男/月读/AttackOnly及萨拉丁共用已有PlayerLogSemantic，不新增投影体系；来源公开、对象真实攻击者、数值有正负符号，萨拉丁多邻居仍只加一次且来源确定。既有logViewModel产品无需改动，只补71行实际formatter回归。

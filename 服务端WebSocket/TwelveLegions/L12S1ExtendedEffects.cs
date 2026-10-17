@@ -975,10 +975,13 @@ public sealed partial class L12GameEngine
         FinishStackItem(item);
     }
 
-    private IEnumerable<int> EffectEntryBattlefieldChoices(int ownerIndex, L12CardInstance card)
+    private IEnumerable<int> EffectEntryBattlefieldChoices(int ownerIndex, L12CardInstance card,
+        L12TriggerCandidate? vacatingSetCounterSource = null)
     {
         var candidates = card.CardId == "S01-0004" ? Enumerable.Range(0, State.Players.Length) : [ownerIndex];
-        return candidates.Where(index => EmptySlots(State.Players[index]).Any());
+        return candidates.Where(index => vacatingSetCounterSource is null
+            ? EmptySlots(State.Players[index]).Any()
+            : FreshSetCounterEntrySlotsAfterSourceVacates(vacatingSetCounterSource, index).Count > 0);
     }
 
     private static string EffectEntryBattlefieldChoice(int playerIndex) => $"battlefield:{playerIndex}";

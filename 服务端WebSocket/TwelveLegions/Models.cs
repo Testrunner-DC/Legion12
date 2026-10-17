@@ -944,6 +944,9 @@ public sealed class L12GameState
     /// <summary>仅新V2局记录明确进攻加值日志，旧Journal尾保持原事件字节。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AttackBuffLogProtocolEnabled { get; init; }
+    /// <summary>新局声明可使用确定由盖伏来源离场腾出的己方格位；旧尾保留原候选。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SourceVacatedEntrySlotProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

@@ -946,17 +946,22 @@ public sealed partial class L12GameEngine
             }
             case ("S01-0021", "reaction", _):
             {
+                var sourceSlot = FreshSetCounterSourceVacatedEntrySlot(candidate, candidate.Controller);
                 var legions = player.Hand.Where(card => card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3)
-                        && EffectEntryBattlefieldChoices(candidate.Controller, card).Any())
+                        && EffectEntryBattlefieldChoices(candidate.Controller, card,
+                            sourceSlot is null ? null : candidate).Any())
                     .Select(card => card.InstanceId).ToList();
                 steps =
                 [
                     PublicTriggerStep("hand-card", "entryCard", "摄政皇权：预先选择手牌1张费用不高于3的军团", legions,
                         allowCancel: false),
                     PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "摄政皇权：预先选择登场战场",
-                        ["dynamic"], referenceKey: "entryCard", allowCancel: false),
-                    PublicTriggerStep("effect-entry-slot", "entrySlot", "摄政皇权：预先选择活跃登场位置",
-                        ["dynamic"], referenceKey: "entryCard", allowCancel: false),
+                        ["dynamic"], referenceKey: "entryCard", allowCancel: false,
+                        includeSourceSlotAfterCost: sourceSlot is not null),
+                    PublicTriggerStep(sourceSlot is null ? "effect-entry-slot" : "prospective-entry-slot",
+                        "entrySlot", "摄政皇权：预先选择活跃登场位置",
+                        ["dynamic"], referenceKey: "entryCard", allowCancel: false,
+                        includeSourceSlotAfterCost: sourceSlot is not null),
                 ];
                 break;
             }
@@ -975,6 +980,7 @@ public sealed partial class L12GameEngine
             case ("S01-0223", "reaction", _):
             {
                 candidate.Data["preserveIndependentStack"] = "true";
+                var sourceSlot = FreshSetCounterSourceVacatedEntrySlot(candidate, candidate.Controller);
                 var guards = player.Graveyard.Where(card => card.CardId == PublicTriggerTombGuardCard)
                     .Select(card => card.InstanceId).Prepend("mode:none").ToList();
                 steps =
@@ -985,10 +991,11 @@ public sealed partial class L12GameEngine
                         guards, requiredChoice: "mode:use"),
                     PublicTriggerStep("effect-entry-battlefield", "entryBattlefield", "不朽之礼：预先选择登场战场",
                         ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true,
-                        requiredChoice: "mode:use"),
-                    PublicTriggerStep("effect-entry-slot", "entrySlot", "不朽之礼：预先选择活跃登场位置",
+                        requiredChoice: "mode:use", includeSourceSlotAfterCost: sourceSlot is not null),
+                    PublicTriggerStep(sourceSlot is null ? "effect-entry-slot" : "prospective-entry-slot",
+                        "entrySlot", "不朽之礼：预先选择活跃登场位置",
                         ["dynamic"], referenceKey: "entryCard", skipWhenReferenceIsNone: true,
-                        requiredChoice: "mode:use"),
+                        requiredChoice: "mode:use", includeSourceSlotAfterCost: sourceSlot is not null),
                 ];
                 break;
             }
@@ -1110,7 +1117,7 @@ public sealed partial class L12GameEngine
         int minReferenceCount = 0, int referenceChoiceIndex = 0, int? targetPlayerIndex = null,
         bool allowCancel = true, string? selectionConstraint = null,
         bool autoSelectEquivalentOrdinaryMorale = false, bool isResponsePresentationTarget = false,
-        bool isCostSelection = false)
+        bool isCostSelection = false, bool includeSourceSlotAfterCost = false)
         => new()
         {
             Kind = kind,
@@ -1134,6 +1141,7 @@ public sealed partial class L12GameEngine
             MinimumReferenceCount = minReferenceCount,
             ReferenceChoiceIndex = referenceChoiceIndex,
             TargetPlayerIndex = targetPlayerIndex,
+            IncludeSourceSlotAfterCost = includeSourceSlotAfterCost,
             SelectionConstraint = selectionConstraint,
             AutoSelectEquivalentOrdinaryMorale = autoSelectEquivalentOrdinaryMorale,
             IsCostSelection = isCostSelection,
@@ -1608,7 +1616,7 @@ public sealed partial class L12GameEngine
         {
             if (entryCard is null || !player.Hand.Any(card => card.InstanceId == entryCard
                     && card.CardType == "legion" && L12StructuredCardRules.CurrentCostAtMost(card, 3))
-                || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Hand))
+                || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Hand, candidate))
                 error = "摄政皇权声明的手牌军团或登场位置已失效；效果未入栈";
         }
         else if (key.Item1 == "S01-0213")
@@ -1623,7 +1631,7 @@ public sealed partial class L12GameEngine
             if (entryCard != "mode:none"
                 && (entryCard is null || !player.Graveyard.Any(card => card.InstanceId == entryCard
                         && card.CardId == PublicTriggerTombGuardCard)
-                    || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Graveyard)))
+                    || !ValidateDeclaredEntry(candidate.Controller, activation, entryCard, player.Graveyard, candidate)))
                 error = "不朽之礼选择的陵墓守卫或登场位置已失效；抽取1张牌的效果仍会结算";
             if (error is not null)
             {
@@ -1849,15 +1857,20 @@ public sealed partial class L12GameEngine
     }
 
     private bool ValidateDeclaredEntry(int controller, L12PendingActivation activation, string cardId,
-        IEnumerable<L12CardInstance> zone)
+        IEnumerable<L12CardInstance> zone, L12TriggerCandidate? vacatingSetCounterSource = null)
     {
+        if (vacatingSetCounterSource is not null
+            && (!IsFreshSetCounterTacticTrigger(vacatingSetCounterSource)
+                || !CanDeclareFreshSetCounterTacticTrigger(vacatingSetCounterSource))) return false;
         var card = zone.FirstOrDefault(candidate => candidate.InstanceId == cardId);
         var battlefield = ParseEffectEntryBattlefieldChoice(
             activation.DeclaredValues.GetValueOrDefault("entryBattlefield", []).SingleOrDefault());
         var slot = activation.DeclaredValues.GetValueOrDefault("entrySlot", []).SingleOrDefault();
         return card is not null && battlefield is not null
-            && EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value)
-            && slot is not null && EmptySlots(State.Players[battlefield.Value])
+            && EffectEntryBattlefieldChoices(controller, card, vacatingSetCounterSource).Contains(battlefield.Value)
+            && slot is not null && (vacatingSetCounterSource is null
+                ? EmptySlots(State.Players[battlefield.Value]).ToList()
+                : FreshSetCounterEntrySlotsAfterSourceVacates(vacatingSetCounterSource, battlefield.Value))
                 .Contains(slot, StringComparer.OrdinalIgnoreCase);
     }
 

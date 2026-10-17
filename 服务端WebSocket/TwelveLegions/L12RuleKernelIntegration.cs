@@ -423,9 +423,10 @@ public sealed partial class L12GameEngine
         else if (step.Kind == "unused-slot")
         {
             var player = State.Players[activation.Controller];
-            var choices = EmptySlots(player)
-                .Except(activation.DeclaredTargets, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            var choices = (step.IncludeSourceSlotAfterCost
+                    ? ProspectiveEntrySlots(activation, step, activation.Controller)
+                    : EmptySlots(player).ToHashSet(StringComparer.OrdinalIgnoreCase))
+                .Except(activation.DeclaredTargets, StringComparer.OrdinalIgnoreCase).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
             if (step.ValidChoices.Count < step.MinChoose)
@@ -552,9 +553,12 @@ public sealed partial class L12GameEngine
                 ? activation.DeclaredValues.GetValueOrDefault(referenceKey, []).SingleOrDefault()
                 : activation.DeclaredTargets.FirstOrDefault();
             var card = reference is null ? null : FindPromptCard(activation.Controller, reference);
+            var triggerCandidate = step.IncludeSourceSlotAfterCost
+                ? PendingTriggerCandidate(activation)
+                : null;
             var choices = card is null
                 ? []
-                : EffectEntryBattlefieldChoices(activation.Controller, card)
+                : EffectEntryBattlefieldChoices(activation.Controller, card, triggerCandidate)
                     .Select(EffectEntryBattlefieldChoice).ToList();
             if (card is not null && step.IncludeSourceSlotAfterCost
                 && ProspectiveEntrySlots(activation, step, activation.Controller).Count > 0)
@@ -591,7 +595,9 @@ public sealed partial class L12GameEngine
             targetPlayerIndex = ParseEffectEntryBattlefieldChoice(battlefieldChoice);
             var choices = targetPlayerIndex is null
                 ? []
-                : EmptySlots(State.Players[targetPlayerIndex.Value]).ToList();
+                : step.IncludeSourceSlotAfterCost
+                    ? ProspectiveEntrySlots(activation, step, targetPlayerIndex.Value).ToList()
+                    : EmptySlots(State.Players[targetPlayerIndex.Value]).ToList();
             step.ValidChoices.Clear();
             step.ValidChoices.AddRange(choices);
             if (step.ValidChoices.Count < step.MinChoose)
@@ -1490,8 +1496,11 @@ public sealed partial class L12GameEngine
                 : activation?.DeclaredTargets.FirstOrDefault();
             var card = reference is null ? null : FindPromptCard(controller, reference);
             var battlefield = ParseEffectEntryBattlefieldChoice(choice);
+            var triggerCandidate = entryStep?.IncludeSourceSlotAfterCost == true && activation is not null
+                ? PendingTriggerCandidate(activation)
+                : null;
             return card is not null && battlefield is not null
-                && (EffectEntryBattlefieldChoices(controller, card).Contains(battlefield.Value)
+                && (EffectEntryBattlefieldChoices(controller, card, triggerCandidate).Contains(battlefield.Value)
                     || entryStep?.IncludeSourceSlotAfterCost == true && battlefield.Value == controller
                     && ProspectiveEntrySlots(activation!, entryStep, controller).Count > 0);
         }
@@ -1574,13 +1583,26 @@ public sealed partial class L12GameEngine
                 if (FindOnField(battlefield, id, out var row, out var slot) is not null)
                     choices.Add($"{row}:{slot}");
         }
-        if (step.IncludeSourceSlotAfterCost && targetPlayerIndex == activation.Controller
-            && SourceSlotAfterCost(activation.Controller, activation.SourceInstanceId) is { } sourceSlot)
-            choices.Add(sourceSlot);
+        if (step.IncludeSourceSlotAfterCost && targetPlayerIndex == activation.Controller)
+        {
+            var triggerCandidate = PendingTriggerCandidate(activation);
+            var sourceSlot = activation.TriggerCandidateId is null
+                ? SourceSlotAfterCost(activation.Controller, activation.SourceInstanceId)
+                : triggerCandidate is null
+                    ? null
+                    : FreshSetCounterSourceVacatedEntrySlot(triggerCandidate, targetPlayerIndex);
+            if (sourceSlot is not null) choices.Add(sourceSlot);
+        }
         if (L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId))
             choices.RemoveWhere(choice => choice.StartsWith("1:", StringComparison.Ordinal));
         return choices;
     }
+
+    private L12TriggerCandidate? PendingTriggerCandidate(L12PendingActivation activation)
+        => activation.TriggerCandidateId is null
+            ? null
+            : State.PendingTriggerStackCandidates.FirstOrDefault(candidate =>
+                candidate.CandidateId == activation.TriggerCandidateId);
 
     private string? SourceSlotAfterCost(int controller, string sourceInstanceId)
         => FindOnField(State.Players[controller], sourceInstanceId, out var row, out var slot) is not null
