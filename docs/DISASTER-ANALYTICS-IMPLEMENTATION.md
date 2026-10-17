@@ -1,8 +1,10 @@
 # 天灾禁选统计接入实施合同
 
-状态：2026-10-17 Main已接收并采用“卡效对抗测试”的DSC-01只读合同。代码审查基线f334127b60f8223bed919be5c01d3d6c4679ee37；本文件不是已实现、验收或部署证明。来源对话01a0dbc8-0071-7bc0-a1bd-f8f5ff5dd543，Main承担实现分批、验收及发布。
+状态：2026-10-18 DSC-01A与DSC-01B均已本地验收完成，未部署；第三、四期未实施。历史合同接收基线f334127b60f8223bed919be5c01d3d6c4679ee37。来源对话01a0dbc8-0071-7bc0-a1bd-f8f5ff5dd543，Main承担实现分批、验收及发布；本合同不代替实际验收与部署收据。
 
-首期实施跟进：DSC-01A已在202f5020基线上交付11叶，Main核源码与真实35专项/运行库绑定并取得只读独审CLEAR；完整规则7846/平台1857均零失败跳过，本地首期验收完成，未接公开接口或UI、未回填、未部署。实际源级接受及同步以 `D:/GPT/Legion12/artifacts/disaster-setup-analytics-20261017/main-final-acceptance.json`、main-git-sync.json为准，不把本合同当部署凭证。下一期才接后台主宰与单局摘要。
+首期实施跟进：DSC-01A在202f5020基线上交付11叶，Main核35专项/运行库及独审；当时完整规则7846/平台1857零失败跳过。首期原证据见 `D:/GPT/Legion12/artifacts/disaster-setup-analytics-20261017/main-final-acceptance.json`、main-git-sync.json。
+
+第二期实施跟进：DSC-01B已接入后台主宰统计及单局准备摘要，15源交付逐项核准；机会/先后手/镜像席位及未知覆盖口径、查询取消、身份/迟到回复、赛后权限和活跃局隐私均有回归。纯统计权限不接收私密选择机会，完整赛后摘要沿AdminMatchesRead；无录像载荷仍可读摘要。真实组件合成9/9，并经最终完整规则7849/平台1884与完整前端验证；规则在仅测试清理修正后同源复用，不称新单轮全门禁。两旧前端夹具仅适配身份和结构锚点，6/53原断言保留。唯一最终源级接受及精确同步见 `D:/GPT/Legion12/artifacts/tournament-referee-control-20261018/final-acceptance.json` 与synchronization.json；不回填历史、不扩公共候选、不新增轮询，未部署。
 
 ## 目标与分期
 

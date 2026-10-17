@@ -46,6 +46,9 @@ public sealed partial class MatchRecorder
             query.RulesVersion,
             query.EffectVersion,
             query.SeasonId,
+            query.DisasterMode,
+            query.DisasterPoolId,
+            query.DisasterOrigin,
             query.ExcludedMatchIds,
             query.ExcludedAccountIds,
         });

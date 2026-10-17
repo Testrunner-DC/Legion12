@@ -100,14 +100,14 @@ const inlineCards = changed('adminMatches', '</button>\n              <p v-else 
   '</button><template v-for="(copy,index) in (participant.deckCards || [])"><CardImage :card-id="copy.cardId"/></template>\n              <p v-else class="privacy-note">')
 reject('aliased inline participant deck loop', 'noInlineArchiveCards', inlineCards)
 reject('inline participant deck loop outside the card', 'noInlineArchiveCards', changed('adminMatches',
-  '</section>\n\n          <section class="fact-timeline">',
-  '</section><div v-for="snapshot in participant.deckCards">{{ snapshot.cardId }}</div>\n\n          <section class="fact-timeline">'))
+  '</section>\n\n          <DisasterDecisionSummary',
+  '</section><div v-for="snapshot in participant.deckCards">{{ snapshot.cardId }}</div>\n\n          <DisasterDecisionSummary'))
 reject('inline participant deck loop using of syntax', 'noInlineArchiveCards', changed('adminMatches',
-  '</section>\n\n          <section class="fact-timeline">',
-  '</section><div v-for="snapshot of participant.deckCards">{{ snapshot.cardId }}</div>\n\n          <section class="fact-timeline">'))
+  '</section>\n\n          <DisasterDecisionSummary',
+  '</section><div v-for="snapshot of participant.deckCards">{{ snapshot.cardId }}</div>\n\n          <DisasterDecisionSummary'))
 reject('inline participant deck loop using static bracket access', 'noInlineArchiveCards', changed('adminMatches',
-  '</section>\n\n          <section class="fact-timeline">',
-  '</section><div v-for="snapshot in participant[\'deckCards\']">{{ snapshot.cardId }}</div>\n\n          <section class="fact-timeline">'))
+  '</section>\n\n          <DisasterDecisionSummary',
+  '</section><div v-for="snapshot in participant[\'deckCards\']">{{ snapshot.cardId }}</div>\n\n          <DisasterDecisionSummary'))
 
 const commentedLoop = changed('adminMatches', '</button>\n              <p v-else class="privacy-note">',
   '</button><!-- <i v-for="card in participant.deckCards">{{ card.cardId }}</i> -->\n              <p v-else class="privacy-note">')

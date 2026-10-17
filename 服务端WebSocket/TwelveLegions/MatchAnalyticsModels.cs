@@ -73,7 +73,10 @@ public sealed record L12CardAnalyticsQuery(
     string? SeasonId = null,
     string? EffectVersion = null,
     IReadOnlyList<string>? ExcludedMatchIds = null,
-    IReadOnlyList<string>? ExcludedAccountIds = null);
+    IReadOnlyList<string>? ExcludedAccountIds = null,
+    string? DisasterMode = null,
+    string? DisasterPoolId = null,
+    string? DisasterOrigin = null);
 
 public sealed record L12AdminMatchPlayer(
     int PlayerIndex,
@@ -203,7 +206,8 @@ public sealed record L12AdminMatchDetail(
     IReadOnlyList<L12MatchParticipantDetail> Participants,
     IReadOnlyList<L12RecordedCommand> Replay,
     IReadOnlyList<L12CardFactView> CardFacts,
-    L12AnalyticsCoverage Coverage);
+    L12AnalyticsCoverage Coverage,
+    L12DisasterSetupSummary? DisasterSetup = null);
 
 public sealed record L12AdminReplayPage(
     IReadOnlyList<L12RecordedCommand> Items,
@@ -346,7 +350,9 @@ public sealed record L12MasterMatchup(
     string OpponentMasterId,
     long Samples,
     long Wins,
-    double? WinRate);
+    double? WinRate,
+    long? FirstSamples = null, long? FirstWins = null,
+    long? SecondSamples = null, long? SecondWins = null);
 
 public sealed record L12PopularMasterDeck(
     string Signature,
@@ -361,7 +367,28 @@ public sealed record L12MasterAnalyticsReport(
     IReadOnlyList<L12MasterAnalyticsTrend> Trend,
     string? SelectedMasterId,
     IReadOnlyList<L12PopularMasterDeck> PopularDecks,
-    L12CardAnalyticsPage? Cards);
+    L12CardAnalyticsPage? Cards,
+    L12DisasterAnalyticsReport? Disasters = null);
+
+public sealed record L12DisasterAnalyticsCoverage(long ParticipantSamples, long DistinctMatches,
+    long UsableSamples, long UsableMatches, long UnknownSamples, long IncompleteSamples,
+    long NotApplicableSamples);
+public sealed record L12DisasterAnalyticsRow(string CardId, string Initiative, string Action, int Step,
+    string Origin, long Opportunities, long Selections, long SelectedWins, long DistinctMatches,
+    long SelectedMatches, double? SelectionRate, double? SelectedWinRate);
+public sealed record L12DisasterAnalyticsPool(string Id, string Mode, IReadOnlyList<string> CardIds);
+public sealed record L12DisasterAnalyticsReport(L12DisasterAnalyticsCoverage Coverage,
+    IReadOnlyList<L12DisasterAnalyticsRow> Items, IReadOnlyList<L12DisasterAnalyticsPool> Pools,
+    string? SelectedMasterId, string? Mode, string? PoolId, string? Origin,
+    int MinimumWinRateSamples = 30, bool PoolsTruncated = false,
+    bool PrivatePickGroupsHidden = false);
+public sealed record L12DisasterSetupCard(string CardId, string Source, int? OwnerIndex);
+public sealed record L12DisasterSetupDecision(int Step, string Action, int ActorIndex,
+    string? Initiative, IReadOnlyList<string> CandidateCardIds, string? ChosenCardId, string? Origin,
+    long OfferedSequence, long? ResolvedSequence);
+public sealed record L12DisasterSetupSummary(string Coverage, string Status, string? Mode,
+    int? FirstPlayer, string? PublicCardId, IReadOnlyList<L12DisasterSetupCard> Composition,
+    IReadOnlyList<L12DisasterSetupDecision> Decisions, string? EffectVersion);
 
 public sealed record L12GlobalAnalyticsDay(
     string Date,

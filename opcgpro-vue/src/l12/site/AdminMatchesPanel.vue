@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CardImage from '@/l12/CardImage.vue'
 import DeckSnapshotViewer from './DeckSnapshotViewer.vue'
 import AdminMatchContextLinks from './AdminMatchContextLinks.vue'
 import AdminAccountPicker from './AdminAccountPicker.vue'
+import DisasterDecisionSummary from './DisasterDecisionSummary.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import {
   adminApi,
+  authState,
+  platformState,
   PlatformRequestError,
   type AdminMatchDetail,
   type AdminMatchPage,
@@ -33,6 +36,8 @@ const selectedAccountId = ref(queryText('accountId'))
 const selectedPlayerName = ref('')
 const loading = ref(false)
 const detailLoading = ref(false)
+const detailError = ref('')
+const lastMatchId = ref('')
 const expiredReplayId = ref('')
 const deckViewer = ref<AdminMatchParticipant | null>(null)
 const filters = ref({
@@ -97,12 +102,35 @@ function factLabel(type: string) {
 async function ensureReferenceData() {
   if (!cards.value.length) cards.value = await loadDeckCatalog()
 }
+let listGeneration = 0
+let detailGeneration = 0
+let disposed = false
+function requestScope() {
+  return JSON.stringify({ view: view.value, filters: filters.value, player: selectedAccountId.value,
+    initialMatchId: props.initialMatchId,
+    account: platformState.account?.id, permissionVersion: platformState.account?.permissionVersion,
+    verified: authState.verified })
+}
+function clearDetail() {
+  ++detailGeneration
+  detail.value = null; deckViewer.value = null; expiredReplayId.value = ''; detailError.value = ''
+  lastMatchId.value = ''; detailLoading.value = false
+}
+function invalidateArchive() { ++listGeneration; loading.value = false; page.value = { items: [], total: 0 }; clearDetail() }
+watch([view, selectedAccountId, () => JSON.stringify(filters.value), () => props.initialMatchId, () => platformState.account?.id,
+  () => platformState.account?.permissionVersion, () => platformState.token, () => authState.verified],
+invalidateArchive, { flush: 'sync' })
 async function loadMatches(reset = true) {
+  if (disposed) return
   if (view.value === 'player' && !selectedAccountId.value) {
     page.value = { items: [], total: 0 }
     detail.value = null
     return
   }
+  const generation = ++listGeneration
+  const scope = requestScope()
+  const isCurrent = () => !disposed && generation === listGeneration && scope === requestScope()
+  if (reset) clearDetail()
   loading.value = true
   try {
     const cursor = reset ? undefined : page.value.nextCursor || undefined
@@ -110,6 +138,7 @@ async function loadMatches(reset = true) {
     const next = view.value === 'player'
       ? await adminApi.playerMatches(selectedAccountId.value, query)
       : await adminApi.matches(query)
+    if (!isCurrent()) return
     page.value = reset ? next : { ...next, items: [...page.value.items, ...next.items] }
     if (reset) {
       const requested = props.initialMatchId || next.items[0]?.matchId
@@ -117,21 +146,37 @@ async function loadMatches(reset = true) {
       else detail.value = null
     }
   } catch (error) {
+    if (!isCurrent()) return
     emit('notice', error instanceof Error ? error.message : '对局档案加载失败')
-  } finally { loading.value = false }
+  } finally { if (isCurrent()) loading.value = false }
 }
 async function selectMatch(matchId: string) {
+  if (disposed) return
+  clearDetail()
+  const generation = detailGeneration
+  const scope = requestScope()
+  const isCurrent = () => !disposed && generation === detailGeneration && scope === requestScope()
+  lastMatchId.value = matchId
   detailLoading.value = true
   expiredReplayId.value = ''
-  try { detail.value = await adminApi.match(matchId) }
+  try {
+    const next = await adminApi.match(matchId)
+    if (!isCurrent()) return
+    if (next.summary.matchId !== matchId) throw new Error('对局详情响应不匹配，请重试')
+    detail.value = next
+  }
   catch (error) {
+    if (!isCurrent()) return
     detail.value = null
     if (error instanceof PlatformRequestError && error.status === 410 && error.code === 'sandbox_replay_expired') {
       expiredReplayId.value = matchId
       emit('notice', '回放已过期')
-    } else emit('notice', error instanceof Error ? error.message : '对局详情加载失败')
+    } else {
+      detailError.value = error instanceof Error ? error.message : '对局详情加载失败'
+      emit('notice', detailError.value)
+    }
   }
-  finally { detailLoading.value = false }
+  finally { if (isCurrent()) detailLoading.value = false }
 }
 async function changeView(next: MatchView) {
   view.value = next
@@ -165,8 +210,9 @@ watch(() => props.initialMatchId, async matchId => {
 })
 onMounted(async () => {
   await ensureReferenceData()
-  await loadMatches(true)
+  if (!disposed) await loadMatches(true)
 })
+onBeforeUnmount(() => { disposed = true; invalidateArchive() })
 </script>
 
 <template>
@@ -219,6 +265,7 @@ onMounted(async () => {
 
       <section class="match-detail panel-shell">
         <div v-if="detailLoading" class="empty">正在读取赛后权威记录…</div>
+        <div v-else-if="detailError" class="empty" role="alert"><p>{{ detailError }}</p><button v-if="lastMatchId" @click="selectMatch(lastMatchId)">重试详情</button></div>
         <div v-else-if="expiredReplayId" class="empty expired-replay"><b>回放已过期</b><span>该沙盒记录已超过保留期限，无法继续读取详情或播放回放。</span><code>{{ expiredReplayId }}</code></div>
         <template v-else-if="detail">
           <header class="detail-header"><div><small>{{ modeLabel(detail.summary.modeId) }} · {{ coverageLabel(detail.coverage) }}</small><h3>{{ detail.summary.players.map(player => player.displayName).join(' VS ') }}</h3><p>{{ dateLabel(detail.summary.startedUtc) }} · {{ durationLabel(detail.summary.durationSeconds) }} · {{ statusLabel(detail.summary) }}</p></div><code>{{ detail.summary.matchId }}</code></header>
@@ -231,6 +278,8 @@ onMounted(async () => {
               <p v-else class="privacy-note">{{ detail.summary.status === 'ongoing' ? '进行中对局不展示私有构筑。' : '该历史对局没有可靠的完整构筑快照。' }}</p>
             </article>
           </section>
+
+          <DisasterDecisionSummary :summary="detail.disasterSetup" :cards="cards"/>
 
           <section class="fact-timeline">
             <header><div><h3>结构化对局时间线</h3><p>只使用权威事实，不从中文日志猜测卡牌行为。</p></div><b>{{ detail.cardFacts?.length || 0 }} 条</b></header>

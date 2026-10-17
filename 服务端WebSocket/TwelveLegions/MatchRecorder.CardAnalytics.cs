@@ -215,6 +215,13 @@ public sealed partial class MatchRecorder
             ? null : query.Initiative.Trim().ToLowerInvariant();
         if (initiative is not null and not ("first" or "second"))
             throw new ArgumentException("先后手筛选必须是 first 或 second", nameof(query));
+        var disasterMode = string.IsNullOrWhiteSpace(query.DisasterMode) ? null : query.DisasterMode.Trim().ToLowerInvariant();
+        var disasterOrigin = string.IsNullOrWhiteSpace(query.DisasterOrigin) ? null : query.DisasterOrigin.Trim().ToLowerInvariant();
+        var disasterPool = string.IsNullOrWhiteSpace(query.DisasterPoolId) ? null : query.DisasterPoolId.Trim().ToUpperInvariant();
+        if (disasterMode is not null and not ("all" or "season" or "random" or "none")
+            || disasterOrigin is not null and not ("player" or "server-setup-timeout")
+            || disasterPool is not null && (disasterPool.Length != 64 || !disasterPool.All(Uri.IsHexDigit)))
+            throw new ArgumentException("天灾模式、卡池快照或选择来源筛选无效", nameof(query));
         var normalized = query with
         {
             Limit = Math.Clamp(query.Limit, 1, 200),
@@ -239,6 +246,9 @@ public sealed partial class MatchRecorder
             OpponentMasterId = string.IsNullOrWhiteSpace(query.OpponentMasterId)
                 ? null : query.OpponentMasterId.Trim(),
             Initiative = initiative,
+            DisasterMode = disasterMode,
+            DisasterPoolId = disasterPool,
+            DisasterOrigin = disasterOrigin,
             RulesVersion = string.IsNullOrWhiteSpace(query.RulesVersion) ? null : query.RulesVersion.Trim(),
             SeasonId = string.IsNullOrWhiteSpace(query.SeasonId) ? null : query.SeasonId.Trim(),
             EffectVersion = string.IsNullOrWhiteSpace(query.EffectVersion) ? null : query.EffectVersion.Trim(),
@@ -343,7 +353,8 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task PrepareAnalyticsScopeAsync(SqliteConnection connection,
-        L12CardAnalyticsQuery query, string? targetCardId = null, bool includeFacts = true)
+        L12CardAnalyticsQuery query, string? targetCardId = null, bool includeFacts = true,
+        SqliteTransaction? transaction = null)
     {
         var eligibleSelect = AnalyticsEligibleSelect(query, out var parameters);
         var inclusionFilter = targetCardId is null ? string.Empty : "WHERE d.card_id=$targetCard";
@@ -408,6 +419,7 @@ public sealed partial class MatchRecorder
               SELECT * FROM match_card_fact_summaries WHERE 0;
               """;
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = $"""
             DROP TABLE IF EXISTS temp.l12_analytics_fact_stats;
             DROP TABLE IF EXISTS temp.l12_analytics_inclusions;

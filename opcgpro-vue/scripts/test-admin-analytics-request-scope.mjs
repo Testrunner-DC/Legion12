@@ -26,12 +26,22 @@ function mount(file, overrides = {}, props = {}) {
   const code = ts.transpileModule(script.content, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const module = { exports: {} }
   const notices = []
+  const platform = {
+    adminApi: {}, getEffectiveOperationsPolicy: async () => ({ season: { id: 'S1', name: '合成赛季' } }),
+    platformState: Vue.reactive({ token: 'fixture-admin-token', account: {
+      id: 'fixture-admin', username: '分析夹具管理员', role: 'admin', createdAt: '2026-01-01T00:00:00Z', publicHistory: false,
+      permissions: ['admin.analytics.read'], permissionVersion: 1,
+    } }),
+    authState: Vue.reactive({ initialized: true, verified: true, refreshing: false }),
+    ...(overrides['@/l12/platform'] || {}),
+  }
   const imports = {
-    vue: Vue, '@/l12/platform': { adminApi: {}, getEffectiveOperationsPolicy: async () => ({ season: { id: 'S1', name: '合成赛季' } }) },
+    vue: Vue,
     '@/l12/decks': { loadDeckCatalog: async () => catalog }, './decks': { loadDeckCatalog: async () => catalog, filterableCardCost: c => c.cost ?? null },
     '@/l12/specialAssets': { masterProfileUrl: id => id }, './mobileViewport': { landscapeTeleportTarget: () => 'body' },
     './cardPresentation': { cardTypeFilterKey: value => value, cardTypeLabel: value => value, isHorizontalCardType: () => false },
     ...overrides,
+    '@/l12/platform': platform,
   }
   vm.runInNewContext(code, { module, exports: module.exports, require: id => imports[id] ?? (id.endsWith('.vue') ? { default: {} } : require(id)), Date, Map, Set, Error, console }, { filename: file })
   const component = module.exports.default

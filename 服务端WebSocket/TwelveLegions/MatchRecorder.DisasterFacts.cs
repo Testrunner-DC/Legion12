@@ -415,6 +415,17 @@ public sealed partial class MatchRecorder
             if (reader.IsDBNull(0)) return new("private", "active", null, [], null, [], []);
             first = reader.IsDBNull(1) ? -1 : reader.GetInt32(1);
         }
+        var result = await ReadDisasterSetupFactsInSnapshotAsync(connection, transaction, matchId, first,
+            cancellationToken);
+        transaction.Commit();
+        return result;
+    }
+
+    private static async Task<L12DisasterSetupFactsView> ReadDisasterSetupFactsInSnapshotAsync(
+        SqliteConnection connection, SqliteTransaction transaction, string matchId, int first,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var capture = await LoadDisasterCaptureAsync(connection, transaction, matchId);
         if (capture is null) return new("unknown", "legacy-unavailable", null, [], null, [], []);
         var decisions = await LoadDisasterDecisionsAsync(connection, transaction, matchId);
@@ -424,7 +435,7 @@ public sealed partial class MatchRecorder
             ReadDisasterJson<string[]>(capture.PoolJson), capture.PublicCard,
             capture.CompositionJson is null ? [] : ReadDisasterJson<L12DisasterCompositionCard[]>(capture.CompositionJson), decisions,
             capture.EffectVersion);
-        transaction.Commit();
+        cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
 

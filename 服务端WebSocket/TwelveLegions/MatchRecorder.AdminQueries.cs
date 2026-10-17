@@ -91,39 +91,49 @@ public sealed partial class MatchRecorder
         return ListAdminMatchesAsync(query with { AccountId = accountId.Trim(), Player = null });
     }
 
-    public async Task<L12AdminMatchDetail?> GetAdminMatchAsync(string matchId, bool includeReplay = false)
+    public async Task<L12AdminMatchDetail?> GetAdminMatchAsync(string matchId, bool includeReplay = false,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(matchId)) return null;
         await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
+        using var transaction = connection.BeginTransaction(deferred: true);
         var summaryCommand = connection.CreateCommand();
+        summaryCommand.Transaction = transaction;
         summaryCommand.CommandText = $"""
             {AdminMatchSelect}
             WHERE m.match_id=$match;
             """;
         summaryCommand.Parameters.AddWithValue("$match", matchId);
         L12AdminMatchSummary summary;
-        await using (var reader = await summaryCommand.ExecuteReaderAsync())
+        await using (var reader = await summaryCommand.ExecuteReaderAsync(cancellationToken))
         {
-            if (!await reader.ReadAsync()) return null;
+            if (!await reader.ReadAsync(cancellationToken)) return null;
             summary = ReadAdminMatchSummary(reader);
         }
 
         var sandbox = string.Equals(summary.ModeId, "sandbox", StringComparison.Ordinal);
         var replayReadable = summary.EndedUtc is not null || sandbox;
-        var participants = await ReadParticipantDetailsAsync(connection, matchId, summary, replayReadable);
+        var participants = await ReadParticipantDetailsAsync(connection, matchId, summary, replayReadable,
+            transaction, cancellationToken);
+        var disasterSetup = await ReadDisasterSummaryInSnapshotAsync(connection, transaction, summary,
+            cancellationToken);
         if (!replayReadable)
         {
             return new L12AdminMatchDetail(summary, participants, [], [],
-                EmptyCoverage(privateDuringActiveMatch: true));
+                EmptyCoverage(privateDuringActiveMatch: true), disasterSetup);
         }
 
+        var facts = sandbox ? [] : await ReadCardFactsAsync(connection, matchId, transaction, cancellationToken);
+        var coverage = sandbox ? EmptyCoverage(privateDuringActiveMatch: false)
+            : await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false, transaction: transaction,
+                cancellationToken: cancellationToken);
+        transaction.Commit();
+        // Replay payload retains its separate compatibility/size checks, after the metadata snapshot.
         if (includeReplay) await EnsureInlineReplayWithinLimitsAsync(connection, matchId);
         var replay = includeReplay ? (await GetMatchAsync(matchId))?.Commands ?? [] : [];
-        var facts = sandbox ? [] : await ReadCardFactsAsync(connection, matchId);
-        var coverage = sandbox ? EmptyCoverage(privateDuringActiveMatch: false)
-            : await ReadCoverageAsync(connection, matchId, privateDuringActiveMatch: false);
-        return new L12AdminMatchDetail(summary, participants, replay, facts, coverage);
+        cancellationToken.ThrowIfCancellationRequested();
+        return new L12AdminMatchDetail(summary, participants, replay, facts, coverage, disasterSetup);
     }
 
     private static async Task EnsureInlineReplayWithinLimitsAsync(SqliteConnection connection, string matchId)
@@ -537,19 +547,21 @@ public sealed partial class MatchRecorder
             : null;
 
     private static async Task<IReadOnlyList<L12MatchParticipantDetail>> ReadParticipantDetailsAsync(
-        SqliteConnection connection, string matchId, L12AdminMatchSummary summary, bool includePrivate)
+        SqliteConnection connection, string matchId, L12AdminMatchSummary summary, bool includePrivate,
+        SqliteTransaction? transaction = null, CancellationToken cancellationToken = default)
     {
         var cards = new Dictionary<int, List<L12DeckCardSnapshot>>();
         if (includePrivate)
         {
             var deckCommand = connection.CreateCommand();
+            deckCommand.Transaction = transaction;
             deckCommand.CommandText = """
                 SELECT player_index,card_id,quantity,section FROM match_deck_cards
                 WHERE match_id=$match ORDER BY player_index,section,card_id;
                 """;
             deckCommand.Parameters.AddWithValue("$match", matchId);
-            await using var deckReader = await deckCommand.ExecuteReaderAsync();
-            while (await deckReader.ReadAsync())
+            await using var deckReader = await deckCommand.ExecuteReaderAsync(cancellationToken);
+            while (await deckReader.ReadAsync(cancellationToken))
             {
                 var playerIndex = deckReader.GetInt32(0);
                 if (!cards.TryGetValue(playerIndex, out var list)) cards[playerIndex] = list = [];
@@ -559,14 +571,15 @@ public sealed partial class MatchRecorder
         }
 
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT player_index,account_id,display_name,master_id,master_name,deck_name,deck_snapshot_coverage
             FROM match_participants WHERE match_id=$match ORDER BY player_index;
             """;
         command.Parameters.AddWithValue("$match", matchId);
         var participants = new List<L12MatchParticipantDetail>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             var playerIndex = reader.GetInt32(0);
             var player = summary.Players.Single(item => item.PlayerIndex == playerIndex);
@@ -582,9 +595,11 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<IReadOnlyList<L12CardFactView>> ReadCardFactsAsync(
-        SqliteConnection connection, string matchId)
+        SqliteConnection connection, string matchId, SqliteTransaction? transaction = null,
+        CancellationToken cancellationToken = default)
     {
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT kind,command_sequence,revision,round,turn,phase,occurred_utc,player_index,account_id,
                    card_id,card_instance_id,related_card_id,related_instance_id,source_zone,destination_zone,
@@ -593,8 +608,8 @@ public sealed partial class MatchRecorder
             """;
         command.Parameters.AddWithValue("$match", matchId);
         var facts = new List<L12CardFactView>();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
         {
             facts.Add(new L12CardFactView(reader.GetString(0), reader.GetInt64(1), reader.GetInt64(2),
                 reader.GetInt32(3), reader.GetInt32(4), reader.GetString(5), reader.GetString(6),
@@ -609,9 +624,11 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<L12AnalyticsCoverage> ReadCoverageAsync(SqliteConnection connection,
-        string? matchId = null, bool privateDuringActiveMatch = false)
+        string? matchId = null, bool privateDuringActiveMatch = false,
+        SqliteTransaction? transaction = null, CancellationToken cancellationToken = default)
     {
         var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = $"""
             SELECT
                 SUM(CASE WHEN coverage='exact' THEN 1 ELSE 0 END),
@@ -622,9 +639,9 @@ public sealed partial class MatchRecorder
             """;
         if (matchId is not null) command.Parameters.AddWithValue("$match", matchId);
         long exact = 0, inferred = 0, partial = 0;
-        await using (var reader = await command.ExecuteReaderAsync())
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
         {
-            if (await reader.ReadAsync())
+            if (await reader.ReadAsync(cancellationToken))
             {
                 exact = reader.IsDBNull(0) ? 0 : reader.GetInt64(0);
                 inferred = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);
@@ -632,6 +649,7 @@ public sealed partial class MatchRecorder
             }
         }
         var decks = connection.CreateCommand();
+        decks.Transaction = transaction;
         decks.CommandText = $"""
             SELECT
                 SUM(CASE WHEN deck_snapshot_coverage='exact' THEN 1 ELSE 0 END),
@@ -641,9 +659,9 @@ public sealed partial class MatchRecorder
             """;
         if (matchId is not null) decks.Parameters.AddWithValue("$match", matchId);
         long exactDecks = 0, inferredDecks = 0;
-        await using (var reader = await decks.ExecuteReaderAsync())
+        await using (var reader = await decks.ExecuteReaderAsync(cancellationToken))
         {
-            if (await reader.ReadAsync())
+            if (await reader.ReadAsync(cancellationToken))
             {
                 exactDecks = reader.IsDBNull(0) ? 0 : reader.GetInt64(0);
                 inferredDecks = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);

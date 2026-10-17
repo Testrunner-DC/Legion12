@@ -271,6 +271,25 @@ export interface AdminMatchDetail {
   summary: AdminMatchSummary; participants: AdminMatchParticipant[]
   replay: RecordedCommand[]; cardFacts: AdminMatchCardFact[]
   coverage: AdminAnalyticsCoverage
+  disasterSetup?: AdminDisasterSetupSummary | null
+}
+export interface AdminDisasterSetupSummary {
+  coverage: string; status: string; mode?: string | null; firstPlayer?: number | null; publicCardId?: string | null
+  effectVersion?: string | null
+  composition: Array<{ cardId: string; source: string; ownerIndex?: number | null }>
+  decisions: Array<{ step: number; action: string; actorIndex: number; initiative?: string | null
+    candidateCardIds: string[]; chosenCardId?: string | null; origin?: string | null
+    offeredSequence: number; resolvedSequence?: number | null }>
+}
+export interface AdminDisasterAnalyticsReport {
+  coverage: { participantSamples: number; distinctMatches: number; usableSamples: number; usableMatches: number
+    unknownSamples: number; incompleteSamples: number; notApplicableSamples: number }
+  items: Array<{ cardId: string; initiative: string; action: string; step: number; origin: string
+    opportunities: number; selections: number; selectedWins: number; distinctMatches: number; selectedMatches: number
+    selectionRate?: number | null; selectedWinRate?: number | null }>
+  pools: Array<{ id: string; mode: string; cardIds: string[] }>
+  selectedMasterId?: string | null; mode?: string | null; poolId?: string | null; origin?: string | null
+  minimumWinRateSamples: number; poolsTruncated?: boolean; privatePickGroupsHidden?: boolean
 }
 export interface AdminReplayPage {
   items: RecordedCommand[]; nextCursor?: string; limit: number; pageBytes: number; totalCommands: number; totalBytes: number
@@ -334,11 +353,13 @@ export interface AdminMasterAnalyticsItem {
 }
 export interface AdminMasterAnalyticsReport {
   items: AdminMasterAnalyticsItem[]
-  matchups: Array<{ masterId: string; opponentMasterId: string; samples: number; wins: number; winRate?: number | null }>
+  matchups: Array<{ masterId: string; opponentMasterId: string; samples: number; wins: number; winRate?: number | null
+    firstSamples?: number | null; firstWins?: number | null; secondSamples?: number | null; secondWins?: number | null }>
   trend: Array<{ date: string; samples: number; wins: number; winRate: number }>
   selectedMasterId?: string | null
   popularDecks: Array<{ signature: string; samples: number; wins: number; winRate: number; cards: Array<{ cardId: string; quantity: number; section: string }> }>
   cards?: AdminCardAnalyticsPage | null
+  disasters?: AdminDisasterAnalyticsReport | null
 }
 export interface AdminGlobalAnalyticsDay {
   date: string; dailyActiveUsers: number; weeklyActiveUsers: number; monthlyActiveUsers: number
@@ -1420,7 +1441,9 @@ export const adminApi = {
     Object.entries(mapped).forEach(([key, value]) => { if (value !== undefined && value !== '') params.set(key, String(value)) })
     return platformRequest<AdminCardAnalyticsDetail>(`/api/admin/analytics/cards/${encodeURIComponent(cardId)}${params.size ? `?${params}` : ''}`)
   },
-  masterAnalytics: (query: { from?: string; to?: string; masterId?: string; effectVersion?: string; seasonId?: string; minimumSample?: number; sort?: string } = {}) => {
+  masterAnalytics: (query: { from?: string; to?: string; masterId?: string; opponentMasterId?: string; initiative?: string
+    rulesVersion?: string; effectVersion?: string; seasonId?: string; minimumSample?: number; sort?: string
+    disasterMode?: string; disasterPoolId?: string; disasterOrigin?: string } = {}) => {
     const params = new URLSearchParams()
     const mapped = { ...query, fromUtc: localDateBoundary(query.from), toUtc: localDateBoundary(query.to, true), minimumSampleSize: query.minimumSample }
     ;['from', 'to', 'minimumSample'].forEach(key => delete (mapped as Record<string, unknown>)[key])

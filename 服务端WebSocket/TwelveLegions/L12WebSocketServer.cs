@@ -870,7 +870,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                         "该休闲／好友房录像已按保留规则清理；对局摘要与结算结果仍保留。",
                         StatusCodes.Status410Gone);
                 }
-                var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay);
+                var match = await _recorder.GetAdminMatchAsync(matchId, includeReplay,
+                    request.HttpContext.RequestAborted);
                 var expired = match is null && await _recorder.IsSandboxReplayExpiredAsync(matchId,
                     request.HttpContext.RequestAborted);
                 var replayPayloadExpired = includeReplay && match is not null
@@ -1057,9 +1058,29 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             request.HttpContext.Response.Headers.CacheControl = "no-store";
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, _app.Lifetime.ApplicationStopping);
             try
             {
-                var report = await _recorder.ReadMasterAnalyticsAsync(CardAnalyticsQuery(request));
+                var query = CardAnalyticsQuery(request) with
+                {
+                    DisasterMode = QueryValue(request, "disasterMode"),
+                    DisasterPoolId = QueryValue(request, "disasterPoolId"),
+                    DisasterOrigin = QueryValue(request, "disasterOrigin"),
+                };
+                var report = await _recorder.ReadMasterAnalyticsAsync(query, cancellation.Token, timing);
+                if (!L12Authorization.HasPermission(authenticated.Account, L12Permission.AdminMatchesRead)
+                    && report.Disasters is { } disasters)
+                {
+                    // Even grouped single-match pick opportunities can disclose a private candidate set.
+                    // Project only this response; never mutate the permission-independent cached DTO.
+                    report = report with { Disasters = disasters with
+                    {
+                        Items = disasters.Items.Where(item => item.Action != "pick").ToArray(),
+                        PrivatePickGroupsHidden = true,
+                    } };
+                }
                 _platform.RecordAdminRead(authenticated.Account, permission, "analytics", "read-master-report",
                     report.SelectedMasterId ?? "masters", AuditContext(request, permission), request.HttpContext.RequestAborted);
                 return Results.Ok(report);
@@ -1068,6 +1089,20 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             {
                 return ApiError(request, "invalid_analytics_query", error.Message, StatusCodes.Status400BadRequest);
             }
+            catch (CardAnalyticsUnavailableException error)
+            {
+                return ApiError(request, error.Code, error.Message, error.StatusCode);
+            }
+            catch (InvalidDataException)
+            {
+                return ApiError(request, "analytics_facts_unavailable", "禁选统计事实暂不可用，请缩小范围或稍后重试。",
+                    StatusCodes.Status503ServiceUnavailable);
+            }
+            catch (OperationCanceledException) when (request.HttpContext.RequestAborted.IsCancellationRequested)
+            { return Results.StatusCode(499); }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+            { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
         });
         _app.MapGet("/api/admin/analytics/global", async (HttpRequest request) =>
         {
