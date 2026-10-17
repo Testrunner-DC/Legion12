@@ -493,7 +493,7 @@ public sealed partial class L12GameEngine
             }
             case "立花誾千代":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
-                    AddTimedModifier(target, 0, -1, ExpiryAtNextOwnEnd(item.Controller), "立花誾千代");
+                    AddTimedModifierUntilNextOwnEnd(target, 0, -1, item.Controller, "立花誾千代");
                 AddEvent("effect", item.Controller, "立花誾千代阵亡：直到下个我方回合结束前，对方所有军团费用-1", card);
                 FinishStackItem(item);
                 return true;
@@ -618,7 +618,7 @@ public sealed partial class L12GameEngine
                 var rested = PublicLegions(enemy).Where(card => card.Tapped).ToArray();
                 if (chosen[0] == "all")
                 {
-                    foreach (var target in rested) AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                    foreach (var target in rested) AddTimedModifierUntilNextOwnEnd(target, -1000, 0, item.Controller, "拼死反抗");
                     FinishStackItem(item);
                 }
                 else if (rested.Length == 0) FinishStackItem(item);
@@ -630,13 +630,13 @@ public sealed partial class L12GameEngine
             case "last-stand-single":
             {
                 var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                if (target is not null) AddTimedModifierUntilNextOwnEnd(target, -2000, 0, item.Controller, "拼死反抗");
                 FinishStackItem(item); return true;
             }
             case "seppuku-cost":
             {
                 var target = DeclaredEnemyTarget(item.Controller, chosen[0]);
-                if (target is not null) AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                if (target is not null) AddTimedModifierUntilNextOwnEnd(target, 0, -2, item.Controller, "切腹仪式");
                 FinishStackItem(item); return true;
             }
             case "wisdom-discard":
@@ -911,9 +911,17 @@ public sealed partial class L12GameEngine
     private int ExpiryAtNextOwnEnd(int controller) => State.TurnSerial + (State.ActivePlayer == controller ? 0 : 1);
     private int ExpiryAtNextOwnStart(int controller) => State.TurnSerial + (State.ActivePlayer == controller ? 1 : 0);
 
-    private static void AddTimedModifier(L12CardInstance card, int troops, int cost, int expiry, string source)
+    private void AddTimedModifierUntilNextOwnEnd(L12CardInstance card, int troops, int cost, int controller, string source)
+        => AddTimedModifier(card, troops, cost, ExpiryAtNextOwnEnd(controller), source,
+            State.OwnerTurnEndModifierProtocolEnabled
+                ? new L12OwnerTurnEndExpiry { Controller = controller, GrantedTurnSerial = State.TurnSerial }
+                : null);
+
+    private static void AddTimedModifier(L12CardInstance card, int troops, int cost, int expiry, string source,
+        L12OwnerTurnEndExpiry? ownerTurnEndExpiry = null)
     {
-        card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = troops, CostDelta = cost, ExpiresAfterTurn = expiry, Source = source });
+        card.TimedModifiers.Add(new L12TimedModifier { TroopsDelta = troops, CostDelta = cost,
+            ExpiresAfterTurn = expiry, Source = source, OwnerTurnEndExpiry = ownerTurnEndExpiry });
         card.Troops += troops; card.CostModifier += cost;
     }
 
@@ -1135,13 +1143,13 @@ public sealed partial class L12GameEngine
                         .Where(card => card.Tapped).ToArray();
                     if (targets.Length == 0) item.Data["effectResultStatus"] = "skipped";
                     foreach (var target in targets)
-                        AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                        AddTimedModifierUntilNextOwnEnd(target, -1000, 0, item.Controller, "拼死反抗");
                 }
                 else
                 {
                     var target = PublicLegions(State.Players[1 - item.Controller])
                         .FirstOrDefault(card => card.InstanceId == declared && card.Tapped);
-                    if (target is not null) AddTimedModifier(target, -2000, 0, ExpiryAtNextOwnEnd(item.Controller), "拼死反抗");
+                    if (target is not null) AddTimedModifierUntilNextOwnEnd(target, -2000, 0, item.Controller, "拼死反抗");
                     else RecordTargetSettlementFailure(item, declared,
                         "所选军团已离场或不再处于休整状态");
                 }
@@ -1152,7 +1160,7 @@ public sealed partial class L12GameEngine
                 Draw(player, 1);
                 var seppukuTarget = DeclaredEnemyTarget(item.Controller, item.Data.GetValueOrDefault("declaredTargets"));
                 if (seppukuTarget is not null)
-                    AddTimedModifier(seppukuTarget, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                    AddTimedModifierUntilNextOwnEnd(seppukuTarget, 0, -2, item.Controller, "切腹仪式");
                 FinishStackItem(item);
                 return;
             case "seppuku-draw":
@@ -1168,7 +1176,7 @@ public sealed partial class L12GameEngine
                 var declaredTarget = PublicTriggerDeclared(item, "costTarget");
                 var target = DeclaredEnemyTarget(item.Controller, declaredTarget);
                 if (target is not null)
-                    AddTimedModifier(target, 0, -2, ExpiryAtNextOwnEnd(item.Controller), "切腹仪式");
+                    AddTimedModifierUntilNextOwnEnd(target, 0, -2, item.Controller, "切腹仪式");
                 else
                     RecordTargetSettlementFailure(item, declaredTarget,
                         "所选对方军团已离场；若发动时原本无对象则仅跳过本段");
@@ -1202,7 +1210,7 @@ public sealed partial class L12GameEngine
             case "复仇血鹰":
             case "blood-eagle-debuff":
                 foreach (var target in PublicLegions(State.Players[1 - item.Controller]))
-                    AddTimedModifier(target, -1000, 0, ExpiryAtNextOwnEnd(item.Controller), "复仇血鹰");
+                    AddTimedModifierUntilNextOwnEnd(target, -1000, 0, item.Controller, "复仇血鹰");
                 FinishStackItem(item);
                 return;
             case "blood-eagle-recover":

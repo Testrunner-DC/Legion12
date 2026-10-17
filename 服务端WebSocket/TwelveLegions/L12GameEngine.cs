@@ -110,6 +110,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             StateFormatVersion = stateFormatVersion,
             PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MovementOriginProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
+            OwnerTurnEndModifierProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -189,6 +190,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         var locations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         void Add(L12CardInstance card, string zone)
         {
+            foreach (var modifier in card.TimedModifiers)
+                if (modifier.OwnerTurnEndExpiry is { } expiry
+                    && (!state.OwnerTurnEndModifierProtocolEnabled || expiry.Controller is < 0 or > 1
+                        || expiry.GrantedTurnSerial < 0 || expiry.GrantedTurnSerial > state.TurnSerial))
+                    throw new InvalidDataException("对局检查点的所属回合期限无效");
             if (!locations.TryAdd(card.InstanceId, zone))
                 throw new InvalidDataException(
                     $"对局检查点存在重复卡牌实例 {card.InstanceId}（{locations[card.InstanceId]} / {zone}）");
@@ -982,7 +988,8 @@ public sealed partial class L12GameEngine : IL12MatchKernel
     {
         if (card.Hidden) return [];
         var effects = new List<L12StatusEffectView>();
-        var activeTimed = card.TimedModifiers.Where(modifier => modifier.ExpiresAfterTurn >= State.TurnSerial).ToArray();
+        var activeTimed = card.TimedModifiers.Where(modifier => modifier.OwnerTurnEndExpiry is not null
+            || modifier.ExpiresAfterTurn >= State.TurnSerial).ToArray();
         var positive = activeTimed.Where(modifier => modifier.TroopsDelta > 0).Sum(modifier => modifier.TroopsDelta);
         var negative = activeTimed.Where(modifier => modifier.TroopsDelta < 0).Sum(modifier => modifier.TroopsDelta);
         if (positive > 0)
@@ -1676,7 +1683,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             .Concat(player.MasterLegionState is null ? [] : [player.MasterLegionState]);
         foreach (var card in cards)
         {
-            L12DerivedStats.ResetForCompletedTurn(card, completedTurn);
+            L12DerivedStats.ResetForCompletedTurn(card, completedTurn, completedPlayer);
             card.HasStrongAttack = false;
             card.HasSureHit = false;
             card.HasShock = false;

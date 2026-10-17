@@ -237,9 +237,13 @@ public static class L12DerivedStats
     /// <summary>
     /// 回合边界移除到期状态并清除累计伤害，从仍有效的设定值、限时层和持续层重建无伤派生兵力。
     /// </summary>
-    public static void ResetForCompletedTurn(L12CardInstance card, int completedTurn)
+    public static void ResetForCompletedTurn(L12CardInstance card, int completedTurn, int completedPlayer = -1)
     {
-        card.TimedModifiers.RemoveAll(modifier => modifier.ExpiresAfterTurn <= completedTurn);
+        if (completedPlayer is < 0 or > 1 && card.TimedModifiers.Any(modifier => modifier.OwnerTurnEndExpiry is not null))
+            throw new ArgumentException("所属回合期限清理必须指定实际结束回合的玩家", nameof(completedPlayer));
+        card.TimedModifiers.RemoveAll(modifier => modifier.OwnerTurnEndExpiry is { } expiry
+            ? completedPlayer == expiry.Controller && completedTurn > expiry.GrantedTurnSerial
+            : modifier.ExpiresAfterTurn <= completedTurn);
         if (card.SetTroopsUntilTurn <= completedTurn)
         {
             card.SetTroopsValue = null;
@@ -417,6 +421,7 @@ public static class L12S2ZoneOps
                 TroopsDelta = modifier.TroopsDelta,
                 CostDelta = modifier.CostDelta,
                 ExpiresAfterTurn = modifier.ExpiresAfterTurn,
+                OwnerTurnEndExpiry = modifier.OwnerTurnEndExpiry,
                 Source = modifier.Source,
                 ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
             });

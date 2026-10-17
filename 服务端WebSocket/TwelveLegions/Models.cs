@@ -287,6 +287,7 @@ public sealed class L12CardInstance
             ConsumedTroopsBonus = modifier.ConsumedTroopsBonus,
             CostDelta = modifier.CostDelta,
             ExpiresAfterTurn = modifier.ExpiresAfterTurn,
+            OwnerTurnEndExpiry = modifier.OwnerTurnEndExpiry,
             Source = modifier.Source,
         }).ToList();
         snapshot.AttachedCards = AttachedCards.Select(card => card.Clone()).ToList();
@@ -320,7 +321,16 @@ public sealed class L12TimedModifier
     public int ConsumedTroopsBonus { get; set; }
     public int CostDelta { get; init; }
     public required int ExpiresAfterTurn { get; init; }
+    /// <summary>新局显式所属回合期限；旧检查点缺省为null，继续原数字期限。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12OwnerTurnEndExpiry? OwnerTurnEndExpiry { get; init; }
     public required string Source { get; init; }
+}
+
+public sealed record L12OwnerTurnEndExpiry
+{
+    public required int Controller { get; init; }
+    public required int GrantedTurnSerial { get; init; }
 }
 
 public sealed class L12MoraleCard
@@ -928,6 +938,9 @@ public sealed class L12GameState
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool MovementOriginProtocolEnabled { get; init; }
+    /// <summary>仅新V2局启用所属玩家回合结束期限；旧局重放保留原规则。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool OwnerTurnEndModifierProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

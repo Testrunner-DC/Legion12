@@ -41,12 +41,19 @@ public sealed partial class L12GameEngine
                      .OrderBy(entry => entry.Source, StringComparer.Ordinal)
                      .ThenBy(entry => entry.ExpiresAfterTurn)
                      .ThenBy(entry => entry.TroopsDelta)
-                     .ThenBy(entry => entry.ConsumedTroopsBonus))
+                     .ThenBy(entry => entry.ConsumedTroopsBonus)
+                     .ThenBy(entry => entry.OwnerTurnEndExpiry?.Controller)
+                     .ThenBy(entry => entry.OwnerTurnEndExpiry?.GrantedTurnSerial))
         {
             Append(raw, "timedSource", modifier.Source);
             Append(raw, "timedUntil", modifier.ExpiresAfterTurn.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(raw, "timedTroops", modifier.TroopsDelta.ToString(System.Globalization.CultureInfo.InvariantCulture));
             Append(raw, "timedConsumed", modifier.ConsumedTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (modifier.OwnerTurnEndExpiry is { } expiry)
+            {
+                Append(raw, "timedOwner", expiry.Controller.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                Append(raw, "timedGranted", expiry.GrantedTurnSerial.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            }
         }
         foreach (var layer in protectedCard.ContinuousTroopsBonusLayers.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
