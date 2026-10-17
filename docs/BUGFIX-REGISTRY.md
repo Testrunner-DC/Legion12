@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-MANUAL-DECISIONS｜两产品建议关闭，混合单不误关
+
+- 用户明确保留手动操作双方、不做AI，保留天廷士气归零拿2的逐次确认、不加默认同意；90856878及cc1e03f0按显式产品决定rejected，不造新fixCommit或原私局/UI复现。cfebec86的AI部分同样被拒绝，但移动按钮/对方出牌缺陷继续开放；fe7505de边观战边匹配已接受，另排限定实现，未关闭为完成。
+- Main全文独审624F87F3提案/7AD202DA报告、五组反向绑定及12原函数/原合同/2SelfTest；原r1排除说明误用了两个20260907日期，认证前修正为真实20261011-cfebec86/20261015-fe7505de，原五小文件保留。准备器新增排除ID须在绑定数组唯一存在且不在关闭集合的守卫，不改变正式执行器/状态边界；无新应用测试、产品代码或Release。
+- 04549490实际收据：两单各一次CAS31284/31285、终态独立读回/原文历史/撤会话；唯一911/66new/374resolved/471closed、阶段464=142fixed/306rejected/16duplicate、周期556。混合单及排期项保留非终态，两服/维护/P0—P4均不变；本地裁定与记录Git同步见closeout/synchronization-current-manual-rulings.json。
+
 ## CLOSEOUT-20261017-A355-FOLLOWING-ELEVEN｜当前正确性与三项产品裁定
 
 - 六个限定批实际11终态，全部rejected/current-correctness或产品拒绝，不冒新修复：1595bf28灾害/猎杀/中列支援、3a5c917d响应/支援、fcfe9012宫本/孟婆/主宰进攻、76a29f43牌库稳定ID及删除确认、b8ac0038投降、b90ac28f公开牌库默认、0731700f不新增ID排名查询、fb4e4c40图坦手选、ca044aea血量、7ebe89f4/e599bc7d回放500。用户明确确认后三项建议的产品边界；不设置仅同主题的duplicate，不给当前正确单伪造fixCommit。
