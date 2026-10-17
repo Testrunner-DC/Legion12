@@ -10,6 +10,7 @@ type DeckSelectionCandidate = PrivateDeckSummary | SavedL12Deck
 
 const props = withDefaults(defineProps<{
   open: boolean
+  teleportTarget?: string | HTMLElement
   mode: L12DeckSelectionScope
   guestDecks?: SavedL12Deck[]
   catalog: DeckCard[]
@@ -182,7 +183,7 @@ function confirm() {
 </script>
 
 <template>
-  <Teleport :to="landscapeTeleportTarget()">
+  <Teleport :to="props.teleportTarget || landscapeTeleportTarget()">
     <div v-if="open" class="saved-deck-selector-mask" data-ui-contract="l12-saved-deck-selector"
       @click.self="cancel">
       <section class="saved-deck-selector" role="dialog" aria-modal="true" :aria-label="`${modeLabel}更换牌库`">

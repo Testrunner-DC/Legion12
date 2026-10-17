@@ -279,6 +279,11 @@ const enemy = computed(() => props.game.players[1 - controlledPlayerIndex.value]
 // The sandbox actor may change for prompts, but the observing player's board orientation never changes.
 const viewMe = computed(() => props.game.players[props.game.you])
 const viewEnemy = computed(() => props.game.players[1 - props.game.you])
+// Phones keep one hand lane. Interactive GM sandbox follows the controlled actor;
+// ordinary players and every read-only view keep the observing player's hand there.
+const mobilePrimaryHandPlayerIndex = computed(() => !props.readOnly && l12State.gmEnabled
+  ? controlledPlayerIndex.value
+  : viewMe.value.playerIndex)
 const showBothHands = computed(() => props.readOnly && (props.revealBothHands || props.refereeLiveView))
 const myBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewMe.value.playerIndex))
 const enemyBadge = computed(() => props.game.playerBadges?.find(item => item.playerIndex === viewEnemy.value.playerIndex))
@@ -1465,12 +1470,12 @@ function statusTexts(card: Card) {
         </section>
 
         <main class="board-center" :class="{ 'timed-board': Boolean(l12State.rankedClock) }" data-l12-game-stage>
-          <HandArea v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
+          <HandArea v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewEnemy.playerIndex }" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
-          <HandArea v-else class="opponent-hand" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
+          <HandArea v-else class="opponent-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewEnemy.playerIndex }" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="board-status-lane opponent-status-lane" data-ui-contract="shared-external-clock-track">
             <PlayerTurnClock class="board-player-clock opponent-player-clock" :player-index="viewEnemy.playerIndex" side="opponent"
               :active="game.activePlayer === viewEnemy.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
@@ -1605,8 +1610,8 @@ function statusTexts(card: Card) {
             <PlayerTurnClock class="board-player-clock my-player-clock" :player-index="viewMe.playerIndex" side="my"
               :active="game.activePlayer === viewMe.playerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock" />
           </div>
-          <HandArea v-if="spectatorLiveView && !showBothHands" class="spectator-hand" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
-          <HandArea v-else :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
+          <HandArea v-if="spectatorLiveView && !showBothHands" class="spectator-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewMe.playerIndex }" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
+          <HandArea v-else :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewMe.playerIndex }" :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
             :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />

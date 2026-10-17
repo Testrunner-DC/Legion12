@@ -3,7 +3,7 @@ import BattleDockPortal from './game/BattleDockPortal.vue'
 import BattleOverlayPortal from './game/BattleOverlayPortal.vue'
 import { provideMobileBattleDock } from './game/mobileBattleDock'
 provideMobileBattleDock()
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
@@ -17,6 +17,7 @@ import { connect, send } from './net'
 import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
 
 const router = useRouter()
+const MatchmakingPanel = defineAsyncComponent(() => import('./site/BattleHubPage.vue'))
 const game = computed(() => l12State.game)
 const agreedDraw = computed(() => game.value?.phase === 'GameOver' && game.value.winner == null
   && (game.value.matchGovernance?.drawRequest?.status === 'accepted'
@@ -31,6 +32,37 @@ const playerFacingWinnerReason = computed(() => {
 })
 const settingsOpen = ref(false)
 const settingsOpener = ref<HTMLElement | null>(null)
+const spectatorMatchmakingOpen = ref(false)
+const gamePageRoot = ref<HTMLElement | null>(null)
+const spectatorMatchmakingDialog = ref<HTMLElement | null>(null)
+const canMatchWhileSpectating = computed(() => l12State.spectating
+  && l12State.observerView !== 'referee' && Boolean(l12State.room) && !l12State.room?.tournamentId)
+async function openSpectatorMatchmaking() {
+  if (!canMatchWhileSpectating.value) return
+  settingsOpen.value = false
+  spectatorMatchmakingOpen.value = true
+  await nextTick()
+  spectatorMatchmakingDialog.value?.querySelector<HTMLElement>('button')?.focus()
+}
+function closeSpectatorMatchmaking() {
+  void closeSettingsAndRestore(() => { spectatorMatchmakingOpen.value = false }, settingsOpener.value)
+}
+function onSpectatorMatchmakingKeydown(event: KeyboardEvent) {
+  if ((event.target as HTMLElement).closest('[role="dialog"]') !== spectatorMatchmakingDialog.value) return
+  if (event.key === 'Escape') { event.stopPropagation(); closeSpectatorMatchmaking(); return }
+  if (event.key !== 'Tab' || !spectatorMatchmakingDialog.value) return
+  const actions = Array.from(spectatorMatchmakingDialog.value.querySelectorAll<HTMLElement>('button:not(:disabled),select:not(:disabled),input:not(:disabled),a[href]'))
+    .filter(element => element.tabIndex >= 0 && element.getClientRects().length > 0)
+  const first = actions[0], last = actions[actions.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+}
+watch(() => canMatchWhileSpectating.value && !l12State.matchFound, eligible => {
+  if (!eligible && spectatorMatchmakingOpen.value) {
+    spectatorMatchmakingOpen.value = false
+    void nextTick(() => gamePageRoot.value?.focus())
+  }
+})
 const loadRetrying = ref(false)
 const gmPanelInitiallyOpen = ref(false)
 const gmPanelOpen = ref(false)
@@ -127,9 +159,9 @@ async function retryGameLoad() {
 </script>
 
 <template>
-  <div v-if="game" class="game-page">
+  <div v-if="game" ref="gamePageRoot" tabindex="-1" class="game-page">
     <RankedBroadcastTicker class="battle-ranked-ticker" />
-    <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" class="battle-route-controls">
+    <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button v-if="l12State.spectating" type="button" @click="openBattleSettings">设置</button>
       <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
@@ -142,7 +174,15 @@ async function retryGameLoad() {
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
     <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="closeBattleSettings">
-      <L12SettingsModal @close="closeBattleSettings" @feedback="openBattleFeedback"/>
+      <L12SettingsModal @close="closeBattleSettings" @feedback="openBattleFeedback">
+        <template #actions><div v-if="canMatchWhileSpectating" class="spectator-matchmaking-entry"><b>匹配</b><button type="button" @click="openSpectatorMatchmaking">{{ l12State.matchmaking?.queued ? '管理匹配' : '排队匹配' }}</button></div></template>
+      </L12SettingsModal>
+    </div></BattleOverlayPortal>
+    <BattleOverlayPortal><div v-if="spectatorMatchmakingOpen && canMatchWhileSpectating" class="battle-settings-mask" :style="{ zIndex: 2147483647 }" @click.self="closeSpectatorMatchmaking">
+      <section ref="spectatorMatchmakingDialog" class="spectator-matchmaking-dialog" role="dialog" aria-modal="true" aria-labelledby="spectator-matchmaking-title" @keydown="onSpectatorMatchmakingKeydown">
+        <header><h2 id="spectator-matchmaking-title">边观战边匹配</h2><button type="button" aria-label="返回观战" @click="closeSpectatorMatchmaking">返回观战</button></header>
+        <div class="spectator-matchmaking-scroll"><MatchmakingPanel matchmaking-only :overlay-target="spectatorMatchmakingDialog || undefined" /></div>
+      </section>
     </div></BattleOverlayPortal>
 
     <Transition name="fade">
@@ -171,7 +211,8 @@ async function retryGameLoad() {
     </Transition>
 </BattleOverlayPortal>
   </div>
-  <main v-else class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
+  <main v-else-if="l12State.matchFound" ref="gamePageRoot" tabindex="-1" class="missing-game" data-state="matching" role="status" aria-live="polite"><h1>匹配成功</h1><p>正在同步对局，请稍候……</p></main>
+  <main v-else ref="gamePageRoot" tabindex="-1" class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
     <small>{{ missingGameState.kind === 'waiting' ? 'TOURNAMENT ROOM' : missingGameState.kind === 'loading' ? 'LOADING' : 'LOAD FAILED' }}</small>
     <h1>{{ missingGameState.title }}</h1>
     <p>{{ missingGameState.detail }}</p>
@@ -189,6 +230,10 @@ async function retryGameLoad() {
 .game-over-minimize,.game-over-restore{display:none}
 .missing-game{min-height:60vh;display:grid;place-content:center;justify-items:center;gap:12px;padding:32px;text-align:center}.missing-game small{color:var(--muted);font-weight:900;letter-spacing:.14em}.missing-game h1,.missing-game p{margin:0}.missing-game p{max-width:560px;color:var(--muted)}.missing-game>div{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}.missing-game[data-state="waiting"]{border-top:3px solid var(--accent)}.missing-game[data-state="failed"]{border-top:3px solid var(--danger)}
 /* Mobile route geometry lives with the dedicated dock; desktop stays above. */
+.battle-settings-mask>.spectator-matchmaking-dialog{width:min(760px,calc(var(--l12-viewport-width,100vw) - 32px));max-height:calc(var(--l12-viewport-height,100vh) - 32px)}
+.spectator-matchmaking-dialog :deep(.saved-deck-selector){width:min(760px,calc(var(--l12-viewport-width,100vw) - 32px));max-height:calc(var(--l12-viewport-height,100vh) - 32px)}
+.spectator-matchmaking-dialog :deep(.ranked-rules-modal){width:min(760px,calc(var(--l12-viewport-width,100vw) - 32px));height:min(820px,calc(var(--l12-viewport-height,100vh) - 32px));max-height:calc(var(--l12-viewport-height,100vh) - 32px)}
+.spectator-matchmaking-entry{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 0;border-bottom:1px solid #ebE6d81a}.spectator-matchmaking-entry button,.spectator-matchmaking-dialog>header button{min-height:44px;padding:10px 16px;border:1px solid #d2b861;background:#221c0d;color:#f6df91;font-weight:900}.spectator-matchmaking-dialog{display:grid;grid-template-rows:auto minmax(0,1fr);width:min(760px,94vw);max-height:90vh;min-height:0;border:1px solid #52606a;background:#101821;color:#f2f0e9}.spectator-matchmaking-dialog>header{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #52606a}.spectator-matchmaking-dialog h2{margin:0;font-size:20px}.spectator-matchmaking-scroll{min-height:0;overflow:auto;overscroll-behavior:contain}
 .game-page:has(.mobile-landscape-board){inset:0!important;width:100%!important;height:100%!important}
 .game-page:has(.mobile-landscape-board) .battle-ranked-ticker{display:none}
 </style>

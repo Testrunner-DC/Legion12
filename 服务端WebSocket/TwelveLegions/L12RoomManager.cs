@@ -133,6 +133,9 @@ public sealed partial class L12RoomManager
     private sealed record MatchmakingEntry(Guid SessionId, string AccountId, string Mode,
         L12PresetDeckDefinition Deck, DateTimeOffset JoinedAt, double HiddenRating);
 
+    private sealed record MatchmakingObservation(Room Room, string RoomCode, string MatchId,
+        L12PresetDeckDefinition? CustomDeck);
+
     private readonly L12Catalog _catalog;
     private readonly MatchRecorder _recorder;
     private readonly L12PlatformStore? _platform;
@@ -242,6 +245,24 @@ public sealed partial class L12RoomManager
                     await recoveredRoom.Gate.WaitAsync();
                     try
                     {
+                        var sourceStillMember = _sessions.TryGetValue(previous.Key, out var currentSource)
+                            && ReferenceEquals(source, currentSource) && source.RoomCode == recoveredRoom.Code
+                            && source.IsSpectator == replacement.IsSpectator
+                            && source.PlayerIndex == replacement.PlayerIndex
+                            && _rooms.TryGetValue(recoveredRoom.Code, out var currentRecoveredRoom)
+                            && ReferenceEquals(recoveredRoom, currentRecoveredRoom);
+                        lock (recoveredRoom.Spectators)
+                            sourceStillMember &= replacement.IsSpectator
+                                ? recoveredRoom.Spectators.Contains(previous.Key)
+                                : recoveredRoom.Sessions.Contains(previous.Key);
+                        if (!sourceStillMember)
+                        {
+                            ClearRoomMembership(replacement);
+                            _sessions[sessionId] = replacement;
+                            decision = "replaced-after-room-exit";
+                        }
+                        else
+                        {
                         var reopeningClosedRoom = recoveredRoom.Closed;
                         if (reopeningClosedRoom
                             && await TryReleasePersistedCompletedRankedRoomAsync(recoveredRoom))
@@ -268,10 +289,14 @@ public sealed partial class L12RoomManager
                         // 超过重连截止时间的连接不能抢在周期看门狗前清除掉线证据。
                         await ApplyRankedClockConclusionLockedAsync(recoveredRoom, now);
                         var playerSlot = recoveredRoom.Sessions.IndexOf(previous.Key);
-                        var spectatorSlot = recoveredRoom.Spectators.IndexOf(previous.Key);
+                        int spectatorSlot;
+                        lock (recoveredRoom.Spectators)
+                        {
+                            spectatorSlot = recoveredRoom.Spectators.IndexOf(previous.Key);
+                            if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = sessionId;
+                        }
                         var replacedGm = recoveredRoom.GmControllerSessionId == previous.Key;
                         if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = sessionId;
-                        if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = sessionId;
                         if (replacedGm) recoveredRoom.GmControllerSessionId = sessionId;
                         roomCode = recoveredRoom.Code;
                         matchId = recoveredRoom.Game?.State.MatchId;
@@ -292,7 +317,8 @@ public sealed partial class L12RoomManager
                             catch (Exception persistenceError)
                             {
                                 if (playerSlot >= 0) recoveredRoom.Sessions[playerSlot] = previous.Key;
-                                if (spectatorSlot >= 0) recoveredRoom.Spectators[spectatorSlot] = previous.Key;
+                                if (spectatorSlot >= 0)
+                                    lock (recoveredRoom.Spectators) recoveredRoom.Spectators[spectatorSlot] = previous.Key;
                                 if (replacedGm) recoveredRoom.GmControllerSessionId = previous.Key;
                                 _sessions.TryRemove(sessionId, out _);
                                 var rollbackRestored = false;
@@ -311,6 +337,7 @@ public sealed partial class L12RoomManager
                         // 冻结房间只有在权威重建和本次连接边界均已落盘后才能重新接收命令。
                         recoveredRoom.Closed = false;
                         RefreshOpponentChatScopeLocked(recoveredRoom);
+                        }
                     }
                     finally { recoveredRoom.Gate.Release(); }
                 }
@@ -408,8 +435,24 @@ public sealed partial class L12RoomManager
         var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
         if (normalizedMode is not ("ranked" or "casual"))
             return Error(sessionId, "匹配模式无效", "matchmakingRejected");
-        if (session.RoomCode is not null)
-            return Error(sessionId, "请先离开当前房间", "matchmakingRejected");
+        if (!TryGetMatchmakingObservation(session, out _))
+        {
+            if (IsDepartingMatchmakingObservation(session))
+            {
+                lock (_matchmakingGate)
+                {
+                    var retained = _matchmaking.FirstOrDefault(item => item.SessionId == sessionId
+                        && IsQueueEntryValid(item));
+                    if (retained is not null) return [MatchmakingQueueState(retained, true)];
+                }
+            }
+            var message = session.IsSpectator && session.RoomCode is not null
+                          && _rooms.TryGetValue(session.RoomCode, out var observedRoom)
+                          && observedRoom.TournamentId is not null
+                ? "赛事观战期间不能加入匹配，请先退出赛事观战"
+                : "请先离开当前房间";
+            return Error(sessionId, message, "matchmakingRejected");
+        }
         if (_platform is null) return Error(sessionId, "匹配服务不可用", "matchmakingRejected");
         if (!session.Connected) return Error(sessionId, "连接已失效，请重新连接", "matchmakingRejected");
         if (normalizedMode == "ranked")
@@ -447,7 +490,7 @@ public sealed partial class L12RoomManager
                 existing?.JoinedAt ?? DateTimeOffset.UtcNow, _platform.HiddenRating(session.AccountId));
             _matchmaking.RemoveAll(item => item.AccountId == entry.AccountId || !IsQueueEntryValid(item));
             opponent = _matchmaking.Where(item => item.Mode == normalizedMode && item.AccountId != entry.AccountId
-                    && IsQueueEntryValid(item) && IsRatingCompatible(entry, item))
+                    && IsQueueEntryReadyToPair(item) && IsRatingCompatible(entry, item))
                 .OrderBy(item => normalizedMode == "ranked"
                     ? _platform.RankedPairPriority(entry.AccountId, item.AccountId, _utcNow()) : 0)
                 .ThenBy(item => item.JoinedAt).FirstOrDefault();
@@ -493,39 +536,95 @@ public sealed partial class L12RoomManager
         room.Sessions.Add(opponent.SessionId);
         room.Sessions.Add(sessionId);
         room.Ready[0] = room.Ready[1] = true;
-        other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
-        session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
-        var responsePreferences = await ResolveResponsePreferencesAsync([other, session]);
-        room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
-        room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
-        room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
-            [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
-            operationsPolicy: policy,
-            stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
-            effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
-            alternateArtUrls: ResolveAlternateArtUrls([other, session]), utcNow: _utcNow,
-            responseModes: responsePreferences.Select(item => item.Mode).ToArray());
-        InitializeRankedClock(room);
         try
         {
+            // Prepare slow inputs without touching either currently observed room.
+            var responsePreferences = await ResolveResponsePreferencesAsync([other, session]);
+            room.ResponsePreferenceSyncPending[0] = responsePreferences[0].SyncPending;
+            room.ResponsePreferenceSyncPending[1] = responsePreferences[1].SyncPending;
+            room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, Random.Shared.Next(),
+                [other.Name, session.Name], [opponent.Deck, entry.Deck], disasterMode: room.Options.DisasterMode,
+                operationsPolicy: policy,
+                stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+                effectPresentationSnapshot: CaptureEffectPresentationSnapshot(),
+                alternateArtUrls: ResolveAlternateArtUrls([other, session]), utcNow: _utcNow,
+                responseModes: responsePreferences.Select(item => item.Mode).ToArray());
+        }
+        catch { return RequeueMatchmakingPair(opponent, entry, "建立匹配房间失败"); }
+        _ = TryGetMatchmakingObservation(other, out var tentativeOtherObservation);
+        _ = TryGetMatchmakingObservation(session, out var tentativeSessionObservation);
+        var observationRooms = new[] { tentativeOtherObservation?.Room, tentativeSessionObservation?.Room }
+            .Where(candidate => candidate is not null).Cast<Room>().Distinct()
+            .OrderBy(candidate => candidate.Code, StringComparer.OrdinalIgnoreCase).ToArray();
+        var acquiredObservationRooms = new List<Room>();
+        foreach (var observedRoom in observationRooms)
+        {
+            if (!observedRoom.Gate.Wait(0))
+            {
+                for (var index = acquiredObservationRooms.Count - 1; index >= 0; index--)
+                    acquiredObservationRooms[index].Gate.Release();
+                return RequeueMatchmakingPair(opponent, entry);
+            }
+            acquiredObservationRooms.Add(observedRoom);
+        }
+
+        MatchmakingObservation? otherObservation = null;
+        MatchmakingObservation? sessionObservation = null;
+        room.Gate.Wait(); // Unpublished room; fence its own lifecycle during durable start.
+        try
+        {
+            if (!TryGetMatchmakingObservation(other, out otherObservation)
+                || !TryGetMatchmakingObservation(session, out sessionObservation)
+                || !SameMatchmakingObservation(otherObservation, tentativeOtherObservation)
+                || !SameMatchmakingObservation(sessionObservation, tentativeSessionObservation))
+            {
+                return RequeueMatchmakingPair(opponent, entry, "匹配期间房间状态已变化");
+            }
+
+            RetireMatchmakingObservation(other, otherObservation);
+            RetireMatchmakingObservation(session, sessionObservation);
+            other.RoomCode = room.Code; other.PlayerIndex = 0; other.CustomDeck = opponent.Deck;
+            other.IsSpectator = false;
+            session.RoomCode = room.Code; session.PlayerIndex = 1; session.CustomDeck = entry.Deck;
+            session.IsSpectator = false;
+            InitializeRankedClock(room);
             if (!_rooms.TryAdd(room.Code, room)) throw new InvalidOperationException("匹配房间码冲突");
+            for (var index = acquiredObservationRooms.Count - 1; index >= 0; index--)
+                acquiredObservationRooms[index].Gate.Release();
+            acquiredObservationRooms.Clear();
             await StartRecordedGameAsync(room, [other, session], [opponent.Deck, entry.Deck]);
         }
         catch
         {
-            _rooms.TryRemove(room.Code, out _);
-            ClearRoomMembership(other); ClearRoomMembership(session);
-            lock (_matchmakingGate)
-            {
-                if (IsQueueEntryValid(opponent)) _matchmaking.Add(opponent);
-                if (IsQueueEntryValid(entry)) _matchmaking.Add(entry);
-            }
-            return [new OutgoingMessage(sessionId, new { type = "matchmakingRejected", message = "建立匹配房间失败，已恢复队列" }),
-                new OutgoingMessage(opponent.SessionId, new { type = "matchmakingRejected", message = "建立匹配房间失败，已恢复队列" })];
+            _rooms.TryRemove(new KeyValuePair<string, Room>(room.Code, room));
+            RestoreMatchmakingObservation(other, otherObservation);
+            RestoreMatchmakingObservation(session, sessionObservation);
+            var retry = RequeueMatchmakingPair(opponent, entry, "建立匹配房间失败");
+            return retry.Concat(new[] { (other, otherObservation), (session, sessionObservation) }
+                .Where(item => item.Item2 is not null && item.Item1.RoomCode is null)
+                .Select(item => new OutgoingMessage(item.Item1.Id, new { type = "roomLeft",
+                    roomCode = item.Item2!.RoomCode, message = "原观战房间已关闭，匹配队列已保留" }))).ToArray();
         }
-        var found = room.Sessions.Select(id => new OutgoingMessage(id, new { type = "matchmakingFound",
-            mode = normalizedMode, roomCode = room.Code, matchId = room.Game.State.MatchId,
-            message = "匹配成功，正在建立对局" }));
+        finally
+        {
+            for (var index = acquiredObservationRooms.Count - 1; index >= 0; index--)
+                acquiredObservationRooms[index].Gate.Release();
+            room.Gate.Release();
+        }
+        var found = room.Sessions.Select(id =>
+        {
+            var retired = id == other.Id ? otherObservation : sessionObservation;
+            return new OutgoingMessage(id, new
+            {
+                type = "matchmakingFound",
+                mode = normalizedMode,
+                roomCode = room.Code,
+                matchId = room.Game!.State.MatchId,
+                retiredObservationRoomCode = retired?.RoomCode,
+                retiredObservationMatchId = retired?.MatchId,
+                message = "匹配成功，正在建立对局",
+            });
+        });
         return found.Concat(BroadcastRoom(room))
             .Concat(BroadcastGame(room, forceCritical: true)).ToArray();
     }
@@ -534,18 +633,24 @@ public sealed partial class L12RoomManager
     {
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
-        if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
-        lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId
-            || (!string.IsNullOrWhiteSpace(session.AccountId) && entry.AccountId == session.AccountId));
-        return [new OutgoingMessage(sessionId, new { type = "matchmakingState", queued = false,
-            message = "已取消匹配" })];
+        _sessionRecoveryGate.Wait();
+        try
+        {
+            if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
+            lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId
+                || (!string.IsNullOrWhiteSpace(session.AccountId) && entry.AccountId == session.AccountId));
+            return [new OutgoingMessage(sessionId, new { type = "matchmakingState", queued = false,
+                message = "已取消匹配" })];
+        }
+        finally { _sessionRecoveryGate.Release(); }
     }
 
     public async Task<IReadOnlyList<OutgoingMessage>> PollMatchmakingAsync(Guid sessionId)
     {
         if (!TryDeploymentMixedGuard(out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
-        if (_sessions.TryGetValue(sessionId, out var session) && session.RoomCode is not null)
+        if (_sessions.TryGetValue(sessionId, out var session) && session.RoomCode is not null
+            && !IsDepartingMatchmakingObservation(session) && !TryGetMatchmakingObservation(session, out _))
             return await RecoveryStateAsync(sessionId);
         MatchmakingEntry? existing;
         lock (_matchmakingGate)
@@ -570,7 +675,104 @@ public sealed partial class L12RoomManager
 
     private bool IsQueueEntryValid(MatchmakingEntry entry)
         => _sessions.TryGetValue(entry.SessionId, out var session) && session.Connected
-            && session.RoomCode is null && session.AccountId == entry.AccountId;
+            && session.AccountId == entry.AccountId
+            && (TryGetMatchmakingObservation(session, out _) || session.RoomCode is null
+                || IsDepartingMatchmakingObservation(session));
+
+    private bool IsQueueEntryReadyToPair(MatchmakingEntry entry)
+        => _sessions.TryGetValue(entry.SessionId, out var session) && session.AccountId == entry.AccountId
+            && TryGetMatchmakingObservation(session, out _);
+
+    private bool IsDepartingMatchmakingObservation(Session session)
+        => session.IsSpectator && (session.RoomCode is not { } code
+            || !_rooms.TryGetValue(code, out var room) || (room.TournamentId is null && room.Closed));
+
+    private static bool SameMatchmakingObservation(MatchmakingObservation? current,
+        MatchmakingObservation? captured)
+        => current is null || (captured is not null && ReferenceEquals(current.Room, captured.Room)
+            && current.RoomCode == captured.RoomCode && current.MatchId == captured.MatchId);
+
+    private bool TryGetMatchmakingObservation(Session session,
+        out MatchmakingObservation? observation)
+    {
+        observation = null;
+        if (!session.Connected) return false;
+        if (session.RoomCode is null) return !session.IsSpectator && session.PlayerIndex is null;
+        if (!session.IsSpectator || !_rooms.TryGetValue(session.RoomCode, out var room)
+            || room.TournamentId is not null || room.Game is null)
+            return false;
+        lock (room.Spectators)
+        {
+            if (session.RoomCode is null) return !session.IsSpectator && session.PlayerIndex is null;
+            if (room.Closed || !_rooms.TryGetValue(room.Code, out var currentRoom)
+                || !ReferenceEquals(room, currentRoom) || !session.IsSpectator
+                || session.RoomCode != room.Code || !room.Spectators.Contains(session.Id))
+                return false;
+            observation = new MatchmakingObservation(room, room.Code, room.Game.State.MatchId,
+                session.CustomDeck);
+            return true;
+        }
+    }
+
+    private static void RetireMatchmakingObservation(Session session,
+        MatchmakingObservation? observation)
+    {
+        if (observation is null) return;
+        lock (observation.Room.Spectators) observation.Room.Spectators.Remove(session.Id);
+    }
+
+    private void RestoreMatchmakingObservation(Session session,
+        MatchmakingObservation? observation)
+    {
+        if (observation is not null)
+        {
+            lock (observation.Room.Spectators)
+            {
+                if (!observation.Room.Closed
+                    && _rooms.TryGetValue(observation.RoomCode, out var currentRoom)
+                    && ReferenceEquals(observation.Room, currentRoom)
+                    && currentRoom.Game?.State.MatchId == observation.MatchId)
+                {
+                    if (!observation.Room.Spectators.Contains(session.Id))
+                        observation.Room.Spectators.Add(session.Id);
+                    session.RoomCode = observation.RoomCode;
+                    session.PlayerIndex = null;
+                    session.CustomDeck = observation.CustomDeck;
+                    session.IsSpectator = true;
+                    return;
+                }
+            }
+        }
+        ClearRoomMembership(session);
+    }
+
+    private static OutgoingMessage MatchmakingQueueState(MatchmakingEntry entry, bool queued,
+        bool observationResyncRequired = false)
+        => new(entry.SessionId, new { type = "matchmakingState", queued, mode = entry.Mode,
+            observationResyncRequired,
+            joinedAt = entry.JoinedAt, message = queued ? "仍在匹配队列中" : "当前匹配状态已变化，请重新匹配" });
+
+    private IReadOnlyList<OutgoingMessage> RequeueMatchmakingPair(MatchmakingEntry opponent,
+        MatchmakingEntry entry, string? rejection = null)
+    {
+        var entries = new[] { opponent, entry };
+        var messages = rejection is null ? new List<OutgoingMessage>()
+            : entries.Select(item => new OutgoingMessage(item.SessionId,
+                new { type = "matchmakingRejected", message = rejection })).ToList();
+        lock (_matchmakingGate)
+        {
+            _matchmaking.RemoveAll(item => item.AccountId == opponent.AccountId
+                || item.AccountId == entry.AccountId);
+            foreach (var candidate in entries)
+            {
+                var queued = IsQueueEntryValid(candidate);
+                if (queued) _matchmaking.Add(candidate);
+                messages.Add(MatchmakingQueueState(candidate, queued, rejection is not null
+                    && _sessions.TryGetValue(candidate.SessionId, out var current) && current.IsSpectator));
+            }
+        }
+        return messages;
+    }
 
     private bool HasOtherRankedBrowserOccupant(Session joining)
     {
@@ -1102,36 +1304,72 @@ public sealed partial class L12RoomManager
         using var deployment = deploymentGuard;
         if (!_sessions.TryGetValue(sessionId, out var session)) return Error(sessionId, "会话不存在");
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
-        var currentPolicy = CaptureOperationsPolicy();
-        if (currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
-            return MaintenanceBlocked(sessionId, currentPolicy);
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
         if (room.Game is null) return Error(sessionId, "对局尚未开始");
-        if (room.Options.Spectating == "disabled") return Error(sessionId, "该房间禁止观战");
-        if (room.Options.Spectating == "friends")
+        var spectatingRule = room.Options.Spectating;
+        if (spectatingRule == "disabled") return Error(sessionId, "该房间禁止观战");
+        Guid[]? friendRoster = null;
+        if (spectatingRule == "friends")
         {
             if (session.AccountId is null) return Error(sessionId, "请先登录账号");
-            var playerAccounts = room.Sessions.Select(id => _sessions[id].AccountId).Where(id => id is not null).ToArray();
+            string?[] playerAccounts;
+            room.Gate.Wait();
+            try
+            {
+                friendRoster = room.Sessions.ToArray();
+                playerAccounts = friendRoster.Select(id => _sessions.TryGetValue(id, out var player)
+                    ? player.AccountId : null).ToArray();
+                if (playerAccounts.Any(accountId => accountId is null))
+                    return Error(sessionId, "房间成员已变化，请重新申请观战");
+            }
+            finally { room.Gate.Release(); }
+            // A platform read must not hold the global membership/admission gate.
             if (_platform is null || !playerAccounts.Any(accountId => _platform.AreFriends(session.AccountId, accountId!)))
                 return Error(sessionId, "该房间仅限参赛玩家的好友观战");
         }
-        lock (room.Spectators)
+        _sessionRecoveryGate.Wait();
+        try
         {
-            if (room.Closed || !_rooms.TryGetValue(code, out var currentRoom)
-                || !ReferenceEquals(room, currentRoom))
-                return Error(sessionId, "房间已经关闭");
-            room.Spectators.Add(sessionId);
-            session.RoomCode = room.Code;
-            session.PlayerIndex = null;
-            session.IsSpectator = true;
+            if (!room.Gate.Wait(0)) return Error(sessionId, "房间正在更新，请重新申请观战");
+            try
+            {
+            if (!_sessions.TryGetValue(sessionId, out var currentSession) || !ReferenceEquals(session, currentSession)
+                || !session.Connected) return Error(sessionId, "连接已失效，请重新连接");
+            if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
+            var currentPolicy = CaptureOperationsPolicy();
+            if (currentPolicy.IsNewGameEntryBlocked(DateTimeOffset.UtcNow))
+                return MaintenanceBlocked(sessionId, currentPolicy);
+            if (room.Options.Spectating != spectatingRule) return Error(sessionId, "观战规则已变化，请重新申请观战");
+            if (friendRoster is not null && !friendRoster.SequenceEqual(room.Sessions))
+                return Error(sessionId, "房间成员已变化，请重新申请观战");
+            if (room.TournamentId is not null && session.AccountId is not null)
+            {
+                lock (_matchmakingGate)
+                    if (_matchmaking.Any(entry => entry.AccountId == session.AccountId
+                                                  && IsQueueEntryValid(entry)))
+                        return Error(sessionId, "请先取消匹配再进入赛事观战", "tournamentRoomRejected");
+            }
+            lock (room.Spectators)
+            {
+                if (room.Closed || room.Game is null || !_rooms.TryGetValue(code, out var currentRoom)
+                    || !ReferenceEquals(room, currentRoom))
+                    return Error(sessionId, "房间已经关闭");
+                room.Spectators.Add(sessionId);
+                session.RoomCode = room.Code;
+                session.PlayerIndex = null;
+                session.IsSpectator = true;
+            }
+            return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
+            {
+                type = "gameState",
+                spectating = true,
+                state = L12KernelProjection.ForSpectator(room.Game),
+            }, IsGameState: true, ForceFullGameState: true)];
+            }
+            finally { room.Gate.Release(); }
         }
-        return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
-        {
-            type = "gameState",
-            spectating = true,
-            state = L12KernelProjection.ForSpectator(room.Game),
-        }, IsGameState: true, ForceFullGameState: true)];
+        finally { _sessionRecoveryGate.Release(); }
     }
 
     public IReadOnlyList<OutgoingMessage> JoinRoom(Guid sessionId, string? roomCode)
@@ -1263,42 +1501,52 @@ public sealed partial class L12RoomManager
     {
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
-        if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
-            return Error(sessionId, "请先登录账号");
-        if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
-        if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
-        L12TournamentRoomAccess access;
+        _sessionRecoveryGate.Wait();
         try
         {
-            access = _platform.TournamentRoomAccess(session.AccountId,
-                tournamentId?.Trim() ?? string.Empty, matchId?.Trim() ?? string.Empty, spectate: true);
+            if (!_sessions.TryGetValue(sessionId, out var session) || session.AccountId is null)
+                return Error(sessionId, "请先登录账号");
+            if (session.RoomCode is not null) return Error(sessionId, "请先离开当前房间");
+            lock (_matchmakingGate)
+                if (_matchmaking.Any(entry => entry.AccountId == session.AccountId
+                                              && IsQueueEntryValid(entry)))
+                    return Error(sessionId, "请先取消匹配再进入赛事观战", "tournamentRoomRejected");
+            if (_platform is null) return Error(sessionId, "赛事房间编排服务不可用");
+            L12TournamentRoomAccess access;
+            try
+            {
+                access = _platform.TournamentRoomAccess(session.AccountId,
+                    tournamentId?.Trim() ?? string.Empty, matchId?.Trim() ?? string.Empty, spectate: true);
+            }
+            catch (Exception error) when (error is L12TournamentScopeException
+                                          or L12TournamentVersionConflictException
+                                          or KeyNotFoundException or ArgumentException)
+            {
+                return Error(sessionId, error.Message, "tournamentRoomRejected");
+            }
+            if (!_rooms.TryGetValue(access.RoomCode, out var room) || room.Game is null)
+                return Error(sessionId, "本桌对局尚未开始", "tournamentRoomRejected");
+            if (room.TournamentId != access.TournamentId || room.TournamentMatchId != access.MatchId)
+                return Error(sessionId, "赛事房间绑定冲突", "tournamentRoomRejected");
+            lock (room.Spectators)
+            {
+                if (!room.Spectators.Contains(sessionId)) room.Spectators.Add(sessionId);
+                session.RoomCode = room.Code;
+                session.PlayerIndex = null;
+                session.IsSpectator = true;
+            }
+            return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
+            {
+                type = "gameState", spectating = true, gmEnabled = false,
+                observerView = access.CanRefereeView ? "referee" : "public",
+                tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
+                tournamentMatchId = room.TournamentMatchId,
+                state = access.CanRefereeView
+                    ? L12KernelProjection.ForReferee(room.Game)
+                    : L12KernelProjection.ForSpectator(room.Game),
+            }, IsGameState: true, ForceFullGameState: true)];
         }
-        catch (Exception error) when (error is L12TournamentScopeException or L12TournamentVersionConflictException
-                                      or KeyNotFoundException or ArgumentException)
-        {
-            return Error(sessionId, error.Message, "tournamentRoomRejected");
-        }
-        if (!_rooms.TryGetValue(access.RoomCode, out var room) || room.Game is null)
-            return Error(sessionId, "本桌对局尚未开始", "tournamentRoomRejected");
-        if (room.TournamentId != access.TournamentId || room.TournamentMatchId != access.MatchId)
-            return Error(sessionId, "赛事房间绑定冲突", "tournamentRoomRejected");
-        lock (room.Spectators)
-        {
-            if (!room.Spectators.Contains(sessionId)) room.Spectators.Add(sessionId);
-            session.RoomCode = room.Code;
-            session.PlayerIndex = null;
-            session.IsSpectator = true;
-        }
-        return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
-        {
-            type = "gameState", spectating = true, gmEnabled = false,
-            observerView = access.CanRefereeView ? "referee" : "public",
-            tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
-            tournamentMatchId = room.TournamentMatchId,
-            state = access.CanRefereeView
-                ? L12KernelProjection.ForReferee(room.Game)
-                : L12KernelProjection.ForSpectator(room.Game),
-        }, IsGameState: true, ForceFullGameState: true)];
+        finally { _sessionRecoveryGate.Release(); }
     }
 
     private bool CanRecoverTournamentSpectator(Room room, string accountId)
@@ -1780,76 +2028,114 @@ public sealed partial class L12RoomManager
     {
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return [];
         using var deployment = deploymentGuard;
-        if (!_sessions.TryGetValue(sessionId, out var session)) return [];
-        lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
-        if (session.RoomCode is null || !_rooms.TryGetValue(session.RoomCode, out var room))
+        while (true)
         {
-            if (!session.Connected) return [];
-            session.Connected = false;
-            session.DisconnectedAt ??= _utcNow();
-            return [];
-        }
-        room.Gate.Wait();
-        try
-        {
-            if (!session.Connected) return [];
-            var now = _utcNow();
-            SettleRankedClockLocked(room, now);
-            session.Connected = false;
-            session.DisconnectedAt ??= now;
-            RefreshRankedClockActorsLocked(room, now);
-            if (room.RankedClock is not null && room.Game is not null
-                && room.Game.State.Phase != L12Phase.GameOver)
+            if (!_sessions.TryGetValue(sessionId, out var session)) return [];
+            if (session.RoomCode is not { } code || !_rooms.TryGetValue(code, out var room))
             {
+                // Only the memory-only no-room transition shares the global admission gate.
+                _sessionRecoveryGate.Wait();
                 try
                 {
-                    _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)])
-                        .GetAwaiter().GetResult();
+                    if (!_sessions.TryGetValue(sessionId, out session)) return [];
+                    if (session.RoomCode is { } currentCode && _rooms.ContainsKey(currentCode)) continue;
+                    lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
+                    session.Connected = false;
+                    session.DisconnectedAt ??= _utcNow();
+                    return [];
                 }
-                catch (Exception persistenceError)
-                {
-                    // Socket 已实际离线，不能回滚为 connected；冻结房间，避免继续在未落盘
-                    // 的连接边界上接受命令。下次启动会从最后 1 秒 checkpoint 安全恢复。
-                    room.Closed = true;
-                    WithdrawOpponentChatScopeLocked(room);
-                    Console.Error.WriteLine($"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
-                    return Error(sessionId, "排位断线状态无法持久化，房间已安全冻结");
-                }
+                finally { _sessionRecoveryGate.Release(); }
             }
-            return BroadcastRoom(room).Concat(room.Game is null ? [] : BroadcastGame(room)).ToArray();
+            room.Gate.Wait();
+            try
+            {
+                if (!_sessions.TryGetValue(sessionId, out var currentSession)) return [];
+                if (!ReferenceEquals(session, currentSession) || session.RoomCode != room.Code
+                    || !_rooms.TryGetValue(room.Code, out var currentRoom) || !ReferenceEquals(room, currentRoom)) continue;
+                lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
+                if (!session.Connected) return [];
+                var now = _utcNow();
+                SettleRankedClockLocked(room, now);
+                session.Connected = false;
+                session.DisconnectedAt ??= now;
+                RefreshRankedClockActorsLocked(room, now);
+                if (room.RankedClock is not null && room.Game is not null
+                    && room.Game.State.Phase != L12Phase.GameOver)
+                {
+                    try
+                    {
+                        _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)])
+                            .GetAwaiter().GetResult();
+                    }
+                    catch (Exception persistenceError)
+                    {
+                        // The transport is already gone; retain fail-closed room persistence semantics.
+                        room.Closed = true;
+                        WithdrawOpponentChatScopeLocked(room);
+                        Console.Error.WriteLine($"Ranked disconnect persistence ({room.Code}): {persistenceError.Message}");
+                        return Error(sessionId, "排位断线状态无法持久化，房间已安全冻结");
+                    }
+                }
+                return BroadcastRoom(room).Concat(room.Game is null ? [] : BroadcastGame(room)).ToArray();
+            }
+            finally { room.Gate.Release(); }
         }
-        finally { room.Gate.Release(); }
     }
 
     public IReadOnlyList<OutgoingMessage> LeaveRoom(Guid sessionId)
     {
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
-        if (!_sessions.TryGetValue(sessionId, out var member) || member.RoomCode is not { } code
-            || !_rooms.TryGetValue(code, out var room)) return LeaveRoomLocked(sessionId);
-        room.Gate.Wait();
-        try { return LeaveRoomLocked(sessionId); }
-        finally { room.Gate.Release(); }
+        while (true)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var member) || member.RoomCode is not { } code
+                || !_rooms.TryGetValue(code, out var room))
+            {
+                _sessionRecoveryGate.Wait();
+                try
+                {
+                    if (_sessions.TryGetValue(sessionId, out var current) && current.RoomCode is { } currentCode
+                        && _rooms.ContainsKey(currentCode)) continue;
+                    return LeaveRoomLocked(sessionId);
+                }
+                finally { _sessionRecoveryGate.Release(); }
+            }
+            room.Gate.Wait();
+            try
+            {
+                if (!_sessions.TryGetValue(sessionId, out var current)) return Error(sessionId, "会话不存在");
+                if (!ReferenceEquals(member, current) || current.RoomCode != room.Code
+                    || !_rooms.TryGetValue(room.Code, out var currentRoom) || !ReferenceEquals(room, currentRoom)) continue;
+                return LeaveRoomLocked(sessionId);
+            }
+            finally { room.Gate.Release(); }
+        }
     }
 
     private IReadOnlyList<OutgoingMessage> LeaveRoomLocked(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var currentSession)) return Error(sessionId, "会话不存在");
-        lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (currentSession.IsSpectator)
         {
-            if (currentSession.RoomCode is { } spectatorRoomCode
+            var spectatorRoomCode = currentSession.RoomCode;
+            if (spectatorRoomCode is not null
                 && _rooms.TryGetValue(spectatorRoomCode, out var spectatorRoom))
             {
-                lock (spectatorRoom.Spectators) spectatorRoom.Spectators.Remove(sessionId);
+                lock (spectatorRoom.Spectators)
+                {
+                    spectatorRoom.Spectators.Remove(sessionId);
+                    ClearRoomMembership(currentSession);
+                }
             }
-            ClearRoomMembership(currentSession);
+            else ClearRoomMembership(currentSession);
             return [new OutgoingMessage(sessionId, new
             {
                 type = "roomLeft",
+                roomCode = spectatorRoomCode,
                 message = "已退出观战并返回大厅",
             })];
         }
+        lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
         if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
@@ -1923,6 +2209,7 @@ public sealed partial class L12RoomManager
                     messages.Add(new OutgoingMessage(id, new
                     {
                         type = "roomClosed",
+                        roomCode = room.Code,
                         message = "所观战的房间已关闭",
                     }));
             }
@@ -2087,7 +2374,8 @@ public sealed partial class L12RoomManager
                     ClearRoomMembership(spectator);
                     yield return new OutgoingMessage(id, new
                     {
-                        type = "roomLeft", message = "赛事观战资格已失效",
+                        type = "roomLeft", roomCode = room.Code,
+                        message = "赛事观战资格已失效",
                     });
                     continue;
                 }

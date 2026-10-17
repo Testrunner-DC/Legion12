@@ -48,9 +48,10 @@
   gap: 3px;
   overflow: hidden;
 }
-.mobile-landscape-board .board-center > .opponent-hand,
+.mobile-landscape-board:not(.referee-both-hands) .board-center > .l12-hand:not(.mobile-primary-hand),
 .mobile-landscape-board .board-center > .board-status-lane { display: none !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child {
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand {
+  display: flex !important;
   width: 100% !important;
   height: 68px !important;
   min-height: 68px !important;
@@ -61,15 +62,15 @@
   overflow-x: auto !important;
   overflow-y: hidden !important;
 }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) {
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-back) {
   width: 48px !important;
   height: 67px !important;
   min-width: 48px !important;
   flex: 0 0 48px !important;
   margin-left: 0 !important;
 }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) {
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-tile) {
   width: 48px !important;
   height: 67px !important;
   min-height: 67px !important;
@@ -620,14 +621,14 @@
 /* The hand lane owns its full height.  No fan, tilt or lift may intrude into the field. */
 .mobile-landscape-board .board-center { grid-template-rows: 0 0 minmax(0, 1fr) 0 74px !important; }
 .mobile-landscape-board .felt-board { position: relative; z-index: 1 !important; overflow: hidden !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child { position: relative; z-index: 42; height: 74px !important; min-height: 74px !important; padding: 2px 4px 0 !important; align-items: flex-end !important; gap: 4px !important; overflow-x: auto !important; overflow-y: hidden !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) { width: 50px !important; min-width: 50px !important; height: 70px !important; min-height: 70px !important; flex: 0 0 50px !important; margin-left: 0 !important; transform: none !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap:nth-child(n + 10)),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back:nth-child(n + 10)) { margin-left: -10px !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap:hover),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected) { transform: translateY(-2px) !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { width: 50px !important; height: 70px !important; min-height: 70px !important; flex-basis: 50px !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand { position: relative; z-index: 42; height: 74px !important; min-height: 74px !important; padding: 2px 4px 0 !important; align-items: flex-end !important; gap: 4px !important; overflow-x: auto !important; overflow-y: hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-back) { width: 50px !important; min-width: 50px !important; height: 70px !important; min-height: 70px !important; flex: 0 0 50px !important; margin-left: 0 !important; transform: none !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap:nth-child(n + 10)),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-back:nth-child(n + 10)) { margin-left: -10px !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap:hover),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap.selected) { transform: translateY(-2px) !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-tile) { width: 50px !important; height: 70px !important; min-height: 70px !important; flex-basis: 50px !important; }
 
 /* A small, edge-hugging data treatment keeps card art clear; full values live in the drawer. */
 .mobile-landscape-board .felt-board :deep(.formation-slot .card-cost),
@@ -657,15 +658,15 @@
    contexts, so a battlefield child can never intercept a scrolling hand card. */
 .mobile-landscape-board .board-center { isolation: isolate; }
 .mobile-landscape-board .felt-board { z-index: 0 !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child { grid-row: 5 !important; margin-top: 3px !important; pointer-events: auto !important; isolation: isolate; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back) { top: 8px !important; bottom: auto !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { min-width: 0 !important; padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important; border-width: 1px !important; font-size: var(--l12-card-stat-font, 7px) !important; line-height: var(--l12-card-stat-line, 8px) !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-cost) { left: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-disaster) { right: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-power) { right: var(--l12-card-edge, 1px) !important; bottom: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand { grid-row: 5 !important; margin-top: 3px !important; pointer-events: auto !important; isolation: isolate; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-back) { top: 8px !important; bottom: auto !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-cost),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-power),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-disaster) { min-width: 0 !important; padding: var(--l12-card-stat-pad-y, 0) var(--l12-card-stat-pad-x, 1px) !important; border-width: 1px !important; font-size: var(--l12-card-stat-font, 7px) !important; line-height: var(--l12-card-stat-line, 8px) !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-cost) { left: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-disaster) { right: var(--l12-card-edge, 1px) !important; top: var(--l12-card-edge, 1px) !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-power) { right: var(--l12-card-edge, 1px) !important; bottom: var(--l12-card-edge, 1px) !important; }
 
 /* The morale summary and every visible orb lead to the same phone picker. */
 .mobile-landscape-board :deep(.resource-morale-stack) { position: relative; }
@@ -1064,13 +1065,13 @@
 .mobile-landscape-board .board-center>.opponent-hand,.mobile-landscape-board .opponent-status-lane { grid-row:1 !important; }
 .mobile-landscape-board .felt-board { grid-row:3 !important; }
 .mobile-landscape-board .my-status-lane { grid-row:4 !important; }
-.mobile-landscape-board .board-center>.l12-hand:last-child { grid-row:5 !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:4px 4px 2px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-back),
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.card-tile) { box-sizing:border-box !important; top:0 !important; bottom:auto !important; width:var(--l12-mobile-hand-card-w) !important; min-width:var(--l12-mobile-hand-card-w) !important; height:var(--l12-mobile-hand-card-h) !important; min-height:var(--l12-mobile-hand-card-h) !important; flex:0 0 var(--l12-mobile-hand-card-w) !important; aspect-ratio:5/7 !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected) { transform:none !important; }
-.mobile-landscape-board .board-center > .l12-hand:last-child :deep(.hand-card-wrap.selected .card-tile) { position:relative; z-index:2; outline-offset:-2px !important; }
+.mobile-landscape-board .board-center>.l12-hand.mobile-primary-hand { grid-row:5 !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand { box-sizing:border-box; height:var(--l12-mobile-hand-h) !important; min-height:var(--l12-mobile-hand-h) !important; margin-top:0 !important; padding:4px 4px 2px !important; align-items:flex-start !important; overflow-x:auto !important; overflow-y:hidden !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-back),
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.card-tile) { box-sizing:border-box !important; top:0 !important; bottom:auto !important; width:var(--l12-mobile-hand-card-w) !important; min-width:var(--l12-mobile-hand-card-w) !important; height:var(--l12-mobile-hand-card-h) !important; min-height:var(--l12-mobile-hand-card-h) !important; flex:0 0 var(--l12-mobile-hand-card-w) !important; aspect-ratio:5/7 !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap.selected) { transform:none !important; }
+.mobile-landscape-board .board-center > .l12-hand.mobile-primary-hand :deep(.hand-card-wrap.selected .card-tile) { position:relative; z-index:2; outline-offset:-2px !important; }
 
 /* The complete left rail participates in one allocation model. The persistent
    detail handle is a real first row, never a fixed overlay. Current disaster,

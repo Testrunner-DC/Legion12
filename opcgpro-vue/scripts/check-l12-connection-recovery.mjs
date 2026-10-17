@@ -296,6 +296,166 @@ function presenceItem(accountId, username, activity = 'idle') {
 }
 
 const tests = [
+  ['spectator matchmaking retires the old observation before accepting the new player snapshot', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'spectator-queue-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 111)
+    await connected
+    const oldState = { matchId: 'observed-old', roomCode: 'WATCH1', revision: 50,
+      phase: 'Main', players: [], recentEvents: [], lastAction: null }
+    socket.receive({ type: 'roomState', roomCode: 'WATCH1', started: true, yourPlayerIndex: null, players: [] })
+    socket.receive({ type: 'gameState', spectating: true, state: oldState })
+    net.joinMatchmaking('casual')
+    socket.receive({ type: 'matchmakingState', queued: true, mode: 'casual' })
+    net.cancelMatchmaking()
+    socket.receive({ type: 'matchmakingState', queued: false })
+    assert.equal(net.l12State.game.matchId, 'observed-old', 'cancel only the queue, not observation')
+    socket.receive({ type: 'matchmakingState', queued: true, mode: 'casual' })
+    socket.receive({ type: 'matchmakingFound', mode: 'casual', roomCode: 'OWN111', matchId: 'own-new',
+      retiredObservationRoomCode: 'WATCH1', retiredObservationMatchId: 'observed-old' })
+    assert.equal(net.l12State.game, null, 'the old game cannot satisfy matched-state recovery')
+    assert.equal(net.l12State.spectating, false)
+    const newState = { ...oldState, matchId: 'own-new', roomCode: 'OWN111', revision: 1 }
+    socket.receive({ type: 'roomState', roomCode: 'OWN111', started: true, yourPlayerIndex: 1, players: [] })
+    socket.receive({ type: 'gameState', spectating: false, state: newState })
+    const sentBefore = socket.sent.length
+    for (const packet of [
+      { type: 'roomState', roomCode: 'WATCH1', started: false, players: [] },
+      { type: 'gameState', spectating: true, state: { ...oldState, revision: 51 } },
+      { type: 'gameStateDelta', matchId: 'observed-old', baseRevision: 50, revision: 51, changes: [] },
+      { type: 'gameStateCardFrameV1', payload: { type: 'gameState', state: oldState } },
+      { type: 'roomClosed', roomCode: 'WATCH1' }, { type: 'roomLeft', roomCode: 'WATCH1' },
+    ]) socket.receive(packet)
+    assert.equal(net.l12State.game.matchId, 'own-new')
+    assert.equal(net.l12State.room.roomCode, 'OWN111')
+    assert.equal(net.l12State.spectating, false)
+    assert.equal(socket.sent.length, sentBefore, 'retired frames must not start resynchronization')
+    socket.receive({ type: 'gameStateDelta', matchId: 'own-new', baseRevision: 1, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 }] })
+    assert.equal(net.l12State.game.revision, 2, 'the new full snapshot owns the delta baseline')
+    net.leaveRoom()
+    socket.receive({ type: 'roomLeft', roomCode: 'OWN111' })
+    net.spectateRoom('WATCH1')
+    socket.receive({ type: 'roomState', roomCode: 'WATCH1', started: true, yourPlayerIndex: null, players: [] })
+    socket.receive({ type: 'gameState', spectating: true, state: oldState })
+    assert.equal(net.l12State.game.matchId, 'observed-old', 'a later explicit observation is allowed after leaving the player room')
+    net.disconnect()
+  }],
+  ['cold spectator handover rejects retired frames and still recovers a missing matched snapshot', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'spectator-cold-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 112)
+    await connected
+    socket.receive({ type: 'matchmakingFound', mode: 'casual', roomCode: 'OWN112', matchId: 'cold-new',
+      retiredObservationRoomCode: 'WATCH2', retiredObservationMatchId: 'cold-old' })
+    socket.receive({ type: 'gameState', spectating: true,
+      state: { matchId: 'cold-old', roomCode: 'WATCH2', revision: 90, phase: 'Main', players: [] } })
+    assert.equal(net.l12State.game, null)
+    await timers.advance(800)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, 1)
+    socket.receive({ type: 'roomState', roomCode: 'OWN112', started: true, yourPlayerIndex: 0, players: [] })
+    socket.receive({ type: 'gameState', state: { matchId: 'cold-new', roomCode: 'OWN112', revision: 1,
+      phase: 'Main', players: [], recentEvents: [], lastAction: null } })
+    assert.equal(net.l12State.game.matchId, 'cold-new')
+    assert.equal(net.l12State.matchFound, null)
+    net.disconnect()
+  }],
+  ['replacement session retains the retired observation fence for the same account', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'spectator-reconnect-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'observer-114', accountId: 'observer-account', connectionGeneration: 114 })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 114 })
+    await connected
+    socket.receive({ type: 'matchmakingFound', mode: 'casual', roomCode: 'OWN114', matchId: 'reconnected-new',
+      retiredObservationRoomCode: 'WATCH4', retiredObservationMatchId: 'reconnected-old' })
+    socket.emitClose(1006, 'reconnect before matched snapshot')
+    await timers.advance(1000)
+    const replacement = FakeWebSocket.instances[1]
+    replacement.open()
+    replacement.receive({ type: 'session', sessionId: 'observer-115', accountId: 'observer-account', connectionGeneration: 115, recovered: true })
+    replacement.receive({ type: 'gameState', spectating: true, state: {
+      matchId: 'reconnected-old', roomCode: 'WATCH4', revision: 99, phase: 'Main', players: [] } })
+    assert.equal(net.l12State.game, null)
+    assert.equal(net.l12State.matchFound.matchId, 'reconnected-new')
+    await timers.advance(700)
+    replacement.receive({ type: 'matchmakingFound', mode: 'casual', roomCode: 'OWN114', matchId: 'reconnected-new',
+      retiredObservationRoomCode: 'WATCH4', retiredObservationMatchId: 'reconnected-old' })
+    await timers.advance(100)
+    assert.equal(replacement.sent.filter(item => JSON.parse(item).type === 'syncState').length, 1,
+      'replacement session must restart the missing matched snapshot grace without waiting for another found')
+    replacement.receive({ type: 'roomState', roomCode: 'OWN114', started: true, yourPlayerIndex: 0, players: [] })
+    replacement.receive({ type: 'gameState', state: {
+      matchId: 'reconnected-new', roomCode: 'OWN114', revision: 1, phase: 'Main', players: [] } })
+    replacement.receive({ type: 'recoveryComplete', connectionGeneration: 115, roomCode: 'OWN114', matchId: 'reconnected-new', recoveryRevision: 1 })
+    assert.equal(net.l12State.game.matchId, 'reconnected-new')
+    assert.equal(net.l12State.spectating, false)
+    net.disconnect()
+  }],
+  ['authoritative lobby recovery retires the observation fence before a later explicit spectate', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'spectator-lobby-recovery-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'observer-117', accountId: 'observer-account', connectionGeneration: 117 })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 117 })
+    await connected
+    socket.receive({ type: 'matchmakingFound', mode: 'casual', roomCode: 'OWN117', matchId: 'finished-new',
+      retiredObservationRoomCode: 'WATCH7', retiredObservationMatchId: 'returned-old' })
+    socket.emitClose(1006, 'player room ended before reconnect')
+    await timers.advance(1000)
+    const replacement = FakeWebSocket.instances[1]
+    replacement.open()
+    replacement.receive({ type: 'session', sessionId: 'observer-118', accountId: 'observer-account', connectionGeneration: 118, recovered: true })
+    replacement.receive({ type: 'recoveryComplete', connectionGeneration: 118 })
+    assert.equal(net.l12State.matchFound, null)
+    assert.equal(net.l12State.game, null)
+    net.spectateRoom('WATCH7')
+    replacement.receive({ type: 'roomState', roomCode: 'WATCH7', started: true, yourPlayerIndex: null, players: [] })
+    replacement.receive({ type: 'gameState', spectating: true, state: {
+      matchId: 'returned-old', roomCode: 'WATCH7', revision: 101, phase: 'Main', players: [] } })
+    assert.equal(net.l12State.room.roomCode, 'WATCH7')
+    assert.equal(net.l12State.game.matchId, 'returned-old')
+    assert.equal(net.l12State.spectating, true)
+    net.disconnect()
+  }],
+  ['failed pairing requeue notification restores visible queue and polling without leaving observation', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'spectator-rollback-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 116)
+    await connected
+    socket.receive({ type: 'roomState', roomCode: 'WATCH5', started: true, players: [] })
+    socket.receive({ type: 'gameState', spectating: true, state: {
+      matchId: 'rollback-observation', roomCode: 'WATCH5', revision: 1, phase: 'Main', players: [] } })
+    socket.receive({ type: 'matchmakingState', queued: true, mode: 'casual' })
+    socket.receive({ type: 'matchmakingRejected', message: '建立匹配房间失败，已恢复队列' })
+    socket.receive({ type: 'matchmakingState', queued: true, mode: 'casual', observationResyncRequired: true,
+      message: '建立对局失败，已恢复匹配队列' })
+    assert.equal(net.l12State.matchmaking.queued, true)
+    assert.equal(net.l12State.game.matchId, 'rollback-observation')
+    assert.equal(net.l12State.spectating, true)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'syncState').length, 1,
+      'restored observation must request a full baseline for any facts missed during durable creation')
+    await timers.advance(5_000)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'pollMatchmaking').length, 1)
+    net.disconnect()
+  }],
+  ['leaving ordinary observation retains the queued match and polling', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'spectator-exit-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 113)
+    await connected
+    socket.receive({ type: 'matchmakingState', queued: true, mode: 'casual' })
+    socket.receive({ type: 'roomState', roomCode: 'WATCH3', started: true, players: [] })
+    socket.receive({ type: 'gameState', spectating: true,
+      state: { matchId: 'watch-exit', roomCode: 'WATCH3', revision: 1, phase: 'Main', players: [] } })
+    net.leaveRoom()
+    socket.receive({ type: 'roomLeft', roomCode: 'WATCH3' })
+    assert.equal(net.l12State.game, null)
+    assert.equal(net.l12State.matchmaking.queued, true)
+    await timers.advance(5_000)
+    assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'pollMatchmaking').length, 1)
+    net.disconnect()
+  }],
   ['an in-flight delta cannot satisfy malformed card-frame plain recovery', async () => {
     installBrowserEnvironment({ 'l12-auth-token': 'card-frame-delta-token' })
     const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
@@ -531,9 +691,10 @@ const tests = [
       await connected
       const syncCount = () => socket.sent.filter(item => JSON.parse(item).type === 'syncState').length
       socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH2', matchId: 'match-two' })
+      await timers.advance(700)
       socket.receive({ type: 'matchmakingFound', mode: 'ranked', roomCode: 'MATCH2', matchId: 'match-two' })
       assert.equal(syncCount(), 0, 'duplicate match-found notifications must remain inside one grace window')
-      await timers.advance(800)
+      await timers.advance(100)
       assert.equal(syncCount(), 1, 'a genuinely missing initial snapshot must request authoritative state')
       socket.receive({ type: 'roomState', roomCode: 'MATCH2', yourPlayerIndex: 0, started: true, players: [] })
       socket.receive({ type: 'gameState', state: {

@@ -1,5 +1,20 @@
 # Legion12 Bug 修复记录
 
+## SPECTATOR-MATCHMAKING-20261017｜普通观战与既有匹配队列共存
+
+- fe7505de为用户已接受的新功能，沿P2/P3/P4既有Session、普通观战成员、单一排位/休闲队列与ForPlayer/ForSpectator投影实现；不扩赛事或裁判准入，不复制对局状态。设置复用懒加载大厅/本人精确牌库id+revision校验，关闭弹框保留画布；取消队列不退观战、退出观战不取消队列，配对后退休旧流、强制本人全量并在解码前挡旧full/delta/card-frame/房间消息。
+- 同类扫描：RoomManager的Join/Poll/Cancel、SpectateRoom/SpectateTournamentMatch、Leave/Disconnect/Connect及关闭/资格撤销；net.ts同账号重连、权威大厅恢复、旧房显式复用、重复found、失败回队；BattleHub五模式/切号/异步正文/原好友房同步边界。新匹配旧房按码Wait(0)，只在完整成员/连接状态配对；slow preparation在旧门外，交接后旧门在录像启动前释放，新房持自身门。失败精确移除owned新房、仅恢复仍权威的旧房并要求全量重同步，已关闭则明确roomLeft；半退出只保队列意图，不抢写新成员。
+- 独审找到并实际修正三处相邻竞态：Connect等待旧门时真实离场不再ghost recovery；Remove/Clear中间态不误删队列或误配对；friends roster在房门内快照，平台读取在全局门外，提交以global+Wait(0)重验规则/成员/实例。最终538AA6D2后端与1A07DC49客户端独审CLEAR，不把审查意见当运行证明。
+- 原backend/red-r2真实7失败、client 38/40中的两条handover失败保留；初轮用户名过长、隐私测试初包尚未发牌、portrait夹具you=-1/逻辑弹框越界分别如实保留。最终专项16/16含真实禁选到Mulligan发牌隐私、忙房、慢录制、同账号退出/重连、半退出、owner替换与回滚；actual Edge三尺寸和两排除角色5/5，含规则关闭/牌库确认/原画布不重建，连接43及牌库消费者44先行通过。
+- 最终标准后端完整7840规则/1828平台、失败跳过0；最终前端Batch-r2完整UI357/聊天79/反馈144/卡图324+42、连接43/牌库消费者44、类型与两构建通过。Edge browser-r7共5/5使用生产landscape-surface根；先前夹具漏根/旧精确属性断言失败保留，只修测试接线，不删除原朝向/控制/隐私要求。根目录 `artifacts/bug-closure-continuation-20261011/spectator-matchmaking-20261017` 绑定最终源与紧凑实际监督收据，成功临时TRX由原监督清理，不假称保留。本地验收不等于Release或真实30房、真iOS/微信、部署/开服；fe7505de未提前关闭。
+
+## SANDBOX-MOBILE-PRIMARY-HAND-20261017｜现有唯一手牌槽跟随受控方
+
+- cfebec86原文“手机界面部分按键不显示，沙盒体验，对方牌出不了”；AI建议已被用户拒绝，本项只处理其真实当前UI缺陷。Main的844×390原生触摸RED停在actor1手牌不可见；HandArea节点在，但移动CSS固定隐藏opponent-hand并将它放在零高行，只显示最后一个viewMe手区。GM面板无视费用出牌不是正常费用/目标链的替代证据。用户已明确批准限定修复。
+- 沿现有controlledPlayerIndex计算mobilePrimaryHandPlayerIndex，仅交互式GM跟随当前受控玩家；四个原HandArea分支标记mobile-primary-hand，通用移动手区隐藏、尺寸/命中、选中态和第五行都按语义类，非GM/只读仍固定viewMe。普通隐藏规则显式排除referee-both-hands，末段裁判双手覆盖与桌面CSS保留，不增第二排、不改卡效/费用/指令/权威隐私。源码扫描四个手区及全部通用:last-child规则已迁移，裁判专属三组保留。
+- GameBoard.vue/mobile.css两叶399DE68D/725DB5F3冻结；sandbox-r3真实SFC原生触摸844×390/740×360/390×844，actor1正常出牌/移动→actor0响应及出牌，每态恰4条绑定sandboxAction；普通玩家/观战不泄手牌、裁判双手及桌面保留共7/7，Main检查旋转实际截图。首次竖屏夹具漏生产surface导致命中失败，补根后复验，未强制点击或改变阈值；合成公开状态/ACK不冒真实引擎、原设备全部按钮或真机。普通hidden/count旧断言保留，新增主手区条件/四分支/裁判隔离守卫。
+- 本轮不部署、不改维护、不线上关单；原a355正式、3b7测试及最近66待办保持。完整结果与后续精确同步以本批 `final-acceptance.json`/`synchronization.json` 为准，未生成前不视为完成。
+
 ## CLOSEOUT-20261017-A355-MANUAL-DECISIONS｜两产品建议关闭，混合单不误关
 
 - 用户明确保留手动操作双方、不做AI，保留天廷士气归零拿2的逐次确认、不加默认同意；90856878及cc1e03f0按显式产品决定rejected，不造新fixCommit或原私局/UI复现。cfebec86的AI部分同样被拒绝，但移动按钮/对方出牌缺陷继续开放；fe7505de边观战边匹配已接受，另排限定实现，未关闭为完成。

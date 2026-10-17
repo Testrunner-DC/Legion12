@@ -13,6 +13,7 @@ import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, ran
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
 import { maintenanceCountdown } from './maintenanceCountdown'
 
+const props = withDefaults(defineProps<{ matchmakingOnly?: boolean; overlayTarget?: HTMLElement }>(), { matchmakingOnly: false })
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'sandbox'>('match')
 const roomCode = ref('')
@@ -80,7 +81,7 @@ function formatRankedDuration(seconds: number) {
   if (seconds > 60) return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
   return `${seconds} 秒`
 }
-const selectedMatchMode = ref<'ranked' | 'casual'>('ranked')
+const selectedMatchMode = ref<'ranked' | 'casual'>(l12State.matchmaking?.queued && l12State.matchmaking.mode === 'casual' ? 'casual' : 'ranked')
 const roomCodeCopied = ref(false)
 const rankedRulesOpen = ref(false)
 const changingFaction = ref(false)
@@ -99,7 +100,7 @@ const deckSelectorError = ref('')
 const modeActionPending = ref(false)
 const guestDeckList = computed(() => platformState.account?.id && platformState.token ? [] : Object.values(cachedDecks.value))
 const activeDeckScope = computed<L12DeckSelectionScope>(() => {
-  if (l12State.room || tab.value === 'friendly') return 'friendly'
+  if ((!props.matchmakingOnly && l12State.room) || tab.value === 'friendly') return 'friendly'
   if (tab.value === 'sandbox') return 'sandbox-player'
   return selectedMatchMode.value
 })
@@ -159,7 +160,7 @@ function hydrateDeckSelections() {
   })
 }
 function openDeckSelector() {
-  if (l12State.room && me.value?.ready) return
+  if (!props.matchmakingOnly && l12State.room && me.value?.ready) return
   deckSelectorScope.value = activeDeckScope.value
   deckSelectorError.value = ''
   deckSelectorOpen.value = true
@@ -200,7 +201,7 @@ function cachedSelection(deck: SavedL12Deck, summary?: PrivateDeckSummary): Mode
 }
 
 async function confirmDeckSelection(candidate: DeckSelectionCandidate) {
-  if (deckSelectorConfirming.value || (l12State.room && me.value?.ready)) return
+  if (deckSelectorConfirming.value || (!props.matchmakingOnly && l12State.room && me.value?.ready)) return
   const scope = deckSelectorScope.value
   const action = ++selectorActionEpoch
   const epoch = identityEpoch
@@ -209,7 +210,7 @@ async function confirmDeckSelection(candidate: DeckSelectionCandidate) {
   const id = candidate.id
   const revision = candidate.revision
   const current = () => identityCurrent(epoch, accountId, token) && selectorActionEpoch === action
-    && deckSelectorOpen.value && deckSelectorScope.value === scope && !(l12State.room && me.value?.ready)
+    && deckSelectorOpen.value && deckSelectorScope.value === scope && !(!props.matchmakingOnly && l12State.room && me.value?.ready)
   deckSelectorConfirming.value = true
   deckSelectorError.value = ''
   try {
@@ -328,6 +329,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([account
   identityEpoch++
   selectorActionEpoch++
   modeActionEpoch++
+  modeActionPending.value = false
   roomDeckSubmitKey = ''
   roomDeckSyncKey = ''
   roomDeckSyncPromise = null
@@ -406,7 +408,8 @@ async function loadSelectedBody(scope: L12DeckSelectionScope, current: () => boo
 
 async function runRoomDeckSync(key: string, roomCode: string, id: string, revision: number, rulesKey: string,
     epoch: number, accountId: string | undefined, token: string) {
-  const current = () => identityCurrent(epoch, accountId, token) && l12State.room?.roomCode === roomCode
+  const current = () => !props.matchmakingOnly && !l12State.spectating
+    && identityCurrent(epoch, accountId, token) && l12State.room?.roomCode === roomCode
     && selectionCurrent('friendly', id, revision) && friendlyRulesKey() === rulesKey && !me.value?.ready
   try {
     const deck = await loadSelectedBody('friendly', current)
@@ -424,6 +427,7 @@ async function runRoomDeckSync(key: string, roomCode: string, id: string, revisi
 }
 
 async function syncCurrentRoomDeck() {
+  if (props.matchmakingOnly || l12State.spectating) return false
   const roomCode = l12State.room?.roomCode
   const selection = selectedDecks.value.friendly
   if (!roomCode || !selection || me.value?.ready) return false
@@ -449,7 +453,7 @@ async function syncCurrentRoomDeck() {
 // 创建、加入或恢复好友房时，只展开并提交已确认的稳定ID+修订；选择器取消不会触发这里。
 watch(() => [l12State.room?.roomCode, selectedDecks.value.friendly?.id, selectedDecks.value.friendly?.revision,
   me.value?.ready, catalog.value.length, operationsPolicy.value?.version, l12State.room?.options?.useCardRestrictions] as const,
-() => { if (l12State.room?.roomCode && !me.value?.ready) void syncCurrentRoomDeck() }, { immediate: true })
+() => { if (!props.matchmakingOnly && !l12State.spectating && l12State.room?.roomCode && !me.value?.ready) void syncCurrentRoomDeck() }, { immediate: true })
 
 async function chooseFaction(faction: 'order' | 'chaos' | 'fate') {
   if (factionSaving.value) return
@@ -477,8 +481,13 @@ async function onMatch() {
   const mode = selectedMatchMode.value
   const scope: L12DeckSelectionScope = mode
   const selection = selectedDecks.value[scope]
+  const observedRoomCode = props.matchmakingOnly && l12State.spectating ? l12State.room?.roomCode : undefined
+  const roomContextCurrent = () => observedRoomCode
+    ? l12State.spectating && l12State.observerView !== 'referee' && !l12State.room?.tournamentId
+      && l12State.room?.roomCode === observedRoomCode && !l12State.leavingRoom && !l12State.matchFound
+    : !l12State.room && !props.matchmakingOnly
   const current = () => identityCurrent(epoch, accountId, token) && modeActionEpoch === action
-    && selectedMatchMode.value === mode && tab.value === 'match' && !l12State.room
+    && selectedMatchMode.value === mode && tab.value === 'match' && roomContextCurrent()
     && Boolean(selection && selectionCurrent(scope, selection.id, selection.revision))
   modeActionPending.value = true
   try {
@@ -544,9 +553,9 @@ async function copyRoomCode() {
 </script>
 
 <template>
-  <div class="battle-hub">
-    <RankedBroadcastTicker />
-    <header class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
+  <div class="battle-hub" :class="{ 'matchmaking-only': props.matchmakingOnly }">
+    <RankedBroadcastTicker v-if="!props.matchmakingOnly" />
+    <header v-if="!props.matchmakingOnly" class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
     <section v-if="maintenanceView" class="maintenance-banner" :class="maintenanceView.phase"><b>{{ maintenanceView.title }}</b><strong>{{ maintenanceView.countdown }}</strong><span>{{ maintenanceView.message }}</span></section>
       <section v-else-if="policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
@@ -555,7 +564,7 @@ async function copyRoomCode() {
       <p>正在建立对局并同步双方状态，请稍候……</p>
       <code>{{ l12State.matchFound.roomCode }}</code>
     </section>
-    <section v-else-if="l12State.room" class="room-stage panel">
+    <section v-else-if="l12State.room && !props.matchmakingOnly" class="room-stage panel">
       <header><div><small>FRIENDLY ROOM</small><h2>友谊战整备室</h2></div><div class="room-code"><code>{{ l12State.room.roomCode }}</code><button type="button" @click="copyRoomCode">{{ roomCodeCopied ? '已复制' : '复制房间码' }}</button></div></header>
       <div class="versus">
         <article v-for="index in [0,1]" :key="index" :class="{ empty: !l12State.room.players[index] }"><span>PLAYER {{ index + 1 }}</span><b>{{ l12State.room.players[index]?.name || '等待玩家' }}</b><p>{{ visibleDeckLabel(index) }}</p><i class="player-online" :class="{ online: l12State.room.players[index]?.connected }">{{ l12State.room.players[index] ? (l12State.room.players[index]?.connected ? '在线' : '已断开') : '等待加入' }}</i><em>{{ l12State.room.players[index]?.ready ? '已准备' : '未准备' }}</em></article><strong>VS</strong>
@@ -566,21 +575,22 @@ async function copyRoomCode() {
         <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></div></div>
         <button type="button" @click="saveRoomRules">保存房间规则</button>
       </section>
-      <section v-if="operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
+      <section v-if="!props.matchmakingOnly && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
       <section class="room-current-deck"><DeckProfile v-if="currentDeck" compact :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" context="好友房牌库" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><p v-else>当前没有已保存牌库</p><div><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合好友房规则' }}</span><button type="button" :disabled="me?.ready" @click="openDeckSelector">更换牌库</button></div></section>
       <footer><button class="leave-room" type="button" @click="leaveRoom()">{{ l12State.room.yourPlayerIndex === 0 ? '关闭房间并返回大厅' : '离开房间并返回大厅' }}</button><router-link to="/decks">管理我的牌库</router-link><button class="primary" :disabled="modeActionPending || l12State.room.players.length < 2 || !!currentDeckError" @click="toggleReady">{{ me?.ready ? '取消准备' : modeActionPending ? '正在校验牌库…' : '准备对战' }}</button></footer>
     </section>
 
     <template v-else>
-      <section v-if="operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
+      <section v-if="!props.matchmakingOnly && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
       <section class="current-deck panel"><DeckProfile v-if="currentDeck" :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" :context="activeDeckScope === 'ranked' ? '排位当前牌库' : activeDeckScope === 'casual' ? '休闲当前牌库' : activeDeckScope === 'friendly' ? '好友房当前牌库' : '沙盒我方牌库'" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><DeckProfile v-else context="当前牌库" meta="当前没有已保存牌库"/><div class="current-deck-actions"><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合当前模式规则' }}</span><button type="button" @click="openDeckSelector">更换牌库</button></div></section>
-      <div class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
-      <div v-if="tab === 'match' && selectedMatchMode === 'ranked' && ranked" class="faction-totals faction-totals--overview" data-ui-contract="faction-totals-above-public-match"><article v-for="faction in ranked.config.factions" :key="faction.id" :style="{ '--accent': faction.color }"><b>{{ faction.name }}</b><span>七曜值 {{ (ranked.factionTotals[faction.name] || 0).toLocaleString() }}</span></article></div>
+      <div v-if="!props.matchmakingOnly" class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
+      <div v-if="!props.matchmakingOnly && tab === 'match' && selectedMatchMode === 'ranked' && ranked" class="faction-totals faction-totals--overview" data-ui-contract="faction-totals-above-public-match"><article v-for="faction in ranked.config.factions" :key="faction.id" :style="{ '--accent': faction.color }"><b>{{ faction.name }}</b><span>七曜值 {{ (ranked.factionTotals[faction.name] || 0).toLocaleString() }}</span></article></div>
 
       <section v-if="tab === 'match'" class="mode-panel panel"><header class="public-match-head"><div><small>PUBLIC MATCH</small><h2>公开匹配</h2></div><button v-if="selectedMatchMode === 'ranked'" class="ranked-rules-button" type="button" @click="rankedRulesOpen = true">排位规则</button></header>
         <p v-if="selectedMatchMode === 'ranked' && operationsPolicy" class="season-name"><b>当前赛季</b><span>{{ operationsPolicy.season.name }}</span></p>
-        <div v-if="selectedMatchMode === 'ranked' && ranked && (!ranked.profile.faction || changingFaction)" class="faction-select"><b>{{ changingFaction ? '改选本赛季派系' : '选择本赛季派系' }}</b><strong v-if="changingFaction" class="faction-reset-warning">注意：确认更换后七曜值将清零，定级与本赛季战绩重新开始。</strong><span v-else>请选择本赛季参与排位的派系。</span><button v-if="changingFaction" :disabled="factionSaving" @click="changingFaction = false">返回，不更改</button><div><button v-for="faction in ranked.config.factions" :key="faction.id" :disabled="factionSaving || faction.name === ranked.profile.faction || faction.id === ranked.profile.faction" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
-        <div v-else-if="selectedMatchMode === 'ranked' && ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.titles?.length"> · {{ ranked.profile.titles.join(' · ') }}</template><template v-else-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button @click="changingFaction = true">改选派系</button></div>
+        <p v-if="props.matchmakingOnly && selectedMatchMode === 'ranked' && ranked && !ranked.profile.faction">请返回大厅选择本赛季派系，或使用休闲匹配。</p>
+        <div v-else-if="!props.matchmakingOnly && selectedMatchMode === 'ranked' && ranked && (!ranked.profile.faction || changingFaction)" class="faction-select"><b>{{ changingFaction ? '改选本赛季派系' : '选择本赛季派系' }}</b><strong v-if="changingFaction" class="faction-reset-warning">注意：确认更换后七曜值将清零，定级与本赛季战绩重新开始。</strong><span v-else>请选择本赛季参与排位的派系。</span><button v-if="changingFaction" :disabled="factionSaving" @click="changingFaction = false">返回，不更改</button><div><button v-for="faction in ranked.config.factions" :key="faction.id" :disabled="factionSaving || faction.name === ranked.profile.faction || faction.id === ranked.profile.faction" @click="chooseFaction(faction.id)">{{ faction.name }}</button></div></div>
+        <div v-else-if="selectedMatchMode === 'ranked' && ranked" class="ranked-profile"><b>{{ ranked.profile.faction }} · {{ ranked.profile.placed ? ranked.profile.tier : `定级 ${ranked.profile.placementPlayed}/${ranked.config.placementMatches}` }}</b><span>{{ ranked.profile.displayValue }}<template v-if="ranked.profile.titles?.length"> · {{ ranked.profile.titles.join(' · ') }}</template><template v-else-if="ranked.profile.title"> · {{ ranked.profile.title }}</template></span><button v-if="!props.matchmakingOnly" @click="changingFaction = true">改选派系</button></div>
         <div class="match-options"><button :class="{ active: selectedMatchMode === 'ranked' }" @click="selectedMatchMode = 'ranked'">排位匹配</button><button :class="{ active: selectedMatchMode === 'casual' }" @click="selectedMatchMode = 'casual'">休闲匹配</button></div>
         <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="modeActionPending || !currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">{{ modeActionPending ? '正在校验牌库…' : `开始${selectedMatchMode === 'ranked' ? '排位' : '休闲'}匹配` }}</button>
       </section>
@@ -590,12 +600,13 @@ async function copyRoomCode() {
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
     <SavedDeckSelector :open="deckSelectorOpen" :mode="deckSelectorScope" :guest-decks="guestDeckList"
+      :teleport-target="props.overlayTarget"
       :catalog="catalog" :current-deck-id="selectedDecks[deckSelectorScope]?.id"
       :current-deck-revision="selectedDecks[deckSelectorScope]?.revision" :current-deck-name="selectorCurrentName"
       :restrictions="selectorRestrictions" :uses-season-restrictions="scopeNeedsPolicy(deckSelectorScope)"
-      :loading="selectorLoading" :disabled="!!(l12State.room && me?.ready)" :confirming="deckSelectorConfirming"
+      :loading="selectorLoading" :disabled="!!(!props.matchmakingOnly && l12State.room && me?.ready)" :confirming="deckSelectorConfirming"
       :action-error="deckSelectorError" @cancel="cancelDeckSelection" @confirm="confirmDeckSelection"/>
-    <Teleport to="body">
+    <Teleport :to="props.overlayTarget || 'body'">
       <div v-if="pendingFaction" class="ranked-rules-backdrop" @click.self="!factionSaving && (pendingFaction = null)">
         <section class="ranked-rules-modal ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="faction-confirm-title" @keydown.esc="!factionSaving && (pendingFaction = null)">
           <header><h2 id="faction-confirm-title">确认改为{{ pendingFactionName }}？</h2></header>
@@ -625,6 +636,7 @@ async function copyRoomCode() {
 </template>
 
 <style scoped>
+.battle-hub.matchmaking-only{padding:14px}.matchmaking-only .current-deck{margin:0 0 12px}.matchmaking-only .mode-panel{margin:0;padding:16px}.matchmaking-only .ranked-profile{margin:8px 0}
 .faction-reset-warning{display:block;padding:14px;border:1px solid #d56d63;background:#30191b;color:#ffb6a9;font-weight:800;line-height:1.7}.ranked-rules-modal>footer{flex-wrap:wrap;gap:12px}
 
 .public-match-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.public-match-head h2{margin:4px 0}.ranked-rules-button{min-height:44px;padding:6px 2px;border:0;border-bottom:1px solid #e1c759;background:transparent;color:#f0d46d;font-weight:900}.season-name{display:flex;align-items:baseline;gap:10px;width:max-content;padding:10px 14px;border-left:4px solid #d7bc55;background:#1d1b12;color:#ead982}.season-name b{font-size:14px}.season-name span{font-size:17px;font-weight:900}

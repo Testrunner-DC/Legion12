@@ -179,6 +179,15 @@ function initializer(relative, name) {
   return declaration.initializer.getText(file)
 }
 
+function accountWatcherCallback(relative) {
+  const file = scriptFile(relative)
+  const statement = file.statements.find(row => ts.isExpressionStatement(row)
+    && ts.isCallExpression(row.expression) && row.expression.expression.getText(file) === 'watch'
+    && row.expression.arguments[0]?.getText(file).includes('platformState.account?.id, platformState.token'))
+  assert.ok(statement, 'Actual account watcher required')
+  return statement.expression.arguments[1].getText(file)
+}
+
 function functionText(relative, name) {
   const file = scriptFile(relative)
   const declaration = file.statements.find(row => ts.isFunctionDeclaration(row) && row.name?.text === name)
@@ -386,7 +395,7 @@ function createBattleConfirmHarness(deckModule, scope, { friendlyRestrictions = 
       unmount() { componentAlive = false; identityEpoch++; selectorActionEpoch++ },
     }
   `, {
-    l12State, me, deckSelectorConfirming, deckSelectorScope, deckSelectorOpen, deckSelectorError,
+    props: { matchmakingOnly: false }, l12State, me, deckSelectorConfirming, deckSelectorScope, deckSelectorOpen, deckSelectorError,
     catalog, operationsPolicy, roomOptions, platformState, cachedDecks, selectedDecks, selectedDeckNames,
     selectionMessages, validateDeck, loadPrivateDeckBody: deckModule.loadPrivateDeckBody,
     saveSelectedDeckName: deckModule.saveSelectedDeckName,
@@ -396,7 +405,7 @@ function createBattleConfirmHarness(deckModule, scope, { friendlyRestrictions = 
     selectedDecks, selectedDeckNames, selectionMessages }, validationCalls, l12State, rule }
 }
 
-function createBattleMatchHarness(deckModule, scope = 'ranked') {
+function createBattleMatchHarness(deckModule, scope = 'ranked', { matchmakingOnly = false } = {}) {
   const rule = { cardId: 'BANNED-1', maxCopies: 0 }
   const selection = { id: `match-${scope}`, revision: 3, name: `旧${scope}`, body: makeBody(`match-${scope}`, 3, `旧${scope}`) }
   const selectedDecks = ref({ ...emptySelectionMap(), [scope]: selection })
@@ -410,7 +419,9 @@ function createBattleMatchHarness(deckModule, scope = 'ranked') {
   const tab = ref('match')
   const modeActionPending = ref(false)
   const ranked = ref({ profile: { faction: 'order' } })
-  const l12State = { room: null, notice: '' }
+  const l12State = { room: matchmakingOnly ? { roomCode: 'WATCH1', tournamentId: null } : null,
+    spectating: matchmakingOnly, observerView: 'public', leavingRoom: false, matchFound: null, notice: '' }
+  const props = { matchmakingOnly }
   const activeDeckScope = ref(scope)
   const validationCalls = []
   const joins = []
@@ -418,6 +429,8 @@ function createBattleMatchHarness(deckModule, scope = 'ranked') {
     let componentAlive = true
     let identityEpoch = 0
     let modeActionEpoch = 0
+    let selectorActionEpoch = 0
+    let roomDeckSubmitKey = '', roomDeckSyncKey = '', roomDeckSyncPromise = null
     ${functionText(sources.battle, 'friendlyUsesRestrictions')}
     ${functionText(sources.battle, 'scopeNeedsPolicy')}
     ${functionText(sources.battle, 'restrictionsForScope')}
@@ -428,20 +441,23 @@ function createBattleMatchHarness(deckModule, scope = 'ranked') {
     ${functionText(sources.battle, 'deckError')}
     ${functionText(sources.battle, 'loadSelectedBody')}
     ${functionText(sources.battle, 'onMatch')}
-    return { onMatch, bumpIdentity() { identityEpoch++; modeActionEpoch++ }, unmount() { componentAlive = false; identityEpoch++; modeActionEpoch++ } }
+    const onIdentityChanged = ${accountWatcherCallback(sources.battle)}
+    return { onMatch, bumpIdentity() { onIdentityChanged([platformState.account?.id, platformState.token]) }, unmount() { componentAlive = false; identityEpoch++; modeActionEpoch++ } }
   `, {
-    platformState, selectedDecks, selectedDeckNames, selectionMessages, cachedDecks, catalog,
+    props, platformState, selectedDecks, selectedDeckNames, selectionMessages, cachedDecks, catalog,
     operationsPolicy, roomOptions, selectedMatchMode, tab, modeActionPending, ranked, l12State, activeDeckScope,
     loadPrivateDeckBody: deckModule.loadPrivateDeckBody,
     deckErrorBelongsToCurrentAccount: deckModule.deckErrorBelongsToCurrentAccount,
     validateDeck: (deck, cards, restrictions) => { validationCalls.push({ deck, cards, restrictions }); return '' },
     operationsAllowed: () => true, ensureConnected: async () => true,
+    deckSelectorOpen: ref(false), deckSelectorConfirming: ref(false), deckSelectorError: ref(''),
+    visibleDecks: () => cachedDecks.value, hydrateDeckSelections: () => {}, refreshGuestDecks: async () => {},
     joinMatchmaking: (mode, deck) => joins.push({ mode, deck }),
   })
   return { runtime, refs: { selectedDecks, selectionMessages, selectedMatchMode, modeActionPending }, selection, joins, validationCalls, l12State, rule }
 }
 
-function createRoomHarness(deckModule, { useRestrictions = true } = {}) {
+function createRoomHarness(deckModule, { useRestrictions = true, matchmakingOnly = false } = {}) {
   const rule = { cardId: 'BANNED-ROOM', maxCopies: 0 }
   const body = makeBody('friendly-room', 4, '好友房正文')
   const selection = { id: body.id, revision: body.revision, name: '好友房旧缓存', body: { ...body, name: '好友房旧缓存' } }
@@ -480,7 +496,7 @@ function createRoomHarness(deckModule, { useRestrictions = true } = {}) {
     ${functionText(sources.battle, 'toggleReady')}
     return { syncCurrentRoomDeck, toggleReady, bumpIdentity() { identityEpoch++ }, unmount() { componentAlive = false; identityEpoch++ } }
   `, {
-    platformState, selectedDecks, selectedDeckNames, selectionMessages, cachedDecks, catalog,
+    props: { matchmakingOnly }, platformState, selectedDecks, selectedDeckNames, selectionMessages, cachedDecks, catalog,
     operationsPolicy, roomOptions, l12State, me, activeDeckScope, modeActionPending,
     loadPrivateDeckBody: deckModule.loadPrivateDeckBody,
     deckErrorBelongsToCurrentAccount: deckModule.deckErrorBelongsToCurrentAccount,
@@ -944,6 +960,60 @@ async function main() {
     pending.resolve(makeBody(harness.selection.id, harness.selection.revision, '迟到排位正文'))
     await task
     assert.equal(harness.joins.length, 0)
+  })
+
+  for (const mode of ['ranked', 'casual']) {
+    await check(`ordinary observation uses the existing exact ${mode} deck admission`, 'positive', async () => {
+      localStorage.clear()
+      const harness = createBattleMatchHarness(deckModule, mode, { matchmakingOnly: true })
+      const body = makeBody(harness.selection.id, harness.selection.revision)
+      requestHandler = async () => body
+      await harness.runtime.onMatch()
+      assert.equal(harness.joins.length, 1)
+      assert.equal(harness.joins[0].mode, mode)
+      assert.strictEqual(harness.joins[0].deck, harness.validationCalls[0].deck)
+      assert.deepEqual(harness.validationCalls[0].restrictions, mode === 'ranked' ? [harness.rule] : [])
+      assert.equal(harness.l12State.room.roomCode, 'WATCH1')
+      assert.equal(harness.l12State.spectating, true)
+    })
+  }
+  for (const change of ['room', 'referee', 'tournament', 'player', 'leaving', 'paired', 'identity']) {
+    await check(`observation ${change} change rejects a late matching body`, 'negative', async () => {
+      localStorage.clear()
+      const harness = createBattleMatchHarness(deckModule, 'ranked', { matchmakingOnly: true })
+      const pending = deferred()
+      requestHandler = () => pending.promise
+      const task = harness.runtime.onMatch()
+      await tick()
+      if (change === 'room') harness.l12State.room.roomCode = 'WATCH2'
+      if (change === 'referee') harness.l12State.observerView = 'referee'
+      if (change === 'tournament') harness.l12State.room.tournamentId = 'tournament'
+      if (change === 'player') harness.l12State.spectating = false
+      if (change === 'leaving') harness.l12State.leavingRoom = true
+      if (change === 'paired') harness.l12State.matchFound = { matchId: 'own-match' }
+      if (change === 'identity') harness.runtime.bumpIdentity()
+      pending.resolve(makeBody(harness.selection.id, harness.selection.revision))
+      await task
+      assert.equal(harness.joins.length, 0)
+      assert.equal(harness.refs.modeActionPending.value, false, 'new identity/context must not retain a retired request busy state')
+    })
+  }
+  await check('observation panel reads matching scopes and never syncs a friendly deck', 'negative', async () => {
+    const observed = { roomCode: 'WATCH1' }
+    for (const mode of ['ranked', 'casual']) {
+      const scope = evaluateExpression(initializer(sources.battle, 'activeDeckScope'), {
+        computed, props: { matchmakingOnly: true }, l12State: { room: observed }, tab: ref('match'), selectedMatchMode: ref(mode),
+      })
+      assert.equal(scope.value, mode)
+    }
+    const harness = createRoomHarness(deckModule, { matchmakingOnly: true })
+    requestHandler = () => { throw new Error('Observation must not read or submit friendly deck body') }
+    assert.equal(await harness.runtime.syncCurrentRoomDeck(), false)
+    assert.deepEqual(harness.submissions, [])
+    const normal = createRoomHarness(deckModule)
+    normal.l12State.spectating = true
+    assert.equal(await normal.runtime.syncCurrentRoomDeck(), false)
+    assert.deepEqual(normal.submissions, [])
   })
 
   await check('current matchmaking 404 marks only that scope and does not retry', 'negative', async () => {

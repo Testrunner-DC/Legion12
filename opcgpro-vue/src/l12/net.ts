@@ -81,6 +81,7 @@ const gameStateCardFrameRecovery = new GameStateCardFrameRecovery()
 let pendingActionEnvelope: null | Record<string, unknown> = null
 let pendingActionResentAttempt = -1
 let lastGameStateEnvelope: any = null
+let retiredObservation: null | { roomCode: string; matchId: string; assignedMatchId: string } = null
 let resourceFallbackTimer: ReturnType<typeof setTimeout> | null = null
 let resourceFallbackLastAt = 0
 const resourceNames = ['friends', 'rankedIntegrity', 'alternateArtNotifications', 'seasonSummaryNotifications', 'operationsPolicy', 'presence', 'rulesContent', 'tournaments'] as const
@@ -367,6 +368,39 @@ function clearMatchmakingPolling() {
 function clearMatchmakingRecovery() {
   if (matchmakingRecoveryTimer !== null) window.clearTimeout(matchmakingRecoveryTimer)
   matchmakingRecoveryTimer = null
+}
+
+function isRetiredObservationMessage(message: any) {
+  if (!retiredObservation) return false
+  const matchId = message.type === 'gameStateDelta' ? message.matchId
+    : message.type === 'gameStateCardFrameV1' ? message.payload?.state?.matchId
+    : message.type === 'gameState' ? message.state?.matchId : ''
+  return Boolean((retiredObservation.matchId && matchId === retiredObservation.matchId)
+    || (retiredObservation.roomCode && ['roomState', 'roomLeft', 'roomClosed'].includes(message.type)
+      && message.roomCode === retiredObservation.roomCode))
+}
+
+function retireObservationForMatch(message: any) {
+  const roomCode = typeof message.retiredObservationRoomCode === 'string'
+    ? message.retiredObservationRoomCode : l12State.spectating ? l12State.room?.roomCode || '' : ''
+  const matchId = typeof message.retiredObservationMatchId === 'string'
+    ? message.retiredObservationMatchId : l12State.spectating ? l12State.game?.matchId || '' : ''
+  if ((!roomCode && !matchId) || retiredObservation?.assignedMatchId === message.matchId) return
+  retiredObservation = { roomCode, matchId, assignedMatchId: String(message.matchId || '') }
+  if (l12State.game) chatResource.retireOpponent(l12State.game.matchId)
+  clearSnapshotRecovery()
+  resetGameStateCardFrameRecovery()
+  cancelPendingAction()
+  lastGameStateEnvelope = null
+  l12State.room = null
+  l12State.game = null
+  l12State.rankedClock = null
+  l12State.rankedSettlement = null
+  l12State.matchGovernanceResult = null
+  l12State.spectating = false
+  l12State.observerView = 'public'
+  l12State.gmEnabled = false
+  l12State.leavingRoom = false
 }
 
 function requestMatchedState(socket: WebSocket, onExhausted: () => void) {
@@ -663,6 +697,9 @@ export function connect(): Promise<void> {
       if (!isCurrentAttempt() || failed) return
       const encodedMessage = String(event.data)
       let message = JSON.parse(encodedMessage)
+      // A successful pair owns the next snapshot. Old observation packets must
+      // not replace its room, poison its delta baseline, or trigger recovery.
+      if (isRetiredObservationMessage(message)) return
       const wireWasPlainGameState = message.type === 'gameState'
       if (message.type === 'gameStateCardFrameV1') {
         const rebuilt = negotiatedGameStateCardFrame ? restoreGameStateCardFrame(message, encodedMessage) : null
@@ -688,6 +725,7 @@ export function connect(): Promise<void> {
       // Any current server message proves the receive path is still alive.
       unansweredHeartbeats = 0
       if (message.type === 'session') {
+        if (l12State.accountId !== String(message.accountId || '')) retiredObservation = null
         cancelResourceFallback()
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         negotiatedEventWindowDelta = message.capabilities?.deltaGameState === true
@@ -709,6 +747,7 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = 'session-claimed'
         l12State.notice = message.recovered ? '连接已恢复，正在同步对局状态…' : ''
         startHeartbeat(socket, () => failConnection('服务器长时间未响应心跳，正在自动重连。'))
+        if (l12State.matchFound && !l12State.game) requestMatchedState(socket, replaceBrokenSnapshotConnection)
         syncGameReentry()
       }
       else if (message.type === 'authenticationRequired') {
@@ -858,12 +897,19 @@ export function connect(): Promise<void> {
         if (message.queued) startMatchmakingPolling()
         else clearMatchmakingPolling()
         l12State.notice = message.message || ''
+        if (message.observationResyncRequired === true && l12State.spectating && l12State.room
+          && !l12State.leavingRoom && !l12State.matchFound)
+          socket.send(JSON.stringify({ type: 'syncState' }))
       }
       else if (message.type === 'matchmakingFound') {
+        if (l12State.matchFound?.matchId === message.matchId) return
         clearMatchmakingPolling()
         l12State.matchmaking = null
+        if (l12State.game?.matchId === message.matchId && !l12State.spectating) return
+        retireObservationForMatch(message)
         l12State.matchFound = { mode: message.mode, roomCode: message.roomCode, matchId: message.matchId }
         l12State.notice = message.message || '匹配成功，正在建立对局'
+        syncGameReentry()
         requestMatchedState(socket, replaceBrokenSnapshotConnection)
       }
       else if (message.type === 'matchmakingRejected') {
@@ -879,6 +925,7 @@ export function connect(): Promise<void> {
         l12State.notice = message.message || '匹配请求未能完成'
       }
       else if (message.type === 'roomLeft' || message.type === 'roomClosed') {
+        retiredObservation = null
         if (l12State.game) chatResource.retireOpponent(l12State.game.matchId)
         clearMatchmakingRecovery()
         clearSnapshotRecovery()
@@ -971,6 +1018,7 @@ export function connect(): Promise<void> {
         }
         clearSnapshotRecovery()
         if (!message.roomCode) {
+          retiredObservation = null
           cancelPendingAction()
           l12State.room = null
           l12State.game = null
@@ -1125,6 +1173,7 @@ export function disconnect() {
   presenceRecoveryPending = false
   presenceBaselineEpoch = ''
   lastGameStateEnvelope = null
+  retiredObservation = null
   l12State.matchmaking = null
   l12State.matchFound = null
   l12State.rankedSettlement = null
