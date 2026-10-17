@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-disaster-statistics-player-views",
+  "date": "2026-10-18",
+  "audience": "players",
+  "title": "天灾禁选记录与公开构筑统计",
+  "changes": [{
+    "category": "tournaments",
+    "text": "对局记录与赛事赛程可按需查看已结束对局的天灾禁选记录：保留公开禁用和本人可见的选择，不公开对手隐蔽候选与选择；公开牌库增加真实绑定排位的天灾禁用统计，样本不足时不展示分布。",
+    "paths": [
+      "opcgpro-vue/src/l12/disasterAnalytics.ts",
+      "opcgpro-vue/src/l12/platform.ts",
+      "opcgpro-vue/src/l12/MatchRecords.vue",
+      "opcgpro-vue/src/l12/site/VisibleDisasterSummary.vue",
+      "opcgpro-vue/src/l12/site/TournamentDisasterSummary.vue",
+      "opcgpro-vue/src/l12/site/PublicDeckDisasterStatistics.vue",
+      "opcgpro-vue/src/l12/site/PublicDeckDetailPage.vue",
+      "opcgpro-vue/src/l12/site/TournamentPublicDetail.vue",
+      "opcgpro-vue/src/l12/site/TournamentAccountDetail.vue",
+      "服务端WebSocket/TwelveLegions/L12WebSocketServer.DisasterAnalytics.cs",
+      "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+      "服务端WebSocket/TwelveLegions/L12PlatformStore.DisasterReads.cs",
+      "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterProjections.cs"
+    ]
+  }]
+}

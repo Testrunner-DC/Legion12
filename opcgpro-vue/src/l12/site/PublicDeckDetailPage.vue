@@ -10,6 +10,7 @@ import CardDetailContent from '@/l12/CardDetailContent.vue'
 import CardImage from '@/l12/CardImage.vue'
 import DeckConstructionBrowser, { type ConstructionEntry } from './DeckConstructionBrowser.vue'
 import StatisticsScope from './StatisticsScope.vue'
+import PublicDeckDisasterStatistics from './PublicDeckDisasterStatistics.vue'
 import { samplePublicDeckOpeningHand } from './publicDeckHands'
 import { capturePublicDeckCounterGuard, isOfficialPublicDeckCounterTarget, mergePublicDeckCounters } from './publicDeckEntry'
 import { useActionGate } from '@/l12/useActionGate'
@@ -566,6 +567,7 @@ function formatRate(value: number) { return `${(value * 100).toFixed(1)}%` }
       </section>
       <section v-if="entry.source === 'public'" id="public-deck-matches" class="content-panel detail-anchor-section" data-detail-section="matches">
         <header><div><h2>版本对局</h2><p>按开局时绑定的不可变公开版本统计。</p></div></header>
+        <PublicDeckDisasterStatistics :key="entry.readToken" :reference="entry.publicCode" :read-token="entry.readToken" :cards="catalog" />
         <p v-if="statisticsState === 'loading'" class="empty-copy">正在读取匿名统计……</p>
         <p v-else-if="statisticsState === 'unavailable'" class="empty-copy">{{ statisticsNotice }}</p>
         <template v-else-if="statisticsState === 'available' && statisticsPage"><StatisticsScope :summary="matchStatisticsRange" :sample="matchStatisticsSample" :items="matchStatisticsItems"/><div v-if="statisticsPage.groups.length" class="match-stat-list"><article v-for="stat in statisticsPage.groups" :key="`${stat.version}-${stat.masterId}-${stat.opponentMasterId}`"><header><b>版本 {{ stat.version }}</b><span>{{ masterName(stat.masterId) }} 对阵 {{ masterName(stat.opponentMasterId) }}</span></header><dl><div><dt>场次</dt><dd>{{ stat.games }}</dd></div><div><dt>胜率</dt><dd>{{ formatRate(stat.winRate) }}</dd></div><div><dt>胜 / 负 / 平</dt><dd>{{ stat.wins }} / {{ stat.losses }} / {{ stat.draws }}</dd></div></dl></article></div><p v-else class="empty-copy">{{ matchStatisticsSample }}</p><div v-if="statisticsPageCount > 1" class="editor-actions"><button :disabled="statisticsPage.page <= 1" @click="loadStatisticsPage(statisticsPage.page - 1)">上一页</button><button :disabled="statisticsPage.page >= statisticsPageCount" @click="loadStatisticsPage(statisticsPage.page + 1)">下一页</button></div></template>

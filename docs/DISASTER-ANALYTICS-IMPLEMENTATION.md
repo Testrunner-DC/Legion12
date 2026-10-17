@@ -1,6 +1,6 @@
 # 天灾禁选统计接入实施合同
 
-状态：2026-10-18 DSC-01A与DSC-01B均已本地验收完成，未部署；第三、四期未实施。历史合同接收基线f334127b60f8223bed919be5c01d3d6c4679ee37。来源对话01a0dbc8-0071-7bc0-a1bd-f8f5ff5dd543，Main承担实现分批、验收及发布；本合同不代替实际验收与部署收据。
+状态：2026-10-18 第1—4期均已本地验收完成，未部署。第三、四期开发基线621d9f41bc149caf2353f109b708989f653f616d，最终源级接受及精确Git同步见D:/GPT/Legion12/artifacts/disaster-analytics-phase34-20261018/final-acceptance.json、synchronization.json；历史合同接收基线f334127b60f8223bed919be5c01d3d6c4679ee37。来源对话01a0dbc8-0071-7bc0-a1bd-f8f5ff5dd543，Main承担实现分批、验收及发布；本合同不代替实际验收与部署收据。
 
 首期实施跟进：DSC-01A在202f5020基线上交付11叶，Main核35专项/运行库及独审；当时完整规则7846/平台1857零失败跳过。首期原证据见 `D:/GPT/Legion12/artifacts/disaster-setup-analytics-20261017/main-final-acceptance.json`、main-git-sync.json。
 
@@ -49,7 +49,19 @@
 - GET /api/admin/matches/{id} → GetAdminMatchAsync → AdminMatchDetail/AdminMatchesPanel，追加独立于录像载荷的准备摘要；includeReplay=false或录像已过期仍可读。纯展示组件只接已授权薄DTO，不能先发原始候选再隐藏。
 - 后续卡牌/热门构筑、Profile、MatchRecords、公开牌库及赛事复用指标服务，不将相关性说成因果；赛事按真实recordedMatchId，轮空/人工判罚/未开局不造禁选样本。
 
-## 首期退出门槛
+## 第三、四期接入范围（2026-10-18）
+
+- P1/P2/P3/P4沿既有事实、查询执行器和页面扩展，不增加结算分支、统计写库、Journal读取或另一套事实。不改赛果、录像期限及旧数据，不回填历史。
+- 第三期：`ReadScopedDisasterAnalyticsAsync`及`GET /api/admin/analytics/disasters`接受互斥的实际携带卡号或服务器规范构筑签名；沿原排位、时间/版本/主宰/对手/先后手/排除集收窄参赛方，再使用同一禁选计算器。scope类型、完整目标、所有原筛选进入缓存键；取消、单键请求合并、epoch及有界worker不变。旧主宰未选中时不展示分布的行为保持。
+- 单卡详情与热门构筑查看弹框中的`ScopedDisasterAnalytics`接入上述查询。按需点击、无新轮询；继承已应用范围、同一日期边界转换；身份、权限、令牌、上下文变更立即退休旧结果。后台仅有统计权限时不返回pick分组，缓存本体不被权限投影修改。
+- 第四期个人入口为现有`MatchRecords`，不再复制Profile的战绩口径。`GET /api/me/matches/{matchId}/disasters`只读已结束且有真实账号绑定的本人对局，返回双方公开禁用、本人pick/候选及本人或已公开的构成，不返回对手隐蔽pick、候选或完整构成。该摘要独立于录像载荷。
+- 公开牌库新增按需禁用统计，沿原公开读取代/可见性/会话/排除集lease重验。固定最近90个UTC日的真实公开版本绑定排位，不接受自由日期、先后手、来源或卡池切片；只返回公开ban汇总，至少3个不同match，不以镜像席位凑门槛；不返回pick、pool、账号、对局ID或私密候选。各版本沿publication绑定合并，不能称为当前单一版本的数据。
+- 赛事账号/公开赛程复用一个按需桌次组件，只有已结束非轮空桌次可选。服务端须有真实recordedMatchId、已结束tournament记录及与桌次一致的两个账号，读后重验赛事版本/绑定/可见性与会话。人工赛果而没有真实对局绑定的桌次不造样本；裁判不因该入口得到额外私密信息。
+- 新薄DTO与后台完整DTO分离；旧事实缺失保留unknown，random原始事实coverage=exact但mode明确无自主禁选，none保留not-applicable。不把事实完整性和自主选择适用性混作一个字段。
+- 专项证据位于`D:/GPT/Legion12/artifacts/disaster-analytics-phase34-20261018`：第三期48/48（含新16、原query10、请求生命周期22），第四期真实投影/HTTP12/12，新组件9/9、第二期兼容9/9及独审CLEAR。最终完整规则7849/平台1915零失败跳过，完整前端含类型及双构建通过，19业务叶与三处运行DLL一致。仅测试夹具修正后复用已过规则，属于组合源级验收，不称新单轮全绿Batch、clean Release或线上。
+- r1共享status局部作用域编译错误、Main三次新增夹具编译错误、random旧期望冲突、首轮浏览器卡池stub接线失败、原平台1911绿/1临时DB清理失败及旧前端夹具/PATH失败均保留，不改写为产品RED或通过。共享清理只提取原8次/原延时并逐次清池，20专项/3新增例通过；前端原断言保留，配对标签54、三时区各9、薄牌库26通过。原生输出不全进入PowerShell transcript，最终收据明确记录实际工具退出及该日志边界，不冒称全原始输出留存。
+
+## 首期退出门槛（既有）
 
 - TwelveLegions.Tests验证真实先后手交换、逻辑步骤/实际候选、all/season/random/none、固定牌与RNG/hash/旧fact序号不变。
 - TwelveLegions.Platform.Tests验证初始化重入/迁移中断、Start/Append/末次pick原子故障、同值重试和冲突拒绝、旧提示/错人/重复请求、各节点checkpoint+tail恢复、不重复计数及有界缓冲。

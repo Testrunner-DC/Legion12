@@ -85,8 +85,7 @@ public sealed class NextResetLockPersistenceCompatibilityTests
         }
         finally
         {
-            SqliteConnection.ClearAllPools();
-            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            PlatformTestDirectoryCleanup.Delete(directory);
         }
     }
 

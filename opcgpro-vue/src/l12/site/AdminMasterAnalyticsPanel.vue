@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import ScopedDisasterAnalytics from './ScopedDisasterAnalytics.vue'
 import CardImage from '@/l12/CardImage.vue'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import { masterProfileUrl } from '@/l12/specialAssets'
@@ -190,7 +191,9 @@ onMounted(async () => {
       <section class="panel master-cards"><header><h3>主宰内单卡表现</h3><p>上手提升比较同一批携带者“抽到 vs 未抽到”，基准不是固定50%。</p></header><article v-for="item in report?.cards?.items || []" :key="item.cardId"><CardImage :card-id="item.cardId" :legacy-url="cardById.get(item.cardId)?.imageUrl" :alt="cardById.get(item.cardId)?.nameZh || item.cardId" intent="thumb"/><b>{{ cardById.get(item.cardId)?.nameZh || item.cardId }}</b><span>入构 {{ percent(item.inclusionRate) }}</span><span>携带 {{ percent(item.winRate) }}</span><span>抽到 {{ item.gihSamples >= 30 ? percent(item.gihWinRate) : '—' }}</span><span>未上手 {{ item.gnsSamples >= 30 ? percent(item.gnsWinRate) : '—' }}</span><strong>提升 {{ item.gihSamples >= 30 && item.gnsSamples >= 30 ? percent(item.inHandWinRateDelta) : '—' }}</strong></article></section>
       <section class="panel popular"><header><h3>热门构筑</h3><p>按完全一致的赛后构筑快照聚合；查看构筑可核对组成。</p></header><article v-for="(deck, index) in report?.popularDecks || []" :key="deck.signature"><span><b>构筑 {{ index + 1 }}</b><small>{{ deck.samples }} 份 · 胜率 {{ deck.samples >= 30 ? percent(deck.winRate) : '—' }}</small></span><button type="button" @click="choosePopularDeck(deck)">查看构筑</button></article><p v-if="!report?.popularDecks.length" class="empty compact">暂无符合当前范围的构筑快照</p></section>
     </template>
-    <DeckSnapshotViewer v-if="popularDeck && selected" :entries="popularDeck.cards" :catalog="cards" :master-id="selected.masterId" :title="`${masterName(selected.masterId)} · 热门构筑`" :deck-name="`${masterName(selected.masterId)} 热门构筑`" eyebrow="统计构筑快照" @close="popularDeck = null" @notice="emit('notice', $event)"/>
+    <DeckSnapshotViewer v-if="popularDeck && selected" :entries="popularDeck.cards" :catalog="cards" :master-id="selected.masterId" :title="`${masterName(selected.masterId)} · 热门构筑`" :deck-name="`${masterName(selected.masterId)} 热门构筑`" eyebrow="统计构筑快照" @close="popularDeck = null" @notice="emit('notice', $event)">
+      <ScopedDisasterAnalytics v-if="appliedScope" :key="popularDeck.signature" :scope="{ from: appliedScope.from, to: appliedScope.to, masterId: appliedScope.masterId, opponentMasterId: appliedScope.opponentMasterId, initiative: appliedScope.initiative, seasonId: appliedScope.seasonId, effectVersion: appliedScope.effectVersion }" :deck-signature="popularDeck.signature" :cards="cards" title="所选热门构筑的天灾禁选分析" />
+    </DeckSnapshotViewer>
   </section>
 </template>
 

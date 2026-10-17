@@ -56,7 +56,11 @@ export const calls=window.__dscCalls=[];export const pending=window.__dscPending
 function request(kind,args){const id=++sequence;calls.push({id,kind,args});return new Promise((resolve,reject)=>pending.set(id,{resolve,reject}));}
 export const adminApi={masterAnalytics:q=>request('master',q),matches:q=>request('list',q),playerMatches:(id,q)=>request('list',{...q,accountId:id}),match:id=>request('detail',{matchId:id})};
 export const getEffectiveOperationsPolicy=async()=>({season:{id:'qa-season',name:'合成赛季'}});
-export const hasPermission=()=>true;`
+export const hasPermission=()=>true;
+// The new lazy scoped child is imported by the real parent. This older fixture
+// never opens it: fail loudly if it unexpectedly creates a new query.
+export const localDateBoundary=value=>value;
+export const platformRequest=()=>Promise.reject(new Error('unexpected scoped query in phase2 fixture'));`
 const cards = [{ id: 'qa-master', cardType: 'master', nameZh: '合成主宰' },
   { id: 'D-A', cardType: 'destruction', nameZh: '合成天灾甲' },
   { id: 'D-FRESH', cardType: 'destruction', nameZh: '当前天灾' },
@@ -88,10 +92,11 @@ const server = await createServer({ root: appRoot, configLoader: 'runner', cache
   logLevel: 'error', server: { host: '127.0.0.1', port: 0, strictPort: false }, plugins: [{
     name: 'dsc01b-real-component-fixture',
     enforce: 'pre',
-    resolveId(id) {
+    resolveId(id, importer) {
       const normalized = id.replaceAll('\\', '/')
       if (id === '/__dsc_main.js') return '\0dsc-entry'
-      if (id === 'dsc-platform' || id === '@/l12/platform' || /\/src\/l12\/platform(?:\.ts)?$/.test(normalized)) return '\0dsc-platform'
+      if (id === 'dsc-platform' || id === '@/l12/platform' || id === './platform' && importer?.replaceAll('\\', '/').endsWith('/disasterAnalytics.ts')
+        || /\/src\/l12\/platform(?:\.ts)?$/.test(normalized)) return '\0dsc-platform'
       if (id === '@/l12/decks' || /\/src\/l12\/decks(?:\.ts)?$/.test(normalized)) return '\0dsc-decks'
       if (id === '@/l12/specialAssets' || /\/src\/l12\/specialAssets(?:\.ts)?$/.test(normalized)) return '\0dsc-assets'
       if (id === '@/l12/CardImage.vue' || normalized.endsWith('/src/l12/CardImage.vue')) return '\0dsc-card'

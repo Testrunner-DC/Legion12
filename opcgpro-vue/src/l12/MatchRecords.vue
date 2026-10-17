@@ -6,6 +6,7 @@ import {
   exportReplayPayload, parseReplayPayload, rememberImportedReplay, type MatchDetail, type MatchSummary,
 } from './replayModel'
 import { isMobileDeviceExperience } from './mobileViewport'
+import VisibleDisasterSummary from './site/VisibleDisasterSummary.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -174,6 +175,7 @@ function resultLabel(match: MatchSummary) {
           <p v-else>回放将在独立的完整对战界面中打开。</p>
           <button class="primary" :disabled="!canUseSelectedReplay" @click="playSelected">播放回放</button>
         </section>
+        <VisibleDisasterSummary v-if="selected.endedUtc" :key="selected.matchId" :path="`/api/me/matches/${encodeURIComponent(selected.matchId)}/disasters`" />
       </main>
       <div v-else class="records-placeholder">{{ loading ? '正在读取对局记录…' : '选择一场对局，或打开 JSON 回放' }}</div>
     </div>

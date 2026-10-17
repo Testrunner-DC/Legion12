@@ -28,10 +28,15 @@ if (!process.argv.includes('--child')) {
   const helpers = tree.statements.filter(node => ts.isFunctionDeclaration(node)
     && ['localDateBoundary', 'analyticsUtcDate'].includes(node.name?.text))
   const compiled = ts.transpileModule(`${helpers.map(node => node.getText(tree)).join('\n')}\nconst invoke=${member.initializer.getText(tree)}`, {
-    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
   }).outputText
   const calls = []
-  const invoke = new Function('platformRequest', `${compiled}\nreturn invoke`)(url => { calls.push(url); return Promise.resolve({}) })
+  // The shared date helper is now exported for scoped analytics. Execute its
+  // real module form rather than treating an ES export as a function body.
+  const helperExports = {}
+  const invoke = new Function('platformRequest', 'exports', `${compiled}\nreturn invoke`)(
+    url => { calls.push(url); return Promise.resolve({}) }, helperExports)
+  assert.equal(typeof helperExports.localDateBoundary, 'function')
   const failures = []
   let passed = 0
   async function check(name, work) {

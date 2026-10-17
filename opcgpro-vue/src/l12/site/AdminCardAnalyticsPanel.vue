@@ -6,6 +6,7 @@ import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPic
 import PagedCollection from './PagedCollection.vue'
 import AdminMasterAnalyticsPanel from './AdminMasterAnalyticsPanel.vue'
 import StatisticsScope from './StatisticsScope.vue'
+import ScopedDisasterAnalytics from './ScopedDisasterAnalytics.vue'
 import {
   adminApi,
   getEffectiveOperationsPolicy,
@@ -368,6 +369,7 @@ onMounted(async () => {
       <main v-else-if="activeTab === 'single'" class="analysis-detail panel-shell">
         <div v-if="detailLoading" class="empty">正在读取卡牌数据…</div>
         <template v-else-if="detail">
+          <ScopedDisasterAnalytics v-if="detailAppliedScope" :key="detail.summary.cardId" :scope="detailAppliedScope.query" :card-id="detail.summary.cardId" :cards="cards" />
           <header class="card-heading">
             <CardImage :card-id="detail.summary.cardId" :legacy-url="selectedCatalogCard?.imageUrl" :alt="selectedCatalogCard?.nameZh || detail.summary.cardId" intent="detail" eager/>
             <div><small>{{ detail.summary.cardId }} · {{ selectedCatalogCard?.faction || '未知阵营' }}</small><h3>{{ selectedCatalogCard?.nameZh || detail.summary.cardId }}</h3><p>{{ coverageLabel(detail.coverage) }} · {{ detail.summary.sampleSize }} 份参赛方样本 / {{ detail.summary.includedMatches }} 场</p><em class="conclusion-strip" :data-tone="resultTone(detail.summary)">{{ resultText(detail.summary) }}</em></div>

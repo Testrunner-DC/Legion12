@@ -323,6 +323,7 @@ function tournamentDetailComponent() {
     '@/l12/tournamentRulingPolicy': tournamentRulingPolicy,
     '@/l12/tournamentTime': timeModule, './TournamentJudgeDesk.vue': componentModule,
     './TournamentManagementPanel.vue': componentModule,
+    './TournamentDisasterSummary.vue': componentModule,
   })
 }
 function tournamentWorkbenchComponent() {

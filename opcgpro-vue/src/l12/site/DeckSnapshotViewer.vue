@@ -64,6 +64,7 @@ async function copyToLibrary() {
       <section class="deck-viewer-modal ui-state-scope" role="dialog" aria-modal="true" :aria-label="title">
         <header><div><small>{{ eyebrow }}</small><h2>{{ title }}</h2></div><button type="button" aria-label="关闭构筑" @click="emit('close')">×</button></header>
         <DeckConstructionBrowser :entries="entries" :catalog="catalog" :title="title"/>
+        <slot />
         <footer class="deck-viewer-actions"><button :disabled="!deck" @click="copyCode">复制牌库码</button><button :disabled="!deck" @click="exportImage">导出牌库图</button><button class="primary" :disabled="!deck || copyBusy" @click="copyToLibrary">复制到我的牌库</button><small v-if="!deck">快照缺少主宰，无法生成可复用牌库。</small></footer>
       </section>
     </div>

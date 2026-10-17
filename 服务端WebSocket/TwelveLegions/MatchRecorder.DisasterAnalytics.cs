@@ -7,7 +7,7 @@ public sealed partial class MatchRecorder
     // Operates on the same bounded worker/transaction and eligible population as the master report.
     // No replay loading and no per-match diagnostic traversal on this HTTP path.
     private static L12DisasterAnalyticsReport ComputeDisasterAnalytics(CardAnalyticsExecution execution,
-        SqliteTransaction transaction, L12CardAnalyticsQuery query)
+        SqliteTransaction transaction, L12CardAnalyticsQuery query, bool allowUnselectedMaster = false)
     {
         var connection = execution.Connection;
         using (var scope = DisasterCommand(connection, transaction, """
@@ -86,13 +86,13 @@ public sealed partial class MatchRecorder
             FROM temp.l12_disaster_population p
             JOIN match_disaster_decisions d ON d.match_id=p.match_id AND d.actor_index=p.player_index
             JOIN match_disaster_candidates k ON k.match_id=d.match_id AND k.step=d.step
-            WHERE p.sample_status='usable' AND $master IS NOT NULL
+            WHERE p.sample_status='usable' AND ($master IS NOT NULL OR $explicitScope=1)
               AND ($mode IS NULL OR p.disaster_mode=$mode)
               AND ($pool IS NULL OR p.seed_hash=$pool)
               AND ($origin IS NULL OR d.origin=$origin)
             GROUP BY k.card_id,initiative,d.action,d.step,d.origin
             ORDER BY initiative,d.step,d.origin,k.card_id LIMIT 1001;
-            """, ("$master", query.MasterId), ("$mode", query.DisasterMode),
+            """, ("$master", query.MasterId), ("$explicitScope", allowUnselectedMaster ? 1 : 0), ("$mode", query.DisasterMode),
             ("$pool", query.DisasterPoolId), ("$origin", query.DisasterOrigin)))
         using (var reader = command.ExecuteReader())
             while (reader.Read())

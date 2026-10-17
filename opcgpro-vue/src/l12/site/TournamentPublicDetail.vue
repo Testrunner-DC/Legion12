@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { publicTournamentApi, type PublicTournamentDetail } from '@/l12/platform'
 import { tournamentDisasterModeText, tournamentFormatText, tournamentMatchStatusText, tournamentPhaseText, tournamentResultText, tournamentRoundStatusText, tournamentStatusText } from '@/l12/tournamentLabels'
 import { tournamentTimeControlLabel } from '@/l12/tournamentTime'
+import TournamentDisasterSummary from './TournamentDisasterSummary.vue'
 
 const route = useRoute(); const router = useRouter()
 const tournament = ref<PublicTournamentDetail | null>(null)
@@ -53,6 +54,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; window.clearTimeout(refre
       <section v-else-if="tab === 'participants'" class="panel"><h2>参赛者</h2><p v-if="tournament.registrationVisibility === 'staff'" class="empty">参赛名单仅工作人员可见</p><p v-else-if="!tournament.participants.length" class="empty">暂无参赛者</p><div v-else class="participants"><article v-for="(person,index) in tournament.participants" :key="index"><b>{{ person.name }}</b><span>{{ participantStatus(person.status) }}</span></article></div></section>
       <section v-else class="panel rules"><h2>赛事规则</h2><p><small>规则版本</small>{{ tournament.rules.ruleset }}</p><p><small>天灾</small>{{ tournamentDisasterModeText(tournament.rules.disasterMode) }}</p><p><small>对局计时</small>{{ tournamentTimeControlLabel(tournament.rules.timeControl) }}</p><p><small>签到窗口</small>{{ tournament.checkInMinutes }} 分钟</p><p><small>迟到宽限</small>{{ tournament.rules.lateGraceMinutes }} 分钟</p><p v-if="tournament.rules.banList"><small>禁限说明</small>{{ tournament.rules.banList }}</p><p v-for="(restriction,index) in tournament.rules.cardRestrictions" :key="index"><small>{{ restriction.cardId }}</small>最多 {{ restriction.maxCopies }} 张</p></section>
     </template>
+    <TournamentDisasterSummary v-if="tournament && tab === 'schedule'" :code="tournament.code" :rounds="tournament.rounds" />
   </main>
 </template>
 

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-disaster-scoped-analytics-internal",
+  "date": "2026-10-18",
+  "audience": "internal",
+  "reason": "天灾统计第三期复用现有事实与有界查询：按真实携带卡牌或规范构筑收窄参赛方，后台组件继承原范围并按权限隐藏私密选牌分组。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterScopedAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterAnalytics.cs",
+    "opcgpro-vue/src/l12/site/ScopedDisasterAnalytics.vue",
+    "opcgpro-vue/src/l12/site/AdminCardAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/DeckSnapshotViewer.vue"
+  ]
+}

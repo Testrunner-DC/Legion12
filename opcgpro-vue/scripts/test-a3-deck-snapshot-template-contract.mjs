@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { parse as parseTemplate } from '@vue/compiler-dom'
 import {
   deckSnapshotGroups,
   deckSnapshotPredicateNames,
@@ -23,13 +25,30 @@ const changed = (key, before, after, sources = baselineSources) => ({
   ...sources,
   [key]: replaceOnce(sources[key], before, after),
 })
-const wrapSelfClosing = (source, marker) => {
-  const start = source.indexOf(marker)
-  assert.notEqual(start, -1, `self-closing marker missing: ${marker}`)
-  const end = source.indexOf('/>', start)
-  assert.notEqual(end, -1, `self-closing end missing: ${marker}`)
-  const element = source.slice(start, end + 2)
-  return source.slice(0, start) + `<template>${element}</template>` + source.slice(end + 2)
+const wrapComponent = (source, marker) => {
+  const markerStart = source.indexOf(marker)
+  assert.notEqual(markerStart, -1, `component marker missing: ${marker}`)
+  const { descriptor, errors } = parseSfc(source)
+  assert.deepEqual(errors, [])
+  const template = descriptor.template
+  assert.ok(template)
+  const start = markerStart + marker.indexOf('<')
+  const offset = template.loc.start.offset
+  const matches = []
+  const visit = node => {
+    if (node.type === 1 && offset + node.loc.start.offset === start) matches.push(node)
+    for (const child of node.children || []) visit(child)
+  }
+  visit(parseTemplate(template.content))
+  assert.equal(matches.length, 1, 'wrap the entire actual component, including slot children')
+  const end = offset + matches[0].loc.end.offset
+  return source.slice(0, start) + `<template>${source.slice(start, end)}</template>` + source.slice(end)
+}
+const renameComponent = (source, pascal, kebab) => {
+  let result = replaceOnce(source, `<${pascal} `, `<${kebab} `)
+  // A component with slot content has a paired closing tag, unlike the old fixture.
+  if (source.includes(`</${pascal}>`)) result = replaceOnce(result, `</${pascal}>`, `</${kebab}>`)
+  return result
 }
 
 let cases = 0
@@ -56,19 +75,23 @@ spaced = changed('adminMasterAnalytics', 'v-if="popularDeck && selected"', 'v-if
 spaced = changed('deckSnapshotViewer', ':entries="entries"', ':entries=" ( entries ) "', spaced)
 accept('expression whitespace and parentheses', spaced)
 
-let kebab = changed('adminMatches', '<DeckSnapshotViewer ', '<deck-snapshot-viewer ')
-kebab = changed('adminMasterAnalytics', '<DeckSnapshotViewer ', '<deck-snapshot-viewer ', kebab)
-kebab = changed('deckSnapshotViewer', '<DeckConstructionBrowser ', '<deck-construction-browser ', kebab)
-kebab = changed('deckConstructionBrowser', '<CatalogCardDetails ', '<catalog-card-details ', kebab)
+const kebab = {
+  adminMatches: renameComponent(baselineSources.adminMatches, 'DeckSnapshotViewer', 'deck-snapshot-viewer'),
+  adminMasterAnalytics: renameComponent(baselineSources.adminMasterAnalytics, 'DeckSnapshotViewer', 'deck-snapshot-viewer'),
+  deckSnapshotViewer: renameComponent(baselineSources.deckSnapshotViewer, 'DeckConstructionBrowser', 'deck-construction-browser'),
+  deckConstructionBrowser: renameComponent(baselineSources.deckConstructionBrowser, 'CatalogCardDetails', 'catalog-card-details'),
+}
 accept('four explicit Vue kebab component spellings', kebab)
 
 const transparent = {
   ...baselineSources,
-  adminMatches: wrapSelfClosing(baselineSources.adminMatches, '    <DeckSnapshotViewer '),
-  adminMasterAnalytics: wrapSelfClosing(baselineSources.adminMasterAnalytics, '    <DeckSnapshotViewer '),
-  deckSnapshotViewer: wrapSelfClosing(baselineSources.deckSnapshotViewer, '        <DeckConstructionBrowser '),
+  adminMatches: wrapComponent(baselineSources.adminMatches, '    <DeckSnapshotViewer '),
+  adminMasterAnalytics: wrapComponent(baselineSources.adminMasterAnalytics, '    <DeckSnapshotViewer '),
+  deckSnapshotViewer: wrapComponent(baselineSources.deckSnapshotViewer, '        <DeckConstructionBrowser '),
 }
 accept('unconditional component templates are transparent', transparent)
+reject('paired analytics consumer mismatched closing tag', 'analyticsViewerConsumer', changed('adminMasterAnalytics',
+  '</DeckSnapshotViewer>', '</FakeViewer>'))
 
 const arrowCallable = changed('deckSnapshotViewer', 'async function copyCode() {', 'const copyCode = async () => {')
 accept('async arrow action declaration is equivalent', arrowCallable)

@@ -457,23 +457,7 @@ internal sealed class RankedIdentityFixture : IDisposable
 
     internal static void DeleteTemporaryDirectoryWithRetry(Action delete, bool windows, Action<int> delay,
         Action? beforeDelete = null)
-    {
-        ArgumentNullException.ThrowIfNull(delete);
-        ArgumentNullException.ThrowIfNull(delay);
-        for (var attempt = 1; attempt <= 8; attempt++)
-        {
-            try
-            {
-                beforeDelete?.Invoke();
-                delete();
-                return;
-            }
-            catch (IOException) when (windows && attempt < 8)
-            {
-                delay(50 * attempt);
-            }
-        }
-    }
+        => PlatformTestDirectoryCleanup.Retry(delete, windows, delay, beforeDelete);
 }
 
 internal static class RankedIdentityTestState

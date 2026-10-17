@@ -787,6 +787,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.UseRouting();
         _app.UseWebSockets();
         MapDeploymentDrainEndpoints();
+        MapDisasterAnalyticsEndpoints();
         _app.MapGet("/health", () =>
         {
             var build = L12RuntimeBuildVersion.Capture();
@@ -2067,14 +2068,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             message = "公开牌库已提交读取代当前不可用" }, statusCode: 503);
         IResult PublicDeckStatisticsFailure() => Results.Json(new { code = "storage_unavailable",
             message = "牌库统计暂时无法读取，请稍后重试" }, statusCode: 503);
-        IResult PublicDeckStatisticsStatus(string status) => status switch
-        {
-            "unauthorized" => Results.Unauthorized(),
-            "not_found" => Results.NotFound(),
-            "read_conflict" => Results.Json(new { code = "public_deck_read_conflict", refreshRequired = true }, statusCode: 409),
-            "feature_disabled" => Results.Json(new { code = "feature_disabled", message = "公开牌库当前未开放" }, statusCode: 503),
-            _ => Results.BadRequest(new { message = "牌库统计查询参数无效" }),
-        };
         bool TryPublicDeckContentWriteToken(IQueryCollection query, out string token)
         {
             token = "";
