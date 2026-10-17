@@ -1,5 +1,32 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-FOLLOWING-TWENTY｜六批20项真实终态，92待办
+
+- rule-display-four：c599/1be/e43/c36均按当前显示字段不明或现规则有界rejected，33正式结果/19当前源加1正式专属Editor引用；D850B79A真实四终态、112→108。哮天犬无冲锋、冲锋不等于射程/挑衅豁免、暴怒进攻优先不等于普通移动豁免，未冒犬攻主宰单一UI链或使用未部署1ba。
+- field-target-three：7c13/50ce/5467按81cbc3已部署a355分别fixed_verified，FD2F23C7三终态、108→105。宫廷真实SFC四态/权威2/恢复2及正式7结果，相关消费者与cce8桥明示；不称GameBoard/CSS整文件未变，月读浏览器仅第一目标、不冒完整移位私局。
+- wukong-counter-three：825/889/21c均bounded rejected，13具名/20同正式源，D94BBC39三终态、105→102。孙悟空真实变身/攻主宰与通用1血致死为组合证据而非同一孙悟空1血链，返1休整需条件/选择且不是退费用；吕布进攻后部分为私有入队单测加真实共享时序，彻夜不眠为活跃对象/非致死1及0士气绝防候选，不冒完整反击结算。
+- presence-disaster-three：a573/af47现有功能有界rejected，32f53按de1cf5已部署fixed；A64AEC00三终态、102→99。观战标记/对战中添加好友依据服务端状态、共享消费者及具名结果，不冒真实列表像素或额外延期功能；天灾值采用当前实际844 DOM“天灾值0”及11视口合同，不冒动态多值/全环境GREEN/真机。
+- charge-room-artemis-three：e3ca/863/fae均bounded rejected，17正式结果/13源，35760820三终态、99→96。冲锋未明卡名仅共享真实登场/印刷/授予链；房间选项权威保留加源合同不冒双浏览器操作；“月神”推测阿尔忒弥斯，现有更正结果不冒玩家确认版本或新修复。
+- egypt-morale-four：546c/0eb/e0b/db4均bounded rejected，04E04C33报告/9D2F7AAD提案、4 SelfTest/22具名正式结果/18源及811A5B4C真实混合返还单态；原v2合同/12函数/五字面绑定不变。图坦身份只是4费/召唤守卫线索推测，尼托克丽丝/安卡墓碑合法/受限/响应后失效具名7结果，天廷0士气恢复具名3结果不等于任意弃牌均回士气。CBE8F8D5四终态，CAS31063/31064/31066/31067、96→92，原文/历史/会话撤销保持。
+- 六批20项不重交；连上节七项为接续410后27实际闭环（7fixed/20rejected）。最新43796633同次快照唯一910/92new/374resolved/444closed、阶段437=142fixed/279rejected/16duplicate、周期529；仅当前检查与记录，不改产品、不部署、不提前关闭1ba/R7/680a/回放或真机长期问题。
+
+## CHECK-20261017-MIXED-MORALE-RETURN｜单844态真实返还选择与活跃/休整辨识
+
+- D盘mixed-morale-return-current-20261017：811A5B4C report-r3、17846F3E源绑定、9F3D7B31 verifier与57B10C5B runner，最终1/1 core/environment均通过。physical/inner/visual/CSS均844×390；真实resource-return询问min=max=2/四合法ID，2活跃亮实线、2休整暗虚线，图片实际载入同一彼界图标。原生纵滑picker scrollTop0→55后四项完整可见，原生选0morale0+0morale2，休整选中仍虚线；确认前0命令、后恰1带UUID/revision/controller的resolvePrompt，650ms仍1。环境所有错误/外部API/业务WS为0，仅既知本地公开settings一次合成替身与Vite HMR；非真实服务器ACK、天廷原私人局、真iOS或其他资源类型。
+- Main全文读verifier/runner、实看原r1与最终FEABA917截图、独核12个源SHA/working blob；10同正式源包含8产品消费者，两项后续QA辅助源不冒充正式产品。FDDD0428独审接收；r2到r3只增加必须精确相等的createdRevision/controller与保留r2原件，不删语义断言。r1 924F30E3因探针漏picker裁剪边界，r2 5DB18C59已真实滚动/选择/唯一发送但期望遗漏公共绑定字段，两失败/源/图完整保留，不称产品RED或把原失败改绿。
+- 现规则混合活跃/休整由玩家手选，不能把玩家“必先返未使用士气”写成强制规则；服务端三项MoraleReturnSelectionTests原正式结果继续有效，不为这一UI缺口重跑引擎或矩阵。浏览器/preview租约结束，无其他进程引用/链接后精确清除专属12再生文件1828104B，C58888F0收据；全部紧凑源/报告/失败原件/截图、业务数据与唯一热DLL保留，无产品改动/部署/维护。
+
+## CLOSEOUT-20261017-A355-CONTEXT-AND-DEFENSE｜七项真实终态与纳芙八格当前检查
+
+- card-context-three：092“彼界大骑士”仅推测费奥纳/欲望等级条件、579拉美西斯选登场与天灾最后的组合规则、5cb“甲飞机”仅推测甲斐姬/主宰费用豁免，各以具名当前24结果/18同a355源有界rejected，不冒精确原UI或未执行组合。B65A4040提案/4A762726执行器，CAS31019—31021、A8721131终态/撤会话，119→116。
+- defense-nefertiti-four：0b2纳芙有限未复现rejected；82b手牌抵挡按钮、0f2后排支援遮挡、621不支援仍触发分别以b1042135/e1e561ad已部署a355独立fixed_verified。8C7F4E5D提案/8D78CE33执行器，4 SelfTest/原v2合同/12函数及5字面绑定，CAS31024—31027、1492D447真实终态/撤会话，同次快照485703F1对账910/112new/370resolved/428closed、阶段417=138fixed/263rejected/16duplicate、周期509。
+- UI证据AB0650AE最终六真实SFC视口与旧combat矩阵、现同正式源桥共同验证，不把8443EFF4整体称55全绿、不把合成本地传输称真实ACK/原手机；0f2原中列slot1未逐格重放，采用共享0..2支援槽证据；621现同源七视口脚本先选支援再不支援，明确resolveDefense.cardInstanceIds=[]，不称原私局。所有旧失败、原文和历史保持。
+
+## CHECK-20261017-NEFERTITI-CHAOTIC-ARROWS｜正式同DLL八格唯一亡语结算
+
+- D盘nefertiti-chaotic-arrows-current-20261017：272FBFA2 acceptance、BE8DC855 current-r3.trx、58C89010监督及3CDABE44测试源，8/8、失败跳过0。真实纷乱箭支付3活跃士气→唯一合法纳芙实例→双方响应→唯一death栈和一次入墓；手牌少于对方时恰伤敌1/治疗己1，相等时均0。双方控制者、直跑/声明后一次严格V2恢复、两手牌条件成对终态raw/state/revision/facts/events一致，不声称逐命令恢复、旧私局或浏览器链。
+- r1误把唯一目标询问的MaxChoose固定为3；r2误把无Flow旧整卡的effect-result计数强求1。原失败/源/监督均保留；Main实核既有L12GameEngine.EffectPresentations:112—117与REGRESSION-FIXTURES豁免后，r3仅移除不适用的呈现数量断言、仍观察为0，权威费用/候选/唯一栈/伤害治疗/移区/恢复去重守卫全保留。无产品修改、不重复完整门禁；66文件5858290B已结束再生缓存清除，原件证据与唯一热构建保留D。
+
 ## CHECK-20261017-GM-PANEL-HIT-AND-SUSANOO-LOG｜两个当前展示问题保留，不以规则通过关闭
 
 - 51d：9201D07B第一844×390态来源卡可选、按钮visible/enabled但物理中心不属按钮，目标未点击/命令0，后两态未执行。独立因果78511E9F明确中心(794,218.31)命中ASIDE.gm-panel内“对方”BUTTON，面板x516/y50/w320/h332、z2147483620；原生点击现有×收起后同一来源仍选中、按钮获命中，再原生目标发送唯一sandboxAction(actor0)/attack(0unit→1unit)，650ms无重复。15SHA/11产品blob同a355 Main复核，未改CSS/state/handler。对照core通过但整体仍因1settings拒连failed；不当3尺寸、actor1或引擎受理。窄屏进入默认收起/保留重开/桌面不变的限定修复已问，未批准不实施、不关51d。
