@@ -1,5 +1,27 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261017-DECKS-BATTLE-NAVIGATION｜大厅牌库保留对战导航，已验未部署
+
+- BUG-a3fb68f6当前原因：牌库链接已带from=/battle，SiteShell却只看route.meta.section；decks无battle元信息，进入即切mainNav，赛事入口消失。按人类批准，只在route.name===decks且from精确字符串/battle时沿用battleNav；原所有battle路由保持，主页直入、外部/未知/数组/近似from及公开详情均不继承，不改布局、权限或牌库功能。
+- 同类查询仅既有mainNav/battleNav与带from牌库入口，不新增导航层或重写路由；产品只SiteShell.vue四行谓词。原test-a3-site-shell-contract用真实SFC脚本AST提取三个实际声明，经真实内存路由切换执行10正反例及牌库链接连续性；先RED落mainNav，后GREEN10/10，旧17模板结构反例全保留。非浏览器截图/真实线上点击，不把纯静态字串当运行时路由证据。
+- Main全文独审两叶，E4CC7928聚焦收据；完整前端映射Batch实际零退出，CA3008EF日志、UI356/反馈144/全部合同与类型/production及testrun双构建通过，源SHA9FAE217F/668E7346未变。无新后端改动，不重跑同源7686/1808；未部署，a3fb保持未关闭。回滚只还原这一导航谓词与其回归，不动已有1ba短屏详情。
+
+## CLOSEOUT-20261017-A355-RULING-COMPOSITE-THREE｜新裁定与真实组合三项闭环
+
+- B9C55AC0报告/C76DE62E提案/31DA1AB5执行器，19具名正式结果、9F140D3A实际actor0/direct组合、15正式源、3 SelfTest/原v2合同及12函数/五字面派生通过。2c两分句按侍从禁攻主宰与新梅杰德＋不朽组合当前检查有界rejected，不称原私局/两侧/组合恢复；4b宫廷封锁切腹共享回归及立花仅当时目标的人类裁定rejected，不否认独立期限缺陷；5b精确“匹配中状态”建议按明确不新增裁定rejected，不冒缺陷已修或设duplicate。
+- 实际单CAS31104/31105/31107、04C3DBFD终态/原文历史/撤会话；唯一同次D11B3CAB快照对账910/83new/374resolved/453closed、阶段446=142fixed/288rejected/16duplicate、周期538。本次213起131、本轮359起277真实关闭，无新部署维护，批准但未部署的新修复报告不提前resolved。
+
+## CLOSEOUT-20261017-A355-SPECTATOR-LOTUS-RANKED｜六项真实终态与单项409续办
+
+- 908观战权限提示、08de诸葛私密天灾横卡、e5e已禁天灾查看按当前消费者/正式4具名结果及356 UI合同有界rejected；E725AD4A报告/5BA83A1B提案，676C277F三终态CAS31077—31079，92→89。不放宽观战指令权限，不冒原浏览器或“左上角”几何；0458短屏详情、ca044即时HP与a3fb导航有明确独立不足，未借一般功能存在混关。
+- e170/c7分别按黑莲卡文/入区唯一实体/共享重置及9正式结果rejected，不互设duplicate。880289DE报告/B619A885提案、7EDB2EDB两终态CAS31083—31084，89→87；太阳城士气牌库6，黑莲可为第7个实体资源，没有另设7张运行时上限，费用可含其他资源/减免。不称黑莲独自保证每轮8费、连续8回合UI或原私局，无“无限增殖不存在”的过度结论。
+- 91d定级进度按认证accountId持久化、挂载请求当前令牌、旧令牌响应拒绝及正式平台5具名结果有界rejected，DC30E73B报告/667E97B5提案。原762AB2C1为409/version_conflict、0终态且会话撤销；同次post-CAS 15字段/原文/备注全未变，仅派生收据/tag/purpose三绑定，12原执行函数逐字不变、1 SelfTest/8反例，B0D92ECE执行器新preview后CAS31094单次成功，A029F235终态/撤会话，87→86。原失败不改、不重交任何成功项，不冒两台真设备/已打开页面实时推送。
+- 唯一EC0C8C5B快照对账910/86new/374resolved/450closed、阶段443=142fixed/285rejected/16duplicate、周期535；接续437后6项，接续410后33项。无新部署或维护写，后续新增已批准修复未上线的报告保持。
+
+## CHECK-20261017-MEDJED-PAID-GIFT-PIERCING｜真实组合单格已过
+
+- 9F140D3A first-cell-r2/86BF10AA TRX/5D641A69监督、9CE7955A测试源，正式6B4 DLL及九Data原绑定；27/27真实Handle/23提示。守方真实付2士气盖唯一不朽并endTurn，赵云攻陵墓守卫，经双方响应/返还士气获得贯通，主宰受1伤后梅杰德先召回一张，随后不朽抽1并召回另一张；仅三守卫实体（战场1＋墓地2），最终各唯一区域、支付仍休整、弃置各一次、空栈。Main全文读源接收单actor0/direct范围，不称actor1/逐命令V2/原私局/UI。r1仅夹具误要求梅杰德另有mode:use，原失败保留；不新增产品旁路或强扩矩阵。
+
 ## CLOSEOUT-20261017-A355-FOLLOWING-TWENTY｜六批20项真实终态，92待办
 
 - rule-display-four：c599/1be/e43/c36均按当前显示字段不明或现规则有界rejected，33正式结果/19当前源加1正式专属Editor引用；D850B79A真实四终态、112→108。哮天犬无冲锋、冲锋不等于射程/挑衅豁免、暴怒进攻优先不等于普通移动豁免，未冒犬攻主宰单一UI链或使用未部署1ba。

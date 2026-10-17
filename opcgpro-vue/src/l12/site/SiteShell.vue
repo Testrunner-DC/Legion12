@@ -649,7 +649,10 @@ const battleNav = [
   { to: '/battle/friends', icon: 'friends', label: '好友' },
   { to: '/battle/records', icon: 'records', label: '对局' },
 ]
-const nav = computed(() => route.meta.section === 'battle' ? battleNav : mainNav)
+const nav = computed(() => route.meta.section === 'battle'
+  || (route.name === 'decks' && route.query.from === '/battle')
+  ? battleNav
+  : mainNav)
 const siteUiStates = computed(() => usesSiteUiStates(route.meta))
 const accountGate = computed(() => route.meta.requiresAccount === true && !platformState.account)
 const authMode = ref<'login' | 'register'>('login')
