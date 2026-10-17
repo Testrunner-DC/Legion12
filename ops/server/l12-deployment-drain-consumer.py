@@ -29,6 +29,8 @@ MAX_RESPONSE_BYTES = 64 * 1024
 MAX_WAIT_SECONDS = 30 * 60
 MAX_POLL_MILLISECONDS = 10_000
 RECOVERY_RESERVE_SECONDS = 5 * 60
+BACKGROUND_ACTIVITY_WAIT_SECONDS = 60
+BACKGROUND_ACTIVITY_POLL_SECONDS = 0.25
 
 GUID_RE = re.compile(r"^[0-9a-f]{32}$")
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -534,6 +536,27 @@ class DeploymentDrainConsumer:
                 raise ConsumerFailure("TRANSPORT_REJECTED", "protocol", "open", True) from None
             raise ConsumerFailure("TRANSPORT_STATE_UNKNOWN", "protocol", "closed" if begun else "unknown") from None
 
+    def _wait_background_activity(self, state: dict[str, Any], owner: dict[str, str],
+                                  expected_active_commit: str, epoch: int,
+                                  stage: str, failure_code: str) -> dict[str, Any]:
+        # Draining intentionally permits background Activity. Only that positive
+        # lease may wait; admission, identity, generation or fence drift must fail.
+        cutoff = self._monotonic() + BACKGROUND_ACTIVITY_WAIT_SECONDS
+        while True:
+            self._require_same_closed(state, owner, expected_active_commit, stage)
+            if state["phase"] != "draining" or state["epoch"] != epoch \
+                    or state["stopConsumed"] or state["sealReady"] \
+                    or state["stopPermitted"] or state["permit"] is not None \
+                    or state["admissionLeases"] != 0:
+                raise ConsumerFailure(failure_code, stage, "closed")
+            if state["activityLeases"] == 0:
+                return state
+            remaining = cutoff - self._monotonic()
+            if remaining <= 0:
+                raise ConsumerFailure(failure_code, stage, "closed")
+            self._sleep(min(BACKGROUND_ACTIVITY_POLL_SECONDS, remaining))
+            state = self._status(stage)
+
     def observe_restart(self, binding: Binding, expected_active_commit: str,
                         previous_process_instance: str, previous_epoch: int) -> dict[str, Any]:
         state = self._status("restart-status")
@@ -542,8 +565,11 @@ class DeploymentDrainConsumer:
         if state["phase"] != "draining" or state["processInstance"] == previous_process_instance \
                 or state["epoch"] <= previous_epoch or state["stopConsumed"] \
                 or state["sealReady"] or state["stopPermitted"] or state["permit"] is not None \
-                or state["admissionLeases"] != 0 or state["activityLeases"] != 0:
+                or state["admissionLeases"] != 0:
             raise ConsumerFailure("RESTART_STATE_REJECTED", "restart-status", "closed")
+        state = self._wait_background_activity(state, owner, expected_active_commit,
+                                              state["epoch"], "restart-status",
+                                              "RESTART_STATE_REJECTED")
         return _receipt("observe-restart", binding, expected_active_commit,
                         state["processInstance"], state["epoch"], None, "draining")
 
@@ -553,8 +579,10 @@ class DeploymentDrainConsumer:
         state = self._status("pre-open-status")
         self._require_same_closed(state, owner, expected_active_commit, "pre-open-status")
         if state["phase"] != "draining" or state["epoch"] != epoch or state["stopConsumed"] \
-                or state["admissionLeases"] != 0 or state["activityLeases"] != 0:
+                or state["admissionLeases"] != 0:
             raise ConsumerFailure("OPEN_PRECONDITION_REJECTED", "pre-open-status", "closed")
+        self._wait_background_activity(state, owner, expected_active_commit,
+                                       epoch, "pre-open-status", "OPEN_PRECONDITION_REJECTED")
         try:
             status, result = self._request("POST", "cancel", "open", owner)
             if status == 200 and result["code"] in ("Applied", "Idempotent"):

@@ -852,6 +852,8 @@ runtime_backup_partial=""
 runtime_backup_checksum=""
 runtime_backup_checksum_partial=""
 runtime_backup_sha256=""
+runtime_proof_file=""
+runtime_proof=""
 runtime_proof_failure_code=""
 drain_failure_code=""
 drain_failure_disposition=""
@@ -943,6 +945,31 @@ backup_runtime() {
   runtime_backup_checksum_partial=""
   chmod 0600 "$runtime_backup"
   log "已创建并校验持久化运行数据快照：${runtime_backup}"
+}
+
+capture_stopped_runtime_proof() {
+  local candidate="${runtime_backup}.proof.json" proof_status
+  assert_new_path "$candidate" || return 1
+  # Keep the verifier's exact stdout before switching or launching anything.
+  # Atomic exclusive creation preserves collisions, including symlink races.
+  if ( umask 077; set -o noclobber; exec 3> "$candidate" || exit 1
+       set +o noclobber
+       if timeout 310 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256" >&3; then
+         proof_status=0
+       else
+         proof_status=$?
+       fi
+       node -e 'const fs=require("fs"),path=require("path"),p=process.argv[1];if(!fs.lstatSync(p).isFile())process.exit(2);const f=fs.openSync(p,fs.constants.O_WRONLY|(fs.constants.O_NOFOLLOW||0));try{if(!fs.fstatSync(f).isFile())process.exit(2);fs.fsyncSync(f)}finally{fs.closeSync(f)}if(process.platform!=="win32"){const d=fs.openSync(path.dirname(p),fs.constants.O_RDONLY|fs.constants.O_DIRECTORY);try{fs.fsyncSync(d)}finally{fs.closeSync(d)}}' "$candidate" || exit 1
+       exit "$proof_status"
+     ); then
+    proof_status=0
+  else
+    proof_status=$?
+  fi
+  [[ -f "$candidate" && ! -L "$candidate" ]] || return 1
+  runtime_proof_file="$candidate"
+  runtime_proof="$(< "$candidate")"
+  return "$proof_status"
 }
 
 restore_runtime_backup() {
@@ -1262,6 +1289,7 @@ write_failure_record() {
     printf 'failedCommit=%s\n' "$commit"
     printf 'failureStage=%s\n' "$failure_stage"
     printf 'runtimeProofFailureCode=%s\n' "$runtime_proof_failure_code"
+    printf 'runtimeProofFile=%s\n' "$runtime_proof_file"
     printf 'deploymentAction=%s\n' "$mode"
     printf 'drainFailureCode=%s\n' "$drain_failure_code"
     printf 'drainFailureDisposition=%s\n' "$drain_failure_disposition"
@@ -1598,8 +1626,8 @@ chown -R "${service_user}:${service_user}" "$runtime_dir"
 chmod 0750 "$runtime_dir"
 backup_runtime
 failure_stage="verify-stopped-runtime-backup"
-if runtime_proof="$(timeout 310 python3 -B "$runtime_verifier" "$runtime_dir" "$runtime_backup" "$runtime_backup_sha256")"; then
-  : # Conditional assignment prevents inherited ERR from recovering twice in a subshell.
+if capture_stopped_runtime_proof; then
+  : # Conditional capture prevents inherited ERR from recovering twice in a subshell.
 else
   proof_status=$?
   if [[ "$proof_status" -eq 124 ]]; then

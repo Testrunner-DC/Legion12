@@ -474,6 +474,91 @@ class ConsumerTests(unittest.TestCase):
         self.assertEqual(binding().transaction_sha256(), receipt["transactionBindingSha256"])
         self.assert_done(fake)
 
+    def test_restart_waits_for_background_activity_without_rebinding(self) -> None:
+        clock = Clock()
+        busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+        clear = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4)
+        subject, fake = client([("GET", "status", 200, busy),
+                                ("GET", "status", 200, busy),
+                                ("GET", "status", 200, clear)], clock)
+        receipt = subject.observe_restart(binding(), NEW_COMMIT, PROCESS_A, 3)
+        self.assertEqual((PROCESS_B, 4), (receipt["processInstance"], receipt["epoch"]))
+        self.assertEqual(0.5, clock.value)
+        self.assertTrue(all(call[0] == "GET" for call in fake.calls))
+        self.assert_done(fake)
+
+    def test_restart_activity_wait_rejects_identity_or_fence_drift_immediately(self) -> None:
+        for field, value in (("epoch", 5), ("admissionLeases", 1),
+                             ("fenceSynchronized", False), ("stopConsumed", True)):
+            with self.subTest(field=field):
+                clock = Clock()
+                busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+                changed = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4)
+                changed[field] = value
+                subject, fake = client([("GET", "status", 200, busy),
+                                        ("GET", "status", 200, changed)], clock)
+                with self.assertRaises(consumer.ConsumerFailure):
+                    subject.observe_restart(binding(), NEW_COMMIT, PROCESS_A, 3)
+                self.assertEqual(0.25, clock.value)
+                self.assertTrue(all(call[0] == "GET" for call in fake.calls))
+                self.assert_done(fake)
+
+    def test_restart_background_activity_has_a_fixed_bounded_timeout(self) -> None:
+        clock = Clock()
+        busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+        subject, fake = client([("GET", "status", 200, busy)] * 241, clock)
+        with self.assertRaises(consumer.ConsumerFailure) as caught:
+            subject.observe_restart(binding(), NEW_COMMIT, PROCESS_A, 3)
+        self.assertEqual("RESTART_STATE_REJECTED", caught.exception.code)
+        self.assertEqual("closed", caught.exception.disposition)
+        self.assertEqual(60, clock.value)
+        self.assert_done(fake)
+
+    def test_cancel_waits_for_activity_before_its_only_post(self) -> None:
+        clock = Clock()
+        busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+        clear = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4)
+        opened = open_state(process=PROCESS_B, active=NEW_COMMIT, epoch=5, code="Applied")
+        subject, fake = client([("GET", "status", 200, busy),
+                                ("GET", "status", 200, clear),
+                                ("POST", "cancel", 200, opened)], clock)
+        self.assertEqual("open", subject.cancel_open(binding(), NEW_COMMIT, PROCESS_B, 4)["phase"])
+        self.assertEqual(0.25, clock.value)
+        self.assertEqual(1, sum(call[0] == "POST" for call in fake.calls))
+        self.assert_done(fake)
+
+    def test_cancel_activity_timeout_never_posts_and_keeps_existing_failure_contract(self) -> None:
+        clock = Clock()
+        busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+        subject, fake = client([("GET", "status", 200, busy)] * 241, clock)
+        with self.assertRaises(consumer.ConsumerFailure) as caught:
+            subject.cancel_open(binding(), NEW_COMMIT, PROCESS_B, 4)
+        self.assertEqual("OPEN_PRECONDITION_REJECTED", caught.exception.code)
+        self.assertEqual("closed", caught.exception.disposition)
+        self.assertEqual(60, clock.value)
+        self.assertTrue(all(call[0] == "GET" for call in fake.calls))
+        self.assert_done(fake)
+
+    def test_cancel_wait_rejects_every_identity_and_safety_drift_without_post(self) -> None:
+        for field, value in (("epoch", 5), ("admissionLeases", 1),
+                             ("activeCommit", OLD_COMMIT), ("processInstance", PROCESS_A),
+                             ("owner", owner(PROCESS_A)), ("fenceSynchronized", False),
+                             ("fenceUnknown", True), ("stopConsumed", True),
+                             ("sealReady", True), ("stopPermitted", True),
+                             ("permit", permit()), ("activityLeases", True)):
+            with self.subTest(field=field):
+                clock = Clock()
+                busy = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4, activity=1)
+                changed = draining(process=PROCESS_B, active=NEW_COMMIT, epoch=4)
+                changed[field] = value
+                subject, fake = client([("GET", "status", 200, busy),
+                                        ("GET", "status", 200, changed)], clock)
+                with self.assertRaises(consumer.ConsumerFailure):
+                    subject.cancel_open(binding(), NEW_COMMIT, PROCESS_B, 4)
+                self.assertEqual(0.25, clock.value)
+                self.assertTrue(all(call[0] == "GET" for call in fake.calls))
+                self.assert_done(fake)
+
     def test_restart_same_process_is_rejected_closed(self) -> None:
         subject, fake = client([("GET", "status", 200,
                                  draining(process=PROCESS_A, active=NEW_COMMIT, epoch=4))])

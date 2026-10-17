@@ -1462,6 +1462,13 @@ exit 255
             "重启后排空故障错误恢复旧程序或未停止目标程序：$postStartFault"
         Assert-True (Test-Path -LiteralPath (Join-Path $closedTarget.Root "opt\legion12-runtime\post-launch-write.txt") -PathType Leaf) `
             "重启后排空故障丢失了目标程序最新 runtime：$postStartFault"
+        $rawProofFiles = @(Get-ChildItem -LiteralPath (Join-Path $closedTarget.Root 'opt\legion12-deployment\runtime-backups') -Filter '*.proof.json' -File)
+        Assert-True ($rawProofFiles.Count -eq 1) "重启后失败没有保留真实停服证明：$postStartFault"
+        $rawProof = Get-Content -LiteralPath $rawProofFiles[0].FullName -Raw | ConvertFrom-Json
+        Assert-True ($rawProof.verified -eq $true -and $rawProof.latestDatabaseAndWalEqualBackup -eq $true) `
+            "重启后保留的停服证明并非实际成功验证结果：$postStartFault"
+        Assert-True ([IO.File]::ReadAllBytes($rawProofFiles[0].FullName)[-1] -eq 10) `
+            "停服证明丢失校验器实际stdout末尾换行：$postStartFault"
         $sandboxFencePath = Join-Path $closedTarget.Root "opt\legion12-runtime\.maintenance-sandbox-drain"
         if ($postStartFault -eq "observe-failure") {
             Assert-True (Test-Path -LiteralPath $sandboxFencePath -PathType Leaf) `
