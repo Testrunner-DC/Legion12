@@ -546,21 +546,24 @@ public sealed partial class L12RoomManager
             clock.Paused, clock.PauseReason);
     }
 
-    public async Task ExtendTournamentClockAsync(string tournamentId, string matchId, int minutes)
+    public async Task<IReadOnlyList<OutgoingMessage>> ExtendTournamentClockAsync(string tournamentId, string matchId, int minutes)
     {
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) throw new L12DeploymentBarrierClosedException();
         using var deployment = deploymentGuard;
         var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
             && item.TournamentMatchId == matchId);
-        if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return;
+        if (room?.RankedClock is null || room.Game is null || room.Game.State.Phase == L12Phase.GameOver) return [];
         await room.Gate.WaitAsync();
         try
         {
             var now = _utcNow();
             SettleRankedClockLocked(room, now);
-            var addedSeconds = Math.Min(checked(minutes * 60),
-                7200 - room.RankedClock.TimeControl.TotalTimeSeconds);
-            if (addedSeconds <= 0) return;
+            // Reconcile the committed absolute table configuration, not a retryable delta.
+            // Both direct HTTP completion and the durable room outbox may call this safely.
+            var targetSeconds = _platform?.TournamentRoomAssignmentByRoom(room.Code)
+                .TimeControl.TotalTimeSeconds ?? throw new InvalidOperationException("赛事计时配置不可用");
+            var addedSeconds = targetSeconds - room.RankedClock.TimeControl.TotalTimeSeconds;
+            if (addedSeconds <= 0) return BroadcastGame(room, forceCritical: true);
             room.RankedClock.TimeControl = room.RankedClock.TimeControl with
             {
                 TotalTimeSeconds = checked(room.RankedClock.TimeControl.TotalTimeSeconds + addedSeconds),
@@ -569,6 +572,12 @@ public sealed partial class L12RoomManager
                 room.RankedClock.TotalRemainingMs[index] = checked(room.RankedClock.TotalRemainingMs[index]
                     + addedSeconds * 1000L);
             await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
+            return BroadcastGame(room, forceCritical: true);
+        }
+        catch
+        {
+            if (!await ReloadRankedRoomFromRecorderAsync(room)) room.Closed = true;
+            throw;
         }
         finally { room.Gate.Release(); }
     }
@@ -588,6 +597,7 @@ public sealed partial class L12RoomManager
             if (clock.Paused == paused) return BroadcastGame(room, forceCritical: true);
             var now = _utcNow();
             SettleRankedClockLocked(room, now);
+            DateTimeOffset? resumedPauseAt = null;
             if (paused)
             {
                 clock.Paused = true;
@@ -596,6 +606,7 @@ public sealed partial class L12RoomManager
             }
             else
             {
+                resumedPauseAt = clock.PausedAt;
                 var duration = clock.PausedAt is { } pausedAt ? now - pausedAt : TimeSpan.Zero;
                 if (duration > TimeSpan.Zero)
                     foreach (var session in room.Sessions.Select(id => _sessions.TryGetValue(id, out var value)
@@ -606,7 +617,18 @@ public sealed partial class L12RoomManager
                 clock.PausedAt = null;
                 clock.LastSettledAt = now;
             }
-            await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
+            if (resumedPauseAt is { } pauseAt && room.Game.CaptureResponseAutoCloseLease() is not null)
+            {
+                var result = room.Game.ResumeTournamentResponseClock(pauseAt, now);
+                if (!result.Accepted) throw new InvalidOperationException(result.Error);
+                room.CommandSequence++;
+                await _recorder.AppendRankedAsync(room.Game, room.CommandSequence, -1,
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        type = "tournamentResumeResponse", pausedAtUtc = pauseAt, resumedAtUtc = now,
+                    }), result, CaptureRankedRuntime(room, now), null);
+            }
+            else await _recorder.PersistRankedRuntimeBatchAsync([CaptureRankedRuntime(room, now)]);
             return BroadcastGame(room, forceCritical: true);
         }
         catch

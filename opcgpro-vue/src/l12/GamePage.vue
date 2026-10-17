@@ -7,6 +7,7 @@ import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
+import TournamentRefereePanel from './game/TournamentRefereePanel.vue'
 import { isMobileViewportExperience } from './mobileViewport'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
@@ -66,7 +67,7 @@ watch(() => canMatchWhileSpectating.value && !l12State.matchFound, eligible => {
 const loadRetrying = ref(false)
 const gmPanelInitiallyOpen = ref(false)
 const gmPanelOpen = ref(false)
-watch(() => l12State.gmEnabled, enabled => {
+watch(() => [l12State.gmEnabled, l12State.refereeControlsEnabled], ([enabled]) => {
   gmPanelInitiallyOpen.value = enabled && !isMobileViewportExperience()
   gmPanelOpen.value = gmPanelInitiallyOpen.value
 }, { immediate: true, flush: 'sync' })
@@ -171,6 +172,8 @@ async function retryGameLoad() {
       @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" :initially-open="gmPanelInitiallyOpen"
       @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
+    <TournamentRefereePanel v-else-if="l12State.refereeControlsEnabled && l12State.spectating && l12State.observerView === 'referee' && game.phase !== 'GameOver'"
+      :game="game" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
     <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="closeBattleSettings">

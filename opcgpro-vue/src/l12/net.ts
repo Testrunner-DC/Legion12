@@ -400,6 +400,7 @@ function retireObservationForMatch(message: any) {
   l12State.spectating = false
   l12State.observerView = 'public'
   l12State.gmEnabled = false
+  l12State.refereeControlsEnabled = false
   l12State.leavingRoom = false
 }
 
@@ -469,6 +470,7 @@ export const l12State = reactive({
   observerView: 'public' as 'public' | 'referee',
   leavingRoom: false,
   gmEnabled: false,
+  refereeControlsEnabled: false,
   pendingAction: false,
   notice: '',
   operationsPolicy: null as EffectiveOperationsPolicy | null,
@@ -798,6 +800,7 @@ export function connect(): Promise<void> {
           l12State.spectating = false
           l12State.observerView = 'public'
           l12State.gmEnabled = false
+          l12State.refereeControlsEnabled = false
           completePendingAction(message.requestId)
         }
         syncGameReentry()
@@ -940,6 +943,7 @@ export function connect(): Promise<void> {
         l12State.observerView = 'public'
         l12State.leavingRoom = false
         l12State.gmEnabled = false
+        l12State.refereeControlsEnabled = false
         cancelPendingAction()
         l12State.matchFound = null
         l12State.notice = message.message || ''
@@ -971,6 +975,9 @@ export function connect(): Promise<void> {
           l12State.spectating = Boolean(message.spectating)
           l12State.observerView = message.spectating && message.observerView === 'referee' ? 'referee' : 'public'
           l12State.gmEnabled = Boolean(message.gmEnabled)
+          l12State.refereeControlsEnabled = message.refereeControlsEnabled === true
+            && l12State.spectating && l12State.observerView === 'referee'
+            && Boolean(message.tournamentId && message.tournamentMatchId)
           completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
           if (message.responsePreference) l12State.responsePreference = message.responsePreference as ResponsePreferenceState
@@ -1017,9 +1024,11 @@ export function connect(): Promise<void> {
           return
         }
         clearSnapshotRecovery()
+        const refereeReceiptPending = pendingActionEnvelope?.type === 'gmAction'
+          && typeof (pendingActionEnvelope.command as Record<string, unknown> | undefined)?.refereeMatchId === 'string'
         if (!message.roomCode) {
           retiredObservation = null
-          cancelPendingAction()
+          if (!refereeReceiptPending) cancelPendingAction()
           l12State.room = null
           l12State.game = null
           lastGameStateEnvelope = null
@@ -1027,16 +1036,18 @@ export function connect(): Promise<void> {
           l12State.spectating = false
           l12State.observerView = 'public'
           l12State.gmEnabled = false
+          l12State.refereeControlsEnabled = false
           l12State.matchFound = null
         }
         else if (!message.matchId) {
-          cancelPendingAction()
+          if (!refereeReceiptPending) cancelPendingAction()
           l12State.game = null
           lastGameStateEnvelope = null
           l12State.rankedClock = null
           l12State.spectating = false
           l12State.observerView = 'public'
           l12State.gmEnabled = false
+          l12State.refereeControlsEnabled = false
         }
         if (cardFrameRecoveryActive) {
           clearGameStateCardFrameRecoveryTimer()
@@ -1063,6 +1074,10 @@ export function connect(): Promise<void> {
         }
         syncGameReentry()
         settle()
+      }
+      else if (message.type === 'refereeActionReceipt') {
+        completePendingAction(message.requestId)
+        l12State.notice = '上次裁判调整已保存'
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
         || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
@@ -1099,6 +1114,7 @@ export function connect(): Promise<void> {
         l12State.recoveryPhase = event.code === 4002 ? 'superseded' : 'disconnected'
         if (!negotiatedRequestIds || [4001, 4002, 1008].includes(event.code)) cancelPendingAction()
         l12State.gmEnabled = false
+        l12State.refereeControlsEnabled = false
         if (l12State.observerView === 'referee') {
           l12State.game = null
           lastGameStateEnvelope = null
@@ -1165,6 +1181,7 @@ export function disconnect() {
   l12State.observerView = 'public'
   l12State.leavingRoom = false
   l12State.gmEnabled = false
+  l12State.refereeControlsEnabled = false
   cancelPendingAction()
   negotiatedRequestIds = false
   negotiatedEventWindowDelta = false
@@ -1207,6 +1224,7 @@ export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12
   l12State.spectating = false
   l12State.leavingRoom = false
   l12State.gmEnabled = false
+  l12State.refereeControlsEnabled = false
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
 }
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'joinRoom', roomCode }) }
@@ -1267,6 +1285,17 @@ export function gmAction(command: Record<string, unknown>) {
   if (!l12State.gmEnabled || l12State.pendingAction) return
   l12State.pendingAction = true
   pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(), command }
+  send(pendingActionEnvelope)
+  if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
+}
+
+export function refereeGmAction(command: Record<string, unknown>) {
+  if (!l12State.refereeControlsEnabled || !l12State.spectating
+    || l12State.observerView !== 'referee' || !l12State.rankedClock?.paused
+    || l12State.pendingAction) return
+  l12State.pendingAction = true
+  pendingActionEnvelope = { type: 'gmAction', requestId: createActionRequestId(),
+    command: { ...command, refereeMatchId: l12State.game?.matchId } }
   send(pendingActionEnvelope)
   if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
 }

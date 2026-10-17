@@ -749,6 +749,10 @@ public sealed partial class MatchRecorder
 
         return engine.ReplayRecordedCommand(receivedUtc, () =>
         {
+            if (internalCommand && string.Equals(type, "tournamentResumeResponse", StringComparison.Ordinal))
+                return engine.ResumeTournamentResponseClock(
+                    commandRoot.GetProperty("pausedAtUtc").GetDateTimeOffset(),
+                    commandRoot.GetProperty("resumedAtUtc").GetDateTimeOffset());
             if (internalCommand && string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase))
             {
                 var winner = commandRoot.TryGetProperty("winner", out var winnerElement)

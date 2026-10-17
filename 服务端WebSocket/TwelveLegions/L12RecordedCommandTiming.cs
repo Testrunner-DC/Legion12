@@ -14,6 +14,7 @@ internal static class L12RecordedCommandOrigin
             return playerIndex is 0 or 1;
         return playerIndex == -1
                && (string.Equals(type, "authorityConclusion", StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(type, "tournamentResumeResponse", StringComparison.Ordinal)
                    || string.Equals(type, "responseAutoClose", StringComparison.OrdinalIgnoreCase));
     }
 }

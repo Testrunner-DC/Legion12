@@ -1538,6 +1538,8 @@ public sealed partial class L12RoomManager
             return [RoomStateForViewer(room, session), new OutgoingMessage(sessionId, new
             {
                 type = "gameState", spectating = true, gmEnabled = false,
+                refereeControlsEnabled = access.CanRefereeView && !access.CanPlay,
+                rankedClock = RankedClockView(room),
                 observerView = access.CanRefereeView ? "referee" : "public",
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId,
@@ -1885,6 +1887,21 @@ public sealed partial class L12RoomManager
         requestId = NormalizeActionRequestId(requestId);
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
         using var deployment = deploymentGuard;
+        if (requestId is not null && commandElement.ValueKind == JsonValueKind.Object
+            && commandElement.TryGetProperty("refereeMatchId", out var recordedMatch)
+            && recordedMatch.ValueKind == JsonValueKind.String
+            && recordedMatch.GetString() is { Length: > 0 and <= 64 } recordedMatchId
+            && recordedMatchId.All(value => char.IsAsciiLetterOrDigit(value) || value == '-')
+            && _sessions.TryGetValue(sessionId, out var receiptViewer)
+            && receiptViewer.Connected && receiptViewer.AccountId is { } receiptAccount)
+        {
+            var revision = await _recorder.ReadAcceptedRefereeReceiptAsync(recordedMatchId, receiptAccount, requestId);
+            if (revision is not null)
+                return [new OutgoingMessage(sessionId, new { type = "refereeActionReceipt", requestId,
+                    accepted = true, revision = revision.Value })];
+        }
+        if (_sessions.TryGetValue(sessionId, out var observer) && observer.IsSpectator)
+            return await HandleRefereeGmActionAsync(sessionId, commandElement, requestId);
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
         if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
@@ -1902,6 +1919,10 @@ public sealed partial class L12RoomManager
             try
             {
                 command = commandElement.Deserialize<L12GmCommand>(new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (command is not null) command = command with
+                {
+                    RefereeName = null, RefereeReason = null, RefereeAccountId = null,
+                };
             }
             catch (JsonException) { return Error(sessionId, "GM 操作格式错误", "actionRejected", requestId); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
@@ -1912,7 +1933,7 @@ public sealed partial class L12RoomManager
             try
             {
                 await _recorder.AppendAsync(room.Game, room.CommandSequence, -1,
-                    commandElement.GetRawText(), result, requestId,
+                    JsonSerializer.Serialize(command, GmRecordedCommandJson), result, requestId,
                     !result.Accepted && room.Game.State.Revision != revisionBefore);
             }
             catch (Exception persistenceError)
@@ -2333,12 +2354,16 @@ public sealed partial class L12RoomManager
             // 每次按权威赛事 assignment 选视角；同一类观战者复用同一载荷。
             object? publicPayload = null;
             object? refereePayload = null;
-            object SpectatorPayload(bool referee) => referee
-                ? refereePayload ??= BuildSpectatorPayload(true)
-                : publicPayload ??= BuildSpectatorPayload(false);
-            object BuildSpectatorPayload(bool referee) => new
+            object? controllingRefereePayload = null;
+            object SpectatorPayload(bool referee, bool controls) => controls
+                ? controllingRefereePayload ??= BuildSpectatorPayload(true, true)
+                : referee ? refereePayload ??= BuildSpectatorPayload(true, false)
+                : publicPayload ??= BuildSpectatorPayload(false, false);
+            object BuildSpectatorPayload(bool referee, bool controls, string? acknowledgedRequestId = null) => new
             {
                 type = "gameState", spectating = true, gmEnabled = false,
+                requestId = acknowledgedRequestId,
+                refereeControlsEnabled = controls,
                 observerView = referee ? "referee" : "public",
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId, playerBadges, rankedClock,
@@ -2350,6 +2375,7 @@ public sealed partial class L12RoomManager
                 if (!_sessions.TryGetValue(id, out var spectator) || !spectator.IsSpectator
                     || spectator.RoomCode != room.Code) continue;
                 var referee = false;
+                var controls = false;
                 var authorized = true;
                 if (room.TournamentId is not null && room.TournamentMatchId is not null)
                 {
@@ -2360,6 +2386,7 @@ public sealed partial class L12RoomManager
                         var access = _platform?.TournamentRoomAccess(spectator.AccountId,
                             room.TournamentId, room.TournamentMatchId, spectate: true);
                         referee = access?.CanRefereeView == true;
+                        controls = referee && access?.CanPlay == false;
                     }
                     catch (Exception error) when (error is L12TournamentScopeException
                                                   or L12TournamentVersionConflictException
@@ -2379,7 +2406,10 @@ public sealed partial class L12RoomManager
                     });
                     continue;
                 }
-                yield return new OutgoingMessage(id, SpectatorPayload(referee), replaceable,
+                var payload = id == requestSessionId && requestId is not null
+                    ? BuildSpectatorPayload(referee, controls, requestId)
+                    : SpectatorPayload(referee, controls);
+                yield return new OutgoingMessage(id, payload, replaceable,
                     IsGameState: true, ForceFullGameState: RequiresFull(id)
                         || room.TournamentId is not null && room.TournamentMatchId is not null);
             }

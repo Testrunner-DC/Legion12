@@ -338,6 +338,8 @@ export interface RankedClockPlayerView {
 }
 
 export interface RankedClockView {
+  paused?: boolean
+  pauseReason?: string | null
   serverUtcMs: number
   receivedAtMs: number
   totalLimitMs: number

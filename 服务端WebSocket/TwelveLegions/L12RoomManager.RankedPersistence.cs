@@ -412,6 +412,19 @@ public sealed partial class L12RoomManager
                     return CommandResult.Ok();
                 });
             }
+            else if (internalCommand && string.Equals(type, "tournamentResumeResponse", StringComparison.Ordinal))
+            {
+                using var document = JsonDocument.Parse(recorded.CommandJson);
+                outcome = engine.ReplayRecordedCommand(receivedUtc, () => engine.ResumeTournamentResponseClock(
+                    document.RootElement.GetProperty("pausedAtUtc").GetDateTimeOffset(),
+                    document.RootElement.GetProperty("resumedAtUtc").GetDateTimeOffset()));
+            }
+            else if (recorded.PlayerIndex == -1)
+            {
+                var gm = JsonSerializer.Deserialize<L12GmCommand>(recorded.CommandJson, RankedRecoveryJson)
+                    ?? throw new InvalidDataException("赛事 GM 命令载荷为空");
+                outcome = engine.ReplayRecordedCommand(receivedUtc, () => engine.HandleGm(gm));
+            }
             else
             {
                 var command = JsonSerializer.Deserialize<L12Command>(recorded.CommandJson, RankedRecoveryJson)

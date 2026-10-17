@@ -1255,6 +1255,11 @@ public sealed partial class L12PlatformStore
                 target.TimeExtensionMinutes += payload.Minutes;
                 if (target.Deadline is not null) target.Deadline = target.Deadline.Value.AddMinutes(payload.Minutes);
                 target.Rulings.Add(NewRuling(actor, matchId, "time-extension", null, "extended", payload.Minutes, reason));
+                if (target.Status == "running")
+                    working.RoomCommands.Add(new TournamentRoomCommandRow
+                    {
+                        Kind = "extend", MatchId = matchId, Reason = reason,
+                    });
             });
         }
     }

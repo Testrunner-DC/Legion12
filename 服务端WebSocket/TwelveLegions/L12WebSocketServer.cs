@@ -2796,8 +2796,11 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             var outcome = ExecuteTournamentCommand(command, permission,
                 (current, apply) => _platform.ExtendTournamentMatch(current.Actor, id, matchId, current.Payload,
                     expected, current.AuditContext, apply));
-            if (outcome.Success && !outcome.Replayed && !body.DryRun)
-                await _rooms.ExtendTournamentClockAsync(id, matchId, body.Minutes);
+            if (outcome.Success && !body.DryRun)
+            {
+                var roomCommands = await _rooms.DrainTournamentRoomCommandsAsync(id);
+                await SendManyAsync(roomCommands.Messages, CancellationToken.None);
+            }
             return TournamentCommandResponse(request, command, outcome, id);
         });
         _app.MapPost("/api/tournaments/{id}/matches/{matchId}/pause",

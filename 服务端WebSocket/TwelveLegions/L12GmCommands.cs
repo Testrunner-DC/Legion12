@@ -2,6 +2,8 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    // Transient command context only; never part of checkpoint state or recipient policy.
+    private bool _suppressRefereeGmDetails;
     /// <summary>
     /// 为跳过开局准备的测试沙盒建立可直接触发的天灾牌库。
     /// 普通对局仍严格走禁用、公开与选择流程；此捷径只由沙盒创建链调用。
@@ -43,7 +45,13 @@ public sealed partial class L12GameEngine
     /// 玩家、卡号、区域和位置，且所有成功动作都会写入对局事件并增加 revision。
     /// </summary>
     public CommandResult HandleGm(L12GmCommand command)
-        => ExecuteRecordedCommand(() => HandleGmCore(command));
+        => ExecuteRecordedCommand(() =>
+        {
+            var previous = _suppressRefereeGmDetails;
+            _suppressRefereeGmDetails = previous || command.RefereeAccountId is not null;
+            try { return HandleGmCore(command); }
+            finally { _suppressRefereeGmDetails = previous; }
+        });
 
     private CommandResult HandleGmCore(L12GmCommand command)
     {
@@ -81,6 +89,9 @@ public sealed partial class L12GameEngine
         };
 
         if (!result.Accepted) return result;
+        if (command.RefereeAccountId is not null)
+            // Explicit bypass: one public notice, while the full trusted command stays in Journal.
+            AddEventCore("gm", null, "裁判已调整本桌场面", null);
         ResolveStateBasedLegionDeaths();
         State.Revision++;
         CheckWinner();

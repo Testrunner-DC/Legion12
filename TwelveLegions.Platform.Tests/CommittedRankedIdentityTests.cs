@@ -335,6 +335,25 @@ public sealed class CommittedRankedIdentityTests
     }
 
     [Fact]
+    public void FixtureCleanupReleasesPoolsBeforeEveryDeleteAttempt()
+    {
+        var releases = 0;
+        var attempts = 0;
+        var delays = new List<int>();
+
+        RankedIdentityFixture.DeleteTemporaryDirectoryWithRetry(() =>
+        {
+            attempts++;
+            Assert.Equal(attempts, releases);
+            if (attempts < 3) throw new IOException("synthetic late pooled fixture lock");
+        }, windows: true, delays.Add, () => releases++);
+
+        Assert.Equal(3, attempts);
+        Assert.Equal(attempts, releases);
+        Assert.Equal([50, 100], delays);
+    }
+
+    [Fact]
     public void FixtureCleanupRethrowsPermanentWindowsIOExceptionAfterEightAttempts()
     {
         var attempts = 0;
@@ -427,13 +446,17 @@ internal sealed class RankedIdentityFixture : IDisposable
     public void Dispose()
     {
         Store.StorageFailureInjector = null;
-        SqliteConnection.ClearAllPools();
-        if (!Directory.Exists(_root)) return;
+        if (!Directory.Exists(_root))
+        {
+            SqliteConnection.ClearAllPools();
+            return;
+        }
         DeleteTemporaryDirectoryWithRetry(() => Directory.Delete(_root, true),
-            OperatingSystem.IsWindows(), Thread.Sleep);
+            OperatingSystem.IsWindows(), Thread.Sleep, SqliteConnection.ClearAllPools);
     }
 
-    internal static void DeleteTemporaryDirectoryWithRetry(Action delete, bool windows, Action<int> delay)
+    internal static void DeleteTemporaryDirectoryWithRetry(Action delete, bool windows, Action<int> delay,
+        Action? beforeDelete = null)
     {
         ArgumentNullException.ThrowIfNull(delete);
         ArgumentNullException.ThrowIfNull(delay);
@@ -441,6 +464,7 @@ internal sealed class RankedIdentityFixture : IDisposable
         {
             try
             {
+                beforeDelete?.Invoke();
                 delete();
                 return;
             }

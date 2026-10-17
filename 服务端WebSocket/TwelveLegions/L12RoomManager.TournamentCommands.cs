@@ -19,8 +19,10 @@ public sealed partial class L12RoomManager
             var applied = 0;
             var failed = 0;
             var messages = new List<OutgoingMessage>();
+            var blockedTables = new HashSet<(string TournamentId, string MatchId)>();
             foreach (var command in _platform.PendingTournamentRoomCommands(tournamentId))
             {
+                if (blockedTables.Contains((command.TournamentId, command.MatchId))) continue;
                 try
                 {
                     var result = command.Kind switch
@@ -30,6 +32,8 @@ public sealed partial class L12RoomManager
                                 command.MatchId, command.RoomCode, paused, command.Reason),
                         "cancel" => await ApplyPendingTournamentCancelAsync(command.TournamentId,
                             command.MatchId, command.RoomCode, command.Reason),
+                        "extend" => await ApplyPendingTournamentExtensionAsync(command.TournamentId,
+                            command.MatchId, command.RoomCode),
                         _ => throw new InvalidDataException($"未知赛事房间待办类型：{command.Kind}"),
                     };
                     if (!result.Applied)
@@ -41,6 +45,9 @@ public sealed partial class L12RoomManager
                 }
                 catch (Exception error)
                 {
+                    // A later resume/cancel must not overtake a failed pause on the
+                    // same table. Independent tables are still allowed to progress.
+                    blockedTables.Add((command.TournamentId, command.MatchId));
                     failed++;
                     try
                     {
@@ -70,6 +77,16 @@ public sealed partial class L12RoomManager
         if (room?.RankedClock is null || room.Game is null)
             return (await _recorder.HasUnfinishedRankedMatchForRoomAsync(roomCode) ? false : true, []);
         return (true, await PauseTournamentClockAsync(tournamentId, matchId, paused, reason));
+    }
+
+    private async Task<(bool Applied, IReadOnlyList<OutgoingMessage> Messages)>
+        ApplyPendingTournamentExtensionAsync(string tournamentId, string matchId, string roomCode)
+    {
+        var room = _rooms.Values.FirstOrDefault(item => item.TournamentId == tournamentId
+            && item.TournamentMatchId == matchId);
+        if (room?.RankedClock is null || room.Game is null)
+            return (await _recorder.HasUnfinishedRankedMatchForRoomAsync(roomCode) ? false : true, []);
+        return (true, await ExtendTournamentClockAsync(tournamentId, matchId, 0));
     }
 
     private async Task<(bool Applied, IReadOnlyList<OutgoingMessage> Messages)>

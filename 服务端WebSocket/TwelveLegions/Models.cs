@@ -1092,7 +1092,10 @@ public sealed record L12GmCommand(
     int? Value = null,
     string? Phase = null,
     bool TriggerEffects = true,
-    string? TargetInstanceId = null);
+    string? TargetInstanceId = null,
+    string? RefereeName = null,
+    string? RefereeReason = null,
+    string? RefereeAccountId = null);
 
 public sealed record L12SandboxRequest(
     L12CustomDeckSubmission? PlayerDeck = null,

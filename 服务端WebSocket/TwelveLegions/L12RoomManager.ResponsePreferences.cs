@@ -163,6 +163,7 @@ public sealed partial class L12RoomManager
 
     private async Task<bool> ExpireResponseWindowLockedAsync(Room room, DateTimeOffset now)
     {
+        if (room.RankedClock is { Paused: true }) return false;
         var game = room.Game;
         var lease = game?.CaptureResponseAutoCloseLease();
         if (game is null || lease is null || now.ToUniversalTime() < lease.DeadlineUtc.ToUniversalTime())

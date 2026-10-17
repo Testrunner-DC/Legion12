@@ -296,6 +296,46 @@ function presenceItem(accountId, username, activity = 'idle') {
 }
 
 const tests = [
+  ['referee correction recovers its receipt after the finished table is no longer recoverable', async () => {
+    const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'referee-token' })
+    const net = await loadNetModule(), connected = net.connect(), first = FakeWebSocket.instances[0]
+    first.open()
+    first.receive({ type: 'session', sessionId: 'referee-first', connectionGeneration: 101,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    first.receive({ type: 'roomState', roomCode: 'REF001', started: true, yourPlayerIndex: null, players: [] })
+    first.receive({ type: 'gameState', spectating: true, observerView: 'referee', gmEnabled: false,
+      refereeControlsEnabled: true, tournamentId: 'tournament', tournamentMatchId: 'table',
+      rankedClock: { paused: true }, state: { matchId: 'referee-match', roomCode: 'REF001', revision: 1, phase: 'Main', players: [] } })
+    first.receive({ type: 'recoveryComplete', connectionGeneration: 101, roomCode: 'REF001', matchId: 'referee-match', recoveryRevision: 1 })
+    await connected
+    assert.equal(net.l12State.gmEnabled, false, 'referee must not receive sandbox capability')
+    net.refereeGmAction({ type: 'setLife', targetPlayer: 0, value: 18, refereeReason: 'synthetic correction' })
+    const firstCorrection = first.sent.map(value => JSON.parse(value)).find(value => value.type === 'gmAction')
+    assert.equal(net.l12State.pendingAction, true)
+    first.receive({ type: 'gameState', requestId: firstCorrection.requestId, spectating: true, observerView: 'referee', gmEnabled: false,
+      refereeControlsEnabled: true, tournamentId: 'tournament', tournamentMatchId: 'table', rankedClock: { paused: true },
+      state: { matchId: 'referee-match', roomCode: 'REF001', revision: 2, phase: 'Main', players: [] } })
+    assert.equal(net.l12State.pendingAction, false, 'the normal spectator game-state acknowledgement must unlock the next correction')
+    net.refereeGmAction({ type: 'setLife', targetPlayer: 0, value: 0, refereeReason: 'synthetic ruling' })
+    const original = first.sent.map(value => JSON.parse(value)).filter(value => value.type === 'gmAction').at(-1)
+    assert.equal(original.command.refereeMatchId, 'referee-match')
+    first.emitClose(1006, 'confirmation lost')
+    assert.equal(net.l12State.refereeControlsEnabled, false)
+    assert.equal(net.l12State.pendingAction, true)
+    await timers.advance(1_000)
+    const replacement = FakeWebSocket.instances[1]
+    replacement.open()
+    replacement.receive({ type: 'session', sessionId: 'referee-next', connectionGeneration: 102,
+      capabilities: { requestIds: true, deltaGameState: true } })
+    replacement.receive({ type: 'recoveryComplete', connectionGeneration: 102 })
+    const retried = replacement.sent.map(value => JSON.parse(value)).find(value => value.type === 'gmAction')
+    assert.deepEqual(retried, original, 'missing completed table must only retry the exact receipt identity')
+    assert.equal(net.l12State.pendingAction, true)
+    replacement.receive({ type: 'refereeActionReceipt', requestId: original.requestId, accepted: true, revision: 2 })
+    assert.equal(net.l12State.pendingAction, false)
+    assert.equal(net.l12State.game, null, 'receipt recovery must not fabricate or expose a privileged snapshot')
+    net.disconnect()
+  }],
   ['spectator matchmaking retires the old observation before accepting the new player snapshot', async () => {
     installBrowserEnvironment({ 'l12-auth-token': 'spectator-queue-token' })
     const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]

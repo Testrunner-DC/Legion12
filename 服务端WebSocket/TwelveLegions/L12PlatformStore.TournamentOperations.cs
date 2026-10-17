@@ -244,7 +244,9 @@ public sealed partial class L12PlatformStore
                         command.MatchId, RequireMatch(row, command.MatchId).Match.RoomCode,
                         command.Paused, command.Reason, command.CreatedAt,
                         command.Attempts, command.LastError)))
-                .OrderBy(command => command.CreatedAt).ThenBy(command => command.Id).ToArray();
+                // RoomCommands is an append-only persisted list. Preserve its durable
+                // insertion order; wall clocks can move and random IDs are not a sequence.
+                .ToArray();
         }
     }
 

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜680a观战动画正式闭环；裁判GM本地验收完成
+
+- BUG-20260927-680a5928原文为佣兵弃置等动画重复。Main实际核delivery 9B502FDC及其17份具名证据引用，4200b689唯一视觉持有者与83e567fa来源补齐均包含于已部署a355；普通差量/赛事全量的登场、休整、活跃、重复包、恢复/切局、取消及隐藏牌消费者证据复用，未为完备性重跑旧私局。来源field→grave红项与重复根因分开，不把文案猜来源当去重方案。
+- 既有原15字段合同及normalization v2离线检查、12负例自检后，单次preview/CAS31398，独立终态与原文保持读回，已resolved/fixed_verified；真实会话撤销，正式a355/maintenance=false不变。原执行根bug-closeout-current-spectator-one-a355.json与closure-intake-after-phase-a355-spectator-one.json同次快照直接对账：911总/64new/375resolved/472closed，阶段466/周期558。真实边界：非原私人录像重放、真iOS、穷举全部战斗或负载容量，不以此重开已有当前正确性结论。
+- 新裁判GM为用户直接要求的非Bug功能：唯一引擎写口、原GM/Journal/clock-runtime；独立capability不授sandboxAction或更多私密投影，非本人桌、每次重验权限、暂停后编辑。补时沿outbox绝对预算幂等/失败reload，暂停冻结五秒响应且恢复期限可重放，终局本人receipt恢复无场面。裁判命令期仅去旧沙盒gm私密详情，成功单条中性通知；真实actor/reason/命令仍审计，正常规则及后续公开阶段日志保留。
+- 最终r14集成14/14、隐私3＋原Sandbox22全部25/25、net44/44及真实组件三尺寸3/3；独审r3 CLEAR。源级最终规则7849与新完整平台1884/完整前端通过，业务源/运行库不变复用；原full-r5 Windows夹具删除失败不改写为通过，仅测试清理逐次清池后18专项及新整轮平台通过。不是新单轮全门禁、Release、真机或实际赛事容量。接受/同步见tournament-referee-control-20261018/final-acceptance.json及synchronization.json，不部署不改维护，不为新GM再关Bug。
+
 ## FEATURE-DSC01A-DISASTER-SETUP-FACTS｜禁选事实独立留存，沿命令事务提交
 
 - 用户要求接入主宰先后手天灾分析，DSC-01合同已由Main采用。首期仅内部准备事实，不是卡效修复或已上线统计：seed冻结真实池/行为版本，offer/decision/public/无序composition沿唯一准备入口，观测不进State、玩家事件、RNG或旧fact游标；不复制结算。独立三表与schema component v1原子可重入，支持原生V2四模式，旧/晚录/skip不补造exact，不改变旧卡统计ranked-only样本。

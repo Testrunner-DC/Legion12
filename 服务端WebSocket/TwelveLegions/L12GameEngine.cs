@@ -2508,6 +2508,9 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private long AddEvent(string type, int? playerIndex, string text, params L12CardInstance[] cards)
     {
+        // Sandbox GM text can name hidden hand/library cards. Referee corrections use
+        // their single neutral notice instead; actual rule events still record normally.
+        if (_suppressRefereeGmDetails && type == "gm") return 0;
         AddEventCore(type, playerIndex, text, null, cards);
         return State.EventSequence;
     }
