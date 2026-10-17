@@ -7,7 +7,7 @@ const {chromium}=require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/co
 const browser=await chromium.launch(process.env.L12_CHROMIUM_EXECUTABLE?{headless:true,executablePath:process.env.L12_CHROMIUM_EXECUTABLE}:{headless:true,channel:'msedge'})
 const page=await browser.newPage(), cdp=await page.context().newCDPSession(page)
 const target=process.argv[2] || 'http://127.0.0.1:5197/__l12_battle_preview__'
-const out=path.resolve('../artifacts/mobile-action-dock/overlays')
+const out=path.resolve(process.env.L12_DOCK_ARTIFACT_DIR || '../artifacts/mobile-action-dock/overlays')
 fs.mkdirSync(out,{recursive:true})
 const results=[],errors=[]
 page.on('pageerror',e=>errors.push(e.message))
@@ -35,6 +35,36 @@ async function hit(locator){
   assert.ok(await e.evaluate(e=>{const r=e.getBoundingClientRect(),h=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);return h===e||e.contains(h)}),`intercepted ${await e.textContent()}`)
   if(await e.isEnabled())await e.click({trial:true})
  }
+}
+async function checkGmInitialState(){
+ label='844x390-gm-only';await page.setViewportSize({width:844,height:390})
+ await load('gm=1&action-fixture=1')
+ assert.equal(await page.locator('.gm-panel').count(),0,`${label} mobile GM must start collapsed`)
+ assert.equal(await page.locator('.gm-open').count(),1,`${label} mobile GM opener missing`)
+ await page.locator('.my-half .formation-slot .card-tile').first().click()
+ await hit(page.locator('.card-context-actions button'))
+ await hit(page.locator('.gm-open'));await page.locator('.gm-open').click();await check(page.locator('.gm-panel'),'gm-opened')
+ await page.locator('.gm-panel>header button').click();assert.equal(await page.locator('.gm-open').count(),1)
+ label='1366x768-gm-only';await page.setViewportSize({width:1366,height:768})
+ await page.goto(`${target}?gm=1&field=full&hand=10&modalFixture=1`,{waitUntil:'domcontentloaded'})
+ await page.locator('.gm-panel').waitFor();assert.equal(await page.locator('.gm-open').count(),0,'desktop GM must remain initially open')
+ await page.locator('.gm-panel>header button').click();assert.equal(await page.locator('.gm-open').count(),1)
+ label='gm-delayed-enable';await page.setViewportSize({width:1366,height:768})
+ await page.goto(`${target}?canvas=1&field=full&hand=10&modalFixture=1`,{waitUntil:'domcontentloaded'})
+ assert.equal(await page.locator('.gm-panel,.gm-open').count(),0,`${label} GM controls must stay absent before authorization`)
+ await page.setViewportSize({width:844,height:390});await page.waitForTimeout(100)
+ await page.evaluate(()=>{window.__battleDockFixture.state.gmEnabled=true})
+ await page.locator('.gm-open').waitFor();assert.equal(await page.locator('.gm-panel').count(),0,`${label} late authorization must read the current mobile policy`)
+ await page.locator('.gm-open').click();await page.locator('.gm-panel').waitFor()
+ await page.setViewportSize({width:1366,height:768});await page.waitForTimeout(100)
+ assert.equal(await page.locator('.gm-panel').count(),1,`${label} resize must not override the user's open state`)
+ results.push({label,name:'late-enable-and-manual-open',mobileStartsCollapsed:true,userOpenSurvivesResize:true})
+}
+if(process.argv.includes('--gm-only')){
+ try{await checkGmInitialState();assert.deepEqual(errors,[])}
+ catch(e){errors.push(e.stack);throw e}
+ finally{fs.writeFileSync(path.join(out,'gm-only-manifest.json'),JSON.stringify({status:errors.length?'failed':'passed',results,errors},null,2));await browser.close()}
+ process.exit(errors.length?1:0)
 }
 try{
  for(const [width,height] of [[740,360],[844,390],[1024,600],[1024,768]]){
@@ -70,8 +100,13 @@ try{
   await page.locator('.master-minimized button').click();await page.locator('.master-close').click()
   await page.locator('.graveyard-minimized button').click();await page.getByRole('button',{name:'关闭墓地'}).click()
   await page.locator('.faction-minimized-bar button').click();await page.locator('.faction-close').click()
-  await load('gm=1');await check(page.locator('.gm-panel'),'gm');await page.locator('.gm-panel>header button').click()
-  await hit(page.locator('.gm-open'));await page.locator('.gm-open').click();await page.locator('.gm-panel>header button').click()
+  await load('gm=1&action-fixture=1')
+  assert.equal(await page.locator('.gm-panel').count(),0,`${label} mobile GM must start collapsed`)
+  assert.equal(await page.locator('.gm-open').count(),1,`${label} mobile GM opener missing`)
+  await page.locator('.my-half .formation-slot .card-tile').first().click()
+  await hit(page.locator('.card-context-actions button'))
+  await hit(page.locator('.gm-open'));await page.locator('.gm-open').click();await check(page.locator('.gm-panel'),'gm-opened')
+  await page.locator('.gm-panel>header button').click();assert.equal(await page.locator('.gm-open').count(),1)
   await load('spectator=1');assert.equal(await page.locator('.action-panel').count(),0);assert.equal(await page.locator('.surrender').count(),0)
   await hit(page.locator('.mobile-battle-dock button'));await check(page.locator('.mobile-battle-dock'),'spectator')
   await load('disaster-chain=1');await page.evaluate(()=>window.__disasterFixture.openPrompt());await check(page.locator('.prompt-panel'),'disaster')
@@ -94,6 +129,10 @@ try{
  await page.getByRole('button',{name:'打开对局工具',exact:true}).click();await check(page.locator('.tools-dialog'),'waiting-tools');await page.getByRole('button',{name:'关闭对局工具',exact:true}).click()
  await page.evaluate(()=>{const state=window.__battleDockFixture.state;state.game.waitingPrompt=null;state.rankedClock.players[1].connected=true})
  await page.locator('.my-half .formation-slot .card-tile').first().click();await hit(page.locator('.mobile-battle-dock button'))
+ label='desktop-gm';await page.setViewportSize({width:1366,height:768})
+ await page.goto(`${target}?gm=1&field=full&hand=10&modalFixture=1`,{waitUntil:'domcontentloaded'})
+ await page.locator('.gm-panel').waitFor();assert.equal(await page.locator('.gm-open').count(),0,'desktop GM must remain initially open')
+ await page.locator('.gm-panel>header button').click();assert.equal(await page.locator('.gm-open').count(),1)
  assert.deepEqual(errors,[])
 }catch(e){errors.push(e.stack);await page.screenshot({path:path.join(out,`${label}-failure.png`)});throw e}
 finally{fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({status:errors.length?'failed':'passed',results,errors},null,2));await browser.close()}

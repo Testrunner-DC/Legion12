@@ -593,6 +593,8 @@ const supplementalChoices = computed(() => currentChoices.value
   .filter(id => !primaryChoices.value.includes(id)))
 const isCardSelectionPrompt = computed(() => prompt.value?.data?.cardSelection === 'true')
 const placementMode = computed(() => prompt.value?.data?.placementMode ?? '')
+const reservePlacementDetailSpace = computed(() => !props.mobileLayout
+  && ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value))
 const currentSelected = computed(() => isMulligan.value ? props.mulliganSelectedIds : ['split-top-bottom', 'all-top-bottom', 'all-bottom'].includes(placementMode.value) ? (placementSelected.value ? [placementSelected.value] : []) : activeSelected.value)
 const hasCardChoices = computed(() => displayCardIds.value.length > 0 || (!isEffectDecision.value
   && (showPreviewCard.value || displayedChoices.value.some(id => Boolean(detailFor(id)))))
@@ -856,7 +858,7 @@ function kindLabel() {
   <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
     <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
-      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible, 'mobile-safe-overlay': mobileLayout }">
+      :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible || reservePlacementDetailSpace, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
         <button :aria-label="`展开：${overlayTitle}`" ref="expandButton" aria-describedby="prompt-minimized-task" :title="minimizedTask" @click="expandPrompt">{{ minimizedButtonText }}</button>
         <span id="prompt-minimized-task" class="prompt-minimized-task">{{ minimizedTask }}</span>
@@ -869,7 +871,7 @@ function kindLabel() {
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
           <p v-if="promptSituation" class="effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
-          <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
+          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
@@ -994,11 +996,15 @@ function kindLabel() {
           <strong>结算顺序（先 → 后）</strong>
           <ol><li v-for="choice in triggerResolutionPreview" :key="choice">{{ label(choice) }}</li></ol>
         </section>
-        <section v-if="focusedCandidateDetail" class="prompt-choice-detail" aria-live="polite">
-          <strong>{{ focusedCandidateDetail.name }}</strong>
-          <span v-if="focusedCandidateDetail.meta">{{ focusedCandidateDetail.meta }}</span>
-          <span v-if="focusedCandidateDetail.consequence">选择后：{{ focusedCandidateDetail.consequence }}</span>
-          <span v-if="focusedCandidateDetail.unavailable" class="unavailable-reason">当前不可选择<span v-if="focusedCandidateDetail.unavailableReason">：{{ focusedCandidateDetail.unavailableReason }}</span></span>
+        <section v-if="focusedCandidateDetail || reservePlacementDetailSpace" class="prompt-choice-detail"
+          :class="{ 'placement-detail-reserved': reservePlacementDetailSpace, 'is-empty': !focusedCandidateDetail }"
+          aria-live="polite" :aria-hidden="!focusedCandidateDetail">
+          <template v-if="focusedCandidateDetail">
+            <strong>{{ focusedCandidateDetail.name }}</strong>
+            <span v-if="focusedCandidateDetail.meta">{{ focusedCandidateDetail.meta }}</span>
+            <span v-if="focusedCandidateDetail.consequence">选择后：{{ focusedCandidateDetail.consequence }}</span>
+            <span v-if="focusedCandidateDetail.unavailable" class="unavailable-reason">当前不可选择<span v-if="focusedCandidateDetail.unavailableReason">：{{ focusedCandidateDetail.unavailableReason }}</span></span>
+          </template>
         </section>
         </main>
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">
@@ -1073,7 +1079,7 @@ function kindLabel() {
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
-        <button v-if="!isDisasterPreparation" class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
+        <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
@@ -1196,6 +1202,7 @@ function kindLabel() {
 .prompt-actor,.prompt-selection-range{overflow-wrap:anywhere}
 .prompt-choice-detail{display:flex;flex-direction:column;gap:3px;min-width:0;margin:7px 3px 10px;padding:8px 10px;border:1px solid #598c8c;background:#0a1b1e;color:#e9f2ed;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
 .prompt-choice-detail strong{color:#fff}.prompt-choice-detail .unavailable-reason{color:#ffb7ba}
+.prompt-choice-detail.placement-detail-reserved{box-sizing:border-box;height:88px;overflow:auto}.prompt-choice-detail.placement-detail-reserved.is-empty{visibility:hidden}
 .prompt-minimized-bar{max-width:min(360px,calc(var(--l12-viewport-width,100vw) - var(--l12-viewport-left,0px) - 16px))}
 .prompt-minimized-task{box-sizing:border-box;display:block;max-width:100%;max-height:4.5em;overflow:auto;padding:5px 8px;border:1px solid #598c8c;background:#10191b;color:#fff;font-size:var(--l12-board-copy,13px);line-height:1.35;white-space:normal;overflow-wrap:anywhere;box-shadow:0 12px 35px #000}
 .l12-prompt-overlay.mobile-safe-overlay .prompt-minimize,.l12-prompt-overlay.mobile-safe-overlay .prompt-minimized-bar button{min-width:44px;min-height:44px}

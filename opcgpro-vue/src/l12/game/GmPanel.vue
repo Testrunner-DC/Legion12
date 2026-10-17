@@ -8,7 +8,7 @@ import type { Card, GameState } from '@/l12/types'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
 
-const props = defineProps<{ game: GameState }>()
+const props = withDefaults(defineProps<{ game: GameState; initiallyOpen?: boolean }>(), { initiallyOpen: true })
 const emit = defineEmits<{
   armPlacement: [request: {
     type: 'placeCard' | 'playHandCard'
@@ -21,7 +21,7 @@ const emit = defineEmits<{
   }]
   openChange: [open: boolean]
 }>()
-const open = ref(true)
+const open = ref(props.initiallyOpen)
 watch(open, value => emit('openChange', value), { immediate: true })
 const targetMode = ref<'self' | 'opponent'>('self')
 const selectedCatalogCard = ref<SingleCardPickerItem | null>(null)

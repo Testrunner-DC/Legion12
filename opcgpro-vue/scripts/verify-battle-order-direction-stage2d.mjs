@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const origin = process.argv[2] || 'http://127.0.0.1:5242/__l12_battle_preview__'
-const output = path.resolve('artifacts/stage2d-order-direction')
+const output = path.resolve(process.env.L12_ORDER_DIRECTION_ARTIFACT_DIR || 'artifacts/stage2d-order-direction')
 fs.mkdirSync(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })
 const results = []
@@ -38,6 +38,31 @@ async function assertPanel(page, panel, label) {
   const errors = await page.evaluate(() => window.__sentCommands.length)
   assert.equal(errors, 0, `${label}: fixture sent an action before confirmation`)
 }
+async function assertHoverStable(page, panel, cards, label) {
+  const card = cards.first()
+  const footer = panel.locator('.prompt-action-footer button').last()
+  const before = { card: await card.boundingBox(), footer: await footer.boundingBox() }
+  const inspectorReservedBefore = await page.locator('.l12-prompt-overlay.inspector-active').count()
+  await card.hover()
+  const after = { card: await card.boundingBox(), footer: await footer.boundingBox() }
+  const originalCenterStillHitsCard = await card.evaluate((node, box) => {
+    if (!box) return false
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+    return Boolean(hit && (hit === node || node.contains(hit)))
+  }, before.card)
+  const delta = (left, right) => left && right
+    ? { x: Math.abs(left.x - right.x), y: Math.abs(left.y - right.y) }
+    : { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY }
+  const evidence = {
+    label, inspectorReservedBefore, originalCenterStillHitsCard,
+    cardDelta: delta(before.card, after.card), footerDelta: delta(before.footer, after.footer),
+  }
+  assert.equal(inspectorReservedBefore, 1, `${label}: placement inspector space was not reserved before hover ${JSON.stringify(evidence)}`)
+  assert.equal(originalCenterStillHitsCard, true, `${label}: original card center was intercepted after hover`)
+  assert.ok(evidence.cardDelta.x <= 1 && evidence.cardDelta.y <= 1, `${label}: card moved after hover ${JSON.stringify(evidence)}`)
+  assert.ok(evidence.footerDelta.x <= 1 && evidence.footerDelta.y <= 1, `${label}: action button moved after hover ${JSON.stringify(evidence)}`)
+  results.push({ name: `${label}-hover-stable`, ...evidence })
+}
 
 try {
   const page = await browser.newPage()
@@ -46,10 +71,27 @@ try {
     ? route.continue() : route.abort())
   const profiles = [
     { name: 'desktop-1280', width: 1280, height: 720 },
+    { name: 'desktop-1366', width: 1366, height: 768 },
     { name: 'mobile-568', width: 568, height: 320, mobile: true },
     { name: 'mobile-390-rotated', width: 390, height: 844, mobile: true },
     { name: 'mobile-844-safe-font', width: 844, height: 390, mobile: true, safe: true, font: true },
   ]
+  {
+    const profile = { name: 'desktop-1366-native-drag', width: 1366, height: 768 }
+    const panel = await view(page, profile, 'all-top-bottom')
+    const cards = panel.locator('.all-placement-row .prompt-card-candidate')
+    await cards.nth(2).dragTo(cards.nth(0))
+    assert.deepEqual(await cards.locator('.prompt-card-candidate__name').allInnerTexts(),
+      ['丙号测试卡', '甲号测试卡', '乙号测试卡'])
+    assert.equal(await page.evaluate(() => window.__sentCommands.length), 0,
+      'native drag must not submit before explicit confirmation')
+    await panel.getByRole('button', { name: '全部放回顶部' }).click()
+    assert.equal(await page.evaluate(() => window.__sentCommands.length), 1,
+      'native drag confirmation must submit exactly one command')
+    assert.deepEqual((await submitted(page)).topCardInstanceIds,
+      ['0-hand-showcase-2', '0-hand-showcase-0', '0-hand-showcase-1'])
+    results.push('desktop-1366-native-drag')
+  }
   for (const profile of profiles) {
     {
       const panel = await view(page, profile, 'trigger-order')
@@ -72,6 +114,7 @@ try {
     for (const [mode, destination] of [['all-top-bottom', 'top'], ['all-top-bottom', 'bottom'], ['all-bottom', 'bottom']]) {
       const panel = await view(page, profile, mode)
       const cards = panel.locator('.all-placement-row .prompt-card-candidate')
+      if (!profile.mobile) await assertHoverStable(page, panel, cards, `${profile.name}-${mode}-${destination}`)
       await cards.nth(0).click()
       await cards.nth(2).click()
       assert.deepEqual(await cards.locator('.prompt-card-candidate__name').allInnerTexts(),
@@ -91,6 +134,7 @@ try {
     {
       const panel = await view(page, profile, 'split-top-bottom')
       const unassigned = panel.locator('.placement-candidates .prompt-card-candidate')
+      if (!profile.mobile) await assertHoverStable(page, panel, unassigned, `${profile.name}-split`)
       await unassigned.nth(0).click()
       await panel.getByRole('button', { name: '放回顶部' }).click()
       await unassigned.nth(0).click()

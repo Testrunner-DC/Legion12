@@ -7,6 +7,7 @@ import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
+import { isMobileViewportExperience } from './mobileViewport'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
@@ -31,7 +32,12 @@ const playerFacingWinnerReason = computed(() => {
 const settingsOpen = ref(false)
 const settingsOpener = ref<HTMLElement | null>(null)
 const loadRetrying = ref(false)
-const gmPanelOpen = ref(l12State.gmEnabled)
+const gmPanelInitiallyOpen = ref(false)
+const gmPanelOpen = ref(false)
+watch(() => l12State.gmEnabled, enabled => {
+  gmPanelInitiallyOpen.value = enabled && !isMobileViewportExperience()
+  gmPanelOpen.value = gmPanelInitiallyOpen.value
+}, { immediate: true, flush: 'sync' })
 const gameOverMinimized = ref(false)
 const opponent = computed(() => l12State.room?.players.find(player => player.playerIndex !== l12State.room?.yourPlayerIndex))
 function openBattleSettings(event?: Event) {
@@ -131,7 +137,8 @@ async function retryGameLoad() {
     </div></BattleDockPortal>
     <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
       @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
-    <GmPanel v-if="l12State.gmEnabled" :game="game" @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
+    <GmPanel v-if="l12State.gmEnabled" :game="game" :initially-open="gmPanelInitiallyOpen"
+      @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <OsirisVictorySequence v-if="osirisSequencePlaying" :key="osirisSequenceKey"
       @complete="completeOsirisSequence" />
     <BattleOverlayPortal>    <div v-if="settingsOpen" class="battle-settings-mask" @click.self="closeBattleSettings">

@@ -30,6 +30,81 @@ async function swipe(cdp, from, to, cancel = false) {
 const results = []
 const layouts = []
 const layoutFailures = []
+
+async function verifyDisasterMinimizeReachability() {
+  const cells = []
+  for (const profile of [
+    { name: 'desktop-1366', width: 1366, height: 768, mobile: false },
+    { name: 'mobile-844', width: 844, height: 390, mobile: true },
+  ]) {
+    for (const kind of ['disaster-ban', 'disaster-pick']) {
+      const context = await browser.newContext({
+        viewport: { width: profile.width, height: profile.height },
+        hasTouch: profile.mobile,
+        deviceScaleFactor: 1,
+      })
+      const page = await context.newPage()
+      const mobile = profile.mobile ? 'mobile=1&' : ''
+      const pick = kind === 'disaster-pick' ? '&disaster-pick=1' : ''
+      await page.goto(`${baseUrl}?canvas=1&${mobile}disaster-choice=1&choice-count=8&rankedClock=1${pick}`, { waitUntil: 'networkidle' })
+      await page.evaluate(() => { window.__l12State.game.phase = 'DisasterPreparation' })
+      const overlay = page.locator('.l12-prompt-overlay.disaster-choice')
+      await overlay.waitFor()
+      const candidate = overlay.locator('.prompt-card-candidate').first()
+      await candidate.click()
+      const promptId = await page.evaluate(() => window.__l12State.game.prompts[0].promptId)
+      const commandCountBefore = await page.evaluate(() => window.__sentCommands.length)
+      const minimizeButton = overlay.locator('.prompt-minimize')
+      const minimizeCount = await minimizeButton.count()
+      if (minimizeCount !== 1) throw new Error(`${profile.name}-${kind}: expected one disaster minimize button, got ${minimizeCount}`)
+      await minimizeButton.click()
+      const minimized = await overlay.evaluate(node => node.classList.contains('minimized'))
+      const clockVisible = await overlay.locator('.setup-decision-clock').isVisible()
+      const masterHits = await page.locator('.mini-master').evaluateAll(nodes => nodes.map(node => {
+        const rect = node.getBoundingClientRect()
+        const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+        return Boolean(hit && (hit === node || node.contains(hit)))
+      }))
+      const commandCountMinimized = await page.evaluate(() => window.__sentCommands.length)
+      await overlay.locator('.prompt-minimized-bar button').click()
+      const selectedAfterExpand = await overlay.locator('.prompt-card-candidate.selected').count()
+      const promptIdAfterExpand = await page.evaluate(() => window.__l12State.game.prompts[0].promptId)
+      const commandCountAfterExpand = await page.evaluate(() => window.__sentCommands.length)
+      if (!minimized || !clockVisible || masterHits.length !== 2 || masterHits.some(value => !value)
+        || selectedAfterExpand !== 1 || promptIdAfterExpand !== promptId
+        || commandCountBefore !== commandCountMinimized || commandCountBefore !== commandCountAfterExpand)
+        throw new Error(`${profile.name}-${kind}: disaster minimize lifecycle changed ${JSON.stringify({ minimized, clockVisible, masterHits, selectedAfterExpand, promptId, promptIdAfterExpand, commandCountBefore, commandCountMinimized, commandCountAfterExpand })}`)
+      cells.push({ profile: profile.name, kind, minimized, clockVisible, masterHits,
+        selectedAfterExpand, promptId, commandCountBefore, commandCountAfterExpand })
+      if (!profile.mobile && kind === 'disaster-ban') {
+        await page.evaluate(() => {
+          window.__l12State.game.prompts = []
+          window.__l12State.game.waitingPrompt = { playerIndex: 1, playerName: '合成对手', kind: 'disaster-ban' }
+        })
+        const waitingOverlay = page.locator('.l12-prompt-overlay')
+        await waitingOverlay.locator('.waiting-panel').waitFor()
+        const waitingMinimize = waitingOverlay.locator('.prompt-minimize')
+        const waitingMinimizeCount = await waitingMinimize.count()
+        if (waitingMinimizeCount !== 1) throw new Error(`desktop-1366-disaster-ban-waiting: expected one minimize button, got ${waitingMinimizeCount}`)
+        const waitingClockBefore = await waitingOverlay.locator('.setup-decision-clock').isVisible()
+        const waitingCommandsBefore = await page.evaluate(() => window.__sentCommands.length)
+        await waitingMinimize.click()
+        const waitingMinimized = await waitingOverlay.evaluate(node => node.classList.contains('minimized'))
+        const waitingClockVisible = await waitingOverlay.locator('.setup-decision-clock').isVisible()
+        const waitingCommandsAfter = await page.evaluate(() => window.__sentCommands.length)
+        if (!waitingMinimized || waitingClockVisible !== waitingClockBefore || waitingCommandsBefore !== waitingCommandsAfter)
+          throw new Error(`desktop-1366-disaster-ban-waiting: lifecycle changed ${JSON.stringify({ waitingMinimized, waitingClockBefore, waitingClockVisible, waitingCommandsBefore, waitingCommandsAfter })}`)
+        cells.push({ profile: profile.name, kind, role: 'waiting', minimized: waitingMinimized,
+          clockVisibleBefore: waitingClockBefore, clockVisibleAfter: waitingClockVisible,
+          commandCountBefore: waitingCommandsBefore, commandCountAfterExpand: waitingCommandsAfter })
+      }
+      await context.close()
+    }
+  }
+  results.push({ origin: 'disaster-minimize-reachability', cells })
+}
+
+await verifyDisasterMinimizeReachability()
 for (const viewport of (process.argv.includes('--quick') ? [{ width: 320, height: 568 }]
   : process.argv.includes('--landscape') ? [{ width: 844, height: 390 }]
     : [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 844, height: 390 }])) {
