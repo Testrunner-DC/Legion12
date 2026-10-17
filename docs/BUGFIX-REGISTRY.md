@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## FIX-20261017-PLACEMENT-ROW-CENTER｜整组排序少牌居中，溢出保首尾
+
+- 8dc4661d已真实复现：精确符文all-bottom两牌在718px行内并集240px、中心偏234px；换序和唯一提交原本正确。用户批准后仅向共享all-placement-row首/尾加margin-inline-start/end:auto，余量存在时平分，溢出时自动归零；不使用会剪掉首牌的硬center，不改拖拽/点击、排序状态、费用、Prompt、预留详情或提交。原字段/结构/方向提示守卫全保留，新增永久UI合同及真实消费者QA脚本；回滚只移除两条布局声明。
+- 全池执行入口查询`BeginAllTopBottomReorder|CreateLibraryPlacementPrompt|"all-bottom"|"all-top-bottom"`：all-top-bottom覆盖山河/普罗米修斯/忒勒马科斯/observing-stars，all-bottom覆盖花魁/野外扎营/法老王庆典/faction-search/武运在天/s2-rune/天启默示录；split三分区不同消费不改。两模式代表性合成提示验证共享行，不冒上述卡全部自然结算链或引擎回归重跑。
+- 真实RED-focused 10/12（仅桌面两短行234px失败）；GREEN 12/12，1366×768/844×390/390×844，两模式短行居中0px、原生指针换序/各唯一resolvePrompt；六溢出scroll range定位后首/尾完整可达、终点差0。桌面悬停预留区域整体0位移，移动仅外框0、内部原有85.69px变化不作已修声明；未测拖拽物理手势，仅保原drop入口及点击换序，不冒移动触摸手势、真机/微信、服务器ACK或原私局。
+- Main全文审永久脚本/差异、前后截图与实际报告；PromptOverlay 7619D919、QA90E10B9C，原失败及名称夹具错误均保留。最终完整前端Batch UI358/连接43/私有牌库44/聊天79/反馈144/卡图324+42、类型与两构建零退出；后端源未变，7840/1828有效同源证据复用，不称Release/新30房或部署。最终绑定见rune-placement-centering-20261017/final-acceptance.json；8dc仍开放待上线，本轮只实际关闭dd63bc0e，65待办。
+
+## CLOSEOUT-20261017-A355-ATTACK-UI-ONE｜当前进攻消费者正确，符文独立保留RED
+
+- dd63bc0e原前排尼托/图特摩斯→关羽反馈，按当前正确性有界未复现rejected，不造fixCommit。正式168C6329四具名Passed覆盖尼托前/后排射程预览与恢复、图三独立指定目标、lc01真实attack长链及Journal恢复；当前真实GamePage/PlayerMat原生三次中心点击各发送唯一指向guan-target的gameAction.attack，进攻按钮本身0提前指令。公开legalAttackTargets由夹具注入，规则与UI分离，未重放原倒数第二回合、私牌、服务端ACK或真机；不能把合成消费者称同次引擎贯通。
+- E3DE6F17主报告整体failed未改绿：两attack独立PASS；rune all-bottom实际行718/卡组240/偏234px，换序与唯一提交正确但居中RED。S01-0003名称首夹具错误原样保留，仅修其名称/重跑rune，不重复两绿；28CF118A源桥四blob/七相关切片独立复算，PlayerMat整blob同a355，GameBoard的a355→988差异仅移动手区，不将整个当前前端谎称同正式。
+- 908855A6审查/B3C8AEB6单项提案及23证据、五绑定可逆/原12函数/v2合同与1SelfTest通过，Main独审及独立CLEAR。实际单CAS31331/终态独立读回/原文历史/撤会话完成；唯一同次快照对账911/65new/374resolved/472closed、阶段465=142/307/16、周期557。原准备器两比较参数间隔错误在认证前修正、零网络，不绕过合同；未部署本地居中修复不用于关单，8dc4661d已获限定修复批准但保持开放。
+
 ## SPECTATOR-MATCHMAKING-20261017｜普通观战与既有匹配队列共存
 
 - fe7505de为用户已接受的新功能，沿P2/P3/P4既有Session、普通观战成员、单一排位/休闲队列与ForPlayer/ForSpectator投影实现；不扩赛事或裁判准入，不复制对局状态。设置复用懒加载大厅/本人精确牌库id+revision校验，关闭弹框保留画布；取消队列不退观战、退出观战不取消队列，配对后退休旧流、强制本人全量并在解码前挡旧full/delta/card-frame/房间消息。

@@ -660,6 +660,11 @@ const contracts = [
     && prompt.includes('其他牌抽完后依次抽到')
     && prompt.includes(':selection-order="index + 1"')
     && promptCardCandidate.includes('本组相对顺序第 ${props.selectionOrder} 张'), '牌库顶部和底部排序必须显示最终相对方向、分组顺序与确认前预览'],
+  [prompt.replace(/\s/g, '').includes('.all-placement-row>:first-child{margin-inline-start:auto}')
+    && prompt.replace(/\s/g, '').includes('.all-placement-row>:last-child{margin-inline-end:auto}')
+    && prompt.includes('reservePlacementDetailSpace') && prompt.includes('placement-detail-reserved')
+    && prompt.includes('@drop.stop.prevent="reorderAll(choice)"') && prompt.includes('@select="selectSwapChoice(choice)"'),
+  '共用整组排序行必须以首尾自动留白实现少牌居中及溢出首尾可达；悬停预留详情、拖拽和点击换序入口均不得丢失'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
     && !gamePage.includes('点击返回后才离开本局')

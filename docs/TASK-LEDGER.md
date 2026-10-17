@@ -1,5 +1,13 @@
 # 十二军团任务台账
 
+## 2026-10-17 符文排序共享居中｜本地验收完成，65待办
+
+- 8dc4661d当前真实GamePage/PromptOverlay在1366×768精确all-bottom两牌行宽718、卡组240、中心偏差234px；原生换序与唯一bottomCardInstanceIds提交正确，属于当前布局缺陷，不关闭。原report整体failed及首轮S01-0003名称夹具失败保留；两个进攻子例独立通过，不把整体failed改成GREEN。
+- 用户接受共用排序行，产品仅两条首尾auto margin，不改排序/费用/提示/提交。完整执行入口查询覆盖all-top-bottom的shanhe/prometheus/telemachus/observing-stars及all-bottom的oiran/camp/festival/faction-search/s2-fortune/s2-rune/apocalypse；共享行一次修正，split-top-bottom不改，不冒11条自然卡效逐卡UI。
+- 权威RED-focused 10/12，最终真实SFC/Edge三尺寸×两模式短行/溢出12/12；桌面中心234→0px、预留详情整体0位移，移动仅外框0位移，原有内部高度变化85.69px未宣称消除。六短行原生指针换序/唯一提交、六溢出滚动范围两端完整可达；后者用原生scroll range程序定位，不冒触摸手势、服务端ACK、真机或原私局。Main全文审脚本/差异及实际前后截图，原失败保留。
+- 最终完整前端Batch UI358/连接43/牌库消费者44/聊天79/反馈144/卡图324+42、类型与双构建通过；复用未变后端7840/1828，不重复跑或称新Release。源级验收及精确Git同步见rune-placement-centering-20261017/final-acceptance.json、synchronization.json；8dc仍待部署核验，不提前resolved。另删除租约结束的重复Vite缓存11文件1828134字节，保留primary唯一活动缓存和全部紧凑证据。
+- dd63bc0e已按a355四具名回归及当前真实消费者两条原生进攻检查独立rejected；Main全文核脚本/源桥，独审CLEAR，BBB12963原执行器单CAS31331/独立终态/原文历史保留/撤会话完成。合法集合由合成快照注入、无服务器ACK/旧私局/真机，不称原倒数第二回合重放。实际收据bug-closeout-current-following-attack-ui-one-a355.json；同次快照复用对账911/65new/374resolved/472closed，阶段465=142fixed/307rejected/16duplicate、周期557，无新部署或维护。
+
 ## 2026-10-17 观战匹配与移动沙盒｜本地验收完成，不部署
 
 - fe7505de沿P2/P3/P4现有普通非赛事观战、排位/休闲队列及唯一会话实现；设置中复用大厅匹配/本人精确牌库校验。取消匹配与退出观战分别保留意图，成功退休旧观战流并使用本人新全量，旧帧在解码前隔离；同账号重连、权威大厅恢复及失败回队/观战重同步均有回归，不扩裁判或手牌权限。
