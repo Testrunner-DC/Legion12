@@ -1013,7 +1013,8 @@ public sealed partial class L12GameEngine
         error = string.Empty;
         if (attacker.SummonRound >= State.Round && !attacker.HasCharge
             && !(target.Type == "master" && attacker.CanAttackMasterOnSummonUntilTurn == State.TurnSerial)
-            && !(target.Type == "legion" && attacker.CanAttackLegionsOnSummonUntilTurn == State.TurnSerial))
+            && !(target.Type == "legion" && attacker.CanAttackLegionsOnSummonUntilTurn == State.TurnSerial)
+            && !HasPaidSummonTurnTargetPermission(playerIndex, attacker, target))
         {
             error = "刚登场的军团不能进攻";
             return false;
@@ -1060,6 +1061,17 @@ public sealed partial class L12GameEngine
         if (!string.IsNullOrEmpty(error)) return false;
         attackTarget = card;
         return true;
+    }
+
+    private bool HasPaidSummonTurnTargetPermission(int playerIndex, L12CardInstance attacker, L12AttackTarget target)
+    {
+        if (L12StructuredCardSemantics.ExtendedRangeRule(attacker.CardId)?.AllowsSummonTurnBackAndMaster != true
+            || attacker.CanAttackBackAndMasterUntilTurn != State.TurnSerial)
+            return false;
+        if (target.Type == "master") return true;
+        return target.Type == "legion"
+            && FindOnField(State.Players[1 - playerIndex], target.InstanceId, out var targetRow, out _) is not null
+            && targetRow == 1;
     }
 
     private static bool HasRangeInPosition(L12CardInstance card, int row)

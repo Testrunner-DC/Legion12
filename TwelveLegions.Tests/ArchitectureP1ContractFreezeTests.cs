@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -34,7 +35,9 @@ public sealed class ArchitectureP1ContractFreezeTests
     [Fact]
     public void NextResetMoraleFlagIsTheOnlyAdditiveChangeToThePriorPostCommandProjection()
     {
-        var game = CreateEngine();
+        // Keep this prior projection byte guard on its original protocol era.
+        // The separate capability guard below proves all newer state-hash changes.
+        var game = CreatePriorProtocolEngine();
         CompleteMulligan(game);
         var snapshotJson = JsonSerializer.Serialize(game.SnapshotFor(0), WireJson);
         using var snapshot = JsonDocument.Parse(snapshotJson);
@@ -53,6 +56,68 @@ public sealed class ArchitectureP1ContractFreezeTests
         Assert.True(string.Equals(expectedPriorProjectionHash, actualPriorProjectionHash,
                 StringComparison.Ordinal),
             $"P1 prior projection hash changed: {actualPriorProjectionHash}");
+    }
+
+    [Fact]
+    public void NewLifecycleCapabilitiesOnlyChangeStateFlagsAndTheProjectedStateHash()
+    {
+        var expectedPrior = JsonSerializer.Deserialize<ContractManifest>(
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures",
+                "architecture-p1-contracts-prior-owner-protocols.json")), FixtureJson);
+        Assert.Equal(expectedPrior, Capture(CreatePriorProtocolEngine()));
+
+        var current = CreateEngine();
+        var prior = CreatePriorProtocolEngine();
+        AssertProtocolEraDifferenceOnly(current, prior);
+        CompleteMulligan(current);
+        CompleteMulligan(prior);
+        AssertProtocolEraDifferenceOnly(current, prior);
+    }
+
+    private static readonly string[] LifecycleCapabilityNames =
+    [
+        nameof(L12GameState.OwnerTurnEndModifierProtocolEnabled),
+        nameof(L12GameState.AttackBuffLogProtocolEnabled),
+        nameof(L12GameState.SourceVacatedEntrySlotProtocolEnabled),
+    ];
+
+    private static L12GameEngine CreatePriorProtocolEngine()
+    {
+        var current = CreateEngine();
+        var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        foreach (var name in LifecycleCapabilityNames)
+        {
+            Assert.True(checkpoint[name]!.GetValue<bool>());
+            Assert.True(checkpoint.Remove(name));
+        }
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(),
+            current.RandomState!.Value, current.CardFactSignalSequence,
+            current.AutoPassEmptyResponses, current.ConcealHiddenResponseAvailability);
+    }
+
+    private static void AssertProtocolEraDifferenceOnly(L12GameEngine current, L12GameEngine prior)
+    {
+        var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        var priorCheckpoint = JsonNode.Parse(prior.SerializeFullState())!.AsObject();
+        foreach (var name in LifecycleCapabilityNames)
+        {
+            Assert.True(checkpoint[name]!.GetValue<bool>());
+            Assert.True(checkpoint.Remove(name));
+            Assert.False(priorCheckpoint.ContainsKey(name));
+        }
+        Assert.Equal(priorCheckpoint.ToJsonString(), checkpoint.ToJsonString());
+        var currentViews = new[] { current.SnapshotFor(0), current.SnapshotFor(1),
+            current.SnapshotForSpectator(), current.SnapshotForReferee() };
+        var priorViews = new[] { prior.SnapshotFor(0), prior.SnapshotFor(1),
+            prior.SnapshotForSpectator(), prior.SnapshotForReferee() };
+        for (var index = 0; index < currentViews.Length; index++)
+        {
+            Assert.Equal(current.ComputeStateHash(), currentViews[index].StateHash);
+            Assert.Equal(prior.ComputeStateHash(), priorViews[index].StateHash);
+            Assert.NotEqual(priorViews[index].StateHash, currentViews[index].StateHash);
+            Assert.Equal(JsonSerializer.Serialize(priorViews[index], WireJson),
+                JsonSerializer.Serialize(currentViews[index] with { StateHash = priorViews[index].StateHash }, WireJson));
+        }
     }
 
     [Fact]

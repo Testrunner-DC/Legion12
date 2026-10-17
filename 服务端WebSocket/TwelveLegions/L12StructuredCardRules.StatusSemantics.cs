@@ -1,6 +1,7 @@
 namespace TwelveLegions.Server;
 
-public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale, bool AllowsMaster);
+public sealed record L12ExtendedRangeRule(string Text, string CostText, int ConsumeMorale, int ReturnMorale,
+    bool AllowsMaster, bool AllowsSummonTurnBackAndMaster = false);
 public sealed record L12PrintedEntryCostRule(string Condition, int Adjustment, int Threshold = 0,
     string? Faction = null, string? ReferenceCardId = null);
 public sealed record L12HandPlayBlockRule(string BlockedCardType, bool AllowsSameCardId, int Priority,
@@ -34,7 +35,7 @@ public static class L12StructuredCardSemantics
     private const string ProliferatingScarabCardId = "S02-0201";
     private static readonly Dictionary<string, L12ExtendedRangeRule> ExtendedRangeRules = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["S01-0003"] = new("位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。", "消耗2士气", 2, 0, true),
+        ["S01-0003"] = new("位于后排 可消耗2士气：此军团本回合可进攻对方后排和主宰。", "消耗2士气", 2, 0, true, true),
         ["S01-0113"] = new("「位于后排」可返还1士气：此军团本回合可进攻对方后排。", "返还1士气", 0, 1, false),
     };
     private static readonly Dictionary<string, L12PrintedEntryCostRule> PrintedEntryCostRules =
