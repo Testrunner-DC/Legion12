@@ -1,5 +1,23 @@
 # Legion12 Bug 修复记录
 
+## CHECK-20261017-MOZI-CONTINUATION｜免死存活后完整进攻链与单项真实收口
+
+- `MoziImmortalityActionContinuationRegressionTests.RealMoziImmortalitySurvivorCanStillAttackTheMasterAfterYingzhengLethal` 只经真实Handle：墨子3士气登场/返1/选择天廷军团获得1免死；嬴政8士气且实际弃另一8费军团，群体击杀恰一次消费该同实例免死，其活跃/1000兵力不变，墨子真实阵亡抽1；随后该军团attack(master)被受理并完成防御/响应排空。双方×逐命令严格V2四格通过，每次旧目标重复提交均拒绝且raw/hash/revision/fact sequence不变。无私有kill/Resolve、GM或直接免死标记注入，公开合成初态不称原私局/UI、历史根因或所有位移语义。
+- 正式a355 DLL 6B4DDC6D和九Data逐blob绑定，测试源93594707、TRX51A4D55D/监督252F3760、组合47B38C16，Main全文核准。首个运行器工具PATH预检失败发生于测试前且原记录保留，实际r1四格一次全绿；无产品变化，不冒称新完整套件或新发布。
+- 8f8199b2按当前有限未复现rejected。FA559459提案/CF2E3A54审核材料、原v2合同/SelfTest/AST与12原函数完整比较通过；单CAS30862、独立终态/原文历史/撤会话完成，同次快照对账909/201new/361resolved/347closed、阶段327=129/182/16、周期419；无新部署或维护操作。
+
+## CHECK-20261017-DISASTER-MINIMIZE｜当前替代入口缺失，限定恢复待裁定
+
+- a9bcffbd/0ba92447当前不能按此前“最小化看主宰”驳回：PromptOverlay两处以isDisasterPreparation隐藏按钮，GameBoard没有另一收起入口。1366及844的禁用/选天灾四真实挂载SFC均为0收起/查看战场控件，两主宰虽有矩形却被遮罩命中；移动端“展开卡牌详情”不是收起战场遮罩。
+- D盘 `disaster-minimize-current-20261017/report.json`（8D117CD3）及两原生图保留，四相关源与正式a355同blob；0命令/非回环生产API/WS，4次已关闭本地8080设置GET及4次Vite WS如实记录，不称零全部网络。Main查看移动ban截图核准。只询问恢复既有最小化/展开、不新增头像或公开隐藏天灾；等待用户答复，不修产品、不关这两条，其他工作继续。
+
+## CHECK-20261017-FORGE-CONTINUATION｜完整击杀后再进攻链及三项真实收口
+
+- 新 `ForgeReadyKillAttackContinuationRegressionTests.RealForgeGrantReadiesTheKillerAndAllowsThatSameLegionToAttackTheMaster` 不注入ReadyAfterNextKill标记、不调用私有结算：真实forgeReadyOnKill/目标声明，锻造炉与一士气实际休整，非空响应必经；赫拉克勒斯真实击杀公开合成普通2000军团后，唯一授予触发/转活跃并清空标记，随后同一实例attack(master)进入Defense、AttacksThisTurn=2。双方×逐命令V2四格，旧声明重交拒绝且raw/hash/revision/fact sequence不变；Main全文独核。
+- 正式a355 DLL 6B4DDC6D及九Data逐blob绑定，source E517E8D4、current-r3.trx 68800343、监督21321305均4/4零失败跳过，91320C59组合回执。r1两原态过/两恢复因夹具旧owner引用失败原样保留，修正只重新取当前owner，r3再硬断言真实响应>0；不重写旧失败、不称原私局/浏览器/历史原因，无产品变更。
+- c3b3ed30按当前有限未复现rejected；e862bbd6按人类保留现有排位计时/玩家三档、不新增休闲好友统一时限的产品边界rejected（不称5秒档会缩短有效响应）；7793d9d6按确认前可取消、确认支付后不新增退款/整次进攻撤回rejected，阿伊三具名再验证与公共声明24参数的实际覆盖如实标明。
+- BB5F40B8提案/23证据及原v2合同/三SelfTest有效，Main精确比对在线执行器仅五绑定字面替换，其余全文不变。实际CAS30853—30855各一次、终态/原文历史/撤会话完成，881650E6收据；同次快照对账909/202new/361resolved/346closed、阶段326=129/181/16、周期418，无部署/维护写。
+
 ## FIX-20261017-EDITOR-SHORT-DETAIL｜已批准入口复用，本地通过未部署
 
 - 根因与同型范围：详情侧栏只有≤820移动布局和821—900/高≤520短横屏隐藏；旧selectCard只处理前者。纯shouldOpenDeckEditorCardDetail统一这两个既有几何区间，沿同一selected/mobileDetailOpen和旧弹框，无设备身份、第二套详情渲染、布局/CSS或保存改动。全组件选择入口共用，普通桌面/窄桌面有侧栏时不新增弹框。
