@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261017-SIDEBAR-WIDTH｜通高侧栏整体横向收窄
+
+- 直接产品调整，最新人类裁定为收宽、不收高。前轮仅工具padding/gap不解决横向冗余；本轮先试内容高度面板，被用户澄清后全部撤回。最终只增共享宽度覆盖：桌面72px、移动/短屏min(184px,84vw)；旧通高/安全区、导航独立滚动、四工具桌面四竖/移动2×2、顺序/44px命中、隐藏文案及焦点围栏均不改。P4沿唯一SiteShell，正文左距复用同一--nav-w，不加页面分支。
+- width-red-browser真实旧92px触发新宽度断言；最终width-green-browser真实SFC/Edge17/17，六宽高边界含701×641导航scroll52、844×390 scroll75，首尾可达/徽标/四工具/弹层边界/路由关闭与双向resize焦点保持。实际截图已Main查看，手机宽184不挤占标签；合成状态/聊天端非真实玩家网络、真机或引擎ACK。高度草案green-browser已失效，不算最终样式验收。
+- 最终width-frontend.json完整前端Batch通过，UI358/聊天79/反馈144/卡图324+42/类型及production、testrun构建通过；首frontend-batch.log仅PATH缺C:\nodejs和原生系统路径失败，原样保留，最终按已有完整原生PATH执行。三叶源绑定不漂移，未变后端不重复跑，不称Release或部署/关单。回滚只移除新增六行CSS并还原对应宽度断言，原通高布局无需数据迁移。证据根 `D:/GPT/Legion12/artifacts/sidebar-content-fit-20261017`。
+
 ## FIX-20261017-PLACEMENT-ROW-CENTER｜整组排序少牌居中，溢出保首尾
 
 - 8dc4661d已真实复现：精确符文all-bottom两牌在718px行内并集240px、中心偏234px；换序和唯一提交原本正确。用户批准后仅向共享all-placement-row首/尾加margin-inline-start/end:auto，余量存在时平分，溢出时自动归零；不使用会剪掉首牌的硬center，不改拖拽/点击、排序状态、费用、Prompt、预留详情或提交。原字段/结构/方向提示守卫全保留，新增永久UI合同及真实消费者QA脚本；回滚只移除两条布局声明。

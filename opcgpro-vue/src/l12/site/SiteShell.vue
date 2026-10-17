@@ -1006,5 +1006,11 @@ onBeforeUnmount(() => {
   .site-drawer-backdrop{position:fixed;z-index:50;inset:var(--mobile-head-h) 0 0;display:block;border:0;background:#020609b8;backdrop-filter:blur(7px)}
   .site-modal-mask{align-items:end;padding:0;background:rgba(1,4,7,.82)}.site-modal{width:100%;max-height:min(92dvh,760px);padding:18px max(16px,env(safe-area-inset-right)) max(18px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));border-right:0;border-bottom:0;border-left:0}.site-modal>header{padding-top:0}.setting-row{align-items:flex-start;flex-direction:column;gap:10px}.setting-row select,.toggle{width:100%}.online-entry{align-items:flex-start;flex-wrap:wrap}.online-actions{width:100%}.online-actions button{flex:1}.update-modal{max-height:92dvh}
 }
+/* Tighten horizontal space only; preserve full-height rail/drawer and tool layout. */
+.site-shell{--nav-w:72px}
+@media(max-width:700px),(max-height:640px){
+  .site-shell{--nav-w:0px}
+  .site-sidebar{width:min(184px,84vw)}
+}
 </style>
 

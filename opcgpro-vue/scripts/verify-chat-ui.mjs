@@ -96,18 +96,22 @@ try {
         const buttons = [...dock.querySelectorAll(':scope > button')].map(button => { const box = rect(button), hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2); return { box, hit: hit === button || button.contains(hit) } })
         const badge = dock.querySelector('.utility-unread'), badgeBox = badge ? rect(badge) : null, badgeButtonBox = badge ? rect(badge.closest('button')) : null
         const dockStyle = getComputedStyle(dock), visual = window.visualViewport
-        return { inner: { width: innerWidth, height: innerHeight }, visual: { width: visual?.width ?? innerWidth, height: visual?.height ?? innerHeight }, sidebar: rect(sidebar), nav: rect(nav), dock: rect(dock), content: rect(content), display: dockStyle.display, flexDirection: dockStyle.flexDirection, columns: dockStyle.gridTemplateColumns.split(' ').filter(Boolean).length, buttons, badgeBox, badgeButtonBox, bodyOverflow: document.body.style.overflow }
+        const header = document.querySelector('.site-mobile-head')
+        return { inner: { width: innerWidth, height: innerHeight }, visual: { width: visual?.width ?? innerWidth, height: visual?.height ?? innerHeight }, header: rect(header), sidebar: rect(sidebar), nav: rect(nav), dock: rect(dock), content: rect(content), display: dockStyle.display, flexDirection: dockStyle.flexDirection, columns: dockStyle.gridTemplateColumns.split(' ').filter(Boolean).length, buttons, badgeBox, badgeButtonBox, bodyOverflow: document.body.style.overflow }
       })
       assert.equal(layout.inner.width, viewport.width); assert.equal(layout.inner.height, viewport.height)
       assert(Math.abs(layout.visual.width - viewport.width) < 2 && Math.abs(layout.visual.height - viewport.height) < 2)
       assert(layout.nav.bottom <= layout.dock.top + 1); assert(layout.dock.bottom <= layout.sidebar.bottom + 1)
+      assert(Math.abs(layout.sidebar.bottom - viewport.height) < 1, 'Sidebar must retain full viewport height, not shrink to its content')
+      assert(Math.abs(layout.sidebar.top - (drawerExpected ? layout.header.bottom : 0)) < 1, 'Drawer starts below the safe-area header; wide rail starts at the top')
       assert(layout.buttons.every(item => item.box.width >= 44 && item.box.height >= 44 && item.hit))
       if (drawerExpected) {
         assert.equal(layout.display, 'grid'); assert.equal(layout.columns, 2); assert(layout.dock.height <= 100)
+        assert(Math.abs(layout.sidebar.width - Math.min(184, viewport.width * .84)) < 1, 'Compact drawer removes excess horizontal space')
         assert(Math.abs(layout.content.left) < 1); assert(layout.sidebar.right <= viewport.width + 1)
       } else {
         assert.equal(layout.display, 'flex'); assert.equal(layout.flexDirection, 'column'); assert(layout.dock.height <= 192)
-        assert(Math.abs(layout.sidebar.width - 92) < 1); assert(Math.abs(layout.content.left - 92) < 1)
+        assert(Math.abs(layout.sidebar.width - 72) < 1); assert(Math.abs(layout.content.left - 72) < 1)
       }
       const fixtureHasUnread = await page.evaluate(() => window.__fixtureHasUnread)
       if (fixtureHasUnread) {
