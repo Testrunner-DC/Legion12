@@ -1,5 +1,39 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-AUTHORITY-FIVE｜规则与费用链再五项闭环
+
+- 0939祭天权威声明/公开天灾值（不称原对手按钮展示）、ac64嬴政炸场后天廷恢复（不称孟婆原私局概率）、aa2f甲虫已选构筑才特殊开局入墓（不称自动加入）、3436精确卡纽特三组6参数费用/取消恢复、eded非百鬼实例禁用跨V2绑定：各bounded rejected。E8DF063C报告/E77A034E提案/3C1CFA8A执行器，27具名正式结果/15同blob源/五SelfTest/原v2合同与12函数保持，Main逐源核准后实际单CAS30938—30942/终态/原文历史/撤会话，268E7670真实收据。
+- 同次快照对账909/154new/364resolved/391closed，阶段374=132fixed/226rejected/16duplicate、周期466、本轮359起205/本次213起59。未改产品、部署或维护。乔泽→图三不凑此批：Main按图特摩斯三世明确推测，正式同DLL四格真实付费Ramses→乔泽自弃7000降5000→图三选择击杀、逐命令V2与成对最终哈希一致，3970F306验收/47527009 TRX/098B2673测试；64真实Handle全部受理、队列排空。该项进入下一批，不冒称图坦/原私局/UI。
+
+## QA-20261017-PREVIEW-PRODUCTION-VIEWPORT｜只修验收夹具，不改产品
+
+- 原public preview仅HTML片段、缺viewport meta，移动仿真CSS980使旧证据失真；保留原失败。新纯helper从生产index提取唯一meta原文，拒绝重复属性/指令、非device-width/非1初始缩放；原入口仅改完整document响应。既有viewport合同保留并加真实函数正/负例，Main补属性顺序/大小写/重复name/content/initial-scale及缺失scale，51E8EF61最终测试源与962E14BD实际日志绿，架构锁通过，不做无关全Release。
+- 286E1BED普通入口报告：无document route.fulfill的844×390墓地与390×844真实旋转手牌，各20项CDP触摸到尾/命中20/0提前指令；helper/preview源未变，报告中的旧测试叶hash仅由Main新增反例改变，不影响实际浏览器输入。截图为Playwright上下文844×390，只作该截图几何，不称竖屏像素通过；竖屏依据截图前window/visual/CSS及物理CDP命中。首轮evaluate闭包失败保留。仅3 QA叶可回退，产品/数据库/隐私/布局不变，非真iOS/微信验收。
+- QA进程/监听结束后精确owned mobile-choice-current缓存3697984B删除，四份原失败41530B逐哈希复制到D证据，不把再生缓存搬E；9E040BF2 cleanup-r2保留旧null汇总收据并只纠正合计，不冒称新删除。独立业务备份/其他热构建不动。
+
+## CLOSEOUT-20261017-A355-SEVEN-MOBILE-FIVE｜再12条实际闭环与移动夹具纠偏
+
+- following-seven旧评论将纳芙蒂蒂0费条件说反，Main按CurrentCost≥2实际门槛纠正；月读一般一资源与骄傲附加二资源分清。旧四叶保留、r2 6BD6A238报告/AA575AAF提案/EC2F6345执行器，29具名结果/16正式源引用/原合同与七SelfTest通过；7项各单CAS30919—30925/读回/撤会话，3B1A5AF5真实收据。安格斯与海伦两项按已部署修复fixed，其余当前规则/有限检查，不称原私局。
+- bfbe/ef77/9ebb/24cd四旧移动反馈复用正式源，并补真实20候选原生触摸；ecb三战术分类绑定权威tactic+counter独立标记和实际前端呈现。69E78A43报告/0A8DBCA0提案/0EBD5F90执行器及五SelfTest通过，CAS30928—30932各一次、A9F3DC14收据全部终态，原文历史/会话撤销核准。唯一909/159new/364resolved/386closed、阶段369=132fixed/221rejected/16duplicate、周期461；未造新fix或duplicate。
+- 原移动夹具缺viewport meta导致CSS980，2CBF06E0失败/错误几何保留不作正式移动证据；r2只给本地HTML补生产index原meta，6677AC51六态/0C53D663脚本：667×375/844×390/390×844实际旋转，各手牌/墓地20项、尾部真实命中/选择20/0提前提交，无设置scrollLeft或伪造旋转。只是当前Edge原生触摸、不是iOS/微信；永久QA入口修正另按原三叶租约推进，不修改已冻结旧结果。
+
+## CHECK-20261017-KHUFU-HAND-RESPONSE｜反击战术保护误挡军团手牌响应，修复待批准
+
+- 正式a355同DLL/九Data真实Handle attack/response/defense/pass、每步严格V2恢复4格：双方登场轮佣兵候选缺失而仅能放弃，前轮对照佣兵实际可发动入墓；均最终排空且目标留场。42114122验收/D826754D观察/EA437DB4 TRX/BC341568监督，0C3E53BD测试源。合成HasCharge隔离进攻资格、使用S01-0102目标，不称自然胡夫登场/原武则天5000场面；PASS是故障诊断而非修复。
+- L12PromptsAndSetup手牌佣兵和戏法师傀儡共受过宽!protectedFromCounters限制，场上反击已有分类判定；选中后还会重走同一候选资格。保护来源全池三张为图特摩斯、拉美西斯、胡夫；傀儡及另两保护尚为同结构静态线索，不称已逐卡复现。已一次询问限定共享修复，未答复不改产品、不扩大保护时段裁定，a05e59b4继续待办，其余清单继续。
+
+## CLOSEOUT-20261017-A355-FOLLOWING-17｜失败单项续办，成功项不重交
+
+- D7797C39原七项仅6成功，1af确切409/version_conflict，ADA52D7B失败回执保持；同次完整快照先仅按6条对账。随后五项942BBFCD提案全部完成，60308C89收据；ea244b78只关闭持续至下个己方回合的旧规则异议，评论明确未推进期限，不代表新提前到期缺陷已处理。
+- 1af原15字段/原文hash/comment未变后，和服部可见性、宫廷/落穴规则、加雷斯非必中、未知连续ban共享来源生命周期、邀请撤回现有功能共六项形成新preview。旧following-six写前独审发现控制者措辞不准确，r2改为所有者；正式OwnerIndex1/位于玩家0的测试及CardTile/PlayerMat/GameBoard同a355源共同绑定。3A46038E提案/388718A2报告/7BCBE9BC执行器、原合同/六SelfTest/12函数原样，Main核准后CAS30910—30915各一次成功，38B39104收据/原文历史/撤会话全部读回；原成功六项未重交。
+- 三批新增17条，909/171new/361resolved/377closed，阶段357=129fixed/212rejected/16duplicate、周期449；本次213起42、本轮359起188实际关闭。未知原卡名、旧私人局和UI组合的边界逐项明确，没有新产品修复、部署或维护写。
+
+## CHECK-20261017-BLOOD-EAGLE-OWNER-END｜当前提前到期已复现，修复待批准
+
+- 正式a355同DLL/九Data的合成公开GM阵亡夹具经真实Handle发动血鹰并endTurn：己方TurnSerial3时6000→5000，ExpiresAfterTurn=3；本回合结束至4/对手回合即恢复6000、modifier清空，不符合直到下个我方回合结束。D盘blood-eagle-duration-current-20261017，F912C3EF验收、3BD470DF源码、0DC570BC边界、40C70E27 TRX/监督1格。PASS仅断言当前故障，不是修复GREEN；前两构建/夹具API失败保留，未声称双方/额外回合/V2/旧私局/UI均已验。
+- 全池查询下个我方回合结束及ExpiryAtNextOwnEnd：四种TimedModifier使用者为拼死反抗、复仇血鹰、立花誾千代、切腹仪式，均落全局数字期限；另有特洛伊木马使用同helper但延迟弃置还校验endingPlayer==OwnerIndex，不能直接称已复现同缺陷。RuleKernel.ResetForCompletedTurn按ExpiresAfterTurn<=completedTurn清理，是血鹰提前失效的共享出口。
+- 已单独询问共享所属玩家实际回合期限修复和同类/额外回合/双方/恢复兼容，未答复不改产品、不降低完整V2哈希。ea244b78旧规则异议的终态不覆盖本独立缺陷；原1012静态风险历史保留并由本条更新状态。
+
 ## CLOSEOUT-20261017-A355-NEXT-NINE｜逆序目标/自然天灾与已有规则九项闭环
 
 - e932f9ca/f9610bbe各按024A8113新格拉墨四格独立当前未复现；bbd8d4f9以新增归零/双方公开抽牌及原自然增长分支；db10b85f推定阿尔维达而非显式alias，正式人工death入口共享选择/公开入手及猎杀时刻目录资格，明确非自然death精确链。e2729170按孙武仅免费战术、山河为圣物；73cab173共享一张佣兵支付/恢复恰一次抵挡，非吕布原UI；019aaedb当前五维排序接线与前端合同，非新生产浏览器点击；1d6d552b当前晋升/登场两个候选和单栈无效、非绝防一体重放；9e83c375埃吉尔当前入栈前公开enemy-legion声明与响应投影，非旧像素重放。九项均bounded rejected，不造历史fixCommit或duplicate。

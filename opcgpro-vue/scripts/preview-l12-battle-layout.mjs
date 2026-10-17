@@ -2,8 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
+import { buildBattlePreviewDocument } from './lib/battlePreviewDocument.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const productionIndexHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
+const previewDocument = buildBattlePreviewDocument(productionIndexHtml)
 const fixtureSource = fs.readFileSync(path.join(root, 'scripts/verify-batch253-visual.mjs'), 'utf8')
 const fixtureStart = fixtureSource.indexOf('const entry = `') + 'const entry = `'.length
 const fixtureEnd = fixtureSource.indexOf('const isPicker=', fixtureStart)
@@ -371,7 +374,7 @@ const server = await createServer({
       devServer.middlewares.use((request, response, next) => {
         if (!request.url?.match(/^\/__l12_battle_preview__(\?|$)/)) { next(); return }
         response.setHeader('Content-Type', 'text/html; charset=utf-8')
-        response.end('<div id="l12-landscape-teleports"></div><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__l12_battle_preview__.js"></script>')
+        response.end(previewDocument)
       })
     },
   }],

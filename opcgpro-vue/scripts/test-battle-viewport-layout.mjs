@@ -2,9 +2,12 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import ts from 'typescript'
+import { buildBattlePreviewDocument } from './lib/battlePreviewDocument.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 const source = await readFile(resolve(root, 'src/l12/game/battleViewportLayout.ts'), 'utf8')
+const productionIndexHtml = await readFile(resolve(root, 'index.html'), 'utf8')
+const previewSource = await readFile(resolve(root, 'scripts/preview-l12-battle-layout.mjs'), 'utf8')
 const pureSource = source
   .replace(/^import .*$/gm, '')
   .replace(/type UseBattleViewportLayoutOptions[\s\S]*$/m, '')
@@ -76,4 +79,44 @@ for (const [width, height] of [[667, 375], [740, 360], [844, 390], [915, 412], [
   assert(result.availableWidth > 0 && result.availableHeight > 0)
 }
 
-console.log('Battle viewport layout kernel: desktop/mobile isolation, compact boundary, GM reserve and 5 mobile ratios passed.')
+const productionViewportTags = [...productionIndexHtml.matchAll(/<meta\b[^>]*name=["']viewport["'][^>]*>/gi)]
+assert.equal(productionViewportTags.length, 1, 'production index must remain the single viewport-meta authority')
+const previewDocument = buildBattlePreviewDocument(productionIndexHtml)
+assert.match(previewDocument, /^<!doctype html>/i)
+assert.equal([...previewDocument.matchAll(/<meta\b[^>]*name=["']viewport["'][^>]*>/gi)].length, 1)
+assert.ok(previewDocument.includes(productionViewportTags[0][0]), 'preview must preserve the production viewport meta verbatim')
+for (const fragment of [
+  '<div id="l12-landscape-teleports"></div>', '<div id="app"></div>',
+  'src="/@vite/client"', 'src="/__l12_battle_preview__.js"',
+]) assert.ok(previewDocument.includes(fragment), `preview document omitted ${fragment}`)
+
+assert.throws(
+  () => buildBattlePreviewDocument(productionIndexHtml.replace(productionViewportTags[0][0], '')),
+  /exactly one viewport meta; found 0/,
+)
+assert.throws(
+  () => buildBattlePreviewDocument(productionIndexHtml.replace('</head>', `${productionViewportTags[0][0]}\n</head>`)),
+  /exactly one viewport meta; found 2/,
+)
+assert.throws(
+  () => buildBattlePreviewDocument(productionIndexHtml.replace('width=device-width', 'width=980')),
+  /width=device-width/,
+)
+assert.throws(
+  () => buildBattlePreviewDocument(productionIndexHtml.replace('initial-scale=1', 'initial-scale=0.75')),
+  /initial-scale=1/,
+)
+assert.throws(() => buildBattlePreviewDocument('<meta name="viewport" name="viewport" content="width=device-width,initial-scale=1">'), /repeats the name attribute/)
+assert.throws(() => buildBattlePreviewDocument('<meta name="viewport" content="width=device-width,initial-scale=1" content="width=980">'), /repeats the content attribute/)
+assert.throws(() => buildBattlePreviewDocument('<meta name="viewport" content="width=device-width,initial-scale=1,initial-scale=1">'), /repeats or omits a directive name/)
+assert.throws(() => buildBattlePreviewDocument('<meta name="viewport" content="width=device-width">'), /initial-scale=1/)
+const reorderedViewport = "<META CONTENT='width=device-width, initial-scale=1.0' NAME='VIEWPORT'>"
+assert.ok(buildBattlePreviewDocument(reorderedViewport).includes(reorderedViewport), 'attribute order/case and equivalent numeric scale must remain valid')
+assert.match(previewSource, /buildBattlePreviewDocument\(productionIndexHtml\)/,
+  'the public preview entry must construct its document through the validated helper')
+assert.match(previewSource, /response\.end\(previewDocument\)/,
+  'the public preview response must serve the validated document')
+assert.ok(!previewSource.includes('width=device-width'),
+  'the public preview entry must not duplicate the production viewport policy')
+
+console.log('Battle viewport layout kernel: desktop/mobile isolation, compact boundary, GM reserve, 5 mobile ratios and the production viewport document contract passed.')
