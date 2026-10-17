@@ -17,6 +17,12 @@
 - 51d5b553完整UI缺口现以--attack-only补齐：同一观察方向0、GM/custom沙盒，844×390分别actor0/actor1，各真实触摸源军团→进攻按钮→投影合法对侧目标，0/0/1指令、650ms不重复、唯一sandboxAction actor/source/target精确，页面/请求/外网错误均0。B4A3AA12/FAC52D00，Main全文及双actor截图独审；只用公开合成局面/既有精确卡图，不称真实服务端ACK或战斗结果。原7例/所有原断言保留，原159b默认收GM共享修复已在4325，未按玩家假设再改按钮布局。
 - 51d实际CAS31496/终态/原文保留/撤会话，18B08991及6C623D34同次快照对账最新911/46new/392resolved/473closed、阶段484/周期576；本次上线后18真实闭环（17fixed/1有界未复现）。D浏览器profile/自有预览均清理。花魁ae9023dd另有reveal/search双卡面线索待实际消费者取证，不借680a或51d泛关；排序卡列遮文及跨滚动观察分别保持。
 
+## 2026-10-18｜花魁公开展示重复：当前消费者RED，待限定修复裁定
+
+- ae9023dd原文哈希0200B4DC，未关闭。Main与只读核查沿真实生产者确认：花魁S01-0419以PubliclyRevealThenAddCardToHandByEffect生成reveal/reveal-add，随后另有search/search-add；入手的权威effect-hand-add与区域事实均合法，不得为去动画而删除。查询`PubliclyRevealThenAddCardToHandByEffect|search-add`覆盖全现有同族入口；当前GameBoard把两种公开事件分别入整卡队列，已有sequence去重只管相同事件重传。
+- 真实当前SFC消费者79108097（oiran-reveal-current-20261018/run/result.json）：对手actor0/viewer1、公开观战actor1/正式投影you0，各同一卡两条不同sequence实际full-card次数2；原对象重建后相同sequence重传新增0。Main读全公开输入与源映射、目视两次显影截图，6产品/夹具叶同4325且无本地改动；公开合成卡，不冒完整合法命令链、原私局、发起方私密视角或全actor观战矩阵。旧环境/夹具失败保留，profile、预览和专属缓存已清。
+- 已异步请求限定共享呈现修复：保留reveal/search/入手事实及日志，仅对明确关联同次展示的结果作为续段，不再整卡；不可按instance全局去重，后续独立再次公开必须保留。待答时只挂本项，未改产品或普通回归。实施后须补真实规则/三接收者与V2恢复、两个actor的公开观战、重传/初始恢复/切局及真正再次公开，不能把本次两视角RED冒全面矩阵。
+
 ## 2026-10-18｜680a观战动画正式闭环；裁判GM本地验收完成
 
 - BUG-20260927-680a5928原文为佣兵弃置等动画重复。Main实际核delivery 9B502FDC及其17份具名证据引用，4200b689唯一视觉持有者与83e567fa来源补齐均包含于已部署a355；普通差量/赛事全量的登场、休整、活跃、重复包、恢复/切局、取消及隐藏牌消费者证据复用，未为完备性重跑旧私局。来源field→grave红项与重复根因分开，不把文案猜来源当去重方案。
