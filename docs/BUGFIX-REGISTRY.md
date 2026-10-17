@@ -9,6 +9,14 @@
 - 工具共享根因：Draining允许后台Activity，原observe/cancel只读一次会拒绝短暂合法占用；初始失败未保存状态体，不能宣称已测得当时Activity。消费者增加唯一60秒有界Activity等待，固定owner/process/commit/epoch/fence、0 admission、无seal/permit/stop必须始终成立；不重试开放POST。原28例保留，新6例（含12种漂移子情形）总34通过；RED及两轮GREEN日志在formal-release-20261018。查询`observe_restart|cancel_open|activityLeases`覆盖两个启动/开放入口，acquire-stop原规则不改。
 - 标准发布原proof只在shell变量，后续失败就可能没落盘；新增停服后/切换前独占真实stdout sidecar及fsync，仍原310秒/完整8阶段/备份绑定，失败记录指向原文件。两条post-start故障新增保留验证，完整72部署故障场景实际通过；首轮Windows不继承POSIX fd3的fsync失败保留，改为独立open/fsync，Linux额外NOFOLLOW和目录fsync保持。临时外层错读末负例LASTEXITCODE不改写为内层测试失败或通过，不重复已完成72。仅ops消费者/shell及其测试，不改游戏/数据格式或再部署正式服；r2已完成恢复所用原工具冻结不追溯篡改。
 
+## 2026-10-18｜当前规则/导航四项与排序旧单有界收口
+
+- e08cbd0b议和同方智慧法典、2c5224cc投石车登场回合限定目标、d38fdd45暗度陈仓腾出原格，分别用正式完整规则TRX的同名双方/恢复4、8、4格及对应边界；a3fb68f6导航用真实路由10/原模板17及正式Release日志同名结果。修复99735e03/b616b7a4/bcb3a843/f3a08cd9均为4325祖先，Main核原文、具名结果和当前导航条件。四项各12反例/原12函数及逆替换后，实际CAS31487—31490/独立终态/撤会话，2E918781收据、9B054E2C快照直接对账，不把导航扩大成二级菜单重做。
+- 16b94953未给卡/模式，新增--reload-only仅当前真实SFC的all-top-bottom代表模式：桌面1366和移动844，可信HTML5拖放、真实reload、同prompt/revision/controller/candidates、三图decode/sameOrigin/非黑可达、再拖与重复确认恰1绑定指令；0页面/请求错误。原34零删不重跑，原产品src同正式4325；682DCAC9/3FBF76F7及r1/r2均保留，Main目视/全文核准。仅当前有界未复现rejected，不冒原私局/手指拖放/真机/真实ACK；跨滚动异常与卡列遮文字独立未收口，未以换相邻卡造全排序绿。
+- 16b实际单CAS31493/终态/保原文/撤会话；39CBD25E收据及C0D7D3B同次快照对账最新911/47new/391resolved/473closed、阶段483/周期575。本次上线后17条真实闭环（16fixed/1有界未复现），未发现新反馈输入，不重复成功项。预览/profile物理D并清理，无产品改动、部署或维护写；51d双控进攻另验。
+- 51d5b553完整UI缺口现以--attack-only补齐：同一观察方向0、GM/custom沙盒，844×390分别actor0/actor1，各真实触摸源军团→进攻按钮→投影合法对侧目标，0/0/1指令、650ms不重复、唯一sandboxAction actor/source/target精确，页面/请求/外网错误均0。B4A3AA12/FAC52D00，Main全文及双actor截图独审；只用公开合成局面/既有精确卡图，不称真实服务端ACK或战斗结果。原7例/所有原断言保留，原159b默认收GM共享修复已在4325，未按玩家假设再改按钮布局。
+- 51d实际CAS31496/终态/原文保留/撤会话，18B08991及6C623D34同次快照对账最新911/46new/392resolved/473closed、阶段484/周期576；本次上线后18真实闭环（17fixed/1有界未复现）。D浏览器profile/自有预览均清理。花魁ae9023dd另有reveal/search双卡面线索待实际消费者取证，不借680a或51d泛关；排序卡列遮文及跨滚动观察分别保持。
+
 ## 2026-10-18｜680a观战动画正式闭环；裁判GM本地验收完成
 
 - BUG-20260927-680a5928原文为佣兵弃置等动画重复。Main实际核delivery 9B502FDC及其17份具名证据引用，4200b689唯一视觉持有者与83e567fa来源补齐均包含于已部署a355；普通差量/赛事全量的登场、休整、活跃、重复包、恢复/切局、取消及隐藏牌消费者证据复用，未为完备性重跑旧私局。来源field→grave红项与重复根因分开，不把文案猜来源当去重方案。
