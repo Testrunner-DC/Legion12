@@ -1,5 +1,26 @@
 # Legion12 Bug 修复记录
 
+## CLOSEOUT-20261017-A355-NEXT-NINE｜逆序目标/自然天灾与已有规则九项闭环
+
+- e932f9ca/f9610bbe各按024A8113新格拉墨四格独立当前未复现；bbd8d4f9以新增归零/双方公开抽牌及原自然增长分支；db10b85f推定阿尔维达而非显式alias，正式人工death入口共享选择/公开入手及猎杀时刻目录资格，明确非自然death精确链。e2729170按孙武仅免费战术、山河为圣物；73cab173共享一张佣兵支付/恢复恰一次抵挡，非吕布原UI；019aaedb当前五维排序接线与前端合同，非新生产浏览器点击；1d6d552b当前晋升/登场两个候选和单栈无效、非绝防一体重放；9e83c375埃吉尔当前入栈前公开enemy-legion声明与响应投影，非旧像素重放。九项均bounded rejected，不造历史fixCommit或duplicate。
+- 2A3BEC9A提案/7C6666E8报告、37证据、九SelfTest/原v2合同及12函数不变通过，Main独核/独审CLEAR。实际CAS30877—30885各一次、终态/原文历史/撤会话，7B75C3B7收据；同次快照一次对账909/188new/361resolved/360closed、阶段340=129/195/16、周期432，无部署/维护写。
+- 埃吉尔声明完成的实际源码为L12RuleKernelIntegration.cs（B41451ED），非原报告多列的RuleKernel.cs；Main精确读方法/同a355逐blob并以36E3D667补充引用，不改冻结提案、历史结果或重交已成功CAS。此为源码引用补正，不新增产品或完整性豁免。
+
+## CHECK-20261017-CURRENT-RETARGET-AND-DISASTER｜当前五格补证，不改产品
+
+- 新 `CurrentDisasterAndRetargetContinuationRegressionTests`（E22B2972）用正式a355同DLL/九Data，格拉墨真实play/支付4/弃顶2/声明→真实伏击响应/同目标→最终5000仍在前排。牌面2000重装步兵在当前对手回合为3000，伏击现行+2000；权威troops-modifier序号早于Gram effect-failed，费用/牌库费用保留、唯一目标不入库/墓，双方×逐命令V2四格和旧提示raw/hash/revision/fact不变通过。不称原芒格兰、原反馈+3000、私人局或UI。
+- 诸神自然增长真实endTurn补最终DisasterValue=0、无追加回合、手牌+3/+2（含正常回合抽1）；双方与普通观战各自可见两名玩家的公开“诸神黄昏抽2”且牌面身份不泄露。只单格终态，不称全部恢复矩阵。最终5/5/0失败跳过，D5318F90 TRX、CB956A29监督、024A8113组合验收；Main全文独核。r1—r3分别误读响应Targets、要求不存在的中间帧、非合同命令计数下限，失败原样保留，不称产品RED；未重跑既有完整7686/1808，不称新Release。
+
+## CHECK-20261017-CATAPULT-FIRST-TURN｜可付费但登场门禁仍拒绝，待规则裁定
+
+- 2c5224cc现行正式同DLL诊断确认：Round=SummonRound=3后排投石车投影enabled，实际extendedRange受理/休整2士气/写入两项本回合目标许可；排空后LegalAttackTargets为空，真实attack(master)/attack(后排)均因“刚登场的军团不能进攻”拒绝且raw/hash/revision不变。只把SummonRound改2的对照两种实际进攻均受理。外置诊断1/1通过，源FC6328CC/TRX3484B15F/监督8BCCA05F、DB7ADB1F结果；不入产品测试、不称旧私局或UI。
+- 当前可用性未检查登场资格；进攻守卫区分HasCharge及明确登场进攻许可，而extendedRange只写后排/主宰目标许可。这里需要先明确“目标范围”是否覆盖登场限制，不能从诊断自行推定必须赋予冲锋或绕开门禁。已单独询问“保留限制且避免无效付费”或“支付后允许当回合进攻后排/主宰”，未裁定不改规则/入口、不关反馈，其他工作继续。
+
+## CLOSEOUT-20261017-A355-NEXT-FOUR｜当前规则/支付/召唤/触发有界核查
+
+- 996d3838：正式持续规则12参数的S02-DS02通过，同源L12Actions同时在候选和提交拒绝活跃前排；不称宫本/图布真实进攻重放。6b310b71：正式槲寄生六结果覆盖声明、每符文减2、零/三符文、恢复取消/旧提示拒绝及已付费用，后两无效/离场为夹具设置，不称原错误文案UI。bde092f2：真实Xishi恢复/重复/召唤/抽牌链1/1，对象S01-0003非诸葛连弩兵；当前ST01-07兵力2000及共享谓词符合。9a5ffd89：Medjed三参数候选守卫，己方回合/对方源不触发；私有入口不称纳芙蒂蒂完整父链。
+- 所有引用源均与a355逐blob相等，原完整7686 TRX 168C6329及4DC17B66续接绑定复用；Main独核/并行独审CLEAR，1013369A报告、2297CA0F提案、原合同/四SelfTest与12函数不变通过。实际CAS30870—30873各一次、终态/原文历史/专用会话撤销，B7AC0C55收据，同次快照对账909/197new/361resolved/351closed、阶段331=129/186/16、周期423，无部署/维护写。
+
 ## CHECK-20261017-MOZI-CONTINUATION｜免死存活后完整进攻链与单项真实收口
 
 - `MoziImmortalityActionContinuationRegressionTests.RealMoziImmortalitySurvivorCanStillAttackTheMasterAfterYingzhengLethal` 只经真实Handle：墨子3士气登场/返1/选择天廷军团获得1免死；嬴政8士气且实际弃另一8费军团，群体击杀恰一次消费该同实例免死，其活跃/1000兵力不变，墨子真实阵亡抽1；随后该军团attack(master)被受理并完成防御/响应排空。双方×逐命令严格V2四格通过，每次旧目标重复提交均拒绝且raw/hash/revision/fact sequence不变。无私有kill/Resolve、GM或直接免死标记注入，公开合成初态不称原私局/UI、历史根因或所有位移语义。
