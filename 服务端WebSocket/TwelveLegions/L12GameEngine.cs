@@ -111,6 +111,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             PresentationFactProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MovementOriginProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             OwnerTurnEndModifierProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
+            AttackBuffLogProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,

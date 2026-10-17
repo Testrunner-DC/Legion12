@@ -105,6 +105,41 @@ const masterDamageReplacement = projectLog([
 assert.deepEqual(masterDamageReplacement[0].parts.map(part => part.text), [
   '〈平阳昭公主〉', '触发 主宰效果', '，〈杨戬〉受到的本次伤害变为2',
 ])
+const susanoo = { ...card('须佐之男', 'master-0'), cardType: 'master' }
+const kusanagi = card('草薙剑', 'kusanagi-front-buff')
+const susanooAttackBuffEvent = event(1, 'effect', '须佐之男使 草薙剑 本次前排进攻兵力 +2000',
+  [susanoo, kusanagi], 0, {
+    playerLogSemantic: {
+      sourceInstanceId: susanoo.instanceId,
+      sourceName: susanoo.name,
+      targetInstanceId: kusanagi.instanceId,
+      targetName: kusanagi.name,
+      actionLabel: '触发 进攻加兵力',
+      outcomeLabel: '〈草薙剑〉本次前排进攻兵力+2000',
+    },
+  })
+const expectedSusanooWords = ['〈须佐之男〉', '触发 进攻加兵力', '，〈草薙剑〉本次前排进攻兵力+2000']
+const susanooOwner = projectLog([susanooAttackBuffEvent], 0, [])
+const susanooOpponent = projectLog([susanooAttackBuffEvent], 1, [])
+const susanooSpectator = projectLog([susanooAttackBuffEvent], 0, [], true)
+assert.deepEqual(susanooOwner[0].parts.map(part => part.text), expectedSusanooWords)
+assert.deepEqual(susanooOpponent[0].parts.map(part => part.text), expectedSusanooWords)
+assert.deepEqual(susanooSpectator[0].parts.map(part => part.text), expectedSusanooWords)
+assert.equal(susanooOwner[0].actor, '我方')
+assert.equal(susanooOpponent[0].actor, '对方')
+assert.equal(susanooSpectator[0].actor, '下方')
+assert.deepEqual(projectLog([{
+  ...susanooAttackBuffEvent,
+  cards: [kusanagi],
+}], 1, []), [], 'a missing or hidden authoritative source must suppress the whole semantic row')
+const legacySusanoo = projectLog([
+  event(1, 'effect', '须佐之男使 草薙剑 本次前排进攻兵力 +2000', [kusanagi], 0),
+], 1, [])
+assert.equal(legacySusanoo.length, 1)
+assert.equal(legacySusanoo[0].parts.map(part => part.text).join('').includes('须佐之男'), false,
+  'legacy audit text must not be parsed to invent the buff source')
+assert.equal(legacySusanoo[0].parts.map(part => part.text).join('').includes('+2000'), false,
+  'legacy audit text must not be parsed to invent a troop delta')
 const hiddenSemanticSource = projectLog([
   event(1, 'effect', '隐藏来源不得公开', [card('未公开响应卡', 'secret-source', true)], 0, {
     playerLogSemantic: {

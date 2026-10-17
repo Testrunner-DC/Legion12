@@ -1636,11 +1636,16 @@ public sealed partial class L12GameEngine
         if (row == 0 && attacker.Faction == "taiyangcheng")
         {
             var slot = Array.FindIndex(player.Field[0], card => card?.InstanceId == attacker.InstanceId);
-            if (slot >= 0 && player.Field[0].Where((card, index) => Math.Abs(index - slot) == 1 && card?.CardId == "S01-0206").Any())
+            var saladin = slot < 0 ? null : player.Field[0]
+                .Where((card, index) => Math.Abs(index - slot) == 1 && card?.CardId == "S01-0206")
+                .FirstOrDefault();
+            if (saladin is not null)
             {
                 attacker.Troops += 1000;
                 temporaryBonus += 1000;
-                AddEvent("effect", playerIndex, "萨拉丁使相邻太阳城军团本次进攻兵力+1000", attacker);
+                AddAttackBuffPlayerLog(playerIndex, attacker,
+                    "萨拉丁使相邻太阳城军团本次进攻兵力+1000", saladin.Name,
+                    $"〈{attacker.Name}〉本次进攻兵力+1000", saladin);
             }
         }
         return temporaryBonus;

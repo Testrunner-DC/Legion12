@@ -941,6 +941,9 @@ public sealed class L12GameState
     /// <summary>仅新V2局启用所属玩家回合结束期限；旧局重放保留原规则。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool OwnerTurnEndModifierProtocolEnabled { get; init; }
+    /// <summary>仅新V2局记录明确进攻加值日志，旧Journal尾保持原事件字节。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AttackBuffLogProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

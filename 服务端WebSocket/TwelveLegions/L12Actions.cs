@@ -800,6 +800,24 @@ public sealed partial class L12GameEngine
         return CommandResult.Ok();
     }
 
+    private void AddAttackBuffPlayerLog(int playerIndex, L12CardInstance attacker, string auditText,
+        string sourceName, string outcomeLabel, L12CardInstance? source = null,
+        string actionLabel = "触发 进攻加兵力")
+    {
+        if (!State.AttackBuffLogProtocolEnabled)
+        {
+            AddEvent("effect", playerIndex, auditText, attacker);
+            return;
+        }
+
+        var semantic = new L12PlayerLogSemantic(actionLabel, outcomeLabel,
+            source?.InstanceId, sourceName, attacker.InstanceId, attacker.Name);
+        if (source is null || source.InstanceId == attacker.InstanceId)
+            AddSemanticPlayerLogEvent("effect", playerIndex, auditText, semantic, attacker);
+        else
+            AddSemanticPlayerLogEvent("effect", playerIndex, auditText, semantic, source, attacker);
+    }
+
     private CommandResult Attack(int playerIndex, L12Command command)
     {
         if (!CanAct(playerIndex)) return CommandResult.Reject("只能在自己的主要阶段进攻");
@@ -881,13 +899,20 @@ public sealed partial class L12GameEngine
         {
             temporaryAttackerTroopsBonus += 1000;
             attacker.Troops += 1000;
-            AddEvent("effect", playerIndex, $"天下布武使{attacker.Name}本次前排进攻兵力+1000", attacker);
+            AddAttackBuffPlayerLog(playerIndex, attacker,
+                $"天下布武使{attacker.Name}本次前排进攻兵力+1000", "天下布武",
+                $"〈{attacker.Name}〉本次前排进攻兵力+1000");
         }
         if (row == 0 && State.Players[playerIndex].UsedAbilities.Contains($"susano-buff:{attacker.InstanceId}"))
         {
             temporaryAttackerTroopsBonus += 2000;
             attacker.Troops += 2000;
-            AddEvent("effect", playerIndex, $"须佐之男使 {attacker.Name} 本次前排进攻兵力 +2000", attacker);
+            var susanoo = State.AttackBuffLogProtocolEnabled
+                ? CreateActiveMasterSource(State.Players[playerIndex], $"master-{playerIndex}")
+                : null;
+            AddAttackBuffPlayerLog(playerIndex, attacker,
+                $"须佐之男使 {attacker.Name} 本次前排进攻兵力 +2000", "须佐之男",
+                $"〈{attacker.Name}〉本次前排进攻兵力+2000", susanoo);
         }
         if (attacker.TsukuyomiFrontMoveBonusTurn == State.TurnSerial
             && attacker.TsukuyomiFrontMoveBonusCount > 0)
@@ -895,13 +920,24 @@ public sealed partial class L12GameEngine
             var tsukuyomiBonus = attacker.TsukuyomiFrontMoveBonusCount * 1000;
             temporaryAttackerTroopsBonus += tsukuyomiBonus;
             attacker.Troops += tsukuyomiBonus;
-            AddEvent("effect", playerIndex, $"月读使{attacker.Name}本次进攻兵力+{tsukuyomiBonus}", attacker);
+            var tsukuyomi = State.AttackBuffLogProtocolEnabled
+                ? CreateActiveMasterSource(State.Players[playerIndex], $"master-{playerIndex}")
+                : null;
+            AddAttackBuffPlayerLog(playerIndex, attacker,
+                $"月读使{attacker.Name}本次进攻兵力+{tsukuyomiBonus}", "月读",
+                $"〈{attacker.Name}〉本次进攻兵力+{tsukuyomiBonus}", tsukuyomi);
         }
         if (attacker.AttackOnlyTroopsBonusUntilTurn == State.TurnSerial && attacker.AttackOnlyTroopsBonus != 0)
         {
             temporaryAttackerTroopsBonus += attacker.AttackOnlyTroopsBonus;
             attacker.Troops += attacker.AttackOnlyTroopsBonus;
-            AddEvent("effect", playerIndex, $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker);
+            var signedBonus = attacker.AttackOnlyTroopsBonus > 0
+                ? $"+{attacker.AttackOnlyTroopsBonus}"
+                : attacker.AttackOnlyTroopsBonus.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            AddAttackBuffPlayerLog(playerIndex, attacker,
+                $"〈{attacker.Name}〉本次进攻兵力+{attacker.AttackOnlyTroopsBonus}", attacker.Name,
+                $"〈{attacker.Name}〉本次进攻兵力{signedBonus}", attacker,
+                attacker.AttackOnlyTroopsBonus > 0 ? "触发 进攻加兵力" : "触发 进攻兵力修正");
         }
         var masterDamage = CalculateMasterAttackDamage(attacker);
         var kagutsuchiCandidate = BuildStarterKagutsuchiCandidate(playerIndex, attacker);
