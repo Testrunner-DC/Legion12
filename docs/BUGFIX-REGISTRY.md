@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜两条旧编辑反馈按当前操作有界收口
+
+- 8aca1ce8原文“牌库编辑不了”、87c6a436原文“。调整排库很难”，原文SHA分别CD59E37D/E8C6096A，各自15字段独立绑定。复用F9BF2F0C源桥/91D823FB实际编译App两个桌面空白→主宰→40张编辑→保存重开、80次加牌及逐项缓存保持；没有重复浏览器/改UI/新建易用性产品规则。
+- 两条均closed/rejected，不能写fixed_verified或duplicate；备注明确原步骤/难度标准不足、guest本地代表路径与原/battle入口/认证服务端/手机边界。schema2/12证据/各8反例及原12函数守恒后CAS31510/31511、终态/原文/撤会话，5ABBBAE0/9E98D91D对账911/40new/392resolved/479closed、阶段490/周期582，本次上线后24闭环。模糊手机91d652e0尚未关闭；667起手16短滑既有RED/30滑可达不是本批已修或原反馈成因。
+
+## 2026-10-18｜牌库新建/保存旧单当前代表路径检查通过
+
+- cce6cfac原文“建不了新牌库，保存牌库那里的按钮一堆黑色的”，哈希854A1FF4。复用既有真实编译App91D823FB：1440×900/1024×768从空白开始，各选主宰/40次加牌/命名保存/刷新重开，逐项牌名张数及压缩本地缓存相等，页面/控制台/请求错误0；Main读报告/目视1024重开截图。只证明合成游客浏览器本地保存，不证明认证服务端保存、原未知环境或手机/iOS。
+- F9BF2F0C独核源桥：decks/cache codec/storage/viewport/draft/router从受验19到现正式4325未变，编辑器唯一hunk仅扩821—900短横屏打开详情；新建/保存/顶栏disabled及按钮样式未改。当前路径有界未复现closed/rejected，不造fixCommit/原历史唯一原因，不与0897仅凭同主题设duplicate，不为旧反馈重复启动浏览器。
+- schema2/15字段、12证据/8反例、原12函数与逆替换不变，实际CAS31506一次、终态/保原文/撤会话成功。09F8106F/F32D2E62对账911/42new/392resolved/477closed、阶段488/周期580，正式本次上线后22闭环；其余手机/模糊编辑问题另核，不借此泛关。
+
 ## 2026-10-18｜性能取证v3：逐请求写门与真实出站分离，本地接受
 
 - 用户既有测试服限定取证授权的下一片，不宣称原卡顿已修好。扫描`_appendWriteGate.WaitAsync|AppendWithCardFactsAsync|CompleteAsync|HandleActionAsync|EnqueueOutgoing`，沿同一请求的AsyncLocal纯数值观察作用域记录Append/Complete写门等待、取得、释放前边界；独立room-acquired与真实out-enqueued/dequeued不再与入站enqueue混称。Recorder无传输/卡效/账号身份依赖，嵌套null抑制、异常恢复、迟到Scope退休围栏及观察异常不影响原结果。
