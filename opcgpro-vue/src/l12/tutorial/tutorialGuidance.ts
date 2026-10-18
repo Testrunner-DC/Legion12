@@ -2,6 +2,10 @@ import type { ActiveTutorialState, Card, GameState, PlayerView, Prompt } from '.
 
 export const tutorialPracticeCardId = 'S01-0116'
 
+export function tutorialPaymentSelectionCount(identities: Iterable<string | null>) {
+  return new Set(Array.from(identities).filter(identity => Boolean(identity))).size
+}
+
 export type TutorialHelpTopic = 'master' | 'cards' | 'morale' | 'current'
 
 export interface TutorialSceneSnapshot {
@@ -98,7 +102,7 @@ export function tutorialPracticeCard(tutorial: ActiveTutorialState, game: GameSt
     return exact ?? null
   }
   const fieldPractice = self.field.flat().find(card => card?.cardId === tutorialPracticeCardId && !card.hidden) ?? null
-  if (tutorial.lessonId === 'deploy')
+  if (tutorial.lessonId === 'deploy' || tutorial.lessonId === 'response')
     return self.hand?.find(card => card.cardId === tutorialPracticeCardId && !card.hidden) ?? fieldPractice
   if (tutorial.lessonId === 'move') return cardAt(self, 1, 1) ?? fieldPractice
   return cardAt(self, 0, 0)

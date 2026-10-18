@@ -219,7 +219,7 @@ function createActionRequestId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-const tutorialLessonIds = new Set<TutorialLessonId>(['deploy', 'move', 'combat'])
+const tutorialLessonIds = new Set<TutorialLessonId>(['deploy', 'move', 'combat', 'response'])
 function tutorialProjection(value: unknown): TutorialProjection | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const candidate = value as Partial<TutorialProjection>

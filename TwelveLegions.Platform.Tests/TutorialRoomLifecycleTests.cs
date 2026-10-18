@@ -89,6 +89,7 @@ public sealed class TutorialRoomLifecycleTests
     [InlineData("deploy")]
     [InlineData("move")]
     [InlineData("combat")]
+    [InlineData("response")]
     public async Task TutorialKeepsOrdinaryPrivacyDeniesGmAndSurrenderDoesNotComplete(string lesson)
     {
         await using var f = await Fixture.Create();

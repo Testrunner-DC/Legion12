@@ -314,7 +314,7 @@ export interface StackItem {
   targets: string[]
 }
 
-export type TutorialLessonId = 'deploy' | 'move' | 'combat'
+export type TutorialLessonId = 'deploy' | 'move' | 'combat' | 'response'
 export type TutorialStatus = 'active' | 'completed'
 
 export interface TutorialProjection {

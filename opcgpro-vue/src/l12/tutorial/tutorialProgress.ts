@@ -1,7 +1,8 @@
 import type { ActiveTutorialState, TutorialLessonId } from '../types'
 
 export const TUTORIAL_PROGRESS_VERSION = 1 as const
-export const tutorialLessonIds = ['deploy', 'move', 'combat'] as const satisfies readonly TutorialLessonId[]
+export const tutorialLessonIds = ['deploy', 'move', 'combat', 'response'] as const satisfies readonly TutorialLessonId[]
+const firstChapterIds = tutorialLessonIds.filter(id => id !== 'response')
 
 type StoredCompletion = { matchId: string; completedAt: string }
 type StoredTutorialProgress = {
@@ -86,6 +87,7 @@ export interface GuidedTutorialProgress {
   version: 2
   introductionRead: boolean
   reviewedScenes: TutorialLessonId[]
+  responseReviewed?: true
 }
 
 export function guidedTutorialStorageKey(accountId: string) {
@@ -95,6 +97,7 @@ const emptyGuidedProgress = (): GuidedTutorialProgress => ({ version: 2, introdu
 const guidedMemory = new Map<string, { progress: GuidedTutorialProgress; unsaved: boolean; pendingReset: boolean }>()
 const copyGuidedProgress = (progress: GuidedTutorialProgress): GuidedTutorialProgress => ({
   version: 2, introductionRead: progress.introductionRead, reviewedScenes: [...progress.reviewedScenes],
+  ...(progress.responseReviewed ? { responseReviewed: true as const } : {}),
 })
 function rememberGuidedProgress(accountId: string, progress: GuidedTutorialProgress, unsaved: boolean, pendingReset = false) {
   guidedMemory.delete(accountId)
@@ -105,11 +108,14 @@ function mergeGuidedProgress(left: GuidedTutorialProgress, right: GuidedTutorial
   const introductionRead = left.introductionRead || right.introductionRead
   const longest = left.reviewedScenes.length >= right.reviewedScenes.length ? left : right
   return { version: 2, introductionRead,
-    reviewedScenes: introductionRead ? [...longest.reviewedScenes] : [] } satisfies GuidedTutorialProgress
+    reviewedScenes: introductionRead ? [...longest.reviewedScenes] : [],
+    ...(introductionRead && longest.reviewedScenes.length === firstChapterIds.length
+      && (left.responseReviewed || right.responseReviewed) ? { responseReviewed: true as const } : {}) } satisfies GuidedTutorialProgress
 }
 function guidedProgressCovers(outer: GuidedTutorialProgress, inner: GuidedTutorialProgress) {
   return (!inner.introductionRead || outer.introductionRead)
     && outer.reviewedScenes.length >= inner.reviewedScenes.length
+    && (!inner.responseReviewed || outer.responseReviewed === true)
 }
 function readGuidedProgress(accountId: string, storage: TutorialProgressStorage): GuidedTutorialProgress | null {
   if (!accountId) return emptyGuidedProgress()
@@ -119,10 +125,12 @@ function readGuidedProgress(accountId: string, storage: TutorialProgressStorage)
       || !Array.isArray(value.reviewedScenes)) return emptyGuidedProgress()
     const reviewedScenes: TutorialLessonId[] = []
     if (value.introductionRead) for (const id of value.reviewedScenes) {
-      if (id !== tutorialLessonIds[reviewedScenes.length]) break
+      if (id !== firstChapterIds[reviewedScenes.length]) break
       reviewedScenes.push(id)
     }
-    return { version: 2, introductionRead: value.introductionRead, reviewedScenes }
+    return { version: 2, introductionRead: value.introductionRead, reviewedScenes,
+      ...(value.responseReviewed === true && reviewedScenes.length === firstChapterIds.length
+        ? { responseReviewed: true as const } : {}) }
   } catch { return null }
 }
 export function loadGuidedTutorialProgress(accountId: string, storage?: TutorialProgressStorage): GuidedTutorialProgress {
@@ -190,8 +198,13 @@ export function recordGuidedSceneReview(projection: ActiveTutorialState,
     || !binding.matchId || projection.matchId !== binding.matchId) return false
   return writeGuidedProgress(binding.accountId, progress => {
     if (!progress.introductionRead) return false
+    if (projection.lessonId === 'response') {
+      if (progress.reviewedScenes.length !== firstChapterIds.length) return false
+      progress.responseReviewed = true
+      return true
+    }
     if (progress.reviewedScenes.includes(projection.lessonId)) return true
-    if (tutorialLessonIds[progress.reviewedScenes.length] !== projection.lessonId) return false
+    if (firstChapterIds[progress.reviewedScenes.length] !== projection.lessonId) return false
     progress.reviewedScenes.push(projection.lessonId)
     return true
   }, storage)

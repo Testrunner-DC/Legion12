@@ -11,11 +11,14 @@ import {
   tutorialFacts,
   tutorialHelpCopy,
   tutorialPlayerSelector,
+  tutorialPaymentSelectionCount,
   tutorialSnapshot,
   type TutorialAnchor,
   type TutorialHelpTopic,
   type TutorialSceneSnapshot,
 } from './tutorialGuidance'
+import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts, responseTutorialHelp,
+  type ResponseTutorialBinding } from './tutorialResponseGuidance'
 
 const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean }>(), { busy: false })
 const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial: [] }>()
@@ -28,11 +31,16 @@ const initialFacts = tutorialFacts(props.tutorial, props.game)
 const practiceInstanceId = ref<string | null>(initialFacts.practiceInstanceId)
 const facts = computed(() => tutorialFacts(props.tutorial, props.game, practiceInstanceId.value || undefined))
 const baseline = ref<TutorialSceneSnapshot>(tutorialSnapshot(facts.value))
+const responseBinding = ref<ResponseTutorialBinding>()
+const responseFacts = computed(() => responseTutorialFacts(props.game, responseBinding.value))
+const responseLesson = computed(() => props.tutorial.lessonId === 'response')
 const stateAligned = computed(() => props.tutorial.matchId === props.game.matchId && props.tutorial.version === 1)
-const pages = computed(() => tutorialDialoguePages(props.tutorial, facts.value, baseline.value))
+const pages = computed(() => props.tutorial.lessonId === 'response'
+  ? responseTutorialDialogue(props.tutorial.stepId, responseFacts.value)
+  : tutorialDialoguePages(props.tutorial, facts.value, baseline.value))
 const dialoguePage = computed(() => pages.value[Math.min(dialogueIndex.value, pages.value.length - 1)] ?? null)
 const dialogueDone = computed(() => dialogueIndex.value >= pages.value.length)
-const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守' })[props.tutorial.lessonId])
+const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应' })[props.tutorial.lessonId])
 
 type DomState = {
   selectedPractice: boolean
@@ -44,11 +52,15 @@ type DomState = {
   paymentPanel: boolean
   paymentChoices: boolean
   selectedPayment: boolean
+  selectedPaymentCount: number
   confirmPayment: boolean
   restorePayment: boolean
   endTurn: boolean
   defenseActions: boolean
   responsePassSelected: boolean
+  responsePlayButton: boolean
+  responseAvailableSlots: boolean
+  responsePromptChoiceSelected: boolean
 }
 
 const emptyDomState: DomState = {
@@ -61,11 +73,15 @@ const emptyDomState: DomState = {
   paymentPanel: false,
   paymentChoices: false,
   selectedPayment: false,
+  selectedPaymentCount: 0,
   confirmPayment: false,
   restorePayment: false,
   endTurn: false,
   defenseActions: false,
   responsePassSelected: false,
+  responsePlayButton: false,
+  responseAvailableSlots: false,
+  responsePromptChoiceSelected: false,
 }
 const domState = ref<DomState>({ ...emptyDomState })
 
@@ -92,6 +108,9 @@ function scanDomState(): DomState {
   const enemyMaster = `${tutorialPlayerSelector(facts.value.enemy.playerIndex)} [data-tutorial-anchor="master"]`
   const practiceSelected = [practiceHandSelector() && `${practiceHandSelector()}.selected`,
     practiceSlotSelector() && `${practiceSlotSelector()}.source`].filter(Boolean).some(queryExists)
+  const responseCardId = props.tutorial.stepId === 'response-cover' ? responseFacts.value.counterId : responseFacts.value.legionId
+  const responsePrompt = responseFacts.value.prompt
+  const responsePrefix = responsePrompt ? `[data-tutorial-prompt-id="${cssAttributeValue(responsePrompt.promptId)}"]` : '[data-tutorial-never]'
   return {
     selectedPractice: practiceSelected,
     playButton: queryExists(exactAction('play-card')),
@@ -102,11 +121,16 @@ function scanDomState(): DomState {
     paymentPanel: queryExists('[data-tutorial-anchor="payment-panel"]'),
     paymentChoices: queryExists('[data-tutorial-payment-resource]'),
     selectedPayment: queryExists('[data-tutorial-payment-resource][aria-pressed="true"]'),
+    selectedPaymentCount: tutorialPaymentSelectionCount(Array.from(document.querySelectorAll('[data-tutorial-payment-resource][aria-pressed="true"]'))
+      .map(element => element.getAttribute('data-tutorial-payment-resource'))),
     confirmPayment: queryExists(tutorialActionSelector('confirm-payment')),
     restorePayment: queryExists(tutorialActionSelector('restore-payment')),
     endTurn: queryExists(tutorialActionSelector('end-turn')),
     defenseActions: queryExists('[data-tutorial-anchor="defense-actions"]'),
     responsePassSelected: queryExists('[data-tutorial-choice="pass"].selected'),
+    responsePlayButton: Boolean(responseCardId && queryExists(tutorialActionSelector('play-card', responseCardId))),
+    responseAvailableSlots: queryExists(`${selfSlots}[data-tutorial-row="${props.tutorial.stepId === 'response-cover' ? 1 : 0}"].available`),
+    responsePromptChoiceSelected: queryExists(`${responsePrefix} [data-tutorial-choice][aria-pressed="true"],${responsePrefix} [data-tutorial-choice].selected`),
   }
 }
 
@@ -126,20 +150,20 @@ function paymentGuide(): GuideView {
   if (!domState.value.paymentPanel || !domState.value.paymentChoices) return {
     eyebrow: '支付费用', title: '打开士气选择',
     body: `本次需要选择 ${prompt?.minChoose ?? 1} 个支付资源。点击士气区，查看亮起的可选士气。`,
-    reason: '打出军团或移动都要先付清费用。', outcome: '打开面板只显示合法选择；尚未消耗士气。',
+    reason: '打出卡牌、盖伏或移动，都要先付清本次费用。', outcome: '打开面板只显示合法选择；尚未消耗士气。',
     anchor: { selector: `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="morale"]`,
       label: '我方士气', unavailable: '士气区当前不在可见范围，请先展开我方战场。' },
   }
-  if (!domState.value.selectedPayment) return {
+  if (domState.value.selectedPaymentCount < (prompt?.minChoose ?? 1)) return {
     eyebrow: '支付费用', title: '选择亮起的士气',
     body: `本次需选择 ${prompt?.minChoose ?? 1}${prompt?.maxChoose !== prompt?.minChoose ? ` 至 ${prompt?.maxChoose}` : ''} 个资源。只选择当前面板允许的士气。`,
-    reason: '选择支付来源，决定哪些活跃士气在本次操作后转为休整。', outcome: '选择尚未提交；可先核对，再确认支付。',
+    reason: '选择支付来源，决定哪些活跃士气在本次操作后转为休整。', outcome: `目前已选择 ${domState.value.selectedPaymentCount} 个；选够本次所需费用，再确认支付。`,
     anchor: { selector: '[data-tutorial-payment-resource]', label: '可支付士气',
       unavailable: '当前支付面板没有可见的可选士气。', multiple: true },
   }
   return {
     eyebrow: '支付费用', title: '确认本次支付', body: '已选择支付资源。确认后等待场面更新。',
-    reason: '确认后才会真正支付本次选择的士气。', outcome: '军团或移动结算后，所付士气会转为休整。',
+    reason: '确认后才会真正支付本次选择的士气。', outcome: '本次行动结算后，所付士气会转为休整。',
     anchor: { selector: tutorialActionSelector('confirm-payment'), label: '确认支付', unavailable: '确认支付按钮当前不可见。' },
   }
 }
@@ -223,11 +247,19 @@ function combatGuide(): GuideView {
     reason: '进攻可能还有响应与防守，要等这些选择完成。', outcome: '结算后再查看主宰血量与军团状态。', anchor: null, waiting: true }
 }
 
-const actionGuide = computed<GuideView>(() => props.tutorial.lessonId === 'deploy'
-  ? deployOrMoveGuide('deploy')
-  : props.tutorial.lessonId === 'move' ? deployOrMoveGuide('move') : combatGuide())
+const actionGuide = computed<GuideView>(() => {
+  if (props.tutorial.lessonId === 'response') return facts.value.resourcePrompt ? paymentGuide()
+    : responseTutorialAction(props.tutorial.stepId, responseFacts.value, {
+      selected: domState.value.selectedPractice, playButton: domState.value.responsePlayButton,
+      availableSlots: domState.value.responseAvailableSlots, endTurn: domState.value.endTurn,
+      selectedPromptChoice: domState.value.responsePromptChoiceSelected,
+    })
+  return props.tutorial.lessonId === 'deploy' ? deployOrMoveGuide('deploy')
+    : props.tutorial.lessonId === 'move' ? deployOrMoveGuide('move') : combatGuide()
+})
 
 const ownResponseGuide = computed<GuideView | null>(() => {
+  if (props.tutorial.lessonId === 'response') return null
   const prompt = props.game.prompts?.find(item => item.playerIndex === props.game.you
     && item.kind === 'response' && item.validChoices.includes('pass'))
   if (!prompt) return null
@@ -254,7 +286,8 @@ const visibleGuide = computed<GuideView | null>(() => {
   return props.tutorial.status === 'completed' ? dialoguePage.value : actionGuide.value
 })
 
-const helpCopy = computed(() => helpTopic.value ? tutorialHelpCopy(helpTopic.value, facts.value) : '')
+const helpCopy = computed(() => props.tutorial.lessonId === 'response' && helpTopic.value === 'current'
+  ? responseTutorialHelp(props.tutorial.stepId) : helpTopic.value ? tutorialHelpCopy(helpTopic.value, facts.value) : '')
 
 function advanceDialogue() {
   if (props.busy || helpTopic.value) return
@@ -382,14 +415,17 @@ function onMutation(records: MutationRecord[]) {
 }
 
 watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}`, () => {
+  responseBinding.value = undefined
   if (props.tutorial.matchId !== props.game.matchId) {
     practiceInstanceId.value = null
     return
   }
   const next = tutorialFacts(props.tutorial, props.game)
+  const nextResponse = responseTutorialFacts(props.game)
+  responseBinding.value = { legionId: nextResponse.legionId, counterId: nextResponse.counterId }
   practiceInstanceId.value = next.practiceInstanceId
   baseline.value = tutorialSnapshot(next)
-}, { flush: 'sync' })
+}, { flush: 'sync', immediate: true })
 
 watch(() => [stateAligned.value, facts.value.practiceInstanceId] as const, ([aligned, instanceId]) => {
   if (aligned && !practiceInstanceId.value && instanceId) {
@@ -433,7 +469,7 @@ onBeforeUnmount(() => {
     <button v-if="minimized" class="tutorial-guidance-restore" type="button" aria-label="展开教学说明"
       @click="minimized = false">教学提示</button>
   </BattleDockPortal>
-  <BattleOverlayPortal>
+  <BattleOverlayPortal force>
     <div class="tutorial-guide-layer" aria-hidden="true">
       <div v-for="(rect, index) in focusRects" :key="index" class="tutorial-focus-ring"
         :style="{ left: `${rect.left - 5}px`, top: `${rect.top - 5}px`, width: `${rect.width + 10}px`, height: `${rect.height + 10}px` }" />
@@ -445,6 +481,7 @@ onBeforeUnmount(() => {
     <div v-if="!minimized" ref="panelElement" class="tutorial-guidance-shell" :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed' }]"
       data-ui-contract="tutorial-authoritative-guidance"
       :data-tutorial-guide-id="dialogueDone ? (tutorial.status === 'completed' ? 'result' : 'action') : dialoguePage?.id"
+      :data-tutorial-anchor-expected="Boolean(visibleGuide?.anchor)"
       :data-tutorial-scene="tutorial.lessonId" :data-tutorial-reading="!ownResponseGuide && !dialogueDone">
       <section class="tutorial-guidance" aria-live="polite">
         <header>
@@ -473,7 +510,7 @@ onBeforeUnmount(() => {
             <button type="button" @click="helpTopic = 'master'">主宰与胜负</button>
             <button type="button" @click="helpTopic = 'cards'">军团、战术与圣物</button>
             <button type="button" @click="helpTopic = 'morale'">士气与费用</button>
-            <button type="button" @click="helpTopic = 'current'">当前练习军团</button>
+            <button type="button" @click="helpTopic = 'current'">{{ responseLesson ? '费用与响应' : '当前练习军团' }}</button>
           </div>
         </template>
 
@@ -487,8 +524,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.tutorial-guide-layer{position:fixed;z-index:var(--l12-battle-fixed-controls-z,5100);inset:0;pointer-events:none}.tutorial-focus-ring{position:fixed;box-sizing:border-box;border:3px solid #f5d45f;border-radius:10px;box-shadow:0 0 0 3px #071014cc,0 0 22px #f5d45fcc;animation:tutorial-guide-pulse 1.4s ease-in-out infinite;pointer-events:none}.tutorial-guide-arrow{position:fixed;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.tutorial-guide-arrow path{fill:none;stroke:#f5d45f;stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 2px 2px #000)}.tutorial-guide-arrow marker path{fill:#f5d45f;stroke:none}@keyframes tutorial-guide-pulse{50%{border-color:#fff2a7;box-shadow:0 0 0 4px #071014cc,0 0 30px #fff2a799}}
-.tutorial-guidance-shell{position:fixed;z-index:calc(var(--l12-battle-fixed-controls-z,5100) + 1);top:14px;box-sizing:border-box;width:min(390px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:13px 15px;border:1px solid #5c6b73;background:#091118f2;color:#f0f2ee;box-shadow:0 14px 38px #000b;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#b59a4b;background:#171408f2}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#62cbd1;font-size:12px;font-weight:900;letter-spacing:.08em}.tutorial-guidance h2{margin:3px 0 0;font-size:18px}.tutorial-guidance header button{min-width:44px;min-height:44px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 18px inherit}.tutorial-guidance p{margin:10px 0;color:#d5dcdd;font-size:14px;font-weight:800;line-height:1.65}.tutorial-cause-and-result{display:grid;gap:6px;margin:8px 0}.tutorial-cause-and-result div{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px;padding:7px 8px;background:#0c181d}.tutorial-cause-and-result dt{color:#e4c96f;font-size:12px;font-weight:900}.tutorial-cause-and-result dd{margin:0;color:#c8d3d4;font-size:13px;font-weight:800;line-height:1.5}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #e0b85a;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:10px 0}.tutorial-guidance button{min-height:44px;padding:8px 12px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{border-color:#e0b85a;background:#3b2e12;color:#fff1b8}.tutorial-help{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid #344149}.tutorial-help span{width:100%;color:#91a2a8;font-size:12px;font-weight:900}.tutorial-help button{min-height:40px;padding:7px 9px;color:#d4e8e7}.tutorial-guidance footer{display:flex;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid #344149}.tutorial-guidance footer button{min-width:108px}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
+.tutorial-guide-layer{position:fixed;z-index:2147483633;inset:0;pointer-events:none}.tutorial-focus-ring{position:fixed;box-sizing:border-box;border:3px solid #f5d45f;border-radius:10px;box-shadow:0 0 0 3px #071014cc,0 0 22px #f5d45fcc;animation:tutorial-guide-pulse 1.4s ease-in-out infinite;pointer-events:none}.tutorial-guide-arrow{position:fixed;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.tutorial-guide-arrow path{fill:none;stroke:#f5d45f;stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 2px 2px #000)}.tutorial-guide-arrow marker path{fill:#f5d45f;stroke:none}@keyframes tutorial-guide-pulse{50%{border-color:#fff2a7;box-shadow:0 0 0 4px #071014cc,0 0 30px #fff2a799}}
+.tutorial-guidance-shell{position:fixed;z-index:2147483634;top:14px;box-sizing:border-box;width:min(390px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:13px 15px;border:1px solid #5c6b73;background:#091118f2;color:#f0f2ee;box-shadow:0 14px 38px #000b;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#b59a4b;background:#171408f2}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#62cbd1;font-size:12px;font-weight:900;letter-spacing:.08em}.tutorial-guidance h2{margin:3px 0 0;font-size:18px}.tutorial-guidance header button{min-width:44px;min-height:44px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 18px inherit}.tutorial-guidance p{margin:10px 0;color:#d5dcdd;font-size:14px;font-weight:800;line-height:1.65}.tutorial-cause-and-result{display:grid;gap:6px;margin:8px 0}.tutorial-cause-and-result div{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px;padding:7px 8px;background:#0c181d}.tutorial-cause-and-result dt{color:#e4c96f;font-size:12px;font-weight:900}.tutorial-cause-and-result dd{margin:0;color:#c8d3d4;font-size:13px;font-weight:800;line-height:1.5}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #e0b85a;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:10px 0}.tutorial-guidance button{min-height:44px;padding:8px 12px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{border-color:#e0b85a;background:#3b2e12;color:#fff1b8}.tutorial-help{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid #344149}.tutorial-help span{width:100%;color:#91a2a8;font-size:12px;font-weight:900}.tutorial-help button{min-height:40px;padding:7px 9px;color:#d4e8e7}.tutorial-guidance footer{display:flex;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid #344149}.tutorial-guidance footer button{min-width:108px}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell){width:min(350px,calc(var(--l12-viewport-width,100vw) - 188px));max-width:calc(var(--l12-viewport-width,100vw) - 188px)}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-left){left:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-right){right:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports .mobile-battle-dock__context > .tutorial-guidance-restore){position:static!important;box-sizing:border-box;width:100%;max-width:100%;min-height:44px!important;padding:8px 4px!important;white-space:normal;overflow-wrap:normal}
 /* The landscape portal enables pointer input on its direct children. The
    teaching focus is decorative, while only the dialogue itself is interactive. */

@@ -11,8 +11,12 @@ public sealed partial class L12RoomManager
     private sealed class TutorialContext(string lessonId)
     {
         public string LessonId { get; } = lessonId;
-        public string StepId { get; set; } = lessonId == "combat" ? "attack" : lessonId;
+        public string StepId { get; set; } = lessonId switch
+            { "combat" => "attack", "response" => "response-legion", _ => lessonId };
         public string PracticeInstanceId { get; set; } = string.Empty;
+        public string CounterInstanceId { get; set; } = string.Empty;
+        public string SiegeInstanceId { get; set; } = string.Empty;
+        public int PracticeTroops { get; set; }
         public bool Frozen { get; set; }
     }
 
@@ -27,7 +31,7 @@ public sealed partial class L12RoomManager
     {
         requestId = NormalizeActionRequestId(requestId);
         if (!TutorialAvailable) return Error(sessionId, "教学尚未开放", "tutorialUnavailable", requestId);
-        if (requestId is null || lessonId is not ("deploy" or "move" or "combat"))
+        if (requestId is null || lessonId is not ("deploy" or "move" or "combat" or "response"))
             return Error(sessionId, "教学请求无效", "tutorialRejected", requestId);
         if (!TryDeploymentGuard(admission: true, out var deploymentGuard))
             return DeploymentEntryRejected(sessionId, requestId);
@@ -76,7 +80,8 @@ public sealed partial class L12RoomManager
             // Replacing the preset's three Bai Qi with three Xi Shi leaves a legal 40-card deck.
             var preset = _catalog.DeckAt(0);
             var deck = new L12PresetDeckDefinition { Name = "教学公开构筑", MasterId = preset.MasterId,
-                CardIds = preset.CardIds.Select(id => id == "S01-0109" ? "S01-0116" : id).ToList(),
+                CardIds = preset.CardIds.Select(id => id == "S01-0109" ? "S01-0116"
+                    : lessonId == "response" && id == "S01-0002" ? "S01-0008" : id).ToList(),
                 MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds] };
             if (!L12DeckValidator.TryValidatePreset(_catalog, deck, out _))
                 return Error(sessionId, "当前规则与教学配方不兼容", "tutorialUnavailable", requestId);
@@ -144,6 +149,11 @@ public sealed partial class L12RoomManager
             CardInstanceIds: [initiative.PlayerIndex == 0 ? "first" : "second"]));
         BootstrapCommand(game, 0, new("mulligan", CardInstanceIds: []));
         BootstrapCommand(game, 1, new("mulligan", CardInstanceIds: []));
+        if (lesson.LessonId == "response")
+        {
+            BootstrapResponseTutorial(game, lesson);
+            return;
+        }
         var combat = lesson.LessonId == "combat";
         static int Copies(L12PlayerState player) => player.Hand.Count(card => card.CardId == "S01-0116");
         // Bounded legal turn progression, never seed hunting, GM mutation, or synthetic padding.
@@ -172,6 +182,28 @@ public sealed partial class L12RoomManager
         BootstrapCommand(game, 1, new("endTurn"));
     }
 
+    private static void BootstrapResponseTutorial(L12GameEngine game, TutorialContext lesson)
+    {
+        static bool Hand(L12PlayerState player, string id) => player.Hand.Any(card => card.CardId == id);
+        var turns = 0;
+        // Same published legal recipe and fixed seed as the Journal-proved response exercise.
+        // Never set a hidden card, draw order, morale, turn, or board through a teaching side door.
+        while (game.State.ActivePlayer != 0 || !Hand(game.State.Players[0], "S01-0116")
+               || !Hand(game.State.Players[0], "S01-0016") || !Hand(game.State.Players[1], "S01-0008")
+               || game.State.Players[0].Morale.Count(card => !card.Tapped) < 3
+               || game.State.Players[1].Morale.Count(card => !card.Tapped) < 2)
+        {
+            if (++turns > 40 || game.State.PendingPrompts.Count != 0)
+                throw new InvalidOperationException("响应教学合法前缀不兼容");
+            BootstrapCommand(game, game.State.ActivePlayer, new("endTurn"));
+        }
+        var legion = game.State.Players[0].Hand.First(card => card.CardId == "S01-0116");
+        lesson.PracticeInstanceId = legion.InstanceId;
+        lesson.PracticeTroops = legion.Troops;
+        lesson.CounterInstanceId = game.State.Players[0].Hand.First(card => card.CardId == "S01-0016").InstanceId;
+        lesson.SiegeInstanceId = game.State.Players[1].Hand.First(card => card.CardId == "S01-0008").InstanceId;
+    }
+
     private static void BootstrapPlay(L12GameEngine game, int actor, string instanceId, int row, int slot)
         => BootstrapCommand(game, actor, new("playCard", CardInstanceId: instanceId, Row: row, Slot: slot,
             CardInstanceIds: [game.State.Players[actor].Morale.First(card => !card.Tapped).InstanceId]));
@@ -197,6 +229,11 @@ public sealed partial class L12RoomManager
                 && command.Target?.Type == "master",
             "end-turn" => command.Type == "endTurn",
             "defend" => command.Type == "resolveDefense",
+            "response-legion" => command.Type == "playCard" && command.CardInstanceId == lesson.PracticeInstanceId
+                && command.Row == 0,
+            "response-cover" => command.Type == "playCard" && command.CardInstanceId == lesson.CounterInstanceId
+                && command.Row == 1,
+            "response-end-turn" => command.Type == "endTurn",
             _ => false,
         };
         return allowed ? null : "请按本关当前目标操作；需要重新开始时请退出本关";
@@ -211,6 +248,7 @@ public sealed partial class L12RoomManager
         {
             for (var budget = 0; budget < 8; budget++)
             {
+                UpdateTutorialStep(room);
                 var state = room.Game.State;
                 L12Command? scripted = null;
                 var prompt = state.PendingPrompts.FirstOrDefault(p => p.PlayerIndex == 1);
@@ -230,6 +268,13 @@ public sealed partial class L12RoomManager
                         .Single(card => card?.CardId == "S01-0116");
                     scripted = new("attack", CardInstanceId: attacker!.InstanceId, Target: new("master"));
                 }
+                else if (lesson.StepId == "response-end-turn" && state.ActivePlayer == 1
+                         && state.Phase == L12Phase.Main && state.PendingDefense is null
+                         && state.PendingPrompts.Count == 0 && state.EffectStack.Count == 0
+                         && state.Players[1].Hand.Any(card => card.InstanceId == lesson.SiegeInstanceId))
+                    scripted = new("playCard", CardInstanceId: lesson.SiegeInstanceId,
+                        CardInstanceIds: state.Players[1].Morale.Where(card => !card.Tapped)
+                            .Take(2).Select(card => card.InstanceId).ToList());
                 if (scripted is null)
                 {
                     UpdateTutorialStep(room);
@@ -270,6 +315,11 @@ public sealed partial class L12RoomManager
     {
         var lesson = room.Tutorial!;
         var state = room.Game!.State;
+        if (lesson.LessonId == "response")
+        {
+            UpdateResponseTutorialStep(room);
+            return;
+        }
         if (state.Phase == L12Phase.GameOver || state.PendingPrompts.Count != 0
             || state.EffectStack.Count != 0) return;
         var field = state.Players[0].Field;
@@ -290,6 +340,35 @@ public sealed partial class L12RoomManager
                 lesson.StepId = "completed";
                 break;
         }
+    }
+
+    private static void UpdateResponseTutorialStep(Room room)
+    {
+        var lesson = room.Tutorial!;
+        var state = room.Game!.State;
+        if (state.Phase == L12Phase.GameOver || lesson.StepId is "completed" or "response-retry") return;
+        var own = state.Players[0];
+        var prompt = state.PendingPrompts.FirstOrDefault(p => p.PlayerIndex == 0);
+        if (prompt is not null)
+        {
+            if (prompt.Continuation == "stack-response" && prompt.ValidChoices.Contains(lesson.CounterInstanceId))
+                lesson.StepId = "response-choose";
+            else if (prompt.Kind == "discard-cost") lesson.StepId = "response-discard";
+            return;
+        }
+        if (state.PendingPrompts.Count != 0 || state.EffectStack.Count != 0) return;
+        var legion = own.Field.SelectMany(row => row).FirstOrDefault(card => card?.InstanceId == lesson.PracticeInstanceId);
+        if (state.Players[1].Graveyard.Any(card => card.InstanceId == lesson.SiegeInstanceId))
+        {
+            var negated = state.Events.Count(e => e.Type == "effect-result" && e.EffectResultStatus == "negated"
+                && e.Cards.FirstOrDefault()?.InstanceId == lesson.SiegeInstanceId) == 1;
+            lesson.StepId = negated && legion?.Troops == lesson.PracticeTroops
+                && own.Graveyard.Any(card => card.InstanceId == lesson.CounterInstanceId)
+                ? "completed" : "response-retry";
+        }
+        else if (legion is not null && own.Field[1].Any(card => card?.InstanceId == lesson.CounterInstanceId
+                     && card.Hidden)) lesson.StepId = "response-end-turn";
+        else if (legion is not null) lesson.StepId = "response-cover";
     }
 
     private bool CanControlSandbox(Room room, Session session)

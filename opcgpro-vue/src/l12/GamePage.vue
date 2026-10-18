@@ -59,12 +59,13 @@ function continueTutorialMainline() {
     connectionGeneration: l12State.connectionGeneration, matchId: game.value?.matchId || '',
   })
   const progress = loadGuidedTutorialProgress(current.accountId)
-  if (!progress.reviewedScenes.includes(current.lessonId)) {
+  if (current.lessonId === 'response' ? !progress.responseReviewed : !progress.reviewedScenes.includes(current.lessonId)) {
     l12State.notice = '请先从教学主线完成前面的介绍与练习。'
     return
   }
   if (!saved) l12State.notice = '本机暂时无法保存进度，当前学习仍可继续。'
-  beginTutorialHandoff(tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)
+  beginTutorialHandoff(current.lessonId === 'response' ? null
+    : tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)
 }
 function restartTutorialScene() { if (tutorial.value) beginTutorialHandoff(tutorial.value.lessonId) }
 function exitTutorialMainline() {

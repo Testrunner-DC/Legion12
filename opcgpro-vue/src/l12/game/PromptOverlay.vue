@@ -975,6 +975,7 @@ function kindLabel() {
               <button class="response-target-select l12-effect-body" :aria-pressed="activeSelected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
+              :data-tutorial-choice="choice"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)" :position-label="positionFor(choice)"
               :consequence="choiceConsequence(choice)" :unavailable-reason="disabledChoiceReason(choice)"
@@ -984,7 +985,7 @@ function kindLabel() {
               :selection-order="!isTriggerOrder && selectedActionChoices.includes(choice) && prompt.maxChoose > 1 ? selectedActionChoices.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
             <button v-else :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
-              :data-tutorial-choice="choice === 'pass' ? 'pass' : undefined"
+              :data-tutorial-choice="choice"
               :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
@@ -1012,7 +1013,7 @@ function kindLabel() {
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
-              :data-tutorial-choice="choice === 'pass' ? 'pass' : undefined"
+              :data-tutorial-choice="choice"
               :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
               :disabled="l12State.pendingAction"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"

@@ -66,7 +66,7 @@ check('guide stays on the real board with inline questions, readable dialogue an
   assert.doesNotMatch(template, /\{\{\s*tutorial\.(?:lessonId|stepId)|服务器权威|不会通关|判定说明/)
   assert.match(source.overlay, /pointer-events:\s*none/)
   assert.match(source.overlay, /44px/)
-  assert.ok(source.overlay.includes('<BattleOverlayPortal>'), 'Expanded teaching copy must not be squeezed into the narrow action lane')
+  assert.match(source.overlay, /<BattleOverlayPortal force>/, 'Teaching must share the prompt teleport host even on desktop')
   assert.match(source.overlay, /continueMainline/)
   assert.match(source.game, /@continue-mainline="continueTutorialMainline"/)
 })

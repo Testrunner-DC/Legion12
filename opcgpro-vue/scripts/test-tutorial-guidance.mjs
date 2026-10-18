@@ -206,6 +206,11 @@ check('mainline and contextual questions remain in one overlay', () => {
   assert.match(overlaySource, /data-tutorial-scene/)
   assert.match(overlaySource, /data-tutorial-reading/)
 })
+check('payment guidance counts distinct resources, not duplicate mobile and board nodes', () => {
+  assert.match(overlaySource, /selectedPaymentCount:\s*tutorialPaymentSelectionCount\(Array\.from\(document\.querySelectorAll/)
+  assert.match(overlaySource, /getAttribute\('data-tutorial-payment-resource'\)/)
+  assert.match(overlaySource, /selectedPaymentCount < \(prompt\?\.minChoose/)
+})
 check('tutorial anchors expose only public own hand, library and exact practice instance', () => {
   const sources = sfcPaths.map(file => fs.readFileSync(file, 'utf8')).join('\n')
   assert.match(sources, /data-tutorial-anchor="hand"/)

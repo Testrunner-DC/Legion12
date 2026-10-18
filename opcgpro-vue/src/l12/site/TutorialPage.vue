@@ -54,7 +54,12 @@ async function ensureConnected(epoch: number, expectedAccountId: string, expecte
   finally { if (epoch === identityEpoch) connecting.value = false }
   return epoch === identityEpoch && accountId.value === expectedAccountId && platformState.token === expectedToken
 }
-async function startPractice() {
+function startPractice() { return startPracticeScene(nextScene.value) }
+function startResponsePractice() {
+  if (!chapterComplete.value) return
+  return startPracticeScene('response')
+}
+async function startPracticeScene(scene: TutorialLessonId) {
   if (actionBusy.value || questionOpen.value) return
   const epoch = identityEpoch
   const expectedAccountId = accountId.value
@@ -66,7 +71,6 @@ async function startPractice() {
     progress.value = loadGuidedTutorialProgress(expectedAccountId)
     introductionOpen.value = false
   }
-  const scene = nextScene.value
   starting.value = scene
   const connected = await ensureConnected(epoch, expectedAccountId, expectedToken)
   if (!connected || epoch !== identityEpoch || accountId.value !== expectedAccountId
@@ -102,8 +106,8 @@ onMounted(() => {
     <header class="tutorial-heading"><div><small>十二军团 · 新手教学</small><h1>初识十二军团</h1></div>
       <router-link v-if="!props.embedded" to="/battle">返回对战大厅</router-link>
     </header>
-    <ol class="course-path" aria-label="教学主线"><li v-for="(chapter, index) in tutorialChapters" :key="chapter" :class="{ current: index === 0 }">
-      <span>{{ chapter }}</span><small v-if="index > 0">尚未开放</small>
+    <ol class="course-path" aria-label="教学主线"><li v-for="(chapter, index) in tutorialChapters" :key="chapter" :class="{ current: index === (chapterComplete ? 1 : 0) }">
+      <span>{{ chapter }}</span><small v-if="index === 1">{{ progress.responseReviewed ? '已复盘' : chapterComplete ? '继续主线' : '完成第一章后继续' }}</small><small v-if="index > 1">尚未开放</small>
     </li></ol>
 
     <section v-if="introductionOpen" class="tutorial-conversation" data-tutorial-introduction="true" aria-live="polite">
@@ -135,8 +139,8 @@ onMounted(() => {
       <div class="guide-speaker"><span aria-hidden="true">✦</span><b>向导</b><small>第一章复盘</small></div>
       <h2>现在，把刚才的行动串起来</h2>
       <p>你已经认识了获胜目标和各种卡牌，并实际打出军团、支付士气、移动、进攻和防守。做决定前，先看当前可用士气、军团位置与状态，再读卡牌效果。</p>
-      <p>下一章会继续认识卡牌效果与响应，目前还在准备。你可以留在这里复习，也可以重新走一遍本章。</p>
-      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy" @click="repeatChapter">重新学习本章</button><button type="button" @click="revisitIntroduction">再看卡牌介绍</button></div>
+      <p>{{ progress.responseReviewed ? '你也已亲手准备反击，并比较了效果无效后的场面和费用。完整对局一章仍在准备，可以继续复习前两章。' : '接下来沿一场练习认识卡牌效果与响应：准备反击，看看费用、效果和实际结果之间的区别。' }}</p>
+      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy || connecting" @click="startResponsePractice">{{ starting ? '正在准备练习场面…' : progress.responseReviewed ? '重学卡牌效果与响应' : '继续主线：卡牌效果与响应' }}</button><button type="button" :disabled="actionBusy" @click="repeatChapter">重新学习第一章</button><button type="button" @click="revisitIntroduction">再看卡牌介绍</button></div>
     </section>
     <p v-if="unsaved" class="tutorial-notice" role="status">本机暂时无法保存进度，当前学习仍可继续；刷新页面后可能需要重新学习。</p>
     <p v-if="accountId && availabilityCopy" class="tutorial-status" role="status">{{ availabilityCopy }}</p>

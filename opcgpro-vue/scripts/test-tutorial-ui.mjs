@@ -20,7 +20,13 @@ fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
 const report = { status: 'RUNNING', cases: [], transport: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. No test/production deployment.' }
 const boundSources = ['opcgpro-vue/src/App.vue','opcgpro-vue/src/l12/GamePage.vue','opcgpro-vue/src/l12/net.ts','opcgpro-vue/src/l12/site/TutorialPage.vue','opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue','opcgpro-vue/src/l12/tutorial/tutorialProgress.ts','opcgpro-vue/src/l12/tutorial/tutorialCourse.ts','opcgpro-vue/src/l12/tutorial/tutorialGuidance.ts','opcgpro-vue/src/l12/site/BattleHubPage.vue','opcgpro-vue/src/l12/game/GameBoard.vue','opcgpro-vue/src/l12/game/GameActions.vue','opcgpro-vue/src/l12/game/HandArea.vue','opcgpro-vue/src/l12/game/PlayerMat.vue','opcgpro-vue/src/l12/game/PromptOverlay.vue']
 const hashes = () => Object.fromEntries(boundSources.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(path.join(repo,name))).digest('hex').toUpperCase()]))
+boundSources.push('opcgpro-vue/src/l12/tutorial/tutorialResponseGuidance.ts','opcgpro-vue/src/l12/game/BattleOverlayPortal.vue',
+  'opcgpro-vue/src/l12/notifications/browserNotifications.ts','opcgpro-vue/src/l12/notifications/realtimeNotificationPolicy.ts',
+  'opcgpro-vue/src/l12/notifications/useRealtimeNotifications.ts','opcgpro-vue/src/l12/site/L12SettingsModal.vue',
+  'opcgpro-vue/src/l12/site/FriendRequestNotifications.vue')
 report.sourceBefore = hashes()
+report.paymentChecks=[]
+report.notificationSettings=[]
 report.backendAtStart = { boundary: 'Local built server binary SHA below; this UI test is not a Release, deployed-identity, or full-backend-suite proof.' }
 const requireFront = createRequire(path.join(front, 'package.json'))
 const { createServer } = await import(pathToFileURL(requireFront.resolve('vite')))
@@ -83,14 +89,27 @@ async function resolveOwnPrompt() {
   const state = await observe()
   const prompt = state.prompts.find(p => p.playerIndex === 0)
   if (!prompt || state.pending) return false
-  if ((prompt.kind || '').includes('resource') || (prompt.kind || '').includes('cost')) {
+  if ((prompt.kind || '').includes('resource')) {
     const mobile = page.locator('.mobile-morale-choice:not(.unavailable):not(.selected)')
     const orb = page.locator('[data-player-index="0"] .morale-orb.payable:not(.selected)')
+    for (let i=0;i<prompt.minChoose;i++) {
     if (await mobile.count()) await tap(mobile.first(), 'select payment')
     else if (await orb.count()) await tap(orb.first(), 'select payment orb')
     else {
       const option = page.locator('.prompt-choices button:not(.decline-action):not([disabled])').first()
       await tap(option, 'select payment option')
+    }
+    if(prompt.minChoose>1 && i===0) {
+      await page.waitForFunction(()=>document.querySelector('[data-ui-contract="tutorial-authoritative-guidance"] h2')?.textContent==='选择亮起的士气')
+      const selected=await page.locator('[data-tutorial-payment-resource][aria-pressed="true"]').evaluateAll(nodes=>({
+        nodes:nodes.length,unique:new Set(nodes.map(node=>node.getAttribute('data-tutorial-payment-resource'))).size,
+      }))
+      assert.equal(selected.unique,1)
+      const confirm=page.locator('[data-tutorial-action="confirm-payment"]').filter({visible:true})
+      assert(await confirm.count()>0)
+      assert(await confirm.first().isDisabled(),'One selected resource cannot confirm a two-resource cost')
+      report.paymentChecks.push({viewport:await page.viewportSize(),minimum:prompt.minChoose,selected,title:'选择亮起的士气'})
+    }
     }
     await tap(page.getByRole('button', { name: /确认支付|确认费用|确认选择/ }).filter({ visible: true }).first(), 'confirm payment')
     return true
@@ -126,6 +145,16 @@ try {
   vite=await createServer({root:front,configLoader:'runner',cacheDir:path.join(cache,'vite'),server:{host:'127.0.0.1',port:uiPort,strictPort:true}})
   await vite.listen()
   context=await chromium.launchPersistentContext(path.join(cache,'profile'),{headless:true,channel:'msedge',hasTouch:true,viewport:{width:1366,height:768}})
+  await context.addInitScript(()=>{
+    window.__notificationQA={requests:0,shown:[]}
+    class QaNotification {
+      static permission='default'
+      static async requestPermission(){window.__notificationQA.requests++;this.permission='granted';return 'granted'}
+      constructor(title,options){window.__notificationQA.shown.push({title,options})}
+      close(){}
+    }
+    Object.defineProperty(window,'Notification',{value:QaNotification,configurable:true})
+  })
   page=await context.newPage(); page.setDefaultTimeout(10000)
   page.on('dialog',dialog=>dialog.accept())
   page.on('pageerror',error=>report.errors.push(error.message))
@@ -189,7 +218,12 @@ try {
     }))
     assert.equal(geometry.pointerEvents,'none')
     const unavailable=await shell.locator('.tutorial-anchor-unavailable').count()
-    if(!unavailable) assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
+    if(!unavailable && await shell.getAttribute('data-tutorial-anchor-expected')==='true') {
+      await page.waitForFunction(()=>Boolean(document.querySelector('.tutorial-focus-ring')&&document.querySelector('.tutorial-guide-arrow > path')),null,{timeout:2000})
+      geometry.rings=await page.locator('.tutorial-focus-ring').count()
+      geometry.arrow=await page.locator('.tutorial-guide-arrow > path').getAttribute('d')
+      assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
+    }
     return {title:h2,explanation,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable)}
   }
   async function readScene(viewport,scene,readings) {
@@ -213,10 +247,54 @@ try {
     const selector='[data-tutorial-action="'+action+'"]'+(instanceId?'[data-tutorial-card-instance="'+instanceId+'"]':'')
     return page.locator(selector).filter({visible:true}).first()
   }
+  async function choosePromptCard(promptId,instanceId,label) {
+    await tap(page.locator('[data-tutorial-choice="'+instanceId+'"]').filter({visible:true}).first(),label)
+    const deadline=Date.now()+10000
+    while(Date.now()<deadline) {
+      const state=await observe()
+      if(state.pending||!state.prompts.some(p=>p.promptId===promptId)) return
+      const confirm=page.locator('[data-tutorial-action="confirm-prompt"]').filter({visible:true}).first()
+      if(await confirm.count()&&await confirm.isEnabled()) {await tap(confirm,'confirm '+label);return}
+      await pause(80)
+    }
+    throw new Error('Chosen prompt neither submitted nor exposed its confirmation: '+label)
+  }
+  const settingsOnly=process.env.L12_NOTIFICATION_SETTINGS_ONLY==='1'
+  report.mode=settingsOnly?'actual-settings-only':'continuous-course-and-actual-settings'
+  async function inspectNotificationSettings(viewport) {
+    assert.equal(await page.evaluate(()=>window.__notificationQA.requests),viewport.width===1366?0:1,
+      'Permission must not be requested by import, connection, route changes or teaching')
+    const mobileNavigation=page.getByRole('button',{name:'打开导航',exact:true}).filter({visible:true})
+    if(await mobileNavigation.count()) await tap(mobileNavigation,'open existing mobile navigation')
+    await tap(page.getByRole('button',{name:'设置',exact:true}).filter({visible:true}).first(),'open notification settings')
+    const settings=page.locator('[data-ui-contract="l12-settings-all-features"]')
+    const notificationRow=settings.locator('.setting-row').filter({hasText:'网页通知'})
+    assert((await notificationRow.innerText()).includes('仅限此浏览器'))
+    await tap(notificationRow.getByRole('button',{name:'开启此浏览器通知',exact:true}),'explicitly enable browser notifications')
+    await page.waitForFunction(()=>window.__notificationQA.requests===1)
+    await notificationRow.getByRole('button',{name:'关闭此浏览器通知',exact:true}).waitFor()
+    const style=await settings.evaluate(async element=>{
+      const mask=element.closest('.site-modal-mask')||element
+      const animations=mask.getAnimations({subtree:true}).filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().iterations))
+      await Promise.all(animations.map(animation=>animation.finished.catch(()=>{})))
+      return {maskOpacity:getComputedStyle(mask).opacity,background:getComputedStyle(element).backgroundColor}
+    })
+    assert(Number(style.maskOpacity)>=.99,'Capture only the settled notification settings, not its fade-in')
+    await page.screenshot({path:path.join(out,viewport.width+'-notification-settings.png')})
+    const toggleBounds=await notificationRow.getByRole('button').boundingBox()
+    assert(toggleBounds&&toggleBounds.x>=0&&toggleBounds.y>=0&&toggleBounds.x+toggleBounds.width<=viewport.width+1
+      &&toggleBounds.y+toggleBounds.height<=viewport.height+1,'Notification toggle must fit and be reachable')
+    await tap(notificationRow.getByRole('button',{name:'关闭此浏览器通知',exact:true}),'disable browser notifications')
+    assert.equal(await page.evaluate(()=>window.__notificationQA.requests),1,'Disabling or re-enabling granted permission never requests it again')
+    await tap(settings.getByRole('button',{name:'关闭设置',exact:true}),'close notification settings')
+    report.notificationSettings.push({viewport,explicitPermissionRequests:1,toggleBounds,style,
+      scope:'real settings UI with controlled Notification API; not actual OS delivery or four live server event chains'})
+  }
   for(const viewport of [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]) {
     await page.setViewportSize(viewport)
+    if(settingsOnly){await inspectNotificationSettings(viewport);report.cases.push({viewport,scope:'settings-only; no gameplay'});continue}
     if(viewport.width!==1366) {
-      await tap(page.getByRole('button',{name:'重新学习本章',exact:true}),'repeat coherent chapter')
+      await tap(page.getByRole('button',{name:'重新学习第一章',exact:true}),'repeat coherent chapter')
     }
     const titles=await readIntroduction(viewport)
     const chapter={viewport,introduction:titles,scenes:[]}
@@ -271,12 +349,63 @@ try {
         await page.waitForURL('**/battle/tutorial')
         await page.getByRole('heading',{name:'现在，把刚才的行动串起来',exact:true}).waitFor()
         assert.equal((await observe()).learning.reviewedScenes.length,3)
-        assert.equal(await page.locator('.course-path li').filter({hasText:'尚未开放'}).count(),2)
+        assert.equal(await page.locator('.course-path li').filter({hasText:'尚未开放'}).count(),1)
       }
       chapter.scenes.push({scene,initialRevision:initial.revision,finalRevision:final.revision,
         beforeAction,readings,result,status:'reviewed-and-continued'})
       console.log('PASS continuous guided UI '+viewport.width+'x'+viewport.height+' '+scene)
     }
+    await tap(page.getByRole('button',{name:/^继续主线：卡牌效果与响应$/}),'continue second chapter')
+    const responseStart=await waitState(s=>s.tutorial?.lessonId==='response'&&!s.pending,'response chapter')
+    await page.waitForURL('**/game')
+    const responseReadings=[]
+    const responseLegion=responseStart.self.hand.find(c=>c.cardId==='S01-0116')
+    const responseCounter=responseStart.self.hand.find(c=>c.cardId==='S01-0016')
+    assert(responseLegion&&responseCounter)
+    assert.equal(responseStart.learning.responseReviewed,undefined)
+    for(const [stage,card,row] of [['response-legion',responseLegion,0],['response-cover',responseCounter,1]]) {
+      await waitState(s=>s.tutorial?.stepId===stage&&!s.pending,stage)
+      await readScene(viewport,stage,responseReadings)
+      await inspectGuide(viewport,stage+' select')
+      await tap(page.locator('.hand-card-wrap[data-tutorial-card-instance="'+card.instanceId+'"]'),'response card '+card.name)
+      const action=await visibleAction('play-card',card.instanceId)
+      if(await action.count())await tap(action,'play '+card.name)
+      const slot=page.locator('[data-player-index="0"] .formation-slot.available[data-tutorial-row="'+row+'"]')
+      await slot.first().waitFor()
+      await tap(slot.first(),'response legal position')
+      await settleTo(s=>s.tutorial?.stepId!==stage,stage+' paid')
+    }
+    const prepared=await waitState(s=>s.tutorial?.stepId==='response-end-turn'&&!s.pending,'response covered')
+    const covered=prepared.self.field.flat().find(c=>c?.instanceId===responseCounter.instanceId)
+    assert(covered?.hidden&&covered.identityKnown,'Own covered identity remains visible to its owner')
+    assert.equal(prepared.self.morale.filter(c=>c.tapped).length-responseStart.self.morale.filter(c=>c.tapped).length,3)
+    await readScene(viewport,'response-end-turn',responseReadings)
+    await tap(await visibleAction('end-turn'),'response end turn')
+    const counterWindow=await waitState(s=>s.tutorial?.stepId==='response-choose'&&!s.pending,'real counter window')
+    await readScene(viewport,'response-choose',responseReadings)
+    await inspectGuide(viewport,'counter real target')
+    await choosePromptCard(counterWindow.prompts.find(p=>p.playerIndex===0).promptId,responseCounter.instanceId,'choose covered counter')
+    const discardState=await waitState(s=>s.tutorial?.stepId==='response-discard'&&!s.pending,'discard payment')
+    await readScene(viewport,'response-discard',responseReadings)
+    const discardPrompt=discardState.prompts.find(p=>p.playerIndex===0&&p.kind==='discard-cost')
+    const discardCard=discardState.self.hand.find(c=>discardPrompt.validChoices.includes(c.instanceId))
+    assert(discardCard)
+    await inspectGuide(viewport,'discard real cost')
+    await choosePromptCard(discardPrompt.promptId,discardCard.instanceId,'choose discard')
+    const responseFinal=await settleTo(s=>s.tutorial?.status==='completed','response actual negation')
+    assert.equal(responseFinal.learning.responseReviewed,undefined,'Action alone must not record response learning')
+    assert.equal(responseFinal.self.field.flat().find(c=>c?.instanceId===responseLegion.instanceId).troops,responseLegion.troops)
+    assert(responseFinal.self.graveyard.some(c=>c.instanceId===responseCounter.instanceId))
+    assert(responseFinal.self.graveyard.some(c=>c.instanceId===discardCard.instanceId))
+    const responseResult=await inspectGuide(viewport,'response result review')
+    await page.screenshot({path:path.join(out,viewport.width+'-response-result.png')})
+    await tap(guide().getByRole('button',{name:'继续主线',exact:true}),'review response outcome')
+    await waitState(s=>!s.room&&!s.matchId&&!s.pending&&s.learning.responseReviewed===true,'response real roomLeft and review')
+    await page.waitForURL('**/battle/tutorial')
+    chapter.response={initialRevision:responseStart.revision,finalRevision:responseFinal.revision,
+      readings:responseReadings,result:responseResult,status:'reviewed-and-continued'}
+    await inspectNotificationSettings(viewport)
+    console.log('PASS continuous response UI '+viewport.width+'x'+viewport.height)
     report.cases.push(chapter)
   }
   assert.deepEqual(report.errors,[])
