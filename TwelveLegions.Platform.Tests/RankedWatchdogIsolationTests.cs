@@ -1127,11 +1127,7 @@ public sealed class RankedWatchdogIsolationTests
             if (!target.StartsWith(parent, StringComparison.OrdinalIgnoreCase)
                 || !Path.GetFileName(target).StartsWith("l12-c2-synthetic-", StringComparison.Ordinal))
                 throw new InvalidOperationException("synthetic cleanup scope mismatch");
-            for (var attempt = 0; attempt < 5; attempt++)
-            {
-                try { Directory.Delete(target, true); return; }
-                catch (IOException) when (attempt < 4) { await Task.Delay(40 * (attempt + 1)); }
-            }
+            PlatformTestDirectoryCleanup.Delete(target);
         }
     }
 }
