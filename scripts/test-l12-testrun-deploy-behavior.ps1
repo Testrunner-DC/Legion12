@@ -248,10 +248,10 @@ try {
         'failure_stage="post-success-storage-cleanup"',
         'converge_testrun_storage "$release_dir"',
         'rollback_count < 1',
-        'program_budget_bytes=$((1024 * 1024 * 1024))',
-        'data_budget_bytes=$((256 * 1024 * 1024))',
-        'temporary_budget_bytes=$((512 * 1024 * 1024))',
-        'total_budget_bytes=$((1536 * 1024 * 1024))',
+        'program_budget_bytes=$((1536 * 1024 * 1024))',
+        'data_budget_bytes=$((512 * 1024 * 1024))',
+        'temporary_budget_bytes=$((1024 * 1024 * 1024))',
+        'total_budget_bytes=$((3072 * 1024 * 1024))',
         'storage cleanup retained explicitly PINNED release:',
         'storage cleanup retained failed release evidence:',
         'storage cleanup refused: release may be incomplete or ownership is unknown:',
@@ -452,18 +452,19 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
 '@
     Write-Utf8NoBom $budgetProbe (($budgetStubs, ($budgetConstants -join "`n"), ($budgetFunction.Value -replace "`r", ''), 'validate_testrun_storage_budget "$4" "$5" "$6" "$7" "$8"') -join "`n")
     $boundaryCases = @(
-        @{ Name='program-below'; Bytes=@((1GB-1),0,0,0,0,0,0,0); Accepted=$true },
-        @{ Name='program-equal'; Bytes=@(1GB,0,0,0,0,0,0,0); Accepted=$true },
-        @{ Name='program-above'; Bytes=@((1GB+1),0,0,0,0,0,0,0); Accepted=$false; Reason='program budget exceeds 1 GiB' },
-        @{ Name='data-below'; Bytes=@(0,(256MB-1),0,0,0,0,0,0); Accepted=$true },
-        @{ Name='data-equal'; Bytes=@(0,256MB,0,0,0,0,0,0); Accepted=$true },
-        @{ Name='data-above'; Bytes=@(0,(256MB+1),0,0,0,0,0,0); Accepted=$false; Reason='data budget exceeds 256 MiB' },
-        @{ Name='temporary-below'; Bytes=@(0,0,(512MB-1),0,0,0,0,0); Accepted=$true },
-        @{ Name='temporary-equal'; Bytes=@(0,0,512MB,0,0,0,0,0); Accepted=$true },
-        @{ Name='temporary-above'; Bytes=@(0,0,(512MB+1),0,0,0,0,0); Accepted=$false; Reason='temporary budget exceeds 512 MiB' },
-        @{ Name='total-below'; Bytes=@(1GB,256MB,(256MB-1),0,0,0,0,0); Accepted=$true },
-        @{ Name='total-equal'; Bytes=@(1GB,256MB,256MB,0,0,0,0,0); Accepted=$true },
-        @{ Name='total-above'; Bytes=@(1GB,256MB,(256MB+1),0,0,0,0,0); Accepted=$false; Reason='total storage budget exceeds 1.5 GiB' },
+        @{ Name='program-below'; Bytes=@((1536MB-1),0,0,0,0,0,0,0); Accepted=$true },
+        @{ Name='program-equal'; Bytes=@(1536MB,0,0,0,0,0,0,0); Accepted=$true },
+        @{ Name='program-above'; Bytes=@((1536MB+1),0,0,0,0,0,0,0); Accepted=$false; Reason='program budget exceeds 1.5 GiB' },
+        @{ Name='data-below'; Bytes=@(0,(512MB-1),0,0,0,0,0,0); Accepted=$true },
+        @{ Name='data-equal'; Bytes=@(0,512MB,0,0,0,0,0,0); Accepted=$true },
+        @{ Name='data-above'; Bytes=@(0,(512MB+1),0,0,0,0,0,0); Accepted=$false; Reason='data budget exceeds 512 MiB' },
+        @{ Name='temporary-below'; Bytes=@(0,0,(1GB-1),0,0,0,0,0); Accepted=$true },
+        @{ Name='temporary-equal'; Bytes=@(0,0,1GB,0,0,0,0,0); Accepted=$true },
+        @{ Name='temporary-above'; Bytes=@(0,0,(1GB+1),0,0,0,0,0); Accepted=$false; Reason='temporary budget exceeds 1 GiB' },
+        @{ Name='total-below'; Bytes=@(1536MB,512MB,(1GB-1),0,0,0,0,0); Accepted=$true },
+        @{ Name='total-equal'; Bytes=@(1536MB,512MB,1GB,0,0,0,0,0); Accepted=$true },
+        # Individual caps sum to 3 GiB; total+1 also exceeds temporary and is rejected there first.
+        @{ Name='total-above'; Bytes=@(1536MB,512MB,(1GB+1),0,0,0,0,0); Accepted=$false; Reason='temporary budget exceeds 1 GiB' },
         # Fresh 2026-10-13 r7 snapshot: no old-file deletion or altered accounting.
         @{ Name='accepted-c860-real-projection'; Bytes=@(592174739,6472588,95986062,206183074,0,0,157591040,23249804); Accepted=$true }
     )
@@ -803,26 +804,26 @@ exit 0
         Copy-Item -LiteralPath $releaseArchive -Destination (Join-Path $incoming "l12-testrun-release-$commitB.tar.gz") -Force
         if (Test-Path -LiteralPath $commandLog) { Remove-Item -LiteralPath $commandLog -Force }
         foreach ($budgetFault in @(
-            @{ Name = "program-over-1gib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1GB + 1) }; Reason = "program budget exceeds 1 GiB" },
-            @{ Name = "data-over-256mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string](256MB + 1) }; Reason = "data budget exceeds 256 MiB" },
-            @{ Name = "temporary-over-512mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](512MB + 1) }; Reason = "temporary budget exceeds 512 MiB" },
-            @{ Name = "total-over-1point5gib"; Values = @{
-                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string]1GB; L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string]256MB
-                L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](256MB + 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
+            @{ Name = "program-over-1point5gib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1536MB + 1) }; Reason = "program budget exceeds 1.5 GiB" },
+            @{ Name = "data-over-512mib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string](512MB + 1) }; Reason = "data budget exceeds 512 MiB" },
+            @{ Name = "temporary-over-1gib"; Values = @{ L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](1GB + 1) }; Reason = "temporary budget exceeds 1 GiB" },
+            @{ Name = "total-cap-sum-over-3gib"; Values = @{
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string]1536MB; L12_TESTRUN_DEPLOY_TEST_DATA_BYTES = [string]512MB
+                L12_TESTRUN_DEPLOY_TEST_TEMP_BYTES = [string](1GB + 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
-            }; Reason = "total storage budget exceeds 1.5 GiB" },
-            @{ Name = "near-1gib-new-web-missing"; Values = @{
-                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1GB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
+            }; Reason = "temporary budget exceeds 1 GiB" },
+            @{ Name = "near-program-cap-new-web-missing"; Values = @{
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1536MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "2"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
-            }; Reason = "program budget exceeds 1 GiB" },
+            }; Reason = "program budget exceeds 1.5 GiB" },
             @{ Name = "previous-web-cache-missing"; Values = @{
-                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1GB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1536MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "0"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "2"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
-            }; Reason = "program budget exceeds 1 GiB" },
+            }; Reason = "program budget exceeds 1.5 GiB" },
             @{ Name = "hydrated-hardlink-logical-byte"; Values = @{
-                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1GB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "2"
+                L12_TESTRUN_DEPLOY_TEST_PROGRAM_BYTES = [string](1536MB - 1); L12_TESTRUN_DEPLOY_TEST_RELEASE_LOGICAL_BYTES = "2"
                 L12_TESTRUN_DEPLOY_TEST_PREVIOUS_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_NEW_WEB_BYTES = "0"; L12_TESTRUN_DEPLOY_TEST_RUNTIME_BACKUP_BYTES = "0"
-            }; Reason = "program budget exceeds 1 GiB" }
+            }; Reason = "program budget exceeds 1.5 GiB" }
         )) {
             foreach ($entry in $budgetFault.Values.GetEnumerator()) { [Environment]::SetEnvironmentVariable($entry.Key, [string]$entry.Value, "Process") }
             try {
