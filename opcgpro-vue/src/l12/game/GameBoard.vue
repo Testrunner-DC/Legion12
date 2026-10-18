@@ -17,6 +17,7 @@ import BattleUtilityDock from './BattleUtilityDock.vue'
 import ActionPresentationLayer from './ActionPresentationLayer.vue'
 import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'
 import CardStateTransitionLayer from './CardStateTransitionLayer.vue'
+import AttackConnectionPresentationLayer from './AttackConnectionPresentationLayer.vue'
 import { cardEffectPresentationCards, effectResultPresentationFactContinuation, entryEffectContinuationTransaction, isCardEffectPresentationEvent } from './visualTransitionProjection'
 import { effectResultPresentationText } from './effectResultPresentation'
 import CombatMotionPresentationLayer from './CombatMotionPresentationLayer.vue'
@@ -40,6 +41,7 @@ import { getFactionPresentation } from '../factionPresentation'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
+import { createPublicRevealPresentationTracker } from './publicRevealPresentation'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -178,7 +180,7 @@ type PublicRevealPresentation = {
   sequence: number
   cards: Card[]
   text: string
-  kind: 'full-card' | 'entry-continuation' | 'fact-continuation'
+  kind: 'full-card' | 'entry-continuation' | 'fact-continuation' | 'linked-public-continuation'
   transactionKey?: string
 }
 type PublicRevealQueueItem = {
@@ -186,6 +188,7 @@ type PublicRevealQueueItem = {
   cards: Card[]
   text: string
   event: ActionEvent
+  linkedPublicContinuation: boolean
   reservation: PresentationReservation
 }
 const publicReveal = ref<PublicRevealPresentation | null>(null)
@@ -203,6 +206,7 @@ const replayZonePresentationBusy = ref(false)
 const replaySequencePresentationBusy = ref(false)
 const replayCombatPresentationBusy = ref(false)
 const cardPresentationCoordinator = createPresentationSequenceCoordinator(busy => { replaySequencePresentationBusy.value = busy })
+const publicRevealPresentationTracker = createPublicRevealPresentationTracker()
 let publicRevealWaiting = false
 let publicRevealWaitingReservation: PresentationReservation | null = null
 let publicRevealRelease: (() => void) | null = null
@@ -236,6 +240,7 @@ function resetCardPresentations() {
   publicRevealQueue.length = 0
   diceRevealQueue.length = 0
   cardPresentationCoordinator.reset()
+  publicRevealPresentationTracker.reset()
   const baseline = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastHiddenRevealSequence.value = baseline
   lastPublicRevealSequence.value = baseline
@@ -822,11 +827,13 @@ async function showNextPublicReveal() {
   const presentationFacts = effectResultPresentationFactContinuation(next.event,
     cardPresentationCoordinator.ownsPresentationFact)
   const continuation = Boolean(entryTransactionKey || presentationFacts)
+  const linkedPublicContinuation = next.linkedPublicContinuation
   publicReveal.value = {
     sequence: next.sequence,
-    cards: continuation ? [] : next.cards,
+    cards: continuation || linkedPublicContinuation ? [] : next.cards,
     text: next.text,
-    kind: presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
+    kind: linkedPublicContinuation ? 'linked-public-continuation'
+      : presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
     transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
@@ -895,6 +902,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     if (event.sequence <= lastPublicRevealSequence.value) continue
+    const linkedPublicContinuation = publicRevealPresentationTracker.classify(event) === 'linked-continuation'
     const reservation = cardPresentationCoordinator.reserve(event.sequence, 10)
     reservation.setPaused(modalPresentationPaused.value)
     publicRevealQueue.push({
@@ -902,6 +910,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
       cards: presentationCards(event),
       text: publicRevealText(event),
       event,
+      linkedPublicContinuation,
       reservation,
     })
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
@@ -1376,6 +1385,13 @@ function statusTexts(card: Card) {
     if (modifier.troopsDelta) statuses.push(`${modifier.source}：兵力${modifier.troopsDelta > 0 ? '+' : ''}${modifier.troopsDelta}。`)
     if (modifier.costDelta) statuses.push(`${modifier.source}：费用${modifier.costDelta > 0 ? '+' : ''}${modifier.costDelta}。`)
   }
+  const current = props.game.players.flatMap(player => player.field.flat())
+    .find(candidate => candidate?.instanceId === card.instanceId)
+  if (current && !current.hidden) for (const effect of current.statusEffects ?? []) {
+    if (effect.kind !== 'conditional-attack' || !effect.label?.trim()) continue
+    const source = effect.source?.trim()
+    statuses.push(`${effect.label.trim()}${source ? `（来源：${source}）` : ''}。`)
+  }
   return statuses
 }
 </script>
@@ -1526,6 +1542,9 @@ function statusTexts(card: Card) {
               :synchronizing="synchronizingAuthoritySnapshot"
               :paused="modalPresentationPaused"
               :playback-speed="replayPlaybackSpeed" :sequence-coordinator="cardPresentationCoordinator" />
+            <AttackConnectionPresentationLayer :pending-defense="game.pendingDefense" :events="game.recentEvents ?? []"
+              :match-id="game.matchId" :revision="game.revision" :viewer-player-index="game.you"
+              :synchronizing="synchronizingAuthoritySnapshot" :paused="modalPresentationPaused" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
               :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
@@ -1554,7 +1573,6 @@ function statusTexts(card: Card) {
               <span>请选择进攻对象</span><button type="button" @click="cancelLocalAttackSelection">取消</button>
             </div></BattleDockPortal>
             <BattleDockPortal lane="context"><div v-if="combat && !activeBoardPromptId" class="combat-presentation" :class="{ 'combat-presentation--passive': game.pendingDefense?.stage !== 'DefenseChoice' }">
-              <i class="combat-trace"/>
               <div class="combat-versus">
                 <small v-if="mobileLandscapeViewport" class="combat-stage-label">{{ combatStageLabel }}</small>
                 <span :class="combat.attackerOwner.playerIndex === game.you ? 'mine' : 'opponent'">{{ combat.attackerOwner.playerIndex === game.you ? '我方' : '对手' }} · {{ combat.attacker.name }}</span>
@@ -1875,7 +1893,7 @@ function statusTexts(card: Card) {
 .session-disaster-panel{flex:none;padding:9px 10px}.session-disaster-panel h3{margin:0 0 7px}.session-disaster-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}.session-disaster-strip button{min-width:0;padding:2px;border:1px solid #59625f;background:#070a0b;color:#d9ddd8;cursor:pointer}.session-disaster-strip button.hidden{border-color:#343b39;cursor:default}.session-disaster-strip button.inactive img,.session-disaster-strip button.inactive .l12-card-image{filter:grayscale(.85) brightness(.45)}.session-disaster-strip img,.session-disaster-strip .l12-card-image{display:block;width:100%;height:auto;aspect-ratio:8/5}.session-disaster-strip span{display:block;overflow:hidden;padding:2px 2px 1px;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.session-disaster-strip button:not(.hidden):hover{border-color:#73d4c5;box-shadow:0 0 8px rgba(115,212,197,.3)}
 .board-mode-hint{position:absolute;z-index:28;left:50%;top:50%;display:flex;align-items:center;gap:10px;padding:8px 9px 8px 16px;border:1px solid #e0b85a;background:rgba(8,10,11,.95);color:#fff3c2;box-shadow:0 7px 22px #000;transform:translate(-50%,-50%);font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.board-mode-hint button{min-width:58px;min-height:44px;padding:6px 12px;border:1px solid #747d7b;background:#171b1c;color:#f1eee4;font-size:var(--l12-board-copy,13px);font-weight:900}.board-mode-hint button:hover{border-color:#e0b85a;background:#292419}
 .public-reveal-animation{position:fixed;z-index:2147483000;left:50%;top:50%;display:grid;min-width:190px;max-width:min(760px,80vw);justify-items:center;gap:10px;transform:translate(-50%,-50%);pointer-events:none}.public-reveal-animation--entry-continuation{min-width:0}.public-reveal-cards{display:flex;max-width:100%;align-items:center;justify-content:center;gap:8px;overflow:hidden}.public-reveal-cards .l12-card-image{width:118px;height:165px;filter:drop-shadow(0 10px 15px #000) drop-shadow(0 0 16px rgba(213,188,112,.38))}.public-reveal-cards .l12-card-image.horizontal{width:190px;height:auto;aspect-ratio:8/5}.public-reveal-animation strong{padding:7px 12px;border:1px solid #d5bc70;background:rgba(7,9,10,.9);box-shadow:0 7px 22px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.04em;text-align:center;white-space:pre-wrap;overflow-wrap:anywhere}.public-reveal-enter-active,.public-reveal-leave-active{transition:opacity .24s ease,filter .24s ease}.public-reveal-enter-from,.public-reveal-leave-to{opacity:0;filter:blur(5px)}
-.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-trace{position:absolute;left:50%;top:-108px;width:4px;height:216px;background:linear-gradient(transparent,#d88a39 20%,#f0ba66 50%,#d88a39 80%,transparent);filter:drop-shadow(0 0 7px #c36b26);transform:rotate(-10deg)}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
+.combat-presentation{position:absolute;z-index:20;left:50%;top:50%;width:760px;height:1px;transform:translate(-50%,-50%);pointer-events:none}.combat-versus{position:absolute;left:50%;top:0;display:flex;width:max-content;max-width:760px;align-items:center;gap:12px;padding:10px 18px;border:1px solid #8e7650;background:rgba(7,9,10,.95);box-shadow:0 8px 26px #000;transform:translate(-50%,-50%);font-weight:900}.combat-versus span{max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.combat-versus span.mine{color:#74d0d3}.combat-versus span.opponent{color:#e6757c}.combat-versus>b{display:flex;align-items:baseline;gap:4px;padding:4px 7px;background:#342a25;color:#fff}.combat-versus b small{color:#c8bba3;font-size:var(--l12-board-copy,13px)}.combat-versus em{color:#e5bd60;font-size:max(18px,var(--l12-board-copy,13px));font-style:normal}.combat-resolution-panel{position:absolute;left:50%;top:34px;width:390px;padding:10px 12px;border:1px solid #8e7650;background:rgba(8,11,12,.96);box-shadow:0 12px 30px #000;transform:translateX(-50%);pointer-events:auto}.combat-resolution-panel :deep(.l12-actions){gap:6px}.combat-resolution-panel :deep(.l12-actions p){margin:0;font-size:var(--l12-board-copy,13px)}.combat-resolution-panel :deep(.l12-actions button){padding:7px 9px}
 .combat-decision-info-trigger{position:absolute;top:calc(50% + 38px);left:calc(50% + 205px);z-index:22;min-height:38px;padding:4px 8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}
 .combat-decision-info-panel{position:fixed;top:50%;left:50%;z-index:2147483600;box-sizing:border-box;width:min(390px,calc(100vw - 24px));max-height:min(70vh,450px);padding:10px;overflow-y:auto;border:1px solid #d7ad62;background:#111819;box-shadow:0 12px 30px #000;color:#fff;transform:translate(-50%,-50%);pointer-events:auto}
 .combat-decision-info-panel>button{display:block;width:100%;min-height:38px;margin-top:8px;border:1px solid #d7ad62;background:#4b331d;color:#fff;font-weight:900}

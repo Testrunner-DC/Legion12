@@ -10,6 +10,8 @@ const hand = read('src/l12/game/HandArea.vue')
 const movement = read('src/l12/game/ZoneMovementPresentationLayer.vue')
 const combat = read('src/l12/game/CombatMotionPresentationLayer.vue')
 const stateTransition = read('src/l12/game/CardStateTransitionLayer.vue')
+const attackConnection = read('src/l12/game/AttackConnectionPresentationLayer.vue')
+const attackConnectionProjection = read('src/l12/game/attackConnectionPresentation.ts')
 const visibilityLease = read('src/l12/game/authoritativeCardVisibility.ts')
 const sharedPixelCapture = read('src/l12/game/authoritativeCardVisualSnapshot.ts')
 const visualProjection = read('src/l12/game/visualTransitionProjection.ts')
@@ -50,6 +52,21 @@ const checks = [
   ['attack lunge and rest share one visible transaction', statePreparation.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")
     && stateTransition.includes('offset: .38') && stateTransition.includes('offset: .56')
     && !combat.includes("event.type === 'attack' &&") && !combat.includes("event.type === 'attack') animateAttack")],
+  ['one authority attack owns one directional connection without the fixed decorative slash',
+    board.includes("import AttackConnectionPresentationLayer from './AttackConnectionPresentationLayer.vue'")
+    && board.includes('<AttackConnectionPresentationLayer :pending-defense="game.pendingDefense" :events="game.recentEvents ?? []"')
+    && !board.includes('class="combat-trace"') && !board.includes('.combat-trace{')
+    && attackConnection.includes('data-ui-contract="authoritative-attack-connection"')
+    && attackConnectionProjection.includes("return attack ? { kind: 'intro', sequence: attack.sequence } : { kind: 'retain' }")
+    && attackConnectionProjection.includes('event.sequence > state.lastEventSequence')],
+  ['attack connection baselines recovery and replay while retaining mobile and reduced-motion safety',
+    attackConnectionProjection.includes('input.synchronizing || input.revision < state.revision')
+    && attackConnectionProjection.includes("return { kind: input.pending ? 'baseline' : 'none' }")
+    && attackConnection.includes('viewportLayoutRect(source)') && attackConnection.includes('viewportLayoutRect(target)')
+    && attackConnection.includes("addEventListener('l12-viewport-change', refreshGeometry)")
+    && attackConnection.includes('if (!(source instanceof HTMLElement) || !(target instanceof HTMLElement))')
+    && attackConnection.includes('.attack-connection-layer.is-paused .attack-connection-orb{visibility:hidden}')
+    && attackConnection.includes('@media(prefers-reduced-motion:reduce)')],
   ['authoritative state layer solely owns ready and rest motion', !motion.includes('l12-rest-settle')
     && !motion.includes('.formation-slot .card-tile.tapped')
     && stateLayerMarkup.includes(':paused="modalPresentationPaused"')
@@ -169,7 +186,7 @@ const checks = [
     && board.includes('cardPresentationCoordinator.ownsEntryMovementTransaction')
     && board.includes('cardPresentationCoordinator.ownsPresentationFact')
     && board.includes('const continuation = Boolean(entryTransactionKey || presentationFacts)')
-    && board.includes('cards: continuation ? [] : next.cards')
+    && board.includes('cards: continuation || linkedPublicContinuation ? [] : next.cards')
     && board.includes("presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card'")],
   ['blocking prompt cancels only started presentation while preparation retains sequence', stateTransition.includes('if (paused && active.value && animation) cancelActive()')
     && stateTransition.includes('await waitUntilUnpaused(preparation.signal)')
