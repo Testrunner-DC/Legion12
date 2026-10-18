@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-18 接续502补记｜产品已同步；两次诊断均未启动负载，测试恢复安全
+
+- 产品与记录61335e901bac5e23c6e64557ec1aaca9493fe3e4已推送，独立ls-remote精确一致且当时干净；7872规则、最终1949平台及前端组合接受认presentation-strategy-20261018/current-local-acceptance.json。不是新Release/部署；编辑器邀请27UI已接受但0ac未提前关单，匹配成功提醒d354已按裁定真实关闭，清单仍28/392/491、阶段502/周期594。
+- Main经相同Control Remote核当前pre-login，再逐字复用8085F4E0原Python实际登录、原DPAPI保存/读回与撤销401通过。仅更新当前初始PID并加非秘密阶段标签的D2602662经独立只读CLEAR后，一次有界重试仍在Prepare前后失败，无session文件、无压力账号/负载。原双层catch抹除异常，标签不证明内层具体原因；本地真实Lifecycle/原Business到Prepare的mock整链也通过，不能冒称已证作用域错误或唯一auth-ready根因。
+- 第二次Install319052→319897，初撤回deferred原件保留；再读0活动/0WS/0在线、精确配置及撤查询会话401后，原冻结工具受控Remove D73E0BAF成功，独立1C713147确认测试PID320606/b4/DCAF、正式296786/4325/A21D，两服healthy/maintenance=false/diagnostic=false、owned不存在。原恢复后本地LASTEXITCODE未设置导致包装中断，不重放已成功Remove；按真实PowerShell调用语义修正并只补只读核验。不得复用319052/319897或314053；无新部署/维护操作/压力结果，旧四条3045—3397ms长尾仍未收口。
+- 最新唯一接续见test-recorder-v3-20261018/current-followthrough-502-performance.json。下一片只补原Prepare吞异常前的安全阶段观察，本地验收，不自动重试、不猜睡眠或扩大矩阵；保留所有原权限、身份、DPAPI与撤销守卫。其余Bug/已验收产品待后续授权部署不混关，旧40分钟回访不恢复。
+
 ## 2026-10-18 接续502｜28待办；展示/策略/共享邀请本地接受，性能实测工具续修
 
 - 人类拒绝新增匹配成功跨页提醒/就绪步骤，d3546604实际单CAS31640、保原15字段、独立终态与撤会话完成；同次快照911/28new/392resolved/491closed、阶段502/周期594。编辑中好友约战提醒六叶已最小合入；入口缺失RED、同栈A→B→A RED及78C000D4三尺寸27GREEN，唯一owner/原命令/草稿/迟到created/游戏回放隔离保留，无新轮询或本地过期规则；Main核diff/844截图及六叶规范化等价桥，不冒原始SHA全相同。
