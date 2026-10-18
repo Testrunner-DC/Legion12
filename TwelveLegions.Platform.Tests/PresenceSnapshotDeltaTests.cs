@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -291,6 +292,86 @@ public sealed class PresenceSnapshotDeltaTests
         var next = queueCodec.Prepare(Queue(Snapshot(3, rejectedEntries)));
         Assert.True(next.IsDelta);
         Assert.Equal(1, Root(next)["baseRevision"]!.GetValue<long>());
+    }
+
+    [Fact]
+    public async Task HelloAdvertisesSameCapturedPresenceRevisionAsInitialSnapshot()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-presence-hello-race-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        ClientWebSocket? socket = null;
+        using var releaseHello = new ManualResetEventSlim();
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks);
+            var account = store.Register("presence99", "password-123");
+            Assert.True(account.Success);
+            server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
+            var capturedRevision = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+            server.PresenceHelloRevisionCapturedForTests = revision =>
+            {
+                capturedRevision.TrySetResult(revision);
+                if (!releaseHello.Wait(TimeSpan.FromSeconds(5)))
+                    throw new TimeoutException("Test did not release the captured presence hello revision.");
+            };
+            await server.StartAsync(0);
+            var uri = new UriBuilder(Assert.Single(server.Addresses)) { Scheme = "ws", Path = "/ws" }.Uri;
+
+            socket = new ClientWebSocket();
+            await socket.ConnectAsync(uri, CancellationToken.None);
+            await SendAsync(socket, new
+            {
+                type = "hello",
+                authToken = account.Token!,
+                capabilities = new { requestIds = true, deltaGameState = true, presenceDeltaV1 = true },
+            });
+            var captured = await capturedRevision.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            var revisionField = typeof(L12WebSocketServer).GetField(
+                "_presenceResourceRevision", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(revisionField);
+            Assert.Equal(captured, Assert.IsType<long>(revisionField.GetValue(server)));
+            revisionField.SetValue(server, captured + 1);
+            Assert.Equal(captured + 1, Assert.IsType<long>(revisionField.GetValue(server)));
+            releaseHello.Set();
+            server.PresenceHelloRevisionCapturedForTests = null;
+
+            await ReceiveTypeAsync(socket, "session");
+            var versions = await ReceiveTypeAsync(socket, "resourceVersions");
+            var initialPresence = await ReceivePresenceAsync(socket,
+                message => message["type"]?.GetValue<string>() == "presenceSnapshot");
+            var advertisedRevision = versions["revisions"]!["presence"]!.GetValue<long>();
+            var initialRevision = initialPresence["revision"]!.GetValue<long>();
+            Assert.Equal(captured, initialRevision);
+            Assert.Equal(captured, advertisedRevision);
+
+            var currentRevision = Assert.IsType<long>(revisionField.GetValue(server));
+            await SendAsync(socket, new { type = "syncPresence" });
+            var forcedFull = await ReceivePresenceAsync(socket,
+                message => message["type"]?.GetValue<string>() == "presenceSnapshot");
+            Assert.Equal(currentRevision, forcedFull["revision"]!.GetValue<long>());
+        }
+        finally
+        {
+            releaseHello.Set();
+            if (server is not null) server.PresenceHelloRevisionCapturedForTests = null;
+            socket?.Abort();
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Directory.Delete(root, true);
+        }
     }
 
     [Fact]

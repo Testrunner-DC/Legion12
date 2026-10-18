@@ -36,13 +36,13 @@ public sealed partial class L12WebSocketServer
     private long AdvanceAccountResource(string accountId, string resource)
         => _accountResourceRevisions.AddOrUpdate(AccountResourceKey(accountId, resource), 1, static (_, current) => current + 1);
 
-    private object ResourceVersionsPayload(string accountId) => new
+    private object ResourceVersionsPayload(string accountId, long presenceRevision) => new
     {
         type = "resourceVersions",
         epoch = _resourceEpoch,
         revisions = new Dictionary<string, long>(StringComparer.Ordinal)
         {
-            [PresenceResource] = Interlocked.Read(ref _presenceResourceRevision),
+            [PresenceResource] = presenceRevision,
             [FriendsResource] = AccountResourceRevision(accountId, FriendsResource),
             [IntegrityResource] = AccountResourceRevision(accountId, IntegrityResource),
             [AlternateArtNotificationsResource] = AccountResourceRevision(accountId, AlternateArtNotificationsResource),

@@ -748,6 +748,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private readonly Func<DateTimeOffset> _seasonActivationUtcNow;
     private readonly L12SyntheticTransportDiagnostics? _transportDiagnostics;
     private readonly L12PresenceRefreshCoalescer _presenceRefreshCoalescer;
+    internal Action<long>? PresenceHelloRevisionCapturedForTests { get; set; }
     private CancellationTokenSource? _sandboxReplayMaintenanceCancellation;
     private Task? _sandboxReplayMaintenanceTask;
     private WebApplication? _app;
@@ -5302,11 +5303,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
+            PresenceHelloRevisionCapturedForTests?.Invoke(presenceRevision);
             return new[]
             {
                 session,
                 EffectiveOperationsPolicyMessage(sessionId),
-                new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id)),
+                new OutgoingMessage(sessionId, ResourceVersionsPayload(authenticated.Account.Id, presenceRevision)),
                 PresenceSnapshotMessage(sessionId, authenticated.Account.Id, presenceRevision)
                     with { ForceFullPresence = true },
             }.Concat(recovery).ToArray();

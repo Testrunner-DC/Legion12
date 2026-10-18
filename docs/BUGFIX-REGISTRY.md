@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜在线状态首包：版本声明与完整快照共用捕获版本
+
+- r4实测一次presence差量恢复后，同源真实net离线序列证实：先声明版本N+1、再到达完整快照N，客户端会保守忽略旧快照且未建立基线，后续N→N+1差量触发恢复。hello路径为完整快照先捕获N，却在ResourceVersionsPayload里再次读全局版本，存在该交错。用户明确批准限定本地修复与并发/旧端/恢复回归，不部署；本项不冒r4逐帧唯一成因。
+- 沿唯一hello捕获值同时传给ResourceVersionsPayload和初始PresenceSnapshotMessage；其他账号资源版本不变。共享查询`ResourceVersionsPayload|PresenceSnapshotMessage`覆盖唯一声明调用、主动同步及合并播报；后两条原来已显式传版本，不扩改。严格差量、epoch、发送成功才提交基线、旧端/冷端/重连完整回退均保留，不改卡牌、数据库或可靠确认。
+- 新真实WebSocket回归以默认null内部测试捕获点和受控线程交错精确制造N/N+1，原版本16项中15过/新增1败；修复后整类16/16。完整平台1957/1957、失败跳过0，架构锁/68内核边界及实际连接恢复44/44通过。早期超长合成用户名夹具失败和既有loopback空upserts波动保留，未改旧断言；后者同源整类有界重跑通过。Main三叶diff/引用独核，独立并发审查有限CLEAR。
+- 唯一源级接受D:/GPT/Legion12/artifacts/test-recorder-v3-20261018/presence-hello-race-product/main-acceptance.json（19236952）。规则引擎与前端源码未改，复用仍有效规则/前端证据，不重建同一前端或冒新Release。真实r4仍因7帧载荷不足及原一次恢复被拒绝；3秒和169—300KiB守卫不改，不据本地修复宣称线上根治。回滚面仅该版本参数、默认无等待的测试缝隙及新增回归，本轮未部署。
+
 ## 2026-10-18｜观战结算：按真实成员保留，不随双方玩家退出清场
 
 - 7a497dcd原证据只覆盖玩家结算，不能据此关闭观战反馈。Main确认双方玩家离开会调用CloseSettlementLocked并清空观战者，用户批准限定修复。沿唯一SettlementParticipantsLeft同时判定真实观战成员：必须仍在本房索引、会话存在、非虚拟、IsSpectator且RoomCode一致；断线仍可恢复，主动退出或已转入新房的陈旧ID不保留旧房。两个原调用点共用，保留CanRetireSettlement及原30分钟硬上限，不增客户端结算副本，不改投影、广播或历史数据。
