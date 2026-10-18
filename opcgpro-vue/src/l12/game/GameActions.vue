@@ -25,8 +25,7 @@ const blockReady = computed(() => selectedBlockers.value.length > 0 && (attackVa
 </script>
 
 <template>
-  <div class="l12-actions" data-ui-contract="equal-combat-action-group"
-    :data-tutorial-anchor="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' ? 'defense-actions' : undefined">
+  <div class="l12-actions" data-ui-contract="equal-combat-action-group">
     <template v-if="game.phase === 'Mulligan'">
       <small class="action-actor-badge" :class="me.mulliganDone ? 'opponent' : 'self'">{{ me.mulliganDone ? '对手操作' : '你的操作' }}</small>
       <p class="mulligan-role">你是{{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</p>
@@ -44,14 +43,14 @@ const blockReady = computed(() => selectedBlockers.value.length > 0 && (attackVa
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'master'">
       <small class="action-actor-badge self">你在防守</small>
       <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" compact />
-      <button class="primary" data-tutorial-action="confirm-defense" :disabled="!blockReady || busy" @click="emit('command', 'resolveDefense')">确认抵挡</button>
-      <button class="danger" data-tutorial-action="decline-defense" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [] })">不抵挡</button>
+      <button class="primary" :disabled="!blockReady || busy" @click="emit('command', 'resolveDefense')">确认抵挡</button>
+      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [] })">不抵挡</button>
     </template>
     <template v-else-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && me.playerIndex === 1 - game.pendingDefense.attackerPlayer && defenseTargetType === 'legion'">
       <small class="action-actor-badge self">你在防守</small>
       <DefenseDecisionExplanation :game="game" :me="me" :defense-ids="defenseIds" :support-ids="supportIds" :defense-target-type="defenseTargetType" compact />
-      <button class="primary" data-tutorial-action="confirm-defense" :disabled="!supportReady || busy" @click="emit('command', 'resolveDefense')">确认支援</button>
-      <button class="danger" data-tutorial-action="decline-defense" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [], supportInstanceId: null })">不支援</button>
+      <button class="primary" :disabled="!supportReady || busy" @click="emit('command', 'resolveDefense')">确认支援</button>
+      <button class="danger" :disabled="busy" @click="emit('command', 'resolveDefense', { cardInstanceIds: [], supportInstanceId: null })">不支援</button>
     </template>
     <template v-else-if="game.activePlayer === me.playerIndex && ['Disaster','Reset','Draw','Morale','End'].includes(game.phase)">
       <small class="action-actor-badge neutral">我方阶段</small>
@@ -61,7 +60,7 @@ const blockReady = computed(() => selectedBlockers.value.length > 0 && (attackVa
       <small class="action-actor-badge self">你的操作</small>
       <p v-if="me.nextLegionChargeMaxCost" class="pending-effect">全军出击：本回合下一张费用不高于 {{ me.nextLegionChargeMaxCost }} 的军团获得冲锋。</p>
       <p class="card-action-hint">点击主宰查看并发动主宰效果；点击手牌或战场军团后显示可执行操作。</p>
-      <button class="danger" data-tutorial-action="end-turn" :disabled="busy" @click="emit('command','endTurn')">{{ busy ? '处理中…' : '结束回合' }}</button>
+      <button class="danger" :disabled="busy" @click="emit('command','endTurn')">{{ busy ? '处理中…' : '结束回合' }}</button>
     </template>
     <p v-else class="waiting"><small class="action-actor-badge opponent">对手操作</small><span>等待对手操作…</span></p>
   </div>

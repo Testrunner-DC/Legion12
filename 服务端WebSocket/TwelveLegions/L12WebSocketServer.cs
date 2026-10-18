@@ -4909,7 +4909,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     "createRoom" => CreateRoom(sessionId, root),
                     "updateRoomOptions" => UpdateRoomOptions(sessionId, root),
                     "createSandbox" => await CreateSandboxAsync(sessionId, root),
-                    "createTutorial" => await CreateTutorialAsync(sessionId, root),
                     "joinMatchmaking" => await JoinMatchmakingAsync(sessionId, root),
                     "pollMatchmaking" => await _rooms.PollMatchmakingAsync(sessionId),
                     "syncState" => await SynchronizeStateAsync(sessionId, root),
@@ -4964,7 +4963,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     _ => [new OutgoingMessage(sessionId, new { type = "error", message = "未知消息类型" })],
                 };
                 await SendManyAsync(outgoing, cancellationToken, transportDiagnostic, sessionId);
-                if (messageType is "hello" or "createRoom" or "createSandbox" or "createTutorial" or "joinMatchmaking"
+                if (messageType is "hello" or "createRoom" or "createSandbox" or "joinMatchmaking"
                     or "cancelMatchmaking" or "joinRoom" or "enterTournamentMatch" or "spectateRoom"
                     or "spectateTournamentMatch" or "leaveRoom" or "ready" or "resolveFriendInvitation")
                     NotifyPresenceChanged();
@@ -5291,7 +5290,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 claim.ConnectionGeneration, claim.ClaimDecision, claim.PreviousConnectionGeneration,
                 claim.RecoveryRevision,
                 protocolVersion = 2,
-                tutorialAvailable = _rooms.TutorialAvailable,
                 chatServerUtcMs = _chatEnabled && capabilities.ChatV1
                     ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : (long?)null,
                 capabilities = new

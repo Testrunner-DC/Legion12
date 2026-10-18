@@ -44,9 +44,6 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room)
-                || room.Game is null || room.IsSandbox && !CanControlSandbox(room, session))
-                return Error(sessionId, "响应设置权限或房间成员身份已变化", "responsePreferenceRejected");
             var player = session.PlayerIndex.Value;
             var effective = await ResolveResponsePreferenceAsync(session.AccountId);
             room.ResponsePreferenceSyncPending[player] = effective.SyncPending;
@@ -70,11 +67,6 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room)
-                || room.Game is null || room.IsSandbox && !CanControlSandbox(room, session))
-                return Error(sessionId, "响应设置权限或房间成员身份已变化", "responsePreferenceRejected", requestId);
-            if (room.Tutorial is { Frozen: true })
-                return Error(sessionId, "本关记录未能完成，请退出后重开本关", "tutorialRestartRequired", requestId);
             var player = session.PlayerIndex.Value;
             var oldMode = room.Game.ResponseModeFor(player);
             if (oldMode == mode)
@@ -171,7 +163,7 @@ public sealed partial class L12RoomManager
 
     private async Task<bool> ExpireResponseWindowLockedAsync(Room room, DateTimeOffset now)
     {
-        if (room.RankedClock is { Paused: true } || room.Tutorial is { Frozen: true }) return false;
+        if (room.RankedClock is { Paused: true }) return false;
         var game = room.Game;
         var lease = game?.CaptureResponseAutoCloseLease();
         if (game is null || lease is null || now.ToUniversalTime() < lease.DeadlineUtc.ToUniversalTime())

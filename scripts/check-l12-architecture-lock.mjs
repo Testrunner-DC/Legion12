@@ -45,7 +45,7 @@ const router = requireFile('opcgpro-vue/src/router/index.ts')
 const app = requireFile('opcgpro-vue/src/App.vue')
 const viewport = requireFile('opcgpro-vue/src/l12/mobileViewport.ts')
 const optedRoutes = [...router.matchAll(/path:\s*'([^']+)'[^\n]+landscapeCanvas:\s*true/g)].map(match => match[1]).sort()
-assert(JSON.stringify(optedRoutes) === JSON.stringify(['/deck-editor', '/game', 'operations/sandbox']),
+assert(JSON.stringify(optedRoutes) === JSON.stringify(['/deck-editor', '/game', '/sandbox']),
   `logical landscape opt-in must stay route-scoped; found ${optedRoutes.join(', ')}`)
 assert(app.includes('route.meta.landscapeCanvas === true') && app.includes('data-l12-landscape-canvas'),
   'the app shell must retain the explicit landscape-canvas boundary')

@@ -314,24 +314,6 @@ export interface StackItem {
   targets: string[]
 }
 
-export type TutorialLessonId = 'deploy' | 'move' | 'combat' | 'response'
-export type TutorialStatus = 'active' | 'completed'
-
-export interface TutorialProjection {
-  lessonId: TutorialLessonId
-  version: 1
-  stepId: string
-  status: TutorialStatus
-}
-
-export interface ActiveTutorialState extends TutorialProjection {
-  accountId: string
-  sessionId: string
-  connectionGeneration: number
-  roomCode: string
-  matchId: string
-}
-
 export interface RoomState {
   roomCode: string
   tournamentId?: string
@@ -344,7 +326,6 @@ export interface RoomState {
   operationsPolicyVersion?: number
   started: boolean
   sandbox?: boolean
-  tutorial?: TutorialProjection | null
 }
 
 export interface RankedClockPlayerView {

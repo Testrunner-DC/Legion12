@@ -46,7 +46,6 @@ public sealed partial class L12RoomManager
         public string IntegrityClientKey { get; set; } = string.Empty;
         public string RankedBrowserKey { get; set; } = string.Empty;
         public long ConnectionGeneration { get; set; }
-        public Dictionary<string, TutorialCreateReceipt> TutorialRequests { get; init; } = new(StringComparer.Ordinal);
     }
 
     private sealed class FriendInvitation
@@ -71,9 +70,6 @@ public sealed partial class L12RoomManager
         public L12GameEngine? Game { get; set; }
         public long CommandSequence { get; set; }
         public bool IsSandbox { get; init; }
-        public bool TrustedSandboxFixture { get; init; }
-        public TutorialContext? Tutorial { get; init; }
-        public bool IsTraining => IsSandbox || Tutorial is not null;
         public Guid? GmControllerSessionId { get; set; }
         public string? TournamentId { get; init; }
         public string? TournamentCode { get; init; }
@@ -161,8 +157,7 @@ public sealed partial class L12RoomManager
     private readonly Func<bool> _maintenanceSandboxFenceActive;
 
     public L12RoomManager(L12Catalog catalog, MatchRecorder recorder, L12PlatformStore? platform = null,
-        Func<DateTimeOffset>? utcNow = null, Func<bool>? maintenanceSandboxFenceActive = null,
-        bool? tutorialEnabled = null)
+        Func<DateTimeOffset>? utcNow = null, Func<bool>? maintenanceSandboxFenceActive = null)
     {
         _catalog = catalog;
         _recorder = recorder;
@@ -170,8 +165,6 @@ public sealed partial class L12RoomManager
         _platform = platform;
         _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         _maintenanceSandboxFenceActive = maintenanceSandboxFenceActive ?? ReadMaintenanceSandboxFence;
-        TutorialAvailable = tutorialEnabled ?? string.Equals(
-            Environment.GetEnvironmentVariable("L12_TUTORIAL_ENABLED"), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public object Connect(Guid sessionId, string accountId, string? requestedName,
@@ -186,7 +179,6 @@ public sealed partial class L12RoomManager
             claimDecision = claim.ClaimDecision, previousConnectionGeneration = claim.PreviousConnectionGeneration,
             replacedSessionId = claim.ReplacedSessionId, recoveryRevision = claim.RecoveryRevision,
             rejectionReason = claim.RejectionReason,
-            tutorialAvailable = TutorialAvailable,
         };
     }
 
@@ -231,7 +223,6 @@ public sealed partial class L12RoomManager
                     PlayerIndex = source.PlayerIndex,
                     SelectedDeckIndex = source.SelectedDeckIndex,
                     CustomDeck = source.CustomDeck,
-                    TutorialRequests = source.TutorialRequests,
                     IsSpectator = source.IsSpectator,
                     IsVirtual = false,
                     Connected = true,
@@ -280,9 +271,7 @@ public sealed partial class L12RoomManager
                         {
                             try
                             {
-                                if (!(recoveredRoom.Tutorial is not null
-                                    ? await ReloadJournalRoomFromRecorderAsync(recoveredRoom)
-                                    : await ReloadRankedRoomFromRecorderAsync(recoveredRoom)))
+                                if (!await ReloadRankedRoomFromRecorderAsync(recoveredRoom))
                                     throw new InvalidDataException("缺少可重建的权威排位快照");
                                 // 重建只恢复可信基线；在本次连接 checkpoint 落盘前仍保持冻结。
                                 recoveredRoom.Closed = true;
@@ -291,10 +280,8 @@ public sealed partial class L12RoomManager
                             {
                                 recoveredRoom.Closed = true;
                                 RecordConnectionClaimRejection(accountId,
-                                    recoveredRoom.Tutorial is null ? "ranked-closed-room-rebuild-failed"
-                                        : "tutorial-closed-room-rebuild-failed");
-                                throw new InvalidOperationException(recoveredRoom.Tutorial is null
-                                        ? "排位房间仍处于安全冻结，无法恢复认领" : "教学房间记录仍不可用，暂时无法恢复",
+                                    "ranked-closed-room-rebuild-failed");
+                                throw new InvalidOperationException("排位房间仍处于安全冻结，无法恢复认领",
                                     recoveryError);
                             }
                         }
@@ -1051,8 +1038,6 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Tutorial is not null && room.Closed)
-                return Error(sessionId, "本关记录不可用，请恢复后退出重开", "tutorialRestartRequired");
             var tournamentStartBlocked = false;
             if (room.Game is not null)
             {
@@ -1073,8 +1058,6 @@ public sealed partial class L12RoomManager
             if (session.IsSpectator) messages.Add(RoomStateForViewer(room, session));
             if (room.Game is not null) messages.AddRange(BroadcastGame(room, forceCritical: true,
                 forceFullSessionId: sessionId));
-            if (room.Tutorial is { Frozen: true })
-                messages.AddRange(Error(sessionId, "本关记录未能完成，请退出后重开本关", "tutorialRestartRequired"));
             return tournamentStartBlocked
                 ? messages.Concat(MaintenanceBlocked(sessionId, CaptureOperationsPolicy())).ToArray()
                 : messages.ToArray();
@@ -1093,8 +1076,6 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (room.Tutorial is not null && room.Closed)
-                return Error(sessionId, "本关记录不可用，请恢复后退出重开", "tutorialRestartRequired");
             var tournamentStartBlocked = false;
             if (room.Game is not null)
             {
@@ -1117,8 +1098,6 @@ public sealed partial class L12RoomManager
                 forceFullSessionId: sessionId));
             if (tournamentStartBlocked)
                 messages.AddRange(MaintenanceBlocked(sessionId, CaptureOperationsPolicy()));
-            if (room.Tutorial is { Frozen: true })
-                messages.AddRange(Error(sessionId, "本关记录未能完成，请退出后重开本关", "tutorialRestartRequired"));
             messages.Add(RecoveryComplete(session, recovered, room));
             return messages;
         }
@@ -1203,10 +1182,6 @@ public sealed partial class L12RoomManager
     }
 
     public async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxAsync(Guid sessionId, L12SandboxRequest? request)
-        => await CreateSandboxCoreAsync(sessionId, request, trustedFixture: false);
-
-    private async Task<IReadOnlyList<OutgoingMessage>> CreateSandboxCoreAsync(Guid sessionId,
-        L12SandboxRequest? request, bool trustedFixture)
     {
         if (!TryDeploymentGuard(admission: true, out var deploymentGuard)) return DeploymentEntryRejected(sessionId);
         using var deployment = deploymentGuard;
@@ -1220,8 +1195,6 @@ public sealed partial class L12RoomManager
         if (currentPolicy.IsNewGameEntryBlocked(_utcNow())
             && !HasMaintenanceSandboxPermission(session))
             return MaintenanceBlocked(sessionId, currentPolicy);
-        if (!trustedFixture && !HasMaintenanceSandboxPermission(session))
-            return Error(sessionId, "仅当前管理员可使用沙盒", "sandboxForbidden");
         var disasterMode = (request.DisasterMode ?? string.Empty).Trim().ToLowerInvariant();
         if (disasterMode is not ("all" or "random" or "custom" or "none"))
             return Error(sessionId, "沙盒天灾模式仅支持全部、随机、自定或不使用天灾", "sandboxRejected");
@@ -1253,7 +1226,6 @@ public sealed partial class L12RoomManager
             {
                 Code = GenerateRoomCode(),
                 IsSandbox = true,
-                TrustedSandboxFixture = trustedFixture,
                 GmControllerSessionId = sessionId,
                 OperationsPolicy = policy,
                 Options = new L12RoomOptions
@@ -1334,7 +1306,6 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
-        if (room.Tutorial is not null) return Error(sessionId, "教学房间仅限本人进入");
         if (room.Game is null) return Error(sessionId, "对局尚未开始");
         var spectatingRule = room.Options.Spectating;
         if (spectatingRule == "disabled") return Error(sessionId, "该房间禁止观战");
@@ -1409,7 +1380,6 @@ public sealed partial class L12RoomManager
         if (session.RoomCode is not null) return Error(sessionId, "已经加入房间");
         var code = (roomCode ?? string.Empty).Trim().ToUpperInvariant();
         if (!_rooms.TryGetValue(code, out var room)) return Error(sessionId, "房间不存在");
-        if (room.Tutorial is not null) return Error(sessionId, "教学房间仅限本人进入");
         var currentPolicy = CaptureOperationsPolicy();
         if (TryOperationsEntryBlock(sessionId, currentPolicy, room.Options.MatchModeId, out var blocked,
                 room.OperationsPolicy))
@@ -1780,17 +1750,7 @@ public sealed partial class L12RoomManager
             transportDiagnostic?.RecorderObserver);
         try
         {
-            // Ordinary matches may finish an already admitted packet after a disconnect so
-            // their existing deadline/rejected-command journal boundary remains authoritative.
-            // A replaced session still fails every exact owner/seat/room check below.
-            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room,
-                    requireConnected: room.IsTraining))
-                return Error(sessionId, "房间成员身份已变化，请重新连接", requestId: requestId);
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
-            if (room.IsSandbox && !CanControlSandbox(room, session))
-                return Error(sessionId, "沙盒权限已失效", "sandboxForbidden", requestId);
-            if (room.Tutorial is { Frozen: true })
-                return Error(sessionId, "本关记录未能完成，请退出后重开本关", "tutorialRestartRequired", requestId);
             if (room.TournamentId is not null && room.TournamentMatchId is not null
                 && session.AccountId is not null)
             {
@@ -1846,8 +1806,6 @@ public sealed partial class L12RoomManager
             catch (JsonException) { return Error(sessionId, "操作格式错误", requestId: requestId); }
             if (command is null || string.IsNullOrWhiteSpace(command.Type))
                 return Error(sessionId, "缺少操作类型", requestId: requestId);
-            if (TutorialCommandError(room, command) is { } tutorialError)
-                return Error(sessionId, tutorialError, "actionRejected", requestId);
             var meaningful = IsMeaningfulRankedCommand(room.Game, command);
             var revisionBefore = room.Game.State.Revision;
             var engineStartedAt = L12PerformanceMetrics.Start();
@@ -1882,8 +1840,7 @@ public sealed partial class L12RoomManager
             {
                 var restored = timed
                     ? await ReloadRankedRoomFromRecorderAsync(room)
-                    : room.Tutorial is not null ? await TryRestoreTutorialJournalAsync(room)
-                        : await ReloadJournalRoomFromRecorderAsync(room);
+                    : await ReloadJournalRoomFromRecorderAsync(room);
                 if (!restored) room.Closed = true;
                 return Error(sessionId, restored
                         ? "操作未完成持久化，已恢复到最后确认状态，请重试"
@@ -1910,11 +1867,6 @@ public sealed partial class L12RoomManager
                 if (meaningful) room.MeaningfulCommandCount++;
                 RefreshRankedClockActorsLocked(room, _utcNow(), session.PlayerIndex.Value);
             }
-            if (room.Tutorial is not null && !await AdvanceTutorialAsync(room))
-                return (room.Closed ? Array.Empty<OutgoingMessage>()
-                    : BroadcastGame(room, forceCritical: true, requestSessionId: sessionId, requestId: requestId))
-                    .Concat(Error(sessionId, "本关记录未能完成，请退出后重开本关",
-                        "tutorialRestartRequired", requestId)).ToArray();
             if (room.Game.State.Phase != L12Phase.GameOver)
                 return BroadcastGame(room, requestSessionId: sessionId, requestId: requestId);
             var errorMessage = await CompleteTournamentRoomGameAsync(room);
@@ -1954,13 +1906,11 @@ public sealed partial class L12RoomManager
             return await HandleRefereeGmActionAsync(sessionId, commandElement, requestId);
         if (!TryGetMembership(sessionId, out var session, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
-        if (!CanControlSandbox(room, session))
+        if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
             return Error(sessionId, "GM 指令只允许由单人测试沙盒的创建者执行", "actionRejected", requestId);
         await room.Gate.WaitAsync();
         try
         {
-            if (!CanControlSandbox(room, session))
-                return Error(sessionId, "沙盒权限已失效", "sandboxForbidden", requestId);
             if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始", requestId: requestId);
             if (room.TryGetProcessedActionRequest(-1, requestId, out var duplicate))
                 return duplicate.Accepted
@@ -2031,9 +1981,9 @@ public sealed partial class L12RoomManager
         requestId = NormalizeActionRequestId(requestId);
         if (!TryDeploymentGuard(admission: false, out var deploymentGuard)) return DeploymentEntryRejected(sessionId, requestId);
         using var deployment = deploymentGuard;
-        if (!TryGetMembership(sessionId, out var session, out var room, out var error))
+        if (!TryGetMembership(sessionId, out _, out var room, out var error))
             return Error(sessionId, error, requestId: requestId);
-        if (!CanControlSandbox(room, session))
+        if (!room.IsSandbox || room.GmControllerSessionId != sessionId)
             return Error(sessionId, "沙盒代行操作只允许由单人测试沙盒的创建者执行", "actionRejected", requestId);
         if (actingPlayerIndex is < 0 or > 1)
             return Error(sessionId, "沙盒代行玩家无效", "actionRejected", requestId);
@@ -2041,8 +1991,6 @@ public sealed partial class L12RoomManager
         await room.Gate.WaitAsync();
         try
         {
-            if (!CanControlSandbox(room, session))
-                return Error(sessionId, "沙盒权限已失效", "sandboxForbidden", requestId);
             if (room.Game is null) return Error(sessionId, "沙盒对局尚未开始", requestId: requestId);
             if (room.TryGetProcessedActionRequest(actingPlayerIndex, requestId, out var duplicate))
                 return duplicate.Accepted
@@ -2190,12 +2138,6 @@ public sealed partial class L12RoomManager
     private IReadOnlyList<OutgoingMessage> LeaveRoomLocked(Guid sessionId)
     {
         if (!_sessions.TryGetValue(sessionId, out var currentSession)) return Error(sessionId, "会话不存在");
-        // A failed read must never close the mutated, uncommitted scripted state. Retry the
-        // existing journal restore under this gate before allowing the frozen lesson to retire.
-        if (currentSession.RoomCode is { } lessonCode && _rooms.TryGetValue(lessonCode, out var lessonRoom)
-            && lessonRoom.Tutorial is not null && lessonRoom.Closed
-            && !TryRestoreTutorialJournalAsync(lessonRoom).GetAwaiter().GetResult())
-            return Error(sessionId, "本关记录仍不可用，暂时无法安全退出", "tutorialRestartRequired");
         if (currentSession.IsSpectator)
         {
             var spectatorRoomCode = currentSession.RoomCode;
@@ -2218,11 +2160,11 @@ public sealed partial class L12RoomManager
         }
         lock (_matchmakingGate) _matchmaking.RemoveAll(entry => entry.SessionId == sessionId);
         if (!TryGetMembership(sessionId, out var session, out var room, out var error)) return Error(sessionId, error);
-        if (!room.IsTraining && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
+        if (!room.IsSandbox && room.Game is not null && room.Game.State.Phase != L12Phase.GameOver)
             return Error(sessionId, "对局已开始，请在对局内投降后离开");
         if (room.Game?.State.Phase == L12Phase.GameOver)
             return LeaveSettlementLocked(session, room);
-        if (room.IsTraining && room.Game is not null && !room.CompletionRecorded)
+        if (room.IsSandbox && room.Game is not null && !room.CompletionRecorded)
         {
             try
             {
@@ -2342,7 +2284,6 @@ public sealed partial class L12RoomManager
         {
             type = "roomState", roomCode = room.Code, yourPlayerIndex = viewer.PlayerIndex,
             players, decks, options = room.Options, started = room.Game is not null, sandbox = room.IsSandbox,
-            tutorial = TutorialView(room),
             tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
             tournamentMatchId = room.TournamentMatchId,
             operationsPolicyVersion = room.OperationsPolicy.Version,
@@ -2368,7 +2309,7 @@ public sealed partial class L12RoomManager
         {
             var viewer = _sessions[id];
             var snapshot = L12KernelProjection.ForPlayer(room.Game!, _sessions[id].PlayerIndex!.Value,
-                revealAllForGm: CanControlSandbox(room, viewer));
+                revealAllForGm: room.IsSandbox && room.GmControllerSessionId == id);
             var matchGovernance = MatchGovernanceForClient(room, viewer, platformView);
             var immediateInteraction = SnapshotRequiresCriticalDelivery(snapshot)
                                        || matchGovernance.DrawRequest?.ViewerCanRespond == true;
@@ -2376,8 +2317,7 @@ public sealed partial class L12RoomManager
             {
                 type = "gameState", state = snapshot,
                 requestId = id == requestSessionId ? requestId : null,
-                gmEnabled = CanControlSandbox(room, viewer),
-                tutorial = TutorialView(room),
+                gmEnabled = room.IsSandbox && room.GmControllerSessionId == id,
                 tournamentId = room.TournamentId, tournamentCode = room.TournamentCode,
                 tournamentMatchId = room.TournamentMatchId,
                 playerBadges,
@@ -2553,7 +2493,7 @@ public sealed partial class L12RoomManager
                 Console.Error.WriteLine($"Match draw cancellation ({room.Code}): {error.Message}");
             }
         }
-        if (room.IsTraining && !room.CompletionRecorded)
+        if (room.IsSandbox && !room.CompletionRecorded)
         {
             try
             {
@@ -2566,7 +2506,7 @@ public sealed partial class L12RoomManager
             }
         }
         var ranked = string.Equals(room.Options.MatchModeId, "ranked", StringComparison.OrdinalIgnoreCase);
-        if (!room.IsTraining && !room.CompletionRecorded)
+        if (!room.IsSandbox && !room.CompletionRecorded)
         {
             if (ranked)
                 return "排位最终事件尚未原子写入，已冻结结算并等待重试";
@@ -2648,14 +2588,6 @@ public sealed partial class L12RoomManager
             SelectedDeck(session).AlternateArtSelections, SelectedDeck(session).AlternateArtCopies)
             ?? new Dictionary<string, string>()).ToArray();
 
-    // Called only while holding this exact room's gate, after any membership captured before an await.
-    private bool IsCurrentPlayerMembership(Guid sessionId, Session session, Room room, bool requireConnected = true)
-        => _sessions.TryGetValue(sessionId, out var current) && ReferenceEquals(session, current)
-           && (!requireConnected || session.Connected) && !session.IsSpectator && session.PlayerIndex is { } player
-           && player >= 0 && player < room.Sessions.Count && room.Sessions[player] == sessionId
-           && session.RoomCode == room.Code && _rooms.TryGetValue(room.Code, out var currentRoom)
-           && ReferenceEquals(room, currentRoom);
-
     private bool TryGetMembership(Guid sessionId, out Session session, out Room room, out string error)
     {
         room = null!;
@@ -2693,7 +2625,6 @@ public sealed partial class L12RoomManager
         if (_platform is null || string.IsNullOrWhiteSpace(session.AccountId)) return false;
         var account = _platform.Account(session.AccountId);
         return account is { Disabled: false, Deleted: false, MustChangePassword: false, MustChangeUsername: false }
-               && string.Equals(account.Role, "admin", StringComparison.Ordinal)
                && L12Authorization.HasPermission(account, L12Permission.AdminOperationsWrite);
     }
 

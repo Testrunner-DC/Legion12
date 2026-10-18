@@ -360,7 +360,7 @@ public sealed class SandboxReplayRetentionTests
             var manager = new L12RoomManager(catalog, first, utcNow: () => now);
             var controller = Guid.NewGuid();
             manager.Connect(controller, "sandbox-restart-owner", "重启沙盒控制者");
-            var created = await manager.CreateSandboxForTestsAsync(controller, new L12SandboxRequest());
+            var created = await manager.CreateSandboxAsync(controller, new L12SandboxRequest());
             matchId = StateFor(controller, created).GetProperty("matchId").GetString()!;
             var command = await manager.HandleGmActionAsync(controller,
                 JsonSerializer.SerializeToElement(new { type = "setLife", targetPlayer = 1, value = 19 }));
@@ -413,7 +413,7 @@ public sealed class SandboxReplayRetentionTests
         var manager = new L12RoomManager(catalog, recorder, utcNow: () => now);
         var controller = Guid.NewGuid();
         manager.Connect(controller, "disconnect-sandbox", "断线沙盒");
-        var created = await manager.CreateSandboxForTestsAsync(controller, new L12SandboxRequest());
+        var created = await manager.CreateSandboxAsync(controller, new L12SandboxRequest());
         var matchId = StateFor(controller, created).GetProperty("matchId").GetString()!;
         manager.Disconnect(controller);
 
@@ -500,7 +500,7 @@ public sealed class SandboxReplayRetentionTests
         var manager = new L12RoomManager(catalog, recorder, utcNow: () => now);
         var original = Guid.NewGuid();
         manager.Connect(original, "boundary-owner", "边界重连");
-        var created = await manager.CreateSandboxForTestsAsync(original, new L12SandboxRequest());
+        var created = await manager.CreateSandboxAsync(original, new L12SandboxRequest());
         var matchId = StateFor(original, created).GetProperty("matchId").GetString()!;
         manager.Disconnect(original);
         now = origin.Add(L12RoomManager.SandboxReconnectGrace);
@@ -539,7 +539,7 @@ public sealed class SandboxReplayRetentionTests
         var manager = new L12RoomManager(catalog, recorder, utcNow: () => now);
         var controller = Guid.NewGuid();
         manager.Connect(controller, "guard-owner", "保护沙盒");
-        var created = await manager.CreateSandboxForTestsAsync(controller, new L12SandboxRequest());
+        var created = await manager.CreateSandboxAsync(controller, new L12SandboxRequest());
         var state = StateFor(controller, created);
         var matchId = state.GetProperty("matchId").GetString()!;
         var roomCode = state.GetProperty("roomCode").GetString()!;

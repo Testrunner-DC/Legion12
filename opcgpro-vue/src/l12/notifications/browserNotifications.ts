@@ -17,8 +17,10 @@ function storedPreference() {
   catch { return false }
 }
 
+let displayUnavailable = false
+
 function capability() {
-  const supported = typeof window !== 'undefined' && 'Notification' in window
+  const supported = !displayUnavailable && typeof window !== 'undefined' && 'Notification' in window
   const secure = typeof window !== 'undefined' && window.isSecureContext === true
   const permission: NotificationPermission = supported ? window.Notification.permission : 'default'
   const status: BrowserNotificationStatus = !supported ? 'unsupported' : !secure ? 'insecure' : permission
@@ -94,6 +96,9 @@ export function showBrowserNotification(kind: RealtimeNotificationKind, onClick:
     }
     return true
   } catch {
+    // An exposed API is not proof that this browser can deliver page notifications.
+    displayUnavailable = true
+    savePreference(false)
     refreshBrowserNotificationState()
     return false
   }

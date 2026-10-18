@@ -507,12 +507,7 @@ function createRoomHarness(deckModule, { useRestrictions = true, matchmakingOnly
     submissions, readyCalls, validationCalls, rule }
 }
 
-function createSandboxHarness(deckModule, player, opponent, access = { role: 'admin', allowed: true }) {
-  const sandboxPlatform = { ...platformState, account: { ...platformState.account, role: access.role } }
-  const canUseSandbox = evaluateExpression(initializer(sources.sandbox, 'canUseSandbox'), {
-    computed, platformState: sandboxPlatform,
-    hasPermission: permission => permission === 'admin.operations.write' && access.allowed,
-  })
+function createSandboxHarness(deckModule, player, opponent) {
   const selectedDecks = ref({ 'sandbox-player': player, 'sandbox-opponent': opponent })
   const selectionMessages = ref({ 'sandbox-player': '', 'sandbox-opponent': '' })
   const playerDeckName = ref(player?.name ?? '')
@@ -538,7 +533,7 @@ function createSandboxHarness(deckModule, player, opponent, access = { role: 'ad
     ${functionText(sources.sandbox, 'startSandbox')}
     return { startSandbox, bumpIdentity() { identityEpoch++; createActionEpoch++ }, unmount() { componentAlive = false; identityEpoch++; createActionEpoch++ } }
   `, {
-    platformState: sandboxPlatform, canUseSandbox, selectedDecks, selectionMessages, playerDeckName, opponentDeckName,
+    platformState, selectedDecks, selectionMessages, playerDeckName, opponentDeckName,
     playerDeckError, opponentDeckError, cachedDecks, catalog, disasterMode, creating, l12State,
     loadPrivateDeckBody: deckModule.loadPrivateDeckBody,
     deckErrorBelongsToCurrentAccount: deckModule.deckErrorBelongsToCurrentAccount,
@@ -1112,19 +1107,6 @@ async function main() {
     assert.strictEqual(harness.creations[0].opponentBody, harness.validationCalls[1][0])
     assert.equal(harness.validationCalls[0].length, 2)
     assert.equal(harness.validationCalls[1].length, 2)
-  })
-
-  await check('sandbox current role and permission reject before private body reads', 'negative', async () => {
-    const body = makeBody('sandbox-denied', 2, '受限正文')
-    const selection = { id: body.id, revision: body.revision, name: body.name, body }
-    for (const access of [{ role: 'player', allowed: true }, { role: 'admin', allowed: false }]) {
-      const harness = createSandboxHarness(deckModule, selection, { ...selection }, access)
-      requestHandler = async () => { assert.fail('Denied sandbox must not load a private body') }
-      await harness.runtime.startSandbox()
-      assert.equal(harness.creations.length, 0)
-      assert.equal(harness.validationCalls.length, 0)
-      assert.match(harness.l12State.notice, /权限/)
-    }
   })
 
   await check('sandbox reuses one exact body when both sides choose the same stable revision', 'positive', async () => {

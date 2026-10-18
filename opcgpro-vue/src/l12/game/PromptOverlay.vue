@@ -856,8 +856,7 @@ function kindLabel() {
 
 <template>
   <Teleport :to="mobileLayout && minimized && mobileDock?.context ? mobileDock.context : landscapeTeleportTarget()">
-    <div v-if="visible" class="l12-prompt-overlay" :data-tutorial-prompt-id="prompt?.promptId" :data-tutorial-prompt-kind="prompt?.kind"
-      @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
+    <div v-if="visible" class="l12-prompt-overlay" @scroll.capture="onCardStripScroll" @wheel="onCardStripWheel"
       @pointerdown="onCardStripPointerDown" @pointermove="onCardStripPointerMove" @pointerup="endCardStripPointer" @pointercancel="endCardStripPointer"
       :class="{ preparation: isPreparation, initiative: isInitiative, 'disaster-choice': isDisasterChoice, 'information-confirm': isInfoConfirm, waiting: waitingPrompt || (isMulliganPhase && !isMulligan), minimized, 'inspector-active': inspectorVisible || reservePlacementDetailSpace, 'mobile-safe-overlay': mobileLayout }">
       <section v-if="minimized" class="prompt-minimized-bar" role="status">
@@ -975,7 +974,6 @@ function kindLabel() {
               <button class="response-target-select l12-effect-body" :aria-pressed="activeSelected.includes(choice)" :disabled="l12State.pendingAction" @click="focusChoice(choice); toggle(choice)">{{ label(choice) }}</button>
             </article>
             <PromptCardCandidate v-else-if="detailFor(choice)"
-              :data-tutorial-choice="choice"
               :card-id="cardIdFor(choice)" :legacy-url="imageFor(choice)" :name="cardName(choice)" :meta="cardMeta(choice)"
               :badge="selectionHint(choice)" :position-label="positionFor(choice)"
               :consequence="choiceConsequence(choice)" :unavailable-reason="disabledChoiceReason(choice)"
@@ -985,7 +983,6 @@ function kindLabel() {
               :selection-order="!isTriggerOrder && selectedActionChoices.includes(choice) && prompt.maxChoose > 1 ? selectedActionChoices.indexOf(choice) + 1 : undefined"
               @focus="focusChoice(choice)" @select="toggle(choice)"/>
             <button v-else :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice), 'unavailable-choice': Boolean(disabledChoiceReason(choice)) }"
-              :data-tutorial-choice="choice"
               :disabled="l12State.pendingAction || Boolean(disabledChoiceReason(choice))" :title="disabledChoiceReason(choice)"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined" @click="toggle(choice)">
               <span :class="{ 'l12-effect-body': isEffectOptionList, 'l12-effect-body--compact': isEffectOptionList }">{{ label(choice) }}</span>
@@ -1013,7 +1010,6 @@ function kindLabel() {
         <footer v-if="!isPureEffectDecision" class="prompt-action-footer" data-ui-contract="equal-action-group">
           <template v-if="prompt.data?.choiceMode !== 'optional-add'">
             <button v-for="choice in supplementalChoices" :key="choice" class="prompt-footer-choice"
-              :data-tutorial-choice="choice"
               :class="{ selected: activeSelected.includes(choice), 'decline-action': isDeclineChoice(choice) }"
               :disabled="l12State.pendingAction"
               :data-ui-contract="isDeclineChoice(choice) ? 'minimum-decline-action' : undefined"
@@ -1049,14 +1045,14 @@ function kindLabel() {
           </template>
           <template v-else-if="isTriggerOrder">
             <span class="order-final-preview" data-ui-contract="trigger-order-lifo-hint">{{ triggerResolutionPreview.length ? `确认后实际结算（先 → 后）：${triggerResolutionPreview.map(label).join(' → ')}` : '后选择的效果先结算；每个选项角标显示实际结算顺序。' }}</span>
-            <button class="primary prompt-confirm-choice" data-tutorial-action="confirm-prompt" :disabled="l12State.pendingAction || activeSelected.length !== prompt.maxChoose" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || activeSelected.length !== prompt.maxChoose" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : '确认发动顺序' }}
             </button>
           </template>
           <template v-else>
             <span v-if="isInfoConfirm">双方均确认后继续</span>
             <button v-if="prompt.minChoose === 0 && !isInfoConfirm" :disabled="l12State.pendingAction" @click="selected = []; confirm()">不选择</button>
-            <button class="primary prompt-confirm-choice" data-tutorial-action="confirm-prompt" :disabled="l12State.pendingAction || !isPromptSelectionSubmittable(prompt, activeSelected)" @click="confirm">
+            <button class="primary prompt-confirm-choice" :disabled="l12State.pendingAction || !isPromptSelectionSubmittable(prompt, activeSelected)" @click="confirm">
               {{ l12State.pendingAction ? '处理中…' : promptConfirmLabel }}
             </button>
           </template>

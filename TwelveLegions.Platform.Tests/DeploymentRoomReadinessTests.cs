@@ -92,7 +92,6 @@ public sealed class DeploymentRoomReadinessTests
             f.Platform = new(Path.Combine(f._root, "platform.json"), catalog.PresetDecks, officialCards: catalog.Cards);
             var account = f.Platform.Register("drainroom01", "synthetic-password").Account!;
             Assert.NotNull(account);
-            Assert.True(f.Platform.SetRole(f.Platform.Login("Admin", "L12master").Account!, account.Id, "admin"));
             f.Recorder = new(Path.Combine(f._root, "matches.db"));
             await f.Recorder.InitializeAsync();
             f.Rooms = new(catalog, f.Recorder, f.Platform);

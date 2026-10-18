@@ -1237,7 +1237,6 @@ public sealed class WebSocketInboundIsolationTests
             var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
                 officialCards: catalog.Cards);
             var account = platform.Register($"ic{Guid.NewGuid():N}"[..10], "Password123!").Account!;
-            Assert.True(platform.SetRole(platform.Login("Admin", "L12master").Account!, account.Id, "admin"));
             var token = platform.Login(account.Username, "Password123!").Token!;
             await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
             await recorder.InitializeAsync();

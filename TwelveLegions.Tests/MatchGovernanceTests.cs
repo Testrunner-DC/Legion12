@@ -400,7 +400,6 @@ public sealed class MatchGovernanceTests
         var platform = new L12PlatformStore(Path.Combine(directory, "platform.json"), catalog.PresetDecks,
             officialCards: catalog.Cards);
         var player = platform.Register("tsandb9d5fa", "Password123!").Account!;
-        Assert.True(platform.SetRole(platform.Login("Admin", "L12master").Account!, player.Id, "admin"));
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
         await recorder.InitializeAsync();
         var manager = new L12RoomManager(catalog, recorder, platform);

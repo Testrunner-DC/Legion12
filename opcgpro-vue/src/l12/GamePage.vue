@@ -3,120 +3,23 @@ import BattleDockPortal from './game/BattleDockPortal.vue'
 import BattleOverlayPortal from './game/BattleOverlayPortal.vue'
 import { provideMobileBattleDock } from './game/mobileBattleDock'
 provideMobileBattleDock()
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import GameBoard from './game/GameBoard.vue'
 import GmPanel from './game/GmPanel.vue'
 import TournamentRefereePanel from './game/TournamentRefereePanel.vue'
-import TutorialGuidanceOverlay from './tutorial/TutorialGuidanceOverlay.vue'
 import { isMobileViewportExperience } from './mobileViewport'
 import OsirisVictorySequence from './game/OsirisVictorySequence.vue'
 import RankedBroadcastTicker from './site/RankedBroadcastTicker.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
 import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { gameAction, l12State, leaveRoom } from './net'
-import { connect, createTutorial, send } from './net'
+import { connect, send } from './net'
 import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
-import { platformState } from './platform'
-import { loadGuidedTutorialProgress, recordGuidedSceneReview } from './tutorial/tutorialProgress'
-import { tutorialHandoffDecision, tutorialScenes, type TutorialHandoffBinding } from './tutorial/tutorialCourse'
-import type { TutorialLessonId } from './types'
 
 const router = useRouter()
 const MatchmakingPanel = defineAsyncComponent(() => import('./site/BattleHubPage.vue'))
 const game = computed(() => l12State.game)
-const tutorial = computed(() => {
-  const current = l12State.tutorial
-  return current && game.value?.matchId === current.matchId && l12State.room?.roomCode === current.roomCode
-    && platformState.account?.id === current.accountId && l12State.accountId === current.accountId
-    && l12State.sessionId === current.sessionId && l12State.connectionGeneration === current.connectionGeneration
-    && !l12State.gmEnabled && !l12State.spectating ? current : null
-})
-const tutorialTransition = ref<{ binding: TutorialHandoffBinding; target: TutorialLessonId | null; phase: 'leaving' | 'creating' } | null>(null)
-const tutorialTransitionSlow = ref(false)
-let tutorialTransitionTimer: ReturnType<typeof setTimeout> | null = null
-function clearTutorialTransition() {
-  if (tutorialTransitionTimer) clearTimeout(tutorialTransitionTimer)
-  tutorialTransitionTimer = null; tutorialTransition.value = null; tutorialTransitionSlow.value = false
-}
-function beginTutorialHandoff(target: TutorialLessonId | null) {
-  const current = tutorial.value
-  if (!current || tutorialTransition.value || l12State.pendingAction) return
-  tutorialTransition.value = { target, phase: 'leaving', binding: {
-    accountId: current.accountId, token: platformState.token || '', sessionId: current.sessionId,
-    connectionGeneration: current.connectionGeneration, roomCode: current.roomCode, matchId: current.matchId,
-  } }
-  tutorialTransitionTimer = setTimeout(() => { tutorialTransitionSlow.value = true }, 15_000)
-  leaveRoom()
-}
-function continueTutorialMainline() {
-  const current = tutorial.value
-  if (current?.status !== 'completed' || tutorialTransition.value || l12State.pendingAction) return
-  // Called by the guide only after the learner has read the result explanation.
-  // A successful game action alone never records learning completion.
-  const saved = recordGuidedSceneReview(current, {
-    accountId: platformState.account?.id || '', sessionId: l12State.sessionId,
-    connectionGeneration: l12State.connectionGeneration, matchId: game.value?.matchId || '',
-  })
-  const progress = loadGuidedTutorialProgress(current.accountId)
-  if (current.lessonId === 'response' ? !progress.responseReviewed : !progress.reviewedScenes.includes(current.lessonId)) {
-    l12State.notice = '请先从教学主线完成前面的介绍与练习。'
-    return
-  }
-  if (!saved) l12State.notice = '本机暂时无法保存进度，当前学习仍可继续。'
-  beginTutorialHandoff(current.lessonId === 'response' ? null
-    : tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)
-}
-function restartTutorialScene() { if (tutorial.value) beginTutorialHandoff(tutorial.value.lessonId) }
-function exitTutorialMainline() {
-  const transition = tutorialTransition.value
-  const ownTransition = transition && platformState.account?.id === transition.binding.accountId
-    && platformState.token === transition.binding.token && l12State.sessionId === transition.binding.sessionId
-    && l12State.connectionGeneration === transition.binding.connectionGeneration
-  clearTutorialTransition()
-  if (tutorial.value || ownTransition && (!l12State.room || l12State.room.tutorial?.lessonId === transition?.target)) leaveRoom()
-  void router.push('/battle/tutorial')
-}
-watch(() => [tutorialTransition.value?.phase, platformState.account?.id, platformState.token,
-  l12State.accountId, l12State.sessionId, l12State.connectionGeneration, l12State.status,
-  l12State.tutorialAvailable, l12State.room?.roomCode, l12State.game?.matchId,
-  l12State.leavingRoom, l12State.pendingAction, tutorial.value?.matchId] as const, () => {
-  const transition = tutorialTransition.value
-  if (!transition) return
-  const snapshot = {
-    accountId: platformState.account?.id || '', token: platformState.token || '',
-    connectedAccountId: l12State.accountId, sessionId: l12State.sessionId,
-    connectionGeneration: l12State.connectionGeneration, online: l12State.status === 'online',
-    available: l12State.tutorialAvailable, roomCode: l12State.room?.roomCode || null,
-    matchId: game.value?.matchId || null, leaving: l12State.leavingRoom, pending: l12State.pendingAction,
-  }
-  if (transition.phase === 'creating') {
-    // The new roomState legitimately precedes its gameState. Do not mistake
-    // that expected new room for an unrelated-room takeover while loading.
-    const identity = tutorialHandoffDecision(transition.binding, { ...snapshot,
-      roomCode: null, matchId: null, leaving: false, pending: false })
-    if (identity === 'cancelled') { clearTutorialTransition(); l12State.notice = '账号或连接已变化，请回到教学主线继续。'; return }
-    if (tutorial.value?.lessonId === transition.target && tutorial.value.matchId !== transition.binding.matchId) {
-      clearTutorialTransition(); return
-    }
-    if (l12State.room && l12State.room.tutorial?.lessonId !== transition.target) {
-      clearTutorialTransition(); l12State.notice = '当前房间已变化，请先处理当前对局。'; return
-    }
-    if (!l12State.pendingAction && !l12State.room && !game.value) {
-      clearTutorialTransition(); l12State.notice ||= '下一段练习未能建立，请回到主线重试。'
-    }
-    return
-  }
-  const decision = tutorialHandoffDecision(transition.binding, snapshot)
-  if (decision === 'cancelled') {
-    clearTutorialTransition(); l12State.notice = '账号、连接或场面已变化，请回到教学主线继续。'; return
-  }
-  if (decision !== 'ready') return
-  if (!transition.target) { clearTutorialTransition(); void router.push('/battle/tutorial'); return }
-  transition.phase = 'creating'
-  if (!createTutorial(transition.target)) clearTutorialTransition()
-}, { flush: 'post' })
-onBeforeUnmount(clearTutorialTransition)
 const agreedDraw = computed(() => game.value?.phase === 'GameOver' && game.value.winner == null
   && (game.value.matchGovernance?.drawRequest?.status === 'accepted'
     || game.value.recentEvents?.some(event => event.type === 'game-draw')))
@@ -233,20 +136,14 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
-  if (tutorial.value || tutorialTransition.value) { exitTutorialMainline(); return }
   const tournamentCode = l12State.room?.tournamentCode
-  const tutorialRoom = Boolean(tutorial.value || l12State.room?.tutorial)
-  const sandboxRoom = l12State.room?.sandbox === true
-  const destination = tutorialRoom ? '/battle/tutorial'
-    : sandboxRoom ? '/admin/operations/sandbox'
-    : tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'
   if (game.value?.phase === 'GameOver') {
     leaveRoom()
-    router.push(destination)
+    router.push('/lobby')
     return
   }
-  if (tutorialRoom || l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
-  router.push(destination)
+  if (l12State.spectating || l12State.room?.sandbox || tournamentCode) leaveRoom()
+  router.push(tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby')
 }
 async function retryGameLoad() {
   if (loadRetrying.value) return
@@ -264,17 +161,15 @@ async function retryGameLoad() {
 
 <template>
   <div v-if="game" ref="gamePageRoot" tabindex="-1" class="game-page">
-    <RankedBroadcastTicker v-if="!tutorial" class="battle-ranked-ticker" />
+    <RankedBroadcastTicker class="battle-ranked-ticker" />
     <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button v-if="l12State.spectating" type="button" @click="openBattleSettings">设置</button>
-      <button class="balanced-copy-button" :aria-label="tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅'" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>{{ tutorial ? '教学' : l12State.room?.sandbox ? '沙盒' : '大厅' }}</span></span></button>
+      <button class="balanced-copy-button" aria-label="返回大厅" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div></BattleDockPortal>
     <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
       @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
-    <TutorialGuidanceOverlay v-if="tutorial" :tutorial="tutorial" :game="game" :busy="Boolean(tutorialTransition)"
-      @continue-mainline="continueTutorialMainline" @restart-scene="restartTutorialScene" @exit-tutorial="exitTutorialMainline" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" :initially-open="gmPanelInitiallyOpen"
       @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
     <TournamentRefereePanel v-else-if="l12State.refereeControlsEnabled && l12State.spectating && l12State.observerView === 'referee' && game.phase !== 'GameOver'"
@@ -314,12 +209,11 @@ async function retryGameLoad() {
           <strong v-else>七曜值 {{ l12State.rankedSettlement.before.toLocaleString() }} → {{ l12State.rankedSettlement.after.toLocaleString() }} <i>{{ l12State.rankedSettlement.delta >= 0 ? '+' : '' }}{{ l12State.rankedSettlement.delta.toLocaleString() }}</i></strong>
           <details v-if="l12State.rankedSettlement.components.length && !['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '')"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
         </section>
-        <button @click="returnToLobby">{{ tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}</button>
+        <button @click="returnToLobby">返回大厅</button>
       </div>
     </Transition>
 </BattleOverlayPortal>
   </div>
-  <main v-else-if="tutorialTransition" class="missing-game" data-tutorial-handoff="true" role="status" aria-live="polite"><h1>继续教学主线</h1><p>{{ tutorialTransitionSlow ? '场面衔接尚未完成，正在等待服务器确认。' : '向导正在为下一段练习准备新的场面…' }}</p><button type="button" @click="exitTutorialMainline">返回教学主线</button></main>
   <main v-else-if="l12State.matchFound" ref="gamePageRoot" tabindex="-1" class="missing-game" data-state="matching" role="status" aria-live="polite"><h1>匹配成功</h1><p>正在同步对局，请稍候……</p></main>
   <main v-else ref="gamePageRoot" tabindex="-1" class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
     <small>{{ missingGameState.kind === 'waiting' ? 'TOURNAMENT ROOM' : missingGameState.kind === 'loading' ? 'LOADING' : 'LOAD FAILED' }}</small>

@@ -20,7 +20,6 @@ Environment=L12_ALLOWED_ORIGINS=https://legion-12.com
 Environment=L12_TESTRUN_ACCEPTANCE_DATA=acceptance-v2
 Environment=L12_PRIVATE_DECK_OBJECT_PERSISTENCE=true
 Environment=L12_CHAT_ENABLED=true
-Environment=L12_TUTORIAL_ENABLED=true
 EnvironmentFile=/etc/legion12-testrun.env
 Nice=10
 CPUWeight=10

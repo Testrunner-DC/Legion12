@@ -11,13 +11,12 @@ import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
-import TutorialPage from './TutorialPage.vue'
 import { maintenanceCountdown } from './maintenanceCountdown'
 import { isFriendlyDisasterMode, loadFriendlyDisasterMode, saveFriendlyDisasterMode } from '@/l12/friendlyRoomPreferences'
 
 const props = withDefaults(defineProps<{ matchmakingOnly?: boolean; overlayTarget?: HTMLElement }>(), { matchmakingOnly: false })
 const router = useRouter()
-const tab = ref<'match' | 'friendly' | 'tutorial'>('match')
+const tab = ref<'match' | 'friendly' | 'sandbox'>('match')
 const roomCode = ref('')
 const roomOptions = ref<RoomOptions>({ matchModeId: 'friendly', spectating: 'public', handVisibility: 'request', disasterMode: 'all', useCardRestrictions: false })
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
@@ -103,6 +102,7 @@ const modeActionPending = ref(false)
 const guestDeckList = computed(() => platformState.account?.id && platformState.token ? [] : Object.values(cachedDecks.value))
 const activeDeckScope = computed<L12DeckSelectionScope>(() => {
   if ((!props.matchmakingOnly && l12State.room) || tab.value === 'friendly') return 'friendly'
+  if (tab.value === 'sandbox') return 'sandbox-player'
   return selectedMatchMode.value
 })
 const currentSelection = computed(() => selectedDecks.value[activeDeckScope.value])
@@ -601,8 +601,8 @@ async function copyRoomCode() {
 
     <template v-else>
       <section v-if="!props.matchmakingOnly && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
-      <section v-if="tab !== 'tutorial'" class="current-deck panel"><DeckProfile v-if="currentDeck" :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" :context="activeDeckScope === 'ranked' ? '排位当前牌库' : activeDeckScope === 'casual' ? '休闲当前牌库' : '好友房当前牌库'" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><DeckProfile v-else context="当前牌库" meta="当前没有已保存牌库"/><div class="current-deck-actions"><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合当前模式规则' }}</span><button type="button" @click="openDeckSelector">更换牌库</button></div></section>
-      <div v-if="!props.matchmakingOnly" class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'tutorial' }" @click="tab = 'tutorial'">教学</button></div>
+      <section class="current-deck panel"><DeckProfile v-if="currentDeck" :master-id="currentDeck.masterId" :master-name="byId.get(currentDeck.masterId)?.nameZh" :name="currentDeck.name" :context="activeDeckScope === 'ranked' ? '排位当前牌库' : activeDeckScope === 'casual' ? '休闲当前牌库' : activeDeckScope === 'friendly' ? '好友房当前牌库' : '沙盒我方牌库'" :meta="`${deckCountSummary(currentDeck.cardIds, byId).label} 张主牌`"/><DeckProfile v-else context="当前牌库" meta="当前没有已保存牌库"/><div class="current-deck-actions"><span :class="{ invalid: !!currentDeckError }">{{ currentDeckError || '符合当前模式规则' }}</span><button type="button" @click="openDeckSelector">更换牌库</button></div></section>
+      <div v-if="!props.matchmakingOnly" class="mode-tabs"><button :class="{ active: tab === 'match' }" @click="tab = 'match'">匹配</button><button :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'">好友房</button><button :class="{ active: tab === 'sandbox' }" @click="tab = 'sandbox'">单人</button></div>
       <div v-if="!props.matchmakingOnly && tab === 'match' && selectedMatchMode === 'ranked' && ranked" class="faction-totals faction-totals--overview" data-ui-contract="faction-totals-above-public-match"><article v-for="faction in ranked.config.factions" :key="faction.id" :style="{ '--accent': faction.color }"><b>{{ faction.name }}</b><span>七曜值 {{ (ranked.factionTotals[faction.name] || 0).toLocaleString() }}</span></article></div>
 
       <section v-if="tab === 'match'" class="mode-panel panel"><header class="public-match-head"><div><small>PUBLIC MATCH</small><h2>公开匹配</h2></div><button v-if="selectedMatchMode === 'ranked'" class="ranked-rules-button" type="button" @click="rankedRulesOpen = true">排位规则</button></header>
@@ -616,7 +616,7 @@ async function copyRoomCode() {
 
       <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode" @change="rememberFriendlyDisasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终湮灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
-      <TutorialPage v-else embedded />
+      <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>
     <SavedDeckSelector :open="deckSelectorOpen" :mode="deckSelectorScope" :guest-decks="guestDeckList"
       :teleport-target="props.overlayTarget"

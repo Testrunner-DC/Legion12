@@ -14,9 +14,9 @@ public sealed partial class L12RoomManager
         await _sessionRecoveryGate.WaitAsync(cancellationToken);
         try
         {
-            var staleRooms = _rooms.Values.Where(room => room.IsTraining && room.Game is not null
+            var staleRooms = _rooms.Values.Where(room => room.IsSandbox && room.Game is not null
                 && room.Game.State.Phase != L12Phase.GameOver
-                && TrainingHolder(room) is { } controllerId
+                && room.GmControllerSessionId is { } controllerId
                 && _sessions.TryGetValue(controllerId, out var controller)
                 && !controller.Connected && controller.DisconnectedAt is { } disconnectedAt
                 && now - disconnectedAt >= SandboxReconnectGrace).ToArray();
@@ -28,7 +28,7 @@ public sealed partial class L12RoomManager
                     Guid[] spectators;
                     lock (room.Spectators) spectators = [.. room.Spectators];
                     if (room.Game?.State.Phase == L12Phase.GameOver
-                        || TrainingHolder(room) is not { } controllerId
+                        || room.GmControllerSessionId is not { } controllerId
                         || !_sessions.TryGetValue(controllerId, out var controller)
                         || controller.Connected || controller.DisconnectedAt is not { } disconnectedAt
                         || now - disconnectedAt < SandboxReconnectGrace
@@ -90,7 +90,7 @@ public sealed partial class L12RoomManager
         {
             // Test environment uses its independently validated 14-day payload policy below.
             if (retentionEnvironment == "testrun") return;
-            var activeSandboxMatches = _rooms.Values.Where(room => room.IsTraining && room.Game is not null)
+            var activeSandboxMatches = _rooms.Values.Where(room => room.IsSandbox && room.Game is not null)
                 .Select(room => room.Game!.State.MatchId).ToArray();
             replayCleanup = await _recorder.RunSandboxReplayCleanupIfDueAsync(
                 activeSandboxMatches, now, token, _platform is null ? null : _platform.UnresolvedReplayEvidence);
@@ -124,7 +124,4 @@ public sealed partial class L12RoomManager
              ("Player replay", PlayerReplay), ("Audit lifecycle", Audit)], cancellationToken);
         return replayCleanup;
     }
-
-    private static Guid? TrainingHolder(Room room)
-        => room.Tutorial is not null ? room.Sessions.FirstOrDefault() : room.GmControllerSessionId;
 }
