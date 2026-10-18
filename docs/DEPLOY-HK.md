@@ -95,18 +95,19 @@ PowerShell验收脚本以其异常/完成结果判断成败；`LASTEXITCODE`只�
 
 Nginx 和 systemd 继续访问 `/opt/legion12-test`，版本切换只原子替换该符号链接。首次使用新流程时，旧版 `publish/runtime` 会在服务停止后通过同文件系统移动到共享目录，不复制约 1GB 的数据库和平台数据。
 
-## 当前正式服固定资料（2026-09-21 核验）
+## 当前正式服固定资料（2026-10-18 读回）
 
 - 服务商实例：Tisula 服务编号 `85751`，实例 `server-85751`，主机名 `ser550468033481`。
 - SSH：`root@154.201.80.91:22`；部署时仍以 `root@legion-12.com` 连接并固定 `HostKeyAlias=154.201.80.91`。
 - 本机部署私钥：`C:\Users\neptu\.ssh\id_ed25519`；公钥指纹 `SHA256:ZWYKCWbtujvI4yVUGl610IZOTcXKfo8D+aT2b4bO9v0`。
 - 已授权部署公钥：`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFPzOIcDTQh/UWWdwQQGqsksGMHHDiz153ecQOtRxHhE neptu@hero-rush`。
-- 服务器 ED25519 主机公钥：`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7zDzJDfZJI1gyqTg8/QL7ALF8wYzXhvnenVp+Czbd2`；人工核验指纹 `SHA256:8GSTnRZ46ArgsRj+G5c1aiZI/0GuyEx0DJyipV5i1Lg`。
-- 本机可信主机记录：`C:\Users\neptu\.ssh\known_hosts`，以 IP `154.201.80.91` 为别名保存。指纹变化时必须先从服务商控制台独立核验，禁止自动接受。
+- 当前重装后主机指纹：`SHA256:RUD26iAbAoApLNZw2Nl9b4hvx0yolbslbfZZOAGrj5o`，沿上文2026-10-13用户批准的隔离绑定，不能冒称已完成控制台独立核验。
+- 日常入口必须显式传`-KnownHostsFile D:\GPT\Legion12\artifacts\security-reinstall-prep-20261009\ssh-reinstall-pinned-20261011.known_hosts`和上述原私钥；独立记录SHA256为`8D0F71B88C9488400B7157CC84B77774D68BFA4E15F79E259656C81C6C2FC0C9`。全局C盘known_hosts含旧项时不修改、不降级校验、不重复询问已批准绑定；新身份变化仍须另行核验。
+- 重装前历史主机公钥`ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK7zDzJDfZJI1gyqTg8/QL7ALF8wYzXhvnenVp+Czbd2`与指纹`SHA256:8GSTnRZ46ArgsRj+G5c1aiZI/0GuyEx0DJyipV5i1Lg`仅保留历史，不用于当前连接。
 - systemd 服务：`legion12-test.service`（仅为历史名称，实际承载正式服）。稳定入口 `/opt/legion12-test`，运行数据 `/opt/legion12-runtime`，当前发布根目录 `/opt`。`/www/legion12` 仅保留历史制品和受保护备份，不在日常部署中自动迁移或删除。
 - 健康接口 `https://legion-12.com/health`，WebSocket `wss://legion-12.com/ws`。部署完成必须同时核验本机和公网 HTTP、WebSocket、提交版本、服务重启次数与发布围栏。
 
-仓库只记录公钥和已人工核验的指纹。服务商密码、SSH 私钥、登录令牌、临时控制台直连地址不得进入仓库或部署日志。若服务器因重装丢失部署公钥，只能从已登录的服务商控制台将上述公钥幂等加入 `/root/.ssh/authorized_keys`，并恢复 `.ssh` 为 `700`、文件为 `600`，随后先执行严格指纹 SSH 探针。
+仓库只记录公钥和具名授权的主机绑定，独立核验状态以对应收据为准。服务商密码、SSH 私钥、登录令牌、临时控制台直连地址不得进入仓库或部署日志。若服务器因重装丢失部署公钥，只能从已登录的服务商控制台将上述公钥幂等加入 `/root/.ssh/authorized_keys`，并恢复 `.ssh` 为 `700`、文件为 `600`，随后先执行严格指纹 SSH 探针。
 
 ## 公网域名
 
@@ -129,7 +130,7 @@ $env:L12_DEPLOY_CACHE = "D:\GPT\Legion12\artifacts\deploy"
 SSH 公钥加入新服务器且已人工核验 `154.201.80.91` 的主机指纹后验证：
 
 ```powershell
-ssh -o HostKeyAlias=154.201.80.91 root@legion-12.com "echo SSH连接成功"
+ssh -o StrictHostKeyChecking=yes -o HostKeyAlias=154.201.80.91 -o UserKnownHostsFile=D:/GPT/Legion12/artifacts/security-reinstall-prep-20261009/ssh-reinstall-pinned-20261011.known_hosts -o GlobalKnownHostsFile=NUL -i C:/Users/neptu/.ssh/id_ed25519 root@legion-12.com "echo SSH连接成功"
 ```
 
 不要复制其他电脑的 SSH 私钥，也不要用 `ssh-keyscan` 的未核验结果直接建立信任。部署脚本会自动读取仓库所有者的用户 SSH 配置；只要新服务器 IP 已存在于所选 `known_hosts`，主域就固定使用该可信 IP 作为 `HostKeyAlias`，不会读取可能残留的旧域名主机项。若可信 IP 条目不存在，脚本保持 `StrictHostKeyChecking=yes` 并失败关闭，不自动接受新指纹。

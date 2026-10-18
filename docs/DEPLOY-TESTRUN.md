@@ -79,11 +79,13 @@ Bootstrap 创建独立管理员密钥和 root-only `0600` 环境文件；邮件�
 ```powershell
 pwsh -NoProfile -File .\ops\windows\deploy-l12-testrun.ps1 `
   -ArtifactManifest D:\path\to\l12-release-<commit>.json `
-  -KnownHostsFile C:\Users\<user>\.ssh\known_hosts `
-  -IdentityFile C:\Users\<user>\.ssh\id_ed25519
+  -KnownHostsFile D:\GPT\Legion12\artifacts\security-reinstall-prep-20261009\ssh-reinstall-pinned-20261011.known_hosts `
+  -IdentityFile C:\Users\neptu\.ssh\id_ed25519
 ```
 
 允许的目标仅为 `root@legion-12.com` 或已核验源站 IP；实际连接始终锁定核验过的 IP、主机指纹与显式私钥。增加 `-ValidateArtifactOnly` 只验证本地目标和发布包；增加 `-DryRun` 会上传并执行服务器端暂存验证，但不切换活动版本。
+
+上述独立主机记录绑定的是用户已批准的重装后RUD指纹；其授权与独立核验范围见DEPLOY-HK。当前全局known_hosts仍可能含重装前旧指纹，必须显式复用独立记录，不回退全局、不关闭严格校验、不因此重复询问同一访问授权。2026-10-18教学首片实际测试部署已沿此入口成功，正式service为legion12-test而非legion12；不要因名称误判环境。
 
 部署入口会：
 
