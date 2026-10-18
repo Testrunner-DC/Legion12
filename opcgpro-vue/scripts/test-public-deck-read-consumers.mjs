@@ -37,7 +37,10 @@ function evaluated(source, dependencies, expression) {
 }
 
 function productionModule(relative) {
-  return evaluated(read(relative), {}, 'exports')
+  return evaluated(read(relative), { require(name) {
+    if (name === '../deckCover') return productionModule('src/l12/deckCover.ts')
+    throw new Error(`Unexpected production dependency: ${name}`)
+  } }, 'exports')
 }
 
 function variableInitializer(source, name) {
