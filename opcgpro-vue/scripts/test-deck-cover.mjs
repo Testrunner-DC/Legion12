@@ -86,8 +86,25 @@ assert.equal(validateOptionalDeckCoverCardIds({ coverCardIds: ['L-12', 'L-12'] }
 
 const source = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const coverComponent = source('../src/l12/DeckCover.vue')
+const deckBannerMasterIds = [
+  'S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2',
+  'S02-01M1', 'S02-02M1', 'S02-03M1', 'S02-04M1', 'S02-05M1', 'S02-05M2', 'S02-06M1', 'S02-06M2',
+  'ST01-M1', 'ST02-M1', 'ST03-M1', 'ST04-M1', 'ST05-M1', 'ST06-M1',
+]
+let deckBannerBytes = 0
+for (const masterId of deckBannerMasterIds) {
+  const banner = readFileSync(new URL(`../public/assets/l12/deck-banners/${masterId}.png`, import.meta.url))
+  deckBannerBytes += banner.length
+  assert.deepEqual([...banner.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10], `${masterId} must remain a PNG`)
+  assert.equal(banner.readUInt32BE(16), 1200, `${masterId} banner width must be 1200`)
+  assert.equal(banner.readUInt32BE(20), 500, `${masterId} banner height must be 500`)
+  assert.match(coverComponent, new RegExp(`['\"]${masterId}['\"]`), `${masterId} must be in the formal banner allowlist`)
+}
+assert.ok(deckBannerBytes > 0, 'formal banner assets must not be empty')
+assert.doesNotMatch(coverComponent, /['\"]S01-02M2['\"]/, 'the non-selectable revived Osiris must keep the fallback path')
 for (const contract of [
   "variant?: 'regular' | 'featured' | 'compact'",
+  'metaPrefix?: string',
   'selectDeckCoverCardIds',
   'validateDeckCoverCardIds',
   'getFactionPresentation',
@@ -96,8 +113,29 @@ for (const contract of [
   '.deck-cover__card:nth-child(2){z-index:2;right:26%',
   '.deck-cover__card:nth-child(3){z-index:1;right:48%',
   '@media(hover:hover) and (pointer:fine)',
+  ':global(button:focus-visible > .deck-cover)',
+  ':global(button:focus-visible > .deck-cover__footer)',
   'transform:translateY(-4px)',
   'transform:scale(1.04)',
+  'border-radius:0',
+  'aspect-ratio:12/5',
+  'height:auto',
+  'height:104px',
+  'top:18px',
+  'top:8px',
+  "import { deploymentPath } from './deploymentBase'",
+  'deck-cover__master-banner',
+  'loading="lazy"',
+  'fetchpriority="low"',
+  '@error="rejectMasterBanner"',
+  'height:30px',
+  'flex-wrap:nowrap',
+  '@media(min-width:701px)',
+  'top:22px;right:-2px',
+  '.deck-cover.deck-cover--featured .deck-cover__cards{right:-5px}',
+  'class="deck-cover__footer"',
+  'data-cover-footer',
+  'color-mix(in srgb,var(--deck-cover-accent) 76%,transparent)',
   '@media(prefers-reduced-motion:reduce)',
   'background:transparent!important',
 ]) assert.match(coverComponent, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
@@ -120,13 +158,30 @@ for (const path of ['../src/l12/SavedDeckSelector.vue', '../src/l12/LobbyPage.vu
   assert.match(contents, /@media\(hover:hover\) and \(pointer:fine\)/)
   assert.match(contents, /transform:translateY\(-4px\)/)
   assert.match(contents, /:deep\(\.deck-cover\).*transform:none/,
-    `${path} must lift its clipped parent and suppress the nested duplicate translation`)
+    `${path} must lift its outer host and suppress the nested duplicate translation`)
+  assert.doesNotMatch(contents, /border-radius:13px/,
+    `${path} must keep deck cover hosts square`)
 }
 const library = source('../src/l12/site/DeckLibraryPage.vue')
 assert.match(source('../src/l12/L12DeckEditor.vue'), /\.mobile-saved-decks-list\{grid-auto-rows:max-content\}/,
-  'clipped cover buttons must keep their content-sized grid rows and form a scrollable mobile list')
+  'cover buttons must keep their content-sized grid rows and form a scrollable mobile list')
 assert.match(library, /variant="featured"/)
-assert.match(library, /badge="热门牌库"/)
+assert.doesNotMatch(library, /badge="热门牌库"/)
+assert.match(library, /replace\(\/\^环境\\s\*\//,
+  'cover environment labels must remove the redundant 环境 prefix')
+assert.match(library, /:meta-prefix="compactDeckEnvironmentLabel\(entry\.environment\.value \?\? 'pending'\)" :meta="`浏览量 /,
+  'featured covers must place environment immediately before view count')
+assert.match(coverComponent, /<\/div>\s*<div v-if="metaPrefix" class="deck-cover__footer"/,
+  'featured statistics must be outside the 12:5 visual body')
+assert.match(library, /class="plaza-card-stats"><span class="deck-environment-badge">[\s\S]{0,180}<span>浏览量 /,
+  'regular public covers must place environment immediately before view count')
+assert.match(library, /class="deck-environment-badge">\{\{ compactDeckEnvironmentLabel\(entry\.environment\.value \?\? 'pending'\) \}\}/,
+  'regular public environment badges must use the same compact label')
+assert.doesNotMatch(library, /<DeckCover[^>]*\/><span class="deck-environment-badge">/,
+  'regular cover environment must not remain at the top right of the cover')
+assert.match(library, /\.mine-grid>article,\.plaza-grid>article,\.hot-deck-loop>button\{overflow:visible;border-radius:0/)
+assert.doesNotMatch(library, /rgba\(215,184,91,\.5\)/,
+  'deck hover glow must come from the faction-aware shared cover')
 assert.match(library, /class="plaza-summary"[\s\S]{0,700}<DeckCover/)
 assert.match(source('../src/l12/LobbyPage.vue'), /repeat\(auto-fit,minmax\(min\(180px,100%\),1fr\)\)/,
   'legacy room cover grid must collapse responsively instead of squeezing four covers')

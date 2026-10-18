@@ -156,8 +156,8 @@ function officialSourceCards(deck: { name: string; masterId: string }) {
 
 <style scoped>
 .deck-picker>div{grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));padding-top:4px}
-.deck-picker>div>button{min-width:0;overflow:hidden;border-radius:13px;transition:transform .3s cubic-bezier(.4,0,.2,1),border-color .3s cubic-bezier(.4,0,.2,1),box-shadow .3s cubic-bezier(.4,0,.2,1)}
+.deck-picker>div>button{min-width:0;overflow:visible;border-radius:0;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 .deck-picker>div>button :deep(.deck-cover){border:0}
-@media(hover:hover) and (pointer:fine){.deck-picker>div>button:not(:disabled):hover,.deck-picker>div>button:not(:disabled):focus-visible{box-shadow:0 18px 40px -16px rgba(215,184,91,.5);transform:translateY(-4px)}.deck-picker>div>button:hover :deep(.deck-cover),.deck-picker>div>button:focus-visible :deep(.deck-cover){transform:none}}
+@media(hover:hover) and (pointer:fine){.deck-picker>div>button:not(:disabled):hover,.deck-picker>div>button:not(:disabled):focus-visible{transform:translateY(-4px)}.deck-picker>div>button:hover :deep(.deck-cover),.deck-picker>div>button:focus-visible :deep(.deck-cover){transform:none}}
 @media(prefers-reduced-motion:reduce){.deck-picker>div>button{transition:none!important}.deck-picker>div>button:hover,.deck-picker>div>button:focus-visible{transform:none}}
 </style>
