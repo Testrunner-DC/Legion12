@@ -10,16 +10,95 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const origin = process.argv[2] || 'http://127.0.0.1:5242/__l12_battle_preview__'
 const reloadOnly = process.argv.includes('--reload-only')
+const geometryOnly = process.argv.includes('--geometry-only')
+const geometryNegative = process.argv.includes('--geometry-negative')
+assert.ok(!geometryNegative || geometryOnly, 'geometry-negative requires geometry-only')
 const output = path.resolve(process.env.L12_ORDER_DIRECTION_ARTIFACT_DIR || 'artifacts/stage2d-order-direction')
 const scriptPath = fileURLToPath(import.meta.url)
 const appRoot = path.resolve(path.dirname(scriptPath), '..')
 const repoRoot = path.resolve(appRoot, '..')
-if (reloadOnly) {
+if (reloadOnly || geometryOnly) {
   assert.ok(process.env.L12_ORDER_DIRECTION_ARTIFACT_DIR, 'reload-only requires an explicit evidence directory')
   assert.ok(['127.0.0.1', 'localhost'].includes(new URL(origin).hostname), 'reload-only must remain local')
   const quote = value => `'${value.replaceAll("'", "''")}'`
   execFileSync('pwsh', ['-NoProfile', '-Command',
     `. ${quote(path.join(repoRoot, 'ops/windows/L12GeneratedStorage.ps1'))}; $null=Assert-L12GeneratedPath -Path ${quote(output)} -Purpose 'order reload evidence'`], { stdio: 'pipe' })
+}
+
+async function assertPlacementGeometry(page, panel, item, mode) {
+  const body = panel.locator('.prompt-choice-body')
+  await body.evaluate(node => { node.scrollTop = 0 })
+  const facts = await panel.evaluate(node => {
+    const rect = element => {
+      const r = element.getBoundingClientRect()
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height }
+    }
+    const body = node.querySelector('.prompt-choice-body')
+    const workspace = node.querySelector('.all-placement-workspace,.placement-workspace')
+    const cards = [...workspace.querySelectorAll('.prompt-card-candidate')].map(element => {
+      const card = rect(element), strip = rect(element.closest('.prompt-card-strip'))
+      return { ...card, visibleLeft: Math.max(card.left, strip.left), visibleRight: Math.min(card.right, strip.right) }
+    })
+    const text = [...body.querySelectorAll('.prompt-task-context,.prompt-instruction,.placement-direction-hint,.placement-edge,.placement-workspace>section>header')]
+      .map(element => ({ text: element.textContent.trim(), rect: rect(element) }))
+    const overlaps = []
+    for (const [index, card] of cards.entries()) for (const copy of text)
+      if (Math.min(card.visibleRight, copy.rect.right) - Math.max(card.visibleLeft, copy.rect.left) > 1
+        && Math.min(card.bottom, copy.rect.bottom) - Math.max(card.top, copy.rect.top) > 1)
+        overlaps.push({ card: index, text: copy.text })
+    return { body: rect(body), workspace: rect(workspace), cards, text, overlaps,
+      clientHeight: body.clientHeight, scrollHeight: body.scrollHeight, scrollTop: body.scrollTop }
+  })
+  const geometry = { mode, initial: facts, reached: [] }
+  ;(item.geometry ??= []).push(geometry)
+  assert.deepEqual(facts.overlaps, [], `${item.name}/${mode}: sorting cards overlap authoritative operation/direction text`)
+  assert.ok(facts.cards.every(card => card.top >= facts.workspace.top - 1 && card.bottom <= facts.workspace.bottom + 1),
+    `${item.name}/${mode}: fixed-height cards escape their sorting workspace`)
+  for (const target of await panel.locator('.prompt-actor,.prompt-selection-range,.prompt-instruction,.placement-direction-hint,.placement-edge,.placement-workspace>section>header').all()) {
+    if (!await target.isVisible()) continue
+    await target.scrollIntoViewIfNeeded()
+    const reached = await target.evaluate(element => {
+      const r = element.getBoundingClientRect(), body = element.closest('.prompt-choice-body'), clip = body.getBoundingClientRect()
+      const x = r.left + r.width / 2, y = r.top + r.height / 2, hit = document.elementFromPoint(x, y)
+      return { text: element.textContent.trim(), centreOwned: Boolean(hit && element.contains(hit)),
+        centreInBody: x >= clip.left && x <= clip.right && y >= clip.top && y <= clip.bottom,
+        scrollTop: body.scrollTop }
+    })
+    geometry.reached.push(reached)
+    assert.ok(reached.centreOwned && reached.centreInBody, `${item.name}/${mode}: text is not reachable/centre-owned ${JSON.stringify(reached)}`)
+    if (item.viewport.width === 844 && /最终相对牌序/.test(reached.text)) {
+      const screenshot = `${item.name}-${mode}-direction.png`
+      await page.screenshot({ path: path.join(output, screenshot) }); item.screenshots.push(screenshot)
+    }
+  }
+  if (item.viewport.width === 844) {
+    assert.ok(facts.scrollHeight > facts.clientHeight, `${item.name}/${mode}: short sorting body must own vertical overflow`)
+    await body.evaluate(node => { node.scrollTop = 0 })
+    const box = await body.boundingBox(); assert.ok(box && box.height > 35)
+    const session = await page.context().newCDPSession(page)
+    const x = box.x + box.width - 8, start = box.y + box.height - 8, end = box.y + 8
+    try {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: start }] })
+      for (let step = 1; step <= 5; step++) await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove', touchPoints: [{ x, y: start + (end - start) * step / 5 }] })
+      await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      await page.waitForFunction(() => document.querySelector('.prompt-choice-body').scrollTop > 0)
+      await page.waitForFunction(() => {
+        const node = document.querySelector('.prompt-choice-body')
+        const previous = window.__sortingScrollSettled
+        window.__sortingScrollSettled = { top: node.scrollTop, stable: previous?.top === node.scrollTop ? previous.stable + 1 : 0 }
+        return window.__sortingScrollSettled.stable >= 8
+      })
+    } finally { await session.detach() }
+    geometry.touchScrollTop = await body.evaluate(node => node.scrollTop)
+    geometry.trustedTouchStarts = await page.evaluate(() => window.__orderReloadEvents.filter(event => event.type === 'touchstart' && event.trusted).length)
+    assert.ok(geometry.touchScrollTop > 0, `${item.name}/${mode}: native browser touch did not move the sorting body`)
+    assert.equal(geometry.trustedTouchStarts, 1, `${item.name}/${mode}: scroll must start with one trusted touch`)
+  }
+  await body.evaluate(node => { node.scrollTop = 0 })
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const screenshot = `${item.name}-${mode}-geometry.png`
+  await page.screenshot({ path: path.join(output, screenshot) }); item.screenshots.push(screenshot)
 }
 fs.mkdirSync(output, { recursive: true })
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })
@@ -108,6 +187,25 @@ async function verifyReloadOnly() {
       dragInput: 'Playwright native HTML5 mouse drag (not finger drag or physical-device certification)',
       confirmInput: profile.mobile ? 'two browser touchscreen taps' : 'native mouse double click',
       errors: [], blockedExternalRequests: [], failedRequests: [], httpErrors: [], screenshots: [] }
+    const loadedFiles = ['game/PromptOverlay.vue', 'game/GameBoard.vue', 'game/PromptCardCandidate.vue', 'CardImage.vue']
+    const sourceReads = []
+    if (geometryOnly) {
+      item.sourceInputs = Object.fromEntries(loadedFiles.map(file => [file, sha256(path.join(appRoot, 'src/l12', file))]))
+      item.loadedSources = []
+      page.on('response', response => {
+        const url = new URL(response.url())
+        const file = loadedFiles.find(file => url.pathname === '/src/l12/' + file)
+        if (!file || url.searchParams.has('type')) return
+        sourceReads.push(response.text().then(text => {
+          const encoded = text.match(/sourceMappingURL=data:application\/json;base64,([^\r\n]+)/)?.[1]
+          assert.ok(encoded, `${file}: loaded SFC source map required`)
+          const map = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'))
+          assert.equal(map.sourcesContent.length, 1, `${file}: exact loaded source required`)
+          item.loadedSources.push({ file, url: response.url(),
+            loadedOriginalSha256: createHash('sha256').update(map.sourcesContent[0]).digest('hex').toUpperCase() })
+        }).catch(error => { item.errors.push(`loaded source: ${error.message}`) }))
+      })
+    }
     page.on('pageerror', error => item.errors.push(`pageerror: ${error.message}`))
     page.on('console', message => { if (message.type() === 'error') item.errors.push(`console: ${message.text()}`) })
     page.on('requestfailed', request => item.failedRequests.push({ url: request.url(), error: request.failure()?.errorText }))
@@ -179,6 +277,12 @@ async function verifyReloadOnly() {
       return facts
     }
     try {
+      if (geometryOnly) for (const mode of ['all-top-bottom', 'all-bottom', 'split-top-bottom']) {
+        const geometryPanel = await view(page, profile, mode)
+        if (geometryNegative && profile.mobile) await page.addStyleTag({ content:
+          '.prompt-choice-body > :is(.all-placement-workspace,.placement-workspace){flex:1 1 auto!important;min-height:0!important}' })
+        await assertPlacementGeometry(page, geometryPanel, item, mode)
+      }
       const dragIndex = profile.mobile ? 1 : 2
       const expectedNames = profile.mobile ? ['乙号测试卡', '甲号测试卡', '丙号测试卡'] : ['丙号测试卡', '甲号测试卡', '乙号测试卡']
       const expectedIds = profile.mobile ? ['0-hand-showcase-1', '0-hand-showcase-0', '0-hand-showcase-2'] : ['0-hand-showcase-2', '0-hand-showcase-0', '0-hand-showcase-1']
@@ -237,6 +341,15 @@ async function verifyReloadOnly() {
       assert.ok(item.eventsRestored.some(e => e.type === 'dragstart' && e.trusted && e.card === expectedNames[0])
         && item.eventsRestored.some(e => e.type === 'drop' && e.trusted && e.card === '甲号测试卡'), 'restored reorder must use trusted native drag/drop on the intended cards')
       if (profile.mobile) assert.equal(item.eventsRestored.filter(e => e.type === 'touchstart' && e.trusted).length, 2)
+      if (geometryOnly) {
+        await Promise.all(sourceReads)
+        for (const file of loadedFiles) {
+          const loaded = item.loadedSources.filter(source => source.file === file)
+          assert.ok(loaded.length, `${file}: source was not loaded from this preview`)
+          assert.ok(loaded.every(source => source.loadedOriginalSha256 === item.sourceInputs[file]), `${file}: loaded SFC differs from recorded worktree input`)
+          assert.equal(sha256(path.join(appRoot, 'src/l12', file)), item.sourceInputs[file], `${file}: input changed during browser verification`)
+        }
+      }
       assert.deepEqual(item.errors, [], 'no unknown browser errors may be ignored')
       assert.deepEqual(item.failedRequests, [], 'no request failures may be ignored')
       assert.deepEqual(item.httpErrors, [], 'no HTTP failures may be ignored')
@@ -251,7 +364,7 @@ async function verifyReloadOnly() {
     } finally { cases.push(item); await context.close() }
   }
   const report = { schemaVersion: 1, status: cases.every(item => item.passed) ? 'passed' : 'failed',
-    generatedAt: new Date().toISOString(), mode: 'reload-only', origin,
+    generatedAt: new Date().toISOString(), mode: geometryOnly ? 'geometry-and-reload-only' : 'reload-only', origin,
     source: { head: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(),
       scriptSha256: sha256(scriptPath), promptOverlaySha256: sha256(path.join(appRoot, 'src/l12/game/PromptOverlay.vue')),
       previewSha256: sha256(path.join(appRoot, 'scripts/preview-l12-battle-layout.mjs')) },
@@ -270,7 +383,7 @@ async function verifyReloadOnly() {
 }
 
 try {
-  if (reloadOnly) await verifyReloadOnly()
+  if (reloadOnly || geometryOnly) await verifyReloadOnly()
   else {
   const page = await browser.newPage()
   page.setDefaultTimeout(9000)

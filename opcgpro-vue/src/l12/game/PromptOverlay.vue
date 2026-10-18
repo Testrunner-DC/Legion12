@@ -1198,6 +1198,12 @@ function kindLabel() {
 .prompt-task-context{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}.prompt-task-context>span{padding:4px 8px;border:1px solid #43504d;background:#0c1213}.prompt-task-context .prompt-selection-range{min-width:0;flex:1 1 180px;color:#e8e2cc}.prompt-task-context[data-actor-state="self"] .prompt-actor{border-color:#4d9e72;background:#0d1c15;color:#79e4a3}.prompt-task-context[data-actor-state="opponent"] .prompt-actor{border-color:#8f454b;background:#1d1012;color:#ef9297}
 .prompt-information-panel{display:flex;flex-direction:column;overflow:hidden}
 .prompt-information-panel>.prompt-choice-body{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto}
+/* Sorting cards have an intrinsic height. Keep their grid from shrinking over
+   operation/direction text; the existing mobile choice body owns overflow. */
+:global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-body > :is(.all-placement-workspace,.placement-workspace)){
+  flex:0 0 auto;
+  min-height:min-content;
+}
 .prompt-information-panel>.prompt-action-footer{flex:0 0 auto}
 .prompt-actor,.prompt-selection-range{overflow-wrap:anywhere}
 .prompt-choice-detail{display:flex;flex-direction:column;gap:3px;min-width:0;margin:7px 3px 10px;padding:8px 10px;border:1px solid #598c8c;background:#0a1b1e;color:#e9f2ed;font-size:var(--l12-board-copy,13px);line-height:1.4;overflow-wrap:anywhere}
