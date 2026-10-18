@@ -9,13 +9,17 @@ import { createServer } from 'vite'
 
 const front = path.resolve(import.meta.dirname, '..')
 const runId = new Date().toISOString().replace(/[:.]/g, '-') + '-' + crypto.randomUUID().slice(0, 8)
+const ciRoot = process.env.GITHUB_ACTIONS === 'true' && process.env.RUNNER_TEMP
+  ? path.resolve(process.env.RUNNER_TEMP, 'l12-tutorial-contracts') : null
 const output = process.env.L12_TUTORIAL_OUTPUT
   || (process.env.L12_ARTIFACT_ROOT && path.join(process.env.L12_ARTIFACT_ROOT, 'tutorial-build-20261018/frontend/contracts-' + runId))
+  || (ciRoot && path.join(ciRoot, 'evidence', runId))
 const cache = process.env.L12_TUTORIAL_VITE_CACHE
   || (process.env.L12_WORK_CACHE && path.join(process.env.L12_WORK_CACHE, 'tutorial-build-20261018/frontend/contracts-current'))
+  || (ciRoot && path.join(ciRoot, 'cache'))
 assert.ok(output && cache, 'Initialize L12 generated storage, or select explicit tutorial output and cache roots')
-execFileSync(process.env.L12_PWSH || 'pwsh.exe', ['-NoProfile', '-NonInteractive', '-Command',
-  '. $env:L12_INITIALIZER | Out-Null; . $env:L12_GUARD; '
+execFileSync(process.env.L12_PWSH || (process.platform === 'win32' ? 'pwsh.exe' : 'pwsh'), ['-NoProfile', '-NonInteractive', '-Command',
+  '. $env:L12_INITIALIZER -CacheRoot $env:L12_TUTORIAL_VITE_CACHE | Out-Null; . $env:L12_GUARD; '
     + '@($env:L12_TUTORIAL_OUTPUT,$env:L12_TUTORIAL_VITE_CACHE,$env:TEMP) | ForEach-Object { '
     + '$null=Assert-L12GeneratedPath -Path $_ -Purpose "tutorial focused UI contract" }'], {
   stdio: 'pipe',
