@@ -26,8 +26,14 @@ public sealed partial class L12RoomManager
     }
 
     private bool SettlementParticipantsLeft(Room room)
-        => room.Sessions.All(id => !_sessions.TryGetValue(id, out var member) || member.IsVirtual
-            || member.PlayerIndex is { } index && room.SettlementLeft[index]);
+    {
+        if (!room.Sessions.All(id => !_sessions.TryGetValue(id, out var member) || member.IsVirtual
+                || member.PlayerIndex is { } index && room.SettlementLeft[index])) return false;
+        // 断线观战者仍可认领原成员关系；统一30分钟上限不因恢复而延长。
+        lock (room.Spectators)
+            return !room.Spectators.Any(id => _sessions.TryGetValue(id, out var member)
+                && !member.IsVirtual && member.IsSpectator && member.RoomCode == room.Code);
+    }
 
     private static bool CanRetireSettlement(Room room)
         => room.CompletionRecorded

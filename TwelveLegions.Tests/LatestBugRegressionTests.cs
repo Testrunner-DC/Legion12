@@ -765,7 +765,7 @@ public sealed class LatestBugRegressionTests
     }
 
     [Fact]
-    public async Task BothPlayersLeavingCompletedRoomReleasesEverySpectator()
+    public async Task BothPlayersLeavingCompletedRoomRetainsSpectatorUntilExplicitExit()
     {
         var directory = Path.Combine(Path.GetTempPath(), "l12-spectator-room-close", Guid.NewGuid().ToString("N"));
         await using var recorder = new MatchRecorder(Path.Combine(directory, "matches.db"));
@@ -786,10 +786,11 @@ public sealed class LatestBugRegressionTests
         await manager.HandleActionAsync(host, JsonSerializer.SerializeToElement(new { type = "surrender" }));
 
         Assert.DoesNotContain(manager.LeaveRoom(host), message => message.SessionId == spectator || message.SessionId == guest);
-        var closed = manager.LeaveRoom(guest);
-        var spectatorMessage = JsonSerializer.SerializeToElement(
-            closed.Single(message => message.SessionId == spectator).Payload);
-        Assert.Equal("roomClosed", spectatorMessage.GetProperty("type").GetString());
+        Assert.DoesNotContain(manager.LeaveRoom(guest), message => message.SessionId == spectator);
+        Assert.Contains(manager.RecoveryState(spectator), message =>
+            JsonSerializer.SerializeToElement(message.Payload).GetProperty("type").GetString() == "gameState");
+        var spectatorLeft = Assert.Single(manager.LeaveRoom(spectator));
+        Assert.Equal("roomLeft", JsonSerializer.SerializeToElement(spectatorLeft.Payload).GetProperty("type").GetString());
         Assert.Empty(manager.RecoveryState(spectator));
         Assert.Equal("roomState", JsonSerializer.SerializeToElement(
             Assert.Single(manager.CreateRoom(spectator)).Payload).GetProperty("type").GetString());
