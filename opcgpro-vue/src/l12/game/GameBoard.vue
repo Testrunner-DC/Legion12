@@ -1729,7 +1729,8 @@ function statusTexts(card: Card) {
         </div>
       </Teleport>
       <Teleport :to="landscapeTeleportTarget()">
-        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="选择士气">
+        <section v-if="mobileMoralePickerEnabled && mobileMoralePickerOpen" class="mobile-record-overlay mobile-morale-overlay mobile-safe-overlay"
+          data-tutorial-anchor="payment-panel" :data-tutorial-prompt-id="mobilePaymentPrompt?.promptId" role="dialog" aria-modal="true" aria-label="选择士气">
           <header><div><h2>{{ mobileMoraleInteractive ? '选择士气' : '我方士气' }}</h2><small>{{ mobileMoraleInteractive ? `已选择 ${selectedPaymentIds.length}/${mobilePaymentPrompt?.maxChoose ?? 0}` : `活跃 ${viewMe.morale.filter(item => !item.tapped).length} / 共 ${viewMe.morale.length}` }}</small></div><div class="mobile-morale-header-actions"><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = true">最小化</button><button type="button" @click="mobileMoralePickerOpen = false; mobileMoralePickerMinimized = false">返回对局</button></div></header>
           <div v-if="mobilePaymentPrompt" class="mobile-morale-prompt inline-prompt-copy">
             <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(mobilePaymentPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(mobilePaymentPrompt) }}</small><strong>{{ inlinePromptTitle(mobilePaymentPrompt) }}</strong></div>
@@ -1742,13 +1743,13 @@ function statusTexts(card: Card) {
           <div class="mobile-morale-picker" aria-label="可选择的士气与符文">
             <section v-if="viewMe.faction === 'otherworld'" class="mobile-rune-row" aria-label="彼界阵营符文">
               <div v-if="mobileRuneChoices.length">
-                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+                <button v-for="choice in mobileRuneChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :data-tutorial-payment-resource="choice.selectable ? choice.id : undefined" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                   <img :src="choice.iconUrl" alt="" />
                 </button>
               </div>
             </section>
             <section class="mobile-resource-row" aria-label="普通士气与特殊士气">
-              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
+              <button v-for="choice in mobileMoraleChoices" :key="choice.id" type="button" :class="['mobile-morale-choice', choice.state, `activity-${choice.activity}`, { selected: selectedPaymentIds.includes(choice.id), unavailable: !choice.selectable }]" :data-tutorial-payment-resource="choice.selectable ? choice.id : undefined" :aria-pressed="selectedPaymentIds.includes(choice.id)" :aria-disabled="!choice.selectable" :aria-label="`${choice.label}${choice.disabledReason ? `：${choice.disabledReason}` : ''}`" :title="choice.disabledReason || choice.label" @click="chooseMobileMorale(choice)">
                 <img :src="choice.iconUrl" alt="" />
               </button>
             </section>
@@ -1758,7 +1759,7 @@ function statusTexts(card: Card) {
           <footer v-if="mobilePaymentPrompt" class="mobile-morale-actions" data-ui-contract="equal-action-group">
             <button v-if="mobilePaymentPrompt.validChoices.includes('skip')" type="button" @click="confirmMobileMoralePayment(true)">{{ promptChoiceText(mobilePaymentPrompt, 'skip', '不发动') }}</button>
             <button v-if="mobilePaymentPrompt.validChoices.includes('cancel')" type="button" @click="cancelMobileMoralePayment">{{ promptChoiceText(mobilePaymentPrompt, 'cancel', '取消打出') }}</button>
-            <button class="primary" type="button" :disabled="selectedPaymentIds.length < mobilePaymentPrompt.minChoose || selectedPaymentIds.length > mobilePaymentPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ mixedBoardPayment ? '确认费用' : mobilePaymentPrompt.kind === 'resource-return' || mobilePaymentPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : mobilePaymentPrompt.kind === 'resource-payment' || mobilePaymentPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
+            <button class="primary" data-tutorial-action="confirm-payment" type="button" :disabled="selectedPaymentIds.length < mobilePaymentPrompt.minChoose || selectedPaymentIds.length > mobilePaymentPrompt.maxChoose" @click="confirmMobileMoralePayment(false)">{{ mixedBoardPayment ? '确认费用' : mobilePaymentPrompt.kind === 'resource-return' || mobilePaymentPrompt.data?.choiceMode === 'resource-return' ? '确认返还' : mobilePaymentPrompt.kind === 'resource-payment' || mobilePaymentPrompt.data?.choiceMode === 'resource-payment' ? '确认支付' : '确认选择' }}</button>
           </footer>
         </section>
       </Teleport>
@@ -1820,7 +1821,8 @@ function statusTexts(card: Card) {
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
           @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls">
+      <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls"
+        data-tutorial-anchor="payment-panel" :data-tutorial-prompt-id="resourceSelectionPrompt.promptId">
         <span v-if="mobileLandscapeViewport" class="inline-prompt-brief" role="status">{{ inlinePromptBrief(resourceSelectionPrompt) }}</span>
         <div v-if="!mobileLandscapeViewport" class="inline-prompt-copy">
           <div class="inline-prompt-operation" :data-actor-state="inlinePromptActorState(resourceSelectionPrompt)"><small class="inline-prompt-actor-badge">{{ inlinePromptActor(resourceSelectionPrompt) }}</small><strong>{{ inlinePromptTitle(resourceSelectionPrompt) }}</strong></div>
@@ -1833,13 +1835,13 @@ function statusTexts(card: Card) {
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('skip')" @click="confirmResourcePayment(true)">{{ promptChoiceText(resourceSelectionPrompt, 'skip', '不发动') }}</button>
         <button v-if="resourceSelectionPrompt.validChoices.includes('cancel')" @click="cancelResourcePayment">{{ promptChoiceText(resourceSelectionPrompt, 'cancel', resourceSelectionPrompt.data?.cancel ?? '取消打出') }}</button>
-        <button class="primary" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose"
+        <button class="primary" data-tutorial-action="confirm-payment" :disabled="paymentResourceIds.length < resourceSelectionPrompt.minChoose || paymentResourceIds.length > resourceSelectionPrompt.maxChoose"
           @click="confirmResourcePayment(false)">{{ resourceSelectionPrompt.kind === 'resource-return' || resourceSelectionPrompt.data?.choiceMode === 'resource-return'
             ? '确认返还'
             : resourceSelectionPrompt.kind === 'resource-payment' || resourceSelectionPrompt.data?.choiceMode === 'resource-payment'
               ? '确认支付' : '确认选择' }}</button>
       </div></BattleDockPortal>
-      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
+      <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :data-tutorial-action="resourceSelectionPrompt ? 'restore-payment' : undefined" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
       <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
         @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>

@@ -117,19 +117,21 @@ onBeforeUnmount(() => resizeObserver?.disconnect())
 </script>
 
 <template>
-  <div ref="handElement" class="l12-hand" data-l12-zone="hand" data-ui-contract="field-sized-safe-hand" :data-player-index="playerIndex"
+  <div ref="handElement" class="l12-hand" data-l12-zone="hand" data-ui-contract="field-sized-safe-hand" data-tutorial-anchor="hand"
+    :data-player-index="playerIndex" :data-tutorial-player-index="playerIndex"
     :data-more-start="moreAtStart" :data-more-end="moreAtEnd" :class="{ hidden, 'playability-active': dimUnplayable, overflowing: isOverflowing, 'mobile-layout': mobileLayout }"
     @scroll="updateOverflowEdges" @wheel="onHandWheel" @pointerdown="onHandPointerDown" @pointermove="onHandPointerMove"
     @pointerup="endHandPointer" @pointercancel="endHandPointer" @click.capture="onHandClickCapture">
     <template v-if="hidden">
       <div v-for="index in count || 0" :key="index" class="card-back" :data-flip-id="`back-${index}`" :style="fanStyle(index - 1, count || 0)"><i>XII</i></div>
     </template>
-    <div v-for="(card, index) in cards" v-else :key="card.instanceId" class="hand-card-wrap" :data-flip-id="card.instanceId" :style="fanStyle(index, cards?.length || 0)"
+    <div v-for="(card, index) in cards" v-else :key="card.instanceId" class="hand-card-wrap" :data-flip-id="card.instanceId"
+      :data-tutorial-card-instance="card.instanceId" :style="fanStyle(index, cards?.length || 0)"
       :class="{ playable: playableIds?.includes(card.instanceId), selected: selectedIds?.includes(card.instanceId) }">
       <BattleDockPortal lane="context">
         <div v-if="showPlayAction && (confirmAllPlayable || card.cardType !== 'legion') && selectedIds?.includes(card.instanceId) && playableIds?.includes(card.instanceId)"
           class="card-context-actions hand-actions" :class="{ 'mobile-action-dock': mobileLayout }">
-          <button @click.stop="emit('play', card)">打出</button>
+          <button data-tutorial-action="play-card" :data-tutorial-card-instance="card.instanceId" @click.stop="emit('play', card)">打出</button>
         </div>
       </BattleDockPortal>
       <CardTile :card="card" :selected="selectedIds?.includes(card.instanceId)"

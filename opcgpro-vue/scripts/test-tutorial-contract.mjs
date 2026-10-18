@@ -35,6 +35,7 @@ const files = {
   types: 'src/l12/types.ts', net: 'src/l12/net.ts', game: 'src/l12/GamePage.vue',
   hub: 'src/l12/site/BattleHubPage.vue', page: 'src/l12/site/TutorialPage.vue',
   overlay: 'src/l12/tutorial/TutorialGuidanceOverlay.vue', progress: 'src/l12/tutorial/tutorialProgress.ts',
+  course: 'src/l12/tutorial/tutorialCourse.ts', guide: 'src/l12/tutorial/tutorialGuidance.ts',
   router: 'src/router/index.ts', admin: 'src/l12/site/adminSections.ts', sandbox: 'src/l12/site/SandboxPage.vue',
   script: 'scripts/test-tutorial-contract.mjs',
 }
@@ -43,28 +44,31 @@ const source = Object.fromEntries(Object.entries(files).map(([key, relative]) =>
 const cases = []
 function check(name, work) { work(); cases.push(name); console.log(`PASS ${name}`) }
 
-check('three playable lessons and five unavailable lessons stay presentation-only', () => {
-  assert.match(source.hub, /跟着提示，练习部署支付、普通移动和攻防/)
-  assert.match(source.page, /const lessons:[\s\S]*id: 'deploy'[\s\S]*id: 'move'[\s\S]*id: 'combat'/)
-  assert.match(source.page, /其余课程正在准备/)
-  assert.doesNotMatch(source.page, /lesson\.order >|completed\.includes\([^)]*order|未接入服务器合法场景|不会假完成/)
-  assert.equal((source.page.match(/@click="startLesson\(lesson\.id\)"/g) || []).length, 1)
+check('one continuous first chapter opens inline without a second directory link', () => {
+  assert.match(source.hub, /<TutorialPage v-else embedded\s*\/>/)
+  assert.doesNotMatch(source.hub + source.page, /进入教学目录|lesson-grid|开始本关|三关可任选/)
+  for (const chapter of ['初识十二军团', '卡牌效果与响应', '完成一场对局']) assert.ok(source.course.includes(chapter))
+  assert.match(source.page, /尚未开放/)
+  assert.match(source.page, /questionOpen \? introduction\.answer : introduction\.text/)
+  assert.match(source.page, /明白了，回到主线/)
 })
-check('lesson copy names the fixed first-slice actors and cells without private ids', () => {
-  for (const text of ['1 费《西施》', '后排中格的《西施》', '前排左格军团进攻对方主宰']) assert.ok(source.page.includes(text))
-  assert.doesNotMatch(source.page + source.overlay, /S01-0116|instanceId|cardInstanceId/)
-  assert.ok(source.overlay.includes('使用普通移动，点选亮起的相邻空格，再按提示支付费用。'), 'Move guidance must follow the actual destination-before-payment UI chain')
+check('introductions explain goals, card types, resource origins and tradeoffs in Legion12 terms', () => {
+  for (const text of ['血量降至0', '主宰', '军团', '战术', '圣物', '手牌从哪里来', '牌库顶部抽1张',
+    '先攻玩家第一回合不抽', '士气牌库', '追加2张', '追加1张', '重置阶段', '费用', '兵力', '代价']) assert.ok(source.course.includes(text), text)
+  assert.doesNotMatch(source.page + source.course + source.overlay + source.guide, /部署|法力|召唤/)
+  const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
+  assert.doesNotMatch(template, /\{\{[^}]*\b(?:instanceId|cardInstanceId|lessonId|stepId)\b/)
+  assert.match(source.page, /<CardImage :card-id="card\.id"/)
 })
-check('overlay is player-facing, minimizable, and keeps touch targets clear', () => {
-  for (const text of ['新手教学', '学习提示', '本关完成，可查看场面变化或返回目录']) assert.ok(source.overlay.includes(text))
+check('guide stays on the real board with inline questions, readable dialogue and non-intercepting focus', () => {
+  for (const text of ['继续主线', '回到主线']) assert.ok(source.overlay.includes(text))
   const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
   assert.doesNotMatch(template, /\{\{\s*tutorial\.(?:lessonId|stepId)|服务器权威|不会通关|判定说明/)
-  assert.match(source.overlay, /left:14px;top:14px/)
-  assert.match(source.overlay, /header button\{min-width:44px;min-height:44px/)
-  assert.match(source.overlay, /summary\{min-height:44px/)
+  assert.match(source.overlay, /pointer-events:\s*none/)
+  assert.match(source.overlay, /44px/)
   assert.ok(source.overlay.includes('<BattleOverlayPortal>'), 'Expanded teaching copy must not be squeezed into the narrow action lane')
-  assert.ok(source.overlay.includes('width:min(360px,calc(var(--l12-viewport-width,100vw) - 200px))'), 'The readable panel must use the logical canvas width')
-  assert.match(source.overlay, /mobile-battle-dock__context > \.tutorial-guidance-restore\)\{[^}]*position:static!important[^}]*min-height:44px!important/)
+  assert.match(source.overlay, /continueMainline/)
+  assert.match(source.game, /@continue-mainline="continueTutorialMainline"/)
 })
 check('tutorial route replaces public single-player while sandbox is admin-only', () => {
   assert.ok(source.router.includes("path: '/battle/tutorial'"))
@@ -93,7 +97,9 @@ check('completion is bound to authoritative completed tutorial identity only', (
   assert.match(source.game, /current\?\.status !== 'completed'/)
   assert.match(source.game, /platformState\.account\?\.id === current\.accountId/)
   assert.match(source.game, /l12State\.connectionGeneration === current\.connectionGeneration/)
-  assert.doesNotMatch(source.game, /game\.phase === 'GameOver'[\s\S]{0,120}recordTutorialCompletion/)
+  assert.doesNotMatch(source.game, /recordTutorialCompletion\(/)
+  assert.match(source.game, /recordGuidedSceneReview/)
+  assert.match(source.game, /tutorialHandoffDecision/)
   assert.match(source.game, /tutorialRoom \? '\/battle\/tutorial'/)
   assert.match(source.game, /sandboxRoom \? '\/admin\/operations\/sandbox'/)
   assert.match(source.page, /v-if="l12State\.notice"[^>]*role="alert"/)
@@ -158,6 +164,72 @@ check('account ABA cannot apply an old completion and a fresh A binding can pers
   const fresh = projection({ sessionId: 'session-a3', connectionGeneration: 13, matchId: 'match-a3', lessonId: 'move' })
   assert.equal(progress.recordTutorialCompletion(fresh, binding({ sessionId: 'session-a3', connectionGeneration: 13, matchId: 'match-a3' }), storage), true)
   assert.deepEqual(progress.loadTutorialProgress('account-a', storage), ['move'])
+})
+
+check('legacy action completions cannot promote the new conversation-led chapter', () => {
+  const storage = new MemoryStorage()
+  progress.recordTutorialCompletion(projection({ accountId: 'legacy-account' }), binding({ accountId: 'legacy-account' }), storage)
+  assert.deepEqual(progress.loadGuidedTutorialProgress('legacy-account', storage), { version: 2, introductionRead: false, reviewedScenes: [] })
+  assert.equal(progress.recordGuidedSceneReview(projection({ accountId: 'legacy-account' }), binding({ accountId: 'legacy-account' }), storage), false)
+})
+check('guided learning requires introduction, authoritative result, review and ordered scenes', () => {
+  const storage = new MemoryStorage(), accountId = 'guided-account'
+  const view = extra => projection({ accountId, ...extra }), owner = extra => binding({ accountId, ...extra })
+  assert.equal(progress.markGuidedIntroductionRead(accountId, storage), true)
+  assert.equal(progress.recordGuidedSceneReview(view({ status: 'active' }), owner(), storage), false)
+  assert.equal(progress.recordGuidedSceneReview(view({ stepId: 'deploy' }), owner(), storage), false)
+  assert.equal(progress.recordGuidedSceneReview(view({ lessonId: 'move' }), owner(), storage), false)
+  assert.equal(progress.recordGuidedSceneReview(view({}), owner({ connectionGeneration: 99 }), storage), false)
+  assert.equal(progress.recordGuidedSceneReview(view({}), owner({ sessionId: 'new-session' }), storage), false)
+  assert.equal(progress.recordGuidedSceneReview(view({}), owner({ matchId: 'wrong-match' }), storage), false)
+  for (const lessonId of ['deploy', 'move', 'combat']) assert.equal(progress.recordGuidedSceneReview(view({ lessonId }), owner(), storage), true)
+  assert.deepEqual(progress.loadGuidedTutorialProgress(accountId, storage).reviewedScenes, ['deploy', 'move', 'combat'])
+  assert.deepEqual(progress.loadGuidedTutorialProgress('another-guided-account', storage).reviewedScenes, [])
+  assert.equal(progress.restartGuidedTutorial(accountId, storage), true)
+  assert.deepEqual(progress.loadGuidedTutorialProgress(accountId, storage), { version: 2, introductionRead: false, reviewedScenes: [] })
+})
+check('unsaved learning stays bounded to this account and does not overwrite unreadable storage', () => {
+  let writes = 0
+  const denied = { getItem() { throw Error('denied') }, setItem() { writes++; assert.fail('unreadable key cannot be overwritten') } }
+  assert.equal(progress.markGuidedIntroductionRead('unsaved-account', denied), false)
+  assert.equal(progress.recordGuidedSceneReview(projection({ accountId: 'unsaved-account' }), binding({ accountId: 'unsaved-account' }), denied), false)
+  assert.deepEqual(progress.loadGuidedTutorialProgress('unsaved-account', denied).reviewedScenes, ['deploy'])
+  assert.equal(progress.loadGuidedTutorialProgress('other-unsaved-account', denied).introductionRead, false)
+  assert.equal(writes, 0)
+  const quota = { getItem() { return null }, setItem() { throw Error('quota') } }
+  assert.equal(progress.markGuidedIntroductionRead('quota-account', quota), false)
+  assert.equal(progress.loadGuidedTutorialProgress('quota-account', quota).introductionRead, true)
+})
+check('malformed or out-of-order chapter records cannot claim all learning is done', () => {
+  const storage = new MemoryStorage()
+  storage.setItem(progress.guidedTutorialStorageKey('malformed-account'), JSON.stringify({ version: 2, introductionRead: true, reviewedScenes: ['deploy', 'combat', 'move'] }))
+  assert.deepEqual(progress.loadGuidedTutorialProgress('malformed-account', storage).reviewedScenes, ['deploy'])
+  const mutable = progress.loadGuidedTutorialProgress('malformed-account', storage)
+  mutable.reviewedScenes.push('move', 'combat')
+  assert.deepEqual(progress.loadGuidedTutorialProgress('malformed-account', storage).reviewedScenes, ['deploy'])
+})
+const course = await import('data:text/javascript;base64,' + Buffer.from(ts.transpileModule(source.course, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText).toString('base64'))
+check('new practice waits for actual roomLeft and fences account, token, generation and unrelated rooms', () => {
+  const expected = { accountId: 'a', token: 'token-a', sessionId: 's', connectionGeneration: 9, roomCode: 'old-room', matchId: 'old-match' }
+  const cleared = { accountId: 'a', token: 'token-a', connectedAccountId: 'a', sessionId: 's', connectionGeneration: 9,
+    online: true, available: true, roomCode: null, matchId: null, leaving: false, pending: false }
+  assert.equal(course.tutorialHandoffDecision(expected, cleared), 'ready')
+  for (const extra of [{ roomCode: 'old-room' }, { matchId: 'old-match' }, { leaving: true }, { pending: true }])
+    assert.equal(course.tutorialHandoffDecision(expected, { ...cleared, ...extra }), 'waiting')
+  for (const extra of [{ accountId: 'b' }, { connectedAccountId: 'b' }, { token: 'new-token' }, { sessionId: 'other' },
+    { connectionGeneration: 10 }, { online: false }, { available: false }, { roomCode: 'unrelated' }, { matchId: 'unrelated' }])
+    assert.equal(course.tutorialHandoffDecision(expected, { ...cleared, ...extra }), 'cancelled')
+})
+check('hand and morale sources are separate concepts with real first-player exceptions', () => {
+  const ids = course.tutorialIntroduction.map(step => step.id)
+  assert.ok(ids.indexOf('goal') < ids.indexOf('legion'))
+  assert.ok(ids.indexOf('hand') < ids.indexOf('practice') && ids.indexOf('morale') < ids.indexOf('practice'))
+  assert.deepEqual(course.tutorialScenes, ['deploy', 'move', 'combat'])
+  for (const step of course.tutorialIntroduction) assert.ok(step.title && step.text && step.question && step.answer)
+  assert.match(course.tutorialIntroduction.find(step => step.id === 'hand').flow, /牌库.*手牌/)
+  assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').answer, /追加新士气.*恢复已有士气/)
 })
 
 class BrowserStorage extends MemoryStorage {

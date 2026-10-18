@@ -18,7 +18,7 @@ execFileSync(process.env.L12_PWSH || 'pwsh', ['-NoProfile', '-NonInteractive', '
   `. '${repo}/ops/windows/Initialize-L12BuildEnvironment.ps1' | Out-Null; . '${repo}/ops/windows/L12GeneratedStorage.ps1'; foreach($p in @($env:L12_TUTORIAL_REAL_OUTPUT,$env:L12_TUTORIAL_REAL_CACHE,$env:TEMP)){$null=Assert-L12GeneratedPath -Path $p -Purpose 'independent real tutorial UI'}`], { stdio: 'pipe' })
 fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
 const report = { status: 'RUNNING', cases: [], transport: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. No test/production deployment.' }
-const boundSources = ['opcgpro-vue/src/App.vue','opcgpro-vue/src/l12/GamePage.vue','opcgpro-vue/src/l12/net.ts','opcgpro-vue/src/l12/site/TutorialPage.vue','opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue','opcgpro-vue/src/l12/tutorial/tutorialProgress.ts']
+const boundSources = ['opcgpro-vue/src/App.vue','opcgpro-vue/src/l12/GamePage.vue','opcgpro-vue/src/l12/net.ts','opcgpro-vue/src/l12/site/TutorialPage.vue','opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue','opcgpro-vue/src/l12/tutorial/tutorialProgress.ts','opcgpro-vue/src/l12/tutorial/tutorialCourse.ts','opcgpro-vue/src/l12/tutorial/tutorialGuidance.ts','opcgpro-vue/src/l12/site/BattleHubPage.vue','opcgpro-vue/src/l12/game/GameBoard.vue','opcgpro-vue/src/l12/game/GameActions.vue','opcgpro-vue/src/l12/game/HandArea.vue','opcgpro-vue/src/l12/game/PlayerMat.vue','opcgpro-vue/src/l12/game/PromptOverlay.vue']
 const hashes = () => Object.fromEntries(boundSources.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(path.join(repo,name))).digest('hex').toUpperCase()]))
 report.sourceBefore = hashes()
 report.backendAtStart = { boundary: 'Local built server binary SHA below; this UI test is not a Release, deployed-identity, or full-backend-suite proof.' }
@@ -49,7 +49,8 @@ const observe = () => page.evaluate(async () => {
   return { status: s.status, pending: s.pendingAction, notice: s.notice, room: s.room?.roomCode,
     tutorial: s.tutorial, gm: s.gmEnabled, phase: s.game?.phase, revision: s.game?.revision,
     matchId: s.game?.matchId, prompts: s.game?.prompts || [],
-    self: s.game?.players[0], defense: s.game?.pendingDefense }
+    self: s.game?.players.find(p=>p.playerIndex===s.game.you), defense: s.game?.pendingDefense,
+    learning: JSON.parse(localStorage.getItem('l12-tutorial-course:v2:account:'+encodeURIComponent(s.accountId||'')) || 'null') }
 })
 async function waitState(predicate, label, timeout = 12000) {
   const end = Date.now() + timeout
@@ -132,68 +133,151 @@ try {
     socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type})}catch{}})
     socket.on('framereceived',frame=>{try{const value=JSON.parse(String(frame.payload));if(value.type==='gameState'&&value.tutorial) report.transport.push({direction:'received',type:value.type,requestId:value.requestId,revision:value.state?.revision,tutorial:value.tutorial});else if(['tutorialRejected','actionRejected','tutorialRestartRequired','roomLeft'].includes(value.type))report.transport.push({direction:'received',type:value.type,requestId:value.requestId})}catch{}})
   })
-  await page.goto(`http://127.0.0.1:${uiPort}/battle/tutorial`)
-  await page.evaluate(async()=>{const p=await import('/src/l12/platform.ts');await p.register('TQA'+Math.random().toString(36).slice(2,8),'Qa'+crypto.randomUUID()+'!');const{router}=await import('/src/router/index.ts');await router.push('/battle/tutorial')})
+
+  await page.goto('http://127.0.0.1:'+uiPort+'/battle')
+  await page.evaluate(async()=>{
+    const p=await import('/src/l12/platform.ts')
+    await p.register('TQA'+Math.random().toString(36).slice(2,8),'Qa'+crypto.randomUUID()+'!')
+    const{router}=await import('/src/router/index.ts');await router.push('/battle')
+  })
   await waitState(s=>s.status==='online','real authenticated connection')
-  if(process.env.L12_TUTORIAL_IDENTITY_ONLY==='true') {
-    await page.evaluate(async()=>{const p=await import('/src/l12/platform.ts');await p.register('TQB'+Math.random().toString(36).slice(2,8),'Qb'+crypto.randomUUID()+'!')})
-    await page.getByText('账号刚刚切换，请刷新页面后开始教学。',{exact:true}).waitFor()
-    for(const button of await page.locator('.lesson-grid button').all()) assert(await button.isDisabled(),'Account mismatch must not create a lesson through the old connection')
-    assert.equal(report.transport.filter(item=>item.direction==='sent'&&item.type==='createTutorial').length,0)
-    await page.reload()
-    await waitState(s=>s.status==='online','new account reconnect')
-    await page.locator('.lesson-grid button').first().waitFor()
-    assert(await page.locator('.lesson-grid button').first().isEnabled(),'Reload must establish the current account connection')
-    assert.equal(await page.locator('.lesson-grid article').getByText('已完成',{exact:true}).count(),0)
-    report.cases.push({case:'real account switch refuses old socket and reloads current identity',passed:true})
+  await tap(page.locator('.mode-tabs').getByRole('button',{name:'教学',exact:true}), 'inline teaching tab')
+  assert.equal(await page.getByRole('link',{name:'进入教学目录',exact:true}).count(),0)
+  assert(await page.locator('.tutorial-page.embedded [data-tutorial-introduction]').isVisible(),
+    'Teaching tab must show mainline dialogue directly, not a directory link')
+
+  async function readIntroduction(viewport) {
+    const panel=page.locator('[data-tutorial-introduction]')
+    await panel.waitFor()
+    const titles=[]
+    for(let i=0;i<9;i++){
+      const title=await panel.locator('h2').innerText();titles.push(title)
+      const text=await panel.innerText()
+      assert(!/部署|法力|召唤/.test(text),'Teaching must use Twelve Legions terminology')
+      const question=panel.getByRole('button',{name:/^我想了解：/})
+      await tap(question,'optional explanation '+title)
+      assert(await panel.getByRole('button',{name:'明白了，回到主线',exact:true}).isVisible())
+      await tap(panel.getByRole('button',{name:'明白了，回到主线',exact:true}),'return same mainline node')
+      assert.equal(await panel.locator('h2').innerText(),title,'FAQ must not advance or leave mainline')
+      if(['手牌从哪里来？','士气：支付费用的资源'].includes(title)){
+        assert((await panel.locator('.resource-flow').innerText()).includes('→'),'Resources need an origin-to-use explanation')
+        await page.screenshot({path:path.join(out,viewport.width+'-intro-'+i+'.png')})
+      }
+      await tap(panel.getByRole('button',{name:i===8?'进入战场，继续主线':'继续主线',exact:true}),'read mainline '+i)
+    }
+    assert.equal(titles[0],'欢迎，主宰者')
+    assert(titles.indexOf('手牌从哪里来？')<titles.indexOf('我们一起走进战场'))
+    return titles
+  }
+  const guide=()=>page.locator('[data-ui-contract="tutorial-authoritative-guidance"]')
+  async function inspectGuide(viewport,label) {
+    const shell=guide();await shell.waitFor()
+    const h2=await shell.locator('h2').innerText()
+    const explanation=await shell.locator('.tutorial-cause-and-result').innerText()
+    assert(explanation.includes('为什么')&&explanation.includes('会发生什么'),'Every practical step must explain cause and outcome')
+    assert(!/DTO|matchId|权威|部署|法力|召唤/.test(await shell.innerText()),'No internal implementation language in teaching')
+    const bounds=await shell.boundingBox()
+    assert(bounds&&bounds.x>=-1&&bounds.y>=-1&&bounds.x+bounds.width<=viewport.width+1&&bounds.y+bounds.height<=viewport.height+1,
+      'Guide must fit physical viewport '+label)
+    const logicalWidth=await shell.evaluate(e=>e.clientWidth)
+    assert(logicalWidth>=280,'Readable guide width '+label)
+    // Read-only geometry, not test control: arrows and focus never receive pointer input.
+    const geometry=await page.locator('.tutorial-guide-layer').evaluate(e=>({
+      pointerEvents:getComputedStyle(e).pointerEvents,
+      rings:e.querySelectorAll('.tutorial-focus-ring').length,
+      arrow:e.querySelector('.tutorial-guide-arrow > path')?.getAttribute('d')||null
+    }))
+    assert.equal(geometry.pointerEvents,'none')
+    const unavailable=await shell.locator('.tutorial-anchor-unavailable').count()
+    if(!unavailable) assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
+    return {title:h2,explanation,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable)}
+  }
+  async function readScene(viewport,scene,readings) {
+    for(let i=0;i<10;i++) {
+      const shell=guide();await shell.waitFor()
+      if(await shell.getAttribute('data-tutorial-reading')!=='true')return
+      const record=await inspectGuide(viewport,scene+' reading '+i)
+      if(i===0) {
+        await tap(shell.getByRole('button',{name:'士气与费用',exact:true}),'in-board question')
+        await tap(shell.getByRole('button',{name:'明白了，回到主线',exact:true}),'in-board return same step')
+        assert.equal(await shell.locator('h2').innerText(),record.title)
+      }
+      if(['card','morale','card-source','defense','attack-result'].includes(await shell.getAttribute('data-tutorial-guide-id')))
+        await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-'+(await shell.getAttribute('data-tutorial-guide-id'))+'.png')})
+      readings.push(record)
+      await tap(shell.getByRole('button',{name:'继续',exact:true}),'read explanation '+record.title)
+    }
+    throw new Error('Unbounded scene dialogue')
+  }
+  async function visibleAction(action,instanceId) {
+    const selector='[data-tutorial-action="'+action+'"]'+(instanceId?'[data-tutorial-card-instance="'+instanceId+'"]':'')
+    return page.locator(selector).filter({visible:true}).first()
   }
   for(const viewport of [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]) {
     await page.setViewportSize(viewport)
-    for(const [index,lesson] of ['deploy','move','combat'].entries()) {
-      if(process.env.L12_TUTORIAL_IDENTITY_ONLY==='true'||process.env.L12_TUTORIAL_ONLY_LESSON&&lesson!==process.env.L12_TUTORIAL_ONLY_LESSON) continue
-      await tap(page.locator('.lesson-grid article').nth(index).getByRole('button'), 'start '+lesson)
-      let initial=await waitState(s=>s.tutorial?.lessonId===lesson&&!s.pending,'start '+lesson)
+    if(viewport.width!==1366) {
+      await tap(page.getByRole('button',{name:'重新学习本章',exact:true}),'repeat coherent chapter')
+    }
+    const titles=await readIntroduction(viewport)
+    const chapter={viewport,introduction:titles,scenes:[]}
+    for(const [index,scene] of ['deploy','move','combat'].entries()) {
+      const initial=await waitState(s=>s.tutorial?.lessonId===scene&&!s.pending,'start '+scene)
       await page.waitForURL('**/game')
       assert.equal(initial.gm,false)
-      await page.getByRole('button',{name:'最小化教学说明'}).waitFor()
-      const bounds=await page.locator('.tutorial-guidance').boundingBox()
-      assert(bounds&&bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=viewport.width+1&&bounds.y+bounds.height<=viewport.height+1,'Tutorial guidance must fit physical viewport')
-      const logicalWidth=await page.locator('.tutorial-guidance').evaluate(element=>element.clientWidth)
-      assert(logicalWidth>=280,'Teaching copy must have a readable width, not a narrow vertical column')
-      if(lesson==='move') await page.getByText('选择后排中格的《西施》，使用普通移动，点选亮起的相邻空格，再按提示支付费用。',{exact:true}).waitFor()
-      await page.screenshot({path:path.join(out,`${viewport.width}-${lesson}-started.png`)})
-      await tap(page.getByRole('button',{name:'最小化教学说明'}),'minimize guidance')
-      if(lesson==='deploy') {
-        const card=initial.self.hand.find(c=>c.cardId==='S01-0116')
-        await tap(page.locator(`[data-l12-zone="hand"][data-player-index="0"] [data-card-instance-id="${card.instanceId}"]`),'select Xi Shi')
-        const play=page.getByRole('button',{name:'打出',exact:true}).filter({visible:true}).first()
-        if(await play.count()) await tap(play,'arm deployment')
-        await tap(page.locator('[data-player-index="0"] .formation-slot.available').first(),'deployment cell')
-      } else if(lesson==='move') {
-        const card=initial.self.field[1][1]
-        await tap(page.locator(`[data-player-index="0"] .formation [data-card-instance-id="${card.instanceId}"]`),'select field Xi Shi')
-        await tap(page.getByRole('button',{name:'移动',exact:true}).filter({visible:true}).first(),'ordinary move')
-        await tap(page.locator('[data-player-index="0"] .formation-slot.available').first(),'move destination')
+      const readings=[]
+      await readScene(viewport,scene,readings)
+      const beforeAction=await inspectGuide(viewport,scene+' action')
+      const practice=scene==='deploy'?initial.self.hand.find(c=>c.cardId==='S01-0116')
+        :scene==='move'?initial.self.field[1][1]:initial.self.field[0][0]
+      const instance=practice.instanceId
+      if(scene==='deploy'||scene==='move'){
+        await tap(page.locator(scene==='deploy'
+          ?'.hand-card-wrap[data-tutorial-card-instance="'+instance+'"]'
+          :'[data-tutorial-anchor="field-slot"][data-tutorial-card-instance="'+instance+'"]'), 'select practice '+scene)
+        const action=await visibleAction(scene==='deploy'?'play-card':'move',instance)
+        if(await action.count())await tap(action,'choose '+scene+' action')
+        await page.locator('[data-player-index="0"] .formation-slot.available').first().waitFor()
+        await tap(page.locator('[data-player-index="0"] .formation-slot.available').first(),'legal destination')
       } else {
-        const card=initial.self.field[0][0]
-        await tap(page.locator(`[data-player-index="0"] .formation [data-card-instance-id="${card.instanceId}"]`),'select attacker')
-        await tap(page.getByRole('button',{name:'进攻',exact:true}).filter({visible:true}).first(),'attack')
+        await tap(page.locator('[data-tutorial-anchor="field-slot"][data-tutorial-card-instance="'+instance+'"]'),'select attacker')
+        await tap(await visibleAction('attack',instance),'attack')
         await tap(page.locator('[data-player-index="1"] .mini-master.targetable'),'attack enemy master')
         await settleTo(s=>s.tutorial?.stepId==='end-turn','own attack')
-        await tap(page.getByRole('button',{name:'结束回合',exact:true}).filter({visible:true}).first(),'end turn')
+        await readScene(viewport,scene,readings)
+        await tap(await visibleAction('end-turn'),'end turn')
         await settleTo(s=>s.tutorial?.stepId==='defend','opponent attack')
+        await readScene(viewport,scene,readings)
+        await inspectGuide(viewport,'real defense decision')
         await tap(page.getByRole('button',{name:'不抵挡',exact:true}).filter({visible:true}).first(),'decline defense')
       }
-      const final=await settleTo(s=>s.tutorial?.status==='completed','complete '+lesson)
+      const final=await settleTo(s=>s.tutorial?.status==='completed','complete '+scene)
       assert(final.revision>initial.revision)
-      report.cases.push({viewport,lesson,initialRevision:initial.revision,finalRevision:final.revision,status:'completed',guidance:bounds,guidanceLogicalWidth:logicalWidth})
-      console.log(`PASS real UI ${viewport.width}x${viewport.height} ${lesson}`)
-      await page.screenshot({path:path.join(out,`${viewport.width}-${lesson}-completed.png`)})
-      await tap(page.getByRole('button',{name:'返回教学目录',exact:true}),'leave tutorial')
-      await waitState(s=>!s.room&&!s.matchId&&!s.pending,'roomLeft')
-      await page.waitForURL('**/battle/tutorial')
-      assert(await page.locator('.lesson-grid article').nth(index).getByText('已完成',{exact:true}).isVisible())
+      assert.equal(final.learning?.reviewedScenes?.length||0,index,
+        'Authoritative action completion must not silently mark explanation learned')
+      const result=await inspectGuide(viewport,scene+' real result')
+      await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-result.png')})
+      const transportStart=report.transport.length
+      await tap(guide().getByRole('button',{name:'继续主线',exact:true}),'review result and continue mainline')
+      if(index<2) {
+        const next=await waitState(s=>s.tutorial?.lessonId===['deploy','move','combat'][index+1]&&!s.pending,'continuous next scene')
+        assert.equal(next.learning.reviewedScenes.length,index+1)
+        const handoff=report.transport.slice(transportStart)
+        const leave=handoff.findIndex(e=>e.direction==='sent'&&e.type==='leaveRoom')
+        const ack=handoff.findIndex(e=>e.direction==='received'&&e.type==='roomLeft')
+        const create=handoff.findIndex(e=>e.direction==='sent'&&e.type==='createTutorial')
+        assert(leave>=0&&ack>leave&&create>ack,'Next scene only after actual roomLeft, not route/timer')
+      }else{
+        await waitState(s=>!s.room&&!s.matchId&&!s.pending,'final roomLeft')
+        await page.waitForURL('**/battle/tutorial')
+        await page.getByRole('heading',{name:'现在，把刚才的行动串起来',exact:true}).waitFor()
+        assert.equal((await observe()).learning.reviewedScenes.length,3)
+        assert.equal(await page.locator('.course-path li').filter({hasText:'尚未开放'}).count(),2)
+      }
+      chapter.scenes.push({scene,initialRevision:initial.revision,finalRevision:final.revision,
+        beforeAction,readings,result,status:'reviewed-and-continued'})
+      console.log('PASS continuous guided UI '+viewport.width+'x'+viewport.height+' '+scene)
     }
+    report.cases.push(chapter)
   }
   assert.deepEqual(report.errors,[])
   report.sourceAfter=hashes()

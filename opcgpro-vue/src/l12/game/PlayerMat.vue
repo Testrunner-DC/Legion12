@@ -346,7 +346,7 @@ function beginCardAbility(card: Card) {
 
 <template>
   <section v-bind="$attrs" class="l12-player-mat" :class="[`side-${side}`, `faction-${player.faction}`, { 'active-turn': active, 'action-guidance': actionGuidanceActive }]"
-    :data-player-index="player.playerIndex">
+    :data-player-index="player.playerIndex" :data-tutorial-player-index="player.playerIndex">
     <div class="commander-zone">
       <span v-if="mobileMoralePicker" class="mobile-hand-count" :aria-label="`${side === 'opponent' ? '对手' : '我方'}手牌 ${player.handCount ?? player.hand?.length ?? 0} 张`"><i>手牌</i><b>{{ player.handCount ?? player.hand?.length ?? 0 }}</b></span>
       <div v-if="player.faction === 'otherworld' || player.specialZones?.canopicTrack?.length"
@@ -372,7 +372,8 @@ function beginCardAbility(card: Card) {
         </template>
       </div>
       <div class="master-column" data-l12-zone="master">
-        <button class="mini-master" :data-card-instance-id="`master-${player.playerIndex}`" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
+        <button class="mini-master" data-tutorial-anchor="master" :data-tutorial-player-index="player.playerIndex"
+          :data-card-instance-id="`master-${player.playerIndex}`" :class="{ targetable: !controllable && attackMode && masterTargetable, tapped: player.master.tapped, 'combat-target': combatTargetMaster }"
           @mouseenter="emit('focus', masterCard)" @focus="emit('focus', masterCard)" @click="emit('master')">
           <CardImage v-if="!player.master.deployedAsLegion" :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl" :alt="player.master.masterName" intent="board" eager />
           <span v-else class="master-away" aria-label="主宰当前作为军团位于战场">主宰已登场</span>
@@ -414,6 +415,9 @@ function beginCardAbility(card: Card) {
         <template v-for="row in (side === 'opponent' ? [1, 0] : [0, 1])" :key="row">
           <div v-for="slot in [0,1,2]" :key="slot" class="formation-slot" role="button" tabindex="0"
             data-ui-contract="actual-combat-target-only"
+            data-tutorial-anchor="field-slot" :data-tutorial-player-index="player.playerIndex"
+            :data-tutorial-row="row" :data-tutorial-slot="slot"
+            :data-tutorial-card-instance="!player.field[row][slot]?.hidden ? player.field[row][slot]?.instanceId : undefined"
             :aria-label="slotAccessibilityLabel(row, slot, player.field[row][slot])"
             :class="{
               targetable: Boolean(player.field[row][slot]) && targetableIds?.includes(player.field[row][slot]!.instanceId) && (selectionMode || (!controllable && attackMode)),
@@ -433,9 +437,11 @@ function beginCardAbility(card: Card) {
               <BattleDockPortal lane="context">
               <div v-if="selectedId === player.field[row][slot]!.instanceId && actionsEnabled && !attackMode && !moveMode && !freeMoveMode && !cavalryMoveMode && (canUseAbilities(player.field[row][slot]!) || canTrial(player.field[row][slot]!))"
                 class="card-context-actions field-actions" :class="{ 'mobile-action-dock': mobileLayout }">
-                <button v-if="canUseAbilities(player.field[row][slot]!) && canAttack(player.field[row][slot]!, row)" :class="{ active: attackMode }"
+                <button v-if="canUseAbilities(player.field[row][slot]!) && canAttack(player.field[row][slot]!, row)" data-tutorial-action="attack"
+                  :data-tutorial-card-instance="player.field[row][slot]!.instanceId" :class="{ active: attackMode }"
                   @click.stop="emit('cardAction', 'attack', player.field[row][slot]!)">{{ attackMode ? '选择目标' : '进攻' }}</button>
-                <button v-if="canUseAbilities(player.field[row][slot]!) && canMove(player.field[row][slot]!, row, slot)" :class="{ active: moveMode }"
+                <button v-if="canUseAbilities(player.field[row][slot]!) && canMove(player.field[row][slot]!, row, slot)" data-tutorial-action="move"
+                  :data-tutorial-card-instance="player.field[row][slot]!.instanceId" :class="{ active: moveMode }"
                   @click.stop="emit('cardAction', 'move', player.field[row][slot]!)">{{ moveMode ? '选择位置' : '移动' }}</button>
                 <button v-if="canUseAbilities(player.field[row][slot]!) && canFreeMove(player.field[row][slot]!)" :class="{ active: freeMoveMode }"
                   @click.stop="emit('cardAction', 'freeMove', player.field[row][slot]!)">{{ freeMoveMode ? '选择位置' : '免费位移' }}</button>
@@ -462,7 +468,7 @@ function beginCardAbility(card: Card) {
     </div>
 
     <div class="mat-piles">
-      <div class="pile deck" data-l12-zone="library">
+      <div class="pile deck" data-l12-zone="library" data-tutorial-anchor="library" :data-tutorial-player-index="player.playerIndex">
         <div class="pile-card" :class="{ 'card-back': !player.libraryTop }"><CardImage v-if="player.libraryTop" :card-id="player.libraryTop.cardId" :legacy-url="player.libraryTop.imageUrl" :alt="player.libraryTop.name" intent="thumb" eager @mouseenter="emit('focus', player.libraryTop)"/><i v-else>XII</i></div>
         <b class="value-badge pile-count">{{ player.libraryCount }}</b><span>牌库</span>
       </div>
@@ -475,7 +481,7 @@ function beginCardAbility(card: Card) {
       </button>
     </div>
 
-    <div class="resource-zone" data-ui-contract="centered-resource-zone">
+    <div class="resource-zone" data-ui-contract="centered-resource-zone" data-tutorial-anchor="morale" :data-tutorial-player-index="player.playerIndex">
       <button class="faction-effect-trigger resource-faction-action" data-ui-contract="resource-faction-action"
         @click.stop="factionOpen = true; factionMinimized = false">阵营效果</button>
       <component :is="mobileMoralePicker ? 'button' : 'div'" :type="mobileMoralePicker ? 'button' : undefined" class="resource-morale-summary" data-ui-contract="resource-morale-summary" :aria-disabled="mobileMoralePicker ? false : undefined" @click.stop="mobileMoralePicker && openMoralePanel()">
@@ -489,6 +495,8 @@ function beginCardAbility(card: Card) {
         :class="{ 'morale-remainder-1': visibleMoraleCount % 3 === 1, 'morale-remainder-2': visibleMoraleCount % 3 === 2 }">
       <button v-for="index in visibleTemporaryMoraleCount" :key="`temporary-${index}`" type="button"
         class="morale-orb temporary-morale" data-ui-contract="temporary-morale-selectable-site-logo"
+        :data-tutorial-payment-resource="temporaryMoralePayable(index) ? temporaryMoraleChoiceId(index) : undefined"
+        :aria-pressed="paymentSelectedIds?.includes(temporaryMoraleChoiceId(index))"
         :class="{ payable: temporaryMoralePayable(index), selected: paymentSelectedIds?.includes(temporaryMoraleChoiceId(index)) }"
         :title="temporaryMoralePayable(index) ? '点击选择此临时士气支付；休整时消失' : '临时士气；休整时消失'"
         :aria-disabled="!temporaryMoralePayable(index)"
@@ -497,6 +505,8 @@ function beginCardAbility(card: Card) {
       </button>
       <button v-for="morale in displayMoraleSlots" :key="morale.instanceId" type="button" class="morale-orb"
         :class="[moraleState(morale), { 'black-lotus-morale': isBlackLotusMorale(morale), payable: paymentChoiceIds?.includes(morale.instanceId), selected: paymentSelectedIds?.includes(morale.instanceId), 'response-target': responseTargetIds?.includes(morale.instanceId) }]"
+        :data-tutorial-payment-resource="paymentChoiceIds?.includes(morale.instanceId) ? morale.instanceId : undefined"
+        :aria-pressed="paymentSelectedIds?.includes(morale.instanceId)"
         :data-ui-contract="isBlackLotusMorale(morale) ? 'black-lotus-morale' : undefined"
         :title="moraleLabel(morale)" :aria-disabled="!paymentChoiceIds?.includes(morale.instanceId)"
         @click.stop="inspectOrSelectMorale(morale.instanceId)">

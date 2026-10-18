@@ -618,7 +618,7 @@ const contracts = [
   [playerMat.includes('v-if="mobileMoralePicker" class="mobile-hand-count"')
     && playerMat.includes(":is=\"mobileMoralePicker ? 'button' : 'div'\"")
     && playerMat.includes('class="temporary-site-logo" :src="siteBrandIconUrl" alt="临时士气"')
-    && gamePage.includes('class="balanced-copy-button" :aria-label="tutorial ? \'返回教学目录\' : l12State.room?.sandbox ? \'返回测试沙盒\' : \'返回大厅\'"')
+    && gamePage.includes('class="balanced-copy-button" :aria-label="tutorial ? \'返回教学主线\' : l12State.room?.sandbox ? \'返回测试沙盒\' : \'返回大厅\'"')
     && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>{{ tutorial ? \'教学\' : l12State.room?.sandbox ? \'沙盒\' : \'大厅\' }}</span></span>')
     && mobileActionDockStyle.includes('.mobile-battle-dock button {') && mobileActionDockStyle.includes('min-height:32px')
     && mobileActionDockStyle.includes('.mobile-battle-dock__route .battle-route-controls .route-label>span {')
@@ -670,7 +670,7 @@ const contracts = [
     && prompt.includes('@drop.stop.prevent="reorderAll(choice)"') && prompt.includes('@select="selectSwapChoice(choice)"'),
   '共用整组排序行必须以首尾自动留白实现少牌居中及溢出首尾可达；悬停预留详情、拖拽和点击换序入口均不得丢失'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
-    && gamePage.includes("{{ tutorial ? '返回教学目录' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}")
+    && gamePage.includes("{{ tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}")
     && !gamePage.includes('点击返回后才离开本局')
     && !gamePage.includes('双方都离开后关闭房间')
     && !gamePage.includes('对局编号')
@@ -956,7 +956,8 @@ const contracts = [
   [lobby.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
     && lobby.includes("scope === 'ranked'") && lobby.includes("scope === 'friendly' && friendlyUsesRestrictions()")
     && lobby.includes("const tab = ref<'match' | 'friendly' | 'tutorial'>('match')")
-    && !lobby.includes("tab.value === 'sandbox'") && lobby.includes("router.push('/battle/tutorial')")
+    && !lobby.includes("tab.value === 'sandbox'") && lobby.includes('<TutorialPage v-else embedded />')
+    && !lobby.includes('进入教学目录')
     && !lobby.includes('/decks?from=%2Fbattle%2Flobby')
     && !lobby.includes('class="room-decks"'), '排位、休闲与好友房必须复用闭环选择器，好友房按房规启用禁限卡且不得跳转牌库页；公开单人入口必须进入教学，不得重新暴露沙盒'],
   [sandbox.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")

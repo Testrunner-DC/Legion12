@@ -11,6 +11,7 @@ import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
+import TutorialPage from './TutorialPage.vue'
 import { maintenanceCountdown } from './maintenanceCountdown'
 import { isFriendlyDisasterMode, loadFriendlyDisasterMode, saveFriendlyDisasterMode } from '@/l12/friendlyRoomPreferences'
 
@@ -615,7 +616,7 @@ async function copyRoomCode() {
 
       <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode" @change="rememberFriendlyDisasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终湮灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
-      <section v-else class="mode-panel panel tutorial-entry"><small>NEW PLAYER TUTORIAL</small><h2>单人新手教学</h2><p>跟着提示，练习部署支付、普通移动和攻防。</p><button class="primary" @click="router.push('/battle/tutorial')">进入教学目录</button></section>
+      <TutorialPage v-else embedded />
     </template>
     <SavedDeckSelector :open="deckSelectorOpen" :mode="deckSelectorScope" :guest-decks="guestDeckList"
       :teleport-target="props.overlayTarget"
