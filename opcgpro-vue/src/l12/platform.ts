@@ -5,6 +5,7 @@ import type { RecordedCommand } from './replayModel'
 import { endpointHttpBase } from './deploymentBase'
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 import { chatResource } from './chatResource'
+import { deckCoverHeadersForOrigin } from './deckCover'
 
 export interface PlatformAccount {
   id: string; username: string; role: string; createdAt: string; publicHistory: boolean; permissions?: string[]
@@ -529,6 +530,8 @@ export interface PublicDeckSummary {
   id: string; source: 'public' | 'official'; name: string; masterId: string; masterName: string; faction: string; author: string
   publicCode: string | null; publicationVersion: number | null; createdAt: string | null; updatedAt: string | null
   counts: { main: number; uncountedMain: number; morale: number; special: number; bench: number }
+  /** Absent only when reading a summary produced by an older server. */
+  coverCardIds?: string[]
   legal: boolean; legalityReason: string | null; environment: { status: string; value: '1.0' | '2.0' | '2.5' | null; reason: string | null }
   views: number; likes: number; copies: number; viewerLiked: boolean; canEdit: boolean; readToken: string | null
 }
@@ -1065,6 +1068,10 @@ export function apiBase() {
   try {
     return endpointHttpBase(l12State.endpoint)
   } catch { return `${location.protocol}//${location.hostname}:8080` }
+}
+
+export function getDeckCoverRequestHeaders() {
+  return deckCoverHeadersForOrigin(apiBase(), globalThis.location?.origin)
 }
 
 function retryAfterMilliseconds(response: Response) {
@@ -1953,7 +1960,9 @@ export const deckLibraryApi = {
   summaries: (query: PublicDeckSummaryQuery = {}) => {
     const params = new URLSearchParams()
     for (const [key, value] of Object.entries(query)) if (value !== undefined && value !== '') params.set(key, String(value))
-    return platformRequest<PublicDeckSummaryPage>(`/api/deck-library/summaries${params.size ? `?${params}` : ''}`)
+    return platformRequest<PublicDeckSummaryPage>(`/api/deck-library/summaries${params.size ? `?${params}` : ''}`, {
+      headers: getDeckCoverRequestHeaders(),
+    })
   },
   ownReferences: (ids: readonly string[]) => {
     if (!ids.length || ids.length > 100 || new Set(ids).size !== ids.length

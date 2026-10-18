@@ -106,6 +106,7 @@ globalThis.__modeConsumerPlatform = {
   platformState,
   watch: platformWatch,
   getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
+  getDeckCoverRequestHeaders: () => ({ 'X-L12-Deck-Cover': '1' }),
   platformRequest: (...args) => requestHandler(...args),
 }
 
@@ -117,6 +118,7 @@ function moduleUrl(source) {
 }
 
 async function loadProductionDeckModule() {
+  const coverUrl = moduleUrl(read('src/l12/deckCover.ts'))
   const binaryUrl = moduleUrl(read('src/l12/deckCodeCodec.ts'))
   const codecUrl = moduleUrl(read('src/l12/deckCacheCodec.ts')
     .replace("from './deckCodeCodec'", "from '" + binaryUrl + "'"))
@@ -131,13 +133,14 @@ async function loadProductionDeckModule() {
   normalOpeningHandCopies,
 } from './openingHandEligibility'`
   const executable = read(sources.decks)
+    .replace("from './deckCover'", "from '" + coverUrl + "'")
     .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__modeConsumerPlatform')
     .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")
     .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
     .replace("import { normalizeLookupCardType } from './cardPresentation'", 'const normalizeLookupCardType = value => value')
     .replace(
-      "import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
-      'const { getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__modeConsumerPlatform',
+      "import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
+      'const { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__modeConsumerPlatform',
     )
     .replace("import { deploymentPath } from './deploymentBase'", 'const deploymentPath = value => value')
     .replace("import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'", 'const moraleIdentityData = []')

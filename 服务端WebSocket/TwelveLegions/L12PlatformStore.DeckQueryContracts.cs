@@ -1,7 +1,16 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 
 namespace TwelveLegions.Server;
+
+public static class L12DeckCoverCapability
+{
+    public const string HeaderName = "X-L12-Deck-Cover";
+
+    public static bool IsEnabled(IHeaderDictionary headers)
+        => headers.TryGetValue(HeaderName, out var value) && value.Count == 1 && value[0] == "1";
+}
 
 public sealed record L12PrivateDeckQuery(int Page = 1, int PageSize = 30,
     string? Keyword = null, string? MasterId = null, bool? Legal = null, string Sort = "latest",
@@ -51,7 +60,9 @@ public sealed record L12PrivateDeckQuery(int Page = 1, int PageSize = 30,
 public sealed record L12DeckSummaryCounts(long Main, long UncountedMain, long Morale, long Special, long Bench);
 public sealed record L12PrivateDeckSummaryView(string Id, long Revision, string Name, string MasterId,
     DateTimeOffset UpdatedAt, string? PublicationId, int? PublicationVersion,
-    L12DeckSummaryCounts Counts, bool Legal, string? LegalityReason);
+    L12DeckSummaryCounts Counts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? CoverCardIds,
+    bool Legal, string? LegalityReason);
 public sealed record L12DeckSummaryMasterFacet(string MasterId, int Count);
 public sealed record L12PrivateDeckFacets(IReadOnlyList<L12DeckSummaryMasterFacet> Masters, int Legal, int Illegal);
 public sealed record L12PrivateDeckSummaryPage(IReadOnlyList<L12PrivateDeckSummaryView> Items, int Total,

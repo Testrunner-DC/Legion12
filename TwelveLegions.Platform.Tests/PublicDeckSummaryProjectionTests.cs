@@ -44,17 +44,28 @@ public sealed class PublicDeckSummaryProjectionTests
         fixture.Publish("season");
         fixture.Configure(config => config with { CardRestrictions = [new(fixture.Source.CardIds[0], 0, "CQ2 synthetic")] });
         fixture.Observe();
-        var page = fixture.Page(new(Source: "public"));
+        var page = fixture.Page(new(Source: "public"), includeCover: true);
         var item = Assert.Single(page.Items);
         Assert.False(L12DeckValidator.TryValidatePreset(fixture.Catalog, fixture.Source, out var error,
             fixture.Store.CaptureOperationsPolicy().CardRestrictions));
         Assert.False(item.Legal);
         Assert.Equal(error, item.LegalityReason);
+        Assert.Equal(L12DeckCoverSelection.SelectCardIds(fixture.Catalog,
+            L12DeckValidator.CountCards(fixture.Source.CardIds)), item.CoverCardIds);
+        Assert.NotNull(item.CoverCardIds);
+        Assert.InRange(item.CoverCardIds.Count, 0, 3);
+        Assert.Equal(item.CoverCardIds.Count, item.CoverCardIds.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         var json = JsonSerializer.Serialize(item, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         foreach (var key in new[] { "cardIds", "moraleIds", "specialIds", "benchIds", "alternateArtCopies",
             "alternateArtSelections", "payloadHash", "ownerId", "likedByAccountIds" }) Assert.DoesNotContain('"' + key + '"', json);
         Assert.False(item.ViewerLiked);
         Assert.False(item.CanEdit);
+        var legacy = fixture.Page(new(Source: "public"));
+        Assert.Equal(page.Generation, legacy.Generation);
+        Assert.Equal(page.CatalogVersion, legacy.CatalogVersion);
+        Assert.Equal(page.PolicyVersion, legacy.PolicyVersion);
+        Assert.Equal(item with { CoverCardIds = null }, Assert.Single(legacy.Items));
+        Assert.DoesNotContain("\"coverCardIds\"", JsonSerializer.Serialize(legacy, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         Assert.Empty(fixture.Expansions);
         fixture.Complete();
     }
@@ -152,9 +163,10 @@ internal sealed class PublicDeckSummaryFixture : IDisposable
         Name = name, MasterId = Source.MasterId, CardIds = [.. Source.CardIds], MoraleIds = [.. Source.MoraleIds],
         SpecialIds = [.. Source.SpecialIds],
     }, null)!;
-    public L12PublicDeckSummaryPage Page(L12PublicDeckSummaryQuery? query = null, L12AuthenticatedSession? viewer = null)
+    public L12PublicDeckSummaryPage Page(L12PublicDeckSummaryQuery? query = null, L12AuthenticatedSession? viewer = null,
+        bool includeCover = false)
     {
-        var result = Store.DeckLibrarySummaries(Catalog, query, viewer);
+        var result = Store.DeckLibrarySummaries(Catalog, query, viewer, includeCover);
         Assert.Equal("ok", result.Status);
         return result.Page!;
     }

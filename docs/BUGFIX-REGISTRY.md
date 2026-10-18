@@ -1,5 +1,16 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19 牌库封面摘要兼容与移动行高
+
+- 封面只扩展原本人／公开摘要的0—3个代表卡号。真实HTTP旧字段断言先RED，补显式X-L12-Deck-Cover能力后未协商字段完全保持，新客户端也接受旧服务缺省；同源getter／两路实际请求／CORS共用常量，跨域保留旧摘要请求，不加探测、轮询或正文扇出。目录代际和内容令牌不因封面能力改变，原权限与来源限制保留。
+- 同类扫描六个DeckCover消费者及本人／公开摘要入口。编辑器手机18项已加载后仍不形成溢出，独审确认新封面按钮overflow:hidden允许隐式网格行压缩；仅给既有移动列表加grid-auto-rows:max-content，保留圆角裁切。静态守卫与末张卡高度／完整滚动可达的真实浏览器断言同步补齐；桌面滚动仍归原saved-decks-panel，不改版面。
+- 首轮完整平台2025项中6失败：5项旧测试按名称启动pwsh时本轮PATH遗漏；1项合成matches.db删除占用。修正执行路径；同类扫描发现4处相同旧清理尾部，统一复用既有有界清池helper，原父目录／GUID守卫和业务断言不变，独审CLEAR。最终全平台2026／2026含41封面项及原失败方法通过，0失败跳过、完整TRX保留，自有118267883字节临时数据清理；12档编辑器与21项选择器真实浏览器、358UI／27变异／完整类型／双构建通过。唯一接受deck-cover-redesign-20261019/main-integration/acceptance.json；旧失败原样留存，不冒完整Release或部署。回滚面为摘要可选字段／能力接线、共用封面消费者与相应测试，不改卡效、数据库或教学权限。
+
+## 2026-10-19 发布测试的SQLite清理
+
+- 排除教学的ed30首轮规则7908通过，平台1960通过／1清理失败：RankedWatchdogIsolationTests.ResponseCommitFailureNotifiesNobodyRestoresOriginalLeaseAndRetryExpiresExactlyOnce已完成原业务断言，删除合成matches.db时仍被占用。仅将本类旧删除重试循环改为现有PlatformTestDirectoryCleanup；原临时目录父路径／名称边界保留，不改应用、测试断言或降低完整平台门禁。
+- 3bf05相对ed30仅此测试叶变化；独立核差异与原规则收据／失败计时／日志SHA后复用规则，完整平台1961本轮通过，原失败方法实际Passed且共享清理成功收据／TRX保留。正式3bf05已独立上线，教学／沙盒／封面未发布；证据统一在formal-release-20261019/local-package-acceptance.json与release-session-summary.json。原失败原样保存，不把源码映射记作一次fresh完整规则运行。
+
 ## 2026-10-19 构建子进程的 PowerShell 路径
 
 - 283727c0的规则7908/平台2007全过后，隔离前端执行响应教学守卫时收到`spawnSync powershell.exe ENOENT`。共享初始化没有导出L12_PWSH，Node守卫回退到短PATH中不存在的命令；这是构建环境缺陷，不是教学规则失败。相关同类入口沿已存在L12_PWSH覆盖统一接入，不逐脚本另造探测。

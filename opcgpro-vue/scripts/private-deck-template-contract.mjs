@@ -75,7 +75,10 @@ export function privateEditorSavedPanelsContract(source) {
   const button = desktopNodes.find(node => node.tag === 'button' && parsed.parents.get(node).includes(row)
     && equal(directive(node, 'on', 'click'), 'requestLoadDeck(deck)'))
   if (!button) return false
-  return [desktopNodes, mobileNodes].every(nodes => nodes.some(node => node.tag === 'DeckProfile'
+  return [desktopNodes, mobileNodes].every(nodes => nodes.some(node => node.tag === 'DeckCover'
+    && attr(node, 'variant') === 'compact'
+    && equal(directive(node, 'bind', 'cover-card-ids'), 'savedDeckCoverIds(deck)')
+    && equal(directive(node, 'bind', 'source-card-ids'), 'savedDeckSourceIds(deck)')
     && equal(directive(node, 'bind', 'selected'), selected)
     && equal(directive(node, 'bind', 'meta'), 'savedDeckCountLabel(deck)')))
 }

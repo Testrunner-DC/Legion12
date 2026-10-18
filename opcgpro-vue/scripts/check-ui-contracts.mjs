@@ -6,6 +6,7 @@ import { hasInvitationTemplate } from './vue-semantic-contract.mjs'
 import './test-a3-site-shell-contract.mjs'
 import './test-admin-global-analytics-date-contract.mjs'
 import './test-canopic-relic-presentation.mjs'
+import './test-deck-cover.mjs'
 import './test-picker-detail-overlay.mjs'
 import './test-admin-account-server-pages.mjs'
 import { hasReadonlyReleaseArtifactSource, hasReadonlyReleaseRuntimeSnapshot } from './test-admin-release-capability.mjs'
@@ -942,7 +943,7 @@ const contracts = [
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
   [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
-  [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '各类牌库框必须复用主宰 Profile 公共组件，不得各自裁切卡面'],
+  [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '独立主宰头像必须保留共享 Profile 资源读取，不得各自裁切卡面'],
   [privateModeLegalityContract(savedDeckSelector), '大厅共享牌库选择器必须逐副展示当前模式合法性并明确提示无可用牌库'],
   [savedDeckSelector.includes("emit('cancel')") && savedDeckSelector.includes("emit('confirm', selected.value.deck)")
     && !savedDeckSelector.includes('saveSelectedDeckName(')
@@ -964,8 +965,8 @@ const contracts = [
     && sandbox.includes("selectorTarget = 'sandbox-player'") && sandbox.includes("selectorTarget = 'sandbox-opponent'")
     && !sandbox.includes('operationsPolicy') && !sandbox.includes('<select v-model="playerDeckName"')
     && !sandbox.includes('<select v-model="opponentDeckName"'), '沙盒双方必须复用同一保存牌库选择器，且不得套用赛季禁限卡或退回原生下拉'],
-  [deckEditor.includes("import DeckProfile from './DeckProfile.vue'") && deckLibrary.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && lobby.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && sandbox.includes("import DeckProfile from '@/l12/DeckProfile.vue'") && legacyLobby.includes("import DeckProfile from './DeckProfile.vue'"), '牌库编辑器、牌库页、对战房间和沙盒的牌库框必须统一接入 DeckProfile'],
-  [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库框不得恢复多卡裁切条或“库”占位图替代已选择主宰 Profile'],
+  [[deckEditor, deckLibrary, lobby, sandbox, legacyLobby, savedDeckSelector].every(source => /import DeckCover from/.test(source) && /<DeckCover\b/.test(source)), '牌库编辑器、牌库页、对战房间、共享选择器和沙盒的封面必须统一接入 DeckCover'],
+  [!deckLibrary.includes('<div class="banner-strip">') && !lobby.includes('<div class="deck-thumb">库</div>') && !legacyLobby.includes('class="commander-glyph">{{ deck.'), '牌库封面不得恢复独立裁切条或“库”占位图替代共享封面'],
   [playerMat.includes('const displayMoraleSlots = computed') && playerMat.includes('payable(right.resource) - payable(left.resource)') && playerMat.includes('rank(left.resource) - rank(right.resource)') && playerMat.includes("isGodPower ? (tapped ? 2 : 0) : (tapped ? 3 : 1)") && playerMat.includes(':key="morale.instanceId"') && playerMat.includes('inspectOrSelectMorale(morale.instanceId)') && board.includes(':key="choice.id"') && board.includes('togglePaymentResource(choice.id)'), '费用资源必须优先展示当前可支付实例，再按状态排序，桌面与大面板均必须保留真实士气实例 ID 作为支付与返还目标'],
   [playerMat.includes('class="god-power-logo"') && playerMat.includes('sepia(1) saturate(3.2)') && playerMat.includes('border-color:#f4dda1'), '神力必须使用淡黄色 Logo 与独立描边，不能继续与白色士气图标混淆'],
   [cardTile.includes('attachedGroups') && cardTile.includes('attached-card-orbs') && cardTile.includes("$emit('focusCard', group.card)")
@@ -1095,7 +1096,7 @@ const contracts = [
     && deckLibrary.includes('不符合本赛季') && deckLibrary.includes('查看构筑')
     && deckLibrary.includes('--deck-faction:') && deckLibrary.includes('rgba(var(--deck-faction),.2)')
     && deckLibrary.includes('color:#c7cecd;font-size:14px'), '公开牌库必须保留复制、点赞、浏览、最新发布排序并支持组合筛选，保留浏览量/点赞/复制/赛季要求信息条与可读阵营底色'],
-  [deckEditor.includes('<DeckProfile compact :master-id="selectedMaster?.id"') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('aspect-ratio:1') && lobby.includes('border-radius:2px'), '主宰头像必须通过共享 Profile 使用官方正方形资源'],
+  [deckEditor.includes('<DeckCover variant="compact" :master-id="selectedMaster?.id"') && deckEditor.includes(':source-card-ids="mainCardIds"') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('aspect-ratio:1') && lobby.includes('border-radius:2px'), '牌表使用统一紧凑封面，独立主宰头像仍通过共享 Profile 使用官方正方形资源'],
   [cardDetailContent.includes('trialValue') && cardDetailContent.includes('<dt>试炼值</dt>'), '卡牌档案必须展示试炼值'],
   [playerMat.includes('aria-disabled') && playerMat.includes('.morale-orb.active-morale[aria-disabled="true"]') && playerMat.includes('.morale-orb.active-god-power[aria-disabled="true"]'), '可用的活跃士气与神力必须始终高亮'],
   [playerMat.includes('class="morale-count resource-morale-count"') && playerMat.match(/resource-morale-count/g)?.length >= 2, '双方士气数量必须共用不溢出的独立计数器单元'],
@@ -1108,10 +1109,10 @@ const contracts = [
     && deckEditor.includes('class="saved-decks-panel grand-panel"') && deckEditor.includes('class="saved-list"')
     && deckEditor.includes('grid-template-rows:minmax(0,5fr) minmax(0,2fr)')
     && deckEditor.includes('class="mobile-saved-decks-dialog"') && !deckEditor.includes('<label>已保存牌库<select'), '牌库编辑器桌面详情与已保存牌库必须按约5:2分区独立滚动；移动端已保存牌库只通过弹框选择'],
-  [deckEditor.includes('class="deck-list-header"') && deckEditor.includes('<DeckProfile compact :master-id="selectedMaster?.id"')
+  [deckEditor.includes('class="deck-list-header"') && deckEditor.includes('<DeckCover variant="compact" :master-id="selectedMaster?.id"')
     && deckEditor.includes('context="当前牌表"') && deckEditor.includes('士气 ${moraleIds.length} 张')
     && deckEditor.includes('<b>{{ countSummary.label }}</b>') && !deckEditor.includes('class="current-deck-summary"')
-    && !deckEditor.includes('class="master-preview"'), '当前主宰头像、名称、阵营和士气数必须与牌表数量合并置于右侧牌表头部，中间卡池不得再重复展示'],
+    && !deckEditor.includes('class="master-preview"'), '当前牌组封面、主宰名称、阵营和士气数必须与牌表数量合并置于右侧牌表头部，中间卡池不得再重复展示'],
   [deckEditor.includes("import DeckCostCurve from './DeckCostCurve.vue'") && deckEditor.includes('<DeckCostCurve :values="curve" expanded/>')
     && !deckEditor.includes('class="cost-curve"'), '费用曲线必须复用共享组件，保持等列、上对齐且不得超出统计容器'],
   [(() => {
@@ -1756,7 +1757,6 @@ contracts.push([
 
 const titleRules = read('../src/l12/site/RankedMasterTitleRulesModal.vue')
 const friendNotifications = read('../src/l12/site/FriendRequestNotifications.vue')
-const realtimeNotifications = read('../src/l12/notifications/useRealtimeNotifications.ts')
 const setupDecisionClock = read('../src/l12/game/SetupDecisionClock.vue')
 const catalogDetails = read('../src/l12/CatalogCardDetails.vue')
 contracts.push(
@@ -1782,8 +1782,7 @@ contracts.push(
     'GM选牌必须保留横卡自然方向、可查看详情且窄桌面筛选不越界'],
   [app.includes('FriendRequestNotifications') && friendNotifications.includes("resolve('block')")
     && friendNotifications.includes("resolve('reject')") && friendNotifications.includes("resolve('accept')")
-    && app.includes('useRealtimeNotifications()') && realtimeNotifications.includes('playL12FriendRequestSound()')
-    && friendNotifications.includes('expected !== generation'),
+    && app.includes('useRealtimeNotifications()') && !friendNotifications.includes('playL12FriendRequestSound') && friendNotifications.includes('expected !== generation'),
     '全局好友申请必须具备提示音、通过拒绝屏蔽及账号代次隔离'],
   [platform.includes('interface RankedTimeControlConfig') && platform.includes('DEFAULT_RANKED_TIME_CONTROL')
     && seasonConfigurationEditor.includes('data-ui-contract="ranked-time-control-config"')

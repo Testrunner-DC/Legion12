@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { DECK_COVER_REQUEST_HEADERS, deckCoverHeadersForOrigin, validateOptionalDeckCoverCardIds } from '../src/l12/deckCover.ts'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const borrowed = process.env.L12_PRIVATE_DECK_DEPENDENCY_ROOT || root
@@ -76,7 +77,7 @@ async function check(label, run) { await run(); passed++; console.log(`PASS ${pa
 const deckHelpers = compileBlock('src/l12/decks.ts', [
   'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
   'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage',
-], {})
+], { validateOptionalDeckCoverCardIds })
 
 await check('summary query encodes one bounded server page and every supported filter', () => {
   const url = new URL(deckHelpers.privateDeckSummaryRequestPath({ page: 3, pageSize: 100, keyword: '中文 &', masterId: 'M/A', legal: false, sort: 'name' }), 'http://owned.invalid')
@@ -92,6 +93,16 @@ await check('summary query rejects unbounded and malformed parameters before a r
 await check('thin summary page validates without creating body arrays', () => {
   const value = deckHelpers.validatePrivateDeckSummaryPage(page([summary()], 1), {})
   assert.equal(value.items[0].counts.main, 40); assert.equal(Object.hasOwn(value.items[0], 'cardIds'), false)
+})
+await check('additive cover ids remain optional and strict without allowing body fields', () => {
+  for (const coverCardIds of [[], ['A'], ['A', 'B', 'C']]) {
+    const value = page([summary('deck-A', 2, { coverCardIds })])
+    assert.deepEqual(deckHelpers.validatePrivateDeckSummaryPage(value).items[0].coverCardIds, coverCardIds)
+    value.items[0].cardIds = ['PRIVATE']
+    assert.throws(() => deckHelpers.validatePrivateDeckSummaryPage(value))
+  }
+  for (const coverCardIds of [null, ['A', 'a'], ['A', 'B', 'C', 'D'], [''], [1]])
+    assert.throws(() => deckHelpers.validatePrivateDeckSummaryPage(page([summary('deck-A', 2, { coverCardIds })])))
 })
 await check('available empty page remains a successful authoritative directory result', () => {
   const value = deckHelpers.validatePrivateDeckSummaryPage(page([], 0), {})
@@ -115,12 +126,13 @@ await check('summary validator binds response page, size, master and legal filte
   assert.throws(() => deckHelpers.validatePrivateDeckSummaryPage(page([summary()], 1), { legal: false }))
 })
 
-function summaryLoaderRuntime() {
+function summaryLoaderRuntime(headers = DECK_COVER_REQUEST_HEADERS) {
   const calls = [], context = { accountId: 'owner', token: 'token', epoch: 1 }, state = { current: true }
   const functions = compileBlock('src/l12/decks.ts', [
     'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
     'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage', 'loadPrivateDeckSummaryPage',
   ], {
+    getDeckCoverRequestHeaders: () => headers, validateOptionalDeckCoverCardIds,
     captureDeckStorageContext: () => context,
     assertCompleteDeckAccount: () => {},
     platformRequest: (url, init) => { const row = { url, init, ...deferred() }; calls.push(row); return row.promise },
@@ -134,8 +146,16 @@ await check('actual summary loader requests only metadata and performs no cache 
   const loading = runtime.loadPrivateDeckSummaryPage(query)
   assert.equal(runtime.calls.length, 1); assert.match(runtime.calls[0].url, /^\/api\/decks\/summaries\?/)
   assert.equal(runtime.calls[0].init.cache, 'no-store')
+  assert.deepEqual(runtime.calls[0].init.headers, { 'X-L12-Deck-Cover': '1' })
   runtime.calls[0].resolve(page([summary()], 31, query)); const result = await loading
   assert.equal(result.page, 2); assert.equal(result.total, 31)
+})
+await check('cross-origin old service remains readable without a new capability header or body request', async () => {
+  const runtime = summaryLoaderRuntime(deckCoverHeadersForOrigin('https://old-api.invalid', 'https://site.invalid'))
+  const loading = runtime.loadPrivateDeckSummaryPage({})
+  assert.deepEqual(runtime.calls[0].init.headers, {})
+  runtime.calls[0].resolve(page([summary()], 1))
+  assert.equal((await loading).items.length, 1); assert.equal(runtime.calls.length, 1)
 })
 await check('actual summary loader drops an account transition after the reply', async () => {
   const runtime = summaryLoaderRuntime(), loading = runtime.loadPrivateDeckSummaryPage({})

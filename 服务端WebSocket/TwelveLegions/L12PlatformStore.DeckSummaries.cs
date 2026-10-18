@@ -21,7 +21,7 @@ public sealed partial class L12PlatformStore
         => ReadRecoveryCardCounts(json).Select(card => new L12DeckCardQuantity(card.CardId, card.Quantity)).ToArray();
 
     private static L12PrivateDeckSummaryView PrivateDeckSummary(DataFile data, DeckRow row, L12Catalog catalog,
-        IReadOnlyList<L12CardRestrictionConfig> restrictions)
+        IReadOnlyList<L12CardRestrictionConfig> restrictions, bool includeCover)
     {
         var payload = ReadReferencedDeckPayload(data, row.PayloadHash);
         var main = SummaryCardCounts(payload.MainJson);
@@ -35,6 +35,7 @@ public sealed partial class L12PlatformStore
             && L12SpecialDeckRules.DoesNotCountTowardMainDeck(card)));
         return new(row.Id, row.Revision, row.Name, row.MasterId, row.UpdatedAt, row.PublicationId, row.PublicationVersion,
             new(L12DeckValidator.CountCards(main) - uncounted, uncounted, L12DeckValidator.CountCards(morale),
-                L12DeckValidator.CountCards(special), L12DeckValidator.CountCards(bench)), legal, legal ? null : reason);
+                L12DeckValidator.CountCards(special), L12DeckValidator.CountCards(bench)),
+            includeCover ? L12DeckCoverSelection.SelectCardIds(catalog, main) : null, legal, legal ? null : reason);
     }
 }

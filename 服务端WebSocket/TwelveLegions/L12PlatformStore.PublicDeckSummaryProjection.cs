@@ -43,7 +43,8 @@ public sealed partial class L12PlatformStore
         var environment = L12DeckEnvironment.ForCardIds(catalog, cards.Concat(bench.Select(item => item.CardId)).Append(masterId));
         catalog.Cards.TryGetValue(masterId, out var master);
         return new(new(id, source, name, masterId, master?.NameZh ?? masterId, master?.Faction ?? "unknown", author,
-            publicCode, publicationVersion, createdAt, updatedAt, counts, legal, legal ? null : reason, environment,
+            publicCode, publicationVersion, createdAt, updatedAt, counts,
+            L12DeckCoverSelection.SelectCardIds(catalog, main), legal, legal ? null : reason, environment,
             views, likes, copies, liked, canEdit), cards);
     }
 

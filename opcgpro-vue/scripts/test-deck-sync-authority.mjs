@@ -36,6 +36,7 @@ globalThis.__deckAuthorityTestPlatform = {
   platformState,
   watch,
   getEffectiveOperationsPolicy: async () => ({ defaultPresetDeckIds: [] }),
+  getDeckCoverRequestHeaders: () => ({ 'X-L12-Deck-Cover': '1' }),
   platformRequest: (...args) => requestHandler(...args),
 }
 
@@ -44,8 +45,10 @@ const productionModuleUrl = source => 'data:text/javascript;base64,' + Buffer.fr
 }).outputText).toString('base64')
 const publicDeckCounters = await import(productionModuleUrl(
   readFileSync(new URL('../src/l12/site/publicDeckEntry.ts', import.meta.url), 'utf8')))
+const coverUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCover.ts', import.meta.url), 'utf8'))
 const publicDeckSummaries = await import(productionModuleUrl(
-  readFileSync(new URL('../src/l12/site/publicDeckSummary.ts', import.meta.url), 'utf8')))
+  readFileSync(new URL('../src/l12/site/publicDeckSummary.ts', import.meta.url), 'utf8')
+    .replace("from '../deckCover'", "from '" + coverUrl + "'")))
 const binaryUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCodeCodec.ts', import.meta.url), 'utf8'))
 const codecUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCacheCodec.ts', import.meta.url), 'utf8')
   .replace("from './deckCodeCodec'", "from '" + binaryUrl + "'"))
@@ -55,13 +58,14 @@ const storageUrl = productionModuleUrl(readFileSync(new URL('../src/l12/deckCach
 const cacheStorage = await import(storageUrl)
 
 const executableSource = deckSource
+  .replace("from './deckCover'", "from '" + coverUrl + "'")
   .replace("import { watch } from 'vue'", 'const { watch } = globalThis.__deckAuthorityTestPlatform')
   .replace("from './deckCacheStorage'", "from '" + storageUrl + "'")
   .replace("from './deckCacheCodec'", "from '" + codecUrl + "'")
   .replace("import { normalizeLookupCardType } from './cardPresentation'", "const normalizeLookupCardType = value => value")
   .replace(
-    "import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
-    "const { getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
+    "import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",
+    "const { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState } = globalThis.__deckAuthorityTestPlatform",
   )
   .replace("import { deploymentPath } from './deploymentBase'", "const deploymentPath = value => value")
   .replace("import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'", 'const moraleIdentityData = []')

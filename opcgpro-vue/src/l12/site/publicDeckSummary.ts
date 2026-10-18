@@ -1,5 +1,6 @@
 import type { OwnPublicDeckReference, OwnPublicDeckReferences, PublicDeckSummary, PublicDeckSummaryPage, PublicDeckSummaryQuery } from '../platform'
 import type { SavedL12Deck } from '../decks'
+import { validateOptionalDeckCoverCardIds } from '../deckCover'
 
 const integer = (value: number) => Number.isSafeInteger(value) && value >= 0
 export function validateSummaryPage(page: PublicDeckSummaryPage, query: PublicDeckSummaryQuery) {
@@ -26,6 +27,7 @@ export function validateSummaryPage(page: PublicDeckSummaryPage, query: PublicDe
       || [item.createdAt, item.updatedAt].some(value => value !== null && typeof value !== 'string')
       || [item.views, item.likes, item.copies].some(value => !integer(value) || value > 2147483647)
       || typeof item.legal !== 'boolean' || typeof item.viewerLiked !== 'boolean' || typeof item.canEdit !== 'boolean'
+      || !validateOptionalDeckCoverCardIds(item as unknown as Record<string, unknown>)
       || ['deck', 'cardIds', 'moraleIds', 'specialIds', 'ownerId', 'payloadHash'].some(key => Object.hasOwn(item, key)))
       throw new Error('牌库摘要条目无效或混入正文')
     if (item.source === 'public' && (!item.publicCode || !/^[a-f0-9]{64}$/.test(item.readToken ?? ''))

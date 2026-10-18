@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
-const output = path.resolve(root, '../artifacts/deck-library-hot-layout')
+const output = process.env.L12_HOT_LAYOUT_OUTPUT || 'D:/GPT/Legion12/artifacts/deck-cover-redesign-20261019/main-integration/hot-layout'
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
 
@@ -13,8 +13,9 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createWebHistory,RouterView} from 'vue-router'
 import Library from '/src/l12/site/DeckLibraryPage.vue'
-import {loadOfficialPresetDecks} from '/src/l12/decks.ts'
-import {platformState,publicDeckApi} from '/src/l12/platform.ts'
+import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
+import {platformState,deckLibraryApi} from '/src/l12/platform.ts'
+import {publicSummaryFixture} from '/scripts/deck-summary-browser-fixture.mjs'
 import '/src/style.css'
 const presets=await loadOfficialPresetDecks()
 const base=presets.find(deck=>deck.cardIds.length>=40)||presets[0]
@@ -26,7 +27,7 @@ const rows=Array.from({length:hotItemsPerRow*2+2},(_,index)=>({
  views:5000-index*17,likes:500-index,copies:400-index,liked:false,createdAt:now,updatedAt:now,seasonCompliant:true,
 }))
 platformState.account=null
-publicDeckApi.list=async()=>rows
+deckLibraryApi.summaries=publicSummaryFixture(rows,await loadDeckCatalog())
 const Detail={props:['deckId'],render(){return h('main',{id:'detail-fixture','data-deck-id':this.deckId},'detail:'+this.deckId)}}
 const router=createRouter({history:createWebHistory(),routes:[
  {path:'/decks',name:'decks',component:Library},
@@ -41,7 +42,7 @@ await router.isReady()
 const server = await createServer({
   root,
   configLoader: 'runner',
-  cacheDir: path.join(root, '.tmp', 'vite-deck-library-hot-layout'),
+  cacheDir: 'D:/GPT/Legion12/cache/primary/deck-cover-integration/vite-hot-layout',
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'deck-library-hot-layout-fixture',
@@ -307,10 +308,10 @@ try {
     assert.deepEqual(geometry.itemCounts, [itemsPerRow, itemsPerRow], `${scenario} 数据样本数量错误`)
     assert.ok(geometry.loopWidths.every(widths => widths.length === 2 && widths[0] > 0 && Math.abs(widths[0] - widths[1]) < .5), `${scenario} 两份循环必须等宽连续闭合`)
     assert.ok(geometry.rows.every(row => row.x >= -1 && row.x + row.width <= width + 1), `${scenario} 轮播视口越界`)
-    const expectedRowHeight = width <= 700 ? 74 : 102
+    const expectedRowHeight = width <= 520 ? 132 : 158
     assert.ok(geometry.rows.every(row => Math.abs(row.height - expectedRowHeight) < 1), width <= 700
-      ? `${scenario} 移动端热门牌库尺寸不应跟随宽屏放大`
-      : `${scenario} 宽屏热门牌库容器未按约30%增大`)
+      ? `${scenario} 移动端应使用122px封面及10px悬停余量`
+      : `${scenario} 宽屏应使用148px封面及10px悬停余量`)
     assert.ok(geometry.cards.every(card => card.x >= -1 && card.x + card.width <= width + 1), `${scenario} 牌库盒子越界`)
     const screenshotName = itemsPerRow === 8 ? `deck-library-${width}x${height}.png` : `deck-library-${itemsPerRow}-items-${width}x${height}.png`
     await view.screenshot({ path:path.join(output,screenshotName), fullPage:true })

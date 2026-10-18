@@ -180,6 +180,11 @@ MockNotification.throwOnConstruct = true
 document.hidden = true
 assert.equal(showBrowserNotification('match_found', () => undefined), false, 'constructor failures are contained')
 MockNotification.throwOnConstruct = false
+assert.equal(browserNotificationState.enabled, false, 'rejected delivery must clear the enabled preference')
+assert.equal(browserNotificationState.status, 'unsupported')
+refreshBrowserNotificationState()
+assert.equal(browserNotificationState.status, 'unsupported', 'API presence must not re-enable rejected delivery')
+assert.equal(showBrowserNotification('chat_message', () => undefined), false)
 
 MockNotification.permission = 'denied'
 refreshBrowserNotificationState()

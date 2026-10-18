@@ -12,8 +12,9 @@ const read = relative => fs.readFileSync(path.join(root, relative), 'utf8')
 function evaluate(source, dependencies = {}) {
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const exports = {}
-  new Function('exports', 'require', ...Object.keys(dependencies), code)(exports,
-    name => dependencies[name] ?? requireDependency(name), ...Object.values(dependencies))
+  const bindings = Object.entries(dependencies).filter(([name]) => /^[A-Za-z_$][\w$]*$/.test(name))
+  new Function('exports', 'require', ...bindings.map(([name]) => name), code)(exports,
+    name => dependencies[name] ?? requireDependency(name), ...bindings.map(([, value]) => value))
   return exports
 }
 function productionFunction(name) {
@@ -29,7 +30,9 @@ function executeFunction(name, dependencies) {
 function pending() { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no }); return { promise, resolve, reject } }
 
 if (process.env.L12_SUMMARY_BASELINE_ONLY !== '1') {
-  const summary = evaluate(read('src/l12/site/publicDeckSummary.ts'))
+  const summary = evaluate(read('src/l12/site/publicDeckSummary.ts'), {
+    '../deckCover': evaluate(read('src/l12/deckCover.ts')),
+  })
   const official = evaluate(read('src/l12/site/officialDeckReference.ts'))
   const entryHelper = evaluate(read('src/l12/site/publicDeckEntry.ts'))
   let count = 0
@@ -49,6 +52,18 @@ if (process.env.L12_SUMMARY_BASELINE_ONLY !== '1') {
   await check('available empty page is distinct from unavailable response', () => {
     assert.equal(summary.validateSummaryPage(page([], 0), {}).total, 0)
     assert.throws(() => summary.validateSummaryPage({ status: 'unavailable', items: [] }, {}))
+  })
+  await check('optional cover ids support old services but reject malformed additive metadata', () => {
+    const legacy = page(); summary.validateSummaryPage(legacy, {})
+    assert.equal(Object.hasOwn(legacy.items[0], 'coverCardIds'), false)
+    for (const coverCardIds of [[], ['A'], ['A', 'B', 'C']]) {
+      const value = page(); value.items[0].coverCardIds = coverCardIds
+      assert.deepEqual(summary.validateSummaryPage(value, {}).items[0].coverCardIds, coverCardIds)
+    }
+    for (const coverCardIds of [null, ['A', 'a'], ['A', 'B', 'C', 'D'], [''], [1]]) {
+      const value = page(); value.items[0].coverCardIds = coverCardIds
+      assert.throws(() => summary.validateSummaryPage(value, {}))
+    }
   })
   await check('source disabled still has official metadata and explicit null content pin', () => {
     const value = page([item('official:' + 'a'.repeat(64), 'official')], 1); value.sourceAvailability.public = 'disabled'
@@ -199,14 +214,24 @@ if (process.env.L12_SUMMARY_BASELINE_ONLY !== '1') {
     const source = read('src/l12/platform.ts'), file = ts.createSourceFile('platform.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const initializer = file.statements.filter(ts.isVariableStatement).flatMap(node => node.declarationList.declarations)
       .find(node => node.name.getText(file) === 'deckLibraryApi').initializer.getText(file)
-    const calls = [], api = evaluate('export const api=' + initializer, { platformRequest: (url, init) => { calls.push({ url, init }); return Promise.resolve({}) } }).api
+    const cover = evaluate(read('src/l12/deckCover.ts'))
+    let headers = cover.DECK_COVER_REQUEST_HEADERS
+    const calls = [], api = evaluate('export const api=' + initializer, {
+      getDeckCoverRequestHeaders: () => headers,
+      platformRequest: (url, init) => { calls.push({ url, init }); return Promise.resolve({}) },
+    }).api
     await api.summaries({ source: 'all', page: 2, pageSize: 30, legal: false, keyword: '中文 &', cardId: 'C', masterId: 'M', faction: 'fate',
       environment: '2.5', updatedAfter: '2026-10-07T00:00:00.000Z', sort: 'name' })
     const query = new URL(calls[0].url, 'http://owned.invalid').searchParams
+    assert.deepEqual(calls[0].init.headers, { 'X-L12-Deck-Cover': '1' })
     assert.equal(query.get('legal'), 'false'); assert.equal(query.get('keyword'), '中文 &'); assert.equal(query.get('page'), '2')
     assert.equal(query.get('updatedAfter'), '2026-10-07T00:00:00.000Z')
     await api.ownReferences(['A/B', '第二条']); assert.deepEqual(new URL(calls[1].url, 'http://owned.invalid').searchParams.getAll('publicationId'), ['A/B', '第二条'])
     await assert.rejects(api.ownReferences(['same', 'same'])); await assert.rejects(api.ownReferences([])); assert.equal(calls.length, 2)
+    headers = cover.deckCoverHeadersForOrigin('https://old-api.invalid', 'https://site.invalid')
+    await api.summaries({ page: 1, pageSize: 30 })
+    assert.deepEqual(calls[2].init.headers, {}); assert.equal(calls.length, 3)
+    assert.match(calls[2].url, /^\/api\/deck-library\/summaries\?/)
   })
   await check('light owner proof preserves the legacy valid-id/version/owner matching semantics', () => {
     const saved = { publicationId: 'P', publicationVersion: 2 }

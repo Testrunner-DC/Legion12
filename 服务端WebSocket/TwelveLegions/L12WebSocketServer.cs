@@ -839,7 +839,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (IsAllowedOrigin(origin)) context.Response.Headers.AccessControlAllowOrigin = origin;
             context.Response.Headers.Vary = "Origin";
             context.Response.Headers.AccessControlAllowHeaders =
-                $"Content-Type, Authorization, {L12CorrelationIds.HeaderName}, Idempotency-Key, If-Match, X-Admin-Reason";
+                $"Content-Type, Authorization, {L12CorrelationIds.HeaderName}, Idempotency-Key, If-Match, X-Admin-Reason, {L12DeckCoverCapability.HeaderName}";
             context.Response.Headers.AccessControlAllowMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
             context.Response.Headers.AccessControlExposeHeaders =
                 $"{L12CorrelationIds.HeaderName}, X-Command-ID, X-Idempotent-Replay, ETag, Retry-After, RateLimit-Limit, RateLimit-Remaining, Server-Timing";
@@ -2086,7 +2086,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             if (!L12PrivateDeckQuery.TryParse(request.Query, out var query))
                 return Results.BadRequest(new { message = "牌库摘要查询参数无效" });
-            var page = _platform.PrivateDeckSummaries(account, _catalog, query);
+            var page = _platform.PrivateDeckSummaries(account, _catalog, query,
+                includeCover: L12DeckCoverCapability.IsEnabled(request.Headers));
             return page is null ? Results.Unauthorized() : Results.Ok(page);
         });
         _app.MapGet("/api/decks/by-id/{id}", (HttpRequest request, string id) =>
@@ -2230,7 +2231,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return Results.BadRequest(new { message = "公开牌库摘要查询参数无效" });
             try
             {
-                var result = _platform.DeckLibrarySummaries(_catalog, query, viewer);
+                var result = _platform.DeckLibrarySummaries(_catalog, query, viewer,
+                    includeCover: L12DeckCoverCapability.IsEnabled(request.Headers));
                 return result.Status switch
                 {
                     "ok" => Results.Ok(result.Page),

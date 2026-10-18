@@ -1458,8 +1458,7 @@ public sealed class WebSocketInboundIsolationTests
             || !Guid.TryParseExact(target.Name, "N", out _))
             throw new InvalidOperationException($"refusing to delete unexpected test directory: {target.FullName}");
 
-        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-        if (target.Exists) target.Delete(recursive: true);
+        PlatformTestDirectoryCleanup.Delete(target.FullName);
     }
 
     private sealed class OpenFenceStore : IL12DeploymentDrainFenceStore
