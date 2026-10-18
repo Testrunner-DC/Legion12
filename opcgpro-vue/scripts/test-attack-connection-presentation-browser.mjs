@@ -86,6 +86,11 @@ async function inspect(page, expected) {
     const sourceDot = element.querySelector('.attack-connection-source')
     const targetDot = element.querySelector('.attack-connection-target')
     const core = element.querySelector('.attack-connection-core')
+    const glow = element.querySelector('.attack-connection-glow')
+    const orb = element.querySelector('.attack-connection-orb')
+    const occluder = element.querySelector('.attack-connection-occluder')
+    const combat = Array.from(document.querySelectorAll('.combat-versus'))
+      .find(node => node instanceof HTMLElement && node.getClientRects().length > 0)
     const number = (node, attribute) => Number(node.getAttribute(attribute))
     const logicalSource = { x: number(sourceDot, 'cx'), y: number(sourceDot, 'cy') }
     const logicalTarget = { x: number(targetDot, 'cx'), y: number(targetDot, 'cy') }
@@ -101,7 +106,18 @@ async function inspect(page, expected) {
       resolving: element.classList.contains('is-resolving'),
       sourceColor: getComputedStyle(sourceDot).color,
       coreWidth: getComputedStyle(core).strokeWidth,
-      glowWidth: getComputedStyle(element.querySelector('.attack-connection-glow')).strokeWidth,
+      glowWidth: getComputedStyle(glow).strokeWidth,
+      coreMask: core.getAttribute('mask'),
+      glowMask: glow.getAttribute('mask'),
+      orbMask: orb?.getAttribute('mask') ?? null,
+      occluder: occluder ? {
+        x: number(occluder, 'x'), y: number(occluder, 'y'),
+        width: number(occluder, 'width'), height: number(occluder, 'height'),
+      } : null,
+      combatRect: combat ? (() => {
+        const rect = combat.getBoundingClientRect()
+        return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+      })() : null,
       logicalSource,
       logicalTarget,
       sourceRect: { left: sourceRect.left, top: sourceRect.top, right: sourceRect.right, bottom: sourceRect.bottom },
@@ -134,6 +150,17 @@ try {
     assert.match(initial.path, / Q /, `${profile.name} must use a restrained quadratic connection`)
     assert.equal(initial.coreWidth, '4px', `${profile.name} core must remain substantial`)
     assert.equal(initial.glowWidth, '12px', `${profile.name} glow must support the thicker core`)
+    assert.match(initial.coreMask, /^url\("?#l12-attack-connection-occlusion-/, `${profile.name} core must pass under combat information`)
+    assert.equal(initial.glowMask, initial.coreMask, `${profile.name} glow must share the occlusion mask`)
+    assert.equal(initial.orbMask, initial.coreMask, `${profile.name} travel marker must share the occlusion mask`)
+    assert.ok(initial.occluder && Object.values(initial.occluder).every(Number.isFinite),
+      `${profile.name} combat information mask must use finite logical geometry`)
+    if (profile.name === 'desktop-player') {
+      assert.ok(initial.combatRect, 'desktop combat information must be measurable')
+      assert.ok(Math.abs(initial.occluder.x - initial.combatRect.left) <= 6
+        && Math.abs(initial.occluder.y - initial.combatRect.top) <= 6,
+      'desktop mask must cover the visible combat information surface')
+    }
     assert.match(initial.marker, /^url\("?#l12-attack-connection-arrow-/, `${profile.name} must retain direction`)
     assert.equal(initial.pointerEvents, 'none', `${profile.name} overlay cannot consume board input`)
     assert.equal(initial.drawStarts, 1, `${profile.name} fresh attack must draw exactly once`)

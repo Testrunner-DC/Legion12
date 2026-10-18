@@ -116,6 +116,9 @@ assert.ok(layer.includes('.attack-connection-layer.is-paused .attack-connection-
   'blocking modals must suppress the SMIL travel marker while the authority relation remains visible')
 assert.ok(layer.includes('.attack-connection-core{stroke-width:4;')
   && layer.includes('.attack-connection-glow{stroke-width:12;'), 'the connection must remain visibly substantial')
+assert.ok(layer.includes('class="attack-connection-occluder"')
+  && layer.includes(':mask="`url(#${occlusionMaskId})`"'),
+  'the combat information surface must mask the connection instead of letting it render above')
 assert.ok(layer.includes('data-ui-contract="authoritative-attack-connection"'))
 assert.ok(!board.includes('class="combat-trace"') && !board.includes('.combat-trace{'),
   'the fixed decorative slash must not remain beside the real connection')

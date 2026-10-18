@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import type { ActionEvent, GameState } from '../types'
-import { landscapeTeleportTarget, viewportLayoutRect, visibleViewport } from '../mobileViewport'
+import { landscapeTeleportTarget, viewportLayoutRect, viewportRect, visibleViewport } from '../mobileViewport'
 import {
   attackConnectionGeometry,
   attackConnectionSourceColor,
@@ -25,6 +25,9 @@ type Presentation = AttackConnectionGeometry & {
   intro: boolean
   resolving: boolean
   sourceColor: string
+  canvasWidth: number
+  canvasHeight: number
+  occluder: { x: number; y: number; width: number; height: number } | null
 }
 
 const presentation = ref<Presentation | null>(null)
@@ -32,6 +35,7 @@ const claimState = createAttackConnectionClaimState()
 const definitionId = useId().replace(/[^a-zA-Z0-9_-]/g, '')
 const gradientId = `l12-attack-connection-gradient-${definitionId}`
 const markerId = `l12-attack-connection-arrow-${definitionId}`
+const occlusionMaskId = `l12-attack-connection-occlusion-${definitionId}`
 let frame = 0
 let introTimer: ReturnType<typeof setTimeout> | null = null
 let introKey: string | null = null
@@ -56,6 +60,20 @@ function targetElement(pending: NonNullable<GameState['pendingDefense']>) {
   return document.querySelector(`[data-l12-game-stage] [data-player-index="${targetPlayerIndex}"] [data-card-instance-id="master-${targetPlayerIndex}"]`)
 }
 
+function combatInformationOccluder() {
+  const information = Array.from(document.querySelectorAll('.combat-versus'))
+    .find(element => element instanceof HTMLElement && element.getClientRects().length > 0)
+  if (!(information instanceof HTMLElement)) return null
+  const rect = viewportRect(information)
+  const padding = 5
+  return {
+    x: rect.left - padding,
+    y: rect.top - padding,
+    width: rect.width + padding * 2,
+    height: rect.height + padding * 2,
+  }
+}
+
 function measure(key: string, intro: boolean) {
   if (intro) setIntro(key)
   cancelAnimationFrame(frame)
@@ -68,8 +86,8 @@ function measure(key: string, intro: boolean) {
       presentation.value = null
       return
     }
-    const geometry = attackConnectionGeometry(viewportLayoutRect(source), viewportLayoutRect(target),
-      visibleViewport().width)
+    const viewport = visibleViewport()
+    const geometry = attackConnectionGeometry(viewportLayoutRect(source), viewportLayoutRect(target), viewport.width)
     if (!geometry) { presentation.value = null; return }
     presentation.value = {
       ...geometry,
@@ -77,6 +95,9 @@ function measure(key: string, intro: boolean) {
       intro: introKey === key,
       resolving: !['AttackerAttackTiming', 'DefenderAttackTiming', 'DefenseChoice'].includes(pending.stage),
       sourceColor: attackConnectionSourceColor(pending.attackerPlayer, props.viewerPlayerIndex),
+      canvasWidth: viewport.width,
+      canvasHeight: viewport.height,
+      occluder: combatInformationOccluder(),
     }
   })
 }
@@ -148,14 +169,22 @@ onBeforeUnmount(() => {
         <marker :id="markerId" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="5" markerHeight="5" orient="auto">
           <path d="M 0 0 L 8 4 L 0 8 z" fill="#f2bd68" />
         </marker>
+        <mask :id="occlusionMaskId" maskUnits="userSpaceOnUse" x="0" y="0"
+          :width="presentation.canvasWidth" :height="presentation.canvasHeight">
+          <rect x="0" y="0" :width="presentation.canvasWidth" :height="presentation.canvasHeight" fill="white" />
+          <rect v-if="presentation.occluder" class="attack-connection-occluder"
+            :x="presentation.occluder.x" :y="presentation.occluder.y"
+            :width="presentation.occluder.width" :height="presentation.occluder.height" fill="black" />
+        </mask>
       </defs>
-      <path class="attack-connection-glow" :d="presentation.path" pathLength="1" :stroke="`url(#${gradientId})`" />
+      <path class="attack-connection-glow" :d="presentation.path" pathLength="1"
+        :stroke="`url(#${gradientId})`" :mask="`url(#${occlusionMaskId})`" />
       <path class="attack-connection-core" :d="presentation.path" pathLength="1"
-        :stroke="`url(#${gradientId})`" :marker-end="`url(#${markerId})`" />
+        :stroke="`url(#${gradientId})`" :marker-end="`url(#${markerId})`" :mask="`url(#${occlusionMaskId})`" />
       <circle class="attack-connection-source" :cx="presentation.startX" :cy="presentation.startY" r="7"
         :style="{ color: presentation.sourceColor }" />
       <circle class="attack-connection-target" :cx="presentation.endX" :cy="presentation.endY" r="8" />
-      <circle v-if="presentation.intro" class="attack-connection-orb" r="4">
+      <circle v-if="presentation.intro" class="attack-connection-orb" r="4" :mask="`url(#${occlusionMaskId})`">
         <animateMotion :path="presentation.path" dur="260ms" fill="freeze" />
       </circle>
     </svg>
