@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-followthrough-analytics-and-diagnostics",
+  "date": "2026-10-18",
+  "audience": "internal",
+  "reason": "后台主宰天灾对阵策略复用已有事实、权限与有界查询；隔离测试新增默认关闭的纯数值持久化分段观察；在线状态首包声明与完整快照使用同一捕获版本。内部统计与取证实现不进入玩家更新日志，不宣称性能根治或新版本已上线。",
+  "paths": [
+    "opcgpro-vue/src/l12/disasterStrategy.ts",
+    "opcgpro-vue/src/l12/site/AdminMasterAnalyticsPanel.vue",
+    "opcgpro-vue/src/l12/site/MasterDisasterStrategyPanel.vue",
+    "服务端WebSocket/TwelveLegions/DisasterStrategyModels.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.DisasterAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.CardFacts.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterAnalytics.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.DisasterStrategy.cs",
+    "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+  ]
+}

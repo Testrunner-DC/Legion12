@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-followthrough-battle-and-ui",
+  "date": "2026-10-18",
+  "audience": "players",
+  "title": "对局展示与好友房体验",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "太阳城的陵墓守卫普通付费移动时，不能休整自身支付费用；仍可使用其他合法军团或资源付款，免费移动不受影响。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs", "服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "花魁同一次展示并入手不再连续弹出两次完整卡面，后续真正再次公开仍正常展示；月读累计的本回合进攻加成可在状态详情查看。",
+      "paths": ["opcgpro-vue/src/l12/game/publicRevealPresentation.ts", "opcgpro-vue/src/l12/game/GameBoard.vue", "服务端WebSocket/TwelveLegions/L12GameEngine.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "双方玩家离开结算房后，仍在房内的观战者可继续查看结果；主动退出及原有最长保留时间保持不变。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12RoomManager.Settlement.cs", "服务端WebSocket/TwelveLegions/L12RoomManager.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "好友房记住本人上次手动选择的天灾模式，不记住具体天灾组合；每局仍按原规则禁选。",
+      "paths": ["opcgpro-vue/src/l12/friendlyRoomPreferences.ts", "opcgpro-vue/src/l12/site/BattleHubPage.vue"]
+    },
+    {
+      "category": "ui",
+      "text": "进攻连线显示双方关联，并避让战斗信息条；移动端排序区的卡牌、提示与确认操作分别可达，不再相互遮挡。",
+      "paths": ["opcgpro-vue/src/l12/game/AttackConnectionPresentationLayer.vue", "opcgpro-vue/src/l12/game/attackConnectionPresentation.ts", "opcgpro-vue/src/l12/game/PromptOverlay.vue"]
+    },
+    {
+      "category": "battle",
+      "text": "编辑牌库时也能收到原有好友约战提醒；不会自动跳转或丢失草稿，接受和拒绝仍由玩家选择。",
+      "paths": ["opcgpro-vue/src/App.vue", "opcgpro-vue/src/l12/site/FriendChallengeNotifications.vue", "opcgpro-vue/src/l12/site/SiteShell.vue"]
+    }
+  ]
+}
