@@ -6,6 +6,7 @@ import { authState, platformState, updateAudioPreferences } from '@/l12/platform
 import SiteShell from '@/l12/site/SiteShell.vue'
 import GlobalBugFeedback from '@/l12/site/GlobalBugFeedback.vue'
 import FriendRequestNotifications from '@/l12/site/FriendRequestNotifications.vue'
+import FriendChallengeNotifications from '@/l12/site/FriendChallengeNotifications.vue'
 import RankedIntegrityNotice from '@/l12/site/RankedIntegrityNotice.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
@@ -16,6 +17,7 @@ import '@/l12/mobileViewport.css'
 const route = useRoute()
 const immersive = computed(() => route.meta.immersive === true)
 const adaptiveEditor = computed(() => route.meta.editorAdaptiveCanvas === true)
+const showFriendChallengeNotifications = computed(() => !immersive.value || adaptiveEditor.value)
 useDeckEditorViewport(adaptiveEditor)
 const landscapeExperience = computed(() => route.meta.landscapeCanvas === true && !(adaptiveEditor.value && deckEditorPortrait.value))
 useLandscapeViewport(landscapeExperience)
@@ -98,6 +100,7 @@ watch(() => [platformState.token, authState.verified] as const, ([token, verifie
   </div>
   <GlobalBugFeedback />
   <FriendRequestNotifications />
+  <FriendChallengeNotifications v-if="showFriendChallengeNotifications" />
   <RankedIntegrityNotice />
 </template>
 

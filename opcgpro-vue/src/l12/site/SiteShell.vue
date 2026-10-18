@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { usesSiteUiStates } from './siteUiStateScope'
 import { useRoute, useRouter } from 'vue-router'
-import { cancelFriendInvitation, inviteFriend, l12State, resolveFriendInvitation, spectateRoom } from '@/l12/net'
+import { inviteFriend, l12State, spectateRoom } from '@/l12/net'
 import { alternateArtApi, friendApi, login, platformState, register, telemetryApi, type AlternateArtGrantNotification, type PlatformPresence } from '@/l12/platform'
 import SiteIcon from './SiteIcon.vue'
 import SocialPopover from './SocialPopover.vue'
@@ -633,11 +633,6 @@ function refreshSocialReturnAnchor() {
     ? menu : socialUtilityButton.value
 }
 const settingsOpener = ref<HTMLElement | null>(null)
-const invitationMinimized = ref(false)
-const outgoingInvitationMinimized = ref(false)
-watch(() => l12State.friendInvitation?.invitationId, () => { invitationMinimized.value = false })
-watch(() => l12State.outgoingFriendInvitation?.invitationId, () => { outgoingInvitationMinimized.value = false })
-
 const mainNav = [
   { to: '/', icon: 'home', label: '主页' },
   { to: '/news', icon: 'news', label: '资讯' },
@@ -769,7 +764,6 @@ watch(() => route.fullPath, () => {
   closeMobileNav(false)
   void telemetryApi.pageView(route.path).catch(() => { /* 统计失败不阻断玩家访问。 */ })
 }, { immediate: true })
-function enterFriendRoom() { void router.push('/battle') }
 async function refreshPresence() {
   if (!platformState.account || !platformState.token) {
     l12State.presence = []
@@ -809,19 +803,6 @@ function watchOnlinePlayer(player: PlatformPresence) {
   modal.value = null
   void router.push('/battle')
 }
-function answerInvitation(accept: boolean) {
-  if (!l12State.friendInvitation) return
-  const invitationId = l12State.friendInvitation.invitationId
-  l12State.friendInvitation = null
-  resolveFriendInvitation(invitationId, accept)
-}
-function outgoingInvitationTarget(targetAccountId: string) {
-  return onlinePlayers.value.find(player => player.accountId === targetAccountId)?.username || targetAccountId
-}
-function cancelOutgoingInvitation() {
-  const invitationId = l12State.outgoingFriendInvitation?.invitationId
-  if (invitationId) cancelFriendInvitation(invitationId)
-}
 function onPresenceResource(event: Event) {
   if ((event as CustomEvent).detail?.fallback === true && l12State.status !== 'online') void refreshPresence()
 }
@@ -834,7 +815,6 @@ watch(() => platformState.account?.id, () => {
 onMounted(() => {
   window.addEventListener('keydown', onMobileNavKeydown)
   window.addEventListener('resize', refreshSocialReturnAnchor)
-  window.addEventListener('l12-friend-room-created', enterFriendRoom)
   void refreshAlternateArtNotifications()
   window.addEventListener('l12-resource-presence', onPresenceResource)
   window.addEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
@@ -843,7 +823,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onMobileNavKeydown)
   window.removeEventListener('resize', refreshSocialReturnAnchor)
   document.body.style.overflow = bodyOverflowBeforeDrawer
-  window.removeEventListener('l12-friend-room-created', enterFriendRoom)
   window.removeEventListener('l12-resource-presence', onPresenceResource)
   window.removeEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
 })
@@ -939,28 +918,6 @@ onBeforeUnmount(() => {
 
     <SeasonSummaryNotice :suspended="Boolean(currentAlternateArtNotification)"/>
 
-    <div v-if="l12State.friendInvitation || l12State.outgoingFriendInvitation" class="invitation-stack ui-state-scope">
-      <div v-if="l12State.outgoingFriendInvitation" class="outgoing-invitation-gate" :class="{ minimized: outgoingInvitationMinimized }">
-        <button v-if="outgoingInvitationMinimized" class="invitation-minimized" @click="outgoingInvitationMinimized = false">已发送对战邀请 · 展开</button>
-        <section v-else class="site-modal invitation-modal outgoing-invitation-modal" role="status" aria-label="已发送好友对战邀请">
-          <header><div><small>FRIEND BATTLE</small><h2>对战邀请已发送</h2></div><button aria-label="最小化已发送对战邀请" @click="outgoingInvitationMinimized = true">—</button></header>
-          <p>正在等待 <b>{{ outgoingInvitationTarget(l12State.outgoingFriendInvitation.targetAccountId) }}</b> 回应。</p>
-          <div class="invite-code"><span>预留房间码</span><strong>{{ l12State.outgoingFriendInvitation.roomCode }}</strong></div>
-          <div class="invite-actions outgoing-invite-actions"><button class="quiet" @click="cancelOutgoingInvitation">撤回邀请</button></div>
-        </section>
-      </div>
-
-      <div v-if="l12State.friendInvitation" class="invitation-gate" :class="{ minimized: invitationMinimized }">
-        <button v-if="invitationMinimized" class="invitation-minimized" @click="invitationMinimized = false">好友对战邀请 · 展开</button>
-        <section v-else class="site-modal invitation-modal" role="dialog" aria-modal="false" aria-label="好友对战邀请">
-          <header><div><small>FRIEND BATTLE</small><h2>好友对战邀请</h2></div><button aria-label="最小化好友对战邀请" @click="invitationMinimized = true">—</button></header>
-          <p><b>{{ l12State.friendInvitation.fromName }}</b> 邀请你进行友谊战。</p>
-          <div class="invite-code"><span>预留房间码</span><strong>{{ l12State.friendInvitation.roomCode }}</strong></div>
-          <p class="invite-note">接受后将直接创建房间：发起方成为房主，你将自动进入整备室，无需再输入房间码。</p>
-          <div class="invite-actions"><button class="quiet" @click="answerInvitation(false)">拒绝</button><button @click="answerInvitation(true)">接受并进入房间</button></div>
-        </section>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -973,7 +930,6 @@ onBeforeUnmount(() => {
 @media(max-width:700px){.mobile-brand img{width:30px;height:30px;border:0;border-radius:0;object-fit:contain;filter:brightness(0) invert(1)}.mobile-brand b{display:none}}
 .auth-modal>p{color:#87939a;font-size:14px;line-height:1.7}.auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:18px 0}.auth-tabs button,.auth-home{padding:11px;border:1px solid #46535b;background:#080e13;color:#9aa3a7;font-weight:900}.auth-tabs button.active{border-color:#e1c16c;background:#2a2414;color:#f2d985}.auth-modal label{display:block;margin:13px 0;color:#abb3b6;font-size:14px;font-weight:900}.auth-modal input{display:block;width:100%;margin-top:7px;padding:12px;border:1px solid #4b5860;background:#080e13;color:#fff}.auth-submit{width:100%;margin-top:16px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.auth-submit:disabled{opacity:.45}.auth-home{width:100%;margin-top:8px}.auth-notice{padding:9px!important;border-left:3px solid #a72e39;background:#291016;color:#e5aab0!important}.account-gate{z-index:140}
 .alternate-art-notification-mask{z-index:180}.alternate-art-notification{width:min(660px,92vw)}.alternate-art-reward{display:grid;grid-template-columns:minmax(150px,220px) minmax(0,1fr);align-items:center;gap:24px;margin-top:18px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){width:100%;max-height:330px;object-fit:contain;background:#050708}.alternate-art-reward p{margin:0;color:#f2d77e;font-size:18px;font-weight:900;line-height:1.75}.alternate-art-reward span,.alternate-art-reward small{display:block;margin-top:10px;color:#8e9ba0}.alternate-art-confirm{width:100%;margin-top:20px;padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}@media(max-width:700px){.alternate-art-notification-mask{align-items:center;padding:max(14px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}.alternate-art-notification{width:min(520px,100%);border:1px solid #526067}.alternate-art-reward{grid-template-columns:110px minmax(0,1fr);gap:14px}.alternate-art-reward p{font-size:15px}.alternate-art-reward>img,.alternate-art-reward>:deep(.l12-card-image){max-height:190px}}
-.invitation-stack{position:fixed;z-index:160;right:18px;bottom:18px;display:flex;width:min(430px,calc(100vw - 36px));max-height:calc(100vh - 36px);flex-direction:column;gap:10px;overflow:auto;pointer-events:none}.invitation-gate,.outgoing-invitation-gate{width:100%;flex:0 0 auto;pointer-events:none}.invitation-modal{box-sizing:border-box;width:100%;max-height:min(620px,calc(100vh - 36px));padding:20px;pointer-events:auto}.invitation-modal>p{color:#aeb6ba;line-height:1.7}.invitation-minimized{padding:10px 14px;border:1px solid #e1c16c;background:#231c0d;color:#f0d478;box-shadow:0 12px 34px #000;font-weight:900;pointer-events:auto}.invite-code{display:flex;align-items:center;justify-content:space-between;margin:18px 0;padding:14px;border:1px solid #4e5b63;background:#080e13}.invite-code span{color:#79868d;font-size:14px}.invite-code strong{color:#f0d478;font:900 22px monospace;letter-spacing:.18em}.invite-note{font-size:14px}.invite-actions{display:grid;grid-template-columns:1fr 1.7fr;gap:10px;margin-top:20px}.invite-actions button{padding:12px;border:1px solid #e1c16c;background:#e1c16c;color:#080b0d;font-weight:900}.invite-actions button.quiet{border-color:#4a565e;background:#0a1117;color:#929da2}.outgoing-invitation-modal{border-color:rgba(81,197,204,.42)}.outgoing-invite-actions{grid-template-columns:1fr}
 .online-actions button.quiet{border-color:#4b565c;background:#0b1217;color:#9ba5aa}
 .update-modal{width:min(680px,94vw)}
 .update-modal h3{font-size:17px}

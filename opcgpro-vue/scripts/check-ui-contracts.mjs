@@ -91,6 +91,7 @@ const savedDeckSelector = read('../src/l12/SavedDeckSelector.vue')
 const deckEditor = read('../src/l12/L12DeckEditor.vue')
 const gamePage = read('../src/l12/GamePage.vue')
 const app = read('../src/App.vue')
+const friendChallengeNotifications = read('../src/l12/site/FriendChallengeNotifications.vue')
 const gameReentry = read('../src/l12/gameReentry.ts')
 const backgroundMusic = read('../src/l12/backgroundMusic.ts')
 const settingsModal = read('../src/l12/site/L12SettingsModal.vue')
@@ -727,7 +728,7 @@ const contracts = [
   [l12Net.includes('scheduleReconnect') && l12Net.includes('connectPromise') && l12Net.includes("type: 'ping'") && l12Net.includes("location.protocol === 'https:'"), 'WebSocket 必须防止并发建连、支持断线退避重连和正式站同源选址'],
   [decks.includes("platformRequest<SavedL12Deck[]>('/api/decks')") && decks.includes("method: 'PUT'") && decks.includes("method: 'DELETE'"), '玩家牌库必须与账号服务端持久化同步'],
   [lobby.includes('copyRoomCode') && lobby.includes('复制房间码'), '友谊战整备室必须保留房间码复制按钮'],
-  [lobby.includes('isRoomHost') && lobby.includes('updateRoomOptions(editableRoomOptions.value)') && lobby.includes('保存房间规则') && l12Net.includes("type: 'updateRoomOptions'") && shell.includes('l12State.friendInvitation = null\n  resolveFriendInvitation(invitationId, accept)'), '好友邀请接受后必须立即关闭邀请层并进入整备室，且仅房主可在开战前调整房间规则'],
+  [lobby.includes('isRoomHost') && lobby.includes('updateRoomOptions(editableRoomOptions.value)') && lobby.includes('保存房间规则') && l12Net.includes("type: 'updateRoomOptions'") && friendChallengeNotifications.includes('l12State.friendInvitation = null\n  resolveFriendInvitation(invitation.invitationId, accept)'), '好友邀请接受后必须立即关闭邀请层并进入整备室，且仅房主可在开战前调整房间规则'],
   [lobby.includes('v-model="roomOptions.useCardRestrictions"') && lobby.includes('不启用运营禁限卡') && lobby.includes('启用运营禁限卡') && !lobby.includes('v-model="roomOptions.matchModeId"') && lobby.includes('<option value="season">赛季天灾'), '好友房必须以是否启用运营禁限卡取代排位/休闲模式，并可选择赛季天灾快照'],
   [lobby.includes('maintenance.entryBlocked') && lobby.includes('维护即将开始/维护中，对局功能已关闭。')
     && lobby.includes('maintenanceCountdown(operationsPolicy.value.maintenance, policyNow.value)')
@@ -1028,15 +1029,17 @@ const contracts = [
   [prompt.includes('const displayCardIds = computed') && prompt.includes('if (displayCardIds.value.length) return displayCardIds.value')
     && prompt.includes('displayCardIds.value.length > 0') && prompt.includes('if (!p || !p.validChoices.includes(id)) return')
     && prompt.includes('v-for="choice in supplementalChoices"') && prompt.includes('@focus="focusChoice(choice)"'), '通用选项弹框必须把 displayCardIds 作为仅供查看的卡牌行，可打开卡牌详情但不得把展示牌误作合法选择，确认项保留在统一页脚'],
-  [hasInvitationTemplate(shell)
-    && shell.includes('aria-modal="false"') && shell.includes('invitationMinimized')
-    && shell.includes('position:fixed;z-index:160;right:18px;bottom:18px')
+  [hasInvitationTemplate(friendChallengeNotifications)
+    && friendChallengeNotifications.includes('aria-modal="false"') && friendChallengeNotifications.includes('invitationMinimized')
+    && friendChallengeNotifications.includes('position:fixed;z-index:160;right:18px;bottom:18px')
+    && app.includes('<FriendChallengeNotifications v-if="showFriendChallengeNotifications" />')
+    && app.includes('!immersive.value || adaptiveEditor.value') && !hasInvitationTemplate(shell)
     && l12Net.includes("message.type === 'friendInvitationResolved' || message.type === 'friendInvitationRevoked'")
     && l12Net.includes('l12State.friendInvitation?.invitationId === message.invitationId')
     && l12Net.includes('l12State.outgoingFriendInvitation?.invitationId === message.invitationId')
     && l12Net.includes("else if (message.type === 'friendRoomCreated')")
     && l12Net.includes("type: 'cancelFriendInvitation', invitationId")
-    && shell.includes('@click="cancelOutgoingInvitation"') && shell.includes('outgoingInvitationMinimized')
+    && friendChallengeNotifications.includes('@click="cancelOutgoingInvitation"') && friendChallengeNotifications.includes('outgoingInvitationMinimized')
     && l12Net.includes("l12State.spectating && message.message === '观战者不能执行对局操作'")
     && l12Net.includes('if (l12State.spectating || l12State.pendingAction) return'), '好友邀请必须是右下角无背板可最小化通知，发起方按服务端返回的精确邀请编号撤回，接收方只按匹配邀请撤销；观战端不得发送对局命令或重复显示权限提示'],
   [battleLog.includes("import { projectLog } from './logViewModel'") && battleLog.includes('computed(() => projectLog(props.events, props.you, props.names, props.neutralView ?? false))')
