@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜即时维护测试接入既有 Windows 清理器
+
+- 教学候选d505的完整规则7908全过，平台1994/1995；唯一失败在即时维护重连／终局用例的finally删除matches.db，业务断言未失败。原TRX与临时树保留，不把该轮记成通过。
+- 该类五处单次目录删除改为现有PlatformTestDirectoryCleanup.Delete；server／recorder等待、环境恢复及全部业务断言不变。共享清理器逐次清池，仅Windows IOException最多八次且最后原异常向外传播，不新增忽略或产品存储改动。对应共享重试顺序／第八次传播／缺失目录守卫及该完整测试类共同复验8/8，零失败跳过，证据在tutorial-build-20261018/main/maintenance-cleanup-final；最终整轮认后续Release收据。
+
 ## 2026-10-18｜好友房记住本人天灾模式，不保存组合或改每局禁选
 
 - e8用户明确选择只记模式。原真实BattleHub原生选择random→重挂回all，RED成立；新增严格四枚举的本地偏好helper，账号编码键与guest隔离，只有两个既有控件的显式change保存。读取、运营默认、加入/观战/广播、离房及原create/update发送均不写偏好；不新增协议、云偏好、轮询、确认状态机或界面文字。

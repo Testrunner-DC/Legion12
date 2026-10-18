@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
+using TwelveLegions.Platform.Tests;
 using Xunit;
 
 namespace GrandUMI.Tests;
@@ -119,7 +120,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -154,7 +155,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -276,7 +277,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
-            Directory.Delete(root, true);
+            PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -340,7 +341,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
         {
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -427,7 +428,7 @@ public sealed class ControlPlaneImmediateMaintenanceOperationsTests
         {
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
