@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19 发布测试的SQLite清理
+
+- ed30规则7908通过，平台唯一失败是RankedWatchdogIsolationTests.ResponseCommitFailureNotifiesNobodyRestoresOriginalLeaseAndRetryExpiresExactlyOnce在全部原业务断言完成后删除matches.db被占用。3bf05仅复用现有PlatformTestDirectoryCleanup，保留临时路径／名称守卫，不改应用或断言。
+- 规则按精确整树差异和原始收据／日志SHA映射复用；平台1961本轮零失败跳过，原失败方法与清理均实际通过，完整TRX保留。实际正式版本3bf05、维护118已开放；原首轮失败保留，教学／沙盒／封面未发布，统一证据为formal-release-20261019发布汇总。
+
 ## 2026-10-19 构建子进程的 PowerShell 路径
 
 - 283727c0的规则7908/平台2007全过后，隔离前端执行响应教学守卫时收到`spawnSync powershell.exe ENOENT`。共享初始化没有导出L12_PWSH，Node守卫回退到短PATH中不存在的命令；这是构建环境缺陷，不是教学规则失败。相关同类入口沿已存在L12_PWSH覆盖统一接入，不逐脚本另造探测。

@@ -68,6 +68,10 @@ PowerShell验收脚本以其异常/完成结果判断成败；`LASTEXITCODE`只�
 
 ### 固定入口与历史授权绑定
 
+2026-10-19用户明确批准本次未开局空大厅退出及替代核对，并长期批准未来同样情况。当前v1只能证明Game=null的未开局项，不证明其成员身份；以同进程／owner／epoch／维护与围栏下两次真实readiness观测、完整blocker集合、其他项及两类租约严格整数0、平台待命令0和revision夹验承接，不反复暂停进程。历史、最新两库／WAL和原始备份proof完整保留；真实对局、未知持久化风险和身份／围栏漂移仍拒绝，不把Draining或拒绝响应冒充sealed／v1停止许可。
+
+远端哈希按标准安装器实际生成的字节绑定：可执行消费者经既有sed去CR后核精确LF哈希，由Python调用且原样安装的备份校验器核源码原字节；同时保留源码SHA和精确转换证明。2026-10-19首次准备已在停服前因此拒绝，确认两服原进程／版本未变后只重做准备；旧失败保留，同一已验包与成功DryRun不重跑，不降低哈希或权限保护。
+
 聊天开放的正式接线使用已有 `L12_CHAT_ENABLED=true`，不要把“包内有聊天代码”当成“线上已开启”。本次用户已明确开放，标准准备阶段在同一部署锁内独占创建 `/etc/legion12-chat.env`（0600，仅该变量）及正式服务的 `zzzzzz-chat.conf`，内容分别来自 `ops/server/legion12-chat.env.example` 和 `legion12-chat-enabled.conf`；有同名未知文件则停止，不覆盖。保留原 `/etc/legion12-test.env` 全部内容，通过最后的附加EnvironmentFile提供明确开关，daemon-reload不单独重启。与已验候选同一次切换启动，独立核新进程开关及认证WS的chatV1协商、主页消息入口和四个无可见文字的按钮；没有实际成功证据前仍记未开启。聊天配置不改变其他开关、测试服或未来维护计划。
 
 正式使用 `ops/windows/deploy-l12.ps1`，服务 `legion12-test.service`／8083／`/opt/legion12-runtime`；测试使用 `ops/windows/deploy-l12-testrun.ps1`，服务 `legion12-testrun.service`／8084／独立runtime／`/testrun/`。`-ValidateArtifactOnly`为本地验包，`-DryRun`可能上传；不能以名称test误认环境。目录参数、哈希／归档／链接拒绝和容量保护保持，具体命令见下文及[测试服参数](DEPLOY-TESTRUN.md)。不在服务器拉源码或构建，不使用旧日期单次执行器；既有工具不符合本标准的，在原任务授权范围内先修正验收，本文不冒称脚本已经全部改好。
