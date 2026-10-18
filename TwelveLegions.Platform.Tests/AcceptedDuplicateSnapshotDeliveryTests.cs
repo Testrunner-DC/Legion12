@@ -193,7 +193,7 @@ public sealed class AcceptedDuplicateSnapshotDeliveryTests
                 Assert.Equal(3, fixture.Accepted.Count);
                 return fixture;
             }
-            await manager.CreateSandboxAsync(host, new L12SandboxRequest(DisasterMode: "none"));
+            await manager.CreateSandboxForTestsAsync(host, new L12SandboxRequest(DisasterMode: "none"));
             var sandbox = OnlyRoom(manager);
             var engine = (L12GameEngine)sandbox.GetType().GetProperty("Game")!.GetValue(sandbox)!;
             var sessions = ((IEnumerable<Guid>)sandbox.GetType().GetProperty("Sessions")!.GetValue(sandbox)!).ToArray();

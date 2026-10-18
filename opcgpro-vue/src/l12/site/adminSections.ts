@@ -17,6 +17,7 @@ export const adminSections = [
   { id: 'match-governance', label: '对局治理', domain: 'matches', path: '/admin/matches/governance', icon: '⚖', permissions: ['admin.match-governance.read'] },
   { id: 'integrity', label: '排位完整性', domain: 'matches', path: '/admin/matches/integrity', icon: '◆', permissions: ['admin.audit.read'] },
   { id: 'tournaments', label: '赛事管理', domain: 'matches', path: '/admin/matches/tournaments', icon: '♜', permissions: ['tournaments.manage', 'tournaments.rulings.write'] },
+  { id: 'sandbox', label: '测试沙盒', domain: 'operations', path: '/admin/operations/sandbox', icon: '▧', permissions: ['admin.operations.write'] },
   { id: 'operations', label: '运营配置', domain: 'operations', path: '/admin/operations/config', icon: '⚙', permissions: ['admin.operations.read'] },
   { id: 'global-data', label: '全局数据', domain: 'operations', path: '/admin/operations/global', icon: '⌁', permissions: ['admin.analytics.read'] },
   { id: 'card-analytics', label: '卡牌数据', domain: 'operations', path: '/admin/operations/cards', icon: '◈', permissions: ['admin.analytics.read'] },

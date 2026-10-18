@@ -301,6 +301,7 @@ try {
         @{ Source = "scripts\ws-smoke.mjs"; Target = "scripts\ws-smoke.mjs" },
         @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
+        @{ Source = "ops\windows\L12GeneratedStorage.ps1"; Target = "ops\windows\L12GeneratedStorage.ps1" },
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
         @{ Source = "ops\windows\verify-l12-testrun-performance.ps1"; Target = "ops\windows\verify-l12-testrun-performance.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },

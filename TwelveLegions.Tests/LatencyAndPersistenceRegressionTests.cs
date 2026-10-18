@@ -78,7 +78,7 @@ public sealed class LatencyAndPersistenceRegressionTests
         var manager = new L12RoomManager(Catalog, recorder);
         var session = Guid.NewGuid();
         manager.Connect(session, "diagnostic-gate", "诊断玩家");
-        var created = await manager.CreateSandboxAsync(session, new L12SandboxRequest());
+        var created = await manager.CreateSandboxForTestsAsync(session, new L12SandboxRequest());
         var roomCode = Payload(created.First(message =>
             Payload(message).GetProperty("type").GetString() == "roomState"))
             .GetProperty("roomCode").GetString()!;
@@ -239,7 +239,7 @@ public sealed class LatencyAndPersistenceRegressionTests
 
         var sandboxSession = Guid.NewGuid();
         manager.Connect(sandboxSession, "sandbox-initial", "沙盒");
-        var sandbox = await manager.CreateSandboxAsync(sandboxSession, new L12SandboxRequest());
+        var sandbox = await manager.CreateSandboxForTestsAsync(sandboxSession, new L12SandboxRequest());
         var sandboxStates = sandbox.Where(message =>
             Payload(message).GetProperty("type").GetString() == "gameState").ToArray();
         Assert.Equal(2, sandboxStates.Length);
@@ -517,7 +517,7 @@ public sealed class LatencyAndPersistenceRegressionTests
         var manager = new L12RoomManager(Catalog, recorder);
         var session = Guid.NewGuid();
         manager.Connect(session, "sandbox-owner", "沙盒");
-        var created = await manager.CreateSandboxAsync(session, new L12SandboxRequest());
+        var created = await manager.CreateSandboxForTestsAsync(session, new L12SandboxRequest());
         var matchId = Payload(created.Single(message => message.SessionId == session
             && Payload(message).GetProperty("type").GetString() == "gameState"))
             .GetProperty("state").GetProperty("matchId").GetString()!;
@@ -731,7 +731,7 @@ public sealed class LatencyAndPersistenceRegressionTests
         var manager = new L12RoomManager(Catalog, recorder);
         var session = Guid.NewGuid();
         manager.Connect(session, "sandbox-owner", "沙盒");
-        var created = await manager.CreateSandboxAsync(session, new L12SandboxRequest());
+        var created = await manager.CreateSandboxForTestsAsync(session, new L12SandboxRequest());
         var initial = Payload(created.Single(message => message.SessionId == session
             && Payload(message).GetProperty("type").GetString() == "gameState")).GetProperty("state");
         var initialRevision = initial.GetProperty("revision").GetInt64();

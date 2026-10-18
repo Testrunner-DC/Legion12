@@ -153,7 +153,7 @@ public sealed class DeploymentIngressGuardTests
     {
         await using var fixture = await WebSocketFixture.CreateAsync(withCoordinator: true);
         await fixture.StartAsync();
-        var (_, token) = fixture.CreateAccount("drain");
+        var (_, token) = fixture.CreateAccount("drain", sandboxAdmin: true);
         using var socket = await ConnectAuthenticatedAsync(fixture.Endpoint, token);
 
         await SendAsync(socket, new { type = "createSandbox" });
@@ -193,7 +193,7 @@ public sealed class DeploymentIngressGuardTests
     {
         await using var fixture = await WebSocketFixture.CreateAsync(withCoordinator: true);
         await fixture.StartAsync();
-        var (_, recoveryToken) = fixture.CreateAccount("recover");
+        var (_, recoveryToken) = fixture.CreateAccount("recover", sandboxAdmin: true);
         string roomCode;
         using (var original = await ConnectAuthenticatedAsync(fixture.Endpoint, recoveryToken))
         {
@@ -236,7 +236,7 @@ public sealed class DeploymentIngressGuardTests
     {
         await using var fixture = await WebSocketFixture.CreateAsync(withCoordinator: true);
         await fixture.StartAsync();
-        var (_, token) = fixture.CreateAccount("revoke");
+        var (_, token) = fixture.CreateAccount("revoke", sandboxAdmin: true);
         var authenticated = fixture.Platform.AuthenticateTokenSession(token)!;
         using var socket = await ConnectAuthenticatedAsync(fixture.Endpoint, token);
         await SendAsync(socket, new { type = "createSandbox" });
@@ -680,11 +680,18 @@ public sealed class DeploymentIngressGuardTests
             _started = true;
         }
 
-        internal (L12AccountView Account, string Token) CreateAccount(string prefix)
+        internal (L12AccountView Account, string Token) CreateAccount(string prefix, bool sandboxAdmin = false)
         {
             var identity = Guid.NewGuid().ToString("N")[..8];
             var registration = Platform.Register($"{prefix[..Math.Min(3, prefix.Length)]}{identity}", "Password123!");
             Assert.True(registration.Success, registration.Message);
+            if (sandboxAdmin)
+            {
+                Assert.True(Platform.SetRole(Platform.Login("Admin", "L12master").Account!, registration.Account!.Id, "admin"));
+                var current = Platform.Login(registration.Account.Username, "Password123!");
+                Assert.True(current.Success, current.Message);
+                return (current.Account!, current.Token!);
+            }
             return (registration.Account!, registration.Token!);
         }
 

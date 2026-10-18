@@ -26,6 +26,7 @@ public sealed class WebSocketTransportRecoveryAdversarialTests
                 officialCards: catalog.Cards);
             var identity = Guid.NewGuid().ToString("N")[..8];
             var account = platform.Register($"td{identity}", "Password123!").Account!;
+            Assert.True(platform.SetRole(platform.Login("Admin", "L12master").Account!, account.Id, "admin"));
             var token = platform.Login(account.Username, "Password123!").Token!;
             using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
                 $"{L12SyntheticTransportDiagnostics.Mode}:1:{nonce}", output.Enqueue,

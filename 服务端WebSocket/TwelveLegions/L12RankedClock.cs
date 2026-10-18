@@ -463,7 +463,7 @@ public sealed partial class L12RoomManager
             if (!room.Gate.Wait(0)) continue;
             try
             {
-                if (room.Closed || room.Game is null)
+                if (room.Closed || room.Game is null || room.Tutorial is { Frozen: true })
                 {
                     // Closed can mean temporarily frozen after an unprovable
                     // recovery, not retired. Keep the observed fact until this
@@ -483,16 +483,31 @@ public sealed partial class L12RoomManager
                     }
                     else if (!room.CompletionRecorded)
                     {
-                        if (!room.MaintenanceAuthorityEventRecorded)
+                        try
                         {
-                            room.CommandSequence++;
-                            await _recorder.AppendAuthorityAsync(room.Game, room.CommandSequence,
-                                room.Game.State.WinnerReason ?? "服务器维护开始，当前对局无效");
-                            room.MaintenanceAuthorityEventRecorded = true;
+                            if (!room.MaintenanceAuthorityEventRecorded)
+                            {
+                                room.CommandSequence++;
+                                await _recorder.AppendAuthorityAsync(room.Game, room.CommandSequence,
+                                    room.Game.State.WinnerReason ?? "服务器维护开始，当前对局无效");
+                                room.MaintenanceAuthorityEventRecorded = true;
+                            }
+                            var completionError = await CompleteTournamentRoomGameAsync(room);
+                            if (completionError is not null)
+                                Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
                         }
-                        var completionError = await CompleteTournamentRoomGameAsync(room);
-                        if (completionError is not null)
-                            Console.Error.WriteLine($"Maintenance completion ({room.Code}): {completionError}");
+                        catch (Exception error) when (room.Tutorial is not null)
+                        {
+                            Console.Error.WriteLine($"Tutorial frozen stage=maintenance-authority exception={error.GetType().Name}");
+                            room.Tutorial.Frozen = true;
+                            await TryRestoreTutorialJournalAsync(room);
+                            // Neither a failed write nor a failed reload may publish/finalize the
+                            // speculative GameOver. The durable lesson can only be safely retired.
+                            foreach (var audience in room.Sessions.Where(id => _sessions.TryGetValue(id, out var member)
+                                         && !member.IsVirtual))
+                                messages.AddRange(Error(audience, "本关记录未能完成，请退出后重开本关", "tutorialRestartRequired"));
+                            continue;
+                        }
                     }
                     if (room.CompletionRecorded) _deferredMaintenanceInvalidations.Remove(room);
                     messages.AddRange(BroadcastGame(room));

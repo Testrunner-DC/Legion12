@@ -32,6 +32,8 @@
 
 ## F2 测试对象写
 
+教学建设期间仅测试服务模板明确设置`L12_TUTORIAL_ENABLED=true`，环境文件中显式false仍可关闭；应用默认关闭，正式服务不配置。公共单人入口改为教学，管理员沙盒从后台进入，必须实际完成课程操作与权限／恢复验收。三关阶段成果不等于整套教学已验收，整套完成前不得发布正式服；本段只记录配置合同，不证明已经部署。
+
 聊天默认关闭；本次用户要求收口后部署测试服，测试 service 模板显式 `L12_CHAT_ENABLED=true`，环境文件中的显式 false 可关闭。仍复用原 `/testrun/ws`，不另开连接；正式 service 与正式环境不新增此项。部署后须实际读回 session 的 `chatV1` 能力并验证双方消息、历史和拒收，不能用 health 代替功能验收。此段为本批配置合同，不代表已经部署。
 
 2026-10-02 起，已获授权的测试service显式配置 `L12_PRIVATE_DECK_OBJECT_PERSISTENCE=true`；测试环境文件显式false可覆盖并在同版本重启后回到全量路径。正常正式service未配置，默认关闭。开关只在启动时捕获，变更需重启，不是运营配置热更新。受保护只读状态 `GET /api/admin/storage/private-deck-persistence` 必须读回 `configuredEnabled=true`、`effectiveMode=object`、`writable=true`；健康接口不披露内部模式。

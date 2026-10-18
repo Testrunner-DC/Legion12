@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-tutorial-internal",
+  "date": "2026-10-18",
+  "audience": "internal",
+  "reason": "教学仅测试服预览：维护失败时从耐久记录恢复或冻结关闭，辅助响应设置在房间锁内重验当前成员与管理员权限。测试服务显式开启教学，正式服务配置不变；隔离前端验收保留物理存储校验依赖。内部权限、发布与恢复实现不进入玩家日志，不宣称全部课程或正式发布已经完成。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12RankedClock.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.ResponsePreferences.cs",
+    "ops/server/legion12-testrun.service",
+    "ops/windows/verify-l12.ps1"
+  ]
+}

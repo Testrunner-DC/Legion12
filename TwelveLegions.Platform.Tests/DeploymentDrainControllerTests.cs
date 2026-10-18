@@ -77,7 +77,10 @@ public sealed class DeploymentDrainControllerTests
         var sessionId = Guid.NewGuid();
         await fixture.Rooms.ConnectAsync(sessionId, account.Id, account.Username);
         if (state == "active")
+        {
+            Assert.True(fixture.Platform.SetRole(fixture.LoginAdmin().Account!, account.Id, "admin"));
             _ = await fixture.Rooms.CreateSandboxAsync(sessionId, null);
+        }
         else
             _ = fixture.Rooms.CreateRoom(sessionId);
 

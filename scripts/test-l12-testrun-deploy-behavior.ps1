@@ -492,6 +492,8 @@ runtime_dir=synthetic-runtime; backup_dir=synthetic-backups; failure_dir=synthet
     }
     Assert-True ($serviceSource.Contains('ExecStart=/usr/local/bin/dotnet /opt/legion12-testrun/publish/GrandUMIServer.dll 8084')) "Service does not use the isolated port."
     Assert-True ($serviceSource.Contains('Environment=L12_PRIVATE_DECK_OBJECT_PERSISTENCE=true')) "Testrun must exercise the approved private-deck object path."
+    Assert-True ($serviceSource.Contains('Environment=L12_TUTORIAL_ENABLED=true')) "The authorized teaching preview must be enabled only by the isolated testrun service."
+    Assert-True ($serviceSource.IndexOf('Environment=L12_TUTORIAL_ENABLED=true') -lt $serviceSource.IndexOf('EnvironmentFile=/etc/legion12-testrun.env')) "The explicit testrun environment file must retain the ability to disable teaching."
     Assert-True ($serviceSource.Contains('InaccessiblePaths=/opt/legion12-test /opt/legion12-runtime /opt/legion12-static')) "Service does not hide production release, runtime, and static paths."
     Assert-True ($serviceSource.Contains('CPUWeight=10') -and $serviceSource.Contains('IOWeight=10') -and $serviceSource.Contains('OOMScoreAdjust=750')) "Service lacks low-priority resource isolation."
     Assert-True (-not $serviceSource.Contains('CPUQuota=')) "Service still imposes a hard CPU quota instead of weight-based priority."

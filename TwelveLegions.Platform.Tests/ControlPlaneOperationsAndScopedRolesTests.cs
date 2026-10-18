@@ -764,13 +764,17 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
                 Assert.Equal("gameState", Payload(message)["type"]!.GetValue<string>()));
 
             var sandboxSession = Guid.NewGuid();
-            rooms.Connect(sandboxSession, "sandbox-restricted", "沙盒限制测试");
+            var sandboxAdmin = store.Register("sandboxadm", "password-123").Account!;
+            Assert.True(store.SetRole(admin, sandboxAdmin.Id, "admin"));
+            rooms.Connect(sandboxSession, sandboxAdmin.Id, sandboxAdmin.Username);
             var sandbox = await rooms.CreateSandboxAsync(sandboxSession,
                 new L12SandboxRequest(Submission(bannedPreset)));
             Assert.Contains(sandbox, message => Payload(message)["type"]!.GetValue<string>() == "gameState");
 
             var seasonSandboxSession = Guid.NewGuid();
-            rooms.Connect(seasonSandboxSession, "season-sandbox", "赛季沙盒伪造");
+            var seasonSandboxAdmin = store.Register("seasonadm", "password-123").Account!;
+            Assert.True(store.SetRole(admin, seasonSandboxAdmin.Id, "admin"));
+            rooms.Connect(seasonSandboxSession, seasonSandboxAdmin.Id, seasonSandboxAdmin.Username);
             var seasonSandbox = await rooms.CreateSandboxAsync(seasonSandboxSession,
                 new L12SandboxRequest(DisasterMode: "season"));
             Assert.Equal("sandboxRejected", Payload(Assert.Single(seasonSandbox))["type"]!.GetValue<string>());
@@ -1333,7 +1337,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             var sessionId = Guid.NewGuid();
             rooms.Connect(sessionId, "sandbox-account", "统计测试");
 
-            await rooms.CreateSandboxAsync(sessionId, new L12SandboxRequest());
+            await rooms.CreateSandboxForTestsAsync(sessionId, new L12SandboxRequest());
             Assert.Equal(1, rooms.RuntimeStats().ActiveGameCount);
 
             using var surrender = JsonDocument.Parse("{\"type\":\"surrender\"}");

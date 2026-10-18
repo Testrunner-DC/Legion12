@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import type { GameState, RankedClockView, RoomState } from './types'
+import type { ActiveTutorialState, GameState, RankedClockView, RoomState, TutorialLessonId, TutorialProjection } from './types'
 import type { SavedL12Deck } from './decks'
 import type { EffectiveOperationsPolicy, PlatformPresence, RankedSettlement } from './platform'
 import type { MatchGovernanceResult } from './matchGovernance'
@@ -219,6 +219,17 @@ function createActionRequestId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+const tutorialLessonIds = new Set<TutorialLessonId>(['deploy', 'move', 'combat'])
+function tutorialProjection(value: unknown): TutorialProjection | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const candidate = value as Partial<TutorialProjection>
+  if (!tutorialLessonIds.has(candidate.lessonId as TutorialLessonId) || candidate.version !== 1
+    || typeof candidate.stepId !== 'string' || !candidate.stepId.trim() || candidate.stepId.length > 128
+    || (candidate.status !== 'active' && candidate.status !== 'completed')) return null
+  return { lessonId: candidate.lessonId as TutorialLessonId, version: 1,
+    stepId: candidate.stepId.trim(), status: candidate.status }
+}
+
 function completePendingAction(responseRequestId?: unknown) {
   if (!pendingActionEnvelope) return
   if (negotiatedRequestIds
@@ -401,6 +412,7 @@ function retireObservationForMatch(message: any) {
   l12State.observerView = 'public'
   l12State.gmEnabled = false
   l12State.refereeControlsEnabled = false
+  l12State.tutorial = null
   l12State.leavingRoom = false
 }
 
@@ -471,6 +483,8 @@ export const l12State = reactive({
   leavingRoom: false,
   gmEnabled: false,
   refereeControlsEnabled: false,
+  tutorialAvailable: false,
+  tutorial: null as ActiveTutorialState | null,
   pendingAction: false,
   notice: '',
   operationsPolicy: null as EffectiveOperationsPolicy | null,
@@ -727,7 +741,10 @@ export function connect(): Promise<void> {
       // Any current server message proves the receive path is still alive.
       unansweredHeartbeats = 0
       if (message.type === 'session') {
-        if (l12State.accountId !== String(message.accountId || '')) retiredObservation = null
+        const nextAccountId = String(message.accountId || '')
+        const nextSessionId = String(message.sessionId || '')
+        if (l12State.accountId !== nextAccountId) retiredObservation = null
+        if (l12State.accountId !== nextAccountId || l12State.sessionId !== nextSessionId) l12State.tutorial = null
         cancelResourceFallback()
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         negotiatedEventWindowDelta = message.capabilities?.deltaGameState === true
@@ -738,8 +755,9 @@ export function connect(): Promise<void> {
         presenceRecoveryPending = false
         presenceBaselineEpoch = ''
         claimedGeneration = Number(message.connectionGeneration || 0)
-        l12State.sessionId = message.sessionId
-        l12State.accountId = String(message.accountId || '')
+        l12State.sessionId = nextSessionId
+        l12State.accountId = nextAccountId
+        l12State.tutorialAvailable = message.tutorialAvailable === true
         l12State.nickname = message.name
         l12State.connectionGeneration = claimedGeneration
         chatResource.connect(l12State.accountId, message.capabilities?.chatV1 === true, payload => {
@@ -792,7 +810,11 @@ export function connect(): Promise<void> {
       else if (message.type === 'pong') l12State.lastPongAt = new Date().toISOString()
       else if (message.type === 'roomState') {
         if (l12State.leavingRoom) return
-        l12State.room = message
+        const projectedTutorial = tutorialProjection(message.tutorial)
+        l12State.room = { ...message, tutorial: projectedTutorial }
+        if (l12State.tutorial && (l12State.tutorial.roomCode !== String(message.roomCode || '')
+          || !projectedTutorial || projectedTutorial.lessonId !== l12State.tutorial.lessonId
+          || projectedTutorial.version !== l12State.tutorial.version)) l12State.tutorial = null
         if (!message.started) {
           if (l12State.game) chatResource.retireOpponent(l12State.game.matchId)
           l12State.game = null
@@ -944,6 +966,7 @@ export function connect(): Promise<void> {
         l12State.leavingRoom = false
         l12State.gmEnabled = false
         l12State.refereeControlsEnabled = false
+        l12State.tutorial = null
         cancelPendingAction()
         l12State.matchFound = null
         l12State.notice = message.message || ''
@@ -978,6 +1001,19 @@ export function connect(): Promise<void> {
           l12State.refereeControlsEnabled = message.refereeControlsEnabled === true
             && l12State.spectating && l12State.observerView === 'referee'
             && Boolean(message.tournamentId && message.tournamentMatchId)
+          const projectedTutorial = tutorialProjection(message.tutorial)
+          const tutorialCapabilityConflict = Boolean(projectedTutorial && (l12State.gmEnabled || l12State.spectating))
+          if (tutorialCapabilityConflict) {
+            l12State.gmEnabled = false
+            l12State.refereeControlsEnabled = false
+            l12State.notice = '教学状态异常，管理操作已停用'
+          }
+          const roomCode = String(incoming.roomCode || l12State.room?.roomCode || '')
+          l12State.tutorial = projectedTutorial && !tutorialCapabilityConflict
+            && Boolean(l12State.accountId && l12State.sessionId && roomCode && incoming.matchId)
+            ? { ...projectedTutorial, accountId: l12State.accountId, sessionId: l12State.sessionId,
+                connectionGeneration: l12State.connectionGeneration, roomCode, matchId: incoming.matchId }
+            : null
           completePendingAction(message.requestId)
           l12State.rankedSettlement = message.rankedSettlement || null
           if (message.responsePreference) l12State.responsePreference = message.responsePreference as ResponsePreferenceState
@@ -1000,6 +1036,15 @@ export function connect(): Promise<void> {
         l12State.responsePreference = {
           confirmedMode: message.confirmedMode as ResponseMode,
           syncPending: Boolean(message.syncPending),
+        }
+      }
+      else if (message.type === 'responsePreferenceRejected') {
+        l12State.notice = String(message.message || '响应设置未写入，请确认当前房间及操作权限')
+        l12State.responsePreferenceResult = {
+          ...l12State.responsePreference,
+          matchApplied: false,
+          accountSynced: false,
+          requestId: typeof message.requestId === 'string' ? message.requestId : undefined,
         }
       }
       else if (message.type === 'recoveryComplete') {
@@ -1037,6 +1082,7 @@ export function connect(): Promise<void> {
           l12State.observerView = 'public'
           l12State.gmEnabled = false
           l12State.refereeControlsEnabled = false
+          l12State.tutorial = null
           l12State.matchFound = null
         }
         else if (!message.matchId) {
@@ -1048,6 +1094,7 @@ export function connect(): Promise<void> {
           l12State.observerView = 'public'
           l12State.gmEnabled = false
           l12State.refereeControlsEnabled = false
+          l12State.tutorial = null
         }
         if (cardFrameRecoveryActive) {
           clearGameStateCardFrameRecoveryTimer()
@@ -1080,6 +1127,9 @@ export function connect(): Promise<void> {
         l12State.notice = '上次裁判调整已保存'
       }
       else if (message.type === 'error' || message.type === 'actionRejected' || message.type === 'deckRejected'
+        || message.type === 'tutorialRejected' || message.type === 'tutorialUnavailable'
+        || message.type === 'tutorialRequestExpired' || message.type === 'tutorialRestartRequired'
+        || message.type === 'sandboxForbidden'
         || message.type === 'tournamentRoomRejected' || message.type === 'tournamentResultPending') {
         if (!(l12State.spectating && message.message === '观战者不能执行对局操作')) l12State.notice = message.message
         completePendingAction(message.requestId)
@@ -1182,6 +1232,8 @@ export function disconnect() {
   l12State.leavingRoom = false
   l12State.gmEnabled = false
   l12State.refereeControlsEnabled = false
+  l12State.tutorialAvailable = false
+  l12State.tutorial = null
   cancelPendingAction()
   negotiatedRequestIds = false
   negotiatedEventWindowDelta = false
@@ -1226,6 +1278,30 @@ export const createSandbox = (playerDeck?: SavedL12Deck, opponentDeck?: SavedL12
   l12State.gmEnabled = false
   l12State.refereeControlsEnabled = false
   send({ type: 'createSandbox', request: { playerDeck, opponentDeck, disasterMode } })
+}
+export function createTutorial(lessonId: TutorialLessonId) {
+  if (!tutorialLessonIds.has(lessonId)) return null
+  if (!l12State.tutorialAvailable) { l12State.notice = '教学暂未在当前服务器开放'; return null }
+  if (l12State.status !== 'online' || l12State.socket?.readyState !== WebSocket.OPEN) {
+    l12State.notice = '教学服务器尚未连接'
+    return null
+  }
+  if (l12State.matchmaking?.queued) {
+    l12State.notice = '请先取消当前匹配，再开始教学'
+    return null
+  }
+  if (l12State.room || l12State.game || l12State.leavingRoom) {
+    l12State.notice = '请等待当前房间完全退出后再开始教学'
+    return null
+  }
+  if (l12State.pendingAction) return null
+  const requestId = createActionRequestId()
+  l12State.tutorial = null
+  l12State.pendingAction = true
+  pendingActionEnvelope = { type: 'createTutorial', lessonId, requestId }
+  send(pendingActionEnvelope)
+  if (l12State.socket?.readyState !== WebSocket.OPEN) cancelPendingAction()
+  return requestId
 }
 export const joinRoom = (roomCode: string) => { l12State.spectating = false; l12State.leavingRoom = false; send({ type: 'joinRoom', roomCode }) }
 export const joinMatchmaking = (mode: 'ranked' | 'casual', deck?: SavedL12Deck) => send({ type: 'joinMatchmaking', mode, deck })

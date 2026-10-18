@@ -207,7 +207,11 @@ public sealed class FriendInvitationExpiryTests
         var third = fixture.CreatePlayer("room");
         var thirdSession = Guid.NewGuid();
         await fixture.Rooms.ConnectAsync(thirdSession, third.Id, third.Username);
-        if (live) _ = await fixture.Rooms.CreateSandboxAsync(thirdSession, null);
+        if (live)
+        {
+            Assert.True(fixture.Platform.SetRole(fixture.LoginAdmin().Account!, third.Id, "admin"));
+            _ = await fixture.Rooms.CreateSandboxAsync(thirdSession, null);
+        }
         else _ = fixture.Rooms.CreateRoom(thirdSession);
         clock.Now = clock.Now.AddMinutes(11);
         fixture.Controller.Begin(fixture.Owner);

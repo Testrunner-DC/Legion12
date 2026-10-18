@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "20261018-tutorial-test-preview",
+  "date": "2026-10-18",
+  "audience": "players",
+  "title": "测试服新手教学预览",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "测试服的单人入口改为新手教学，首批可练习部署与支付、普通移动、进攻与防守；课程可以退出重练，进度仅在本机按账号保存。其余课程完成整体验收前不在正式服开放。",
+      "paths": [
+        "opcgpro-vue/src/router/index.ts",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/TutorialPage.vue",
+        "opcgpro-vue/src/l12/GamePage.vue",
+        "opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue",
+        "opcgpro-vue/src/l12/tutorial/tutorialProgress.ts",
+        "opcgpro-vue/src/l12/net.ts",
+        "opcgpro-vue/src/l12/types.ts",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.Tutorial.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.Tutorial.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+        "服务端WebSocket/TwelveLegions/L12RoomManager.SandboxRecording.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "测试沙盒调整为管理员专用，不再提供普通玩家的公共入口。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/SandboxPage.vue",
+        "opcgpro-vue/src/l12/site/adminSections.ts"
+      ]
+    }
+  ]
+}

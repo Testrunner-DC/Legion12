@@ -4,7 +4,7 @@ import { connect, createSandbox, l12State } from '@/l12/net'
 import { ensureOfficialPrebuiltDecks, deckErrorBelongsToCurrentAccount, loadSavedDecksState, loadDeckCatalog, loadPrivateDeckBody,
   loadSelectedDeckName, saveSelectedDeckName, SELECTED_DECK_KEY, validateDeck, type DeckCard, type L12DeckSelectionScope,
   type PrivateDeckSummary, type SavedL12Deck } from '@/l12/decks'
-import { platformState } from '@/l12/platform'
+import { hasPermission, platformState } from '@/l12/platform'
 import DeckProfile from '@/l12/DeckProfile.vue'
 import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'
 
@@ -23,6 +23,8 @@ const selectorConfirming = ref(false)
 const selectorError = ref('')
 const disasterMode = ref<'all' | 'random' | 'none' | 'custom'>('none')
 const creating = ref(false)
+const canUseSandbox = computed(() => platformState.account?.role === 'admin'
+  && hasPermission('admin.operations.write'))
 const guestDecks = computed(() => platformState.account?.id && platformState.token ? [] : Object.values(cachedDecks.value))
 const playerDeck = computed(() => selectedDecks.value['sandbox-player']?.body)
 const opponentDeck = computed(() => selectedDecks.value['sandbox-opponent']?.body)
@@ -226,6 +228,7 @@ async function loadSelectionBody(scope: SandboxScope, id: string, revision: numb
 }
 
 async function startSandbox() {
+  if (!canUseSandbox.value) { l12State.notice = '需要游戏运营写入权限才能建立测试沙盒'; return }
   if (creating.value) return
   if (!platformState.account || !platformState.token) { l12State.notice = '请先登录账号'; return }
   const player = selectedDecks.value['sandbox-player']
@@ -273,16 +276,17 @@ async function startSandbox() {
 <template>
   <div class="sandbox-page">
     <section>
-      <header><div><small>TEST SANDBOX</small><h1>单人测试沙盒</h1><p>复用正式规则内核，GM 指令仅对本沙盒生效；沙盒不会进入个人对局记录或排位统计。</p></div><span :class="l12State.status"><i/>{{ l12State.status === 'online' ? '服务器在线' : '服务器离线' }}</span></header>
+      <header><div><small>ADMIN TEST SANDBOX</small><h1>管理员测试沙盒</h1><p>复用正式规则内核，GM 指令仅对本沙盒生效；沙盒不会进入个人对局记录或排位统计。</p></div><span :class="l12State.status"><i/>{{ l12State.status === 'online' ? '服务器在线' : '服务器离线' }}</span></header>
+      <p v-if="!canUseSandbox" class="notice">当前账号没有游戏运营写入权限，不能建立测试沙盒。</p>
       <div class="sandbox-grid">
-        <section class="sandbox-deck"><b>我方牌库</b><DeckProfile v-if="playerDeck" compact :master-id="playerDeck.masterId" :master-name="byId.get(playerDeck.masterId)?.nameZh" :name="playerDeck.name" context="我方"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!playerDeckError }">{{ playerDeckError || '符合沙盒构筑规则' }}</span><button type="button" :disabled="creating" @click="selectorError = ''; selectorTarget = 'sandbox-player'">更换牌库</button></section>
-        <section class="sandbox-deck"><b>对手牌库</b><DeckProfile v-if="opponentDeck" compact :master-id="opponentDeck.masterId" :master-name="byId.get(opponentDeck.masterId)?.nameZh" :name="opponentDeck.name" context="对手"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!opponentDeckError }">{{ opponentDeckError || '符合沙盒构筑规则' }}</span><button type="button" :disabled="creating" @click="selectorError = ''; selectorTarget = 'sandbox-opponent'">更换牌库</button></section>
+        <section class="sandbox-deck"><b>我方牌库</b><DeckProfile v-if="playerDeck" compact :master-id="playerDeck.masterId" :master-name="byId.get(playerDeck.masterId)?.nameZh" :name="playerDeck.name" context="我方"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!playerDeckError }">{{ playerDeckError || '符合沙盒构筑规则' }}</span><button type="button" :disabled="creating || !canUseSandbox" @click="selectorError = ''; selectorTarget = 'sandbox-player'">更换牌库</button></section>
+        <section class="sandbox-deck"><b>对手牌库</b><DeckProfile v-if="opponentDeck" compact :master-id="opponentDeck.masterId" :master-name="byId.get(opponentDeck.masterId)?.nameZh" :name="opponentDeck.name" context="对手"/><p v-else>没有已保存牌库</p><span :class="{ invalid: !!opponentDeckError }">{{ opponentDeckError || '符合沙盒构筑规则' }}</span><button type="button" :disabled="creating || !canUseSandbox" @click="selectorError = ''; selectorTarget = 'sandbox-opponent'">更换牌库</button></section>
         <div class="sandbox-account"><b>测试账号</b><span>{{ platformState.account?.username || '尚未登录' }}</span><router-link v-if="!platformState.account" to="/me">前往登录</router-link></div>
         <label><b>天灾模式</b><select v-model="disasterMode"><option value="none">不使用天灾</option><option value="random">随机天灾</option><option value="all">全部天灾</option><option value="custom">自定天灾（四张始终公开）</option></select></label>
       </div>
       <div class="capabilities"><article><b>卡牌与区域</b><span>加牌、置顶/置底、墓地、无视费用打出、击杀与状态切换。</span></article><article><b>阶段与数值</b><span>切换回合玩家和阶段，调整血量、天灾值、士气并触发天灾。</span></article><article><b>可复现记录</b><span>每条 GM 指令由服务端校验，并写入与实战相同的状态快照。</span></article></div>
       <p v-if="l12State.notice" class="notice">{{ l12State.notice }}</p>
-      <footer><router-link to="/lobby">← 返回对战大厅</router-link><button :disabled="creating || !playerDeck || !opponentDeck || !!playerDeckError || !!opponentDeckError" @click="startSandbox">{{ creating ? '正在校验并建立…' : '建立测试沙盒' }}</button></footer>
+      <footer><router-link to="/admin/operations/config">← 返回运营后台</router-link><button :disabled="creating || !canUseSandbox || !playerDeck || !opponentDeck || !!playerDeckError || !!opponentDeckError" @click="startSandbox">{{ creating ? '正在校验并建立…' : '建立测试沙盒' }}</button></footer>
     </section>
     <SavedDeckSelector :open="!!selectorTarget" :mode="selectorTarget || 'sandbox-player'" :guest-decks="guestDecks"
       :catalog="catalog" :current-deck-id="selectorCurrent?.id" :current-deck-revision="selectorCurrent?.revision"

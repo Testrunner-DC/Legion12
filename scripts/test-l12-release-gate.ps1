@@ -228,6 +228,7 @@ $unsafeIsolation = @($isolationValue.FindAll({ param($node)
 }, $true))
 Assert-True ($unsafeIsolation.Count -eq 0) 'Isolation dependencies must be literal data, not executable expressions.'
 $isolationFiles = @(& ([scriptblock]::Create($isolationValue.Extent.Text)))
+Assert-True (@($isolationFiles | Where-Object { $_.Source -ceq 'ops\windows\L12GeneratedStorage.ps1' -and $_.Target -ceq 'ops\windows\L12GeneratedStorage.ps1' }).Count -eq 1) 'Isolated frontend checks must retain the physical generated-output guard dependency exactly once.'
 function Test-PrebuiltIsolation {
     param([object[]]$Files)
     foreach ($required in @('服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json',

@@ -618,8 +618,8 @@ const contracts = [
   [playerMat.includes('v-if="mobileMoralePicker" class="mobile-hand-count"')
     && playerMat.includes(":is=\"mobileMoralePicker ? 'button' : 'div'\"")
     && playerMat.includes('class="temporary-site-logo" :src="siteBrandIconUrl" alt="临时士气"')
-    && gamePage.includes('class="balanced-copy-button" aria-label="返回大厅"')
-    && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>大厅</span></span>')
+    && gamePage.includes('class="balanced-copy-button" :aria-label="tutorial ? \'返回教学目录\' : l12State.room?.sandbox ? \'返回测试沙盒\' : \'返回大厅\'"')
+    && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>{{ tutorial ? \'教学\' : l12State.room?.sandbox ? \'沙盒\' : \'大厅\' }}</span></span>')
     && mobileActionDockStyle.includes('.mobile-battle-dock button {') && mobileActionDockStyle.includes('min-height:32px')
     && mobileActionDockStyle.includes('.mobile-battle-dock__route .battle-route-controls .route-label>span {')
     && gamePage.includes('<BattleDockPortal lane="route"><div v-if="game.phase !== \'GameOver\' || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">')
@@ -670,13 +670,13 @@ const contracts = [
     && prompt.includes('@drop.stop.prevent="reorderAll(choice)"') && prompt.includes('@select="selectSwapChoice(choice)"'),
   '共用整组排序行必须以首尾自动留白实现少牌居中及溢出首尾可达；悬停预留详情、拖拽和点击换序入口均不得丢失'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
-    && gamePage.includes('<button @click="returnToLobby">返回大厅</button>')
+    && gamePage.includes("{{ tutorial ? '返回教学目录' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}")
     && !gamePage.includes('点击返回后才离开本局')
     && !gamePage.includes('双方都离开后关闭房间')
     && !gamePage.includes('对局编号')
     && gamePage.includes('align-items:center')
     && gamePage.includes('.ranked-result details span{display:block')
-    && gamePage.includes('text-align:center'), '胜负结算必须整体居中、保留明确返回按钮，并且不对玩家暴露房间保留机制或内部对局编号'],
+    && gamePage.includes('text-align:center'), '胜负结算必须整体居中、保留与教学／后台沙盒／赛事／大厅来源相符的明确返回按钮，并且不对玩家暴露房间保留机制或内部对局编号'],
   [playerMat.includes('data-ui-contract="resource-faction-action"') && playerMat.includes('data-ui-contract="resource-morale-summary"') && playerMat.includes('data-ui-contract="resource-morale-label"')
     && playerMat.includes('data-ui-contract="resource-morale-count"') && playerMat.includes('data-ui-contract="resource-morale-stack"')
     && playerMat.indexOf('data-ui-contract="resource-faction-action"') > playerMat.indexOf('<div class="mat-piles">')
@@ -921,8 +921,11 @@ const contracts = [
     && replayPage.includes('players: [0, 1].map(index =>') && replayPage.includes("winner === index ? '胜' : '负'"), '三类共用回放必须默认1倍速并提供1.0/2.0/3.0切换；1倍约3秒一步，按倍速缩短卡面动画且等待动画完成后推进，抵达最后一步立即停止并显示双方赛果'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes("game.value?.phase === 'GameOver'")
-    && gamePage.includes('leaveRoom()') && gamePage.includes("router.push('/lobby')")
-    && !gamePage.includes('returnToRoom'), '胜负结算必须保持到玩家主动返回；返回时离开当前房间并直接进入对战大厅，不得回到原房间或赛事页'],
+    && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'")
+    && gamePage.includes(": sandboxRoom ? '/admin/operations/sandbox'")
+    && gamePage.includes(": tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'")
+    && gamePage.includes('leaveRoom()') && gamePage.includes('router.push(destination)')
+    && !gamePage.includes('returnToRoom'), '胜负结算必须保持到玩家主动返回；返回时离开当前房间，并按教学、后台沙盒、赛事或普通大厅的来源回到对应入口'],
   [adminMatches.includes("name: 'admin-match-replay'")
     && replayPage.includes('Promise.all([adminApi.match(matchId), adminApi.replayPage(matchId, undefined, 50, controller.signal)])')
     && replayPage.includes('ensureReplayStepLoaded') && replayPage.includes('new ReplayArchiveLoader(')
@@ -952,9 +955,10 @@ const contracts = [
     && decks.includes('commitDeckCache(localStorage, context.storageKey, previous, decks, activity, aliases'), '当前牌库必须按排位、休闲、好友房及沙盒双方隔离持久化，删除后的选择须与缓存单次提交一同逻辑失效（行为由test-deck-sync-authority覆盖）'],
   [lobby.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
     && lobby.includes("scope === 'ranked'") && lobby.includes("scope === 'friendly' && friendlyUsesRestrictions()")
-    && lobby.includes("if (tab.value === 'sandbox') return 'sandbox-player'")
+    && lobby.includes("const tab = ref<'match' | 'friendly' | 'tutorial'>('match')")
+    && !lobby.includes("tab.value === 'sandbox'") && lobby.includes("router.push('/battle/tutorial')")
     && !lobby.includes('/decks?from=%2Fbattle%2Flobby')
-    && !lobby.includes('class="room-decks"'), '排位、休闲、好友房及大厅沙盒入口必须复用闭环选择器，好友房按房规启用禁限卡且不得跳转牌库页'],
+    && !lobby.includes('class="room-decks"'), '排位、休闲与好友房必须复用闭环选择器，好友房按房规启用禁限卡且不得跳转牌库页；公开单人入口必须进入教学，不得重新暴露沙盒'],
   [sandbox.includes("import SavedDeckSelector from '@/l12/SavedDeckSelector.vue'")
     && sandbox.includes("selectorTarget = 'sandbox-player'") && sandbox.includes("selectorTarget = 'sandbox-opponent'")
     && !sandbox.includes('operationsPolicy') && !sandbox.includes('<select v-model="playerDeckName"')
@@ -1144,7 +1148,10 @@ const contracts = [
   [deckEditor.includes('createDeckImageBlob') && deckEditor.includes('deck-image-dialog') && deckEditor.includes('下载牌库图'), '牌库编辑器必须提供可预览、下载的真实牌库图生成流程'],
   [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckConstructionBrowser.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
   [deckEditor.includes('牌库删除后不可找回') && deckEditor.includes('继续删除') && deckEditor.includes('pendingDeleteName') && !deckEditor.includes('@click="onDelete'), '全部牌库删除入口必须先经过统一确认弹框'],
-  [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'") && gamePage.includes('leaveRoom()') && gamePage.includes("router.push('/lobby')") && !gamePage.includes('returnToRoom'), '所有对局结算必须停留到玩家主动返回；返回后退出权威房间并进入对战大厅'],
+  [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'")
+    && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'") && gamePage.includes(": sandboxRoom ? '/admin/operations/sandbox'")
+    && gamePage.includes("tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'")
+    && gamePage.includes('leaveRoom()') && gamePage.includes('router.push(destination)') && !gamePage.includes('returnToRoom'), '所有对局结算必须停留到玩家主动返回；返回后退出权威房间并回到对应的教学、后台沙盒、赛事或普通大厅入口'],
   [l12Net.includes('leavingRoom: false') && l12Net.includes("if (l12State.leavingRoom) return") && l12Net.includes("socket.send(JSON.stringify({ type: 'leaveRoom' }))")
     && gameReentry.includes('!snapshot.leavingRoom') && l12Net.includes('gameReentry.requestExit(l12State.game?.matchId)'), '退出观战必须屏蔽迟到快照与自动路由，并在断线重连后优先重发退出请求'],
   [sandbox.includes('createSandbox') && sandbox.includes('沙盒不会进入个人对局记录或排位统计') && sandbox.includes('router-link v-if="!platformState.account" to="/me"') && !sandbox.includes('to="/profile"') && !sandbox.includes('沙盒服务器适配器尚未接入'), '单人测试沙盒必须连接正式规则内核且明确隔离正式记录；未登录入口必须直达实际账号页，不得回退为占位页或失效路由'],

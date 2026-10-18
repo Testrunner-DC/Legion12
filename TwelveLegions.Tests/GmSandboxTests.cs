@@ -68,7 +68,7 @@ public sealed class GmSandboxTests
 
         var sandboxHost = Guid.NewGuid();
         manager.Connect(sandboxHost, "沙盒控制者");
-        var sandboxMessages = await manager.CreateSandboxAsync(sandboxHost, new L12SandboxRequest());
+        var sandboxMessages = await manager.CreateSandboxForTestsAsync(sandboxHost, new L12SandboxRequest());
         var initial = sandboxMessages
             .Where(message => message.SessionId == sandboxHost)
             .Select(message => JsonSerializer.SerializeToElement(message.Payload, WebJson))
@@ -702,7 +702,7 @@ public sealed class GmSandboxTests
 
         var sandboxHost = Guid.NewGuid();
         manager.Connect(sandboxHost, "沙盒控制者");
-        await manager.CreateSandboxAsync(sandboxHost, new L12SandboxRequest());
+        await manager.CreateSandboxForTestsAsync(sandboxHost, new L12SandboxRequest());
         var accepted = await manager.HandleSandboxActionAsync(sandboxHost, 1,
             JsonSerializer.SerializeToElement(new { type = "surrender" }));
         var state = accepted
@@ -735,7 +735,7 @@ public sealed class GmSandboxTests
             .Single(payload => payload.GetProperty("type").GetString() == "gameState")
             .GetProperty("state").Clone();
 
-        var created = await manager.CreateSandboxAsync(host, new L12SandboxRequest());
+        var created = await manager.CreateSandboxForTestsAsync(host, new L12SandboxRequest());
         var initial = StateFor(host, created);
         var matchId = initial.GetProperty("matchId").GetString()!;
         Assert.Equal("S01-04M2", initial.GetProperty("players")[1].GetProperty("master").GetProperty("masterId").GetString());
