@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Path $EvidenceRoot -Force|Out-Null
 $fixture=Join-Path $EvidenceRoot ('guard-fixture-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture|Out-Null
 $results=[Collections.Generic.List[object]]::new()
-$variables=@('TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME','L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','DOTNET_SKIP_FIRST_TIME_EXPERIENCE','DOTNET_CLI_TELEMETRY_OPTOUT','NUGET_XMLDOC_MODE','npm_config_update_notifier','npm_config_fund')
+$variables=@('TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME','L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH','DOTNET_SKIP_FIRST_TIME_EXPERIENCE','DOTNET_CLI_TELEMETRY_OPTOUT','NUGET_XMLDOC_MODE','npm_config_update_notifier','npm_config_fund')
 $saved=@{};foreach($name in $variables){$saved[$name]=[Environment]::GetEnvironmentVariable($name,'Process')}
 function Check([string]$Name,[scriptblock]$Action){&$Action;$results.Add([pscustomobject]@{name=$Name;passed=$true})}
 function Reject-C([scriptblock]$Action){$rejected=$false;try{&$Action|Out-Null}catch{if($_.Exception.Message -notlike '*L12_OUTPUT_ON_C*' -and $_.Exception.Message -notlike '*L12_OUTPUT_UNSUPPORTED_PATH*'){throw};$rejected=$true};if(-not $rejected){throw 'Expected unsafe output rejection'}}
@@ -42,6 +42,26 @@ try{
     $env:L12_ARTIFACT_ROOT=Join-Path $fixture 'evidence';$env:L12_ARCHIVE_ROOT=Join-Path $fixture 'archives'
     Check 'initializer rejects C archive before writing' {$env:L12_ARCHIVE_ROOT='C:\l12-output-guard-must-not-create-20261016';Reject-C {&$initializer -DependencyCacheRoot (Join-Path $fixture 'dependencies')};$env:L12_ARCHIVE_ROOT=Join-Path $fixture 'archives'}
     Check 'normal initializer keeps every generated path off C' {&$initializer -DependencyCacheRoot (Join-Path $fixture 'dependencies')|Out-Null;foreach($name in @('TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT')){$null=Assert-L12GeneratedPath ([Environment]::GetEnvironmentVariable($name,'Process'))}}
+    Check 'initializer binds an absolute PowerShell executable without caller configuration' {
+        $env:L12_PWSH=$null
+        &$initializer -DependencyCacheRoot (Join-Path $fixture 'dependencies')|Out-Null
+        if([string]::IsNullOrWhiteSpace($env:L12_PWSH) -or -not [IO.Path]::IsPathRooted($env:L12_PWSH) -or -not (Test-Path -LiteralPath $env:L12_PWSH -PathType Leaf)){throw 'L12_PWSH_ABSOLUTE_EXECUTABLE_MISSING'}
+    }
+    $expectedPowerShell=$env:L12_PWSH
+    Check 'explicit PowerShell override is preserved' {&$initializer -DependencyCacheRoot (Join-Path $fixture 'dependencies')|Out-Null;if($env:L12_PWSH -cne $expectedPowerShell){throw 'Explicit PowerShell override changed'}}
+    foreach($invalidTool in @('powershell.exe',(Join-Path $fixture 'missing-pwsh.exe'),$fixture)) {
+        Check "invalid PowerShell executable rejected before cache creation: $invalidTool" {
+            $env:L12_PWSH=$invalidTool;$invalidCache=Join-Path $fixture ('invalid-host-'+[Guid]::NewGuid().ToString('N'))
+            $rejected=$false
+            try{&$initializer -CacheRoot $invalidCache -DependencyCacheRoot (Join-Path $fixture 'dependencies')|Out-Null}catch{if($_.Exception.Message -notlike '*L12_POWERSHELL_EXECUTABLE_INVALID*'){throw};$rejected=$true}
+            if(-not $rejected -or (Test-Path -LiteralPath $invalidCache)){throw 'Invalid PowerShell tool accepted or created partial cache'}
+            $env:L12_PWSH=$expectedPowerShell
+        }
+    }
+    Check 'Node child launches bound PowerShell when neither PowerShell name is on PATH' {
+        $node=(Get-Command node -ErrorAction Stop).Source;$oldPath=$env:PATH
+        try{$env:PATH=Split-Path -Parent $node;$actual=&$node -e 'const {execFileSync}=require("node:child_process");process.stdout.write(execFileSync(process.env.L12_PWSH,["-NoProfile","-Command","Write-Output L12_HOST_OK"],{encoding:"utf8"}));';if($LASTEXITCODE -ne 0 -or $actual.Trim() -cne 'L12_HOST_OK'){throw 'Bound Node-to-PowerShell execution failed'}}finally{$env:PATH=$oldPath}
+    }
     $receipt=[ordered]@{schema=1;status='completed';cases=@($results.ToArray());fixture=$fixture;sourceSha256=(Get-FileHash -LiteralPath (Join-Path $repoRoot 'ops/windows/L12GeneratedStorage.ps1')).Hash;initializerSha256=(Get-FileHash -LiteralPath $initializer).Hash;completedUtc=[DateTime]::UtcNow.ToString('o');productOrOnlineWrites=0}
     $receipt|ConvertTo-Json -Depth 6|Set-Content -LiteralPath (Join-Path $EvidenceRoot $ReportName)
     foreach($link in @($nestedBad,$alias,$bad)){[IO.DirectoryInfo]::new($link).Delete()}

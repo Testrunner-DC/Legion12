@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19 构建子进程的 PowerShell 路径
+
+- 283727c0的规则7908/平台2007全过后，隔离前端执行响应教学守卫时收到`spawnSync powershell.exe ENOENT`。共享初始化没有导出L12_PWSH，Node守卫回退到短PATH中不存在的命令；这是构建环境缺陷，不是教学规则失败。相关同类入口沿已存在L12_PWSH覆盖统一接入，不逐脚本另造探测。
+- Initialize-L12BuildEnvironment在建缓存前绑定当前PSHOME的pwsh.exe（旧宿主回退powershell.exe），保留明确覆盖，拒绝相对/缺失/目录路径；输出物理D/E及原17项存储守卫不变。旧实现真实RED，修正后23项GREEN，含PATH只有Node目录仍能启动绝对PowerShell的真实子进程；只读独审CLEAR。
+- 证据为既有storage-output-routing-20261016中的initializer-pwsh-red/green-20261019日志及green收据。原Release仍失败，无接受包/部署；单独前端续办的一次Node原生崩溃根因未知，单脚本有界复核与未执行尾链/类型/双构建通过，不把这些合成为新的完整Release。回滚面仅初始化工具绑定与新增6项测试，不涉及游戏、数据库、权限或门槛修改。
+
 ## 2026-10-19 实时通知共享生命周期
 
 - 用户直接要求匹配、好友申请、约战和新消息通知/音效。App一个桥观察既有状态，统一使用原短音控制器及音效偏好，移除原好友局部首次快照重复响铃；不改WebSocket、聊天解析、好友资源、音频控制器或新增轮询。聊天只有friend/opponent两类，不增加公共频道广播。

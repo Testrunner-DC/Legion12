@@ -9,6 +9,21 @@ Set-StrictMode -Version Latest
 
 . (Join-Path $PSScriptRoot 'L12GeneratedStorage.ps1')
 
+# Node-based acceptance probes must not rediscover a PowerShell executable via
+# a shortened npm child PATH. Bind the current host unless explicitly supplied.
+$resolvedPowerShellExecutable = $env:L12_PWSH
+if ([string]::IsNullOrWhiteSpace($resolvedPowerShellExecutable)) {
+    $resolvedPowerShellExecutable = Join-Path $PSHOME 'pwsh.exe'
+    if (-not (Test-Path -LiteralPath $resolvedPowerShellExecutable -PathType Leaf)) {
+        $resolvedPowerShellExecutable = Join-Path $PSHOME 'powershell.exe'
+    }
+}
+if ($resolvedPowerShellExecutable -notmatch '^[A-Za-z]:[\\/]' -or
+    -not (Test-Path -LiteralPath $resolvedPowerShellExecutable -PathType Leaf)) {
+    throw 'L12_POWERSHELL_EXECUTABLE_INVALID: require an existing absolute local executable.'
+}
+$env:L12_PWSH = [IO.Path]::GetFullPath($resolvedPowerShellExecutable)
+
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 if ([string]::IsNullOrWhiteSpace($CacheRoot)) {
