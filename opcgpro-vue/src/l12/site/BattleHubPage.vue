@@ -12,6 +12,7 @@ import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import { getEffectiveOperationsPolicy, normalizeRankedConfig, platformState, rankedApi, type EffectiveOperationsPolicy, type RankedOverview } from '@/l12/platform'
 import RankedBroadcastTicker from './RankedBroadcastTicker.vue'
 import { maintenanceCountdown } from './maintenanceCountdown'
+import { isFriendlyDisasterMode, loadFriendlyDisasterMode, saveFriendlyDisasterMode } from '@/l12/friendlyRoomPreferences'
 
 const props = withDefaults(defineProps<{ matchmakingOnly?: boolean; overlayTarget?: HTMLElement }>(), { matchmakingOnly: false })
 const router = useRouter()
@@ -263,9 +264,27 @@ const optionLabels = {
 let maintenanceClockTimer = 0
 let refreshingOperationsPolicy = false
 let roomDefaultsHydrated = false
+let friendlyDisasterModeChosen = false
 let roomDeckSubmitKey = ''
 let roomDeckSyncKey = ''
 let roomDeckSyncPromise: Promise<boolean> | null = null
+
+function restoreFriendlyDisasterMode() {
+  const saved = loadFriendlyDisasterMode(platformState.account?.id)
+  const defaultMode = operationsPolicy.value?.defaultRoomConfig.disasterMode
+  friendlyDisasterModeChosen = saved !== undefined
+  roomOptions.value.disasterMode = saved ?? (isFriendlyDisasterMode(defaultMode) ? defaultMode : 'all')
+}
+restoreFriendlyDisasterMode()
+watch(() => platformState.account?.id, restoreFriendlyDisasterMode, { flush: 'sync' })
+
+function rememberFriendlyDisasterMode(event: Event) {
+  const mode = (event.target as HTMLSelectElement | null)?.value
+  if (!isFriendlyDisasterMode(mode)) return
+  friendlyDisasterModeChosen = true
+  roomOptions.value.disasterMode = mode
+  saveFriendlyDisasterMode(platformState.account?.id, mode)
+}
 
 function consumeOperationsPolicy(policy: EffectiveOperationsPolicy) {
   operationsPolicy.value = policy
@@ -275,8 +294,8 @@ function consumeOperationsPolicy(policy: EffectiveOperationsPolicy) {
     matchModeId: 'friendly',
     spectating: policy.defaultRoomConfig.spectating,
     handVisibility: policy.defaultRoomConfig.handVisibility,
-    disasterMode: ['all', 'random', 'season', 'none'].includes(policy.defaultRoomConfig.disasterMode)
-      ? policy.defaultRoomConfig.disasterMode as RoomOptions['disasterMode'] : 'all',
+    disasterMode: friendlyDisasterModeChosen ? roomOptions.value.disasterMode
+      : isFriendlyDisasterMode(policy.defaultRoomConfig.disasterMode) ? policy.defaultRoomConfig.disasterMode : 'all',
     useCardRestrictions: false,
   }
   roomDefaultsHydrated = true
@@ -572,7 +591,7 @@ async function copyRoomCode() {
       <div v-if="l12State.room.options" class="room-rule-summary"><b>房主规则</b><span>好友房</span><span>{{ l12State.room.options.useCardRestrictions ? '启用运营禁限卡' : '不启用运营禁限卡' }}</span><span>{{ optionLabels.spectating[l12State.room.options.spectating] }}</span><span>{{ optionLabels.handVisibility[l12State.room.options.handVisibility] }}</span><span>{{ optionLabels.disasterMode[l12State.room.options.disasterMode] }}</span><span v-if="l12State.room.operationsPolicyVersion">运营规则 v{{ l12State.room.operationsPolicyVersion }}</span></div>
       <section v-if="isRoomHost" class="room-rule-editor">
         <header><b>调整房间规则</b><span>保存后双方准备状态会重置</span></header>
-        <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></div></div>
+        <div class="room-settings"><div><b>禁限卡规则</b><select v-model="editableRoomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="editableRoomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="editableRoomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="editableRoomOptions.disasterMode" @change="rememberFriendlyDisasterMode"><option value="all">全部天灾</option><option value="random">随机天灾</option><option value="season">赛季天灾</option><option value="none">不使用天灾</option></select></div></div>
         <button type="button" @click="saveRoomRules">保存房间规则</button>
       </section>
       <section v-if="!props.matchmakingOnly && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
@@ -595,7 +614,7 @@ async function copyRoomCode() {
         <button v-if="l12State.matchmaking?.queued" class="cancel-match" @click="cancelMatchmaking()">取消{{ l12State.matchmaking.mode === 'ranked' ? '排位' : '休闲' }}匹配</button><button v-else class="primary" :disabled="modeActionPending || !currentDeck || !!currentDeckError || maintenanceActive" @click="onMatch">{{ modeActionPending ? '正在校验牌库…' : `开始${selectedMatchMode === 'ranked' ? '排位' : '休闲'}匹配` }}</button>
       </section>
 
-      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终湮灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
+      <section v-else-if="tab === 'friendly'" class="mode-panel panel friendly-panel"><small>FRIENDLY ROOM</small><h2>创建、加入或观战房间</h2><div class="account-identity" :class="{ missing: !platformState.account }"><span>{{ platformState.account ? '当前账号' : '尚未登录' }}</span><b>{{ platformState.account?.username || '登录后才能创建、加入或观战房间' }}</b><router-link to="/me">{{ platformState.account ? '账号设置 →' : '前往登录 →' }}</router-link></div><div class="join-row"><button class="primary" :disabled="maintenanceActive" @click="onCreate">创建新房间</button><span>房间码</span><input v-model="roomCode" maxlength="6" placeholder="输入 6 位房间码" @keyup.enter="onJoin"/><div class="join-actions"><button :disabled="maintenanceActive" @click="onJoin">加入对战</button><button class="spectate-button" :disabled="maintenanceActive" @click="onSpectate">直接观战</button></div></div><div class="room-settings"><div><b>禁限卡规则</b><select v-model="roomOptions.useCardRestrictions"><option :value="false">不启用运营禁限卡</option><option :value="true">启用运营禁限卡</option></select></div><div><b>观战权限</b><select v-model="roomOptions.spectating"><option value="public">允许所有玩家直接观战</option><option value="friends">仅限好友观战</option><option value="disabled">禁止观战</option></select></div><div><b>观战者查看手牌</b><select v-model="roomOptions.handVisibility"><option value="request">需要当局玩家同意</option><option value="public">默认公开</option></select></div><div><b>天灾模式</b><select v-model="roomOptions.disasterMode" @change="rememberFriendlyDisasterMode"><option value="all">全部天灾（禁用与选取）</option><option value="random">随机天灾（3张随机天灾＋最终湮灭）</option><option value="season">赛季天灾（使用当前赛季天灾池）</option><option value="none">不使用天灾（天灾值恒为0）</option></select></div></div></section>
 
       <section v-else class="mode-panel panel"><small>TEST SANDBOX</small><h2>单人测试沙盒</h2><p>用于验证牌库、卡效、阶段与交互，不计入玩家战绩和排行榜。</p><button class="primary" @click="router.push('/sandbox')">进入测试沙盒</button></section>
     </template>

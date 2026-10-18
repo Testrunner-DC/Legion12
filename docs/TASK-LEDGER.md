@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-18 接续511｜好友房模式记忆本地完成，待上线核验
+
+- 人类选择仅记上次天灾模式；P4沿既有控件显式change及账号/匿名本地键，不存卡牌组合、不改每局禁选或权威房间流程，无新增文案。原SFC重新进入真实RED后，14定向/8实际SFC/44原消费者与Main完整前端通过、独审CLEAR；加入他人房间再同组件离房新建保留本人偏好，原账号/token回调未扩改。
+- 唯一接受friendly-disaster-mode-preference-20261018/main-acceptance.json；e8同步verify-live，不再误排待用户，原sourceStatus/原文及终态数字不变，当前20待办仍认唯一清单。未改后端复用7908/1957及费用90证据；没有Release、部署、维护或线上关单。源码/远端及唯一接续认该目录current-followthrough-mode-local.json。
+
 ## 2026-10-18 接续511｜本地组合验收与当前清单完成同步
 
 - P0/P1陵墓守卫来源排除、新旧支付询问均已完成，90定向/独审及整批实际结果统一保存ordinary-move-self-payment-20261018/main-acceptance.json；完整7908规则通过，平台/前端以该索引真实收据为准。仅本地源级接受，不冒新Release或部署。
