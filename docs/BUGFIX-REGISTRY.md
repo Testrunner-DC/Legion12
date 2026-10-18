@@ -1,5 +1,30 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-18｜编辑中好友约战提醒：共享唯一owner与账号生命周期
+
+- 0ac784d3实际根因是immersive编辑器不挂SiteShell，旧提醒只归SiteShell所有；接受用户限定裁定后移到App共享入口，普通站点和编辑器唯一挂载，对战/回放不扩覆盖。不新轮询/协议，不自动因收到邀请导航，不重建或保存草稿；接受/拒绝/撤回继续既有精确ID命令和服务器资格/过期校验，匹配成功另项d354已按保持现状关闭。
+- friend-invitation-editor-approved-fix-20261018真实入口RED保留。抽取后补账号owner、权威撤回/重复created一次性消费；Main审出同同步栈A→B→A的pre watcher合并，r5-red真实1≠0，只有账号watch改sync。最终78C000D4三尺寸27/27、页面错误0、3次真实未保存草稿导航确认，原24场保留；断连同账号合法提醒恢复，不伪造本地十分钟期限。新输出入口内建真实存储守卫，无out纯合同不写文件。
+- Main核完整diff/报告/844截图，四tracked原叶与Main基线相同，仅四hunk+两新叶合入；六叶规范化文本逐一相等，App/SiteShell/两新叶的CRLF与末空行差异不冒原始SHA相同。唯一新组件与具名永久静态入口接正常UI门禁，组合契约/类型/双构建已过；仅环境版本及外层日志参数的原失败保留，不重跑有效门禁。未部署、不提前关0ac。
+
+## 2026-10-18｜天灾策略后续：真实A×B分层与卡池摘要守卫
+
+- 在既有权威禁选事实和同一有界读事务中建立A×B×先后手、各自步骤/实际候选的描述性策略页；参考仅其他对手，按共同effect-version/pool/party/step/origin分层及目标机会加权，无支撑或不足30保持unknown。条件只用当时已公开禁牌/公共天灾及当步本人真实候选，不拿对手私密先选反推后选；现卡文仅参考，不冒卡效克制库或因果建议。原主宰/单卡分母、已发布分布查询不变，population原SQL2647字符逐字抽取。
+- AdminAnalyticsRead必要，缓存返回后重验原会话/权限；无AdminMatchesRead只返公开ban和公开条件，不泄漏私密pick。原worker队列/取消/原生截止/epoch沿用，不新增DB结构、历史补造或Journal。11叶交付9E7A5608已独核源/18证据，原后端14过1夹具失败＋修正/新增3过是17不同，不冒同轮17；前端12场中3纯函数/9真实SFC合成API，非整站或真实群体置信度。
+- 独审指出策略seed_hash可被损坏记录冒充同池；Main新增目标/参考两原生模式篡改摘要，真实RED均No exception，D45ED73E。沿同事务批验DISTINCT种子摘要、复用DisasterSeedHash，错即fail-closed且无N+1；19策略GREEN 21FE5119、完整平台1949/0失败跳过 9A2A0D06，源F1DC4B0F/回归9DA23436。旧7872规则与未变策略前端证据复用，最终受影响前端通过；不冒新同包Release，Git待收口，本轮不部署。
+
+## 2026-10-18｜月读条件进攻加成详情：只读投影与当前实例消费者
+
+- 44cffa54沿既有BuildStatusEffects补`conditional-attack`标签，仅当前TurnSerial且次数大于0时显示“本回合每次进攻兵力＋实际数值（来源：月读）”；不改常驻兵力、真实进攻计算或状态格式。GameBoard从当前权威实例读取，详情保持打开并替换快照时不会沿旧focusCard残留加值；离场/隐藏/期限结束即无此项。
+- 全池/共享扫描`TsukuyomiFrontMoveBonus|AttackOnlyTroopsBonus|susano-buff|s2-tenka-front-attack|AttackTroopsSetValue`，月读是本批明确累计条件；须佐、天下布武及AttackOnly保留原语义，不误标常驻兵力。19新投影例覆盖双方/次数/V2、重复读取全状态与哈希/RNG/事件序守恒、无值/过期/未来/隐藏/离场及同类负控；首次真实RED10失败/9通过，GREEN含相关旧例54/54、零失败跳过。夹具为直接条件状态，不冒自然累计整链。
+- tsukuyomi-status-20261018内6条纯消费者及6真实GamePage合成UI通过：桌面/844短横屏×本人/对手/观战，打开详情后1000→替换实例2000→0→隐藏→离场，0指令/页面错误；非服务器WS或物理设备。Main核报告与移动截图，统一Batch规则7872已过、平台/前端仍在途，未部署、不提前resolved。
+
+## 2026-10-18｜已批准花魁公开展示与移动排序高度：局部验收后并入，未上线
+
+- ae9023dd：保留合法reveal/search/入手及日志，只对现行唯一已证明的ContinueOiranPick reveal-add→search-add生产者成对呈现。稳定ability是目录身份，不能冒充发动身份；相同actor/instance及至多一个私密入手间隔只是防御约束，不授权其他来源。缺scene、隐藏、多卡、歧义、插入展示和后来真正公开均保守整卡；恢复/切局清关联。全池查询`PubliclyRevealThenAddCardToHandByEffect|search-add`沿原RED复核，未删权威事实或改隐私。
+- 花魁最终真实SFC 6F850BAB、日志ACABAF0D：对手与公开观战各8轨迹，full5/linked3、同sequence重传0/恢复0/独立再公开正常，13纯逻辑边界；Main审差异/截图并只接GameBoard公开展示hunk，保留并行连线。永久13原断言与4消费者合同已实际执行通过。浏览器close五秒告警如实保留，context/server及进程退出后profile/cache清理通过；不冒真实服务器、真机或所有卡的原私局。
+- 排序共享根因是移动flex压低有固定卡高的工作区，卡列溢出压提示。仅六行CSS让all/split工作区不缩，既有body纵滚；原full-pool入口查询继续适用。85B1EED2绑定RED、六模式GREEN及反加旧flex再RED；真实触摸滚动/拖放/恢复/唯一确认、desktop不变，原34场景尾逐字保留但未重复全跑。不冒跨滚动手指拖拽或物理设备。
+- 两片产品/专项最小合入主线，组合前端验收、Git及部署尚未完成，两单不提前resolved。P0—P4、卡效/可靠性/动画权威保持，相关motion静态合同只作等价续段表达适配，不移除原守卫。
+
 ## 2026-10-18｜两条旧编辑反馈按当前操作有界收口
 
 - 8aca1ce8原文“牌库编辑不了”、87c6a436原文“。调整排库很难”，原文SHA分别CD59E37D/E8C6096A，各自15字段独立绑定。复用F9BF2F0C源桥/91D823FB实际编译App两个桌面空白→主宰→40张编辑→保存重开、80次加牌及逐项缓存保持；没有重复浏览器/改UI/新建易用性产品规则。
