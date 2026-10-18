@@ -9,6 +9,27 @@ const target = process.argv[2] || 'http://127.0.0.1:5190/__l12_battle_preview__'
 const output = process.env.L12_MOBILE_DISASTER_OUT || path.resolve('..', 'artifacts', 'batch-mobile-disaster-b2b-b')
 const viewports = [{ width: 667, height: 375 }, { width: 844, height: 390 }, { width: 932, height: 430 }, { width: 1024, height: 768 }]
 const query = 'mobile=1&hand=10&trials=2&myTrials=1&disaster-chain=1'
+// These shipped, card-id-specific round faces are controlled local decoder
+// inputs for the presentation test. They do not claim that the full-resolution
+// card-art manifest or CDN payload has been validated here.
+const controlledDisasterArtwork = {
+  'S01-DS01': '/assets/l12/special/round/S01-DS01.png',
+  'S01-DS02': '/assets/l12/special/round/S01-DS02.png',
+}
+const controlledDisasterManifest = JSON.stringify({
+  schemaVersion: 3,
+  catalogVersion: 'mobile-disaster-sequencing-controlled-art',
+  assetVersion: 'mobile-disaster-sequencing-controlled-art',
+  basePath: '/',
+  cards: Object.fromEntries(Object.entries(controlledDisasterArtwork).map(([cardId, url]) => [cardId, {
+    cardId,
+    contentHash: `controlled-local-${cardId}`,
+    width: 720,
+    height: 720,
+    orientation: 'portrait',
+    variants: { thumbWebp: url, boardWebp: url, detailWebp: url },
+  }])),
+})
 fs.mkdirSync(output, { recursive: true })
 
 const browser = await chromium.launch({ headless: true, channel: 'msedge' })
@@ -21,7 +42,13 @@ try {
     window.matchMedia = media => media.includes('pointer: coarse')
       ? ({ matches: true, media, addEventListener() {}, removeEventListener() {} }) : native(media)
   })
-  await page.route('**/*', route => ['127.0.0.1', 'localhost'].includes(new URL(route.request().url()).hostname) ? route.continue() : route.abort())
+  await page.route('**/*', route => {
+    const url = new URL(route.request().url())
+    if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return route.abort()
+    if (url.pathname === '/card-assets/card-assets.manifest.json')
+      return route.fulfill({ contentType: 'application/json', body: controlledDisasterManifest })
+    return route.continue()
+  })
 
   const load = async viewport => {
     await page.setViewportSize(viewport)
@@ -43,20 +70,18 @@ try {
       const buttons = [...element.querySelectorAll('.session-disaster-strip button')]
       const current = element.querySelector('.current-disaster-card')
       const copy = element.querySelector('.mobile-current-disaster-copy')
-      const name = copy?.querySelector('i')
-      if (!strip || !current || !copy || !name) return null
+      const currentImage = current?.querySelector('img')
+      const value = element.querySelector('.mobile-current-disaster-value')
+      if (!strip || !current || !copy || !currentImage || !value) return null
       const stripRect = strip.getBoundingClientRect()
       const currentRect = current.getBoundingClientRect()
+      const currentImageRect = currentImage.getBoundingClientRect()
       const copyRect = copy.getBoundingClientRect()
-      const nameRect = name.getBoundingClientRect()
-      const nameStyle = getComputedStyle(name)
-      const lineHeight = Number.parseFloat(nameStyle.lineHeight)
-      const fontSize = Number.parseFloat(nameStyle.fontSize)
-      const nameRange = document.createRange()
-      nameRange.selectNodeContents(name)
-      const nameLineTops = [...nameRange.getClientRects()]
-        .filter(rect => rect.width > 0 && rect.height > 0)
-        .map(rect => Math.round(rect.top * 2) / 2)
+      const valueRect = value.getBoundingClientRect()
+      const currentStyle = getComputedStyle(current)
+      const currentImageStyle = getComputedStyle(currentImage)
+      const copyStyle = getComputedStyle(copy)
+      const valueStyle = getComputedStyle(value)
       return {
         stripRect: { left: stripRect.left, top: stripRect.top, right: stripRect.right, bottom: stripRect.bottom },
         stripOverflow: getComputedStyle(strip).overflow,
@@ -70,14 +95,15 @@ try {
           }
         }),
         currentInside: currentRect.left >= 0 && currentRect.top >= 0 && currentRect.right <= innerWidth && currentRect.bottom <= innerHeight,
-        copyVisible: copyRect.width > 20 && copyRect.height > 12 && getComputedStyle(copy).visibility !== 'hidden',
-        nameWidth: nameRect.width,
-        nameMinWidth: fontSize * 2,
-        nameLines: new Set(nameLineTops).size,
-        nameClientHeight: name.clientHeight,
-        nameScrollHeight: name.scrollHeight,
-        nameLineHeight: lineHeight,
-        text: copy.textContent?.replace(/\s+/g, ' ').trim(),
+        currentVisible: currentRect.width > 20 && currentRect.height > 20 && currentStyle.display !== 'none' && currentStyle.visibility !== 'hidden',
+        currentEnabled: !current.disabled,
+        currentImageVisible: currentImageRect.width > 20 && currentImageRect.height > 20 && currentImageStyle.display !== 'none' && currentImageStyle.visibility !== 'hidden',
+        currentAlt: currentImage.getAttribute('alt')?.trim(),
+        copyHidden: copyRect.width === 0 && copyRect.height === 0 && copyStyle.display === 'none',
+        valueVisible: valueRect.width > 20 && valueRect.height > 12 && valueStyle.display !== 'none' && valueStyle.visibility !== 'hidden',
+        valueInside: valueRect.left >= 0 && valueRect.top >= 0 && valueRect.right <= innerWidth && valueRect.bottom <= innerHeight,
+        valueLabel: value.getAttribute('aria-label'),
+        valueText: value.textContent?.replace(/\s+/g, ' ').trim(),
       }
     })
     assert.ok(result, `disaster rail ${suffix} must exist`)
@@ -86,11 +112,15 @@ try {
     if (!result.buttons.every(item => item.inside && item.clipped && item.round)) console.error(JSON.stringify({ suffix, result }, null, 2))
     assert.equal(result.buttons.every(item => item.inside && item.clipped && item.round), true, `disaster circles ${suffix} must remain round and inside the rail`)
     assert.equal(result.currentInside, true, `current disaster ${suffix} must stay in the viewport`)
-    assert.equal(result.copyVisible, true, `current disaster copy ${suffix} must be readable`)
-    if (result.nameWidth < result.nameMinWidth - .5 || result.nameLines > 2) console.error(JSON.stringify({ suffix, disasterNameGeometry: result }, null, 2))
-    assert.ok(result.nameWidth >= result.nameMinWidth - .5, `current disaster name ${suffix} must reserve at least two Chinese characters of width`)
-    assert.ok(result.nameLines <= 2, `current disaster name ${suffix} must use at most two horizontal lines; got ${result.nameLines}`)
-    assert.match(result.text ?? '', /当前天灾.+/, `current disaster ${suffix} must show its label and name`)
+    assert.equal(result.currentVisible, true, `current disaster card ${suffix} must be visible`)
+    assert.equal(result.currentEnabled, true, `current disaster card ${suffix} must be reachable`)
+    assert.equal(result.currentImageVisible, true, `current disaster card image ${suffix} must be readable`)
+    assert.ok((result.currentAlt ?? '').length > 0, `current disaster card ${suffix} must retain an accessible name`)
+    assert.equal(result.copyHidden, true, `redundant current disaster copy ${suffix} must stay hidden in the mobile layout`)
+    assert.equal(result.valueVisible, true, `current disaster value ${suffix} must be readable`)
+    assert.equal(result.valueInside, true, `current disaster value ${suffix} must stay in the viewport`)
+    assert.equal(result.valueLabel, '当前天灾值', `current disaster value ${suffix} must retain its label`)
+    assert.match(result.valueText ?? '', /天灾值\s*\d+/, `current disaster value ${suffix} must show its numeric value`)
   }
 
   for (const viewport of viewports) {

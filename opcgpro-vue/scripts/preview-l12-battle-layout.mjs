@@ -243,8 +243,9 @@ if(params.has('disaster-chain')){
    l12State.game.activeDisaster=incoming
    const reveal={sequence:++disasterSequence,type:'disaster-reveal',playerIndex:null,text:'公开天灾〈'+incoming.name+'〉',cards:[incoming]}
    const events=[reveal]
-   if(triggered)events.push({sequence:++disasterSequence,type:'effect-trigger',playerIndex:null,text:'〈'+incoming.name+'〉的天灾效果触发',effectText:'天灾效果开始结算。',cards:[incoming],effectResultStatus:'resolved'})
+   if(triggered)events.push({sequence:++disasterSequence,type:'effect-trigger',playerIndex:null,text:'〈'+incoming.name+'〉的天灾效果触发',effectText:'天灾效果开始结算。',cards:[incoming],effectAbilityId:'S01-DS02:ability:disaster:4548c9e0f724c914',effectSceneId:'S01-DS02:ability:disaster:4548c9e0f724c914:presentation:disaster',effectResultStatus:'resolved'})
    l12State.game.recentEvents=[...l12State.game.recentEvents,...events]
+    l12State.game.revision=(Number(l12State.game.revision)||0)+1
    return events.map(event=>event.sequence)
   },
  }
