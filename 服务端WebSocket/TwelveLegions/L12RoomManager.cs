@@ -1780,7 +1780,11 @@ public sealed partial class L12RoomManager
             transportDiagnostic?.RecorderObserver);
         try
         {
-            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room))
+            // Ordinary matches may finish an already admitted packet after a disconnect so
+            // their existing deadline/rejected-command journal boundary remains authoritative.
+            // A replaced session still fails every exact owner/seat/room check below.
+            if (room.Closed || !IsCurrentPlayerMembership(sessionId, session, room,
+                    requireConnected: room.IsTraining))
                 return Error(sessionId, "房间成员身份已变化，请重新连接", requestId: requestId);
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
             if (room.IsSandbox && !CanControlSandbox(room, session))
@@ -2645,9 +2649,9 @@ public sealed partial class L12RoomManager
             ?? new Dictionary<string, string>()).ToArray();
 
     // Called only while holding this exact room's gate, after any membership captured before an await.
-    private bool IsCurrentPlayerMembership(Guid sessionId, Session session, Room room)
+    private bool IsCurrentPlayerMembership(Guid sessionId, Session session, Room room, bool requireConnected = true)
         => _sessions.TryGetValue(sessionId, out var current) && ReferenceEquals(session, current)
-           && session.Connected && !session.IsSpectator && session.PlayerIndex is { } player
+           && (!requireConnected || session.Connected) && !session.IsSpectator && session.PlayerIndex is { } player
            && player >= 0 && player < room.Sessions.Count && room.Sessions[player] == sessionId
            && session.RoomCode == room.Code && _rooms.TryGetValue(room.Code, out var currentRoom)
            && ReferenceEquals(room, currentRoom);
