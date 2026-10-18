@@ -27,6 +27,7 @@ Object.defineProperty(globalThis,'navigator',{configurable:true,value:{locks:{re
 const state=reactive({account:null,token:''}), calls=[]
 let handler=()=>{throw new Error('Unexpected platform read')}
 Object.defineProperty(globalThis,'__deckNameReconciliationTest',{configurable:true,value:{watch,platformState:state,
+  getDeckCoverRequestHeaders:()=>({'X-L12-Deck-Cover':'1'}),
   getEffectiveOperationsPolicy:async()=>({}),platformRequest:(p,init)=>{
     assert.equal(init?.method,undefined,'Name reconciliation is read-only')
     assert.equal(lockDepth,0,'HTTP may not run while holding the cache Web Lock')
@@ -36,12 +37,14 @@ const binary=url(read('src/l12/deckCodeCodec.ts'))
 const codec=url(read('src/l12/deckCacheCodec.ts').replace("from './deckCodeCodec'",`from '${binary}'`))
 const cache=url(read('src/l12/deckCacheStorage.ts').replace("from './deckCodeCodec'",`from '${binary}'`).replace("from './deckCacheCodec'",`from '${codec}'`))
 const opening=url(read('src/l12/openingHandEligibility.ts'))
+const cover=url(read('src/l12/deckCover.ts'))
 const executable=read('src/l12/decks.ts')
+  .replace("from './deckCover'",`from '${cover}'`)
   .replace("import { watch } from 'vue'",'const {watch}=globalThis.__deckNameReconciliationTest')
   .replace("from './deckCacheStorage'",`from '${cache}'`)
   .replace("from './deckCacheCodec'",`from '${codec}'`)
   .replace("import { normalizeLookupCardType } from './cardPresentation'",'const normalizeLookupCardType=value=>value')
-  .replace("import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",'const {getEffectiveOperationsPolicy,platformRequest,platformState}=globalThis.__deckNameReconciliationTest')
+  .replace("import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'",'const {getDeckCoverRequestHeaders,getEffectiveOperationsPolicy,platformRequest,platformState}=globalThis.__deckNameReconciliationTest')
   .replace("import { deploymentPath } from './deploymentBase'",'const deploymentPath=value=>value')
   .replace(/import (\w+) from '(\.\.\/\.\.\/\.\.\/服务端WebSocket\/TwelveLegions\/Data\/[^']+\.json)'/g,(_all,name,relative)=>
     `const ${name}=${fs.readFileSync(path.resolve(vueRoot,'src/l12',relative),'utf8').replace(/^\uFEFF/,'')}`)

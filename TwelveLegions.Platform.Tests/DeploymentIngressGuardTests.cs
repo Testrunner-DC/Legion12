@@ -585,8 +585,7 @@ public sealed class DeploymentIngressGuardTests
                 expectedParent, StringComparison.OrdinalIgnoreCase)
             || !Guid.TryParseExact(target.Name, "N", out _))
             throw new InvalidOperationException($"refusing to delete unexpected test directory: {target.FullName}");
-        SqliteConnection.ClearAllPools();
-        if (target.Exists) target.Delete(recursive: true);
+        PlatformTestDirectoryCleanup.Delete(target.FullName);
     }
 
     private sealed record GateHolder(Task Entered, TaskCompletionSource Release, Task Completion);

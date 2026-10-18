@@ -7,7 +7,7 @@ namespace TwelveLegions.Server;
 public sealed partial class L12PlatformStore
 {
     public L12PublicDeckSummaryResult DeckLibrarySummaries(L12Catalog catalog, L12PublicDeckSummaryQuery? query = null,
-        L12AuthenticatedSession? viewer = null)
+        L12AuthenticatedSession? viewer = null, bool includeCover = false)
     {
         query ??= new();
         if (!query.IsValid) throw new ArgumentOutOfRangeException(nameof(query));
@@ -38,7 +38,7 @@ public sealed partial class L12PlatformStore
                 Viewer = viewer?.Account.Id, Permission = viewer?.Account.PermissionVersion,
                 // A directory generation tracks visible metadata and counters. Per-item
                 // content pins are attached only after paging and never enter this hash.
-                Entries = entries.Select(entry => entry.View with { ReadToken = null })
+                Entries = entries.Select(entry => entry.View with { ReadToken = null, CoverCardIds = null })
                     .OrderBy(entry => entry.Id, StringComparer.Ordinal),
             })));
             var comparison = CultureInfo.GetCultureInfo("zh-CN").CompareInfo;
@@ -72,7 +72,7 @@ public sealed partial class L12PlatformStore
             var pinned = new L12PublicDeckSummaryView[items.Length];
             for (var index = 0; index < items.Length; index++)
             {
-                var item = items[index];
+                var item = includeCover ? items[index] : items[index] with { CoverCardIds = null };
                 if (item.Source == "official")
                 {
                     pinned[index] = item with { ReadToken = null };

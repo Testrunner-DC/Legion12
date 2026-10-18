@@ -33,7 +33,10 @@ function evaluated(source, dependencies, expression) {
 }
 
 function productionModule(relative) {
-  return evaluated(read(relative), {}, 'exports')
+  return evaluated(read(relative), { require: name => {
+    if (name === '../deckCover') return productionModule('src/l12/deckCover.ts')
+    throw new Error(`Unexpected production module dependency: ${name}`)
+  } }, 'exports')
 }
 
 // This replaces only the previous counter-preservation leaf. The surrounding
@@ -141,7 +144,9 @@ function pageRuntime(kind, helper, baseline = false) {
   const validatePrivatePage = privateFunctions ? evaluated([
     'privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger', 'privateDeckText', 'privateDeckContractError',
     'normalizePrivateDeckSummaryQuery', 'validatePrivateDeckSummaryPage',
-  ].map(name => privateFunctions.get(name)).join('\n'), {}, 'validatePrivateDeckSummaryPage') : null
+  ].map(name => privateFunctions.get(name)).join('\n'), {
+    validateOptionalDeckCoverCardIds: productionModule('src/l12/deckCover.ts').validateOptionalDeckCoverCardIds,
+  }, 'validatePrivateDeckSummaryPage') : null
   const scalar = () => ({ id: 'p', publicCode: 'CODE12', views: 1, likes: 2, copies: 3, viewerLiked: true, canEdit: true })
   const runAction = async (key, action) => { if (active.has(key)) return; active.add(key); try { return await action() } finally { active.delete(key) } }
   const counter = async (reference, operation) => { counters.push([reference, operation]); return counterReply() }

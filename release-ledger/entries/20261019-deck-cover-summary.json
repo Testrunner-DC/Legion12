@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-deck-cover-summary",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "牌库封面展示",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "牌库广场、热门牌库、对战选牌库及编辑器统一使用主宰横幅和最多三张代表卡的封面；信息栏保持单行，封面强调色跟随阵营，手机长列表可完整滚动选择。",
+      "paths": [
+        "opcgpro-vue/src/l12/DeckCover.vue",
+        "opcgpro-vue/src/l12/deckCover.ts",
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/platform.ts",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue",
+        "opcgpro-vue/src/l12/LobbyPage.vue",
+        "opcgpro-vue/src/l12/SavedDeckSelector.vue",
+        "opcgpro-vue/src/l12/site/BattleHubPage.vue",
+        "opcgpro-vue/src/l12/site/DeckLibraryPage.vue",
+        "opcgpro-vue/src/l12/site/SandboxPage.vue",
+        "opcgpro-vue/src/l12/site/publicDeckSummary.ts",
+        "服务端WebSocket/TwelveLegions/L12DeckCoverSelection.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckQueryContracts.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckSummaries.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryContracts.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryProjection.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckSummaryQueries.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    }
+  ]
+}

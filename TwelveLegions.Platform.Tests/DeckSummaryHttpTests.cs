@@ -10,10 +10,75 @@ namespace TwelveLegions.Platform.Tests;
 [Collection("Platform environment")]
 public sealed class DeckSummaryHttpTests
 {
+    [Fact]
+    public async Task CoverCapabilityPreflightPreservesExactHeaderListAndOriginAndAuthenticationBoundaries()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "l12-cover-cors-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        var previousOrigins = Environment.GetEnvironmentVariable("L12_ALLOWED_ORIGINS");
+        const string origin = "https://deck-cover.example.invalid";
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        var passed = false;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            Environment.SetEnvironmentVariable("L12_ALLOWED_ORIGINS", origin);
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), officialCards: catalog.Cards);
+            var expansions = new List<string>();
+            store.DeckPayloadExpansionObserver = expansions.Add;
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            server = new L12WebSocketServer(new L12RoomManager(catalog, recorder, store), recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            foreach (var route in new[] { "/api/decks/summaries", "/api/deck-library/summaries" })
+            {
+                using var preflight = new HttpRequestMessage(HttpMethod.Options, route);
+                preflight.Headers.Add("Origin", origin);
+                preflight.Headers.Add("Access-Control-Request-Method", "GET");
+                preflight.Headers.Add("Access-Control-Request-Headers", "authorization,x-l12-deck-cover");
+                using var response = await client.SendAsync(preflight);
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                Assert.Equal(origin, Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+                Assert.Equal(new[] { "Content-Type", "Authorization", L12CorrelationIds.HeaderName,
+                    "Idempotency-Key", "If-Match", "X-Admin-Reason", L12DeckCoverCapability.HeaderName },
+                    string.Join(",", response.Headers.GetValues("Access-Control-Allow-Headers"))
+                        .Split(',', StringSplitOptions.TrimEntries));
+                Assert.Contains("GET", string.Join(",", response.Headers.GetValues("Access-Control-Allow-Methods")));
+            }
+            using var unauthorized = new HttpRequestMessage(HttpMethod.Get, "/api/decks/summaries");
+            unauthorized.Headers.Add("Origin", origin);
+            unauthorized.Headers.Add(L12DeckCoverCapability.HeaderName, "1");
+            using var denied = await client.SendAsync(unauthorized);
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            using var foreign = new HttpRequestMessage(HttpMethod.Options, "/api/decks/summaries");
+            foreign.Headers.Add("Origin", "https://not-allowed.example.invalid");
+            foreign.Headers.Add("Access-Control-Request-Method", "GET");
+            foreign.Headers.Add("Access-Control-Request-Headers", "x-l12-deck-cover");
+            using var foreignResponse = await client.SendAsync(foreign);
+            Assert.False(foreignResponse.Headers.Contains("Access-Control-Allow-Origin"));
+            Assert.Empty(expansions);
+            passed = true;
+        }
+        finally
+        {
+            if (server is not null) { await server.StopAsync(); await server.DisposeAsync(); }
+            if (recorder is not null) await recorder.DisposeAsync();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            Environment.SetEnvironmentVariable("L12_ALLOWED_ORIGINS", previousOrigins);
+            if (passed) PlatformTestDirectoryCleanup.Delete(root);
+            else Console.WriteLine("Failed synthetic cover CORS fixture retained: " + root);
+        }
+    }
+
     [Theory]
-    [InlineData("summaries")]
-    [InlineData("detail")]
-    public async Task NewPrivateReadRoutesUseCurrentOwnerWithoutExpandingOtherBodies(string kind)
+    [InlineData("summaries", false)]
+    [InlineData("summaries", true)]
+    [InlineData("detail", false)]
+    public async Task NewPrivateReadRoutesUseCurrentOwnerWithoutExpandingOtherBodies(string kind, bool includeCover)
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-c-q1-http-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -54,6 +119,7 @@ public sealed class DeckSummaryHttpTests
                 : $"/api/decks/by-id/{selected!.Id}?expectedRevision={selected.Revision}";
             using var request = new HttpRequestMessage(HttpMethod.Get, target);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", login.Token!);
+            if (includeCover) request.Headers.Add("X-L12-Deck-Cover", "1");
             using var response = await client.SendAsync(request);
             Console.WriteLine($"CQ1 HTTP {target}: status={(int)response.StatusCode}, expansions={expansions.Count}");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -65,6 +131,20 @@ public sealed class DeckSummaryHttpTests
                 foreach (var item in json.RootElement.GetProperty("items").EnumerateArray())
                 {
                     Assert.StartsWith("owned ", item.GetProperty("name").GetString());
+                    if (includeCover)
+                    {
+                        var cover = item.GetProperty("coverCardIds").EnumerateArray()
+                            .Select(card => card.GetString()!).ToArray();
+                        Assert.InRange(cover.Length, 0, 3);
+                        Assert.Equal(cover.Length, cover.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+                        Assert.All(cover, cardId => Assert.Contains(cardId, source.CardIds, StringComparer.OrdinalIgnoreCase));
+                    }
+                    else
+                    {
+                        Assert.Equal(new[] { "counts", "id", "legal", "legalityReason", "masterId", "name",
+                            "publicationId", "publicationVersion", "revision", "updatedAt" },
+                            item.EnumerateObject().Select(field => field.Name).OrderBy(name => name, StringComparer.Ordinal));
+                    }
                     foreach (var forbidden in new[] { "cardIds", "moraleIds", "specialIds", "benchIds",
                         "alternateArtCopies", "alternateArtSelections", "payloadHash", "code", "environment" })
                         Assert.False(item.TryGetProperty(forbidden, out _));

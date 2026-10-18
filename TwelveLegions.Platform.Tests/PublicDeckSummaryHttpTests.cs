@@ -13,9 +13,11 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class PublicDeckSummaryHttpTests
 {
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task RealLibraryGetCombinesOfficialAndPublicMetadataWithoutBodies(bool authenticated)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RealLibraryGetCombinesOfficialAndPublicMetadataWithoutBodies(bool authenticated, bool includeCover)
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-cq2-http-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -45,6 +47,7 @@ public sealed class PublicDeckSummaryHttpTests
             using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
             using var request = new HttpRequestMessage(HttpMethod.Get, "/api/deck-library/summaries?pageSize=100");
             if (authenticated) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", owner.Token!);
+            if (includeCover) request.Headers.Add("X-L12-Deck-Cover", "1");
             using var response = await client.SendAsync(request);
             Console.WriteLine($"CQ2 actual GET status={(int)response.StatusCode}, expansions={expansions.Count}");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -58,8 +61,20 @@ public sealed class PublicDeckSummaryHttpTests
             Assert.Equal(authenticated ? publication.Deck.PublicationVersion : null,
                 published.GetProperty("publicationVersion").ValueKind == JsonValueKind.Null ? null
                     : (int?)published.GetProperty("publicationVersion").GetInt32());
+            if (includeCover)
+                Assert.Equal(L12DeckCoverSelection.SelectCardIds(catalog, L12DeckValidator.CountCards(source.CardIds)),
+                    published.GetProperty("coverCardIds").EnumerateArray().Select(card => card.GetString()!).ToArray());
             foreach (var item in items)
             {
+                if (includeCover)
+                {
+                    var cover = item.GetProperty("coverCardIds").EnumerateArray().Select(card => card.GetString()!).ToArray();
+                    Assert.InRange(cover.Length, 0, 3);
+                    Assert.Equal(cover.Length, cover.Distinct(StringComparer.OrdinalIgnoreCase).Count());
+                    Assert.All(cover, cardId => Assert.True(catalog.Cards.TryGetValue(cardId, out var card)
+                        && card.CardType is "legion" or "tactic" or "artifact"));
+                }
+                else Assert.False(item.TryGetProperty("coverCardIds", out _));
                 foreach (var field in new[] { "cardIds", "moraleIds", "specialIds", "benchIds", "alternateArtCopies",
                     "alternateArtSelections", "payloadHash", "code", "ownerId", "likedByAccountIds" })
                     Assert.False(item.TryGetProperty(field, out _));

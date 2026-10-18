@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-catapult-range-summon-separation",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "攻城投石车进攻资格修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "攻城投石车支付2士气仅扩大本回合的进攻目标范围，不再绕过召唤失调；独立获得的冲锋或限定进攻许可仍按原规则生效。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12Actions.cs",
+        "服务端WebSocket/TwelveLegions/L12StructuredCardRules.StatusSemantics.cs"
+      ]
+    }
+  ]
+}

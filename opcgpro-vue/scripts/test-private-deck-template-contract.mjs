@@ -10,7 +10,9 @@ check(privateEditorSavedPanelsContract(editor.replace('saved-decks-panel grand-p
 check(privateEditorSavedPanelsContract(editor.replaceAll('deck.id ? deck.id === activeDeckId : deck.name === activeDeckName', '(deck.id ? deck.id === activeDeckId : deck.name === activeDeckName)')), true, 'parentheses preserve identity selection')
 for (const [before, after] of [['chooseMobileSavedDeck(deck)', 'requestNewDeck()'], ['requestLoadDeck(deck)', 'requestDelete(deck)'],
   ['role="dialog" aria-modal="true" aria-labelledby="mobile-saved-decks-title"', 'role="region" aria-labelledby="mobile-saved-decks-title"'],
-  ['savedDeckCountLabel(deck)', 'deck.cardIds.length'], ['deck in savedDirectoryDecks', 'deck in []']])
+  ['savedDeckCountLabel(deck)', 'deck.cardIds.length'], ['deck in savedDirectoryDecks', 'deck in []'],
+  ['<DeckCover variant="compact"', '<DeckProfile compact'], ['savedDeckCoverIds(deck)', '[]'],
+  ['savedDeckSourceIds(deck)', '[]']])
   check(privateEditorSavedPanelsContract(editor.replaceAll(before, after)), false, `editor rejects ${after}`)
 check(privateModeLegalityContract(selector), true, 'actual authenticated/guest legality distinction and empty state')
 check(privateModeLegalityContract(selector.replace('computed(() => authenticated.value ? serverRows.value : guestRows.value)', 'computed(() => (authenticated.value ? serverRows.value : guestRows.value))')), true, 'parenthesized branch is equivalent')

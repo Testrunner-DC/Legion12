@@ -4,7 +4,8 @@ import { readDeckCache, requireDeckCache, commitDeckCache, interpretDeckSelectio
 import { encodeDeckCache, decodeDeckCache } from './deckCacheCodec'
 
 import { normalizeLookupCardType } from './cardPresentation'
-import { getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
+import { validateOptionalDeckCoverCardIds } from './deckCover'
+import { getDeckCoverRequestHeaders, getEffectiveOperationsPolicy, platformRequest, platformState, type OperationsCardRestriction } from './platform'
 import { deploymentPath } from './deploymentBase'
 import moraleIdentityData from '../../../服务端WebSocket/TwelveLegions/Data/morale-identities.json'
 import cardProductInclusionsData from '../../../服务端WebSocket/TwelveLegions/Data/card-product-inclusions.json'
@@ -89,6 +90,8 @@ export interface PrivateDeckSummary {
   publicationId: string | null
   publicationVersion: number | null
   counts: PrivateDeckSummaryCounts
+  /** Older summary servers omit this field; new summaries provide at most three main-card IDs. */
+  coverCardIds?: string[]
   legal: boolean
   legalityReason: string | null
 }
@@ -499,7 +502,9 @@ export function validatePrivateDeckSummaryPage(value: unknown, query: PrivateDec
   const countFields = ['main', 'uncountedMain', 'morale', 'special', 'bench'] as const
   const identities = new Set<string>()
   const items = value.items.map((entry, index) => {
-    if (!privateDeckObject(entry) || !privateDeckExactFields(entry, itemFields)) privateDeckContractError(`第${index + 1}项字段无效`)
+    if (!privateDeckObject(entry)) privateDeckContractError(`第${index + 1}项字段无效`)
+    const entryFields = Object.hasOwn(entry, 'coverCardIds') ? [...itemFields, 'coverCardIds'] : itemFields
+    if (!privateDeckExactFields(entry, entryFields)) privateDeckContractError(`第${index + 1}项字段无效`)
     if (!privateDeckText(entry.id) || identities.has(entry.id as string) || !privateDeckInteger(entry.revision, 1)
       || !privateDeckText(entry.name) || !privateDeckText(entry.masterId) || !privateDeckText(entry.updatedAt)
       || !Number.isFinite(Date.parse(entry.updatedAt as string)) || typeof entry.legal !== 'boolean')
@@ -516,6 +521,8 @@ export function validatePrivateDeckSummaryPage(value: unknown, query: PrivateDec
     const counts = entry.counts
     if (!privateDeckObject(counts) || !privateDeckExactFields(counts, countFields)
       || countFields.some(field => !privateDeckInteger(counts[field]))) privateDeckContractError(`第${index + 1}项计数无效`)
+    if (!validateOptionalDeckCoverCardIds(entry))
+      privateDeckContractError(`第${index + 1}项封面卡牌无效`)
     if (entry.legal ? entry.legalityReason !== null
       : !privateDeckText(entry.legalityReason)) privateDeckContractError(`第${index + 1}项合法性原因无效`)
     if (normalized.masterId && (entry.masterId as string).toLocaleLowerCase() !== normalized.masterId.toLocaleLowerCase())
@@ -544,7 +551,9 @@ export async function loadPrivateDeckSummaryPage(query: PrivateDeckSummaryQuery 
   try {
     assertCompleteDeckAccount(context)
     if (!context.accountId || !context.token) throw new Error('请先登录账号再读取牌库目录')
-    const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), { cache: 'no-store' })
+    const response = await platformRequest<unknown>(privateDeckSummaryRequestPath(query), {
+      cache: 'no-store', headers: getDeckCoverRequestHeaders(),
+    })
     if (!isCurrentDeckStorageContext(context)) throw new Error('账号已切换，已忽略旧牌库目录')
     return validatePrivateDeckSummaryPage(response, query)
   } catch (error) { throw operationError(error, context) }

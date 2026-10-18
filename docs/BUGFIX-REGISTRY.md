@@ -1,9 +1,28 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19 牌库封面横幅与信息栏收口
+
+- 按最新界面要求统一方角、12:5封面主体与独立30px单行信息栏，去掉热门区域重复标签和环境徽标前缀；强调色按阵营，代表卡仅宽屏轻微右下移动。接入22张正式主宰横幅，未知主宰/加载失败仍回退阵营底色，不预读整副牌库；测试基址复用既有deploymentPath。
+- 29叶逐SHA与F原图核对，22图真实解码、失败回退、六阵营hover/focus、触摸、reduced-motion、末张可达及六档热门几何/入口均通过；完整前端契约、类型与双基址构建通过。Main另核全部源/证据与桌面/移动真实卡面截图。原npm PATH失败保留；旧热门夹具卡背只作几何/导航证明，生产缓存留待发布后实核。
+- 接受formal-deploy-20261019-deck-cover/main-cover-acceptance.json绑定同伴formal-banner-acceptance-v1原件；封面已本地收口，正式选择性候选仍待完整Release和部署。教学/沙盒行为变动不纳入正式，原权限、隐私、保存与规则不改。
+
+## FIX-20261019-CATAPULT-RANGE-NOT-CHARGE｜目标范围不解除召唤失调
+
+- 人类新裁定覆盖2026-10-17旧裁定：攻城投石车的2士气能力只扩大可进攻目标，不赋予登场回合进攻资格。删除TryValidateAttackTarget中的付费目标旁路和ExtendedRangeRule专用开关，仍先检查召唤失调，再检查射程/目标；不改HasCharge、独立限定进攻许可、费用、次数、目标保护或检查点格式。
+- 同类扫描：全324张ST/S1/S2卡，以“可进攻对方后排|可进攻对方主宰|登场.*进攻|冲锋”命中33张；结构化付费射程定义仅攻城投石车/养由基，额外射程标记写入/继承/到期/离场入口沿旧生命周期保留。错误开关在生产源码无残留；不以射程取代独立冲锋，不回写旧录像或数据库。
+- 原35项真实命令中17RED保留（登场禁止8、限定许可被扩大8、专用开关1），修正后35项全过；连同原ExtendedRange生命周期及旧目标集合回归共57通过，覆盖双方、严格V2逐命令恢复、扣费但不可攻、拒绝完整状态/哈希/RNG不变、已过登场回合可攻、独立冲锋与限定目标许可。标准Batch完整7932规则/2026平台均零失败跳过，架构/原子/日志门禁通过，独立只读审查CLEAR；唯一源级接受catapult-range-summon-20261019/main-acceptance.json。未部署、不提前改线上Bug终态。
+- 外显：原卡文及卡图未宣称冲锋，无需修改；旧错误玩家条目已纠正，并新增本次限定修正条目。已经发布的历史包不在本次本地修改中被替换。回退面仅两个规则源码、此族测试和对应日志；不要恢复旧错误裁定。
+
+## 2026-10-19 牌库封面摘要兼容与移动行高
+
+- 封面只扩展原本人／公开摘要的0—3个代表卡号。真实HTTP旧字段断言先RED，补显式X-L12-Deck-Cover能力后未协商字段完全保持，新客户端也接受旧服务缺省；同源getter／两路实际请求／CORS共用常量，跨域保留旧摘要请求，不加探测、轮询或正文扇出。目录代际和内容令牌不因封面能力改变，原权限与来源限制保留。
+- 同类扫描六个DeckCover消费者及本人／公开摘要入口。编辑器手机18项已加载后仍不形成溢出，独审确认新封面按钮overflow:hidden允许隐式网格行压缩；仅给既有移动列表加grid-auto-rows:max-content，保留圆角裁切。静态守卫与末张卡高度／完整滚动可达的真实浏览器断言同步补齐；桌面滚动仍归原saved-decks-panel，不改版面。
+- 首轮完整平台2025项中6失败：5项旧测试按名称启动pwsh时本轮PATH遗漏；1项合成matches.db删除占用。修正执行路径；同类扫描发现4处相同旧清理尾部，统一复用既有有界清池helper，原父目录／GUID守卫和业务断言不变，独审CLEAR。最终全平台2026／2026含41封面项及原失败方法通过，0失败跳过、完整TRX保留，自有118267883字节临时数据清理；12档编辑器与21项选择器真实浏览器、358UI／27变异／完整类型／双构建通过。唯一接受deck-cover-redesign-20261019/main-integration/acceptance.json；旧失败原样留存，不冒完整Release或部署。回滚面为摘要可选字段／能力接线、共用封面消费者与相应测试，不改卡效、数据库或教学权限。
+
 ## 2026-10-19 发布测试的SQLite清理
 
-- ed30规则7908通过，平台唯一失败是RankedWatchdogIsolationTests.ResponseCommitFailureNotifiesNobodyRestoresOriginalLeaseAndRetryExpiresExactlyOnce在全部原业务断言完成后删除matches.db被占用。3bf05仅复用现有PlatformTestDirectoryCleanup，保留临时路径／名称守卫，不改应用或断言。
-- 规则按精确整树差异和原始收据／日志SHA映射复用；平台1961本轮零失败跳过，原失败方法与清理均实际通过，完整TRX保留。实际正式版本3bf05、维护118已开放；原首轮失败保留，教学／沙盒／封面未发布，统一证据为formal-release-20261019发布汇总。
+- 排除教学的ed30首轮规则7908通过，平台1960通过／1清理失败：RankedWatchdogIsolationTests.ResponseCommitFailureNotifiesNobodyRestoresOriginalLeaseAndRetryExpiresExactlyOnce已完成原业务断言，删除合成matches.db时仍被占用。仅将本类旧删除重试循环改为现有PlatformTestDirectoryCleanup；原临时目录父路径／名称边界保留，不改应用、测试断言或降低完整平台门禁。
+- 3bf05相对ed30仅此测试叶变化；独立核差异与原规则收据／失败计时／日志SHA后复用规则，完整平台1961本轮通过，原失败方法实际Passed且共享清理成功收据／TRX保留。正式3bf05已独立上线，教学／沙盒／封面未发布；证据统一在formal-release-20261019/local-package-acceptance.json与release-session-summary.json。原失败原样保存，不把源码映射记作一次fresh完整规则运行。
 
 ## 2026-10-19 构建子进程的 PowerShell 路径
 
@@ -259,6 +278,8 @@
 - 22A30C4A派生器由Main整文件核五组字面替换，12函数/原v2合同/2 SelfTest有效。ADB9D982真实单CAS31163/31165、终态独立读回/原文历史保留/会话撤销；同次E0D1502E快照唯一911/81new/374resolved/456closed，新增4d1de02d另核，不把待办净减1冒充只关闭1。阶段449=142fixed/291rejected/16duplicate、周期541，本次213起134、本轮359起280实际关闭；无部署或维护写。
 
 ## FIX-20261017-CATAPULT-SUMMON-TURN-TARGETS｜付费后的限定后排与主宰许可
+
+- 历史状态：以下旧裁定及对应实现由FIX-20261019-CATAPULT-RANGE-NOT-CHARGE覆盖，保留原证据，不再作为现行规则。
 
 - 人类明确：攻城投石车付2士气后允许登场回合进攻后排和主宰，不获其他冲锋。共享ExtendedRangeRule增默认false能力，仅S01-0003启用；CanAttackTarget只在已有本回合真实已付/结算标记且目标为敌方真实后排或主宰时解除summon gate，后续射程/挑衅/保护/天灾与次数照旧。完整字典两定义审计，养由基仍不获该许可；不改HasCharge或另存状态。
 - 8有效RED/养由基2对照保留；11新例含双方/严格V2、支付前拒绝、前排目标拒绝原子不变、权威可攻目标、真实结算/休整/一次攻击及养由基反例，纳入组合368零失败；ExtendedRange生命周期原无效/费用/失位/到期门禁复用。GameBoard/PlayerMat已有权威legalAttackTargets驱动，未改前端fallback去伪造冲锋；独审CLEAR。

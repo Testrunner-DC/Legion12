@@ -9,7 +9,7 @@ const front = path.resolve(import.meta.dirname, '..')
 const out = process.env.L12_SELECTOR_OUTPUT || 'D:/GPT/Legion12/artifacts/deck-private-lookup-20261007/selector-browser-r1'
 fs.mkdirSync(out, { recursive: true })
 const { chromium } = createRequire(import.meta.url)('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
-const tracked = ['scripts/verify-private-deck-selector.mjs', 'src/App.vue', 'src/l12/SavedDeckSelector.vue', 'src/l12/DeckProfile.vue', 'src/l12/decks.ts', 'src/l12/platform.ts']
+const tracked = ['scripts/verify-private-deck-selector.mjs', 'src/App.vue', 'src/l12/SavedDeckSelector.vue', 'src/l12/DeckCover.vue', 'src/l12/deckCover.ts', 'src/l12/decks.ts', 'src/l12/platform.ts']
 const hashes = () => Object.fromEntries(tracked.map(file => [file, crypto.createHash('sha256').update(fs.readFileSync(path.join(front, file))).digest('hex')]))
 const report = { sourceBefore: hashes(), cases: [], sizes: [], errors: [], productionWrites: 0,
   limitations: ['Actual App, Vue component, platform request and summary reader with synthetic HTTP data.',
@@ -23,14 +23,16 @@ import {createRouter,createMemoryHistory} from 'vue-router'
 import App from '/src/App.vue'
 import Selector from '/src/l12/SavedDeckSelector.vue'
 import {platformState,authState} from '/src/l12/platform.ts'
+import {l12State} from '/src/l12/net.ts'
 import '/src/style.css'
+l12State.endpoint='ws://'+(new URL(location.href).searchParams.has('cross')?location.hostname+':8080':location.host)
 platformState.account={id:'selector-qa',username:'合成验收',role:'player',permissions:[]};platformState.token='synthetic-only';authState.initialized=true;authState.verified=true
 const open=ref(true), confirmations=[];window.__selector={confirmations,platformState,open}
 const fixture=defineComponent({setup(){return()=>h(Selector,{open:open.value,mode:'casual',catalog:${JSON.stringify([master])},currentDeckId:'qa-01',currentDeckRevision:1,currentDeckName:'合成牌库01',usesSeasonRestrictions:false,onCancel:()=>open.value=false,onConfirm:deck=>{confirmations.push(deck);open.value=false}})}})
 const router=createRouter({history:createMemoryHistory(),routes:[{path:'/selector',component:fixture,meta:{immersive:true}}]})
 await router.push('/selector');createApp(App).use(router).mount('#app')
 `
-const server = await createServer({ root: front, configLoader: 'runner', cacheDir: 'D:/GPT/Legion12/cache/private-selector-browser/vite',
+const server = await createServer({ root: front, configLoader: 'runner', cacheDir: 'D:/GPT/Legion12/cache/primary/deck-cover-integration/vite-selector',
   server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'private-selector-fixture',
     resolveId(id) { if (id === '/__selector__.js') return id }, load(id) { if (id === '/__selector__.js') return entry },
     configureServer(vite) { vite.middlewares.use((request, response, next) => {
@@ -45,8 +47,8 @@ const decks = Array.from({ length: 75 }, (_, index) => ({ id: `qa-${String(index
 async function check(name, work) { await work(); report.cases.push(name) }
 try {
   await server.listen(); browser = await chromium.launch({ headless: true, channel: 'msedge' })
-  for (const [width, height] of [[1920,1080],[1366,768],[1024,500],[844,390],[390,844],[320,568]]) {
-    const size = `${width}x${height}`, reads = []
+  for (const [width, height, crossOrigin] of [[1920,1080,false],[1366,768,false],[1024,500,false],[844,390,false],[390,844,false],[320,568,false],[1920,1080,true]]) {
+    const size = `${width}x${height}${crossOrigin ? '-cross-origin' : ''}`, reads = []
     const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: width < 820 })
     await context.routeWebSocket(/.*/, socket => socket.close())
     await context.route('**/*', async route => {
@@ -55,6 +57,9 @@ try {
       if (url.pathname.startsWith('/api/')) {
         reads.push({ path: url.pathname + url.search, method: request.method() })
         if (url.pathname === '/api/decks/summaries') {
+          assert.equal(request.headers()['x-l12-deck-cover'], crossOrigin ? undefined : '1',
+            crossOrigin ? 'cross-origin legacy service keeps the original request header contract'
+              : 'same-origin new client explicitly opts in to additive cover metadata')
           const number = Number(url.searchParams.get('page')), pageSize = Number(url.searchParams.get('pageSize')), keyword = url.searchParams.get('keyword') || ''
           const all = decks.filter(deck => deck.name.includes(keyword))
           return route.fulfill({ json: { items: all.slice((number-1)*pageSize,number*pageSize), page: number, pageSize, total: all.length,
@@ -76,11 +81,12 @@ try {
     })
     page = await context.newPage(); page.setDefaultTimeout(8000)
     page.on('pageerror', error => report.errors.push(error.stack || error.message))
-    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__selector__`)
+    await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__selector__${crossOrigin ? '?cross=1' : ''}`)
     const modal = page.getByRole('dialog'), rows = modal.locator('.selector-list>button')
     await rows.first().filter({ hasText: '合成牌库01' }).waitFor()
     await check(`${size}: bounded directory, no body reads and season metadata does not disable casual selection`, async () => {
       assert.equal(await rows.count(), 30); assert.equal(await rows.first().isEnabled(), true)
+      assert.equal(await rows.first().locator('.deck-cover--compact').count(), 1, 'legacy summary without cover ids still renders the shared cover')
       assert.equal(reads.some(item => item.path === '/api/decks' || item.path.startsWith('/api/decks/by-id/')), false)
     })
     await check(`${size}: all pages reachable while footer remains outside the scroll area`, async () => {

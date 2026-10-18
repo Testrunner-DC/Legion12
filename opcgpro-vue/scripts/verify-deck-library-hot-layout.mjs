@@ -5,7 +5,8 @@ import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
-const output = path.resolve(root, '../artifacts/deck-library-hot-layout')
+const output = process.env.L12_HOT_LAYOUT_OUTPUT || 'D:/GPT/Legion12/artifacts/deck-cover-redesign-20261019/main-integration/hot-layout'
+const cache = process.env.L12_HOT_LAYOUT_CACHE || 'D:/GPT/Legion12/cache/primary/tasks/deck-cover-refine-20261019/vite-hot-layout'
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
 
@@ -13,8 +14,9 @@ const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createWebHistory,RouterView} from 'vue-router'
 import Library from '/src/l12/site/DeckLibraryPage.vue'
-import {loadOfficialPresetDecks} from '/src/l12/decks.ts'
-import {platformState,publicDeckApi} from '/src/l12/platform.ts'
+import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
+import {platformState,deckLibraryApi} from '/src/l12/platform.ts'
+import {publicSummaryFixture} from '/scripts/deck-summary-browser-fixture.mjs'
 import '/src/style.css'
 const presets=await loadOfficialPresetDecks()
 const base=presets.find(deck=>deck.cardIds.length>=40)||presets[0]
@@ -26,7 +28,7 @@ const rows=Array.from({length:hotItemsPerRow*2+2},(_,index)=>({
  views:5000-index*17,likes:500-index,copies:400-index,liked:false,createdAt:now,updatedAt:now,seasonCompliant:true,
 }))
 platformState.account=null
-publicDeckApi.list=async()=>rows
+deckLibraryApi.summaries=publicSummaryFixture(rows,await loadDeckCatalog())
 const Detail={props:['deckId'],render(){return h('main',{id:'detail-fixture','data-deck-id':this.deckId},'detail:'+this.deckId)}}
 const router=createRouter({history:createWebHistory(),routes:[
  {path:'/decks',name:'decks',component:Library},
@@ -41,7 +43,7 @@ await router.isReady()
 const server = await createServer({
   root,
   configLoader: 'runner',
-  cacheDir: path.join(root, '.tmp', 'vite-deck-library-hot-layout'),
+  cacheDir: cache,
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'deck-library-hot-layout-fixture',
@@ -147,6 +149,14 @@ try {
   await prepare(page)
   await page.goto(`http://127.0.0.1:${port}/decks`)
   await waitForLibrary(page)
+  const firstBanner = page.locator('.hot-decks .deck-cover__master-banner').first()
+  await firstBanner.waitFor()
+  await page.waitForFunction(() => {
+    const image = document.querySelector('.hot-decks .deck-cover__master-banner')
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth === 1200 && image.naturalHeight === 500
+  })
+  assert.match(await firstBanner.getAttribute('src'), /\/assets\/l12\/deck-banners\/[A-Z0-9-]+\.png$/,
+    'featured deck covers must load the formal master banner through the deployment path')
 
   const hot = page.locator('.hot-decks')
   const tracks = hot.locator('.hot-deck-track')
@@ -292,6 +302,28 @@ try {
       const rowBoxes = [...document.querySelectorAll('.hot-deck-viewport')].map(element => element.getBoundingClientRect())
       const loops = [...document.querySelectorAll('.hot-deck-track')].map(track => [...track.querySelectorAll(':scope > .hot-deck-loop')])
       const cards = [...document.querySelectorAll('.plaza-grid>article')].slice(0, 6).map(element => element.getBoundingClientRect())
+      const regularCovers = [...document.querySelectorAll('.plaza-grid>article .deck-cover')].slice(0, 6).map(element => element.getBoundingClientRect())
+      const hotCards = [...document.querySelectorAll('.hot-deck-track .hot-deck-loop:first-child > button')].map(button => {
+        const buttonBox = button.getBoundingClientRect()
+        const coverBox = button.querySelector('.deck-cover')?.getBoundingClientRect()
+        const footerElement = button.querySelector('[data-cover-footer]')
+        const footerBox = footerElement?.getBoundingClientRect()
+        const footerStyle = footerElement ? getComputedStyle(footerElement) : null
+        const banner = button.querySelector('.deck-cover__master-banner')
+        return {
+          row:Number(button.dataset.hotRow),
+          button:{ width:buttonBox.width, height:buttonBox.height },
+          cover:coverBox ? { x:coverBox.x, y:coverBox.y, width:coverBox.width, height:coverBox.height, bottom:coverBox.bottom } : null,
+          footer:footerBox ? {
+            x:footerBox.x, y:footerBox.y, width:footerBox.width, height:footerBox.height, top:footerBox.top,
+            clientHeight:footerElement.clientHeight, scrollHeight:footerElement.scrollHeight,
+            whiteSpace:footerStyle.whiteSpace, text:footerElement.textContent?.trim() || '',
+          } : null,
+          banner:banner ? { src:banner.getAttribute('src') || '', masterId:button.querySelector('.deck-cover')?.getAttribute('data-master-banner') || '' } : null,
+        }
+      })
+      const environmentLabels = [...document.querySelectorAll('.plaza-card-stats .deck-environment-badge')]
+        .slice(0, 6).map(element => element.textContent?.trim() || '')
       const sectionStyle = section ? getComputedStyle(section) : null
       return {
         documentFits: document.documentElement.scrollWidth <= innerWidth + 1,
@@ -300,6 +332,9 @@ try {
         loopWidths: loops.map(row => row.map(loop => loop.getBoundingClientRect().width)),
         section: section ? { x:section.getBoundingClientRect().x, width:section.getBoundingClientRect().width, backgroundColor:sectionStyle.backgroundColor, borderTop:sectionStyle.borderTopWidth, borderBottom:sectionStyle.borderBottomWidth } : null,
         cards: cards.map(box => ({ x:box.x, y:box.y, width:box.width, height:box.height })),
+        regularCovers: regularCovers.map(box => ({ width:box.width, height:box.height })),
+        environmentLabels,
+        hotCards,
       }
     })
     assert.equal(geometry.documentFits, true, `${scenario} 页面横向溢出`)
@@ -307,10 +342,19 @@ try {
     assert.deepEqual(geometry.itemCounts, [itemsPerRow, itemsPerRow], `${scenario} 数据样本数量错误`)
     assert.ok(geometry.loopWidths.every(widths => widths.length === 2 && widths[0] > 0 && Math.abs(widths[0] - widths[1]) < .5), `${scenario} 两份循环必须等宽连续闭合`)
     assert.ok(geometry.rows.every(row => row.x >= -1 && row.x + row.width <= width + 1), `${scenario} 轮播视口越界`)
-    const expectedRowHeight = width <= 700 ? 74 : 102
-    assert.ok(geometry.rows.every(row => Math.abs(row.height - expectedRowHeight) < 1), width <= 700
-      ? `${scenario} 移动端热门牌库尺寸不应跟随宽屏放大`
-      : `${scenario} 宽屏热门牌库容器未按约30%增大`)
+    assert.ok(geometry.regularCovers.every(cover => Math.abs(cover.height - cover.width * 5 / 12) < 1), `${scenario} 常规封面主体必须为12:5`)
+    assert.equal(geometry.hotCards.length, itemsPerRow * 2, `${scenario} 热门首份循环封面数量错误`)
+    assert.ok(geometry.hotCards.every(card => card.cover && Math.abs(card.cover.height - card.cover.width * 5 / 12) < 1), `${scenario} 热门封面主体必须为12:5`)
+    assert.ok(geometry.hotCards.every(card => card.cover && card.footer && Math.abs(card.footer.top - card.cover.bottom) < 1), `${scenario} 环境与浏览统计必须位于12:5主体下方`)
+    assert.ok(geometry.hotCards.every(card => card.cover && card.footer && Math.abs(card.button.height - card.cover.height - card.footer.height) < 1), `${scenario} 热门按钮高度必须由12:5主体与独立下栏组成`)
+    assert.ok(geometry.hotCards.every(card => card.footer && Math.abs(card.footer.height - 30) < 1 && card.footer.whiteSpace === 'nowrap' && card.footer.scrollHeight <= card.footer.clientHeight), `${scenario} 独立信息栏必须保持固定单行`)
+    assert.ok(geometry.hotCards.every(card => card.footer && !card.footer.text.includes('环境')), `${scenario} 独立信息栏环境徽标不得重复显示“环境”二字`)
+    assert.ok(geometry.environmentLabels.every(label => label && !label.includes('环境')), `${scenario} 常规牌库环境徽标也必须使用精简文本`)
+    assert.ok(geometry.hotCards.every(card => card.banner && card.banner.masterId && card.banner.src.endsWith(`/assets/l12/deck-banners/${card.banner.masterId}.png`)), `${scenario} 热门封面必须引用对应主宰横幅`)
+    assert.ok(geometry.rows.every((row,index) => {
+      const sample = geometry.hotCards.find(card => card.row === index + 1)
+      return sample && Math.abs(row.height - sample.button.height - 10) < 1
+    }), `${scenario} 轮播行高必须只在主体和独立下栏之外保留10px悬停余量`)
     assert.ok(geometry.cards.every(card => card.x >= -1 && card.x + card.width <= width + 1), `${scenario} 牌库盒子越界`)
     const screenshotName = itemsPerRow === 8 ? `deck-library-${width}x${height}.png` : `deck-library-${itemsPerRow}-items-${width}x${height}.png`
     await view.screenshot({ path:path.join(output,screenshotName), fullPage:true })

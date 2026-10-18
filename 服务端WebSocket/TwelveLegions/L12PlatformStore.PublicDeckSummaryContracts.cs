@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http;
 
 namespace TwelveLegions.Server;
@@ -50,6 +51,7 @@ public sealed record L12PublicDeckSummaryQuery(string Source = "all", int Page =
 public sealed record L12PublicDeckSummaryView(string Id, string Source, string Name, string MasterId,
     string MasterName, string Faction, string Author, string? PublicCode, int? PublicationVersion,
     DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt, L12DeckSummaryCounts Counts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? CoverCardIds,
     bool Legal, string? LegalityReason, L12DeckEnvironmentView Environment,
     int Views, int Likes, int Copies, bool ViewerLiked, bool CanEdit, string? ReadToken = null);
 public sealed record L12DeckSummaryFacet(string Value, int Count);

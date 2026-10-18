@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import { validateOptionalDeckCoverCardIds } from '../src/l12/deckCover.ts'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const ts = createRequire(import.meta.url)('typescript')
 function functions(relative, names, dependencies, controls = '') {
@@ -88,7 +89,7 @@ await check('source count/body mismatch and stale page reject before any body/ca
   await assert.rejects(result, /切换/); assert.equal(late.state.bodyCalls.length, 0)
 })
 const queryFunctions = functions('src/l12/decks.ts', ['privateDeckObject', 'privateDeckExactFields', 'privateDeckInteger',
-  'privateDeckText', 'privateDeckContractError', 'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage'], {})
+  'privateDeckText', 'privateDeckContractError', 'normalizePrivateDeckSummaryQuery', 'privateDeckSummaryRequestPath', 'validatePrivateDeckSummaryPage'], { validateOptionalDeckCoverCardIds })
 await check('wire query encodes exact name/source and rejects malformed explicit filters', () => {
   const url = new URL(queryFunctions.privateDeckSummaryRequestPath({ pageSize: 1, exactName: ' A & B ', publicationId: ' pub-1 ' }), 'http://synthetic.invalid')
   assert.equal(url.searchParams.get('exactName'), 'A & B'); assert.equal(url.searchParams.get('publicationId'), 'pub-1')

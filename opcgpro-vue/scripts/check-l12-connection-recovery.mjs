@@ -163,6 +163,13 @@ function gameStateCardFrameModuleUrl() {
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#card-frame-${moduleSerial}`
 }
 
+function deckCoverModuleUrl() {
+  const filename = join(sourceRoot, 'deckCover.ts')
+  const output = compile(readFileSync(filename, 'utf8'), filename)
+  moduleSerial += 1
+  return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#deck-cover-${moduleSerial}`
+}
+
 async function loadPlatformModule() {
   const filename = join(sourceRoot, 'platform.ts')
   const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
@@ -170,6 +177,7 @@ async function loadPlatformModule() {
   let source = readFileSync(filename, 'utf8')
   source = source
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
+    .replace("from './deckCover'", `from '${deckCoverModuleUrl()}'`)
     .replace("import { computed, reactive } from 'vue'", `
       const reactive = value => value
       const computed = getter => ({ get value() { return getter() } })

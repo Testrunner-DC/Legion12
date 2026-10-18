@@ -31,7 +31,7 @@
     },
     {
       "category": "card-effects",
-      "text": "攻城投石车支付2士气后，登场回合也可进攻对方后排或主宰；不会因此获得其他冲锋能力。",
+      "text": "攻城投石车支付2士气后，本回合可进攻对方后排和主宰；此能力只改变目标范围，不解除登场回合的进攻限制。",
       "paths": [
         "服务端WebSocket/TwelveLegions/L12Actions.cs"
       ]

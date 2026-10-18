@@ -2,11 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { connect, createRoom, joinRoom, l12State, selectCustomDeck, selectDeck, setReady } from './net'
-import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type DeckCard, type SavedL12Deck } from './decks'
+import { deckCountSummary, ensureOfficialPrebuiltDecks, loadDeckCatalog, loadOfficialPresetDecks, loadSavedDecksState, deckErrorBelongsToCurrentAccount, type DeckCard, type OfficialL12PresetDeck, type SavedL12Deck } from './decks'
 import CardArchive from './CardArchive.vue'
 import MatchRecords from './MatchRecords.vue'
 import { platformState } from './platform'
-import DeckProfile from './DeckProfile.vue'
+import DeckCover from './DeckCover.vue'
 
 const roomCode = ref('')
 const router = useRouter()
@@ -18,6 +18,7 @@ function visibleDecks(): Record<string, SavedL12Deck> {
 const customDecks = ref(visibleDecks())
 watch(() => [platformState.account?.id, platformState.token], () => { customDecks.value = visibleDecks() }, { flush: 'sync' })
 const catalog = ref<DeckCard[]>([])
+const officialDecks = ref<OfficialL12PresetDeck[]>([])
 const byId = computed(() => new Map(catalog.value.map(card => [card.id, card])))
 const view = ref<'home' | 'room' | 'cards' | 'replay'>('home')
 const me = computed(() => l12State.room?.players.find(player => player.playerIndex === l12State.room?.yourPlayerIndex))
@@ -25,8 +26,12 @@ const me = computed(() => l12State.room?.players.find(player => player.playerInd
 onMounted(async () => {
   const account = platformState.account?.id, token = platformState.token
   try {
-    const [decks] = await Promise.all([ensureOfficialPrebuiltDecks(), loadDeckCatalog().then(cards => { catalog.value = cards })])
-    if (account === platformState.account?.id && token === platformState.token) customDecks.value = decks
+    const [decks, , presets] = await Promise.all([ensureOfficialPrebuiltDecks(),
+      loadDeckCatalog().then(cards => { catalog.value = cards }), loadOfficialPresetDecks()])
+    if (account === platformState.account?.id && token === platformState.token) {
+      customDecks.value = decks
+      officialDecks.value = presets
+    }
   } catch (error) {
     if (account === platformState.account?.id && token === platformState.token && deckErrorBelongsToCurrentAccount(error))
       l12State.notice = error instanceof Error ? error.message : '牌库暂不可读取'
@@ -40,6 +45,10 @@ async function ensureConnected() {
 }
 async function onCreate() { try { if (await ensureConnected()) { createRoom(); view.value = 'room' } } catch { } }
 async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode.value); view.value = 'room' } } catch { } }
+function officialSourceCards(deck: { name: string; masterId: string }) {
+  return officialDecks.value.find(candidate => candidate.masterId === deck.masterId && candidate.name === deck.name)?.cardIds
+    ?? officialDecks.value.find(candidate => candidate.masterId === deck.masterId)?.cardIds
+}
 </script>
 
 <template>
@@ -81,14 +90,16 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
               <button v-for="deck in l12State.room.decks" :key="deck.index"
                 :class="{ selected: me?.deckIndex === deck.index }" :disabled="me?.ready"
                 @click="selectDeck(deck.index)">
-                <DeckProfile compact :master-id="deck.masterId" :master-name="deck.masterName" :name="deck.name"
-                  context="预组" :selected="me?.deckIndex === deck.index"/>
+                <DeckCover variant="compact" :master-id="deck.masterId" :master-name="deck.masterName" :faction="deck.faction"
+                  :name="deck.name" :catalog="catalog" :source-card-ids="officialSourceCards(deck)"
+                  context="官方预组" :selected="me?.deckIndex === deck.index"/>
               </button>
               <button v-for="deck in customDecks" :key="`custom-${deck.name}`"
                 :class="{ selected: me?.customDeck && me?.deckName === deck.name }" :disabled="me?.ready"
                 @click="selectCustomDeck(deck)">
-                <DeckProfile compact :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh"
-                  :name="deck.name" context="自定义" :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"
+                <DeckCover variant="compact" :master-id="deck.masterId" :master-name="byId.get(deck.masterId)?.nameZh"
+                  :name="deck.name" :catalog="catalog" :source-card-ids="deck.cardIds" context="自定义"
+                  :meta="`${deckCountSummary(deck.cardIds, byId).label} 张`"
                   :selected="me?.customDeck && me?.deckName === deck.name"/>
               </button>
             </div>
@@ -142,3 +153,11 @@ async function onJoin() { try { if (await ensureConnected()) { joinRoom(roomCode
     </aside>
   </div>
 </template>
+
+<style scoped>
+.deck-picker>div{grid-template-columns:repeat(auto-fit,minmax(min(180px,100%),1fr));padding-top:4px}
+.deck-picker>div>button{min-width:0;overflow:visible;border-radius:0;transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.deck-picker>div>button :deep(.deck-cover){border:0}
+@media(hover:hover) and (pointer:fine){.deck-picker>div>button:not(:disabled):hover,.deck-picker>div>button:not(:disabled):focus-visible{transform:translateY(-4px)}.deck-picker>div>button:hover :deep(.deck-cover),.deck-picker>div>button:focus-visible :deep(.deck-cover){transform:none}}
+@media(prefers-reduced-motion:reduce){.deck-picker>div>button{transition:none!important}.deck-picker>div>button:hover,.deck-picker>div>button:focus-visible{transform:none}}
+</style>

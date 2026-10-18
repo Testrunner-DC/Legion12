@@ -56,16 +56,28 @@ public sealed class DeckSummaryProjectionTests
                 Permission: L12Authorization.Key(L12Permission.AdminOperationsWrite), Reason: "CQ1 synthetic",
                 RequestMethod: "PUT", RequestPath: "/api/admin/operations/config"));
         fixture.Observe();
-        var page = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog)!;
+        var page = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog, includeCover: true)!;
         var item = Assert.Single(page.Items);
         Assert.False(item.Legal);
         Assert.False(L12DeckValidator.TryValidatePreset(fixture.Catalog, source, out var error,
             fixture.Store.EffectiveOperationsPolicy().CardRestrictions));
         Assert.Equal(error, item.LegalityReason);
         Assert.Equal(1, page.Facets.Illegal);
+        Assert.Equal(L12DeckCoverSelection.SelectCardIds(fixture.Catalog,
+            L12DeckValidator.CountCards(source.CardIds)), item.CoverCardIds);
+        Assert.NotNull(item.CoverCardIds);
+        Assert.InRange(item.CoverCardIds.Count, 0, 3);
+        Assert.Equal(item.CoverCardIds.Count, item.CoverCardIds.Distinct(StringComparer.OrdinalIgnoreCase).Count());
         var serialized = JsonSerializer.Serialize(page, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         foreach (var key in new[] { "cardIds", "moraleIds", "specialIds", "benchIds", "alternateArtCopies", "alternateArtSelections",
             "payloadHash", "code", "environment" }) Assert.DoesNotContain('"' + key + '"', serialized);
+        var legacy = fixture.Store.PrivateDeckSummaries(fixture.Owner, fixture.Catalog)!;
+        Assert.Null(Assert.Single(legacy.Items).CoverCardIds);
+        Assert.Equal(page.Generation, legacy.Generation);
+        Assert.Equal(page.PolicyVersion, legacy.PolicyVersion);
+        Assert.Equal(page.CatalogVersion, legacy.CatalogVersion);
+        Assert.Equal(item with { CoverCardIds = null }, Assert.Single(legacy.Items));
+        Assert.DoesNotContain("\"coverCardIds\"", JsonSerializer.Serialize(legacy, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         Assert.Empty(fixture.Expansions);
         fixture.Complete();
     }

@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
-const output = path.resolve(root, '../artifacts/deck-library-environment')
+const output = process.env.L12_DECK_ENVIRONMENT_OUTPUT || 'D:/GPT/Legion12/artifacts/deck-cover-redesign-20261019/main-integration/environment'
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
 
@@ -14,7 +14,9 @@ import {createApp,h} from 'vue'
 import {createRouter,createWebHistory,RouterView} from 'vue-router'
 import Library from '/src/l12/site/DeckLibraryPage.vue'
 import {deckEnvironmentFromEvidence} from '/src/l12/site/deckEnvironment.ts'
-import {platformState,publicDeckApi} from '/src/l12/platform.ts'
+import {platformState,deckLibraryApi} from '/src/l12/platform.ts'
+import {loadDeckCatalog} from '/src/l12/decks.ts'
+import {publicSummaryFixture} from '/scripts/deck-summary-browser-fixture.mjs'
 import '/src/style.css'
 
 const products={
@@ -53,7 +55,7 @@ rows.push(makeEntry('QA 2.0 勘误仍属旧环境',['S02-05M1'],37,890))
 rows.push(makeEntry('QA 环境待定 未知卡',['QA-UNKNOWN'],44,870))
 rows.push(makeEntry('QA 环境待定 空牌库',[],45,860))
 platformState.account=null
-publicDeckApi.list=async()=>rows
+deckLibraryApi.summaries=publicSummaryFixture(rows,await loadDeckCatalog())
 const router=createRouter({history:createWebHistory(),routes:[
  {path:'/decks',name:'decks',component:Library},
  {path:'/decks/:deckId',name:'public-deck-detail',component:{render:()=>h('main','detail')}},
@@ -66,7 +68,7 @@ await router.isReady()
 const server = await createServer({
   root,
   configLoader: 'runner',
-  cacheDir: path.join(root, '.tmp', 'vite-deck-library-environment'),
+  cacheDir: 'D:/GPT/Legion12/cache/primary/deck-cover-integration/vite-environment',
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'deck-library-environment-fixture',
@@ -96,7 +98,7 @@ async function prepare(page) {
 }
 
 async function waitForLibrary(page) {
-  await page.getByRole('heading', { name:'热门卡组', exact:true }).waitFor()
+  await page.getByRole('heading', { name:'热门牌库', exact:true }).waitFor()
   await page.getByPlaceholder('搜索牌库名称、作者或主宰').fill('QA')
   await page.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length === 30)
 }
@@ -136,7 +138,7 @@ try {
   const restored = await browser.newPage({ viewport:{ width:1440,height:900 } })
   await prepare(restored)
   await restored.goto(`http://127.0.0.1:${port}/decks?q=QA&environment=2.5`)
-  await restored.getByRole('heading', { name:'热门卡组', exact:true }).waitFor()
+  await restored.getByRole('heading', { name:'热门牌库', exact:true }).waitFor()
   await restored.waitForFunction(() => document.querySelectorAll('.plaza-grid>article').length === 6)
   assert.equal(await restored.getByLabel('按环境筛选').inputValue(), '2.5', '刷新后应恢复环境筛选')
   assert.deepEqual(await restored.locator('.plaza-grid .deck-environment-badge').allTextContents(), Array(6).fill('环境 2.5'))
@@ -153,8 +155,9 @@ try {
     await view.evaluate(() => document.querySelectorAll('.hot-deck-track').forEach(track => { track.style.animation='none'; track.style.transform='none' }))
     const overlaps = await view.evaluate(() => [...document.querySelectorAll('.plaza-summary,.hot-deck-loop>button')].slice(0,12).map(card => {
       const badge=card.querySelector('.deck-environment-badge')?.getBoundingClientRect()
-      const title=card.querySelector('.deck-profile__copy b')?.getBoundingClientRect()
-      return Boolean(badge && title && badge.left < title.right && badge.right > title.left && badge.top < title.bottom && badge.bottom > title.top)
+      const title=card.querySelector('.deck-cover__copy b')?.getBoundingClientRect()
+      if (!badge || !title) throw Error('封面标题或环境标签缺失，不能跳过重叠核查')
+      return badge.left < title.right && badge.right > title.left && badge.top < title.bottom && badge.bottom > title.top
     }))
     assert.equal(overlaps.some(Boolean), false, `${width}x${height} 环境标识不得遮挡标题`)
     await assertNoOverflow(view, `${width}x${height}`)
