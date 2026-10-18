@@ -887,6 +887,19 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 command = selected.Command,
             });
             var confirmation = await confirmationTask;
+            if (ReadString(confirmation.Payload, "type") != "gameState")
+            {
+                // Synthetic fixture context only. Do not allocate a second full
+                // state string on the successful setup path or hide a rejection.
+                var inputState = latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state");
+                var handContext = selected.Type == "playCard"
+                    ? PlayerView(inputState, selected.PlayerIndex).GetProperty("hand").GetRawText()
+                    : "<not-playCard>";
+                Assert.Fail($"large-state preparation rejected command {acceptedCommands} ({selected.Type}) " +
+                    $"at revision {revisionBefore}; command={JsonSerializer.Serialize(selected.Command, Wire)}; " +
+                    $"phase={ReadString(inputState, "phase")}; prompts={inputState.GetProperty("prompts").GetRawText()}; " +
+                    $"hand={handContext}; reply={confirmation.Payload.GetRawText()}");
+            }
             Assert.Equal("gameState", ReadString(confirmation.Payload, "type"));
             Assert.True(IsAdvancedGameState(confirmation.Payload, revisionBefore),
                 $"accepted {selected.Type} did not advance the authoritative revision");
