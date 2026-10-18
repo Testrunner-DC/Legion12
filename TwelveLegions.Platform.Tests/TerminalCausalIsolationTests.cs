@@ -813,13 +813,26 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 minChoose = scenario.ChoiceCount,
                 maxChoose = scenario.ChoiceCount,
                 activationId = "activation-contract",
+                sourceInstanceId = "source-instance-contract",
+                sourceCardId = "source-card-contract",
+                step = 4,
+                createdRevision = 99L,
+                controller = 0,
                 data = new { placementMode = scenario.Mode, action = "contract-placement" },
             }, Wire));
 
             var command = BuildLargePromptCommand(document.RootElement);
             Assert.Equal("resolvePrompt", command["type"]);
             Assert.Equal($"prompt-{scenario.Mode}", command["promptId"]);
-            Assert.True(command.ContainsKey("activationId"));
+            Assert.Equal("activation-contract",
+                Assert.IsType<JsonElement>(command["activationId"]).GetString());
+            Assert.Equal("source-instance-contract",
+                Assert.IsType<JsonElement>(command["sourceInstanceId"]).GetString());
+            Assert.Equal("source-card-contract",
+                Assert.IsType<JsonElement>(command["sourceCardId"]).GetString());
+            Assert.Equal(4, Assert.IsType<JsonElement>(command["step"]).GetInt32());
+            Assert.Equal(99L, Assert.IsType<JsonElement>(command["createdRevision"]).GetInt64());
+            Assert.Equal(0, Assert.IsType<JsonElement>(command["controller"]).GetInt32());
             if (scenario.Destination is not null)
             {
                 Assert.Equal(choices, Assert.IsType<string[]>(command["cardInstanceIds"]));
@@ -850,6 +863,183 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             () => BuildLargePromptCommand(unknown.RootElement));
         Assert.Contains("future-placement", rejection.Message, StringComparison.Ordinal);
         Assert.Contains("future-action", rejection.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LargeStateSelectorChoosesAProductLegalGraveFactionCombination()
+    {
+        var owner = new L12PlayerState
+        {
+            PlayerIndex = 0,
+            Name = "selector-owner",
+            DeckName = "selector-deck",
+            Faction = "asgard",
+            MasterId = "selector-master",
+            MasterName = "selector-master",
+        };
+        var ordinaryA = new L12CardInstance
+        {
+            InstanceId = "ordinary-a", CardId = "S01-0301", Name = "ordinary-a",
+            CardType = "legion", Faction = "asgard",
+        };
+        var ordinaryB = new L12CardInstance
+        {
+            InstanceId = "ordinary-b", CardId = "S01-0302", Name = "ordinary-b",
+            CardType = "legion", Faction = "asgard",
+        };
+        var warrior = new L12CardInstance
+        {
+            InstanceId = "warrior", CardId = "ST03-08", Name = "warrior",
+            CardType = "legion", Faction = "asgard",
+        };
+        owner.Graveyard.AddRange([ordinaryA, ordinaryB, warrior]);
+        var legality = typeof(L12StructuredCardRules).GetMethod(
+            "CanPotentiallyRepresentGraveFactionCount", BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.NotNull(legality);
+        bool ProductAccepts(params L12CardInstance[] cards) =>
+            Assert.IsType<bool>(legality.Invoke(null, [owner, cards, "asgard", 3, false]));
+        Assert.False(ProductAccepts(ordinaryA));
+        Assert.True(ProductAccepts(warrior));
+
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            promptId = "prompt-grave-faction",
+            playerIndex = 0,
+            validChoices = new[] { ordinaryA.InstanceId, ordinaryB.InstanceId, warrior.InstanceId },
+            minChoose = 1,
+            maxChoose = 3,
+            data = new Dictionary<string, string>
+            {
+                ["action"] = "grave-faction-proof",
+                ["selectionConstraint"] = "grave-faction-exact",
+                ["factionConstraint"] = "asgard",
+                ["representedCount"] = "3",
+                ["legionCardsOnly"] = "false",
+                [$"{ordinaryA.InstanceId}:cardId"] = ordinaryA.CardId,
+                [$"{ordinaryA.InstanceId}:cardType"] = ordinaryA.CardType,
+                [$"{ordinaryA.InstanceId}:zone"] = "墓地",
+                [$"{ordinaryB.InstanceId}:cardId"] = ordinaryB.CardId,
+                [$"{ordinaryB.InstanceId}:cardType"] = ordinaryB.CardType,
+                [$"{ordinaryB.InstanceId}:zone"] = "墓地",
+                [$"{warrior.InstanceId}:cardId"] = warrior.CardId,
+                [$"{warrior.InstanceId}:cardType"] = warrior.CardType,
+                [$"{warrior.InstanceId}:zone"] = "墓地",
+            },
+        }, Wire));
+
+        var command = BuildLargePromptCommand(document.RootElement);
+        var selectedIds = Assert.IsType<string[]>(command["cardInstanceIds"]);
+        var selectedCards = selectedIds.Select(id => owner.Graveyard.Single(card => card.InstanceId == id)).ToArray();
+        Assert.True(ProductAccepts(selectedCards),
+            $"selector emitted product-illegal grave combination: {string.Join(',', selectedIds)}");
+        Assert.Equal(new[] { warrior.InstanceId }, selectedIds);
+    }
+
+    [Fact]
+    public void LargeStateSelectorHonorsAuthoritativeCombinationMetadataAndFailsClosed()
+    {
+        Assert.Equal(new[] { "same-a", "unique" }, LargePromptSelectionForTest(
+            "prompt-distinct", ["same-a", "same-b", "unique"], 2, 2,
+            new Dictionary<string, string>
+            {
+                ["action"] = "distinct-proof",
+                ["selectionConstraint"] = "distinct-card-names",
+                ["same-a:name"] = "same",
+                ["same-b:name"] = "same",
+                ["unique:name"] = "unique",
+            }));
+
+        Assert.Equal(new[] { "cost-two-a", "cost-one" }, LargePromptSelectionForTest(
+            "prompt-hijikata", ["cost-two-a", "cost-two-b", "cost-one"], 2, 2,
+            LargeFieldConstraintData("hijikata-entry-targets",
+                ("cost-two-a", 2), ("cost-two-b", 2), ("cost-one", 1))));
+
+        var mixedData = LargeFieldConstraintData("one-resource-two-field-legions",
+            ("field-a", 2), ("field-b", 1));
+        mixedData["resource-a:resourceType"] = "morale";
+        mixedData["resource-a:activityState"] = "active";
+        mixedData["resource-b:resourceType"] = "temporary-morale";
+        mixedData["resource-b:activityState"] = "active";
+        Assert.Equal(new[] { "resource-a", "field-a", "field-b" }, LargePromptSelectionForTest(
+            "prompt-one-resource", ["resource-a", "resource-b", "field-a", "field-b"], 3, 3,
+            mixedData));
+
+        mixedData["selectionConstraint"] = "zero-resource-two-field-legions";
+        Assert.Equal(new[] { "field-a", "field-b" }, LargePromptSelectionForTest(
+            "prompt-zero-resource", ["resource-a", "field-a", "field-b"], 2, 2, mixedData));
+
+        Assert.Equal(new[] { "prefiltered" }, LargePromptSelectionForTest(
+            "prompt-taiyangcheng", ["prefiltered"], 1, 1,
+            new Dictionary<string, string>
+            {
+                ["action"] = "horus-entry",
+                ["selectionConstraint"] = "taiyangcheng",
+            }));
+
+        var unknown = Assert.Throws<Xunit.Sdk.XunitException>(() => LargePromptSelectionForTest(
+            "prompt-future-constraint", ["choice-a"], 1, 1,
+            new Dictionary<string, string>
+            {
+                ["action"] = "future-combination-action",
+                ["selectionConstraint"] = "future-combination",
+            }));
+        Assert.Contains("future-combination", unknown.Message, StringComparison.Ordinal);
+        Assert.Contains("future-combination-action", unknown.Message, StringComparison.Ordinal);
+        Assert.Contains("prompt-future-constraint", unknown.Message, StringComparison.Ordinal);
+        Assert.Contains("min=1", unknown.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LargeStateSelectorKeepsZeroChoiceSkipAndCancelSemanticsSeparate()
+    {
+        var controls = new Dictionary<string, string>
+        {
+            ["action"] = "control-proof",
+            ["allowCancel"] = "true",
+            ["skip"] = "取消整次发动",
+            ["cancel"] = "取消打出",
+        };
+        Assert.Empty(LargePromptSelectionForTest(
+            "prompt-zero", ["skip", "cancel", "material"], 0, 2, controls, "activation-zero"));
+        Assert.Equal(new[] { "material-a", "material-b" }, LargePromptSelectionForTest(
+            "prompt-material", ["skip", "cancel", "material-a", "material-b"], 2, 2,
+            controls, "activation-material"));
+        Assert.Equal(new[] { "skip" }, LargePromptSelectionForTest(
+            "prompt-skip", ["skip", "material"], 2, 2, controls, "activation-skip"));
+        Assert.Equal(new[] { "cancel" }, LargePromptSelectionForTest(
+            "prompt-cancel", ["cancel", "material"], 2, 2, controls));
+
+        var movePayment = new Dictionary<string, string>
+        {
+            ["action"] = "move-payment-proof",
+            ["choiceMode"] = "resource-payment",
+            ["cardInstanceId"] = "moving-legion",
+        };
+        Assert.Equal(new[] { "morale" }, LargePromptSelectionForTest(
+            "prompt-move-payment", ["moving-legion", "morale"], 1, 1, movePayment));
+    }
+
+    [Fact]
+    public void LargeStateSelectorExcludesDefaultDeckLegionMatchingVisibleFlippedLibraryTop()
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            spendableResourceCount = 8,
+            // Both cards are in the default 高天原 S1 preset. libraryTop is exposed only while
+            // S02-DS01 is active, when the product forbids this matching-profession hand play.
+            libraryTop = new { cardId = "S01-0410", profession = "弓手" },
+            hand = new object[]
+            {
+                new { instanceId = "matching", cardId = "S01-0416", cardType = "legion",
+                    profession = "弓手", playCost = 1, playBlockedReason = (string?)null },
+                new { instanceId = "other", cardId = "S01-0415", cardType = "legion",
+                    profession = "刺客", playCost = 0, playBlockedReason = (string?)null },
+            },
+        }, Wire));
+        var own = document.RootElement;
+        var hand = own.GetProperty("hand").EnumerateArray().ToArray();
+        Assert.False(IsLargeStateLegionCandidate(own, hand[0], 8));
+        Assert.True(IsLargeStateLegionCandidate(own, hand[1], 0));
     }
 
     private static async Task<GrownLargeRoom> GrowLargeFriendlyRoomAsync(
@@ -1053,17 +1243,8 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                 if (slot >= 0)
                 {
                     var budget = ReadInt32(own, "spendableResourceCount");
-                    var candidates = own.GetProperty("hand").EnumerateArray().Where(card =>
-                        string.Equals(ReadString(card, "cardType"), "legion", StringComparison.OrdinalIgnoreCase)
-                        && card.TryGetProperty("instanceId", out var instance)
-                        && instance.ValueKind == JsonValueKind.String
-                        && card.TryGetProperty("playCost", out var cost)
-                        && cost.ValueKind == JsonValueKind.Number
-                        && cost.TryGetInt32(out var playCost)
-                        && playCost >= 0 && playCost <= budget
-                        && (!card.TryGetProperty("playBlockedReason", out var blocked)
-                            || blocked.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
-                            || string.IsNullOrWhiteSpace(blocked.GetString()))).ToArray();
+                    var candidates = own.GetProperty("hand").EnumerateArray()
+                        .Where(card => IsLargeStateLegionCandidate(own, card, budget)).ToArray();
                     if (candidates.Length > 0)
                     {
                         var card = candidates[selector.Next(candidates.Length)];
@@ -1098,6 +1279,29 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             "no legal command selected from authoritative snapshots: " + JsonSerializer.Serialize(states));
     }
 
+    private static bool IsLargeStateLegionCandidate(JsonElement own, JsonElement card, int budget)
+    {
+        if (!string.Equals(ReadString(card, "cardType"), "legion", StringComparison.OrdinalIgnoreCase)
+            || !card.TryGetProperty("instanceId", out var instance)
+            || instance.ValueKind != JsonValueKind.String
+            || !card.TryGetProperty("playCost", out var cost)
+            || cost.ValueKind != JsonValueKind.Number
+            || !cost.TryGetInt32(out var playCost)
+            || playCost < 0 || playCost > budget
+            || (card.TryGetProperty("playBlockedReason", out var blocked)
+                && blocked.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
+                && !string.IsNullOrWhiteSpace(blocked.GetString())))
+            return false;
+
+        // The server exposes libraryTop only for S02-DS01. Its dynamic same-profession
+        // restriction is not folded into the static hand PlayBlockedReason snapshot.
+        return !own.TryGetProperty("libraryTop", out var libraryTop)
+            || libraryTop.ValueKind != JsonValueKind.Object
+            || string.IsNullOrWhiteSpace(ReadString(card, "profession"))
+            || !string.Equals(ReadString(card, "profession"), ReadString(libraryTop, "profession"),
+                StringComparison.Ordinal);
+    }
+
     private static IReadOnlyDictionary<string, object?> BuildLargePromptCommand(JsonElement prompt)
     {
         var validChoices = prompt.GetProperty("validChoices").EnumerateArray()
@@ -1110,10 +1314,12 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         Assert.InRange(minimum, 0, validChoices.Length);
         Assert.InRange(maximum, minimum, validChoices.Length);
 
+        var data = default(JsonElement);
         string? placementMode = null;
         string? placementAction = null;
-        if (prompt.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+        if (prompt.TryGetProperty("data", out var promptData) && promptData.ValueKind == JsonValueKind.Object)
         {
+            data = promptData;
             placementAction = ReadString(data, "action");
             if (data.TryGetProperty("placementMode", out var placement)
                 && placement.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
@@ -1125,7 +1331,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             }
         }
 
-        var selected = validChoices.Take(minimum).ToArray();
+        var selected = SelectLargePromptChoices(prompt, data, validChoices, minimum, maximum);
         var command = new Dictionary<string, object?>
         {
             ["type"] = "resolvePrompt",
@@ -1166,6 +1372,181 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         CopyPromptBinding(prompt, command, "createdRevision");
         CopyPromptBinding(prompt, command, "controller");
         return command;
+    }
+
+    private static string[] SelectLargePromptChoices(JsonElement prompt, JsonElement data,
+        string[] validChoices, int minimum, int maximum)
+    {
+        var constraint = data.ValueKind == JsonValueKind.Object
+            ? ReadString(data, "selectionConstraint") : null;
+        var action = data.ValueKind == JsonValueKind.Object ? ReadString(data, "action") : null;
+        var promptId = ReadString(prompt, "promptId") ?? "<missing>";
+        var context = $"promptId='{promptId}', action='{action ?? "<missing>"}', " +
+            $"constraint='{constraint ?? "<none>"}', min={minimum}, max={maximum}, " +
+            $"choices=[{string.Join(',', validChoices.Take(12))}]";
+        if (!string.IsNullOrWhiteSpace(constraint)
+            && constraint is not ("distinct-card-names" or "grave-faction-exact"
+                or "hijikata-entry-targets" or "one-resource-two-field-legions"
+                or "zero-resource-two-field-legions" or "taiyangcheng"))
+            throw new Xunit.Sdk.XunitException(
+                $"large-state legal selector reached unsupported authoritative selectionConstraint; {context}");
+
+        var hasBoundSkip = prompt.TryGetProperty("activationId", out var activation)
+            && activation.ValueKind == JsonValueKind.String
+            && !string.IsNullOrWhiteSpace(activation.GetString())
+            && validChoices.Contains("skip", StringComparer.OrdinalIgnoreCase);
+        var hasExplicitCancel = data.ValueKind == JsonValueKind.Object
+            && string.Equals(ReadString(data, "allowCancel"), "true", StringComparison.Ordinal)
+            && validChoices.Contains("cancel", StringComparer.OrdinalIgnoreCase);
+        if (minimum == 0) return [];
+
+        var resourcePayment = data.ValueKind == JsonValueKind.Object
+            && string.Equals(ReadString(data, "choiceMode"), "resource-payment", StringComparison.Ordinal);
+        var excludedSource = resourcePayment ? ReadString(data, "cardInstanceId") : null;
+        var materialChoices = validChoices
+            .Where(choice => !(hasBoundSkip && choice.Equals("skip", StringComparison.OrdinalIgnoreCase)))
+            .Where(choice => !(hasExplicitCancel && choice.Equals("cancel", StringComparison.OrdinalIgnoreCase)))
+            // Restored move-payment prompts may still expose the moving legion itself.
+            .Where(choice => string.IsNullOrWhiteSpace(excludedSource)
+                || !choice.Equals(excludedSource, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (materialChoices.Length < minimum)
+        {
+            if (hasBoundSkip) return ["skip"];
+            if (hasExplicitCancel) return ["cancel"];
+            throw new Xunit.Sdk.XunitException(
+                $"large-state legal selector has fewer material choices than required; {context}");
+        }
+
+        if (string.IsNullOrWhiteSpace(constraint) || constraint == "taiyangcheng")
+            return materialChoices.Take(minimum).ToArray();
+
+        return FindLargePromptCombination(materialChoices, minimum,
+            selected => LargePromptCombinationIsAccepted(constraint, data, selected), context);
+    }
+
+    private static string[] FindLargePromptCombination(string[] candidates, int count,
+        Func<IReadOnlyList<string>, bool> accepts, string context)
+    {
+        const int maximumChecks = 4096;
+        var buffer = new string[count];
+        string[]? result = null;
+        var checks = 0;
+        bool Search(int start, int depth)
+        {
+            if (depth == count)
+            {
+                if (++checks > maximumChecks)
+                    throw new Xunit.Sdk.XunitException(
+                        $"large-state legal selector exceeded {maximumChecks} bounded combination checks; {context}");
+                if (!accepts(buffer)) return false;
+                result = buffer.ToArray();
+                return true;
+            }
+            var remaining = count - depth;
+            for (var index = start; index <= candidates.Length - remaining; index++)
+            {
+                buffer[depth] = candidates[index];
+                if (Search(index + 1, depth + 1)) return true;
+            }
+            return false;
+        }
+
+        if (Search(0, 0)) return result!;
+        throw new Xunit.Sdk.XunitException(
+            $"large-state legal selector found no product-legal minimum-size combination; {context}");
+    }
+
+    private static bool LargePromptCombinationIsAccepted(string constraint, JsonElement data,
+        IReadOnlyList<string> selected)
+    {
+        string? CardData(string id, string property) => ReadString(data, $"{id}:{property}");
+        bool IsFieldLegion(string id) =>
+            string.Equals(CardData(id, "zone"), "战场", StringComparison.Ordinal)
+            && string.Equals(CardData(id, "cardType"), "legion", StringComparison.OrdinalIgnoreCase);
+        bool IsActiveResource(string id) =>
+            !string.IsNullOrWhiteSpace(CardData(id, "resourceType"))
+            && string.Equals(CardData(id, "activityState"), "active", StringComparison.Ordinal);
+
+        switch (constraint)
+        {
+            case "distinct-card-names":
+            {
+                var names = selected.Select(id => CardData(id, "name") ?? ReadString(data, id)).ToArray();
+                return names.All(name => !string.IsNullOrWhiteSpace(name))
+                    && names.Distinct(StringComparer.Ordinal).Count() == names.Length;
+            }
+            case "grave-faction-exact":
+            {
+                if (!int.TryParse(ReadString(data, "representedCount"), out var represented)
+                    || represented <= 0 || selected.Count == 0 || selected.Count > represented)
+                    return false;
+                var faction = ReadString(data, "factionConstraint") ?? string.Empty;
+                var legionOnly = string.Equals(ReadString(data, "legionCardsOnly"), "true",
+                    StringComparison.Ordinal);
+                if (selected.Any(id => !string.Equals(CardData(id, "zone"), "墓地", StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(CardData(id, "cardId"))
+                    || (legionOnly && !string.Equals(CardData(id, "cardType"), "legion",
+                        StringComparison.OrdinalIgnoreCase))))
+                    return false;
+                return selected.Sum(id =>
+                    string.Equals(CardData(id, "cardId"), "ST03-08", StringComparison.OrdinalIgnoreCase)
+                    && (string.IsNullOrWhiteSpace(faction)
+                        || faction.Equals("asgard", StringComparison.OrdinalIgnoreCase)) ? 3 : 1) >= represented;
+            }
+            case "hijikata-entry-targets":
+            {
+                if (selected.Count != 2) return true;
+                var costs = selected.Select(id => int.TryParse(CardData(id, "cost"), out var cost)
+                    ? cost : int.MaxValue).ToArray();
+                return selected.All(IsFieldLegion) && costs.All(cost => cost <= 2)
+                    && costs.Any(cost => cost <= 1);
+            }
+            case "one-resource-two-field-legions":
+            case "zero-resource-two-field-legions":
+            {
+                var requiredResources = constraint == "one-resource-two-field-legions" ? 1 : 0;
+                return selected.Count(IsActiveResource) == requiredResources
+                    && selected.Count(IsFieldLegion) == 2;
+            }
+            default:
+                return false;
+        }
+    }
+
+    private static string[] LargePromptSelectionForTest(string promptId, string[] validChoices,
+        int minimum, int maximum, Dictionary<string, string> data, string? activationId = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["promptId"] = promptId,
+            ["playerIndex"] = 0,
+            ["validChoices"] = validChoices,
+            ["minChoose"] = minimum,
+            ["maxChoose"] = maximum,
+            ["data"] = data,
+        };
+        if (!string.IsNullOrWhiteSpace(activationId)) payload["activationId"] = activationId;
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(payload, Wire));
+        var command = BuildLargePromptCommand(document.RootElement);
+        return Assert.IsType<string[]>(command["cardInstanceIds"]);
+    }
+
+    private static Dictionary<string, string> LargeFieldConstraintData(string constraint,
+        params (string Id, int Cost)[] cards)
+    {
+        var data = new Dictionary<string, string>
+        {
+            ["action"] = "field-constraint-proof",
+            ["selectionConstraint"] = constraint,
+        };
+        foreach (var card in cards)
+        {
+            data[$"{card.Id}:cardType"] = "legion";
+            data[$"{card.Id}:zone"] = "战场";
+            data[$"{card.Id}:cost"] = card.Cost.ToString();
+        }
+        return data;
     }
 
     private static JsonElement PlayerView(JsonElement state, int playerIndex) =>
