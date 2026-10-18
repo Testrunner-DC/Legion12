@@ -18,28 +18,77 @@ public sealed class CatapultSummonTurnTargetPermissionTests
 
     [Theory]
     [MemberData(nameof(PaidTargets))]
-    public void PaidRangeAllowsOnlyPrintedTargetsOnTheSummonTurn(int owner, bool restore, string target)
+    public void PaidRangeDoesNotRemoveTheSummonTurnAttackRestriction(int owner, bool restore, string target)
     {
         var game = Arrange(owner, "S01-0003");
-        var source = Source(game, owner);
         RejectUnchanged(game, owner, new("attack", "source", Target: new("master")));
         RejectUnchanged(game, owner, new("attack", "source", Target: new("legion", "back")));
         Pay(ref game, owner, restore);
-        source = Source(game, owner);
+        var source = Source(game, owner);
         Assert.False(source.HasCharge);
+        Assert.Equal(game.State.Round, source.SummonRound);
         Assert.Equal(2, game.State.Players[owner].Morale.Count(card => card.Tapped));
-        var targets = game.SnapshotFor(owner).LegalAttackTargets.GetValueOrDefault("source") ?? [];
-        Assert.Contains("master", targets); Assert.Contains("back", targets);
-        Assert.DoesNotContain("front", targets);
+        Assert.Equal(game.State.TurnSerial, source.CanAttackBackAndMasterUntilTurn);
+        Assert.Equal(game.State.TurnSerial, source.CanAttackBackUntilTurn);
+        Assert.False(game.SnapshotFor(owner).LegalAttackTargets.ContainsKey("source"));
+        RejectUnchanged(game, owner, new("attack", "source", Target: new(target == "master" ? "master" : "legion",
+            target == "master" ? null : "back")), "刚登场的军团不能进攻");
         RejectUnchanged(game, owner, new("attack", "source", Target: new("legion", "front")));
+        Assert.False(source.Tapped); Assert.Equal(0, source.AttacksThisTurn);
+        Assert.Empty(game.State.PendingPrompts); Assert.Empty(game.State.EffectStack);
+        Assert.Null(game.State.PendingDefense); Assert.Null(game.State.ResponseWindow);
+    }
+
+    [Theory]
+    [MemberData(nameof(PaidTargets))]
+    public void PaidRangeStillAllowsBothPrintedTargetsWhenSummonRestrictionDoesNotApply(int owner, bool restore, string target)
+    {
+        var game = Arrange(owner, "S01-0003");
+        Source(game, owner).SummonRound = game.State.Round - 1;
+        Pay(ref game, owner, restore);
+        var targets = game.SnapshotFor(owner).LegalAttackTargets.GetValueOrDefault("source") ?? [];
+        Assert.Contains("master", targets); Assert.Contains("back", targets); Assert.Contains("front", targets);
         Send(ref game, owner, new("attack", "source", Target: new(target == "master" ? "master" : "legion",
             target == "master" ? null : "back")), restore);
-        source = Source(game, owner);
+        var source = Source(game, owner);
         Assert.True(source.Tapped); Assert.Equal(1, source.AttacksThisTurn); Assert.False(source.HasCharge);
         RejectUnchanged(game, owner, new("attack", "source", Target: new("master")));
         SettleCombat(ref game, restore);
         Assert.Null(game.State.PendingDefense); Assert.Empty(game.State.EffectStack);
         Assert.Empty(game.State.PendingPrompts); Assert.Null(game.State.ResponseWindow);
+    }
+
+    [Theory]
+    [MemberData(nameof(PaidTargets))]
+    public void IndependentlyGrantedChargeRemainsEffectiveAfterRangePayment(int owner, bool restore, string target)
+    {
+        var game = Arrange(owner, "S01-0003");
+        Source(game, owner).HasCharge = true;
+        Pay(ref game, owner, restore);
+        Assert.True(Source(game, owner).HasCharge);
+        Assert.Contains(target == "master" ? "master" : "back", game.SnapshotFor(owner).LegalAttackTargets["source"]);
+        Send(ref game, owner, new("attack", "source", Target: new(target == "master" ? "master" : "legion",
+            target == "master" ? null : "back")), restore);
+        SettleCombat(ref game, restore);
+    }
+
+    [Theory]
+    [MemberData(nameof(PaidTargets))]
+    public void IndependentTargetSpecificSummonPermissionIsNotBroadenedByRangePayment(int owner, bool restore, string target)
+    {
+        var game = Arrange(owner, "S01-0003");
+        var source = Source(game, owner);
+        if (target == "master") source.CanAttackMasterOnSummonUntilTurn = game.State.TurnSerial;
+        else source.CanAttackLegionsOnSummonUntilTurn = game.State.TurnSerial;
+        Pay(ref game, owner, restore);
+        Assert.False(Source(game, owner).HasCharge);
+        var targets = game.SnapshotFor(owner).LegalAttackTargets["source"];
+        Assert.Equal(target == "master", targets.Contains("master"));
+        Assert.Equal(target != "master", targets.Contains("back"));
+        RejectUnchanged(game, owner, new("attack", "source", Target: target == "master" ? new("legion", "back") : new("master")),
+            "刚登场的军团不能进攻");
+        Send(ref game, owner, new("attack", "source", Target: target == "master" ? new("master") : new("legion", "back")), restore);
+        SettleCombat(ref game, restore);
     }
 
     [Theory]
@@ -55,13 +104,14 @@ public sealed class CatapultSummonTurnTargetPermissionTests
     }
 
     [Fact]
-    public void FullPoolPaidRangeRulesKeepBackOnlyAndSummonTurnPermissionsSeparate()
+    public void FullPoolPaidRangeRulesDescribeTargetsAndHaveNoSummonTurnBypass()
     {
         var rules = Catalog.Cards.Values.Where(card => L12StructuredCardSemantics.ExtendedRangeRule(card.Id) is not null)
             .Select(card => card.Id).OrderBy(id => id, StringComparer.Ordinal).ToArray();
         Assert.Equal(new[] { "S01-0003", "S01-0113" }, rules);
-        Assert.True(L12StructuredCardSemantics.ExtendedRangeRule("S01-0003")!.AllowsSummonTurnBackAndMaster);
-        Assert.False(L12StructuredCardSemantics.ExtendedRangeRule("S01-0113")!.AllowsSummonTurnBackAndMaster);
+        Assert.True(L12StructuredCardSemantics.ExtendedRangeRule("S01-0003")!.AllowsMaster);
+        Assert.False(L12StructuredCardSemantics.ExtendedRangeRule("S01-0113")!.AllowsMaster);
+        Assert.Null(typeof(L12ExtendedRangeRule).GetProperty("AllowsSummonTurnBackAndMaster"));
     }
 
     private static L12GameEngine Arrange(int owner, string cardId)
@@ -120,10 +170,12 @@ public sealed class CatapultSummonTurnTargetPermissionTests
         }
     }
 
-    private static void RejectUnchanged(L12GameEngine game, int owner, L12Command command)
+    private static void RejectUnchanged(L12GameEngine game, int owner, L12Command command, string? expectedError = null)
     {
         var raw = game.SerializeFullState(); var hash = game.ComputeStateHash(); var random = game.RandomState;
-        Assert.False(game.Handle(owner, command).Accepted);
+        var result = game.Handle(owner, command);
+        Assert.False(result.Accepted);
+        if (expectedError is not null) Assert.Contains(expectedError, result.Error);
         Assert.Equal(raw, game.SerializeFullState()); Assert.Equal(hash, game.ComputeStateHash()); Assert.Equal(random, game.RandomState);
     }
 
