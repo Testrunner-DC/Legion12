@@ -9,6 +9,13 @@ public sealed partial class MatchRecorder
     private static L12DisasterAnalyticsReport ComputeDisasterAnalytics(CardAnalyticsExecution execution,
         SqliteTransaction transaction, L12CardAnalyticsQuery query, bool allowUnselectedMaster = false)
     {
+        PrepareDisasterPopulation(execution, transaction, query);
+        return ReadDisasterDistribution(execution, transaction, query, allowUnselectedMaster);
+    }
+
+    private static void PrepareDisasterPopulation(CardAnalyticsExecution execution,
+        SqliteTransaction transaction, L12CardAnalyticsQuery query)
+    {
         var connection = execution.Connection;
         using (var scope = DisasterCommand(connection, transaction, """
             DROP TABLE IF EXISTS temp.l12_disaster_population;
@@ -45,7 +52,12 @@ public sealed partial class MatchRecorder
             """, ("$master", query.MasterId)))
             scope.ExecuteNonQuery();
         execution.Check();
+    }
 
+    private static L12DisasterAnalyticsReport ReadDisasterDistribution(CardAnalyticsExecution execution,
+        SqliteTransaction transaction, L12CardAnalyticsQuery query, bool allowUnselectedMaster)
+    {
+        var connection = execution.Connection;
         L12DisasterAnalyticsCoverage coverage;
         using (var command = DisasterCommand(connection, transaction, """
             SELECT COUNT(*),COUNT(DISTINCT match_id),

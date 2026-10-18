@@ -40,6 +40,32 @@ public sealed partial class L12WebSocketServer
     private void MapDisasterAnalyticsEndpoints()
     {
         var app = _app ?? throw new InvalidOperationException("服务尚未初始化");
+        app.MapGet("/api/admin/analytics/disasters/strategy", (HttpRequest request) => DisasterRead(request, async () =>
+        {
+            const L12Permission permission = L12Permission.AdminAnalyticsRead;
+            if (!TryAuthorize(request, permission, out var captured, out var failure)) return failure;
+            var timing = new CardAnalyticsRequestTiming();
+            using var cancellation = MatchRecorder.CreateCardAnalyticsRequestCancellation(
+                request.HttpContext.RequestAborted, app.Lifetime.ApplicationStopping);
+            try
+            {
+                var query = CardAnalyticsQuery(request) with { DisasterMode = QueryValue(request, "disasterMode"),
+                    DisasterPoolId = QueryValue(request, "disasterPoolId"), DisasterOrigin = QueryValue(request, "disasterOrigin") };
+                var report = await _recorder.ReadDisasterStrategyAsync(query, cancellation.Token, timing);
+                if (!IsCurrentDisasterReader(request, captured)) return Results.Unauthorized();
+                var current = _platform.AuthenticateSession(request.Headers.Authorization)!;
+                if (!L12Authorization.HasPermission(current.Account, permission))
+                    return ApiError(request, "permission_denied", "没有读取统计的权限。", 403);
+                if (!L12Authorization.HasPermission(current.Account, L12Permission.AdminMatchesRead))
+                    report = report with { Items = report.Items.Where(row => row.Action == "ban").ToArray(),
+                        Conditions = report.Conditions.Where(condition => condition.Step < 3).ToArray(),
+                        PrivatePickGroupsHidden = true };
+                _platform.RecordAdminRead(current.Account, permission, "analytics", "read-disaster-strategy",
+                    "disaster-strategy", AuditContext(request, permission), request.HttpContext.RequestAborted);
+                return Results.Ok(report);
+            }
+            finally { request.HttpContext.Response.Headers["Server-Timing"] = timing.ToServerTiming(); }
+        }));
         app.MapGet("/api/admin/analytics/disasters", (HttpRequest request) => DisasterRead(request, async () =>
         {
             const L12Permission permission = L12Permission.AdminAnalyticsRead;
