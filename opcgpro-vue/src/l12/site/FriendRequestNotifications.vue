@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { friendApi, platformState } from '../platform'
 import { friendResource, refreshFriendResource, resetFriendResource } from '../friendResource'
-import { playL12FriendRequestSound, primeL12ActionAudio } from '../game/useL12ActionAudio'
 import { landscapeTeleportTarget } from '../mobileViewport'
 import { usesSiteUiStates } from './siteUiStateScope'
 
@@ -13,7 +12,6 @@ const requests = computed(() => friendResource.requests.filter(item => item.dire
 const current = computed(() => requests.value[0])
 const busy = ref(false)
 const notice = ref('')
-const sounded = new Set<string>()
 let generation = 0
 async function refresh() {
   const accountId = platformState.account?.id
@@ -22,12 +20,6 @@ async function refresh() {
   try {
     await refreshFriendResource()
     if (expected !== generation || accountId !== platformState.account?.id) return
-    let newRequest = false
-    for (const item of requests.value) {
-      const key = `${accountId}:${item.accountId}:${item.createdAt}`
-      if (!sounded.has(key)) { sounded.add(key); newRequest = true }
-    }
-    if (newRequest) playL12FriendRequestSound()
   } catch { /* Retry preserves the pending dialog without inventing a rejection. */ }
 }
 async function resolve(action: 'accept' | 'reject' | 'block') {
@@ -52,13 +44,11 @@ onMounted(() => {
   void refresh()
   window.addEventListener('l12-resource-friends', changed)
   window.addEventListener('l12-friends-changed', changed)
-  window.addEventListener('pointerdown', primeL12ActionAudio, { once: true })
 })
 onBeforeUnmount(() => {
   generation++
   window.removeEventListener('l12-resource-friends', changed)
   window.removeEventListener('l12-friends-changed', changed)
-  window.removeEventListener('pointerdown', primeL12ActionAudio)
 })
 </script>
 <template>

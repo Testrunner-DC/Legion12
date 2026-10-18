@@ -1756,6 +1756,7 @@ contracts.push([
 
 const titleRules = read('../src/l12/site/RankedMasterTitleRulesModal.vue')
 const friendNotifications = read('../src/l12/site/FriendRequestNotifications.vue')
+const realtimeNotifications = read('../src/l12/notifications/useRealtimeNotifications.ts')
 const setupDecisionClock = read('../src/l12/game/SetupDecisionClock.vue')
 const catalogDetails = read('../src/l12/CatalogCardDetails.vue')
 contracts.push(
@@ -1781,7 +1782,8 @@ contracts.push(
     'GM选牌必须保留横卡自然方向、可查看详情且窄桌面筛选不越界'],
   [app.includes('FriendRequestNotifications') && friendNotifications.includes("resolve('block')")
     && friendNotifications.includes("resolve('reject')") && friendNotifications.includes("resolve('accept')")
-    && friendNotifications.includes('playL12FriendRequestSound') && friendNotifications.includes('expected !== generation'),
+    && app.includes('useRealtimeNotifications()') && realtimeNotifications.includes('playL12FriendRequestSound()')
+    && friendNotifications.includes('expected !== generation'),
     '全局好友申请必须具备提示音、通过拒绝屏蔽及账号代次隔离'],
   [platform.includes('interface RankedTimeControlConfig') && platform.includes('DEFAULT_RANKED_TIME_CONTROL')
     && seasonConfigurationEditor.includes('data-ui-contract="ranked-time-control-config"')

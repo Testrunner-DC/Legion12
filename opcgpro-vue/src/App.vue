@@ -10,6 +10,7 @@ import FriendChallengeNotifications from '@/l12/site/FriendChallengeNotification
 import RankedIntegrityNotice from '@/l12/site/RankedIntegrityNotice.vue'
 import { applyAudioPreferences, audioPreferences, l12MusicOutputVolume, syncAudioStore } from '@/l12/audioPreferences'
 import { BackgroundMusicController } from '@/l12/backgroundMusic'
+import { useRealtimeNotifications } from '@/l12/notifications/useRealtimeNotifications'
 import { useLandscapeViewport } from '@/l12/mobileViewport'
 import { deckEditorPortrait, useDeckEditorViewport } from '@/l12/deckEditorViewport'
 import '@/l12/mobileViewport.css'
@@ -21,6 +22,7 @@ const showFriendChallengeNotifications = computed(() => !immersive.value || adap
 useDeckEditorViewport(adaptiveEditor)
 const landscapeExperience = computed(() => route.meta.landscapeCanvas === true && !(adaptiveEditor.value && deckEditorPortrait.value))
 useLandscapeViewport(landscapeExperience)
+useRealtimeNotifications()
 const lockedViewport = 'width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover'
 const readableViewport = 'width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover'
 watch(landscapeExperience, locked => {

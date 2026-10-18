@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-realtime-web-notifications",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "匹配与社交通知",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "匹配成功、好友申请、对战邀请及新消息增加提示音，沿用游戏音效开关与音量；可在设置主动开启此浏览器的网页通知，在网页隐藏或失焦时提醒，通知不显示聊天正文。旧记录、重复消息和重连补发不会反复提醒。",
+      "paths": [
+        "opcgpro-vue/src/App.vue",
+        "opcgpro-vue/src/l12/notifications/**",
+        "opcgpro-vue/src/l12/site/L12SettingsModal.vue",
+        "opcgpro-vue/src/l12/site/FriendRequestNotifications.vue"
+      ]
+    }
+  ]
+}
