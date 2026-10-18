@@ -13,7 +13,7 @@ const stepCopy = computed(() => {
   const key = `${props.tutorial.lessonId}:${props.tutorial.stepId}`
   return ({
     'deploy:deploy': '从手牌选择 1 费《西施》，点选亮起的空阵地，并按支付提示确认费用。',
-    'move:move': '选择后排中格的《西施》，使用普通移动，支付费用后点选亮起的相邻空格。',
+    'move:move': '选择后排中格的《西施》，使用普通移动，点选亮起的相邻空格，再按提示支付费用。',
     'combat:attack': '选择我方前排左格的练习军团，再进攻对方主宰。',
     'combat:end-turn': '进攻已经完成。结束当前回合，等待对手按合法动作发起进攻。',
     'combat:defend': '在防守阶段选择合法抵挡，或明确选择不抵挡，再确认本次防守。',

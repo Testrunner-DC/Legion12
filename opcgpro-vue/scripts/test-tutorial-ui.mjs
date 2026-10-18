@@ -160,6 +160,7 @@ try {
       assert(bounds&&bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=viewport.width+1&&bounds.y+bounds.height<=viewport.height+1,'Tutorial guidance must fit physical viewport')
       const logicalWidth=await page.locator('.tutorial-guidance').evaluate(element=>element.clientWidth)
       assert(logicalWidth>=280,'Teaching copy must have a readable width, not a narrow vertical column')
+      if(lesson==='move') await page.getByText('选择后排中格的《西施》，使用普通移动，点选亮起的相邻空格，再按提示支付费用。',{exact:true}).waitFor()
       await page.screenshot({path:path.join(out,`${viewport.width}-${lesson}-started.png`)})
       await tap(page.getByRole('button',{name:'最小化教学说明'}),'minimize guidance')
       if(lesson==='deploy') {

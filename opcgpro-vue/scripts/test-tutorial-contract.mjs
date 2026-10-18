@@ -53,6 +53,7 @@ check('three playable lessons and five unavailable lessons stay presentation-onl
 check('lesson copy names the fixed first-slice actors and cells without private ids', () => {
   for (const text of ['1 费《西施》', '后排中格的《西施》', '前排左格军团进攻对方主宰']) assert.ok(source.page.includes(text))
   assert.doesNotMatch(source.page + source.overlay, /S01-0116|instanceId|cardInstanceId/)
+  assert.ok(source.overlay.includes('使用普通移动，点选亮起的相邻空格，再按提示支付费用。'), 'Move guidance must follow the actual destination-before-payment UI chain')
 })
 check('overlay is player-facing, minimizable, and keeps touch targets clear', () => {
   for (const text of ['新手教学', '学习提示', '本关完成，可查看场面变化或返回目录']) assert.ok(source.overlay.includes(text))
