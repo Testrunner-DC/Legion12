@@ -1586,19 +1586,24 @@ public sealed partial class L12GameEngine
         if (OrdinaryMoveDestinationUnavailableReason(player, sourceRow, sourceSlot, targetRow, targetSlot) is { } destinationError)
             return CommandResult.Reject(destinationError);
         var hasFreeMove = HasFreeOrdinaryMove(player, card, sourceRow, targetRow, out var freeMoveKey);
-        if (!hasFreeMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1))
+        // Paying must not rest the legion whose ordinary movement requires it to stay active.
+        string[] excludedResources = [card.InstanceId];
+        if (!hasFreeMove && command.CardInstanceIds is null && NeedsManualOrdinaryResourcePayment(player, 1, excludedResources))
         {
             CreateResourcePaymentPrompt(playerIndex, 1, "move-morale-choice", null, new Dictionary<string, string>
             {
                 ["cardInstanceId"] = card.InstanceId,
                 ["row"] = targetRow.ToString(),
                 ["slot"] = targetSlot.ToString(),
-            });
+            }, excludedResourceIds: excludedResources);
             return CommandResult.Ok();
         }
         if (!hasFreeMove && !(command.CardInstanceIds is not null
-            ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds)
-            : TryConsumeMorale(player, 1)))
+            ? TryConsumeSelectedResources(player, 1, command.CardInstanceIds, excludedResources)
+            : player.MasterMoraleWaiverCredit > 0
+                ? TryConsumeMorale(player, 1, allowTombGuards: false)
+                : TryConsumeSelectedResources(player, 1,
+                    SelectAutomaticOrdinaryResourcePaymentIds(player, 1, excludedResources), excludedResources)))
             return CommandResult.Reject("移动需要消耗 1 张活跃士气");
         player.Field[sourceRow][sourceSlot] = null;
         player.Field[targetRow][targetSlot] = card;

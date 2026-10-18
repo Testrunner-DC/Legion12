@@ -1107,6 +1107,13 @@ public sealed partial class L12GameEngine
                 return CommandResult.Reject($"必须选择{requiredResources}份可用士气资源和2张我方战场军团");
         }
 
+        // Old checkpoints may still list the moving legion as a payment choice.
+        // Reject it before consuming the prompt so a legal payment can still be chosen.
+        if (prompt.Continuation == "move-morale-choice"
+            && prompt.Data.GetValueOrDefault("cardInstanceId") is { Length: > 0 } movingCardId
+            && chosen.Contains(movingCardId, StringComparer.OrdinalIgnoreCase))
+            return CommandResult.Reject("移动军团不能用于支付自身的移动费用");
+
         // Reject corrupt restored lethal provenance before consuming the real player prompt.
         if (prompt.Continuation == "effect-lethal-replacement")
             _ = EffectLethalDefeatCause(prompt);
