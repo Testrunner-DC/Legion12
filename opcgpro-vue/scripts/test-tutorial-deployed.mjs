@@ -51,7 +51,13 @@ function allowed(url, method = 'GET') {
   if (!['https:', 'wss:'].includes(value.protocol) || value.hostname !== 'legion-12.com' || value.port) return false
   if (value.pathname.startsWith('/testrun/')) return true
   // The shipped card component deliberately shares the immutable official pool.
-  return value.protocol === 'https:' && method === 'GET' && value.pathname.startsWith('/card-assets/')
+  return value.protocol === 'https:' && method === 'GET' && (value.pathname.startsWith('/card-assets/')
+    || ['/favicon.png', '/audio/legion12-site.mp3', '/audio/legion12-battle-1.mp3',
+      '/audio/legion12-battle-2.mp3', '/assets/l12/special/master/ST01-M1.png',
+      '/assets/l12/special/master/ST04-M1.png',
+      '/assets/l12/special/round/Round_Cardback_Destruction.png',
+      '/assets/l12/special/round/S01-DS10.png', '/assets/l12/special/logo/gaotianyuan.png',
+      '/assets/l12/special/logo/tianting.png'].includes(value.pathname))
 }
 async function health() {
   const response = await fetch(BASE + 'health', { redirect: 'error', signal: AbortSignal.timeout(15_000),
@@ -77,7 +83,9 @@ async function images(selector) {
   await wait(async () => locator.evaluateAll(nodes => nodes.length > 0 && nodes.every(image => {
     const url = new URL(image.currentSrc || image.src, location.href)
     return image.complete && image.naturalWidth > 0 && url.origin === 'https://legion-12.com'
-      && /^\/(testrun\/)?card-assets\//.test(url.pathname) && !/card-back|placeholder/.test(url.pathname)
+      && (/^\/(testrun\/)?card-assets\//.test(url.pathname)
+        || ['/assets/l12/special/master/ST01-M1.png', '/assets/l12/special/master/ST04-M1.png'].includes(url.pathname))
+      && !/card-back|placeholder/.test(url.pathname)
   })), 'official card image did not load', 30_000)
   const observations = await locator.evaluateAll(nodes => nodes.map(image => ({
     pathname: new URL(image.currentSrc || image.src, location.href).pathname,
@@ -181,6 +189,7 @@ try {
   await click(page.locator('.auth-tabs').getByRole('button', { name: '注册', exact: true }))
   const form = page.locator('form.auth-form')
   const username = 'TQA' + crypto.randomBytes(4).toString('hex')
+  report.syntheticAccountLabel = username // Owned synthetic fixture, not a real player identity or credential.
   let password = 'Qa!' + crypto.randomBytes(24).toString('base64url')
   await form.getByLabel('用户名', { exact: true }).fill(username)
   await form.getByLabel('密码', { exact: true }).fill(password)
@@ -259,11 +268,16 @@ try {
   assert.deepEqual(learned, { introductionRead: true, reviewedScenes: ['deploy'] })
   report.progress = learned
   report.paymentScope = 'A real playCard was accepted, authoritative deploy progress persisted by the ordinary consumer, and a single roomLeft opened move; engine payment is not bypassed or separately simulated.'
+  stage = 'next-scene-card-images'
+  // A roomState/guide handoff precedes asynchronous card-image resolution.
+  // Capture only after the next scene's real field and master art has loaded.
+  await images('.formation-slot .l12-card-image__img,.mini-master .l12-card-image__img')
   await page.screenshot({ path: path.join(output, 'deployed-first-scene-next-room.png') })
   stage = 'owned-room-exit'
   await click(page.getByRole('button', { name: '返回教学主线', exact: true }))
   await page.waitForURL(BASE + 'battle/tutorial')
   await wait(() => !ownedRoom && report.roomLeftAcknowledgements === 2, 'own smoke roomLeft cleanup')
+  stage = 'complete-resource-and-error-check'
   assert.equal(report.pageErrorCount, 0)
   assert.equal(report.consoleErrorCount, 0)
   assert.deepEqual(report.rejectedNetwork, [])
