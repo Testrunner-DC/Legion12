@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-19 播报与普通保存同代复用｜41项专项通过，完整Release待验
+
+- P3既有提交结果复用，不改协议／格式／权限或SQL权威；Save同事务已同步广播对象，又构造完整新rollback和已提交索引，现同时预备同core checksum锚点并仅在commit后发布。_rankedBroadcastReadCoreChecksum仍仅供冷读，不被普通保存覆盖；Claim完整header／core hash／对象检查原样保留。
+- 新四反例修改前4失败，修改后整个RankedBroadcastObjectStorageTests族41／41通过，含真实外部writer／同代对象改写／坏core和对象／恢复／UTF16／撤销。首空claim及镜像失败不再触发全局索引构造；准备失败不推进SQL、镜像与版本。仅本地专项，尚无新完整平台或部署成绩。
+- 前片8ceac0f8已经远端读回；本片先形成干净本地候选，统一完整Release通过后再推送和测试发布，避免重复整套和两次测试部署。精确源及TRX见test-performance-followthrough-20261019/causal-isolation/broadcast-local.json；原30＋10／3秒／载荷／共享主机保护不改，正式／维护／线上Bug零写。
+
 ## 2026-10-19 F2普通保存共享正文放大｜本地验收完成
 
 - 按既有最大分配来源优化授权继续；扩展P3实现效率，不改P0—P4、格式、完整性或正式教学排除。持有事务内仍逐引用Capture，正文完整解码／验hash／编码／INSERT只按不同hash执行一次，成功后本次局部集合才记忆；不得把当前集合转成长寿命或跨代缓存。

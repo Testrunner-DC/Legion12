@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-19-platform-save-shared-facts",
+  "date": "2026-10-19",
+  "audience": "internal",
+  "reason": "事务内共享牌库正文去重，以及普通保存后复用同代已验证的播报读取锚点；格式、规则、权限和完整SQL权威核验不变。线上性能收益仍待测试服原负载验收，不将局部合成结果外显为已根治。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.DeckStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedBroadcastStorage.cs"
+  ]
+}

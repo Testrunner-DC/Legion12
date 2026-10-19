@@ -14,6 +14,104 @@ public sealed class RankedBroadcastObjectStorageTests(ITestOutputHelper output)
 {
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     private const BindingFlags PrivateStatic = BindingFlags.Static | BindingFlags.NonPublic;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GenericSaveFirstEmptyClaimKeepsNewCommittedRollbackWithoutRebuilding(bool objectWrite)
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            if (objectWrite)
+            {
+                store.PrivateDeckObjectPersistenceEnabled = true;
+                store.UpsertDeck(viewerId, new L12PresetDeckDefinition
+                {
+                    Name = "broadcast-object-deck", MasterId = "M1", CardIds = ["C2"], MoraleIds = [], SpecialIds = [],
+                });
+            }
+            else store.RecordCommandOutcome(store.Accounts().Single(row => row.Id == viewerId),
+                new L12AdminAuditContext("save-first-claim"), "synthetic", "storage", "succeeded");
+            var field = typeof(L12PlatformStore).GetField("_lastCommittedSnapshot", PrivateInstance)!;
+            var buffer = field.GetValue(store);
+            var facts = PlatformFacts(path, store, viewerId);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-session-index-build") throw new InvalidOperationException("first-noop-must-not-rebuild");
+            };
+            try
+            {
+                Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                Assert.Same(buffer, field.GetValue(store));
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Equal(facts, PlatformFacts(path, store, viewerId));
+        });
+    }
+
+    [Fact]
+    public void GenericSaveAnchorPreparationFailureLeavesSqlMirrorAndRevisionUnchanged()
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            var before = PlatformFacts(path, store, viewerId);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-ranked-broadcast-read-anchor") throw new OutOfMemoryException("generic-anchor-prepare");
+            };
+            try
+            {
+                Assert.Throws<L12PlatformStorageUnavailableException>(() => store.RecordCommandOutcome(
+                    store.Accounts().Single(row => row.Id == viewerId), new L12AdminAuditContext("generic-anchor-fail"),
+                    "synthetic", "storage", "succeeded"));
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Equal(before, PlatformFacts(path, store, viewerId));
+            Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+        });
+    }
+
+    [Fact]
+    public void GenericSavePostCommitMirrorFailureKeepsLatestAnchorAndSqlAuthority()
+    {
+        InLiveBroadcast((path, store, viewerId, subscribedAt) =>
+        {
+            var claim = Assert.IsType<L12RankedBroadcastClaimView>(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+            Assert.True(store.CompleteRankedBroadcast(viewerId, claim.Broadcast.Id, claim.ClaimToken));
+            store.PrivateDeckObjectPersistenceEnabled = true;
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-private-deck-mirror") throw new IOException("generic-mirror-fail");
+            };
+            try
+            {
+                store.UpsertDeck(viewerId, new L12PresetDeckDefinition
+                {
+                    Name = "broadcast-object-deck", MasterId = "M1", CardIds = ["LATEST"], MoraleIds = [], SpecialIds = [],
+                });
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.False(store.StorageStatus().FallbackMirrorHealthy);
+            var field = typeof(L12PlatformStore).GetField("_lastCommittedSnapshot", PrivateInstance)!;
+            var buffer = field.GetValue(store);
+            store.StorageFailureInjector = stage =>
+            {
+                if (stage == "before-session-index-build") throw new InvalidOperationException("committed-anchor-must-remain");
+            };
+            try
+            {
+                Assert.Null(store.ClaimRankedBroadcast(viewerId, subscribedAt));
+                Assert.Same(buffer, field.GetValue(store));
+            }
+            finally { store.StorageFailureInjector = null; }
+            Assert.Equal("LATEST", new L12PlatformStore(path).Decks(viewerId).Single().CardIds[0]);
+        });
+    }
+
     [Fact]
     public void WarmEmptyPollAllocationIsBelowThirtyPercentOfForcedFullRefresh()
     {

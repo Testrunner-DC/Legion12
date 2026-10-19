@@ -788,11 +788,15 @@ public sealed partial class L12PlatformStore
     }
 
     private RankedBroadcastReadAnchor PrepareRankedBroadcastReadAnchor(DataFile data, byte[] snapshot)
+        => PrepareRankedBroadcastReadAnchor(data, snapshot,
+            _rankedBroadcastReadCoreChecksum
+                ?? throw new InvalidDataException("排位广播已验证核心快照摘要缺失"));
+
+    private RankedBroadcastReadAnchor PrepareRankedBroadcastReadAnchor(DataFile data, byte[] snapshot,
+        string coreChecksum)
     {
-        var checksum = _rankedBroadcastReadCoreChecksum
-            ?? throw new InvalidDataException("排位广播已验证核心快照摘要缺失");
         StorageFailureInjector?.Invoke("before-ranked-broadcast-read-anchor");
-        return new(checksum, snapshot, new(data));
+        return new(coreChecksum, snapshot, new(data));
     }
 
     // A validated same-generation no-op is not a platform write. Keep the original complete

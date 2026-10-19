@@ -347,10 +347,15 @@ public sealed partial class L12PlatformStore
             StorageFailureInjector?.Invoke("before-commit");
             var rollbackSnapshot = SerializeRollbackState(_data);
             var sessionActivity = PrepareCommittedSessionActivityMeasured(_data, rollbackSnapshot);
+            // The broadcast objects were synchronized and read back in this same
+            // transaction. Prepare all allocations before commit, then publish
+            // the same-generation anchor alongside the committed read indexes.
+            var broadcastReadAnchor = PrepareRankedBroadcastReadAnchor(_data, rollbackSnapshot, snapshotChecksum);
             StorageFailureInjector?.Invoke("after-rollback-serialize");
             transaction.Commit();
             _lastCommittedSnapshot = rollbackSnapshot;
             PublishCommittedSessionActivity(sessionActivity);
+            _rankedBroadcastReadAnchor = broadcastReadAnchor;
             _storageIssue = null;
         }
         catch (L12PrivateDeckMutationConflictException)

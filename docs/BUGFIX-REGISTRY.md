@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19｜保存成功后首次空播报领取复用同代已验证事实（专项通过）
+
+- 根因：generic Save会替换_lastCommittedSnapshot及CommittedSessionActivity，却保留只属于前一DataFile／rollback的广播锚点；Claim正确拒绝旧锚点，随后冷读取整库并再次gzip。没有把claim误说成直接generic Save，亦不以故障共现冒精确根因。新普通保存／私人对象保存／准备失败／镜像失败四格真实RED，修改后整族41绿。
+- PersistTransactionalData在同事务Synchronize广播对象并Hydrate回读之后，以snapshot.Checksum、新rollback和_data准备局部anchor；所有分配及before-ranked-broadcast-read-anchor注入均在commit前。仅commit后发布，不改冷读checksum scratch。Claim完整逐字节core hash、header版本、对象digest／同代内容比较和UTF16退路一字不删。
+- GenericSave四格覆盖首空claim不重建全局索引且rollback引用不变、准备失败SQL／mirror／revision不变、commit后镜像失败仍保留最新锚点；旧族外部更新、同generation改写／孤儿、坏校验、撤销、失败恢复等全保留。当前仅41专项，完整Release及2051平台待结果，不冒Git推送或线上根治。回滚仅本片两产品与具名测试，不回写业务库；证据causal-isolation/broadcast-local.json。
+
 ## 2026-10-19｜普通保存按事务去除重复牌库正文工作（本地验收完成）
 
 - 根因：PersistDeckDomainSnapshot对私人／公开／赛事每个引用重复ReadReferencedDeckPayload、校验hash、重新紧凑编码及INSERT OR IGNORE正文。F2私人单点开关不会覆盖排位结算等generic Save。完整族扫描为DeckStorage三循环、DeckPayloadReferences的Capture／Require／Compact、PrivateDeckPersistence和Ranked保存入口；对象单点路径及其他存储协议不改。
