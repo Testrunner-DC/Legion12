@@ -86,7 +86,8 @@ Assert-Contains $galahad '["healMode"] = target' 'Galahad immutable optional-hea
 
 Assert-Contains $prompts 'var disasterAuthorityTiming = IsDisasterAuthorityTiming(top);' 'Disaster response timing must use the shared root-timing classifier.'
 Assert-Contains $prompts 'responseCards = responseCards.Where(card => !IsCounterTactic(card.CardId)).ToArray();' 'Every counter tactic must remain excluded from disaster response windows.'
-Assert-Contains $prompts 'if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0' 'A disaster timing with no non-counter response must close without an empty response prompt.'
+Assert-Contains $prompts 'ShouldAutoPassEmptyResponse(responseMode, choices.Count, hasAnonymousPoolResponse,' 'All product response modes must use the shared empty-window policy.'
+Assert-Contains $prompts '|| ((autoPassEmptyResponses || disasterAuthorityTiming) && !hasAnonymousPoolResponse));' 'A disaster timing with no non-counter response must close without an empty response prompt.'
 Assert-Contains $prompts 'timing.Trigger.Equals("authority-disaster", StringComparison.OrdinalIgnoreCase)' 'Authority-triggered disasters must use the same counter-tactic exclusion.'
 Assert-Contains $disasters 'SetLibrariesReversedByDisaster(true);' 'Heaven Earth Change must reverse the real library order.'
 Assert-Contains $disasters 'SetLibrariesReversedByDisaster(false);' 'Heaven Earth Change must restore library order on leaving.'

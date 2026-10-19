@@ -1964,12 +1964,6 @@ public sealed partial class L12GameEngine
             PassPriority(playerIndex);
             return;
         }
-        if ((_autoPassEmptyResponses || disasterAuthorityTiming) && choices.Count == 0
-            && !hasAnonymousPoolResponse && responseMode == DefaultResponseMode)
-        {
-            PassPriority(playerIndex);
-            return;
-        }
         var responseData = choices.ToDictionary(id => id, id =>
             (FindOnField(player, id, out _, out _) ?? player.Hand.First(card => card.InstanceId == id)).Name);
         choices.Add("pass");
@@ -2002,8 +1996,9 @@ public sealed partial class L12GameEngine
 
     private static bool ShouldAutoPassEmptyResponse(string responseMode, int legalChoiceCount,
         bool hasAnonymousPoolResponse, bool autoPassEmptyResponses, bool disasterAuthorityTiming)
-        => responseMode == ValidOnlyResponseMode
-           && legalChoiceCount == 0; // 用户明确选择的隐私／时点权衡：忽略匿名池提示。
+        => legalChoiceCount == 0
+           && (responseMode == ValidOnlyResponseMode // 用户明确选择的隐私／时点权衡：忽略匿名池提示。
+               || ((autoPassEmptyResponses || disasterAuthorityTiming) && !hasAnonymousPoolResponse));
 
     private static void ClearResponseAutoClose(L12ResponseWindow window)
     {

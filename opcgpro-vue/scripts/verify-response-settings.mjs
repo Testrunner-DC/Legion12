@@ -20,6 +20,12 @@ try {
     await page.getByRole('button', { name: /响应设置/ }).click()
     const labels = await page.locator('.response-settings-form label b').allTextContents()
     assert.deepEqual(labels, ['默认', '仅有效响应', '5秒关闭无效响应']); assertions++
+    const descriptions = await page.locator('.response-settings-form label small').allTextContents()
+    assert.deepEqual(descriptions, [
+      '按公开场面与可用牌池提示潜在响应',
+      '没有实际可执行响应时直接让过',
+      '存在潜在响应但当前无可执行选项时，5秒后自动让过',
+    ]); assertions++
     ok(await page.locator('input[value="default"]').isChecked(), `${fixture.name}: default must be selected`)
     await page.locator('input[value="valid-only"]').check()
     ok(await page.locator('input[value="valid-only"]').isChecked(), `${fixture.name}: valid-only selectable`)

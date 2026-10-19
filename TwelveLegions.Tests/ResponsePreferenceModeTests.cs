@@ -35,16 +35,51 @@ public sealed class ResponsePreferenceModeTests
     }
 
     private static L12StackItem EmptyResponseStack(string id = "response-stack",
-        string trigger = "reaction", string text = "测试响应时点") => new()
+        string trigger = "reaction", string text = "测试响应时点", int controller = 1) => new()
     {
         StackItemId = id,
-        Controller = 1,
+        Controller = controller,
         SourceInstanceId = "source",
         SourceCardId = "S01-0103",
         SourceName = "测试来源",
         Trigger = trigger,
         Text = text,
     };
+
+    private static L12CardInstance Card(string cardId, string instanceId, int owner)
+    {
+        var definition = Catalog.Cards[cardId];
+        return new L12CardInstance
+        {
+            CardId = cardId,
+            InstanceId = instanceId,
+            OwnerIndex = owner,
+            Name = definition.NameZh,
+            CardType = definition.CardType,
+            Faction = definition.Faction,
+            ImageUrl = definition.ImageUrl,
+            Cost = definition.Cost ?? 0,
+            HasPrintedCost = definition.Cost.HasValue,
+            EffectText = definition.Effect,
+            Traits = [.. definition.Traits],
+            BaseTroops = definition.Troops ?? 0,
+            Troops = definition.Troops ?? 0,
+            SummonRound = -1,
+        };
+    }
+
+    private static void SetCoveredResponseState(L12GameEngine game, int playerIndex, bool actualResponse)
+    {
+        game.State.Round = 2;
+        var player = game.State.Players[playerIndex];
+        player.Field[0][0] = Card("S01-0002", $"public-legion-{playerIndex}", playerIndex);
+        var covered = Card(actualResponse ? "S01-0019" : "S01-0010",
+            $"covered-tactic-{playerIndex}", playerIndex);
+        covered.Hidden = true;
+        covered.SetRound = 0;
+        covered.CannotRespondUntilRound = 0;
+        player.Field[1][2] = covered;
+    }
 
     private static void Offer(L12GameEngine game, L12StackItem stack, int priorityPlayer = 0)
     {
@@ -87,8 +122,10 @@ public sealed class ResponsePreferenceModeTests
     public void ValidOnlyIgnoresAnonymousPoolAvailability()
     {
         var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
-        var game = Create(L12GameEngine.ValidOnlyResponseMode, ref now, conceal: true);
-        var stack = EmptyResponseStack(trigger: "promotion-enter", text: "晋升登场 可抽取1张牌。");
+        var game = Create(L12GameEngine.ValidOnlyResponseMode, ref now, autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 1, actualResponse: false);
+        var stack = EmptyResponseStack(trigger: "promotion-enter", text: "晋升登场 可抽取1张牌。",
+            controller: 0);
         var policy = typeof(L12GameEngine).GetMethod("ShouldAutoPassEmptyResponse",
             BindingFlags.Static | BindingFlags.NonPublic)!;
         Assert.True((bool)policy.Invoke(null,
@@ -101,11 +138,70 @@ public sealed class ResponsePreferenceModeTests
         Assert.Null(game.CaptureResponseAutoCloseLease());
     }
 
+    [Theory]
+    [InlineData(L12GameEngine.DefaultResponseMode)]
+    [InlineData(L12GameEngine.ValidOnlyResponseMode)]
+    [InlineData(L12GameEngine.InvalidFiveSecondsResponseMode)]
+    public void ProductModesSkipTimingsWithNoActualOrTheoreticalResponse(string mode)
+    {
+        var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
+        var game = Create(mode, ref now, autoPass: true, conceal: true);
+
+        Offer(game, EmptyResponseStack(), priorityPlayer: 0);
+
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Null(game.CaptureResponseAutoCloseLease());
+        Assert.Contains(game.State.Events,
+            item => item.Type == "priority-pass" && item.PlayerIndex == 0);
+    }
+
+    [Theory]
+    [InlineData(L12GameEngine.DefaultResponseMode, true, false)]
+    [InlineData(L12GameEngine.ValidOnlyResponseMode, false, false)]
+    [InlineData(L12GameEngine.InvalidFiveSecondsResponseMode, true, true)]
+    public void ProductModesApplyPreferenceOnlyWhenThePublicCardPoolCanRespond(
+        string mode, bool expectsPrompt, bool expectsAutoClose)
+    {
+        var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
+        var game = Create(mode, ref now, autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 0, actualResponse: false);
+
+        Offer(game, EmptyResponseStack(), priorityPlayer: 0);
+
+        if (!expectsPrompt)
+        {
+            Assert.Empty(game.State.PendingPrompts);
+            Assert.Null(game.CaptureResponseAutoCloseLease());
+            return;
+        }
+        Assert.Equal(["pass"], Assert.Single(game.State.PendingPrompts).ValidChoices);
+        Assert.Equal(expectsAutoClose, game.CaptureResponseAutoCloseLease() is not null);
+    }
+
+    [Theory]
+    [InlineData(L12GameEngine.DefaultResponseMode)]
+    [InlineData(L12GameEngine.ValidOnlyResponseMode)]
+    [InlineData(L12GameEngine.InvalidFiveSecondsResponseMode)]
+    public void ProductModesAlwaysShowAnActuallyLegalResponse(string mode)
+    {
+        var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
+        var game = Create(mode, ref now, autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 0, actualResponse: true);
+
+        Offer(game, EmptyResponseStack(), priorityPlayer: 0);
+
+        var prompt = Assert.Single(game.State.PendingPrompts);
+        Assert.Contains("covered-tactic-0", prompt.ValidChoices);
+        Assert.Null(game.CaptureResponseAutoCloseLease());
+    }
+
     [Fact]
     public void InvalidFiveSecondsProjectsOnlyToOwnerAndGm()
     {
         var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
-        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now);
+        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now,
+            autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 0, actualResponse: false);
         Offer(game, EmptyResponseStack());
 
         var owner = JsonSerializer.Serialize(game.SnapshotFor(0));
@@ -126,7 +222,9 @@ public sealed class ResponsePreferenceModeTests
     public void AutoCloseUsesInclusiveDeadlineAndRejectsStaleOrDuplicateLease()
     {
         var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
-        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now);
+        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now,
+            autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 0, actualResponse: false);
         Offer(game, EmptyResponseStack());
         var lease = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
 
@@ -208,7 +306,9 @@ public sealed class ResponsePreferenceModeTests
     public void CheckpointRestoreKeepsFrozenModesDeadlineAndProjectionPrivacy()
     {
         var now = DateTimeOffset.Parse("2026-09-27T00:00:00Z");
-        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now);
+        var game = Create(L12GameEngine.InvalidFiveSecondsResponseMode, ref now,
+            autoPass: true, conceal: true);
+        SetCoveredResponseState(game, 0, actualResponse: false);
         Offer(game, EmptyResponseStack(), priorityPlayer: 0);
         var originalLease = Assert.IsType<L12ResponseAutoCloseLease>(game.CaptureResponseAutoCloseLease());
         Assert.True(game.ApplyResponsePreference(0, L12GameEngine.DefaultResponseMode).Accepted);

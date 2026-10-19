@@ -209,9 +209,9 @@ function saveResponseSettings() {
         <form v-else-if="toolView === 'response'" class="response-settings-form" @submit.prevent="saveResponseSettings">
           <fieldset :disabled="busy">
             <legend>响应窗口模式</legend>
-            <label><input v-model="responseDraft" type="radio" value="default"><span><b>默认</b></span></label>
+            <label><input v-model="responseDraft" type="radio" value="default"><span><b>默认</b><small>按公开场面与可用牌池提示潜在响应</small></span></label>
             <label><input v-model="responseDraft" type="radio" value="valid-only"><span><b>仅有效响应</b><small>没有实际可执行响应时直接让过</small></span></label>
-            <label><input v-model="responseDraft" type="radio" value="invalid-five-seconds"><span><b>5秒关闭无效响应</b><small>无有效响应时显示仅可让过的 5 秒窗口</small></span></label>
+            <label><input v-model="responseDraft" type="radio" value="invalid-five-seconds"><span><b>5秒关闭无效响应</b><small>存在潜在响应但当前无可执行选项时，5秒后自动让过</small></span></label>
           </fieldset>
           <p v-if="l12State.responsePreference.syncPending">本局设置已确认，账号同步待重试。</p>
           <footer data-ui-contract="equal-action-group"><button type="button" @click="toolView = 'menu'">返回</button><button class="primary" :disabled="busy" type="submit">{{ busy ? '保存中…' : '保存设置' }}</button></footer>

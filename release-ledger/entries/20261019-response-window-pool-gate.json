@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-response-window-pool-gate",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "响应提示修正",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "修复“5秒关闭无效响应”在当前完全没有响应可能时仍反复弹窗的问题；有合法响应时仍正常提示，只有存在潜在响应但当前不能执行时才显示5秒窗口。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PromptsAndSetup.cs", "opcgpro-vue/src/l12/game/BattleUtilityDock.vue"]
+    }
+  ]
+}
