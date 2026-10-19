@@ -1,6 +1,11 @@
 import type { TutorialLessonId } from '../types'
 
 export const tutorialScenes = ['deploy', 'move', 'combat'] as const satisfies readonly TutorialLessonId[]
+export const tutorialSceneSequence: readonly TutorialLessonId[] = [...tutorialScenes, 'response', 'preparation', 'finale']
+export function nextTutorialScene(current: TutorialLessonId): TutorialLessonId | null {
+  const index = tutorialSceneSequence.indexOf(current)
+  return index >= 0 ? tutorialSceneSequence[index + 1] ?? null : null
+}
 export const tutorialChapters = ['初识十二军团', '卡牌效果与响应', '完成一场对局'] as const
 
 export interface TutorialIntroductionStep {

@@ -88,7 +88,9 @@ async function ensureConnected(epoch: number, expectedAccountId: string, expecte
 function startPractice() { return startPracticeScene(nextScene.value) }
 function startResponsePractice() {
   if (!chapterComplete.value) return
-  return startPracticeScene('response')
+  return startPracticeScene(progress.value.finaleReviewed ? 'response'
+    : progress.value.preparationReviewed ? 'finale'
+      : progress.value.responseReviewed ? 'preparation' : 'response')
 }
 async function startPracticeScene(scene: TutorialLessonId) {
   if (actionBusy.value) return
@@ -134,8 +136,8 @@ onBeforeUnmount(closeCardDetails)
     <header v-if="!props.embedded" class="tutorial-heading"><div><small>十二军团 · 新手教学</small><h1>初识十二军团</h1></div>
       <router-link v-if="!props.embedded" to="/battle">返回对战大厅</router-link>
     </header>
-    <ol class="course-path" :class="{ compact: props.embedded }" aria-label="教学主线"><li v-for="(chapter, index) in tutorialChapters" :key="chapter" :aria-label="chapter" :class="{ current: index === (chapterComplete ? 1 : 0) }">
-      <span>{{ props.embedded ? ['基础','响应','对局'][index] : chapter }}</span><small v-if="!props.embedded && index === 1">{{ progress.responseReviewed ? '已复盘' : chapterComplete ? '下一步' : '完成第一章后继续' }}</small><small v-if="!props.embedded && index > 1">尚未开放</small>
+    <ol class="course-path" :class="{ compact: props.embedded }" aria-label="教学主线"><li v-for="(chapter, index) in tutorialChapters" :key="chapter" :aria-label="chapter" :class="{ current: index === (progress.responseReviewed ? 2 : chapterComplete ? 1 : 0) }">
+      <span>{{ props.embedded ? ['基础','响应','对局'][index] : chapter }}</span><small v-if="!props.embedded && index === 1">{{ progress.responseReviewed ? '已完成' : chapterComplete ? '下一步' : '完成第一章后继续' }}</small><small v-if="!props.embedded && index > 1">{{ progress.finaleReviewed ? '已完成' : progress.responseReviewed ? '下一步' : '完成第二章后继续' }}</small>
     </li></ol>
 
     <section v-if="introductionOpen" class="tutorial-conversation" :class="{ 'has-intro-cards': introduction.cards.length }" data-tutorial-introduction="true" aria-live="polite">
@@ -164,10 +166,9 @@ onBeforeUnmount(closeCardDetails)
     </section>
     <section v-else class="tutorial-conversation chapter-review" aria-live="polite">
       <div class="guide-speaker"><span aria-hidden="true">✦</span><b>向导</b><small>第一章复盘</small></div>
-      <h2>现在，把刚才的行动串起来</h2>
-      <p>你已完成打出军团、支付士气、移动、进攻和防守。继续按当前资源、位置和卡牌效果行动。</p>
-      <p>{{ progress.responseReviewed ? '你也完成了反击响应。第三章仍在准备，可重学前两章。' : '下一章练习盖伏反击、支付费用并确认实际结果。' }}</p>
-      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy || connecting" @click="startResponsePractice">{{ starting ? '正在准备练习场面…' : progress.responseReviewed ? '重学卡牌效果与响应' : '下一步：卡牌效果与响应' }}</button><button type="button" :disabled="actionBusy" @click="repeatChapter">重新学习第一章</button></div>
+      <h2>{{ progress.finaleReviewed ? '你已完成新手教学' : '继续你的练习' }}</h2>
+      <p>{{ progress.finaleReviewed ? '从准备、资源与站位，到效果、响应和胜负，你已经亲手走过。接下来可以使用预组开始对局。' : progress.responseReviewed ? '接下来认识对局准备，再把已学操作串起来，完成一场小局。' : '接下来练习检索、盖伏与进攻后的响应。' }}</p>
+      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy || connecting" @click="startResponsePractice">{{ starting ? '正在准备练习场面…' : progress.finaleReviewed ? '重学卡牌效果与响应' : progress.responseReviewed ? '下一步：完成一场对局' : '下一步：卡牌效果与响应' }}</button><button type="button" :disabled="actionBusy" @click="repeatChapter">重新学习第一章</button></div>
     </section>
     <p v-if="unsaved" class="tutorial-notice" role="status">进度暂未保存，当前学习可继续；刷新页面可能丢失本次进度。<button type="button" @click="retryProgressSave">重试保存</button></p>
     <p v-if="accountId && availabilityCopy" class="tutorial-status" role="status">{{ availabilityCopy }}</p>

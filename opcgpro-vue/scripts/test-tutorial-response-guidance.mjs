@@ -43,8 +43,9 @@ check('duplicate board and mobile nodes represent only one selected payment reso
 const card = (instanceId, cardId, name, extra = {}) => ({ instanceId, cardId, name,
   cardType: cardId === 'S01-0016' ? 'tactic' : 'legion', cost: cardId === 'S01-0016' ? 2 : 1,
   troops: 1000, tapped: false, summonRound: 1, ...extra })
-const xi = card('xi-first', 'S01-0116', '西施')
-const counter = card('counter-first', 'S01-0016', '绝对防御')
+const xi = card('nie-first', 'ST01-08', '聂隐娘')
+const counter = card('counter-first', 'ST01-10', '暗度陈仓', { cardType: 'tactic' })
+const artifact = card('artifact-first', 'S01-0117', '山河社稷图', { cardType: 'relic' })
 const discarded = card('discard-a', 'S01-0108', '韩信', { cost: 5 })
 const player = (index, extra = {}) => ({ playerIndex: index, name: `actor-${index}`,
   hand: [], handCount: 0, morale: [{ instanceId: 'm0', tapped: false }, { instanceId: 'm1', tapped: true }],
@@ -52,7 +53,11 @@ const player = (index, extra = {}) => ({ playerIndex: index, name: `actor-${inde
 const game = (self = player(0, { hand: [xi, counter, discarded], handCount: 3 }), extra = {}) => ({
   you: 0, players: [self, player(1)], prompts: [], ...extra,
 })
-const initial = helpers.responseTutorialFacts(game())
+const focus = { artifactInstanceId: artifact.instanceId, counterInstanceId: counter.instanceId,
+  legionInstanceId: xi.instanceId, costCardInstanceId: discarded.instanceId }
+const factsFor = (state, binding = focus) => helpers.responseTutorialFacts(state, binding)
+const initial = factsFor(game(player(0, { hand: [xi, counter, discarded], handCount: 3, relic: artifact,
+  master: { hp: 4 } })))
 check('a reveal waiting for our real prompt cannot deadlock reading its instructions', () => {
   const own = game(undefined, { prompts: [{ playerIndex: 0, kind: 'response' }] })
   assert.equal(sharedHelpers.tutorialInstructionBlocked(own, false, true), false)
@@ -87,7 +92,7 @@ check('detail focus never resolves an unknown covered card or reads the opponent
   assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, counter.instanceId), null)
 })
 check('response card introductions bind shared detail fields to their own exact instances', () => {
-  const legion = helpers.responseTutorialDialogue('response-legion', initial)[0].anchor
+  const legion = helpers.responseTutorialDialogue('response-summon', initial)[0].anchor
   const counterPage = helpers.responseTutorialDialogue('response-cover', initial).find(page => page.id === 'response-cover-card')
   assert.equal(legion.detailInstanceId, xi.instanceId)
   assert.deepEqual(legion.detailFields, ['费用', '兵力', '效果'])
@@ -101,28 +106,36 @@ check('learns exact own recipe instances from real ordered cards', () => {
   assert.equal(initial.activeMorale, 1); assert.equal(initial.handCount, 3)
 })
 check('reads actual current cost and troops, never replaces them by printed defaults', () => {
-  const facts = helpers.responseTutorialFacts(game(player(0, { hand: [{ ...xi, currentCost: 0, troops: 2300 }, counter] })))
-  const text = helpers.responseTutorialDialogue('response-legion', facts).map(page => page.body).join(' ')
-  assert.match(text, /费用 0、兵力 2300/)
+  const facts = factsFor(game(player(0, { hand: [xi, { ...counter, currentCost: 0 }], master: { hp: 4 } })))
+  const text = helpers.responseTutorialDialogue('response-cover', facts).map(page => page.body).join(' ')
+  assert.match(text, /费用 0/)
 })
 check('retains owner-known covered counter on reconnect', () => {
-  const facts = helpers.responseTutorialFacts(game(player(0, { field: [[xi, null, null], [counter, null, null]].map(row => row.map(c => c?.instanceId === counter.instanceId ? { ...c, hidden: true, identityKnown: true } : c)) })))
+  const facts = factsFor(game(player(0, { field: [[xi, null, null], [counter, null, null]].map(row => row.map(c => c?.instanceId === counter.instanceId ? { ...c, hidden: true, identityKnown: true } : c)) })))
   assert.equal(facts.counterId, counter.instanceId)
 })
 check('unknown covered identity is not guessed', () => {
-  const facts = helpers.responseTutorialFacts(game(player(0, { field: [[null, null, null], [{ ...counter, hidden: true, identityKnown: false }, null, null]] })))
-  assert.equal(facts.counter, null); assert.equal(facts.counterId, null)
+  const facts = factsFor(game(player(0, { field: [[null, null, null], [{ ...counter, hidden: true, identityKnown: false }, null, null]] })))
+  assert.equal(facts.counter, null)
+  assert.equal(factsFor(game(), { ...focus, counterInstanceId: null }).counterId, null)
 })
 check('bound instance does not switch to another same-name card', () => {
-  const facts = helpers.responseTutorialFacts(game(player(0, { hand: [{ ...xi, instanceId: 'xi-second' }, counter] })), { legionId: xi.instanceId, counterId: counter.instanceId })
+  const facts = factsFor(game(player(0, { hand: [{ ...xi, instanceId: 'nie-second' }, counter] })))
   assert.equal(facts.legion, null); assert.equal(facts.legionId, xi.instanceId)
 })
 check('does not access opponent hidden hand', () => {
   const enemy = player(1)
   Object.defineProperty(enemy, 'hand', { get() { throw new Error('private opponent hand accessed') } })
-  assert.equal(helpers.responseTutorialFacts(game(undefined, { players: [player(0, { hand: [xi, counter] }), enemy] })).counterId, counter.instanceId)
+  assert.equal(factsFor(game(undefined, { players: [player(0, { hand: [xi, counter] }), enemy] })).counterId, counter.instanceId)
 })
-const phases = ['response-legion', 'response-cover', 'response-end-turn', 'response-choose', 'response-discard', 'completed', 'response-retry']
+check('no metadata cannot guess same-name cards or future searched identity', () => {
+  const unknown = helpers.responseTutorialFacts(game())
+  assert.equal(unknown.legion, null); assert.equal(unknown.counter, null)
+  assert.equal(factsFor(game(), { ...focus, legionInstanceId: null }).legionId, null)
+})
+const phases = ['response-artifact', 'response-search-cost', 'response-search-pick', 'response-search-order',
+  'response-cover', 'response-end-turn', 'response-defend', 'response-choose', 'response-return',
+  'response-summon', 'response-position', 'completed', 'response-retry']
 for (const phase of phases) check(`${phase}: explains cause and gain before acting or reviewing`, () => {
   const pages = helpers.responseTutorialDialogue(phase, initial)
   assert.ok(pages.length > 0)
@@ -131,30 +144,43 @@ for (const phase of phases) check(`${phase}: explains cause and gain before acti
 })
 check('explains card activation versus effect activation without Angus exception', () => {
   const text = helpers.responseTutorialDialogue('response-choose', initial).map(page => `${page.body} ${page.reason} ${page.outcome}`).join(' ')
-  assert.match(text, /卡的发动与效果的发动/); assert.match(text, /不是抵挡进攻|不是一次进攻/)
+  assert.match(text, /卡的发动与效果的发动/); assert.match(text, /不会抵挡或无效/)
 })
-const prompt = { promptId: 'cost-"-id', playerIndex: 0, kind: 'discard-cost', validChoices: [discarded.instanceId], minChoose: 1, maxChoose: 1 }
-const costFacts = helpers.responseTutorialFacts(game(undefined, { prompts: [prompt] }))
+const prompt = { promptId: 'cost-"-id', playerIndex: 0, kind: 'active-target', sourceInstanceId: artifact.instanceId,
+  presentation: { paymentStatus: 'pending' }, validChoices: [discarded.instanceId], minChoose: 1, maxChoose: 1 }
+const costFacts = factsFor(game(undefined, { prompts: [prompt] }))
+check('real Dark Passage target-morale cost means return, not rest; source and step remain exact', () => {
+  const payment = { ...prompt, kind: 'target-morale', sourceInstanceId: counter.instanceId,
+    data: { choiceMode: 'resource-selection' } }
+  const actual = factsFor(game(undefined, { prompts: [payment] }))
+  assert.equal(helpers.responseTutorialReturnCost('response-return', actual), true)
+  assert.equal(helpers.responseTutorialReturnCost('response-cover', actual), false)
+  assert.equal(helpers.responseTutorialReturnCost('response-return', { ...actual, counterId: 'other' }), false)
+  assert.equal(helpers.responseTutorialReturnCost('response-return', { ...actual, prompt: null }), false)
+})
 check('discard recommendation is own visible hand and current valid choice only', () => {
   assert.equal(costFacts.discard.instanceId, discarded.instanceId)
-  const text = helpers.responseTutorialDialogue('response-discard', costFacts)[0].body
-  assert.match(text, /韩信/); assert.match(text, /不需要再支付/)
-  assert.equal(helpers.responseTutorialFacts(game(undefined, { prompts: [{ ...prompt, playerIndex: 1 }] })).discard, null)
+  const text = helpers.responseTutorialDialogue('response-search-cost', costFacts)[0].body
+  assert.match(text, /韩信/); assert.match(text, /不是在打出/)
+  assert.equal(factsFor(game(undefined, { prompts: [{ ...prompt, playerIndex: 1 }] })).discard, null)
+  assert.equal(factsFor(game(undefined, { prompts: [prompt] }), { ...focus, costCardInstanceId: 'missing' }).discard, null)
+  assert.equal(factsFor(game(undefined, { prompts: [{ ...prompt, sourceInstanceId: 'different-artifact' }] })).discard, null)
+  assert.equal(factsFor(game(undefined, { prompts: [{ ...prompt, presentation: { paymentStatus: 'paid' } }] })).discard, null)
 })
 const dom = { selected: false, playButton: false, availableSlots: false, endTurn: false, selectedPromptChoice: false }
 check('prompt card and confirmation bind exact prompt, escaped safely', () => {
-  const action = helpers.responseTutorialAction('response-discard', costFacts, dom)
+  const action = helpers.responseTutorialAction('response-search-cost', costFacts, dom)
   assert.match(action.anchor.selector, /cost-\\"-id/); assert.match(action.anchor.selector, /discard-a/)
-  const confirm = helpers.responseTutorialAction('response-discard', costFacts, { ...dom, selectedPromptChoice: true })
+  const confirm = helpers.responseTutorialAction('response-search-cost', costFacts, { ...dom, selectedPromptChoice: true })
   assert.match(confirm.anchor.selector, /confirm-prompt/); assert.doesNotMatch(confirm.anchor.selector, /data-tutorial-choice/)
 })
 check('placement points to front legion and back covered counter only', () => {
-  assert.match(helpers.responseTutorialAction('response-legion', initial, { ...dom, availableSlots: true }).anchor.selector, /data-tutorial-row="0"/)
+  assert.match(helpers.responseTutorialAction('response-position', initial, { ...dom, availableSlots: true }).anchor.selector, /data-tutorial-row="0"/)
   assert.match(helpers.responseTutorialAction('response-cover', initial, { ...dom, availableSlots: true }).anchor.selector, /data-tutorial-row="1"/)
 })
 check('result keeps paid costs and automatically continues only after the real result', () => {
   const page = helpers.responseTutorialDialogue('completed', initial)[0]
-  assert.match(page.body, /不会自动退回/); assert.match(page.outcome, /结果已提交.*自动进入下一步/)
+  assert.match(page.body, /费用都保留/); assert.match(page.body, /伤害也仍然存在/); assert.match(page.outcome, /自动进入下一步/)
   assert.doesNotMatch(page.outcome, /确认结果.*才记录|继续主线/)
 })
 check('unknown step waits without providing an action or completion', () => {
@@ -168,7 +194,9 @@ function storage() {
 }
 function completion(account, lessonId, extra = {}) {
   return { accountId: account, sessionId: 'session', connectionGeneration: 1,
-    matchId: `match-${lessonId}`, lessonId, version: 1, stepId: 'completed', status: 'completed', ...extra }
+    matchId: `match-${lessonId}`, lessonId, version: lessonId === 'response' ? 2 : 1,
+    ...(lessonId === 'response' ? { recipeId: 'public-response-v1' } : {}),
+    stepId: 'completed', status: 'completed', ...extra }
 }
 function review(account, lessonId, store, extra = {}) {
   return progress.recordGuidedSceneReview(completion(account, lessonId, extra), {
@@ -196,6 +224,7 @@ check('explicit response review adds independent completion without changing fir
   assert.equal(review('response-review', 'response', store), true)
   assert.deepEqual(progress.loadGuidedTutorialProgress('response-review', store), {
     version: 2, introductionRead: true, reviewedScenes: ['deploy', 'move', 'combat'], responseReviewed: true,
+    responseRecipeId: 'public-response-v1',
   })
 })
 check('old progress and malformed response flag cannot promote an unfinished course', () => {
@@ -203,6 +232,16 @@ check('old progress and malformed response flag cannot promote an unfinished cou
   store.setItem(progress.guidedTutorialStorageKey(account), JSON.stringify({ version: 2, introductionRead: true,
     reviewedScenes: ['deploy', 'response', 'combat'], responseReviewed: true }))
   assert.deepEqual(progress.loadGuidedTutorialProgress(account, store), { version: 2, introductionRead: true, reviewedScenes: ['deploy'] })
+})
+check('legacy response review cannot promote the public recipe while first chapter survives', () => {
+  const store = storage(), account = 'legacy-response-full'
+  store.setItem(progress.guidedTutorialStorageKey(account), JSON.stringify({ version: 2, introductionRead: true,
+    reviewedScenes: ['deploy', 'move', 'combat'], responseReviewed: true }))
+  assert.deepEqual(progress.loadGuidedTutorialProgress(account, store), { version: 2,
+    introductionRead: true, reviewedScenes: ['deploy', 'move', 'combat'] })
+  assert.equal(review(account, 'response', store, { version: 1, recipeId: undefined }), false)
+  assert.equal(review(account, 'response', store, { recipeId: 'unknown' }), false)
+  assert.equal(review(account, 'response', store), true)
 })
 check('response progress keeps full account connection and result binding', () => {
   const store = storage(); firstChapter('bound-response', store)

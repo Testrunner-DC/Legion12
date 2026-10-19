@@ -1032,7 +1032,7 @@ function kindLabel() {
           </template>
           <template v-else-if="placementMode === 'all-top-bottom'">
             <span class="order-final-preview">最终相对牌序（左侧先抽到）：{{ placementOrder.map(cardName).join(' → ') }}。再选择全部放回顶部或底部。</span>
-            <button :disabled="l12State.pendingAction" @click="confirmAllPlacement('top')">全部放回顶部</button>
+            <button data-tutorial-action="place-all-top" :disabled="l12State.pendingAction" @click="confirmAllPlacement('top')">全部放回顶部</button>
             <button class="primary" :disabled="l12State.pendingAction" @click="confirmAllPlacement('bottom')">全部放回底部</button>
           </template>
           <template v-else-if="placementMode === 'all-bottom'">
@@ -1074,12 +1074,13 @@ function kindLabel() {
            <p class="prompt-instruction">{{ mulliganInstruction }}</p>
           <div class="prompt-choices prompt-card-strip">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
+            :data-tutorial-mulligan-card="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
             :horizontal="isHorizontalCardType(card.cardType)" :selected="mulliganSelectedIds.includes(card.instanceId)"
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
           </div>
         </main>
-        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选 {{ mulliganSelectedIds.length }} 张</span><button class="primary" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
+        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选 {{ mulliganSelectedIds.length }} 张</span><button class="primary" data-tutorial-action="confirm-mulligan" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">

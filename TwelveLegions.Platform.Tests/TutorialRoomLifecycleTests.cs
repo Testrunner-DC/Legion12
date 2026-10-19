@@ -23,7 +23,8 @@ public sealed class TutorialRoomLifecycleTests
         var self = state.GetProperty("players")[0];
         Assert.Equal("嫦娥", self.GetProperty("master").GetProperty("masterName").GetString());
         Assert.Equal("迦具土", state.GetProperty("players")[1].GetProperty("master").GetProperty("masterName").GetString());
-        Assert.InRange(self.GetProperty("hand").GetArrayLength(), 1, 8);
+        Assert.InRange(self.GetProperty("hand").GetArrayLength(), 1, 3);
+        AssertLowHandBootstrap(f, state, expectedStudentLegions: 0);
         var card = self.GetProperty("hand").EnumerateArray().First(card => card.GetProperty("cardId").GetString() == "ST01-05");
         var result = await f.Manager.HandleActionAsync(f.Student, JsonSerializer.SerializeToElement(new
         {
@@ -48,6 +49,7 @@ public sealed class TutorialRoomLifecycleTests
         await using var f = await Fixture.Create();
         var initial = await f.Start("move");
         var self = initial.GetProperty("state").GetProperty("players")[0];
+        AssertLowHandBootstrap(f, initial.GetProperty("state"), expectedStudentLegions: 1);
         var card = self.GetProperty("field")[1][1];
         Assert.Equal("ST01-05", card.GetProperty("cardId").GetString());
         var command = new L12Command("move", card.GetProperty("instanceId").GetString(), 0, 1,
@@ -73,8 +75,9 @@ public sealed class TutorialRoomLifecycleTests
         var players = initial.GetProperty("state").GetProperty("players");
         Assert.Equal("嫦娥", players[0].GetProperty("master").GetProperty("masterName").GetString());
         Assert.Equal("迦具土", players[1].GetProperty("master").GetProperty("masterName").GetString());
-        Assert.InRange(players[0].GetProperty("hand").GetArrayLength(), 0, 8);
+        Assert.InRange(players[0].GetProperty("hand").GetArrayLength(), 0, 3);
         Assert.InRange(players[1].GetProperty("handCount").GetInt32(), 0, 8);
+        AssertLowHandBootstrap(f, initial.GetProperty("state"), expectedStudentLegions: 2);
         Assert.Equal("ST04-09", players[1].GetProperty("field")[0][1].GetProperty("cardId").GetString());
         var card = players[0].GetProperty("field")[0][0];
         Assert.Equal("ST01-05", card.GetProperty("cardId").GetString());
@@ -94,6 +97,22 @@ public sealed class TutorialRoomLifecycleTests
         Assert.Null(loaded.Engine.State.PendingDefense);
         Assert.True(loaded.CommandSequence >= 5); // Own attack + opponent defense + turn + opponent attack + own defense.
         Assert.Equal(0, loaded.ProcessedRequests.Single(request => request.RequestId == "defense-1").PlayerIndex);
+    }
+
+    private static void AssertLowHandBootstrap(Fixture fixture, JsonElement state, int expectedStudentLegions)
+    {
+        var players = state.GetProperty("players");
+        var student = players[0];
+        var opponent = players[1];
+        Assert.InRange(student.GetProperty("hand").GetArrayLength(), 0, 3);
+        Assert.Equal(expectedStudentLegions, student.GetProperty("field").EnumerateArray()
+            .SelectMany(row => row.EnumerateArray()).Count(card => card.ValueKind != JsonValueKind.Null));
+        var opponentLegions = opponent.GetProperty("field").EnumerateArray()
+            .SelectMany(row => row.EnumerateArray()).Where(card => card.ValueKind != JsonValueKind.Null).ToArray();
+        Assert.Single(opponentLegions);
+        Assert.Equal("ST04-09", opponentLegions[0].GetProperty("cardId").GetString());
+        Assert.Contains(fixture.RuntimeGame().State.Events, entry => entry.Type == "defense"
+            && entry.PlayerCombat?.OutcomeCode == "blocked");
     }
 
     [Theory]
@@ -659,6 +678,8 @@ public sealed class TutorialRoomLifecycleTests
             var entry = rooms.Cast<object>().Single();
             return entry.GetType().GetProperty("Value")!.GetValue(entry)!;
         }
+        internal L12GameEngine RuntimeGame()
+            => (L12GameEngine)RuntimeRoom().GetType().GetProperty("Game")!.GetValue(RuntimeRoom())!;
         internal SemaphoreSlim RoomGate() => (SemaphoreSlim)RuntimeRoom().GetType().GetProperty("Gate")!.GetValue(RuntimeRoom())!;
         internal void ScheduledMaintenance()
         {

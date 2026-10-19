@@ -135,9 +135,11 @@ export function tutorialCardCost(card: Card | null) {
 }
 
 function tutorialResourcePrompt(game: GameState) {
-  return game.prompts?.find(prompt => prompt.kind === 'resource-payment'
+  return game.prompts?.find(prompt => prompt.playerIndex === game.you && (prompt.kind === 'resource-payment'
+    || prompt.kind === 'resource-return'
+    || prompt.data?.choiceMode === 'resource-return'
     || prompt.data?.choiceMode === 'resource-payment'
-    || prompt.data?.choiceMode === 'resource-selection') ?? null
+    || prompt.data?.choiceMode === 'resource-selection')) ?? null
 }
 
 export function tutorialFacts(tutorial: ActiveTutorialState, game: GameState, preferredInstanceId?: string | null): TutorialSceneFacts {

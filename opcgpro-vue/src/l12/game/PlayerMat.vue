@@ -566,6 +566,7 @@ function beginCardAbility(card: Card) {
           <p v-if="!activeAbilities(abilityCardOpen).length" class="l12-effect-body">{{ abilityCardOpen.effectText || '暂无效果文字' }}</p>
           <div class="faction-effect-actions" data-ui-contract="equal-option-group">
             <button v-for="entry in activeAbilities(abilityCardOpen)" :key="entry.id" class="l12-effect-body l12-effect-body--compact"
+              :data-tutorial-ability="entry.id" :data-tutorial-card-instance="abilityCardOpen.instanceId"
               :disabled="!actionsEnabled || entry.enabled === false || entry.triggerOnly"
               :title="entry.disabledReason || (entry.triggerOnly ? '仅在触发时点发动' : '')"
               @click="emit('ability', abilityCardOpen!, entry.id); abilityCardOpen = null">{{ entry.label }}</button>

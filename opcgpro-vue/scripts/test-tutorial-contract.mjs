@@ -40,6 +40,7 @@ const files = {
   course: 'src/l12/tutorial/tutorialCourse.ts', guide: 'src/l12/tutorial/tutorialGuidance.ts',
   router: 'src/router/index.ts', admin: 'src/l12/site/adminSections.ts', sandbox: 'src/l12/site/SandboxPage.vue',
   script: 'scripts/test-tutorial-contract.mjs',
+  finalChapter: 'src/l12/tutorial/tutorialFinalChapter.ts', finalChapterTests: 'scripts/test-tutorial-final-chapter.mjs',
 }
 const source = Object.fromEntries(Object.entries(files).map(([key, relative]) =>
   [key, fs.readFileSync(path.join(front, relative), 'utf8')]))
@@ -50,7 +51,7 @@ check('one continuous first chapter opens inline without a second directory link
   assert.match(source.hub, /<TutorialPage v-else embedded\s*\/>/)
   assert.doesNotMatch(source.hub + source.page, /进入教学目录|lesson-grid|开始本关|三关可任选/)
   for (const chapter of ['初识十二军团', '卡牌效果与响应', '完成一场对局']) assert.ok(source.course.includes(chapter))
-  assert.match(source.page, /尚未开放/)
+  assert.match(source.page, /你已完成新手教学/)
   for (const id of ['goal', 'cards', 'hand', 'morale', 'practice']) assert.match(source.course, new RegExp(`id: '${id}'`))
   assert.doesNotMatch(source.page + source.overlay, /questionOpen|我想了解|回到主线/)
   const introductionTemplate = source.page.slice(source.page.indexOf('<section v-if="introductionOpen"'), source.page.indexOf('<section v-else-if'))
@@ -191,6 +192,21 @@ function actualInitializer(sfc, name, dependencies) {
   }).outputText
   return Function(...Object.keys(dependencies), `${js}\nreturn result`)(...Object.values(dependencies))
 }
+check('actual wire parser accepts only the named public response recipe and bounded focus', () => {
+  const parser = actualFunctions(`<script setup lang="ts">${source.net}</script>`, ['tutorialProjection'], {
+    tutorialLessonIds: new Set(['deploy', 'move', 'combat', 'response']),
+  }).tutorialProjection
+  const value = { lessonId: 'response', version: 2, recipeId: 'public-response-v1',
+    stepId: 'response-artifact', status: 'active', focus: { artifactInstanceId: 'artifact',
+      counterInstanceId: 'counter', costCardInstanceId: null, legionInstanceId: null } }
+  assert.deepEqual(parser(value), value)
+  for (const extra of [{ recipeId: 'other' }, { version: 3 }, { lessonId: 'combat' }, { focus: null },
+    { focus: {} }, { focus: { ...value.focus, legionInstanceId: true } },
+    { focus: { ...value.focus, legionInstanceId: ' ' } },
+    { focus: { ...value.focus, legionInstanceId: 'a'.repeat(129) } }]) assert.equal(parser({ ...value, ...extra }), null)
+  assert.equal(parser({ lessonId: 'deploy', version: 1, stepId: 'deploy', status: 'active' }).version, 1)
+  assert.equal(parser({ ...value, version: 1 }).version, 1, 'Legacy wire identity is retained but not promoted to the new recipe')
+})
 check('actual board busy includes preparation without mounted animations and preserves legacy replay projection', () => {
   const inputs = { computed, props: reactive({ replayPlaybackSpeed: null }), hiddenRevealCard: ref(null),
     publicReveal: ref(null), diceReveal: ref(null), dicePresentationPending: ref(false),
@@ -238,7 +254,7 @@ check('actual parent and overlay retry a rejected completion and accept duplicat
     game: ref({ matchId: current.matchId }), tutorialProgressUnsaved: ref(false), tutorialProgressRetryIdentity: ref(''),
     recordGuidedSceneReview: () => readable,
     loadGuidedTutorialProgress: () => ({ reviewedScenes: readable ? ['deploy'] : [] }),
-    guidedTutorialPersistenceState: () => ({ unsaved: false }), tutorialScenes: ['deploy', 'move', 'combat'],
+    guidedTutorialPersistenceState: () => ({ unsaved: false }), nextTutorialScene: () => 'move',
     tutorialTransitionTimer: null, tutorialTransitionSlow: ref(false), setTimeout: () => 1,
     leaveRoom: () => { leaves++; l12State.pendingAction = true },
   })
@@ -265,7 +281,8 @@ check('actual parent and overlay retry a rejected completion and accept duplicat
 })
 check('reading and completion use separate real consumers while presentation release is watched', () => {
   const dialogueIndex = ref(0), dialogueDone = ref(false), instructionBlocked = ref(true)
-  const child = actualFunctions(source.overlay, ['advanceDialogue'], { dialogueIndex, dialogueDone, instructionBlocked })
+  const child = actualFunctions(source.overlay, ['advanceDialogue'], { dialogueIndex, dialogueDone, instructionBlocked,
+    props: { tutorial: { lessonId: 'deploy' } }, finaleIntroduced: ref(false) })
   child.advanceDialogue(); assert.equal(dialogueIndex.value, 0)
   instructionBlocked.value = false
   child.advanceDialogue(); assert.equal(dialogueIndex.value, 1)
@@ -274,9 +291,39 @@ check('reading and completion use separate real consumers while presentation rel
   assert.match(source.overlay, /watch\(\(\) => \[completedIdentity\.value[\s\S]*?props\.presentationBusy[\s\S]*?\] as const, queueRefresh/)
   assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction\)" :presentation-busy="tutorialPresentationBusy"/)
 })
+check('finale automatically records once but keeps victory until the original exit action', () => {
+  const current = projection({ lessonId: 'finale' }), tutorial = ref(current)
+  const acceptedTutorialHandoffIdentity = ref('')
+  const tutorialPresentationBusy = ref(true), tutorialTransition = ref(null)
+  const l12State = reactive({ pendingAction: false, status: 'online', sessionId: current.sessionId,
+    connectionGeneration: current.connectionGeneration })
+  let actualExitGuard = ref(true)
+  const tutorialFinaleExitBlocked = { get value() { return actualExitGuard.value } }
+  let records = 0, exits = 0
+  const actual = actualFunctions(source.game, ['tutorialCompletionIdentity', 'continueTutorialMainline', 'returnToLobby'], {
+    tutorial, acceptedTutorialHandoffIdentity, tutorialFinaleExitBlocked, tutorialTransition, tutorialPresentationBusy, l12State,
+    platformState: { account: { id: current.accountId } }, game: ref({ matchId: current.matchId }),
+    tutorialProgressUnsaved: ref(false), tutorialProgressRetryIdentity: ref(''),
+    recordGuidedSceneReview: () => { records++; return true }, loadGuidedTutorialProgress: () => ({ finaleReviewed: true }),
+    guidedTutorialPersistenceState: () => ({ unsaved: false }),
+    beginTutorialHandoff: target => { assert.equal(target, null); exits++; return true },
+  })
+  actualExitGuard = actualInitializer(source.game, 'tutorialFinaleExitBlocked', { computed, tutorial,
+    tutorialPresentationBusy, l12State, tutorialTransition, acceptedTutorialHandoffIdentity,
+    tutorialCompletionIdentity: actual.tutorialCompletionIdentity })
+  actual.returnToLobby(); actual.continueTutorialMainline()
+  assert.equal(records, 0); assert.equal(exits, 0, 'Early click while presentation is busy cannot leave or record')
+  tutorialPresentationBusy.value = false
+  actual.returnToLobby(); assert.equal(exits, 0, 'Presentation release alone is not a learning acknowledgement')
+  actual.continueTutorialMainline(); actual.continueTutorialMainline()
+  assert.equal(records, 1); assert.equal(exits, 0, 'Recording completion cannot dismiss the actual victory result')
+  actual.returnToLobby(); assert.equal(exits, 1, 'The existing final exit uses the real roomLeft handoff')
+  assert.match(source.overlay, /props\.tutorial\.lessonId === 'finale' \? '\.game-over\[role="dialog"\]'/)
+})
 check('completed response without a card anchor uses the visible own master instead of deadlocking', () => {
   const selections = [], element = new (class VisibleMaster {})()
   const result = actualFunctions(source.overlay, ['completedResultVisible'], {
+    props: { tutorial: { lessonId: 'response' } },
     document: { querySelectorAll: selector => { selections.push(selector); return [element] } },
     HTMLElement: element.constructor, visibleGuide: ref({ anchor: null }),
     facts: ref({ self: { playerIndex: 1 } }), visibleViewport: () => ({ width: 844, height: 390 }),
@@ -304,6 +351,8 @@ check('successful owned chapter retirement clears only its normal closure copy, 
   const actual = actualFunctions(source.game, ['clearExpectedTutorialExitNotice'], { l12State })
   actual.clearExpectedTutorialExitNotice()
   assert.equal(l12State.notice, '')
+  l12State.notice = '已离开结算并返回大厅'; actual.clearExpectedTutorialExitNotice()
+  assert.equal(l12State.notice, '')
   for (const message of ['下一段练习未能建立', '账号或连接已变化', '未知错误', '']) {
     l12State.notice = message; actual.clearExpectedTutorialExitNotice(); assert.equal(l12State.notice, message)
   }
@@ -328,7 +377,7 @@ check('cold storage read denial exposes a bound retry and accepts exactly one ha
       loadGuidedTutorialProgress: owner => progress.loadGuidedTutorialProgress(owner, selected),
       guidedTutorialPersistenceState: owner => progress.guidedTutorialPersistenceState(owner, selected),
       retryGuidedTutorialProgress: owner => progress.retryGuidedTutorialProgress(owner, selected),
-      tutorialScenes: ['deploy', 'move', 'combat'], tutorialTransitionTimer: null,
+      nextTutorialScene: () => 'move', tutorialTransitionTimer: null,
       tutorialTransitionSlow: ref(false), setTimeout: () => 1, leaveRoom: () => { leaves++; l12State.pendingAction = true },
     })
   const key = parent.tutorialCompletionIdentity(current)
@@ -592,6 +641,8 @@ try {
   })
   net.disconnect()
 } finally { await vite.close() }
+
+await import('./test-tutorial-final-chapter.mjs')
 
 const report = { status: 'GREEN', count: cases.length, cases,
   sourceSha256: Object.fromEntries(Object.entries(files).map(([key, relative]) =>

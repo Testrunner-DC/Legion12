@@ -674,7 +674,7 @@ const contracts = [
     && prompt.includes('@drop.stop.prevent="reorderAll(choice)"') && prompt.includes('@select="selectSwapChoice(choice)"'),
   '共用整组排序行必须以首尾自动留白实现少牌居中及溢出首尾可达；悬停预留详情、拖拽和点击换序入口均不得丢失'],
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
-    && gamePage.includes("{{ tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}")
+    && gamePage.includes("{{ tutorial?.lessonId === 'finale' && tutorial.status === 'completed' ? '完成教学' : tutorial ? '返回教学' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}")
     && !gamePage.includes('点击返回后才离开本局')
     && !gamePage.includes('双方都离开后关闭房间')
     && !gamePage.includes('对局编号')

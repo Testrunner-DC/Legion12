@@ -1,36 +1,42 @@
-import type { Card, GameState, PlayerView, Prompt } from '../types'
+import type { Card, GameState, PlayerView, Prompt, TutorialProjection } from '../types'
 import { cssAttributeValue, tutorialActionSelector, tutorialCardSelector, tutorialPlayerSelector,
   type TutorialDialoguePage } from './tutorialGuidance'
 
-export type ResponseTutorialStep = 'response-legion' | 'response-cover' | 'response-end-turn'
-  | 'response-choose' | 'response-discard' | 'response-retry' | 'completed'
-export interface ResponseTutorialBinding { legionId: string | null; counterId: string | null }
-export interface ResponseTutorialFacts extends ResponseTutorialBinding {
-  self: PlayerView; legion: Card | null; counter: Card | null; discard: Card | null
+export type ResponseTutorialBinding = NonNullable<TutorialProjection['focus']>
+export interface ResponseTutorialFacts {
+  self: PlayerView; artifact: Card | null; legion: Card | null; counter: Card | null; discard: Card | null
+  artifactId: string | null; legionId: string | null; counterId: string | null
   prompt: Prompt | null; activeMorale: number; handCount: number
 }
 export interface ResponseTutorialDom {
   selected: boolean; playButton: boolean; availableSlots: boolean; endTurn: boolean
-  selectedPromptChoice: boolean
+  selectedPromptChoice: boolean; artifactAbility?: boolean
 }
 
-function ownCards(player: PlayerView) {
-  return [...(player.hand ?? []), ...player.field.flat().filter((card): card is Card => Boolean(card)),
-    ...(player.graveyard ?? [])].filter(card => !card.hidden || card.identityKnown === true)
+export function responseTutorialReturnCost(step: string, facts: ResponseTutorialFacts): boolean {
+  return step === 'response-return' && facts.prompt?.kind === 'target-morale'
+    && facts.prompt.data?.choiceMode === 'resource-selection'
+    && Boolean(facts.counterId && facts.prompt.sourceInstanceId === facts.counterId)
 }
+
 export function responseTutorialFacts(game: GameState, binding?: ResponseTutorialBinding): ResponseTutorialFacts {
   const self = game.players.find(player => player.playerIndex === game.you) ?? game.players[game.you]!
-  const cards = ownCards(self)
-  const exact = (id: string | null | undefined, cardId: string) => id
-    ? cards.find(card => card.instanceId === id) ?? null : cards.find(card => card.cardId === cardId) ?? null
-  const legion = exact(binding?.legionId, 'S01-0116')
-  const counter = exact(binding?.counterId, 'S01-0016')
+  const cards = [...(self.hand ?? []), ...self.field.flat(), self.relic,
+    ...(self.extraRelics ?? []), ...(self.resolving ?? []), ...(self.graveyard ?? [])]
+    .filter((card): card is Card => Boolean(card && (!card.hidden || card.identityKnown === true)))
+  const exact = (id?: string | null) => id ? cards.find(card => card.instanceId === id) ?? null : null
   const prompt = game.prompts?.find(item => item.playerIndex === game.you) ?? null
-  const discard = prompt?.kind === 'discard-cost'
-    ? self.hand?.find(card => !card.hidden && prompt.validChoices.includes(card.instanceId)) ?? null : null
-  return { self, legion, counter, legionId: binding?.legionId ?? legion?.instanceId ?? null,
-    counterId: binding?.counterId ?? counter?.instanceId ?? null, discard, prompt,
-    activeMorale: self.morale.filter(resource => !resource.tapped).length,
+  const costId = binding?.costCardInstanceId
+  const discard = prompt?.kind === 'active-target' && prompt.sourceInstanceId === binding?.artifactInstanceId
+    && prompt.presentation?.paymentStatus === 'pending' && costId && prompt.validChoices.includes(costId)
+    ? self.hand?.find(card => card.instanceId === costId && !card.hidden) ?? null : null
+  // The server reveals the searched identity only when the real search exposes it.
+  // Never learn a hidden library card from a matching name or catalog identifier.
+  const legionId = binding?.legionInstanceId ?? null
+  return { self, artifact: exact(binding?.artifactInstanceId), legion: exact(legionId),
+    counter: exact(binding?.counterInstanceId), discard, prompt,
+    artifactId: binding?.artifactInstanceId ?? null, counterId: binding?.counterInstanceId ?? null,
+    legionId, activeMorale: self.morale.filter(resource => !resource.tapped).length,
     handCount: self.handCount ?? self.hand?.length ?? 0 }
 }
 
@@ -44,96 +50,95 @@ const page = (id: string, title: string, body: string, reason: string, outcome: 
   anchor: TutorialDialoguePage['anchor'] = null): TutorialDialoguePage => ({
   id, eyebrow: '第二章 · 卡牌效果与响应', title, body, reason, outcome, anchor,
 })
+const detail = (id: string | null, label: string, legion = false): TutorialDialoguePage['anchor'] => id ? {
+  selector: '.catalog-detail-dialog', detailInstanceId: id,
+  detailFields: legion ? ['费用', '兵力', '效果'] : ['费用', '效果'], label, unavailable: '请查看当前卡牌详情。',
+} : null
 
 export function responseTutorialDialogue(step: string, facts: ResponseTutorialFacts): TutorialDialoguePage[] {
-  const morale = { selector: `${tutorialPlayerSelector(facts.self.playerIndex)} [data-tutorial-anchor="morale"]`,
-    label: '我方士气', unavailable: '请展开我方士气区。' }
   switch (step) {
-    case 'response-legion': return [
-      page('response-goal', '先让西施登场',
-        `西施当前费用 ${cardCost(facts.legion)}、兵力 ${facts.legion?.troops ?? '—'}。让她在前排登场，再准备一张反击。`,
-        '费用决定打出的资源代价，兵力参与攻防；选择前排是本场练习安排，不是所有军团都应放前排。',
-        '打出后少一张手牌，换来一张场上军团。',
-        facts.legionId ? { selector: '.catalog-detail-dialog', detailInstanceId: facts.legionId,
-          detailFields: ['费用', '兵力', '效果'], label: '西施的费用、兵力与效果', unavailable: '请打开本次西施的卡牌详情。' } : null),
-      page('response-resource-plan', '为反击留出资源',
-        `现在有 ${facts.activeMorale} 张活跃士气、${facts.handCount} 张手牌。打出西施后，还要支付绝对防御的盖伏费用；本场资源不是开局数值。`,
-        '手牌是可选的行动，士气才让这些行动能够支付；不能只看手里有多少张牌。',
-        '付费会让所选活跃士气转为休整。', morale),
-    ]
-    case 'response-cover': return [
-      page('response-cover-result', '先看西施登场后的变化',
-        `西施已在前排，当前兵力 ${facts.legion?.troops ?? '—'}；现在还有 ${facts.activeMorale} 张活跃士气。`,
-        '刚才用手牌和费用换来了场上的军团，而不是额外获得兵力或一次进攻。',
-        '接下来盖伏反击，保护这张军团。',
-        facts.legionId ? { selector: `${fieldSelector(facts.self.playerIndex)}${tutorialCardSelector(facts.legionId)}`, label: '登场的西施', unavailable: '请展开我方战场。' } : null),
-      page('response-cover-card', '盖伏是在准备，不是立刻生效',
-        `绝对防御是反击战术，当前打出费用 ${cardCost(facts.counter)}。把它盖伏到合法后排位置，并按提示支付费用。`,
-        '先付费准备一张以后可以响应的卡，不表示现在已经无效任何效果。',
-        '自己知道盖伏的卡是什么；对手此时只能看见盖伏卡。',
-        facts.counterId ? { selector: '.catalog-detail-dialog', detailInstanceId: facts.counterId,
-          detailFields: ['费用', '效果'], label: '绝对防御的费用与效果', unavailable: '请打开绝对防御的卡牌详情。' } : null),
-    ]
-    case 'response-end-turn': return [page('response-prepared', '准备好了，把行动权交给对方',
-      '西施已登场，绝对防御已盖伏。现在正常结束回合，观察对方公开的行动。',
-      '本例跨回合是练习安排，不是另加一条“所有反击都必须等下一回合”的规则。',
-      '对方会按正常规则打出战术；在真实响应出现前，我们不提前宣布它的结果。')]
-    case 'response-choose': return [
-      page('response-started-not-resolved', '发动已经发生，效果还在等待',
-        '对方已打出兵临城下并支付费用，但效果仍在等待处理。',
-        '发动与成功处理不是一回事。卡的发动与效果的发动也要分开理解。',
-        '之后即使效果被无效，也不会把已经发生的发动和费用抹去。'),
-      page('response-counter-window', '回应的是效果，不是抵挡进攻',
-        '在当前响应中选择刚才盖伏的绝对防御。我们要阻止的是兵临城下的效果，不是一次进攻。',
-        '是否响应，要比较保护场面带来的收益与自己付出的手牌。',
-        '选择反击后还要支付它要求的费用；此刻不能提前说无效成功。',
-        facts.prompt && facts.counterId ? { selector: promptChoice(facts.prompt, facts.counterId), label: '响应中的绝对防御', unavailable: '请恢复当前响应面板。' } : null),
-    ]
-    case 'response-discard': return [page('response-discard-cost', '用一张手牌，换取阻止效果的机会',
-      `盖伏时已经付过士气。现在另选一张合法手牌弃置；本次可先选择${facts.discard?.name ?? '当前费用询问中的卡牌'}。这不是把它打出，不需要再支付它牌面上的打出费用。`,
-      '这张手牌原本也有未来的用途；付出它，是为了争取让眼前效果无效，而不是保证效果成功的押金。',
-      '确认后才实际支付弃牌费用，并继续处理堆叠；不额外创造不存在的确认步骤。',
-      facts.prompt && facts.discard ? { selector: promptChoice(facts.prompt, facts.discard.instanceId), label: '可弃置的手牌', unavailable: '请恢复当前弃牌费用面板。' } : null)]
-    case 'completed': return [page('response-result', '比较结果，也别忘了代价',
-      `兵临城下的效果已被无效，西施当前兵力 ${facts.legion?.troops ?? '—'}；打出、盖伏及弃牌的费用不会自动退回。`,
-      '本次投入了手牌与士气，换来保护军团的结果。下次面对不同卡，也要先看条件、时机、费用与目标，再决定是否响应。',
-      '真实结果已提交，教学会自动进入下一步。')]
-    case 'response-retry': return [page('response-observe-other-result', '这次看到了另一种结果',
-      '这次没有沿预定的反击路线完成。请看场面中的真实变化；已经支付的费用仍按原规则处理。',
-      '不响应也可能是合法选择，但与本次“亲手阻止效果”的练习目标不同。',
-      '可以重新练习这段场面；不会把这次结果当作完成响应教学。')]
-    default: return [page('response-wait', '等待当前练习场面', '请稍候，当前场面尚未准备好。',
-      '先确认当前步骤，才能给出准确的操作说明。', '不会根据客户端计时或点击次数跳过练习。')]
+    case 'response-artifact': return [page('response-artifact-card', '用圣物寻找需要的手牌',
+      '山河社稷图已在圣物区。发动“弃牌·检索”，用一张手牌换取查看牌库顶部3张、从中选牌的机会。',
+      '圣物留场不代表能力会自动发动。', '本段是已备好资源的练习场面，不是标准开局。',
+      detail(facts.artifactId, '山河社稷图的费用与效果'))]
+    case 'response-search-cost': return [page('response-search-cost-card', '先支付弃牌费用',
+      `选择${facts.discard?.name ?? '高亮的合法手牌'}弃置。这是在支付山河社稷图的费用，不是在打出这张牌。`,
+      '费用与效果分开处理。', '费用付出后不会因后续效果未成功而自动退回。')]
+    case 'response-search-pick': return [page('response-search-card', '把需要的军团加入手牌',
+      '从这次看到的3张牌中选择聂隐娘。接下来借助暗度陈仓，让她在对方回合活跃登场。',
+      '检索让手牌更贴合下一步计划。', '其他牌仍要按提示安排返回牌库。')]
+    case 'response-search-order': return [page('response-search-result', '安排未选中的牌',
+      '聂隐娘已加入手牌。其余牌可以调整顺序；本次选择“全部放回顶部”，左侧的牌先抽到。',
+      '选牌与余牌返回是同一次效果的不同步骤。', '安排后继续准备反击。',
+      detail(facts.legionId, '聂隐娘的费用、兵力与效果', true))]
+    case 'response-cover': return [page('response-cover-card', '为对方回合准备反击',
+      `暗度陈仓是反击战术，当前费用 ${cardCost(facts.counter)}。将它盖伏到后排，并支付费用；现在还不会使军团登场。`,
+      '盖伏是在准备之后的响应。', '对手此时只能看到盖伏卡。', detail(facts.counterId, '暗度陈仓的费用与效果'))]
+    case 'response-end-turn': return [page('response-prepared', '把行动权交给对方',
+      '暗度陈仓已盖伏，聂隐娘留在手牌。结束回合，观察对方进攻及反击出现的时机。',
+      '准备好不等于已经发动。', '原费用不会因为交接回合而退回。')]
+    case 'response-pass': return []
+    case 'response-defend': return [page('response-defense', '这次先不抵挡',
+      '对方正在进攻我方主宰。本次选择“不抵挡”，保留聂隐娘；主宰会先承受这次进攻，再出现暗度陈仓的响应时机。',
+      '响应与抵挡是不同选择。', '后续反击不会抹去已经结算的伤害。')]
+    case 'response-choose': return [page('response-after-attack', '进攻结束后，再发动反击',
+      `我方主宰当前血量 ${facts.self.master.hp}。选择发动暗度陈仓；它不会抵挡或无效刚才的进攻，而是为军团登场创造机会。`,
+      '卡的发动与效果的发动要区分；同一效果也可能有多步处理。', '接下来还要支付返还士气的费用。')]
+    case 'response-return': return [page('response-return-cost', '返还士气，支付发动费用',
+      '选择1张合法士气返还士气牌库。返还会减少场上的士气，不同于支付打出费用时将士气休整。',
+      '盖伏费用和本次发动费用是两次不同支付。', '支付后再选择要登场的手牌。')]
+    case 'response-summon': return [page('response-entry-card', '选择聂隐娘活跃登场',
+      `聂隐娘当前兵力 ${facts.legion?.troops ?? '—'}。这次由暗度陈仓的效果使她活跃登场，不再支付她的打出费用。`,
+      '卡牌效果可以改变军团进入战场的方式。', '活跃不等于无条件获得冲锋。', detail(facts.legionId, '聂隐娘的费用、兵力与效果', true))]
+    case 'response-position': return [page('response-entry-position', '为军团选择位置',
+      '选择亮起的合法空格。军团登场后的站位决定接下来可参与的攻防；本次先放前排。',
+      '位置仍受当前效果与真实占位限制。', '不会覆盖已有军团。')]
+    case 'completed': return [page('response-result', '看清每一步的代价与结果',
+      `聂隐娘已活跃登场，我方主宰当前血量 ${facts.self.master.hp}。弃牌、盖伏和返还士气的费用都保留；刚才的伤害也仍然存在。`,
+      '一次响应可能包含费用、选牌与选位，不能把它们当作多次发动。', '本段完成，自动进入下一步。')]
+    case 'response-retry': return [page('response-other-result', '这次形成了另一种局面',
+      '本次没有完成预定的检索与反击路线。已支付的费用和实际结果保留，可以重新练习。',
+      '其他选择可能合法，但不等于完成本段目标。', '不会自动退费或把未完成的步骤记为完成。')]
+    default: return [page('response-wait', '等待当前练习场面', '正在准备下一步，请稍候。',
+      '先看到场面，再指向操作。', '不会按点击次数跳过步骤。')]
   }
 }
 
 export function responseTutorialAction(step: string, facts: ResponseTutorialFacts, dom: ResponseTutorialDom): TutorialDialoguePage {
-  if (step === 'response-legion' || step === 'response-cover') {
-    const cover = step === 'response-cover'
-    const id = cover ? facts.counterId : facts.legionId
-    const name = cover ? '绝对防御' : '西施'
-    if (dom.availableSlots) return page('response-place', cover ? '选择合法后排位置' : '选择合法前排空位',
-      cover ? '选择亮起的合法后排位置，再按原支付提示继续。' : '选择亮起的合法前排空位，再按原支付提示继续。',
-      cover ? '盖伏是为之后的响应做准备。' : '本例用前排军团观察兵临城下的效果。',
-      '选位尚不代表已经付清费用。', { selector: `${fieldSelector(facts.self.playerIndex, cover ? 1 : 0)}.available`, label: '合法阵地', unavailable: '请重新选择本次卡牌。', multiple: true })
-    return page('response-select-card', dom.playButton ? `准备打出${name}` : `选择${name}`,
-      dom.playButton ? '点击原界面的“打出”，查看本次合法位置。' : `点击我方手牌中高亮的${name}。`,
-      '选择只打开本次真实操作入口，不会直接支付费用。', '随后仍需确认合法位置和本次费用。', id ? {
-        selector: dom.playButton ? tutorialActionSelector('play-card', id) : handSelector(id), label: name, unavailable: '请展开或滑动我方手牌区。',
-      } : null)
-  }
-  if (step === 'response-end-turn') return page('response-end-turn-action', '正常结束回合',
-    '点击“结束回合”，再观察对方公开的行动。', '交接行动权，才能看到这次真实响应机会。',
-    '结束回合本身不会完成反击。', { selector: tutorialActionSelector('end-turn'), label: '结束回合', unavailable: '结束回合当前不可用。' })
   const prompt = facts.prompt
-  const id = step === 'response-choose' ? facts.counterId : step === 'response-discard' ? facts.discard?.instanceId : null
-  if (prompt && id) return page('response-prompt-action', dom.selectedPromptChoice ? '确认本次选择' : step === 'response-choose' ? '选择绝对防御响应' : '选择一张合法手牌弃置',
-    dom.selectedPromptChoice ? '核对当前选择，再点击原确认按钮。' : '先选择高亮的合法卡牌。',
-    step === 'response-choose' ? '选择这张反击来回应眼前的战术效果。' : '弃掉一张手牌是本次发动的费用，不是打出这张手牌。',
-    '确认后等待实际处理结果，不按按钮点击就提前计作完成。', {
-      selector: dom.selectedPromptChoice ? `${promptSelector(prompt)} [data-tutorial-action="confirm-prompt"]` : promptChoice(prompt, id),
-      label: dom.selectedPromptChoice ? '确认选择' : '合法卡牌', unavailable: '请恢复当前选择面板。',
-    })
-  return page('response-action-wait', '等待当前结果', '稍等当前操作处理完成，再一起看结果。',
-    '操作、费用和效果需要依真实顺序处理。', '只在场面显示结果后继续。')
+  const own = tutorialPlayerSelector(facts.self.playerIndex)
+  if (step === 'response-artifact') return page('response-artifact-action', '发动“弃牌·检索”',
+    dom.artifactAbility ? '点击高亮的“弃牌·检索”，用一张手牌换取选牌机会。' : '点击我方圣物区的山河社稷图，查看它的能力。',
+    '选择圣物只是打开能力。', '发动后进入真实费用选择。', { selector: dom.artifactAbility
+      ? `[data-tutorial-ability="artifactSearch"]${tutorialCardSelector(facts.artifactId || '')}`
+      : `${own} [data-l12-zone="relic"]`, label: '山河社稷图', unavailable: '请展开我方圣物区。' })
+  if (step === 'response-cover') {
+    if (dom.availableSlots) return page('response-place', '选择合法后排空位', '点击亮起的后排空位，准备盖伏暗度陈仓。',
+      '先选位，再付费。', '盖伏尚未完成。', { selector: `${fieldSelector(facts.self.playerIndex, 1)}.available`,
+        label: '后排空位', unavailable: '请重新选择暗度陈仓。', multiple: true })
+    return page('response-select-card', dom.playButton ? '打出暗度陈仓' : '选择暗度陈仓',
+      dom.playButton ? '点击“打出”，选择盖伏位置。' : '点击高亮的暗度陈仓，准备盖伏。',
+      '盖伏须支付打出费用。', '准备之后的响应。', facts.counterId ? {
+        selector: dom.playButton ? tutorialActionSelector('play-card', facts.counterId) : handSelector(facts.counterId),
+        label: '暗度陈仓', unavailable: '请展开我方手牌。' } : null)
+  }
+  if (step === 'response-end-turn') return page('response-end-turn-action', '结束回合', '点击“结束回合”，观察对方的进攻。',
+    '交接行动权。', '稍后仍要自行选择是否响应。', { selector: tutorialActionSelector('end-turn'), label: '结束回合', unavailable: '结束回合当前不可用。' })
+  if (step === 'response-defend') return page('response-defend-action', '选择不抵挡', '这次保留手牌，让主宰承受进攻，观察进攻后的响应。',
+    '这是本场练习的选择，并非总应放弃抵挡。', '伤害结算后再响应。', { selector: tutorialActionSelector('decline-defense'), label: '不抵挡', unavailable: '请恢复抵挡面板。' })
+  if (step === 'response-position') return page('response-position-action', '选择前排空位', '点击亮起的前排空位，让聂隐娘登场。',
+    '效果给出的登场位置仍须合法。', '等待军团实际登场。', { selector: `${fieldSelector(facts.self.playerIndex, 0)}.available`, label: '合法前排', unavailable: '请恢复位置选择。', multiple: true })
+  if (step === 'response-search-order' && prompt) return page('response-order-action', '安排返回牌库的顺序', '本次点击“全部放回顶部”；左侧先抽到，可先点击两张牌交换顺序。',
+    '其余牌不会凭空消失。', '返回后继续盖伏反击。', { selector: `${promptSelector(prompt)} ${tutorialActionSelector('place-all-top')}`, label: '全部放回顶部', unavailable: '请恢复牌序面板。' })
+  const id = step === 'response-search-cost' ? facts.discard?.instanceId
+    : step === 'response-search-pick' || step === 'response-summon' ? facts.legionId
+      : step === 'response-pass' ? 'pass'
+        : step === 'response-choose' ? (prompt?.validChoices.includes('mode:use') ? 'mode:use' : facts.counterId) : null
+  if (prompt && id && prompt.validChoices.includes(id)) return page('response-prompt-action', dom.selectedPromptChoice ? '确认选择' : step === 'response-pass' ? '先让过当前响应' : '选择高亮选项',
+    step === 'response-pass' ? '本次没有要使用的响应牌，选择“不响应”并确认；这不等于不抵挡。'
+      : dom.selectedPromptChoice ? '核对选择并确认，继续费用或效果处理。' : '选择高亮选项，再按当前面板确认。',
+    '按当前响应的合法选项操作。', '确认后等待场面变化。', {
+      selector: dom.selectedPromptChoice ? `${promptSelector(prompt)} ${tutorialActionSelector('confirm-prompt')}` : promptChoice(prompt, id),
+      label: dom.selectedPromptChoice ? '确认选择' : '当前选项', unavailable: '请恢复当前选择面板。' })
+  return page('response-action-wait', '等待场面变化', '当前操作正在处理，请稍候。', '费用和效果依次处理。', '处理后进入下一步。')
 }

@@ -1,8 +1,8 @@
 import type { ActiveTutorialState, TutorialLessonId } from '../types'
 
 export const TUTORIAL_PROGRESS_VERSION = 1 as const
-export const tutorialLessonIds = ['deploy', 'move', 'combat', 'response'] as const satisfies readonly TutorialLessonId[]
-const firstChapterIds = tutorialLessonIds.filter(id => id !== 'response')
+export const tutorialLessonIds = ['deploy', 'move', 'combat', 'response', 'preparation', 'finale'] as const satisfies readonly TutorialLessonId[]
+const firstChapterIds: readonly TutorialLessonId[] = ['deploy', 'move', 'combat']
 
 type StoredCompletion = { matchId: string; completedAt: string }
 type StoredTutorialProgress = {
@@ -88,6 +88,9 @@ export interface GuidedTutorialProgress {
   introductionRead: boolean
   reviewedScenes: TutorialLessonId[]
   responseReviewed?: true
+  responseRecipeId?: 'public-response-v1'
+  preparationReviewed?: true
+  finaleReviewed?: true
 }
 
 export function guidedTutorialStorageKey(accountId: string) {
@@ -97,7 +100,10 @@ const emptyGuidedProgress = (): GuidedTutorialProgress => ({ version: 2, introdu
 const guidedMemory = new Map<string, { progress: GuidedTutorialProgress; unsaved: boolean; pendingReset: boolean }>()
 const copyGuidedProgress = (progress: GuidedTutorialProgress): GuidedTutorialProgress => ({
   version: 2, introductionRead: progress.introductionRead, reviewedScenes: [...progress.reviewedScenes],
-  ...(progress.responseReviewed ? { responseReviewed: true as const } : {}),
+  ...(progress.responseReviewed && progress.responseRecipeId === 'public-response-v1'
+    ? { responseReviewed: true as const, responseRecipeId: 'public-response-v1' as const } : {}),
+  ...(progress.responseReviewed && progress.responseRecipeId === 'public-response-v1' && progress.preparationReviewed
+    ? { preparationReviewed: true as const, ...(progress.finaleReviewed ? { finaleReviewed: true as const } : {}) } : {}),
 })
 function rememberGuidedProgress(accountId: string, progress: GuidedTutorialProgress, unsaved: boolean, pendingReset = false) {
   guidedMemory.delete(accountId)
@@ -107,15 +113,23 @@ function rememberGuidedProgress(accountId: string, progress: GuidedTutorialProgr
 function mergeGuidedProgress(left: GuidedTutorialProgress, right: GuidedTutorialProgress) {
   const introductionRead = left.introductionRead || right.introductionRead
   const longest = left.reviewedScenes.length >= right.reviewedScenes.length ? left : right
+  const responseReviewed = introductionRead && longest.reviewedScenes.length === firstChapterIds.length
+    && ((left.responseReviewed && left.responseRecipeId === 'public-response-v1')
+      || (right.responseReviewed && right.responseRecipeId === 'public-response-v1'))
+  const preparationReviewed = responseReviewed && (left.preparationReviewed || right.preparationReviewed)
   return { version: 2, introductionRead,
     reviewedScenes: introductionRead ? [...longest.reviewedScenes] : [],
-    ...(introductionRead && longest.reviewedScenes.length === firstChapterIds.length
-      && (left.responseReviewed || right.responseReviewed) ? { responseReviewed: true as const } : {}) } satisfies GuidedTutorialProgress
+    ...(responseReviewed ? { responseReviewed: true as const, responseRecipeId: 'public-response-v1' as const } : {}),
+    ...(preparationReviewed ? { preparationReviewed: true as const,
+      ...(left.finaleReviewed || right.finaleReviewed ? { finaleReviewed: true as const } : {}) } : {}),
+  } satisfies GuidedTutorialProgress
 }
 function guidedProgressCovers(outer: GuidedTutorialProgress, inner: GuidedTutorialProgress) {
   return (!inner.introductionRead || outer.introductionRead)
     && outer.reviewedScenes.length >= inner.reviewedScenes.length
     && (!inner.responseReviewed || outer.responseReviewed === true)
+    && (!inner.preparationReviewed || outer.preparationReviewed === true)
+    && (!inner.finaleReviewed || outer.finaleReviewed === true)
 }
 function readGuidedProgress(accountId: string, storage: TutorialProgressStorage): GuidedTutorialProgress | null {
   if (!accountId) return emptyGuidedProgress()
@@ -128,9 +142,13 @@ function readGuidedProgress(accountId: string, storage: TutorialProgressStorage)
       if (id !== firstChapterIds[reviewedScenes.length]) break
       reviewedScenes.push(id)
     }
+    const responseReviewed = value.responseReviewed === true && value.responseRecipeId === 'public-response-v1'
+      && reviewedScenes.length === firstChapterIds.length
+    const preparationReviewed = responseReviewed && value.preparationReviewed === true
     return { version: 2, introductionRead: value.introductionRead, reviewedScenes,
-      ...(value.responseReviewed === true && reviewedScenes.length === firstChapterIds.length
-        ? { responseReviewed: true as const } : {}) }
+      ...(responseReviewed ? { responseReviewed: true as const, responseRecipeId: 'public-response-v1' as const } : {}),
+      ...(preparationReviewed ? { preparationReviewed: true as const,
+        ...(value.finaleReviewed === true ? { finaleReviewed: true as const } : {}) } : {}) }
   } catch { return null }
 }
 export function loadGuidedTutorialProgress(accountId: string, storage?: TutorialProgressStorage): GuidedTutorialProgress {
@@ -211,7 +229,10 @@ export function restartGuidedTutorial(accountId: string, storage?: TutorialProgr
 }
 export function recordGuidedSceneReview(projection: ActiveTutorialState,
   binding: TutorialCompletionBinding, storage?: TutorialProgressStorage) {
-  if (!binding.accountId || projection.version !== 1 || projection.status !== 'completed'
+  const supported = projection.lessonId === 'response'
+    ? projection.version === 2 && projection.recipeId === 'public-response-v1'
+    : projection.version === 1
+  if (!binding.accountId || !supported || projection.status !== 'completed'
     || projection.stepId !== 'completed' || !isLessonId(projection.lessonId)
     || projection.accountId !== binding.accountId || projection.sessionId !== binding.sessionId
     || projection.connectionGeneration !== binding.connectionGeneration
@@ -221,6 +242,16 @@ export function recordGuidedSceneReview(projection: ActiveTutorialState,
     if (projection.lessonId === 'response') {
       if (progress.reviewedScenes.length !== firstChapterIds.length) return false
       progress.responseReviewed = true
+      progress.responseRecipeId = 'public-response-v1'
+      return true
+    }
+    if (projection.lessonId === 'preparation' || projection.lessonId === 'finale') {
+      if (!progress.responseReviewed || progress.responseRecipeId !== 'public-response-v1') return false
+      if (projection.lessonId === 'preparation') progress.preparationReviewed = true
+      else {
+        if (!progress.preparationReviewed) return false
+        progress.finaleReviewed = true
+      }
       return true
     }
     if (progress.reviewedScenes.includes(projection.lessonId)) return true

@@ -17,7 +17,7 @@ public sealed partial class L12WebSocketServer
         if (seen.Count != 3 || !root.TryGetProperty("type", out var type)
             || type.ValueKind != JsonValueKind.String || type.GetString() != "createTutorial"
             || !root.TryGetProperty("lessonId", out var lesson) || lesson.ValueKind != JsonValueKind.String
-            || lesson.GetString() is not ("deploy" or "move" or "combat" or "response")
+            || lesson.GetString() is not ("deploy" or "move" or "combat" or "response" or "preparation" or "finale")
             || !root.TryGetProperty("requestId", out var request) || request.ValueKind != JsonValueKind.String
             || request.GetString() is not { Length: > 0 and <= 128 } id
             || id.Any(char.IsControl) || id != id.Trim()) return false;

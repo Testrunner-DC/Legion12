@@ -314,12 +314,19 @@ export interface StackItem {
   targets: string[]
 }
 
-export type TutorialLessonId = 'deploy' | 'move' | 'combat' | 'response'
+export type TutorialLessonId = 'deploy' | 'move' | 'combat' | 'response' | 'preparation' | 'finale'
 export type TutorialStatus = 'active' | 'completed'
 
 export interface TutorialProjection {
   lessonId: TutorialLessonId
-  version: 1
+  version: 1 | 2
+  recipeId?: 'public-response-v1'
+  focus?: {
+    artifactInstanceId: string | null
+    counterInstanceId: string | null
+    costCardInstanceId: string | null
+    legionInstanceId: string | null
+  }
   stepId: string
   status: TutorialStatus
 }

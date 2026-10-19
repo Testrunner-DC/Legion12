@@ -19,7 +19,7 @@ import { connect, createTutorial, send } from './net'
 import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
 import { platformState } from './platform'
 import { guidedTutorialPersistenceState, loadGuidedTutorialProgress, recordGuidedSceneReview, retryGuidedTutorialProgress } from './tutorial/tutorialProgress'
-import { tutorialHandoffDecision, tutorialScenes, type TutorialHandoffBinding } from './tutorial/tutorialCourse'
+import { tutorialHandoffDecision, nextTutorialScene, type TutorialHandoffBinding } from './tutorial/tutorialCourse'
 import type { TutorialLessonId } from './types'
 
 const router = useRouter()
@@ -46,7 +46,7 @@ function clearTutorialTransition() {
 function clearExpectedTutorialExitNotice() {
   // Called only after this owned handoff receives its real roomLeft. Preserve
   // unexpected errors; the normal closure message is not a teaching failure.
-  if (l12State.notice === '房间已关闭') l12State.notice = ''
+  if (l12State.notice === '房间已关闭' || l12State.notice === '已离开结算并返回大厅') l12State.notice = ''
 }
 function beginTutorialHandoff(target: TutorialLessonId | null) {
   const current = tutorial.value
@@ -61,10 +61,13 @@ function beginTutorialHandoff(target: TutorialLessonId | null) {
 }
 function tutorialCompletionIdentity(current: NonNullable<typeof tutorial.value>) {
   return [current.accountId, current.sessionId, current.connectionGeneration, current.roomCode,
-    current.matchId, current.lessonId, current.stepId].join(':')
+    current.matchId, current.lessonId, current.version, current.recipeId || '', current.stepId].join(':')
 }
 const tutorialProgressRetryRequired = computed(() => Boolean(tutorial.value
   && tutorialProgressRetryIdentity.value === tutorialCompletionIdentity(tutorial.value)))
+const tutorialFinaleExitBlocked = computed(() => Boolean(tutorial.value?.lessonId === 'finale'
+  && tutorial.value.status === 'completed' && (tutorialPresentationBusy.value || l12State.pendingAction
+    || tutorialTransition.value || acceptedTutorialHandoffIdentity.value !== tutorialCompletionIdentity(tutorial.value))))
 function continueTutorialMainline() {
   const current = tutorial.value
   if (current?.status !== 'completed' || current.stepId !== 'completed' || tutorialTransition.value
@@ -79,14 +82,23 @@ function continueTutorialMainline() {
   })
   const progress = loadGuidedTutorialProgress(current.accountId)
   tutorialProgressUnsaved.value = guidedTutorialPersistenceState(current.accountId).unsaved
-  if (current.lessonId === 'response' ? !progress.responseReviewed : !progress.reviewedScenes.includes(current.lessonId)) {
+  const learned = current.lessonId === 'response' ? progress.responseReviewed
+    : current.lessonId === 'preparation' ? progress.preparationReviewed
+      : current.lessonId === 'finale' ? progress.finaleReviewed : progress.reviewedScenes.includes(current.lessonId)
+  if (!learned) {
     tutorialProgressRetryIdentity.value = identity
     l12State.notice = '学习进度暂时无法确认，请重试。'
     return
   }
   if (!saved) l12State.notice = '本机暂时无法保存进度，当前学习仍可继续。'
-  if (!beginTutorialHandoff(current.lessonId === 'response' ? null
-    : tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)) return
+  if (current.lessonId === 'finale') {
+    // Learning completes automatically, but the ordinary victory result stays
+    // visible until the player uses its existing exit action.
+    acceptedTutorialHandoffIdentity.value = identity
+    tutorialProgressRetryIdentity.value = ''
+    return
+  }
+  if (!beginTutorialHandoff(nextTutorialScene(current.lessonId))) return
   acceptedTutorialHandoffIdentity.value = identity
   tutorialProgressRetryIdentity.value = ''
 }
@@ -274,6 +286,11 @@ function surrender() {
   gameAction({ type: 'surrender' })
 }
 function returnToLobby() {
+  if (tutorial.value?.lessonId === 'finale' && tutorial.value.status === 'completed') {
+    if (tutorialFinaleExitBlocked.value) return
+    beginTutorialHandoff(null)
+    return
+  }
   if (tutorial.value || tutorialTransition.value) { exitTutorialMainline(); return }
   const tournamentCode = l12State.room?.tournamentCode
   const tutorialRoom = Boolean(tutorial.value || l12State.room?.tutorial)
@@ -361,7 +378,7 @@ async function retryGameLoad() {
           <strong v-else>七曜值 {{ l12State.rankedSettlement.before.toLocaleString() }} → {{ l12State.rankedSettlement.after.toLocaleString() }} <i>{{ l12State.rankedSettlement.delta >= 0 ? '+' : '' }}{{ l12State.rankedSettlement.delta.toLocaleString() }}</i></strong>
           <details v-if="l12State.rankedSettlement.components.length && !['held', 'voided'].includes(l12State.rankedSettlement.rewardStatus || '')"><summary>查看结算明细</summary><span v-for="item in l12State.rankedSettlement.components" :key="item.kind">{{ item.label }} {{ item.value >= 0 ? '+' : '' }}{{ item.value.toLocaleString() }}</span></details>
         </section>
-        <button @click="returnToLobby">{{ tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}</button>
+        <button :disabled="tutorialFinaleExitBlocked" @click="returnToLobby">{{ tutorial?.lessonId === 'finale' && tutorial.status === 'completed' ? '完成教学' : tutorial ? '返回教学' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅' }}</button>
       </div>
     </Transition>
 </BattleOverlayPortal>

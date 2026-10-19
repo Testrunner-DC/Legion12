@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜公开预组整课衔接与真实费用引导
+
+- 新六场线性教学沿普通Handle/Journal/接收者投影实现；准备阶段、响应新配方、最终胜利分别版本化及按账号/连接/房间绑定，不以点击或准备完成冒整课。最终按钮与自动学习确认共用精确已接受身份及表现围栏，避免结果出现后过早退出丢进度。
+- 实走发现原前端猜测discard-cost，但山河实际为active-target；只匹配当前圣物source、待付状态、本人可见手牌和合法候选。暗度实际返还询问是target-morale/resource-selection，按当前response-return及精确反击来源解释为返还，不把它讲成休整；手机已有士气触发层覆盖板上小圆，必须先打开原选择器，不绕过点击。
+- 同类检查覆盖全部六教学ID、resource-payment/resource-return/resource-selection、同名实例/不同来源/已支付/未知隐藏牌，以及普通/回放不受影响；真实卡图白名单用卡池destruction分类，不能拿卡背证明天灾展示。手机准备单独分栏，真实矩形断言说明不遮候选或确认，桌面和普通对局布局不改。
+- Tutorial62/62、响应42/实际消费者37/终章9，ui-r7三屏完整课程18分组GREEN且源稳定，Main看图接收；r1—r5失败及r6功能绿但视觉拒绝原件保留，独审CLEAR。证据tutorial-public-course-20261020/local-acceptance.json；尚待统一Release/测试上线，不改正式数据或据此关闭线上反馈。
+
 ## 2026-10-20｜教学卡图收尾及响应预约循环等待
 
 - 新第二章详情末页在dialogueDone后仍按clamped末页取detailCard，导致详情挡住后续出牌；现完成阅读立即返回null并关闭。本人卡牌仅按精确instanceId遍历本人已知区域，未知盖伏不展示，不按同名替换；战术不映射虚构兵力0。

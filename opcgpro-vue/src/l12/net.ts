@@ -219,13 +219,24 @@ function createActionRequestId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
-const tutorialLessonIds = new Set<TutorialLessonId>(['deploy', 'move', 'combat', 'response'])
+const tutorialLessonIds = new Set<TutorialLessonId>(['deploy', 'move', 'combat', 'response', 'preparation', 'finale'])
 function tutorialProjection(value: unknown): TutorialProjection | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   const candidate = value as Partial<TutorialProjection>
-  if (!tutorialLessonIds.has(candidate.lessonId as TutorialLessonId) || candidate.version !== 1
+  if (!tutorialLessonIds.has(candidate.lessonId as TutorialLessonId) || ![1, 2].includes(candidate.version as number)
     || typeof candidate.stepId !== 'string' || !candidate.stepId.trim() || candidate.stepId.length > 128
     || (candidate.status !== 'active' && candidate.status !== 'completed')) return null
+  if (candidate.version === 2) {
+    const focus = candidate.focus
+    const keys = ['artifactInstanceId', 'counterInstanceId', 'costCardInstanceId', 'legionInstanceId'] as const
+    if (candidate.lessonId !== 'response' || candidate.recipeId !== 'public-response-v1'
+      || !focus || typeof focus !== 'object' || Array.isArray(focus)
+      || keys.some(key => focus[key] !== null && (typeof focus[key] !== 'string'
+        || !focus[key]!.trim() || focus[key]!.length > 128))) return null
+    return { lessonId: 'response', version: 2, recipeId: 'public-response-v1',
+      focus: Object.fromEntries(keys.map(key => [key, focus[key]])) as NonNullable<TutorialProjection['focus']>,
+      stepId: candidate.stepId.trim(), status: candidate.status }
+  }
   return { lessonId: candidate.lessonId as TutorialLessonId, version: 1,
     stepId: candidate.stepId.trim(), status: candidate.status }
 }

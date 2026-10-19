@@ -20,30 +20,37 @@ import {
   type TutorialAnchor,
   type TutorialSceneSnapshot,
 } from './tutorialGuidance'
-import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts,
-  type ResponseTutorialBinding } from './tutorialResponseGuidance'
+import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts, responseTutorialReturnCost } from './tutorialResponseGuidance'
+import { finaleAction, finaleAttacker, finaleDialogue, preparationAction, preparationDialogue } from './tutorialFinalChapter'
 
 const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean; presentationBusy?: boolean; acceptedHandoffIdentity?: string; connected?: boolean; unsavedProgress?: boolean; progressRetryRequired?: boolean }>(),
   { busy: false, presentationBusy: false, acceptedHandoffIdentity: '', connected: true, unsavedProgress: false, progressRetryRequired: false })
 const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial: []; retryProgressSave: [] }>()
 
 const minimized = ref(false)
+const guidanceVisible = computed(() => !minimized.value
+  && !(props.tutorial.lessonId === 'finale' && props.tutorial.status === 'completed' && !props.progressRetryRequired))
 const dialogueIndex = ref(0)
+const finaleIntroduced = ref(false)
 const panelElement = ref<HTMLElement | null>(null)
 const initialFacts = tutorialFacts(props.tutorial, props.game)
 const practiceInstanceId = ref<string | null>(initialFacts.practiceInstanceId)
 const facts = computed(() => tutorialFacts(props.tutorial, props.game, practiceInstanceId.value || undefined))
 const baseline = ref<TutorialSceneSnapshot>(tutorialSnapshot(facts.value))
-const responseBinding = ref<ResponseTutorialBinding>()
-const responseFacts = computed(() => responseTutorialFacts(props.game, responseBinding.value))
-const stateAligned = computed(() => props.tutorial.matchId === props.game.matchId && props.tutorial.version === 1)
+const responseFacts = computed(() => responseTutorialFacts(props.game, props.tutorial.focus))
+const stateAligned = computed(() => props.tutorial.matchId === props.game.matchId
+  && (props.tutorial.lessonId === 'response'
+    ? props.tutorial.version === 2 && props.tutorial.recipeId === 'public-response-v1'
+    : props.tutorial.version === 1))
 const instructionBlocked = computed(() => tutorialInstructionBlocked(props.game, props.busy, props.presentationBusy))
 const pages = computed(() => props.tutorial.lessonId === 'response'
   ? responseTutorialDialogue(props.tutorial.stepId, responseFacts.value)
-  : tutorialDialoguePages(props.tutorial, facts.value, baseline.value))
+  : props.tutorial.lessonId === 'preparation' ? preparationDialogue(props.game)
+    : props.tutorial.lessonId === 'finale' ? finaleDialogue(finaleIntroduced.value ? props.tutorial.stepId : 'finale-ready', props.game)
+      : tutorialDialoguePages(props.tutorial, facts.value, baseline.value))
 const dialoguePage = computed(() => pages.value[Math.min(dialogueIndex.value, pages.value.length - 1)] ?? null)
 const dialogueDone = computed(() => dialogueIndex.value >= pages.value.length)
-const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应' })[props.tutorial.lessonId])
+const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应', preparation: '对局准备', finale: '完成一场对局' })[props.tutorial.lessonId])
 const detailOpen = ref(false)
 const detailCard = computed<DeckCard | null>(() => {
   if (dialogueDone.value) return null
@@ -61,7 +68,7 @@ const detailCard = computed<DeckCard | null>(() => {
 const detailScrollKey = ref('')
 const completedIdentity = computed(() => [props.tutorial.accountId, props.tutorial.sessionId,
   props.tutorial.connectionGeneration, props.tutorial.roomCode, props.tutorial.matchId,
-  props.tutorial.lessonId, props.tutorial.stepId].join(':'))
+  props.tutorial.lessonId, props.tutorial.version, props.tutorial.recipeId || '', props.tutorial.stepId].join(':'))
 
 type DomState = {
   selectedPractice: boolean
@@ -82,6 +89,7 @@ type DomState = {
   responsePlayButton: boolean
   responseAvailableSlots: boolean
   responsePromptChoiceSelected: boolean
+  responseArtifactAbility: boolean
 }
 
 const emptyDomState: DomState = {
@@ -103,6 +111,7 @@ const emptyDomState: DomState = {
   responsePlayButton: false,
   responseAvailableSlots: false,
   responsePromptChoiceSelected: false,
+  responseArtifactAbility: false,
 }
 const domState = ref<DomState>({ ...emptyDomState })
 
@@ -111,7 +120,7 @@ function queryExists(selector: string) {
 }
 
 function practiceSlotSelector() {
-  const instanceId = facts.value.practiceInstanceId
+  const instanceId = props.tutorial.lessonId === 'finale' ? finaleAttacker(props.game)?.instanceId : facts.value.practiceInstanceId
   if (!instanceId) return ''
   return `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="field-slot"]`
     + `[data-tutorial-card-instance="${cssAttributeValue(instanceId)}"]`
@@ -123,7 +132,7 @@ function practiceHandSelector() {
 }
 
 function scanDomState(): DomState {
-  const instanceId = facts.value.practiceInstanceId
+  const instanceId = props.tutorial.lessonId === 'finale' ? finaleAttacker(props.game)?.instanceId : facts.value.practiceInstanceId
   const exactAction = (action: string) => instanceId ? tutorialActionSelector(action, instanceId) : '[data-tutorial-never]'
   const selfSlots = `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="field-slot"]`
   const enemyMaster = `${tutorialPlayerSelector(facts.value.enemy.playerIndex)} [data-tutorial-anchor="master"]`
@@ -132,14 +141,16 @@ function scanDomState(): DomState {
   const responseCardId = props.tutorial.stepId === 'response-cover' ? responseFacts.value.counterId : responseFacts.value.legionId
   const responsePrompt = responseFacts.value.prompt
   const responsePrefix = responsePrompt ? `[data-tutorial-prompt-id="${cssAttributeValue(responsePrompt.promptId)}"]` : '[data-tutorial-never]'
+  const paymentPickerClosed = queryExists(`${tutorialPlayerSelector(facts.value.self.playerIndex)} .mobile-morale-stack-trigger`)
+    && !queryExists('.mobile-morale-overlay[aria-label="选择士气"]')
   return {
     selectedPractice: practiceSelected,
     playButton: queryExists(exactAction('play-card')),
     moveButton: queryExists(exactAction('move')),
-    attackButton: queryExists(exactAction('attack')),
+    attackButton: queryExists(props.tutorial.lessonId === 'finale' ? tutorialActionSelector('attack') : exactAction('attack')),
     availableSlots: queryExists(`${selfSlots}.available`),
     targetMaster: queryExists(`${enemyMaster}.targetable`),
-    paymentPanel: queryExists('[data-tutorial-anchor="payment-panel"]'),
+    paymentPanel: !paymentPickerClosed && queryExists('[data-tutorial-anchor="payment-panel"]'),
     paymentChoices: queryExists('[data-tutorial-payment-resource]'),
     selectedPayment: queryExists('[data-tutorial-payment-resource][aria-pressed="true"]'),
     selectedPaymentCount: tutorialPaymentSelectionCount(Array.from(document.querySelectorAll('[data-tutorial-payment-resource][aria-pressed="true"]'))
@@ -152,6 +163,7 @@ function scanDomState(): DomState {
     responsePlayButton: Boolean(responseCardId && queryExists(tutorialActionSelector('play-card', responseCardId))),
     responseAvailableSlots: queryExists(`${selfSlots}[data-tutorial-row="${props.tutorial.stepId === 'response-cover' ? 1 : 0}"].available`),
     responsePromptChoiceSelected: queryExists(`${responsePrefix} [data-tutorial-choice][aria-pressed="true"],${responsePrefix} [data-tutorial-choice].selected`),
+    responseArtifactAbility: Boolean(responseFacts.value.artifactId && queryExists(`[data-tutorial-ability="artifactSearch"][data-tutorial-card-instance="${cssAttributeValue(responseFacts.value.artifactId)}"]`)),
   }
 }
 
@@ -163,6 +175,8 @@ type GuideView = { eyebrow: string; title: string; body: string; reason: string;
 
 function paymentGuide(): GuideView {
   const prompt = facts.value.resourcePrompt
+  const returning = prompt?.kind === 'resource-return' || prompt?.data?.choiceMode === 'resource-return'
+    || props.tutorial.lessonId === 'response' && responseTutorialReturnCost(props.tutorial.stepId, responseFacts.value)
   if (domState.value.restorePayment) return {
     eyebrow: '支付费用', title: '恢复支付面板', body: '支付任务已最小化。先恢复面板，再从亮起的士气中选择。',
     reason: '必须回到支付面板，才能继续选择本次费用来源。', outcome: '恢复面板本身不提交费用，也不会推进教学。',
@@ -170,21 +184,21 @@ function paymentGuide(): GuideView {
   }
   if (!domState.value.paymentPanel || !domState.value.paymentChoices) return {
     eyebrow: '支付费用', title: '打开士气选择',
-    body: `本次需要选择 ${prompt?.minChoose ?? 1} 个支付资源。点击士气区，查看亮起的可选士气。`,
+    body: `本次需要${returning ? '返还' : '选择'} ${prompt?.minChoose ?? 1} 张士气。点击士气区，查看可选士气。`,
     reason: '打出卡牌、盖伏或移动，都要先付清本次费用。', outcome: '打开面板只显示合法选择；尚未消耗士气。',
     anchor: { selector: `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="morale"]`,
       label: '我方士气', unavailable: '士气区当前不在可见范围，请先展开我方战场。' },
   }
   if (domState.value.selectedPaymentCount < (prompt?.minChoose ?? 1)) return {
     eyebrow: '支付费用', title: '选择亮起的士气',
-    body: `本次需选择 ${prompt?.minChoose ?? 1}${prompt?.maxChoose !== prompt?.minChoose ? ` 至 ${prompt?.maxChoose}` : ''} 个资源。只选择当前面板允许的士气。`,
-    reason: '选择支付来源，决定哪些活跃士气在本次操作后转为休整。', outcome: `目前已选择 ${domState.value.selectedPaymentCount} 个；选够本次所需费用，再确认支付。`,
+    body: `本次需${returning ? '返还' : '选择'} ${prompt?.minChoose ?? 1}${prompt?.maxChoose !== prompt?.minChoose ? ` 至 ${prompt?.maxChoose}` : ''} 张士气。${returning ? '所选士气会返回士气牌库，而不是休整。' : '确认支付后，所选士气转为休整。'}`,
+    reason: returning ? '返还与休整不同。' : '选择支付来源。', outcome: `目前已选择 ${domState.value.selectedPaymentCount} 张；选够后确认。`,
     anchor: { selector: '[data-tutorial-payment-resource]', label: '可支付士气',
       unavailable: '当前支付面板没有可见的可选士气。', multiple: true },
   }
   return {
-    eyebrow: '支付费用', title: '确认本次支付', body: '已选择支付资源。确认后等待场面更新。',
-    reason: '确认后才会真正支付本次选择的士气。', outcome: '本次行动结算后，所付士气会转为休整。',
+    eyebrow: '支付费用', title: returning ? '确认返还士气' : '确认本次支付', body: returning ? '确认后，所选士气返回士气牌库；场上可用士气随之减少。' : '确认后，所选士气休整，再完成本次行动。',
+    reason: '确认后才会真正支付。', outcome: returning ? '返还后继续处理效果。' : '所付士气转为休整。',
     anchor: { selector: tutorialActionSelector('confirm-payment'), label: '确认支付', unavailable: '确认支付按钮当前不可见。' },
   }
 }
@@ -271,11 +285,16 @@ function combatGuide(): GuideView {
 }
 
 const actionGuide = computed<GuideView>(() => {
+  if (props.tutorial.lessonId === 'preparation') return preparationAction(props.game, domState.value.responsePromptChoiceSelected)
+  if (props.tutorial.lessonId === 'finale') return finaleAction(props.game, {
+    selected: domState.value.selectedPractice, attackButton: domState.value.attackButton, targetMaster: domState.value.targetMaster,
+  })
   if (props.tutorial.lessonId === 'response') return facts.value.resourcePrompt ? paymentGuide()
     : responseTutorialAction(props.tutorial.stepId, responseFacts.value, {
       selected: domState.value.selectedPractice, playButton: domState.value.responsePlayButton,
       availableSlots: domState.value.responseAvailableSlots, endTurn: domState.value.endTurn,
       selectedPromptChoice: domState.value.responsePromptChoiceSelected,
+      artifactAbility: domState.value.responseArtifactAbility,
     })
   return props.tutorial.lessonId === 'deploy' ? deployOrMoveGuide('deploy')
     : props.tutorial.lessonId === 'move' ? deployOrMoveGuide('move') : combatGuide()
@@ -311,6 +330,7 @@ const visibleGuide = computed<GuideView | null>(() => {
 
 function advanceDialogue() {
   if (instructionBlocked.value) return
+  if (props.tutorial.lessonId === 'finale') finaleIntroduced.value = true
   if (!dialogueDone.value) dialogueIndex.value++
 }
 
@@ -476,7 +496,7 @@ function onMutation(records: MutationRecord[]) {
 function completedResultVisible() {
   if (typeof document === 'undefined') return false
   const anchor = visibleGuide.value?.anchor
-  const selector = anchor?.selector
+  const selector = props.tutorial.lessonId === 'finale' ? '.game-over[role="dialog"]' : anchor?.selector
     ?? `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="master"]`
   const viewportSize = visibleViewport()
   const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
@@ -492,15 +512,13 @@ function attemptCompletedHandoff() {
   emit('continueMainline')
 }
 
-watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}`, () => {
-  responseBinding.value = undefined
+watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.version}:${props.tutorial.recipeId || ''}`, () => {
+  finaleIntroduced.value = false
   if (props.tutorial.matchId !== props.game.matchId) {
     practiceInstanceId.value = null
     return
   }
   const next = tutorialFacts(props.tutorial, props.game)
-  const nextResponse = responseTutorialFacts(props.game)
-  responseBinding.value = { legionId: nextResponse.legionId, counterId: nextResponse.counterId }
   practiceInstanceId.value = next.practiceInstanceId
   baseline.value = tutorialSnapshot(next)
 }, { flush: 'sync', immediate: true })
@@ -512,7 +530,7 @@ watch(() => [stateAligned.value, facts.value.practiceInstanceId] as const, ([ali
   }
 }, { flush: 'sync' })
 
-watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.stepId}:${props.tutorial.status}`, () => {
+watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.stepId}:${props.tutorial.status}:${props.game.prompts?.find(prompt => prompt.playerIndex === props.game.you)?.promptId || ''}`, () => {
   minimized.value = false
   dialogueIndex.value = 0
   detailScrollKey.value = ''
@@ -577,7 +595,7 @@ onBeforeUnmount(() => {
         <path :d="`M ${arrow.x1} ${arrow.y1} L ${arrow.x2} ${arrow.y2}`" marker-end="url(#tutorial-arrow-head)" />
       </svg>
     </div>
-    <div v-if="!minimized" ref="panelElement" class="tutorial-guidance-shell"
+    <div v-if="guidanceVisible" ref="panelElement" class="tutorial-guidance-shell"
       :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed', 'detail-mode': detailOpen && detailCard }]"
       data-ui-contract="tutorial-authoritative-guidance"
       :data-tutorial-guide-id="dialogueDone ? (tutorial.status === 'completed' ? 'result' : 'action') : dialoguePage?.id"
@@ -639,4 +657,9 @@ onBeforeUnmount(() => {
 :global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail dl>*){padding:5px 8px;font-size:12px}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect.tutorial-detail-focus){padding:7px 8px}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect p){margin-top:4px;font-size:12px;line-height:1.5}
+/* Preparation has a card-selection surface of its own. Keep it beside the
+   teaching dialogue instead of obscuring the first disaster or starting hand. */
+:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell[data-tutorial-scene=preparation]){left:10px;right:auto;top:8px;width:280px;max-width:280px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports:has(.tutorial-guidance-shell[data-tutorial-scene=preparation]) .l12-prompt-overlay:not(.minimized)){padding-left:304px!important;padding-right:102px!important}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports:has(.tutorial-guidance-shell[data-tutorial-scene=preparation]) .l12-prompt-overlay:not(.minimized) .prompt-panel){box-sizing:border-box;width:100%!important;max-width:100%!important;margin:auto;padding:12px}
 </style>
