@@ -102,7 +102,7 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 .deck-cover__wash{position:absolute;z-index:0;inset:0 42% 0 0;display:grid;place-items:center;overflow:hidden;color:color-mix(in srgb,var(--deck-cover-accent) 35%,transparent);font:900 128px/1 'Microsoft YaHei','微软雅黑',sans-serif;opacity:.42;transform:translate(-8%,-4%);pointer-events:none}
 
 .deck-cover{container-type:inline-size}
-.deck-cover__cards{position:absolute;z-index:1;top:auto;bottom:-14%;right:-2%;width:50%;height:100%;transform-origin:100% 100%;transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.deck-cover__cards{position:absolute;z-index:1;top:auto;bottom:0;right:-2%;width:55%;height:100%;transform-origin:100% 100%;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 
 .deck-cover__card{position:absolute;right:4%;top:auto;bottom:0;width:43%;aspect-ratio:5/7;overflow:visible;filter:drop-shadow(0 9px 10px rgba(0,0,0,.58));transform:rotate(4deg);transform-origin:50% 86%}
 
@@ -114,18 +114,18 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 
 .deck-cover__copy{position:absolute;z-index:3;left:15px;right:44%;bottom:14px;display:grid;min-width:0;gap:3px;text-shadow:0 2px 8px #000}
 
-.deck-cover__copy small{overflow:hidden;color:color-mix(in srgb,var(--deck-cover-accent) 72%,#fff);font:800 11px/1.2 'Microsoft YaHei','微软雅黑',sans-serif;letter-spacing:.08em;text-overflow:ellipsis;white-space:nowrap}
+.deck-cover__copy small{overflow:hidden;color:#f4f1e8;font:800 11px/1.2 'Microsoft YaHei','微软雅黑',sans-serif;letter-spacing:.08em;text-overflow:ellipsis;white-space:nowrap}
 
 .deck-cover__copy b{overflow:hidden;color:#f3f0e8;font:900 18px/1.25 'Microsoft YaHei','微软雅黑',sans-serif;text-overflow:ellipsis;white-space:nowrap;transition:color .3s cubic-bezier(.4,0,.2,1)}
 
-.deck-cover__copy span,.deck-cover__copy em{overflow:hidden;color:#aeb9bb;font:normal 12px/1.35 'Microsoft YaHei','微软雅黑',sans-serif;text-overflow:ellipsis;white-space:nowrap}
-.deck-cover__copy em{color:#7f8d92;font-style:normal}
+.deck-cover__copy span,.deck-cover__copy em{overflow:hidden;color:#f4f1e8;font:normal 12px/1.35 'Microsoft YaHei','微软雅黑',sans-serif;text-overflow:ellipsis;white-space:nowrap}
+.deck-cover__copy em{font-style:normal}
 
 .deck-cover__footer{--deck-cover-accent:#b4b2af;display:flex;box-sizing:border-box;width:100%;height:30px;min-width:0;align-items:center;flex-wrap:nowrap;gap:6px;overflow:hidden;padding:5px 10px;border:1px solid color-mix(in srgb,var(--deck-cover-accent) 42%,#526069);border-top:0;border-radius:0;background:linear-gradient(90deg,color-mix(in srgb,var(--deck-cover-accent) 16%,#0b1218),#080d12);color:#7f8d92;text-align:left;white-space:nowrap;transition:border-color .3s cubic-bezier(.4,0,.2,1),box-shadow .3s cubic-bezier(.4,0,.2,1)}
-.deck-cover__footer em{min-width:0;overflow:hidden;flex:1;color:#89969a;font:normal 11px/1.35 'Microsoft YaHei','微软雅黑',sans-serif;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
-.deck-cover__footer .deck-environment-badge{display:inline-flex;min-height:18px;box-sizing:border-box;align-items:center;flex:none;padding:2px 5px;border:1px solid color-mix(in srgb,var(--deck-cover-accent) 48%,#59666e);background:rgba(8,14,18,.84);color:color-mix(in srgb,var(--deck-cover-accent) 68%,#e7eceb);font:900 9px/1 'Microsoft YaHei','微软雅黑',sans-serif;font-style:normal;white-space:nowrap}
+.deck-cover__footer em{min-width:0;overflow:hidden;flex:1;color:#f4f1e8;font:normal 11px/1.35 'Microsoft YaHei','微软雅黑',sans-serif;font-style:normal;text-overflow:ellipsis;white-space:nowrap}
+.deck-cover__footer .deck-environment-badge{display:inline-flex;min-height:18px;box-sizing:border-box;align-items:center;flex:none;padding:2px 5px;border:1px solid color-mix(in srgb,var(--deck-cover-accent) 48%,#59666e);background:rgba(8,14,18,.84);color:#f4f1e8;font:900 9px/1 'Microsoft YaHei','微软雅黑',sans-serif;font-style:normal;white-space:nowrap}
 
-.deck-cover__badge{position:absolute;z-index:4;top:11px;left:12px;max-width:46%;overflow:hidden;padding:5px 8px;border:1px solid color-mix(in srgb,var(--deck-cover-accent) 66%,#efe4bd);border-radius:999px;background:rgba(7,11,15,.82);color:#f1dfaa;font:900 11px/1 'Microsoft YaHei','微软雅黑',sans-serif;letter-spacing:.06em;text-overflow:ellipsis;white-space:nowrap}
+.deck-cover__badge{position:absolute;z-index:4;top:11px;left:12px;max-width:46%;overflow:hidden;padding:5px 8px;border:1px solid color-mix(in srgb,var(--deck-cover-accent) 66%,#efe4bd);border-radius:999px;background:rgba(7,11,15,.82);color:#f4f1e8;font:900 11px/1 'Microsoft YaHei','微软雅黑',sans-serif;letter-spacing:.06em;text-overflow:ellipsis;white-space:nowrap}
 
 .deck-cover--featured{border-color:color-mix(in srgb,var(--deck-cover-accent) 58%,#d6b75d);background:linear-gradient(125deg,color-mix(in srgb,var(--deck-cover-accent) 40%,#101820),#0b1117 55%,#05080b)}
 
@@ -144,14 +144,14 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 
 .deck-cover--selected{border-color:#e6c766;box-shadow:0 0 0 1px rgba(230,199,102,.44),0 16px 36px -20px rgba(230,199,102,.72)}
 
-@media(min-width:701px){.deck-cover .deck-cover__cards{bottom:-14%;right:-3%}
+@media(min-width:701px){.deck-cover .deck-cover__cards{bottom:0;right:-2%}
 }
 
 @media(hover:hover) and (pointer:fine){.deck-cover:hover,:global(button:hover > .deck-cover),:global(a:hover > .deck-cover),:global(article:hover > .deck-cover),:global(button:focus-visible > .deck-cover),:global(a:focus-visible > .deck-cover),:global(article:focus-within > .deck-cover){border-color:color-mix(in srgb,var(--deck-cover-accent) 88%,#f4efe1);box-shadow:0 0 0 1px color-mix(in srgb,var(--deck-cover-accent) 54%,transparent),0 20px 46px -14px color-mix(in srgb,var(--deck-cover-accent) 76%,transparent),inset 0 0 28px color-mix(in srgb,var(--deck-cover-accent) 14%,transparent);transform:translateY(-4px)}
 :global(button:hover > .deck-cover__footer),:global(a:hover > .deck-cover__footer),:global(button:focus-visible > .deck-cover__footer),:global(a:focus-visible > .deck-cover__footer){border-color:color-mix(in srgb,var(--deck-cover-accent) 72%,#f4efe1);box-shadow:0 12px 28px -18px color-mix(in srgb,var(--deck-cover-accent) 72%,transparent)}
 .deck-cover:hover::before,:global(button:hover > .deck-cover::before),:global(a:hover > .deck-cover::before),:global(article:hover > .deck-cover::before),:global(button:focus-visible > .deck-cover::before),:global(a:focus-visible > .deck-cover::before),:global(article:focus-within > .deck-cover::before){opacity:1}
-.deck-cover:hover .deck-cover__cards,:global(button:hover > .deck-cover .deck-cover__cards),:global(a:hover > .deck-cover .deck-cover__cards),:global(article:hover > .deck-cover .deck-cover__cards),:global(button:focus-visible > .deck-cover .deck-cover__cards),:global(a:focus-visible > .deck-cover .deck-cover__cards),:global(article:focus-within > .deck-cover .deck-cover__cards){transform:scale(1.04)}
-.deck-cover:hover .deck-cover__copy b,:global(button:hover > .deck-cover .deck-cover__copy b),:global(a:hover > .deck-cover .deck-cover__copy b),:global(article:hover > .deck-cover .deck-cover__copy b),:global(button:focus-visible > .deck-cover .deck-cover__copy b),:global(a:focus-visible > .deck-cover .deck-cover__copy b),:global(article:focus-within > .deck-cover .deck-cover__copy b){color:color-mix(in srgb,var(--deck-cover-accent) 72%,#fff)}
+.deck-cover:hover .deck-cover__cards,:global(button:hover > .deck-cover .deck-cover__cards),:global(a:hover > .deck-cover .deck-cover__cards),:global(article:hover > .deck-cover .deck-cover__cards),:global(button:focus-visible > .deck-cover .deck-cover__cards),:global(a:focus-visible > .deck-cover .deck-cover__cards),:global(article:focus-within > .deck-cover .deck-cover__cards){transform:scale(1.08)}
+.deck-cover:hover .deck-cover__copy b,:global(button:hover > .deck-cover .deck-cover__copy b),:global(a:hover > .deck-cover .deck-cover__copy b),:global(article:hover > .deck-cover .deck-cover__copy b),:global(button:focus-visible > .deck-cover .deck-cover__copy b),:global(a:focus-visible > .deck-cover .deck-cover__copy b),:global(article:focus-within > .deck-cover .deck-cover__copy b){color:#f4f1e8}
 }
 
 @media(max-width:520px){.deck-cover__copy{left:12px;right:43%;bottom:11px}
