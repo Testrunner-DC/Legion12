@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜教学卡图收尾及响应预约循环等待
+
+- 新第二章详情末页在dialogueDone后仍按clamped末页取detailCard，导致详情挡住后续出牌；现完成阅读立即返回null并关闭。本人卡牌仅按精确instanceId遍历本人已知区域，未知盖伏不展示，不按同名替换；战术不映射虚构兵力0。
+- 全族查询tutorialPresentationBusy/presentationChange/预约coordinator：队列预约可能等待当前玩家prompt；原将它合入所有Next的busy后互锁。只拆教学阅读与完成：transition/pendingAction优先阻挡，只有真实己方prompt/防守选择时可读说明；完成仍保留父/子表现、身份、可见结果和唯一离房守卫，并监听释放。普通对局/回放/队列/规则未改。
+- r1详情残留、r2循环等待实际RED均保留；r3三尺寸12段操作全部GREEN且源稳定，Main看过实际卡图，33响应/28指南/35源码消费者/UI358/类型通过，独审CLEAR。公开新配方另1/1仅证明engine合法2手牌与checkpoint，不冒其room/Journal已集成。证据tutorial-public-response-20261020及tutorial-public-response-recipe-20261020；未部署或写线上Bug。
+
 ## 2026-10-20｜教学详情逻辑横屏与真实引用，第一章局部接收
 
 - 真实r3操作全过仍发现视觉失败：Teleport不是兄弟，:has兄弟规则不命中；物理390媒体查询把逻辑横屏详情改成单列，又让引导覆盖卡图。仅教学实际mask标记＋逻辑host分栏，默认共享详情不改；动态字段不伪造血量，箭头/光晕减重，稳定高亮0次反复class修改。窗口关闭/卸载均清标记。

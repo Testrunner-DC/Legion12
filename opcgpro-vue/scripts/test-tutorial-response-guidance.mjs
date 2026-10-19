@@ -53,6 +53,49 @@ const game = (self = player(0, { hand: [xi, counter, discarded], handCount: 3 })
   you: 0, players: [self, player(1)], prompts: [], ...extra,
 })
 const initial = helpers.responseTutorialFacts(game())
+check('a reveal waiting for our real prompt cannot deadlock reading its instructions', () => {
+  const own = game(undefined, { prompts: [{ playerIndex: 0, kind: 'response' }] })
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(own, false, true), false)
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(own, true, true), true)
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(game(undefined, { prompts: [{ playerIndex: 1 }] }), false, true), true)
+})
+check('only our real defense choice releases a presentation wait, not an unrelated phase', () => {
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(game(), false, true), true)
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(game(), false, false), false)
+  const defense = { stage: 'DefenseChoice', attackerPlayer: 1 }
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(game(undefined, { pendingDefense: defense }), false, true), false)
+  assert.equal(sharedHelpers.tutorialInstructionBlocked(game(undefined, { pendingDefense: { ...defense, attackerPlayer: 0 } }), false, true), true)
+})
+check('detail focus resolves the exact owned card, including owner-known covered cards', () => {
+  assert.equal(typeof sharedHelpers.tutorialOwnedDetailCard, 'function')
+  const covered = { ...counter, hidden: true, identityKnown: true, currentCost: 0 }
+  const state = game(player(0, { hand: [{ ...xi, instanceId: 'same-name-other' }],
+    field: [[xi, null, null], [covered, null, null]] }))
+  const before = JSON.stringify(state)
+  assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, xi.instanceId), xi)
+  assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, counter.instanceId), covered)
+  assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, 'missing'), null)
+  assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, null), null)
+  assert.equal(JSON.stringify(state), before)
+})
+check('detail focus never resolves an unknown covered card or reads the opponent', () => {
+  const enemy = player(1)
+  for (const key of ['hand', 'field', 'relic', 'graveyard'])
+    Object.defineProperty(enemy, key, { get() { throw new Error('opponent detail access') } })
+  const unknown = { ...counter, hidden: true, identityKnown: false }
+  const state = game(undefined, { players: [player(0, { hand: [unknown] }), enemy] })
+  assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, counter.instanceId), null)
+})
+check('response card introductions bind shared detail fields to their own exact instances', () => {
+  const legion = helpers.responseTutorialDialogue('response-legion', initial)[0].anchor
+  const counterPage = helpers.responseTutorialDialogue('response-cover', initial).find(page => page.id === 'response-cover-card')
+  assert.equal(legion.detailInstanceId, xi.instanceId)
+  assert.deepEqual(legion.detailFields, ['费用', '兵力', '效果'])
+  assert.equal(counterPage.anchor.detailInstanceId, counter.instanceId)
+  assert.deepEqual(counterPage.anchor.detailFields, ['费用', '效果'])
+  assert.equal(legion.selector, '.catalog-detail-dialog')
+  assert.equal(counterPage.anchor.selector, '.catalog-detail-dialog')
+})
 check('learns exact own recipe instances from real ordered cards', () => {
   assert.equal(initial.legionId, xi.instanceId); assert.equal(initial.counterId, counter.instanceId)
   assert.equal(initial.activeMorale, 1); assert.equal(initial.handCount, 3)

@@ -85,7 +85,7 @@ check('guide stays on the real board with linear dialogue and non-intercepting f
   assert.match(source.overlay, /props\.tutorial\.stepId !== 'completed'/)
   assert.match(source.overlay, /props\.connected/)
   assert.match(source.game, /:connected="l12State\.status === 'online'"/)
-  assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction \|\| tutorialPresentationBusy\)"/)
+  assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction\)" :presentation-busy="tutorialPresentationBusy"/)
   assert.match(source.game, /@presentation-change="updateTutorialPresentationBusy"/)
   assert.doesNotMatch(template, /tutorial\.status === 'completed'[\s\S]{0,220}<button[^>]*tutorial-primary/)
   assert.match(source.page + source.overlay, /下一步/)
@@ -244,7 +244,8 @@ check('actual parent and overlay retry a rejected completion and accept duplicat
   })
   const key = parent.tutorialCompletionIdentity(current)
   const props = { tutorial: current, connected: true,
-    get busy() { return Boolean(tutorialTransition.value || l12State.pendingAction || tutorialPresentationBusy.value) },
+    get busy() { return Boolean(tutorialTransition.value || l12State.pendingAction) },
+    get presentationBusy() { return tutorialPresentationBusy.value },
     get acceptedHandoffIdentity() { return acceptedTutorialHandoffIdentity.value } }
   const child = actualFunctions(source.overlay, ['attemptCompletedHandoff'], {
     props, completedIdentity: ref(key), stateAligned: ref(true), completedResultVisible: () => true,
@@ -261,6 +262,17 @@ check('actual parent and overlay retry a rejected completion and accept duplicat
   tutorialTransition.value = null; l12State.pendingAction = false
   child.attemptCompletedHandoff()
   assert.equal(leaves, 1); assert.equal(emitted, 2, 'parent acknowledgement stops repeated completed snapshots')
+})
+check('reading and completion use separate real consumers while presentation release is watched', () => {
+  const dialogueIndex = ref(0), dialogueDone = ref(false), instructionBlocked = ref(true)
+  const child = actualFunctions(source.overlay, ['advanceDialogue'], { dialogueIndex, dialogueDone, instructionBlocked })
+  child.advanceDialogue(); assert.equal(dialogueIndex.value, 0)
+  instructionBlocked.value = false
+  child.advanceDialogue(); assert.equal(dialogueIndex.value, 1)
+  dialogueDone.value = true
+  child.advanceDialogue(); assert.equal(dialogueIndex.value, 1)
+  assert.match(source.overlay, /watch\(\(\) => \[completedIdentity\.value[\s\S]*?props\.presentationBusy[\s\S]*?\] as const, queueRefresh/)
+  assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction\)" :presentation-busy="tutorialPresentationBusy"/)
 })
 check('completed response without a card anchor uses the visible own master instead of deadlocking', () => {
   const selections = [], element = new (class VisibleMaster {})()

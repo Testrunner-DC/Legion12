@@ -47,6 +47,7 @@ export interface TutorialAnchor {
   unavailable: string
   multiple?: boolean
   detailFields?: readonly ('费用' | '兵力' | '血量' | '效果')[]
+  detailInstanceId?: string
 }
 
 export function cssAttributeValue(value: string | number) {
@@ -72,6 +73,25 @@ function selfPlayer(game: GameState) {
 
 function enemyPlayer(game: GameState) {
   return game.players.find(player => player.playerIndex !== game.you) ?? game.players[1 - game.you]
+}
+
+export function tutorialOwnedDetailCard(game: GameState, instanceId?: string | null): Card | null {
+  if (!instanceId) return null
+  const self = selfPlayer(game)
+  if (!self) return null
+  const cards = [...(self.hand ?? []), ...self.field.flat(), self.relic,
+    ...(self.extraRelics ?? []), ...(self.resolving ?? []), ...(self.graveyard ?? [])]
+  return cards.find((card): card is Card => Boolean(card && card.instanceId === instanceId
+    && (!card.hidden || card.identityKnown === true))) ?? null
+}
+
+export function tutorialInstructionBlocked(game: GameState, busy: boolean, presentationBusy: boolean) {
+  if (busy) return true
+  const ownChoice = game.prompts?.some(prompt => prompt.playerIndex === game.you)
+    || game.pendingDefense?.stage === 'DefenseChoice' && game.pendingDefense.attackerPlayer !== game.you
+  // A queued reveal can wait for this very choice. Reading its instructions is
+  // safe; treating that wait as a chapter-completion barrier remains separate.
+  return Boolean(presentationBusy && !ownChoice)
 }
 
 function cardAt(player: PlayerView, row: number, slot: number) {

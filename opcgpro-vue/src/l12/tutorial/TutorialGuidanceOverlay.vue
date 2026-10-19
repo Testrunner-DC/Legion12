@@ -11,6 +11,9 @@ import {
   tutorialActionSelector,
   tutorialDialoguePages,
   tutorialFacts,
+  tutorialCardCost,
+  tutorialOwnedDetailCard,
+  tutorialInstructionBlocked,
   tutorialPlayerSelector,
   tutorialPaymentSelectionCount,
   tutorialSnapshot,
@@ -20,8 +23,8 @@ import {
 import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts,
   type ResponseTutorialBinding } from './tutorialResponseGuidance'
 
-const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean; acceptedHandoffIdentity?: string; connected?: boolean; unsavedProgress?: boolean; progressRetryRequired?: boolean }>(),
-  { busy: false, acceptedHandoffIdentity: '', connected: true, unsavedProgress: false, progressRetryRequired: false })
+const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean; presentationBusy?: boolean; acceptedHandoffIdentity?: string; connected?: boolean; unsavedProgress?: boolean; progressRetryRequired?: boolean }>(),
+  { busy: false, presentationBusy: false, acceptedHandoffIdentity: '', connected: true, unsavedProgress: false, progressRetryRequired: false })
 const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial: []; retryProgressSave: [] }>()
 
 const minimized = ref(false)
@@ -34,6 +37,7 @@ const baseline = ref<TutorialSceneSnapshot>(tutorialSnapshot(facts.value))
 const responseBinding = ref<ResponseTutorialBinding>()
 const responseFacts = computed(() => responseTutorialFacts(props.game, responseBinding.value))
 const stateAligned = computed(() => props.tutorial.matchId === props.game.matchId && props.tutorial.version === 1)
+const instructionBlocked = computed(() => tutorialInstructionBlocked(props.game, props.busy, props.presentationBusy))
 const pages = computed(() => props.tutorial.lessonId === 'response'
   ? responseTutorialDialogue(props.tutorial.stepId, responseFacts.value)
   : tutorialDialoguePages(props.tutorial, facts.value, baseline.value))
@@ -42,11 +46,16 @@ const dialogueDone = computed(() => dialogueIndex.value >= pages.value.length)
 const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应' })[props.tutorial.lessonId])
 const detailOpen = ref(false)
 const detailCard = computed<DeckCard | null>(() => {
-  const card = facts.value.practiceCard
-  if (!card || !dialoguePage.value?.anchor?.detailFields) return null
+  if (dialogueDone.value) return null
+  const anchor = dialoguePage.value?.anchor
+  if (!anchor?.detailFields?.length) return null
+  const card = anchor.detailInstanceId
+    ? tutorialOwnedDetailCard(props.game, anchor.detailInstanceId) : facts.value.practiceCard
+  if (!card) return null
   return { id: card.cardId, number: card.cardId, nameZh: card.name, cardType: card.cardType,
     isCounterTactic: card.isCounterTactic, product: '当前教学场面', faction: card.faction,
-    imageUrl: card.imageUrl, cost: facts.value.practiceCost ?? undefined, troops: card.troops,
+    imageUrl: card.imageUrl, cost: tutorialCardCost(card) ?? undefined,
+    troops: card.cardType === 'legion' ? card.troops : undefined,
     traits: card.traits, profession: card.profession, effect: card.effectText || '无效果' }
 })
 const detailScrollKey = ref('')
@@ -301,7 +310,7 @@ const visibleGuide = computed<GuideView | null>(() => {
 })
 
 function advanceDialogue() {
-  if (props.busy) return
+  if (instructionBlocked.value) return
   if (!dialogueDone.value) dialogueIndex.value++
 }
 
@@ -477,7 +486,7 @@ function completedResultVisible() {
 
 function attemptCompletedHandoff() {
   const key = completedIdentity.value
-  if (!props.connected || props.busy || props.progressRetryRequired || !stateAligned.value || props.tutorial.status !== 'completed'
+  if (!props.connected || props.busy || props.presentationBusy || props.progressRetryRequired || !stateAligned.value || props.tutorial.status !== 'completed'
     || props.tutorial.stepId !== 'completed' || props.acceptedHandoffIdentity === key
     || !completedResultVisible()) return
   emit('continueMainline')
@@ -526,7 +535,7 @@ watch(detailOpen, () => {
 }, { flush: 'post', immediate: true })
 
 watch(() => [completedIdentity.value, props.tutorial.status, props.connected, stateAligned.value,
-  props.busy, props.acceptedHandoffIdentity, props.progressRetryRequired] as const, queueRefresh, { immediate: true, flush: 'post' })
+  props.busy, props.presentationBusy, props.acceptedHandoffIdentity, props.progressRetryRequired] as const, queueRefresh, { immediate: true, flush: 'post' })
 
 watch(() => [props.game.revision, props.game.phase, props.game.prompts?.map(prompt => prompt.promptId).join('|'),
   dialogueIndex.value, minimized.value], queueRefresh, { flush: 'post' })
@@ -573,6 +582,7 @@ onBeforeUnmount(() => {
       data-ui-contract="tutorial-authoritative-guidance"
       :data-tutorial-guide-id="dialogueDone ? (tutorial.status === 'completed' ? 'result' : 'action') : dialoguePage?.id"
       :data-tutorial-anchor-expected="Boolean(visibleGuide?.anchor)"
+      :data-tutorial-detail-fields="visibleGuide?.anchor?.detailFields?.join('|') || ''"
       :data-tutorial-scene="tutorial.lessonId" :data-tutorial-reading="!ownResponseGuide && !dialogueDone">
       <section class="tutorial-guidance" aria-live="polite">
         <header>
@@ -585,8 +595,8 @@ onBeforeUnmount(() => {
         <p v-else-if="unsavedProgress" class="tutorial-anchor-unavailable" role="status">进度暂未保存，当前学习可继续。<button type="button" @click="emit('retryProgressSave')">重试保存</button></p>
         <p v-if="anchorUnavailable" class="tutorial-anchor-unavailable" role="status">{{ anchorUnavailable }}</p>
         <div v-if="!ownResponseGuide && !dialogueDone && tutorial.status !== 'completed'" class="tutorial-main-action">
-          <button class="tutorial-primary" type="button" :disabled="busy || !stateAligned" @click="advanceDialogue">
-            {{ busy ? '正在切换…' : '下一步' }}
+          <button class="tutorial-primary" type="button" :disabled="instructionBlocked || !stateAligned" @click="advanceDialogue">
+            {{ instructionBlocked ? '请稍候…' : '下一步' }}
           </button>
         </div>
 

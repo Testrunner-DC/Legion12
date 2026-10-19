@@ -316,7 +316,7 @@ async function retryGameLoad() {
       @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings"
       @presentation-change="updateTutorialPresentationBusy" />
     <TutorialGuidanceOverlay v-if="tutorial" :tutorial="tutorial" :game="game"
-      :busy="Boolean(tutorialTransition || l12State.pendingAction || tutorialPresentationBusy)"
+      :busy="Boolean(tutorialTransition || l12State.pendingAction)" :presentation-busy="tutorialPresentationBusy"
       :unsaved-progress="tutorialProgressUnsaved" @retry-progress-save="retryTutorialProgressSave"
       :progress-retry-required="tutorialProgressRetryRequired"
       :accepted-handoff-identity="acceptedTutorialHandoffIdentity"

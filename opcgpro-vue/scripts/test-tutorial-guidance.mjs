@@ -208,7 +208,8 @@ for (const sfcPath of sfcPaths) {
 
 const overlaySource = fs.readFileSync(overlayPath, 'utf8')
 check('overlay contract is explicit and cannot complete from timer or click-only action', () => {
-  assert.match(overlaySource, /tutorial: ActiveTutorialState; game: GameState; busy\?: boolean; acceptedHandoffIdentity\?: string/)
+  assert.match(overlaySource, /tutorial: ActiveTutorialState; game: GameState; busy\?: boolean; presentationBusy\?: boolean; acceptedHandoffIdentity\?: string/)
+  assert.match(overlaySource, /props\.busy \|\| props\.presentationBusy \|\| props\.progressRetryRequired/)
   assert.match(overlaySource, /continueMainline: \[\]; restartScene: \[\]; exitTutorial: \[\]/)
   assert.match(overlaySource, /props\.tutorial\.status === 'completed'/)
   assert.match(overlaySource, /props\.acceptedHandoffIdentity === key/)

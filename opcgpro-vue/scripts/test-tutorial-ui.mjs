@@ -21,13 +21,13 @@ fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
 const report = { status: 'RUNNING', cases: [], transport: [], projectedObservations: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. Completion is passively observed after the actual net consumer restores full/delta/card frames. No test/production deployment.' }
 const firstChapterOnly = process.env.L12_TUTORIAL_FIRST_CHAPTER_ONLY === '1'
 let visualCardManifest = null
-if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly) {
+if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly || process.env.L12_TUTORIAL_REAL_CARD_ART === '1') {
   const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json')
   assert(manifestResponse.ok, 'Official public card asset manifest must be readable')
   const manifest = await manifestResponse.json()
   assert(manifest?.cards?.['S01-0104'], 'Official public manifest must contain Han Xin')
   const deckSnapshot = JSON.parse(fs.readFileSync(path.join(repo,'服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json'),'utf8'))
-  const selectedIds = new Set(['S01-0104','S01-0117','ST01-10','S01-01C1',
+  const selectedIds = new Set(['S01-0104','S01-0117','ST01-10','S01-01C1','S01-0116','S01-0016','S01-0008',
     ...deckSnapshot.decks.flatMap(deck=>[deck.masterId,...deck.cardIds,...deck.moraleIds,...deck.specialIds])])
   visualCardManifest = { schemaVersion: 3, catalogVersion: manifest.catalogVersion, assetVersion: manifest.assetVersion,
     basePath: '/card-assets', cards: Object.fromEntries([...selectedIds].filter(id=>manifest.cards[id]).map(id=>[id,manifest.cards[id]])) }
@@ -306,13 +306,24 @@ try {
     let details=null
     if((await shell.getAttribute('class'))?.includes('detail-mode')) {
       await page.locator('.catalog-detail-mask.tutorial-detail-mask').waitFor()
+      const expectedFields=(await shell.getAttribute('data-tutorial-detail-fields')).split('|').filter(Boolean)
+      assert(expectedFields.includes('费用')&&expectedFields.includes('效果'),'A card introduction must highlight its actual cost and effect')
+      await page.waitForFunction(()=>{
+        const image=document.querySelector('.tutorial-detail-mask .archive-modal-image .l12-card-image__img')
+        return image?.complete&&image.naturalWidth>0&&!image.closest('.placeholder')
+      })
       details=await page.evaluate(()=>{
         const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}}
         const dialog=document.querySelector('.tutorial-detail-mask .catalog-detail-dialog')
         return {dialog:rect(dialog),fields:[...dialog.querySelectorAll('.tutorial-detail-focus')].map(e=>({text:e.textContent.trim(),...rect(e)})),
+          labels:[...dialog.querySelectorAll('dt.tutorial-detail-focus')].map(e=>e.textContent.trim())
+            .concat(dialog.querySelector('.archive-effect.tutorial-detail-focus')?['效果']:[]),
+          allLabels:[...dialog.querySelectorAll('dt')].map(e=>e.textContent.trim()),
           image:rect(dialog.querySelector('.archive-modal-image')),guide:rect(document.querySelector('.tutorial-guidance-shell'))}
       })
-      assert(details.fields.length>=5,'All real cost, troops and effect fields must be highlighted')
+      assert.deepEqual(details.labels.toSorted(),expectedFields.toSorted(),'Highlight every requested real card field; do not invent troops for a tactic')
+      if(!expectedFields.includes('兵力')) assert(!details.allLabels.includes('兵力'),'A tactic must not gain a fictitious zero-troops field')
+      assert.equal(details.fields.length,expectedFields.reduce((count,field)=>count+(field==='效果'?1:2),0),'Every numeric field includes its label and value')
       for(const field of [...details.fields,details.image]) {
         assert(field.x>=details.dialog.x-1&&field.y>=details.dialog.y-1
           &&field.right<=details.dialog.right+1&&field.bottom<=details.dialog.bottom+1,'Every teaching detail field and whole card image must fit its dialog')
@@ -337,7 +348,8 @@ try {
       const shell=guide();await shell.waitFor()
       if(await shell.getAttribute('data-tutorial-reading')!=='true')return
       const record=await inspectGuide(viewport,scene+' reading '+i)
-      if(['card','morale','card-source','defense','attack-result'].includes(await shell.getAttribute('data-tutorial-guide-id')))
+      if(['card','morale','card-source','defense','attack-result'].includes(await shell.getAttribute('data-tutorial-guide-id'))
+        || (await shell.getAttribute('class'))?.includes('detail-mode'))
         await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-'+(await shell.getAttribute('data-tutorial-guide-id'))+'.png')})
       readings.push(record)
       const previous=await shell.getAttribute('data-tutorial-guide-id')
@@ -554,6 +566,7 @@ try {
     for(const [stage,card,row] of [['response-legion',responseLegion,0],['response-cover',responseCounter,1]]) {
       await waitState(s=>s.tutorial?.stepId===stage&&!s.pending,stage)
       await readScene(viewport,stage,responseReadings)
+      await page.locator('.tutorial-detail-mask').waitFor({state:'detached'})
       await inspectGuide(viewport,stage+' select')
       await tap(page.locator('.hand-card-wrap[data-tutorial-card-instance="'+card.instanceId+'"]'),'response card '+card.name)
       const action=await visibleAction('play-card',card.instanceId)
