@@ -11,7 +11,6 @@ import { tutorialChapters, tutorialIntroduction, tutorialScenes } from '@/l12/tu
 const props = withDefaults(defineProps<{ embedded?: boolean }>(), { embedded: false })
 const router = useRouter()
 const introductionIndex = ref(0)
-const questionOpen = ref(false)
 const introductionOpen = ref(true)
 const progress = ref(loadGuidedTutorialProgress(''))
 const starting = ref<TutorialLessonId | null>(null)
@@ -37,7 +36,6 @@ watch(() => [platformState.account?.id || '', platformState.token] as const, () 
   identityEpoch++
   starting.value = null
   connecting.value = false
-  questionOpen.value = false
   introductionIndex.value = 0
   progress.value = loadGuidedTutorialProgress(accountId.value)
   introductionOpen.value = !progress.value.introductionRead
@@ -60,7 +58,7 @@ function startResponsePractice() {
   return startPracticeScene('response')
 }
 async function startPracticeScene(scene: TutorialLessonId) {
-  if (actionBusy.value || questionOpen.value) return
+  if (actionBusy.value) return
   const epoch = identityEpoch
   const expectedAccountId = accountId.value
   const expectedToken = platformState.token
@@ -78,7 +76,6 @@ async function startPracticeScene(scene: TutorialLessonId) {
   if (!available.value || !createTutorial(scene)) starting.value = null
 }
 function continueIntroduction() {
-  if (questionOpen.value) return
   if (lastIntroduction.value && chapterComplete.value) { introductionOpen.value = false; return }
   if (lastIntroduction.value) { void startPractice(); return }
   introductionIndex.value++
@@ -88,11 +85,7 @@ function repeatChapter() {
   unsaved.value = !restartGuidedTutorial(accountId.value)
   progress.value = loadGuidedTutorialProgress(accountId.value)
   introductionIndex.value = 0
-  questionOpen.value = false
   introductionOpen.value = true
-}
-function revisitIntroduction() {
-  introductionIndex.value = 0; questionOpen.value = false; introductionOpen.value = true
 }
 onMounted(() => {
   const epoch = identityEpoch; const expectedAccountId = accountId.value; const expectedToken = platformState.token
@@ -112,35 +105,30 @@ onMounted(() => {
 
     <section v-if="introductionOpen" class="tutorial-conversation" data-tutorial-introduction="true" aria-live="polite">
       <div class="guide-speaker"><span aria-hidden="true">✦</span><b>向导</b><small>认识十二军团</small></div>
-      <div class="intro-cards" v-if="!questionOpen && introduction.cards.length">
+      <div class="intro-cards" v-if="introduction.cards.length">
         <figure v-for="card in introduction.cards" :key="card.id"><CardImage :card-id="card.id" :alt="card.name" intent="detail" eager native-orientation /><figcaption>{{ card.name }} · {{ card.kind }}</figcaption></figure>
       </div>
-      <h2>{{ questionOpen ? introduction.question : introduction.title }}</h2>
-      <p>{{ questionOpen ? introduction.answer : introduction.text }}</p>
-      <p v-if="!questionOpen && introduction.flow" class="resource-flow">{{ introduction.flow }}</p>
+      <h2>{{ introduction.title }}</h2>
+      <p>{{ introduction.text }}</p>
+      <p v-if="introduction.flow" class="resource-flow">{{ introduction.flow }}</p>
       <div class="conversation-choices">
-        <button v-if="questionOpen" class="primary" type="button" @click="questionOpen = false">明白了，回到主线</button>
-        <template v-else>
-          <button class="primary" type="button" :disabled="lastIntroduction && (actionBusy || connecting)" @click="continueIntroduction">
-            {{ starting ? '正在准备练习场面…' : lastIntroduction ? (chapterComplete ? '回到本章复盘' : accountId ? '进入战场，继续主线' : '登录后开始实操') : '继续主线' }}
-          </button>
-          <button type="button" @click="questionOpen = true">我想了解：{{ introduction.question }}</button>
-        </template>
+        <button class="primary" type="button" :disabled="lastIntroduction && (actionBusy || connecting)" @click="continueIntroduction">
+          {{ starting ? '正在准备练习场面…' : lastIntroduction ? (chapterComplete ? '回到本章复盘' : accountId ? '进入战场，继续主线' : '登录后开始实操') : '继续主线' }}
+        </button>
       </div>
     </section>
 
     <section v-else-if="!chapterComplete" class="tutorial-conversation" aria-live="polite">
       <div class="guide-speaker"><span aria-hidden="true">✦</span><b>向导</b><small>继续主线</small></div>
-      <h2>我们接着刚才的学习</h2><p>接下来是{{ nextScene === 'deploy' ? '打出军团与支付士气' : nextScene === 'move' ? '普通移动' : '进攻与防守' }}。我会先介绍当前场面，再陪你一步步操作。</p>
-      <div class="conversation-choices"><button class="primary" type="button" :disabled="actionBusy || connecting" @click="startPractice">{{ starting ? '正在准备练习场面…' : '继续主线' }}</button>
-        <button type="button" :disabled="actionBusy" @click="revisitIntroduction">再认识一下卡牌</button></div>
+      <h2>继续下一段实操</h2><p>接下来练习{{ nextScene === 'deploy' ? '打出军团与支付士气' : nextScene === 'move' ? '普通移动' : '进攻与防守' }}。</p>
+      <div class="conversation-choices"><button class="primary" type="button" :disabled="actionBusy || connecting" @click="startPractice">{{ starting ? '正在准备练习场面…' : '继续主线' }}</button></div>
     </section>
     <section v-else class="tutorial-conversation chapter-review" aria-live="polite">
       <div class="guide-speaker"><span aria-hidden="true">✦</span><b>向导</b><small>第一章复盘</small></div>
       <h2>现在，把刚才的行动串起来</h2>
-      <p>你已经认识了获胜目标和各种卡牌，并实际打出军团、支付士气、移动、进攻和防守。做决定前，先看当前可用士气、军团位置与状态，再读卡牌效果。</p>
-      <p>{{ progress.responseReviewed ? '你也已亲手准备反击，并比较了效果无效后的场面和费用。完整对局一章仍在准备，可以继续复习前两章。' : '接下来沿一场练习认识卡牌效果与响应：准备反击，看看费用、效果和实际结果之间的区别。' }}</p>
-      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy || connecting" @click="startResponsePractice">{{ starting ? '正在准备练习场面…' : progress.responseReviewed ? '重学卡牌效果与响应' : '继续主线：卡牌效果与响应' }}</button><button type="button" :disabled="actionBusy" @click="repeatChapter">重新学习第一章</button><button type="button" @click="revisitIntroduction">再看卡牌介绍</button></div>
+      <p>你已完成打出军团、支付士气、移动、进攻和防守。继续按当前资源、位置和卡牌效果行动。</p>
+      <p>{{ progress.responseReviewed ? '你也完成了反击响应。第三章仍在准备，可重学前两章。' : '下一章练习盖伏反击、支付费用并确认实际结果。' }}</p>
+      <div class="conversation-choices"><button type="button" class="primary" :disabled="actionBusy || connecting" @click="startResponsePractice">{{ starting ? '正在准备练习场面…' : progress.responseReviewed ? '重学卡牌效果与响应' : '继续主线：卡牌效果与响应' }}</button><button type="button" :disabled="actionBusy" @click="repeatChapter">重新学习第一章</button></div>
     </section>
     <p v-if="unsaved" class="tutorial-notice" role="status">本机暂时无法保存进度，当前学习仍可继续；刷新页面后可能需要重新学习。</p>
     <p v-if="accountId && availabilityCopy" class="tutorial-status" role="status">{{ availabilityCopy }}</p>

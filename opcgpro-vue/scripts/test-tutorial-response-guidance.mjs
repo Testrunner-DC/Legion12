@@ -32,6 +32,9 @@ const helpers = await import(toModule(responseFile, [["'./tutorialGuidance'", JS
 const sharedHelpers = await import(toModule(guidanceFile))
 const checks = []
 function check(name, fn) { fn(); checks.push({ name, passed: true }) }
+check('response teaching exposes no optional explanation branch', () => {
+  assert.equal('responseTutorialHelp' in helpers, false)
+})
 check('duplicate board and mobile nodes represent only one selected payment resource', () => {
   assert.equal(sharedHelpers.tutorialPaymentSelectionCount(['morale-a', 'morale-a']), 1)
   assert.equal(sharedHelpers.tutorialPaymentSelectionCount(['morale-a', 'morale-b', 'morale-a', 'morale-b']), 2)
@@ -108,7 +111,7 @@ check('placement points to front legion and back covered counter only', () => {
 })
 check('result explicitly keeps paid costs and waits for review', () => {
   const page = helpers.responseTutorialDialogue('completed', initial)[0]
-  assert.match(page.body, /不会自动退回/); assert.match(page.outcome, /读完.*复盘/)
+  assert.match(page.body, /不会自动退回/); assert.match(page.outcome, /确认结果.*才记录本段完成/)
 })
 check('unknown step waits without providing an action or completion', () => {
   const page = helpers.responseTutorialDialogue('unknown-future', initial)[0]

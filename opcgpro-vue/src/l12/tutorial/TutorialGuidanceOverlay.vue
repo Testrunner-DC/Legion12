@@ -9,15 +9,13 @@ import {
   tutorialActionSelector,
   tutorialDialoguePages,
   tutorialFacts,
-  tutorialHelpCopy,
   tutorialPlayerSelector,
   tutorialPaymentSelectionCount,
   tutorialSnapshot,
   type TutorialAnchor,
-  type TutorialHelpTopic,
   type TutorialSceneSnapshot,
 } from './tutorialGuidance'
-import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts, responseTutorialHelp,
+import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts,
   type ResponseTutorialBinding } from './tutorialResponseGuidance'
 
 const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean }>(), { busy: false })
@@ -25,7 +23,6 @@ const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial:
 
 const minimized = ref(false)
 const dialogueIndex = ref(0)
-const helpTopic = ref<TutorialHelpTopic | null>(null)
 const panelElement = ref<HTMLElement | null>(null)
 const initialFacts = tutorialFacts(props.tutorial, props.game)
 const practiceInstanceId = ref<string | null>(initialFacts.practiceInstanceId)
@@ -33,7 +30,6 @@ const facts = computed(() => tutorialFacts(props.tutorial, props.game, practiceI
 const baseline = ref<TutorialSceneSnapshot>(tutorialSnapshot(facts.value))
 const responseBinding = ref<ResponseTutorialBinding>()
 const responseFacts = computed(() => responseTutorialFacts(props.game, responseBinding.value))
-const responseLesson = computed(() => props.tutorial.lessonId === 'response')
 const stateAligned = computed(() => props.tutorial.matchId === props.game.matchId && props.tutorial.version === 1)
 const pages = computed(() => props.tutorial.lessonId === 'response'
   ? responseTutorialDialogue(props.tutorial.stepId, responseFacts.value)
@@ -286,11 +282,8 @@ const visibleGuide = computed<GuideView | null>(() => {
   return props.tutorial.status === 'completed' ? dialoguePage.value : actionGuide.value
 })
 
-const helpCopy = computed(() => props.tutorial.lessonId === 'response' && helpTopic.value === 'current'
-  ? responseTutorialHelp(props.tutorial.stepId) : helpTopic.value ? tutorialHelpCopy(helpTopic.value, facts.value) : '')
-
 function advanceDialogue() {
-  if (props.busy || helpTopic.value) return
+  if (props.busy) return
   if (props.tutorial.status === 'completed') {
     if (stateAligned.value) emit('continueMainline')
     return
@@ -361,7 +354,7 @@ function updateGeometry() {
   focusRects.value = []
   arrow.value = null
   anchorUnavailable.value = ''
-  const anchor = !minimized.value && !helpTopic.value ? visibleGuide.value?.anchor : null
+  const anchor = !minimized.value ? visibleGuide.value?.anchor : null
   if (!anchor || typeof document === 'undefined') { observeGeometry([]); return }
   const viewportSize = visibleViewport()
   const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
@@ -437,12 +430,11 @@ watch(() => [stateAligned.value, facts.value.practiceInstanceId] as const, ([ali
 watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.stepId}:${props.tutorial.status}`, () => {
   minimized.value = false
   dialogueIndex.value = 0
-  helpTopic.value = null
   queueRefresh()
 }, { flush: 'sync' })
 
 watch(() => [props.game.revision, props.game.phase, props.game.prompts?.map(prompt => prompt.promptId).join('|'),
-  dialogueIndex.value, helpTopic.value, minimized.value], queueRefresh, { flush: 'post' })
+  dialogueIndex.value, minimized.value], queueRefresh, { flush: 'post' })
 watch(() => visibleGuide.value?.anchor?.selector, queueRefresh, { flush: 'post' })
 
 onMounted(() => {
@@ -489,30 +481,14 @@ onBeforeUnmount(() => {
           <button type="button" aria-label="最小化教学说明" @click="minimized = true">−</button>
         </header>
 
-        <template v-if="helpTopic">
-          <p>{{ helpCopy }}</p>
-          <button class="tutorial-primary" type="button" @click="helpTopic = null">明白了，回到主线</button>
-        </template>
-        <template v-else>
-          <p>{{ visibleGuide?.body }}</p>
-          <dl class="tutorial-cause-and-result">
-            <div><dt>为什么</dt><dd>{{ visibleGuide?.reason }}</dd></div>
-            <div><dt>会发生什么</dt><dd>{{ visibleGuide?.outcome }}</dd></div>
-          </dl>
-          <p v-if="anchorUnavailable" class="tutorial-anchor-unavailable" role="status">{{ anchorUnavailable }}</p>
-          <div v-if="!ownResponseGuide && (!dialogueDone || tutorial.status === 'completed')" class="tutorial-main-action">
-            <button class="tutorial-primary" type="button" :disabled="busy || !stateAligned" @click="advanceDialogue">
-              {{ busy ? '正在切换…' : tutorial.status === 'completed' ? '继续主线' : '继续' }}
-            </button>
-          </div>
-          <div class="tutorial-help">
-            <span>我想了解…</span>
-            <button type="button" @click="helpTopic = 'master'">主宰与胜负</button>
-            <button type="button" @click="helpTopic = 'cards'">军团、战术与圣物</button>
-            <button type="button" @click="helpTopic = 'morale'">士气与费用</button>
-            <button type="button" @click="helpTopic = 'current'">{{ responseLesson ? '费用与响应' : '当前练习军团' }}</button>
-          </div>
-        </template>
+        <p>{{ visibleGuide?.body }}</p>
+        <p class="tutorial-result-line">{{ visibleGuide?.outcome }}</p>
+        <p v-if="anchorUnavailable" class="tutorial-anchor-unavailable" role="status">{{ anchorUnavailable }}</p>
+        <div v-if="!ownResponseGuide && (!dialogueDone || tutorial.status === 'completed')" class="tutorial-main-action">
+          <button class="tutorial-primary" type="button" :disabled="busy || !stateAligned" @click="advanceDialogue">
+            {{ busy ? '正在切换…' : tutorial.status === 'completed' ? '继续主线' : '继续' }}
+          </button>
+        </div>
 
         <footer>
           <button type="button" :disabled="busy" @click="restartScene">重学本段</button>
@@ -526,6 +502,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .tutorial-guide-layer{position:fixed;z-index:2147483633;inset:0;pointer-events:none}.tutorial-focus-ring{position:fixed;box-sizing:border-box;border:3px solid #f5d45f;border-radius:10px;box-shadow:0 0 0 3px #071014cc,0 0 22px #f5d45fcc;animation:tutorial-guide-pulse 1.4s ease-in-out infinite;pointer-events:none}.tutorial-guide-arrow{position:fixed;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.tutorial-guide-arrow path{fill:none;stroke:#f5d45f;stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 2px 2px #000)}.tutorial-guide-arrow marker path{fill:#f5d45f;stroke:none}@keyframes tutorial-guide-pulse{50%{border-color:#fff2a7;box-shadow:0 0 0 4px #071014cc,0 0 30px #fff2a799}}
 .tutorial-guidance-shell{position:fixed;z-index:2147483634;top:14px;box-sizing:border-box;width:min(390px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:13px 15px;border:1px solid #5c6b73;background:#091118f2;color:#f0f2ee;box-shadow:0 14px 38px #000b;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#b59a4b;background:#171408f2}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#62cbd1;font-size:12px;font-weight:900;letter-spacing:.08em}.tutorial-guidance h2{margin:3px 0 0;font-size:18px}.tutorial-guidance header button{min-width:44px;min-height:44px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 18px inherit}.tutorial-guidance p{margin:10px 0;color:#d5dcdd;font-size:14px;font-weight:800;line-height:1.65}.tutorial-cause-and-result{display:grid;gap:6px;margin:8px 0}.tutorial-cause-and-result div{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px;padding:7px 8px;background:#0c181d}.tutorial-cause-and-result dt{color:#e4c96f;font-size:12px;font-weight:900}.tutorial-cause-and-result dd{margin:0;color:#c8d3d4;font-size:13px;font-weight:800;line-height:1.5}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #e0b85a;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:10px 0}.tutorial-guidance button{min-height:44px;padding:8px 12px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{border-color:#e0b85a;background:#3b2e12;color:#fff1b8}.tutorial-help{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid #344149}.tutorial-help span{width:100%;color:#91a2a8;font-size:12px;font-weight:900}.tutorial-help button{min-height:40px;padding:7px 9px;color:#d4e8e7}.tutorial-guidance footer{display:flex;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid #344149}.tutorial-guidance footer button{min-width:108px}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
+.tutorial-result-line{padding:7px 8px;background:#0c181d;color:#e0cf91!important;font-size:13px!important}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell){width:min(350px,calc(var(--l12-viewport-width,100vw) - 188px));max-width:calc(var(--l12-viewport-width,100vw) - 188px)}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-left){left:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-right){right:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports .mobile-battle-dock__context > .tutorial-guidance-restore){position:static!important;box-sizing:border-box;width:100%;max-width:100%;min-height:44px!important;padding:8px 4px!important;white-space:normal;overflow-wrap:normal}
 /* The landscape portal enables pointer input on its direct children. The
    teaching focus is decorative, while only the dialogue itself is interactive. */

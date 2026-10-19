@@ -49,21 +49,25 @@ check('one continuous first chapter opens inline without a second directory link
   assert.doesNotMatch(source.hub + source.page, /进入教学目录|lesson-grid|开始本关|三关可任选/)
   for (const chapter of ['初识十二军团', '卡牌效果与响应', '完成一场对局']) assert.ok(source.course.includes(chapter))
   assert.match(source.page, /尚未开放/)
-  assert.match(source.page, /questionOpen \? introduction\.answer : introduction\.text/)
-  assert.match(source.page, /明白了，回到主线/)
+  for (const id of ['goal', 'cards', 'hand', 'morale', 'practice']) assert.match(source.course, new RegExp(`id: '${id}'`))
+  assert.doesNotMatch(source.page + source.overlay, /questionOpen|我想了解|回到主线/)
+  const introductionTemplate = source.page.slice(source.page.indexOf('<section v-if="introductionOpen"'), source.page.indexOf('<section v-else-if'))
+  assert.equal((introductionTemplate.match(/<button/g) ?? []).length, 1, 'Each introduction step has one main action')
 })
 check('introductions explain goals, card types, resource origins and tradeoffs in Legion12 terms', () => {
-  for (const text of ['血量降至0', '主宰', '军团', '战术', '圣物', '手牌从哪里来', '牌库顶部抽1张',
-    '先攻玩家第一回合不抽', '士气牌库', '追加2张', '追加1张', '重置阶段', '费用', '兵力', '代价']) assert.ok(source.course.includes(text), text)
+  for (const text of ['血量降至0', '主宰', '军团', '战术', '圣物', '手牌来自牌库', '牌库顶部抽1张',
+    '先攻首回合不抽', '士气牌库', '追加2张', '追加1张', '重置阶段', '费用', '兵力', '效果']) assert.ok(source.course.includes(text), text)
   assert.doesNotMatch(source.page + source.course + source.overlay + source.guide, /部署|法力|召唤/)
   const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
   assert.doesNotMatch(template, /\{\{[^}]*\b(?:instanceId|cardInstanceId|lessonId|stepId)\b/)
   assert.match(source.page, /<CardImage :card-id="card\.id"/)
 })
-check('guide stays on the real board with inline questions, readable dialogue and non-intercepting focus', () => {
-  for (const text of ['继续主线', '回到主线']) assert.ok(source.overlay.includes(text))
+check('guide stays on the real board with linear dialogue and non-intercepting focus', () => {
+  assert.ok(source.overlay.includes('继续主线'))
   const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
   assert.doesNotMatch(template, /\{\{\s*tutorial\.(?:lessonId|stepId)|服务器权威|不会通关|判定说明/)
+  assert.doesNotMatch(template, /tutorial-help|tutorial-cause-and-result|为什么|会发生什么/)
+  assert.match(template, /tutorial-result-line/)
   assert.match(source.overlay, /pointer-events:\s*none/)
   assert.match(source.overlay, /44px/)
   assert.match(source.overlay, /<BattleOverlayPortal force>/, 'Teaching must share the prompt teleport host even on desktop')
@@ -224,12 +228,15 @@ check('new practice waits for actual roomLeft and fences account, token, generat
 })
 check('hand and morale sources are separate concepts with real first-player exceptions', () => {
   const ids = course.tutorialIntroduction.map(step => step.id)
-  assert.ok(ids.indexOf('goal') < ids.indexOf('legion'))
-  assert.ok(ids.indexOf('hand') < ids.indexOf('practice') && ids.indexOf('morale') < ids.indexOf('practice'))
+  assert.deepEqual(ids, ['goal', 'cards', 'hand', 'morale', 'practice'])
   assert.deepEqual(course.tutorialScenes, ['deploy', 'move', 'combat'])
-  for (const step of course.tutorialIntroduction) assert.ok(step.title && step.text && step.question && step.answer)
+  for (const step of course.tutorialIntroduction) {
+    assert.ok(step.title && step.text)
+    assert.equal('question' in step || 'answer' in step, false)
+  }
   assert.match(course.tutorialIntroduction.find(step => step.id === 'hand').flow, /牌库.*手牌/)
-  assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').answer, /追加新士气.*恢复已有士气/)
+  assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').text, /追加.*重置阶段.*恢复活跃/)
+  assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').flow, /士气牌库.*活跃士气.*休整/)
 })
 
 class BrowserStorage extends MemoryStorage {

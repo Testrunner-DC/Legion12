@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-tutorial-linear-internal",
+  "date": "2026-10-19",
+  "audience": "internal",
+  "reason": "教学仍仅测试预览：介绍收为五步线性主线，删除补充问答和知识回跳，实际操作用短提示与单句结果；保留真实高亮、费用、操作与进度校验。后续章节和整套教学尚未验收，不进入正式发布。",
+  "paths": [
+    "opcgpro-vue/src/l12/tutorial/tutorialCourse.ts",
+    "opcgpro-vue/src/l12/tutorial/tutorialGuidance.ts",
+    "opcgpro-vue/src/l12/tutorial/tutorialResponseGuidance.ts",
+    "opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue",
+    "opcgpro-vue/src/l12/site/TutorialPage.vue",
+    "opcgpro-vue/scripts/test-tutorial-contract.mjs",
+    "opcgpro-vue/scripts/test-tutorial-guidance.mjs",
+    "opcgpro-vue/scripts/test-tutorial-response-guidance.mjs",
+    "opcgpro-vue/scripts/test-tutorial-ui.mjs"
+  ]
+}

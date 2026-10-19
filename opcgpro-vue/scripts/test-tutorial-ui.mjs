@@ -179,31 +179,29 @@ try {
     const panel=page.locator('[data-tutorial-introduction]')
     await panel.waitFor()
     const titles=[]
-    for(let i=0;i<9;i++){
+    for(let i=0;i<5;i++){
       const title=await panel.locator('h2').innerText();titles.push(title)
       const text=await panel.innerText()
       assert(!/部署|法力|召唤/.test(text),'Teaching must use Twelve Legions terminology')
-      const question=panel.getByRole('button',{name:/^我想了解：/})
-      await tap(question,'optional explanation '+title)
-      assert(await panel.getByRole('button',{name:'明白了，回到主线',exact:true}).isVisible())
-      await tap(panel.getByRole('button',{name:'明白了，回到主线',exact:true}),'return same mainline node')
-      assert.equal(await panel.locator('h2').innerText(),title,'FAQ must not advance or leave mainline')
-      if(['手牌从哪里来？','士气：支付费用的资源'].includes(title)){
+      assert.equal(await panel.getByRole('button').count(),1,'Each introduction step has one main action')
+      assert(!/我想了解|回到主线|再看卡牌|再认识/.test(text),'Introduction must stay linear')
+      if(['手牌来自牌库','士气用来支付费用'].includes(title)){
         assert((await panel.locator('.resource-flow').innerText()).includes('→'),'Resources need an origin-to-use explanation')
         await page.screenshot({path:path.join(out,viewport.width+'-intro-'+i+'.png')})
       }
-      await tap(panel.getByRole('button',{name:i===8?'进入战场，继续主线':'继续主线',exact:true}),'read mainline '+i)
+      await tap(panel.getByRole('button',{name:i===4?'进入战场，继续主线':'继续主线',exact:true}),'read mainline '+i)
     }
-    assert.equal(titles[0],'欢迎，主宰者')
-    assert(titles.indexOf('手牌从哪里来？')<titles.indexOf('我们一起走进战场'))
+    assert.deepEqual(titles,['欢迎，主宰者','认识三种卡牌','手牌来自牌库','士气用来支付费用','看清数值，再开始实操'])
     return titles
   }
   const guide=()=>page.locator('[data-ui-contract="tutorial-authoritative-guidance"]')
   async function inspectGuide(viewport,label) {
     const shell=guide();await shell.waitFor()
     const h2=await shell.locator('h2').innerText()
-    const explanation=await shell.locator('.tutorial-cause-and-result').innerText()
-    assert(explanation.includes('为什么')&&explanation.includes('会发生什么'),'Every practical step must explain cause and outcome')
+    const resultLine=await shell.locator('.tutorial-result-line').innerText()
+    assert(resultLine.trim(),'Every practical step keeps one necessary cost or result line')
+    assert.equal(await shell.locator('.tutorial-result-line').count(),1)
+    assert.equal(await shell.locator('.tutorial-help,.tutorial-cause-and-result').count(),0)
     assert(!/DTO|matchId|权威|部署|法力|召唤/.test(await shell.innerText()),'No internal implementation language in teaching')
     const bounds=await shell.boundingBox()
     assert(bounds&&bounds.x>=-1&&bounds.y>=-1&&bounds.x+bounds.width<=viewport.width+1&&bounds.y+bounds.height<=viewport.height+1,
@@ -224,18 +222,13 @@ try {
       geometry.arrow=await page.locator('.tutorial-guide-arrow > path').getAttribute('d')
       assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
     }
-    return {title:h2,explanation,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable)}
+    return {title:h2,resultLine,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable)}
   }
   async function readScene(viewport,scene,readings) {
     for(let i=0;i<10;i++) {
       const shell=guide();await shell.waitFor()
       if(await shell.getAttribute('data-tutorial-reading')!=='true')return
       const record=await inspectGuide(viewport,scene+' reading '+i)
-      if(i===0) {
-        await tap(shell.getByRole('button',{name:'士气与费用',exact:true}),'in-board question')
-        await tap(shell.getByRole('button',{name:'明白了，回到主线',exact:true}),'in-board return same step')
-        assert.equal(await shell.locator('h2').innerText(),record.title)
-      }
       if(['card','morale','card-source','defense','attack-result'].includes(await shell.getAttribute('data-tutorial-guide-id')))
         await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-'+(await shell.getAttribute('data-tutorial-guide-id'))+'.png')})
       readings.push(record)

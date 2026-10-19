@@ -50,25 +50,21 @@ export function responseTutorialDialogue(step: string, facts: ResponseTutorialFa
     label: '我方士气', unavailable: '请展开我方士气区。' }
   switch (step) {
     case 'response-legion': return [
-      page('response-goal', '这次，准备一个反击',
-        '本章沿同一场练习认识效果和响应。先让西施登场，再盖伏绝对防御，亲手阻止对方的一次战术效果。',
-        '不是为了机械地打完手牌，而是比较投入手牌与士气之后，能保护什么。',
-        '先准备一个能观察前后变化的场面；对手尚未公开的手牌不会提前展示。'),
-      page('response-legion-card', '先看这张西施',
-        `西施当前费用 ${cardCost(facts.legion)}、兵力 ${facts.legion?.troops ?? '—'}。本例先让她在前排登场，方便比较接下来的效果。`,
+      page('response-goal', '先让西施登场',
+        `西施当前费用 ${cardCost(facts.legion)}、兵力 ${facts.legion?.troops ?? '—'}。让她在前排登场，再准备一张反击。`,
         '费用决定打出的资源代价，兵力参与攻防；选择前排是本场练习安排，不是所有军团都应放前排。',
-        '打出后会少一张手牌，换来一张场上军团，但这还不是进攻。',
+        '打出后少一张手牌，换来一张场上军团。',
         facts.legionId ? { selector: handSelector(facts.legionId), label: '西施', unavailable: '请在我方手牌中找到本次西施。' } : null),
-      page('response-resource-plan', '士气也要为下一步留出',
-        `现在有 ${facts.activeMorale} 张活跃士气、${facts.handCount} 张手牌。这段练习已走过若干回合，不代表开局就有这些资源。打出西施后，还要为盖伏绝对防御保留费用。`,
+      page('response-resource-plan', '为反击留出资源',
+        `现在有 ${facts.activeMorale} 张活跃士气、${facts.handCount} 张手牌。打出西施后，还要支付绝对防御的盖伏费用；本场资源不是开局数值。`,
         '手牌是可选的行动，士气才让这些行动能够支付；不能只看手里有多少张牌。',
-        '每次付费都把所选活跃士气转为休整；它们不是被永久删除。', morale),
+        '付费会让所选活跃士气转为休整。', morale),
     ]
     case 'response-cover': return [
       page('response-cover-result', '先看西施登场后的变化',
         `西施已在前排，当前兵力 ${facts.legion?.troops ?? '—'}；现在还有 ${facts.activeMorale} 张活跃士气。`,
         '刚才用手牌和费用换来了场上的军团，而不是额外获得兵力或一次进攻。',
-        '接下来准备反击，用来保护这张军团。',
+        '接下来盖伏反击，保护这张军团。',
         facts.legionId ? { selector: `${fieldSelector(facts.self.playerIndex)}${tutorialCardSelector(facts.legionId)}`, label: '登场的西施', unavailable: '请展开我方战场。' } : null),
       page('response-cover-card', '盖伏是在准备，不是立刻生效',
         `绝对防御是反击战术，当前打出费用 ${cardCost(facts.counter)}。把它盖伏到合法后排位置，并按提示支付费用。`,
@@ -82,7 +78,7 @@ export function responseTutorialDialogue(step: string, facts: ResponseTutorialFa
       '对方会按正常规则打出战术；在真实响应出现前，我们不提前宣布它的结果。')]
     case 'response-choose': return [
       page('response-started-not-resolved', '发动已经发生，效果还在等待',
-        '对方已公开打出兵临城下并支付费用。西施此刻的兵力还可以对照；效果正在等待处理。',
+        '对方已打出兵临城下并支付费用，但效果仍在等待处理。',
         '发动与成功处理不是一回事。卡的发动与效果的发动也要分开理解。',
         '之后即使效果被无效，也不会把已经发生的发动和费用抹去。'),
       page('response-counter-window', '回应的是效果，不是抵挡进攻',
@@ -97,9 +93,9 @@ export function responseTutorialDialogue(step: string, facts: ResponseTutorialFa
       '确认后才实际支付弃牌费用，并继续处理堆叠；不额外创造不存在的确认步骤。',
       facts.prompt && facts.discard ? { selector: promptChoice(facts.prompt, facts.discard.instanceId), label: '可弃置的手牌', unavailable: '请恢复当前弃牌费用面板。' } : null)]
     case 'completed': return [page('response-result', '比较结果，也别忘了代价',
-      `兵临城下的效果已被无效，西施当前兵力 ${facts.legion?.troops ?? '—'}。请再对照墓地和休整的士气：打出、盖伏及弃牌的费用并不会自动退回。`,
+      `兵临城下的效果已被无效，西施当前兵力 ${facts.legion?.troops ?? '—'}；打出、盖伏及弃牌的费用不会自动退回。`,
       '本次投入了手牌与士气，换来保护军团的结果。下次面对不同卡，也要先看条件、时机、费用与目标，再决定是否响应。',
-      '本次练习已经完成；读完这次复盘后再继续主线，才记录这段学习完成。')]
+      '确认结果后继续主线，才记录本段完成。')]
     case 'response-retry': return [page('response-observe-other-result', '这次看到了另一种结果',
       '这次没有沿预定的反击路线完成。请看场面中的真实变化；已经支付的费用仍按原规则处理。',
       '不响应也可能是合法选择，但与本次“亲手阻止效果”的练习目标不同。',
@@ -138,12 +134,4 @@ export function responseTutorialAction(step: string, facts: ResponseTutorialFact
     })
   return page('response-action-wait', '等待当前结果', '稍等当前操作处理完成，再一起看结果。',
     '操作、费用和效果需要依真实顺序处理。', '只在场面显示结果后继续。')
-}
-
-export function responseTutorialHelp(step: string) {
-  if (step === 'response-cover' || step === 'response-end-turn')
-    return '盖伏是在合法位置准备反击，不是立刻无效效果。本例的跨回合只是练习安排，实际能否响应仍看卡牌与当前合法选项。'
-  if (step === 'response-discard')
-    return '弃置手牌是在支付这次反击的费用，不是在打出被弃置的那张卡，所以不另付它牌面上的打出费用。支付后不会因为后续效果被无效而自动退回。'
-  return '卡的发动与效果的发动不是同一件事；发动也不等于成功处理。响应按当前真实时机进行，不能把回应战术效果说成抵挡进攻。'
 }

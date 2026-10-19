@@ -87,6 +87,7 @@ check('authoritative spendableResourceCount wins over visible fallback', () => {
 check('deploy dialogue explains reason and outcome before action', () => {
   const pages = guidance.tutorialDialoguePages(tutorial('deploy'), deployFacts, guidance.tutorialSnapshot(deployFacts))
   assert.ok(pages.length >= 4)
+  assert.match(pages[0].body, /备好资源的练习场面/, 'Prepared practice resources must not be mistaken for the standard opening')
   assert.ok(pages.every(page => page.reason && page.outcome))
   assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /手牌/)
   assert.match(pages.map(page => `${page.body} ${page.outcome}`).join(' '), /牌库 30 张、手牌 2 张/)
@@ -127,10 +128,10 @@ check('combat anchors exact front-left DTO instance', () => {
   assert.equal(combatFacts.practiceInstanceId, 'combat-practice')
   assert.equal(combatFacts.practicePosition, '0:0')
 })
-check('combat copy connects attack to master-zero objective and opportunity cost', () => {
+check('combat copy connects attack to master-zero objective and resting cost', () => {
   const pages = guidance.tutorialDialoguePages(tutorial('combat', 'attack'), combatFacts, guidance.tutorialSnapshot(combatFacts))
   assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /主宰血量降到 0/)
-  assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /进攻机会/)
+  assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /进攻通常会让这张军团休整/)
 })
 
 const endTurnFacts = guidance.tutorialFacts(tutorial('combat', 'end-turn'), game(player(0, {
@@ -143,7 +144,7 @@ check('end-turn copy explains opponent resource turn without inventing a delta',
   const page = guidance.tutorialDialoguePages(tutorial('combat', 'end-turn'), endTurnFacts,
     guidance.tutorialSnapshot(endTurnFacts))[0]
   assert.match(page.body, /公开手牌数 4，士气区 2 张，其中活跃 1 张/)
-  assert.match(page.body, /具体变化请看接下来的场面/)
+  assert.match(page.outcome, /结束回合后.*补充资源并行动/)
 })
 
 const defenseGame = game(player(0), enemy, { phase: 'Defense', pendingDefense: {
@@ -157,7 +158,30 @@ check('defense reads actual pending attack value and target', () => {
 check('defense copy explains protection versus resource tradeoff', () => {
   const page = guidance.tutorialDialoguePages(tutorial('combat', 'defend'), defenseFacts, guidance.tutorialSnapshot(defenseFacts))[0]
   assert.match(`${page.reason} ${page.outcome}`, /保护主宰|投入手牌/)
-  assert.match(page.body, /请根据现在可见的场面/)
+  assert.match(page.body, /选择抵挡或不抵挡/)
+  assert.match(page.outcome, /抵挡.*保护目标.*不抵挡.*承受/, 'The visible short line must retain the reason for the choice')
+})
+const firstChapterVisiblePages = [
+  ...guidance.tutorialDialoguePages(tutorial('deploy'), deployFacts, guidance.tutorialSnapshot(deployFacts)),
+  ...guidance.tutorialDialoguePages(tutorial('move'), moveStart, guidance.tutorialSnapshot(moveStart)),
+  ...guidance.tutorialDialoguePages(tutorial('combat', 'attack'), combatFacts, guidance.tutorialSnapshot(combatFacts)),
+  ...guidance.tutorialDialoguePages(tutorial('combat', 'end-turn'), endTurnFacts, guidance.tutorialSnapshot(endTurnFacts)),
+  ...guidance.tutorialDialoguePages(tutorial('combat', 'defend'), defenseFacts, guidance.tutorialSnapshot(defenseFacts)),
+]
+const copyMetrics = {
+  pages: firstChapterVisiblePages.length,
+  bodyCharacters: firstChapterVisiblePages.reduce((sum, page) => sum + page.body.length, 0),
+  outcomeCharacters: firstChapterVisiblePages.reduce((sum, page) => sum + page.outcome.length, 0),
+  longestBody: Math.max(...firstChapterVisiblePages.map(page => page.body.length)),
+  longestOutcome: Math.max(...firstChapterVisiblePages.map(page => page.outcome.length)),
+}
+check('first chapter visible copy stays within two short sentences plus one result line', () => {
+  for (const page of firstChapterVisiblePages) {
+    assert.ok(page.body.length <= 90, `${page.id} body is ${page.body.length} characters`)
+    assert.ok(page.outcome.length <= 36, `${page.id} outcome is ${page.outcome.length} characters`)
+    assert.ok(page.body.split(/[。！？]/).filter(Boolean).length <= 2, `${page.id} body has too many sentences`)
+    assert.ok(page.outcome.split(/[。！？]/).filter(Boolean).length <= 1, `${page.id} outcome must be one line`)
+  }
 })
 
 for (const sfcPath of sfcPaths) {
@@ -197,11 +221,13 @@ check('focus geometry is event-driven, transformed and non-blocking', () => {
   assert.match(overlaySource, /!ownResponseGuide && \(!dialogueDone/)
   assert.match(overlaySource, /不等于已经选择不抵挡/)
 })
-check('mainline and contextual questions remain in one overlay', () => {
-  assert.match(overlaySource, /我想了解…/)
-  assert.match(overlaySource, /明白了，回到主线/)
-  assert.match(overlaySource, /为什么/)
-  assert.match(overlaySource, /会发生什么/)
+check('mainline is linear and keeps one concise result line', () => {
+  const template = parse(overlaySource, { filename: overlayPath }).descriptor.template?.content ?? ''
+  assert.doesNotMatch(template, /我想了解|回到主线|tutorial-help|tutorial-cause-and-result|为什么|会发生什么/)
+  assert.match(template, /tutorial-result-line/)
+  assert.match(template, /<footer>/)
+  assert.match(template, /重学本段/)
+  assert.match(template, /退出教学/)
   assert.match(overlaySource, /data-tutorial-guide-id/)
   assert.match(overlaySource, /data-tutorial-scene/)
   assert.match(overlaySource, /data-tutorial-reading/)
@@ -227,7 +253,7 @@ check('tutorial terminology does not expose internal lesson labels', () => {
 
 const sourceHashes = Object.fromEntries([helperPath, ...sfcPaths].map(file => [path.relative(repo, file).replaceAll('\\', '/'),
   crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')]))
-const report = { status: 'passed', total: results.length, failed: 0, results, sourceHashes,
+const report = { status: 'passed', total: results.length, failed: 0, results, sourceHashes, copyMetrics,
   boundaries: ['pure focused helper/SFC compilation only', 'no browser, server, build, deployment or tutorial completion acceptance'] }
 const reportPath = path.join(output, 'report.json')
 fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`)
