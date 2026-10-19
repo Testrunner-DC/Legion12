@@ -341,6 +341,29 @@ async function main() {
     const value = helper.validatePublicDeckCurrent(current(true))
     assert.equal(value.summary.publicationVersion, 135); assert.equal(value.deck.publicationId, generation.id)
   })
+  for (const owner of [false, true]) {
+    for (const cover of [[], ['C1'], ['C1', 'C2', 'C3']]) await check(`current accepts bounded optional cover for owner=${owner}, size=${cover.length}`, () => {
+      const body = current(owner)
+      body.summary.coverCardIds = cover
+      assert.equal(helper.validatePublicDeckCurrent(body), body)
+      const entry = helper.toPublicDeckCurrentEntry(body)
+      assert.equal(entry.deck, body.deck)
+      assert.equal(entry.canEdit, owner)
+      assert.equal(Object.hasOwn(entry, 'coverCardIds'), false)
+    })
+    for (const cover of [null, undefined, 'C1', {}, [1], [''], [' '], ['C1', 'c1'], ['C1', 'C2', 'C3', 'C4']])
+      await check(`current rejects malformed optional cover for owner=${owner}, value=${JSON.stringify(cover)}`, () => {
+        const body = current(owner)
+        body.summary.coverCardIds = cover
+        assert.throws(() => helper.validatePublicDeckCurrent(body))
+      })
+    await check(`cover compatibility does not accept other unknown summary fields for owner=${owner}`, () => {
+      const body = current(owner)
+      body.summary.coverCardIds = ['C1']
+      body.summary.ownerId = 'unexpected-owner'
+      assert.throws(() => helper.validatePublicDeckCurrent(body), /字段无效/)
+    })
+  }
   for (const [label, mutate] of [
     ['foreign owner id', value => { value.deck.publicationId = 'foreign'; return value }],
     ['foreign owner version', value => { value.deck.publicationVersion = 134; return value }],

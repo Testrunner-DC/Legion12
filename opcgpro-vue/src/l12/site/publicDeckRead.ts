@@ -4,6 +4,7 @@ import type {
   PublicDeckVersionRead,
 } from '../platform'
 import type { SavedL12Deck } from '../decks'
+import { validateOptionalDeckCoverCardIds } from '../deckCover'
 
 const lowerToken = /^[a-f0-9]{64}$/
 const integer = (value: unknown, minimum = 0) => typeof value === 'number'
@@ -43,7 +44,9 @@ function validateSummary(value: unknown) {
   if (!summary) throw new Error('公开牌库摘要无效')
   exact(summary, ['id', 'source', 'name', 'masterId', 'masterName', 'faction', 'author', 'publicCode',
     'publicationVersion', 'createdAt', 'updatedAt', 'counts', 'legal', 'legalityReason', 'environment',
-    'views', 'likes', 'copies', 'viewerLiked', 'canEdit', 'readToken'], '公开牌库摘要')
+    'views', 'likes', 'copies', 'viewerLiked', 'canEdit', 'readToken',
+    ...(Object.hasOwn(summary, 'coverCardIds') ? ['coverCardIds'] : [])], '公开牌库摘要')
+  if (!validateOptionalDeckCoverCardIds(summary)) throw new Error('公开牌库封面摘要无效')
   if (typeof summary.id !== 'string' || !summary.id || summary.source !== 'public'
     || ['name', 'masterId', 'masterName', 'faction', 'author', 'publicCode'].some(key =>
       typeof summary[key] !== 'string' || !summary[key])
