@@ -621,6 +621,29 @@ public sealed partial class L12PlatformStore
                     continue;
                 }
 
+                if (type == "card")
+                {
+                    RequireOnlyProperties(block, "id", "type", "cardId");
+                    var cardId = JsonString(block, "cardId");
+                    var canonicalCardId = cardId.Trim().ToUpperInvariant();
+                    if (cardId != canonicalCardId || cardId.Length is 0 or > 100 || HasUnsafeControlCharacters(cardId)
+                        || _officialCards.Count == 0 || !_officialCards.ContainsKey(cardId))
+                        throw new ArgumentException($"正文单卡必须引用权威卡池中的规范卡号：{cardId}");
+                    hasContent = true;
+                    continue;
+                }
+
+                if (type == "publicDeck")
+                {
+                    RequireOnlyProperties(block, "id", "type", "reference");
+                    var reference = JsonString(block, "reference");
+                    if (reference.Length != PublicDeckCodeLength || reference.Any(character => !PublicDeckCodeAlphabet.Contains(character))
+                        || FindPublishedDeck(reference) is null)
+                        throw new ArgumentException("正文公共牌库必须引用已公开牌库的规范短码");
+                    hasContent = true;
+                    continue;
+                }
+
                 if (type is not ("paragraph" or "h2" or "h3" or "bulletList" or "orderedList" or "quote"))
                     throw new ArgumentException($"正文内容块类型不在白名单中：{type}");
                 RequireOnlyProperties(block, "id", "type", "text", "marks", "align");

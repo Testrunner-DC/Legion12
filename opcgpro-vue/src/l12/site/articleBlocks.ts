@@ -1,5 +1,5 @@
 export type ArticleTextBlockType = 'paragraph' | 'h2' | 'h3' | 'bulletList' | 'orderedList' | 'quote'
-export type ArticleBlockType = ArticleTextBlockType | 'image' | 'divider'
+export type ArticleBlockType = ArticleTextBlockType | 'image' | 'divider' | 'card' | 'publicDeck'
 export type ArticleMarkType = 'bold' | 'italic' | 'underline' | 'strikethrough' | 'link'
 export type ArticleTextAlign = 'left' | 'center' | 'right' | 'justify'
 
@@ -27,7 +27,9 @@ export interface ArticleImageBlock {
 }
 
 export interface ArticleDividerBlock { id: string; type: 'divider' }
-export type ArticleBlock = ArticleTextBlock | ArticleImageBlock | ArticleDividerBlock
+export interface ArticleCardBlock { id: string; type: 'card'; cardId: string }
+export interface ArticlePublicDeckBlock { id: string; type: 'publicDeck'; reference: string }
+export type ArticleBlock = ArticleTextBlock | ArticleImageBlock | ArticleDividerBlock | ArticleCardBlock | ArticlePublicDeckBlock
 export interface ArticleBodyDocument { format: 'l12-blocks'; version: 1; blocks: ArticleBlock[] }
 export interface ArticleInlineRun { text: string; bold: boolean; italic: boolean; underline: boolean; strikethrough: boolean; href: string }
 export interface ArticleListItem { text: string; from: number; to: number }
@@ -74,6 +76,42 @@ export function newArticleImageBlock(): ArticleImageBlock {
 }
 
 export function newArticleDividerBlock(): ArticleDividerBlock { return { id: articleBlockId(), type: 'divider' } }
+export function newArticleCardBlock(cardId: string): ArticleCardBlock {
+  return { id: articleBlockId(), type: 'card', cardId: cleanArticleCardId(cardId) }
+}
+export function newArticlePublicDeckBlock(reference: string): ArticlePublicDeckBlock {
+  return { id: articleBlockId(), type: 'publicDeck', reference: articlePublicDeckReference(reference) }
+}
+
+export function isArticleTextBlock(block: ArticleBlock): block is ArticleTextBlock {
+  return textTypes.has(block.type as ArticleTextBlockType)
+}
+
+export function cleanArticleCardId(value: string) {
+  const cardId = value.trim()
+  return /^[A-Za-z0-9-]{1,100}$/.test(cardId) ? cardId : ''
+}
+
+export function articlePublicDeckReference(value: string) {
+  const input = value.trim()
+  let reference = input
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const path = new URL(input).pathname.replace(/\/+$/, '')
+      const match = path.match(/(?:^|\/)decks\/([^/]+)$/)
+      if (!match) return ''
+      reference = decodeURIComponent(match[1])
+    } catch { return '' }
+  } else if (input.startsWith('/')) {
+    const path = input.split(/[?#]/, 1)[0].replace(/\/+$/, '')
+    const match = path.match(/(?:^|\/)decks\/([^/]+)$/)
+    if (!match) return ''
+    try { reference = decodeURIComponent(match[1]) }
+    catch { return '' }
+  }
+  const canonical = reference.replaceAll('-', '').toLocaleUpperCase('en-US')
+  return /^[23456789ABCDEFGHJKMNPQRSTVWXYZ]{12}$/.test(canonical) ? canonical : ''
+}
 
 function cleanMarks(value: unknown, textLength: number): ArticleMark[] {
   if (!Array.isArray(value)) return []
@@ -101,6 +139,14 @@ function cleanStructuredBlock(value: unknown): ArticleBlock | null {
     }
   }
   if (block.type === 'divider') return { id, type: 'divider' }
+  if (block.type === 'card') {
+    const cardId = cleanArticleCardId(String(block.cardId || ''))
+    return cardId ? { id, type: 'card', cardId } : null
+  }
+  if (block.type === 'publicDeck') {
+    const reference = articlePublicDeckReference(String(block.reference || ''))
+    return reference ? { id, type: 'publicDeck', reference } : null
+  }
   if (!textTypes.has(block.type as ArticleTextBlockType)) return null
   const text = String(block.text || '').slice(0, 20_000)
   const align = alignTypes.has(block.align as ArticleTextAlign) ? block.align as ArticleTextAlign : 'left'
@@ -128,7 +174,7 @@ export function serializeArticleBody(document: ArticleBodyDocument) {
 }
 
 export function articleBodyText(value?: string | null, limit = 260) {
-  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption : block.type === 'divider' ? '' : block.text)
+  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption : isArticleTextBlock(block) ? block.text : '')
     .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
   return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text
 }

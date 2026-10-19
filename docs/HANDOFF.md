@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-19 资讯单卡／公开牌库嵌入本地收口
+
+- 原对话人类要求已由Main实际读回：资讯可插单卡和公共牌库，单卡可点详情，牌库必须复用现有完整容器。正文仍l12-blocks/v1，只加card/cardId和publicDeck/reference，不存私人ID、读取凭据或牌库正文；服务端权威卡池／已发布12位短码及精确字段白名单检查保留。复用SingleCardPicker、CardImage、CatalogCardDetails、DeckCover和public-deck-detail，不造新卡牌／牌库组件。
+- Main独审拦下跨代重复读：现冻结计划＋串行pump，每实例最多一波12个在途；catalog完成及读取完成后有销毁／代际围栏，旧请求自然完成不冒称取消，只消费最新需求。目录失败显式点击重试；正文变化关闭旧详情。真实SFC可控Promise回归已纳固定前端链；实际桌面、手机竖屏、短横屏均完成插入、更换、预览、详情、现有路由、删除撤销、旧编辑器往返、重复引用去重／12读上限及404状态，零页面异常／正式写入。独审CLEAR，完整前端最终结果见article-content-embeds-20261019/main-acceptance.json。
+- 平台整套2026/2026已实际读回受管success/exit0/counters回执，服务器与测试两叶SHA未变，复用原证据不重跑；该helper成功后按既定策略删除private TRX，只留计数回执。对方原称存在的platform-structured-news-green.log及定向1/1原件无法核实，已明确撤回，不计入接受。旧Focused正文止于文本守卫失败保留；Main最终前端另验，不把失败日志写成通过。
+- 本片只本地提交，未推送／部署／改维护／关线上Bug；远端选择性正式树与开发教学差异仍待独立整合，不快进覆盖。此前封面408429d2及响应07018ff6保留独立。唯一源级接受D:/GPT/Legion12/artifacts/article-content-embeds-20261019/main-acceptance.json。
+
 ## 2026-10-19 共享牌库封面容器显示本地收口
 
 - 用户要求各处 deckbanner／三张代表牌显示一致，并指出大厅错误、宽屏右下移动反而上移。共享 DeckCover 的 compact 固定104／96px高使大厅横幅约7.8:1；旧宽屏偏移又排除compact。现三变体都保留12:5，横幅contain，代表牌按50%容器比例及底部锚点布局，移除手机65%放大覆盖；大厅／好友房限合理封面宽度，操作区按容器宽度换行，窄于240px按文字角色收紧。

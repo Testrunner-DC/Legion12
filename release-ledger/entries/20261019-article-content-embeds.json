@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-article-content-embeds",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "资讯卡牌与牌库引用",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "资讯可展示单卡与公共牌库封面：点击单卡查看卡牌详情，点击牌库封面进入现有公开牌库详情页。",
+      "paths": ["opcgpro-vue/src/l12/site/ArticleContentRenderer.vue", "opcgpro-vue/src/l12/site/ArticleDocumentEditor.vue"]
+    }
+  ]
+}

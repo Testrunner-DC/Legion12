@@ -1037,8 +1037,12 @@ public sealed class SiteContentPlatformStoreTests
         var root = Path.Combine(Path.GetTempPath(), $"l12-article-blocks-{Guid.NewGuid():N}");
         try
         {
-            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards);
             var admin = store.Login("Admin", "L12master").Account!;
+            var publicDeck = store.PublishDeck(admin.Id, catalog.PresetDecks.First(), null)!;
+            var articleCardId = catalog.PresetDecks.First().CardIds.First();
             var media = Upload(store, admin, "article");
             var body = JsonSerializer.Serialize(new
             {
@@ -1047,6 +1051,8 @@ public sealed class SiteContentPlatformStoreTests
                 {
                     new { id = "heading", type = "h2", text = "正式标题", align = "center", marks = Array.Empty<object>() },
                     new { id = "paragraph", type = "paragraph", text = "访问官网", align = "justify", marks = new[] { new { type = "bold", from = 0, to = 2, href = (string?)null }, new { type = "underline", from = 0, to = 2, href = (string?)null }, new { type = "strikethrough", from = 1, to = 2, href = (string?)null }, new { type = "link", from = 2, to = 4, href = (string?)"https://example.com" } } },
+                    new { id = "card", type = "card", cardId = articleCardId },
+                    new { id = "public-deck", type = "publicDeck", reference = publicDeck.PublicCode },
                     new { id = "divider", type = "divider" },
                     new { id = "image", type = "image", mediaAssetId = media.Id, alt = "正文插图内容", caption = "图片说明" },
                 },
@@ -1071,6 +1077,31 @@ public sealed class SiteContentPlatformStoreTests
             var htmlBlock = "{\"format\":\"l12-blocks\",\"version\":1,\"blocks\":[{\"id\":\"html\",\"type\":\"html\",\"text\":\"<script>alert(1)</script>\",\"marks\":[]}]}";
             Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
                 "非法 HTML 块", "", htmlBlock, "官方公告", "", "", "unsafe-html", false, null)));
+
+            var unknownCard = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = "unknown-card", type = "card", cardId = "S99-9999" } },
+            });
+            Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "未知单卡", "", unknownCard, "官方公告", "", "", "unknown-card", false, null)));
+            var cardWithExtraField = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = "extra-card", type = "card", cardId = articleCardId, privateNote = "不得保存" } },
+            });
+            Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "单卡额外字段", "", cardWithExtraField, "官方公告", "", "", "extra-card", false, null)));
+            foreach (var invalidReference in new[] { $"/decks/{publicDeck.PublicCode}", "PRIVATE-ID", "23456789ABCE" })
+            {
+                var unsafeDeck = JsonSerializer.Serialize(new
+                {
+                    format = "l12-blocks", version = 1,
+                    blocks = new[] { new { id = "unsafe-deck", type = "publicDeck", reference = invalidReference } },
+                });
+                Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                    "非法公开牌库", "", unsafeDeck, "官方公告", "", "", "unsafe-public-deck", false, null)));
+            }
 
             var blankIdBody = JsonSerializer.Serialize(new
             {

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19｜资讯嵌入与共享读取生命周期
+
+- 直接功能需求：资讯插入可点详情的单卡及复用既有容器的公共牌库。沿ArticleDocumentEditor／ArticleContentRenderer／articleBlocks扩展card/publicDeck，旧ArticleBlockEditor用isArticleTextBlock保护往返；复用SingleCardPicker、CardImage、CatalogCardDetails、DeckCover与现有路由。服务器只收规范权威卡号、已公开短码，字段白名单及旧文本／媒体／ID／权限不减。
+- Main审查原实现：catalog等待之后未检查卸载／代际，再从实时document取引用；旧新两代可各发12读、卸载后仍新发请求。修正为冻结代际计划、单实例串行pump及异步边界围栏，只处理最终需求；已有在途自然结束不宣称取消。目录失败不再静默无效，现有单卡入口显示失败并手动重试，切正文清除旧详情。无新增HTTP旁路、全局缓存或隐私副本。
+- 防回滚：真实SFC脚本注入可控Promise覆盖延迟catalog换代／卸载、12在途／串行最新代、失败恢复、点击重试及旧点击围栏；Main新增实际浏览器3尺寸，覆盖插入／保存序列化／预览／单卡详情／整封面现有路由／更换／删除撤销／旧编辑器往返／12读及404。模型和SFC回归纳入package固定UI链，独审CLEAR。Main完整前端最终日志与源SHA认article-content-embeds-20261019/main-acceptance.json。
+- 服务器／测试两叶与平台全套2026成功receipt映射复用；helper按旧策略仅留计数，不冒已删除TRX。对方不存在的定向日志／不可核1项声明撤回；旧UI文本守卫失败及两次浏览器夹具假设失败保留，未通过删除断言改变产品行为。本片未部署／未改维护／未关线上Bug，只本地提交；未来同步须保留教学开发树与封面／响应独立片。
+
 ## 2026-10-19｜大厅及共享牌库封面容器比例、代表牌位置
 
 - 直接用户要求：统一各处deckbanner／三张代表牌，修正大厅显示错误及宽屏代表牌反向上移。根因是compact固定104／96px高、旧宽屏规则明确排除compact；不同变体与手机又分别扩大牌扇，按页面断点而非实际容器定位。

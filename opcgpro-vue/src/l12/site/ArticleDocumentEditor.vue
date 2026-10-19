@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { SiteMedia } from '@/l12/platform'
+import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
-import { articleBlockId, articleInlineRuns, articleListItems, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
+import { articleBlockId, articleInlineRuns, articleListItems, articlePublicDeckReference, cleanArticleCardId, isArticleTextBlock, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
 
 const props = withDefaults(defineProps<{ modelValue?: string; media?: SiteMedia[] }>(), { modelValue: '', media: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'media-uploaded': [value: SiteMedia]; notice: [value: string] }>()
@@ -21,6 +22,11 @@ const imageAssetId = ref('')
 const imageAlt = ref('')
 const imageCaption = ref('')
 const editingFigure = ref<HTMLElement | null>(null)
+const cardPicker = ref(false)
+const deckPanel = ref(false)
+const deckInput = ref('')
+const deckError = ref('')
+const editingEmbed = ref<HTMLElement | null>(null)
 const recentMedia = ref<SiteMedia[]>([])
 const HISTORY_DEBOUNCE_MS = 700
 let historyTimer: ReturnType<typeof setTimeout> | undefined
@@ -31,8 +37,9 @@ const articleMedia = computed(() => [...new Map([...recentMedia.value, ...props.
 const mediaFor = (id: string) => articleMedia.value.find(item => item.id === id)
 const canUndo = computed(() => historyIndex.value > 0 || historyPending.value)
 const canRedo = computed(() => !historyPending.value && historyIndex.value < history.value.length - 1)
-const characterCount = computed(() => articleDocument.value.blocks.reduce((sum, block) => sum + (block.type === 'image' || block.type === 'divider' ? 0 : block.text.length), 0))
+const characterCount = computed(() => articleDocument.value.blocks.reduce((sum, block) => sum + (isArticleTextBlock(block) ? block.text.length : 0), 0))
 const imageCount = computed(() => articleDocument.value.blocks.filter(block => block.type === 'image').length)
+const embedCount = computed(() => articleDocument.value.blocks.filter(block => block.type === 'card' || block.type === 'publicDeck').length)
 
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!)) }
 function inlineHtml(block: ArticleTextBlock, from = 0, to = block.text.length) {
@@ -49,6 +56,8 @@ function inlineHtml(block: ArticleTextBlock, from = 0, to = block.text.length) {
 function blockHtml(block: ArticleBlock) {
   const id = escapeHtml(block.id)
   if (block.type === 'divider') return `<hr data-block-id="${id}">`
+  if (block.type === 'card') return embedHtml('card', block.cardId, block.cardId, block.id)
+  if (block.type === 'publicDeck') return embedHtml('publicDeck', block.reference, block.reference, block.id)
   if (block.type === 'image') {
     const media = mediaFor(block.mediaAssetId)
     if (!media) return ''
@@ -62,6 +71,10 @@ function blockHtml(block: ArticleBlock) {
   }
   const tag = block.type === 'paragraph' ? 'p' : block.type
   return `<${tag} data-block-id="${id}"${align}>${inlineHtml(block)}</${tag}>`
+}
+function embedHtml(type: 'card' | 'publicDeck', value: string, label = value, id: string = articleBlockId()) {
+  const kind = type === 'card' ? '单卡' : '公共牌库'
+  return `<aside class="article-embed-placeholder" data-block-id="${escapeHtml(id)}" data-article-embed="${type}" data-embed-value="${escapeHtml(value)}" contenteditable="false"><b>${kind}</b><span>${escapeHtml(label)}</span><button type="button" data-edit-embed="true" tabindex="-1">编辑${kind}</button><button type="button" data-remove-embed="true" tabindex="-1">删除${kind}</button></aside>`
 }
 function documentHtml(value: ArticleBodyDocument) { return value.blocks.map(blockHtml).join('') || `<p data-block-id="${articleBlockId()}" data-align="left"><br></p>` }
 function renderCanvas() {
@@ -127,7 +140,9 @@ function parseCanvas(): ArticleBodyDocument {
     if (!(node instanceof HTMLElement)) continue
     const tag = node.tagName
     const blockIndex = blocks.length
-    if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || '', type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
+    if (node.dataset.articleEmbed === 'card') blocks.push({ id: node.dataset.blockId || '', type: 'card', cardId: (node.dataset.embedValue || '').slice(0, 100) })
+    else if (node.dataset.articleEmbed === 'publicDeck') blocks.push({ id: node.dataset.blockId || '', type: 'publicDeck', reference: (node.dataset.embedValue || '').slice(0, 64) })
+    else if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || '', type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
     else if (tag === 'HR') blocks.push({ id: node.dataset.blockId || '', type: 'divider' })
     else if (tag === 'UL' || tag === 'OL') blocks.push(listBlock(node, tag === 'UL' ? 'bulletList' : 'orderedList'))
     else if (['H2', 'H3', 'BLOCKQUOTE', 'P', 'DIV'].includes(tag)) blocks.push(textBlock(node, tag === 'H2' ? 'h2' : tag === 'H3' ? 'h3' : tag === 'BLOCKQUOTE' ? 'quote' : 'paragraph'))
@@ -218,7 +233,52 @@ function saveImage() {
 }
 function removeImage() { if (editingFigure.value?.isConnected) editingFigure.value.remove(); imagePanel.value = false; editingFigure.value = null; scheduleHistory() }
 function uploaded(media: SiteMedia) { recentMedia.value = [media, ...recentMedia.value.filter(item => item.id !== media.id)]; imageAssetId.value = media.id; if (!imageAlt.value.trim()) imageAlt.value = media.altText; emit('media-uploaded', media) }
-function canvasClick(event: MouseEvent) { if (event.target instanceof Element && event.target.closest('figure')) openImage(event); else saveSelection() }
+function embedFromEvent(event: MouseEvent | undefined, type: 'card' | 'publicDeck') {
+  const embed = event?.target instanceof Element ? event.target.closest<HTMLElement>(`[data-article-embed="${type}"]`) : null
+  return embed?.closest('.editor-canvas') === canvas.value ? embed : null
+}
+function replaceOrInsertEmbed(html: string) {
+  if (editingEmbed.value?.isConnected) { editingEmbed.value.outerHTML = html; scheduleHistory() }
+  else insertBlockAfterCursor(`${html}<p data-block-id="${articleBlockId()}" data-align="left"><br></p>`)
+  editingEmbed.value = null
+}
+function openCard(event?: MouseEvent) {
+  saveSelection(); editingEmbed.value = embedFromEvent(event, 'card'); cardPicker.value = true
+}
+function selectCard(card: SingleCardPickerItem) {
+  const cardId = cleanArticleCardId(card.cardId)
+  if (!cardId) { emit('notice', '所选卡牌缺少规范卡号'); return }
+  replaceOrInsertEmbed(embedHtml('card', cardId, card.nameZh || card.name || cardId,
+    editingEmbed.value?.dataset.blockId || articleBlockId()))
+  cardPicker.value = false
+}
+function closeCardPicker() { cardPicker.value = false; editingEmbed.value = null }
+function openDeck(event?: MouseEvent) {
+  saveSelection(); editingEmbed.value = embedFromEvent(event, 'publicDeck')
+  deckInput.value = editingEmbed.value?.dataset.embedValue || ''; deckError.value = ''; deckPanel.value = true
+}
+function saveDeckEmbed() {
+  const reference = articlePublicDeckReference(deckInput.value)
+  if (!reference) { deckError.value = '请输入公共牌库短码或 /decks/短码 链接'; return }
+  replaceOrInsertEmbed(embedHtml('publicDeck', reference, reference,
+    editingEmbed.value?.dataset.blockId || articleBlockId()))
+  deckPanel.value = false; deckInput.value = ''; deckError.value = ''
+}
+function closeDeckPanel() { deckPanel.value = false; deckInput.value = ''; deckError.value = ''; editingEmbed.value = null }
+function removeEmbed() {
+  if (editingEmbed.value?.isConnected) editingEmbed.value.remove()
+  cardPicker.value = false; deckPanel.value = false; editingEmbed.value = null; deckInput.value = ''; deckError.value = ''
+  scheduleHistory()
+}
+function canvasClick(event: MouseEvent) {
+  const target = event.target instanceof Element ? event.target : null
+  const embed = target?.closest<HTMLElement>('[data-article-embed]')
+  if (embed && target?.closest('[data-remove-embed]')) { editingEmbed.value = embed; removeEmbed() }
+  else if (embed?.dataset.articleEmbed === 'card') openCard(event)
+  else if (embed?.dataset.articleEmbed === 'publicDeck') openDeck(event)
+  else if (target?.closest('figure')) openImage(event)
+  else saveSelection()
+}
 
 watch(() => props.modelValue, value => {
   if ((value || '') === currentBody()) return
@@ -237,15 +297,23 @@ onBeforeUnmount(clearTimer)
       <span><button title="加粗" @mousedown.prevent @click="command('bold')"><strong>B</strong></button><button title="斜体" @mousedown.prevent @click="command('italic')"><em>I</em></button><button title="下划线" @mousedown.prevent @click="command('underline')"><u>U</u></button><button title="删除线" @mousedown.prevent @click="command('strikeThrough')"><s>S</s></button></span>
       <span><button title="左对齐" @mousedown.prevent @click="setAlignment('left')">≡</button><button title="居中" @mousedown.prevent @click="setAlignment('center')">≣</button><button title="右对齐" class="align-right" @mousedown.prevent @click="setAlignment('right')">≡</button><button title="两端对齐" @mousedown.prevent @click="setAlignment('justify')">☷</button></span>
       <span><button @mousedown.prevent @click="command('insertUnorderedList')">• 列表</button><button @mousedown.prevent @click="command('insertOrderedList')">1. 列表</button><button @mousedown.prevent @click="insertDivider">— 分隔线</button></span>
-      <span><button @mousedown.prevent @click="openLink">🔗 链接</button><button class="image-tool" @mousedown.prevent @click="openImage()">＋ 图片</button></span>
+      <span><button @mousedown.prevent @click="openLink">🔗 链接</button><button class="image-tool" @mousedown.prevent @click="openImage()">＋ 图片</button><button class="embed-tool" @mousedown.prevent @click="openCard()">＋ 单卡</button><button class="embed-tool" @mousedown.prevent @click="openDeck()">＋ 公共牌库</button></span>
     </div>
     <ArticleContentRenderer v-if="preview" class="editor-preview" :body="currentBody()" :media="articleMedia"/>
-    <div v-else class="canvas-wrap"><div ref="canvas" class="editor-canvas" contenteditable="true" spellcheck="true" data-placeholder="从这里开始撰写文章……" @input="scheduleHistory" @paste="pastePlainText" @mouseup="saveSelection" @keyup="saveSelection" @click="canvasClick" @blur="flushHistory"/><footer><span>{{ characterCount }} 字 · {{ imageCount }} 张图</span><span>正文图片不限尺寸与长宽比；点击图片可再次编辑</span></footer></div>
+    <div v-else class="canvas-wrap"><div ref="canvas" class="editor-canvas" contenteditable="true" spellcheck="true" data-placeholder="从这里开始撰写文章……" @input="scheduleHistory" @paste="pastePlainText" @mouseup="saveSelection" @keyup="saveSelection" @click="canvasClick" @blur="flushHistory"/><footer><span>{{ characterCount }} 字 · {{ imageCount }} 张图 · {{ embedCount }} 个卡牌/牌库</span><span>点击图片可再次编辑；单卡和公共牌库也可点击编辑</span></footer></div>
     <div v-if="linkPanel" class="dialog-mask" @mousedown.self="linkPanel = false"><section class="editor-dialog"><header><b>添加文字链接</b><button @click="linkPanel = false">×</button></header><label>链接地址<input v-model="linkHref" autofocus placeholder="/news/文章ID 或 https://example.com" @input="linkError = ''" @keydown.enter.prevent="applyLink"></label><small>仅允许站内路径或 http(s) 地址。</small><p v-if="linkError">{{ linkError }}</p><footer><button class="primary" @click="applyLink">应用链接</button><button @click="removeLink">移除链接</button><button @click="linkPanel = false">取消</button></footer></section></div>
     <div v-if="imagePanel" class="dialog-mask" @mousedown.self="imagePanel = false"><section class="editor-dialog image-dialog"><header><b>{{ editingFigure ? '编辑正文图片' : '插入正文图片' }}</b><button @click="imagePanel = false">×</button></header><label>已上传图片<select v-model="imageAssetId"><option value="">请选择</option><option v-for="item in articleMedia" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><img v-if="mediaFor(imageAssetId)" :src="mediaFor(imageAssetId)?.thumbnailUrl" :alt="imageAlt || mediaFor(imageAssetId)?.altText"><label>替代文字<input v-model="imageAlt" maxlength="180" placeholder="描述图片中的关键信息"></label><label>图片说明（可空）<input v-model="imageCaption" maxlength="500" placeholder="显示在图片下方"></label><details><summary>上传新图片</summary><MediaUploadField kind="article" :initial-alt="imageAlt" @uploaded="uploaded" @notice="emit('notice', $event)"/></details><footer><button class="primary" @click="saveImage">{{ editingFigure ? '保存图片' : '插入到光标处' }}</button><button v-if="editingFigure" class="danger" @click="removeImage">删除图片</button><button @click="imagePanel = false">取消</button></footer></section></div>
+    <div v-if="deckPanel" class="dialog-mask" @mousedown.self="closeDeckPanel"><section class="editor-dialog"><header><b>{{ editingEmbed ? '编辑公共牌库' : '插入公共牌库' }}</b><button @click="closeDeckPanel">×</button></header><label>公共牌库短码或链接<input v-model="deckInput" autofocus maxlength="240" placeholder="CODE12 或 /decks/CODE12" @input="deckError = ''" @keydown.enter.prevent="saveDeckEmbed"></label><small>正文只保存公开短码，展示时使用当前公共牌库内容。</small><p v-if="deckError">{{ deckError }}</p><footer><button class="primary" @click="saveDeckEmbed">{{ editingEmbed ? '保存牌库' : '插入到光标处' }}</button><button v-if="editingEmbed" class="danger" @click="removeEmbed">删除牌库</button><button @click="closeDeckPanel">取消</button></footer></section></div>
+    <SingleCardPicker v-if="cardPicker" title="插入资讯单卡" @select="selectCard" @close="closeCardPicker"/>
   </section>
 </template>
 
 <style scoped>
 .document-editor{grid-column:1/-1;border:1px solid #46545d;background:#0b1218;color:#d6dcde}.document-editor-head{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:18px 22px;border-bottom:1px solid #344149;background:#111b22}.document-editor-head>div{display:grid;gap:5px}.document-editor-head b{font-size:17px}.document-editor-head span{color:#9ca7ab;font-size:14px}.document-editor nav,.rich-toolbar,.rich-toolbar>span,.editor-dialog footer{display:flex;align-items:center;flex-wrap:wrap;gap:8px}.document-editor button,.document-editor select,.document-editor input{box-sizing:border-box;min-height:38px;padding:8px 11px;border:1px solid #526069;background:#070d12;color:#f2f4f3;font:inherit;font-size:14px}.document-editor button{font-weight:800}.document-editor button:hover:not(:disabled),.document-editor button.active{border-color:#d3b65f;color:#efd37a}.document-editor button:disabled{opacity:.38}.rich-toolbar{position:sticky;top:0;z-index:4;padding:10px 16px;border-bottom:1px solid #3a474e;background:#152028;box-shadow:0 6px 18px rgba(0,0,0,.2)}.rich-toolbar select{min-width:120px}.rich-toolbar>span{gap:4px;padding-left:8px;border-left:1px solid #45525a}.rich-toolbar button{min-width:40px}.rich-toolbar .image-tool{border-color:#36838a;color:#72d4da}.rich-toolbar .align-right{transform:scaleX(-1)}.canvas-wrap{padding:24px;background:#080d11}.editor-canvas{box-sizing:border-box;min-height:650px;width:min(860px,100%);margin:auto;padding:clamp(34px,6vw,76px);outline:0;background:#f4f0e5;color:#202628;font-family:'Microsoft YaHei','微软雅黑',sans-serif;font-size:16px;line-height:1.9;box-shadow:0 20px 60px rgba(0,0,0,.34);caret-color:#9b2632}.editor-canvas:empty:before{content:attr(data-placeholder);color:#9aa0a0}.editor-canvas :deep(p){margin:1.1em 0;white-space:pre-wrap}.editor-canvas :deep(h2){margin:1.8em 0 .7em;font-size:1.75em;line-height:1.35}.editor-canvas :deep(h3){margin:1.5em 0 .6em;font-size:1.35em}.editor-canvas :deep(blockquote){margin:1.35em 0;padding:.8em 1.2em;border-left:4px solid #b8963e;background:#e7e0cb}.editor-canvas :deep(ul),.editor-canvas :deep(ol){padding-left:1.8em}.editor-canvas :deep(a){color:#147d89;text-decoration:underline}.editor-canvas :deep(hr){margin:2em 0;border:0;border-top:1px solid #aaa28c}.editor-canvas :deep(figure){position:relative;margin:1.8em 0;padding:10px;border:1px solid transparent;cursor:pointer}.editor-canvas :deep(figure:hover){border-color:#c19f49;background:#ece5d2}.editor-canvas :deep(figure img){display:block;max-width:100%;height:auto;margin:auto}.editor-canvas :deep(figcaption){margin-top:9px;color:#747b7c;font-size:14px;text-align:center}.editor-canvas :deep([data-edit-image]){position:absolute;right:18px;top:18px;border-color:#d3b65f;background:rgba(7,13,18,.85);color:#efd37a}.canvas-wrap>footer{display:flex;justify-content:space-between;gap:16px;width:min(860px,100%);margin:12px auto 0;color:#8f9ba0;font-size:14px}.editor-preview{margin:24px auto;padding:clamp(32px,6vw,72px);width:min(860px,calc(100% - 48px));background:#f4f0e5;color:#202628;box-shadow:0 20px 60px rgba(0,0,0,.34)}.dialog-mask{position:fixed;z-index:1200;inset:0;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,.72)}.editor-dialog{display:grid;gap:15px;width:min(560px,100%);max-height:calc(100vh - 48px);overflow:auto;padding:22px;border:1px solid #6d7a81;background:#111b22;box-shadow:0 28px 80px rgba(0,0,0,.55)}.editor-dialog>header{display:flex;align-items:center;justify-content:space-between}.editor-dialog>header b{font-size:18px}.editor-dialog label{display:grid;gap:7px;color:#c8d0d2;font-size:14px;font-weight:900}.editor-dialog input,.editor-dialog select{width:100%;min-height:44px}.editor-dialog small{color:#94a0a5}.editor-dialog>p{margin:0;color:#f2a0aa}.editor-dialog .primary{border-color:#b99b45;color:#efd47f}.editor-dialog .danger{border-color:#82414a;color:#ef929e}.image-dialog{width:min(780px,100%)}.image-dialog>img{display:block;max-width:100%;max-height:300px;margin:auto;object-fit:contain}.image-dialog details{border:1px solid #3b4950}.image-dialog summary{cursor:pointer;padding:12px;color:#70d1d7;font-weight:900}.image-dialog details>:not(summary){margin:12px}.image-dialog :deep(.media-upload-field){grid-template-columns:140px minmax(0,1fr)}.image-dialog :deep(.media-upload-field>img){width:140px}.editor-dialog footer{justify-content:flex-end}@media(max-width:760px){.document-editor-head{align-items:flex-start;flex-direction:column}.rich-toolbar{position:static}.canvas-wrap{padding:10px}.editor-canvas{min-height:500px;padding:24px 18px}.canvas-wrap>footer{align-items:flex-start;flex-direction:column}.editor-preview{width:calc(100% - 20px);margin:10px;padding:22px 18px}.rich-toolbar>span{padding-left:4px}.dialog-mask{padding:10px}.image-dialog :deep(.media-upload-field){grid-template-columns:1fr}}
+.rich-toolbar .embed-tool{border-color:#8c733c;color:#e0bf67}
+.editor-canvas :deep(.article-embed-placeholder){display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;margin:1.5em 0;padding:14px;border:1px solid #aa8b42;background:#191a15;color:#f2e7c5;cursor:pointer}
+.editor-canvas :deep(.article-embed-placeholder span){overflow:hidden;color:#d0c7aa;text-overflow:ellipsis;white-space:nowrap}
+.editor-canvas :deep(.article-embed-placeholder button){min-height:34px;border-color:#8c733c;color:#e0bf67}
+.editor-canvas :deep(.article-embed-placeholder [data-remove-embed]){border-color:#82414a;color:#ef929e}
+@media(max-width:760px){.editor-canvas :deep(.article-embed-placeholder){grid-template-columns:1fr 1fr}.editor-canvas :deep(.article-embed-placeholder span){grid-column:1/-1;grid-row:2}}
 </style>

@@ -4,7 +4,7 @@ import type { SiteMedia } from '@/l12/platform'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
 import {
-  newArticleImageBlock, newArticleTextBlock, parseArticleBody, safeArticleHref, serializeArticleBody,
+  isArticleTextBlock, newArticleImageBlock, newArticleTextBlock, parseArticleBody, safeArticleHref, serializeArticleBody,
   type ArticleBlock, type ArticleMark, type ArticleMarkType, type ArticleTextBlock, type ArticleTextBlockType,
 } from './articleBlocks'
 
@@ -257,7 +257,7 @@ function restoreTextSelection(blockId: string, from: number, to: number) {
     textarea.focus()
     textarea.setSelectionRange(from, to)
     const block = document.value.blocks.find(item => item.id === blockId)
-    if (block && block.type !== 'image' && block.type !== 'divider') captureSelection(block)
+    if (block && isArticleTextBlock(block)) captureSelection(block)
   })
 }
 function openLinkPanel(block: ArticleTextBlock) {
@@ -291,7 +291,7 @@ function applyLink() {
     return
   }
   const block = document.value.blocks.find(item => item.id === panel.blockId)
-  if (!block || block.type === 'image' || block.type === 'divider' || panel.to > block.text.length || block.text.slice(panel.from, panel.to) !== panel.selectedText) {
+  if (!block || !isArticleTextBlock(block) || panel.to > block.text.length || block.text.slice(panel.from, panel.to) !== panel.selectedText) {
     linkError.value = '所选文字已经变化，请取消后重新选择。'
     return
   }
@@ -306,7 +306,7 @@ function removeLink() {
   const panel = linkPanel.value
   if (!panel) return
   const block = document.value.blocks.find(item => item.id === panel.blockId)
-  if (!block || block.type === 'image' || block.type === 'divider') return
+  if (!block || !isArticleTextBlock(block)) return
   mutateStructure(() => {
     block.marks = block.marks.flatMap(mark => mark.type === 'link' ? removeMarkRange(mark, panel.from, panel.to) : [mark])
   })
@@ -327,9 +327,8 @@ function handleKeyboard(event: KeyboardEvent) {
   const key = event.key.toLowerCase()
   const target = event.target
   const textarea = target instanceof HTMLTextAreaElement ? target : null
-  const block = textarea
-    ? document.value.blocks.find(item => item.id === textarea.dataset.blockId && item.type !== 'image' && item.type !== 'divider') as ArticleTextBlock | undefined
-    : undefined
+  const candidate = textarea ? document.value.blocks.find(item => item.id === textarea.dataset.blockId) : undefined
+  const block = candidate && isArticleTextBlock(candidate) ? candidate : undefined
   if (block && (key === 'b' || key === 'i' || key === 'k')) {
     event.preventDefault()
     captureSelection(block, event)
@@ -359,11 +358,11 @@ function handleKeyboard(event: KeyboardEvent) {
     <div v-else class="block-list">
       <article v-for="(block, index) in document.blocks" :key="block.id" class="editor-block" :class="{ focused: activeBlockId === block.id }" @focusin="activeBlockId = block.id">
         <header>
-          <select v-if="block.type !== 'image' && block.type !== 'divider'" :value="block.type" aria-label="内容块类型" @change="changeBlockType(block, $event)"><option v-for="item in textBlockTypes" :key="item.id" :value="item.id">{{ item.label }}</option></select>
-          <b v-else>{{ block.type === 'divider' ? '分隔线' : '正文图片' }}</b>
+          <select v-if="isArticleTextBlock(block)" :value="block.type" aria-label="内容块类型" @change="changeBlockType(block, $event)"><option v-for="item in textBlockTypes" :key="item.id" :value="item.id">{{ item.label }}</option></select>
+          <b v-else>{{ block.type === 'divider' ? '分隔线' : block.type === 'image' ? '正文图片' : block.type === 'card' ? '单卡' : '公共牌库' }}</b>
           <nav><button type="button" :disabled="index === 0" aria-label="上移内容块" @click="moveBlock(block, -1)">↑ 上移</button><button type="button" :disabled="index === document.blocks.length - 1" aria-label="下移内容块" @click="moveBlock(block, 1)">↓ 下移</button><button type="button" class="delete" aria-label="删除内容块" @click="removeBlock(block)">删除</button></nav>
         </header>
-        <template v-if="block.type !== 'image' && block.type !== 'divider'">
+        <template v-if="isArticleTextBlock(block)">
           <div class="format-toolbar">
             <span>选中文字后：</span>
             <button type="button" title="粗体 Ctrl/Cmd+B" :class="{ active: selectionHasMark(block, 'bold') }" :aria-pressed="selectionHasMark(block, 'bold')" @mousedown.prevent @click="applyMark(block, 'bold')"><strong>B</strong> 粗体</button>
@@ -394,6 +393,8 @@ function handleKeyboard(event: KeyboardEvent) {
           </div>
           <details class="inline-upload"><summary>上传一张新的资讯正文图片</summary><MediaUploadField kind="article" :preview-url="mediaFor(block.mediaAssetId)?.thumbnailUrl" :initial-alt="block.alt" @uploaded="imageUploaded(block, $event)" @notice="emit('notice', $event)"/></details>
         </template>
+        <p v-else-if="block.type === 'card'" class="empty-image-preview">单卡：{{ block.cardId }}。请使用当前文章编辑器更换此单卡。</p>
+        <p v-else-if="block.type === 'publicDeck'" class="empty-image-preview">公共牌库：{{ block.reference }}。请使用当前文章编辑器更换此牌库。</p>
       </article>
     </div>
   </section>
