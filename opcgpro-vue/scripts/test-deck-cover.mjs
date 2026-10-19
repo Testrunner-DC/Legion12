@@ -86,6 +86,10 @@ assert.equal(validateOptionalDeckCoverCardIds({ coverCardIds: ['L-12', 'L-12'] }
 
 const source = relative => readFileSync(new URL(relative, import.meta.url), 'utf8')
 const coverComponent = source('../src/l12/DeckCover.vue')
+assert.doesNotMatch(coverComponent, /\.deck-cover--compact\{height:(?:104|96)px/,
+  'compact hosts must preserve the 12:5 banner instead of fixed-height cropping')
+assert.match(coverComponent, /bottom:-14%;right:-3%/,
+  'wide representative cards must anchor toward the right/bottom in every shared variant')
 const deckBannerMasterIds = [
   'S01-01M1', 'S01-01M2', 'S01-02M1', 'S01-02M3', 'S01-03M1', 'S01-03M2', 'S01-04M1', 'S01-04M2',
   'S02-01M1', 'S02-02M1', 'S02-03M1', 'S02-04M1', 'S02-05M1', 'S02-05M2', 'S02-06M1', 'S02-06M2',
@@ -120,9 +124,9 @@ for (const contract of [
   'border-radius:0',
   'aspect-ratio:12/5',
   'height:auto',
-  'height:104px',
-  'top:18px',
-  'top:8px',
+  'bottom:-14%;right:-2%',
+  'transform-origin:100% 100%',
+  '.deck-cover--compact{height:auto;aspect-ratio:12/5',
   "import { deploymentPath } from './deploymentBase'",
   'deck-cover__master-banner',
   'loading="lazy"',
@@ -131,14 +135,16 @@ for (const contract of [
   'height:30px',
   'flex-wrap:nowrap',
   '@media(min-width:701px)',
-  'top:22px;right:-2px',
-  '.deck-cover.deck-cover--featured .deck-cover__cards{right:-5px}',
+  'bottom:-14%;right:-3%',
   'class="deck-cover__footer"',
   'data-cover-footer',
   'color-mix(in srgb,var(--deck-cover-accent) 76%,transparent)',
   '@media(prefers-reduced-motion:reduce)',
   'background:transparent!important',
 ]) assert.match(coverComponent, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+
+assert.doesNotMatch(coverComponent, /\.deck-cover__cards\{width:65%\}/,
+  'mobile covers must retain the same container-proportional fan instead of enlarging it again')
 
 const consumers = [
   '../src/l12/site/DeckLibraryPage.vue',

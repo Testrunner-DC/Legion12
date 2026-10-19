@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-deck-cover-container-consistency",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "牌库封面显示调整",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "统一大厅、好友房、牌库及选择器的封面比例，修正横幅被拉成长条的问题；三张代表牌按容器右下角排列，窄屏文字与更换牌库按钮保持完整可达。",
+      "paths": ["opcgpro-vue/src/l12/DeckCover.vue", "opcgpro-vue/src/l12/site/BattleHubPage.vue"]
+    }
+  ]
+}
