@@ -8,7 +8,13 @@
     {
       "category": "ui",
       "text": "资讯可展示单卡与公共牌库封面：点击单卡查看卡牌详情，点击牌库封面进入现有公开牌库详情页。",
-      "paths": ["opcgpro-vue/src/l12/site/ArticleContentRenderer.vue", "opcgpro-vue/src/l12/site/ArticleDocumentEditor.vue"]
+      "paths": [
+        "opcgpro-vue/src/l12/site/ArticleContentRenderer.vue",
+        "opcgpro-vue/src/l12/site/ArticleDocumentEditor.vue",
+        "opcgpro-vue/src/l12/site/ArticleBlockEditor.vue",
+        "opcgpro-vue/src/l12/site/articleBlocks.ts",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.Articles.cs"
+      ]
     }
   ]
 }
