@@ -109,9 +109,10 @@ check('placement points to front legion and back covered counter only', () => {
   assert.match(helpers.responseTutorialAction('response-legion', initial, { ...dom, availableSlots: true }).anchor.selector, /data-tutorial-row="0"/)
   assert.match(helpers.responseTutorialAction('response-cover', initial, { ...dom, availableSlots: true }).anchor.selector, /data-tutorial-row="1"/)
 })
-check('result explicitly keeps paid costs and waits for review', () => {
+check('result keeps paid costs and automatically continues only after the real result', () => {
   const page = helpers.responseTutorialDialogue('completed', initial)[0]
-  assert.match(page.body, /不会自动退回/); assert.match(page.outcome, /确认结果.*才记录本段完成/)
+  assert.match(page.body, /不会自动退回/); assert.match(page.outcome, /结果已提交.*自动进入下一步/)
+  assert.doesNotMatch(page.outcome, /确认结果.*才记录|继续主线/)
 })
 check('unknown step waits without providing an action or completion', () => {
   const page = helpers.responseTutorialDialogue('unknown-future', initial)[0]

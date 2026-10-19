@@ -11,19 +11,38 @@ const repo = path.resolve(import.meta.dirname, '../..')
 const front = path.join(repo, 'opcgpro-vue')
 const out = process.env.L12_TUTORIAL_UI_OUTPUT || process.env.L12_TUTORIAL_REAL_OUTPUT
 const cache = process.env.L12_TUTORIAL_UI_CACHE || process.env.L12_TUTORIAL_REAL_CACHE
+const serverSource = process.env.L12_TUTORIAL_SERVER_SOURCE || path.join(repo, '服务端WebSocket/bin/Release/net10.0')
 assert(out && cache, 'Explicit governed roots are required')
 process.env.L12_TUTORIAL_REAL_OUTPUT = out
 process.env.L12_TUTORIAL_REAL_CACHE = cache
 execFileSync(process.env.L12_PWSH || 'pwsh', ['-NoProfile', '-NonInteractive', '-Command',
   `. '${repo}/ops/windows/Initialize-L12BuildEnvironment.ps1' | Out-Null; . '${repo}/ops/windows/L12GeneratedStorage.ps1'; foreach($p in @($env:L12_TUTORIAL_REAL_OUTPUT,$env:L12_TUTORIAL_REAL_CACHE,$env:TEMP)){$null=Assert-L12GeneratedPath -Path $p -Purpose 'independent real tutorial UI'}`], { stdio: 'pipe' })
 fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
-const report = { status: 'RUNNING', cases: [], transport: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. No test/production deployment.' }
+const report = { status: 'RUNNING', cases: [], transport: [], projectedObservations: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. Completion is passively observed after the actual net consumer restores full/delta/card frames. No test/production deployment.' }
+const firstChapterOnly = process.env.L12_TUTORIAL_FIRST_CHAPTER_ONLY === '1'
+let visualCardManifest = null
+if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly) {
+  const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json')
+  assert(manifestResponse.ok, 'Official public card asset manifest must be readable')
+  const manifest = await manifestResponse.json()
+  assert(manifest?.cards?.['S01-0104'], 'Official public manifest must contain Han Xin')
+  const deckSnapshot = JSON.parse(fs.readFileSync(path.join(repo,'服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json'),'utf8'))
+  const selectedIds = new Set(['S01-0104','S01-0117','ST01-10','S01-01C1',
+    ...deckSnapshot.decks.flatMap(deck=>[deck.masterId,...deck.cardIds,...deck.moraleIds,...deck.specialIds])])
+  visualCardManifest = { schemaVersion: 3, catalogVersion: manifest.catalogVersion, assetVersion: manifest.assetVersion,
+    basePath: '/card-assets', cards: Object.fromEntries([...selectedIds].filter(id=>manifest.cards[id]).map(id=>[id,manifest.cards[id]])) }
+  process.env.VITE_L12_CARD_ASSET_CDN = 'https://legion-12.com/card-assets'
+  report.visualCardAsset = { cardId: 'S01-0104', contentHash: manifest.cards['S01-0104'].contentHash,
+    source: 'official public card asset manifest; bounded introduction and two frozen public decks', entries: Object.keys(visualCardManifest.cards).length }
+}
 const boundSources = ['opcgpro-vue/src/App.vue','opcgpro-vue/src/l12/GamePage.vue','opcgpro-vue/src/l12/net.ts','opcgpro-vue/src/l12/site/TutorialPage.vue','opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue','opcgpro-vue/src/l12/tutorial/tutorialProgress.ts','opcgpro-vue/src/l12/tutorial/tutorialCourse.ts','opcgpro-vue/src/l12/tutorial/tutorialGuidance.ts','opcgpro-vue/src/l12/site/BattleHubPage.vue','opcgpro-vue/src/l12/game/GameBoard.vue','opcgpro-vue/src/l12/game/GameActions.vue','opcgpro-vue/src/l12/game/HandArea.vue','opcgpro-vue/src/l12/game/PlayerMat.vue','opcgpro-vue/src/l12/game/PromptOverlay.vue']
 const hashes = () => Object.fromEntries(boundSources.map(name=>[name,crypto.createHash('sha256').update(fs.readFileSync(path.join(repo,name))).digest('hex').toUpperCase()]))
 boundSources.push('opcgpro-vue/src/l12/tutorial/tutorialResponseGuidance.ts','opcgpro-vue/src/l12/game/BattleOverlayPortal.vue',
   'opcgpro-vue/src/l12/notifications/browserNotifications.ts','opcgpro-vue/src/l12/notifications/realtimeNotificationPolicy.ts',
   'opcgpro-vue/src/l12/notifications/useRealtimeNotifications.ts','opcgpro-vue/src/l12/site/L12SettingsModal.vue',
   'opcgpro-vue/src/l12/site/FriendRequestNotifications.vue')
+boundSources.push('opcgpro-vue/scripts/test-tutorial-ui.mjs','服务端WebSocket/TwelveLegions/L12RoomManager.Tutorial.cs',
+  '服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json')
 report.sourceBefore = hashes()
 report.paymentChecks=[]
 report.notificationSettings=[]
@@ -37,7 +56,7 @@ for (const port of [serverPort, uiPort]) await new Promise((resolve, reject) => 
 })
 const hostRoot = path.join(cache, 'host')
 assert(!fs.existsSync(hostRoot), 'Never reuse an old runtime or overwrite a prior attempt')
-fs.cpSync(path.join(repo, '服务端WebSocket/bin/Release/net10.0'), hostRoot, { recursive: true,
+fs.cpSync(serverSource, hostRoot, { recursive: true,
   filter: source => path.basename(source) !== 'runtime' })
 const dll = path.join(hostRoot, 'GrandUMIServer.dll')
 report.dllSha256 = crypto.createHash('sha256').update(fs.readFileSync(dll)).digest('hex').toUpperCase()
@@ -131,6 +150,20 @@ async function settleTo(predicate, label) {
   }
   throw new Error('Could not settle: ' + label)
 }
+async function completedFrame(scene, matchId, transportStart) {
+  const deadline=Date.now()+20000
+  while(Date.now()<deadline) {
+    report.projectedObservations=await page.evaluate(()=>window.__tutorialProjectionObservations||[])
+    const completion=report.projectedObservations.find(frame=>frame.kind==='completed'
+      &&frame.tutorial?.lessonId===scene&&frame.tutorial?.status==='completed'
+      &&frame.result?.matchId===matchId)
+    if(completion) return completion
+    const current=await observe()
+    if(current.matchId===matchId&&!current.pending&&current.prompts.some(prompt=>prompt.playerIndex===0)) await resolveOwnPrompt()
+    else await pause(80)
+  }
+  throw new Error('No authoritative completed frame: '+scene)
+}
 try {
   const readyDeadline = Date.now()+30000
   let healthy = false
@@ -142,7 +175,13 @@ try {
   assert(healthy, 'Local health did not become ready')
   process.env.VITE_WS_URL=`ws://127.0.0.1:${serverPort}/ws`
   process.env.L12_VITE_CACHE_DIR=path.join(cache,'vite')
-  vite=await createServer({root:front,configLoader:'runner',cacheDir:path.join(cache,'vite'),server:{host:'127.0.0.1',port:uiPort,strictPort:true}})
+  vite=await createServer({root:front,configLoader:'runner',cacheDir:path.join(cache,'vite'),
+    plugins: visualCardManifest ? [{ name: 'tutorial-visual-card-manifest', configureServer(server) {
+      server.middlewares.use('/card-assets/card-assets.manifest.json',(_request,response)=>{
+        response.setHeader('content-type','application/json; charset=utf-8')
+        response.end(JSON.stringify(visualCardManifest))
+      })
+    } }] : [], server:{host:'127.0.0.1',port:uiPort,strictPort:true}})
   await vite.listen()
   context=await chromium.launchPersistentContext(path.join(cache,'profile'),{headless:true,channel:'msedge',hasTouch:true,viewport:{width:1366,height:768}})
   await context.addInitScript(()=>{
@@ -160,7 +199,14 @@ try {
   page.on('pageerror',error=>report.errors.push(error.message))
   page.on('websocket',socket=>{
     socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type})}catch{}})
-    socket.on('framereceived',frame=>{try{const value=JSON.parse(String(frame.payload));if(value.type==='gameState'&&value.tutorial) report.transport.push({direction:'received',type:value.type,requestId:value.requestId,revision:value.state?.revision,tutorial:value.tutorial});else if(['tutorialRejected','actionRejected','tutorialRestartRequired','roomLeft'].includes(value.type))report.transport.push({direction:'received',type:value.type,requestId:value.requestId})}catch{}})
+    socket.on('framereceived',frame=>{try{const value=JSON.parse(String(frame.payload));if(value.type==='gameState'&&value.tutorial) {
+      const self=value.state?.players?.find(player=>player.playerIndex===value.state.you)||value.state?.players?.[0]
+      report.transport.push({direction:'received',type:value.type,requestId:value.requestId,revision:value.state?.revision,tutorial:value.tutorial,
+        result:value.tutorial.status==='completed'?{matchId:value.state?.matchId,activeMorale:self?.morale?.filter(card=>!card.tapped).length,
+          handCount:self?.handCount??self?.hand?.length,masterHp:self?.master?.hp,
+          field:self?.field?.map(row=>row.map(card=>card?{instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped,troops:card.troops}:null)),
+          graveyard:self?.graveyard?.map(card=>({instanceId:card.instanceId,cardId:card.cardId}))}:undefined})
+    }else if(['tutorialRejected','actionRejected','tutorialRestartRequired','roomLeft'].includes(value.type))report.transport.push({direction:'received',type:value.type,requestId:value.requestId})}catch{}})
   })
 
   await page.goto('http://127.0.0.1:'+uiPort+'/battle')
@@ -170,6 +216,30 @@ try {
     const{router}=await import('/src/router/index.ts');await router.push('/battle')
   })
   await waitState(s=>s.status==='online','real authenticated connection')
+  await page.evaluate(async()=>{
+    const moduleSource=await (await fetch('/src/l12/net.ts')).text()
+    const vueModule=moduleSource.match(/from\s+["']([^"']*\/vue\.js[^"']*)["']/)?.[1]
+    if(!vueModule) throw new Error('Cannot locate the actual net consumer Vue dependency')
+    const {watch}=await import(vueModule)
+    const {l12State:s}=await import('/src/l12/net.ts')
+    const observations=[]
+    window.__tutorialProjectionObservations=observations
+    // Passive observers only. Never send commands, change progress or bypass presentation.
+    watch(()=>s.tutorial,tutorial=>{
+      if(tutorial?.status!=='completed'||tutorial.matchId!==s.game?.matchId) return
+      const self=s.game.players.find(player=>player.playerIndex===s.game.you)
+      observations.push(JSON.parse(JSON.stringify({kind:'completed',order:observations.length,revision:s.game.revision,
+        tutorial:{lessonId:tutorial.lessonId,status:tutorial.status,stepId:tutorial.stepId},
+        result:{matchId:s.game.matchId,activeMorale:self.morale.filter(card=>!card.tapped).length,
+          handCount:self.handCount??self.hand?.length,masterHp:self.master.hp,
+          field:self.field.map(row=>row.map(card=>card?{instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped,troops:card.troops}:null)),
+          graveyard:self.graveyard.map(card=>({instanceId:card.instanceId,cardId:card.cardId}))}})))
+    },{flush:'sync'})
+    watch(()=>s.leavingRoom,leaving=>{
+      if(leaving) observations.push({kind:'leavingRoom',order:observations.length,matchId:s.game?.matchId,
+        lessonId:s.tutorial?.lessonId,status:s.tutorial?.status})
+    },{flush:'sync'})
+  })
   await tap(page.locator('.mode-tabs').getByRole('button',{name:'教学',exact:true}), 'inline teaching tab')
   assert.equal(await page.getByRole('link',{name:'进入教学目录',exact:true}).count(),0)
   assert(await page.locator('.tutorial-page.embedded [data-tutorial-introduction]').isVisible(),
@@ -183,13 +253,24 @@ try {
       const title=await panel.locator('h2').innerText();titles.push(title)
       const text=await panel.innerText()
       assert(!/部署|法力|召唤/.test(text),'Teaching must use Twelve Legions terminology')
-      assert.equal(await panel.getByRole('button').count(),1,'Each introduction step has one main action')
+      assert.equal(await panel.locator('.conversation-choices').getByRole('button').count(),1,'Each introduction step has one main action')
       assert(!/我想了解|回到主线|再看卡牌|再认识/.test(text),'Introduction must stay linear')
+      await page.waitForFunction(()=>[...document.querySelectorAll('[data-tutorial-introduction] .intro-card img')]
+        .every(image=>image.complete&&image.naturalWidth>0&&image.closest('.l12-card-image')?.dataset.source!=='placeholder'))
+      const layout=await panel.evaluate(element=>{
+        const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom}}
+        return {panel:rect(element),cards:[...element.querySelectorAll('.intro-card')].map(rect),
+          notice:document.querySelector('.tutorial-notice[role="alert"]')?.textContent.trim()||''}
+      })
+      assert.equal(layout.notice,'','Successful prior practice must not leave a red failure notice on the introduction')
+      for(const card of layout.cards) assert(card.x>=layout.panel.x-1&&card.right<=layout.panel.right+1,'Introduction cards fit their panel')
+      await page.screenshot({path:path.join(out,viewport.width+'-introduction-'+i+'.png')})
+      report.cases.push({scope:'introduction-visual',viewport,step:i,title,layout})
       if(['手牌来自牌库','士气用来支付费用'].includes(title)){
         assert((await panel.locator('.resource-flow').innerText()).includes('→'),'Resources need an origin-to-use explanation')
         await page.screenshot({path:path.join(out,viewport.width+'-intro-'+i+'.png')})
       }
-      await tap(panel.getByRole('button',{name:i===4?'进入战场，继续主线':'继续主线',exact:true}),'read mainline '+i)
+      await tap(panel.locator('.conversation-choices').getByRole('button',{name:i===4?'进入战场':'下一步',exact:true}),'read mainline '+i)
     }
     assert.deepEqual(titles,['欢迎，主宰者','认识三种卡牌','手牌来自牌库','士气用来支付费用','看清数值，再开始实操'])
     return titles
@@ -198,9 +279,9 @@ try {
   async function inspectGuide(viewport,label) {
     const shell=guide();await shell.waitFor()
     const h2=await shell.locator('h2').innerText()
-    const resultLine=await shell.locator('.tutorial-result-line').innerText()
-    assert(resultLine.trim(),'Every practical step keeps one necessary cost or result line')
-    assert.equal(await shell.locator('.tutorial-result-line').count(),1)
+    const body=await shell.locator('.tutorial-guidance > p').first().innerText()
+    assert(body.trim(),'Every practical step has one concise actionable explanation')
+    assert.equal(await shell.locator('.tutorial-result-line').count(),0,'Do not repeat cost/result in a second explanatory block')
     assert.equal(await shell.locator('.tutorial-help,.tutorial-cause-and-result').count(),0)
     assert(!/DTO|matchId|权威|部署|法力|召唤/.test(await shell.innerText()),'No internal implementation language in teaching')
     const bounds=await shell.boundingBox()
@@ -222,7 +303,34 @@ try {
       geometry.arrow=await page.locator('.tutorial-guide-arrow > path').getAttribute('d')
       assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
     }
-    return {title:h2,resultLine,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable)}
+    let details=null
+    if((await shell.getAttribute('class'))?.includes('detail-mode')) {
+      await page.locator('.catalog-detail-mask.tutorial-detail-mask').waitFor()
+      details=await page.evaluate(()=>{
+        const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}}
+        const dialog=document.querySelector('.tutorial-detail-mask .catalog-detail-dialog')
+        return {dialog:rect(dialog),fields:[...dialog.querySelectorAll('.tutorial-detail-focus')].map(e=>({text:e.textContent.trim(),...rect(e)})),
+          image:rect(dialog.querySelector('.archive-modal-image')),guide:rect(document.querySelector('.tutorial-guidance-shell'))}
+      })
+      assert(details.fields.length>=5,'All real cost, troops and effect fields must be highlighted')
+      for(const field of [...details.fields,details.image]) {
+        assert(field.x>=details.dialog.x-1&&field.y>=details.dialog.y-1
+          &&field.right<=details.dialog.right+1&&field.bottom<=details.dialog.bottom+1,'Every teaching detail field and whole card image must fit its dialog')
+        assert(field.x>=-1&&field.y>=-1&&field.right<=viewport.width+1&&field.bottom<=viewport.height+1,'Teaching details must not be clipped by the physical viewport')
+        const overlapX=Math.min(field.right,details.guide.right)-Math.max(field.x,details.guide.x)
+        const overlapY=Math.min(field.bottom,details.guide.bottom)-Math.max(field.y,details.guide.y)
+        assert(overlapX<=2||overlapY<=2,'The guide must not cover the card image or highlighted fields')
+      }
+      const mutations=await page.evaluate(async()=>{
+        let count=0
+        const observer=new MutationObserver(records=>{count+=records.filter(record=>record.target.closest('.tutorial-detail-mask')).length})
+        observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']})
+        await new Promise(resolve=>setTimeout(resolve,240));observer.disconnect();return count
+      })
+      assert(mutations<=3,'Settled field highlights must not repeatedly remove/re-add themselves')
+      details.settledHighlightMutations=mutations
+    }
+    return {title:h2,body,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable),details}
   }
   async function readScene(viewport,scene,readings) {
     for(let i=0;i<10;i++) {
@@ -232,7 +340,12 @@ try {
       if(['card','morale','card-source','defense','attack-result'].includes(await shell.getAttribute('data-tutorial-guide-id')))
         await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-'+(await shell.getAttribute('data-tutorial-guide-id'))+'.png')})
       readings.push(record)
-      await tap(shell.getByRole('button',{name:'继续',exact:true}),'read explanation '+record.title)
+      const previous=await shell.getAttribute('data-tutorial-guide-id')
+      await tap(shell.getByRole('button',{name:'下一步',exact:true}),'read explanation '+record.title)
+      await page.waitForFunction(id=>{
+        const shell=document.querySelector('[data-ui-contract="tutorial-authoritative-guidance"]')
+        return shell?.getAttribute('data-tutorial-guide-id')!==id||shell?.getAttribute('data-tutorial-reading')!=='true'
+      },previous)
     }
     throw new Error('Unbounded scene dialogue')
   }
@@ -253,7 +366,8 @@ try {
     throw new Error('Chosen prompt neither submitted nor exposed its confirmation: '+label)
   }
   const settingsOnly=process.env.L12_NOTIFICATION_SETTINGS_ONLY==='1'
-  report.mode=settingsOnly?'actual-settings-only':'continuous-course-and-actual-settings'
+  const visualSliceOnly=process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY==='1'
+  report.mode=settingsOnly?'actual-settings-only':visualSliceOnly?'real-component-visual-slice':firstChapterOnly?'actual-first-chapter-auto-handoff':'continuous-course-and-actual-settings'
   async function inspectNotificationSettings(viewport) {
     assert.equal(await page.evaluate(()=>window.__notificationQA.requests),viewport.width===1366?0:1,
       'Permission must not be requested by import, connection, route changes or teaching')
@@ -283,7 +397,80 @@ try {
     report.notificationSettings.push({viewport,explicitPermissionRequests:1,toggleBounds,style,
       scope:'real settings UI with controlled Notification API; not actual OS delivery or four live server event chains'})
   }
-  for(const viewport of [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]) {
+  if(visualSliceOnly) {
+    const desktop={width:1366,height:768}
+    const visualViewports=[desktop,{width:390,height:844},{width:844,height:390}]
+    const settledShellLayout=async viewport=>{
+      const before=await page.evaluate(()=>{
+        const sidebar=document.querySelector('.site-sidebar'),content=document.querySelector('.site-content'),root=document.querySelector('.site-shell')
+        const rect=e=>{const r=e?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}:null}
+        return {root:rect(root),sidebar:rect(sidebar),content:rect(content),sidebarTransform:sidebar?getComputedStyle(sidebar).transform:null,
+          sidebarTransition:sidebar?getComputedStyle(sidebar).transition:null,sidebarClass:sidebar?.className}
+      })
+      if(viewport.width<=700||viewport.height<=640) await page.waitForFunction(()=>document.querySelector('.site-sidebar')?.getBoundingClientRect().right<=1)
+      const after=await page.evaluate(()=>{
+        const sidebar=document.querySelector('.site-sidebar'),content=document.querySelector('.site-content'),root=document.querySelector('.site-shell')
+        const rect=e=>{const r=e?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}:null}
+        return {root:rect(root),sidebar:rect(sidebar),content:rect(content),sidebarTransform:sidebar?getComputedStyle(sidebar).transform:null,
+          sidebarTransition:sidebar?getComputedStyle(sidebar).transition:null,sidebarClass:sidebar?.className}
+      })
+      return {before,after}
+    }
+    for(const viewport of visualViewports) {
+      await page.setViewportSize(viewport)
+      await page.locator('[data-tutorial-introduction]').waitFor()
+      const shellLayout=await settledShellLayout(viewport)
+      await page.waitForFunction(()=>[...document.querySelectorAll('.intro-card-native-image')].every(image=>image.complete&&image.naturalWidth>0))
+      const layout=await page.evaluate(()=>{
+        const box=selector=>{const e=document.querySelector(selector);const r=e?.getBoundingClientRect();return r?{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}:null}
+        const content=document.querySelector('.site-content')
+        return {documentClientWidth:document.documentElement.clientWidth,documentScrollWidth:document.documentElement.scrollWidth,
+          windowScrollX:scrollX,contentScrollLeft:content?.scrollLeft,contentClientWidth:content?.clientWidth,contentScrollWidth:content?.scrollWidth,
+          hub:box('.battle-hub'),tutorial:box('.tutorial-page'),conversation:box('.tutorial-conversation')}
+      })
+      report.cases.push({scope:'goal-layout-observation',viewport,layout,shellLayout})
+      await page.screenshot({path:path.join(out,viewport.width+'x'+viewport.height+'-goal-introduction.png')})
+    }
+    await page.setViewportSize(desktop)
+    await settledShellLayout(desktop)
+    const panel=page.locator('[data-tutorial-introduction]')
+    await tap(panel.locator('.conversation-choices').getByRole('button',{name:'下一步',exact:true}),'open card-type introduction')
+    await panel.getByRole('button',{name:'查看韩信卡牌详情',exact:true}).waitFor()
+    const visualCases=[]
+    for(const viewport of visualViewports) {
+      const existing=page.getByRole('button',{name:'关闭卡牌详情',exact:true})
+      if(await existing.count()) await tap(existing,'close details before viewport switch')
+      await page.setViewportSize(viewport)
+      await settledShellLayout(viewport)
+      await tap(panel.getByRole('button',{name:'查看韩信卡牌详情',exact:true}),'open real shared card details '+viewport.width)
+      await page.locator('.catalog-detail-dialog').waitFor()
+      await page.waitForFunction(()=>document.querySelectorAll('.catalog-detail-dialog .tutorial-intro-detail-focus').length>=5)
+      await page.waitForFunction(()=>{
+        const image=document.querySelector('.catalog-detail-dialog .l12-card-image__img')
+        return image?.complete&&image.naturalWidth>0&&image.closest('.l12-card-image')?.dataset.source!=='placeholder'
+      })
+      const layout=await page.evaluate(()=>{
+        const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}}
+        const dialog=document.querySelector('.catalog-detail-dialog')
+        const focused=[...document.querySelectorAll('.catalog-detail-dialog .tutorial-intro-detail-focus')]
+        return {dialog:rect(dialog),focus:focused.map(e=>({text:e.textContent.trim(),...rect(e)}))}
+      })
+      assert(layout.focus.some(field=>field.text==='费用')&&layout.focus.some(field=>field.text==='兵力')
+        &&layout.focus.some(field=>field.text.includes('效果')),'Cost, troops and effect are highlighted')
+      assert(layout.dialog.x>=0&&layout.dialog.y>=0&&layout.dialog.right<=viewport.width+1&&layout.dialog.bottom<=viewport.height+1,
+        'Shared details fit the viewport')
+      assert(layout.focus.every(field=>field.y>=layout.dialog.y-1&&field.bottom<=layout.dialog.bottom+1),
+        'Every focused field is actually visible inside the shared details viewport')
+      const screenshot=path.join(out,viewport.width+'x'+viewport.height+'-card-details-focus.png')
+      await page.screenshot({path:screenshot})
+      visualCases.push({viewport,screenshot,layout})
+    }
+    await tap(page.getByRole('button',{name:'关闭卡牌详情',exact:true}),'close short-landscape card details')
+    await tap(panel.locator('.conversation-choices').getByRole('button',{name:'下一步',exact:true}),'continue from short-landscape card introduction')
+    assert.equal(await panel.locator('.guide-speaker h2').innerText(),'手牌来自牌库')
+    report.visualInteractionChecks={shortLandscapeClose:'touch-reachable',shortLandscapeNext:'touch-reachable',nextTitle:'手牌来自牌库'}
+    report.cases.push({scope:'Visual slice only: real shared card details for a card in the frozen public Chang\u2019e deck; no gameplay-chain claim.',visualCases})
+  } else for(const viewport of [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]) {
     await page.setViewportSize(viewport)
     if(settingsOnly){await inspectNotificationSettings(viewport);report.cases.push({viewport,scope:'settings-only; no gameplay'});continue}
     if(viewport.width!==1366) {
@@ -293,14 +480,19 @@ try {
     const chapter={viewport,introduction:titles,scenes:[]}
     for(const [index,scene] of ['deploy','move','combat'].entries()) {
       const initial=await waitState(s=>s.tutorial?.lessonId===scene&&!s.pending,'start '+scene)
+      const transportStart=report.transport.length
       await page.waitForURL('**/game')
       assert.equal(initial.gm,false)
+      assert.equal(initial.self.master.masterName,'嫦娥')
+      assert(initial.self.hand.length<=8,'The current legal recipe must stay within its bounded hand size')
       const readings=[]
       await readScene(viewport,scene,readings)
       const beforeAction=await inspectGuide(viewport,scene+' action')
-      const practice=scene==='deploy'?initial.self.hand.find(c=>c.cardId==='S01-0116')
+      const practice=scene==='deploy'?initial.self.hand.find(c=>c.cardId==='ST01-05')
         :scene==='move'?initial.self.field[1][1]:initial.self.field[0][0]
+      assert.equal(practice?.cardId,'ST01-05','Use the practice card from the frozen public Chang\u2019e deck')
       const instance=practice.instanceId
+      await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-action.png')})
       if(scene==='deploy'||scene==='move'){
         await tap(page.locator(scene==='deploy'
           ?'.hand-card-wrap[data-tutorial-card-instance="'+instance+'"]'
@@ -321,14 +513,8 @@ try {
         await inspectGuide(viewport,'real defense decision')
         await tap(page.getByRole('button',{name:'不抵挡',exact:true}).filter({visible:true}).first(),'decline defense')
       }
-      const final=await settleTo(s=>s.tutorial?.status==='completed','complete '+scene)
+      const final=await completedFrame(scene,initial.matchId,transportStart)
       assert(final.revision>initial.revision)
-      assert.equal(final.learning?.reviewedScenes?.length||0,index,
-        'Authoritative action completion must not silently mark explanation learned')
-      const result=await inspectGuide(viewport,scene+' real result')
-      await page.screenshot({path:path.join(out,viewport.width+'-'+scene+'-result.png')})
-      const transportStart=report.transport.length
-      await tap(guide().getByRole('button',{name:'继续主线',exact:true}),'review result and continue mainline')
       if(index<2) {
         const next=await waitState(s=>s.tutorial?.lessonId===['deploy','move','combat'][index+1]&&!s.pending,'continuous next scene')
         assert.equal(next.learning.reviewedScenes.length,index+1)
@@ -336,20 +522,29 @@ try {
         const leave=handoff.findIndex(e=>e.direction==='sent'&&e.type==='leaveRoom')
         const ack=handoff.findIndex(e=>e.direction==='received'&&e.type==='roomLeft')
         const create=handoff.findIndex(e=>e.direction==='sent'&&e.type==='createTutorial')
-        assert(leave>=0&&ack>leave&&create>ack,'Next scene only after actual roomLeft, not route/timer')
+        report.projectedObservations=await page.evaluate(()=>window.__tutorialProjectionObservations||[])
+        const leaving=report.projectedObservations.filter(event=>event.kind==='leavingRoom'&&event.matchId===initial.matchId)
+        assert.equal(leaving.length,1,'One automatic leave for this exact completed match')
+        assert.equal(leaving[0].status,'completed')
+        assert(leaving[0].order>final.order,'Completion is observed before automatic room retirement')
+        assert(leave>=0&&ack>leave&&create>ack,'Auto next scene follows actual roomLeft')
+        assert.equal(handoff.filter(e=>e.direction==='sent'&&e.type==='leaveRoom').length,1,'Only one leave request for one completed exercise')
+        assert.equal(handoff.filter(e=>e.direction==='sent'&&e.type==='createTutorial').length,1,'Only one next exercise without an extra confirmation')
       }else{
         await waitState(s=>!s.room&&!s.matchId&&!s.pending,'final roomLeft')
         await page.waitForURL('**/battle/tutorial')
         await page.getByRole('heading',{name:'现在，把刚才的行动串起来',exact:true}).waitFor()
         assert.equal((await observe()).learning.reviewedScenes.length,3)
-        assert.equal(await page.locator('.course-path li').filter({hasText:'尚未开放'}).count(),1)
+        assert.equal(await guide().count(),0)
       }
       chapter.scenes.push({scene,initialRevision:initial.revision,finalRevision:final.revision,
-        beforeAction,readings,result,status:'reviewed-and-continued'})
+        beforeAction,readings,result:final.result,status:'authoritatively-completed-and-auto-continued'})
       console.log('PASS continuous guided UI '+viewport.width+'x'+viewport.height+' '+scene)
     }
-    await tap(page.getByRole('button',{name:/^继续主线：卡牌效果与响应$/}),'continue second chapter')
+    if(firstChapterOnly) { report.cases.push(chapter); continue }
+    await tap(page.getByRole('button',{name:/^下一步：卡牌效果与响应$/}),'continue second chapter')
     const responseStart=await waitState(s=>s.tutorial?.lessonId==='response'&&!s.pending,'response chapter')
+    const responseTransportStart=report.transport.length
     await page.waitForURL('**/game')
     const responseReadings=[]
     const responseLegion=responseStart.self.hand.find(c=>c.cardId==='S01-0116')
@@ -385,18 +580,14 @@ try {
     assert(discardCard)
     await inspectGuide(viewport,'discard real cost')
     await choosePromptCard(discardPrompt.promptId,discardCard.instanceId,'choose discard')
-    const responseFinal=await settleTo(s=>s.tutorial?.status==='completed','response actual negation')
-    assert.equal(responseFinal.learning.responseReviewed,undefined,'Action alone must not record response learning')
-    assert.equal(responseFinal.self.field.flat().find(c=>c?.instanceId===responseLegion.instanceId).troops,responseLegion.troops)
-    assert(responseFinal.self.graveyard.some(c=>c.instanceId===responseCounter.instanceId))
-    assert(responseFinal.self.graveyard.some(c=>c.instanceId===discardCard.instanceId))
-    const responseResult=await inspectGuide(viewport,'response result review')
-    await page.screenshot({path:path.join(out,viewport.width+'-response-result.png')})
-    await tap(guide().getByRole('button',{name:'继续主线',exact:true}),'review response outcome')
+    const responseFinal=await completedFrame('response',responseStart.matchId,responseTransportStart)
+    assert.equal(responseFinal.result.field.flat().find(c=>c?.instanceId===responseLegion.instanceId).troops,responseLegion.troops)
+    assert(responseFinal.result.graveyard.some(c=>c.instanceId===responseCounter.instanceId))
+    assert(responseFinal.result.graveyard.some(c=>c.instanceId===discardCard.instanceId))
     await waitState(s=>!s.room&&!s.matchId&&!s.pending&&s.learning.responseReviewed===true,'response real roomLeft and review')
     await page.waitForURL('**/battle/tutorial')
     chapter.response={initialRevision:responseStart.revision,finalRevision:responseFinal.revision,
-      readings:responseReadings,result:responseResult,status:'reviewed-and-continued'}
+      readings:responseReadings,result:responseFinal.result,status:'authoritatively-completed-and-auto-continued'}
     await inspectNotificationSettings(viewport)
     console.log('PASS continuous response UI '+viewport.width+'x'+viewport.height)
     report.cases.push(chapter)
@@ -404,7 +595,7 @@ try {
   assert.deepEqual(report.errors,[])
   report.sourceAfter=hashes()
   assert.deepEqual(report.sourceAfter,report.sourceBefore,'Product source changed during acceptance')
-  report.status='GREEN'
+  report.status=visualSliceOnly?'CAPTURED':'GREEN'
 } catch(error) {
   report.status='FAILED'; report.failure=String(error.message)
   if(page){try{report.lastObservation=await observe();report.visibleButtons=await page.getByRole('button').allTextContents();await page.screenshot({path:path.join(out,'failure.png')})}catch{}}
@@ -431,7 +622,7 @@ try {
   if(!hostDone) await Promise.race([new Promise(resolve=>host.once('exit',resolve)),pause(5000)])
   fs.closeSync(hostLog)
   report.hostExited=hostDone
-  if(report.status!=='GREEN'||!report.hostExited) process.exitCode=1
+  if(!['GREEN','CAPTURED'].includes(report.status)||!report.hostExited) process.exitCode=1
   fs.writeFileSync(path.join(out,'report.json'),JSON.stringify(report,null,2)+'\n')
   console.log(JSON.stringify({status:report.status,cases:report.cases.length,failure:report.failure,hostExited:report.hostExited}))
 }

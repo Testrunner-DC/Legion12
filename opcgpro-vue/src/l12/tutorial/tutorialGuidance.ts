@@ -1,6 +1,6 @@
 import type { ActiveTutorialState, Card, GameState, PlayerView, Prompt } from '../types'
 
-export const tutorialPracticeCardId = 'S01-0116'
+export const tutorialPracticeCardId = 'ST01-05'
 
 export function tutorialPaymentSelectionCount(identities: Iterable<string | null>) {
   return new Set(Array.from(identities).filter(identity => Boolean(identity))).size
@@ -19,6 +19,8 @@ export interface TutorialSceneSnapshot {
   enemyMasterHp: number
   pendingAttackValue: number | null
   pendingDefenseTarget: string | null
+  handCount: number
+  libraryCount: number
 }
 
 export interface TutorialSceneFacts extends TutorialSceneSnapshot {
@@ -44,6 +46,7 @@ export interface TutorialAnchor {
   label: string
   unavailable: string
   multiple?: boolean
+  detailFields?: readonly ('费用' | '兵力' | '血量' | '效果')[]
 }
 
 export function cssAttributeValue(value: string | number) {
@@ -86,7 +89,7 @@ function positionOf(player: PlayerView, instanceId: string | null) {
 }
 
 /**
- * The version-1 server recipe records the first Xi Shi in its ordered hand as
+ * The version-1 server recipe records the first practice legion in its ordered hand as
  * PracticeInstanceId. That private server field is intentionally not projected,
  * so the client mirrors that one frozen recipe choice from the ordered Card DTO
  * and immediately addresses the real DOM by the resulting instanceId. This is
@@ -141,6 +144,8 @@ export function tutorialFacts(tutorial: ActiveTutorialState, game: GameState, pr
     enemyMasterHp: enemy.master.hp,
     pendingAttackValue: game.pendingDefense?.attackValue ?? null,
     pendingDefenseTarget: game.pendingDefense?.target.type ?? null,
+    handCount: self.handCount ?? self.hand?.length ?? 0,
+    libraryCount: self.libraryCount,
     resourcePrompt: tutorialResourcePrompt(game),
     revision: game.revision,
   }
@@ -160,6 +165,8 @@ export function tutorialSnapshot(facts: TutorialSceneFacts): TutorialSceneSnapsh
     enemyMasterHp: facts.enemyMasterHp,
     pendingAttackValue: facts.pendingAttackValue,
     pendingDefenseTarget: facts.pendingDefenseTarget,
+    handCount: handCount(facts.self),
+    libraryCount: facts.self.libraryCount,
   }
 }
 
@@ -178,6 +185,11 @@ function exactCardAnchor(facts: TutorialSceneFacts, unavailable: string): Tutori
     ? `${tutorialPlayerSelector(facts.self.playerIndex)} [data-tutorial-anchor="field-slot"]${exact}`
     : `.hand-card-wrap${exact}`
   return { selector, label: facts.practiceCard?.name || '练习军团', unavailable }
+}
+
+function practiceCardDetailAnchor(): TutorialAnchor {
+  return { selector: '.catalog-detail-dialog', label: '练习军团卡牌详情',
+    unavailable: '卡牌详情正在打开，请稍候。', detailFields: ['费用', '兵力', '效果'] }
 }
 
 function masterAnchor(playerIndex: number, label: string): TutorialAnchor {
@@ -231,24 +243,21 @@ export function tutorialDialoguePages(tutorial: ActiveTutorialState, facts: Tuto
       : tutorial.lessonId === 'move'
         ? `${facts.practiceCard?.name || '练习军团'}已经${observedTransition ? `从${battlefieldPositionLabel(baseline.practicePosition)}移动到` : '位于'}${battlefieldPositionLabel(facts.practicePosition)}。${resourceResult}。`
         : `防守已结算。你的主宰当前血量为 ${facts.selfMasterHp}。`
-    return [{ id: 'result', eyebrow: '操作结果', title: '看清场面变化', body: result,
+    return [{ id: 'result', eyebrow: '真实结果', title: '场面已经更新', body: result,
       reason: tutorial.lessonId === 'deploy'
         ? '把手牌中的军团打到战场，才能让它成为之后可进攻或防守的场上力量。'
         : tutorial.lessonId === 'move'
           ? '移动用资源换取站位，能带来保护或进攻机会，但不会凭空增加军团兵力。'
           : '防守是在保护主宰或军团与付出手牌、场上兵力之间作选择。',
-      outcome: tutorial.lessonId === 'deploy'
-        ? '手牌减少，军团登场，所付士气已休整。'
-        : tutorial.lessonId === 'move'
-          ? '军团已换到新格位，兵力没有增加。'
-          : '结果以当前主宰血量与军团兵力为准。',
+      outcome: tutorial.lessonId === 'deploy' ? `手牌 ${baseline.handCount}→${handCount(facts.self)}，牌库仍为 ${facts.self.libraryCount}。`
+        : tutorial.lessonId === 'move' ? '格位已改变，兵力没有增加。' : `主宰血量 ${baseline.selfMasterHp}→${facts.selfMasterHp}。`,
       anchor: exactCardAnchor(facts, '结果中的练习军团当前不在可见范围，请先展开我方战场。')
         ?? masterAnchor(facts.self.playerIndex, '我方主宰') }]
   }
 
   if (tutorial.lessonId === 'deploy') return [
     { id: 'scene', eyebrow: '本次场面', title: '先看主宰与目标',
-      body: `这是备好资源的练习场面。主宰${facts.self.master.masterName}当前血量 ${facts.selfMasterHp}/${facts.self.master.maxHp}，先打出一张军团。`,
+      body: `这是备好资源的练习场面。${facts.self.master.masterName}血量 ${facts.selfMasterHp}/${facts.self.master.maxHp}，先打出一张军团。`,
       reason: '主宰血量降到 0 通常会输掉对局；打出军团能建立保护主宰、继续进攻的场上力量。',
       outcome: '军团会离开手牌，在合法阵地登场。',
       anchor: masterAnchor(facts.self.playerIndex, '我方主宰') },
@@ -258,12 +267,12 @@ export function tutorialDialoguePages(tutorial: ActiveTutorialState, facts: Tuto
       outcome: '抽牌会让牌库减少、手牌增加。',
       anchor: cardSourceAnchor(facts.self.playerIndex) },
     { id: 'card', eyebrow: '练习军团', title: `认识${facts.practiceCard?.name || '这张军团'}`,
-      body: `${facts.practiceCard?.name || '这张军团'}当前费用 ${facts.practiceCost ?? '—'}、兵力 ${facts.practiceCard?.troops ?? '—'}。费用用于支付，兵力用于进攻和抵挡。`,
+      body: `${facts.practiceCard?.name || '这张军团'}的费用为 ${facts.practiceCost ?? '—'}，决定本次支付；兵力 ${facts.practiceCard?.troops ?? '—'}，用于进攻与抵挡。`,
       reason: '手牌提供可使用的卡，军团登场后才能在战场参与后续战斗。先区分费用和兵力，才能衡量用多少资源换来怎样的场面。',
-      outcome: '打出后离开手牌，进入合法空阵地。',
-      anchor: exactCardAnchor(facts, '练习军团不在当前可见手牌范围，请滑动或展开我方手牌。') },
+      outcome: '费用决定支付，兵力用于进攻与抵挡。',
+      anchor: practiceCardDetailAnchor() },
     { id: 'morale', eyebrow: '支付费用', title: '看清活跃与休整',
-      body: `士气牌库${moraleDeckCount(facts.self) === null ? '数量未公开' : ` ${moraleDeckCount(facts.self)} 张`}；士气从这里进入士气区。${facts.spendableMoraleAuthoritative ? '可用于普通支付' : '场面可见'}士气 ${facts.spendableMorale}，活跃 ${facts.activeMorale}/${facts.moraleLimit}。`,
+      body: `士气牌库${moraleDeckCount(facts.self) === null ? '数量未公开' : ` ${moraleDeckCount(facts.self)} 张`}。本场可支付 ${facts.spendableMorale} 点费用；用于支付的活跃士气会转为休整。`,
       reason: '费用限制了同一回合能打出多少卡，选择支付哪些活跃士气也是资源安排。',
       outcome: '支付后，选中的活跃士气转为休整。',
       anchor: moraleAnchor(facts.self.playerIndex) },
@@ -271,12 +280,12 @@ export function tutorialDialoguePages(tutorial: ActiveTutorialState, facts: Tuto
 
   if (tutorial.lessonId === 'move') return [
     { id: 'scene', eyebrow: '本次场面', title: '普通移动需要支付',
-      body: `${facts.practiceCard?.name || '练习军团'}位于${battlefieldPositionLabel(facts.practicePosition)}。普通移动需选择合法相邻空格并支付士气。`,
+      body: `本场${facts.practiceCard?.name || '练习军团'}在后排。移到前排，可利用对面的空位进攻主宰；移动不会增加兵力。`,
       reason: '移动用资源换站位，可以调整保护范围或创造进攻机会，但不会直接提高兵力。',
       outcome: '移动只改变格位，不增加兵力。',
       anchor: exactCardAnchor(facts, '后排中格的练习军团目前不在可见战场内。') },
     { id: 'morale', eyebrow: '移动代价', title: '先看可用士气',
-      body: `${facts.spendableMoraleAuthoritative ? '可用于普通支付' : '场面可见'}士气 ${facts.spendableMorale}，活跃 ${facts.activeMorale}/${facts.moraleLimit}。`,
+      body: `${facts.spendableMoraleAuthoritative ? '本场可支付' : '场面可见'}士气 ${facts.spendableMorale}。普通移动需支付1点费用，换取新的站位。`,
       reason: '普通移动不是免费改位；先确认资源，才能判断这次站位交换是否值得。',
       outcome: '支付后活跃士气减少，军团改变格位。',
       anchor: moraleAnchor(facts.self.playerIndex) },

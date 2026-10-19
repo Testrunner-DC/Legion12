@@ -5,7 +5,7 @@ import { landscapeTeleportElement, viewportLayoutRect, viewportRect } from '../m
 import type { ActionEvent, Card } from '../types'
 
 const props = withDefaults(defineProps<{ events: ActionEvent[]; matchId: string; playbackSpeed?: number | null }>(), { playbackSpeed: null })
-const emit = defineEmits<{ busyChange: [busy: boolean] }>()
+const emit = defineEmits<{ busyChange: [busy: boolean]; presentationChange: [busy: boolean] }>()
 
 type CardSnapshot = { ghost: HTMLElement; rect: DOMRect }
 type CapturedCard = CardSnapshot & { card: Card }
@@ -18,6 +18,7 @@ const animations = new Set<Animation>()
 const overlays = new Set<HTMLElement>()
 const fieldSnapshots = new Map<string, CardSnapshot>()
 const defeatedInstances = new Set<string>()
+let preparationCount = 0
 
 function presentationDuration(standardMs: number, liveMinimumMs: number, replayMinimumMs = liveMinimumMs) {
   if (!props.playbackSpeed) return l12AnimationDuration(standardMs, liveMinimumMs)
@@ -25,7 +26,10 @@ function presentationDuration(standardMs: number, liveMinimumMs: number, replayM
 }
 
 function notifyBusy() {
+  // Keep the existing replay clock contract; teaching also needs the live
+  // preparation interval before an animation has a mounted DOM element.
   emit('busyChange', Boolean(props.playbackSpeed && animations.size))
+  emit('presentationChange', Boolean(preparationCount || animations.size))
 }
 
 function cardElement(instanceId?: string) {
@@ -195,6 +199,7 @@ function presentDefeats(job: DefeatJob) {
 
 function reset() {
   playbackGeneration++
+  preparationCount = 0
   animations.forEach(animation => animation.cancel())
   animations.clear()
   overlays.forEach(element => element.remove())
@@ -226,13 +231,21 @@ watch(() => props.events.map(event => event.sequence).join(','), () => {
     lastSequence = Math.max(lastSequence, event.sequence)
   }
   const generation = playbackGeneration
+  const preparedJobs = jobs.length
+  preparationCount += preparedJobs
+  if (preparedJobs) notifyBusy()
   void nextTick().then(() => {
     if (generation !== playbackGeneration) return
-    jobs
-      .sort((left, right) => Number(right.event.type === 'combat') - Number(left.event.type === 'combat')
-        || left.event.sequence - right.event.sequence)
-      .forEach(presentDefeats)
-    refreshFieldSnapshots()
+    try {
+      jobs
+        .sort((left, right) => Number(right.event.type === 'combat') - Number(left.event.type === 'combat')
+          || left.event.sequence - right.event.sequence)
+        .forEach(presentDefeats)
+      refreshFieldSnapshots()
+    } finally {
+      preparationCount = Math.max(0, preparationCount - preparedJobs)
+      if (preparedJobs) notifyBusy()
+    }
   })
 }, { immediate: true, flush: 'pre' })
 function viewportChanged() {
@@ -243,7 +256,7 @@ function viewportChanged() {
   void nextTick().then(refreshFieldSnapshots)
 }
 onMounted(() => { window.addEventListener('l12-viewport-change', viewportChanged); void nextTick().then(refreshFieldSnapshots) })
-onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false) })
+onBeforeUnmount(() => { window.removeEventListener('l12-viewport-change', viewportChanged); reset(); emit('busyChange', false); emit('presentationChange', false) })
 </script>
 
 <template></template>

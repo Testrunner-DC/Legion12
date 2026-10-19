@@ -410,14 +410,7 @@ public sealed class PrivateDeckPersistenceStartupTests
     }
 
     private static string FindProgramSource()
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-        {
-            var path = Path.Combine(directory.FullName, "服务端WebSocket", "Program.cs");
-            if (File.Exists(path)) return File.ReadAllText(path);
-        }
-        throw new FileNotFoundException("Program startup contract requires the source checkout.");
-    }
+        => File.ReadAllText(PlatformTestSource.FilePath("服务端WebSocket", "Program.cs"));
 
     private static L12PresetDeckDefinition Deck(string name, string card) => new()
         { Name = name, MasterId = "M1", CardIds = [card], MoraleIds = ["R1"] };

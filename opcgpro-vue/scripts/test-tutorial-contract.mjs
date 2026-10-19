@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import ts from 'typescript'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import { createServer } from 'vite'
+import { computed, reactive, ref } from 'vue'
 
 const front = path.resolve(import.meta.dirname, '..')
 const runId = new Date().toISOString().replace(/[:.]/g, '-') + '-' + crypto.randomUUID().slice(0, 8)
@@ -33,6 +34,7 @@ fs.mkdirSync(output, { recursive: true })
 
 const files = {
   types: 'src/l12/types.ts', net: 'src/l12/net.ts', game: 'src/l12/GamePage.vue',
+  board: 'src/l12/game/GameBoard.vue', combatMotion: 'src/l12/game/CombatMotionPresentationLayer.vue',
   hub: 'src/l12/site/BattleHubPage.vue', page: 'src/l12/site/TutorialPage.vue',
   overlay: 'src/l12/tutorial/TutorialGuidanceOverlay.vue', progress: 'src/l12/tutorial/tutorialProgress.ts',
   course: 'src/l12/tutorial/tutorialCourse.ts', guide: 'src/l12/tutorial/tutorialGuidance.ts',
@@ -52,7 +54,8 @@ check('one continuous first chapter opens inline without a second directory link
   for (const id of ['goal', 'cards', 'hand', 'morale', 'practice']) assert.match(source.course, new RegExp(`id: '${id}'`))
   assert.doesNotMatch(source.page + source.overlay, /questionOpen|我想了解|回到主线/)
   const introductionTemplate = source.page.slice(source.page.indexOf('<section v-if="introductionOpen"'), source.page.indexOf('<section v-else-if'))
-  assert.equal((introductionTemplate.match(/<button/g) ?? []).length, 1, 'Each introduction step has one main action')
+  const mainActions = introductionTemplate.slice(introductionTemplate.indexOf('<div class="conversation-choices">'))
+  assert.equal((mainActions.match(/<button/g) ?? []).length, 1, 'Each introduction step has one main action')
 })
 check('introductions explain goals, card types, resource origins and tradeoffs in Legion12 terms', () => {
   for (const text of ['血量降至0', '主宰', '军团', '战术', '圣物', '手牌来自牌库', '牌库顶部抽1张',
@@ -60,19 +63,40 @@ check('introductions explain goals, card types, resource origins and tradeoffs i
   assert.doesNotMatch(source.page + source.course + source.overlay + source.guide, /部署|法力|召唤/)
   const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
   assert.doesNotMatch(template, /\{\{[^}]*\b(?:instanceId|cardInstanceId|lessonId|stepId)\b/)
-  assert.match(source.page, /<CardImage :card-id="card\.id"/)
+  assert.match(source.page, /CatalogCardDetails/)
+  assert.match(source.page, /loadDeckCatalog/)
+  assert.match(source.page, /const labels = new Set\(\['费用', '兵力', '血量'\]\)/, 'Highlight only fields present in the shared details, including real master HP')
+  assert.match(source.page, /:aria-label="`查看\$\{card\.name\}卡牌详情`"/)
+  assert.doesNotMatch(source.page, /<dt>费用<\/dt>|<dt>兵力<\/dt>|<b>效果<\/b>/, '教学页不得复制卡牌详情')
 })
 check('guide stays on the real board with linear dialogue and non-intercepting focus', () => {
-  assert.ok(source.overlay.includes('继续主线'))
+  assert.doesNotMatch(source.page + source.overlay + source.game, /继续主线|继续教学主线/)
   const template = parse(source.overlay, { filename: files.overlay }).descriptor.template.content
   assert.doesNotMatch(template, /\{\{\s*tutorial\.(?:lessonId|stepId)|服务器权威|不会通关|判定说明/)
   assert.doesNotMatch(template, /tutorial-help|tutorial-cause-and-result|为什么|会发生什么/)
-  assert.match(template, /tutorial-result-line/)
+  assert.doesNotMatch(template, /tutorial-result-line/)
   assert.match(source.overlay, /pointer-events:\s*none/)
   assert.match(source.overlay, /44px/)
   assert.match(source.overlay, /<BattleOverlayPortal force>/, 'Teaching must share the prompt teleport host even on desktop')
   assert.match(source.overlay, /continueMainline/)
   assert.match(source.game, /@continue-mainline="continueTutorialMainline"/)
+  assert.match(source.overlay, /acceptedHandoffIdentity/)
+  assert.doesNotMatch(source.overlay, /completedHandoffKey|presentationInFlight/)
+  assert.match(source.overlay, /props\.tutorial\.stepId !== 'completed'/)
+  assert.match(source.overlay, /props\.connected/)
+  assert.match(source.game, /:connected="l12State\.status === 'online'"/)
+  assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction \|\| tutorialPresentationBusy\)"/)
+  assert.match(source.game, /@presentation-change="updateTutorialPresentationBusy"/)
+  assert.doesNotMatch(template, /tutorial\.status === 'completed'[\s\S]{0,220}<button[^>]*tutorial-primary/)
+  assert.match(source.page + source.overlay, /下一步/)
+})
+check('live presentation busy is exposed without changing replay speed gating', () => {
+  assert.match(source.board, /presentationChange: \[busy: boolean\]/)
+  assert.match(source.board, /const cardPresentationBusy = computed/)
+  assert.match(source.board, /watch\(cardPresentationBusy, busy => emit\('presentationChange', busy\)/)
+  assert.match(source.board, /const replayCardPresentationBusy = computed\(\(\) => Boolean\(props\.replayPlaybackSpeed && \(/)
+  assert.match(source.combatMotion, /emit\('presentationChange', Boolean\(preparationCount \|\| animations\.size\)\)/)
+  assert.match(source.combatMotion, /emit\('busyChange', Boolean\(props\.playbackSpeed && animations\.size\)\)/)
 })
 check('tutorial route replaces public single-player while sandbox is admin-only', () => {
   assert.ok(source.router.includes("path: '/battle/tutorial'"))
@@ -104,9 +128,16 @@ check('completion is bound to authoritative completed tutorial identity only', (
   assert.doesNotMatch(source.game, /recordTutorialCompletion\(/)
   assert.match(source.game, /recordGuidedSceneReview/)
   assert.match(source.game, /tutorialHandoffDecision/)
+  assert.match(source.game, /acceptedTutorialHandoffIdentity/)
+  assert.match(source.game, /if \(!beginTutorialHandoff\([\s\S]*?\)\) return/)
+  assert.match(source.game, /acceptedTutorialHandoffIdentity\.value = identity/)
+  assert.match(source.overlay, /props\.tutorial\.accountId[\s\S]*props\.tutorial\.sessionId[\s\S]*props\.tutorial\.connectionGeneration/)
+  assert.match(source.overlay, /props\.tutorial\.roomCode[\s\S]*props\.tutorial\.matchId[\s\S]*props\.tutorial\.lessonId/)
   assert.match(source.game, /tutorialRoom \? '\/battle\/tutorial'/)
   assert.match(source.game, /sandboxRoom \? '\/admin\/operations\/sandbox'/)
   assert.match(source.page, /v-if="l12State\.notice"[^>]*role="alert"/)
+  assert.match(source.page, /guidedTutorialPersistenceState/)
+  assert.match(source.page, /retryGuidedTutorialProgress/)
   assert.match(source.page, /matchmakingBusy[\s\S]*请先取消当前匹配，再开始教学/)
   assert.match(source.page, /请先结束并退出当前对局，再开始教学/)
 })
@@ -133,6 +164,205 @@ const projection = (overrides = {}) => ({ lessonId: 'deploy', version: 1, stepId
   roomCode: 'TUTOR1', matchId: 'match-a1', ...overrides })
 const binding = (overrides = {}) => ({ accountId: 'account-a', sessionId: 'session-a1',
   connectionGeneration: 11, matchId: 'match-a1', ...overrides })
+
+// Execute the exact setup functions/expressions with bounded dependencies, not
+// a second implementation of handoff. DOM rendering is covered separately.
+function setupNodes(sfc) {
+  const setup = parse(sfc).descriptor.scriptSetup.content
+  return ts.createSourceFile('setup.ts', setup, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+}
+function actualFunctions(sfc, names, dependencies) {
+  const tree = setupNodes(sfc)
+  const selected = names.map(name => {
+    const node = tree.statements.find(item => ts.isFunctionDeclaration(item) && item.name?.text === name)
+    assert(node, `Actual setup function missing: ${name}`)
+    return node.getText(tree)
+  }).join('\n')
+  const js = ts.transpileModule(selected, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  return Function(...Object.keys(dependencies), `${js}\nreturn {${names.join(',')}}`)(...Object.values(dependencies))
+}
+function actualInitializer(sfc, name, dependencies) {
+  const tree = setupNodes(sfc)
+  const declaration = tree.statements.filter(ts.isVariableStatement)
+    .flatMap(item => [...item.declarationList.declarations]).find(item => item.name.getText(tree) === name)
+  assert(declaration?.initializer, `Actual setup initializer missing: ${name}`)
+  const js = ts.transpileModule(`const result = ${declaration.initializer.getText(tree)}`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  return Function(...Object.keys(dependencies), `${js}\nreturn result`)(...Object.values(dependencies))
+}
+check('actual board busy includes preparation without mounted animations and preserves legacy replay projection', () => {
+  const inputs = { computed, props: reactive({ replayPlaybackSpeed: null }), hiddenRevealCard: ref(null),
+    publicReveal: ref(null), diceReveal: ref(null), dicePresentationPending: ref(false),
+    replayZonePresentationBusy: ref(false), replaySequencePresentationBusy: ref(false),
+    replayCombatPresentationBusy: ref(false), combatPresentationBusy: ref(false) }
+  const live = actualInitializer(source.board, 'cardPresentationBusy', inputs)
+  const replay = actualInitializer(source.board, 'replayCardPresentationBusy', inputs)
+  assert.equal(live.value, false)
+  inputs.replayZonePresentationBusy.value = true
+  assert.equal(live.value, true, 'preparing zone images must block before any animation DOM exists')
+  assert.equal(replay.value, false, 'live teaching must not enable the replay clock')
+  inputs.replayZonePresentationBusy.value = false
+  inputs.replaySequencePresentationBusy.value = true
+  assert.equal(live.value, true, 'a reserved sequence blocks handoff')
+  inputs.replaySequencePresentationBusy.value = false
+  inputs.combatPresentationBusy.value = true
+  assert.equal(live.value, true)
+  inputs.combatPresentationBusy.value = false
+  inputs.dicePresentationPending.value = true
+  inputs.props.replayPlaybackSpeed = 1
+  assert.equal(live.value, true)
+  assert.equal(replay.value, false, 'the new signal must not add dice to the legacy replay barrier')
+})
+check('actual combat notifier reports preparation for live teaching while keeping replay output unchanged', () => {
+  const props = { playbackSpeed: null }, animations = new Set(), events = []
+  const run = preparationCount => actualFunctions(source.combatMotion, ['notifyBusy'], {
+    props, animations, preparationCount, emit: (name, busy) => events.push([name, busy]),
+  }).notifyBusy()
+  run(1)
+  assert.deepEqual(events.splice(0), [['busyChange', false], ['presentationChange', true]])
+  animations.add('synthetic-animation'); props.playbackSpeed = 2; run(0)
+  assert.deepEqual(events.splice(0), [['busyChange', true], ['presentationChange', true]])
+  animations.clear(); run(0)
+  assert.deepEqual(events, [['busyChange', false], ['presentationChange', false]])
+})
+check('actual parent and overlay retry a rejected completion and accept duplicates only once', () => {
+  const current = projection(), tutorial = ref(current), tutorialTransition = ref(null)
+  const tutorialPresentationBusy = ref(true), acceptedTutorialHandoffIdentity = ref('')
+  const l12State = { pendingAction: false, status: 'online', sessionId: current.sessionId,
+    connectionGeneration: current.connectionGeneration, notice: '' }
+  let readable = false, leaves = 0, emitted = 0
+  const parent = actualFunctions(source.game, ['beginTutorialHandoff', 'tutorialCompletionIdentity', 'continueTutorialMainline'], {
+    tutorial, tutorialTransition, tutorialPresentationBusy, acceptedTutorialHandoffIdentity, l12State,
+    platformState: { account: { id: current.accountId }, token: 'synthetic' },
+    game: ref({ matchId: current.matchId }), tutorialProgressUnsaved: ref(false), tutorialProgressRetryIdentity: ref(''),
+    recordGuidedSceneReview: () => readable,
+    loadGuidedTutorialProgress: () => ({ reviewedScenes: readable ? ['deploy'] : [] }),
+    guidedTutorialPersistenceState: () => ({ unsaved: false }), tutorialScenes: ['deploy', 'move', 'combat'],
+    tutorialTransitionTimer: null, tutorialTransitionSlow: ref(false), setTimeout: () => 1,
+    leaveRoom: () => { leaves++; l12State.pendingAction = true },
+  })
+  const key = parent.tutorialCompletionIdentity(current)
+  const props = { tutorial: current, connected: true,
+    get busy() { return Boolean(tutorialTransition.value || l12State.pendingAction || tutorialPresentationBusy.value) },
+    get acceptedHandoffIdentity() { return acceptedTutorialHandoffIdentity.value } }
+  const child = actualFunctions(source.overlay, ['attemptCompletedHandoff'], {
+    props, completedIdentity: ref(key), stateAligned: ref(true), completedResultVisible: () => true,
+    emit: () => { emitted++; parent.continueTutorialMainline() },
+  })
+  child.attemptCompletedHandoff()
+  assert.equal(emitted, 0, 'busy preparation without DOM cannot request handoff')
+  tutorialPresentationBusy.value = false
+  child.attemptCompletedHandoff()
+  assert.equal(leaves, 0); assert.equal(acceptedTutorialHandoffIdentity.value, '')
+  readable = true
+  child.attemptCompletedHandoff()
+  assert.equal(leaves, 1); assert.equal(acceptedTutorialHandoffIdentity.value, key)
+  tutorialTransition.value = null; l12State.pendingAction = false
+  child.attemptCompletedHandoff()
+  assert.equal(leaves, 1); assert.equal(emitted, 2, 'parent acknowledgement stops repeated completed snapshots')
+})
+check('completed response without a card anchor uses the visible own master instead of deadlocking', () => {
+  const selections = [], element = new (class VisibleMaster {})()
+  const result = actualFunctions(source.overlay, ['completedResultVisible'], {
+    document: { querySelectorAll: selector => { selections.push(selector); return [element] } },
+    HTMLElement: element.constructor, visibleGuide: ref({ anchor: null }),
+    facts: ref({ self: { playerIndex: 1 } }), visibleViewport: () => ({ width: 844, height: 390 }),
+    tutorialPlayerSelector: index => `[data-tutorial-player-index="${index}"]`, visibleElement: () => true,
+  })
+  assert.equal(result.completedResultVisible(), true)
+  assert.deepEqual(selections, ['[data-tutorial-player-index="1"] [data-tutorial-anchor="master"]'])
+})
+check('actual action copy names the current practice card instead of a stale recipe card', () => {
+  for (const name of ['食铁兽', '西施']) {
+    const guide = actualFunctions(source.overlay, ['deployOrMoveGuide'], {
+      facts: ref({ practiceInstanceId: 'synthetic-practice', practiceCard: { name }, resourcePrompt: null }),
+      practiceHandSelector: () => '[data-synthetic-hand]', practiceSlotSelector: () => '[data-synthetic-slot]',
+      domState: ref({ selectedPractice: false, availableSlots: false }),
+    })
+    for (const kind of ['deploy', 'move']) {
+      const result = guide.deployOrMoveGuide(kind)
+      assert(result.body.includes(name)); assert.equal(result.anchor.label, name)
+      if (name === '食铁兽') assert(!result.body.includes('西施'))
+    }
+  }
+})
+check('successful owned chapter retirement clears only its normal closure copy, never an unexpected error', () => {
+  const l12State = { notice: '房间已关闭' }
+  const actual = actualFunctions(source.game, ['clearExpectedTutorialExitNotice'], { l12State })
+  actual.clearExpectedTutorialExitNotice()
+  assert.equal(l12State.notice, '')
+  for (const message of ['下一段练习未能建立', '账号或连接已变化', '未知错误', '']) {
+    l12State.notice = message; actual.clearExpectedTutorialExitNotice(); assert.equal(l12State.notice, message)
+  }
+  assert.match(source.game, /if \(decision !== 'ready'\) return\s+if \(!transition.target\) \{ clearExpectedTutorialExitNotice\(\)/)
+})
+check('cold storage read denial exposes a bound retry and accepts exactly one handoff after recovery', () => {
+  const accountId = 'cold-handoff', current = projection({ accountId }), storage = new MemoryStorage()
+  storage.values.set(progress.guidedTutorialStorageKey(accountId), JSON.stringify({ version: 2, introductionRead: true, reviewedScenes: [] }))
+  let denied = true, leaves = 0, emitted = 0
+  const selected = { getItem(key) { if (denied) throw new Error('synthetic cold read denial'); return storage.getItem(key) },
+    setItem: (key, value) => storage.setItem(key, value) }
+  const tutorial = ref(current), tutorialTransition = ref(null), tutorialProgressRetryIdentity = ref('')
+  const tutorialProgressUnsaved = ref(false), acceptedTutorialHandoffIdentity = ref('')
+  const l12State = { pendingAction: false, status: 'online', sessionId: current.sessionId,
+    connectionGeneration: current.connectionGeneration, notice: '' }
+  const parent = actualFunctions(source.game,
+    ['beginTutorialHandoff', 'tutorialCompletionIdentity', 'continueTutorialMainline', 'retryTutorialProgressSave'], {
+      tutorial, tutorialTransition, tutorialPresentationBusy: ref(false), tutorialProgressRetryIdentity,
+      tutorialProgressUnsaved, acceptedTutorialHandoffIdentity, l12State,
+      platformState: { account: { id: accountId }, token: 'synthetic' }, game: ref({ matchId: current.matchId }),
+      recordGuidedSceneReview: (view, owner) => progress.recordGuidedSceneReview(view, owner, selected),
+      loadGuidedTutorialProgress: owner => progress.loadGuidedTutorialProgress(owner, selected),
+      guidedTutorialPersistenceState: owner => progress.guidedTutorialPersistenceState(owner, selected),
+      retryGuidedTutorialProgress: owner => progress.retryGuidedTutorialProgress(owner, selected),
+      tutorialScenes: ['deploy', 'move', 'combat'], tutorialTransitionTimer: null,
+      tutorialTransitionSlow: ref(false), setTimeout: () => 1, leaveRoom: () => { leaves++; l12State.pendingAction = true },
+    })
+  const key = parent.tutorialCompletionIdentity(current)
+  const child = actualFunctions(source.overlay, ['attemptCompletedHandoff'], {
+    props: { tutorial: current, connected: true, busy: false,
+      get acceptedHandoffIdentity() { return acceptedTutorialHandoffIdentity.value },
+      get progressRetryRequired() { return tutorialProgressRetryIdentity.value === key } },
+    completedIdentity: ref(key), stateAligned: ref(true), completedResultVisible: () => true,
+    emit: () => { emitted++; parent.continueTutorialMainline() },
+  })
+  child.attemptCompletedHandoff()
+  assert.equal(leaves, 0); assert.equal(tutorialProgressUnsaved.value, false)
+  assert.equal(tutorialProgressRetryIdentity.value, parent.tutorialCompletionIdentity(current))
+  assert.match(source.overlay, /v-if="progressRetryRequired"[\s\S]*?重试进度/)
+  child.attemptCompletedHandoff()
+  assert.equal(emitted, 1, 'scroll, resize or DOM refresh must not spin after a failed cold read')
+  denied = false
+  child.attemptCompletedHandoff()
+  assert.equal(emitted, 1, 'storage recovery must not bypass the explicit failed-progress retry')
+  parent.retryTutorialProgressSave()
+  assert.equal(leaves, 1); assert.equal(tutorialProgressRetryIdentity.value, '')
+  assert.deepEqual(progress.loadGuidedTutorialProgress(accountId, storage).reviewedScenes, ['deploy'])
+  tutorialTransition.value = null; l12State.pendingAction = false
+  parent.retryTutorialProgressSave(); parent.continueTutorialMainline()
+  assert.equal(leaves, 1)
+})
+check('actual teaching-page retry preserves unsaved learning across roomLeft and stays account-local', () => {
+  const owner = 'page-unsaved', other = 'page-other', storage = new MemoryStorage()
+  const blocked = { getItem: key => storage.getItem(key), setItem() { throw new Error('synthetic quota') } }
+  assert.equal(progress.markGuidedIntroductionRead(owner, blocked), false)
+  assert.equal(progress.recordGuidedSceneReview(projection({ accountId: owner }), binding({ accountId: owner }), blocked), false)
+  // roomLeft may clear transport notices; persistence state belongs to the account, not that notice.
+  assert.equal(progress.guidedTutorialPersistenceState(owner, storage).unsaved, true)
+  const accountId = ref(other), unsaved = ref(true), pageProgress = ref(null)
+  const page = actualFunctions(source.page, ['retryProgressSave'], { accountId, unsaved, progress: pageProgress,
+    retryGuidedTutorialProgress: id => progress.retryGuidedTutorialProgress(id, storage),
+    guidedTutorialPersistenceState: id => progress.guidedTutorialPersistenceState(id, storage),
+    loadGuidedTutorialProgress: id => progress.loadGuidedTutorialProgress(id, storage),
+  })
+  page.retryProgressSave()
+  assert.equal(storage.getItem(progress.guidedTutorialStorageKey(owner)), null)
+  accountId.value = owner; page.retryProgressSave()
+  assert.equal(unsaved.value, false)
+  assert.deepEqual(pageProgress.value.reviewedScenes, ['deploy'])
+  const writes = storage.writes; page.retryProgressSave(); assert.equal(storage.writes, writes)
+})
 
 check('active, wrong-version, wrong-match and wrong-identity states never record completion', () => {
   const storage = new MemoryStorage()
@@ -237,6 +467,16 @@ check('hand and morale sources are separate concepts with real first-player exce
   assert.match(course.tutorialIntroduction.find(step => step.id === 'hand').flow, /牌库.*手牌/)
   assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').text, /追加.*重置阶段.*恢复活跃/)
   assert.match(course.tutorialIntroduction.find(step => step.id === 'morale').flow, /士气牌库.*活跃士气.*休整/)
+  assert.deepEqual(course.tutorialIntroduction.find(step => step.id === 'goal').cards.map(card => card.name), ['嫦娥', '迦具土'])
+  const shown = course.tutorialIntroduction.flatMap(step => step.cards.map(card => card.id))
+  for (const id of ['ST01-M1', 'ST04-M1', 'S01-0104', 'ST01-05', 'ST01-10', 'S01-0117']) assert.ok(shown.includes(id), id)
+})
+check('every introduction card belongs to the frozen public decks, including the real morale reference', () => {
+  const snapshot = JSON.parse(fs.readFileSync(path.join(front, '../服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json'), 'utf8'))
+  const available = new Set(snapshot.decks.flatMap(deck => [deck.masterId, ...deck.cardIds, ...deck.moraleIds, ...deck.specialIds]))
+  for (const card of course.tutorialIntroduction.flatMap(step => step.cards)) assert(available.has(card.id), card.id)
+  assert.equal(course.tutorialIntroduction.find(step => step.id === 'morale').cards[0].id,
+    snapshot.decks.find(deck => deck.role === 'student').moraleIds[0])
 })
 
 class BrowserStorage extends MemoryStorage {

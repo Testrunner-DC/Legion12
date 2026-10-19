@@ -21,11 +21,15 @@ public sealed class TutorialRoomLifecycleTests
         Assert.False(initial.GetProperty("gmEnabled").GetBoolean());
         var state = initial.GetProperty("state");
         var self = state.GetProperty("players")[0];
-        var card = self.GetProperty("hand").EnumerateArray().First(card => card.GetProperty("cardId").GetString() == "S01-0116");
+        Assert.Equal("嫦娥", self.GetProperty("master").GetProperty("masterName").GetString());
+        Assert.Equal("迦具土", state.GetProperty("players")[1].GetProperty("master").GetProperty("masterName").GetString());
+        Assert.InRange(self.GetProperty("hand").GetArrayLength(), 1, 8);
+        var card = self.GetProperty("hand").EnumerateArray().First(card => card.GetProperty("cardId").GetString() == "ST01-05");
         var result = await f.Manager.HandleActionAsync(f.Student, JsonSerializer.SerializeToElement(new
         {
             type = "playCard", cardInstanceId = card.GetProperty("instanceId").GetString(), row = 0, slot = 0,
-            cardInstanceIds = new[] { self.GetProperty("morale")[0].GetProperty("instanceId").GetString() },
+            cardInstanceIds = self.GetProperty("morale").EnumerateArray().Where(resource => !resource.GetProperty("tapped").GetBoolean())
+                .Take(3).Select(resource => resource.GetProperty("instanceId").GetString()).ToArray(),
         }), "paid-deploy-1");
         var final = Message(result, "gameState");
         Assert.Equal("completed", final.GetProperty("tutorial").GetProperty("status").GetString());
@@ -34,7 +38,7 @@ public sealed class TutorialRoomLifecycleTests
         Assert.NotNull(loaded);
         Assert.Equal(1, loaded.CommandSequence);
         Assert.NotNull(loaded.Engine.State.Players[0].Field[0][0]);
-        Assert.Single(loaded.Engine.State.Players[0].Morale.Where(resource => resource.Tapped));
+        Assert.Equal(3, loaded.Engine.State.Players[0].Morale.Count(resource => resource.Tapped));
         Assert.Empty(await f.Recorder.ListMatchesForPlayerAsync("learner"));
     }
 
@@ -45,7 +49,7 @@ public sealed class TutorialRoomLifecycleTests
         var initial = await f.Start("move");
         var self = initial.GetProperty("state").GetProperty("players")[0];
         var card = self.GetProperty("field")[1][1];
-        Assert.Equal("S01-0116", card.GetProperty("cardId").GetString());
+        Assert.Equal("ST01-05", card.GetProperty("cardId").GetString());
         var command = new L12Command("move", card.GetProperty("instanceId").GetString(), 0, 1,
             CardInstanceIds: [self.GetProperty("morale").EnumerateArray()
                 .First(resource => !resource.GetProperty("tapped").GetBoolean()).GetProperty("instanceId").GetString()!]);
@@ -66,7 +70,14 @@ public sealed class TutorialRoomLifecycleTests
     {
         await using var f = await Fixture.Create();
         var initial = await f.Start("combat");
-        var card = initial.GetProperty("state").GetProperty("players")[0].GetProperty("field")[0][0];
+        var players = initial.GetProperty("state").GetProperty("players");
+        Assert.Equal("嫦娥", players[0].GetProperty("master").GetProperty("masterName").GetString());
+        Assert.Equal("迦具土", players[1].GetProperty("master").GetProperty("masterName").GetString());
+        Assert.InRange(players[0].GetProperty("hand").GetArrayLength(), 0, 8);
+        Assert.InRange(players[1].GetProperty("handCount").GetInt32(), 0, 8);
+        Assert.Equal("ST04-09", players[1].GetProperty("field")[0][1].GetProperty("cardId").GetString());
+        var card = players[0].GetProperty("field")[0][0];
+        Assert.Equal("ST01-05", card.GetProperty("cardId").GetString());
         var attack = new L12Command("attack", card.GetProperty("instanceId").GetString(), Target: new("master"));
         var afterAttack = await f.PassOwnResponses(Message(await f.Act(attack, "attack-1"), "gameState"));
         Assert.Equal("end-turn", afterAttack.GetProperty("tutorial").GetProperty("stepId").GetString());
@@ -543,11 +554,12 @@ public sealed class TutorialRoomLifecycleTests
             Assert.Equal("deploy", room.GetProperty("tutorial").GetProperty("lessonId").GetString());
             var initial = await ReceiveWire(socket, "gameState", deadline.Token);
             var self = initial.GetProperty("state").GetProperty("players")[0];
-            var card = self.GetProperty("hand").EnumerateArray().First(card => card.GetProperty("cardId").GetString() == "S01-0116");
+            var card = self.GetProperty("hand").EnumerateArray().First(card => card.GetProperty("cardId").GetString() == "ST01-05");
             await SendWire(socket, new { type = "gameAction", requestId = "wire-pay", command = new
             {
                 type = "playCard", cardInstanceId = card.GetProperty("instanceId").GetString(), row = 0, slot = 0,
-                cardInstanceIds = new[] { self.GetProperty("morale")[0].GetProperty("instanceId").GetString() },
+                cardInstanceIds = self.GetProperty("morale").EnumerateArray().Where(resource => !resource.GetProperty("tapped").GetBoolean())
+                    .Take(3).Select(resource => resource.GetProperty("instanceId").GetString()).ToArray(),
             } }, deadline.Token);
             var final = await ReceiveWire(socket, "gameState", deadline.Token);
             Assert.Equal("wire-pay", final.GetProperty("requestId").GetString());
@@ -583,11 +595,7 @@ public sealed class TutorialRoomLifecycleTests
     }
 
     private static string SourceRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AGENTS.md"))) directory = directory.Parent;
-        return directory?.FullName ?? throw new InvalidOperationException("Source root unavailable");
-    }
+        => PlatformTestSource.Root();
 
     [Theory]
     [InlineData("seed", "42")]

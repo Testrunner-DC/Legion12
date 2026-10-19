@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BattleDockPortal from '../game/BattleDockPortal.vue'
 import BattleOverlayPortal from '../game/BattleOverlayPortal.vue'
+import CatalogCardDetails from '../CatalogCardDetails.vue'
+import type { DeckCard } from '../decks'
 import { viewportRect, visibleViewport } from '../mobileViewport'
 import type { ActiveTutorialState, GameState } from '../types'
 import {
@@ -18,8 +20,9 @@ import {
 import { responseTutorialAction, responseTutorialDialogue, responseTutorialFacts,
   type ResponseTutorialBinding } from './tutorialResponseGuidance'
 
-const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean }>(), { busy: false })
-const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial: [] }>()
+const props = withDefaults(defineProps<{ tutorial: ActiveTutorialState; game: GameState; busy?: boolean; acceptedHandoffIdentity?: string; connected?: boolean; unsavedProgress?: boolean; progressRetryRequired?: boolean }>(),
+  { busy: false, acceptedHandoffIdentity: '', connected: true, unsavedProgress: false, progressRetryRequired: false })
+const emit = defineEmits<{ continueMainline: []; restartScene: []; exitTutorial: []; retryProgressSave: [] }>()
 
 const minimized = ref(false)
 const dialogueIndex = ref(0)
@@ -37,6 +40,19 @@ const pages = computed(() => props.tutorial.lessonId === 'response'
 const dialoguePage = computed(() => pages.value[Math.min(dialogueIndex.value, pages.value.length - 1)] ?? null)
 const dialogueDone = computed(() => dialogueIndex.value >= pages.value.length)
 const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应' })[props.tutorial.lessonId])
+const detailOpen = ref(false)
+const detailCard = computed<DeckCard | null>(() => {
+  const card = facts.value.practiceCard
+  if (!card || !dialoguePage.value?.anchor?.detailFields) return null
+  return { id: card.cardId, number: card.cardId, nameZh: card.name, cardType: card.cardType,
+    isCounterTactic: card.isCounterTactic, product: '当前教学场面', faction: card.faction,
+    imageUrl: card.imageUrl, cost: facts.value.practiceCost ?? undefined, troops: card.troops,
+    traits: card.traits, profession: card.profession, effect: card.effectText || '无效果' }
+})
+const detailScrollKey = ref('')
+const completedIdentity = computed(() => [props.tutorial.accountId, props.tutorial.sessionId,
+  props.tutorial.connectionGeneration, props.tutorial.roomCode, props.tutorial.matchId,
+  props.tutorial.lessonId, props.tutorial.stepId].join(':'))
 
 type DomState = {
   selectedPractice: boolean
@@ -166,6 +182,7 @@ function paymentGuide(): GuideView {
 
 function deployOrMoveGuide(kind: 'deploy' | 'move'): GuideView {
   const instanceId = facts.value.practiceInstanceId
+  const practiceName = facts.value.practiceCard?.name || '练习军团'
   const exactCard = kind === 'deploy' ? practiceHandSelector() : practiceSlotSelector()
   if (!instanceId || !exactCard) return {
     eyebrow: '等待场面', title: '练习军团尚未出现', body: '正在准备本段的练习场面。', anchor: null, waiting: true,
@@ -174,25 +191,26 @@ function deployOrMoveGuide(kind: 'deploy' | 'move'): GuideView {
   if (facts.value.resourcePrompt) return paymentGuide()
   if (!domState.value.selectedPractice && !domState.value.availableSlots) return {
     eyebrow: '实际操作', title: `选择${facts.value.practiceCard?.name || '练习军团'}`,
-    body: kind === 'deploy' ? '点击手牌中高亮的西施。' : '点击后排中格的西施，打开她当前可执行的操作。',
-    reason: kind === 'deploy' ? '先选中西施，才能把她从手牌打到战场。' : '先选中西施，才能查看她此刻允许的移动。',
+    body: kind === 'deploy' ? `选择手牌中高亮的${practiceName}，准备让它登场。`
+      : `选择后排的${practiceName}，准备移到前排，创造进攻主宰的机会。`,
+    reason: kind === 'deploy' ? `先选中${practiceName}，再把它打到战场。` : '移动用资源换取新的站位。',
     outcome: '选择只打开原操作入口，不等于已经打出、移动或支付。',
     anchor: { selector: exactCard, label: facts.value.practiceCard?.name || '练习军团',
       unavailable: kind === 'deploy' ? '练习军团不在可见手牌范围，请滑动或展开我方手牌。' : '后排中格的练习军团不在可见战场内。' },
   }
   if (kind === 'deploy' && domState.value.playButton && !domState.value.availableSlots) return {
-    eyebrow: '实际操作', title: '准备打出军团', body: '在移动端先点“打出”，让战场标出本次可选的合法空阵地。',
+    eyebrow: '实际操作', title: '准备打出军团', body: '点击“打出”，选择军团的登场格位。',
     reason: '“打出”把手牌选择切换为战场落点选择。', outcome: '原界面会高亮合法空阵地；军团尚未登场。',
     anchor: { selector: tutorialActionSelector('play-card', instanceId), label: '打出', unavailable: '“打出”按钮当前不可见，请重新点选练习军团。' },
   }
   if (kind === 'move' && domState.value.moveButton && !domState.value.availableSlots) return {
-    eyebrow: '实际操作', title: '选择普通移动', body: '点击“移动”。随后只选择原界面亮起的合法空格。',
+    eyebrow: '实际操作', title: '选择普通移动', body: '点击“移动”，再选择亮起的相邻空格。普通移动要支付费用，但不会增加兵力。',
     reason: '“移动”进入本次位移目标选择，而不是直接改变位置。', outcome: '原界面会高亮合法相邻空格；尚未支付或移动。',
     anchor: { selector: tutorialActionSelector('move', instanceId), label: '移动', unavailable: '“移动”按钮当前不可见，请重新点选练习军团。' },
   }
   if (domState.value.availableSlots) return {
     eyebrow: '实际操作', title: kind === 'deploy' ? '选择合法空阵地' : '选择亮起的相邻空格',
-    body: kind === 'deploy' ? '选择一个高亮的合法空阵地，随后按支付提示继续。' : '选择一个已经高亮的相邻空格。',
+    body: kind === 'deploy' ? '选择亮起的空格，随后按提示支付费用。' : '选择亮起的相邻空格，随后按提示支付费用。',
     reason: kind === 'deploy' ? '选择落点决定新军团登场后的站位与后续攻防作用。' : '选择新格位是在资源代价与保护、进攻机会之间作取舍。',
     outcome: '选定后会进入支付；付清士气后才会完成登场或移动。',
     anchor: { selector: `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="field-slot"].available`,
@@ -204,7 +222,7 @@ function deployOrMoveGuide(kind: 'deploy' | 'move'): GuideView {
 
 function combatGuide(): GuideView {
   if (props.tutorial.stepId === 'end-turn') return {
-    eyebrow: '实际操作', title: '结束当前回合', body: '点击“结束回合”。随后对手会按教学场景中的合法动作进攻，你仍需亲自完成防守选择。',
+    eyebrow: '实际操作', title: '结束当前回合', body: '点击“结束回合”，把行动权交给对手。对手进攻后，选择如何保护我方主宰。',
     reason: '结束回合把行动权交给对方，才能进入防守教学。', outcome: '对方将按回合规则行动；点击本身不是防守完成。',
     anchor: domState.value.endTurn
       ? { selector: tutorialActionSelector('end-turn'), label: '结束回合', unavailable: '结束回合按钮当前不可见。' }
@@ -213,7 +231,7 @@ function combatGuide(): GuideView {
   }
   if (props.tutorial.stepId === 'defend') return {
     eyebrow: '实际操作', title: '完成本次防守选择',
-    body: `来袭进攻值为 ${facts.value.pendingAttackValue ?? '—'}。可先选择合法军团再确认抵挡，也可明确选择不抵挡；选好后等待场面显示结果。`,
+    body: `来袭兵力为 ${facts.value.pendingAttackValue ?? '—'}。选择军团抵挡可保护目标；不抵挡则保留资源，承受这次进攻。`,
     reason: '抵挡是在保护主宰或军团与投入手牌、场上兵力之间作取舍。', outcome: '结果会反映在主宰血量与军团兵力上。',
     anchor: { selector: '[data-tutorial-anchor="defense-actions"]', label: '抵挡选择',
       unavailable: '抵挡选择当前被最小化或不在可见范围，请先恢复抵挡面板。' },
@@ -229,12 +247,12 @@ function combatGuide(): GuideView {
     anchor: { selector: exactCard, label: facts.value.practiceCard?.name || '进攻军团', unavailable: '前排左格的练习军团当前不可见。' },
   }
   if (domState.value.attackButton && !domState.value.targetMaster) return {
-    eyebrow: '实际操作', title: '选择进攻', body: '点击“进攻”，让原界面标出本次合法目标。',
+    eyebrow: '实际操作', title: '选择进攻', body: '点击“进攻”，再选择亮起的合法目标。',
     reason: '进入进攻模式后，只能选择界面亮起的合法目标。', outcome: '对方主宰会被标出；尚未造成血量变化。',
     anchor: { selector: tutorialActionSelector('attack', instanceId), label: '进攻', unavailable: '“进攻”按钮当前不可见，请重新点选练习军团。' },
   }
   if (domState.value.targetMaster) return {
-    eyebrow: '实际操作', title: '进攻对方主宰', body: '对方主宰已经由原界面标为合法目标。点击主宰并等待结算。',
+    eyebrow: '实际操作', title: '进攻对方主宰', body: '点击亮起的对方主宰。对方未抵挡时，主宰血量会减少，进一步接近胜利。',
     reason: '进攻主宰直接推进把其血量降到 0 的对局目标。', outcome: '结算后，主宰血量与进攻军团活跃/休整状态会更新。',
     anchor: { selector: `${tutorialPlayerSelector(facts.value.enemy.playerIndex)} [data-tutorial-anchor="master"].targetable`,
       label: '对方主宰', unavailable: '对方主宰当前不在可见范围，请先展开对方战场。' },
@@ -263,7 +281,7 @@ const ownResponseGuide = computed<GuideView | null>(() => {
   const selected = domState.value.responsePassSelected
   return {
     eyebrow: '进攻中的响应机会', title: selected ? '确认不响应' : '先处理当前响应',
-    body: '进攻结算前，符合时机的卡牌可能有响应机会。这段练习先不使用响应牌；选择“不响应”，再继续观察进攻和防守。',
+    body: '这次先选择“不响应”，再确认。不响应不会取消进攻，也不代表选择不抵挡。',
     reason: '不响应表示这一次不使用响应牌，不会取消对方进攻，也不等于已经选择不抵挡。',
     outcome: '关闭这次响应选择后，对局会继续到接下来的结算或抵挡选择。',
     anchor: { selector: selected ? `${prefix} [data-tutorial-action="confirm-prompt"]`
@@ -275,7 +293,7 @@ const ownResponseGuide = computed<GuideView | null>(() => {
 const visibleGuide = computed<GuideView | null>(() => {
   if (!stateAligned.value) return {
     eyebrow: '准备中', title: '等待当前教学场面', body: '正在进入这段练习，请稍候。', anchor: null, waiting: true,
-    reason: '先准备好正确的练习场面，提示才能指向要操作的位置。', outcome: '场面出现后即可继续主线。',
+    reason: '先准备好正确的练习场面，提示才能指向要操作的位置。', outcome: '场面出现后进入下一步。',
   }
   if (ownResponseGuide.value) return ownResponseGuide.value
   if (!dialogueDone.value && dialoguePage.value) return dialoguePage.value
@@ -284,10 +302,6 @@ const visibleGuide = computed<GuideView | null>(() => {
 
 function advanceDialogue() {
   if (props.busy) return
-  if (props.tutorial.status === 'completed') {
-    if (stateAligned.value) emit('continueMainline')
-    return
-  }
   if (!dialogueDone.value) dialogueIndex.value++
 }
 
@@ -350,34 +364,77 @@ function observeGeometry(elements: HTMLElement[]) {
   elements.forEach(element => resizeObserver?.observe(element))
 }
 
+function detailTargets(anchor: TutorialAnchor, roots: HTMLElement[]) {
+  if (!anchor.detailFields?.length) return roots
+  const targets: HTMLElement[] = []
+  for (const root of roots) {
+    const terms = Array.from(root.querySelectorAll('dt')).filter((term): term is HTMLElement => term instanceof HTMLElement)
+    for (const field of anchor.detailFields) {
+      if (field === '效果') {
+        const effect = root.querySelector('.archive-effect')
+        if (effect instanceof HTMLElement) targets.push(effect)
+        continue
+      }
+      const term = terms.find(item => item.textContent?.trim() === field)
+      if (term) {
+        targets.push(term)
+        if (term.nextElementSibling instanceof HTMLElement) targets.push(term.nextElementSibling)
+      }
+    }
+  }
+  return targets
+}
+
+function syncDetailFocus(targets: HTMLElement[] = []) {
+  const wanted = new Set(targets)
+  document.querySelectorAll('.tutorial-detail-focus').forEach(element => {
+    if (!wanted.has(element as HTMLElement)) element.classList.remove('tutorial-detail-focus')
+  })
+  targets.forEach(element => { if (!element.classList.contains('tutorial-detail-focus')) element.classList.add('tutorial-detail-focus') })
+}
+
 function updateGeometry() {
   focusRects.value = []
   arrow.value = null
   anchorUnavailable.value = ''
   const anchor = !minimized.value ? visibleGuide.value?.anchor : null
-  if (!anchor || typeof document === 'undefined') { observeGeometry([]); return }
+  if (typeof document === 'undefined') return
+  if (!anchor) { syncDetailFocus(); observeGeometry([]); return }
   const viewportSize = visibleViewport()
   const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
-  const matches = Array.from(document.querySelectorAll(anchor.selector)).filter((element): element is HTMLElement => element instanceof HTMLElement)
-  const visible = matches.filter(element => visibleElement(element, viewport))
-  const targets = anchor.multiple ? visible : visible.slice(0, 1)
+  const roots = Array.from(document.querySelectorAll(anchor.selector)).filter((element): element is HTMLElement => element instanceof HTMLElement)
+  const allDetailMatches = detailTargets(anchor, roots)
+  const detailMatches = allDetailMatches.filter(element => visibleElement(element, viewport))
+  const visible = roots.filter(element => visibleElement(element, viewport))
+  if (anchor.detailFields?.length && visible.length && !detailMatches.length && allDetailMatches.length
+    && detailScrollKey.value !== dialoguePage.value?.id) {
+    detailScrollKey.value = dialoguePage.value?.id || ''
+    allDetailMatches[0]!.scrollIntoView({ block: 'center', inline: 'nearest' })
+    queueRefresh()
+    return
+  }
+  const candidates = anchor.detailFields?.length ? detailMatches : visible
+  const targets = anchor.detailFields?.length || anchor.multiple ? candidates : candidates.slice(0, 1)
   if (!targets.length) {
+    syncDetailFocus()
     observeGeometry([])
     anchorUnavailable.value = anchor.unavailable
     return
   }
+  syncDetailFocus(anchor.detailFields?.length ? detailMatches : [])
   const rects = targets.map(element => {
     const rect = viewportRect(element)
     return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
   })
-  focusRects.value = rects
+  focusRects.value = anchor.detailFields?.length ? [unionRect(rects)] : rects
   const target = unionRect(rects)
-  panelSide.value = target.left + target.width / 2 < viewport.width / 2 ? 'right' : 'left'
+  panelSide.value = anchor.detailFields?.length ? 'right'
+    : target.left + target.width / 2 < viewport.width / 2 ? 'right' : 'left'
   void nextTick(() => {
     const panel = panelElement.value
     if (!panel) return
     const panelRect = viewportRect(panel)
-    const targetX = target.left + target.width / 2
+    const targetX = panelSide.value === 'right' ? target.left + target.width : target.left
     const targetY = target.top + target.height / 2
     const fromX = panelSide.value === 'right' ? panelRect.left : panelRect.right
     const fromY = Math.max(panelRect.top + 24, Math.min(panelRect.bottom - 24, targetY))
@@ -390,7 +447,7 @@ function refreshFromDom() {
   refreshQueued = false
   const next = scanDomState()
   if (!sameDomState(next, domState.value)) domState.value = next
-  void nextTick(updateGeometry)
+  void nextTick(() => { updateGeometry(); attemptCompletedHandoff() })
 }
 
 function queueRefresh() {
@@ -405,6 +462,25 @@ function onMutation(records: MutationRecord[]) {
     return !element?.closest('.tutorial-guidance-shell,.tutorial-guide-layer')
   })
   if (meaningful) queueRefresh()
+}
+
+function completedResultVisible() {
+  if (typeof document === 'undefined') return false
+  const anchor = visibleGuide.value?.anchor
+  const selector = anchor?.selector
+    ?? `${tutorialPlayerSelector(facts.value.self.playerIndex)} [data-tutorial-anchor="master"]`
+  const viewportSize = visibleViewport()
+  const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
+  return Array.from(document.querySelectorAll(selector))
+    .some(element => element instanceof HTMLElement && visibleElement(element, viewport))
+}
+
+function attemptCompletedHandoff() {
+  const key = completedIdentity.value
+  if (!props.connected || props.busy || props.progressRetryRequired || !stateAligned.value || props.tutorial.status !== 'completed'
+    || props.tutorial.stepId !== 'completed' || props.acceptedHandoffIdentity === key
+    || !completedResultVisible()) return
+  emit('continueMainline')
 }
 
 watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}`, () => {
@@ -430,8 +506,27 @@ watch(() => [stateAligned.value, facts.value.practiceInstanceId] as const, ([ali
 watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.stepId}:${props.tutorial.status}`, () => {
   minimized.value = false
   dialogueIndex.value = 0
+  detailScrollKey.value = ''
   queueRefresh()
 }, { flush: 'sync' })
+
+watch(() => [dialoguePage.value?.id, Boolean(detailCard.value)] as const, ([, available]) => {
+  detailOpen.value = available
+}, { immediate: true, flush: 'post' })
+
+// The details Teleport and this companion are not necessarily siblings. Bind
+// layout to the actual mounted mask, not a sibling selector or physical media query.
+watch(detailOpen, () => {
+  void nextTick(() => {
+    document.querySelectorAll('.tutorial-detail-mask').forEach(element => element.classList.remove('tutorial-detail-mask'))
+    if (detailOpen.value) document.querySelector('.catalog-detail-dialog')?.closest('.catalog-detail-mask')
+      ?.classList.add('tutorial-detail-mask')
+    queueRefresh()
+  })
+}, { flush: 'post', immediate: true })
+
+watch(() => [completedIdentity.value, props.tutorial.status, props.connected, stateAligned.value,
+  props.busy, props.acceptedHandoffIdentity, props.progressRetryRequired] as const, queueRefresh, { immediate: true, flush: 'post' })
 
 watch(() => [props.game.revision, props.game.phase, props.game.prompts?.map(prompt => prompt.promptId).join('|'),
   dialogueIndex.value, minimized.value], queueRefresh, { flush: 'post' })
@@ -453,6 +548,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', queueRefresh)
   window.removeEventListener('scroll', queueRefresh, true)
   window.removeEventListener('l12-viewport-change', queueRefresh)
+  document.querySelectorAll('.tutorial-detail-focus').forEach(element => element.classList.remove('tutorial-detail-focus'))
+  document.querySelectorAll('.tutorial-detail-mask').forEach(element => element.classList.remove('tutorial-detail-mask'))
 })
 </script>
 
@@ -462,6 +559,7 @@ onBeforeUnmount(() => {
       @click="minimized = false">教学提示</button>
   </BattleDockPortal>
   <BattleOverlayPortal force>
+    <CatalogCardDetails v-if="detailOpen && detailCard" :card="detailCard" within-picker @close="detailOpen = false"/>
     <div class="tutorial-guide-layer" aria-hidden="true">
       <div v-for="(rect, index) in focusRects" :key="index" class="tutorial-focus-ring"
         :style="{ left: `${rect.left - 5}px`, top: `${rect.top - 5}px`, width: `${rect.width + 10}px`, height: `${rect.height + 10}px` }" />
@@ -470,7 +568,8 @@ onBeforeUnmount(() => {
         <path :d="`M ${arrow.x1} ${arrow.y1} L ${arrow.x2} ${arrow.y2}`" marker-end="url(#tutorial-arrow-head)" />
       </svg>
     </div>
-    <div v-if="!minimized" ref="panelElement" class="tutorial-guidance-shell" :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed' }]"
+    <div v-if="!minimized" ref="panelElement" class="tutorial-guidance-shell"
+      :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed', 'detail-mode': detailOpen && detailCard }]"
       data-ui-contract="tutorial-authoritative-guidance"
       :data-tutorial-guide-id="dialogueDone ? (tutorial.status === 'completed' ? 'result' : 'action') : dialoguePage?.id"
       :data-tutorial-anchor-expected="Boolean(visibleGuide?.anchor)"
@@ -482,18 +581,20 @@ onBeforeUnmount(() => {
         </header>
 
         <p>{{ visibleGuide?.body }}</p>
-        <p class="tutorial-result-line">{{ visibleGuide?.outcome }}</p>
+        <p v-if="progressRetryRequired" class="tutorial-anchor-unavailable" role="status">进度暂时无法确认。<button type="button" :disabled="busy || !connected" @click="emit('retryProgressSave')">重试进度</button></p>
+        <p v-else-if="unsavedProgress" class="tutorial-anchor-unavailable" role="status">进度暂未保存，当前学习可继续。<button type="button" @click="emit('retryProgressSave')">重试保存</button></p>
         <p v-if="anchorUnavailable" class="tutorial-anchor-unavailable" role="status">{{ anchorUnavailable }}</p>
-        <div v-if="!ownResponseGuide && (!dialogueDone || tutorial.status === 'completed')" class="tutorial-main-action">
+        <div v-if="!ownResponseGuide && !dialogueDone && tutorial.status !== 'completed'" class="tutorial-main-action">
           <button class="tutorial-primary" type="button" :disabled="busy || !stateAligned" @click="advanceDialogue">
-            {{ busy ? '正在切换…' : tutorial.status === 'completed' ? '继续主线' : '继续' }}
+            {{ busy ? '正在切换…' : '下一步' }}
           </button>
         </div>
 
-        <footer>
-          <button type="button" :disabled="busy" @click="restartScene">重学本段</button>
-          <button type="button" :disabled="busy" @click="exitTutorial">退出教学</button>
-        </footer>
+        <details class="tutorial-secondary-actions">
+          <summary>教学选项</summary>
+          <div><button type="button" :disabled="busy" @click="restartScene">重学本段</button>
+            <button type="button" :disabled="busy" @click="exitTutorial">退出教学</button></div>
+        </details>
       </section>
     </div>
   </BattleOverlayPortal>
@@ -501,11 +602,31 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .tutorial-guide-layer{position:fixed;z-index:2147483633;inset:0;pointer-events:none}.tutorial-focus-ring{position:fixed;box-sizing:border-box;border:3px solid #f5d45f;border-radius:10px;box-shadow:0 0 0 3px #071014cc,0 0 22px #f5d45fcc;animation:tutorial-guide-pulse 1.4s ease-in-out infinite;pointer-events:none}.tutorial-guide-arrow{position:fixed;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.tutorial-guide-arrow path{fill:none;stroke:#f5d45f;stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 2px 2px #000)}.tutorial-guide-arrow marker path{fill:#f5d45f;stroke:none}@keyframes tutorial-guide-pulse{50%{border-color:#fff2a7;box-shadow:0 0 0 4px #071014cc,0 0 30px #fff2a799}}
-.tutorial-guidance-shell{position:fixed;z-index:2147483634;top:14px;box-sizing:border-box;width:min(390px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:13px 15px;border:1px solid #5c6b73;background:#091118f2;color:#f0f2ee;box-shadow:0 14px 38px #000b;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#b59a4b;background:#171408f2}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#62cbd1;font-size:12px;font-weight:900;letter-spacing:.08em}.tutorial-guidance h2{margin:3px 0 0;font-size:18px}.tutorial-guidance header button{min-width:44px;min-height:44px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 18px inherit}.tutorial-guidance p{margin:10px 0;color:#d5dcdd;font-size:14px;font-weight:800;line-height:1.65}.tutorial-cause-and-result{display:grid;gap:6px;margin:8px 0}.tutorial-cause-and-result div{display:grid;grid-template-columns:74px minmax(0,1fr);gap:8px;padding:7px 8px;background:#0c181d}.tutorial-cause-and-result dt{color:#e4c96f;font-size:12px;font-weight:900}.tutorial-cause-and-result dd{margin:0;color:#c8d3d4;font-size:13px;font-weight:800;line-height:1.5}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #e0b85a;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:10px 0}.tutorial-guidance button{min-height:44px;padding:8px 12px;border:1px solid #57656d;background:#151e24;color:#fff;font:900 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{border-color:#e0b85a;background:#3b2e12;color:#fff1b8}.tutorial-help{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:10px;padding-top:9px;border-top:1px solid #344149}.tutorial-help span{width:100%;color:#91a2a8;font-size:12px;font-weight:900}.tutorial-help button{min-height:40px;padding:7px 9px;color:#d4e8e7}.tutorial-guidance footer{display:flex;justify-content:space-between;gap:8px;margin-top:11px;padding-top:9px;border-top:1px solid #344149}.tutorial-guidance footer button{min-width:108px}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
-.tutorial-result-line{padding:7px 8px;background:#0c181d;color:#e0cf91!important;font-size:13px!important}
+.tutorial-guidance-shell{position:fixed;z-index:2147483634;top:16px;box-sizing:border-box;width:min(354px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:15px 16px 12px;border:1px solid #50636b;background:linear-gradient(150deg,#101b22f7,#081116f7);color:#f0f2ee;box-shadow:0 12px 30px #000b,0 0 0 1px #9acfd111 inset;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#a58c48;background:#171408f7}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#70cdd1;font-size:11px;font-weight:800;letter-spacing:.12em}.tutorial-guidance h2{margin:4px 0 0;font-size:17px;line-height:1.35}.tutorial-guidance header button{min-width:40px;min-height:40px;border:1px solid #465a63;background:#132129;color:#dce8e7;font:800 18px inherit}.tutorial-guidance p{margin:9px 0 0;color:#d4dedc;font-size:13px;font-weight:500;line-height:1.6}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #d4b657;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:11px 0 0}.tutorial-guidance button{min-height:42px;padding:7px 12px;border:1px solid #4b616b;background:#132129;color:#edf4f2;font:800 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{min-width:108px;border-color:#d9bc62;background:#d9bc62;color:#101719;box-shadow:0 4px 12px #0004}.tutorial-secondary-actions{margin-top:9px;padding-top:8px;border-top:1px solid #2f4149;color:#91a4a8;font-size:12px}.tutorial-secondary-actions summary{width:max-content;cursor:pointer;user-select:none}.tutorial-secondary-actions>div{display:flex;gap:7px;margin-top:8px}.tutorial-secondary-actions button{min-width:0;flex:1;min-height:38px;color:#c9d6d4;background:#101b21}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
+:global(.catalog-detail-dialog .tutorial-detail-focus){position:relative;border-radius:4px;background:#3a3117!important;box-shadow:0 0 0 2px #e2c568,0 0 18px #e2c56855;color:#fff3bd!important}:global(.catalog-detail-dialog .archive-effect.tutorial-detail-focus){padding:10px}
+@media(min-width:1000px){.tutorial-guidance-shell.detail-mode{left:auto;right:18px;top:24px;width:350px}:global(.catalog-detail-mask.tutorial-detail-mask){padding:24px 390px 24px 24px}:global(.tutorial-detail-mask .catalog-detail-dialog){width:min(900px,100%);max-height:100%}}
+@media(max-height:480px) and (min-width:650px){.tutorial-guidance-shell{width:min(286px,calc(var(--l12-viewport-width,100vw) - 176px));top:8px;max-height:calc(100dvh - 16px)}.tutorial-guidance-shell.detail-mode{left:auto;right:8px;width:286px}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode)){padding:8px 302px 8px 8px}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode) .catalog-detail-dialog){padding:12px;max-height:calc(100dvh - 16px)}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode) .catalog-detail-body){grid-template-columns:minmax(0,170px) minmax(0,1fr);gap:14px}.tutorial-guidance-shell .tutorial-guidance{padding:11px 12px}.tutorial-guidance-shell h2{font-size:15px}.tutorial-guidance-shell p{font-size:12px;line-height:1.5}.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
+@media(max-width:480px){.tutorial-guidance-shell.detail-mode{top:auto;bottom:max(10px,env(safe-area-inset-bottom));left:10px;right:10px;width:auto;max-height:43dvh}.tutorial-guidance-shell.detail-mode .tutorial-guidance{padding:10px 12px}.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell){width:min(350px,calc(var(--l12-viewport-width,100vw) - 188px));max-width:calc(var(--l12-viewport-width,100vw) - 188px)}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-left){left:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-right){right:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports .mobile-battle-dock__context > .tutorial-guidance-restore){position:static!important;box-sizing:border-box;width:100%;max-width:100%;min-height:44px!important;padding:8px 4px!important;white-space:normal;overflow-wrap:normal}
 /* The landscape portal enables pointer input on its direct children. The
    teaching focus is decorative, while only the dialogue itself is interactive. */
 :global(#l12-landscape-teleports > .tutorial-guide-layer),:global(#l12-landscape-teleports > .tutorial-guide-layer *){pointer-events:none}
 :global(#l12-landscape-teleports > .tutorial-guidance-shell){pointer-events:none}
+.tutorial-focus-ring{border-width:2px;border-radius:6px;box-shadow:0 0 0 2px #071014dd,0 0 12px #f5d45f66;animation:none}.tutorial-guide-arrow path{stroke-width:2.5;filter:drop-shadow(0 1px 1px #0008)}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.detail-mode){left:auto;right:8px;top:8px;bottom:auto;width:280px;max-width:280px;max-height:calc(var(--l12-viewport-height,100dvh) - 16px)}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .catalog-detail-mask.tutorial-detail-mask){box-sizing:border-box;padding:8px 304px 8px 8px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog){width:100%;max-height:100%;padding:12px;overflow:auto}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog>header){position:sticky;top:0;z-index:2;background:#101821;padding-bottom:8px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog>header h2){margin:0;font-size:18px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-body){grid-template-columns:minmax(0,160px) minmax(0,1fr);gap:12px;align-items:start}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-image){height:min(250px,calc(var(--l12-viewport-height,100dvh) - 98px));margin:0}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-image .l12-card-image__img){object-fit:contain!important}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail){padding:0;min-width:0}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-number){display:none}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail h2){margin:0 0 4px;font-size:19px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-tags span){padding:2px 5px;font-size:11px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail dl){margin:6px 0}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail dl>*){padding:5px 8px;font-size:12px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect.tutorial-detail-focus){padding:7px 8px}
+:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect p){margin-top:4px;font-size:12px;line-height:1.5}
 </style>

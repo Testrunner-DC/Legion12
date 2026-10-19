@@ -95,7 +95,7 @@ export function responseTutorialDialogue(step: string, facts: ResponseTutorialFa
     case 'completed': return [page('response-result', '比较结果，也别忘了代价',
       `兵临城下的效果已被无效，西施当前兵力 ${facts.legion?.troops ?? '—'}；打出、盖伏及弃牌的费用不会自动退回。`,
       '本次投入了手牌与士气，换来保护军团的结果。下次面对不同卡，也要先看条件、时机、费用与目标，再决定是否响应。',
-      '确认结果后继续主线，才记录本段完成。')]
+      '真实结果已提交，教学会自动进入下一步。')]
     case 'response-retry': return [page('response-observe-other-result', '这次看到了另一种结果',
       '这次没有沿预定的反击路线完成。请看场面中的真实变化；已经支付的费用仍按原规则处理。',
       '不响应也可能是合法选择，但与本次“亲手阻止效果”的练习目标不同。',

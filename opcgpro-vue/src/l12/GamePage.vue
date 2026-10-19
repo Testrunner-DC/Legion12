@@ -18,7 +18,7 @@ import { gameAction, l12State, leaveRoom } from './net'
 import { connect, createTutorial, send } from './net'
 import { tournamentRoomLoadingState } from './tournamentRoomLoadingState'
 import { platformState } from './platform'
-import { loadGuidedTutorialProgress, recordGuidedSceneReview } from './tutorial/tutorialProgress'
+import { guidedTutorialPersistenceState, loadGuidedTutorialProgress, recordGuidedSceneReview, retryGuidedTutorialProgress } from './tutorial/tutorialProgress'
 import { tutorialHandoffDecision, tutorialScenes, type TutorialHandoffBinding } from './tutorial/tutorialCourse'
 import type { TutorialLessonId } from './types'
 
@@ -33,40 +33,81 @@ const tutorial = computed(() => {
     && !l12State.gmEnabled && !l12State.spectating ? current : null
 })
 const tutorialTransition = ref<{ binding: TutorialHandoffBinding; target: TutorialLessonId | null; phase: 'leaving' | 'creating' } | null>(null)
+const tutorialPresentationBusy = ref(false)
+const tutorialProgressUnsaved = ref(false)
+const tutorialProgressRetryIdentity = ref('')
+const acceptedTutorialHandoffIdentity = ref('')
 const tutorialTransitionSlow = ref(false)
 let tutorialTransitionTimer: ReturnType<typeof setTimeout> | null = null
 function clearTutorialTransition() {
   if (tutorialTransitionTimer) clearTimeout(tutorialTransitionTimer)
   tutorialTransitionTimer = null; tutorialTransition.value = null; tutorialTransitionSlow.value = false
 }
+function clearExpectedTutorialExitNotice() {
+  // Called only after this owned handoff receives its real roomLeft. Preserve
+  // unexpected errors; the normal closure message is not a teaching failure.
+  if (l12State.notice === '房间已关闭') l12State.notice = ''
+}
 function beginTutorialHandoff(target: TutorialLessonId | null) {
   const current = tutorial.value
-  if (!current || tutorialTransition.value || l12State.pendingAction) return
+  if (!current || tutorialTransition.value || l12State.pendingAction) return false
   tutorialTransition.value = { target, phase: 'leaving', binding: {
     accountId: current.accountId, token: platformState.token || '', sessionId: current.sessionId,
     connectionGeneration: current.connectionGeneration, roomCode: current.roomCode, matchId: current.matchId,
   } }
   tutorialTransitionTimer = setTimeout(() => { tutorialTransitionSlow.value = true }, 15_000)
   leaveRoom()
+  return true
 }
+function tutorialCompletionIdentity(current: NonNullable<typeof tutorial.value>) {
+  return [current.accountId, current.sessionId, current.connectionGeneration, current.roomCode,
+    current.matchId, current.lessonId, current.stepId].join(':')
+}
+const tutorialProgressRetryRequired = computed(() => Boolean(tutorial.value
+  && tutorialProgressRetryIdentity.value === tutorialCompletionIdentity(tutorial.value)))
 function continueTutorialMainline() {
   const current = tutorial.value
-  if (current?.status !== 'completed' || tutorialTransition.value || l12State.pendingAction) return
-  // Called by the guide only after the learner has read the result explanation.
-  // A successful game action alone never records learning completion.
+  if (current?.status !== 'completed' || current.stepId !== 'completed' || tutorialTransition.value
+    || l12State.pendingAction || l12State.status !== 'online' || tutorialPresentationBusy.value) return
+  const identity = tutorialCompletionIdentity(current)
+  if (acceptedTutorialHandoffIdentity.value === identity) return
+  // Called only when the exact connected tutorial projection reports the committed step complete.
+  // Clicks, command sends and timers never record learning completion.
   const saved = recordGuidedSceneReview(current, {
     accountId: platformState.account?.id || '', sessionId: l12State.sessionId,
     connectionGeneration: l12State.connectionGeneration, matchId: game.value?.matchId || '',
   })
   const progress = loadGuidedTutorialProgress(current.accountId)
+  tutorialProgressUnsaved.value = guidedTutorialPersistenceState(current.accountId).unsaved
   if (current.lessonId === 'response' ? !progress.responseReviewed : !progress.reviewedScenes.includes(current.lessonId)) {
-    l12State.notice = '请先从教学主线完成前面的介绍与练习。'
+    tutorialProgressRetryIdentity.value = identity
+    l12State.notice = '学习进度暂时无法确认，请重试。'
     return
   }
   if (!saved) l12State.notice = '本机暂时无法保存进度，当前学习仍可继续。'
-  beginTutorialHandoff(current.lessonId === 'response' ? null
-    : tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)
+  if (!beginTutorialHandoff(current.lessonId === 'response' ? null
+    : tutorialScenes[tutorialScenes.indexOf(current.lessonId) + 1] || null)) return
+  acceptedTutorialHandoffIdentity.value = identity
+  tutorialProgressRetryIdentity.value = ''
 }
+function updateTutorialPresentationBusy(busy: boolean) {
+  tutorialPresentationBusy.value = Boolean(tutorial.value && busy)
+}
+function retryTutorialProgressSave() {
+  const current = tutorial.value
+  if (current && tutorialProgressRetryIdentity.value === tutorialCompletionIdentity(current)) {
+    continueTutorialMainline()
+    return
+  }
+  const accountId = platformState.account?.id || ''
+  if (!accountId) return
+  retryGuidedTutorialProgress(accountId)
+  tutorialProgressUnsaved.value = guidedTutorialPersistenceState(accountId).unsaved
+}
+watch(() => [platformState.account?.id || '', platformState.token] as const, () => {
+  tutorialProgressRetryIdentity.value = ''
+  tutorialProgressUnsaved.value = guidedTutorialPersistenceState(platformState.account?.id || '').unsaved
+}, { immediate: true, flush: 'sync' })
 function restartTutorialScene() { if (tutorial.value) beginTutorialHandoff(tutorial.value.lessonId) }
 function exitTutorialMainline() {
   const transition = tutorialTransition.value
@@ -112,7 +153,7 @@ watch(() => [tutorialTransition.value?.phase, platformState.account?.id, platfor
     clearTutorialTransition(); l12State.notice = '账号、连接或场面已变化，请回到教学主线继续。'; return
   }
   if (decision !== 'ready') return
-  if (!transition.target) { clearTutorialTransition(); void router.push('/battle/tutorial'); return }
+  if (!transition.target) { clearExpectedTutorialExitNotice(); clearTutorialTransition(); void router.push('/battle/tutorial'); return }
   transition.phase = 'creating'
   if (!createTutorial(transition.target)) clearTutorialTransition()
 }, { flush: 'post' })
@@ -272,8 +313,14 @@ async function retryGameLoad() {
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div></BattleDockPortal>
     <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
-      @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings" />
-    <TutorialGuidanceOverlay v-if="tutorial" :tutorial="tutorial" :game="game" :busy="Boolean(tutorialTransition)"
+      @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings"
+      @presentation-change="updateTutorialPresentationBusy" />
+    <TutorialGuidanceOverlay v-if="tutorial" :tutorial="tutorial" :game="game"
+      :busy="Boolean(tutorialTransition || l12State.pendingAction || tutorialPresentationBusy)"
+      :unsaved-progress="tutorialProgressUnsaved" @retry-progress-save="retryTutorialProgressSave"
+      :progress-retry-required="tutorialProgressRetryRequired"
+      :accepted-handoff-identity="acceptedTutorialHandoffIdentity"
+      :connected="l12State.status === 'online'"
       @continue-mainline="continueTutorialMainline" @restart-scene="restartTutorialScene" @exit-tutorial="exitTutorialMainline" />
     <GmPanel v-if="l12State.gmEnabled" :game="game" :initially-open="gmPanelInitiallyOpen"
       @arm-placement="gmPlacement = $event" @open-change="gmPanelOpen = $event" />
@@ -319,7 +366,7 @@ async function retryGameLoad() {
     </Transition>
 </BattleOverlayPortal>
   </div>
-  <main v-else-if="tutorialTransition" class="missing-game" data-tutorial-handoff="true" role="status" aria-live="polite"><h1>继续教学主线</h1><p>{{ tutorialTransitionSlow ? '场面衔接尚未完成，正在等待服务器确认。' : '向导正在为下一段练习准备新的场面…' }}</p><button type="button" @click="exitTutorialMainline">返回教学主线</button></main>
+  <main v-else-if="tutorialTransition" class="missing-game" data-tutorial-handoff="true" role="status" aria-live="polite"><h1>正在进入下一步</h1><p>{{ tutorialTransitionSlow ? '场面衔接尚未完成，正在等待服务器确认。' : '向导正在为下一段练习准备新的场面…' }}</p><button type="button" @click="exitTutorialMainline">退出到教学页</button></main>
   <main v-else-if="l12State.matchFound" ref="gamePageRoot" tabindex="-1" class="missing-game" data-state="matching" role="status" aria-live="polite"><h1>匹配成功</h1><p>正在同步对局，请稍候……</p></main>
   <main v-else ref="gamePageRoot" tabindex="-1" class="missing-game" :data-state="missingGameState.kind" role="status" aria-live="polite">
     <small>{{ missingGameState.kind === 'waiting' ? 'TOURNAMENT ROOM' : missingGameState.kind === 'loading' ? 'LOADING' : 'LOAD FAILED' }}</small>

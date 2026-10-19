@@ -131,9 +131,5 @@ public sealed class SandboxAdminAuthorizationTests
         => JsonSerializer.SerializeToElement(message.Payload).GetProperty("type").GetString() == "gameState";
 
     private static string SourceRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "AGENTS.md"))) directory = directory.Parent;
-        return directory?.FullName ?? throw new InvalidOperationException("Source root unavailable");
-    }
+        => PlatformTestSource.Root();
 }

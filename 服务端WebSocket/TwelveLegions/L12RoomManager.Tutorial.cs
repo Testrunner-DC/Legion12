@@ -1,4 +1,7 @@
 using System.Text.Json;
+using System.Text.Encodings.Web;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace TwelveLegions.Server;
 
@@ -7,6 +10,23 @@ public sealed partial class L12RoomManager
     // Local teaching is opt-in. Deployment policy keeps this flag off outside the test service.
     public bool TutorialAvailable { get; }
     private sealed record TutorialCreateReceipt(string RoomCode, string MatchId, string LessonId);
+    private sealed class TutorialDeckSnapshot
+    {
+        public int SchemaVersion { get; init; }
+        public List<TutorialDeckEntry> Decks { get; init; } = [];
+    }
+    private sealed class TutorialDeckEntry
+    {
+        public string Role { get; init; } = string.Empty;
+        public string PublicCode { get; init; } = string.Empty;
+        public int PublicationVersion { get; init; }
+        public string NormalizedContentSha256 { get; init; } = string.Empty;
+        public string Name { get; init; } = string.Empty;
+        public string MasterId { get; init; } = string.Empty;
+        public List<string> CardIds { get; init; } = [];
+        public List<string> MoraleIds { get; init; } = [];
+        public List<string> SpecialIds { get; init; } = [];
+    }
 
     private sealed class TutorialContext(string lessonId)
     {
@@ -76,36 +96,38 @@ public sealed partial class L12RoomManager
                 return Error(sessionId, "维护即将开始或正在进行，暂时不能进入教学", "tutorialRejected", requestId);
 
             var policy = currentPolicy.ForSandbox("none");
-            // These are legal published cards, not a client-provided deck or a GM checkpoint.
-            // Replacing the preset's three Bai Qi with three Xi Shi leaves a legal 40-card deck.
-            var preset = _catalog.DeckAt(0);
-            var deck = new L12PresetDeckDefinition { Name = "教学公开构筑", MasterId = preset.MasterId,
-                CardIds = preset.CardIds.Select(id => id == "S01-0109" ? "S01-0116"
-                    : lessonId == "response" && id == "S01-0002" ? "S01-0008" : id).ToList(),
-                MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds] };
-            if (!L12DeckValidator.TryValidatePreset(_catalog, deck, out _))
+            L12PresetDeckDefinition studentDeck;
+            L12PresetDeckDefinition opponentDeck;
+            if (lessonId == "response")
+            {
+                // The existing response lesson remains on its proven recipe. The two named public
+                // prebuilt decks do not contain an equivalent negating counter, so this chapter is
+                // not falsely presented as migrated to Chang'e/Kagutsuchi.
+                studentDeck = opponentDeck = LegacyResponseTutorialDeck(_catalog);
+            }
+            else
+            {
+                (studentDeck, opponentDeck) = LoadTutorialDecks();
+            }
+            if (!L12DeckValidator.TryValidatePreset(_catalog, studentDeck, out _)
+                || !L12DeckValidator.TryValidatePreset(_catalog, opponentDeck, out _))
                 return Error(sessionId, "当前规则与教学配方不兼容", "tutorialUnavailable", requestId);
             var room = ReserveTutorialRoom(policy, lessonId);
             var opponentId = Guid.NewGuid();
             var opponent = new Session { Id = opponentId, Name = "教学对手", IsVirtual = true,
-                RoomCode = room.Code, PlayerIndex = 1, CustomDeck = deck };
+                RoomCode = room.Code, PlayerIndex = 1, CustomDeck = opponentDeck };
             var initializationStage = "bootstrap";
             try
             {
-                room.Game = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, 1701,
-                    [session.Name, opponent.Name], [deck, deck], disasterMode: "none",
-                    operationsPolicy: policy, stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
-                    effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), utcNow: _utcNow,
-                    responseModes: [L12GameEngine.DefaultResponseMode, L12GameEngine.DefaultResponseMode]);
-                BootstrapTutorial(room);
+                room.Game = BuildTutorialGame(room, session.Name, opponent.Name, studentDeck, opponentDeck, policy);
                 // Exactly the trusted, legally reached state is checkpoint zero. All subsequent
                 // student and scripted-opponent commands use the existing durable Journal path.
                 initializationStage = "start-recording";
-                await _recorder.StartAsync(room.Game, "sandbox", session.AccountId, null, [deck, deck]);
+                await _recorder.StartAsync(room.Game, "sandbox", session.AccountId, null, [studentDeck, opponentDeck]);
             }
             catch (Exception error)
             {
-                Console.Error.WriteLine($"Tutorial unavailable stage={initializationStage} exception={error.GetType().Name}");
+                Console.Error.WriteLine($"Tutorial unavailable stage={initializationStage} exception={error.GetType().Name} detail={error.Message}");
                 ((ICollection<KeyValuePair<string, Room>>)_rooms).Remove(new(room.Code, room));
                 return Error(sessionId, "教学配方或记录暂时不可用，未进入关卡", "tutorialUnavailable", requestId);
             }
@@ -115,7 +137,7 @@ public sealed partial class L12RoomManager
             _sessions[opponentId] = opponent;
             session.RoomCode = room.Code;
             session.PlayerIndex = 0;
-            session.CustomDeck = deck;
+            session.CustomDeck = studentDeck;
             session.TutorialRequests[requestId] = new(room.Code, room.Game!.State.MatchId, lessonId);
             if (session.TutorialRequests.Count > 32)
                 session.TutorialRequests.Remove(session.TutorialRequests.Keys.First());
@@ -140,43 +162,131 @@ public sealed partial class L12RoomManager
         return room;
     }
 
-    private static void BootstrapTutorial(Room room)
+    private static readonly JsonSerializerOptions TutorialDeckJson = new()
     {
-        var game = room.Game!;
-        var lesson = room.Tutorial!;
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+    };
+
+    private static (L12PresetDeckDefinition Student, L12PresetDeckDefinition Opponent) LoadTutorialDecks()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data", "tutorial-decks.v1.json");
+        var snapshot = JsonSerializer.Deserialize<TutorialDeckSnapshot>(File.ReadAllText(path), TutorialDeckJson)
+            ?? throw new InvalidDataException("教学公开构筑快照不可读取");
+        if (snapshot.SchemaVersion != 1 || snapshot.Decks.Count != 2)
+            throw new InvalidDataException("教学公开构筑快照版本不兼容");
+        var student = snapshot.Decks.Single(deck => deck.Role == "student");
+        var opponent = snapshot.Decks.Single(deck => deck.Role == "opponent");
+        VerifyTutorialDeck(student, "J2DR72B52KQQ", 1,
+            "E93351066B33A5BD2E8044DE02329F59870C4E1EE66F2725058B42B62F151738");
+        VerifyTutorialDeck(opponent, "RGKZ73S3NHMQ", 1,
+            "2FB47E86AEF1A16F3340176ACD4469B39FA42BA350F0DA1DD6F3C682E43937BD");
+        return (ToPreset(student), ToPreset(opponent));
+    }
+
+    private static void VerifyTutorialDeck(TutorialDeckEntry deck, string publicCode, int version, string expectedHash)
+    {
+        var canonical = JsonSerializer.Serialize(new
+        {
+            deck.Name, deck.MasterId, deck.CardIds, deck.MoraleIds, deck.SpecialIds,
+        }, TutorialDeckJson);
+        var actualHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
+        if (deck.PublicCode != publicCode || deck.PublicationVersion != version
+            || deck.NormalizedContentSha256 != expectedHash || actualHash != expectedHash)
+            throw new InvalidDataException("教学公开构筑快照校验失败");
+    }
+
+    private static L12PresetDeckDefinition ToPreset(TutorialDeckEntry deck) => new()
+    {
+        Name = deck.Name, MasterId = deck.MasterId, CardIds = [.. deck.CardIds],
+        MoraleIds = [.. deck.MoraleIds], SpecialIds = [.. deck.SpecialIds],
+    };
+
+    private static L12PresetDeckDefinition LegacyResponseTutorialDeck(L12Catalog catalog)
+    {
+        var preset = catalog.DeckAt(0);
+        return new L12PresetDeckDefinition { Name = "教学响应构筑", MasterId = preset.MasterId,
+            CardIds = preset.CardIds.Select(id => id == "S01-0109" ? "S01-0116"
+                : id == "S01-0002" ? "S01-0008" : id).ToList(),
+            MoraleIds = [.. preset.MoraleIds], SpecialIds = [.. preset.SpecialIds] };
+    }
+
+    private L12GameEngine BuildTutorialGame(Room room, string studentName, string opponentName,
+        L12PresetDeckDefinition studentDeck, L12PresetDeckDefinition opponentDeck,
+        L12OperationsPolicySnapshot policy)
+    {
+        var response = room.Tutorial!.LessonId == "response";
+        var firstSeed = response ? 1701 : 1701;
+        var lastSeed = response ? firstSeed : 1956;
+        var lastFailure = "none";
+        for (var seed = firstSeed; seed <= lastSeed; seed++)
+        {
+            var candidate = new L12GameEngine(_catalog, Guid.NewGuid().ToString("N"), room.Code, seed,
+                [studentName, opponentName], [studentDeck, opponentDeck], disasterMode: "none",
+                operationsPolicy: policy, stateFormatVersion: L12PersistenceContract.CurrentStateFormatVersion,
+                effectPresentationSnapshot: CaptureEffectPresentationSnapshot(), utcNow: _utcNow,
+                responseModes: [L12GameEngine.DefaultResponseMode, L12GameEngine.DefaultResponseMode]);
+            var candidateLesson = new TutorialContext(room.Tutorial.LessonId);
+            try { BootstrapTutorial(candidate, candidateLesson); }
+            catch (InvalidOperationException error) when (!response) { lastFailure = error.Message; continue; }
+            if (!response && candidate.State.Players.Any(player => player.Hand.Count > 8)) continue;
+            room.Tutorial.PracticeInstanceId = candidateLesson.PracticeInstanceId;
+            room.Tutorial.CounterInstanceId = candidateLesson.CounterInstanceId;
+            room.Tutorial.SiegeInstanceId = candidateLesson.SiegeInstanceId;
+            room.Tutorial.PracticeTroops = candidateLesson.PracticeTroops;
+            return candidate;
+        }
+        throw new InvalidOperationException($"教学有限种子范围内没有少手牌合法场面；最后失败：{lastFailure}");
+    }
+
+    private static void BootstrapTutorial(L12GameEngine game, TutorialContext lesson)
+    {
         var initiative = game.State.PendingPrompts.Single();
         BootstrapCommand(game, initiative.PlayerIndex, new("resolvePrompt", PromptId: initiative.PromptId,
             CardInstanceIds: [initiative.PlayerIndex == 0 ? "first" : "second"]));
-        BootstrapCommand(game, 0, new("mulligan", CardInstanceIds: []));
-        BootstrapCommand(game, 1, new("mulligan", CardInstanceIds: []));
         if (lesson.LessonId == "response")
         {
+            BootstrapCommand(game, 0, new("mulligan", CardInstanceIds: []));
+            BootstrapCommand(game, 1, new("mulligan", CardInstanceIds: []));
             BootstrapResponseTutorial(game, lesson);
             return;
         }
+        BootstrapCommand(game, 0, new("mulligan", CardInstanceIds: game.State.Players[0].Hand
+            .Where(card => card.CardId != "ST01-05").Select(card => card.InstanceId).ToList()));
+        BootstrapCommand(game, 1, new("mulligan", CardInstanceIds: game.State.Players[1].Hand
+            .Where(card => card.CardId != "ST04-09").Select(card => card.InstanceId).ToList()));
         var combat = lesson.LessonId == "combat";
-        static int Copies(L12PlayerState player) => player.Hand.Count(card => card.CardId == "S01-0116");
-        // Bounded legal turn progression, never seed hunting, GM mutation, or synthetic padding.
+        static int Copies(L12PlayerState player) => player.Hand.Count(card => card.CardId == "ST01-05");
+        // A bounded named-seed search surrounds this legal command prefix. It never mutates a
+        // draw order, hidden zone, resource, turn or battlefield through a teaching side door.
         var turns = 0;
-        while (game.State.ActivePlayer != 0 || Copies(game.State.Players[0]) < (combat ? 2 : 1)
-               || game.State.Players[0].Morale.Count(card => !card.Tapped) < (combat ? 2 : 1)
-               || combat && Copies(game.State.Players[1]) < 1)
+        while (game.State.ActivePlayer != 0 || Copies(game.State.Players[0]) < 1
+               || game.State.Players[0].Morale.Count(card => !card.Tapped) < 3
+               || combat && game.State.Players[1].Hand.All(card => card.CardId != "ST04-09"))
         {
-            if (++turns > 40) throw new InvalidOperationException("教学合法前缀超出预算");
+            if (++turns > 40) throw new InvalidOperationException($"教学合法前缀超出预算：我方练习牌{Copies(game.State.Players[0])}，我方活跃士气{game.State.Players[0].Morale.Count(card => !card.Tapped)}，对方野猪王{game.State.Players[1].Hand.Count(card => card.CardId == "ST04-09")}，手牌{game.State.Players[0].Hand.Count}/{game.State.Players[1].Hand.Count}");
             BootstrapCommand(game, game.State.ActivePlayer, new("endTurn"));
         }
-        lesson.PracticeInstanceId = game.State.Players[0].Hand.First(card => card.CardId == "S01-0116").InstanceId;
+        lesson.PracticeInstanceId = game.State.Players[0].Hand.First(card => card.CardId == "ST01-05").InstanceId;
         if (lesson.LessonId == "deploy") return;
         BootstrapPlay(game, 0, lesson.PracticeInstanceId, combat ? 0 : 1, combat ? 0 : 1);
         if (combat)
         {
-            var defender = game.State.Players[0].Hand.First(card => card.CardId == "S01-0116");
+            turns = 0;
+            while (game.State.ActivePlayer != 0 || Copies(game.State.Players[0]) < 1
+                   || game.State.Players[0].Morale.Count(card => !card.Tapped) < 3)
+            {
+                if (++turns > 20) throw new InvalidOperationException("教学第二张军团合法前缀超出预算");
+                BootstrapCommand(game, game.State.ActivePlayer, new("endTurn"));
+            }
+            var defender = game.State.Players[0].Hand.First(card => card.CardId == "ST01-05");
             BootstrapPlay(game, 0, defender.InstanceId, 0, 2);
         }
         BootstrapCommand(game, 0, new("endTurn"));
         if (combat)
         {
-            var attacker = game.State.Players[1].Hand.First(card => card.CardId == "S01-0116");
+            var attacker = game.State.Players[1].Hand.First(card => card.CardId == "ST04-09");
             BootstrapPlay(game, 1, attacker.InstanceId, 0, 1);
         }
         BootstrapCommand(game, 1, new("endTurn"));
@@ -205,8 +315,26 @@ public sealed partial class L12RoomManager
     }
 
     private static void BootstrapPlay(L12GameEngine game, int actor, string instanceId, int row, int slot)
-        => BootstrapCommand(game, actor, new("playCard", CardInstanceId: instanceId, Row: row, Slot: slot,
-            CardInstanceIds: [game.State.Players[actor].Morale.First(card => !card.Tapped).InstanceId]));
+    {
+        var cost = game.State.Players[actor].Hand.Single(card => card.InstanceId == instanceId).CurrentCost;
+        BootstrapCommand(game, actor, new("playCard", CardInstanceId: instanceId, Row: row, Slot: slot,
+            CardInstanceIds: game.State.Players[actor].Morale.Where(card => !card.Tapped)
+                .Take(cost).Select(card => card.InstanceId).ToList()));
+        BootstrapPassResponses(game);
+    }
+
+    private static void BootstrapPassResponses(L12GameEngine game)
+    {
+        for (var budget = 0; game.State.PendingPrompts.Count != 0; budget++)
+        {
+            if (budget >= 8) throw new InvalidOperationException("教学合法初始化响应超出预算");
+            var prompt = game.State.PendingPrompts[0];
+            if (prompt.Continuation != "stack-response" || !prompt.ValidChoices.Contains("pass"))
+                throw new InvalidOperationException("教学合法初始化遇到未声明询问");
+            BootstrapCommand(game, prompt.PlayerIndex,
+                new("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: ["pass"]));
+        }
+    }
 
     private static void BootstrapCommand(L12GameEngine game, int actor, L12Command command)
     {
@@ -254,9 +382,14 @@ public sealed partial class L12RoomManager
                 var prompt = state.PendingPrompts.FirstOrDefault(p => p.PlayerIndex == 1);
                 if (prompt is not null)
                 {
-                    if (prompt.Continuation != "stack-response" || !prompt.ValidChoices.Contains("pass"))
+                    if (prompt.Continuation == "stack-response" && prompt.ValidChoices.Contains("pass"))
+                        scripted = new("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: ["pass"]);
+                    else if (lesson.LessonId == "combat" && prompt.Kind == "option"
+                             && prompt.Text.StartsWith("迦具土：", StringComparison.Ordinal)
+                             && prompt.ValidChoices.Contains("mode:none"))
+                        scripted = new("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: ["mode:none"]);
+                    else
                         throw new InvalidOperationException("教学脚本遇到未声明询问");
-                    scripted = new("resolvePrompt", PromptId: prompt.PromptId, CardInstanceIds: ["pass"]);
                 }
                 else if (state.PendingDefense is { AttackerPlayer: 0, Stage: L12CombatStage.DefenseChoice }
                          && state.PendingPrompts.Count == 0 && state.EffectStack.Count == 0)
@@ -265,7 +398,7 @@ public sealed partial class L12RoomManager
                          && state.Phase == L12Phase.Main && state.PendingDefense is null)
                 {
                     var attacker = state.Players[1].Field.SelectMany(row => row)
-                        .Single(card => card?.CardId == "S01-0116");
+                        .Single(card => card?.CardId == "ST04-09");
                     scripted = new("attack", CardInstanceId: attacker!.InstanceId, Target: new("master"));
                 }
                 else if (lesson.StepId == "response-end-turn" && state.ActivePlayer == 1

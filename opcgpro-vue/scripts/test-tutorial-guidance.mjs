@@ -40,8 +40,8 @@ assert.equal(transpiled.diagnostics?.length ?? 0, 0, 'tutorial guidance helper m
 const guidance = await import(`data:text/javascript;base64,${Buffer.from(transpiled.outputText).toString('base64')}`)
 
 function card(instanceId, overrides = {}) {
-  return { instanceId, cardId: 'S01-0116', name: '西施', cardType: 'legion', faction: 'qin',
-    cost: 1, baseTroops: 2, troops: 2, disasterLevel: 0, tapped: false, summonRound: 0, ...overrides }
+  return { instanceId, cardId: 'ST01-05', name: '食铁兽', cardType: 'legion', faction: 'tianting',
+    cost: 3, baseTroops: 4000, troops: 4000, effectText: '无效果', disasterLevel: 0, tapped: false, summonRound: 0, ...overrides }
 }
 
 function player(playerIndex, overrides = {}) {
@@ -92,6 +92,9 @@ check('deploy dialogue explains reason and outcome before action', () => {
   assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /手牌/)
   assert.match(pages.map(page => `${page.body} ${page.outcome}`).join(' '), /牌库 30 张、手牌 2 张/)
   assert.match(pages.map(page => `${page.body} ${page.outcome}`).join(' '), /士气牌库 8 张/)
+  const detail = pages.find(page => page.id === 'card')
+  assert.deepEqual(detail.anchor.detailFields, ['费用', '兵力', '效果'])
+  assert.doesNotMatch(`${detail.body} ${detail.outcome}`, /军团血量/)
 })
 
 const deployedSelf = player(0, { hand: [second], handCount: 1, morale: [
@@ -120,6 +123,11 @@ check('move anchors exact rear-center DTO instance', () => {
 check('move copy says positioning is not a troop increase', () => {
   const pages = guidance.tutorialDialoguePages(tutorial('move'), moveStart, guidance.tutorialSnapshot(moveStart))
   assert.match(pages.map(page => `${page.reason} ${page.outcome}`).join(' '), /不会直接提高兵力|不会凭空增加/)
+  assert.match(pages.map(page => page.body).join(' '), /本场.*后排.*前排/)
+  const visibleCopy = pages.map(page => page.body).join(' ')
+  assert.match(visibleCopy, /本场食铁兽.*后排.*移到前排.*对面的空位.*进攻主宰/)
+  assert.doesNotMatch(visibleCopy, /所有后排|后排军团(?:都)?不能进攻/, 'Do not turn this scene-specific movement purpose into a universal rear-row restriction')
+  assert.match(visibleCopy, /支付1点费用.*新的站位/)
 })
 
 const combatCard = card('combat-practice')
@@ -200,9 +208,16 @@ for (const sfcPath of sfcPaths) {
 
 const overlaySource = fs.readFileSync(overlayPath, 'utf8')
 check('overlay contract is explicit and cannot complete from timer or click-only action', () => {
-  assert.match(overlaySource, /tutorial: ActiveTutorialState; game: GameState; busy\?: boolean/)
+  assert.match(overlaySource, /tutorial: ActiveTutorialState; game: GameState; busy\?: boolean; acceptedHandoffIdentity\?: string/)
   assert.match(overlaySource, /continueMainline: \[\]; restartScene: \[\]; exitTutorial: \[\]/)
   assert.match(overlaySource, /props\.tutorial\.status === 'completed'/)
+  assert.match(overlaySource, /props\.acceptedHandoffIdentity === key/)
+  assert.doesNotMatch(overlaySource, /completedHandoffKey/)
+  assert.match(overlaySource, /props\.tutorial\.accountId[\s\S]*props\.tutorial\.sessionId[\s\S]*props\.tutorial\.connectionGeneration/)
+  assert.match(overlaySource, /props\.tutorial\.roomCode[\s\S]*props\.tutorial\.matchId[\s\S]*props\.tutorial\.lessonId/)
+  assert.match(overlaySource, /props\.connected[\s\S]*stateAligned\.value[\s\S]*props\.tutorial\.stepId !== 'completed'/)
+  assert.match(overlaySource, /!completedResultVisible\(\)/)
+  assert.doesNotMatch(overlaySource, /presentationInFlight|l12-zone-flight-ghost|l12-card-state-transition-ghost|l12-combat-defeat-ghost/)
   assert.doesNotMatch(overlaySource, /setInterval|setTimeout/)
 })
 check('scene transition cannot capture a practice identity from the departing match', () => {
@@ -218,19 +233,29 @@ check('focus geometry is event-driven, transformed and non-blocking', () => {
   assert.match(overlaySource, /:global\(#l12-landscape-teleports > \.tutorial-guide-layer\)[\s\S]*?pointer-events:none/)
   assert.match(overlaySource, /:global\(#l12-landscape-teleports > \.tutorial-guidance-shell\)\{pointer-events:none\}/)
   assert.match(overlaySource, /if \(ownResponseGuide\.value\) return ownResponseGuide\.value/)
-  assert.match(overlaySource, /!ownResponseGuide && \(!dialogueDone/)
+  assert.match(overlaySource, /!ownResponseGuide && !dialogueDone && tutorial\.status !== 'completed'/)
   assert.match(overlaySource, /不等于已经选择不抵挡/)
 })
-check('mainline is linear and keeps one concise result line', () => {
+check('real shared card details expose and focus only fields that the card actually has', () => {
+  assert.match(overlaySource, /import CatalogCardDetails from/)
+  assert.match(overlaySource, /<CatalogCardDetails/)
+  assert.match(overlaySource, /detailFields/)
+  assert.match(overlaySource, /querySelectorAll\('dt'\)/)
+  assert.match(overlaySource, /archive-effect/)
+  assert.doesNotMatch(overlaySource, /军团血量栏/)
+})
+check('mainline is linear and does not repeat body in a second result panel', () => {
   const template = parse(overlaySource, { filename: overlayPath }).descriptor.template?.content ?? ''
   assert.doesNotMatch(template, /我想了解|回到主线|tutorial-help|tutorial-cause-and-result|为什么|会发生什么/)
-  assert.match(template, /tutorial-result-line/)
-  assert.match(template, /<footer>/)
+  assert.doesNotMatch(template, /tutorial-result-line/)
+  assert.match(template, /<details class="tutorial-secondary-actions">/)
   assert.match(template, /重学本段/)
   assert.match(template, /退出教学/)
   assert.match(overlaySource, /data-tutorial-guide-id/)
   assert.match(overlaySource, /data-tutorial-scene/)
   assert.match(overlaySource, /data-tutorial-reading/)
+  assert.doesNotMatch(template, /tutorial\.status === 'completed'[\s\S]{0,220}<button[^>]*tutorial-primary/)
+  assert.match(template, /'下一步'/)
 })
 check('payment guidance counts distinct resources, not duplicate mobile and board nodes', () => {
   assert.match(overlaySource, /selectedPaymentCount:\s*tutorialPaymentSelectionCount\(Array\.from\(document\.querySelectorAll/)
@@ -248,7 +273,8 @@ check('tutorial terminology does not expose internal lesson labels', () => {
   const template = parse(overlaySource, { filename: overlayPath }).descriptor.template?.content ?? ''
   const visibleTemplate = template.replace(':data-tutorial-scene="tutorial.lessonId"', '')
   assert.doesNotMatch(visibleTemplate, /lessonId|stepId|部署/)
-  assert.match(template, /继续主线/)
+  assert.doesNotMatch(template, /继续主线/)
+  assert.match(template, /下一步/)
 })
 
 const sourceHashes = Object.fromEntries([helperPath, ...sfcPaths].map(file => [path.relative(repo, file).replaceAll('\\', '/'),

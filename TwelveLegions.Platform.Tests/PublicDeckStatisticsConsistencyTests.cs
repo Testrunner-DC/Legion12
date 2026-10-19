@@ -135,12 +135,5 @@ public sealed class PublicDeckStatisticsConsistencyTests
         => source.Split(value, StringSplitOptions.None).Length - 1;
 
     private static string RepositoryFile(params string[] segments)
-    {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
-        {
-            var path = Path.Combine([directory.FullName, .. segments]);
-            if (File.Exists(path)) return path;
-        }
-        throw new FileNotFoundException("无法定位仓库源文件", string.Join('/', segments));
-    }
+        => PlatformTestSource.FilePath(segments);
 }

@@ -73,6 +73,31 @@ check('longer unsaved memory stays monotonic and persists after storage recovers
   assert.deepEqual(stored(storage, accountId), state(true, ['deploy', 'move']))
 })
 
+check('unsaved state survives a room change and retries only the same account', () => {
+  const accountId = 'room-left-unsaved', otherAccount = 'room-left-other'
+  const storage = new MemoryStorage(), blocked = denied(storage)
+  assert.equal(progress.markGuidedIntroductionRead(accountId, blocked), false)
+  assert.deepEqual(progress.guidedTutorialPersistenceState(accountId, blocked), { unsaved: true })
+  assert.deepEqual(progress.guidedTutorialPersistenceState(otherAccount, storage), { unsaved: false })
+  assert.equal(progress.retryGuidedTutorialProgress(otherAccount, storage), true)
+  assert.equal(storage.getItem(progress.guidedTutorialStorageKey(accountId)), null,
+    'another account must not flush the pending tutorial progress')
+  assert.equal(progress.retryGuidedTutorialProgress(accountId, storage), true)
+  assert.deepEqual(stored(storage, accountId), state(true, []))
+  assert.deepEqual(progress.guidedTutorialPersistenceState(accountId, storage), { unsaved: false })
+})
+
+check('failed retry remains visible and a later retry is idempotent', () => {
+  const accountId = 'retry-visible', storage = new MemoryStorage(), blocked = denied(storage)
+  assert.equal(progress.markGuidedIntroductionRead(accountId, blocked), false)
+  assert.equal(progress.retryGuidedTutorialProgress(accountId, blocked), false)
+  assert.deepEqual(progress.guidedTutorialPersistenceState(accountId, blocked), { unsaved: true })
+  assert.equal(progress.retryGuidedTutorialProgress(accountId, storage), true)
+  const writes = storage.writes
+  assert.equal(progress.retryGuidedTutorialProgress(accountId, storage), true)
+  assert.equal(storage.writes, writes, 'an already persisted account must not be written twice')
+})
+
 check('failed explicit reset cannot revive old storage when reads recover', () => {
   const accountId = 'pending-reset', storage = new MemoryStorage()
   seed(storage, accountId, state(true, ['deploy', 'move', 'combat']))

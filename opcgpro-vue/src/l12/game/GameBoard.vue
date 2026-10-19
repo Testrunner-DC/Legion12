@@ -65,7 +65,7 @@ const props = withDefaults(defineProps<{
   gmPlacement?: GmPlacementRequest | null
   gmPanelOpen?: boolean
 }>(), { readOnly: false, revealBothHands: false, refereeLiveView: false, spectatorLiveView: false, replayFocusCard: null, replayPlaybackSpeed: null, gmPlacement: null, gmPanelOpen: false })
-const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean] }>()
+const emit = defineEmits<{ gmPlacementResolved: []; settings: []; replayPresentationChange: [busy: boolean]; presentationChange: [busy: boolean] }>()
 const neutralLogView = computed(() => props.spectatorLiveView || props.refereeLiveView
   || props.revealBothHands || (!props.readOnly && l12State.gmEnabled))
 // Preserve the desktop hierarchy while allowing the whole board to become
@@ -202,9 +202,11 @@ const lastPublicRevealSequence = ref(0)
 const lastDiceSequence = ref(0)
 const publicRevealQueue: PublicRevealQueueItem[] = []
 const diceRevealQueue: Array<{ sequence: number; values: number[]; text: string }> = []
+const dicePresentationPending = ref(false)
 const replayZonePresentationBusy = ref(false)
 const replaySequencePresentationBusy = ref(false)
 const replayCombatPresentationBusy = ref(false)
+const combatPresentationBusy = ref(false)
 const cardPresentationCoordinator = createPresentationSequenceCoordinator(busy => { replaySequencePresentationBusy.value = busy })
 const publicRevealPresentationTracker = createPublicRevealPresentationTracker()
 let publicRevealWaiting = false
@@ -239,6 +241,7 @@ function resetCardPresentations() {
   for (const item of publicRevealQueue) item.reservation.cancel()
   publicRevealQueue.length = 0
   diceRevealQueue.length = 0
+  dicePresentationPending.value = false
   cardPresentationCoordinator.reset()
   publicRevealPresentationTracker.reset()
   const baseline = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
@@ -246,6 +249,9 @@ function resetCardPresentations() {
   lastPublicRevealSequence.value = baseline
   lastDiceSequence.value = baseline
 }
+const cardPresentationBusy = computed(() => Boolean(hiddenRevealCard.value || publicReveal.value || diceReveal.value
+  || dicePresentationPending.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value
+  || combatPresentationBusy.value))
 const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
   hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
 )))
@@ -264,6 +270,7 @@ watch(() => [props.game.matchId, props.game.revision, synchronizingAuthoritySnap
   presentationBoundaryRevision = revision
 }, { flush: 'sync' })
 watch(replayCardPresentationBusy, busy => emit('replayPresentationChange', busy), { immediate: true })
+watch(cardPresentationBusy, busy => emit('presentationChange', busy), { immediate: true })
 
 function cardRevealDuration() {
   if (!props.replayPlaybackSpeed) return l12AnimationDuration(3000, 700)
@@ -869,6 +876,7 @@ function diceValuesFromEvent(event: ActionEvent) {
   return [...rollText.matchAll(/(?:^|\s)([1-6])(?=，|,|。|$)/g)].map(match => Number(match[1])).slice(-2)
 }
 function showNextDiceReveal() {
+  dicePresentationPending.value = Boolean(diceReveal.value || diceRevealQueue.length)
   if (diceReveal.value || !diceRevealQueue.length || modalPresentationPaused.value || replayZonePresentationBusy.value) return
   const next = diceRevealQueue.shift()
   if (!next) return
@@ -988,6 +996,7 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
     .sort((left, right) => left.sequence - right.sequence)
   for (const event of fresh) {
     diceRevealQueue.push({ sequence: event.sequence, values: diceValuesFromEvent(event), text: event.text })
+    dicePresentationPending.value = true
     lastDiceSequence.value = Math.max(lastDiceSequence.value, event.sequence)
   }
   showNextDiceReveal()
@@ -1546,7 +1555,8 @@ function statusTexts(card: Card) {
               :match-id="game.matchId" :revision="game.revision" :viewer-player-index="game.you"
               :synchronizing="synchronizingAuthoritySnapshot" :paused="modalPresentationPaused" />
             <CombatMotionPresentationLayer :events="game.recentEvents ?? []" :match-id="game.matchId"
-              :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event" />
+              :playback-speed="replayPlaybackSpeed" @busy-change="replayCombatPresentationBusy = $event"
+              @presentation-change="combatPresentationBusy = $event" />
             <Teleport :to="landscapeTeleportTarget()">
               <Transition name="public-reveal">
                 <div v-if="publicReveal && !visibleBoardPromptId" :key="publicReveal.sequence" class="public-reveal-animation"

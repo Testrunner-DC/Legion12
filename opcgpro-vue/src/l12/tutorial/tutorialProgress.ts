@@ -149,6 +149,26 @@ export function loadGuidedTutorialProgress(accountId: string, storage?: Tutorial
     return copyGuidedProgress(memory?.progress || emptyGuidedProgress())
   } catch { return copyGuidedProgress(memory?.progress || emptyGuidedProgress()) }
 }
+export function guidedTutorialPersistenceState(accountId: string, storage?: TutorialProgressStorage) {
+  if (!accountId) return { unsaved: false }
+  loadGuidedTutorialProgress(accountId, storage)
+  return { unsaved: guidedMemory.get(accountId)?.unsaved === true }
+}
+export function retryGuidedTutorialProgress(accountId: string, storage?: TutorialProgressStorage) {
+  if (!accountId) return false
+  const memory = guidedMemory.get(accountId)
+  if (!memory?.unsaved) return true
+  try {
+    const selected = storage ?? browserStorage()
+    const readable = selected ? readGuidedProgress(accountId, selected) : null
+    if (!selected || !readable) return false
+    const progress = memory.pendingReset ? copyGuidedProgress(memory.progress)
+      : mergeGuidedProgress(readable, memory.progress)
+    selected.setItem(guidedTutorialStorageKey(accountId), JSON.stringify(progress))
+    rememberGuidedProgress(accountId, progress, false)
+    return true
+  } catch { return false }
+}
 function writeGuidedProgress(accountId: string, change: (progress: GuidedTutorialProgress) => boolean,
   storage?: TutorialProgressStorage) {
   try {
