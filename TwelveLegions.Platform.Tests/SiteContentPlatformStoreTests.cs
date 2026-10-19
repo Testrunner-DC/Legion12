@@ -1051,7 +1051,7 @@ public sealed class SiteContentPlatformStoreTests
                 {
                     new { id = "heading", type = "h2", text = "正式标题", align = "center", marks = Array.Empty<object>() },
                     new { id = "paragraph", type = "paragraph", text = "访问官网", align = "justify", marks = new[] { new { type = "bold", from = 0, to = 2, href = (string?)null }, new { type = "underline", from = 0, to = 2, href = (string?)null }, new { type = "strikethrough", from = 1, to = 2, href = (string?)null }, new { type = "link", from = 2, to = 4, href = (string?)"https://example.com" } } },
-                    new { id = "card", type = "card", cardId = articleCardId },
+                    new { id = "card", type = "card", cardId = articleCardId, caption = "适合在对手展开后使用" },
                     new { id = "public-deck", type = "publicDeck", reference = publicDeck.PublicCode },
                     new { id = "divider", type = "divider" },
                     new { id = "image", type = "image", mediaAssetId = media.Id, alt = "正文插图内容", caption = "图片说明" },
@@ -1062,6 +1062,10 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Equal(media.Id, Assert.Single(draft.BodyMedia!).Id);
             var published = store.PublishArticle(admin, draft.Id);
             Assert.Equal(media.Id, Assert.Single(published.BodyMedia!).Id);
+            using (var publishedBody = JsonDocument.Parse(published.Body))
+                Assert.Equal("适合在对手展开后使用", publishedBody.RootElement.GetProperty("blocks")[2].GetProperty("caption").GetString());
+            using (var publicBody = JsonDocument.Parse(Assert.Single(store.PublicArticles(kind: "news")).Body))
+                Assert.Equal("适合在对手展开后使用", publicBody.RootElement.GetProperty("blocks")[2].GetProperty("caption").GetString());
             Assert.Throws<L12SiteContentConflictException>(() => store.DeleteSiteMedia(admin, media.Id));
 
             var unsafeLink = JsonSerializer.Serialize(new
@@ -1092,6 +1096,44 @@ public sealed class SiteContentPlatformStoreTests
             });
             Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
                 "单卡额外字段", "", cardWithExtraField, "官方公告", "", "", "extra-card", false, null)));
+            var maxCaptionBody = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = "max-caption", type = "card", cardId = articleCardId, caption = new string('注', 500) } },
+            });
+            var maxCaptionDraft = store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "五百字单卡备注", "", maxCaptionBody, "官方公告", "", "", "max-card-caption", false, null));
+            using (var maxCaptionDocument = JsonDocument.Parse(maxCaptionDraft.Body))
+                Assert.Equal(500, maxCaptionDocument.RootElement.GetProperty("blocks")[0].GetProperty("caption").GetString()!.Length);
+            var missingCaptionBody = JsonSerializer.Serialize(new
+            {
+                format = "l12-blocks", version = 1,
+                blocks = new[] { new { id = "missing-caption", type = "card", cardId = articleCardId } },
+            });
+            var missingCaptionDraft = store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                "无单卡备注", "", missingCaptionBody, "官方公告", "", "", "missing-card-caption", false, null));
+            using (var missingCaptionDocument = JsonDocument.Parse(missingCaptionDraft.Body))
+                Assert.False(missingCaptionDocument.RootElement.GetProperty("blocks")[0].TryGetProperty("caption", out _));
+            foreach (var invalidCaption in new[] { new string('注', 501), "非法\u0001备注" })
+            {
+                var invalidCardCaption = JsonSerializer.Serialize(new
+                {
+                    format = "l12-blocks", version = 1,
+                    blocks = new[] { new { id = "card-caption", type = "card", cardId = articleCardId, caption = invalidCaption } },
+                });
+                Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                    "非法单卡备注", "", invalidCardCaption, "官方公告", "", "", "invalid-card-caption", false, null)));
+            }
+            foreach (var invalidCaption in new object?[] { 42, new { note = "对象" }, null })
+            {
+                var invalidCardCaption = JsonSerializer.Serialize(new
+                {
+                    format = "l12-blocks", version = 1,
+                    blocks = new object[] { new { id = "typed-card-caption", type = "card", cardId = articleCardId, caption = invalidCaption } },
+                });
+                Assert.Throws<ArgumentException>(() => store.SaveArticleDraft(admin, new L12ArticleDraft(null,
+                    "非文本单卡备注", "", invalidCardCaption, "官方公告", "", "", "typed-card-caption", false, null)));
+            }
             foreach (var invalidReference in new[] { $"/decks/{publicDeck.PublicCode}", "PRIVATE-ID", "23456789ABCE" })
             {
                 var unsafeDeck = JsonSerializer.Serialize(new

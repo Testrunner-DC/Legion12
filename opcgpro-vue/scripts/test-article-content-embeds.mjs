@@ -3,26 +3,50 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import { createRequire } from 'node:module'
 import * as articleBlocks from '../src/l12/site/articleBlocks.ts'
+import * as deckCover from '../src/l12/deckCover.ts'
 
 const { articlePublicDeckReference, parseArticleBody, serializeArticleBody } = articleBlocks
 const require = createRequire(import.meta.url)
 const Vue = require('vue')
 const ts = require('typescript')
 const { parse, compileScript } = require('@vue/compiler-sfc')
+const publicDeckSummaryModule = { exports: {} }
+const publicDeckSummaryOutput = ts.transpileModule(
+  readFileSync(new URL('../src/l12/site/publicDeckSummary.ts', import.meta.url), 'utf8'),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText
+vm.runInNewContext(publicDeckSummaryOutput, {
+  module: publicDeckSummaryModule, exports: publicDeckSummaryModule.exports,
+  require: id => {
+    if (id === '../deckCover') return deckCover
+    assert.fail(`unexpected publicDeckSummary import ${id}`)
+  },
+  console, Error, Map, Set, Promise, URL, Date,
+})
+const publicDeckSummary = publicDeckSummaryModule.exports
 
 const source = JSON.stringify({
   format: 'l12-blocks', version: 1,
   blocks: [
     { id: 'copy', type: 'paragraph', text: '正文', marks: [], align: 'left' },
-    { id: 'card', type: 'card', cardId: 'S01-0001' },
+    { id: 'card', type: 'card', cardId: 'S01-0001', caption: '关键回合再使用' },
     { id: 'deck', type: 'publicDeck', reference: '23456789ABCD' },
   ],
 })
 const parsed = parseArticleBody(source)
 assert.deepEqual(parsed.blocks.map(block => block.type), ['paragraph', 'card', 'publicDeck'])
 assert.equal(parsed.blocks[1].type === 'card' && parsed.blocks[1].cardId, 'S01-0001')
+assert.equal(parsed.blocks[1].type === 'card' && parsed.blocks[1].caption, '关键回合再使用')
 assert.equal(parsed.blocks[2].type === 'publicDeck' && parsed.blocks[2].reference, '23456789ABCD')
 assert.deepEqual(parseArticleBody(serializeArticleBody(parsed)), parsed, '卡牌与牌库块必须完整往返')
+assert.match(articleBlocks.articleBodyText(source), /关键回合再使用/, '单卡备注必须进入资讯摘要文本')
+const cleanedCaption = parseArticleBody(JSON.stringify({ format: 'l12-blocks', version: 1, blocks: [
+  { id: 'caption', type: 'card', cardId: 'S01-0001', caption: `  ${'注'.repeat(510)}  ` },
+  { id: 'empty-caption', type: 'card', cardId: 'S01-0002', caption: '   ' },
+] }))
+assert.equal(cleanedCaption.blocks[0].type === 'card' && cleanedCaption.blocks[0].caption?.length, 500)
+assert.equal(cleanedCaption.blocks[1].type === 'card' && Object.hasOwn(cleanedCaption.blocks[1], 'caption'), false,
+  '空备注不得占用正文或展示位置')
 
 assert.equal(articlePublicDeckReference('2345-6789-ABCD'), '23456789ABCD')
 assert.equal(articlePublicDeckReference('/decks/2345-6789-ABCD?from=news'), '23456789ABCD')
@@ -39,13 +63,33 @@ assert.deepEqual(dirty.blocks.map(block => block.type), ['paragraph'], '非法�
 
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8').replace(/\r\n?/g, '\n')
 const editor = read('../src/l12/site/ArticleDocumentEditor.vue')
+const picker = read('../src/l12/site/PublicDeckPicker.vue')
 const renderer = read('../src/l12/site/ArticleContentRenderer.vue')
 assert.match(editor, /import SingleCardPicker/)
-assert.match(editor, /articlePublicDeckReference\(deckInput\.value\)/)
+assert.match(editor, /import PublicDeckPicker/)
+assert.match(editor, /articlePublicDeckReference\(deck\.publicCode \|\| ''\)/)
+assert.doesNotMatch(editor, /公共牌库短码或链接|deckInput/)
 assert.match(editor, /data-article-embed/)
+assert.match(editor, /cleanArticleCardCaption/)
+assert.match(editor, /单卡备注（可空）/)
+assert.match(editor, /cardEditContext !== currentBody\(\)/)
+assert.match(picker, /import DeckCover/)
+assert.match(picker, /deckLibraryApi\.summaries\(request\)/)
+assert.match(picker, /validateSummaryPage/)
+assert.doesNotMatch(picker, /hot-deck|animation:|setInterval|iframe/i)
 assert.match(renderer, /import CardImage/)
 assert.match(renderer, /import CatalogCardDetails/)
 assert.match(renderer, /import DeckCover/)
+assert.match(renderer, /const renderItems = computed/)
+assert.match(renderer, /class="article-card-row"/)
+assert.match(renderer, /v-if="card\.caption"/)
+assert.match(renderer, /key: `cards:\$\{cards\[0\]!\.id\}`/)
+assert.match(renderer, /key: `block:\$\{block\.id\}`/)
+  assert.match(renderer, /flex-wrap:wrap/)
+  assert.match(renderer, /justify-content:center/)
+  assert.match(renderer, /flex:0 0 calc\(\(100% - var\(--article-card-gap\) - var\(--article-card-gap\)\)\/3\)/)
+assert.match(renderer, /@media\(hover:hover\) and \(pointer:fine\)/)
+assert.doesNotMatch(renderer, /<small>单卡<\/small>/)
 assert.match(renderer, /name: 'public-deck-detail'/)
 assert.match(renderer, /MAX_EMBEDDED_DECK_READS = 12/)
 assert.doesNotMatch(source, /readToken|ownerId|cardIds/, '文章正文不得存储牌库正文、私人标识或读取凭据')
@@ -63,7 +107,9 @@ const deckCode = offset => Array.from({ length: 12 }, (_, index) => alphabet[(of
 const articleBody = ({ cards = [], decks = [] } = {}) => JSON.stringify({
   format: 'l12-blocks', version: 1,
   blocks: [
-    ...cards.map((cardId, index) => ({ id: `card-${index}`, type: 'card', cardId })),
+    ...cards.map((card, index) => ({ id: `card-${index}`, type: 'card',
+      cardId: typeof card === 'string' ? card : card.cardId,
+      ...(typeof card === 'string' || !card.caption ? {} : { caption: card.caption }) })),
     ...decks.map((reference, index) => ({ id: `deck-${index}`, type: 'publicDeck', reference })),
   ],
 })
@@ -128,6 +174,137 @@ const memoryRenderer = Vue.createRenderer({
   setScopeId() {},
 })
 
+let activePickerHarness = null
+const pickerParsed = parse(picker, { filename: 'PublicDeckPicker.vue' })
+assert.deepEqual(pickerParsed.errors, [])
+const pickerScript = compileScript(pickerParsed.descriptor, { id: 'public-deck-picker-regression' })
+const pickerOutput = ts.transpileModule(pickerScript.content, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const pickerModule = { exports: {} }
+const pickerImports = {
+  vue: Vue,
+  '@/l12/decks': { loadDeckCatalog: () => activePickerHarness.loadCatalog() },
+  '@/l12/platform': { deckLibraryApi: { summaries: query => activePickerHarness.summaries(query) } },
+  '@/l12/DeckCover.vue': componentStub,
+  '@/l12/mobileViewport': { landscapeTeleportTarget: () => 'body' },
+  './articleBlocks': articleBlocks,
+  './publicDeckSummary': publicDeckSummary,
+}
+vm.runInNewContext(pickerOutput, {
+  module: pickerModule, exports: pickerModule.exports,
+  require: id => { assert.ok(Object.hasOwn(pickerImports, id), `unexpected picker import ${id}`); return pickerImports[id] },
+  console, Error, Map, Set, Promise, URLSearchParams,
+})
+const ActualPicker = pickerModule.exports.default
+ActualPicker.render = () => null
+
+const publicSummary = (reference, name = reference) => ({
+  id: `public-${reference}`, source: 'public', name, masterId: 'S01-0001', masterName: '测试主宰', faction: 'tianting',
+  author: '测试作者', publicCode: reference, publicationVersion: null, createdAt: '2026-10-20T00:00:00Z',
+  updatedAt: '2026-10-20T00:00:00Z', counts: { main: 3, uncountedMain: 0, morale: 0, special: 0, bench: 0 },
+  legal: true, legalityReason: null, environment: { status: 'known', value: '2.5', reason: null },
+  views: 0, likes: 0, copies: 0, viewerLiked: false, canEdit: false, readToken: 'a'.repeat(64),
+})
+const officialSummary = () => ({ ...publicSummary('', '官方测试牌库'), id: `official:${'b'.repeat(64)}`, source: 'official', publicCode: null, readToken: null })
+const summaryPage = (query, items, total = items.length) => ({
+  items, total, page: query.page ?? 1, pageSize: query.pageSize ?? 30, generation: 'picker-test', catalogVersion: 'catalog-test',
+  policyVersion: 1, sourceAvailability: { public: 'available', official: 'available' },
+  facets: { sources: [], masters: [], factions: [], environments: [], cards: [], legal: total, illegal: 0 },
+})
+function pickerFixture() {
+  const harness = {
+    catalogCalls: [], summaryCalls: [],
+    loadCatalog() { const call = deferred(); this.catalogCalls.push(call); return call.promise },
+    summaries(query) { const call = { query: structuredClone(query), ...deferred() }; this.summaryCalls.push(call); return call.promise },
+  }
+  activePickerHarness = harness
+  const events = []
+  const root = hostNode('root')
+  const app = memoryRenderer.createApp({ render: () => Vue.h(ActualPicker, {
+    title: '选择公共牌库', selectedReference: deckCode(0),
+    onSelect: (reference, deck) => events.push({ type: 'select', reference, deck }),
+    onClose: () => events.push({ type: 'close' }),
+  }) })
+  app.mount(root)
+  return {
+    ...harness, events,
+    get state() { return app._instance.subTree.component.setupState },
+    unmount: () => app.unmount(),
+  }
+}
+
+const pickerLifecycle = pickerFixture()
+await flush()
+assert.equal(pickerLifecycle.summaryCalls.length, 1)
+assert.deepEqual(pickerLifecycle.summaryCalls[0].query, { source: 'public', page: 1, pageSize: 12, keyword: undefined, sort: 'trend' })
+pickerLifecycle.catalogCalls[0].reject(new Error('卡面失败'))
+pickerLifecycle.state.searchDraft = '第二代'
+pickerLifecycle.state.applySearch()
+await flush()
+assert.equal(pickerLifecycle.summaryCalls.length, 2)
+const firstPickerDeck = publicSummary(deckCode(0), '旧牌库')
+const latestPickerDeck = publicSummary(deckCode(1), '新牌库')
+pickerLifecycle.summaryCalls[0].resolve(summaryPage(pickerLifecycle.summaryCalls[0].query, [firstPickerDeck]))
+await flush()
+assert.equal(pickerLifecycle.state.items.length, 0, '旧搜索成功不得覆盖新一代加载状态')
+const latestSummaryPage = summaryPage(pickerLifecycle.summaryCalls[1].query, [latestPickerDeck, officialSummary()], 2)
+assert.doesNotThrow(() => publicDeckSummary.validateSummaryPage(latestSummaryPage, pickerLifecycle.summaryCalls[1].query))
+pickerLifecycle.summaryCalls[1].resolve(latestSummaryPage)
+await flush()
+assert.equal(pickerLifecycle.state.catalogUnavailable, true, '卡面失败只降级显示，不锁死目录选择')
+assert.deepEqual(Array.from(pickerLifecycle.state.items, item => item.name), ['新牌库'],
+  `官方或无公开短码条目不可选择；状态=${pickerLifecycle.state.state}；错误=${pickerLifecycle.state.errorText}`)
+pickerLifecycle.state.choose(officialSummary())
+assert.equal(pickerLifecycle.events.length, 0)
+pickerLifecycle.state.choose(latestPickerDeck)
+assert.equal(pickerLifecycle.events[0].reference, latestPickerDeck.publicCode)
+assert.equal(Object.hasOwn(pickerLifecycle.events[0], 'readToken'), false)
+pickerLifecycle.state.page = 2
+await flush()
+assert.equal(pickerLifecycle.summaryCalls.at(-1).query.page, 2)
+pickerLifecycle.state.sort = 'latest'
+await flush()
+const stalePage = pickerLifecycle.summaryCalls.at(-2), latestSort = pickerLifecycle.summaryCalls.at(-1)
+stalePage.resolve(summaryPage(stalePage.query, [publicSummary(deckCode(2), '旧分页')], 13))
+latestSort.resolve(summaryPage(latestSort.query, [publicSummary(deckCode(3), '最新排序')], 13))
+await flush()
+assert.deepEqual(Array.from(pickerLifecycle.state.items, item => item.name), ['最新排序'])
+pickerLifecycle.unmount()
+
+const pickerRetry = pickerFixture()
+await flush()
+pickerRetry.catalogCalls[0].resolve([])
+pickerRetry.summaryCalls[0].reject(new Error('目录暂不可用'))
+await flush()
+assert.equal(pickerRetry.state.state, 'unavailable')
+pickerRetry.state.retry()
+assert.equal(pickerRetry.summaryCalls.length, 2)
+pickerRetry.summaryCalls[1].resolve(summaryPage(pickerRetry.summaryCalls[1].query, [publicSummary(deckCode(4), '重试成功')]))
+await flush()
+assert.equal(pickerRetry.state.state, 'available')
+pickerRetry.state.close()
+assert.deepEqual(pickerRetry.events.at(-1), { type: 'close' })
+pickerRetry.unmount()
+
+const pickerClosed = pickerFixture()
+await flush()
+pickerClosed.state.close()
+pickerClosed.summaryCalls[0].resolve(summaryPage(pickerClosed.summaryCalls[0].query, [publicSummary(deckCode(5), '关闭后迟到')]))
+pickerClosed.catalogCalls[0].resolve([])
+await flush()
+assert.equal(pickerClosed.state.items.length, 0, '取消后迟到响应不得写回选择器')
+pickerClosed.unmount()
+
+const pickerUnmounted = pickerFixture()
+await flush()
+const pickerUnmountedState = pickerUnmounted.state
+pickerUnmounted.unmount()
+pickerUnmounted.summaryCalls[0].reject(new Error('卸载后失败'))
+pickerUnmounted.catalogCalls[0].resolve([])
+await flush()
+assert.equal(pickerUnmountedState.items.length, 0, '卸载后迟到响应不得提交')
+
 function fixture(initialBody) {
   const harness = {
     catalogCalls: [], deckCalls: [], inFlight: 0, maxInFlight: 0,
@@ -157,6 +334,44 @@ function fixture(initialBody) {
     unmount: () => app.unmount(),
   }
 }
+
+for (const count of [1, 3, 4, 6]) {
+  const grouped = fixture(articleBody({ cards: Array.from({ length: count }, () => 'S01-0001') }))
+  await flush()
+  assert.deepEqual(Array.from(grouped.state.renderItems, item => item.kind), ['cards'])
+  assert.equal(grouped.state.renderItems[0].cards.length, count, `连续 ${count} 张单卡必须保持同一三列换行组`)
+  grouped.catalogCalls[0].resolve([testCard('S01-0001')])
+  await flush(); grouped.unmount()
+}
+const interruptedCards = fixture(JSON.stringify({ format: 'l12-blocks', version: 1, blocks: [
+  { id: 'card-a', type: 'card', cardId: 'S01-0001', caption: '有备注' },
+  { id: 'middle', type: 'paragraph', text: '分隔正文', marks: [], align: 'left' },
+  { id: 'card-b', type: 'card', cardId: 'S01-0002' },
+] }))
+await flush()
+assert.deepEqual(Array.from(interruptedCards.state.renderItems, item => item.kind), ['cards', 'block', 'cards'],
+  '正文块必须切断连续单卡分组并保持原顺序')
+assert.equal(interruptedCards.state.renderItems[0].cards[0].caption, '有备注')
+assert.equal(Object.hasOwn(interruptedCards.state.renderItems[2].cards[0], 'caption'), false)
+interruptedCards.catalogCalls[0].resolve([testCard('S01-0001'), testCard('S01-0002')])
+await flush(); interruptedCards.unmount()
+
+const collidingLegacyKeys = fixture(JSON.stringify({ format: 'l12-blocks', version: 1, blocks: [
+  { id: 'x', type: 'card', cardId: 'S01-0001' },
+  { id: 'cards-x', type: 'paragraph', text: '旧键会与卡组冲突', marks: [], align: 'left' },
+] }))
+await flush()
+assert.deepEqual(Array.from(collidingLegacyKeys.state.renderItems, item => item.key), ['cards:x', 'block:cards-x'])
+assert.equal(new Set(Array.from(collidingLegacyKeys.state.renderItems, item => item.key)).size, 2,
+  '卡组和普通块必须使用互斥键命名空间')
+collidingLegacyKeys.props.body = JSON.stringify({ format: 'l12-blocks', version: 1, blocks: [
+  { id: 'y', type: 'card', cardId: 'S01-0002' },
+  { id: 'cards-y', type: 'paragraph', text: '更新后的旧文档', marks: [], align: 'left' },
+] })
+await flush()
+assert.deepEqual(Array.from(collidingLegacyKeys.state.renderItems, item => item.key), ['cards:y', 'block:cards-y'])
+collidingLegacyKeys.catalogCalls[0].resolve([testCard('S01-0001'), testCard('S01-0002')])
+await flush(); collidingLegacyKeys.unmount()
 
 const firstReferences = Array.from({ length: 12 }, (_, index) => deckCode(index))
 const latestReferences = Array.from({ length: 12 }, (_, index) => deckCode(index + 12))

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import type { SiteMedia } from '@/l12/platform'
+import type { PublicDeckSummary, SiteMedia } from '@/l12/platform'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
-import { articleBlockId, articleInlineRuns, articleListItems, articlePublicDeckReference, cleanArticleCardId, isArticleTextBlock, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
+import PublicDeckPicker from './PublicDeckPicker.vue'
+import { articleBlockId, articleInlineRuns, articleListItems, articlePublicDeckReference, cleanArticleCardCaption, cleanArticleCardId, isArticleTextBlock, newArticleTextBlock, normalizeArticleBlockIds, parseArticleBody, safeArticleHref, serializeArticleBody, type ArticleBlock, type ArticleBodyDocument, type ArticleMark, type ArticleMarkType, type ArticleTextAlign, type ArticleTextBlock } from './articleBlocks'
 
 const props = withDefaults(defineProps<{ modelValue?: string; media?: SiteMedia[] }>(), { modelValue: '', media: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: string]; 'media-uploaded': [value: SiteMedia]; notice: [value: string] }>()
@@ -23,14 +24,16 @@ const imageAlt = ref('')
 const imageCaption = ref('')
 const editingFigure = ref<HTMLElement | null>(null)
 const cardPicker = ref(false)
+const cardCaptionPanel = ref(false)
+const pendingCard = ref<SingleCardPickerItem | null>(null)
+const cardCaption = ref('')
 const deckPanel = ref(false)
-const deckInput = ref('')
-const deckError = ref('')
 const editingEmbed = ref<HTMLElement | null>(null)
 const recentMedia = ref<SiteMedia[]>([])
 const HISTORY_DEBOUNCE_MS = 700
 let historyTimer: ReturnType<typeof setTimeout> | undefined
 let savedRange: Range | null = null
+let cardEditContext = ''
 let rendering = false
 
 const articleMedia = computed(() => [...new Map([...recentMedia.value, ...props.media].filter(item => item.kind === 'article').map(item => [item.id, item])).values()])
@@ -40,6 +43,8 @@ const canRedo = computed(() => !historyPending.value && historyIndex.value < his
 const characterCount = computed(() => articleDocument.value.blocks.reduce((sum, block) => sum + (isArticleTextBlock(block) ? block.text.length : 0), 0))
 const imageCount = computed(() => articleDocument.value.blocks.filter(block => block.type === 'image').length)
 const embedCount = computed(() => articleDocument.value.blocks.filter(block => block.type === 'card' || block.type === 'publicDeck').length)
+const editingDeckReference = computed(() => editingEmbed.value?.dataset.articleEmbed === 'publicDeck'
+  ? editingEmbed.value.dataset.embedValue || '' : '')
 
 function escapeHtml(value: string) { return value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!)) }
 function inlineHtml(block: ArticleTextBlock, from = 0, to = block.text.length) {
@@ -56,7 +61,7 @@ function inlineHtml(block: ArticleTextBlock, from = 0, to = block.text.length) {
 function blockHtml(block: ArticleBlock) {
   const id = escapeHtml(block.id)
   if (block.type === 'divider') return `<hr data-block-id="${id}">`
-  if (block.type === 'card') return embedHtml('card', block.cardId, block.cardId, block.id)
+  if (block.type === 'card') return embedHtml('card', block.cardId, block.cardId, block.id, block.caption)
   if (block.type === 'publicDeck') return embedHtml('publicDeck', block.reference, block.reference, block.id)
   if (block.type === 'image') {
     const media = mediaFor(block.mediaAssetId)
@@ -72,9 +77,12 @@ function blockHtml(block: ArticleBlock) {
   const tag = block.type === 'paragraph' ? 'p' : block.type
   return `<${tag} data-block-id="${id}"${align}>${inlineHtml(block)}</${tag}>`
 }
-function embedHtml(type: 'card' | 'publicDeck', value: string, label = value, id: string = articleBlockId()) {
+function embedHtml(type: 'card' | 'publicDeck', value: string, label = value, id: string = articleBlockId(), caption = '') {
   const kind = type === 'card' ? '单卡' : '公共牌库'
-  return `<aside class="article-embed-placeholder" data-block-id="${escapeHtml(id)}" data-article-embed="${type}" data-embed-value="${escapeHtml(value)}" contenteditable="false"><b>${kind}</b><span>${escapeHtml(label)}</span><button type="button" data-edit-embed="true" tabindex="-1">编辑${kind}</button><button type="button" data-remove-embed="true" tabindex="-1">删除${kind}</button></aside>`
+  const cleanCaption = type === 'card' ? cleanArticleCardCaption(caption) : ''
+  const captionAttribute = cleanCaption ? ` data-embed-caption="${escapeHtml(cleanCaption)}"` : ''
+  const captionText = cleanCaption ? `<small>${escapeHtml(cleanCaption)}</small>` : ''
+  return `<aside class="article-embed-placeholder" data-block-id="${escapeHtml(id)}" data-article-embed="${type}" data-embed-value="${escapeHtml(value)}"${captionAttribute} contenteditable="false"><b>${kind}</b><span>${escapeHtml(label)}</span>${captionText}<button type="button" data-edit-embed="true" tabindex="-1">编辑${kind}</button><button type="button" data-remove-embed="true" tabindex="-1">删除${kind}</button></aside>`
 }
 function documentHtml(value: ArticleBodyDocument) { return value.blocks.map(blockHtml).join('') || `<p data-block-id="${articleBlockId()}" data-align="left"><br></p>` }
 function renderCanvas() {
@@ -140,7 +148,10 @@ function parseCanvas(): ArticleBodyDocument {
     if (!(node instanceof HTMLElement)) continue
     const tag = node.tagName
     const blockIndex = blocks.length
-    if (node.dataset.articleEmbed === 'card') blocks.push({ id: node.dataset.blockId || '', type: 'card', cardId: (node.dataset.embedValue || '').slice(0, 100) })
+    if (node.dataset.articleEmbed === 'card') {
+      const caption = cleanArticleCardCaption(node.dataset.embedCaption || '')
+      blocks.push({ id: node.dataset.blockId || '', type: 'card', cardId: (node.dataset.embedValue || '').slice(0, 100), ...(caption ? { caption } : {}) })
+    }
     else if (node.dataset.articleEmbed === 'publicDeck') blocks.push({ id: node.dataset.blockId || '', type: 'publicDeck', reference: (node.dataset.embedValue || '').slice(0, 64) })
     else if (tag === 'FIGURE') blocks.push({ id: node.dataset.blockId || '', type: 'image', mediaAssetId: (node.dataset.mediaId || '').slice(0, 100), alt: (node.dataset.alt || '').slice(0, 180), caption: (node.dataset.caption || '').slice(0, 500) })
     else if (tag === 'HR') blocks.push({ id: node.dataset.blockId || '', type: 'divider' })
@@ -243,31 +254,59 @@ function replaceOrInsertEmbed(html: string) {
   editingEmbed.value = null
 }
 function openCard(event?: MouseEvent) {
-  saveSelection(); editingEmbed.value = embedFromEvent(event, 'card'); cardPicker.value = true
+  saveSelection(); editingEmbed.value = embedFromEvent(event, 'card'); cardEditContext = currentBody()
+  cardCaption.value = cleanArticleCardCaption(editingEmbed.value?.dataset.embedCaption || '')
+  if (editingEmbed.value) {
+    const cardId = cleanArticleCardId(editingEmbed.value.dataset.embedValue || '')
+    pendingCard.value = cardId ? { id: cardId, cardId, number: cardId, name: cardId, nameZh: cardId, cardType: '' } : null
+    cardCaptionPanel.value = Boolean(pendingCard.value)
+    cardPicker.value = !pendingCard.value
+  } else {
+    pendingCard.value = null; cardCaptionPanel.value = false; cardPicker.value = true
+  }
 }
 function selectCard(card: SingleCardPickerItem) {
+  if (cardEditContext !== currentBody()) { emit('notice', '正文已更新，请重新选择单卡'); closeCardCaption(); return }
   const cardId = cleanArticleCardId(card.cardId)
   if (!cardId) { emit('notice', '所选卡牌缺少规范卡号'); return }
-  replaceOrInsertEmbed(embedHtml('card', cardId, card.nameZh || card.name || cardId,
-    editingEmbed.value?.dataset.blockId || articleBlockId()))
-  cardPicker.value = false
+  pendingCard.value = { ...card, cardId }; cardPicker.value = false; cardCaptionPanel.value = true
 }
-function closeCardPicker() { cardPicker.value = false; editingEmbed.value = null }
+function saveCardEmbed() {
+  if (cardEditContext !== currentBody()) { emit('notice', '正文已更新，请重新编辑单卡'); closeCardCaption(); return }
+  const card = pendingCard.value
+  const cardId = cleanArticleCardId(card?.cardId || '')
+  if (!card || !cardId) { emit('notice', '请先选择单卡'); return }
+  replaceOrInsertEmbed(embedHtml('card', cardId, card.nameZh || card.name || cardId,
+    editingEmbed.value?.dataset.blockId || articleBlockId(), cardCaption.value))
+  cardPicker.value = false; cardCaptionPanel.value = false; pendingCard.value = null; cardCaption.value = ''; cardEditContext = ''
+}
+function closeCardCaption() {
+  cardPicker.value = false; cardCaptionPanel.value = false; pendingCard.value = null; cardCaption.value = ''
+  editingEmbed.value = null; cardEditContext = ''
+}
+function closeCardPicker() {
+  cardPicker.value = false
+  if (!cardCaptionPanel.value) closeCardCaption()
+}
 function openDeck(event?: MouseEvent) {
   saveSelection(); editingEmbed.value = embedFromEvent(event, 'publicDeck')
-  deckInput.value = editingEmbed.value?.dataset.embedValue || ''; deckError.value = ''; deckPanel.value = true
+  deckPanel.value = true
 }
-function saveDeckEmbed() {
-  const reference = articlePublicDeckReference(deckInput.value)
-  if (!reference) { deckError.value = '请输入公共牌库短码或 /decks/短码 链接'; return }
-  replaceOrInsertEmbed(embedHtml('publicDeck', reference, reference,
+function selectDeck(reference: string, deck: PublicDeckSummary) {
+  const canonical = articlePublicDeckReference(reference)
+  if (!canonical || deck.source !== 'public' || articlePublicDeckReference(deck.publicCode || '') !== canonical) {
+    emit('notice', '所选公共牌库缺少规范公开短码')
+    return
+  }
+  replaceOrInsertEmbed(embedHtml('publicDeck', canonical, deck.name || canonical,
     editingEmbed.value?.dataset.blockId || articleBlockId()))
-  deckPanel.value = false; deckInput.value = ''; deckError.value = ''
+  deckPanel.value = false
 }
-function closeDeckPanel() { deckPanel.value = false; deckInput.value = ''; deckError.value = ''; editingEmbed.value = null }
+function closeDeckPanel() { deckPanel.value = false; editingEmbed.value = null }
 function removeEmbed() {
   if (editingEmbed.value?.isConnected) editingEmbed.value.remove()
-  cardPicker.value = false; deckPanel.value = false; editingEmbed.value = null; deckInput.value = ''; deckError.value = ''
+  cardPicker.value = false; cardCaptionPanel.value = false; pendingCard.value = null; cardCaption.value = ''; cardEditContext = ''
+  deckPanel.value = false; editingEmbed.value = null
   scheduleHistory()
 }
 function canvasClick(event: MouseEvent) {
@@ -303,7 +342,8 @@ onBeforeUnmount(clearTimer)
     <div v-else class="canvas-wrap"><div ref="canvas" class="editor-canvas" contenteditable="true" spellcheck="true" data-placeholder="从这里开始撰写文章……" @input="scheduleHistory" @paste="pastePlainText" @mouseup="saveSelection" @keyup="saveSelection" @click="canvasClick" @blur="flushHistory"/><footer><span>{{ characterCount }} 字 · {{ imageCount }} 张图 · {{ embedCount }} 个卡牌/牌库</span><span>点击图片可再次编辑；单卡和公共牌库也可点击编辑</span></footer></div>
     <div v-if="linkPanel" class="dialog-mask" @mousedown.self="linkPanel = false"><section class="editor-dialog"><header><b>添加文字链接</b><button @click="linkPanel = false">×</button></header><label>链接地址<input v-model="linkHref" autofocus placeholder="/news/文章ID 或 https://example.com" @input="linkError = ''" @keydown.enter.prevent="applyLink"></label><small>仅允许站内路径或 http(s) 地址。</small><p v-if="linkError">{{ linkError }}</p><footer><button class="primary" @click="applyLink">应用链接</button><button @click="removeLink">移除链接</button><button @click="linkPanel = false">取消</button></footer></section></div>
     <div v-if="imagePanel" class="dialog-mask" @mousedown.self="imagePanel = false"><section class="editor-dialog image-dialog"><header><b>{{ editingFigure ? '编辑正文图片' : '插入正文图片' }}</b><button @click="imagePanel = false">×</button></header><label>已上传图片<select v-model="imageAssetId"><option value="">请选择</option><option v-for="item in articleMedia" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><img v-if="mediaFor(imageAssetId)" :src="mediaFor(imageAssetId)?.thumbnailUrl" :alt="imageAlt || mediaFor(imageAssetId)?.altText"><label>替代文字<input v-model="imageAlt" maxlength="180" placeholder="描述图片中的关键信息"></label><label>图片说明（可空）<input v-model="imageCaption" maxlength="500" placeholder="显示在图片下方"></label><details><summary>上传新图片</summary><MediaUploadField kind="article" :initial-alt="imageAlt" @uploaded="uploaded" @notice="emit('notice', $event)"/></details><footer><button class="primary" @click="saveImage">{{ editingFigure ? '保存图片' : '插入到光标处' }}</button><button v-if="editingFigure" class="danger" @click="removeImage">删除图片</button><button @click="imagePanel = false">取消</button></footer></section></div>
-    <div v-if="deckPanel" class="dialog-mask" @mousedown.self="closeDeckPanel"><section class="editor-dialog"><header><b>{{ editingEmbed ? '编辑公共牌库' : '插入公共牌库' }}</b><button @click="closeDeckPanel">×</button></header><label>公共牌库短码或链接<input v-model="deckInput" autofocus maxlength="240" placeholder="CODE12 或 /decks/CODE12" @input="deckError = ''" @keydown.enter.prevent="saveDeckEmbed"></label><small>正文只保存公开短码，展示时使用当前公共牌库内容。</small><p v-if="deckError">{{ deckError }}</p><footer><button class="primary" @click="saveDeckEmbed">{{ editingEmbed ? '保存牌库' : '插入到光标处' }}</button><button v-if="editingEmbed" class="danger" @click="removeEmbed">删除牌库</button><button @click="closeDeckPanel">取消</button></footer></section></div>
+    <div v-if="cardCaptionPanel" class="dialog-mask" @mousedown.self="closeCardCaption"><section class="editor-dialog"><header><b>{{ editingEmbed ? '编辑资讯单卡' : '插入资讯单卡' }}</b><button aria-label="关闭单卡编辑" @click="closeCardCaption">×</button></header><p class="card-caption-selection">{{ pendingCard?.nameZh || pendingCard?.name || pendingCard?.cardId }}</p><label>单卡备注（可空）<textarea v-model="cardCaption" maxlength="500" rows="3" placeholder="显示在卡图下方；留空则不占位置"/></label><small>备注会在卡图下方居中显示。</small><footer><button class="primary" @click="saveCardEmbed">{{ editingEmbed ? '保存单卡' : '插入单卡' }}</button><button @click="cardPicker = true">更换单卡</button><button v-if="editingEmbed" class="danger" @click="removeEmbed">删除单卡</button><button @click="closeCardCaption">取消</button></footer></section></div>
+    <PublicDeckPicker v-if="deckPanel" :title="editingEmbed ? '更换公共牌库' : '插入公共牌库'" :selected-reference="editingDeckReference" @select="selectDeck" @close="closeDeckPanel"/>
     <SingleCardPicker v-if="cardPicker" title="插入资讯单卡" @select="selectCard" @close="closeCardPicker"/>
   </section>
 </template>
@@ -313,7 +353,9 @@ onBeforeUnmount(clearTimer)
 .rich-toolbar .embed-tool{border-color:#8c733c;color:#e0bf67}
 .editor-canvas :deep(.article-embed-placeholder){display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;margin:1.5em 0;padding:14px;border:1px solid #aa8b42;background:#191a15;color:#f2e7c5;cursor:pointer}
 .editor-canvas :deep(.article-embed-placeholder span){overflow:hidden;color:#d0c7aa;text-overflow:ellipsis;white-space:nowrap}
+.editor-canvas :deep(.article-embed-placeholder small){grid-column:1/-1;color:#b8aa84;text-align:center;white-space:pre-wrap}
 .editor-canvas :deep(.article-embed-placeholder button){min-height:34px;border-color:#8c733c;color:#e0bf67}
 .editor-canvas :deep(.article-embed-placeholder [data-remove-embed]){border-color:#82414a;color:#ef929e}
+.document-editor textarea{box-sizing:border-box;width:100%;min-height:88px;padding:8px 11px;resize:vertical;border:1px solid #526069;background:#070d12;color:#f2f4f3;font:inherit;font-size:14px}.editor-dialog>.card-caption-selection{color:#f1d77e;font-weight:900}
 @media(max-width:760px){.editor-canvas :deep(.article-embed-placeholder){grid-template-columns:1fr 1fr}.editor-canvas :deep(.article-embed-placeholder span){grid-column:1/-1;grid-row:2}}
 </style>

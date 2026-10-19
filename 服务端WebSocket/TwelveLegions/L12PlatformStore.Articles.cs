@@ -623,12 +623,16 @@ public sealed partial class L12PlatformStore
 
                 if (type == "card")
                 {
-                    RequireOnlyProperties(block, "id", "type", "cardId");
+                    RequireOnlyProperties(block, "id", "type", "cardId", "caption");
                     var cardId = JsonString(block, "cardId");
+                    ValidateJsonString(block, "caption", 500);
+                    var caption = JsonString(block, "caption");
                     var canonicalCardId = cardId.Trim().ToUpperInvariant();
                     if (cardId != canonicalCardId || cardId.Length is 0 or > 100 || HasUnsafeControlCharacters(cardId)
                         || _officialCards.Count == 0 || !_officialCards.ContainsKey(cardId))
                         throw new ArgumentException($"正文单卡必须引用权威卡池中的规范卡号：{cardId}");
+                    if (HasUnsafeControlCharacters(caption))
+                        throw new ArgumentException("正文单卡备注超过限制或包含控制字符");
                     hasContent = true;
                     continue;
                 }

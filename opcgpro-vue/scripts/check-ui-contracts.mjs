@@ -136,6 +136,9 @@ const adminSiteContent = read('../src/l12/site/AdminSiteContentPanel.vue')
 const mediaUploadField = read('../src/l12/site/MediaUploadField.vue')
 const articleBlockEditor = read('../src/l12/site/ArticleBlockEditor.vue')
 const articleDocumentEditor = read('../src/l12/site/ArticleDocumentEditor.vue')
+const articleCaptionTextareas = [...articleDocumentEditor.matchAll(/<textarea\b[^>]*>/g)].map(match => match[0])
+const articleHasOnlyCaptionTextarea = articleCaptionTextareas.length === 1 && articleCaptionTextareas.every(tag =>
+  tag.includes('v-model="cardCaption"') && tag.includes('maxlength="500"'))
 const articleBlockModel = read('../src/l12/site/articleBlocks.ts')
 const articleRenderer = read('../src/l12/site/ArticleContentRenderer.vue')
 const adminMatches = read('../src/l12/site/AdminMatchesPanel.vue')
@@ -1321,7 +1324,7 @@ const contracts = [
     && articleDocumentEditor.includes("command('insertUnorderedList')") && articleDocumentEditor.includes("command('insertOrderedList')")
     && articleDocumentEditor.includes('↶ 撤销') && articleDocumentEditor.includes('↷ 重做')
     && articleDocumentEditor.includes('MediaUploadField kind="article"') && articleDocumentEditor.includes('预览文章')
-    && !articleDocumentEditor.includes('class="editor-block"') && !articleDocumentEditor.includes('<textarea')
+    && !articleDocumentEditor.includes('class="editor-block"') && articleHasOnlyCaptionTextarea
     && articleBlockModel.includes("format: 'l12-blocks'") && articleBlockModel.includes('safeArticleHref')
     && articleBlockModel.includes("'underline'") && articleBlockModel.includes("'strikethrough'") && articleBlockModel.includes('ArticleTextAlign')
     && articleRenderer.includes('<blockquote') && articleRenderer.includes('<figure') && articleRenderer.includes('alignStyle') && !articleRenderer.includes('v-html')

@@ -27,7 +27,7 @@ export interface ArticleImageBlock {
 }
 
 export interface ArticleDividerBlock { id: string; type: 'divider' }
-export interface ArticleCardBlock { id: string; type: 'card'; cardId: string }
+export interface ArticleCardBlock { id: string; type: 'card'; cardId: string; caption?: string }
 export interface ArticlePublicDeckBlock { id: string; type: 'publicDeck'; reference: string }
 export type ArticleBlock = ArticleTextBlock | ArticleImageBlock | ArticleDividerBlock | ArticleCardBlock | ArticlePublicDeckBlock
 export interface ArticleBodyDocument { format: 'l12-blocks'; version: 1; blocks: ArticleBlock[] }
@@ -76,8 +76,9 @@ export function newArticleImageBlock(): ArticleImageBlock {
 }
 
 export function newArticleDividerBlock(): ArticleDividerBlock { return { id: articleBlockId(), type: 'divider' } }
-export function newArticleCardBlock(cardId: string): ArticleCardBlock {
-  return { id: articleBlockId(), type: 'card', cardId: cleanArticleCardId(cardId) }
+export function newArticleCardBlock(cardId: string, caption = ''): ArticleCardBlock {
+  const cleanCaption = cleanArticleCardCaption(caption)
+  return { id: articleBlockId(), type: 'card', cardId: cleanArticleCardId(cardId), ...(cleanCaption ? { caption: cleanCaption } : {}) }
 }
 export function newArticlePublicDeckBlock(reference: string): ArticlePublicDeckBlock {
   return { id: articleBlockId(), type: 'publicDeck', reference: articlePublicDeckReference(reference) }
@@ -91,6 +92,8 @@ export function cleanArticleCardId(value: string) {
   const cardId = value.trim()
   return /^[A-Za-z0-9-]{1,100}$/.test(cardId) ? cardId : ''
 }
+
+export function cleanArticleCardCaption(value: string) { return value.trim().slice(0, 500) }
 
 export function articlePublicDeckReference(value: string) {
   const input = value.trim()
@@ -141,7 +144,8 @@ function cleanStructuredBlock(value: unknown): ArticleBlock | null {
   if (block.type === 'divider') return { id, type: 'divider' }
   if (block.type === 'card') {
     const cardId = cleanArticleCardId(String(block.cardId || ''))
-    return cardId ? { id, type: 'card', cardId } : null
+    const caption = cleanArticleCardCaption(String(block.caption || ''))
+    return cardId ? { id, type: 'card', cardId, ...(caption ? { caption } : {}) } : null
   }
   if (block.type === 'publicDeck') {
     const reference = articlePublicDeckReference(String(block.reference || ''))
@@ -174,7 +178,8 @@ export function serializeArticleBody(document: ArticleBodyDocument) {
 }
 
 export function articleBodyText(value?: string | null, limit = 260) {
-  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption : isArticleTextBlock(block) ? block.text : '')
+  const text = parseArticleBody(value).blocks.map(block => block.type === 'image' ? block.caption
+    : block.type === 'card' ? block.caption || '' : isArticleTextBlock(block) ? block.text : '')
     .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim()
   return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text
 }
