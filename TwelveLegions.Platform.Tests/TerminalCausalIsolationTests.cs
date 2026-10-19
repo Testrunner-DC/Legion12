@@ -1042,8 +1042,195 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         Assert.True(IsLargeStateLegionCandidate(own, hand[1], 0));
     }
 
+    [Fact]
+    public async Task TenNaturalFriendlyRoomsReachBothLargeActiveViewsBeforeAnyPerformanceTiming()
+    {
+        // This is a preparation feasibility gate, not a ten-room latency/capacity claim.
+        using var budget = new CancellationTokenSource(TimeSpan.FromMinutes(4));
+        using var identity = new RankedIdentityFixture();
+        await using var recorder = new MatchRecorder(Path.Combine(
+            Path.GetDirectoryName(identity.Path)!, "ten-room-preparation.db"));
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(identity.Catalog, recorder, identity.Store);
+        await using var server = new L12WebSocketServer(rooms, recorder, identity.Store,
+            identity.Catalog, null, null, null, null, null, null, null);
+        var peers = new List<SocketPeer>();
+        var startedRooms = new List<StartedLargeRoom>();
+        var grownRooms = new List<GrownLargeRoom>();
+        var serverStarted = false;
+        try
+        {
+            await server.StartAsync(0).WaitAsync(SetupDeadline);
+            serverStarted = true;
+            var endpoint = new UriBuilder(Assert.Single(server.Addresses))
+                { Host = "127.0.0.1", Scheme = "ws", Path = "/ws" }.Uri;
+            for (var slot = 0; slot < 10; slot++)
+            {
+                budget.Token.ThrowIfCancellationRequested();
+                var actor = identity.Store.Register($"pa{Guid.NewGuid():N}"[..10], "Password123!");
+                var opponent = identity.Store.Register($"pb{Guid.NewGuid():N}"[..10], "Password123!");
+                Assert.True(actor.Success);
+                Assert.True(opponent.Success);
+                peers.Add(await SocketPeer.ConnectAsync(endpoint, actor.Token!, budget.Token));
+                peers.Add(await SocketPeer.ConnectAsync(endpoint, opponent.Token!, budget.Token));
+                startedRooms.Add(await StartLargeFriendlyGameAsync(
+                    peers[slot * 2], peers[slot * 2 + 1], budget.Token, (0, 1)));
+            }
+            Assert.Equal(10, startedRooms.Select(room => room.MatchId).Distinct().Count());
+            for (var slot = 0; slot < 10; slot++)
+            {
+                var grown = await GrowLargeFriendlyRoomAsync(
+                    peers[slot * 2], peers[slot * 2 + 1], startedRooms[slot], budget.Token);
+                grownRooms.Add(grown);
+                output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    stage = "legal-preparation", slot, acceptedCommands = grown.AcceptedCommands,
+                    commandTypes = grown.CommandTypes, logicalViewBytes = grown.PreTerminalBytes,
+                    presetIndexes = new[] { 0, 1 }, performanceTimingStarted = false,
+                }));
+            }
+
+            // Flush queued frames before the final all-room barrier. In particular a timed
+            // response must not let an older, larger preparation view stand in for current state.
+            for (var slot = 0; slot < 10; slot++)
+            {
+                var actor = peers[slot * 2];
+                var opponent = peers[slot * 2 + 1];
+                await actor.SendAsync(new { type = "ping" }, budget.Token);
+                await opponent.SendAsync(new { type = "ping" }, budget.Token);
+                await Task.WhenAll(actor.ReceiveTypeAsync("pong", SetupDeadline, budget.Token),
+                    opponent.ReceiveTypeAsync("pong", SetupDeadline, budget.Token));
+                var boundPeers = new SocketPeer[2];
+                var latest = new ReceivedFrame[2];
+                BindPlayerFrame(actor, startedRooms[slot].Actor, boundPeers, latest);
+                BindPlayerFrame(opponent, startedRooms[slot].Opponent, boundPeers, latest);
+                foreach (var peer in new[] { actor, opponent })
+                    BindPlayerFrame(peer, peer.Received.Last(frame =>
+                        ReadString(frame.Payload, "type") == "gameState"), boundPeers, latest);
+                var checkedRoom = CompleteLargeRoomPreparation(latest, startedRooms[slot].MatchId,
+                    startedRooms[slot].RoomCode,
+                    grownRooms[slot].AcceptedCommands, grownRooms[slot].CommandTypes);
+                output.WriteLine(JsonSerializer.Serialize(new
+                {
+                    stage = "all-room-barrier", slot, logicalViewBytes = checkedRoom.PreTerminalBytes,
+                    revision = ReadInt64(latest[0].Payload.GetProperty("state"), "revision"),
+                    performanceTimingStarted = false,
+                }));
+            }
+            output.WriteLine("ten-room legal preparation barrier passed; no terminal/performance workload measured");
+        }
+        finally
+        {
+            foreach (var peer in peers) await peer.DisposeAsync();
+            if (serverStarted) await server.StopAsync().WaitAsync(SetupDeadline);
+        }
+    }
+
+    [Theory]
+    [InlineData(180 * 1024 - 1, "Main")]
+    [InlineData(300 * 1024 + 1, "Main")]
+    [InlineData(180 * 1024, "GameOver")]
+    public void LargePreparationCannotSucceedAfterCommandBudgetWithUndersizeOrEndedView(
+        int secondViewBytes, string secondViewPhase)
+    {
+        // Synthetic boundary-only frames: these declared sizes are not a workload proof.
+        var frames = new[]
+        {
+            PreparationBoundaryFrame(0, PreferredPreTerminalBytes, "Main"),
+            PreparationBoundaryFrame(1, secondViewBytes, secondViewPhase),
+        };
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => CompleteLargeRoomPreparation(
+            frames, "boundary-match", "boundary-room", MaximumAcceptedLargeStateCommands,
+            new Dictionary<string, int>()));
+    }
+
+    [Theory]
+    [InlineData("other-match", "boundary-room", 1, 7)]
+    [InlineData("boundary-match", "other-room", 1, 7)]
+    [InlineData("boundary-match", "boundary-room", 0, 7)]
+    [InlineData("boundary-match", "boundary-room", 1, 8)]
+    public void LargePreparationRejectsMixedMatchRoomSeatOrRevision(
+        string matchId, string roomCode, int secondSeat, long revision)
+    {
+        var frames = new[]
+        {
+            PreparationBoundaryFrame(0, PreferredPreTerminalBytes, "Main"),
+            PreparationBoundaryFrame(secondSeat, PreferredPreTerminalBytes, "Main", matchId, roomCode, revision),
+        };
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => CompleteLargeRoomPreparation(
+            frames, "boundary-match", "boundary-room", MaximumAcceptedLargeStateCommands,
+            new Dictionary<string, int>()));
+    }
+
+    [Theory]
+    [InlineData(180 * 1024)]
+    [InlineData(300 * 1024)]
+    public void LargePreparationAcceptsExactBoundsEvenOnTheLastAllowedCommand(int bytes)
+    {
+        var frames = new[]
+        {
+            PreparationBoundaryFrame(0, bytes, "Main"),
+            PreparationBoundaryFrame(1, bytes, "Main"),
+        };
+        var grown = CompleteLargeRoomPreparation(frames, "boundary-match", "boundary-room",
+            MaximumAcceptedLargeStateCommands, new Dictionary<string, int>());
+        Assert.Equal(new[] { bytes, bytes }, grown.PreTerminalBytes);
+    }
+
+    [Fact]
+    public async Task LargePreparationRejectsSwappedSocketSeatsInsteadOfSortingThemAway()
+    {
+        await using var actor = new SocketPeer();
+        await using var opponent = new SocketPeer();
+        var boundPeers = new SocketPeer[2];
+        var latest = new ReceivedFrame[2];
+        BindPlayerFrame(actor, PreparationBoundaryFrame(0, PreferredPreTerminalBytes, "Main"), boundPeers, latest);
+        BindPlayerFrame(opponent, PreparationBoundaryFrame(1, PreferredPreTerminalBytes, "Main"), boundPeers, latest);
+        Assert.ThrowsAny<Xunit.Sdk.XunitException>(() => BindPlayerFrame(
+            actor, PreparationBoundaryFrame(1, PreferredPreTerminalBytes, "Main"), boundPeers, latest));
+    }
+
+    private static ReceivedFrame PreparationBoundaryFrame(int playerIndex, int bytes, string phase,
+        string matchId = "boundary-match", string roomCode = "boundary-room", long revision = 7)
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            type = "gameState",
+            state = new { matchId, roomCode, you = playerIndex, revision, phase, players = new object[] { new { }, new { } } },
+        }, Wire));
+        return new(document.RootElement.Clone(), Stopwatch.GetTimestamp(), bytes);
+    }
+
+    private static GrownLargeRoom CompleteLargeRoomPreparation(
+        IReadOnlyList<ReceivedFrame> frames, string matchId, string roomCode, int acceptedCommands,
+        IReadOnlyDictionary<string, int> commandTypes)
+    {
+        Assert.Equal(2, frames.Count);
+        Assert.InRange(acceptedCommands, 0, MaximumAcceptedLargeStateCommands);
+        for (var index = 0; index < frames.Count; index++)
+        {
+            var frame = frames[index];
+            Assert.Equal("gameState", ReadString(frame.Payload, "type"));
+            var state = frame.Payload.GetProperty("state");
+            Assert.Equal(matchId, ReadString(state, "matchId"));
+            Assert.Equal(roomCode, ReadString(state, "roomCode"));
+            Assert.Equal(index, ReadInt32(state, "you"));
+            Assert.Equal(2, state.GetProperty("players").GetArrayLength());
+            Assert.False(string.IsNullOrWhiteSpace(ReadString(state, "phase")));
+            Assert.False(IsGameOver(frame.Payload),
+                $"preparation ended the game after {acceptedCommands} commands");
+            Assert.True(frame.RawBytes >= PreferredPreTerminalBytes && frame.RawBytes <= MaximumTerminalBytes,
+                $"preparation incomplete after {acceptedCommands}/{MaximumAcceptedLargeStateCommands} commands: " +
+                $"player {index} view={frame.RawBytes}, required={PreferredPreTerminalBytes}..{MaximumTerminalBytes}");
+        }
+        Assert.Equal(ReadInt64(frames[0].Payload.GetProperty("state"), "revision"),
+            ReadInt64(frames[1].Payload.GetProperty("state"), "revision"));
+        return new(acceptedCommands, commandTypes, frames.Select(frame => frame.RawBytes).ToArray());
+    }
+
     private static async Task<GrownLargeRoom> GrowLargeFriendlyRoomAsync(
-        SocketPeer actor, SocketPeer opponent, StartedLargeRoom started)
+        SocketPeer actor, SocketPeer opponent, StartedLargeRoom started,
+        CancellationToken cancellationToken = default)
     {
         var peersByPlayer = new SocketPeer[2];
         var latestByPlayer = new ReceivedFrame[2];
@@ -1058,6 +1245,7 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         while (acceptedCommands < MaximumAcceptedLargeStateCommands
                && latestByPlayer.Min(frame => frame.RawBytes) < PreferredPreTerminalBytes)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Assert.DoesNotContain(latestByPlayer,
                 frame => IsGameOver(frame.Payload));
             var selected = SelectLargeStateCommand(latestByPlayer, playedTurns, selector);
@@ -1066,34 +1254,44 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             var revisionBefore = ReadInt64(
                 latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state"), "revision");
             var requestId = $"large-state-{acceptedCommands:D3}-{Guid.NewGuid():N}";
+            using var exchange = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var confirmationTask = sender.ReceiveAsync(
-                payload => ReadString(payload, "requestId") == requestId, SetupDeadline);
+                payload => ReadString(payload, "requestId") == requestId, SetupDeadline, exchange.Token);
             var peerTask = other.ReceiveAsync(
-                payload => IsAdvancedGameState(payload, revisionBefore), SetupDeadline);
-            await sender.SendAsync(new
+                payload => IsAdvancedGameState(payload, revisionBefore), SetupDeadline, exchange.Token);
+            ReceivedFrame confirmation;
+            ReceivedFrame peerFrame;
+            try
             {
-                type = "gameAction",
-                requestId,
-                command = selected.Command,
-            });
-            var confirmation = await confirmationTask;
-            if (ReadString(confirmation.Payload, "type") != "gameState")
+                await sender.SendAsync(new
+                {
+                    type = "gameAction", requestId, command = selected.Command,
+                }, exchange.Token);
+                confirmation = await confirmationTask;
+                if (ReadString(confirmation.Payload, "type") != "gameState")
+                {
+                    // Synthetic failure context only; no extra successful-path serialization.
+                    var inputState = latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state");
+                    var handContext = selected.Type == "playCard"
+                        ? PlayerView(inputState, selected.PlayerIndex).GetProperty("hand").GetRawText()
+                        : "<not-playCard>";
+                    Assert.Fail($"large-state preparation rejected command {acceptedCommands} ({selected.Type}) " +
+                        $"at revision {revisionBefore}; command={JsonSerializer.Serialize(selected.Command, Wire)}; " +
+                        $"phase={ReadString(inputState, "phase")}; prompts={inputState.GetProperty("prompts").GetRawText()}; " +
+                        $"hand={handContext}; reply={confirmation.Payload.GetRawText()}");
+                }
+                peerFrame = await peerTask;
+            }
+            catch
             {
-                // Synthetic fixture context only. Do not allocate a second full
-                // state string on the successful setup path or hide a rejection.
-                var inputState = latestByPlayer[selected.PlayerIndex].Payload.GetProperty("state");
-                var handContext = selected.Type == "playCard"
-                    ? PlayerView(inputState, selected.PlayerIndex).GetProperty("hand").GetRawText()
-                    : "<not-playCard>";
-                Assert.Fail($"large-state preparation rejected command {acceptedCommands} ({selected.Type}) " +
-                    $"at revision {revisionBefore}; command={JsonSerializer.Serialize(selected.Command, Wire)}; " +
-                    $"phase={ReadString(inputState, "phase")}; prompts={inputState.GetProperty("prompts").GetRawText()}; " +
-                    $"hand={handContext}; reply={confirmation.Payload.GetRawText()}");
+                exchange.Cancel();
+                // Drain both receives before the caller tears down sockets. Preserve the original failure.
+                try { await Task.WhenAll(confirmationTask, peerTask); } catch { }
+                throw;
             }
             Assert.Equal("gameState", ReadString(confirmation.Payload, "type"));
             Assert.True(IsAdvancedGameState(confirmation.Payload, revisionBefore),
                 $"accepted {selected.Type} did not advance the authoritative revision");
-            var peerFrame = await peerTask;
             BindPlayerFrame(sender, confirmation, peersByPlayer, latestByPlayer);
             BindPlayerFrame(other, peerFrame, peersByPlayer, latestByPlayer);
             Assert.Equal(
@@ -1104,35 +1302,79 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             acceptedCommands++;
         }
 
-        var preTerminalBytes = latestByPlayer.Select(frame => frame.RawBytes).ToArray();
-        return new(acceptedCommands, commandTypes, preTerminalBytes);
+        return CompleteLargeRoomPreparation(latestByPlayer, started.MatchId, started.RoomCode,
+            acceptedCommands, commandTypes);
     }
 
     private static async Task<StartedLargeRoom> StartLargeFriendlyGameAsync(
-        SocketPeer actor, SocketPeer opponent)
+        SocketPeer actor, SocketPeer opponent, CancellationToken cancellationToken = default,
+        (int Actor, int Opponent)? presetIndexes = null)
     {
+        using var exchange = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cancellationToken = exchange.Token;
+        var receives = new List<Task<ReceivedFrame>>();
+        Task<ReceivedFrame> Receive(SocketPeer peer, string type)
+        {
+            var pending = peer.ReceiveTypeAsync(type, SetupDeadline, cancellationToken);
+            receives.Add(pending);
+            return pending;
+        }
+        try
+        {
         await actor.SendAsync(new
         {
             type = "createRoom",
             options = new { matchModeId = "friendly" },
-        });
-        var created = await actor.ReceiveTypeAsync("roomState", SetupDeadline);
+        }, cancellationToken);
+        var created = await Receive(actor, "roomState");
         var roomCode = ReadString(created.Payload, "roomCode");
         Assert.False(string.IsNullOrWhiteSpace(roomCode));
 
-        var actorJoined = actor.ReceiveTypeAsync("roomState", SetupDeadline);
-        var opponentJoined = opponent.ReceiveTypeAsync("roomState", SetupDeadline);
-        await opponent.SendAsync(new { type = "joinRoom", roomCode });
+        var actorJoined = Receive(actor, "roomState");
+        var opponentJoined = Receive(opponent, "roomState");
+        await opponent.SendAsync(new { type = "joinRoom", roomCode }, cancellationToken);
         await Task.WhenAll(actorJoined, opponentJoined);
 
-        var actorReady = actor.ReceiveTypeAsync("roomState", SetupDeadline);
-        var opponentSeesReady = opponent.ReceiveTypeAsync("roomState", SetupDeadline);
-        await actor.SendAsync(new { type = "ready", ready = true });
+        if (presetIndexes is { } presets)
+        {
+            var actorSeat = ReadInt32(actorJoined.Result.Payload, "yourPlayerIndex");
+            var opponentSeat = ReadInt32(opponentJoined.Result.Payload, "yourPlayerIndex");
+            Assert.InRange(actorSeat, 0, 1);
+            Assert.InRange(opponentSeat, 0, 1);
+            Assert.NotEqual(actorSeat, opponentSeat);
+            var selectedIndexes = new Dictionary<int, int>();
+            foreach (var (peer, seat, deckIndex) in new[]
+            {
+                (actor, actorSeat, presets.Actor),
+                (opponent, opponentSeat, presets.Opponent),
+            })
+            {
+                var actorSelected = Receive(actor, "roomState");
+                var opponentSelected = Receive(opponent, "roomState");
+                await peer.SendAsync(new { type = "selectDeck", deckIndex }, cancellationToken);
+                var selected = await Task.WhenAll(actorSelected, opponentSelected);
+                selectedIndexes[seat] = deckIndex;
+                foreach (var frame in selected)
+                {
+                    Assert.Equal(roomCode, ReadString(frame.Payload, "roomCode"));
+                    foreach (var (selectedSeat, selectedIndex) in selectedIndexes)
+                    {
+                        var member = frame.Payload.GetProperty("players").EnumerateArray()
+                            .Single(player => ReadInt32(player, "playerIndex") == selectedSeat);
+                        Assert.Equal(selectedIndex, ReadInt32(member, "deckIndex"));
+                    }
+                }
+            }
+        }
+
+        var actorReady = Receive(actor, "roomState");
+        var opponentSeesReady = Receive(opponent, "roomState");
+        await actor.SendAsync(new { type = "ready", ready = true }, cancellationToken);
         await Task.WhenAll(actorReady, opponentSeesReady);
 
-        var actorStarted = actor.ReceiveTypeAsync("gameState", SetupDeadline);
-        var opponentStarted = opponent.ReceiveTypeAsync("gameState", SetupDeadline);
-        await opponent.SendAsync(new { type = "ready", ready = true });
+        var actorStarted = Receive(actor, "gameState");
+        var opponentStarted = Receive(opponent, "gameState");
+        await opponent.SendAsync(new { type = "ready", ready = true }, cancellationToken);
         var started = await Task.WhenAll(actorStarted, opponentStarted);
         Assert.All(started, frame => Assert.False(IsGameOver(frame.Payload)));
         var actorMatchId = ReadString(started[0].Payload.GetProperty("state"), "matchId");
@@ -1140,6 +1382,13 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         Assert.False(string.IsNullOrWhiteSpace(actorMatchId));
         Assert.Equal(actorMatchId, opponentMatchId);
         return new(roomCode!, actorMatchId!, started[0], started[1]);
+        }
+        catch
+        {
+            exchange.Cancel();
+            try { await Task.WhenAll(receives); } catch { }
+            throw;
+        }
     }
 
     private static void BindPlayerFrame(SocketPeer peer, ReceivedFrame frame,
@@ -1776,12 +2025,14 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
         internal Guid SessionId { get; private set; }
         internal List<ReceivedFrame> Received { get; } = [];
 
-        internal static async Task<SocketPeer> ConnectAsync(Uri endpoint, string token)
+        internal static async Task<SocketPeer> ConnectAsync(Uri endpoint, string token,
+            CancellationToken cancellationToken = default)
         {
             var peer = new SocketPeer();
             try
             {
-                using var deadline = new CancellationTokenSource(SetupDeadline);
+                using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                deadline.CancelAfter(SetupDeadline);
                 await peer._socket.ConnectAsync(endpoint, deadline.Token);
                 await peer.SendAsync(new
                 {
@@ -1794,10 +2045,10 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
                         eventWindowDeltaV1 = false,
                         presenceDeltaV1 = false,
                     },
-                });
-                var session = await peer.ReceiveTypeAsync("session", SetupDeadline);
+                }, cancellationToken);
+                var session = await peer.ReceiveTypeAsync("session", SetupDeadline, cancellationToken);
                 peer.SessionId = session.Payload.GetProperty("sessionId").GetGuid();
-                _ = await peer.ReceiveTypeAsync("recoveryComplete", SetupDeadline);
+                _ = await peer.ReceiveTypeAsync("recoveryComplete", SetupDeadline, cancellationToken);
                 return peer;
             }
             catch
@@ -1807,19 +2058,24 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
             }
         }
 
-        internal async Task SendAsync(object payload)
+        internal async Task SendAsync(object payload, CancellationToken cancellationToken = default)
         {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(SetupDeadline);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, Wire);
-            await _socket.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+            await _socket.SendAsync(bytes, WebSocketMessageType.Text, true, deadline.Token);
         }
 
-        internal Task<ReceivedFrame> ReceiveTypeAsync(string type, TimeSpan timeout) =>
-            ReceiveAsync(payload => ReadString(payload, "type") == type, timeout);
+        internal Task<ReceivedFrame> ReceiveTypeAsync(string type, TimeSpan timeout,
+            CancellationToken cancellationToken = default) =>
+            ReceiveAsync(payload => ReadString(payload, "type") == type, timeout, cancellationToken);
 
         internal async Task<ReceivedFrame> ReceiveAsync(
-            Func<JsonElement, bool> predicate, TimeSpan timeout)
+            Func<JsonElement, bool> predicate, TimeSpan timeout,
+            CancellationToken cancellationToken = default)
         {
-            using var deadline = new CancellationTokenSource(timeout);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            deadline.CancelAfter(timeout);
             while (true)
             {
                 var frame = await ReceiveOneAsync(deadline.Token);
