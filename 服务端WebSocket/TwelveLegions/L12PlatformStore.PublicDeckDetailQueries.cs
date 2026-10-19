@@ -132,7 +132,9 @@ public sealed partial class L12PlatformStore
                 || runtime.MoraleJson != selected.Payload.MoraleJson || runtime.SpecialJson != selected.Payload.SpecialJson)
                 throw new InvalidDataException("公开牌库正文与已提交代际不一致");
             var content = ReadPinnedPublicDeckContent(connection, transaction, head);
-            var summary = PublishedLibraryEntry(_data, row, catalog, policy, viewer?.Account.Id).View;
+            // Cover capability belongs to the directory endpoint. Current detail keeps
+            // its exact legacy wire shape for already-loaded clients and content editors.
+            var summary = PublishedLibraryEntry(_data, row, catalog, policy, viewer?.Account.Id).View with { CoverCardIds = null };
             PreflightOnlineDeckProjection([selected.Payload]);
             transaction.Commit();
             var payload = ExpandRuntimeDeckPayload(selected.Payload);
