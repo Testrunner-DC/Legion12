@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19｜普通保存按事务去除重复牌库正文工作（本地验收完成）
+
+- 根因：PersistDeckDomainSnapshot对私人／公开／赛事每个引用重复ReadReferencedDeckPayload、校验hash、重新紧凑编码及INSERT OR IGNORE正文。F2私人单点开关不会覆盖排位结算等generic Save。完整族扫描为DeckStorage三循环、DeckPayloadReferences的Capture／Require／Compact、PrivateDeckPersistence和Ranked保存入口；对象单点路径及其他存储协议不改。
+- 纯合成规模9299引用／1196正文，修改前计数门禁RED（18604条、699293552B），修改后首轮GREEN（10501条、200836968B）；240／4反例同样RED→GREEN，240全唯一保持486条且无收益假设。SQL页写仍约1.8MB，不冒IO根治。时间单次775→400ms不作为稳定延迟承诺；既存正式7.43秒保存仅供故障机制定位。
+- 修复仅同一次同步事务局部Ordinal集合：每个引用仍先Capture／Require，首次正文验证并写成功后才加入；引用独立写、首次created时间、公开版本／赛事锁／墓碑及外层CAS／镜像／rollback全部保留。晚捕获赛事也进入相同路径。跨保存、异常和冲突刷新均无可复用缓存。
+- 新DeckPayloadPersistenceDeduplicationTests覆盖规模／全唯一、跨账号＋公开＋赛事真实6个INSERT（五类引用写＋一个正文）、首次时间、空master非空卡赛事晚捕获、错误master拒绝和跨事务正文损坏回滚后续存。独审CLEAR，最终完整平台2047／2047零失败跳过、固定映射及边界／配置／性能守卫通过；精确两源／TRX为payload-acceptance.json，Git另认git-sync.json，未部署／线上关单。回滚仅本产品叶及其具名回归，不恢复旧数据库。证据test-performance-followthrough-20261019/causal-isolation保留原RED／GREEN与失败聚合，不捏造缺失原因。
+
 ## 2026-10-19｜远端准备与计量分离，R6保护中止及恢复缺口
 
 - 仅合成验收工具扩展：远端core在原10／20／30阶段和终局前增加准备屏障，有界96条追加接受命令／180秒且从属原720／900秒；只对欠载荷房间执行合法命令，最终双座180—300KiB及同revision、精确ACK收敛。准备动作和前阶段动作清出当前计时acceptedTypes，命令等待器发送失败／取消后abort并allSettled，解决纯r1末尾未处理拒绝；最终r3纯12项退出0无unhandled rejection，真实本地当前DLL协议31命令及原codec通过。
