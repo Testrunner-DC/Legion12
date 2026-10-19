@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261019-public-deck-current-compatibility",
+  "date": "2026-10-19",
+  "audience": "players",
+  "title": "公开牌库详情恢复",
+  "changes": [
+    {
+      "category": "decks",
+      "text": "修复点击公开牌库后提示“返回内容无法确认”的问题，恢复详情查看；牌库封面保持不变。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12PlatformStore.PublicDeckDetailQueries.cs"]
+    }
+  ]
+}

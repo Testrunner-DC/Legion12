@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-19 公开牌库详情限定热修进行中
+
+- 正式d7f发布本身与07:49开服已完成，现用户新报“所有公开牌库点开均返回内容无法确认”，并明确批准限定热修上线。真实HTTP200携带summary.coverCardIds导致旧前端exact拒绝；两份真实响应去掉这一字段即完整通过，其余正文/权限不变。
+- 当前仅恢复ReadPublicDeckCurrent原wire，目录封面保留；新HTTP三视角先3RED，修正后四族56GREEN。待完整Release和独立线上真实详情/消费者验收后才记上线；证据D:/GPT/Legion12/artifacts/public-deck-detail-hotfix-20261019，开发树教学保留、测试不动。
+
 ## 2026-10-19 封面收口及正式发布准备
 
 - 封面29叶已冻结并由Main逐SHA核源、F盘22原图和全部证据；1200×500横幅、12:5主体、独立单行信息栏、宽屏卡片右下微移、阵营强调与未知/失败回退完成。真实卡面验收来自banner-gallery，热门页夹具卡背仅支持几何/导航，不混称实际卡面。封面同伴已停写并交还构建槽，最终选择性正式树待完整Release；唯一源级接受formal-deploy-20261019-deck-cover/main-cover-acceptance.json。

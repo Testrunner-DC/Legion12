@@ -15,6 +15,37 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class PublicDeckCurrentDetailHttpTests
 {
     [Theory]
+    [InlineData("anonymous")]
+    [InlineData("owner")]
+    [InlineData("other")]
+    public async Task CurrentDetailKeepsLegacySummaryShapeEvenWithDirectoryCoverCapability(string mode)
+    {
+        await using var fixture = await PublicDeckReadFixture.Start();
+        var token = mode == "owner" ? fixture.Token : mode == "other" ? fixture.OtherToken : null;
+        fixture.Observe();
+        foreach (var coverRequested in new[] { false, true })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"/api/public-decks/{fixture.Published.Id}/current");
+            if (token is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            if (coverRequested) request.Headers.Add("X-L12-Deck-Cover", "1");
+            using var response = await fixture.Client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var summary = json.RootElement.GetProperty("summary");
+            var keys = new[] { "id", "source", "name", "masterId", "masterName", "faction", "author", "publicCode",
+                "publicationVersion", "createdAt", "updatedAt", "counts", "legal", "legalityReason", "environment",
+                "views", "likes", "copies", "viewerLiked", "canEdit", "readToken" };
+            Assert.Equal(keys.Order(StringComparer.Ordinal), summary.EnumerateObject().Select(item => item.Name).Order(StringComparer.Ordinal));
+            Assert.Equal(JsonValueKind.Null, summary.GetProperty("readToken").ValueKind);
+            Assert.Equal(mode == "owner", summary.GetProperty("canEdit").GetBoolean());
+            Assert.Equal(64, json.RootElement.GetProperty("readToken").GetString()!.Length);
+            Assert.NotEmpty(json.RootElement.GetProperty("deck").GetProperty("cardIds").EnumerateArray());
+        }
+        Assert.Equal(2, fixture.Expansions.Count);
+        fixture.Complete();
+    }
+
+    [Theory]
     [InlineData("current", 1)]
     [InlineData("versions", 0)]
     [InlineData("versions/1", 1)]

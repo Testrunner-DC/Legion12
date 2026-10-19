@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19｜公开牌库详情封面字段兼容热修
+
+- 用户报告所有公开牌库详情均提示“返回内容无法确认”，批准限定修复并上线。正式d7f两个真实匿名详情HTTP200，当前真实前端validatePublicDeckCurrent均报“公开牌库摘要字段无效”；仅移除summary.coverCardIds后同一正文/代际/权限原样通过。非数据丢失或网络故障；先前线上封面验收仅目录摘要，没有覆盖真实详情校验，是本次漏验。
+- 根因是PublishedLibraryEntry共享投影新增封面后，ReadPublicDeckCurrent直接透出，而旧详情的exact字段集不接纳目录扩展。只在既有当前详情边界将CoverCardIds置null并沿JsonIgnore省略，恢复旧wire；不放宽前端未知字段校验，不去掉目录封面、不改数据库/卡效/教学/沙盒。扫描PublishedLibraryEntry/OfficialLibraryEntry/LibraryEntry所有调用：目录已有能力控制，历史版本只取counts/legal/environment，不输出这个共享summary；内容编辑和目录改名读回同走current。
+- 新真实HTTP回归anonymous/owner/other三例在原实现3/3 RED，逐例包含无能力头及带目录能力头，严格核21字段、正文、top token和owner边界。修正后详情/目录/历史版本/内容保存四类56/56通过，失败跳过0；独审与完整发布验收另认D盘public-deck-detail-hotfix-20261019。P1/P2/P3/P4边界不变；回滚守卫即精确wire与既有目录封面协商回归。本条此刻仅本地修复，实际上线以该目录release-session-summary.json为准。
+
 ## 2026-10-19 牌库封面横幅与信息栏收口
 
 - 按最新界面要求统一方角、12:5封面主体与独立30px单行信息栏，去掉热门区域重复标签和环境徽标前缀；强调色按阵营，代表卡仅宽屏轻微右下移动。接入22张正式主宰横幅，未知主宰/加载失败仍回退阵营底色，不预读整副牌库；测试基址复用既有deploymentPath。
