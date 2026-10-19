@@ -232,7 +232,8 @@ Assert-True (@($isolationFiles | Where-Object { $_.Source -ceq 'ops\windows\L12G
 function Test-PrebuiltIsolation {
     param([object[]]$Files)
     foreach ($required in @('服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json',
-            '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json')) {
+            '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json',
+            '服务端WebSocket\TwelveLegions\Data\tutorial-decks.v1.json')) {
         $matching = @($Files | Where-Object { $_.Source -ceq $required })
         if ($matching.Count -ne 1 -or $matching[0].Target -cne $required) { return $false }
     }
@@ -240,7 +241,8 @@ function Test-PrebuiltIsolation {
 }
 Assert-True (Test-PrebuiltIsolation $isolationFiles) 'Both shipped prebuilt catalogs must be present at their exact isolated relative paths.'
 foreach ($required in @('服务端WebSocket\TwelveLegions\Data\preset-decks.s1.json',
-        '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json')) {
+        '服务端WebSocket\TwelveLegions\Data\preset-decks.s2.json',
+        '服务端WebSocket\TwelveLegions\Data\tutorial-decks.v1.json')) {
     Assert-True (-not (Test-PrebuiltIsolation @($isolationFiles | Where-Object { $_.Source -cne $required }))) 'Missing prebuilt dependency was not detected.'
 }
 $wrongTarget = @($isolationFiles | ForEach-Object {
