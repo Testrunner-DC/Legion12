@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-19｜响应设置实际界面合同校正
+
+- 只修验收脚本，不改产品：手机最小化窗口按既有设计显示紧凑“n秒”，完整语义保留在aria-label／title；旧verify-response-settings仍要求可见全文而误拒绝。现在分别核电脑全文、手机紧凑秒数、完整无障碍说明和不递增倒计时，原模式名称／说明／选择及14项检查均保留。
+- Main沿仓库现有preview-l12-battle-layout实际挂载GamePage，桌面与短横屏14项全过，相关源前后SHA一致且自有预览进程退出；首轮通用Vite未挂战场夹具、第二轮旧可见全文断言两次失败原样保留，不伪称产品修复或删除失败。真实证据development-integration-20261019/response-browser-r3/report.json；规则和平台代码不变，不因此重跑整套或部署。
+
 ## 2026-10-19｜资讯嵌入与共享读取生命周期
 
 - 直接功能需求：资讯插入可点详情的单卡及复用既有容器的公共牌库。沿ArticleDocumentEditor／ArticleContentRenderer／articleBlocks扩展card/publicDeck，旧ArticleBlockEditor用isArticleTextBlock保护往返；复用SingleCardPicker、CardImage、CatalogCardDetails、DeckCover与现有路由。服务器只收规范权威卡号、已公开短码，字段白名单及旧文本／媒体／ID／权限不减。

@@ -43,9 +43,19 @@ try {
     await page.locator('.prompt-minimize').click()
     const minimized = page.locator('.prompt-minimized-bar .prompt-auto-close')
     await minimized.waitFor()
-    ok((await minimized.innerText()).startsWith('当前没有有效响应，将在 '), `${fixture.name}: minimized countdown`)
+    const fullCountdown = /^当前没有有效响应，将在 ([0-5]) 秒后自动关闭$/
+    const minimizedLabel = await minimized.getAttribute('aria-label')
+    const minimizedText = await minimized.innerText()
+    ok(fullCountdown.test(minimizedLabel || '') && (await minimized.getAttribute('title')) === minimizedLabel
+      && (fixture.name === 'mobile' ? /^[0-5]秒$/.test(minimizedText) : minimizedText === minimizedLabel),
+    `${fixture.name}: minimized countdown keeps its compact display and full accessible meaning`)
     await page.waitForTimeout(1100)
-    ok((await minimized.innerText()).includes('秒后自动关闭'), `${fixture.name}: countdown remains server-display only`)
+    const laterLabel = await minimized.getAttribute('aria-label')
+    const beforeSeconds = Number(fullCountdown.exec(minimizedLabel || '')?.[1])
+    const laterSeconds = Number(fullCountdown.exec(laterLabel || '')?.[1])
+    ok(fullCountdown.test(laterLabel || '') && Number.isFinite(beforeSeconds) && laterSeconds <= beforeSeconds
+      && (fixture.name === 'mobile' ? /^[0-5]秒$/.test(await minimized.innerText()) : (await minimized.innerText()) === laterLabel),
+    `${fixture.name}: countdown remains server-display only and never counts backwards`)
   }
   console.log(`Response settings browser checks passed: ${assertions} assertions`)
 } finally {
