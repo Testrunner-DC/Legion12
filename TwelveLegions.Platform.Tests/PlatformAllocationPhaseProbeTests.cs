@@ -2,6 +2,7 @@ using System.Collections;
 using System.Diagnostics;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using TwelveLegions.Server;
 using Xunit;
 using Xunit.Abstractions;
@@ -31,13 +32,26 @@ public sealed class PlatformAllocationPhaseProbeTests(ITestOutputHelper output)
         var measurements = new List<(string Phase, long Bytes, double Ms)>();
         Measure("admin-raw-snapshot-baseline", () => JsonSerializer.Serialize(data, data.GetType()));
         Measure("database-core-string-baseline", () => InvokeStatic("SerializeSnapshot", data));
-        Measure("database-core-snapshot", () => InvokeStatic("SerializeCoreSnapshot", data, "UTF-8"));
+        // This compatibility encoder is not the normal UTF-8 Save preparation.
+        // Keep it as a baseline, but never rank it as the live allocation source.
+        Measure("database-core-utf8-buffer-baseline", () => InvokeStatic("SerializeCoreSnapshot", data, "UTF-8"));
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+               { DataSource = fixture.Store.TransactionalStoragePath, Mode = SqliteOpenMode.ReadOnly, Pooling = false }.ToString()))
+        {
+            connection.Open();
+            using var transaction = connection.BeginTransaction(deferred: true);
+            var current = Measure("database-core-prepare-current", () =>
+                InvokeStatic("PrepareCoreSnapshot", data, connection, transaction))!;
+            var jsonValue = current.GetType().GetProperty("JsonValue")!.GetValue(current)!;
+            Assert.Equal("StreamedCoreSnapshot", jsonValue.GetType().Name);
+        }
         Measure("disk-mirror", () => InvokeStatic("PrepareFallbackMirror", data));
         var rollback = (byte[])InvokeStatic("SerializeRollbackState", data)!;
         Measure("rollback-gzip", () => InvokeStatic("SerializeRollbackState", data));
         Measure("committed-index", () => typeof(L12PlatformStore).GetMethod("PrepareCommittedSessionActivity", instance)!
             .Invoke(fixture.Store, new[] { data, rollback }));
         Measure("admin-noop-transaction", () => fixture.Store.ExecuteAdminTransaction(() => true));
+        Assert.Contains(measurements, row => row.Phase == "database-core-prepare-current");
         var readStart = GC.GetAllocatedBytesForCurrentThread();
         var watch = Stopwatch.StartNew();
         for (var index = 0; index < 1000; index++)
@@ -51,14 +65,21 @@ public sealed class PlatformAllocationPhaseProbeTests(ITestOutputHelper output)
             readBytes, watch.Elapsed.TotalMilliseconds);
         Assert.True(readBytes < 1024 * 1024); // Readers do not serialize unrelated multi-MiB state.
         Assert.Same(generation, RankedIdentityTestState.CommittedProjection(fixture.Store));
-        var dominant = measurements.Where(row => row.Phase != "admin-noop-transaction"
+        // Include one real Save (streamed SQLite write, mirror and rollback), not
+        // only isolated preparation. Do it after preserving the read-only guard.
+        Measure("admin-save-transaction", () => fixture.Store.ExecuteAdminTransaction(() =>
+        {
+            RankedIdentityTestState.RequestSave(fixture.Store);
+            return true;
+        }));
+        var dominant = measurements.Where(row => !row.Phase.EndsWith("-transaction", StringComparison.Ordinal)
                 && !row.Phase.EndsWith("-baseline", StringComparison.Ordinal))
             .OrderByDescending(row => row.Bytes).First();
         output.WriteLine("dominant_allocated_phase={0} allocated_bytes={1}", dominant.Phase, dominant.Bytes);
 
         object? InvokeStatic(string method, params object[] inputs)
             => typeof(L12PlatformStore).GetMethod(method, statics)!.Invoke(null, inputs);
-        void Measure(string phase, Func<object?> work)
+        object? Measure(string phase, Func<object?> work)
         {
             var before = GC.GetAllocatedBytesForCurrentThread();
             var timer = Stopwatch.StartNew();
@@ -67,6 +88,7 @@ public sealed class PlatformAllocationPhaseProbeTests(ITestOutputHelper output)
             measurements.Add((phase, bytes, timer.Elapsed.TotalMilliseconds));
             output.WriteLine("phase={0} allocated_bytes={1} elapsed_ms={2:F3}", phase, bytes, timer.Elapsed.TotalMilliseconds);
             GC.KeepAlive(result);
+            return result;
         }
     }
 }

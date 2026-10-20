@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-21 性能测法校正：兼容编码不再冒正常保存热点
+
+- 复查现有PlatformAllocationPhaseProbe发现它以SerializeCoreSnapshot整块兼容编码代替正常Save的PrepareCoreSnapshot流式准备。只修测试：兼容编码保留为baseline，实际只读SQLite事务调用真实Prepare入口并断言StreamedCoreSnapshot；原只读1000轮/同代际守卫保留，再测一笔真实admin Save，复合事务不与独立阶段相加。
+- 缺真实入口守卫的RED→最终受管单项1/1过，真实入口2920B/3.628ms，兼容4227504B仅基线；mirror127544B、rollback180168B、index35280B，真实Save1177784B/49.256ms，1000轮三读56040B。单次4MiB重复文本合成样本，不是当前产品新优化/生产热点/高熵数据或30房SLA。未改产品，后端tree与99cf相同，不采未变线上或重跑长轮。
+- 唯一performance-current-path-20261021/main-acceptance.json及red/green显式TRX/监督收据；原全2094私有pass-proof按既有策略只留计数，未伪称取到其旧阶段数据。已诊断RED合成临时91727B及可再生probe构建1144906378B已清，当前已验热DLL/原始证据保留。只同步测试/记录，不Release/部署/线上关Bug。
+- 下一性能仍是实际Save剩余分段与协议字段字节归因、完整负载短资格和有代表性30＋10；不能从组件静态值猜磁盘/GC/供应商根因。素材分页/留存/字体和教学/通知按已批队列未完成，CI自动标准包仍待可信卡图输入；正式/测试不动。
+
 ## 2026-10-21 画廊真实文件与HTTP/UI首片通过，合成实例已清理
 
 - Main复用AFDF2B55已验2094服务DLL，backend Git tree与99cf一致；独立D盘新runtime、127.0.0.1真实服务/SQLite及当前实际AdminAlternateArtsPanel/MediaUploadField，原生上传PNG→生成并传真实WebP multipart→创建独立联动展示卡/画师→刷新查询→第二图替换均过；重启自有实例后账号及卡片/画师/图片读回正确。匿名真实CardArchive精确编号、画师和宽屏新图解码通过，Main看图；不冒fake API或线上数据。
