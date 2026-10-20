@@ -145,6 +145,185 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void HistoricalBatchAlternateArtMetadataIsManyToManyAndKeepsIdentityAndEntitlements()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-metadata-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("meta" + Guid.NewGuid().ToString("N")[..6], "Password123!").Account!;
+            var art = store.AdminAlternateArts().Single(item => item.ArtCode.Equals("S01-0101b",
+                StringComparison.OrdinalIgnoreCase));
+            Assert.Equal("catalog-alt:S01-0101b", art.Id);
+            Assert.Equal("S01-0101b", art.CardImageId);
+            Assert.Equal("S01-0101", art.BaseCardId);
+            Assert.Contains(art.Products, item => item.Id == "catalog:ST01|天廷阵营预组");
+            Assert.Contains(art.Rarities, item => item.Code == "N");
+            Assert.DoesNotContain(store.AdminAlternateArts(), item => item.CardImageId == "S02-05C1B");
+
+            var category = store.AdminSiteCategories("product").First(item => item.Slug == "card-series");
+            var draftProduct = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "后台未发布商品", "不可公开摘要",
+                "不可公开正文", category.Name, "", "/cards", "private-alt-product", false, null,
+                Kind: "product", CategoryId: category.Id));
+            var products = store.AlternateArtProducts(includeInactive: true);
+            var siteProduct = Assert.Single(products, item => item.Id == $"site:{draftProduct.Id}");
+            var catalogProduct = products.First(item => item.Id == "catalog:ST01|天廷阵营预组");
+            Assert.Equal(category.Name, siteProduct.CategoryName);
+            Assert.Equal("draft", siteProduct.Status);
+
+            var foil = store.SaveAlternateArtRarity(admin, new L12AlternateArtRarityDraft(null, "FOIL", "闪卡"));
+            var normal = store.AlternateArtRarities(includeInactive: true).Single(item => item.Code == "N");
+            var saved = store.SaveAlternateArtMetadata(admin, new L12AlternateArtMetadataDraft(art.Id,
+                [catalogProduct.Id, siteProduct.Id], [normal.Id, foil.Id]));
+            Assert.Equal(2, saved.Products.Count);
+            Assert.Equal(2, saved.Rarities.Count);
+
+            var grant = store.GrantAlternateArt(admin, new(art.Id, player.Id, "manual", "metadata-regression"));
+            var preset = catalog.PresetDecks.First(item => item.CardIds.Contains(art.BaseCardId));
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "异画元数据身份回归", MasterId = preset.MasterId, CardIds = preset.CardIds.ToList(),
+                MoraleIds = preset.MoraleIds.ToList(), SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtSelections = new(StringComparer.OrdinalIgnoreCase) { [art.BaseCardId] = art.Id },
+            };
+            var storedDeck = store.UpsertDeck(player.Id, deck);
+            Assert.Equal(art.Id, storedDeck.AlternateArtSelections![art.BaseCardId]);
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var reloadedAdminArt = reloaded.AdminAlternateArts().Single(item => item.Id == art.Id);
+            Assert.Equal(2, reloadedAdminArt.Products.Count);
+            Assert.Equal(2, reloadedAdminArt.Rarities.Count);
+            Assert.DoesNotContain(reloaded.AlternateArts().Single(item => item.Id == art.Id).Products,
+                item => item.Id == siteProduct.Id || item.Name.Contains("未发布", StringComparison.Ordinal));
+            Assert.DoesNotContain(reloaded.OwnedAlternateArts(player.Id).Single(item => item.Id == art.Id).Products,
+                item => item.Id == siteProduct.Id || item.Name.Contains("未发布", StringComparison.Ordinal));
+            Assert.Equal(grant.Id, reloaded.AlternateArtGrants().Single(item => item.Id == grant.Id).Id);
+            Assert.Equal($"l12-card-id:{art.CardImageId}",
+                reloaded.ResolveOwnedAlternateArtUrls(player.Id, storedDeck.AlternateArtSelections)[art.BaseCardId]);
+
+            var reduced = reloaded.SaveAlternateArtMetadata(admin, new L12AlternateArtMetadataDraft(art.Id,
+                [catalogProduct.Id], [foil.Id]));
+            Assert.Equal([catalogProduct.Id], reduced.Products.Select(item => item.Id));
+            Assert.Equal([foil.Id], reduced.Rarities.Select(item => item.Id));
+            var cleared = reloaded.SaveAlternateArtMetadata(admin,
+                new L12AlternateArtMetadataDraft(art.Id, [], []));
+            Assert.Empty(cleared.Products);
+            Assert.Empty(cleared.Rarities);
+            var clearedReload = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            Assert.Empty(clearedReload.AdminAlternateArts().Single(item => item.Id == art.Id).Products);
+            Assert.Empty(clearedReload.AdminAlternateArts().Single(item => item.Id == art.Id).Rarities);
+            Assert.Contains(clearedReload.OwnedAlternateArts(player.Id), item => item.Id == art.Id);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void LegacySingleProductAssociationMigratesWithoutMergingSameNamedProducts()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-legacy-product-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var media = Upload(store, admin, "card-art");
+            var legacy = store.SaveAlternateArtProduct(admin, new(null, "第1季|典藏版"));
+            var baseCard = catalog.Cards.Values.First();
+            var custom = store.SaveAlternateArt(admin, new(null, "ALT-LEGACY-MIGRATION", baseCard.Id,
+                baseCard.NameZh, media.Id, ProductId: legacy.Id));
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var art = reloaded.AdminAlternateArts().Single(item => item.Id == custom.Id);
+            Assert.Contains(art.Products, item => item.Id == legacy.Id);
+            Assert.DoesNotContain(art.Products, item => item.Id == "catalog:第1季|典藏版");
+            Assert.Contains(reloaded.AlternateArtProducts(true), item => item.Id == legacy.Id);
+            Assert.Contains(reloaded.AlternateArtProducts(true), item => item.Id == "catalog:第1季|典藏版");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void StandaloneCollaborationCardIsGalleryOnlyAndNeverBecomesRulesOrDeckAlternateArt()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-gallery-collaboration-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
+                officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("collab" + Guid.NewGuid().ToString("N")[..5], "Password123!").Account!;
+            var media = Upload(store, admin, "card-art");
+            var saved = store.SaveAlternateArt(admin, new L12AlternateArtDraft(null, "COLLAB-001", "",
+                "十二军团 × 联动角色", media.Id, Kind: "gallery-card", Effect: "此卡具有独立撰写的联动卡效。"));
+
+            Assert.Equal("gallery-card", saved.Kind);
+            Assert.Equal("", saved.BaseCardId);
+            Assert.Equal("十二军团 × 联动角色", saved.DisplayName);
+            Assert.Equal("此卡具有独立撰写的联动卡效。", saved.Effect);
+            Assert.DoesNotContain(saved.Id, catalog.Cards.Keys);
+            var publicCard = Assert.Single(store.AlternateArts(), item => item.Id == saved.Id);
+            Assert.Equal("gallery-card", publicCard.Kind);
+            Assert.Throws<ArgumentException>(() => store.GrantAlternateArt(admin,
+                new(saved.Id, player.Id, "manual", "gallery-only")));
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArtAwardRule(admin,
+                new(null, saved.Id, "event", "", "collaboration", 0)));
+            Assert.Throws<ArgumentException>(() => store.PreviewRankedParticipantAlternateArtDispatch(
+                new(saved.Id)));
+            Assert.Throws<ArgumentException>(() => store.DispatchRankedParticipantAlternateArt(admin,
+                new(saved.Id)));
+            Assert.Empty(store.OwnedAlternateArts(player.Id));
+            Assert.Empty(store.AlternateArtGrants().Where(item => item.AlternateArtId == saved.Id));
+            Assert.Empty(store.PendingAlternateArtGrantNotifications(player.Id));
+
+            var preset = catalog.PresetDecks[0];
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "联动卡不可注入牌库", MasterId = preset.MasterId, CardIds = preset.CardIds.ToList(),
+                MoraleIds = preset.MoraleIds.ToList(), SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtSelections = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    [preset.CardIds[0]] = saved.Id,
+                },
+            };
+            var stored = store.UpsertDeck(player.Id, deck);
+            Assert.False(stored.AlternateArtSelections?.Values.Contains(saved.Id) == true);
+            Assert.Empty(store.ResolveOwnedAlternateArtUrls(player.Id,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [preset.CardIds[0]] = saved.Id }));
+
+            var normalArt = store.SaveAlternateArt(admin, new L12AlternateArtDraft(null, "ALT-LOCK-001",
+                preset.CardIds[0], "ignored", media.Id));
+            store.GrantAlternateArt(admin, new(normalArt.Id, player.Id, "manual", "identity-lock"));
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArt(admin, new L12AlternateArtDraft(normalArt.Id,
+                normalArt.ArtCode, "", "试图转换", media.Id, Kind: "gallery-card", Effect: "不应保存")));
+            var unchanged = Assert.Single(store.AdminAlternateArts(), item => item.Id == normalArt.Id);
+            Assert.Equal("alternate-art", unchanged.Kind);
+            Assert.Equal(preset.CardIds[0], unchanged.BaseCardId);
+            Assert.Single(store.OwnedAlternateArts(player.Id), item => item.Id == normalArt.Id);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AlternateArtRegistrySearchIsFilteredAndPagedWithoutLoadingTheFullRegistry()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-search-{Guid.NewGuid():N}");

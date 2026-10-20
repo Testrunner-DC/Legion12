@@ -19,6 +19,11 @@ const riskAction = read('../src/l12/site/useAdminRiskAction.ts')
 const sectionScroll = read('../src/l12/site/useSectionScroll.ts')
 const ruleCenter = read('../src/l12/site/RuleCenterPage.vue')
 
+const alternateArtIdentityControls = source => source.includes('SingleCardPicker')
+  && source.includes("openArtPicker('base')") && !source.includes('<label>原卡<select')
+  && /<label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input\b[^>]*:value="selectedBaseCard\?\.nameZh[^>]* disabled>/.test(source)
+  && source.includes('if (base) artForm.displayName = base.nameZh')
+
 const checks = [
   [analyzeSource(profile, 'ProfilePage.vue').maximumParallelPageLoad <= 3 && analyzeSource(adminWorkbench, 'AdminWorkbenchPage.vue').maximumParallelPageLoad <= 3, '本批后台与个人页 AST 扇出必须不超过三路'],
   [profile.includes("{ id: 'overview', label: '排位与战绩' }")
@@ -71,9 +76,12 @@ const checks = [
   [router.includes("AdminRuleRulingsPanel.vue") && adminNavigation.includes("label: '规则审核'")
     && !siteContent.includes("section === 'rules'") && !siteContent.includes("id: 'rules'"),
   '规则中心审核必须与站点内容工作台平级'],
-  [alternateArts.includes('SingleCardPicker') && alternateArts.includes("openArtPicker('base')")
-    && !alternateArts.includes('<label>原卡<select') && alternateArts.includes('卡名（随原卡，不可单独修改）'),
+  [alternateArtIdentityControls(alternateArts),
   '原卡与异画选择必须复用筛选单卡组件，异画卡名不可单独编辑'],
+  [!alternateArtIdentityControls(alternateArts.replace("openArtPicker('base')", "openWrongPicker('base')"))
+    && !alternateArtIdentityControls(alternateArts.replace("'选择原卡后自动带入'\" disabled>", "'选择原卡后自动带入'\">"))
+    && !alternateArtIdentityControls(alternateArts.replace('if (base) artForm.displayName = base.nameZh', '')),
+  '异画身份守卫必须拒绝移除原卡选择器、开放名称编辑或跳过原卡名称绑定'],
   [ruleReview.includes('publishRuleItem') && ruleReview.includes('审核并发布此项')
     && !ruleReview.includes('@click="publish">正式发布'),
   '规则与裁定必须逐项审核发布，不得保留整批正式发布按钮'],

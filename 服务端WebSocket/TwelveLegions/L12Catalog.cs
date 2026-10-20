@@ -8,7 +8,11 @@ public sealed record L12OfficialAlternateArtDefinition(
     string BaseCardId,
     string DisplayName,
     string CardImageId,
-    string ProductName);
+    IReadOnlyList<string> ProductNames,
+    IReadOnlyList<string> RarityCodes)
+{
+    public string ProductName => ProductNames.FirstOrDefault() ?? string.Empty;
+}
 
 public sealed class L12Catalog
 {
@@ -126,9 +130,10 @@ public sealed class L12Catalog
             ?? throw new InvalidDataException("画廊异画登记格式无效");
         var definitions = archive.Cards
             .Where(row => !row.Id.Equals("S02-05C1B", StringComparison.OrdinalIgnoreCase))
-            .Select(row => OfficialAlternateArt(row.Id, row.BaseCardId, row.Products.FirstOrDefault()
-                ?? row.Product, cards)).ToList();
-        definitions.Add(OfficialAlternateArt("S02-05C1A", "S02-05C1", "第2季|典藏版", cards));
+            .Select(row => OfficialAlternateArt(row.Id, row.BaseCardId,
+                row.Products.Count > 0 ? row.Products : [row.Product],
+                string.IsNullOrWhiteSpace(row.Rarity) ? [] : [row.Rarity], cards)).ToList();
+        definitions.Add(OfficialAlternateArt("S02-05C1A", "S02-05C1", ["第2季|典藏版"], [], cards));
         var duplicateCodes = definitions.GroupBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase)
             .Where(group => group.Count() > 1).Select(group => group.Key).ToArray();
         if (duplicateCodes.Length > 0)
@@ -137,12 +142,15 @@ public sealed class L12Catalog
     }
 
     private static L12OfficialAlternateArtDefinition OfficialAlternateArt(string cardImageId,
-        string baseCardId, string productName, IReadOnlyDictionary<string, L12CardDefinition> cards)
+        string baseCardId, IReadOnlyList<string> productNames, IReadOnlyList<string> rarityCodes,
+        IReadOnlyDictionary<string, L12CardDefinition> cards)
     {
         if (!cards.TryGetValue(baseCardId, out var baseCard))
             throw new InvalidDataException($"画廊异画 {cardImageId} 引用了不存在的原卡 {baseCardId}");
         return new L12OfficialAlternateArtDefinition($"catalog-alt:{cardImageId}", cardImageId,
-            baseCardId, baseCard.NameZh, cardImageId, productName);
+            baseCardId, baseCard.NameZh, cardImageId,
+            productNames.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.Ordinal).ToArray(),
+            rarityCodes.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
     private sealed class ArchiveAlternateArtCatalog
@@ -156,6 +164,7 @@ public sealed class L12Catalog
         public string BaseCardId { get; init; } = string.Empty;
         public string Product { get; init; } = string.Empty;
         public List<string> Products { get; init; } = [];
+        public string Rarity { get; init; } = string.Empty;
     }
 
     private sealed class CardProductInclusionCatalog

@@ -4439,6 +4439,18 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AlternateArtProducts(includeInactive == true));
         });
+        _app.MapGet("/api/admin/alternate-art-rarities", (HttpRequest request, bool? includeInactive) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.AlternateArtRarities(includeInactive == true));
+        });
+        _app.MapPut("/api/admin/alternate-art-rarities", (HttpRequest request, L12AlternateArtRarityDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtRarity(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_rarity_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapPut("/api/admin/alternate-art-products", (HttpRequest request, L12AlternateArtProductDraft draft) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
@@ -4449,7 +4461,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
-            return Results.Ok(_platform.AlternateArts(includeInactive == true));
+            return Results.Ok(_platform.AdminAlternateArts(includeInactive == true));
         });
         _app.MapGet("/api/admin/alternate-arts/search", (HttpRequest request, string? name, string? artCode,
             string? baseCard, int? page, int? pageSize, bool? includeInactive) =>
@@ -4475,6 +4487,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             try { return Results.Ok(_platform.SaveAlternateArt(authenticated.Account, draft, RequestAuditContext(request, permission))); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPut("/api/admin/alternate-arts/metadata", (HttpRequest request, L12AlternateArtMetadataDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveAlternateArtMetadata(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "alternate_art_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_metadata_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapGet("/api/admin/alternate-art-grants", (HttpRequest request, string? username) =>
         {

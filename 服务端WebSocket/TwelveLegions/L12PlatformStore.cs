@@ -328,6 +328,8 @@ public sealed partial class L12PlatformStore
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
         public List<AlternateArtProductRow> AlternateArtProducts { get; set; } = [];
         public List<AlternateArtRow> AlternateArts { get; set; } = [];
+        public List<AlternateArtMetadataRow> AlternateArtMetadata { get; set; } = [];
+        public List<AlternateArtRarityRow> AlternateArtRarities { get; set; } = [];
         public List<AlternateArtGrantRow> AlternateArtGrants { get; set; } = [];
         public List<AlternateArtAwardRuleRow> AlternateArtAwardRules { get; set; } = [];
         public List<UsernameChangeRequestRow> UsernameChangeRequests { get; set; } = [];
@@ -382,6 +384,8 @@ public sealed partial class L12PlatformStore
         public string ArtCode { get; set; } = string.Empty;
         public string BaseCardId { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
+        public string Kind { get; set; } = "alternate-art";
+        public string Effect { get; set; } = string.Empty;
         public string MediaAssetId { get; set; } = string.Empty;
         public string ProductId { get; set; } = string.Empty;
         public bool Active { get; set; } = true;
@@ -393,6 +397,26 @@ public sealed partial class L12PlatformStore
     private sealed class AlternateArtProductRow
     {
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string Name { get; set; } = string.Empty;
+        public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtMetadataRow
+    {
+        public string AlternateArtId { get; set; } = string.Empty;
+        public List<string> ProductIds { get; set; } = [];
+        public List<string> RarityIds { get; set; } = [];
+        public string UpdatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtRarityRow
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString("N");
+        public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public bool Active { get; set; } = true;
         public string CreatedByAccountId { get; set; } = string.Empty;
@@ -507,6 +531,7 @@ public sealed partial class L12PlatformStore
         EnsureSeasonLifecycleState();
         EnsureArticleState();
         EnsureSiteContentState();
+        EnsureAlternateArtMetadataState();
     }
 
     public (bool Success, string Message, L12AccountView? Account, string? Token) Register(string username, string password)

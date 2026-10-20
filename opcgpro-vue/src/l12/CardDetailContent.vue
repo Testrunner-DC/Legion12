@@ -4,8 +4,10 @@ import { cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { displayCardNumber, type DeckCard } from './decks'
 import CardImage from './CardImage.vue'
 
+type DetailCard = DeckCard & { galleryStandalone?: boolean }
+
 const props = withDefaults(defineProps<{
-  card: DeckCard
+  card: DetailCard
   layout?: 'panel' | 'modal'
   showCatalogOnly?: boolean
   titleId?: string
@@ -15,6 +17,7 @@ const props = withDefaults(defineProps<{
 })
 
 const products = computed(() => props.card.products ?? [])
+const standalone = computed(() => props.card.galleryStandalone === true)
 
 function hasCostDimension(card: DeckCard) {
   return card.cardType !== 'master' && card.cost !== undefined
@@ -34,20 +37,20 @@ function hasCostDimension(card: DeckCard) {
     <h2 :id="titleId">{{ card.nameZh }}</h2>
     <div class="archive-tags">
       <span v-for="trait in card.traits" :key="trait">{{ trait }}</span>
-      <span>{{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
+      <span>{{ standalone ? '联动卡' : cardTypeLabel(card.cardType, card.isCounterTactic) }}</span>
       <span v-if="card.profession">{{ card.profession }}</span>
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>
-    <dl>
+    <dl v-if="!standalone">
       <template v-if="hasCostDimension(card)"><dt>费用</dt><dd>{{ card.cost }}</dd></template>
       <template v-if="card.troops !== undefined"><dt>兵力</dt><dd>{{ card.troops }}</dd></template>
       <template v-if="card.hp !== undefined"><dt>血量</dt><dd>{{ card.hp }}</dd></template>
       <template v-if="card.disasterLevel !== undefined"><dt>天灾等级</dt><dd>{{ card.disasterLevel }}</dd></template>
       <template v-if="card.trialValue !== undefined"><dt>试炼值</dt><dd>{{ card.trialValue }}</dd></template>
     </dl>
-    <section class="archive-effect"><b>效果</b><p class="l12-effect-body">{{ card.effect || '无效果文字' }}</p></section>
+    <section class="archive-effect" :data-gallery-card-effect="standalone ? '' : undefined"><b>效果</b><p class="l12-effect-body">{{ card.effect || '无效果文字' }}</p></section>
     <template v-if="showCatalogOnly">
-      <section v-if="products.length" class="archive-decks"><b>收录产品</b><p v-for="name in products" :key="name">{{ name }}</p></section>
+      <section v-if="products.length" class="archive-decks"><b>收录产品</b><p v-for="(name, index) in products" :key="`${index}:${name}`">{{ name }}</p></section>
       <slot name="catalog-extra"/>
     </template>
   </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { adminApi, hasPermission, platformState, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRankedParticipantDispatchPreview, type AlternateArtSearchPage, type PlatformAccount, type SiteMedia } from '@/l12/platform'
+import { adminApi, hasPermission, platformState, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRarity, type AlternateArtRankedParticipantDispatchPreview, type AlternateArtSearchPage, type PlatformAccount, type SiteMedia } from '@/l12/platform'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import MediaUploadField from './MediaUploadField.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
@@ -16,6 +16,7 @@ const awardRules = ref<AlternateArtAwardRule[]>([])
 const catalog = ref<DeckCard[]>([])
 const media = ref<SiteMedia[]>([])
 const products = ref<AlternateArtProduct[]>([])
+const rarities = ref<AlternateArtRarity[]>([])
 const busy = ref(false)
 const artsLoaded = ref(false)
 const registryOpen = ref(false)
@@ -24,8 +25,9 @@ const registryFilters = reactive({ name: '', artCode: '', baseCard: '' })
 const registry = ref<AlternateArtSearchPage>({ items: [], total: 0, page: 1, pageSize: 20 })
 const registryPages = computed(() => Math.max(1, Math.ceil(registry.value.total / registry.value.pageSize)))
 const grantForm = reactive({ alternateArtId: '', accountId: '', sourceKind: 'manual' as AlternateArtGrant['sourceKind'], sourceReference: '' })
-const artForm = reactive({ id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', productId: '', active: true })
-const productForm = reactive({ id: '', name: '', active: true })
+const artForm = reactive({ id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', active: true,
+  kind: 'alternate-art' as 'alternate-art' | 'gallery-card', effect: '', productIds: [] as string[], rarityIds: [] as string[], builtIn: false })
+const rarityForm = reactive({ id: '', code: '', name: '', active: true })
 const ruleForm = reactive({ id: '', alternateArtId: '', kind: 'rank-reached' as AlternateArtAwardRule['kind'], seasonId: '', eventId: '', masterId: '', minimumTierIndex: 0, active: true })
 const eventAccountId = ref('')
 const eventAccounts = ref<PlatformAccount[]>([])
@@ -43,7 +45,7 @@ const basePickerItems = computed<SingleCardPickerItem[]>(() => catalog.value.map
   number: card.number, name: card.nameZh, nameZh: card.nameZh, cardImageId: card.id, cardType: card.cardType,
   faction: card.faction, product: card.product, cost: card.cost, disasterLevel: card.disasterLevel,
   effect: card.effect, detailCard: card })))
-const artPickerItems = computed<SingleCardPickerItem[]>(() => arts.value.filter(art => art.active).map(art => {
+const artPickerItems = computed<SingleCardPickerItem[]>(() => arts.value.filter(art => art.active && art.kind !== 'gallery-card').map(art => {
   const card = cardById.value.get(art.baseCardId)
   return { id: art.id, cardId: art.baseCardId, number: art.artCode, name: art.displayName, nameZh: art.displayName,
     imageUrl: art.builtIn ? undefined : art.thumbnailUrl, cardImageId: art.builtIn ? art.cardImageId : undefined,
@@ -86,11 +88,17 @@ function choosePickerItem(item: SingleCardPickerItem) {
   betaGrantPreview.value = null
   artPickerTarget.value = null
 }
-function resetArt() { Object.assign(artForm, { id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', productId: '', active: true }) }
-function editArt(art: AlternateArt) { if (!art.builtIn) Object.assign(artForm, art) }
-function editRegistryArt(art: AlternateArt) { editArt(art); registryOpen.value = false }
-function resetProduct() { Object.assign(productForm, { id: '', name: '', active: true }) }
-function editProduct(product: AlternateArtProduct) { Object.assign(productForm, product) }
+function resetArt() { Object.assign(artForm, { id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', active: true,
+  kind: 'alternate-art', effect: '', productIds: [], rarityIds: [], builtIn: false }) }
+function editRegistryArt(art: AlternateArt) {
+  Object.assign(artForm, { id: art.id, artCode: art.artCode, baseCardId: art.baseCardId, displayName: art.displayName,
+    mediaAssetId: art.mediaAssetId, active: art.active, kind: art.kind || 'alternate-art', effect: art.effect || '',
+    productIds: art.products?.map(item => item.id) ?? (art.productId ? [art.productId] : []),
+    rarityIds: art.rarities?.map(item => item.id) ?? [], builtIn: Boolean(art.builtIn) })
+  registryOpen.value = false
+}
+function resetRarity() { Object.assign(rarityForm, { id: '', code: '', name: '', active: true }) }
+function editRarity(rarity: AlternateArtRarity) { Object.assign(rarityForm, rarity) }
 function uploaded(item: SiteMedia) { media.value = [item, ...media.value.filter(row => row.id !== item.id)]; artForm.mediaAssetId = item.id }
 function resetRule() { Object.assign(ruleForm, { id: '', alternateArtId: '', kind: 'rank-reached', seasonId: '', eventId: '', masterId: '', minimumTierIndex: 0, active: true }) }
 function editRule(rule: AlternateArtAwardRule) { Object.assign(ruleForm, rule) }
@@ -100,41 +108,57 @@ async function load() {
     const [nextGrants, nextCatalog, nextMedia] = await Promise.all([
       adminApi.alternateArtGrants(), loadDeckCatalog(), adminApi.siteMedia('card-art'),
     ])
-    const [nextRules, nextProducts] = await Promise.all([
-      adminApi.alternateArtAwardRules(), adminApi.alternateArtProducts(),
+    const [nextRules, nextProducts, nextRarities] = await Promise.all([
+      adminApi.alternateArtAwardRules(), adminApi.alternateArtProducts(), adminApi.alternateArtRarities(),
     ])
-    grants.value = nextGrants; catalog.value = nextCatalog; media.value = nextMedia; awardRules.value = nextRules; products.value = nextProducts
+    grants.value = nextGrants; catalog.value = nextCatalog; media.value = nextMedia; awardRules.value = nextRules; products.value = nextProducts; rarities.value = nextRarities
   } catch (error) { notice(error instanceof Error ? error.message : '异画资料读取失败') }
   finally { busy.value = false }
 }
-async function saveProduct() {
+async function saveRarity() {
   try {
-    const saved = await adminApi.saveAlternateArtProduct({ ...productForm, id: productForm.id || undefined })
-    products.value = [saved, ...products.value.filter(item => item.id !== saved.id)]
-    artForm.productId = saved.id
-    resetProduct()
-    notice('异画归属产品已保存，可在异画登记时选用')
-  } catch (error) { notice(error instanceof Error ? error.message : '异画归属产品保存失败') }
+    const saved = await adminApi.saveAlternateArtRarity({ ...rarityForm, id: rarityForm.id || undefined })
+    rarities.value = [saved, ...rarities.value.filter(item => item.id !== saved.id)]
+    if (!artForm.rarityIds.includes(saved.id)) artForm.rarityIds.push(saved.id)
+    resetRarity()
+    notice('罕贵定义已保存，可重复用于多张异画或联动卡')
+  } catch (error) { notice(error instanceof Error ? error.message : '罕贵定义保存失败') }
 }
 async function performSaveArt() {
   try {
-    const base = cardById.value.get(artForm.baseCardId)
-    if (!base) { notice('请先通过单卡筛选选择原卡'); return }
-    artForm.displayName = base.nameZh
-    const saved = await adminApi.saveAlternateArt({ ...artForm, id: artForm.id || undefined })
+    const base = artForm.kind === 'alternate-art' ? cardById.value.get(artForm.baseCardId) : undefined
+    if (artForm.kind === 'alternate-art' && !base) { notice('请先通过单卡筛选选择原卡'); return }
+    if (artForm.kind === 'gallery-card' && !artForm.displayName.trim()) { notice('请填写联动卡名称'); return }
+    if (base) artForm.displayName = base.nameZh
+    let saved = artForm.builtIn ? registry.value.items.find(item => item.id === artForm.id) : undefined
+    if (!saved) {
+      saved = await adminApi.saveAlternateArt({ id: artForm.id || undefined, artCode: artForm.artCode,
+        baseCardId: artForm.kind === 'gallery-card' ? '' : artForm.baseCardId, displayName: artForm.displayName,
+        mediaAssetId: artForm.mediaAssetId, active: artForm.active, kind: artForm.kind, effect: artForm.effect })
+      // 主体保存与元数据保存是两个请求。后者失败时保留服务端已生成的稳定 ID，
+      // 让风险对话框内的再次确认更新同一条记录，同时保留用户当前多选内容。
+      artForm.id = saved.id
+    }
+    saved = await adminApi.saveAlternateArtMetadata({ alternateArtId: saved.id,
+      productIds: [...artForm.productIds], rarityIds: [...artForm.rarityIds] })
     arts.value = [saved, ...arts.value.filter(item => item.id !== saved.id)]
-    grantForm.alternateArtId ||= saved.id
-    notice(saved.active ? '异画已保存并立即进入画廊；获得权益的玩家可在构筑中选用' : '异画已保存为停用状态，不会在画廊展示')
+    if (saved.kind !== 'gallery-card') grantForm.alternateArtId ||= saved.id
+    notice(saved.kind === 'gallery-card' ? '联动卡已保存到画廊；不会进入卡池、构筑、拥有或派发系统'
+      : saved.active ? '异画及其产品、罕贵归属已保存并同步画廊' : '异画已保存为停用状态，不会在画廊展示')
     resetArt()
     if (registryOpen.value) await searchRegistry(registry.value.page)
   } catch (error) { notice(error instanceof Error ? error.message : '异画保存失败'); throw error }
 }
 function saveArt() {
   if (!canWrite.value) return
-  const base = cardById.value.get(artForm.baseCardId)
-  if (!base) { notice('请先通过单卡筛选选择原卡'); return }
+  const base = artForm.kind === 'alternate-art' ? cardById.value.get(artForm.baseCardId) : undefined
+  if (artForm.kind === 'alternate-art' && !base) { notice('请先通过单卡筛选选择原卡'); return }
+  if (artForm.kind === 'gallery-card' && !artForm.displayName.trim()) { notice('请填写联动卡名称'); return }
   if (!artForm.active) { void performSaveArt().catch(() => {}); return }
-  requestRiskAction({ title: '确认启用异画并同步画廊', target: `${artForm.artCode || '未编号'} · ${base.nameZh}`, impact: '保存后会立即进入玩家画廊；已有权益的玩家可在构筑中选用。', confirmLabel: '保存并同步画廊', severity: 'warning', run: performSaveArt })
+  const targetName = artForm.kind === 'gallery-card' ? artForm.displayName : base?.nameZh || artForm.displayName
+  requestRiskAction({ title: artForm.kind === 'gallery-card' ? '确认发布联动卡到画廊' : '确认启用异画并同步画廊', target: `${artForm.artCode || '未编号'} · ${targetName}`,
+    impact: artForm.kind === 'gallery-card' ? '保存后会进入画廊并展示卡效文字，但不会接入卡效结算，也不产生拥有权或构筑身份。' : '保存后会立即进入玩家画廊；已有权益的玩家可在构筑中选用。',
+    confirmLabel: '保存并同步画廊', severity: 'warning', run: performSaveArt })
 }
 async function performGrant() {
   if (!grantForm.alternateArtId || !grantForm.accountId) { notice('请选择异画和玩家账号'); return }
@@ -224,9 +248,9 @@ onMounted(load)
 <template>
   <section class="alternate-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
-    <header><div><small>ALTERNATE ART</small><h3>异画与玩家权益</h3><p>异画不改变卡牌编号、效果或构筑合法性。先上传并绑定原卡，再授予玩家；派发来源会写入审计记录。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></header>
-    <section class="product-editor"><h4>异画归属产品</h4><p>产品独立于站点商品，可先在此新建，再绑定一张或多张异画。</p><div class="form-grid"><label>产品名称<input v-model.trim="productForm.name" maxlength="100" placeholder="例如：S01 赛季典藏"></label><label class="check"><input v-model="productForm.active" type="checkbox">可继续绑定</label></div><div class="actions"><button @click="resetProduct">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveProduct">保存归属产品</button></div><article v-for="product in products" :key="product.id"><span>{{ product.name }} · {{ product.active ? '可用' : '已停用' }}</span><button @click="editProduct(product)">编辑</button></article></section>
-    <section class="art-editor"><h4>{{ artForm.id ? '编辑异画' : '新建异画' }}</h4><p>异画卡名始终沿用原卡；启用后保存即进入玩家画廊，不需要再走资讯或站点内容发布。</p><div class="form-grid"><label>异画编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001"></label><label>绑定原卡<button class="art-choice" type="button" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label>卡名（随原卡，不可单独修改）<input :value="selectedBaseCard?.nameZh || '选择原卡后自动带入'" disabled></label><label>归属产品（复用已有）<select v-model="artForm.productId"><option value="">暂不归属产品</option><option v-for="item in products.filter(product => product.active || product.id === artForm.productId)" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><label>异画素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox">启用并在画廊展示</label></div><MediaUploadField v-if="hasPermission('admin.content.draft')" kind="card-art" :initial-alt="selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并同步画廊</button></div></section>
+    <header><div><small>ALTERNATE ART · GALLERY</small><h3>异画与联动画廊</h3><p>异画沿用原卡规则身份；联动卡可独立填写卡效文字，但不接入卡效结算，也不进入拥有、派发、构筑或对局。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></header>
+    <section class="product-editor"><h4>可复用产品与罕贵</h4><p>产品直接复用现有卡牌产品及站点产品分类；一张异画或联动卡可同时归属多个产品、多个罕贵。</p><div class="product-groups"><article v-for="product in products" :key="product.id"><span><b>{{ product.name }}</b> · {{ product.categoryName || '未分类' }} · {{ product.source === 'site' ? '站点产品' : product.source === 'catalog' ? '卡牌产品' : '历史归属' }}{{ product.status ? ` · ${product.status}` : '' }}</span></article></div><h5>罕贵定义</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section>
+    <section class="art-editor"><h4>{{ artForm.id ? '编辑画廊条目' : '新建画廊条目' }}</h4><p>历史批量异画也可在“已登记异画”中打开并补充多个产品与罕贵。联动卡不需要绑定任何已有卡。</p><div class="form-grid"><label>条目类型<select v-model="artForm.kind" :disabled="Boolean(artForm.id)"><option value="alternate-art">已有卡的异画</option><option value="gallery-card">独立联动卡</option></select></label><label>编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001 / COLLAB-001"></label><label v-if="artForm.kind === 'alternate-art'">绑定原卡<button class="art-choice" type="button" :disabled="artForm.builtIn" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input :value="selectedBaseCard?.nameZh || artForm.displayName || '选择原卡后自动带入'" disabled></label><label v-else>联动卡名称<input v-model.trim="artForm.displayName" maxlength="120" placeholder="独立撰写名称"></label><label v-if="artForm.kind === 'gallery-card'" class="full-field">联动卡卡效<textarea v-model.trim="artForm.effect" rows="4" maxlength="2000" placeholder="填写画廊中展示的卡效文字；不会接入对局结算"></textarea></label><fieldset class="metadata-choice"><legend>收录产品（可多选）</legend><label v-for="item in products.filter(product => product.active || artForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="artForm.productIds" type="checkbox" :value="item.id">{{ item.name }}<small>{{ item.categoryName || '未分类' }}</small></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选）</legend><label v-for="item in rarities.filter(rarity => rarity.active || artForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="artForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">可先在上方建立罕贵定义。</p></fieldset><label v-if="!artForm.builtIn">卡图素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox" :disabled="artForm.builtIn">启用并在画廊展示</label></div><MediaUploadField v-if="hasPermission('admin.content.draft') && !artForm.builtIn" kind="card-art" :initial-alt="artForm.kind === 'gallery-card' ? artForm.displayName || '联动卡图' : selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并同步画廊</button></div></section>
     <section class="art-list art-registry-entry"><div><h4>已登记异画</h4><p>按需打开查询，不在进入页面时载入全部异画。</p></div><button type="button" @click="openRegistry">查看已登记异画</button></section>
     <section class="grant-panel"><h4>直接派发（兜底）</h4><p>赛季达段、赛季结算和活动派发将使用同一权益记录；此处可处理补发、修正与活动名单。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('grant')">{{ selectedArt ? `${selectedArt.artCode} · ${selectedArt.displayName}` : '打开异画卡查选择' }}</button></label><AdminAccountPicker v-model="grantForm.accountId"/><label>派发来源<select v-model="grantForm.sourceKind"><option value="manual">后台直接派发</option><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="event">活动派发</option></select></label><label>派发原因<input v-model.trim="grantForm.sourceReference" maxlength="240" :placeholder="selectedArt ? `例如：${selectedArt.displayName} 补发` : '可留空；填写后会原样展示给玩家'"></label></div><button v-if="hasPermission('admin.content.draft')" class="primary" @click="grant">派发异画权益</button></section>
     <section class="award-rules"><h4>自动派发规则</h4><p>“达到段位”在排位结算后即时检查；“赛季结算”和“最强主宰”在后台归档旧赛季时自动执行；活动规则需由管理员在名单确认后执行。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('rule')">{{ selectedRuleArt ? `${selectedRuleArt.artCode} · ${selectedRuleArt.displayName}` : '打开异画卡查选择' }}</button></label><label>规则类型<select v-model="ruleForm.kind"><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="master-champion-season-final">赛季最强主宰</option><option value="event">活动派发</option></select></label><label v-if="ruleForm.kind !== 'event'">赛季编号<input v-model.trim="ruleForm.seasonId" maxlength="100" placeholder="例如：S01"></label><label v-else>活动编号<input v-model.trim="ruleForm.eventId" maxlength="160" placeholder="例如：2026-国庆活动"></label><label v-if="ruleForm.kind === 'master-champion-season-final'">指定主宰<select v-model="ruleForm.masterId"><option value="">所有最强主宰得主</option><option v-for="card in catalog.filter(item => item.cardType === 'master')" :key="card.id" :value="card.id">{{ card.nameZh }}</option></select></label><label v-if="ruleForm.kind === 'rank-reached' || ruleForm.kind === 'season-final'">最低段位<select v-model.number="ruleForm.minimumTierIndex"><option v-for="index in 5" :key="index - 1" :value="index - 1">第 {{ index }} 档及以上</option></select></label><label class="check"><input v-model="ruleForm.active" type="checkbox">启用此规则</label></div><div class="actions"><button @click="resetRule">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveRule">保存规则</button></div><article v-for="rule in awardRules" :key="rule.id" :class="{ inactive: !rule.active }"><div><b>{{ arts.find(art => art.id === rule.alternateArtId)?.displayName || rule.alternateArtId }}</b><span>{{ rule.kind === 'rank-reached' ? `赛季达段 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'season-final' ? `赛季结算 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'master-champion-season-final' ? `赛季最强主宰 · ${rule.seasonId} · ${rule.masterId || '全部主宰'}` : `活动派发 · ${rule.eventId}` }}</span><small>{{ rule.active ? '已启用' : '已停用' }}</small></div><button @click="editRule(rule)">编辑</button></article><p v-if="!awardRules.length">尚未设置自动派发规则。</p></section>
@@ -239,7 +263,7 @@ onMounted(load)
           <header><div><small>ALTERNATE ART REGISTRY</small><h2 id="alternate-art-registry-title">已登记异画</h2></div><button type="button" aria-label="关闭" @click="registryOpen = false">×</button></header>
           <form class="registry-filters" @submit.prevent="searchRegistry(1)"><label>名称<input v-model.trim="registryFilters.name" placeholder="异画名称"></label><label>编号<input v-model.trim="registryFilters.artCode" placeholder="异画编号"></label><label>绑定卡<input v-model.trim="registryFilters.baseCard" placeholder="原卡名或编号"></label><button type="button" @click="resetRegistryFilters">重置</button><button class="primary" type="submit">查询</button></form>
           <div class="registry-results" :aria-busy="registryBusy">
-            <article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补异画编号' }} · {{ art.baseCardId }} · {{ art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中' }}</span><small>{{ art.productName || '未归属产品' }} · {{ art.builtIn ? '内置异画，已在画廊展示，可授予' : art.active ? '已在画廊展示，可授予' : '已停用，不展示不再授予' }}</small></div><button v-if="!art.builtIn" type="button" @click="editRegistryArt(art)">编辑</button></article>
+            <article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补编号' }} · {{ art.kind === 'gallery-card' ? '独立联动卡' : `${art.baseCardId} · ${art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中'}` }}</span><small>产品：{{ art.products?.map(item => item.name).join('、') || '未归属' }} · 罕贵：{{ art.rarities?.map(item => item.name).join('、') || '未设定' }}</small><small>{{ art.kind === 'gallery-card' ? '仅画廊展示，不可派发或构筑' : art.builtIn ? '内置异画，可编辑归属' : art.active ? '已在画廊展示，可授予' : '已停用，不展示不再授予' }}</small></div><button type="button" @click="editRegistryArt(art)">编辑</button></article>
             <p v-if="!registryBusy && !registry.items.length">没有符合条件的已登记异画。</p>
           </div>
           <footer><span>共 {{ registry.total }} 项 · 第 {{ registry.page }} / {{ registryPages }} 页</span><div><button type="button" :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button type="button" :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer>
@@ -256,4 +280,5 @@ onMounted(load)
 .event-accounts{display:grid;gap:6px;margin:10px 0}.event-accounts>button{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px;text-align:left}.event-accounts>button code{overflow-wrap:anywhere;color:#7bcbd0}.event-accounts>button span{grid-column:2;grid-row:1/3;align-self:center;color:#e8b0b6}
 .art-registry-entry{display:flex;align-items:center;justify-content:space-between;gap:18px}.art-registry-entry h4,.art-registry-entry p{margin:0}.registry-mask{position:fixed;z-index:3500;inset:0;display:grid;place-items:center;padding:32px;background:#020507df}.registry-modal{display:grid;width:min(1040px,94vw);height:min(760px,90vh);grid-template-rows:auto auto minmax(0,1fr) auto;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.registry-modal>header,.registry-modal>footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid #374147}.registry-modal>header h2{margin:4px 0 0}.registry-modal>header small{color:#cfad43;font:900 12px monospace;letter-spacing:.08em}.registry-modal>header button{border:0;background:transparent;color:#fff;font-size:28px}.registry-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto auto;align-items:end;gap:8px;padding:12px 18px;border-bottom:1px solid #283238}.registry-filters label{display:grid;gap:5px;color:#aeb8bb;font-size:13px;font-weight:900}.registry-filters input,.registry-filters button,.registry-modal>footer button{box-sizing:border-box;min-height:38px;padding:8px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-results{overflow:auto;padding:12px 18px}.registry-results article{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:8px;padding:9px;border:1px solid #35424a;background:#101820}.registry-results img,.registry-results :deep(.l12-card-image){width:46px;height:64px;object-fit:cover}.registry-results article>div{display:grid;gap:3px}.registry-results span,.registry-results small{color:#93a0a6;font-size:13px}.registry-results article>button{min-height:34px;padding:7px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-modal>footer{border-top:1px solid #374147;border-bottom:0}.registry-modal>footer span{color:#93a0a6}.registry-modal>footer div{display:flex;gap:8px}.registry-modal button:disabled{cursor:not-allowed;opacity:.42}@media(max-width:760px){.art-registry-entry{align-items:stretch;flex-direction:column}.registry-mask{padding:8px}.registry-modal{width:100%;height:96dvh}.registry-filters{grid-template-columns:1fr 1fr}.registry-filters label:first-child{grid-column:1/-1}.registry-results{padding:9px}.registry-results article{grid-template-columns:38px minmax(0,1fr)}.registry-results img,.registry-results :deep(.l12-card-image){width:38px;height:54px}.registry-results article>button{grid-column:1/-1}.registry-modal>footer{align-items:flex-start;flex-direction:column}.registry-modal>footer div,.registry-modal>footer button{width:100%}}
 .alternate-admin,.alternate-admin>*,.product-editor,.art-editor,.grant-panel,.award-rules,.event-dispatch,.form-grid,.form-grid>*{box-sizing:border-box;min-width:0;max-width:100%}.alternate-admin button,.alternate-admin input,.alternate-admin select,.alternate-admin textarea{max-width:100%;min-width:0;white-space:normal}@media(max-width:380px){.alternate-admin{padding:14px}.alternate-admin>header{margin:-14px -14px 14px;padding:14px}.product-editor,.art-editor,.grant-panel,.art-list,.grant-list,.award-rules,.event-dispatch{padding:10px}}
+.full-field,.metadata-choice{grid-column:1/-1}.metadata-choice{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:7px;padding:12px;border:1px solid #35424a}.metadata-choice legend{padding:0 6px;color:#d9c176;font-weight:900}.metadata-choice .check{justify-content:flex-start;padding:7px;background:#101820}.metadata-choice small{margin-left:auto}.product-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;max-height:220px;overflow:auto}.product-groups article{margin:0}.form-grid textarea{width:100%;resize:vertical}@media(max-width:760px){.full-field,.metadata-choice{grid-column:auto}}
 </style>

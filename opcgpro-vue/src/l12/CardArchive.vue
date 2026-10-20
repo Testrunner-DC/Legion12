@@ -9,13 +9,13 @@ import CardDetailContent from './CardDetailContent.vue'
 import { alternateArtApi, authState, platformState, type AlternateArt } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
-type CatalogCard = DeckCard
+type CatalogCard = DeckCard & { galleryStandalone?: boolean }
 type ArchivePage = 'catalog' | 'gallery'
 
 const typeLabels: Record<string, string> = {
   legion: '军团', tactic: '战术（主动／反击）', rune: '士气卡', artifact: '圣物',
   divinity: '主城', master: '主宰', destruction: '天灾',
-  token: '衍生卡牌', trial: '试炼卡', unknown: '待识别',
+  token: '衍生卡牌', trial: '试炼卡', unknown: '待识别', 'gallery-card': '联动卡',
 }
 const factionLabels: Record<string, string> = {
   universal: '通用', tianting: '天廷', gaotianyuan: '高天原',
@@ -57,6 +57,23 @@ let archiveMounted = false
 let ownedArtsRequest = 0
 
 function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
+  if (art.kind === 'gallery-card') {
+    if (!gallery) return null
+    return {
+      id: `GALLERY-${art.id}`,
+      number: art.artCode || `GALLERY-${art.id.slice(0, 8)}`,
+      nameZh: art.displayName,
+      cardType: 'gallery-card',
+      product: '',
+      faction: '',
+      imageUrl: art.imageUrl,
+      rarity: art.rarities?.map(item => item.name).join(' / ') || undefined,
+      traits: [],
+      effect: art.effect || '',
+      products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : []),
+      galleryStandalone: true,
+    }
+  }
   const base = cards.value.find(card => card.id === art.baseCardId)
   if (!base || art.builtIn) return null
   return {
@@ -66,7 +83,8 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
     nameZh: gallery ? `${base.nameZh} · ${art.displayName}` : base.nameZh,
     imageUrl: art.imageUrl,
     archiveBaseCardId: base.id,
-    products: art.productName ? [art.productName] : base.products,
+    products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : base.products),
+    rarity: art.rarities !== undefined ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
   }
 }
 const catalogAlternateArts = computed(() => authState.verified && platformState.account?.role === 'admin'
@@ -77,8 +95,21 @@ const catalogCards = computed(() => [
   ...catalogAlternateArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
 ])
 const logicalCards = computed(() => groupArchiveCards(catalogCards.value))
+function withGalleryMetadata(card: CatalogCard): CatalogCard {
+  const overlay = galleryArts.value.find(art => art.builtIn && (art.cardImageId === card.id || art.artCode === card.id))
+  if (!overlay) return card
+  return {
+    ...card,
+    products: overlay.products !== undefined
+      ? overlay.products.map(item => item.name)
+      : overlay.productName ? [overlay.productName] : card.products,
+    rarity: overlay.rarities !== undefined
+      ? overlay.rarities.map(item => item.name).join(' / ') || undefined
+      : card.rarity,
+  }
+}
 const galleryCards = computed(() => {
-  const legacy = cards.value.filter(isGalleryVariant)
+  const legacy = cards.value.filter(isGalleryVariant).map(withGalleryMetadata)
   const uploaded = galleryArts.value.map(art => projectedUploadedArt(art, true))
     .filter((card): card is CatalogCard => Boolean(card))
   return [...legacy, ...uploaded].sort(compareArchiveVersions)
@@ -185,7 +216,7 @@ const filteredGallery = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return galleryCards.value.filter(card => matchesFilters(card, keyword)).sort(compareVisibleCards)
 })
-const types = computed(() => [...new Set(cards.value.map(card => cardTypeFilterKey(card.cardType)))]
+const types = computed(() => [...new Set((page.value === 'gallery' ? galleryCards.value : cards.value).map(card => cardTypeFilterKey(card.cardType)))]
   .filter(key => typeLabels[key]))
 const factions = computed(() => Object.keys(factionLabels).filter(key => cards.value.some(card => card.faction === key)))
 const selectedLogical = computed(() => logicalCards.value.find(entry => entry.logicalId === selectedLogicalId.value) ?? null)
@@ -356,7 +387,7 @@ function resetFilters() {
               <b v-if="card.disasterLevel" class="archive-disaster">{{ card.disasterLevel }}</b>
               <b v-if="card.troops" class="archive-troops">{{ card.troops }}</b>
             </div>
-            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · 异画 · {{ cardTypeLabel(card.cardType, card.isCounterTactic) }}</small>
+            <span>{{ card.nameZh }}</span><small>{{ displayCardNumber(card) }} · {{ card.galleryStandalone ? '联动卡' : `异画 · ${cardTypeLabel(card.cardType, card.isCounterTactic)}` }}</small>
           </article>
           <div v-if="!filteredGallery.length" class="archive-empty">没有符合条件的异画。</div>
         </template>
