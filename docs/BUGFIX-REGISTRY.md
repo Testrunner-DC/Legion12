@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜CI旧格式包与现行部署契约漂移
+
+- 源确认旧CI引用不存在的public/cards，拼schema1且遗漏测试前端/共享清单/排空标记/优化资源绑定。沿批准统一入口计划退役无效CI producer/upload，不删历史Artifact；CI完整验证与原两套无filter受管测试保持，前端低成本先行。可部署包仅现有verify-l12.ps1生成，该源和部署器未改。
+- Node实际源RED，修后三负变异；真实PS -Workflow一正三反、P0—P4过，原运行库/150MiB断言绑定真实标准owner，能力/schema3/卡图要求保持。证据release-entry-unification-20261021/main-acceptance.json；未宣称GitHub托管执行、完整发布或部署。CI自动标准包仍缺可信素材来源，单独挂起；禁止复活旧schema或虚填卡图hash。
+
 ## 2026-10-21｜同源正式/测试登录缓存共享：按部署挂载归属统一出口
 
 - 已有人类批准项目规划及原生串用复现。扫描src全部l12-auth-token/account/nickname/endpoint读写，17处在platform/net；deploymentBase新增唯一键解析，根部署沿原键兼容、其他归一化base附命名空间，不按页面路由或可编辑endpoint改变。测试不读/清正式旧键，HTTP鉴权、WS hello/重连、昵称与诊断全部迁移，原会话ABA/迟到401/退出守卫保持。

@@ -185,15 +185,11 @@ powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
 
 ## GitHub Actions
 
-`.github/workflows/verify-release.yml` 会在 `main` 推送、Pull Request 和手动触发时执行同等测试，并生成 Linux 运行包 Artifact。下载后的 JSON 清单可传给部署脚本：
+`.github/workflows/verify-release.yml` 在 main、Pull Request、手动及 v* 标签运行完整前端构建、两套完整后端测试与架构/发布状态检查；低成本前端拒绝先于耗时后端测试，不过滤测试。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\deploy-l12.ps1 `
-  -ServerArtifactRoot "/opt" `
-  -ArtifactManifest D:\path\l12-release-<commit>.json
-```
+2026-10-21 已撤下旧 schema-1 手拼包出口：它依赖已不存在的 public/cards Git 子树，且缺少当前双前端、共享清单、排空能力及优化卡图绑定，不能再将其 Artifact 当成可部署包。唯一可部署包入口保持 `ops/windows/verify-l12.ps1`，沿既有完整校验、schema-3/运行兼容证明、卡图内容寻址及150 MiB上限执行，不新增重复发布链。
 
-CI Artifact 不重复包含卡图；若服务器没有对应缓存，部署电脑会从当前同提交仓库生成一次卡图包。
+CI 自动生成标准包仍需先接入可核验的完整优化卡图来源；当前不从未知URL拉资源、不虚填空卡图哈希或冒称已完成CI出包。`scripts/test-ci-release-entry.mjs` 与既有工作流验收器防止旧出口复活，并保留标准入口的能力/资源要求。
 
 ## 回滚与排查
 

@@ -16,14 +16,12 @@ foreach ($project in @('TwelveLegions.Tests','TwelveLegions.Platform.Tests')) {
     if ($text -notmatch [regex]::Escape("./scripts/invoke-l12-tests.ps1 -Project ./$project/$project.csproj")) { throw "Full supervised project missing: $project" }
 }
 if ($testEntry -match '--filter' -or -not $testEntry.Contains("@('test',`$Project,'--configuration'")) { throw 'CI test entry must execute both full projects without filters.' }
-$releaseCondition = "if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')"
-$conditionCount = ([regex]::Matches($text, [regex]::Escape($releaseCondition))).Count
-
-if ($conditionCount -ne 2) { throw "Expected the package and upload steps to share two release-only conditions; found $conditionCount." }
+$standardEntry = Get-Content -LiteralPath (Join-Path $repoRoot 'ops/windows/verify-l12.ps1') -Raw
+if ($text -match 'actions/upload-artifact|dotnet publish|releaseSha256') { throw 'CI cannot publish a second legacy deployment artifact.' }
 if ($text -notmatch "tags:\s*\['v\*'\]") { throw 'Release tag trigger v* is missing.' }
-if ($text -notmatch 'if \[\[ -d "\$\{root\}/publish/runtimes" \]\]; then') { throw 'Optional runtimes directory guard is missing.' }
-if ($text -notmatch 'archive_bytes > 157286400') { throw '150 MiB release archive budget is missing.' }
-if ($text -notmatch '::error::release archive is larger') { throw 'Release archive diagnostic is missing.' }
+if (-not $standardEntry.Contains('发布产物缺少 linux-x64 原生依赖')) { throw 'Canonical Linux runtime guard is missing.' }
+if (-not $standardEntry.Contains(').Length -gt 150MB')) { throw 'Canonical 150 MiB release archive budget is missing.' }
+if (-not $standardEntry.Contains('运行包异常大于 150MB')) { throw 'Canonical release archive diagnostic is missing.' }
 if (([regex]::Matches($text, 'npm run check:performance-architecture')).Count -ne 0) {
     throw 'GitHub verification must not run a standalone performance lock before the frontend build.'
 }
@@ -40,4 +38,6 @@ if (([regex]::Matches($text, 'node scripts/test-release-status\.mjs')).Count -ne
     throw 'GitHub main verification must validate the release state source exactly once.'
 }
 
-Write-Host '[L12 workflow] ordinary pushes run architecture, performance and release verification; manual/tag runs package and upload.'
+& node (Join-Path $repoRoot 'scripts/test-ci-release-entry.mjs') $path
+if ($LASTEXITCODE -ne 0) { throw 'Canonical release entry contract failed.' }
+Write-Host '[L12 workflow] push/PR/manual/tag verify the full code; canonical asset-bound packages remain owned by verify-l12.ps1.'
