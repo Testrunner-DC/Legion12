@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜现有正文字号覆盖对局记录语义
+
+- 按已批项目规划，只补BattleEventLog两正文容器，一次使用原board-copy与现有1/1.12/1.24倍率；控件、回合标签、图标、卡图、权威日志/回放数据不变。设置说明准确补记录正文，不新增字号协议或全站最低字号。
+- 实际偏好17项及三尺寸三档原生通过，13→14.56→16.12px、控件13px恒定，长文换行/末行滚动/明细与卡牌点击保持；Main看图。最终组合前端UI/类型/双base通过，未变后端复用素材2101。唯一battle-log-font-20261021/main-acceptance.json；不冒全站覆盖、完整棋盘或真机，更不自动线上关字体反馈。回退不得重复乘倍率、改变标准基线或放大外围按钮。
+
 ## 2026-10-21｜素材库封顶与本地假分页：统一有界服务端读取
 
 - 已批项目评估改进。旧AdminSiteMedia默认500/最大1000；本地分页和select看不到旧素材。保留数组兼容，新search端口沿AdminContentRead，默认24/最大100、说明/ID/hash、精确1或100 ID、稳定时间/ID排序；只投影当前页。扫描AdminAlternateArts、AdminArticles、AdminSiteContent、AdminRuleRulings、ArticleDocumentEditor，均迁共享Picker，管理页改真分页；旧截断API已无这五类运行消费者。

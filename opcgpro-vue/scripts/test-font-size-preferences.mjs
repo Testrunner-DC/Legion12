@@ -81,7 +81,20 @@ test('native setting clearly limits this slice to semantic prose', () => {
   const settings = fs.readFileSync(path.join(root, 'src/l12/site/L12SettingsModal.vue'), 'utf8')
   assert(settings.includes('v-model="audioPreferences.fontSize"'))
   for (const size of ['standard', 'large', 'extra-large']) assert(settings.includes(`value="${size}"`))
-  assert(settings.includes('卡牌与询问正文') && settings.includes('不改变卡图'))
+  assert(settings.includes('卡牌、询问及对局记录正文') && settings.includes('不改变卡图'))
+})
+test('battle log prose scales once, controls and default board tier remain unchanged', () => {
+  const log = fs.readFileSync(path.join(root, 'src/l12/game/BattleEventLog.vue'), 'utf8')
+  for (const selector of ['.event-message', '.combat-cards']) {
+    const declaration = log.slice(log.indexOf(`${selector}{`)).split('}')[0]
+    assert(declaration.includes('font-size:calc(var(--l12-board-copy,13px) * var(--l12-font-scale,1))'))
+    assert.equal((declaration.match(/--l12-font-scale/g) || []).length, 1)
+    assert(declaration.includes('line-height:1.55') && declaration.includes('overflow-wrap:anywhere'))
+  }
+  for (const selector of ['.combat-toggle', '.action-toggle', '.jump-latest', '.turn-divider']) {
+    const declaration = log.slice(log.indexOf(`${selector}{`)).split('}')[0]
+    assert(!declaration.includes('--l12-font-scale'), `${selector} is a control or label, not prose`)
+  }
 })
 console.log(JSON.stringify({ suite: 'actual-font-preferences-module-and-semantic-contract', passed: results.length, failed: failures.length, results, failures }, null, 2))
 if (failures.length) throw new Error(failures.join('\n'))
