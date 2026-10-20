@@ -34,7 +34,7 @@ public sealed class LongChainLifecycleContractTests
     [Trait("L12Evidence", "long-chain-failure-evidence-guard")]
     public void FailurePathsCannotDropTheCurrentCommandPrefixOrCutpoints()
     {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        var directory = new FileInfo(TestSourcePath()).Directory;
         string? source = null;
         while (directory is not null && source is null)
         {
@@ -53,6 +53,9 @@ public sealed class LongChainLifecycleContractTests
         Assert.Contains("authorityHash[A=", text, StringComparison.Ordinal);
         Assert.Contains("projectionHash[p0=", text, StringComparison.Ordinal);
     }
+
+    private static string TestSourcePath(
+        [System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "") => sourcePath;
 
     [Theory]
     [MemberData(nameof(DeterministicScenarios))]

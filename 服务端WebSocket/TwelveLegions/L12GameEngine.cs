@@ -1557,12 +1557,33 @@ public sealed partial class L12GameEngine : IL12MatchKernel
 
     private void RegisterReturnedMorale(L12PlayerState player, int count)
     {
+        const string pendingFactionZero = "pending:factionZeroRecovery";
+        if (count > 0 && player.PendingStarterMoraleReturnEvents == 0 && player.Morale.Count > 0
+            && player.UsedAbilities.Contains(pendingFactionZero))
+        {
+            static bool IsFactionZeroCandidate(L12TriggerCandidate candidate, int controller)
+                => candidate.Controller == controller && candidate.Trigger == "morale-returned-to-zero"
+                    && candidate.Data.GetValueOrDefault("ability") == "factionZeroRecovery";
+            var factionZeroWorkInProgress = player.UsedAbilities.Contains("trigger:factionZeroRecovery")
+                || player.UsedAbilities.Contains("queued:factionZeroRecovery")
+                || State.PendingTriggerBatches.Any(batch => batch.Candidates.Any(candidate =>
+                    IsFactionZeroCandidate(candidate, player.PlayerIndex)))
+                || State.PendingTriggerStackCandidates.Any(candidate =>
+                    IsFactionZeroCandidate(candidate, player.PlayerIndex))
+                || State.PendingActivations.Any(activation => activation.Controller == player.PlayerIndex
+                    && activation.SourceCardId == "S01-01C1" && activation.Ability == "factionZeroRecovery")
+                || State.EffectStack.Concat(State.DeferredEffectStack).Any(item =>
+                    item.Controller == player.PlayerIndex && item.Trigger == "morale-returned-to-zero"
+                    && item.Data.GetValueOrDefault("ability") == "factionZeroRecovery");
+            if (!factionZeroWorkInProgress) player.UsedAbilities.Remove(pendingFactionZero);
+        }
+
         player.ReturnedMoraleThisTurn += count;
         if (count > 0) player.PendingStarterMoraleReturnEvents++;
         if (player.PlayerIndex == State.ActivePlayer && player.Faction == "tianting" && player.Morale.Count == 0
             && player.MoraleDeck.Count > 0 && !player.UsedAbilities.Contains("trigger:factionZeroRecovery")
-            && !player.UsedAbilities.Contains("pending:factionZeroRecovery"))
-            player.UsedAbilities.Add("pending:factionZeroRecovery");
+            && !player.UsedAbilities.Contains(pendingFactionZero))
+            player.UsedAbilities.Add(pendingFactionZero);
     }
 
     private void ReturnMoraleCardToDestination(L12PlayerState player, L12MoraleCard card)

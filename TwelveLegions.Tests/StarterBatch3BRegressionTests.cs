@@ -247,7 +247,7 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Equal(expected, serverCard.Effect);
         Assert.Equal($"Ability 1\n{expected}", serverCard.AtomicReference);
 
-        var frontendCatalogPath = FindRepositoryFile("opcgpro-vue", "public", "data", "l12", "cards.st.json");
+        var frontendCatalogPath = FindRepositoryFile(["opcgpro-vue", "public", "data", "l12", "cards.st.json"]);
         using var frontendCatalog = JsonDocument.Parse(File.ReadAllText(frontendCatalogPath));
         var frontendCard = frontendCatalog.RootElement.EnumerateArray()
             .Single(card => card.GetProperty("id").GetString() == "ST02-M1");
@@ -263,16 +263,17 @@ public sealed class StarterBatch3BRegressionTests
         Assert.Equal(expected, Assert.Single(structured, ability => ability.Trigger == "active").Text);
     }
 
-    private static string FindRepositoryFile(params string[] pathParts)
+    private static string FindRepositoryFile(string[] pathParts,
+        [System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "")
     {
-        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null;
+        for (var directory = new FileInfo(sourcePath).Directory; directory is not null;
              directory = directory.Parent)
         {
             var candidate = Path.Combine([directory.FullName, .. pathParts]);
             if (File.Exists(candidate)) return candidate;
         }
 
-        throw new FileNotFoundException($"无法从测试输出目录定位仓库文件：{Path.Combine(pathParts)}");
+        throw new FileNotFoundException($"无法从测试源码定位仓库文件：{Path.Combine(pathParts)}");
     }
 
     [Fact]

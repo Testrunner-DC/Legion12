@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜标准天廷归零共享入队与旧pending兼容
+
+- 根因/批准：西施返最后1士气已登记资格，但Flush把天廷S01-01C1候选限定在ST01-M1的morale-return plan，标准杨戬/孟婆/孙悟空均遗漏。人类call_155bfcdb2c624f399132a0fb78c785eb批准限定修复；全S1/S2/ST卡文按`返还.*士气|士气.*返还`得32，排除黑莲花去向及李牧/哮天犬/嫦娥观察项，28实际来源均走ReturnSelectedMorale→RegisterReturnedMorale，无新增单卡旁路。
+- 修复：Flush用既有active/Tianting/deck/pending/未用/未queued共享资格，嫦娥独立候选保持；候选沿原factionZeroEligibleAtReturn，不因秦良玉先+1而撤销已发生归零。正常次序仍秦+1→归零询问→可选+2，不插队。兼容真实RED还暴露旧pending借下一次2→1返还；Register只在新批正返还、仍非0、旧pending存在时扫描准确controller/trigger/ability工作，确无在途才清旧标，不扩大到同卡其他能力，也不每次返还都扫队列。
+- 回归：XiShiQinLiangyuZeroMoraleReportedTests最终21项，标准三主宰/预组、双方、真实V2、接受/拒绝、非己方回合/非天廷/空牌库、真实杨戬二次归零、旧pending/同批锁/旧0兼容与在途保护。显式私有方法兼容夹具不冒端到端；真实杨戬附带哮天犬询问按准确卡号拒绝，不吞其他prompt。
+- Main完整7988：7986通过，2个旧源码合同因受管缓存无源码祖先失败；只改CallerFilePath定位、原断言均保留，补23/23成功。最终源级累计7988、原整轮仍失败，产品DLL未变，不宣称新全绿同DLL整轮；162相关、P0-P4/68内核源、原子324卡和预组76卡审计通过。独审CLEAR，唯一xishi-qinliangyu-feedback-20261020/fixed-main-acceptance.json。原6红、legacy红和夹具失败均保留。
+- 回滚/上线边界：只撤Register/Flush两叶可回退，不删测试、卡文或恢复守卫。本地verify-live，尚无部署/维护/线上关闭；17待办仍含8065c50d，性能独立未通过。
+
 ## 2026-10-20｜孟婆目标/花魁公开日志消费者与关单原子版本
 
 - 两个当前反馈均已补实际消费者：真实Handle孟婆目标→响应，花魁打出→选牌→放回余牌→公开入手，双方及真实V2恢复的八份投影交给同一GamePage对象；本人/对手/公开观战/裁判×两屏64组通过。明确响应原文/唯一高亮、最小化、日志展开及实名行完整滚入视区/中心命中、重复快照不增行；不是仅innerText存在就认显示通过。Main已看最终图，独审CLEAR。

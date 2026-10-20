@@ -277,7 +277,7 @@ public sealed class ProjectedCostTargetRegressionTests
     [Fact]
     public void AllEightProjectionSitesShareTheHelperWithoutChangingFinalOrSearchFilters()
     {
-        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        var root = new FileInfo(TestSourcePath()).Directory;
         while (root is not null && !Directory.Exists(Path.Combine(root.FullName, "服务端WebSocket", "TwelveLegions"))) root = root.Parent;
         Assert.NotNull(root);
         string Read(string name) => File.ReadAllText(Path.Combine(root!.FullName, "服务端WebSocket", "TwelveLegions", name + ".cs"));
@@ -296,6 +296,9 @@ public sealed class ProjectedCostTargetRegressionTests
         Assert.Contains("L12StructuredCardRules.CurrentCostAtMost(card, 1)", Read("L12CompositeEffectPlans"));
         Assert.Contains("L12StructuredCardRules.CurrentCostEquals(card, 0)", Read("L12S1FactionEffects"));
     }
+
+    private static string TestSourcePath(
+        [System.Runtime.CompilerServices.CallerFilePath] string sourcePath = "") => sourcePath;
 
     private static readonly L12Catalog Catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };

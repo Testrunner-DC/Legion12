@@ -1026,8 +1026,11 @@ public sealed partial class L12GameEngine
             player.PendingStarterRuneSpendEvents = 0;
 
             if (returnedEvents > 0
-                && L12StructuredCardRules.StarterRemainingPlan(player.MasterId, "morale-return") == "change-rested-morale"
+                && player.PlayerIndex == State.ActivePlayer
+                && player.Faction == "tianting"
+                && player.MoraleDeck.Count > 0
                 && player.UsedAbilities.Contains("pending:factionZeroRecovery")
+                && !player.UsedAbilities.Contains("trigger:factionZeroRecovery")
                 && !player.UsedAbilities.Contains("queued:factionZeroRecovery"))
             {
                 player.UsedAbilities.Remove("pending:factionZeroRecovery");
