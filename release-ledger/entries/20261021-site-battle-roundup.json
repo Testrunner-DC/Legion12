@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-site-battle-roundup",
+  "date": "2026-10-21",
+  "audience": "players",
+  "title": "教学、画廊与对局体验",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "单人入口提供三章线性教学，使用嫦娥与迦具土预组，通过场面、高亮和卡牌详情认识资源、进攻与响应；完成操作自动进入下一步。沙盒调整为管理员从后台进入。",
+      "paths": ["opcgpro-vue/src/l12/tutorial/tutorialFinalChapter.ts", "服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json", "opcgpro-vue/src/assets/l12/battle/Match_1_m.png", "opcgpro-vue/src/assets/l12/battle/Match_1_w.png", "opcgpro-vue/src/assets/l12/battle/Match_2_m.png", "opcgpro-vue/src/assets/l12/battle/Match_2_w.png", "opcgpro-vue/src/assets/l12/battle/Match_3_m.png", "opcgpro-vue/src/assets/l12/battle/Match_3_w.png"]
+    },
+    {
+      "category": "content",
+      "text": "画廊完善异画的多产品、罕贵和独立联动卡资料，卡牌详情增加画师信息。",
+      "paths": ["opcgpro-vue/src/l12/CardArchive.vue", "opcgpro-vue/src/l12/CardDetailContent.vue", "服务端WebSocket/TwelveLegions/L12Catalog.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs"]
+    },
+    {
+      "category": "ui",
+      "text": "设置可调卡牌、询问及对局记录正文的字号，操作按钮和卡图尺寸保持不变；获得月读条件进攻加成的军团增加状态小图标。",
+      "paths": ["opcgpro-vue/src/l12/CardTile.vue", "opcgpro-vue/src/l12/game/BattleEventLog.vue", "opcgpro-vue/src/l12/site/L12SettingsModal.vue", "opcgpro-vue/src/style.css"]
+    },
+    {
+      "category": "battle",
+      "text": "普通终局结果在最后一段合法演出播放完成后显示，等待期间仍可返回；切换对局不再接受上一局的演出回调。",
+      "paths": ["opcgpro-vue/src/l12/game/CombatMotionPresentationLayer.vue"]
+    },
+    {
+      "category": "card-effects",
+      "text": "修正西施返还最后1点士气后，标准天廷主宰漏掉士气归零询问的问题，保留逐次确认及原有发动条件。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12GameEngine.cs", "服务端WebSocket/TwelveLegions/L12StarterRemainingEffects.cs"]
+    },
+    {
+      "category": "accounts",
+      "text": "正式服与测试服独立保存登录状态和对战连接，不再相互覆盖；测试服升级后需要重新登录一次。",
+      "paths": ["opcgpro-vue/src/l12/deploymentBase.ts", "opcgpro-vue/src/l12/platform.ts"]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-admin-media-internal",
+  "date": "2026-10-21",
+  "audience": "internal",
+  "reason": "后台任务式画廊、画师编辑、素材分页检索与显式引用读取，以及通知音量与公开牌库选择器的内部接线；保持既有权限、风险确认、引用和保存保护，不作为玩家更新说明。",
+  "paths": ["opcgpro-vue/src/l12/audioPreferences.ts", "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue", "opcgpro-vue/src/l12/site/AdminArticlesPanel.vue", "opcgpro-vue/src/l12/site/AdminRuleRulingsPanel.vue", "opcgpro-vue/src/l12/site/AdminSiteContentPanel.vue", "opcgpro-vue/src/l12/site/PublicDeckPicker.vue", "opcgpro-vue/src/l12/site/SiteMediaPicker.vue", "opcgpro-vue/src/l12/site/siteMediaReferences.ts", "服务端WebSocket/TwelveLegions/L12PlatformStore.SiteContent.cs", "服务端WebSocket/TwelveLegions/L12PlatformStore.cs"]
+}
