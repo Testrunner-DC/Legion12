@@ -111,7 +111,7 @@ export interface PlayerLogSemantic {
   targetName?: string
 }
 
-export type CardStatusIconKind = 'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'
+export type CardStatusIconKind = 'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack' | 'conditional-attack'
 
 export interface CardStatusEffect {
   kind: CardStatusIconKind | string

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜月读条件进攻增益卡面标记
+
+- 人类直接要求获得月读增益的军团显示小图标。已有权威投影正确发布conditional-attack及当前数值/来源，遗漏点是共享CardTile没有对应别名、字形和默认标签；非卡效结算错误。沿既有结构化状态显示浅紫月亮，保留数值与来源提示、同状态去重及容器缩放，不另存客户端增益、不改常驻兵力、卡效或数据库。
+- 同类扫描BuildStatusEffects的全部状态种类及CardTile映射，现有lock/power-up/power-down/disabled/shield/discard-end/extra-attack保持；keyword-disabled继续独立关键词红叉，不误画为月读。真实SFC初始RED为预期1个图标实际0；最终6项现行详情检查、8组真实SFC渲染及1366×768/844×390双方与观战6场通过，更新/去重/失效/隐藏/离场、卡内边界和零游戏命令均验证，Main看过两尺寸卡面和详情。
+- 唯一D盘证据tsukuyomi-status-icon-20261020：red.log保留；browser-r2/report.json为最终原生界面证据，浏览器及预览已退出。初次入口相对路径错误在浏览器启动前被TEMP守卫拒绝，browser-r1.log原件保留，修入口后验证；不冒产品RED。权威引擎/字段/投影回归与667c逐叶未变，复用当天Release中19/19投影/双方/V2恢复记录，不重复全规则测试。共享UI359及Vue/Node类型通过，实际SFC已由原生Vite界面编译；没有为此纯映射变动重做Release/包。本改动尚未部署，不关闭线上反馈。
+- 回退面仅共享状态类型/映射/色彩和具名回归，不能移除已有权威状态、详情实时读取、旧快照兼容、隐藏信息或状态图标换行守卫。
+
 ## 2026-10-20｜R11恢复工具：逻辑删除投影及真实执行器合同
 
 - 首稿只测了正常accountId，漏掉已有逻辑删除的真实链：ExecuteAccountDeletion→DeletedAccountName完整GUID→AnonymizeIdentity把参与ID置null、名字变墓碑；ReadAdminMatchSummary又将ongoing非sandbox牌库名强制null。按数据库内部“已清理牌库”要求API会必拒，当前8c AdminQueries blob95643aba与工作树相同。修双侧canonical，仅精确墓碑名恢复ID，69已删账号/同名墓碑、20唯一参与者、时窗/计数/0连接与绑定指纹全部保留；Node16/Python11通过，不展示身份/牌面/回放。

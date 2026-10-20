@@ -570,6 +570,9 @@ const contracts = [
     && playerMat.includes('.formation-slot:focus-visible')
     && playerMat.includes('data-ui-contract="actual-combat-target-only"'), '手牌与场上军团只移除卡片常驻装饰框，透明边线保持命中尺寸；六格边界及可用、选择、目标、支付、反击状态和键盘焦点标记必须保留'],
   [l12Types.includes("'lock' | 'power-up' | 'power-down' | 'disabled' | 'shield' | 'discard-end' | 'extra-attack'") && l12Types.includes('statusIcons?: string[]') && l12Types.includes('statusEffects?: CardStatusEffect[]'), '卡牌投影视图必须提供结构化 statusEffects/statusIcons 状态契约并兼容旧快照缺省'],
+  [l12Types.includes("| 'conditional-attack'") && cardTile.includes("'conditional-attack': '☾'")
+    && cardTile.includes("'conditional-attack': 'conditional-attack'") && cardTile.includes("'conditional-attack': '进攻时兵力增加'")
+    && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes('!result.some(entry => entry.kind === kind)'), '月读条件进攻增益沿权威状态显示月亮图标，保留数值及来源并合并同一状态的双字段投影，不冒充常驻兵力'],
   [cardTile.includes('props.card.statusEffects ?? []') && cardTile.includes('props.card.statusIcons ?? []') && cardTile.includes('statusLabel(effect, kind)') && cardTile.includes(':title="status.label"') && cardTile.includes(':aria-label="status.label"')
     && cardTile.includes('data-ui-contract="status-icons-wrap-down"') && board.includes('--l12-card-status-size:clamp(8px,13.9cqw,19.5px)')
     && board.includes('--l12-card-keyword-font:clamp(6px,7.2cqw,11.25px)')
