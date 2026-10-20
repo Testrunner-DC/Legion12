@@ -1,10 +1,13 @@
 param(
-  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive')] [string]$Scenario = 'empty-draw',
+  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive', 'mengpo-selected-targets', 'oiran-log')] [string]$Scenario = 'empty-draw',
   [ValidateSet('Debug', 'Release')] [string]$Configuration = 'Release',
   [string]$AssemblyDirectory,
-  [string]$ExpectedCommit
+  [string]$ExpectedCommit,
+  [ValidateSet(0, 1)] [int]$ActorIndex = 0,
+  [switch]$Restore
 )
 
+$ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
 $testProject = Join-Path $repoRoot 'TwelveLegions.Tests/TwelveLegions.Tests.csproj'
 if ([string]::IsNullOrWhiteSpace($AssemblyDirectory)) {
@@ -34,8 +37,27 @@ $deckIndex = if ($Scenario -eq 'prometheus-empty') { 3 } else { 0 }
 $argsForGame = @($catalog, 'stage4a-integration', 'STAGE4A', 105311,
   [string[]]@('甲','乙'), [int[]]@($deckIndex,$deckIndex), $true, 'random', $true, $false,
   $null, 2, $null, $null, $null, $null)
+# This scenario explicitly drives both response decisions; do not auto-pass them.
+if ($Scenario -eq 'yin-empty') { $argsForGame[8] = $false }
 $game = $ctor.Invoke($argsForGame)
+if ($Scenario -eq 'mengpo-selected-targets') {
+  $baseDeck = $catalog.DeckAt(0)
+  $mengPoDeck = [TwelveLegions.Server.L12PresetDeckDefinition]::new()
+  $mengPoDeck.Name = '孟婆目标合成界面回归'
+  $mengPoDeck.MasterId = 'S01-01M2'
+  $mengPoDeck.CardIds = $baseDeck.CardIds
+  $mengPoDeck.MoraleIds = $baseDeck.MoraleIds
+  $mengPoDeck.SpecialIds = [System.Collections.Generic.List[string]]::new()
+  $decks = [TwelveLegions.Server.L12PresetDeckDefinition[]]@($baseDeck, $baseDeck)
+  $decks[$ActorIndex] = $mengPoDeck
+  $presetCtor = [TwelveLegions.Server.L12GameEngine].GetConstructors() |
+    Where-Object { $_.GetParameters()[5].ParameterType -eq $decks.GetType() }
+  $argsForGame[5] = $decks
+  $argsForGame[8] = $false
+  $game = $presetCtor.Invoke($argsForGame)
+}
 $game.State.ActivePlayer = if ($Scenario -eq 'yin-empty') { 1 } else { 0 }
+if ($Scenario -in @('mengpo-selected-targets', 'oiran-log')) { $game.State.ActivePlayer = $ActorIndex }
 $game.State.FirstPlayer = 0
 $game.State.Round = 2
 $game.State.TurnSerial = 3
@@ -66,7 +88,7 @@ if ($Scenario -in @('empty-draw', 'target-decline', 'hidden-draw')) {
     $game.State.Players[0].Morale.Add($morale)
   }
 }
-function Command($type, $card, $prompt, $choice, $selectedIds, $ability) {
+function Command($type, $card, $prompt, $choice, $selectedIds, $ability, $bottomIds) {
   $commandCtor = [TwelveLegions.Server.L12Command].GetConstructors()[0]
   $values = foreach ($parameter in $commandCtor.GetParameters()) {
     switch ($parameter.Name) {
@@ -75,6 +97,14 @@ function Command($type, $card, $prompt, $choice, $selectedIds, $ability) {
       'PromptId' { $prompt }
       'Choice' { $choice }
       'Ability' { $ability }
+      'TopCardInstanceIds' { if ($null -eq $bottomIds) { $null } else { ,[System.Collections.Generic.List[string]]::new() } }
+      'BottomCardInstanceIds' {
+        if ($null -eq $bottomIds) { $null } else {
+          $bottom = [System.Collections.Generic.List[string]]::new()
+          foreach ($id in $bottomIds) { $bottom.Add($id) }
+          ,$bottom
+        }
+      }
       'CardInstanceIds' {
         if ($null -eq $selectedIds) { $null }
         else {
@@ -91,6 +121,84 @@ function Command($type, $card, $prompt, $choice, $selectedIds, $ability) {
 function Accept($command, $actor) {
   $result = $game.Handle($actor, $command)
   if (-not $result.Accepted) { throw $result.Error }
+}
+if ($Scenario -in @('mengpo-selected-targets', 'oiran-log')) {
+  $owner = $game.State.Players[$ActorIndex]
+  $other = 1 - $ActorIndex
+  if ($Scenario -eq 'mengpo-selected-targets') {
+    $owner.MasterTapped = $false
+    $morale = [TwelveLegions.Server.L12MoraleCard]::new()
+    $morale.CardId = 'S01-01C1'; $morale.InstanceId = 'mengpo-payment'
+    $owner.Morale.Add($morale)
+    $target = $createCard.Invoke($game, @('S01-0204', 'mengpo-target'))
+    $nonTarget = $createCard.Invoke($game, @('S01-0004', 'mengpo-non-target'))
+    $target.OwnerIndex = $other; $nonTarget.OwnerIndex = $other
+    $game.State.Players[$other].Field[0][0] = $target
+    $game.State.Players[$other].Field[1][2] = $nonTarget
+    Accept (Command 'activateAbility' "master-$ActorIndex" $null $null $null 'mengpoSilence') $ActorIndex
+    $prompt = $game.State.PendingPrompts[0]
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId $target.InstanceId) $ActorIndex
+    for ($step = 0; $step -lt 4 -and $game.State.PendingPrompts[0].Kind -ne 'response'; $step++) {
+      $prompt = $game.State.PendingPrompts[0]
+      Accept (Command 'resolvePrompt' $null $prompt.PromptId $morale.InstanceId) $ActorIndex
+    }
+    if ($game.State.PendingPrompts[0].Kind -ne 'response') { throw 'Missing MengPo response barrier' }
+    $expected = @{ targetId = $target.InstanceId; targetName = $target.Name; nonTargetId = $nonTarget.InstanceId }
+  } else {
+    $gift = $createCard.Invoke($game, @('S01-0419', 'oiran-gift'))
+    $gift.OwnerIndex = $ActorIndex; $owner.Hand.Add($gift)
+    while ($owner.MoraleDeck.Count -gt 0) {
+      $morale = $owner.MoraleDeck[0]; $owner.MoraleDeck.RemoveAt(0)
+      $morale.Tapped = $false; $owner.Morale.Add($morale)
+    }
+    $owner.Library.Clear()
+    foreach ($id in @('S01-0401', 'S01-0402', 'S01-0403')) {
+      $candidate = $createCard.Invoke($game, @($id, "oiran-$id"))
+      $candidate.OwnerIndex = $ActorIndex; $owner.Library.Add($candidate)
+    }
+    $chosen = $owner.Library[0]
+    Accept (Command 'playCard' $gift.InstanceId) $ActorIndex
+    for ($step = 0; $step -lt 12 -and $game.State.PendingPrompts[0].Kind -eq 'response'; $step++) {
+      $prompt = $game.State.PendingPrompts[0]
+      Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass') $prompt.PlayerIndex
+    }
+    $prompt = $game.State.PendingPrompts[0]
+    if ($prompt.Data['choiceMode'] -ne 'required-add') { throw 'Missing Oiran private choice' }
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId $chosen.InstanceId) $ActorIndex
+    $prompt = $game.State.PendingPrompts[0]
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId $null $null $null @($prompt.ValidChoices)) $ActorIndex
+    for ($step = 0; $step -lt 12 -and $game.State.PendingPrompts.Count -gt 0 -and $game.State.PendingPrompts[0].Kind -eq 'response'; $step++) {
+      $prompt = $game.State.PendingPrompts[0]
+      Accept (Command 'resolvePrompt' $null $prompt.PromptId 'pass') $prompt.PlayerIndex
+    }
+    $prompt = $game.State.PendingPrompts[0]
+    if ($null -eq $prompt -or -not $prompt.ValidChoices.Contains('mode:none')) { throw 'Missing Oiran optional ready choice' }
+    Accept (Command 'resolvePrompt' $null $prompt.PromptId 'mode:none') $ActorIndex
+    $expected = @{ cardId = $chosen.InstanceId; cardName = $chosen.Name }
+  }
+  if ($Restore) {
+    $restoreMethod = [TwelveLegions.Server.L12GameEngine].GetMethod('RestoreCheckpoint',
+      [System.Reflection.BindingFlags]'NonPublic,Static')
+    $flags = [System.Reflection.BindingFlags]'NonPublic,Instance'
+    $randomState = [TwelveLegions.Server.L12GameEngine].GetProperty('RandomState', $flags).GetValue($game)
+    $signalSequence = [TwelveLegions.Server.L12GameEngine].GetProperty('CardFactSignalSequence', $flags).GetValue($game)
+    if ($null -eq $randomState) { throw 'A real V2 deterministic random state is required' }
+    $game = $restoreMethod.Invoke($null, @($catalog, $game.SerializeFullState(),
+      $randomState, $signalSequence, $false, $false, $null))
+  }
+  $options = [System.Text.Json.JsonSerializerOptions]::new()
+  $options.PropertyNamingPolicy = [System.Text.Json.JsonNamingPolicy]::CamelCase
+  $options.MaxDepth = 128
+  [System.Text.Json.JsonSerializer]::Serialize(@{
+    scenario = $Scenario; actor = $ActorIndex; restored = [bool]$Restore; expected = $expected
+    engineSha256 = (Get-FileHash -LiteralPath $assemblyPath -Algorithm SHA256).Hash
+    commit = $ExpectedCommit
+    views = @{
+      owner = $game.SnapshotFor($ActorIndex); opponent = $game.SnapshotFor($other)
+      spectator = $game.SnapshotForSpectator(); referee = $game.SnapshotForReferee()
+    }
+  }, $options)
+  exit
 }
 if ($Scenario -eq 'prometheus-empty') {
   $source = $createCard.Invoke($game, @('S02-05M2', 'stage4a-prometheus-empty'))
