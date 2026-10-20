@@ -2,20 +2,37 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import { createServer } from 'vite'
 
 const root = path.resolve(import.meta.dirname, '..')
 const output = process.env.L12_DECK_ENVIRONMENT_OUTPUT || 'D:/GPT/Legion12/artifacts/deck-cover-redesign-20261019/main-integration/environment'
+const cacheRoot = process.env.L12_DECK_ENVIRONMENT_CACHE || 'D:/GPT/Legion12/cache/primary/deck-cover-integration/vite-environment'
+const cardSizeOnly = process.env.L12_DECK_CARD_SIZE_ONLY === '1'
+execFileSync(process.env.L12_PWSH || 'pwsh', ['-NoProfile', '-NonInteractive', '-Command',
+  ". 'D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/ops/windows/L12GeneratedStorage.ps1'; "
+  + '$null=Assert-L12GeneratedPath -Path $env:L12_DECK_ENVIRONMENT_OUTPUT_RESOLVED -Purpose "deck environment evidence"; '
+  + '$null=Assert-L12GeneratedPath -Path $env:L12_DECK_ENVIRONMENT_CACHE_RESOLVED -Purpose "deck environment Vite cache"; '
+  + '$null=Assert-L12GeneratedPath -Path $env:TEMP -Purpose "deck environment browser temporary profile"'],
+{ env: { ...process.env, L12_DECK_ENVIRONMENT_OUTPUT_RESOLVED: output, L12_DECK_ENVIRONMENT_CACHE_RESOLVED: cacheRoot }, stdio: 'pipe', windowsHide: true })
 const { chromium } = createRequire(import.meta.url)(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 fs.mkdirSync(output, { recursive: true })
+assert(!fs.existsSync(path.join(output, 'report.json')), 'Never overwrite an acceptance report')
+const report = { scope: 'Local actual App/SiteShell/Settings/DeckLibrary SFC consumers with synthetic guest/public decks; not live transport, account sync or card-art CDN proof',
+  status: 'running', cardSizeCases: [], pageErrors: [], externalRequestsBlocked: 0, browserClosed: false, serverClosed: false,
+  sourceHashes: Object.fromEntries(['src/App.vue', 'src/l12/site/L12SettingsModal.vue', 'src/l12/site/DeckLibraryPage.vue', 'src/l12/audioPreferences.ts', 'src/l12/DeckCover.vue', 'scripts/verify-deck-library-environment.mjs']
+    .map(file => [file, createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')])),
+  output, cacheRoot, browserTemp: process.env.TEMP }
+report.originalEnvironmentChecks=cardSizeOnly?'not-run-by-explicit-card-size-scope':'pending'
 
 const entry = `
 import {createApp,h} from 'vue'
 import {createRouter,createWebHistory,RouterView} from 'vue-router'
 import Library from '/src/l12/site/DeckLibraryPage.vue'
 import {deckEnvironmentFromEvidence} from '/src/l12/site/deckEnvironment.ts'
-import {platformState,deckLibraryApi} from '/src/l12/platform.ts'
-import {loadDeckCatalog} from '/src/l12/decks.ts'
+import {platformState,authState,deckLibraryApi} from '/src/l12/platform.ts'
+import {loadDeckCatalog,loadOfficialPresetDecks,loadSavedDecks,saveDeck} from '/src/l12/decks.ts'
 import {publicSummaryFixture} from '/scripts/deck-summary-browser-fixture.mjs'
 import '/src/style.css'
 
@@ -55,20 +72,35 @@ rows.push(makeEntry('QA 2.0 勘误仍属旧环境',['S02-05M1'],37,890))
 rows.push(makeEntry('QA 环境待定 未知卡',['QA-UNKNOWN'],44,870))
 rows.push(makeEntry('QA 环境待定 空牌库',[],45,860))
 platformState.account=null
+platformState.token=''
+authState.initialized=true
+// The real Library may canonicalize its filter query; keep only the test host
+// choice across refresh, never inject or restore a card-size preference here.
+const cardSizeProbe=new URLSearchParams(location.search).has('card-size-probe')||sessionStorage.getItem('l12:card-size-fixture')==='1'
+if(cardSizeProbe){
+ sessionStorage.setItem('l12:card-size-fixture','1')
+ const preset=(await loadOfficialPresetDecks())[0]
+ for(let index=0;index<6;index++){
+  const name='尺寸合成牌库 '+index
+  if(!loadSavedDecks()[name])await saveDeck({...preset,name,updatedAt:now})
+ }
+ for(const row of rows)row.deck={...preset,name:row.deck.name,updatedAt:now}
+}
 deckLibraryApi.summaries=publicSummaryFixture(rows,await loadDeckCatalog())
 const router=createRouter({history:createWebHistory(),routes:[
  {path:'/decks',name:'decks',component:Library},
  {path:'/decks/:deckId',name:'public-deck-detail',component:{render:()=>h('main','detail')}},
  {path:'/:pathMatch(.*)*',redirect:'/decks'},
 ]})
-createApp({render:()=>h('main',{class:'site-content',style:{position:'absolute',inset:'0',overflow:'auto'}},h(RouterView))}).use(router).mount('#app')
+const host=cardSizeProbe?(await import('/src/App.vue')).default:{render:()=>h('main',{class:'site-content',style:{position:'absolute',inset:'0',overflow:'auto'}},h(RouterView))}
+createApp(host).use(router).mount('#app')
 await router.isReady()
 `
 
 const server = await createServer({
   root,
   configLoader: 'runner',
-  cacheDir: 'D:/GPT/Legion12/cache/primary/deck-cover-integration/vite-environment',
+  cacheDir: path.join(cacheRoot, 'vite'),
   server: { host: '127.0.0.1', port: 0 },
   plugins: [{
     name: 'deck-library-environment-fixture',
@@ -78,7 +110,7 @@ const server = await createServer({
       vite.middlewares.use((request, response, next) => {
         if ((request.url?.startsWith('/decks') || request.url?.startsWith('/__deck_library_environment__')) && !request.url.includes('.js')) {
           response.setHeader('Content-Type', 'text/html')
-          response.end('<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><div id="l12-landscape-teleports"></div><div id="app"></div><script type="module" src="/__deck_library_environment__.js"></script>')
+          response.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body><div id="l12-landscape-teleports"></div><div id="app"></div><script type="module" src="/__deck_library_environment__.js"></script></body></html>')
           return
         }
         next()
@@ -107,11 +139,89 @@ async function assertNoOverflow(page, label) {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${label} 横向溢出`)
 }
 
+async function cardSizeGeometry(page, tab, columns) {
+  await page.locator('.deck-tabs').getByRole('button', { name:tab === 'mine' ? '我的牌库' : '公开牌库', exact:true }).click()
+  const grid = page.locator(tab === 'mine' ? '.mine-grid' : '.plaza-grid')
+  await grid.locator(':scope>article').first().waitFor()
+  const value = await grid.evaluate(element => {
+    const cover=element.querySelector('.deck-cover'), card=cover?.querySelector('.deck-cover__card')
+    if(!cover || !card)throw Error('Real cover and representative card must both exist')
+    const box=cover.getBoundingClientRect(), representative=card.getBoundingClientRect()
+    return { columns:getComputedStyle(element).gridTemplateColumns.split(' ').length,
+      coverWidth:box.width, coverHeight:box.height, representativeWidth:representative.width }
+  })
+  assert.equal(value.columns, columns, `${tab} actual columns`)
+  assert(Math.abs(value.coverWidth/value.coverHeight-12/5)<.02, 'Shared cover keeps its 12:5 ratio')
+  return value
+}
+
+async function chooseCardSize(page, size, checkRestoredSelection = false) {
+  const navigation=page.getByRole('button', { name:'打开导航', exact:true })
+  if(await navigation.isVisible())await navigation.click()
+  await page.getByRole('button', { name:'设置', exact:true }).click()
+  const settings=page.locator('.l12-settings-modal')
+  if(checkRestoredSelection)assert.equal(await settings.locator('label').filter({ hasText:'卡牌显示' }).locator('select').inputValue(),size,'Reopened Settings must show the restored selection')
+  await settings.locator('label').filter({ hasText:'卡牌显示' }).locator('select').selectOption(size)
+  await page.waitForFunction(expected => document.documentElement.dataset.l12CardSize === expected, size)
+  assert.equal(await settings.locator('label').filter({ hasText:'卡牌显示' }).locator('select').inputValue(), size)
+  await settings.getByRole('button', { name:'关闭设置', exact:true }).click()
+}
+
+async function verifyCardSizeConsumers(browser, origin) {
+  for(const [width,height] of [[1440,900],[390,844]]){
+    const page=await browser.newPage({ viewport:{width,height} })
+    page.setDefaultTimeout(10000)
+    page.on('pageerror', error => report.pageErrors.push(error.message))
+    await page.addInitScript(() => {
+      if(!localStorage.getItem('l12-audio-preferences-v1'))localStorage.setItem('l12-audio-preferences-v1', JSON.stringify({musicEnabled:false,sfxEnabled:false,cardSize:'auto'}))
+      localStorage.setItem('l12:official-presets:guest-seeded:v1','true')
+    })
+    await page.route('**/*', route => {
+      const url=new URL(route.request().url())
+      if(url.origin!==origin){report.externalRequestsBlocked++;return route.abort()}
+      if(url.pathname==='/api/operations/effective-policy')return route.fulfill({json:{cardRestrictions:{}}})
+      if(url.pathname.endsWith('card-assets.manifest.json'))return route.fulfill({json:{schemaVersion:3,catalogVersion:'qa',assetVersion:'qa',basePath:'/',cards:{}}})
+      return route.continue()
+    })
+    try{
+      await page.goto(origin+'/decks?card-size-probe=1')
+      await page.locator('.plaza-grid>article').first().waitFor()
+      const measurements=[]
+      for(const [size,desktopColumns] of [['small',4],['medium',3],['large',2]]){
+        await chooseCardSize(page,size)
+        const expected=width<=700?1:desktopColumns
+        const item={width,height,size,mine:await cardSizeGeometry(page,'mine',expected),plaza:await cardSizeGeometry(page,'plaza',expected)}
+        report.cardSizeCases.push(item)
+        await page.screenshot({path:path.join(output,`card-size-${width}-${size}.png`),fullPage:true})
+        await page.reload({waitUntil:'domcontentloaded'})
+        await page.waitForFunction(expected=>document.documentElement.dataset.l12CardSize===expected,size)
+        await page.locator('.plaza-grid>article').first().waitFor()
+        item.persisted=await page.evaluate(()=>JSON.parse(localStorage.getItem('l12-audio-preferences-v1')).cardSize)
+        assert.equal(item.persisted,size,'Refresh must restore the chosen preference')
+        await chooseCardSize(page,size,true)
+        item.reloadedMine=await cardSizeGeometry(page,'mine',expected)
+        item.reloadedPlaza=await cardSizeGeometry(page,'plaza',expected)
+        item.status='passed';measurements.push(item)
+      }
+      for(const tab of ['mine','plaza']){
+        const widths=measurements.map(item=>item[tab].coverWidth)
+        const cards=measurements.map(item=>item[tab].representativeWidth)
+        if(width>700){assert(widths[0]<widths[1]&&widths[1]<widths[2],`${tab} cover changes with selected size`);assert(cards[0]<cards[1]&&cards[1]<cards[2],`${tab} representative cards change with cover`)}
+        else assert(Math.max(...widths)-Math.min(...widths)<1,'Mobile retains one-column cover width')
+      }
+      await assertNoOverflow(page,`${width} card-size consumer`)
+    }catch(error){await page.screenshot({path:path.join(output,`card-size-failure-${width}.png`),fullPage:true}).catch(()=>{});throw error}
+    finally{await page.close()}
+  }
+  assert.deepEqual(report.pageErrors,[])
+}
+
 let browser
 try {
   await server.listen()
   const port = server.httpServer.address().port
   browser = await chromium.launch({ headless:true, channel:'msedge' })
+  if(!cardSizeOnly){
   const page = await browser.newPage({ viewport:{ width:1440,height:900 } })
   await prepare(page)
   await page.goto(`http://127.0.0.1:${port}/decks`)
@@ -174,9 +284,19 @@ try {
     await view.screenshot({ path:path.join(output, `environment-${width}x${height}.png`), fullPage:true })
     await view.close()
   }
+  report.originalEnvironmentChecks='passed'
+  report.originalEnvironmentProfiles=profiles
+  }
 
-  console.log(JSON.stringify({ ok:true, output, profiles }, null, 2))
+  await verifyCardSizeConsumers(browser, `http://127.0.0.1:${port}`)
+  report.status='passed'
+
+  console.log(JSON.stringify({ ok:true, output, originalEnvironmentChecks:report.originalEnvironmentChecks, cardSizeCases:report.cardSizeCases.length }, null, 2))
+} catch(error) {
+  report.status='failed';report.error=String(error?.stack||error)
+  throw error
 } finally {
-  if (browser) await browser.close()
-  await server.close()
+  if (browser) { await browser.close(); report.browserClosed=!browser.isConnected() }
+  await server.close();report.serverClosed=true
+  fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(report,null,2),{flag:'wx'})
 }

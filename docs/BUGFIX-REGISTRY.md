@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜牌库容器大小已有设置与具名消费者核查
+
+- 当前原建议73b2b79d不是新增已证缺陷：侧栏设置的卡牌显示已有小/中/大。实际App/SiteShell/Settings/DeckLibrary六组原生选择、两页签及每档刷新通过，1440为4/3/2列，390保持单列，热榜不受规则影响。没有直接写data属性来伪造设置，也不造新watcher/CSS。
+- App/Settings/Library/audioPreferences四叶与正式d7及实际5ee入口相同；DeckCover存在真实差异，Main与独审已读完，regular根仍100%宽/12:5，内部绝对定位不决定父列数。只说明整体大小入口，不把本地代表牌79/107/163像素当正式事实，旧正式104上限不冒可独立调大小。56外部请求阻断、访客合成目录，未验证账号同步/网络/原截图或卡图资源。
+- 唯一deck-library-card-size-20261020/main-acceptance.json；工具新增显式card-size-only消费者范围，原环境标签旧断言RED留存且默认检查不冒通过。独审CLEAR、Main核六组报告/源码和两图；沿原十二函数一致的关单器8负例自检后实际单CAS32957/独立终态/撤会话成功，原字段保留，按已有功能说明rejected，不造fixed_verified。复用单post对账16待办、阶段521/周期613；无部署/维护写，不触及未上线西施修复。
+
 ## 2026-10-20｜标准天廷归零共享入队与旧pending兼容
 
 - 根因/批准：西施返最后1士气已登记资格，但Flush把天廷S01-01C1候选限定在ST01-M1的morale-return plan，标准杨戬/孟婆/孙悟空均遗漏。人类call_155bfcdb2c624f399132a0fb78c785eb批准限定修复；全S1/S2/ST卡文按`返还.*士气|士气.*返还`得32，排除黑莲花去向及李牧/哮天犬/嫦娥观察项，28实际来源均走ReturnSelectedMorale→RegisterReturnedMorale，无新增单卡旁路。
