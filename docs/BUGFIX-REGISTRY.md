@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜压测当前候选准入、必需检查点及输出别名守卫
+
+- 原报告丢失共因已有18+3证明，但旧thin/R8未接。实际标准verify-l12允许测试包notes-base为空，旧helper/thin/owned误要求40hex；只接纳精确空字符串或小写40hex，缺/null/空格/数字不接纳。真实manifest SHA、包SHA、候选、PID/DLL/nonce、owned回执和恢复/清理完整性未减；cleanup与finalizer实际loader同步同源helper，避免主流程过而恢复仍被旧guard拒。
+- 新core只换helper import，runPressure完整反向相同；thin新增必需固定文件名、四路径词法及real-parent+basename物理去重、scope/已有文件拒绝。独审发现ROOT内junction收敛已补实际反例。R9把检查点列为必需证据，并用既有validator核候选/core/结构及同一次bytes SHA=lifecycle绑定；独审TOCTOU缺口已修。其余最终分类断言不改。
+- 固定实际Node21项真实CLI合成seam，清理抛错/有界kill留下checkpoint不产生client成功；R9内嵌validator5项过。检查点finalAccepted=false/cleanupPending=true不变，3001ms仍超标，缺观测不补。旧18+3复用，不称新远端压测；原失败工具/报告保留。8c源副本从Git精确SHA绑定，不用可变当前net，原包及协议初始化、本地owned render与R9 prepared-only实际成功。
+- 唯一performance-measurement-recovery-20261020/durable-entry-main-acceptance.json。新现场0局/0连接/0在线，两服务身份未变，原R8 config来源已精确绑定，退役另按本地工具先验。不部署/改维护、不把正式d7采样当优化收益；完整性能仍INCONCLUSIVE，回滚仅新工具引用，不删旧失败或改应用规则。
+
 ## 2026-10-20｜宫廷魔术师普通移动的实际页面消费者收口
 
 - 当前db044ce6沿既有正确移动入口，不新增产品修复。后端12项覆盖双方、两个合法相邻格、付款中真实V2及占格/休整负控；新探针固定A875程序集，按正确圣物区公开阵面输出真实initial/payment/completed，不伪称当前HEAD为DLL编译版本。

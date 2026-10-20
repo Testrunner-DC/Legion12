@@ -1,5 +1,12 @@
 # 十二军团任务台账
 
+## 2026-10-20 性能测量入口与有效8c候选已完成本地接线
+
+- P2/P3仅测试工具扩展。标准测试包允许空notes-base，三额外guard纠正并同步cleanup/finalizer实际调用链，不手改已验manifest/重建应用或放宽正式部署基线。新durable-r5只换共享helper，保持原30房＋10外围、3秒、载荷、720秒压力/900秒墙钟和可靠清理。
+- 新thin强制measurement-before-account-cleanup.json，词法与真实物理四路径碰撞均拒；旧文件不覆盖，清理失败不丢已完成数值。R9把同次读取的字节SHA绑定lifecycle，并具名验证candidate/core/schema/隐私，检查点永不提升finalAccepted或补造server时窗。独审两个具体缺口已修，最终CLEAR。
+- actual pinned-Node CLI seam21及真实R9内嵌validator5项通过；旧helper18/真实runPressure边界3项同源复用。夹具seam不是线上准入；另外实际8c原Git两叶精确SHA、真实manifest/archive绑定及协议初始化/owned本地render/prepared-only均已实际通过。唯一performance-measurement-recovery-20261020/durable-entry-main-acceptance.json。
+- fresh测试0活动/0WS/0在线、双服务版本/PID/DLL不变；但原6c R8 exact config仍在。已明确派发同源证据退役小工具本地实施，先验收再执行，不去撞必失败安装。此片newPressureRuns=0、线上服务/维护写0，性能仍未完整通过，不冒根治。Court已一条真实收口至15；Git DNS失败不反复重试、不停止后续。
+
 ## 2026-10-20 宫廷魔术师普通移动反馈完成当前消费者收口
 
 - P1/P4边界未改：已有12项真实命令证据补八组实际GamePage原生点击，双方/1366与844/直接与付款窗V2均过。仅显示两个合法空相邻格、占格不提供，精确move与付款各一次、休整1资源并到前排；实际卡图外部请求阻断，不冒资源/真机/公网ACK或原玩家未知目的格。两叶验收工具保留旧默认64组，不为完备性重跑未变场景。

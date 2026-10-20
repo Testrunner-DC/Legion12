@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-20 性能新入口已接通，先退役精确旧诊断
+
+- 原包8c的空releaseBaseCommit属于标准测试包合法值，只修额外准入为精确空串或小写40hex；新helper/owned/cleanup/finalizer最小派生，原SHA/候选/包/身份/清理守卫不减。durable-r5实际runPressure除helper import外与已验r4相同。新thin强制固定检查点、四路径词法及物理去重、CreateNew；R9同次读取核schema/candidate/coreSHA与lifecycle SHA，失败明确拒绝，不代替最终client/server/清理。
+- 固定实际Node的21项真实CLI合成seam通过，含cleanup抛错/8秒kill仍留检查点、物理junction碰撞拒绝；R9实际内嵌validator5正反过。18+3旧证据原样复用，不冒再次整套或真实负载。8c两协议叶从Git精确导出，真实包binding/协议初始化/owned本地render/R9 prepared-only均过。唯一performance-measurement-recovery-20261020/durable-entry-main-acceptance.json。
+- 一次新现场为0局/0WS/0在线，正式d7/PID371661与测试8c/PID419226及DLL精确未变，读会话已撤。旧R8 install.json精确证明config 0E664仍在，普通新install必拒；专属有界退役工具在本地验收，禁止直接覆盖或重复旧入口。此处未重启/部署/改维护，完整性能仍INCONCLUSIVE，不能宣布根治。Court已本地提交a93aea64；fetch因github DNS失败保留，尚未推送，不因此中断其他任务。
+
 ## 2026-10-20 宫廷移动实际界面已收口，剩余15反馈
 
 - db044ce6复用已受管后端12项，补固定A875引擎四份真实投影和GamePage八组原生移动/格位/付款/真实V2消费者，1366与844、双方均通过。Main读两工具完整diff/报告并看三屏图，独审桥接正式5ee的移动/付款/序列化片段及样式相同；不冒整文件相同、原私局、未知目的格或网络WS/ACK。唯一court-magician-movement-20261020/ui-main-acceptance.json。
