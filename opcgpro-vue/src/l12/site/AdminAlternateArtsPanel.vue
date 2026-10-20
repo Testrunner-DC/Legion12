@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { adminApi, hasPermission, platformState, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRarity, type AlternateArtRankedParticipantDispatchPreview, type AlternateArtSearchPage, type PlatformAccount, type SiteMedia } from '@/l12/platform'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { adminApi, hasPermission, platformState, type AlternateArt, type AlternateArtAwardRule, type AlternateArtGrant, type AlternateArtProduct, type AlternateArtRarity, type AlternateArtRankedParticipantDispatchPreview, type AlternateArtSearchPage, type PlatformAccount, type SiteCategory, type SiteMedia } from '@/l12/platform'
 import { loadDeckCatalog, type DeckCard } from '@/l12/decks'
 import MediaUploadField from './MediaUploadField.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
@@ -18,8 +18,22 @@ const media = ref<SiteMedia[]>([])
 const products = ref<AlternateArtProduct[]>([])
 const rarities = ref<AlternateArtRarity[]>([])
 const busy = ref(false)
+const workspace = ref<'gallery' | 'rights'>('gallery')
+const editorOpen = ref(false)
+const rightsLoaded = ref(false)
+const productDialogOpen = ref(false)
+const productSaving = ref(false)
+const pendingProductId = ref('')
+const editorSession = ref(0)
+const productDialogContext = ref(0)
+let productSaveRequest = 0
+const productCategories = ref<SiteCategory[]>([])
+const productForm = reactive({ title: '', categoryId: '' })
+const rarityManagerOpen = ref(false)
+const imageDialogOpen = ref(false)
+const imageTarget = ref<AlternateArt | null>(null)
+const imageMediaAssetId = ref('')
 const artsLoaded = ref(false)
-const registryOpen = ref(false)
 const registryBusy = ref(false)
 const registryFilters = reactive({ name: '', artCode: '', baseCard: '' })
 const registry = ref<AlternateArtSearchPage>({ items: [], total: 0, page: 1, pageSize: 20 })
@@ -48,12 +62,13 @@ const basePickerItems = computed<SingleCardPickerItem[]>(() => catalog.value.map
 const artPickerItems = computed<SingleCardPickerItem[]>(() => arts.value.filter(art => art.active && art.kind !== 'gallery-card').map(art => {
   const card = cardById.value.get(art.baseCardId)
   return { id: art.id, cardId: art.baseCardId, number: art.artCode, name: art.displayName, nameZh: art.displayName,
-    imageUrl: art.builtIn ? undefined : art.thumbnailUrl, cardImageId: art.builtIn ? art.cardImageId : undefined,
+    imageUrl: art.thumbnailUrl || art.imageUrl || undefined, cardImageId: art.builtIn ? art.cardImageId : undefined,
     cardType: card?.cardType || 'alternate-art', faction: card?.faction, product: art.productName || card?.product,
     cost: card?.cost, disasterLevel: card?.disasterLevel, effect: card?.effect, detailCard: card,
     subtitle: `${art.artCode} · ${card?.nameZh || art.baseCardId}` }
 }))
 const selectedBaseCard = computed(() => cardById.value.get(artForm.baseCardId))
+const replacementMedia = computed(() => media.value.find(item => item.id === imageMediaAssetId.value))
 function notice(value: string) { emit('notice', value) }
 async function ensureArtsLoaded() {
   if (artsLoaded.value) return
@@ -74,7 +89,6 @@ async function searchRegistry(page = 1) {
   } catch (error) { notice(error instanceof Error ? error.message : '已登记异画查询失败') }
   finally { registryBusy.value = false }
 }
-async function openRegistry() { registryOpen.value = true; await searchRegistry(1) }
 function resetRegistryFilters() { Object.assign(registryFilters, { name: '', artCode: '', baseCard: '' }); void searchRegistry(1) }
 function choosePickerItem(item: SingleCardPickerItem) {
   if (artPickerTarget.value === 'base') {
@@ -90,30 +104,129 @@ function choosePickerItem(item: SingleCardPickerItem) {
 }
 function resetArt() { Object.assign(artForm, { id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', active: true,
   kind: 'alternate-art', effect: '', productIds: [], rarityIds: [], builtIn: false }) }
+function closeEditor() { editorSession.value += 1; editorOpen.value = false }
+function openNewArt() { editorSession.value += 1; resetArt(); editorOpen.value = true }
 function editRegistryArt(art: AlternateArt) {
+  editorSession.value += 1
   Object.assign(artForm, { id: art.id, artCode: art.artCode, baseCardId: art.baseCardId, displayName: art.displayName,
     mediaAssetId: art.mediaAssetId, active: art.active, kind: art.kind || 'alternate-art', effect: art.effect || '',
     productIds: art.products?.map(item => item.id) ?? (art.productId ? [art.productId] : []),
     rarityIds: art.rarities?.map(item => item.id) ?? [], builtIn: Boolean(art.builtIn) })
-  registryOpen.value = false
+  editorOpen.value = true
 }
 function resetRarity() { Object.assign(rarityForm, { id: '', code: '', name: '', active: true }) }
 function editRarity(rarity: AlternateArtRarity) { Object.assign(rarityForm, rarity) }
 function uploaded(item: SiteMedia) { media.value = [item, ...media.value.filter(row => row.id !== item.id)]; artForm.mediaAssetId = item.id }
+function replacementUploaded(item: SiteMedia) {
+  media.value = [item, ...media.value.filter(row => row.id !== item.id)]
+  imageMediaAssetId.value = item.id
+}
+function openImageEditor(art: AlternateArt) {
+  imageTarget.value = art
+  imageMediaAssetId.value = ''
+  imageDialogOpen.value = true
+}
+function closeImageEditor() {
+  imageDialogOpen.value = false
+  imageTarget.value = null
+  imageMediaAssetId.value = ''
+}
+async function performImageSave(mediaAssetId: string) {
+  const target = imageTarget.value
+  if (!target) return
+  try {
+    const saved = await adminApi.saveAlternateArtImage({ alternateArtId: target.id, mediaAssetId })
+    registry.value = { ...registry.value, items: registry.value.items.map(item => item.id === saved.id ? saved : item) }
+    arts.value = arts.value.map(item => item.id === saved.id ? saved : item)
+    notice(mediaAssetId ? '卡图已更换；卡牌身份、产品、罕贵与权益保持不变' : '已恢复系统卡图')
+    closeImageEditor()
+  } catch (error) { notice(error instanceof Error ? error.message : '卡图更换失败'); throw error }
+}
+function saveReplacementImage() {
+  const target = imageTarget.value
+  if (!target || !imageMediaAssetId.value) { notice('请先上传或选择新的卡图素材'); return }
+  requestRiskAction({ title: '确认更换卡图', target: `${target.artCode} · ${target.displayName}`,
+    impact: '仅替换画廊与牌库展示图片；原卡身份、异画编号、卡效、产品、罕贵、构筑和权益记录保持不变。',
+    confirmLabel: '确认更换卡图', severity: 'warning', run: () => performImageSave(imageMediaAssetId.value) })
+}
+function restoreCatalogImage() {
+  const target = imageTarget.value
+  if (!target?.builtIn || !target.mediaAssetId) return
+  requestRiskAction({ title: '确认恢复系统卡图', target: `${target.artCode} · ${target.displayName}`,
+    impact: '移除当前上传的覆盖图，恢复卡牌图库中的系统原图；身份与所有归属保持不变。',
+    confirmLabel: '恢复系统卡图', severity: 'warning', run: () => performImageSave('') })
+}
 function resetRule() { Object.assign(ruleForm, { id: '', alternateArtId: '', kind: 'rank-reached', seasonId: '', eventId: '', masterId: '', minimumTierIndex: 0, active: true }) }
 function editRule(rule: AlternateArtAwardRule) { Object.assign(ruleForm, rule) }
 async function load() {
   busy.value = true
   try {
-    const [nextGrants, nextCatalog, nextMedia] = await Promise.all([
-      adminApi.alternateArtGrants(), loadDeckCatalog(), adminApi.siteMedia('card-art'),
+    const [nextCatalog, nextMedia, nextProducts, nextRarities, nextCategories] = await Promise.all([
+      loadDeckCatalog(), adminApi.siteMedia('card-art'), adminApi.alternateArtProducts(),
+      adminApi.alternateArtRarities(), adminApi.siteCategories('product'),
     ])
-    const [nextRules, nextProducts, nextRarities] = await Promise.all([
-      adminApi.alternateArtAwardRules(), adminApi.alternateArtProducts(), adminApi.alternateArtRarities(),
-    ])
-    grants.value = nextGrants; catalog.value = nextCatalog; media.value = nextMedia; awardRules.value = nextRules; products.value = nextProducts; rarities.value = nextRarities
+    catalog.value = nextCatalog; media.value = nextMedia; products.value = nextProducts; rarities.value = nextRarities
+    productCategories.value = nextCategories.filter(item => item.active)
+    if (!productCategories.value.some(item => item.id === productForm.categoryId))
+      productForm.categoryId = productCategories.value[0]?.id || ''
+    await searchRegistry(1)
   } catch (error) { notice(error instanceof Error ? error.message : '异画资料读取失败') }
   finally { busy.value = false }
+}
+async function loadRights() {
+  if (rightsLoaded.value) return
+  busy.value = true
+  try {
+    const [nextGrants, nextRules] = await Promise.all([adminApi.alternateArtGrants(), adminApi.alternateArtAwardRules()])
+    grants.value = nextGrants; awardRules.value = nextRules
+    await ensureArtsLoaded()
+    rightsLoaded.value = true
+  } catch (error) { notice(error instanceof Error ? error.message : '权益与派发资料读取失败') }
+  finally { busy.value = false }
+}
+watch(workspace, value => { if (value === 'rights') void loadRights() })
+function openProductDialog() {
+  if (!pendingProductId.value)
+    Object.assign(productForm, { title: '', categoryId: productCategories.value[0]?.id || '' })
+  productDialogContext.value = editorSession.value
+  productDialogOpen.value = true
+}
+async function selectCreatedProduct(expectedContext = productDialogContext.value) {
+  if (!pendingProductId.value) return
+  try {
+    products.value = await adminApi.alternateArtProducts()
+    const product = products.value.find(item => item.id === pendingProductId.value)
+    if (!product) throw new Error('产品草稿已保存，但产品列表暂未读到该条目，请重试回选')
+    if (!editorOpen.value || !productDialogOpen.value || expectedContext !== editorSession.value) {
+      notice('产品草稿已保存；当前编辑窗口已变化，请重新打开“新建产品”后回选该草稿')
+      return
+    }
+    if (!artForm.productIds.includes(product.id)) artForm.productIds.push(product.id)
+    pendingProductId.value = ''
+    productDialogOpen.value = false
+    notice('产品草稿已保存并选用；公开画廊会在产品中心正式发布后显示该归属')
+  } catch (error) { notice(error instanceof Error ? error.message : '产品列表刷新失败') }
+}
+async function saveProductDraft() {
+  if (pendingProductId.value) { await selectCreatedProduct(); return }
+  const category = productCategories.value.find(item => item.id === productForm.categoryId)
+  if (!productForm.title.trim() || !category) { notice('请填写产品名称并选择有效产品分类'); return }
+  productSaving.value = true
+  const request = ++productSaveRequest
+  const expectedContext = productDialogContext.value
+  try {
+    const saved = await adminApi.saveArticle({ title: productForm.title.trim(), summary: '', body: '',
+      category: category.name, categoryId: category.id, coverUrl: '', link: '', slug: '', pinned: false,
+      kind: 'product', mediaAssetId: '', sortOrder: 0 })
+    pendingProductId.value = `site:${saved.id}`
+    if (request !== productSaveRequest || !editorOpen.value || !productDialogOpen.value
+      || expectedContext !== editorSession.value) {
+      notice('产品草稿已保存；当前编辑窗口已关闭或变化，没有自动改写其他卡片')
+      return
+    }
+    await selectCreatedProduct(expectedContext)
+  } catch (error) { notice(error instanceof Error ? error.message : '产品草稿保存失败') }
+  finally { productSaving.value = false }
 }
 async function saveRarity() {
   try {
@@ -146,7 +259,8 @@ async function performSaveArt() {
     notice(saved.kind === 'gallery-card' ? '联动卡已保存到画廊；不会进入卡池、构筑、拥有或派发系统'
       : saved.active ? '异画及其产品、罕贵归属已保存并同步画廊' : '异画已保存为停用状态，不会在画廊展示')
     resetArt()
-    if (registryOpen.value) await searchRegistry(registry.value.page)
+    closeEditor()
+    await searchRegistry(registry.value.page)
   } catch (error) { notice(error instanceof Error ? error.message : '异画保存失败'); throw error }
 }
 function saveArt() {
@@ -242,32 +356,40 @@ function dispatchBetaGrant() {
   const preview = betaGrantPreview.value
   requestRiskAction({ title: '确认向排位参与者派发异画', target: `${preview.seasonId} · ${preview.toGrant} 名玩家`, impact: `将新增 ${preview.toGrant} 条权益；已拥有同来源权益的 ${preview.alreadyGranted} 人不会重复派发。`, confirmLabel: '确认派发', severity: 'danger', run: performDispatchBetaGrant })
 }
-onMounted(load)
+function onWindowKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || riskAction.value) return
+  if (productDialogOpen.value) productDialogOpen.value = false
+  else if (imageDialogOpen.value) closeImageEditor()
+  else if (editorOpen.value) closeEditor()
+}
+onMounted(() => { window.addEventListener('keydown', onWindowKeydown); void load() })
+onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
 </script>
 
 <template>
   <section class="alternate-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
-    <header><div><small>ALTERNATE ART · GALLERY</small><h3>异画与联动画廊</h3><p>异画沿用原卡规则身份；联动卡可独立填写卡效文字，但不接入卡效结算，也不进入拥有、派发、构筑或对局。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新' }}</button></header>
-    <section class="product-editor"><h4>可复用产品与罕贵</h4><p>产品直接复用现有卡牌产品及站点产品分类；一张异画或联动卡可同时归属多个产品、多个罕贵。</p><div class="product-groups"><article v-for="product in products" :key="product.id"><span><b>{{ product.name }}</b> · {{ product.categoryName || '未分类' }} · {{ product.source === 'site' ? '站点产品' : product.source === 'catalog' ? '卡牌产品' : '历史归属' }}{{ product.status ? ` · ${product.status}` : '' }}</span></article></div><h5>罕贵定义</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section>
-    <section class="art-editor"><h4>{{ artForm.id ? '编辑画廊条目' : '新建画廊条目' }}</h4><p>历史批量异画也可在“已登记异画”中打开并补充多个产品与罕贵。联动卡不需要绑定任何已有卡。</p><div class="form-grid"><label>条目类型<select v-model="artForm.kind" :disabled="Boolean(artForm.id)"><option value="alternate-art">已有卡的异画</option><option value="gallery-card">独立联动卡</option></select></label><label>编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001 / COLLAB-001"></label><label v-if="artForm.kind === 'alternate-art'">绑定原卡<button class="art-choice" type="button" :disabled="artForm.builtIn" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input :value="selectedBaseCard?.nameZh || artForm.displayName || '选择原卡后自动带入'" disabled></label><label v-else>联动卡名称<input v-model.trim="artForm.displayName" maxlength="120" placeholder="独立撰写名称"></label><label v-if="artForm.kind === 'gallery-card'" class="full-field">联动卡卡效<textarea v-model.trim="artForm.effect" rows="4" maxlength="2000" placeholder="填写画廊中展示的卡效文字；不会接入对局结算"></textarea></label><fieldset class="metadata-choice"><legend>收录产品（可多选）</legend><label v-for="item in products.filter(product => product.active || artForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="artForm.productIds" type="checkbox" :value="item.id">{{ item.name }}<small>{{ item.categoryName || '未分类' }}</small></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选）</legend><label v-for="item in rarities.filter(rarity => rarity.active || artForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="artForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">可先在上方建立罕贵定义。</p></fieldset><label v-if="!artForm.builtIn">卡图素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox" :disabled="artForm.builtIn">启用并在画廊展示</label></div><MediaUploadField v-if="hasPermission('admin.content.draft') && !artForm.builtIn" kind="card-art" :initial-alt="artForm.kind === 'gallery-card' ? artForm.displayName || '联动卡图' : selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><div class="actions"><button @click="resetArt">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveArt">保存并同步画廊</button></div></section>
-    <section class="art-list art-registry-entry"><div><h4>已登记异画</h4><p>按需打开查询，不在进入页面时载入全部异画。</p></div><button type="button" @click="openRegistry">查看已登记异画</button></section>
+    <header><div><small>GALLERY WORKBENCH</small><h3>画廊卡片后台</h3><p>上传新卡、替换已有卡图并维护必要资料。联动卡填写正式卡效文本，但不接入对局结算、牌池、构筑或权益。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新当前资料' }}</button></header>
+    <nav class="workspace-tabs" aria-label="画廊后台工作区"><button :class="{ active: workspace === 'gallery' }" @click="workspace = 'gallery'">画廊卡片</button><button :class="{ active: workspace === 'rights' }" @click="workspace = 'rights'">权益与派发</button></nav>
+    <div v-if="workspace === 'gallery'" class="gallery-workspace">
+      <section class="task-strip"><div><small>PRIMARY TASK</small><h4>上传与维护卡片</h4><p>从卡片列表直接编辑资料或更换卡图，低频派发功能已移至独立页签。</p></div><button v-if="canWrite" class="primary" type="button" @click="openNewArt">上传新卡 / 异画</button></section>
+      <form class="gallery-filters" @submit.prevent="searchRegistry(1)"><label>名称<input v-model.trim="registryFilters.name" placeholder="异画或联动卡名称"></label><label>编号<input v-model.trim="registryFilters.artCode" placeholder="异画或联动编号"></label><label>绑定原卡<input v-model.trim="registryFilters.baseCard" placeholder="原卡名或编号"></label><div class="filter-actions"><button type="button" @click="resetRegistryFilters">重置</button><button class="primary" type="submit">查询</button></div></form>
+      <section class="gallery-list" :aria-busy="registryBusy"><header><div><h4>卡片列表</h4><p>当前结果 {{ registry.total }} 项；产品草稿带状态标记，只有发布后才会出现在公开画廊。</p></div></header><article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :legacy-url="art.thumbnailUrl || art.imageUrl" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div class="art-summary"><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补编号' }} · {{ art.kind === 'gallery-card' ? '独立联动展示卡' : `${art.baseCardId} · ${art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中'}` }}</span><div class="chips"><em v-for="item in art.products" :key="item.id">{{ item.name }}<small v-if="item.source === 'site' && item.status !== 'published'">草稿</small></em><em v-for="item in art.rarities" :key="item.id">{{ item.code }}</em><em>{{ art.active ? '展示中' : '已停用' }}</em></div></div><div class="row-actions"><button type="button" @click="editRegistryArt(art)">编辑资料</button><button class="primary" type="button" @click="openImageEditor(art)">更换卡图</button></div></article><p v-if="!registryBusy && !registry.items.length">没有符合条件的画廊卡片。</p><footer><span>第 {{ registry.page }} / {{ registryPages }} 页</span><div><button :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer></section>
+      <section v-if="editorOpen" class="art-editor ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-editor-title"><header class="editor-heading"><div><small>{{ artForm.id ? 'EDIT ENTRY' : 'CREATE ENTRY' }}</small><h4 id="alternate-art-editor-title">{{ artForm.id ? '编辑卡片资料' : '上传新卡 / 异画' }}</h4></div><button type="button" @click="closeEditor">关闭</button></header><div class="form-grid"><label>条目类型<select v-model="artForm.kind" :disabled="Boolean(artForm.id)"><option value="alternate-art">已有卡的异画</option><option value="gallery-card">独立联动展示卡</option></select></label><label>编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001 / COLLAB-001"></label><label v-if="artForm.kind === 'alternate-art'">绑定原卡<button class="art-choice" type="button" :disabled="artForm.builtIn || Boolean(artForm.id)" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input :value="selectedBaseCard?.nameZh || artForm.displayName || '选择原卡后自动带入'" disabled></label><label v-else>联动卡名称<input v-model.trim="artForm.displayName" maxlength="120" placeholder="独立撰写名称"></label><label v-if="artForm.kind === 'gallery-card'" class="full-field">联动卡卡效<textarea v-model.trim="artForm.effect" rows="4" maxlength="2000" placeholder="填写在画廊展示的正式卡效文本；不会接入对局结算"></textarea></label><fieldset class="metadata-choice"><legend>收录产品（可多选） <button v-if="canWrite" type="button" @click="openProductDialog">新建产品</button></legend><label v-for="item in products.filter(product => product.active || artForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="artForm.productIds" type="checkbox" :value="item.id"><span>{{ item.name }}<small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选） <button v-if="canWrite" type="button" @click="rarityManagerOpen = !rarityManagerOpen">管理罕贵</button></legend><label v-for="item in rarities.filter(rarity => rarity.active || artForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="artForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">尚未建立罕贵定义。</p></fieldset><label v-if="!artForm.id">卡图素材<select v-model="artForm.mediaAssetId"><option value="">先上传或选择素材</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><label class="check"><input v-model="artForm.active" type="checkbox" :disabled="artForm.builtIn">启用并在画廊展示</label></div><MediaUploadField v-if="canWrite && !artForm.id" kind="card-art" :initial-alt="artForm.kind === 'gallery-card' ? artForm.displayName || '联动卡图' : selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><section v-if="rarityManagerOpen" class="inline-manager"><h5>可复用罕贵</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section><div class="actions"><button @click="closeEditor">取消</button><button v-if="canWrite" class="primary" @click="saveArt">保存卡片资料</button></div></section>
+    </div>
+    <div v-else class="rights-workspace">
     <section class="grant-panel"><h4>直接派发（兜底）</h4><p>赛季达段、赛季结算和活动派发将使用同一权益记录；此处可处理补发、修正与活动名单。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('grant')">{{ selectedArt ? `${selectedArt.artCode} · ${selectedArt.displayName}` : '打开异画卡查选择' }}</button></label><AdminAccountPicker v-model="grantForm.accountId"/><label>派发来源<select v-model="grantForm.sourceKind"><option value="manual">后台直接派发</option><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="event">活动派发</option></select></label><label>派发原因<input v-model.trim="grantForm.sourceReference" maxlength="240" :placeholder="selectedArt ? `例如：${selectedArt.displayName} 补发` : '可留空；填写后会原样展示给玩家'"></label></div><button v-if="hasPermission('admin.content.draft')" class="primary" @click="grant">派发异画权益</button></section>
     <section class="award-rules"><h4>自动派发规则</h4><p>“达到段位”在排位结算后即时检查；“赛季结算”和“最强主宰”在后台归档旧赛季时自动执行；活动规则需由管理员在名单确认后执行。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('rule')">{{ selectedRuleArt ? `${selectedRuleArt.artCode} · ${selectedRuleArt.displayName}` : '打开异画卡查选择' }}</button></label><label>规则类型<select v-model="ruleForm.kind"><option value="rank-reached">赛季达到段位</option><option value="season-final">赛季结算</option><option value="master-champion-season-final">赛季最强主宰</option><option value="event">活动派发</option></select></label><label v-if="ruleForm.kind !== 'event'">赛季编号<input v-model.trim="ruleForm.seasonId" maxlength="100" placeholder="例如：S01"></label><label v-else>活动编号<input v-model.trim="ruleForm.eventId" maxlength="160" placeholder="例如：2026-国庆活动"></label><label v-if="ruleForm.kind === 'master-champion-season-final'">指定主宰<select v-model="ruleForm.masterId"><option value="">所有最强主宰得主</option><option v-for="card in catalog.filter(item => item.cardType === 'master')" :key="card.id" :value="card.id">{{ card.nameZh }}</option></select></label><label v-if="ruleForm.kind === 'rank-reached' || ruleForm.kind === 'season-final'">最低段位<select v-model.number="ruleForm.minimumTierIndex"><option v-for="index in 5" :key="index - 1" :value="index - 1">第 {{ index }} 档及以上</option></select></label><label class="check"><input v-model="ruleForm.active" type="checkbox">启用此规则</label></div><div class="actions"><button @click="resetRule">清空</button><button v-if="hasPermission('admin.content.draft')" class="primary" @click="saveRule">保存规则</button></div><article v-for="rule in awardRules" :key="rule.id" :class="{ inactive: !rule.active }"><div><b>{{ arts.find(art => art.id === rule.alternateArtId)?.displayName || rule.alternateArtId }}</b><span>{{ rule.kind === 'rank-reached' ? `赛季达段 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'season-final' ? `赛季结算 · ${rule.seasonId} · 第 ${rule.minimumTierIndex + 1} 档及以上` : rule.kind === 'master-champion-season-final' ? `赛季最强主宰 · ${rule.seasonId} · ${rule.masterId || '全部主宰'}` : `活动派发 · ${rule.eventId}` }}</span><small>{{ rule.active ? '已启用' : '已停用' }}</small></div><button @click="editRule(rule)">编辑</button></article><p v-if="!awardRules.length">尚未设置自动派发规则。</p></section>
     <section class="event-dispatch"><h4>赛季排位参与者派发</h4><p>选择异画后先预览。默认只覆盖本赛季参与过排位的玩家；也可明确填写一个历史赛季。确认后同一异画、同一赛季只会派发一次。</p><div class="form-grid"><label>异画<button class="art-choice" type="button" @click="openArtPicker('participants')">{{ selectedParticipantArt ? `${selectedParticipantArt.artCode} · ${selectedParticipantArt.displayName}` : '打开异画卡查选择' }}</button></label><label>派发范围<select v-model="rankedParticipantScope" @change="betaGrantPreview = null"><option value="current">本赛季参与过排位的玩家</option><option value="specified">指定赛季参与过排位的玩家</option></select></label><label v-if="rankedParticipantScope === 'specified'">指定赛季<input v-model.trim="betaGrantForm.seasonId" maxlength="100" placeholder="例如：S01" @input="betaGrantPreview = null"></label></div><p v-if="betaGrantPreview">{{ betaGrantPreview.seasonId }} 赛季可参与 {{ betaGrantPreview.eligibleAccounts }} 人；已拥有同来源权益 {{ betaGrantPreview.alreadyGranted }} 人；本次新增 {{ betaGrantPreview.toGrant }} 人。</p><div class="actions"><button @click="previewBetaGrant">预览派发范围</button><button v-if="betaGrantPreview && hasPermission('admin.content.draft')" class="primary" @click="dispatchBetaGrant">确认派发</button></div></section>
     <section v-if="awardRules.some(rule => rule.active && rule.kind === 'event')" class="event-dispatch"><h4>执行活动名单</h4><p>逐名从统一账号候选加入获奖玩家；重名账号以唯一玩家ID区分，系统提交前仍会校验账号状态。</p><AdminAccountPicker v-model="eventAccountId" label="加入获奖玩家" @change="addEventAccount"/><div class="event-accounts"><p v-if="!eventAccounts.length">尚未加入获奖玩家。</p><button v-for="account in eventAccounts" :key="account.id" type="button" @click="removeEventAccount(account.id)"><b>{{ account.username }}</b><code>{{ account.id }}</code><span>移除</span></button></div><div v-for="rule in awardRules.filter(rule => rule.active && rule.kind === 'event')" :key="rule.id" class="event-rule"><span>{{ arts.find(art => art.id === rule.alternateArtId)?.displayName || rule.alternateArtId }} · {{ rule.eventId }}</span><button v-if="hasPermission('admin.content.draft')" class="primary" @click="dispatchEvent(rule)">按此规则派发</button></div></section>
     <section class="grant-list"><h4>派发记录</h4><article v-for="grantRow in grants" :key="grantRow.id" :class="{ revoked: grantRow.revokedAt }"><div><b>{{ grantRow.username }}</b><span>{{ arts.find(art => art.id === grantRow.alternateArtId)?.displayName || grantRow.alternateArtId }}</span><small>{{ grantRow.sourceKind }}{{ grantRow.sourceReference ? ` · ${grantRow.sourceReference}` : '' }} · {{ new Date(grantRow.grantedAt).toLocaleString() }}</small></div><button v-if="!grantRow.revokedAt && hasPermission('admin.content.draft')" class="danger" @click="revoke(grantRow)">撤回</button><em v-else-if="grantRow.revokedAt">已撤回</em></article><p v-if="!grants.length">暂无派发记录。</p></section>
+    </div>
     <Teleport to="body">
-      <div v-if="registryOpen" class="registry-mask" @click.self="registryOpen = false">
-        <section class="registry-modal ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-registry-title">
-          <header><div><small>ALTERNATE ART REGISTRY</small><h2 id="alternate-art-registry-title">已登记异画</h2></div><button type="button" aria-label="关闭" @click="registryOpen = false">×</button></header>
-          <form class="registry-filters" @submit.prevent="searchRegistry(1)"><label>名称<input v-model.trim="registryFilters.name" placeholder="异画名称"></label><label>编号<input v-model.trim="registryFilters.artCode" placeholder="异画编号"></label><label>绑定卡<input v-model.trim="registryFilters.baseCard" placeholder="原卡名或编号"></label><button type="button" @click="resetRegistryFilters">重置</button><button class="primary" type="submit">查询</button></form>
-          <div class="registry-results" :aria-busy="registryBusy">
-            <article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补编号' }} · {{ art.kind === 'gallery-card' ? '独立联动卡' : `${art.baseCardId} · ${art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中'}` }}</span><small>产品：{{ art.products?.map(item => item.name).join('、') || '未归属' }} · 罕贵：{{ art.rarities?.map(item => item.name).join('、') || '未设定' }}</small><small>{{ art.kind === 'gallery-card' ? '仅画廊展示，不可派发或构筑' : art.builtIn ? '内置异画，可编辑归属' : art.active ? '已在画廊展示，可授予' : '已停用，不展示不再授予' }}</small></div><button type="button" @click="editRegistryArt(art)">编辑</button></article>
-            <p v-if="!registryBusy && !registry.items.length">没有符合条件的已登记异画。</p>
-          </div>
-          <footer><span>共 {{ registry.total }} 项 · 第 {{ registry.page }} / {{ registryPages }} 页</span><div><button type="button" :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button type="button" :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer>
-        </section>
+      <div v-if="imageDialogOpen && imageTarget" class="registry-mask" @click.self="closeImageEditor">
+        <section class="image-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-image-title"><header><div><small>REPLACE ARTWORK</small><h2 id="alternate-art-image-title">更换卡图</h2><p>{{ imageTarget.artCode }} · {{ imageTarget.displayName }}</p></div><button aria-label="关闭" @click="closeImageEditor">×</button></header><div class="image-compare"><figure><figcaption>当前卡图</figcaption><CardImage v-if="imageTarget.builtIn" :card-id="imageTarget.cardImageId" :legacy-url="imageTarget.imageUrl" :alt="imageTarget.displayName" intent="detail"/><img v-else :src="imageTarget.imageUrl" :alt="imageTarget.displayName"></figure><figure><figcaption>待替换卡图</figcaption><img v-if="replacementMedia" :src="replacementMedia.desktopUrl" :alt="replacementMedia.altText"><div v-else class="empty-preview">上传或选择素材后在此预览</div></figure></div><label>已上传卡图<select v-model="imageMediaAssetId"><option value="">请选择</option><option v-for="item in media" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }}</option></select></label><MediaUploadField v-if="canWrite" kind="card-art" :initial-alt="`${imageTarget.displayName} 新卡图`" @uploaded="replacementUploaded" @notice="notice"/><p class="identity-note">保存只会替换图片。卡牌身份、编号、卡效、产品、罕贵、构筑与权益记录不会改变。</p><footer><button v-if="imageTarget.builtIn && imageTarget.mediaAssetId" class="danger" @click="restoreCatalogImage">恢复系统卡图</button><span></span><button @click="closeImageEditor">取消</button><button v-if="canWrite" class="primary" :disabled="!imageMediaAssetId" @click="saveReplacementImage">确认更换</button></footer></section>
+      </div>
+      <div v-if="productDialogOpen" class="registry-mask" @click.self="productDialogOpen = false">
+        <section class="product-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-product-title"><header><div><small>PRODUCT DRAFT</small><h2 id="alternate-art-product-title">新建产品</h2></div><button aria-label="关闭" @click="productDialogOpen = false">×</button></header><p>在现有产品体系中创建草稿并立即选用。草稿仅后台可见，不会自动发布资讯或公开画廊归属。</p><label>产品名称<input v-model.trim="productForm.title" maxlength="160" placeholder="例如：联动纪念卡系列"></label><label>产品分类<select v-model="productForm.categoryId"><option v-for="item in productCategories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><p v-if="pendingProductId" class="draft-state">草稿已创建：{{ pendingProductId }}。如果列表刷新失败，只需重试回选，不会重复创建。</p><footer><button @click="productDialogOpen = false">取消</button><button v-if="canWrite" class="primary" :disabled="productSaving" @click="saveProductDraft">{{ pendingProductId ? '重试回选已建草稿' : productSaving ? '保存中…' : '保存草稿并选用' }}</button></footer></section>
       </div>
       <SingleCardPicker v-if="artPickerTarget" :title="artPickerTarget === 'base' ? '选择异画绑定的原卡' : '选择异画'" :items="artPickerTarget === 'base' ? basePickerItems : artPickerItems" @select="choosePickerItem" @close="artPickerTarget = null"/>
     </Teleport>
@@ -281,4 +403,8 @@ onMounted(load)
 .art-registry-entry{display:flex;align-items:center;justify-content:space-between;gap:18px}.art-registry-entry h4,.art-registry-entry p{margin:0}.registry-mask{position:fixed;z-index:3500;inset:0;display:grid;place-items:center;padding:32px;background:#020507df}.registry-modal{display:grid;width:min(1040px,94vw);height:min(760px,90vh);grid-template-rows:auto auto minmax(0,1fr) auto;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.registry-modal>header,.registry-modal>footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid #374147}.registry-modal>header h2{margin:4px 0 0}.registry-modal>header small{color:#cfad43;font:900 12px monospace;letter-spacing:.08em}.registry-modal>header button{border:0;background:transparent;color:#fff;font-size:28px}.registry-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto auto;align-items:end;gap:8px;padding:12px 18px;border-bottom:1px solid #283238}.registry-filters label{display:grid;gap:5px;color:#aeb8bb;font-size:13px;font-weight:900}.registry-filters input,.registry-filters button,.registry-modal>footer button{box-sizing:border-box;min-height:38px;padding:8px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-results{overflow:auto;padding:12px 18px}.registry-results article{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:8px;padding:9px;border:1px solid #35424a;background:#101820}.registry-results img,.registry-results :deep(.l12-card-image){width:46px;height:64px;object-fit:cover}.registry-results article>div{display:grid;gap:3px}.registry-results span,.registry-results small{color:#93a0a6;font-size:13px}.registry-results article>button{min-height:34px;padding:7px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-modal>footer{border-top:1px solid #374147;border-bottom:0}.registry-modal>footer span{color:#93a0a6}.registry-modal>footer div{display:flex;gap:8px}.registry-modal button:disabled{cursor:not-allowed;opacity:.42}@media(max-width:760px){.art-registry-entry{align-items:stretch;flex-direction:column}.registry-mask{padding:8px}.registry-modal{width:100%;height:96dvh}.registry-filters{grid-template-columns:1fr 1fr}.registry-filters label:first-child{grid-column:1/-1}.registry-results{padding:9px}.registry-results article{grid-template-columns:38px minmax(0,1fr)}.registry-results img,.registry-results :deep(.l12-card-image){width:38px;height:54px}.registry-results article>button{grid-column:1/-1}.registry-modal>footer{align-items:flex-start;flex-direction:column}.registry-modal>footer div,.registry-modal>footer button{width:100%}}
 .alternate-admin,.alternate-admin>*,.product-editor,.art-editor,.grant-panel,.award-rules,.event-dispatch,.form-grid,.form-grid>*{box-sizing:border-box;min-width:0;max-width:100%}.alternate-admin button,.alternate-admin input,.alternate-admin select,.alternate-admin textarea{max-width:100%;min-width:0;white-space:normal}@media(max-width:380px){.alternate-admin{padding:14px}.alternate-admin>header{margin:-14px -14px 14px;padding:14px}.product-editor,.art-editor,.grant-panel,.art-list,.grant-list,.award-rules,.event-dispatch{padding:10px}}
 .full-field,.metadata-choice{grid-column:1/-1}.metadata-choice{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:7px;padding:12px;border:1px solid #35424a}.metadata-choice legend{padding:0 6px;color:#d9c176;font-weight:900}.metadata-choice .check{justify-content:flex-start;padding:7px;background:#101820}.metadata-choice small{margin-left:auto}.product-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;max-height:220px;overflow:auto}.product-groups article{margin:0}.form-grid textarea{width:100%;resize:vertical}@media(max-width:760px){.full-field,.metadata-choice{grid-column:auto}}
+.workspace-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin-bottom:16px;border:1px solid #35424a;background:#35424a}.workspace-tabs button{border:0;background:#0a1117;color:#aab4b7;font-weight:900}.workspace-tabs button.active{background:#273039;color:#f0ce67;box-shadow:inset 0 -3px #d7b64c}.task-strip{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px;border:1px solid #5b4e2c;background:linear-gradient(110deg,#15170f,#0a1218 58%)}.task-strip h4,.task-strip p{margin:2px 0}.gallery-filters{display:grid;grid-template-columns:2fr repeat(6,minmax(120px,1fr));gap:8px;margin-top:14px;padding:14px;border:1px solid #35424a;background:#091016}.gallery-filters label,.image-dialog>label,.product-dialog>label{display:grid;gap:5px;color:#c4ccce;font-size:13px;font-weight:800}.filter-actions{display:flex;grid-column:1/-1;justify-content:flex-end;gap:8px}.gallery-list{margin-top:14px;border:1px solid #35424a;background:#091016}.gallery-list>header,.gallery-list>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #35424a}.gallery-list>footer{border-top:1px solid #35424a;border-bottom:0}.gallery-list>footer>div{display:flex;gap:8px}.gallery-list article{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #29343a}.gallery-list article>img,.gallery-list article>:deep(.l12-card-image){width:64px;height:90px;object-fit:cover}.art-summary{display:grid;gap:5px}.art-summary>b{font-size:17px}.chips{display:flex;flex-wrap:wrap;gap:5px}.chips em{display:inline-flex;gap:4px;padding:3px 7px;border:1px solid #4a555a;background:#111a20;color:#cdd4d5;font-size:12px;font-style:normal}.chips small{padding-left:4px;border-left:1px solid #776a3d;color:#e2c360;font-family:inherit;letter-spacing:0}.row-actions{display:flex;gap:8px}.editor-heading,.image-dialog>header,.product-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:14px}.editor-heading h4,.image-dialog h2,.product-dialog h2{margin:3px 0}.inline-manager{grid-column:1/-1;margin-top:14px;padding:14px;border:1px solid #35424a;background:#0e171e}.inline-manager article{display:flex;align-items:center;gap:10px;margin-top:7px;padding:8px;border:1px solid #2f3a40}.inline-manager article button{margin-left:auto}.image-dialog,.product-dialog{width:min(900px,94vw);max-height:92vh;overflow:auto;padding:18px;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.product-dialog{width:min(560px,94vw)}.image-dialog>header,.product-dialog>header{margin:-18px -18px 18px;padding:16px 18px;border-bottom:1px solid #374147}.image-dialog>header button,.product-dialog>header button{border:0;background:transparent;color:#fff;font-size:28px}.image-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.image-compare figure{display:grid;justify-items:center;gap:8px;margin:0;padding:12px;border:1px solid #35424a;background:#070d12}.image-compare figcaption{justify-self:start;color:#cdd4d5;font-weight:900}.image-compare img,.image-compare :deep(.l12-card-image),.empty-preview{width:min(250px,100%);aspect-ratio:5/7;object-fit:contain;background:#020405}.empty-preview{display:grid;align-items:center;padding:15px;color:#78868c;text-align:center}.identity-note,.draft-state{padding:10px;border-left:3px solid #d1b34e;background:#17160e}.image-dialog>footer,.product-dialog>footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}.image-dialog>footer>span{flex:1}.product-dialog>label{margin-top:12px}.rights-workspace>.grant-panel:first-child{margin-top:0}
+@media(max-width:1050px){.gallery-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.gallery-filters label:first-child{grid-column:span 2}}
+@media(max-width:760px){.task-strip,.gallery-list>header,.gallery-list>footer{align-items:stretch;flex-direction:column}.gallery-filters{grid-template-columns:1fr}.gallery-filters label:first-child{grid-column:auto}.gallery-list article{grid-template-columns:52px minmax(0,1fr);padding:10px}.gallery-list article>img,.gallery-list article>:deep(.l12-card-image){width:52px;height:74px}.row-actions{grid-column:1/-1}.row-actions button{flex:1}.image-compare{grid-template-columns:1fr}.image-compare img,.image-compare :deep(.l12-card-image),.empty-preview{width:min(210px,100%)}.image-dialog,.product-dialog{width:calc(100vw - 16px);max-height:96dvh;padding:14px}.image-dialog>header,.product-dialog>header{margin:-14px -14px 14px;padding:14px}.image-dialog>footer,.product-dialog>footer{align-items:stretch;flex-direction:column}.image-dialog>footer button,.product-dialog>footer button{width:100%}.workspace-tabs{position:sticky;z-index:3;top:0}}
+.gallery-filters{grid-template-columns:repeat(3,minmax(120px,1fr))}.art-editor{position:fixed;z-index:3300;inset:4vh max(16px,5vw);overflow:auto;margin:0;padding:20px;border-color:#66572b;box-shadow:0 30px 100px #000}.art-editor>.editor-heading{position:sticky;z-index:2;top:-20px;margin:-20px -20px 18px;padding:16px 20px;border-bottom:1px solid #374147;background:#0b1116}@media(max-width:760px){.gallery-filters{grid-template-columns:1fr}.art-editor{inset:8px;padding:14px}.art-editor>.editor-heading{top:-14px;margin:-14px -14px 14px;padding:14px}}
 </style>

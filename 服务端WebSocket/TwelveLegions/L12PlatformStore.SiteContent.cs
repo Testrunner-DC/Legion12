@@ -1396,7 +1396,8 @@ public sealed partial class L12PlatformStore
         count += _data.ContentEntries.Sum(entry => CountJsonString(entry.DraftValue, id) +
             CountJsonString(entry.PublishedValue, id));
         count += _data.ContentVersions.Sum(version => CountJsonString(version.Value, id));
-        return count + _data.AlternateArts.Count(row => row.MediaAssetId == id);
+        return count + _data.AlternateArts.Count(row => row.MediaAssetId == id)
+            + _data.AlternateArtMetadata.Count(row => row.ImageMediaAssetId == id);
     }
 
     private void MigrateCategoryReferences(SiteCategoryRow source, SiteCategoryRow target)

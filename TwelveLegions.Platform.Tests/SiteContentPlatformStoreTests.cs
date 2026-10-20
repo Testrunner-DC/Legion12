@@ -145,6 +145,130 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void OfficialAlternateArtImageOverrideKeepsStableIdentityAndCanRestoreCatalogImage()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-official-alternate-art-image-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var player = store.Register("ofi" + Guid.NewGuid().ToString("N")[..6], "Password123!").Account!;
+            var media = Upload(store, admin, "card-art");
+            var before = store.AdminAlternateArts().First(item => item.BuiltIn);
+            store.GrantAlternateArt(admin, new(before.Id, player.Id, "manual", "image-override"));
+
+            var preset = catalog.PresetDecks.First(item => item.CardIds.Contains(before.BaseCardId));
+            var deck = new L12PresetDeckDefinition
+            {
+                Name = "内置异画覆盖图身份回归", MasterId = preset.MasterId,
+                CardIds = preset.CardIds.ToList(), MoraleIds = preset.MoraleIds.ToList(),
+                SpecialIds = preset.SpecialIds.ToList(),
+                AlternateArtSelections = new(StringComparer.OrdinalIgnoreCase) { [before.BaseCardId] = before.Id },
+            };
+            var storedDeck = store.UpsertDeck(player.Id, deck);
+
+            var changed = store.SaveAlternateArtImage(admin, new(before.Id, media.Id));
+
+            Assert.Equal(before.Id, changed.Id);
+            Assert.Equal(before.ArtCode, changed.ArtCode);
+            Assert.Equal(before.BaseCardId, changed.BaseCardId);
+            Assert.Equal(before.CardImageId, changed.CardImageId);
+            Assert.Equal(before.Kind, changed.Kind);
+            Assert.True(changed.BuiltIn);
+            Assert.Equal(media.Id, changed.MediaAssetId);
+            Assert.Equal(media.DesktopUrl, changed.ImageUrl);
+            Assert.Equal(media.ThumbnailUrl, changed.ThumbnailUrl);
+            Assert.Equal(before.Products!.Select(item => item.Id), changed.Products!.Select(item => item.Id));
+            Assert.Equal(before.Rarities!.Select(item => item.Id), changed.Rarities!.Select(item => item.Id));
+            Assert.Equal(changed.ImageUrl, store.AlternateArts().Single(item => item.Id == before.Id).ImageUrl);
+            Assert.Equal(changed.ImageUrl, store.OwnedAlternateArts(player.Id).Single(item => item.Id == before.Id).ImageUrl);
+            Assert.Equal(changed.ImageUrl,
+                store.ResolveOwnedAlternateArtUrls(player.Id, storedDeck.AlternateArtSelections)[before.BaseCardId]);
+            Assert.Throws<L12SiteContentConflictException>(() => store.DeleteSiteMedia(admin, media.Id));
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var persisted = reloaded.AdminAlternateArts().Single(item => item.Id == before.Id);
+            Assert.Equal(changed.ImageUrl, persisted.ImageUrl);
+            Assert.Equal(before.CardImageId, persisted.CardImageId);
+            Assert.Equal(before.Products!.Select(item => item.Id), persisted.Products!.Select(item => item.Id));
+            Assert.Equal(before.Rarities!.Select(item => item.Id), persisted.Rarities!.Select(item => item.Id));
+
+            var restored = reloaded.SaveAlternateArtImage(admin, new(before.Id, ""));
+            Assert.Equal(before.Id, restored.Id);
+            Assert.Equal(before.CardImageId, restored.CardImageId);
+            Assert.Equal("", restored.MediaAssetId);
+            Assert.Equal("", restored.ImageUrl);
+            Assert.Equal(before.Products!.Select(item => item.Id), restored.Products!.Select(item => item.Id));
+            Assert.Equal(before.Rarities!.Select(item => item.Id), restored.Rarities!.Select(item => item.Id));
+            Assert.Equal($"l12-card-id:{before.CardImageId}",
+                reloaded.ResolveOwnedAlternateArtUrls(player.Id, storedDeck.AlternateArtSelections)[before.BaseCardId]);
+            reloaded.DeleteSiteMedia(admin, media.Id);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public void CustomAlternateArtImageReplacementChangesOnlyMedia()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-custom-alternate-art-image-{Guid.NewGuid():N}");
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
+                officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var oldMedia = Upload(store, admin, "card-art");
+            var newMedia = Upload(store, admin, "card-art");
+            var invalidMedia = Upload(store, admin, "product");
+            var baseCard = catalog.Cards.Values.First();
+            var created = store.SaveAlternateArt(admin, new(null, "ALT-IMAGE-ONLY", baseCard.Id,
+                baseCard.NameZh, oldMedia.Id, Effect: "保留的资料"));
+            var product = store.AlternateArtProducts(true).First();
+            var rarity = store.AlternateArtRarities(true).First();
+            var before = store.SaveAlternateArtMetadata(admin,
+                new(created.Id, [product.Id], [rarity.Id]));
+
+            var changed = store.SaveAlternateArtImage(admin, new(created.Id, newMedia.Id));
+
+            Assert.Equal(before.Id, changed.Id);
+            Assert.Equal(before.ArtCode, changed.ArtCode);
+            Assert.Equal(before.BaseCardId, changed.BaseCardId);
+            Assert.Equal(before.DisplayName, changed.DisplayName);
+            Assert.Equal(before.Kind, changed.Kind);
+            Assert.Equal(before.Effect, changed.Effect);
+            Assert.Equal(before.Active, changed.Active);
+            Assert.Equal(before.Products!.Select(item => item.Id), changed.Products!.Select(item => item.Id));
+            Assert.Equal(before.Rarities!.Select(item => item.Id), changed.Rarities!.Select(item => item.Id));
+            Assert.Equal(newMedia.Id, changed.MediaAssetId);
+            Assert.Equal(newMedia.DesktopUrl, changed.ImageUrl);
+            Assert.Equal(newMedia.ThumbnailUrl, changed.ThumbnailUrl);
+            var staleMetadataSave = store.SaveAlternateArt(admin, new(created.Id, created.ArtCode,
+                created.BaseCardId, created.DisplayName, oldMedia.Id, created.Active, Kind: created.Kind,
+                Effect: created.Effect));
+            Assert.Equal(newMedia.Id, staleMetadataSave.MediaAssetId);
+            Assert.Equal(newMedia.DesktopUrl, staleMetadataSave.ImageUrl);
+            store.DeleteSiteMedia(admin, oldMedia.Id);
+            Assert.Throws<L12SiteContentConflictException>(() => store.DeleteSiteMedia(admin, newMedia.Id));
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArtImage(admin, new(created.Id, "")));
+            Assert.Throws<ArgumentException>(() => store.SaveAlternateArtImage(admin, new(created.Id, invalidMedia.Id)));
+            Assert.Throws<KeyNotFoundException>(() => store.SaveAlternateArtImage(admin, new("missing-art", newMedia.Id)));
+            Assert.Equal(newMedia.Id, store.AdminAlternateArts().Single(item => item.Id == created.Id).MediaAssetId);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void HistoricalBatchAlternateArtMetadataIsManyToManyAndKeepsIdentityAndEntitlements()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-metadata-{Guid.NewGuid():N}");

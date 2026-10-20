@@ -24,6 +24,7 @@ public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool A
 public sealed record L12AlternateArtRarityDraft(string? Id, string Code, string Name, bool Active = true);
 public sealed record L12AlternateArtMetadataDraft(string AlternateArtId, IReadOnlyList<string> ProductIds,
     IReadOnlyList<string> RarityIds);
+public sealed record L12AlternateArtImageDraft(string AlternateArtId, string MediaAssetId);
 public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string AccountId, string SourceKind,
     string SourceReference = "");
 public sealed record L12AlternateArtAwardRuleView(string Id, string AlternateArtId, string Kind, string SeasonId,
@@ -157,6 +158,58 @@ public sealed partial class L12PlatformStore
         }
     }
 
+    public L12AlternateArtView SaveAlternateArtImage(L12AccountView actor, L12AlternateArtImageDraft draft,
+        L12AdminAuditContext? context = null)
+    {
+        lock (_gate)
+        {
+            var artId = draft.AlternateArtId?.Trim() ?? string.Empty;
+            var before = FindAlternateArtLocked(artId, true) ?? throw new KeyNotFoundException("异画不存在");
+            var mediaId = draft.MediaAssetId?.Trim() ?? string.Empty;
+            SiteMediaRow? media = null;
+            if (!string.IsNullOrWhiteSpace(mediaId))
+            {
+                media = ActiveMedia(mediaId) ?? throw new ArgumentException("异画素材不存在或已删除");
+                if (!string.Equals(media.Kind, "card-art", StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("异画必须使用“卡牌异画”素材上传入口的图片");
+            }
+
+            var official = _officialAlternateArts.ContainsKey(artId);
+            if (official)
+            {
+                var metadata = _data.AlternateArtMetadata.FirstOrDefault(item => item.AlternateArtId == artId);
+                if (metadata is null)
+                {
+                    var definition = _officialAlternateArts[artId];
+                    metadata = new AlternateArtMetadataRow
+                    {
+                        AlternateArtId = artId,
+                        ProductIds = definition.ProductNames.Select(value => $"catalog:{value}").ToList(),
+                        RarityIds = definition.RarityCodes.Select(CatalogRarityId).ToList(),
+                    };
+                    _data.AlternateArtMetadata.Add(metadata);
+                }
+                metadata.ImageMediaAssetId = media?.Id ?? string.Empty;
+                metadata.UpdatedByAccountId = actor.Id;
+                metadata.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                if (media is null) throw new ArgumentException("上传的画廊卡图不能恢复为空图");
+                var row = _data.AlternateArts.First(item => item.Id == artId);
+                row.MediaAssetId = media.Id;
+                row.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+
+            var after = FindAlternateArtLocked(artId, true)!;
+            AddAdminAudit(actor, "alternate-art-image", official && media is null ? "restore-catalog-image" : "replace-image",
+                artId, System.Text.Json.JsonSerializer.Serialize(before),
+                System.Text.Json.JsonSerializer.Serialize(after), null, context);
+            Save();
+            return after;
+        }
+    }
+
     public L12AlternateArtSearchPage SearchAlternateArts(string? name, string? artCode, string? baseCard,
         int page = 1, int pageSize = 20, bool includeInactive = true)
     {
@@ -260,7 +313,10 @@ public sealed partial class L12PlatformStore
             if (kind == "alternate-art" && !_officialCards.TryGetValue(baseCardId, out baseCard))
                 throw new ArgumentException("异画必须绑定到现有的规则卡牌编号");
             if (kind == "gallery-card") baseCardId = string.Empty;
-            var media = ActiveMedia(draft.MediaAssetId) ?? throw new ArgumentException("异画素材不存在或已删除");
+            // Existing rows change their image only through SaveAlternateArtImage. Keeping the current media here
+            // prevents a stale metadata editor from reverting a newer image replacement made in another session.
+            var media = ActiveMedia(existing?.MediaAssetId ?? draft.MediaAssetId)
+                ?? throw new ArgumentException("异画素材不存在或已删除");
             if (!string.Equals(media.Kind, "card-art", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("异画必须使用“卡牌异画”素材上传入口的图片");
             // 异画是原卡的外观权益，名称属于规则卡牌身份，不能由上传表单另造或改写。
@@ -566,9 +622,9 @@ public sealed partial class L12PlatformStore
                 var art = FindActiveAlternateArtLocked(selection.Value);
                 if (art is not null && owned.Contains(art.Id)
                     && string.Equals(art.BaseCardId, selection.Key, StringComparison.OrdinalIgnoreCase))
-                    result[art.BaseCardId] = art.BuiltIn
-                        ? $"l12-card-id:{art.CardImageId}"
-                        : SiteMediaUrl(art.MediaAssetId);
+                    result[art.BaseCardId] = !string.IsNullOrWhiteSpace(art.MediaAssetId)
+                        ? SiteMediaUrl(art.MediaAssetId)
+                        : $"l12-card-id:{art.CardImageId}";
             }
             foreach (var group in (copies ?? new Dictionary<string, List<string>>()).Take(128))
             {
@@ -579,9 +635,9 @@ public sealed partial class L12PlatformStore
                     var art = FindActiveAlternateArtLocked(artId);
                     if (art is null || !owned.Contains(art.Id)
                         || !string.Equals(art.BaseCardId, group.Key, StringComparison.OrdinalIgnoreCase)) continue;
-                    result[$"{art.BaseCardId}#{index + 1}"] = art.BuiltIn
-                        ? $"l12-card-id:{art.CardImageId}"
-                        : SiteMediaUrl(art.MediaAssetId);
+                    result[$"{art.BaseCardId}#{index + 1}"] = !string.IsNullOrWhiteSpace(art.MediaAssetId)
+                        ? SiteMediaUrl(art.MediaAssetId)
+                        : $"l12-card-id:{art.CardImageId}";
                 }
             }
             return result;
@@ -739,11 +795,13 @@ public sealed partial class L12PlatformStore
         return ids.Where(byId.ContainsKey).Select(id => ToAlternateArtRarityView(byId[id])).ToArray();
     }
 
-    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities) EffectiveMetadataLocked(
+    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities, string ImageMediaAssetId,
+        DateTimeOffset UpdatedAt) EffectiveMetadataLocked(
         string artId, IReadOnlyList<string> defaultProducts, IReadOnlyList<string> defaultRarities)
     {
         var metadata = _data.AlternateArtMetadata.FirstOrDefault(item => item.AlternateArtId == artId);
-        return metadata is null ? (defaultProducts, defaultRarities) : (metadata.ProductIds, metadata.RarityIds);
+        return metadata is null ? (defaultProducts, defaultRarities, string.Empty, DateTimeOffset.UnixEpoch)
+            : (metadata.ProductIds, metadata.RarityIds, metadata.ImageMediaAssetId, metadata.UpdatedAt);
     }
 
     private L12AlternateArtView ToAlternateArtView(AlternateArtRow row, bool admin)
@@ -767,8 +825,11 @@ public sealed partial class L12PlatformStore
         var metadata = EffectiveMetadataLocked(row.Id, defaultProducts, defaultRarities);
         var products = ResolveProductsLocked(metadata.Products, admin);
         var rarities = ResolveRaritiesLocked(metadata.Rarities);
-        return new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName, "", "", "", true,
-            DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch, products.FirstOrDefault()?.Id ?? "",
+        var mediaId = metadata.ImageMediaAssetId;
+        return new(row.Id, row.ArtCode, row.BaseCardId, row.DisplayName, mediaId,
+            string.IsNullOrWhiteSpace(mediaId) ? "" : SiteMediaUrl(mediaId),
+            string.IsNullOrWhiteSpace(mediaId) ? "" : SiteMediaUrl(mediaId, "thumbnail"), true,
+            DateTimeOffset.UnixEpoch, metadata.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", row.CardImageId, true,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : row.BaseCardId,
             null, "", products, rarities);

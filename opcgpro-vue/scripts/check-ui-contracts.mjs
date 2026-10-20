@@ -1867,12 +1867,14 @@ contracts.push(
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
-  [adminAlternateArts.includes('查看已登记异画')
+  [adminAlternateArts.includes("const workspace = ref<'gallery' | 'rights'>('gallery')")
+    && adminAlternateArts.includes('class="gallery-workspace"') && adminAlternateArts.includes('画廊卡片')
     && adminAlternateArts.includes('adminApi.searchAlternateArts')
-    && adminAlternateArts.includes('registryFilters.baseCard')
+    && ['name', 'artCode', 'baseCard'].every(key => adminAlternateArts.includes(`registryFilters.${key}`))
     && adminAlternateArts.includes('pageSize: registry.value.pageSize')
+    && adminAlternateArts.includes('await searchRegistry(1)')
     && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
-    '异画后台初始加载不得拉取全量登记表，必须通过弹框按名称、编号、绑定卡查询并分页'],
+    '画廊后台默认卡片工作区必须按名称、编号、绑定卡进行服务器查询和分页，初始加载不得拉取全量登记表；权益派发保持独立'],
   [shell.includes('alternateArtApi.notifications()')
     && shell.includes('alternateArtApi.acknowledgeNotification')
     && shell.includes('<h2 id="alternate-art-notification-title">获得异画！</h2>')

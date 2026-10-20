@@ -100,6 +100,7 @@ function withGalleryMetadata(card: CatalogCard): CatalogCard {
   if (!overlay) return card
   return {
     ...card,
+    imageUrl: overlay.imageUrl || card.imageUrl,
     products: overlay.products !== undefined
       ? overlay.products.map(item => item.name)
       : overlay.productName ? [overlay.productName] : card.products,
