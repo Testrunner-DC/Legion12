@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-21 画廊真实文件与HTTP/UI首片通过，合成实例已清理
+
+- Main复用AFDF2B55已验2094服务DLL，backend Git tree与99cf一致；独立D盘新runtime、127.0.0.1真实服务/SQLite及当前实际AdminAlternateArtsPanel/MediaUploadField，原生上传PNG→生成并传真实WebP multipart→创建独立联动展示卡/画师→刷新查询→第二图替换均过；重启自有实例后账号及卡片/画师/图片读回正确。匿名真实CardArchive精确编号、画师和宽屏新图解码通过，Main看图；不冒fake API或线上数据。
+- 唯一gallery-real-http-20261021/main-acceptance.json绑定八叶及r2报告/图/退出/清理；r1前面业务已过，最后用手机modal选择器找宽屏sidebar失败，旧退出标志又只看exitCode忽略Windows signal，原件不改。改测试叶后r2通过、四自有PID实际均退出，浏览器/Vite退出。
+- 已按精确owner/物理路径校验先解除借用junction，再清本轮合成DB/上传和复制程序11117010字节；共享已验DLL和目录仍在、原失败/图/日志保留。不改产品、不重复后端或新Release、两服和维护零写。范围仅1366独立联动卡真实链，不冒三类型/产品草稿/真机或测试服已验；其他已批队列继续，性能30＋10仍未通过。
+
 ## 2026-10-21 旧CI制品出口退役，标准出包入口唯一
 
 - 按已批项目规划：CI手拼schema1包缺双前端/共享清单/排空/优化卡图绑定，还引用已不存在的public/cards子树；仅撤下这个无效生产/上传出口，未删既有Artifacts。CI仍完整前端与两套受管后端、架构和发布状态，不过滤；前端先行。标准verify-l12.ps1及部署器逐SHA未改，schema3/资源/150MiB/运行库等保护不降。
