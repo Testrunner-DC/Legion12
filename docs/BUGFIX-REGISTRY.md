@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜R11恢复工具：逻辑删除投影及真实执行器合同
+
+- 首稿只测了正常accountId，漏掉已有逻辑删除的真实链：ExecuteAccountDeletion→DeletedAccountName完整GUID→AnonymizeIdentity把参与ID置null、名字变墓碑；ReadAdminMatchSummary又将ongoing非sandbox牌库名强制null。按数据库内部“已清理牌库”要求API会必拒，当前8c AdminQueries blob95643aba与工作树相同。修双侧canonical，仅精确墓碑名恢复ID，69已删账号/同名墓碑、20唯一参与者、时窗/计数/0连接与绑定指纹全部保留；Node16/Python11通过，不展示身份/牌面/回放。
+- 包装器原吞掉helper安全原因码，现仅传播白名单code并持久会话生命周期，失败finally仍撤销；PS真实调用链5例证明。r4原执行器330000超出既有ValidateRange300000，argv mock没触发实际参数绑定，尚未启动SSH；改为原300秒/远端240秒，用真实合成子进程通过后续办，保留unknown回执，不把它改成成功或盲重试。程序的exit10可从正常收尽的有界输出解析拒绝原因，任何其他中止/不明仍unknown。
+- r5实际四次ownership/session清理、一次仅测试重启，433730→436540，0局/房/连接/在线，诊断撤除；正式d7/PID371661不变，账号实体不改。测试ephemeral数据按人类明确授权丢弃，原小配置保全。唯一test-retirement-r11/retirement-main-r5.json，旧failed原件保留。主R11仍缺30房完整成绩，r11-attempt-main-result.json保持INCONCLUSIVE，不包装成卡顿根治或线上Bug关闭。
+
 ## 2026-10-20｜后台异画元数据与联动卡：既有身份不变的扩展
 
 - 直接人类需求：已有产品/分类、历史批量异画进入管理，单卡可多产品/多可复用罕贵；独立联动卡有卡效文字但不接结算。扫描官方画廊全登记、旧ProductId、上传异画、public/admin/owned/通知/构筑/派发各出口，统一稳定metadata投影；产品源ID带catalog/site/legacy前缀，同名不合并，不新建第二套商品。草稿在admin可选，公开/拥有只读已发布标题和分类，不泄漏草稿正文或管理状态。
