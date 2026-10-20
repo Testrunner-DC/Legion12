@@ -161,9 +161,11 @@ function editRule(rule: AlternateArtAwardRule) { Object.assign(ruleForm, rule) }
 async function load() {
   busy.value = true
   try {
-    const [nextCatalog, nextMedia, nextProducts, nextRarities, nextCategories] = await Promise.all([
-      loadDeckCatalog(), adminApi.siteMedia('card-art'), adminApi.alternateArtProducts(),
-      adminApi.alternateArtRarities(), adminApi.siteCategories('product'),
+    const [nextCatalog, nextProducts, nextRarities] = await Promise.all([
+      loadDeckCatalog(), adminApi.alternateArtProducts(), adminApi.alternateArtRarities(),
+    ])
+    const [nextMedia, nextCategories] = await Promise.all([
+      adminApi.siteMedia('card-art'), adminApi.siteCategories('product'),
     ])
     catalog.value = nextCatalog; media.value = nextMedia; products.value = nextProducts; rarities.value = nextRarities
     productCategories.value = nextCategories.filter(item => item.active)
