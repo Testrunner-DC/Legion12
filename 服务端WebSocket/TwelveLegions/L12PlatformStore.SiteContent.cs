@@ -31,6 +31,9 @@ public sealed record L12SiteMediaView(string Id, string Kind, string AltText, do
     int ReferenceCount, string DesktopAltText, string MobileAltText, string ThumbnailAltText,
     bool IndependentVariants);
 
+public sealed record L12SiteMediaSearchView(IReadOnlyList<L12SiteMediaView> Items, int Page, int PageSize,
+    int Total, bool HasMore);
+
 public sealed record L12SiteMediaEmbedView(string Id, string AltText, string DesktopUrl, string MobileUrl,
     string ThumbnailUrl, int DesktopWidth, int DesktopHeight, int MobileWidth, int MobileHeight);
 
@@ -758,6 +761,35 @@ public sealed partial class L12PlatformStore
             return _data.SiteMedia.Where(row => row.DeletedAt is null && (normalizedKind is null || row.Kind == normalizedKind))
                 .OrderByDescending(row => row.CreatedAt).Take(Math.Clamp(limit, 1, 1000))
                 .Select(ToSiteMediaView).ToArray();
+        }
+    }
+
+    public L12SiteMediaSearchView SearchSiteMedia(string? kind = null, string? search = null,
+        int page = 1, int pageSize = 24, string? id = null, IReadOnlyList<string>? ids = null)
+    {
+        var query = (search ?? string.Empty).Trim();
+        if (query.Length > 160) throw new ArgumentException("素材搜索不能超过160个字符");
+        var exactId = string.IsNullOrWhiteSpace(id) ? null : id.Trim();
+        if (exactId?.Length > 100) throw new ArgumentException("素材编号不能超过100个字符");
+        if (ids is { Count: > 100 } || ids?.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 100) == true)
+            throw new ArgumentException("每次最多查询100个有效素材编号");
+        var exactIds = ids?.ToHashSet(StringComparer.Ordinal);
+        var normalizedKind = string.IsNullOrWhiteSpace(kind) ? null : NormalizeMediaKind(kind);
+        var size = Math.Clamp(pageSize, 1, 100);
+        lock (_gate)
+        {
+            var matches = _data.SiteMedia.Where(row => row.DeletedAt is null
+                && (exactId is null || string.Equals(row.Id, exactId, StringComparison.Ordinal))
+                && (exactIds is null || exactIds.Contains(row.Id))
+                && (normalizedKind is null || row.Kind == normalizedKind)
+                && (query.Length == 0 || row.Id.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || row.AltText.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || row.ContentHash.Contains(query, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(row => row.CreatedAt).ThenBy(row => row.Id, StringComparer.Ordinal).ToArray();
+            var selectedPage = Math.Clamp(page, 1, Math.Max(1, (int)((matches.LongLength + size - 1) / size)));
+            // Only the requested page pays for reference-count/public view projection.
+            var items = matches.Skip((selectedPage - 1) * size).Take(size).Select(ToSiteMediaView).ToArray();
+            return new(items, selectedPage, size, matches.Length, (long)selectedPage * size < matches.Length);
         }
     }
 

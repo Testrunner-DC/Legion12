@@ -181,6 +181,7 @@ export interface SiteMedia {
   createdBy: string; createdAt: string; referenceCount: number
   desktopAltText: string; mobileAltText: string; thumbnailAltText: string; independentVariants: boolean
 }
+export interface SiteMediaSearch { items: SiteMedia[]; page: number; pageSize: number; total: number; hasMore: boolean }
 export interface SiteMediaEmbed {
   id: string; altText: string; desktopUrl: string; mobileUrl: string; thumbnailUrl: string
   desktopWidth: number; desktopHeight: number; mobileWidth: number; mobileHeight: number
@@ -1525,6 +1526,16 @@ export const adminApi = {
     }),
   siteMediaPolicies: () => platformRequest<SiteMediaPolicy[]>('/api/admin/site/media/policies'),
   siteMedia: (kind?: SiteMediaKind) => platformRequest<SiteMedia[]>(`/api/admin/site/media${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  searchSiteMedia: (options: { kind?: SiteMediaKind; search?: string; page?: number; pageSize?: number; id?: string; ids?: string[] } = {}) => {
+    const query = new URLSearchParams()
+    if (options.kind) query.set('kind', options.kind)
+    if (options.search) query.set('search', options.search)
+    if (options.id) query.set('id', options.id)
+    if (options.ids) query.set('ids', options.ids.join(','))
+    query.set('page', String(options.page ?? 1))
+    query.set('pageSize', String(options.pageSize ?? 24))
+    return platformRequest<SiteMediaSearch>(`/api/admin/site/media/search?${query}`)
+  },
   uploadSiteMedia: (form: FormData) => platformRequest<SiteMedia>('/api/admin/site/media', { method: 'POST', body: form }),
   deleteSiteMedia: (id: string) => platformRequest<void>(`/api/admin/site/media/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   alternateArts: (includeInactive = true) => platformRequest<AlternateArt[]>(`/api/admin/alternate-arts?includeInactive=${includeInactive}`),

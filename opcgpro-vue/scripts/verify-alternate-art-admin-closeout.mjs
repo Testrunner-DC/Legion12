@@ -91,6 +91,7 @@ let failNextProductsRefresh=false
 let delayNextProductSave=false
 adminApi.alternateArtGrants=async()=>[]
 adminApi.siteMedia=async()=>[media]
+adminApi.searchSiteMedia=async()=>({items:[media],page:1,pageSize:24,total:1,hasMore:false})
 adminApi.alternateArtAwardRules=async()=>[]
 adminApi.alternateArtProducts=async()=>{if(failNextProductsRefresh){failNextProductsRefresh=false;throw new Error('注入：产品列表暂时读取失败')}return products}
 adminApi.alternateArtRarities=async()=>rarities
@@ -263,7 +264,8 @@ try {
     }
     await builtInRow.getByRole('button', { name: '更换卡图' }).click()
     const imageDialog = page.locator('.image-dialog')
-    await imageDialog.getByLabel('已上传卡图').selectOption('media-gallery')
+    await imageDialog.locator('.media-choice-trigger').click()
+    await page.getByRole('dialog', { name: '选择已上传素材', exact: true }).getByRole('button', { name: /联动卡图/ }).click()
     await imageDialog.getByRole('button', { name: '确认更换' }).click()
     await confirm.getByRole('button', { name: '确认更换卡图' }).click()
     await page.waitForFunction(() => window.__panelQa.calls.saveImage.length === 1)
@@ -287,7 +289,8 @@ try {
       await editor.locator('input[type="checkbox"][value="site:qa-b"]').check()
       await editor.locator('input[type="checkbox"][value="rarity-ur"]').check()
       await editor.locator('input[type="checkbox"][value="rarity-sp"]').check()
-      await editor.getByLabel('卡图素材').selectOption('media-gallery')
+      await editor.locator('.media-choice-trigger').click()
+      await page.getByRole('dialog', { name: '选择已上传素材', exact: true }).getByRole('button', { name: /联动卡图/ }).click()
       await page.evaluate(() => window.__panelQa.failNextGalleryMetadata())
       const callsBeforeGallery = await page.evaluate(() => ({ saveArt: window.__panelQa.calls.saveArt.length, metadata: window.__panelQa.calls.metadata.length }))
       await editor.getByRole('button', { name: '保存卡片资料' }).click()

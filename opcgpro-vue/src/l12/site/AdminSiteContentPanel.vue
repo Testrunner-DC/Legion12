@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ContentBatch, type ContentEntry, type SiteCategory, type SiteContentKind, type SiteMedia, type SiteMediaKind } from '@/l12/platform'
 import AdminArticlesPanel from './AdminArticlesPanel.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import SiteMediaPicker from './SiteMediaPicker.vue'
+import { loadSiteMediaReferences } from './siteMediaReferences'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
 import { createHomeHeroSlide, createHomeNotice, defaultHomeComposition, defaultSiteLegal, homeCompositionKey, parseHomeComposition, parseSiteLegal, serializeHomeComposition, serializeSiteLegal, siteLegalKey, type HomeComposition, type HomeNotice, type SiteLegalContent } from './homeContent'
@@ -18,6 +20,15 @@ const contentEntries = reactive<Record<string, ContentEntry | undefined>>({})
 const contentBatches = ref<ContentBatch[]>([])
 const media = ref<SiteMedia[]>([])
 const mediaKind = ref<SiteMediaKind>('hero')
+const mediaSearch = ref('')
+const mediaAppliedSearch = ref('')
+const mediaPage = ref(1)
+const mediaTotal = ref(0)
+const mediaHasMore = ref(false)
+const mediaPageBusy = ref(false)
+const mediaError = ref('')
+const mediaPageItems = ref<SiteMedia[]>([])
+let mediaReadGeneration = 0
 const categories = ref<SiteCategory[]>([])
 const publishedNews = ref<Article[]>([])
 const categoryKind = ref<SiteContentKind>('news')
@@ -35,8 +46,7 @@ const sections: { id: SiteSection; label: string }[] = [
   { id: 'home-video', label: '视频区外观' }, { id: 'video', label: '视频稿件' },
   { id: 'categories', label: '分类管理' }, { id: 'legal', label: '页尾与法务' },
 ]
-const mediaByKind = computed(() => media.value.filter(item => item.kind === mediaKind.value))
-const heroMedia = computed(() => media.value.filter(item => item.kind === 'hero'))
+const mediaByKind = computed(() => mediaPageItems.value.filter(item => item.kind === mediaKind.value))
 const categoriesByKind = computed(() => categories.value.filter(item => item.kind === categoryKind.value)
   .sort((left, right) => left.sortOrder - right.sortOrder))
 
@@ -69,7 +79,24 @@ function mediaUrl(id?: string, variant: 'desktopUrl' | 'thumbnailUrl' = 'thumbna
 function mediaUploaded(item: SiteMedia, targetSlide?: number) {
   media.value = [item, ...media.value.filter(row => row.id !== item.id)]
   if (targetSlide !== undefined && composition.heroSlides[targetSlide]) composition.heroSlides[targetSlide].mediaAssetId = item.id
+  if (section.value === 'media' && item.kind === mediaKind.value) void loadMediaPage(1)
 }
+
+async function loadMediaPage(page = 1) {
+  const attempt = ++mediaReadGeneration
+  mediaPageBusy.value = true; mediaError.value = ''
+  try {
+    const result = await adminApi.searchSiteMedia({ kind: mediaKind.value, search: mediaAppliedSearch.value, page, pageSize: 24 })
+    if (attempt !== mediaReadGeneration) return
+    mediaPageItems.value = result.items; mediaPage.value = result.page; mediaTotal.value = result.total; mediaHasMore.value = result.hasMore
+    const pinned = new Set(composition.heroSlides.map(slide => slide.mediaAssetId))
+    media.value = [...new Map([...media.value.filter(item => pinned.has(item.id)), ...result.items].map(item => [item.id, item])).values()]
+  } catch (error) { if (attempt === mediaReadGeneration) mediaError.value = error instanceof Error ? error.message : '素材读取失败' }
+  finally { if (attempt === mediaReadGeneration) mediaPageBusy.value = false }
+}
+function searchMedia() { mediaAppliedSearch.value = mediaSearch.value.trim(); void loadMediaPage(1) }
+watch(mediaKind, () => { mediaSearch.value = ''; mediaAppliedSearch.value = ''; void loadMediaPage(1) })
+onBeforeUnmount(() => { mediaReadGeneration++ })
 
 async function load() {
   busy.value = true
@@ -77,15 +104,20 @@ async function load() {
     const [home, footer, rules] = await Promise.all([
       adminApi.getContent(homeCompositionKey), adminApi.getContent(siteLegalKey), adminApi.getContent('rules.notice'),
     ])
-    const [nextMedia, nextCategories, batches] = await Promise.all([
-      adminApi.siteMedia(), adminApi.siteCategories(), adminApi.contentBatches(),
+    const [nextCategories, batches] = await Promise.all([
+      adminApi.siteCategories(), adminApi.contentBatches(),
     ])
     const nextPublishedNews = await adminApi.articles({ status: 'published', kind: 'news' })
     contentEntries[homeCompositionKey] = home; contentEntries[siteLegalKey] = footer; contentEntries['rules.notice'] = rules
     Object.assign(composition, parseHomeComposition(home.draftValue))
     Object.assign(legal, parseSiteLegal(footer.draftValue))
     ruleNotice.value = rules.draftValue
-    media.value = nextMedia; categories.value = nextCategories; contentBatches.value = batches; publishedNews.value = nextPublishedNews
+    categories.value = nextCategories; contentBatches.value = batches; publishedNews.value = nextPublishedNews
+    await loadMediaPage(1)
+    // Preserve previews of already-bound old slides without downloading the library.
+    const missing = composition.heroSlides.map(slide => slide.mediaAssetId)
+      .filter(id => id && !media.value.some(item => item.id === id))
+    media.value.push(...await loadSiteMediaReferences(missing))
   } catch (error) { showNotice(error instanceof Error ? error.message : '站点内容加载失败') }
   finally { busy.value = false }
 }
@@ -141,7 +173,7 @@ function rollback(batch: ContentBatch) {
   requestRiskAction({ title: '确认回滚发布批次', target: batch.id, impact: `将恢复该批次涉及的 ${batch.items.length} 项历史内容，并生成新的审计记录。`, confirmLabel: '执行回滚', severity: 'danger', run: () => performRollback(batch) })
 }
 async function performDeleteMedia(item: SiteMedia) {
-  try { await adminApi.deleteSiteMedia(item.id); media.value = media.value.filter(row => row.id !== item.id); showNotice('素材记录已软删除') }
+  try { await adminApi.deleteSiteMedia(item.id); media.value = media.value.filter(row => row.id !== item.id); await loadMediaPage(mediaPage.value); showNotice('素材记录已软删除') }
   catch (error) { showNotice(error instanceof Error ? error.message : '素材删除失败'); throw error }
 }
 function deleteMedia(item: SiteMedia) {
@@ -197,9 +229,9 @@ onMounted(load)
     <nav class="site-content-nav" aria-label="站点内容模块"><button v-for="item in sections" :key="item.id" :class="{ active: section === item.id }" @click="section = item.id">{{ item.label }}</button></nav>
 
     <section v-if="section === 'media'" class="content-panel media-library">
-      <header><div><h3>素材库</h3><p>原图仅归档；公开端只提供内容哈希 URL 的桌面、移动 WebP 与缩略图，删除前检查全部草稿和历史引用。</p></div><select v-model="mediaKind"><option value="hero">首页轮播</option><option value="news">资讯封面</option><option value="article">资讯正文图片</option><option value="video">视频封面 16:9</option><option value="product">商品图片</option></select></header>
+      <header><div><h3>素材库</h3><p>原图仅归档；公开端只提供内容哈希 URL 的桌面、移动 WebP 与缩略图，删除前检查全部草稿和历史引用。</p></div><select v-model="mediaKind"><option value="hero">首页轮播</option><option value="news">资讯封面</option><option value="article">资讯正文图片</option><option value="video">视频封面 16:9</option><option value="product">商品图片</option><option value="rule">规则图片</option><option value="card-art">卡图素材</option></select></header>
       <MediaUploadField v-if="canDraft" :kind="mediaKind" @uploaded="mediaUploaded" @notice="showNotice"/>
-      <div class="media-grid"><PagedCollection :items="mediaByKind" v-slot="{ items: paged9983 }"><article v-for="item in paged9983" :key="item.id" :data-kind="item.kind"><img :src="item.thumbnailUrl" :alt="item.thumbnailAltText || item.altText"><div><b>{{ item.altText || '未填写替代文字' }}</b><code>{{ item.contentHash }}</code><small>{{ item.originalFormat }} · 原图 {{ Math.ceil(item.originalBytes / 1024) }}KB · 交付 {{ Math.ceil(item.deliveryBytes / 1024) }}KB</small><small v-if="item.kind === 'hero' && item.independentVariants">独立三版本 · 桌面：{{ item.desktopAltText }} · 移动：{{ item.mobileAltText }} · 缩略：{{ item.thumbnailAltText }}</small><small v-else>焦点 {{ Math.round(item.focalX * 100) }}% / {{ Math.round(item.focalY * 100) }}% · 引用 {{ item.referenceCount }}</small><small v-if="item.kind === 'hero' && item.independentVariants">素材组引用 {{ item.referenceCount }}；三个版本统一保护、统一软删除</small><button :disabled="item.referenceCount > 0" @click="deleteMedia(item)">{{ item.referenceCount ? '被引用，禁止删除' : '软删除素材组' }}</button></div></article></PagedCollection><p v-if="!mediaByKind.length" class="empty">此类型尚无上传素材。</p></div>
+      <form class="media-search" @submit.prevent="searchMedia"><input v-model="mediaSearch" maxlength="160" aria-label="搜索素材库" placeholder="搜索说明、素材编号或哈希"><button :disabled="mediaPageBusy">搜索</button></form><p v-if="mediaError" role="alert">{{ mediaError }} <button @click="loadMediaPage(mediaPage)">重试</button></p><p v-if="mediaPageBusy" role="status">正在读取…</p><div class="media-grid" :aria-busy="mediaPageBusy"><article v-for="item in mediaByKind" :key="item.id" :data-kind="item.kind"><img :src="item.thumbnailUrl" :alt="item.thumbnailAltText || item.altText"><div><b>{{ item.altText || '未填写替代文字' }}</b><code>{{ item.contentHash }}</code><small>{{ item.originalFormat }} · 原图 {{ Math.ceil(item.originalBytes / 1024) }}KB · 交付 {{ Math.ceil(item.deliveryBytes / 1024) }}KB</small><small v-if="item.kind === 'hero' && item.independentVariants">独立三版本 · 桌面：{{ item.desktopAltText }} · 移动：{{ item.mobileAltText }} · 缩略：{{ item.thumbnailAltText }}</small><small v-else>焦点 {{ Math.round(item.focalX * 100) }}% / {{ Math.round(item.focalY * 100) }}% · 引用 {{ item.referenceCount }}</small><small v-if="item.kind === 'hero' && item.independentVariants">素材组引用 {{ item.referenceCount }}；三个版本统一保护、统一软删除</small><button :disabled="item.referenceCount > 0 || mediaPageBusy || Boolean(mediaError)" @click="deleteMedia(item)">{{ item.referenceCount ? '被引用，禁止删除' : '软删除素材组' }}</button></div></article><p v-if="!mediaByKind.length && !mediaPageBusy && !mediaError" class="empty">此类型尚无上传素材。</p></div><nav class="media-pagination" aria-label="素材分页"><button :disabled="mediaPageBusy || Boolean(mediaError) || mediaPage <= 1" @click="loadMediaPage(mediaPage - 1)">上一页</button><span>第 {{ mediaPage }} 页 · 共 {{ mediaTotal }} 项</span><button :disabled="mediaPageBusy || Boolean(mediaError) || !mediaHasMore" @click="loadMediaPage(mediaPage + 1)">下一页</button></nav>
     </section>
 
     <section v-else-if="section === 'hero'" class="content-panel home-compose">
@@ -215,7 +247,7 @@ onMounted(load)
           <span class="scroll-hint wide">原样预览保留手动换行，超长行可横向滚动</span><div class="hero-copy-preview wide" tabindex="0" aria-label="轮播文案手动换行预览"><small v-if="slide.eyebrow">{{ slide.eyebrow }}</small><b v-if="slide.title">{{ slide.title }}</b><p v-if="slide.summary">{{ slide.summary }}</p><strong v-if="slide.footer">{{ slide.footer }}</strong><i v-if="!slide.eyebrow && !slide.title && !slide.summary && !slide.footer">未填写轮播文案</i></div>
           <label class="wide">整张轮播图点击链接（可空）<input v-model="slide.href" placeholder="留空不跳转；可填 /news 或 https://"></label><label class="check"><input v-model="slide.enabled" type="checkbox"> 启用</label>
         </div>
-        <div class="compose-media"><select v-model="slide.mediaAssetId"><option value="">请选择轮播素材</option><option v-for="asset in heroMedia" :key="asset.id" :value="asset.id">{{ asset.altText || asset.contentHash.slice(0, 12) }}</option></select><MediaUploadField v-model="slide.mediaAssetId" kind="hero" :preview-url="mediaUrl(slide.mediaAssetId)" :initial-alt="slide.title" @uploaded="mediaUploaded($event, index)" @notice="showNotice"/><button class="danger" @click="removeSlide(index)">删除轮播</button></div>
+        <div class="compose-media"><SiteMediaPicker v-model="slide.mediaAssetId" kind="hero" :selected-media="media.find(item => item.id === slide.mediaAssetId)" @selected="mediaUploaded($event, index)"/><MediaUploadField v-model="slide.mediaAssetId" kind="hero" :preview-url="mediaUrl(slide.mediaAssetId)" :initial-alt="slide.title" @uploaded="mediaUploaded($event, index)" @notice="showNotice"/><button class="danger" @click="removeSlide(index)">删除轮播</button></div>
       </article><p v-if="!composition.heroSlides.length" class="empty">暂无轮播；公开首页只显示无文案的基础主视觉，添加并上传图片后再发布。</p>
     </section>
 
@@ -272,4 +304,5 @@ onMounted(load)
 .new-category{display:grid;grid-template-columns:1fr 1fr auto;gap:12px}.category-row{display:grid;grid-template-columns:1fr 1fr 100px 120px 56px 56px 74px minmax(180px,1fr) 72px;gap:10px;align-items:center;margin-top:12px;padding:12px;border-bottom:1px solid #303c43}.category-row label{font-size:14px}.category-row label input{width:auto;min-height:auto}.category-row small{color:#98a3a8;font-size:14px}.legal-editor>label{margin-top:18px}.batch-history{margin-top:26px}.batch-history summary{color:#d8bc69;cursor:pointer;font-size:14px;font-weight:900}.batch-history article{display:flex;align-items:center;justify-content:space-between;padding:13px;border-bottom:1px solid #303c43}.batch-history article span{display:flex;flex-direction:column;gap:4px}.batch-history small{color:#98a3a8;font-size:14px}.empty{grid-column:1/-1;padding:38px;color:#8d999e;font-size:14px;text-align:center}
 @media(max-width:1300px){.media-grid{grid-template-columns:1fr 1fr}.compose-row{grid-template-columns:54px 1fr}.compose-media{grid-column:2}.category-row{grid-template-columns:1fr 1fr 90px 110px repeat(3,56px)}.category-row select,.category-row .danger{grid-column:auto / span 3}.notice-compose-row{grid-template-columns:34px 1fr 1fr 100px}.notice-compose-row button{grid-row:2}}
 .site-content-nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));overflow:visible}.site-content-nav button{min-width:0;white-space:normal}@media(max-width:760px){.site-content-head,.content-panel>header{align-items:flex-start;flex-direction:column}.media-grid{grid-template-columns:1fr}.compose-row{grid-template-columns:1fr}.compose-order{flex-direction:row}.compose-media{grid-column:auto}.compose-fields,.section-copy-grid{grid-template-columns:1fr}.compose-fields .wide{grid-column:auto}.notice-compose-row,.new-category,.category-row{grid-template-columns:1fr}.notice-compose-row button,.category-row select,.category-row .danger{grid-column:auto;grid-row:auto}.panel-actions{justify-content:flex-start}}
+.media-search,.media-pagination{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0}.media-search input{min-width:0;flex:1;min-height:40px;background:#050a0e;color:#fff;border:1px solid #46545d;padding:8px 10px;font:inherit}.media-pagination{justify-content:space-between}
 </style>

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import PagedCollection from './PagedCollection.vue'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { adminApi, hasPermission, type Article, type ArticleDraft, type ArticleRevision, type ModianImportBatchResult, type ModianImportPreview, type SiteCategory, type SiteContentKind, type SiteMedia } from '@/l12/platform'
 import ArticleDocumentEditor from './ArticleDocumentEditor.vue'
 import ArticleContentRenderer from './ArticleContentRenderer.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import SiteMediaPicker from './SiteMediaPicker.vue'
+import { loadSiteMediaReferences } from './siteMediaReferences'
+import { parseArticleBody } from './articleBlocks'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
 
@@ -25,6 +28,10 @@ const statuses = [
 const articles = ref<Article[]>([])
 const categories = ref<SiteCategory[]>([])
 const media = ref<SiteMedia[]>([])
+const bodyMediaLoading = ref(false)
+const bodyMediaError = ref('')
+let bodyMediaGeneration = 0
+onBeforeUnmount(() => { bodyMediaGeneration++ })
 const selected = ref<EditableArticle | null>(null)
 const revisions = ref<ArticleRevision[]>([])
 const search = ref('')
@@ -43,7 +50,6 @@ const modianOverwriteIds = ref<string[]>([])
 const { riskAction, riskBusy, riskError, requestRiskAction, cancelRiskAction, confirmRiskAction } = useAdminRiskAction()
 
 const activeCategories = computed(() => categories.value.filter(item => item.active))
-const coverMedia = computed(() => media.value.filter(item => item.kind === props.kind))
 const selectedIsSaved = computed(() => Boolean(selected.value?.id))
 const selectedPreview = computed(() => {
   const uploaded = media.value.find(item => item.id === selected.value?.mediaAssetId)
@@ -66,10 +72,28 @@ function dateTimeLocal(value?: string) {
 }
 function selectArticle(article: Article) {
   selected.value = { ...article, publishAt: dateTimeLocal(article.publishAt) }
+  void hydrateArticleMedia()
   preview.value = false
   void loadRevisions(article.id)
 }
-function createArticle() { selected.value = emptyArticle(); revisions.value = []; preview.value = false }
+function createArticle() { bodyMediaGeneration++; bodyMediaLoading.value = false; bodyMediaError.value = ''; selected.value = emptyArticle(); revisions.value = []; preview.value = false }
+async function hydrateArticleMedia() {
+  const draft = selected.value
+  if (!draft) return
+  const attempt = ++bodyMediaGeneration
+  bodyMediaLoading.value = true; bodyMediaError.value = ''
+  try {
+    const ids = [draft.mediaAssetId || '', ...parseArticleBody(draft.body || '').blocks
+      .flatMap(block => block.type === 'image' ? [block.mediaAssetId] : [])]
+    const referenced = await loadSiteMediaReferences(ids)
+    if (attempt === bodyMediaGeneration && selected.value === draft) media.value = referenced
+  } catch (error) {
+    if (attempt === bodyMediaGeneration && selected.value === draft)
+      bodyMediaError.value = error instanceof Error ? error.message : '正文素材读取失败'
+  } finally {
+    if (attempt === bodyMediaGeneration && selected.value === draft) bodyMediaLoading.value = false
+  }
+}
 function showNotice(value: string) { notice.value = value; emit('notice', value) }
 function categoryChanged() {
   if (!selected.value) return
@@ -79,6 +103,7 @@ function categoryChanged() {
 function mediaUploaded(value: SiteMedia) {
   media.value = [value, ...media.value.filter(item => item.id !== value.id)]
   if (selected.value) selected.value.mediaAssetId = value.id
+  if (bodyMediaLoading.value) void hydrateArticleMedia()
 }
 function inlineMediaUploaded(value: SiteMedia) {
   media.value = [value, ...media.value.filter(item => item.id !== value.id)]
@@ -87,11 +112,11 @@ function inlineMediaUploaded(value: SiteMedia) {
 async function load() {
   busy.value = true; notice.value = ''
   try {
-    const [items, nextCategories, nextMedia] = await Promise.all([
+    const [items, nextCategories] = await Promise.all([
       adminApi.articles({ kind: props.kind, status: status.value, category: category.value, search: search.value.trim() }),
-      adminApi.siteCategories(props.kind), adminApi.siteMedia(),
+      adminApi.siteCategories(props.kind),
     ])
-    articles.value = items; categories.value = nextCategories; media.value = nextMedia
+    articles.value = items; categories.value = nextCategories
     if (!nextCategories.some(item => item.id === modianCategoryId.value && item.active))
       modianCategoryId.value = nextCategories.find(item => item.active)?.id || ''
     if (selected.value?.id) {
@@ -272,7 +297,7 @@ onMounted(load)
             <label>发布时间<input v-model="selected.publishAt" type="datetime-local"><small>留空则发布时立即公开；未来时间到点自动公开。公开排序只使用置顶与此时间。</small></label>
             <label v-if="props.kind === 'video'" class="wide">作者名（新视频发布必填）<input v-model="selected.videoAuthorName" maxlength="80" placeholder="视频作者或频道名"><small>最多 80 字符，不接受换行或控制字符；旧视频可保留为空。</small></label>
             <label v-if="props.kind !== 'video'" class="wide">{{ copy.summary }}<textarea v-model="selected.summary" rows="3" maxlength="600"></textarea></label>
-            <ArticleDocumentEditor v-if="props.kind === 'news'" v-model="selected.body" :media="media" @media-uploaded="inlineMediaUploaded" @notice="showNotice"/>
+            <p v-if="props.kind === 'news' && (bodyMediaLoading || bodyMediaError)" role="status">{{ bodyMediaLoading ? '正在读取正文素材…' : bodyMediaError }} <button v-if="bodyMediaError" type="button" @click="hydrateArticleMedia">重试</button></p><ArticleDocumentEditor v-if="props.kind === 'news' && !bodyMediaLoading && !bodyMediaError" v-model="selected.body" :media="media" @media-uploaded="inlineMediaUploaded" @notice="showNotice"/>
             <label v-else-if="props.kind === 'product'" class="wide">{{ copy.body }}<textarea v-model="selected.body" rows="12" maxlength="100000"></textarea></label>
             <label class="wide">{{ copy.link }}<input v-model="selected.link" maxlength="2000" :placeholder="props.kind === 'video' ? '必填：站内 /path 或 https://；前台整卡直接跳转' : '站内 /path 或 https://' "></label>
             <label v-if="props.kind !== 'video'" class="check"><input v-model="selected.pinned" type="checkbox"> 首页置顶</label>
@@ -280,7 +305,7 @@ onMounted(load)
           </div>
 
           <section class="cover-manager">
-            <header><div><b>{{ props.kind === 'product' ? '商品图' : '封面素材' }}</b><small>禁止粘贴图片地址；选择已上传素材或上传新原图。视频/商品发布时封面必填。</small></div><select v-model="selected.mediaAssetId"><option value="">不使用封面（仅草稿）</option><option v-for="item in coverMedia" :key="item.id" :value="item.id">{{ item.altText || item.contentHash.slice(0, 12) }} · 引用 {{ item.referenceCount }}</option></select></header>
+            <header><div><b>{{ props.kind === 'product' ? '商品图' : '封面素材' }}</b><small>禁止粘贴图片地址；选择已上传素材或上传新原图。视频/商品发布时封面必填。</small></div><SiteMediaPicker v-model="selected.mediaAssetId" :kind="props.kind" :selected-media="media.find(item => item.id === selected?.mediaAssetId)" @selected="mediaUploaded"/></header>
             <MediaUploadField v-model="selected.mediaAssetId" :kind="props.kind" :preview-url="selectedPreview" :initial-alt="selected.title" @uploaded="mediaUploaded" @notice="showNotice"/>
           </section>
 

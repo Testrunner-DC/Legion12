@@ -47,7 +47,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -83,7 +83,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -158,7 +158,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -214,7 +214,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -242,7 +242,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -296,7 +296,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -389,7 +389,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -437,7 +437,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -503,7 +503,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -535,7 +535,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -575,7 +575,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -631,7 +631,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -687,7 +687,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         finally
         {
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -820,7 +820,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -952,7 +952,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         {
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -1070,7 +1070,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -1319,7 +1319,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
             Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 
@@ -1349,7 +1349,7 @@ public sealed class ControlPlaneOperationsAndScopedRolesTests
         {
             if (recorder is not null) await recorder.DisposeAsync();
             SqliteConnection.ClearAllPools();
-            Directory.Delete(root, true);
+            TwelveLegions.Platform.Tests.PlatformTestDirectoryCleanup.Delete(root);
         }
     }
 

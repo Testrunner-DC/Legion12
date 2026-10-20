@@ -5,6 +5,8 @@ import CardImage from '@/l12/CardImage.vue'
 import CatalogCardDetails from '@/l12/CatalogCardDetails.vue'
 import SingleCardPicker, { type SingleCardPickerItem } from '@/l12/SingleCardPicker.vue'
 import MediaUploadField from './MediaUploadField.vue'
+import SiteMediaPicker from './SiteMediaPicker.vue'
+import { loadSiteMediaReferences } from './siteMediaReferences'
 import AdminRiskActionDialog from './AdminRiskActionDialog.vue'
 import { useAdminRiskAction } from './useAdminRiskAction'
 import { cardProductsForIds, displayCardNumber, loadDeckCatalog, type DeckCard } from '@/l12/decks'
@@ -270,7 +272,6 @@ async function load() {
     const [rulings, center, batches] = await Promise.all([
       adminApi.getContent('rules.rulings'), adminApi.getContent('rules.center'), adminApi.contentBatches(),
     ])
-    const media = await adminApi.siteMedia('rule')
     cardCatalog.value = await loadDeckCatalog().catch(() => [] as DeckCard[])
     const parsedRulings = parseRulingDocument(rulings.draftValue)
     entries.value = !parsedRulings.length && !rulings.draftValue.trim() ? createRulingsDraft() : withPendingRulingSeeds(parsedRulings)
@@ -278,9 +279,7 @@ async function load() {
     publishedRulings.value = parseRulingDocument(rulings.publishedValue)
     publishedCenter.value = parsePublishedRuleCenter(center.publishedValue)
     rulingVersion.value = rulings.version
-    centerVersion.value = center.version
     history.value = batches
-    ruleMedia.value = media
     const centerDocument = JSON.parse(center.draftValue.trim() || JSON.stringify(createRuleCenterDraft())) as Record<string, unknown>
     centerDocument.schemaVersion = 2
     const collections = centerDocument as Record<string, Array<Record<string, unknown>>>
@@ -291,6 +290,9 @@ async function load() {
       collections[collection] = (collections[collection] || []).map(item => ({ ...item,
         status: typeof item.status === 'string' ? item.status : 'pending' }))
     ruleCenterDocument.value = centerDocument as unknown as RuleCenterDocument
+    centerVersion.value = center.version
+    ruleMedia.value = await loadSiteMediaReferences((collections.coreBlocks || [])
+      .flatMap(block => typeof block.mediaAssetId === 'string' && block.mediaAssetId ? [block.mediaAssetId] : []))
   } catch (error) { notice(error instanceof Error ? error.message : '裁定草稿读取失败') }
   finally { busy.value = false }
 }
@@ -386,7 +388,7 @@ onMounted(load)
           <fieldset :disabled="!canDraft"><div class="form-grid">
             <label v-if="item.collection === 'coreBlocks'" class="wide">章节<input v-model.trim="item.row.chapter" maxlength="100"></label><label v-else class="wide">标题<input v-model.trim="item.row.title" maxlength="300"></label>
             <label v-if="item.collection === 'coreBlocks'" class="wide">规则正文<textarea v-model.trim="item.row.text" rows="5" maxlength="12000"></textarea></label><label v-else-if="item.collection === 'versions'" class="wide">版本摘要<textarea v-model.trim="item.row.summary" rows="5" maxlength="12000"></textarea></label><label v-else class="wide">正文<textarea v-model.trim="item.row.body" rows="5" maxlength="12000"></textarea></label>
-            <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><select v-model="item.row.mediaAssetId"><option value="">不插入图片</option><option v-for="media in ruleMedia" :key="media.id" :value="media.id">{{ media.altText || media.contentHash.slice(0, 12) }}</option></select><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
+            <div v-if="item.collection === 'coreBlocks'" class="wide rule-media-editor"><span>子板块图片（可选）</span><SiteMediaPicker v-model="item.row.mediaAssetId" kind="rule" :selected-media="mediaFor(item.row.mediaAssetId)" @selected="ruleMediaUploaded($event, item.row)"/><img v-if="mediaFor(item.row.mediaAssetId)" :src="mediaFor(item.row.mediaAssetId)?.thumbnailUrl" :alt="mediaFor(item.row.mediaAssetId)?.altText"><details><summary>上传新的规则图片</summary><MediaUploadField kind="rule" :initial-alt="item.row.chapter || '规则示意图'" @uploaded="ruleMediaUploaded($event, item.row)" @notice="notice"/></details></div>
             <label v-if="item.collection !== 'coreBlocks'">来源说明<input v-model.trim="item.row.sourceRef" maxlength="300"></label><label>生效时间（北京时间，可留空）<input :value="effectiveInput(String(item.row.effectiveAt || ''))" type="datetime-local" @input="setCenterEffective(item.row, ($event.target as HTMLInputElement).value)"></label>
           </div></fieldset>
           <div class="item-actions"><button v-if="canDraft" :disabled="item.index === 0" @click="moveCenterItem(item, -1)">上移</button><button v-if="canDraft" :disabled="item.index === centerCollectionLength(item.collection) - 1" @click="moveCenterItem(item, 1)">下移</button><button v-if="canDraft" @click="saveCenterItem(item.id)">保存此项</button><button v-if="canDraft" class="danger" @click="deleteCenterItem(item)">删除</button><button v-if="hasPermission('admin.content.publish')" class="publish" :disabled="publishingCenterIds.has(item.id)" @click="publishCenterItem(item.collection, item.id)">{{ publishingCenterIds.has(item.id) ? '发布中…' : '审核并发布此项' }}</button></div></template>

@@ -3971,6 +3971,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.AdminSiteMedia(kind, limit ?? 500));
         });
+        _app.MapGet("/api/admin/site/media/search", (HttpRequest request, string? kind, string? search, int? page, int? pageSize, string? id, string? ids) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            try { return Results.Ok(_platform.SearchSiteMedia(kind, search, page ?? 1, pageSize ?? 24, id, ids?.Split(','))); }
+            catch (ArgumentException error)
+            { return ApiError(request, "media_search_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapPost("/api/admin/site/media", async (HttpRequest request) =>
         {
             const L12Permission permission = L12Permission.AdminContentDraft;
