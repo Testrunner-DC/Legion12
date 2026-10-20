@@ -4,7 +4,7 @@ import type { SavedL12Deck } from './decks'
 import type { EffectiveOperationsPolicy, PlatformPresence, RankedSettlement } from './platform'
 import type { MatchGovernanceResult } from './matchGovernance'
 import { createGameReentryController } from './gameReentry'
-import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
+import { deploymentStorageKey, deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
 import { chatResource } from './chatResource'
 import { GameStateCardFrameRecovery, restoreGameStateCardFrame } from './gameStateCardFrame'
 
@@ -48,7 +48,7 @@ const configuredEndpoint = String(import.meta.env.VITE_WS_URL || '').trim()
 const defaultEndpoint = configuredEndpoint || (location.protocol === 'https:'
   ? `wss://${location.host}${deploymentWebSocketPath()}`
   : `ws://${location.hostname || 'localhost'}:8080/ws`)
-const storedEndpoint = localStorage.getItem('l12-endpoint') || ''
+const storedEndpoint = localStorage.getItem(deploymentStorageKey('l12-endpoint')) || ''
 // 正式 HTTPS 页面必须跟随当前域名，避免历史调试地址在部署后把玩家永久带到旧服务。
 const initialEndpoint = location.protocol === 'https:' && !configuredEndpoint
   ? defaultEndpoint
@@ -195,7 +195,7 @@ function cancelResourceFallback() {
 
 function scheduleResourceFallback() {
   cancelResourceFallback()
-  if (!automaticConnectionEnabled || !localStorage.getItem('l12-auth-token')) return
+  if (!automaticConnectionEnabled || !localStorage.getItem(deploymentStorageKey('l12-auth-token'))) return
   resourceFallbackTimer = window.setTimeout(() => {
     resourceFallbackTimer = null
     if (l12State.status === 'online' || !automaticConnectionEnabled) return
@@ -466,7 +466,7 @@ function startHeartbeat(socket: WebSocket, onTimeout: () => void) {
 }
 
 function scheduleReconnect(reason = '') {
-  if (!automaticConnectionEnabled || reconnectTimer !== null || !localStorage.getItem('l12-auth-token')) return
+  if (!automaticConnectionEnabled || reconnectTimer !== null || !localStorage.getItem(deploymentStorageKey('l12-auth-token'))) return
   const delay = Math.min(1_000 * (2 ** reconnectAttempts), 15_000)
   reconnectAttempts += 1
   l12State.retryCount = reconnectAttempts
@@ -484,7 +484,7 @@ function scheduleReconnect(reason = '') {
 export const l12State = reactive({
   socket: null as WebSocket | null,
   status: 'offline' as 'offline' | 'connecting' | 'online',
-  nickname: localStorage.getItem('l12-nickname') || '',
+  nickname: localStorage.getItem(deploymentStorageKey('l12-nickname')) || '',
   endpoint: normalizeEndpoint(initialEndpoint),
   sessionId: '',
   room: null as RoomState | null,
@@ -565,7 +565,7 @@ async function diagnosticFetch(path: string, authenticated = false) {
   const timeout = window.setTimeout(() => controller.abort(), 3_000)
   try {
     const headers = new Headers()
-    const token = authenticated ? localStorage.getItem('l12-auth-token') : ''
+    const token = authenticated ? localStorage.getItem(deploymentStorageKey('l12-auth-token')) : ''
     if (token) headers.set('Authorization', `Bearer ${token}`)
     const response = await fetch(httpEndpoint(path), { headers, signal: controller.signal, cache: 'no-store' })
     const payload = await response.json().catch(() => ({})) as { status?: string; maintenance?: boolean }
@@ -577,7 +577,7 @@ async function diagnosticFetch(path: string, authenticated = false) {
 
 export async function captureBugClientDiagnostic(currentRoute: string): Promise<BugClientConnectionDiagnostic> {
   const [health, api] = await Promise.all([diagnosticFetch('/health'), diagnosticFetch('/api/auth/me', true)])
-  const authenticationState = !localStorage.getItem('l12-auth-token') ? 'missing-token'
+  const authenticationState = !localStorage.getItem(deploymentStorageKey('l12-auth-token')) ? 'missing-token'
     : api.statusCode === 200 ? 'authenticated'
       : api.statusCode === 401 ? 'rejected'
         : api.reachable ? 'unknown-response' : 'unreachable'
@@ -610,7 +610,7 @@ export function connect(): Promise<void> {
     return Promise.resolve()
   }
   if (connectPromise) return connectPromise
-  const authToken = localStorage.getItem('l12-auth-token') || ''
+  const authToken = localStorage.getItem(deploymentStorageKey('l12-auth-token')) || ''
   if (!authToken) {
     l12State.notice = '请先登录账号'
     l12State.connectionIssue = 'authentication'
@@ -627,7 +627,7 @@ export function connect(): Promise<void> {
   l12State.notice = ''
   syncGameReentry()
   l12State.endpoint = normalizeEndpoint(l12State.endpoint)
-  localStorage.setItem('l12-endpoint', l12State.endpoint)
+  localStorage.setItem(deploymentStorageKey('l12-endpoint'), l12State.endpoint)
   const attempt = ++connectionAttemptSerial
   const pending = new Promise<void>((resolve, reject) => {
     let socket: WebSocket
@@ -1197,7 +1197,7 @@ export function connect(): Promise<void> {
 
 export function startAutomaticConnection() {
   automaticConnectionEnabled = true
-  if (!localStorage.getItem('l12-auth-token')) return
+  if (!localStorage.getItem(deploymentStorageKey('l12-auth-token'))) return
   if (l12State.status === 'offline') void connect().catch(() => undefined)
 }
 

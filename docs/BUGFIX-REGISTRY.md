@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜同源正式/测试登录缓存共享：按部署挂载归属统一出口
+
+- 已有人类批准项目规划及原生串用复现。扫描src全部l12-auth-token/account/nickname/endpoint读写，17处在platform/net；deploymentBase新增唯一键解析，根部署沿原键兼容、其他归一化base附命名空间，不按页面路由或可编辑endpoint改变。测试不读/清正式旧键，HTTP鉴权、WS hello/重连、昵称与诊断全部迁移，原会话ABA/迟到401/退出守卫保持。
+- 新实际AST回归原版读到legacy-formal为RED，修后25断言；29原会话、46连接（含挂载API/hello/重连与无令牌不连接两新例），全9前端链/UI361/类型/双构建绿。同源原生两页真实storage完成双向退出和刷新，实际AST非线上认证；最终退出可读回。唯一auth-environment-isolation-20261021/main-acceptance.json保留原夹具失败和实际RED，后端未变无需重复2094/7988。
+- 回滚守卫：不能把测试令牌写入正式旧键、不能自动导入模糊旧令牌、不能从当前route推算归属或删旧正式登录。此处只隔离浏览器缓存，不冒同origin脚本安全隔离/旧卡顿成因；测试升级后一次重新登录是边界。未部署/改维护/线上关单。
+
 ## 2026-10-21｜最后演出与终局结果交接：共享GamePage呈现生命周期
 
 - 已获call_d0663608限定批准。原真实页面RED为GameOver结果与combat ghost/public reveal叠层约0.9–3秒，3400ms已清，不冒永久残留；同类扫描GamePage普通结果/恢复/返回、GameBoard现有presentation信号、教学忙闲、奥西里斯及直接使用GameBoard的ReplayPage。只修共享GamePage结果接管，不取消演出、不改回放速度、事件序列、隐私、观战延迟或规则。

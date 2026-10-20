@@ -4,12 +4,14 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { deploymentSourceModuleUrl } from './deployment-source-module.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const dependencyRoot = path.resolve(process.env.L12_PLATFORM_DEPENDENCY_ROOT || root)
 const requireDependency = createRequire(path.join(dependencyRoot, 'package.json'))
 const ts = requireDependency('typescript')
 const { reactive } = requireDependency('vue')
+const { deploymentStorageKey } = await import(deploymentSourceModuleUrl('/'))
 const platformFile = path.join(root, 'src/l12/platform.ts')
 const reliabilityFile = path.join(root, 'src/l12/platformRequestReliability.ts')
 const source = fs.readFileSync(platformFile, 'utf8')
@@ -90,6 +92,7 @@ function actualRuntime(initialFetch = async () => json(200, {})) {
   const deps = {
     reactive,
     localStorage,
+    deploymentStorageKey,
     loadAccount: () => null,
     createRequestCoordinator: reliability.createRequestCoordinator,
     RequestDeadlineError: reliability.RequestDeadlineError,

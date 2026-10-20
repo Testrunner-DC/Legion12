@@ -24,6 +24,7 @@ import { privateEditorSavedPanelsContract, privateModeLegalityContract } from '.
 import './test-private-deck-template-contract.mjs'
 import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contract.mjs'
 import { gameOverPresentationHandoffContractVerified } from './test-spectator-game-over-presentation-handoff.mjs'
+import { deploymentAuthIsolationVerified } from './test-deployment-auth-isolation.mjs'
 
 // These actual-template fixtures temporarily supply DOM constructors. Static
 // sibling imports with top-level await can overlap their restore lifetimes.
@@ -242,6 +243,7 @@ const deckSnapshotContractPassed = deckSnapshotGroups(deckSnapshotContract)
 const publicDeckConsumerContract = publicDeckConsumerTemplateContract({ publicDeckDetail, deckConstructionBrowser })
 
 const contracts = [
+  [deploymentAuthIsolationVerified, '同源正式与测试登录必须按不可变部署路径隔离，测试不继承或删除正式旧键，登录／退出／刷新及不同挂载互不覆盖'],
   [mainEntry.includes("import './l12/site/uiSystem.css'")
     && shell.includes('data-l12-ui-system="site-v1"')
     && siteUiSystem.includes('--l12-ui-panel:') && siteUiSystem.includes('--l12-ui-control:')
@@ -1483,7 +1485,7 @@ const contracts = [
   [profilePage.includes("if (authMode.value === 'login') await login(auth.username, auth.password)")
     && profilePage.includes('authenticationCompleted = Boolean(platformState.account)')
     && profilePage.includes('账号已登录，但后续数据同步失败')
-    && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem('l12-auth-token', token)")
+    && platform.includes('authState.verified = true') && platform.includes("localStorage.setItem(deploymentStorageKey('l12-auth-token'), token)")
     && app.includes('if (token && verified) startAutomaticConnection()'), '登录成功必须先提交权威账号与令牌再启动全站WebSocket；后续牌库或资料同步失败不得把已成功认证伪装成登录失败'],
   [hasProfileStatusNoticeBeforeRank(profilePage)
     && profilePage.includes('.notice{position:fixed;') && profilePage.includes('z-index:90;'), '个人中心的称号、改密、邮箱与会话操作必须共用当前视口可见的状态播报，不得再把唯一反馈放到整页内容末尾'],

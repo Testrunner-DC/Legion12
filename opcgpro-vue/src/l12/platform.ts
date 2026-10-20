@@ -2,7 +2,7 @@ import { computed, reactive } from 'vue'
 import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
-import { endpointHttpBase } from './deploymentBase'
+import { deploymentStorageKey, endpointHttpBase } from './deploymentBase'
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 import { chatResource } from './chatResource'
 import { deckCoverHeadersForOrigin } from './deckCover'
@@ -1005,11 +1005,11 @@ const platformRequestCoordinator = createRequestCoordinator(PLATFORM_MAX_CONCURR
 let platformSessionVersion = 0
 
 function loadAccount(): PlatformAccount | null {
-  try { return JSON.parse(localStorage.getItem('l12-account') || 'null') as PlatformAccount | null } catch { return null }
+  try { return JSON.parse(localStorage.getItem(deploymentStorageKey('l12-account')) || 'null') as PlatformAccount | null } catch { return null }
 }
 
 export const platformState = reactive({
-  token: localStorage.getItem('l12-auth-token') || '',
+  token: localStorage.getItem(deploymentStorageKey('l12-auth-token')) || '',
   account: loadAccount(),
 })
 
@@ -1201,10 +1201,10 @@ function remember(account: PlatformAccount, token: string) {
   authState.initialized = true
   authState.verified = true
   authState.refreshing = false
-  localStorage.setItem('l12-account', JSON.stringify(account))
-  localStorage.setItem('l12-auth-token', token)
+  localStorage.setItem(deploymentStorageKey('l12-account'), JSON.stringify(account))
+  localStorage.setItem(deploymentStorageKey('l12-auth-token'), token)
   l12State.nickname = account.username
-  localStorage.setItem('l12-nickname', account.username)
+  localStorage.setItem(deploymentStorageKey('l12-nickname'), account.username)
 }
 
 export function refreshCurrentAccount(options: { force?: boolean } = {}): Promise<PlatformAccount | null> {
@@ -1285,10 +1285,10 @@ function forgetAccount(expectedToken?: string, expectedSessionVersion?: number) 
   authState.initialized = true
   authState.verified = false
   authState.refreshing = false
-  localStorage.removeItem('l12-account')
-  localStorage.removeItem('l12-auth-token')
+  localStorage.removeItem(deploymentStorageKey('l12-account'))
+  localStorage.removeItem(deploymentStorageKey('l12-auth-token'))
   l12State.nickname = ''
-  localStorage.removeItem('l12-nickname')
+  localStorage.removeItem(deploymentStorageKey('l12-nickname'))
 }
 
 export async function logout(options: { revokeServer?: boolean } = {}) {

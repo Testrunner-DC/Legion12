@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
+import { deploymentSourceModuleUrl } from './deployment-source-module.mjs'
 
 const frontendRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(frontendRoot, 'src', 'l12')
@@ -170,7 +171,7 @@ function deckCoverModuleUrl() {
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#deck-cover-${moduleSerial}`
 }
 
-async function loadPlatformModule() {
+async function loadPlatformModule(base = '/') {
   const filename = join(sourceRoot, 'platform.ts')
   const reliabilityFilename = join(sourceRoot, 'platformRequestReliability.ts')
   const reliabilitySource = compile(readFileSync(reliabilityFilename, 'utf8'), reliabilityFilename)
@@ -186,14 +187,7 @@ async function loadPlatformModule() {
       const l12State = globalThis.__l12NetState
       const disconnect = () => { globalThis.__l12DisconnectCalls += 1 }
     `)
-    .replace("import { endpointHttpBase } from './deploymentBase'", `
-      const endpointHttpBase = endpoint => {
-        const url = new URL(endpoint)
-        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
-        return url.toString().replace(/\\/$/, '')
-      }
-    `)
+    .replace("from './deploymentBase'", `from '${deploymentSourceModuleUrl(base)}'`)
   source = source.replace(
     "import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'",
     reliabilitySource,
@@ -201,7 +195,7 @@ async function loadPlatformModule() {
   return importJavaScript(compile(source, filename), 'l12-platform-recovery-test')
 }
 
-async function loadNetModule() {
+async function loadNetModule(base = '/') {
   const filename = join(sourceRoot, 'net.ts')
   let source = readFileSync(filename, 'utf8')
   source = source
@@ -215,15 +209,7 @@ async function loadNetModule() {
         dispose: () => {},
       })
     `)
-    .replace("import { deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'", `
-      const deploymentWebSocketPath = () => '/ws'
-      const endpointHttpBase = endpoint => {
-        const url = new URL(endpoint)
-        url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-        url.pathname = url.pathname.replace(/\\/ws\\/?$/, '').replace(/\\/$/, '')
-        return url.toString().replace(/\\/$/, '')
-      }
-    `)
+    .replace("from './deploymentBase'", `from '${deploymentSourceModuleUrl(base)}'`)
     .replaceAll('import.meta.env.VITE_WS_URL', 'globalThis.__viteEnv.VITE_WS_URL')
   return importJavaScript(compile(source, filename), 'l12-net-recovery-test')
 }
@@ -304,6 +290,62 @@ function presenceItem(accountId, username, activity = 'idle') {
 }
 
 const tests = [
+  ['mounted test never starts or diagnoses with a legacy formal login', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'formal-only', 'l12-nickname': 'formal-name' })
+    const net = await loadNetModule('/testrun/')
+    assert.equal(net.l12State.nickname, '')
+    net.startAutomaticConnection()
+    assert.equal(FakeWebSocket.instances.length, 0)
+    assert.equal((await promiseOutcome(net.connect())).status, 'rejected')
+    assert.equal(FakeWebSocket.instances.length, 0)
+    const calls = []
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url, token: init.headers.get('Authorization') })
+      return new Response(JSON.stringify({ status: 'ok' }), { status: 200 })
+    }
+    const diagnostic = await net.captureBugClientDiagnostic('/testrun/profile')
+    assert.equal(diagnostic.authenticationState, 'missing-token')
+    assert.equal(calls.length, 2)
+    assert.ok(calls.every(call => call.url.startsWith('https://legion-12.com/testrun/')))
+    assert.ok(calls.every(call => call.token === null))
+    net.disconnect()
+  }],
+  ['actual HTTP auth and WebSocket reconnect keep mounted token across formal login changes', async () => {
+    const { timers, storage } = installBrowserEnvironment({ 'l12-auth-token': 'formal-token' })
+    const net = await loadNetModule('/testrun/')
+    globalThis.__l12NetState = net.l12State
+    const platform = await loadPlatformModule('/testrun/')
+    const calls = []
+    const testAccount = { id: 'mounted-test', username: 'test-name', role: 'player' }
+    globalThis.fetch = async (url, init) => {
+      calls.push({ url: String(url), token: init.headers.get('Authorization') })
+      const body = String(url).endsWith('/api/auth/login')
+        ? { account: testAccount, token: 'mounted-token' } : testAccount
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+    await platform.login('synthetic-test', 'not-a-real-password')
+    await platform.refreshCurrentAccount({ force: true })
+    assert.deepEqual(calls, [
+      { url: 'https://legion-12.com/testrun/api/auth/login', token: null },
+      { url: 'https://legion-12.com/testrun/api/auth/me', token: 'Bearer mounted-token' },
+    ])
+    assert.equal(storage.getItem('l12-auth-token'), 'formal-token')
+    const connected = net.connect(), first = FakeWebSocket.instances[0]
+    assert.equal(first.url, 'wss://legion-12.com/testrun/ws')
+    sendSuccessfulHandshake(first, 201)
+    await connected
+    assert.equal(JSON.parse(first.sent[0]).authToken, 'mounted-token')
+    storage.setItem('l12-auth-token', 'formal-changed-while-test-open')
+    first.emitClose(1006, 'synthetic reconnect')
+    await timers.advance(1000)
+    const replacement = FakeWebSocket.instances[1]
+    sendSuccessfulHandshake(replacement, 202)
+    await flushPromises()
+    assert.equal(JSON.parse(replacement.sent[0]).authToken, 'mounted-token')
+    assert.equal(net.l12State.status, 'online')
+    assert.equal(storage.getItem('l12-auth-token'), 'formal-changed-while-test-open')
+    net.disconnect()
+  }],
   ['referee correction recovers its receipt after the finished table is no longer recoverable', async () => {
     const { timers } = installBrowserEnvironment({ 'l12-auth-token': 'referee-token' })
     const net = await loadNetModule(), connected = net.connect(), first = FakeWebSocket.instances[0]
