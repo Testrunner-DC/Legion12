@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-21 真实保存与传输字段归因通过，连续进入素材可达性
+
+- 仅测试扩展：复用现有StorageFailureInjector/SQLite合成测量，重复文本及确定性base64各4MiB、各3笔真实保存，里程碑相邻区间字节守恒、重载内容一致。实际三接收者投影/现行codec各6帧，128条公开合成事件、真实卡池、无文本垫大；全量卡帧和差量完整还原、隐藏ID精确匹配及每包字节守恒。最终受管9/9，P0—P4过。
+- 高熵样本首笔：操作开始至mirror前21192024B/67.843ms，mirror前至audit前16779224B/79.198ms，rollback至session-index前21012376B/50ms；前两段含多项工作，不冒单方法热点。镜像4574937B、SQLite页面约9.12MB；SQL profile不含blob流，不能从差值推磁盘。观战原始391592B、现有卡帧42623B，随后差量5965B，其中eventWindow3876B/lastAction1830B；这是既有协议在合成历史上的表现，不是本次新优化或线上分布。
+- 唯一performance-save-attribution-20261021/main-acceptance.json与最终attribution-final-r2.trx。第一次新增隐私断言把p0-c2当p0-c24前缀，原失败保留，改精确JSON字符串后通过；未弱化隐私。构建暂保留供下一产品批复用，失败临时仅待精确清理。未部署/采样正式/线上关Bug，30＋10与3秒仍未验收；继续素材服务端分页及共享选择入口，不在单项完成后暂停。
+
 ## 2026-10-21 性能测法校正：兼容编码不再冒正常保存热点
 
 - 复查现有PlatformAllocationPhaseProbe发现它以SerializeCoreSnapshot整块兼容编码代替正常Save的PrepareCoreSnapshot流式准备。只修测试：兼容编码保留为baseline，实际只读SQLite事务调用真实Prepare入口并断言StreamedCoreSnapshot；原只读1000轮/同代际守卫保留，再测一笔真实admin Save，复合事务不与独立阶段相加。

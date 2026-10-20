@@ -12,6 +12,74 @@ namespace TwelveLegions.Platform.Tests;
 [Collection("Platform environment")]
 public sealed class PlatformAllocationPhaseProbeTests(ITestOutputHelper output)
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ActualSaveReportsNonOverlappingMilestonesAndNativeStorageTotals(bool highEntropy)
+    {
+        using var fixture = new RankedIdentityFixture();
+        const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
+        var data = typeof(L12PlatformStore).GetProperty("_data", instance)!.GetValue(fixture.Store)!;
+        var content = (IDictionary)data.GetType().GetProperty("Content")!.GetValue(data)!;
+        var random = new Random(90210);
+        var bytes = new byte[3 * 1024 * 1024];
+        if (highEntropy) random.NextBytes(bytes);
+        var payload = highEntropy ? Convert.ToBase64String(bytes) : new string('a', 4 * 1024 * 1024);
+        content["synthetic-save-attribution"] = payload;
+        fixture.Store.ExecuteAdminTransaction(() => { RankedIdentityTestState.RequestSave(fixture.Store); return true; });
+        // Three bounded real commits. Existing failure hooks only observe; they never
+        // throw, bypass a write, replace SQLite, or change a production metric label.
+        for (var sample = 0; sample < 3; sample++)
+        {
+            var points = new (string Stage, long Tick, long Bytes)[96];
+            var count = 0;
+            void Point(string stage)
+            {
+                Assert.True(count < points.Length, "Save milestone buffer overflow");
+                points[count++] = (stage, Stopwatch.GetTimestamp(), GC.GetAllocatedBytesForCurrentThread());
+            }
+            using var scope = L12PlatformStore.BeginSyntheticStorageMeasurement();
+            fixture.Store.StorageFailureInjector = Point;
+            try
+            {
+                Point("probe-begin");
+                fixture.Store.ExecuteAdminTransaction(() =>
+                {
+                    RankedIdentityTestState.RequestSave(fixture.Store);
+                    return true;
+                });
+                Point("probe-end");
+            }
+            finally { fixture.Store.StorageFailureInjector = null; }
+            var storage = scope.Complete();
+            Assert.Equal(0, storage.InstrumentationErrors);
+            Assert.True(storage.SqlitePageWrites > 0);
+            Assert.True(storage.MirrorBytes > 0);
+            foreach (var required in new[] { "before-mirror-serialize", "before-audit-append",
+                         "after-audit-append", "before-commit", "after-rollback-serialize" })
+                Assert.Single(points.Take(count).Where(point => point.Stage == required));
+            long attributed = 0;
+            for (var index = 1; index < count; index++)
+            {
+                var previous = points[index - 1]; var current = points[index];
+                var allocated = current.Bytes - previous.Bytes;
+                Assert.True(allocated >= 0);
+                attributed += allocated;
+                output.WriteLine("save_milestone entropy={0} sample={1} from={2} to={3} allocated_bytes={4} elapsed_ms={5:F3}",
+                    highEntropy, sample, previous.Stage, current.Stage, allocated,
+                    Stopwatch.GetElapsedTime(previous.Tick, current.Tick).TotalMilliseconds);
+            }
+            Assert.Equal(points[count - 1].Bytes - points[0].Bytes, attributed);
+            output.WriteLine("save_native entropy={0} sample={1} measurement={2}", highEntropy, sample,
+                JsonSerializer.Serialize(storage));
+        }
+        // This probe must exercise an actual durable Save rather than only its serializer.
+        var recovered = new L12PlatformStore(fixture.Path, fixture.Catalog.PresetDecks, officialCards: fixture.Catalog.Cards);
+        var restored = typeof(L12PlatformStore).GetProperty("_data", instance)!.GetValue(recovered)!;
+        var restoredContent = (IDictionary)restored.GetType().GetProperty("Content")!.GetValue(restored)!;
+        Assert.Equal(payload, restoredContent["synthetic-save-attribution"]);
+    }
+
     [Fact]
     public void SyntheticFourMiBPlatformPayloadSeparatesReadAllocationsFromWritePhases()
     {
