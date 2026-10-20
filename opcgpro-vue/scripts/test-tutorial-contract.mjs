@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import ts from 'typescript'
 import { parse, compileScript } from '@vue/compiler-sfc'
 import { createServer } from 'vite'
-import { computed, reactive, ref } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 const front = path.resolve(import.meta.dirname, '..')
 const runId = new Date().toISOString().replace(/[:.]/g, '-') + '-' + crypto.randomUUID().slice(0, 8)
@@ -87,7 +87,7 @@ check('guide stays on the real board with linear dialogue and non-intercepting f
   assert.match(source.overlay, /props\.connected/)
   assert.match(source.game, /:connected="l12State\.status === 'online'"/)
   assert.match(source.game, /:busy="Boolean\(tutorialTransition \|\| l12State\.pendingAction\)" :presentation-busy="tutorialPresentationBusy"/)
-  assert.match(source.game, /@presentation-change="updateTutorialPresentationBusy"/)
+  assert.match(source.game, /:key="game\.matchId"[\s\S]*@presentation-change="battlePresentationListener"/)
   assert.doesNotMatch(template, /tutorial\.status === 'completed'[\s\S]{0,220}<button[^>]*tutorial-primary/)
   assert.match(source.page + source.overlay, /下一步/)
 })
@@ -196,6 +196,33 @@ function actualInitializer(sfc, name, dependencies) {
   }).outputText
   return Function(...Object.keys(dependencies), `${js}\nreturn result`)(...Object.values(dependencies))
 }
+check('actual match-bound presentation listener preserves tutorial busy without accepting stale matches', async () => {
+  const l12State = reactive({ game: { matchId: 'tutorial-a', phase: 'Main' } })
+  const game = computed(() => l12State.game)
+  const tutorialMatchId = ref('tutorial-a')
+  const tutorial = computed(() => game.value.matchId === tutorialMatchId.value ? { matchId: tutorialMatchId.value } : null)
+  const tutorialPresentationBusy = ref(false), gameOverMinimized = ref(false)
+  const actual = actualFunctions(source.game, ['createGameOverPresentationHandoff'], {
+    computed, game, gameOverMinimized, nextTick, ref, tutorial, tutorialPresentationBusy, watch,
+  }).createGameOverPresentationHandoff()
+  const firstHandler = actual.presentationListener.value
+  firstHandler(true)
+  assert.equal(tutorialPresentationBusy.value, true)
+  firstHandler(false)
+  assert.equal(tutorialPresentationBusy.value, false)
+
+  l12State.game = { matchId: 'tutorial-b', phase: 'Main' }
+  tutorialMatchId.value = 'tutorial-b'
+  await nextTick()
+  const secondHandler = actual.presentationListener.value
+  assert.notEqual(secondHandler, firstHandler)
+  firstHandler(true)
+  assert.equal(tutorialPresentationBusy.value, false, 'old board callback cannot mark the current tutorial busy')
+  secondHandler(true)
+  assert.equal(tutorialPresentationBusy.value, true, 'current tutorial still consumes the real board busy signal')
+  secondHandler(false)
+  assert.equal(tutorialPresentationBusy.value, false)
+})
 check('actual wire parser accepts only the named public response recipe and bounded focus', () => {
   const parser = actualFunctions(`<script setup lang="ts">${source.net}</script>`, ['tutorialProjection'], {
     tutorialLessonIds: new Set(['deploy', 'move', 'combat', 'response']),

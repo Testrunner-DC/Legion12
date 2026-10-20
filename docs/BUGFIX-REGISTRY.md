@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜最后演出与终局结果交接：共享GamePage呈现生命周期
+
+- 已获call_d0663608限定批准。原真实页面RED为GameOver结果与combat ghost/public reveal叠层约0.9–3秒，3400ms已清，不冒永久残留；同类扫描GamePage普通结果/恢复/返回、GameBoard现有presentation信号、教学忙闲、奥西里斯及直接使用GameBoard的ReplayPage。只修共享GamePage结果接管，不取消演出、不改回放速度、事件序列、隐私、观战延迟或规则。
+- 沿既有忙闲信号在渲染后武装终局，绑定matchId并代际拒绝旧回调/异步续体；GameBoard按局key隔离，已接受结果单向锁存，同局WS离线/重连快照不闪退，换局/阶段变化重置。等待期可返回，最小化/恢复和奥西里斯7秒序列仍优先。
+- 实际SFC函数的同包忙信号、旧忙/闲交错、两源码变异拒绝均绿；Main新测试读取仅归一化CRLF，实读正控1次及2反例再验，共享360通过。教学38/类型/生产Vite与作者最终产品源相同；原生终局、已结束局首开、568短横最小化/恢复及特殊胜利过，Main看两图。唯一spectator-game-over-presentation-handoff/main-acceptance.json保留作者绑定与原RED；不重跑未变后端2094/规则7988。
+- 回滚守卫：不得删末次合法演出、使用GameOver全局暂停/任意超时吞事件、移除等待返回或让旧局回调释放新局结果。受控Edge一直visible，原生后台标签计时冻结尚未证明；不冒所有历史重复动画或ReplayPage已根治。本批未部署、未改维护、未线上关单。
+
 ## 2026-10-21｜画廊画师元数据：直接功能扩展，非卡效Bug
 
 - 人类直接要求可填画师。同类扫描内建/上传/独立联动三类metadata、admin/public/owned视图与CardArchive/CardDetailContent，沿既有行增加Artist默认空串；可选draft字段null/省略保留、显式空串清空，有界120，公开用纯文本插值。不改引擎、卡图、权益、商品身份或第二套持久化。

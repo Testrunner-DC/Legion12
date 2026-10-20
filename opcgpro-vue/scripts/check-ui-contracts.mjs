@@ -23,6 +23,7 @@ import { publicDeckCounterBindingsContract } from './test-public-deck-counter-re
 import { privateEditorSavedPanelsContract, privateModeLegalityContract } from './private-deck-template-contract.mjs'
 import './test-private-deck-template-contract.mjs'
 import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contract.mjs'
+import { gameOverPresentationHandoffContractVerified } from './test-spectator-game-over-presentation-handoff.mjs'
 
 // These actual-template fixtures temporarily supply DOM constructors. Static
 // sibling imports with top-level await can overlap their restore lifetimes.
@@ -397,7 +398,7 @@ const contracts = [
   [zoneMovementLayer.includes("event.type === 'mill'") && visualTransitionProjection.includes("event.type === 'mill'") && zoneMovementLayer.includes("from = 'library'; to = 'graveyard'") && zoneMovementLayer.includes('draft.disasterReveal || draft.authoritativeFace ? null') && zoneMovementLayer.includes(':key="active.key"'), '牌库弃牌必须按事件 cards 顺序进入统一移动队列，从牌库锚点使用权威正面逐张播放且不得反向克隆最终 DOM 或复用同 sequence 的 DOM'],
   [actionAudio.includes('createOscillator()') && actionAudio.includes('useAudioStore.getState()') && !actionAudio.includes('playBgm') && !actionAudio.includes('new Audio('), '基础动作音效必须使用本地程序化短音效、遵循音效设置且不得增加 BGM 或远程音频依赖'],
   [actionLayer.includes('pointer-events:none') && actionLayer.includes('@media(prefers-reduced-motion:reduce)') && !actionLayer.includes('action-mask'), '基础动作动画必须无蒙版、不可阻塞操作并遵循减少动态效果偏好'],
-  [gamePage.includes("import OsirisVictorySequence from './game/OsirisVictorySequence.vue'") && gamePage.includes("item.type === 'special-victory'") && gamePage.includes("card.cardId === 'S01-02M2'") && gamePage.includes("game.phase === 'GameOver' && !osirisSequencePlaying") && osirisVictory.includes('data-ui-contract="osiris-special-victory-sequence"') && osirisVictory.includes("['S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220']") && osirisVictory.includes('<CardImage :card-id="cardId"') && osirisVictory.includes('points="50,92 20,18 92,56 8,56 80,18 50,92"') && osirisVictory.includes('setTimeout(() => emit(\'complete\'), 7000)') && osirisVictory.includes('card-id="S01-02M2"'), '奥西里斯特殊胜利必须以金色七秒序列沿倒五角星路径显示五张完整圣物卡，再显示中央奥西里斯与闪光'],
+  [gamePage.includes("import OsirisVictorySequence from './game/OsirisVictorySequence.vue'") && gamePage.includes("item.type === 'special-victory'") && gamePage.includes("card.cardId === 'S01-02M2'") && gamePage.includes("game.phase === 'GameOver' && gameOverPresentationReady && !osirisSequencePlaying") && osirisVictory.includes('data-ui-contract="osiris-special-victory-sequence"') && osirisVictory.includes("['S01-0216', 'S01-0217', 'S01-0218', 'S01-0219', 'S01-0220']") && osirisVictory.includes('<CardImage :card-id="cardId"') && osirisVictory.includes('points="50,92 20,18 92,56 8,56 80,18 50,92"') && osirisVictory.includes('setTimeout(() => emit(\'complete\'), 7000)') && osirisVictory.includes('card-id="S01-02M2"'), '奥西里斯特殊胜利必须以金色七秒序列沿倒五角星路径显示五张完整圣物卡，再显示中央奥西里斯与闪光'],
   [board.includes('function activateOsirisVictory()') && board.includes("command('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })") && board.includes("if (ability === 'isisVictory')") && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null') && playerMat.includes('canActivateOsiris') && playerMat.includes("emit('ability', masterCard, 'isisVictory')") && graveyardOverlay.includes("emit('ability', card, 'isisVictory')"), '点击伊西斯效果、五个卡诺匹斯区域或墓地奥西里斯必须共用同一权威奥西里斯实例命令与可用性，并在发送前关闭墓地、主宰弹框和详情'],
   [gamePage.includes('lastOsirisVictorySequence') && gamePage.includes('osirisSequenceMatchId') && gamePage.includes('lastOsirisVictorySequence = highest') && gamePage.includes('lastOsirisVictorySequence = Math.max(lastOsirisVictorySequence, highest)') && gamePage.includes('event.sequence > lastOsirisVictorySequence') && gamePage.includes('osirisSequenceKey.value =') && !gamePage.includes("const osirisSequenceKey = computed(() =>"), '奥西里斯胜利事件必须按 matchId+sequence 只消费一次，首快照只建立基线，重连或事件窗口截断后不得倒退序号并重播'],
   [osirisVictory.includes('playL12OsirisVictorySound()') && actionAudio.includes('playL12OsirisVictorySound') && actionAudio.includes('[196, 220, 247, 294, 330]') && actionAudio.includes('isMuted || sfxVolume <= 0'), '奥西里斯特殊胜利必须使用本地轻量专属音效并遵循静音与音效音量设置'],
@@ -629,12 +630,22 @@ const contracts = [
     && gamePage.includes('<span class="route-label" aria-hidden="true"><span>返回</span><span>{{ tutorial ? \'教学\' : l12State.room?.sandbox ? \'沙盒\' : \'大厅\' }}</span></span>')
     && mobileActionDockStyle.includes('.mobile-battle-dock button {') && mobileActionDockStyle.includes('min-height:32px')
     && mobileActionDockStyle.includes('.mobile-battle-dock__route .battle-route-controls .route-label>span {')
-    && gamePage.includes('<BattleDockPortal lane="route"><div v-if="game.phase !== \'GameOver\' || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">')
+    && gamePage.includes('<BattleDockPortal lane="route"><div v-if="game.phase !== \'GameOver\' || !gameOverPresentationReady || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">')
     && mobileViewportStyle.includes('transform: translateZ(0)')
     && mobileViewportStyle.includes('#l12-landscape-teleports > .mobile-safe-overlay:not(.minimized)')
     && mobileActionDockStyle.includes('inset:4px 4px 4px auto')
     && mobileActionDockStyle.includes('white-space:normal; overflow-wrap:anywhere;')
     && prompt.includes('--inspector-safe-lane:clamp(118px,19vw,258px)'), '移动专用手牌计数、阵营标识和路由换行不得泄漏到桌面；临时士气始终使用网站图标，桌面弹框安全区必须使用经验证的窄侧栏比例'],
+  [gameOverPresentationHandoffContractVerified
+    && gamePage.includes('function createGameOverPresentationHandoff()')
+    && gamePage.includes("watch([() => game.value?.matchId ?? '', () => game.value?.phase ?? '']")
+    && gamePage.includes('await nextTick()')
+    && gamePage.includes('transitionGeneration !== generation')
+    && gamePage.includes('if (!matchId || game.value?.matchId !== matchId) return')
+    && gamePage.includes('<GameBoard :key="game.matchId"')
+    && gamePage.includes('@presentation-change="battlePresentationListener"')
+    && gamePage.includes('game.phase === \'GameOver\' && gameOverPresentationReady && !osirisSequencePlaying && !gameOverMinimized'),
+    '观战终局必须等待同一局最后一轮权威动效交接完成再显示结果；同局离线与重连保留已提交结果，旧局回调和旧渲染续体不得标记新局空闲'],
   [board.includes('--l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px)')
     && board.includes('--l12-mobile-pile-badge-h:clamp(12px,calc(var(--l12-mobile-card-w) * .30),20px)')
     && board.includes('--l12-mobile-resource-summary-h:clamp(22px,calc(var(--l12-mobile-card-w) * .52),30px)')

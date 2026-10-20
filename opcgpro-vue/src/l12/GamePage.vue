@@ -102,8 +102,55 @@ function continueTutorialMainline() {
   acceptedTutorialHandoffIdentity.value = identity
   tutorialProgressRetryIdentity.value = ''
 }
-function updateTutorialPresentationBusy(busy: boolean) {
-  tutorialPresentationBusy.value = Boolean(tutorial.value && busy)
+function createGameOverPresentationHandoff() {
+  const presentationState = ref({ matchId: '', busy: false })
+  const armedMatchId = ref('')
+  const readyMatchId = ref('')
+  let generation = 0
+
+  function updatePresentationBusy(matchId: string, busy: boolean) {
+    if (!matchId || game.value?.matchId !== matchId) return
+    presentationState.value = { matchId, busy }
+    tutorialPresentationBusy.value = Boolean(tutorial.value && busy)
+  }
+  const presentationListener = computed(() => {
+    const matchId = game.value?.matchId ?? ''
+    return (busy: boolean) => updatePresentationBusy(matchId, busy)
+  })
+  const resultReady = computed(() => Boolean(game.value?.phase === 'GameOver'
+    && readyMatchId.value === game.value.matchId))
+
+  watch([() => game.value?.matchId ?? '', () => game.value?.phase ?? ''], async ([matchId, phase]) => {
+    gameOverMinimized.value = false
+    const transitionGeneration = ++generation
+    armedMatchId.value = ''
+    readyMatchId.value = ''
+    if (presentationState.value.matchId !== matchId)
+      presentationState.value = { matchId, busy: false }
+    if (!matchId || phase !== 'GameOver') return
+    // Let GameBoard reserve every presentation from the same authoritative
+    // snapshot before deciding whether the result may take over the viewport.
+    await nextTick()
+    if (transitionGeneration !== generation || game.value?.matchId !== matchId
+      || game.value?.phase !== 'GameOver') return
+    armedMatchId.value = matchId
+  }, { immediate: true })
+
+  watch(() => [
+    game.value?.matchId ?? '',
+    game.value?.phase ?? '',
+    armedMatchId.value,
+    presentationState.value.matchId,
+    presentationState.value.busy,
+  ] as const, ([matchId, phase, armed, presentedMatchId, busy]) => {
+    if (!matchId || phase !== 'GameOver' || readyMatchId.value === matchId) return
+    // Latch once. A later unrelated busy signal must not make an accepted result
+    // disappear, while a new match/phase invalidates the latch above.
+    if (armed === matchId && presentedMatchId === matchId && !busy)
+      readyMatchId.value = matchId
+  }, { immediate: true, flush: 'post' })
+
+  return { presentationListener, resultReady }
 }
 function retryTutorialProgressSave() {
   const current = tutorial.value
@@ -265,9 +312,10 @@ watch(() => [game.value?.matchId ?? '', game.value?.recentEvents?.map(event => e
   if (key === completedOsirisSequence.value || key === osirisSequenceKey.value) return
   osirisSequenceKey.value = key
 }, { immediate: true })
-watch(() => `${game.value?.matchId ?? ''}:${game.value?.phase ?? ''}`, () => { gameOverMinimized.value = false })
 const osirisSequencePlaying = computed(() => Boolean(osirisSequenceKey.value
   && completedOsirisSequence.value !== osirisSequenceKey.value))
+const { presentationListener: battlePresentationListener,
+  resultReady: gameOverPresentationReady } = createGameOverPresentationHandoff()
 function completeOsirisSequence() {
   completedOsirisSequence.value = osirisSequenceKey.value
   osirisSequenceKey.value = ''
@@ -323,15 +371,15 @@ async function retryGameLoad() {
 <template>
   <div v-if="game" ref="gamePageRoot" tabindex="-1" class="game-page">
     <RankedBroadcastTicker v-if="!tutorial" class="battle-ranked-ticker" />
-    <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">
+    <BattleDockPortal lane="route"><div v-if="game.phase !== 'GameOver' || !gameOverPresentationReady || gameOverMinimized || osirisSequencePlaying" :inert="spectatorMatchmakingOpen" class="battle-route-controls">
       <span :class="{ online: opponent?.connected }"><i/>对方{{ opponent?.connected ? '在线' : '已断开' }}</span>
       <button v-if="l12State.spectating" type="button" @click="openBattleSettings">设置</button>
       <button class="balanced-copy-button" :aria-label="tutorial ? '返回教学主线' : l12State.room?.sandbox ? '返回测试沙盒' : '返回大厅'" @click="returnToLobby"><span class="route-label" aria-hidden="true"><span>返回</span><span>{{ tutorial ? '教学' : l12State.room?.sandbox ? '沙盒' : '大厅' }}</span></span></button>
       <button v-if="!l12State.spectating && game.phase !== 'GameOver'" class="surrender" @click="surrender">投降</button>
     </div></BattleDockPortal>
-    <GameBoard :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
+    <GameBoard :key="game.matchId" :game="game" :read-only="l12State.spectating" :spectator-live-view="l12State.spectating" :referee-live-view="l12State.spectating && l12State.observerView === 'referee'" :gm-placement="gmPlacement" :gm-panel-open="gmPanelOpen"
       @gm-placement-resolved="gmPlacement = null" @settings="openBattleSettings"
-      @presentation-change="updateTutorialPresentationBusy" />
+      @presentation-change="battlePresentationListener" />
     <TutorialGuidanceOverlay v-if="tutorial" :tutorial="tutorial" :game="game"
       :busy="Boolean(tutorialTransition || l12State.pendingAction)" :presentation-busy="tutorialPresentationBusy"
       :unsaved-progress="tutorialProgressUnsaved" @retry-progress-save="retryTutorialProgressSave"
@@ -362,10 +410,10 @@ async function retryGameLoad() {
     </Transition>
 
     <BattleOverlayPortal>    <Transition name="fade">
-      <button v-if="game.phase === 'GameOver' && !osirisSequencePlaying && gameOverMinimized" class="game-over-restore" type="button" @click="gameOverMinimized = false">恢复对局结果</button>
+      <button v-if="game.phase === 'GameOver' && gameOverPresentationReady && !osirisSequencePlaying && gameOverMinimized" class="game-over-restore" type="button" @click="gameOverMinimized = false">恢复对局结果</button>
     </Transition>
     <Transition name="fade">
-      <div v-if="game.phase === 'GameOver' && !osirisSequencePlaying && !gameOverMinimized" class="game-over"
+      <div v-if="game.phase === 'GameOver' && gameOverPresentationReady && !osirisSequencePlaying && !gameOverMinimized" class="game-over"
         data-ui-contract="manual-game-over-exit" role="dialog" aria-modal="true" aria-label="对局结果">
         <button class="game-over-minimize" type="button" aria-label="最小化对局结果" @click="gameOverMinimized = true">—</button>
         <p>{{ game.winner == null ? (agreedDraw ? '平局' : '对局无效') : (game.winner === game.you ? '胜利' : '败北') }}</p>
