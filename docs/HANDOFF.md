@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-20 宫廷移动实际界面已收口，剩余15反馈
+
+- db044ce6复用已受管后端12项，补固定A875引擎四份真实投影和GamePage八组原生移动/格位/付款/真实V2消费者，1366与844、双方均通过。Main读两工具完整diff/报告并看三屏图，独审桥接正式5ee的移动/付款/序列化片段及样式相同；不冒整文件相同、原私局、未知目的格或网络WS/ACK。唯一court-magician-movement-20261020/ui-main-acceptance.json。
+- 按checked-current/rejected而非新修复上线，沿既有十二函数/原子行版本执行器自检8负例、独审后一次CAS32975/独立终态，专用会话已撤；单post对账918总/15待办/397resolved/506closed，阶段522/周期614、新增0。原bug-closeout-current-court-move-one-d7f.json不重复Apply。仅工具与记录，无产品/部署/维护写。
+- 性能新thin已补mandatory检查点及物理别名碰撞，固定实际Node的21项CLI合成验收通过；R9另核同字节SHA/candidate/core，真实8c原包准入及prepared-only已过，不是性能成绩。新现场已0活动/0连接/0在线，两服PID/DLL不变；旧R8配置精确来源已定位，先有界安全退役，不能跑必拒的重复安装。其余UI旧反馈只读分流继续，西施仍未部署。
+
 ## 2026-10-20 牌库大小已有设置已核，剩余16反馈
 
 - 73b2b79d原建议为电脑端调整整体牌库容器大小。实际App/Settings/Library六组原生select/两页签/逐档刷新通过：1440下4/3/2列，390三档单列；Main全文核报告/看图。决定列数与保存的四叶和正式d7/前端5ee相同，DeckCover不是同源：旧正式代表牌仍有104px上限，仅共用regular根100%宽/12:5；不冒当前代表牌像素或新封面已上线。唯一deck-library-card-size-20261020/main-acceptance.json。

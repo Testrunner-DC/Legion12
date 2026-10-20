@@ -1,10 +1,11 @@
 param(
-  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive', 'mengpo-selected-targets', 'oiran-log')] [string]$Scenario = 'empty-draw',
+  [ValidateSet('empty-draw', 'target-decline', 'hidden-draw', 'prometheus-empty', 'yin-empty', 'volley-empty', 'volley-positive', 'mengpo-selected-targets', 'oiran-log', 'court-move')] [string]$Scenario = 'empty-draw',
   [ValidateSet('Debug', 'Release')] [string]$Configuration = 'Release',
   [string]$AssemblyDirectory,
   [string]$ExpectedCommit,
   [ValidateSet(0, 1)] [int]$ActorIndex = 0,
-  [switch]$Restore
+  [switch]$Restore,
+  [string]$ExpectedAssemblySha256
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +24,9 @@ $assemblyPath = Join-Path $testOutput 'GrandUMIServer.dll'
 if (-not (Test-Path -LiteralPath $assemblyPath)) {
   throw "Missing $Configuration engine assembly: $assemblyPath. Build the test project first."
 }
+if ($Scenario -eq 'court-move' -and ((Get-FileHash -LiteralPath $assemblyPath -Algorithm SHA256).Hash -cne $ExpectedAssemblySha256 -or $ExpectedAssemblySha256 -cne 'A8756BC87B9E0238BAC64C41F94050EB5520B45789651F7B160E3A19592B24DA')) {
+  throw 'COURT_MOVE_PINNED_ENGINE_REQUIRED'
+}
 $engineAssembly = [System.Reflection.Assembly]::LoadFrom($assemblyPath)
 if (-not [string]::IsNullOrWhiteSpace($ExpectedCommit)) {
   $version = $engineAssembly.GetCustomAttributes(
@@ -39,6 +43,7 @@ $argsForGame = @($catalog, 'stage4a-integration', 'STAGE4A', 105311,
   $null, 2, $null, $null, $null, $null)
 # This scenario explicitly drives both response decisions; do not auto-pass them.
 if ($Scenario -eq 'yin-empty') { $argsForGame[8] = $false }
+if ($Scenario -eq 'court-move') { $argsForGame[7] = 'none'; $argsForGame[8] = $false }
 $game = $ctor.Invoke($argsForGame)
 if ($Scenario -eq 'mengpo-selected-targets') {
   $baseDeck = $catalog.DeckAt(0)
@@ -121,6 +126,60 @@ function Command($type, $card, $prompt, $choice, $selectedIds, $ability, $bottom
 function Accept($command, $actor) {
   $result = $game.Handle($actor, $command)
   if (-not $result.Accepted) { throw $result.Error }
+}
+if ($Scenario -eq 'court-move') {
+  # Synthetic board copied from the already accepted authority regression. Only
+  # subsequent real Handle commands produce payment and completed snapshots.
+  $game.State.ActivePlayer = $ActorIndex; $game.State.FirstPlayer = $ActorIndex
+  $game.State.Round = 3; $game.State.TurnSerial = 5
+  foreach ($participant in $game.State.Players) {
+    $participant.TemporaryMorale = 0; $participant.Relic = $null; $participant.ExtraRelics.Clear()
+  }
+  $owner = $game.State.Players[$ActorIndex]; $other = 1 - $ActorIndex
+  $lubu = $createCard.Invoke($game, @('S01-0101', 'reported-lu-bu')); $lubu.OwnerIndex = $ActorIndex
+  $magician = $createCard.Invoke($game, @('S02-0003', 'reported-court-magician')); $magician.OwnerIndex = $ActorIndex
+  $owner.Field[1][0] = $lubu; $owner.Field[1][1] = $magician
+  $first = [TwelveLegions.Server.L12MoraleCard]::new(); $first.InstanceId = 'reported-move-payment-a'; $first.CardId = 'S01-01C1'
+  $second = [TwelveLegions.Server.L12MoraleCard]::new(); $second.InstanceId = 'reported-move-payment-b'; $second.CardId = 'S01-01C1'; $second.IsGodPower = $true
+  $owner.Morale.Add($first); $owner.Morale.Add($second)
+  $miyamoto = $createCard.Invoke($game, @('S01-0405', 'reported-miyamoto')); $miyamoto.OwnerIndex = $other
+  $kusanagi = $createCard.Invoke($game, @('S01-0417', 'reported-kusanagi')); $kusanagi.OwnerIndex = $other
+  $game.State.Players[$other].Field[0][0] = $miyamoto; $game.State.Players[$other].Relic = $kusanagi
+  $options = [System.Text.Json.JsonSerializerOptions]::new(); $options.PropertyNamingPolicy = [System.Text.Json.JsonNamingPolicy]::CamelCase; $options.MaxDepth = 128
+  # Serialize each projection immediately, before advancing the engine.
+  $initialJson = [System.Text.Json.JsonSerializer]::Serialize($game.SnapshotFor($ActorIndex), $options)
+  $moveCtor = [TwelveLegions.Server.L12Command].GetConstructors()[0]
+  $moveArgs = foreach ($parameter in $moveCtor.GetParameters()) {
+    switch ($parameter.Name) {
+      'Type' { 'move' }; 'CardInstanceId' { 'reported-court-magician' }
+      'Row' { 0 }; 'Slot' { 1 }; default { $parameter.DefaultValue }
+    }
+  }
+  Accept ($moveCtor.Invoke([object[]]$moveArgs)) $ActorIndex
+  $prompt = $game.State.PendingPrompts[0]
+  if ($game.State.PendingPrompts.Count -ne 1 -or $prompt.Kind -ne 'resource-payment' -or $prompt.Continuation -ne 'move-morale-choice') { throw 'COURT_MOVE_REAL_PAYMENT_REQUIRED' }
+  if ($Restore) {
+    $flags = [System.Reflection.BindingFlags]'NonPublic,Instance'
+    $randomState = [TwelveLegions.Server.L12GameEngine].GetProperty('RandomState', $flags).GetValue($game)
+    $signalSequence = [TwelveLegions.Server.L12GameEngine].GetProperty('CardFactSignalSequence', $flags).GetValue($game)
+    if ($null -eq $randomState) { throw 'COURT_MOVE_REAL_V2_RANDOM_STATE_REQUIRED' }
+    $restoreMethod = [TwelveLegions.Server.L12GameEngine].GetMethod('RestoreCheckpoint', [System.Reflection.BindingFlags]'NonPublic,Static')
+    $game = $restoreMethod.Invoke($null, @($catalog, $game.SerializeFullState(), $randomState, $signalSequence, $false, $false, $null))
+    $prompt = $game.State.PendingPrompts[0]
+  }
+  $paymentJson = [System.Text.Json.JsonSerializer]::Serialize($game.SnapshotFor($ActorIndex), $options)
+  Accept (Command 'resolvePrompt' $null $prompt.PromptId $null @('reported-move-payment-a')) $ActorIndex
+  $completedJson = [System.Text.Json.JsonSerializer]::Serialize($game.SnapshotFor($ActorIndex), $options)
+  if ($game.State.Players[$ActorIndex].Field[0][1].InstanceId -cne 'reported-court-magician' -or $null -ne $game.State.Players[$ActorIndex].Field[1][1] -or !$game.State.Players[$ActorIndex].Morale[0].Tapped -or $game.State.PendingPrompts.Count -ne 0) { throw 'COURT_MOVE_REAL_SETTLEMENT_REQUIRED' }
+  [System.Text.Json.JsonSerializer]::Serialize(@{
+    scenario = $Scenario; actor = $ActorIndex; restored = [bool]$Restore
+    engineSha256 = (Get-FileHash -LiteralPath $assemblyPath -Algorithm SHA256).Hash; commit = $ExpectedCommit
+    initial = [System.Text.Json.JsonDocument]::Parse($initialJson).RootElement.Clone()
+    payment = [System.Text.Json.JsonDocument]::Parse($paymentJson).RootElement.Clone()
+    completed = [System.Text.Json.JsonDocument]::Parse($completedJson).RootElement.Clone()
+    expected = @{ sourceId = 'reported-court-magician'; paymentId = 'reported-move-payment-a'; row = 0; slot = 1; legalSlots = @('0:1', '1:2') }
+  }, $options)
+  exit
 }
 if ($Scenario -in @('mengpo-selected-targets', 'oiran-log')) {
   $owner = $game.State.Players[$ActorIndex]
