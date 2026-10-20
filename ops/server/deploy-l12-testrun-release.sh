@@ -620,11 +620,41 @@ prune_release_set() {
   done
 }
 
+runtime_backup_pair_verified() {
+  local backup="$1" deadline="$2" checksum="${1}.sha256" name expected actual remaining size
+  name="$(basename "$backup")" || return 1
+  [[ "$name" =~ ^runtime-before-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz$ ]] || return 1
+  assert_cleanup_child "$backup" "$backup_dir" && assert_cleanup_child "$checksum" "$backup_dir" || return 1
+  [[ -f "$backup" && -r "$backup" && -f "$checksum" && -r "$checksum" ]] || return 1
+  size="$(stat -c '%s' "$checksum")" || return 1
+  [[ "$size" =~ ^[0-9]+$ && ${#size} -le 3 ]] && (( size <= 512 )) || return 1
+  # Never allow a sidecar to attest a different pathname or multiple files.
+  expected="$(awk -v name="$name" '
+    { if (NR != 1 || length($0) != 66 + length(name) || substr($0,65,2) != "  " || substr($0,67) != name) bad=1
+      hash=substr($0,1,64); if (hash !~ /^[0-9a-f]+$/) bad=1 }
+    END { if (NR != 1 || bad) exit 42; print hash }
+  ' "$checksum")" || return 1
+  remaining=$((deadline - SECONDS)); (( remaining > 0 )) || return 1
+  actual="$(timeout "${remaining}s" sha256sum -- "$backup")" || return 1
+  [[ "${actual%% *}" == "$expected" ]] || return 1
+  remaining=$((deadline - SECONDS)); (( remaining > 0 )) || return 1
+  timeout "${remaining}s" tar -tzf "$backup" >/dev/null 2>&1 || return 1
+}
+
 prune_runtime_backup_groups() {
-  local row backup checksum index=0
-  local complete_rows=()
+  local row backup checksum name listing stamp record reference index keep deadline
+  local -a backup_rows=() failure_records=() protected_backups=()
   assert_cleanup_root "$backup_dir" || return 1
-  mapfile -t backup_rows < <(find "$backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%T@:%p\n' | sort -rn)
+  listing="$(find "$backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.tar.gz' -printf '%f\n')" \
+    || { log "runtime snapshot cleanup skipped: enumeration failed"; return 1; }
+  while IFS= read -r name || [[ -n "$name" ]]; do
+    [[ "$name" =~ ^runtime-before-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz$ ]] || continue
+    stamp="${name##*-}"
+    backup_rows+=("${stamp}:${backup_dir}/${name}")
+  done <<< "$listing"
+  if (( ${#backup_rows[@]} )); then
+    mapfile -t backup_rows < <(printf '%s\n' "${backup_rows[@]}" | LC_ALL=C sort -r)
+  fi
   if [[ "$prune_runtime_backups_enabled" != "1" ]]; then
     local paired=0
     for row in "${backup_rows[@]}"; do
@@ -635,31 +665,45 @@ prune_runtime_backup_groups() {
     log "runtime snapshot deletion skipped by default; explicit authorization is required"
     return 0
   fi
-  for row in "${backup_rows[@]}"; do
-    backup="${row#*:}"; checksum="${backup}.sha256"
-    if [[ ! -f "$checksum" || -L "$checksum" ]] || ! (cd "$backup_dir" && sha256sum -c "$(basename "$checksum")" >/dev/null 2>&1); then
-      log "storage cleanup kept incomplete or unverifiable runtime snapshot: ${backup}"
-      continue
-    fi
-    complete_rows+=("$row")
+  [[ ! -e "$backup_dir/PINNED" && ! -L "$backup_dir/PINNED" ]] || { log "runtime snapshots are globally PINNED"; return 0; }
+  [[ "$runtime_backup_keep_groups" =~ ^[0-9]{1,2}$ ]] \
+    && (( runtime_backup_keep_groups >= 2 && runtime_backup_keep_groups <= 20 )) \
+    || { log "runtime snapshot cleanup refused: retain 2-20 groups"; return 1; }
+  keep="$runtime_backup_keep_groups"
+  (( ${#backup_rows[@]} > keep )) || return 0
+  load_failure_records || return 1
+  for record in "${failure_records[@]}"; do
+    reference="$(awk -F= '$1 == "runtimeBackup" { print $2 }' "$record")" || return 1
+    [[ -n "$reference" ]] || continue
+    name="${reference##*/}"
+    [[ "$reference" == "$backup_dir/$name" && "$name" =~ ^runtime-before-[0-9a-f]{12}-[0-9]{8}T[0-9]{6}Z[.]tar[.]gz$ ]] \
+      || { log "runtime snapshot cleanup refused: failure binding is unknown"; return 1; }
+    protected_backups+=("$reference")
   done
-  log "storage cleanup found ${#complete_rows[@]} complete runtime snapshot groups; automatic deletion enabled=${prune_runtime_backups_enabled}, configured keep=${runtime_backup_keep_groups}"
-  for row in "${complete_rows[@]}"; do
-    backup="${row#*:}"; checksum="${backup}.sha256"
-    if (( index < runtime_backup_keep_groups )); then
-      log "storage cleanup retained runtime snapshot: ${backup}"
-    else
-      assert_cleanup_child "$backup" "$backup_dir" && assert_cleanup_child "$checksum" "$backup_dir" || continue
-      if ! rm -f -- "$backup" "$checksum"; then log "storage cleanup could not remove runtime snapshot; retained: ${backup}"; continue; fi
-      log "storage cleanup removed runtime snapshot: ${backup}"
-    fi
-    index=$((index + 1))
+  # Optional cleanup never delays the release indefinitely: 15 seconds total,
+  # at least the newest two proven groups, at most one old complete pair removed.
+  deadline=$((SECONDS + 15))
+  for ((index=0; index<keep; index++)); do
+    backup="${backup_rows[index]#*:}"
+    runtime_backup_pair_verified "$backup" "$deadline" \
+      || { log "runtime snapshot cleanup skipped: newest retained group is not verified"; return 1; }
   done
-  while IFS= read -r -d '' backup; do
-    assert_cleanup_child "$backup" "$backup_dir" || continue
-    if ! rm -f -- "$backup"; then log "storage cleanup could not remove snapshot temporary; retained: ${backup}"; continue; fi
-    log "storage cleanup removed abandoned snapshot temporary: ${backup}"
-  done < <(find "$backup_dir" -maxdepth 1 -type f -name 'runtime-before-*.partial' -print0)
+  for ((index=${#backup_rows[@]}-1; index>=keep; index--)); do
+    backup="${backup_rows[index]#*:}"; checksum="${backup}.sha256"
+    if [[ "$backup" == "${runtime_backup:-}" || -e "$backup.PINNED" || -L "$backup.PINNED" ]]; then continue; fi
+    local protected=0
+    for reference in "${protected_backups[@]}"; do
+      if [[ "$reference" == "$backup" ]]; then protected=1; break; fi
+    done
+    (( protected == 0 )) || continue
+    runtime_backup_pair_verified "$backup" "$deadline" \
+      || { log "storage cleanup kept incomplete or unverifiable runtime snapshot: ${backup}"; return 1; }
+    assert_cleanup_child "$backup" "$backup_dir" && assert_cleanup_child "$checksum" "$backup_dir" || return 1
+    rm -f -- "$backup" "$checksum" || { log "storage cleanup could not remove runtime snapshot: ${backup}"; return 1; }
+    log "storage cleanup removed one verified runtime snapshot: ${backup}"
+    break
+  done
+  # Partial, corrupt, linked and unknown files are evidence, not automatic trash.
 }
 
 prune_card_asset_versions() {

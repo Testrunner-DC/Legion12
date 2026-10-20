@@ -15,6 +15,8 @@ function check(source) {
     assert.equal(source.includes(command), true, `CI must preserve ${command}`)
   assert.ok(source.indexOf('npm run build') < source.indexOf('./scripts/invoke-l12-tests.ps1'),
     'cheap frontend rejection must precede long backend suites')
+  assert.match(source, /^        run: bash scripts\/test-l12-runtime-backup-retention\.sh ops\/server\/deploy-l12-testrun-release\.sh "\$RUNNER_TEMP"$/m,
+    'CI must execute the real synthetic backup-retention boundary suite')
 }
 
 check(workflow)
@@ -29,4 +31,6 @@ assert.throws(() => check(workflow + '\n      - run: tar -czf old.tar.gz .'), /s
 assert.throws(() => check(workflow.replace('npm run build', 'echo skipped')), /preserve npm run build/)
 assert.throws(() => check(workflow.replace('./scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj', 'echo skipped')),
   /preserve.*Platform.Tests/)
-console.log('CI single release entry: current workflow and three negative mutations passed; standard schema/capability/assets requirements retained.')
+assert.throws(() => check(workflow.replace('run: bash scripts/test-l12-runtime-backup-retention.sh', 'run: echo skipped-retention')),
+  /synthetic backup-retention/)
+console.log('CI single release entry: current workflow and four negative mutations passed; canonical package and synthetic retention requirements retained.')

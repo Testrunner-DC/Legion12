@@ -41,6 +41,9 @@ jobs:
       - name: 唯一发布包入口约束
         run: node scripts/test-ci-release-entry.mjs
 
+      - name: 测试快照轮转边界（仅合成目录）
+        run: bash scripts/test-l12-runtime-backup-retention.sh ops/server/deploy-l12-testrun-release.sh "$RUNNER_TEMP"
+
       - name: 发布状态来源回归
         run: node scripts/test-release-status.mjs
 
