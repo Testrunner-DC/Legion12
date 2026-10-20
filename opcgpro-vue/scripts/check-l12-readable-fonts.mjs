@@ -44,7 +44,7 @@ const globalStyle = fs.readFileSync(path.join(srcRoot, 'style.css'), 'utf8')
 const gameBoard = fs.readFileSync(path.join(srcRoot, 'l12/game/GameBoard.vue'), 'utf8')
 const contracts = [
   [gameBoard.includes("'--l12-board-copy'") && gameBoard.includes("'--l12-board-meta'") && gameBoard.includes("'--l12-board-micro'") && gameBoard.includes("'--l12-effect-copy'"), 'board scale must publish copy, metadata, micro-label and effect-copy tiers'],
-  [globalStyle.includes('.l12-effect-body{font-size:var(--l12-effect-copy,clamp(') && globalStyle.includes('overflow-wrap:anywhere;white-space:pre-wrap'), 'effect prose must use its adaptive semantic tier and preserve authoritative wrapping'],
+  [globalStyle.includes('.l12-effect-body{font-size:calc(var(--l12-effect-copy,clamp(') && globalStyle.includes(' * var(--l12-font-scale,1))!important') && globalStyle.includes('overflow-wrap:anywhere;white-space:pre-wrap'), 'effect prose must preserve its adaptive semantic base, one preference multiplier and authoritative wrapping'],
   [globalStyle.includes('small { font-size:var(--l12-board-meta,clamp(') && globalStyle.includes('.kicker {') && globalStyle.includes('--l12-board-meta'), 'auxiliary labels must use the metadata tier rather than inherit a project-wide body floor'],
 ]
 for (const [ok, message] of contracts) if (!ok) findings.push(`semantic contract: ${message}`)
@@ -56,3 +56,5 @@ if (findings.length) {
 } else {
   console.log('L12 semantic typography and containment contracts passed; no project-wide 14px floor remains.')
 }
+
+await import('./test-font-size-preferences.mjs')

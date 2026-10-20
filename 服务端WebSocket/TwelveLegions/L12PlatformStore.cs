@@ -6,7 +6,7 @@ namespace TwelveLegions.Server;
 
 public sealed record L12AudioPreferencesView(bool MusicEnabled = true, double MusicVolume = 0.35,
     bool SfxEnabled = true, double SfxVolume = 0.7, string CardSize = "auto", string Animation = "standard",
-    string MobileLayout = "auto");
+    string MobileLayout = "auto", string? FontSize = null);
 public sealed record L12AccountView(string Id, string Username, string Role, DateTimeOffset CreatedAt,
     bool PublicHistory, int PermissionVersion = 1, bool Disabled = false,
     DateTimeOffset? DisabledAt = null, string? DisabledReason = null, bool MustChangePassword = false,
@@ -125,6 +125,7 @@ public sealed partial class L12PlatformStore
         public string CardSize { get; set; } = "auto";
         public string Animation { get; set; } = "standard";
         public string MobileLayout { get; set; } = "auto";
+        public string FontSize { get; set; } = "standard";
         public string ResponseMode { get; set; } = L12GameEngine.DefaultResponseMode;
         public string? ResponseModeOperationId { get; set; }
         public DateTimeOffset? DeletedAt { get; set; }
@@ -739,9 +740,12 @@ public sealed partial class L12PlatformStore
             row.CardSize = value.CardSize is "small" or "medium" or "large" ? value.CardSize : "auto";
             row.Animation = value.Animation is "off" or "fast" ? value.Animation : "standard";
             row.MobileLayout = value.MobileLayout is "on" or "off" ? value.MobileLayout : "auto";
+            // Legacy clients omit this field. Their full preference PUT must not
+            // erase a size selected by a newer client on the same account.
+            if (value.FontSize is not null) row.FontSize = NormalizeFontSize(value.FontSize);
             Save();
             return new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
-                row.CardSize, row.Animation, row.MobileLayout);
+                row.CardSize, row.Animation, row.MobileLayout, NormalizeFontSize(row.FontSize));
         }
     }
 
@@ -1893,11 +1897,14 @@ public sealed partial class L12PlatformStore
             ? row.Username
             : L12UsernamePolicy.PublicName(row.Username);
 
+    private static string NormalizeFontSize(string? value)
+        => value is "large" or "extra-large" ? value : "standard";
+
     private static L12AccountView ToView(AccountRow row) => new(row.Id, PublicUsername(row), row.Role, row.CreatedAt,
         row.PublicHistory, row.PermissionVersion, row.Disabled, row.DisabledAt, row.DisabledReason,
         row.MustChangePassword, row.MustChangeUsername, row.Deleted, row.DeletedAt, MaskEmail(row.Email), row.EmailVerifiedAt is not null,
         new L12AudioPreferencesView(row.MusicEnabled, row.MusicVolume, row.SfxEnabled, row.SfxVolume,
-            row.CardSize, row.Animation, row.MobileLayout));
+            row.CardSize, row.Animation, row.MobileLayout, NormalizeFontSize(row.FontSize)));
     private L12FriendView ToFriendView(string viewerId, AccountRow row)
     {
         var blocked = _data.BlockedAccounts.Any(item => item.AccountId == viewerId && item.BlockedAccountId == row.Id);

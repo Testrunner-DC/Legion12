@@ -9,6 +9,7 @@ export interface L12AudioPreferences {
   cardSize: 'auto' | 'small' | 'medium' | 'large'
   animation: 'off' | 'fast' | 'standard'
   mobileLayout: 'auto' | 'on' | 'off'
+  fontSize: 'standard' | 'large' | 'extra-large'
 }
 
 const stored = (() => {
@@ -25,6 +26,8 @@ const isAnimation = (value: unknown): value is L12AudioPreferences['animation'] 
   && ['off', 'fast', 'standard'].includes(value)
 const isMobileLayout = (value: unknown): value is L12AudioPreferences['mobileLayout'] => typeof value === 'string'
   && ['auto', 'on', 'off'].includes(value)
+const isFontSize = (value: unknown): value is L12AudioPreferences['fontSize'] => typeof value === 'string'
+  && ['standard', 'large', 'extra-large'].includes(value)
 
 export const audioPreferences = reactive<L12AudioPreferences>({
   musicEnabled: typeof stored.musicEnabled === 'boolean' ? stored.musicEnabled : true,
@@ -34,6 +37,7 @@ export const audioPreferences = reactive<L12AudioPreferences>({
   cardSize: isCardSize(stored.cardSize) ? stored.cardSize : 'auto',
   animation: isAnimation(stored.animation) ? stored.animation : 'standard',
   mobileLayout: isMobileLayout(stored.mobileLayout) ? stored.mobileLayout : 'auto',
+  fontSize: isFontSize(stored.fontSize) ? stored.fontSize : 'standard',
 })
 
 export function applyAudioPreferences(value?: Partial<L12AudioPreferences> | null) {
@@ -48,6 +52,10 @@ export function applyAudioPreferences(value?: Partial<L12AudioPreferences> | nul
     ? value.animation : audioPreferences.animation
   audioPreferences.mobileLayout = value.mobileLayout && ['auto', 'on', 'off'].includes(value.mobileLayout)
     ? value.mobileLayout : audioPreferences.mobileLayout
+  // App applies the complete current account preference projection here.
+  // An older account/server without this field must not inherit the previous
+  // account's larger text. This differs from the server's legacy PUT handling.
+  audioPreferences.fontSize = isFontSize(value.fontSize) ? value.fontSize : 'standard'
   syncAudioStore()
 }
 
@@ -60,6 +68,8 @@ export function syncAudioStore() {
     document.documentElement.dataset.l12CardSize = audioPreferences.cardSize
     document.documentElement.dataset.l12Animation = audioPreferences.animation
     document.documentElement.dataset.l12MobileLayoutPreference = audioPreferences.mobileLayout
+    document.documentElement.dataset.l12FontSize = audioPreferences.fontSize
+    document.documentElement.style.setProperty('--l12-font-scale', ({ standard: '1', large: '1.12', 'extra-large': '1.24' } as const)[audioPreferences.fontSize])
     const animationScale = audioPreferences.animation === 'off' ? '0' : audioPreferences.animation === 'fast' ? '.55' : '1'
     document.documentElement.style.setProperty('--l12-animation-scale', animationScale)
     document.documentElement.style.setProperty('--l12-card-scale', ({ small: '.86', medium: '1', large: '1.16', auto: '1' } as const)[audioPreferences.cardSize])

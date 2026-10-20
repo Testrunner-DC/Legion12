@@ -177,6 +177,51 @@ public sealed class ControlPlanePhaseThreeStorageTests
     }
 
     [Fact]
+    public void AccountFontSizeDefaultsAndPersistsWithoutLegacyRequestReset()
+    {
+        var root = TempRoot();
+        var path = Path.Combine(root, "platform.json");
+        static string? FontSize(L12AudioPreferencesView value)
+            => JsonSerializer.SerializeToElement(value).GetProperty("FontSize").GetString();
+        try
+        {
+            var store = new L12PlatformStore(path);
+            var account = store.Register("tfontd1020", "password-123").Account!;
+            Assert.Equal("standard", FontSize(account.AudioPreferences!));
+            var request = JsonSerializer.Deserialize<L12AudioPreferencesView>("""
+                {"MusicEnabled":false,"CardSize":"large","FontSize":"extra-large"}
+                """);
+            var saved = store.UpdateAudioPreferences(account.Id, request!);
+            Assert.Equal("extra-large", FontSize(saved));
+            var legacy = store.UpdateAudioPreferences(account.Id, new L12AudioPreferencesView());
+            Assert.Equal("extra-large", FontSize(legacy));
+            var restarted = new L12PlatformStore(path);
+            Assert.Equal("extra-large", FontSize(restarted.Login("tfontd1020", "password-123").Account!.AudioPreferences!));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Theory]
+    [InlineData("standard", "standard")]
+    [InlineData("large", "large")]
+    [InlineData("extra-large", "extra-large")]
+    [InlineData("huge", "standard")]
+    [InlineData("", "standard")]
+    public void AccountFontSizeNormalizesOnlyNamedChoices(string input, string expected)
+    {
+        var root = TempRoot();
+        try
+        {
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"));
+            var account = store.Register("tfontc1020", "password-123").Account!;
+            var request = JsonSerializer.Deserialize<L12AudioPreferencesView>(JsonSerializer.Serialize(new { FontSize = input }));
+            var saved = store.UpdateAudioPreferences(account.Id, request!);
+            Assert.Equal(expected, JsonSerializer.SerializeToElement(saved).GetProperty("FontSize").GetString());
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void FailedCommitRollsBackMemoryAndDurableSnapshot()
     {
         var root = TempRoot();
