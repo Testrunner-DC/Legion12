@@ -7742,3 +7742,9 @@
 - 首次完整Batch三项阻断已实查修正：Batch299用变量方法名及参数数量反射旧DamageMaster，子静态检索漏掉；Main保留其原6参数签名，由新进攻出口调用同一核心的末位分量入口，不改测试期待值。P1冻结夹具仅abilityCatalogSha256因本次唯一奥西里斯能力身份改动从4087e90d…94e75f变42979a45…868a5；其他12项契约/状态/视角黄金哈希保持原值。扩大专项233/233失败跳过0（focused-compat/test-2498d301514c4d478f4d8a6707391276），包括原批299及P1恢复/隐私/读取顺序；全Batch重跑，原失败/中止日志保留。
 - 最终本地Batch证据：规则6170、平台435全部通过且失败跳过0；紧接前端账本校验发现新增分类cards不属于既有枚举，仅改card-effects后续跑前端与账本Batch，exit0、UI354/卡图324+42/双构建通过。两段日志保留，不将中途失败的整段冒称exit0；规则和平台源未再变，提交后还将运行完整干净Release。没有部署、后台发布或维护操作。
 - 最终同步：4e96ee7a6efe26a373cfa9811184b672a3469100于21:40:53完整干净Release6170规则/435平台失败跳过0，UI354/卡图324+42/双前端/制品通过，success timings/TRX及包SHA cfcd8e76…3c1cb2独立实读，origin/main精确读回。最终日志osiris-priority-release-20261003.log、证据deploy/verification-evidence/4e96ee7a…/20261003T132826Z-264b9f06d063462e8a9aa75b3082f2f6。未部署、未发布后台规则、未关闭反馈、未改维护，历史失败证据未删除。
+
+## SERVER-SHUTDOWN-20261021｜正式发布关闭链超时（诊断确认，产品修复待批准）
+
+- 原始systemd生命周期证实停止信号后20秒与120秒均超时，r3原始拒绝码stopped-service；精确应用标记确认已进入server.StopAsync。两次均由发布器恢复d7，未切新包或回写旧库。历史14计数和四组指纹仍相同，不将运维revision增加误报业务损坏。
+- 同型只读检索StopAsync/Stop*Coordinator/CloseAsync/CompleteAsync：共享socket关闭使用CancellationToken.None，outbound sender与worker join无总期限，host.StopAsync位于其后。现有受控wire测试能证明无界路径，但不冒原正式await已定位。共享修复单独请求批准，尚未实施；下一本地真实匿名不回关闭握手及慢发送复现，再正常/重复/并发关闭与持久化保护验收，不再正式停服探测。
+- 唯一D盘formal-release-20261021/release-session-summary.json引用原始失败与recovery-final-r3.json；未新建线上Bug或关单、未冒性能容量通过。
