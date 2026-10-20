@@ -218,9 +218,16 @@ for (const preservedLobbyContract of [
   "@click=\"toggleReady\">{{ me?.ready ? '取消准备'",
   'data-ui-contract="long-term-announcements-above-deck"',
   "tab === 'tutorial'",
-  'class="tutorial-return"',
-  '.battle-hub.tutorial-mode',
+  '<TutorialPage v-else embedded />',
+  '.battle-hub>.tutorial-page.embedded',
 ]) assert.ok(battleHub.includes(preservedLobbyContract), `lobby redesign must preserve: ${preservedLobbyContract}`)
+assert.doesNotMatch(battleHub, /tutorial-return|battle-hub\.tutorial-mode|<header[^>]+tab !== 'tutorial'|<div[^>]+class="mode-tabs"[^>]+tab !== 'tutorial'/,
+  'teaching must stay inside the same visible lobby shell instead of switching to a special full-page layout')
+assert.match(battleHub, /data-lobby-art-slot="tutorial"[^>]*:class="\{ active: tab === 'tutorial' \}"/,
+  'the teaching illustration must remain the selected third lobby tab while its content is open')
+assert.match(battleHub, /initialTab\?: 'match' \| 'friendly' \| 'tutorial'/)
+assert.match(battleHub, /watch\(\(\) => props\.initialTab, next => \{ tab\.value = next \}, \{ immediate: true \}\)/,
+  'the shared lobby instance must follow direct tutorial-route props without losing its other local state')
 assert.match(battleHub, /data-lobby-art-slot="match"/)
 assert.match(battleHub, /data-lobby-art-slot="friendly"/)
 assert.match(battleHub, /data-lobby-art-slot="tutorial"/)

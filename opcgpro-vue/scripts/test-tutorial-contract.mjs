@@ -101,6 +101,10 @@ check('live presentation busy is exposed without changing replay speed gating', 
 })
 check('tutorial route replaces public single-player while sandbox is admin-only', () => {
   assert.ok(source.router.includes("path: '/battle/tutorial'"))
+  assert.match(source.router, /path: '\/battle\/tutorial'[\s\S]{0,180}BattleHubPage\.vue'[\s\S]{0,120}props: \{ initialTab: 'tutorial' \}/)
+  assert.doesNotMatch(source.router, /path: '\/battle\/tutorial'[\s\S]{0,180}TutorialPage\.vue'/)
+  assert.match(source.hub, /initialTab\?: 'match' \| 'friendly' \| 'tutorial'/)
+  assert.match(source.hub, /watch\(\(\) => props\.initialTab, next => \{ tab\.value = next \}, \{ immediate: true \}\)/)
   assert.ok(source.router.includes("path: 'operations/sandbox'"))
   assert.match(source.router, /path: '\/sandbox'[\s\S]{0,180}redirect: '\/admin\/operations\/sandbox'[\s\S]{0,180}requiresAdmin: true/)
   assert.match(source.admin, /id: 'sandbox'[\s\S]{0,200}permissions: \['admin\.operations\.write'\]/)

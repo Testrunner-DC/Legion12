@@ -19,7 +19,7 @@ export const router = createRouter({
     { path: '/rules', name: 'rules', component: () => import('@/l12/site/RuleCenterPage.vue') },
     { path: '/battle', name: 'battle', component: () => import('@/l12/site/BattleHubPage.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/lobby', redirect: '/battle' },
-    { path: '/battle/tutorial', name: 'tutorial', component: () => import('@/l12/site/TutorialPage.vue'), meta: { section: 'battle', requiresAccount: true } },
+    { path: '/battle/tutorial', name: 'tutorial', component: () => import('@/l12/site/BattleHubPage.vue'), props: { initialTab: 'tutorial' }, meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/tournaments', name: 'tournaments', component: () => import('@/l12/site/TournamentHubPage.vue'), meta: { section: 'battle' } },
     { path: '/battle/tournaments/:code', name: 'tournament-detail', component: () => import('@/l12/site/TournamentDetailPage.vue'), meta: { section: 'battle' } },
     { path: '/decks', name: 'decks', component: () => import('@/l12/site/DeckLibraryPage.vue') },

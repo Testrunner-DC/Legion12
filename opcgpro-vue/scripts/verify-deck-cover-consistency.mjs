@@ -16,7 +16,7 @@ fs.mkdirSync(output,{recursive:true})
 const {chromium}=createRequire(import.meta.url)('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
 const policy={version:1,season:{id:'qa',name:'合成验收'},maintenance:{entryBlocked:false,active:false},defaultPresetDeckIds:[],cardRestrictions:[],disasterCardIds:[],announcements:[],defaultRoomConfig:{spectating:'public',handVisibility:'request',disasterMode:'all'}}
 const entry=`
-import {createApp,h} from 'vue';import {createRouter,createMemoryHistory} from 'vue-router'
+import {createApp,h,Transition} from 'vue';import {createRouter,createMemoryHistory,RouterView} from 'vue-router'
 import Cover from '/src/l12/DeckCover.vue';import Hub from '/src/l12/site/BattleHubPage.vue'
 import Editor from '/src/l12/L12DeckEditor.vue'
 import {loadDeckCatalog,ensureOfficialPrebuiltDecks,saveSelectedDeckName} from '/src/l12/decks.ts'
@@ -28,22 +28,32 @@ const deck=Object.values(saved).find(d=>['legion','tactic','artifact'].every(t=>
 for(const scope of ['ranked','casual','friendly'])saveSelectedDeckName(scope,deck.name)
 const mode=new URLSearchParams(location.search).get('mode')||'gallery'
 if(mode==='room')l12State.room={roomCode:'QA1234',yourPlayerIndex:0,decks:[],players:[{playerIndex:0,name:'合成甲',connected:true},{playerIndex:1,name:'合成乙',connected:true}],options:{matchModeId:'friendly',spectating:'public',handVisibility:'request',disasterMode:'all',useCardRestrictions:false}}
-const router=createRouter({history:createMemoryHistory(),routes:[{path:'/',component:{render:()=>null}}]});await router.push({path:'/',query:mode==='editor'?{deck:deck.name}:{}})
-createApp({render:()=>h('main',{style:{boxSizing:'border-box',width:mode==='narrow'?'min(360px,100%)':'100%',padding:mode==='editor'?'0':'20px',maxWidth:mode==='editor'?'none':'1300px',margin:'auto'}},mode==='gallery'?[h('h1','共享横幅与代表牌'),h('div',{style:{display:'flex',flexWrap:'wrap',gap:'20px'}},['regular','featured','compact'].flatMap(variant=>[180,280,420].map(w=>h('article',{style:{width:w+'px',maxWidth:'100%'}},[h('p',variant+' / '+w+'px'),h(Cover,{variant,name:'预组·三张代表牌',masterId:deck.masterId,catalog:cards,sourceCardIds:deck.cardIds,context:'合成展示',meta:'40张主牌',...(variant==='featured'?{metaPrefix:'S02'}:{})})]))))]:h(mode==='editor'?Editor:Hub,{matchmakingOnly:mode==='narrow'}))}).use(router).mount('#app');window.__coverReady=true
+const routes=mode==='route'?[{path:'/battle',component:Hub,props:{initialTab:'match'}},{path:'/battle/tutorial',component:Hub,props:{initialTab:'tutorial'}}]:[{path:'/',component:{render:()=>null}}]
+const router=createRouter({history:createMemoryHistory(),routes});await router.push(mode==='route'?'/battle/tutorial':{path:'/',query:mode==='editor'?{deck:deck.name}:{}});if(mode==='route'){window.__routeTestRouter=router;window.__fixtureL12State=l12State}
+const keyedRouteHost=()=>h(RouterView,null,{default:({Component,route})=>h(Transition,{name:'page-slide'},()=>h(Component,{key:route.path}))})
+createApp({render:()=>h('main',{style:{boxSizing:'border-box',width:mode==='narrow'?'min(360px,100%)':'100%',padding:mode==='editor'?'0':'20px',maxWidth:mode==='editor'?'none':'1300px',margin:'auto'}},mode==='route'?keyedRouteHost():mode==='gallery'?[h('h1','共享横幅与代表牌'),h('div',{style:{display:'flex',flexWrap:'wrap',gap:'20px'}},['regular','featured','compact'].flatMap(variant=>[180,280,420].map(w=>h('article',{style:{width:w+'px',maxWidth:'100%'}},[h('p',variant+' / '+w+'px'),h(Cover,{variant,name:'预组·三张代表牌',masterId:deck.masterId,catalog:cards,sourceCardIds:deck.cardIds,context:'合成展示',meta:'40张主牌',...(variant==='featured'?{metaPrefix:'S02'}:{})})]))))]:h(mode==='editor'?Editor:Hub,{matchmakingOnly:mode==='narrow'}))}).use(router).mount('#app');window.__coverReady=true
 `
 const server=await createServer({root,configLoader:'runner',cacheDir:cache,server:{host:'127.0.0.1',port:0},plugins:[{name:'cover-consistency',enforce:'pre',resolveId(id){if(id==='/__cover__.js')return id},load(id){if(id==='/__cover__.js')return entry;return overrides.get(id.replaceAll('\\','/'))},configureServer(v){v.middlewares.use((req,res,next)=>{if(new URL(req.url||'/','http://fixture').pathname!=='/__cover__')return next();res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#080d12;color:#eee"><div id="app"></div><script type="module" src="/__cover__.js"></script>')})}}]})
-const tracked=['src/l12/DeckCover.vue','src/l12/site/BattleHubPage.vue','src/l12/L12DeckEditor.vue','src/l12/deckCover.ts','scripts/verify-deck-cover-consistency.mjs',...['1_w','1_m','2_w','2_m','3_w','3_m'].map(name=>'src/assets/l12/battle/Match_'+name+'.png')]
+const tracked=['src/l12/DeckCover.vue','src/l12/site/BattleHubPage.vue','src/l12/L12DeckEditor.vue','src/l12/deckCover.ts','src/router/index.ts','scripts/test-deck-cover.mjs','scripts/test-tutorial-contract.mjs','scripts/verify-deck-cover-consistency.mjs',...['1_w','1_m','2_w','2_m','3_w','3_m'].map(name=>'src/assets/l12/battle/Match_'+name+'.png')]
 const hashes=()=>Object.fromEntries(tracked.map(p=>[p,crypto.createHash('sha256').update(overrides.get(path.join(root,p).replaceAll('\\','/'))??fs.readFileSync(path.join(root,p))).digest('hex')]))
-const report={baseline,sourceBefore:hashes(),cases:[],failures:[],pageErrors:[],productionWrites:0,scope:'actual shared Cover/BattleHub/Editor, synthetic guest state; not physical mobile or live accounts'};let browser
+const report={baseline,sourceBefore:hashes(),cases:[],failures:[],pageErrors:[],productionWrites:0,scope:'actual shared Cover/BattleHub/Editor with App-equivalent path-keyed RouterView transition; synthetic guest state; not physical mobile or live accounts'};let browser
 try{
  await server.listen();browser=await chromium.launch({channel:'msedge',headless:true})
- const cases=[['gallery',1440,1100],['hub',1440,1000],['friendly',1440,1000],['room',1440,1000],['hub',390,844],['friendly',390,844],['room',390,844],['hub',844,390],['friendly',844,390],['room',844,390],['narrow',844,390],...baseline?[]:[['editor',1440,1000],['editor',390,844]]]
+ const cases=[['gallery',1440,1100],...baseline?[]:[['route',1440,1000]],['hub',1440,1000],['friendly',1440,1000],['room',1440,1000],['hub',390,844],['friendly',390,844],['room',390,844],['hub',844,390],['friendly',844,390],['room',844,390],['narrow',844,390],...baseline?[]:[['editor',1440,1000],['editor',390,844]]]
  for(const [mode,width,height] of cases.filter(c=>!process.argv.includes('--editor-only')||c[0]==='editor')){
   const touch=width<=844&&!['gallery','editor'].includes(mode);const ctx=await browser.newContext({viewport:{width,height},reducedMotion:'reduce',hasTouch:touch});await ctx.routeWebSocket(/.*/,s=>s.close())
   await ctx.route('**/*',r=>{const u=new URL(r.request().url());if(u.hostname!=='127.0.0.1')return r.abort();if(u.pathname.startsWith('/api/'))return r.fulfill({json:u.pathname.includes('effective-policy')?policy:[]});if(u.pathname.startsWith('/card-assets/')){const b=path.resolve('D:/L12-assets/published/current'),f=path.resolve(b,decodeURIComponent(u.pathname.slice(13)));assert.ok(f.startsWith(b+path.sep));return fs.existsSync(f)?r.fulfill({path:f}):r.abort()}return r.continue()})
   const artImageRequests=[];const page=await ctx.newPage();page.on('pageerror',e=>report.pageErrors.push(e.message));page.on('request',r=>{if(r.resourceType()==='image'&&r.url().includes('Match_'))artImageRequests.push(decodeURIComponent(new URL(r.url()).pathname))});await page.goto('http://127.0.0.1:'+server.httpServer.address().port+'/__cover__?mode='+mode);await page.waitForFunction(()=>window.__coverReady)
+  if(mode==='route'){
+   await page.locator('.tutorial-page.embedded').waitFor();assert.equal(await page.locator('.mode-tabs>button.active').getAttribute('data-lobby-art-slot'),'tutorial','legacy tutorial URL must open the third lobby tab');assert.equal(await page.locator('.battle-hub').count(),1)
+   await page.evaluate(()=>{window.__firstRouteHub=document.querySelector('.battle-hub')});await page.evaluate(()=>window.__routeTestRouter.push('/battle'));await page.waitForFunction(()=>document.querySelectorAll('.battle-hub').length===1&&document.querySelector('.mode-tabs>button.active')?.dataset.lobbyArtSlot==='match')
+   assert.equal(await page.evaluate(()=>document.querySelector('.battle-hub')!==window.__firstRouteHub),true,'App path key must remount the lobby across route paths')
+   await page.getByRole('button',{name:'好友房',exact:true}).click();const roomDraft=page.getByLabel('房间码');await roomDraft.fill('QA1234');await roomDraft.focus();await page.getByRole('button',{name:'教学',exact:true}).click();await page.locator('.tutorial-page.embedded').waitFor();assert.notEqual(await page.evaluate(()=>document.activeElement?.tagName),'INPUT','hidden room draft must not retain focus');await page.getByRole('button',{name:'好友房',exact:true}).click();assert.equal(await page.getByLabel('房间码').inputValue(),'QA1234','same-lobby tab roundtrip must retain the unsubmitted room draft')
+   await page.evaluate(()=>window.__routeTestRouter.push('/battle/tutorial'));await page.waitForFunction(()=>document.querySelectorAll('.battle-hub').length===1&&document.querySelector('.tutorial-page.embedded'));assert.equal(await page.locator('.mode-tabs>button.active').getAttribute('data-lobby-art-slot'),'tutorial');assert.equal(await page.evaluate(()=>Boolean(window.__fixtureL12State.pendingAction||window.__fixtureL12State.room||window.__fixtureL12State.game)),false,'route mount must not automatically start a tutorial')
+   await page.evaluate(()=>window.__routeTestRouter.push('/battle'));await page.waitForFunction(()=>document.querySelectorAll('.battle-hub').length===1&&document.querySelector('.mode-tabs>button.active')?.dataset.lobbyArtSlot==='match');await page.evaluate(()=>window.__routeTestRouter.push('/battle/tutorial'));await page.waitForFunction(()=>document.querySelectorAll('.battle-hub').length===1&&document.querySelector('.tutorial-page.embedded'));assert.equal(await page.locator('.mode-tabs>button').count(),3);await page.screenshot({path:path.join(output,'tutorial-route-roundtrip-1440x1000.png'),fullPage:true,animations:'disabled'});report.cases.push({mode,width,height,routeRoundtrip:true,appPathKeyed:true,sameLobbyTabDraftRetained:true,singleActiveLobby:true,automaticTutorialStarts:0,productionWrites:0});await ctx.close();continue
+  }
   if(mode==='friendly'){await page.getByRole('button',{name:'好友房',exact:true}).click();await page.mouse.move(0,0)}
-  let modeArtStates=[]
+  let modeArtStates=[],tutorialLobbyEmbedded=false
   if(!baseline&&['hub','friendly'].includes(mode)){
    const tabs=page.locator('.mode-tabs>button');assert.equal(await tabs.count(),3,'lobby must retain three functional illustrated modes')
    await page.waitForFunction(()=>[...document.querySelectorAll('.mode-tab-art img')].length===3&&[...document.querySelectorAll('.mode-tab-art img')].every(img=>img.complete&&img.naturalWidth>0))
@@ -55,6 +65,15 @@ try{
    const sizeSuffix=width<=700?'_m.png':'_w.png';assert.ok(modeArtStates.every(item=>new URL(item.currentSrc).pathname.endsWith(sizeSuffix)),'each rendered mode must select only the viewport-sized asset')
    const actualArt=[...new Set(artImageRequests.map(value=>path.basename(value)))].sort();assert.deepEqual(actualArt,[1,2,3].map(index=>'Match_'+index+sizeSuffix),'image network must load only the three matching viewport assets')
    const inactive=page.locator('.mode-tabs>button:not(.active)').first();await inactive.hover();assert.ok((await inactive.locator('.mode-tab-art').evaluate(e=>getComputedStyle(e).filter)).includes('grayscale(1)'),'hover must keep unselected art gray');await inactive.focus();assert.ok((await inactive.locator('.mode-tab-art').evaluate(e=>getComputedStyle(e).filter)).includes('grayscale(1)'),'keyboard focus must keep unselected art gray');await page.evaluate(()=>document.activeElement instanceof HTMLElement&&document.activeElement.blur());await page.mouse.move(0,0)
+   await page.getByRole('button',{name:'教学',exact:true}).click();await page.mouse.move(0,0)
+   assert.equal(await page.locator('.mode-tabs>button').count(),3,'teaching must keep all three lobby modes visible')
+   assert.equal(await page.locator('.page-head').count(),1,'teaching must keep the shared lobby heading visible')
+   assert.equal(await page.locator('.tutorial-page.embedded').count(),1,'teaching must render inside the current lobby content area')
+   assert.equal(await page.locator('.tutorial-return').count(),0,'teaching must not restore a separate full-page return bar')
+   assert.equal(await page.locator('.mode-tabs>button.active').getAttribute('data-lobby-art-slot'),'tutorial','teaching must remain the selected lobby mode')
+   tutorialLobbyEmbedded=true
+   if(mode==='hub')await page.screenshot({path:path.join(output,'tutorial-lobby-'+width+'x'+height+'.png'),fullPage:true,animations:'disabled'})
+   await page.getByRole('button',{name:mode==='friendly'?'好友房':'匹配',exact:true}).click();await page.mouse.move(0,0)
   }
   await page.waitForFunction(()=>window.__coverReady&&document.querySelector('.deck-cover')?.getAttribute('data-cover-cards')?.split(',').length===3)
   if(mode==='editor'){
@@ -100,7 +119,7 @@ try{
   if(!baseline&&['hub','friendly','room'].includes(mode))await page.locator('.deck-selection-block').screenshot({path:path.join(output,mode+'-deck-'+width+'x'+height+'.png'),animations:'disabled'})
   const selectorCase=!['gallery','editor'].includes(mode)
   if(selectorCase){const trigger=page.getByRole('button',{name:/^更换牌库：/});if(mode==='hub'&&width===1440){await trigger.focus();await page.keyboard.press('Enter');report.keyboardSelector=true}else if(touch){await trigger.tap();report.touchSelectors=(report.touchSelectors||0)+1}else await trigger.click();await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'取消',exact:true}).click()}
-  report.cases.push({mode,width,height,geometry,modeArtStates,artImageRequests,actualSelectorOpenAndCancel:selectorCase});await ctx.close()
+  report.cases.push({mode,width,height,geometry,modeArtStates,artImageRequests,tutorialLobbyEmbedded,actualSelectorOpenAndCancel:selectorCase});await ctx.close()
  }
  assert.deepEqual(report.pageErrors,[]);if(baseline)assert.ok(report.failures.length>0);else assert.deepEqual(report.failures,[])
  console.log(JSON.stringify({baseline,cases:report.cases.length,failures:report.failures,pageErrors:report.pageErrors.length}))

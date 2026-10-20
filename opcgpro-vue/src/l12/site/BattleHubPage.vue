@@ -21,9 +21,10 @@ import roomModeMobile from '@/assets/l12/battle/Match_2_m.png'
 import tutorialModeWide from '@/assets/l12/battle/Match_3_w.png'
 import tutorialModeMobile from '@/assets/l12/battle/Match_3_m.png'
 
-const props = withDefaults(defineProps<{ matchmakingOnly?: boolean; overlayTarget?: HTMLElement }>(), { matchmakingOnly: false })
+const props = withDefaults(defineProps<{ matchmakingOnly?: boolean; overlayTarget?: HTMLElement; initialTab?: 'match' | 'friendly' | 'tutorial' }>(), { matchmakingOnly: false, initialTab: 'match' })
 const router = useRouter()
 const tab = ref<'match' | 'friendly' | 'tutorial'>('match')
+watch(() => props.initialTab, next => { tab.value = next }, { immediate: true })
 const roomCode = ref('')
 const roomOptions = ref<RoomOptions>({ matchModeId: 'friendly', spectating: 'public', handVisibility: 'request', disasterMode: 'all', useCardRestrictions: false })
 const operationsPolicy = ref<EffectiveOperationsPolicy | null>(null)
@@ -579,10 +580,9 @@ async function copyRoomCode() {
 </script>
 
 <template>
-  <div class="battle-hub" :class="{ 'matchmaking-only': props.matchmakingOnly, 'tutorial-mode': !props.matchmakingOnly && tab === 'tutorial' }">
-    <RankedBroadcastTicker v-if="!props.matchmakingOnly && tab !== 'tutorial'" />
-    <header v-if="!props.matchmakingOnly && tab !== 'tutorial'" class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
-    <nav v-if="!props.matchmakingOnly && tab === 'tutorial'" class="tutorial-return"><button type="button" @click="tab = 'match'">← 返回对战大厅</button></nav>
+  <div class="battle-hub" :class="{ 'matchmaking-only': props.matchmakingOnly }">
+    <RankedBroadcastTicker v-if="!props.matchmakingOnly" />
+    <header v-if="!props.matchmakingOnly" class="page-head"><div><small>BATTLE LOBBY</small><h1>开始对战</h1><p>选择模式并确认当前牌库，准备后进入对局。</p></div><div class="server-state" :class="l12State.status"><i/><span>{{ l12State.status === 'online' ? '服务器在线' : '尚未连接' }}</span></div></header>
     <section v-if="tab !== 'tutorial' && maintenanceView" class="maintenance-banner" :class="maintenanceView.phase"><b>{{ maintenanceView.title }}</b><strong>{{ maintenanceView.countdown }}</strong><span>{{ maintenanceView.message }}</span></section>
       <section v-else-if="tab !== 'tutorial' && policyError" class="policy-warning"><b>运营规则暂不可用</b><span>{{ policyError }}。页面暂用安全默认值，服务端仍会在操作时进行权威校验。</span></section>
 
@@ -615,11 +615,11 @@ async function copyRoomCode() {
     </section>
 
     <template v-else>
-      <section v-if="!props.matchmakingOnly && tab !== 'tutorial' && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
-      <div v-if="!props.matchmakingOnly && tab !== 'tutorial'" class="mode-tabs">
+      <section v-if="!props.matchmakingOnly && operationsPolicy?.announcements?.length" class="long-term-announcements" data-ui-contract="long-term-announcements-above-deck"><article v-for="item in operationsPolicy.announcements" :key="item.id"><b>长期公告</b><span>{{ item.content }}</span></article></section>
+      <div v-if="!props.matchmakingOnly" class="mode-tabs">
         <button data-lobby-art-slot="match" aria-label="匹配" :class="{ active: tab === 'match' }" @click="tab = 'match'"><picture class="mode-tab-art" aria-hidden="true"><source media="(max-width: 700px)" :srcset="matchModeMobile"><img :src="matchModeWide" alt=""></picture><small>MATCH</small><b>匹配</b></button>
         <button data-lobby-art-slot="friendly" aria-label="好友房" :class="{ active: tab === 'friendly' }" @click="tab = 'friendly'"><picture class="mode-tab-art" aria-hidden="true"><source media="(max-width: 700px)" :srcset="roomModeMobile"><img :src="roomModeWide" alt=""></picture><small>ROOM</small><b>好友房</b></button>
-        <button data-lobby-art-slot="tutorial" aria-label="教学" @click="tab = 'tutorial'"><picture class="mode-tab-art" aria-hidden="true"><source media="(max-width: 700px)" :srcset="tutorialModeMobile"><img :src="tutorialModeWide" alt=""></picture><small>TUTORIAL</small><b>教学</b></button>
+        <button data-lobby-art-slot="tutorial" aria-label="教学" :class="{ active: tab === 'tutorial' }" @click="tab = 'tutorial'"><picture class="mode-tab-art" aria-hidden="true"><source media="(max-width: 700px)" :srcset="tutorialModeMobile"><img :src="tutorialModeWide" alt=""></picture><small>TUTORIAL</small><b>教学</b></button>
       </div>
       <div v-if="!props.matchmakingOnly && tab === 'match' && selectedMatchMode === 'ranked' && ranked" class="faction-totals faction-totals--overview" data-ui-contract="faction-totals-above-public-match"><article v-for="faction in ranked.config.factions" :key="faction.id" :style="{ '--accent': faction.color }"><b>{{ faction.name }}</b><span>七曜值 {{ (ranked.factionTotals[faction.name] || 0).toLocaleString() }}</span></article></div>
 
@@ -687,7 +687,7 @@ async function copyRoomCode() {
 
 <style scoped>
 .battle-hub.matchmaking-only{padding:14px}.matchmaking-only .current-deck{margin:0 0 12px}.matchmaking-only .mode-panel{margin:0;padding:16px}.matchmaking-only .ranked-profile{margin:8px 0}
-.battle-hub.tutorial-mode{width:min(1000px,calc(100% - 24px));padding:12px 0 42px}.tutorial-return{margin:0 0 8px}.tutorial-return button{min-height:44px;padding:8px 12px;border:0;background:transparent;color:#b9c9ca;font:700 13px 'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-return button:hover,.tutorial-return button:focus-visible{color:#efd27d;text-decoration:underline}
+.battle-hub>.tutorial-page.embedded{box-sizing:border-box;padding:22px;border:1px solid rgba(235,230,216,.17);background:#101821;box-shadow:0 18px 50px rgba(0,0,0,.18)}
 .faction-reset-warning{display:block;padding:14px;border:1px solid #d56d63;background:#30191b;color:#ffb6a9;font-weight:800;line-height:1.7}.ranked-rules-modal>footer{flex-wrap:wrap;gap:12px}
 
 .public-match-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.public-match-head h2{margin:4px 0}.ranked-rules-button{min-height:44px;padding:6px 2px;border:0;border-bottom:1px solid #e1c759;background:transparent;color:#f0d46d;font-weight:900}.season-name{display:flex;align-items:baseline;gap:10px;width:max-content;padding:10px 14px;border-left:4px solid #d7bc55;background:#1d1b12;color:#ead982}.season-name b{font-size:14px}.season-name span{font-size:17px;font-weight:900}
