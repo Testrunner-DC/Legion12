@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-20 手牌消费者与两项产品决定已收口，字体另排
+
+- 真实App/history /game→GamePage→原生对局设置，小中大桌面CSS宽64/74/88，逐档刷新保留且原生点牌；auto基准114.391，不能说大档比auto大。844仅large为40×56/tap/刷新通过。四案例＋两auto数值/四图，Main读完整新工具并看两图，来源前后相同，browser/server正常退出。唯一hand-card-size-current-20261020/main-acceptance.json；无WS/ACK、真机、卡图或全手机三档声明。
+- 人类call_956b65aa明确保留手牌和好友布局，9de/6bf各一次CAS32996/32997及独立终态，撤会话；单post对账918总/13待办/397resolved/508closed、阶段524/周期616。两字体诉求另排可调字号，唯一清单已由awaiting-user转实施队列，仅登记人类决定，不当已修关闭。真实ruling-followthrough与closeout/bug-closeout-current-ui-product-two-d7f.json为准。
+- 旧诊断退役第一次参数构造拒绝，现场证实两服务/旧配置全未动；修复OwnedRunner dot-source覆盖参数并补真实库构造链5项（不发SSH），body10同源复用。随后retirement-r9-r2.json真实完成：旧原件改名保全、两idle/两撤会话、测试同8c一次重启至428152、正式371661不变。R9原30＋10已启动，正在有界运行；不要重复启动/退役，等原session与最终生命周期/分类。完整性能此处仍未判通过。
+
 ## 2026-10-20 性能新入口已接通，先退役精确旧诊断
 
 - 原包8c的空releaseBaseCommit属于标准测试包合法值，只修额外准入为精确空串或小写40hex；新helper/owned/cleanup/finalizer最小派生，原SHA/候选/包/身份/清理守卫不减。durable-r5实际runPressure除helper import外与已验r4相同。新thin强制固定检查点、四路径词法及物理去重、CreateNew；R9同次读取核schema/candidate/coreSHA与lifecycle SHA，失败明确拒绝，不代替最终client/server/清理。

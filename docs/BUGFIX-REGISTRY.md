@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-20｜当前手牌设置消费者与明确产品建议处置
+
+- 既有牌库大小证据不能直接外推手牌，新增真实App+history/GamePage/Settings原生入口验证：桌面小中大实际64/74/88，刷新保存/原生选牌不发业务命令；auto114.391；844仅large40×56及真实touch上下文。四测量＋两baseline数值，四图；Main看desktop/mobile，工具10输入末尾deepEqual及当前rawSHA相同，浏览器/Vite退出。新脚本独立，原产品不变，不将stage装配或模拟投影称线上WS/原局/真机/卡图验证。
+- 人类保留现行手牌和好友布局，9de与6bf按产品决定各一次CAS32996/32997、独立读回及撤会话关闭；不是fixed_verified，不新增固定左右好友布局、不声称手牌与炉石同像素。单post对账13待办/阶段524/周期616。唯一hand-card-size-current-20261020/main-acceptance.json与后续ruling-followthrough.json、原始关单回执均保留。
+- 两字体反馈已获“另排可调字体功能”决定，登记到既有实施队列，不再误标待用户或当已上线。尚未修改字号、布局或偏好格式；后续沿共享语义字号/设置落地并验证裁切、弹层与触摸，不以卡牌尺寸代替字体可调。
+
 ## 2026-10-20｜压测当前候选准入、必需检查点及输出别名守卫
 
 - 原报告丢失共因已有18+3证明，但旧thin/R8未接。实际标准verify-l12允许测试包notes-base为空，旧helper/thin/owned误要求40hex；只接纳精确空字符串或小写40hex，缺/null/空格/数字不接纳。真实manifest SHA、包SHA、候选、PID/DLL/nonce、owned回执和恢复/清理完整性未减；cleanup与finalizer实际loader同步同源helper，避免主流程过而恢复仍被旧guard拒。
