@@ -448,6 +448,126 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void GalleryArtistPersistsForBuiltInUploadedAndCollaborationCardsWithOmitAndClearSemantics()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-gallery-artist-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var media = Upload(store, admin, "card-art");
+            var baseCard = catalog.Cards.Values.First();
+            var builtIn = store.AdminAlternateArts().First(item => item.BuiltIn);
+            var uploaded = store.SaveAlternateArt(admin, new(null, "ALT-ARTIST-001", baseCard.Id,
+                baseCard.NameZh, media.Id));
+            var collaboration = store.SaveAlternateArt(admin, new(null, "COLLAB-ARTIST-001", "",
+                "联动画师测试", media.Id, Kind: "gallery-card", Effect: "只在画廊展示。"));
+
+            store.SaveAlternateArtMetadata(admin, new(builtIn.Id, [], [], Artist: "内建画师"));
+            store.SaveAlternateArtMetadata(admin, new(uploaded.Id, [], [], Artist: "上传画师"));
+            store.SaveAlternateArtMetadata(admin, new(collaboration.Id, [], [], Artist: "联动画师"));
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            Assert.Equal("内建画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == builtIn.Id).Artist);
+            Assert.Equal("上传画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == uploaded.Id).Artist);
+            Assert.Equal("联动画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == collaboration.Id).Artist);
+
+            // Legacy clients omit Artist. That must preserve an existing artist instead of silently clearing it.
+            var legacyUpdate = reloaded.SaveAlternateArtMetadata(admin,
+                new L12AlternateArtMetadataDraft(uploaded.Id, [], []));
+            Assert.Equal("上传画师", legacyUpdate.Artist);
+
+            // An explicit empty value is the intentional clear operation.
+            var cleared = reloaded.SaveAlternateArtMetadata(admin,
+                new L12AlternateArtMetadataDraft(collaboration.Id, [], [], Artist: ""));
+            Assert.Equal("", cleared.Artist);
+            Assert.Equal("", Assert.Single(reloaded.AlternateArts(), item => item.Id == collaboration.Id).Artist);
+            var bounded = reloaded.SaveAlternateArtMetadata(admin,
+                new L12AlternateArtMetadataDraft(builtIn.Id, [], [], Artist: new string('画', 121)));
+            Assert.Equal(120, bounded.Artist.Length);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task GalleryArtistMetadataHttpRequiresPermissionAndPreservesOmittedArtist()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-gallery-artist-http-{Guid.NewGuid():N}");
+        var previousHost = Environment.GetEnvironmentVariable("L12_LISTEN_HOST");
+        L12WebSocketServer? server = null;
+        MatchRecorder? recorder = null;
+        try
+        {
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", "127.0.0.1");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            recorder = new MatchRecorder(Path.Combine(root, "matches.db"));
+            await recorder.InitializeAsync();
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
+                officialCardProducts: catalog.CardProducts);
+            var rooms = new L12RoomManager(catalog, recorder, store);
+            server = new L12WebSocketServer(rooms, recorder, store, catalog);
+            await server.StartAsync(0);
+            using var client = new HttpClient { BaseAddress = new Uri(Assert.Single(server.Addresses)) };
+            var player = store.Register("artist" + Guid.NewGuid().ToString("N")[..5], "Password123!");
+            var admin = store.Login("Admin", "L12master");
+            var art = store.AdminAlternateArts().First(item => item.BuiltIn);
+            store.SaveAlternateArtMetadata(admin.Account!, new(art.Id, [], [], Artist: "原画师"));
+
+            using (var request = Authorized(HttpMethod.Put, "/api/admin/alternate-arts/metadata", player.Token!,
+                       new { alternateArtId = art.Id, productIds = Array.Empty<string>(), rarityIds = Array.Empty<string>(), artist = "越权画师" }))
+            using (var response = await client.SendAsync(request))
+                Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+
+            using (var request = Authorized(HttpMethod.Put, "/api/admin/alternate-arts/metadata", admin.Token!,
+                       new { alternateArtId = art.Id, productIds = Array.Empty<string>(), rarityIds = Array.Empty<string>() }))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("原画师", (await response.Content.ReadFromJsonAsync<L12AlternateArtView>())!.Artist);
+            }
+
+            using (var request = Authorized(HttpMethod.Put, "/api/admin/alternate-arts/metadata", admin.Token!,
+                       new { alternateArtId = art.Id, productIds = Array.Empty<string>(), rarityIds = Array.Empty<string>(), artist = "HTTP 画师" }))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("HTTP 画师", (await response.Content.ReadFromJsonAsync<L12AlternateArtView>())!.Artist);
+            }
+
+            var publicRows = await client.GetFromJsonAsync<L12AlternateArtView[]>("/api/alternate-arts");
+            Assert.Equal("HTTP 画师", Assert.Single(publicRows!, item => item.Id == art.Id).Artist);
+
+            using (var request = Authorized(HttpMethod.Put, "/api/admin/alternate-arts/metadata", admin.Token!,
+                       new { alternateArtId = art.Id, productIds = Array.Empty<string>(), rarityIds = Array.Empty<string>(), artist = "" }))
+            using (var response = await client.SendAsync(request))
+            {
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+                Assert.Equal("", (await response.Content.ReadFromJsonAsync<L12AlternateArtView>())!.Artist);
+            }
+        }
+        finally
+        {
+            if (server is not null)
+            {
+                await server.StopAsync();
+                await server.DisposeAsync();
+            }
+            if (recorder is not null) await recorder.DisposeAsync();
+            SqliteConnection.ClearAllPools();
+            Environment.SetEnvironmentVariable("L12_LISTEN_HOST", previousHost);
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AlternateArtRegistrySearchIsFilteredAndPagedWithoutLoadingTheFullRegistry()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-search-{Guid.NewGuid():N}");

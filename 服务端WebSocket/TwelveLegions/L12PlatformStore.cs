@@ -409,6 +409,7 @@ public sealed partial class L12PlatformStore
         public string AlternateArtId { get; set; } = string.Empty;
         public List<string> ProductIds { get; set; } = [];
         public List<string> RarityIds { get; set; } = [];
+        public string Artist { get; set; } = string.Empty;
         public string ImageMediaAssetId { get; set; } = string.Empty;
         public string UpdatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

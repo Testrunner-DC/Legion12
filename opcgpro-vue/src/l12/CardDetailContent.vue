@@ -4,7 +4,7 @@ import { cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { displayCardNumber, type DeckCard } from './decks'
 import CardImage from './CardImage.vue'
 
-type DetailCard = DeckCard & { galleryStandalone?: boolean }
+type DetailCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
 
 const props = withDefaults(defineProps<{
   card: DetailCard
@@ -41,6 +41,7 @@ function hasCostDimension(card: DeckCard) {
       <span v-if="card.profession">{{ card.profession }}</span>
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>
+    <p v-if="card.artist" class="archive-artist" data-gallery-artist><b>画师</b><span>{{ card.artist }}</span></p>
     <dl v-if="!standalone">
       <template v-if="hasCostDimension(card)"><dt>费用</dt><dd>{{ card.cost }}</dd></template>
       <template v-if="card.troops !== undefined"><dt>兵力</dt><dd>{{ card.troops }}</dd></template>
@@ -59,4 +60,5 @@ function hasCostDimension(card: DeckCard) {
 <style scoped>
 /* 同一图鉴详情复用于窄侧栏时，横卡的固定理想宽度不能超过宿主容器。 */
 .archive-detail-image,.archive-modal-image{box-sizing:border-box;max-width:100%;min-width:0;overflow:hidden}
+.archive-artist{display:flex;align-items:baseline;gap:8px;margin:10px 0;color:#cbd3d4}.archive-artist b{color:#54c7cf}.archive-artist span{overflow-wrap:anywhere}
 </style>

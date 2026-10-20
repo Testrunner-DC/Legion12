@@ -9,7 +9,7 @@ import CardDetailContent from './CardDetailContent.vue'
 import { alternateArtApi, authState, platformState, type AlternateArt } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
-type CatalogCard = DeckCard & { galleryStandalone?: boolean }
+type CatalogCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
 type ArchivePage = 'catalog' | 'gallery'
 
 const typeLabels: Record<string, string> = {
@@ -70,6 +70,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       rarity: art.rarities?.map(item => item.name).join(' / ') || undefined,
       traits: [],
       effect: art.effect || '',
+      artist: art.artist || undefined,
       products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : []),
       galleryStandalone: true,
     }
@@ -85,6 +86,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
     archiveBaseCardId: base.id,
     products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : base.products),
     rarity: art.rarities !== undefined ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
+    artist: art.artist || undefined,
   }
 }
 const catalogAlternateArts = computed(() => authState.verified && platformState.account?.role === 'admin'
@@ -107,6 +109,7 @@ function withGalleryMetadata(card: CatalogCard): CatalogCard {
     rarity: overlay.rarities !== undefined
       ? overlay.rarities.map(item => item.name).join(' / ') || undefined
       : card.rarity,
+    artist: overlay.artist || undefined,
   }
 }
 const galleryCards = computed(() => {

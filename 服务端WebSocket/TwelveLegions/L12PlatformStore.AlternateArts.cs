@@ -6,7 +6,7 @@ public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseC
     string BaseCardName = "", DateTimeOffset? GrantedAt = null, string GrantReason = "",
     IReadOnlyList<L12AlternateArtProductView>? Products = null,
     IReadOnlyList<L12AlternateArtRarityView>? Rarities = null, string Kind = "alternate-art",
-    string Effect = "");
+    string Effect = "", string Artist = "");
 public sealed record L12AlternateArtSearchPage(IReadOnlyList<L12AlternateArtView> Items, int Total, int Page, int PageSize);
 public sealed record L12AlternateArtGrantNotificationView(string Id, string AlternateArtId, string DisplayName,
     string ArtCode, string BaseCardId, string BaseCardName, string Reason, DateTimeOffset GrantedAt,
@@ -23,7 +23,7 @@ public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string Bas
 public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
 public sealed record L12AlternateArtRarityDraft(string? Id, string Code, string Name, bool Active = true);
 public sealed record L12AlternateArtMetadataDraft(string AlternateArtId, IReadOnlyList<string> ProductIds,
-    IReadOnlyList<string> RarityIds);
+    IReadOnlyList<string> RarityIds, string? Artist = null);
 public sealed record L12AlternateArtImageDraft(string AlternateArtId, string MediaAssetId);
 public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string AccountId, string SourceKind,
     string SourceReference = "");
@@ -148,6 +148,9 @@ public sealed partial class L12PlatformStore
             }
             row.ProductIds = productIds.ToList();
             row.RarityIds = rarityIds.ToList();
+            // Null means an older client omitted the field and must not erase newer data.
+            // An explicit empty string is the supported clear operation.
+            if (draft.Artist is not null) row.Artist = LimitSiteText(draft.Artist, 120);
             row.UpdatedByAccountId = actor.Id;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var after = FindAlternateArtLocked(artId, true)!;
@@ -795,13 +798,13 @@ public sealed partial class L12PlatformStore
         return ids.Where(byId.ContainsKey).Select(id => ToAlternateArtRarityView(byId[id])).ToArray();
     }
 
-    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities, string ImageMediaAssetId,
+    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities, string Artist, string ImageMediaAssetId,
         DateTimeOffset UpdatedAt) EffectiveMetadataLocked(
         string artId, IReadOnlyList<string> defaultProducts, IReadOnlyList<string> defaultRarities)
     {
         var metadata = _data.AlternateArtMetadata.FirstOrDefault(item => item.AlternateArtId == artId);
-        return metadata is null ? (defaultProducts, defaultRarities, string.Empty, DateTimeOffset.UnixEpoch)
-            : (metadata.ProductIds, metadata.RarityIds, metadata.ImageMediaAssetId, metadata.UpdatedAt);
+        return metadata is null ? (defaultProducts, defaultRarities, string.Empty, string.Empty, DateTimeOffset.UnixEpoch)
+            : (metadata.ProductIds, metadata.RarityIds, metadata.Artist, metadata.ImageMediaAssetId, metadata.UpdatedAt);
     }
 
     private L12AlternateArtView ToAlternateArtView(AlternateArtRow row, bool admin)
@@ -815,7 +818,7 @@ public sealed partial class L12PlatformStore
             row.CreatedAt, row.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", "", false,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : "",
-            null, "", products, rarities, row.Kind, row.Effect);
+            null, "", products, rarities, row.Kind, row.Effect, metadata.Artist);
     }
 
     private L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row, bool admin)
@@ -832,7 +835,7 @@ public sealed partial class L12PlatformStore
             DateTimeOffset.UnixEpoch, metadata.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", row.CardImageId, true,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : row.BaseCardId,
-            null, "", products, rarities);
+            null, "", products, rarities, Artist: metadata.Artist);
     }
 
     private L12AlternateArtView? FindAlternateArtLocked(string alternateArtId, bool admin = false)
