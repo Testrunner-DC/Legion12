@@ -29,6 +29,7 @@ if(effectSliceOnly) {
 }
 const effectViewports = effectViewportName==='portrait'?[{width:390,height:844}]:[{width:844,height:390}]
 if(effectSliceOnly) report.effectViewport=effectViewportName
+if(effectSliceOnly) report.effectEvidenceBoundary='The owner-browser chain proves native touch, exact submitted identities/order, same-request authoritative acceptance, public placement count, and ordinary owner projection. It does not directly observe final private library order or the opponent recipient projection. Named engine regressions are mapped separately by their actual assertions; public-event identity protection is not a full recipient-projection test.'
 let visualCardManifest = null
 if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly || process.env.L12_TUTORIAL_REAL_CARD_ART === '1') {
   const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json')
@@ -70,8 +71,84 @@ for (const port of [serverPort, uiPort]) await new Promise((resolve, reject) => 
 })
 const hostRoot = path.join(cache, 'host')
 assert(!fs.existsSync(hostRoot), 'Never reuse an old runtime or overwrite a prior attempt')
-fs.cpSync(serverSource, hostRoot, { recursive: true,
-  filter: source => path.basename(source) !== 'runtime' })
+function planWindowsHostRuntimeCopy(runtimeTargets,runtimeInventory) {
+  const safeRelative=value=>{
+    const relative=String(value||'').replaceAll('\\','/')
+    assert(relative&&!path.posix.isAbsolute(relative)&&!/^[a-z]:/i.test(relative),'Illegal runtime path: '+value)
+    assert(path.posix.normalize(relative)===relative&&!relative.split('/').includes('..'),'Illegal runtime path: '+value)
+    return relative
+  }
+  const targets=runtimeTargets.map(asset=>({...asset,relative:safeRelative(asset.relative)}))
+  for(const asset of targets) assert(asset.relative.startsWith('runtimes/'+asset.rid+'/'),
+    'Runtime target path does not match its RID: '+asset.relative)
+  const declaredRids=new Set(targets.map(asset=>asset.rid).filter(Boolean))
+  const declaredWindowsAssets=new Set(targets.filter(asset=>asset.rid==='win-x64').map(asset=>asset.relative))
+  const selectedRuntimeFiles=targets.filter(asset=>asset.rid==='win-x64'&&asset.assetType==='native'
+    &&path.posix.extname(asset.relative).toLowerCase()==='.dll').map(asset=>asset.relative).sort()
+  assert(selectedRuntimeFiles.length>=2,'Bounded Windows host copy requires its declared win-x64 native DLLs')
+  for(const raw of runtimeInventory) {
+    const entry={...raw,relative:safeRelative(raw.relative)}
+    assert(entry.kind!=='link','Linked host input is forbidden: '+entry.relative)
+    const parts=entry.relative.split('/')
+    if(parts[0]==='runtimes'&&parts.length===2)
+      assert(entry.kind==='directory'&&declaredRids.has(parts[1]),'Unknown runtime directory: '+entry.relative)
+    if(entry.kind==='file'&&entry.relative.startsWith('runtimes/win-x64/'))
+      assert(declaredWindowsAssets.has(entry.relative),'Unknown win-x64 runtime asset: '+entry.relative)
+  }
+  return {selectedRuntimeFiles,declaredRids:[...declaredRids].sort()}
+}
+const hostCopyMode=process.env.L12_TUTORIAL_HOST_COPY_MODE||'full'
+if(hostCopyMode==='win-x64') {
+  const normalizedSource=path.resolve(serverSource)
+  const depsPath=path.join(normalizedSource,'GrandUMIServer.deps.json')
+  const deps=JSON.parse(fs.readFileSync(depsPath,'utf8'))
+  const target=Object.values(deps.targets||{})[0]
+  assert(target,'GrandUMIServer deps target is required for a bounded Windows host copy')
+  const runtimeTargets=Object.values(target).flatMap(library=>Object.entries(library.runtimeTargets||{})
+    .map(([relative,detail])=>({relative,rid:detail.rid,assetType:detail.assetType})))
+  const runtimesRoot=path.join(normalizedSource,'runtimes')
+  const runtimeInventory=[]
+  for(const entry of fs.readdirSync(runtimesRoot,{withFileTypes:true})) {
+    runtimeInventory.push({relative:'runtimes/'+entry.name,kind:entry.isSymbolicLink()?'link':entry.isDirectory()?'directory':'file'})
+  }
+  const winRoot=path.join(runtimesRoot,'win-x64')
+  const walkFiles=(root,inventory=null)=>fs.readdirSync(root,{withFileTypes:true}).flatMap(entry=>{
+    const full=path.join(root,entry.name)
+    if(inventory)inventory.push({relative:path.relative(normalizedSource,full).replaceAll(path.sep,'/'),
+      kind:entry.isSymbolicLink()?'link':entry.isDirectory()?'directory':'file'})
+    return entry.isDirectory()?walkFiles(full,inventory):[full]
+  })
+  walkFiles(winRoot,runtimeInventory)
+  const runtimePlan=planWindowsHostRuntimeCopy(runtimeTargets,runtimeInventory)
+  const selectedRuntimeFiles=new Set(runtimePlan.selectedRuntimeFiles.map(relative=>relative.replaceAll('/',path.sep)))
+  fs.cpSync(normalizedSource,hostRoot,{recursive:true,filter:source=>{
+    const stat=fs.lstatSync(source)
+    assert(!stat.isSymbolicLink(),'Linked host input is forbidden: '+source)
+    const relative=path.relative(normalizedSource,source)
+    if(!relative)return true
+    if(relative==='runtime'||relative.startsWith('runtime'+path.sep))return false
+    if(relative==='runtimes')return true
+    if(relative.startsWith('runtimes'+path.sep)) {
+      if(stat.isDirectory())return [...selectedRuntimeFiles].some(file=>file===relative||file.startsWith(relative+path.sep))
+      return selectedRuntimeFiles.has(relative)
+    }
+    return path.extname(relative).toLowerCase()!=='.pdb'
+  }})
+  const copied=walkFiles(hostRoot).map(file=>({relative:path.relative(hostRoot,file),bytes:fs.statSync(file).size,
+    sha256:crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex').toUpperCase()}))
+  assert.deepEqual(copied.filter(file=>file.relative.startsWith('runtimes'+path.sep)).map(file=>file.relative).sort(),
+    [...selectedRuntimeFiles].sort(),'Only deps-declared win-x64 native DLLs may enter the bounded host')
+  for(const file of copied) assert.equal(file.sha256,
+    crypto.createHash('sha256').update(fs.readFileSync(path.join(normalizedSource,file.relative))).digest('hex').toUpperCase(),
+    'Copied host file hash mismatch: '+file.relative)
+  report.hostCopy={mode:hostCopyMode,files:copied.length,bytes:copied.reduce((sum,file)=>sum+file.bytes,0),
+    runtimeFiles:[...selectedRuntimeFiles].sort(),manifest:copied}
+} else {
+  assert.equal(hostCopyMode,'full','Unknown tutorial host copy mode')
+  fs.cpSync(serverSource, hostRoot, { recursive: true,
+    filter: source => path.basename(source) !== 'runtime' })
+  report.hostCopy={mode:hostCopyMode,boundary:'Original full-copy behavior preserved'}
+}
 const dll = path.join(hostRoot, 'GrandUMIServer.dll')
 report.dllSha256 = crypto.createHash('sha256').update(fs.readFileSync(dll)).digest('hex').toUpperCase()
 report.sourceCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()
@@ -107,7 +184,7 @@ const observe = () => page.evaluate(async () => {
   return { status: s.status, pending: s.pendingAction, notice: s.notice, room: s.room?.roomCode,
     tutorial: s.tutorial, gm: s.gmEnabled, phase: s.game?.phase, revision: s.game?.revision,
     winner: s.game?.winner, legalAttackTargets: s.game?.legalAttackTargets,
-    matchId: s.game?.matchId, prompts: s.game?.prompts || [],
+    matchId: s.game?.matchId, prompts: s.game?.prompts || [], recentEvents: s.game?.recentEvents || [],
     self: s.game?.players.find(p=>p.playerIndex===s.game.you), defense: s.game?.pendingDefense,
     enemy: s.game?.players.find(p=>p.playerIndex!==s.game.you),
     learning: JSON.parse(localStorage.getItem('l12-tutorial-course:v2:account:'+encodeURIComponent(s.accountId||'')) || 'null') }
@@ -229,6 +306,7 @@ async function waitCommandAck(transportStart, predicate, beforeRevision, label) 
     const ack=sent&&typeof sent.requestId==='string'&&sent.requestId.length>0&&report.transport.slice(transportStart).find(entry=>entry.direction==='received'&&entry.type==='gameState'
       &&entry.requestId===sent.requestId&&entry.revision>beforeRevision)
     if(sent&&ack)return {requestId:sent.requestId,command:sent.command,promptId:sent.promptId,selectedValues:sent.cardInstanceIds??[],
+      topCardInstanceIds:sent.topCardInstanceIds??[],bottomCardInstanceIds:sent.bottomCardInstanceIds??[],
       beforeRevision,ackRevision:ack.revision,tutorial:ack.tutorial}
     await pause(60)
   }
@@ -293,6 +371,7 @@ try {
   page.on('websocket',socket=>{
     socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type,
       promptId:value.command?.promptId,cardInstanceId:value.command?.cardInstanceId,cardInstanceIds:value.command?.cardInstanceIds,
+      topCardInstanceIds:value.command?.topCardInstanceIds,bottomCardInstanceIds:value.command?.bottomCardInstanceIds,
       choice:value.command?.choice,row:value.command?.row,slot:value.command?.slot,ability:value.command?.ability,target:value.command?.target})}catch{}})
     socket.on('framereceived',frame=>{try{const wire=JSON.parse(String(frame.payload))
       const value=wire.type==='gameStateCardFrameV1'?wire.payload:wire
@@ -704,10 +783,64 @@ try {
     const searchPrompt=searchState.prompts.find(p=>p.playerIndex===0&&p.validChoices.includes(legionId))
     assert(searchPrompt.validChoices.includes(legionId))
     assert.equal(searchPrompt.data[legionId+':cardId'],'ST01-08')
-    await choosePromptCard(searchPrompt.promptId,legionId,'select Nie from actual search')
-    await settleTo(s=>s.tutorial?.stepId==='response-search-order','remaining library order')
+    const handBeforeSearch=searchState.self.hand.map(card=>card.instanceId)
+    const searchTransportStart=report.transport.length
+    const searchInteraction=await choosePromptCard(searchPrompt.promptId,legionId,'select Nie from actual search')
+    const orderState=await settleTo(s=>s.tutorial?.stepId==='response-search-order','remaining library order')
+    const searchAck=await waitCommandAck(searchTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===searchPrompt.promptId,searchState.revision,'Shanhe private library search choice')
+    assert.deepEqual(searchAck.selectedValues,[legionId],'Search sends the exact touched private library card')
+    assert(!handBeforeSearch.includes(legionId)&&orderState.self.hand.some(card=>card.instanceId===legionId),
+      'The exact searched legion enters the owner hand after authoritative ACK')
+    assert(orderState.self.relic?.instanceId===searchState.tutorial.focus.artifactInstanceId&&orderState.self.relic.tapped,
+      'Shanhe source remains tapped after the search step')
+    report.effectReceipts.push({type:'library-search-pick',abilityId:'S01-0117:ability:active:ba48403c4da1e24c',viewport,
+      touchStart:searchInteraction.choiceTouch,prompt:{promptId:searchPrompt.promptId,kind:searchPrompt.kind,
+        minChoose:searchPrompt.minChoose,maxChoose:searchPrompt.maxChoose,validChoices:searchPrompt.validChoices},ack:searchAck,
+      readback:{revision:orderState.revision,stepId:orderState.tutorial.stepId,selectedCardInstanceId:legionId,
+        selectedCardId:orderState.self.hand.find(card=>card.instanceId===legionId)?.cardId,zone:'hand',sourceTapped:true,
+        nextPromptKind:orderState.prompts.find(prompt=>prompt.playerIndex===0)?.kind}})
     await readScene(viewport,'response-search-order',responseReadings)
-    await tap(page.locator('[data-tutorial-action="place-all-top"]').filter({visible:true}),'return actual remainder to top')
+    const orderPrompt=orderState.prompts.find(prompt=>prompt.playerIndex===0&&prompt.kind==='order')
+    assert(orderPrompt&&orderPrompt.data?.placementMode==='all-top-bottom','Shanhe remainder uses the private all-top-or-bottom order prompt')
+    const originalOrder=[...orderPrompt.validChoices]
+    assert(originalOrder.length>=2&&new Set(originalOrder).size===originalOrder.length,'Shanhe order prompt carries the distinct remaining cards')
+    assert(originalOrder.every(id=>orderPrompt.data[id+':cardId']),'Owner prompt carries private card detail for every remainder')
+    assert.equal(orderState.self.libraryTop??null,null,'Ordinary player projection does not expose the private library top')
+    const orderCards=page.locator('.all-placement-row .prompt-card-candidate')
+    assert.equal(await orderCards.count(),originalOrder.length,'Every private remainder has one visible order card')
+    const firstSwapTouch=await tap(orderCards.nth(0),'select first remainder for a real order swap')
+    const secondSwapTouch=await tap(orderCards.nth(1),'swap first two remainders by touch')
+    const submittedOrder=[originalOrder[1],originalOrder[0],...originalOrder.slice(2)]
+    const orderTransportStart=report.transport.length
+    const orderConfirmTouch=await tap(page.locator('[data-tutorial-action="place-all-top"]').filter({visible:true}),'return reordered actual remainder to top')
+    const coverState=await waitState(s=>s.tutorial?.stepId==='response-cover'&&!s.pending,'response cover after authoritative library order')
+    const orderAck=await waitCommandAck(orderTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===orderPrompt.promptId,orderState.revision,'Shanhe private library order placement')
+    assert.deepEqual(orderAck.topCardInstanceIds,submittedOrder,'Submitted top order matches the exact touch-swapped order')
+    assert.deepEqual(orderAck.bottomCardInstanceIds,[],'No remainder is submitted to the library bottom')
+    assert.deepEqual([...orderAck.topCardInstanceIds].sort(),[...originalOrder].sort(),'Placement preserves the full inspected remainder set')
+    assert(!coverState.prompts.some(prompt=>prompt.promptId===orderPrompt.promptId),'Accepted private order prompt is closed')
+    assert(coverState.self.hand.some(card=>card.instanceId===legionId),'Searched legion stays in the owner hand after placement')
+    assert(originalOrder.every(id=>!coverState.self.hand.some(card=>card.instanceId===id)
+      &&!coverState.self.graveyard.some(card=>card.instanceId===id)
+      &&!coverState.self.field.flat().some(card=>card?.instanceId===id)),'Every unselected inspected card remains outside public and hand zones')
+    assert(coverState.self.relic?.instanceId===searchState.tutorial.focus.artifactInstanceId&&coverState.self.relic.tapped,
+      'Shanhe source remains tapped after the full search and order chain')
+    const reorderEvent=[...coverState.recentEvents].reverse().find(event=>event.type==='reorder')
+    assert(reorderEvent&&reorderEvent.text===`将 ${originalOrder.length} 张牌放回牌库顶部、0 张牌放回牌库底部`,
+      'Authoritative event confirms the accepted placement count and destination')
+    assert.equal(coverState.self.libraryTop??null,null,'Final ordinary projection still keeps the exact library order private')
+    report.effectReceipts.push({type:'library-order-placement',abilityId:'S01-0117:ability:active:ba48403c4da1e24c',viewport,
+      touchStart:firstSwapTouch,swapTouch:secondSwapTouch,confirmation:orderConfirmTouch,
+      prompt:{promptId:orderPrompt.promptId,kind:orderPrompt.kind,placementMode:orderPrompt.data.placementMode,
+        minChoose:orderPrompt.minChoose,maxChoose:orderPrompt.maxChoose,originalOrder},ack:orderAck,
+      readback:{revision:coverState.revision,stepId:coverState.tutorial.stepId,submittedOrder,destination:'library-top',
+        preservedSet:true,sourceTapped:true,reorderEvent:{type:reorderEvent.type,text:reorderEvent.text},
+        ownerProjectionLibraryTopHidden:true,serverReceiptBoundary:'Submitted order and accepted count; the browser projection does not expose the authoritative private library order.',
+        opponentProjectionBoundary:'Not observed in this one-client UI chain.',
+        combinedEngineEvidence:['NewSystemsTests.ShanheShejituReusesObservingStarsAllTopBottomOrdering',
+          'LibraryPlacementTransactionTests.RestoredOrderCompletesExactlyOnceAndDoesNotRevealCards']}})
     for(const [stage,card,row] of [['response-cover',responseCounter,1]]) {
       await waitState(s=>s.tutorial?.stepId===stage&&!s.pending,stage)
       await readScene(viewport,stage,responseReadings)
@@ -882,9 +1015,9 @@ try {
   }
   assert.deepEqual(report.errors,[])
   if(effectSliceOnly) {
-    assert.equal(report.effectReceipts.length,3,'Three exact effect interactions in this explicit independent mobile direction')
+    assert.equal(report.effectReceipts.length,5,'Five exact effect interactions in this explicit independent mobile direction')
     for(const {width} of effectViewports) assert.deepEqual(report.effectReceipts.filter(row=>row.viewport.width===width).map(row=>row.type).sort(),
-      ['hand-card-cost','hand-card-to-board-slot','resource-return'])
+      ['hand-card-cost','hand-card-to-board-slot','library-order-placement','library-search-pick','resource-return'])
     assert(report.effectReceipts.every(row=>row.touchStart.input==='touchscreen'),'Every accepted effect interaction begins with native touch')
   }
   report.sourceAfter=hashes()

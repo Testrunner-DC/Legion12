@@ -4,13 +4,42 @@ import fs from 'node:fs'
 // Exercise the actual runner's correlation function without a browser, host,
 // output directory, or wall-clock waiting. These are QA-oracle tests only.
 const source = fs.readFileSync(new URL('./test-tutorial-ui.mjs', import.meta.url), 'utf8')
+const planBegin=source.indexOf('function planWindowsHostRuntimeCopy(')
+const planEnd=source.indexOf('const hostCopyMode=',planBegin)
+assert(planBegin>=0&&planEnd>planBegin)
+const planFactory=new Function('assert','path',source.slice(planBegin,planEnd)+'\nreturn planWindowsHostRuntimeCopy;')
+const runtimePlan=planFactory(assert,{posix:{isAbsolute:value=>value.startsWith('/'),normalize:value=>{
+  const parts=[]
+  for(const part of value.split('/'))if(part==='..')parts.pop();else if(part!=='.'&&part!=='')parts.push(part)
+  return parts.join('/')
+},extname:value=>value.includes('.')?value.slice(value.lastIndexOf('.')):''}})
+const runtimeTargets=[
+  {relative:'runtimes/win-x64/native/e_sqlite3.dll',rid:'win-x64',assetType:'native'},
+  {relative:'runtimes/win-x64/native/libSkiaSharp.dll',rid:'win-x64',assetType:'native'},
+  {relative:'runtimes/win-x64/native/libSkiaSharp.pdb',rid:'win-x64',assetType:'native'},
+  {relative:'runtimes/linux-x64/native/libSkiaSharp.so',rid:'linux-x64',assetType:'native'},
+]
+const runtimeInventory=[
+  {relative:'runtimes/win-x64',kind:'directory'},{relative:'runtimes/linux-x64',kind:'directory'},
+  {relative:'runtimes/win-x64/native',kind:'directory'},
+  ...runtimeTargets.filter(asset=>asset.rid==='win-x64').map(asset=>({relative:asset.relative,kind:'file'})),
+]
+assert.deepEqual(runtimePlan(runtimeTargets,runtimeInventory).selectedRuntimeFiles,
+  ['runtimes/win-x64/native/e_sqlite3.dll','runtimes/win-x64/native/libSkiaSharp.dll'])
+for(const invalid of [
+  {targets:runtimeTargets,inventory:[...runtimeInventory,{relative:'runtimes/plan9-x64',kind:'directory'}]},
+  {targets:runtimeTargets,inventory:runtimeInventory.map((entry,index)=>index===0?{...entry,kind:'link'}:entry)},
+  {targets:runtimeTargets,inventory:[...runtimeInventory,{relative:'runtimes/win-x64/native/injected.dll',kind:'file'}]},
+  {targets:[...runtimeTargets,{relative:'runtimes/win-x64/../escape.dll',rid:'win-x64',assetType:'native'}],inventory:runtimeInventory},
+]) assert.throws(()=>runtimePlan(invalid.targets,invalid.inventory))
 const begin = source.indexOf('async function waitCommandAck(')
 const end = source.indexOf('async function settleTo(', begin)
 assert(begin >= 0 && end > begin)
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const exercise = new AsyncFunction('report', 'pause', 'Date', source.slice(begin, end)
   + '\nreturn waitCommandAck(0,entry=>entry.promptId==="bound-prompt",10,"synthetic oracle");')
-const sent = { direction: 'sent', type: 'gameAction', command: 'resolvePrompt', requestId: 'bound-request', promptId: 'bound-prompt', cardInstanceIds: ['chosen-instance'] }
+const sent = { direction: 'sent', type: 'gameAction', command: 'resolvePrompt', requestId: 'bound-request', promptId: 'bound-prompt',
+  cardInstanceIds: ['chosen-instance'], topCardInstanceIds: ['top-2','top-1'], bottomCardInstanceIds: [] }
 const ack = { direction: 'received', type: 'gameState', requestId: 'bound-request', revision: 11 }
 const cases = [
   { label: 'same-request-advance', rows: [sent, ack], passes: true },
@@ -30,6 +59,8 @@ for (const item of cases) {
     const result = await run()
     assert.equal(result.requestId, 'bound-request')
     assert.deepEqual(result.selectedValues, ['chosen-instance'])
+    assert.deepEqual(result.topCardInstanceIds, ['top-2','top-1'])
+    assert.deepEqual(result.bottomCardInstanceIds, [])
     assert.equal(result.ackRevision, 11)
   } else await assert.rejects(run, /No same-request authoritative ACK/)
 }
@@ -96,5 +127,5 @@ for(const target of [0,1,2]) for(const mode of ['closed','sync-throw','async-rej
   publicCloseCases++
 }
 console.log(JSON.stringify({ status: 'passed', cases: cases.length, viteFinalizerCases:5,
-  publicAckCases:cases.length,publicCloseCases,actualRunnerFunction: true,
+  publicAckCases:cases.length,publicCloseCases,runtimeCopyGuardCases:5,actualRunnerFunction: true,
   boundary: 'correlation oracle only; normalized-delta fixture does not test the codec or claim engine/touch coverage', browsers: 0, filesWritten: 0 }))
