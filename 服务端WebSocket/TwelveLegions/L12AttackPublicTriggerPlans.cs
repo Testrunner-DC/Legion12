@@ -222,7 +222,8 @@ public sealed partial class L12GameEngine
                     break;
                 case "enemy-covered-counter":
                     steps.Add(PublicTriggerStep("covered-counter", "target", "源博雅：预先选择对方后排1张覆盖的反击战术",
-                        opponent.Field[1].Where(card => card is { CardType: "tactic" }).Select(card => card!.InstanceId)));
+                        opponent.Field[1].Where(card => card is { CardType: "tactic" }).Select(card => card!.InstanceId),
+                        allowCancel: false));
                     break;
                 case "own-front-gaotianyuan":
                     steps.Add(PublicTriggerStep("field-legion", "target", "稻姬：预先选择我方前排1张其他低兵力【高天原】军团",

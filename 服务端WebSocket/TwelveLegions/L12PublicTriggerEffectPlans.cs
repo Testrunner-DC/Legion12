@@ -793,7 +793,8 @@ public sealed partial class L12GameEngine
                 steps =
                 [
                     PublicTriggerStep("target-morale", "morale", "月读：预先选择1张休整士气转为活跃",
-                        player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId)),
+                        player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId),
+                        allowCancel: false),
                 ];
                 break;
             case ("S02-0523", "trojan-after-attack", _):

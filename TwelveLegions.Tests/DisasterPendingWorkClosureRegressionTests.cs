@@ -149,17 +149,39 @@ public sealed class DisasterPendingWorkClosureRegressionTests
     [Trait("L12Evidence", "rule:disaster-after-declined-work")]
     public void ExistingDelegatedDeclarationDeclineEndsOnlyItsOwnWorkAndReleasesDisaster(int controller)
     {
-        // Preserve the existing declaration cancellation contract; this test does
-        // not introduce a new card-optionality ruling.
         var scene = CreateScene(controller, 1, 2026100970 + controller);
         var game = scene.Game;
-        PlayAndDeclareRamses(game, controller, scene.RamsesId, scene.DelegateIds);
+        var owner = game.State.Players[controller];
+        var horemheb = Card("S01-0205", $"work-horemheb-{controller}", controller);
+        var guard = Card("S01-0212", $"work-guard-{controller}", controller);
+        owner.Field[0][1] = horemheb;
+        owner.Field[1][0] = guard;
+        Assert.True(game.Handle(controller,
+            new L12Command("playCard", scene.RamsesId, Row: 0, Slot: 0)).Accepted);
+        var payment = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("play-morale-choice", payment.Continuation);
+        var paymentCost = int.Parse(payment.Data["cost"]);
+        var ordinaryMorale = owner.Morale.Where(card => !card.Tapped)
+            .Select(card => card.InstanceId).Take(paymentCost).ToList();
+        Assert.Equal(paymentCost, ordinaryMorale.Count);
+        Assert.DoesNotContain(guard.InstanceId, ordinaryMorale);
+        Assert.True(game.Handle(controller, new L12Command("resolvePrompt", PromptId: payment.PromptId,
+            CardInstanceIds: ordinaryMorale)).Accepted);
+        Assert.Null(game.State.ActiveDisaster);
+        var declaration = Assert.Single(game.State.PendingPrompts);
+        Assert.Equal("pending-activation", declaration.Continuation);
+        Assert.Contains(horemheb.InstanceId, declaration.ValidChoices);
+        Assert.True(game.Handle(controller, new L12Command("resolvePrompt", PromptId: declaration.PromptId,
+            CardInstanceIds: [horemheb.InstanceId])).Accepted);
         PassResponses(game);
         Assert.Null(game.State.ActiveDisaster);
         var prompt = Assert.Single(game.State.PendingPrompts);
-        Assert.Contains("skip", prompt.ValidChoices);
+        Assert.Equal(["mode:none", "mode:use"], prompt.ValidChoices);
         Assert.True(game.Handle(controller,
-            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "skip")).Accepted);
+            new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: "mode:none")).Accepted);
+        Assert.False(horemheb.HasCharge);
+        Assert.Same(guard, owner.Field[1][0]);
+        Assert.DoesNotContain(owner.Graveyard, card => card.InstanceId == guard.InstanceId);
         DrainRemainingPrompts(game);
         Assert.Contains(game.State.Players[1 - controller].Field.SelectMany(row => row),
             card => card?.InstanceId == scene.VictimIds[0]);

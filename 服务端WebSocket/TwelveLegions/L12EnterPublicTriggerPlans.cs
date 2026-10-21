@@ -179,7 +179,8 @@ public sealed partial class L12GameEngine
                 One("target-morale", "returnCost", "孙武：预先选择返还的1张士气", Morale(1),
                     "mode:use", isCostSelection: true); break;
             case "thutmose": One("enemy-legion", "target", "图特摩斯三世：预先选择击杀目标",
-                enemy.Where(card => card.Troops <= 5000).Select(card => card.InstanceId)); break;
+                enemy.Where(card => card.Troops <= 5000).Select(card => card.InstanceId),
+                allowCancel: false); break;
             case "ramses": Many("field-legion", "targets", "拉美西斯二世：预先选择1至3张其他太阳城军团并确定顺序",
                 own.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng")
                         && card.CardId != source.CardId)
