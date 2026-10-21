@@ -229,7 +229,7 @@ public sealed partial class L12GameEngine
                     steps.Add(PublicTriggerStep("field-legion", "target", "稻姬：预先选择我方前排1张其他低兵力【高天原】军团",
                         PublicFactionLegions(player, "gaotianyuan").Where(card => card.InstanceId != source.InstanceId
                                 && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                                && card.Troops <= 5000).Select(card => card.InstanceId)));
+                                && card.Troops <= 5000).Select(card => card.InstanceId), allowCancel: false));
                     break;
             }
         }

@@ -192,7 +192,8 @@ public sealed partial class L12GameEngine
                 One("field-legion", "discardCost", "霍列姆赫布：预先选择弃置的陵墓守卫",
                     tombGuards.Select(card => card.InstanceId), "mode:use", isCostSelection: true); break;
             case "ankh": One("field-legion", "target", "安卡神碑：选择本回合兵力+2000的陵墓守卫",
-                own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId)); break;
+                own.Where(card => card.CardId == "S01-0212").Select(card => card.InstanceId),
+                allowCancel: false); break;
             case "canopic-one": One("field-legion", "targets", "卡诺匹斯罐一：选择本回合兵力+2000并获得强攻的太阳城军团",
                 own.Where(card => L12StructuredCardRules.HasFaction(player, card, "taiyangcheng"))
                     .Select(card => card.InstanceId), allowCancel: false); break;
@@ -213,12 +214,14 @@ public sealed partial class L12GameEngine
                     enemy.Where(card => card.Troops <= 3000 && !L12SpecialDeckRules.IsDerivedSpecialCard(card))
                         .Select(card => card.InstanceId), "mode:use"); break;
             case "nobunaga": One("enemy-legion", "target", "织田信长：预先选择击杀目标",
-                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 4)).Select(card => card.InstanceId)); break;
+                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 4)).Select(card => card.InstanceId),
+                allowCancel: false); break;
             case "uesugi":
             {
                 var x = State.Players.SelectMany(owner => owner.Field[1]).Count(card => card is { CardType: "tactic" });
                 One("enemy-legion", "target", $"上杉谦信：预先选择费用不高于{x}的击杀目标",
-                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, x)).Select(card => card.InstanceId)); break;
+                    enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, x)).Select(card => card.InstanceId),
+                    allowCancel: false); break;
             }
             case "hijikata":
             {
@@ -236,15 +239,16 @@ public sealed partial class L12GameEngine
                         enemy.Select(card => card.InstanceId), allowCancel: false);
                 break;
             case "abe": One("field-legion", "target", "安倍晴明：预先选择获得免死的我方军团",
-                own.Select(card => card.InstanceId)); break;
+                own.Select(card => card.InstanceId), allowCancel: false); break;
             case "tachibana": One("enemy-legion", "target", "立花誾千代：预先选择费用-3目标",
-                enemy.Select(card => card.InstanceId)); break;
+                enemy.Select(card => card.InstanceId), allowCancel: false); break;
             case "inahime": One("field-legion", "target", "稻姬本多小松：预先选择我方前排其他高天原军团",
                 PublicFactionLegions(player, "gaotianyuan").Where(card => card.InstanceId != source.InstanceId
                     && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                    && card.Troops <= 5000).Select(card => card.InstanceId)); break;
+                    && card.Troops <= 5000).Select(card => card.InstanceId), allowCancel: false); break;
             case "kusanagi": One("enemy-legion", "target", "草薙剑：预先选择费用不高于2的击杀目标",
-                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId)); break;
+                enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId),
+                allowCancel: false); break;
             case "court-magician":
             {
                 var counters = State.Players.SelectMany(owner => owner.Field[1])
