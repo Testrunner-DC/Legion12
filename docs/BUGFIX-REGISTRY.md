@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-RAW-WIRE-COST｜默认关闭的原文片段字节归因
+
+- 既有分类已足够排除测量阶段presence：30房full＋delta占99.78765%，不新造重复全类型统计。缺口仅包内；新增local-pressure-wire-cost及纯测，接既有local-pressure-protocol/qualify/test的显式开关，固定stage/type/field，不改业务协议或负载。
+- 只按原文span的UTF8计字节，不用JSON.stringify反算；重复键/截断/超界整包记未归因，发布统计前保守对账＋零失败。正常路径在原计时后观察，packed解包失败支也记一次；扫描开销单列，明确不是零成本或容量证明。
+- 90纯/49协议/12真实生成客户端内存/5清理、24既有.NET导出合成包及有限独审CLEAR；新90并入原QA入口免后续漏跑。新whole changes数组含分隔语法，与先前逐entry计数仅分组不同，总字节一致。唯一performance-hand-load-20261022/wire-cost-main-acceptance.json；未新跑负载/线上或关闭性能反馈，回退仅5QA叶及记录。
+
 ## QA-20261022-HAND-WORKLOAD｜压测消费者显式协商与最终同源本机验证
 
 - 原QA模块闭包未含handArrayDelta，旧负载不能验证已部署新手牌；仅local-pressure-protocol/test/qualify三叶显式协商、绑定真实源SHA、完整先解码及numeric packet/applied/rejected计数，默认不开新开关。原冻结F737反向字节等同，可靠确认、旧客户端和清理不改；46纯/8生成客户端/5清理及独审CLEAR。

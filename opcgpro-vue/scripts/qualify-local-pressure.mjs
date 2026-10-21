@@ -9,11 +9,12 @@ import {summarizeLocalPressureCost} from './local-pressure-cost.mjs'
 import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from 'file:///C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
-assert.ok(process.argv.slice(2).every(value => ['--host-probe', '--cleanup-probe', '--notification-probe', '--hand-array-delta'].includes(value)), 'only local probe switches are accepted')
+assert.ok(process.argv.slice(2).every(value => ['--host-probe', '--cleanup-probe', '--notification-probe', '--hand-array-delta', '--wire-cost'].includes(value)), 'only local probe switches are accepted')
 const hostProbeOnly = process.argv.includes('--host-probe')
 const cleanupProbeOnly = process.argv.includes('--cleanup-probe')
 const notificationProbeOnly = process.argv.includes('--notification-probe')
 const handArrayDeltaV1 = process.argv.includes('--hand-array-delta')
+const wireCost = process.argv.includes('--wire-cost')
 const accepted = process.env.L12_ACCEPTED_SERVER_ROOT
 const hostAssembly = process.env.L12_LOCAL_PRESSURE_HOST_DLL
 const cacheParent = process.env.L12_LOCAL_PRESSURE_CACHE
@@ -53,6 +54,7 @@ const processes = [], ledgers = []
 const report = {schema: 1, status: 'starting', runId, scope: 'local Windows real HTTP/WS qualification only',
   productionTouched: false, testServiceTouched: false, onlineCapacityAccepted: false, runtimeRoot: root,
   handArrayDeltaRequested: handArrayDeltaV1,
+  wireCostRequested: wireCost,
   originalCoreSha256: digest(originalBytes), adaptedCoreSha256: digest(fs.readFileSync(adaptedPath)),
   hostAssemblySha256: digest(fs.readFileSync(hostAssembly)), owner, ownedProcesses: [],
   acceptedServerSourceEvidence: {path: acceptedBindingPath, sha256: digest(acceptedBindingBytes),
@@ -108,7 +110,7 @@ try {
     handArraySha256: digest(fs.readFileSync(path.join(repo, 'opcgpro-vue/src/l12/handArrayDelta.ts')))})
   Object.assign(report, {ready, observedHealth: health, protocolBinding: binding, status: 'ready'})
   const core = await import(pathToFileURL(adaptedPath).href)
-  await core.initializeLocalQualificationProtocol(binding, {handArrayDeltaV1})
+  await core.initializeLocalQualificationProtocol(binding, {handArrayDeltaV1, wireCost})
   const ledgerSource = 'C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1'
   for (const [index, maxSlots] of [60, 9].entries()) {
     const run = 'local-' + runId + '-' + index, pipe = 'l12-local-' + crypto.randomBytes(16).toString('hex')
@@ -203,6 +205,12 @@ try {
       scope: 'All received packets across preparation, measured stages and cleanup; not a measured-stage traffic rate.',
       wireBytesScope: 'Entire raw received handSplices packets, including rejected packets; not saved bytes or a traffic-benefit comparison.'},
     fullOriginalFinalAcceptance: false})
+  if (wireCost) {
+    report.wireCostObservation = result.localWireCost
+    assert.ok(result.localWireCost?.reconciled === true && result.localWireCost.failures === 0,
+      'diagnostic attribution must reconcile original numeric rows without missing bytes')
+    report.diagnosticOnlyNoNewCapacityClaim = true
+  }
   if (result.status !== 'completed') process.exitCode = 2
   }
 } catch (error) {

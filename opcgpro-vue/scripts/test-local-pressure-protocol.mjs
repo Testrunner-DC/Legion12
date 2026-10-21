@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import {pathToFileURL} from 'node:url'
 import {assertLocalPressureTarget, adaptFrozenPressureCore, createLocalQualificationProtocol, cleanupLocalQualificationAccounts, digest} from './local-pressure-protocol.mjs'
+import {createLocalWireCostObserver} from './local-pressure-wire-cost.mjs'
+import './test-local-pressure-wire-cost.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
 let cases = 0
@@ -28,6 +30,9 @@ const binding = {kind: 'local-real-http-qualification-v1', baseUrl: 'http://127.
   netSourcePath, cardFrameSourcePath, handArraySourcePath, deployedNetSha256: digest(fs.readFileSync(netSourcePath)),
   cardFrameSha256: digest(fs.readFileSync(cardFrameSourcePath)), handArraySha256: digest(fs.readFileSync(handArraySourcePath))}
 const protocol = await createLocalQualificationProtocol(binding)
+assert.equal(protocol.wireCost, false); cases++
+assert.equal((await createLocalQualificationProtocol(binding, {wireCost: true})).wireCost, true); cases++
+await assert.rejects(() => createLocalQualificationProtocol(binding, {wireCost: 'true'})); cases++
 assert.equal(typeof protocol.reduce, 'function'); cases++
 assert.equal(typeof protocol.codec.restoreGameStateCardFrame, 'function'); cases++
 assert.equal(protocol.reduce(null, {type: 'gameStateDelta'}, false), null); cases++
@@ -90,7 +95,7 @@ await assert.rejects(() => createLocalQualificationProtocol(binding, {handArrayD
 const classStart = adapted.indexOf('class WsClient {')
 const classEnd = adapted.indexOf('\nasync function checkCommit(', classStart)
 assert.ok(classStart >= 0 && classEnd > classStart)
-const createClient = ({requested, serverHand = true, localBase = binding.baseUrl}) => {
+const createClient = ({requested, serverHand = true, localBase = binding.baseUrl, wireCost = false}) => {
   const sent = []
   class MemoryWebSocket extends EventTarget {
     static OPEN = 1
@@ -114,9 +119,15 @@ const createClient = ({requested, serverHand = true, localBase = binding.baseUrl
     Error, localBase, requested, requested ? enabled.reduce : protocol.reduce, MemoryWebSocket)
   const metrics = {currentStage: 'pure', recordWs() {}, reconstructionErrors: 0, presenceNegotiatedClients: 0,
     localHandArrayDelta: {enabled: requested, negotiatedSessions: 0, packets: 0, wireBytes: 0, applied: 0, rejected: 0}}
+  const consumerOrder = []
+  if (wireCost) {
+    const counter = createLocalWireCostObserver()
+    metrics.localWireCost = {observe: row => {consumerOrder.push('diagnostic'); counter.observe(row)},
+      summarize: rows => counter.summarize(rows)}
+  }
   const client = new Client('synthetic-only', metrics, 1000, new AbortController().signal,
-    {observeParsed: () => null, afterDispatch() {}})
-  return {client, metrics, sent}
+    {observeParsed: () => wireCost ? {} : null, afterDispatch() {consumerOrder.push('dispatch')}})
+  return {client, metrics, sent, consumerOrder}
 }
 let clientCases = 0
 const live = createClient({requested: true})
@@ -161,17 +172,42 @@ assert.equal(Object.hasOwn(nonlocal.sent[0].capabilities, 'handArrayDeltaV1'), f
 assert.equal(nonlocal.client.negotiatedHandArrayDelta, false)
 nonlocal.client.socket.close(); clientCases++
 
+const diagnostic = createClient({requested: true, wireCost: true})
+await diagnostic.client.connect('ws://127.0.0.1:34567/ws')
+diagnostic.client.socket.emit(base); diagnostic.client.socket.emit(delta)
+assert.deepEqual(diagnostic.client.envelope, expected)
+const diagnosticBytes = Buffer.byteLength(JSON.stringify(delta))
+const diagnosticSummary = diagnostic.metrics.localWireCost.summarize([{stage: 'pure', type: 'gameStateDelta', bytes: diagnosticBytes}])
+assert.equal(diagnosticSummary.reconciled, true); assert.equal(diagnosticSummary.failures, 0)
+assert.equal(diagnosticSummary.rows[0].parts.handSplices, Buffer.byteLength(JSON.stringify(delta.handSplices)))
+assert.deepEqual(diagnostic.consumerOrder.slice(-4), ['dispatch', 'diagnostic', 'dispatch', 'diagnostic']); clientCases++
+const invalidPacked = {type: 'gameStateCardFrameV1', payload: {invalid: true},
+  cardSnapshots: [], eventCardRefs: [], lastActionCardRefs: null}
+diagnostic.client.socket.emit(invalidPacked)
+assert.deepEqual(diagnostic.client.envelope, expected)
+assert.equal(diagnostic.metrics.reconstructionErrors, 1)
+const rejectedFrameSummary = diagnostic.metrics.localWireCost.summarize([
+  {stage: 'pure', type: 'gameStateDelta', bytes: diagnosticBytes},
+  {stage: 'pure', type: 'gameStateCardFrameV1', bytes: Buffer.byteLength(JSON.stringify(invalidPacked))},
+])
+assert.equal(rejectedFrameSummary.reconciled, true)
+assert.equal(rejectedFrameSummary.rows.length, 2); clientCases++
+diagnostic.client.socket.close(); clientCases++
+assert.equal(old.metrics.localWireCost, undefined); clientCases++
+
 const runner = fs.readFileSync(path.join(import.meta.dirname, 'qualify-local-pressure.mjs'), 'utf8')
 const optionStart = runner.indexOf('assert.ok(process.argv.slice(2).every(')
 const optionEnd = runner.indexOf('\nconst accepted =', optionStart)
 assert.ok(optionStart >= 0 && optionEnd > optionStart)
 const parseLocalOptions = args => new Function('assert', 'process', runner.slice(optionStart, optionEnd)
-  + ';return {hostProbeOnly,cleanupProbeOnly,notificationProbeOnly,handArrayDeltaV1};')(assert, {argv: ['node', 'pure', ...args]})
+  + ';return {hostProbeOnly,cleanupProbeOnly,notificationProbeOnly,handArrayDeltaV1,wireCost};')(assert, {argv: ['node', 'pure', ...args]})
 assert.equal(parseLocalOptions([]).handArrayDeltaV1, false)
 assert.equal(parseLocalOptions(['--hand-array-delta']).handArrayDeltaV1, true)
 assert.equal(parseLocalOptions(['--host-probe', '--hand-array-delta']).hostProbeOnly, true)
 assert.throws(() => parseLocalOptions(['--remote']))
-assert.ok(runner.includes('await core.initializeLocalQualificationProtocol(binding, {handArrayDeltaV1})'))
+assert.equal(parseLocalOptions([]).wireCost, false)
+assert.equal(parseLocalOptions(['--wire-cost']).wireCost, true)
+assert.ok(runner.includes('await core.initializeLocalQualificationProtocol(binding, {handArrayDeltaV1, wireCost})'))
 assert.ok(runner.includes('handArraySha256: digest(fs.readFileSync('))
 assert.ok(runner.includes('handArrayDeltaObservation: {...result.localHandArrayDelta,'))
 clientCases++

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import {createRequire} from 'node:module'
+export {createLocalWireCostObserver} from './local-pressure-wire-cost.mjs'
 
 export function assertLocalPressureTarget(base) {
   const value = new URL(base)
@@ -68,10 +69,11 @@ export async function cleanupLocalQualificationAccounts(context, admin, accounts
   } catch { result.failures++ }
   return result
 }
-export async function createLocalQualificationProtocol(binding, {handArrayDeltaV1 = false} = {}) {
+export async function createLocalQualificationProtocol(binding, {handArrayDeltaV1 = false, wireCost = false} = {}) {
   assert.equal(binding.kind, 'local-real-http-qualification-v1')
   assertLocalPressureTarget(binding.baseUrl)
   assert.equal(typeof handArrayDeltaV1, 'boolean')
+  assert.equal(typeof wireCost, 'boolean')
   const sources = [[binding.netSourcePath, binding.deployedNetSha256, 1048576],
     [binding.cardFrameSourcePath, binding.cardFrameSha256, 65536]]
   if (handArrayDeltaV1 || binding.handArraySourcePath !== undefined || binding.handArraySha256 !== undefined)
@@ -111,26 +113,28 @@ export async function createLocalQualificationProtocol(binding, {handArrayDeltaV
     checkedBytes.get(binding.cardFrameSourcePath).toString('utf8'))).toString('base64'))
   assert.equal(typeof codec.restoreGameStateCardFrame, 'function')
   assert.equal(typeof codec.GameStateCardFrameRecovery, 'function')
-  return {reduce, codec, handArrayDeltaV1}
+  return {reduce, codec, handArrayDeltaV1, wireCost}
 }
 
 // A generated, local-only adapter; the frozen remote entry and its binding are never modified.
 export function adaptFrozenPressureCore(source, adapterUrl) {
   const replacements = [
     ['reconstructCandidateDelta as reduceEnvelope', 'reconstructCandidateDelta as remoteReduceEnvelope'],
-    ['let productionCodec=null', `import {createLocalQualificationProtocol,assertLocalPressureTarget,cleanupLocalQualificationAccounts} from ${JSON.stringify(adapterUrl)}\nlet reduceEnvelope=remoteReduceEnvelope\nlet localProtocolBase=null\nlet localHandArrayDelta=false\nexport async function initializeLocalQualificationProtocol(binding,options={}){\n const loaded=await createLocalQualificationProtocol(binding,options)\n productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.deployedNetSha256\n initializePresenceConsumer(binding);localProtocolBase=assertLocalPressureTarget(binding.baseUrl)\n localHandArrayDelta=loaded.handArrayDeltaV1\n}\nlet productionCodec=null`],
+    ['let productionCodec=null', `import {createLocalQualificationProtocol,assertLocalPressureTarget,cleanupLocalQualificationAccounts,createLocalWireCostObserver} from ${JSON.stringify(adapterUrl)}\nlet reduceEnvelope=remoteReduceEnvelope\nlet localProtocolBase=null\nlet localHandArrayDelta=false\nlet localWireCostEnabled=false\nexport async function initializeLocalQualificationProtocol(binding,options={}){\n const loaded=await createLocalQualificationProtocol(binding,options)\n productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.deployedNetSha256\n initializePresenceConsumer(binding);localProtocolBase=assertLocalPressureTarget(binding.baseUrl)\n localHandArrayDelta=loaded.handArrayDeltaV1;localWireCostEnabled=loaded.wireCost\n}\nlet productionCodec=null`],
     ['function initializePresenceConsumer() {', 'function initializePresenceConsumer(binding=FIXED) {'],
     ["const source=fs.readFileSync(FIXED.netSourcePath,'utf8')", "const source=fs.readFileSync(binding.netSourcePath,'utf8')"],
     ["if(sha256File(FIXED.netSourcePath)!==FIXED.deployedNetSha256)", "if(sha256File(binding.netSourcePath)!==binding.deployedNetSha256)"],
     ['async function runPressure(configuration) {', "async function runPressure(configuration) {\n if(localProtocolBase!==null){assertLocalPressureTarget(configuration?.baseUrl);requireContract(configuration?.local===true&&configuration.baseUrl===localProtocolBase,'local_qualification_cannot_run_remote')}"],
-    ['const metrics = new Metrics()', 'const metrics = new Metrics()\n  if(localProtocolBase!==null)metrics.localHandArrayDelta={enabled:localHandArrayDelta,negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}'],
+    ['const metrics = new Metrics()', 'const metrics = new Metrics()\n  if(localProtocolBase!==null)metrics.localHandArrayDelta={enabled:localHandArrayDelta,negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}\n  if(localProtocolBase!==null&&localWireCostEnabled)metrics.localWireCost=createLocalWireCostObserver()'],
     ['this.negotiatedEventWindowDelta = false\n    this.presenceConsumer = null', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    this.presenceConsumer = null'],
     ['gameStateCardFrameV1: true },', 'gameStateCardFrameV1: true, ...(localProtocolBase!==null&&localHandArrayDelta?{handArrayDeltaV1:true}:{}) },'],
     ["if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)", "if(localProtocolBase!==null&&localHandArrayDelta&&!this.negotiatedHandArrayDelta)throw new SafeError('hand-array-capability-not-negotiated')\n    if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)"],
     ["if (type === 'session') {", "if (type === 'session') {\n      this.negotiatedHandArrayDelta=localProtocolBase!==null&&localHandArrayDelta&&message.capabilities?.deltaGameState===true&&message.capabilities?.handArrayDeltaV1===true\n      if(this.negotiatedHandArrayDelta)this.metrics.localHandArrayDelta.negotiatedSessions++"],
     ['const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta)', "const localHandPacket=localProtocolBase!==null&&Object.hasOwn(message,'handSplices')\n      if(localHandPacket){this.metrics.localHandArrayDelta.packets++;this.metrics.localHandArrayDelta.wireBytes+=wireBytes}\n      const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta, this.negotiatedHandArrayDelta)\n      if(localHandPacket)this.metrics.localHandArrayDelta[rebuilt?'applied':'rejected']++"],
     ['this.negotiatedEventWindowDelta = false\n    for (const waiter', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    for (const waiter'],
-    ['expectedCommit: { value: configuration.expectedCommit,', '...(localProtocolBase!==null?{localHandArrayDelta:{...metrics.localHandArrayDelta}}:{}),\n    expectedCommit: { value: configuration.expectedCommit,'],
+    ['expectedCommit: { value: configuration.expectedCommit,', '...(localProtocolBase!==null?{localHandArrayDelta:{...metrics.localHandArrayDelta}}:{}),\n    ...(metrics.localWireCost?{localWireCost:metrics.localWireCost.summarize(metrics.ws)}:{}),\n    expectedCommit: { value: configuration.expectedCommit,'],
+    ['this.metrics.recordWs(wireType,wireBytes,null)', 'this.metrics.recordWs(wireType,wireBytes,null)\n      this.metrics.localWireCost?.observe({raw,wireType,wireBytes,stage:this.metrics.currentStage})'],
+    ["if(this.metrics.currentStage==='cleanup' && type==='presenceSnapshot')this.metrics.burstObserver.observePresence(this.numericClientSlot,raw)", "if(this.metrics.currentStage==='cleanup' && type==='presenceSnapshot')this.metrics.burstObserver.observePresence(this.numericClientSlot,raw)\n    this.metrics.localWireCost?.observe({raw,wireType,wireBytes,stage:this.metrics.currentStage})"],
     ['export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {', 'export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {\n if(localProtocolBase!==null)return cleanupLocalQualificationAccounts(context,adminIdentity,provisioning.owned??[],cohortRequest(context))'],
     ['requestFn:cohortRequest(context),delayFn:context.local?async()=>{}:delay,\n     stopFile:', 'requestFn:cohortRequest(context),delayFn:localProtocolBase!==null?delay:context.local?async()=>{}:delay,\n     stopFile:'],
     ['{requestFn:cohortRequest(context),delayFn:context.local?async()=>{}:delay,existsFn:fs.existsSync})', '{requestFn:cohortRequest(context),delayFn:localProtocolBase!==null?delay:context.local?async()=>{}:delay,existsFn:fs.existsSync})'],
