@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-oasis-dancer-printed-troops",
+  "date": "2026-10-21",
+  "audience": "players",
+  "title": "绿洲的舞女兵力修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "绿洲的舞女的原本兵力修正为卡图所示的3000，原有主动休整使我方太阳城军团本回合兵力＋1000的效果不变。",
+      "paths": ["服务端WebSocket/TwelveLegions/Data/cards.st.json", "opcgpro-vue/public/data/l12/cards.st.json"]
+    }
+  ]
+}
