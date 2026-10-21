@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-GALLERY-PRODUCT｜新产品草稿到卡片归属真实闭环
+
+- 仅QA扩既有gallery真实HTTP入口product-draft模式，使用现后台组件、POST文章草稿和metadata风险确认；一次创建后同编辑器自动选用，合成宿主重启后仍勾选；匿名实际读产品与画廊均不暴露草稿且旧归属不变。非原生全路由/所有异画类型/已部署，未改产品规则或存储。
+- r1错误exact标签选择器保持原件，r2使用唯一combobox通过。显式输出/拒覆盖/Stop共享guard、browser/Vite/宿主三独立收尾与5真实finalizer异常例过；Main看图、独审CLEAR。D盘gallery-product-draft-20261022/main-acceptance.json，原本机23文件宿主24909223B已按owner/PID/路径核验回收，不保留另一套合成DB。后端完整证据按精确58FB复用，部署/维护/线上Bug零写。
+
 ## UI-20261022-EDITOR-REPLAY-TOUCH｜编辑器与回放提示页可达性（本地接受）
 
 - 原r5七处几何RED中动作实际成功但触控偏小。仅portrait分类/返回38px、821–900且高度≤520短横屏分类38与数量列38/14/38、移动回放阻断页按钮38；90px容器恰容纳，数字无裁切，宽屏fine原32/30不变。不新增移动播放，不改构筑、保存或规则。

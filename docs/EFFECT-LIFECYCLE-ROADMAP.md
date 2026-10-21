@@ -1,5 +1,9 @@
 # 效果一致性实施计划
 
+## 2026-10-22 画廊产品发布边界实证
+
+- 仅P4 QA验证既有新建草稿/自动选用/metadata保存/重启持久化及匿名归属过滤，不改变卡牌身份、权益、卡效、Journal或正式数据。具名gallery-product-draft-20261022/main-acceptance.json；其他画廊类型原生闭环仍单列，移动赛事/好友/图鉴接续，无自动部署。
+
 ## 2026-10-22 可达性家族续片与必发资格取证
 
 - P4编辑器/回放两CSS及QA入口家族本地接受，12＋1双独立UI、类型/双base/真实收尾与guard回归通过，不改构筑/规则或移动回放支持；赛事参赛者移动链继续。唯一editor-replay-mobile-reachability-20261022-main-r1/main-acceptance.json。
