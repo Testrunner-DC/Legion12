@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜性能测法推进：完整本机30＋10实测与清理适配
+
+- 只新增手动QA入口，不实施新产品Bug修复。旧local分支跳过注册节奏会撞30/min认证限制，已恢复原2300ms；命名管道先实际就绪，不靠固定200ms。原线上清理仍有旧候选绑定与撤会话60/min问题，本机专用路径逐写1300ms、真实版本、精确身份/CAS及删除读回，原远程守卫不改。逆变换保留原core全文、载荷/可靠确认/时间预算不减。
+- 原真实三阶段全达成、1796操作零超时/60终局零超3秒/900HTTP零错，但旧清理失败仍保留completed-with-errors；后续20＋5纯合同、真实2账号清理/冷读/进程退出及完整60/9冷读分层接受，不冒整轮或线上通过。独审管理员版本守卫与缺账本计数已收口。
+- 唯一performance-local-qualification-20261021/main-acceptance.json；三性能报告仍待代表性环境，未部署、维护或关单。原失败/数值证据保留，产品与内核未变，不重跑无关全套。
+
 ## 2026-10-21｜处理中连续计时建议：现行事实核对与明确裁定
 
 - c4eff3f6原文请求处理中不走时间；d7的SettleRankedClockLocked按acting/connected和UTC结清，普通命令处理后再转操作责任方，busy房跳过watchdog不免累计扣时；766按责任方插值，纯动画无暂停协议。正常响应、准备退出基线、断线及裁判暂停不混为一谈。已有具名SkippedRoomKeepsItsBaselineAndNextTickChargesAccumulatedUtcExactlyOnce、ThirtySecondBusyResponseRoomKeepsOriginalDeadlineWhileHealthyExpiryIsDurable、NormalClockStartsAfterFinalMulliganProcessingWithoutChargingTheSetupActor说明范围，不重跑无改版本线上采样。
