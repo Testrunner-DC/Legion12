@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-22 全卡效移动验收首版完整矩阵｜P0/P1/P2/P4仅QA
+
+- 用户新增所有类型真实移动touch范围已纳入。只跑已编译当前inventory单Fact1/1并监督清临时，导出324卡/686稳定能力/7无能力；实际源码询问126、34字面kind＋3动态，旧9/28的125漏a5fc4c000主动翻士气目标来源。4个能力结构ID已与当前源区分，不把旧地图当当前完整清单。
+- 修QA实际漏类：读不存在BranchId导致103分支全空/19能力漏分支标签；现保全SceneId/BranchLabel/RequiredChoices、全部757展示场景/分段、原子顺序/stage/参数。每能力一行，488集合组合不认等价；5条仅时点片段标expected-semantics-pending，原卡文上下文不当本能力预期。78档案只覆盖408，另278 fine/composite并非缺失。
+- matrix-r2-final/coverage-matrix.json及tsv为首交付；923 linked引用/组件140/完整引擎touch-ACK-结算四层分开，未映射保持待映射，不说历史从未测或本轮已全过。branch9纯例、矩阵保持/拒绝用例、5实际入口负例及独审CLEAR；原计数/引号守卫失败及旧派生记录保持，不重跑全套/长压力。唯一mobile-effect-type-audit-20261022/main-acceptance.json，下一复用真实引擎桥并先补具体缺口，UI子对话只读盘点≤4类，无产品写/部署/线上关闭。
+
 ## 2026-10-22 移动赛事与好友真实触摸｜P4仅QA
 
 - Main最终两视口赛事4链与好友4链零page/request/cleanup错误；原生select先tap、所有按钮实际touch，38px底线，40/41只建议，无产品改动。赛事报名/选牌库/锁牌/签到/入场及候补双确认退出；好友精确搜索/申请/接受拒绝/约战/观战/屏蔽解屏、双touch门闩与真实confirm。唯一mobile-social-tournament-acceptance-20261022/main-acceptance.json。

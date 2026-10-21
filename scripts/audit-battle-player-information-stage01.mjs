@@ -1,6 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import process from 'node:process'
+import { execFileSync } from 'node:child_process'
+import { presentationBranches } from './lib/l12-presentation-branches.mjs'
 
 // Read-only audit of the existing Prompt call sites and engine-exported atomic
 // ability inventory. It does not infer rule behavior from card text.
@@ -9,8 +11,18 @@ const server = path.join(root, '服务端WebSocket', 'TwelveLegions')
 const sourceInventory = process.argv[2]
   ? path.resolve(process.argv[2])
   : path.join(root, 'artifacts', 'battle-player-information-stage01', 'effect-ability-inventory.json')
-const promptTarget = path.join(root, 'docs', 'l12', 'BATTLE-PLAYER-INFORMATION-PROMPT-MAP-20260928.tsv')
-const abilityTarget = path.join(root, 'docs', 'l12', 'BATTLE-PLAYER-INFORMATION-ABILITY-MAP-20260928.tsv')
+const exportRoot = process.env.L12_PLAYER_INFORMATION_AUDIT_OUT?.trim()
+if (exportRoot && !path.isAbsolute(exportRoot)) throw new Error('Audit output must be absolute')
+const targetRoot = exportRoot || path.join(root, 'docs', 'l12')
+const pwsh = process.env.L12_PWSH
+if (!pwsh || !path.isAbsolute(pwsh) || !fs.existsSync(pwsh)) throw new Error('Initialized absolute L12_PWSH is required')
+execFileSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command',
+  '$ErrorActionPreference="Stop"; . $env:L12_AUDIT_GUARD; Assert-L12GeneratedPath -Path $env:L12_AUDIT_OUT -Purpose "effect UI inventory export" | Out-Null',
+], { env: { ...process.env, L12_AUDIT_GUARD: path.join(root, 'ops/windows/L12GeneratedStorage.ps1'), L12_AUDIT_OUT: targetRoot }, stdio: 'pipe', timeout: 15_000, windowsHide: true })
+const promptTarget = path.join(targetRoot, 'BATTLE-PLAYER-INFORMATION-PROMPT-MAP-20260928.tsv')
+const abilityTarget = path.join(targetRoot, 'BATTLE-PLAYER-INFORMATION-ABILITY-MAP-20260928.tsv')
+if (exportRoot && [promptTarget, abilityTarget].some(file => fs.existsSync(file))) throw new Error('Refusing to overwrite existing audit evidence')
+fs.mkdirSync(targetRoot, { recursive: true })
 
 function walk(directory) {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -157,7 +169,11 @@ for (const file of walk(server)) {
   }
 }
 prompts.sort((a, b) => a.source.localeCompare(b.source) || a.line - b.line)
-if (prompts.length !== 125) throw new Error(`Expected 125 CreatePrompt call sites, found ${prompts.length}`)
+// a5fc4c000 added the authoritative pre-response morale-flip target in
+// L12ActiveAbilities. It uses an existing kind, but is a separate real call site.
+if (prompts.length !== 126) throw new Error(`Expected 126 CreatePrompt call sites, found ${prompts.length}`)
+if (!prompts.some(row => row.source.endsWith('/L12ActiveAbilities.cs') && row.kind === 'target-morale' && literal(row.continuationExpression) === 'active-ability'))
+  throw new Error('Missing authoritative pre-response morale target call site')
 const promptColumns = Object.keys(prompts[0])
 fs.writeFileSync(promptTarget,
   [promptColumns.join('\t'), ...prompts.map(row => promptColumns.map(key => tsv(row[key])).join('\t'))].join('\n') + '\n')
@@ -172,12 +188,13 @@ const abilities = inventory.Abilities.map(row => {
   const ability = row.Definition
   const kinds = [...new Set(ability.Atoms.map(atom => atom.Kind))]
   const scenes = ability.Presentations
+  const branches = presentationBranches(scenes)
   const categories = []
   if (kinds.some(kind => kind.startsWith('cost.')) || ability.Atoms.some(atom => atom.Stage === 'cost')) categories.push('payment')
   if (kinds.includes('selection.target')) categories.push('target')
   if (ability.ExecutionModel === 'reaction' || ability.Trigger.includes('reaction')) categories.push('response')
   if (kinds.includes('operation.composite-flow')
-    || scenes.some(scene => (scene.SegmentCount ?? 0) > 1 || scene.BranchId)) categories.push('multi-segment-or-branch')
+    || scenes.some(scene => (scene.SegmentCount ?? 0) > 1) || branches.length > 0) categories.push('multi-segment-or-branch')
   if (kinds.some(kind => ['operation.move-zone', 'operation.move', 'operation.draw', 'operation.shuffle'].includes(kind))) categories.push('zone-or-movement')
   if (ability.ExecutionModel.includes('continuous') || kinds.includes('duration.apply')) categories.push('continuous-or-duration')
   if (['disaster', 'trial', 'destruction'].includes(cardTypes.get(row.CardId))
@@ -193,7 +210,8 @@ const abilities = inventory.Abilities.map(row => {
     atomKinds: kinds.join(';'),
     sceneIds: scenes.map(scene => scene.SceneId).join(';'),
     segmentScenes: scenes.filter(scene => scene.SegmentIndex).map(scene => `${scene.SceneId}#${scene.SegmentIndex}/${scene.SegmentCount}`).join(';'),
-    branchScenes: scenes.filter(scene => scene.BranchId).map(scene => `${scene.SceneId}#${scene.BranchId}`).join(';'),
+    branchScenes: branches.map(scene => scene.sceneId).join(';'),
+    branchFactsJson: JSON.stringify(branches),
     routeCandidates: row.RouteCandidates.join(';'),
     entryEvidence: row.EntryEvidence,
     categories: categories.join(';') || 'other',
