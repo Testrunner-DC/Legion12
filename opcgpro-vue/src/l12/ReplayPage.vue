@@ -377,7 +377,7 @@ function openReplayFeedback() { void openBugFeedbackFromSettings(() => { setting
 
 <style scoped>
 .replay-page{background:#050809}
-.replay-mobile-blocked{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}.replay-mobile-blocked p{margin:0;font-size:18px}.replay-mobile-blocked button{padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}
+.replay-mobile-blocked{position:fixed;inset:0;display:grid;place-content:center;justify-items:center;gap:14px;background:radial-gradient(circle,rgba(28,70,74,.28),transparent 40%),#050809;color:#e7e4da;font-weight:900}.replay-mobile-blocked p{margin:0;font-size:18px}.replay-mobile-blocked button{min-height:38px;padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}
 .replay-route-controls{position:fixed;z-index:var(--l12-battle-fixed-controls-z,5100);top:12px;right:14px;display:flex;align-items:center;gap:9px;padding:6px;border:1px solid #445057;background:#080d11ed;box-shadow:0 8px 24px #000}
 .replay-route-controls span{max-width:310px;overflow:hidden;padding:0 7px;color:#aeb8b7;font-size:14px;font-weight:900;text-overflow:ellipsis;white-space:nowrap}
 .replay-route-controls button,.replay-controls button,.replay-loading button{padding:8px 12px;border:1px solid #667276;background:#11191c;color:#f1eee6;font-size:14px;font-weight:900}

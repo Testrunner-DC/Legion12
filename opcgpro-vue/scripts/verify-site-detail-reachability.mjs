@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { createServer } from 'vite'
+import { closeNotificationProbeResources as closeProbeResources } from './verify-notification-real-chain.mjs'
 
 const scriptPath = fileURLToPath(import.meta.url)
 const root = path.resolve(path.dirname(scriptPath), '..')
@@ -23,7 +24,7 @@ for (const candidate of [process.env.TEMP, process.env.TMP, process.env.TMPDIR])
 const pwsh = requiredEnvironment('L12_PWSH')
 const storageGuard = path.resolve(root, '../ops/windows/L12GeneratedStorage.ps1')
 execFileSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command',
-  '. $env:L12_STORAGE_GUARD; '
+  '$ErrorActionPreference="Stop"; . $env:L12_STORAGE_GUARD; '
   + 'Assert-L12GeneratedPath -Path $env:L12_ACCEPTANCE_OUT -Purpose "site detail reachability acceptance" | Out-Null; '
   + 'Assert-L12GeneratedPath -Path $env:L12_ACCEPTANCE_CACHE -Purpose "site detail reachability cache" | Out-Null; '
   + 'foreach($name in @("TEMP","TMP","TMPDIR")){'
@@ -354,8 +355,9 @@ try {
   recordFailure('harness', error)
   report.status = 'failed'
 } finally {
-  await browser?.close()
-  await server.close()
+  report.cleanupResourceFailures = await closeProbeResources(browser, server)
+  for (const resource of report.cleanupResourceFailures) recordFailure(`cleanup-${resource}`, new Error('Owned resource failed to close'))
+  if (report.cleanupResourceFailures.length) report.status = 'failed'
   report.completedAt = new Date().toISOString()
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2))
   appendProgress({ stage: 'completed', status: report.status, failures: report.failures.length })

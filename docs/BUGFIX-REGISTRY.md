@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261022-EDITOR-REPLAY-TOUCH｜编辑器与回放提示页可达性（本地接受）
+
+- 原r5七处几何RED中动作实际成功但触控偏小。仅portrait分类/返回38px、821–900且高度≤520短横屏分类38与数量列38/14/38、移动回放阻断页按钮38；90px容器恰容纳，数字无裁切，宽屏fine原32/30不变。不新增移动播放，不改构筑、保存或规则。
+- 作者及Main各12真实触摸流程＋wide-fine守卫通过，Main看图、55/58合同、两类型及双base构建过。独审补QA共因：调用共享物理路径guard；两入口复用已有allSettled收尾，10真实finally失败/空owner回归与6实际拒参通过。最终QA仅入口/收尾变化，原F8AE实际runner精确冻结，不重跑未变UI/8004规则/2124平台。
+- 唯一D盘editor-replay-mobile-reachability-20261022-main-r1/main-acceptance.json；原r5失败/作者r8/Main报告保持。mock组件非真实HTTP或真机，922/10不变，线上关单/两服/维护零写；回滚为两CSS与配套QA，不关闭已有移动阻断。
+
 ## QA-20261022-HAND-DELTA-ATTRIBUTION｜手牌变长整段重发已定位，协议未改
 
 - 实际BuildChanges仅等长数组逐元素，不等长原样替换。三组当前预组/48真实回合命令，经三视角独立原codec及严格ApplyDelta，153差量完整恢复，State/随机/fact不变；本组件玩家1962806B差量中手牌1442488B，非线上流量比例。48完整值拼接原型1441546→216242B/12边界与4原解码拒绝通过、独审CLEAR，不按卡号/目录回填，不删除字段或实现新协议。
