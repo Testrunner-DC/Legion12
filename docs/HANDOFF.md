@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-22 公开目标桥有限接受｜手牌真实传输通过，三必发继续
+
+- public-target-main-acceptance.json有限接受梅林横竖真实UI/WS正常链，7touch/4ACK各、确定资源/数值/日志，固定58FB/FFF49。Main看图/读回和独审过；r4缺hostPid/精确QA源不补造，后续QA收尾38纯例/default-ready compile单独列，不冒同源全业务重跑。
+- 手牌真实loopback新/旧协商两例过，10endTurn各及权威players/隐私/重连首包，导出10帧经真实net重建过；plainFull两次恢复完整仅此范围，非永久停hand。最终类型/双base通过。正在做编码成本对照，不部署未验协议。三必发用户批准，子对话新33专项过、完整规则进行中。
+- 图鉴/设置已本地326cd，重核长期授权后尝试精确同步获准但GitHub DNS失败，未推；其他本地继续。922/10与部署/维护/线上零写不变。
+
 ## 2026-10-22 图鉴/设置本地接受｜手牌协议继续
 
 - 两Vue895F/1FBB冻结，10手机＋2宽屏流程过；紧凑单触原详情/原卡版本、槽内筛选38/手机关闭38，宽屏侧栏/单击选中/关闭34保留。Main源码/报告/收尾图核验，唯一mobile-interaction-audit-20261022/main-acceptance.json，合成API非真机/线上。前端UI、两类型/双base按源码接续过；原sidecar loader/hello/type失败保留，仅续失败点/未执行范围。

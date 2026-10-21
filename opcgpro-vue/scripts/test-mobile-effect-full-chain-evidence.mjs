@@ -56,5 +56,45 @@ for(const mode of ['closed','async-rejection','sync-throw','timeout','still-list
   assert.equal(writes[1].status,report.status)
   assert.equal(report.hostExited,true,'Vite failure does not skip the remaining finalizer')
 }
-console.log(JSON.stringify({ status: 'passed', cases: cases.length, viteFinalizerCases:5, actualRunnerFunction: true,
+const publicSource=fs.readFileSync(new URL('./verify-mobile-public-target-full-chain.mjs',import.meta.url),'utf8')
+const publicBegin=publicSource.indexOf('async function waitAck(')
+const publicEnd=publicSource.indexOf('async function selectPromptChoice(',publicBegin)
+assert(publicBegin>=0&&publicEnd>publicBegin)
+const publicAck=new AsyncFunction('entries','delay','Date',publicSource.slice(publicBegin,publicEnd)
+  +'\nreturn waitAck(entries,0,command=>command.promptId==="bound-prompt",10,"synthetic public oracle");')
+for(const item of cases) {
+  let clock=0
+  const rows=item.rows.map(entry=>entry.direction==='sent'
+    ? {...entry,command:{type:'resolvePrompt',promptId:entry.promptId}}:entry)
+  const run=()=>publicAck(rows,async()=>{},{now:()=>clock+=4000})
+  if(item.passes) assert.equal((await run()).requestId,'bound-request')
+  else await assert.rejects(run,/No same-request authoritative ACK/)
+}
+const closeBegin=publicSource.indexOf('async function closeOwnedUi(')
+const closeEnd=publicSource.indexOf('async function runCase(',closeBegin)
+assert(closeBegin>=0&&closeEnd>closeBegin)
+const publicClose=new AsyncFunction('assert','delay','resources','result',
+  publicSource.slice(closeBegin,closeEnd)+'\nawait closeOwnedUi(...resources,result);')
+let publicCloseCases=0
+for(const target of [0,1,2]) for(const mode of ['closed','sync-throw','async-rejection','timeout','still-open']) {
+  const touched=[],result={}
+  const resources=[0,1,2].map(index=>{
+    let open=true
+    const resource={httpServer:{listening:true},browser:()=>({isConnected:()=>open}),close:()=>{
+      touched.push(index)
+      if(index===target&&mode==='sync-throw')throw new Error('synthetic close')
+      if(index===target&&mode==='async-rejection')return Promise.reject(new Error('synthetic close'))
+      if(index===target&&mode==='timeout')return never()
+      if(index!==target||mode==='closed'){open=false;resource.httpServer.listening=false}
+      return Promise.resolve()
+    }}
+    return resource
+  })
+  await publicClose(assert,()=>new Promise(resolve=>setImmediate(resolve)),resources,result)
+  assert.deepEqual(touched,[0,1,2],'One close failure cannot skip another owned resource')
+  assert.equal(result.cleanupErrors.length,mode==='closed'?0:1)
+  publicCloseCases++
+}
+console.log(JSON.stringify({ status: 'passed', cases: cases.length, viteFinalizerCases:5,
+  publicAckCases:cases.length,publicCloseCases,actualRunnerFunction: true,
   boundary: 'correlation oracle only; normalized-delta fixture does not test the codec or claim engine/touch coverage', browsers: 0, filesWritten: 0 }))

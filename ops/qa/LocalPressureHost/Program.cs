@@ -12,7 +12,7 @@ var accepted = Path.GetFullPath(Environment.GetEnvironmentVariable("L12_ACCEPTED
 var ownerPath = Path.Combine(root, "owner.json");
 using var owner = JsonDocument.Parse(File.ReadAllText(ownerPath));
 if (owner.RootElement.GetProperty("kind").GetString() != "l12-local-real-pressure-v1"
-    || !Guid.TryParseExact(owner.RootElement.GetProperty("runId").GetString(), "N", out _)
+    || !Guid.TryParseExact(owner.RootElement.GetProperty("runId").GetString(), "N", out var runId)
     || new DirectoryInfo(root).LinkTarget is not null
     || !root.StartsWith(Path.GetFullPath(owner.RootElement.GetProperty("cacheParent").GetString()!)
         + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
@@ -22,6 +22,10 @@ var actualSha = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Path.Combi
 if (actualSha != expectedSha) throw new InvalidOperationException("Accepted server drift");
 if (Environment.GetEnvironmentVariable("L12_LISTEN_HOST") != "127.0.0.1")
     throw new InvalidOperationException("Local host must bind IPv4 loopback only");
+var fixtureMode = Environment.GetEnvironmentVariable("L12_LOCAL_EFFECT_FIXTURE")?.Trim();
+fixtureMode = string.IsNullOrEmpty(fixtureMode) ? null : fixtureMode;
+if (fixtureMode is not null and not "merlin-public-target-v1")
+    throw new InvalidOperationException("Unknown local effect fixture");
 AssemblyLoadContext.Default.Resolving += (_, name) =>
 {
     var path = Path.Combine(accepted, name.Name + ".dll");
@@ -51,7 +55,8 @@ async Task RunAsync()
         BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!;
     var stateVersion = (int)typeof(L12GameEngine).Assembly.GetType("TwelveLegions.Server.L12PersistenceContract", true)!
         .GetField("CurrentStateFormatVersion", BindingFlags.Static | BindingFlags.NonPublic)!.GetRawConstantValue()!;
-    for (var index = 0; index < 16; index++)
+    var syntheticHistoryMatches = fixtureMode is null ? 16 : 0;
+    for (var index = 0; index < syntheticHistoryMatches; index++)
     {
         var engine = new L12GameEngine(catalog, $"local-history-{index}", $"LH{index:000}", 71000 + index,
             ["synthetic-history-a", "synthetic-history-b"], [index % catalog.PresetDecks.Count,
@@ -67,6 +72,9 @@ async Task RunAsync()
         await recorder.CompleteAsync(engine);
     }
     var rooms = new L12RoomManager(catalog, recorder, platform);
+    var effectFixture = fixtureMode == "merlin-public-target-v1"
+        ? await CreateMerlinPublicTargetFixtureAsync(catalog, platform, recorder, rooms, runId, stateVersion)
+        : null;
     var assembly = typeof(L12WebSocketServer).Assembly;
     var diagnosticType = assembly.GetType("TwelveLegions.Server.L12SyntheticTransportDiagnostics", true)!;
     var nonce = Environment.GetEnvironmentVariable("L12_LOCAL_DIAGNOSTIC_NONCE")!;
@@ -80,8 +88,12 @@ async Task RunAsync()
         [rooms, recorder, platform, catalog, null, null, null, null, null, null, null, diagnostic, true]);
     await server.StartAsync(0);
     var address = new Uri(AssertLoopback(server.Addresses.Single()));
-    var ready = new { schema = 1, kind = "local-real-http-ready", pid = Environment.ProcessId,
-        baseUrl = address.ToString(), serverSha256 = actualSha, syntheticHistoryMatches = 16, fixtures };
+    object ready = effectFixture is null
+        ? new { schema = 1, kind = "local-real-http-ready", pid = Environment.ProcessId,
+            baseUrl = address.ToString(), serverSha256 = actualSha, syntheticHistoryMatches, fixtures }
+        : new { schema = 1, kind = "local-real-http-ready", pid = Environment.ProcessId,
+            baseUrl = address.ToString(), serverSha256 = actualSha, syntheticHistoryMatches, fixtures,
+            effectFixture };
     await File.WriteAllTextAsync(Path.Combine(root, "ready.json"), JsonSerializer.Serialize(ready));
     var samples = new List<object>();
     using var process = System.Diagnostics.Process.GetCurrentProcess();
@@ -111,6 +123,178 @@ async Task RunAsync()
         await File.WriteAllTextAsync(Path.Combine(root, "numeric-process-samples.json"), JsonSerializer.Serialize(samples));
         await File.WriteAllTextAsync(Path.Combine(root, "stopped.json"), "{\"graceful\":true}");
     }
+}
+
+static async Task<object> CreateMerlinPublicTargetFixtureAsync(L12Catalog catalog, L12PlatformStore platform,
+    MatchRecorder recorder, L12RoomManager rooms, Guid runId, int stateVersion)
+{
+    var suffix = runId.ToString("N")[..7];
+    var password = Environment.GetEnvironmentVariable("L12_LOCAL_EFFECT_PASSWORD");
+    Environment.SetEnvironmentVariable("L12_LOCAL_EFFECT_PASSWORD", null);
+    if (string.IsNullOrWhiteSpace(password))
+        throw new InvalidOperationException("Explicit local effect fixture password is required");
+    var hostUsername = "qa" + suffix;
+    var guestUsername = "qb" + suffix;
+    var hostRegistration = platform.Register(hostUsername, password);
+    var guestRegistration = platform.Register(guestUsername, password);
+    if (!hostRegistration.Success || hostRegistration.Account is null
+        || !guestRegistration.Success || guestRegistration.Account is null)
+        throw new InvalidOperationException("Fixture account registration failed");
+
+    var hostSession = Guid.NewGuid();
+    var guestSession = Guid.NewGuid();
+    rooms.Connect(hostSession, hostRegistration.Account.Id, hostUsername);
+    rooms.Connect(guestSession, guestRegistration.Account.Id, guestUsername);
+    var created = rooms.CreateRoom(hostSession);
+    var roomCode = ReadRoomCode(created, hostSession);
+    var joined = rooms.JoinRoom(guestSession, roomCode);
+    if (joined.All(message => message.SessionId != guestSession))
+        throw new InvalidOperationException("Fixture guest did not join the room");
+
+    var room = FindOwnedRoom(rooms, roomCode);
+    var roomType = room.GetType();
+    var gate = (SemaphoreSlim)ReadRoomProperty(roomType, room, "Gate")!;
+    var sessions = (System.Collections.ICollection)ReadRoomProperty(roomType, room, "Sessions")!;
+    await gate.WaitAsync();
+    string matchId;
+    try
+    {
+        if ((bool)ReadRoomProperty(roomType, room, "IsSandbox")!
+            || sessions.Count != 2
+            || ReadRoomProperty(roomType, room, "Game") is not null
+            || (long)ReadRoomProperty(roomType, room, "CommandSequence")! != 0)
+            throw new InvalidOperationException("Fixture room was not pristine ordinary room state");
+
+        var policy = (L12OperationsPolicySnapshot)ReadRoomProperty(roomType, room, "OperationsPolicy")!;
+        var options = (L12RoomOptions)ReadRoomProperty(roomType, room, "Options")!;
+        var decks = new[] { catalog.DeckAt(0), catalog.DeckAt(1) };
+        matchId = "local-merlin-" + runId.ToString("N");
+        var engine = new L12GameEngine(catalog, matchId, roomCode, 63082,
+            [hostUsername, guestUsername], decks, skipPreparation: true,
+            operationsPolicy: policy, stateFormatVersion: stateVersion);
+        var first = engine.State.Players[0];
+        var second = engine.State.Players[1];
+        ClearFixturePlayer(first);
+        ClearFixturePlayer(second);
+        var merlin = FixtureCard(catalog, "S02-0603", "l12qa-merlin-source", 0);
+        merlin.SummonRound = -1;
+        var target = FixtureCard(catalog, "S02-0502", "l12qa-merlin-target", 1);
+        target.SummonRound = -1;
+        var response = FixtureCard(catalog, "S01-0016", "l12qa-merlin-response", 1);
+        response.Hidden = true;
+        response.SetRound = 0;
+        response.SummonRound = -1;
+        first.Field[0][0] = merlin;
+        first.SpecialZones.Runes = 1;
+        second.Field[0][0] = target;
+        second.Field[1][0] = response;
+        second.Hand.Add(FixtureCard(catalog, "S01-0003", "l12qa-merlin-response-discard", 1));
+        engine.State.ActivePlayer = 0;
+        engine.State.FirstPlayer = 0;
+        engine.State.Round = 2;
+        engine.State.TurnSerial = 2;
+        engine.State.Phase = L12Phase.Main;
+
+        await recorder.StartAsync(engine, options.MatchModeId, hostRegistration.Account.Id,
+            guestRegistration.Account.Id, decks);
+        roomType.GetProperty("Game")!.SetValue(room, engine);
+        var ready = (bool[])ReadRoomProperty(roomType, room, "Ready")!;
+        ready[0] = ready[1] = true;
+    }
+    finally { gate.Release(); }
+
+    rooms.Disconnect(hostSession);
+    rooms.Disconnect(guestSession);
+    return new
+    {
+        schema = 1,
+        kind = "merlin-public-target-v1",
+        hostUsername,
+        guestUsername,
+        roomCode,
+        matchId,
+        sourceInstanceId = "l12qa-merlin-source",
+        targetInstanceId = "l12qa-merlin-target",
+        responseInstanceId = "l12qa-merlin-response",
+        expectedTargetTroopsDelta = -3000,
+    };
+}
+
+static string ReadRoomCode(IReadOnlyList<OutgoingMessage> messages, Guid sessionId)
+{
+    var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+    foreach (var message in messages.Where(item => item.SessionId == sessionId))
+    {
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(message.Payload, options));
+        if (document.RootElement.TryGetProperty("type", out var type)
+            && type.GetString() == "roomState"
+            && document.RootElement.TryGetProperty("roomCode", out var roomCode))
+            return roomCode.GetString() ?? throw new InvalidOperationException("Fixture room code was empty");
+    }
+    throw new InvalidOperationException("Fixture room creation did not return roomState");
+}
+
+static object FindOwnedRoom(L12RoomManager rooms, string roomCode)
+{
+    var roomMap = typeof(L12RoomManager).GetField("_rooms", BindingFlags.Instance | BindingFlags.NonPublic)!
+        .GetValue(rooms) as System.Collections.IEnumerable
+        ?? throw new InvalidOperationException("Fixture room map unavailable");
+    foreach (var entry in roomMap)
+    {
+        var entryType = entry!.GetType();
+        if (string.Equals(entryType.GetProperty("Key")!.GetValue(entry) as string, roomCode,
+                StringComparison.Ordinal))
+            return entryType.GetProperty("Value")!.GetValue(entry)
+                   ?? throw new InvalidOperationException("Fixture room value unavailable");
+    }
+    throw new InvalidOperationException("Owned fixture room was not found");
+}
+
+static object? ReadRoomProperty(Type roomType, object room, string name)
+    => roomType.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!
+        .GetValue(room);
+
+static void ClearFixturePlayer(L12PlayerState player)
+{
+    player.Hand.Clear();
+    player.Relic = null;
+    player.ExtraRelics.Clear();
+    player.Resolving.Clear();
+    player.Graveyard.Clear();
+    player.Removed.Clear();
+    player.SpecialZones.Runes = 0;
+    player.SpecialZones.GodPower.Clear();
+    player.SpecialZones.Trials.Clear();
+    player.SpecialZones.CanopicProgress.Clear();
+    for (var row = 0; row < player.Field.Length; row++)
+        Array.Clear(player.Field[row]);
+}
+
+static L12CardInstance FixtureCard(L12Catalog catalog, string cardId, string instanceId, int ownerIndex)
+{
+    var definition = catalog.Cards[cardId];
+    return new L12CardInstance
+    {
+        InstanceId = instanceId,
+        CardId = definition.Id,
+        Name = definition.NameZh,
+        CardType = definition.CardType,
+        IsCounterTactic = definition.IsCounterTactic,
+        Faction = definition.Faction,
+        ImageUrl = definition.ImageUrl,
+        Cost = definition.Cost ?? 0,
+        HasPrintedCost = definition.Cost.HasValue,
+        EffectText = definition.Effect,
+        Traits = [.. definition.Traits],
+        Profession = definition.Profession,
+        EffectiveProfession = definition.Profession,
+        BaseTroops = definition.Troops ?? 0,
+        Troops = definition.Troops ?? 0,
+        DisasterLevel = definition.DisasterLevel ?? 0,
+        TrialValue = definition.TrialValue ?? 0,
+        CannotAttack = definition.Id is "S02-0005" or "S02-0007" or "S02-0201" or "S02-0603",
+        OwnerIndex = ownerIndex,
+    };
 }
 
 static string AssertLoopback(string value)

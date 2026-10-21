@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-PUBLIC-TARGET-TOUCH｜合成初态后真实公开目标链
+
+- 显式local-only宿主夹具在普通房间Gate内、recorder.Start前播种，默认16历史不变。梅林横竖各7触摸/4真实命令及exact request ACK、revision0→4、符文1→0、敌军4000→1000及明确日志均r4通过；Main读报告/看两图，有限独审CLEAR。
+- 唯一mobile-effect-type-audit-20261022/public-target-main-acceptance.json，固定58FB产品与FFF49宿主；r4没有hostPid/精确QA源摘要，不补造。后续只补QA拒空ACK/独立有界收尾及default-ready shape，38真实函数纯例/宿主编译验证，不冒重新业务跑过。不是自然建局/抽牌、全部能力/反击边界或真机；未部署、未关单。
+
 ## UI-20261022-ARCHIVE-SETTINGS-TOUCH｜紧凑详情与38px底线
 
 - 用户限定批准：图鉴隐藏侧栏后单触打开既有详情与原卡版本，移动slot六筛选38直接避免Teleport作用域丢失；设置仅手机布局关闭38，宽屏fine34/侧栏与原选择保持。未改变卡效、设置保存/账号或独立联动版本功能。
