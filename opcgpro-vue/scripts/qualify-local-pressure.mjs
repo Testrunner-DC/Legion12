@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import {spawn, execFileSync} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
 import {adaptFrozenPressureCore, assertLocalPressureTarget, cleanupLocalQualificationAccounts, digest} from './local-pressure-protocol.mjs'
+import {summarizeLocalPressureCost} from './local-pressure-cost.mjs'
 import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from 'file:///C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
@@ -232,6 +233,25 @@ try {
   }
   if (!report.allOwnedProcessesExited || !report.gracefulHostStop || report.ownedProcesses.some(item => item.forcedStop || item.exit?.code !== 0)) {
     report.cleanupFailed = true; report.status = 'local-cleanup-failed'; process.exitCode = 2
+  }
+  // Interpret already captured numbers only after every owned process exited.
+  // This does not rerun pressure, repair its result, or claim online acceptance.
+  if (report.allOwnedProcessesExited && fs.existsSync(path.join(output, 'pressure-report.json'))
+      && fs.existsSync(path.join(output, 'numeric-process-samples.json'))) {
+    try {
+      const cost = summarizeLocalPressureCost({
+        samples: JSON.parse(fs.readFileSync(path.join(output, 'numeric-process-samples.json'), 'utf8')),
+        pressure: JSON.parse(fs.readFileSync(path.join(output, 'pressure-report.json'), 'utf8')),
+        hostLog: fs.readFileSync(path.join(output, 'host.log'), 'utf8')})
+      const costPath = path.join(output, 'numeric-cost-summary.json')
+      fs.writeFileSync(costPath, JSON.stringify(cost, null, 2), {flag: 'wx'})
+      report.offlineNumericCost = {path: costPath, sha256: digest(fs.readFileSync(costPath)),
+        onlineCapacityAccepted: false}
+    } catch {
+      report.offlineNumericCostFailed = true
+      if (report.status === 'local-run-finished') report.status = 'local-cost-analysis-failed'
+      if (!process.exitCode) process.exitCode = 2
+    }
   }
   fs.writeFileSync(path.join(output, 'local-result.json'), JSON.stringify(report, null, 2), {flag: 'wx'})
   console.log(JSON.stringify({status: report.status, clientStatus: report.clientStatus, error: report.error,
