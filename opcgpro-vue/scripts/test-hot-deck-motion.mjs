@@ -75,6 +75,15 @@ assert.deepEqual(hotDeckTouchPaused.value, [false, false])
 assert.match(source, /scrollbar-width:none/)
 assert.match(source, /::-webkit-scrollbar\{display:none\}/)
 assert.doesNotMatch(source, /scrollbar-width:thin/)
-assert.match(source, /@media\(prefers-reduced-motion:reduce\).*animation:none!important/)
+assert.doesNotMatch(source, /prefers-reduced-motion/,
+  'human ruling: deck scrolling and hover remain enabled independently of the system motion preference')
+for (const name of ['DeckCover.vue', 'SavedDeckSelector.vue', 'LobbyPage.vue', 'L12DeckEditor.vue']) {
+  const component = parse(fs.readFileSync(path.join(front, 'src/l12', name), 'utf8')).descriptor
+  assert(component.styles.every(style => !style.content.includes('prefers-reduced-motion')),
+    `shared deck-cover hover must not be suppressed in ${name}`)
+}
+const battleMotion = fs.readFileSync(path.join(front, 'src/l12/motion.css'), 'utf8')
+assert.match(battleMotion, /@media \(prefers-reduced-motion: reduce\)/,
+  'the bounded deck ruling must not remove the existing other-motion safety fallback')
 assert.match(source, /:has\(:focus-visible\) \.hot-deck-track\{transform:none!important\}/, 'keyboard focus must reveal the first copy without moving a mouse-clicked clone')
-console.log('hot-deck-motion: original two-row rank grouping, 48/46px/s, recovery, hidden scrollbar and reduced-motion guards passed')
+console.log('hot-deck-motion: two-row grouping, 48/46px/s, recovery, keyboard/touch pause, hidden scrollbar and system-independent deck motion passed')

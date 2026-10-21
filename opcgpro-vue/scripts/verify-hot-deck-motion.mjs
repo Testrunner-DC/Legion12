@@ -248,15 +248,26 @@ try {
     const rows = []
     for (const row of [0, 1]) {
       const metrics = await geometry(page, row)
-      assert.equal(metrics.animation, 'none'); assert.equal(metrics.scrollbar, 'none'); assert.equal(metrics.webkitScrollbar, 'none'); assert.equal(metrics.horizontalBarHeight, 0)
-      assert.equal(await page.locator('.hot-deck-loop[aria-hidden]').nth(row).evaluate(loop => getComputedStyle(loop).display), 'none')
-      stopped(await motion(page, 450, row), 'reduced motion must remain static')
-      rows.push({ row: row + 1, metrics })
+      layout(metrics)
+      assert.notEqual(metrics.animation, 'none'); assert.equal(metrics.scrollbar, 'none'); assert.equal(metrics.webkitScrollbar, 'none'); assert.equal(metrics.horizontalBarHeight, 0)
+      assert.notEqual(await page.locator('.hot-deck-loop[aria-hidden]').nth(row).evaluate(loop => getComputedStyle(loop).display), 'none')
+      const observed = await motion(page, 450, row); moving(observed, 'confirmed deck motion remains enabled under reduced motion', row)
+      const transitions = await page.locator('.hot-deck-track').nth(row).evaluate(track => ({
+        cover: getComputedStyle(track.querySelector('.deck-cover')).transitionDuration,
+        fan: getComputedStyle(track.querySelector('.deck-cover__cards')).transitionDuration,
+      }))
+      assert.ok(transitions.cover.split(',').every(value => Number.parseFloat(value) >= .29))
+      assert.ok(transitions.fan.split(',').every(value => Number.parseFloat(value) >= .29))
+      await page.locator('.hot-deck-viewport').nth(row).hover()
+      stopped(await motion(page, 200, row), 'system-independent motion still pauses the hovered row')
+      moving(await motion(page, 350, 1-row), 'other row keeps moving under reduced motion', 1-row)
+      await page.mouse.move(0,0)
+      rows.push({ row: row + 1, metrics, observed, transitions })
     }
     await keyboardAll(page)
-    for (const row of [0, 1]) stopped(await motion(page, 250, row), 'reduced motion must not restart after keyboard release')
+    for (const row of [0, 1]) moving(await motion(page, 450, row), 'system-independent motion resumes after keyboard release', row)
     await page.screenshot({ path: path.join(output, `reduced-${viewport.width}x${viewport.height}.png`), fullPage: false })
-    report.scenarios.push({ viewport, preference: 'reduce', rows, all16KeyboardReachable: true, autoPlaybackForced: false })
+    report.scenarios.push({ viewport, preference: 'reduce', rows, all16KeyboardReachable: true, systemIndependentDeckMotion: true })
     await reduced.close()
   }
   assert.deepEqual(report.errors, [])

@@ -25,6 +25,7 @@ import './test-private-deck-template-contract.mjs'
 import { hasReliableQueuedPayloadDispatch } from './transport-queue-source-contract.mjs'
 import { gameOverPresentationHandoffContractVerified } from './test-spectator-game-over-presentation-handoff.mjs'
 import './test-hot-deck-motion.mjs'
+import './test-deck-motion-diagnostics.mjs'
 import { deploymentAuthIsolationVerified } from './test-deployment-auth-isolation.mjs'
 
 // These actual-template fixtures temporarily supply DOM constructors. Static

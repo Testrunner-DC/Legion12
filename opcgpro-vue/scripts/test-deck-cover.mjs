@@ -150,10 +150,11 @@ for (const contract of [
   'class="deck-cover__footer"',
   'data-cover-footer',
   'color-mix(in srgb,var(--deck-cover-accent) 76%,transparent)',
-  '@media(prefers-reduced-motion:reduce)',
   'background:transparent!important',
 ]) assert.match(coverComponent, new RegExp(contract.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 
+assert.doesNotMatch(coverComponent, /prefers-reduced-motion/,
+  'human ruling: the shared deck cover hover stays enabled regardless of system motion preference')
 assert.doesNotMatch(coverComponent, /\.deck-cover__cards\{width:65%\}/,
   'mobile covers must retain the same container-proportional fan instead of enlarging it again')
 

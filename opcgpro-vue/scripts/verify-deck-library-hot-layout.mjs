@@ -366,8 +366,8 @@ try {
   await prepare(reduced)
   await reduced.goto(`http://127.0.0.1:${port}/decks`)
   await waitForLibrary(reduced)
-  assert.equal(await reduced.locator('.hot-deck-track').first().evaluate(element => getComputedStyle(element).animationName), 'none', '减少动态时应停止自动轮播')
-  assert.equal(await reduced.locator('.hot-deck-loop[aria-hidden="true"]').first().evaluate(element => getComputedStyle(element).display), 'none', '减少动态时不应保留重复副本')
+  assert.notEqual(await reduced.locator('.hot-deck-track[data-motion-ready="true"]').first().evaluate(element => getComputedStyle(element).animationName), 'none', '按最新裁定，牌库轮播不随系统减少动态关闭')
+  assert.notEqual(await reduced.locator('.hot-deck-loop[aria-hidden="true"]').first().evaluate(element => getComputedStyle(element).display), 'none', '两行连续循环仍保留同内容衔接副本')
   await reduced.screenshot({ path:path.join(output,'deck-library-390x844-reduced-motion.png'), fullPage:true })
   await reduced.close()
 

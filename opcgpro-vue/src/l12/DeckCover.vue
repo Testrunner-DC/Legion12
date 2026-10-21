@@ -161,10 +161,6 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 .deck-cover__footer{padding:5px 8px}
 }
 
-@media(prefers-reduced-motion:reduce){.deck-cover,.deck-cover::before,.deck-cover__footer,.deck-cover__cards,.deck-cover__copy b{transition:none!important}
-.deck-cover:hover,:global(button:hover > .deck-cover),:global(a:hover > .deck-cover),:global(article:hover > .deck-cover),:global(button:focus-visible > .deck-cover),:global(a:focus-visible > .deck-cover),:global(article:focus-within > .deck-cover){transform:none}
-.deck-cover:hover .deck-cover__cards,:global(button:hover > .deck-cover .deck-cover__cards),:global(a:hover > .deck-cover .deck-cover__cards),:global(article:hover > .deck-cover .deck-cover__cards),:global(button:focus-visible > .deck-cover .deck-cover__cards),:global(a:focus-visible > .deck-cover .deck-cover__cards),:global(article:focus-within > .deck-cover .deck-cover__cards){transform:none}
-}
 
 @container(max-width:240px){.deck-cover .deck-cover__copy{left:8px;right:40%;bottom:6px;gap:2px}.deck-cover .deck-cover__copy small{display:none}.deck-cover .deck-cover__copy b{font-size:12px}.deck-cover .deck-cover__copy span,.deck-cover .deck-cover__copy em{font-size:9px;line-height:1.2}}
 </style>

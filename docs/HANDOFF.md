@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-21 实际客户端减少动态根因已证，按最新裁定保持牌库动效并热修
+
+- 人类确认正式/decks已加载a94新日志；1e311仅显式诊断链接上线后，真实客户端读回reduce=true、standard/fine/hover=true、两轨ready=true却animation=none及cover/fan过渡0s。不是未刷新或初始化失败。此前对局off修复真实有效，但不能代替此客户端剩余原因；原始回执和失败记录保留。
+- 人类随后明确“保持这个动效的开启，不随系统设置”，取代原牌库reduce静态约定，不新增开关。P4只删除Library滚动/外层、DeckCover及Selector/旧Lobby/Editor封面宿主六处专属reduce阻断；原对局off、essential、其他系统reduce、卡效/业务/最终布局均不改。
+- 兼容766d977a最终全前端/类型/双base、七组真实SFC、完整构建App六个系统×原设置组合及844触摸共七组通过：两行48/46px/s、实际鼠标上浮4px/fan1.08/0.3s、单行暂停恢复；默认诊断隐藏。Main361/P0—P4与独审CLEAR。完整App首次本地端口不一致使合成摘要未加载，旧失败保留，显式绑定本地端点后r2通过，未改产品掩盖失败。
+- 07:35 UTC已不停服静态上线，独立6路由/184磁盘/42公网和同匿名WS不断通过；正式d7/PID468393、测试872d/PID451870、maintenance=false不变，后台重启/维护写/DB操作/业务统计测试0。原客户端更新后尚未人工回报，不冒其真机确认或30＋10通过。唯一deck-system-motion-hotfix-20261021/release-session-summary.json；1e311取证回执另存，不重复部署。完整后台部署仍取消，共享shutdown已批准未实施，其他队列不凭此变更。
+
 ## 2026-10-21 完整入口误伤根因已修，热门滚动/悬停三档实测并热修
 
 - 人类再次反馈b113滚动/hover未见，Main用同一实际构建完整App和原设置重现：standard两行运动，off使两行duration=1e-6s/iteration1，cover/fan过渡亦1e-6s。根因为App全局对局动画关闭规则误伤站点，先前组件夹具漏App样式，不能继续以其7/7代替完整入口。未推给缓存或系统偏好。

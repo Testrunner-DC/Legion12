@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-deck-motion-diagnostics-internal",
+  "date": "2026-10-21",
+  "audience": "internal",
+  "reason": "仅显式诊断链接开启牌库动效只读面板，显示计算样式、动画条件和版本；不上传、不读取身份或牌库正文、不改动效规则和默认页面。",
+  "paths": ["opcgpro-vue/src/l12/site/DeckMotionDiagnostics.vue", "opcgpro-vue/src/l12/site/DeckLibraryPage.vue"]
+}

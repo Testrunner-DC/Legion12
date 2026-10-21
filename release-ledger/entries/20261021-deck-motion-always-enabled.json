@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-deck-motion-always-enabled",
+  "date": "2026-10-21",
+  "audience": "players",
+  "title": "牌库动效保持开启",
+  "changes": [{
+    "category": "ui",
+    "text": "热门牌库双行自动滚动和牌库封面悬停保持开启，不再随系统的减少动态效果设置关闭；悬停、触摸和键盘操作时仍可暂停当前行。",
+    "paths": ["opcgpro-vue/src/l12/site/DeckLibraryPage.vue", "opcgpro-vue/src/l12/DeckCover.vue", "opcgpro-vue/src/l12/SavedDeckSelector.vue", "opcgpro-vue/src/l12/LobbyPage.vue", "opcgpro-vue/src/l12/L12DeckEditor.vue"]
+  }]
+}

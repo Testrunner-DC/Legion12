@@ -159,5 +159,4 @@ function officialSourceCards(deck: { name: string; masterId: string }) {
 .deck-picker>div>button{min-width:0;overflow:visible;border-radius:0;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 .deck-picker>div>button :deep(.deck-cover){border:0}
 @media(hover:hover) and (pointer:fine){.deck-picker>div>button:not(:disabled):hover,.deck-picker>div>button:not(:disabled):focus-visible{transform:translateY(-4px)}.deck-picker>div>button:hover :deep(.deck-cover),.deck-picker>div>button:focus-visible :deep(.deck-cover){transform:none}}
-@media(prefers-reduced-motion:reduce){.deck-picker>div>button{transition:none!important}.deck-picker>div>button:hover,.deck-picker>div>button:focus-visible{transform:none}}
 </style>

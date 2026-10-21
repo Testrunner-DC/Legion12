@@ -1424,5 +1424,4 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 :global(html[data-l12-editor-portrait="true"] .single-card-filters input){grid-column:1/-1}
 .saved-list{padding-top:5px}.saved-list article,.mobile-saved-decks-list>button{transition:transform .3s cubic-bezier(.4,0,.2,1)}
 @media(hover:hover) and (pointer:fine){.saved-list article:hover,.saved-list article:focus-within,.mobile-saved-decks-list>button:hover,.mobile-saved-decks-list>button:focus-visible{transform:translateY(-4px)}.saved-list article:hover :deep(.deck-cover),.saved-list article:focus-within :deep(.deck-cover),.mobile-saved-decks-list>button:hover :deep(.deck-cover),.mobile-saved-decks-list>button:focus-visible :deep(.deck-cover){transform:none}}
-@media(prefers-reduced-motion:reduce){.saved-list article,.mobile-saved-decks-list>button{transition:none!important}.saved-list article:hover,.saved-list article:focus-within,.mobile-saved-decks-list>button:hover,.mobile-saved-decks-list>button:focus-visible{transform:none}}
 </style>

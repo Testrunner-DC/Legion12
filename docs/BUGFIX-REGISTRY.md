@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜用户浏览器减少动态导致热门与悬停静止：真实取证及新裁定
+
+- 真实正式客户端frontend1e311：visible/focused、animationSetting=standard、reduce=true、hover/fine=true；after两轨ready=true，时长变量72.8299/75.9964s但计算animation=none、duration0s、cover/fan过渡0s。实际CSS吻合现行系统reduce静态分支，不再猜缓存或用本地reduce=false替代客户证据。
+- 明确新授权：“保持这个动效的开启，不随系统设置”。同类扫描rg覆盖DeckLibraryPage/DeckCover/SavedDeckSelector/LobbyPage/L12DeckEditor/BattleHubPage/SandboxPage，六处专属阻断移除；共享App对局off和motion.css其他reduce逐字保持，键盘/触摸/hover暂停、无条和最终封面位置不改。此裁定取代下方历史“牌库reduce保持静态”，不扩为全站或对局强播放。
+- 新源断言在原产品确实RED，最终SFC七组及完整最终构建App七组通过，覆盖系统两态×对局三档和844触摸；实际鼠标lift=-4/fan1.08/transition0.3s、两行48/46px/s及独立暂停恢复。361合同、P0—P4、完整前端/类型/双base与独审通过。完整App首轮只因本地端口不匹配而无摘要，显式测试端点后r2过，原失败不改；不冒线上私局或真机验证。
+- 766d977a已静态热修并独立6HTML/184磁盘/42公网及匿名WS连续核验；后台/测试PID与DLL、维护false不变。唯一deck-system-motion-hotfix-20261021/release-session-summary.json；诊断正常地址默认隐藏且不上传。未以此关闭后台报告，更新后客户人工确认未收到，性能30＋10未通过。回退不得重引任一牌库系统阻断或波及其他系统reduce。
+
 ## 2026-10-21｜对局动画off全局压制站点滚动及悬停：完整入口漏验收口
 
 - 人类再次报告b113无滚动/hover。Main在实际b113完整App（非SFC替换）使用原设置复现：standard两行有位移，off使动画duration=1e-6s/iteration1且transform=none，cover/fan transition=1e-6s；浏览器reduce=false。此前夹具只导style.css而漏App全局style/motion/uiSystem，故正常偏好的7/7无法覆盖此真实条件。不能把原因推给缓存或仅补更多相同局部测试。
