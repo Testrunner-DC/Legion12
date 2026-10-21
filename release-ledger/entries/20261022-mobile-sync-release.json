@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-mobile-sync-release",
+  "date": "2026-10-22",
+  "audience": "players",
+  "title": "移动操作与同步优化",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "优化手机直接选目标、选位置和资源选择时的操作区，确认与取消按钮不再被记录入口挤出；补大图鉴筛选、设置关闭、牌库编辑器与回放提示页返回入口的触摸范围。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css",
+        "opcgpro-vue/src/l12/ReplayPage.vue",
+        "opcgpro-vue/src/l12/CardArchive.vue",
+        "opcgpro-vue/src/l12/site/L12SettingsModal.vue",
+        "opcgpro-vue/src/l12/L12DeckEditor.vue"
+      ]
+    },
+    {
+      "category": "ui",
+      "text": "补齐手机产品相关链接和账号恢复页返回链接的触摸范围，保留原有页面与操作流程。",
+      "paths": [
+        "opcgpro-vue/src/l12/site/AccountRecoveryPage.vue",
+        "opcgpro-vue/src/l12/site/NewsPage.vue"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "减少手牌张数变化时未变卡牌内容的重复传输，保留全部可见信息；首次连接、重新连接或旧状态无法确认时仍完整同步，旧客户端保持兼容。",
+      "paths": [
+        "opcgpro-vue/src/l12/handArrayDelta.ts",
+        "服务端WebSocket/TwelveLegions/L12HandArrayDelta.cs",
+        "服务端WebSocket/TwelveLegions/L12CardSnapshotFrame.cs",
+        "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs"
+      ]
+    }
+  ]
+}

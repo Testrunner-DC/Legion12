@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-transport-lifecycle-internal",
+  "date": "2026-10-22",
+  "audience": "internal",
+  "reason": "共享停服连接关闭、聊天与资源发送收尾，以及只读战斗摘要分配优化；不改变卡效、可靠确认、业务持久化格式或玩家可见内容。运维实现不进入玩家更新日志。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12ChatRuntime.cs",
+    "服务端WebSocket/TwelveLegions/L12OutboundConnection.cs",
+    "服务端WebSocket/TwelveLegions/L12StructuredCardRules.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.Lifecycle.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.ResourceSync.cs"
+  ]
+}
