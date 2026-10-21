@@ -254,4 +254,5 @@ function confirm() {
 .selector-pages{display:flex;align-items:center;justify-content:center;gap:12px;padding:0 18px 14px;color:#91a0a8;font-size:13px}.selector-pages span{min-width:0;text-align:center}.selector-pages button{flex:none;white-space:nowrap}
 @media(max-width:760px){.selector-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.selector-filters>button{grid-column:span 2}}@media(max-width:640px){.saved-deck-selector-mask{padding:10px}.selector-list{grid-template-columns:1fr}.saved-deck-selector>footer{flex-wrap:wrap}.saved-deck-selector footer>span{width:100%;margin-right:0}.selector-pages{justify-content:space-between}.selector-filters{grid-template-columns:1fr}.selector-filters>button{grid-column:auto}}
 @media(hover:hover) and (pointer:fine){.selector-list>button:not(:disabled):hover,.selector-list>button:not(:disabled):focus-visible{transform:translateY(-4px)}.selector-list>button:hover :deep(.deck-cover),.selector-list>button:focus-visible :deep(.deck-cover){transform:none}}
+@media(max-width:900px),(pointer:coarse){.saved-deck-selector header>button{box-sizing:border-box;width:44px;height:44px;flex:0 0 44px;padding:0}}
 </style>

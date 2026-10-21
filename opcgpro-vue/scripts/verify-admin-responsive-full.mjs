@@ -1,15 +1,42 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const output = process.env.L12_QA_OUT || path.resolve(root, '../artifacts/admin-responsive-full')
+const scriptPath = fileURLToPath(import.meta.url)
+const sourceSha = createHash('sha256').update(fs.readFileSync(scriptPath)).digest('hex').toUpperCase()
+const output = process.env.L12_QA_OUT
+const cacheDir = process.env.L12_QA_CACHE
+const scope = process.env.L12_QA_SCOPE || 'full'
+assert(output, 'L12_QA_OUT must point to a governed D/E acceptance directory')
+assert(cacheDir, 'L12_QA_CACHE must point to a governed D/E cache directory')
+assert(['full', 'targeted', 'routes'].includes(scope), `unknown L12_QA_SCOPE: ${scope}`)
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright')
+const pwsh = process.env.L12_PWSH
+assert(pwsh && path.isAbsolute(pwsh) && fs.existsSync(pwsh) && fs.statSync(pwsh).isFile(), 'L12_PWSH must be an existing absolute executable selected by the shared initializer')
+const storageGuard = path.resolve(root, '..', 'ops', 'windows', 'L12GeneratedStorage.ps1')
+execFileSync(pwsh, ['-NoProfile', '-NonInteractive', '-Command',
+  '. $env:L12_STORAGE_GUARD; '
+  + 'Assert-L12GeneratedPath -Path $env:L12_ACCEPTANCE_OUT -Purpose "admin responsive acceptance" | Out-Null; '
+  + 'Assert-L12GeneratedPath -Path $env:L12_ACCEPTANCE_CACHE -Purpose "admin responsive cache" | Out-Null; '
+  + 'foreach($name in @("TEMP","TMP","TMPDIR")){'
+  + '$value=[Environment]::GetEnvironmentVariable($name,"Process"); '
+  + 'if([string]::IsNullOrWhiteSpace($value)){throw "L12_TEMP_PATH_MISSING: $name"}; '
+  + 'Assert-L12GeneratedPath -Path $value -Purpose "admin responsive $name" | Out-Null}',
+], { env: { ...process.env, L12_STORAGE_GUARD: storageGuard, L12_ACCEPTANCE_OUT: output, L12_ACCEPTANCE_CACHE: cacheDir },
+  stdio: 'pipe', timeout: 15_000, windowsHide: true })
+if (fs.existsSync(output)) assert.equal(fs.readdirSync(output).length, 0, 'acceptance output must be a new or empty directory; refusing to overwrite evidence')
 fs.mkdirSync(output, { recursive: true })
+fs.mkdirSync(cacheDir, { recursive: true })
+const progressPath=path.join(output,'progress.ndjson')
+function appendProgress(stage,details={}){fs.appendFileSync(progressPath,JSON.stringify({schemaVersion:1,sourceSha,stage,at:new Date().toISOString(),...details})+'\n')}
+appendProgress('started',{scope,routeViewportMode:process.env.L12_QA_VIEWPORTS||'targeted'})
 
 const baseScript = fs.readFileSync(path.join(root, 'scripts/verify-profile-admin-responsive.mjs'), 'utf8')
 const baseEntry = baseScript.match(/const entry = `([\s\S]*?)`\r?\n\r?\nlet browser/)?.[1]
@@ -31,6 +58,7 @@ const components={
  governance:(await import('/src/l12/site/AdminMatchGovernancePanel.vue')).default,
  integrity:(await import('/src/l12/site/AdminRankedIntegrityPanel.vue')).default,
  tournaments:(await import('/src/l12/site/AdminTournamentWorkbench.vue')).default,
+ sandbox:(await import('/src/l12/site/SandboxPage.vue')).default,
  operations:(await import('/src/l12/site/AdminOperationsPanel.vue')).default,
  globalData:(await import('/src/l12/site/AdminGlobalDataPanel.vue')).default,
  cardAnalytics:(await import('/src/l12/site/AdminCardAnalyticsPage.vue')).default,
@@ -54,6 +82,7 @@ const routeDefs=[
  ['matches/governance',components.governance,'match-governance'],
  ['matches/integrity',components.integrity,'integrity'],
  ['matches/tournaments',components.tournaments,'tournaments',{adminMode:true,embedded:true}],
+ ['operations/sandbox',components.sandbox,'sandbox'],
  ['operations/config',components.operations,'operations'],
  ['operations/global',components.globalData,'global-data'],
  ['operations/cards',components.cardAnalytics,'card-analytics'],
@@ -79,12 +108,18 @@ const qaLegal={copyright:'© 2026 Cynic Games',trademark:'十二军团后台响�
 platform.adminApi.getContent=async key=>({key,draftValue:key==='home.composition'?JSON.stringify(qaHome):key==='site.footer'?JSON.stringify(qaLegal):'规则中心公告验收内容',publishedValue:key==='home.composition'?JSON.stringify(qaHome):key==='site.footer'?JSON.stringify(qaLegal):'规则中心公告验收内容',status:'published',version:7,updatedBy:'移动端验收管理员',updatedAt:'2026-09-25T08:00:00Z'})
 const qaMedia=[{id:'media-hero',kind:'hero',altText:'响应式验收轮播主视觉',focalX:.5,focalY:.5,originalFormat:'svg',contentHash:'0123456789abcdef0123456789abcdef',desktopUrl:qaImage,mobileUrl:qaImage,thumbnailUrl:qaImage,desktopWidth:600,desktopHeight:351,mobileWidth:390,mobileHeight:520,thumbnailWidth:300,thumbnailHeight:176,originalBytes:4096,deliveryBytes:2048,createdBy:'qa-admin',createdAt:'2026-09-25T08:00:00Z',referenceCount:0,desktopAltText:'桌面轮播验收图',mobileAltText:'移动轮播验收图',thumbnailAltText:'缩略轮播验收图',independentVariants:true},{id:'media-card-art',kind:'card-art',altText:'验收异画素材',focalX:.5,focalY:.5,originalFormat:'svg',contentHash:'abcdef0123456789abcdef0123456789',desktopUrl:qaImage,mobileUrl:qaImage,thumbnailUrl:qaImage,desktopWidth:500,desktopHeight:700,mobileWidth:500,mobileHeight:700,thumbnailWidth:250,thumbnailHeight:350,originalBytes:4096,deliveryBytes:2048,createdBy:'qa-admin',createdAt:'2026-09-25T08:00:00Z',referenceCount:1,desktopAltText:'验收异画',mobileAltText:'验收异画',thumbnailAltText:'验收异画',independentVariants:false}]
 platform.adminApi.siteMedia=async kind=>kind?qaMedia.filter(item=>item.kind===kind):qaMedia
+platform.adminApi.searchSiteMedia=async query=>{const items=query?.kind?qaMedia.filter(item=>item.kind===query.kind):qaMedia;return{items,total:items.length,page:query?.page||1,pageSize:query?.pageSize||24,hasMore:false}}
 platform.adminApi.siteCategories=async()=>[{id:'category-news',kind:'news',name:'官方公告与超长分类名称',slug:'official-news',sortOrder:0,active:true,version:3,itemCount:1},{id:'category-video',kind:'video',name:'官方视频',slug:'official-video',sortOrder:0,active:true,version:2,itemCount:1},{id:'category-product',kind:'product',name:'产品资讯',slug:'products',sortOrder:0,active:true,version:2,itemCount:1}]
 platform.adminApi.contentBatches=async()=>[{id:'batch-responsive-qa',action:'publish',status:'published',actorId:'qa-admin',actorName:'移动端验收管理员',createdAt:'2026-09-25T08:00:00Z',items:[{key:'home.composition',previousValue:'{}',publishedValue:JSON.stringify(qaHome),publishedVersionId:'content-v7'}]}]
 platform.adminApi.articles=async()=>[{id:'qa-news',title:'后台响应式验收资讯稿件',summary:'用于站点内容编辑器的成功态数据。',body:'正文',category:'官方公告',coverUrl:qaImage,link:'',slug:'qa-news',pinned:true,status:'published',hasUnpublishedChanges:false,createdAt:'2026-09-24T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z',publishedAt:'2026-09-25T08:00:00Z',author:'十二军团官方',updatedBy:'qa-admin',publishedBy:'qa-admin',revision:3,kind:'news',categoryId:'category-news',mediaAssetId:'media-hero',sortOrder:0}]
-platform.adminApi.alternateArts=async()=>[{id:'art-qa',artCode:'ALT-QA-001',baseCardId:'S01-02C1',displayName:'移动端验收限定异画',mediaAssetId:'media-card-art',imageUrl:qaImage,thumbnailUrl:qaImage,active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z',productId:'product-qa',productName:'响应式验收典藏',cardImageId:'art-qa',builtIn:false,baseCardName:'移动端长名称卡效验收卡牌'}]
+const qaProduct={id:'product-qa',name:'响应式验收典藏',active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z',categoryId:'category-product',categoryName:'产品资讯',source:'site',status:'published'}
+const qaRarity={id:'rarity-qa',code:'UR-QA',name:'响应式验收罕贵',active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z'}
+const qaAlternateArt={id:'art-qa',artCode:'ALT-QA-001',baseCardId:'S01-02C1',displayName:'移动端验收限定异画',mediaAssetId:'media-card-art',imageUrl:qaImage,thumbnailUrl:qaImage,active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z',productId:'product-qa',productName:'响应式验收典藏',products:[qaProduct],rarities:[qaRarity],kind:'alternate-art',artist:'响应式验收画师',cardImageId:'art-qa',builtIn:false,baseCardName:'移动端长名称卡效验收卡牌'}
+platform.adminApi.alternateArts=async()=>[qaAlternateArt]
+platform.adminApi.searchAlternateArts=async query=>({items:[qaAlternateArt],total:1,page:query?.page||1,pageSize:query?.pageSize||20})
 platform.adminApi.alternateArtGrants=async()=>[{id:'grant-qa',accountId:'account-001',username:'长昵称玩家一号',alternateArtId:'art-qa',sourceKind:'manual',sourceReference:'响应式验收',grantedAt:'2026-09-25T08:00:00Z'}]
-platform.adminApi.alternateArtProducts=async()=>[{id:'product-qa',name:'响应式验收典藏',active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z'}]
+platform.adminApi.alternateArtProducts=async()=>[qaProduct]
+platform.adminApi.alternateArtRarities=async()=>[qaRarity]
 platform.adminApi.alternateArtAwardRules=async()=>[{id:'award-qa',alternateArtId:'art-qa',kind:'season-final',seasonId:'S01',eventId:'',minimumTierIndex:2,active:true,createdAt:'2026-09-25T08:00:00Z',updatedAt:'2026-09-25T08:00:00Z'}]
 platform.adminApi.rankedIntegrityAudits=async()=>Array.from({length:2},(_,index)=>({id:'integrity-'+index,matchId:'MATCH-INTEGRITY-'+index,seasonId:'S01',firstAccountId:'account-001',firstPlayer:'长昵称玩家一号',secondAccountId:'account-002',secondPlayer:'长昵称玩家二号',winner:0,durationMs:125000,meaningfulCommandCount:18,conclusionKind:'completed',networkLinked:true,networkCorrelationId:'network-correlation-long-'+index,signals:[{code:'unilateral-score-transfer',label:'单向分数转移'}],browserLinked:true,browserCorrelationId:'browser-correlation-long-'+index,finalRound:3,reviewRecommended:true,effectiveDisposition:'unreviewed',enforcement:'held',createdAt:'2026-09-25T08:00:00Z'}))
 platform.adminApi.releaseEnvironments=async()=>[{environment:'production',version:20260925,state:'healthy',adapterConfigured:true,activeArtifactId:'artifact-with-a-very-long-production-identifier',activeCommit:'0123456789abcdef0123456789abcdef',health:{success:true,code:'ok',durationMs:42},webSocket:{success:true,code:'ok',durationMs:35},observedAt:'2026-09-25T08:00:00Z'}]
@@ -93,10 +128,12 @@ platform.adminApi.releaseRuns=async()=>[]
 platform.adminApi.securityStatus=async()=>({activeApprovers:3,secondApproverReady:true,highRiskAuditAvailable:true,auditRetentionDays:365,auditArchiveSegments:4,lastAuditArchiveAt:'2026-09-25T08:00:00Z',disabledAccounts:2,activeLoginLocks:1,pendingApprovals:1,oldestPendingApprovalAt:'2026-09-25T07:00:00Z',platformVersion:20260925,alerts:[{code:'qa-warning',severity:'warning',count:1,message:'响应式验收安全提示'}],offlineBootstrapUsed:false,offlineBootstrapEnabled:false,offlineBootstrapCredentialConfigured:false,mfa:{credentialProtectionAvailable:true,enrollmentEnabled:false,mode:'optional',secretsPersisted:true,requirement:'optional'}})
 platform.adminApi.auditArchives=async()=>[]
 platform.adminApi.commands=async()=>[{id:'command-very-long-identifier-0123456789abcdef',type:'operations-config-apply',actorId:'qa-admin',actorName:'移动端验收管理员',requestedAt:'2026-09-25T08:00:00Z',scope:'operations',reason:'响应式验收',dryRun:false,risk:'high',status:'executed',permission:'admin.operations.write',payload:{},correlationId:'correlation-responsive-qa',resourceVersion:7,updatedAt:'2026-09-25T08:00:00Z'}]
+platform.adminApi.commandsPage=async query=>{const items=await platform.adminApi.commands();return{items,total:items.length,page:query?.page||1,pageSize:query?.pageSize||10}}
 const operationsConfigPayload={season:{id:'S01',name:'第一赛季·后台响应式验收',status:'active',startsAt:'2026-09-01T00:00:00Z',endsAt:'2026-12-01T00:00:00Z'},disasterPool:{cardIds:['S01-DS01','S01-DS02','S01-DS03','S01-DS04','S01-DS05','S01-DS06','S01-DS07','S01-DS08','S01-DS10'],annihilationLocked:true},cardRestrictions:[{cardId:'S01-02C1',maxCopies:2,reason:'验收长文本限制说明'}],defaultPresetDeckIds:['preset-order-control'],matchModes:[{id:'ranked',name:'排位对战',enabled:true},{id:'casual',name:'休闲对战',enabled:true}],defaultRoomConfig:{matchModeId:'ranked',spectating:'public',handVisibility:'request',disasterMode:'season'},featureFlags:{tournaments:true,publicDecks:true,spectating:true},maintenance:{enabled:true,message:'计划维护期间新对局入口关闭，已有对局继续。',startsAt:'2026-10-01T01:00:00Z',endsAt:'2026-10-01T03:00:00Z',advanceBroadcastHours:24,expectedDurationHours:2},announcements:[{id:'announcement-qa',content:'后台响应式验收长期公告',enabled:true,sortOrder:0}]}
 const operationsView={version:37,versionId:'operations-config-responsive-qa-v37',config:operationsConfigPayload,updatedBy:'移动端验收管理员',updatedAt:'2026-09-25T08:00:00Z'}
 platform.adminApi.operationsConfig=async()=>structuredClone(operationsView)
 platform.adminApi.operationsHistory=async()=>[{id:'operations-history-v36',version:36,action:'apply',config:structuredClone(operationsConfigPayload),actorId:'qa-admin',actorName:'移动端验收管理员',reason:'上一版响应式验收配置',createdAt:'2026-09-24T08:00:00Z'}]
+platform.adminApi.operationsSectionHistory=async section=>[{id:'operations-section-history-v36-'+section,section,revision:36,operationsVersion:36,action:'apply',config:section==='room'?{defaultRoomConfig:structuredClone(operationsConfigPayload.defaultRoomConfig),matchModes:structuredClone(operationsConfigPayload.matchModes)}:section==='features'?{featureFlags:structuredClone(operationsConfigPayload.featureFlags)}:section==='announcements'?{announcements:structuredClone(operationsConfigPayload.announcements)}:{maintenance:structuredClone(operationsConfigPayload.maintenance)},changedFields:[section],actorId:'qa-admin',actorName:'移动端验收管理员',reason:'上一版响应式验收配置',createdAt:'2026-09-24T08:00:00Z'}]
 platform.adminApi.runtimeStatus=async()=>({observedAt:'2026-09-25T08:00:00Z',serviceVersion:'2026.09.25-responsive-qa-long-version',cardCount:324,onlineAccountCount:128,webSocketConnectionCount:96,roomCount:24,activeGameCount:18,releaseEnvironments:await platform.adminApi.releaseEnvironments(),cdn:{name:'卡图 CDN',configured:true,state:'healthy',detail:'全部区域可用',observedAt:'2026-09-25T08:00:00Z'},httpPerformance:{windowSeconds:300,slowRequestThresholdMilliseconds:800,minimumSamples:20,minimumReadSamples:10,minimumMutationSamples:5,sampleCount:240,readSampleCount:180,mutationSampleCount:60,diagnosticRequestCount:8,inFlight:3,peakInFlight:18,averageDurationMilliseconds:42,p95LatencyBand:'100-250ms',slowRequestCount:2,slowRequestPercent:.8,rateLimitedCount:1,rateLimitedPercent:.4,serverErrorCount:0,serverErrorPercent:0,expectedUnavailableCount:1,expectedUnavailablePercent:.4,clientCancelledCount:1,clientCancelledPercent:.4,sampleSufficient:true,withinBudget:true,budgetFailures:[]}})
 const rankedTier=(name,minimum,index)=>({name,minimum,baseDelta:100+index*10,winStreakCap:50,lossProtectionCap:40,ratingGapCap:30,streakTerminationReward:20,color:'#d7ba63',icon:'◆'})
 const rankedFactions=['order','chaos','fate'].map((id,factionIndex)=>({id,name:['秩序','混沌','命运'][factionIndex],color:'#d7ba63',icon:'◆',firstTitle:'派系第一',topFiveTitle:'派系前五',tiers:['新星','星火','群星','璀璨','永恒'].map((name,index)=>rankedTier(name,index*10000,index))}))
@@ -134,6 +171,7 @@ const qaOriginalFetch=window.fetch.bind(window)
 window.fetch=async(input,init)=>{
  const url=String(typeof input==='string'?input:input.url)
  if(url.includes('/api/operations/effective-policy'))return new Response(JSON.stringify({version:37,season:operationsConfigPayload.season,disasterCardIds:operationsConfigPayload.disasterPool.cardIds,matchModes:operationsConfigPayload.matchModes,defaultRoomConfig:operationsConfigPayload.defaultRoomConfig,seasonDisasterModeAvailable:true,cardRestrictions:operationsConfigPayload.cardRestrictions,defaultPresetDeckIds:operationsConfigPayload.defaultPresetDeckIds,maintenance:{...operationsConfigPayload.maintenance,active:false,entryBlocked:false,status:'upcoming',broadcastMessage:operationsConfigPayload.maintenance.message},announcements:operationsConfigPayload.announcements}),{status:200,headers:{'Content-Type':'application/json'}})
+ if(url.includes('/api/decks/summaries?')){const params=new URL(url,location.origin).searchParams;return new Response(JSON.stringify({items:[],total:0,page:Number(params.get('page')||1),pageSize:Number(params.get('pageSize')||30),generation:1,permissionVersion:8,catalogVersion:'A'.repeat(64),policyVersion:37,facets:{masters:[],legal:0,illegal:0}}),{status:200,headers:{'Content-Type':'application/json'}})}
  return qaOriginalFetch(input,init)
 }
 `
@@ -142,22 +180,30 @@ const cutStart = baseEntry.indexOf("const mode=new URLSearchParams")
 const beforeMode = baseEntry.slice(0, cutStart)
 const entry = beforeMode + extraMocks + imports
 
-const routePaths = [
+const fullRoutePaths = [
  '/admin','/admin/users/accounts','/admin/users/accounts/account-001','/admin/users/renames','/admin/users/bugs',
  '/admin/content/site','/admin/content/rules','/admin/content/effects','/admin/content/alternate-arts',
  '/admin/matches/archive','/admin/matches/governance','/admin/matches/integrity','/admin/matches/tournaments',
- '/admin/operations/config','/admin/operations/global','/admin/operations/cards',
+ '/admin/operations/sandbox','/admin/operations/config','/admin/operations/global','/admin/operations/cards',
  '/admin/system/releases','/admin/system/security','/admin/system/storage','/admin/system/commands','/admin/system/audit',
 ]
-const viewports=[
+const fullViewports=[
  {width:320,height:568},{width:360,height:800},{width:390,height:844},{width:430,height:932},{width:768,height:1024},
  {width:1024,height:768},{width:1280,height:720},{width:1366,height:768},{width:1440,height:900},{width:1920,height:1080},{width:2560,height:1080},
 ]
+const targetedViewports=[{width:390,height:844},{width:844,height:390}]
+const requestedRoutes=(process.env.L12_QA_ROUTES||'').split(',').map(value=>value.trim()).filter(Boolean)
+if(scope==='routes'){assert.ok(requestedRoutes.length,'L12_QA_ROUTES must select at least one route in routes scope');assert.deepEqual(requestedRoutes.filter(route=>!fullRoutePaths.includes(route)),[],`unknown admin routes: ${requestedRoutes.filter(route=>!fullRoutePaths.includes(route)).join(', ')}`)}
+const routeViewportMode=process.env.L12_QA_VIEWPORTS||'targeted'
+assert(['targeted','all'].includes(routeViewportMode),`unknown L12_QA_VIEWPORTS: ${routeViewportMode}`)
+const routePaths=scope==='targeted'?['/admin/content/alternate-arts','/admin/operations/sandbox']:scope==='routes'?requestedRoutes:fullRoutePaths
+const viewports=scope==='full'||scope==='routes'&&routeViewportMode==='all'?fullViewports:targetedViewports
 
 let browser
-const server=await createServer({root,configLoader:'runner',cacheDir:path.join(root,'.tmp','vite-admin-responsive-full-audit'),server:{host:'127.0.0.1',port:0,strictPort:false},plugins:[{
+let currentCase={stage:'startup'}
+const server=await createServer({root,configLoader:'runner',cacheDir,server:{host:'127.0.0.1',port:0,strictPort:false},plugins:[{
  name:'full-admin-responsive-audit',resolveId(id){if(id==='/__admin_audit__.js')return id},load(id){if(id==='/__admin_audit__.js')return entry},
- configureServer(devServer){devServer.middlewares.use((request,response,next)=>{if(request.url?.match(/^\/__admin_audit__(\?|$)/)){response.setHeader('Content-Type','text/html');response.end('<style>html,body,#app{margin:0;min-height:100%;background:#080d11;color:#eee}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__admin_audit__.js"></script>');return}next()})}
+ configureServer(devServer){devServer.middlewares.use((request,response,next)=>{if(request.url?.match(/^\/__admin_audit__(\?|$)/)){response.setHeader('Content-Type','text/html');response.end('<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"><style>html,body,#app{margin:0;min-height:100%;background:#080d11;color:#eee}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__admin_audit__.js"></script>');return}next()})}
 }]})
 
 function slug(route){return route.replace(/^\/admin\/?/,'').replaceAll('/','--')||'overview'}
@@ -165,10 +211,11 @@ const readyText={
  '/admin':'待处理事项','/admin/users/accounts':'长昵称玩家一号','/admin/users/accounts/account-001':'基本资料',
  '/admin/users/renames':'超长目标用户名','/admin/users/bugs':'移动端弹框在极窄屏幕下信息显示不完整',
  '/admin/content/rules':'规则中心与 FAQ 裁定库','/admin/content/effects':'移动端长名称卡效验收卡牌',
- '/admin/content/alternate-arts':'响应式验收典藏','/admin/matches/archive':'MATCH-QA-RESPONSIVE-001-LONG-IDENTIFIER',
+ '/admin/content/alternate-arts':'移动端验收限定异画','/admin/matches/archive':'MATCH-QA-RESPONSIVE-001-LONG-IDENTIFIER',
  '/admin/matches/governance':'draw-request-responsive-qa','/admin/matches/integrity':'MATCH-INTEGRITY-0',
  '/admin/operations/config':'operations-config-responsive-qa-v37','/admin/operations/global':'逐日历史',
- '/admin/system/releases':'运行态只读快照','/admin/system/security':'qa-warning',
+ '/admin/operations/sandbox':'管理员测试沙盒',
+ '/admin/system/releases':'发布适配器只读快照','/admin/system/security':'qa-warning',
  '/admin/system/storage':'存储容量需要关注','/admin/system/commands':'command-very-long-identifier-0123456789abcdef',
  '/admin/system/audit':'account-001',
 }
@@ -218,7 +265,7 @@ async function prepareRoute(page,route){
  }
  if(route==='/admin/system/releases'){
   assert.equal(await page.getByLabel('已验证工件').inputValue(),'artifact-with-a-very-long-production-identifier','release artifact success fixture')
-  await page.locator('.panel article code').filter({hasText:'artifact-with-a-very-long-production-identifier'}).waitFor({state:'visible'})
+  await page.getByText('本发布台账暂无记录，不包含既有外部部署流程历史。',{exact:true}).waitFor({state:'visible'})
  }
  await assertNoPendingOrError(page,route)
 }
@@ -233,10 +280,56 @@ async function inspectLocalScroll(page,selector,label,viewport){
  assert.ok(value.ariaLabel.length>0,label+' has no aria label at '+viewport)
  return {label,viewport,...value}
 }
+async function controlGeometry(locator){
+ await locator.evaluate(el=>el.scrollIntoView({block:'center',inline:'center'}))
+ await locator.page().evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+ return locator.evaluate(el=>{const r=el.getBoundingClientRect();const style=getComputedStyle(el);const x=Math.min(innerWidth-1,Math.max(0,r.left+r.width/2));const y=Math.min(innerHeight-1,Math.max(0,r.top+r.height/2));const hit=document.elementFromPoint(x,y);return{tag:el.tagName.toLowerCase(),type:el.getAttribute('type')||'',name:el.getAttribute('aria-label')||el.textContent?.trim().replace(/\s+/g,' ').slice(0,80)||'',width:r.width,height:r.height,left:r.left,right:r.right,top:r.top,bottom:r.bottom,computedHeight:style.height,minHeight:style.minHeight,maxHeight:style.maxHeight,boxSizing:style.boxSizing,appearance:style.appearance,displayed:style.display!=='none'&&style.visibility!=='hidden'&&style.opacity!=='0',inViewport:r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1,hit:hit===el||el.contains(hit)}})
+}
+const touchFailures=[]
+async function assertTouchControl(locator,label,{minimum=38}={}){
+ await locator.waitFor({state:'visible',timeout:15000})
+ const geometry=await controlGeometry(locator)
+ assert.ok(geometry.displayed&&geometry.inViewport&&geometry.hit,`${label} is not touch reachable: ${JSON.stringify(geometry)}`)
+ if(geometry.width<minimum||geometry.height<minimum)touchFailures.push({label,minimum,...geometry})
+ return {label,...geometry}
+}
+async function auditEnabledControls(page,rootSelector,label){
+ const controls=page.locator(`${rootSelector} button:not([disabled]),${rootSelector} input:not([disabled]),${rootSelector} select:not([disabled]),${rootSelector} textarea:not([disabled])`)
+ const count=await controls.count();const rows=[]
+ for(let index=0;index<count;index++){
+  const control=controls.nth(index);if(!await control.isVisible())continue
+  const type=await control.getAttribute('type')
+  const target=type==='checkbox'||type==='radio'?control.locator('xpath=ancestor::label[1]'):control
+  rows.push(await assertTouchControl(target,`${label} control ${index}`))
+ }
+ assert.ok(rows.length>0,`${label} exposed no enabled controls`)
+ return {label,count:rows.length,controls:rows}
+}
+async function inspectTargetedInteractions(page,viewport){
+ const viewportName=`${viewport.width}x${viewport.height}`;const checks=[]
+ await prepareRoute(page,'/admin/content/alternate-arts')
+ checks.push(await auditEnabledControls(page,'.gallery-workspace',`alternate gallery ${viewportName}`))
+ const rightsTab=page.getByRole('button',{name:'权益与派发',exact:true});checks.push(await assertTouchControl(rightsTab,`rights tab ${viewportName}`));await rightsTab.click();await page.locator('.rights-workspace').waitFor({state:'visible'})
+ checks.push(await auditEnabledControls(page,'.rights-workspace',`alternate rights ${viewportName}`))
+ const artPicker=page.locator('.rights-workspace .art-choice').first();checks.push(await assertTouchControl(artPicker,`rights art picker ${viewportName}`));await artPicker.click();await page.locator('.single-card-picker').waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.single-card-picker',`rights card picker ${viewportName}`));await page.getByRole('dialog').getByRole('button',{name:'关闭'}).click()
+ const galleryTab=page.getByRole('button',{name:'画廊卡片',exact:true});checks.push(await assertTouchControl(galleryTab,`gallery tab ${viewportName}`));await galleryTab.click();await page.locator('.gallery-workspace').waitFor({state:'visible'})
+ const upload=page.getByRole('button',{name:'上传新卡 / 异画',exact:true});checks.push(await assertTouchControl(upload,`alternate upload ${viewportName}`));await upload.click();await page.locator('.art-editor').waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.art-editor',`alternate editor ${viewportName}`))
+ const product=page.getByRole('button',{name:'新建产品',exact:true});checks.push(await assertTouchControl(product,`alternate product draft ${viewportName}`));await product.click();await page.locator('.product-dialog').waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.product-dialog',`alternate product dialog ${viewportName}`));await page.locator('.product-dialog').getByRole('button',{name:'取消'}).click()
+ const rarity=page.getByRole('button',{name:'管理罕贵',exact:true});checks.push(await assertTouchControl(rarity,`alternate rarity manager ${viewportName}`));await rarity.click();await page.locator('.inline-manager').waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.inline-manager',`alternate rarity panel ${viewportName}`));await page.locator('.art-editor').getByRole('button',{name:'关闭'}).click()
+ const image=page.getByRole('button',{name:'更换卡图',exact:true});checks.push(await assertTouchControl(image,`alternate replace image ${viewportName}`));await image.click();await page.locator('.image-dialog').waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.image-dialog',`alternate image dialog ${viewportName}`));await page.locator('.image-dialog').getByRole('button',{name:'取消'}).click()
+ await prepareRoute(page,'/admin/operations/sandbox');checks.push(await auditEnabledControls(page,'.sandbox-page',`sandbox ${viewportName}`))
+ const deckButtons=page.getByRole('button',{name:'更换牌库',exact:true});assert.equal(await deckButtons.count(),2,`sandbox deck entry count ${viewportName}`)
+ for(let index=0;index<2;index++){
+  const button=deckButtons.nth(index);checks.push(await assertTouchControl(button,`sandbox deck ${index+1} ${viewportName}`));await button.click();const dialog=page.locator('.saved-deck-selector');await dialog.waitFor({state:'visible'});checks.push(await auditEnabledControls(page,'.saved-deck-selector',`sandbox selector ${index+1} ${viewportName}`));await dialog.getByRole('button',{name:'取消更换牌库'}).click()
+ }
+ await page.screenshot({path:path.join(output,`targeted-interactions-${viewport.width}x${viewport.height}.png`),fullPage:true})
+ return {viewport:viewportName,checks}
+}
 try{
  await server.listen();const port=server.httpServer.address().port
  browser=await chromium.launch({headless:true,channel:'msedge'})
- const page=await browser.newPage();const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
+ const context=await browser.newContext({hasTouch:true,isMobile:true,deviceScaleFactor:1})
+ const page=await context.newPage();const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
  await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
  const report=[]
  for(const viewport of viewports){
@@ -244,20 +337,28 @@ try{
   await page.goto(`http://127.0.0.1:${port}/__admin_audit__`)
   await page.locator('.admin-shell').waitFor()
   for(const route of routePaths){
+   currentCase={stage:'route',route,viewport:`${viewport.width}x${viewport.height}`}
    await prepareRoute(page,route)
     const metrics=await collectMetrics(page)
    const item={viewport:`${viewport.width}x${viewport.height}`,route,...metrics};report.push(item)
+   appendProgress('route-complete',{route,viewport:item.viewport,metrics})
    if(metrics.overflow||[320,390,768,1280,2560].includes(viewport.width)) await page.screenshot({path:path.join(output,`${slug(route)}-${viewport.width}x${viewport.height}.png`),fullPage:true})
   }
  }
+ const interactionChecks=[]
+ if(scope==='targeted')for(const viewport of targetedViewports){
+  currentCase={stage:'targeted-interactions',viewport:`${viewport.width}x${viewport.height}`}
+  await page.setViewportSize(viewport);await page.goto(`http://127.0.0.1:${port}/__admin_audit__`);await page.locator('.admin-shell').waitFor()
+  const item=await inspectTargetedInteractions(page,viewport);interactionChecks.push(item);appendProgress('targeted-interactions-complete',item)
+ }
  const zoomChecks=[]
- for(const zoom of [1.25,1.5])for(const physical of [{width:390,height:844},{width:1280,height:720}]){
+ if(scope==='full')for(const zoom of [1.25,1.5])for(const physical of [{width:390,height:844},{width:1280,height:720}]){
   const effective={width:Math.floor(physical.width/zoom),height:Math.floor(physical.height/zoom)};await page.setViewportSize(effective);await page.goto(`http://127.0.0.1:${port}/__admin_audit__`);await page.locator('.admin-shell').waitFor()
-   for(const route of routePaths){await prepareRoute(page,route);const metrics=await collectMetrics(page);zoomChecks.push({route,zoom,physical,effective,...metrics})}
+   for(const route of routePaths){currentCase={stage:'zoom',route,zoom,physical,effective};await prepareRoute(page,route);const metrics=await collectMetrics(page);const item={route,zoom,physical,effective,...metrics};zoomChecks.push(item);appendProgress('zoom-complete',{route,zoom,physical,effective,metrics})}
   }
   const contentCoverage=[]
   const riskDialogs=[]
-  for(const viewport of viewports.filter(item=>[320,390,768,1280,2560].includes(item.width))){
+  if(scope==='full')for(const viewport of viewports.filter(item=>[320,390,768,1280,2560].includes(item.width))){
    const viewportName=viewport.width+'x'+viewport.height;await page.setViewportSize(viewport);await page.goto(`http://127.0.0.1:${port}/__admin_audit__`);await page.locator('.admin-shell').waitFor()
    await prepareRoute(page,'/admin/operations/global');contentCoverage.push(await inspectLocalScroll(page,'.table','global daily table',viewportName))
    await prepareRoute(page,'/admin/content/site');contentCoverage.push(await inspectLocalScroll(page,'.hero-copy-preview','hero copy preview',viewportName))
@@ -272,10 +373,13 @@ try{
   const failures=report.filter(item=>item.overflow||item.contentOverflow||item.unreachable.length||item.adminPageWidth>2000)
   const zoomFailures=zoomChecks.filter(item=>item.overflow||item.contentOverflow||item.unreachable.length)
   const uniqueErrors=[...new Set(pageErrors)]
-  const result={status:failures.length||zoomFailures.length||uniqueErrors.length?'failed':'passed',routePaths,viewports,report,zoomChecks,contentCoverage,riskDialogs,pageErrors:uniqueErrors,failures,zoomFailures}
+  const result={status:failures.length||zoomFailures.length||touchFailures.length||uniqueErrors.length?'failed':'passed',sourceSha,scope,fixtureTransport:'mocked component APIs with local Vite static card data',routePaths,viewports,report,zoomChecks,contentCoverage,riskDialogs,interactionChecks,touchFailures,pageErrors:uniqueErrors,failures,zoomFailures}
   fs.writeFileSync(path.join(output,'report.json'),JSON.stringify(result,null,2))
+  appendProgress('report-written',{status:result.status,routes:routePaths.length,viewports:viewports.length,routeCases:report.length,zoomCases:zoomChecks.length,failures:failures.length,zoomFailures:zoomFailures.length,touchFailures:touchFailures.length,pageErrors:uniqueErrors.length})
   assert.equal(uniqueErrors.length,0,`page errors: ${uniqueErrors.join(' | ')}`)
   assert.equal(failures.length,0,`responsive failures: ${JSON.stringify(failures.slice(0,5))}`)
   assert.equal(zoomFailures.length,0,`zoom failures: ${JSON.stringify(zoomFailures.slice(0,5))}`)
+  assert.equal(touchFailures.length,0,`touch target failures: ${JSON.stringify(touchFailures.slice(0,8))}`)
   console.log(JSON.stringify({status:'passed',routes:routePaths.length,viewports:viewports.length,zoomChecks:zoomChecks.length,output},null,2))
-}finally{await browser?.close();await server.close()}
+}catch(error){appendProgress('failed',{...currentCase,error:error instanceof Error?{name:error.name,message:error.message,stack:error.stack}:String(error)});throw error}
+finally{await browser?.close();await server.close()}
