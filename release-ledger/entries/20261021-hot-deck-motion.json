@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-hot-deck-motion",
+  "date": "2026-10-21",
+  "audience": "players",
+  "title": "热门牌库滚动完善",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "热门牌库保留上下两行，每行各自横向自动循环滚动、不换行，不显示拖动条；切换页面和屏幕尺寸后保持正常滚动。",
+      "paths": ["opcgpro-vue/src/l12/site/DeckLibraryPage.vue"]
+    }
+  ]
+}

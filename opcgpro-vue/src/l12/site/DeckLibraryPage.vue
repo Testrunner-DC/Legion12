@@ -81,6 +81,7 @@ const plazaPage = ref(1)
 const hotDeckHoverPaused = ref([false, false])
 const hotDeckFocusPaused = ref([false, false])
 const hotDeckTouchPaused = ref([false, false])
+const hotDeckTouchPointers = new Map<number, number>()
 const cardPickerOpen = ref(false)
 const publishGuide = ref<PublicDeckGuide>({ buildIdea: '', opening: '', keyCards: '', commonSequence: '', substitutions: '' })
 const publishMatchups = ref<PublicDeckMatchup[]>([])
@@ -105,6 +106,7 @@ const route = useRoute()
 const router = useRouter()
 const { pending: actionBusy, isPending: actionPending, run: runAction } = useActionGate()
 let hotDeckResizeObserver: ResizeObserver | null = null
+let hotDeckMotionFrame = 0
 let libraryAccountEpoch = 0
 let libraryCounterDocumentEpoch = 0
 watch(() => route.fullPath, () => {
@@ -229,9 +231,29 @@ function syncHotDeckMotion() {
     updateHotDeckDuration(originalLoop)
   })
 }
+function refreshHotDeckMotion() {
+  cancelAnimationFrame(hotDeckMotionFrame)
+  hotDeckMotionFrame = requestAnimationFrame(() => {
+    hotDeckMotionFrame = 0
+    pageRoot.value?.querySelectorAll<HTMLElement>('.hot-deck-loop:not([aria-hidden="true"])').forEach(updateHotDeckDuration)
+  })
+}
+function releaseHotDeckTouches(event: PointerEvent) {
+  if (event.pointerType !== 'touch') return
+  const rowIndex = hotDeckTouchPointers.get(event.pointerId)
+  if (rowIndex === undefined) return
+  hotDeckTouchPointers.delete(event.pointerId)
+  hotDeckTouchPaused.value[rowIndex] = [...hotDeckTouchPointers.values()].includes(rowIndex)
+}
 onBeforeUnmount(() => {
   hotDeckResizeObserver?.disconnect()
   hotDeckResizeObserver = null
+  cancelAnimationFrame(hotDeckMotionFrame)
+  document.removeEventListener('visibilitychange', refreshHotDeckMotion)
+  window.removeEventListener('resize', refreshHotDeckMotion)
+  window.removeEventListener('pointerup', releaseHotDeckTouches, true)
+  window.removeEventListener('pointercancel', releaseHotDeckTouches, true)
+  hotDeckTouchPointers.clear()
 })
 // This phase is synchronous local cache work, not a pending HTTP page load.
 function applyLibraryCacheSnapshot() {
@@ -241,6 +263,12 @@ function applyLibraryCacheSnapshot() {
 }
 onMounted(async () => {
   restoreFiltersFromRoute()
+  if (typeof document !== 'undefined' && typeof window !== 'undefined') {
+    document.addEventListener('visibilitychange', refreshHotDeckMotion)
+    window.addEventListener('resize', refreshHotDeckMotion)
+    window.addEventListener('pointerup', releaseHotDeckTouches, true)
+    window.addEventListener('pointercancel', releaseHotDeckTouches, true)
+  }
   libraryMounted = true
   if (!platformState.account) privateLoadState.value = 'available'
   const context = libraryContext()
@@ -393,8 +421,15 @@ onBeforeUnmount(() => {
   libraryDisposed = true; privateDirectorySequence++; mineBodyReadSequence++
   summaryGate.dispose(); referenceGate.dispose(); ownReferences.value = []
 })
-watch(hotDeckRows, async () => {
+watch([hotDeckRows, tab], async () => {
   await nextTick()
+  if (libraryDisposed) return
+  // DOM replacement must not inherit a removed card's hover/focus/touch latch.
+  const viewports = pageRoot.value?.querySelectorAll<HTMLElement>('.hot-deck-viewport')
+  hotDeckHoverPaused.value = [0, 1].map(index => Boolean(viewports?.[index]?.matches(':hover')))
+  hotDeckFocusPaused.value = [0, 1].map(index => Boolean(viewports?.[index]?.contains(document.activeElement)))
+  hotDeckTouchPointers.clear()
+  hotDeckTouchPaused.value = [false, false]
   syncHotDeckMotion()
 }, { flush: 'post' })
 function hotDeckRowPaused(rowIndex: number) {
@@ -915,15 +950,30 @@ function choosePlazaCard(card: SingleCardPickerItem) {
 function resetMineFilters() {
   mineQuery.value = ''; mineHomeCityFilter.value = 'all'; mineLegalFilter.value = 'all'; mineSort.value = 'latest'
 }
+async function handleHotDeckFocusIn(event: FocusEvent, rowIndex: number) {
+  hotDeckFocusPaused.value[rowIndex] = true
+  const viewport = event.currentTarget as HTMLElement
+  const target = event.target
+  await nextTick()
+  if (!(target instanceof HTMLElement) || !target.matches(':focus-visible') || !viewport.contains(document.activeElement)) return
+  // Focus uses the untransformed first copy, including items outside the clip.
+  const box = target.getBoundingClientRect(), clip = viewport.getBoundingClientRect()
+  if (box.left < clip.left) viewport.scrollLeft += box.left - clip.left
+  else if (box.right > clip.right) viewport.scrollLeft += box.right - clip.right
+}
 function handleHotDeckFocusOut(event: FocusEvent, rowIndex: number) {
   const next = event.relatedTarget
-  if (!(next instanceof Node) || !(event.currentTarget as HTMLElement).contains(next)) hotDeckFocusPaused.value[rowIndex] = false
+  const viewport = event.currentTarget as HTMLElement
+  if (!(next instanceof Node) || !viewport.contains(next)) {
+    hotDeckFocusPaused.value[rowIndex] = false
+    viewport.scrollLeft = 0
+  }
 }
 function handleHotDeckPointerDown(event: PointerEvent, rowIndex: number) {
-  if (event.pointerType === 'touch') hotDeckTouchPaused.value[rowIndex] = true
-}
-function handleHotDeckPointerEnd(event: PointerEvent, rowIndex: number) {
-  if (event.pointerType === 'touch') hotDeckTouchPaused.value[rowIndex] = false
+  if (event.pointerType === 'touch') {
+    hotDeckTouchPointers.set(event.pointerId, rowIndex)
+    hotDeckTouchPaused.value[rowIndex] = true
+  }
 }
 function pageItems(total: number, current: number) {
   const pages = total <= 7
@@ -1023,7 +1073,7 @@ watch(plazaPageCount, total => {
       <button v-if="plazaFilterCount" type="button" class="plaza-filter-summary" @click="plazaFiltersOpen = true">{{ plazaFilterSummary }}</button>
       <section v-if="hotDeckRows.length" class="hot-decks" aria-labelledby="hot-decks-title">
         <header><h2 id="hot-decks-title">热门牌库</h2></header>
-        <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="hotDeckFocusPaused[rowIndex] = true" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)" @pointerup="handleHotDeckPointerEnd($event,rowIndex)" @pointercancel="handleHotDeckPointerEnd($event,rowIndex)">
+        <div v-for="(row,rowIndex) in hotDeckRows" :key="rowIndex" class="hot-deck-viewport" :class="{ paused: hotDeckRowPaused(rowIndex) }" :data-hot-row-viewport="rowIndex + 1" @mouseenter="hotDeckHoverPaused[rowIndex] = true" @mouseleave="hotDeckHoverPaused[rowIndex] = false" @focusin="handleHotDeckFocusIn($event,rowIndex)" @focusout="handleHotDeckFocusOut($event,rowIndex)" @pointerdown="handleHotDeckPointerDown($event,rowIndex)">
           <div class="hot-deck-track" :class="`row-${rowIndex + 1}`" :data-hot-row-track="rowIndex + 1">
             <div v-for="copyIndex in 2" :key="copyIndex" class="hot-deck-loop" :aria-hidden="copyIndex === 2 ? 'true' : undefined">
               <button v-for="entry in row" :key="`${copyIndex}-${entry.id}`" type="button" :tabindex="copyIndex === 2 ? -1 : 0" :data-hot-row="rowIndex + 1" :data-hot-copy="copyIndex" :data-public-code="publicDeckSummaryReference(entry)" :aria-label="`查看热门牌库《${entry.name}》`" @click="openDeck(entry)">
@@ -1074,8 +1124,9 @@ watch(plazaPageCount, total => {
 @media(max-width:700px){.mine-toolbar{grid-template-columns:1fr}.deck-pagination{gap:4px}.deck-pagination button{min-width:38px;padding-inline:8px}.import-modal{width:100%;max-height:100dvh;border:0}.import-modal footer button{flex:1}}
 .hot-decks{margin:0 0 18px;padding:4px 0 0}.hot-decks>header{padding:0 0 10px}.hot-decks h2{margin:0;font-size:17px}.hot-deck-viewport{overflow:hidden}.hot-deck-viewport+.hot-deck-viewport{margin-top:8px}.hot-deck-track{display:flex;width:max-content;animation:none;will-change:transform}.hot-deck-track[data-motion-ready="true"]{animation:hot-decks-slide var(--hot-deck-duration) linear infinite}.hot-deck-track.row-2{animation-direction:reverse}.hot-deck-viewport.paused .hot-deck-track{animation-play-state:paused}.hot-deck-loop{display:flex;flex:none;gap:8px;padding-right:8px}.hot-deck-loop>button{position:relative;width:clamp(325px,26vw,429px);padding:0;border:0;background:transparent;color:inherit;text-align:left}.hot-deck-loop>button:focus-visible{outline:2px solid #e0bf6d;outline-offset:-2px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:50px minmax(0,1fr);height:102px;box-sizing:border-box;gap:10px;padding:9px;background:#101821}.hot-deck-loop :deep(.deck-profile__portrait){width:50px}.hot-deck-loop :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.hot-deck-loop :deep(.deck-profile__copy b){order:1}.hot-deck-loop :deep(.deck-profile__copy small){order:2;margin:3px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hot-deck-loop :deep(.deck-profile__copy span){display:none}.hot-deck-loop :deep(.deck-profile__copy em){order:3}.plaza-grid>article{display:grid;grid-template-rows:auto 1fr}.plaza-summary{position:relative;padding:0}.plaza-summary>:deep(.deck-profile){min-height:102px;padding:14px;border:0;background:transparent}.plaza-summary :deep(.deck-profile__copy){display:flex;min-width:0;flex-direction:column;padding-right:84px}.plaza-summary :deep(.deck-profile__copy b){order:1;font-size:16px}.plaza-summary :deep(.deck-profile__copy small){order:2;margin:5px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.plaza-summary :deep(.deck-profile__copy span){order:3}.plaza-summary :deep(.deck-profile__copy em){order:4}.deck-environment-badge{display:inline-flex!important;min-height:22px;box-sizing:border-box;align-items:center;padding:3px 7px;border:1px solid #59666e;background:#111a21;color:#dce5e5!important;font-size:11px!important;font-weight:900;line-height:1;white-space:nowrap;pointer-events:none}.plaza-grid footer{grid-template-columns:minmax(0,1fr) auto auto}.plaza-card-stats,.plaza-card-actions{display:flex;align-items:center;gap:10px;min-width:0}.plaza-card-stats{flex-wrap:wrap}.plaza-card-actions{justify-content:flex-end}.mine-grid>article{display:grid;grid-template-rows:auto auto 1fr;padding:0}.mine-grid>article>:deep(.deck-profile){min-height:102px;padding:14px}.mine-public-state{margin:0;padding:0 14px 10px}.mine-grid>article>.deck-card-actions{align-self:end;margin:0;padding:10px 14px;border-top:1px solid rgba(235,230,216,.1);background:#0d151c}
 @keyframes hot-decks-slide{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.hot-deck-viewport{scrollbar-width:none;scroll-behavior:auto}.hot-deck-viewport::-webkit-scrollbar{display:none}.hot-deck-viewport:has(:focus-visible) .hot-deck-track{transform:none!important}
 @media(max-width:700px){.hot-decks{margin-bottom:14px;padding-top:2px}.hot-decks>header{padding-bottom:8px}.hot-decks h2{font-size:15px}.hot-deck-loop>button{width:230px}.hot-deck-loop :deep(.deck-profile){grid-template-columns:38px minmax(0,1fr);height:74px;gap:8px;padding:7px}.hot-deck-loop :deep(.deck-profile__portrait){width:38px}.plaza-grid footer{grid-template-columns:1fr auto}.plaza-card-stats{grid-column:1/-1}.plaza-grid footer .season-compliance{grid-column:auto;justify-self:start}.plaza-card-actions{min-height:40px}.mine-grid>article{padding:0}}
-@media(prefers-reduced-motion:reduce){.hot-deck-viewport{overflow-x:auto;scrollbar-width:thin}.hot-deck-track{animation:none!important;transform:none!important}.hot-deck-loop[aria-hidden="true"]{display:none}}
+@media(prefers-reduced-motion:reduce){.hot-deck-viewport{overflow-x:auto}.hot-deck-track{animation:none!important;transform:none!important}.hot-deck-loop[aria-hidden="true"]{display:none}}
 .mine-grid>article,.plaza-grid>article,.hot-deck-loop>button{overflow:visible;border-radius:0;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 .hot-deck-viewport{padding-block:5px}
 @media(hover:hover) and (pointer:fine){.mine-grid>article:hover,.mine-grid>article:focus-within,.plaza-grid>article:hover,.plaza-grid>article:focus-within,.hot-deck-loop>button:hover,.hot-deck-loop>button:focus-visible{transform:translateY(-4px)}.mine-grid>article:hover :deep(.deck-cover),.mine-grid>article:focus-within :deep(.deck-cover),.plaza-grid>article:hover :deep(.deck-cover),.plaza-grid>article:focus-within :deep(.deck-cover),.hot-deck-loop>button:hover :deep(.deck-cover),.hot-deck-loop>button:focus-visible :deep(.deck-cover){transform:none}}
