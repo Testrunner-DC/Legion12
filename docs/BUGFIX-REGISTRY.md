@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## UI-20261021-MOBILE-DIRECT-CONTEXT｜展开选择初始裁切（本地接受，未部署）
+
+- 续既有已批共享操作区/全站按钮检查：固定记录36px占位与单列直接目标/格位/支付面板争用窄高空间，按钮需先滚动才可见。单叶CSS让展开直接选择优先context、按钮双列、摘要单行，完整任务说明仍可打开；最小化后记录恢复，关闭后恢复目标/费用并正常触摸提交，不删功能/选择、不改规则/桌面。
+- 同型扫描board-target-controls、board-slot-controls、resource-payment-controls及同源Prompt125/能力686分类表；通用31kind＋动态兜底四尺寸128场、专用3kind四尺寸12场全过，Main另最窄6场及QA拒参4过。分类台账不是逐卡真实结算；候选“裁切”系旋转父框求交误报，按实际命中/可读性更正QA，不改卡图。原GM/文案/响应/排序旧夹具失败如实留存。
+- Main独核CSS/QA、32通用kind-family组合无缺及两张320图；前端361合同/类型/双base通过，首次缺版本环境与缺本机预览失败保留，只续剩余。唯一mobile-reachability-20261021/main/main-acceptance.json；非物理手机/服务端ACK或全站完成，不部署/改维护/线上关单。非对战画廊/22后台路由QA已续派。
+
 ## PERF-20261021-CARD-FRAME-ALLOCATION｜整卡查重避免逐引用UTF-16副本（本地接受，未部署）
 
 - 原因证据：实际本机GC采样栈指向L12CardSnapshotFrame.TryReplaceCards→GetRawText；每次原始JSON字典查找先造完整字符串。沿已批性能/单包快照优化范围，只改唯一共享编码出口，324卡无逐卡旁路。同型检索`GetRawText\(|Dictionary<string, int>`覆盖服务端目录；其他命令留存/恢复解析字符串不机械迁移，后台两处单纯UTF-8计数另列后续。
