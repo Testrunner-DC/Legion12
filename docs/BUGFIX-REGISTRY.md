@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-SOCIAL-TOURNAMENT-MOBILE｜赛事/好友实际触摸与精确目标
+
+- 新两QA叶不改产品，Main最终8触摸链/两视口、38px/无页面横溢出/遮挡、0page/request/cleanup错误。赛事真实页面用stateful API及窄net桥；主办者阶段外部明示，参赛者锁牌/签到不伪造开轮；精确赛事/版本/牌库/轮次/搜索和入局派发校验。好友拒绝必须false且不入好友，邀请/观战/屏蔽实参精确；两次实际触摸只一邀请，原生屏蔽确认一次，关系移除/解屏回读。
+- 原44过严/焦点过严/选择器歧义、赛事初版伪阶段和参数oracle缺口均保留，未因此改产品；最终waiting/running/参数补强后8场重验、独审CLEAR。唯一D盘mobile-social-tournament-acceptance-20261022/main-acceptance.json；只认mock组件和导航派发，不认真实服务/WS/真机或完整卡效。图鉴新两点挂批准，922/10/线上关单0。
+
 ## QA-20261022-GALLERY-PRODUCT｜新产品草稿到卡片归属真实闭环
 
 - 仅QA扩既有gallery真实HTTP入口product-draft模式，使用现后台组件、POST文章草稿和metadata风险确认；一次创建后同编辑器自动选用，合成宿主重启后仍勾选；匿名实际读产品与画廊均不暴露草稿且旧归属不变。非原生全路由/所有异画类型/已部署，未改产品规则或存储。
