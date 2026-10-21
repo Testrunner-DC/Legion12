@@ -68,15 +68,23 @@ export async function cleanupLocalQualificationAccounts(context, admin, accounts
   } catch { result.failures++ }
   return result
 }
-export async function createLocalQualificationProtocol(binding) {
+export async function createLocalQualificationProtocol(binding, {handArrayDeltaV1 = false} = {}) {
   assert.equal(binding.kind, 'local-real-http-qualification-v1')
   assertLocalPressureTarget(binding.baseUrl)
-  for (const [file, hash, max] of [[binding.netSourcePath, binding.deployedNetSha256, 1048576],
-    [binding.cardFrameSourcePath, binding.cardFrameSha256, 65536]]) {
+  assert.equal(typeof handArrayDeltaV1, 'boolean')
+  const sources = [[binding.netSourcePath, binding.deployedNetSha256, 1048576],
+    [binding.cardFrameSourcePath, binding.cardFrameSha256, 65536]]
+  if (handArrayDeltaV1 || binding.handArraySourcePath !== undefined || binding.handArraySha256 !== undefined)
+    sources.push([binding.handArraySourcePath, binding.handArraySha256, 65536])
+  const checkedBytes = new Map()
+  for (const [file, hash, max] of sources) {
     assert.ok(path.isAbsolute(file) && fs.statSync(file).size <= max)
-    assert.equal(digest(fs.readFileSync(file)), hash)
+    const bytes = fs.readFileSync(file)
+    assert.ok(bytes.length <= max)
+    assert.equal(digest(bytes), hash)
+    checkedBytes.set(file, bytes)
   }
-  const source = fs.readFileSync(binding.netSourcePath, 'utf8').replaceAll('\r\n', '\n')
+  const source = checkedBytes.get(binding.netSourcePath).toString('utf8').replaceAll('\r\n', '\n')
   const start = source.indexOf('function rebuildDeltaGameState('), end = source.indexOf('function clearReconnectTimer()')
   assert.ok(start >= 0 && end > start)
   assert.equal(source.indexOf('function rebuildDeltaGameState(', start + 1), -1)
@@ -87,24 +95,42 @@ export async function createLocalQualificationProtocol(binding) {
     assert.ok(!(result.diagnostics ?? []).some(row => row.category === ts.DiagnosticCategory.Error))
     return result.outputText
   }
-  const reduce = new Function('lastGameStateEnvelope', 'delta', 'negotiatedEventWindowDelta',
+  const rawReduce = new Function('lastGameStateEnvelope', 'delta', 'negotiatedEventWindowDelta',
+    'negotiatedHandArrayDelta', 'restoreHandSplices', 'validHandDeltaChangePath',
     compile(source.slice(start, end)) + ';return rebuildDeltaGameState(delta);')
+  const hand = sources.length === 3 ? await import('data:text/javascript;base64,' + Buffer.from(compile(
+    checkedBytes.get(binding.handArraySourcePath).toString('utf8'))).toString('base64')) : null
+  if (hand) {
+    assert.equal(hand.HAND_ARRAY_DELTA_CAPABILITY, 'handArrayDeltaV1')
+    assert.equal(typeof hand.restoreHandSplices, 'function')
+    assert.equal(typeof hand.validHandDeltaChangePath, 'function')
+  }
+  const reduce = (baseline, delta, eventWindow, negotiatedHand = false) => rawReduce(baseline, delta,
+    eventWindow, handArrayDeltaV1 && negotiatedHand === true, hand?.restoreHandSplices, hand?.validHandDeltaChangePath)
   const codec = await import('data:text/javascript;base64,' + Buffer.from(compile(
-    fs.readFileSync(binding.cardFrameSourcePath, 'utf8'))).toString('base64'))
+    checkedBytes.get(binding.cardFrameSourcePath).toString('utf8'))).toString('base64'))
   assert.equal(typeof codec.restoreGameStateCardFrame, 'function')
   assert.equal(typeof codec.GameStateCardFrameRecovery, 'function')
-  return {reduce, codec}
+  return {reduce, codec, handArrayDeltaV1}
 }
 
 // A generated, local-only adapter; the frozen remote entry and its binding are never modified.
 export function adaptFrozenPressureCore(source, adapterUrl) {
   const replacements = [
     ['reconstructCandidateDelta as reduceEnvelope', 'reconstructCandidateDelta as remoteReduceEnvelope'],
-    ['let productionCodec=null', `import {createLocalQualificationProtocol,assertLocalPressureTarget,cleanupLocalQualificationAccounts} from ${JSON.stringify(adapterUrl)}\nlet reduceEnvelope=remoteReduceEnvelope\nlet localProtocolBase=null\nexport async function initializeLocalQualificationProtocol(binding){\n const loaded=await createLocalQualificationProtocol(binding)\n productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.deployedNetSha256\n initializePresenceConsumer(binding);localProtocolBase=assertLocalPressureTarget(binding.baseUrl)\n}\nlet productionCodec=null`],
+    ['let productionCodec=null', `import {createLocalQualificationProtocol,assertLocalPressureTarget,cleanupLocalQualificationAccounts} from ${JSON.stringify(adapterUrl)}\nlet reduceEnvelope=remoteReduceEnvelope\nlet localProtocolBase=null\nlet localHandArrayDelta=false\nexport async function initializeLocalQualificationProtocol(binding,options={}){\n const loaded=await createLocalQualificationProtocol(binding,options)\n productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.deployedNetSha256\n initializePresenceConsumer(binding);localProtocolBase=assertLocalPressureTarget(binding.baseUrl)\n localHandArrayDelta=loaded.handArrayDeltaV1\n}\nlet productionCodec=null`],
     ['function initializePresenceConsumer() {', 'function initializePresenceConsumer(binding=FIXED) {'],
     ["const source=fs.readFileSync(FIXED.netSourcePath,'utf8')", "const source=fs.readFileSync(binding.netSourcePath,'utf8')"],
     ["if(sha256File(FIXED.netSourcePath)!==FIXED.deployedNetSha256)", "if(sha256File(binding.netSourcePath)!==binding.deployedNetSha256)"],
     ['async function runPressure(configuration) {', "async function runPressure(configuration) {\n if(localProtocolBase!==null){assertLocalPressureTarget(configuration?.baseUrl);requireContract(configuration?.local===true&&configuration.baseUrl===localProtocolBase,'local_qualification_cannot_run_remote')}"],
+    ['const metrics = new Metrics()', 'const metrics = new Metrics()\n  if(localProtocolBase!==null)metrics.localHandArrayDelta={enabled:localHandArrayDelta,negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}'],
+    ['this.negotiatedEventWindowDelta = false\n    this.presenceConsumer = null', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    this.presenceConsumer = null'],
+    ['gameStateCardFrameV1: true },', 'gameStateCardFrameV1: true, ...(localProtocolBase!==null&&localHandArrayDelta?{handArrayDeltaV1:true}:{}) },'],
+    ["if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)", "if(localProtocolBase!==null&&localHandArrayDelta&&!this.negotiatedHandArrayDelta)throw new SafeError('hand-array-capability-not-negotiated')\n    if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)"],
+    ["if (type === 'session') {", "if (type === 'session') {\n      this.negotiatedHandArrayDelta=localProtocolBase!==null&&localHandArrayDelta&&message.capabilities?.deltaGameState===true&&message.capabilities?.handArrayDeltaV1===true\n      if(this.negotiatedHandArrayDelta)this.metrics.localHandArrayDelta.negotiatedSessions++"],
+    ['const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta)', "const localHandPacket=localProtocolBase!==null&&Object.hasOwn(message,'handSplices')\n      if(localHandPacket){this.metrics.localHandArrayDelta.packets++;this.metrics.localHandArrayDelta.wireBytes+=wireBytes}\n      const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta, this.negotiatedHandArrayDelta)\n      if(localHandPacket)this.metrics.localHandArrayDelta[rebuilt?'applied':'rejected']++"],
+    ['this.negotiatedEventWindowDelta = false\n    for (const waiter', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    for (const waiter'],
+    ['expectedCommit: { value: configuration.expectedCommit,', '...(localProtocolBase!==null?{localHandArrayDelta:{...metrics.localHandArrayDelta}}:{}),\n    expectedCommit: { value: configuration.expectedCommit,'],
     ['export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {', 'export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {\n if(localProtocolBase!==null)return cleanupLocalQualificationAccounts(context,adminIdentity,provisioning.owned??[],cohortRequest(context))'],
     ['requestFn:cohortRequest(context),delayFn:context.local?async()=>{}:delay,\n     stopFile:', 'requestFn:cohortRequest(context),delayFn:localProtocolBase!==null?delay:context.local?async()=>{}:delay,\n     stopFile:'],
     ['{requestFn:cohortRequest(context),delayFn:context.local?async()=>{}:delay,existsFn:fs.existsSync})', '{requestFn:cohortRequest(context),delayFn:localProtocolBase!==null?delay:context.local?async()=>{}:delay,existsFn:fs.existsSync})'],
