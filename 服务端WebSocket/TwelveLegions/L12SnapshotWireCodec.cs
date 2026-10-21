@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Buffers;
 
 namespace TwelveLegions.Server;
 
@@ -18,6 +19,7 @@ internal sealed class L12SnapshotWireCodec
     private readonly object _gate = new();
     private bool _enabled;
     private bool _eventWindowEnabled;
+    private bool _handArrayEnabled;
     private bool _cardSnapshotFrameEnabled;
     // Outbound payloads are immutable UTF-8 bytes. Retain only the successfully
     // sent bytes; do not hydrate a complete mutable card tree for every connection.
@@ -28,13 +30,18 @@ internal sealed class L12SnapshotWireCodec
         => SetDeltaEnabled(enabled, false);
 
     internal void SetDeltaEnabled(bool enabled, bool eventWindowDeltaV1)
+        => SetDeltaEnabled(enabled, eventWindowDeltaV1, false);
+
+    internal void SetDeltaEnabled(bool enabled, bool eventWindowDeltaV1, bool handArrayDeltaV1)
     {
         lock (_gate)
         {
             var windowEnabled = enabled && eventWindowDeltaV1;
-            if (_enabled == enabled && _eventWindowEnabled == windowEnabled) return;
+            var handEnabled = enabled && handArrayDeltaV1;
+            if (_enabled == enabled && _eventWindowEnabled == windowEnabled && _handArrayEnabled == handEnabled) return;
             _enabled = enabled;
             _eventWindowEnabled = windowEnabled;
+            _handArrayEnabled = handEnabled;
             _baseline = null;
             _sinceFull = 0;
         }
@@ -77,7 +84,9 @@ internal sealed class L12SnapshotWireCodec
 
             var changes = new JsonArray();
             var eventWindow = _eventWindowEnabled ? L12RecentEventWindowDelta.TryCreate(previous, current) : null;
-            BuildChanges(previous, current, [], changes, eventWindow is not null);
+            var handSplices = _handArrayEnabled ? L12HandArrayDelta.TryCreate(previous, current) : null;
+            BuildChanges(previous, current, [], changes, eventWindow is not null,
+                handSplices is null ? null : L12HandArrayDelta.Players(handSplices));
             if (changes.Count > MaximumChanges) return Full(queued.FullPayload);
             var delta = new JsonObject
             {
@@ -88,7 +97,18 @@ internal sealed class L12SnapshotWireCodec
                 ["changes"] = changes,
             };
             if (eventWindow is not null) delta["eventWindow"] = eventWindow;
+            if (handSplices is not null) delta["handSplices"] = handSplices;
             var encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
+            if (handSplices is not null && changes.Count + handSplices["edits"]!.AsArray().Count <= MaximumChanges
+                && MeasureOrdinaryDelta(delta, current, handSplices) <= encoded.Length)
+            {
+                // Only materialize the ordinary packet when it actually wins. Its exact
+                // UTF-8 length is measured with a reusable discard buffer, not a second tree.
+                var ordinaryChanges = new JsonArray();
+                BuildChanges(previous, current, [], ordinaryChanges, eventWindow is not null);
+                delta.Remove("handSplices"); delta["changes"] = ordinaryChanges;
+                encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
+            }
             if (encoded.Length >= queued.FullPayload.Length * 9 / 10)
                 return Full(queued.FullPayload);
             return new L12PreparedWirePayload(encoded, () =>
@@ -99,6 +119,69 @@ internal sealed class L12SnapshotWireCodec
                     _sinceFull++;
                 }
             }, true);
+        }
+    }
+
+    internal static long MeasureOrdinaryDelta(JsonObject delta, JsonElement current, JsonObject hands)
+    {
+        using var count = new ByteCountWriter();
+        using (var writer = new Utf8JsonWriter(count))
+        {
+            writer.WriteStartObject();
+            foreach (var property in delta)
+            {
+                if (property.Key == "handSplices") continue;
+                writer.WritePropertyName(property.Key);
+                if (property.Key != "changes")
+                {
+                    if (property.Value is { } value) value.WriteTo(writer); else writer.WriteNullValue();
+                    continue;
+                }
+                writer.WriteStartArray();
+                foreach (var change in property.Value!.AsArray()) change!.WriteTo(writer);
+                foreach (var edit in hands["edits"]!.AsArray())
+                {
+                    var owner = edit!["playerIndex"]!.GetValue<int>();
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("path"); writer.WriteStartArray();
+                    writer.WriteStringValue("state"); writer.WriteStringValue("players");
+                    writer.WriteNumberValue(owner); writer.WriteStringValue("hand"); writer.WriteEndArray();
+                    writer.WritePropertyName("value");
+                    current.GetProperty("state").GetProperty("players")[owner].GetProperty("hand").WriteTo(writer);
+                    writer.WriteBoolean("remove", false); writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+            }
+            writer.WriteEndObject(); writer.Flush();
+        }
+        return count.Length;
+    }
+
+    private sealed class ByteCountWriter : IBufferWriter<byte>, IDisposable
+    {
+        private byte[]? buffer = ArrayPool<byte>.Shared.Rent(4096);
+        internal long Length { get; private set; }
+        public void Advance(int count)
+        {
+            ObjectDisposedException.ThrowIf(buffer is null, this);
+            if (count < 0 || count > buffer!.Length) throw new ArgumentOutOfRangeException(nameof(count));
+            Length = checked(Length + count);
+        }
+        public Memory<byte> GetMemory(int sizeHint = 0) { Ensure(sizeHint); return buffer!; }
+        public Span<byte> GetSpan(int sizeHint = 0) { Ensure(sizeHint); return buffer!; }
+        private void Ensure(int sizeHint)
+        {
+            ObjectDisposedException.ThrowIf(buffer is null, this);
+            if (sizeHint < 0) throw new ArgumentOutOfRangeException(nameof(sizeHint));
+            if (sizeHint <= buffer!.Length) return;
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            buffer = null;
+            buffer = ArrayPool<byte>.Shared.Rent(sizeHint);
+        }
+        public void Dispose()
+        {
+            if (buffer is not null) ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            buffer = null;
         }
     }
 
@@ -129,7 +212,8 @@ internal sealed class L12SnapshotWireCodec
     }
 
     private static void BuildChanges(JsonElement previous, JsonElement current,
-        IReadOnlyList<object> path, JsonArray changes, bool skipRecentEvents = false)
+        IReadOnlyList<object> path, JsonArray changes, bool skipRecentEvents = false,
+        IReadOnlySet<int>? skipHands = null)
     {
         if (changes.Count > MaximumChanges) return;
         if (JsonElement.DeepEquals(previous, current)) return;
@@ -144,12 +228,14 @@ internal sealed class L12SnapshotWireCodec
                 var next = path.Append(key).ToArray();
                 if (skipRecentEvents && next.Length == 2 && Equals(next[0], "state")
                     && key == "recentEvents") continue;
+                if (next.Length == 4 && Equals(next[0], "state") && Equals(next[1], "players")
+                    && next[2] is int owner && skipHands?.Contains(owner) == true && key == "hand") continue;
                 if (!hasCurrent)
                 {
                     changes.Add(Change(next, null, remove: true));
                 }
                 else
-                    BuildChanges(property.Value, currentValue, next, changes, skipRecentEvents);
+                    BuildChanges(property.Value, currentValue, next, changes, skipRecentEvents, skipHands);
                 if (changes.Count > MaximumChanges) return;
             }
             foreach (var property in current.EnumerateObject())
@@ -168,7 +254,7 @@ internal sealed class L12SnapshotWireCodec
             for (var index = 0; index < current.GetArrayLength(); index++)
             {
                 if (JsonElement.DeepEquals(previous[index], current[index])) continue;
-                BuildChanges(previous[index], current[index], path.Append(index).ToArray(), changes, skipRecentEvents);
+                BuildChanges(previous[index], current[index], path.Append(index).ToArray(), changes, skipRecentEvents, skipHands);
                 if (changes.Count > MaximumChanges) return;
             }
             return;
@@ -201,6 +287,18 @@ internal sealed class L12SnapshotWireCodec
         if (hasWindow)
             L12RecentEventWindowDelta.Apply(result, delta["eventWindow"]?.AsObject()
                 ?? throw new InvalidDataException("历史事件窗口不是对象"));
+        if (delta.ContainsKey("handSplices"))
+        {
+            var (baseMatch, baseRevision) = Identity(JsonSerializer.SerializeToElement(baseline));
+            var (resultMatch, resultRevision) = Identity(JsonSerializer.SerializeToElement(result));
+            if (delta["matchId"]?.GetValue<string>() != baseMatch || resultMatch != baseMatch
+                || delta["baseRevision"]?.GetValue<long>() != baseRevision
+                || delta["revision"]?.GetValue<long>() != resultRevision)
+                throw new InvalidDataException("手牌增量的对局或版本不匹配");
+            L12HandArrayDelta.Apply(baseline, result, delta["handSplices"] as JsonObject
+                ?? throw new InvalidDataException("手牌增量不是对象"), delta["changes"] as JsonArray
+                ?? throw new InvalidDataException("手牌增量缺少普通变更列表"));
+        }
         return result;
     }
 

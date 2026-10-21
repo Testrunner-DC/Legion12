@@ -164,6 +164,13 @@ function gameStateCardFrameModuleUrl() {
   return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#card-frame-${moduleSerial}`
 }
 
+function handArrayDeltaModuleUrl() {
+  const filename = join(sourceRoot, 'handArrayDelta.ts')
+  const output = compile(readFileSync(filename, 'utf8'), filename)
+  moduleSerial += 1
+  return `data:text/javascript;base64,${Buffer.from(output).toString('base64')}#hand-array-${moduleSerial}`
+}
+
 function deckCoverModuleUrl() {
   const filename = join(sourceRoot, 'deckCover.ts')
   const output = compile(readFileSync(filename, 'utf8'), filename)
@@ -201,6 +208,7 @@ async function loadNetModule(base = '/') {
   source = source
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("from './gameStateCardFrame'", `from '${gameStateCardFrameModuleUrl()}'`)
+    .replace("from './handArrayDelta'", `from '${handArrayDeltaModuleUrl()}'`)
     .replace("import { reactive } from 'vue'", 'const reactive = value => value')
     .replace("import { createGameReentryController } from './gameReentry'", `
       const createGameReentryController = () => ({
@@ -1168,7 +1176,7 @@ const tests = [
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
       capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-        chatV1: true, gameStateCardFrameV1: true },
+        chatV1: true, gameStateCardFrameV1: true, handArrayDeltaV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')

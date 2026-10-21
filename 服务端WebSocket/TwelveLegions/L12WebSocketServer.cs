@@ -710,7 +710,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
         bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false,
-        bool GameStateCardFrameV1 = false);
+        bool GameStateCardFrameV1 = false, bool HandArrayDeltaV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -5295,7 +5295,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 _socketCapabilities[sessionId] = capabilities;
                 if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
                 {
-                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1);
+                    snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1,
+                        capabilities.HandArrayDeltaV1);
                     snapshotCodec.SetCardSnapshotFrameEnabled(capabilities.GameStateCardFrameV1);
                 }
                 if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
@@ -5336,6 +5337,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     requestIds = capabilities.RequestIds,
                     deltaGameState = capabilities.DeltaGameState,
                     eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
+                    handArrayDeltaV1 = capabilities.DeltaGameState && capabilities.HandArrayDeltaV1,
                     presenceDeltaV1 = capabilities.PresenceDeltaV1,
                     chatV1 = _chatEnabled && capabilities.ChatV1,
                     gameStateCardFrameV1 = capabilities.GameStateCardFrameV1,
@@ -5423,12 +5425,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
                 requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"),
-                requested.Contains("chatV1"), requested.Contains(L12CardSnapshotFrame.Capability));
+                requested.Contains("chatV1"), requested.Contains(L12CardSnapshotFrame.Capability),
+                requested.Contains(L12HandArrayDelta.Capability));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
             GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false),
-            GetBool(value, "chatV1", false), GetBool(value, L12CardSnapshotFrame.Capability, false));
+            GetBool(value, "chatV1", false), GetBool(value, L12CardSnapshotFrame.Capability, false),
+            GetBool(value, L12HandArrayDelta.Capability, false));
     }
 
     private async Task<IReadOnlyList<OutgoingMessage>> SynchronizeStateAsync(Guid sessionId, JsonElement root)

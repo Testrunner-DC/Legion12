@@ -7,6 +7,7 @@ import { createGameReentryController } from './gameReentry'
 import { deploymentStorageKey, deploymentWebSocketPath, endpointHttpBase } from './deploymentBase'
 import { chatResource } from './chatResource'
 import { GameStateCardFrameRecovery, restoreGameStateCardFrame } from './gameStateCardFrame'
+import { HAND_ARRAY_DELTA_CAPABILITY, restoreHandSplices, validHandDeltaChangePath } from './handArrayDelta'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -72,6 +73,7 @@ let reconnectAttempts = 0
 let automaticConnectionEnabled = false
 let negotiatedRequestIds = false
 let negotiatedEventWindowDelta = false
+let negotiatedHandArrayDelta = false
 let negotiatedPresenceDelta = false
 let negotiatedGameStateCardFrame = false
 let presenceRecoveryPending = false
@@ -265,9 +267,13 @@ function rebuildDeltaGameState(delta: any) {
     || !Array.isArray(delta.changes)) return null
   const rebuilt = JSON.parse(JSON.stringify(baseline))
   const hasWindow = Object.hasOwn(delta, 'eventWindow')
+  const hasHands = Object.hasOwn(delta, 'handSplices')
+  if (hasHands && (!negotiatedHandArrayDelta || typeof delta.matchId !== 'string' || !delta.matchId
+    || !Number.isSafeInteger(delta.baseRevision) || !Number.isSafeInteger(delta.revision))) return null
   if (hasWindow && !negotiatedEventWindowDelta) return null
   for (const change of delta.changes) {
     if (!Array.isArray(change?.path) || change.path.length === 0) return null
+    if (hasHands && !validHandDeltaChangePath(rebuilt, change.path)) return null
     if (hasWindow && change.path[0] === 'state'
       && (change.path.length === 1 || change.path[1] === 'recentEvents')) return null
     let target: any = rebuilt
@@ -308,6 +314,8 @@ function rebuildDeltaGameState(delta: any) {
     rebuilt.state.recentEvents = next
   }
   if (Number(rebuilt.state?.revision ?? -1) !== Number(delta.revision ?? -2)) return null
+  if (hasHands && (rebuilt.state?.matchId !== delta.matchId
+    || !restoreHandSplices(baseline, rebuilt, delta.handSplices, delta.changes))) return null
   return rebuilt
   } catch {
     // Bad paths or shapes must request authoritative full recovery, not partially publish a window.
@@ -675,6 +683,7 @@ export function connect(): Promise<void> {
     }
 
     negotiatedEventWindowDelta = false
+    negotiatedHandArrayDelta = false
     negotiatedGameStateCardFrame = false
     resetGameStateCardFrameRecovery()
     try { socket = new WebSocket(l12State.endpoint) }
@@ -716,7 +725,7 @@ export function connect(): Promise<void> {
         type: 'hello',
         authToken,
         capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-          chatV1: true, gameStateCardFrameV1: true },
+          chatV1: true, gameStateCardFrameV1: true, [HAND_ARRAY_DELTA_CAPABILITY]: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -760,6 +769,8 @@ export function connect(): Promise<void> {
         negotiatedRequestIds = Boolean(message.capabilities?.requestIds)
         negotiatedEventWindowDelta = message.capabilities?.deltaGameState === true
           && message.capabilities?.eventWindowDeltaV1 === true
+        negotiatedHandArrayDelta = message.capabilities?.deltaGameState === true
+          && message.capabilities?.[HAND_ARRAY_DELTA_CAPABILITY] === true
         negotiatedPresenceDelta = message.capabilities?.presenceDeltaV1 === true
         resetGameStateCardFrameRecovery()
         negotiatedGameStateCardFrame = message.capabilities?.gameStateCardFrameV1 === true
@@ -1248,6 +1259,7 @@ export function disconnect() {
   cancelPendingAction()
   negotiatedRequestIds = false
   negotiatedEventWindowDelta = false
+  negotiatedHandArrayDelta = false
   negotiatedPresenceDelta = false
   negotiatedGameStateCardFrame = false
   presenceRecoveryPending = false
