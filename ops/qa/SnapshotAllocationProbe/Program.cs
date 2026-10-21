@@ -8,8 +8,8 @@ using Microsoft.Diagnostics.Tracing.Etlx;
 using Microsoft.Diagnostics.Tracing.Parsers.Clr;
 using TwelveLegions.Server;
 
-if (args.Length != 1 || args[0] is not ("probe" or "analyze"))
-    throw new ArgumentException("Only explicit local component probe/analyze modes are allowed");
+if (args.Length != 1 || args[0] is not ("probe" or "analyze" or "delta-fields"))
+    throw new ArgumentException("Only explicit local component probe/analyze/delta-fields modes are allowed");
 var root = Path.GetFullPath(Environment.GetEnvironmentVariable("L12_ALLOCATION_PROBE_ROOT")
     ?? throw new InvalidOperationException("Explicit governed output required"));
 var repo = Path.GetFullPath(Environment.GetEnvironmentVariable("L12_PROBE_REPO")
@@ -43,7 +43,8 @@ AssemblyLoadContext.Default.Resolving += (_, name) =>
     var path = Path.Combine(accepted, name.Name + ".dll");
     return File.Exists(path) ? AssemblyLoadContext.Default.LoadFromAssemblyPath(path) : null;
 };
-if (args[0] == "analyze") Analyze(); else Probe();
+if (args[0] == "delta-fields") await DeltaFieldProbe.RunAsync(accepted, expectedSha, Save);
+else if (args[0] == "analyze") Analyze(); else Probe();
 
 void Save(string name, object value)
 {

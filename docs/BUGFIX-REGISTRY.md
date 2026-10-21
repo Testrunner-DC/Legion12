@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-HAND-DELTA-ATTRIBUTION｜手牌变长整段重发已定位，协议未改
+
+- 实际BuildChanges仅等长数组逐元素，不等长原样替换。三组当前预组/48真实回合命令，经三视角独立原codec及严格ApplyDelta，153差量完整恢复，State/随机/fact不变；本组件玩家1962806B差量中手牌1442488B，非线上流量比例。48完整值拼接原型1441546→216242B/12边界与4原解码拒绝通过、独审CLEAR，不按卡号/目录回填，不删除字段或实现新协议。
+- 原30友好留存全匿名化，原hash不再适用；不放宽旧hash或补造原线载，转固定真实命令组件。初手写oracle偏宽已删除并改强类型Span delegate复用唯一严格解码器。唯一performance-delta-fields-20261021/main-acceptance.json；等待限定手牌增量裁定，不重Release/长压力或线上关三性能项。两新规则反馈9bf48f83/187df451已入队，未实现或关闭。
+
 ## UI-20261021-PRIMARY-LINK-TOUCH｜产品相关与恢复返回命中区（本地接受）
 
 - 唯一主操作链接原高16/19px，触控过小；NewsPage卡片footer相关链接和Recovery返回同型限定窄屏/coarse最小38px及横padding。原生a/router-link、实际内容到达、宽屏fine尺寸不变，正文链接与已合格40–43px控件不改；不新增详情路由或业务能力。
