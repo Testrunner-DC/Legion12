@@ -262,6 +262,20 @@ function selectGallery(card: CatalogCard) {
   selectedGalleryId.value = card.id
 }
 
+function usesCompactArchiveLayout() {
+  return window.matchMedia('(max-width: 900px), (max-height: 640px)').matches
+}
+
+function selectLogicalFromPointer(entry: LogicalArchiveCard, event: Event) {
+  selectLogical(entry)
+  if (usesCompactArchiveLayout()) openDetail(displayedVersion(entry), event, entry.versions)
+}
+
+function selectGalleryFromPointer(card: CatalogCard, event: Event) {
+  selectGallery(card)
+  if (usesCompactArchiveLayout()) openDetail(card, event)
+}
+
 function displayedVersion(entry: LogicalArchiveCard) {
   if (selectedLogicalId.value !== entry.logicalId) return entry.defaultVersion
   return entry.versions.find(card => card.id === selectedVersionId.value) ?? entry.defaultVersion
@@ -331,12 +345,12 @@ function resetFilters() {
       <label class="archive-search"><span>搜索</span><input v-model="query" type="search" placeholder="卡名、编号或效果文字"/></label>
       <MobileFilterSheet v-model="filtersOpen" title="图鉴筛选与排序" :active-count="activeFilterCount" @reset="resetFilters">
         <div class="archive-filter-fields">
-          <label><span>类型</span><select v-model="type"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
-          <label><span>阵营</span><select v-model="faction"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
-          <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
-          <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
-          <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-          <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+          <label><span>类型</span><select v-model="type" style="min-height:38px!important"><option value="all">全部类型</option><option v-for="key in types" :key="key" :value="key">{{ typeLabels[key] }}</option></select></label>
+          <label><span>阵营</span><select v-model="faction" style="min-height:38px!important"><option value="all">全部阵营</option><option v-for="key in factions" :key="key" :value="key">{{ factionLabels[key] }}</option></select></label>
+          <label><span>收录产品</span><select v-model="product" style="min-height:38px!important"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>费用</span><select v-model="cost" style="min-height:38px!important"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
+          <label><span>天灾等级</span><select v-model="disaster" style="min-height:38px!important"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
+          <label><span>排序</span><select v-model="sort" style="min-height:38px!important"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
         </div>
         <template #apply-label>查看 {{ visibleCount }} 张结果</template>
       </MobileFilterSheet>
@@ -359,7 +373,7 @@ function resetFilters() {
           <article v-for="entry in filteredCatalog" :key="entry.logicalId" role="listitem" tabindex="0" class="archive-card"
             :aria-label="`${displayedVersion(entry).nameZh}，按回车打开详情`"
             :class="[{ selected: selectedLogicalId === entry.logicalId, 'landscape-thumbnail': isHorizontalCardType(displayedVersion(entry).cardType) }, `faction-${displayedVersion(entry).faction}`]"
-            @click="selectLogical(entry)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
+            @click="selectLogicalFromPointer(entry, $event)" @keydown.enter.prevent="selectLogical(entry); openDetail(displayedVersion(entry), $event, entry.versions)" @keydown.space.prevent="selectLogical(entry)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(displayedVersion(entry), $event, entry.versions)">
                 <MobileDeferredCardImage :card-id="displayedVersion(entry).id" :legacy-url="displayedVersion(entry).imageUrl" :alt="displayedVersion(entry).nameZh"/>
@@ -382,7 +396,7 @@ function resetFilters() {
           <article v-for="card in filteredGallery" :key="card.id" role="listitem" tabindex="0" class="archive-card archive-gallery-card"
             :aria-label="`${card.nameZh}，按回车打开详情`"
             :class="[{ selected: selectedGalleryId === card.id, 'landscape-thumbnail': isHorizontalCardType(card.cardType) }, `faction-${card.faction}`]"
-            @click="selectGallery(card)" @keydown.enter.prevent="selectGallery(card); openDetail(card, $event)" @keydown.space.prevent="selectGallery(card)">
+            @click="selectGalleryFromPointer(card, $event)" @keydown.enter.prevent="selectGallery(card); openDetail(card, $event)" @keydown.space.prevent="selectGallery(card)">
             <div class="archive-card-image">
               <div class="archive-image-open" @dblclick.stop="openDetail(card, $event)">
                 <MobileDeferredCardImage :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh"/>
@@ -492,6 +506,7 @@ function resetFilters() {
   :global(.archive-filter-summary) {
     display: block;
     width: 100%;
+    min-height: 38px;
     margin-top: 8px;
     padding: 8px 10px;
     border: 1px solid #52636a;
@@ -508,6 +523,8 @@ function resetFilters() {
     flex: none;
   }
   .archive-detail { display: none; }
+  :global(.archive-search input) { min-height: 38px !important; }
+  :global(.archive-modal-close) { width: 38px; height: 38px; }
   .archive-grid { min-height: auto; max-height: none; overflow: visible; padding-right: 0; }
   .archive-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
