@@ -8,9 +8,10 @@ import {adaptFrozenPressureCore, assertLocalPressureTarget, cleanupLocalQualific
 import {AccountLedgerClient, NamedPipeLedgerTransport, registrationFingerprint} from 'file:///C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
-assert.ok(process.argv.slice(2).every(value => ['--host-probe', '--cleanup-probe'].includes(value)), 'only local probe switches are accepted')
+assert.ok(process.argv.slice(2).every(value => ['--host-probe', '--cleanup-probe', '--notification-probe'].includes(value)), 'only local probe switches are accepted')
 const hostProbeOnly = process.argv.includes('--host-probe')
 const cleanupProbeOnly = process.argv.includes('--cleanup-probe')
+const notificationProbeOnly = process.argv.includes('--notification-probe')
 const accepted = process.env.L12_ACCEPTED_SERVER_ROOT
 const hostAssembly = process.env.L12_LOCAL_PRESSURE_HOST_DLL
 const cacheParent = process.env.L12_LOCAL_PRESSURE_CACHE
@@ -144,7 +145,7 @@ try {
   if (hostProbeOnly) {
     report.status = 'local-host-probe-finished'
     report.originalWorkloadExecuted = false
-  } else if (cleanupProbeOnly) {
+  } else if (cleanupProbeOnly || notificationProbeOnly) {
     await startLedger(0)
     const accounts = []
     for (let index = 0; index < 2; index++) {
@@ -156,9 +157,16 @@ try {
         body: JSON.stringify({username, password})})
       await ledgers[0].client.persistConfirmed({slot: index, id: registered.account.id, createdAtUtc: registered.account.createdAt})
       accounts.push({username, requestedAtUtc, preflightAbsent: true, registrationOutcome: 'confirmed',
-        id: registered.account.id, createdAt: registered.account.createdAt})
+        id: registered.account.id, createdAt: registered.account.createdAt,
+        token: registered.token, accountView: registered.account})
     }
     ledgers[0].client.close()
+    let notificationError
+    if (notificationProbeOnly) {
+      const {verifyNotificationServerChain} = await import('./verify-notification-real-chain.mjs')
+      try {report.notificationProbe = await verifyNotificationServerChain({baseUrl, identities: accounts, outputRoot: output, cacheRoot: root})}
+      catch (error) {notificationError = error}
+    }
     const request = async (_unusedBase, route, _deadline, options) => {
       assert.equal(new URL(route, baseUrl).origin, new URL(baseUrl).origin)
       const response = await fetch(new URL(route, baseUrl), {method: options.method ?? 'GET',
@@ -170,7 +178,8 @@ try {
     report.cleanupProbe = await cleanupLocalQualificationAccounts({local: true, baseUrl,
       expectedCommit: health.serverVersion, cleanupDeadline: Date.now() + 30000}, {token: login.token}, accounts, request)
     assert.deepEqual(report.cleanupProbe, {playerSessionsRevoked: 2, adminSessionRevoked: 1, syntheticAccountsDeleted: 2, failures: 0})
-    report.status = 'local-cleanup-probe-finished'
+    if (notificationError) throw notificationError
+    report.status = notificationProbeOnly ? 'local-notification-probe-finished' : 'local-cleanup-probe-finished'
     report.originalWorkloadExecuted = false
   } else {
   const result = await core.workloadTestHooks.runPressure({local: true, baseUrl,
@@ -212,7 +221,7 @@ try {
       report.coldLedgerRead = JSON.parse(execFileSync(pwsh, ['-NoProfile', '-File',
         path.join(repo, 'ops/qa/Verify-LocalPressureLedgers.ps1'), '-ControlPath', report.accountLedgerControl,
         '-ExpectedServerSha256', owner.serverSha256], {env: process.env, windowsHide: true, timeout: 15000, encoding: 'utf8', stdio: 'pipe'}))
-      const expectedCounts = hostProbeOnly ? [0, 0] : cleanupProbeOnly ? [2, 0] : [60, 9]
+      const expectedCounts = hostProbeOnly ? [0, 0] : cleanupProbeOnly || notificationProbeOnly ? [2, 0] : [60, 9]
       const actual = report.coldLedgerRead.groups
       report.coldLedgerReadComplete = expectedCounts.every((count, index) => {
         const group = actual.find(row => row.group === index)
