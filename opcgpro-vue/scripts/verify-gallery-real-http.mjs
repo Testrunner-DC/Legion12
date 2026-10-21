@@ -24,7 +24,7 @@ assert.equal(digest(fs.readFileSync(path.join(hostRoot, 'GrandUMIServer.dll'))).
 const output = process.env.L12_QA_OUT
 assert(output && path.isAbsolute(output), 'explicit absolute L12_QA_OUT is required')
 const flow = process.env.L12_GALLERY_FLOW || 'standalone'
-assert(['standalone', 'product-draft'].includes(flow), 'Unknown gallery flow')
+assert(['standalone', 'product-draft', 'builtin-image'].includes(flow), 'Unknown gallery flow')
 const cache = process.env.L12_WORK_CACHE || 'D:/GPT/Legion12/cache/primary/gallery-real-http-20261021'
 const env = { ...process.env, L12_TASK_REPO: repo, L12_TASK_OUT: output, L12_TASK_HOST: hostRoot, L12_TASK_CACHE: cache }
 execFileSync(process.env.L12_PWSH || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe',
@@ -44,6 +44,10 @@ let backend, vite, browser, latestPage
 let backendLog = '', stage = 'start-backend'
 const backendPids = [], errors = [], requests = []
 const report = { status: 'running', flow, scope: 'actual admin/gallery components with real local HTTP and synthetic SQLite runtime; no production/test deployment', hostRoot }
+const sourceFiles = [import.meta.filename, ...['src/l12/site/AdminAlternateArtsPanel.vue', 'src/l12/CardArchive.vue',
+  'src/l12/CardDetailContent.vue', 'src/l12/CardImage.vue', 'src/l12/platform.ts'].map(file => path.join(front, file))]
+const sourceHashes = () => Object.fromEntries(sourceFiles.map(file => [path.relative(repo, file).replaceAll('\\', '/'), digest(fs.readFileSync(file))]))
+report.sourceBefore = sourceHashes()
 async function startBackend() {
   const serverEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('L12_')))
   backendLog = ''
@@ -67,6 +71,12 @@ async function stopBackend() {
   const stopped = new Promise(resolve => backend.once('exit', resolve))
   backend.kill()
   await Promise.race([stopped, delay(5000).then(() => { throw new Error('Owned backend did not exit') })])
+}
+async function restartBackend() {
+  // No live UI resource fetch may overlap a deliberate owned-host restart.
+  await Promise.all(browser.contexts().flatMap(context => context.pages()).map(page =>
+    page.goto('about:blank', { waitUntil: 'load', timeout: 5000 })))
+  await stopBackend(); await startBackend()
 }
 const entry = `
 import {createApp,h} from 'vue';import {createRouter,createMemoryHistory} from 'vue-router';
@@ -126,7 +136,99 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   page.on('response', response => { const url = new URL(response.url()); if (url.pathname.startsWith('/api/')) requests.push({ method: response.request().method(), path: url.pathname, status: response.status() }) })
   await open(page)
-  if (flow === 'product-draft') {
+  if (flow === 'builtin-image') {
+    stage = 'builtin-capture-original'
+    const baseline = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.builtIn && !item.mediaAssetId)
+    assert(baseline, 'A real built-in entry without an uploaded image override is required')
+    const unchanged = value => Object.fromEntries(Object.entries(value).filter(([key]) => !['mediaAssetId', 'imageUrl', 'thumbnailUrl', 'updatedAt'].includes(key)))
+    const assertIdentity = value => {
+      assert(value, 'The exact built-in entry must remain public')
+      assert.deepEqual(unchanged(value), unchanged(baseline), 'Image replacement must preserve every returned non-image field')
+    }
+    const queryRow = async () => {
+      await page.getByLabel('编号', { exact: true }).fill(baseline.artCode)
+      await page.getByRole('button', { name: '查询', exact: true }).click()
+      const row = page.locator('.gallery-list article').filter({ hasText: baseline.artCode })
+      await row.waitFor()
+      assert.equal(await row.count(), 1, 'The precise built-in code must select one entry')
+      return row
+    }
+    await (await queryRow()).getByRole('button', { name: '更换卡图', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '更换卡图', exact: true })
+    stage = 'builtin-upload-and-replace'
+    const media = await upload(page, dialog, '#195b7e')
+    const replacementResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/alternate-arts/image' && response.request().method() === 'PUT')
+    await dialog.getByRole('button', { name: '确认更换', exact: true }).click()
+    await page.locator('.admin-risk-dialog').getByRole('button', { name: '确认更换卡图', exact: true }).click()
+    const replacement = await replacementResponse
+    assert.equal(replacement.status(), 200)
+    assert.deepEqual(replacement.request().postDataJSON(), { alternateArtId: baseline.id, mediaAssetId: media.id })
+    await dialog.waitFor({ state: 'hidden' })
+    let art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === baseline.id)
+    assertIdentity(art); assert.equal(art.mediaAssetId, media.id)
+    const imageResponse = await fetch(backendOrigin + art.imageUrl)
+    assert.equal(imageResponse.status, 200); assert.match(imageResponse.headers.get('content-type'), /image\/webp/)
+    const imageBytes = Buffer.from(await imageResponse.arrayBuffer())
+    assert.equal((await sharp(imageBytes).metadata()).width, 600)
+    stage = 'builtin-anonymous-replacement-display'
+    const publicContext = await browser.newContext({ viewport: { width: 1366, height: 900 } })
+    await publicContext.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
+    const publicPage = await publicContext.newPage()
+    publicPage.on('pageerror', error => errors.push(error.message))
+    await open(publicPage, 'gallery')
+    await publicPage.getByRole('tab', { name: '画廊', exact: true }).click()
+    await publicPage.getByPlaceholder('卡名、编号或效果文字').fill(baseline.artCode)
+    const card = publicPage.locator('.archive-gallery-card').filter({ hasText: baseline.artCode })
+    await card.waitFor({ state: 'visible' })
+    assert.equal(await card.count(), 1)
+    await card.click()
+    const expectedImageUrls = [art.imageUrl, art.thumbnailUrl].filter(Boolean).map(url => new URL(url, publicPage.url()).href)
+    await publicPage.waitForFunction(expected => {
+      const image = document.querySelector('.archive-detail-image img')
+      return image && expected.includes(image.currentSrc || image.src)
+        && image.closest('.l12-card-image')?.dataset.source !== 'placeholder'
+    }, expectedImageUrls)
+    await publicPage.locator('.archive-detail-image img').first().evaluate(async image => {
+      await image.decode(); if (!image.naturalWidth) throw new Error('Anonymous overridden built-in image did not decode')
+    })
+    const displayedImageUrl = await publicPage.locator('.archive-detail-image img').first().evaluate(image => image.currentSrc || image.src)
+    assert(expectedImageUrls.includes(displayedImageUrl), 'Displayed source remains the precise replacement after decoding')
+    const displayedImageResponse = await publicContext.request.get(displayedImageUrl)
+    assert.equal(displayedImageResponse.status(), 200)
+    const displayedImageBytes = await displayedImageResponse.body()
+    const expectedDisplayedResponse = await fetch(displayedImageUrl)
+    assert.equal(expectedDisplayedResponse.status, 200)
+    const expectedDisplayedBytes = Buffer.from(await expectedDisplayedResponse.arrayBuffer())
+    assert.equal(digest(displayedImageBytes), digest(expectedDisplayedBytes), 'Anonymous displayed resource must match its actual replacement bytes')
+    if (displayedImageUrl === new URL(art.imageUrl, publicPage.url()).href) assert.equal(digest(displayedImageBytes), digest(imageBytes))
+    await publicPage.screenshot({ path: path.join(output, 'builtin-override-anonymous.png'), fullPage: true })
+    stage = 'builtin-restart-override-persistence'
+    await restartBackend(); await open(page)
+    art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === baseline.id)
+    assertIdentity(art); assert.equal(art.mediaAssetId, media.id)
+    stage = 'builtin-restore-through-risk-dialog'
+    await (await queryRow()).getByRole('button', { name: '更换卡图', exact: true }).click()
+    const restoredResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/admin/alternate-arts/image' && response.request().method() === 'PUT')
+    await dialog.getByRole('button', { name: '恢复系统卡图', exact: true }).click()
+    await page.locator('.admin-risk-dialog').getByRole('button', { name: '恢复系统卡图', exact: true }).click()
+    const restored = await restoredResponse
+    assert.equal(restored.status(), 200)
+    assert.deepEqual(restored.request().postDataJSON(), { alternateArtId: baseline.id, mediaAssetId: '' })
+    await dialog.waitFor({ state: 'hidden' })
+    await restartBackend(); await open(page)
+    art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === baseline.id)
+    assertIdentity(art)
+    for (const field of ['mediaAssetId', 'imageUrl', 'thumbnailUrl']) assert.equal(art[field], baseline[field], 'Restored original ' + field)
+    await open(publicPage, 'gallery')
+    const anonymous = (await publicPage.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === baseline.id)
+    assert.deepEqual(anonymous, art, 'Fresh anonymous projection must read the persisted restoration')
+    assert.deepEqual(errors, [])
+    Object.assign(report, { status: 'passed', artId: baseline.id, actualMultipartUploads: 1, imageWrites: 2,
+      exactImageRequestBodies: true, everyNonImageFieldPreserved: true, anonymousReplacementImageDecoded: true,
+      replacementAndRestorationPersistedAfterOwnedRestarts: true, originalImageReferencesRestored: true,
+      restoredSystemAssetDecodeNotClaimed: true, replacementImageSha256: digest(imageBytes),
+      displayedImagePath: new URL(displayedImageUrl).pathname, displayedImageSha256: digest(displayedImageBytes), backendSha256: owner.backendSha256 })
+  } else if (flow === 'product-draft') {
     stage = 'product-open-existing-card'
     const baseline = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.builtIn)
     assert(baseline, 'A real built-in gallery entry must exist')
@@ -157,7 +259,7 @@ try {
     await page.locator('.admin-risk-dialog').getByRole('button', { name: '保存并同步画廊', exact: true }).click()
     await editor.waitFor({ state: 'hidden' })
     stage = 'product-reload-and-restart-persistence'
-    await stopBackend(); await startBackend(); await open(page)
+    await restartBackend(); await open(page)
     const products = await page.evaluate(() => window.__galleryHttpQa.readAdminProducts())
     assert.equal(products.find(item => item.id === productId)?.status, 'draft')
     await page.getByLabel('编号', { exact: true }).fill(code)
@@ -222,7 +324,7 @@ try {
   const imageBytes = Buffer.from(await imageResponse.arrayBuffer())
   assert.equal((await sharp(imageBytes).metadata()).width, 600)
   stage = 'restart-and-read-persisted-art'
-  await stopBackend(); await startBackend()
+  await restartBackend()
   await open(page)
   art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === artId)
   assert.equal(art.mediaAssetId, secondMedia.id)
@@ -247,6 +349,8 @@ try {
     actualMultipartUploads: 2, persistenceAfterOwnedRestart: true, publicAnonymousComponentAndImageDecoded: true,
     desktopImageSha256: digest(imageBytes), backendSha256: owner.backendSha256 })
   }
+  report.sourceAfter = sourceHashes()
+  assert.deepEqual(report.sourceAfter, report.sourceBefore, 'Gallery source changed during real HTTP acceptance')
 } catch (error) {
   report.status = 'failed'; report.stage = stage; report.error = error instanceof Error ? error.message : String(error)
   await latestPage?.screenshot({ path: path.join(output, 'failed-stage.png'), fullPage: true }).catch(() => {})
