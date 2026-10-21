@@ -100,15 +100,23 @@ async function geometry(page, row = 0) {
 async function motion(page, ms = 450, row = 0) {
   return page.locator('.hot-deck-track').nth(row).evaluate(async (track, delay) => {
     const x = () => new DOMMatrixReadOnly(getComputedStyle(track).transform).m41
+    const animationState = () => track.getAnimations().map(animation => ({
+      pending: animation.pending, playState: animation.playState, currentTime: animation.currentTime,
+    }))
+    const beforeAnimations = animationState()
     const before = x(), start = performance.now(), width = track.firstElementChild.getBoundingClientRect().width
     await new Promise(resolve => setTimeout(resolve, delay))
     const after = x(), elapsed = (performance.now() - start) / 1000
     const distance = ((getComputedStyle(track).animationDirection === 'reverse' ? after - before : before - after) + width) % width
-    return { before, after, elapsed, distance, speed: distance / elapsed }
+    return { before, after, elapsed, distance, speed: distance / elapsed,
+      beforeAnimations, afterAnimations: animationState(), computedPlayState: getComputedStyle(track).animationPlayState }
   }, ms)
 }
 function moving(value, label, row = 0) { const speed = [48, 46][row]; assert.ok(Math.abs(value.speed - speed) < 5, `${label}: expected ${speed}px/s, got ${JSON.stringify(value)}`) }
-function stopped(value, label) { assert.ok(Math.abs(value.after - value.before) < .5, `${label}: ${JSON.stringify(value)}`) }
+function stopped(value, label) {
+  if (label === 'both touch rows paused') console.log(JSON.stringify({ checkpoint: 'pause-boundary-observation', ...value }))
+  assert.ok(Math.abs(value.after - value.before) < .5, `${label}: ${JSON.stringify(value)}`)
+}
 function layout(value) {
   assert.ok(value.cardTops.every(top => Math.abs(top - value.cardTops[0]) < .5), 'all covers share one line')
   assert.equal(value.horizontalBarHeight, 0, 'no visible horizontal drag bar')

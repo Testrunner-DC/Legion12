@@ -7,9 +7,13 @@ import {createRequire} from 'node:module'
 import {createServer} from 'vite'
 const root=path.resolve(import.meta.dirname,'..'),output=process.env.L12_COVER_CONSISTENCY_OUTPUT,cache=process.env.L12_COVER_CONSISTENCY_CACHE
 assert.ok(output&&cache&&process.env.L12_COVER_CONSISTENCY_GUARDED==='1','Guard explicit D/E output/cache before running')
-const baseline=process.argv.includes('--baseline'),overrides=new Map()
+const baseline=process.argv.includes('--baseline'),fanBaseline=process.argv.includes('--fan-baseline'),overrides=new Map()
 if(baseline)for(const p of ['src/l12/DeckCover.vue','src/l12/site/BattleHubPage.vue']){
  const r=spawnSync('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/git.exe',['--no-lazy-fetch','-c','safe.directory='+path.dirname(root),'-C',path.dirname(root),'show','07018ff60bb3119b13b86cb313ae5eed9057538a:opcgpro-vue/'+p],{encoding:'utf8'})
+ assert.equal(r.status,0);overrides.set(path.join(root,p).replaceAll('\\','/'),r.stdout)
+}
+if(fanBaseline){
+ const p='src/l12/DeckCover.vue',r=spawnSync('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/git/cmd/git.exe',['--no-lazy-fetch','-c','safe.directory='+path.dirname(root),'-C',path.dirname(root),'show','HEAD:opcgpro-vue/'+p],{encoding:'utf8'})
  assert.equal(r.status,0);overrides.set(path.join(root,p).replaceAll('\\','/'),r.stdout)
 }
 fs.mkdirSync(output,{recursive:true})
@@ -36,10 +40,10 @@ createApp({render:()=>h('main',{style:{boxSizing:'border-box',width:mode==='narr
 const server=await createServer({root,configLoader:'runner',cacheDir:cache,server:{host:'127.0.0.1',port:0},plugins:[{name:'cover-consistency',enforce:'pre',resolveId(id){if(id==='/__cover__.js')return id},load(id){if(id==='/__cover__.js')return entry;return overrides.get(id.replaceAll('\\','/'))},configureServer(v){v.middlewares.use((req,res,next)=>{if(new URL(req.url||'/','http://fixture').pathname!=='/__cover__')return next();res.setHeader('Content-Type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:0;background:#080d12;color:#eee"><div id="app"></div><script type="module" src="/__cover__.js"></script>')})}}]})
 const tracked=['src/l12/DeckCover.vue','src/l12/site/BattleHubPage.vue','src/l12/L12DeckEditor.vue','src/l12/deckCover.ts','src/router/index.ts','scripts/test-deck-cover.mjs','scripts/test-tutorial-contract.mjs','scripts/verify-deck-cover-consistency.mjs',...['1_w','1_m','2_w','2_m','3_w','3_m'].map(name=>'src/assets/l12/battle/Match_'+name+'.png')]
 const hashes=()=>Object.fromEntries(tracked.map(p=>[p,crypto.createHash('sha256').update(overrides.get(path.join(root,p).replaceAll('\\','/'))??fs.readFileSync(path.join(root,p))).digest('hex')]))
-const report={baseline,sourceBefore:hashes(),cases:[],failures:[],pageErrors:[],productionWrites:0,scope:'actual shared Cover/BattleHub/Editor with App-equivalent path-keyed RouterView transition; synthetic guest state; not physical mobile or live accounts'};let browser
+const report={baseline,fanBaseline,sourceBefore:hashes(),cases:[],failures:[],pageErrors:[],productionWrites:0,scope:'actual shared Cover/BattleHub/Editor with App-equivalent path-keyed RouterView transition; synthetic guest state; not physical mobile or live accounts'};let browser
 try{
  await server.listen();browser=await chromium.launch({channel:'msedge',headless:true})
- const cases=[['gallery',1440,1100],...baseline?[]:[['route',1440,1000]],['hub',1440,1000],['friendly',1440,1000],['room',1440,1000],['hub',390,844],['friendly',390,844],['room',390,844],['hub',844,390],['friendly',844,390],['room',844,390],['narrow',844,390],...baseline?[]:[['editor',1440,1000],['editor',390,844]]]
+ const cases=fanBaseline?[['gallery',1440,1100]]:[['gallery',1440,1100],...baseline?[]:[['route',1440,1000]],['hub',1440,1000],['friendly',1440,1000],['room',1440,1000],['hub',390,844],['friendly',390,844],['room',390,844],['hub',844,390],['friendly',844,390],['room',844,390],['narrow',844,390],...baseline?[]:[['editor',1440,1000],['editor',390,844]]]
  for(const [mode,width,height] of cases.filter(c=>!process.argv.includes('--editor-only')||c[0]==='editor')){
   const touch=width<=844&&!['gallery','editor'].includes(mode);const ctx=await browser.newContext({viewport:{width,height},reducedMotion:'reduce',hasTouch:touch});await ctx.routeWebSocket(/.*/,s=>s.close())
   await ctx.route('**/*',r=>{const u=new URL(r.request().url());if(u.hostname!=='127.0.0.1')return r.abort();if(u.pathname.startsWith('/api/'))return r.fulfill({json:u.pathname.includes('effective-policy')?policy:[]});if(u.pathname.startsWith('/card-assets/')){const b=path.resolve('D:/L12-assets/published/current'),f=path.resolve(b,decodeURIComponent(u.pathname.slice(13)));assert.ok(f.startsWith(b+path.sep));return fs.existsSync(f)?r.fulfill({path:f}):r.abort()}return r.continue()})
@@ -113,13 +117,23 @@ try{
   if(!baseline&&mode==='gallery'){
    for(const g of geometry){assert.ok(g.cards[0].right>=g.w,'rightmost representative card must reach the cover edge');assert.ok(g.cards[0].right<=g.w*1.03,'rightmost representative card must not crowd beyond the cover edge');for(const card of g.cards){assert.ok(card.bottom>g.h&&card.bottom<=g.h*1.1,'representative card must retain only slight bottom clipping')}}
   }
+  let hoverFan=null
+  if(!baseline&&mode==='gallery'&&width===1440){
+   const cover=page.locator('.deck-cover').filter({has:page.locator('.deck-cover__card:nth-child(3)')}).first()
+   const measure=()=>cover.locator('.deck-cover__card').evaluateAll(cards=>cards.map(card=>{const matrix=new DOMMatrixReadOnly(getComputedStyle(card).transform),box=card.getBoundingClientRect();return{translateX:matrix.m41,width:box.width}}))
+   const before=await measure();await cover.hover();await page.waitForTimeout(360);const after=await measure()
+   assert.ok(after[0].translateX-before[0].translateX>=before[0].width*.045,'right representative card must move slightly outward on hover')
+   assert.ok(after[2].translateX-before[2].translateX<=-before[2].width*.045,'left representative card must move slightly outward on hover')
+   assert.ok(Math.abs(after[1].translateX-before[1].translateX)<.5,'middle representative card must keep its current horizontal transform')
+   hoverFan={before,after}
+  }
   await page.evaluate(()=>scrollTo(0,0))
   await page.screenshot({path:path.join(output,mode+'-'+width+'x'+height+'.png'),fullPage:true,animations:'disabled'})
   if(!baseline&&['hub','friendly'].includes(mode))await page.locator('.mode-tabs').screenshot({path:path.join(output,mode+'-modes-'+width+'x'+height+'.png'),animations:'disabled'})
   if(!baseline&&['hub','friendly','room'].includes(mode))await page.locator('.deck-selection-block').screenshot({path:path.join(output,mode+'-deck-'+width+'x'+height+'.png'),animations:'disabled'})
   const selectorCase=!['gallery','editor'].includes(mode)
   if(selectorCase){const trigger=page.getByRole('button',{name:/^更换牌库：/});if(mode==='hub'&&width===1440){await trigger.focus();await page.keyboard.press('Enter');report.keyboardSelector=true}else if(touch){await trigger.tap();report.touchSelectors=(report.touchSelectors||0)+1}else await trigger.click();await page.getByRole('dialog').waitFor();await page.getByRole('button',{name:'取消',exact:true}).click()}
-  report.cases.push({mode,width,height,geometry,modeArtStates,artImageRequests,tutorialLobbyEmbedded,actualSelectorOpenAndCancel:selectorCase});await ctx.close()
+  report.cases.push({mode,width,height,geometry,hoverFan,modeArtStates,artImageRequests,tutorialLobbyEmbedded,actualSelectorOpenAndCancel:selectorCase});await ctx.close()
  }
  assert.deepEqual(report.pageErrors,[]);if(baseline)assert.ok(report.failures.length>0);else assert.deepEqual(report.failures,[])
  console.log(JSON.stringify({baseline,cases:report.cases.length,failures:report.failures,pageErrors:report.pageErrors.length}))

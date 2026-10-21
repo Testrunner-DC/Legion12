@@ -7800,3 +7800,9 @@
 - RED4及真实聊天commit RED保留；首轮完整规则7999通过、平台2107/2116有9失败，日志/TRX/紧凑7叶源码zip保留。修正取消观察器LIFO自注销、注册/终局入队夹具竞态、正常退役取消分类及远期timer后，Release定向28/28含长短期限和未预期取消反例，最终同程序集完整无筛选平台2121/2121零失败跳过。未变规则7999与完整前端/类型/双base源级组合接受，独审CLEAR，架构P0—P4与68内核边界过；不拿定向或旧Batch失败冒新Release通过。
 - 唯一D盘formal-release-20261021/release-session-summary.json引用原始失败与recovery-final-r3.json；未新建线上Bug或关单、未冒性能容量通过。
 - 本地实现/验收唯一D盘server-shutdown-20261021/main-acceptance.json；3已诊断失败轮合成临时126911075B已清，原日志/TRX/源码归档/监督收据保留。完整正式部署已取消，两服/维护/业务统计测试零操作。回滚保护覆盖匿名1/8不回应、真实取消与慢sender/close、注册/移除/finally竞态、并发Stop/Dispose、失败worker继续清理和SQLite命令/聊天耐久恢复；不改变现行连续计时。
+
+## DECK-COVER-FAN-20261021｜代表牌左右轻移（人类界面请求，本地已验收）
+
+- 旧共享封面只有整体放大，没有左右独立横移；按人类要求同一DeckCover三张牌增加右+6%/左-6%，中牌不横移。仅精细指针hover/focus生效，旋转/1.08/0.3s、既有几何与稳定选牌身份保持，所有画廊/大厅/好友房/房间/编辑器消费者共用，不新增封面实现。
+- 原HEAD真实右牌外移RED、当前14场/三尺寸零错误、UI361/类型/双base与Main其余8前端链源级接受，Main看两图。原热门双触摸0.800/0.802px两失败保留；仅测量叶补Animation.pending/playState/currentTime，追加7组通过、双触摸样本pending=false/位移0；阈值0.5px不变，未修改产品触摸/滚动，不冒旧一帧原因已证或真机双指拆分通过。
+- 原权限/Node PATH启动失败另记为环境失败，非产品RED；新Main诊断沿D初始化，不笼统声称作者初期所有浏览器temp物理D。唯一deck-cover-fan-20261021/main-acceptance.json绑定3叶/原失败/新报告；后端未变不重跑2121/7999，无部署/维护/统计/线上关单。

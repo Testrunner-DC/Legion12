@@ -102,13 +102,13 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 .deck-cover__wash{position:absolute;z-index:0;inset:0 42% 0 0;display:grid;place-items:center;overflow:hidden;color:color-mix(in srgb,var(--deck-cover-accent) 35%,transparent);font:900 128px/1 'Microsoft YaHei','微软雅黑',sans-serif;opacity:.42;transform:translate(-8%,-4%);pointer-events:none}
 
 .deck-cover{container-type:inline-size}
-.deck-cover__cards{position:absolute;z-index:1;top:auto;bottom:0;right:-2%;width:55%;height:100%;transform-origin:100% 100%;transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.deck-cover__cards{--deck-cover-right-card-shift:0%;--deck-cover-left-card-shift:0%;position:absolute;z-index:1;top:auto;bottom:0;right:-2%;width:55%;height:100%;transform-origin:100% 100%;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 
-.deck-cover__card{position:absolute;right:4%;top:auto;bottom:0;width:43%;aspect-ratio:5/7;overflow:visible;filter:drop-shadow(0 9px 10px rgba(0,0,0,.58));transform:rotate(4deg);transform-origin:50% 86%}
+.deck-cover__card{position:absolute;right:4%;top:auto;bottom:0;width:43%;aspect-ratio:5/7;overflow:visible;filter:drop-shadow(0 9px 10px rgba(0,0,0,.58));transform:translateX(var(--deck-cover-right-card-shift)) rotate(4deg);transform-origin:50% 86%;transition:transform .3s cubic-bezier(.4,0,.2,1)}
 
 .deck-cover__card:nth-child(1){z-index:3}
 .deck-cover__card:nth-child(2){z-index:2;right:26%;bottom:-4%;transform:rotate(0)}
-.deck-cover__card:nth-child(3){z-index:1;right:48%;bottom:-8%;transform:rotate(-4deg)}
+.deck-cover__card:nth-child(3){z-index:1;right:48%;bottom:-8%;transform:translateX(var(--deck-cover-left-card-shift)) rotate(-4deg)}
 
 .deck-cover__card :deep(.l12-card-image),.deck-cover__card :deep(.l12-card-image__resolving),.deck-cover__card :deep(.l12-card-image__img){overflow:visible;background:transparent!important}
 
@@ -150,7 +150,7 @@ function rejectMasterBanner() { failedBannerId.value = normalizedMasterId.value 
 @media(hover:hover) and (pointer:fine){.deck-cover:hover,:global(button:hover > .deck-cover),:global(a:hover > .deck-cover),:global(article:hover > .deck-cover),:global(button:focus-visible > .deck-cover),:global(a:focus-visible > .deck-cover),:global(article:focus-within > .deck-cover){border-color:color-mix(in srgb,var(--deck-cover-accent) 88%,#f4efe1);box-shadow:0 0 0 1px color-mix(in srgb,var(--deck-cover-accent) 54%,transparent),0 20px 46px -14px color-mix(in srgb,var(--deck-cover-accent) 76%,transparent),inset 0 0 28px color-mix(in srgb,var(--deck-cover-accent) 14%,transparent);transform:translateY(-4px)}
 :global(button:hover > .deck-cover__footer),:global(a:hover > .deck-cover__footer),:global(button:focus-visible > .deck-cover__footer),:global(a:focus-visible > .deck-cover__footer){border-color:color-mix(in srgb,var(--deck-cover-accent) 72%,#f4efe1);box-shadow:0 12px 28px -18px color-mix(in srgb,var(--deck-cover-accent) 72%,transparent)}
 .deck-cover:hover::before,:global(button:hover > .deck-cover::before),:global(a:hover > .deck-cover::before),:global(article:hover > .deck-cover::before),:global(button:focus-visible > .deck-cover::before),:global(a:focus-visible > .deck-cover::before),:global(article:focus-within > .deck-cover::before){opacity:1}
-.deck-cover:hover .deck-cover__cards,:global(button:hover > .deck-cover .deck-cover__cards),:global(a:hover > .deck-cover .deck-cover__cards),:global(article:hover > .deck-cover .deck-cover__cards),:global(button:focus-visible > .deck-cover .deck-cover__cards),:global(a:focus-visible > .deck-cover .deck-cover__cards),:global(article:focus-within > .deck-cover .deck-cover__cards){transform:scale(1.08)}
+.deck-cover:hover .deck-cover__cards,:global(button:hover > .deck-cover .deck-cover__cards),:global(a:hover > .deck-cover .deck-cover__cards),:global(article:hover > .deck-cover .deck-cover__cards),:global(button:focus-visible > .deck-cover .deck-cover__cards),:global(a:focus-visible > .deck-cover .deck-cover__cards),:global(article:focus-within > .deck-cover .deck-cover__cards){--deck-cover-right-card-shift:6%;--deck-cover-left-card-shift:-6%;transform:scale(1.08)}
 .deck-cover:hover .deck-cover__copy b,:global(button:hover > .deck-cover .deck-cover__copy b),:global(a:hover > .deck-cover .deck-cover__copy b),:global(article:hover > .deck-cover .deck-cover__copy b),:global(button:focus-visible > .deck-cover .deck-cover__copy b),:global(a:focus-visible > .deck-cover .deck-cover__copy b),:global(article:focus-within > .deck-cover .deck-cover__copy b){color:#f4f1e8}
 }
 
