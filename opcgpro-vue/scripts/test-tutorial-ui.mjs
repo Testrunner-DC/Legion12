@@ -12,14 +12,23 @@ const front = path.join(repo, 'opcgpro-vue')
 const out = process.env.L12_TUTORIAL_UI_OUTPUT || process.env.L12_TUTORIAL_REAL_OUTPUT
 const cache = process.env.L12_TUTORIAL_UI_CACHE || process.env.L12_TUTORIAL_REAL_CACHE
 const serverSource = process.env.L12_TUTORIAL_SERVER_SOURCE || path.join(repo, '服务端WebSocket/bin/Release/net10.0')
-assert(out && cache, 'Explicit governed roots are required')
+assert(out && cache && path.isAbsolute(out) && path.isAbsolute(cache), 'Explicit absolute governed roots are required')
+assert(!fs.existsSync(path.join(out,'report.json')), 'Refusing to overwrite a prior tutorial report')
 process.env.L12_TUTORIAL_REAL_OUTPUT = out
 process.env.L12_TUTORIAL_REAL_CACHE = cache
 execFileSync(process.env.L12_PWSH || 'pwsh', ['-NoProfile', '-NonInteractive', '-Command',
-  `. '${repo}/ops/windows/Initialize-L12BuildEnvironment.ps1' | Out-Null; . '${repo}/ops/windows/L12GeneratedStorage.ps1'; foreach($p in @($env:L12_TUTORIAL_REAL_OUTPUT,$env:L12_TUTORIAL_REAL_CACHE,$env:TEMP)){$null=Assert-L12GeneratedPath -Path $p -Purpose 'independent real tutorial UI'}`], { stdio: 'pipe' })
+  `$ErrorActionPreference='Stop'; . '${repo}/ops/windows/Initialize-L12BuildEnvironment.ps1' | Out-Null; . '${repo}/ops/windows/L12GeneratedStorage.ps1'; foreach($p in @($env:L12_TUTORIAL_REAL_OUTPUT,$env:L12_TUTORIAL_REAL_CACHE,$env:TEMP)){$null=Assert-L12GeneratedPath -Path $p -Purpose 'independent real tutorial UI'}`], { stdio: 'pipe' })
 fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
 const report = { status: 'RUNNING', cases: [], transport: [], projectedObservations: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. Completion is passively observed after the actual net consumer restores full/delta/card frames. No test/production deployment.' }
 const firstChapterOnly = process.env.L12_TUTORIAL_FIRST_CHAPTER_ONLY === '1'
+const effectSliceOnly = process.env.L12_TUTORIAL_EFFECT_SLICE_ONLY === '1'
+const effectViewportName = process.env.L12_TUTORIAL_EFFECT_VIEWPORT
+if(effectSliceOnly) {
+  assert(['portrait','landscape'].includes(effectViewportName),'Effect slice requires one explicit independent portrait/landscape run')
+  assert(!firstChapterOnly&&process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY!=='1'&&process.env.L12_NOTIFICATION_SETTINGS_ONLY!=='1','Effect slice cannot silently mix other modes')
+}
+const effectViewports = effectViewportName==='portrait'?[{width:390,height:844}]:[{width:844,height:390}]
+if(effectSliceOnly) report.effectViewport=effectViewportName
 let visualCardManifest = null
 if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly || process.env.L12_TUTORIAL_REAL_CARD_ART === '1') {
   const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json')
@@ -49,6 +58,7 @@ boundSources.push('opcgpro-vue/scripts/test-tutorial-ui.mjs','服务端WebSocket
   '服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json','opcgpro-vue/src/l12/tutorial/tutorialFinalChapter.ts')
 report.sourceBefore = hashes()
 report.paymentChecks=[]
+report.effectReceipts=[]
 report.notificationSettings=[]
 report.backendAtStart = { boundary: 'Local built server binary SHA below; this UI test is not a Release, deployed-identity, or full-backend-suite proof.' }
 const requireFront = createRequire(path.join(front, 'package.json'))
@@ -64,11 +74,30 @@ fs.cpSync(serverSource, hostRoot, { recursive: true,
   filter: source => path.basename(source) !== 'runtime' })
 const dll = path.join(hostRoot, 'GrandUMIServer.dll')
 report.dllSha256 = crypto.createHash('sha256').update(fs.readFileSync(dll)).digest('hex').toUpperCase()
+report.sourceCommit=execFileSync('git',['rev-parse','HEAD'],{cwd:repo,encoding:'utf8'}).trim()
+const serverProductVersion=execFileSync(process.env.L12_PWSH || 'pwsh',['-NoProfile','-NonInteractive','-Command',
+  `(Get-Item -LiteralPath '${dll.replaceAll("'", "''")}').VersionInfo.ProductVersion`],{encoding:'utf8'}).trim()
+const serverBindingPath=process.env.L12_TUTORIAL_SERVER_BINDING_FILE
+const serverBinding=serverBindingPath?JSON.parse(fs.readFileSync(serverBindingPath,'utf8')):null
+const boundServerSources=serverBinding?.sources?.map(source=>({path:source.path,expectedSha256:source.sha256,
+  actualSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(repo,source.path))).digest('hex').toUpperCase()}))||[]
+report.backendAtStart={...report.backendAtStart,serverSource,dllSha256:report.dllSha256,productVersion:serverProductVersion,
+  bindingFile:serverBindingPath||null,bindingBoundary:serverBinding?.sourceBoundary||null,boundServerSources,
+  recipeBinding:process.env.L12_TUTORIAL_SERVER_RECIPE_BINDING||null}
+if(effectSliceOnly) {
+  const expectedCommit=process.env.L12_TUTORIAL_SERVER_COMMIT
+  assert(expectedCommit,'Effect slice requires an explicit server commit binding')
+  assert(serverProductVersion.includes(expectedCommit),'Server binary does not match its declared source commit')
+  assert(serverBinding?.serverDll===report.dllSha256,'Server binary does not match the governed dirty-batch binding')
+  assert(boundServerSources.every(source=>source.actualSha256===source.expectedSha256),
+    'Current source files do not match the governed dirty-batch binding')
+}
 const hostLog = fs.openSync(path.join(out, 'local-host.log'), 'wx')
 const host = spawn('C:/Program Files/dotnet/dotnet.exe', [dll, String(serverPort)], {
   cwd: hostRoot, windowsHide: true, stdio: ['ignore', hostLog, hostLog], env: { ...process.env,
     L12_LISTEN_HOST: '127.0.0.1', L12_ALLOWED_ORIGINS: `http://127.0.0.1:${uiPort}`,
     L12_TUTORIAL_ENABLED: 'true', L12_CHAT_ENABLED: 'false' } })
+report.ownedResources={parentPid:process.pid,hostPid:host.pid,hostRoot,profile:path.join(cache,'profile'),serverPort,uiPort}
 let hostFailure, vite, context, page, hostDone=false
 host.on('error', error => { hostFailure = error })
 host.on('exit',()=>{hostDone=true})
@@ -107,7 +136,16 @@ async function tap(locator, label) {
     if(!point) await pause(80)
   }
   assert(point, 'No visible, unobstructed touch point: ' + label)
-  if ((await page.viewportSize()).width < 1000) await page.touchscreen.tap(point.x,point.y)
+  const viewport=await page.viewportSize()
+  const target=await locator.evaluate(element=>({tag:element.tagName.toLowerCase(),role:element.getAttribute('role'),
+    ariaLabel:element.getAttribute('aria-label'),text:(element.textContent||'').trim().slice(0,160),
+    tutorialChoice:element.getAttribute('data-tutorial-choice'),
+    tutorialPaymentResource:element.getAttribute('data-tutorial-payment-resource'),
+    tutorialCardInstance:element.getAttribute('data-tutorial-card-instance'),
+    tutorialRow:element.getAttribute('data-tutorial-row'),tutorialSlot:element.getAttribute('data-tutorial-slot'),
+    tutorialAction:element.getAttribute('data-tutorial-action')}))
+  const input=viewport.width < 1000?'touchscreen':'mouse'
+  if (input==='touchscreen') await page.touchscreen.tap(point.x,point.y)
   else {
     // Match an actual desktop interaction: hovering a candidate opens its
     // existing preview, so re-hit-test after hover layout settles, before press.
@@ -125,12 +163,14 @@ async function tap(locator, label) {
     }
     await page.mouse.down(); await page.mouse.up()
   }
+  return {label,input,viewport,point,target}
 }
 async function resolveOwnPrompt() {
   const state = await observe()
   const prompt = state.prompts.find(p => p.playerIndex === 0)
   if (!prompt || state.pending) return false
   if ((prompt.kind || '').includes('resource') || ['resource-return', 'resource-payment', 'resource-selection'].includes(prompt.data?.choiceMode)) {
+    const selectionTouches=[]
     const mobile = page.locator('.mobile-morale-choice:not(.unavailable):not(.selected)')
     const orb = page.locator('[data-player-index="0"] .morale-orb.payable:not(.selected)')
     const picker=page.locator('[data-player-index="0"] .mobile-morale-stack-trigger')
@@ -139,7 +179,7 @@ async function resolveOwnPrompt() {
       await mobile.first().waitFor({state:'visible'})
     }
     for (let i=0;i<prompt.minChoose;i++) {
-    if (await mobile.count()) await tap(mobile.first(), 'select payment')
+    if (await mobile.count()) selectionTouches.push(await tap(mobile.first(), 'select payment'))
     else if (await orb.count()) {
       let candidate=null
       for(let index=(await orb.count())-1;index>=0;index--) {
@@ -153,11 +193,11 @@ async function resolveOwnPrompt() {
         })){candidate=item;break}
       }
       assert(candidate,'At least one real board payment orb must be touchable')
-      await tap(candidate, 'select payment orb')
+      selectionTouches.push(await tap(candidate, 'select payment orb'))
     }
     else {
       const option = page.locator('.prompt-choices button:not(.decline-action):not([disabled])').first()
-      await tap(option, 'select payment option')
+      selectionTouches.push(await tap(option, 'select payment option'))
     }
     if(prompt.minChoose>1 && i===0) {
       await page.waitForFunction(()=>document.querySelector('[data-ui-contract="tutorial-authoritative-guidance"] h2')?.textContent==='选择亮起的士气')
@@ -171,8 +211,8 @@ async function resolveOwnPrompt() {
       report.paymentChecks.push({viewport:await page.viewportSize(),minimum:prompt.minChoose,selected,title:'选择亮起的士气'})
     }
     }
-    await tap(page.getByRole('button', { name: /确认支付|确认费用|确认选择|确认返还/ }).filter({ visible: true }).first(), 'confirm payment')
-    return true
+    const confirmTouch=await tap(page.getByRole('button', { name: /确认支付|确认费用|确认选择|确认返还/ }).filter({ visible: true }).first(), 'confirm payment')
+    return {promptId:prompt.promptId,kind:prompt.kind,selectionTouches,confirmTouch}
   }
   if (prompt.validChoices?.includes('pass')) {
     await tap(page.getByRole('button', { name: /不响应|不发动|让过/ }).filter({ visible: true }).first(), 'pass response')
@@ -181,6 +221,18 @@ async function resolveOwnPrompt() {
     return true
   }
   throw new Error('Unsupported real prompt in acceptance: ' + prompt.kind)
+}
+async function waitCommandAck(transportStart, predicate, beforeRevision, label) {
+  const deadline=Date.now()+12000
+  while(Date.now()<deadline) {
+    const sent=report.transport.slice(transportStart).find(entry=>entry.direction==='sent'&&entry.type==='gameAction'&&predicate(entry))
+    const ack=sent&&typeof sent.requestId==='string'&&sent.requestId.length>0&&report.transport.slice(transportStart).find(entry=>entry.direction==='received'&&entry.type==='gameState'
+      &&entry.requestId===sent.requestId&&entry.revision>beforeRevision)
+    if(sent&&ack)return {requestId:sent.requestId,command:sent.command,promptId:sent.promptId,selectedValues:sent.cardInstanceIds??[],
+      beforeRevision,ackRevision:ack.revision,tutorial:ack.tutorial}
+    await pause(60)
+  }
+  throw new Error('No same-request authoritative ACK with revision advance: '+label)
 }
 async function settleTo(predicate, label) {
   for (let i=0;i<80;i++) {
@@ -239,11 +291,17 @@ try {
   page.on('dialog',dialog=>dialog.accept())
   page.on('pageerror',error=>report.errors.push(error.message))
   page.on('websocket',socket=>{
-    socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type})}catch{}})
-    socket.on('framereceived',frame=>{try{const value=JSON.parse(String(frame.payload));if(value.type==='gameState'&&value.tutorial) {
+    socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type,
+      promptId:value.command?.promptId,cardInstanceId:value.command?.cardInstanceId,cardInstanceIds:value.command?.cardInstanceIds,
+      choice:value.command?.choice,row:value.command?.row,slot:value.command?.slot,ability:value.command?.ability,target:value.command?.target})}catch{}})
+    socket.on('framereceived',frame=>{try{const wire=JSON.parse(String(frame.payload))
+      const value=wire.type==='gameStateCardFrameV1'?wire.payload:wire
+      const deltaRequestId=wire.type==='gameStateDelta'?wire.changes?.find(change=>change.path?.length===1&&change.path[0]==='requestId')?.value:null
+      if(value.type==='gameState'||wire.type==='gameStateDelta') {
       const self=value.state?.players?.find(player=>player.playerIndex===value.state.you)||value.state?.players?.[0]
-      report.transport.push({direction:'received',type:value.type,requestId:value.requestId,revision:value.state?.revision,tutorial:value.tutorial,
-        result:value.tutorial.status==='completed'?{matchId:value.state?.matchId,activeMorale:self?.morale?.filter(card=>!card.tapped).length,
+      report.transport.push({direction:'received',type:'gameState',wireType:wire.type,requestId:value.requestId||deltaRequestId,
+        revision:value.state?.revision??wire.revision,tutorial:value.tutorial,
+        result:value.tutorial?.status==='completed'?{matchId:value.state?.matchId,activeMorale:self?.morale?.filter(card=>!card.tapped).length,
           handCount:self?.handCount??self?.hand?.length,masterHp:self?.master?.hp,
           field:self?.field?.map(row=>row.map(card=>card?{instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped,troops:card.troops}:null)),
           graveyard:self?.graveyard?.map(card=>({instanceId:card.instanceId,cardId:card.cardId}))}:undefined})
@@ -272,6 +330,8 @@ try {
       observations.push(JSON.parse(JSON.stringify({kind:'completed',order:observations.length,revision:s.game.revision,
         tutorial:{lessonId:tutorial.lessonId,status:tutorial.status,stepId:tutorial.stepId},
         result:{matchId:s.game.matchId,phase:s.game.phase,winner:s.game.winner,activeMorale:self.morale.filter(card=>!card.tapped).length,
+          morale:self.morale.map(card=>({instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped})),
+          moraleDeck:(self.moraleDeck??[]).map(card=>({instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped})),
           handCount:self.handCount??self.hand?.length,masterHp:self.master.hp,
           field:self.field.map(row=>row.map(card=>card?{instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped,troops:card.troops}:null)),
           graveyard:self.graveyard.map(card=>({instanceId:card.instanceId,cardId:card.cardId}))}})))
@@ -414,20 +474,20 @@ try {
     return page.locator(selector).filter({visible:true}).first()
   }
   async function choosePromptCard(promptId,instanceId,label) {
-    await tap(page.locator('[data-tutorial-choice="'+instanceId+'"]').filter({visible:true}).first(),label)
+    const choiceTouch=await tap(page.locator('[data-tutorial-choice="'+instanceId+'"]').filter({visible:true}).first(),label)
     const deadline=Date.now()+10000
     while(Date.now()<deadline) {
       const state=await observe()
-      if(state.pending||!state.prompts.some(p=>p.promptId===promptId)) return
+      if(state.pending||!state.prompts.some(p=>p.promptId===promptId)) return {choiceTouch,confirmTouch:null}
       const confirm=page.locator('[data-tutorial-action="confirm-prompt"]').filter({visible:true}).first()
-      if(await confirm.count()&&await confirm.isEnabled()) {await tap(confirm,'confirm '+label);return}
+      if(await confirm.count()&&await confirm.isEnabled()) {const confirmTouch=await tap(confirm,'confirm '+label);return {choiceTouch,confirmTouch}}
       await pause(80)
     }
     throw new Error('Chosen prompt neither submitted nor exposed its confirmation: '+label)
   }
   const settingsOnly=process.env.L12_NOTIFICATION_SETTINGS_ONLY==='1'
   const visualSliceOnly=process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY==='1'
-  report.mode=settingsOnly?'actual-settings-only':visualSliceOnly?'real-component-visual-slice':firstChapterOnly?'actual-first-chapter-auto-handoff':'continuous-course-and-actual-settings'
+  report.mode=settingsOnly?'actual-settings-only':visualSliceOnly?'real-component-visual-slice':effectSliceOnly?'mobile-effect-full-chain-slice':firstChapterOnly?'actual-first-chapter-auto-handoff':'continuous-course-and-actual-settings'
   async function inspectNotificationSettings(viewport) {
     assert.equal(await page.evaluate(()=>window.__notificationQA.requests),viewport.width===1366?0:1,
       'Permission must not be requested by import, connection, route changes or teaching')
@@ -530,10 +590,12 @@ try {
     assert.equal(await panel.locator('.guide-speaker h2').innerText(),'手牌来自牌库')
     report.visualInteractionChecks={shortLandscapeClose:'touch-reachable',shortLandscapeNext:'touch-reachable',nextTitle:'手牌来自牌库'}
     report.cases.push({scope:'Visual slice only: real shared card details for a card in the frozen public Chang\u2019e deck; no gameplay-chain claim.',visualCases})
-  } else for(const viewport of [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]) {
+  } else for(const [viewportIndex,viewport] of (effectSliceOnly
+    ? effectViewports
+    : [{width:1366,height:768},{width:844,height:390},{width:390,height:844}]).entries()) {
     await page.setViewportSize(viewport)
     if(settingsOnly){await inspectNotificationSettings(viewport);report.cases.push({viewport,scope:'settings-only; no gameplay'});continue}
-    if(viewport.width!==1366) {
+    if(viewportIndex>0) {
       await tap(page.getByRole('button',{name:'重新学习第一章',exact:true}),'repeat coherent chapter')
     }
     const titles=await readIntroduction(viewport)
@@ -625,8 +687,18 @@ try {
       &&p.sourceInstanceId===costState.tutorial.focus.artifactInstanceId&&p.presentation?.paymentStatus==='pending')
     const discardCard=costState.self.hand.find(c=>c.instanceId===costState.tutorial.focus.costCardInstanceId)
     assert(discardCard&&discardPrompt?.validChoices.includes(discardCard.instanceId))
-    await choosePromptCard(discardPrompt.promptId,discardCard.instanceId,'pay actual discard cost')
+    const discardTransportStart=report.transport.length
+    const discardInteraction=await choosePromptCard(discardPrompt.promptId,discardCard.instanceId,'pay actual discard cost')
     const searchState=await settleTo(s=>s.tutorial?.stepId==='response-search-pick','real search')
+    const discardAck=await waitCommandAck(discardTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===discardPrompt.promptId,costState.revision,'Shanhe hand discard cost')
+    assert(searchState.self.graveyard.some(card=>card.instanceId===discardCard.instanceId),'Paid hand card reaches authoritative graveyard')
+    assert.deepEqual(discardAck.selectedValues,[discardCard.instanceId],'Exact touched hand cost is sent to the server')
+    report.effectReceipts.push({type:'hand-card-cost',abilityId:'S01-0117:ability:active:ba48403c4da1e24c',viewport,touchStart:discardInteraction.choiceTouch,
+      prompt:{promptId:discardPrompt.promptId,kind:discardPrompt.kind,minChoose:discardPrompt.minChoose,maxChoose:discardPrompt.maxChoose},
+      ack:discardAck,readback:{revision:searchState.revision,stepId:searchState.tutorial.stepId,
+        selectedCard:{instanceId:discardCard.instanceId,cardId:discardCard.cardId},zone:'graveyard',
+        present:searchState.self.graveyard.some(card=>card.instanceId===discardCard.instanceId),nextPromptKind:searchState.prompts.find(p=>p.playerIndex===0)?.kind}})
     await readScene(viewport,'response-search-pick',responseReadings)
     const legionId=searchState.tutorial.focus.legionInstanceId
     const searchPrompt=searchState.prompts.find(p=>p.playerIndex===0&&p.validChoices.includes(legionId))
@@ -664,27 +736,79 @@ try {
     await inspectGuide(viewport,'counter real target')
     const usePrompt=counterWindow.prompts.find(p=>p.playerIndex===0)
     await choosePromptCard(usePrompt.promptId,usePrompt.validChoices.includes('mode:use')?'mode:use':responseCounter.instanceId,'activate covered counter')
-    await waitState(s=>s.tutorial?.stepId==='response-return'&&!s.pending,'return payment')
+    const returnState=await waitState(s=>s.tutorial?.stepId==='response-return'&&!s.pending,'return payment')
+    const returnPrompt=returnState.prompts.find(p=>p.playerIndex===0)
+    assert(returnPrompt?.kind==='target-morale'&&returnPrompt?.data?.choiceMode==='resource-selection'
+      &&returnPrompt.sourceInstanceId===responseCounter.instanceId,
+    'Dark Passage return cost must use its bound target-morale resource selection')
     await readScene(viewport,'response-return',responseReadings)
     assert.match(await guide().innerText(),/返还|返回士气牌库/)
     assert.doesNotMatch(await guide().innerText(),/确认支付后，所选士气转为休整/)
     await page.screenshot({path:path.join(out,viewport.width+'-response-return-payment.png')})
-    await resolveOwnPrompt()
+    const returnReady=await observe()
+    assert.equal(returnReady.revision,returnState.revision,'Reading the return explanation must not mutate authoritative gameplay')
+    assert(returnReady.prompts.some(prompt=>prompt.promptId===returnPrompt.promptId),'Return prompt remains active until the player acts')
+    const returnTransportStart=report.transport.length
+    const returnInteraction=await resolveOwnPrompt()
     const summonState=await settleTo(s=>s.tutorial?.stepId==='response-summon','hand legion choice')
+    const returnAck=await waitCommandAck(returnTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===returnPrompt.promptId,returnState.revision,'Dark Passage morale return')
+    const returnedIds=returnInteraction.selectionTouches.map(touch=>touch.target.tutorialPaymentResource).filter(Boolean)
+    assert.equal(returnedIds.length,returnPrompt.minChoose,'Every returned morale is tied to its touched instance')
+    assert.deepEqual(returnAck.selectedValues,returnedIds,'Declared return matches the exact touched resource instances')
+    assert(returnedIds.every(id=>summonState.self.morale.some(card=>card.instanceId===id)),
+      'Return selection remains an uncommitted declaration until all Dark Passage targets are valid')
+    const returnReceipt={type:'resource-return',abilityId:'ST01-10:ability:reaction:6c595d8cfc22fc59',viewport,touchStart:returnInteraction.selectionTouches[0],
+      confirmation:returnInteraction.confirmTouch,
+      prompt:{promptId:returnPrompt.promptId,kind:returnPrompt.kind,minChoose:returnPrompt.minChoose,maxChoose:returnPrompt.maxChoose,
+        choiceMode:returnPrompt.data?.choiceMode},ack:returnAck,
+      declarationReadback:{revision:summonState.revision,stepId:summonState.tutorial.stepId,returnedIds,
+        selectedStillPresentBeforeCommit:returnedIds.every(id=>summonState.self.morale.some(card=>card.instanceId===id)),
+        nextPromptKind:summonState.prompts.find(p=>p.playerIndex===0)?.kind}}
     await readScene(viewport,'response-summon',responseReadings)
-    await choosePromptCard(summonState.prompts.find(p=>p.playerIndex===0).promptId,legionId,'select hand Nie')
-    await settleTo(s=>s.tutorial?.stepId==='response-position','entry position')
+    const handPrompt=summonState.prompts.find(p=>p.playerIndex===0)
+    const handTransportStart=report.transport.length
+    const handInteraction=await choosePromptCard(handPrompt.promptId,legionId,'select hand Nie')
+    const positionState=await settleTo(s=>s.tutorial?.stepId==='response-position','entry position')
+    const handAck=await waitCommandAck(handTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===handPrompt.promptId,summonState.revision,'Dark Passage hand legion choice')
+    assert.deepEqual(handAck.selectedValues,[legionId],'Hand declaration contains the exact touched legion')
     await readScene(viewport,'response-position',responseReadings)
-    await tap(page.locator('[data-player-index="0"] .formation-slot.available[data-tutorial-row="0"]').first(),'choose real empty front slot')
+    const slotPrompt=positionState.prompts.find(p=>p.playerIndex===0)
+    const slotTransportStart=report.transport.length
+    const slotTouch=await tap(page.locator('[data-player-index="0"] .formation-slot.available[data-tutorial-row="0"]').first(),'choose real empty front slot')
     const responseFinal=await completedFrame('response',responseStart.matchId,responseTransportStart)
+    const slotAck=await waitCommandAck(slotTransportStart,entry=>entry.command==='resolvePrompt'
+      &&entry.promptId===slotPrompt.promptId,positionState.revision,'Dark Passage entry slot')
     assert.equal(responseFinal.result.field.flat().find(c=>c?.instanceId===legionId).tapped,false)
     assert.equal(responseFinal.result.masterHp,defenseState.self.master.hp-1,'Counter does not erase committed attack damage')
     assert(responseFinal.result.graveyard.some(c=>c.instanceId===responseCounter.instanceId))
     assert(responseFinal.result.graveyard.some(c=>c.instanceId===discardCard.instanceId))
+    assert(returnedIds.every(id=>!responseFinal.result.morale.some(card=>card.instanceId===id)
+      &&responseFinal.result.moraleDeck.some(card=>card.instanceId===id)),
+    'Committed Dark Passage cost leaves morale and returns the exact selected card to its authoritative deck')
+    returnReceipt.readback={revision:responseFinal.revision,stepId:responseFinal.tutorial.stepId,returnedIds,
+      remainingMorale:responseFinal.result.morale,returnedToMoraleDeck:responseFinal.result.moraleDeck.filter(card=>returnedIds.includes(card.instanceId)),
+      status:responseFinal.tutorial.status}
+    report.effectReceipts.push(returnReceipt)
+    const entered=responseFinal.result.field.flat().find(c=>c?.instanceId===legionId)
+    const selectedRow=Number(slotTouch.target.tutorialRow),selectedSlot=Number(slotTouch.target.tutorialSlot)
+    assert(slotTouch.target.tutorialRow!==null&&slotTouch.target.tutorialSlot!==null,'Slot touch exposes its actual board coordinate')
+    assert.equal(responseFinal.result.field[selectedRow]?.[selectedSlot]?.instanceId,legionId,'Legion enters the precise touched slot')
+    report.effectReceipts.push({type:'hand-card-to-board-slot',abilityId:'ST01-10:ability:reaction:6c595d8cfc22fc59',viewport,touchStart:handInteraction.choiceTouch,
+      slotTouch,handPrompt:{promptId:handPrompt.promptId,kind:handPrompt.kind},slotPrompt:{promptId:slotPrompt.promptId,kind:slotPrompt.kind},
+      acknowledgements:[handAck,slotAck],readback:{revision:responseFinal.revision,stepId:responseFinal.tutorial.stepId,
+        selectedCardInstanceId:legionId,enteredCard:entered,row:selectedRow,slot:selectedSlot,zone:'field',active:entered?.tapped===false,status:responseFinal.tutorial.status}})
     await waitState(s=>s.tutorial?.lessonId==='preparation'&&!s.pending&&s.learning.responseReviewed===true,'response real roomLeft and preparation')
     chapter.response={initialRevision:responseStart.revision,finalRevision:responseFinal.revision,
       readings:responseReadings,result:responseFinal.result,status:'authoritatively-completed-and-auto-continued'}
     console.log('PASS continuous response UI '+viewport.width+'x'+viewport.height)
+    if(effectSliceOnly) {
+      await tap(guide().locator('summary'),'open tutorial auxiliary actions after effect slice')
+      await tap(guide().getByRole('button',{name:'退出教学',exact:true}),'exit after mobile effect slice')
+      await waitState(s=>!s.room&&!s.matchId&&!s.pending,'mobile-effect-slice exit')
+      report.cases.push(chapter); continue
+    }
     const preparationStart=await observe(), preparationReadings=[], preparationPrompts=[]
     assert.equal(preparationStart.gm,false)
     assert.equal(preparationStart.tutorial.version,1)
@@ -757,6 +881,12 @@ try {
     report.cases.push(chapter)
   }
   assert.deepEqual(report.errors,[])
+  if(effectSliceOnly) {
+    assert.equal(report.effectReceipts.length,3,'Three exact effect interactions in this explicit independent mobile direction')
+    for(const {width} of effectViewports) assert.deepEqual(report.effectReceipts.filter(row=>row.viewport.width===width).map(row=>row.type).sort(),
+      ['hand-card-cost','hand-card-to-board-slot','resource-return'])
+    assert(report.effectReceipts.every(row=>row.touchStart.input==='touchscreen'),'Every accepted effect interaction begins with native touch')
+  }
   report.sourceAfter=hashes()
   assert.deepEqual(report.sourceAfter,report.sourceBefore,'Product source changed during acceptance')
   report.status=visualSliceOnly?'CAPTURED':'GREEN'
@@ -781,7 +911,15 @@ try {
       if(!report.browserClosed) report.status='FAILED'
     }
   }
-  if(vite) await Promise.race([vite.close().catch(()=>{}),pause(8000)])
+  report.viteClosed=!vite
+  if(vite) {
+    const result=await Promise.race([
+      Promise.resolve().then(()=>vite.close()).then(()=>({closed:true}),error=>({closed:false,error:String(error.message)})),
+      pause(8000).then(()=>({closed:false,error:'Vite close exceeded 8 seconds'})),
+    ])
+    report.viteClosed=result.closed&&!vite.httpServer?.listening
+    if(!report.viteClosed){report.viteCleanupError=result.error||'Vite remains listening after close';report.status='FAILED'}
+  }
   if(!hostDone) host.kill()
   if(!hostDone) await Promise.race([new Promise(resolve=>host.once('exit',resolve)),pause(5000)])
   fs.closeSync(hostLog)

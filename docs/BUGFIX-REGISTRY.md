@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-MOBILE-EFFECT-CHAIN｜三类正常路径与回执/收尾oracle
+
+- 源完整矩阵首片落到真实App/GameBoard/PromptOverlay/net/WS/engine：山河active手牌费用、暗度reaction返还/手牌格位，横竖6个交互收据只对应两能力部分。暗度returnCost是target-morale/resource-selection声明，三声明齐才提交；不以错误kind或提前资源变化假设判产品故障。精确触摸IDs、同request ACK与revision、墓地/自身士气库/入场坐标与活跃均有读回。
+- 横屏后续切场提示导致整体FAILED原件保持，已完成子集具名；竖屏独立补齐GREEN，不重跑横屏，实际源均冻存。QA Vite关闭抛错/超时/仍监听不能误GREEN，9实际ACK关联＋5实际finally纯例、独审CLEAR；未动产品/完整后端/两服/维护/线上关单。证据first-full-chain-acceptance.json，7可再生副本4.28GB清理原报告保留。
+
 ## QA-20261022-GALLERY-BUILTIN-IMAGE｜系统覆盖图更换与恢复真实闭环
 
 - 仅QA：真实现有面板上传及风险确认，两条精确image PUT，真实匿名详情显示URL/字节绑定新上传资源，不以旧图/占位decode冒通过；换图与恢复均实际重启持久化，非图片返回字段全保。原图仅引用读回，不声称原CDN解码/权益/移动/所有类型。

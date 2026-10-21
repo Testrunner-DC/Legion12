@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-22 三类真实引擎手机链双向实证｜继续公开目标桥
+
+- first-full-chain-acceptance.json合并横屏3个完成子集与独立竖屏GREEN3个，确切只归山河active/暗度reaction两能力，非ST01-08自身/全部686/所有边界。真实App/GameBoard/WS触摸→exact prompt/request/choices ACK→墓地/士气库/精确格位与活跃读回；暗度三声明齐后才付费。原横屏整report仍FAILED（下一方向前主动退出提示），两原实际runner均按SHA冻存，未改原报告或重跑横屏。
+- r1缺图/r2漏差量ACK/r3—4猜kind/r5提前判付款为QA错误，不据此改产品；先按现有契约一次校正，再分方向独立场次。Main9真实关联函数纯例＋5真实Vite finally异常/超时/仍监听例过，原业务无需重复。独审CLEAR；7已结束测试树4281852927B已按路径/58FB/无进程/链接/端口核验清理，证据及热构建保留。
+- 公开战场卡效目标无现成全桥，已给UI子对话本地LocalPressureHost＋新QA两文件租约，只有显式owner/loopback fixture，不改产品/教程/API；先交生命周期diff再执行。Main继续其余本地队列，不部署、不改维护、不线上关单，922/10不变。
+
 ## 2026-10-22 系统卡图真实更换/恢复收口｜卡效触摸继续
 
 - gallery-builtin-image-20261022/main-acceptance.json：真实后台UI/HTTP上传1、更换/恢复2次精确PUT、两次自有宿主重启，非图片返回字段全部不变；匿名真实CardArchive详情绑定本次新图URL及响应SHA并解码。恢复只证原图引用与持久化，不冒原CDN解码/权益/移动或全部画廊类型。Main看图、语法及5独立收尾例通过，复用58FB规则8004/平台2124，不重建全套。
