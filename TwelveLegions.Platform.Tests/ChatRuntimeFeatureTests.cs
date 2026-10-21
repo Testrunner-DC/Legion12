@@ -10,6 +10,53 @@ namespace TwelveLegions.Platform.Tests;
 [Collection("Platform environment")]
 public sealed class ChatRuntimeFeatureTests
 {
+    [Fact]
+    public async Task ShutdownJoinsStartedChatCommitWithoutCancelingItAndDropsUnstartedWork()
+    {
+        using var fixture = new RankedIdentityFixture();
+        var sender = fixture.Store.Register($"ss{Guid.NewGuid():N}"[..10], "Password123!").Account!;
+        var recipient = fixture.Store.Register($"sr{Guid.NewGuid():N}"[..10], "Password123!").Account!;
+        Assert.True(fixture.Store.SendFriendRequest(sender.Id, recipient.Id).Success);
+        Assert.True(fixture.Store.ResolveFriendRequest(recipient.Id, sender.Id, true).Success);
+        await using var recorder = new MatchRecorder(Path.Combine(Path.GetDirectoryName(fixture.Path)!, "shutdown-chat.db"));
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(fixture.Catalog, recorder, fixture.Store);
+        var runtime = new L12ChatRuntime(fixture.Store, rooms, _ => true, _ => null, _ => true);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        fixture.Store.StorageFailureInjector = stage =>
+        {
+            if (stage != "before-chat-commit") return;
+            entered.Set();
+            if (!release.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException("synthetic shutdown chat commit hold");
+        };
+        Task? stopping = null;
+        try
+        {
+            Queue(runtime, sender.Id, recipient.Id, DateTimeOffset.UtcNow, 0);
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(3)));
+            Queue(runtime, sender.Id, recipient.Id, DateTimeOffset.UtcNow, 1);
+            stopping = runtime.DisposeAsync().AsTask();
+            Assert.False(stopping.IsCompleted);
+            release.Set();
+            await stopping.WaitAsync(TimeSpan.FromSeconds(5));
+            var history = fixture.Store.ReadCommittedFriendChatHistory(sender.Id, recipient.Id, null,
+                DateTimeOffset.UtcNow, CancellationToken.None);
+            var entry = Assert.Single(history.Entries);
+            Assert.Equal("body-0", entry.Text);
+            Assert.Equal(0, Field<int>(runtime, "_queuedWorkItems"));
+            Assert.Equal(0, Field<long>(runtime, "_queuedWorkBytes"));
+            Assert.Same(stopping, runtime.DisposeAsync().AsTask());
+        }
+        finally
+        {
+            release.Set();
+            fixture.Store.StorageFailureInjector = null;
+            if (stopping is null) await runtime.DisposeAsync();
+            else await stopping.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
     [Theory]
     [InlineData("管理员 GM 裁判 外挂是什么", "管理员 GM 裁判 外挂是什么", false)]
     [InlineData("你真傻\u200B逼", "你真****", true)]

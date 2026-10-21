@@ -7791,8 +7791,12 @@
 - 最终本地Batch证据：规则6170、平台435全部通过且失败跳过0；紧接前端账本校验发现新增分类cards不属于既有枚举，仅改card-effects后续跑前端与账本Batch，exit0、UI354/卡图324+42/双构建通过。两段日志保留，不将中途失败的整段冒称exit0；规则和平台源未再变，提交后还将运行完整干净Release。没有部署、后台发布或维护操作。
 - 最终同步：4e96ee7a6efe26a373cfa9811184b672a3469100于21:40:53完整干净Release6170规则/435平台失败跳过0，UI354/卡图324+42/双前端/制品通过，success timings/TRX及包SHA cfcd8e76…3c1cb2独立实读，origin/main精确读回。最终日志osiris-priority-release-20261003.log、证据deploy/verification-evidence/4e96ee7a…/20261003T132826Z-264b9f06d063462e8a9aa75b3082f2f6。未部署、未发布后台规则、未关闭反馈、未改维护，历史失败证据未删除。
 
-## SERVER-SHUTDOWN-20261021｜正式发布关闭链超时（诊断确认，产品修复待批准）
+## SERVER-SHUTDOWN-20261021｜共享请求/传输关闭（本地已验收，未部署）
 
 - 原始systemd生命周期证实停止信号后20秒与120秒均超时，r3原始拒绝码stopped-service；精确应用标记确认已进入server.StopAsync。两次均由发布器恢复d7，未切新包或回写旧库。历史14计数和四组指纹仍相同，不将运维revision增加误报业务损坏。
-- 同型只读检索StopAsync/Stop*Coordinator/CloseAsync/CompleteAsync：共享socket关闭使用CancellationToken.None，outbound sender与worker join无总期限，host.StopAsync位于其后。现有受控wire测试能证明无界路径，但不冒原正式await已定位。共享修复单独请求批准，尚未实施；下一本地真实匿名不回关闭握手及慢发送复现，再正常/重复/并发关闭与持久化保护验收，不再正式停服探测。
+- 人类call_f61aa3aafc1c4219851e5ae9baaad9c8已批准。P2只拥有传输与请求，不复制房间/排空状态；停止准入后并行2秒传输预算，保持捕获的真实wire引用，不依赖已移除的_sockets项。sender实际退出后CloseOutput，超时Abort并等待真实关闭帧；独立WireClosed之后finally才Dispose，先释放wire再等整个request，避免循环join。Start/Stop/Dispose复用任务且继续join全部worker/host后报告真实错误。
+- P3已开始命令/聊天commit不注入停服取消，丢弃的仅未执行工作；normal/chat队列即使已terminal/drain也可升级非drain停止，预算归零且资源仅在真实sender退出后一次释放。只接受截止或确已退役传输的取消，未预期取消仍失败。正常请求/数据库所有者不因2秒预算冒完成，可能延迟停服的真实业务提交仍保留。
+- 同型检索StopAsync/Stop*Coordinator/CloseAsync/CompleteAsync/Task.Delay及两资源Run*Transition发现远期绝对计划可超系统timer范围；统一最多1天分段重算等待，不提前通知，原赛季1小时上限保留。未改卡效/权威写入/Journal/数据库格式/维护/排空许可，原正式具体await仍未声称唯一定位。
+- RED4及真实聊天commit RED保留；首轮完整规则7999通过、平台2107/2116有9失败，日志/TRX/紧凑7叶源码zip保留。修正取消观察器LIFO自注销、注册/终局入队夹具竞态、正常退役取消分类及远期timer后，Release定向28/28含长短期限和未预期取消反例，最终同程序集完整无筛选平台2121/2121零失败跳过。未变规则7999与完整前端/类型/双base源级组合接受，独审CLEAR，架构P0—P4与68内核边界过；不拿定向或旧Batch失败冒新Release通过。
 - 唯一D盘formal-release-20261021/release-session-summary.json引用原始失败与recovery-final-r3.json；未新建线上Bug或关单、未冒性能容量通过。
+- 本地实现/验收唯一D盘server-shutdown-20261021/main-acceptance.json；3已诊断失败轮合成临时126911075B已清，原日志/TRX/源码归档/监督收据保留。完整正式部署已取消，两服/维护/业务统计测试零操作。回滚保护覆盖匿名1/8不回应、真实取消与慢sender/close、注册/移除/finally竞态、并发Stop/Dispose、失败worker继续清理和SQLite命令/聊天耐久恢复；不改变现行连续计时。

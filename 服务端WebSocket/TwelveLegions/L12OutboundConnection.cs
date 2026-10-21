@@ -28,6 +28,7 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
     }
 
     private readonly object _gate = new();
+    private readonly object _cancellationGate = new();
     private readonly LinkedList<PendingMessage> _queue = [];
     private readonly SemaphoreSlim _signal = new(0);
     private readonly Func<object, CancellationToken, Task> _sender;
@@ -38,6 +39,9 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
     private LinkedListNode<PendingMessage>? _replaceableTail;
     private readonly Task _senderLoop;
     private bool _completed;
+    private bool _stopRequested;
+    private bool _resourcesDisposed;
+    private Task? _disposeTask;
     private long _mergedCount;
     private long _droppedCount;
     private int _maximumDepth;
@@ -201,21 +205,29 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
                 _completed = true;
                 _replaceableTail = null;
                 DiscardQueuedChatLocked();
-                if (!drain)
-                {
-                    foreach (var message in _queue)
-                    {
-                        message.Delivered?.TrySetCanceled();
-                        message.Diagnostic?.Discarded();
-                    }
-                    _queue.Clear();
-                    cancel = true;
-                }
                 _signal.Release();
+            }
+            // A terminal notice or a draining close may already own the sender. A later
+            // transport shutdown must still cancel it and discard every unstarted frame.
+            if (!drain)
+            {
+                foreach (var message in _queue)
+                {
+                    message.Delivered?.TrySetCanceled();
+                    message.Diagnostic?.Discarded();
+                }
+                _queue.Clear();
+                DiscardQueuedChatLocked();
+                if (!_stopRequested && !_senderLoop.IsCompleted) cancel = true;
+                _stopRequested = true;
             }
         }
         CloseChatStarts();
-        if (cancel) _stop.Cancel();
+        // Cancellation callbacks may cross queue/chat gates. Never invoke them under _gate,
+        // but serialize cancellation with the one final resource disposal.
+        if (cancel)
+            lock (_cancellationGate)
+                if (!_resourcesDisposed) _stop.Cancel();
         try { await _senderLoop; }
         catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
     }
@@ -715,11 +727,33 @@ internal sealed class L12OutboundConnection : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        await CompleteAsync(drain: false);
-        _signal.Dispose();
-        _stop.Dispose();
+        TaskCompletionSource completion;
+        lock (_gate)
+        {
+            if (_disposeTask is not null) return new(_disposeTask);
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _disposeTask = completion.Task;
+        }
+        _ = DisposeCoreAsync(completion);
+        return new(completion.Task);
+    }
+
+    private async Task DisposeCoreAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await CompleteAsync(drain: false);
+            lock (_cancellationGate)
+            {
+                _signal.Dispose();
+                _stop.Dispose();
+                _resourcesDisposed = true;
+            }
+            completion.TrySetResult();
+        }
+        catch (Exception error) { completion.TrySetException(error); }
     }
 }
 

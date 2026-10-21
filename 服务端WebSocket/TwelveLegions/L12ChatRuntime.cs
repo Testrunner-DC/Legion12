@@ -258,6 +258,7 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
     private int _opponentReceipts;
     private long _opponentReceiptBytes;
     private bool _completed;
+    private Task? _disposeTask;
 
     internal L12ChatRuntime(L12PlatformStore platform, L12RoomManager rooms,
         Func<L12ChatRequestIdentity, bool> requestFresh,
@@ -862,31 +863,44 @@ internal sealed class L12ChatRuntime : IAsyncDisposable
         => WorkMetadataBytes + values.Where(value => value is not null)
             .Sum(value => 24L + 2L * value!.Length);
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        _rooms.OpponentChatScopeChanged -= OnOpponentChatScopeChanged;
+        TaskCompletionSource completion;
         lock (_workGate)
         {
-            if (!_completed)
-            {
-                _completed = true;
-                while (_work.TryDequeue(out var queued)) ReleaseWorkLocked(queued);
-                _workSignal.Release();
-            }
+            if (_disposeTask is not null) return new(_disposeTask);
+            completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _disposeTask = completion.Task;
+            _completed = true;
+            while (_work.TryDequeue(out var queued)) ReleaseWorkLocked(queued);
+            _workSignal.Release();
         }
-        _stop.Cancel();
-        try { await _worker; }
-        catch (OperationCanceledException) { }
-        lock (_opponentGate)
+        _rooms.OpponentChatScopeChanged -= OnOpponentChatScopeChanged;
+        _ = DisposeCoreAsync(completion);
+        return new(completion.Task);
+    }
+
+    private async Task DisposeCoreAsync(TaskCompletionSource completion)
+    {
+        try
         {
-            _opponent.Clear();
-            _opponentItems = 0;
-            _opponentBytes = 0;
-            _opponentReceipts = 0;
-            _opponentReceiptBytes = 0;
+            // Dropping unstarted queue work is safe; a started persistence operation must keep
+            // its original authentication/commit checks and must not be canceled by shutdown.
+            await _worker;
+            _stop.Cancel();
+            lock (_opponentGate)
+            {
+                _opponent.Clear();
+                _opponentItems = 0;
+                _opponentBytes = 0;
+                _opponentReceipts = 0;
+                _opponentReceiptBytes = 0;
+            }
+            _workSignal.Dispose();
+            _stop.Dispose();
+            completion.TrySetResult();
         }
-        _workSignal.Dispose();
-        _stop.Dispose();
+        catch (Exception error) { completion.TrySetException(error); }
     }
 }
 

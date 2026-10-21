@@ -196,9 +196,12 @@ public sealed partial class L12WebSocketServer
 
     private void ScheduleNextRulesContentTransition()
     {
+        if (IsStopping) return;
         var next = _platform.NextRuleContentTransition();
+        lock (_lifecycleGate)
         lock (_rulesContentTransitionGate)
         {
+            if (_stopTask is not null) return;
             _rulesContentTransitionCancellation?.Cancel();
             _rulesContentTransitionCancellation?.Dispose();
             _rulesContentTransitionCancellation = null;
@@ -214,8 +217,7 @@ public sealed partial class L12WebSocketServer
     {
         try
         {
-            var delay = transitionAt - DateTimeOffset.UtcNow;
-            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken);
+            await WaitForResourceTransitionAsync(transitionAt, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             NotifyRulesContentChanged();
         }
@@ -243,6 +245,7 @@ public sealed partial class L12WebSocketServer
 
     private void ScheduleNextOperationsTransition()
     {
+        if (IsStopping) return;
         var snapshot = _platform.CaptureOperationsPolicy();
         var now = DateTimeOffset.UtcNow;
         var candidates = new List<DateTimeOffset>();
@@ -261,8 +264,10 @@ public sealed partial class L12WebSocketServer
             if (announcement.EndsAt is { } announcementEndsAt) candidates.Add(announcementEndsAt);
         }
         var next = candidates.Where(value => value > now.AddMilliseconds(100)).OrderBy(value => value).FirstOrDefault();
+        lock (_lifecycleGate)
         lock (_operationsTransitionGate)
         {
+            if (_stopTask is not null) return;
             _operationsTransitionCancellation?.Cancel();
             _operationsTransitionCancellation?.Dispose();
             _operationsTransitionCancellation = null;
@@ -278,12 +283,25 @@ public sealed partial class L12WebSocketServer
     {
         try
         {
-            var delay = transitionAt - DateTimeOffset.UtcNow;
-            if (delay > TimeSpan.Zero) await Task.Delay(delay, cancellationToken);
+            await WaitForResourceTransitionAsync(transitionAt, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             NotifyOperationsPolicyChanged();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
+    private static async Task WaitForResourceTransitionAsync(DateTimeOffset transitionAt,
+        CancellationToken cancellationToken)
+    {
+        // Absolute schedules may be farther away than the system timer permits. Chunk only
+        // the waiting, never the actual due time; a canceled long schedule must still join.
+        while (true)
+        {
+            var remaining = transitionAt - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero) return;
+            await Task.Delay(remaining > TimeSpan.FromDays(1) ? TimeSpan.FromDays(1) : remaining,
+                cancellationToken);
+        }
     }
 
     private async Task StopOperationsTransitionAsync()

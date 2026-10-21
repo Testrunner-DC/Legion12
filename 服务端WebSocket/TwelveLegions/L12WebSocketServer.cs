@@ -808,7 +808,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         InitializeChatRuntime(chatEnabled);
     }
 
-    public async Task StartAsync(int port)
+    private async Task StartCoreAsync(int port)
     {
         if (!_presenceRefreshCoalescer.Start())
             throw new InvalidOperationException("在线状态刷新器正在停止或已释放，不能启动服务");
@@ -823,6 +823,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         MapRankedIntegrityEndpoints();
         _app.Use((context, next) => _httpPerformance.InvokeAsync(context, next));
         _app.Use((context, next) => L12HttpExceptionBoundary.InvokeAsync(context, next));
+        _app.UseWebSockets();
+        _app.Use((context, next) => InvokeRequestLifetimeAsync(context, next));
         _app.Use(async (context, next) =>
         {
             // Authentication, mail throttles and privacy-preserving ranked network keys
@@ -917,7 +919,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             await next();
         });
         _app.UseRouting();
-        _app.UseWebSockets();
         MapDeploymentDrainEndpoints();
         MapDisasterAnalyticsEndpoints();
         _app.MapGet("/health", () =>
@@ -4722,25 +4723,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         Console.WriteLine($"HTTP: http://{host}:{port}  WebSocket: /ws");
     }
 
-    public async Task StopAsync()
-    {
-        await _presenceRefreshCoalescer.StopAsync();
-        await StopSeasonActivationCoordinatorAsync();
-        await StopRulesContentTransitionAsync();
-        await StopOperationsTransitionAsync();
-        await StopSandboxReplayMaintenanceAsync();
-        await StopRankedClockWatchdogAsync();
-        foreach (var outbound in _outboundConnections.Values)
-            await outbound.CompleteAsync(drain: false);
-        foreach (var socket in _sockets.Values)
-        {
-            try { await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "server stopped", CancellationToken.None); }
-            catch { }
-            socket.Dispose();
-        }
-        if (_app is not null) await _app.StopAsync();
-    }
-
     private async Task<L12PublicDeckDetailsView?> PublicDeckDetailsWithStatisticsAsync(string id)
     {
         var published = _platform.PublishedDeck(id, null);
@@ -4765,48 +4747,64 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     {
         var sessionId = Guid.NewGuid();
         WebSocket? socket = null;
+        var lifetime = (ServerRequestLifetime)context.Items[RequestLifetimeKey]!;
         try
         {
             socket = await context.WebSockets.AcceptWebSocketAsync();
-            _sockets[sessionId] = socket;
-            var acceptedSocket = socket;
-            var snapshotCodec = new L12SnapshotWireCodec();
-            _snapshotCodecs[sessionId] = snapshotCodec;
-            var presenceSnapshotCodec = new L12PresenceSnapshotWireCodec();
-            _presenceSnapshotCodecs[sessionId] = presenceSnapshotCodec;
-            void OutboundFault(Exception error)
+            lock (_lifecycleGate) lifetime.Socket = socket;
+            if (BeforeSocketRegistrationForTests is { } beforeRegistration) await beforeRegistration();
+            L12InboundConnection inbound;
+            lock (_lifecycleGate)
             {
-                Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
-                acceptedSocket.Abort();
+                if (_stopTask is not null)
+                {
+                    lifetime.TransportReady.TrySetResult();
+                    socket.Abort();
+                    return;
+                }
+                _sockets[sessionId] = socket;
+                var acceptedSocket = socket;
+                var snapshotCodec = new L12SnapshotWireCodec();
+                _snapshotCodecs[sessionId] = snapshotCodec;
+                var presenceSnapshotCodec = new L12PresenceSnapshotWireCodec();
+                _presenceSnapshotCodecs[sessionId] = presenceSnapshotCodec;
+                void OutboundFault(Exception error)
+                {
+                    Console.Error.WriteLine($"WebSocket {sessionId} 发送隔离：{error.Message}");
+                    acceptedSocket.Abort();
+                }
+                var outbound = _transportDiagnostics is null
+                    ? new L12OutboundConnection(
+                        (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, presenceSnapshotCodec,
+                            payload, null, token),
+                        OutboundFault, SocketSendTimeout)
+                    : new L12OutboundConnection(
+                        (payload, diagnostic, token) => SendDirectAsync(acceptedSocket, snapshotCodec,
+                            presenceSnapshotCodec, payload, diagnostic, token),
+                        OutboundFault, SocketSendTimeout);
+                ConfigureChatOutbound(sessionId, acceptedSocket, outbound);
+                _outboundConnections[sessionId] = outbound;
+                var deploymentDrain = _rooms.DeploymentDrain;
+                void InboundFault(Exception error)
+                {
+                    Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
+                    acceptedSocket.Abort();
+                }
+                Func<string, L12DeploymentDrainLease?>? leaseAcquirer = deploymentDrain is null
+                    ? null
+                    : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json);
+                inbound = _transportDiagnostics is null
+                    ? new L12InboundConnection(
+                        json => DispatchAsync(sessionId, json, CancellationToken.None),
+                        InboundFault, leaseAcquirer)
+                    : new L12InboundConnection(
+                        (json, timing) => DispatchAsync(sessionId, json, CancellationToken.None, timing),
+                        InboundFault, leaseAcquirer);
+                _inboundConnections[sessionId] = inbound;
+                lifetime.Inbound = inbound;
+                lifetime.Outbound = outbound;
+                lifetime.TransportReady.TrySetResult();
             }
-            var outbound = _transportDiagnostics is null
-                ? new L12OutboundConnection(
-                    (payload, token) => SendDirectAsync(acceptedSocket, snapshotCodec, presenceSnapshotCodec,
-                        payload, null, token),
-                    OutboundFault, SocketSendTimeout)
-                : new L12OutboundConnection(
-                    (payload, diagnostic, token) => SendDirectAsync(acceptedSocket, snapshotCodec,
-                        presenceSnapshotCodec, payload, diagnostic, token),
-                    OutboundFault, SocketSendTimeout);
-            ConfigureChatOutbound(sessionId, acceptedSocket, outbound);
-            _outboundConnections[sessionId] = outbound;
-            var deploymentDrain = _rooms.DeploymentDrain;
-            void InboundFault(Exception error)
-            {
-                Console.Error.WriteLine($"WebSocket {sessionId} 入站隔离：{error.Message}");
-                acceptedSocket.Abort();
-            }
-            Func<string, L12DeploymentDrainLease?>? leaseAcquirer = deploymentDrain is null
-                ? null
-                : json => TryAcquireQueuedDeploymentLease(deploymentDrain, json);
-            var inbound = _transportDiagnostics is null
-                ? new L12InboundConnection(
-                    json => DispatchAsync(sessionId, json, CancellationToken.None),
-                    InboundFault, leaseAcquirer)
-                : new L12InboundConnection(
-                    (json, timing) => DispatchAsync(sessionId, json, CancellationToken.None, timing),
-                    InboundFault, leaseAcquirer);
-            _inboundConnections[sessionId] = inbound;
             var businessPathEstablished = false;
             var rankedNetworkFingerprint = L12RankedNetworkPrivacy.Fingerprint(
                 context.Connection.RemoteIpAddress, _rankedIntegrityHmacKey);
@@ -4820,6 +4818,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 var message = await ReceiveTextAsync(socket, buffer, cancellationToken);
                 var receiveCompletedAt = _transportDiagnostics is null ? 0 : Stopwatch.GetTimestamp();
                 if (message is null) break;
+                lock (_lifecycleGate)
+                    if (_stopTask is not null) break;
                 // The initial handshake is sequential. Once authentication/recovery has established
                 // this connection, it can never fall back to concurrent direct dispatch even if a
                 // revocation removes the current binding while old FIFO work is still running.
@@ -4896,7 +4896,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             _presenceSnapshotCodecs.TryRemove(sessionId, out _);
             if (_outboundConnections.TryRemove(sessionId, out var outbound))
                 await outbound.DisposeAsync();
-            socket?.Dispose();
+            await DisposeRequestSocketAsync(lifetime);
         }
     }
 
@@ -6888,18 +6888,6 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        _platform.SessionsRevoked -= HandlePlatformSessionsRevoked;
-        if (_chatRuntime is not null) await _chatRuntime.DisposeAsync();
-        await _presenceRefreshCoalescer.DisposeAsync();
-        await StopSeasonActivationCoordinatorAsync();
-        await StopRulesContentTransitionAsync();
-        await StopSandboxReplayMaintenanceAsync();
-        await StopRankedClockWatchdogAsync();
-        _modianImports.Dispose();
-        if (_app is not null) await _app.DisposeAsync();
-    }
 }
 
 public sealed record AuthRequest(string? Username, string? Password);
