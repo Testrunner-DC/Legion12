@@ -24,7 +24,9 @@ if (Environment.GetEnvironmentVariable("L12_LISTEN_HOST") != "127.0.0.1")
     throw new InvalidOperationException("Local host must bind IPv4 loopback only");
 var fixtureMode = Environment.GetEnvironmentVariable("L12_LOCAL_EFFECT_FIXTURE")?.Trim();
 fixtureMode = string.IsNullOrEmpty(fixtureMode) ? null : fixtureMode;
-if (fixtureMode is not null and not "merlin-public-target-v1")
+if (fixtureMode is not null
+    && fixtureMode != "merlin-public-target-v1"
+    && fixtureMode != "ankh-mandatory-target-v1")
     throw new InvalidOperationException("Unknown local effect fixture");
 AssemblyLoadContext.Default.Resolving += (_, name) =>
 {
@@ -72,9 +74,14 @@ async Task RunAsync()
         await recorder.CompleteAsync(engine);
     }
     var rooms = new L12RoomManager(catalog, recorder, platform);
-    var effectFixture = fixtureMode == "merlin-public-target-v1"
-        ? await CreateMerlinPublicTargetFixtureAsync(catalog, platform, recorder, rooms, runId, stateVersion)
-        : null;
+    object? effectFixture = fixtureMode switch
+    {
+        "merlin-public-target-v1" =>
+            await CreateMerlinPublicTargetFixtureAsync(catalog, platform, recorder, rooms, runId, stateVersion),
+        "ankh-mandatory-target-v1" =>
+            await CreateAnkhMandatoryTargetFixtureAsync(catalog, platform, recorder, rooms, runId, stateVersion),
+        _ => null,
+    };
     var assembly = typeof(L12WebSocketServer).Assembly;
     var diagnosticType = assembly.GetType("TwelveLegions.Server.L12SyntheticTransportDiagnostics", true)!;
     var nonce = Environment.GetEnvironmentVariable("L12_LOCAL_DIAGNOSTIC_NONCE")!;
@@ -217,6 +224,106 @@ static async Task<object> CreateMerlinPublicTargetFixtureAsync(L12Catalog catalo
         targetInstanceId = "l12qa-merlin-target",
         responseInstanceId = "l12qa-merlin-response",
         expectedTargetTroopsDelta = -3000,
+    };
+}
+
+static async Task<object> CreateAnkhMandatoryTargetFixtureAsync(L12Catalog catalog, L12PlatformStore platform,
+    MatchRecorder recorder, L12RoomManager rooms, Guid runId, int stateVersion)
+{
+    var suffix = runId.ToString("N")[..7];
+    var password = Environment.GetEnvironmentVariable("L12_LOCAL_EFFECT_PASSWORD");
+    Environment.SetEnvironmentVariable("L12_LOCAL_EFFECT_PASSWORD", null);
+    if (string.IsNullOrWhiteSpace(password))
+        throw new InvalidOperationException("Explicit local effect fixture password is required");
+    var hostUsername = "qc" + suffix;
+    var guestUsername = "qd" + suffix;
+    var hostRegistration = platform.Register(hostUsername, password);
+    var guestRegistration = platform.Register(guestUsername, password);
+    if (!hostRegistration.Success || hostRegistration.Account is null
+        || !guestRegistration.Success || guestRegistration.Account is null)
+        throw new InvalidOperationException("Fixture account registration failed");
+
+    var hostSession = Guid.NewGuid();
+    var guestSession = Guid.NewGuid();
+    rooms.Connect(hostSession, hostRegistration.Account.Id, hostUsername);
+    rooms.Connect(guestSession, guestRegistration.Account.Id, guestUsername);
+    var created = rooms.CreateRoom(hostSession);
+    var roomCode = ReadRoomCode(created, hostSession);
+    var joined = rooms.JoinRoom(guestSession, roomCode);
+    if (joined.All(message => message.SessionId != guestSession))
+        throw new InvalidOperationException("Fixture guest did not join the room");
+
+    var room = FindOwnedRoom(rooms, roomCode);
+    var roomType = room.GetType();
+    var gate = (SemaphoreSlim)ReadRoomProperty(roomType, room, "Gate")!;
+    var sessions = (System.Collections.ICollection)ReadRoomProperty(roomType, room, "Sessions")!;
+    await gate.WaitAsync();
+    string matchId;
+    try
+    {
+        if ((bool)ReadRoomProperty(roomType, room, "IsSandbox")!
+            || sessions.Count != 2
+            || ReadRoomProperty(roomType, room, "Game") is not null
+            || (long)ReadRoomProperty(roomType, room, "CommandSequence")! != 0)
+            throw new InvalidOperationException("Fixture room was not pristine ordinary room state");
+
+        var policy = (L12OperationsPolicySnapshot)ReadRoomProperty(roomType, room, "OperationsPolicy")!;
+        var options = (L12RoomOptions)ReadRoomProperty(roomType, room, "Options")!;
+        var decks = new[] { catalog.DeckAt(2), catalog.DeckAt(1) };
+        matchId = "local-ankh-" + runId.ToString("N");
+        var engine = new L12GameEngine(catalog, matchId, roomCode, 63083,
+            [hostUsername, guestUsername], decks, skipPreparation: true,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            operationsPolicy: policy, stateFormatVersion: stateVersion);
+        var first = engine.State.Players[0];
+        var second = engine.State.Players[1];
+        ClearFixturePlayer(first);
+        ClearFixturePlayer(second);
+        first.Library.Clear();
+        first.Morale.Clear();
+        first.MoraleDeck.Clear();
+        second.Library.Clear();
+        second.Morale.Clear();
+        second.MoraleDeck.Clear();
+
+        var source = FixtureCard(catalog, "S01-0215", "l12qa-ankh-source", 0);
+        var target = FixtureCard(catalog, "S01-0212", "l12qa-ankh-guard", 0);
+        target.SummonRound = -1;
+        first.Hand.Add(source);
+        first.Field[0][0] = target;
+        var ordinaryMoraleInstanceIds = new[] { "l12qa-ankh-morale-1", "l12qa-ankh-morale-2" };
+        foreach (var instanceId in ordinaryMoraleInstanceIds)
+            first.Morale.Add(new L12MoraleCard { CardId = "S01-02C1", InstanceId = instanceId });
+        engine.State.ActivePlayer = 0;
+        engine.State.FirstPlayer = 0;
+        engine.State.Round = 2;
+        engine.State.TurnSerial = 2;
+        engine.State.Phase = L12Phase.Main;
+
+        await recorder.StartAsync(engine, options.MatchModeId, hostRegistration.Account.Id,
+            guestRegistration.Account.Id, decks);
+        roomType.GetProperty("Game")!.SetValue(room, engine);
+        var ready = (bool[])ReadRoomProperty(roomType, room, "Ready")!;
+        ready[0] = ready[1] = true;
+    }
+    finally { gate.Release(); }
+
+    rooms.Disconnect(hostSession);
+    rooms.Disconnect(guestSession);
+    return new
+    {
+        schema = 1,
+        kind = "ankh-mandatory-target-v1",
+        hostUsername,
+        guestUsername,
+        roomCode,
+        matchId,
+        sourceInstanceId = "l12qa-ankh-source",
+        targetInstanceId = "l12qa-ankh-guard",
+        ordinaryMoraleInstanceIds = new[] { "l12qa-ankh-morale-1", "l12qa-ankh-morale-2" },
+        sourcePrintedCost = 2,
+        expectedTargetTroopsDelta = 2000,
+        forcedManualResponsePasses = true,
     };
 }
 

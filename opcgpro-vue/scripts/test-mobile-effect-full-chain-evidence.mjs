@@ -126,6 +126,25 @@ for(const target of [0,1,2]) for(const mode of ['closed','sync-throw','async-rej
   assert.equal(result.cleanupErrors.length,mode==='closed'?0:1)
   publicCloseCases++
 }
+const mandatorySource=fs.readFileSync(new URL('./verify-mobile-mandatory-target-full-chain.mjs',import.meta.url),'utf8')
+const mandatoryCleanupBegin=mandatorySource.indexOf('function canRemoveMandatoryOwnedRoot(')
+const mandatoryCleanupEnd=mandatorySource.indexOf('async function closeOwnedUi(',mandatoryCleanupBegin)
+assert(mandatoryCleanupBegin>=0&&mandatoryCleanupEnd>mandatoryCleanupBegin)
+const canRemoveMandatoryRoot=new Function(mandatorySource.slice(mandatoryCleanupBegin,mandatoryCleanupEnd)
+  +'\nreturn canRemoveMandatoryOwnedRoot;')()
+const cleanMandatory={cleanupErrors:[],hostExit:{code:0},gracefulHostStop:true}
+const mandatoryCleanupCases=[
+  [cleanMandatory,true],
+  [{...cleanMandatory,cleanupErrors:['browser remains connected']},false],
+  [{...cleanMandatory,cleanupErrors:['Vite remains listening']},false],
+  [{...cleanMandatory,cleanupErrors:['host exit unknown']},false],
+  [{...cleanMandatory,hostExit:{code:1}},false],
+  [{...cleanMandatory,hostExit:null},false],
+  [{...cleanMandatory,gracefulHostStop:false},false],
+  [{...cleanMandatory,forcedStop:true},false],
+]
+for(const [state,expected] of mandatoryCleanupCases)assert.equal(canRemoveMandatoryRoot(state),expected)
+assert.match(mandatorySource,/if \(canRemoveMandatoryOwnedRoot\(result\)\) result\.ownedRootUsage = removeOwnedRoot\(root, runId\)/)
 console.log(JSON.stringify({ status: 'passed', cases: cases.length, viteFinalizerCases:5,
-  publicAckCases:cases.length,publicCloseCases,runtimeCopyGuardCases:5,actualRunnerFunction: true,
+  publicAckCases:cases.length,publicCloseCases,runtimeCopyGuardCases:5,mandatoryCleanupCases:mandatoryCleanupCases.length,actualRunnerFunction: true,
   boundary: 'correlation oracle only; normalized-delta fixture does not test the codec or claim engine/touch coverage', browsers: 0, filesWritten: 0 }))
