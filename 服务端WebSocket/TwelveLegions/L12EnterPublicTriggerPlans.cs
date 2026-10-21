@@ -34,6 +34,15 @@ public sealed partial class L12GameEngine
     private static string? Batch6JAEnterPlan(string cardId, string trigger)
         => Batch6JAEnterPlans.GetValueOrDefault($"{cardId}|{trigger}");
 
+    // Printed card-name exclusion is not source-instance exclusion. Resolve
+    // the canonical catalog identity, not a stored cosmetic display label.
+    private bool IsInahimePublicTarget(L12PlayerState player, L12CardInstance card)
+        => IsFieldLegion(card) && !card.Hidden
+            && _catalog.Cards.TryGetValue(card.CardId, out var definition)
+            && !string.Equals(definition.NameZh, "稻姬本多小松", StringComparison.Ordinal)
+            && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
+            && card.Troops <= 5000 && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan");
+
     private bool PrepareBatch6JAEnterCandidate(L12TriggerCandidate candidate)
     {
         var plan = Batch6JAEnterPlan(candidate.SourceCardId, candidate.Trigger);
@@ -242,10 +251,9 @@ public sealed partial class L12GameEngine
                 own.Select(card => card.InstanceId), allowCancel: false); break;
             case "tachibana": One("enemy-legion", "target", "立花誾千代：预先选择费用-3目标",
                 enemy.Select(card => card.InstanceId), allowCancel: false); break;
-            case "inahime": One("field-legion", "target", "稻姬本多小松：预先选择我方前排其他高天原军团",
-                PublicFactionLegions(player, "gaotianyuan").Where(card => card.InstanceId != source.InstanceId
-                    && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                    && card.Troops <= 5000).Select(card => card.InstanceId), allowCancel: false); break;
+            case "inahime": One("field-legion", "target", "稻姬：选择我方前排1张〈稻姬本多小松〉以外兵力不高于5000的高天原军团",
+                PublicLegions(player).Where(card => IsInahimePublicTarget(player, card))
+                    .Select(card => card.InstanceId), allowCancel: false); break;
             case "kusanagi": One("enemy-legion", "target", "草薙剑：预先选择费用不高于2的击杀目标",
                 enemy.Where(card => L12StructuredCardRules.CurrentCostAtMost(card, 2)).Select(card => card.InstanceId),
                 allowCancel: false); break;
@@ -726,10 +734,8 @@ public sealed partial class L12GameEngine
                 break;
             case "inahime":
                 if (ResolveDeclaredOwnLegionTarget(item, One("target"), card =>
-                        FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                        && card.InstanceId != item.SourceInstanceId && card.Troops <= 5000
-                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan"),
-                        "位于前排、兵力不高于5000且具有高天原阵营") is { } ina)
+                        IsInahimePublicTarget(player, card),
+                        "卡名非〈稻姬本多小松〉、位于前排、兵力不高于5000且具有高天原阵营") is { } ina)
                     ApplyPlayerThisTurnTroopsModifier(ina, 1000, item.Controller, source.Name);
                 break;
             case "court-magician":

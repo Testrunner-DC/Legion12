@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-mandatory-target-family",
+  "date": "2026-10-22",
+  "audience": "players",
+  "title": "卡牌选择与结算修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "陵墓构造体、月读、图特摩斯三世、源博雅、安卡神碑、织田信长、上杉谦信、安倍晴明、立花誾千代、稻姬本多小松和草薙剑的必做选择，有合法对象时不再允许“不发动”；没有合法对象时正常结束，不影响原本可选的效果。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "稻姬本多小松的登场与进攻效果不再把另一张同名卡列为目标；响应后仍会重新核对卡名、前排、阵营及兵力条件。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "武田信玄召唤真田幸村与活跃1张士气独立处理：没有真田、选择不召唤或召唤位置失效时，仍继续活跃合法士气；整个效果不发动或被无效时不执行后续。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs"
+      ]
+    }
+  ]
+}

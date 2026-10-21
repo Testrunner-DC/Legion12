@@ -226,10 +226,9 @@ public sealed partial class L12GameEngine
                         allowCancel: false));
                     break;
                 case "own-front-gaotianyuan":
-                    steps.Add(PublicTriggerStep("field-legion", "target", "稻姬：预先选择我方前排1张其他低兵力【高天原】军团",
-                        PublicFactionLegions(player, "gaotianyuan").Where(card => card.InstanceId != source.InstanceId
-                                && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                                && card.Troops <= 5000).Select(card => card.InstanceId), allowCancel: false));
+                    steps.Add(PublicTriggerStep("field-legion", "target", "稻姬：选择我方前排1张〈稻姬本多小松〉以外兵力不高于5000的高天原军团",
+                        PublicLegions(player).Where(card => IsInahimePublicTarget(player, card))
+                            .Select(card => card.InstanceId), allowCancel: false));
                     break;
             }
         }
@@ -289,10 +288,7 @@ public sealed partial class L12GameEngine
             "enemy-legion" => PublicLegions(opponent).Any(),
             "attack-legion" => State.PendingDefense?.Target.Type == "legion",
             "enemy-covered-counter" => opponent.Field[1].Any(card => card is { CardType: "tactic" }),
-            "own-front-gaotianyuan" => PublicFactionLegions(player, "gaotianyuan").Any(card =>
-                card.InstanceId != source.InstanceId
-                && FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                && card.Troops <= 5000),
+            "own-front-gaotianyuan" => PublicLegions(player).Any(card => IsInahimePublicTarget(player, card)),
             _ => true,
         };
         var condition = plan.PlanId switch
@@ -416,9 +412,8 @@ public sealed partial class L12GameEngine
                         || FindOnField(opponent, targetId, out var row, out _) is not { CardType: "tactic" } || row != 1
                         => "源博雅声明的覆盖反击战术已失效；效果未入栈",
                     "own-front-gaotianyuan" when targetId is null
-                        || FindOnField(player, targetId, out var row, out _) is not { } target || row != 0
-                        || !IsFieldLegion(target) || target.InstanceId == candidate.SourceInstanceId
-                        || !L12StructuredCardRules.HasFaction(player, target, "gaotianyuan") || target.Troops > 5000
+                        || FindOnField(player, targetId, out _, out _) is not { } target
+                        || !IsInahimePublicTarget(player, target)
                         => "稻姬声明的前排目标已失效；效果未入栈",
                     _ => null,
                 };
@@ -598,11 +593,8 @@ public sealed partial class L12GameEngine
                 Finish(); return true;
             case "inahime":
                 if (ResolveDeclaredOwnLegionTarget(item, targetId, card =>
-                        FindOnField(player, card.InstanceId, out var row, out _) is not null && row == 0
-                        && card.InstanceId != item.SourceInstanceId
-                        && L12StructuredCardRules.HasFaction(player, card, "gaotianyuan")
-                        && card.Troops <= 5000,
-                        "位于前排、兵力不高于5000且具有高天原阵营") is { } inahimeTarget)
+                        IsInahimePublicTarget(player, card),
+                        "卡名非〈稻姬本多小松〉、位于前排、兵力不高于5000且具有高天原阵营") is { } inahimeTarget)
                     ApplyPlayerThisTurnTroopsModifier(inahimeTarget, 1000, item.Controller, "稻姬本多小松");
                 Finish(); return true;
             case "pingyang":
