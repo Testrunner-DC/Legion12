@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## QA-20261022-GALLERY-CUSTOM-ALTERNATE｜自定义异画原生闭环
+
+- 既有真实HTTP QA增加custom-alternate，不改产品；精确底卡选择、新建/替换两次multipart、风险确认、重启后所有非图片字段全保，匿名真实详情显示本次URL、解码和响应SHA。共享精确新图断言也供原系统图/独立联动卡调用；不是占位图或仅上传接口验收。
+- r1 accessible name选择器失败0上传原件保持，r2全链零HTTP/页面/清理错，Main看图及独审CLEAR。唯一gallery-custom-alternate-20261022/main-acceptance.json，热58FB/完整8004/2124沿精确源绑定复用，未重复后端；24.96MB合成副本核验清除，不冒全App/移动/权益或线上收口。
+
 ## QA-20261022-MOBILE-EFFECT-CHAIN｜三类正常路径与回执/收尾oracle
 
 - 源完整矩阵首片落到真实App/GameBoard/PromptOverlay/net/WS/engine：山河active手牌费用、暗度reaction返还/手牌格位，横竖6个交互收据只对应两能力部分。暗度returnCost是target-morale/resource-selection声明，三声明齐才提交；不以错误kind或提前资源变化假设判产品故障。精确触摸IDs、同request ACK与revision、墓地/自身士气库/入场坐标与活跃均有读回。

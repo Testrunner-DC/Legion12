@@ -1,5 +1,10 @@
 # 十二军团简短交接
 
+## 2026-10-22 自定义异画真实闭环接受｜规则批准项持续实施
+
+- gallery-custom-alternate-20261022/main-acceptance.json：真实SingleCardPicker绑定S01-0104、新建/替换两次multipart与原生风险确认，重启后全部非图片字段原样，匿名CardArchive精确新图URL/响应SHA/解码通过。仅本地桌面现组件/真实HTTP，不冒全App鉴权、权益、移动或全类型；r1选择器失败保留，r2零HTTP/页面/收尾错。Main看图/独审CLEAR，24,958,070B已退出合成宿主精确回收。
+- 用户五项答复已入唯一队列：构造体必发与武田士气独立正在Main修复验收；图鉴/设置两移动修复在原UI子对话；手牌协商增量另批。取消部署/维护及922/10未变，不在片段结束停工。
+
 ## 2026-10-22 三类真实引擎手机链双向实证｜继续公开目标桥
 
 - first-full-chain-acceptance.json合并横屏3个完成子集与独立竖屏GREEN3个，确切只归山河active/暗度reaction两能力，非ST01-08自身/全部686/所有边界。真实App/GameBoard/WS触摸→exact prompt/request/choices ACK→墓地/士气库/精确格位与活跃读回；暗度三声明齐后才付费。原横屏整report仍FAILED（下一方向前主动退出提示），两原实际runner均按SHA冻存，未改原报告或重跑横屏。

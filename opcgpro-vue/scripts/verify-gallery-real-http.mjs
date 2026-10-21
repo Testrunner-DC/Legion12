@@ -24,7 +24,7 @@ assert.equal(digest(fs.readFileSync(path.join(hostRoot, 'GrandUMIServer.dll'))).
 const output = process.env.L12_QA_OUT
 assert(output && path.isAbsolute(output), 'explicit absolute L12_QA_OUT is required')
 const flow = process.env.L12_GALLERY_FLOW || 'standalone'
-assert(['standalone', 'product-draft', 'builtin-image'].includes(flow), 'Unknown gallery flow')
+assert(['standalone', 'product-draft', 'builtin-image', 'custom-alternate'].includes(flow), 'Unknown gallery flow')
 const cache = process.env.L12_WORK_CACHE || 'D:/GPT/Legion12/cache/primary/gallery-real-http-20261021'
 const env = { ...process.env, L12_TASK_REPO: repo, L12_TASK_OUT: output, L12_TASK_HOST: hostRoot, L12_TASK_CACHE: cache }
 execFileSync(process.env.L12_PWSH || 'C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe',
@@ -45,7 +45,7 @@ let backendLog = '', stage = 'start-backend'
 const backendPids = [], errors = [], requests = []
 const report = { status: 'running', flow, scope: 'actual admin/gallery components with real local HTTP and synthetic SQLite runtime; no production/test deployment', hostRoot }
 const sourceFiles = [import.meta.filename, ...['src/l12/site/AdminAlternateArtsPanel.vue', 'src/l12/CardArchive.vue',
-  'src/l12/CardDetailContent.vue', 'src/l12/CardImage.vue', 'src/l12/platform.ts'].map(file => path.join(front, file))]
+  'src/l12/CardDetailContent.vue', 'src/l12/CardImage.vue', 'src/l12/SingleCardPicker.vue', 'src/l12/platform.ts'].map(file => path.join(front, file))]
 const sourceHashes = () => Object.fromEntries(sourceFiles.map(file => [path.relative(repo, file).replaceAll('\\', '/'), digest(fs.readFileSync(file))]))
 report.sourceBefore = sourceHashes()
 async function startBackend() {
@@ -107,6 +107,26 @@ async function upload(page, container, color) {
   const media = await response.json()
   assert(media.id)
   return media
+}
+async function verifyShownReplacement(page, art, originalBytes) {
+  const expectedUrls = [art.imageUrl, art.thumbnailUrl].filter(Boolean).map(url => new URL(url, page.url()).href)
+  await page.waitForFunction(expected => {
+    const image = document.querySelector('.archive-detail-image img')
+    return image && expected.includes(image.currentSrc || image.src)
+      && image.closest('.l12-card-image')?.dataset.source !== 'placeholder'
+  }, expectedUrls)
+  const image = page.locator('.archive-detail-image img').first()
+  await image.evaluate(async element => { await element.decode(); if (!element.naturalWidth) throw new Error('Replacement image did not decode') })
+  const displayedUrl = await image.evaluate(element => element.currentSrc || element.src)
+  assert(expectedUrls.includes(displayedUrl), 'Displayed image remains the exact uploaded resource after decoding')
+  const actual = await page.context().request.get(displayedUrl)
+  assert.equal(actual.status(), 200)
+  const displayedBytes = await actual.body()
+  const expected = await fetch(displayedUrl)
+  assert.equal(expected.status, 200)
+  assert.equal(digest(displayedBytes), digest(Buffer.from(await expected.arrayBuffer())))
+  if (displayedUrl === new URL(art.imageUrl, page.url()).href) assert.equal(digest(displayedBytes), digest(originalBytes))
+  return { displayedImagePath: new URL(displayedUrl).pathname, displayedImageSha256: digest(displayedBytes) }
 }
 try {
   await startBackend()
@@ -182,25 +202,7 @@ try {
     await card.waitFor({ state: 'visible' })
     assert.equal(await card.count(), 1)
     await card.click()
-    const expectedImageUrls = [art.imageUrl, art.thumbnailUrl].filter(Boolean).map(url => new URL(url, publicPage.url()).href)
-    await publicPage.waitForFunction(expected => {
-      const image = document.querySelector('.archive-detail-image img')
-      return image && expected.includes(image.currentSrc || image.src)
-        && image.closest('.l12-card-image')?.dataset.source !== 'placeholder'
-    }, expectedImageUrls)
-    await publicPage.locator('.archive-detail-image img').first().evaluate(async image => {
-      await image.decode(); if (!image.naturalWidth) throw new Error('Anonymous overridden built-in image did not decode')
-    })
-    const displayedImageUrl = await publicPage.locator('.archive-detail-image img').first().evaluate(image => image.currentSrc || image.src)
-    assert(expectedImageUrls.includes(displayedImageUrl), 'Displayed source remains the precise replacement after decoding')
-    const displayedImageResponse = await publicContext.request.get(displayedImageUrl)
-    assert.equal(displayedImageResponse.status(), 200)
-    const displayedImageBytes = await displayedImageResponse.body()
-    const expectedDisplayedResponse = await fetch(displayedImageUrl)
-    assert.equal(expectedDisplayedResponse.status, 200)
-    const expectedDisplayedBytes = Buffer.from(await expectedDisplayedResponse.arrayBuffer())
-    assert.equal(digest(displayedImageBytes), digest(expectedDisplayedBytes), 'Anonymous displayed resource must match its actual replacement bytes')
-    if (displayedImageUrl === new URL(art.imageUrl, publicPage.url()).href) assert.equal(digest(displayedImageBytes), digest(imageBytes))
+    const displayedImage = await verifyShownReplacement(publicPage, art, imageBytes)
     await publicPage.screenshot({ path: path.join(output, 'builtin-override-anonymous.png'), fullPage: true })
     stage = 'builtin-restart-override-persistence'
     await restartBackend(); await open(page)
@@ -227,7 +229,7 @@ try {
       exactImageRequestBodies: true, everyNonImageFieldPreserved: true, anonymousReplacementImageDecoded: true,
       replacementAndRestorationPersistedAfterOwnedRestarts: true, originalImageReferencesRestored: true,
       restoredSystemAssetDecodeNotClaimed: true, replacementImageSha256: digest(imageBytes),
-      displayedImagePath: new URL(displayedImageUrl).pathname, displayedImageSha256: digest(displayedImageBytes), backendSha256: owner.backendSha256 })
+      ...displayedImage, backendSha256: owner.backendSha256 })
   } else if (flow === 'product-draft') {
     stage = 'product-open-existing-card'
     const baseline = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.builtIn)
@@ -288,19 +290,35 @@ try {
   stage = 'create-through-ui'
   await page.getByRole('button', { name: '上传新卡 / 异画' }).click()
   const editor = page.locator('.art-editor')
-  await editor.getByLabel('条目类型').selectOption('gallery-card')
-  const code = 'COLLAB-HTTP-' + crypto.randomUUID().slice(0, 8).toUpperCase()
+  const alternate = flow === 'custom-alternate'
+  await editor.getByLabel('条目类型').selectOption(alternate ? 'alternate-art' : 'gallery-card')
+  if (alternate) {
+    assert.equal(await editor.locator('button.art-choice').count(),1,'The original-card control is unique in this editor')
+    await editor.locator('button.art-choice').click()
+    const picker = page.getByRole('dialog', { name: '选择异画绑定的原卡', exact: true })
+    await picker.getByPlaceholder('搜索卡名、编号或效果文字').fill('S01-0104')
+    const original = picker.locator('.single-card-result-card').filter({ has: page.locator('small').filter({ hasText: /^S01-0104 ·/ }) })
+    await original.waitFor({ state: 'visible' })
+    assert.equal(await original.count(), 1, 'Select the precise original card, not a similarly numbered alternate')
+    await original.getByRole('button', { name: '选择', exact: true }).click()
+    await picker.waitFor({ state: 'hidden' })
+    assert.match(await editor.locator('.art-choice').innerText(), /S01-0104.*韩信/)
+  }
+  const code = (alternate ? 'ALT-HTTP-' : 'COLLAB-HTTP-') + crypto.randomUUID().slice(0, 8).toUpperCase()
   await editor.getByLabel('编号', { exact: true }).fill(code)
-  await editor.getByLabel('联动卡名称').fill('合成HTTP展示卡')
+  if (!alternate) await editor.getByLabel('联动卡名称').fill('合成HTTP展示卡')
   await editor.getByLabel('画师', { exact: true }).fill('合成HTTP画师')
-  await editor.getByLabel('联动卡卡效').fill('仅用于隔离验收，不参与对局。')
+  if (!alternate) await editor.getByLabel('联动卡卡效').fill('仅用于隔离验收，不参与对局。')
   const firstMedia = await upload(page, editor, '#127e88')
   await editor.getByRole('button', { name: '保存卡片资料', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '保存并同步画廊', exact: true }).click()
   await editor.waitFor({ state: 'hidden' })
   let art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.artCode === code)
   assert(art && art.artist === '合成HTTP画师' && art.mediaAssetId === firstMedia.id)
+  assert.equal(art.kind, alternate ? 'alternate-art' : 'gallery-card')
+  if (alternate) { assert.equal(art.baseCardId, 'S01-0104'); assert.equal(art.displayName, '韩信') }
   const artId = art.id
+  const initialIdentity = Object.fromEntries(Object.entries(art).filter(([key]) => !['mediaAssetId','imageUrl','thumbnailUrl','updatedAt'].includes(key)))
   Object.assign(report, { artId, artCode: code, firstMediaId: firstMedia.id, createdThroughRealUi: true })
   stage = 'reload-and-replace-through-ui'
   await open(page)
@@ -317,6 +335,7 @@ try {
   art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === artId)
   assert.equal(art.mediaAssetId, secondMedia.id)
   assert.equal(art.artist, '合成HTTP画师')
+  assert.deepEqual(Object.fromEntries(Object.entries(art).filter(([key]) => !['mediaAssetId','imageUrl','thumbnailUrl','updatedAt'].includes(key))), initialIdentity)
   Object.assign(report, { secondMediaId: secondMedia.id, replacedThroughRealUi: true })
   const imageResponse = await fetch(backendOrigin + art.imageUrl)
   assert.equal(imageResponse.status, 200)
@@ -329,6 +348,8 @@ try {
   art = (await page.evaluate(() => window.__galleryHttpQa.readPublic())).find(item => item.id === artId)
   assert.equal(art.mediaAssetId, secondMedia.id)
   assert.equal(art.artist, '合成HTTP画师')
+  const persistedIdentity = Object.fromEntries(Object.entries(art).filter(([key]) => !['mediaAssetId','imageUrl','thumbnailUrl','updatedAt'].includes(key)))
+  assert.deepEqual(persistedIdentity, initialIdentity, 'Every returned non-image field survives the actual restart')
   report.persistenceAfterOwnedRestart = true
   stage = 'public-native-display'
   const publicContext = await browser.newContext({ viewport: { width: 1366, height: 900 } })
@@ -338,16 +359,19 @@ try {
   await open(publicPage, 'gallery')
   await publicPage.getByRole('tab', { name: '画廊', exact: true }).click()
   await publicPage.getByPlaceholder('卡名、编号或效果文字').fill(code)
-  const card = publicPage.locator('.archive-card').filter({ hasText: '合成HTTP展示卡' })
+  const card = publicPage.locator('.archive-gallery-card').filter({ hasText: code })
+  await card.waitFor({ state: 'visible' })
+  assert.equal(await card.count(), 1)
   await card.click()
   await publicPage.getByText('合成HTTP画师', { exact: true }).waitFor()
-  const actualImage = publicPage.locator('.archive-detail-image img').first()
-  await actualImage.evaluate(async image => { await image.decode(); if (!image.naturalWidth) throw new Error('public card image did not decode') })
+  const displayedImage = await verifyShownReplacement(publicPage, art, imageBytes)
   await publicPage.screenshot({ path: path.join(output, 'public-real-uploaded-art.png'), fullPage: true })
   assert.deepEqual(errors, [])
   Object.assign(report, { status: 'passed', artId, artCode: code, firstMediaId: firstMedia.id, secondMediaId: secondMedia.id,
     actualMultipartUploads: 2, persistenceAfterOwnedRestart: true, publicAnonymousComponentAndImageDecoded: true,
-    desktopImageSha256: digest(imageBytes), backendSha256: owner.backendSha256 })
+    exactBaseCardBinding: alternate ? 'S01-0104' : null, returnedNonImageFieldsPreserved: true,
+    originalNonImageFields: initialIdentity, persistedNonImageFields: persistedIdentity,
+    ...displayedImage, desktopImageSha256: digest(imageBytes), backendSha256: owner.backendSha256 })
   }
   report.sourceAfter = sourceHashes()
   assert.deepEqual(report.sourceAfter, report.sourceBefore, 'Gallery source changed during real HTTP acceptance')
