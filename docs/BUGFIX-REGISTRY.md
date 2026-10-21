@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜处理中连续计时建议：现行事实核对与明确裁定
+
+- c4eff3f6原文请求处理中不走时间；d7的SettleRankedClockLocked按acting/connected和UTC结清，普通命令处理后再转操作责任方，busy房跳过watchdog不免累计扣时；766按责任方插值，纯动画无暂停协议。正常响应、准备退出基线、断线及裁判暂停不混为一谈。已有具名SkippedRoomKeepsItsBaselineAndNextTickChargesAccumulatedUtcExactlyOnce、ThirtySecondBusyResponseRoomKeepsOriginalDeadlineWhileHealthyExpiryIsDurable、NormalClockStartsAfterFinalMulliganProcessingWithoutChargingTheSetupActor说明范围，不重跑无改版本线上采样。
+- 人类call_8cc4129b7eba4c8bb9082f725a15d6e7明确保留现行连续计时，故本条按产品建议`closed/rejected`；无规则改动，不冒处理耗时已免扣或性能根治。单preview/CAS/独立读回、撤会话及原文保留完成，单次post-CAS快照920/8，阶段531/周期623。
+- 原根`closeout/review-current-clock-one-d7f.json`、`bug-closeout-current-clock-one-d7f.json`及`final-product-decisions-reconciliation-20261021.json`绑定当前事实和决定；本轮六条实际决定均回填，未新增线上业务/维护/部署动作。其余八条不按主题代关。
+
 ## 2026-10-21｜当前界面建议有界收口与字体范围归位
 
 - 9315d578佣兵再次确认、faaecd6d恢复旧手机整体、1f13d3c7二级导航，按人类明确保留现行/框架拒绝建议；不把仍存在的设计选择说成“未复现”。687a3312泛化交互复杂及e54c5ff2时点文案长，复用正式766的现有具体提示层级与公共文案压缩检查后有界关闭；不声称所有操作完美或原手机场景已验。
