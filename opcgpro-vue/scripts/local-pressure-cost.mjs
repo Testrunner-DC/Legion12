@@ -39,14 +39,20 @@ export function summarizeLocalPressureCost({samples, pressure, hostLog}) {
   const metrics = new Map()
   for (const line of hostLog.split(/\r?\n/)) {
     if (!line.startsWith('[L12性能] 阶段=')) continue
-    const match = line.match(/^\[L12性能\] 阶段=(\S+) 次数=(\d+) 平均=([\d.]+) 最大=([\d.]+) 单位=(\S+).*累计争用丢样=(\d+) 窗口开始=(\S+) 窗口结束=(\S+)$/)
+    const match = line.match(/^\[L12性能\] 阶段=(\S+) 次数=(\d+) 平均=([\d.]+) 最大=([\d.]+) 单位=(\S+) P95桶=(\S+) P99桶=(\S+) 溢出样本=(\d+) 累计争用丢样=(\d+) 窗口开始=(\S+) 窗口结束=(\S+)$/)
     assert.ok(match, 'unsupported metric row; do not silently omit evidence')
-    const [, label, countText, meanText, maxText, unit, lostText, startText, endText] = match
+    const [, label, countText, meanText, maxText, unit, p95, p99, overflowText, lostText, startText, endText] = match
     const count = Number(countText), mean = Number(meanText), maximum = Number(maxText), lost = Number(lostText)
+    const overflow = Number(overflowText)
     const start = Date.parse(startText), end = Date.parse(endText)
-    assert.ok([count, mean, maximum, lost, start, end].every(finite) && count > 0 && mean <= maximum && start < end)
+    assert.ok([count, mean, maximum, overflow, lost, start, end].every(finite)
+      && mean <= maximum && start < end)
+    // Flush retains an idle row when its cumulative contention-loss counter is nonzero.
+    // Keep that explicit no-sample window; it is not evidence of zero operation cost.
+    assert.ok(count > 0 || (mean === 0 && maximum === 0 && overflow === 0 && lost > 0
+      && p95 === 'no-samples' && p99 === 'no-samples'), 'invalid zero-sample metric row')
     const row = metrics.get(label) ?? {label, unit, count: 0, approximateSum: 0,
-      roundingErrorBound: 0, maximum: 0, latestCumulativeContentionLoss: 0, windows: 0}
+      roundingErrorBound: 0, maximum: 0, latestCumulativeContentionLoss: 0, windows: 0, zeroSampleWindows: 0}
     assert.equal(row.unit, unit, 'metric unit changed')
     if (row.lastWindowEndUtcMs !== undefined)
       assert.ok(start >= row.lastWindowEndUtcMs, 'metric windows overlap or repeat')
@@ -60,6 +66,7 @@ export function summarizeLocalPressureCost({samples, pressure, hostLog}) {
     row.firstWindowStartUtcMs ??= start
     row.lastWindowEndUtcMs = end
     row.windows++
+    if (count === 0) row.zeroSampleWindows++
     metrics.set(label, row)
   }
   const wire = pressure.websocket?.messageTypes ?? {}
@@ -84,6 +91,7 @@ export function summarizeLocalPressureCost({samples, pressure, hostLog}) {
     caveats: ['Stage counters cover contained sample pairs only; boundary intervals are not extrapolated.',
       'Metric sums use rounded means, may omit contended samples, and inclusive operations/phases overlap.',
       'Metrics cover the complete host log, including possible startup/history/shutdown; process counters cover their separate recorded windows, so their totals cannot yield attribution percentages.',
+      'Zero-sample metric windows retain cumulative contention loss, not proof of zero cost or missing process activity.',
       'JSON/wire byte counts are not allocation counters; metric scopes must not be added or subtracted as net allocation.',
       'Local Windows measurements do not establish Linux/shared-host capacity or production traffic distribution.']}
 }

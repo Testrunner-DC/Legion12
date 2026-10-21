@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261021-IDLE-COST-WINDOW｜合法空日志窗误拒（离线修复，不改产品门槛）
+
+- 原完整新DLL本机负载客户端completed，wrapper成本解析把27条真实Flush合法count0窗口误拒；L12PerformanceMetrics.Flush仅在Count与累计Dropped均零时省略，因此空窗仍可携带累计丢样。原local-cost-analysis-failed、host/report/samples四SHA原件保留，不涂改绿、不再跑负载。
+- 唯一成本解析器严格识别count0、mean/max/overflow均0、P95/P99为no-samples、累计丢样非零；空窗单列、不增加样本/加权成本/舍入误差，原有限数/时间窗/单位/重叠重复/丢样重置均保留。runner仅补有界失败原因，仍失败关闭；同型扫描现有Flush与离线读取入口，无第二套产品计时。30成本、20协议、5清理纯例及独审CLEAR。
+- load-acceptance.json为原数据离线增补：1797ACK/60终局/900HTTP与所有清理完成；30房分配55.14→28.04MB/s仅两轮观测，CPU/线载未改善，线上三性能报告保持。无产品规则/数据/部署/维护/线上关单变化；回滚只涉及QA解析和错误说明，不降低3秒、载荷或30＋10门槛。
+
 ## PERF-20261021-COMBAT-FLAGS｜JSON四布尔读取重复构造声明（本地接受，未部署）
 
 - 实际GC栈从序列化四个Models布尔getter进入CombatProfile及声明工厂；1000次热键四属性读取在旧实现确实分配33160000B，五项中仅分配守卫失败、其余四项先过。全同型检索四HasAnyRow方法的唯一调用为Models；未按卡号旁路、不缓存公开可变Atoms。

@@ -247,8 +247,12 @@ try {
       fs.writeFileSync(costPath, JSON.stringify(cost, null, 2), {flag: 'wx'})
       report.offlineNumericCost = {path: costPath, sha256: digest(fs.readFileSync(costPath)),
         onlineCapacityAccepted: false}
-    } catch {
+    } catch (error) {
       report.offlineNumericCostFailed = true
+      report.offlineNumericCostError = {
+        name: typeof error?.name === 'string' && /^[A-Za-z]{1,80}$/.test(error.name) ? error.name : 'Error',
+        message: typeof error?.message === 'string' ? error.message.slice(0, 300) : 'Offline numeric analysis failed',
+      }
       if (report.status === 'local-run-finished') report.status = 'local-cost-analysis-failed'
       if (!process.exitCode) process.exitCode = 2
     }

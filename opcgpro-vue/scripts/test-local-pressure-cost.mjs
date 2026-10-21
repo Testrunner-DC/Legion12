@@ -38,4 +38,23 @@ for (const invalid of [first + '\n' + first, first + '\n' + first.replace('00:00
 }
 assert.throws(() => summarize({pressure: {...pressure, stages: [{startedUtcMs: 1, endedUtcMs: 1}]}})); cases++
 assert.throws(() => summarize({pressure: {...pressure, websocket: {messageTypes: {gameState: {messages: 1, totalPayloadBytes: -1}}}}})); cases++
+// The real logger emits idle windows only to retain cumulative contention loss.
+const empty = metric('2026-10-21T00:01:00Z', '2026-10-21T00:02:00Z', '0.00', 1)
+  .replace('次数=4', '次数=0').replace('最大=5.00', '最大=0.00')
+  .replaceAll('桶=(1,4]', '桶=no-samples')
+const emptyOnly = summarize({hostLog: empty}).metrics[0]
+assert.equal(emptyOnly.count, 0); assert.equal(emptyOnly.zeroSampleWindows, 1)
+assert.equal(emptyOnly.approximateSum, 0); assert.equal(emptyOnly.roundingErrorBound, 0); cases++
+const activeThenEmpty = summarize({hostLog: first + '\n' + empty}).metrics[0]
+assert.equal(activeThenEmpty.count, 4); assert.equal(activeThenEmpty.windows, 2)
+assert.equal(activeThenEmpty.zeroSampleWindows, 1); assert.equal(activeThenEmpty.maximum, 5)
+assert.equal(activeThenEmpty.approximateSum, 9); assert.equal(activeThenEmpty.latestCumulativeContentionLoss, 1); cases++
+for (const invalid of [
+  empty.replace('累计争用丢样=1', '累计争用丢样=0'),
+  empty.replace('平均=0.00', '平均=0.01'),
+  empty.replace('最大=0.00', '最大=0.01'),
+  empty.replace('P95桶=no-samples', 'P95桶=(1,4]'),
+  empty.replace('溢出样本=0', '溢出样本=1'),
+  empty + '\n' + empty,
+]) { assert.throws(() => summarize({hostLog: invalid})); cases++ }
 console.log(JSON.stringify({status: 'passed', cases, networkCalls: 0, generatedFiles: 0}))
