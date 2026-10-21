@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261021-COMBAT-FLAGS｜JSON四布尔读取重复构造声明（本地接受，未部署）
+
+- 实际GC栈从序列化四个Models布尔getter进入CombatProfile及声明工厂；1000次热键四属性读取在旧实现确实分配33160000B，五项中仅分配守卫失败、其余四项先过。全同型检索四HasAnyRow方法的唯一调用为Models；未按卡号旁路、不缓存公开可变Atoms。
+- 四getter共享每线程仅一条readonly scalar摘要，Ordinal精确CardId/Profession/Tapped变化即替换；只存字符串键和四布尔，无卡牌/profile引用、无跨卡字典。完整CombatProfile和任意row仍即时求值，保留数值CurrentCulture语义，未改规则/JSON/检查点/隐私或内核写权。
+- 全324卡×基础/空/远程/非远程职介及空白差异、休整切换、A→B→A、双线程、可变同一Culture、调用者参数隔离、序列化字段/状态/随机守卫；最终相关9过，标准Batch完整规则8004/平台2124零失败跳过、架构/声明守卫和独审CLEAR，前端接受源级复用。首轮测试接口误用编译失败保留，不冒实际RED。
+- 同一233021B/SHA、128次JSON序列化分配97101872→45280896B（-53.37%），线载字节完全相同；不冒线上卡顿/流量/容量根治或编码/投影收益。唯一performance-combat-flags-20261021/main-acceptance.json，监督已清本轮459500546B合成临时。下一新候选本机原负载，不再原样重跑旧版；三性能报告保持开放。
+
 ## UI-20261021-TELEPORT-TOUCH｜画廊弹窗与共享牌库关闭触控（本地接受，未部署）
 
 - 人类全站移动按钮检查中实际发现：画廊产品/换图弹窗Teleport脱离alternate-admin祖先，控制基线失效；共享SavedDeckSelector关闭固定34px。v5共18处触控区不足，第一片后v6仅原生select两处37px。只补弹窗自身深色控件基线，窄屏或coarse下关闭/表单/底部按钮44px；select显式height保持原生选择，宽屏fine关闭尺寸不变。

@@ -280,11 +280,38 @@ public static partial class L12StructuredCardRules
     public static int OpponentTurnCostModifier(string cardId)
         => L12StructuredCardSemantics.OpponentTurnFieldRule(cardId)?.CostAdjustment ?? 0;
 
+    // JSON reads these four adjacent properties separately. Keep one bounded, thread-local
+    // scalar summary instead of rebuilding the same declaration graph for every property.
+    // Full CombatProfile remains fresh: its numeric parsing observes CurrentCulture, and
+    // public rule declarations contain caller-owned mutable parameter dictionaries.
+    [ThreadStatic]
+    private static AnyRowCombatFlags? _lastAnyRowCombatFlags;
+
+    private readonly record struct AnyRowCombatFlags(string CardId, string? Profession, bool Tapped,
+        bool Range, bool RangedNoLoss, bool AttackNoLoss, bool CannotBeRanged);
+
+    private static AnyRowCombatFlags AnyRowFlags(L12CardInstance card)
+    {
+        if (_lastAnyRowCombatFlags is { } cached
+            && string.Equals(cached.CardId, card.CardId, StringComparison.Ordinal)
+            && string.Equals(cached.Profession, card.Profession, StringComparison.Ordinal)
+            && cached.Tapped == card.Tapped)
+            return cached;
+
+        var front = CombatProfile(card, 0);
+        var back = CombatProfile(card, 1);
+        var flags = new AnyRowCombatFlags(card.CardId, card.Profession, card.Tapped,
+            front.HasRangeBonus || back.HasRangeBonus, front.HasRangedNoLoss || back.HasRangedNoLoss,
+            front.HasAttackNoLoss || back.HasAttackNoLoss, front.CannotBeRanged || back.CannotBeRanged);
+        _lastAnyRowCombatFlags = flags;
+        return flags;
+    }
+
     public static bool HasAnyRowRangeBonus(L12CardInstance card)
-        => CombatProfile(card, 0).HasRangeBonus || CombatProfile(card, 1).HasRangeBonus;
+        => AnyRowFlags(card).Range;
 
     public static bool HasAnyRowRangedNoLoss(L12CardInstance card)
-        => CombatProfile(card, 0).HasRangedNoLoss || CombatProfile(card, 1).HasRangedNoLoss;
+        => AnyRowFlags(card).RangedNoLoss;
 
     /// <summary>
     /// “远程军团”是卡牌身份，不等同于某个位置临时获得了进攻距离与无损。
@@ -313,10 +340,10 @@ public static partial class L12StructuredCardRules
                     && atom.Parameters.GetValueOrDefault("rangedNoLoss") == "true"));
 
     public static bool HasAnyRowAttackNoLoss(L12CardInstance card)
-        => CombatProfile(card, 0).HasAttackNoLoss || CombatProfile(card, 1).HasAttackNoLoss;
+        => AnyRowFlags(card).AttackNoLoss;
 
     public static bool CannotBeRangedInAnyRow(L12CardInstance card)
-        => CombatProfile(card, 0).CannotBeRanged || CombatProfile(card, 1).CannotBeRanged;
+        => AnyRowFlags(card).CannotBeRanged;
 
     public static string? HandPlayBlockReason(L12PlayerState controller, L12CardInstance card)
     {
