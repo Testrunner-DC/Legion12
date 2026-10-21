@@ -880,32 +880,52 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var sanadas = player.Hand.Where(card => card.CardId == "S01-0404").ToArray();
         if (sanadas.Length == 0 || !EmptySlots(player).Any())
-        {
-            FinishStackItem(item);
-            return true;
-        }
+            return BeginTakedaMoraleWithinStack(item);
 
         var data = new Dictionary<string, string>
         {
             ["action"] = "s2-takeda-sanada",
-            ["skip"] = "不发动真田幸村登场与士气转活跃",
+            ["skip"] = "不使真田幸村登场",
         };
         foreach (var sanada in sanadas) AddPromptCardData(data, sanada);
-        CreatePrompt(item.Controller, "optional-card", "武田信玄：可选择手牌1张〈真田幸村〉活跃登场，并将1张士气转为活跃",
+        CreatePrompt(item.Controller, "optional-card", "武田信玄：可选择手牌1张〈真田幸村〉活跃登场；随后将1张士气转为活跃",
             sanadas.Select(card => card.InstanceId).Append("skip"), 1, 1,
             "card-effect", item.StackItemId,
             data: WithPromptNarrative(data,
                 new("武田信玄",
-                    "〈武田信玄〉的检索部分已经结束，牌库也已经洗牌。你可以选择手牌中的1张〈真田幸村〉，再为其选择合法空位并尝试使其活跃登场；只有登场成功且届时仍有休整士气，才会继续选择1张士气转为活跃。",
-                    "请选择1张手牌中的〈真田幸村〉继续，或选择“不发动”结束这段后续。",
+                    "〈武田信玄〉的检索部分已经结束，牌库也已经洗牌。你可以选择手牌中的1张〈真田幸村〉，再为其选择合法空位并尝试使其活跃登场。无论是否登场，随后都会独立结算1张士气转为活跃；没有休整士气时无事结束。",
+                    "请选择1张手牌中的〈真田幸村〉继续，或选择“不发动”跳过登场；仍会继续士气步骤。",
                     L12PromptWaitingAction.CardSelection,
                     sanadas.ToDictionary(card => card.InstanceId,
-                        card => $"选择手牌中的〈{card.Name}〉，然后进入合法登场空位选择；登场成功且仍有休整士气时，才继续士气步骤。",
+                        card => $"选择手牌中的〈{card.Name}〉，然后进入合法登场空位选择；无论登场是否成功，随后独立结算士气步骤。",
                         StringComparer.OrdinalIgnoreCase)
                         .Append(new KeyValuePair<string, string>("skip",
-                            "结束这段后续，不移动〈真田幸村〉，也不将士气转为活跃。"))
+                            "不移动〈真田幸村〉，仍会继续士气步骤。"))
                         .ToDictionary(pair => pair.Key, pair => pair.Value,
                             StringComparer.OrdinalIgnoreCase))));
+        return true;
+    }
+
+    private bool BeginTakedaMoraleWithinStack(L12StackItem item)
+    {
+        var player = State.Players[item.Controller];
+        var restedMorale = player.Morale.Where(card => card.Tapped).Select(card => card.InstanceId).ToArray();
+        if (restedMorale.Length == 0)
+        {
+            FinishStackItem(item);
+            return true;
+        }
+        CreatePrompt(item.Controller, "target-morale", "武田信玄：选择1张休整士气转为活跃",
+            restedMorale, 1, 1, "card-effect", item.StackItemId,
+            data: WithPromptNarrative(
+                new Dictionary<string, string> { ["action"] = "s2-takeda-ready-morale" },
+                new("武田信玄",
+                    "〈真田幸村〉的登场步骤已结束。现在独立结算士气步骤，必须选择1张当前休整的士气转为活跃；若所选士气在结算时已离开士气区或不再休整，本步骤无事结束，不补偿，也不会改选其他士气。",
+                    "请选择1张当前休整的士气；本步骤不能跳过。",
+                    L12PromptWaitingAction.TargetSelection,
+                    restedMorale.ToDictionary(id => id,
+                        _ => "使所选休整士气转为活跃；若结算时不再合法，则不改选。",
+                        StringComparer.OrdinalIgnoreCase))));
         return true;
     }
 }

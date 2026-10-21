@@ -1135,17 +1135,17 @@ public sealed class PromptNarrativeMatrixTests
     [InlineData(0)]
     [InlineData(1)]
     [Trait("L12Evidence", "prompt-narrative:takeda-sanada-slot-morale-chain")]
-    public void TakedaFollowupExplainsEveryConditionalStepWithoutPromisingLaterMorale(int controller)
+    public void TakedaFollowupExplainsIndependentMoraleAfterEverySummonOutcome(int controller)
     {
         var success = BeginTakedaFollowupPrompt(202609401 + controller, controller, "success");
         var playerName = success.Game.State.Players[controller].Name;
         AssertPresentation(success.Prompt, "武田信玄", "检索部分已经结束", "选择“不发动”");
-        Assert.Contains("只有登场成功且届时仍有休整士气",
+        Assert.Contains("无论是否登场",
             success.Prompt.Presentation!.Situation, StringComparison.Ordinal);
-        Assert.Contains("才继续士气步骤",
+        Assert.Contains("独立结算士气步骤",
             success.Prompt.Presentation.ChoiceConsequences[success.FirstSanada.InstanceId],
             StringComparison.Ordinal);
-        Assert.Contains("不将士气转为活跃",
+        Assert.Contains("仍会继续士气步骤",
             success.Prompt.Presentation.ChoiceConsequences["skip"], StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
             $"对手正在完成卡牌选择", success.FirstSanada, success.SecondSanada);
@@ -1153,7 +1153,7 @@ public sealed class PromptNarrativeMatrixTests
         ResolvePromptChoice(success.Game, success.Prompt, success.FirstSanada.InstanceId);
         var slot = Assert.Single(success.Game.State.PendingPrompts);
         AssertPresentation(slot, "武田信玄", "已经选择手牌中的", "当前合法的空位");
-        Assert.Contains("不覆盖、不改选，也不继续士气步骤", slot.Presentation!.Situation,
+        Assert.Contains("不覆盖、不改选；无论登场是否成功", slot.Presentation!.Situation,
             StringComparison.Ordinal);
         Assert.DoesNotContain("已经活跃登场", slot.Presentation.Situation, StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
@@ -1164,7 +1164,7 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Same(success.FirstSanada, success.Game.State.Players[controller].Field[0][1]);
         var morale = Assert.Single(success.Game.State.PendingPrompts);
         Assert.Equal("s2-takeda-ready-morale", morale.Data.GetValueOrDefault("action"));
-        AssertPresentation(morale, "武田信玄", "已经活跃登场", "不能跳过");
+        AssertPresentation(morale, "武田信玄", "独立结算士气步骤", "不能跳过");
         Assert.Contains("不补偿，也不会改选", morale.Presentation!.Situation, StringComparison.Ordinal);
         AssertPromptBoundaryAndCheckpoint(success.Game, controller,
             $"对手正在选择效果对象");
@@ -1179,6 +1179,7 @@ public sealed class PromptNarrativeMatrixTests
         ResolvePromptChoice(skip.Game, skip.Prompt, "skip");
         Assert.Contains(skip.FirstSanada, skip.Game.State.Players[controller].Hand);
         Assert.All(skip.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+        ResolveIndependentTakedaMorale(skip.Game);
         Assert.Empty(skip.Game.State.PendingPrompts);
 
         var staleCard = BeginTakedaFollowupPrompt(202609405 + controller, controller, "stale-card");
@@ -1186,8 +1187,9 @@ public sealed class PromptNarrativeMatrixTests
         var staleCardSlot = Assert.Single(staleCard.Game.State.PendingPrompts);
         staleCard.Game.State.Players[controller].Hand.Remove(staleCard.FirstSanada);
         ResolvePromptChoice(staleCard.Game, staleCardSlot, "0:1");
-        Assert.Empty(staleCard.Game.State.PendingPrompts);
         Assert.All(staleCard.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+        ResolveIndependentTakedaMorale(staleCard.Game);
+        Assert.Empty(staleCard.Game.State.PendingPrompts);
 
         var staleSlot = BeginTakedaFollowupPrompt(202609407 + controller, controller, "stale-slot");
         ResolvePromptChoice(staleSlot.Game, staleSlot.Prompt, staleSlot.FirstSanada.InstanceId);
@@ -1196,8 +1198,9 @@ public sealed class PromptNarrativeMatrixTests
             Card("S01-0002", $"narrative-takeda-slot-blocker-{controller}", controller);
         ResolvePromptChoice(staleSlot.Game, occupiedSlot, "0:1");
         Assert.Contains(staleSlot.FirstSanada, staleSlot.Game.State.Players[controller].Hand);
-        Assert.Empty(staleSlot.Game.State.PendingPrompts);
         Assert.All(staleSlot.Game.State.Players[controller].Morale, card => Assert.True(card.Tapped));
+        ResolveIndependentTakedaMorale(staleSlot.Game);
+        Assert.Empty(staleSlot.Game.State.PendingPrompts);
 
         var staleMorale = BeginTakedaFollowupPrompt(202609409 + controller, controller, "stale-morale");
         ResolvePromptChoice(staleMorale.Game, staleMorale.Prompt,
@@ -1213,6 +1216,15 @@ public sealed class PromptNarrativeMatrixTests
         Assert.Empty(staleMorale.Game.State.PendingPrompts);
         Assert.Contains(staleMorale.Game.State.Players[controller].Morale,
             card => card.InstanceId != staleMoraleId && card.Tapped);
+
+        static void ResolveIndependentTakedaMorale(L12GameEngine game)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            Assert.Equal("s2-takeda-ready-morale", prompt.Data["action"]);
+            var selected = prompt.ValidChoices[0];
+            ResolvePromptChoice(game, prompt, selected);
+            Assert.False(game.State.Players[prompt.PlayerIndex].Morale.Single(card => card.InstanceId == selected).Tapped);
+        }
     }
 
     [Theory]

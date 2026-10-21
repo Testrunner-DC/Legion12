@@ -4092,6 +4092,125 @@ public sealed class S2FactionRegressionTests
             && entry.Text.Contains("随后选择", StringComparison.Ordinal));
     }
 
+    public static IEnumerable<object[]> TakedaIndependentMoraleScenarios()
+    {
+        foreach (var controller in new[] { 0, 1 })
+        foreach (var restore in new[] { false, true })
+        foreach (var scenario in new[] { "no-sanada", "skip", "full", "success", "stale-slot", "stale-card", "late-full" })
+            yield return [controller, restore, scenario];
+    }
+
+    [Theory]
+    [MemberData(nameof(TakedaIndependentMoraleScenarios))]
+    [Trait("L12Evidence", "repro:BUG-20261021-9bf48f83-independent-morale")]
+    public void TakedaReadiesExactlyOneMoraleRegardlessOfOptionalSummonOutcome(
+        int controller, bool restore, string scenario)
+    {
+        var now = DateTimeOffset.Parse("2026-10-22T01:00:00Z");
+        var game = new L12GameEngine(Catalog, "takeda-independent-morale", "LOCAL", 632019,
+            ["Synthetic A", "Synthetic B"], [0, 0], skipPreparation: true,
+            autoPassEmptyResponses: false, concealHiddenResponseAvailability: false,
+            stateFormatVersion: 2, utcNow: () => now);
+        game.State.ActivePlayer = controller;
+        game.State.Round = 2; game.State.TurnSerial = 3; game.State.Phase = L12Phase.Main;
+        game.State.PendingPrompts.Clear();
+        game.State.ActiveDisaster = null; game.State.DisasterDeck.Clear();
+        foreach (var p in game.State.Players)
+        {
+            p.Field[0] = new L12CardInstance?[3]; p.Field[1] = new L12CardInstance?[3];
+            p.Hand.Clear(); p.Library.Clear(); p.Graveyard.Clear(); p.Resolving.Clear();
+            p.Morale.Clear(); p.TemporaryMorale = 0;
+        }
+        var player = game.State.Players[controller];
+        var takeda = Card("S02-0401", "independent-takeda"); takeda.OwnerIndex = controller;
+        var sanada = Card("S01-0404", "independent-sanada"); sanada.OwnerIndex = controller;
+        player.Hand.Add(takeda);
+        if (scenario != "no-sanada") player.Hand.Add(sanada);
+        player.Library.Add(Card("S02-0402", "independent-search-card"));
+        for (var i = 0; i < takeda.Cost; i++)
+            player.Morale.Add(new() { InstanceId = "independent-morale-" + i, CardId = "S01-04C1" });
+        if (scenario == "full") FillSlots();
+
+        Send(controller, new("playCard", takeda.InstanceId, Row: 0, Slot: 0));
+        Pass(); Choose("mode:use");
+        var stackId = Assert.Single(game.State.EffectStack).StackItemId;
+        Pass();
+        Assert.Equal("s2-takeda-search", Prompt().Data["action"]);
+        Choose("skip");
+        Assert.Contains(game.State.Events, entry => entry.Type == "shuffle" && entry.PlayerIndex == controller);
+        if (scenario is not "no-sanada" and not "full")
+        {
+            Assert.Equal("s2-takeda-sanada", Prompt().Data["action"]);
+            if (scenario == "late-full") FillSlots();
+            Choose(scenario == "skip" ? "skip" : sanada.InstanceId);
+            if (scenario is not "skip" and not "late-full")
+            {
+                Assert.Equal("s2-takeda-sanada-slot", Prompt().Data["action"]);
+                if (scenario == "stale-slot")
+                    game.State.Players[controller].Field[0][1] = Card("S01-0001", "independent-blocker");
+                if (scenario == "stale-card")
+                {
+                    var stale = game.State.Players[controller].Hand.Single(card => card.InstanceId == sanada.InstanceId);
+                    game.State.Players[controller].Hand.Remove(stale);
+                    game.State.Players[controller].Removed.Add(stale);
+                }
+                Choose("0:1");
+            }
+        }
+        var morale = Prompt();
+        Assert.Equal("s2-takeda-ready-morale", morale.Data["action"]);
+        Assert.Equal(stackId, morale.StackItemId);
+        Assert.DoesNotContain("skip", morale.ValidChoices);
+        var beforeReject = game.SerializeFullState();
+        Assert.False(game.Handle(controller, Typed(morale, "skip")).Accepted);
+        Assert.Equal(beforeReject, game.SerializeFullState());
+        var moraleId = morale.ValidChoices[0];
+        var commit = Typed(morale, moraleId);
+        Send(controller, commit);
+        var afterCommit = game.SerializeFullState();
+        Assert.False(game.Handle(controller, commit).Accepted);
+        Assert.Equal(afterCommit, game.SerializeFullState());
+        Pass();
+        player = game.State.Players[controller];
+        Assert.Single(player.Morale, card => !card.Tapped && card.InstanceId == moraleId);
+        Assert.Equal(1, player.Morale.Count(card => !card.Tapped));
+        Assert.Equal(scenario == "success" ? 1 : 0,
+            player.Field.SelectMany(row => row).Count(card => card?.InstanceId == sanada.InstanceId));
+        if (scenario == "stale-slot") Assert.Equal("independent-blocker", player.Field[0][1]!.InstanceId);
+        Assert.Empty(game.State.PendingPrompts); Assert.Empty(game.State.EffectStack);
+        Assert.Empty(game.State.DeferredEffectStack); Assert.Empty(game.State.PendingActivations);
+
+        L12Prompt Prompt() => Assert.Single(game.State.PendingPrompts);
+        static L12Command Typed(L12Prompt p, string choice) => new("resolvePrompt", PromptId: p.PromptId,
+            Choice: choice, ActivationId: p.ActivationId, SourceInstanceId: p.SourceInstanceId,
+            SourceCardId: p.SourceCardId, Step: p.Step, CreatedRevision: p.CreatedRevision, Controller: p.Controller);
+        void Choose(string choice) => Send(Prompt().PlayerIndex, Typed(Prompt(), choice));
+        void Send(int actor, L12Command command)
+        {
+            var result = game.Handle(actor, command);
+            Assert.True(result.Accepted, scenario + ": " + result.Error);
+            if (!restore) return;
+            var state = game.SerializeFullState(); var random = game.RandomState!.Value;
+            var fact = game.CardFactSignalSequence;
+            game = L12GameEngine.RestoreCheckpoint(Catalog, state, random, fact,
+                autoPassEmptyResponses: false, concealHiddenResponseAvailability: false, utcNow: () => now);
+            Assert.Equal(state, game.SerializeFullState()); Assert.Equal(random, game.RandomState);
+            Assert.Equal(fact, game.CardFactSignalSequence);
+        }
+        void Pass()
+        {
+            for (var i = 0; i < 16 && game.State.PendingPrompts.FirstOrDefault()?.Kind == "response"; i++) Choose("pass");
+            Assert.DoesNotContain(game.State.PendingPrompts, prompt => prompt.Kind == "response");
+        }
+        void FillSlots()
+        {
+            for (var row = 0; row < 2; row++)
+            for (var slot = 0; slot < 3; slot++)
+                if (row != 0 || slot != 0)
+                    game.State.Players[controller].Field[row][slot] ??= Card("S01-0001", $"independent-filler-{row}-{slot}");
+        }
+    }
+
     [Fact]
     public void TakedaPreventsMoraleFromBeingReadiedByAMasterEffect()
     {
