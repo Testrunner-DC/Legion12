@@ -1,5 +1,10 @@
 # Legion12 Bug 修复记录
 
+## UI-20261021-PRIMARY-LINK-TOUCH｜产品相关与恢复返回命中区（本地接受）
+
+- 唯一主操作链接原高16/19px，触控过小；NewsPage卡片footer相关链接和Recovery返回同型限定窄屏/coarse最小38px及横padding。原生a/router-link、实际内容到达、宽屏fine尺寸不变，正文链接与已合格40–43px控件不改；不新增详情路由或业务能力。
+- 作者/Main各8流程＋6窄fine/宽fine/宽coarse边界、完整UI361/类型/双base与只读审通过；原RED、PATH环境失败及拒空/覆盖保留。唯一mobile-reachability-20261021/site-detail-main-r1/main-acceptance.json；回滚仅两CSS与该QA，尚未线上/真机/全站验收，两服/维护/920/8不变。
+
 ## QA-20261021-IDLE-COST-WINDOW｜合法空日志窗误拒（离线修复，不改产品门槛）
 
 - 原完整新DLL本机负载客户端completed，wrapper成本解析把27条真实Flush合法count0窗口误拒；L12PerformanceMetrics.Flush仅在Count与累计Dropped均零时省略，因此空窗仍可携带累计丢样。原local-cost-analysis-failed、host/report/samples四SHA原件保留，不涂改绿、不再跑负载。

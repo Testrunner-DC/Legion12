@@ -1,5 +1,9 @@
 # 效果一致性实施计划
 
+## 2026-10-21 站点原生链接触控｜P4不侵入卡效
+
+- 两处真实16–19px主操作链接按原媒体断点/coarse扩38px，业务/原生导航/宽屏fine不变；作者及Main各8＋6、UI361/类型/双base与独审接受。唯一site-detail-main-r1/main-acceptance.json，本地未部署，下一沉浸编辑器/回放继续，性能与线上8待办不被本片代关。
+
 ## 2026-10-21 真实负载后转向差量字段归因｜P0—P4不变
 
 - 新DLL本机原30＋10实际完成，离线成本只补真实Flush合法空窗兼容，原wrapper失败与日志不覆盖、无重跑负载。30/20/5纯例及独审过；具名performance-combat-flags-20261021/load-acceptance.json。
