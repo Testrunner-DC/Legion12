@@ -19,6 +19,43 @@ public sealed class TombConstructSuppressedDeathLeaveRegressionTests(ITestOutput
     private static L12Catalog Catalog => L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "Data"));
 
     [Theory]
+    [InlineData(0, false, false)] [InlineData(0, true, false)]
+    [InlineData(1, false, false)] [InlineData(1, true, false)]
+    [InlineData(0, false, true)] [InlineData(0, true, true)]
+    [InlineData(1, false, true)] [InlineData(1, true, true)]
+    [Trait("L12Evidence", "repro:BUG-20261021-187df451-mandatory-death-leave")]
+    public void MandatoryDeathOrSuppressedLeaveRejectsEveryDeclineWithoutMutation(
+        int actor, bool restore, bool suppressDeath)
+    {
+        var f = Prepared(actor, restore, "mandatory-" + suppressDeath);
+        if (suppressDeath) f.SuppressWithMengpo();
+        f.KillWithTianZhu();
+        f.Drain(stopAtConstruct: true);
+        for (var index = 0; index < f.GuardIds.Count; index++)
+        {
+            var prompt = f.Prompt();
+            Assert.Equal("pending-activation", prompt.Continuation);
+            Assert.Equal("S01-0204", prompt.SourceCardId);
+            var activation = Assert.Single(f.Game.State.PendingActivations);
+            Assert.All(activation.SelectionSteps,
+                step => Assert.Equal(L12ActivationCancellationPolicy.NotAllowed, step.CancellationPolicy));
+            foreach (var decline in new[] { "skip", "mode:none", "decline", "refuse", "cancel" })
+            {
+                Assert.DoesNotContain(decline, prompt.ValidChoices);
+                f.Send(prompt.PlayerIndex, Fixture.Typed(prompt, decline), "reject-mandatory-" + decline, false);
+            }
+            var valid = Fixture.Typed(prompt, "0:" + index);
+            f.Send(prompt.PlayerIndex, valid, "mandatory-slot-" + index);
+            f.Send(prompt.PlayerIndex, valid, "reject-duplicate-mandatory-slot", false);
+        }
+        f.Drain();
+        var run = f.Complete("mandatory-declaration");
+        Assert.Equal(suppressDeath ? 0 : 1, run.DeathCount);
+        Assert.Equal(suppressDeath ? 1 : 0, run.LeaveCount);
+        AssertGuardsReturned(f);
+    }
+
+    [Theory]
     [InlineData(0, false)] [InlineData(0, true)]
     [InlineData(1, false)] [InlineData(1, true)]
     [Trait("L12Evidence", "repro:BUG-20260921-d1e22956-paid-mengpo-before-death")]

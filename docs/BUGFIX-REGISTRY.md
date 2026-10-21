@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261021-187df451｜陵墓构造体必发声明（本地接受，未部署）
+
+- 用户批准限定修复。正式同源4场真实付费天诛已证可skip；根因是阵亡/离场共用owner-unused-slot沿默认可取消。该步骤显式NotAllowed，不改公共默认，合法空位/所有者/无目标裁剪、孟婆压制后独立离场、无效后回退均保留。
+- 新增8场双方×恢复×正常阵亡/孟婆离场，逐格拒skip/mode:none/decline/refuse/cancel且全状态不变，合法提交/重复拒绝与守卫恰一次；72专项通过。与后续武田组合同DLL完整8040/8040、声明/零legacy/P0—P4守卫通过，独审有限CLEAR。唯一approved-card-rules-20261022/main-acceptance.json；首轮测试属性名编译错误原件保留，未伪称产品失败。
+- 同类扫描全324及PublicTriggerStep/allowCancel/enter/attack/friendly-front-to-back：另10卡11时点仅源码候选，单列后续具名复现，不冒本批已修；可选、费用前取消和最多零选择保持。922/10与线上状态不变，不部署、不改维护/历史。
+
 ## QA-20261022-GALLERY-CUSTOM-ALTERNATE｜自定义异画原生闭环
 
 - 既有真实HTTP QA增加custom-alternate，不改产品；精确底卡选择、新建/替换两次multipart、风险确认、重启后所有非图片字段全保，匿名真实详情显示本次URL、解码和响应SHA。共享精确新图断言也供原系统图/独立联动卡调用；不是占位图或仅上传接口验收。

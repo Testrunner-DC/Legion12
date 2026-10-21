@@ -717,7 +717,8 @@ public sealed partial class L12GameEngine
             candidate.Data["tombGuardOwners"] = string.Join('|', guards.Select(entry => entry.Owner));
             steps = guards.Select((entry, index) => PublicTriggerStep("owner-unused-slot", $"tombSlot{index}",
                 $"陵墓构造体：选择第{index + 1}张〈陵墓守卫〉在所有者战场休整登场的位置",
-                EmptySlots(State.Players[entry.Owner]), targetPlayerIndex: entry.Owner)).ToList();
+                EmptySlots(State.Players[entry.Owner]), targetPlayerIndex: entry.Owner,
+                allowCancel: false)).ToList();
         }
         else if (fifthBatchPlan == "blood-eagle")
         {
