@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="GrandUMIServer"><HintPath>$(L12AcceptedServerRoot)/GrandUMIServer.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Diagnostics.Tracing.TraceEvent"><HintPath>$(L12TraceToolRoot)/Microsoft.Diagnostics.Tracing.TraceEvent.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Diagnostics.FastSerialization"><HintPath>$(L12TraceToolRoot)/Microsoft.Diagnostics.FastSerialization.dll</HintPath></Reference>
+  </ItemGroup>
+  <Target Name="RequirePinnedDependencies" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(L12AcceptedServerRoot)/GrandUMIServer.dll') Or !Exists('$(L12TraceToolRoot)/Microsoft.Diagnostics.Tracing.TraceEvent.dll')" Text="Explicit accepted assembly and scoped trace tool are required." />
+  </Target>
+</Project>

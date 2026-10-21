@@ -13,6 +13,83 @@ public sealed class CardSnapshotFrameTests
     private static readonly JsonSerializerOptions Wire = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public void RawCardKeysBorrowUtf8WithoutAllocatingRepeatedTextAndCheckEqualityAfterHashCollision()
+    {
+        var content = "{\"instanceId\":\"synthetic\",\"text\":\"" + new string('x', 2048) + "\"}";
+        using var first = JsonDocument.Parse(content);
+        using var second = JsonDocument.Parse(content);
+        using var different = JsonDocument.Parse(content.Replace("synthetic", "different", StringComparison.Ordinal));
+        var comparer = L12CardSnapshotFrame.RawCardSnapshotComparer.Instance;
+        Assert.True(comparer.Equals(first.RootElement, second.RootElement));
+        Assert.False(comparer.Equals(first.RootElement, different.RootElement));
+        Assert.Equal(comparer.GetHashCode(first.RootElement), comparer.GetHashCode(second.RootElement));
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 1000; index++)
+        {
+            _ = comparer.GetHashCode(first.RootElement);
+            if (!comparer.Equals(first.RootElement, second.RootElement)) throw new InvalidOperationException();
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.True(allocated <= 512, $"Raw-key lookup allocated {allocated} bytes");
+        var collision = new Dictionary<JsonElement, int>(new ConstantHashRawComparer())
+            { [first.RootElement] = 1, [different.RootElement] = 2 };
+        Assert.Equal(2, collision.Count);
+        Assert.Equal(1, collision[second.RootElement]);
+    }
+
+    [Fact]
+    public void SemanticallyEqualButByteDifferentCardSnapshotsAreNotMerged()
+    {
+        var tail = ",\"effectText\":\"" + new string('x', 1024) + "\"}";
+        var cards = new[] { "{\"instanceId\":\"a\",\"value\":1" + tail,
+            "{\"instanceId\":\"a\",\"value\":1.0" + tail,
+            "{\"instanceId\":\"\\u0061\",\"value\":1" + tail,
+            "{\"value\":1,\"instanceId\":\"a\"" + tail };
+        var events = string.Join(',', Enumerable.Range(0, 32)
+            .Select(index => "{\"sequence\":" + index + ",\"cards\":[" + string.Join(',', cards) + "]}"));
+        var raw = "{\"type\":\"gameState\",\"state\":{\"matchId\":\"synthetic-raw\",\"revision\":1,\"recentEvents\":["
+            + events + "],\"lastAction\":null}}";
+        Assert.True(L12CardSnapshotFrame.TryEncode(System.Text.Encoding.UTF8.GetBytes(raw), out var encoded));
+        var packed = JsonNode.Parse(encoded)!.AsObject();
+        Assert.Equal(4, packed["cardSnapshots"]!.AsArray().Count);
+        foreach (var references in packed["eventCardRefs"]!.AsArray())
+            Assert.Equal(new[] { 0, 1, 2, 3 }, references!.AsArray().Select(value => value!.GetValue<int>()));
+        Assert.True(JsonNode.DeepEquals(JsonNode.Parse(raw), Restore(packed)));
+    }
+
+    private sealed class ConstantHashRawComparer : IEqualityComparer<JsonElement>
+    {
+        public bool Equals(JsonElement first, JsonElement second)
+            => L12CardSnapshotFrame.RawCardSnapshotComparer.Instance.Equals(first, second);
+        public int GetHashCode(JsonElement value) => 0;
+    }
+
+    [Fact]
+    public void RepeatedWholeCardEncodingDoesNotAllocateUtf16CopiesForEveryReference()
+    {
+        var original = Frame(1);
+        var events = original["state"]!["recentEvents"]!.AsArray();
+        var template = events[0]!.DeepClone();
+        events.Clear();
+        for (var index = 0; index < 48; index++)
+        {
+            var entry = template.DeepClone();
+            entry["sequence"] = index;
+            events.Add(entry);
+        }
+        var bytes = Bytes(original);
+        Assert.True(L12CardSnapshotFrame.TryEncode(bytes, out _));
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 4; index++)
+            Assert.True(L12CardSnapshotFrame.TryEncode(bytes, out _));
+        var perFrame = (GC.GetAllocatedBytesForCurrentThread() - before) / 4;
+        // Wide enough for parsing/writing and one dictionary entry, not a second
+        // UTF-16 copy of the repeated card for each occurrence in the envelope.
+        Assert.True(perFrame < bytes.LongLength * 7 / 2 + 256 * 1024,
+            $"Full frame {bytes.LongLength} bytes allocated {perFrame} bytes per encoding");
+    }
+
+    [Fact]
     public void NegotiatedFullFramePreservesEnvelopeAndRestoresIndependentWholeCards()
     {
         var original = Frame(7);

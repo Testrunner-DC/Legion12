@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Runtime.InteropServices;
 
 namespace TwelveLegions.Server;
 
@@ -43,7 +44,9 @@ internal static class L12CardSnapshotFrame
                 || events.Count != sourceEvents.GetArrayLength()) return false;
 
             var snapshots = new JsonArray();
-            var lookup = new Dictionary<string, int>(StringComparer.Ordinal);
+            // Keys borrow the original document only for this synchronous call.
+            // Compare exact UTF-8 bytes, not card ids or semantic JSON equality.
+            var lookup = new Dictionary<JsonElement, int>(RawCardSnapshotComparer.Instance);
             var eventCardRefs = new JsonArray();
             var referenceCount = 0;
             var eventIndex = 0;
@@ -98,7 +101,7 @@ internal static class L12CardSnapshotFrame
     }
 
     private static bool TryReplaceCards(JsonElement sourceOwner, JsonObject targetOwner,
-        IDictionary<string, int> lookup, JsonArray snapshots, ref int referenceCount,
+        IDictionary<JsonElement, int> lookup, JsonArray snapshots, ref int referenceCount,
         out JsonArray references)
     {
         references = [];
@@ -110,18 +113,32 @@ internal static class L12CardSnapshotFrame
         {
             if (sourceCard.ValueKind != JsonValueKind.Object
                 || ++referenceCount > MaximumReferences) return false;
-            var raw = sourceCard.GetRawText();
-            if (!lookup.TryGetValue(raw, out var index))
+            if (!lookup.TryGetValue(sourceCard, out var index))
             {
                 if (snapshots.Count >= MaximumReferences
-                    || JsonNode.Parse(raw) is not JsonObject snapshot) return false;
+                    || JsonNode.Parse(JsonMarshal.GetRawUtf8Value(sourceCard)) is not JsonObject snapshot) return false;
                 index = snapshots.Count;
-                lookup.Add(raw, index);
+                lookup.Add(sourceCard, index);
                 snapshots.Add(snapshot);
             }
             references.Add(index);
         }
         targetOwner["cards"] = null;
         return true;
+    }
+
+    internal sealed class RawCardSnapshotComparer : IEqualityComparer<JsonElement>
+    {
+        internal static readonly RawCardSnapshotComparer Instance = new();
+
+        public bool Equals(JsonElement first, JsonElement second)
+            => JsonMarshal.GetRawUtf8Value(first).SequenceEqual(JsonMarshal.GetRawUtf8Value(second));
+
+        public int GetHashCode(JsonElement value)
+        {
+            var hash = new HashCode();
+            hash.AddBytes(JsonMarshal.GetRawUtf8Value(value));
+            return hash.ToHashCode();
+        }
     }
 }
