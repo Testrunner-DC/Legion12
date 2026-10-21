@@ -236,6 +236,50 @@ try {
     Assert-True ($logicalBytes -eq 8192) "Logical accounting did not count a hydrated hard-link pathname again."
     $bootstrapSource = Get-Content -LiteralPath $bootstrap -Raw
     $dailySource = Get-Content -LiteralPath $serverDeploy -Raw
+    $stopFunction = [regex]::Match($dailySource, '(?ms)^stop_service_and_confirm\(\) \{\r?\n.*?^\}')
+    Assert-True ($stopFunction.Success) 'Actual normal-stop confirmation helper is missing.'
+    $stopProbe = Join-Path $fixture 'actual-normal-stop-confirmation.sh'
+    $stopProbeBody = @'
+set -eu
+service_name=fixture.service
+fault="$1"
+systemctl() {
+  if [ "$1" = stop ]; then
+    [ "$fault" != stop-exit ] || return 73
+    return 0
+  fi
+  [ "$1" = show ] || return 2
+  property="$3"
+  [ "$fault:$property" != query-failure:Result ] || return 9
+  [ "$fault:$property" != missing:Result ] || return 0
+  case "$fault:$property" in
+    failed:ActiveState) printf 'failed\n'; return 0 ;;
+    active:ActiveState) printf 'active\n'; return 0 ;;
+    duplicate:ActiveState) printf 'inactive\ninactive\n'; return 0 ;;
+    running:SubState) printf 'running\n'; return 0 ;;
+    pid:MainPID) printf '101\n'; return 0 ;;
+    malformed-pid:MainPID) printf '00\n'; return 0 ;;
+    timeout:Result) printf 'timeout\n'; return 0 ;;
+    exit-code:Result) printf 'exit-code\n'; return 0 ;;
+    status:ExecMainStatus) printf '9\n'; return 0 ;;
+  esac
+  case "$property" in
+    ActiveState) printf 'inactive\n' ;;
+    SubState) printf 'dead\n' ;;
+    MainPID|ExecMainStatus) printf '0\n' ;;
+    Result) printf 'success\n' ;;
+    *) return 2 ;;
+  esac
+}
+stop_service_and_confirm
+'@
+    Write-Utf8NoBom $stopProbe ((($stopFunction.Value -replace "`r", ''), $stopProbeBody) -join "`n")
+    foreach ($fault in @('normal', 'failed', 'active', 'duplicate', 'running', 'pid', 'malformed-pid',
+            'timeout', 'exit-code', 'status', 'missing', 'query-failure', 'stop-exit')) {
+        $stopResult = Invoke-NativeCapture $shell @((ConvertTo-MsysPath $stopProbe), $fault)
+        Assert-True (($stopResult.ExitCode -eq 0) -eq ($fault -eq 'normal')) "Stop result '$fault' was misclassified."
+        if ($fault -eq 'stop-exit') { Assert-True ($stopResult.ExitCode -eq 73) 'The real stop failure exit code was lost.' }
+    }
     $windowsSource = Get-Content -LiteralPath $windowsDeploy -Raw
     $serviceSource = Get-Content -LiteralPath $service -Raw
     $httpSource = Get-Content -LiteralPath $httpNginx -Raw
@@ -684,6 +728,16 @@ printf 'systemctl %s\n' "$*" >> "$L12_TEST_COMMAND_LOG"
 case "${1:-}" in
   cat|is-enabled) exit 0 ;;
   is-active) [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = "running" ] && exit 0; exit 3 ;;
+  show)
+    case "${3:-}" in
+      ActiveState) if [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = stopped ]; then printf 'inactive\n'; else printf 'active\n'; fi ;;
+      SubState) if [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = stopped ]; then printf 'dead\n'; else printf 'running\n'; fi ;;
+      MainPID) if [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = stopped ]; then printf '0\n'; else printf '1001\n'; fi ;;
+      Result) printf 'success\n' ;;
+      ExecMainStatus) printf '0\n' ;;
+      *) exit 2 ;;
+    esac
+    exit 0 ;;
   stop) printf 'stopped\n' > "$L12_TEST_SERVICE_STATE"; exit 0 ;;
   start) printf 'running\n' > "$L12_TEST_SERVICE_STATE"; exit 0 ;;
 esac

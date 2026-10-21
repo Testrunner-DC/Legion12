@@ -1,5 +1,10 @@
 # 十二军团任务台账
 
+## 2026-10-22 发布工具正常停服契约｜本地接受
+
+- 两入口正常及恢复stop helper同一严格inactive/dead/PID0/success/exit0，并保留真实stop失败码；原生六字段拒绝JSON白名单/4KiB净化留原日志/已有incident，无新记录体系或许可。Main源码审查及正式76场景、两份各13实际helper反例、测试服预算/隔离/回滚/收敛套件通过。
+- 原首轮QA误读open/unchanged不存在incident、r2短PATH漏OpenSSH、r3原生tar长路径错误保留，最终r4短D真实整套通过。唯一formal-release-20261022/stop-contract-behavior-r4.log，不把合成门禁冒线上d7退出已修；下一最终clean Release→正式/测试按授权，先准备完整桥与恢复，不盲重试原执行器。
+
 ## 2026-10-22 安卡必发手机链｜P2/P4仅QA接受
 
 - 真实普通合成房，横竖各12触摸/5同请求ACK/2显式pass；只支付两普通士气、守卫留场活跃、必发无取消并可最小化恢复、安卡入圣物、守卫2000→4000。Main看竖目标/横结果图与源码/报告，原686仍非逐能力手机实测。唯一mobile-effect-type-audit-20261022/ankh-main-acceptance.json。

@@ -1198,8 +1198,16 @@ cleanup() {
 }
 
 stop_service_and_confirm() {
-  systemctl stop "$service_name" >/dev/null 2>&1 || true
-  ! systemctl is-active --quiet "$service_name" >/dev/null 2>&1
+  local stop_status=0 active_state sub_state main_pid result main_status
+  systemctl stop "$service_name" >/dev/null 2>&1 || stop_status=$?
+  [[ "$stop_status" -eq 0 ]] || return "$stop_status"
+  active_state="$(systemctl show --property ActiveState --value "$service_name")" || return 1
+  sub_state="$(systemctl show --property SubState --value "$service_name")" || return 1
+  main_pid="$(systemctl show --property MainPID --value "$service_name")" || return 1
+  result="$(systemctl show --property Result --value "$service_name")" || return 1
+  main_status="$(systemctl show --property ExecMainStatus --value "$service_name")" || return 1
+  [[ "$active_state" == "inactive" && "$sub_state" == "dead" && "$main_pid" == "0" \
+    && "$result" == "success" && "$main_status" == "0" ]]
 }
 
 restore_previous_link() {
@@ -1342,8 +1350,7 @@ sample_web_asset="$(find "$static_web_assets_dir" -type f -print -quit)"
 runuser -u "$web_user" -- test -r "$sample_web_asset" || fail "web account cannot read shared testrun web assets"
 failure_stage="stop-current-service"
 service_stopped=1
-systemctl stop "$service_name"
-if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then fail "service remained active after stop"; fi
+stop_service_and_confirm || fail "service did not stop normally (inactive/dead, PID 0, successful result and exit status required)"
 
 failure_stage="snapshot-runtime"
 mkdir -p "$backup_dir"

@@ -552,11 +552,14 @@ assert_before_recovery_deadline() {
 
 parse_consumer_failure() {
   node -e '
-let text="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>text+=chunk);
+let text="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>{text+=chunk;if(Buffer.byteLength(text,"utf8")>4096)process.exit(2)});
 process.stdin.on("end",()=>{try{const value=JSON.parse(text);const keys=Object.keys(value).sort();
 const expected=["failedStage","ok","reasonCode","retrySafe","schema","stateDisposition"];
 const known=new Set(["ARGUMENT_REJECTED","TOKEN_REJECTED","RESPONSE_CONTRACT_REJECTED","AUTHENTICATION_REJECTED","AUTHORIZATION_REJECTED","AUDIT_UNAVAILABLE","PROTOCOL_UNAVAILABLE","REQUEST_REJECTED","HTTP_REJECTED","STATUS_REJECTED","PREEXISTING_OR_UNKNOWN_FENCE","OWNER_OR_STATE_MISMATCH","BEGIN_STATE_UNKNOWN","BEGIN_REJECTED","READINESS_CONTRACT_REJECTED","PERMIT_MISMATCH","SEAL_STATE_UNKNOWN","SEAL_REJECTED","DRAIN_TIMEOUT","CONSUME_STATE_UNKNOWN","CONSUME_REJECTED","CANCEL_FAILED","TRANSPORT_REJECTED","TRANSPORT_STATE_UNKNOWN","RESTART_STATE_REJECTED","OPEN_PRECONDITION_REJECTED","OPEN_RESPONSE_REJECTED","OPEN_STATE_UNKNOWN","DEPLOYMENT_DEADLINE_EXCEEDED","CONSUMER_REJECTED"]);
-if(JSON.stringify(keys)!==JSON.stringify(expected)||value.schema!==1||value.ok!==false||!known.has(value.reasonCode)||typeof value.failedStage!=="string"||!new Set(["unchanged","open","closed","unknown"]).has(value.stateDisposition)||typeof value.retrySafe!=="boolean")process.exit(2);process.stdout.write(value.reasonCode+"\t"+value.stateDisposition)}catch{process.exit(2)}});'
+const stages=new Set(["arguments","token","http-response","initial-deadline","initial-status","begin","begin-reconcile","seal-deadline","seal","seal-reconcile","consume-deadline","consume","consume-reconcile","cancel-before-stop","cancel-reconcile","protocol","restart-status","pre-open-status","open","open-reconcile","internal"]);
+if(JSON.stringify(keys)!==JSON.stringify(expected)||value.schema!==1||value.ok!==false||!known.has(value.reasonCode)||!stages.has(value.failedStage)||!new Set(["unchanged","open","closed","unknown"]).has(value.stateDisposition)||typeof value.retrySafe!=="boolean")process.exit(2);
+// Persist only validated fixed-contract values, never untrusted raw stdout or duplicate-key contents.
+process.stdout.write(value.reasonCode+"\t"+value.stateDisposition+"\t"+JSON.stringify(value))}catch{process.exit(2)}});'
 }
 
 validate_consumer_receipt() {
@@ -598,10 +601,13 @@ run_consumer() {
   else
     status=$?
     if parsed="$(printf '%s' "$consumer_output" | parse_consumer_failure 2>/dev/null)"; then
-      IFS=$'\t' read -r drain_failure_code drain_failure_disposition <<<"$parsed"
+      IFS=$'\t' read -r drain_failure_code drain_failure_disposition drain_failure_json <<<"$parsed"
+      log "deployment drain consumer rejected ${expected_command}; validatedFailureJson=${drain_failure_json}"
     else
       drain_failure_code="CONSUMER_REJECTED"
       drain_failure_disposition="unknown"
+      drain_failure_json=""
+      log "deployment drain consumer rejected ${expected_command}; failure JSON contract unavailable"
     fi
     consumer_output=""
     return "$status"
@@ -857,6 +863,7 @@ runtime_proof=""
 runtime_proof_failure_code=""
 drain_failure_code=""
 drain_failure_disposition=""
+drain_failure_json=""
 deployment_control_token=""
 consumer_output=""
 consumer_fields=""
@@ -1230,12 +1237,16 @@ read_service_main_pid() {
 }
 
 stop_service_and_confirm() {
-  systemctl stop "$service_name" >/dev/null 2>&1 || true
-  if systemctl is-active --quiet "$service_name" >/dev/null 2>&1; then
-    return 1
-  fi
-  [[ "$(read_service_main_pid)" == "0" ]] || return 1
-  return 0
+  local stop_status=0 active_state sub_state main_pid result main_status
+  systemctl stop "$service_name" >/dev/null 2>&1 || stop_status=$?
+  [[ "$stop_status" -eq 0 ]] || return "$stop_status"
+  active_state="$(systemctl show --property ActiveState --value "$service_name")" || return 1
+  sub_state="$(systemctl show --property SubState --value "$service_name")" || return 1
+  main_pid="$(systemctl show --property MainPID --value "$service_name")" || return 1
+  result="$(systemctl show --property Result --value "$service_name")" || return 1
+  main_status="$(systemctl show --property ExecMainStatus --value "$service_name")" || return 1
+  [[ "$active_state" == "inactive" && "$sub_state" == "dead" && "$main_pid" == "0" \
+    && "$result" == "success" && "$main_status" == "0" ]]
 }
 
 write_sandbox_fence_payload() {
@@ -1293,6 +1304,7 @@ write_failure_record() {
     printf 'deploymentAction=%s\n' "$mode"
     printf 'drainFailureCode=%s\n' "$drain_failure_code"
     printf 'drainFailureDisposition=%s\n' "$drain_failure_disposition"
+    printf 'drainFailureJson=%s\n' "$drain_failure_json"
     printf 'drainStopConsumed=%s\n' "$drain_stop_consumed"
     printf 'drainOpened=%s\n' "$drain_opened"
     printf 'drainTransactionBindingSha256=%s\n' "$drain_transaction_sha256"

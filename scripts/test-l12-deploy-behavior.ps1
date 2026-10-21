@@ -167,6 +167,51 @@ try {
     Write-Host "Accepted application package binding: $bindingCases cases passed; no remote operations."
 
     $serverDeploySource = Get-Content -LiteralPath $serverDeploy -Raw
+    $stopFunction = [regex]::Match($serverDeploySource, '(?ms)^stop_service_and_confirm\(\) \{\r?\n.*?^\}')
+    Assert-True ($stopFunction.Success) 'Actual normal-stop confirmation helper is missing.'
+    $stopProbe = Join-Path $fixtureRoot 'actual-normal-stop-confirmation.sh'
+    $stopProbeBody = @'
+set -eu
+service_name=fixture.service
+fault="$1"
+systemctl() {
+  if [ "$1" = stop ]; then
+    [ "$fault" != stop-exit ] || return 73
+    return 0
+  fi
+  [ "$1" = show ] || return 2
+  property="$3"
+  [ "$fault:$property" != query-failure:Result ] || return 9
+  [ "$fault:$property" != missing:Result ] || return 0
+  case "$fault:$property" in
+    failed:ActiveState) printf 'failed\n'; return 0 ;;
+    active:ActiveState) printf 'active\n'; return 0 ;;
+    duplicate:ActiveState) printf 'inactive\ninactive\n'; return 0 ;;
+    running:SubState) printf 'running\n'; return 0 ;;
+    pid:MainPID) printf '101\n'; return 0 ;;
+    malformed-pid:MainPID) printf '00\n'; return 0 ;;
+    timeout:Result) printf 'timeout\n'; return 0 ;;
+    exit-code:Result) printf 'exit-code\n'; return 0 ;;
+    status:ExecMainStatus) printf '9\n'; return 0 ;;
+  esac
+  case "$property" in
+    ActiveState) printf 'inactive\n' ;;
+    SubState) printf 'dead\n' ;;
+    MainPID|ExecMainStatus) printf '0\n' ;;
+    Result) printf 'success\n' ;;
+    *) return 2 ;;
+  esac
+}
+stop_service_and_confirm
+'@
+    Write-Utf8NoBom $stopProbe ((($stopFunction.Value -replace "`r", ''), $stopProbeBody) -join "`n")
+    foreach ($fault in @('normal', 'failed', 'active', 'duplicate', 'running', 'pid', 'malformed-pid',
+            'timeout', 'exit-code', 'status', 'missing', 'query-failure', 'stop-exit')) {
+        $stopResult = Invoke-NativeCapture -Executable $bashPath -Arguments @(
+            (ConvertTo-MsysPath $stopProbe), $fault)
+        Assert-True (($stopResult.ExitCode -eq 0) -eq ($fault -eq 'normal')) "Stop result '$fault' was misclassified."
+        if ($fault -eq 'stop-exit') { Assert-True ($stopResult.ExitCode -eq 73) 'The real stop failure exit code was lost.' }
+    }
     $drainConsumerSource = Get-Content -LiteralPath $drainConsumer -Raw
     $webAssetsActivatorSource = Get-Content -LiteralPath $webAssetsActivator -Raw
     $webAssetsNginxSource = Get-Content -LiteralPath $webAssetsNginx -Raw
@@ -381,7 +426,7 @@ try {
             [switch]$SeedStorageCleanup,
             [ValidateSet("", "missing", "bad-protocol", "wrong-commit", "missing-runtime-fingerprint", "bad-runtime-fingerprint")][string]$CapabilityFault = "",
             [switch]$RuntimeCompatibilityMismatch,
-            [ValidateSet("", "unavailable", "blocker", "invalid-receipt", "closed", "observe-failure", "cancel-failure", "sandbox-fence-race")][string]$DrainFault = "",
+            [ValidateSet("", "unavailable", "blocker", "invalid-receipt", "closed", "observe-failure", "cancel-failure", "sandbox-fence-race", "private-stage", "private-key", "invalid-json", "duplicate-private-stage")][string]$DrainFault = "",
             [int]$DeadlineOffsetSeconds = 3600,
             [switch]$FailStopConfirmation,
             [switch]$FailSandboxFenceCleanup,
@@ -666,7 +711,14 @@ case "${1:-}" in
     [ -f "$L12_TEST_SERVICE_STATE" ] && [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = "running" ] && exit 0
     exit 3 ;;
   show)
-    cat "$L12_TEST_SERVICE_PID"
+    case "${3:-}" in
+      ActiveState) if [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = stopped ]; then printf 'inactive\n'; else printf 'active\n'; fi ;;
+      SubState) if [ "$(tr -d '\r\n' < "$L12_TEST_SERVICE_STATE")" = stopped ]; then printf 'dead\n'; else printf 'running\n'; fi ;;
+      MainPID) cat "$L12_TEST_SERVICE_PID" ;;
+      Result) printf 'success\n' ;;
+      ExecMainStatus) printf '0\n' ;;
+      *) exit 2 ;;
+    esac
     exit 0 ;;
   start)
     next_pid=$(( $(tr -d '\r\n' < "$L12_TEST_SERVICE_PID_COUNTER") + 1 ))
@@ -797,7 +849,7 @@ while [ "$#" -gt 0 ]; do
 done
 printf 'drain-consumer %s %s %s %s\n' "$command_name" "$action" "$package" "$target" >> "$L12_TEST_COMMAND_LOG"
 failure() {
-  printf '{"failedStage":"fixture","ok":false,"reasonCode":"%s","retrySafe":%s,"schema":1,"stateDisposition":"%s"}\n' "$1" "$2" "$3"
+  printf '{"failedStage":"seal","ok":false,"reasonCode":"%s","retrySafe":%s,"schema":1,"stateDisposition":"%s"}\n' "$1" "$2" "$3"
   exit 2
 }
 case "${L12_TEST_DRAIN_FAULT:-}:$command_name" in
@@ -806,6 +858,13 @@ case "${L12_TEST_DRAIN_FAULT:-}:$command_name" in
   closed:acquire-stop) failure CANCEL_FAILED false closed ;;
   observe-failure:observe-restart) failure RESTART_STATE_REJECTED false closed ;;
   cancel-failure:cancel-open) failure CANCEL_FAILED false closed ;;
+  private-stage:acquire-stop)
+    printf '{"failedStage":"PRIVATE_SENTINEL_%s","ok":false,"reasonCode":"DRAIN_TIMEOUT","retrySafe":true,"schema":1,"stateDisposition":"open"}\n' "$token"; exit 2 ;;
+  private-key:acquire-stop)
+    printf '{"failedStage":"seal","ok":false,"reasonCode":"DRAIN_TIMEOUT","retrySafe":true,"schema":1,"stateDisposition":"open","token":"PRIVATE_SENTINEL_%s"}\n' "$token"; exit 2 ;;
+  invalid-json:acquire-stop) printf 'PRIVATE_SENTINEL_%s\n' "$token"; exit 2 ;;
+  duplicate-private-stage:acquire-stop)
+    printf '{"failedStage":"PRIVATE_SENTINEL_%s","failedStage":"seal","ok":false,"reasonCode":"DRAIN_TIMEOUT","retrySafe":true,"schema":1,"stateDisposition":"open"}\n' "$token"; exit 2 ;;
 esac
 if [ "${L12_TEST_DRAIN_FAULT:-}" = "invalid-receipt" ] && [ "$command_name" = "acquire-stop" ]; then
   printf '{"schema":1,"ok":true,"unexpected":true}\n'
@@ -1373,7 +1432,7 @@ exit 255
         Assert-BaseStatePreserved $capabilityRejected
     }
 
-    foreach ($drainFault in @("unavailable", "blocker")) {
+    foreach ($drainFault in @("unavailable", "blocker", "duplicate-private-stage")) {
         $drainRejected = Invoke-ServerScenario -Name "drain-$drainFault" -DrainFault $drainFault
         Assert-True ($drainRejected.ExitCode -ne 0) "排空控制面拒绝被旧停服流程绕过：$drainFault"
         Assert-True ($drainRejected.Commands.Contains("drain-consumer acquire-stop") -and
@@ -1381,16 +1440,37 @@ exit 255
             "排空控制面不可用/有历史 blocker 时仍停止服务：$drainFault"
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $drainRejected.Root "opt\legion12-deployment\deployment-blocked.txt"))) `
             "消费者已证明 open/unchanged 时被错误固化为未知围栏：$drainFault"
+        # Proven open/unchanged refusal intentionally does not create a blocked
+        # incident. Its existing scenario log is the durable evidence location.
+        $refusalLogPath = Join-Path $drainRejected.Root 'scenario-output.log'
+        Assert-True (Test-Path -LiteralPath $refusalLogPath -PathType Leaf) 'Consumer refusal did not leave its existing scenario log.'
+        $refusalLog = Get-Content -LiteralPath $refusalLogPath -Raw
+        $jsonLine = [regex]::Match($refusalLog, '(?m)validatedFailureJson=(\{[^\r\n]+\})')
+        Assert-True ($jsonLine.Success) 'Consumer refusal JSON was discarded before the scenario log.'
+        $refusal = $jsonLine.Groups[1].Value | ConvertFrom-Json
+        Assert-True ($refusal.schema -eq 1 -and $refusal.ok -eq $false -and $refusal.failedStage -eq 'seal' -and
+            $refusal.reasonCode -eq $(if ($drainFault -eq 'unavailable') { 'PROTOCOL_UNAVAILABLE' } else { 'DRAIN_TIMEOUT' })) `
+            'Persisted consumer refusal changed the actual fixed-contract fields.'
+        Assert-True ($drainRejected.Output.Contains('validatedFailureJson=') -and
+            -not ($drainRejected.Output + $refusalLog).Contains('PRIVATE_SENTINEL_') -and
+            -not ($drainRejected.Output + $refusalLog).Contains(('1' * 64))) 'Consumer refusal evidence leaked untrusted content or the stdin token.'
         Assert-BaseStatePreserved $drainRejected
     }
 
-    foreach ($drainFault in @("invalid-receipt", "closed")) {
+    foreach ($drainFault in @("invalid-receipt", "closed", "private-stage", "private-key", "invalid-json")) {
         $drainUnknown = Invoke-ServerScenario -Name "drain-$drainFault" -DrainFault $drainFault
         Assert-True ($drainUnknown.ExitCode -ne 0) "未知/closed 排空状态被继续执行：$drainFault"
         Assert-True (-not $drainUnknown.Commands.Contains("systemctl stop")) `
             "未知/closed 排空状态触发了未经证明的停服：$drainFault"
         Assert-True (Test-Path -LiteralPath (Join-Path $drainUnknown.Root "opt\legion12-deployment\deployment-blocked.txt") -PathType Leaf) `
             "未知/closed 排空状态没有留下人工对账阻断：$drainFault"
+        $blockedText = Get-Content -LiteralPath (Join-Path $drainUnknown.Root 'opt\legion12-deployment\deployment-blocked.txt') -Raw
+        Assert-True (-not ($drainUnknown.Output + $blockedText).Contains('PRIVATE_SENTINEL_') -and
+            -not ($drainUnknown.Output + $blockedText).Contains(('1' * 64))) 'Untrusted consumer refusal leaked private content.'
+        if ($drainFault -in @('private-stage', 'private-key', 'invalid-json')) {
+            Assert-True ($blockedText.Contains('drainFailureCode=CONSUMER_REJECTED') -and
+                -not $drainUnknown.Output.Contains('validatedFailureJson=')) 'An untrusted failure body was accepted as evidence.'
+        }
         Assert-BaseStatePreserved $drainUnknown
     }
 
