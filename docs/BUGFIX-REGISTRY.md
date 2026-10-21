@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## 2026-10-21｜对局动画off全局压制站点滚动及悬停：完整入口漏验收口
+
+- 人类再次报告b113无滚动/hover。Main在实际b113完整App（非SFC替换）使用原设置复现：standard两行有位移，off使动画duration=1e-6s/iteration1且transform=none，cover/fan transition=1e-6s；浏览器reduce=false。此前夹具只导style.css而漏App全局style/motion/uiSystem，故正常偏好的7/7无法覆盖此真实条件。不能把原因推给缓存或仅补更多相同局部测试。
+- 扫描App/audioPreferences/motion、DeckLibrary/DeckCover及既有off规则：仅给原App选择器加:where负排除deck-page、封面及footer及其后代，不降低原选择器权重、不改off声明/essential例外。战斗组件不命中排除，系统reduce继续静态；最终封面/大厅、沙盒、公开接口/计数完全不改。既有单挂载和48/46双行/无条保留。
+- 新源守卫纳入正常UI合同；原实际UI入口补App真实style、motion/uiSystem和真实off偏好/cover及fan过渡时长断言，原七组全过、错误0。完整最终构建通过；完整App原设置三档与off刷新及实际鼠标输入：两行运动、上浮-4、fan1.08、过渡0.3s、本行pause另行running。42工具对抗与独审CLEAR；a94c5bb0已静态上线，独立6HTML/184磁盘/42公网/新玩家日志和同匿名WS过，后端/测试PID、DLL/maintenance=false不变，0业务统计写/后台重启/DB操作/线上关单。
+- 唯一site-motion-scope-hotfix-20261021/release-session-summary.json及full-entry-acceptance.json；完整App为本地合成目录，不冒正式认证点击/真机。原失败、b113回执和截图历史保留；生成目录守卫的本地dispatch前拒绝不冒线上失败。回退不得恢复全局误伤或再从夹具漏App样式，不能把系统reduce强行开播或扩大为关闭战斗偏好保护。
+
 ## 2026-10-21｜最终样式选源纠正、热门双行自动滚动生命周期
 
 - 人类确认热门区是两行、单行各自自动横移、无拖动条。扫描DeckLibraryPage所有hotDeckRows/track/viewport/暂停与生命周期：原奇偶分组、48/46px/s和反向第二行不变；补切tab后DOM重建重绑、visibility/resize重测（无ResizeObserver亦可）、pointerId独立触摸释放、焦点原副本可达及移出归零，隐藏滚动条，保留减少动态效果不强播。无HTTP/轮询、牌库/计数/私有初始化变化。

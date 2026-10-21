@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261021-deck-ui-motion-scope",
+  "date": "2026-10-21",
+  "audience": "players",
+  "title": "牌库展示动效修正",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "关闭对局动画不再同时关闭热门牌库的双行自动滚动和牌库封面的悬停动效；战斗动画设置保持原有作用。",
+      "paths": ["opcgpro-vue/src/App.vue"]
+    }
+  ]
+}

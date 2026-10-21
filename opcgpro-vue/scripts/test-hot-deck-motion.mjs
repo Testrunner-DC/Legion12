@@ -16,6 +16,11 @@ const source = (process.argv.includes('--baseline')
   ? execFileSync('git', ['show', 'HEAD:opcgpro-vue/src/l12/site/DeckLibraryPage.vue'], { cwd: front, encoding: 'utf8' })
   : fs.readFileSync(path.join(front, 'src/l12/site/DeckLibraryPage.vue'), 'utf8')).replace(/\r\n/g, '\n')
 const setup = parse(source).descriptor.scriptSetup.content
+const appStyles = parse(fs.readFileSync(path.join(front, 'src/App.vue'), 'utf8')).descriptor.styles.map(style => style.content).join('\n')
+assert.match(appStyles, /:root\[data-l12-animation="off"\] \*:not\(\[data-essential-motion\]\):not\(:where\(\.deck-page,\.deck-page \*,\.deck-cover,\.deck-cover \*,\.deck-cover__footer,\.deck-cover__footer \*\)\)/,
+  'the real application animation-off guard must exclude deck UI, not only the isolated component fixture')
+assert.match(appStyles, /animation-duration:\.001ms!important;animation-iteration-count:1!important;transition-duration:\.001ms!important;scroll-behavior:auto!important/,
+  'nonessential battle motion still obeys the existing off preference')
 const tree = ts.createSourceFile('DeckLibraryPage.ts', setup, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 assert.equal(tree.statements.filter(item => ts.isExpressionStatement(item) && ts.isCallExpression(item.expression)
   && item.expression.expression.getText(tree) === 'onMounted').length, 1,

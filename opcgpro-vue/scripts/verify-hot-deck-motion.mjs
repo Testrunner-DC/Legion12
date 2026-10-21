@@ -5,11 +5,14 @@ import { createHash } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer } from 'vite'
+import { parse } from '@vue/compiler-sfc'
 
 // Reuses the summary fixture and real component from verify-deck-library-hot-layout.
 const front = path.resolve(import.meta.dirname, '..')
 const baseline = process.argv.includes('--baseline')
 const source = baseline ? execFileSync('git', ['show', 'HEAD:opcgpro-vue/src/l12/site/DeckLibraryPage.vue'], { cwd: front, encoding: 'utf8' }) : fs.readFileSync(path.join(front, 'src/l12/site/DeckLibraryPage.vue'), 'utf8')
+const appSource = fs.readFileSync(path.join(front, 'src/App.vue'), 'utf8')
+const appStyles = parse(appSource).descriptor.styles.map(style => style.content).join('\n')
 const output = process.env.L12_HOT_DECK_MOTION_OUTPUT || 'D:/GPT/Legion12/artifacts/hot-deck-motion-20261021'
 const cache = process.env.L12_HOT_DECK_MOTION_CACHE || 'D:/GPT/Legion12/cache/primary/hot-deck-motion-20261021/vite'
 const env = { ...process.env, L12_MOTION_OUTPUT: output, L12_MOTION_CACHE: cache,
@@ -26,6 +29,9 @@ import {loadDeckCatalog,loadOfficialPresetDecks} from '/src/l12/decks.ts'
 import {platformState,deckLibraryApi} from '/src/l12/platform.ts'
 import {publicSummaryFixture} from '/scripts/deck-summary-browser-fixture.mjs'
 import '/src/style.css'
+import '/src/l12/motion.css'
+import '/src/l12/site/uiSystem.css'
+import '/__app_motion_scope__.css'
 const presets=await loadOfficialPresetDecks(), base=presets.find(deck=>deck.cardIds.length>=40)||presets[0]
 const now=new Date().toISOString()
 const rows=Array.from({length:16},(_,index)=>({id:'motion-'+index,publicCode:'MOTION'+String(index+1).padStart(6,'0'),ownerId:'synthetic-'+index,author:'本地合成作者 '+index,
@@ -41,9 +47,10 @@ await router.isReady()
 `
 const server = await createServer({ root: front, configLoader: 'runner', cacheDir: cache,
   server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'hot-deck-motion-fixture', enforce: 'pre',
-    resolveId(id) { if (id === '/__hot_deck_motion__.js') return id },
+    resolveId(id) { if (id === '/__hot_deck_motion__.js' || id === '/__app_motion_scope__.css') return id },
     load(id) {
       if (id === '/__hot_deck_motion__.js') return entry
+      if (id === '/__app_motion_scope__.css') return appStyles
       if (baseline && id === path.join(front, 'src/l12/site/DeckLibraryPage.vue').replaceAll('\\', '/')) return source
     },
     configureServer(vite) { vite.middlewares.use((request, response, next) => {
@@ -54,11 +61,13 @@ const server = await createServer({ root: front, configLoader: 'runner', cacheDi
     }) },
   }] })
 const report = { completed: false, baseline, sourceSha256: createHash('sha256').update(source).digest('hex'),
+  appSourceSha256: createHash('sha256').update(appSource).digest('hex'), animationPreference: 'off', actualAppGlobalStyleIncluded: true,
   scope: 'local synthetic summary, actual DeckLibraryPage/DeckCover and original detail router; no backend or statistics traffic', scenarios: [], errors: [] }
 async function prepare(page, noObserver = false) {
   page.on('pageerror', error => report.errors.push(error.message))
   await page.addInitScript(disable => {
     localStorage.setItem('l12:official-presets:guest-seeded:v1', 'true')
+    localStorage.setItem('l12-audio-preferences-v1', JSON.stringify({ animation: 'off', musicEnabled: false, sfxEnabled: false }))
     if (disable) window.ResizeObserver = undefined
   }, noObserver)
   await page.route('**/*', route => {
@@ -70,6 +79,7 @@ async function prepare(page, noObserver = false) {
   })
 }
 async function ready(page) {
+  assert.equal(await page.locator('html').getAttribute('data-l12-animation'), 'off', 'exercise the actual global application animation-off preference')
   await page.locator('.hot-deck-track[data-motion-ready="true"]').nth(1).waitFor()
   assert.equal(await page.locator('.hot-deck-viewport').count(), 2, 'retain exactly two popular rows')
   for (const row of [0, 1]) assert.deepEqual(await page.locator('.hot-deck-loop:not([aria-hidden])').nth(row).locator(':scope > button').evaluateAll(items => items.map(item => item.dataset.publicCode)),
@@ -138,6 +148,12 @@ try {
     const rows = []
     for (const row of [0, 1]) {
       const metrics = await geometry(page, row); layout(metrics)
+      const hoverDurations = await page.locator('.hot-deck-track').nth(row).evaluate(track => ({
+        cover: getComputedStyle(track.querySelector('.deck-cover')).transitionDuration,
+        fan: getComputedStyle(track.querySelector('.deck-cover__cards')).transitionDuration,
+      }))
+      assert.ok(hoverDurations.cover.split(',').every(value => Number.parseFloat(value) >= .29), 'cover hover must not inherit battle animation-off duration')
+      assert.ok(hoverDurations.fan.split(',').every(value => Number.parseFloat(value) >= .29), 'fan hover must not inherit battle animation-off duration')
       assert.ok(Math.abs(metrics.loopWidth / metrics.duration - [48, 46][row]) < .05)
       const normal = await motion(page, 450, row); moving(normal, 'normal motion', row)
       await page.locator('.hot-deck-track').nth(row).evaluate(track => { const animation = track.getAnimations()[0]; animation.currentTime = Number.parseFloat(getComputedStyle(track).animationDuration) * 1000 - 180 })
