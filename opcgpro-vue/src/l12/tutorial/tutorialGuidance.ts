@@ -46,8 +46,6 @@ export interface TutorialAnchor {
   label: string
   unavailable: string
   multiple?: boolean
-  detailFields?: readonly ('费用' | '兵力' | '血量' | '效果')[]
-  detailInstanceId?: string
 }
 
 export function cssAttributeValue(value: string | number) {
@@ -209,11 +207,6 @@ function exactCardAnchor(facts: TutorialSceneFacts, unavailable: string): Tutori
   return { selector, label: facts.practiceCard?.name || '练习军团', unavailable }
 }
 
-function practiceCardDetailAnchor(): TutorialAnchor {
-  return { selector: '.catalog-detail-dialog', label: '练习军团卡牌详情',
-    unavailable: '卡牌详情正在打开，请稍候。', detailFields: ['费用', '兵力', '效果'] }
-}
-
 function masterAnchor(playerIndex: number, label: string): TutorialAnchor {
   return {
     selector: `${tutorialPlayerSelector(playerIndex)} [data-tutorial-anchor="master"]`,
@@ -289,10 +282,10 @@ export function tutorialDialoguePages(tutorial: ActiveTutorialState, facts: Tuto
       outcome: '抽牌会让牌库减少、手牌增加。',
       anchor: cardSourceAnchor(facts.self.playerIndex) },
     { id: 'card', eyebrow: '练习军团', title: `认识${facts.practiceCard?.name || '这张军团'}`,
-      body: `${facts.practiceCard?.name || '这张军团'}的费用为 ${facts.practiceCost ?? '—'}，决定本次支付；兵力 ${facts.practiceCard?.troops ?? '—'}，用于进攻与抵挡。`,
+      body: `${facts.practiceCard?.name || '这张军团'}，打出它需要 ${facts.practiceCost ?? '—'} 点费用；兵力 ${facts.practiceCard?.troops ?? '—'}，用于进攻与抵挡；效果：${facts.practiceCard ? facts.practiceCard.effectText || '无效果' : '待场面显示'}。`,
       reason: '手牌提供可使用的卡，军团登场后才能在战场参与后续战斗。先区分费用和兵力，才能衡量用多少资源换来怎样的场面。',
       outcome: '费用决定支付，兵力用于进攻与抵挡。',
-      anchor: practiceCardDetailAnchor() },
+      anchor: exactCardAnchor(facts, '练习军团目前不在可见范围，请展开我方手牌或战场。') },
     { id: 'morale', eyebrow: '支付费用', title: '看清活跃与休整',
       body: `士气牌库${moraleDeckCount(facts.self) === null ? '数量未公开' : ` ${moraleDeckCount(facts.self)} 张`}。本场可支付 ${facts.spendableMorale} 点费用；用于支付的活跃士气会转为休整。`,
       reason: '费用限制了同一回合能打出多少卡，选择支付哪些活跃士气也是资源安排。',

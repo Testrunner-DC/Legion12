@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-tutorial-completion",
+  "date": "2026-10-22",
+  "audience": "players",
+  "title": "教学完成后的自主选择",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "基础教学完成后推荐熟悉的预组和练习方式，玩家可自主前往对战大厅；不自动建房、匹配或选牌库，教学完成情况不限制其他模式。",
+      "paths": ["opcgpro-vue/src/l12/site/TutorialPage.vue"]
+    }
+  ]
+}

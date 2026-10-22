@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-tutorial-scene-focus",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "教学改用实际场面引导",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "教学实操不再反复自动打开卡牌详情，介绍与操作指向实际卡牌或当前选择面板；卡牌详情仍可主动查看，排序与选择登场军团时不再指向被弹框挡住的背景手牌。",
+      "paths": ["opcgpro-vue/src/l12/tutorial/TutorialGuidanceOverlay.vue", "opcgpro-vue/src/l12/tutorial/tutorialGuidance.ts", "opcgpro-vue/src/l12/tutorial/tutorialResponseGuidance.ts"]
+    }
+  ]
+}

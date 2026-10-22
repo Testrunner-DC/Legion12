@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-TUTORIAL-AUTO-DETAILS｜取消重复自动详情，优先当前交互层
+
+- 已实际读L12-后台优化实施中人类原话：场面优先、单线、准确简练、不反复弹军团详情。原Overlay随dialoguePage/detailCard的watch自动打开Catalog，五处首章/响应介绍依赖详情字段锚点。整类撤去自动挂载、watch及专用几何/样式，改实际手牌/战场/圣物；初次必要数值用当前公开事实短述，普通GameBoard及介绍页主动详情入口保留。不新建seen状态、进度或说明分支。
+- 两纯RED→31/44；真实portrait r1在余牌排序时再证：modal遮挡背景手牌，元素存在不代表可见。保留失败后共因收紧：本人、精确kind、顶层/data一致来源、合法choice/placement绑定，order指本次place-all-top、summon指本次精确候选；错缺/冲突prompt只等待，不猜来源或回退背景。负例RED→31/51、两轮有限独审CLEAR。
+- 唯一r2使用原effect+portrait，6组/5类真实交互、5roomLeft、四锚点均箭头/高亮/无unavailable、0自动Catalog及普通游戏请求，响应权威completed；25源稳定、会话200→401、所属进程和14640/14641退出。Main读回并看两图，原38合同、31/51、原两类型及双Vite通过；后端/卡效/费用/演出等待/进度持久化不改。唯一tutorial-no-auto-details-20261022/main-acceptance.json；不冒新源全18组、真机、部署或线上关单。
+- 新保留缺口：portrait排序/召唤候选截图出现黑框及局部裁切，现记录只证91次图像GET发起，未证响应完成或候选img就绪，无法定因加载/CSS/缺图；列移动剩余，不宣称整个视觉通过，不第三轮盲跑或顺带改图像。旧完成页18组仅按其未变合同复用，不改原失败/包装器INCOMPLETE。
+
 ## UX-20261022-REPLAY-SUMMARY-AND-COUNT｜摘要主宰及记录数口径
 
 - 用户要求推进历史摘要与操作数说明；只复用match_participants已存公开主宰，不从私密牌库/Journal推断。四条共享ReadSummary查询统一追加主宰两列，固定player_index的一对一主键连接不放大既有COUNT；缺名称回退已存ID、缺参赛方返回null，前端明确“主宰未记录”，不补造先后手。

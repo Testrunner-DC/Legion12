@@ -369,7 +369,7 @@ try {
   page.on('dialog',dialog=>dialog.accept())
   page.on('pageerror',error=>report.errors.push(error.message))
   page.on('websocket',socket=>{
-    socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type,
+    socket.on('framesent',frame=>{try{const value=JSON.parse(String(frame.payload));if(['createTutorial','gameAction','leaveRoom','joinMatchmaking','createRoom','joinRoom'].includes(value.type)) report.transport.push({direction:'sent',type:value.type,requestId:value.requestId,lessonId:value.lessonId,command:value.command?.type,
       promptId:value.command?.promptId,cardInstanceId:value.command?.cardInstanceId,cardInstanceIds:value.command?.cardInstanceIds,
       topCardInstanceIds:value.command?.topCardInstanceIds,bottomCardInstanceIds:value.command?.bottomCardInstanceIds,
       choice:value.command?.choice,row:value.command?.row,slot:value.command?.slot,ability:value.command?.ability,target:value.command?.target})}catch{}})
@@ -420,6 +420,22 @@ try {
         lessonId:s.tutorial?.lessonId,status:s.tutorial?.status})
     },{flush:'sync'})
   })
+  const unfinished=await waitState(s=>s.status==='online'&&!s.room&&!s.matchId&&!s.pending,'unfinished-course normal lobby')
+  assert.notEqual(unfinished.learning?.finaleReviewed,true,'Use the new ordinary account without inventing completed teaching progress')
+  const entrySwitchStart=report.transport.length
+  for(const name of ['匹配','好友房']) {
+    const entry=page.locator('.mode-tabs').getByRole('button',{name,exact:true})
+    assert(await entry.isEnabled(),'Unfinished teaching must not lock the '+name+' entry')
+    await tap(entry,'choose '+name+' before completing teaching without starting a normal game')
+    assert.match(await entry.getAttribute('class')||'',/\bactive\b/)
+    await page.getByRole('heading',{name:name==='匹配'?'公开匹配':'创建、加入或观战房间',exact:true}).waitFor()
+  }
+  assert.equal(report.transport.slice(entrySwitchStart).filter(e=>e.direction==='sent'
+    &&['joinMatchmaking','createRoom','joinRoom'].includes(e.type)).length,0,'Choosing ordinary lobby modes must not automatically start a game')
+  const afterEntrySwitch=await observe()
+  assert(!afterEntrySwitch.room&&!afterEntrySwitch.matchId&&!afterEntrySwitch.pending)
+  report.unfinishedCourseModeEntries={learningCompleted:false,selectable:['匹配','好友房'],ordinaryGameRequests:0,
+    boundary:'Actual enabled mode tabs and rendered entry panels only; no normal room, queue, deck preparation or gameplay is created.'}
   await tap(page.locator('.mode-tabs').getByRole('button',{name:'教学',exact:true}), 'inline teaching tab')
   assert.equal(await page.getByRole('link',{name:'进入教学目录',exact:true}).count(),0)
   assert(await page.locator('.tutorial-page.embedded [data-tutorial-introduction]').isVisible(),
@@ -490,43 +506,42 @@ try {
       geometry.arrow=await page.locator('.tutorial-guide-arrow > path').getAttribute('d')
       assert(geometry.rings>0&&geometry.arrow,'Visible reference requires a real highlight and arrow '+label)
     }
-    let details=null
-    if((await shell.getAttribute('class'))?.includes('detail-mode')) {
-      await page.locator('.catalog-detail-mask.tutorial-detail-mask').waitFor()
-      const expectedFields=(await shell.getAttribute('data-tutorial-detail-fields')).split('|').filter(Boolean)
-      assert(expectedFields.includes('费用')&&expectedFields.includes('效果'),'A card introduction must highlight its actual cost and effect')
-      await page.waitForFunction(()=>{
-        const image=document.querySelector('.tutorial-detail-mask .archive-modal-image .l12-card-image__img')
-        return image?.complete&&image.naturalWidth>0&&!image.closest('.placeholder')
-      })
-      details=await page.evaluate(()=>{
-        const rect=e=>{const r=e.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom}}
-        const dialog=document.querySelector('.tutorial-detail-mask .catalog-detail-dialog')
-        return {dialog:rect(dialog),fields:[...dialog.querySelectorAll('.tutorial-detail-focus')].map(e=>({text:e.textContent.trim(),...rect(e)})),
-          labels:[...dialog.querySelectorAll('dt.tutorial-detail-focus')].map(e=>e.textContent.trim())
-            .concat(dialog.querySelector('.archive-effect.tutorial-detail-focus')?['效果']:[]),
-          allLabels:[...dialog.querySelectorAll('dt')].map(e=>e.textContent.trim()),
-          image:rect(dialog.querySelector('.archive-modal-image')),guide:rect(document.querySelector('.tutorial-guidance-shell'))}
-      })
-      assert.deepEqual(details.labels.toSorted(),expectedFields.toSorted(),'Highlight every requested real card field; do not invent troops for a tactic')
-      if(!expectedFields.includes('兵力')) assert(!details.allLabels.includes('兵力'),'A tactic must not gain a fictitious zero-troops field')
-      assert.equal(details.fields.length,expectedFields.reduce((count,field)=>count+(field==='效果'?1:2),0),'Every numeric field includes its label and value')
-      for(const field of [...details.fields,details.image]) {
-        assert(field.x>=details.dialog.x-1&&field.y>=details.dialog.y-1
-          &&field.right<=details.dialog.right+1&&field.bottom<=details.dialog.bottom+1,'Every teaching detail field and whole card image must fit its dialog')
-        assert(field.x>=-1&&field.y>=-1&&field.right<=viewport.width+1&&field.bottom<=viewport.height+1,'Teaching details must not be clipped by the physical viewport')
-        const overlapX=Math.min(field.right,details.guide.right)-Math.max(field.x,details.guide.x)
-        const overlapY=Math.min(field.bottom,details.guide.bottom)-Math.max(field.y,details.guide.y)
-        assert(overlapX<=2||overlapY<=2,'The guide must not cover the card image or highlighted fields')
-      }
-      const mutations=await page.evaluate(async()=>{
-        let count=0
-        const observer=new MutationObserver(records=>{count+=records.filter(record=>record.target.closest('.tutorial-detail-mask')).length})
-        observer.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']})
-        await new Promise(resolve=>setTimeout(resolve,240));observer.disconnect();return count
-      })
-      assert(mutations<=3,'Settled field highlights must not repeatedly remove/re-add themselves')
-      details.settledHighlightMutations=mutations
+    assert.equal(await page.locator('.catalog-detail-mask').count(),0,'Practical teaching must never automatically open or reopen card details after page, card or DOM changes')
+    const details={automaticModal:false,actualAnchor:null}
+    const guideId=await shell.getAttribute('data-tutorial-guide-id')
+    const state=await observe()
+    const instanceId=guideId==='card'?state.self.hand.find(card=>card.cardId==='ST01-05')?.instanceId
+      :guideId==='response-entry-card'?state.tutorial.focus.legionInstanceId
+        :guideId==='response-cover-card'?state.tutorial.focus.counterInstanceId:null
+    let selector=null
+    let choiceAnchor=false,promptId=null
+    if(instanceId) selector=state.self.field.flat().some(card=>card?.instanceId===instanceId)
+      ?'[data-tutorial-player-index="0"] [data-tutorial-anchor="field-slot"][data-tutorial-card-instance="'+instanceId+'"]'
+      :'.hand-card-wrap[data-tutorial-card-instance="'+instanceId+'"]'
+    if(guideId==='response-artifact-card') {
+      assert.equal(state.self.relic.instanceId,state.tutorial.focus.artifactInstanceId,'The highlighted relic is the actual current recipe instance')
+      selector='[data-tutorial-player-index="0"] [data-l12-zone="relic"]'
+    }
+    if(['response-search-result','response-entry-card'].includes(guideId)) {
+      const ordering=guideId==='response-search-result'
+      const prompt=state.prompts.find(prompt=>prompt.playerIndex===state.self.playerIndex&&prompt.kind===(ordering?'order':'hand-card'))
+      assert(prompt,'Use the actual current owner interaction layer')
+      const sourceId=ordering?state.tutorial.focus.artifactInstanceId:state.tutorial.focus.counterInstanceId
+      const sources=[prompt.sourceInstanceId,prompt.data?.sourceInstanceId].filter(value=>value!==null&&value!==undefined&&value!=='')
+      assert(sources.length&&sources.every(value=>value===sourceId),'The current interaction keeps the exact recipe source')
+      const prefix='[data-tutorial-prompt-id="'+prompt.promptId.replaceAll('\\','\\\\').replaceAll('"','\\"')+'"]'
+      if(ordering) {assert.equal(prompt.data.placementMode,'all-top-bottom');selector=prefix+' [data-tutorial-action="place-all-top"]'}
+      else {assert(prompt.validChoices.includes(instanceId));selector=prefix+' [data-tutorial-choice="'+instanceId+'"]';choiceAnchor=true}
+      promptId=prompt.promptId
+    }
+    if(selector) {
+      const actual=page.locator(selector).filter({visible:true}).first()
+      await actual.waitFor()
+      await page.waitForFunction(()=>!document.querySelector('[data-ui-contract="tutorial-authoritative-guidance"] .tutorial-anchor-unavailable'),null,{timeout:2000})
+      assert.equal(await shell.locator('.tutorial-anchor-unavailable').count(),0,'The practical card anchor must exist without opening details')
+      if(instanceId) assert.equal(await actual.getAttribute(choiceAnchor?'data-tutorial-choice':'data-tutorial-card-instance'),instanceId)
+      details.actualAnchor={selector,instanceId,promptId,rect:await actual.boundingBox()}
+      await page.screenshot({path:path.join(out,viewport.width+'-'+guideId+'-actual-anchor.png')})
     }
     return {title:h2,body,logicalWidth,bounds,geometry,unavailable:Boolean(unavailable),details}
   }
@@ -675,6 +690,7 @@ try {
     await page.setViewportSize(viewport)
     if(settingsOnly){await inspectNotificationSettings(viewport);report.cases.push({viewport,scope:'settings-only; no gameplay'});continue}
     if(viewportIndex>0) {
+      if(new URL(page.url()).pathname==='/battle') await tap(page.locator('.mode-tabs').getByRole('button',{name:'教学',exact:true}),'reopen the course after completion CTA')
       await tap(page.getByRole('button',{name:'重新学习第一章',exact:true}),'repeat coherent chapter')
     }
     const titles=await readIntroduction(viewport)
@@ -1003,10 +1019,22 @@ try {
     assert.equal(report.transport.slice(finaleTransportStart).filter(e=>e.direction==='sent'&&e.type==='leaveRoom').length,0)
     await page.getByRole('dialog',{name:'对局结果',exact:true}).waitFor()
     await page.screenshot({path:path.join(out,viewport.width+'-finale-victory.png')})
+    const finaleExitTransportStart=report.transport.length
     await tap(page.getByRole('button',{name:'完成教学',exact:true}),'finish actual course')
     await waitState(s=>!s.room&&!s.matchId&&!s.pending,'final course roomLeft')
+    const finalExit=report.transport.slice(finaleExitTransportStart)
+    const finalLeave=finalExit.findIndex(e=>e.direction==='sent'&&e.type==='leaveRoom')
+    const finalLeft=finalExit.findIndex(e=>e.direction==='received'&&e.type==='roomLeft')
+    assert(finalLeave>=0&&finalLeft>finalLeave,'Completed teaching must receive actual roomLeft after its leave request')
     await page.waitForURL('**/battle/tutorial')
     await page.getByRole('heading',{name:'你已完成新手教学',exact:true}).waitFor()
+    const firstGameLink=page.getByRole('link',{name:'前往对战',exact:true})
+    assert.equal(await firstGameLink.getAttribute('href'),'/battle')
+    await tap(firstGameLink,'leave completed teaching for the normal lobby')
+    await page.waitForURL('**/battle')
+    await waitState(s=>!s.room&&!s.matchId&&!s.pending,'normal lobby without tutorial room')
+    assert.equal(report.transport.slice(finaleTransportStart).filter(e=>e.direction==='sent'&&['joinMatchmaking','createRoom','joinRoom'].includes(e.type)).length,0,'Completion CTA does not automatically create or queue a normal game')
+    chapter.handoff={route:'/battle',roomCleared:true,roomLeftReceived:true,automaticNormalGameRequests:0}
     chapter.preparation={readings:preparationReadings,prompts:preparationPrompts,status:'actual-preparation-completed'}
     chapter.finale={readings:finaleReadings,playerAttacks,result:finaleFinal.result,status:'actual-victory-and-saved-progress'}
     await inspectNotificationSettings(viewport)

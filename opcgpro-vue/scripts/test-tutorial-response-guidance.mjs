@@ -58,6 +58,13 @@ const focus = { artifactInstanceId: artifact.instanceId, counterInstanceId: coun
 const factsFor = (state, binding = focus) => helpers.responseTutorialFacts(state, binding)
 const initial = factsFor(game(player(0, { hand: [xi, counter, discarded], handCount: 3, relic: artifact,
   master: { hp: 4 } })))
+const actualOrderPrompt = { promptId: 'order-"-id', playerIndex: 0, kind: 'order', sourceInstanceId: null,
+  validChoices: ['remainder-a', 'remainder-b'], data: { sourceInstanceId: artifact.instanceId,
+    action: 'reorder-order', placementMode: 'all-top-bottom' } }
+const actualSummonPrompt = { promptId: 'summon-"-id', playerIndex: 0, kind: 'hand-card',
+  sourceInstanceId: counter.instanceId, validChoices: [xi.instanceId], data: {} }
+const orderFacts = { ...initial, prompt: actualOrderPrompt }
+const summonFacts = { ...initial, prompt: actualSummonPrompt }
 check('a reveal waiting for our real prompt cannot deadlock reading its instructions', () => {
   const own = game(undefined, { prompts: [{ playerIndex: 0, kind: 'response' }] })
   assert.equal(sharedHelpers.tutorialInstructionBlocked(own, false, true), false)
@@ -91,15 +98,65 @@ check('detail focus never resolves an unknown covered card or reads the opponent
   const state = game(undefined, { players: [player(0, { hand: [unknown] }), enemy] })
   assert.equal(sharedHelpers.tutorialOwnedDetailCard(state, counter.instanceId), null)
 })
-check('response card introductions bind shared detail fields to their own exact instances', () => {
-  const legion = helpers.responseTutorialDialogue('response-summon', initial)[0].anchor
+check('response card introductions highlight actual owned hand or relic, never an automatic detail dialog', () => {
+  const legion = helpers.responseTutorialDialogue('response-summon', summonFacts)[0].anchor
   const counterPage = helpers.responseTutorialDialogue('response-cover', initial).find(page => page.id === 'response-cover-card')
-  assert.equal(legion.detailInstanceId, xi.instanceId)
-  assert.deepEqual(legion.detailFields, ['费用', '兵力', '效果'])
-  assert.equal(counterPage.anchor.detailInstanceId, counter.instanceId)
-  assert.deepEqual(counterPage.anchor.detailFields, ['费用', '效果'])
-  assert.equal(legion.selector, '.catalog-detail-dialog')
-  assert.equal(counterPage.anchor.selector, '.catalog-detail-dialog')
+  assert.equal(legion.selector, '[data-tutorial-prompt-id="summon-\\"-id"] [data-tutorial-choice="nie-first"]')
+  assert.equal(counterPage.anchor.selector, '.hand-card-wrap[data-tutorial-card-instance="counter-first"]')
+  assert.equal(helpers.responseTutorialDialogue('response-artifact', initial)[0].anchor.selector,
+    '[data-tutorial-player-index="0"] [data-l12-zone="relic"]')
+  for (const step of ['response-artifact', 'response-search-order', 'response-cover', 'response-summon']) {
+    const anchor = helpers.responseTutorialDialogue(step, step === 'response-search-order' ? orderFacts : step === 'response-summon' ? summonFacts : initial)[0].anchor
+    assert.doesNotMatch(anchor.selector, /catalog-detail/)
+    assert.equal(anchor.detailFields, undefined)
+  }
+})
+check('search order points into its actual ordering layer while the committed entry result points to the field', () => {
+  const afterSearch = helpers.responseTutorialDialogue('response-search-order', orderFacts)[0]
+  assert.equal(afterSearch.anchor.selector, '[data-tutorial-prompt-id="order-\\"-id"] [data-tutorial-action="place-all-top"]')
+  assert.match(afterSearch.body, /聂隐娘已加入手牌/)
+  const entered = factsFor(game(player(0, { hand: [{ ...xi, instanceId: 'nie-other' }], master: { hp: 3 },
+    field: [[xi, null, null], [null, null, null]] })))
+  assert.equal(helpers.responseTutorialDialogue('completed', entered)[0].anchor.selector,
+    '[data-tutorial-player-index="0"] [data-tutorial-anchor="field-slot"][data-tutorial-card-instance="nie-first"]')
+  const missing = { ...initial, legion: null, legionId: 'not-revealed' }
+  assert.equal(helpers.responseTutorialDialogue('response-search-order', missing)[0].anchor, null)
+  assert.equal(helpers.responseTutorialDialogue('response-summon', missing)[0].anchor, null)
+})
+for (const [name, change] of Object.entries({
+  'missing prompt': () => null,
+  'wrong owner': p => ({ ...p, playerIndex: 1 }),
+  'wrong kind': p => ({ ...p, kind: 'unknown' }),
+  'missing source': p => ({ ...p, sourceInstanceId: null, data: { ...p.data, sourceInstanceId: undefined } }),
+  'wrong source': p => ({ ...p, sourceInstanceId: 'unrelated-source', data: {} }),
+  'conflicting source fields': p => ({ ...p, sourceInstanceId: p === actualOrderPrompt ? artifact.instanceId : counter.instanceId,
+    data: { ...p.data, sourceInstanceId: 'conflicting-source' } }),
+})) check(`current interaction layer refuses ${name} without falling back to background cards`, () => {
+  for (const [step, original] of [['response-search-order', actualOrderPrompt], ['response-summon', actualSummonPrompt]]) {
+    const facts = { ...initial, prompt: change(original) }
+    assert.equal(helpers.responseTutorialDialogue(step, facts)[0].anchor, null)
+    assert.equal(helpers.responseTutorialAction(step, facts, { selectedPromptChoice: false }).anchor, null)
+  }
+})
+check('order placement and summon legal choice remain exact, with no guessed alternative target', () => {
+  const wrongOrder = { ...initial, prompt: { ...actualOrderPrompt, data: { ...actualOrderPrompt.data, placementMode: 'all-bottom' } } }
+  const wrongChoice = { ...initial, prompt: { ...actualSummonPrompt, validChoices: ['nie-other'] } }
+  for (const [step, facts] of [['response-search-order', wrongOrder], ['response-summon', wrongChoice]]) {
+    assert.equal(helpers.responseTutorialDialogue(step, facts)[0].anchor, null)
+    assert.equal(helpers.responseTutorialAction(step, facts, {}).anchor, null)
+  }
+})
+check('missing, same-name, hidden and departed identities never create a guessed scene highlight', () => {
+  for (const self of [
+    player(0, { hand: [{ ...xi, instanceId: 'nie-other' }], master: { hp: 3 } }),
+    player(0, { field: [[{ ...xi, hidden: true, identityKnown: true }, null, null], [null, null, null]], master: { hp: 3 } }),
+    player(0, { graveyard: [xi], master: { hp: 3 } }),
+  ]) {
+    const facts = factsFor(game(self))
+    assert.equal(helpers.responseTutorialDialogue('response-search-order', facts)[0].anchor, null)
+    assert.equal(helpers.responseTutorialDialogue('response-summon', facts)[0].anchor, null)
+    assert.equal(helpers.responseTutorialDialogue('completed', facts)[0].anchor, null)
+  }
 })
 check('learns exact own recipe instances from real ordered cards', () => {
   assert.equal(initial.legionId, xi.instanceId); assert.equal(initial.counterId, counter.instanceId)

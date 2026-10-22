@@ -2,8 +2,6 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import BattleDockPortal from '../game/BattleDockPortal.vue'
 import BattleOverlayPortal from '../game/BattleOverlayPortal.vue'
-import CatalogCardDetails from '../CatalogCardDetails.vue'
-import type { DeckCard } from '../decks'
 import { viewportRect, visibleViewport } from '../mobileViewport'
 import type { ActiveTutorialState, GameState } from '../types'
 import {
@@ -11,8 +9,6 @@ import {
   tutorialActionSelector,
   tutorialDialoguePages,
   tutorialFacts,
-  tutorialCardCost,
-  tutorialOwnedDetailCard,
   tutorialInstructionBlocked,
   tutorialPlayerSelector,
   tutorialPaymentSelectionCount,
@@ -51,21 +47,6 @@ const pages = computed(() => props.tutorial.lessonId === 'response'
 const dialoguePage = computed(() => pages.value[Math.min(dialogueIndex.value, pages.value.length - 1)] ?? null)
 const dialogueDone = computed(() => dialogueIndex.value >= pages.value.length)
 const lessonTitle = computed(() => ({ deploy: '打出军团', move: '普通移动', combat: '进攻与防守', response: '卡牌效果与响应', preparation: '对局准备', finale: '完成一场对局' })[props.tutorial.lessonId])
-const detailOpen = ref(false)
-const detailCard = computed<DeckCard | null>(() => {
-  if (dialogueDone.value) return null
-  const anchor = dialoguePage.value?.anchor
-  if (!anchor?.detailFields?.length) return null
-  const card = anchor.detailInstanceId
-    ? tutorialOwnedDetailCard(props.game, anchor.detailInstanceId) : facts.value.practiceCard
-  if (!card) return null
-  return { id: card.cardId, number: card.cardId, nameZh: card.name, cardType: card.cardType,
-    isCounterTactic: card.isCounterTactic, product: '当前教学场面', faction: card.faction,
-    imageUrl: card.imageUrl, cost: tutorialCardCost(card) ?? undefined,
-    troops: card.cardType === 'legion' ? card.troops : undefined,
-    traits: card.traits, profession: card.profession, effect: card.effectText || '无效果' }
-})
-const detailScrollKey = ref('')
 const completedIdentity = computed(() => [props.tutorial.accountId, props.tutorial.sessionId,
   props.tutorial.connectionGeneration, props.tutorial.roomCode, props.tutorial.matchId,
   props.tutorial.lessonId, props.tutorial.version, props.tutorial.recipeId || '', props.tutorial.stepId].join(':'))
@@ -393,72 +374,30 @@ function observeGeometry(elements: HTMLElement[]) {
   elements.forEach(element => resizeObserver?.observe(element))
 }
 
-function detailTargets(anchor: TutorialAnchor, roots: HTMLElement[]) {
-  if (!anchor.detailFields?.length) return roots
-  const targets: HTMLElement[] = []
-  for (const root of roots) {
-    const terms = Array.from(root.querySelectorAll('dt')).filter((term): term is HTMLElement => term instanceof HTMLElement)
-    for (const field of anchor.detailFields) {
-      if (field === '效果') {
-        const effect = root.querySelector('.archive-effect')
-        if (effect instanceof HTMLElement) targets.push(effect)
-        continue
-      }
-      const term = terms.find(item => item.textContent?.trim() === field)
-      if (term) {
-        targets.push(term)
-        if (term.nextElementSibling instanceof HTMLElement) targets.push(term.nextElementSibling)
-      }
-    }
-  }
-  return targets
-}
-
-function syncDetailFocus(targets: HTMLElement[] = []) {
-  const wanted = new Set(targets)
-  document.querySelectorAll('.tutorial-detail-focus').forEach(element => {
-    if (!wanted.has(element as HTMLElement)) element.classList.remove('tutorial-detail-focus')
-  })
-  targets.forEach(element => { if (!element.classList.contains('tutorial-detail-focus')) element.classList.add('tutorial-detail-focus') })
-}
-
 function updateGeometry() {
   focusRects.value = []
   arrow.value = null
   anchorUnavailable.value = ''
   const anchor = !minimized.value ? visibleGuide.value?.anchor : null
   if (typeof document === 'undefined') return
-  if (!anchor) { syncDetailFocus(); observeGeometry([]); return }
+  if (!anchor) { observeGeometry([]); return }
   const viewportSize = visibleViewport()
   const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
   const roots = Array.from(document.querySelectorAll(anchor.selector)).filter((element): element is HTMLElement => element instanceof HTMLElement)
-  const allDetailMatches = detailTargets(anchor, roots)
-  const detailMatches = allDetailMatches.filter(element => visibleElement(element, viewport))
   const visible = roots.filter(element => visibleElement(element, viewport))
-  if (anchor.detailFields?.length && visible.length && !detailMatches.length && allDetailMatches.length
-    && detailScrollKey.value !== dialoguePage.value?.id) {
-    detailScrollKey.value = dialoguePage.value?.id || ''
-    allDetailMatches[0]!.scrollIntoView({ block: 'center', inline: 'nearest' })
-    queueRefresh()
-    return
-  }
-  const candidates = anchor.detailFields?.length ? detailMatches : visible
-  const targets = anchor.detailFields?.length || anchor.multiple ? candidates : candidates.slice(0, 1)
+  const targets = anchor.multiple ? visible : visible.slice(0, 1)
   if (!targets.length) {
-    syncDetailFocus()
     observeGeometry([])
     anchorUnavailable.value = anchor.unavailable
     return
   }
-  syncDetailFocus(anchor.detailFields?.length ? detailMatches : [])
   const rects = targets.map(element => {
     const rect = viewportRect(element)
     return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
   })
-  focusRects.value = anchor.detailFields?.length ? [unionRect(rects)] : rects
+  focusRects.value = rects
   const target = unionRect(rects)
-  panelSide.value = anchor.detailFields?.length ? 'right'
-    : target.left + target.width / 2 < viewport.width / 2 ? 'right' : 'left'
+  panelSide.value = target.left + target.width / 2 < viewport.width / 2 ? 'right' : 'left'
   void nextTick(() => {
     const panel = panelElement.value
     if (!panel) return
@@ -533,24 +472,8 @@ watch(() => [stateAligned.value, facts.value.practiceInstanceId] as const, ([ali
 watch(() => `${props.tutorial.matchId}:${props.tutorial.lessonId}:${props.tutorial.stepId}:${props.tutorial.status}:${props.game.prompts?.find(prompt => prompt.playerIndex === props.game.you)?.promptId || ''}`, () => {
   minimized.value = false
   dialogueIndex.value = 0
-  detailScrollKey.value = ''
   queueRefresh()
 }, { flush: 'sync' })
-
-watch(() => [dialoguePage.value?.id, Boolean(detailCard.value)] as const, ([, available]) => {
-  detailOpen.value = available
-}, { immediate: true, flush: 'post' })
-
-// The details Teleport and this companion are not necessarily siblings. Bind
-// layout to the actual mounted mask, not a sibling selector or physical media query.
-watch(detailOpen, () => {
-  void nextTick(() => {
-    document.querySelectorAll('.tutorial-detail-mask').forEach(element => element.classList.remove('tutorial-detail-mask'))
-    if (detailOpen.value) document.querySelector('.catalog-detail-dialog')?.closest('.catalog-detail-mask')
-      ?.classList.add('tutorial-detail-mask')
-    queueRefresh()
-  })
-}, { flush: 'post', immediate: true })
 
 watch(() => [completedIdentity.value, props.tutorial.status, props.connected, stateAligned.value,
   props.busy, props.presentationBusy, props.acceptedHandoffIdentity, props.progressRetryRequired] as const, queueRefresh, { immediate: true, flush: 'post' })
@@ -575,8 +498,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', queueRefresh)
   window.removeEventListener('scroll', queueRefresh, true)
   window.removeEventListener('l12-viewport-change', queueRefresh)
-  document.querySelectorAll('.tutorial-detail-focus').forEach(element => element.classList.remove('tutorial-detail-focus'))
-  document.querySelectorAll('.tutorial-detail-mask').forEach(element => element.classList.remove('tutorial-detail-mask'))
 })
 </script>
 
@@ -586,7 +507,6 @@ onBeforeUnmount(() => {
       @click="minimized = false">教学提示</button>
   </BattleDockPortal>
   <BattleOverlayPortal force>
-    <CatalogCardDetails v-if="detailOpen && detailCard" :card="detailCard" within-picker @close="detailOpen = false"/>
     <div class="tutorial-guide-layer" aria-hidden="true">
       <div v-for="(rect, index) in focusRects" :key="index" class="tutorial-focus-ring"
         :style="{ left: `${rect.left - 5}px`, top: `${rect.top - 5}px`, width: `${rect.width + 10}px`, height: `${rect.height + 10}px` }" />
@@ -596,11 +516,10 @@ onBeforeUnmount(() => {
       </svg>
     </div>
     <div v-if="guidanceVisible" ref="panelElement" class="tutorial-guidance-shell"
-      :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed', 'detail-mode': detailOpen && detailCard }]"
+      :class="[`panel-${panelSide}`, { completed: tutorial.status === 'completed' }]"
       data-ui-contract="tutorial-authoritative-guidance"
       :data-tutorial-guide-id="dialogueDone ? (tutorial.status === 'completed' ? 'result' : 'action') : dialoguePage?.id"
       :data-tutorial-anchor-expected="Boolean(visibleGuide?.anchor)"
-      :data-tutorial-detail-fields="visibleGuide?.anchor?.detailFields?.join('|') || ''"
       :data-tutorial-scene="tutorial.lessonId" :data-tutorial-reading="!ownResponseGuide && !dialogueDone">
       <section class="tutorial-guidance" aria-live="polite">
         <header>
@@ -631,32 +550,14 @@ onBeforeUnmount(() => {
 <style scoped>
 .tutorial-guide-layer{position:fixed;z-index:2147483633;inset:0;pointer-events:none}.tutorial-focus-ring{position:fixed;box-sizing:border-box;border:3px solid #f5d45f;border-radius:10px;box-shadow:0 0 0 3px #071014cc,0 0 22px #f5d45fcc;animation:tutorial-guide-pulse 1.4s ease-in-out infinite;pointer-events:none}.tutorial-guide-arrow{position:fixed;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}.tutorial-guide-arrow path{fill:none;stroke:#f5d45f;stroke-width:4;stroke-linecap:round;filter:drop-shadow(0 2px 2px #000)}.tutorial-guide-arrow marker path{fill:#f5d45f;stroke:none}@keyframes tutorial-guide-pulse{50%{border-color:#fff2a7;box-shadow:0 0 0 4px #071014cc,0 0 30px #fff2a799}}
 .tutorial-guidance-shell{position:fixed;z-index:2147483634;top:16px;box-sizing:border-box;width:min(354px,calc(var(--l12-viewport-width,100vw) - 28px));max-height:calc(var(--l12-viewport-height,100dvh) - 28px);overflow:auto;pointer-events:none;font-family:'Microsoft YaHei','微软雅黑',sans-serif}.tutorial-guidance-shell.panel-left{left:14px;right:auto}.tutorial-guidance-shell.panel-right{right:14px;left:auto}.tutorial-guidance{box-sizing:border-box;width:100%;min-width:0;padding:15px 16px 12px;border:1px solid #50636b;background:linear-gradient(150deg,#101b22f7,#081116f7);color:#f0f2ee;box-shadow:0 12px 30px #000b,0 0 0 1px #9acfd111 inset;pointer-events:auto}.tutorial-guidance-shell.completed .tutorial-guidance{border-color:#a58c48;background:#171408f7}.tutorial-guidance header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.tutorial-guidance small{color:#70cdd1;font-size:11px;font-weight:800;letter-spacing:.12em}.tutorial-guidance h2{margin:4px 0 0;font-size:17px;line-height:1.35}.tutorial-guidance header button{min-width:40px;min-height:40px;border:1px solid #465a63;background:#132129;color:#dce8e7;font:800 18px inherit}.tutorial-guidance p{margin:9px 0 0;color:#d4dedc;font-size:13px;font-weight:500;line-height:1.6}.tutorial-anchor-unavailable{padding:7px 9px;border-left:3px solid #d4b657;background:#241d0d;color:#f4d994!important}.tutorial-main-action{display:flex;justify-content:flex-end;margin:11px 0 0}.tutorial-guidance button{min-height:42px;padding:7px 12px;border:1px solid #4b616b;background:#132129;color:#edf4f2;font:800 13px inherit}.tutorial-guidance button:disabled{cursor:not-allowed;opacity:.55}.tutorial-guidance .tutorial-primary{min-width:108px;border-color:#d9bc62;background:#d9bc62;color:#101719;box-shadow:0 4px 12px #0004}.tutorial-secondary-actions{margin-top:9px;padding-top:8px;border-top:1px solid #2f4149;color:#91a4a8;font-size:12px}.tutorial-secondary-actions summary{width:max-content;cursor:pointer;user-select:none}.tutorial-secondary-actions>div{display:flex;gap:7px;margin-top:8px}.tutorial-secondary-actions button{min-width:0;flex:1;min-height:38px;color:#c9d6d4;background:#101b21}.tutorial-guidance-restore{z-index:var(--l12-battle-fixed-controls-z,5100);min-height:44px;padding:9px 13px;border:1px solid #5c6b73;background:#091118f2;color:#ecd47f;box-shadow:0 14px 38px #000b;font:900 14px 'Microsoft YaHei','微软雅黑',sans-serif}
-:global(.catalog-detail-dialog .tutorial-detail-focus){position:relative;border-radius:4px;background:#3a3117!important;box-shadow:0 0 0 2px #e2c568,0 0 18px #e2c56855;color:#fff3bd!important}:global(.catalog-detail-dialog .archive-effect.tutorial-detail-focus){padding:10px}
-@media(min-width:1000px){.tutorial-guidance-shell.detail-mode{left:auto;right:18px;top:24px;width:350px}:global(.catalog-detail-mask.tutorial-detail-mask){padding:24px 390px 24px 24px}:global(.tutorial-detail-mask .catalog-detail-dialog){width:min(900px,100%);max-height:100%}}
-@media(max-height:480px) and (min-width:650px){.tutorial-guidance-shell{width:min(286px,calc(var(--l12-viewport-width,100vw) - 176px));top:8px;max-height:calc(100dvh - 16px)}.tutorial-guidance-shell.detail-mode{left:auto;right:8px;width:286px}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode)){padding:8px 302px 8px 8px}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode) .catalog-detail-dialog){padding:12px;max-height:calc(100dvh - 16px)}:global(.catalog-detail-mask:has(~ .tutorial-guidance-shell.detail-mode) .catalog-detail-body){grid-template-columns:minmax(0,170px) minmax(0,1fr);gap:14px}.tutorial-guidance-shell .tutorial-guidance{padding:11px 12px}.tutorial-guidance-shell h2{font-size:15px}.tutorial-guidance-shell p{font-size:12px;line-height:1.5}.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
-@media(max-width:480px){.tutorial-guidance-shell.detail-mode{top:auto;bottom:max(10px,env(safe-area-inset-bottom));left:10px;right:10px;width:auto;max-height:43dvh}.tutorial-guidance-shell.detail-mode .tutorial-guidance{padding:10px 12px}.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
+@media(max-height:480px) and (min-width:650px){.tutorial-guidance-shell{width:min(286px,calc(var(--l12-viewport-width,100vw) - 176px));top:8px;max-height:calc(100dvh - 16px)}.tutorial-guidance-shell .tutorial-guidance{padding:11px 12px}.tutorial-guidance-shell h2{font-size:15px}.tutorial-guidance-shell p{font-size:12px;line-height:1.5}.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
+@media(max-width:480px){.tutorial-secondary-actions{margin-top:6px;padding-top:6px}}
 :global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell){width:min(350px,calc(var(--l12-viewport-width,100vw) - 188px));max-width:calc(var(--l12-viewport-width,100vw) - 188px)}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-left){left:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.panel-right){right:86px}:global(html[data-l12-mobile=true] #l12-landscape-teleports .mobile-battle-dock__context > .tutorial-guidance-restore){position:static!important;box-sizing:border-box;width:100%;max-width:100%;min-height:44px!important;padding:8px 4px!important;white-space:normal;overflow-wrap:normal}
 /* The landscape portal enables pointer input on its direct children. The
    teaching focus is decorative, while only the dialogue itself is interactive. */
 :global(#l12-landscape-teleports > .tutorial-guide-layer),:global(#l12-landscape-teleports > .tutorial-guide-layer *){pointer-events:none}
 :global(#l12-landscape-teleports > .tutorial-guidance-shell){pointer-events:none}
 .tutorial-focus-ring{border-width:2px;border-radius:6px;box-shadow:0 0 0 2px #071014dd,0 0 12px #f5d45f66;animation:none}.tutorial-guide-arrow path{stroke-width:2.5;filter:drop-shadow(0 1px 1px #0008)}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell.detail-mode){left:auto;right:8px;top:8px;bottom:auto;width:280px;max-width:280px;max-height:calc(var(--l12-viewport-height,100dvh) - 16px)}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .catalog-detail-mask.tutorial-detail-mask){box-sizing:border-box;padding:8px 304px 8px 8px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog){width:100%;max-height:100%;padding:12px;overflow:auto}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog>header){position:sticky;top:0;z-index:2;background:#101821;padding-bottom:8px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-dialog>header h2){margin:0;font-size:18px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .catalog-detail-body){grid-template-columns:minmax(0,160px) minmax(0,1fr);gap:12px;align-items:start}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-image){height:min(250px,calc(var(--l12-viewport-height,100dvh) - 98px));margin:0}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-image .l12-card-image__img){object-fit:contain!important}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail){padding:0;min-width:0}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-number){display:none}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail h2){margin:0 0 4px;font-size:19px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-tags span){padding:2px 5px;font-size:11px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail dl){margin:6px 0}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-modal-detail dl>*){padding:5px 8px;font-size:12px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect.tutorial-detail-focus){padding:7px 8px}
-:global(html[data-l12-mobile=true] #l12-landscape-teleports .tutorial-detail-mask .archive-effect p){margin-top:4px;font-size:12px;line-height:1.5}
 /* Preparation has a card-selection surface of its own. Keep it beside the
    teaching dialogue instead of obscuring the first disaster or starting hand. */
 :global(html[data-l12-mobile=true] #l12-landscape-teleports > .tutorial-guidance-shell[data-tutorial-scene=preparation]){left:10px;right:auto;top:8px;width:280px;max-width:280px}

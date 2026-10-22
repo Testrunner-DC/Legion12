@@ -23,8 +23,10 @@ fs.mkdirSync(output, { recursive: true })
 
 const helperPath = path.join(front, 'src/l12/tutorial/tutorialGuidance.ts')
 const overlayPath = path.join(front, 'src/l12/tutorial/TutorialGuidanceOverlay.vue')
+const introductionPath = path.join(front, 'src/l12/site/TutorialPage.vue')
 const sfcPaths = [
   overlayPath,
+  introductionPath,
   path.join(front, 'src/l12/game/GameBoard.vue'),
   path.join(front, 'src/l12/game/HandArea.vue'),
   path.join(front, 'src/l12/game/PlayerMat.vue'),
@@ -93,7 +95,9 @@ check('deploy dialogue explains reason and outcome before action', () => {
   assert.match(pages.map(page => `${page.body} ${page.outcome}`).join(' '), /牌库 30 张、手牌 2 张/)
   assert.match(pages.map(page => `${page.body} ${page.outcome}`).join(' '), /士气牌库 8 张/)
   const detail = pages.find(page => page.id === 'card')
-  assert.deepEqual(detail.anchor.detailFields, ['费用', '兵力', '效果'])
+  assert.equal(detail.anchor.selector, '.hand-card-wrap[data-tutorial-card-instance="practice-first"]')
+  assert.doesNotMatch(detail.anchor.selector, /catalog-detail/)
+  assert.match(detail.body, /需要 2 点费用.*兵力 4000.*效果.*无效果/)
   assert.doesNotMatch(`${detail.body} ${detail.outcome}`, /军团血量/)
 })
 
@@ -112,6 +116,12 @@ check('completion result states real resource and field consequences', () => {
     guidance.tutorialSnapshot(deployFacts))
   assert.equal(pages.length, 1)
   assert.match(`${pages[0].reason} ${pages[0].outcome}`, /场上力量|活跃士气/)
+})
+check('practice introduction follows its exact current card from hand to field without a detail-dialog anchor', () => {
+  const page = guidance.tutorialDialoguePages(tutorial('deploy'), deployedFacts, guidance.tutorialSnapshot(deployFacts)).find(page => page.id === 'card')
+  assert.equal(page.anchor.selector, '[data-tutorial-player-index="0"] [data-tutorial-anchor="field-slot"][data-tutorial-card-instance="practice-first"]')
+  const missing = { ...deployFacts, practiceCard: null, practiceInstanceId: null }
+  assert.equal(guidance.tutorialDialoguePages(tutorial('deploy'), missing, guidance.tutorialSnapshot(missing)).find(page => page.id === 'card').anchor, null)
 })
 
 const moveCard = card('move-practice')
@@ -237,13 +247,20 @@ check('focus geometry is event-driven, transformed and non-blocking', () => {
   assert.match(overlaySource, /!ownResponseGuide && !dialogueDone && tutorial\.status !== 'completed'/)
   assert.match(overlaySource, /不等于已经选择不抵挡/)
 })
-check('real shared card details expose and focus only fields that the card actually has', () => {
-  assert.match(overlaySource, /import CatalogCardDetails from/)
-  assert.match(overlaySource, /<CatalogCardDetails/)
-  assert.match(overlaySource, /detailFields/)
-  assert.match(overlaySource, /querySelectorAll\('dt'\)/)
-  assert.match(overlaySource, /archive-effect/)
+check('practical guidance never mounts a card-details modal or reopens it from page, card or DOM changes', () => {
+  assert.doesNotMatch(overlaySource, /CatalogCardDetails|detailOpen|detailCard|detailFields|detailScrollKey/)
+  assert.doesNotMatch(overlaySource, /catalog-detail-dialog|tutorial-detail-mask|tutorial-detail-focus/)
+  assert.match(overlaySource, /document\.querySelectorAll\(anchor\.selector\)/)
   assert.doesNotMatch(overlaySource, /军团血量栏/)
+})
+check('ordinary card inspector and first introduction details still require the existing user controls', () => {
+  const introduction = fs.readFileSync(introductionPath, 'utf8')
+  assert.match(introduction, /@click="showCardDetails\(card\.id\)"/)
+  assert.match(introduction, /<CatalogCardDetails v-if="detailCard"[^>]*@close="closeCardDetails"/)
+  assert.equal((introduction.match(/showCardDetails\(/g) ?? []).length, 2, 'Only the existing function and direct user click may open first-introduction details')
+  const board = fs.readFileSync(path.join(front, 'src/l12/game/GameBoard.vue'), 'utf8')
+  assert.match(board, /@click="mobileInspectorOpen = !mobileInspectorOpen"/)
+  assert.match(board, /v-if="mobileLandscapeViewport && mobileInspectorOpen"[^>]*role="dialog"[^>]*aria-label="卡牌详情"/)
 })
 check('mainline is linear and does not repeat body in a second result panel', () => {
   const template = parse(overlaySource, { filename: overlayPath }).descriptor.template?.content ?? ''
