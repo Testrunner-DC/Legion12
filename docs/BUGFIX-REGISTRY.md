@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261022-WIRE-ATTRIBUTION｜实负载包内字节闭环，未宣称根治
+
+- b74 QA同546原负载完成，5479包顶层片段互斥求和且独立对原messageTypes全对；changes40.10%/events35.08%/full22.17%/hand1.95%给出真实当前优先级。完整快照细分是父项子集，不双计；同步scan开销单列，原1796/900/60及冷账本清理均留原件。
+- 唯一performance-hand-load-20261022/diagnostic-run-main-acceptance.json。Windows本机fresh-data、非Linux共享主机/全浏览器/新容量，未复用旧手牌占比或把扫描后的延迟与前轮trace作因果比较；3性能反馈仍开。
+- 原生压缩源审找到Accept先于hello/auth、单helper含chat、Text1MiB与未证明的压缩输入预算；Microsoft/RFC安全边界进入independent-stream-potential.json。24旧合成包288无损往返只证69.37%独立DEFLATE流缩量，不是RFC线包、整轮收益或隐私证明。没有改产品/认证/发送队列/基线commit、启压或部署；新本地出站原型按新问题单独等待决定。
+
 ## QA-20261022-RAW-WIRE-COST｜默认关闭的原文片段字节归因
 
 - 既有分类已足够排除测量阶段presence：30房full＋delta占99.78765%，不新造重复全类型统计。缺口仅包内；新增local-pressure-wire-cost及纯测，接既有local-pressure-protocol/qualify/test的显式开关，固定stage/type/field，不改业务协议或负载。
