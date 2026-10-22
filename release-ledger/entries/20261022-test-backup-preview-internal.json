@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-test-backup-preview-internal",
+  "date": "2026-10-22",
+  "audience": "internal",
+  "reason": "测试服备份工具增加共用原保护规则的受锁预览入口，默认自动删除仍关闭；正式备份和业务数据不改，不在玩家日志展示内部维护工具。",
+  "paths": ["ops/server/deploy-l12-testrun-release.sh"]
+}

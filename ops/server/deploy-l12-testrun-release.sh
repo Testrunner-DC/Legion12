@@ -642,6 +642,8 @@ runtime_backup_pair_verified() {
 }
 
 prune_runtime_backup_groups() {
+  local action="${1:-apply}"
+  [[ "$action" == "apply" || "$action" == "plan" ]] || { log "runtime snapshot cleanup refused: invalid action"; return 1; }
   local row backup checksum name listing stamp record reference index keep deadline
   local -a backup_rows=() failure_records=() protected_backups=()
   assert_cleanup_root "$backup_dir" || return 1
@@ -655,7 +657,7 @@ prune_runtime_backup_groups() {
   if (( ${#backup_rows[@]} )); then
     mapfile -t backup_rows < <(printf '%s\n' "${backup_rows[@]}" | LC_ALL=C sort -r)
   fi
-  if [[ "$prune_runtime_backups_enabled" != "1" ]]; then
+  if [[ "$prune_runtime_backups_enabled" != "1" && "$action" != "plan" ]]; then
     local paired=0
     for row in "${backup_rows[@]}"; do
       backup="${row#*:}"; checksum="${backup}.sha256"
@@ -699,11 +701,16 @@ prune_runtime_backup_groups() {
     runtime_backup_pair_verified "$backup" "$deadline" \
       || { log "storage cleanup kept incomplete or unverifiable runtime snapshot: ${backup}"; return 1; }
     assert_cleanup_child "$backup" "$backup_dir" && assert_cleanup_child "$checksum" "$backup_dir" || return 1
+    if [[ "$action" == "plan" ]]; then
+      log "runtime snapshot plan: retain newest ${keep} verified groups and protected evidence; eligible one pair=${backup}; deletion=0"
+      return 0
+    fi
     rm -f -- "$backup" "$checksum" || { log "storage cleanup could not remove runtime snapshot: ${backup}"; return 1; }
     log "storage cleanup removed one verified runtime snapshot: ${backup}"
     break
   done
   # Partial, corrupt, linked and unknown files are evidence, not automatic trash.
+  if [[ "$action" == "plan" ]]; then log "runtime snapshot plan: no eligible old complete pair; deletion=0"; fi
 }
 
 prune_card_asset_versions() {
@@ -1103,6 +1110,16 @@ self_test() {
 if [[ "${1:-}" == "self-test" ]]; then
   assert_unblocked
   self_test
+  exit 0
+fi
+
+if [[ "${1:-}" == "runtime-backup-plan" ]]; then
+  (( $# == 1 )) || fail "runtime-backup-plan accepts no additional arguments"
+  assert_cleanup_root "$(dirname "$lock_file")" || fail "runtime snapshot plan lock root is unsafe"
+  [[ ! -L "$lock_file" && ( ! -e "$lock_file" || -f "$lock_file" ) ]] || fail "runtime snapshot plan lock is unsafe"
+  exec 9>>"$lock_file"
+  flock --nonblock 9 || fail "deployment is active; runtime snapshot plan did not run"
+  prune_runtime_backup_groups plan
   exit 0
 fi
 

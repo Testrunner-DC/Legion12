@@ -115,5 +115,52 @@ native_timeout=0
 timeout 0.05s sh -c 'sleep 1' || native_timeout=$?
 (( native_timeout == 124 )) || fail 'native timeout did not enforce a real child deadline'
 case_passed native-timeout-deadline
+
+seed_case plan-default-off; prune_runtime_backups_enabled=0
+prune_runtime_backup_groups plan || fail 'read-only plan failed while deletion disabled'
+assert_count 5
+for snapshot in "${snapshots[@]}"; do assert_exists "$snapshot.sha256"; done
+grep -Fq "eligible one pair=${snapshots[0]}; deletion=0" "$owner_root/operations.log" || fail 'plan did not identify the oldest verified pair'
+case_passed plan-is-read-only-and-keeps-default-off
+seed_case plan-failure-bound; failure_record "${snapshots[0]}"
+prune_runtime_backup_groups plan || fail 'protected plan failed'
+assert_count 5
+grep -Fq "eligible one pair=${snapshots[1]}; deletion=0" "$owner_root/operations.log" || fail 'plan did not preserve exact failure binding'
+case_passed plan-preserves-failure-binding
+seed_case plan-corrupt-retained; printf bad >> "${snapshots[4]}"
+if prune_runtime_backup_groups plan; then fail 'plan accepted corrupt retained snapshot'; fi
+assert_count 5; case_passed plan-refuses-corrupt-retained-group
+seed_case plan-invalid-action
+if prune_runtime_backup_groups unknown; then fail 'unknown action accepted'; fi
+assert_count 5; case_passed plan-refuses-unknown-action
+
+seed_case plan-cli
+cli_root="$owner_root/l12-testrun-deploy-behavior-plan"
+mkdir -p "$cli_root/opt/legion12-testrun-deployment" "$cli_root/run/lock"
+cp -a "$backup_dir" "$cli_root/opt/legion12-testrun-deployment/runtime-backups"
+mkdir "$cli_root/opt/legion12-testrun-deployment/failures"
+cli_backup="$cli_root/opt/legion12-testrun-deployment/runtime-backups"
+cli_run() {
+  L12_TESTRUN_DEPLOY_TEST_MODE=1 L12_TESTRUN_DEPLOY_TEST_ROOT="$cli_root" \
+    L12_TESTRUN_PRUNE_RUNTIME_BACKUPS=0 bash "$source_file" runtime-backup-plan "$@"
+}
+before="$(find "$cli_backup" -type f -exec sha256sum {} \; | LC_ALL=C sort)"
+cli_run > "$case_root/plan.log"
+[[ "$(find "$cli_backup" -type f -exec sha256sum {} \; | LC_ALL=C sort)" == "$before" ]] || fail 'CLI plan modified a backup or sidecar'
+grep -Fq 'deletion=0' "$case_root/plan.log" || fail 'CLI plan did not disclose no deletion'
+case_passed cli-plan-preserves-all-backup-bytes
+if cli_run extra > "$case_root/extra.log" 2>&1; then fail 'CLI accepted extra arguments'; fi
+case_passed cli-plan-refuses-extra-arguments
+exec 8>>"$cli_root/run/lock/legion12-testrun-deploy.lock"
+flock --nonblock 8 || fail 'cannot own synthetic deployment lock'
+if cli_run > "$case_root/busy.log" 2>&1; then fail 'CLI plan ran during deployment lock'; fi
+grep -Fq 'deployment is active' "$case_root/busy.log" || fail 'CLI lock refusal not explicit'
+exec 8>&-
+case_passed cli-plan-does-not-race-a-deployment
+printf bad >> "$cli_backup/$(basename "${snapshots[4]}")"
+if cli_run > "$case_root/corrupt.log" 2>&1; then fail 'CLI accepted a corrupt retained group'; fi
+[[ "$(find "$cli_backup" -type f -name '*.tar.gz' | wc -l)" == 5 ]] || fail 'CLI removed a backup after failed proof'
+case_passed cli-plan-refuses-corrupt-proof-without-deletion
+
 passed=1
-printf 'PASS all 25 synthetic retention cases; no service, real backup, database or player data accessed\n'
+printf 'PASS all 33 synthetic retention cases; no service, real backup, database or player data accessed\n'
