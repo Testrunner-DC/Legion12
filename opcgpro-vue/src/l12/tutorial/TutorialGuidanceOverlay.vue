@@ -332,6 +332,7 @@ let mutationObserver: MutationObserver | null = null
 let resizeObserver: ResizeObserver | null = null
 let observedElements: HTMLElement[] = []
 let refreshQueued = false
+let lastRevealedChoiceAnchor = ''
 
 function intersects(left: RectView, right: RectView) {
   return Math.min(left.left + left.width, right.left + right.width) - Math.max(left.left, right.left) > 3
@@ -384,6 +385,16 @@ function updateGeometry() {
   const viewportSize = visibleViewport()
   const viewport = { left: 0, top: 0, width: viewportSize.width, height: viewportSize.height }
   const roots = Array.from(document.querySelectorAll(anchor.selector)).filter((element): element is HTMLElement => element instanceof HTMLElement)
+  const revealIdentity = `${props.tutorial.matchId}:${props.tutorial.stepId}:${anchor.selector}:${document.documentElement.dataset.l12Rotated}`
+  const choiceTarget = roots.map(element => element.closest<HTMLElement>('.prompt-card-candidate'))
+    .find(element => element?.closest('.prompt-choice-body'))
+  if (document.documentElement.dataset.l12Mobile === 'true' && choiceTarget && lastRevealedChoiceAnchor !== revealIdentity) {
+    lastRevealedChoiceAnchor = revealIdentity
+    // A teaching reference must reveal its real interaction, not highlight a
+    // clipped portion. Reveal once per bound step/orientation, not for toolbar
+    // resizes or subsequent scrolling by the player.
+    choiceTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+  }
   const visible = roots.filter(element => visibleElement(element, viewport))
   const targets = anchor.multiple ? visible : visible.slice(0, 1)
   if (!targets.length) {

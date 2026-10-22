@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-MOBILE-CANDIDATE-CONTAINMENT｜候选卡按真实可用区定位
+
+- 用户call_ea05c863批准。两幕真实公开卡图均200/finished且240×335解码；原r2仅解码GREEN不证布局，聂隐娘候选卡图约36%被body裁切。共因是卡高取整个dialog而非扣除页头/提示/页脚后的实际body，且教学引用未揭示body中的当前候选。
+- 只在既有移动横画布内令body提供size container，共用候选高取实际剩余区并保留128px下限、等大宽度和卡名/状态槽；不足仍沿原body滚动。教学只揭示本人当前精确候选，一局/一步/selector/方向一次，不随工具栏像素变化或玩家继续滚动反复抢位；不新加步骤、自动详情、规则或指令。
+- 更强卡名守卫r3先RED；最终r6横竖两实链各6组、5类真实效果触摸/确认与恢复链通过。逐卡滚入后art/name及物理viewport/所有裁切祖先100%包含，单张登场候选初始完整；CSS/QA自身等源哈希前后稳定，browser/Vite/host均退。Main看实际截图及完整diff，独审低中风险已收窄。32教学守卫/6弹框尺寸、前端全低成本链按失败点续验、两类型与双base通过；唯一tutorial-candidate-images-20261023/main-acceptance.json。
+- 排序本来与提示/操作共用滚动区，QA使用browser scrollIntoViewIfNeeded揭示后触摸，不冒真实用户pan、iOS/Safari/微信/动态安全区、全部686能力或全18组新源验收。解释框与卡图同时完全无遮挡不是本片证明；不得把旧r2 GREEN改写为布局通过。仅本地未部署/线上关单。
+
 ## BUG-20261023-COMBAT-AUTHORITY-CONFLICT｜损坏回放不猜战斗摘要
 
 - 用户call_7f688650批准仅日志投影加固；已有正常生产链互斥/进攻ID唯一证据，不把损坏夹具冒线上事故。去重后同combatId多个attack根、invalid-block与blocked、invalid-support与supported矛盾组失败关闭；相邻正常组保留。同序号合法重传、抵挡无效后主宰伤害或军团结算仍正常展示。

@@ -180,6 +180,7 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-panel.prompt-choice-panel 
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-body {
   display: flex;
+  container-type: size;
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
@@ -218,14 +219,15 @@ html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-actio
   border-top: 1px solid rgba(150, 173, 169, .42);
 }
 html[data-l12-mobile=true][data-l12-viewport] .prompt-choice-panel .prompt-card-candidate:not(.size-featured) {
+  --l12-contained-card-h: max(128px, min(var(--l12-dialog-card-h), calc(100cqh - 4px)));
   display: grid !important;
   box-sizing: border-box;
   flex-basis: var(--l12-dialog-card-w) !important;
   width: var(--l12-dialog-card-w) !important;
   min-width: var(--l12-dialog-card-w) !important;
-  height: var(--l12-dialog-card-h) !important;
-  min-height: var(--l12-dialog-card-h) !important;
-  max-height: var(--l12-dialog-card-h) !important;
+  height: var(--l12-contained-card-h) !important;
+  min-height: var(--l12-contained-card-h) !important;
+  max-height: var(--l12-contained-card-h) !important;
   gap: 3px !important;
   padding: 3px !important;
   grid-template-rows: minmax(0, 1fr) 2.7em 1.9em;

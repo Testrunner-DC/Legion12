@@ -287,6 +287,19 @@ check('tutorial anchors expose only public own hand, library and exact practice 
   assert.match(overlaySource, /practiceInstanceId = ref/)
   assert.match(overlaySource, /tutorialFacts\(props\.tutorial, props\.game, practiceInstanceId\.value \|\| undefined\)/)
 })
+check('mobile teaching reveals only its bound card once per step and orientation', () => {
+  assert.match(overlaySource, /document\.documentElement\.dataset\.l12Mobile === 'true'/)
+  assert.match(overlaySource, /closest<HTMLElement>\('\.prompt-card-candidate'\)/)
+  assert.match(overlaySource, /lastRevealedChoiceAnchor !== revealIdentity/)
+  assert.match(overlaySource, /props\.tutorial\.matchId.*props\.tutorial\.stepId.*anchor\.selector.*dataset\.l12Rotated/)
+  assert.doesNotMatch(overlaySource.match(/const revealIdentity = .*/)?.[0] ?? '', /viewport\.width|viewport\.height/)
+  assert.match(overlaySource, /scrollIntoView\(\{ block: 'nearest', inline: 'nearest', behavior: 'instant' \}\)/)
+  assert.doesNotMatch(overlaySource, /props\.mobileLayout/)
+  const mobileCss = fs.readFileSync(path.join(front, 'src/l12/mobileViewport.css'), 'utf8')
+  assert.match(mobileCss, /\.prompt-choice-body\s*\{[^}]*container-type: size/s)
+  assert.match(mobileCss, /--l12-contained-card-h: max\(128px, min\(var\(--l12-dialog-card-h\), calc\(100cqh - 4px\)\)\)/)
+  assert.match(mobileCss, /height: var\(--l12-contained-card-h\) !important/)
+})
 check('tutorial terminology does not expose internal lesson labels', () => {
   const template = parse(overlaySource, { filename: overlayPath }).descriptor.template?.content ?? ''
   const visibleTemplate = template.replace(':data-tutorial-scene="tutorial.lessonId"', '')

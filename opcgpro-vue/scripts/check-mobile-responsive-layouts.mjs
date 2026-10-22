@@ -74,7 +74,9 @@ const densityRules = [...viewportCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/
 const mobileDensityRule = (selector, declaration) => densityRules.some(([, selectors, body]) =>
   selectors.trim().startsWith('html[data-l12-mobile=true][data-l12-viewport]')
   && selectors.includes(selector) && body.includes(declaration))
-expect(['height','min-height','max-height'].every(property => mobileDensityRule('.prompt-card-candidate:not(.size-featured)', `${property}: var(--l12-dialog-card-h) !important`))
+expect(['height','min-height','max-height'].every(property => mobileDensityRule('.prompt-card-candidate:not(.size-featured)', `${property}: var(--l12-contained-card-h) !important`))
+  && mobileDensityRule('.prompt-choice-body', 'container-type: size')
+  && mobileDensityRule('.prompt-card-candidate:not(.size-featured)', '--l12-contained-card-h: max(128px, min(var(--l12-dialog-card-h), calc(100cqh - 4px)))')
   && ['width','min-width','flex-basis'].every(property => mobileDensityRule('.prompt-card-candidate.horizontal:not(.size-featured)', `${property}: var(--l12-dialog-card-w) !important`))
   && mobileDensityRule('.prompt-card-candidate:not(.size-featured)', 'grid-template-rows: minmax(0, 1fr) 2.7em 1.9em'), 'mobile choice rows must give every orientation and state one shared peer box with reserved name/state lanes')
 expect(mobileDensityRule('.prompt-choices.response-target-list', 'grid-template-columns: minmax(0, 1fr)')
