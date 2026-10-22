@@ -2,6 +2,10 @@
 
 ## 2026-10-23 按序持续推进｜测试服共用图库，业务数据保持隔离
 
+- 五层响应798479cb本地接受：实际Handle21命令至6层、V2恢复1例；原header836px／body0的r1、真实wheel仍不可达r2均保留。人类call_324914批准后产品仅PromptOverlay一叶，完整说明进既有正文且不压缩choices。最终r4桌面／窄横40视角、20精确单命令／20非owner、12最小化恢复及逐hit真实wheel全过；Main读源／看图／SHA、AST防回退和正常前端13段／类型／双构建通过。唯一deep-response-ui/main-acceptance.json CF9E53D1；无原局／socket接管／超时归因／真机pan声明。唯一清单仅该项verify-live，其他927及928／10／537／629不变，线上0写；同步结果见该目录git-synchronization.json，未部署。
+- 两条规则正确性关单当前单挂：公开health实际546187bc／maintenance=true；四相关规则／目录文件与已验0ce26c72逐Git blob完全一致。固定关单器要求ok／maintenance=false，目前未登录／未CAS，未为关单解除维护或放宽12冻结函数；版本对应与持有原因在rule-correctness-online-hold.json。其他QA继续，不重复未变线上性能采样。
+- 性能4ddd同源复用已独立核清并物化normal-load-binding-4ddd.json（D60D3B92）：原协议363D／负载F737不改，三codec叶与4ddd逐Git内容一致、原包/清单及上次独立PID/DLL绑定通过。本地offline-proof仅准备资格、联网/账号/服务变更0；现有runner要求两服ok／maintenance=false，最近正式health仍维护，故不启动已知必拒的账号/负载流程、不擅自解除维护。后续仍须新核现场；不把历史现场当当前准入，不冒30＋10容量通过，未因本地Bug候选重部署测试服。
+
 - 本轮收口接续：神力锁定／原7费武则天两条仅新增当前规则QA，8新例＋原≤6正控9／9过、产品仍FE8E，无产品修复／原局重放声明。五条本地进度已一次自检→Apply→独立SHA读回写入唯一清单，其余923对象保留；本地928／10、537／629不变、线上写／关单0。唯一approved-batch-local-progress.json，不冒本轮又拉了最新线上总队列。
 - 进攻修复8e3403fe、等待层d5afa11c已本地提交；本条规则QA／本段同一后续提交，最终同步以同intake/git-synchronization.json为准，不把Git同步当部署。下一原30＋10容量、798479cb五层响应真实UI链、全池回库事实／隐私族和运营项仍分队列，未知规则单挂，不重跑旧负载冒根治。
 - 本轮四个已退出浏览器/Vite缓存精确删除117,742,868B（约112MiB），当前热前端／.NET构建、原失败／截图／证据保留；两完整套件另监督清理500,463,200B临时数据，不与旧批次重复计量。唯一storage-output-routing-20261016/current-bug-browser-cache-cleanup-20261023.json，仍无C生成物。

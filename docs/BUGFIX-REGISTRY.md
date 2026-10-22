@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-DEEP-RESPONSE-CONTAINMENT｜长连锁按钮本地接受，未部署
+
+- 798479cb无原局ID；不把轻量重连摘要当作断网或自动判负证据。真实目录全军出击＋交替绝对防御21条Handle，严格V2在第5层前恢复，4／5／6层10个双方投影节点完整闭合；具名DeepResponseUiFixture20261023Tests实际1／1通过。修前桌面6层header约836px／body0，合法“不响应”存在却不可达；r1及不做程序滚入、真实滚轮仍失败的r2原件保留。
+- 人类call_324914批准后仅改PromptOverlay共享呈现：完整原说明从无界header移到既有可滚正文，说明及choices保留自然高度，标题／最小化／原footer保持。扫描共享promptSituation、effect-decision-text、prompt-choice-body及OfferResponse／GameBoard消费者，无第5层截断或卡号特例；全卡池响应／目标／费用入口复用此修复，不改卡效、计时、私密投影或协议。
+- r3首40组通过但逐hit滚轮元数据不完整，原件保留；同产品r4补齐40视角＝20正确单命令＋20非owner负控、12最小化恢复、桌面3／窄横17次真实wheel、52原生中心命中，4／5／6层及短目标／弃牌费用均过。说明逐项与未改shared copy核对，初始body全部正高、零页面错／外部请求。Main读全三叶／diff、核SHA并看修前后及可达截图，正常13段／两类型／双构建全过，现有prompt合同新增AST所有权与删改／重复／回头部反例防回退。
+- 唯一deep-response-ui/main-acceptance.json（CF9E53D1…），r4报告74272718…、产品77420847…。后端产品未改，复用有效8236规则／2230平台，不重跑或冒新全套；fixture产品DLL5F9E的Git元数据与旧FE8E不同，分别绑定。真实socket接管／服务端ACK／原玩家局／超时判负与真机pan未验，不称根治这些路径。本地清单仅此项verify-live，其他927对象及实际关闭数不变；未部署、维护／线上Bug零写。
+
 ## QA-20261023-CURRENT-RULE-CORRECTNESS｜神力锁定与原7费武则天
 
 - 9cd672de原诉求“锁对面士气应该不能选择神力”已由人类明确神力视为士气；不做排除修复。原反馈有matchId／轻量诊断，但未含具体锁牌或被选资源快照；以真实瘟疫声明休整神力、实际下一所属重置保持休整／再下一次正常、普通士气正控验证共享裁定，不冒原锁牌重放或所有其他条件均正确。

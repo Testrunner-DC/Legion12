@@ -4,6 +4,8 @@ import './test-prompt-player-copy.mjs'
 import './test-inline-prompt-waiting-priority.mjs'
 import './test-a3-prompt-template-contract.mjs'
 import { promptFooterContract } from './prompt-template-contract.mjs'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+import { parse as parseTemplate } from '@vue/compiler-dom'
 import {readFileSync} from 'node:fs'
 const readSource=url=>readFileSync(url,'utf8').replace(/\r\n?/g, '\n')
 const source=readSource(new URL('../src/l12/game/PromptOverlay.vue',import.meta.url))
@@ -36,6 +38,33 @@ assert(!source.includes('naturalChoiceLabel(prompt.value?.presentation?.choiceCo
  'A choice consequence must never become its button label')
 assert(source.includes('justify-content:safe center'),'Scrollable candidates must keep their first card accessible')
 assert(source.includes('overflow-x:hidden;overflow-y:auto'),'Full effect text must not trap footer actions below a clipped panel')
+function narrativeWithinScrollableBody(text) {
+ const sfc=parseSfc(text)
+ if(sfc.errors.length || !sfc.descriptor.template) return false
+ const ast=parseTemplate(sfc.descriptor.template.content,{comments:false}),nodes=[]
+ const classes=node=>node.props?.find(prop=>prop.type===6 && prop.name==='class')?.value?.content?.split(/\s+/) ?? []
+ const walk=node=>{if(node.type===1)nodes.push(node);for(const child of node.children ?? [])walk(child)}
+ walk(ast)
+ const panels=nodes.filter(node=>node.tag==='section' && classes(node).includes('prompt-choice-panel')
+  && node.props.some(prop=>prop.type===7 && prop.name==='else-if' && prop.exp?.content==='prompt'))
+ if(panels.length!==1)return false
+ const children=panels[0].children.filter(node=>node.type===1),headers=children.filter(node=>node.tag==='header')
+ const bodies=children.filter(node=>node.tag==='main' && classes(node).includes('prompt-choice-body'))
+ if(headers.length!==1 || bodies.length!==1)return false
+ const narrative=nodes.filter(node=>classes(node).includes('prompt-situation'))
+ return narrative.length===1 && bodies[0].children.includes(narrative[0])
+  && narrative[0].props.some(prop=>prop.type===7 && prop.name==='if' && prop.exp?.content==='promptSituation')
+  && narrative[0].children.some(node=>node.type===5 && node.content.content==='isEffectDecision ? decisionEffectText : promptSituation')
+  && !headers[0].children.some(node=>node.type===1 && classes(node).includes('effect-decision-text'))
+}
+assert(narrativeWithinScrollableBody(source),'Complete chain narrative must belong to the existing scroll body, not the unbounded header')
+const narrative=source.match(/<p v-if="promptSituation" class="prompt-situation effect-decision-text l12-effect-body">[\s\S]*?<\/p>/)?.[0]
+assert(narrative,'Preserve the single full narrative binding')
+assert(!narrativeWithinScrollableBody(source.replace(narrative,'').replace('<header :class="{ \'effect-decision-header\': isEffectDecision }">',`<header :class="{ 'effect-decision-header': isEffectDecision }">${narrative}`)),'Header regression must be rejected')
+assert(!narrativeWithinScrollableBody(source.replace(narrative,'')),'Deleting the narrative must not pass containment')
+assert(!narrativeWithinScrollableBody(source.replace(narrative,narrative+narrative)),'Duplicating the narrative must not pass containment')
+assert(!narrativeWithinScrollableBody(source.replace('isEffectDecision ? decisionEffectText : promptSituation','promptTitle')),'A shortened title must not replace the full narrative')
+assert(source.includes('.prompt-choice-body>.prompt-situation,.prompt-choice-body>.prompt-choices{flex:0 0 auto}'),'Scrollable text and choices must retain intrinsic height')
 assert(source.includes('.prompt-choices.effect-option-list{display:grid;width:100%;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));grid-auto-rows:1fr'))
 assert(source.includes('height:auto;min-height:82px!important;max-height:none;overflow:visible'), 'Equal options must grow together without clipping consequences')
 assert(source.includes('displayedChoices.value.filter(id => !isDeclineChoice(id))'))

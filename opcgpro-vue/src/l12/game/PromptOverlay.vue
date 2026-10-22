@@ -872,13 +872,13 @@ function kindLabel() {
       <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
-          <p v-if="promptSituation" class="effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
         </header>
         <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body"
           @touchstart.passive="onChoiceBodyTouchStart" @touchmove="onChoiceBodyTouchMove" @touchend="onChoiceBodyTouchEnd" @touchcancel="onChoiceBodyTouchEnd">
+        <p v-if="promptSituation" class="prompt-situation effect-decision-text l12-effect-body">{{ isEffectDecision ? decisionEffectText : promptSituation }}</p>
         <div class="prompt-task-context" :data-actor-state="promptActor.state"><span class="prompt-actor">{{ promptActor.label }}</span><span v-if="!isPureEffectDecision && prompt.data?.choiceMode !== 'instant'" class="prompt-selection-range" role="status">{{ promptSelectionRange }} · {{ promptPendingSelection }}</span><span v-else class="prompt-selection-range">{{ promptSelectionRange }}</span></div>
         <p v-if="promptInstruction" class="prompt-instruction">{{ promptInstruction }}</p>
         <p v-if="prompt.presentation?.paymentStatus && prompt.presentation?.paymentSummary" class="prompt-payment-state"
@@ -1204,6 +1204,7 @@ function kindLabel() {
 .prompt-task-context{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;margin:8px 3px 0;color:#e8e2cc;font-size:var(--l12-board-copy,13px);font-weight:800;line-height:1.4}.prompt-task-context>span{padding:4px 8px;border:1px solid #43504d;background:#0c1213}.prompt-task-context .prompt-selection-range{min-width:0;flex:1 1 180px;color:#e8e2cc}.prompt-task-context[data-actor-state="self"] .prompt-actor{border-color:#4d9e72;background:#0d1c15;color:#79e4a3}.prompt-task-context[data-actor-state="opponent"] .prompt-actor{border-color:#8f454b;background:#1d1012;color:#ef9297}
 .prompt-information-panel{display:flex;flex-direction:column;overflow:hidden}
 .prompt-information-panel>.prompt-choice-body{min-height:0;flex:1 1 auto;overflow-x:hidden;overflow-y:auto}
+.prompt-choice-body>.prompt-situation,.prompt-choice-body>.prompt-choices{flex:0 0 auto}
 /* Sorting cards have an intrinsic height. Keep their grid from shrinking over
    operation/direction text; the existing mobile choice body owns overflow. */
 :global(html[data-l12-mobile="true"][data-l12-viewport] .l12-prompt-overlay.mobile-safe-overlay .prompt-choice-body > :is(.all-placement-workspace,.placement-workspace)){
