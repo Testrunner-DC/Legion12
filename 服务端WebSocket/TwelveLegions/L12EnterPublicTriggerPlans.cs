@@ -439,6 +439,7 @@ public sealed partial class L12GameEngine
                     AddPresentationEvent("reveal", candidate.Controller,
                         $"赫拉克勒斯·晋升展示〈{card.Name}〉并放回牌库顶部",
                         "S02-0501", "promotion-cost-declaration", card);
+                    PublishLibraryReturn(candidate.Controller, candidate.Controller, "top", [card], true);
                 }
                 else if (plan == "horemheb")
                 {

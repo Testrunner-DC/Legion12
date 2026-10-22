@@ -868,6 +868,15 @@ public sealed record L12PlayerCardStateTransition(
     bool FromTapped,
     bool ToTapped);
 
+/// <summary>成功回库的公开数量/方向事实；不包含隐藏身份或排列索引。</summary>
+public sealed record L12PlayerLibraryReturn(
+    string OperationId,
+    int LibraryOwner,
+    int TopCount,
+    int BottomCount,
+    int ShuffledCount,
+    bool IdentitiesPublic);
+
 public sealed record L12ActionEvent(
     long Sequence,
     string Type,
@@ -903,6 +912,8 @@ public sealed record L12ActionEvent(
     public string? PlayerLogDecisionLabel { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerLogSemantic? PlayerLogSemantic { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public L12PlayerLibraryReturn? PlayerLibraryReturn { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public L12PlayerCombatPresentation? PlayerCombat { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -947,6 +958,9 @@ public sealed class L12GameState
     /// <summary>新局声明可使用确定由盖伏来源离场腾出的己方格位；旧尾保留原候选。</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool SourceVacatedEntrySlotProtocolEnabled { get; init; }
+    /// <summary>新V2局发布结构化回库事实；旧检查点缺省关闭以保留Journal尾字节。</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LibraryReturnFactsProtocolEnabled { get; init; }
     public required string MatchId { get; init; }
     public required string RoomCode { get; init; }
     public required int Seed { get; init; }

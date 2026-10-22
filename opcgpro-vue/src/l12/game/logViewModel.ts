@@ -1,4 +1,4 @@
-import type { ActionEvent, Card } from '../types'
+import type { ActionEvent, Card, PlayerLibraryReturn } from '../types'
 import { battlefieldSlotLabel } from './battlefieldTargetPresentation.ts'
 
 export type IconKind = 'attack' | 'defense' | 'support' | 'effect' | 'disaster'
@@ -123,7 +123,8 @@ function line(sequence: number, icon: IconKind, actor: LogLineRow['actor'], part
 function groupedIndexes(events: ActionEvent[], groupId: string) {
   const indexes: number[] = []
   events.forEach((event, index) => {
-    if (event.playerLogGroupId === groupId) indexes.push(index)
+    if (event.playerLogGroupId === groupId
+      && !(event.playerLibraryReturn != null && LIBRARY_RETURN_EVENT_TYPES.has(event.type))) indexes.push(index)
   })
   return indexes
 }
@@ -144,15 +145,76 @@ function disasterValueText(event: ActionEvent): string | null {
   return before === after ? `天灾值保持 ${after}` : `天灾值 ${before}→${after}`
 }
 
+type LibraryReturnReceipt = Required<PlayerLibraryReturn>
+const LIBRARY_RETURN_EVENT_TYPES = new Set(['return', 'library', 'reorder', 'leave', 'promotion-stack-leave'])
+
+// A host leave is attributed to its controller; promotion foundations and the
+// destination return are attributed to the original owner. Both can be members
+// of one actual operation. Keep raw actors intact and normalize only this log key.
+function libraryReturnLogActor(event: ActionEvent) {
+  return event.type === 'leave' ? event.playerLibraryReturn?.libraryOwner : event.playerIndex
+}
+
+function libraryReturnOperationKey(event: ActionEvent): string | null {
+  if (!LIBRARY_RETURN_EVENT_TYPES.has(event.type)
+    || (event.playerIndex !== 0 && event.playerIndex !== 1)) return null
+  const id = event.playerLibraryReturn?.operationId
+  return typeof id === 'string' && /^library-return:[01]:[1-9][0-9]*$/.test(id)
+    ? `${id}|${libraryReturnLogActor(event)}` : null
+}
+
+function libraryReturnReceipt(event: ActionEvent): LibraryReturnReceipt | null {
+  if (!libraryReturnOperationKey(event)) return null
+  const fact = event.playerLibraryReturn
+  const operation = typeof fact?.operationId === 'string'
+    ? /^library-return:([01]):([1-9][0-9]*)$/.exec(fact.operationId) : null
+  if (!fact || !operation || Number(operation[1]) !== fact.libraryOwner
+    || (event.playerLogGroupId != null && event.playerLogGroupId !== fact.operationId)
+    || !Number.isSafeInteger(Number(operation[2])) || !Number.isSafeInteger(event.sequence)
+    || event.sequence < Number(operation[2]) || typeof fact.identitiesPublic !== 'boolean') return null
+  const counts = [fact.topCount, fact.bottomCount, fact.shuffledCount]
+  if (counts.some(count => typeof count !== 'number' || !Number.isInteger(count)
+    || count < 0 || count > 2147483647)) return null
+  const total = counts.reduce<number>((sum, count) => sum + (count ?? 0), 0)
+  if (total <= 0 || total > 2147483647
+    || (fact.shuffledCount! > 0 && (fact.topCount! > 0 || fact.bottomCount! > 0))) return null
+  return fact as LibraryReturnReceipt
+}
+
+function projectLibraryReturns(events: ActionEvent[], you: number, neutralView: boolean): LogLineRow | null {
+  const receipts = events.map(libraryReturnReceipt)
+  if (!receipts.length || receipts.some(fact => !fact)) return null
+  const first = receipts[0]!
+  if (receipts.some(fact => fact!.operationId !== first.operationId
+    || fact!.libraryOwner !== first.libraryOwner)
+    || events.some(event => libraryReturnLogActor(event) !== libraryReturnLogActor(events[0]))) return null
+  const top = receipts.reduce((sum, fact) => sum + fact!.topCount, 0)
+  const bottom = receipts.reduce((sum, fact) => sum + fact!.bottomCount, 0)
+  const shuffled = receipts.reduce((sum, fact) => sum + fact!.shuffledCount, 0)
+  if (top + bottom + shuffled > 2147483647 || shuffled > 0 && top + bottom > 0) return null
+  // Cards come exclusively from this recipient's projection, never from the
+  // identity-public flag, an earlier leave, raw text or another viewer's state.
+  const cards = [...new Map(events.flatMap(publicCards)
+    .map(card => [card.instanceId || `${card.cardId}:${card.name}`, card])).values()]
+  const destination = shuffled ? '返回牌库并重洗'
+    : top && bottom ? '返回牌库' : bottom ? '返回牌库底部' : '返回牌库顶部'
+  return line(events[0].sequence, 'info', side(first.libraryOwner, you, neutralView), [
+    ...cardParts(cards), { text: `${destination}（${top + bottom + shuffled}张）` },
+  ], top && bottom ? [
+    { value: `顶部 ${top}张`, tone: 'info' }, { value: `底部 ${bottom}张`, tone: 'info' },
+  ] : [])
+}
+
 const structuredFactKeys = [
   'playerLogSemantic', 'playerCombat', 'playerBattlefieldMovement',
-  'playerPublicPlacement', 'playerTroopsModifier', 'playerDisasterValue', 'playerSelectedTargets',
+  'playerPublicPlacement', 'playerTroopsModifier', 'playerDisasterValue', 'playerSelectedTargets', 'playerLibraryReturn',
 ] as const
 type StructuredFactKey = typeof structuredFactKeys[number]
 
 function hasUsableStructuredFact(event: ActionEvent, key: StructuredFactKey) {
   const fact = event[key]
   if (!fact) return false
+  if (key === 'playerLibraryReturn') return libraryReturnReceipt(event) !== null
   if (key === 'playerDisasterValue') return disasterValueText(event) !== null
   if (key === 'playerBattlefieldMovement') return projectBattlefieldMovement(event, 0, false) !== null
   if (key === 'playerPublicPlacement') return projectPublicPlacement(event, 0, false) !== null
@@ -231,8 +293,11 @@ function coalesceDuplicateEvents(events: ActionEvent[]): ActionEvent | null {
   if (divergentIdentity) set('cards', [])
   for (const key of structuredFactKeys) {
     if (globallyConflictingFacts.has(key)
+      || (key === 'playerLibraryReturn' && events.some(event => event[key] != null && !hasUsableStructuredFact(event, key)))
       || (divergentIdentity && key !== 'playerDisasterValue')) {
-      set(key, undefined)
+      // Preserve an invalid marker so ambiguous return receipts cannot fall
+      // through to untrusted legacy text and guess a top/bottom destination.
+      set(key, key === 'playerLibraryReturn' && events.some(event => event.playerLibraryReturn != null) ? {} : undefined)
       continue
     }
     const facts = factSources.filter(event => hasUsableStructuredFact(event, key))
@@ -679,6 +744,10 @@ function projectSelectedTargets(event: ActionEvent, you: number, neutralView: bo
 }
 
 function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], costDetails: LogPart[] = [], neutralView = false): LogLineRow | null {
+  if (event.playerLibraryReturn != null && LIBRARY_RETURN_EVENT_TYPES.has(event.type)) {
+    return projectLibraryReturns([event], you, neutralView)
+      ?? line(event.sequence, 'info', side(event.playerIndex, you, neutralView), [{ text: '返回牌库（位置未记录）' }])
+  }
   if (event.type === 'target-selected') return projectSelectedTargets(event, you, neutralView)
   if (event.type === 'troops-modifier') return projectTroopsModifier(event, you, neutralView)
   const movement = projectBattlefieldMovement(event, you, neutralView)
@@ -740,12 +809,14 @@ function projectLine(event: ActionEvent, you: number, costs: LogBadge[] = [], co
         [{ value: `${countFrom(event.text, cards.length)}张`, tone: 'info' }])
     }
     case 'library': return line(event.sequence, 'info', actor,
-      [cardPart(card), { text: event.text.includes('底部') ? '返回牌库底部' : '返回牌库顶部' }])
+      [cardPart(card), { text: event.text.includes('底部') ? '返回牌库底部'
+        : event.text.includes('顶部') ? '返回牌库顶部' : '返回牌库（位置未记录）' }])
     case 'reorder': {
-      const top = numberAfter(event.text, /([0-9]+)\s*张牌放回牌库顶部/)
-      const bottom = numberAfter(event.text, /([0-9]+)\s*张牌放回牌库底部/)
+      const top = /([0-9]+)\s*张牌放回牌库顶部/.exec(event.text)
+      const bottom = /([0-9]+)\s*张牌放回牌库底部/.exec(event.text)
       return line(event.sequence, 'info', actor, [{ text: '整理牌库' }], [
-        { value: `顶部 ${top}张`, tone: 'info' }, { value: `底部 ${bottom}张`, tone: 'info' },
+        ...(top ? [{ value: `顶部 ${top[1]}张`, tone: 'info' as const }] : []),
+        ...(bottom ? [{ value: `底部 ${bottom[1]}张`, tone: 'info' as const }] : []),
       ])
     }
     case 'attach': {
@@ -951,6 +1022,12 @@ function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number,
 
 export function projectLog(events: ActionEvent[], you: number, _names: string[], neutralView = false): LogRow[] {
   const ordered = orderedUniqueEvents(events)
+  const returnGroups = new Map<string, number[]>()
+  const returnKey = libraryReturnOperationKey
+  ordered.forEach((event, index) => {
+    const key = returnKey(event)
+    if (key) returnGroups.set(key, [...(returnGroups.get(key) ?? []), index])
+  })
   const combats = new Map<string, ActionEvent[]>()
   for (const event of ordered) {
     const id = event.playerCombat?.combatId
@@ -971,6 +1048,29 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
     if (consumed.has(index)) continue
     const event = ordered[index]
     if (event.playerCombat?.combatId && conflictedCombats.has(event.playerCombat.combatId)) continue
+    const key = returnKey(event)
+    const receiptIndexes = key ? returnGroups.get(key)! : []
+    if (key) {
+      const row = projectLibraryReturns(receiptIndexes.map(item => ordered[item]), you, neutralView)
+      // Contradictory operation totals are not an excuse to choose a subset.
+      receiptIndexes.forEach(item => consumed.add(item))
+      rows.push(row ?? line(event.sequence, 'info', side(event.playerIndex, you, neutralView), [{ text: '返回牌库（位置未记录）' }]))
+      continue
+    }
+    if (event.type === 'leave' && event.playerLogGroupId?.startsWith('library-return:')) {
+      // A controlled card can leave one player's field for its original owner's
+      // library. Their actors differ, but the producer's exact operation includes
+      // that destination owner. Never infer the link from card ID or adjacency.
+      const pairedGroups = [...returnGroups.entries()]
+        .filter(([groupKey]) => groupKey.startsWith(`${event.playerLogGroupId}|`))
+      if (pairedGroups.length === 1
+        && projectLibraryReturns(pairedGroups[0][1].map(item => ordered[item]), you, neutralView)) continue
+    }
+    if (event.playerLibraryReturn != null || event.playerLogGroupId?.startsWith('library-return:')) {
+      const row = projectLine(event, you, [], [], neutralView)
+      if (row) rows.push(row)
+      continue
+    }
     if (event.type === 'turn-start') {
       rows.push({ kind: 'turn', sequence: event.sequence, round: numberAfter(event.text, /第\s*(\d+)\s*回合/, 0), side: side(event.playerIndex, you, neutralView) ?? (neutralView ? '上方' : '对方') })
       if (event.playerLogGroupId) {

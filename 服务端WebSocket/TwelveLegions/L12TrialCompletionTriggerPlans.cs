@@ -265,13 +265,15 @@ public sealed partial class L12GameEngine
             }
             if (segment == 1)
             {
-                foreach (var arthur in player.Graveyard.Where(card => card.CardId == "S02-0601").ToArray())
+                var returned = player.Graveyard.Where(card => card.CardId == "S02-0601").ToArray();
+                foreach (var arthur in returned)
                 {
                     player.Graveyard.Remove(arthur);
                     ResetCardForPrivateZone(arthur);
                     player.Library.Add(arthur);
                 }
                 ShuffleLibrary(player, "湖中仙女的馈赠返回墓地亚瑟王并重洗");
+                PublishLibraryReturn(item.Controller, item.Controller, "shuffled", returned, true);
                 FinishStackItem(item);
                 return;
             }

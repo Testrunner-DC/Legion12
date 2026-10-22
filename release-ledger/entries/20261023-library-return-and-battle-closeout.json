@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-library-return-and-battle-closeout",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "回库记录与对战操作完善",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "杨戬及同类回库效果公开成功放回牌库顶、底的位置和张数，私密卡牌身份与顺序仍保密；同一次操作的多张回库合并显示日志，逐张移动与动画保留，回库后重洗不再误报顶底位置。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "服务端WebSocket/TwelveLegions/L12LibraryReturnEvents.cs",
+        "服务端WebSocket/TwelveLegions/L12RecipientVisibility.cs",
+        "服务端WebSocket/TwelveLegions/L12ActiveAbilities.cs",
+        "服务端WebSocket/TwelveLegions/L12S1FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S2FactionEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12EffectContinuations.cs",
+        "服务端WebSocket/TwelveLegions/L12Disasters.cs",
+        "服务端WebSocket/TwelveLegions/L12S2CounterTactics.cs",
+        "服务端WebSocket/TwelveLegions/L12AttackPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12EnterPublicTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12AuthoritativeCardZones.cs",
+        "服务端WebSocket/TwelveLegions/L12TrialCompletionTriggerPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12LibraryPlacementTransactions.cs",
+        "opcgpro-vue/src/l12/types.ts",
+        "opcgpro-vue/src/l12/replayModel.ts",
+        "opcgpro-vue/src/l12/game/logViewModel.ts"
+      ]
+    },
+    {
+      "category": "card-effects",
+      "text": "暴怒之罪只要求优先进攻真正可被进攻的军团，不再被受保护的汉尼拔挡住其他合法进攻；阿塔兰忒·晋升与源义经先确定进攻时兵力基值，再叠加应生效的持续增减。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs"]
+    },
+    {
+      "category": "ui",
+      "text": "自己的目标、格位或资源选择优先保持可操作，不再被对手等待提示挡住；长连锁的完整说明可在正文滚动查看，响应、不响应和最小化按钮保持可达。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/PromptOverlay.vue", "opcgpro-vue/src/l12/mobileViewport.css"]
+    }
+  ]
+}

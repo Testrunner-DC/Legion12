@@ -436,9 +436,15 @@ public sealed partial class L12GameEngine
         if (card is null) { FinishStackItem(item); return; }
         if (choice == "bottom")
         {
-            player.Library.Remove(card); player.Library.Add(card); FinishStackItem(item); return;
+            player.Library.Remove(card); player.Library.Add(card);
+            PublishLibraryReturn(item.Controller, item.Controller, "bottom", [card], true, placementOnly: true);
+            FinishStackItem(item); return;
         }
-        if (choice == "top") { FinishStackItem(item); return; }
+        if (choice == "top")
+        {
+            PublishLibraryReturn(item.Controller, item.Controller, "top", [card], true, placementOnly: true);
+            FinishStackItem(item); return;
+        }
         BeginEffectMoraleReturn(item, 1, "lijing-recruit", new() { ["card"] = card.InstanceId });
     }
 
@@ -620,12 +626,15 @@ public sealed partial class L12GameEngine
     private void CompleteOiranOrder(L12StackItem item, List<string> order)
     {
         var player = State.Players[item.Controller];
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
             if (card is null) continue;
             player.Library.Remove(card); player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 

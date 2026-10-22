@@ -130,17 +130,29 @@ public sealed partial class L12GameEngine
         var owner = CardOwner(card, State.Players[fallbackOwner]);
         if (location.Zone == "field")
         {
+            var beforeMove = State.EventSequence;
             if (!MoveFieldCardToZone(location.Host, card, "library-top", reason))
             {
                 error = "战场实例已失效";
                 return false;
             }
             moved = card;
+            // A departure replacement can succeed without returning to the library.
+            if (State.LibraryReturnFactsProtocolEnabled && !owner.Library.Contains(card)) return true;
+            var leave = State.Events.LastOrDefault(entry => entry.Sequence > beforeMove
+                && entry.Type == "leave" && entry.PlayerLibraryReturn is not null
+                && entry.Cards.Any(visible => visible.InstanceId == card.InstanceId));
             AddEvent("return", owner.PlayerIndex, $"{card.Name}返回所有者牌库顶部", card);
+            if (leave?.PlayerLibraryReturn is { } fact)
+            {
+                ReplaceLibraryReturnEvent(leave with { PlayerLibraryReturn = null });
+                AttachLastLibraryReturnFact(owner.PlayerIndex, "top", 1, fact.IdentitiesPublic, fact.OperationId);
+            }
             return true;
         }
 
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
+        var identitiesPublic = location.Zone is not ("hand" or "library") && !card.Hidden;
         if (!RemoveAuthoritativeLocation(location))
         {
             error = "真实实例的来源区域已失效";
@@ -150,14 +162,17 @@ public sealed partial class L12GameEngine
             DiscardAttachedCards(card, $"{card.Name}离开圣物区");
         ResetCardForPrivateZone(card);
         owner.Library.Insert(0, card);
+        var operation = LibraryReturnOperationId(owner.PlayerIndex);
         if (location.Zone is "relic" or "extra")
         {
             AddEvent("leave", location.Host.PlayerIndex, $"{card.Name}{reason}", card);
+            AttachLibraryReturnOperation(State.LastAction!.Sequence, operation);
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(location.Host.PlayerIndex, sourceSnapshot,
                 includeTombConstruct: true, wasDefeated: false));
         }
         QueueReturnedToLibraryTopTrigger(fallbackOwner, sourceSnapshot);
         AddEvent("return", owner.PlayerIndex, $"{card.Name}返回所有者牌库顶部", card);
+        AttachLastLibraryReturnFact(owner.PlayerIndex, "top", 1, identitiesPublic, operation);
         moved = card;
         return true;
     }

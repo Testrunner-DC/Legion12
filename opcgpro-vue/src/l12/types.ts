@@ -28,6 +28,7 @@ export interface ActionEvent {
   playerSelectedTargets?: PlayerSelectedTargets
   playerDisasterValue?: PlayerDisasterValue
   playerCardStateTransition?: PlayerCardStateTransition
+  playerLibraryReturn?: PlayerLibraryReturn
   playerPresentationFactSequences?: number[]
   cards?: Card[]
 }
@@ -36,6 +37,16 @@ export interface PlayerCardStateTransition {
   instanceId: string
   fromTapped: boolean
   toTapped: boolean
+}
+
+/** Completed library movement. Optional members keep malformed/legacy input untrusted. */
+export interface PlayerLibraryReturn {
+  operationId?: string
+  libraryOwner?: number
+  topCount?: number
+  bottomCount?: number
+  shuffledCount?: number
+  identitiesPublic?: boolean
 }
 
 export interface PlayerBattlefieldMovementFact {

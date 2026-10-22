@@ -20,8 +20,10 @@ public sealed class ArchitectureP1ContractFreezeTests
     [Fact]
     public void FrozenContractManifestMatchesTheCurrentKernelBoundary()
     {
-        var first = CreateEngine();
-        var second = CreateEngine();
+        // Preserve the committed pre-return manifest byte-for-byte. The new optional
+        // event property and capability are frozen independently below.
+        var first = CreateBeforeLibraryReturnEngine();
+        var second = CreateBeforeLibraryReturnEngine();
         var actual = Capture(first);
 
         Assert.Equal(actual, Capture(second));
@@ -79,7 +81,43 @@ public sealed class ArchitectureP1ContractFreezeTests
         nameof(L12GameState.OwnerTurnEndModifierProtocolEnabled),
         nameof(L12GameState.AttackBuffLogProtocolEnabled),
         nameof(L12GameState.SourceVacatedEntrySlotProtocolEnabled),
+        nameof(L12GameState.LibraryReturnFactsProtocolEnabled),
     ];
+
+    [Fact]
+    public void LibraryReturnAddsOnlyItsOptionalEventPropertyAndExplicitNewV2Capability()
+    {
+        var current = CreateEngine();
+        Assert.True(current.State.LibraryReturnFactsProtocolEnabled);
+        var legacy = CreateBeforeLibraryReturnEngine();
+        Assert.False(legacy.State.LibraryReturnFactsProtocolEnabled);
+        Assert.DoesNotContain(nameof(L12GameState.LibraryReturnFactsProtocolEnabled), legacy.SerializeFullState());
+        var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        Assert.True(checkpoint.Remove(nameof(L12GameState.LibraryReturnFactsProtocolEnabled)));
+        Assert.Equal(legacy.SerializeFullState(), checkpoint.ToJsonString());
+        var property = typeof(L12ActionEvent).GetProperty(nameof(L12ActionEvent.PlayerLibraryReturn))!;
+        Assert.Equal(typeof(L12PlayerLibraryReturn), property.PropertyType);
+        Assert.Equal(System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            property.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>()!.Condition);
+        Assert.Equal(new[] { "BottomCount", "IdentitiesPublic", "LibraryOwner", "OperationId", "ShuffledCount", "TopCount" },
+            typeof(L12PlayerLibraryReturn).GetProperties().Select(item => item.Name).Order(StringComparer.Ordinal));
+        var oldEvent = new L12ActionEvent(1, "return", 0, "legacy", []);
+        Assert.DoesNotContain("playerLibraryReturn", JsonSerializer.Serialize(oldEvent, WireJson));
+        var currentViews = new[] { current.SnapshotFor(0), current.SnapshotFor(1), current.SnapshotForSpectator(), current.SnapshotForReferee() };
+        var legacyViews = new[] { legacy.SnapshotFor(0), legacy.SnapshotFor(1), legacy.SnapshotForSpectator(), legacy.SnapshotForReferee() };
+        for (var index = 0; index < currentViews.Length; index++)
+            Assert.Equal(JsonSerializer.Serialize(legacyViews[index], WireJson),
+                JsonSerializer.Serialize(currentViews[index] with { StateHash = legacyViews[index].StateHash }, WireJson));
+    }
+
+    private static L12GameEngine CreateBeforeLibraryReturnEngine()
+    {
+        var current = CreateEngine();
+        var checkpoint = JsonNode.Parse(current.SerializeFullState())!.AsObject();
+        Assert.True(checkpoint.Remove(nameof(L12GameState.LibraryReturnFactsProtocolEnabled)));
+        return L12GameEngine.RestoreCheckpoint(Catalog, checkpoint.ToJsonString(), current.RandomState!.Value,
+            current.CardFactSignalSequence, current.AutoPassEmptyResponses, current.ConcealHiddenResponseAvailability);
+    }
 
     private static L12GameEngine CreatePriorProtocolEngine()
     {
@@ -238,6 +276,8 @@ public sealed class ArchitectureP1ContractFreezeTests
     {
         var canonical = types.OrderBy(type => type.FullName, StringComparer.Ordinal)
             .SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                // Exact additive surface is asserted above; do not rebase prior golden hashes.
+                .Where(property => type != typeof(L12ActionEvent) || property.Name != nameof(L12ActionEvent.PlayerLibraryReturn))
                 .OrderBy(property => property.Name, StringComparer.Ordinal)
                 .Select(property => $"{type.FullName}|{property.Name}|{CanonicalType(property.PropertyType)}|"
                     + $"read:{property.GetMethod is not null}|write:{property.SetMethod is not null}"));

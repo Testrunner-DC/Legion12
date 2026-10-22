@@ -614,6 +614,7 @@ public sealed partial class L12GameEngine
                     {
                         player.Library.Remove(top);
                         player.Library.Add(top);
+                        PublishLibraryReturn(item.Controller, item.Controller, "bottom", [top], true, placementOnly: true);
                     }
                 }
                 Finish(); return true;

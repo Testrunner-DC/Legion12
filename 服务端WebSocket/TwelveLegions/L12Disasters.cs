@@ -563,6 +563,7 @@ public sealed partial class L12GameEngine
                 ResetCardForPrivateZone(card);
                 player.Library.Add(card);
             }
+            PublishLibraryReturn(index, index, "bottom", cards.Values, false);
             if (!Draw(player, 4)) SetWinner(1 - index, "天启默示录抽牌时牌库为空");
         }
         FinishStackItem(item);
@@ -604,11 +605,14 @@ public sealed partial class L12GameEngine
     private void ContinueEndDisasterHand(L12Prompt prompt, List<string> chosen)
     {
         var player = State.Players[prompt.PlayerIndex];
+        var returned = new List<L12CardInstance>();
         foreach (var id in chosen)
         {
             var card = player.Hand.First(candidate => candidate.InstanceId == id);
             player.Hand.Remove(card); ResetCardForPrivateZone(card); player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryReturn(prompt.PlayerIndex, prompt.PlayerIndex, "bottom", returned, false);
         CompleteEndTurn(prompt.PlayerIndex);
     }
 }

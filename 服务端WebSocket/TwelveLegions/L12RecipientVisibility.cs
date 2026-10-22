@@ -242,6 +242,36 @@ internal static class L12RecipientVisibility
         actionEvent = ProjectSelectedTargetsEvent(ProjectCardStateTransitionEvent(ProjectDisasterValueEvent(ProjectTroopsModifierEvent(ProjectPublicPlacementEvent(
             ProjectBattlefieldMovementEvent(ProjectCombatEvent(
                 L12TrialProgressVisibility.PublicEvent(actionEvent))))))));
+        var libraryReturn = actionEvent.PlayerLibraryReturn;
+        if (libraryReturn is null && actionEvent.Type == "leave" && actionEvent.PlayerLogGroupId is { } returnOperation
+            && returnOperation.StartsWith("library-return:", StringComparison.Ordinal))
+        {
+            // The operation can contain both public foundations and a hidden host.
+            // Only its explicit, unique per-card return receipt describes this leave.
+            var matchingReturns = state.Events.Where(entry => entry.Type == "return"
+                && entry.PlayerLibraryReturn?.OperationId == returnOperation
+                && actionEvent.Cards.Length == 1 && entry.Cards.Length == 1
+                && actionEvent.Cards[0].InstanceId == entry.Cards[0].InstanceId)
+                .Take(2).ToArray();
+            if (matchingReturns.Length == 1) libraryReturn = matchingReturns[0].PlayerLibraryReturn;
+            else
+                return new L12ActionEvent(actionEvent.Sequence, actionEvent.Type, actionEvent.PlayerIndex,
+                    "卡牌离场返回牌库", []) { PlayerLogGroupId = returnOperation, PlayerLogTiming = actionEvent.PlayerLogTiming };
+        }
+        if (libraryReturn is { IdentitiesPublic: false })
+        {
+            if (revealAllHands || libraryReturn.LibraryOwner == viewer)
+                return actionEvent.Type == "private-return" ? actionEvent with { Type = "return" } : actionEvent;
+            return new L12ActionEvent(actionEvent.Sequence,
+                actionEvent.Type == "private-return" ? "return" : actionEvent.Type,
+                actionEvent.PlayerIndex, actionEvent.PlayerLibraryReturn is null
+                    ? "卡牌离场返回牌库" : L12LibraryReturnFacts.PublicText(libraryReturn), [])
+            {
+                PlayerLibraryReturn = actionEvent.PlayerLibraryReturn,
+                PlayerLogGroupId = libraryReturn.OperationId,
+                PlayerLogTiming = actionEvent.PlayerLogTiming,
+            };
+        }
         if (actionEvent.Type == "private-return")
             return revealAllHands || actionEvent.PlayerIndex == viewer
                 ? actionEvent with { Type = "return" }

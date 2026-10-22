@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-LIBRARY-RETURN-FACTS｜全族本地接受，尚未部署
+
+- 人类明确杨戬／同类回库：私密牌面、身份与内部顺序不公开，成功放顶／底及张数公开；同次实际操作只合并玩家日志，不合并逐牌权威移动或动画。复用324卡池→51命中→排10非回库得到41卡＋2语义复用的现有分类，不把全部命中冒作已证Bug。原杨戬双方×直接／分步×顶／底8实际Handle均因公开文字缺方向RED，贯穿4正反对照通过；backend/red-r1保留。
+- P2/P3沿既有可选事实与NewV2能力位：六键playerLibraryReturn只记录operationId、库所有者及成功top/bottom/shuffled数量、IdentitiesPublic；不含私密ID／顺序索引。operation固定library-return:{owner}:{首个公开sequence}，费用／效果／独立子段分开。旧检查点缺位false，旧日志无事实不猜；新字段和新事件均由能力位约束，完整兼容／全族与最终Release尚待下条实际证据。
+- Main前端以recipient.cards为唯一身份来源，支持return/library/reorder/leave及真实promotion-stack-leave；按精确operation＋owner集纳、矛盾actor不并组，不靠卡名／邻近猜。真实受控军团的leave.actor为控制者而return.actor为原持有者，故成对leave只在精确operation且唯一可验证return组下折叠；这是权威事件技术合同修正，不改卡效裁定或把leave重复计数。原raw事件、sequence与动画输入不变。
+- 前端首RED保留。独审四缺口（费用混入、损坏成员择有效、广义effect吞回库、旧reorder造0）均修复并加反例；最终43专项、原71日志／67回放、正常九链及最终类型／双构建通过。31真实引擎夹具×4接收者共124日志／回放通过；真实host与foundation actor差异曾RED，仅leave精确operation键按库所有者归一后GREEN。
+- 后端初始191过后，Main独审新增多卡借公开基底、场上／圣物缺失回执3个真实RED，均改为缺失／歧义即匿名，最终受影响62过；旧Journal／黄金及贯穿正控保留。唯一main-acceptance.json SHA B5ADC81DA41E4412DD6BA9DF97BBEE47DF46714B734D59623336624A76541275绑定25源及原失败。未称41张逐一E2E、最终后端全量、浏览器或线上通过；完整Release与同包两服发布随后。
+
 ## BUG-20261023-DEEP-RESPONSE-CONTAINMENT｜长连锁按钮本地接受，未部署
 
 - 798479cb无原局ID；不把轻量重连摘要当作断网或自动判负证据。真实目录全军出击＋交替绝对防御21条Handle，严格V2在第5层前恢复，4／5／6层10个双方投影节点完整闭合；具名DeepResponseUiFixture20261023Tests实际1／1通过。修前桌面6层header约836px／body0，合法“不响应”存在却不可达；r1及不做程序滚入、真实滚轮仍失败的r2原件保留。

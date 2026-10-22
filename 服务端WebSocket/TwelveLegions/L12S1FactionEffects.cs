@@ -1833,14 +1833,19 @@ public sealed partial class L12GameEngine
 
     private void MoveGraveToLibraryBottom(L12PlayerState player, IEnumerable<L12CardInstance> cards)
     {
-        var requested = cards.Distinct().ToArray();
+        var requested = cards.Distinct().Where(card => !State.LibraryReturnFactsProtocolEnabled
+            || player.Graveyard.Contains(card)).ToArray();
         var legal = requested.Where(CanEnterHandOrLibrary).ToArray();
         foreach (var guard in requested.Where(card => !CanEnterHandOrLibrary(card)))
             AddEvent("replacement", player.PlayerIndex, $"{guard.Name}不能进入牌库，仍置于墓地", guard);
         foreach (var card in legal) ResetCardForPrivateZone(card);
         if (!L12LibraryOps.PutOnBottom(player, legal)) return;
+        var operationId = LibraryReturnOperationId(player.PlayerIndex);
         foreach (var card in legal)
+        {
             AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库底部", card);
+            AttachLastLibraryReturnFact(player.PlayerIndex, "bottom", 1, true, operationId);
+        }
     }
 
     private void MoveGraveToLibraryTop(L12PlayerState player, string instanceId)
@@ -1850,7 +1855,10 @@ public sealed partial class L12GameEngine
         if (!CanEnterHandOrLibrary(card)) { AddEvent("replacement", player.PlayerIndex, $"{card.Name}不能进入牌库，仍置于墓地", card); return; }
         ResetCardForPrivateZone(card);
         if (L12LibraryOps.PutOnTop(player, [card]))
+        {
             AddEvent("return", player.PlayerIndex, $"〈{card.Name}〉从墓地返回牌库顶部", card);
+            AttachLastLibraryReturnFact(player.PlayerIndex, "top", 1, true);
+        }
     }
 
     private void RecoverAsgard(L12StackItem item, int maxCost, bool legionOnly)
@@ -1985,11 +1993,14 @@ public sealed partial class L12GameEngine
     private void CompletePharaohFestivalOrder(L12StackItem item, List<string> order)
     {
         var player = State.Players[item.Controller];
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id); if (card is null) continue;
             player.Library.Remove(card); player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 
@@ -1998,6 +2009,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller]; var top = player.Library.Take(count).ToArray(); item.Data["faction-search-top"] = string.Join('|', top.Select(card => card.InstanceId)); item.Data["faction-search-context"] = context;
         item.Data["faction-search-faction"] = faction;
         item.Data["faction-search-excluded"] = excluded;
+        if (State.LibraryReturnFactsProtocolEnabled && context == "sun-divinity")
+            item.Data["library-return-identities-public"] = "true";
         if (context == "sun-divinity" && top.Length > 0)
             AddPresentationEvent("reveal", item.Controller, "众神之乡公开牌库顶部3张牌",
                 "S01-02D1", "top-three", top);
@@ -2059,13 +2072,16 @@ public sealed partial class L12GameEngine
     private void CompleteFactionSearchOrder(L12StackItem item, List<string> order)
     {
         var player = State.Players[item.Controller];
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id);
             if (card is null) continue;
             player.Library.Remove(card);
             player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 

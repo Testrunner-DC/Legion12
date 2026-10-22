@@ -603,6 +603,7 @@ public sealed partial class L12GameEngine
                     return true;
                 }
                 enemy.Hand.Remove(target); ResetCardForPrivateZone(target); enemy.Library.Add(target); ShuffleLibrary(enemy, "前线侦查结算");
+                PublishLibraryReturn(item.Controller, enemy.PlayerIndex, "shuffled", [target], false);
                 FinishStackItem(item); return true;
             }
             case "ambush-buff":
@@ -967,11 +968,14 @@ public sealed partial class L12GameEngine
     private void CompleteCampOrder(L12StackItem item, List<string> order)
     {
         var player = State.Players[item.Controller];
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.FirstOrDefault(candidate => candidate.InstanceId == id); if (card is null) continue;
             player.Library.Remove(card); player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 

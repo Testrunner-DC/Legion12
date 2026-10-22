@@ -19,7 +19,7 @@ public sealed class YangJianPrivateReturnAndPiercingDeclineTests
 
     [Theory]
     [MemberData(nameof(YangJianReturnCases))]
-    public void YangJianPrivateReturnHidesIdentityAndChosenDestinationFromEveryPublicView(
+    public void YangJianPrivateReturnHidesIdentityButPublishesChosenDestinationToEveryPublicView(
         int ownerIndex, bool direct, string destination)
     {
         var game = CreateWithYangJian(ownerIndex, 202610200 + ownerIndex * 10 + (direct ? 2 : 0)
@@ -86,6 +86,7 @@ public sealed class YangJianPrivateReturnAndPiercingDeclineTests
         }
 
         AssertYangJianViews(game, ownerIndex, hidden, destination);
+        LibraryReturnVisibilityAndBatchFactsTests.Export($"yangjian-{ownerIndex}-{direct}-{destination}", game);
         var restored = Restore(game);
         AssertYangJianViews(restored, ownerIndex, hidden, destination);
     }
@@ -232,22 +233,28 @@ public sealed class YangJianPrivateReturnAndPiercingDeclineTests
         Assert.Contains(hidden.Name, ownerEvent.Text, StringComparison.Ordinal);
         Assert.Contains(destination == "top" ? "顶部" : "底部", ownerEvent.Text, StringComparison.Ordinal);
         Assert.Single(ownerEvent.Cards, card => card.InstanceId == hidden.InstanceId);
+        Assert.NotNull(ownerEvent.PlayerLibraryReturn);
+        Assert.Equal(ownerIndex, ownerEvent.PlayerLibraryReturn!.LibraryOwner);
+        Assert.False(ownerEvent.PlayerLibraryReturn.IdentitiesPublic);
+        Assert.Equal(destination == "top" ? 1 : 0, ownerEvent.PlayerLibraryReturn.TopCount);
+        Assert.Equal(destination == "bottom" ? 1 : 0, ownerEvent.PlayerLibraryReturn.BottomCount);
+        Assert.Equal(0, ownerEvent.PlayerLibraryReturn.ShuffledCount);
         Assert.Null(ownerEvent.PlayerSelectedTargets);
 
         foreach (var view in PublicViews(game, 1 - ownerIndex))
         {
             var returned = Assert.Single(view.RecentEvents,
                 entry => entry.Type == "return" && entry.PlayerIndex == ownerIndex);
-            Assert.Equal("放回1张牌", returned.Text);
             Assert.Empty(returned.Cards);
+            Assert.Equal(ownerEvent.PlayerLibraryReturn, returned.PlayerLibraryReturn);
             Assert.Null(returned.EffectText);
             Assert.Null(returned.PlayerSelectedTargets);
             var eventJson = JsonSerializer.Serialize(returned, WireJson);
             Assert.DoesNotContain(hidden.InstanceId, eventJson, StringComparison.Ordinal);
             Assert.DoesNotContain(hidden.CardId, eventJson, StringComparison.Ordinal);
             Assert.DoesNotContain(hidden.Name, eventJson, StringComparison.Ordinal);
-            Assert.DoesNotContain("顶部", eventJson, StringComparison.Ordinal);
-            Assert.DoesNotContain("底部", eventJson, StringComparison.Ordinal);
+            Assert.Contains(destination == "top" ? "牌库顶部" : "牌库底部", returned.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain(destination == "top" ? "底部" : "顶部", eventJson, StringComparison.Ordinal);
         }
         AssertNoPrivateTargetPreview(game, 1 - ownerIndex, hidden);
     }

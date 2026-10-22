@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import './test-library-return-log.mjs'
 import './test-battle-troops-modifier.mjs'
 import './test-battle-selected-targets.mjs'
 import './test-battle-disaster-value.mjs'

@@ -2390,11 +2390,13 @@ public sealed partial class L12GameEngine
                 {
                     _ = L12LibraryOps.PutOnBottom(player, [top]);
                     AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库底部", top);
+                    AttachLastLibraryReturnFact(item.Controller, "bottom", 1, true);
                 }
                 else if (place == "top")
                 {
                     _ = L12LibraryOps.PutOnTop(player, [top]);
                     AddEvent("return", item.Controller, $"阿麦金将〈{top.Name}〉返回牌库顶部", top);
+                    AttachLastLibraryReturnFact(item.Controller, "top", 1, true);
                 }
                 else
                 {
@@ -2468,6 +2470,7 @@ public sealed partial class L12GameEngine
                 AddPresentationEvent("reveal", item.Controller,
                     $"赫拉克勒斯·晋升展示手牌中的〈{shown.Name}〉并放回牌库顶部",
                     "S02-0501", "promotion-cost-resolution", shown);
+                PublishLibraryReturn(item.Controller, item.Controller, "top", [shown], true);
                 ContinueHeraclesPromotionTargetChoice(item);
                 return true;
             }
@@ -2852,6 +2855,7 @@ public sealed partial class L12GameEngine
         player.Library.Remove(card);
         player.Library.Add(card);
         AddEvent("library", item.Controller, $"李牧将〈{card.Name}〉返回牌库底部", card);
+        AttachLastLibraryReturnFact(item.Controller, "bottom", 1, true);
     }
 
     private void PlayS2LiMuRevealedTactic(L12StackItem item)
@@ -2871,6 +2875,8 @@ public sealed partial class L12GameEngine
         var player = State.Players[item.Controller];
         var top = player.Library.Take(5).ToArray();
         item.Data["s2-fortune-cards"] = string.Join('|', top.Select(card => card.InstanceId));
+        if (State.LibraryReturnFactsProtocolEnabled)
+            item.Data["library-return-identities-public"] = "true";
         if (top.Length > 0)
             AddPresentationEvent("reveal", item.Controller,
                 "〈武运在天 铠甲在前〉展示牌库顶部5张牌", "S02-0405", "top-five", top);
@@ -2970,12 +2976,15 @@ public sealed partial class L12GameEngine
             return;
         }
 
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.First(candidate => candidate.InstanceId == id);
             player.Library.Remove(card);
             player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 
@@ -3026,12 +3035,15 @@ public sealed partial class L12GameEngine
             FinishStackItem(item);
             return;
         }
+        var returned = new List<L12CardInstance>();
         foreach (var id in order)
         {
             var card = player.Library.First(candidate => candidate.InstanceId == id);
             player.Library.Remove(card);
             player.Library.Add(card);
+            returned.Add(card);
         }
+        PublishLibraryPlacementReturn(item, returned);
         FinishStackItem(item);
     }
 

@@ -150,6 +150,7 @@ public sealed partial class L12GameEngine
                     ResetCardForPrivateZone(selected);
                     L12LibraryOps.PutOnTop(affected, CardOwner(selected, affected), [selected]);
                     AddEvent("return", item.Controller, "〈粮草掠夺〉将盲选的1张对方手牌返回所有者牌库顶部");
+                    AttachLastLibraryReturnFact(CardOwner(selected, affected).PlayerIndex, "top", 1, false);
                 }
                 else RecordTargetSettlementFailure(item, selectedId, "已选择的匿名对象不再位于对方手牌中");
                 FinishStackItem(item);
@@ -209,6 +210,7 @@ public sealed partial class L12GameEngine
             DeclarePresentationBranch(item.Data, "cosmos-yin-reveal", "revealMode", "mode:return");
             item.Data.Remove("presentationSceneId");
             AddEvent("return", item.Controller, $"〈{revealed.Name}〉置于牌库底部", revealed);
+            AttachLastLibraryReturnFact(item.Controller, "bottom", 1, true);
             FinishStackItem(item);
             return;
         }

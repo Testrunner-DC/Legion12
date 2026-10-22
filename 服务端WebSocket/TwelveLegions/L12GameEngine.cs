@@ -113,6 +113,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             OwnerTurnEndModifierProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             AttackBuffLogProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             SourceVacatedEntrySlotProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
+            LibraryReturnFactsProtocolEnabled = stateFormatVersion >= L12PersistenceContract.MinimumCheckpointRecoveryVersion,
             MatchId = matchId,
             RoomCode = roomCode,
             Seed = seed,
@@ -2054,6 +2055,7 @@ public sealed partial class L12GameEngine : IL12MatchKernel
         if (ReturnsToMasterZoneOnDeparture(card)
             && !CanStoreMasterLegion(departureOwner, card, reason)) return false;
         CaptureLastKnownFieldState(card, row);
+        var identitiesPublic = !card.Hidden;
         var sourceSnapshot = CaptureLastKnownSourceSnapshot(card);
         player.Field[row][slot] = null;
         RecordFieldLegionDeparture(player, card);
@@ -2097,9 +2099,41 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             default: ResetCardForPrivateZone(card); owner.Graveyard.Add(card); break;
         }
 
+        var foundationVisibility = promotionFoundations.ToDictionary(foundation => foundation.InstanceId,
+            foundation => !foundation.Hidden, StringComparer.Ordinal);
+        var beforeFoundationEvents = State.EventSequence;
         MovePromotionFoundationsToZone(promotionFoundations, owner, finalDestination, $"{card.Name}离场");
 
         AddEvent("leave", player.PlayerIndex, $"{card.Name}{reason}", card);
+        if (State.LibraryReturnFactsProtocolEnabled && finalDestination is "library-top" or "library-bottom")
+        {
+            // The actual destination, not the requested one, controls the receipt.
+            // Retain the original per-card leave events and their authority ordering.
+            var hostLeave = State.LastAction!;
+            var operations = new Dictionary<int, string>();
+            foreach (var entry in State.Events.Where(entry => entry.Sequence > beforeFoundationEvents
+                         && entry.Type == "promotion-stack-leave").ToArray())
+            {
+                var foundation = promotionFoundations.FirstOrDefault(foundation =>
+                    entry.Cards.Any(visible => visible.InstanceId == foundation.InstanceId));
+                if (foundation is null) continue;
+                var foundationOwner = CardOwner(foundation, owner);
+                if (!foundationOwner.Library.Contains(foundation)) continue;
+                if (!operations.TryGetValue(foundationOwner.PlayerIndex, out var operation))
+                    operations[foundationOwner.PlayerIndex] = operation = LibraryReturnOperationId(foundationOwner.PlayerIndex, entry.Sequence);
+                AttachLibraryReturnFact(entry.Sequence, foundationOwner.PlayerIndex,
+                    finalDestination == "library-top" ? 1 : 0, finalDestination == "library-bottom" ? 1 : 0,
+                    0, foundationVisibility[foundation.InstanceId], operation);
+            }
+            if (owner.Library.Contains(card))
+            {
+                if (!operations.TryGetValue(owner.PlayerIndex, out var operation))
+                    operation = LibraryReturnOperationId(owner.PlayerIndex, hostLeave.Sequence);
+                AttachLibraryReturnFact(hostLeave.Sequence, owner.PlayerIndex,
+                    finalDestination == "library-top" ? 1 : 0, finalDestination == "library-bottom" ? 1 : 0,
+                    0, identitiesPublic, operation);
+            }
+        }
         if (queueLeaveTrigger)
             QueueTriggerCandidates(BuildS1LeaveReactionCandidates(player.PlayerIndex, sourceSnapshot,
                 includeTombConstruct: true, wasDefeated: false));

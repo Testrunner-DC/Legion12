@@ -1006,6 +1006,7 @@ public sealed partial class L12GameEngine
             ResetCardForPrivateZone(card);
             if (place == "top") player.Library.Insert(0, card); else player.Library.Add(card);
             AddEvent("private-return", item.Controller, $"{card.Name} 返回牌库{(place == "top" ? "顶部" : "底部")}", card);
+            AttachLastLibraryReturnFact(item.Controller, place == "top" ? "top" : "bottom", 1, false);
         }
         FinishStackItem(item);
     }

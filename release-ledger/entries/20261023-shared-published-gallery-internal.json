@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-shared-published-gallery-internal",
+  "date": "2026-10-23",
+  "audience": "internal",
+  "reason": "测试环境公开图鉴、卡图及画廊管理入口使用正式已发布资料源；只读定义桥与排位权益计算保持单代快照，不共享账号、权益、对局或统计数据库。",
+  "paths": [
+    "opcgpro-vue/src/l12/cardAssets.ts",
+    "opcgpro-vue/src/l12/deploymentBase.ts",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12SharedGalleryCatalog.cs"
+  ]
+}

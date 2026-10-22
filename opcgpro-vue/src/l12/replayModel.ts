@@ -312,6 +312,7 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     const troopsModifier = value<any>(event, 'PlayerTroopsModifier', 'playerTroopsModifier', undefined)
     const selectedTargets = value<any>(event, 'PlayerSelectedTargets', 'playerSelectedTargets', undefined)
     const disasterValue = value<any>(event, 'PlayerDisasterValue', 'playerDisasterValue', undefined)
+    const libraryReturn = value<any>(event, 'PlayerLibraryReturn', 'playerLibraryReturn', undefined)
     // Generic replay-card defaults are presentation placeholders, not recorded target identity.
     const troopsTargetId = value(troopsModifier, 'TargetInstanceId', 'targetInstanceId', undefined)
     const troopsTargets = troopsModifier ? value<any[]>(event, 'Cards', 'cards', [])
@@ -387,6 +388,14 @@ export function replayGameAt(detail: MatchDetail, step: number, catalog?: Readon
     playerDisasterValue: disasterValue && typeof disasterValue === 'object' ? {
       before: value(disasterValue, 'Before', 'before', undefined),
       after: value(disasterValue, 'After', 'after', undefined),
+    } : undefined,
+    playerLibraryReturn: libraryReturn && typeof libraryReturn === 'object' && !Array.isArray(libraryReturn) ? {
+      operationId: value(libraryReturn, 'OperationId', 'operationId', undefined),
+      libraryOwner: value(libraryReturn, 'LibraryOwner', 'libraryOwner', undefined),
+      topCount: value(libraryReturn, 'TopCount', 'topCount', undefined),
+      bottomCount: value(libraryReturn, 'BottomCount', 'bottomCount', undefined),
+      shuffledCount: value(libraryReturn, 'ShuffledCount', 'shuffledCount', undefined),
+      identitiesPublic: value(libraryReturn, 'IdentitiesPublic', 'identitiesPublic', undefined),
     } : undefined,
     playerPublicPlacement: placement ? {
       instanceId: value(placement, 'InstanceId', 'instanceId', undefined),

@@ -38,7 +38,9 @@ public sealed partial class L12GameEngine
         CreatePrompt(item.Controller, "order", text, ids, ids.Length, ids.Length,
             "card-effect", item.StackItemId, isPrivate: true,
             data: WithPromptNarrative(data,
-                new(item.SourceName, $"〈{item.SourceName}〉正在整理你查看的{ids.Length}张牌；这些牌尚未向对手公开。",
+                new(item.SourceName, $"〈{item.SourceName}〉正在整理你查看的{ids.Length}张牌；"
+                    + (State.LibraryReturnFactsProtocolEnabled && LibraryPlacementIdentitiesPublic(item)
+                        ? "这些牌已向所有玩家公开，放回位置为公开信息。" : "这些牌尚未向对手公开。"),
                     instruction, L12PromptWaitingAction.LibraryArrangement)));
     }
 
@@ -75,9 +77,15 @@ public sealed partial class L12GameEngine
         foreach (var card in byId.Values) player.Library.Remove(card);
         player.Library.InsertRange(0, topIds.Select(id => byId[id]));
         player.Library.AddRange(bottomIds.Select(id => byId[id]));
-        AddEvent("reorder", item.Controller, $"将 {topIds.Count} 张牌放回牌库顶部、{bottomIds.Count} 张牌放回牌库底部");
+        var identitiesPublic = LibraryPlacementIdentitiesPublic(item);
+        AddEvent("reorder", item.Controller, $"将 {topIds.Count} 张牌放回牌库顶部、{bottomIds.Count} 张牌放回牌库底部",
+            State.LibraryReturnFactsProtocolEnabled && identitiesPublic ? cards.Cast<L12CardInstance>().ToArray() : []);
+        AttachLibraryReturnFact(State.EventSequence, item.Controller, topIds.Count, bottomIds.Count, 0, identitiesPublic);
         FinishStackItem(item);
     }
+
+    private static bool LibraryPlacementIdentitiesPublic(L12StackItem item)
+        => item.Data.GetValueOrDefault("library-return-identities-public") == "true";
 
     private bool ReconcileLibraryPlacementPrompts()
     {
