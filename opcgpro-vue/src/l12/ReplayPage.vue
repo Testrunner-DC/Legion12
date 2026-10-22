@@ -10,6 +10,7 @@ import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGame
 import { isMobileDeviceExperience, landscapeTeleportTarget } from './mobileViewport'
 import { buildReplayIndex, createReplayIndexAccumulator, type ReplayIndexCategory } from './replayIndex'
 import { ReplayArchiveLoader } from './replayArchiveLoader'
+import { recordedMatchOutcome } from './replayOutcome'
 
 const route = useRoute()
 const router = useRouter()
@@ -88,11 +89,14 @@ const atLast = computed(() => selectedStep.value >= totalSteps.value - 1)
 const returnLabel = computed(() => isAdminReplay.value ? '返回后台对局档案' : '返回对局记录')
 const replayResult = computed(() => {
   if (!detail.value || !currentGame.value || !atLast.value) return null
-  const winner = detail.value.match.winner ?? currentGame.value.winner
-  const invalid = Boolean(detail.value.match.error)
-  return { state: winner === 0 || winner === 1 ? 'decided' : invalid ? 'invalid' : 'draw',
+  const window = replayWindow.value
+  const raw = window?.detail.commands[window.step]?.state
+  const outcome = recordedMatchOutcome(detail.value.match, raw)
+  if (outcome.kind === 'ongoing') return null
+  return { state: outcome.kind,
     players: [0, 1].map(index => ({ name: index === 0 ? detail.value!.match.player0 : detail.value!.match.player1,
-      result: winner === 0 || winner === 1 ? winner === index ? '胜' : '负' : invalid ? '无效' : '平' })) }
+      result: outcome.kind === 'decided' ? outcome.winner === index ? '胜' : '负'
+        : outcome.kind === 'invalid' ? '无效' : outcome.kind === 'draw' ? '平' : '无法确认' })) }
 })
 function isCurrentRead(generation: number) { return !disposed && generation === readGeneration }
 function clearReadSession() {
@@ -319,7 +323,7 @@ function openReplayFeedback() { void openBugFeedbackFromSettings(() => { setting
       <p v-if="catalogWarning" class="replay-catalog-warning" role="status">{{ catalogWarning }}</p>
 
       <div v-if="replayResult" class="replay-result" :data-state="replayResult.state" aria-live="polite">
-        <strong>对局结束</strong>
+        <strong>{{ replayResult.state === 'unknown' ? '结果无法确认' : '对局结束' }}</strong>
         <span v-for="(player, index) in replayResult.players" :key="index" :data-result="player.result"><b>{{ player.name }}</b><em>{{ player.result }}</em></span>
       </div>
 

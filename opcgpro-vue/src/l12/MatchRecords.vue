@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { platformRequest } from './platform'
+import { authState, platformRequest, platformState } from './platform'
+import { recordedMatchOutcome } from './replayOutcome'
 import {
   exportReplayPayload, parseReplayPayload, rememberImportedReplay, type MatchDetail, type MatchSummary,
 } from './replayModel'
@@ -17,25 +18,52 @@ const error = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const canUseSelectedReplay = computed(() => Boolean(selected.value?.endedUtc && selected.value.commandCount > 0))
 const mobileReplayBlocked = isMobileDeviceExperience()
+let identityGeneration = 0
+let listReadGeneration = 0
+let disposed = false
+let initialSelectionPending = true
+
+function identityCurrent(generation: number) {
+  return !disposed && generation === identityGeneration && authState.verified
+    && Boolean(platformState.token && platformState.account?.id && !platformState.account.disabled)
+}
+function clearIdentityRecords() {
+  identityGeneration++; listReadGeneration++
+  matches.value = []; selected.value = null; loading.value = false
+  initialSelectionPending = false
+  error.value = '账号或登录状态已变化，请重新读取对局记录'
+}
+watch(() => [platformState.token, platformState.account?.id, platformState.account?.disabled, authState.verified] as const,
+  clearIdentityRecords, { flush: 'sync' })
+onBeforeUnmount(() => { disposed = true; identityGeneration++; listReadGeneration++ })
 
 function blockMobileReplay() {
   error.value = '请到电脑端查看回放'
 }
 
-onMounted(async () => {
-  await loadMatches()
-  const selectedId = String(route.query.selected ?? '')
-  selected.value = matches.value.find(match => match.matchId === selectedId) ?? null
-})
+onMounted(() => { void loadMatches() })
 
 async function loadMatches() {
+  const identity = identityGeneration
+  const read = ++listReadGeneration
+  if (!identityCurrent(identity)) {
+    matches.value = []; selected.value = null; loading.value = false
+    error.value = '请先登录后读取对局记录'
+    return
+  }
   loading.value = true
   error.value = ''
   try {
-    matches.value = await platformRequest<MatchSummary[]>('/api/matches?limit=10')
+    const incoming = await platformRequest<MatchSummary[]>('/api/matches?limit=10')
+    if (!identityCurrent(identity) || read !== listReadGeneration) return
+    const selectedId = selected.value?.matchId || (initialSelectionPending ? String(route.query.selected ?? '') : '')
+    matches.value = incoming
+    selected.value = incoming.find(match => match.matchId === selectedId) ?? null
+    initialSelectionPending = false
   } catch (reason) {
+    if (!identityCurrent(identity) || read !== listReadGeneration) return
     error.value = reason instanceof Error ? reason.message : '读取对局记录失败'
-  } finally { loading.value = false }
+  } finally { if (identityCurrent(identity) && read === listReadGeneration) loading.value = false }
 }
 
 function selectMatch(match: MatchSummary) {
@@ -45,6 +73,7 @@ function selectMatch(match: MatchSummary) {
 
 function playSelected() {
   if (mobileReplayBlocked) return blockMobileReplay()
+  if (!identityCurrent(identityGeneration)) return
   if (selected.value?.endedUtc && selected.value.commandCount > 0)
     router.push({ name: 'match-replay', params: { matchId: selected.value.matchId } })
 }
@@ -55,8 +84,11 @@ function openReplayImport() {
 }
 
 async function resolveSelectedDetail() {
-  if (!selected.value) return null
-  return platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(selected.value.matchId)}`)
+  const identity = identityGeneration
+  const matchId = selected.value?.matchId
+  if (!matchId || !identityCurrent(identity)) return null
+  const detail = await platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(matchId)}`)
+  return identityCurrent(identity) && selected.value?.matchId === matchId ? detail : null
 }
 
 function replayFileDate(raw: string) {
@@ -69,10 +101,11 @@ function replayFileDate(raw: string) {
 }
 
 async function exportReplay() {
+  const identity = identityGeneration
   error.value = ''
   try {
     const detail = await resolveSelectedDetail()
-    if (!detail) return
+    if (!detail || !identityCurrent(identity)) return
     const blob = new Blob([JSON.stringify(exportReplayPayload(detail))], { type: 'application/json' })
     const anchor = document.createElement('a')
     anchor.href = URL.createObjectURL(blob)
@@ -80,6 +113,7 @@ async function exportReplay() {
     anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000)
   } catch (reason) {
+    if (!identityCurrent(identity)) return
     error.value = reason instanceof Error ? reason.message : '保存回放失败'
   }
 }
@@ -92,12 +126,17 @@ async function importReplay(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
+  const identity = identityGeneration
+  if (!identityCurrent(identity)) { input.value = ''; return }
   error.value = ''
   try {
-    const detail = parseReplayPayload(JSON.parse(await file.text()))
+    const contents = await file.text()
+    if (!identityCurrent(identity)) return
+    const detail = parseReplayPayload(JSON.parse(contents))
     rememberImportedReplay(detail)
     await router.push({ name: 'json-replay' })
   } catch (reason) {
+    if (!identityCurrent(identity)) return
     error.value = reason instanceof Error ? reason.message : '回放导入失败'
   } finally { input.value = '' }
 }
@@ -120,9 +159,11 @@ function durationLabel(match: MatchSummary) {
 }
 
 function resultLabel(match: MatchSummary) {
-  if (!match.endedUtc) return '进行中'
-  if (match.winner === null || match.winner === undefined) return '已结束'
-  return `${match.winner === 0 ? match.player0 : match.player1} 胜`
+  const outcome = recordedMatchOutcome(match)
+  if (outcome.kind === 'ongoing') return '进行中'
+  if (outcome.kind === 'invalid') return '对局无效'
+  if (outcome.kind !== 'decided') return '已结束 · 结果无法确认'
+  return `${outcome.winner === 0 ? match.player0 : match.player1} 胜`
 }
 </script>
 
