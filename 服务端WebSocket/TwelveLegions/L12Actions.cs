@@ -886,11 +886,25 @@ public sealed partial class L12GameEngine
         var temporaryAttackerTroopsBonus = 0;
         if (combatProfile.AttackTroopsSetValue is { } setAttackTroops)
         {
-            temporaryAttackerTroopsBonus = setAttackTroops - attacker.Troops;
-            attacker.Troops = setAttackTroops;
+            // Set the attack base, retaining only the already materialized, unconsumed
+            // signed continuous layers. Their source and damage ledgers stay intact.
+            var continuousModifier = attacker.ContinuousTroopsModifier;
+            var setCurrentTroops = setAttackTroops + continuousModifier;
+            temporaryAttackerTroopsBonus = setCurrentTroops - attacker.Troops;
+            attacker.Troops = setCurrentTroops;
+            var auditText = $"{attacker.Name}位于后排，本次进攻兵力视为{setAttackTroops}";
+            var outcomeLabel = $"本次进攻兵力变为{attacker.CurrentTroops}";
+            if (continuousModifier != 0)
+            {
+                var signedModifier = continuousModifier > 0
+                    ? $"+{continuousModifier}"
+                    : continuousModifier.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                auditText += $"，计入持续修正{signedModifier}后为{attacker.CurrentTroops}";
+                outcomeLabel += $"（基值{setAttackTroops}，持续修正{signedModifier}）";
+            }
             AddSemanticPlayerLogEvent("effect", playerIndex,
-                $"{attacker.Name}位于后排，本次进攻兵力视为{setAttackTroops}",
-                new("触发 进攻时效果", $"本次进攻兵力变为{setAttackTroops}",
+                auditText,
+                new("触发 进攻时效果", outcomeLabel,
                     attacker.InstanceId, attacker.Name, attacker.InstanceId, attacker.Name), attacker);
         }
         temporaryAttackerTroopsBonus += ApplyS1FactionAttackPassives(playerIndex, attacker, row);
@@ -1072,21 +1086,18 @@ public sealed partial class L12GameEngine
         => defender.Field[0].Any(card => card is not null && !card.Hidden && IsFieldLegion(card)
             && L12StructuredCardRules.ProtectsMasterFromTroops(card, 0, attackerTroops));
 
-    private bool HasMandatoryDisasterLegionTarget(L12CardInstance attacker, int row, L12PlayerState defender)
+    private bool HasMandatoryDisasterLegionTarget(int playerIndex, L12CardInstance attacker, int row, L12PlayerState defender)
     {
         for (var targetRow = 0; targetRow < 2; targetRow++)
         for (var slot = 0; slot < 3; slot++)
         {
             var target = defender.Field[targetRow][slot];
-            if (target is null || target.Hidden || !IsFieldLegion(target)) continue;
-            if (L12ActiveDisasterRules.ActiveFrontRowUnattackable(State.ActiveDisaster?.CardId) && targetRow == 0 && !target.Tapped) continue;
-            if (row == 1 && targetRow != 0 && !CanAttackBackFromBackRow(attacker)) continue;
-            if (row == 0 && targetRow == 1 && !HasRangeInPosition(attacker, row)) continue;
-            var ranged = row == 1 || targetRow == 1;
-            if (ranged && L12ActiveDisasterRules.RangedLegionsCannotRangedAttack(State.ActiveDisaster?.CardId)
-                && L12StructuredCardRules.IsRangedLegion(attacker, row)) continue;
-            if (ranged && L12StructuredCardRules.CombatProfile(target, targetRow).CannotBeRanged) continue;
-            return true;
+            if (target is null) continue;
+            // Only the real legion-target validator defines a mandatory target.
+            // The literal legion branch cannot recurse into master validation.
+            if (TryValidateAttackTarget(playerIndex, attacker, row,
+                    new L12AttackTarget("legion", target.InstanceId), out _, out _, out _))
+                return true;
         }
         return false;
     }
@@ -1138,7 +1149,7 @@ public sealed partial class L12GameEngine
         else if (L12ActiveDisasterRules.MasterUnattackableByTroopsAtMost2000(State.ActiveDisaster?.CardId) && attacker.Troops <= 2000)
             error = "〈迷雾绝境〉生效时兵力不高于2000的军团无法进攻主宰";
         else if (L12ActiveDisasterRules.MustAttackLegionBeforeMaster(State.ActiveDisaster?.CardId)
-                 && HasMandatoryDisasterLegionTarget(attacker, row, defender))
+                 && HasMandatoryDisasterLegionTarget(playerIndex, attacker, row, defender))
             error = "〈暴怒之罪〉生效时必须优先进攻范围内的对方军团";
         // 〈风暴乱象〉同样阻断远程军团经效果许可（扩展射程/天灾许可）从后排对主宰的远程进攻。
         else if (row != 0 && L12ActiveDisasterRules.RangedLegionsCannotRangedAttack(State.ActiveDisaster?.CardId)
