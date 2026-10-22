@@ -60,6 +60,7 @@ alternateArtApi.gallery=async()=>[
  {id:'custom-alt-metadata',artCode:'ALT-QA-MULTI',baseCardId:'S01-0101',displayName:'吕布',artist:'上传画师',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22/%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'alternate-art',products:[product('dup-a','同名产品'),product('dup-b','同名产品')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]},
  {id:'gallery-collab-1',artCode:'COLLAB-QA-001',baseCardId:'',displayName:'联动画廊测试',artist:'联动画师',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%232b3850%22/%3E%3Ctext x=%2250%22 y=%22350%22 fill=%22white%22 font-size=%2240%22%3ECOLLAB%3C/text%3E%3C/svg%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'gallery-card',effect:'这是独立撰写的联动卡效，但不会接入对局结算。',products:[product('p1','QA产品甲'),product('p2','QA产品乙')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]}
 ]
+alternateArtApi.presentationCatalog=async()=>({regularCards:[],filterProducts:[product('p1','QA产品甲'),{...product('p2','QA产品乙'),showInGalleryFilter:false}]})
 alternateArtApi.mine=async()=>[]
 authState.verified=false
 platformState.token=''
@@ -83,9 +84,10 @@ const rarities=[
 ]
 let builtIn={id:'catalog-alt:S01-0101b',artCode:'S01-0101b',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'原画师',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101b',builtIn:true,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
 let uploadedAlt={id:'uploaded-alt',artCode:'ALT-QA-UPLOADED',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'上传原画师',mediaAssetId:'media-gallery',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,builtIn:false,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
+let regularCard={id:'S01-0101',artCode:'S01-0101',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'常规卡原画师',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101',builtIn:true,kind:'regular-card',products:[products[0]],rarities:[rarities[0]],effect:'常规卡规则文本'}
 const imageUrl='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%234c6d82%22/%3E%3C/svg%3E'
 const media={id:'media-gallery',kind:'card-art',altText:'联动卡图',focalX:.5,focalY:.5,originalFormat:'png',contentHash:'abcdef1234567890',desktopUrl:imageUrl,mobileUrl:imageUrl,thumbnailUrl:imageUrl,desktopWidth:500,desktopHeight:700,mobileWidth:500,mobileHeight:700,thumbnailWidth:250,thumbnailHeight:350,originalBytes:1,deliveryBytes:1,createdBy:'admin',createdAt:now,referenceCount:0,desktopAltText:'',mobileAltText:'',thumbnailAltText:'',independentVariants:false}
-const calls={metadata:[],saveArt:[],saveImage:[],saveArticle:[],publishArticle:[],grant:[],saveRarity:[],search:0}
+const calls={metadata:[],regularMetadata:[],saveArt:[],saveImage:[],saveRegularImage:[],filterVisibility:[],saveArticle:[],publishArticle:[],grant:[],saveRarity:[],search:0,regularSearch:0}
 let failNextGalleryMetadata=false
 let failNextProductsRefresh=false
 let delayNextProductSave=false
@@ -98,9 +100,13 @@ adminApi.alternateArtRarities=async()=>rarities
 adminApi.siteCategories=async()=>[{id:'product-category',kind:'product',name:'卡牌系列',slug:'card-series',sortOrder:10,active:true,version:1,itemCount:0}]
 adminApi.alternateArts=async()=>[builtIn,uploadedAlt]
 adminApi.searchAlternateArts=async()=>{calls.search++;return {items:[builtIn,uploadedAlt],total:2,page:1,pageSize:20}}
+adminApi.searchRegularGalleryCards=async()=>{calls.regularSearch++;return {items:[regularCard],total:1,page:1,pageSize:20}}
 adminApi.saveAlternateArtMetadata=async draft=>{calls.metadata.push(structuredClone(draft));if(draft.alternateArtId==='gallery-new'&&failNextGalleryMetadata){failNextGalleryMetadata=false;throw new Error('注入：元数据暂时保存失败')}const selectedProducts=draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean);const selectedRarities=draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean);if(draft.alternateArtId===builtIn.id){builtIn={...builtIn,artist:draft.artist,products:selectedProducts,rarities:selectedRarities};return builtIn}if(draft.alternateArtId===uploadedAlt.id){uploadedAlt={...uploadedAlt,artist:draft.artist,products:selectedProducts,rarities:selectedRarities};return uploadedAlt}return {...window.__lastSavedArt,artist:draft.artist,products:selectedProducts,rarities:selectedRarities}}
 adminApi.saveAlternateArt=async draft=>{if(!draft.id&&calls.saveArt.some(item=>item.artCode===draft.artCode))throw new Error('异画编号已被使用');calls.saveArt.push(structuredClone(draft));window.__lastSavedArt={...window.__lastSavedArt,...draft,id:draft.id||'gallery-new',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22/%3E',thumbnailUrl:'',createdAt:now,updatedAt:now};return window.__lastSavedArt}
 adminApi.saveAlternateArtImage=async draft=>{calls.saveImage.push(structuredClone(draft));builtIn={...builtIn,mediaAssetId:draft.mediaAssetId,imageUrl:draft.mediaAssetId?imageUrl:'',thumbnailUrl:draft.mediaAssetId?imageUrl:''};return builtIn}
+adminApi.saveRegularGalleryCardMetadata=async draft=>{calls.regularMetadata.push(structuredClone(draft));regularCard={...regularCard,artist:draft.artist,products:draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean),rarities:draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean)};return regularCard}
+adminApi.saveRegularGalleryCardImage=async draft=>{calls.saveRegularImage.push(structuredClone(draft));regularCard={...regularCard,mediaAssetId:draft.mediaAssetId,imageUrl:draft.mediaAssetId?imageUrl:'',thumbnailUrl:draft.mediaAssetId?imageUrl:''};return regularCard}
+adminApi.saveGalleryProductFilterVisibility=async draft=>{calls.filterVisibility.push(structuredClone(draft));const current=products.find(item=>item.id===draft.productId);const saved={...current,showInGalleryFilter:draft.showInGalleryFilter};products=products.map(item=>item.id===draft.productId?saved:item);return saved}
 adminApi.saveArticle=async draft=>{calls.saveArticle.push(structuredClone(draft));if(delayNextProductSave){delayNextProductSave=false;await new Promise(resolve=>setTimeout(resolve,120))}const saved={...draft,id:'product-new',status:'draft',revision:1,createdAt:now,updatedAt:now,author:'AdminA',updatedBy:'AdminA',hasUnpublishedChanges:true,sortOrder:0};products=[...products,{id:'site:product-new',name:draft.title,active:true,createdAt:now,updatedAt:now,categoryName:draft.category,categoryId:draft.categoryId,source:'site',status:'draft'}];return saved}
 adminApi.publishArticle=async id=>{calls.publishArticle.push(id);throw new Error('画廊流程不应发布产品')}
 adminApi.saveAlternateArtRarity=async draft=>{calls.saveRarity.push(structuredClone(draft));return {...draft,id:'unexpected',createdAt:now,updatedAt:now}}
@@ -109,7 +115,7 @@ adminApi.accounts=async()=>[]
 authState.verified=true
 platformState.token='qa-token'
 platformState.account={id:'admin-a',username:'AdminA',role:'admin',createdAt:'',publicHistory:false,permissions:['admin.accounts.read','admin.content.draft']}
-window.__panelQa={calls,products,rarities,builtIn:()=>builtIn,failNextGalleryMetadata:()=>{failNextGalleryMetadata=true},failNextProductsRefresh:()=>{failNextProductsRefresh=true},delayNextProductSave:()=>{delayNextProductSave=true}}
+window.__panelQa={calls,products:()=>products,rarities,builtIn:()=>builtIn,regularCard:()=>regularCard,failNextGalleryMetadata:()=>{failNextGalleryMetadata=true},failNextProductsRefresh:()=>{failNextProductsRefresh=true},delayNextProductSave:()=>{delayNextProductSave=true}}
 createApp(AdminAlternateArtsPanel).mount('#app')
 `
 
@@ -317,13 +323,43 @@ try {
       assert.equal(createMetadata[0].artist, '联动画师更新', 'collaboration artist was not saved through metadata')
       assert.equal(calls.grant.length, 0, 'gallery card unexpectedly called grant API')
       assert.equal(calls.saveRarity.length, 0, 'reusing rarity unexpectedly created a new rarity definition')
+      await page.getByRole('button', { name: '常规卡', exact: true }).click()
+      await page.getByRole('heading', { name: '常规卡画廊资料' }).waitFor()
+      const regularRow = page.locator('.regular-gallery-workspace .gallery-list article').filter({ hasText: 'S01-0101' })
+      await regularRow.getByRole('button', { name: '编辑资料' }).click()
+      const regularEditor = page.getByRole('dialog', { name: '编辑常规卡画廊资料' })
+      await regularEditor.getByLabel('画师').fill('常规卡画师更新')
+      await regularEditor.locator('input[type="checkbox"][value="site:qa-b"]').check()
+      await regularEditor.locator('input[type="checkbox"][value="rarity-sp"]').check()
+      await regularEditor.getByRole('button', { name: '保存画廊资料' }).click()
+      await confirm.getByRole('button', { name: '保存画廊资料' }).click()
+      await page.waitForFunction(() => window.__panelQa.calls.regularMetadata.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.regularMetadata[0]), { cardId: 'S01-0101', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '常规卡画师更新' })
+      assert.equal(await page.evaluate(() => window.__panelQa.calls.metadata.length), callsBeforeGallery.metadata + 2, 'regular-card save leaked into alternate-art metadata API')
+      assert.match(await regularRow.innerText(), /画师：常规卡画师更新/, 'regular-card metadata was not re-read in its separate list')
+      await page.getByRole('button', { name: '管理产品筛选' }).click()
+      const filterDialog = page.getByRole('dialog', { name: '管理玩家端产品筛选' })
+      await filterDialog.getByRole('checkbox', { name: '同名产品 卡牌系列 · 卡牌产品', exact: true }).uncheck()
+      await page.waitForFunction(() => window.__panelQa.calls.filterVisibility.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.filterVisibility[0]), { productId: 'catalog:qa-a', showInGalleryFilter: false })
+      await filterDialog.getByRole('button', { name: '完成' }).click()
+      await regularRow.getByRole('button', { name: '更换画廊卡图' }).click()
+      await imageDialog.locator('.media-choice-trigger').click()
+      await page.getByRole('dialog', { name: '选择已上传素材', exact: true }).getByRole('button', { name: /联动卡图/ }).click()
+      await imageDialog.getByRole('button', { name: '确认更换' }).click()
+      await confirm.getByRole('button', { name: '确认更换卡图' }).click()
+      await page.waitForFunction(() => window.__panelQa.calls.saveRegularImage.length === 1)
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.saveRegularImage[0]), { cardId: 'S01-0101', mediaAssetId: 'media-gallery' })
       await page.screenshot({ path: path.join(output, 'admin-panel-native-flow-1440x900.png'), fullPage: true })
     }
-    report.push({ viewport, taskWorkspace: true, productDraftSelectedWithoutPublish: viewport.width === 1440, imageReplacement: true, imageRestore: viewport.width === 1440, builtInMetadataRoundTrip: true, galleryEffectSaved: viewport.width === 1440, metadataFailureRetryStableId: viewport.width === 1440 })
+    report.push({ viewport, taskWorkspace: true, productDraftSelectedWithoutPublish: viewport.width === 1440, imageReplacement: true, imageRestore: viewport.width === 1440, builtInMetadataRoundTrip: true, galleryEffectSaved: viewport.width === 1440, metadataFailureRetryStableId: viewport.width === 1440, regularCardSeparateWorkspace: viewport.width === 1440, regularCardMetadataAndImage: viewport.width === 1440, productFilterVisibility: viewport.width === 1440 })
   }
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto(`http://127.0.0.1:${port}/__alternate_art_gallery_closeout__`)
   await page.getByRole('tab', { name: '画廊' }).click()
+  const productFilter = page.getByLabel('收录产品')
+  assert.equal(await productFilter.locator('option', { hasText: 'QA产品甲' }).count(), 1, 'visible product was missing from player filter')
+  assert.equal(await productFilter.locator('option', { hasText: 'QA产品乙' }).count(), 0, 'hidden product remained in player filter')
   const search = page.getByPlaceholder('卡名、编号或效果文字')
   await search.fill('联动画廊测试')
   const collaborationCard = page.locator('.archive-gallery-card').filter({ hasText: '联动画廊测试' })
@@ -360,7 +396,7 @@ try {
   assert.equal(await detail.locator('.archive-decks').count(), 0, 'explicit empty products failed to clear static archive products')
   assert.doesNotMatch(await detail.locator('.archive-tags').innerText(), /\bN\b/, 'explicit empty rarities failed to clear static archive rarity')
   await page.screenshot({ path: path.join(output, 'gallery-card-and-built-in-metadata-1440x900.png'), fullPage: true })
-  report.push({ viewport: { width: 1440, height: 900 }, standaloneGalleryCard: true, displayOnlyEffect: true, builtInMetadataOverlay: true, customMetadataOverlay: true, oldFieldFallback: true, explicitClear: true, sameNameProductsRetained: true })
+  report.push({ viewport: { width: 1440, height: 900 }, standaloneGalleryCard: true, displayOnlyEffect: true, builtInMetadataOverlay: true, customMetadataOverlay: true, oldFieldFallback: true, explicitClear: true, sameNameProductsRetained: true, hiddenProductRemovedOnlyFromFilter: true })
   assert.equal(pageErrors.length, 0, `page errors: ${pageErrors.join(' | ')}`)
   assert.equal(consoleProblems.filter(message => /duplicate keys|same key/i.test(message)).length, 0, `duplicate-key console warnings: ${consoleProblems.join(' | ')}`)
   const afterSourceHashes = sourceHashes()

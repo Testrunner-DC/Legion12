@@ -253,12 +253,13 @@ export interface AdminAnalyticsCoverage {
   exactDeckSnapshots: number; inferredDeckSnapshots: number; privateDuringActiveMatch: boolean
   metrics: AdminAnalyticsMetricCoverage[]; limitations: string[]
 }
-export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; products?: AlternateArtProduct[]; rarities?: AlternateArtRarity[]; kind?: 'alternate-art' | 'gallery-card'; effect?: string; artist?: string; cardImageId?: string; builtIn?: boolean; baseCardName?: string; grantedAt?: string; grantReason?: string }
+export interface AlternateArt { id: string; artCode: string; baseCardId: string; displayName: string; mediaAssetId: string; imageUrl: string; thumbnailUrl: string; active: boolean; createdAt: string; updatedAt: string; productId?: string; productName?: string; products?: AlternateArtProduct[] | null; rarities?: AlternateArtRarity[] | null; kind?: 'alternate-art' | 'gallery-card' | 'regular-card'; effect?: string; artist?: string; cardImageId?: string; builtIn?: boolean; baseCardName?: string; grantedAt?: string; grantReason?: string }
 export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; page: number; pageSize: number }
 export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
-export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string; categoryId?: string; categoryName?: string; source?: 'catalog' | 'site' | 'legacy'; status?: string }
+export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string; categoryId?: string; categoryName?: string; source?: 'catalog' | 'site' | 'legacy'; status?: string; showInGalleryFilter?: boolean }
 export interface AlternateArtProductMergeResult { target: AlternateArtProduct; sources: AlternateArtProduct[]; migratedMetadataRows: number; archivedSiteProducts: number; disabledLegacyProducts: number }
 export interface AlternateArtRarity { id: string; code: string; name: string; active: boolean; createdAt: string; updatedAt: string }
+export interface GalleryPresentationCatalog { regularCards: AlternateArt[]; filterProducts: AlternateArtProduct[] }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { id: string; label: string; totalBytes: number; usedBytes: number; freeBytes: number }
 export interface ServerStorageCategory { id: string; label: string; bytes: number; available: boolean }
@@ -1550,16 +1551,28 @@ export const adminApi = {
     params.set('includeInactive', String(query.includeInactive ?? true))
     return platformRequest<AlternateArtSearchPage>(`/api/admin/alternate-arts/search?${params}`)
   },
+  searchRegularGalleryCards: (query: { name?: string; cardCode?: string; productId?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams()
+    if (query.name) params.set('name', query.name)
+    if (query.cardCode) params.set('cardCode', query.cardCode)
+    if (query.productId) params.set('productId', query.productId)
+    params.set('page', String(query.page ?? 1))
+    params.set('pageSize', String(query.pageSize ?? 20))
+    return platformRequest<AlternateArtSearchPage>(`/api/admin/gallery/regular-cards/search?${params}`)
+  },
   serverStorage: () => platformRequest<ServerStorageStatus>('/api/admin/server-storage', { cache: 'no-store' }),
   workbenchSummary: () => platformRequest<AdminWorkbenchSummary>('/api/admin/workbench/summary', { cache: 'no-store' }),
   alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
   saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
   mergeAlternateArtProducts: (draft: { targetProductId: string; sourceProductIds: string[] }) => platformRequest<AlternateArtProductMergeResult>('/api/admin/alternate-art-products/merge', { method: 'POST', body: JSON.stringify(draft) }),
+  saveGalleryProductFilterVisibility: (draft: { productId: string; showInGalleryFilter: boolean }) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products/filter-visibility', { method: 'PUT', body: JSON.stringify(draft) }),
   saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'artCode' | 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
   alternateArtRarities: (includeInactive = true) => platformRequest<AlternateArtRarity[]>(`/api/admin/alternate-art-rarities?includeInactive=${includeInactive}`),
   saveAlternateArtRarity: (draft: Partial<AlternateArtRarity> & Pick<AlternateArtRarity, 'code' | 'name'>) => platformRequest<AlternateArtRarity>('/api/admin/alternate-art-rarities', { method: 'PUT', body: JSON.stringify(draft) }),
   saveAlternateArtMetadata: (draft: { alternateArtId: string; productIds: string[]; rarityIds: string[]; artist?: string }) => platformRequest<AlternateArt>('/api/admin/alternate-arts/metadata', { method: 'PUT', body: JSON.stringify(draft) }),
   saveAlternateArtImage: (draft: { alternateArtId: string; mediaAssetId: string }) => platformRequest<AlternateArt>('/api/admin/alternate-arts/image', { method: 'PUT', body: JSON.stringify(draft) }),
+  saveRegularGalleryCardMetadata: (draft: { cardId: string; productIds: string[]; rarityIds: string[]; artist?: string }) => platformRequest<AlternateArt>('/api/admin/gallery/regular-cards/metadata', { method: 'PUT', body: JSON.stringify(draft) }),
+  saveRegularGalleryCardImage: (draft: { cardId: string; mediaAssetId: string }) => platformRequest<AlternateArt>('/api/admin/gallery/regular-cards/image', { method: 'PUT', body: JSON.stringify(draft) }),
   alternateArtGrants: (username?: string) => platformRequest<AlternateArtGrant[]>(`/api/admin/alternate-art-grants${username ? `?username=${encodeURIComponent(username)}` : ''}`),
   grantAlternateArt: (draft: { alternateArtId: string; accountId: string; sourceKind: AlternateArtGrant['sourceKind']; sourceReference?: string }) => platformRequest<AlternateArtGrant>('/api/admin/alternate-art-grants', { method: 'POST', body: JSON.stringify(draft) }),
   previewAlternateArtRankedParticipants: (draft: { alternateArtId: string; seasonId?: string }) => platformRequest<AlternateArtRankedParticipantDispatchPreview>('/api/admin/alternate-art-grants/ranked-participants/preview', { method: 'POST', body: JSON.stringify(draft) }),
@@ -1970,6 +1983,7 @@ export const telemetryApi = {
 export const alternateArtApi = {
   mine: () => platformRequest<AlternateArt[]>('/api/me/alternate-arts'),
   gallery: () => platformRequest<AlternateArt[]>('/api/alternate-arts'),
+  presentationCatalog: () => platformRequest<GalleryPresentationCatalog>('/api/gallery/presentation'),
   notifications: () => platformRequest<AlternateArtGrantNotification[]>('/api/me/alternate-art-grant-notifications'),
   acknowledgeNotification: (id: string) => platformRequest<void>(`/api/me/alternate-art-grant-notifications/${encodeURIComponent(id)}/acknowledge`, { method: 'POST' }),
 }

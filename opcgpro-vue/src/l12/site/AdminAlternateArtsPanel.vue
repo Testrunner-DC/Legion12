@@ -19,11 +19,15 @@ const media = ref<SiteMedia[]>([])
 const products = ref<AlternateArtProduct[]>([])
 const rarities = ref<AlternateArtRarity[]>([])
 const busy = ref(false)
-const workspace = ref<'gallery' | 'rights'>('gallery')
+const workspace = ref<'regular' | 'gallery' | 'rights'>('gallery')
 const editorOpen = ref(false)
+const regularEditorOpen = ref(false)
 const rightsLoaded = ref(false)
 const productDialogOpen = ref(false)
 const productMergeDialogOpen = ref(false)
+const productFilterDialogOpen = ref(false)
+const productFilterPending = ref<Record<string, { request: number; value: boolean }>>({})
+let productFilterRequest = 0
 const productSaving = ref(false)
 const pendingProductId = ref('')
 const editorSession = ref(0)
@@ -41,9 +45,16 @@ const registryBusy = ref(false)
 const registryFilters = reactive({ name: '', artCode: '', baseCard: '' })
 const registry = ref<AlternateArtSearchPage>({ items: [], total: 0, page: 1, pageSize: 20 })
 const registryPages = computed(() => Math.max(1, Math.ceil(registry.value.total / registry.value.pageSize)))
+const regularRegistryBusy = ref(false)
+const regularRegistryLoaded = ref(false)
+const regularRegistryFilters = reactive({ name: '', cardCode: '', productId: '' })
+const regularRegistry = ref<AlternateArtSearchPage>({ items: [], total: 0, page: 1, pageSize: 20 })
+const regularRegistryPages = computed(() => Math.max(1, Math.ceil(regularRegistry.value.total / regularRegistry.value.pageSize)))
 const grantForm = reactive({ alternateArtId: '', accountId: '', sourceKind: 'manual' as AlternateArtGrant['sourceKind'], sourceReference: '' })
 const artForm = reactive({ id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', active: true,
   kind: 'alternate-art' as 'alternate-art' | 'gallery-card', effect: '', artist: '', productIds: [] as string[], rarityIds: [] as string[], builtIn: false })
+const regularForm = reactive({ cardId: '', cardCode: '', displayName: '', mediaAssetId: '', artist: '',
+  productIds: [] as string[], rarityIds: [] as string[] })
 const rarityForm = reactive({ id: '', code: '', name: '', active: true })
 const ruleForm = reactive({ id: '', alternateArtId: '', kind: 'rank-reached' as AlternateArtAwardRule['kind'], seasonId: '', eventId: '', masterId: '', minimumTierIndex: 0, active: true })
 const eventAccountId = ref('')
@@ -93,6 +104,20 @@ async function searchRegistry(page = 1) {
   finally { registryBusy.value = false }
 }
 function resetRegistryFilters() { Object.assign(registryFilters, { name: '', artCode: '', baseCard: '' }); void searchRegistry(1) }
+async function searchRegularRegistry(page = 1) {
+  regularRegistryBusy.value = true
+  try {
+    regularRegistry.value = await adminApi.searchRegularGalleryCards({
+      ...regularRegistryFilters, page, pageSize: regularRegistry.value.pageSize,
+    })
+    regularRegistryLoaded.value = true
+  } catch (error) { notice(error instanceof Error ? error.message : '常规卡画廊资料查询失败') }
+  finally { regularRegistryBusy.value = false }
+}
+function resetRegularRegistryFilters() {
+  Object.assign(regularRegistryFilters, { name: '', cardCode: '', productId: '' })
+  void searchRegularRegistry(1)
+}
 function choosePickerItem(item: SingleCardPickerItem) {
   if (artPickerTarget.value === 'base') {
     artForm.baseCardId = item.cardId; artForm.displayName = item.name; artPickerTarget.value = null; return
@@ -108,6 +133,7 @@ function choosePickerItem(item: SingleCardPickerItem) {
 function resetArt() { Object.assign(artForm, { id: '', artCode: '', baseCardId: '', displayName: '', mediaAssetId: '', active: true,
   kind: 'alternate-art', effect: '', artist: '', productIds: [], rarityIds: [], builtIn: false }) }
 function closeEditor() { editorSession.value += 1; editorOpen.value = false }
+function closeRegularEditor() { editorSession.value += 1; regularEditorOpen.value = false }
 function openNewArt() { editorSession.value += 1; resetArt(); editorOpen.value = true }
 function editRegistryArt(art: AlternateArt) {
   editorSession.value += 1
@@ -116,6 +142,24 @@ function editRegistryArt(art: AlternateArt) {
     productIds: art.products?.map(item => item.id) ?? (art.productId ? [art.productId] : []),
     rarityIds: art.rarities?.map(item => item.id) ?? [], builtIn: Boolean(art.builtIn) })
   editorOpen.value = true
+}
+function editRegularCard(card: AlternateArt) {
+  editorSession.value += 1
+  const catalogCard = cardById.value.get(card.baseCardId || card.id)
+  const catalogRarity = catalogCard?.rarity
+  const defaultRarity = catalogRarity
+    ? rarities.value.find(item => item.code.toLocaleUpperCase() === catalogRarity.toLocaleUpperCase())
+    : undefined
+  Object.assign(regularForm, {
+    cardId: card.baseCardId || card.id,
+    cardCode: card.artCode || catalogCard?.number || card.id,
+    displayName: card.displayName || catalogCard?.nameZh || card.id,
+    mediaAssetId: card.mediaAssetId || '',
+    artist: card.artist || '',
+    productIds: card.products?.map(item => item.id) ?? [],
+    rarityIds: card.rarities?.map(item => item.id) ?? (defaultRarity ? [defaultRarity.id] : []),
+  })
+  regularEditorOpen.value = true
 }
 function resetRarity() { Object.assign(rarityForm, { id: '', code: '', name: '', active: true }) }
 function editRarity(rarity: AlternateArtRarity) { Object.assign(rarityForm, rarity) }
@@ -138,10 +182,20 @@ async function performImageSave(mediaAssetId: string) {
   const target = imageTarget.value
   if (!target) return
   try {
-    const saved = await adminApi.saveAlternateArtImage({ alternateArtId: target.id, mediaAssetId })
-    registry.value = { ...registry.value, items: registry.value.items.map(item => item.id === saved.id ? saved : item) }
-    arts.value = arts.value.map(item => item.id === saved.id ? saved : item)
-    notice(mediaAssetId ? '卡图已更换；卡牌身份、产品、罕贵与权益保持不变' : '已恢复系统卡图')
+    const regular = target.kind === 'regular-card'
+    const saved = regular
+      ? await adminApi.saveRegularGalleryCardImage({ cardId: target.baseCardId || target.id, mediaAssetId })
+      : await adminApi.saveAlternateArtImage({ alternateArtId: target.id, mediaAssetId })
+    if (regular) {
+      regularRegistry.value = { ...regularRegistry.value,
+        items: regularRegistry.value.items.map(item => item.id === saved.id ? saved : item) }
+    } else {
+      registry.value = { ...registry.value, items: registry.value.items.map(item => item.id === saved.id ? saved : item) }
+      arts.value = arts.value.map(item => item.id === saved.id ? saved : item)
+    }
+    notice(mediaAssetId
+      ? regular ? '常规卡画廊卡图已更换；对战规则与卡牌身份保持不变' : '卡图已更换；卡牌身份、产品、罕贵与权益保持不变'
+      : '已恢复系统卡图')
     closeImageEditor()
   } catch (error) { notice(error instanceof Error ? error.message : '卡图更换失败'); throw error }
 }
@@ -149,7 +203,9 @@ function saveReplacementImage() {
   const target = imageTarget.value
   if (!target || !imageMediaAssetId.value) { notice('请先上传或选择新的卡图素材'); return }
   requestRiskAction({ title: '确认更换卡图', target: `${target.artCode} · ${target.displayName}`,
-    impact: '仅替换画廊与牌库展示图片；原卡身份、异画编号、卡效、产品、罕贵、构筑和权益记录保持不变。',
+    impact: target.kind === 'regular-card'
+      ? '仅替换图鉴中的常规卡展示图；卡牌编号、卡效、产品、罕贵和对战规则保持不变。'
+      : '仅替换画廊与牌库展示图片；原卡身份、异画编号、卡效、产品、罕贵、构筑和权益记录保持不变。',
     confirmLabel: '确认更换卡图', severity: 'warning', run: () => performImageSave(imageMediaAssetId.value) })
 }
 function restoreCatalogImage() {
@@ -187,7 +243,12 @@ async function loadRights() {
   } catch (error) { notice(error instanceof Error ? error.message : '权益与派发资料读取失败') }
   finally { busy.value = false }
 }
-watch(workspace, value => { if (value === 'rights') void loadRights() })
+watch(workspace, value => {
+  closeEditor()
+  closeRegularEditor()
+  if (value === 'rights') void loadRights()
+  else if (value === 'regular' && !regularRegistryLoaded.value) void searchRegularRegistry(1)
+})
 function openProductDialog() {
   if (!pendingProductId.value)
     Object.assign(productForm, { title: '', categoryId: productCategories.value[0]?.id || '' })
@@ -204,8 +265,10 @@ async function performProductMerge() {
   const result = await adminApi.mergeAlternateArtProducts({ targetProductId: targetId, sourceProductIds: sourceIds })
   products.value = await adminApi.alternateArtProducts()
   artForm.productIds = [...new Set(artForm.productIds.map(id => sourceIds.includes(id) ? targetId : id))]
+  regularForm.productIds = [...new Set(regularForm.productIds.map(id => sourceIds.includes(id) ? targetId : id))]
   artsLoaded.value = false
-  await searchRegistry(registry.value.page)
+  if (workspace.value === 'regular') await searchRegularRegistry(regularRegistry.value.page)
+  else await searchRegistry(registry.value.page)
   productMergeDialogOpen.value = false
   notice(`产品已合并：迁移 ${result.migratedMetadataRows} 条异画归属，归档 ${result.archivedSiteProducts} 个重复产品草稿`)
 }
@@ -226,11 +289,12 @@ async function selectCreatedProduct(expectedContext = productDialogContext.value
     products.value = await adminApi.alternateArtProducts()
     const product = products.value.find(item => item.id === pendingProductId.value)
     if (!product) throw new Error('产品草稿已保存，但产品列表暂未读到该条目，请重试回选')
-    if (!editorOpen.value || !productDialogOpen.value || expectedContext !== editorSession.value) {
+    if ((!editorOpen.value && !regularEditorOpen.value) || !productDialogOpen.value || expectedContext !== editorSession.value) {
       notice('产品草稿已保存；当前编辑窗口已变化，请重新打开“新建产品”后回选该草稿')
       return
     }
-    if (!artForm.productIds.includes(product.id)) artForm.productIds.push(product.id)
+    const selectedProductIds = regularEditorOpen.value ? regularForm.productIds : artForm.productIds
+    if (!selectedProductIds.includes(product.id)) selectedProductIds.push(product.id)
     pendingProductId.value = ''
     productDialogOpen.value = false
     notice('产品草稿已保存并选用；公开画廊会在产品中心正式发布后显示该归属')
@@ -248,7 +312,7 @@ async function saveProductDraft() {
       category: category.name, categoryId: category.id, coverUrl: '', link: '', slug: '', pinned: false,
       kind: 'product', mediaAssetId: '', sortOrder: 0 })
     pendingProductId.value = `site:${saved.id}`
-    if (request !== productSaveRequest || !editorOpen.value || !productDialogOpen.value
+    if (request !== productSaveRequest || (!editorOpen.value && !regularEditorOpen.value) || !productDialogOpen.value
       || expectedContext !== editorSession.value) {
       notice('产品草稿已保存；当前编辑窗口已关闭或变化，没有自动改写其他卡片')
       return
@@ -261,7 +325,8 @@ async function saveRarity() {
   try {
     const saved = await adminApi.saveAlternateArtRarity({ ...rarityForm, id: rarityForm.id || undefined })
     rarities.value = [saved, ...rarities.value.filter(item => item.id !== saved.id)]
-    if (!artForm.rarityIds.includes(saved.id)) artForm.rarityIds.push(saved.id)
+    const selectedRarityIds = regularEditorOpen.value ? regularForm.rarityIds : artForm.rarityIds
+    if (!selectedRarityIds.includes(saved.id)) selectedRarityIds.push(saved.id)
     resetRarity()
     notice('罕贵定义已保存，可重复用于多张异画或联动卡')
   } catch (error) { notice(error instanceof Error ? error.message : '罕贵定义保存失败') }
@@ -302,6 +367,63 @@ function saveArt() {
   requestRiskAction({ title: artForm.kind === 'gallery-card' ? '确认发布联动卡到画廊' : '确认启用异画并同步画廊', target: `${artForm.artCode || '未编号'} · ${targetName}`,
     impact: artForm.kind === 'gallery-card' ? '保存后会进入画廊并展示卡效文字，但不会接入卡效结算，也不产生拥有权或构筑身份。' : '保存后会立即进入玩家画廊；已有权益的玩家可在构筑中选用。',
     confirmLabel: '保存并同步画廊', severity: 'warning', run: performSaveArt })
+}
+async function performSaveRegularCard() {
+  try {
+    const saved = await adminApi.saveRegularGalleryCardMetadata({
+      cardId: regularForm.cardId,
+      productIds: [...regularForm.productIds],
+      rarityIds: [...regularForm.rarityIds],
+      artist: regularForm.artist,
+    })
+    regularRegistry.value = { ...regularRegistry.value,
+      items: regularRegistry.value.items.map(item => item.id === saved.id ? saved : item) }
+    closeRegularEditor()
+    notice('常规卡画廊资料已保存；卡牌规则与对战身份保持不变')
+  } catch (error) { notice(error instanceof Error ? error.message : '常规卡画廊资料保存失败'); throw error }
+}
+function saveRegularCard() {
+  if (!canWrite.value || !regularForm.cardId) return
+  requestRiskAction({
+    title: '确认更新常规卡画廊资料', target: `${regularForm.cardCode} · ${regularForm.displayName}`,
+    impact: '保存后会更新图鉴中的产品、罕贵与画师资料；卡牌编号、卡效、构筑和对战规则不变。',
+    confirmLabel: '保存画廊资料', severity: 'warning', run: performSaveRegularCard,
+  })
+}
+function productFilterChecked(product: AlternateArtProduct) {
+  return productFilterPending.value[product.id]?.value ?? product.showInGalleryFilter !== false
+}
+function clearProductFilterPending(productId: string, request: number) {
+  if (productFilterPending.value[productId]?.request !== request) return
+  const next = { ...productFilterPending.value }
+  delete next[productId]
+  productFilterPending.value = next
+}
+async function setProductFilterVisibility(product: AlternateArtProduct, showInGalleryFilter: boolean) {
+  if (!canWrite.value) return 'failed' as const
+  const request = ++productFilterRequest
+  productFilterPending.value = {
+    ...productFilterPending.value,
+    [product.id]: { request, value: showInGalleryFilter },
+  }
+  try {
+    const saved = await adminApi.saveGalleryProductFilterVisibility({ productId: product.id, showInGalleryFilter })
+    if (productFilterPending.value[product.id]?.request !== request) return 'stale' as const
+    products.value = products.value.map(item => item.id === saved.id ? saved : item)
+    clearProductFilterPending(product.id, request)
+    notice(showInGalleryFilter ? `“${saved.name}”已进入玩家端产品筛选` : `“${saved.name}”已从玩家端产品筛选隐藏`)
+    return 'saved' as const
+  } catch (error) {
+    if (productFilterPending.value[product.id]?.request !== request) return 'stale' as const
+    clearProductFilterPending(product.id, request)
+    notice(error instanceof Error ? error.message : '产品筛选设置保存失败')
+    return 'failed' as const
+  }
+}
+async function onProductFilterChange(product: AlternateArtProduct, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (await setProductFilterVisibility(product, input.checked) === 'failed')
+    input.checked = product.showInGalleryFilter !== false
 }
 async function performGrant() {
   if (!grantForm.alternateArtId || !grantForm.accountId) { notice('请选择异画和玩家账号'); return }
@@ -387,9 +509,11 @@ function dispatchBetaGrant() {
 }
 function onWindowKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || riskAction.value) return
-  if (productMergeDialogOpen.value) productMergeDialogOpen.value = false
+  if (productFilterDialogOpen.value) productFilterDialogOpen.value = false
+  else if (productMergeDialogOpen.value) productMergeDialogOpen.value = false
   else if (productDialogOpen.value) productDialogOpen.value = false
   else if (imageDialogOpen.value) closeImageEditor()
+  else if (regularEditorOpen.value) closeRegularEditor()
   else if (editorOpen.value) closeEditor()
 }
 onMounted(() => { window.addEventListener('keydown', onWindowKeydown); void load() })
@@ -400,9 +524,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
   <section class="alternate-admin">
     <AdminRiskActionDialog v-if="riskAction" :title="riskAction.title" :target="riskAction.target" :impact="riskAction.impact" :confirm-label="riskAction.confirmLabel" :severity="riskAction.severity" :busy="riskBusy" :error="riskError" @cancel="cancelRiskAction" @confirm="confirmRiskAction"/>
     <header><div><small>GALLERY WORKBENCH</small><h3>画廊卡片后台</h3><p>上传新卡、替换已有卡图并维护必要资料。联动卡填写正式卡效文本，但不接入对局结算、牌池、构筑或权益。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新当前资料' }}</button></header>
-    <nav class="workspace-tabs" aria-label="画廊后台工作区"><button :class="{ active: workspace === 'gallery' }" @click="workspace = 'gallery'">画廊卡片</button><button :class="{ active: workspace === 'rights' }" @click="workspace = 'rights'">权益与派发</button></nav>
-    <div v-if="workspace === 'gallery'" class="gallery-workspace">
-      <section class="task-strip"><div><small>PRIMARY TASK</small><h4>上传与维护卡片</h4><p>从卡片列表直接编辑资料或更换卡图，低频派发功能已移至独立页签。</p></div><div class="task-actions"><button v-if="canWrite" type="button" @click="openProductMergeDialog">合并重复产品</button><button v-if="canWrite" class="primary" type="button" @click="openNewArt">上传新卡 / 异画</button></div></section>
+    <nav class="workspace-tabs" aria-label="画廊后台工作区"><button :class="{ active: workspace === 'regular' }" @click="workspace = 'regular'">常规卡</button><button :class="{ active: workspace === 'gallery' }" @click="workspace = 'gallery'">异画 / 联动卡</button><button :class="{ active: workspace === 'rights' }" @click="workspace = 'rights'">权益与派发</button></nav>
+    <div v-if="workspace === 'regular'" class="gallery-workspace regular-gallery-workspace">
+      <section class="task-strip"><div><small>REGULAR CARDS</small><h4>常规卡画廊资料</h4><p>管理官方常规卡在图鉴中使用的产品、罕贵、画师和展示卡图，不修改卡效、构筑或对战身份。</p></div><div class="task-actions"><button v-if="canWrite" type="button" @click="productFilterDialogOpen = true">管理产品筛选</button><button v-if="canWrite" type="button" @click="openProductMergeDialog">合并重复产品</button></div></section>
+      <form class="gallery-filters" @submit.prevent="searchRegularRegistry(1)"><label>卡名<input v-model.trim="regularRegistryFilters.name" placeholder="常规卡名称"></label><label>卡号<input v-model.trim="regularRegistryFilters.cardCode" placeholder="官方卡号"></label><label>收录产品<select v-model="regularRegistryFilters.productId"><option value="">全部产品</option><option v-for="item in products" :key="item.id" :value="item.id">{{ item.name }} · {{ item.categoryName || '未分类' }}</option></select></label><div class="filter-actions"><button type="button" @click="resetRegularRegistryFilters">重置</button><button class="primary" type="submit">查询</button></div></form>
+      <section class="gallery-list" :aria-busy="regularRegistryBusy"><header><div><h4>常规卡列表</h4><p>当前结果 {{ regularRegistry.total }} 项；此处资料只控制画廊展示。</p></div></header><article v-for="card in regularRegistry.items" :key="card.id"><CardImage :card-id="card.cardImageId || card.baseCardId || card.id" :legacy-url="card.thumbnailUrl || card.imageUrl" :alt="card.displayName" intent="thumb"/><div class="art-summary"><b>{{ card.displayName }}</b><span>{{ card.artCode }} · 官方常规卡</span><div class="chips"><em v-for="item in card.products || []" :key="item.id">{{ item.name }}<small v-if="item.source === 'site' && item.status !== 'published'">草稿</small></em><em v-for="item in card.rarities || []" :key="item.id">{{ item.code }}</em><em v-if="card.artist">画师：{{ card.artist }}</em></div></div><div class="row-actions"><button type="button" @click="editRegularCard(card)">编辑资料</button><button class="primary" type="button" @click="openImageEditor(card)">更换画廊卡图</button></div></article><p v-if="!regularRegistryBusy && !regularRegistry.items.length">没有符合条件的常规卡。</p><footer><span>第 {{ regularRegistry.page }} / {{ regularRegistryPages }} 页</span><div><button :disabled="regularRegistryBusy || regularRegistry.page <= 1" @click="searchRegularRegistry(regularRegistry.page - 1)">上一页</button><button :disabled="regularRegistryBusy || regularRegistry.page >= regularRegistryPages" @click="searchRegularRegistry(regularRegistry.page + 1)">下一页</button></div></footer></section>
+      <section v-if="regularEditorOpen" class="art-editor ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="regular-gallery-editor-title"><header class="editor-heading"><div><small>REGULAR CARD</small><h4 id="regular-gallery-editor-title">编辑常规卡画廊资料</h4></div><button type="button" @click="closeRegularEditor">关闭</button></header><div class="form-grid"><label>卡号<input :value="regularForm.cardCode" disabled></label><label>卡名<input :value="regularForm.displayName" disabled></label><label>画师<input v-model.trim="regularForm.artist" maxlength="120" placeholder="例如：画师姓名或署名"></label><fieldset class="metadata-choice"><legend>收录产品（可多选） <button v-if="canWrite" type="button" @click="openProductDialog">新建产品</button></legend><label v-for="item in products.filter(product => product.active || regularForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="regularForm.productIds" type="checkbox" :value="item.id"><span>{{ item.name }}<small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选） <button v-if="canWrite" type="button" @click="rarityManagerOpen = !rarityManagerOpen">管理罕贵</button></legend><label v-for="item in rarities.filter(rarity => rarity.active || regularForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="regularForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">尚未建立罕贵定义。</p></fieldset></div><section v-if="rarityManagerOpen" class="inline-manager"><h5>可复用罕贵</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section><div class="actions"><button @click="closeRegularEditor">取消</button><button v-if="canWrite" class="primary" @click="saveRegularCard">保存画廊资料</button></div></section>
+    </div>
+    <div v-else-if="workspace === 'gallery'" class="gallery-workspace">
+      <section class="task-strip"><div><small>ALTERNATE &amp; COLLAB</small><h4>上传与维护异画 / 联动卡</h4><p>从独立列表编辑资料或更换卡图；权益派发保留在单独页签。</p></div><div class="task-actions"><button v-if="canWrite" type="button" @click="productFilterDialogOpen = true">管理产品筛选</button><button v-if="canWrite" type="button" @click="openProductMergeDialog">合并重复产品</button><button v-if="canWrite" class="primary" type="button" @click="openNewArt">上传新卡 / 异画</button></div></section>
       <form class="gallery-filters" @submit.prevent="searchRegistry(1)"><label>名称<input v-model.trim="registryFilters.name" placeholder="异画或联动卡名称"></label><label>编号<input v-model.trim="registryFilters.artCode" placeholder="异画或联动编号"></label><label>绑定原卡<input v-model.trim="registryFilters.baseCard" placeholder="原卡名或编号"></label><div class="filter-actions"><button type="button" @click="resetRegistryFilters">重置</button><button class="primary" type="submit">查询</button></div></form>
       <section class="gallery-list" :aria-busy="registryBusy"><header><div><h4>卡片列表</h4><p>当前结果 {{ registry.total }} 项；产品草稿带状态标记，只有发布后才会出现在公开画廊。</p></div></header><article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :legacy-url="art.thumbnailUrl || art.imageUrl" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div class="art-summary"><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补编号' }} · {{ art.kind === 'gallery-card' ? '独立联动展示卡' : `${art.baseCardId} · ${art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中'}` }}</span><div class="chips"><em v-for="item in art.products" :key="item.id">{{ item.name }}<small v-if="item.source === 'site' && item.status !== 'published'">草稿</small></em><em v-for="item in art.rarities" :key="item.id">{{ item.code }}</em><em v-if="art.artist">画师：{{ art.artist }}</em><em>{{ art.active ? '展示中' : '已停用' }}</em></div></div><div class="row-actions"><button type="button" @click="editRegistryArt(art)">编辑资料</button><button class="primary" type="button" @click="openImageEditor(art)">更换卡图</button></div></article><p v-if="!registryBusy && !registry.items.length">没有符合条件的画廊卡片。</p><footer><span>第 {{ registry.page }} / {{ registryPages }} 页</span><div><button :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer></section>
       <section v-if="editorOpen" class="art-editor ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-editor-title"><header class="editor-heading"><div><small>{{ artForm.id ? 'EDIT ENTRY' : 'CREATE ENTRY' }}</small><h4 id="alternate-art-editor-title">{{ artForm.id ? '编辑卡片资料' : '上传新卡 / 异画' }}</h4></div><button type="button" @click="closeEditor">关闭</button></header><div class="form-grid"><label>条目类型<select v-model="artForm.kind" :disabled="Boolean(artForm.id)"><option value="alternate-art">已有卡的异画</option><option value="gallery-card">独立联动展示卡</option></select></label><label>编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001 / COLLAB-001"></label><label v-if="artForm.kind === 'alternate-art'">绑定原卡<button class="art-choice" type="button" :disabled="artForm.builtIn || Boolean(artForm.id)" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input :value="selectedBaseCard?.nameZh || artForm.displayName || '选择原卡后自动带入'" disabled></label><label v-else>联动卡名称<input v-model.trim="artForm.displayName" maxlength="120" placeholder="独立撰写名称"></label><label>画师<input v-model.trim="artForm.artist" maxlength="120" placeholder="例如：画师姓名或署名"></label><label v-if="artForm.kind === 'gallery-card'" class="full-field">联动卡卡效<textarea v-model.trim="artForm.effect" rows="4" maxlength="2000" placeholder="填写在画廊展示的正式卡效文本；不会接入对局结算"></textarea></label><fieldset class="metadata-choice"><legend>收录产品（可多选） <button v-if="canWrite" type="button" @click="openProductDialog">新建产品</button></legend><label v-for="item in products.filter(product => product.active || artForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="artForm.productIds" type="checkbox" :value="item.id"><span>{{ item.name }}<small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选） <button v-if="canWrite" type="button" @click="rarityManagerOpen = !rarityManagerOpen">管理罕贵</button></legend><label v-for="item in rarities.filter(rarity => rarity.active || artForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="artForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">尚未建立罕贵定义。</p></fieldset><label v-if="!artForm.id">卡图素材<SiteMediaPicker v-model="artForm.mediaAssetId" kind="card-art" :selected-media="media.find(item => item.id === artForm.mediaAssetId)" @selected="uploaded"/></label><label class="check"><input v-model="artForm.active" type="checkbox" :disabled="artForm.builtIn">启用并在画廊展示</label></div><MediaUploadField v-if="canWrite && !artForm.id" kind="card-art" :initial-alt="artForm.kind === 'gallery-card' ? artForm.displayName || '联动卡图' : selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><section v-if="rarityManagerOpen" class="inline-manager"><h5>可复用罕贵</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section><div class="actions"><button @click="closeEditor">取消</button><button v-if="canWrite" class="primary" @click="saveArt">保存卡片资料</button></div></section>
@@ -421,6 +551,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
       <div v-if="productDialogOpen" class="registry-mask" @click.self="productDialogOpen = false">
         <section class="product-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-product-title"><header><div><small>PRODUCT DRAFT</small><h2 id="alternate-art-product-title">新建产品</h2></div><button aria-label="关闭" @click="productDialogOpen = false">×</button></header><p>在现有产品体系中创建草稿并立即选用。草稿仅后台可见，不会自动发布资讯或公开画廊归属。</p><label>产品名称<input v-model.trim="productForm.title" maxlength="160" placeholder="例如：联动纪念卡系列"></label><label>产品分类<select v-model="productForm.categoryId"><option v-for="item in productCategories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><p v-if="pendingProductId" class="draft-state">草稿已创建：{{ pendingProductId }}。如果列表刷新失败，只需重试回选，不会重复创建。</p><footer><button @click="productDialogOpen = false">取消</button><button v-if="canWrite" class="primary" :disabled="productSaving" @click="saveProductDraft">{{ pendingProductId ? '重试回选已建草稿' : productSaving ? '保存中…' : '保存草稿并选用' }}</button></footer></section>
       </div>
+      <div v-if="productFilterDialogOpen" class="registry-mask" @click.self="productFilterDialogOpen = false">
+        <section class="product-dialog product-filter-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="gallery-product-filter-title"><header><div><small>GALLERY FILTERS</small><h2 id="gallery-product-filter-title">管理玩家端产品筛选</h2></div><button aria-label="关闭" @click="productFilterDialogOpen = false">×</button></header><p>关闭后只会从玩家端“收录产品”筛选选项移除；产品本身、卡片归属和详情中的产品资料都会保留。</p><div class="product-filter-list"><label v-for="item in products" :key="item.id"><input type="checkbox" :checked="productFilterChecked(item)" :disabled="!canWrite || productFilterPending[item.id] !== undefined" @change="onProductFilterChange(item, $event)"><span><b>{{ item.name }}</b><small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></div><footer><button @click="productFilterDialogOpen = false">完成</button></footer></section>
+      </div>
       <div v-if="productMergeDialogOpen" class="registry-mask" @click.self="productMergeDialogOpen = false">
         <section class="product-dialog product-merge-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-product-merge-title"><header><div><small>MERGE PRODUCTS</small><h2 id="alternate-art-product-merge-title">合并重复产品</h2></div><button aria-label="关闭" @click="productMergeDialogOpen = false">×</button></header><p>保留一个正式产品，系统会迁移全部异画归属，并归档或隐藏重复来源。</p><label>保留产品<select v-model="productMergeForm.targetProductId"><option value="">请选择最终保留的产品</option><option v-for="item in products.filter(product => product.active)" :key="item.id" :value="item.id">{{ item.name }} · {{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</option></select></label><fieldset class="merge-sources"><legend>合并这些重复来源</legend><label v-for="item in products.filter(product => product.id !== productMergeForm.targetProductId)" :key="item.id"><input v-model="productMergeForm.sourceProductIds" type="checkbox" :value="item.id"><span><b>{{ item.name }}</b><small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><footer><button @click="productMergeDialogOpen = false">取消</button><button v-if="canWrite" class="primary" :disabled="!productMergeForm.targetProductId || !productMergeForm.sourceProductIds.length" @click="mergeProducts">核对并合并</button></footer></section>
       </div>
@@ -436,7 +569,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
 .art-registry-entry{display:flex;align-items:center;justify-content:space-between;gap:18px}.art-registry-entry h4,.art-registry-entry p{margin:0}.registry-mask{position:fixed;z-index:3500;inset:0;display:grid;place-items:center;padding:32px;background:#020507df}.registry-modal{display:grid;width:min(1040px,94vw);height:min(760px,90vh);grid-template-rows:auto auto minmax(0,1fr) auto;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.registry-modal>header,.registry-modal>footer{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid #374147}.registry-modal>header h2{margin:4px 0 0}.registry-modal>header small{color:#cfad43;font:900 12px monospace;letter-spacing:.08em}.registry-modal>header button{border:0;background:transparent;color:#fff;font-size:28px}.registry-filters{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto auto;align-items:end;gap:8px;padding:12px 18px;border-bottom:1px solid #283238}.registry-filters label{display:grid;gap:5px;color:#aeb8bb;font-size:13px;font-weight:900}.registry-filters input,.registry-filters button,.registry-modal>footer button{box-sizing:border-box;min-height:38px;padding:8px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-results{overflow:auto;padding:12px 18px}.registry-results article{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:12px;margin-bottom:8px;padding:9px;border:1px solid #35424a;background:#101820}.registry-results img,.registry-results :deep(.l12-card-image){width:46px;height:64px;object-fit:cover}.registry-results article>div{display:grid;gap:3px}.registry-results span,.registry-results small{color:#93a0a6;font-size:13px}.registry-results article>button{min-height:34px;padding:7px 10px;border:1px solid #4a5860;background:#070d12;color:#fff}.registry-modal>footer{border-top:1px solid #374147;border-bottom:0}.registry-modal>footer span{color:#93a0a6}.registry-modal>footer div{display:flex;gap:8px}.registry-modal button:disabled{cursor:not-allowed;opacity:.42}@media(max-width:760px){.art-registry-entry{align-items:stretch;flex-direction:column}.registry-mask{padding:8px}.registry-modal{width:100%;height:96dvh}.registry-filters{grid-template-columns:1fr 1fr}.registry-filters label:first-child{grid-column:1/-1}.registry-results{padding:9px}.registry-results article{grid-template-columns:38px minmax(0,1fr)}.registry-results img,.registry-results :deep(.l12-card-image){width:38px;height:54px}.registry-results article>button{grid-column:1/-1}.registry-modal>footer{align-items:flex-start;flex-direction:column}.registry-modal>footer div,.registry-modal>footer button{width:100%}}
 .alternate-admin,.alternate-admin>*,.product-editor,.art-editor,.grant-panel,.award-rules,.event-dispatch,.form-grid,.form-grid>*{box-sizing:border-box;min-width:0;max-width:100%}.alternate-admin button,.alternate-admin input,.alternate-admin select,.alternate-admin textarea{max-width:100%;min-width:0;white-space:normal}@media(max-width:380px){.alternate-admin{padding:14px}.alternate-admin>header{margin:-14px -14px 14px;padding:14px}.product-editor,.art-editor,.grant-panel,.art-list,.grant-list,.award-rules,.event-dispatch{padding:10px}}
 .full-field,.metadata-choice{grid-column:1/-1}.metadata-choice{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:7px;padding:12px;border:1px solid #35424a}.metadata-choice legend{padding:0 6px;color:#d9c176;font-weight:900}.metadata-choice .check{justify-content:flex-start;padding:7px;background:#101820}.metadata-choice small{margin-left:auto}.product-groups{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;max-height:220px;overflow:auto}.product-groups article{margin:0}.form-grid textarea{width:100%;resize:vertical}@media(max-width:760px){.full-field,.metadata-choice{grid-column:auto}}
-.workspace-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin-bottom:16px;border:1px solid #35424a;background:#35424a}.workspace-tabs button{border:0;background:#0a1117;color:#aab4b7;font-weight:900}.workspace-tabs button.active{background:#273039;color:#f0ce67;box-shadow:inset 0 -3px #d7b64c}.task-strip{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px;border:1px solid #5b4e2c;background:linear-gradient(110deg,#15170f,#0a1218 58%)}.task-strip h4,.task-strip p{margin:2px 0}.gallery-filters{display:grid;grid-template-columns:2fr repeat(6,minmax(120px,1fr));gap:8px;margin-top:14px;padding:14px;border:1px solid #35424a;background:#091016}.gallery-filters label,.image-dialog>label,.product-dialog>label{display:grid;gap:5px;color:#c4ccce;font-size:13px;font-weight:800}.filter-actions{display:flex;grid-column:1/-1;justify-content:flex-end;gap:8px}.gallery-list{margin-top:14px;border:1px solid #35424a;background:#091016}.gallery-list>header,.gallery-list>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #35424a}.gallery-list>footer{border-top:1px solid #35424a;border-bottom:0}.gallery-list>footer>div{display:flex;gap:8px}.gallery-list article{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #29343a}.gallery-list article>img,.gallery-list article>:deep(.l12-card-image){width:64px;height:90px;object-fit:cover}.art-summary{display:grid;gap:5px}.art-summary>b{font-size:17px}.chips{display:flex;flex-wrap:wrap;gap:5px}.chips em{display:inline-flex;gap:4px;padding:3px 7px;border:1px solid #4a555a;background:#111a20;color:#cdd4d5;font-size:12px;font-style:normal}.chips small{padding-left:4px;border-left:1px solid #776a3d;color:#e2c360;font-family:inherit;letter-spacing:0}.row-actions{display:flex;gap:8px}.editor-heading,.image-dialog>header,.product-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:14px}.editor-heading h4,.image-dialog h2,.product-dialog h2{margin:3px 0}.inline-manager{grid-column:1/-1;margin-top:14px;padding:14px;border:1px solid #35424a;background:#0e171e}.inline-manager article{display:flex;align-items:center;gap:10px;margin-top:7px;padding:8px;border:1px solid #2f3a40}.inline-manager article button{margin-left:auto}.image-dialog,.product-dialog{width:min(900px,94vw);max-height:92vh;overflow:auto;padding:18px;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.product-dialog{width:min(560px,94vw)}.image-dialog>header,.product-dialog>header{margin:-18px -18px 18px;padding:16px 18px;border-bottom:1px solid #374147}.image-dialog>header button,.product-dialog>header button{border:0;background:transparent;color:#fff;font-size:28px}.image-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.image-compare figure{display:grid;justify-items:center;gap:8px;margin:0;padding:12px;border:1px solid #35424a;background:#070d12}.image-compare figcaption{justify-self:start;color:#cdd4d5;font-weight:900}.image-compare img,.image-compare :deep(.l12-card-image),.empty-preview{width:min(250px,100%);aspect-ratio:5/7;object-fit:contain;background:#020405}.empty-preview{display:grid;align-items:center;padding:15px;color:#78868c;text-align:center}.identity-note,.draft-state{padding:10px;border-left:3px solid #d1b34e;background:#17160e}.image-dialog>footer,.product-dialog>footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}.image-dialog>footer>span{flex:1}.product-dialog>label{margin-top:12px}.rights-workspace>.grant-panel:first-child{margin-top:0}
+.workspace-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-bottom:16px;border:1px solid #35424a;background:#35424a}.workspace-tabs button{border:0;background:#0a1117;color:#aab4b7;font-weight:900}.workspace-tabs button.active{background:#273039;color:#f0ce67;box-shadow:inset 0 -3px #d7b64c}.task-strip{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px;border:1px solid #5b4e2c;background:linear-gradient(110deg,#15170f,#0a1218 58%)}.task-strip h4,.task-strip p{margin:2px 0}.gallery-filters{display:grid;grid-template-columns:2fr repeat(6,minmax(120px,1fr));gap:8px;margin-top:14px;padding:14px;border:1px solid #35424a;background:#091016}.gallery-filters label,.image-dialog>label,.product-dialog>label{display:grid;gap:5px;color:#c4ccce;font-size:13px;font-weight:800}.filter-actions{display:flex;grid-column:1/-1;justify-content:flex-end;gap:8px}.gallery-list{margin-top:14px;border:1px solid #35424a;background:#091016}.gallery-list>header,.gallery-list>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #35424a}.gallery-list>footer{border-top:1px solid #35424a;border-bottom:0}.gallery-list>footer>div{display:flex;gap:8px}.gallery-list article{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid #29343a}.gallery-list article>img,.gallery-list article>:deep(.l12-card-image){width:64px;height:90px;object-fit:cover}.art-summary{display:grid;gap:5px}.art-summary>b{font-size:17px}.chips{display:flex;flex-wrap:wrap;gap:5px}.chips em{display:inline-flex;gap:4px;padding:3px 7px;border:1px solid #4a555a;background:#111a20;color:#cdd4d5;font-size:12px;font-style:normal}.chips small{padding-left:4px;border-left:1px solid #776a3d;color:#e2c360;font-family:inherit;letter-spacing:0}.row-actions{display:flex;gap:8px}.editor-heading,.image-dialog>header,.product-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:14px}.editor-heading h4,.image-dialog h2,.product-dialog h2{margin:3px 0}.inline-manager{grid-column:1/-1;margin-top:14px;padding:14px;border:1px solid #35424a;background:#0e171e}.inline-manager article{display:flex;align-items:center;gap:10px;margin-top:7px;padding:8px;border:1px solid #2f3a40}.inline-manager article button{margin-left:auto}.image-dialog,.product-dialog{width:min(900px,94vw);max-height:92vh;overflow:auto;padding:18px;border:1px solid #66572b;background:#0b1116;color:#eff2ef;box-shadow:0 30px 100px #000}.product-dialog{width:min(560px,94vw)}.image-dialog>header,.product-dialog>header{margin:-18px -18px 18px;padding:16px 18px;border-bottom:1px solid #374147}.image-dialog>header button,.product-dialog>header button{border:0;background:transparent;color:#fff;font-size:28px}.image-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}.image-compare figure{display:grid;justify-items:center;gap:8px;margin:0;padding:12px;border:1px solid #35424a;background:#070d12}.image-compare figcaption{justify-self:start;color:#cdd4d5;font-weight:900}.image-compare img,.image-compare :deep(.l12-card-image),.empty-preview{width:min(250px,100%);aspect-ratio:5/7;object-fit:contain;background:#020405}.empty-preview{display:grid;align-items:center;padding:15px;color:#78868c;text-align:center}.identity-note,.draft-state{padding:10px;border-left:3px solid #d1b34e;background:#17160e}.image-dialog>footer,.product-dialog>footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:16px}.image-dialog>footer>span{flex:1}.product-dialog>label{margin-top:12px}.rights-workspace>.grant-panel:first-child{margin-top:0}
 @media(max-width:1050px){.gallery-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.gallery-filters label:first-child{grid-column:span 2}}
 @media(max-width:760px){.task-strip,.gallery-list>header,.gallery-list>footer{align-items:stretch;flex-direction:column}.gallery-filters{grid-template-columns:1fr}.gallery-filters label:first-child{grid-column:auto}.gallery-list article{grid-template-columns:52px minmax(0,1fr);padding:10px}.gallery-list article>img,.gallery-list article>:deep(.l12-card-image){width:52px;height:74px}.row-actions{grid-column:1/-1}.row-actions button{flex:1}.image-compare{grid-template-columns:1fr}.image-compare img,.image-compare :deep(.l12-card-image),.empty-preview{width:min(210px,100%)}.image-dialog,.product-dialog{width:calc(100vw - 16px);max-height:96dvh;padding:14px}.image-dialog>header,.product-dialog>header{margin:-14px -14px 14px;padding:14px}.image-dialog>footer,.product-dialog>footer{align-items:stretch;flex-direction:column}.image-dialog>footer button,.product-dialog>footer button{width:100%}.workspace-tabs{position:sticky;z-index:3;top:0}}
 .gallery-filters{grid-template-columns:repeat(3,minmax(120px,1fr))}.art-editor{position:fixed;z-index:3300;inset:4vh max(16px,5vw);overflow:auto;margin:0;padding:20px;border-color:#66572b;box-shadow:0 30px 100px #000}.art-editor>.editor-heading{position:sticky;z-index:2;top:-20px;margin:-20px -20px 18px;padding:16px 20px;border-bottom:1px solid #374147;background:#0b1116}@media(max-width:760px){.gallery-filters{grid-template-columns:1fr}.art-editor{inset:8px;padding:14px}.art-editor>.editor-heading{top:-14px;margin:-14px -14px 14px;padding:14px}}
@@ -444,5 +577,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
 .image-dialog>footer>button,.product-dialog>footer>button,.product-dialog>label>input,.product-dialog>label>select{box-sizing:border-box;min-height:38px;padding:8px 10px;border:1px solid #4a5860;background:#070d12;color:#fff;font:inherit}
 @media(max-width:900px),(pointer:coarse){.image-dialog>header>button,.product-dialog>header>button{box-sizing:border-box;min-width:44px;min-height:44px;flex:0 0 44px;padding:0}.image-dialog>footer>button,.product-dialog>footer>button,.product-dialog>label>input,.product-dialog>label>select{min-height:44px}.product-dialog>label>select{height:44px}}
 .task-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.merge-sources{display:grid;gap:7px;max-height:320px;overflow:auto;margin:14px 0 0;padding:12px;border:1px solid #35424a}.merge-sources legend{padding:0 6px;color:#d9c176;font-weight:900}.merge-sources label{display:flex;align-items:center;gap:9px;padding:8px;background:#101820}.merge-sources label span{display:grid;gap:2px}.merge-sources label small{color:#93a0a6}.product-merge-dialog{width:min(720px,94vw)}
-@media(max-width:760px){.task-actions{width:100%;justify-content:stretch}.task-actions button{flex:1}.merge-sources label{align-items:flex-start}.product-merge-dialog{width:calc(100vw - 16px)}}
+.product-filter-dialog{width:min(720px,94vw)}.product-filter-list{display:grid;gap:7px;max-height:min(58vh,520px);overflow:auto;margin-top:14px}.product-filter-list label{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #35424a;background:#101820;color:#e2e7e7}.product-filter-list label>span{display:grid;gap:2px}.product-filter-list small{color:#93a0a6}
+@media(max-width:760px){.task-actions{width:100%;justify-content:stretch}.task-actions button{flex:1}.merge-sources label{align-items:flex-start}.product-merge-dialog,.product-filter-dialog{width:calc(100vw - 16px)}}
 </style>

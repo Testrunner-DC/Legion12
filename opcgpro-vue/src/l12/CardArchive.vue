@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { cardTypeFilterKey, cardTypeLabel, isHorizontalCardType } from './cardPresentation'
 import { compareArchiveVersions, groupArchiveCards, type LogicalArchiveCard } from './cardArchiveVersions'
 import { cardArchiveProducts, displayCardNumber, filterableCardCost, loadCardArchiveCatalog, type DeckCard } from './decks'
 import { cardErrataForCard, type CardErrataRecord } from './data/cardErrata'
 import MobileDeferredCardImage from './MobileDeferredCardImage.vue'
 import CardDetailContent from './CardDetailContent.vue'
-import { alternateArtApi, authState, platformState, type AlternateArt } from './platform'
+import { alternateArtApi, type AlternateArt, type AlternateArtProduct } from './platform'
 import MobileFilterSheet from './site/MobileFilterSheet.vue'
 
 type CatalogCard = DeckCard & { galleryStandalone?: boolean; artist?: string }
@@ -34,7 +34,8 @@ const galleryVariantPatterns = [
 ]
 const cards = ref<CatalogCard[]>([])
 const galleryArts = ref<AlternateArt[]>([])
-const ownedArts = ref<AlternateArt[]>([])
+const regularGalleryCards = ref<AlternateArt[]>([])
+const galleryFilterProducts = ref<AlternateArtProduct[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const page = ref<ArchivePage>('catalog')
@@ -53,8 +54,14 @@ const modalCard = ref<CatalogCard | null>(null)
 const modalVersions = ref<CatalogCard[]>([])
 const modalCloseButton = ref<HTMLButtonElement | null>(null)
 let modalTrigger: HTMLElement | null = null
-let archiveMounted = false
-let ownedArtsRequest = 0
+
+function alternateArtArchiveName(baseName: string, artName: string) {
+  const normalizedBase = baseName.trim()
+  const normalizedArt = artName.trim()
+  return !normalizedArt || normalizedArt.localeCompare(normalizedBase, 'zh-CN', { sensitivity: 'accent' }) === 0
+    ? normalizedBase
+    : `${normalizedBase} · ${normalizedArt}`
+}
 
 function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard | null {
   if (art.kind === 'gallery-card') {
@@ -75,25 +82,41 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       galleryStandalone: true,
     }
   }
-  const base = cards.value.find(card => card.id === art.baseCardId)
+  const base = regularDisplayCards.value.find(card => card.id === art.baseCardId)
   if (!base || art.builtIn) return null
   return {
     ...base,
     id: `ALT-${gallery ? art.artCode || art.id : art.id}`,
     number: art.artCode || `ALT-${art.id.slice(0, 8)}`,
-    nameZh: gallery ? `${base.nameZh} · ${art.displayName}` : base.nameZh,
+    nameZh: gallery ? alternateArtArchiveName(base.nameZh, art.displayName) : base.nameZh,
     imageUrl: art.imageUrl,
     archiveBaseCardId: base.id,
     products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : base.products),
-    rarity: art.rarities !== undefined ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
+    rarity: art.rarities != null ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
     artist: art.artist || undefined,
   }
 }
-const catalogAlternateArts = computed(() => authState.verified && platformState.account?.role === 'admin'
-  ? galleryArts.value
-  : ownedArts.value)
+function withRegularGalleryMetadata(card: CatalogCard): CatalogCard {
+  const overlay = regularGalleryCards.value.find(item => item.baseCardId === card.id || item.cardImageId === card.id)
+  if (!overlay) return card
+  return {
+    ...card,
+    imageUrl: overlay.imageUrl || card.imageUrl,
+    products: overlay.products !== undefined && overlay.products !== null
+      ? overlay.products.map(item => item.name)
+      : card.products,
+    rarity: overlay.rarities !== undefined && overlay.rarities !== null
+      ? overlay.rarities.map(item => item.name).join(' / ') || undefined
+      : card.rarity,
+    artist: overlay.artist || undefined,
+  }
+}
+const regularDisplayCards = computed(() => cards.value.map(withRegularGalleryMetadata))
+// The archive is a public catalog: every active alternate art may be previewed here.
+// Deck saving and match startup continue to validate ownership on the server.
+const catalogAlternateArts = computed(() => galleryArts.value)
 const catalogCards = computed(() => [
-  ...cards.value,
+  ...regularDisplayCards.value,
   ...catalogAlternateArts.value.map(art => projectedUploadedArt(art)).filter((card): card is CatalogCard => Boolean(card)),
 ])
 const logicalCards = computed(() => groupArchiveCards(catalogCards.value))
@@ -103,58 +126,46 @@ function withGalleryMetadata(card: CatalogCard): CatalogCard {
   return {
     ...card,
     imageUrl: overlay.imageUrl || card.imageUrl,
-    products: overlay.products !== undefined
+    products: overlay.products != null
       ? overlay.products.map(item => item.name)
       : overlay.productName ? [overlay.productName] : card.products,
-    rarity: overlay.rarities !== undefined
+    rarity: overlay.rarities != null
       ? overlay.rarities.map(item => item.name).join(' / ') || undefined
       : card.rarity,
     artist: overlay.artist || undefined,
   }
 }
 const galleryCards = computed(() => {
-  const legacy = cards.value.filter(isGalleryVariant).map(withGalleryMetadata)
+  const legacy = regularDisplayCards.value.filter(isGalleryVariant).map(withGalleryMetadata)
   const uploaded = galleryArts.value.map(art => projectedUploadedArt(art, true))
     .filter((card): card is CatalogCard => Boolean(card))
   return [...legacy, ...uploaded].sort(compareArchiveVersions)
 })
-const productOptions = computed(() => [...new Set([
-  ...cardArchiveProducts,
-  ...galleryCards.value.flatMap(card => card.products ?? []),
-])].filter(value => cards.value.some(card => card.products?.includes(value))
-  || galleryCards.value.some(card => card.products?.includes(value))))
-
-async function refreshOwnedArts() {
-  const request = ++ownedArtsRequest
-  const accountId = authState.verified ? platformState.account?.id ?? '' : ''
-  if (!accountId || platformState.account?.role === 'admin') {
-    ownedArts.value = []
-    return
-  }
-  try {
-    const owned = await alternateArtApi.mine()
-    if (request === ownedArtsRequest && authState.verified && platformState.account?.id === accountId)
-      ownedArts.value = owned
-  } catch {
-    if (request === ownedArtsRequest) ownedArts.value = []
-  }
-}
-
-watch(() => `${authState.verified}:${platformState.account?.id ?? ''}:${platformState.account?.role ?? ''}`, () => {
-  if (archiveMounted) void refreshOwnedArts()
+const productOptions = computed(() => {
+  const visibleNames = new Set(galleryFilterProducts.value
+    .filter(item => item.showInGalleryFilter !== false)
+    .map(item => item.name))
+  const ordered = [
+    ...cardArchiveProducts.filter(name => visibleNames.has(name)),
+    ...galleryFilterProducts.value.map(item => item.name)
+      .filter(name => visibleNames.has(name) && !cardArchiveProducts.includes(name)),
+  ]
+  return [...new Set(ordered)].filter(value => regularDisplayCards.value.some(card => card.products?.includes(value))
+    || galleryCards.value.some(card => card.products?.includes(value)))
 })
 
 onMounted(async () => {
-  archiveMounted = true
   window.addEventListener('keydown', onWindowKeydown)
   try {
-    const [catalog, arts] = await Promise.all([
+    const [catalog, arts, presentation] = await Promise.all([
       loadCardArchiveCatalog(),
       alternateArtApi.gallery(),
+      alternateArtApi.presentationCatalog(),
     ])
     cards.value = catalog
     galleryArts.value = arts
-    await refreshOwnedArts()
+    regularGalleryCards.value = presentation.regularCards
+    galleryFilterProducts.value = presentation.filterProducts
     const first = logicalCards.value[0]
     if (first) selectLogical(first)
     selectedGalleryId.value = galleryCards.value[0]?.id ?? ''
@@ -166,8 +177,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  archiveMounted = false
-  ownedArtsRequest += 1
   window.removeEventListener('keydown', onWindowKeydown)
 })
 
@@ -220,9 +229,9 @@ const filteredGallery = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase('zh-CN')
   return galleryCards.value.filter(card => matchesFilters(card, keyword)).sort(compareVisibleCards)
 })
-const types = computed(() => [...new Set((page.value === 'gallery' ? galleryCards.value : cards.value).map(card => cardTypeFilterKey(card.cardType)))]
+const types = computed(() => [...new Set((page.value === 'gallery' ? galleryCards.value : regularDisplayCards.value).map(card => cardTypeFilterKey(card.cardType)))]
   .filter(key => typeLabels[key]))
-const factions = computed(() => Object.keys(factionLabels).filter(key => cards.value.some(card => card.faction === key)))
+const factions = computed(() => Object.keys(factionLabels).filter(key => regularDisplayCards.value.some(card => card.faction === key)))
 const selectedLogical = computed(() => logicalCards.value.find(entry => entry.logicalId === selectedLogicalId.value) ?? null)
 const selectedCatalogCard = computed(() => selectedLogical.value?.versions.find(card => card.id === selectedVersionId.value)
   ?? selectedLogical.value?.defaultVersion

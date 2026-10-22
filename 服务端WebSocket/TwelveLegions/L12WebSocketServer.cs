@@ -4442,6 +4442,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         });
         // 画廊是公开展示；权益只在构筑选用和开局二次校验时生效。
         _app.MapGet("/api/alternate-arts", () => Results.Ok(_platform.AlternateArts()));
+        _app.MapGet("/api/gallery/presentation", () => Results.Ok(_platform.GalleryPresentationCatalog()));
         _app.MapGet("/api/admin/alternate-art-products", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
@@ -4473,6 +4474,14 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try { return Results.Ok(_platform.MergeAlternateArtProducts(authenticated.Account, draft, RequestAuditContext(request, permission))); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_product_merge_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
+        _app.MapPut("/api/admin/alternate-art-products/filter-visibility",
+            (HttpRequest request, L12AlternateArtProductFilterVisibilityDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveGalleryProductFilterVisibility(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "gallery_product_missing", error.Message, StatusCodes.Status404NotFound); }
+        });
         _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
@@ -4484,6 +4493,31 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
             return Results.Ok(_platform.SearchAlternateArts(name, artCode, baseCard, page ?? 1, pageSize ?? 20,
                 includeInactive != false));
+        });
+        _app.MapGet("/api/admin/gallery/regular-cards/search", (HttpRequest request, string? name,
+            string? cardCode, string? productId, int? page, int? pageSize) =>
+        {
+            if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;
+            return Results.Ok(_platform.SearchRegularGalleryCards(name, cardCode, productId,
+                page ?? 1, pageSize ?? 20));
+        });
+        _app.MapPut("/api/admin/gallery/regular-cards/metadata",
+            (HttpRequest request, L12RegularGalleryCardMetadataDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveRegularGalleryCardMetadata(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "gallery_regular_card_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "gallery_regular_card_metadata_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
+        _app.MapPut("/api/admin/gallery/regular-cards/image",
+            (HttpRequest request, L12RegularGalleryCardImageDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.SaveRegularGalleryCardImage(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (KeyNotFoundException error) { return ApiError(request, "gallery_regular_card_missing", error.Message, StatusCodes.Status404NotFound); }
+            catch (ArgumentException error) { return ApiError(request, "gallery_regular_card_image_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
         _app.MapGet("/api/admin/server-storage", (HttpRequest request) =>
         {

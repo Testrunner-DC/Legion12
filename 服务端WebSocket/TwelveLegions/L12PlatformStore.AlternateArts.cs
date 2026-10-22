@@ -13,7 +13,7 @@ public sealed record L12AlternateArtGrantNotificationView(string Id, string Alte
     string ImageUrl, string ThumbnailUrl, string CardImageId, bool BuiltIn);
 public sealed record L12AlternateArtProductView(string Id, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string CategoryId = "", string CategoryName = "",
-    string Source = "legacy", string Status = "active");
+    string Source = "legacy", string Status = "active", bool ShowInGalleryFilter = true);
 public sealed record L12AlternateArtRarityView(string Id, string Code, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
@@ -51,6 +51,7 @@ public sealed partial class L12PlatformStore
     public IReadOnlyList<L12AlternateArtProductView> AlternateArtProducts(bool includeInactive = false)
     {
         lock (_gate) return AllAlternateArtProductsLocked().Where(row => includeInactive || row.Active)
+            .Select(WithGalleryFilterPreferenceLocked)
             .OrderBy(row => row.CategoryName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
@@ -812,6 +813,7 @@ public sealed partial class L12PlatformStore
             var changed = false;
             _data.AlternateArtMetadata ??= [];
             _data.AlternateArtProductMerges ??= [];
+            _data.AlternateArtProductPreferences ??= [];
             _data.AlternateArtRarities ??= [];
             foreach (var row in _data.AlternateArtMetadata)
             {

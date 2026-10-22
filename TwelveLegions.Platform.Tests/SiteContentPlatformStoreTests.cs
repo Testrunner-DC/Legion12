@@ -93,6 +93,68 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void RegularGalleryCardMetadataAndProductFilterVisibilityPersistWithoutChangingRules()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-regular-gallery-card-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var cardProduct = catalog.CardProducts.First(item => item.Value.Count > 0 && catalog.Cards.ContainsKey(item.Key));
+            var card = catalog.Cards[cardProduct.Key];
+            var originalEffect = card.Effect;
+            var productId = $"catalog:{cardProduct.Value[0]}";
+            var rarity = store.SaveAlternateArtRarity(admin, new(null, "QA", "测试罕贵"));
+            var media = Upload(store, admin, "card-art");
+
+            var saved = store.SaveRegularGalleryCardMetadata(admin,
+                new(card.Id, [productId], [rarity.Id], "测试画师"));
+            var changedImage = store.SaveRegularGalleryCardImage(admin, new(card.Id, media.Id));
+            var hidden = store.SaveGalleryProductFilterVisibility(admin, new(productId, false));
+
+            Assert.Equal("regular-card", saved.Kind);
+            Assert.Equal(card.Id, saved.Id);
+            Assert.Equal(card.Number, saved.ArtCode);
+            Assert.Equal(card.NameZh, saved.DisplayName);
+            Assert.Equal("测试画师", changedImage.Artist);
+            Assert.Equal(media.DesktopUrl, changedImage.ImageUrl);
+            Assert.Equal([productId], changedImage.Products!.Select(item => item.Id));
+            Assert.Equal([rarity.Id], changedImage.Rarities!.Select(item => item.Id));
+            Assert.False(hidden.ShowInGalleryFilter);
+            Assert.Equal(originalEffect, catalog.Cards[card.Id].Effect);
+
+            var presentation = store.GalleryPresentationCatalog();
+            var publicCard = presentation.RegularCards.Single(item => item.Id == card.Id);
+            Assert.Equal(media.DesktopUrl, publicCard.ImageUrl);
+            Assert.Equal("测试画师", publicCard.Artist);
+            Assert.Contains(publicCard.Products!, item => item.Id == productId);
+            Assert.Contains(presentation.FilterProducts,
+                item => item.Id == productId && !item.ShowInGalleryFilter);
+            Assert.Contains(store.SearchRegularGalleryCards(card.NameZh, card.Number, productId).Items,
+                item => item.Id == card.Id);
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var restoredState = reloaded.GalleryPresentationCatalog();
+            Assert.Contains(restoredState.RegularCards,
+                item => item.Id == card.Id && item.Artist == "测试画师" && item.MediaAssetId == media.Id);
+            Assert.Contains(restoredState.FilterProducts,
+                item => item.Id == productId && !item.ShowInGalleryFilter);
+
+            var restoredImage = reloaded.SaveRegularGalleryCardImage(admin, new(card.Id, ""));
+            Assert.Equal("", restoredImage.MediaAssetId);
+            reloaded.DeleteSiteMedia(admin, media.Id);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AlternateArtNameAlwaysFollowsBaseCardAndActiveArtIsPublic()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-card-{Guid.NewGuid():N}");

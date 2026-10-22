@@ -328,6 +328,7 @@ public sealed partial class L12PlatformStore
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
         public List<AlternateArtProductRow> AlternateArtProducts { get; set; } = [];
         public List<AlternateArtProductMergeRow> AlternateArtProductMerges { get; set; } = [];
+        public List<AlternateArtProductPreferenceRow> AlternateArtProductPreferences { get; set; } = [];
         public List<AlternateArtRow> AlternateArts { get; set; } = [];
         public List<AlternateArtMetadataRow> AlternateArtMetadata { get; set; } = [];
         public List<AlternateArtRarityRow> AlternateArtRarities { get; set; } = [];
@@ -411,6 +412,14 @@ public sealed partial class L12PlatformStore
         public string TargetProductId { get; set; } = string.Empty;
         public string CreatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtProductPreferenceRow
+    {
+        public string ProductId { get; set; } = string.Empty;
+        public bool ShowInGalleryFilter { get; set; } = true;
+        public string UpdatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
 

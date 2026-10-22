@@ -293,10 +293,10 @@ const contracts = [
     && decks.includes('const base = byId.get(asset.baseCardId) ?? catalogById.get(asset.baseCardId)')
     && decks.includes('archiveBaseCardId: asset.baseCardId')
     && cardArchive.includes('groupArchiveCards(catalogCards.value)') && cardArchive.includes('entry.versions.some(card =>')
-    && cardArchive.includes("platformState.account?.role === 'admin'")
-    && cardArchive.includes('? galleryArts.value')
-    && cardArchive.includes('await alternateArtApi.mine()')
-    && cardArchive.includes('watch(() => `${authState.verified}:${platformState.account?.id ?? \'\'}:${platformState.account?.role ?? \'\'}`')
+    && cardArchive.includes('const catalogAlternateArts = computed(() => galleryArts.value)')
+    && cardArchive.includes('alternateArtArchiveName(base.nameZh, art.displayName)')
+    && !cardArchive.includes('alternateArtApi.mine()')
+    && !cardArchive.includes('ownedArts')
     && cardArchiveVersions.includes("byId.get(card.archiveBaseCardId ?? '')")
     && cardDetailContent.includes('props.card.products') && cardDetailContent.includes('收录产品')
     && cardDetailContent.includes('v-if="showCatalogOnly"')
@@ -317,7 +317,8 @@ const contracts = [
     && s2Cards.some(card => card.id === 'S02-05C1A')
     && cardArchive.includes("card.id !== 'S02-05C1B'")
     && cardArchive.includes("Boolean(card.archiveBaseCardId) || card.id === 'S02-05C1A'")
-    && cardArchive.includes('cards.value.filter(isGalleryVariant)')
+    && (cardArchive.includes('cards.value.filter(isGalleryVariant)')
+      || cardArchive.includes('regularDisplayCards.value.filter(isGalleryVariant)'))
     && cardArchive.includes('v-for="card in filteredGallery" :key="card.id"')
     && !galleryMarkup.includes('archive-version-arrow'), '画廊必须逐卡展示41张登记展示资源与S02-05C1A，共42张异画；主宰异画编号不得写死为M1A；S02-05C1A在图鉴并入默认士气S02-05C1的版本切换、在画廊独立展示，不得成为新规则身份，也不得误收规则独立的奥林匹斯神力B面'],
   [cardArchive.includes("import MobileDeferredCardImage from './MobileDeferredCardImage.vue'")
@@ -1882,14 +1883,19 @@ contracts.push(
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
-  [adminAlternateArts.includes("const workspace = ref<'gallery' | 'rights'>('gallery')")
-    && adminAlternateArts.includes('class="gallery-workspace"') && adminAlternateArts.includes('画廊卡片')
+  [adminAlternateArts.includes("const workspace = ref<'regular' | 'gallery' | 'rights'>('gallery')")
+    && adminAlternateArts.includes('常规卡画廊资料') && adminAlternateArts.includes('异画 / 联动卡')
     && adminAlternateArts.includes('adminApi.searchAlternateArts')
     && ['name', 'artCode', 'baseCard'].every(key => adminAlternateArts.includes(`registryFilters.${key}`))
     && adminAlternateArts.includes('pageSize: registry.value.pageSize')
     && adminAlternateArts.includes('await searchRegistry(1)')
     && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
-    '画廊后台默认卡片工作区必须按名称、编号、绑定卡进行服务器查询和分页，初始加载不得拉取全量登记表；权益派发保持独立'],
+    && adminAlternateArts.includes('adminApi.searchRegularGalleryCards')
+    && adminAlternateArts.includes('adminApi.saveRegularGalleryCardMetadata')
+    && adminAlternateArts.includes('adminApi.saveRegularGalleryCardImage')
+    && adminAlternateArts.includes('adminApi.saveGalleryProductFilterVisibility')
+    && adminAlternateArts.includes('只会从玩家端“收录产品”筛选选项移除')
+    '画廊后台必须将常规卡、异画/联动卡和权益拆为独立页签；两类卡片分别使用服务器分页，共用产品筛选可见性管理'],
   [shell.includes('alternateArtApi.notifications()')
     && shell.includes('alternateArtApi.acknowledgeNotification')
     && shell.includes('<h2 id="alternate-art-notification-title">获得异画！</h2>')

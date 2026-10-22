@@ -170,6 +170,58 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
         Assert.DoesNotContain(productsJson.RootElement.EnumerateArray(), row => row.GetProperty("id").GetString() == sourceId);
     }
 
+    [Fact]
+    public async Task RegularCardsUseSeparateAdminRoutesAndPublicPresentationKeepsHiddenProductAssociations()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var admin = f.Store.AuthenticateTokenSession(f.AdminToken)!.Account;
+        var product = f.Store.SaveAlternateArtProduct(admin, new(null, "常规卡测试产品"));
+        var rarity = f.Store.SaveAlternateArtRarity(admin, new(null, "RG", "常规卡测试罕贵"));
+        var media = Upload(f.Store, admin, "card-art");
+
+        using var publicBefore = await Send(f, HttpMethod.Get, "/api/gallery/presentation", null);
+        Assert.Equal(HttpStatusCode.OK, publicBefore.StatusCode);
+        using var beforeJson = JsonDocument.Parse(await publicBefore.Content.ReadAsStringAsync());
+        var card = beforeJson.RootElement.GetProperty("regularCards").EnumerateArray().First();
+        var cardId = card.GetProperty("id").GetString()!;
+
+        using var deniedSearch = await Send(f, HttpMethod.Get,
+            "/api/admin/gallery/regular-cards/search?page=1&pageSize=20", f.PlayerToken);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedSearch.StatusCode);
+        using var search = await Send(f, HttpMethod.Get,
+            $"/api/admin/gallery/regular-cards/search?cardCode={Uri.EscapeDataString(cardId)}&page=1&pageSize=20",
+            f.AdminToken);
+        Assert.Equal(HttpStatusCode.OK, search.StatusCode);
+
+        var metadataBody = new { cardId, productIds = new[] { product.Id }, rarityIds = new[] { rarity.Id }, artist = "HTTP画师" };
+        using var deniedSave = await Send(f, HttpMethod.Put, "/api/admin/gallery/regular-cards/metadata",
+            f.PlayerToken, metadataBody);
+        Assert.Equal(HttpStatusCode.Forbidden, deniedSave.StatusCode);
+        using var saved = await Send(f, HttpMethod.Put, "/api/admin/gallery/regular-cards/metadata",
+            f.AdminToken, metadataBody);
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        using var image = await Send(f, HttpMethod.Put, "/api/admin/gallery/regular-cards/image", f.AdminToken,
+            new { cardId, mediaAssetId = media.Id });
+        Assert.Equal(HttpStatusCode.OK, image.StatusCode);
+        using var hidden = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products/filter-visibility",
+            f.AdminToken, new { productId = product.Id, showInGalleryFilter = false });
+        Assert.Equal(HttpStatusCode.OK, hidden.StatusCode);
+
+        using var publicAfter = await Send(f, HttpMethod.Get, "/api/gallery/presentation", null);
+        Assert.Equal(HttpStatusCode.OK, publicAfter.StatusCode);
+        using var afterJson = JsonDocument.Parse(await publicAfter.Content.ReadAsStringAsync());
+        var updated = afterJson.RootElement.GetProperty("regularCards").EnumerateArray()
+            .Single(row => row.GetProperty("id").GetString() == cardId);
+        Assert.Equal("regular-card", updated.GetProperty("kind").GetString());
+        Assert.Equal("HTTP画师", updated.GetProperty("artist").GetString());
+        Assert.Equal(media.DesktopUrl, updated.GetProperty("imageUrl").GetString());
+        Assert.Contains(updated.GetProperty("products").EnumerateArray(),
+            row => row.GetProperty("id").GetString() == product.Id);
+        Assert.Contains(afterJson.RootElement.GetProperty("filterProducts").EnumerateArray(),
+            row => row.GetProperty("id").GetString() == product.Id
+                && !row.GetProperty("showInGalleryFilter").GetBoolean());
+    }
+
     private static void AssertStableIdentity(L12AlternateArtView baseline, JsonElement actual)
     {
         Assert.Equal(baseline.Id, actual.GetProperty("id").GetString());
