@@ -5,6 +5,11 @@ import { articleBodyText } from './articleBlocks'
 import { defaultHomeComposition, defaultSiteLegal, parseHomeComposition, parseSiteLegal, type HomeHeroSlide } from './homeContent'
 import { loadPublishedHomeCache, savePublishedHomeCache } from './homePublishedCache'
 import { homeAccountVerified } from './homeRevisit'
+import { deploymentPath } from '@/l12/deploymentBase'
+
+const partnerSites = [
+  { id: 'ka-league', name: 'KA盟', logo: deploymentPath('/images/partners/ka-league.png'), href: 'https://legion-12.shmxwd.com/community/index.html' },
+]
 
 const HomeRevisitActions = defineAsyncComponent(() => import('./HomeRevisitActions.vue'))
 const showRevisit = computed(() => homeAccountVerified(platformState.account?.id, platformState.token,
@@ -178,7 +183,20 @@ onBeforeUnmount(() => {
       <p v-else class="home-content-empty" role="status">暂无视频</p>
     </section>
 
-    <footer class="official-footer"><div class="footer-brand"><img src="/favicon.png" alt="十二军团"><span>LEGION 12</span></div><div><p>{{ legal.trademark }}</p><a v-if="legal.contactHref" :href="legal.contactHref" target="_blank" rel="noopener">{{ legal.contactLabel || '联系我们' }}</a><small>{{ legal.copyright }}<template v-if="legal.registration"> · {{ legal.registration }}</template></small></div></footer>
+    <footer class="official-footer">
+      <div class="footer-identities">
+        <div class="footer-brand"><img src="/favicon.png" alt="十二军团"><span>LEGION 12</span></div>
+        <div class="footer-partners" role="group" aria-label="合作站">
+          <span class="footer-partner-label">合作站</span>
+          <div class="footer-partner-links">
+            <a v-for="partner in partnerSites" :key="partner.id" class="footer-partner" :href="partner.href" target="_blank" rel="noopener noreferrer" :aria-label="`${partner.name}合作站（新窗口打开）`">
+              <img :src="partner.logo" :alt="partner.name" width="80" height="80" decoding="async">
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-legal"><p>{{ legal.trademark }}</p><a v-if="legal.contactHref" :href="legal.contactHref" target="_blank" rel="noopener">{{ legal.contactLabel || '联系我们' }}</a><small>{{ legal.copyright }}<template v-if="legal.registration"> · {{ legal.registration }}</template></small></div>
+    </footer>
   </div>
   <div v-else class="official-home-loading" aria-label="正在加载官网内容"><i/><i/><i/></div>
 </template>
@@ -287,7 +305,17 @@ onBeforeUnmount(() => {
 @media(prefers-reduced-motion:reduce){.hero-fade-enter-active,.hero-fade-leave-active,.hero-copy-fade-enter-active,.hero-copy-fade-leave-active{transition:none}.carousel-controls span button.active::after{animation:none;transform:scaleX(1)}}
 .hero-copy{top:auto;bottom:96px;left:clamp(26px,5vw,78px);width:min(390px,32vw)}
 @media(max-width:700px){.hero-copy{top:auto;right:18px;bottom:230px;left:18px;width:auto}}
-.official-footer>.footer-brand{display:flex;align-items:center;gap:13px;color:#fff;font:900 14px monospace;letter-spacing:.16em}
+.official-footer .footer-brand{display:flex;align-items:center;gap:13px;color:#fff;font:900 14px monospace;letter-spacing:.16em;white-space:nowrap}
+.official-footer>.footer-identities{display:flex;flex:0 0 auto;max-width:100%;align-items:center;flex-wrap:wrap;column-gap:26px;row-gap:12px;text-align:left}
+.official-footer .footer-partners{display:flex;min-width:0;max-width:100%;align-items:center;gap:12px;padding-left:24px;border-left:1px solid #354047}
+.footer-partner-label{flex:none;color:#c8ced0;font-size:13px;font-weight:700;white-space:nowrap}
+.footer-partner-links{display:flex;min-width:0;align-items:center;flex-wrap:wrap;gap:12px}
+.official-footer .footer-partner{display:flex;flex:none;min-width:44px;min-height:44px;align-items:center;justify-content:center;color:#c8ced0;text-decoration:none}
+.official-footer .footer-partner img{display:block;flex:none;width:80px;height:80px;object-fit:contain;filter:none}
+.official-footer .footer-partner:hover{color:#f3d477}
+.official-footer .footer-partner:focus-visible{outline:2px solid #e1c16c;outline-offset:5px}
+.official-footer>.footer-legal{min-width:0;overflow-wrap:anywhere}
+@media(max-width:700px){.official-footer>.footer-identities{column-gap:20px}.official-footer .footer-partners{padding-left:0;border-left:0}}
 .featured-editorial-layout{display:grid;grid-template-columns:minmax(340px,1.05fr) minmax(0,1.5fr);align-items:start;gap:clamp(28px,4vw,58px)}
 .featured-editorial-layout>*{min-width:0}
 .featured-editorial-layout>.featured-editorial-main:only-child{grid-column:1/-1}

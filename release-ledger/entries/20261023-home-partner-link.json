@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-home-partner-link",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "官网合作站入口",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "官网页脚新增KA盟合作站入口，“合作站”标签在左、站点logo在右，点击在新窗口打开；后续站点可向右追加，小屏自动换行。",
+      "paths": ["opcgpro-vue/src/l12/site/OfficialHomePage.vue", "opcgpro-vue/public/images/partners/ka-league.png"]
+    }
+  ]
+}
