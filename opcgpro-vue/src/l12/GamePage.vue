@@ -344,7 +344,7 @@ function returnToLobby() {
   const tutorialRoom = Boolean(tutorial.value || l12State.room?.tutorial)
   const sandboxRoom = l12State.room?.sandbox === true
   const destination = tutorialRoom ? '/battle/tutorial'
-    : sandboxRoom ? '/admin/operations/sandbox'
+    : sandboxRoom ? '/sandbox'
     : tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'
   if (game.value?.phase === 'GameOver') {
     leaveRoom()

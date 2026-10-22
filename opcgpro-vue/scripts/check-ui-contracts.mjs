@@ -699,7 +699,7 @@ const contracts = [
     && !gamePage.includes('对局编号')
     && gamePage.includes('align-items:center')
     && gamePage.includes('.ranked-result details span{display:block')
-    && gamePage.includes('text-align:center'), '胜负结算必须整体居中、保留与教学／后台沙盒／赛事／大厅来源相符的明确返回按钮，并且不对玩家暴露房间保留机制或内部对局编号'],
+    && gamePage.includes('text-align:center'), '胜负结算必须整体居中、保留与教学／测试沙盒／赛事／大厅来源相符的明确返回按钮，并且不对玩家暴露房间保留机制或内部对局编号'],
   [playerMat.includes('data-ui-contract="resource-faction-action"') && playerMat.includes('data-ui-contract="resource-morale-summary"') && playerMat.includes('data-ui-contract="resource-morale-label"')
     && playerMat.includes('data-ui-contract="resource-morale-count"') && playerMat.includes('data-ui-contract="resource-morale-stack"')
     && playerMat.indexOf('data-ui-contract="resource-faction-action"') > playerMat.indexOf('<div class="mat-piles">')
@@ -948,10 +948,10 @@ const contracts = [
   [gamePage.includes('data-ui-contract="manual-game-over-exit"')
     && gamePage.includes("game.value?.phase === 'GameOver'")
     && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'")
-    && gamePage.includes(": sandboxRoom ? '/admin/operations/sandbox'")
+    && gamePage.includes(": sandboxRoom ? '/sandbox'")
     && gamePage.includes(": tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'")
     && gamePage.includes('leaveRoom()') && gamePage.includes('router.push(destination)')
-    && !gamePage.includes('returnToRoom'), '胜负结算必须保持到玩家主动返回；返回时离开当前房间，并按教学、后台沙盒、赛事或普通大厅的来源回到对应入口'],
+    && !gamePage.includes('returnToRoom'), '胜负结算必须保持到玩家主动返回；返回时离开当前房间，并按教学、测试沙盒、赛事或普通大厅的来源回到对应入口'],
   [adminMatches.includes("name: 'admin-match-replay'")
     && replayPage.includes('Promise.all([adminApi.match(matchId), adminApi.replayPage(matchId, undefined, 50, controller.signal)])')
     && replayPage.includes('ensureReplayStepLoaded') && replayPage.includes('new ReplayArchiveLoader(')
@@ -1176,9 +1176,9 @@ const contracts = [
   [deckOrdering.includes('TYPE_PRIORITY') && deckOrdering.includes('Number.NEGATIVE_INFINITY') && deckEditor.includes('compareDeckCards') && deckShare.includes('compareDeckCardIds') && deckConstructionBrowser.includes('compareDeckCardIds'), '牌库默认顺序必须统一为类型、本阵营/中立、费用高至低和编号前至后，并由编辑器、详情与牌库图复用'],
   [deckEditor.includes('牌库删除后不可找回') && deckEditor.includes('继续删除') && deckEditor.includes('pendingDeleteName') && !deckEditor.includes('@click="onDelete'), '全部牌库删除入口必须先经过统一确认弹框'],
   [gamePage.includes("import { gameAction, l12State, leaveRoom } from './net'") && gamePage.includes("game.value?.phase === 'GameOver'")
-    && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'") && gamePage.includes(": sandboxRoom ? '/admin/operations/sandbox'")
+    && gamePage.includes("const destination = tutorialRoom ? '/battle/tutorial'") && gamePage.includes(": sandboxRoom ? '/sandbox'")
     && gamePage.includes("tournamentCode ? `/battle/tournaments/${encodeURIComponent(tournamentCode)}` : '/lobby'")
-    && gamePage.includes('leaveRoom()') && gamePage.includes('router.push(destination)') && !gamePage.includes('returnToRoom'), '所有对局结算必须停留到玩家主动返回；返回后退出权威房间并回到对应的教学、后台沙盒、赛事或普通大厅入口'],
+    && gamePage.includes('leaveRoom()') && gamePage.includes('router.push(destination)') && !gamePage.includes('returnToRoom'), '所有对局结算必须停留到玩家主动返回；返回后退出权威房间并回到对应的教学、测试沙盒、赛事或普通大厅入口'],
   [l12Net.includes('leavingRoom: false') && l12Net.includes("if (l12State.leavingRoom) return") && l12Net.includes("socket.send(JSON.stringify({ type: 'leaveRoom' }))")
     && gameReentry.includes('!snapshot.leavingRoom') && l12Net.includes('gameReentry.requestExit(l12State.game?.matchId)'), '退出观战必须屏蔽迟到快照与自动路由，并在断线重连后优先重发退出请求'],
   [sandbox.includes('createSandbox') && sandbox.includes('沙盒不会进入个人对局记录或排位统计') && sandbox.includes('router-link v-if="!platformState.account" to="/me"') && !sandbox.includes('to="/profile"') && !sandbox.includes('沙盒服务器适配器尚未接入'), '单人测试沙盒必须连接正式规则内核且明确隔离正式记录；未登录入口必须直达实际账号页，不得回退为占位页或失效路由'],
@@ -1476,7 +1476,7 @@ const contracts = [
     && l12ServerSources.includes('CREATE TEMP TABLE l12_analytics_fact_stats')
     && l12ServerSources.includes('WilsonInterval') && l12ServerSources.includes('ReadStratifiedComparisonsAsync')
     && l12ServerSources.includes('not-estimated'), '单卡分析必须复用参赛方聚合与目标卡事实，并使用分层对照；未修正样本依赖不得伪造差值置信区间'],
-  [profilePage.includes('class="admin-button"') && profilePage.includes('⚙ 管理后台') && !profilePage.includes('feedback-banner') && !profilePage.includes('openBugFeedback') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口与排位资料，不得保留独立反馈入口或出现未规划的自设卡背功能'],
+  [profilePage.includes('class="profile-action admin-button" to="/admin"') && profilePage.includes('⚙ 管理后台') && !profilePage.includes('feedback-banner') && !profilePage.includes('openBugFeedback') && profilePage.includes('本赛季排位') && !profilePage.includes('自设卡背'), '个人中心须以按钮提供管理后台入口与排位资料，不得保留独立反馈入口或出现未规划的自设卡背功能'],
   [hasProfileAuthTemplate(profilePage) && profilePage.includes("if (authBusy.value) return")
     && profilePage.includes("authMode.value === 'login' ? '登录中…' : '正在建立账号…'"), '个人中心登录/注册必须使用语义表单，支持回车且空字段不可提交；请求中须禁用并以同步忙碌门禁阻止快速重复提交，结果须在表单旁无障碍播报'],
   [profilePage.includes('error instanceof PlatformRequestError') && profilePage.includes('error.status === 403')

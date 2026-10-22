@@ -45,7 +45,6 @@ export const router = createRouter({
         { path: 'matches/governance', name: 'admin-match-governance', component: () => import('@/l12/site/AdminMatchGovernancePanel.vue'), meta: { adminSection: 'match-governance' } },
         { path: 'matches/integrity', name: 'admin-integrity', component: () => import('@/l12/site/AdminRankedIntegrityPanel.vue'), meta: { adminSection: 'integrity' } },
         { path: 'matches/tournaments', name: 'admin-tournaments', component: () => import('@/l12/site/AdminTournamentWorkbench.vue'), props: { adminMode: true, embedded: true }, meta: { adminSection: 'tournaments' } },
-        { path: 'operations/sandbox', name: 'admin-sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { adminSection: 'sandbox', landscapeCanvas: true } },
         { path: 'operations/config', name: 'admin-operations', component: () => import('@/l12/site/AdminOperationsPanel.vue'), meta: { adminSection: 'operations' } },
         { path: 'operations/global', name: 'admin-global-data', component: () => import('@/l12/site/AdminGlobalDataPanel.vue'), meta: { adminSection: 'global-data' } },
         { path: 'operations/cards', name: 'admin-card-analytics', component: () => import('@/l12/site/AdminCardAnalyticsPage.vue'), meta: { adminSection: 'card-analytics' } },
@@ -60,7 +59,8 @@ export const router = createRouter({
     { path: '/battle/records', name: 'records', component: () => import('@/l12/MatchRecords.vue'), meta: { section: 'battle', requiresAccount: true } },
     { path: '/battle/records/replay/json', name: 'json-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
     { path: '/battle/records/replay/:matchId', name: 'match-replay', component: () => import('@/l12/ReplayPage.vue'), meta: { immersive: true, replay: true, requiresAccount: true } },
-    { path: '/sandbox', name: 'sandbox', redirect: '/admin/operations/sandbox', meta: { requiresAdmin: true } },
+    { path: '/sandbox', name: 'sandbox', component: () => import('@/l12/site/SandboxPage.vue'), meta: { requiresAdmin: true, landscapeCanvas: true } },
+    { path: '/admin/operations/sandbox', name: 'admin-sandbox', redirect: to => ({ path: '/sandbox', query: to.query, hash: to.hash }) },
     { path: '/deck-editor', component: () => import('@/l12/L12DeckEditor.vue'), meta: { immersive: true, landscapeCanvas: true, editorAdaptiveCanvas: true } },
     { path: '/game', component: () => import('@/l12/GamePage.vue'), meta: { immersive: true, landscapeCanvas: true } },
     { path: '/lobby', redirect: '/battle' },
@@ -82,11 +82,11 @@ router.afterEach(to => { finishRouteNavigation(to.fullPath) })
 router.beforeEach(async to => {
   beginRouteNavigation(to.fullPath)
   if (to.name === 'admin' && typeof to.query.section === 'string') {
-    const legacy = adminSections.find(item => item.id === to.query.section)
-    if (legacy) {
+    const legacyPath = to.query.section === 'sandbox' ? '/sandbox' : adminSections.find(item => item.id === to.query.section)?.path
+    if (legacyPath) {
       const query = { ...to.query }
       delete query.section
-      return { path: legacy.path, query, hash: to.hash, replace: true }
+      return { path: legacyPath, query, hash: to.hash, replace: true }
     }
   }
   if (authState.verified && platformState.account?.mustChangeUsername && to.name !== 'me')

@@ -286,7 +286,7 @@ async function startSandbox() {
       </div>
       <div class="capabilities"><article><b>卡牌与区域</b><span>加牌、置顶/置底、墓地、无视费用打出、击杀与状态切换。</span></article><article><b>阶段与数值</b><span>切换回合玩家和阶段，调整血量、天灾值、士气并触发天灾。</span></article><article><b>可复现记录</b><span>每条 GM 指令由服务端校验，并写入与实战相同的状态快照。</span></article></div>
       <p v-if="l12State.notice" class="notice">{{ l12State.notice }}</p>
-      <footer><router-link to="/admin/operations/config">← 返回运营后台</router-link><button :disabled="creating || !canUseSandbox || !playerDeck || !opponentDeck || !!playerDeckError || !!opponentDeckError" @click="startSandbox">{{ creating ? '正在校验并建立…' : '建立测试沙盒' }}</button></footer>
+      <footer><router-link to="/me">← 返回我的</router-link><button :disabled="creating || !canUseSandbox || !playerDeck || !opponentDeck || !!playerDeckError || !!opponentDeckError" @click="startSandbox">{{ creating ? '正在校验并建立…' : '建立测试沙盒' }}</button></footer>
     </section>
     <SavedDeckSelector :open="!!selectorTarget" :mode="selectorTarget || 'sandbox-player'" :guest-decks="guestDecks"
       :catalog="catalog" :current-deck-id="selectorCurrent?.id" :current-deck-revision="selectorCurrent?.revision"
