@@ -28,13 +28,18 @@ type ArticleRenderItem = { kind: 'cards'; key: string; cards: ArticleCardBlock[]
 const renderItems = computed<ArticleRenderItem[]>(() => {
   const items: ArticleRenderItem[] = []
   let cards: ArticleCardBlock[] = []
+  let blankParagraphs: ArticleTextBlock[] = []
   const flushCards = () => {
     if (!cards.length) return
     items.push({ kind: 'cards', key: `cards:${cards[0]!.id}`, cards })
     cards = []
+    for (const block of blankParagraphs) items.push({ kind: 'block', key: `block:${block.id}`, block })
+    blankParagraphs = []
   }
   for (const block of document.value.blocks) {
-    if (block.type === 'card') cards.push(block)
+    // Only discard blank paragraphs once another card confirms they are between cards.
+    if (block.type === 'card') { cards.push(block); blankParagraphs = [] }
+    else if (cards.length && block.type === 'paragraph' && !block.text.trim()) blankParagraphs.push(block)
     else { flushCards(); items.push({ kind: 'block', key: `block:${block.id}`, block }) }
   }
   flushCards()
