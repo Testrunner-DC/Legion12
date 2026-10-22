@@ -14,6 +14,10 @@ var chatEnabled = L12ChatStartup.Parse(
 
 var port = args.FirstOrDefault(argument => int.TryParse(argument, out _)) is { } portArgument
     && int.TryParse(portArgument, out var parsedPort) ? parsedPort : 8080;
+var sharedGalleryEnabled = L12SharedGalleryCatalog.EnabledForConfiguration(
+    Environment.GetEnvironmentVariable(L12SharedGalleryCatalog.EnvironmentKey),
+    Environment.GetEnvironmentVariable(L12TestRunStorageProfile.EnvironmentKey),
+    Environment.GetEnvironmentVariable("L12_PUBLIC_BASE_URL"), port);
 var dataPath = Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data");
 var runtimePath = Path.Combine(AppContext.BaseDirectory, "runtime");
 var runtimeBuild = L12RuntimeBuildVersion.Capture();
@@ -31,9 +35,11 @@ if (ephemeralTestMatches)
     Console.WriteLine("Test-run match storage: ephemeral; previous match, replay and analytics data cleared.");
 
 var catalog = L12Catalog.Load(dataPath);
+await using var sharedGallery = L12SharedGalleryCatalog.Create(sharedGalleryEnabled, ephemeralTestMatches);
+if (sharedGallery is not null) await sharedGallery.StartAsync();
 var platform = new L12PlatformStore(Path.Combine(runtimePath, "platform.json"), catalog.PresetDecks,
     officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts,
-    officialCardProducts: catalog.CardProducts);
+    officialCardProducts: catalog.CardProducts, sharedGallery: sharedGallery);
 platform.ApplyPrivateDeckPersistenceStartup(privateDeckObjectPersistenceEnabled);
 if (L12TestRunStorageProfile.AcceptanceDataEnabled(ephemeralTestMatches,
         Environment.GetEnvironmentVariable(L12TestRunStorageProfile.AcceptanceDataEnvironmentKey)))

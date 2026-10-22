@@ -2,7 +2,7 @@ import { computed, reactive } from 'vue'
 import { disconnect, l12State, type BugClientConnectionDiagnostic } from './net'
 import type { SavedL12Deck } from './decks'
 import type { RecordedCommand } from './replayModel'
-import { deploymentStorageKey, endpointHttpBase } from './deploymentBase'
+import { deploymentStorageKey, endpointHttpBase, usesSharedGallery } from './deploymentBase'
 import { createRequestCoordinator, RequestDeadlineError } from './platformRequestReliability'
 import { chatResource } from './chatResource'
 import { deckCoverHeadersForOrigin } from './deckCover'
@@ -1106,13 +1106,19 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
   const { reliability = {}, responseType = 'json', ...fetchInit } = init
   const method = String(fetchInit.method || 'GET').toUpperCase()
   const safeRead = method === 'GET' || method === 'HEAD'
+  const sharedGalleryRead = usesSharedGallery && safeRead
+    && (path === '/api/alternate-arts' || path === '/api/gallery/presentation')
+  // Bind shared content to this site's root, never to an editable game endpoint.
+  // This lives in the candidate, so rolling the candidate back restores its old routing too.
+  const requestBase = sharedGalleryRead ? location.origin : apiBase()
   // 登录和注册是匿名凭据交换；不能让旧会话的迟到 401 清掉一次新的登录。
   const anonymousCredentialRequest = path === '/api/auth/login' || path === '/api/auth/register'
     || path === '/api/auth/email/capability'
     || path === '/api/auth/email/verify' || path === '/api/auth/password/forgot'
     || path === '/api/auth/password/reset'
   // Public projections are identity-independent, even while an administrator browses.
-  const anonymousPublicRead = safeRead && path.startsWith('/api/public/')
+  const anonymousPublicRead = safeRead && (path.startsWith('/api/public/')
+    || path === '/api/alternate-arts' || path === '/api/gallery/presentation')
   const requestToken = anonymousCredentialRequest || anonymousPublicRead ? '' : platformState.token
   const requestSessionVersion = platformSessionVersion
   const headerKey = Array.from(new Headers(fetchInit.headers).entries())
@@ -1121,7 +1127,7 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
     .map(([name, value]) => `${name}:${value}`).join('\n')
   // 仅合并无独立取消语义的安全读取；Map 中只保留摘要，不驻留令牌、查询参数或业务头原文。
   const requestKey = safeRead && !fetchInit.signal
-    ? await requestFingerprint(`${requestToken ? `session:${requestSessionVersion}` : 'anonymous'}\n${method}\n${path}\n${headerKey}`)
+    ? await requestFingerprint(`${requestToken ? `session:${requestSessionVersion}` : 'anonymous'}\n${method}\n${requestBase}${path}\n${headerKey}`)
     : undefined
   const maximumTimeoutMs = path === '/api/admin/site/media'
     ? PLATFORM_UPLOAD_TIMEOUT_MS : safeRead ? PLATFORM_READ_TIMEOUT_MS : PLATFORM_MUTATION_TIMEOUT_MS
@@ -1150,7 +1156,8 @@ export async function platformRequest<T>(path: string, init: PlatformRequestInit
         headers.set('X-Correlation-ID', globalThis.crypto?.randomUUID?.()
           ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`)
         if (requestToken) headers.set('Authorization', `Bearer ${requestToken}`)
-        const response = await fetch(`${apiBase()}${path}`, { ...fetchInit, signal, headers,
+        const response = await fetch(`${requestBase}${path}`, { ...fetchInit, signal, headers,
+          ...(sharedGalleryRead ? { redirect: 'error' as const } : {}),
           ...(anonymousPublicRead ? { credentials: 'omit' as const, cache: 'no-store' as const } : {}) })
         const payload = responseType === 'blob' && response.ok
           ? await response.blob() : await response.json().catch(() => ({}))

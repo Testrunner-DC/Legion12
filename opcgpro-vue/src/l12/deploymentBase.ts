@@ -6,6 +6,16 @@ function normalizeBase(value: string) {
 
 export const deploymentBasePath = normalizeBase(import.meta.env.BASE_URL || '/')
 
+// Only the fixed public test mount shares published gallery content. Accounts,
+// entitlements, matches and all other platform APIs keep their own mount.
+export const usesSharedGallery = deploymentBasePath === '/testrun/'
+export const sharedGalleryAdminPath = '/admin/content/alternate-arts'
+
+export function cardMediaPath(path: string) {
+  return usesSharedGallery && path.startsWith('/api/site/media/')
+    ? path : deploymentPath(path)
+}
+
 // Root deployment keeps its existing login; mounted environments never inherit
 // or delete those ambiguous legacy keys. The build base, not the current route
 // or an editable endpoint, determines ownership for the page's entire lifetime.

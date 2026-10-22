@@ -495,6 +495,7 @@ public sealed partial class L12PlatformStore
     private readonly IReadOnlyList<L12PresetDeckDefinition> _officialDecks;
     private readonly IReadOnlyDictionary<string, L12CardDefinition> _officialCards;
     private readonly IReadOnlyDictionary<string, L12OfficialAlternateArtDefinition> _officialAlternateArts;
+    private readonly L12SharedGalleryCatalog? _sharedGallery;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _officialCardProducts;
     private readonly IL12EmailSender _emailSender;
     private readonly bool _emailFeatureEnabled;
@@ -528,13 +529,15 @@ public sealed partial class L12PlatformStore
         IL12EmailSender? emailSender = null,
         bool? emailFeatureEnabled = null,
         IReadOnlyList<L12OfficialAlternateArtDefinition>? officialAlternateArts = null,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? officialCardProducts = null)
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? officialCardProducts = null,
+        L12SharedGalleryCatalog? sharedGallery = null)
     {
         _path = path;
         _officialDecks = officialDecks ?? [];
         _officialCards = officialCards ?? new Dictionary<string, L12CardDefinition>(StringComparer.OrdinalIgnoreCase);
         _officialAlternateArts = (officialAlternateArts ?? []).ToDictionary(row => row.Id,
             StringComparer.OrdinalIgnoreCase);
+        _sharedGallery = sharedGallery;
         _officialCardProducts = officialCardProducts ??
             new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         _mfaCredentialProtector = mfaCredentialProtector ?? new L12UnavailableMfaCredentialProtector();
@@ -978,6 +981,7 @@ public sealed partial class L12PlatformStore
     {
         lock (_gate)
         {
+            var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             var row = _data.Decks.FirstOrDefault(item => item.AccountId == accountId
                 && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal));
             var created = row is null;
@@ -988,7 +992,7 @@ public sealed partial class L12PlatformStore
                 _data.Decks.Add(row);
             }
             else row.Revision++;
-            ApplyDeck(row, accountId, deck);
+            ApplyDeck(row, accountId, deck, appearances);
             try
             {
                 if (created) SavePrivateDeckCreate(row);
@@ -1009,8 +1013,9 @@ public sealed partial class L12PlatformStore
             if (_data.Decks.Any(item => item.AccountId == accountId
                     && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
                 return new("name_conflict");
+            var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             var row = new DeckRow { AccountId = accountId, Name = deck.Name, Revision = 1 };
-            ApplyDeck(row, accountId, deck);
+            ApplyDeck(row, accountId, deck, appearances);
             _data.Decks.Add(row);
             try { SavePrivateDeckCreate(row); }
             catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
@@ -1034,8 +1039,9 @@ public sealed partial class L12PlatformStore
             if (_data.Decks.Any(item => item.AccountId == accountId && item != row
                     && string.Equals(DeckNameKey(item.Name), DeckNameKey(deck.Name), StringComparison.Ordinal)))
                 return new("name_conflict");
+            var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             row.Revision++;
-            ApplyDeck(row, accountId, deck);
+            ApplyDeck(row, accountId, deck, appearances);
             try { SavePrivateDeckUpdate(row, expectedRevision); }
             catch (L12PlatformStorageConflictException) { return new("storage_conflict"); }
             catch (L12PrivateDeckMutationConflictException error)
@@ -1084,7 +1090,8 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck)
+    private void ApplyDeck(DeckRow row, string accountId, L12PresetDeckDefinition deck,
+        (Dictionary<string, string> Selections, Dictionary<string, List<string>> Copies) appearances)
     {
         row.PayloadHash = string.Empty;
         row.BenchJson = "[]";
@@ -1097,8 +1104,8 @@ public sealed partial class L12PlatformStore
         var binding = ResolvePublicDeckBinding(accountId, deck, deck.PublicationId, deck.PublicationVersion);
         row.PublicationId = binding?.PublicationId;
         row.PublicationVersion = binding?.Version;
-        row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
-        row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
+        row.AlternateArtSelections = appearances.Selections;
+        row.AlternateArtCopies = appearances.Copies;
         row.UpdatedAt = DateTimeOffset.UtcNow;
     }
 
@@ -1219,6 +1226,7 @@ public sealed partial class L12PlatformStore
             var row = string.IsNullOrWhiteSpace(publicationId) ? null : FindPublishedDeck(publicationId);
             if (row is not null && row.OwnerId != accountId) row = null;
             if (!string.IsNullOrWhiteSpace(publicationId) && row is null) return null;
+            var appearances = PrepareDeckAlternateArtsLocked(accountId, deck);
             row ??= _data.PublishedDecks.FirstOrDefault(item => item.OwnerId == accountId
                 && string.Equals(item.Name, deck.Name, StringComparison.OrdinalIgnoreCase));
             if (row is null)
@@ -1237,8 +1245,8 @@ public sealed partial class L12PlatformStore
             row.CardIds = deck.CardIds.ToList();
             row.MoraleIds = deck.MoraleIds.ToList();
             row.SpecialIds = deck.SpecialIds.ToList();
-            row.AlternateArtSelections = SanitizeOwnedAlternateArtSelections(accountId, deck.AlternateArtSelections);
-            row.AlternateArtCopies = SanitizeOwnedAlternateArtCopies(accountId, deck.CardIds, deck.AlternateArtCopies);
+            row.AlternateArtSelections = appearances.Selections;
+            row.AlternateArtCopies = appearances.Copies;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             Save();
             return ToView(row, accountId);

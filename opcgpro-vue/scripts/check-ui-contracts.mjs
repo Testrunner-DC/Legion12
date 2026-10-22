@@ -1887,7 +1887,10 @@ contracts.push(
     && prompt.includes("'decline', 'cancel'")
     && prompt.includes("id === 'cancel' && p.data?.allowCancel === 'true'"),
     '打出前支付取消必须复用既有支付控制条与Prompt底部次级按钮，且取消值不得混入资源或卡牌选择'],
-  [adminAlternateArts.includes("const workspace = ref<'regular' | 'gallery' | 'rights'>('gallery')")
+  [adminAlternateArts.includes("const workspace = ref<'regular' | 'gallery' | 'rights'>(usesSharedGallery ? 'rights' : 'gallery')")
+    && adminAlternateArts.includes('v-else class="workspace-tabs"')
+    && adminAlternateArts.includes(':href="sharedGalleryAdminPath" target="_blank" rel="noopener noreferrer"')
+    && adminAlternateArts.includes('下方权益与派发仅属于测试服')
     && adminAlternateArts.includes('常规卡画廊资料') && adminAlternateArts.includes('异画 / 联动卡')
     && adminAlternateArts.includes('adminApi.searchAlternateArts')
     && adminAlternateArts.includes('adminApi.searchRegularGalleryCards')
@@ -1899,7 +1902,7 @@ contracts.push(
     && adminAlternateArts.includes('pageSize: registry.value.pageSize')
     && adminAlternateArts.includes('await searchRegistry(1)')
     && !/async function load\(\)[\s\S]*?Promise\.all\(\[\s*adminApi\.alternateArts\(/.test(adminAlternateArts),
-    '画廊后台必须将常规卡、异画/联动卡和权益拆为独立页签；两类卡片分别使用服务器分页，共用产品筛选可见性管理'],
+    '正式画廊保留常规卡、异画/联动卡及权益分页页签；测试共用正式资料管理入口且只保留本地权益'],
   [shell.includes('alternateArtApi.notifications()')
     && shell.includes('alternateArtApi.acknowledgeNotification')
     && shell.includes('<h2 id="alternate-art-notification-title">获得异画！</h2>')

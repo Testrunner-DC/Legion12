@@ -1161,6 +1161,28 @@ public sealed partial class L12PlatformStore
         string secondAccountId, int winner, string? firstMasterId = null, string? secondMasterId = null,
         L12RankedIntegrityContext? integrity = null, string? seasonId = null)
     {
+        if (_sharedGallery is null)
+            return SettleRankedMatchCore(matchId, firstAccountId, secondAccountId, winner,
+                firstMasterId, secondMasterId, integrity, seasonId);
+        // Use the existing platform rollback boundary only when this settlement can run a local
+        // award rule. The original match outbox retries failure; no second reward queue is created.
+        using var deployment = EnterDeploymentMutation();
+        lock (_gate)
+        {
+            var effectiveSeasonId = seasonId ?? RequireOperationsConfig().Season.Id;
+            if (_data.AlternateArtAwardRules.Any(row => row.Active && row.Kind == "rank-reached"
+                    && SeasonIdsEqual(row.SeasonId, effectiveSeasonId)))
+                return ExecuteAdminTransaction(() => SettleRankedMatchCore(matchId, firstAccountId,
+                    secondAccountId, winner, firstMasterId, secondMasterId, integrity, seasonId));
+            return SettleRankedMatchCore(matchId, firstAccountId, secondAccountId, winner,
+                firstMasterId, secondMasterId, integrity, seasonId);
+        }
+    }
+
+    private L12RankedSettlementPair SettleRankedMatchCore(string matchId, string firstAccountId,
+        string secondAccountId, int winner, string? firstMasterId, string? secondMasterId,
+        L12RankedIntegrityContext? integrity, string? seasonId)
+    {
         lock (_gate)
         {
             ValidateRankedIdentity(matchId, firstAccountId, secondAccountId, winner);
@@ -1183,6 +1205,9 @@ public sealed partial class L12PlatformStore
                 throw new InvalidOperationException("排位结算缺少赛季派系");
             if (TryHoldRankedMatchLocked(matchId, first, second, winner, firstMasterId,
                     secondMasterId, integrity, out var held)) return held;
+            // Pin one published definition generation for both recipients. A concurrent valid
+            // refresh must not split a single authoritative settlement into different award rules.
+            var alternateArtDefinitions = CaptureSharedAlternateArtAwardDefinitionsLocked(first.SeasonId, seasonFinal: false);
             var firstProfileBefore = CaptureRankedProfile(first);
             var secondProfileBefore = CaptureRankedProfile(second);
             var beforeTitles = CurrentFactionTitleAssignments();
@@ -1199,8 +1224,8 @@ public sealed partial class L12PlatformStore
             var secondSettlement = SettleOne(matchId, second, winner == 1, secondRating,
                 firstSevenBefore, firstStreakBefore);
             // 段位异画以结算后的权威资料为准，重复结算会命中同一来源记录而保持幂等。
-            ApplyRankReachedAlternateArtAwardsLocked(first.AccountId, first.SeasonId, TierIndex(first));
-            ApplyRankReachedAlternateArtAwardsLocked(second.AccountId, second.SeasonId, TierIndex(second));
+            ApplyRankReachedAlternateArtAwardsLocked(first.AccountId, first.SeasonId, TierIndex(first), alternateArtDefinitions);
+            ApplyRankReachedAlternateArtAwardsLocked(second.AccountId, second.SeasonId, TierIndex(second), alternateArtDefinitions);
             var expectedFirst = 1d / (1d + Math.Pow(10d, (secondRating - firstRating) / 400d));
             first.HiddenRating = Math.Clamp(firstRating + 24d * ((winner == 0 ? 1d : 0d) - expectedFirst), 500d, 2500d);
             second.HiddenRating = Math.Clamp(secondRating + 24d * ((winner == 1 ? 1d : 0d) - (1d - expectedFirst)), 500d, 2500d);
@@ -1526,10 +1551,12 @@ public sealed partial class L12PlatformStore
                 finalizedAt, "season-finalization-v1", string.Empty);
         var champions = CurrentMasterChampions();
         var rows = EligibleOutgoingRankedSeasonRowsLocked(outgoingSeasonId);
+        // The full season (all profiles and master champions) consumes one immutable generation.
+        var alternateArtDefinitions = CaptureSharedAlternateArtAwardDefinitionsLocked(outgoingSeasonId, seasonFinal: true);
         foreach (var row in rows)
         {
             // 在归档前使用该赛季的最终七曜值计算门槛；重复切换同一赛季只会复用同一权益记录。
-            ApplySeasonFinalAlternateArtAwardsLocked(row.AccountId, outgoingSeasonId, TierIndex(row));
+            ApplySeasonFinalAlternateArtAwardsLocked(row.AccountId, outgoingSeasonId, TierIndex(row), alternateArtDefinitions);
             var factionRank = FactionRank(row);
             var factionTitle = FactionPlacementTitle(row, factionRank);
             var masterTitles = PlayerMasterTitles(row, champions);
@@ -1539,7 +1566,7 @@ public sealed partial class L12PlatformStore
             ArchiveRankedProfile(row, outgoingSeasonName, true, titles, factionTitle, masterTitles,
                 finalizedAt);
         }
-        ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId);
+        ApplyMasterChampionSeasonFinalAlternateArtAwardsLocked(champions, outgoingSeasonId, alternateArtDefinitions);
     }
 
     private List<SeasonFactionFinalTotalRow> FreezeFactionFinalTotalsLocked(string seasonId,

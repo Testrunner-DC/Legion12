@@ -26,6 +26,7 @@ let forgotten=0;let refreshed=0;let status=200
 class PlatformRequestError extends Error { constructor(message,status){super(message);this.status=status} }
 class RequestDeadlineError extends Error {}
 const scope={platformState,authState,platformSessionVersion:1,PlatformRequestError,RequestDeadlineError,
+ usesSharedGallery:false,location:{origin:'https://fixture.invalid'},
  PLATFORM_UPLOAD_TIMEOUT_MS:10000,PLATFORM_READ_TIMEOUT_MS:10000,PLATFORM_MUTATION_TIMEOUT_MS:10000,PLATFORM_READ_MAX_ATTEMPTS:1,
  requestFingerprint:async()=>undefined,retryableReadFailure:()=>false,retryAfterMilliseconds:()=>0,apiBase:()=> 'https://fixture.invalid',
  forgetAccount:()=>{forgotten++},refreshCurrentAccount:async()=>{refreshed++},platformRequestCoordinator:{execute:options=>options.run(new AbortController().signal)}}

@@ -1,4 +1,4 @@
-import { deploymentPath } from './deploymentBase'
+import { cardMediaPath, deploymentPath } from './deploymentBase'
 
 export type CardImageIntent = 'thumb' | 'board' | 'detail'
 
@@ -151,7 +151,7 @@ function uniqueSources(sources: Array<CardAssetSource | null>) {
 function trustedSiteMediaSource(url: string | undefined): CardAssetSource | null {
   const normalized = url?.trim() ?? ''
   if (!normalized.startsWith('/api/site/media/')) return null
-  const deployed = deploymentPath(normalized)
+  const deployed = cardMediaPath(normalized)
   return { kind: 'sameOrigin', lowWebp: deployed, webp: deployed }
 }
 

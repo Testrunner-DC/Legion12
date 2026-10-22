@@ -53,6 +53,7 @@ public sealed partial class L12PlatformStore
     public L12AlternateArtView SaveRegularGalleryCardMetadata(L12AccountView actor,
         L12RegularGalleryCardMetadataDraft draft, L12AdminAuditContext? context = null)
     {
+        RequireLocalGalleryDefinitions();
         lock (_gate)
         {
             var cardId = draft.CardId?.Trim() ?? string.Empty;
@@ -90,6 +91,7 @@ public sealed partial class L12PlatformStore
     public L12AlternateArtView SaveRegularGalleryCardImage(L12AccountView actor,
         L12RegularGalleryCardImageDraft draft, L12AdminAuditContext? context = null)
     {
+        RequireLocalGalleryDefinitions();
         lock (_gate)
         {
             var cardId = draft.CardId?.Trim() ?? string.Empty;
@@ -130,6 +132,7 @@ public sealed partial class L12PlatformStore
     public L12AlternateArtProductView SaveGalleryProductFilterVisibility(L12AccountView actor,
         L12AlternateArtProductFilterVisibilityDraft draft, L12AdminAuditContext? context = null)
     {
+        RequireLocalGalleryDefinitions();
         lock (_gate)
         {
             var productId = ResolveMergedProductIdLocked(draft.ProductId?.Trim() ?? string.Empty);

@@ -75,7 +75,7 @@ async function until(predicate, message) {
   assert.fail(message)
 }
 
-function actualRuntime(initialFetch = async () => json(200, {})) {
+function actualRuntime(initialFetch = async () => json(200, {}), { sharedGallery = false } = {}) {
   const store = new Map()
   const localStorage = {
     getItem: key => store.get(key) ?? null,
@@ -93,6 +93,8 @@ function actualRuntime(initialFetch = async () => json(200, {})) {
     reactive,
     localStorage,
     deploymentStorageKey,
+    usesSharedGallery: sharedGallery,
+    location: { origin: 'https://legion-12.com' },
     loadAccount: () => null,
     createRequestCoordinator: reliability.createRequestCoordinator,
     RequestDeadlineError: reliability.RequestDeadlineError,
@@ -431,6 +433,34 @@ for (const mode of ['single-attempt', 'independent-deadline']) await check(`same
     await limited
   }
 })
+
+for (const route of ['/api/alternate-arts', '/api/gallery/presentation']) {
+  await check(`shared public gallery ${route} never forwards or invalidates the test login`, async () => {
+    const runtime = actualRuntime(() => json(401, { message: 'unavailable' }), { sharedGallery: true })
+    runtime.remember(account('test-admin'), 'test-only-token')
+    await assert.rejects(runtime.platformRequest(route, {
+      headers: { Authorization: 'Bearer injected' }, reliability: { maxAttempts: 1 },
+    }))
+    assert.equal(runtime.fetchCalls.length, 1)
+    const request = runtime.fetchCalls[0]
+    assert.equal(request.url, `https://legion-12.com${route}`)
+    assert.equal(request.init.redirect, 'error')
+    assert.equal(new Headers(request.init.headers).has('Authorization'), false)
+    assert.equal(request.init.credentials, 'omit')
+    assert.equal(request.init.cache, 'no-store')
+    assert.equal(runtime.platformState.token, 'test-only-token')
+  })
+}
+
+for (const route of ['/api/me/alternate-arts', '/api/admin/alternate-arts', '/api/gallery/presentation?unexpected=1']) {
+  await check(`test business remains local: ${route}`, async () => {
+    const runtime = actualRuntime(() => json(200, {}), { sharedGallery: true })
+    runtime.remember(account('test-admin'), 'test-only-token')
+    await runtime.platformRequest(route)
+    assert.equal(runtime.fetchCalls[0].url, `http://synthetic.invalid${route}`)
+    assert.equal(new Headers(runtime.fetchCalls[0].init.headers).get('Authorization'), 'Bearer test-only-token')
+  })
+}
 
 const report = {
   schema: 1,
