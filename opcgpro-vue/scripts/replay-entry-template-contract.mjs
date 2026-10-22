@@ -285,7 +285,7 @@ export function replayEntryTemplateContract(sources) {
   const launch = selectedDetail && unique(renderedChildren(selectedDetail), node => node.tag === 'section'
     && hasClass(node, 'record-launch') && noVisibility(node) && !hasRenderingOverride(node))
   const cleared = launch && unique(renderedChildren(launch), node => node.tag === 'p'
-    && staticText(node) === '这场对局的回放载荷已清理，摘要与结算结果仍保留。'
+    && staticText(node) === '暂无可播放的回放记录。'
     && exactVisibility(node, 'if', 'selected.commandCount === 0') && !hasRenderingOverride(node))
   const mobileInline = launch && unique(renderedChildren(launch), node => node.tag === 'p'
     && hasClass(node, 'mobile-replay-inline')

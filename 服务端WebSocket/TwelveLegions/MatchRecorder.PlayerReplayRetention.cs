@@ -145,8 +145,12 @@ public sealed partial class MatchRecorder
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
-                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
+                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id),
+                   COALESCE(NULLIF(p0.master_name,''),NULLIF(p0.master_id,'')),
+                   COALESCE(NULLIF(p1.master_name,''),NULLIF(p1.master_id,''))
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+            LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
             WHERE m.mode_id <> 'sandbox' AND m.ended_utc IS NOT NULL
               AND julianday(m.ended_utc)>=julianday($cutoff)
               AND NOT EXISTS(SELECT 1 FROM player_replay_payload_expirations x WHERE x.match_id=m.match_id)

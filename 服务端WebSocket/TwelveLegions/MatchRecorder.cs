@@ -360,8 +360,12 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
-                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
+                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id),
+                   COALESCE(NULLIF(p0.master_name,''),NULLIF(p0.master_id,'')),
+                   COALESCE(NULLIF(p1.master_name,''),NULLIF(p1.master_id,''))
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+            LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
             GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 200));
@@ -378,8 +382,12 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         var command = connection.CreateCommand();
         command.CommandText = """
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
-                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
+                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id),
+                   COALESCE(NULLIF(p0.master_name,''),NULLIF(p0.master_id,'')),
+                   COALESCE(NULLIF(p1.master_name,''),NULLIF(p1.master_id,''))
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+            LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
             WHERE (m.player_0=$player OR m.player_1=$player) AND m.mode_id <> 'sandbox'
               AND m.ended_utc IS NOT NULL
             GROUP BY m.match_id ORDER BY m.started_utc DESC LIMIT $limit;
@@ -459,8 +467,12 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         var summaryCommand = connection.CreateCommand();
         summaryCommand.CommandText = """
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
-                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id)
+                   m.started_utc,m.ended_utc,m.winner,m.final_hash,m.error,COUNT(e.id),
+                   COALESCE(NULLIF(p0.master_name,''),NULLIF(p0.master_id,'')),
+                   COALESCE(NULLIF(p1.master_name,''),NULLIF(p1.master_id,''))
             FROM matches m LEFT JOIN match_events e ON e.match_id=m.match_id
+            LEFT JOIN match_participants p0 ON p0.match_id=m.match_id AND p0.player_index=0
+            LEFT JOIN match_participants p1 ON p1.match_id=m.match_id AND p1.player_index=1
             WHERE m.match_id=$id GROUP BY m.match_id;
             """;
         summaryCommand.Parameters.AddWithValue("$id", matchId);
@@ -788,7 +800,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         reader.GetString(4), reader.GetString(5), reader.GetString(6),
         reader.IsDBNull(7) ? null : reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetInt32(8),
         reader.IsDBNull(9) ? null : reader.GetString(9), reader.IsDBNull(10) ? null : reader.GetString(10),
-        reader.GetInt32(11));
+        reader.GetInt32(11), reader.IsDBNull(12) ? null : reader.GetString(12),
+        reader.IsDBNull(13) ? null : reader.GetString(13));
 
     // Preserve the original recorder lifetime contract. Disposing the managed
     // gate without a holder/waiter shutdown protocol can throw after a commit.
@@ -810,7 +823,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
 
 public sealed record L12MatchSummary(
     string MatchId, string RoomCode, string Player0, string Player1, string Deck0, string Deck1,
-    string StartedUtc, string? EndedUtc, int? Winner, string? FinalHash, string? Error, int CommandCount);
+    string StartedUtc, string? EndedUtc, int? Winner, string? FinalHash, string? Error, int CommandCount,
+    string? Master0 = null, string? Master1 = null);
 
 public sealed record L12RecordedCommand(
     long Sequence, string ReceivedUtc, int PlayerIndex, JsonElement Command, bool Accepted,

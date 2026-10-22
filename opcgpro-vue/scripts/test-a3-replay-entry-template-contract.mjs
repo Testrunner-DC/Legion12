@@ -117,6 +117,8 @@ reject('disabled state borrowed by refresh button', 'recordsReplayAvailability',
   '<button @click="exportReplay">保存 JSON</button>\n        <button :disabled="!canUseSelectedReplay" @click="loadMatches">'))
 reject('cleared payload wrong condition', 'recordsReplayAvailability', changed('matchRecords',
   'v-if="selected.commandCount === 0"', 'v-if="selected.commandCount < 0"'))
+reject('zero records cannot invent a retention cause', 'recordsReplayAvailability', changed('matchRecords',
+  '暂无可播放的回放记录。', '这场对局的回放载荷已清理，摘要与结算结果仍保留。'))
 reject('mobile notice becomes blocking dialog', 'recordsMobileInlineBlock', changed('matchRecords',
   '<p v-else-if="mobileReplayBlocked" class="mobile-replay-inline"',
   '<p v-else-if="mobileReplayBlocked" role="alertdialog" class="mobile-replay-inline"'))

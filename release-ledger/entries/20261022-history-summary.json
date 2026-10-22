@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-history-summary",
+  "date": "2026-10-22",
+  "audience": "players",
+  "title": "对局摘要信息完善",
+  "changes": [
+    {
+      "category": "replays",
+      "text": "对局回放列表与摘要补充双方已记录的主宰，旧记录缺少信息时明确标识；原操作数改为回放记录数，说明其中包含系统及未接受记录，暂无可播放记录时不再猜测清理原因。",
+      "paths": ["opcgpro-vue/src/l12/MatchRecords.vue", "opcgpro-vue/src/l12/replayModel.ts", "服务端WebSocket/TwelveLegions/MatchRecorder.cs", "服务端WebSocket/TwelveLegions/MatchRecorder.PlayerReplayRetention.cs"]
+    }
+  ]
+}

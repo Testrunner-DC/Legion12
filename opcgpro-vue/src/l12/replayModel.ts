@@ -23,6 +23,8 @@ export interface MatchSummary {
   finalHash?: string | null
   error?: string | null
   commandCount: number
+  master0?: string | null
+  master1?: string | null
 }
 
 export interface RecordedCommand {

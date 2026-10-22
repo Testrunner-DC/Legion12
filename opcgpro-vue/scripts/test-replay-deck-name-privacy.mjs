@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { compile } from '@vue/compiler-dom'
 import { parse } from '@vue/compiler-sfc'
+import ts from 'typescript'
 import * as Vue from 'vue'
 import { exportReplayPayload, parseReplayPayload } from '../src/l12/replayModel.ts'
 
@@ -79,7 +80,13 @@ function compileMatchRecordsRender() {
   const descriptor = parse(readFileSync(filename, 'utf8'), { filename }).descriptor
   assert(descriptor.template, 'MatchRecords.vue must retain a template')
   const result = compile(descriptor.template.content, { mode: 'function', filename })
-  return new Function('Vue', result.code)(Vue)
+  const script = ts.createSourceFile(filename, descriptor.scriptSetup.content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const declaration = script.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'masterLabel')
+  assert(declaration, 'render privacy check must bind the actual public master-label helper')
+  const helper = ts.transpileModule(declaration.getText(script), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const masterLabel = new Function(`${helper}; return masterLabel;`)()
+  const render = new Function('Vue', result.code)(Vue)
+  return (context, cache) => render({ ...context, masterLabel }, cache)
 }
 
 function vnodeText(value) {

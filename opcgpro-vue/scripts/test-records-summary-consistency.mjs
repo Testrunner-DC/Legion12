@@ -354,16 +354,57 @@ for (const [id, raw, expected, summaryOverrides = {}] of [
   })
 }
 
+await test('HR-06-MASTERS', 'public master summaries stay attached to their recorded seats', observation => use('records', {
+  match: summary({ master0: '嫦娥', master1: '迦具土' }),
+}, f => {
+  observation.summary = surface(f.main, 'record-summary-grid')
+  observation.list = surface(f.main, 'records-list')
+  assert.match(observation.summary, /合成甲的主宰嫦娥/)
+  assert.match(observation.summary, /合成乙的主宰迦具土/)
+  assert.match(observation.list, /嫦娥.*迦具土/)
+  assert.doesNotMatch(observation.summary, /先手|后手/)
+}))
+await test('HR-06-LEGACY', 'legacy missing master facts remain explicitly unknown', observation => use('records', {
+  match: summary({ master0: null, master1: '  ' }),
+}, f => {
+  observation.summary = surface(f.main, 'record-summary-grid')
+  assert.equal((observation.summary.match(/主宰未记录/g) || []).length, 2)
+  assert.doesNotMatch(observation.summary, /undefined|null|先手|后手/)
+}))
+await test('HR-07-COUNT', 'record count is not advertised as player actions', observation => use('records', {
+  match: summary({ commandCount: 7 }),
+}, f => {
+  observation.summary = surface(f.main, 'record-summary-grid')
+  observation.list = surface(f.main, 'records-list')
+  assert.match(observation.summary, /回放记录数7/)
+  assert.match(observation.list, /7 条回放记录/)
+  assert.doesNotMatch(text(f.main), /次操作|操作数/)
+  const count = descendants(f.main, element => element.props.title?.includes('系统记录'))
+  assert.equal(count.length, 1)
+  assert.match(count[0].props.title, /未通过的指令/)
+  assert.match(count[0].props.title, /不等同于有效操作次数/)
+  assert.equal(f.state.selected.commandCount, 7)
+  assert.equal(f.state.canUseSelectedReplay, true)
+}))
+await test('HR-07-ZERO', 'zero records do not invent a cleanup cause', observation => use('records', {
+  match: summary({ commandCount: 0 }), mobile: true,
+}, f => {
+  observation.text = surface(f.main, 'record-detail')
+  assert.match(observation.text, /暂无可播放的回放记录/)
+  assert.doesNotMatch(observation.text, /已清理/)
+  assert.equal(f.state.canUseSelectedReplay, false)
+}))
+
 let sourceStable = true
 for (const [key, relative] of Object.entries(sourcePaths)) if (hash(fs.readFileSync(path.join(root, relative))) !== hash(bytes[key])) sourceStable = false
 const report = {
-  schemaVersion: 1, scope: 'HR-01 through HR-04, actual player records/replay SFC in memory',
+  schemaVersion: 1, scope: 'HR-01 through HR-04 and HR-06/07, actual player records/replay SFC in memory',
   status: runtimeErrors.length || warnings.length || results.some(result => result.status === 'harness-error') || !sourceStable ? 'harness-error'
     : results.some(result => result.status === 'failed') ? 'defects-reproduced' : 'passed',
   sourceHashes, scriptSha256: hash(fs.readFileSync(fileURLToPath(import.meta.url))),
   totals: { cases: results.length, passed: results.filter(result => result.status === 'passed').length, failed: results.filter(result => result.status === 'failed').length, harnessErrors: results.filter(result => result.status === 'harness-error').length },
   sourceStable, runtimeErrors, warnings, mountedFixturesAfter: mountedFixtures, forbiddenNetworkCalls, cases: results,
-  boundaries: ['This runner never mutates product sources, shared contracts, documentation or Git', 'No browser, build, .NET or real API/server access', 'Actual SFC setup/template and replay model; API, identity, router and child board are controlled fixtures', 'No DOM geometry or real server persistence proof', 'Unknown summaries cannot establish a draw; record the uncertainty without rewriting history', 'HR-05/06/07 not executed in this tranche'],
+  boundaries: ['This runner never mutates product sources, shared contracts, documentation or Git', 'No browser, build, .NET or real API/server access', 'Actual SFC setup/template and replay model; API, identity, router and child board are controlled fixtures', 'No DOM geometry or real server persistence proof', 'Unknown summaries cannot establish a draw; record the uncertainty without rewriting history', 'HR-05 and confirmed first-player projection not executed in this tranche'],
 }
 fs.writeFileSync(path.join(output, 'sfc-summary-report.json'), JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report, null, 2))

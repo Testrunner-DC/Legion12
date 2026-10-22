@@ -149,6 +149,10 @@ function dateLabel(raw: string) {
   }).format(date)
 }
 
+function masterLabel(name: string | null | undefined) {
+  return name?.trim() || '主宰未记录'
+}
+
 function durationLabel(match: MatchSummary) {
   if (!match.endedUtc) return '进行中'
   const duration = Math.max(0, new Date(match.endedUtc).getTime() - new Date(match.startedUtc).getTime())
@@ -189,7 +193,8 @@ function resultLabel(match: MatchSummary) {
         <button v-for="match in matches" :key="match.matchId"
           :class="{ selected: selected?.matchId === match.matchId }" @click="selectMatch(match)">
           <span><b>{{ match.player0 }}</b><em>VS</em><b>{{ match.player1 }}</b></span>
-          <small>{{ dateLabel(match.startedUtc) }} · {{ durationLabel(match) }} · {{ match.commandCount }} 次操作</small>
+          <small class="record-masters">{{ masterLabel(match.master0) }} · {{ masterLabel(match.master1) }}</small>
+          <small>{{ dateLabel(match.startedUtc) }} · {{ durationLabel(match) }} · {{ match.commandCount }} 条回放记录</small>
           <i class="record-result">{{ resultLabel(match) }}</i>
         </button>
         <p v-if="!loading && !matches.length">尚无已记录对局。</p>
@@ -206,12 +211,14 @@ function resultLabel(match: MatchSummary) {
         <section class="record-launch">
           <div class="record-summary-grid">
             <span><small>对局结果</small><b>{{ resultLabel(selected) }}</b></span>
+            <span><small>{{ selected.player0 }}的主宰</small><b>{{ masterLabel(selected.master0) }}</b></span>
+            <span><small>{{ selected.player1 }}的主宰</small><b>{{ masterLabel(selected.master1) }}</b></span>
             <span><small>对局时长</small><b>{{ durationLabel(selected) }}</b></span>
             <span><small>开始时间</small><b>{{ dateLabel(selected.startedUtc) }}</b></span>
             <span><small>结束时间</small><b>{{ selected.endedUtc ? dateLabel(selected.endedUtc) : '进行中' }}</b></span>
-            <span><small>操作数</small><b>{{ selected.commandCount }}</b></span>
+            <span title="按已保存的指令记录计数，可能包含系统记录和未通过的指令，不等同于有效操作次数。"><small>回放记录数</small><b>{{ selected.commandCount }}</b></span>
           </div>
-          <p v-if="selected.commandCount === 0">这场对局的回放载荷已清理，摘要与结算结果仍保留。</p>
+          <p v-if="selected.commandCount === 0">暂无可播放的回放记录。</p>
           <p v-else-if="mobileReplayBlocked" class="mobile-replay-inline">移动端可查看完整摘要；请到电脑端播放回放。</p>
           <p v-else>回放将在独立的完整对战界面中打开。</p>
           <button class="primary" :disabled="!canUseSelectedReplay" @click="playSelected">播放回放</button>
