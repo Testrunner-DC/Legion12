@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-snapshot-utf8-transport-internal",
+  "date": "2026-10-22",
+  "audience": "internal",
+  "reason": "仅优化接收者快照JSON中文编码及精确字节比较；规则、消息字段、隐私投影、旧客户端和恢复语义不变，未证代表性负载改善，不发布性能根治承诺。",
+  "paths": [
+    "服务端WebSocket/TwelveLegions/L12SnapshotJson.cs",
+    "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs",
+    "服务端WebSocket/TwelveLegions/L12PresenceSnapshotWireCodec.cs",
+    "服务端WebSocket/TwelveLegions/L12CardSnapshotFrame.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}
