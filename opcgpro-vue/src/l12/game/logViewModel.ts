@@ -854,6 +854,16 @@ function combatResult(members: ActionEvent[]) {
   return { result: has('aborted') ? '进攻中止' : invalid ? `${invalid}；${settled}` : settled, damage }
 }
 
+function hasConflictingCombatAuthority(members: ActionEvent[]) {
+  const attackRoots = members.filter(event => event.playerCombat?.eventKind === 'attack')
+  if (attackRoots.length > 1) return true
+
+  const outcomes = new Set(members.map(event => event.playerCombat?.outcomeCode)
+    .filter((outcome): outcome is string => Boolean(outcome)))
+  return (outcomes.has('invalid-block') && outcomes.has('blocked'))
+    || (outcomes.has('invalid-support') && outcomes.has('supported'))
+}
+
 function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number, neutralView: boolean): LogCombatRow | null {
   const cards = publicCards(attack)
   const attacker = cards[0]
@@ -949,6 +959,9 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
     members.push(event)
     combats.set(id, members)
   }
+  const conflictedCombats = new Set([...combats.entries()]
+    .filter(([, members]) => hasConflictingCombatAuthority(members))
+    .map(([id]) => id))
   const consumed = new Set<number>()
   const combatAttacks = new Set(ordered.filter(event => event.playerCombat?.eventKind === 'attack')
     .map(event => event.playerCombat?.combatId).filter((id): id is string => Boolean(id)))
@@ -957,6 +970,7 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
   for (let index = 0; index < ordered.length; index++) {
     if (consumed.has(index)) continue
     const event = ordered[index]
+    if (event.playerCombat?.combatId && conflictedCombats.has(event.playerCombat.combatId)) continue
     if (event.type === 'turn-start') {
       rows.push({ kind: 'turn', sequence: event.sequence, round: numberAfter(event.text, /第\s*(\d+)\s*回合/, 0), side: side(event.playerIndex, you, neutralView) ?? (neutralView ? '上方' : '对方') })
       if (event.playerLogGroupId) {

@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-COMBAT-AUTHORITY-CONFLICT｜损坏回放不猜战斗摘要
+
+- 用户call_7f688650批准仅日志投影加固；已有正常生产链互斥/进攻ID唯一证据，不把损坏夹具冒线上事故。去重后同combatId多个attack根、invalid-block与blocked、invalid-support与supported矛盾组失败关闭；相邻正常组保留。同序号合法重传、抵挡无效后主宰伤害或军团结算仍正常展示。
+- 只改logViewModel及其现有专项，覆盖正序/反序/重复重连×本人/对手/观战。精确旧源新断言RED→71原日志行与新增矩阵通过，67恢复例和前端集成/类型/双base通过；Main读完整diff。唯一battle-log-conflict-hardening-20261023/main-acceptance.json，原RED保留。
+- P2/P3仅消费者失败关闭；不改服务端卡效、Journal、录像文件或统计，不据此关闭线上反馈或观战动画剩余项。不得恢复“选一条猜结果”或误抑制合法无效后续结算。
+
 ## BUG-20261023-TUTORIAL-AUTO-DETAILS｜取消重复自动详情，优先当前交互层
 
 - 已实际读L12-后台优化实施中人类原话：场面优先、单线、准确简练、不反复弹军团详情。原Overlay随dialoguePage/detailCard的watch自动打开Catalog，五处首章/响应介绍依赖详情字段锚点。整类撤去自动挂载、watch及专用几何/样式，改实际手牌/战场/圣物；初次必要数值用当前公开事实短述，普通GameBoard及介绍页主动详情入口保留。不新建seen状态、进度或说明分支。

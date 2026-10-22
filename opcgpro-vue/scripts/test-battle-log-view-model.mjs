@@ -912,6 +912,142 @@ const invalidSupport = projectLog([
 assert.equal(invalidSupport[0].result, '支援无效；战斗结果未记录')
 assert.equal(JSON.stringify(invalidSupport).includes('私有候选'), false)
 
+const stableAttacker = card('稳定进攻军团', 'stable-attacker')
+const stableTarget = card('稳定目标军团', 'stable-target')
+const stableCombat = [
+  event(790, 'attack', '稳定进攻', [stableAttacker, stableTarget], 0, { playerCombat: {
+    combatId: 'stable-neighbor', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: stableAttacker.instanceId, targetInstanceId: stableTarget.instanceId,
+  } }),
+  event(791, 'combat', '稳定结算', [stableAttacker, stableTarget], 0, { playerCombat: {
+    combatId: 'stable-neighbor', eventKind: 'combat', outcomeCode: 'not-defeated',
+    attackerInstanceId: stableAttacker.instanceId, targetInstanceId: stableTarget.instanceId,
+  } }),
+]
+const transmissionVariants = events => [
+  ['ordered', events],
+  ['reverse', [...events].reverse()],
+  ['duplicate-reconnect', [...events, ...events].reverse()],
+]
+const viewerVariants = [[0, false], [1, false], [-1, true]]
+const assertOnlyStableCombatRemains = (events, label) => {
+  for (const [transport, delivered] of transmissionVariants(events)) {
+    for (const [you, neutral] of viewerVariants) {
+      const rows = projectLog([...delivered, ...stableCombat], you, [], neutral)
+        .filter(row => row.kind === 'combat')
+      assert.deepEqual(rows.map(row => row.attacker.instanceId), [stableAttacker.instanceId],
+        `${label} must fail closed without hiding another combat (${transport}/${you}/${neutral})`)
+    }
+  }
+}
+
+const secondRoot = card('冲突进攻军团', 'conflicting-root')
+assertOnlyStableCombatRemains([
+  event(760, 'attack', '第一进攻根', [a, b], 0, { playerCombat: {
+    combatId: 'duplicate-attack-root', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(761, 'attack', '第二进攻根', [secondRoot, b], 0, { playerCombat: {
+    combatId: 'duplicate-attack-root', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: secondRoot.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(762, 'combat', '冲突组结算', [a, b], 0, { playerCombat: {
+    combatId: 'duplicate-attack-root', eventKind: 'combat', outcomeCode: 'defeated',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 'two distinct attack roots in one combat id')
+
+const retransmittedRoot = event(770, 'attack', '同一进攻根重传', [a, b], 0, { playerCombat: {
+  combatId: 'retransmitted-attack-root', eventKind: 'attack', outcomeCode: 'declared',
+  attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+} })
+for (const [transport, delivered] of transmissionVariants([
+  retransmittedRoot,
+  event(771, 'combat', '同一进攻结算', [a, b], 0, { playerCombat: {
+    combatId: 'retransmitted-attack-root', eventKind: 'combat', outcomeCode: 'defeated',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+])) {
+  for (const [you, neutral] of viewerVariants) {
+    const rows = projectLog(delivered, you, [], neutral).filter(row => row.kind === 'combat')
+    assert.equal(rows.length, 1, `same-sequence retransmission stays one legal root (${transport}/${you}/${neutral})`)
+    assert.equal(rows[0].attacker.instanceId, a.instanceId)
+  }
+}
+
+assertOnlyStableCombatRemains([
+  event(780, 'attack', '抵挡冲突进攻', [a, b], 0, { playerCombat: {
+    combatId: 'invalid-and-blocked', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(781, 'defense-invalid', '抵挡已无效', [], 1, { playerCombat: {
+    combatId: 'invalid-and-blocked', eventKind: 'defense-invalid', outcomeCode: 'invalid-block',
+  } }),
+  event(782, 'defense', '却又宣称完成抵挡', [blockOne], 1, { playerCombat: {
+    combatId: 'invalid-and-blocked', eventKind: 'defense', outcomeCode: 'blocked',
+  } }),
+], 'invalid-block and blocked terminal conflict')
+
+assertOnlyStableCombatRemains([
+  event(783, 'attack', '支援冲突进攻', [a, b], 0, { playerCombat: {
+    combatId: 'invalid-and-supported', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(784, 'defense-invalid', '支援已无效', [], 1, { playerCombat: {
+    combatId: 'invalid-and-supported', eventKind: 'defense-invalid', outcomeCode: 'invalid-support',
+  } }),
+  event(785, 'support', '却又宣称完成支援', [supporter, a, b], 1, { playerCombat: {
+    combatId: 'invalid-and-supported', eventKind: 'support', outcomeCode: 'supported',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 'invalid-support and supported terminal conflict')
+
+const validInvalidBlockDamage = projectLog([
+  event(800, 'attack', '进攻主宰', [a], 0, { playerCombat: {
+    combatId: 'valid-invalid-block-damage', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId,
+  } }),
+  event(801, 'defense-invalid', '抵挡无效', [], 1, { playerCombat: {
+    combatId: 'valid-invalid-block-damage', eventKind: 'defense-invalid', outcomeCode: 'invalid-block',
+  } }),
+  event(802, 'defense', '未抵挡并受到伤害', [a], 1, { playerCombat: {
+    combatId: 'valid-invalid-block-damage', eventKind: 'defense', outcomeCode: 'unblocked',
+    attackerInstanceId: a.instanceId, masterDamage: 1,
+  } }),
+], 0, [])
+assert.equal(validInvalidBlockDamage[0].result, '抵挡无效；造成伤害',
+  'an invalid block may legitimately continue to an unblocked master-damage result')
+const validInvalidBlockSettlement = projectLog([
+  event(810, 'attack', '进攻军团', [a, b], 0, { playerCombat: {
+    combatId: 'valid-invalid-block-settlement', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(811, 'defense-invalid', '抵挡无效', [], 1, { playerCombat: {
+    combatId: 'valid-invalid-block-settlement', eventKind: 'defense-invalid', outcomeCode: 'invalid-block',
+  } }),
+  event(812, 'combat', '继续交战并击破', [a, b], 0, { playerCombat: {
+    combatId: 'valid-invalid-block-settlement', eventKind: 'combat', outcomeCode: 'defeated',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 0, [])
+assert.equal(validInvalidBlockSettlement[0].result, '抵挡无效；击破',
+  'an invalid block must not hide the later legitimate legion settlement')
+const validInvalidSupportSettlement = projectLog([
+  event(820, 'attack', '进攻军团', [a, b], 0, { playerCombat: {
+    combatId: 'valid-invalid-support-settlement', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+  event(821, 'defense-invalid', '支援无效', [], 1, { playerCombat: {
+    combatId: 'valid-invalid-support-settlement', eventKind: 'defense-invalid', outcomeCode: 'invalid-support',
+  } }),
+  event(822, 'combat', '继续交战且未击破', [a, b], 0, { playerCombat: {
+    combatId: 'valid-invalid-support-settlement', eventKind: 'combat', outcomeCode: 'not-defeated',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 0, [])
+assert.equal(validInvalidSupportSettlement[0].result, '支援无效；未击破',
+  'an invalid support must not hide the later legitimate legion settlement')
+
 const legacyBattle = projectLog([event(720, 'attack', '旧记录 9999 vs 8888', [a, b], 0)], 0, [])[0]
 assert.equal(legacyBattle.result, '战斗结果未记录')
 assert.equal(legacyBattle.attackTroops, undefined)
