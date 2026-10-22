@@ -635,7 +635,7 @@ const visibleBoardPromptId = computed(() => visibleBoardPromptIds.value[0] ?? nu
 const routedPromptModal = computed(() => {
   const inlinePromptIds = new Set(activeBoardPromptIds.value)
   const prompt = props.game.prompts?.find(item => !inlinePromptIds.has(item.promptId))
-  return Boolean(prompt || (!prompt && props.game.waitingPrompt)
+  return Boolean(prompt || (!(props.game.prompts?.length ?? 0) && props.game.waitingPrompt)
     || props.game.phase === 'Mulligan' || props.game.phase === 'DisasterPreparation')
 })
 const visiblePromptModal = computed(() => Boolean(promptOverlayMounted.value

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import './test-library-placement-recovery.mjs'
 import './test-prompt-player-copy.mjs'
+import './test-inline-prompt-waiting-priority.mjs'
 import './test-a3-prompt-template-contract.mjs'
 import { promptFooterContract } from './prompt-template-contract.mjs'
 import {readFileSync} from 'node:fs'

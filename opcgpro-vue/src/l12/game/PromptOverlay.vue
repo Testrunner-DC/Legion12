@@ -40,7 +40,8 @@ const prompt = computed(() => {
   ])
   return props.game.prompts?.find(item => !suppressed.has(item.promptId)) ?? null
 })
-const waitingPrompt = computed(() => prompt.value ? null : props.game.waitingPrompt ?? null)
+// An owner choice delegated to the board still takes priority over opponent waiting.
+const waitingPrompt = computed(() => (props.game.prompts?.length ?? 0) > 0 ? null : props.game.waitingPrompt ?? null)
 const sandboxActorIndex = computed(() => {
   if (!l12State.gmEnabled) return props.game.you
   if (prompt.value) return prompt.value.playerIndex
