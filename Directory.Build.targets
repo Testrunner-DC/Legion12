@@ -1,0 +1,32 @@
+<Project>
+  <!-- These third-party native debug symbols are about 244 MiB per output.
+       Keep the NuGet originals and every runtime DLL; opt in when native
+       Skia debugging is required: -p:L12IncludeSkiaSharpNativeSymbols=true.
+       This changes future copy lists, not existing bin/publish directories. -->
+  <PropertyGroup>
+    <L12IncludeSkiaSharpNativeSymbols Condition="'$(L12IncludeSkiaSharpNativeSymbols)' == ''">false</L12IncludeSkiaSharpNativeSymbols>
+  </PropertyGroup>
+
+  <Target Name="L12FilterSkiaSharpNativeSymbolsForBuild"
+          AfterTargets="ResolvePackageAssets"
+          Condition="'$(L12IncludeSkiaSharpNativeSymbols)' != 'true'">
+    <ItemGroup>
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
+          Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'SkiaSharp.NativeAssets.Win32' and '%(NativeCopyLocalItems.AssetType)' == 'native' and '%(NativeCopyLocalItems.Filename)%(NativeCopyLocalItems.Extension)' == 'libSkiaSharp.pdb'" />
+      <RuntimeTargetsCopyLocalItems Remove="@(RuntimeTargetsCopyLocalItems)"
+          Condition="'%(RuntimeTargetsCopyLocalItems.NuGetPackageId)' == 'SkiaSharp.NativeAssets.Win32' and '%(RuntimeTargetsCopyLocalItems.AssetType)' == 'native' and '%(RuntimeTargetsCopyLocalItems.Filename)%(RuntimeTargetsCopyLocalItems.Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+
+  <!-- Publishing with NoBuild still resolves package assets. PreserveStoreLayout
+       and runtime-store publishing can create an independent publish list,
+       so filter that list too rather than relying on a preceding Build. -->
+  <Target Name="L12FilterSkiaSharpNativeSymbolsForPublish"
+          AfterTargets="_ResolveCopyLocalAssetsForPublish"
+          Condition="'$(L12IncludeSkiaSharpNativeSymbols)' != 'true'">
+    <ItemGroup>
+      <_ResolvedCopyLocalPublishAssets Remove="@(_ResolvedCopyLocalPublishAssets)"
+          Condition="'%(_ResolvedCopyLocalPublishAssets.NuGetPackageId)' == 'SkiaSharp.NativeAssets.Win32' and '%(_ResolvedCopyLocalPublishAssets.AssetType)' == 'native' and '%(_ResolvedCopyLocalPublishAssets.Filename)%(_ResolvedCopyLocalPublishAssets.Extension)' == 'libSkiaSharp.pdb'" />
+    </ItemGroup>
+  </Target>
+</Project>

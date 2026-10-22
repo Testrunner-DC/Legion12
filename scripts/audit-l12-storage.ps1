@@ -40,6 +40,7 @@ function Get-DirectoryBytes([string]$Path, [string[]]$ExcludedDirectories=@(), [
     return $sum
 }
 
+if ($Scope -eq 'Inventory') {
 $app = Join-Path $resolvedRoot 'app'
 $gitCommon = (& git -C $app rev-parse --git-common-dir 2>$null)
 if ($LASTEXITCODE -eq 0 -and $gitCommon) {
@@ -71,10 +72,12 @@ $rows = foreach ($relative in $budgets.Keys) {
         Status = if ($bytes -le [int64]$budgets[$relative]) { 'OK' } else { 'OVER' }
     }
 }
+}
 
 # Inventory retains the original aggregate thresholds. Active verification is
 # a separate, explicit scope: protected historical databases/worktrees cannot
-# be deleted to make a source change pass. It never authorizes their cleanup.
+# be deleted to make a source change pass. Do not scan unrelated legacy trees
+# before the bounded Active audit. Neither scope authorizes cleanup.
 if ($Scope -eq 'Active') {
     if ([string]::IsNullOrWhiteSpace($CandidateRoot)) { throw 'Active audit requires the precise candidate checkout.' }
     $candidate=[IO.Path]::GetFullPath($CandidateRoot)
@@ -124,9 +127,6 @@ if ($Scope -eq 'Active') {
         $bytes=Get-DirectoryBytes $_.Path $_.Exclude $true
         [pscustomobject]@{Path=$_.Name;MiB=[math]::Round($bytes/1MB,1);BudgetMiB=[math]::Round($_.Budget/1MB,1);Status=if($bytes -le $_.Budget){'OK'}else{'OVER'}}
     }
-    Write-Host '[L12 storage audit] Legacy inventory (not deletion authority):'
-    $rows | Format-Table -AutoSize
-    if (@($rows | Where-Object Status -eq 'OVER').Count) { Write-Warning 'Legacy aggregate budgets exceeded. Preserve protected/unknown data and continue per-directory governance; do not erase it to pass a gate.' }
     $rows=$activeRows
 }
 

@@ -19,28 +19,17 @@ Codex 原工作区中的 `L12work` 是指向 `D:\GPT\Legion12\workspace` 的目�
 
 ## 清理策略
 
-`ops\windows\maintain-l12-storage.ps1` 默认只预览，不删除文件：
+旧入口 `ops\windows\maintain-l12-storage.ps1` 已停用：无论预览还是 `-Apply`，都会在扫描和删除前拒绝执行。它原先仅按年龄／份数分类，无法可靠保护失败证据、当前版本和独有备份，不再作为清理依据。
+
+统一使用受保护入口，默认只预览：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\maintain-l12-storage.ps1
+pwsh -NoProfile -File .\scripts\clean-l12-generated.ps1
 ```
 
-确认列表后显式应用：
+核对具名清单及真实物理路径、占用、成功／失败回执和必要版本保护后，才可应用。部署包清理还必须传入实际正式／回退／测试提交；参数及范围见 [STORAGE-GOVERNANCE.md](STORAGE-GOVERNANCE.md)。此入口不会自动清理源码、运行数据库、任意旧 `bin/obj` 或未知临时目录。
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\ops\windows\maintain-l12-storage.ps1 -Apply
-```
-
-默认策略：
-
-- 测试产物保留 3 天；
-- 临时文件保留 24 小时；
-- 每个提交的部署产物只保留最新 2 份；
-- `active-*` 与 `main-*` 紧凑迁移快照各保留最新 2 份；
-- 日志保留 14 天且最多 20 份；
-- 检测到未提交 Git 改动的目录一律跳过。
-
-可以用参数覆盖保留期限，但不要把 `Root` 指向磁盘根目录、用户目录或其他项目。
+删除前必须证明可再生或已有完整核验保留件。成功／失败记录、唯一业务数据和事故材料不能仅因“旧”或超预算而删除；可再生副本应清除，不把冗余搬到 E 盘无限保留。无法证明的单独保留，不能为刷出容量数字放宽范围。
 
 ## 恢复与兼容
 
