@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-gallery-and-admin-entry-internal",
+  "date": "2026-10-22",
+  "audience": "internal",
+  "reason": "常规卡画廊元数据管理、产品筛选逐项保存保护及管理员沙盒个人入口迁移；保留原权限、旧链接兼容、素材归属、卡效和发布边界，不在玩家日志展示管理实现。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/ProfilePage.vue",
+    "opcgpro-vue/src/l12/site/SandboxPage.vue",
+    "opcgpro-vue/src/l12/site/adminSections.ts",
+    "opcgpro-vue/src/l12/GamePage.vue",
+    "opcgpro-vue/src/router/index.ts",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.GalleryCards.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}

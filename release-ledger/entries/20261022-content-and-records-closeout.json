@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "20261022-content-and-records-closeout",
+  "date": "2026-10-22",
+  "audience": "players",
+  "title": "资讯、异画与对局记录完善",
+  "changes": [
+    {
+      "category": "content",
+      "text": "资讯中选择公共牌库时显示完整名称、作者和短码；连续单卡每行最多显示3张，卡片之间的空白段落不再拆散排布，正文与图片仍正常分隔。",
+      "paths": ["opcgpro-vue/src/l12/site/PublicDeckPicker.vue", "opcgpro-vue/src/l12/site/ArticleContentRenderer.vue"]
+    },
+    {
+      "category": "content",
+      "text": "全卡池可切换查看已公开的异画版本，同名异画不再重复显示两遍名称；查看版本不会改变牌库和对战中的异画使用资格。",
+      "paths": ["opcgpro-vue/src/l12/CardArchive.vue"]
+    },
+    {
+      "category": "replays",
+      "text": "刷新对局历史后同步当前选中的记录，切换账号或退出登录后清除旧列表；无法确认的赛果不再显示为平局，尚未结束的本地录像播到末尾也不会显示平局。回放遇到相互矛盾的记录时不再任意展示其中一条。",
+      "paths": ["opcgpro-vue/src/l12/MatchRecords.vue", "opcgpro-vue/src/l12/ReplayPage.vue", "opcgpro-vue/src/l12/replayOutcome.ts", "opcgpro-vue/src/l12/replayIndex.ts"]
+    },
+    {
+      "category": "battle",
+      "text": "佣兵成功抵挡对军团的进攻时，记录显示实际进攻者与目标，不再把被进攻军团误写为主宰；补齐独立入手记录，目标详情统一显示选择时费用。",
+      "paths": ["opcgpro-vue/src/l12/game/logViewModel.ts", "服务端WebSocket/TwelveLegions/L12AuthorityEvents.cs"]
+    }
+  ]
+}
