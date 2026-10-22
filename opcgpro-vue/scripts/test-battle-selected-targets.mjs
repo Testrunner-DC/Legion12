@@ -18,7 +18,7 @@ for (const [you, expected] of [[0, '对方后排右格'], [1, '我方后排右�
   const rows = projectLog([activated, selected, selected], you, ['绝不能显示的甲', '绝不能显示的乙'])
   assert.equal(rows.length, 1, 'target selection and effect belong to one reviewable record')
   assert.equal(rows[0].detail.length, 1)
-  assert.equal(words(rows[0].detail[0]), `已选目标：${expected}〈公开目标〉，声明时费用2`)
+  assert.equal(words(rows[0].detail[0]), `已选目标：${expected}〈公开目标〉，选择时费用2`)
   assert(!JSON.stringify(rows).includes('秘密审计文字'))
   assert(!JSON.stringify(rows).includes('绝不能显示'))
 }

@@ -187,8 +187,22 @@ const groupedMetadataKeys = [
   'playerLogGroupId', 'playerLogTiming', 'playerLogDecisionLabel', 'effectResultStatus',
 ] as const
 
-function coalesceDuplicateEvents(events: ActionEvent[]) {
+function coalesceDuplicateEvents(events: ActionEvent[]): ActionEvent | null {
   if (events.length === 1) return events[0]
+  const divergentActorOrType = events.some(event => event.type !== events[0].type
+    || event.playerIndex !== events[0].playerIndex)
+  const settledStructuredFact = structuredFactKeys.some(key => {
+    const signatures = events.filter(event => hasUsableStructuredFact(event, key))
+      .map(event => factSignature(event[key]))
+    return signatures.length > 0 && new Set(signatures).size === 1
+  })
+  const rawTextConflict = new Set(events.map(event => factSignature({
+    text: event.text, effectText: event.effectText,
+  }))).size > 1
+  // A sequence is the authority identity. If reconnect copies disagree about
+  // actor, action type, or an unstructured player-facing result, no copy is a
+  // safe fact to display. Structured facts may still settle wording differences.
+  if ((divergentActorOrType || rawTextConflict) && !settledStructuredFact) return null
   const factCount = (event: ActionEvent) => structuredFactKeys
     .filter(key => hasUsableStructuredFact(event, key)).length
   const divergentIdentity = events.some(event => !sameEventIdentity(events[0], event))
@@ -245,6 +259,7 @@ function orderedUniqueEvents(events: ActionEvent[]) {
     bySequence.set(event.sequence, copies)
   }
   return [...bySequence.values()].map(coalesceDuplicateEvents)
+    .filter((event): event is ActionEvent => event !== null)
 }
 
 function timingLabel(timing: string | undefined) {
@@ -645,7 +660,7 @@ function projectSelectedTargets(event: ActionEvent, you: number, neutralView: bo
       && fact.isGodPower == null) {
       label = `${movementSlotLabel(fact.owner, fact.row, fact.slot, you, neutralView)}`
         + (fact.publicName ? `〈${fact.publicName}〉` : '盖伏卡牌')
-        + (fact.currentCost == null ? '' : `，声明时费用${fact.currentCost}`)
+        + (fact.currentCost == null ? '' : `，选择时费用${fact.currentCost}`)
     } else if (fact.zone === 'morale' && fact.row === -1 && fact.slot === -1
       && fact.publicName == null && fact.currentCost == null
       && (fact.isGodPower == null || typeof fact.isGodPower === 'boolean')) {
@@ -850,11 +865,22 @@ function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number,
     ['combat', 'support', 'defense'].includes(event.playerCombat?.eventKind ?? '')
     && !['invalid-block', 'invalid-support'].includes(event.playerCombat?.outcomeCode ?? ''))
   const finalTargetId = finalTargetEvent?.playerCombat?.targetInstanceId
+  const declaredTargetId = declared?.targetInstanceId
+  const declaredDefender: Card | '主宰' | '目标' = declaredTargetId
+    ? cards.find(card => card.instanceId === declaredTargetId) ?? '目标'
+    : cards[1] ?? '主宰'
+  const finalTarget = finalTargetId
+    ? [finalTargetEvent, attack, ...related]
+      .filter((event): event is ActionEvent => Boolean(event))
+      .flatMap(publicCards)
+      .find(card => card.instanceId === finalTargetId)
+    : undefined
   const defender: Card | '主宰' | '目标' = finalTargetEvent
     ? finalTargetId
-      ? publicCards(finalTargetEvent).find(card => card.instanceId === finalTargetId) ?? '目标'
-      : finalTargetEvent.playerCombat?.eventKind === 'defense' ? '主宰' : '目标'
-    : cards[1] ?? '主宰'
+      ? finalTarget ?? '目标'
+      : ['defense', 'support'].includes(finalTargetEvent.playerCombat?.eventKind ?? '')
+        ? declaredDefender : '目标'
+    : declaredDefender
   const { result, damage } = combatResult(related)
   const detail: LogLineRow[] = []
   const shownInvalid = new Set<string>()
@@ -866,9 +892,11 @@ function projectCombat(attack: ActionEvent, members: ActionEvent[], you: number,
     const publicParticipants = publicCards(event)
     switch (combat.eventKind) {
       case 'defense':
+        const blockers = publicParticipants.filter(card => card.instanceId !== combat.attackerInstanceId
+          && card.instanceId !== combat.targetInstanceId)
         detail.push(line(event.sequence, 'defense', null,
           combat.outcomeCode === 'blocked'
-            ? [{ text: `${actor}完成抵挡：` }, ...cardParts(publicParticipants)]
+            ? [{ text: `${actor}完成抵挡：` }, ...cardParts(blockers)]
             : [{ text: `${actor}未抵挡` }],
           combat.masterDamage == null ? [] : [{ value: `主宰受到 ${combat.masterDamage} 点伤害`, tone: 'neg' }]))
         break
@@ -1006,10 +1034,12 @@ export function projectLog(events: ActionEvent[], you: number, _names: string[],
     }
     if (event.type === 'cost' && costMergesIntoFollowingResult(ordered, index)) continue
     if (isPrivateHandAddEvent(event)) {
-      const precedingPublicAdd = ordered.slice(Math.max(0, index - 4), index).some(candidate =>
-        candidate.playerIndex === event.playerIndex
-        && ['reveal', 'search', 'return'].includes(candidate.type)
-        && /加入手牌|返回手牌|回到手牌/.test(candidate.text))
+      const previous = ordered[index - 1]
+      const precedingPublicAdd = previous != null
+        && previous.sequence + 1 === event.sequence
+        && previous.playerIndex === event.playerIndex
+        && ['reveal', 'search', 'return'].includes(previous.type)
+        && /加入手牌|返回手牌|回到手牌/.test(previous.text)
       if (precedingPublicAdd) continue
     }
     if (PLAYER_LOG_HIDDEN_TYPES.has(event.type) && !isPrivateHandAddEvent(event) && !event.playerLogSemantic) continue

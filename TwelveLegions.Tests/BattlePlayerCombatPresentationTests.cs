@@ -257,6 +257,76 @@ public sealed class BattlePlayerCombatPresentationTests
     }
 
     [Fact]
+    public void MercenaryResponseBlockPublishesOriginalLegionTargetForEveryViewer()
+    {
+        var game = Game(72530);
+        Ready(game);
+        var attacker = Legion("mercenary-log-attacker");
+        attacker.Troops = 9000;
+        var target = Legion("mercenary-log-target");
+        target.Troops = 1000;
+        var mercenary = PrintedCard("S01-0002", "mercenary-log-response");
+        game.State.Players[0].Field[0][0] = attacker;
+        game.State.Players[1].Field[0][0] = target;
+        game.State.Players[1].Hand.Add(mercenary);
+
+        Assert.True(game.Handle(0, new L12Command("attack", attacker.InstanceId,
+            Target: new L12AttackTarget("legion", target.InstanceId))).Accepted);
+        var declaration = Assert.Single(game.State.Events, entry => entry.Type == "attack");
+        var responded = false;
+        for (var step = 0; step < 50 && game.State.PendingPrompts.Count > 0; step++)
+        {
+            var prompt = Assert.Single(game.State.PendingPrompts);
+            var choice = prompt.Kind == "response" && prompt.ValidChoices.Contains(mercenary.InstanceId)
+                ? mercenary.InstanceId
+                : prompt.Kind == "response" ? "pass"
+                : prompt.ValidChoices.Contains("no") ? "no"
+                : prompt.ValidChoices.Contains("skip") ? "skip" : prompt.ValidChoices.First();
+            responded |= choice == mercenary.InstanceId;
+            Assert.True(game.Handle(prompt.PlayerIndex,
+                new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+        }
+        Assert.True(responded, "未进入佣兵部队响应窗口");
+        for (var step = 0; step < 100; step++)
+        {
+            if (game.State.PendingPrompts.FirstOrDefault() is { } prompt)
+            {
+                var choice = prompt.Kind == "response" ? "pass"
+                    : prompt.ValidChoices.Contains("no") ? "no"
+                    : prompt.ValidChoices.Contains("skip") ? "skip" : prompt.ValidChoices.First();
+                Assert.True(game.Handle(prompt.PlayerIndex,
+                    new L12Command("resolvePrompt", PromptId: prompt.PromptId, Choice: choice)).Accepted);
+                continue;
+            }
+            if (game.State.PendingDefense is not null)
+            {
+                Assert.True(game.Handle(1, new L12Command("resolveDefense", CardInstanceIds: [])).Accepted);
+                continue;
+            }
+            if (game.State.EffectStack.Count == 0) break;
+        }
+
+        var defense = Assert.Single(game.State.Events, entry => entry.Type == "defense"
+            && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+        Assert.Equal(declaration.PlayerCombat?.CombatId, defense.PlayerCombat?.CombatId);
+        Assert.Equal("blocked", defense.PlayerCombat?.OutcomeCode);
+        Assert.Equal(attacker.InstanceId, defense.PlayerCombat?.AttackerInstanceId);
+        Assert.Equal(target.InstanceId, defense.PlayerCombat?.TargetInstanceId);
+        Assert.Contains(defense.Cards, card => card.InstanceId == attacker.InstanceId);
+        Assert.Contains(defense.Cards, card => card.InstanceId == target.InstanceId);
+        foreach (var snapshot in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+                     game.SnapshotForSpectator(), game.SnapshotForReferee(), game.SnapshotForGm(0) })
+        {
+            var publicDefense = Assert.Single(snapshot.RecentEvents, entry => entry.Type == "defense"
+                && entry.Cards.Any(card => card.InstanceId == mercenary.InstanceId));
+            Assert.Equal(attacker.InstanceId, publicDefense.PlayerCombat?.AttackerInstanceId);
+            Assert.Equal(target.InstanceId, publicDefense.PlayerCombat?.TargetInstanceId);
+            Assert.Contains(publicDefense.Cards, card => card.InstanceId == attacker.InstanceId);
+            Assert.Contains(publicDefense.Cards, card => card.InstanceId == target.InstanceId);
+        }
+    }
+
+    [Fact]
     public void CombatIdRemainsUniqueAfterRestartAndAnotherAttack()
     {
         var game = Game();

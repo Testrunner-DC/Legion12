@@ -332,6 +332,18 @@ assert.equal(duplicatedReconnect.length, 1, 'reconnect delivery must deduplicate
 assert(duplicatedReconnect[0].kind === 'line'
   && duplicatedReconnect[0].parts.some(part => part.text.includes('不同意议和')),
 'reconnect deduplication must prefer the enriched copy of an event sequence')
+const conflictingSameSequence = projectLog([
+  event(8, 'game-over', '甲方获胜', [], 0),
+  event(8, 'game-over', '乙方获胜', [], 1),
+], 0, [])
+assert.equal(conflictingSameSequence.length, 0,
+  'conflicting actor or event type at one authority sequence must fail closed')
+const conflictingDrawCount = projectLog([
+  event(9, 'draw', '抽取1张牌', [], 0),
+  event(9, 'draw', '抽取9张牌', [], 0),
+], 0, [])
+assert.equal(conflictingDrawCount.length, 0,
+  'conflicting unstructured player-facing text at one authority sequence must fail closed')
 const hiddenGroupedSource = projectLog([
   event(1, 'effect-announced', '对方声明一张尚未公开的响应卡', [{ ...peace, hidden: true }], 1, {
     playerLogGroupId: 'effect:hidden-response', playerLogTiming: 'response',
@@ -642,6 +654,65 @@ assert(masterDefended[0].kind === 'combat'
   && [blockOne, blockTwo].every(card => masterDefended[0].detail[0].parts.some(part => part.card?.instanceId === card.instanceId)),
   'all public blocking cards must remain visible in the compact defense detail')
 
+const mercenary = card('佣兵部队', 'mercenary-response')
+const legacyMercenaryBlock = [
+  event(10, 'attack', '军团进攻声明', [a, b], 0, { playerCombat: {
+    combatId: 'mercenary-legacy-block', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+    attackerTroops: 6000, defenderTroops: 4000,
+  } }),
+  event(20, 'defense', '佣兵完成抵挡', [mercenary], 1, { playerCombat: {
+    combatId: 'mercenary-legacy-block', eventKind: 'defense', outcomeCode: 'blocked',
+  } }),
+]
+for (const [events, you, neutral] of [
+  [legacyMercenaryBlock, 0, false],
+  [[...legacyMercenaryBlock].reverse(), 1, false],
+  [[...legacyMercenaryBlock, ...legacyMercenaryBlock].reverse(), -1, true],
+]) {
+  const [row] = projectLog(events, you, [], neutral)
+  assert.equal(row.kind, 'combat')
+  assert.equal(row.defender?.instanceId, b.instanceId,
+    'a legacy response block without its own target id must inherit the declared legion target')
+}
+const targetIdOnlyBlock = projectLog([
+  legacyMercenaryBlock[0],
+  event(20, 'defense', '佣兵完成抵挡', [mercenary], 1, { playerCombat: {
+    combatId: 'mercenary-legacy-block', eventKind: 'defense', outcomeCode: 'blocked',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 0, [])
+assert.equal(targetIdOnlyBlock[0].kind, 'combat')
+assert.equal(targetIdOnlyBlock[0].defender?.instanceId, b.instanceId,
+  'a final target id may resolve its public card from another event in the same combat')
+const authorityMercenaryBlock = projectLog([
+  legacyMercenaryBlock[0],
+  event(20, 'defense', '佣兵完成抵挡', [mercenary, a, b], 1, { playerCombat: {
+    combatId: 'mercenary-legacy-block', eventKind: 'defense', outcomeCode: 'blocked',
+    attackerInstanceId: a.instanceId, targetInstanceId: b.instanceId,
+  } }),
+], 0, [])
+assert.equal(authorityMercenaryBlock[0].kind, 'combat')
+assert.equal(authorityMercenaryBlock[0].defender?.instanceId, b.instanceId)
+assert.deepEqual(authorityMercenaryBlock[0].detail[0].parts
+  .filter(part => part.card).map(part => part.card.instanceId), [mercenary.instanceId],
+  'public attacker and target cards preserve ids but must not be presented as blockers')
+const authorityMasterBlock = projectLog([
+  event(10, 'attack', '进攻主宰', [a], 0, { playerCombat: {
+    combatId: 'mercenary-master-block', eventKind: 'attack', outcomeCode: 'declared',
+    attackerInstanceId: a.instanceId, attackerTroops: 6000,
+  } }),
+  event(20, 'defense', '佣兵完成抵挡', [mercenary, a], 1, { playerCombat: {
+    combatId: 'mercenary-master-block', eventKind: 'defense', outcomeCode: 'blocked',
+    attackerInstanceId: a.instanceId,
+  } }),
+], 0, [])
+assert.equal(authorityMasterBlock[0].kind, 'combat')
+assert.equal(authorityMasterBlock[0].defender, '主宰')
+assert.deepEqual(authorityMasterBlock[0].detail[0].parts
+  .filter(part => part.card).map(part => part.card.instanceId), [mercenary.instanceId],
+  'master defense must identify only the response card as the blocker')
+
 const puppet = card('戏法师的傀儡', 'retargeted-puppet')
 for (const outcomeCode of ['defeated', 'not-defeated']) {
   const retargeted = projectLog([
@@ -784,6 +855,15 @@ const deduplicatedPublicHandAdd = projectLog([
   event(2, 'authority-event', '测试甲因效果将1张牌加入手牌，进入响应时点', [], 0),
 ], 0, [])
 assert.equal(deduplicatedPublicHandAdd.length, 1, 'a public hand add and its authority timing must not render twice')
+const independentPrivateHandAdd = projectLog([
+  event(1, 'reveal', '〈来源卡〉展示〈甲军团〉并加入手牌', [a, source]),
+  event(2, 'dice', '掷骰：4点', [], 1),
+  event(3, 'authority-event', '测试甲因效果将2张牌加入手牌，进入响应时点', [], 0),
+], 0, [])
+assert.equal(independentPrivateHandAdd.length, 3,
+  'a later independent private hand add must not be swallowed by a nearby public hand add')
+assert(independentPrivateHandAdd.some(row => row.kind === 'line' && row.icon === 'hand-add'
+  && row.badges.some(item => item.value === '2张')))
 
 const safeRows = projectLog([
   ...representative,

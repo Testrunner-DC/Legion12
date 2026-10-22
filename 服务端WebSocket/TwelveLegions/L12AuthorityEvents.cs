@@ -160,10 +160,20 @@ public sealed partial class L12GameEngine
         if (item.Data.GetValueOrDefault("invalid") == "true" || pending is null) return;
         pending.BlockedByResponse = true;
         var source = FindSource(item) ?? item.SourceSnapshot;
+        var attacker = FindOnField(State.Players[pending.AttackerPlayer],
+            pending.AttackerInstanceId, out _, out _);
+        var target = pending.Target.Type == "legion"
+            ? FindOnField(State.Players[1 - pending.AttackerPlayer], pending.Target.InstanceId, out _, out _)
+            : null;
+        var participants = new List<L12CardInstance>();
+        if (source is not null) participants.Add(source);
+        if (attacker is not null) participants.Add(attacker);
+        if (target is not null) participants.Add(target);
         AddPlayerCombatEvent("defense", authorityEvent.ActorPlayer,
             $"〈{item.SourceName}〉抵挡本次进攻",
-            new(pending.CombatId, "defense", "blocked"),
-            source is null ? [] : [source]);
+            new(pending.CombatId, "defense", "blocked", null,
+                pending.AttackerInstanceId, pending.Target.InstanceId),
+            participants.ToArray());
         AddEvent("combat-stage", authorityEvent.ActorPlayer,
             $"〈{item.SourceName}〉抵挡本次进攻；已结算的进攻时效果不回退");
     }
