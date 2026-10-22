@@ -341,7 +341,7 @@ public sealed class HandArrayDeltaTests
             ["path"] = new JsonArray("state", "players", 0, "hand"),
             ["value"] = b["state"]!["players"]![0]!["hand"]!.DeepClone(), ["remove"] = false,
         });
-        var expected = Bytes(ordinary).Length;
+        var expected = L12SnapshotJson.SerializeToUtf8Bytes(ordinary).Length;
         var current = JsonSerializer.SerializeToElement(b);
         for (var repeat = 0; repeat < 3; repeat++)
             Assert.Equal(expected, L12SnapshotWireCodec.MeasureOrdinaryDelta(delta, current, hands));

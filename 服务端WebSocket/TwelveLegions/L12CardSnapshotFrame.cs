@@ -83,7 +83,7 @@ internal static class L12CardSnapshotFrame
                 ["lastActionCardRefs"] = lastActionCardRefs,
                 ["cardSnapshots"] = snapshots,
             };
-            var candidate = JsonSerializer.SerializeToUtf8Bytes(wrapper);
+            var candidate = L12SnapshotJson.SerializeToUtf8Bytes(wrapper);
             // A negotiated client can always receive the original full frame. Small/noisy frames
             // stay on that path rather than paying a new protocol shape for negligible savings.
             if (candidate.Length > MaximumWireBytes

@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261022-SNAPSHOT-UTF8｜接收者快照真实编码，无字典替代
+
+- 原全量、delta、presence和packed writer默认把中文展开六ASCII字节；现统一快照专用冻结JavaScriptEncoder.Create(UnicodeRanges.All)，仍安全转义HTML/换行敏感字符，非UnsafeRelaxed/自适应压缩。全出口扫描SendMany/两codec/CardFrame/MeasureOrdinaryDelta，同策略计收益；其他SendAsync/鉴权/聊天/HTTP/存储原样，P1/P2隐私投影和可靠队列不变。
+- 新7源RED→完整8199规则/2170平台、两旧新端真实发送链、10真实命令帧经当前net完整还原，失败发送基线/混合旧转义/安全字符/全字段/精确scratch计数受守卫；独审CLEAR。presence旧假设第一delta必有变更不成立，改连续重建到实际inRoom并保持单8秒；原r1/r2失败都留存，不增加超时。
+- 实际选项104合成引擎包全语义及原默认字节核对215、原生消费者210；2079038→1856725B（−10.69%）是同包编码分量，不冒代表性30＋10/浏览器/CPU或线上根治。唯一wire-json-encoding-20261022/main-acceptance.json绑定所有最终源/程序集/原失败/真socket。
+- 回滚需同时撤快照专用五产品叶和计数策略及相关四测试，不改数据/协议/规则；未部署/维护/线上关单，三性能仍开。正常测试服入口按新候选另验，不重跑异版旧R11或以94离线用例冒线上通过。
+
 ## QA-20261022-COMPRESSION-VETO｜无损通过不等于隐私通过
 
 - 仅QA原型显式synthetic-offline-only与实验能力，鉴权/聊天/未知类型不进压缩；严格有界解压/完整字节校验/损坏拒绝、默认无产品准入。真实546/DLL818引擎52合成endTurn及接收者codec导出104原包，333守卫、832往返；包装后−74.22%不是大终局/原30房/浏览器容量或线上流量收益。

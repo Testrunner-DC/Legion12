@@ -8,8 +8,7 @@ namespace TwelveLegions.Platform.Tests;
 
 public sealed class EventWindowDeltaTests(ITestOutputHelper output)
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private static byte[] Bytes(JsonNode node) => JsonSerializer.SerializeToUtf8Bytes(node, Json);
+    private static byte[] Bytes(JsonNode node) => L12SnapshotJson.SerializeToUtf8Bytes(node);
     private static JsonObject Frame(long revision, IEnumerable<long> sequences) => new()
     {
         ["type"] = "gameState", ["state"] = new JsonObject

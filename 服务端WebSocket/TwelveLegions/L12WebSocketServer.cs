@@ -5524,7 +5524,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (!serializedByPayload.TryGetValue(message.Payload, out var bytes))
             {
                 var serializationStartedAt = L12PerformanceMetrics.Start();
-                bytes = JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions);
+                bytes = message.IsGameState || message.IsPresenceSnapshot
+                    ? L12SnapshotJson.SerializeToUtf8Bytes(message.Payload)
+                    : JsonSerializer.SerializeToUtf8Bytes(message.Payload, OutgoingJsonOptions);
                 var serializationCompletedAt = messageDiagnostic is null ? 0 : Stopwatch.GetTimestamp();
                 L12PerformanceMetrics.Duration("websocket.serialize", serializationStartedAt);
                 messageDiagnostic?.Serialization(serializationStartedAt, serializationCompletedAt);

@@ -422,13 +422,42 @@ public sealed class PresenceSnapshotDeltaTests
                     && message["items"]!.AsArray().Count == accounts.Length);
 
             await SendAsync(sockets[2], new { type = "createRoom" });
+            var expectedBaseRevision = fullRevision;
+            var roomAccountId = accounts[2].Account!.Id;
+            var receivedItems = negotiatedFull["items"]!.AsArray().ToDictionary(
+                item => item!["accountId"]!.GetValue<string>(), item => item!.DeepClone());
             var delta = await ReceivePresenceAsync(negotiated.Socket,
-                message => message["revision"]!.GetValue<long>() > fullRevision);
+                message =>
+                {
+                    var revision = message["revision"]!.GetValue<long>();
+                    if (revision <= expectedBaseRevision) return false;
+                    Assert.Equal("presenceDelta", message["type"]!.GetValue<string>());
+                    Assert.Equal(expectedBaseRevision, message["baseRevision"]!.GetValue<long>());
+                    Assert.Equal(negotiatedFull["epoch"]!.GetValue<string>(), message["epoch"]!.GetValue<string>());
+                    expectedBaseRevision = revision;
+                    foreach (var removed in message["removedAccountIds"]!.AsArray())
+                        Assert.True(receivedItems.Remove(removed!.GetValue<string>()));
+                    foreach (var item in message["upserts"]!.AsArray())
+                        receivedItems[item!["accountId"]!.GetValue<string>()] = item.DeepClone();
+                    var order = message["order"]!.AsArray().Select(id => id!.GetValue<string>()).ToArray();
+                    Assert.Equal(receivedItems.Count, order.Length);
+                    Assert.Equal(order.Length, order.Distinct(StringComparer.Ordinal).Count());
+                    var rebuilt = new JsonArray(order.Select(id => receivedItems[id].DeepClone()).ToArray());
+                    // A valid revision-only notification can precede the room update.
+                    // Consume and check its baseline; wait for the actual target change
+                    // under the receiver's original single eight-second deadline.
+                    return rebuilt.Any(item =>
+                        item!["accountId"]!.GetValue<string>() == roomAccountId
+                        && item["activity"]!.GetValue<string>() == "inRoom");
+                });
             Assert.Equal("presenceDelta", delta["type"]!.GetValue<string>());
-            Assert.Equal(fullRevision, delta["baseRevision"]!.GetValue<long>());
             Assert.NotEmpty(delta["upserts"]!.AsArray());
             var legacyRefresh = await ReceivePresenceAsync(legacy.Socket,
-                message => message["revision"]!.GetValue<long>() > legacyFull["revision"]!.GetValue<long>());
+                message => message["type"]?.GetValue<string>() == "presenceSnapshot"
+                    && message["revision"]!.GetValue<long>() > legacyFull["revision"]!.GetValue<long>()
+                    && message["items"]!.AsArray().Any(item =>
+                        item!["accountId"]!.GetValue<string>() == roomAccountId
+                        && item["activity"]!.GetValue<string>() == "inRoom"));
             Assert.Equal("presenceSnapshot", legacyRefresh["type"]!.GetValue<string>());
 
             await SendAsync(negotiated.Socket, new { type = "syncPresence" });

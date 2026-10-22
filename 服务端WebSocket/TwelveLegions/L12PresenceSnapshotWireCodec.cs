@@ -59,7 +59,7 @@ internal sealed class L12PresenceSnapshotWireCodec
                 ["upserts"] = upserts,
                 ["order"] = order,
             };
-            var encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
+            var encoded = L12SnapshotJson.SerializeToUtf8Bytes(delta);
             if (encoded.Length >= queued.FullPayload.Length) return Full(queued.FullPayload, _generation);
             var generation = _generation;
             return new(encoded, () => Commit(queued.FullPayload, generation), true);

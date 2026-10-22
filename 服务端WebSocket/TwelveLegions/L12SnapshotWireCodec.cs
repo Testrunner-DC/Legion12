@@ -98,7 +98,7 @@ internal sealed class L12SnapshotWireCodec
             };
             if (eventWindow is not null) delta["eventWindow"] = eventWindow;
             if (handSplices is not null) delta["handSplices"] = handSplices;
-            var encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
+            var encoded = L12SnapshotJson.SerializeToUtf8Bytes(delta);
             if (handSplices is not null && changes.Count + handSplices["edits"]!.AsArray().Count <= MaximumChanges
                 && MeasureOrdinaryDelta(delta, current, handSplices) <= encoded.Length)
             {
@@ -107,7 +107,7 @@ internal sealed class L12SnapshotWireCodec
                 var ordinaryChanges = new JsonArray();
                 BuildChanges(previous, current, [], ordinaryChanges, eventWindow is not null);
                 delta.Remove("handSplices"); delta["changes"] = ordinaryChanges;
-                encoded = JsonSerializer.SerializeToUtf8Bytes(delta);
+                encoded = L12SnapshotJson.SerializeToUtf8Bytes(delta);
             }
             if (encoded.Length >= queued.FullPayload.Length * 9 / 10)
                 return Full(queued.FullPayload);
@@ -125,7 +125,7 @@ internal sealed class L12SnapshotWireCodec
     internal static long MeasureOrdinaryDelta(JsonObject delta, JsonElement current, JsonObject hands)
     {
         using var count = new ByteCountWriter();
-        using (var writer = new Utf8JsonWriter(count))
+        using (var writer = new Utf8JsonWriter(count, L12SnapshotJson.WriterOptions))
         {
             writer.WriteStartObject();
             foreach (var property in delta)
