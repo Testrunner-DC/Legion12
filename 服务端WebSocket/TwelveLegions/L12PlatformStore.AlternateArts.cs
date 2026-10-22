@@ -21,6 +21,10 @@ public sealed record L12AlternateArtGrantView(string Id, string AccountId, strin
 public sealed record L12AlternateArtDraft(string? Id, string ArtCode, string BaseCardId, string DisplayName, string MediaAssetId,
     bool Active = true, string ProductId = "", string Kind = "alternate-art", string Effect = "");
 public sealed record L12AlternateArtProductDraft(string? Id, string Name, bool Active = true);
+public sealed record L12AlternateArtProductMergeDraft(string TargetProductId, IReadOnlyList<string> SourceProductIds);
+public sealed record L12AlternateArtProductMergeResult(L12AlternateArtProductView Target,
+    IReadOnlyList<L12AlternateArtProductView> Sources, int MigratedMetadataRows,
+    int ArchivedSiteProducts, int DisabledLegacyProducts);
 public sealed record L12AlternateArtRarityDraft(string? Id, string Code, string Name, bool Active = true);
 public sealed record L12AlternateArtMetadataDraft(string AlternateArtId, IReadOnlyList<string> ProductIds,
     IReadOnlyList<string> RarityIds, string? Artist = null);
@@ -72,6 +76,105 @@ public sealed partial class L12PlatformStore
                 System.Text.Json.JsonSerializer.Serialize(view), null, context);
             Save();
             return view;
+        }
+    }
+
+    public L12AlternateArtProductMergeResult MergeAlternateArtProducts(L12AccountView actor,
+        L12AlternateArtProductMergeDraft draft, L12AdminAuditContext? context = null)
+    {
+        lock (_gate)
+        {
+            var all = RawAlternateArtProductsLocked().ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var targetId = draft.TargetProductId?.Trim() ?? string.Empty;
+            if (!all.TryGetValue(targetId, out var target) || !target.Active)
+                throw new ArgumentException("合并目标产品不存在或已停用");
+            if (_data.AlternateArtProductMerges.Any(item => item.SourceProductId == targetId))
+                throw new ArgumentException("合并目标已经归入其他产品，请选择最终保留的产品");
+
+            var sourceIds = NormalizeIds(draft.SourceProductIds).Where(id => id != targetId).ToArray();
+            if (sourceIds.Length == 0) throw new ArgumentException("至少选择一个需要合并的来源产品");
+            var sources = new List<L12AlternateArtProductView>();
+            foreach (var sourceId in sourceIds)
+            {
+                if (!all.TryGetValue(sourceId, out var source)) throw new ArgumentException($"来源产品不存在：{sourceId}");
+                var existing = _data.AlternateArtProductMerges.FirstOrDefault(item => item.SourceProductId == sourceId);
+                if (existing is not null && existing.TargetProductId != targetId)
+                    throw new ArgumentException($"来源产品已归入其他产品：{source.Name}");
+                sources.Add(source);
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            foreach (var sourceId in sourceIds)
+            {
+                var row = _data.AlternateArtProductMerges.FirstOrDefault(item => item.SourceProductId == sourceId);
+                if (row is null)
+                {
+                    row = new AlternateArtProductMergeRow
+                    {
+                        SourceProductId = sourceId,
+                        TargetProductId = targetId,
+                        CreatedByAccountId = actor.Id,
+                        CreatedAt = now,
+                    };
+                    _data.AlternateArtProductMerges.Add(row);
+                }
+                row.TargetProductId = targetId;
+                row.UpdatedAt = now;
+            }
+
+            var migrated = 0;
+            foreach (var metadata in _data.AlternateArtMetadata)
+            {
+                var next = metadata.ProductIds.Select(ResolveMergedProductIdLocked)
+                    .Distinct(StringComparer.Ordinal).ToList();
+                if (metadata.ProductIds.SequenceEqual(next, StringComparer.Ordinal)) continue;
+                metadata.ProductIds = next;
+                metadata.UpdatedByAccountId = actor.Id;
+                metadata.UpdatedAt = now;
+                migrated++;
+            }
+
+            var archivedSiteProducts = 0;
+            var disabledLegacyProducts = 0;
+            foreach (var sourceId in sourceIds)
+            {
+                if (sourceId.StartsWith("site:", StringComparison.Ordinal))
+                {
+                    var articleId = RemoveProductSourcePrefix(sourceId, "site:");
+                    var article = _data.Articles.FirstOrDefault(row => row.Id == articleId && row.Kind == "product");
+                    if (article is not null && article.Status != "archived")
+                    {
+                        var previous = article.Status;
+                        article.Status = "archived";
+                        article.UpdatedAt = now;
+                        article.UpdatedByAccountId = actor.Id;
+                        article.Revision++;
+                        AppendArticleRevision(article, actor.Id, "archive-product-merge");
+                        AddAdminAudit(actor, "article", "archive-product-merge", article.Id, previous,
+                            article.Status, null, context);
+                        archivedSiteProducts++;
+                    }
+                }
+                else if (sourceId.StartsWith("legacy:", StringComparison.Ordinal))
+                {
+                    var legacyId = RemoveProductSourcePrefix(sourceId, "legacy:");
+                    var legacy = _data.AlternateArtProducts.FirstOrDefault(row => row.Id == legacyId);
+                    if (legacy is not null && legacy.Active)
+                    {
+                        legacy.Active = false;
+                        legacy.UpdatedAt = now;
+                        disabledLegacyProducts++;
+                    }
+                }
+            }
+
+            var result = new L12AlternateArtProductMergeResult(target, sources, migrated,
+                archivedSiteProducts, disabledLegacyProducts);
+            AddAdminAudit(actor, "alternate-art-product", "merge", targetId,
+                System.Text.Json.JsonSerializer.Serialize(sources.Select(item => item.Id)),
+                System.Text.Json.JsonSerializer.Serialize(result), null, context);
+            Save();
+            return result;
         }
     }
 
@@ -134,7 +237,8 @@ public sealed partial class L12PlatformStore
         {
             var artId = draft.AlternateArtId?.Trim() ?? string.Empty;
             var before = FindAlternateArtLocked(artId, true) ?? throw new KeyNotFoundException("异画不存在");
-            var productIds = NormalizeIds(draft.ProductIds);
+            var productIds = NormalizeIds(draft.ProductIds).Select(ResolveMergedProductIdLocked)
+                .Distinct(StringComparer.Ordinal).ToArray();
             var rarityIds = NormalizeIds(draft.RarityIds);
             var knownProducts = AllAlternateArtProductsLocked().Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
             if (productIds.Any(id => !knownProducts.Contains(id))) throw new ArgumentException("异画归属产品不存在");
@@ -707,6 +811,7 @@ public sealed partial class L12PlatformStore
         {
             var changed = false;
             _data.AlternateArtMetadata ??= [];
+            _data.AlternateArtProductMerges ??= [];
             _data.AlternateArtRarities ??= [];
             foreach (var row in _data.AlternateArtMetadata)
             {
@@ -740,7 +845,7 @@ public sealed partial class L12PlatformStore
         }
     }
 
-    private IReadOnlyList<L12AlternateArtProductView> AllAlternateArtProductsLocked()
+    private IReadOnlyList<L12AlternateArtProductView> RawAlternateArtProductsLocked()
     {
         var catalog = _officialCardProducts.Values.SelectMany(value => value)
             .Concat(_officialAlternateArts.Values.SelectMany(value => value.ProductNames))
@@ -759,6 +864,26 @@ public sealed partial class L12PlatformStore
         return catalog.Concat(site).Concat(legacy).ToArray();
     }
 
+    private IReadOnlyList<L12AlternateArtProductView> AllAlternateArtProductsLocked()
+    {
+        var mergedSources = _data.AlternateArtProductMerges.Select(item => item.SourceProductId)
+            .ToHashSet(StringComparer.Ordinal);
+        return RawAlternateArtProductsLocked().Where(item => !mergedSources.Contains(item.Id)).ToArray();
+    }
+
+    private string ResolveMergedProductIdLocked(string id)
+    {
+        var current = id;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (visited.Add(current))
+        {
+            var merge = _data.AlternateArtProductMerges.FirstOrDefault(item => item.SourceProductId == current);
+            if (merge is null) return current;
+            current = merge.TargetProductId;
+        }
+        return id;
+    }
+
     private SiteCategoryRow? CatalogProductCategoryLocked(string product)
     {
         var slug = product.StartsWith("ST", StringComparison.OrdinalIgnoreCase) ? "starter-decks" : "card-series";
@@ -767,9 +892,9 @@ public sealed partial class L12PlatformStore
 
     private IReadOnlyList<L12AlternateArtProductView> ResolveProductsLocked(IReadOnlyList<string> ids, bool admin)
     {
-        var all = AllAlternateArtProductsLocked().ToDictionary(item => item.Id, StringComparer.Ordinal);
+        var all = RawAlternateArtProductsLocked().ToDictionary(item => item.Id, StringComparer.Ordinal);
         var result = new List<L12AlternateArtProductView>();
-        foreach (var id in ids)
+        foreach (var id in ids.Select(ResolveMergedProductIdLocked).Distinct(StringComparer.Ordinal))
         {
             if (!all.TryGetValue(id, out var item)) continue;
             if (admin) { result.Add(item); continue; }

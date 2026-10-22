@@ -139,6 +139,37 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
         Assert.Equal("draft", f.Store.AdminArticles(kind: "product").Single(row => "site:" + row.Id == productId).Status);
     }
 
+    [Fact]
+    public async Task ProductMergeRequiresAdminAndArchivesTheDuplicateSource()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        var category = f.Store.AdminSiteCategories("product").First(row => row.Active);
+        async Task<string> Create(string title, string slug)
+        {
+            using var response = await Send(f, HttpMethod.Post, "/api/admin/articles", f.AdminToken,
+                new { kind = "product", title, categoryId = category.Id, summary = "", body = "",
+                    coverUrl = "", link = "", slug, pinned = false });
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return "site:" + json.RootElement.GetProperty("id").GetString();
+        }
+
+        var targetId = await Create("正式产品", "merge-target");
+        var sourceId = await Create("误建产品", "merge-source");
+        var body = new { targetProductId = targetId, sourceProductIds = new[] { sourceId } };
+        using var denied = await Send(f, HttpMethod.Post, "/api/admin/alternate-art-products/merge", f.PlayerToken, body);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        using var merged = await Send(f, HttpMethod.Post, "/api/admin/alternate-art-products/merge", f.AdminToken, body);
+        Assert.Equal(HttpStatusCode.OK, merged.StatusCode);
+        using var result = JsonDocument.Parse(await merged.Content.ReadAsStringAsync());
+        Assert.Equal(targetId, result.RootElement.GetProperty("target").GetProperty("id").GetString());
+        Assert.Equal(1, result.RootElement.GetProperty("archivedSiteProducts").GetInt32());
+        using var products = await Send(f, HttpMethod.Get, "/api/admin/alternate-art-products", f.AdminToken);
+        using var productsJson = JsonDocument.Parse(await products.Content.ReadAsStringAsync());
+        Assert.Contains(productsJson.RootElement.EnumerateArray(), row => row.GetProperty("id").GetString() == targetId);
+        Assert.DoesNotContain(productsJson.RootElement.EnumerateArray(), row => row.GetProperty("id").GetString() == sourceId);
+    }
+
     private static void AssertStableIdentity(L12AlternateArtView baseline, JsonElement actual)
     {
         Assert.Equal(baseline.Id, actual.GetProperty("id").GetString());

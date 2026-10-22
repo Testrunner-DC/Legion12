@@ -257,6 +257,7 @@ export interface AlternateArt { id: string; artCode: string; baseCardId: string;
 export interface AlternateArtSearchPage { items: AlternateArt[]; total: number; page: number; pageSize: number }
 export interface AlternateArtGrantNotification { id: string; alternateArtId: string; displayName: string; artCode: string; baseCardId: string; baseCardName: string; reason: string; grantedAt: string; imageUrl: string; thumbnailUrl: string; cardImageId: string; builtIn: boolean }
 export interface AlternateArtProduct { id: string; name: string; active: boolean; createdAt: string; updatedAt: string; categoryId?: string; categoryName?: string; source?: 'catalog' | 'site' | 'legacy'; status?: string }
+export interface AlternateArtProductMergeResult { target: AlternateArtProduct; sources: AlternateArtProduct[]; migratedMetadataRows: number; archivedSiteProducts: number; disabledLegacyProducts: number }
 export interface AlternateArtRarity { id: string; code: string; name: string; active: boolean; createdAt: string; updatedAt: string }
 export interface AlternateArtRankedParticipantDispatchPreview { eligibleAccounts: number; alreadyGranted: number; toGrant: number; sourceReference: string; seasonId: string }
 export interface ServerStorageVolume { id: string; label: string; totalBytes: number; usedBytes: number; freeBytes: number }
@@ -1553,6 +1554,7 @@ export const adminApi = {
   workbenchSummary: () => platformRequest<AdminWorkbenchSummary>('/api/admin/workbench/summary', { cache: 'no-store' }),
   alternateArtProducts: (includeInactive = true) => platformRequest<AlternateArtProduct[]>(`/api/admin/alternate-art-products?includeInactive=${includeInactive}`),
   saveAlternateArtProduct: (draft: Partial<AlternateArtProduct> & Pick<AlternateArtProduct, 'name'>) => platformRequest<AlternateArtProduct>('/api/admin/alternate-art-products', { method: 'PUT', body: JSON.stringify(draft) }),
+  mergeAlternateArtProducts: (draft: { targetProductId: string; sourceProductIds: string[] }) => platformRequest<AlternateArtProductMergeResult>('/api/admin/alternate-art-products/merge', { method: 'POST', body: JSON.stringify(draft) }),
   saveAlternateArt: (draft: Partial<AlternateArt> & Pick<AlternateArt, 'artCode' | 'baseCardId' | 'displayName' | 'mediaAssetId'>) => platformRequest<AlternateArt>('/api/admin/alternate-arts', { method: 'PUT', body: JSON.stringify(draft) }),
   alternateArtRarities: (includeInactive = true) => platformRequest<AlternateArtRarity[]>(`/api/admin/alternate-art-rarities?includeInactive=${includeInactive}`),
   saveAlternateArtRarity: (draft: Partial<AlternateArtRarity> & Pick<AlternateArtRarity, 'code' | 'name'>) => platformRequest<AlternateArtRarity>('/api/admin/alternate-art-rarities', { method: 'PUT', body: JSON.stringify(draft) }),

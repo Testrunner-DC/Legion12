@@ -327,6 +327,7 @@ public sealed partial class L12PlatformStore
         public List<ArticleRow> Articles { get; set; } = [];
         public List<SiteMediaRow> SiteMedia { get; set; } = [];
         public List<AlternateArtProductRow> AlternateArtProducts { get; set; } = [];
+        public List<AlternateArtProductMergeRow> AlternateArtProductMerges { get; set; } = [];
         public List<AlternateArtRow> AlternateArts { get; set; } = [];
         public List<AlternateArtMetadataRow> AlternateArtMetadata { get; set; } = [];
         public List<AlternateArtRarityRow> AlternateArtRarities { get; set; } = [];
@@ -399,6 +400,15 @@ public sealed partial class L12PlatformStore
         public string Id { get; set; } = Guid.NewGuid().ToString("N");
         public string Name { get; set; } = string.Empty;
         public bool Active { get; set; } = true;
+        public string CreatedByAccountId { get; set; } = string.Empty;
+        public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    private sealed class AlternateArtProductMergeRow
+    {
+        public string SourceProductId { get; set; } = string.Empty;
+        public string TargetProductId { get; set; } = string.Empty;
         public string CreatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

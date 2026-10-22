@@ -4466,6 +4466,13 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             try { return Results.Ok(_platform.SaveAlternateArtProduct(authenticated.Account, draft, RequestAuditContext(request, permission))); }
             catch (ArgumentException error) { return ApiError(request, "alternate_art_product_invalid", error.Message, StatusCodes.Status400BadRequest); }
         });
+        _app.MapPost("/api/admin/alternate-art-products/merge", (HttpRequest request, L12AlternateArtProductMergeDraft draft) =>
+        {
+            const L12Permission permission = L12Permission.AdminContentDraft;
+            if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
+            try { return Results.Ok(_platform.MergeAlternateArtProducts(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "alternate_art_product_merge_invalid", error.Message, StatusCodes.Status400BadRequest); }
+        });
         _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>
         {
             if (!TryAuthorize(request, L12Permission.AdminContentRead, out _, out var failure)) return failure;

@@ -23,6 +23,7 @@ const workspace = ref<'gallery' | 'rights'>('gallery')
 const editorOpen = ref(false)
 const rightsLoaded = ref(false)
 const productDialogOpen = ref(false)
+const productMergeDialogOpen = ref(false)
 const productSaving = ref(false)
 const pendingProductId = ref('')
 const editorSession = ref(0)
@@ -30,6 +31,7 @@ const productDialogContext = ref(0)
 let productSaveRequest = 0
 const productCategories = ref<SiteCategory[]>([])
 const productForm = reactive({ title: '', categoryId: '' })
+const productMergeForm = reactive({ targetProductId: '', sourceProductIds: [] as string[] })
 const rarityManagerOpen = ref(false)
 const imageDialogOpen = ref(false)
 const imageTarget = ref<AlternateArt | null>(null)
@@ -191,6 +193,32 @@ function openProductDialog() {
     Object.assign(productForm, { title: '', categoryId: productCategories.value[0]?.id || '' })
   productDialogContext.value = editorSession.value
   productDialogOpen.value = true
+}
+function openProductMergeDialog() {
+  Object.assign(productMergeForm, { targetProductId: '', sourceProductIds: [] })
+  productMergeDialogOpen.value = true
+}
+async function performProductMerge() {
+  const targetId = productMergeForm.targetProductId
+  const sourceIds = [...productMergeForm.sourceProductIds]
+  const result = await adminApi.mergeAlternateArtProducts({ targetProductId: targetId, sourceProductIds: sourceIds })
+  products.value = await adminApi.alternateArtProducts()
+  artForm.productIds = [...new Set(artForm.productIds.map(id => sourceIds.includes(id) ? targetId : id))]
+  artsLoaded.value = false
+  await searchRegistry(registry.value.page)
+  productMergeDialogOpen.value = false
+  notice(`产品已合并：迁移 ${result.migratedMetadataRows} 条异画归属，归档 ${result.archivedSiteProducts} 个重复产品草稿`)
+}
+function mergeProducts() {
+  const target = products.value.find(item => item.id === productMergeForm.targetProductId)
+  const sources = products.value.filter(item => productMergeForm.sourceProductIds.includes(item.id))
+  if (!target || !sources.length) { notice('请选择一个保留产品和至少一个重复来源'); return }
+  if (sources.some(item => item.id === target.id)) { notice('保留产品不能同时作为重复来源'); return }
+  requestRiskAction({
+    title: '确认合并重复产品', target: target.name, targetLabel: '保留产品',
+    impact: `“${sources.map(item => item.name).join('”、“')}”的异画归属会迁移到保留产品；重复的产品草稿会归档，目录来源会隐藏。此操作会写入审计记录。`,
+    confirmLabel: '确认合并', severity: 'warning', run: performProductMerge,
+  })
 }
 async function selectCreatedProduct(expectedContext = productDialogContext.value) {
   if (!pendingProductId.value) return
@@ -359,7 +387,8 @@ function dispatchBetaGrant() {
 }
 function onWindowKeydown(event: KeyboardEvent) {
   if (event.key !== 'Escape' || riskAction.value) return
-  if (productDialogOpen.value) productDialogOpen.value = false
+  if (productMergeDialogOpen.value) productMergeDialogOpen.value = false
+  else if (productDialogOpen.value) productDialogOpen.value = false
   else if (imageDialogOpen.value) closeImageEditor()
   else if (editorOpen.value) closeEditor()
 }
@@ -373,7 +402,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
     <header><div><small>GALLERY WORKBENCH</small><h3>画廊卡片后台</h3><p>上传新卡、替换已有卡图并维护必要资料。联动卡填写正式卡效文本，但不接入对局结算、牌池、构筑或权益。</p></div><button @click="load">{{ busy ? '读取中…' : '刷新当前资料' }}</button></header>
     <nav class="workspace-tabs" aria-label="画廊后台工作区"><button :class="{ active: workspace === 'gallery' }" @click="workspace = 'gallery'">画廊卡片</button><button :class="{ active: workspace === 'rights' }" @click="workspace = 'rights'">权益与派发</button></nav>
     <div v-if="workspace === 'gallery'" class="gallery-workspace">
-      <section class="task-strip"><div><small>PRIMARY TASK</small><h4>上传与维护卡片</h4><p>从卡片列表直接编辑资料或更换卡图，低频派发功能已移至独立页签。</p></div><button v-if="canWrite" class="primary" type="button" @click="openNewArt">上传新卡 / 异画</button></section>
+      <section class="task-strip"><div><small>PRIMARY TASK</small><h4>上传与维护卡片</h4><p>从卡片列表直接编辑资料或更换卡图，低频派发功能已移至独立页签。</p></div><div class="task-actions"><button v-if="canWrite" type="button" @click="openProductMergeDialog">合并重复产品</button><button v-if="canWrite" class="primary" type="button" @click="openNewArt">上传新卡 / 异画</button></div></section>
       <form class="gallery-filters" @submit.prevent="searchRegistry(1)"><label>名称<input v-model.trim="registryFilters.name" placeholder="异画或联动卡名称"></label><label>编号<input v-model.trim="registryFilters.artCode" placeholder="异画或联动编号"></label><label>绑定原卡<input v-model.trim="registryFilters.baseCard" placeholder="原卡名或编号"></label><div class="filter-actions"><button type="button" @click="resetRegistryFilters">重置</button><button class="primary" type="submit">查询</button></div></form>
       <section class="gallery-list" :aria-busy="registryBusy"><header><div><h4>卡片列表</h4><p>当前结果 {{ registry.total }} 项；产品草稿带状态标记，只有发布后才会出现在公开画廊。</p></div></header><article v-for="art in registry.items" :key="art.id"><CardImage v-if="art.builtIn" :card-id="art.cardImageId" :legacy-url="art.thumbnailUrl || art.imageUrl" :alt="art.displayName" intent="thumb"/><img v-else :src="art.thumbnailUrl" :alt="art.displayName"><div class="art-summary"><b>{{ art.displayName }}</b><span>{{ art.artCode || '待补编号' }} · {{ art.kind === 'gallery-card' ? '独立联动展示卡' : `${art.baseCardId} · ${art.baseCardName || cardById.get(art.baseCardId)?.nameZh || '原卡资料加载中'}` }}</span><div class="chips"><em v-for="item in art.products" :key="item.id">{{ item.name }}<small v-if="item.source === 'site' && item.status !== 'published'">草稿</small></em><em v-for="item in art.rarities" :key="item.id">{{ item.code }}</em><em v-if="art.artist">画师：{{ art.artist }}</em><em>{{ art.active ? '展示中' : '已停用' }}</em></div></div><div class="row-actions"><button type="button" @click="editRegistryArt(art)">编辑资料</button><button class="primary" type="button" @click="openImageEditor(art)">更换卡图</button></div></article><p v-if="!registryBusy && !registry.items.length">没有符合条件的画廊卡片。</p><footer><span>第 {{ registry.page }} / {{ registryPages }} 页</span><div><button :disabled="registryBusy || registry.page <= 1" @click="searchRegistry(registry.page - 1)">上一页</button><button :disabled="registryBusy || registry.page >= registryPages" @click="searchRegistry(registry.page + 1)">下一页</button></div></footer></section>
       <section v-if="editorOpen" class="art-editor ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-editor-title"><header class="editor-heading"><div><small>{{ artForm.id ? 'EDIT ENTRY' : 'CREATE ENTRY' }}</small><h4 id="alternate-art-editor-title">{{ artForm.id ? '编辑卡片资料' : '上传新卡 / 异画' }}</h4></div><button type="button" @click="closeEditor">关闭</button></header><div class="form-grid"><label>条目类型<select v-model="artForm.kind" :disabled="Boolean(artForm.id)"><option value="alternate-art">已有卡的异画</option><option value="gallery-card">独立联动展示卡</option></select></label><label>编号<input v-model.trim="artForm.artCode" maxlength="80" placeholder="例如：ALT-S01-001 / COLLAB-001"></label><label v-if="artForm.kind === 'alternate-art'">绑定原卡<button class="art-choice" type="button" :disabled="artForm.builtIn || Boolean(artForm.id)" @click="openArtPicker('base')">{{ selectedBaseCard ? `${selectedBaseCard.number} · ${selectedBaseCard.nameZh}` : '打开单卡筛选选择原卡' }}</button></label><label v-if="artForm.kind === 'alternate-art'">卡名（随原卡）<input :value="selectedBaseCard?.nameZh || artForm.displayName || '选择原卡后自动带入'" disabled></label><label v-else>联动卡名称<input v-model.trim="artForm.displayName" maxlength="120" placeholder="独立撰写名称"></label><label>画师<input v-model.trim="artForm.artist" maxlength="120" placeholder="例如：画师姓名或署名"></label><label v-if="artForm.kind === 'gallery-card'" class="full-field">联动卡卡效<textarea v-model.trim="artForm.effect" rows="4" maxlength="2000" placeholder="填写在画廊展示的正式卡效文本；不会接入对局结算"></textarea></label><fieldset class="metadata-choice"><legend>收录产品（可多选） <button v-if="canWrite" type="button" @click="openProductDialog">新建产品</button></legend><label v-for="item in products.filter(product => product.active || artForm.productIds.includes(product.id))" :key="item.id" class="check"><input v-model="artForm.productIds" type="checkbox" :value="item.id"><span>{{ item.name }}<small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><fieldset class="metadata-choice"><legend>罕贵（可多选） <button v-if="canWrite" type="button" @click="rarityManagerOpen = !rarityManagerOpen">管理罕贵</button></legend><label v-for="item in rarities.filter(rarity => rarity.active || artForm.rarityIds.includes(rarity.id))" :key="item.id" class="check"><input v-model="artForm.rarityIds" type="checkbox" :value="item.id">{{ item.code }} · {{ item.name }}</label><p v-if="!rarities.length">尚未建立罕贵定义。</p></fieldset><label v-if="!artForm.id">卡图素材<SiteMediaPicker v-model="artForm.mediaAssetId" kind="card-art" :selected-media="media.find(item => item.id === artForm.mediaAssetId)" @selected="uploaded"/></label><label class="check"><input v-model="artForm.active" type="checkbox" :disabled="artForm.builtIn">启用并在画廊展示</label></div><MediaUploadField v-if="canWrite && !artForm.id" kind="card-art" :initial-alt="artForm.kind === 'gallery-card' ? artForm.displayName || '联动卡图' : selectedBaseCard?.nameZh || '异画卡图'" @uploaded="uploaded" @notice="notice"/><section v-if="rarityManagerOpen" class="inline-manager"><h5>可复用罕贵</h5><div class="form-grid"><label>罕贵代码<input v-model.trim="rarityForm.code" maxlength="40" placeholder="例如：UR"></label><label>显示名称<input v-model.trim="rarityForm.name" maxlength="80" placeholder="例如：终极罕贵"></label><label class="check"><input v-model="rarityForm.active" type="checkbox">可继续选用</label></div><div class="actions"><button @click="resetRarity">清空</button><button class="primary" @click="saveRarity">保存罕贵定义</button></div><article v-for="rarity in rarities" :key="rarity.id"><span><b>{{ rarity.code }}</b> · {{ rarity.name }} · {{ rarity.active ? '可用' : '已停用' }}</span><button @click="editRarity(rarity)">编辑</button></article></section><div class="actions"><button @click="closeEditor">取消</button><button v-if="canWrite" class="primary" @click="saveArt">保存卡片资料</button></div></section>
@@ -391,6 +420,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
       </div>
       <div v-if="productDialogOpen" class="registry-mask" @click.self="productDialogOpen = false">
         <section class="product-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-product-title"><header><div><small>PRODUCT DRAFT</small><h2 id="alternate-art-product-title">新建产品</h2></div><button aria-label="关闭" @click="productDialogOpen = false">×</button></header><p>在现有产品体系中创建草稿并立即选用。草稿仅后台可见，不会自动发布资讯或公开画廊归属。</p><label>产品名称<input v-model.trim="productForm.title" maxlength="160" placeholder="例如：联动纪念卡系列"></label><label>产品分类<select v-model="productForm.categoryId"><option v-for="item in productCategories" :key="item.id" :value="item.id">{{ item.name }}</option></select></label><p v-if="pendingProductId" class="draft-state">草稿已创建：{{ pendingProductId }}。如果列表刷新失败，只需重试回选，不会重复创建。</p><footer><button @click="productDialogOpen = false">取消</button><button v-if="canWrite" class="primary" :disabled="productSaving" @click="saveProductDraft">{{ pendingProductId ? '重试回选已建草稿' : productSaving ? '保存中…' : '保存草稿并选用' }}</button></footer></section>
+      </div>
+      <div v-if="productMergeDialogOpen" class="registry-mask" @click.self="productMergeDialogOpen = false">
+        <section class="product-dialog product-merge-dialog ui-state-scope" role="dialog" aria-modal="true" aria-labelledby="alternate-art-product-merge-title"><header><div><small>MERGE PRODUCTS</small><h2 id="alternate-art-product-merge-title">合并重复产品</h2></div><button aria-label="关闭" @click="productMergeDialogOpen = false">×</button></header><p>保留一个正式产品，系统会迁移全部异画归属，并归档或隐藏重复来源。</p><label>保留产品<select v-model="productMergeForm.targetProductId"><option value="">请选择最终保留的产品</option><option v-for="item in products.filter(product => product.active)" :key="item.id" :value="item.id">{{ item.name }} · {{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</option></select></label><fieldset class="merge-sources"><legend>合并这些重复来源</legend><label v-for="item in products.filter(product => product.id !== productMergeForm.targetProductId)" :key="item.id"><input v-model="productMergeForm.sourceProductIds" type="checkbox" :value="item.id"><span><b>{{ item.name }}</b><small>{{ item.categoryName || '未分类' }} · {{ item.source === 'site' ? item.status === 'published' ? '已发布' : '草稿' : item.source === 'catalog' ? '卡牌产品' : '历史归属' }}</small></span></label></fieldset><footer><button @click="productMergeDialogOpen = false">取消</button><button v-if="canWrite" class="primary" :disabled="!productMergeForm.targetProductId || !productMergeForm.sourceProductIds.length" @click="mergeProducts">核对并合并</button></footer></section>
       </div>
       <SingleCardPicker v-if="artPickerTarget" :title="artPickerTarget === 'base' ? '选择异画绑定的原卡' : '选择异画'" :items="artPickerTarget === 'base' ? basePickerItems : artPickerItems" @select="choosePickerItem" @close="artPickerTarget = null"/>
     </Teleport>
@@ -411,4 +443,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKeydown))
 /* Teleported dialogs are outside .alternate-admin and need their own control baseline. */
 .image-dialog>footer>button,.product-dialog>footer>button,.product-dialog>label>input,.product-dialog>label>select{box-sizing:border-box;min-height:38px;padding:8px 10px;border:1px solid #4a5860;background:#070d12;color:#fff;font:inherit}
 @media(max-width:900px),(pointer:coarse){.image-dialog>header>button,.product-dialog>header>button{box-sizing:border-box;min-width:44px;min-height:44px;flex:0 0 44px;padding:0}.image-dialog>footer>button,.product-dialog>footer>button,.product-dialog>label>input,.product-dialog>label>select{min-height:44px}.product-dialog>label>select{height:44px}}
+.task-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}.merge-sources{display:grid;gap:7px;max-height:320px;overflow:auto;margin:14px 0 0;padding:12px;border:1px solid #35424a}.merge-sources legend{padding:0 6px;color:#d9c176;font-weight:900}.merge-sources label{display:flex;align-items:center;gap:9px;padding:8px;background:#101820}.merge-sources label span{display:grid;gap:2px}.merge-sources label small{color:#93a0a6}.product-merge-dialog{width:min(720px,94vw)}
+@media(max-width:760px){.task-actions{width:100%;justify-content:stretch}.task-actions button{flex:1}.merge-sources label{align-items:flex-start}.product-merge-dialog{width:calc(100vw - 16px)}}
 </style>

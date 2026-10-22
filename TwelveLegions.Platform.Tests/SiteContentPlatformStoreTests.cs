@@ -37,6 +37,62 @@ public sealed class SiteContentPlatformStoreTests
     }
 
     [Fact]
+    public void AlternateArtProductMergeMigratesReferencesArchivesDuplicateAndPersistsCatalogAlias()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-product-merge-{Guid.NewGuid():N}");
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var category = store.AdminSiteCategories("product").First(item => item.Slug == "card-series");
+            var productMedia = Upload(store, admin, "product");
+            var targetDraft = store.SaveArticleDraft(admin, new(null, "收藏级异画扩充包 | 黄金的理想乡", "",
+                "正式产品", category.Name, "", "/products/golden", "golden-paradise", false, null,
+                Kind: "product", CategoryId: category.Id, MediaAssetId: productMedia.Id));
+            var target = store.PublishArticle(admin, targetDraft.Id);
+            var duplicate = store.SaveArticleDraft(admin, new(null, "黄金的理想乡", "", "误建草稿",
+                category.Name, "", "", "golden-paradise-draft", false, null,
+                Kind: "product", CategoryId: category.Id));
+            var targetId = $"site:{target.Id}";
+            var duplicateId = $"site:{duplicate.Id}";
+            const string catalogId = "catalog:黄金的理想乡";
+            Assert.Contains(store.AlternateArtProducts(true), item => item.Id == targetId);
+            Assert.Contains(store.AlternateArtProducts(true), item => item.Id == duplicateId);
+            Assert.Contains(store.AlternateArtProducts(true), item => item.Id == catalogId);
+
+            var artMedia = Upload(store, admin, "card-art");
+            var baseCard = catalog.Cards.Values.First();
+            var art = store.SaveAlternateArt(admin, new(null, "ALT-PRODUCT-MERGE", baseCard.Id,
+                baseCard.NameZh, artMedia.Id));
+            store.SaveAlternateArtMetadata(admin, new(art.Id, [catalogId, duplicateId], []));
+
+            var merged = store.MergeAlternateArtProducts(admin,
+                new(targetId, [catalogId, duplicateId]));
+
+            Assert.Equal(targetId, merged.Target.Id);
+            Assert.Equal(1, merged.MigratedMetadataRows);
+            Assert.Equal(1, merged.ArchivedSiteProducts);
+            Assert.Equal("archived", store.AdminArticle(duplicate.Id)!.Status);
+            Assert.DoesNotContain(store.AlternateArtProducts(true), item => item.Id == catalogId || item.Id == duplicateId);
+            Assert.Equal([targetId], store.AdminAlternateArts().Single(item => item.Id == art.Id).Products.Select(item => item.Id));
+
+            var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            Assert.DoesNotContain(reloaded.AlternateArtProducts(true), item => item.Id == catalogId || item.Id == duplicateId);
+            Assert.Equal([targetId], reloaded.AdminAlternateArts().Single(item => item.Id == art.Id).Products.Select(item => item.Id));
+            Assert.Throws<ArgumentException>(() => reloaded.MergeAlternateArtProducts(admin,
+                new(catalogId, [targetId])));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void AlternateArtNameAlwaysFollowsBaseCardAndActiveArtIsPublic()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-card-{Guid.NewGuid():N}");
