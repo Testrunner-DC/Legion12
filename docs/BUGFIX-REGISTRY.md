@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261023-AUDIT-VALIDATION-AMPLIFICATION｜本地根因修复接受，未部署
+
+- 人类要求性能找根因、不再同法反复。现当前57测试服务每笔transactional-save分配约115MB，但未按内部审计段归因；不能把嵌套Admin约140MB相加。源码完整同类扫描MergeIndependentAudit／AppendIndependentAudit涵盖普通、私人牌库、季末、初始迁移、启动、冲突与广播读取；核心问题是两个完整检查域重叠仍重复读验正文，Append再读一次。
+- 复用既有IncrementalReadAuditTests及StorageFailureInjector、native SQLite measurement，以已接受57 DLL独立合成1／1000／5000审计、单次无密码account-only Save。5000条正文10227361B→分配293450360B，第三Append97140600B；最终同夹具103410296B（−64.76%），账本有序九列digest／fresh restart不变。原模板列与正文不一致的夹具失败保留，不放宽验证；原probe、第三遍候选和最终并集结果分别保存，不混成同源全绿。
+- P3只合并staged IDs（包括最新窗口外）与数据库latest5000 IDs，外排created_utc DESC／id DESC，每唯一行仍校验SHA、元数据、staged正文冲突；最终retention不改。同IMMEDIATE事务追加只复用20逻辑字段不可变身份，日期local ticks与offset分开，不以对象引用冒未变。新的staged审计正常INSERT；其他无Merge证明的初始Append仍全验证。closed writer契约禁止Merge→Append间直接SQL改审计账本，现object／season调用图遵守；未来新直写必须走普通验证入口。
+- 原RED重复查询5而非4；第三遍候选22专项过，最终24专项包括三SQL、5001同时间保留、窗口外冲突、全字段／独立offset、跨连接／已结束事务、损坏元数据及季末新审计重启。完整最终平台2236／2236、零失败跳过；有限只读独审及架构／性能锁通过。首长路径完整1241／19失败后中止；原同程序集仅短D根19／19过，确证环境路径原因，原失败不改写。主回执B0E006BB，源与候选DLL CD1AB4F0固定。
+- 唯一full-confirmation-20261023/AuditCost，回滚仅恢复本批两个产品叶，不改数据库格式、镜像／回滚／F2开关、权限、卡效、Journal或历史。终局1帧超3秒仍未证与此同因，3性能Bug不关闭；当前服务仍57，无新部署／正式统计写。
+
 ## BUG-20261023-LIBRARY-RETURN-FACTS｜最终57ef89b3两服已部署核验
 
 - 人类明确杨戬／同类回库：私密牌面、身份与内部顺序不公开，成功放顶／底及张数公开；同次实际操作只合并玩家日志，不合并逐牌权威移动或动画。复用324卡池→51命中→排10非回库得到41卡＋2语义复用的现有分类，不把全部命中冒作已证Bug。原杨戬双方×直接／分步×顶／底8实际Handle均因公开文字缺方向RED，贯穿4正反对照通过；backend/red-r1保留。

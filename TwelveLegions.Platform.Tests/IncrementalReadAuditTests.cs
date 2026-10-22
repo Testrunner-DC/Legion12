@@ -105,6 +105,173 @@ public sealed class IncrementalReadAuditTests
         Assert.Throws<InvalidDataException>(() => f.Store.AdminAudit(category: "analytics"));
     }
 
+    [Fact]
+    public void AccountOnlySaveReusesItsTransactionLocalAuditValidation()
+    {
+        using var f = new RankedIdentityFixture();
+        Append(f.Store, f.Admin);
+        var before = AuditLedgerDigest(f.Store);
+        using var scope = L12PlatformStore.BeginSyntheticStorageMeasurement();
+        f.Store.ApplyResponsePreference(f.Admin.Id, L12GameEngine.ValidOnlyResponseMode, "synthetic-audit-reuse");
+        var measured = scope.Complete();
+        Assert.Equal(0, measured.InstrumentationErrors);
+        // Two migration filters and one union of both validation domains.
+        Assert.Equal(3, measured.AuditDomainStatements);
+        Assert.Equal(before, AuditLedgerDigest(f.Store));
+        var restarted = new L12PlatformStore(f.Path, f.Catalog.PresetDecks, officialCards: f.Catalog.Cards);
+        Assert.Equal(L12GameEngine.ValidOnlyResponseMode, restarted.ResponsePreference(f.Admin.Id));
+        Assert.Equal(before, AuditLedgerDigest(restarted));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AccountOnlySaveStillRejectsAuditMetadataOrStagedBodyConflict(bool mutateAfterMerge)
+    {
+        using var f = new RankedIdentityFixture();
+        Append(f.Store, f.Admin);
+        f.Store.ApplyResponsePreference(f.Admin.Id, L12GameEngine.ValidOnlyResponseMode, "synthetic-audit-stage");
+        var core = Scalar(f.Store, "SELECT snapshot_sha256 FROM platform_state;");
+        if (!mutateAfterMerge)
+            Execute(f.Store, "UPDATE admin_audit_events SET category='altered' WHERE category='analytics';");
+        else
+            f.Store.StorageFailureInjector = stage =>
+            {
+                if (stage != "before-audit-append") return;
+                var data = typeof(L12PlatformStore).GetProperty("_data", Private)!.GetValue(f.Store)!;
+                var audits = (System.Collections.IEnumerable)data.GetType().GetProperty("AdminAudit")!.GetValue(data)!;
+                var audit = audits.Cast<object>().Single();
+                audit.GetType().GetProperty("Comment")!.SetValue(audit, "synthetic conflicting staged body");
+            };
+        try
+        {
+            Assert.Throws<L12PlatformStorageUnavailableException>(() =>
+                f.Store.ApplyResponsePreference(f.Admin.Id, L12GameEngine.DefaultResponseMode, "synthetic-audit-reject"));
+        }
+        finally { f.Store.StorageFailureInjector = null; }
+        Assert.Equal(core, Scalar(f.Store, "SELECT snapshot_sha256 FROM platform_state;"));
+    }
+
+    [Fact]
+    public void AuditValidationIdentityCoversEveryPersistedFieldAndExactDateOffset()
+    {
+        using var f = new RankedIdentityFixture();
+        Append(f.Store, f.Admin);
+        var payload = (string)Scalar(f.Store, "SELECT payload_json FROM admin_audit_events;")!;
+        var rowType = typeof(L12PlatformStore).GetNestedType("AdminAuditRow", BindingFlags.NonPublic)!;
+        var identityType = typeof(L12PlatformStore).GetNestedType("AuditContentIdentity", BindingFlags.NonPublic)!;
+        var capture = identityType.GetMethod("Capture", BindingFlags.Static | BindingFlags.NonPublic)!;
+        object Row() => System.Text.Json.JsonSerializer.Deserialize(payload, rowType)!;
+        var original = Row();
+        var expected = capture.Invoke(null, [original]);
+        var properties = rowType.GetProperties();
+        var identityNames = identityType.GetProperties().Select(property => property.Name)
+            .Where(name => name is not "CreatedAtTicks" and not "CreatedAtOffsetTicks").Append("CreatedAt");
+        Assert.Equal(properties.Select(property => property.Name).Order(), identityNames.Order());
+        foreach (var property in properties)
+        {
+            var changed = Row();
+            object value = property.PropertyType == typeof(string) ? "synthetic changed " + property.Name
+                : property.PropertyType == typeof(bool) ? !(bool)property.GetValue(changed)!
+                : property.PropertyType == typeof(long?) ? 39483L
+                : property.PropertyType == typeof(DateTimeOffset) ? ((DateTimeOffset)property.GetValue(changed)!).AddMinutes(1)
+                : throw new InvalidOperationException("New audit value type needs identity coverage");
+            property.SetValue(changed, value);
+            Assert.NotEqual(expected, capture.Invoke(null, [changed]));
+        }
+        var differentOffset = Row();
+        var createdAt = rowType.GetProperty("CreatedAt")!;
+        var originalDate = (DateTimeOffset)createdAt.GetValue(original)!;
+        var changedOffset = originalDate.Offset == TimeSpan.FromHours(8) ? TimeSpan.Zero : TimeSpan.FromHours(8);
+        // Same local ticks, different offset: dropping only OffsetTicks must fail this guard.
+        createdAt.SetValue(differentOffset, new DateTimeOffset(originalDate.Ticks, changedOffset));
+        Assert.NotEqual(expected, capture.Invoke(null, [differentOffset]));
+    }
+
+    [Fact]
+    public void AuditValidationProofCannotCrossConnectionOrTransactionLifetime()
+    {
+        using var f = new RankedIdentityFixture();
+        Append(f.Store, f.Admin);
+        var data = typeof(L12PlatformStore).GetProperty("_data", Private)!.GetValue(f.Store)!;
+        var merge = typeof(L12PlatformStore).GetMethod("MergeIndependentAudit", BindingFlags.Static | BindingFlags.NonPublic)!;
+        using var connection = Open(f.Store);
+        using var transaction = connection.BeginTransaction();
+        var proof = merge.Invoke(null, [connection, data, transaction, true])!;
+        var require = proof.GetType().GetMethod("RequireScope", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        require.Invoke(proof, [connection, transaction]);
+        using var other = Open(f.Store);
+        var wrongConnection = Assert.Throws<TargetInvocationException>(() => require.Invoke(proof, [other, transaction]));
+        Assert.IsType<InvalidOperationException>(wrongConnection.InnerException);
+        transaction.Rollback();
+        var retired = Assert.Throws<TargetInvocationException>(() => require.Invoke(proof, [connection, transaction]));
+        Assert.IsType<InvalidOperationException>(retired.InnerException);
+        using var next = connection.BeginTransaction();
+        var wrongTransaction = Assert.Throws<TargetInvocationException>(() => require.Invoke(proof, [connection, next]));
+        Assert.IsType<InvalidOperationException>(wrongTransaction.InnerException);
+    }
+
+    [Fact]
+    public void AuditValidationUnionPreservesLatestWindowTieOrderAndAllLedgerRows()
+    {
+        using var f = new RankedIdentityFixture();
+        Append(f.Store, f.Admin);
+        var payload = System.Text.Json.Nodes.JsonNode.Parse((string)Scalar(f.Store,
+            "SELECT payload_json FROM admin_audit_events;")!)!;
+        var created = DateTimeOffset.UtcNow.AddHours(1).ToString("O");
+        var ids = Enumerable.Range(0, 5001).Select(index => $"synthetic-tie-{index:D4}").ToArray();
+        using (var connection = Open(f.Store))
+        using (var transaction = connection.BeginTransaction())
+        {
+            using var command = connection.CreateCommand(); command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO admin_audit_events VALUES($id,$created,
+                    json_extract($payload,'$.Category'),json_extract($payload,'$.Outcome'),
+                    json_extract($payload,'$.ActorId'),json_extract($payload,'$.CommandId'),
+                    json_extract($payload,'$.CorrelationId'),$payload,$sha);
+                """;
+            foreach (var id in ids)
+            {
+                payload["Id"] = id; payload["CreatedAt"] = created;
+                var body = payload.ToJsonString();
+                command.Parameters.Clear(); command.Parameters.AddWithValue("$id", id); command.Parameters.AddWithValue("$created", created);
+                command.Parameters.AddWithValue("$payload", body);
+                command.Parameters.AddWithValue("$sha", Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(body))).ToLowerInvariant());
+                command.ExecuteNonQuery();
+            }
+            transaction.Commit();
+        }
+        var before = AuditLedgerDigest(f.Store);
+        f.Store.ApplyResponsePreference(f.Admin.Id, L12GameEngine.ValidOnlyResponseMode, "synthetic-union-tie");
+        Assert.Equal(before, AuditLedgerDigest(f.Store));
+        string[] Retained(L12PlatformStore store)
+        {
+            var data = typeof(L12PlatformStore).GetProperty("_data", Private)!.GetValue(store)!;
+            var rows = (System.Collections.IEnumerable)data.GetType().GetProperty("AdminAudit")!.GetValue(data)!;
+            return rows.Cast<object>().Select(row => (string)row.GetType().GetProperty("Id")!.GetValue(row)!).ToArray();
+        }
+        var expected = ids.OrderByDescending(id => id, StringComparer.Ordinal).Take(5000).ToArray();
+        Assert.Equal(expected, Retained(f.Store));
+        var restarted = new L12PlatformStore(f.Path, f.Catalog.PresetDecks, officialCards: f.Catalog.Cards);
+        Assert.Equal(expected, Retained(restarted));
+        Assert.Equal(before, AuditLedgerDigest(restarted));
+    }
+
+    private static string AuditLedgerDigest(L12PlatformStore store)
+    {
+        using var connection = Open(store); using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256 FROM admin_audit_events ORDER BY id;";
+        using var reader = command.ExecuteReader();
+        using var hash = System.Security.Cryptography.IncrementalHash.CreateHash(System.Security.Cryptography.HashAlgorithmName.SHA256);
+        while (reader.Read())
+            for (var index = 0; index < reader.FieldCount; index++)
+            {
+                var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(reader.IsDBNull(index) ? null : reader.GetString(index));
+                hash.AppendData(BitConverter.GetBytes(bytes.Length)); hash.AppendData(bytes);
+            }
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
     private static object? Scalar(L12PlatformStore store, string sql)
     {
         using var db = Open(store); using var command = db.CreateCommand();

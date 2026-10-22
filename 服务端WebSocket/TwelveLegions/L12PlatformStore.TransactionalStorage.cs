@@ -311,7 +311,7 @@ public sealed partial class L12PlatformStore
             _data.Version++;
             if (businessChange) _data.BusinessVersion++;
             using var transaction = connection.BeginTransaction(deferred: false);
-            MergeIndependentAudit(connection, _data, transaction);
+            var validatedAudit = MergeIndependentAudit(connection, _data, transaction, prepareAppend: true);
             var completedFinalizationRevision = ReadLatestSeasonFinalizationRevision(connection, transaction);
             if (expectedRevision < completedFinalizationRevision)
                 throw new L12SeasonFinalizationStaleWriteException(
@@ -342,7 +342,7 @@ public sealed partial class L12PlatformStore
             UpsertSnapshotCas(connection, transaction, snapshot, snapshotChecksum,
                 mirrorChecksum, _data, expectedRevision, privateDeckObjectWrite);
             StorageFailureInjector?.Invoke("before-audit-append");
-            AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+            AppendIndependentAudit(connection, transaction, _data.AdminAudit, validatedAudit);
             StorageFailureInjector?.Invoke("after-audit-append");
             StorageFailureInjector?.Invoke("before-commit");
             var rollbackSnapshot = SerializeRollbackState(_data);
@@ -515,7 +515,7 @@ public sealed partial class L12PlatformStore
                     HydrateDeckDomain(connection, latest, transaction);
                     HydrateRankedBroadcastObjects(connection, latest, transaction);
                 }
-                MergeIndependentAudit(connection, latest, transaction);
+                var validatedAudit = MergeIndependentAudit(connection, latest, transaction, prepareAppend: true);
                 _data = latest;
                 var mutation = action(connection, transaction);
                 if (!mutation.Changed)
@@ -539,7 +539,7 @@ public sealed partial class L12PlatformStore
                 var preparedMirror = PrepareFallbackMirror(_data);
                 UpsertSnapshot(connection, transaction, snapshot, snapshot.Checksum,
                     preparedMirror.Checksum, _data);
-                AppendIndependentAudit(connection, transaction, _data.AdminAudit);
+                AppendIndependentAudit(connection, transaction, _data.AdminAudit, validatedAudit);
                 mutation.BeforeCommit?.Invoke(_data.Version);
                 StorageFailureInjector?.Invoke("before-season-finalization-commit");
                 var rollbackSnapshot = SerializeRollbackState(_data);
@@ -664,13 +664,14 @@ public sealed partial class L12PlatformStore
     }
 
     private static void AppendIndependentAudit(SqliteConnection connection, SqliteTransaction transaction,
-        IEnumerable<AdminAuditRow> audits)
+        IEnumerable<AdminAuditRow> audits, ValidatedAuditAppend? validatedAudit = null)
     {
         var pending = audits.ToDictionary(row => row.Id, StringComparer.Ordinal);
-        var present = ValidateExistingAuditRows(connection, transaction, pending);
+        validatedAudit?.RequireScope(connection, transaction);
+        var present = validatedAudit is null ? ValidateExistingAuditRows(connection, transaction, pending) : null;
         foreach (var audit in pending.Values)
         {
-            if (present.Contains(audit.Id)) continue;
+            if (validatedAudit?.ContainsUnchanged(audit) ?? present!.Contains(audit.Id)) continue;
             var payload = JsonSerializer.Serialize(audit, PlatformSnapshotJsonOptions);
             using var command = CreateAuditInsert(connection, transaction, audit, payload, Sha256(payload), ignore: false);
             if (command.ExecuteNonQuery() != 1)
@@ -741,19 +742,29 @@ public sealed partial class L12PlatformStore
         return result;
     }
 
-    private static void MergeIndependentAudit(SqliteConnection connection, DataFile data,
-        SqliteTransaction? transaction = null)
+    private static ValidatedAuditAppend? MergeIndependentAudit(SqliteConnection connection, DataFile data,
+        SqliteTransaction? transaction = null, bool prepareAppend = false)
     {
         FilterMigratedAuditSnapshot(connection, data, transaction);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256 FROM admin_audit_events
-            ORDER BY created_utc DESC, id DESC LIMIT 5000;
+            WITH latest AS (
+                SELECT id FROM admin_audit_events ORDER BY created_utc DESC, id DESC LIMIT 5000
+            ), wanted AS (
+                SELECT value AS id FROM json_each($ids)
+                UNION SELECT id FROM latest
+            )
+            SELECT id,created_utc,category,outcome,actor_id,command_id,correlation_id,payload_json,payload_sha256
+            FROM admin_audit_events WHERE id IN (SELECT id FROM wanted)
+            ORDER BY created_utc DESC, id DESC;
             """;
         var existing = data.AdminAudit.ToDictionary(row => row.Id, StringComparer.Ordinal);
-        // Validate every staged identity before retention can remove an old conflict.
-        ValidateExistingAuditRows(connection, transaction, existing);
+        // Both validation domains remain complete: every staged identity, including
+        // outside retention, UNION the latest database window. Read overlapping
+        // bodies once, never let retention hide an old conflicting staged identity.
+        command.Parameters.AddWithValue("$ids", JsonSerializer.Serialize(existing.Keys));
+        var present = new HashSet<string>(StringComparer.Ordinal);
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
@@ -764,8 +775,13 @@ public sealed partial class L12PlatformStore
                     != JsonSerializer.Serialize(row, PlatformSnapshotJsonOptions))
                 throw new InvalidDataException("独立审计事件同一标识存在冲突正文");
             existing[row.Id] = row;
+            present.Add(row.Id);
         }
         data.AdminAudit = existing.Values.OrderByDescending(row => row.CreatedAt).Take(5000).ToList();
+        return prepareAppend
+            ? new ValidatedAuditAppend(connection, transaction
+                ?? throw new InvalidOperationException("审计验证复用必须在同一事务内"), data.AdminAudit, present)
+            : null;
     }
 
     private static void InitializeStorageSchema(SqliteConnection connection)

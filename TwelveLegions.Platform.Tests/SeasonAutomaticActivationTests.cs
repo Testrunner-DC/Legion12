@@ -247,6 +247,8 @@ public sealed class SeasonAutomaticActivationTests
                 catalog.PresetDecks, officialCards: catalog.Cards);
             Assert.Equal("finalized", reopened.SeasonCatalog(admin, takeoverAt.AddHours(1))
                 .Current.FinalizationStatus);
+            Assert.Single(reopened.AdminAudit(category: "operations").Where(item =>
+                item.Action == "season-finalize" && item.CorrelationId == "takeover-owner"));
             Assert.Null(reopened.TryClaimDueSeasonFinalization("instance-c",
                 takeoverAt.AddHours(1), TimeSpan.FromMinutes(1)));
         }
