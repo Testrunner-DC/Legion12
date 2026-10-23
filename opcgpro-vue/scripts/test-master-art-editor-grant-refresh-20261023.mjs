@@ -125,6 +125,8 @@ async function browserAcceptance() {
     ['-NoProfile', '-NonInteractive', '-Command', '. "$env:L12_PROBE_REPO/ops/windows/L12GeneratedStorage.ps1"; '
       + '@($env:L12_PROBE_OUT,$env:L12_PROBE_CACHE,$env:L12_PROBE_HOST) | ForEach-Object {$null=Assert-L12GeneratedPath -Path $_ -Purpose "master art editor refresh acceptance"}'],
     { env: guardEnv, windowsHide: true, stdio: 'pipe' })
+  // The guard child cannot initialize its parent Node process's temp roots.
+  process.env.TEMP = cache; process.env.TMP = cache; process.env.TMPDIR = cache
   assert(!fs.existsSync(out) || fs.readdirSync(out).length === 0, 'Do not overwrite evidence')
   fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
   const expectedDll = '908E146B9A92D52A0FA6E3B5CAD8260A07443515D82E35AA528204A41365321B'

@@ -1,0 +1,130 @@
+{
+  "schema": 1,
+  "purpose": "Version ownership of active QA and explicit immutable legacy inputs; not runtime admission or capacity acceptance.",
+  "formalMutationsAllowed": false,
+  "normalConfirmationMs": 3000,
+  "normalLifecycleMs": 900000,
+  "sources": [
+    "opcgpro-vue/scripts/check-testrun-qa-ownership.mjs",
+    "opcgpro-vue/scripts/measure-testrun-static-burst.mjs",
+    "opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs",
+    "opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs",
+    "opcgpro-vue/scripts/run-testrun-confirmation-trace.mjs",
+    "opcgpro-vue/scripts/run-testrun-representative-pressure.mjs",
+    "opcgpro-vue/scripts/terminal-recipient-markers.mjs",
+    "opcgpro-vue/scripts/terminal-recipient-runner.mjs",
+    "opcgpro-vue/scripts/terminal-recipient-runtime.mjs",
+    "opcgpro-vue/scripts/terminal-recipient-trace-contract.mjs",
+    "opcgpro-vue/scripts/terminal-recipient-transport-adapter.mjs",
+    "opcgpro-vue/scripts/test-master-art-editor-grant-refresh-20261023.mjs",
+    "opcgpro-vue/scripts/test-normal-testrun-qualification.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-guard-runtime.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-markers.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-runner.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-runtime.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-session-policy.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-trace-contract.mjs",
+    "opcgpro-vue/scripts/test-terminal-recipient-transport-adapter.mjs",
+    "opcgpro-vue/scripts/test-testrun-cleanup-timing.mjs",
+    "opcgpro-vue/scripts/test-testrun-confirmation-trace.mjs",
+    "opcgpro-vue/scripts/test-testrun-pressure-control.mjs",
+    "opcgpro-vue/scripts/test-testrun-pressure-current.mjs",
+    "opcgpro-vue/scripts/test-testrun-pressure-execution.mjs",
+    "opcgpro-vue/scripts/test-testrun-observation-policy.mjs",
+    "opcgpro-vue/scripts/test-testrun-pressure-runtime.mjs",
+    "opcgpro-vue/scripts/test-testrun-qa-ownership.mjs",
+    "opcgpro-vue/scripts/test-testrun-static-burst.mjs",
+    "opcgpro-vue/scripts/testrun-confirmation-trace.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-control.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-execution.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-finalizer.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-protocol.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-recovery.mjs",
+    "opcgpro-vue/scripts/testrun-pressure-runtime.mjs",
+    "ops/qa/Invoke-TestrunRepresentativePressure.ps1",
+    "ops/qa/Read-TestrunPressureLedgers.ps1",
+    "ops/qa/TestAnalyticsHistory/Program.cs",
+    "ops/qa/TestAnalyticsHistory/TestAnalyticsHistory.csproj",
+    "ops/qa/test-testrun-owned-analytics-import.py",
+    "ops/qa/test-testrun-terminal-resource-guard.py",
+    "ops/qa/testrun-normal-resource-guard.py",
+    "ops/qa/testrun-owned-analytics-import.py",
+    "ops/qa/testrun-terminal-resource-guard.py",
+    "scripts/lib/l12-pressure-checkpoint.mjs"
+  ],
+  "entries": [
+    {
+      "path": "opcgpro-vue/scripts/run-testrun-representative-pressure.mjs",
+      "mode": "test-only",
+      "target": "https://legion-12.com/testrun/"
+    },
+    {
+      "path": "opcgpro-vue/scripts/run-testrun-confirmation-trace.mjs",
+      "mode": "test-only",
+      "target": "https://legion-12.com/testrun/"
+    },
+    {
+      "path": "opcgpro-vue/scripts/terminal-recipient-runner.mjs",
+      "mode": "test-only",
+      "target": "https://legion-12.com/testrun/"
+    },
+    {
+      "path": "opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs",
+      "mode": "test-only",
+      "target": "https://legion-12.com/testrun/"
+    },
+    {
+      "path": "ops/qa/Invoke-TestrunRepresentativePressure.ps1",
+      "mode": "offline-preparer"
+    },
+    {
+      "path": "ops/qa/Read-TestrunPressureLedgers.ps1",
+      "mode": "private-ledger"
+    },
+    {
+      "path": "opcgpro-vue/scripts/measure-testrun-static-burst.mjs",
+      "mode": "read-only-static"
+    },
+    {
+      "path": "opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs",
+      "mode": "local-browser"
+    },
+    {
+      "path": "opcgpro-vue/scripts/test-master-art-editor-grant-refresh-20261023.mjs",
+      "mode": "local-browser"
+    },
+    {
+      "path": "ops/qa/TestAnalyticsHistory/Program.cs",
+      "mode": "offline-preparer"
+    }
+  ],
+  "immutableInputs": [
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/preparation-cadence-r6/pressure-load-r7-approved-preparation-cadence-r6.mjs",
+      "sha256": "F737052DCBFDA4A29FF53BA5DFAD76E771774C1C89C993275FFAFEAA023684FD",
+      "role": "unchanged original workload"
+    },
+    {
+      "path": "D:/GPT/Legion12/artifacts/performance-measurement-recovery-20261020/guard-deadline-r4/resource-guard-deadline-r4.py",
+      "sha256": "549BC59A31A3EDF836A045C5F915C9DB2E283B070150ABC7E369A01BBC8A2C1F",
+      "role": "original resource guard"
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-sink-r2.ps1",
+      "sha256": "B74A6359DA15536248EE660F01B33DFD8A59376AF6D930DDC0F2BC54CC94DA81",
+      "role": "immutable DPAPI sink, legacy read-only compatibility reference"
+    },
+    {
+      "path": "C:/Users/neptu/Documents/ChatGPT/Legion12/artifacts/performance-causal-isolation-20261016/terminal-bounds-v2/cohort30-terminal-v2/ledger-r5/account-ledger-client-r2.mjs",
+      "sha256": "88BB6ACB68C3867CEC7A5E3DBA5A2B429A672FE4CDEF94C8D47D5921EA38B7F9",
+      "role": "immutable private-pipe ledger client, legacy read-only compatibility reference"
+    }
+  ],
+  "completeLegacyCodeClosure": false,
+  "limits": [
+    "No private key, credential, DPAPI ledger, runtime database, screenshot or generated fixture is versioned by this catalog.",
+    "Immutable legacy workload imports remain explicit external acceptance inputs; the repository is not yet a standalone portable copy of that historical dependency closure.",
+    "Fixture generator only creates a new isolated Linux /tmp database; it cannot select a production source directory or either live database.",
+    "Node browser entry temp roots are applied in the parent process only after the physical selected cache has passed the existing PowerShell storage guard."
+  ]
+}
