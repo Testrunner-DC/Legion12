@@ -1,10 +1,11 @@
 # Legion12 Bug 修复记录
 
-## QA-20261023-CLEANUP-RESERVE｜清退预算矛盾已证，尚未修改原门槛
+## QA-20261023-CLEANUP-RESERVE｜清退节奏已修，原容量未通过
 
-- 真实适配cleanupOwnedTestrunAccounts对69所属测试身份串行执行555请求、139次1300ms等待。test-testrun-cleanup-timing.mjs只替换时钟与本地响应，不访问账号／网络；零响应延迟下完整180700ms，180000ms窗会留下管理员会话未撤销。100ms纯合成响应对照完整236200ms，不冒真实RTT或清退性能。
+- 旧真实适配cleanupOwnedTestrunAccounts对69所属测试身份串行执行555请求、139次1300ms等待。test-testrun-cleanup-timing.mjs只替换时钟与本地响应，不访问账号／网络；零响应延迟下完整180700ms，180000ms窗会留下管理员会话未撤销。100ms纯合成响应对照完整236200ms，不冒真实RTT或清退性能。
 - 原压力720000ms、总900000ms、清退预留180000ms的组合，在压力用满时不能容纳该函数的理论下界；这不是30房＋10外围／3秒目标本身不可达的证明，早结束的负载仍可能容纳。保留原各失败，未调整阈值／自动通过，也未拿清退问题抵消终局迟到。
-- 证据presence-order-reuse/cleanup-timing-red.json；下一限定修正工具编排，仍保身份／CAS／限速／独立撤销及有界恢复，先证明完整生命周期可行再启动正常负载，不原样复跑69账号。
+- 原证据presence-order-reuse/cleanup-timing-red.json／cleanup-timing-final.json及紧凑cleanup-before-source.mjs保留。限定改为按真实请求准入计下一时点，保串行／每次写前新鲜健康核验／身份／CAS／独立撤销和最小1300ms间隔；扣除已耗响应时间、不强加首个空等，到期拒绝读写及跨截止健康后的写。真实节奏RED139≠138等待后，最终零延迟179400ms，100ms响应193700ms，555请求／139写及全部清退确认不减；仍不能由此保证真实900秒通过。
+- 唯一cleanup-pacing/run-27d5a1c4c8fa4cd88636799644cd6cd5/acceptance.json：最终虚拟时钟正反例、完整current适配107、execution20全部通过，网络／部署0；节奏回归接原性能链。协议适配与纯回归纳Git，其余在用QA仍待完整归属；先证明实际全生命周期可行再启动正常负载，不原样复跑69账号。
 
 ## PERF-20261023-PRESENCE-ORDER-REUSE｜在线名单重复顺序，本地接受未部署
 

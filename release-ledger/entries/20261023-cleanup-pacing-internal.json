@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-cleanup-pacing-internal",
+  "date": "2026-10-23",
+  "audience": "internal",
+  "reason": "纳管测试服压测协议适配与清退节奏回归，保留原版本闭包、冻结负载和至少1300ms写入准入间隔；只扣除已经耗掉的处理时间，不改变原900秒或3秒要求，尚无新线上容量验收。",
+  "paths": [
+    "opcgpro-vue/scripts/testrun-pressure-protocol.mjs",
+    "opcgpro-vue/scripts/test-testrun-cleanup-timing.mjs",
+    "opcgpro-vue/package.json"
+  ]
+}
