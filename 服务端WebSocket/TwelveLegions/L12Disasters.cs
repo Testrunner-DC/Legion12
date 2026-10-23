@@ -31,6 +31,9 @@ public sealed partial class L12GameEngine
         State.DisasterDeck.RemoveAt(0);
         State.ActiveDisaster = disaster;
         State.DisasterValue = 0;
+        // 天灾触发不可响应，可能在同一条命令内立即结算，不能等命令末尾或快照再刷新。
+        // 先移除旧天灾的持续层，再让新天灾读取当前兵力；已结算的本回合效果不在此清除。
+        RecalculateContinuousTroops();
         AddEvent("disaster", State.ActivePlayer, $"翻开天灾〈{disaster.Name}〉", disaster);
         var triggerSourceText = triggerSource == DisasterTriggerSourceTurnPhase
             ? "因回合阶段天灾值增长开场触发"

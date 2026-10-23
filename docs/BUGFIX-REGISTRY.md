@@ -1,5 +1,14 @@
 # Legion12 Bug 修复记录
 
+## BUG-20261023-DISASTER-REPLACEMENT-CONTINUOUS-STATE｜天灾交替数值刷新
+
+- 人类直接要求修复：新天灾触发不再计入已结束旧天灾的持续影响；〈色欲之罪〉下5000的〈真田幸村〉须先退去1000加成，再按4000被〈怒触不周山〉置入所有者墓地。另经人类明确：〈黯陨晨星〉已经结算的“本回合”免费／后排进攻许可仍保留到回合结束，不按旧天灾持续层删除。
+- 根因：BeginDisasterTrigger已替换ActiveDisaster，但RecalculateContinuousTroops原只在后续状态检查／快照才调用。不可响应天灾可能同一命令立即结算，〈怒触不周山〉读取card.Troops时仍含旧色欲层。并非真田原本兵力或不周山阈值错误。
+- P0/P1共享修复：在唯一翻开入口切换当前天灾后、发布新触发／执行其效果前刷新现有持续数值；三条自然回合／军团登场／GM触发共用，不增加卡号特判。既有来源分层只撤旧色欲仍剩余的加成，其他持续来源、已支付费用、限时效果、天灾不可响应与不触发军团离场／阵亡反应的边界保持；P3格式和旧Journal不改。
+- 同类扫描：`cardType == destruction`遍历S01/S02/ST全部19张；`ActiveDisaster =|RecalculateContinuousTroops|ds01-|StarterDisasterTroopsBonus|SetLibrariesReversedByDisaster`追踪全部替换点、物化层及持续查询。正常翻开与GM换牌共2处当前天灾赋值，后者已有刷新；天地异变离场恢复牌库方向保持，其他持续资格以当前天灾身份读取；晨星两项本回合授权是明确保留项，最终湮灭不可正常被替换。
+- 新DisasterReplacementContinuousStateTests：原例三入口×双方×V2恢复12/12修前RED；4个晨星期限对照原本正确。修后第一轮50/54，4个自然回合对照的裸Troops手设增益被现有回合重置正常清除，保留失败并改用真实叠放王者之剑持续层作正控，不改产品或阈值以迎合夹具。最终54/54，含18张可替换天灾×直接／恢复36项、原例12、晨星4和汉尼拔相邻持续加成2；王者之剑／后排及独立减值正负控一起验证。
+- 唯一证据物理D:/GPT/Legion12/artifacts/disaster-replacement-20261023：red-r1.log E688A4A3、green-r1.log 765B4E41、green-r2.log 54901294；产品346C8979、回归26931861冻结。完整标准Batch规则8340／平台2236全过、零失败跳过，架构／性能锁、全池及原子审计通过，batch-r1.log B2FB8752；规则与平台实际服务DLL同为669C0D31。Main已审最终共享顺序、全部新回归及原差异，接受本地修复；未部署或修改线上Bug状态。回滚仅撤本次入口刷新及其新回归，不清玩家数据、不撤除既有兵力分层和晨星期限规则。同步实况见同目录synchronization.json，不冒Clean Release或已上线。
+
 ## PERF-20261023-AUDIT-VALIDATION-AMPLIFICATION｜本地根因修复接受，未部署
 
 - 人类要求性能找根因、不再同法反复。现当前57测试服务每笔transactional-save分配约115MB，但未按内部审计段归因；不能把嵌套Admin约140MB相加。源码完整同类扫描MergeIndependentAudit／AppendIndependentAudit涵盖普通、私人牌库、季末、初始迁移、启动、冲突与广播读取；核心问题是两个完整检查域重叠仍重复读验正文，Append再读一次。
