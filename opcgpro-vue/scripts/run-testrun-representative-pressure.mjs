@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import {pathToFileURL} from 'node:url'
-import {REPO,assertGeneratedDirectories,validateBinding,digest,FROZEN_SHA} from './testrun-pressure-protocol.mjs'
+import {REPO,assertGeneratedDirectories,validateBinding,digest,FROZEN_SHA,PROTOCOL_CLIENT_SOURCES} from './testrun-pressure-protocol.mjs'
 import {observeIdentity,assertRuntimeIdentity,acquireTestSession,testRequest,installGuardFiles,startNormalGuard,bindOwnedControl,remoteJson,durableJson,pause,publicFailure} from './testrun-pressure-runtime.mjs'
 import {openOwnedControl} from './testrun-pressure-control.mjs'
 import {protectOwnedSession,planQualificationSessionRecovery,removeExitedGuardFiles} from './qualify-normal-testrun-lifecycle.mjs'
@@ -12,8 +12,9 @@ import {createExecutableCore,createOwnedLedgerSinks,readPeripheralPreflight,read
 import {inspectNormalPressureEvidence} from './testrun-pressure-finalizer.mjs'
 import {FULL_TRACE_PROFILE,createConfirmationObserver,composeConfirmationMarkers,observeFailedSetupTail,readFullOwnedJournal} from './testrun-confirmation-trace.mjs'
 
-const SOURCE_FILES=['run-testrun-representative-pressure.mjs','testrun-confirmation-trace.mjs','test-testrun-confirmation-trace.mjs','testrun-pressure-control.mjs','testrun-pressure-protocol.mjs','testrun-pressure-runtime.mjs','testrun-pressure-recovery.mjs','testrun-pressure-execution.mjs','testrun-pressure-finalizer.mjs','qualify-normal-testrun-lifecycle.mjs']
-const sources=()=>SOURCE_FILES.map(file=>({file,sha256:digest(fs.readFileSync(path.join(import.meta.dirname,file)))}))
+const SOURCE_FILES=['run-testrun-representative-pressure.mjs','testrun-confirmation-trace.mjs','test-testrun-confirmation-trace.mjs','testrun-pressure-control.mjs','testrun-pressure-protocol.mjs','testrun-pressure-runtime.mjs','testrun-pressure-recovery.mjs','testrun-pressure-execution.mjs','testrun-pressure-finalizer.mjs','qualify-normal-testrun-lifecycle.mjs','property-frame-source-module.mjs','ws-burst-observer.mjs']
+const sources=()=>[...SOURCE_FILES.map(file=>({file,sha256:digest(fs.readFileSync(path.join(import.meta.dirname,file)))})),
+ ...PROTOCOL_CLIENT_SOURCES.map(([, , file])=>({file,sha256:digest(fs.readFileSync(path.join(REPO,file)))}))]
 // Optional full Journal diagnosis consumes its own reserve. It is not an
 // additional normal capacity gate or a reason to shorten the original workload.
 export function normalObservationPolicy(confirmationDiagnostics=false){
@@ -113,7 +114,7 @@ export async function executeNormalPressure(configuration){
     finally{observer.setPhase('cleanup')}
    },
   }:undefined
-  const artifactBinding={candidateBindingSha256:bindingSha256,manifestSha256:binding.test.manifestSha256,releaseSha256:binding.test.releaseSha256,testPid:binding.test.pid,formalPid:binding.formal.pid,deployedNetSha256:binding.client.netSha256,cardFrameSha256:binding.client.cardFrameSha256,handArraySha256:binding.client.handArraySha256}
+  const artifactBinding={candidateBindingSha256:bindingSha256,manifestSha256:binding.test.manifestSha256,releaseSha256:binding.test.releaseSha256,testPid:binding.test.pid,formalPid:binding.formal.pid,deployedNetSha256:binding.client.netSha256,cardFrameSha256:binding.client.cardFrameSha256,handArraySha256:binding.client.handArraySha256,propertyFrameSha256:binding.client.propertyFrameSha256,propertyNamesSha256:binding.client.propertyNamesSha256}
   await manager.withPrivateSession(original,async privateSession=>{
    coreReport=await core.workloadTestHooks.runPressure({local:false,baseUrl:binding.baseUrl,expectedCommit:binding.test.commit,expectedCommitSource:'exact-normal-binding-and-actual-running-process',
     credentials:{players:null,admin:{token:privateSession.token},tournamentReader:null},provisionPlayers:true,diagnosticNonce:crypto.randomBytes(16).toString('hex'),artifactBinding,

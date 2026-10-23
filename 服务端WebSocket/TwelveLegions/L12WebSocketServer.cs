@@ -840,7 +840,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
         bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false,
         bool GameStateCardFrameV1 = false, bool HandArrayDeltaV1 = false,
-        bool PresenceOrderReuseV1 = false);
+        bool PresenceOrderReuseV1 = false, bool GameStatePropertyFrameV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -5470,6 +5470,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     snapshotCodec.SetDeltaEnabled(capabilities.DeltaGameState, capabilities.EventWindowDeltaV1,
                         capabilities.HandArrayDeltaV1);
                     snapshotCodec.SetCardSnapshotFrameEnabled(capabilities.GameStateCardFrameV1);
+                    snapshotCodec.SetPropertyFrameEnabled(capabilities.GameStatePropertyFrameV1);
                 }
                 if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
                     presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1,
@@ -5515,6 +5516,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     presenceOrderReuseV1 = capabilities.PresenceDeltaV1 && capabilities.PresenceOrderReuseV1,
                     chatV1 = _chatEnabled && capabilities.ChatV1,
                     gameStateCardFrameV1 = capabilities.GameStateCardFrameV1,
+                    gameStatePropertyFrameV1 = capabilities.GameStatePropertyFrameV1,
                 },
             });
             var presenceRevision = Interlocked.Read(ref _presenceResourceRevision);
@@ -5601,14 +5603,16 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"),
                 requested.Contains("chatV1"), requested.Contains(L12CardSnapshotFrame.Capability),
                 requested.Contains(L12HandArrayDelta.Capability),
-                requested.Contains(L12PresenceSnapshotWireCodec.OrderReuseCapability));
+                requested.Contains(L12PresenceSnapshotWireCodec.OrderReuseCapability),
+                requested.Contains(L12PropertySnapshotFrame.Capability));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
             GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false),
             GetBool(value, "chatV1", false), GetBool(value, L12CardSnapshotFrame.Capability, false),
             GetBool(value, L12HandArrayDelta.Capability, false),
-            GetBool(value, L12PresenceSnapshotWireCodec.OrderReuseCapability, false));
+            GetBool(value, L12PresenceSnapshotWireCodec.OrderReuseCapability, false),
+            GetBool(value, L12PropertySnapshotFrame.Capability, false));
     }
 
     private async Task<IReadOnlyList<OutgoingMessage>> SynchronizeStateAsync(Guid sessionId, JsonElement root)
@@ -5620,9 +5624,12 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             // the plain path when the per-connection sender prepares them.
             if (_socketCapabilities.TryGetValue(sessionId, out var capabilities))
                 _socketCapabilities.TryUpdate(sessionId,
-                    capabilities with { GameStateCardFrameV1 = false }, capabilities);
+                    capabilities with { GameStateCardFrameV1 = false, GameStatePropertyFrameV1 = false }, capabilities);
             if (_snapshotCodecs.TryGetValue(sessionId, out var snapshotCodec))
+            {
                 snapshotCodec.SetCardSnapshotFrameEnabled(false);
+                snapshotCodec.SetPropertyFrameEnabled(false);
+            }
         }
         return await _rooms.RecoveryStateWithAckAsync(sessionId, recovered: true);
     }

@@ -30,6 +30,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- One immutable wire vocabulary is consumed by both the browser and server. -->
+    <EmbeddedResource Include="..\opcgpro-vue\src\l12\gameStatePropertyNamesV1.json"
+                      LogicalName="TwelveLegions.Server.GameStatePropertyNamesV1.json" />
     <None Update="TwelveLegions\Data\*.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

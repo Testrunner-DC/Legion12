@@ -21,6 +21,8 @@ internal sealed class L12SnapshotWireCodec
     private bool _eventWindowEnabled;
     private bool _handArrayEnabled;
     private bool _cardSnapshotFrameEnabled;
+    private bool _propertyFrameEnabled;
+    private long _configurationVersion;
     // Outbound payloads are immutable UTF-8 bytes. Retain only the successfully
     // sent bytes; do not hydrate a complete mutable card tree for every connection.
     private byte[]? _baseline;
@@ -42,6 +44,7 @@ internal sealed class L12SnapshotWireCodec
             _enabled = enabled;
             _eventWindowEnabled = windowEnabled;
             _handArrayEnabled = handEnabled;
+            _configurationVersion++;
             _baseline = null;
             _sinceFull = 0;
         }
@@ -53,6 +56,7 @@ internal sealed class L12SnapshotWireCodec
         {
             if (_cardSnapshotFrameEnabled == enabled) return;
             _cardSnapshotFrameEnabled = enabled;
+            _configurationVersion++;
             // A peer that rejected a packed frame must recover from an original full frame.
             // Never carry its pre-recovery baseline across this capability boundary.
             _baseline = null;
@@ -61,6 +65,38 @@ internal sealed class L12SnapshotWireCodec
     }
 
     internal L12PreparedWirePayload Prepare(L12QueuedPayload queued)
+    {
+        if (!queued.IsGameState) return PrepareSnapshot(queued);
+        lock (_gate)
+        {
+            var version = _configurationVersion;
+            var prepared = PrepareSnapshot(queued);
+            var payload = _propertyFrameEnabled && L12PropertySnapshotFrame.TryEncode(prepared.Payload, out var packed)
+                ? packed : prepared.Payload;
+            return new(payload, () =>
+            {
+                lock (_gate)
+                {
+                    // A queued/in-flight old capability frame must not restore a retired baseline.
+                    if (_configurationVersion == version) prepared.Commit();
+                }
+            }, prepared.IsDelta);
+        }
+    }
+
+    internal void SetPropertyFrameEnabled(bool enabled)
+    {
+        lock (_gate)
+        {
+            if (_propertyFrameEnabled == enabled) return;
+            _propertyFrameEnabled = enabled;
+            _configurationVersion++;
+            _baseline = null;
+            _sinceFull = 0;
+        }
+    }
+
+    private L12PreparedWirePayload PrepareSnapshot(L12QueuedPayload queued)
     {
         if (!queued.IsGameState) return new(queued.FullPayload, static () => { }, false);
         lock (_gate)

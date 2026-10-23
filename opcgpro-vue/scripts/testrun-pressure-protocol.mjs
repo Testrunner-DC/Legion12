@@ -5,6 +5,7 @@ import crypto from 'node:crypto'
 import {execFileSync} from 'node:child_process'
 import {createRequire} from 'node:module'
 import {pathToFileURL} from 'node:url'
+import {propertyFrameSourceModuleUrl} from './property-frame-source-module.mjs'
 
 export const REPO = path.resolve(import.meta.dirname, '../..')
 export const EVIDENCE_ROOT = 'D:/GPT/Legion12/artifacts/representative-load-current-20261022'
@@ -68,13 +69,22 @@ export function strictSshArguments() {
     '-o', 'HostName=154.201.80.91', '-o', 'HostKeyAlias=154.201.80.91',
     '-o', 'ConnectTimeout=10', 'root@legion-12.com']
 }
-export function validateProtocolBinding(client) {
-  keys(client, ['netSourcePath', 'netSha256', 'cardFrameSourcePath', 'cardFrameSha256', 'handArraySourcePath', 'handArraySha256'])
-  for (const [fileKey, shaKey, relative, maximum] of [
+export const PROTOCOL_CLIENT_SOURCES = Object.freeze([
     ['netSourcePath', 'netSha256', 'opcgpro-vue/src/l12/net.ts', 1048576],
     ['cardFrameSourcePath', 'cardFrameSha256', 'opcgpro-vue/src/l12/gameStateCardFrame.ts', 65536],
     ['handArraySourcePath', 'handArraySha256', 'opcgpro-vue/src/l12/handArrayDelta.ts', 65536],
-  ]) {
+    ['propertyFrameSourcePath', 'propertyFrameSha256', 'opcgpro-vue/src/l12/gameStatePropertyFrame.ts', 65536],
+    ['propertyNamesSourcePath', 'propertyNamesSha256', 'opcgpro-vue/src/l12/gameStatePropertyNamesV1.json', 65536],
+])
+export function currentProtocolClientBinding() {
+  return Object.fromEntries(PROTOCOL_CLIENT_SOURCES.flatMap(([fileKey, shaKey, relative, maximum]) => {
+    const file = path.join(REPO, relative)
+    return [[fileKey, file], [shaKey, digest(readBounded(file, maximum))]]
+  }))
+}
+export function validateProtocolBinding(client) {
+  keys(client, PROTOCOL_CLIENT_SOURCES.flatMap(([fileKey, shaKey]) => [fileKey, shaKey]))
+  for (const [fileKey, shaKey, relative, maximum] of PROTOCOL_CLIENT_SOURCES) {
     hash(client[shaKey])
     assert.equal(normalized(client[fileKey]), normalized(path.join(REPO, relative)), 'client source must be the authoritative leaf')
     assert.equal(digest(readBounded(client[fileKey], maximum)), client[shaKey], 'client source SHA mismatch')
@@ -106,14 +116,13 @@ export function validateBinding(binding) {
 }
 export function candidateSourceClosure(binding) {
   const closure = []
-  for (const [file, key] of [['net.ts', 'netSourcePath'], ['gameStateCardFrame.ts', 'cardFrameSourcePath'],
-    ['handArrayDelta.ts', 'handArraySourcePath']]) {
-    const bytes = execFileSync('git', ['-C', REPO, 'show', `${binding.test.commit}:opcgpro-vue/src/l12/${file}`],
+  for (const [key, , relative] of PROTOCOL_CLIENT_SOURCES) {
+    const bytes = execFileSync('git', ['-C', REPO, 'show', `${binding.test.commit}:${relative}`],
       {windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000, maxBuffer: 1048576})
     const current = readBounded(binding.client[key])
     const canonical = value => Buffer.from(value.toString('utf8').replaceAll('\r\n', '\n'))
     assert.equal(digest(canonical(bytes)), digest(canonical(current)), 'client content must match the candidate commit; only CRLF/LF is normalized')
-    closure.push({path: `opcgpro-vue/src/l12/${file}`, sourceFileSha256: digest(current),
+    closure.push({path: relative, sourceFileSha256: digest(current),
       committedBlobSha256: digest(bytes), lfContentSha256: digest(canonical(current))})
   }
   return closure
@@ -143,12 +152,16 @@ export async function createTestrunProtocol(client) {
     negotiatedHand === true, hand.restoreHandSplices, hand.validHandDeltaChangePath)
   const codec = await import('data:text/javascript;base64,' + Buffer.from(compile(readBounded(client.cardFrameSourcePath, 65536).toString('utf8'))).toString('base64'))
   assert.equal(typeof codec.restoreGameStateCardFrame, 'function'); assert.equal(typeof codec.GameStateCardFrameRecovery, 'function')
-  return {reduce, codec}
+  const property = await import(propertyFrameSourceModuleUrl())
+  assert.equal(property.GAME_STATE_PROPERTY_FRAME_CAPABILITY, 'gameStatePropertyFrameV1')
+  return {reduce, codec: {...codec, ...property}}
 }
 
 export function adaptFrozenCore(source, adapterUrl) {
   assert.equal(digest(Buffer.from(source)), FROZEN_SHA, 'the workload must be the exact frozen F737 source')
   const replacements = [
+    ["from 'file:///D:/GPT/Legion12/artifacts/performance-causal-isolation-20261016/cohort30-full-workload-r7/ws-burst-r7.mjs'",
+      'from ' + JSON.stringify(new URL('./ws-burst-observer.mjs', adapterUrl).href)],
     ['reconstructCandidateDelta as reduceEnvelope', 'reconstructCandidateDelta as historicReduceEnvelope'],
     ['let productionCodec=null', `import {createTestrunProtocol,assertTestrunTarget,cleanupOwnedTestrunAccounts} from ${JSON.stringify(adapterUrl)}\nlet representativeBinding=null\nlet reduceEnvelope=historicReduceEnvelope\nexport async function initializeNormalTestrunProtocol(binding){\n assertTestrunTarget(binding.baseUrl);assertTestrunTarget(binding.wsUrl,true)\n const loaded=await createTestrunProtocol(binding.client)\n representativeBinding=binding;productionCodec=loaded.codec;reduceEnvelope=loaded.reduce;deployedNetSha=binding.client.netSha256\n initializePresenceConsumer(binding.client)\n}\nlet productionCodec=null`],
     ['function initializePresenceConsumer() {', 'function initializePresenceConsumer(binding=FIXED) {'],
@@ -162,15 +175,53 @@ export function adaptFrozenCore(source, adapterUrl) {
       "reset(){negotiatedPresenceDelta=false;negotiatedPresenceOrderReuse=false;presenceRecoveryPending=false;"],
     ['async function runPressure(configuration) {', `async function runPressure(configuration) {\n // Deliberately fail closed until the independent remote lifecycle is implemented and verified.\n requireContract(false,'normal_pressure_execution_not_admitted')`],
     ['async connect(url) {', 'async connect(url) {\n    assertTestrunTarget(url instanceof URL ? url.href : url,true)'],
-    ['this.negotiatedEventWindowDelta = false\n    this.presenceConsumer = null', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    this.presenceConsumer = null'],
-    ['gameStateCardFrameV1: true },', 'gameStateCardFrameV1: true, handArrayDeltaV1: true, presenceOrderReuseV1: true },'],
-    ["if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)", "if(!this.negotiatedHandArrayDelta)throw new SafeError('hand-array-capability-not-negotiated')\n    if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)"],
+    ['this.negotiatedEventWindowDelta = false\n    this.presenceConsumer = null', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    this.negotiatedPropertyFrame=false\n    this.metrics.currentPropertyFrame??={negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}\n    this.presenceConsumer = null'],
+    ['gameStateCardFrameV1: true },', 'gameStateCardFrameV1: true, handArrayDeltaV1: true, presenceOrderReuseV1: true, gameStatePropertyFrameV1:true },'],
+    ["if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)", "if(!this.negotiatedHandArrayDelta)throw new SafeError('hand-array-capability-not-negotiated')\n    if(!this.negotiatedPropertyFrame)throw new SafeError('property-frame-capability-not-negotiated')\n    if (sessionMessage.capabilities?.gameStateCardFrameV1 !== true)"],
+    ['let restoreMs=0', `let restoreMs=0
+    let logicalSource=raw
+    if(wireType==='session'){
+      this.negotiatedPropertyFrame=message.capabilities?.gameStatePropertyFrameV1===true
+      if(this.negotiatedPropertyFrame)this.metrics.currentPropertyFrame.negotiatedSessions++
+    }
+    if(wireType==='gameStatePropertyFrameV1'){
+      this.metrics.currentPropertyFrame.packets++;this.metrics.currentPropertyFrame.wireBytes+=wireBytes
+      const propertyStarted=performance.now()
+      const restored=this.negotiatedPropertyFrame&&!this.cardFrameRecovery.disabled
+        ?productionCodec.restoreGameStatePropertyFrame(message,raw,source=>{logicalSource=source}):null
+      restoreMs+=performance.now()-propertyStarted
+      this.metrics.currentPropertyFrame[restored?'applied':'rejected']++
+      if(!restored){
+        this.metrics.reconstructionErrors++;this.deltaInvalid=true;this.metrics.recordWs(wireType,wireBytes,null)
+        if(this.cardFrameRecovery.begin(this.terminalTrace?.requestId??'')){
+          this.negotiatedPropertyFrame=false;this.negotiatedCardFrame = false;this.plainRecoveryRequests++
+          try{this.send({type:'syncState',plainFull:true})}catch{}
+        }
+        this.metrics.requestStop?.('property-frame-reconstruction-failed')
+        return
+      }
+      message=restored
+    }`],
+    ["if(wireType==='gameStateCardFrameV1') {", "if(message.type==='gameStateCardFrameV1') {"],
+    ['productionCodec.restoreGameStateCardFrame(message,raw)', 'productionCodec.restoreGameStateCardFrame(message,logicalSource)'],
+    ['restoreMs=performance.now()-restoreStarted', 'restoreMs+=performance.now()-restoreStarted'],
+    ['this.negotiatedCardFrame=false;this.plainRecoveryRequests++', 'this.negotiatedPropertyFrame=false;this.negotiatedCardFrame=false;this.plainRecoveryRequests++'],
+    ['recordWs(type, bytes, logicalJsonBytes=null) {\n    this.ws.push({ type, bytes, logicalJsonBytes, stage: this.currentStage })',
+      'recordWs(type, bytes, logicalJsonBytes=null, logicalType=null) {\n    this.ws.push({ type, bytes, logicalJsonBytes, logicalType, stage: this.currentStage })'],
+    ['this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes)', 'this.metrics.recordWs(wireType, wireBytes, logicalJsonBytes, message.type)'],
+    ["const wanted = ['pong', 'gameState', 'gameStateCardFrameV1',", "const wanted = ['pong', 'gameState', 'gameStateCardFrameV1', 'gameStatePropertyFrameV1',"],
+    ["const full = rows.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type))",
+      "const full = rows.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type)||(row.type==='gameStatePropertyFrameV1'&&row.logicalType==='gameState'))"],
+    ["const full = this.ws.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type))",
+      "const full = this.ws.filter(row => ['gameState','gameStateCardFrameV1'].includes(row.type)||(row.type==='gameStatePropertyFrameV1'&&row.logicalType==='gameState'))"],
+    ["const delta = rows.filter(row => row.type === 'gameStateDelta')", "const delta = rows.filter(row => row.type === 'gameStateDelta'||(row.type==='gameStatePropertyFrameV1'&&row.logicalType==='gameStateDelta'))"],
+    ["const delta = this.ws.filter(row => row.type === 'gameStateDelta')", "const delta = this.ws.filter(row => row.type === 'gameStateDelta'||(row.type==='gameStatePropertyFrameV1'&&row.logicalType==='gameStateDelta'))"],
     ["if (type === 'session') {", "if (type === 'session') {\n      this.negotiatedHandArrayDelta=message.capabilities?.deltaGameState===true&&message.capabilities?.handArrayDeltaV1===true\n      if(this.negotiatedHandArrayDelta)this.metrics.currentHandArrayDelta.negotiatedSessions++\n      if(message.capabilities?.presenceDeltaV1===true&&message.capabilities?.presenceOrderReuseV1===true)this.metrics.currentPresenceOrderReuse.negotiatedSessions++"],
     ['const presenceResult = this.presenceConsumer?.handle(message)', "const orderReusePacket=type==='presenceDelta'&&Object.hasOwn(message,'orderFromBaseline')\n    if(orderReusePacket){this.metrics.currentPresenceOrderReuse.packets++;this.metrics.currentPresenceOrderReuse.wireBytes+=wireBytes}\n    const presenceResult = this.presenceConsumer?.handle(message)\n    if(orderReusePacket)this.metrics.currentPresenceOrderReuse[presenceResult?.applied?'applied':'rejected']++"],
     ['const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta)', "const handPacket=Object.hasOwn(message,'handSplices')\n      if(handPacket){this.metrics.currentHandArrayDelta.packets++;this.metrics.currentHandArrayDelta.wireBytes+=wireBytes}\n      const rebuilt = reduceEnvelope(this.envelope, message, this.negotiatedEventWindowDelta,this.negotiatedHandArrayDelta)\n      if(handPacket)this.metrics.currentHandArrayDelta[rebuilt?'applied':'rejected']++"],
-    ['this.negotiatedEventWindowDelta = false\n    for (const waiter', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    for (const waiter'],
+    ['this.negotiatedEventWindowDelta = false\n    for (const waiter', 'this.negotiatedEventWindowDelta = false\n    this.negotiatedHandArrayDelta = false\n    this.negotiatedPropertyFrame=false\n    for (const waiter'],
     ['const metrics = new Metrics()', 'const metrics = new Metrics()\n  metrics.currentHandArrayDelta={negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}\n  metrics.currentPresenceOrderReuse={negotiatedSessions:0,packets:0,wireBytes:0,applied:0,rejected:0}'],
-    ['expectedCommit: { value: configuration.expectedCommit,', 'currentHandArrayDelta:{...metrics.currentHandArrayDelta},\n    currentPresenceOrderReuse:{...metrics.currentPresenceOrderReuse},\n    expectedCommit: { value: configuration.expectedCommit,'],
+    ['expectedCommit: { value: configuration.expectedCommit,', 'currentHandArrayDelta:{...metrics.currentHandArrayDelta},\n    currentPropertyFrame:{...metrics.currentPropertyFrame},\n    currentPresenceOrderReuse:{...metrics.currentPresenceOrderReuse},\n    expectedCommit: { value: configuration.expectedCommit,'],
     ['export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {', 'export async function cleanupDualLedgerAccounts(context,adminIdentity,provisioning) {\n if(representativeBinding!==null)return cleanupOwnedTestrunAccounts(context,adminIdentity,provisioning.owned??[],cohortRequest(context))'],
   ]
   let adapted = source

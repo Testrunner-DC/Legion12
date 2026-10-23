@@ -5,9 +5,23 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 import { deploymentSourceModuleUrl } from './deployment-source-module.mjs'
+import { propertyFrameSourceModuleUrl } from './property-frame-source-module.mjs'
 
 const frontendRoot = fileURLToPath(new URL('..', import.meta.url))
 const sourceRoot = join(frontendRoot, 'src', 'l12')
+const propertyNames = JSON.parse(readFileSync(join(sourceRoot, 'gameStatePropertyNamesV1.json'), 'utf8'))
+function propertyPacket(payload) {
+  const encode = value => {
+    if (Array.isArray(value)) return value.map(encode)
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+      propertyNames.includes(key) ? '@' + propertyNames.indexOf(key).toString(36)
+        : /^[~@]/.test(key) ? '~' + key : key, encode(item)]))
+  }
+  const matchId = payload.type === 'gameStateDelta' ? payload.matchId
+    : payload.type === 'gameStateCardFrameV1' ? payload.payload.state.matchId : payload.state.matchId
+  return { type: 'gameStatePropertyFrameV1', version: 1, matchId, payload: encode(payload) }
+}
 let moduleSerial = 0
 
 class MemoryStorage {
@@ -209,6 +223,7 @@ async function loadNetModule(base = '/') {
     .replace("from './chatResource'", `from '${chatResourceModuleUrl()}'`)
     .replace("from './gameStateCardFrame'", `from '${gameStateCardFrameModuleUrl()}'`)
     .replace("from './handArrayDelta'", `from '${handArrayDeltaModuleUrl()}'`)
+    .replace("from './gameStatePropertyFrame'", `from '${propertyFrameSourceModuleUrl()}'`)
     .replace("import { reactive } from 'vue'", 'const reactive = value => value')
     .replace("import { createGameReentryController } from './gameReentry'", `
       const createGameReentryController = () => ({
@@ -422,6 +437,7 @@ const tests = [
       { type: 'gameState', spectating: true, state: { ...oldState, revision: 51 } },
       { type: 'gameStateDelta', matchId: 'observed-old', baseRevision: 50, revision: 51, changes: [] },
       { type: 'gameStateCardFrameV1', payload: { type: 'gameState', state: oldState } },
+      { type: 'gameStatePropertyFrameV1', version: 1, matchId: 'observed-old', payload: { '@bad': true } },
       { type: 'roomClosed', roomCode: 'WATCH1' }, { type: 'roomLeft', roomCode: 'WATCH1' },
     ]) socket.receive(packet)
     assert.equal(net.l12State.game.matchId, 'own-new')
@@ -552,6 +568,94 @@ const tests = [
     assert.equal(net.l12State.matchmaking.queued, true)
     await timers.advance(5_000)
     assert.equal(socket.sent.filter(item => JSON.parse(item).type === 'pollMatchmaking').length, 1)
+    net.disconnect()
+  }],
+  ['property frames preserve the actual full/delta/card-frame and reliable acknowledgement path', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'property-frame-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'property-session', connectionGeneration: 188,
+      capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true,
+        gameStateCardFrameV1: true, gameStatePropertyFrameV1: true } })
+    socket.receive({ type: 'roomState', roomCode: 'PROP', yourPlayerIndex: 0, started: true, players: [] })
+    const state = { matchId: 'property-match', roomCode: 'PROP', revision: 1, stateHash: 'h1',
+      phase: 'Main', players: [], recentEvents: [], lastAction: null }
+    socket.receive(propertyPacket({ type: 'gameState', state, rankedClock: { marker: 'full' } }))
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 188,
+      roomCode: 'PROP', matchId: 'property-match', recoveryRevision: 1 })
+    await connected
+    assert.equal(net.l12State.game.revision, 1); assert.equal(net.l12State.rankedClock.marker, 'full')
+    net.gameAction({ type: 'endTurn' })
+    const action = socket.sent.map(JSON.parse).findLast(value => value.type === 'gameAction')
+    socket.receive(propertyPacket({ type: 'gameStateDelta', matchId: 'property-match', baseRevision: 1, revision: 2,
+      changes: [{ path: ['state', 'revision'], value: 2 }, { path: ['state', 'stateHash'], value: 'h2' },
+        { path: ['requestId'], value: action.requestId }, { path: ['rankedClock'], value: { marker: 'delta' } }] }))
+    assert.equal(net.l12State.game.revision, 2); assert.equal(net.l12State.pendingAction, false)
+    assert.equal(net.l12State.rankedClock.marker, 'delta')
+    socket.receive(propertyPacket({ type: 'gameStateCardFrameV1', payload: { type: 'gameState', state: {
+      ...state, revision: 3, phase: 'GameOver', recentEvents: [{ sequence: 1, cards: null }], lastAction: null } },
+      cardSnapshots: [{ name: '合成军团' }], eventCardRefs: [[0]], lastActionCardRefs: null }))
+    assert.equal(net.l12State.game.phase, 'GameOver')
+    assert.equal(net.l12State.game.recentEvents[0].cards[0].name, '合成军团')
+    assert.equal(socket.sent.map(JSON.parse).filter(value => value.type === 'syncState').length, 0)
+    net.disconnect()
+  }],
+  ['a property wrapper above two MiB preserves a bounded inner card frame through actual net dispatch', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'property-large-synthetic' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'property-large', connectionGeneration: 191,
+      capabilities: { gameStateCardFrameV1: true, gameStatePropertyFrameV1: true } })
+    const state = { matchId: 'b'.repeat(200), roomCode: 'BOUND', revision: 1, phase: 'Main', players: [],
+      recentEvents: [], lastAction: null, syntheticPadding: '' }
+    socket.receive({ type: 'roomState', roomCode: 'BOUND', yourPlayerIndex: 0, started: true, players: [] })
+    const inner = { type: 'gameStateCardFrameV1', payload: { type: 'gameState', state },
+      cardSnapshots: [], eventCardRefs: [], lastActionCardRefs: null }
+    state.syntheticPadding = 'p'.repeat(2 * 1024 * 1024 - 16 - Buffer.byteLength(JSON.stringify(inner)))
+    assert(Buffer.byteLength(JSON.stringify(inner)) <= 2 * 1024 * 1024)
+    const packet = propertyPacket(inner)
+    assert(Buffer.byteLength(JSON.stringify(packet)) > 2 * 1024 * 1024)
+    socket.receive(packet)
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 191,
+      roomCode: 'BOUND', matchId: state.matchId, recoveryRevision: 1 })
+    await connected
+    assert.equal(net.l12State.game.syntheticPadding.length, state.syntheticPadding.length)
+    assert.equal(socket.sent.map(JSON.parse).filter(message => message.type === 'syncState').length, 0)
+    net.disconnect()
+  }],
+  ['malformed property frames share bounded plain recovery without losing the pending request', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'property-bad-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    socket.open()
+    socket.receive({ type: 'session', sessionId: 'property-bad-session', connectionGeneration: 189,
+      capabilities: { requestIds: true, gameStateCardFrameV1: true, gameStatePropertyFrameV1: true } })
+    socket.receive({ type: 'roomState', roomCode: 'PFAIL', yourPlayerIndex: 0, started: true, players: [] })
+    const state = { matchId: 'property-bad', roomCode: 'PFAIL', revision: 1, phase: 'Main', players: [] }
+    socket.receive({ type: 'gameState', state })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 189, roomCode: 'PFAIL', matchId: 'property-bad', recoveryRevision: 1 })
+    await connected
+    net.gameAction({ type: 'endTurn' })
+    const action = socket.sent.map(JSON.parse).findLast(value => value.type === 'gameAction')
+    const broken = propertyPacket({ type: 'gameState', requestId: action.requestId, state: { ...state, phase: 'GameOver' } })
+    broken.payload['@unknown'] = true
+    socket.receive(broken); socket.receive(broken)
+    assert.equal(net.l12State.game.phase, 'Main'); assert.equal(net.l12State.pendingAction, true)
+    assert.equal(socket.sent.map(JSON.parse).filter(value => value.type === 'syncState' && value.plainFull === true).length, 1)
+    socket.receive({ type: 'gameState', state, recovered: true })
+    socket.receive({ type: 'recoveryComplete', connectionGeneration: 189, roomCode: 'PFAIL', matchId: 'property-bad', recoveryRevision: 1 })
+    const retried = socket.sent.map(JSON.parse).filter(value => value.type === 'gameAction')
+    assert.equal(retried.length, 2); assert.deepEqual(retried[1], action)
+    socket.receive({ type: 'gameState', requestId: action.requestId, state: { ...state, revision: 2 } })
+    assert.equal(net.l12State.pendingAction, false)
+    net.disconnect()
+  }],
+  ['unnegotiated property frames never publish even when their contents are well formed', async () => {
+    installBrowserEnvironment({ 'l12-auth-token': 'property-old-server-token' })
+    const net = await loadNetModule(), connected = net.connect(), socket = FakeWebSocket.instances[0]
+    sendSuccessfulHandshake(socket, 190); await connected
+    socket.receive(propertyPacket({ type: 'gameState', state: { matchId: 'unnegotiated', revision: 1, phase: 'Main', players: [] } }))
+    assert.equal(net.l12State.game, null)
+    assert.equal(socket.sent.map(JSON.parse).filter(value => value.type === 'syncState' && value.plainFull === true).length, 1)
     net.disconnect()
   }],
   ['an in-flight delta cannot satisfy malformed card-frame plain recovery', async () => {
@@ -1176,7 +1280,8 @@ const tests = [
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
       capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-        presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, handArrayDeltaV1: true },
+        presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, handArrayDeltaV1: true,
+        gameStatePropertyFrameV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')

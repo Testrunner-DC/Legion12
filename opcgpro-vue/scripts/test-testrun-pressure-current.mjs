@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url'
 import {createRequire} from 'node:module'
 import {REPO, EVIDENCE_ROOT, CACHE_ROOT, FROZEN_CORE, FROZEN_SHA, PLAN, EXECUTION_GAPS, digest,
   assertTestrunTarget, assertGeneratedDirectories, validateBinding, validateProtocolBinding,
-  createTestrunProtocol, adaptFrozenCore, cleanupOwnedTestrunAccounts, strictSshArguments} from './testrun-pressure-protocol.mjs'
+  createTestrunProtocol, adaptFrozenCore, cleanupOwnedTestrunAccounts, strictSshArguments, currentProtocolClientBinding} from './testrun-pressure-protocol.mjs'
 import {inspectNormalPressureEvidence} from './testrun-pressure-finalizer.mjs'
 
 // This test has no real transport. All target URL strings below are allowlist or
@@ -47,14 +47,9 @@ check('strict-pinned-ssh-arguments-no-connection', () => {
   for (const required of ['StrictHostKeyChecking=yes', 'HostName=154.201.80.91', 'HostKeyAlias=154.201.80.91',
     'IdentitiesOnly=yes', 'BatchMode=yes', 'GlobalKnownHostsFile=NUL']) assert.ok(selected.includes(required))
 })
-const client = {
-  netSourcePath: path.join(REPO, 'opcgpro-vue/src/l12/net.ts'),
-  cardFrameSourcePath: path.join(REPO, 'opcgpro-vue/src/l12/gameStateCardFrame.ts'),
-  handArraySourcePath: path.join(REPO, 'opcgpro-vue/src/l12/handArrayDelta.ts'),
-}
-for (const [source, hash] of [['netSourcePath', 'netSha256'], ['cardFrameSourcePath', 'cardFrameSha256'], ['handArraySourcePath', 'handArraySha256']]) client[hash] = digest(fs.readFileSync(client[source]))
-check('three-real-current-client-sources', () => validateProtocolBinding(client))
-for (const key of ['netSha256', 'cardFrameSha256', 'handArraySha256']) reject('reject-source-sha-' + key, () => validateProtocolBinding({...client, [key]: '0'.repeat(64)}))
+const client = currentProtocolClientBinding()
+check('five-real-current-client-sources', () => validateProtocolBinding(client))
+for (const key of ['netSha256', 'cardFrameSha256', 'handArraySha256', 'propertyFrameSha256', 'propertyNamesSha256']) reject('reject-source-sha-' + key, () => validateProtocolBinding({...client, [key]: '0'.repeat(64)}))
 reject('reject-unbound-hand-module', () => {const bad = {...client}; delete bad.handArraySourcePath; validateProtocolBinding(bad)})
 const original = fs.readFileSync(FROZEN_CORE)
 check('original-F737-unmodified', () => assert.equal(digest(original), FROZEN_SHA))
@@ -152,8 +147,8 @@ legacy.changes.push({path: ['state', 'players', 0, 'hand'], value: expected.stat
 check('legacy-delta-still-restores', () => assert.deepEqual(protocol.reduce(base, legacy, true, false), expected))
 const classStart = adapted.source.indexOf('class WsClient {'), classEnd = adapted.source.indexOf('\nasync function checkCommit(', classStart)
 assert.ok(classStart >= 0 && classEnd > classStart)
-function memoryClient(serverHand = true, serverPresenceReuse = true) {
-  const sent = []
+function memoryClient(serverHand = true, serverPresenceReuse = true, serverProperty = true) {
+  const sent = [], recorded = []
   let socketConstructors = 0
   class MemoryWebSocket extends EventTarget {
     static OPEN = 1; static CLOSING = 2; readyState = 1
@@ -163,7 +158,7 @@ function memoryClient(serverHand = true, serverPresenceReuse = true) {
       const message = JSON.parse(raw); sent.push(message)
       if (message.type === 'hello') queueMicrotask(() => {
         this.emit({type: 'session', capabilities: {...message.capabilities, handArrayDeltaV1: serverHand,
-          presenceOrderReuseV1: serverPresenceReuse}})
+          presenceOrderReuseV1: serverPresenceReuse, gameStatePropertyFrameV1: serverProperty}})
         this.emit({type: 'recoveryComplete'})
       })
     }
@@ -172,11 +167,11 @@ function memoryClient(serverHand = true, serverPresenceReuse = true) {
   const Client = new Function('productionCodec', 'createPresenceAdapter', 'requireContract', 'SafeError', 'reduceEnvelope', 'WebSocket', 'assertTestrunTarget',
     adapted.source.slice(classStart, classEnd) + ';return WsClient;')(protocol.codec, presenceFactory,
     (condition, code) => assert.ok(condition, code), Error, protocol.reduce, MemoryWebSocket, assertTestrunTarget)
-  const metrics = {currentStage: 'memory-only', recordWs() {}, reconstructionErrors: 0, presenceNegotiatedClients: 0,
+  const metrics = {currentStage: 'memory-only', recordWs(...args) {recorded.push(args)}, reconstructionErrors: 0, presenceNegotiatedClients: 0,
     currentHandArrayDelta: {negotiatedSessions: 0, packets: 0, wireBytes: 0, applied: 0, rejected: 0},
     currentPresenceOrderReuse: {negotiatedSessions: 0, packets: 0, wireBytes: 0, applied: 0, rejected: 0}}
   return {client: new Client('synthetic-only', metrics, 1000, new AbortController().signal,
-    {observeParsed() {return null}, afterDispatch() {}}), metrics, sent, socketConstructors: () => socketConstructors}
+    {observeParsed() {return null}, afterDispatch() {}}), metrics, sent, recorded, socketConstructors: () => socketConstructors}
 }
 await asyncCheck('generated-actual-client-hello-session-and-hand-packet', async () => {
   const item = memoryClient()
@@ -249,6 +244,79 @@ for (const bad of ['wss://legion-12.com/ws', 'wss://legion-12.com/testrun/ws?x=1
   })
 }
 
+const propertyNames = JSON.parse(fs.readFileSync(client.propertyNamesSourcePath, 'utf8'))
+const propertyTokens = new Map(propertyNames.map((name, index) => [name, '@' + index.toString(36)]))
+function propertyFixtureEncode(value) {
+  if (Array.isArray(value)) return value.map(propertyFixtureEncode)
+  if (value === null || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+    propertyTokens.get(key) ?? (/^[~@]/.test(key) ? '~' + key : key), propertyFixtureEncode(item)]))
+}
+const propertyFull = revision => ({type: 'gameState', state: {matchId: 'synthetic-property', revision,
+  stateHash: 'h' + revision, phase: 'Main', you: 0, recentEvents: [], lastAction: null,
+  players: [{playerIndex: 0, hand: []}, {playerIndex: 1, hand: []}]}})
+const propertyFixture = payload => ({type: 'gameStatePropertyFrameV1', version: 1,
+  matchId: payload.type === 'gameStateDelta' ? payload.matchId
+    : payload.type === 'gameStateCardFrameV1' ? payload.payload.state.matchId : payload.state.matchId,
+  payload: propertyFixtureEncode(payload)})
+await asyncCheck('generated-property-full-delta-card-terminal-and-original-plain-recovery', async () => {
+  const item = memoryClient(); await item.client.connect('wss://legion-12.com/testrun/ws')
+  check('generated-property-actual-negotiation', () => {
+    assert.equal(item.sent[0].capabilities.gameStatePropertyFrameV1, true)
+    assert.equal(item.client.negotiatedPropertyFrame, true)
+    assert.equal(item.metrics.currentPropertyFrame.negotiatedSessions, 1)
+  })
+  const payloads = [propertyFull(1), {type: 'gameStateDelta', matchId: 'synthetic-property', baseRevision: 1,
+    revision: 2, changes: [{path: ['state', 'revision'], value: 2}, {path: ['state', 'stateHash'], value: 'h2'}]},
+    {type: 'gameStateCardFrameV1', payload: propertyFull(3), cardSnapshots: [], eventCardRefs: [], lastActionCardRefs: null},
+    {...propertyFull(4), state: {...propertyFull(4).state, phase: 'GameOver'}}]
+  let wireBytes = 0
+  for (const [index, payload] of payloads.entries()) {
+    const packet = propertyFixture(payload); wireBytes += Buffer.byteLength(JSON.stringify(packet))
+    item.client.socket.emit(packet)
+    check('generated-property-dispatch-' + index, () => {
+      assert.deepEqual(item.client.envelope, index === 3 ? payload : propertyFull(index + 1))
+      assert.equal(item.metrics.currentPropertyFrame.applied, index + 1)
+      assert.equal(item.metrics.reconstructionErrors, 0)
+      assert.equal(item.recorded.at(-1)[0], 'gameStatePropertyFrameV1')
+      assert.equal(item.recorded.at(-1)[3], index === 1 ? 'gameStateDelta' : 'gameState')
+    })
+  }
+  check('generated-property-original-wire-byte-total', () => assert.deepEqual(item.metrics.currentPropertyFrame,
+    {negotiatedSessions: 1, packets: 4, wireBytes, applied: 4, rejected: 0}))
+  const before = structuredClone(item.client.envelope), bad = {...propertyFixture(propertyFull(5)), version: 2}
+  item.client.socket.emit(bad); item.client.socket.emit(bad)
+  check('generated-property-rejection-keeps-baseline-and-single-recovery', () => {
+    assert.deepEqual(item.client.envelope, before)
+    assert.equal(item.metrics.currentPropertyFrame.rejected, 2)
+    assert.equal(item.sent.filter(value => value.type === 'syncState' && value.plainFull === true).length, 1)
+    assert.equal(item.client.negotiatedPropertyFrame, false)
+    assert.equal(item.client.negotiatedCardFrame, false)
+    assert.equal(item.client.plainRecoveryRequests, 1)
+  })
+  item.client.socket.emit(propertyFull(5)); item.client.socket.emit({type: 'recoveryComplete'})
+  check('generated-property-original-plain-recovery', () => assert.deepEqual(item.client.envelope, propertyFull(5)))
+  item.client.socket.close()
+  check('generated-property-close-retirement', () => assert.equal(item.client.negotiatedPropertyFrame, false))
+})
+await asyncCheck('generated-property-nested-card-uses-original-source-not-larger-wrapper', async () => {
+  const item = memoryClient(); await item.client.connect('wss://legion-12.com/testrun/ws')
+  const state = {matchId: 's'.repeat(200), recentEvents: [], lastAction: null, syntheticPadding: ''}
+  const inner = {type: 'gameStateCardFrameV1', payload: {type: 'gameState', state},
+    cardSnapshots: [], eventCardRefs: [], lastActionCardRefs: null}
+  state.syntheticPadding = 'p'.repeat(2 * 1024 * 1024 - 16 - Buffer.byteLength(JSON.stringify(inner)))
+  const packet = propertyFixture(inner)
+  assert(Buffer.byteLength(JSON.stringify(packet)) > 2 * 1024 * 1024)
+  item.client.socket.emit(packet)
+  assert.equal(item.client.envelope.state.syntheticPadding.length, state.syntheticPadding.length)
+  assert.equal(item.metrics.reconstructionErrors, 0); assert.equal(item.client.plainRecoveryRequests, 0)
+  item.client.socket.close()
+})
+await asyncCheck('generated-property-refuses-server-without-capability', async () => {
+  const item = memoryClient(true, true, false)
+  await assert.rejects(() => item.client.connect('wss://legion-12.com/testrun/ws'), /property-frame-capability-not-negotiated/)
+  item.client.socket.close()
+})
 const accounts = Array.from({length: 69}, (_, index) => ({preflightAbsent: true, registrationOutcome: 'confirmed',
   id: 'synthetic-' + index, username: 'normal-' + index, createdAt: '2026-10-22T00:00:00Z'}))
 const context = {local: false, baseUrl: 'https://legion-12.com/testrun/', expectedCommit: head, runId,
@@ -335,7 +403,8 @@ function prospectiveEvidence() {
     expectedCommit: {value: head}, observedCommit: head,
     artifactBinding: {candidateBindingSha256: 'A'.repeat(64), manifestSha256: binding.test.manifestSha256,
       releaseSha256: binding.test.releaseSha256, testPid: 101, formalPid: 102, deployedNetSha256: client.netSha256,
-      cardFrameSha256: client.cardFrameSha256, handArraySha256: client.handArraySha256},
+      cardFrameSha256: client.cardFrameSha256, handArraySha256: client.handArraySha256,
+      propertyFrameSha256: client.propertyFrameSha256, propertyNamesSha256: client.propertyNamesSha256},
     deltaReconstruction: {sourceSha256: client.netSha256, errors: 0}, presenceDeltaReconstruction: {sourceSha256: client.netSha256, errors: 0},
     budget: {roomStages: [10, 20, 30], stageSeconds: 60, maximumRooms: 30, playerIdentities: 60, distinctOutsideUsers: 10,
       syntheticIdentities: 69, maximumIdentities: 70, httpIntervalMs: 2000, wsPingIntervalMs: 2000, actionInspectionIntervalMs: 2000,
@@ -345,6 +414,7 @@ function prospectiveEvidence() {
     http, outsideHttpByStage: Object.fromEntries([10, 20, 30].map(rooms => ['rooms-' + rooms, structuredClone(http)])),
     commands: {overall: {attempted: 1, outcomes: {rejected: 0, 'timed-out': 0, 'transport-error': 0, 'advanced-without-ack': 0}}},
     currentHandArrayDelta: {negotiatedSessions: 60, packets: 1, wireBytes: 100, applied: 1, rejected: 0},
+    currentPropertyFrame: {negotiatedSessions: 60, packets: 60, wireBytes: 100, applied: 60, rejected: 0},
     frameProtocol: {capability: 'gameStateCardFrameV1', decoderFailures: 0}, payloadFloorPrecheck: floor, terminalFrames,
     wsBurstClient: {captureComplete: 1, terminalCoverageComplete: 1, connectionsObserved: 60, droppedFrames: 0, invalidRecords: 0},
     actionBoundsClient: {expected_samples: 6, begun_samples: 6, surrender_begun: 6, play_card_begun: 0, end_turn_begun: 0,
@@ -399,6 +469,11 @@ for (const [name, mutate] of [
   ['hand-rejected', e => {e.report.currentHandArrayDelta.rejected = 1}],
   ['wrong-client', e => {e.report.deltaReconstruction.sourceSha256 = '0'.repeat(64)}],
   ['artifact-hand-sha', e => {e.report.artifactBinding.handArraySha256 = '0'.repeat(64)}],
+  ['artifact-property-sha', e => {e.report.artifactBinding.propertyFrameSha256 = '0'.repeat(64)}],
+  ['artifact-property-vocabulary-sha', e => {e.report.artifactBinding.propertyNamesSha256 = '0'.repeat(64)}],
+  ['property-not-negotiated', e => {e.report.currentPropertyFrame.negotiatedSessions = 59}],
+  ['property-not-exercised', e => {e.report.currentPropertyFrame.packets = 0}],
+  ['property-reconstruction-rejected', e => {e.report.currentPropertyFrame.rejected = 1}],
   ['artifact-binding', e => {e.report.artifactBinding.candidateBindingSha256 = '0'.repeat(64)}],
   ['wire-size', e => {e.report.terminalFrames[1].wireBytes = 2 * 1024 * 1024 + 1}],
   ['small-payload', e => {e.report.payloadFloorPrecheck.rows[0].receivers[0].logicalJsonBytes = 180 * 1024 - 1}],

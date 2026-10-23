@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-property-frame-transport-internal",
+  "date": "2026-10-24",
+  "audience": "internal",
+  "reason": "仅为已按接收者投影的游戏状态增加显式协商的固定公开字段名编码，保留原逻辑数据、可靠确认与全量恢复；编码封装有独立证明上限，不改原逻辑上限、规则或存储。实际字节与代表性负载仍须验收，不发布卡顿根治承诺。",
+  "paths": [
+    "服务端WebSocket/GrandUMIServer.csproj",
+    "服务端WebSocket/TwelveLegions/L12PropertySnapshotFrame.cs",
+    "服务端WebSocket/TwelveLegions/L12SnapshotWireCodec.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+    "opcgpro-vue/src/l12/net.ts",
+    "opcgpro-vue/src/l12/gameStatePropertyFrame.ts",
+    "opcgpro-vue/src/l12/gameStatePropertyNamesV1.json"
+  ]
+}

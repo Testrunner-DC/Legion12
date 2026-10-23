@@ -5,9 +5,11 @@ using System.Text.Json;
 using TwelveLegions.Server;
 
 // An in-memory, stdin-only component probe. It has no listener, account store or recorder.
-if (args.Length != 2 || !Path.IsPathFullyQualified(args[0]) || args[1].Length != 64)
+if (args.Length is not (2 or 3) || !Path.IsPathFullyQualified(args[0]) || args[1].Length != 64
+    || args.Length == 3 && args[2] != "property-frame-v1")
     throw new ArgumentException("Explicit catalog root and expected loaded assembly SHA256 are required");
 var assembly = typeof(L12GameEngine).Assembly;
+var propertyMode = args.Length == 3;
 if (Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assembly.Location))) != args[1])
     throw new InvalidOperationException("Loaded assembly differs from the accepted test package");
 const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
@@ -24,6 +26,7 @@ var clock = DateTimeOffset.Parse("2026-10-24T00:00:00Z");
 var watch = Stopwatch.StartNew();
 L12GameEngine? game = null;
 object[] codecs = [];
+object[] comparisonCodecs = [];
 var commands = 0;
 var requests = 0;
 while (Console.ReadLine() is { } line)
@@ -39,14 +42,20 @@ while (Console.ReadLine() is { } line)
         game = new L12GameEngine(catalog, "synthetic-wire-" + seed, "SYNTH", seed,
             ["Synthetic A", "Synthetic B"], [0, 1], skipPreparation: true,
             disasterMode: "none", stateFormatVersion: stateVersion, utcNow: () => clock);
-        codecs = Enumerable.Range(0, 3).Select(_ =>
+        object Codec(bool enableProperty)
         {
             var codec = Activator.CreateInstance(codecType, true)!;
             codecType.GetMethod("SetDeltaEnabled", instance, [typeof(bool), typeof(bool), typeof(bool)])!
                 .Invoke(codec, [true, true, true]);
             codecType.GetMethod("SetCardSnapshotFrameEnabled", instance)!.Invoke(codec, [true]);
+            if (enableProperty)
+                (codecType.GetMethod("SetPropertyFrameEnabled", instance)
+                    ?? throw new InvalidOperationException("Requested property framing is absent"))
+                    .Invoke(codec, [true]);
             return codec;
-        }).ToArray();
+        }
+        codecs = Enumerable.Range(0, 3).Select(_ => Codec(propertyMode)).ToArray();
+        comparisonCodecs = propertyMode ? Enumerable.Range(0, 3).Select(_ => Codec(false)).ToArray() : [];
         commands = 0;
     }
     else if (action == "command" && game is not null)
@@ -78,8 +87,23 @@ while (Console.ReadLine() is { } line)
         var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
         var payload = (byte[])prepared.GetType().GetProperty("Payload")!.GetValue(prepared)!;
         ((Action)prepared.GetType().GetProperty("Commit")!.GetValue(prepared)!)();
+        byte[]? comparisonPayload = null;
+        double? comparisonMs = null;
+        long? comparisonAllocated = null;
+        if (propertyMode)
+        {
+            var comparisonAllocationStart = GC.GetAllocatedBytesForCurrentThread();
+            var comparisonStart = Stopwatch.GetTimestamp();
+            var comparison = prepare.Invoke(comparisonCodecs[viewer], [queued])!;
+            comparisonMs = Stopwatch.GetElapsedTime(comparisonStart).TotalMilliseconds;
+            comparisonAllocated = GC.GetAllocatedBytesForCurrentThread() - comparisonAllocationStart;
+            comparisonPayload = (byte[])comparison.GetType().GetProperty("Payload")!.GetValue(comparison)!;
+            ((Action)comparison.GetType().GetProperty("Commit")!.GetValue(comparison)!)();
+        }
         snapshots.Add(new { viewer, logical = Convert.ToBase64String(bytes),
-            wire = Convert.ToBase64String(payload), prepareMs = elapsed, prepareAllocatedBytes = allocated });
+            wire = Convert.ToBase64String(payload), comparisonWire = comparisonPayload is null ? null : Convert.ToBase64String(comparisonPayload),
+            prepareMs = elapsed, prepareAllocatedBytes = allocated,
+            comparisonPrepareMs = comparisonMs, comparisonPrepareAllocatedBytes = comparisonAllocated });
     }
     Console.WriteLine(JsonSerializer.Serialize(new { commands, snapshots }, wire));
 }

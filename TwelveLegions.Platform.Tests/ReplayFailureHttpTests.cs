@@ -11,10 +11,14 @@ namespace TwelveLegions.Platform.Tests;
 public sealed class ReplayFailureHttpTests
 {
     [Theory]
-    [InlineData("player")]
-    [InlineData("admin-detail")]
-    [InlineData("admin-page")]
-    public async Task AuthorizedBadReplayFailsClosedWithoutTurningHealthyServiceInto500(string route)
+    [InlineData("player", false)]
+    [InlineData("admin-detail", false)]
+    [InlineData("admin-page", false)]
+    [InlineData("player", true)]
+    [InlineData("admin-detail", true)]
+    [InlineData("admin-page", true)]
+    public async Task AuthorizedBadReplayFailsClosedWithoutTurningHealthyServiceInto500(string route,
+        bool maintenanceWindow)
     {
         await using var fixture = await CommandDeadlineClockFixture.CreateAsync(0, 0);
         var command = fixture.PassCommand();
@@ -55,7 +59,27 @@ public sealed class ReplayFailureHttpTests
             await arrange.ExecuteNonQueryAsync();
         }
 
-        var manager = new L12RoomManager(fixture.Catalog, fixture.Recorder, platform);
+        var manager = new L12RoomManager(fixture.Catalog, fixture.Recorder, platform,
+            utcNow: () => fixture.Now);
+        if (maintenanceWindow)
+        {
+            // Exercise real maintenance at the fixture's next-day 04:05 Beijing window.
+            // The corrupt replay is only about 36h old, so its original 409 must remain observable.
+            fixture.Now = fixture.Now.AddDays(1).AddHours(12).AddMinutes(5);
+            await manager.RunSandboxReplayMaintenanceAsync();
+            await using var connection = new SqliteConnection(connectionString);
+            await connection.OpenAsync();
+            using var query = connection.CreateCommand();
+            query.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='storage_daily_maintenance';";
+            Assert.Equal(1L, query.ExecuteScalar());
+            query.CommandText = "SELECT outcome FROM storage_daily_maintenance WHERE day_key=$day;";
+            query.Parameters.AddWithValue("$day", fixture.Now.ToOffset(TimeSpan.FromHours(8)).ToString("yyyy-MM-dd"));
+            Assert.Equal("window-completed", query.ExecuteScalar());
+            query.CommandText = "SELECT COUNT(*) FROM player_replay_payload_expirations WHERE match_id=$match;";
+            query.Parameters.Clear();
+            query.Parameters.AddWithValue("$match", matchId);
+            Assert.Equal(0L, query.ExecuteScalar());
+        }
         await using var server = new L12WebSocketServer(manager, fixture.Recorder, platform, fixture.Catalog);
         await server.StartAsync(0);
         try

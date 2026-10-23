@@ -6,7 +6,7 @@ import {execFileSync} from 'node:child_process'
 import {pathToFileURL} from 'node:url'
 import {TRACE_LIMITS,createConfirmationTraceCore,createConfirmationObserver,runConfirmationWindow,snapshotDecodeCounters,OWNED_JOURNAL_QUERY,OWNED_JOURNAL_CODE} from './testrun-confirmation-trace.mjs'
 import {createTraceLedgerControl,registerTwentyOwned} from './run-testrun-confirmation-trace.mjs'
-import {EVIDENCE_ROOT,CACHE_ROOT,assertGeneratedDirectories,digest} from './testrun-pressure-protocol.mjs'
+import {EVIDENCE_ROOT,CACHE_ROOT,assertGeneratedDirectories,digest,currentProtocolClientBinding} from './testrun-pressure-protocol.mjs'
 import {createOwnedLedgerSinks} from './testrun-pressure-execution.mjs'
 import {readColdLedgersPrivately,recoverOwnedLedgerAccounts} from './testrun-pressure-recovery.mjs'
 import {durableJson} from './testrun-pressure-runtime.mjs'
@@ -24,9 +24,7 @@ async function check(name,run){try{await run();cases.push({name,passed:true})}ca
 const binding={kind:'normal-testrun-pressure-v1',baseUrl:'https://legion-12.com/testrun/',wsUrl:'wss://legion-12.com/testrun/ws',
  test:{pid:542637,commit:'131989a65ef3b26a22e58e5fe5c480c061aae9cb',dllSha256:'B'.repeat(64)},
  formal:{pid:534086,commit:'546187bc'+ 'a'.repeat(32),dllSha256:'C'.repeat(64)},
- client:{netSourcePath:path.resolve(import.meta.dirname,'../src/l12/net.ts'),netSha256:digest(fs.readFileSync(path.resolve(import.meta.dirname,'../src/l12/net.ts'))),
- cardFrameSourcePath:path.resolve(import.meta.dirname,'../src/l12/gameStateCardFrame.ts'),cardFrameSha256:digest(fs.readFileSync(path.resolve(import.meta.dirname,'../src/l12/gameStateCardFrame.ts'))),
- handArraySourcePath:path.resolve(import.meta.dirname,'../src/l12/handArrayDelta.ts'),handArraySha256:digest(fs.readFileSync(path.resolve(import.meta.dirname,'../src/l12/handArrayDelta.ts')))}}
+ client:currentProtocolClientBinding()}
 let core,fullCore,LoadV2Markers
 await check('actual generated core imports; only export suffix added; original functions retained',async()=>{
  const generated=createConfirmationTraceCore(new URL('./testrun-pressure-protocol.mjs',import.meta.url).href)

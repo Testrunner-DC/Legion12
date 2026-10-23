@@ -7,6 +7,10 @@
   "sources": [
     "opcgpro-vue/scripts/check-testrun-qa-ownership.mjs",
     "opcgpro-vue/scripts/measure-terminal-wire-fields.mjs",
+    "opcgpro-vue/scripts/property-frame-source-module.mjs",
+    "opcgpro-vue/scripts/test-game-state-property-frame.mjs",
+    "opcgpro-vue/scripts/ws-burst-observer.mjs",
+    "opcgpro-vue/scripts/test-ws-burst-observer.mjs",
     "opcgpro-vue/scripts/measure-testrun-static-burst.mjs",
     "opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs",
     "opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs",

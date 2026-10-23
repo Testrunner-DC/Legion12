@@ -8,6 +8,7 @@ import { deploymentStorageKey, deploymentWebSocketPath, endpointHttpBase } from 
 import { chatResource } from './chatResource'
 import { GameStateCardFrameRecovery, restoreGameStateCardFrame } from './gameStateCardFrame'
 import { HAND_ARRAY_DELTA_CAPABILITY, restoreHandSplices, validHandDeltaChangePath } from './handArrayDelta'
+import { GAME_STATE_PROPERTY_FRAME_CAPABILITY, restoreGameStatePropertyFrame } from './gameStatePropertyFrame'
 
 export type L12RecoveryPhase = 'idle' | 'opening-websocket' | 'authenticating' | 'session-claimed'
   | 'snapshot-received' | 'snapshot-mismatch' | 'snapshot-acknowledged' | 'authentication-rejected'
@@ -77,6 +78,7 @@ let negotiatedHandArrayDelta = false
 let negotiatedPresenceDelta = false
 let negotiatedPresenceOrderReuse = false
 let negotiatedGameStateCardFrame = false
+let negotiatedGameStatePropertyFrame = false
 let presenceRecoveryPending = false
 let presenceBaselineEpoch = ''
 let gameStateCardFrameRecoveryTimer: ReturnType<typeof setTimeout> | null = null
@@ -369,6 +371,7 @@ function requestPlainGameStateRecovery(socket: WebSocket, onExhausted: () => voi
     return
   }
   negotiatedGameStateCardFrame = false
+  negotiatedGameStatePropertyFrame = false
   // The same request id remains authoritative even if this connection attempt had already resent it.
   pendingActionResentAttempt = -1
   clearSnapshotRecovery()
@@ -412,7 +415,8 @@ function clearMatchmakingRecovery() {
 
 function isRetiredObservationMessage(message: any) {
   if (!retiredObservation) return false
-  const matchId = message.type === 'gameStateDelta' ? message.matchId
+  const matchId = message.type === GAME_STATE_PROPERTY_FRAME_CAPABILITY ? message.matchId
+    : message.type === 'gameStateDelta' ? message.matchId
     : message.type === 'gameStateCardFrameV1' ? message.payload?.state?.matchId
     : message.type === 'gameState' ? message.state?.matchId : ''
   return Boolean((retiredObservation.matchId && matchId === retiredObservation.matchId)
@@ -679,6 +683,7 @@ export function connect(): Promise<void> {
       clearSnapshotRecovery()
       resetGameStateCardFrameRecovery()
       negotiatedGameStateCardFrame = false
+      negotiatedGameStatePropertyFrame = false
       l12State.status = 'offline'
       l12State.connectionIssue = 'websocket'
       l12State.notice = reason
@@ -695,6 +700,7 @@ export function connect(): Promise<void> {
     negotiatedEventWindowDelta = false
     negotiatedHandArrayDelta = false
     negotiatedGameStateCardFrame = false
+    negotiatedGameStatePropertyFrame = false
     resetGameStateCardFrameRecovery()
     try { socket = new WebSocket(l12State.endpoint) }
     catch (error) {
@@ -735,7 +741,8 @@ export function connect(): Promise<void> {
         type: 'hello',
         authToken,
         capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-          presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, [HAND_ARRAY_DELTA_CAPABILITY]: true },
+          presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, [HAND_ARRAY_DELTA_CAPABILITY]: true,
+          [GAME_STATE_PROPERTY_FRAME_CAPABILITY]: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -747,8 +754,21 @@ export function connect(): Promise<void> {
       // not replace its room, poison its delta baseline, or trigger recovery.
       if (isRetiredObservationMessage(message)) return
       const wireWasPlainGameState = message.type === 'gameState'
+      let snapshotEncodedMessage = encodedMessage
+      if (message.type === GAME_STATE_PROPERTY_FRAME_CAPABILITY) {
+        const rebuilt = negotiatedGameStatePropertyFrame ? restoreGameStatePropertyFrame(message, encodedMessage,
+          source => { snapshotEncodedMessage = source }) : null
+        if (!rebuilt) {
+          l12State.recoveryPhase = 'snapshot-mismatch'
+          l12State.notice = '完整快照校验失败，正在请求未压缩权威状态…'
+          syncGameReentry()
+          requestPlainGameStateRecovery(socket, replaceBrokenSnapshotConnection)
+          return
+        }
+        message = rebuilt
+      }
       if (message.type === 'gameStateCardFrameV1') {
-        const rebuilt = negotiatedGameStateCardFrame ? restoreGameStateCardFrame(message, encodedMessage) : null
+        const rebuilt = negotiatedGameStateCardFrame ? restoreGameStateCardFrame(message, snapshotEncodedMessage) : null
         if (!rebuilt) {
           l12State.recoveryPhase = 'snapshot-mismatch'
           l12State.notice = '完整快照校验失败，正在请求未压缩权威状态…'
@@ -785,6 +805,7 @@ export function connect(): Promise<void> {
         negotiatedPresenceOrderReuse = negotiatedPresenceDelta && message.capabilities?.presenceOrderReuseV1 === true
         resetGameStateCardFrameRecovery()
         negotiatedGameStateCardFrame = message.capabilities?.gameStateCardFrameV1 === true
+        negotiatedGameStatePropertyFrame = message.capabilities?.[GAME_STATE_PROPERTY_FRAME_CAPABILITY] === true
         presenceRecoveryPending = false
         presenceBaselineEpoch = ''
         claimedGeneration = Number(message.connectionGeneration || 0)
@@ -1185,6 +1206,7 @@ export function connect(): Promise<void> {
         l12State.socket = null
         lastGameStateEnvelope = null
         negotiatedGameStateCardFrame = false
+        negotiatedGameStatePropertyFrame = false
         negotiatedPresenceDelta = false
         negotiatedPresenceOrderReuse = false
         presenceRecoveryPending = false
@@ -1275,6 +1297,7 @@ export function disconnect() {
   negotiatedPresenceDelta = false
   negotiatedPresenceOrderReuse = false
   negotiatedGameStateCardFrame = false
+  negotiatedGameStatePropertyFrame = false
   presenceRecoveryPending = false
   presenceBaselineEpoch = ''
   lastGameStateEnvelope = null

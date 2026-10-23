@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import ts from 'typescript'
+import { propertyFrameSourceModuleUrl } from './property-frame-source-module.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const hash = value => crypto.createHash('sha256').update(value).digest('hex').toUpperCase()
@@ -63,7 +64,9 @@ export function fixedPropertyTransform(raw, names, decode = false) {
 }
 
 async function main() {
-  const [output, probe, accepted, expectedSha] = process.argv.slice(2)
+  const [output, probe, accepted, expectedSha, mode] = process.argv.slice(2)
+  assert(mode === undefined || mode === '--property-frame-v1')
+  const propertyMode = mode === '--property-frame-v1'
   for (const value of [output, probe, accepted]) assert(path.isAbsolute(value))
   execFileSync(process.env.L12_PWSH, ['-NoProfile', '-Command',
     `. '${repo}/ops/windows/L12GeneratedStorage.ps1'; $null=Assert-L12GeneratedPath -Path '${output.replaceAll("'", "''")}' -Purpose 'offline actual terminal fields'`],
@@ -76,6 +79,8 @@ async function main() {
   const sources = ['opcgpro-vue/src/l12/types.ts', 'opcgpro-vue/src/l12/net.ts',
     '服务端WebSocket/TwelveLegions/Models.cs',
     'opcgpro-vue/src/l12/handArrayDelta.ts', 'opcgpro-vue/src/l12/gameStateCardFrame.ts',
+    'opcgpro-vue/src/l12/gameStatePropertyFrame.ts', 'opcgpro-vue/src/l12/gameStatePropertyNamesV1.json',
+    'opcgpro-vue/scripts/property-frame-source-module.mjs',
     'ops/qa/TerminalWireProbe/Program.cs', 'ops/qa/TerminalWireProbe/TerminalWireProbe.csproj',
     'ops/qa/Invoke-L12TerminalWireProbe.ps1', 'opcgpro-vue/scripts/measure-terminal-wire-fields.mjs']
   const sourceHashes = Object.fromEntries(sources.map(name => [name, hash(fs.readFileSync(path.join(repo, name)))]))
@@ -101,6 +106,7 @@ async function main() {
   }
   const hands = loadTs('opcgpro-vue/src/l12/handArrayDelta.ts')
   const cards = loadTs('opcgpro-vue/src/l12/gameStateCardFrame.ts')
+  const propertyDecoder = await import(propertyFrameSourceModuleUrl())
   const net = fs.readFileSync(path.join(repo, 'opcgpro-vue/src/l12/net.ts'), 'utf8')
   const start = net.indexOf('function rebuildDeltaGameState('), end = net.indexOf('function clearReconnectTimer(', start)
   assert(start > 0 && end > start)
@@ -114,7 +120,7 @@ async function main() {
   assert.equal(hash(fs.readFileSync(parentPath)), 'D328933729E54167078F123329A0880981C8C5A55771E32865F77B9DEAE1B456')
   const { selectLegalCommandWithAllBottom: select } = await import(pathToFileURL(selectorPath))
   const cases = [], fields = new Map(), propertyCosts = new Map(), commands = {}, rows = []
-  const child = spawn('dotnet', [probe, path.join(accepted, 'TwelveLegions', 'Data'), expectedSha],
+  const child = spawn('dotnet', [probe, path.join(accepted, 'TwelveLegions', 'Data'), expectedSha, ...(propertyMode ? ['property-frame-v1'] : [])],
     { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   let stderr = '', pending = null, exited = false
   const exit = new Promise((resolve, reject) => {
@@ -133,7 +139,10 @@ async function main() {
     child.stdin.write(JSON.stringify(value) + '\n')
   })
   const totals = { frames: 0, wireBytes: 0, logicalBytes: 0, fixedNamePrototypeBytes: 0, terminalWireBytes: 0,
-    terminalFrames: 0, deltaFrames: 0, reconstructionChecks: 0, maximumLogicalBytes: 0, maximumPrepareMs: 0 }
+    terminalFrames: 0, deltaFrames: 0, reconstructionChecks: 0, maximumLogicalBytes: 0, maximumPrepareMs: 0,
+    comparisonWireBytes: 0, terminalComparisonWireBytes: 0, propertyFrameMessages: 0, comparisonIdentityChecks: 0 }
+  const costs = { prepareMs: [], prepareAllocatedBytes: [], comparisonPrepareMs: [], comparisonPrepareAllocatedBytes: [],
+    propertyRestoreMs: [] }
   function walk(value) {
     if (!value || typeof value !== 'object') return
     if (Array.isArray(value)) { value.forEach(walk); return }
@@ -148,24 +157,40 @@ async function main() {
   function inspect(reply, retainRow = false) {
     const snapshots = []
     for (const item of reply.snapshots) {
-      const raw = Buffer.from(item.wire, 'base64').toString('utf8'), wire = JSON.parse(raw)
+      const raw = Buffer.from(item.wire, 'base64').toString('utf8'), originalWire = JSON.parse(raw)
+      let logicalSource = raw
+      const propertyStarted = performance.now()
+      const wire = originalWire.type === propertyDecoder.GAME_STATE_PROPERTY_FRAME_TYPE
+        ? propertyDecoder.restoreGameStatePropertyFrame(originalWire, raw, source => { logicalSource = source }) : originalWire
+      if (originalWire.type === propertyDecoder.GAME_STATE_PROPERTY_FRAME_TYPE) costs.propertyRestoreMs.push(performance.now() - propertyStarted)
+      for (const name of ['prepareMs', 'prepareAllocatedBytes', 'comparisonPrepareMs', 'comparisonPrepareAllocatedBytes'])
+        if (Number.isFinite(item[name])) costs[name].push(item[name])
+      assert(wire, 'Actual property frame decoder rejected the producer')
+      const comparisonRaw = item.comparisonWire ? Buffer.from(item.comparisonWire, 'base64').toString('utf8') : raw
+      if (propertyMode) {
+        assert(item.comparisonWire, 'Actual comparison codec packet missing')
+        assert(isDeepStrictEqual(wire, JSON.parse(comparisonRaw)), 'Property coding changed the original actual codec envelope')
+        totals.comparisonIdentityChecks++
+      }
+      if (originalWire.type === propertyDecoder.GAME_STATE_PROPERTY_FRAME_TYPE) totals.propertyFrameMessages++
       const logical = JSON.parse(Buffer.from(item.logical, 'base64').toString('utf8'))
       const restored = wire.type === 'gameStateDelta'
         ? rebuild(baseline[item.viewer], true, true, hands.restoreHandSplices, hands.validHandDeltaChangePath, wire)
-        : wire.type === cards.GAME_STATE_CARD_FRAME_TYPE ? cards.restoreGameStateCardFrame(structuredClone(wire), raw) : wire
+        : wire.type === cards.GAME_STATE_CARD_FRAME_TYPE ? cards.restoreGameStateCardFrame(structuredClone(wire), logicalSource) : wire
       assert(isDeepStrictEqual(restored, logical), `Actual frontend reconstruction differs at seed=${currentSeed}, command=${reply.commands}, viewer=${item.viewer}`)
       totals.reconstructionChecks++
       baseline[item.viewer] = logical
-      const packed = fixedPropertyTransform(raw, names), unpacked = fixedPropertyTransform(packed, names, true)
+      const packed = fixedPropertyTransform(comparisonRaw, names), unpacked = fixedPropertyTransform(packed, names, true)
       assert(isDeepStrictEqual(JSON.parse(unpacked), wire), 'Offline fixed-property semantic reconstruction differs')
       const before = Buffer.byteLength(raw), after = Buffer.byteLength(packed) + 96 // Conservative framing allowance; not a product envelope.
       totals.frames++; totals.wireBytes += before; totals.logicalBytes += Buffer.from(item.logical, 'base64').length
-      totals.fixedNamePrototypeBytes += Math.min(before, after)
+      totals.comparisonWireBytes += Buffer.byteLength(comparisonRaw)
+      totals.fixedNamePrototypeBytes += Math.min(Buffer.byteLength(comparisonRaw), after)
       totals.maximumLogicalBytes = Math.max(totals.maximumLogicalBytes, Buffer.from(item.logical, 'base64').length)
       totals.maximumPrepareMs = Math.max(totals.maximumPrepareMs, item.prepareMs)
       if (wire.type === 'gameStateDelta') {
         totals.deltaFrames++
-        const exact = deltaFieldRanges(raw)
+        const exact = deltaFieldRanges(comparisonRaw)
         assert.equal(exact.changes.length, wire.changes.length)
         for (const [index, change] of wire.changes.entries()) {
           const parts = change.path.map(part => typeof part === 'number' ? '[]' : publicNames.has(part) ? part : '*')
@@ -181,11 +206,12 @@ async function main() {
         }
       }
       const terminal = logical.state.phase === 'GameOver'
-      if (terminal) { totals.terminalWireBytes += before; totals.terminalFrames++ }
+      if (terminal) { totals.terminalWireBytes += before; totals.terminalComparisonWireBytes += Buffer.byteLength(comparisonRaw); totals.terminalFrames++ }
       walk(wire)
       if (retainRow || terminal) rows.push({ seed: currentSeed, viewer: item.viewer, commands: reply.commands,
-        terminal, wireType: wire.type, wireBytes: before, logicalBytes: Buffer.from(item.logical, 'base64').length,
-        fixedNamePrototypeBytes: Math.min(before, after), sha256: hash(raw), prepareMs: item.prepareMs,
+        terminal, wireType: originalWire.type, logicalWireType: wire.type, wireBytes: before,
+        comparisonWireBytes: Buffer.byteLength(comparisonRaw), logicalBytes: Buffer.from(item.logical, 'base64').length,
+        fixedNamePrototypeBytes: Math.min(Buffer.byteLength(comparisonRaw), after), sha256: hash(raw), prepareMs: item.prepareMs,
         prepareAllocatedBytes: item.prepareAllocatedBytes })
       snapshots[item.viewer] = logical.state
     }
@@ -224,14 +250,23 @@ async function main() {
     assert.equal(ended.code, 0, stderr)
     assert.equal(ended.signal, null)
     for (const [name, sha] of Object.entries(sourceHashes)) assert.equal(hash(fs.readFileSync(path.join(repo, name))), sha)
+    const distribution = samples => {
+      const sorted = [...samples].sort((a, b) => a - b)
+      const quantile = p => sorted.length ? sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)] : null
+      return { count: sorted.length, total: sorted.reduce((a, b) => a + b, 0), p50: quantile(.5), p95: quantile(.95),
+        p99: quantile(.99), max: sorted.at(-1) ?? null }
+    }
     const report = { schema: 1, status: 'CURRENT_ASSEMBLY_OFFLINE_ATTRIBUTION_COMPLETE', syntheticOnly: true,
-      commit, serverSha256: expectedSha, sourceHashes, originalSelectorPins: { selector: hash(fs.readFileSync(selectorPath)), parent: hash(fs.readFileSync(parentPath)) },
+      commit, serverSha256: expectedSha, sourceHashes, propertyMode, originalSelectorPins: { selector: hash(fs.readFileSync(selectorPath)), parent: hash(fs.readFileSync(parentPath)) },
       cases, commands, totals, rows, fieldByteMethod: 'Exact source JSON node spans converted to UTF-8 bytes, excluding outer array commas; not parsed-value reserialization.',
+      costs: Object.fromEntries(Object.entries(costs).map(([name, values]) => [name, distribution(values)])),
       propertyVocabulary: { count: names.length, sha256: hash(JSON.stringify(names)), adaptive: false },
       fields: [...fields].map(([field, value]) => ({ field, ...value })).sort((a, b) => b.changeBytes - a.changeBytes),
       propertyCosts: [...propertyCosts].map(([field, value]) => ({ field, ...value })).sort((a, b) => b.propertyNameBytes - a.propertyNameBytes),
       networkCalls: 0, databaseReadsOrWrites: 0, productSourceChanges: 0, onlineCapacityAccepted: false,
-      childExited: true, boundary: 'In-memory actual commands and three independent recipient codecs from the accepted test DLL; actual frontend reducers reconstruct every frame. No room clock or request ACK envelope, real sockets, production data, representative wall-clock cadence or FPS. Fixed-name encoding is an offline potential with 96 bytes assumed envelope overhead, not an implemented or accepted wire protocol or proven latency cure.' }
+      childExited: true, boundary: propertyMode
+        ? 'Current actual production codec property framing and original-codec control on identical in-memory commands/recipient projections; actual frontend restores both and checks complete envelope equality. Component costs include QA reflection, control is sequential not a concurrent server load. No room clock/ACK envelope, real sockets, representative cadence, production data, FPS or online latency claim. Separate fixed-name potential still includes a hypothetical96-byte header and is not the actual measured wire total.'
+        : 'In-memory actual commands and three independent recipient codecs from the accepted test DLL; actual frontend reducers reconstruct every frame. No room clock or request ACK envelope, real sockets, production data, representative wall-clock cadence or FPS. Fixed-name encoding is an offline potential with 96 bytes assumed envelope overhead, not an accepted wire protocol or proven latency cure.' }
     fs.writeFileSync(reportFile, JSON.stringify(report, null, 2), { flag: 'wx' })
     console.log(JSON.stringify({ status: report.status, cases, commands, totals, topFields: report.fields.slice(0, 8), output: reportFile }, null, 2))
   } finally {

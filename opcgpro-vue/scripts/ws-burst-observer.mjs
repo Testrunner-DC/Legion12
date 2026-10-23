@@ -1,0 +1,114 @@
+// Version-owned successor of the frozen r7 observer: only the property-frame
+// wire type is added to accounting and verified-terminal classification. Original
+// clocks, 3-second windows, 60 recipients, caps and completeness checks stay intact.
+import crypto from 'node:crypto'
+import {performance} from 'node:perf_hooks'
+
+export const BURST_TYPES = Object.freeze(['pong','gameState','gameStateCardFrameV1','gameStatePropertyFrameV1','gameStateDelta','presenceSnapshot','presenceDelta','roomState','roomLeft','roomClosed','session','recoveryComplete','resourceVersions','resourceChanged','error','actionRejected','other'])
+const bucket = () => Object.fromEntries(BURST_TYPES.map(type => [type,{frames:0,bytes:0}]))
+const add = (counts,type,bytes) => { counts[type].frames++; counts[type].bytes += bytes }
+const copy = counts => Object.fromEntries(BURST_TYPES.map(type => [type,{...counts[type]}]))
+const sum = counts => BURST_TYPES.reduce((n,type)=>n+counts[type].bytes,0)
+const finite = value => Number.isFinite(value) && value >= 0
+const clientSlot = value => Number.isInteger(value) && value >= 0 && value < 60
+
+// Client-only, one shared cleanup performance.now axis. No identifiers, payloads,
+// hashes or wall-clock phase attribution are retained in the exported report.
+export class WsBurstObserver {
+  constructor({frameCap=4096,now=()=>performance.now()}={}) {
+    this.frameCap=frameCap; this.now=now; this.origin=null
+    this.frames=[]; this.sends=[]; this.responses=[]; this.terminals=[]
+    this.totals=bucket(); this.first3s=bucket(); this.byClient=Array.from({length:60},bucket)
+    this.sequence=0; this.droppedFrames=0; this.droppedBytes=0; this.invalidRecords=0
+    this.seenClients=new Set(); this.seenSends=new Set(); this.seenTerminals=new Set()
+    this.previousPresence=new Map(); this.presenceCheckedFrames=0; this.duplicateFrames=0; this.duplicateBytes=0; this.hashCostMs=0; this.hashErrors=0
+    this.presenceByClient=Array.from({length:60},(_,numericClientSlot)=>({numericClientSlot,receivedFrames:0,receivedBytes:0,initialFrames:0,initialBytes:0,checkedFrames:0,checkedBytes:0,equalFrames:0,equalBytes:0,unequalFrames:0,unequalBytes:0,hashCostMs:0}))
+    this.observationCostMs=0
+  }
+  begin(rawAt) {
+    if(this.origin!==null || !finite(rawAt)){this.invalidRecords++;return}
+    this.origin=rawAt
+  }
+  relative(rawAt) { return this.origin!==null && finite(rawAt) && rawAt>=this.origin ? rawAt-this.origin : null }
+  observeFrame(numericClientSlot,type,bytes,terminalFlag,rawAt) {
+    const started=this.now()
+    try {
+      const arrivalSinceCleanupStartMs=this.relative(rawAt)
+      if(!clientSlot(numericClientSlot) || !Number.isSafeInteger(bytes) || bytes<0 || arrivalSinceCleanupStartMs===null){this.invalidRecords++;return null}
+      type=BURST_TYPES.includes(type)?type:'other'
+      terminalFlag=Number(['gameState','gameStateCardFrameV1','gameStatePropertyFrameV1'].includes(type) && terminalFlag===true)
+      const frameSequence=++this.sequence
+      const row={frameSequence,numericClientSlot,type,bytes,terminalFlag,arrivalSinceCleanupStartMs}
+      if(terminalFlag && !this.seenTerminals.has(numericClientSlot)) {
+        this.seenTerminals.add(numericClientSlot)
+        this.terminals.push({numericClientSlot,numericRoomSlot:Math.floor(numericClientSlot/2),frameSequence,arrivalSinceCleanupStartMs,receivedBeforeTerminalBytes:sum(this.byClient[numericClientSlot]),receivedBeforeTerminalByType:copy(this.byClient[numericClientSlot])})
+      }
+      add(this.totals,type,bytes); add(this.byClient[numericClientSlot],type,bytes)
+      if(arrivalSinceCleanupStartMs<=3000)add(this.first3s,type,bytes)
+      this.seenClients.add(numericClientSlot)
+      if(this.frames.length<this.frameCap)this.frames.push(row)
+      else {this.droppedFrames++;this.droppedBytes+=bytes}
+      return frameSequence
+    } finally {this.observationCostMs+=Math.max(0,this.now()-started)}
+  }
+  observeSend(numericRoomSlot,numericClientSlot,rawAt) {
+    const started=this.now()
+    try {
+      const sendSinceCleanupStartMs=this.relative(rawAt)
+      if(!clientSlot(numericClientSlot) || numericRoomSlot!==Math.floor(numericClientSlot/2) || sendSinceCleanupStartMs===null || this.seenSends.has(numericRoomSlot)){this.invalidRecords++;return}
+      this.seenSends.add(numericRoomSlot)
+      this.sends.push({numericRoomSlot,numericClientSlot,sendSinceCleanupStartMs})
+    } finally {this.observationCostMs+=Math.max(0,this.now()-started)}
+  }
+  observeResponse(numericRoomSlot,numericClientSlot,frameSequence,rawAt,terminalFlag) {
+    const started=this.now()
+    try {
+      const arrivalSinceCleanupStartMs=this.relative(rawAt)
+      if(!clientSlot(numericClientSlot) || numericRoomSlot!==Math.floor(numericClientSlot/2) || !Number.isSafeInteger(frameSequence) || frameSequence<1 || arrivalSinceCleanupStartMs===null || this.responses.some(row=>row.numericRoomSlot===numericRoomSlot)){this.invalidRecords++;return}
+      this.responses.push({numericRoomSlot,numericClientSlot,frameSequence,arrivalSinceCleanupStartMs,terminalFlag:Number(terminalFlag===true)})
+    } finally {this.observationCostMs+=Math.max(0,this.now()-started)}
+  }
+  observePresence(numericClientSlot,raw) {
+    const started=this.now()
+    const counts=clientSlot(numericClientSlot)?this.presenceByClient[numericClientSlot]:null
+    try {
+      if(!clientSlot(numericClientSlot) || typeof raw!=='string'){this.hashErrors++;return}
+      const digest=crypto.createHash('sha256').update(raw,'utf8').digest()
+      const previous=this.previousPresence.get(numericClientSlot)
+      const bytes=Buffer.byteLength(raw)
+      counts.receivedFrames++;counts.receivedBytes+=bytes
+      if(previous) {
+        counts.checkedFrames++;counts.checkedBytes+=bytes;this.presenceCheckedFrames++
+        if(previous.equals(digest)){this.duplicateFrames++;this.duplicateBytes+=bytes;counts.equalFrames++;counts.equalBytes+=bytes}
+        else {counts.unequalFrames++;counts.unequalBytes+=bytes}
+      } else {counts.initialFrames++;counts.initialBytes+=bytes}
+      this.previousPresence.set(numericClientSlot,digest)
+    } catch {this.hashErrors++}
+    finally {const cost=Math.max(0,this.now()-started);this.hashCostMs+=cost;if(counts)counts.hashCostMs+=cost}
+  }
+  summary() {
+    const started=this.now()
+    const perSurrender3s=this.sends.map(send=>{
+      const allConnectionsByType=bucket(),sameConnectionByType=bucket()
+      for(const frame of this.frames) {
+        if(frame.arrivalSinceCleanupStartMs<send.sendSinceCleanupStartMs || frame.arrivalSinceCleanupStartMs>send.sendSinceCleanupStartMs+3000)continue
+        add(allConnectionsByType,frame.type,frame.bytes)
+        if(frame.numericClientSlot===send.numericClientSlot)add(sameConnectionByType,frame.type,frame.bytes)
+      }
+      const response=this.responses.find(row=>row.numericRoomSlot===send.numericRoomSlot)
+      const sendToRawArrivalMs=response?response.arrivalSinceCleanupStartMs-send.sendSinceCleanupStartMs:null
+      return {...send,windowComplete:Number(this.droppedFrames===0 && this.invalidRecords===0),allConnectionsByType,sameConnectionByType,sendToRawArrivalMs,responseFrameSequence:response?.frameSequence??null,terminalFlag:response?.terminalFlag??0,late3s:sendToRawArrivalMs===null?null:Number(sendToRawArrivalMs>3000)}
+    })
+    return {schema:1,clockAxis:1,windowStartMs:0,windowEndMs:3000,windowInclusive:1,clientOnly:1,serverTraceCollected:0,original3sMs:3000,retries:0,failuresConvertedToPass:0,
+      captureComplete:Number(this.origin!==null && this.droppedFrames===0 && this.invalidRecords===0 && this.hashErrors===0 && this.seenClients.size===60),terminalCoverageComplete:Number(this.sends.length===30 && this.responses.length===30 && this.responses.every(row=>row.terminalFlag===1 && this.sends.some(send=>send.numericRoomSlot===row.numericRoomSlot && send.numericClientSlot===row.numericClientSlot)) && this.terminals.length===60),
+      frameCap:this.frameCap,framesObserved:this.sequence,framesRetained:this.frames.length,droppedFrames:this.droppedFrames,droppedBytes:this.droppedBytes,invalidRecords:this.invalidRecords,connectionsObserved:this.seenClients.size,
+      cleanupTotalsByType:copy(this.totals),first3sByType:copy(this.first3s),frames:this.frames.map(row=>({...row})),sends:this.sends.map(row=>({...row})),responses:this.responses.map(row=>({...row})),firstTerminalByConnection:this.terminals.map(row=>({...row,receivedBeforeTerminalByType:copy(row.receivedBeforeTerminalByType)})),perSurrender3s,
+      presenceEquality:{consecutiveSameConnectionOnly:1,initialSeparate:1,checkedFrames:this.presenceCheckedFrames,duplicateFrames:this.duplicateFrames,duplicateBytes:this.duplicateBytes,hashCostMs:this.hashCostMs,hashErrors:this.hashErrors,hashesExported:0,payloadsExported:0,byClient:this.presenceByClient.map(row=>({...row}))},
+      observationCostMs:this.observationCostMs,summaryCostMs:Math.max(0,this.now()-started)}
+  }
+}
+
+export function finalizeClientObservationStatus(status,report) {
+  const complete=report.captureComplete===1 && report.terminalCoverageComplete===1 && report.connectionsObserved===60 && report.droppedFrames===0 && report.invalidRecords===0 && report.sends.length===30 && report.responses.length===30 && report.firstTerminalByConnection.length===60
+  return status==='completed' && !complete ? 'completed-with-errors' : status
+}

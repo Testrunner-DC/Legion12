@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$AcceptedServerRoot,
     [Parameter(Mandatory)][ValidatePattern('^[0-9A-F]{64}$')][string]$ServerSha256,
     [Parameter(Mandatory)][string]$OutputRoot,
-    [Parameter(Mandatory)][string]$CacheRoot
+    [Parameter(Mandatory)][string]$CacheRoot,
+    [switch]$PropertyFrame
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -23,5 +24,7 @@ New-Item -ItemType Directory -Path $output -Force|Out-Null
 if($LASTEXITCODE -ne 0){throw 'Offline probe build failed'}
 $probe="$cache/build/bin/TerminalWireProbe/release/TerminalWireProbe.dll"
 if((Get-FileHash -LiteralPath "$cache/build/bin/TerminalWireProbe/release/GrandUMIServer.dll").Hash -cne $ServerSha256){throw 'Actual probe reference differs'}
-& node "$repo/opcgpro-vue/scripts/measure-terminal-wire-fields.mjs" $output $probe $server $ServerSha256
+$nodeArguments=@("$repo/opcgpro-vue/scripts/measure-terminal-wire-fields.mjs",$output,$probe,$server,$ServerSha256)
+if($PropertyFrame){$nodeArguments+='--property-frame-v1'}
+& node @nodeArguments
 if($LASTEXITCODE -ne 0){throw 'Offline terminal attribution failed; preserve failure and investigate'}

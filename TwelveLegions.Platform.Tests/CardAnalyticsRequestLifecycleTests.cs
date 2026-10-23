@@ -542,6 +542,53 @@ public sealed class CardAnalyticsRequestLifecycleTests
     }
 
     [Fact]
+    public async Task HttpFixtureCleanupReleasesReadOnlyAuditPoolWithoutClearingOtherPools()
+    {
+        var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "l12-card-http-" + Guid.NewGuid().ToString("N"));
+        var other = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "l12-card-http-" + Guid.NewGuid().ToString("N"));
+        var path = System.IO.Path.Combine(root, "matches.db");
+        Directory.CreateDirectory(other);
+        var otherPath = System.IO.Path.Combine(other, "matches.db");
+        var readOnly = new SqliteConnectionStringBuilder(
+            new SqliteConnectionStringBuilder { DataSource = path }.ToString())
+            { Mode = SqliteOpenMode.ReadOnly }.ToString();
+        try
+        {
+            using (var unrelated = new SqliteConnection(
+                new SqliteConnectionStringBuilder { DataSource = otherPath }.ToString()))
+            {
+                unrelated.Open();
+                using var command = unrelated.CreateCommand();
+                command.CommandText = "CREATE TABLE synthetic_other(value INTEGER);";
+                command.ExecuteNonQuery();
+            }
+            await using (var recorder = new MatchRecorder(path))
+            {
+                await recorder.InitializeAsync();
+                Assert.Empty(await recorder.ReadAuditRetentionHoldsAsync(CancellationToken.None));
+            }
+            // Daily audit maintenance leaves this exact idle read-only pool, not a live owner.
+            await DeleteOwnedHttpFixtureAsync(root);
+            Assert.False(Directory.Exists(root));
+            if (OperatingSystem.IsWindows())
+                Assert.Throws<IOException>(() =>
+                {
+                    using var exclusive = new FileStream(otherPath, FileMode.Open,
+                        FileAccess.ReadWrite, FileShare.None);
+                });
+        }
+        finally
+        {
+            // Keep a deliberate RED self-contained without using global pool cleanup.
+            using (var pooled = new SqliteConnection(readOnly)) SqliteConnection.ClearPool(pooled);
+            if (Directory.Exists(root)) await DeleteOwnedHttpFixtureAsync(root);
+            if (Directory.Exists(other)) await DeleteOwnedHttpFixtureAsync(other);
+        }
+    }
+
+    [Fact]
     public async Task HttpFixtureCleanupCannotSuppressPersistentFileOwnershipFailure()
     {
         var root = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
@@ -593,9 +640,17 @@ public sealed class CardAnalyticsRequestLifecycleTests
             || !Guid.TryParseExact(name[prefix.Length..], "N", out _)
             || (Directory.Exists(target) && (File.GetAttributes(target) & FileAttributes.ReparsePoint) != 0))
             throw new InvalidOperationException("synthetic HTTP fixture cleanup scope mismatch");
-        using (var pooled = new SqliteConnection(new SqliteConnectionStringBuilder
-            { DataSource = System.IO.Path.Combine(target, "matches.db") }.ToString()))
-            SqliteConnection.ClearPool(pooled);
+        var settings = new SqliteConnectionStringBuilder
+            { DataSource = System.IO.Path.Combine(target, "matches.db") };
+        var ownedPools = new[]
+        {
+            settings.ToString(),
+            new SqliteConnectionStringBuilder(settings.ToString())
+                { Mode = SqliteOpenMode.ReadOnly }.ToString(),
+        };
+        foreach (var connectionString in ownedPools)
+            using (var pooled = new SqliteConnection(connectionString))
+                SqliteConnection.ClearPool(pooled);
         for (var attempt = 0; attempt < 5; attempt++)
         {
             try { Directory.Delete(target, true); return; }

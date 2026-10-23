@@ -38,7 +38,8 @@ export function inspectNormalPressureEvidence(evidence, binding) {
   assert.deepEqual(report.artifactBinding, {candidateBindingSha256: evidence.bindingSha256,
     manifestSha256: binding.test.manifestSha256, releaseSha256: binding.test.releaseSha256,
     testPid: binding.test.pid, formalPid: binding.formal.pid, deployedNetSha256: binding.client.netSha256,
-    cardFrameSha256: binding.client.cardFrameSha256, handArraySha256: binding.client.handArraySha256})
+    cardFrameSha256: binding.client.cardFrameSha256, handArraySha256: binding.client.handArraySha256,
+    propertyFrameSha256: binding.client.propertyFrameSha256, propertyNamesSha256: binding.client.propertyNamesSha256})
   const startedUtcMs = Date.parse(report.startedAt), terminalStart = Date.parse(report.terminalWindow.startUtc)
   const terminalEnd = Date.parse(report.terminalWindow.endUtc)
   assert.ok(Number.isFinite(startedUtcMs) && Number.isFinite(terminalStart) && Number.isFinite(terminalEnd)
@@ -70,6 +71,10 @@ export function inspectNormalPressureEvidence(evidence, binding) {
   integer(report.commands.overall.attempted, 1)
   for (const outcome of ['rejected', 'timed-out', 'transport-error', 'advanced-without-ack']) zero(report.commands.overall.outcomes[outcome])
   assert.equal(report.frameProtocol.capability, 'gameStateCardFrameV1'); zero(report.frameProtocol.decoderFailures)
+  const property = report.currentPropertyFrame
+  integer(property.negotiatedSessions); assert.equal(property.negotiatedSessions, 60)
+  integer(property.packets, 1); integer(property.wireBytes, 1); zero(property.rejected)
+  assert.equal(property.applied, property.packets)
   const hand = report.currentHandArrayDelta
   integer(hand.negotiatedSessions, 60); integer(hand.packets, 1); integer(hand.wireBytes, 1)
   assert.equal(hand.applied, hand.packets); zero(hand.rejected)
@@ -98,7 +103,7 @@ export function inspectNormalPressureEvidence(evidence, binding) {
     integer(frame.numericClientSlot); assert.ok(frame.numericClientSlot < 60)
     assert.equal(frame.numericRoomSlot, Math.floor(frame.numericClientSlot / 2)); assert.equal(frame.receiver, frame.numericClientSlot % 2)
     assert.equal(frame.type, 'gameState'); assert.equal(frame.terminal, true); assert.equal(frame.delta, false)
-    assert.ok(['gameState', 'gameStateCardFrameV1'].includes(frame.wireType))
+    assert.ok(['gameState', 'gameStateCardFrameV1', 'gameStatePropertyFrameV1'].includes(frame.wireType))
     integer(frame.wireBytes, 1)
     assert.ok(frame.wireBytes <= 2 * 1024 * 1024)
     integer(frame.logicalJsonBytes)
