@@ -54,11 +54,11 @@ const now=new Date().toISOString()
 const product=(id,name)=>({id,name,active:true,createdAt:now,updatedAt:now,source:'catalog',categoryName:'卡牌系列'})
 const rarity=(id,code,name)=>({id,code,name,active:true,createdAt:now,updatedAt:now})
 alternateArtApi.gallery=async()=>[
- {id:'official-s01-0101b',artCode:'S01-0101b',baseCardId:'S01-0101',displayName:'吕布',artist:'内建画师',mediaAssetId:'media-override',imageUrl:'/api/site/media/media-override/desktop/hash.webp',thumbnailUrl:'/api/site/media/media-override/thumbnail/hash.webp',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101b',builtIn:true,kind:'alternate-art',products:[product('p1','QA产品甲'),product('p2','QA产品乙')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]},
+ {id:'official-s01-0101b',artCode:'S01-0101b',baseCardId:'S01-0101',displayName:'吕布',artist:'内建画师',collaboration:'内建联动',mediaAssetId:'media-override',imageUrl:'/api/site/media/media-override/desktop/hash.webp',thumbnailUrl:'/api/site/media/media-override/thumbnail/hash.webp',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101b',builtIn:true,kind:'alternate-art',products:[product('p1','QA产品甲'),product('p2','QA产品乙')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]},
  {id:'official-old-fields',artCode:'S01-0104a',baseCardId:'S01-0104',displayName:'韩信',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0104a',builtIn:true,kind:'alternate-art',productName:'旧字段产品'},
  {id:'official-explicit-clear',artCode:'S01-0117a',baseCardId:'S01-0117',displayName:'山河社稷图',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0117a',builtIn:true,kind:'alternate-art',products:[],rarities:[]},
- {id:'custom-alt-metadata',artCode:'ALT-QA-MULTI',baseCardId:'S01-0101',displayName:'吕布',artist:'上传画师',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22/%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'alternate-art',products:[product('dup-a','同名产品'),product('dup-b','同名产品')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]},
- {id:'gallery-collab-1',artCode:'COLLAB-QA-001',baseCardId:'',displayName:'联动画廊测试',artist:'联动画师',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%232b3850%22/%3E%3Ctext x=%2250%22 y=%22350%22 fill=%22white%22 font-size=%2240%22%3ECOLLAB%3C/text%3E%3C/svg%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'gallery-card',effect:'这是独立撰写的联动卡效，但不会接入对局结算。',products:[product('p1','QA产品甲'),product('p2','QA产品乙')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]}
+ {id:'custom-alt-metadata',artCode:'ALT-QA-MULTI',baseCardId:'S01-0101',displayName:'吕布',artist:'上传画师',collaboration:'上传联动',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22/%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'alternate-art',products:[product('dup-a','同名产品'),product('dup-b','同名产品')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]},
+ {id:'gallery-collab-1',artCode:'COLLAB-QA-001',baseCardId:'',displayName:'联动画廊测试',artist:'联动画师',collaboration:'独立联动',mediaAssetId:'qa',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%232b3850%22/%3E%3Ctext x=%2250%22 y=%22350%22 fill=%22white%22 font-size=%2240%22%3ECOLLAB%3C/text%3E%3C/svg%3E',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,kind:'gallery-card',effect:'这是独立撰写的联动卡效，但不会接入对局结算。',products:[product('p1','QA产品甲'),product('p2','QA产品乙')],rarities:[rarity('r1','UR','终极罕贵'),rarity('r2','SP','特别罕贵')]}
 ]
 alternateArtApi.presentationCatalog=async()=>({regularCards:[],filterProducts:[product('p1','QA产品甲'),{...product('p2','QA产品乙'),showInGalleryFilter:false}]})
 alternateArtApi.mine=async()=>[]
@@ -101,10 +101,10 @@ adminApi.siteCategories=async()=>[{id:'product-category',kind:'product',name:'�
 adminApi.alternateArts=async()=>[builtIn,uploadedAlt]
 adminApi.searchAlternateArts=async()=>{calls.search++;return {items:[builtIn,uploadedAlt],total:2,page:1,pageSize:20}}
 adminApi.searchRegularGalleryCards=async()=>{calls.regularSearch++;return {items:[regularCard],total:1,page:1,pageSize:20}}
-adminApi.saveAlternateArtMetadata=async draft=>{calls.metadata.push(structuredClone(draft));if(draft.alternateArtId==='gallery-new'&&failNextGalleryMetadata){failNextGalleryMetadata=false;throw new Error('注入：元数据暂时保存失败')}const selectedProducts=draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean);const selectedRarities=draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean);if(draft.alternateArtId===builtIn.id){builtIn={...builtIn,artist:draft.artist,products:selectedProducts,rarities:selectedRarities};return builtIn}if(draft.alternateArtId===uploadedAlt.id){uploadedAlt={...uploadedAlt,artist:draft.artist,products:selectedProducts,rarities:selectedRarities};return uploadedAlt}return {...window.__lastSavedArt,artist:draft.artist,products:selectedProducts,rarities:selectedRarities}}
+adminApi.saveAlternateArtMetadata=async draft=>{calls.metadata.push(structuredClone(draft));if(draft.alternateArtId==='gallery-new'&&failNextGalleryMetadata){failNextGalleryMetadata=false;throw new Error('注入：元数据暂时保存失败')}const selectedProducts=draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean);const selectedRarities=draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean);if(draft.alternateArtId===builtIn.id){builtIn={...builtIn,artist:draft.artist,collaboration:draft.collaboration,products:selectedProducts,rarities:selectedRarities};return builtIn}if(draft.alternateArtId===uploadedAlt.id){uploadedAlt={...uploadedAlt,artist:draft.artist,collaboration:draft.collaboration,products:selectedProducts,rarities:selectedRarities};return uploadedAlt}return {...window.__lastSavedArt,artist:draft.artist,collaboration:draft.collaboration,products:selectedProducts,rarities:selectedRarities}}
 adminApi.saveAlternateArt=async draft=>{if(!draft.id&&calls.saveArt.some(item=>item.artCode===draft.artCode))throw new Error('异画编号已被使用');calls.saveArt.push(structuredClone(draft));window.__lastSavedArt={...window.__lastSavedArt,...draft,id:draft.id||'gallery-new',imageUrl:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22/%3E',thumbnailUrl:'',createdAt:now,updatedAt:now};return window.__lastSavedArt}
 adminApi.saveAlternateArtImage=async draft=>{calls.saveImage.push(structuredClone(draft));builtIn={...builtIn,mediaAssetId:draft.mediaAssetId,imageUrl:draft.mediaAssetId?imageUrl:'',thumbnailUrl:draft.mediaAssetId?imageUrl:''};return builtIn}
-adminApi.saveRegularGalleryCardMetadata=async draft=>{calls.regularMetadata.push(structuredClone(draft));regularCard={...regularCard,artist:draft.artist,products:draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean),rarities:draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean)};return regularCard}
+adminApi.saveRegularGalleryCardMetadata=async draft=>{calls.regularMetadata.push(structuredClone(draft));regularCard={...regularCard,artist:draft.artist,collaboration:draft.collaboration,products:draft.productIds.map(id=>products.find(item=>item.id===id)).filter(Boolean),rarities:draft.rarityIds.map(id=>rarities.find(item=>item.id===id)).filter(Boolean)};return regularCard}
 adminApi.saveRegularGalleryCardImage=async draft=>{calls.saveRegularImage.push(structuredClone(draft));regularCard={...regularCard,mediaAssetId:draft.mediaAssetId,imageUrl:draft.mediaAssetId?imageUrl:'',thumbnailUrl:draft.mediaAssetId?imageUrl:''};return regularCard}
 adminApi.saveGalleryProductFilterVisibility=async draft=>{calls.filterVisibility.push(structuredClone(draft));const current=products.find(item=>item.id===draft.productId);const saved={...current,showInGalleryFilter:draft.showInGalleryFilter};products=products.map(item=>item.id===draft.productId?saved:item);return saved}
 adminApi.saveArticle=async draft=>{calls.saveArticle.push(structuredClone(draft));if(delayNextProductSave){delayNextProductSave=false;await new Promise(resolve=>setTimeout(resolve,120))}const saved={...draft,id:'product-new',status:'draft',revision:1,createdAt:now,updatedAt:now,author:'AdminA',updatedBy:'AdminA',hasUnpublishedChanges:true,sortOrder:0};products=[...products,{id:'site:product-new',name:draft.title,active:true,createdAt:now,updatedAt:now,categoryName:draft.category,categoryId:draft.categoryId,source:'site',status:'draft'}];return saved}
@@ -223,9 +223,14 @@ try {
     await page.getByRole('heading', { name: '画廊卡片后台' }).waitFor()
     assert.equal(await page.locator('.grant-panel').count(), 0, `rights tools leaked into the default workspace at ${suffix(viewport)}`)
     const builtInRow = page.locator('.gallery-list article').filter({ hasText: 'S01-0101b' })
+    await builtInRow.getByRole('button', { name: '查看吕布详情' }).click()
+    await page.locator('.catalog-detail-dialog').waitFor()
+    await page.getByRole('button', { name: '关闭卡牌详情' }).click()
+    assert.equal(await builtInRow.getByRole('button', { name: '查看吕布详情' }).evaluate(el => document.activeElement === el), true, '关闭详情后没有回到卡图按钮')
     await builtInRow.getByRole('button', { name: '编辑资料' }).click()
     const editor = page.locator('.art-editor')
     await editor.getByLabel('画师').fill(`内建画师-${viewport.width}`)
+    await editor.getByLabel('联动', { exact: true }).fill(`联动-${viewport.width}`)
     if (viewport.width === 1440) {
       await editor.getByRole('button', { name: '新建产品' }).click()
       const productDialog = page.locator('.product-dialog')
@@ -254,7 +259,7 @@ try {
     await confirm.getByRole('button', { name: '保存并同步画廊' }).click()
     await page.waitForFunction(() => window.__panelQa.calls.metadata.length === 1)
     const metadata = await page.evaluate(() => window.__panelQa.calls.metadata[0])
-    assert.deepEqual(metadata, { alternateArtId: 'catalog-alt:S01-0101b', productIds: viewport.width === 1440 ? ['catalog:qa-a', 'site:product-new', 'site:qa-b'] : ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: `内建画师-${viewport.width}` }, `built-in metadata request mismatch at ${suffix(viewport)}`)
+    assert.deepEqual(metadata, { alternateArtId: 'catalog-alt:S01-0101b', productIds: viewport.width === 1440 ? ['catalog:qa-a', 'site:product-new', 'site:qa-b'] : ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: `内建画师-${viewport.width}`, collaboration: `联动-${viewport.width}` }, `built-in metadata request mismatch at ${suffix(viewport)}`)
     const registryText = await page.locator('.gallery-list').innerText()
     assert.match(registryText, /同名产品[\s\S]*同名产品/, `same-name cross-source products were merged at ${suffix(viewport)}`)
     assert.match(registryText, /UR[\s\S]*SP/, `reused rarities were not re-read at ${suffix(viewport)}`)
@@ -318,7 +323,7 @@ try {
       assert.equal(createCalls[0].effect, '仅展示但不接入结算的联动卡效。')
       assert.equal(createCalls[0].id, undefined, 'first create unexpectedly had an id')
       assert.equal(createCalls[1].id, 'gallery-new', 'retry did not update the stable id returned by the first save')
-      assert.deepEqual(createMetadata[0], { alternateArtId: 'gallery-new', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '联动画师更新' })
+      assert.deepEqual(createMetadata[0], { alternateArtId: 'gallery-new', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '联动画师更新', collaboration: '' })
       assert.deepEqual(createMetadata[1], createMetadata[0], 'retry lost the original product or rarity selections')
       assert.equal(createMetadata[0].artist, '联动画师更新', 'collaboration artist was not saved through metadata')
       assert.equal(calls.grant.length, 0, 'gallery card unexpectedly called grant API')
@@ -334,14 +339,14 @@ try {
       await regularEditor.getByRole('button', { name: '保存画廊资料' }).click()
       await confirm.getByRole('button', { name: '保存画廊资料' }).click()
       await page.waitForFunction(() => window.__panelQa.calls.regularMetadata.length === 1)
-      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.regularMetadata[0]), { cardId: 'S01-0101', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '常规卡画师更新' })
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.regularMetadata[0]), { cardId: 'S01-0101', productIds: ['catalog:qa-a', 'site:qa-b'], rarityIds: ['rarity-ur', 'rarity-sp'], artist: '常规卡画师更新', collaboration: '' })
       assert.equal(await page.evaluate(() => window.__panelQa.calls.metadata.length), callsBeforeGallery.metadata + 2, 'regular-card save leaked into alternate-art metadata API')
       assert.match(await regularRow.innerText(), /画师：常规卡画师更新/, 'regular-card metadata was not re-read in its separate list')
-      await page.getByRole('button', { name: '管理产品筛选' }).click()
-      const filterDialog = page.getByRole('dialog', { name: '管理玩家端产品筛选' })
-      await filterDialog.getByRole('checkbox', { name: '同名产品 卡牌系列 · 卡牌产品', exact: true }).uncheck()
+      await page.getByRole('button', { name: '管理收录产品' }).click()
+      const filterDialog = page.getByRole('dialog', { name: '管理收录产品' })
+      await filterDialog.getByRole('checkbox', { name: /同名产品 卡牌系列 · 卡牌产品/ }).uncheck()
       await page.waitForFunction(() => window.__panelQa.calls.filterVisibility.length === 1)
-      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.filterVisibility[0]), { productId: 'catalog:qa-a', showInGalleryFilter: false })
+      assert.deepEqual(await page.evaluate(() => window.__panelQa.calls.filterVisibility[0]), { productId: 'catalog:qa-a', showInGalleryFilter: false, releaseOrder: undefined })
       await filterDialog.getByRole('button', { name: '完成' }).click()
       await regularRow.getByRole('button', { name: '更换画廊卡图' }).click()
       await imageDialog.locator('.media-choice-trigger').click()
@@ -370,6 +375,7 @@ try {
   assert.equal(await modal.locator('[data-gallery-card-effect]').count(), 1, 'standalone collaboration effect was not rendered in the real detail component')
   assert.match(await modal.innerText(), /效果[\s\S]*独立撰写的联动卡效/, 'standalone collaboration effect text was not shown')
   assert.match(await modal.locator('[data-gallery-artist]').innerText(), /画师\s*联动画师/, 'standalone collaboration artist was not shown')
+  assert.match(await modal.locator('[data-gallery-collaboration]').innerText(), /联动\s*独立联动/)
   await page.getByRole('button', { name: '关闭卡牌详情' }).click()
   await search.fill('QA产品甲')
   const historicalCard = page.locator('.archive-gallery-card').filter({ hasText: 'S01-0101b' })
@@ -380,6 +386,7 @@ try {
   assert.match(await detail.innerText(), /QA产品甲[\s\S]*QA产品乙/, 'historical built-in product overlay was not consumed by gallery detail')
   assert.match(await detail.innerText(), /终极罕贵[\s\S]*特别罕贵/, 'historical built-in rarity overlay was not consumed by gallery detail')
   assert.match(await detail.locator('[data-gallery-artist]').innerText(), /画师\s*内建画师/, 'historical built-in artist overlay was not consumed by gallery detail')
+  assert.match(await detail.locator('[data-gallery-collaboration]').innerText(), /联动\s*内建联动/)
   await search.fill('ALT-QA-MULTI')
   const customCard = page.locator('.archive-gallery-card').filter({ hasText: 'ALT-QA-MULTI' })
   await customCard.waitFor()
@@ -387,6 +394,7 @@ try {
   assert.deepEqual(await detail.locator('.archive-decks p').allTextContents(), ['同名产品', '同名产品'], 'same-name product associations were merged or dropped')
   assert.match(await detail.innerText(), /终极罕贵 \/ 特别罕贵/, 'custom alternate-art rarities did not override the base rarity')
   assert.match(await detail.locator('[data-gallery-artist]').innerText(), /画师\s*上传画师/, 'uploaded alternate-art artist was not consumed by gallery detail')
+  assert.match(await detail.locator('[data-gallery-collaboration]').innerText(), /联动\s*上传联动/)
   await search.fill('旧字段产品')
   await page.locator('.archive-gallery-card').filter({ hasText: 'S01-0104a' }).click()
   assert.match(await detail.innerText(), /旧字段产品/, 'old single productName fallback was lost')

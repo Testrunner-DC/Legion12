@@ -93,14 +93,14 @@ const vite = await createServer({
           publicCatalogRequests += 1
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
           res.end(JSON.stringify([
-            { id: 'qa-same', artCode: 'QA-SAME-NAME', baseCardId: 'S01-0002', displayName: sameDisplayName, mediaAssetId: 'qa-same-media', imageUrl: '/api/site/media/qa-same.png', thumbnailUrl: '/api/site/media/qa-same.png', active: true, createdAt: '', updatedAt: '', kind: 'alternate-art', builtIn: false },
-            { id: 'qa-distinct', artCode: 'QA-DISTINCT-NAME', baseCardId: 'S01-0002', displayName: '限定异画名', mediaAssetId: 'qa-distinct-media', imageUrl: '/api/site/media/qa-distinct.png', thumbnailUrl: '/api/site/media/qa-distinct.png', active: true, createdAt: '', updatedAt: '', kind: 'alternate-art', builtIn: false },
+            { id: 'qa-same', artCode: 'QA-SAME-NAME', baseCardId: 'S01-0002', displayName: sameDisplayName, mediaAssetId: 'qa-same-media', imageUrl: '/api/site/media/qa-same.png', thumbnailUrl: '/api/site/media/qa-same.png', active: true, createdAt: '', updatedAt: '', kind: 'alternate-art', builtIn: false, products: [{ id: 'early', name: '先发产品', releaseOrder: 1 }] },
+            { id: 'qa-distinct', artCode: 'QA-DISTINCT-NAME', baseCardId: 'S01-0002', displayName: '限定异画名', mediaAssetId: 'qa-distinct-media', imageUrl: '/api/site/media/qa-distinct.png', thumbnailUrl: '/api/site/media/qa-distinct.png', active: true, createdAt: '', updatedAt: '', kind: 'alternate-art', builtIn: false, products: [{ id: 'late', name: '后发产品', releaseOrder: 2 }] },
           ]))
           return
         }
         if (pathname === '/api/gallery/presentation') {
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
-          res.end(JSON.stringify({ regularCards: [], filterProducts: [] }))
+          res.end(JSON.stringify({ regularCards: [], filterProducts: [{ id: 'early', name: '先发产品', releaseOrder: 1 }, { id: 'late', name: '后发产品', releaseOrder: 2 }] }))
           return
         }
         if (pathname === '/api/me/alternate-arts') {
@@ -165,9 +165,27 @@ try {
     await distinctGalleryCard.waitFor()
     assert.ok(((await distinctGalleryCard.textContent()) || '').includes(`${qa.baseName} · 限定异画名`),
       '真正不同的异画名没有保留')
+    await page.getByPlaceholder('卡名、编号或效果文字').fill('QA-')
+    assert.match(await page.locator('.archive-gallery-card').first().innerText(), /QA-SAME-NAME/, '画廊未默认产品优先排序')
+    for (let index = 1; index <= 6; index++) {
+      const code = `ST0${index}-C1st`
+      await page.getByPlaceholder('卡名、编号或效果文字').fill(code)
+      const morale = page.locator('.archive-gallery-card')
+      await morale.waitFor()
+      assert.equal(await morale.count(), 1, `${code} 未唯一收录为异画`)
+      assert.match(await morale.innerText(), /异画 · 士气/)
+    }
+    await page.getByRole('tab', { name: '全卡池', exact: true }).click()
+    for (let index = 1; index <= 6; index++) {
+      await page.getByPlaceholder('卡名、编号或效果文字').fill(`ST0${index}-C1st`)
+      const morale = page.locator('.archive-card')
+      await morale.waitFor()
+      assert.equal(await morale.count(), 1, '士气异画没有合入唯一对应士气版本组')
+      assert.equal(await morale.getByRole('button', { name: '下一版本', exact: true }).count(), 1)
+    }
     await page.screenshot({ path: path.join(artifactRoot, `public-alternate-art-${viewport.width}x${viewport.height}.png`), fullPage: true })
     assert.deepEqual(pageErrors, [], `视口 ${viewport.width}x${viewport.height} 出现页面异常`)
-    cases.push({ viewport, publicVersionSwitch: true, duplicateNameSuppressed: true, distinctNamePreserved: true })
+    cases.push({ viewport, publicVersionSwitch: true, duplicateNameSuppressed: true, distinctNamePreserved: true, productFirstOrder: true, sixStMoraleVariantsGrouped: true })
     await page.close()
   }
   assert.equal(ownedRequests, 0, '公开图鉴不应请求玩家异画权益接口')

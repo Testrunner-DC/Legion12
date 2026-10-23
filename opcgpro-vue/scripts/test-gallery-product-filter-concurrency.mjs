@@ -45,6 +45,12 @@ adminApi.saveGalleryProductFilterVisibility = draft => {
   calls.push(structuredClone(draft))
   return new Promise((resolve, reject) => pending.push({ draft: structuredClone(draft), resolve, reject }))
 }
+adminApi.saveAlternateArtProduct = async draft => {
+  const existing = products.find(item => item.id === draft.id)
+  const saved = { ...(existing || products[0]), ...draft, id: draft.id || 'new-managed-product' }
+  products = existing ? products.map(item => item.id === saved.id ? saved : item) : [...products, saved]
+  return saved
+}
 authState.verified = true
 platformState.token = 'qa-token'
 platformState.account = { id: 'qa-admin', username: 'QA', role: 'admin', createdAt: '', publicHistory: false, permissions: ['admin.content.draft'] }
@@ -55,7 +61,8 @@ window.__qa = {
   resolve: (index, value, updateServer = true) => {
     const request = pending[index]
     const current = products.find(item => item.id === request.draft.productId)
-    const saved = { ...current, showInGalleryFilter: value ?? request.draft.showInGalleryFilter }
+    const saved = { ...current, showInGalleryFilter: value ?? request.draft.showInGalleryFilter,
+      releaseOrder: request.draft.releaseOrder ?? current.releaseOrder }
     if (updateServer) products = products.map(item => item.id === saved.id ? saved : item)
     request.resolve(saved)
   },
@@ -106,8 +113,8 @@ try {
     return route.continue()
   })
   await page.goto(`http://127.0.0.1:${port}/__gallery_filter_concurrency`)
-  await page.getByRole('button', { name: '管理产品筛选', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '管理玩家端产品筛选' })
+  await page.getByRole('button', { name: '管理收录产品', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '管理收录产品' })
   await dialog.waitFor()
   const productA = dialog.getByRole('checkbox', { name: /产品甲/ })
   const productB = dialog.getByRole('checkbox', { name: /产品乙/ })
@@ -145,12 +152,40 @@ try {
   assert.equal(await page.evaluate(() => window.__qa.products().find(item => item.id === 'product-a').showInGalleryFilter), true,
     '服务端最终值没有保持最新请求')
 
+  const productRow = dialog.locator('.product-settings-row').filter({ hasText: '产品甲' })
+  await productRow.getByLabel('发布顺序').fill('12')
+  await productRow.getByRole('button', { name: '保存顺序' }).click()
+  await page.evaluate(() => window.__qa.resolve(4))
+  await page.waitForFunction(() => window.__qa.products().find(item => item.id === 'product-a').releaseOrder === 12)
+  await productRow.getByRole('button', { name: '编辑产品' }).click()
+  const form = dialog.locator('.managed-product-form')
+  await form.getByLabel('产品名称').fill('产品甲改名')
+  await form.getByLabel('启用', { exact: true }).uncheck()
+  await form.getByRole('button', { name: '保存产品' }).click()
+  await dialog.getByText('产品甲改名', { exact: true }).waitFor()
+  assert.equal(await productRow.getByLabel('发布顺序').inputValue(), '12', '改名覆盖了排序')
+  assert.match(await productRow.innerText(), /已停用/, '停用产品没有显示真实状态')
+  await form.getByLabel('产品名称').fill('独立新产品')
+  await form.getByRole('button', { name: '新建产品' }).click()
+  await dialog.getByText('独立新产品', { exact: true }).waitFor()
+  for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false)
+    await dialog.getByText('独立新产品', { exact: true }).scrollIntoViewIfNeeded()
+    const control = dialog.locator('.product-settings-row').filter({ hasText: '独立新产品' }).getByRole('button', { name: '编辑产品' })
+    await control.scrollIntoViewIfNeeded()
+    assert.equal(await control.isVisible(), true)
+    await page.screenshot({ path: path.join(artifactRoot, `product-management-${viewport.width}x${viewport.height}.png`) })
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+
   await page.screenshot({ path: path.join(artifactRoot, 'product-filter-concurrency-1440x900.png'), fullPage: true })
   assert.deepEqual(pageErrors, [], '真实SFC回归出现页面异常')
   const sha256 = relative => crypto.createHash('sha256').update(read(relative)).digest('hex').toUpperCase()
   const report = {
     status: 'passed',
-    cases: { sameProductBusy: true, failureReleasesBusy: true, differentProductsParallel: true, staleReplyIgnored: true },
+    cases: { sameProductBusy: true, failureReleasesBusy: true, differentProductsParallel: true, staleReplyIgnored: true,
+      releaseOrderSaved: true, productRenameDisableCreate: true, narrowContainment: true },
     calls: await page.evaluate(() => window.__qa.calls),
     sourceSha256: { [panelPath]: sha256(panelPath), [testPath]: sha256(testPath) },
   }

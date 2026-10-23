@@ -45,7 +45,13 @@ const faction = ref('all')
 const cost = ref('all')
 const disaster = ref('all')
 const product = ref('all')
-const sort = ref<'number' | 'cost' | 'troops' | 'name'>('number')
+type ArchiveSort = 'number' | 'cost' | 'troops' | 'name' | 'product'
+const catalogSort = ref<ArchiveSort>('number')
+const gallerySort = ref<ArchiveSort>('product')
+const sort = computed({
+  get: () => page.value === 'gallery' ? gallerySort.value : catalogSort.value,
+  set: (value: ArchiveSort) => { if (page.value === 'gallery') gallerySort.value = value; else catalogSort.value = value },
+})
 const filtersOpen = ref(false)
 const selectedLogicalId = ref('')
 const selectedVersionId = ref('')
@@ -78,6 +84,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
       traits: [],
       effect: art.effect || '',
       artist: art.artist || undefined,
+      collaboration: art.collaboration || undefined,
       products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : []),
       galleryStandalone: true,
     }
@@ -94,6 +101,7 @@ function projectedUploadedArt(art: AlternateArt, gallery = false): CatalogCard |
     products: art.products?.map(item => item.name) ?? (art.productName ? [art.productName] : base.products),
     rarity: art.rarities != null ? art.rarities.map(item => item.name).join(' / ') || undefined : base.rarity,
     artist: art.artist || undefined,
+    collaboration: art.collaboration || undefined,
   }
 }
 function withRegularGalleryMetadata(card: CatalogCard): CatalogCard {
@@ -109,6 +117,7 @@ function withRegularGalleryMetadata(card: CatalogCard): CatalogCard {
       ? overlay.rarities.map(item => item.name).join(' / ') || undefined
       : card.rarity,
     artist: overlay.artist || undefined,
+    collaboration: overlay.collaboration || undefined,
   }
 }
 const regularDisplayCards = computed(() => cards.value.map(withRegularGalleryMetadata))
@@ -133,6 +142,7 @@ function withGalleryMetadata(card: CatalogCard): CatalogCard {
       ? overlay.rarities.map(item => item.name).join(' / ') || undefined
       : card.rarity,
     artist: overlay.artist || undefined,
+    collaboration: overlay.collaboration || undefined,
   }
 }
 const galleryCards = computed(() => {
@@ -212,7 +222,18 @@ function matchesFilters(card: CatalogCard, keyword: string) {
       || (disaster.value === 'none' ? !card.disasterLevel : card.disasterLevel === Number(disaster.value)))
 }
 
+const galleryProductRanks = computed(() => {
+  const ranks = new Map<string, number>()
+  galleryFilterProducts.value.forEach((item, index) => { if (!ranks.has(item.name)) ranks.set(item.name, index) })
+  return ranks
+})
 function compareVisibleCards(left: CatalogCard, right: CatalogCard) {
+  if (sort.value === 'product') {
+    const rank = (card: CatalogCard) => Math.min(Number.MAX_SAFE_INTEGER,
+      ...(card.products ?? []).map(name => galleryProductRanks.value.get(name) ?? Number.MAX_SAFE_INTEGER))
+    return rank(left) - rank(right) || left.number.localeCompare(right.number, 'zh-CN', { numeric: true })
+      || left.id.localeCompare(right.id)
+  }
   if (sort.value === 'name') return left.nameZh.localeCompare(right.nameZh, 'zh-CN')
   if (sort.value === 'cost') return (filterableCardCost(left) ?? 99) - (filterableCardCost(right) ?? 99) || left.number.localeCompare(right.number)
   if (sort.value === 'troops') return (right.troops ?? -1) - (left.troops ?? -1) || left.number.localeCompare(right.number)
@@ -333,7 +354,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 function resetFilters() {
   query.value = ''
   type.value = faction.value = cost.value = disaster.value = product.value = 'all'
-  sort.value = 'number'
+  sort.value = page.value === 'gallery' ? 'product' : 'number'
 }
 </script>
 
@@ -359,7 +380,7 @@ function resetFilters() {
           <label><span>收录产品</span><select v-model="product" style="min-height:38px!important"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
           <label><span>费用</span><select v-model="cost" style="min-height:38px!important"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
           <label><span>天灾等级</span><select v-model="disaster" style="min-height:38px!important"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-          <label><span>排序</span><select v-model="sort" style="min-height:38px!important"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+          <label><span>排序</span><select v-model="sort" style="min-height:38px!important"><option v-if="page === 'gallery'" value="product">产品</option><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
         </div>
         <template #apply-label>查看 {{ visibleCount }} 张结果</template>
       </MobileFilterSheet>
@@ -369,7 +390,7 @@ function resetFilters() {
         <label><span>收录产品</span><select v-model="product"><option value="all">全部产品</option><option v-for="value in productOptions" :key="value" :value="value">{{ value }}</option></select></label>
         <label><span>费用</span><select v-model="cost"><option value="all">全部费用</option><option v-for="value in ['0','1','2','3','4','5','6','7+']" :key="value" :value="value">{{ value }}</option></select></label>
         <label><span>天灾等级</span><select v-model="disaster"><option value="all">全部</option><option value="none">无</option><option v-for="value in [1,2,3,4,5,6,7,8]" :key="value" :value="String(value)">{{ value }}</option></select></label>
-        <label><span>排序</span><select v-model="sort"><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
+        <label><span>排序</span><select v-model="sort"><option v-if="page === 'gallery'" value="product">产品</option><option value="number">编号</option><option value="cost">费用</option><option value="troops">兵力</option><option value="name">名称</option></select></label>
         <button class="archive-reset" @click="resetFilters">重置</button>
       </div>
     </div>

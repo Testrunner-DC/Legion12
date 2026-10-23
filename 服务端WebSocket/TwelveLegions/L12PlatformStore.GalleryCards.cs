@@ -4,9 +4,10 @@ public sealed record L12GalleryPresentationCatalogView(
     IReadOnlyList<L12AlternateArtView> RegularCards,
     IReadOnlyList<L12AlternateArtProductView> FilterProducts);
 public sealed record L12RegularGalleryCardMetadataDraft(string CardId, IReadOnlyList<string> ProductIds,
-    IReadOnlyList<string> RarityIds, string? Artist = null);
+    IReadOnlyList<string> RarityIds, string? Artist = null, string? Collaboration = null);
 public sealed record L12RegularGalleryCardImageDraft(string CardId, string MediaAssetId);
-public sealed record L12AlternateArtProductFilterVisibilityDraft(string ProductId, bool ShowInGalleryFilter);
+public sealed record L12AlternateArtProductFilterVisibilityDraft(string ProductId, bool ShowInGalleryFilter,
+    int? ReleaseOrder = null);
 
 public sealed partial class L12PlatformStore
 {
@@ -20,7 +21,7 @@ public sealed partial class L12PlatformStore
                 .OrderBy(card => card.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
             var products = ResolveProductsLocked(AllAlternateArtProductsLocked().Select(item => item.Id).ToArray(), false)
                 .Select(WithGalleryFilterPreferenceLocked)
-                .OrderBy(item => item.CategoryName, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item.ReleaseOrder).ThenBy(item => item.CategoryName, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
             return new(cards, products);
         }
@@ -77,6 +78,7 @@ public sealed partial class L12PlatformStore
             row.ProductIds = productIds.ToList();
             row.RarityIds = rarityIds.ToList();
             if (draft.Artist is not null) row.Artist = LimitSiteText(draft.Artist, 120);
+            if (draft.Collaboration is not null) row.Collaboration = LimitSiteText(draft.Collaboration, 120);
             row.UpdatedByAccountId = actor.Id;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var after = ToRegularGalleryCardViewLocked(card, true);
@@ -135,6 +137,7 @@ public sealed partial class L12PlatformStore
         RequireLocalGalleryDefinitions();
         lock (_gate)
         {
+            if (draft.ReleaseOrder is < 0 or > 100_000) throw new ArgumentException("产品发布顺序须为0至100000的整数");
             var productId = ResolveMergedProductIdLocked(draft.ProductId?.Trim() ?? string.Empty);
             var product = AllAlternateArtProductsLocked().FirstOrDefault(item => item.Id == productId)
                 ?? throw new KeyNotFoundException("收录产品不存在");
@@ -146,6 +149,8 @@ public sealed partial class L12PlatformStore
                 _data.AlternateArtProductPreferences.Add(row);
             }
             row.ShowInGalleryFilter = draft.ShowInGalleryFilter;
+            // Older filter-only clients must not reset the product's saved release order.
+            if (draft.ReleaseOrder is { } order) row.ReleaseOrder = order;
             row.UpdatedByAccountId = actor.Id;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var after = WithGalleryFilterPreferenceLocked(product);
@@ -161,7 +166,10 @@ public sealed partial class L12PlatformStore
     {
         var canonicalId = ResolveMergedProductIdLocked(product.Id);
         var preference = _data.AlternateArtProductPreferences.FirstOrDefault(item => item.ProductId == canonicalId);
-        return product with { ShowInGalleryFilter = preference?.ShowInGalleryFilter ?? true };
+        return product with { ShowInGalleryFilter = preference?.ShowInGalleryFilter ?? true,
+            Name = string.IsNullOrWhiteSpace(preference?.DisplayName) ? product.Name : preference.DisplayName,
+            Active = preference?.ActiveOverride ?? product.Active,
+            ReleaseOrder = preference?.ReleaseOrder ?? product.ReleaseOrder };
     }
 
     private L12AlternateArtView ToRegularGalleryCardViewLocked(L12CardDefinition card, bool admin)
@@ -179,7 +187,7 @@ public sealed partial class L12PlatformStore
             DateTimeOffset.UnixEpoch, metadata?.UpdatedAt ?? DateTimeOffset.UnixEpoch,
             products.FirstOrDefault()?.Id ?? string.Empty, products.FirstOrDefault()?.Name ?? string.Empty,
             card.Id, true, card.NameZh, null, string.Empty, products, rarities, "regular-card",
-            card.Effect ?? string.Empty, metadata?.Artist ?? string.Empty);
+            card.Effect ?? string.Empty, metadata?.Artist ?? string.Empty, metadata?.Collaboration ?? string.Empty);
     }
 
     private IReadOnlyList<string> DefaultRegularProductIdsLocked(string cardId)

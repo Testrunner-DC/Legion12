@@ -42,6 +42,7 @@ function hasCostDimension(card: DeckCard) {
       <span v-if="card.rarity">{{ card.rarity }}</span>
     </div>
     <p v-if="card.artist" class="archive-artist" data-gallery-artist><b>画师</b><span>{{ card.artist }}</span></p>
+    <p v-if="card.collaboration" class="archive-artist" data-gallery-collaboration><b>联动</b><span>{{ card.collaboration }}</span></p>
     <dl v-if="!standalone">
       <template v-if="hasCostDimension(card)"><dt>费用</dt><dd>{{ card.cost }}</dd></template>
       <template v-if="card.troops !== undefined"><dt>兵力</dt><dd>{{ card.troops }}</dd></template>

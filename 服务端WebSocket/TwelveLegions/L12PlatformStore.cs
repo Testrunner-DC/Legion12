@@ -419,6 +419,9 @@ public sealed partial class L12PlatformStore
     {
         public string ProductId { get; set; } = string.Empty;
         public bool ShowInGalleryFilter { get; set; } = true;
+        public int ReleaseOrder { get; set; }
+        public string DisplayName { get; set; } = string.Empty;
+        public bool? ActiveOverride { get; set; }
         public string UpdatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     }
@@ -429,6 +432,7 @@ public sealed partial class L12PlatformStore
         public List<string> ProductIds { get; set; } = [];
         public List<string> RarityIds { get; set; } = [];
         public string Artist { get; set; } = string.Empty;
+        public string Collaboration { get; set; } = string.Empty;
         public string ImageMediaAssetId { get; set; } = string.Empty;
         public string UpdatedByAccountId { get; set; } = string.Empty;
         public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

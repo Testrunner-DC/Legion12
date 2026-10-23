@@ -43,6 +43,7 @@ export interface DeckCard {
   canonicalMoraleId?: string
   archiveBaseCardId?: string
   products?: string[]
+  collaboration?: string
 }
 
 export interface MoraleIdentity {

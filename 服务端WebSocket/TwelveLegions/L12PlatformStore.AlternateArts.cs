@@ -6,14 +6,14 @@ public sealed record L12AlternateArtView(string Id, string ArtCode, string BaseC
     string BaseCardName = "", DateTimeOffset? GrantedAt = null, string GrantReason = "",
     IReadOnlyList<L12AlternateArtProductView>? Products = null,
     IReadOnlyList<L12AlternateArtRarityView>? Rarities = null, string Kind = "alternate-art",
-    string Effect = "", string Artist = "");
+    string Effect = "", string Artist = "", string Collaboration = "");
 public sealed record L12AlternateArtSearchPage(IReadOnlyList<L12AlternateArtView> Items, int Total, int Page, int PageSize);
 public sealed record L12AlternateArtGrantNotificationView(string Id, string AlternateArtId, string DisplayName,
     string ArtCode, string BaseCardId, string BaseCardName, string Reason, DateTimeOffset GrantedAt,
     string ImageUrl, string ThumbnailUrl, string CardImageId, bool BuiltIn);
 public sealed record L12AlternateArtProductView(string Id, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string CategoryId = "", string CategoryName = "",
-    string Source = "legacy", string Status = "active", bool ShowInGalleryFilter = true);
+    string Source = "legacy", string Status = "active", bool ShowInGalleryFilter = true, int ReleaseOrder = 0);
 public sealed record L12AlternateArtRarityView(string Id, string Code, string Name, bool Active,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 public sealed record L12AlternateArtGrantView(string Id, string AccountId, string Username, string AlternateArtId,
@@ -27,7 +27,7 @@ public sealed record L12AlternateArtProductMergeResult(L12AlternateArtProductVie
     int ArchivedSiteProducts, int DisabledLegacyProducts);
 public sealed record L12AlternateArtRarityDraft(string? Id, string Code, string Name, bool Active = true);
 public sealed record L12AlternateArtMetadataDraft(string AlternateArtId, IReadOnlyList<string> ProductIds,
-    IReadOnlyList<string> RarityIds, string? Artist = null);
+    IReadOnlyList<string> RarityIds, string? Artist = null, string? Collaboration = null);
 public sealed record L12AlternateArtImageDraft(string AlternateArtId, string MediaAssetId);
 public sealed record L12AlternateArtGrantDraft(string AlternateArtId, string AccountId, string SourceKind,
     string SourceReference = "");
@@ -55,10 +55,10 @@ public sealed partial class L12PlatformStore
             if (_sharedGallery is not null)
                 return _sharedGallery.RequireCurrent().Arts.SelectMany(row => row.Products ?? [])
                     .Where(row => includeInactive || row.Active).DistinctBy(row => row.Id)
-                    .OrderBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToArray();
+                    .OrderBy(row => row.ReleaseOrder).ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToArray();
             return AllAlternateArtProductsLocked().Where(row => includeInactive || row.Active)
             .Select(WithGalleryFilterPreferenceLocked)
-            .OrderBy(row => row.CategoryName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(row => row.ReleaseOrder).ThenBy(row => row.CategoryName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase).ToArray();
         }
     }
@@ -71,8 +71,33 @@ public sealed partial class L12PlatformStore
         {
             var name = LimitSiteText(draft.Name, 100);
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("异画归属产品名称不能为空");
+            var sourceId = draft.Id?.Trim() ?? string.Empty;
+            if (sourceId.StartsWith("catalog:", StringComparison.Ordinal) || sourceId.StartsWith("site:", StringComparison.Ordinal))
+            {
+                var id = ResolveMergedProductIdLocked(sourceId);
+                var product = AllAlternateArtProductsLocked().FirstOrDefault(item => item.Id == id)
+                    ?? throw new ArgumentException("收录产品不存在");
+                var before = System.Text.Json.JsonSerializer.Serialize(product);
+                var preference = _data.AlternateArtProductPreferences.FirstOrDefault(item => item.ProductId == id);
+                if (preference is null)
+                {
+                    preference = new AlternateArtProductPreferenceRow { ProductId = id };
+                    _data.AlternateArtProductPreferences.Add(preference);
+                }
+                // Only the gallery's label/availability changes; published product articles retain their approval boundary.
+                preference.DisplayName = name;
+                preference.ActiveOverride = draft.Active;
+                preference.UpdatedByAccountId = actor.Id;
+                preference.UpdatedAt = DateTimeOffset.UtcNow;
+                var after = WithGalleryFilterPreferenceLocked(product);
+                AddAdminAudit(actor, "alternate-art-product", "update", id, before,
+                    System.Text.Json.JsonSerializer.Serialize(after), null, context);
+                Save();
+                return after;
+            }
             var requestedId = RemoveProductSourcePrefix(draft.Id, "legacy:");
             var row = string.IsNullOrWhiteSpace(requestedId) ? null : _data.AlternateArtProducts.FirstOrDefault(item => item.Id == requestedId);
+            if (!string.IsNullOrWhiteSpace(requestedId) && row is null) throw new ArgumentException("收录产品不存在");
             if (row is null && _data.AlternateArtProducts.Any(item => item.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
                 throw new ArgumentException("同名异画归属产品已存在");
             var previous = row is null ? null : System.Text.Json.JsonSerializer.Serialize(ToAlternateArtProductView(row));
@@ -80,7 +105,7 @@ public sealed partial class L12PlatformStore
             row.Name = name;
             row.Active = draft.Active;
             row.UpdatedAt = DateTimeOffset.UtcNow;
-            var view = ToAlternateArtProductView(row);
+            var view = WithGalleryFilterPreferenceLocked(ToAlternateArtProductView(row));
             AddAdminAudit(actor, "alternate-art-product", previous is null ? "create" : "update", row.Id, previous,
                 System.Text.Json.JsonSerializer.Serialize(view), null, context);
             Save();
@@ -94,7 +119,8 @@ public sealed partial class L12PlatformStore
         RequireLocalGalleryDefinitions();
         lock (_gate)
         {
-            var all = RawAlternateArtProductsLocked().ToDictionary(item => item.Id, StringComparer.Ordinal);
+            var all = RawAlternateArtProductsLocked().Select(WithGalleryFilterPreferenceLocked)
+                .ToDictionary(item => item.Id, StringComparer.Ordinal);
             var targetId = draft.TargetProductId?.Trim() ?? string.Empty;
             if (!all.TryGetValue(targetId, out var target) || !target.Active)
                 throw new ArgumentException("合并目标产品不存在或已停用");
@@ -190,14 +216,12 @@ public sealed partial class L12PlatformStore
 
     public IReadOnlyList<L12AlternateArtView> AlternateArts(bool includeInactive = false)
     {
-        lock (_gate) return AlternateArtDefinitionsLocked(false, includeInactive, requireAvailable: true)
-            .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+        lock (_gate) return OrderGalleryArts(AlternateArtDefinitionsLocked(false, includeInactive, requireAvailable: true)).ToArray();
     }
 
     public IReadOnlyList<L12AlternateArtView> AdminAlternateArts(bool includeInactive = true)
     {
-        lock (_gate) return AlternateArtDefinitionsLocked(true, includeInactive, requireAvailable: true)
-            .OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+        lock (_gate) return OrderGalleryArts(AlternateArtDefinitionsLocked(true, includeInactive, requireAvailable: true)).ToArray();
     }
 
     public IReadOnlyList<L12AlternateArtRarityView> AlternateArtRarities(bool includeInactive = false)
@@ -272,6 +296,7 @@ public sealed partial class L12PlatformStore
             // Null means an older client omitted the field and must not erase newer data.
             // An explicit empty string is the supported clear operation.
             if (draft.Artist is not null) row.Artist = LimitSiteText(draft.Artist, 120);
+            if (draft.Collaboration is not null) row.Collaboration = LimitSiteText(draft.Collaboration, 120);
             row.UpdatedByAccountId = actor.Id;
             row.UpdatedAt = DateTimeOffset.UtcNow;
             var after = FindAlternateArtLocked(artId, true)!;
@@ -353,7 +378,7 @@ public sealed partial class L12PlatformStore
             if (!string.IsNullOrWhiteSpace(baseTerm))
                 query = query.Where(row => row.BaseCardId.Contains(baseTerm, StringComparison.OrdinalIgnoreCase)
                     || row.BaseCardName.Contains(baseTerm, StringComparison.OrdinalIgnoreCase));
-            var ordered = query.OrderBy(row => row.ArtCode, StringComparer.OrdinalIgnoreCase).ToArray();
+            var ordered = OrderGalleryArts(query).ToArray();
             return new L12AlternateArtSearchPage(ordered.Skip((page - 1) * pageSize).Take(pageSize).ToArray(),
                 ordered.Length, page, pageSize);
         }
@@ -942,7 +967,8 @@ public sealed partial class L12PlatformStore
     {
         var mergedSources = _data.AlternateArtProductMerges.Select(item => item.SourceProductId)
             .ToHashSet(StringComparer.Ordinal);
-        return RawAlternateArtProductsLocked().Where(item => !mergedSources.Contains(item.Id)).ToArray();
+        return RawAlternateArtProductsLocked().Where(item => !mergedSources.Contains(item.Id))
+            .Select(WithGalleryFilterPreferenceLocked).ToArray();
     }
 
     private string ResolveMergedProductIdLocked(string id)
@@ -988,7 +1014,10 @@ public sealed partial class L12PlatformStore
             }
             if (item.Active) result.Add(item);
         }
-        return result;
+        return result.Select(WithGalleryFilterPreferenceLocked)
+            .Where(item => admin || item.Active)
+            .OrderBy(item => item.ReleaseOrder).ThenBy(item => item.CategoryName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
     private IReadOnlyList<L12AlternateArtRarityView> ResolveRaritiesLocked(IReadOnlyList<string> ids)
@@ -997,13 +1026,20 @@ public sealed partial class L12PlatformStore
         return ids.Where(byId.ContainsKey).Select(id => ToAlternateArtRarityView(byId[id])).ToArray();
     }
 
-    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities, string Artist, string ImageMediaAssetId,
+    private static IOrderedEnumerable<L12AlternateArtView> OrderGalleryArts(IEnumerable<L12AlternateArtView> arts)
+        => arts.OrderBy(art => art.Products?.FirstOrDefault()?.ReleaseOrder ?? int.MaxValue)
+            .ThenBy(art => art.Products?.FirstOrDefault()?.CategoryName ?? "", StringComparer.OrdinalIgnoreCase)
+            .ThenBy(art => art.Products?.FirstOrDefault()?.Name ?? art.ProductName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(art => art.ArtCode, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(art => art.Id, StringComparer.Ordinal);
+
+    private (IReadOnlyList<string> Products, IReadOnlyList<string> Rarities, string Artist, string Collaboration, string ImageMediaAssetId,
         DateTimeOffset UpdatedAt) EffectiveMetadataLocked(
         string artId, IReadOnlyList<string> defaultProducts, IReadOnlyList<string> defaultRarities)
     {
         var metadata = _data.AlternateArtMetadata.FirstOrDefault(item => item.AlternateArtId == artId);
-        return metadata is null ? (defaultProducts, defaultRarities, string.Empty, string.Empty, DateTimeOffset.UnixEpoch)
-            : (metadata.ProductIds, metadata.RarityIds, metadata.Artist, metadata.ImageMediaAssetId, metadata.UpdatedAt);
+        return metadata is null ? (defaultProducts, defaultRarities, string.Empty, string.Empty, string.Empty, DateTimeOffset.UnixEpoch)
+            : (metadata.ProductIds, metadata.RarityIds, metadata.Artist, metadata.Collaboration, metadata.ImageMediaAssetId, metadata.UpdatedAt);
     }
 
     private L12AlternateArtView ToAlternateArtView(AlternateArtRow row, bool admin)
@@ -1017,7 +1053,7 @@ public sealed partial class L12PlatformStore
             row.CreatedAt, row.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", "", false,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : "",
-            null, "", products, rarities, row.Kind, row.Effect, metadata.Artist);
+            null, "", products, rarities, row.Kind, row.Effect, metadata.Artist, metadata.Collaboration);
     }
 
     private L12AlternateArtView ToAlternateArtView(L12OfficialAlternateArtDefinition row, bool admin)
@@ -1034,7 +1070,7 @@ public sealed partial class L12PlatformStore
             DateTimeOffset.UnixEpoch, metadata.UpdatedAt, products.FirstOrDefault()?.Id ?? "",
             products.FirstOrDefault()?.Name ?? "", row.CardImageId, true,
             _officialCards.TryGetValue(row.BaseCardId, out var baseCard) ? baseCard.NameZh : row.BaseCardId,
-            null, "", products, rarities, Artist: metadata.Artist);
+            null, "", products, rarities, Artist: metadata.Artist, Collaboration: metadata.Collaboration);
     }
 
     private void RequireLocalGalleryDefinitions()

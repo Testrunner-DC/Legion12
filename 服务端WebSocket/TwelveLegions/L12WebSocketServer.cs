@@ -4480,6 +4480,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             const L12Permission permission = L12Permission.AdminContentDraft;
             if (!TryAuthorize(request, permission, out var authenticated, out var failure)) return failure;
             try { return Results.Ok(_platform.SaveGalleryProductFilterVisibility(authenticated.Account, draft, RequestAuditContext(request, permission))); }
+            catch (ArgumentException error) { return ApiError(request, "gallery_product_settings_invalid", error.Message, StatusCodes.Status400BadRequest); }
             catch (KeyNotFoundException error) { return ApiError(request, "gallery_product_missing", error.Message, StatusCodes.Status404NotFound); }
         });
         _app.MapGet("/api/admin/alternate-arts", (HttpRequest request, bool? includeInactive) =>

@@ -14,6 +14,48 @@ public sealed class AlternateArtGalleryWorkflowHttpTests
     private const string ImageEndpoint = "/api/admin/alternate-arts/image";
 
     [Fact]
+    public async Task ProductManagementAndOrderUseAuthenticatedRoutesAndKeepMetadataIndependent()
+    {
+        await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);
+        foreach (var endpoint in new[] { "/api/admin/alternate-art-products", "/api/admin/alternate-art-products/filter-visibility" })
+        {
+            foreach (var (token, status) in new[] { ((string?)null, HttpStatusCode.Unauthorized),
+                         (f.PlayerToken, HttpStatusCode.Forbidden), (f.RevokedToken, HttpStatusCode.Unauthorized) })
+            {
+                using var denied = await Send(f, HttpMethod.Put, endpoint, token,
+                    new { name = "越权", productId = "catalog:missing", showInGalleryFilter = true, releaseOrder = 5 });
+                Assert.Equal(status, denied.StatusCode);
+            }
+        }
+        var art = f.Store.AdminAlternateArts().First(item => item.Products!.Count > 0);
+        var product = art.Products![0];
+        using var renamed = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products", f.AdminToken,
+            new { id = product.Id, name = "HTTP产品名", active = true });
+        Assert.Equal(HttpStatusCode.OK, renamed.StatusCode);
+        using var ordered = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products/filter-visibility", f.AdminToken,
+            new { productId = product.Id, showInGalleryFilter = true, releaseOrder = 7 });
+        Assert.Equal(HttpStatusCode.OK, ordered.StatusCode);
+        Assert.Equal(7, (await ordered.Content.ReadFromJsonAsync<L12AlternateArtProductView>())!.ReleaseOrder);
+        using var invalid = await Send(f, HttpMethod.Put, "/api/admin/alternate-art-products/filter-visibility", f.AdminToken,
+            new { productId = product.Id, showInGalleryFilter = false, releaseOrder = -1 });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var metadata = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts/metadata", f.AdminToken,
+            new { alternateArtId = art.Id, productIds = new[] { product.Id }, rarityIds = Array.Empty<string>(), artist = "独立画师", collaboration = "HTTP联动" });
+        Assert.Equal(HttpStatusCode.OK, metadata.StatusCode);
+        using var legacy = await Send(f, HttpMethod.Put, "/api/admin/alternate-arts/metadata", f.AdminToken,
+            new { alternateArtId = art.Id, productIds = new[] { product.Id }, rarityIds = Array.Empty<string>() });
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        var saved = (await legacy.Content.ReadFromJsonAsync<L12AlternateArtView>())!;
+        Assert.Equal("HTTP联动", saved.Collaboration);
+        Assert.Equal("独立画师", saved.Artist);
+        var publicArts = await f.Client.GetFromJsonAsync<L12AlternateArtView[]>("/api/alternate-arts");
+        var result = publicArts!.Single(item => item.Id == art.Id);
+        Assert.Equal("HTTP联动", result.Collaboration);
+        Assert.Equal("HTTP产品名", result.Products![0].Name);
+        Assert.Equal(7, result.Products![0].ReleaseOrder);
+    }
+
+    [Fact]
     public async Task ImageReplacementRequiresTheRealAuthenticatedAdminRoute()
     {
         await using var f = await AdminWorkbenchTimingTests.Fixture.Create(false);

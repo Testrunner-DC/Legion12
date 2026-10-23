@@ -190,7 +190,7 @@ public sealed class L12SharedGalleryCatalog : IAsyncDisposable
                 ?? throw new InvalidDataException("共享图库条目为空");
             Text(art.Id, 160, true); Text(art.ArtCode, 80, true); Text(art.BaseCardId, 100);
             Text(art.DisplayName, 200, true); Text(art.MediaAssetId, 160); Text(art.CardImageId, 160);
-            Text(art.BaseCardName, 200); Text(art.Effect, 4000, multiline: true); Text(art.Artist, 120);
+            Text(art.BaseCardName, 200); Text(art.Effect, 4000, multiline: true); Text(art.Artist, 120); Text(art.Collaboration, 120);
             Text(art.ProductId, 200); Text(art.ProductName, 200);
             if (art.CardImageId != "" && !CardImageId.IsMatch(art.CardImageId))
                 throw new InvalidDataException("共享图库卡图身份不合法");
@@ -218,6 +218,7 @@ public sealed class L12SharedGalleryCatalog : IAsyncDisposable
                 if (product is null) throw new InvalidDataException("共享图库产品为空");
                 Text(product.Id, 200, true); Text(product.Name, 200, true); Text(product.CategoryId, 160);
                 Text(product.CategoryName, 160); Text(product.Source, 40); Text(product.Status, 40);
+                if (product.ReleaseOrder is < 0 or > 100_000) throw new InvalidDataException("共享图库产品顺序不合法");
             }
             foreach (var rarity in rarities)
             {

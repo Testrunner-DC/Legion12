@@ -14,6 +14,78 @@ namespace GrandUMIServer.Tests;
 public sealed class SiteContentPlatformStoreTests
 {
     [Fact]
+    public void GalleryProductManagementKeepsIdentityAndOrderAcrossRenameDisableAndReload()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gp-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var path = Path.Combine(root, "platform.json");
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            L12PlatformStore Open() => new(path, catalog.PresetDecks, officialCards: catalog.Cards,
+                officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var store = Open();
+            var admin = store.Login("Admin", "L12master").Account!;
+            var art = store.AdminAlternateArts().First(item => item.BuiltIn && item.Products!.Count > 0);
+            var originalProduct = art.Products![0];
+            var custom = store.SaveAlternateArtProduct(admin, new(null, "新收录产品"));
+            store.SaveGalleryProductFilterVisibility(admin, new(originalProduct.Id, true, 20));
+            store.SaveGalleryProductFilterVisibility(admin, new(custom.Id, true, 10));
+            store.SaveAlternateArtMetadata(admin, new(art.Id, [originalProduct.Id, custom.Id], []));
+            Assert.Equal(custom.Id, store.AlternateArts().Single(item => item.Id == art.Id).Products![0].Id);
+            var renamed = store.SaveAlternateArtProduct(admin, new(originalProduct.Id, "改名后的产品", false));
+            Assert.Equal(originalProduct.Id, renamed.Id);
+            Assert.Equal(20, renamed.ReleaseOrder);
+            Assert.DoesNotContain(store.AlternateArtProducts(), item => item.Id == originalProduct.Id);
+            Assert.DoesNotContain(store.AlternateArts().Single(item => item.Id == art.Id).Products!, item => item.Id == originalProduct.Id);
+            Assert.Contains(store.AdminAlternateArts().Single(item => item.Id == art.Id).Products!, item => item.Id == originalProduct.Id);
+            store.SaveAlternateArtProduct(admin, new(originalProduct.Id, "改名后的产品", true));
+            store.SaveAlternateArtProduct(admin, new(custom.Id, "自定义改名", false));
+            var restarted = Open();
+            var restored = restarted.AdminAlternateArts().Single(item => item.Id == art.Id);
+            Assert.Equal(new[] { custom.Id, originalProduct.Id }, restored.Products!.Select(item => item.Id));
+            Assert.Equal("自定义改名", restored.Products![0].Name);
+            Assert.False(restored.Products![0].Active);
+            Assert.Equal("改名后的产品", restored.Products![1].Name);
+            Assert.Equal(20, restored.Products![1].ReleaseOrder);
+            var legacySettings = restarted.SaveGalleryProductFilterVisibility(admin, new(originalProduct.Id, false));
+            Assert.Equal(20, legacySettings.ReleaseOrder);
+            foreach (var invalid in new[] { -1, 100001 })
+                Assert.Throws<ArgumentException>(() => restarted.SaveGalleryProductFilterVisibility(admin, new(originalProduct.Id, true, invalid)));
+            Assert.Equal(20, restarted.AlternateArtProducts(true).Single(item => item.Id == originalProduct.Id).ReleaseOrder);
+            Assert.False(restarted.AlternateArtProducts(true).Single(item => item.Id == originalProduct.Id).ShowInGalleryFilter);
+            Assert.Throws<ArgumentException>(() => restarted.SaveAlternateArtProduct(admin, new("catalog:missing", "不存在")));
+            Assert.Throws<ArgumentException>(() => restarted.SaveAlternateArtProduct(admin, new("legacy:missing", "不存在")));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public void GalleryProductEnableDoesNotPublishDraftProductArticles()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "gpd-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var catalog = L12Catalog.Load(Path.Combine(AppContext.BaseDirectory, "TwelveLegions", "Data"));
+            var store = new L12PlatformStore(Path.Combine(root, "platform.json"), catalog.PresetDecks,
+                officialCards: catalog.Cards, officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
+            var admin = store.Login("Admin", "L12master").Account!;
+            var category = store.AdminSiteCategories("product").First();
+            var draft = store.SaveArticleDraft(admin, new L12ArticleDraft(null, "私有产品草稿", "摘要", "正文",
+                category.Name, "", "", "gp-private", false, null, Kind: "product", CategoryId: category.Id));
+            var before = JsonSerializer.Serialize(store.AdminArticle(draft.Id));
+            var productId = "site:" + draft.Id;
+            store.SaveAlternateArtProduct(admin, new(productId, "新的画廊标签", true));
+            var art = store.AdminAlternateArts().First();
+            store.SaveAlternateArtMetadata(admin, new(art.Id, [productId], []));
+            Assert.Empty(store.AlternateArts().Single(item => item.Id == art.Id).Products!);
+            Assert.DoesNotContain(store.GalleryPresentationCatalog().FilterProducts, item => item.Id == productId);
+            Assert.Equal("新的画廊标签", store.AdminAlternateArts().Single(item => item.Id == art.Id).Products![0].Name);
+            Assert.Equal(before, JsonSerializer.Serialize(store.AdminArticle(draft.Id)));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public void AlternateArtProductsAreUniqueAndPersistAcrossStoreReload()
     {
         var root = Path.Combine(Path.GetTempPath(), $"l12-alternate-art-products-{Guid.NewGuid():N}");
@@ -111,7 +183,7 @@ public sealed class SiteContentPlatformStoreTests
             var media = Upload(store, admin, "card-art");
 
             var saved = store.SaveRegularGalleryCardMetadata(admin,
-                new(card.Id, [productId], [rarity.Id], "测试画师"));
+                new(card.Id, [productId], [rarity.Id], "测试画师", "常规联动"));
             var changedImage = store.SaveRegularGalleryCardImage(admin, new(card.Id, media.Id));
             var hidden = store.SaveGalleryProductFilterVisibility(admin, new(productId, false));
 
@@ -120,6 +192,7 @@ public sealed class SiteContentPlatformStoreTests
             Assert.Equal(card.Number, saved.ArtCode);
             Assert.Equal(card.NameZh, saved.DisplayName);
             Assert.Equal("测试画师", changedImage.Artist);
+            Assert.Equal("常规联动", changedImage.Collaboration);
             Assert.Equal(media.DesktopUrl, changedImage.ImageUrl);
             Assert.Equal([productId], changedImage.Products!.Select(item => item.Id));
             Assert.Equal([rarity.Id], changedImage.Rarities!.Select(item => item.Id));
@@ -130,6 +203,7 @@ public sealed class SiteContentPlatformStoreTests
             var publicCard = presentation.RegularCards.Single(item => item.Id == card.Id);
             Assert.Equal(media.DesktopUrl, publicCard.ImageUrl);
             Assert.Equal("测试画师", publicCard.Artist);
+            Assert.Equal("常规联动", publicCard.Collaboration);
             Assert.Contains(publicCard.Products!, item => item.Id == productId);
             Assert.Contains(presentation.FilterProducts,
                 item => item.Id == productId && !item.ShowInGalleryFilter);
@@ -139,6 +213,8 @@ public sealed class SiteContentPlatformStoreTests
             var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
                 officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
             var restoredState = reloaded.GalleryPresentationCatalog();
+            Assert.Equal("常规联动", reloaded.SaveRegularGalleryCardMetadata(admin, new(card.Id, [productId], [rarity.Id])).Collaboration);
+            Assert.Equal("", reloaded.SaveRegularGalleryCardMetadata(admin, new(card.Id, [productId], [rarity.Id], Collaboration: "")).Collaboration);
             Assert.Contains(restoredState.RegularCards,
                 item => item.Id == card.Id && item.Artist == "测试画师" && item.MediaAssetId == media.Id);
             Assert.Contains(restoredState.FilterProducts,
@@ -275,7 +351,9 @@ public sealed class SiteContentPlatformStoreTests
             var admin = store.Login("Admin", "L12master").Account!;
             var player = store.Register("ofi" + Guid.NewGuid().ToString("N")[..6], "Password123!").Account!;
             var media = Upload(store, admin, "card-art");
-            var before = store.AdminAlternateArts().First(item => item.BuiltIn);
+            // Product-first gallery order may begin with a morale or a non-preset legion.
+            var before = store.AdminAlternateArts().First(item => item.BuiltIn
+                && catalog.PresetDecks.Any(preset => preset.CardIds.Contains(item.BaseCardId)));
             store.GrantAlternateArt(admin, new(before.Id, player.Id, "manual", "image-override"));
 
             var preset = catalog.PresetDecks.First(item => item.CardIds.Contains(before.BaseCardId));
@@ -584,20 +662,27 @@ public sealed class SiteContentPlatformStoreTests
             var collaboration = store.SaveAlternateArt(admin, new(null, "COLLAB-ARTIST-001", "",
                 "联动画师测试", media.Id, Kind: "gallery-card", Effect: "只在画廊展示。"));
 
-            store.SaveAlternateArtMetadata(admin, new(builtIn.Id, [], [], Artist: "内建画师"));
-            store.SaveAlternateArtMetadata(admin, new(uploaded.Id, [], [], Artist: "上传画师"));
-            store.SaveAlternateArtMetadata(admin, new(collaboration.Id, [], [], Artist: "联动画师"));
+            store.SaveAlternateArtMetadata(admin, new(builtIn.Id, [], [], Artist: "内建画师", Collaboration: "内建联动"));
+            store.SaveAlternateArtMetadata(admin, new(uploaded.Id, [], [], Artist: "上传画师", Collaboration: "上传联动"));
+            store.SaveAlternateArtMetadata(admin, new(collaboration.Id, [], [], Artist: "联动画师", Collaboration: "独立联动"));
 
             var reloaded = new L12PlatformStore(path, catalog.PresetDecks, officialCards: catalog.Cards,
                 officialAlternateArts: catalog.OfficialAlternateArts, officialCardProducts: catalog.CardProducts);
             Assert.Equal("内建画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == builtIn.Id).Artist);
             Assert.Equal("上传画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == uploaded.Id).Artist);
             Assert.Equal("联动画师", Assert.Single(reloaded.AlternateArts(), item => item.Id == collaboration.Id).Artist);
+            foreach (var (id, expected) in new[] { (builtIn.Id, "内建联动"), (uploaded.Id, "上传联动"), (collaboration.Id, "独立联动") })
+                Assert.Equal(expected, reloaded.AlternateArts().Single(item => item.Id == id).Collaboration);
 
             // Legacy clients omit Artist. That must preserve an existing artist instead of silently clearing it.
             var legacyUpdate = reloaded.SaveAlternateArtMetadata(admin,
                 new L12AlternateArtMetadataDraft(uploaded.Id, [], []));
             Assert.Equal("上传画师", legacyUpdate.Artist);
+            Assert.Equal("上传联动", legacyUpdate.Collaboration);
+            Assert.Equal("", reloaded.SaveAlternateArtMetadata(admin, new(collaboration.Id, [], [], Collaboration: "")).Collaboration);
+            var longCollaboration = reloaded.SaveAlternateArtMetadata(admin, new(builtIn.Id, [], [], Collaboration: new string('联', 121)));
+            Assert.Equal(120, longCollaboration.Collaboration.Length);
+            Assert.Equal("内建画师", longCollaboration.Artist);
 
             // An explicit empty value is the intentional clear operation.
             var cleared = reloaded.SaveAlternateArtMetadata(admin,
