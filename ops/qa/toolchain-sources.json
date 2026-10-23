@@ -6,6 +6,7 @@
   "normalLifecycleMs": 900000,
   "sources": [
     "opcgpro-vue/scripts/check-testrun-qa-ownership.mjs",
+    "opcgpro-vue/scripts/measure-terminal-wire-fields.mjs",
     "opcgpro-vue/scripts/measure-testrun-static-burst.mjs",
     "opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs",
     "opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs",
@@ -33,6 +34,7 @@
     "opcgpro-vue/scripts/test-testrun-observation-policy.mjs",
     "opcgpro-vue/scripts/test-testrun-pressure-runtime.mjs",
     "opcgpro-vue/scripts/test-testrun-qa-ownership.mjs",
+    "opcgpro-vue/scripts/test-terminal-wire-fields.mjs",
     "opcgpro-vue/scripts/test-testrun-static-burst.mjs",
     "opcgpro-vue/scripts/testrun-confirmation-trace.mjs",
     "opcgpro-vue/scripts/testrun-pressure-control.mjs",
@@ -42,6 +44,9 @@
     "opcgpro-vue/scripts/testrun-pressure-recovery.mjs",
     "opcgpro-vue/scripts/testrun-pressure-runtime.mjs",
     "ops/qa/Invoke-TestrunRepresentativePressure.ps1",
+    "ops/qa/Invoke-L12TerminalWireProbe.ps1",
+    "ops/qa/TerminalWireProbe/Program.cs",
+    "ops/qa/TerminalWireProbe/TerminalWireProbe.csproj",
     "ops/qa/Read-TestrunPressureLedgers.ps1",
     "ops/qa/TestAnalyticsHistory/Program.cs",
     "ops/qa/TestAnalyticsHistory/TestAnalyticsHistory.csproj",
@@ -53,6 +58,11 @@
     "scripts/lib/l12-pressure-checkpoint.mjs"
   ],
   "entries": [
+    {
+      "path": "ops/qa/Invoke-L12TerminalWireProbe.ps1",
+      "mode": "offline-preparer",
+      "scope": "Current accepted assembly, in-memory synthetic commands and exact wire-field attribution only; no network, database or deployment."
+    },
     {
       "path": "opcgpro-vue/scripts/run-testrun-representative-pressure.mjs",
       "mode": "test-only",
