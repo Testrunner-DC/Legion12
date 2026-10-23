@@ -13,6 +13,10 @@
     "opcgpro-vue/scripts/test-ws-burst-observer.mjs",
     "opcgpro-vue/scripts/measure-testrun-static-burst.mjs",
     "opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs",
+    "opcgpro-vue/scripts/test-tutorial-ui.mjs",
+    "opcgpro-vue/scripts/test-tutorial-deployed.mjs",
+    "opcgpro-vue/scripts/tutorial-wire-observer.mjs",
+    "opcgpro-vue/scripts/test-tutorial-wire-observer.mjs",
     "opcgpro-vue/scripts/qualify-normal-testrun-lifecycle.mjs",
     "opcgpro-vue/scripts/run-testrun-confirmation-trace.mjs",
     "opcgpro-vue/scripts/run-testrun-representative-pressure.mjs",
@@ -66,6 +70,17 @@
     "scripts/lib/l12-pressure-checkpoint.mjs"
   ],
   "entries": [
+    {
+      "path": "opcgpro-vue/scripts/test-tutorial-ui.mjs",
+      "mode": "local-browser",
+      "scope": "Complete existing tutorial with an owned local browser/runtime and explicitly bound accepted backend; no deployment or production business writes."
+    },
+    {
+      "path": "opcgpro-vue/scripts/test-tutorial-deployed.mjs",
+      "mode": "test-only",
+      "target": "https://legion-12.com/testrun/",
+      "scope": "Existing bounded deployed tutorial smoke only, not full-course or capacity acceptance."
+    },
     {
       "path": "ops/qa/restore-startup-drill.mjs",
       "mode": "offline-preparer",

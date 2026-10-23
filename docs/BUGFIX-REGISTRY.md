@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-TUTORIAL-WIRE｜教学观察器兼容当前编码，父进程临时目录留D
+
+- 同类是test-tutorial-ui、candidate-images及deployed-smoke三个实际入帧消费者；旧版只拆card payload，漏property外壳，从而丢同请求确认。真实callback抽取RED保留在tutorial-current/observer-red.json，不把工具漏记当产品失败。新共享observer绑定实际net／property／card／hand／names，property恢复原文传入card，保持requestId、revision和原失败拒绝；无发送、恢复或自造ACK。AST执行三消费者27纯回归含plain／delta／nested／坏版本／错身份／重复完成，不弱化现有课程动作和终点断言，加入既有QA链。
+- 子PowerShell不能替父Node设置TEMP；test-ui在物理out/cache guard成功后、mkdir／浏览器之前显式设置TEMP/TMP/TMPDIR。两本地入口前段真实内存执行证明拒绝路径零创建且无C回退。公开卡图manifest读取加15秒有界等待。63来源、22导入、4固定历史输入及29归属例、原完整性能QA链实际过；独立只读复核无阻断。
+- 当前已验BAEFF／3a后端复用，不构建或线上写。完整原六幕三尺寸full-r2实际104800ms／18组GREEN、每尺寸两次进攻获胜／保存／真实返回；165入帧含96 property／18 card、失败0，18离房确认及15实际效果交互、32叶哈希前后不变。Main看图与进程／监听0核对后清两个自有cache119517090B，失败／成功证据及原热构建保留。r1启动器清变量留下空诊断值被应用正确拒绝，改真正remove；原r1不改写，不当教学规则缺陷。桌面触摸不是真机，设置Notification mock不是OS送达。
+- 唯一stage-goals-20261024/tutorial-current/main-acceptance.json，raw782C9A1B；本片无部署、维护、正式合成数据或线上关单。人类随后新增正式部署一次授权另按标准承接。
+
 ## QA-20261024-APPLICATION-RESTORE｜持久化字段与旧缺省值兼容，不启用临时删库
 
 - 恢复验收只在固定私有/tmp副本启动当前已验3a程序集，绝不将旧库回写live或打开ephemeral测试profile。原FC374全备证明、归档SHA、程序身份、监听loopback／随机端口、资源与子进程收尾均保。r1未启动即因按HTTP camelCase读DataFile PascalCase而拒绝，r2真实health通过后因将缺失FontSize→已发布默认standard误算业务变化而拒绝；失败原件不改。

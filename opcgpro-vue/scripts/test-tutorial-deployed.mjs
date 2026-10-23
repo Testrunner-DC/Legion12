@@ -7,6 +7,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
+import {createTutorialWireObserver} from './tutorial-wire-observer.mjs'
 
 const BASE = 'https://legion-12.com/testrun/'
 const expected = process.env.EXPECTED_COMMIT || ''
@@ -39,6 +40,8 @@ const report = { status: 'RUNNING', expectedCommit: expected, base: BASE, starte
   rejectedNetwork: [], transport: [], lessonsObserved: [], officialImages: [], browserExited: false }
 let browserServer, browser, context, page, browserProcess, stage = 'health-before', completed = false
 let failureCode = '', ownedRoom = false, registered = false
+const wireObserver=await createTutorialWireObserver()
+report.wireObservation={clientBinding:wireObserver.clientBinding,statistics:wireObserver.statistics}
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 const wait = async (test, label, timeout = 20_000) => {
   const until = Date.now() + timeout
@@ -110,9 +113,8 @@ async function readGuidance() {
   throw new Error('reading exceeded bounded budget')
 }
 function receive(raw) {
-  let packet
-  try { packet = JSON.parse(String(raw)) } catch { return }
-  const message = packet.type === 'gameStateCardFrameV1' ? packet.payload : packet
+  let message
+  try { message = wireObserver.decode(raw).value } catch { failureCode='wire-observation-rejected';return }
   if (!message || typeof message !== 'object') return
   if (message.type === 'session') {
     report.session = { ordinaryIdentityBound: Boolean(message.accountId && message.sessionId),

@@ -6,6 +6,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import assert from 'node:assert/strict'
+import {createTutorialWireObserver} from './tutorial-wire-observer.mjs'
 
 const repo = path.resolve(import.meta.dirname, '../..')
 const front = path.join(repo, 'opcgpro-vue')
@@ -18,8 +19,12 @@ process.env.L12_TUTORIAL_REAL_OUTPUT = out
 process.env.L12_TUTORIAL_REAL_CACHE = cache
 execFileSync(process.env.L12_PWSH || 'pwsh', ['-NoProfile', '-NonInteractive', '-Command',
   `$ErrorActionPreference='Stop'; . '${repo}/ops/windows/Initialize-L12BuildEnvironment.ps1' | Out-Null; . '${repo}/ops/windows/L12GeneratedStorage.ps1'; foreach($p in @($env:L12_TUTORIAL_REAL_OUTPUT,$env:L12_TUTORIAL_REAL_CACHE,$env:TEMP)){$null=Assert-L12GeneratedPath -Path $p -Purpose 'independent real tutorial UI'}`], { stdio: 'pipe' })
+// The child initializer cannot update this Node parent or later browser temps.
+process.env.TEMP = cache; process.env.TMP = cache; process.env.TMPDIR = cache
 fs.mkdirSync(out, { recursive: true }); fs.mkdirSync(cache, { recursive: true })
 const report = { status: 'RUNNING', cases: [], transport: [], projectedObservations: [], errors: [], boundary: 'Actual local server, real account/WS, unchanged App/router/GameBoard; UI clicks only for gameplay. Completion is passively observed after the actual net consumer restores full/delta/card frames. No test/production deployment.' }
+const wireObserver=await createTutorialWireObserver()
+report.wireObservation={clientBinding:wireObserver.clientBinding,statistics:wireObserver.statistics}
 const firstChapterOnly = process.env.L12_TUTORIAL_FIRST_CHAPTER_ONLY === '1'
 const effectSliceOnly = process.env.L12_TUTORIAL_EFFECT_SLICE_ONLY === '1'
 const effectViewportName = process.env.L12_TUTORIAL_EFFECT_VIEWPORT
@@ -32,7 +37,7 @@ if(effectSliceOnly) report.effectViewport=effectViewportName
 if(effectSliceOnly) report.effectEvidenceBoundary='The owner-browser chain proves native touch, exact submitted identities/order, same-request authoritative acceptance, public placement count, and ordinary owner projection. It does not directly observe final private library order or the opponent recipient projection. Named engine regressions are mapped separately by their actual assertions; public-event identity protection is not a full recipient-projection test.'
 let visualCardManifest = null
 if (process.env.L12_TUTORIAL_VISUAL_SLICE_ONLY === '1' || firstChapterOnly || process.env.L12_TUTORIAL_REAL_CARD_ART === '1') {
-  const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json')
+  const manifestResponse = await fetch('https://legion-12.com/card-assets/card-assets.manifest.json',{signal:AbortSignal.timeout(15000),redirect:'error'})
   assert(manifestResponse.ok, 'Official public card asset manifest must be readable')
   const manifest = await manifestResponse.json()
   assert(manifest?.cards?.['S01-0104'], 'Official public manifest must contain Han Xin')
@@ -57,6 +62,9 @@ boundSources.push('opcgpro-vue/src/l12/tutorial/tutorialResponseGuidance.ts','op
   'opcgpro-vue/src/l12/site/FriendRequestNotifications.vue')
 boundSources.push('opcgpro-vue/scripts/test-tutorial-ui.mjs','服务端WebSocket/TwelveLegions/L12RoomManager.Tutorial.cs',
   '服务端WebSocket/TwelveLegions/Data/tutorial-decks.v1.json','opcgpro-vue/src/l12/tutorial/tutorialFinalChapter.ts')
+boundSources.push('opcgpro-vue/scripts/tutorial-wire-observer.mjs','opcgpro-vue/scripts/testrun-pressure-protocol.mjs',
+  'opcgpro-vue/scripts/property-frame-source-module.mjs','opcgpro-vue/src/l12/gameStateCardFrame.ts',
+  'opcgpro-vue/src/l12/handArrayDelta.ts','opcgpro-vue/src/l12/gameStatePropertyFrame.ts','opcgpro-vue/src/l12/gameStatePropertyNamesV1.json')
 report.sourceBefore = hashes()
 report.paymentChecks=[]
 report.effectReceipts=[]
@@ -373,18 +381,17 @@ try {
       promptId:value.command?.promptId,cardInstanceId:value.command?.cardInstanceId,cardInstanceIds:value.command?.cardInstanceIds,
       topCardInstanceIds:value.command?.topCardInstanceIds,bottomCardInstanceIds:value.command?.bottomCardInstanceIds,
       choice:value.command?.choice,row:value.command?.row,slot:value.command?.slot,ability:value.command?.ability,target:value.command?.target})}catch{}})
-    socket.on('framereceived',frame=>{try{const wire=JSON.parse(String(frame.payload))
-      const value=wire.type==='gameStateCardFrameV1'?wire.payload:wire
-      const deltaRequestId=wire.type==='gameStateDelta'?wire.changes?.find(change=>change.path?.length===1&&change.path[0]==='requestId')?.value:null
-      if(value.type==='gameState'||wire.type==='gameStateDelta') {
+    socket.on('framereceived',frame=>{try{const {wireType,value}=wireObserver.decode(frame.payload)
+      const deltaRequestId=value.type==='gameStateDelta'?value.changes?.find(change=>change.path?.length===1&&change.path[0]==='requestId')?.value:null
+      if(value.type==='gameState'||value.type==='gameStateDelta') {
       const self=value.state?.players?.find(player=>player.playerIndex===value.state.you)||value.state?.players?.[0]
-      report.transport.push({direction:'received',type:'gameState',wireType:wire.type,requestId:value.requestId||deltaRequestId,
-        revision:value.state?.revision??wire.revision,tutorial:value.tutorial,
+      report.transport.push({direction:'received',type:'gameState',wireType,requestId:value.requestId||deltaRequestId,
+        revision:value.state?.revision??value.revision,tutorial:value.tutorial,
         result:value.tutorial?.status==='completed'?{matchId:value.state?.matchId,activeMorale:self?.morale?.filter(card=>!card.tapped).length,
           handCount:self?.handCount??self?.hand?.length,masterHp:self?.master?.hp,
           field:self?.field?.map(row=>row.map(card=>card?{instanceId:card.instanceId,cardId:card.cardId,tapped:card.tapped,troops:card.troops}:null)),
           graveyard:self?.graveyard?.map(card=>({instanceId:card.instanceId,cardId:card.cardId}))}:undefined})
-    }else if(['tutorialRejected','actionRejected','tutorialRestartRequired','roomLeft'].includes(value.type))report.transport.push({direction:'received',type:value.type,requestId:value.requestId})}catch{}})
+    }else if(['tutorialRejected','actionRejected','tutorialRestartRequired','roomLeft'].includes(value.type))report.transport.push({direction:'received',type:value.type,requestId:value.requestId})}catch{report.errors.push('TUTORIAL_WIRE_OBSERVATION_REJECTED')}})
   })
 
   await page.goto('http://127.0.0.1:'+uiPort+'/battle')
