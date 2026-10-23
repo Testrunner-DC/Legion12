@@ -136,7 +136,8 @@ try {
     assert.equal(geometry.actorText, '你在防守', `${label} must retain its actor information`)
     assert.equal(geometry.actorAboveDecisions, true, `${label} actor must occupy a separate complete row`)
     assert.equal(geometry.sameHitBox, true, `${label} buttons must preserve equal hit boxes`)
-    assert.equal(geometry.decisionHeight, 36, `${label} must retain the compact decision hit-box height`)
+    assert.ok(geometry.decisionHeight >= 40 && geometry.decisionHeight <= 44,
+      `${label} must preserve the enlarged mobile decision hit-box height: ${JSON.stringify(geometry)}`)
     assert.ok(geometry.panelHeight <= geometry.actorHeight + geometry.decisionHeight + 12, `${label} must contain only the actor, one decision row and bounded spacing: ${JSON.stringify(geometry)}`)
     for (const name of [firstName, secondName]) {
       const initial = await initialButtonGeometry(panel.getByRole('button', { name, exact: true }))
@@ -248,6 +249,8 @@ try {
     }
     if (viewport.width === 390 || viewport.width === 320) {
       await load(viewport, 'gm=1&field=empty')
+      const gmExpand = page.locator('.gm-open')
+      if (await gmExpand.count()) await gmExpand.click()
       await page.locator('.gm-panel .gm-hand button').first().click()
       await page.locator('.gm-panel').getByRole('button', { name: '无视费用打出所选手牌', exact: true }).click()
       const gmMinimize = page.locator('.gm-placement-controls').getByRole('button', { name: '最小化', exact: true })

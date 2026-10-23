@@ -524,7 +524,7 @@
 .mobile-card-inspector header { display: flex; align-items: center; justify-content: space-between; gap: 7px; border-bottom: 1px solid #47605d; padding-bottom: 5px; }
 .mobile-card-inspector header small { display: block; color: #aebfbb; font-size: 9px; line-height: 1; }
 .mobile-card-inspector header h2 { max-width: 150px; margin: 3px 0 0; overflow: hidden; font-size: 13px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
-.mobile-card-inspector header button { min-width: 42px; min-height: 26px; padding: 2px 5px; border: 1px solid #607a76; background: #172021; color: #fff; font-size: 10px; font-weight: 900; }
+.mobile-card-inspector header button { min-width: 48px; min-height: 38px; padding: 4px 7px; border: 1px solid #607a76; background: #172021; color: #fff; font-size: 10px; font-weight: 900; }
 .mobile-card-detail-body { display: block !important; min-height: 0; flex: 1; padding: 6px 2px 8px; border-left: 0; overflow-x: hidden; overflow-y: auto; background: transparent; }
 .mobile-card-detail-body :deep(.archive-detail-image) { width: min(150px, 100%); margin-bottom: 8px; }
 .mobile-card-detail-body :deep(.archive-detail-image.horizontal) { width: 100%; }
@@ -688,7 +688,7 @@
   top:8px !important;
   box-sizing:border-box;
   width:var(--l12-mobile-left-rail-w);
-  height:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
+  height:clamp(34px,calc(var(--l12-viewport-height,100vh) * .1),38px);
   min-height:0;
   padding:3px 5px;
   overflow:hidden;
@@ -890,7 +890,7 @@
   --l12-mobile-player-track-w:calc(var(--l12-mobile-commander-w) + var(--l12-mobile-formation-w) + var(--l12-mobile-pile-w) + var(--l12-mobile-resource-w));
   --l12-mobile-group-gap:clamp(2px,calc((var(--l12-mobile-player-w) - var(--l12-mobile-player-track-w) - 4px) / 3),calc(var(--l12-mobile-card-w) * 1.5));
   --l12-mobile-rail-gap:clamp(3px,calc(var(--l12-viewport-height,100vh) * .012),5px);
-  --l12-mobile-detail-handle-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
+  --l12-mobile-detail-handle-h:clamp(34px,calc(var(--l12-viewport-height,100vh) * .1),38px);
   --l12-mobile-current-disaster-h:clamp(48px,calc(var(--l12-viewport-height,100vh) * .14),66px);
   --l12-mobile-disaster-value-h:clamp(24px,calc(var(--l12-viewport-height,100vh) * .07),30px);
   /* The two-column disaster grid is constrained by both viewport height and
@@ -908,7 +908,7 @@
   --l12-mobile-resource-summary-h:clamp(22px,calc(var(--l12-mobile-card-w) * .52),30px);
   --l12-mobile-resource-font:clamp(7px,calc(var(--l12-mobile-card-w) * .17),10px);
   --l12-mobile-action-w:clamp(84px,calc(var(--l12-mobile-right-rail-w) - 6px),104px);
-  --l12-mobile-action-h:clamp(30px,calc(var(--l12-viewport-height,100vh) * .09),38px);
+  --l12-mobile-action-h:clamp(40px,calc(var(--l12-viewport-height,100vh) * .11),44px);
   --l12-mobile-action-font:clamp(9px,calc(var(--l12-viewport-height,100vh) * .025),11px);
 }
 .mobile-landscape-board .stage-layout { grid-template-columns:var(--l12-mobile-left-rail-w) minmax(0,1fr) var(--l12-mobile-right-rail-w) !important; }
@@ -1104,7 +1104,7 @@
 .mobile-landscape-board .combat-resolution-panel :deep(.l12-actions button) { min-height:var(--l12-mobile-action-h) !important; height:var(--l12-mobile-action-h) !important; font-size:var(--l12-mobile-action-font) !important; }
 .mobile-safe-overlay button { text-align:center; text-wrap:balance; overflow-wrap:anywhere; }
 .mobile-landscape-board .board-mode-hint span { font-size:9px !important; line-height:1.15; white-space:normal; }
-.mobile-landscape-board .board-mode-hint button { min-height:32px !important; padding:3px 5px !important; }
+.mobile-landscape-board .board-mode-hint button { min-height:40px !important; padding:5px !important; }
 
 /* The detail drawer is a reading surface. The small reference image never
    pushes the name, basic values or rules text below the first screen. */
@@ -1194,24 +1194,6 @@
   margin-left:0 !important;
 }
 .mobile-landscape-board .board-control-minimize { min-height:30px !important; padding:3px 6px !important; }
-
-/* Player names stay in the dock; the complete lawful identity projection opens
-   in one bounded safe-area sheet. Desktop identity geometry lives in GameBoard. */
-.mobile-player-details-overlay { position:fixed; z-index:2147483622; inset:0; display:grid; box-sizing:border-box; place-items:center; padding:8px; overflow:hidden; background:rgba(2,5,6,.78); backdrop-filter:blur(6px); }
-.mobile-player-details-dialog { display:flex; box-sizing:border-box; width:min(560px,calc(var(--l12-viewport-width,100vw) - 16px)); max-height:min(300px,calc(var(--l12-viewport-height,100vh) - 16px)); min-height:0; flex-direction:column; overflow:hidden; border:1px solid #61706e; background:#0d1518; box-shadow:0 18px 55px #000; }
-.mobile-player-details-dialog>header { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:12px; padding:8px 10px; border-bottom:1px solid #344441; }
-.mobile-player-details-dialog>header h2 { margin:1px 0 0; font-size:15px; }
-.mobile-player-details-dialog>header button { width:34px; min-width:34px; height:32px; border:1px solid #60706d; background:#151f21; color:#fff; font-size:20px; }
-.mobile-player-details-list { display:grid; min-height:0; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:8px; overflow:auto; }
-.mobile-player-details-list :deep(.battle-player-identity) { box-sizing:border-box; min-width:0; align-content:start; padding:8px; border:1px solid #344542; background:#090f11; }
-.mobile-player-details-list :deep(.battle-player-identity.focused) { border-color:#c9ad59; box-shadow:inset 3px 0 #c9ad59; }
-.mobile-player-details-list :deep(.battle-player-identity__facts) { gap:3px; }
-.mobile-player-details-list :deep(.battle-player-identity__facts>div) { grid-template-columns:54px minmax(0,1fr); gap:4px; }
-.mobile-player-details-list :deep(.battle-player-identity__name>strong) { font-size:12px; }
-.mobile-player-details-list :deep(.battle-player-identity dt) { font-size:9px; }
-.mobile-player-details-list :deep(.battle-player-identity dd) { font-size:10px; }
-.mobile-player-details-list :deep(.ranked-identity-badge.compact) { --ranked-tier-badge-font-size:9px; --ranked-title-badge-font-size:9px; max-width:100%; }
-.mobile-player-details-list :deep(.ranked-identity-badge.compact>span) { min-width:0; overflow-wrap:anywhere; white-space:normal; }
 
 /* Every peer in a payment/choice group owns the same hit box. State and copy
    may change its paint, never its geometry. */

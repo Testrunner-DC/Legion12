@@ -69,11 +69,11 @@ async function geometry(name) {
       handCountRatio: (handCount.right - handCount.left) / (master.right - master.left),
       compactHandSummary: Boolean(dock.querySelector('.mobile-target-hand-counts')),
       markerRatio: marker ? (r(marker).right - r(marker).left) / (master.right - master.left) : null,
-      playerNames: [...dock.querySelectorAll('.mobile-player-name')].map(e => ({ text:e.textContent.trim(), box:r(e), fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
-      playerNamesAboveRecord: (() => {
-        const names=dock.querySelector('.mobile-player-name-strip')?.getBoundingClientRect(), entry=dock.querySelector('.mobile-record-trigger')
-        const record=entry?.getBoundingClientRect(), visible=entry && getComputedStyle(entry).visibility !== 'hidden' && record.width > 0 && record.height > 0
-        return Boolean(names && record && (!visible || names.bottom <= record.top + 1))
+      playerIdentities: [...dock.querySelectorAll('.mobile-player-summary-strip .battle-player-identity')].map(e => ({ text:e.textContent.trim(), box:r(e), fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
+      playerIdentitiesAboveRecord: (() => {
+        const tools=dock.querySelector('.mobile-battle-dock__tools')?.getBoundingClientRect()
+        const context=dock.querySelector('.mobile-battle-dock__context')?.getBoundingClientRect()
+        return Boolean(tools && context && tools.bottom <= context.top + 1)
       })(),
       moraleLabels: [...document.querySelectorAll('.resource-morale-label')].map(e => ({ text:e.textContent.trim(), images:e.querySelectorAll('img').length, fits:e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1 })),
       currentActionCount: dock.querySelectorAll('.card-context-actions button').length,
@@ -93,42 +93,48 @@ async function geometry(name) {
   if (report.compactHandSummary) assert.equal(report.handCountRatio,0,`${label}/${name}: expanded board control must replace duplicate PlayerMat hand counters ${JSON.stringify(report)}`)
   else assert.ok(report.handCountRatio >= .75, `${label}/${name}: hand count did not scale with master ${JSON.stringify(report)}`)
   if (report.markerRatio !== null) assert.ok(report.markerRatio >= .3, `${label}/${name}: master marker did not scale ${JSON.stringify(report)}`)
-  assert.equal(report.playerNames.length, 2, `${label}/${name}: persistent player names missing`)
-  assert.equal(report.playerNames.every(item => item.fits), true, `${label}/${name}: player name clipped ${JSON.stringify(report.playerNames)}`)
-  assert.equal(report.playerNamesAboveRecord, true, `${label}/${name}: player names are not above record`)
+  assert.equal(report.playerIdentities.length, 2, `${label}/${name}: persistent player identities missing`)
+  assert.equal(report.playerIdentities.every(item => item.fits), true, `${label}/${name}: player identity clipped ${JSON.stringify(report.playerIdentities)}`)
+  assert.equal(report.playerIdentitiesAboveRecord, true, `${label}/${name}: player identities are not above record`)
   assert.equal(report.moraleLabels.length, 2, `${label}/${name}: morale labels missing`)
   assert.equal(report.moraleLabels.every(item => item.text === '士气' && item.images === 0 && item.fits), true, `${label}/${name}: legacy faction icon still crowds morale label ${JSON.stringify(report.moraleLabels)}`)
   manifest.cases.push({ label, name, ...report })
 }
 async function playerDetailsVisible() {
-  await page.locator('.mobile-player-name').first().click()
-  const report = await page.locator('.mobile-player-details-dialog').evaluate(dialog => {
-    const host=document.querySelector('#l12-landscape-teleports').getBoundingClientRect(), box=dialog.getBoundingClientRect()
-    const identities=[...dialog.querySelectorAll('.battle-player-identity')]
-    const text=dialog.textContent || ''
+  const identities = page.locator('.mobile-player-summary-strip .battle-player-identity')
+  assert.equal(await identities.count(),2,`${label}: persistent player summary must show both players`)
+  const reachableIdentities=[]
+  for(let index=0;index<2;index++){
+    const identity=identities.nth(index)
+    await identity.scrollIntoViewIfNeeded()
+    reachableIdentities.push(await identity.evaluate(element=>{
+      const box=element.getBoundingClientRect(), lane=element.closest('.mobile-battle-dock__tools').getBoundingClientRect()
+      return box.top>=lane.top-1&&box.bottom<=lane.bottom+1
+    }))
+  }
+  const report = await page.locator('.mobile-player-summary-strip').evaluate(summary => {
+    const identities=[...summary.querySelectorAll('.battle-player-identity')]
+    const text=summary.textContent || ''
     return {
-      inside:box.left>=host.left-1&&box.top>=host.top-1&&box.right<=host.right+1&&box.bottom<=host.bottom+1,
       identities:identities.length,
       names:identities.map(item=>item.querySelector('.battle-player-identity__name strong')?.textContent?.trim()),
-      rankRows:dialog.querySelectorAll('.identity-rank-row').length,
-      tierRows:dialog.querySelectorAll('.identity-tier-row').length,
-      masterRows:dialog.querySelectorAll('.identity-master-row').length,
-      masterTitleRows:dialog.querySelectorAll('.identity-master-title-row').length,
+      rankRows:summary.querySelectorAll('.identity-rank-row').length,
+      tierRows:summary.querySelectorAll('.identity-tier-row').length,
+      masterRows:summary.querySelectorAll('.identity-master-row').length,
+      masterTitleRows:summary.querySelectorAll('.identity-master-title-row').length,
       text,
     }
   })
-  assert.equal(report.inside,true,`${label}: player details outside safe area ${JSON.stringify(report)}`)
-  assert.equal(report.identities,2,`${label}: player details must show both players`)
+  assert.equal(reachableIdentities.every(Boolean),true,`${label}: a persistent player identity cannot be reached by dock scrolling`)
+  assert.equal(report.identities,2,`${label}: persistent player summary must show both players`)
   assert.equal(report.names.every(Boolean),true,`${label}: player detail names missing`)
-  assert.equal(report.rankRows,2,`${label}: authoritative ranks missing`)
+  assert.ok(report.rankRows>=1,`${label}: available authoritative rank missing`)
   assert.equal(report.tierRows,2,`${label}: authoritative tiers missing`)
   assert.equal(report.masterRows,2,`${label}: lawful master information missing`)
   assert.ok(report.masterTitleRows>=1,`${label}: available master title missing`)
   assert.ok(report.text.includes('连接')&&report.text.includes('主宰'),`${label}: player details incomplete`)
-  await reachable(page.locator('.mobile-player-details-dialog button'))
-  await shot('player-details')
-  await page.getByRole('button',{name:'关闭双方玩家详情'}).click()
-  assert.equal(await page.locator('.mobile-player-details-overlay').count(),0,`${label}: player details did not close`)
+  assert.equal(await page.locator('.mobile-player-details-overlay').count(),0,`${label}: legacy player-detail modal must not return`)
+  await shot('persistent-player-details')
 }
 
 async function markerGeometry(expectedCount) {

@@ -41,7 +41,10 @@ for (const file of ['PromptOverlay','MasterOverlay','GraveyardOverlay','PlayerMa
 assert.ok(!board.includes('mobileInspectorOpen.value = true'), 'selecting an object must not force the inspector open')
 assert.ok(!board.includes('mobileIdentityOpen'), 'mobile identity must stay expanded')
 assert.ok(!board.includes('>双方信息</button>'), 'mobile identity must not expose a collapse control')
-assert.ok(board.includes('class="mobile-player-name-strip"') && board.includes('class="mobile-player-details-overlay mobile-safe-overlay"'), 'mobile player names and details must have separate persistent/dialog surfaces')
+assert.ok(board.includes('class="mobile-player-summary-strip"')
+  && !board.includes('mobile-player-details-overlay mobile-safe-overlay')
+  && !board.includes('mobilePlayerDetailsOpen'),
+  'both complete mobile player identities must stay expanded without a separate detail overlay')
 assert.ok(board.includes('<BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport" type="button" class="mobile-record-trigger"'), 'mobile record entry must own the context lane beneath transient combat information')
 assert.ok(css.includes('.mobile-battle-dock__context { position:relative;')
   && css.includes('.mobile-battle-dock__context > .combat-presentation')
@@ -49,7 +52,7 @@ assert.ok(css.includes('.mobile-battle-dock__context { position:relative;')
   && css.includes('pointer-events:none !important;')
   && css.includes('pointer-events:auto !important;'), 'transient combat information must overlay without consuming dock height, pass through record taps, and retain its explicit minimize action')
 assert.ok(identity.includes('showMasterDetails?: boolean') && identity.includes('v-if="showMasterDetails" class="identity-master-row"'), 'current master details must be opt-in so desktop identity stays concise')
-assert.equal((board.match(/show-master-details/g) || []).length, 2, 'current master details must appear only in the two mobile detail cards')
+assert.equal((board.match(/show-master-details/g) || []).length, 2, 'current master details must appear in the two persistent mobile identities')
 assert.ok(identity.includes('identity-rank-row') && identity.includes('identity-tier-row') && identity.includes('identity-master-title-row'), 'player identity must preserve authoritative rank, tier and master-title fields')
 assert.ok(!playerMat.includes('<img v-if="mobileMoralePicker && factionLogoUrls[player.faction]"'), 'legacy mobile faction icon cannot remain inside the morale label')
 assert.ok(!legacy.includes(':global(.mobile-action-dock)'), 'old independent fixed dock cannot reappear')
@@ -72,7 +75,7 @@ for (const rule of ['overscroll-behavior:contain','overflow:auto','pointer-event
 assert.ok(!css.includes('.bug-feedback-trigger') && !utility.includes("l12-open-bug-feedback") && !utility.includes('Bug反馈'), 'battle dock must not own a direct feedback entry')
 assert.ok(settings.includes('class="feedback-entry"') && settings.includes("emit('feedback')") && gamePage.includes('@feedback="openBattleFeedback"'), 'battle feedback must open from the shared Settings modal')
 const runtime = read('scripts/verify-mobile-action-dock.mjs')
-for (const invariant of ['elementFromPoint','fieldOverlap','laneOverlap','setSafeAreaInsetsOverride','setPageScaleFactor','maximum-real-actions','commandIs','leftRatio','relicRatio','pileRatio','handSelectionVisible','playerDetailsVisible','markerGeometry','playerNamesAboveRecord','moraleLabels']) assert.ok(runtime.includes(invariant))
+for (const invariant of ['elementFromPoint','fieldOverlap','laneOverlap','setSafeAreaInsetsOverride','setPageScaleFactor','maximum-real-actions','commandIs','leftRatio','relicRatio','pileRatio','handSelectionVisible','playerDetailsVisible','markerGeometry','playerIdentitiesAboveRecord','moraleLabels']) assert.ok(runtime.includes(invariant))
 
 function assertCombatDecisionLayout(styles) {
   const parsed = postcss.parse(styles)
@@ -82,8 +85,8 @@ function assertCombatDecisionLayout(styles) {
     let count = 0
     parsed.walkRules(rule => {
       if (!rule.selectors.includes(selector)) return
+      if (rule.parent.type !== 'root') return
       count++
-      assert.equal(rule.parent.type, 'root', 'combat layout rule must not hide behind a media condition')
       rule.walkDecls(declaration => values.set(declaration.prop, declaration.value))
     })
     assert.equal(count, 1, `combat layout must have one unambiguous rule: ${selector}`)
@@ -99,14 +102,25 @@ function assertCombatDecisionLayout(styles) {
   assert.equal(actions.get('grid-template-columns'), 'repeat(2,minmax(0,1fr))', 'combat decisions must remain equal peers')
   assert.equal(actor.get('grid-column'), '1/-1', 'combat actor must own one complete row before both decisions')
   assert.equal(buttons.get('grid-column'), 'auto', 'neither combat decision may consume the actor row')
-  assert.equal(buttons.get('height'), '36px', 'compact combat decisions must retain the existing hit-box height')
+  assert.equal(buttons.get('height'), '42px', 'combat decisions must retain the enlarged mobile hit-box height')
   assert.equal(buttons.get('min-height'), buttons.get('height'), 'combat decision hit boxes must remain equal')
   assert.equal(minimize.get('order'), '-1', 'combat minimize must precede long passive status in the bounded context')
+  const shortButtons = new Map()
+  let shortCount = 0
+  parsed.walkRules(rule => {
+    if (!rule.selectors.includes(`${base} .l12-actions > button`)
+      || rule.parent.type !== 'atrule' || rule.parent.params !== '(max-height:340px)') return
+    shortCount++
+    rule.walkDecls(declaration => shortButtons.set(declaration.prop, declaration.value))
+  })
+  assert.equal(shortCount, 1, 'very short screens must have one explicit combat hit-box override')
+  assert.equal(shortButtons.get('height'), '40px', 'very short screens must retain a 40px combat hit box')
+  assert.equal(shortButtons.get('min-height'), shortButtons.get('height'), 'very short combat hit boxes must remain equal')
 }
 assertCombatDecisionLayout(css)
 assert.throws(() => assertCombatDecisionLayout(css.replace('height:auto !important; max-height:none !important;', 'height:42px !important; max-height:42px !important;')), /must grow/)
 assert.throws(() => assertCombatDecisionLayout(css.replace('grid-column:1/-1; justify-self:start;', 'grid-column:auto; justify-self:start;')), /complete row/)
-assert.throws(() => assertCombatDecisionLayout(css.replace('width:auto !important; min-height:36px !important; height:36px !important;', 'width:auto !important; min-height:32px !important; height:36px !important;')), /remain equal/)
+assert.throws(() => assertCombatDecisionLayout(css.replace('width:auto !important; min-height:42px !important; height:42px !important;', 'width:auto !important; min-height:38px !important; height:42px !important;')), /remain equal/)
 assert.throws(() => assertCombatDecisionLayout(css.replace('order:-1; pointer-events:auto !important;', 'pointer-events:auto !important;')), /minimize must precede/)
 function assertContextScrollOwnership(styles) {
   const selector = '#l12-landscape-teleports .mobile-battle-dock__context > :is(.card-context-actions,.board-target-controls,.board-mode-hint)'

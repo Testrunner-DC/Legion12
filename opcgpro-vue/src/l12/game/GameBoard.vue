@@ -38,6 +38,7 @@ import CardImage from '../CardImage.vue'
 import CardDetailContent from '../CardDetailContent.vue'
 import type { DeckCard } from '../decks'
 import { getFactionPresentation } from '../factionPresentation'
+import { alternateArtApi, type AlternateArt } from '../platform'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
@@ -93,8 +94,6 @@ const {
 })
 const mobileRecordOpen = ref(false)
 const mobileRecordMinimized = ref(false)
-const mobilePlayerDetailsOpen = ref(false)
-const mobilePlayerDetailsFocus = ref<number | null>(null)
 const mobileMoralePickerOpen = ref(false)
 const mobileMoralePickerMinimized = ref(false)
 const mobileMoraleReason = ref('')
@@ -105,9 +104,27 @@ const mobileTrialAbilitySource = ref<MobileTrialAbilitySource | null>(null)
 const mobileTrialAbilityMinimized = ref(false)
 const selectedId = ref<string | null>(null)
 const focusCard = ref<Card | null>(null)
-const focusDetailCard = computed<DeckCard | null>(() => {
+const publicAlternateArts = ref<AlternateArt[]>([])
+type BattleDetailCard = DeckCard & { artist?: string }
+function presentationImageIdentity(value?: string | null) {
+  const normalized = value?.trim() ?? ''
+  if (!normalized) return ''
+  if (normalized.toLowerCase().startsWith('l12-card-id:')) return normalized.toLowerCase()
+  try { return new URL(normalized, window.location.origin).href }
+  catch { return normalized }
+}
+function visibleAlternateArt(card: Card) {
+  const visibleImage = presentationImageIdentity(card.imageUrl)
+  if (!visibleImage || card.hidden) return undefined
+  return publicAlternateArts.value.find(art => art.active && art.kind !== 'gallery-card'
+    && art.baseCardId.toLowerCase() === card.cardId.toLowerCase()
+    && [art.imageUrl, art.cardImageId ? `l12-card-id:${art.cardImageId}` : '']
+      .some(image => presentationImageIdentity(image) === visibleImage))
+}
+const focusDetailCard = computed<BattleDetailCard | null>(() => {
   const card = focusCard.value
   if (!card) return null
+  const alternateArt = visibleAlternateArt(card)
   const master = card.cardType === 'master'
     ? props.game.players.find(player => player.master.masterId === card.cardId)?.master
     : undefined
@@ -128,6 +145,8 @@ const focusDetailCard = computed<DeckCard | null>(() => {
     traits: card.traits ?? [],
     profession: card.profession,
     effect: card.effectText,
+    artist: alternateArt?.artist || undefined,
+    collaboration: alternateArt?.collaboration || undefined,
   }
 })
 const inspectorAnchor = ref<HTMLElement | null>(null)
@@ -330,10 +349,6 @@ const connectionLabel = (playerIndex: number) => {
   return connected === null ? (props.readOnly ? '记录快照' : '状态同步中') : connected ? '在线' : '已断开'
 }
 const factionLabel = (faction: string) => getFactionPresentation(faction).label
-function openMobilePlayerDetails(playerIndex: number) {
-  mobilePlayerDetailsFocus.value = playerIndex
-  mobilePlayerDetailsOpen.value = true
-}
 function isControlledPlayer(playerIndex: number) { return playerIndex === controlledPlayerIndex.value }
 const defenseTargetType = computed(() => props.game.pendingDefense?.stage === 'DefenseChoice'
   ? props.game.pendingDefense.target.type : null)
@@ -1058,6 +1073,7 @@ onMounted(() => {
   lastHiddenRevealSequence.value = Math.max(0, ...(props.game.recentEvents ?? []).map(event => event.sequence))
   lastPublicRevealSequence.value = lastHiddenRevealSequence.value
   lastDiceSequence.value = lastHiddenRevealSequence.value
+  void alternateArtApi.gallery().then(arts => { publicAlternateArts.value = arts }).catch(() => {})
 })
 onBeforeUnmount(() => {
   resetCardPresentations()
@@ -1650,9 +1666,13 @@ function statusTexts(card: Card) {
                match instead receives its own reserved pair of compact clocks in
                this otherwise unused section of the right rail. -->
           <BattleDockPortal lane="tools"><section class="grand-panel player-panel" data-ui-contract="complete-player-summary">
-            <div v-if="mobileLandscapeViewport" class="mobile-player-name-strip" aria-label="双方玩家">
-              <button type="button" class="mobile-player-name opponent" :aria-label="`查看对方玩家详情：${viewEnemy.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewEnemy.playerIndex)"><b>对方</b><strong>{{ viewEnemy.name || '未命名玩家' }}</strong></button>
-              <button type="button" class="mobile-player-name mine" :aria-label="`查看我方玩家详情：${viewMe.name || '未命名玩家'}`" @click="openMobilePlayerDetails(viewMe.playerIndex)"><b>我方</b><strong>{{ viewMe.name || '未命名玩家' }}</strong></button>
+            <div v-if="mobileLandscapeViewport" class="mobile-player-summary-strip" aria-label="双方玩家信息">
+              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
+                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
+                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)" show-master-details />
+              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
+                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
+                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)" show-master-details />
             </div>
             <template v-else>
               <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
@@ -1680,23 +1700,6 @@ function statusTexts(card: Card) {
         </aside>
       </div>
       <Teleport :to="landscapeTeleportTarget()">
-        <section v-if="mobileLandscapeViewport && mobilePlayerDetailsOpen" class="mobile-player-details-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="双方玩家详情" @click.self="mobilePlayerDetailsOpen = false">
-          <div class="mobile-player-details-dialog">
-            <header><div><h2>双方玩家信息</h2></div><button type="button" aria-label="关闭双方玩家详情" @click="mobilePlayerDetailsOpen = false">×</button></header>
-            <div class="mobile-player-details-list">
-              <BattlePlayerIdentity side-label="对方" :player="viewEnemy" :rank="battleRank(enemyBadge)" :tier-label="battleTierLabel(enemyBadge)"
-                :placement-title="identityLabel(enemyBadge?.placementTitle)" :master-title="identityLabel(enemyBadge?.masterTitle)"
-                :faction="viewEnemy.faction" :faction-label="factionLabel(viewEnemy.faction)" :connection-label="connectionLabel(viewEnemy.playerIndex)" :connected="playerConnection(viewEnemy.playerIndex)"
-                show-master-details
-                :class="{ focused: mobilePlayerDetailsFocus === viewEnemy.playerIndex }" />
-              <BattlePlayerIdentity side-label="我方" :player="viewMe" :rank="battleRank(myBadge)" :tier-label="battleTierLabel(myBadge)"
-                :placement-title="identityLabel(myBadge?.placementTitle)" :master-title="identityLabel(myBadge?.masterTitle)"
-                :faction="viewMe.faction" :faction-label="factionLabel(viewMe.faction)" :connection-label="connectionLabel(viewMe.playerIndex)" :connected="playerConnection(viewMe.playerIndex)"
-                show-master-details
-                :class="{ focused: mobilePlayerDetailsFocus === viewMe.playerIndex }" />
-            </div>
-          </div>
-        </section>
         <section v-if="mobileLandscapeViewport && mobileRecordOpen" class="mobile-record-overlay mobile-safe-overlay" role="dialog" aria-modal="true" aria-label="对局记录">
           <header><h2>对局记录</h2><div class="mobile-record-actions"><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = true">最小化</button><button type="button" @click="mobileRecordOpen = false; mobileRecordMinimized = false">关闭</button></div></header>
           <BattleEventLog :events="game.recentEvents ?? []" :you="game.you" :names="game.players.map(player => player.name)" :neutral-view="neutralLogView" @focus="focusCard = $event" />

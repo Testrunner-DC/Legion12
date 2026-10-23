@@ -27,6 +27,7 @@ import { gameOverPresentationHandoffContractVerified } from './test-spectator-ga
 import './test-hot-deck-motion.mjs'
 import './test-deck-motion-diagnostics.mjs'
 import { deploymentAuthIsolationVerified } from './test-deployment-auth-isolation.mjs'
+import { hasPersistentMobilePlayerIdentities, hasSharedBattleCardDetails, hasProportionalMobileActionSize } from './battle-usability-template-contract.mjs'
 
 // These actual-template fixtures temporarily supply DOM constructors. Static
 // sibling imports with top-level await can overlap their restore lifetimes.
@@ -456,7 +457,7 @@ const contracts = [
     && board.includes('connectionLabel(viewEnemy.playerIndex)') && board.includes('connectionLabel(viewMe.playerIndex)')
     && battlePlayerIdentity.includes('<dt>主宰</dt>') && battlePlayerIdentity.includes('{{ player.master.hp }}/{{ player.master.maxHp }}')
     && board.includes("import BattlePlayerIdentity from './BattlePlayerIdentity.vue'")
-    && board.includes('class="mobile-player-name-strip"') && board.includes('class="mobile-player-details-overlay mobile-safe-overlay"')
+    && hasPersistentMobilePlayerIdentities(boardComponent)
     && battlePlayerIdentity.includes("import RankedIdentityBadge from '../RankedIdentityBadge.vue'")
     && battlePlayerIdentity.includes('v-if="rank" class="identity-rank-row"')
     && battlePlayerIdentity.includes('v-if="tierLabel || placementTitle" class="identity-tier-row"')
@@ -655,7 +656,7 @@ const contracts = [
   [board.includes('--l12-mobile-master-health-h:clamp(13px,calc(var(--l12-mobile-card-w) * .34),22px)')
     && board.includes('--l12-mobile-pile-badge-h:clamp(12px,calc(var(--l12-mobile-card-w) * .30),20px)')
     && board.includes('--l12-mobile-resource-summary-h:clamp(22px,calc(var(--l12-mobile-card-w) * .52),30px)')
-    && board.includes('--l12-mobile-action-h:clamp(30px,calc(var(--l12-viewport-height,100vh) * .09),38px)')
+    && hasProportionalMobileActionSize(boardMobileStyle)
     && board.includes('font-size:var(--l12-mobile-pile-count-font) !important')
     && board.includes('font-size:var(--l12-mobile-resource-font) !important')
     && board.includes('min-height:var(--l12-mobile-action-h) !important'), '移动主宰血量、牌堆数字、士气摘要与场面操作按钮必须从卡牌或逻辑视口比例令牌取值，不得恢复为各自固定尺寸'],
@@ -1830,9 +1831,7 @@ contracts.push(
   [playerMat.includes('inheritAttrs: false') && playerMat.includes('v-bind="$attrs"')
     && board.includes('--l12-board-copy') && board.includes('--l12-board-meta') && board.includes('--l12-board-micro') && board.includes('flex-wrap:wrap'),
     '多根PlayerMat必须显式向场面根节点传递外框样式，缩放后的正文、辅助与微标签层级不得破坏布局'],
-  [board.includes("import CardDetailContent from '../CardDetailContent.vue'")
-    && (board.match(/<CardDetailContent :card="focusDetailCard" :show-catalog-only="false" \/>/g) ?? []).length === 2
-    && board.includes('const focusDetailCard = computed<DeckCard | null>')
+  [hasSharedBattleCardDetails(boardComponent)
     && board.includes('class="grand-panel card-inspector archive-detail"')
     && board.includes('class="archive-detail mobile-card-detail-body"')
     && !board.includes('class="inspector-effect') && !board.includes('class="mobile-inspector-effect')
