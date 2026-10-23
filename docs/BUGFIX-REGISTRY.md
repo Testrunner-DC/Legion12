@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261024-ACCEPTED-QA-BINDING｜后续纯QA不应迫使同一应用重包
+
+- 原Windows绑定只接纳五个记录／包装器叶，实际3a→943仅四具名文档、12个具名QA与一条既有QA链命令，原函数实测false。保留原应用包与完整Release，具名QA仅准A/M；package只能在唯一固定锚点插入一次观察器检查，回填后所有字段完整相等。
+- 同型核查覆盖Git name-status及整个package对象：未知QA、应用／服务端源码、schema／ledger／配置／架构锁、删除及非祖先均拒绝；无宽泛目录豁免，不改变真实许可／最新数据／备份证明。
+- 实际3a→943原RED／新GREEN、63绑定正反例、6执行器重试及76隔离服务器场景通过，独立只读复核无阻断。架构／内核／路由／ledger／status／release gate及备份30、consumer34映射检查全过；组合包装器读预期负例残留退出码的误报原件保留，仅续未执行项。证据formal-release-20261024的application-binding-red-green.json／deploy-behavior.log及remaining-mapped／两纯回归日志；不冒正式已部署。
+
 ## QA-20261024-TUTORIAL-WIRE｜教学观察器兼容当前编码，父进程临时目录留D
 
 - 同类是test-tutorial-ui、candidate-images及deployed-smoke三个实际入帧消费者；旧版只拆card payload，漏property外壳，从而丢同请求确认。真实callback抽取RED保留在tutorial-current/observer-red.json，不把工具漏记当产品失败。新共享observer绑定实际net／property／card／hand／names，property恢复原文传入card，保持requestId、revision和原失败拒绝；无发送、恢复或自造ACK。AST执行三消费者27纯回归含plain／delta／nested／坏版本／错身份／重复完成，不弱化现有课程动作和终点断言，加入既有QA链。

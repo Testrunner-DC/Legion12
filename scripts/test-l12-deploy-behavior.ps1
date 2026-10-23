@@ -124,14 +124,33 @@ try {
     & git -C $bindingRoot config user.name 'L12 synthetic verification'
     & git -C $bindingRoot config user.email 'synthetic@example.invalid'
     $bindingPaths = @('docs/HANDOFF.md','docs/TASK-LEDGER.md','docs/BUGFIX-REGISTRY.md',
+        'docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
         'ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1',
         'server.cs','opcgpro-vue/src/net.ts','release-ledger/entry.json','global.json',
-        'appsettings.json','ops/server/deploy-l12-release.sh','docs/ARCHITECTURE-LOCK.md')
+        'appsettings.json','ops/server/deploy-l12-release.sh','docs/ARCHITECTURE-LOCK.md',
+        'ops/qa/not-admitted.mjs')
     foreach ($bindingPath in $bindingPaths) {
         $file = Join-Path $bindingRoot $bindingPath
         New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null
         Write-Utf8NoBom $file 'base'
     }
+    $qaBindingPaths = @('opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs',
+        'opcgpro-vue/scripts/test-testrun-pressure-current.mjs','opcgpro-vue/scripts/test-tutorial-deployed.mjs',
+        'opcgpro-vue/scripts/test-tutorial-ui.mjs','opcgpro-vue/scripts/test-tutorial-wire-observer.mjs',
+        'opcgpro-vue/scripts/testrun-pressure-finalizer.mjs','opcgpro-vue/scripts/tutorial-wire-observer.mjs',
+        'ops/qa/restore-startup-drill.mjs','ops/qa/restore-startup-drill.py',
+        'ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs','ops/qa/test-restore-startup-drill.py','ops/qa/toolchain-sources.json')
+    foreach ($bindingPath in $qaBindingPaths) {
+        if($bindingPath -ceq 'ops/qa/restore-startup-drill.py'){continue} # Exercise a genuinely added named QA file.
+        $file=Join-Path $bindingRoot $bindingPath
+        New-Item -ItemType Directory -Path (Split-Path -Parent $file) -Force | Out-Null
+        Write-Utf8NoBom $file 'base'
+    }
+    $bindingPaths += $qaBindingPaths
+    $packagePath=Join-Path $bindingRoot 'opcgpro-vue/package.json'
+    $basePackage=[ordered]@{name='synthetic';dependencies=@{test='1'};scripts=[ordered]@{
+        'check:performance-architecture'='node check.mjs && node scripts/test-testrun-observation-policy.mjs';build='vite build'}}
+    Write-Utf8NoBom $packagePath ($basePackage|ConvertTo-Json -Depth 8)
     & git -C $bindingRoot add -- .
     & git -C $bindingRoot commit -qm 'synthetic base'
     if ($LASTEXITCODE -ne 0) { throw 'Binding fixture base commit failed.' }
@@ -144,8 +163,9 @@ try {
         & git -C $bindingRoot commit -qm 'synthetic scoped change'
         if ($LASTEXITCODE -ne 0) { throw 'Binding fixture scoped commit failed.' }
         $bindingHead = (& git -C $bindingRoot rev-parse HEAD).Trim()
-        $expectedBinding = $bindingPath -cin @('docs/HANDOFF.md','docs/TASK-LEDGER.md',
-            'docs/BUGFIX-REGISTRY.md','ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1')
+        $expectedBinding = $bindingPath -cin (@('docs/HANDOFF.md','docs/TASK-LEDGER.md',
+            'docs/BUGFIX-REGISTRY.md','docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
+            'ops/windows/deploy-l12.ps1','scripts/test-l12-deploy-behavior.ps1') + $qaBindingPaths)
         Assert-True ((Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingHead) -eq $expectedBinding) "Wrong application binding: $bindingPath"
         Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $bindingHead $bindingBase)) 'Non-ancestor binding accepted.'
         $bindingCases += 2
@@ -159,6 +179,24 @@ try {
         Assert-True (-not (Test-L12AcceptedApplicationBinding $bindingRoot $badCommit $bindingBase)) 'Malformed/unknown binding accepted.'
         $bindingCases++
     }
+    foreach ($fault in @('exact-extra-qa','dependency','build-command','removed-original-check','extra-other-script')) {
+        $package=($basePackage|ConvertTo-Json -Depth 8)|ConvertFrom-Json
+        $package.scripts.'check:performance-architecture'='node check.mjs && node scripts/test-tutorial-wire-observer.mjs && node scripts/test-testrun-observation-policy.mjs'
+        if($fault -ceq 'dependency'){$package.dependencies.test='2'}
+        if($fault -ceq 'build-command'){$package.scripts.build='unknown build'}
+        if($fault -ceq 'removed-original-check'){$package.scripts.'check:performance-architecture'='node scripts/test-tutorial-wire-observer.mjs'}
+        if($fault -ceq 'extra-other-script'){$package.scripts|Add-Member -NotePropertyName unknown -NotePropertyValue 'node unknown.mjs'}
+        Write-Utf8NoBom $packagePath ($package|ConvertTo-Json -Depth 8)
+        & git -C $bindingRoot add -- opcgpro-vue/package.json
+        & git -C $bindingRoot commit -qm 'synthetic package boundary'
+        if($LASTEXITCODE -ne 0){throw 'Package boundary fixture commit failed'}
+        $bindingHead=(& git -C $bindingRoot rev-parse HEAD).Trim()
+        Assert-True ((Test-L12AcceptedApplicationBinding $bindingRoot $bindingBase $bindingHead) -eq ($fault -ceq 'exact-extra-qa')) "Package boundary: $fault"
+        $bindingCases++
+    }
+    Write-Utf8NoBom $packagePath ($basePackage|ConvertTo-Json -Depth 8)
+    & git -C $bindingRoot add -- opcgpro-vue/package.json
+    & git -C $bindingRoot commit -qm 'restore synthetic package'
     & git -C $bindingRoot rm -q -- docs/HANDOFF.md
     & git -C $bindingRoot commit -qm 'synthetic deletion'
     $bindingHead = (& git -C $bindingRoot rev-parse HEAD).Trim()

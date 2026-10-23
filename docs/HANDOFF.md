@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-24 正式发布准备｜复用已验应用，不因后续QA重包
+
+- 稳定3a到工具943仅四具名文档、12个具名QA及package性能链精确新增一条观察器检查。Windows入口原五叶限制会误拒同包；现仅接纳这些具名A/M，package回填原QA链后完整对象必须相同，源码／依赖／构建／配置／删除／分叉仍拒绝。实际原函数RED→新GREEN，63绑定例、6真实重试例及76隔离服务器场景全过，独立只读复核无阻断；不改服务端停服、备份proof、manifest或Release。唯一formal-release-20261024/application-binding-red-green.json及deploy-behavior.log。
+- 当前正式57仍未切换。人类明确授权强退唯一玩家沙盒；首次因维护时间UTC与+08表示误判，第二次因把测试共用图库HTTP一起计入WS而在断连前拒绝。两次均保原进程／4命令、恢复入口原SHA、owned cancel/Open5／7及会话401；已精确定位第五条连接属测试PID649657，正补双向归属，不扩大断开范围。七位小数时刻比较已27纯回归，尚未取得强退成功，不手写库、不伪造胜负／许可。
+- 部署工具剩余映射均实际通过：架构／内核边界／路由、ledger／status／release gate、备份30和consumer34。组合包装器在release gate已打印通过后误读预期反例的残留LASTEXITCODE，原失败保留，只续跑后两项，未重复已通过76场景或产品构建；证据remaining-mapped.log及两个独立回归日志。
+- 三组10月15／18旧正式完整备份及原proof／sha共9件经私有E盘逐字节及归档验证后，仅移除服务器同字节副本；可用空间10030923776→14495363072B。最新两组、失败引用、当前库及E完整副本保留，自动轮转仍关闭；唯一formal-backup-cold-copy.json／backup-duplicate-removal.json。
+
 ## 2026-10-24 当前六幕教学三尺寸整课通过｜收尾后正式部署获新授权
 
 - 当前产品仍与完整已验3a376f17一致，复用精确BAEFF后端及Windows依赖，不重复构建或30＋10。现有全课脚本full-r2实际104800ms／exit0：1366×768、844×390、390×844各五页介绍与deploy／move／combat／response／preparation／finale六幕，18组GREEN；各亲自两次进攻获胜、学习保存、返回大厅且不自动排队。18次真实leave／roomLeft一一完成，15项实际费用／检索／排序／返还／登场回执，32叶前后hash全等、页面错误0。

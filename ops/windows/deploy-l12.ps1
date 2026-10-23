@@ -180,20 +180,55 @@ function Test-L12AcceptedApplicationBinding {
     if ($LASTEXITCODE -ne 0) { return $false }
     if ($ApplicationCommit -ceq $ToolCommit) { return $true }
     # The artifact keeps its original application identity and full Release proof.
-    # Only these existing records and this locally tested Windows wrapper may
+    # Only these named records, QA sources and this locally tested wrapper may
     # differ. No application, server-side tool, schema, config, ledger or asset
     # can be silently deployed from an older tree. HEAD still equals origin/main.
     $nonPayloadPaths = @(
         'docs/HANDOFF.md', 'docs/TASK-LEDGER.md', 'docs/BUGFIX-REGISTRY.md',
+        'docs/NEW-PLAYER-TUTORIAL-IMPLEMENTATION.md',
         'ops/windows/deploy-l12.ps1', 'scripts/test-l12-deploy-behavior.ps1'
+    )
+    $namedQaPaths = @(
+        'opcgpro-vue/scripts/qa-tutorial-candidate-images-20261023.mjs',
+        'opcgpro-vue/scripts/test-testrun-pressure-current.mjs',
+        'opcgpro-vue/scripts/test-tutorial-deployed.mjs',
+        'opcgpro-vue/scripts/test-tutorial-ui.mjs',
+        'opcgpro-vue/scripts/test-tutorial-wire-observer.mjs',
+        'opcgpro-vue/scripts/testrun-pressure-finalizer.mjs',
+        'opcgpro-vue/scripts/tutorial-wire-observer.mjs',
+        'ops/qa/restore-startup-drill.mjs', 'ops/qa/restore-startup-drill.py',
+        'ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs',
+        'ops/qa/test-restore-startup-drill.py', 'ops/qa/toolchain-sources.json'
     )
     $changes = @(& git -C $RepositoryRoot diff --name-status --no-renames --no-ext-diff `
         $ApplicationCommit $ToolCommit -- 2>$null)
     if ($LASTEXITCODE -ne 0) { return $false }
     foreach ($change in $changes) {
         $fields = $change -split "`t"
-        if ($fields.Count -ne 2 -or $fields[0] -cne 'M' -or
-            $fields[1] -cnotin $nonPayloadPaths) { return $false }
+        if ($fields.Count -ne 2) { return $false }
+        if ($fields[0] -ceq 'M' -and $fields[1] -cin $nonPayloadPaths) { continue }
+        if ($fields[0] -cin @('A','M') -and $fields[1] -cin $namedQaPaths) { continue }
+        if ($fields[0] -ceq 'M' -and $fields[1] -ceq 'opcgpro-vue/package.json') {
+            # One exact extra regression in an existing QA chain only. Every
+            # dependency, build command, other script and package field is equal.
+            try {
+                $acceptedPackage = ((& git -C $RepositoryRoot show "${ApplicationCommit}:opcgpro-vue/package.json") -join "`n") | ConvertFrom-Json
+                if ($LASTEXITCODE -ne 0) { return $false }
+                $toolPackage = ((& git -C $RepositoryRoot show "${ToolCommit}:opcgpro-vue/package.json") -join "`n") | ConvertFrom-Json
+                if ($LASTEXITCODE -ne 0) { return $false }
+                $oldChain = [string]$acceptedPackage.scripts.'check:performance-architecture'
+                $anchor = ' && node scripts/test-testrun-observation-policy.mjs'
+                if ($oldChain.Split([string]$anchor).Count -ne 2 -or
+                    [string]$toolPackage.scripts.'check:performance-architecture' -cne
+                    $oldChain.Replace($anchor, ' && node scripts/test-tutorial-wire-observer.mjs' + $anchor)) { return $false }
+                $toolPackage.scripts.'check:performance-architecture' = $oldChain
+                if (($acceptedPackage | ConvertTo-Json -Depth 40 -Compress) -cne
+                    ($toolPackage | ConvertTo-Json -Depth 40 -Compress)) { return $false }
+            }
+            catch { return $false }
+            continue
+        }
+        return $false
     }
     return $true
 }
