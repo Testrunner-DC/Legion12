@@ -1787,6 +1787,9 @@ public sealed partial class L12RoomManager
                     requireConnected: room.IsTraining))
                 return Error(sessionId, "房间成员身份已变化，请重新连接", requestId: requestId);
             if (room.Game is null) return Error(sessionId, "对局尚未开始", requestId: requestId);
+            // Numeric test-only observation binds the two authority-owned player transports,
+            // never an arbitrary first non-requester (which might be a spectator).
+            transportDiagnostic?.BindRecipients(room.Sessions);
             if (room.IsSandbox && !CanControlSandbox(room, session))
                 return Error(sessionId, "沙盒权限已失效", "sandboxForbidden", requestId);
             if (room.Tutorial is { Frozen: true })

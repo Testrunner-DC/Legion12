@@ -66,7 +66,8 @@ internal readonly record struct L12SyntheticTransportSnapshot(
     long OutboundEnqueuedRelativeMicroseconds,
     long OutboundDequeuedRelativeMicroseconds,
     L12SyntheticRecorderSnapshot RecorderAppend,
-    L12SyntheticRecorderSnapshot RecorderComplete);
+    L12SyntheticRecorderSnapshot RecorderComplete,
+    int RecipientRole = 0);
 
 /// <summary>
 /// A one-shot numeric probe for an explicitly isolated test-run profile. It deliberately does not
@@ -78,6 +79,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     internal const string Mode = "terminal-burst-v1";
     internal const string BoundsMode = "terminal-bounds-v2";
     internal const string RecorderMode = "terminal-recorder-v3";
+    internal const string RecipientsMode = "terminal-recipients-v4";
     internal const int MaximumSamples = 32;
     internal const int MaximumBoundsSamples = 6;
     private static readonly TimeSpan DefaultDeadline = TimeSpan.FromSeconds(15);
@@ -87,11 +89,13 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     private readonly string _nonce;
     private readonly string _requestPrefix;
     private readonly L12SyntheticTransportSample?[] _samples;
+    private readonly L12SyntheticTransportSample?[]? _peerSamples;
     private readonly Action<string> _sink;
     private readonly TimeSpan _deadline;
     private readonly TimeSpan _quietPeriod;
     private readonly bool _boundsMode;
     private readonly bool _recorderMode;
+    private readonly bool _recipientsMode;
     private readonly Timer _timer;
     private int _accepted;
     private int _completed;
@@ -104,17 +108,19 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     private bool _flushed;
 
     private L12SyntheticTransportDiagnostics(int expected, string nonce, Action<string> sink,
-        TimeSpan deadline, TimeSpan quietPeriod, bool boundsMode, bool recorderMode)
+        TimeSpan deadline, TimeSpan quietPeriod, bool boundsMode, bool recorderMode, bool recipientsMode)
     {
         ExpectedSamples = expected;
         _nonce = nonce;
         _requestPrefix = $"l12diag:{nonce}:";
         _samples = new L12SyntheticTransportSample?[expected];
+        _peerSamples = recipientsMode ? new L12SyntheticTransportSample?[expected] : null;
         _sink = sink;
         _deadline = deadline;
         _quietPeriod = quietPeriod;
-        _boundsMode = boundsMode || recorderMode;
-        _recorderMode = recorderMode;
+        _boundsMode = boundsMode || recorderMode || recipientsMode;
+        _recorderMode = recorderMode || recipientsMode;
+        _recipientsMode = recipientsMode;
         _timer = new Timer(static state => ((L12SyntheticTransportDiagnostics)state!).Flush(),
             this, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
     }
@@ -124,6 +130,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     internal int CompletedSamples { get { lock (_gate) return _completed; } }
     internal bool IsBoundsMode => _boundsMode;
     internal bool IsRecorderMode => _recorderMode;
+    internal bool IsRecipientsMode => _recipientsMode;
 
     internal static L12SyntheticTransportDiagnostics? Create(bool ephemeralTestMatches,
         string? setting, Action<string>? sink = null, TimeSpan? deadline = null,
@@ -138,11 +145,13 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         var legacyMode = parts.Length == 3 && string.Equals(parts[0], Mode, StringComparison.Ordinal);
         var boundsMode = parts.Length == 3 && string.Equals(parts[0], BoundsMode, StringComparison.Ordinal);
         var recorderMode = parts.Length == 3 && string.Equals(parts[0], RecorderMode, StringComparison.Ordinal);
+        var recipientsMode = parts.Length == 3 && string.Equals(parts[0], RecipientsMode, StringComparison.Ordinal);
         if (parts.Length != 3
-            || !legacyMode && !boundsMode && !recorderMode
+            || !legacyMode && !boundsMode && !recorderMode && !recipientsMode
             || !int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var expected)
             || expected < 1
             || legacyMode && expected > MaximumSamples
+            || recipientsMode && expected > MaximumSamples
             || (boundsMode || recorderMode) && expected > MaximumBoundsSamples
             || parts[2].Length != 32
             || parts[2].Any(character => character is not (>= '0' and <= '9')
@@ -155,10 +164,10 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
             throw new ArgumentOutOfRangeException(nameof(deadline),
                 "Synthetic transport diagnostic timers must be positive.");
         return new L12SyntheticTransportDiagnostics(expected, parts[2], sink ?? Console.Error.WriteLine,
-            effectiveDeadline, effectiveQuietPeriod, boundsMode, recorderMode);
+            effectiveDeadline, effectiveQuietPeriod, boundsMode, recorderMode, recipientsMode);
     }
 
-    internal bool AcceptsCommand(string? commandType) => _boundsMode
+    internal bool AcceptsCommand(string? commandType) => _boundsMode && !_recipientsMode
         ? commandType is "surrender" or "playCard" or "endTurn"
         : string.Equals(commandType, "surrender", StringComparison.Ordinal);
 
@@ -222,7 +231,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         {
             lock (_gate)
             {
-                if (_flushed || !ReferenceEquals(_samples[sample.Slot], sample)) return;
+                if (_flushed || !OwnsSampleLocked(sample)) return;
                 if (RejectBoundsEventAtOrBeyondDeadlineLocked(observedAt)) return;
                 if (!sample.TryComplete(status)) return;
                 _completed++;
@@ -230,6 +239,66 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                     _timer.Change(_quietPeriod, Timeout.InfiniteTimeSpan);
                 else if (_boundsMode)
                     ScheduleBoundsFlushIfResolvedLocked();
+            }
+        }
+        catch { }
+    }
+
+    private bool OwnsSampleLocked(L12SyntheticTransportSample sample)
+        => sample.Slot >= 0 && sample.Slot < ExpectedSamples
+            && (ReferenceEquals(_samples[sample.Slot], sample)
+                || _peerSamples is not null && ReferenceEquals(_peerSamples[sample.Slot], sample));
+
+    internal void BindRecipients(L12SyntheticTransportSample command, IReadOnlyList<Guid> players)
+    {
+        if (!_recipientsMode) return;
+        try
+        {
+            lock (_gate)
+            {
+                if (_flushed || !ReferenceEquals(_samples[command.Slot], command)
+                    || RejectBoundsEventAtOrBeyondDeadlineLocked(Stopwatch.GetTimestamp())) return;
+                if (players.Count != 2 || players[0] == default || players[1] == default
+                    || players[0] == players[1] || !players.Contains(command.TransportId)
+                    || _peerSamples![command.Slot] is not null)
+                { _invalid++; return; }
+                var peer = players[0] == command.TransportId ? players[1] : players[0];
+                _peerSamples![command.Slot] = command.CreatePeer(peer);
+            }
+        }
+        catch { } // Observation must never change command delivery or settlement.
+    }
+
+    internal L12SyntheticTransportSample? TakeRecipient(L12SyntheticTransportSample command,
+        Guid transportId, bool isGameState)
+    {
+        if (!_recipientsMode || !isGameState) return null;
+        try
+        {
+            lock (_gate)
+            {
+                if (_flushed || !ReferenceEquals(_samples[command.Slot], command)
+                    || RejectBoundsEventAtOrBeyondDeadlineLocked(Stopwatch.GetTimestamp())) return null;
+                var recipient = transportId == command.TransportId ? command
+                    : _peerSamples![command.Slot] is { } peer && peer.TransportId == transportId ? peer : null;
+                if (recipient is null) return null; // Spectators/other transports are not the peer.
+                if (!recipient.TryAssignOutbound()) { _invalid++; return null; }
+                return recipient;
+            }
+        }
+        catch { return null; }
+    }
+
+    internal void FinishRecipients(L12SyntheticTransportSample command)
+    {
+        if (!_recipientsMode) return;
+        try
+        {
+            lock (_gate)
+            {
+                if (_flushed || !ReferenceEquals(_samples[command.Slot], command)) return;
+                if (!command.OutboundAssigned) command.MissingReply();
+                if (_peerSamples![command.Slot] is { OutboundAssigned: false } peer) peer.MissingReply();
             }
         }
         catch { }
@@ -271,13 +340,21 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                 || !string.Equals(rawSlot, slot.ToString(CultureInfo.InvariantCulture),
                     StringComparison.Ordinal))
                 return false;
-            return TryAcceptReceipt(transportId, nonce.GetString(), slot, receivedAt);
+            var recipientRole = 0;
+            if (_recipientsMode)
+            {
+                if (!root.TryGetProperty("diagnosticRecipient", out var recipient)
+                    || recipient.ValueKind != JsonValueKind.Number
+                    || recipient.GetRawText() is not ("0" or "1")) return false;
+                recipientRole = recipient.GetInt32();
+            }
+            return TryAcceptReceipt(transportId, nonce.GetString(), slot, receivedAt, recipientRole);
         }
         catch (JsonException) { return false; }
         catch { return false; }
     }
 
-    private bool TryAcceptReceipt(Guid transportId, string? nonce, int slot, long receivedAt)
+    private bool TryAcceptReceipt(Guid transportId, string? nonce, int slot, long receivedAt, int recipientRole = 0)
     {
         try
         {
@@ -286,7 +363,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                 if (_flushed) return false;
                 if (!string.Equals(nonce, _nonce, StringComparison.Ordinal)
                     || slot < 0 || slot >= ExpectedSamples
-                    || _samples[slot] is not { } sample
+                    || (recipientRole == 0 ? _samples[slot] : _peerSamples?[slot]) is not { } sample
                     || sample.TransportId != transportId)
                 {
                     _invalid++;
@@ -322,6 +399,9 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
         if (!_boundsMode || !_started || _accepted < ExpectedSamples) return;
         foreach (var sample in _samples)
             if (sample is null || !sample.IsBoundsResolved) return;
+        if (_peerSamples is not null)
+            foreach (var sample in _peerSamples)
+                if (sample is null || !sample.IsBoundsResolved) return;
         var remaining = _deadline - Stopwatch.GetElapsedTime(_deadlineStartedAt);
         var due = remaining <= TimeSpan.Zero
             ? TimeSpan.Zero
@@ -332,9 +412,12 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
     internal IReadOnlyList<L12SyntheticTransportSnapshot> SnapshotForTests()
     {
         lock (_gate)
-            return _samples.Where(sample => sample is not null)
+            return AllSamplesLocked().Where(sample => sample is not null)
                 .Select(sample => sample!.Snapshot()).ToArray();
     }
+
+    private IEnumerable<L12SyntheticTransportSample?> AllSamplesLocked()
+        => _peerSamples is null ? _samples : _samples.Concat(_peerSamples);
 
     private void Flush()
     {
@@ -350,9 +433,9 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
             if (_flushed) return;
             _flushed = true;
             if (!_started) return;
-            foreach (var sample in _samples)
+            foreach (var sample in AllSamplesLocked())
                 sample?.SealAtDeadline();
-            rows = _samples.Where(sample => sample is not null)
+            rows = AllSamplesLocked().Where(sample => sample is not null)
                 .Select(sample => sample!.Snapshot()).ToArray();
             accepted = _accepted;
             completed = rows.Count(row => row.Status != (int)L12SyntheticTransportStatus.Pending
@@ -386,7 +469,7 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                 // A separate schema keeps both legacy strict numeric contracts unchanged.
                 var line = JsonSerializer.Serialize(new
                 {
-                    schema = 3, kind = 1, slot = row.Slot, status = row.Status,
+                    schema = _recipientsMode ? 4 : 3, kind = 1, slot = row.Slot, status = row.Status,
                     in_fifo_us = row.InboundFifoMicroseconds, in_depth = row.InboundAcceptedDepth,
                     in_bytes = row.InboundAcceptedRetainedBytes, in_remaining = row.InboundRemainingDepth,
                     pre_gate_us = row.PreGateMicroseconds, gate_wait_us = row.GateWaitMicroseconds,
@@ -417,8 +500,28 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
                     complete_acquired_rel_us = row.RecorderComplete.AcquiredRelativeMicroseconds,
                     complete_hold_end_rel_us = row.RecorderComplete.HoldEndedRelativeMicroseconds,
                 });
+                if (_recipientsMode)
+                    line = "{\"recipient\":" + row.RecipientRole.ToString(CultureInfo.InvariantCulture)
+                        + "," + line[1..];
                 try { _sink(line); }
                 catch { }
+            }
+            if (_recipientsMode)
+            {
+                var recipientSummary = JsonSerializer.Serialize(new
+                {
+                    schema = 4, kind = 2, expected_commands = ExpectedSamples, accepted_commands = accepted,
+                    expected_recipients = ExpectedSamples * 2, observed_recipients = rows.Length, completed,
+                    missing = ExpectedSamples * 2 - rows.Length,
+                    deadline = rows.Count(row => row.Status == (int)L12SyntheticTransportStatus.Deadline),
+                    duplicate = duplicates, invalid, receipts,
+                    receipt_missing = rows.Count(row => row.ReceiptValid == 0
+                        && row.Status is (int)L12SyntheticTransportStatus.Sent or (int)L12SyntheticTransportStatus.Deadline),
+                    receipt_duplicate = receiptDuplicates,
+                });
+                try { _sink(recipientSummary); }
+                catch { }
+                return;
             }
             var summary = JsonSerializer.Serialize(new
             {
@@ -460,6 +563,9 @@ internal sealed class L12SyntheticTransportDiagnostics : IDisposable
 internal sealed class L12SyntheticTransportSample
 {
     private readonly L12SyntheticTransportDiagnostics _owner;
+    private readonly L12InboundQueueTiming _inbound;
+    private readonly L12SyntheticTransportSample? _commandSample;
+    private int _outboundAssigned;
     private readonly long _inboundEnqueuedAt;
     private readonly long _inboundDequeuedAt;
     private readonly long _receiveCompletedAt;
@@ -491,9 +597,11 @@ internal sealed class L12SyntheticTransportSample
     private RecorderInterval _recorderComplete;
 
     internal L12SyntheticTransportSample(L12SyntheticTransportDiagnostics owner, int slot,
-        L12InboundQueueTiming inbound, Guid transportId)
+        L12InboundQueueTiming inbound, Guid transportId, L12SyntheticTransportSample? commandSample = null)
     {
         _owner = owner;
+        _inbound = inbound;
+        _commandSample = commandSample;
         Slot = slot;
         TransportId = transportId;
         _inboundEnqueuedAt = inbound.EnqueuedAt;
@@ -504,7 +612,7 @@ internal sealed class L12SyntheticTransportSample
         _inboundAcceptedDepth = inbound.AcceptedDepth;
         _inboundAcceptedRetainedBytes = inbound.AcceptedRetainedBytes;
         _inboundRemainingDepth = inbound.RemainingQueuedMessages;
-        if (owner.IsRecorderMode)
+        if (owner.IsRecorderMode && commandSample is null)
             _recorderObserver = (operation, boundary, timestamp) =>
                 owner.RecordRecorderBoundary(this, operation, boundary, timestamp);
     }
@@ -512,6 +620,15 @@ internal sealed class L12SyntheticTransportSample
     internal int Slot { get; }
     internal Guid TransportId { get; }
     internal Action<int, int, long>? RecorderObserver => _recorderObserver;
+    internal bool IsRecipientsMode => _owner.IsRecipientsMode;
+    internal bool OutboundAssigned => Volatile.Read(ref _outboundAssigned) != 0;
+    internal bool TryAssignOutbound() => Interlocked.CompareExchange(ref _outboundAssigned, 1, 0) == 0;
+    internal L12SyntheticTransportSample CreatePeer(Guid transportId)
+        => new(_owner, Slot, _inbound, transportId, this);
+    internal void BindRecipients(IReadOnlyList<Guid> players) => _owner.BindRecipients(this, players);
+    internal L12SyntheticTransportSample? TakeRecipient(Guid transportId, bool isGameState)
+        => _owner.TakeRecipient(this, transportId, isGameState);
+    internal void FinishRecipients() => _owner.FinishRecipients(this);
 
     // Accessed only under the diagnostics owner gate, also used by SnapshotForTests/Flush.
     private struct RecorderInterval
@@ -649,7 +766,7 @@ internal sealed class L12SyntheticTransportSample
         var receiptValid = receiveTimelineValid && receiptReceivedAt >= _receiveCompletedAt;
         var receiptAfterSendValid = receiptValid && sendCompletedAt > 0
                                    && receiptReceivedAt >= sendCompletedAt;
-        return new L12SyntheticTransportSnapshot(
+        var snapshot = new L12SyntheticTransportSnapshot(
             Slot,
             Volatile.Read(ref _status),
             ElapsedMicroseconds(_inboundEnqueuedAt, _inboundDequeuedAt),
@@ -687,7 +804,19 @@ internal sealed class L12SyntheticTransportSample
             _recorderAppend.Snapshot(_receiveCompletedAt, Volatile.Read(ref _gateAcquiredAt),
                 Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Deadline),
             _recorderComplete.Snapshot(_receiveCompletedAt, Volatile.Read(ref _gateAcquiredAt),
-                Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Deadline));
+                Volatile.Read(ref _status) == (int)L12SyntheticTransportStatus.Deadline),
+            _commandSample is null ? 0 : 1);
+        if (_commandSample is null) return snapshot;
+        var command = _commandSample.Snapshot();
+        return snapshot with
+        {
+            PreGateMicroseconds = command.PreGateMicroseconds,
+            GateWaitMicroseconds = command.GateWaitMicroseconds,
+            GateHoldMicroseconds = command.GateHoldMicroseconds,
+            RoomGateAcquiredRelativeMicroseconds = command.RoomGateAcquiredRelativeMicroseconds,
+            RecorderAppend = command.RecorderAppend,
+            RecorderComplete = command.RecorderComplete,
+        };
     }
 
     private static long ElapsedMicroseconds(long startedAt, long completedAt)
@@ -5552,7 +5681,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             if (!_outboundConnections.TryGetValue(message.SessionId, out var outbound)) continue;
-            var messageDiagnostic = !diagnosticAssigned && transportDiagnostic is not null
+            var messageDiagnostic = transportDiagnostic is { IsRecipientsMode: true }
+                ? transportDiagnostic.TakeRecipient(message.SessionId, message.IsGameState)
+                : !diagnosticAssigned && transportDiagnostic is not null
                                     && message.SessionId == diagnosticSessionId
                 ? transportDiagnostic : null;
             if (messageDiagnostic is not null) diagnosticAssigned = true;
@@ -5579,7 +5710,9 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             // 队列中全是不可丢关键消息时，隔离此慢连接，绝不反压房间动作链。
             if (_sockets.TryGetValue(message.SessionId, out var slowSocket)) slowSocket.Abort();
         }
-        if (transportDiagnostic is not null && !diagnosticAssigned)
+        if (transportDiagnostic is { IsRecipientsMode: true })
+            transportDiagnostic.FinishRecipients();
+        else if (transportDiagnostic is not null && !diagnosticAssigned)
             transportDiagnostic.MissingReply();
         return Task.CompletedTask;
     }

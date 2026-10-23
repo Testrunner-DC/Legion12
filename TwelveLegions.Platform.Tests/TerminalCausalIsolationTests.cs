@@ -25,6 +25,114 @@ public sealed class TerminalCausalIsolationTests(ITestOutputHelper output)
 
     [Theory]
     [InlineData("normal")]
+    [InlineData("held-peer")]
+    [InlineData("held-actor")]
+    public async Task BothTerminalRecipientsKeepTheirOwnQueuePrepareSendAndAuthenticatedReceipt(string arm)
+    {
+        using var identity = new RankedIdentityFixture();
+        var actorRegistration = identity.Store.Register($"ra{Guid.NewGuid():N}"[..10], "Password123!");
+        var peerRegistration = identity.Store.Register($"rb{Guid.NewGuid():N}"[..10], "Password123!");
+        Assert.True(actorRegistration.Success);
+        Assert.True(peerRegistration.Success);
+        var evidence = new ConcurrentQueue<string>();
+        var nonce = Guid.NewGuid().ToString("N");
+        using var diagnostics = L12SyntheticTransportDiagnostics.Create(true,
+            $"{L12SyntheticTransportDiagnostics.RecipientsMode}:1:{nonce}", evidence.Enqueue,
+            ThreeSeconds, TimeSpan.FromMilliseconds(10))!;
+        await using var recorder = new MatchRecorder(Path.Combine(Path.GetDirectoryName(identity.Path)!, $"recipients-{arm}.db"));
+        await recorder.InitializeAsync();
+        var rooms = new L12RoomManager(identity.Catalog, recorder, identity.Store);
+        await using var server = new L12WebSocketServer(rooms, recorder, identity.Store,
+            identity.Catalog, null, null, null, null, null, null, null, diagnostics);
+        SocketPeer? actor = null;
+        SocketPeer? peer = null;
+        HeldTargetSender? held = null;
+        var started = false;
+        try
+        {
+            await server.StartAsync(0).WaitAsync(SetupDeadline);
+            started = true;
+            var endpoint = new UriBuilder(Assert.Single(server.Addresses))
+                { Host = "127.0.0.1", Scheme = "ws", Path = "/ws" }.Uri;
+            actor = await SocketPeer.ConnectAsync(endpoint, actorRegistration.Token!);
+            peer = await SocketPeer.ConnectAsync(endpoint, peerRegistration.Token!);
+            await StartFriendlyGameAsync(actor, peer);
+            await AssertHealthyAsync(actor);
+            await AssertHealthyAsync(peer);
+            if (arm != "normal")
+            {
+                held = await HeldTargetSender.InstallAsync(server, arm == "held-peer" ? peer.SessionId : actor.SessionId);
+                await held.EnterAsync();
+            }
+            var requestId = $"l12diag:{nonce}:0:{Guid.NewGuid():N}";
+            var actorTask = actor.ReceiveAsync(frame => IsGameOver(frame)
+                && ReadString(frame, "requestId") == requestId, ThreeSeconds);
+            var peerTask = peer.ReceiveAsync(IsGameOver, ThreeSeconds);
+            var sentAt = Stopwatch.GetTimestamp();
+            await actor.SendAsync(new { type = "gameAction", requestId, command = new { type = "surrender" } });
+            if (held is not null)
+            {
+                _ = await (arm == "held-peer" ? actorTask : peerTask);
+                Assert.False((arm == "held-peer" ? peerTask : actorTask).IsCompleted);
+                await Task.Delay(1100);
+                held.Release();
+            }
+            var frames = await Task.WhenAll(actorTask, peerTask);
+            Assert.All(frames, frame => Assert.True(ElapsedMilliseconds(sentAt, frame.ReceivedAt) < 3000));
+            Assert.Null(ReadString(frames[1].Payload, "requestId"));
+            Assert.Equal(frames[0].Payload.GetProperty("state").GetProperty("matchId").GetString(),
+                frames[1].Payload.GetProperty("state").GetProperty("matchId").GetString());
+            Assert.Equal(ReadInt64(frames[0].Payload.GetProperty("state"), "revision"),
+                ReadInt64(frames[1].Payload.GetProperty("state"), "revision"));
+            var peers = new[] { actor, peer };
+            for (var role = 0; role < 2; role++)
+            {
+                await peers[role].SendAsync(new { type = "ping", diagnosticNonce = nonce,
+                    diagnosticSlot = 0, diagnosticRecipient = role });
+                var pong = await peers[role].ReceiveTypeAsync("pong", ThreeSeconds);
+                Assert.Equal(new[] { "type", "utc" }, pong.Payload.EnumerateObject().Select(property => property.Name));
+            }
+            using var deadline = new CancellationTokenSource(SetupDeadline);
+            while (evidence.Count < 3) await Task.Delay(10, deadline.Token);
+            Assert.Equal(3, evidence.Count);
+            var rows = evidence.Select(line => JsonSerializer.Deserialize<JsonElement>(line))
+                .Where(row => row.GetProperty("kind").GetInt32() == 1)
+                .OrderBy(row => row.GetProperty("recipient").GetInt32()).ToArray();
+            Assert.Equal(2, rows.Length);
+            for (var role = 0; role < 2; role++)
+            {
+                var row = rows[role];
+                Assert.Equal(4, row.GetProperty("schema").GetInt32());
+                Assert.Equal(role, row.GetProperty("recipient").GetInt32());
+                Assert.Equal((int)L12SyntheticTransportStatus.Sent, row.GetProperty("status").GetInt32());
+                Assert.Equal(1, row.GetProperty("receipt_valid").GetInt32());
+                Assert.Equal(1, row.GetProperty("receipt_after_send_valid").GetInt32());
+                Assert.Equal(1, row.GetProperty("append_valid").GetInt32());
+                Assert.Equal(frames[role].RawBytes, row.GetProperty("wire_bytes").GetInt32());
+                Assert.True(row.GetProperty("send_end_rel_us").GetInt64() >= row.GetProperty("send_start_rel_us").GetInt64());
+                output.WriteLine("recipient-arm={0} role={1} callback_us={2} queue_us={3} prepare_us={4} send_us={5} bytes={6}",
+                    arm, role, ElapsedMicroseconds(sentAt, frames[role].ReceivedAt),
+                    row.GetProperty("out_queue_us").GetInt64(), row.GetProperty("prepare_us").GetInt64(),
+                    row.GetProperty("send_us").GetInt64(), row.GetProperty("wire_bytes").GetInt32());
+            }
+            if (held is not null)
+                Assert.True(rows[arm == "held-peer" ? 1 : 0].GetProperty("out_queue_us").GetInt64() >= 1_000_000);
+            using var summary = JsonDocument.Parse(evidence.Last());
+            Assert.Equal(2, summary.RootElement.GetProperty("receipts").GetInt32());
+            Assert.Equal(0, summary.RootElement.GetProperty("missing").GetInt32());
+            Assert.Equal(0, summary.RootElement.GetProperty("invalid").GetInt32());
+        }
+        finally
+        {
+            held?.Release();
+            if (actor is not null) await actor.DisposeAsync();
+            if (peer is not null) await peer.DisposeAsync();
+            if (started) await server.StopAsync().WaitAsync(SetupDeadline);
+        }
+    }
+
+    [Theory]
+    [InlineData("normal")]
     [InlineData("held-target-sender")]
     [InlineData("held-platform-commit")]
     public async Task LocalhostTerminalSeparatesTargetSenderAndPlatformBackgroundFromHealthyPeers(string arm)
