@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-24 正式3a已独验上线｜本次维护已结束，测试不重复切包
+
+- 唯一正式操作a278e344实际exit0，57→完整已验3a376f17同包；正式PID663771／DLL BAEFF29E7／无重启，测试PID649657及同一3a不变。原Release8378／2322／九阶段、原30＋10及当前六幕三尺寸证据复用，不造正式账号／测试对局／业务统计，不因工具提交重建应用。工具开发a483与被部署3a分开记录。
+- 人类授权的唯一玩家沙盒已沿正常断线回收abandoned，4命令／checkpoint／录像保留。r1／r2／r3失败不改，r3实时计数误判另以只读新证明修正；原审计前缀及本人撤销事件正文SHA／列／权限完整校验、精确输出和生成源固定。历史另两条已applied且父沙盒真实到期的响应残项21／22精确保留，原native未解2不伪装0，其他13计数／四历史指纹全等；warm read、两真实seal、正常停服、最新库/WAL证明均保。
+- 新完整备份3044659124B／SHA AE906185，真实停服证明34442A50：双库／4持久文件6177607680B、WAL／镜像／锚点／SQLite完整一致，239238ms、无修复或旧库回写。独立formal验收再核包／服务、本地与公网HTTP／匿名WS、静态与玩家更新日志、原生seal／历史／围栏及测试不变，通过；不把它冒正式30＋10或真机容量。
+- 成功独验后仅结束捕获的即时维护，131→132，07:45:45 +08生效；health ok／maintenance=false、policy entryBlocked=false、drain Open12／双租约严格0／owner空、三围栏不存在，原计划与其他配置全保，会话撤销401。清理已消费包及一份可再生旧程序共283378224B，业务和备份不删；此前三组旧备份仅服务器重复件已私有E完整保全。
+- 唯一formal-release-20261024/release-session-summary.json引用formal-execution-result、independent-formal-r1、maintenance-completion及真实raw proof；不再重复正式／测试部署或结束维护。原五阶段目标仍active：1—3测试限定容量接受、4当前本地整课通过但真机待补、5自动轮转／CI可信素材／历史QA可移植闭包未完成。保留期与response outbox原生就绪语义缺口另排产品修复，不把本次精确历史分类当成已修。
+
 ## 2026-10-24 正式发布准备｜复用已验应用，不因后续QA重包
 
 - 稳定3a到工具943仅四具名文档、12个具名QA及package性能链精确新增一条观察器检查。Windows入口原五叶限制会误拒同包；现仅接纳这些具名A/M，package回填原QA链后完整对象必须相同，源码／依赖／构建／配置／删除／分叉仍拒绝。实际原函数RED→新GREEN，63绑定例、6真实重试例及76隔离服务器场景全过，独立只读复核无阻断；不改服务端停服、备份proof、manifest或Release。唯一formal-release-20261024/application-binding-red-green.json及deploy-behavior.log。
