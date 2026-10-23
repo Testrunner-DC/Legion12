@@ -3,7 +3,7 @@ import BattleDockPortal from './BattleDockPortal.vue'
 import BattleOverlayPortal from './BattleOverlayPortal.vue'
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { gmAction, refereeGmAction, l12State } from '@/l12/net'
-import { endpointHttpBase } from '@/l12/deploymentBase'
+import { platformRequest, platformState } from '../platform'
 import type { Card, GameState } from '@/l12/types'
 import SingleCardPicker, { type SingleCardPickerItem } from '../SingleCardPicker.vue'
 import CardImage from '../CardImage.vue'
@@ -100,26 +100,46 @@ function onKeydown(event: KeyboardEvent) {
   if ((event.target as HTMLElement | null)?.closest('input,select,textarea,button')) return
   open.value = !open.value
 }
+const exportingRecord = ref(false)
+let exportRecordController: AbortController | null = null
+function stopRecordExport() {
+  exportRecordController?.abort()
+  exportRecordController = null
+  exportingRecord.value = false
+}
+watch([() => props.game.matchId, () => platformState.token], stopRecordExport)
 async function exportRecord() {
+  if (exportingRecord.value) return
+  const controller = new AbortController()
+  const matchId = props.game.matchId
+  const identity = platformState.token
+  exportRecordController = controller
+  exportingRecord.value = true
   try {
-    const url = `${endpointHttpBase(l12State.endpoint)}/api/matches/${props.game.matchId}`
-    const response = await fetch(url)
-    if (!response.ok) throw new Error('读取对局记录失败')
-    const data = await response.json()
+    const data = await platformRequest<unknown>(`/api/matches/${encodeURIComponent(matchId)}`, { signal: controller.signal })
+    if (controller.signal.aborted || exportRecordController !== controller
+      || props.game.matchId !== matchId || platformState.token !== identity) return
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const href = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = href
-    anchor.download = `L12-sandbox-${props.game.matchId.slice(0, 12)}.json`
+    anchor.download = `L12-sandbox-${matchId.slice(0, 12)}.json`
     anchor.click()
     URL.revokeObjectURL(href)
   } catch (error) {
+    if (controller.signal.aborted || exportRecordController !== controller
+      || props.game.matchId !== matchId || platformState.token !== identity) return
     l12State.notice = error instanceof Error ? error.message : '导出失败'
+  } finally {
+    if (exportRecordController === controller) {
+      exportRecordController = null
+      exportingRecord.value = false
+    }
   }
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+onBeforeUnmount(() => { stopRecordExport(); window.removeEventListener('keydown', onKeydown) })
 </script>
 
 <template>
@@ -148,7 +168,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
     <section><h3>士气、抽牌与牌库</h3><div class="number-row"><input v-model.number="count" type="number" min="1" max="20"/><button @click="run('addMorale', { value: count })">追加活跃士气</button></div><div class="two"><button @click="run('readyMorale')">全部士气活跃</button><button @click="run('restMorale')">全部士气休整</button><button @click="run('draw', { value: count })">抽取 {{ count }} 张</button><button @click="run('mill', { value: count })">弃置牌库顶 {{ count }} 张</button></div><button class="wide" @click="run('shuffleLibrary')">洗切牌库</button></section>
 
     </fieldset>
-    <footer><button v-if="!refereeMode" @click="exportRecord">导出可复现 JSON</button><span>快捷键 T</span></footer>
+    <footer><button v-if="!refereeMode" :disabled="exportingRecord" @click="exportRecord">{{ exportingRecord ? '导出中…' : '导出可复现 JSON' }}</button><span>快捷键 T</span></footer>
   </aside></BattleOverlayPortal>
   <SingleCardPicker v-if="pickerOpen" title="选择要执行 GM 操作的卡片" @select="selectCatalogCard" @close="pickerOpen = false"/>
 </template>

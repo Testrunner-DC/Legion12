@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261023-GOVERNED-RECORD-EXPORT｜两条到期网络例外收口
+
+- 阶段目标5的P2/P4维护：GM原生fetch绕过既有鉴权、超时与请求治理，且切号、换局、卸载后的旧导出仍可下载；未被任何路由或glob引用的旧M6占位回放页保留另一条raw-fetch例外。只使用原platformRequest出口，不新增请求层、不更改权限或导出接口。
+- GM导出绑定发起时账号Token／matchId／AbortController，忙碌时拒绝重复提交，卸载／换局／切号退休；迟到成功、失败和旧finally均不得跨代下载或清除新请求。原JSON字节格式、文件名和手动重试保留，现有三条真实回放路由不变。删除旧占位页可由Git恢复，未删除任何录像或业务数据。
+- 原raw-fetch具名RED保留；实际SFC导出函数8项行为回归通过，架构370源／13fetch／11interval及max fanout3通过，ops/performance-exceptions.json两条10月31日例外全部移除，不延长日期或放宽规则。新回归接原标准前端build；最终UI361、类型、正式／测试双Vite全过，唯一stage-goals-20261023/frontend-acceptance/main-acceptance.json。
+- 回滚仅本批导出叶及已退休占位页；不恢复到期豁免作为发布办法。无线上导出、部署、维护或业务写入，不冒真实服务器导出链／性能容量验收。
+
 ## PERF-20261023-TERMINAL-RECIPIENT-PROBE｜双方终局边界本地接受，未部署
 
 - 原57完整负载的30命令／60接收者已精确匹配，唯一迟到者是peer；旧SendMany只给actor附探针，原运行又关闭了诊断，不能从旧数据追定准备／队列／网络根因。本片是人类阶段目标下的P2观测缺口修复，不把本机控制组当公网原因或容量通过。
