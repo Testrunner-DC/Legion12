@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## PERF-20261023-COMMITTED-TITLE-FACT-REUSE｜保存分配同族优化，本地接受未部署
+
+- 根因：PrepareCommittedRankedIdentity每次平台保存都复制全部TitleFacts，并重建按主宰／账号的不可变索引，即使只是账号资料变化。人类已确认性能阶段目标；P3只复用上一真实已提交代的不可变事实及其索引，不新增权威缓存，不变更数据库、F2、Journal或提交顺序。
+- 复用条件为扁平事实有序十字段逐项精确相等：MatchId、双方账号／主宰、Winner、FinalRound、EndedAt的local ticks及offset、ConclusionKind、IsRanked。数量、顺序、大小写或任一值变化即重建；不用对象引用、版本号或DateTimeOffset的UTC相等代替。新账号、资格、停用／删除、赛季／段位、待结算及完整性排除集仍每代物化；失败候选从未成为复用来源。
+- 同类扫描PrepareCommittedRankedIdentity／IndexRankedMasterTitleFacts／TitleFacts，以及SessionActivity、TransactionalStorage和RankedBroadcastStorage的全部准备／发布入口。仍在数据库提交前完整准备，提交后Volatile发布；启动无可复用代时正常重建。其他可变索引不借本批越界复用。
+- 原产品RED是无关保存后的Assert.Same失败；2048纯合成事实×5次索引准备分配11,936,872B，最终同夹具2,658,168B（约−77.73%）。这不是整次Save、线上吞吐或终局SLA收益，计时不设脆弱门槛。新增22项覆盖十字段合同、16类失效、等值替换、失败回滚、资格／排除刷新和重启；专项60／60通过时尚无最后一项字段形状守卫，最终完整平台包含该项2261／2261通过，零失败跳过。架构锁、69项内核边界及原性能架构链通过；引擎8340和前端39e同源有效证据复用，不重跑无关构建。
+- 唯一物理D:/GPT/Legion12/artifacts/stage-goals-20261023；先前三轮夹具错误（私有属性误作字段、超长合成用户名、未补齐held身份／错误假定称号资格）原TRX保留，纠正夹具而未减产品断言。正式／测试服务与维护未动，原30＋10仍NOT_ACCEPTED，3性能反馈不关闭。回滚仅本批不可变子索引复用及新测试，不删事实、不回写旧库。
+
 ## FEATURE-20261023-GALLERY-METADATA-PRODUCTS｜收录产品与卡片资料统一管理
 
 - 人类直接要求：ST01—ST06的六张st士气作为对应士气异画、画廊默认产品优先与可配置发布顺序、后台点击卡图详情、与画师并列的可选联动资料、收录产品可独立管理。仅扩展P3/P4的现有资料投影，不改卡效、构筑、权益或线上数据。

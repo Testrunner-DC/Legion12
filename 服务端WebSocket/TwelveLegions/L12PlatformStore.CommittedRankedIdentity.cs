@@ -44,7 +44,8 @@ public sealed partial class L12PlatformStore
         FrozenSet<string> ExcludedMatchIds,
         FrozenSet<string> KnownInactiveAccountIds,
         FrozenSet<string> ChampionEligibleAccountIds,
-        FrozenSet<string> SelectableMasterIds);
+        FrozenSet<string> SelectableMasterIds,
+        ImmutableArray<L12RankedMasterTitleMatchFact> MasterTitleFacts);
 
     private static readonly CommittedRankedIdentity UnavailableRankedIdentity = new(false,
         string.Empty, null,
@@ -52,7 +53,7 @@ public sealed partial class L12PlatformStore
         FrozenDictionary<string, CommittedRankedProfile>.Empty,
         null,
         FrozenSet<string>.Empty, FrozenSet<string>.Empty, FrozenSet<string>.Empty,
-        FrozenSet<string>.Empty);
+        FrozenSet<string>.Empty, []);
 
     private CommittedRankedIdentity PrepareCommittedRankedIdentity(DataFile data)
     {
@@ -111,9 +112,15 @@ public sealed partial class L12PlatformStore
             .ToFrozenDictionary(row => row.AccountId, StringComparer.Ordinal);
         // RankedBattleIdentityAt remains an exact historical-time projection. Keep every committed
         // fact here; this index bounds query fan-out by master, not authoritative history retention.
-        var facts = data.RankedMasterRecords.SelectMany(row => row.TitleFacts ?? [])
-            .Select(fact => fact with { }).ToImmutableArray();
-        var factIndex = IndexRankedMasterTitleFacts(facts);
+        var previous = Volatile.Read(ref _committedSessionActivity).RankedIdentity;
+        var reuseFacts = previous is { Available: true, MasterTitleIndex: not null }
+            && SameCommittedMasterTitleFacts(data, previous.MasterTitleFacts);
+        // Only the immutable fact index is reused. Accounts, eligibility, season,
+        // exclusions and the enclosing committed generation are always rebuilt.
+        var facts = reuseFacts ? previous!.MasterTitleFacts
+            : data.RankedMasterRecords.SelectMany(row => row.TitleFacts ?? [])
+                .Select(fact => fact with { }).ToImmutableArray();
+        var factIndex = reuseFacts ? previous!.MasterTitleIndex! : IndexRankedMasterTitleFacts(facts);
         var excluded = ProjectRankedMasterTitleExclusions(data, facts);
         var inactive = data.Accounts.Where(row => row.Disabled || row.Deleted).Select(row => row.Id)
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -124,9 +131,34 @@ public sealed partial class L12PlatformStore
             NormalizeSeasonIdentity(data.OperationsConfig.Season.Id),
             new CommittedRankedConfig(ranked.PlacementMatches, sharedTierMinimums, factions, masters),
             accounts, profiles, factIndex, excluded, inactive, eligible,
-            masters.Keys.ToFrozenSet(StringComparer.OrdinalIgnoreCase));
+            masters.Keys.ToFrozenSet(StringComparer.OrdinalIgnoreCase), facts);
         StorageFailureInjector?.Invoke("after-ranked-identity-index-build");
         return prepared;
+    }
+
+    private static bool SameCommittedMasterTitleFacts(DataFile data,
+        ImmutableArray<L12RankedMasterTitleMatchFact> committed)
+    {
+        if (committed.IsDefault) return false;
+        var index = 0;
+        foreach (var record in data.RankedMasterRecords)
+        {
+            if (record.TitleFacts is null) continue;
+            foreach (var fact in record.TitleFacts)
+            {
+                if (index >= committed.Length || fact is null) return false;
+                var old = committed[index++];
+                // Exact representation, not record equality (DateTimeOffset equality
+                // ignores its offset), reference identity, a count or a version hint.
+                if (fact.MatchId != old.MatchId || fact.FirstAccountId != old.FirstAccountId
+                    || fact.SecondAccountId != old.SecondAccountId || fact.FirstMasterId != old.FirstMasterId
+                    || fact.SecondMasterId != old.SecondMasterId || fact.Winner != old.Winner
+                    || fact.FinalRound != old.FinalRound || fact.EndedAt.Ticks != old.EndedAt.Ticks
+                    || fact.EndedAt.Offset != old.EndedAt.Offset || fact.ConclusionKind != old.ConclusionKind
+                    || fact.IsRanked != old.IsRanked) return false;
+            }
+        }
+        return index == committed.Length;
     }
 
     private L12RankedBattleIdentityView ReadCommittedRankedBattleIdentity(string accountId,
