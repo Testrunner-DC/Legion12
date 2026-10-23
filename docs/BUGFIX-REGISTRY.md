@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-ATOMIC-OWNED-CLEANUP｜删除已原子撤销会话，不重复写
+
+- 源审DeleteAccountPersonalData与ExecuteAccountDeletion确认：真实账号删除在原事务调用RevokeActiveSessions、Save后NotifySessionsRevoked，含既有聊天／记录匿名化保护；AccountExists仍识别已删除墓碑，Sessions只返回未撤销且未过期者。同源2299 TRX中CommittedSessionActivityTests.RealLifecycleRevocationsPublishImmediatelyAfterCommit(delete)实际Passed，包含重开库失效与恰一次通知。产品代码未改，不重复全后端。
+- 当前QA先DELETE sessions再POST logical-delete，69账号多69次重复写／节奏等待。限定保原1300ms写入间隔与每次新鲜健康／身份，等待后再次精确owner／CAS再删除；随后核ID／创建时间／角色／墓碑、活动会话数组为空，以及存在原token时实际401，全部通过才增加原清退计数。无新批量删除／并发／权限／过期重试，独立冷账本恢复的保守分支原样保留。
+- 新纯合成真实函数RED139≠70与旧预算证据保留。最终仍555请求、69账号删除／69玩家＋1管理员会话确认，写139→70；零响应179400→89700ms，100ms响应193700→104000ms，最小间隔仍≥1300ms。会话残留、token仍有效、sessions不可读、创建时间错、角色错、删除ACK丢失六族各69条均拒绝计成功；原短窗／跨截止健康负例保留。
+- current适配107、execution20（含真实本地私有账本）、确认32和原性能全链通过；唯一stage-goals-20261024/cleanup-cascade/main-acceptance.json。只接受工具去冗余；原F737／30＋10／三档60秒／60终局／3秒／720及900秒最终合同不变，无线上负载、部署、维护或关单，真实完整生命周期仍待验。
+
 ## QA-20261024-NORMAL-OBSERVATION｜正常负载不强制额外诊断，原门槛不降
 
 - 真实run-testrun-representative-pressure.mjs强制confirmationTrace=true、680000ms停止；execution派生又把180000预留改220000。旧2eda回执同源且有2518条Journal取证，30档仅48760ms；证实存在额外40秒工具预算挤占，不据此推定它解释全部短档／终局迟到，更不把原失败改绿。

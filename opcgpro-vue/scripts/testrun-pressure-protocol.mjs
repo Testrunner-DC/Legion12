@@ -233,22 +233,28 @@ export async function cleanupOwnedTestrunAccounts(context, admin, accounts, requ
       assert.equal(account.preflightAbsent, true); assert.equal(account.registrationOutcome, 'confirmed')
       assert.ok(typeof account.id === 'string' && account.id.length >= 8 && !seen.has(account.id))
       assert.ok(typeof account.username === 'string' && typeof account.createdAt === 'string')
+      if(account.token!==undefined)assert.match(account.token,/^[a-f0-9]{64}$/)
       seen.add(account.id)
       const route = 'api/admin/accounts/' + encodeURIComponent(account.id)
       await checkHealth()
       verifyOwner(await call(route, {token: admin.token}), account)
       await admit()
-      await call(route + '/sessions', {method: 'DELETE', token: admin.token, expected: [200, 204], retain: false})
-      result.playerSessionsRevoked++
+      // Logical deletion atomically revokes this account's sessions. Recheck
+      // ownership/CAS after pacing, then prove both postconditions instead of
+      // performing an extra session-revocation mutation before every deletion.
       const detail = await call(route, {token: admin.token}); verifyOwner(detail, account)
-      await admit()
       await call('api/admin/v1/accounts/' + encodeURIComponent(account.id) + '/delete',
         {method: 'POST', token: admin.token, body: {reason: 'owned testrun representative pressure cleanup',
           idempotencyKey: `normal-pressure-${context.runId}-${index}`, expectedVersion: detail.permissionVersion,
           dryRun: false}, expected: [200, 204], retain: false})
       const verified = await call(route, {token: admin.token})
       assert.equal(verified.id, account.id); assert.equal(verified.deleted, true)
+      assert.equal(verified.createdAt,account.createdAt);assert.equal(verified.role,'player')
       assert.notEqual(verified.username, account.username)
+      const sessions=await call(route+'/sessions',{token:admin.token})
+      assert.ok(Array.isArray(sessions)&&sessions.length===0,'deleted account sessions must be verifiably inactive')
+      if(account.token!==undefined)await call('api/auth/me',{token:account.token,expected:[401],retain:false})
+      result.playerSessionsRevoked++
       result.syntheticAccountsDeleted++
     } catch {result.failures++}
   }

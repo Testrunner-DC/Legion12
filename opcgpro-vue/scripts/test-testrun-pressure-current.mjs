@@ -266,6 +266,7 @@ const request = async (_base, route, _deadline, options) => {
     if (route === 'api/auth/sessions/current') adminRevoked = true
     return
   }
+  if(route.endsWith('/sessions')){assert.ok(deleted.has(route.split('/')[3]));return []}
   const id = route.split('/')[3], row = accounts.find(item => item.id === id)
   return {...row, role: 'player', permissionVersion: 7, deleted: deleted.has(id), username: deleted.has(id) ? 'deleted-' + id : row.username}
 }
@@ -276,7 +277,7 @@ await asyncCheck('current-CAS-cleanup-69-accounts-70-sessions-and-readback', asy
     const cleanup = await cleanupOwnedTestrunAccounts({...context,cleanupDeadline:900000}, admin, accounts, request,
       async ms => {assert.ok(ms>0&&ms<=1300); waits++;virtualNow+=ms})
     assert.deepEqual(cleanup, {playerSessionsRevoked: 69, adminSessionRevoked: 1, syntheticAccountsDeleted: 69, failures: 0})
-    assert.equal(mutations, 139); assert.equal(waits,138);assert.equal(virtualNow,179400)
+    assert.equal(mutations, 70); assert.equal(waits,69);assert.equal(virtualNow,89700)
   } finally {Date.now=previousNow}
 })
 for (const [name, change] of [['wrong-version', {serverVersion: '0'.repeat(40)}], ['maintenance', {maintenance: true}]])
