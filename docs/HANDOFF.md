@@ -1,5 +1,12 @@
 # 十二军团简短交接
 
+## 2026-10-24 新30＋10实测达标｜修复计时起点误判，不重跑负载
+
+- 干净3a376f17完整标准Release九阶段实际通过（8378规则／2322平台／前端与归档），已推送读回；仅测试同包独验PID649657／DLL BAEFF29E7，正式57／PID577290及维护不变。原90391已真实退出，不再轮询或重启：三档10／20／30房各完整60秒＋10外围，1717操作全确认（p95 241.41ms／max491.47ms）、867业务HTTP全成功，60终局全部≤3秒／max2119.622ms；30房、69账号、70会话及全部所属helper清退，完整819556ms＜900000。
+- 原normal-pressure-acceptance.json仍NOT_ACCEPTED，唯一final-original-contract拒绝来自QA错误等式：cleanupRoom marker起点早于WsClient.send，而二者共用同一接收回调，真实差值0.029—0.280ms不应要求相等。改为两者各自有限／非负／≤3000ms且marker≥frame，wire／parse／slot／命令绑定及所有后续断言不变；真实源提取RED→136离线GREEN与独审接受。只改QA，不重新构建产品、部署或原样负载。
+- 固定此单次run的只读复验入口ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs已纳既有QA清单，逐SHA绑定原失败／独立report／binding／实际适配及三个历史marker依赖；完整原合同继续验证，原始文件不写。13种逐输入字节变动均拒绝；独审补齐真实冷账本complete／run绑定及136GREEN原报告固定SHA，排除泛化错误来自其他前置检查。签发须干净已提交QA版本，新normal-clock-revalidation.json用exclusive write并分开记录被测3a与裁定提交。最终裁定以stage-goals-20261024/property-frame/main-acceptance.json及新复验回执为准，不把纯validator返回冒新线上执行。
+- 最终同包315份实际完整报文／重建6277553→3736436B（−40.48%），9终局1059539→592183B（−44.11%）；额外分配23596264B／顺序组件准备178.4344ms成本保留。当前原30＋10达标不代表真机帧率、长稳态或正式全环境根治。下一继续真实移动／线性教学和受控备份恢复／可信CI素材／QA历史闭包；正式部署与维护仍不在本阶段范围，未验反馈不关闭。
+
 ## 2026-10-24 固定公开字段编码已接真实收发｜冻结候选做最终资格
 
 - 延续正常0ef的两份终局3.13秒尾延迟，不改原3秒／900秒，不原样再跑未改版负载。新gameStatePropertyFrameV1只处理已经完成接收者投影的gameState／delta／卡帧，固定527个公开字段名，值原字节保留；两端共用不可变JSON及SHA，明确协商、每连接配置代际、旧端／请求者plainFull和退休观战保护复用既有恢复链。P2／P4扩展，不改P0／P1／P3、鉴权、聊天或数据库。

@@ -447,6 +447,47 @@ check('prospective-contract-valid-is-never-live-acceptance', () => {
   assert.equal(result.onlineCapacityAccepted, false); assert.equal(result.executionEnabled, false)
   assert.deepEqual(result.missingExecutionComponents, EXECUTION_GAPS)
 })
+await asyncCheck('actual-frozen-cleanup-marker-begins-before-native-send-clock', async () => {
+  const cleanupStart = adapted.source.indexOf('async function cleanupRoom(')
+  const cleanupEnd = adapted.source.indexOf('\nasync function logout(', cleanupStart)
+  const sendStart = adapted.source.indexOf('\n  send(payload) {', classStart)
+  const sendEnd = adapted.source.indexOf('\n  close() {', sendStart)
+  assert.ok(cleanupStart > 0 && cleanupEnd > cleanupStart && sendStart > 0 && sendEnd > sendStart)
+  let clockCalls = 0, markerStartedAt
+  const clock = {now: () => 1000 + [0, .1, .2, .28][clockCalls++]}
+  const nativeSends = [], burstSends = []
+  const send = new Function('performance', 'WebSocket', 'SafeError',
+    'return ({' + adapted.source.slice(sendStart, sendEnd) + '}).send;')(clock, {OPEN: 1}, Error)
+  const peer = slot => ({closed: false, numericRoomSlot: 0, numericClientSlot: slot,
+    envelope: {state: {matchId: 'synthetic-clock-origin'}}, cleanupTraces: new Map(),
+    socket: {readyState: 1, send: raw => nativeSends.push(JSON.parse(raw))},
+    metrics: {currentStage: 'cleanup', burstObserver: {observeSend: (...args) => burstSends.push(args)}},
+    send, close() {this.closed = true}})
+  const room = {host: peer(0), guest: peer(1)}
+  const cleanup = new Function('cleanupRoomProtocol', 'performance', 'crypto', 'remainingMs', 'delay', 'safeFailure',
+    adapted.source.slice(cleanupStart, cleanupEnd) + ';return cleanupRoom;')(
+      async (pair, options) => {
+        const requestId = options.requestIdFactory()
+        pair.host.send({type: 'command', requestId, command: {type: 'surrender'}})
+        return {compliantSurrenders: 1, roomsLeft: 1, errors: []}
+      }, clock, crypto, () => 3000, async () => {}, error => error.message)
+  const outcome = {compliantSurrenders: 0, roomsLeft: 0, roomErrors: []}
+  await cleanup(room, {cleanupDeadline: 10000, requestTimeoutMs: 10000, signal: {aborted: false},
+    actionMarkers: {tryBegin: value => {markerStartedAt = value.sentAt; return 'synthetic-clock-request'}}}, outcome, 0)
+  assert.equal(clockCalls, 4); assert.equal(markerStartedAt, 1000)
+  assert.equal(room.host.terminalTrace.sentAt, 1000.28)
+  assert.equal(room.guest.terminalTrace.sentAt, room.host.terminalTrace.sentAt)
+  assert.equal(burstSends[0][2], room.host.terminalTrace.sentAt)
+  assert.equal(nativeSends[0].requestId, 'synthetic-clock-request'); assert.deepEqual(outcome.roomErrors, [])
+  assert.equal(room.host.closed && room.guest.closed, true)
+  const evidence = prospectiveEvidence(), callbackAt = 2500
+  evidence.report.terminalFrames[0].sendToCallbackMs = callbackAt - room.host.terminalTrace.sentAt
+  evidence.report.actionBoundsClient.client.rows[0].send_to_callback_ms = callbackAt - markerStartedAt
+  assert.ok(evidence.report.actionBoundsClient.client.rows[0].send_to_callback_ms
+    > evidence.report.terminalFrames[0].sendToCallbackMs)
+  const result = inspectNormalPressureEvidence(evidence, binding)
+  assert.equal(result.onlineCapacityAccepted, false)
+})
 for (const [name, mutate] of [
   ['legacy-install', e => {e.install = {status: 'installed'}}],
   ['wrong-target', e => {e.preflight.baseUrl = 'https://legion-12.com/'}],
@@ -482,6 +523,15 @@ for (const [name, mutate] of [
   ['late-terminal', e => {e.report.terminalFrames[1].sendToCallbackMs = 3000.001}],
   ['incomplete-burst', e => {e.report.wsBurstClient.captureComplete = 0}],
   ['marker-mismatch', e => {e.report.actionBoundsClient.client.rows[1].wire_bytes++}],
+  ['marker-clock-before-native-impossible', e => {e.report.actionBoundsClient.client.rows[0].send_to_callback_ms = 2999.999}],
+  ['marker-clock-over-3s-even-with-zero-flag', e => {e.report.actionBoundsClient.client.rows[0].send_to_callback_ms = 3000.001}],
+  ['marker-clock-negative', e => {e.report.actionBoundsClient.client.rows[0].send_to_callback_ms = -1}],
+  ['marker-clock-nan', e => {e.report.actionBoundsClient.client.rows[0].send_to_callback_ms = NaN}],
+  ['marker-clock-infinite', e => {e.report.actionBoundsClient.client.rows[0].send_to_callback_ms = Infinity}],
+  ['marker-parse-mismatch', e => {e.report.actionBoundsClient.client.rows[0].parse_ms += .001}],
+  ['marker-wrong-slot', e => {e.report.actionBoundsClient.client.rows[0].slot = 1}],
+  ['marker-wrong-command', e => {e.report.actionBoundsClient.client.rows[0].command_kind = 1}],
+  ['marker-late-flag', e => {e.report.actionBoundsClient.client.rows[0].exceeded_original_3s = 1}],
   ['late-passive-tail', e => {e.report.cleanupPassiveTail.originalFailureThresholdMs = 10000}],
   ['missing-ledger', e => {e.ledgers.pop()}],
   ['no-cold-reader', e => {e.ledgers[0].coldReadVerified = false}],

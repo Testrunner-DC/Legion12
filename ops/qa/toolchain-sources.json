@@ -48,6 +48,7 @@
     "opcgpro-vue/scripts/testrun-pressure-recovery.mjs",
     "opcgpro-vue/scripts/testrun-pressure-runtime.mjs",
     "ops/qa/Invoke-TestrunRepresentativePressure.ps1",
+    "ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs",
     "ops/qa/Invoke-L12TerminalWireProbe.ps1",
     "ops/qa/TerminalWireProbe/Program.cs",
     "ops/qa/TerminalWireProbe/TerminalWireProbe.csproj",
@@ -62,6 +63,11 @@
     "scripts/lib/l12-pressure-checkpoint.mjs"
   ],
   "entries": [
+    {
+      "path": "ops/qa/revalidate-pressure-clock-origin-3a376f17.mjs",
+      "mode": "offline-preparer",
+      "scope": "One pinned historical run only; no network or new workload, original failure preserved, separate committed clock-origin adjudication. Not a general acceptance bypass."
+    },
     {
       "path": "ops/qa/Invoke-L12TerminalWireProbe.ps1",
       "mode": "offline-preparer",

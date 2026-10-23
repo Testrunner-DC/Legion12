@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-CLOCK-ORIGIN｜不同起点的耗时不应要求完全相等
+
+- 原正常3a压测三档60秒／30房＋10外围均完整，1717操作及867业务HTTP全成功，60终局max2119.622ms、零迟到，完整清退819556ms。原最终验收仍NOT_ACCEPTED，唯一final-original-contract/NORMAL_RUNTIME_FAILURE；原receipt SHA8015D8…CAE4和独立report SHA8AFB6E…C6C2A保留，不重写或重跑未变负载。
+- 同型扫描冻结F737的cleanupRoom／WsClient.send／onmessage与marker／client-boundaries：marker取t0，send稍后取t1并覆盖双方terminalTrace，同一arrivedAt产生两耗时，故应marker≥frame而非相等。六组实际差0.029—0.280ms，wire／parse逐组相等；不是NIC／first-byte计时。原真正超3秒的旧失败不能据此升格。
+- finalizer只改此等式为marker有限、非负、≤3000ms且不短于frame；60终局自身原≤3000ms及所有slot／room／receiver／wire／parse、阶段、载荷、冷账本、清退／资源／身份断言全保。用真实源提取的cleanupRoom及send虚拟时钟编码RED1500≠1499.72，136 GREEN含逆序、超时假flag、NaN／Infinity／负值、parse／wire／slot／命令错配；独立关键复核未见过宽。
+- 固定run的只读adjudicator不接收可选run／阈值／原件／输出覆盖，绑定13份原始输入、F737实际适配／prepared源及三历史marker依赖，逐输入变动拒绝；136GREEN源码只允许后续测量边界注释更正。独审指出原报告及冷账本前置检查须独立绑定，已补固定SHA／精确5源码、complete／run／binding／两组cipher，以及六组实际marker>frame；旧finalizer内容SHA及wx前HEAD／源码再次核对。完整原合同验证后，须在干净已提交QA版本下exclusive新写复验回执，区分被测应用3a与裁定提交。原prospective函数仍不能签发线上容量，固定复验不冒新的线上执行；证据与最终结果在stage-goals-20261024/property-frame，不改变产品、正式服务或维护，不据此关闭真机／全部性能反馈。
+
 ## PERF-20261024-FIXED-PROPERTY-FRAME｜真实收发与隐私边界，尚未线上验收
 
 - 同类范围是所有已按接收者投影的完整游戏包／差量／卡帧，不处理鉴权、聊天、在线名单或持久化。沿现有L12SnapshotWireCodec、hello能力、net的单一plain恢复与退休观战围栏接入；固定527公开字段名JSON同时嵌入服务器及浏览器，哈希9193B87A…，不从值训练、跨包或跨玩家复用。

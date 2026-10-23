@@ -120,7 +120,13 @@ export function inspectNormalPressureEvidence(evidence, binding) {
     assert.equal(row.slot, index); assert.equal(row.command_kind, 3)
     for (const key of ['response_kind', 'terminal', 'response_seen', 'callback_valid', 'parse_valid', 'dispatch_valid', 'receipt_send_valid']) assert.equal(row[key], 1)
     const frame = report.terminalFrames.find(item => item.numericClientSlot === [0, 5, 11, 17, 23, 29][index] * 2)
-    assert.equal(row.wire_bytes, frame.wireBytes); assert.equal(row.send_to_callback_ms, frame.sendToCallbackMs)
+    assert.equal(row.wire_bytes, frame.wireBytes)
+    // Frozen cleanupRoom starts the marker before WsClient.send captures the
+    // later WsClient.send timestamp. Both use the same callback/parse observation,
+    // but their elapsed values are not equal. Keep the earlier (stricter)
+    // marker independently inside the original3s, and require the source order.
+    nonnegative(row.send_to_callback_ms); assert.ok(row.send_to_callback_ms <= 3000)
+    assert.ok(row.send_to_callback_ms >= frame.sendToCallbackMs)
     assert.equal(row.parse_ms, frame.parseMs); zero(row.exceeded_original_3s)
   })
   assert.equal(report.cleanupPassiveTail.originalFailureThresholdMs, 3000)
