@@ -7,6 +7,7 @@
 - 新诊断OFF原负载NOT_ACCEPTED：10／20房各60秒，30房因预留清退预算仅48.760秒（不是完整60秒），各档始终原活动房数／10外围，30房均真实出牌／进攻。1528命令全确认，p95 298.16／max622.16ms；817业务HTTP全200，max520.16ms；delta／presence／cardFrame零重建错。60终局仍两迟到3334.04／3120.77ms，回调后小于4ms，未启用服务器Prepare／队列／发送分段，不能归因网络或DB，不能宣称保存分配优化已根治。原preparation-time-budget-exhausted／清退超900秒、短档和全部原件保留；下一只接双方v4数值因果profile，不放宽正常guard或原样重复30＋10，不将短窗口外推流量收益。
 - 补充清退EXACT_OWNED_RECOVERY_COMPLETE：同一60＋9私有账本32已删＋37新删、0未知，两个精确原会话401、所属helper／guard／控制均退出、两服身份不变；独立补充成功不升级原容量失败。唯一normal-load-analysis.json和representative-load-current-20261022/stage-goals-live-2eda18c1/owned-recovery/recovery-result.json。当前无重型构建或远端负载。
 - 子对话01a0dbc8的新需求已回执并给三叶租约：Editor侧栏去合法性、Hub去三处重复提示但保准备态唯一可见原因，独立QA两静态RED→GREEN；两产品叶已修改未提交，不在2eda中，压力QA未跟踪原件保留。现已给仅本地隔离真实组件与主宰异画grant→选用→保存重载／投影／撤权反例验收时槽，不得写正式／测试或改权益逻辑；等其核所属进程/浏览器退出再开启下一性能诊断。Main保留共享记录／Git／部署。
+- 下一诊断客户端组合已补两QA叶：native adapter在真正socket.send之前记录时刻，保原this／参数／返回／异常及旧观察器，非终局不打标，绑定漂移不猜成功，退休不覆盖外来替换。9内存socket组合与原26标记器已在既有性能全链通过；不是实际socket／远端profile或根因完成。首npm长PATH失败后短工具PATH通过、两日志保留；未放宽正常guard，尚无新远端负载。移动线程01a0d25d另有人类深度移动审查请求，已回执仅只读矩阵／避开Editor/Hub及共享记录，等待异画线程实际链完成和浏览器退出再给时槽；Main诊断QA片同步后释放自己的写槽。
 
 ## 2026-10-23 阶段目标确认｜先根因，后测试发布与体验／运营
 
