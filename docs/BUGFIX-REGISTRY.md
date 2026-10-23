@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-APPLICATION-RESTORE｜持久化字段与旧缺省值兼容，不启用临时删库
+
+- 恢复验收只在固定私有/tmp副本启动当前已验3a程序集，绝不将旧库回写live或打开ephemeral测试profile。原FC374全备证明、归档SHA、程序身份、监听loopback／随机端口、资源与子进程收尾均保。r1未启动即因按HTTP camelCase读DataFile PascalCase而拒绝，r2真实health通过后因将缺失FontSize→已发布默认standard误算业务变化而拒绝；失败原件不改。
+- 实际只读两副本按字段名／数量／哈希确认唯一变化为1085账号补缺省FontSize；ID不变，所有所测牌库／媒体／好友／对局事件哈希相同。后端3a的AccountRow声明精确默认standard。QA只给缺字段副本投影添加该值，不修改数据库，不归一化显式large／空／null或其他字段。先完成原副本与已启动副本完整比较资格，再实际r3；未以忽略整账号列或放宽内容比较蒙混。
+- r3完整启动／监听与健康身份、业务前中后等价、SIGINT exit0通过，8235ms／峰RSS287236096B；1085账号、6414牌库、7载荷、4公开、3对局9事件保全，原E归档与两live身份维护不变。16纯兼容／环境边界检查不联网，actual源SHA绑定回执；旧样本无资讯／Bug，不作其内容恢复声明。弱resume路径被独审拒绝后删除，最终使用新私有副本，不将不明目录内容带入执行。
+- 成功副本及两结束的旧副本均按精确所有权清退；369657216B旧临时逻辑占用移除，D受限私有失败日志及所有失败／SHA证明、E原备份保留。唯一stage-goals-20261024/restore-startup，不改产品、正式／测试服务或维护，不自动开启备份删除／轮转。
+
 ## QA-20261024-CLOCK-ORIGIN｜不同起点的耗时不应要求完全相等
 
 - 原正常3a压测三档60秒／30房＋10外围均完整，1717操作及867业务HTTP全成功，60终局max2119.622ms、零迟到，完整清退819556ms。原最终验收仍NOT_ACCEPTED，唯一final-original-contract/NORMAL_RUNTIME_FAILURE；原receipt SHA8015D8…CAE4和独立report SHA8AFB6E…C6C2A保留，不重写或重跑未变负载。
