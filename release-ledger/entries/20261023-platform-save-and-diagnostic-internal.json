@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-platform-save-and-diagnostic-internal",
+  "date": "2026-10-23",
+  "audience": "internal",
+  "reason": "后台产品独立管理、发布排序与卡图详情入口；平台审计同事务完整校验去重及精确未变称号事实子索引复用；隔离测试新增默认关闭的双方终局数值探针。尚无新负载证明整体卡顿解决，不向玩家发布该效果声明。",
+  "paths": [
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AuditValidation.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedRankedIdentity.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12RoomManager.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}

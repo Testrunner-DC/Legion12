@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-gallery-product-collaboration",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "画廊与卡牌资料完善",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "画廊异画默认按收录产品顺序展示；卡牌详情新增可选的联动资料，与画师信息并列显示。",
+      "paths": [
+        "opcgpro-vue/src/l12/CardArchive.vue",
+        "opcgpro-vue/src/l12/CardDetailContent.vue",
+        "opcgpro-vue/src/l12/decks.ts",
+        "opcgpro-vue/src/l12/platform.ts",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.AlternateArts.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.GalleryCards.cs",
+        "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+        "服务端WebSocket/TwelveLegions/L12SharedGalleryCatalog.cs"
+      ]
+    }
+  ]
+}

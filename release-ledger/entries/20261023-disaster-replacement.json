@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-disaster-replacement",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "天灾交替效果修正",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "新天灾触发前，旧天灾的持续效果先结束；色欲之罪不再让真田幸村避开怒触不周山，已经结算的本回合效果仍保留至回合结束。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Disasters.cs"]
+    }
+  ]
+}
