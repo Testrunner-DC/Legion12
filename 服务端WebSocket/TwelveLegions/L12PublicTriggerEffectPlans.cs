@@ -24,6 +24,9 @@ public sealed partial class L12GameEngine
             ["S01-0204|leave"] = "tomb-construct",
             ["S01-0414|after-attack"] = "after-attack-katsura",
             ["S01-0414|return-library-top"] = "returned-top-katsura",
+            ["S01-04M2|leave"] = "owner-top-kusanagi",
+            // Settlement/declaration compatibility for an already-persisted legacy candidate.
+            // New departures are sourced by Susanoo, not by the departed sword.
             ["S01-0417|play"] = "owner-top-kusanagi",
         };
 
@@ -706,7 +709,7 @@ public sealed partial class L12GameEngine
         {
             steps =
             [
-                PublicTriggerStep("option", "mode", "草薙剑：预先声明是否返回所有者牌库顶部",
+                PublicTriggerStep("option", "mode", $"{source.Name}：预先声明是否将离场的〈草薙剑〉返回所有者牌库顶部",
                     ["mode:none", "mode:use"]),
             ];
         }

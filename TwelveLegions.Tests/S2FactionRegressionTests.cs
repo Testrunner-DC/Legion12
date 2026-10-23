@@ -3701,8 +3701,10 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
             candidate => candidate.SourceInstanceId == sword.InstanceId);
         Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
-            && entry.Cards.Any(card => card.InstanceId == sword.InstanceId)
-            && entry.Text.Contains("离场", StringComparison.Ordinal));
+            && entry.Cards.Any(card => card.CardId == "S01-04M2")
+            && entry.Text.Contains("离场", StringComparison.Ordinal)
+            && entry.Text.Contains("草薙剑", StringComparison.Ordinal)
+            && entry.Text.Contains("牌库顶部", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -3741,8 +3743,10 @@ public sealed class S2FactionRegressionTests
         Assert.DoesNotContain(game.State.PendingTriggerStackCandidates,
             candidate => candidate.SourceInstanceId == sword.InstanceId);
         Assert.Single(game.State.Events, entry => entry.Type == "effect-trigger"
-            && entry.Cards.Any(card => card.InstanceId == sword.InstanceId)
-            && entry.Text.Contains("离场", StringComparison.Ordinal));
+            && entry.Cards.Any(card => card.CardId == "S01-04M2")
+            && entry.Text.Contains("离场", StringComparison.Ordinal)
+            && entry.Text.Contains("草薙剑", StringComparison.Ordinal)
+            && entry.Text.Contains("牌库顶部", StringComparison.Ordinal));
     }
 
     [Fact]

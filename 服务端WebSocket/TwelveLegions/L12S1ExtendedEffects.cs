@@ -1410,7 +1410,16 @@ public sealed partial class L12GameEngine
         var player = State.Players[owner];
         var candidates = new List<L12TriggerCandidate>();
         if (left.CardId == "S01-0417" && player.MasterId == "S01-04M2")
-            candidates.Add(CreateTriggerCandidate(owner, left, "play", "【离场时】效果"));
+        {
+            const string effectText = "〈草薙剑〉离场时：可选择将其放回牌库顶部。";
+            var master = CreateCard(player.MasterId, $"master-{owner}");
+            candidates.Add(CreateTriggerCandidate(owner, master, "leave", effectText,
+                new Dictionary<string, string>
+                {
+                    [SusanooDepartedSwordTarget] = left.InstanceId,
+                    ["triggerEffectText"] = effectText,
+                }));
+        }
         if (includeTombConstruct && left.CardId == "S01-0204" && left.LastKnownAttachedCardIds.Count > 0)
             candidates.Add(CreateTriggerCandidate(owner, left, "leave", "【离场时】效果"));
         if (!IsFieldLegion(left)) return candidates;

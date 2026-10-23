@@ -2,6 +2,7 @@ namespace TwelveLegions.Server;
 
 public sealed partial class L12GameEngine
 {
+    private const string SusanooDepartedSwordTarget = "susanooDepartedSwordTarget";
     private static readonly HashSet<string> ImmediateEnterCards = new(StringComparer.OrdinalIgnoreCase)
     {
         "S01-0101", "S01-0102", "S01-0103", "S01-0105", "S01-0108", "S01-0109", "S01-0117",
@@ -339,14 +340,8 @@ public sealed partial class L12GameEngine
                             })));
                 return;
             case "草薙剑":
-                if (PublicTriggerDeclared(item, "mode") == "mode:use"
-                    && !TryMoveAuthoritativeCardToOwnerLibraryTop(item.Controller, item.SourceInstanceId,
-                        "因离场效果返回牌库顶部", out _, out var kusanagiError))
-                {
-                    AddEvent("effect-cancelled", item.Controller,
-                        $"草薙剑声明的返回牌库顶部效果取消：{kusanagiError}", item.SourceSnapshot ?? card);
-                }
-                FinishStackItem(item);
+                // Already-persisted legacy play items still move their real source instance.
+                ResolveSusanooDepartedSwordReturn(item);
                 return;
             case "observing-stars-reorder": BeginTopDeckReorder(item, 5, "observing-stars"); return;
             case "observing-stars-morale":
@@ -426,7 +421,31 @@ public sealed partial class L12GameEngine
     private void ResolveLeaveEffect(L12StackItem item)
     {
         var card = FindSource(item);
+        if (card?.CardId == "S01-04M2" && item.Data.ContainsKey(SusanooDepartedSwordTarget))
+        {
+            ResolveSusanooDepartedSwordReturn(item);
+            return;
+        }
         if (card?.CardId == "S01-0204" && TryResolveS1FactionDeath(item, card)) return;
+        FinishStackItem(item);
+    }
+
+    private void ResolveSusanooDepartedSwordReturn(L12StackItem item)
+    {
+        // The triggering/affected card is not the effect's source. Only the explicit
+        // real departed instance may move; a source snapshot is never a zone card.
+        var targetId = item.Data.GetValueOrDefault(SusanooDepartedSwordTarget) ?? item.SourceInstanceId;
+        if (PublicTriggerDeclared(item, "mode") == "mode:use")
+        {
+            var source = FindSource(item);
+            L12CardInstance[] sourceCards = source is null ? [] : [source];
+            if (FindAuthoritativeCard(targetId) is { CardId: not "S01-0417" })
+                AddEvent("effect-cancelled", item.Controller, "须佐之男声明的回库对象已不是〈草薙剑〉，效果取消", sourceCards);
+            else if (!TryMoveAuthoritativeCardToOwnerLibraryTop(item.Controller, targetId,
+                "因须佐之男的离场效果返回牌库顶部", out _, out var error))
+                AddEvent("effect-cancelled", item.Controller,
+                    $"须佐之男声明的草薙剑返回牌库顶部效果取消：{error}", sourceCards);
+        }
         FinishStackItem(item);
     }
 

@@ -122,7 +122,7 @@ public static class L12RuntimeEffectRoutes
         new("S01-0416", "attack", "稻姬本多小松"),
         new("S01-0416", "enter", "稻姬本多小松"),
         new("S01-0417", "enter", "草薙剑"),
-        new("S01-0417", "play", "草薙剑"),
+        new("S01-04M2", "leave", "须佐之男"),
         new("S01-0418", "play", "天诛"),
         new("S01-0419", "play", "花魁的馈赠"),
         new("S01-0420", "reaction", "切腹仪式"),

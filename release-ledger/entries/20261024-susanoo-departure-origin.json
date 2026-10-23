@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-susanoo-departure-origin",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "须佐之男与草薙剑的效果来源",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "草薙剑离场后返回牌库顶部时，正确显示为须佐之男的离场效果，智慧法典不能因此发动；草薙剑自身的圣物效果仍可正常响应。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/L12S1ExtendedEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12PublicTriggerEffectPlans.cs",
+        "服务端WebSocket/TwelveLegions/L12CardEffects.cs",
+        "服务端WebSocket/TwelveLegions/L12RuntimeEffectRoutes.cs"
+      ]
+    }
+  ]
+}

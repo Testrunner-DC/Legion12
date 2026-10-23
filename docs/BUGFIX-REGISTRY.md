@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## CARD-20261024-SUSANOO-ORIGIN｜主宰效果来源与离场对象分离
+
+- 已实际读来源人类原话并按其裁定：草薙剑离场回库顶是须佐之男效果，不满足智慧法典，响应来源／时机必须真实。BuildS1LeaveReactionCandidates原传left／play；资格和文案按此错误身份正常工作，结算又把SourceInstanceId当移动对象，共因不在按钮或智慧法典特判。
+- 新候选构造真实master／leave并独立保存离场剑ID；公共声明、运行时路由及唯一真实实例回库同步迁移。无主宰快照入库、无隐藏信息改动、不造实体；原剑play已持久化项只保留有限真实结算兼容，不改历史事件、FindSource或restore，不声称任意旧错栈响应已迁移。
+- 同型扫描324卡、CreateTriggerCandidate、play/leave声明／路由／结算及主宰观察／授予，唯一play＋离场错配是本处；已正确的主宰观察与索尔授予军团登场保持。全池play路线必须绑定战术新守卫；延迟授予未擅裁定。
+- 真实16RED；最终新37＋既有139＝176专项零失败跳过，含双方、真实主宰转军团→endTurn→战斗离场／圣物GM移除、逐命令V2原文/hash、放弃、合法绝防无效、Codex强送无副作用和正常圣物效果正控。原两S2事件来源断言精确迁移，十真实区域／缺失实体／不造快照保护保留；原编译、缓存hash夹具、错误费用目标失败均保留。
+- Main读完七叶及新测试，核最终源SHA、TRX1E95E255、测试F0435D4A实际加载后端F7036C4D及所属进程0，复用未变专项而非冒Main重跑。唯一triggered-effect-origin-20261024/main-source-acceptance.json为源码／专项接受；完整Release／部署／线上关单未完成，正式授权不扩张。
+
 ## QA-20261024-ATOMIC-OWNED-CLEANUP｜删除已原子撤销会话，不重复写
 
 - 源审DeleteAccountPersonalData与ExecuteAccountDeletion确认：真实账号删除在原事务调用RevokeActiveSessions、Save后NotifySessionsRevoked，含既有聊天／记录匿名化保护；AccountExists仍识别已删除墓碑，Sessions只返回未撤销且未过期者。同源2299 TRX中CommittedSessionActivityTests.RealLifecycleRevocationsPublishImmediatelyAfterCommit(delete)实际Passed，包含重开库失效与恰一次通知。产品代码未改，不重复全后端。

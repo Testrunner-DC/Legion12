@@ -331,7 +331,9 @@ public sealed class AtomicReviewBatch6DRegressionTests
         PutInZone(player, sword, zone);
 
         Resolve(game, "mode:use");
-        var effect = Assert.Single(game.State.EffectStack, item => item.SourceCardId == "S01-0417");
+        var effect = Assert.Single(game.State.EffectStack, item => item.SourceCardId == "S01-04M2");
+        Assert.Equal("leave", effect.Trigger);
+        Assert.Contains(sword.InstanceId, effect.Data.Values);
         Assert.NotNull(effect.SourceSnapshot);
         PassResponses(game);
 
