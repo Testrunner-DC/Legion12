@@ -23,7 +23,7 @@ const checks = [
   ['起手完整展示逐副本卡面、名称、编号与单次概率说明', editor.includes('fit="contain"') && editor.includes('openingHandMeta(copy,index)') && editor.includes('{{ copy.card.number }} · {{ copy.label }}') && editor.includes('等概率、不放回') && editor.includes('overflow-wrap:anywhere')],
   ['移动端次要操作收进更多操作菜单', editor.includes('class="more-actions-trigger"') && editor.includes('class="secondary-actions"')],
   ['分区折叠状态持久保留', editor.includes('l12-deck-editor-sections-v1') && editor.includes('watch(collapsedSections')],
-  ['基础硬错误与本赛季排位禁限提示分别显示', editor.includes('entryIssue(entry.card, entry.count)')
+  ['卡池基础硬错误与本赛季排位禁限提示分别显示，牌表不重复', editor.includes('entryIssue(entry.card, counts[entry.card.id] || 0)')
     && editor.includes('seasonEntryIssue(entry.card)') && editor.includes('data-season-advisory')
     && editor.includes('const validation = computed(() => validateDeck(construction.value, catalog.value))')
     && editor.includes('validateDeck(construction.value, catalog.value, operationsRestrictions.value)')
