@@ -1,5 +1,13 @@
 # Legion12 Bug 修复记录
 
+## UX-20261023-MASTER-ART-EDITOR-REFRESH｜主宰异画发现与原地刷新，本地接受
+
+- 人类在既有来源线程明确批准三项：主宰异画难发现、获授不自动更新、mine失败不提示。P4沿现有主宰基础身份展开已拥有外观并直接选用，右侧banner复用所选卡图；P2权益仍只读原mine和资源通知，不改授予／保存权限、卡效或图库身份。全主宰异画同型扫描5项，未添加杨戬卡号特判。
+- 共享请求协调器会合并同账号同URL的在飞GET，故只增加监听仍可能复用授予前的旧结果。Editor限定同identity一条在飞＋一位dirty合并，失效旧结果不发布，settled后再真实读取；account／token／epoch／request／alive约束退休，切号不等待旧账号，旧finally不能清新状态。失败保留同账号最后确认资料并显示原按钮重试，不新增轮询／协议／全局请求实现。
+- 原3合同RED、r1浏览器2过3失败均保留；其中旧已选外观按钮期望、异步logout未await是夹具问题，撤权无资源推送是单列后端边界，不假造真实事件。最终同源实际组件focused4／4与浏览器5／5（真实local grant→原WS资源→直接选择→保存重载、在飞旧GET真实二次HTTP、503／重试、切号迟到、390触摸）通过，0pageerror；具名可信异画字节解码SHA FEFB2A78一致，其他卡图不冒完整资产验收。
+- Main独立读完整QA／最终loader与两图、核最终两源／r2报告SHA及所属进程／端口0；标准前端Batch含本批回归、类型／正式和测试双Vite通过。后端／卡数据无改且C#测试无此Editor引用，复用8340规则／2299平台，不重复同源整包。唯一master-art-editor-grant-refresh-20261023/main-acceptance.json；真实浏览器同源复用，不冒Main重新执行／真机／完整站点导航或正式授权到账。
+- 回滚仅Editor两叶与build接线；无部署／正式写入／维护改动，不关闭笛喜_DC正式反例。DELETE grant未调用现有通知的边界尚未扩租修复；单列待Main确认和授权，fixture失效不冒真实撤权推送。
+
 ## QA-20261023-CLEANUP-RESERVE｜清退节奏已修，原容量未通过
 
 - 旧真实适配cleanupOwnedTestrunAccounts对69所属测试身份串行执行555请求、139次1300ms等待。test-testrun-cleanup-timing.mjs只替换时钟与本地响应，不访问账号／网络；零响应延迟下完整180700ms，180000ms窗会留下管理员会话未撤销。100ms纯合成响应对照完整236200ms，不冒真实RTT或清退性能。

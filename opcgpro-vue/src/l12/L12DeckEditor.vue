@@ -81,6 +81,10 @@ const localDraft = ref<DeckEditorDraft | null>(null)
 const restoredLocalDraft = ref(false)
 const hasUnsavedChanges = computed(() => editorContentRevision.value !== persistedContentRevision.value)
 const ownedAlternateArts = ref<AlternateArt[]>([])
+const ownedArtLoading = ref(false)
+const ownedArtError = ref('')
+let ownedArtAccountId = ''
+let ownedArtRead: { accountId: string; token: string; epoch: number; dirty: boolean } | null = null
 let ownedArtRequest = 0
 let editorAccountEpoch = 0
 let editorDocumentEpoch = 0
@@ -142,14 +146,41 @@ function refreshSavedDirectoryAfterMutation() {
   if (authenticatedEditor.value) void loadSavedDirectory(savedDirectory.value?.page ?? 1)
 }
 async function refreshOwnedAlternateArts() {
-  const accountId = platformState.account?.id, request = ++ownedArtRequest
-  ownedAlternateArts.value = []
-  if (!accountId) return
+  const accountId = platformState.account?.id, token = platformState.token
+  // The platform coalesces identical in-flight GETs. An invalidation must wait for
+  // that read to settle, discard its stale result, then perform a fresh read.
+  if (accountId && token && ownedArtRead?.accountId === accountId && ownedArtRead.token === token
+    && ownedArtRead.epoch === editorAccountEpoch) {
+    ownedArtRead.dirty = true
+    return
+  }
+  const request = ++ownedArtRequest, epoch = editorAccountEpoch
+  if (ownedArtAccountId !== (accountId ?? '') || !token) ownedAlternateArts.value = []
+  ownedArtAccountId = accountId ?? ''
+  ownedArtError.value = ''
+  ownedArtLoading.value = false
+  ownedArtRead = null
+  if (!accountId || !token) return
+  const read = { accountId, token, epoch, dirty: false }
+  ownedArtRead = read
+  const current = () => editorAlive && request === ownedArtRequest && epoch === editorAccountEpoch
+    && ownedArtRead === read && platformState.account?.id === accountId && platformState.token === token
+  ownedArtLoading.value = true
   try {
     const arts = await alternateArtApi.mine()
-    if (request === ownedArtRequest && platformState.account?.id === accountId) ownedAlternateArts.value = arts
-  } catch { /* Failed grant reads stay empty, never another account's list. */ }
+    if (current() && !read.dirty) ownedAlternateArts.value = arts
+  } catch {
+    if (current() && !read.dirty) ownedArtError.value = '异画权益读取失败；当前保留本账号上次确认的资料，新获异画可能暂未显示。'
+  } finally {
+    if (current()) {
+      ownedArtRead = null
+      ownedArtLoading.value = false
+      if (read.dirty) void refreshOwnedAlternateArts()
+    }
+  }
 }
+function onAlternateArtResource() { void refreshOwnedAlternateArts() }
+onMounted(() => window.addEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource))
 const alternateArtSelections = ref<Record<string, string>>({})
 const alternateArtCopies = ref<Record<string, string[]>>({})
 const operationsRestrictions = ref<OperationsCardRestriction[]>([])
@@ -269,6 +300,15 @@ const selectedTrials = computed(() => specialIds.value.map(id => byId.value.get(
 const selectedAlternateArts = computed(() => selected.value
   ? ownedAlternateArts.value.filter(art => art.baseCardId === selected.value!.id) : [])
 const alternateArtsById = computed(() => new Map(ownedAlternateArts.value.map(art => [art.id, art])))
+const masterAppearances = computed<PoolCardAppearance[]>(() => masters.value.flatMap(card => [
+  { key: `${card.id}:original`, card },
+  ...ownedAlternateArts.value.filter(art => art.baseCardId === card.id)
+    .map(art => ({ key: `${card.id}:${art.id}`, card, art })),
+]))
+const selectedMasterArt = computed(() => {
+  const art = alternateArtsById.value.get(alternateArtSelections.value[masterId.value] ?? '')
+  return art?.baseCardId === masterId.value ? art : undefined
+})
 const entries = computed(() => Object.entries(counts.value)
   .filter(([, count]) => count > 0)
   .map(([id, count]) => ({ card: byId.value.get(id)!, count }))
@@ -534,6 +574,11 @@ function chooseMaster(id: string) {
   }).slice(0, capacity)
   catalogTab.value = 'main'
   openingHandIds.value = []
+}
+function chooseMasterAppearance(entry: PoolCardAppearance) {
+  chooseMaster(entry.card.id)
+  selectAlternateArt(entry.card.id, entry.art?.id ?? '')
+  selected.value = entry.card
 }
 
 function toggleTrial(card: DeckCard) {
@@ -1059,6 +1104,7 @@ onBeforeUnmount(() => {
   deckReadSequence++
   editorAccountEpoch++
   ownedArtRequest++
+  window.removeEventListener('l12-resource-alternateArtNotifications', onAlternateArtResource)
   window.removeEventListener('keydown', closeEditorDialogOnEscape)
   window.removeEventListener('beforeunload', warnBeforeUnload)
   closeDeckImage()
@@ -1132,6 +1178,10 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 
     <p v-if="notice" class="deck-operation-notice" role="status">{{ notice }}</p>
     <p v-if="seasonAdvisory" class="deck-operation-notice" data-season-advisory>{{ seasonAdvisory }}</p>
+    <div v-if="authenticatedEditor && (ownedArtLoading || ownedArtError)" class="alternate-art-status" role="status" :aria-busy="ownedArtLoading">
+      <span>{{ ownedArtError || '正在更新已拥有的异画…' }}</span>
+      <button v-if="ownedArtError" type="button" :disabled="ownedArtLoading" @click="refreshOwnedAlternateArts()">重试读取异画</button>
+    </div>
     <nav class="deck-mobile-nav" aria-label="移动端牌库编辑工作区">
       <button :class="{ active: mobilePane === 'pool' }" @click="setMobilePane('pool')">牌库</button>
       <button :class="{ active: mobilePane === 'deck' }" @click="setMobilePane('deck')">牌表 · {{ totalCards }}</button>
@@ -1184,7 +1234,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         <button v-if="publicationCode" :class="{ active: workspace === 'content' }" @click="setWorkspace('content')">公开内容</button>
       </nav>
       <section v-show="workspace === 'gallery'" class="deck-catalog grand-panel">
-        <header><div><p class="kicker">构筑卡池</p><h2>{{ catalogTab === 'master' ? '主宰' : catalogTab === 'main' ? '主牌库' : '额外卡牌' }}</h2></div><span>{{ catalogTab === 'master' ? masters.length : catalogTab === 'main' ? filtered.length : availableTrials.length + automaticExtraCards.length }} 张结果</span></header>
+        <header><div><p class="kicker">构筑卡池</p><h2>{{ catalogTab === 'master' ? '主宰' : catalogTab === 'main' ? '主牌库' : '额外卡牌' }}</h2></div><span>{{ catalogTab === 'master' ? masterAppearances.length : catalogTab === 'main' ? filtered.length : availableTrials.length + automaticExtraCards.length }} 张结果</span></header>
         <nav class="catalog-tabs" aria-label="牌库构筑卡池分类">
           <button :class="{ active: catalogTab === 'master' }" @click="catalogTab = 'master'">主宰</button>
           <button :class="{ active: catalogTab === 'main' }" @click="catalogTab = 'main'">主牌库</button>
@@ -1205,10 +1255,10 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
           <button class="filter-reset" @click="resetFilters">清除筛选</button>
         </section>
         <div v-if="catalogTab === 'master'" class="deck-card-grid">
-          <article v-for="master in masters" :key="master.id" class="deck-card" :class="{ chosen: master.id === masterId }" @click="selectCard(master)">
-            <button class="card-image" @dblclick.stop="chooseMaster(master.id)"><CardImage :card-id="master.id" :legacy-url="master.imageUrl" :alt="master.nameZh" intent="thumb" :fit="deckEditorPortrait ? 'contain' : 'cover'"/></button>
-            <div><b>{{ master.nameZh }}</b><small>{{ master.number }} · {{ factionLabels[master.faction] }}</small></div>
-            <button class="choose-special" @click.stop="chooseMaster(master.id)">{{ master.id === masterId ? '已选择' : '选择主宰' }}</button>
+          <article v-for="entry in masterAppearances" :key="entry.key" class="deck-card" :data-card-id="entry.card.id" :data-appearance-id="entry.art?.id || 'original'" :class="{ chosen: entry.card.id === masterId && (alternateArtSelections[entry.card.id] || '') === (entry.art?.id || ''), 'alternate-art-card': entry.art }" @click="selectCard(entry.card)">
+            <button class="card-image" @dblclick.stop="chooseMasterAppearance(entry)"><CardImage :card-id="entry.art?.cardImageId || entry.card.id" :legacy-url="entry.art ? (entry.art.builtIn ? undefined : entry.art.thumbnailUrl || entry.art.imageUrl) : entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" :fit="deckEditorPortrait ? 'contain' : 'cover'"/></button>
+            <div><b>{{ entry.card.nameZh }}<em v-if="entry.art">异画</em></b><small>{{ entry.art?.artCode || entry.card.number }} · {{ factionLabels[entry.card.faction] }}</small></div>
+            <button class="choose-special" @click.stop="chooseMasterAppearance(entry)">{{ entry.card.id === masterId && (alternateArtSelections[entry.card.id] || '') === (entry.art?.id || '') ? '已选择' : entry.art ? '使用异画' : '选择主宰' }}</button>
           </article>
         </div>
         <div v-else-if="catalogTab === 'main'" class="deck-card-grid">
@@ -1261,7 +1311,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
         <header class="deck-list-header"><DeckCover variant="compact" :master-id="selectedMaster?.id" :master-name="selectedMaster?.nameZh" :name="deckName || selectedMaster?.nameZh || '未选择主宰'" :catalog="catalog" :source-card-ids="mainCardIds" context="当前牌表" :meta="selectedMaster ? `${factionLabels[selectedMaster.faction]} · 士气 ${moraleIds.length} 张` : '先从牌库选择主宰'"/><b>{{ countSummary.label }}</b></header>
         <p v-if="validation && deckEditorPortrait" class="portrait-deck-issue">{{ validation }}</p>
         <div class="deck-sections">
-          <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMaster.id" :legacy-url="selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
+          <section class="deck-zone" data-deck-section="master"><header><button @click="toggleSection('master')"><span>主宰</span><b>{{ selectedMaster ? '1/1' : '0/1' }}</b><i>{{ collapsedSections.master ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.master" class="deck-zone-body"><article v-if="selectedMaster" class="deck-entry-row" @click="selectCard(selectedMaster)"><CardImage class="deck-entry-banner" :card-id="selectedMasterArt?.cardImageId || selectedMaster.id" :legacy-url="selectedMasterArt ? (selectedMasterArt.builtIn ? undefined : selectedMasterArt.thumbnailUrl || selectedMasterArt.imageUrl) : selectedMaster.imageUrl" :alt="selectedMaster.nameZh" intent="thumb" fit="cover" native-orientation/><span>主</span><div><b>{{ selectedMaster.nameZh }}</b><small>{{ factionLabels[selectedMaster.faction] }}{{ selectedMasterArt ? ' · 异画' : '' }}</small></div><strong>×1</strong></article><p v-else>请从卡池选择主宰。</p></div></section>
           <section class="deck-zone" data-deck-section="main"><header><button @click="toggleSection('main')"><span>主牌库</span><b>{{ totalCards }}/40–50</b><i>{{ collapsedSections.main ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.main" class="deck-zone-body"><template v-for="entry in entries" :key="entry.card.id"><article class="deck-entry-row" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="entry.card.id" :legacy-url="entry.card.imageUrl" :alt="entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>{{ entry.card.cost ?? '—' }}</span><div><b>{{ entry.card.nameZh }}</b><small>{{ entry.card.number }}</small></div><strong>×{{ originalAppearanceCount(entry.card,entry.count) }}</strong><button aria-label="增加一张" :disabled="entry.count >= allowedCopies(entry.card) || (!doesNotCountTowardMainDeck(entry.card) && totalCards >= 50)" @click.stop="add(entry.card)">＋</button><button aria-label="减少一张" @click.stop="remove(entry.card.id)">−</button></article><article v-for="group in alternateAppearanceGroups(entry.card,entry.count)" :key="group.presentation.key" class="deck-entry-row alternate-art-banner" @click="selectCard(entry.card)"><CardImage class="deck-entry-banner" :card-id="group.presentation.cardImageId" :legacy-url="group.presentation.legacyUrl" :alt="group.presentation.art?.displayName || entry.card.nameZh" intent="thumb" fit="cover" native-orientation object-position="center 28%"/><span>异</span><div><b>{{ group.presentation.art?.displayName || entry.card.nameZh }}</b><small>{{ group.presentation.art?.artCode || entry.card.number }}</small></div><strong>×{{ group.count }}</strong></article></template><p v-if="!entries.length">从卡池加入卡牌，或从备选区移回主牌。</p></div></section>
           <section class="deck-zone" data-deck-section="morale"><header><button @click="toggleSection('morale')"><span>士气</span><b>{{ moraleIds.length }}/{{ selectedMaster?.faction === 'taiyangcheng' ? 6 : 8 }}</b><i>{{ collapsedSections.morale ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.morale" class="deck-zone-body"><article v-for="(card,index) in moraleCards" :key="`${card.id}-${index}`" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>士</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }}</small></div><strong>×1</strong></article><p v-if="!moraleCards.length">选择主宰后自动配置士气。</p></div></section>
           <section class="deck-zone" data-deck-section="extra"><header><button @click="toggleSection('extra')"><span>额外区</span><b>{{ selectedTrials.length }}/{{ trialCapacity }}<span v-if="automaticExtraCards.length"> + {{ automaticExtraCards.length }} 自动</span></b><i>{{ collapsedSections.extra ? '展开' : '折叠' }}</i></button></header><div v-if="!collapsedSections.extra" class="deck-zone-body"><article v-for="trial in selectedTrials" :key="trial.id" class="deck-entry-row" @click="selectCard(trial)"><CardImage class="deck-entry-banner" :card-id="trial.id" :legacy-url="trial.imageUrl" :alt="trial.nameZh" intent="thumb" fit="cover" native-orientation/><span>{{ trial.trialValue ?? '试' }}</span><div><b>{{ trial.nameZh }}</b><small>{{ trial.number }} · 试炼</small></div><strong>×1</strong><button aria-label="移出额外区" @click.stop="toggleTrial(trial)">−</button></article><article v-for="card in automaticExtraCards" :key="card.id" class="deck-entry-row" @click="selectCard(card)"><CardImage class="deck-entry-banner" :card-id="card.id" :legacy-url="card.imageUrl" :alt="card.nameZh" intent="thumb" fit="cover" native-orientation/><span>专</span><div><b>{{ card.nameZh }}</b><small>{{ card.number }} · 自动配置</small></div><strong>×1</strong><button aria-label="主宰自动配置" disabled>锁</button></article><p v-if="!selectedTrials.length && !automaticExtraCards.length">当前没有额外区卡牌。</p></div></section>
@@ -1321,6 +1371,7 @@ watch(() => [platformState.account?.id, platformState.token] as const, ([current
 </template>
 
 <style scoped>
+.alternate-art-status{display:flex;flex:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin:0;padding:6px 12px;border-bottom:1px solid #675f59;background:#151c20;color:#e0c875;font-size:13px;line-height:1.5}.alternate-art-status span{min-width:0;flex:1 1 220px;overflow-wrap:anywhere}.alternate-art-status button{flex:none;min-height:44px;padding:6px 10px;border:1px solid #617572;background:#142326;color:#eee;font:inherit;font-weight:700}.alternate-art-status button:focus-visible{outline:2px solid #70d7df;outline-offset:2px}
 .deck-side-column .saved-decks-panel{overflow-y:auto;overscroll-behavior:contain}.saved-decks-panel .saved-list{flex:none;overflow:visible}
 .deck-builder-shell .mobile-saved-decks-dialog{display:flex;flex-direction:column}
 .saved-directory-search{display:flex;flex:none;gap:6px;min-width:0;margin:0 0 8px}.saved-directory-search input{box-sizing:border-box;min-width:0;width:100%;min-height:40px;padding:8px;border:1px solid #52615d;background:#080f11;color:#eee}.saved-directory-search button,.saved-directory-pages button,.saved-directory-error button{flex:none;min-height:40px;padding:6px 10px;border:1px solid #52615d;background:#141e21;color:#eee;font:inherit;font-weight:700}.saved-directory-search input:focus-visible,.saved-directory-search button:focus-visible,.saved-directory-pages button:focus-visible,.saved-directory-error button:focus-visible{outline:2px solid #70d7df;outline-offset:2px}.saved-directory-pages{display:flex;flex:none;align-items:center;justify-content:space-between;gap:4px;margin-top:6px}.saved-directory-pages span{min-width:0;font-size:12px;white-space:nowrap}.saved-directory-error{flex:none;margin:0 0 6px;color:#efadb6;font-size:13px;overflow-wrap:anywhere}.saved-directory-pages button:disabled,.saved-directory-search button:disabled{opacity:.5}.saved-list{flex:1}.mobile-saved-decks-dialog{display:flex;flex-direction:column}.mobile-saved-decks-dialog>header,.mobile-saved-decks-current{flex:none}.mobile-saved-decks-dialog>.saved-directory-search,.mobile-saved-decks-dialog>.saved-directory-error,.mobile-saved-decks-dialog>.saved-directory-pages{margin:8px 12px}.mobile-saved-decks-list{flex:1}.mobile-saved-decks-dialog .saved-directory-search input,.mobile-saved-decks-dialog .saved-directory-search button,.mobile-saved-decks-dialog .saved-directory-pages button{min-height:44px}
