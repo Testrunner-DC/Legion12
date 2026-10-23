@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-accepted-mobile-and-lobby-coverage",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "移动对局与大厅提示完善",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "扩大手机对局详情和操作按钮的点击区域，减少选牌、选格位时的重复标签与遮挡；双方玩家信息直接展示，异画详情补齐画师和联动信息。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/GameBoard.mobile.css",
+        "opcgpro-vue/src/l12/game/GameBoard.vue",
+        "opcgpro-vue/src/l12/game/MobileBattleDock.css"
+      ]
+    },
+    {
+      "category": "decks",
+      "text": "移除对战大厅重复的更换牌库提示，保留已准备时不能更换的说明。",
+      "paths": ["opcgpro-vue/src/l12/site/BattleHubPage.vue"]
+    }
+  ]
+}

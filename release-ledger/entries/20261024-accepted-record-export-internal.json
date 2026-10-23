@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-accepted-record-export-internal",
+  "date": "2026-10-24",
+  "audience": "internal",
+  "reason": "补登已验收的管理员沙盒记录导出迁移：使用既有受管读取与取消，切换账号、对局或卸载时退休旧请求；不把管理工具实现发布到玩家更新日志。",
+  "paths": ["opcgpro-vue/src/l12/game/GmPanel.vue"]
+}
