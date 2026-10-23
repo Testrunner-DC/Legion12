@@ -9,16 +9,19 @@ namespace TwelveLegions.Server;
 /// </summary>
 internal sealed class L12PresenceSnapshotWireCodec
 {
+    internal const string OrderReuseCapability = "presenceOrderReuseV1";
     private readonly object _gate = new();
     private bool _enabled;
+    private bool _reuseOrder;
     private byte[]? _baseline;
     private long _generation;
 
-    internal void SetDeltaEnabled(bool enabled)
+    internal void SetDeltaEnabled(bool enabled, bool reuseOrder = false)
     {
         lock (_gate)
         {
             _enabled = enabled;
+            _reuseOrder = enabled && reuseOrder;
             _baseline = null;
             _generation++;
         }
@@ -46,8 +49,6 @@ internal sealed class L12PresenceSnapshotWireCodec
                 if (!previous.Items.TryGetValue(accountId, out var oldItem)
                     || !JsonElement.DeepEquals(oldItem, current.Items[accountId]))
                     upserts.Add(JsonSerializer.SerializeToNode(current.Items[accountId]));
-            var order = new JsonArray();
-            foreach (var accountId in current.Order) order.Add(accountId);
             var delta = new JsonObject
             {
                 ["type"] = "presenceDelta",
@@ -57,8 +58,18 @@ internal sealed class L12PresenceSnapshotWireCodec
                 ["revision"] = current.Revision,
                 ["removedAccountIds"] = removed,
                 ["upserts"] = upserts,
-                ["order"] = order,
             };
+            // Removed identities leave the relative order of surviving entries
+            // intact. New entries or a real reorder still need the complete order.
+            if (_reuseOrder && previous.Order.Where(current.Items.ContainsKey)
+                    .SequenceEqual(current.Order, StringComparer.Ordinal))
+                delta["orderFromBaseline"] = true;
+            else
+            {
+                var order = new JsonArray();
+                foreach (var accountId in current.Order) order.Add(accountId);
+                delta["order"] = order;
+            }
             var encoded = L12SnapshotJson.SerializeToUtf8Bytes(delta);
             if (encoded.Length >= queued.FullPayload.Length) return Full(queued.FullPayload, _generation);
             var generation = _generation;

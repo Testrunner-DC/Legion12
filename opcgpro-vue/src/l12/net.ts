@@ -75,6 +75,7 @@ let negotiatedRequestIds = false
 let negotiatedEventWindowDelta = false
 let negotiatedHandArrayDelta = false
 let negotiatedPresenceDelta = false
+let negotiatedPresenceOrderReuse = false
 let negotiatedGameStateCardFrame = false
 let presenceRecoveryPending = false
 let presenceBaselineEpoch = ''
@@ -157,7 +158,13 @@ function rebuildPresenceDelta(message: any) {
     || typeof baseRevision !== 'number' || !Number.isSafeInteger(baseRevision) || baseRevision < 0
     || baseRevision !== currentRevision || revision <= baseRevision
     || !Array.isArray(message.removedAccountIds) || !Array.isArray(message.upserts)
-    || !Array.isArray(message.order) || !Array.isArray(l12State.presence)) return null
+    || !Array.isArray(l12State.presence)) return null
+  const hasOrderFromBaseline = Object.prototype.hasOwnProperty.call(message, 'orderFromBaseline')
+  const orderFromBaseline = hasOrderFromBaseline && message.orderFromBaseline === true
+  if (hasOrderFromBaseline && !orderFromBaseline) return null
+  if (orderFromBaseline
+    ? !negotiatedPresenceOrderReuse || Object.prototype.hasOwnProperty.call(message, 'order')
+    : !Array.isArray(message.order)) return null
 
   const entries = new Map<string, any>()
   for (const item of l12State.presence) {
@@ -177,11 +184,14 @@ function rebuildPresenceDelta(message: any) {
     if (removed.has(accountId) || upserts.has(accountId)) return null
     upserts.set(accountId, item)
   }
+  // Explicit removals filter the previous order; an unseen identity needs a
+  // complete order. Validate before exposing any reconstructed state.
+  if (orderFromBaseline && [...upserts.keys()].some(id => !entries.has(id))) return null
   removed.forEach(accountId => entries.delete(accountId))
   upserts.forEach((item, accountId) => entries.set(accountId, item))
   const order = new Set<string>()
   const rebuilt = []
-  for (const value of message.order) {
+  for (const value of orderFromBaseline ? entries.keys() : message.order) {
     if (typeof value !== 'string' || !value || order.has(value) || !entries.has(value)) return null
     order.add(value)
     rebuilt.push(entries.get(value))
@@ -725,7 +735,7 @@ export function connect(): Promise<void> {
         type: 'hello',
         authToken,
         capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-          chatV1: true, gameStateCardFrameV1: true, [HAND_ARRAY_DELTA_CAPABILITY]: true },
+          presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, [HAND_ARRAY_DELTA_CAPABILITY]: true },
       }))
     }
     socket.onmessage = (event) => {
@@ -772,6 +782,7 @@ export function connect(): Promise<void> {
         negotiatedHandArrayDelta = message.capabilities?.deltaGameState === true
           && message.capabilities?.[HAND_ARRAY_DELTA_CAPABILITY] === true
         negotiatedPresenceDelta = message.capabilities?.presenceDeltaV1 === true
+        negotiatedPresenceOrderReuse = negotiatedPresenceDelta && message.capabilities?.presenceOrderReuseV1 === true
         resetGameStateCardFrameRecovery()
         negotiatedGameStateCardFrame = message.capabilities?.gameStateCardFrameV1 === true
         presenceRecoveryPending = false
@@ -1175,6 +1186,7 @@ export function connect(): Promise<void> {
         lastGameStateEnvelope = null
         negotiatedGameStateCardFrame = false
         negotiatedPresenceDelta = false
+        negotiatedPresenceOrderReuse = false
         presenceRecoveryPending = false
         presenceBaselineEpoch = ''
         l12State.status = 'offline'
@@ -1261,6 +1273,7 @@ export function disconnect() {
   negotiatedEventWindowDelta = false
   negotiatedHandArrayDelta = false
   negotiatedPresenceDelta = false
+  negotiatedPresenceOrderReuse = false
   negotiatedGameStateCardFrame = false
   presenceRecoveryPending = false
   presenceBaselineEpoch = ''

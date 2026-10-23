@@ -1176,7 +1176,7 @@ const tests = [
     assert.deepEqual(JSON.parse(socket.sent[0]), {
       type: 'hello', authToken: 'valid-token',
       capabilities: { requestIds: true, deltaGameState: true, eventWindowDeltaV1: true, presenceDeltaV1: true,
-        chatV1: true, gameStateCardFrameV1: true, handArrayDeltaV1: true },
+        presenceOrderReuseV1: true, chatV1: true, gameStateCardFrameV1: true, handArrayDeltaV1: true },
     })
     socket.receive({ type: 'recoveryComplete', connectionGeneration: 0 })
     assert.equal(net.l12State.status, 'connecting', 'recoveryComplete without this attempt session claim must be ignored')

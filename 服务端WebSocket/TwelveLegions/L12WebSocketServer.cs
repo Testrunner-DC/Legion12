@@ -839,7 +839,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
         long ConnectionGeneration);
     private sealed record ProtocolCapabilities(bool RequestIds, bool DeltaGameState,
         bool EventWindowDeltaV1 = false, bool PresenceDeltaV1 = false, bool ChatV1 = false,
-        bool GameStateCardFrameV1 = false, bool HandArrayDeltaV1 = false);
+        bool GameStateCardFrameV1 = false, bool HandArrayDeltaV1 = false,
+        bool PresenceOrderReuseV1 = false);
     private sealed record TelemetryPageViewRequest(string? Path);
 
     private static readonly JsonSerializerOptions CommandJsonOptions = new(JsonSerializerDefaults.Web);
@@ -5471,7 +5472,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     snapshotCodec.SetCardSnapshotFrameEnabled(capabilities.GameStateCardFrameV1);
                 }
                 if (_presenceSnapshotCodecs.TryGetValue(sessionId, out var presenceSnapshotCodec))
-                    presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1);
+                    presenceSnapshotCodec.SetDeltaEnabled(capabilities.PresenceDeltaV1,
+                        capabilities.PresenceOrderReuseV1);
                 previousSocket = _activeAccountSockets.GetValueOrDefault(authenticated.Account.Id);
                 // ConnectAsync advances the room connection generation before it returns. Fence
                 // the old transport first; a failed/unknown claim never reopens that old lane.
@@ -5510,6 +5512,7 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                     eventWindowDeltaV1 = capabilities.DeltaGameState && capabilities.EventWindowDeltaV1,
                     handArrayDeltaV1 = capabilities.DeltaGameState && capabilities.HandArrayDeltaV1,
                     presenceDeltaV1 = capabilities.PresenceDeltaV1,
+                    presenceOrderReuseV1 = capabilities.PresenceDeltaV1 && capabilities.PresenceOrderReuseV1,
                     chatV1 = _chatEnabled && capabilities.ChatV1,
                     gameStateCardFrameV1 = capabilities.GameStateCardFrameV1,
                 },
@@ -5597,13 +5600,15 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             return new(requested.Contains("requestIds"), requested.Contains("deltaGameState"),
                 requested.Contains("eventWindowDeltaV1"), requested.Contains("presenceDeltaV1"),
                 requested.Contains("chatV1"), requested.Contains(L12CardSnapshotFrame.Capability),
-                requested.Contains(L12HandArrayDelta.Capability));
+                requested.Contains(L12HandArrayDelta.Capability),
+                requested.Contains(L12PresenceSnapshotWireCodec.OrderReuseCapability));
         }
         if (value.ValueKind != JsonValueKind.Object) return new(false, false);
         return new(GetBool(value, "requestIds", false), GetBool(value, "deltaGameState", false),
             GetBool(value, "eventWindowDeltaV1", false), GetBool(value, "presenceDeltaV1", false),
             GetBool(value, "chatV1", false), GetBool(value, L12CardSnapshotFrame.Capability, false),
-            GetBool(value, L12HandArrayDelta.Capability, false));
+            GetBool(value, L12HandArrayDelta.Capability, false),
+            GetBool(value, L12PresenceSnapshotWireCodec.OrderReuseCapability, false));
     }
 
     private async Task<IReadOnlyList<OutgoingMessage>> SynchronizeStateAsync(Guid sessionId, JsonElement root)

@@ -1,5 +1,18 @@
 # Legion12 Bug 修复记录
 
+## QA-20261023-CLEANUP-RESERVE｜清退预算矛盾已证，尚未修改原门槛
+
+- 真实适配cleanupOwnedTestrunAccounts对69所属测试身份串行执行555请求、139次1300ms等待。test-testrun-cleanup-timing.mjs只替换时钟与本地响应，不访问账号／网络；零响应延迟下完整180700ms，180000ms窗会留下管理员会话未撤销。100ms纯合成响应对照完整236200ms，不冒真实RTT或清退性能。
+- 原压力720000ms、总900000ms、清退预留180000ms的组合，在压力用满时不能容纳该函数的理论下界；这不是30房＋10外围／3秒目标本身不可达的证明，早结束的负载仍可能容纳。保留原各失败，未调整阈值／自动通过，也未拿清退问题抵消终局迟到。
+- 证据presence-order-reuse/cleanup-timing-red.json；下一限定修正工具编排，仍保身份／CAS／限速／独立撤销及有界恢复，先证明完整生命周期可行再启动正常负载，不原样复跑69账号。
+
+## PERF-20261023-PRESENCE-ORDER-REUSE｜在线名单重复顺序，本地接受未部署
+
+- P2既有每连接差量在所有状态更新中重复整份accountId顺序；同类扫描`presenceDelta|removedAccountIds|SetDeltaEnabled|DescribeOnlinePresence`覆盖codec、个性化生产者、协商／客户端恢复及清退断线。既有25ms合并和可靠队列不改，不重造全局名单或跨接收者缓存。
+- 新显式presenceOrderReuseV1仅在双方原presenceDeltaV1也确认时启用。orderFromBaseline精确复用已成功发送基线的顺序、过滤明确移除；新增成员／实际重排发送完整order。发送失败不提交、重新协商废弃旧Commit、epoch／主动同步／冷端和旧端全量回退不变。客户端先完整验证再发布，未知新增、重复移除、双重顺序表达、错版本／epoch与未协商均拒绝并沿原单次恢复，不泄漏私密字段或改DB。
+- 两轮真实服务端RED及实际net函数RED保留；最终42专项包含真实localhost协商／建房／断线移除／旧端／同步／重连。70条目30次更新＋30次移除的60个真实C#包经当前net完整还原，25纯例＋60实际包共85例过；总148,108→18,283B严格仅差order，分配7,553,152→7,118,888B。仅合成局部收益，非整体流量／终局根治证明。
+- 最终完整平台2299／2299、规则8340／8340零失败跳过；标准前端原通过前缀＋失败处续验全部剩余检查、类型、正式与测试双Vite通过。旧45／46失败是hello能力精确期望漏新字段，仅补该字段，保留其他45行为断言与原失败、不重跑同源后端。唯一presence-order-reuse/main-acceptance.json绑定九源和实际TRX／日志；原性能全链／架构锁及261条日志账本通过。原容量NOT_ACCEPTED、3秒／F737负载／900秒均保留。压测QA仍独立本地队列，未提交源与HEAD闭包拒绝不绕过；本轮不部署、无正式服／维护或业务写入，回滚面仅该可选协议与相应回归。
+
 ## QA-20261023-TERMINAL-LEASE-APPLICABILITY｜拒绝不可成立的诊断条件，不放宽容量
 
 - P2取证工具的共享条件错误：诊断派生入口要求每行lease_valid=1，但L12InboundConnection只有在L12_DEPLOYMENT_DRAIN启用、存在leaseAcquirer时才记录租约；未启用时receive_valid仍可真实有效。原固定条件会使该配置的完整取证也必定失败，不是3秒性能标准本身不可达。

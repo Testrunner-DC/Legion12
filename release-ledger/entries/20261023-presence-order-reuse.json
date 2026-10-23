@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "20261023-presence-order-reuse",
+  "date": "2026-10-23",
+  "audience": "players",
+  "title": "在线状态同步优化",
+  "changes": [
+    {
+      "category": "ui",
+      "text": "减少在线名单状态变化和玩家离线时的重复传输，保留完整名单、显示顺序和重连恢复。",
+      "paths": [
+        "opcgpro-vue/src/l12/net.ts",
+        "服务端WebSocket/TwelveLegions/L12PresenceSnapshotWireCodec.cs",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+      ]
+    }
+  ]
+}

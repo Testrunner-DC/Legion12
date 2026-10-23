@@ -374,8 +374,10 @@ public sealed class PresenceSnapshotDeltaTests
         }
     }
 
-    [Fact]
-    public async Task LoopbackNegotiationLegacySyncAndReconnectKeepFullFallbacks()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoopbackNegotiationLegacySyncAndReconnectKeepFullFallbacks(bool reuseOrder)
     {
         var root = Path.Combine(Path.GetTempPath(), "l12-presence-delta-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -398,9 +400,10 @@ public sealed class PresenceSnapshotDeltaTests
             await server.StartAsync(0);
             var uri = new UriBuilder(Assert.Single(server.Addresses)) { Scheme = "ws", Path = "/ws" }.Uri;
 
-            var negotiated = await ConnectAsync(uri, accounts[0].Token!, presenceDelta: true);
+            var negotiated = await ConnectAsync(uri, accounts[0].Token!, presenceDelta: true, reuseOrder: reuseOrder);
             sockets.Add(negotiated.Socket);
             Assert.True(negotiated.Session["capabilities"]!["presenceDeltaV1"]!.GetValue<bool>());
+            Assert.Equal(reuseOrder, negotiated.Session["capabilities"]!["presenceOrderReuseV1"]!.GetValue<bool>());
             Assert.Equal("presenceSnapshot", negotiated.InitialPresence["type"]!.GetValue<string>());
             var legacy = await ConnectAsync(uri, accounts[1].Token!, presenceDelta: false);
             sockets.Add(legacy.Socket);
@@ -426,11 +429,11 @@ public sealed class PresenceSnapshotDeltaTests
             var roomAccountId = accounts[2].Account!.Id;
             var receivedItems = negotiatedFull["items"]!.AsArray().ToDictionary(
                 item => item!["accountId"]!.GetValue<string>(), item => item!.DeepClone());
-            var delta = await ReceivePresenceAsync(negotiated.Socket,
-                message =>
+            var receivedOrder = negotiatedFull["items"]!.AsArray().Select(item => item!["accountId"]!.GetValue<string>()).ToArray();
+            JsonArray? ApplyDelta(JsonObject message)
                 {
                     var revision = message["revision"]!.GetValue<long>();
-                    if (revision <= expectedBaseRevision) return false;
+                    if (revision <= expectedBaseRevision) return null;
                     Assert.Equal("presenceDelta", message["type"]!.GetValue<string>());
                     Assert.Equal(expectedBaseRevision, message["baseRevision"]!.GetValue<long>());
                     Assert.Equal(negotiatedFull["epoch"]!.GetValue<string>(), message["epoch"]!.GetValue<string>());
@@ -439,19 +442,34 @@ public sealed class PresenceSnapshotDeltaTests
                         Assert.True(receivedItems.Remove(removed!.GetValue<string>()));
                     foreach (var item in message["upserts"]!.AsArray())
                         receivedItems[item!["accountId"]!.GetValue<string>()] = item.DeepClone();
-                    var order = message["order"]!.AsArray().Select(id => id!.GetValue<string>()).ToArray();
+                    string[] order;
+                    if (message["orderFromBaseline"]?.GetValue<bool>() == true)
+                    {
+                        Assert.True(reuseOrder); Assert.False(message.ContainsKey("order"));
+                        order = receivedOrder.Where(receivedItems.ContainsKey).ToArray();
+                    }
+                    else order = message["order"]!.AsArray().Select(id => id!.GetValue<string>()).ToArray();
                     Assert.Equal(receivedItems.Count, order.Length);
                     Assert.Equal(order.Length, order.Distinct(StringComparer.Ordinal).Count());
                     var rebuilt = new JsonArray(order.Select(id => receivedItems[id].DeepClone()).ToArray());
+                    receivedOrder = order;
+                    return rebuilt;
+                }
+            var delta = await ReceivePresenceAsync(negotiated.Socket,
+                message =>
+                {
+                    var rebuilt = ApplyDelta(message);
                     // A valid revision-only notification can precede the room update.
                     // Consume and check its baseline; wait for the actual target change
                     // under the receiver's original single eight-second deadline.
-                    return rebuilt.Any(item =>
+                    return rebuilt is not null && rebuilt.Any(item =>
                         item!["accountId"]!.GetValue<string>() == roomAccountId
                         && item["activity"]!.GetValue<string>() == "inRoom");
                 });
             Assert.Equal("presenceDelta", delta["type"]!.GetValue<string>());
             Assert.NotEmpty(delta["upserts"]!.AsArray());
+            Assert.Equal(reuseOrder, delta["orderFromBaseline"]?.GetValue<bool>() == true);
+            Assert.Equal(!reuseOrder, delta.ContainsKey("order"));
             var legacyRefresh = await ReceivePresenceAsync(legacy.Socket,
                 message => message["type"]?.GetValue<string>() == "presenceSnapshot"
                     && message["revision"]!.GetValue<long>() > legacyFull["revision"]!.GetValue<long>()
@@ -460,12 +478,29 @@ public sealed class PresenceSnapshotDeltaTests
                         && item["activity"]!.GetValue<string>() == "inRoom"));
             Assert.Equal("presenceSnapshot", legacyRefresh["type"]!.GetValue<string>());
 
+            // Disconnecting a real room participant must remove their identity,
+            // not retransmit every survivor's order or lose the committed baseline.
+            sockets[2].Abort();
+            var removal = await ReceivePresenceAsync(negotiated.Socket, message =>
+            {
+                var rebuilt = ApplyDelta(message);
+                return rebuilt is not null && !receivedItems.ContainsKey(roomAccountId);
+            });
+            Assert.Contains(removal["removedAccountIds"]!.AsArray(), id => id!.GetValue<string>() == roomAccountId);
+            Assert.Equal(accounts.Length - 1, receivedItems.Count);
+            Assert.Equal(reuseOrder, removal["orderFromBaseline"]?.GetValue<bool>() == true);
+            Assert.Equal(!reuseOrder, removal.ContainsKey("order"));
+            await ReceivePresenceAsync(legacy.Socket, message =>
+                message["type"]?.GetValue<string>() == "presenceSnapshot"
+                    && message["items"]!.AsArray().Count == accounts.Length - 1
+                    && message["items"]!.AsArray().All(item => item!["accountId"]!.GetValue<string>() != roomAccountId));
+
             await SendAsync(negotiated.Socket, new { type = "syncPresence" });
             Assert.Equal("presenceSnapshot", (await ReceivePresenceAsync(negotiated.Socket,
                 message => message["type"]?.GetValue<string>() == "presenceSnapshot"))["type"]!.GetValue<string>());
 
             negotiated.Socket.Abort();
-            var reconnected = await ConnectAsync(uri, accounts[0].Token!, presenceDelta: true);
+            var reconnected = await ConnectAsync(uri, accounts[0].Token!, presenceDelta: true, reuseOrder: reuseOrder);
             sockets.Add(reconnected.Socket);
             Assert.Equal("presenceSnapshot", reconnected.InitialPresence["type"]!.GetValue<string>());
         }
@@ -516,7 +551,7 @@ public sealed class PresenceSnapshotDeltaTests
         }).ToList();
 
     private static async Task<(ClientWebSocket Socket, JsonObject Session, JsonObject InitialPresence)> ConnectAsync(
-        Uri uri, string token, bool presenceDelta)
+        Uri uri, string token, bool presenceDelta, bool reuseOrder = false)
     {
         var socket = new ClientWebSocket();
         await socket.ConnectAsync(uri, CancellationToken.None);
@@ -524,7 +559,7 @@ public sealed class PresenceSnapshotDeltaTests
         {
             type = "hello",
             authToken = token,
-            capabilities = new { requestIds = true, deltaGameState = true, presenceDeltaV1 = presenceDelta },
+            capabilities = new { requestIds = true, deltaGameState = true, presenceDeltaV1 = presenceDelta, presenceOrderReuseV1 = reuseOrder },
         });
         var session = await ReceiveTypeAsync(socket, "session");
         var presence = await ReceivePresenceAsync(socket);
