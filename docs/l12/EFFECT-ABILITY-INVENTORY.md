@@ -5,7 +5,7 @@
 
 卡牌：324；能力段：686；无能力卡：7。
 这是当前运行目录的分段基线；印刷卡文分段正确性、旧入口完整归属仍需审查，不能把自动导出当成P0完成。
-内容指纹：`c139e82cc163298463e67b25f5226bd08c17a481736cf1bba56e9a145e1b642a`。
+内容指纹：`056240784a139797a60fe8d29fb3aa8bb6978f89efaee2aaa56e9abb4c6cfbd2`。
 
 | 定义证据 | 能力数 |
 | --- | ---: |
@@ -1044,7 +1044,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-04M1:ability:static:51c3f1e1976210f8 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M1 | authoritative-consumer, per-card-branch |
 | S01-04M2:ability:static:ce8699cac703af1c | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M2 | authoritative-consumer, per-card-branch |
 | S01-04M2:ability:attack:ebb2054e23f75cd1 | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelineActiveEffectSegmentBindsToTheSharedActivePipeline / S01-04M2 | authoritative-consumer, per-card-branch |
-| S01-04M2:ability:leave:4e83a7191108369b | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-04M2 | authoritative-consumer, per-card-plan |
+| S01-04M2:ability:leave:47290d11c9fa259d | TwelveLegions.Tests.PipelineLifecycleProfileTests.EveryPipelinePublicTriggerSegmentBindsToTheSharedTriggerPipeline / S01-04M2 | authoritative-consumer, per-card-plan |
 | S01-DS01:ability:static:9b5681c438931452 | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS01 | normal, presentation-consumers, reconnect |
 | S01-DS01:ability:static:9b5681c438931452 | TwelveLegions.Tests.FrontRowTauntAndTrialLifecycleProfileTests.EveryDisasterContinuousRuleSegmentReadsTheSharedRuleRegistry / S01-DS01 | authoritative-consumer, registry-closed-set |
 | S01-DS02:ability:static:4408d437a8ab5e5a | TwelveLegions.Tests.DisasterContinuousRuleLifecycleProfileTests.CurrentRuleAndPublicDisasterProjectionSurviveCheckpoint / S01-DS02 | normal, presentation-consumers, reconnect |
@@ -1948,7 +1948,7 @@ fine-definition = 原子顺序/参数与本能力匹配；composite-definition =
 | S01-04M1 天照大神 #2 | S01-04M1:ability:static:51c3f1e1976210f8 | static/continuous | shared-rule-owner | 我方 回合1次 可弃置1张手牌 | trigger:trigger.observe → condition:control.optional → cost:cost.discard → resolution:operation.modify-troops → resolution:operation.ready → duration:duration.apply | 2 | 我方 回合1次 可弃置1张手牌：将我方最多2张士气转为活跃。我方前排所有【高天原】军团本回合兵力+1000 |
 | S01-04M2 须佐之男 #1 | S01-04M2:ability:static:ce8699cac703af1c | static/continuous | shared-rule-owner | 我方 回合1次 可消耗1士气 | trigger:trigger.observe → condition:control.optional → target:selection.target → cost:cost.pay-morale → duration:duration.apply | 0 | 我方 回合1次 可消耗1士气：选择我方1张【高天原】军团，本回合位于前排 |
 | S01-04M2 须佐之男 #2 | S01-04M2:ability:attack:ebb2054e23f75cd1 | attack/triggered | shared-rule-owner | 进攻时兵力+2000。消耗2士气 | trigger:trigger.observe → condition:control.optional → cost:cost.pay-morale → resolution:operation.modify-troops | 1 | 进攻时兵力+2000。消耗2士气：将我方&lt;草薙剑&gt;置入前排，视为1张兵力5000的【武者】军团。（草薙剑仍可发动其效果）。&lt;草薙剑&gt; |
-| S01-04M2 须佐之男 #3 | S01-04M2:ability:leave:4e83a7191108369b | leave/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone | 1 | 离场时：可选择将其放回牌库顶部 |
+| S01-04M2 须佐之男 #3 | S01-04M2:ability:leave:47290d11c9fa259d | leave/triggered | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → target:selection.target → resolution:operation.move-zone → resolution:operation.composite-flow | 1 | 离场时：可选择将其放回牌库顶部 |
 | S01-DS01 黯陨晨星 #1 | S01-DS01:ability:static:9b5681c438931452 | static/continuous | shared-rule-owner | — | trigger:trigger.observe → condition:control.optional → condition:condition.expression → target:selection.target → target:selection.mode → resolution:operation.ready → resolution:operation.rest → duration:duration.apply → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 主要阶段开始时，回合玩家掷骰。双数：将我方1张活跃士气转为休整。单数：选择以下一项在本回合中生效。·打出&lt;主动战术&gt;无需消耗费用。·【术师】/【弓手】位于后排时可攻击对方主宰 |
 | S01-DS02 百鬼夜行 #1 | S01-DS02:ability:disaster:4548c9e0f724c914 | disaster/triggered | fine-definition | — | trigger:trigger.observe → resolution:operation.damage-master | 1 | 触发 对所有主宰造成1点非致命伤害 |
 | S01-DS02 百鬼夜行 #2 | S01-DS02:ability:static:4408d437a8ab5e5a | static/continuous | shared-rule-owner | — | trigger:trigger.observe → resolution:special.domain → resolution:legacy.resolve | 0 | 持续 带有天灾等级的军团进攻主宰时，造成的伤害+1 |

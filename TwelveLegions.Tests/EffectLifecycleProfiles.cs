@@ -1805,7 +1805,7 @@ internal static class EffectLifecycleProfiles
     [
         ("S01-01M1:ability:static:0924c3a5995ba164", "哮天犬·稚"),
         ("S01-01M1:ability:death:ee5adb706424f233", "追加1张休整的士气"),
-        ("S01-04M2:ability:leave:4e83a7191108369b", "放回牌库顶部"),
+        ("S01-04M2:ability:leave:47290d11c9fa259d", "放回牌库顶部"),
         ("S01-0204:ability:leave:a59801f7c2874f4a", "陵墓守卫"),
         ("S01-0311:ability:static:3409dd9fa29f684f", "回合1次"),
         ("S01-0311:ability:after-attack:65ce2315ff4c0465", "转为活跃"),

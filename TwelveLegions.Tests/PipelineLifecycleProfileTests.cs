@@ -111,7 +111,7 @@ public sealed class PipelineLifecycleProfileTests
     [Fact]
     [L12AbilityEvidence("S01-01M1:ability:static:0924c3a5995ba164", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-01M1:ability:death:ee5adb706424f233", "per-card-plan", "authoritative-consumer")]
-    [L12AbilityEvidence("S01-04M2:ability:leave:4e83a7191108369b", "per-card-plan", "authoritative-consumer")]
+    [L12AbilityEvidence("S01-04M2:ability:leave:47290d11c9fa259d", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0204:ability:leave:a59801f7c2874f4a", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0311:ability:static:3409dd9fa29f684f", "per-card-plan", "authoritative-consumer")]
     [L12AbilityEvidence("S01-0311:ability:after-attack:65ce2315ff4c0465", "per-card-plan", "authoritative-consumer")]

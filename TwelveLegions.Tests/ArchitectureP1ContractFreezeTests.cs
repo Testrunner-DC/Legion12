@@ -30,6 +30,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         var expected = JsonSerializer.Deserialize<ContractManifest>(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "architecture-p1-contracts.json")),
             FixtureJson);
+        expected = WithReviewedSusanooDepartureRoute(expected!);
         Assert.True(expected == actual,
             $"P1 内核契约发生变化；必须先审查等价性并显式更新黄金夹具。当前值：{Environment.NewLine}{JsonSerializer.Serialize(actual, FixtureJson)}");
     }
@@ -66,7 +67,7 @@ public sealed class ArchitectureP1ContractFreezeTests
         var expectedPrior = JsonSerializer.Deserialize<ContractManifest>(
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures",
                 "architecture-p1-contracts-prior-owner-protocols.json")), FixtureJson);
-        Assert.Equal(expectedPrior, Capture(CreatePriorProtocolEngine()));
+        Assert.Equal(WithReviewedSusanooDepartureRoute(expectedPrior!), Capture(CreatePriorProtocolEngine()));
 
         var current = CreateEngine();
         var prior = CreatePriorProtocolEngine();
@@ -254,10 +255,50 @@ public sealed class ArchitectureP1ContractFreezeTests
     private static string SnapshotHash(L12GameSnapshot snapshot)
         => Sha256(JsonSerializer.Serialize(snapshot, WireJson));
 
-    private static string AbilityCatalogHash()
+    [Fact]
+    public void SusanooDepartureRouteIsTheOnlyReviewedAbilityCatalogChange()
     {
-        var canonical = Catalog.AtomicEffects.All
-            .SelectMany(card => card.Abilities)
+        var abilities = Catalog.AtomicEffects.All.SelectMany(card => card.Abilities).ToArray();
+        var current = Assert.Single(abilities, ability => ability.AbilityId ==
+            "S01-04M2:ability:leave:47290d11c9fa259d");
+        Assert.Equal("leave", current.Trigger);
+        Assert.Equal("triggered", current.ExecutionModel);
+        Assert.Single(current.Atoms, atom => atom.Kind == L12AtomKinds.CompositeFlow);
+        Assert.DoesNotContain(abilities, ability => ability.AbilityId ==
+            "S01-04M2:ability:leave:4e83a7191108369b");
+
+        // The reviewed source correction adds this master's concrete settlement
+        // route. Reconstruct only the previous declarative catalog entry, not an
+        // old engine or an executable legacy source identity. Every other entry
+        // remains byte-for-byte inside the original full-catalog hash guard.
+        var previous = L12AtomicAbilityIdentity.Assign(current.CardId,
+            current with { Atoms = current.Atoms.Where(atom => atom.Kind != L12AtomKinds.CompositeFlow).ToArray() },
+            current.Sequence);
+        Assert.Equal("S01-04M2:ability:leave:4e83a7191108369b", previous.AbilityId);
+        Assert.Equal("14969742d79d606cb39f9d4a358839b4fe98bac699fac1566ff42aae89eb1af2",
+            AbilityCatalogHash(abilities.Select(ability => ability == current ? previous : ability)));
+        Assert.Equal("a13bd467de6626018e984309c8aeb45e6fa259dd67fe32133df4bfaa7861e665",
+            AbilityCatalogHash(abilities));
+    }
+
+    private static ContractManifest WithReviewedSusanooDepartureRoute(ContractManifest previous)
+    {
+        Assert.Equal("14969742d79d606cb39f9d4a358839b4fe98bac699fac1566ff42aae89eb1af2",
+            previous.AbilityCatalogSha256);
+        // Preserve both historical fixture files and every non-catalog field.
+        // The dedicated test above proves the exact one-entry catalog delta.
+        return previous with
+        {
+            AbilityCatalogSha256 = "a13bd467de6626018e984309c8aeb45e6fa259dd67fe32133df4bfaa7861e665",
+        };
+    }
+
+    private static string AbilityCatalogHash()
+        => AbilityCatalogHash(Catalog.AtomicEffects.All.SelectMany(card => card.Abilities));
+
+    private static string AbilityCatalogHash(IEnumerable<L12AtomicAbility> abilities)
+    {
+        var canonical = abilities
             .OrderBy(ability => ability.AbilityId, StringComparer.Ordinal)
             .Select(ability => string.Join('|',
                 ability.CardId,
