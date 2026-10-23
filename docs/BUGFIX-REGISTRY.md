@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## QA-20261023-TERMINAL-LEASE-APPLICABILITY｜拒绝不可成立的诊断条件，不放宽容量
+
+- P2取证工具的共享条件错误：诊断派生入口要求每行lease_valid=1，但L12InboundConnection只有在L12_DEPLOYMENT_DRAIN启用、存在leaseAcquirer时才记录租约；未启用时receive_valid仍可真实有效。原固定条件会使该配置的完整取证也必定失败，不是3秒性能标准本身不可达。
+- 具名当前PID627907只读读取实际启动开关为false；不把它伪称旧PID623313的历史配置证明。未来采集器在原精确PID／commit／DLL／profile校验后仅读取此具名开关，未知配置拒绝；新合同在启用时仍要求真实租约计时，禁用时必须valid=0且两时刻均0，明确N/A而非补0冒测量。
+- 原60行、30slot×2接收者、完整接收／发送后回执及无缺失／重复／截止／损坏要求保留，并补严格范围／汇总核对；默认15个纯正反例接入原性能链。再绑定真实旧B7BAA68E回执补2例，共17过；原旧56份／缺4即使假设开关false仍拒绝。真实RED、runner17／runtime22和完整性能链保留，不改变3秒、正常900秒、F737原负载，也不改绿任何旧结果。
+- 唯一stage-goals-20261023/terminal-recipients：current-applicability、lease-applicability-red／green、performance-chain-with-applicability。仅合同及纯回归先纳Git；完整远端运行／恢复／guard工具链仍本地待纳管，未重跑压测、启用诊断、变更配置、部署或改维护。回滚只撤该工具语义修正，不扩大正常容量准入。
+
 ## UX-20261023-DECK-BANNER-COPY｜牌表与大厅重复说明收束
 
 - 既有人类限定范围：右侧已保存牌表的单卡banner不再重复合法性提示，卡池逐卡提示、整体构筑／赛季合法性、份数上限及禁限校验保留；大厅三个牌库封面入口移除重复底部说明，已准备时不能更换的独有原因仍可见。只改两叶模板，不改封面布局、权益、保存或对局规则。
