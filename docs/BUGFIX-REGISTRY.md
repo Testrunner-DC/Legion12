@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## QA-20261024-ISOLATED-SOURCE-BINDING｜标准隔离前端构建不丢QA来源
+
+- 纳管后的QA性能检查需要ops/qa清单、准备器和checkpoint；原隔离打包只复制旧固定子集且无.git，必缺来源。标准verify-l12现在沿同一清单复制源码，不新增第二打包入口；构建期间显式绑定来源repo／完整提交并finally恢复环境。
+- 来源检查仍要求全部声明与相对导入受Git跟踪。隔离模式另须来源干净、HEAD精确匹配、清单与每个QA源／直接相对导入逐字节一致；默认本地模式不变，未凭环境变量豁免归属。新增29纯例含错误根／HEAD／脏源／清单与源／导入漂移；真实隔离副本probe须在本地候选干净提交后执行，当前不冒实际发布通过。
+- 原发布合成回归依赖真实exceptions[0]，在两旧例外清除后越界；仅为测试自建具名过期行，不在产品恢复例外。fixture根从旧D/temp改受管primary缓存并实际物理路径核验。原index失败日志保留，r2标准发布回归和29源绑定通过。唯一stage-goals-20261024/release-qa-binding；完整Release仍待一次统一执行，无部署／维护改动。
+
 ## CARD-20261024-SUSANOO-ORIGIN｜主宰效果来源与离场对象分离
 
 - 已实际读来源人类原话并按其裁定：草薙剑离场回库顶是须佐之男效果，不满足智慧法典，响应来源／时机必须真实。BuildS1LeaveReactionCandidates原传left／play；资格和文案按此错误身份正常工作，结算又把SourceInstanceId当移动对象，共因不在按钮或智慧法典特判。

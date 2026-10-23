@@ -16,12 +16,22 @@ const allowedSource=value=>typeof value==='string'&&value.length>0&&!value.inclu
 
 // This is a read-only source-ownership check, not remote execution permission or
 // a substitute for the normal runtime/identity/workload/cleanup verifiers.
-export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.readFileSync(file),verifyLocalInputs=false}={}) {
+export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.readFileSync(file),verifyLocalInputs=false,sourceMirror}={}) {
   assert.equal(manifest.schema,1)
   assert.equal(manifest.formalMutationsAllowed,false)
   assert.equal(manifest.normalConfirmationMs,3000);assert.equal(manifest.normalLifecycleMs,900000)
   assert.ok(Array.isArray(manifest.sources)&&manifest.sources.length>0&&manifest.sources.length<=80)
   assert.ok(tracked instanceof Set)
+  if(sourceMirror){
+    assert.ok(path.isAbsolute(sourceMirror.root)&&path.resolve(sourceMirror.root)!==path.resolve(repo),'QA_STAGED_SOURCE_ROOT_INVALID')
+    assert.match(sourceMirror.commit,/^[a-f0-9]{40}$/)
+    assert.equal(sourceMirror.head,sourceMirror.commit,'QA_STAGED_SOURCE_COMMIT_CHANGED')
+    assert.equal(sourceMirror.clean,true,'QA_STAGED_SOURCE_NOT_CLEAN')
+    assert.ok(read(path.join(repo,QA_MANIFEST)).equals(read(path.join(sourceMirror.root,QA_MANIFEST))),'QA_STAGED_MANIFEST_DIFFERS')
+  }
+  const equalMirror=(relative,bytes)=>{
+    if(sourceMirror)assert.ok(bytes.equals(read(path.join(sourceMirror.root,relative))),'QA_STAGED_SOURCE_DIFFERS: '+relative)
+  }
   const seen=new Set(),hashes={},importTargets=new Set()
   for(const relative of manifest.sources) {
     assert.ok(allowedSource(relative),'QA_SOURCE_PATH_INVALID')
@@ -30,6 +40,7 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
     const absolute=path.resolve(repo,relative),bytes=read(absolute)
     assert.ok(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=256*1024,'QA_SOURCE_SIZE_INVALID')
     const source=bytes.toString('utf8')
+    equalMirror(relative,bytes)
     assert.ok(!/-----BEGIN (?:OPENSSH|RSA|EC|DSA) PRIVATE KEY-----/.test(source),'PRIVATE_KEY_IN_QA_SOURCE')
     hashes[relative]=crypto.createHash('sha256').update(bytes).digest('hex').toUpperCase()
     if(!relative.endsWith('.mjs'))continue
@@ -40,6 +51,7 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
       const target=path.relative(repo,path.resolve(path.dirname(absolute),specifier)).replaceAll('\\','/')
       assert.ok(!target.startsWith('../')&&!path.isAbsolute(target),'QA_IMPORT_ESCAPES_REPO')
       assert.ok(tracked.has(target),'UNVERSIONED_QA_IMPORT: '+target)
+      if(sourceMirror)equalMirror(target,read(path.join(repo,target)))
       importTargets.add(target)
     }
   }
@@ -61,10 +73,17 @@ export function inspectQaOwnership(manifest,{repo=QA_REPO,tracked,read=file=>fs.
   assert.equal(manifest.completeLegacyCodeClosure,false,'Immutable legacy dependencies remain explicitly outside the owned source set')
   return {status:'passed',sourceCount:seen.size,relativeImportTargets:importTargets.size,
     sources:hashes,immutableInputsVerified:verifyLocalInputs?inputs.size:0,completeLegacyCodeClosure:false,
-    networkCalls:0,remoteExecutionAuthorized:false,onlineCapacityAccepted:false}
+    stagedSourceBound:Boolean(sourceMirror),networkCalls:0,remoteExecutionAuthorized:false,onlineCapacityAccepted:false}
 }
 
 export function readQaOwnership({verifyLocalInputs=false}={}) {
+  const mirrorRoot=process.env.L12_QA_SOURCE_REPO,mirrorCommit=process.env.L12_QA_SOURCE_COMMIT
+  assert.equal(Boolean(mirrorRoot),Boolean(mirrorCommit),'QA_STAGED_SOURCE_BINDING_INCOMPLETE')
+  const sourceRoot=mirrorRoot??QA_REPO
+  assert.ok(path.isAbsolute(sourceRoot),'QA_STAGED_SOURCE_ROOT_INVALID')
+  const git=args=>execFileSync('git',['-C',sourceRoot,...args],{encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024})
+  const sourceMirror=mirrorRoot?{root:sourceRoot,commit:mirrorCommit,head:git(['rev-parse','HEAD']).trim(),
+    clean:git(['status','--porcelain=v1','--untracked-files=all']).trim()===''}:undefined
   const manifest=JSON.parse(fs.readFileSync(path.join(QA_REPO,QA_MANIFEST),'utf8'))
   const code=relative=>fs.readFileSync(path.join(QA_REPO,relative),'utf8')
   const exact=(source,pattern)=>{const matches=[...source.matchAll(pattern)];assert.equal(matches.length,1,'QA_PIN_ANCHOR_CHANGED');return matches[0][1]}
@@ -79,10 +98,10 @@ export function readQaOwnership({verifyLocalInputs=false}={}) {
     [ledger+'/account-ledger-client-r2.mjs',exact(execution,/const CLIENT_SHA='([A-F0-9]{64})'/g)],
   ]
   assert.deepEqual(manifest.immutableInputs.map(value=>[value.path,value.sha256]),expected,'QA_DECLARED_INPUTS_DIFFER_FROM_RUNTIME_PINS')
-  const names=execFileSync('git',['-C',QA_REPO,'-c','core.quotepath=false','ls-files'],{encoding:'utf8',windowsHide:true,maxBuffer:4*1024*1024})
+  const names=git(['-c','core.quotepath=false','ls-files'])
   const tracked=new Set(names.trim().split(/\r?\n/))
   assert.ok(tracked.has(QA_MANIFEST),'QA_MANIFEST_NOT_VERSIONED')
-  return inspectQaOwnership(manifest,{tracked,verifyLocalInputs})
+  return inspectQaOwnership(manifest,{tracked,verifyLocalInputs,sourceMirror})
 }
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   assert.ok(process.argv.length===2||(process.argv.length===3&&process.argv[2]==='--verify-local-inputs'),'Only optional local immutable-input verification is supported')

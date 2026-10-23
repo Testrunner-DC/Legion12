@@ -333,6 +333,20 @@ try {
         New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $repoRoot $contractFile.Source) -Destination $targetPath -Force
     }
+    # Active QA is source, not a generated acceptance artifact. Reuse its single
+    # catalog in the isolated build rather than maintaining another partial list.
+    $qaSourceManifest = Join-Path $repoRoot 'ops/qa/toolchain-sources.json'
+    $qaSources = Get-Content -LiteralPath $qaSourceManifest -Raw -Encoding utf8 | ConvertFrom-Json
+    if ($qaSources.schema -ne 1 -or $qaSources.formalMutationsAllowed -ne $false) { throw 'Invalid active QA source catalog' }
+    foreach ($relative in @($qaSources.sources) + @('ops/qa/toolchain-sources.json')) {
+        if ($relative -match '\\|(^|/)\.\.?(/|$)|^[A-Za-z]:|^/' -or
+            ($relative -notmatch '^(opcgpro-vue/scripts/|ops/qa/|scripts/lib/l12-pressure-checkpoint\.mjs$)')) {
+            throw "QA source path escapes its catalog: $relative"
+        }
+        $targetPath = Join-Path $frontendWorkspaceDirectory $relative
+        New-Item -ItemType Directory -Path (Split-Path -Parent $targetPath) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path $repoRoot $relative) -Destination $targetPath -Force
+    }
     Copy-Item -LiteralPath (Join-Path $repoRoot "release-ledger") `
         -Destination (Join-Path $frontendWorkspaceDirectory "release-ledger") -Recurse -Force
     Copy-Item -LiteralPath $generatedPlayerRelease `
@@ -347,11 +361,19 @@ try {
     try {
         Invoke-TimedExternal "frontend-npm-ci" $npmExecutable ci --prefer-offline --no-audit
         $previousClientRelease = $env:VITE_APP_VERSION
+        $previousQaSourceRepo = $env:L12_QA_SOURCE_REPO
+        $previousQaSourceCommit = $env:L12_QA_SOURCE_COMMIT
         try {
             $env:VITE_APP_VERSION = $commit
+            $env:L12_QA_SOURCE_REPO = $repoRoot
+            $env:L12_QA_SOURCE_COMMIT = $commit
             Invoke-TimedExternal "frontend-build" $npmExecutable run build
         }
-        finally { $env:VITE_APP_VERSION = $previousClientRelease }
+        finally {
+            $env:VITE_APP_VERSION = $previousClientRelease
+            $env:L12_QA_SOURCE_REPO = $previousQaSourceRepo
+            $env:L12_QA_SOURCE_COMMIT = $previousQaSourceCommit
+        }
     }
     finally { Pop-Location }
 

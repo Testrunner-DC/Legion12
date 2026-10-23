@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import {execFileSync,spawnSync} from 'node:child_process'
+import ts from 'typescript'
 import {inspectQaOwnership,readQaOwnership,QA_REPO,QA_MANIFEST} from './check-testrun-qa-ownership.mjs'
 
 const actual=readQaOwnership(),manifest=JSON.parse(fs.readFileSync(path.join(QA_REPO,QA_MANIFEST)))
@@ -38,6 +40,30 @@ assert.match(fixtureGenerator,/Existing fixture is never reused/)
 assert.doesNotMatch(fixtureGenerator,/BA157FD1|131989a65/)
 cases++
 
+// The standard release build has no .git of its own. It must bind its exact
+// copied sources to a separately verified clean commit, not waive ownership.
+const stagedRepo=path.resolve(QA_REPO,'synthetic-staged-qa'),sourceRoot=path.resolve(QA_REPO,'synthetic-source-qa')
+const sourceMirror={root:sourceRoot,commit:'a'.repeat(40),head:'a'.repeat(40),clean:true}
+const mirrorRead=file=>Buffer.from(file.endsWith(QA_MANIFEST)?JSON.stringify(fixture):'export const valid=true')
+assert.equal(inspectQaOwnership(fixture,{repo:stagedRepo,tracked:fakeTracked,sourceMirror,read:mirrorRead}).stagedSourceBound,true);cases++
+for(const changes of [{root:'relative'},{root:stagedRepo},{commit:'wrong'},{head:'b'.repeat(40)},{clean:false}]){
+ assert.throws(()=>inspectQaOwnership(fixture,{repo:stagedRepo,tracked:fakeTracked,sourceMirror:{...sourceMirror,...changes},read:mirrorRead}));cases++
+}
+for(const target of [QA_MANIFEST,fixture.sources[0]]){
+ assert.throws(()=>inspectQaOwnership(fixture,{repo:stagedRepo,tracked:fakeTracked,sourceMirror,
+  read:file=>file===path.join(sourceRoot,target)?Buffer.from('different'):mirrorRead(file)}));cases++
+}
+const imported='opcgpro-vue/scripts/imported.mjs'
+assert.throws(()=>inspectQaOwnership(fixture,{repo:stagedRepo,tracked:new Set([...fakeTracked,imported]),sourceMirror,
+ read:file=>file.endsWith(QA_MANIFEST)?Buffer.from(JSON.stringify(fixture))
+  :file.endsWith('probe.mjs')?Buffer.from("import './imported.mjs'")
+  :Buffer.from(file.startsWith(sourceRoot)?'different':'export const valid=true')}));cases++
+const releaseEntry=fs.readFileSync(path.join(QA_REPO,'ops/windows/verify-l12.ps1'),'utf8')
+assert.match(releaseEntry,/foreach \(\$relative in @\(\$qaSources\.sources\) \+ @\('ops\/qa\/toolchain-sources\.json'\)\)/)
+assert.match(releaseEntry,/\$env:L12_QA_SOURCE_REPO = \$repoRoot/)
+assert.match(releaseEntry,/\$env:L12_QA_SOURCE_COMMIT = \$commit/)
+assert.match(releaseEntry,/finally \{[\s\S]*\$env:L12_QA_SOURCE_REPO = \$previousQaSourceRepo[\s\S]*\$env:L12_QA_SOURCE_COMMIT = \$previousQaSourceCommit/);cases++
+
 // Execute the actual pre-browser initialization blocks with a guard stub. A
 // child's PowerShell environment must never be mistaken for its parent Node's.
 for(const [relative,start,end]of[
@@ -59,4 +85,45 @@ for(const [relative,start,end]of[
  assert.throws(()=>execute(refused,io,path,assert,QA_REPO,()=>{throw new Error('PHYSICAL_ROOT_REFUSED')}),/PHYSICAL_ROOT_REFUSED/)
  assert.equal(writes,0);assert.equal(refused.env.TEMP,'C:/unsafe-temp');cases++
 }
-console.log(JSON.stringify({status:'passed',cases,ownedSources:actual.sourceCount,actualNodeEntryDataflow:true,networkCalls:0,onlineCapacityAccepted:false}))
+const args=process.argv.slice(2)
+assert.ok(args.length===0||(args.length===2&&args[0]==='--stage-probe'))
+let stagingProbe=null
+if(args.length){
+ const root=args[1];assert.ok(path.isAbsolute(root)&&!fs.existsSync(root),'STAGING_PROBE_REQUIRES_NEW_ABSOLUTE_ROOT')
+ const dependencyRoot=fs.realpathSync(path.join(QA_REPO,'opcgpro-vue/node_modules'))
+ execFileSync(process.env.L12_PWSH||'pwsh',['-NoProfile','-Command',
+  '. $env:L12_PROBE_STORAGE; $null=Assert-L12GeneratedPath -Path $env:L12_PROBE_ROOT -Purpose "QA staging probe"; $null=Assert-L12GeneratedPath -Path $env:L12_PROBE_DEPENDENCIES -Purpose "shared QA dependencies"'],
+  {env:{...process.env,L12_PROBE_STORAGE:path.join(QA_REPO,'ops/windows/L12GeneratedStorage.ps1'),L12_PROBE_ROOT:root,L12_PROBE_DEPENDENCIES:dependencyRoot},windowsHide:true})
+ const sourceHead=execFileSync('git',['-C',QA_REPO,'rev-parse','HEAD'],{encoding:'utf8',windowsHide:true}).trim()
+ assert.equal(execFileSync('git',['-C',QA_REPO,'status','--porcelain=v1','--untracked-files=all'],{encoding:'utf8',windowsHide:true}).trim(),'','STAGING_PROBE_SOURCE_MUST_BE_COMMITTED_AND_CLEAN')
+ const paths=new Set([...manifest.sources,QA_MANIFEST])
+ for(const relative of manifest.sources)if(relative.endsWith('.mjs')){
+  const ast=ts.createSourceFile(relative,fs.readFileSync(path.join(QA_REPO,relative),'utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS)
+  for(const node of ast.statements)if(ts.isImportDeclaration(node)&&ts.isStringLiteral(node.moduleSpecifier)&&node.moduleSpecifier.text.startsWith('.'))
+   paths.add(path.relative(QA_REPO,path.resolve(QA_REPO,path.dirname(relative),node.moduleSpecifier.text)))
+ }
+ fs.mkdirSync(root)
+ const dependencyLink=path.join(root,'opcgpro-vue/node_modules')
+ try{
+  for(const relative of paths){const target=path.join(root,relative);fs.mkdirSync(path.dirname(target),{recursive:true});fs.copyFileSync(path.join(QA_REPO,relative),target)}
+  fs.symlinkSync(dependencyRoot,dependencyLink,process.platform==='win32'?'junction':'dir')
+  const entry=path.join(root,'opcgpro-vue/scripts/check-testrun-qa-ownership.mjs'),currentBytes=fs.readFileSync(entry)
+  const env={...process.env,L12_QA_SOURCE_REPO:QA_REPO,L12_QA_SOURCE_COMMIT:sourceHead}
+  const child=()=>spawnSync(process.execPath,[entry],{encoding:'utf8',env,windowsHide:true,timeout:15000})
+  fs.writeFileSync(entry,execFileSync('git',['-C',QA_REPO,'show','7a4217aed105fbc174eb8d70f244fafa833efb98:opcgpro-vue/scripts/check-testrun-qa-ownership.mjs'],{windowsHide:true}))
+  const red=child();assert.notEqual(red.status,0);assert.match(red.stderr,/not a git repository/)
+  fs.writeFileSync(entry,currentBytes)
+  const green=child();assert.equal(green.status,0,green.stderr)
+  const accepted=JSON.parse(green.stdout);assert.equal(accepted.stagedSourceBound,true);assert.equal(accepted.sourceCount,actual.sourceCount)
+  const changed=path.join(root,'opcgpro-vue/scripts/run-testrun-representative-pressure.mjs')
+  fs.appendFileSync(changed,'\n// synthetic changed staged source\n')
+  const corrupted=child();assert.notEqual(corrupted.status,0);assert.match(corrupted.stderr,/QA_STAGED_SOURCE_DIFFERS/)
+  stagingProbe={oldEntryRejectedWithoutGit:true,currentBoundEntryPassed:true,changedCopyRejected:true,sourceHead,copiedFiles:paths.size,networkCalls:0,cleanup:'pending'}
+ }finally{
+  if(fs.existsSync(dependencyLink)){assert.ok(fs.lstatSync(dependencyLink).isSymbolicLink());if(process.platform==='win32')fs.rmdirSync(dependencyLink);else fs.unlinkSync(dependencyLink)}
+  // Only the exact new fixture root and the files copied above are reclaimed.
+  const reclaim=directory=>{for(const item of fs.readdirSync(directory,{withFileTypes:true})){const selected=path.join(directory,item.name);assert.ok(!fs.lstatSync(selected).isSymbolicLink());if(item.isDirectory())reclaim(selected);else fs.unlinkSync(selected)}fs.rmdirSync(directory)}
+  reclaim(root);if(stagingProbe)stagingProbe.cleanup='removed-exact-owned-fixture'
+ }
+}
+console.log(JSON.stringify({status:'passed',cases,ownedSources:actual.sourceCount,actualNodeEntryDataflow:true,stagingProbe,networkCalls:0,onlineCapacityAccepted:false}))

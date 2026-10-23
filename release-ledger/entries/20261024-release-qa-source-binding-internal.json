@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-release-qa-source-binding-internal",
+  "date": "2026-10-24",
+  "audience": "internal",
+  "reason": "标准隔离构建复用在用QA清单复制源码，并显式绑定干净来源提交及逐字节副本；不绕过Git归属、原性能门槛或完整Release。合成发布回归使用受管缓存和独立到期例外，不依赖现行例外列表非空。",
+  "paths": [
+    "opcgpro-vue/scripts/check-testrun-qa-ownership.mjs",
+    "opcgpro-vue/scripts/test-testrun-qa-ownership.mjs",
+    "ops/windows/verify-l12.ps1",
+    "scripts/test-l12-release-gate.ps1"
+  ]
+}

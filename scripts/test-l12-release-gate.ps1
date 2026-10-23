@@ -346,7 +346,9 @@ $staleReleaseBaseMessage = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64
     '5Y+R5biD5YyF55qE5pu05paw5pel5b+X5Z+657q/5LiN5piv5b2T5YmN5q2j5byP5pyN5o+Q5Lqk'))
 Assert-True ($deploySource.Contains($staleReleaseBaseMessage)) "A stale or prebuilt manifest must not bypass the production changelog range gate."
 
-$fixtureBase = if (Test-Path -LiteralPath "D:\GPT\Legion12") { "D:\GPT\Legion12\temp" } else { [IO.Path]::GetTempPath() }
+. (Join-Path $repoRoot 'ops/windows/L12GeneratedStorage.ps1')
+$fixtureCache = if ($env:L12_WORK_CACHE) { $env:L12_WORK_CACHE } else { 'D:/GPT/Legion12/cache/primary' }
+$fixtureBase = Assert-L12GeneratedPath -Path (Join-Path $fixtureCache 'release-gate-fixtures') -Purpose 'release gate synthetic fixtures'
 New-Item -ItemType Directory -Path $fixtureBase -Force | Out-Null
 $fixtureRoot = Join-Path $fixtureBase "l12-release-gate-$([Guid]::NewGuid().ToString('N'))"
 $fixtureRepo = Join-Path $fixtureRoot "repo"
@@ -550,7 +552,9 @@ try {
     Remove-Item -LiteralPath (Join-Path $fixtureRepo "dirty-untracked.txt") -Force
     $fixtureExceptions = Join-Path $fixtureRepo "ops\performance-exceptions.json"
     $expiredDocument = Get-Content -LiteralPath $fixtureExceptions -Raw | ConvertFrom-Json
-    $expiredDocument.exceptions[0].expiresAt = "2020-01-01"
+    # An empty real exception list is valid (the last two exceptions expired out
+    # of the product). This isolated expiry probe must own its synthetic row.
+    $expiredDocument.exceptions = @([pscustomobject]@{ id = 'expired-release-fixture'; expiresAt = '2020-01-01' })
     $expiredDocument | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $fixtureExceptions -Encoding utf8
     Invoke-GitChecked $fixtureRepo @("add", "ops/performance-exceptions.json")
     Invoke-GitChecked $fixtureRepo @("commit", "--quiet", "-m", "expired performance exception fixture")
