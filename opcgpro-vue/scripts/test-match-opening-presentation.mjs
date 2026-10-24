@@ -210,8 +210,10 @@ assert.match(template, /opening-versus-player[\s\S]*opening-die[\s\S]*openingPla
   'central versus identities and dice labels must share the same live/replay identity rule')
 assert.doesNotMatch(template, /class="opening-versus-player"[^>]*:style=/,
   'central player ids must not inherit a faction-colored inline style')
-assert.match(script, /'--opening-perspective': mine \? '-28deg' : '28deg'[\s\S]*'--opening-depth-origin': mine \? '100% 50%' : '0% 50%'/,
-  'outer edges must stay near the camera while both inner edges recede toward versus')
+assert.doesNotMatch(script, /--opening-perspective|--opening-depth-origin/,
+  'opening masters must not receive per-side depth projection variables')
+assert.match(script, /'--opening-rotation': '0deg'/,
+  'both opening master faces must remain upright while moving to their side')
 assert.doesNotMatch(template, /opening-master-card[\s\S]{0,420}opening-master-name/,
   'player identity must not remain attached below either flying master card')
 assert.match(template, /class="mulligan-stage"[\s\S]*你是先手[\s\S]*你是后手[\s\S]*请确认调度的手牌/,
@@ -245,23 +247,25 @@ assert.match(style, /\.opening-versus-player\.opponent\{top:calc\(43% - clamp\([
   'opponent information must be above versus while self information remains below it')
 assert.match(style, /\.opening-versus-player small\{color:#76dce3/,
   'both player ids must use the fixed interface cyan instead of faction colors')
-assert.match(style, /\.opening-master-card :deep\(\.l12-card-image\)\{[^}]*transform-origin:var\(--opening-depth-origin\)[^}]*animation:opening-master-depth/,
-  'the card plane itself must own the depth projection instead of relying on two-dimensional article tilt')
-assert.match(style, /\.opening-master-card\{[^}]*width:clamp\(240px,32vw,480px\)/,
-  'the versus card plane must be large enough to occupy the human-marked quadrilateral')
+assert.match(style, /\.opening-master-card :deep\(\.l12-card-image\)\{[^}]*width:100%[^}]*height:auto[^}]*aspect-ratio:5\/7/,
+  'opening masters must retain a normal face-on card ratio')
+assert.doesNotMatch(style, /perspective\(|rotateY\(|scaleX\(1\.25\)|opening-master-depth|preserve-3d/,
+  'the opening must not distort master faces with a 3D projection or horizontal compensation')
+assert.match(style, /\.opening-master-card\{[^}]*width:clamp\(220px,24vw,340px\)/,
+  'desktop face-on cards must leave a clear central dice and versus lane')
 assert.match(script, /'--opening-side-x': mine \? 'clamp\(150px, 22vw, 360px\)' : 'clamp\(-360px, -22vw, -150px\)'/,
   'both master cards must advance toward the center instead of remaining at the screen edges')
 assert.match(script, /'--opening-side-y': mine \? 'clamp\(40px, 5vh, 64px\)' : 'clamp\(-64px, -5vh, -40px\)'/,
   'the opponent-high and viewer-low split must match the marked vertical footprints')
 assert.match(style, /@keyframes opening-master-sequence[\s\S]*var\(--opening-side-x\)[\s\S]*var\(--opening-side-y\)/,
   'the split beat must retain the accepted opponent-high and viewer-low placement')
-assert.match(style, /\.opening-master-card\{--opening-depth-distance:620px;/,
-  'desktop versus projection must retain the accepted depth distance')
-assert.match(style, /@keyframes opening-master-depth\{[^}]*perspective\(var\(--opening-depth-distance\)\) rotateY\(0\) scaleX\(1\)[\s\S]*perspective\(var\(--opening-depth-distance\)\) rotateY\(var\(--opening-perspective\)\) scaleX\(1\.25\)/,
-  'the master face must become a projected quadrilateral with a materially strong Y-depth angle')
-assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)\{\.opening-master-card\{--opening-depth-distance:300px;width:clamp\(112px,17vw,164px\)/,
-  'short landscape must keep the projected depth after reducing the card size')
-assert.match(style, /data-l12-rotated="true"[\s\S]*\.opening-master-card\)\{--opening-depth-distance:300px;width:164px\}/,
+assert.match(style, /@keyframes opening-master-sequence\{[\s\S]*45%,100%\{opacity:1;transform:translate3d\(calc\(-50% \+ var\(--opening-side-x\)\),calc\(-50% \+ var\(--opening-side-y\)\),0\) rotateZ\(0\) scale\(1\)\}/,
+  'opening masters must finish at their two side positions instead of landing on the board or disappearing')
+assert.match(style, /\.opening-presentation\.settled \.opening-master-card,[^\{]*\.opening-presentation\.skipped \.opening-master-card\{opacity:1;transform:translate3d\(calc\(-50% \+ var\(--opening-side-x\)\),calc\(-50% \+ var\(--opening-side-y\)\),0\) rotateZ\(0\) scale\(1\);animation:none\}/,
+  'settled and skipped initiative states must retain both face-on masters at the sides')
+assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)\{\.opening-master-card\{width:clamp\(112px,17vw,164px\)/,
+  'short landscape must keep the face-on cards contained after reducing their size')
+assert.match(style, /data-l12-rotated="true"[\s\S]*\.opening-master-card\)\{width:164px\}/,
   'rotated portrait must use the contained logical-canvas master footprint')
 assert.match(style, /\.opening-die b\{[^}]*font-size:clamp\(88px,12vw,156px\)/,
   'desktop dice must occupy the central opening composition')
@@ -281,8 +285,8 @@ assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)/,
   'short landscape battle canvases need a bounded opening layout')
 assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,
   'skip must end the entrance motion without changing game state')
-assert.match(style, /html\[data-l12-animation="off"\] \.opening-master-card/,
-  'only explicit in-game off must disable the new entrance animation')
+assert.match(style, /html\[data-l12-animation="off"\] \.opening-master-card\)\{opacity:1;transform:translate3d\(calc\(-50% \+ var\(--opening-side-x\)\),calc\(-50% \+ var\(--opening-side-y\)\),0\)!important\}/,
+  'animation off must retain the same static two-side master layout')
 assert.doesNotMatch(style, /prefers-reduced-motion/, 'opening CSS cannot override standard/fast with the OS hint')
 assert.match(style, /var\(--l12-animation-scale,1\)/,
   'new opening CSS must consume the existing fast/off animation scale')

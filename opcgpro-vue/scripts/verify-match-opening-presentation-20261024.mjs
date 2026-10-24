@@ -222,123 +222,59 @@ try {
   }
 
   await runCase('visual-dramatic-versus', async () => {
-    const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'zero', markers: '0' })
+    const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, {
+      'opening-rolls': 'valid', 'opening-role': 'owner', markers: '0',
+    })
     try {
-      await page.waitForSelector('[data-ui-contract="match-opening-stage"]', { state: 'visible' })
-      await page.evaluate(() => {
-        for (const element of document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row')) {
-          for (const animation of element.getAnimations()) {
-            animation.pause()
-            animation.currentTime = 650
-          }
-        }
-      })
+      await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
       await waitForArtwork(page)
       const snapshot = await stageSnapshot(page)
-      assert.equal(snapshot.identities.at(-1), '你', JSON.stringify(snapshot.identities))
-      assert.ok(snapshot.identities[0] && snapshot.identities[0] !== '对手', `live opponent id was replaced by generic copy: ${JSON.stringify(snapshot.identities)}`)
-      assert.deepEqual(snapshot.identityColors, ['rgb(118, 220, 227)', 'rgb(118, 220, 227)'], `player ids inherited faction colors: ${JSON.stringify(snapshot.identityColors)}`)
       assert.equal(snapshot.factionColors.length, 2)
       assert.ok(snapshot.factionColors.every(Boolean), `missing faction glow: ${JSON.stringify(snapshot.factionColors)}`)
       assert.notEqual(snapshot.factionColors[0], snapshot.factionColors[1], 'fixture factions must render distinct master glows')
-      const versus = await page.locator('.opening-versus').evaluate(node => {
-        const rect = node.getBoundingClientRect()
-        const style = getComputedStyle(node)
-        return { text: node.textContent?.trim(), left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
-          width: rect.width, height: rect.height, fontSize: Number.parseFloat(style.fontSize), opacity: Number.parseFloat(style.opacity) }
-      })
-      assert.equal(versus.text, '对阵')
-      assert.ok(versus.fontSize >= 48 && versus.opacity > .9, JSON.stringify(versus))
       assert.ok(snapshot.articleRects[0].left < snapshot.articleRects[1].left, `opponent/self sides reversed: ${JSON.stringify(snapshot.articleRects)}`)
       assert.ok(snapshot.articleRects[0].top + 60 < snapshot.articleRects[1].top, `master cards remained on one flat line: ${JSON.stringify(snapshot.articleRects)}`)
-      const depth = await page.locator('.opening-master-card .l12-card-image').evaluateAll(nodes => nodes.map(node => {
+      const faces = await page.locator('.opening-master-card .l12-card-image').evaluateAll(nodes => nodes.map(node => {
         const style = getComputedStyle(node)
-        const matrix = new DOMMatrixReadOnly(style.transform)
-        const [originX, originY] = style.transformOrigin.split(' ').map(Number.parseFloat)
-        const project = (x, y) => {
-          const point = new DOMPoint(x - originX, y - originY, 0, 1).matrixTransform(matrix)
-          return { x: point.x / point.w + originX, y: point.y / point.w + originY }
+        const rect = node.getBoundingClientRect()
+        return {
+          transform:style.transform, perspective:style.perspective,
+          left:rect.left, top:rect.top, right:rect.right, bottom:rect.bottom,
+          width:rect.width, height:rect.height,
+          intrinsicRatio:node.clientWidth / node.clientHeight,
         }
-        const tl = project(0, 0), tr = project(node.clientWidth, 0)
-        const bl = project(0, node.clientHeight), br = project(node.clientWidth, node.clientHeight)
-        const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
-        const article = node.closest('.opening-master-card')
-        const stage = article?.offsetParent
-        const articleStyle = article ? getComputedStyle(article) : null
-        const articleMatrix = new DOMMatrixReadOnly(articleStyle?.transform || 'none')
-        const [articleOriginX, articleOriginY] = (articleStyle?.transformOrigin || '0 0').split(' ').map(Number.parseFloat)
-        const stageRect = stage?.getBoundingClientRect()
-        const toViewport = point => {
-          const nested = new DOMPoint(
-            node.offsetLeft + point.x - articleOriginX,
-            node.offsetTop + point.y - articleOriginY,
-          ).matrixTransform(articleMatrix)
-          return {
-            x: (stageRect?.left || 0) + (article?.offsetLeft || 0) + nested.x + articleOriginX,
-            y: (stageRect?.top || 0) + (article?.offsetTop || 0) + nested.y + articleOriginY,
-          }
-        }
-        return { transform: style.transform, originX, width: node.clientWidth,
-          leftEdge: distance(tl, bl), rightEdge: distance(tr, br), corners: { tl, tr, bl, br },
-          viewportCorners: { tl: toViewport(tl), tr: toViewport(tr), bl: toViewport(bl), br: toViewport(br) } }
       }))
-      assert.ok(depth.every(item => item.transform.startsWith('matrix3d(')), `master faces were only rotated in 2D: ${JSON.stringify(depth)}`)
-      assert.ok(depth[0].originX <= 1 && depth[0].leftEdge > depth[0].rightEdge * 1.22,
-        `opponent outer edge was not nearer than its inner edge: ${JSON.stringify(depth[0])}`)
-      assert.ok(Math.abs(depth[1].originX - depth[1].width) <= 1 && depth[1].rightEdge > depth[1].leftEdge * 1.22,
-        `self outer edge was not nearer than its inner edge: ${JSON.stringify(depth[1])}`)
-      const opponentBounds = {
-        left: Math.min(...Object.values(depth[0].viewportCorners).map(point => point.x)),
-        right: Math.max(...Object.values(depth[0].viewportCorners).map(point => point.x)),
-        top: Math.min(...Object.values(depth[0].viewportCorners).map(point => point.y)),
-        bottom: Math.max(...Object.values(depth[0].viewportCorners).map(point => point.y)),
-      }
-      const selfBounds = {
-        left: Math.min(...Object.values(depth[1].viewportCorners).map(point => point.x)),
-        right: Math.max(...Object.values(depth[1].viewportCorners).map(point => point.x)),
-        top: Math.min(...Object.values(depth[1].viewportCorners).map(point => point.y)),
-        bottom: Math.max(...Object.values(depth[1].viewportCorners).map(point => point.y)),
-      }
-      assert.ok(opponentBounds.left >= 1440 * .08 && opponentBounds.left <= 1440 * .18
-        && opponentBounds.right >= 1440 * .34 && opponentBounds.right <= 1440 * .43,
-      `opponent master missed the human-marked horizontal footprint: ${JSON.stringify(opponentBounds)}`)
-      assert.ok(selfBounds.left >= 1440 * .57 && selfBounds.left <= 1440 * .66
-        && selfBounds.right >= 1440 * .82 && selfBounds.right <= 1440 * .92,
-      `self master missed the human-marked horizontal footprint: ${JSON.stringify(selfBounds)}`)
-      assert.ok(opponentBounds.top <= 900 * .12 && opponentBounds.bottom >= 900 * .72,
-        `opponent master missed the human-marked vertical footprint: ${JSON.stringify(opponentBounds)}`)
-      assert.ok(selfBounds.top <= 900 * .2 && selfBounds.bottom >= 900 * .8,
-        `self master missed the human-marked vertical footprint: ${JSON.stringify(selfBounds)}`)
-      assert.ok(opponentBounds.right < versus.left && selfBounds.left > versus.right,
-        `master cards overlapped the central versus title: ${JSON.stringify({ opponentBounds, selfBounds, versus })}`)
+      assert.ok(faces.every(face => face.transform === 'none' && face.perspective === 'none'),
+        `master faces retained a projected transform: ${JSON.stringify(faces)}`)
+      assert.ok(faces.every(face => Math.abs(face.intrinsicRatio - 5 / 7) <= .01),
+        `master faces did not retain their normal 5:7 ratio: ${JSON.stringify(faces)}`)
+      assert.ok(faces[0].right < faces[1].left,
+        `opponent and self masters did not remain on separate sides: ${JSON.stringify(faces)}`)
+      assert.ok(faces[0].right < 1440 * .46 && faces[1].left > 1440 * .54,
+        `face-on masters did not leave the central dice lane clear: ${JSON.stringify(faces)}`)
+      assert.ok(faces.every(face => face.left >= 0 && face.top >= 0 && face.right <= 1440 && face.bottom <= 900),
+        `face-on master escaped the viewport: ${JSON.stringify(faces)}`)
       const masterVisibility = await page.locator('.opening-master-card').evaluateAll(nodes => nodes.map(node => ({
         opacity: Number.parseFloat(getComputedStyle(node).opacity), visibility: getComputedStyle(node).visibility,
         imageOpacity: Number.parseFloat(getComputedStyle(node.querySelector('.l12-card-image')).opacity),
       })))
       assert.ok(masterVisibility.every(item => item.opacity > .9 && item.imageOpacity > .9 && item.visibility === 'visible'),
-        `projected master faces were not visibly rendered: ${JSON.stringify(masterVisibility)}`)
-      assert.ok(snapshot.identityRects[0].bottom < versus.top, `opponent identity was not above versus: ${JSON.stringify({ identities: snapshot.identityRects, versus })}`)
-      assert.ok(snapshot.identityRects[1].top > versus.bottom, `self identity was not below versus: ${JSON.stringify({ identities: snapshot.identityRects, versus })}`)
+        `settled master faces were not visibly rendered: ${JSON.stringify(masterVisibility)}`)
+      assert.equal(await page.locator('[data-tutorial-choice="first"],[data-tutorial-choice="second"]').count(), 2,
+        'choice owner did not retain both initiative controls after dice settled')
+      assert.equal(await page.evaluate(() => window.__sentCommands.filter(command => JSON.stringify(command).includes('first') || JSON.stringify(command).includes('second')).length), 0,
+        'visual observation emitted an initiative command before the owner acted')
       await page.screenshot({ path: path.join(screenshotRoot, 'visual-dramatic-versus.png') })
-      return { identities: snapshot.identities, identityTexts: snapshot.identityTexts, identityRects: snapshot.identityRects,
-        identityColors: snapshot.identityColors, articleRects: snapshot.articleRects, depth, opponentBounds, selfBounds,
-        masterVisibility, factionColors: snapshot.factionColors, versus }
+      return { state: 'settled-owner-choice', articleRects: snapshot.articleRects, faces,
+        masterVisibility, factionColors: snapshot.factionColors, choiceCount: 2, emittedChoices: 0 }
     } finally { await context.close() }
   })
 
   async function verifyResponsiveVersus(name, viewport, params) {
     await runCase(name, async () => {
-      const { context, page } = await openingPage(baseUrl, viewport, { 'opening-rolls': 'zero', markers: '0', ...params })
+      const { context, page } = await openingPage(baseUrl, viewport, { 'opening-rolls': 'valid', markers: '0', ...params })
       try {
-        await page.waitForSelector('[data-ui-contract="match-opening-stage"]', { state: 'visible' })
-        await page.evaluate(() => {
-          for (const element of document.querySelectorAll('.opening-master-card,.opening-master-card .l12-card-image,.opening-versus,.opening-versus-player,.opening-dice-row')) {
-            for (const animation of element.getAnimations()) {
-              animation.pause()
-              animation.currentTime = 650
-            }
-          }
-        })
+        await page.waitForSelector('.opening-presentation.settled', { timeout: 2500 })
         await waitForArtwork(page)
         const geometry = await page.evaluate(() => {
           const rect = node => {
@@ -348,41 +284,45 @@ try {
           }
           const stage = rect(document.querySelector('.opening-presentation'))
           const cards = [...document.querySelectorAll('.opening-master-card .l12-card-image')].map(node => {
-            const box = rect(node)
             const style = getComputedStyle(node)
-            const matrix = new DOMMatrixReadOnly(style.transform)
-            const [originX, originY] = style.transformOrigin.split(' ').map(Number.parseFloat)
-            const project = (x, y) => {
-              const point = new DOMPoint(x - originX, y - originY, 0, 1).matrixTransform(matrix)
-              return { x: point.x / point.w + originX, y: point.y / point.w + originY }
-            }
-            const tl = project(0, 0), tr = project(node.clientWidth, 0)
-            const bl = project(0, node.clientHeight), br = project(node.clientWidth, node.clientHeight)
-            const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
-            return { ...box, transform: style.transform, leftEdge: distance(tl, bl), rightEdge: distance(tr, br) }
+            return { ...rect(node), transform:style.transform, perspective:style.perspective,
+              intrinsicRatio:node.clientWidth / node.clientHeight }
           })
-          const copy = [...document.querySelectorAll('.opening-versus,.opening-versus-player')].map(node => ({
-            ...rect(node), text: node.textContent?.trim(),
-          }))
-          return { stage, cards, copy }
+          const choiceCount = document.querySelectorAll('[data-tutorial-choice="first"],[data-tutorial-choice="second"]').length
+          const emittedChoices = window.__sentCommands.filter(command => JSON.stringify(command).includes('first') || JSON.stringify(command).includes('second')).length
+          const rotated = document.documentElement.dataset.l12Rotated === 'true'
+          return { stage, cards, choiceCount, emittedChoices, rotated }
         })
         const inside = (box, stage) => box.left >= stage.left - 1 && box.top >= stage.top - 1
           && box.right <= stage.right + 1 && box.bottom <= stage.bottom + 1
-        const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
         assert.ok(geometry.cards.every(card => inside(card, geometry.stage)),
-          `responsive projected master left the opening stage: ${JSON.stringify(geometry)}`)
-        assert.ok(geometry.cards[0].leftEdge > geometry.cards[0].rightEdge * 1.22
-          && geometry.cards[1].rightEdge > geometry.cards[1].leftEdge * 1.22,
-        `responsive master depth weakened below the accepted threshold: ${JSON.stringify(geometry.cards)}`)
-        assert.ok(geometry.cards.every(card => geometry.copy.every(copy => !intersects(card, copy))),
-          `responsive master overlapped versus/player copy: ${JSON.stringify(geometry)}`)
-        return geometry
+          `responsive face-on master left the opening stage: ${JSON.stringify(geometry)}`)
+        assert.ok(geometry.cards.every(card => card.transform === 'none' && card.perspective === 'none'
+          && Math.abs(card.intrinsicRatio - 5 / 7) <= .01),
+        `responsive master was not a normal face-on 5:7 card: ${JSON.stringify(geometry.cards)}`)
+        const stageCenter = geometry.stage.left + geometry.stage.width / 2
+        const rotatedStageCenter = geometry.stage.top + geometry.stage.height / 2
+        assert.ok(geometry.rotated
+          ? geometry.cards[0].bottom < rotatedStageCenter && geometry.cards[1].top > rotatedStageCenter
+          : geometry.cards[0].right < stageCenter && geometry.cards[1].left > stageCenter,
+          `responsive master cards were not split left and right: ${JSON.stringify(geometry.cards)}`)
+        const expectedChoices = params['opening-role'] === 'waiting' ? 0 : 2
+        assert.equal(geometry.choiceCount, expectedChoices,
+          `responsive initiative authority changed: ${JSON.stringify({ expectedChoices, geometry })}`)
+        assert.equal(geometry.emittedChoices, 0,
+          `responsive observation emitted an initiative choice: ${JSON.stringify(geometry)}`)
+        await page.screenshot({ path:path.join(screenshotRoot, `${name}.png`) })
+        return { state:params['opening-role'] === 'waiting' ? 'settled-waiting' : 'settled-owner-choice', ...geometry }
       } finally { await context.close() }
     })
   }
 
-  await verifyResponsiveVersus('visual-dramatic-versus-short-landscape', { width: 844, height: 390 }, { mobile: '1', canvas: '1' })
-  await verifyResponsiveVersus('visual-dramatic-versus-portrait-rotated', { width: 390, height: 844 }, { mobile: '1', canvas: '1' })
+  await verifyResponsiveVersus('visual-dramatic-versus-short-landscape', { width: 844, height: 390 }, {
+    mobile: '1', canvas: '1', 'opening-role': 'owner',
+  })
+  await verifyResponsiveVersus('visual-dramatic-versus-portrait-rotated', { width: 390, height: 844 }, {
+    mobile: '1', canvas: '1', 'opening-role': 'waiting',
+  })
 
   await runCase('visual-large-dice', async () => {
     const { context, page } = await openingPage(baseUrl, { width: 1440, height: 900 }, { 'opening-rolls': 'valid' })

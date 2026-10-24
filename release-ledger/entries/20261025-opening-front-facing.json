@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-opening-front-facing",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "开场主宰布局",
+  "changes": [{
+    "category": "battle",
+    "text": "掷骰及先后攻选择期间，双方主宰以正常正视卡面分列左右，取消透视拉伸；选择完成前保持可见，关闭动画时保留静态展示。",
+    "paths": ["opcgpro-vue/src/l12/game/PromptOverlay.vue"]
+  }]
+}

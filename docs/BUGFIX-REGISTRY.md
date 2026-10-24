@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI-20261025-OPENING-FRONT-FACING｜新要求的正视侧列与选择期留存
+
+- 来源区域移动专项01a16f51人类明确“掷骰选择先后手时，双方的主宰应该分列两旁，正常卡面无透视”，Main实读原话，不因前批结束漏排或重复询问授权。P4仅呈现，覆盖旧正负28度方向；真实卡图绑定、双方共享开场、权威dice/chooser/命令/时钟及逻辑横画布保持，不改P0—P3。
+- 去卡面perspective/rotateY/scaleX补偿/preserve-3d，外层旋转0、桌面卡宽局部收至24vw/max340保中道，移动沿原164逻辑宽。原settled opacity0会令真正选择时无主宰，故末帧/settled/skip/off均停两侧可见静态，去“先落场再跳回”，不加新计时器或第二套演出。扫描initiativeCardStyle、opening-master/depth、skip/off、settled和旋转覆盖；其它提示/调度不动。
+- 原纯深度/投影断言按新规则精确替为正常5:7/无透视/侧列/留存；不是放宽旧隐私/生命周期。01桌面/短横通过、旋转物理x失败原保；02三点3/3，2A4B1498，按既有90度逻辑主轴侧列，物理完整包含、owner2/waiting0按钮、未操作0命令。Main看三图与source diff；纹理为已解码卡背夹具，仅证明几何，一可选404保，非实卡美术或真机证明。
+- Main完整受影响合同/UI361/动效49/更新日志285/类型双构建19.51秒通过，2AB6065E日志、三源非空前后pins一致；未变3f完整前端和8e8415/2462沿原同源复用，不冒新干净Release。唯一opening-front-facing-20261025/main-acceptance及synchronization；未部署/维护/线上关单，回滚本族三叶与账目即可。
+
 ## UI-20261025-PLAY-SINGLE-OWNER｜普通圣物落位后效果重复整卡
 
 - 人类批准三项呈现修复。普通军团三视角为正控制；普通圣物真实DOM/WAAPI帧在落位后又出现full-card与权威圣物同时可见。前端entryMovementTransactionKey只接legion→field，漏普通artifact play/hand→relic；服务端L12Actions两类同样使用enter稳定日志身份，不能把timing或“已有新动画”当正确证据。
