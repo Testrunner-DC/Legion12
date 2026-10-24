@@ -58,6 +58,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
+          $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
           $hostLog = Join-Path $env:L12_ARTIFACT_ROOT 'host-native.log'
           New-Item -ItemType Directory -Path $env:L12_ARTIFACT_ROOT -Force | Out-Null
           try {
@@ -67,7 +68,12 @@ jobs:
           } catch {
             $tail = ($_ | Out-String)
             if (Test-Path -LiteralPath $hostLog) { $tail += (Get-Content -LiteralPath $hostLog -Tail 24) -join "`n" }
-            if ($tail.Length -gt 8000) { $tail = $tail.Substring($tail.Length - 8000) }
+            $tailBytes = [Text.Encoding]::UTF8.GetBytes($tail)
+            if ($tailBytes.Length -gt 3000) {
+              $start = $tailBytes.Length - 3000
+              while (($tailBytes[$start] -band 0xC0) -eq 0x80) { $start++ }
+              $tail = [Text.Encoding]::UTF8.GetString($tailBytes, $start, $tailBytes.Length - $start)
+            }
             $tail = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Host "::error title=L12 host boundary actual failure::$tail"
             throw
@@ -102,13 +108,19 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
+          $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
           $log = Join-Path $env:L12_ARTIFACT_ROOT 'frontend-native.log'
           New-Item -ItemType Directory -Path $env:L12_ARTIFACT_ROOT -Force | Out-Null
           npm run build 2>&1 | Tee-Object -FilePath $log
           $buildExit = $LASTEXITCODE
           if ($buildExit -ne 0) {
             $tail = (Get-Content -LiteralPath $log -Tail 24) -join "`n"
-            if ($tail.Length -gt 8000) { $tail = $tail.Substring($tail.Length - 8000) }
+            $tailBytes = [Text.Encoding]::UTF8.GetBytes($tail)
+            if ($tailBytes.Length -gt 3000) {
+              $start = $tailBytes.Length - 3000
+              while (($tailBytes[$start] -band 0xC0) -eq 0x80) { $start++ }
+              $tail = [Text.Encoding]::UTF8.GetString($tailBytes, $start, $tailBytes.Length - $start)
+            }
             $tail = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Host "::error title=L12 frontend actual failure::$tail"
             exit $buildExit

@@ -38,6 +38,11 @@ export function check(source) {
     const step = source.split(`      - name: ${name}\n`)[1]?.split('\n      - ')[0] || ''
     assert.ok(step.includes('$tail = $tail.Replace(\'%\',\'%25\').Replace("`r",\'%0D\').Replace("`n",\'%0A\')'),
       `CI host/failure binding must escape each actual step: ${name}`)
+    for (const marker of ['$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)',
+      '$tailBytes = [Text.Encoding]::UTF8.GetBytes($tail)', '$tailBytes.Length -gt 3000',
+      '$start = $tailBytes.Length - 3000', 'while (($tailBytes[$start] -band 0xC0) -eq 0x80)',
+      '[Text.Encoding]::UTF8.GetString($tailBytes, $start, $tailBytes.Length - $start)'])
+      assert.ok(step.includes(marker), `CI host/failure binding must bound UTF-8 tail in each step: ${name}`)
   }
   assert.ok(source.indexOf('& ./ops/windows/Initialize-L12BuildEnvironment.ps1') < source.indexOf('npm ci '),
     'CI must bind host and all generated roots before dependency install and frontend execution')
@@ -67,4 +72,6 @@ assert.throws(() => check(workflow.replace('exit $buildExit', 'exit 0')), /host\
 assert.throws(() => check(workflow.replace('.Replace("`n",\'%0A\')', '')), /host\/failure binding/)
 assert.throws(() => check(workflow.replace('    steps:', '    env:\n      BAD: ${{ runner.temp }}\n    steps:')), /runner context is unavailable/)
 assert.throws(() => check(workflow.replace("'L12_WORK_CACHE','L12_DEPENDENCY_CACHE','L12_ARTIFACT_ROOT','L12_ARCHIVE_ROOT','L12_PWSH'", "'L12_PWSH'")), /host\/failure binding/)
-console.log('CI single release entry: current workflow and twelve negative mutations passed; step context, cross-step roots, canonical package and failure propagation retained.')
+assert.throws(() => check(workflow.replace('$tailBytes.Length -gt 3000', '$tailBytes.Length -gt 8000')), /host\/failure binding/)
+assert.throws(() => check(workflow.replace('while (($tailBytes[$start] -band 0xC0) -eq 0x80)', 'while ($false)')), /host\/failure binding/)
+console.log('CI single release entry: current workflow and fourteen negative mutations passed; step context, cross-step roots, canonical package and failure propagation retained.')

@@ -32,7 +32,8 @@ function assertCapturedNativeLines(log, stderr) {
   // PowerShell merges two independent native streams; stdout may occur between
   // stderr lines. Require every stderr line verbatim, in order, without assuming
   // a cross-stream order that the native process does not guarantee.
-  assert.deepEqual(lines.filter(line => line !== stdoutLine), stderr.split('\n'),
+  const captured = lines.filter(line => line !== stdoutLine), expected = stderr.split('\n')
+  assert(captured.length === expected.length && captured.every((line, index) => line === expected[index]),
     `raw stderr lines retained; expected=${stderr.length}; log=${log.length}; synthetic tail=${JSON.stringify(log.slice(-240))}`)
 }
 let cases = 0
@@ -94,7 +95,8 @@ try {
   cases++
   for (const scenario of [{ code: 0, tail: 'synthetic success' },
     { code: 7, tail: 'synthetic 7% failure\nsecond line' },
-    { code: 13, tail: 'X'.repeat(10000) + '\nsynthetic 13% stderr' }]) {
+    { code: 13, tail: 'X'.repeat(10000) + '\nsynthetic 13% stderr' },
+    { code: 17, tail: '界'.repeat(4000) + '\nsynthetic 17% 中文' }]) {
     const directory = path.join(root, String(scenario.code))
     const payload = Buffer.from(scenario.tail).toString('base64')
     // Only npm is replaced. The real workflow body runs in its own actual
@@ -115,13 +117,15 @@ try {
     else {
       assert(annotation?.includes(`synthetic ${scenario.code}%25`), 'actual failure annotation must preserve escaped error')
       assert(annotation.includes('%0A'), 'actual annotation must escape newline')
+      const decoded = annotation.split('::').slice(2).join('::').replaceAll('%0D', '\r').replaceAll('%0A', '\n').replaceAll('%25', '%')
+      assert(Buffer.byteLength(decoded, 'utf8') <= 3000 && !decoded.includes('\uFFFD'), 'UTF-8 summary fits below actual annotation truncation without splitting a character')
       assert(annotation.length < 25000 && log.length >= scenario.tail.length, 'summary bounded without truncating raw log')
     }
     cases++
   }
 } finally {
   for (const directory of fs.readdirSync(root)) {
-    assert(['host', 'host-failure', '0', '7', '13'].includes(directory))
+    assert(['host', 'host-failure', '0', '7', '13', '17'].includes(directory))
     const child = path.join(root, directory)
     assert(fs.lstatSync(child).isDirectory() && !fs.lstatSync(child).isSymbolicLink())
     if (directory === 'host-failure') {
@@ -152,4 +156,4 @@ try {
   }
   fs.rmdirSync(root)
 }
-console.log(`Actual CI step bodies passed: ${cases} groups (native stream interleaving/loss guards;13 bindings/fresh later step;host-error annotation;3 native exit/stdout/stderr cases); standard npm mocked, no dependency install/product load; fixtures removed.`)
+console.log(`Actual CI step bodies passed: ${cases} groups (native stream interleaving/loss guards;13 bindings/fresh later step;host-error annotation;4 native exit/stdout/stderr cases including UTF-8 summary); standard npm mocked, no dependency install/product load; fixtures removed.`)
