@@ -1301,7 +1301,10 @@ const contracts = [
   [board.includes(':mine="masterPlayerIndex === controlledPlayerIndex"') && board.includes("sandboxAction(controlledPlayerIndex.value, { type, ...extra })") && prompt.includes('sandboxAction(actingPlayerIndex, command)'), '沙盒代操作对方时必须按受控方索引开放主宰效果并完成后续提示，正式房仍只允许登录座位'],
   [board.includes('watch(activeBoardPromptId, promptId => {') && board.includes('graveyardPlayer.value = null') && board.includes('masterPlayerIndex.value = null') && board.includes('focusCard.value = null'), '任何场面直选 Prompt 开始时必须关闭墓地、效果弹框与浮动卡牌详情'],
   [board.includes('const hasBlockingPrompt = computed') && board.includes('function clearOrdinaryInteractionState()') && board.includes('watch(hasBlockingPrompt')
-    && board.includes("if (hasBlockingPrompt.value && type !== 'resolvePrompt') return")
+    && board.includes('function freeCommand(') && board.includes('if (hasBlockingPrompt.value || freeActionBusy.value) return')
+    && board.includes('if (!props.game.prompts?.some(candidate => candidate.promptId === prompt.promptId)) return')
+    && board.includes("dispatchCommand('resolvePrompt', withPromptBinding({ ...extra, promptId:prompt.promptId }))")
+    && board.includes("if (defenseDecisionContinuation.value) {\n    if (hasBlockingPrompt.value) return")
     && board.includes(':placement-mode="!hasBlockingPrompt &&') && prompt.includes('function withPromptBinding(')
     && prompt.includes('activationId: p.activationId') && board.includes('activationId: prompt.activationId'),
   '任意 Prompt（包括最小化状态）出现时必须清空并封锁普通手牌/战场操作；resolvePrompt 必须回传服务端下发的不可变事务绑定'],

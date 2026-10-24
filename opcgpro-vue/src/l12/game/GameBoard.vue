@@ -271,6 +271,11 @@ function resetCardPresentations() {
 const cardPresentationBusy = computed(() => Boolean(hiddenRevealCard.value || publicReveal.value || diceReveal.value
   || dicePresentationPending.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value
   || combatPresentationBusy.value))
+// pendingAction covers the authority round-trip; cardPresentationBusy covers
+// the same transaction's visible client handoff after that round-trip. Only
+// genuinely free actions use the combined gate. Prompt and defense continuations
+// keep dedicated structural paths so a paused presentation cannot deadlock them.
+const freeActionBusy = computed(() => Boolean(l12State.pendingAction || cardPresentationBusy.value))
 const replayCardPresentationBusy = computed(() => Boolean(props.replayPlaybackSpeed && (
   hiddenRevealCard.value || publicReveal.value || replayZonePresentationBusy.value || replaySequencePresentationBusy.value || replayCombatPresentationBusy.value
 )))
@@ -372,7 +377,7 @@ const mobileTrialActionsEnabled = computed(() => {
   const source = mobileTrialAbilitySource.value
   return Boolean(mobileLandscapeViewport.value && source && !props.readOnly
     && isControlledPlayer(source.playerIndex) && isMyMain.value
-    && !hasBlockingPrompt.value && !l12State.pendingAction)
+    && !hasBlockingPrompt.value && !freeActionBusy.value)
 })
 function closeMobileTrialAbility() {
   mobileTrialAbilitySource.value = null
@@ -400,6 +405,7 @@ function mobileTrialAbilityTitle(entry: AbilityEntry) {
   if (!isMyMain.value) return '仅在我方主要阶段可以发动'
   if (hasBlockingPrompt.value) return '请先完成当前提示'
   if (l12State.pendingAction) return '上一操作正在处理中'
+  if (cardPresentationBusy.value) return '当前演示尚未结束'
   return entry.label
 }
 function activateMobileTrialAbility(entry: AbilityEntry) {
@@ -706,7 +712,7 @@ const sessionDisasters = computed(() => props.game.sessionDisasters ?? [])
 const osirisVictoryCard = computed(() => me.value.graveyard?.find(card => card.cardId === 'S01-02M2') ?? null)
 const osirisVictoryAbility = computed(() => me.value.master.abilities?.find(entry => entry.id === 'isisVictory')
   ?? osirisVictoryCard.value?.abilities?.find(entry => entry.id === 'isisVictory'))
-const canActivateOsiris = computed(() => Boolean(!props.readOnly && isMyMain.value && !l12State.pendingAction
+const canActivateOsiris = computed(() => Boolean(!props.readOnly && isMyMain.value && !freeActionBusy.value
   && osirisVictoryCard.value && osirisVictoryAbility.value
   && osirisVictoryAbility.value.enabled !== false && !osirisVictoryAbility.value.triggerOnly))
 const osirisVictoryDisabledReason = computed(() => osirisVictoryAbility.value?.disabledReason
@@ -1094,11 +1100,9 @@ function withPromptBinding(extra: Record<string, unknown>) {
     controller: prompt.controller,
   }
 }
-function command(type: string, extra: Record<string, unknown> = {}) {
+function dispatchCommand(type: string, extra: Record<string, unknown> = {}) {
   if (props.readOnly) return
   if (l12State.pendingAction) return
-  if (hasBlockingPrompt.value && type !== 'resolvePrompt') return
-  if (type === 'resolvePrompt') extra = withPromptBinding(extra)
   if (type === 'mulligan') extra.cardInstanceIds = mulliganIds.value
   if (type === 'resolveDefense') {
     if (!Object.hasOwn(extra, 'cardInstanceIds'))
@@ -1107,6 +1111,27 @@ function command(type: string, extra: Record<string, unknown> = {}) {
   if (l12State.gmEnabled) sandboxAction(controlledPlayerIndex.value, { type, ...extra })
   else gameAction({ type, ...extra })
   if (type === 'resolveDefense') { defenseIds.value = []; supportIds.value = [] }
+}
+function freeCommand(type: string, extra: Record<string, unknown> = {}) {
+  if (hasBlockingPrompt.value || freeActionBusy.value) return
+  dispatchCommand(type, extra)
+}
+function continuePrompt(prompt: Prompt, extra: Record<string, unknown> = {}) {
+  if (!props.game.prompts?.some(candidate => candidate.promptId === prompt.promptId)) return
+  dispatchCommand('resolvePrompt', withPromptBinding({ ...extra, promptId:prompt.promptId }))
+}
+const defenseDecisionContinuation = computed(() => Boolean(props.game.phase === 'Defense'
+  && props.game.pendingDefense?.stage === 'DefenseChoice'
+  && isControlledPlayer(1 - props.game.pendingDefense.attackerPlayer)))
+const gameActionsBusy = computed(() => Boolean(l12State.pendingAction
+  || (cardPresentationBusy.value && !defenseDecisionContinuation.value)))
+function gameActionsCommand(type: string, extra: Record<string, unknown> = {}) {
+  if (defenseDecisionContinuation.value) {
+    if (hasBlockingPrompt.value) return
+    dispatchCommand(type, extra)
+    return
+  }
+  freeCommand(type, extra)
 }
 function toggle(list: string[], id: string) {
   const index = list.indexOf(id)
@@ -1120,7 +1145,7 @@ function selectedHandIdsFor(playerIndex: number) {
   return selectedId.value ? [selectedId.value] : []
 }
 function playableHandIdsFor(playerIndex: number) {
-  return !props.readOnly && isControlledPlayer(playerIndex) && !l12State.pendingAction ? handPlayableIds.value : []
+  return !props.readOnly && isControlledPlayer(playerIndex) && !freeActionBusy.value ? handPlayableIds.value : []
 }
 function selectHandFor(playerIndex: number, card: Card) {
   if (props.readOnly) { focusCard.value = card; return }
@@ -1195,7 +1220,7 @@ function resolveBoardSlotPrompt(playerIndex: number, row: number, slot: number) 
   const prompt = boardSlotPrompt.value
   if (!prompt || boardSlotTargetPlayerIndex.value !== playerIndex) return false
   const choice = `${row}:${slot}`
-  if (prompt.validChoices.includes(choice)) command('resolvePrompt', { promptId: prompt.promptId, choice })
+  if (prompt.validChoices.includes(choice)) continuePrompt(prompt, { choice })
   return true
 }
 function ownSlot(row: number, slot: number, card: Card | null) {
@@ -1215,14 +1240,14 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   }
   if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value
     && promotionFoundationIdsFor(selectedHandCard.value).includes(card.instanceId)) {
-    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, choice: `promotion:${card.instanceId}` })
+    freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, choice: `promotion:${card.instanceId}` })
     selectedId.value = null
     playArmed.value = false
     return
   }
   if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
     && row === 1 && isCounter(card)) {
-    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: me.value.playerIndex })
+    freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: me.value.playerIndex })
     selectedId.value = null
     playArmed.value = false
     return
@@ -1238,7 +1263,7 @@ function ownSlot(row: number, slot: number, card: Card | null) {
   if (mode.value === 'play' && !playArmed.value) return
   const commandType = mode.value === 'freeMove' ? 'move'
     : mode.value === 'move' || mode.value === 'cavalryMove' ? mode.value : 'playCard'
-  command(commandType, {
+  freeCommand(commandType, {
     cardInstanceId: selectedId.value, row, slot,
     ...(mode.value === 'play' ? { targetPlayerIndex: me.value.playerIndex } : {}),
   })
@@ -1260,16 +1285,16 @@ function confirmResourcePayment(skip = false) {
   if (!prompt) return
   if (skip) {
     if (!prompt.validChoices.includes('skip')) return
-    command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['skip'] })
+    continuePrompt(prompt, { cardInstanceIds: ['skip'] })
     return
   }
   if (paymentResourceIds.value.length < prompt.minChoose || paymentResourceIds.value.length > prompt.maxChoose) return
-  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: [...paymentResourceIds.value] })
+  continuePrompt(prompt, { cardInstanceIds: [...paymentResourceIds.value] })
 }
 function cancelResourcePayment() {
   const prompt = resourceSelectionPrompt.value
   if (!prompt?.validChoices.includes('cancel')) return
-  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+  continuePrompt(prompt, { cardInstanceIds: ['cancel'] })
 }
 function confirmMobileMoralePayment(skip = false) {
   if (mixedBoardPayment.value) resolveBoardTarget(skip)
@@ -1280,7 +1305,7 @@ function cancelMobileMoralePayment() {
   if (mixedBoardPayment.value) {
     const prompt = mobilePaymentPrompt.value
     if (prompt?.validChoices.includes('cancel'))
-      command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ['cancel'] })
+      continuePrompt(prompt, { cardInstanceIds: ['cancel'] })
   } else cancelResourcePayment()
   mobileMoralePickerOpen.value = false
 }
@@ -1294,7 +1319,7 @@ function enemySlot(row: number, slot: number, card: Card | null) {
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
   if (hasBlockingPrompt.value) return
   if (mode.value === 'play' && playArmed.value && selectedHandCard.value && isInfiltrator(selectedHandCard.value) && !card) {
-    command('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: enemy.value.playerIndex })
+    freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: enemy.value.playerIndex })
     selectedId.value = null
     playArmed.value = false
     return
@@ -1306,7 +1331,7 @@ function enemySlot(row: number, slot: number, card: Card | null) {
     return
   }
   if (mode.value !== 'attack' || !selectedId.value || !card || !selectedAttackTargets.value.includes(card.instanceId)) return
-  command('attack', { cardInstanceId: selectedId.value, target: { type: 'legion', instanceId: card.instanceId } })
+  freeCommand('attack', { cardInstanceId: selectedId.value, target: { type: 'legion', instanceId: card.instanceId } })
   selectedId.value = null
   mode.value = 'play'
 }
@@ -1325,12 +1350,12 @@ function resolveBoardTarget(skip = false) {
   if (!prompt) return
   const ids = skip ? ['skip'] : [...boardTargetIds.value]
   if (!skip && (ids.length < prompt.minChoose || ids.length > prompt.maxChoose)) return
-  command('resolvePrompt', { promptId: prompt.promptId, cardInstanceIds: ids })
+  continuePrompt(prompt, { cardInstanceIds: ids })
 }
 function attackMaster() {
   if (hasBlockingPrompt.value) return
   if (mode.value !== 'attack' || !selectedId.value || !selectedAttackTargets.value.includes('master')) return
-  command('attack', { cardInstanceId: selectedId.value, target: { type: 'master' } })
+  freeCommand('attack', { cardInstanceId: selectedId.value, target: { type: 'master' } })
   selectedId.value = null
   mode.value = 'play'
 }
@@ -1342,7 +1367,7 @@ function enemyMaster() {
 function activateMaster(ability: string) {
   if (hasBlockingPrompt.value) return
   if (ability === 'isisVictory') return activateOsirisVictory()
-  command('activateAbility', { cardInstanceId: me.value.master.masterId, ability })
+  freeCommand('activateAbility', { cardInstanceId: me.value.master.masterId, ability })
   masterPlayerIndex.value = null
 }
 function playFromHand(card: Card) {
@@ -1355,7 +1380,7 @@ function playFromHand(card: Card) {
     playArmed.value = true
     return
   }
-  command('playCard', { cardInstanceId: card.instanceId })
+  freeCommand('playCard', { cardInstanceId: card.instanceId })
   selectedId.value = null
 }
 function fieldAction(action: Exclude<BoardMode, 'play'>, card: Card) {
@@ -1380,7 +1405,7 @@ function selectPublicCard(card: Card) {
 function activateAbility(card: Card, ability: string) {
   if (hasBlockingPrompt.value) return
   if (ability === 'isisVictory') { activateOsirisVictory(); return }
-  command('activateAbility', { cardInstanceId: card.instanceId, ability })
+  freeCommand('activateAbility', { cardInstanceId: card.instanceId, ability })
   selectedId.value = null
 }
 function activateOsirisVictory() {
@@ -1391,11 +1416,11 @@ function activateOsirisVictory() {
   focusCard.value = null
   promptMinimized.value = false
   selectedId.value = null
-  command('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })
+  freeCommand('activateAbility', { cardInstanceId: osiris.instanceId, ability: 'isisVictory' })
 }
 function activateFactionAbility(ability: string) {
   if (hasBlockingPrompt.value) return
-  command('activateAbility', { cardInstanceId: `faction-${me.value.playerIndex}`, ability })
+  freeCommand('activateAbility', { cardInstanceId: `faction-${me.value.playerIndex}`, ability })
 }
 function statusTexts(card: Card) {
   const statuses: string[] = []
@@ -1514,7 +1539,7 @@ function statusTexts(card: Card) {
           <HandArea v-if="l12State.gmEnabled || showBothHands" class="opponent-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewEnemy.playerIndex }" :cards="viewEnemy.hand" :player-index="viewEnemy.playerIndex"
             :selected-ids="selectedHandIdsFor(viewEnemy.playerIndex)"
             :playable-ids="playableHandIdsFor(viewEnemy.playerIndex)" :dim-unplayable="isControlledPlayer(viewEnemy.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !freeActionBusy" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewEnemy.playerIndex, $event)" @play="playFromHandFor(viewEnemy.playerIndex, $event)" @focus="focusCard = $event" />
           <HandArea v-else class="opponent-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewEnemy.playerIndex }" hidden :count="viewEnemy.handCount || 0" :player-index="viewEnemy.playerIndex" />
           <div class="board-status-lane opponent-status-lane" data-ui-contract="shared-external-clock-track">
@@ -1526,8 +1551,8 @@ function statusTexts(card: Card) {
             <PlayerMat class="battlefield-half opponent-half" :player="viewEnemy" side="opponent" :controllable="isControlledPlayer(viewEnemy.playerIndex)"
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
-              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !l12State.pendingAction"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !freeActionBusy"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
@@ -1612,7 +1637,7 @@ function statusTexts(card: Card) {
               <BattleDockPortal lane="primary"><div v-if="game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized" class="combat-resolution-panel">
                   <GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
                     :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
-                    :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" />
+                    :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="gameActionsBusy" @command="gameActionsCommand" />
                 </div></BattleDockPortal>
             </div></BattleDockPortal>
             <BattleDockPortal lane="tools"><button v-if="combat && game.phase === 'Defense' && game.pendingDefense?.stage === 'DefenseChoice' && !readOnly && !combatDecisionMinimized && isControlledPlayer(1 - game.pendingDefense.attackerPlayer)"
@@ -1627,9 +1652,9 @@ function statusTexts(card: Card) {
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewMe.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
-              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction"
+              :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !freeActionBusy"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
               :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
@@ -1657,7 +1682,7 @@ function statusTexts(card: Card) {
           <HandArea v-if="spectatorLiveView && !showBothHands" class="spectator-hand" :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewMe.playerIndex }" hidden :count="viewMe.handCount || 0" :player-index="viewMe.playerIndex" />
           <HandArea v-else :class="{ 'mobile-primary-hand': mobilePrimaryHandPlayerIndex === viewMe.playerIndex }" :cards="viewMe.hand" :player-index="viewMe.playerIndex" :selected-ids="selectedHandIdsFor(viewMe.playerIndex)"
             :playable-ids="playableHandIdsFor(viewMe.playerIndex)" :dim-unplayable="isControlledPlayer(viewMe.playerIndex) && game.phase !== 'Mulligan'"
-            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !l12State.pendingAction" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
+            :show-play-action="!readOnly && !hasBlockingPrompt && isControlledPlayer(viewMe.playerIndex) && isMyMain && !freeActionBusy" :confirm-all-playable="mobileLandscapeViewport" :mobile-layout="mobileLandscapeViewport"
             @select="selectHandFor(viewMe.playerIndex, $event)" @play="playFromHandFor(viewMe.playerIndex, $event)" @focus="focusCard = $event" />
         </main>
 
@@ -1696,7 +1721,7 @@ function statusTexts(card: Card) {
           </section>
           <BattleDockPortal lane="primary"><section v-if="!combat && !readOnly" class="grand-panel action-panel" :class="{ 'mobile-context-actions': mobileLandscapeViewport }"><h3>操作</h3><GameActions :game="game" :me="me" :mode="mode" :selected-id="selectedId"
             :mulligan-count="mulliganIds.length" :defense-ids="defenseIds" :defense-target-type="defenseTargetType"
-            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="l12State.pendingAction" @command="command" /></section></BattleDockPortal>
+            :support-ids="supportIds" :can-support="eligibleSupportIds.length > 0" :support-ready="supportReady" :busy="gameActionsBusy" @command="gameActionsCommand" /></section></BattleDockPortal>
         </aside>
       </div>
       <Teleport :to="landscapeTeleportTarget()">
@@ -1736,7 +1761,7 @@ function statusTexts(card: Card) {
                   :disabled="mobileTrialAbilityDisabled(entry)" :title="mobileTrialAbilityTitle(entry)"
                   @click="activateMobileTrialAbility(entry)">{{ entry.label }}</button>
               </div>
-              <span v-if="!mobileTrialActionsEnabled" class="mobile-trial-ability-hint">{{ hasBlockingPrompt ? '请先完成当前提示' : l12State.pendingAction ? '上一操作正在处理中' : '仅在我方主要阶段可以发动' }}</span>
+              <span v-if="!mobileTrialActionsEnabled" class="mobile-trial-ability-hint">{{ hasBlockingPrompt ? '请先完成当前提示' : l12State.pendingAction ? '上一操作正在处理中' : cardPresentationBusy ? '当前演示尚未结束' : '仅在我方主要阶段可以发动' }}</span>
             </div>
           </section>
         </div>
@@ -1796,7 +1821,7 @@ function statusTexts(card: Card) {
         :mobile-layout="mobileLandscapeViewport"
         @close="graveyardPlayer = null" @focus="focusCard = $event" @inspect="inspectDialogCard" @ability="activateAbility" />
       <MasterOverlay v-if="masterPlayerIndex !== null" :player="game.players[masterPlayerIndex]" :mine="masterPlayerIndex === controlledPlayerIndex"
-        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="l12State.pendingAction" :mobile-layout="mobileLandscapeViewport" @close="masterPlayerIndex = null" @activate="activateMaster" @focus="focusMasterCard(masterPlayerIndex)" @inspect="inspectMasterCard(masterPlayerIndex)" />
+        :can-activate="!readOnly && masterPlayerIndex === controlledPlayerIndex && isMyMain" :busy="freeActionBusy" :mobile-layout="mobileLandscapeViewport" @close="masterPlayerIndex = null" @activate="activateMaster" @focus="focusMasterCard(masterPlayerIndex)" @inspect="inspectMasterCard(masterPlayerIndex)" />
       <BattleDockPortal lane="context"><div v-if="gmPlacement && !readOnly && !boardControlMinimized" class="board-target-controls gm-placement-controls">
         <strong>GM：请选择〈{{ gmPlacement.cardName }}〉的登场位置</strong><span>直接点击目标玩家的绿色高亮空位</span>
         <small v-if="mobileLandscapeViewport" class="mobile-target-hand-counts" :aria-label="`对手手牌 ${viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0} 张；我方手牌 ${viewMe.handCount ?? viewMe.hand?.length ?? 0} 张`">对{{ viewEnemy.handCount ?? viewEnemy.hand?.length ?? 0 }}·我{{ viewMe.handCount ?? viewMe.hand?.length ?? 0 }}</small>
@@ -1832,7 +1857,7 @@ function statusTexts(card: Card) {
         <button v-if="mobileLandscapeViewport" ref="inlinePromptInfoTrigger" type="button" @click="openInlinePromptInfo">任务说明</button>
         <button v-if="mobileLandscapeViewport" class="board-control-minimize" type="button" @click="boardControlMinimized = true">最小化</button>
         <button v-if="boardSlotPrompt.validChoices.includes('skip')"
-          @click="command('resolvePrompt', { promptId: boardSlotPrompt.promptId, cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
+          @click="continuePrompt(boardSlotPrompt, { cardInstanceIds: ['skip'] })">{{ promptChoiceText(boardSlotPrompt, 'skip', '取消') }}</button>
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><div v-if="resourceSelectionPrompt && !readOnly && !boardControlMinimized" class="board-target-controls resource-payment-controls inline-prompt-controls"
         data-tutorial-anchor="payment-panel" :data-tutorial-prompt-id="resourceSelectionPrompt.promptId">
@@ -1856,7 +1881,7 @@ function statusTexts(card: Card) {
       </div></BattleDockPortal>
       <BattleDockPortal lane="context"><button v-if="mobileLandscapeViewport && boardControlMinimized && (gmPlacement || boardTargetPrompt || boardSlotPrompt || resourceSelectionPrompt)" class="board-control-restore" type="button" :data-tutorial-action="resourceSelectionPrompt ? 'restore-payment' : undefined" :aria-label="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" :title="gmPlacement ? '恢复 GM 登场位置选择' : minimizedBoardTask" @click="boardControlMinimized = false">{{ gmPlacement ? '恢复 GM 选择' : minimizedBoardTask }}</button></BattleDockPortal>
       <PromptOverlay v-if="promptOverlayMounted" :game="game" :read-only="readOnly" :suppressed-prompt-id="activeBoardPromptId" :suppressed-prompt-ids="activeBoardPromptIds" :suppress-defense-wait="Boolean(combat)" :mulligan-selected-ids="mulliganIds" :busy="l12State.pendingAction" :inspector-visible="modalInspectorVisible" :mobile-layout="mobileLandscapeViewport"
-        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="command('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
+        @focus-card="focusCard = $event" @mulligan-toggle="toggle(mulliganIds, $event)" @mulligan-confirm="freeCommand('mulligan')" @minimized-change="promptMinimized = $event" @response-targets-change="responseTargetIds = $event" />
     </div>
   </div>
   <SingleCardPicker v-if="customDisasterSlot !== null" title="更换自定天灾（第四槽湮灭固定）" :allowed-types="['destruction']" @select="replaceCustomDisaster" @close="customDisasterSlot = null"/>

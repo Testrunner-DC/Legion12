@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "2026-10-24-presentation-free-action-gate",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "演出与下一步操作衔接",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "当前卡牌演出完成后才开放下一次出牌、移动、进攻或结束回合；当前选择与抵挡、支援等必要回应仍可正常操作。",
+      "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue"]
+    }
+  ]
+}

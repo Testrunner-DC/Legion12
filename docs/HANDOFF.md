@@ -1,5 +1,11 @@
 # 十二军团简短交接
 
+## 2026-10-24 动效第一片Main独验｜源码／实际局部链接受，待干净Batch
+
+- 来源按人类要求分阶段；本片只修自由操作提前释放，不含军团重落地／攻击分段／天灾新演出。GameBoard 93EE8760统一pending＋真实presentation busy，当前Prompt经精确绑定续办、防守Decision结构分流，未改net／服务器／计时或持久连线；PromptOverlay开局草稿不混入。
+- Main完整读两叶diff／QA，核冻结源和5B19D66A原报告，看竖屏续播与桌面不抵挡图；原12玩家UI RED＋3观战通过保留，最终16场209断言全过，6忙时自由命令／6提示后续播命令探针真实执行，1防守不抵挡正常，3观战重传不重播及换局／离房清退通过。合成authority写入／假socket／鼠标尺寸模拟不冒生产入站ACK、真触摸、减少动态或you=1观战覆盖。
+- Main只另把现有UI合同的旧统一command字面断言更新为freeCommand封锁＋精确Prompt绑定＋防守分流的语义保护，不删原断言。下一单独提交后三叶＋玩家账本与记录进入干净D标准Batch；未接受前来源继续冻结，不进入阶段2、不部署。唯一free-action-presentation-gate-20261024-main-acceptance。
+
 ## 2026-10-24 QA账本代码纳管｜提交后镜像与标准Batch接受
 
 - 只迁移代码，不读写或搬迁真实账号账本。sink／client与原件逐字节同B74A6359／88BB6ACB；Reader仅原runner四函数，7ABD52F2，无顶层runner。执行、恢复、本地及两PS消费者均用仓库路径，9个SHA与7个路径强核；三个原件仅留immutableEvidence，14旧执行降11、证据5升8，完整闭包仍false。
