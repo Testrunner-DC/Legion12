@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-account-sanctions-and-gallery-admin-internal",
+  "date": "2026-10-24",
+  "audience": "internal",
+  "reason": "登记已验收的后台画廊派发分页、赛季目录和账号读取隔离，以及独立按天排位限制、个人收益处置和对应的持久化及已提交投影兼容。复用现有权限、审计、事务与幂等，不把后台管理或处罚操作写入玩家更新日志；本条仅补发布登记，不改变产品行为或既有验收边界。",
+  "paths": [
+    "opcgpro-vue/src/l12/platform.ts",
+    "opcgpro-vue/src/l12/rankedIntegrity.ts",
+    "opcgpro-vue/src/l12/site/AdminAccountDetailPage.vue",
+    "opcgpro-vue/src/l12/site/AdminAlternateArtsPanel.vue",
+    "opcgpro-vue/src/l12/site/AdminRankedIntegrityPanel.vue",
+    "opcgpro-vue/src/l12/site/RankedIntegrityActions.vue",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.AccountRankedRestrictions.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedGameplayReads.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedRankedIdentity.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.CommittedStatisticsReads.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.Ranked.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedBroadcastStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedIntegrityActions.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.RankedMasterTitles.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.TransactionalStorage.cs",
+    "服务端WebSocket/TwelveLegions/L12PlatformStore.cs",
+    "服务端WebSocket/TwelveLegions/L12RankedIntegrity.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.AccountRankedRestrictions.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.RankedIntegrity.cs",
+    "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs"
+  ]
+}

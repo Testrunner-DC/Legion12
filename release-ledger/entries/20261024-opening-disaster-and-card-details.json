@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-opening-disaster-and-card-details",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "开局、卡牌演出与图鉴体验",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "完善开局对阵、骰点和先后攻结果展示；只展示已确定的骰点，切换对局不再沿用上一局的演出。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/DeckCover.vue",
+        "opcgpro-vue/src/l12/specialAssets.ts"
+      ]
+    },
+    {
+      "category": "battle",
+      "text": "公开军团登场时先居中展示，再落到实际位置；天灾翻开时完整展示卡面并停留，无触发效果的天灾也正常播放。必要回应、重连和切换对局不会重复播放同一次演出。",
+      "paths": ["opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue"]
+    },
+    {
+      "category": "content",
+      "text": "调整图鉴详情在宽屏、短横屏和竖屏中的卡图尺寸与正文滚动，改善横卡、长效果文本和关闭入口的可达性。",
+      "paths": ["opcgpro-vue/src/l12/CardArchive.vue"]
+    }
+  ]
+}
