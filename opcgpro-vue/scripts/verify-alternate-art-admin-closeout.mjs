@@ -82,8 +82,9 @@ const rarities=[
  {id:'rarity-ur',code:'UR',name:'终极罕贵',active:true,createdAt:now,updatedAt:now},
  {id:'rarity-sp',code:'SP',name:'特别罕贵',active:true,createdAt:now,updatedAt:now},
 ]
-let builtIn={id:'catalog-alt:S01-0101b',artCode:'S01-0101b',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'原画师',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101b',builtIn:true,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
-let uploadedAlt={id:'uploaded-alt',artCode:'ALT-QA-UPLOADED',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'上传原画师',mediaAssetId:'media-gallery',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,builtIn:false,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
+let builtIn={id:'catalog-alt:S01-0101b',artCode:'S01-0101b',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'原画师',mediaAssetId:'',imageUrl:'/api/site/media/qa-built-in/desktop/builtin.svg',thumbnailUrl:'/api/site/media/qa-built-in/thumbnail/builtin.svg',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101b',builtIn:true,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
+const wideImageUrl='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%222400%22 height=%22400%22%3E%3Crect width=%222400%22 height=%22400%22 fill=%22%23714986%22/%3E%3C/svg%3E'
+let uploadedAlt={id:'uploaded-alt',artCode:'ALT-QA-UPLOADED',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'上传原画师',mediaAssetId:'media-gallery',imageUrl:wideImageUrl,thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,builtIn:false,kind:'alternate-art',products:[products[0]],rarities:[rarities[0]]}
 let regularCard={id:'S01-0101',artCode:'S01-0101',baseCardId:'S01-0101',baseCardName:'吕布',displayName:'吕布',artist:'常规卡原画师',mediaAssetId:'',imageUrl:'',thumbnailUrl:'',active:true,createdAt:now,updatedAt:now,cardImageId:'S01-0101',builtIn:true,kind:'regular-card',products:[products[0]],rarities:[rarities[0]],effect:'常规卡规则文本'}
 const imageUrl='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22500%22 height=%22700%22%3E%3Crect width=%22500%22 height=%22700%22 fill=%22%234c6d82%22/%3E%3C/svg%3E'
 const media={id:'media-gallery',kind:'card-art',altText:'联动卡图',focalX:.5,focalY:.5,originalFormat:'png',contentHash:'abcdef1234567890',desktopUrl:imageUrl,mobileUrl:imageUrl,thumbnailUrl:imageUrl,desktopWidth:500,desktopHeight:700,mobileWidth:500,mobileHeight:700,thumbnailWidth:250,thumbnailHeight:350,originalBytes:1,deliveryBytes:1,createdBy:'admin',createdAt:now,referenceCount:0,desktopAltText:'',mobileAltText:'',thumbnailAltText:'',independentVariants:false}
@@ -143,6 +144,11 @@ const server = await createServer({
           response.end('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><rect width="500" height="700" fill="#8a4f30"/></svg>')
           return
         }
+        if (request.url?.startsWith('/api/site/media/qa-built-in/')) {
+          response.setHeader('Content-Type', 'image/svg+xml')
+          response.end('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="700"><rect width="500" height="700" fill="#315b72"/></svg>')
+          return
+        }
         if (request.url?.match(/^\/__alternate_art_admin_closeout__(\?|$)/)) {
           response.setHeader('Content-Type', 'text/html')
           response.end('<style>html,body,#app{margin:0;min-height:100%;background:#080d11;color:#eee}.qa-altart{display:grid;gap:18px;width:min(720px,calc(100% - 32px));margin:auto;padding:24px 0}.qa-altart>button{min-height:44px}</style><div id="app"></div><script type="module" src="/@vite/client"></script><script type="module" src="/__alternate_art_admin_closeout__.js"></script>')
@@ -173,8 +179,13 @@ try {
   const page = await browser.newPage()
   const pageErrors = []
   const consoleProblems = []
+  const failedRequests = []
+  const thumbnailEvidence = []
   page.on('pageerror', error => pageErrors.push(error.message))
   page.on('console', message => { if (['warning', 'error'].includes(message.type())) consoleProblems.push(message.text()) })
+  page.on('requestfailed', request => failedRequests.push({
+    url: request.url(), resourceType: request.resourceType(), errorText: request.failure()?.errorText || 'unknown',
+  }))
   await page.route('**/*', route => new URL(route.request().url()).hostname === '127.0.0.1' ? route.continue() : route.abort())
   const report = []
   for (const viewport of viewports) {
@@ -223,6 +234,41 @@ try {
     await page.getByRole('heading', { name: '画廊卡片后台' }).waitFor()
     assert.equal(await page.locator('.grant-panel').count(), 0, `rights tools leaked into the default workspace at ${suffix(viewport)}`)
     const builtInRow = page.locator('.gallery-list article').filter({ hasText: 'S01-0101b' })
+    const uploadedRow = page.locator('.gallery-list article').filter({ hasText: 'ALT-QA-UPLOADED' })
+    const expectedThumbnail = viewport.width <= 760 ? { width: 52, height: 74 } : { width: 64, height: 90 }
+    for (const [kind, row] of [['built-in', builtInRow], ['uploaded-wide', uploadedRow]]) {
+      const thumbnail = row.locator('.gallery-card-open')
+      const image = thumbnail.locator('img').first()
+      await image.waitFor()
+      await image.evaluate(element => element.complete && element.naturalWidth > 0
+        ? element.decode?.()
+        : new Promise((resolve, reject) => {
+            element.addEventListener('load', () => resolve(element.decode?.()), { once: true })
+            element.addEventListener('error', () => reject(new Error(`thumbnail failed to load: ${element.currentSrc || element.src}`)), { once: true })
+          }))
+      const geometry = await thumbnail.evaluate(element => {
+        const image = element.querySelector('img')
+        const buttonBox = element.getBoundingClientRect()
+        const imageBox = image.getBoundingClientRect()
+        return {
+          button: { width: buttonBox.width, height: buttonBox.height },
+          image: { width: imageBox.width, height: imageBox.height },
+          objectFit: getComputedStyle(image).objectFit,
+          complete: image.complete,
+          natural: { width: image.naturalWidth, height: image.naturalHeight },
+          source: image.currentSrc || image.src,
+        }
+      })
+      assert.deepEqual(geometry.button, expectedThumbnail, `${kind} thumbnail button escaped its fixed list slot at ${suffix(viewport)}`)
+      assert.deepEqual(geometry.image, expectedThumbnail, `${kind} image escaped its fixed list slot at ${suffix(viewport)}`)
+      assert.equal(geometry.objectFit, 'contain', `${kind} image no longer preserves the complete card at ${suffix(viewport)}`)
+      assert.equal(geometry.complete, true, `${kind} image did not complete at ${suffix(viewport)}`)
+      assert.deepEqual(geometry.natural, kind === 'built-in' ? { width: 500, height: 700 } : { width: 2400, height: 400 },
+        `${kind} image decoded the wrong controlled source at ${suffix(viewport)}`)
+      assert.match(geometry.source, kind === 'built-in' ? /\/api\/site\/media\/qa-built-in\/thumbnail\/builtin\.svg$/ : /^data:image\/svg\+xml/,
+        `${kind} image used an uncontrolled source at ${suffix(viewport)}`)
+      thumbnailEvidence.push({ viewport, kind, ...geometry })
+    }
     await builtInRow.getByRole('button', { name: '查看吕布详情' }).click()
     await page.locator('.catalog-detail-dialog').waitFor()
     await page.getByRole('button', { name: '关闭卡牌详情' }).click()
@@ -265,7 +311,6 @@ try {
     assert.match(registryText, /UR[\s\S]*SP/, `reused rarities were not re-read at ${suffix(viewport)}`)
     assert.match(registryText, new RegExp(`画师：内建画师-${viewport.width}`), `built-in artist was not re-read at ${suffix(viewport)}`)
     if (viewport.width === 1440) {
-      const uploadedRow = page.locator('.gallery-list article').filter({ hasText: 'ALT-QA-UPLOADED' })
       await uploadedRow.getByRole('button', { name: '编辑资料' }).click()
       await editor.getByLabel('画师').fill('上传画师更新')
       await editor.getByRole('button', { name: '保存卡片资料' }).click()
@@ -407,9 +452,15 @@ try {
   report.push({ viewport: { width: 1440, height: 900 }, standaloneGalleryCard: true, displayOnlyEffect: true, builtInMetadataOverlay: true, customMetadataOverlay: true, oldFieldFallback: true, explicitClear: true, sameNameProductsRetained: true, hiddenProductRemovedOnlyFromFilter: true })
   assert.equal(pageErrors.length, 0, `page errors: ${pageErrors.join(' | ')}`)
   assert.equal(consoleProblems.filter(message => /duplicate keys|same key/i.test(message)).length, 0, `duplicate-key console warnings: ${consoleProblems.join(' | ')}`)
+  const cardImageAborts = failedRequests.filter(request => request.resourceType === 'image' && request.errorText === 'net::ERR_ABORTED')
+  const cardImageFailures = failedRequests.filter(request => request.resourceType === 'image' && request.errorText !== 'net::ERR_ABORTED')
+  assert.equal(cardImageFailures.length, 0, `card image requests failed: ${JSON.stringify(cardImageFailures)}`)
+  assert.equal(thumbnailEvidence.length, 6, 'thumbnail evidence must cover two sources across three viewports')
   const afterSourceHashes = sourceHashes()
   assert.deepEqual(afterSourceHashes, beforeSourceHashes, 'verification mutated its source inputs')
-  finalPayload = { status: 'passed', report, pageErrors, consoleProblems, beforeSourceHashes, afterSourceHashes, apiMode: 'in-memory synthetic adminApi methods; no real HTTP persistence' }
+  finalPayload = { status: 'passed', report, thumbnailEvidence, pageErrors, consoleProblems, failedRequests,
+    expectedInjectedBusinessFailures: ['product refresh retry', 'gallery metadata retry'], cardImageAborts, cardImageFailures,
+    beforeSourceHashes, afterSourceHashes, apiMode: 'in-memory synthetic adminApi methods; no real HTTP persistence' }
 } finally {
   await browser?.close()
   await server.close()
