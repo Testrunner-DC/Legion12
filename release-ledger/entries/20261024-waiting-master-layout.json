@@ -11,7 +11,9 @@
       "paths": [
         "opcgpro-vue/src/l12/game/GameBoard.vue",
         "opcgpro-vue/src/l12/game/PromptOverlay.vue",
-        "opcgpro-vue/src/l12/game/PlayerMat.vue"
+        "opcgpro-vue/src/l12/game/PlayerMat.vue",
+        "opcgpro-vue/src/l12/mobileViewport.css",
+        "opcgpro-vue/src/l12/motion.css"
       ]
     }
   ]
