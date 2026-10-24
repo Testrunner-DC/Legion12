@@ -15,6 +15,7 @@ const screenshotRoot = path.join(outputRoot, 'screenshots')
 fs.mkdirSync(screenshotRoot, { recursive: true })
 
 const tracked = [
+  'src/l12/audioPreferences.ts',
   'src/l12/game/PromptOverlay.vue', 'src/l12/CardImage.vue', 'src/l12/game/GameBoard.vue',
   'src/l12/site/uiSystem.css',
   'scripts/test-match-opening-presentation.mjs', 'scripts/preview-l12-battle-layout.mjs',
@@ -682,7 +683,9 @@ try {
     { key: 'standard', reduced: 'no-preference', expected: [1050, 1550], css: [1150, 1300] },
     { key: 'fast', reduced: 'no-preference', expected: [520, 920], css: [620, 730] },
     { key: 'off', reduced: 'no-preference', expected: [0, 180], css: [0, 1] },
-    { key: 'standard', reduced: 'reduce', expected: [0, 180], css: [0, 0] },
+    { key: 'standard', reduced: 'reduce', expected: [1050, 1550], css: [1150, 1300] },
+    { key: 'fast', reduced: 'reduce', expected: [520, 920], css: [620, 730] },
+    { key: 'off', reduced: 'reduce', expected: [0, 180], css: [0, 1] },
   ]) {
     const name = `motion-${motion.key}-${motion.reduced}`
     await runCase(name, async () => {
@@ -695,7 +698,7 @@ try {
           return { animationName: style.animationName, animationDuration: style.animationDuration, transitionDuration: style.transitionDuration }
         }))
         const initialFaces = []
-        if (motion.key === 'off' || motion.reduced === 'reduce') {
+        if (motion.key === 'off') {
           for (let sample = 0; sample < 3; sample += 1) {
             initialFaces.push(await page.locator('.opening-die em').allTextContents())
             await page.waitForTimeout(110)

@@ -86,4 +86,9 @@ export function l12AnimationDuration(standardMs: number, minimumMs = 0) {
   return Math.max(minimumMs, Math.round(standardMs * scale))
 }
 
+// Battle presentation follows the explicit in-game choice, not the OS motion hint.
+export function l12BattleMotionDisabled() {
+  return audioPreferences.animation === 'off'
+}
+
 syncAudioStore()

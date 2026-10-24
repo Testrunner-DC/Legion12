@@ -116,6 +116,7 @@ onBeforeUnmount(() => {
 .l12-action-presentation .action-copy strong{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;text-overflow:clip}
 @keyframes l12-action-flare{from{transform:translateX(-40%) skewX(-18deg)}to{transform:translateX(260%) skewX(-18deg)}}
 @media(max-width:700px){.l12-action-presentation{top:10%;max-width:calc(100vw - 16px);padding:6px 9px}.action-copy strong{max-width:72vw;font-size:var(--l12-board-copy,13px)}.action-symbol{width:37px;height:37px;flex-basis:37px;font-size:max(16px,var(--l12-board-copy,13px))}}
-@media(prefers-reduced-motion:reduce){.l12-action-presentation-enter-active,.action-flare{animation:none}.l12-action-presentation-leave-active{transition:opacity .01s linear}}
+:global(html[data-l12-animation="off"] .l12-action-presentation-enter-active),:global(html[data-l12-animation="off"] .action-flare){animation:none}
+:global(html[data-l12-animation="off"] .l12-action-presentation-leave-active){transition:opacity .01s linear}
 .l12-action-presentation{z-index:900}
 </style>

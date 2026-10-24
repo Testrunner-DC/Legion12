@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { l12AnimationDuration } from '../audioPreferences'
+import { l12AnimationDuration, l12BattleMotionDisabled } from '../audioPreferences'
 import { landscapeTeleportElement, settleElementGeometry, viewportLayoutRect } from '../mobileViewport'
 import type { ActionEvent, PlayerView } from '../types'
 import { acquireAuthoritativeCardVisibility } from './authoritativeCardVisibility'
@@ -78,7 +78,7 @@ function attackTargetElement(transition: Transition) {
 }
 
 function duration() {
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return 80
+  if (l12BattleMotionDisabled()) return 80
   const standard = props.playbackSpeed ? Math.round(380 / props.playbackSpeed) : 380
   return l12AnimationDuration(standard, props.playbackSpeed ? 80 : 140)
 }

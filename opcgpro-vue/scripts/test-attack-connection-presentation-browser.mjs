@@ -226,11 +226,11 @@ try {
       orbCount: element.querySelectorAll('.attack-connection-orb').length,
       key: element.dataset.attackPresentationKey,
     }))
-    assert.equal(reduced.coreAnimation, 'none')
-    assert.equal(reduced.glowDisplay, 'none')
+    assert.notEqual(reduced.coreAnimation, 'none', 'standard attack motion must override the OS hint')
+    assert.notEqual(reduced.glowDisplay, 'none', 'standard attack glow must remain visible under the OS hint')
     assert.equal(reduced.key, `${expected.matchId}:${expected.sequence}`)
     assert.deepEqual(errors, [], 'reduced-motion browser errors')
-    results.push({ profile: 'reduced-motion', reduced, errors })
+    results.push({ profile: 'system-reduce-standard', reduced, errors })
     await context.close()
   }
 

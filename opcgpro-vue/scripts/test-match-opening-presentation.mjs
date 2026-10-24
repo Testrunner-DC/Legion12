@@ -34,8 +34,9 @@ assert.match(script, /function skipOpeningIntro\(\)[\s\S]*openingIntroSkipped\.v
   'skip must accelerate only local presentation and still consume the authoritative result')
 assert.match(script, /l12AnimationDuration\(1250\)/,
   'the accepted 1.25 second standard dice cadence must consume the existing fast/off preference')
-assert.match(script, /prefers-reduced-motion: reduce[\s\S]*duration <= 0[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
-  'off and operating-system reduced motion must skip local rolling without fabricating a result')
+assert.match(script, /const duration = l12AnimationDuration\(1250\)[\s\S]*duration <= 0[\s\S]*diceAnimationReadyToSettle\.value = true[\s\S]*settleInitiativeDice\(\)/,
+  'only the in-game off setting skips local rolling without fabricating a result')
+assert.doesNotMatch(script, /prefers-reduced-motion/, 'the OS preference must not override standard/fast')
 
 assert.match(script, /watch\(\(\) => \[props\.game\.matchId, props\.game\.phase\] as const/,
   'match and phase must share one lifecycle boundary instead of racing independent watchers')
@@ -98,7 +99,9 @@ function executeDiceStart(animation, reduced = false) {
 assert.deepEqual(executeDiceStart('standard'), { delay: 1250, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('fast'), { delay: 688, intervalStarts: 1, settles: 0 })
 assert.deepEqual(executeDiceStart('off'), { delay: 0, intervalStarts: 0, settles: 1 })
-assert.deepEqual(executeDiceStart('standard', true), { delay: 0, intervalStarts: 0, settles: 1 })
+assert.deepEqual(executeDiceStart('standard', true), { delay: 1250, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('fast', true), { delay: 688, intervalStarts: 1, settles: 0 })
+assert.deepEqual(executeDiceStart('off', true), { delay: 0, intervalStarts: 0, settles: 1 })
 
 function controlledTimers() {
   let nextId = 1
@@ -274,8 +277,9 @@ assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)/,
   'short landscape battle canvases need a bounded opening layout')
 assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,
   'skip must end the entrance motion without changing game state')
-assert.match(style, /@media\(prefers-reduced-motion:reduce\)[^{]*\{[^}]*opening-master-card/,
-  'operating-system reduced motion must disable the new entrance animation')
+assert.match(style, /html\[data-l12-animation="off"\] \.opening-master-card/,
+  'only explicit in-game off must disable the new entrance animation')
+assert.doesNotMatch(style, /prefers-reduced-motion/, 'opening CSS cannot override standard/fast with the OS hint')
 assert.match(style, /var\(--l12-animation-scale,1\)/,
   'new opening CSS must consume the existing fast/off animation scale')
 

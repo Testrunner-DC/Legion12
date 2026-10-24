@@ -61,10 +61,10 @@ export function hasScopedZoneMovementMotion(source) {
 
     const simplified = actualFunction('simplifiedEntryMotion')
     // Execute only this actual pure preference predicate with isolated globals.
-    const preference = Function('document', 'window', `return (${simplified.toString()})()`)
+    const preference = Function('l12BattleMotionDisabled', 'window', `return (${simplified.toString()})()`)
     for (const off of [false, true]) for (const reduce of [false, true])
-      assert.equal(preference({ documentElement: { dataset: { l12Animation: off ? 'off' : 'standard' } } },
-        { matchMedia: query => ({ matches: query === '(prefers-reduced-motion: reduce)' && reduce }) }), off || reduce)
+      assert.equal(preference(() => off,
+        { matchMedia: query => ({ matches: query === '(prefers-reduced-motion: reduce)' && reduce }) }), off)
 
     const declarations = new Map()
     const walk = node => {
@@ -139,8 +139,8 @@ const mutations = [
   ['disaster owner skips release', "wrapper.style.visibility = 'hidden'\n      revealTarget(movement)", "wrapper.style.visibility = 'hidden'"],
   ['reduced animation central flight', '? movement.entrySimplified ? directFrames : legionEntryFrames(movement)', '? movement.entrySimplified ? legionEntryFrames(movement) : legionEntryFrames(movement)'],
   ['regular move central flight', ': [\n              { transform:', ': legionEntryFrames(movement) || [\n              { transform:'],
-  ['off preference', "dataset.l12Animation === 'off'", "dataset.l12Animation === 'unsupported'"],
-  ['reduced preference', "'(prefers-reduced-motion: reduce)'", "'(unsupported: reduce)'"],
+  ['off preference bypass', 'return l12BattleMotionDisabled()', 'return false'],
+  ['system preference override', 'return l12BattleMotionDisabled()', "return l12BattleMotionDisabled() || window.matchMedia('(prefers-reduced-motion: reduce)').matches"],
   ['string troop coercion', "typeof troops !== 'number' || !Number.isFinite(troops)", '!Number.isFinite(Number(troops))'],
   ['non-finite troops', '!Number.isFinite(troops)', 'false'],
   ['zero troop fallback', 'rawTroops == null ?', '!rawTroops ?'],

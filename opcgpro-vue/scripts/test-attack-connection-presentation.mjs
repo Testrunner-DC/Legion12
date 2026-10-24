@@ -111,7 +111,8 @@ assert.ok(layer.includes('if (!(source instanceof HTMLElement) || !(target insta
   'an attacker leaving or a target disappearing must suppress the overlay')
 assert.ok(layer.includes("window.addEventListener('l12-viewport-change', refreshGeometry)"),
   'the connection must remeasure in the logical mobile canvas')
-assert.ok(layer.includes('@media(prefers-reduced-motion:reduce)'), 'reduced motion must keep a static relation without moving effects')
+assert.ok(layer.includes('html[data-l12-animation="off"]') && !layer.includes('prefers-reduced-motion'),
+  'only the explicit in-game off setting keeps a static relation without moving effects')
 assert.ok(layer.includes('.attack-connection-layer.is-paused .attack-connection-orb{visibility:hidden}'),
   'blocking modals must suppress the SMIL travel marker while the authority relation remains visible')
 assert.ok(layer.includes('.attack-connection-core{stroke-width:4;')

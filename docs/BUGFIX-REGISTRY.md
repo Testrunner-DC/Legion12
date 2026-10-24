@@ -1,5 +1,12 @@
 # Legion12 Bug 修复记录
 
+## UI-20261025-BATTLE-MOTION-PRECEDENCE｜游戏设置不再被系统动效偏好覆盖
+
+- 人类报告测试服开场与新对局动效不可见，明确游戏内为标准；源码发现三处JS直接读OS reduce及五组件CSS独立压制。人类本轮明确同意游戏设置优先并更新测试服。P4仅呈现，不改规则、计时、命令、隐私、Journal或结果；过去off/reduce合并预期由本次裁定取代，不追改旧回执。
+- 全src扫描prefers-reduced-motion，游戏内命中Prompt、ZoneMovement、CardStateTransition、AttackConnection、ActionPresentation、PlayerMat、Osiris；统一显式off，JS复用audioPreferences.l12BattleMotionDisabled，CSS保原off简化。站点背景与非对战motion.css系统偏好不改，关动画的必要公开信息/最短交接继续保留。
+- 原真实函数RED为standard＋reduce得到0ms/直接settled，应1250ms/滚动；新41函数／SFC编译检查过。开场既有浏览器8项实际过（标准reduce1323ms／快速717ms／off42ms），骰点、跳过与换局保；登场原矩阵＋新增两档共19组264断言过，原生命周期、隐私、重复快照和换局不变，C398743C／C78C92DA原报告。局部夹具可选图库API未启动／favicon噪声原留，不冒零资源错误、真实玩家WS或真机。
+- 原低成本性能/前端链有效前缀与精确旧断言续验通过（UI361／motion49），旧失败保；移区AST仍保同数量破坏反例，以off旁路／OS重新覆盖替代旧双来源假设。下一步只做隔离完整前端构建与测试静态更新，未变后端复用8e完整8415／2462。唯一`battle-motion-precedence-20261025`回执，正式服不动。
+
 ## UI-20261025-OPENING-EXPANSION｜放大对峙卡面与逻辑画布响应
 
 - 人类后续要求四边更大／向中央展开，P4仅原Prompt/合同/浏览器三叶。桌面保真实±28/620透视并调整32vw/max480、±22vw/±5vh、split横展1.25；小卡不能用相同物理视距导致深度不足，旋转画布不能混物理vw/vh。沿mobile-safe补300px视距与逻辑卡164px，不改牌桌、调度或生命周期。

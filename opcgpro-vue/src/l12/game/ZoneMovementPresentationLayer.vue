@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { l12AnimationDuration } from '../audioPreferences'
+import { l12AnimationDuration, l12BattleMotionDisabled } from '../audioPreferences'
 import { landscapeTeleportElement, landscapeTeleportTarget, settleElementGeometry, viewportLayoutRect, visibleViewport } from '../mobileViewport'
 import { CARD_IMAGE_PLACEHOLDER, resolveCardAssetUrls } from '../cardAssets'
 import type { ActionEvent, Card, PlayerView, Prompt } from '../types'
@@ -298,8 +298,7 @@ function publicHandAddCaption(event: ActionEvent, card: Card) {
 }
 
 function simplifiedEntryMotion() {
-  return document.documentElement.dataset.l12Animation === 'off'
-    || Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+  return l12BattleMotionDisabled()
 }
 
 function legionEntryImpact(card: Card | undefined): { tier?: LegionEntryImpactTier; strength: number } {

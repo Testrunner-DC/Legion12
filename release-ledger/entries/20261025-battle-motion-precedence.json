@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-battle-motion-precedence",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "对局动画设置",
+  "changes": [{
+    "category": "battle",
+    "text": "开场、军团登场、天灾翻开、休整与活跃、进攻连线及战斗提示统一遵循游戏内动画设置；选择标准或快速时，不再被系统的减少动态效果设置跳过或简化。选择关闭时仍保留必要的状态交接和结果信息。",
+    "paths": ["opcgpro-vue/src/l12/audioPreferences.ts", "opcgpro-vue/src/l12/game/PromptOverlay.vue", "opcgpro-vue/src/l12/game/ZoneMovementPresentationLayer.vue", "opcgpro-vue/src/l12/game/CardStateTransitionLayer.vue", "opcgpro-vue/src/l12/game/AttackConnectionPresentationLayer.vue", "opcgpro-vue/src/l12/game/ActionPresentationLayer.vue", "opcgpro-vue/src/l12/game/PlayerMat.vue", "opcgpro-vue/src/l12/game/OsirisVictorySequence.vue"]
+  }]
+}

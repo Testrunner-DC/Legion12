@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import './test-battle-animation-precedence.mjs'
 
 const root = process.cwd()
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n?/g, '\n')
@@ -59,14 +60,15 @@ const checks = [
     && attackConnection.includes('data-ui-contract="authoritative-attack-connection"')
     && attackConnectionProjection.includes("return attack ? { kind: 'intro', sequence: attack.sequence } : { kind: 'retain' }")
     && attackConnectionProjection.includes('event.sequence > state.lastEventSequence')],
-  ['attack connection baselines recovery and replay while retaining mobile and reduced-motion safety',
+  ['attack connection baselines recovery and replay while retaining mobile and explicit animation-off safety',
     attackConnectionProjection.includes('input.synchronizing || input.revision < state.revision')
     && attackConnectionProjection.includes("return { kind: input.pending ? 'baseline' : 'none' }")
     && attackConnection.includes('viewportLayoutRect(source)') && attackConnection.includes('viewportLayoutRect(target)')
     && attackConnection.includes("addEventListener('l12-viewport-change', refreshGeometry)")
     && attackConnection.includes('if (!(source instanceof HTMLElement) || !(target instanceof HTMLElement))')
     && attackConnection.includes('.attack-connection-layer.is-paused .attack-connection-orb{visibility:hidden}')
-    && attackConnection.includes('@media(prefers-reduced-motion:reduce)')],
+    && attackConnection.includes('html[data-l12-animation="off"]')
+    && !attackConnection.includes('prefers-reduced-motion')],
   ['authoritative state layer solely owns ready and rest motion', !motion.includes('l12-rest-settle')
     && !motion.includes('.formation-slot .card-tile.tapped')
     && stateLayerMarkup.includes(':paused="modalPresentationPaused"')
@@ -131,7 +133,7 @@ const checks = [
     && visualProjection.includes('if (revision <= state.revision) return []')
     && visualProjection.includes('transactionKey: `${revision}:${change.instanceId}')],
   ['state observer is layout neutral', stateTransition.includes('.card-state-transition-layer{display:none!important}') && board.includes('.felt-board :deep(.battlefield-half.my-half){grid-row:3}')],
-  ['ready and rest use global timing language', stateTransition.includes('l12AnimationDuration') && stateTransition.includes("cubic-bezier(.22,1,.36,1)") && stateTransition.includes('prefers-reduced-motion: reduce')],
+  ['ready and rest use global timing language and explicit game preference', stateTransition.includes('l12AnimationDuration') && stateTransition.includes("cubic-bezier(.22,1,.36,1)") && stateTransition.includes('l12BattleMotionDisabled()') && !stateTransition.includes('prefers-reduced-motion')],
   ['multi-card movement stays per instance', movement.includes('movementCardsForEvent(event)') && visualProjection.includes("event.type === 'move' || event.type === 'attach'")],
   ['cross-source movement descriptions share one authority transaction', movement.includes('beginMovementTransactionBatch(movementClaims, revision, authoritativeZones)')
     && movement.includes('claimMovementTransaction(movementClaims, transactionBatch')

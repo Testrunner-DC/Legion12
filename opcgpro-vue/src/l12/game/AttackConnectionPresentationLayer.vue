@@ -211,8 +211,6 @@ onBeforeUnmount(() => {
 @keyframes l12-attack-source-pulse{0%{opacity:0;transform:scale(.45)}42%{opacity:1;transform:scale(1.5)}100%{opacity:1;transform:scale(1)}}
 @keyframes l12-attack-target-pulse{0%,30%{opacity:0;transform:scale(.55)}62%{opacity:1;transform:scale(1.45)}100%{opacity:1;transform:scale(1)}}
 @keyframes l12-attack-orb{0%,8%{opacity:0}20%,72%{opacity:1}100%{opacity:0}}
-@media(prefers-reduced-motion:reduce){
-  .attack-connection-layer.is-intro :is(.attack-connection-core,.attack-connection-source,.attack-connection-target){animation:none}
-  .attack-connection-glow,.attack-connection-orb{display:none}
-}
+:global(html[data-l12-animation="off"] .attack-connection-layer.is-intro :is(.attack-connection-core,.attack-connection-source,.attack-connection-target)){animation:none}
+:global(html[data-l12-animation="off"] .attack-connection-glow),:global(html[data-l12-animation="off"] .attack-connection-orb){display:none}
 </style>
