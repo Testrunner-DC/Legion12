@@ -5,7 +5,8 @@
 - 人类按阶段要求改善军团登场与观战演出。原共享ZoneMovement只有来源直飞格位，没有中央停驻或公开兵力派生的局部落地。本片仅扩P2/P4呈现：已接受的play／put／enter、公开legion、非field来源→field统一走中央→落地；隐私未知／非军团／场内位移不新增该演出，不改P0/P1结算／P3数据／服务器计时。
 - 同类扫描movementFromEvent、sourceGhost、template fallback及entryTransactionKey，共用既有reservation／visualOwner／busy与完成释放；RHS仅公开troops或nullish时baseTroops且严格正有限number，未知不猜。holder正面解码前仍允许静态安全卡背；reduce／off只作两端点必要交接，全部新增impact在finish／cancel／dispose清退，active-prompt让位／换局／重传规则保留。
 - Main完整读三叶初稿及四次收束点，最终BD1AC503／89CBF7A6／CE12F312冻结；独读9DF3DD9E真实报告、17组250/250与全部3图、10实际源SHA前后。双方／观战×宽屏／横屏／旋转竖屏、真实主与impact同帧可见几何／强度、template确实路径、准备卡背、门控到完成、减少动态、重传／换局均覆盖。合成authority／假socket／本地Vite不冒生产入站ACK、真触摸或整动画完成。
-- 原两次RED、50真实产品缺口与1错误QA预期分别保留；35console／34本地可选异画API拒绝及一次未归属404保留，未伪装无资源错误；子任务不能枚举全部进程，不冒0process，仅finally和监听核验。唯一legion-entry-presentation-20261024/main-source-acceptance.json；来源全部租约结束，待Main只纳三叶的干净标准Batch／类型／双构建，不部署、不混开局三草稿。
+- 原两次RED、50真实产品缺口与1错误QA预期分别保留；35console／34本地可选异画API拒绝及一次未归属404保留，未伪装无资源错误；子任务不能枚举全部进程，不冒0process，仅finally和监听核验。
+- 28454b3f干净标准Batch原30D4B870在旧“所有移动直飞”literal失败，精确适配这一条：实际资格谓词只接受公开play／put／enter军团非场内→战场；真实公开兵力和reduced/off谓词、AST四帧普通路径／两端点交接加21破坏反例全部通过，保source像素／未知卡背／通用脉冲禁用。首新增夹具CRLF目标不匹配的工具失败保留，改夹具换行而非产品。有效前缀＋失败点续跑40原标准步骤全过，361 UI／类型／双Vite、两个实际bundle均核，8AB50F11；不冒新单轮Batch exit0，不重跑250或未改后端／负载。唯一main-source-acceptance.json，来源全冻结，不部署、不混开局三草稿。
 
 ## QA-20261024-WORKLOAD-CODE-OWNERSHIP｜消除最后11份历史执行源码依赖
 

@@ -28,6 +28,7 @@ import './test-hot-deck-motion.mjs'
 import './test-deck-motion-diagnostics.mjs'
 import { deploymentAuthIsolationVerified } from './test-deployment-auth-isolation.mjs'
 import { hasPersistentMobilePlayerIdentities, hasSharedBattleCardDetails, hasProportionalMobileActionSize } from './battle-usability-template-contract.mjs'
+import { hasScopedZoneMovementMotion } from './test-zone-movement-motion-contract.mjs'
 
 // These actual-template fixtures temporarily supply DOM constructors. Static
 // sibling imports with top-level await can overlap their restore lifetimes.
@@ -383,7 +384,7 @@ const contracts = [
     && playerMat.includes("authority.targetKeys.includes(`${row}:${slot}`)")
     && playerMat.indexOf('if (authority) return') < playerMat.indexOf("card.profession !== '骑兵'"), '骑兵位移按钮必须优先读取服务端规则动作资格、禁用原因和文案，旧服务端兼容判断不得覆盖权威投影'],
   [board.includes("import ZoneMovementPresentationLayer from './ZoneMovementPresentationLayer.vue'") && board.includes('<ZoneMovementPresentationLayer :events="game.recentEvents ?? []"') && zoneMovementLayer.includes('data-ui-contract="authoritative-zone-card-movement"') && zoneMovementLayer.includes('viewportLayoutRect(element)') && read('../src/l12/mobileViewport.ts').includes('element.getBoundingClientRect()') && read('../src/l12/mobileViewport.ts').includes('element.offsetWidth * scaleX') && zoneMovementLayer.includes('data-l12-game-stage') && zoneMovementLayer.includes('data-card-instance-id') && zoneMovementLayer.includes('await nextTick()'), '打出、登场与区域移动必须读取更新前后真实 DOM 锚点并由独立卡牌实体连续飞行'],
-  [zoneMovementLayer.includes('publicHolder.cloneNode(true)') && zoneMovementLayer.includes('snapshotDecodedAuthoritativeCardVisual(publicHolder, sourceGhost)') && zoneMovementLayer.includes('genericPublicSourceGhost(draft.from)') && zoneMovementLayer.includes('wrapper.animate([') && !zoneMovementLayer.includes('--move-mid-x') && !zoneMovementLayer.includes('l12-zone-card-pulse'), '卡牌跨区域动画必须复用来源实体快照并做单次起终点位移，不得恢复中途放大、脉冲或三段跳变'],
+  [hasScopedZoneMovementMotion(zoneMovementLayer), '卡牌跨区域动画必须复用来源实体快照及单一动画；仅公开军团登场允许中央展示再落地，隐藏牌、普通位移与减少动态不得误走该分段，通用脉冲仍禁止'],
   [zoneMovementLayer.includes('prepareMovementImage') && zoneMovementLayer.includes('resolveCardAssetUrls') && zoneMovementLayer.includes('preparedImageUrl') && zoneMovementLayer.includes(".filter(url => url !== CARD_IMAGE_PLACEHOLDER)"), '无来源实体的区域移动必须在动画前预解码真实卡图，主牌库卡背只能作为全部候选失败后的最终兜底'],
   [board.includes("import CardStateTransitionLayer from './CardStateTransitionLayer.vue'") && board.includes('<CardStateTransitionLayer :players="game.players" :events="game.recentEvents ?? []"')
     && cardStateTransitionLayer.includes("holderWrapper.dataset.motionKind = transition.attackSequence === undefined ? 'state' : 'attack-rest'")

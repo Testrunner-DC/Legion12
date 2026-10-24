@@ -1,6 +1,6 @@
 # 十二军团任务台账
 
-接续2026-10-24动效第二片（P2/P4）：Main接收公开军团非场内来源→战场的中央停驻／按公开兵力局部落地，唯一ZoneMovement产品叶与两QA叶；同reservation/busy/隐私/取消保留，非军团／隐藏／未知／场内移动不新增。三叶BD1AC503／89CBF7A6／CE12F312及17组250/250已读源／看3图／核10源，局部源码与专项接受，原RED与资源错误不覆盖；下一干净标准前端Batch，不重复250或后端／30＋10，未部署。子线程全冻结、Main接管，开局DeckCover／PromptOverlay／specialAssets草稿排除。唯一legion-entry-presentation-20261024/main-source-acceptance.json。
+接续2026-10-24动效第二片（P2/P4）最终整合：28454b3f干净标准Batch在旧“所有移动直飞”合同失败（30D4B870）；仅该条改成公开军团登场精确资格／普通四帧和reduced/off两端点的真实谓词与AST检查，21破坏反例拒绝，来源像素／卡背／通用脉冲保护不减。新增夹具首CRLF错保留，修夹具非产品。原有效前缀＋失败点后40原标准步骤全过，361 UI／类型／双Vite及两个实际bundle通过（8AB50F11），不冒新整轮Batch exit0。原BD1AC503／89CBF7A6／CE12F312三叶与17组250/250专项复用，3图／10源已独核，原RED和资源错误保留，不重跑未变后端／30＋10。唯一legion-entry-presentation-20261024/main-source-acceptance.json；子线程全冻结、开局三草稿不混、不部署。正式CI40055055885前端步失败、完整日志403且公开注释仅exit1，下一继续可信输入与唯一出包宿主资格，不捏造根因。
 
 接续QA宿主根边界：现有CI为ubuntu，source-import自测增加显式跨宿主临时根选择／既有RUNNER_TEMP目录／Windows带盘符约束，仍先物理guard再创建新UUID并精确清退。原77＋11纯根例＝88与三实际Windows导入通过；不冒Linux真实执行或CI资格，不重跑未改UI／双构建／负载。动效第二片三叶源及17场250证据已Main逐读／看3图，局部接受、待Main干净Batch，子任务全冻结无写/重型槽；35console／34可选本地API拒绝和进程枚举权限不足照实保留。
 
