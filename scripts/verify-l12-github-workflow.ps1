@@ -17,7 +17,9 @@ foreach ($project in @('TwelveLegions.Tests','TwelveLegions.Platform.Tests')) {
 }
 if ($testEntry -match '--filter' -or -not $testEntry.Contains("@('test',`$Project,'--configuration'")) { throw 'CI test entry must execute both full projects without filters.' }
 $standardEntry = Get-Content -LiteralPath (Join-Path $repoRoot 'ops/windows/verify-l12.ps1') -Raw
-if ($text -match 'actions/upload-artifact|dotnet publish|releaseSha256') { throw 'CI cannot publish a second legacy deployment artifact.' }
+if ($text -match 'dotnet publish|releaseSha256') { throw 'CI cannot publish a second legacy deployment artifact.' }
+# The shared contract below permits only the human-authorized three qualified
+# canonical outputs, for three days. It rejects directory/glob/private uploads.
 if ($text -notmatch "tags:\s*\['v\*'\]") { throw 'Release tag trigger v* is missing.' }
 if (-not $standardEntry.Contains('发布产物缺少 linux-x64 原生依赖')) { throw 'Canonical Linux runtime guard is missing.' }
 if (-not $standardEntry.Contains(').Length -gt 150MB')) { throw 'Canonical 150 MiB release archive budget is missing.' }

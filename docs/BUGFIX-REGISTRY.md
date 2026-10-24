@@ -1,5 +1,11 @@
 # Legion12 Bug 修复记录
 
+## OPS-20261024-CI-PUBLISH-FIXTURE｜原生故障夹具跨系统与三件附件授权
+
+- c591真实Linux平台2335过/3失败，末段实际注释指向迁移rename没有出现预期故障；两测试源恰为一Fact＋UTF16双Theory，用FileShare.None读取来阻止最终rename，Unix允许替换已打开文件。测试共用MirrorPublicationFailureScope暂存原镜像、仅最终目标设空目录，真实待发布写/事务提交/rename仍执行，退出scope先恢复原镜像后原schema8、hash、编码、会话、pending/retry/idempotency断言全部保留。无产品源/持久格式/门槛变更，不以跳过或吞失败通过。
+- Main完整平台42595实际exit0，2338/2338、0失败/跳过；原失败原件和完整新TRX/监督清退收据保留，未变规则/前端/负载证据复用。人类独立批准仅三件标准产物外传保留3天，上传只消费原canonical核验的精确输出；三天/成功条件/无通配符/无隐藏文件/无覆盖/缺件报错均受原入口30破坏反例保护，44策略/7宿主/5Git/27产物边界通过。
+- 唯一canonical-ci-20261024/authorized-upload-acceptance.json。云端下一完整canonical和实际附件送达仍待独立结果，不冒已完成，不做任何服务/维护写；同步不再等待独立工程目标全部完成，三外来UI草稿原SHA保留。
+
 ## OPS-20261024-NONEMPTY-RESTORE｜补齐非空反馈／资讯／媒体恢复证据
 
 - 目标5已授权恢复演练的未覆盖部分，不是重复部署：旧10月19日快照两集合均0，不能证明有内容时可恢复。新七叶工具只固定已验3a／BAEFF／26原包文件、私有/tmp唯一owner和0700目录；合成业务经现有API产生，原FC374校验两库/WAL/镜像后真实proof落盘，精确恢复、API读回及实际应用启动正常关闭。正式／测试数据库不读写，不继承ephemeral删除、共享画廊标记或真实凭据。

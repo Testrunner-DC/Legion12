@@ -289,8 +289,7 @@ public sealed class PlatformCoreSnapshotMemoryTests(ITestOutputHelper output)
 
         var pendingPath = platformPath + ".ranked-broadcast-schema8.pending";
         Exception? failure;
-        using (var locked = new FileStream(platformPath, FileMode.Open, FileAccess.Read,
-                   FileShare.None))
+        using (var blocked = new MirrorPublicationFailureScope(platformPath))
             failure = Record.Exception(() =>
                 L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(databasePath));
         Assert.True(failure is IOException or UnauthorizedAccessException,

@@ -5,10 +5,28 @@ const workflow = fs.readFileSync(process.argv[2] || new URL('../.github/workflow
 const standard = fs.readFileSync(new URL('../ops/windows/verify-l12.ps1', import.meta.url), 'utf8')
 const deploy = fs.readFileSync(new URL('../ops/windows/deploy-l12-testrun.ps1', import.meta.url), 'utf8')
 const canonicalCi = fs.readFileSync(new URL('../ops/ci/invoke-l12-canonical-package.ps1', import.meta.url), 'utf8')
+const authorizedUpload = `        if: success() && steps.policy.outputs.package == 'true' && steps.canonical.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: l12-standard-\${{ steps.policy.outputs.commit }}
+          path: |
+            \${{ steps.canonical.outputs.manifest }}
+            \${{ steps.canonical.outputs.releaseArchive }}
+            \${{ steps.canonical.outputs.cardAssetsArchive }}
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
+          include-hidden-files: false
+          overwrite: false`
 
 export function check(source) {
-  assert.doesNotMatch(source, /tar\s+-[a-zA-Z]*c|dotnet\s+publish|actions\/upload-artifact|releaseSha256\s*"?\s*:/,
+  assert.doesNotMatch(source, /tar\s+-[a-zA-Z]*c|dotnet\s+publish|releaseSha256\s*"?\s*:/,
     'CI must not publish a second hand-assembled legacy deployment artifact')
+  assert.equal((source.match(/actions\/upload-artifact/g) || []).length, 1, 'only one authorized three-file upload')
+  const upload = source.split('      - name: 保存三件已核验标准产物（3天）\n')[1]?.split('\n      - ')[0] || ''
+  assert.equal(upload.trim(), authorizedUpload.trim(), 'upload must retain the exact three qualified files, success-only condition and three-day retention')
+  assert.ok(source.indexOf('      - name: 唯一标准发布包\n') < source.indexOf('      - name: 保存三件已核验标准产物（3天）\n'),
+    'upload follows canonical qualification')
   for (const command of ['node scripts/check-l12-architecture-lock.mjs', 'node scripts/test-ci-release-entry.mjs',
     'npm ci --prefer-offline --no-audit', 'npm run build', 'node scripts/test-release-status.mjs',
     './scripts/invoke-l12-tests.ps1 -Project ./TwelveLegions.Tests/TwelveLegions.Tests.csproj',
@@ -103,6 +121,18 @@ assert.throws(() => check(workflow.replace("hashFiles('ops/ci/l12-card-assets-in
 assert.throws(() => check(workflow.replace('      - name: 可信卡图精确缓存\n', '      - name: skipped-cache\n')), /input cache/)
 assert.throws(() => check(workflow.replace('node ops/ci/l12-package-policy.mjs $env:CI_EVENT_NAME', 'echo skip $env:CI_EVENT_NAME')), /source selection/)
 assert.throws(() => check(workflow.replace('id: policy', 'id: other')), /source selection/)
+for (const [from, to] of [
+  ['retention-days: 3', 'retention-days: 90'],
+  ['include-hidden-files: false', 'include-hidden-files: true'],
+  ['overwrite: false', 'overwrite: true'],
+  ['if-no-files-found: error', 'if-no-files-found: warn'],
+  ['${{ steps.canonical.outputs.manifest }}', '${{ env.L12_ARTIFACT_ROOT }}/**'],
+  ['${{ steps.canonical.outputs.releaseArchive }}', '/etc/legion12-test.env'],
+  ['${{ steps.canonical.outputs.cardAssetsArchive }}', '${{ env.L12_ARTIFACT_ROOT }}/private.db'],
+  ["if: success() && steps.policy.outputs.package == 'true' && steps.canonical.outcome == 'success'", 'if: always()'],
+  ['uses: actions/upload-artifact@v4', 'uses: actions/upload-artifact@v3'],
+]) assert.throws(() => check(workflow.replace(from, to)), /upload must retain/)
+assert.throws(() => check(workflow + '\n      - uses: actions/upload-artifact@v4\n        with:\n          path: .'), /only one authorized/)
 for (const marker of ['ops/windows/verify-l12.ps1', 'ops/ci/l12-canonical-artifacts.py',
   'verify --lock $lock --input-root $CardAssetRoot', 'prepare --lock $lock --output-root $CardAssetRoot --from-web',
   'if ($LASTEXITCODE -ne 0)', 'if ($canonicalExit -ne 0)', '-OutputDirectory $OutputRoot -CacheRoot $env:L12_WORK_CACHE -CardAssetDirectory $CardAssetRoot',
@@ -113,4 +143,4 @@ const ownerCall = canonicalCi.split('    & $env:L12_PWSH -NoProfile -NonInteract
 assert(ownerCall && !/-Force\b/.test(ownerCall), 'canonical owner cannot be forced; New-Item directory creation is unrelated')
 for (const project of ['TwelveLegions.Tests', 'TwelveLegions.Platform.Tests'])
   assert.ok(standard.includes(`'${project}/${project}.csproj'`), 'canonical owner retains both full suites')
-console.log('CI single release entry: current workflow and twenty negative mutations passed; mutually exclusive full verification/canonical lanes, exact input cache and failure propagation retained.')
+console.log('CI single release entry: current workflow, twenty original and ten upload negative mutations passed; canonical-only exact three-file publication, three-day retention and all original gates retained.')

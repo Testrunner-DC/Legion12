@@ -140,6 +140,21 @@ jobs:
           CI_HEAD: ${{ steps.policy.outputs.commit }}
         run: ./ops/ci/invoke-l12-canonical-package.ps1 -Commit $env:CI_HEAD -CardAssetRoot "$env:L12_WORK_CACHE/card-input" -OutputRoot "$env:L12_ARTIFACT_ROOT/canonical"
 
+      - name: 保存三件已核验标准产物（3天）
+        if: success() && steps.policy.outputs.package == 'true' && steps.canonical.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: l12-standard-${{ steps.policy.outputs.commit }}
+          path: |
+            ${{ steps.canonical.outputs.manifest }}
+            ${{ steps.canonical.outputs.releaseArchive }}
+            ${{ steps.canonical.outputs.cardAssetsArchive }}
+          retention-days: 3
+          if-no-files-found: error
+          compression-level: 0
+          include-hidden-files: false
+          overwrite: false
+
       - name: 安装前端依赖
         if: steps.policy.outputs.verify == 'true'
         working-directory: opcgpro-vue
@@ -184,4 +199,5 @@ jobs:
 
       # Both mutually exclusive lanes retain full rules/platform/frontend gates.
       # Only verify-l12.ps1 creates packages; CI never deploys or changes services.
-      # External attachment publication awaits its separate data-transfer choice.
+      # Human authorized only the three qualified standard outputs for 3 days.
+      # No directory/glob, logs, private evidence, database or runtime env upload.

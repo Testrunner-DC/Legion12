@@ -198,8 +198,7 @@ public sealed class RankedBroadcastSchemaMigrationTests
                 store.ClaimRankedBroadcast(viewer.Id, subscribedAt));
             var pending = path + ".ranked-broadcast-schema8.pending";
             Exception? failure;
-            using (var locked = new FileStream(path, FileMode.Open, FileAccess.Read,
-                       FileShare.None))
+            using (var blocked = new MirrorPublicationFailureScope(path))
                 failure = Record.Exception(() =>
                     L12PlatformStore.RevertRankedBroadcastObjectStorageForRehearsal(
                         store.TransactionalStoragePath));
@@ -552,5 +551,34 @@ public sealed class RankedBroadcastSchemaMigrationTests
         using var command = connection.CreateCommand();
         command.CommandText = sql;
         command.ExecuteNonQuery();
+    }
+}
+
+// A FileShare.None reader prevents rename on Windows, but an open file may be
+// replaced on Unix. Obstruct only the final pathname with an empty directory:
+// the real pending write/SQLite commit/rename still execute, and the original
+// mirror bytes are restored before the existing preservation/retry assertions.
+internal sealed class MirrorPublicationFailureScope : IDisposable
+{
+    private readonly string path;
+    private readonly string preserved;
+
+    public MirrorPublicationFailureScope(string path)
+    {
+        this.path = path;
+        preserved = path + ".publication-failure-" + Guid.NewGuid().ToString("N");
+        File.Move(path, preserved, overwrite: false);
+        try { Directory.CreateDirectory(path); }
+        catch
+        {
+            File.Move(preserved, path, overwrite: false);
+            throw;
+        }
+    }
+
+    public void Dispose()
+    {
+        Directory.Delete(path, recursive: false);
+        File.Move(preserved, path, overwrite: false);
     }
 }
