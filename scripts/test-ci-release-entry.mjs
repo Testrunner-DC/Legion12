@@ -20,6 +20,8 @@ const authorizedUpload = `        if: success() && steps.policy.outputs.package 
           overwrite: false`
 
 export function check(source) {
+  assert.match(source, /^concurrency:\n  group: l12-verify-\$\{\{ github\.ref \}\}\n  cancel-in-progress: false$/m,
+    'running verification must finish; ordinary synchronization must not cancel it or wait for it')
   assert.doesNotMatch(source, /tar\s+-[a-zA-Z]*c|dotnet\s+publish|releaseSha256\s*"?\s*:/,
     'CI must not publish a second hand-assembled legacy deployment artifact')
   assert.equal((source.match(/actions\/upload-artifact/g) || []).length, 1, 'only one authorized three-file upload')
@@ -133,6 +135,7 @@ for (const [from, to] of [
   ['uses: actions/upload-artifact@v4', 'uses: actions/upload-artifact@v3'],
 ]) assert.throws(() => check(workflow.replace(from, to)), /upload must retain/)
 assert.throws(() => check(workflow + '\n      - uses: actions/upload-artifact@v4\n        with:\n          path: .'), /only one authorized/)
+assert.throws(() => check(workflow.replace('cancel-in-progress: false', 'cancel-in-progress: true')), /running verification must finish/)
 for (const marker of ['ops/windows/verify-l12.ps1', 'ops/ci/l12-canonical-artifacts.py',
   'verify --lock $lock --input-root $CardAssetRoot', 'prepare --lock $lock --output-root $CardAssetRoot --from-web',
   'if ($LASTEXITCODE -ne 0)', 'if ($canonicalExit -ne 0)', '-OutputDirectory $OutputRoot -CacheRoot $env:L12_WORK_CACHE -CardAssetDirectory $CardAssetRoot',
@@ -143,4 +146,4 @@ const ownerCall = canonicalCi.split('    & $env:L12_PWSH -NoProfile -NonInteract
 assert(ownerCall && !/-Force\b/.test(ownerCall), 'canonical owner cannot be forced; New-Item directory creation is unrelated')
 for (const project of ['TwelveLegions.Tests', 'TwelveLegions.Platform.Tests'])
   assert.ok(standard.includes(`'${project}/${project}.csproj'`), 'canonical owner retains both full suites')
-console.log('CI single release entry: current workflow, twenty original and ten upload negative mutations passed; canonical-only exact three-file publication, three-day retention and all original gates retained.')
+console.log('CI single release entry: current workflow, twenty original, ten upload and one concurrency negative mutations passed; running verification preserved, exact three-file publication and all original gates retained.')
