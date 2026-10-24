@@ -52,9 +52,12 @@ assert.equal(report.transport.length,receipts);assert.equal(report.errors.length
 const start=entry.indexOf('const repo ='),end=entry.indexOf('const report =',start)
 assert.ok(start>0&&end>start)
 const prefix=entry.slice(start,end).replaceAll('import.meta.dirname',JSON.stringify(import.meta.dirname))
+// These paths are consumed only by the inert filesystem below. Use this host's
+// absolute spelling instead of feeding a Windows drive string to POSIX path.
+const syntheticRoot=path.resolve(import.meta.dirname,'synthetic-only')
 for(const rejected of [false,true]){
-  const parent={env:{L12_TUTORIAL_UI_OUTPUT:'D:/GPT/Legion12/artifacts/synthetic-only',
-    L12_TUTORIAL_UI_CACHE:'D:/GPT/Legion12/cache/primary/synthetic-only',TEMP:'C:/must-not-write',TMP:'C:/must-not-write',TMPDIR:'C:/must-not-write'}}
+  const parent={env:{L12_TUTORIAL_UI_OUTPUT:path.join(syntheticRoot,'evidence'),
+    L12_TUTORIAL_UI_CACHE:path.join(syntheticRoot,'cache'),TEMP:'C:/must-not-write',TMP:'C:/must-not-write',TMPDIR:'C:/must-not-write'}}
   const created=[]
   const run=()=>new Function('fs','path','process','execFileSync','assert',prefix)(
     {existsSync:()=>false,mkdirSync:where=>{assert.equal(parent.env.TEMP,parent.env.L12_TUTORIAL_UI_CACHE);created.push(where)}},
