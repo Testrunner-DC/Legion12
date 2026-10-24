@@ -13,7 +13,7 @@ const repo = path.resolve(front, '..')
 const output = process.env.L12_TUTORIAL_REWORK_OUTPUT
   || (process.env.L12_ARTIFACT_ROOT ? path.join(process.env.L12_ARTIFACT_ROOT, 'tutorial-rework-20261018', 'focused-current') : '')
 assert.ok(output, 'L12_TUTORIAL_REWORK_OUTPUT or initialized L12_ARTIFACT_ROOT is required')
-const powershell = process.env.SystemRoot ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell.exe'
+const powershell = process.env.L12_PWSH || (process.platform === 'win32' ? 'pwsh.exe' : 'pwsh')
 execFileSync(powershell, ['-NoProfile', '-Command',
   `. '${path.join(repo, 'ops/windows/L12GeneratedStorage.ps1').replaceAll("'", "''")}'; `
   + '$null=Assert-L12GeneratedPath -Path $env:L12_TUTORIAL_REWORK_OUTPUT -Purpose "tutorial guidance focused evidence"'], {

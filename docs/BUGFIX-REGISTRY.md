@@ -1,16 +1,11 @@
 # Legion12 Bug 修复记录
 
-## OPS-20261024-CI-HOST-COPY｜发布宿主绑定与唯一入口普通复制
+## OPS-20261024-CI-HOST-COPY｜既有CI宿主、只读基准与唯一复制入口
 
-- 实际808fe7cd的Linux宿主／诊断已过，下一失败已证：教学pure测试用D盘合成根触发POSIX绝对路径拒绝。只改惰性fs／exec桩中的路径，未创建实体目录、启动教学或改真实入口；仍核物理guard拒绝前无目录／TEMP变更、成功时同步三个TEMP变量。原27通过，单叶隔离标准前端Batch87970 exit0／361 UI／类型／双Vite通过；标准build直达119脚本同类扫描区分真正入口与惰性输入，不猜全部跨平台通过。实际新CI尚待，原失败linux-ci-808fe7cd.json保留。
-- 70cafdc3实际下一失败摘要被平台截为4096字符，原8000字符本地限制不足以保关键尾部；新首因未知。两步共同按UTF-8末尾3000字节且不切断字符截取，并统一native UTF-8捕获，原完整日志不删／不裁。新增中文长载荷实测先发现本机GBK错解（首失败保留），修编码后7组真实包装体、14破坏及标准工具Batch通过，不放宽退出码／全字节日志／性能判定。
-- 实际Linux40060673994已通过宿主／前置门，前端test-ws-burst-observer因硬读D历史原件ENOENT。原9056B以只读txt纳仓库并固定-text，SHA9CF6B5E3与旧原件相同；只改测试读取位置，保留原哈希、逆还原与3秒／60连接的所有语义。扫描test-*.mjs历史读取，另处pressure-execution为具名独立现场入口、不在标准npm build，未混改。三叶隔离标准前端Batch29076 exit0，性能全链／361 UI／类型／双Vite通过（6B455EE3）；这不是实际Linux构建或canonical包成功，须看新CI。原失败摘要和证据保留，已结束输出精确回收1341476681B，不保冗余全树。
-- 新dfb268dd真实Linux失败已证与强制退出风险不同：exit7原始合成摘要完整55字符，但stdout插在stderr两行之间，旧断言错误要求跨流连续。修正为stdout恰一次、stderr每行全字节及原顺序，无缺失／截断／乱序容忍，保留10k载荷、真实0／7／13退出码和限长转义。三合法交错＋三破坏反例、实际6步骤组与单叶标准Batch42517通过；原860与dfb两个失败摘要分别保全，Linux新run尚未证明通过。
-- 86067c05真实Ubuntu23宿主测试通过；后续新增夹具的原生输出留存断言失败（run40059855492，原摘要保留），不是应用已执行的证据。夹具改用process.exitCode，避免[Node文档所述强制退出截断异步stdout/stderr](https://nodejs.org/docs/latest-v22.x/api/process.html#processexitcode)风险；原全量输出／退出码／摘要断言不放宽，并补有界合成失败定位。本地5组与单叶Batch通过，是否解决真实Linux失败待新run；不冒旧前端根因。自定义入口误用不存在的参数在测试前拒绝保留，改现有env不改产品。
-- 实际ae1da5bc CI在派发前0job失败：本次新job.env错误引用runner.temp（[官方作用域表](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability)该层不提供runner）。只将配置放到可用的步骤env，完整13项经GITHUB_ENV导出；新实际步骤体／后续进程4组、12反例并拒绝真实失败版本、三叶标准Batch通过。原失败保留，不把本地通过或这次启动纠正冒完整Linux资格，也不是旧CI前端失败的已证原因。
-- 目标5既有入口的Windows假设阻止Linux资格；仅工具外围修当前宿主可执行文件／runner.temp生成根、单标准构建原生失败透传、九处原生文件参数与Python定位及输出物理guard。原C禁写、文件存在、精确包／runtime／卡图哈希、150MiB预算、排空和旧数据规则均不变。
-- 三复制入口统一普通文件组件，排除原dependency／dist／cards目录但不遍历其跳转，其他链接／非空目标／源目标物理重叠拒绝。新增祖先跳转真RED（工具输出01df55，无Tee文件）在源根物理解析后通过19场；9真实原生参数往返、原发布缓存／dirty／篡改／失效回归通过。23宿主／原23存储／3实际包装体退出码／10破坏反例保留，两个新增QA错误与旧literal失败区分，不降低门槛。
-- 7工具干净标准Batch8378规则／2338平台／361 UI／类型／双Vite全过；后续5工具标准Batch及唯一读取变更脚本的4项已编译测试过，12源均与隔离副本实核。复用不受影响的同源后端／产品证据；不是新单轮12叶全Batch或完整canonical包，不冒LinuxCI成功。唯一ci-host-20261024/main-acceptance.json及canonical-copy-acceptance.json；无线上、维护或业务数据变动。
+- 共因与范围：原Windows宿主／原生文件参数、robocopy及强制QA的本机历史路径不能直接在Linux执行；同族还纠正Main新引入的job.env上下文、stdout／stderr合法交错误判、过长注释截断与中文解码、教学惰性测试D路径。最后实际8c315e29错误已由官方公开页确认：guidance／progress忽略L12_PWSH而调用powershell.exe，三教学QA现统一既有绑定／宿主fallback。以上仅P2工具，不改产品规则、教学步骤、性能或隐私。
+- 同类扫描与保护：标准build直达119脚本；8处Windows终端调用区分必跑与可选浏览器模式，修2处忽略绑定并补response fallback，不改其他现场入口。原物理C禁写、路径／链接／重叠拒绝、schema／hash／runtime／150MiB预算／排空／缓存dirty与例外过期保护都保留。三目录复制共用普通组件；9056B基准以9CF6B5E3原SHA只读纳仓库，不执行历史文件，原逆还原／3秒／60接收者断言不降。
+- 验收与失败：本地7＋5分段标准Batch及8378／2338／361 UI／类型／双Vite有效，复制19场、9原生文件参数与原发布反例通过；实际Linux23宿主与7包装体已过。最后四叶10组真实步骤体（含三QA真实启动前缀、物理拒绝零写入）及干净标准前端Batch66234 exit0／145D15BF、32／6／51教学纯回归和双构建通过。不是新合并整轮或完整Linux／canonical包；各失败原件、计数、源SHA和同步链集中ci-host-20261024，不删除、不改成成功。
+- 可信素材续验：原工具／锁不改，固定官方源全1840图＋2锁内元数据／242903364B验证及唯一同源324＋42审计通过，trusted-card-input-20261024/full-public-qualification.json。保一份热输入供canonical，不造第二打包器或重复下载。回滚面是各具名工具／QA提交；生产服务、维护、业务数据和已验负载无变动，完整自动CI包待后续真实验证。
 
 ## UI-20261024-LEGION-CENTER-LANDING｜同一登场事务的中央展示与落地
 

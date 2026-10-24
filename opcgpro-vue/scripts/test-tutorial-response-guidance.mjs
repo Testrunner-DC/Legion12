@@ -11,7 +11,7 @@ const repo = path.dirname(front)
 const output = process.env.L12_TUTORIAL_RESPONSE_OUTPUT
   || (process.env.L12_ARTIFACT_ROOT ? path.join(process.env.L12_ARTIFACT_ROOT, 'tutorial-response-guidance-20261019') : '')
 assert.ok(output, 'explicit governed D/E output or initialized L12_ARTIFACT_ROOT is required')
-execFileSync(process.env.L12_PWSH || 'powershell.exe', ['-NoProfile', '-Command',
+execFileSync(process.env.L12_PWSH || (process.platform === 'win32' ? 'pwsh.exe' : 'pwsh'), ['-NoProfile', '-Command',
   `. '${path.join(repo, 'ops/windows/L12GeneratedStorage.ps1').replaceAll("'", "''")}'; `
   + '$null=Assert-L12GeneratedPath -Path $env:L12_TUTORIAL_RESPONSE_OUTPUT -Purpose "response teaching focused evidence"'], {
   env: { ...process.env, L12_TUTORIAL_RESPONSE_OUTPUT: output }, stdio: 'pipe',

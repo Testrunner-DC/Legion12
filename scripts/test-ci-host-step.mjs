@@ -38,6 +38,32 @@ function assertCapturedNativeLines(log, stderr) {
 }
 let cases = 0
 try {
+  for (const name of ['test-tutorial-guidance.mjs', 'test-tutorial-progress-recovery.mjs', 'test-tutorial-response-guidance.mjs']) {
+    const url = new URL('../opcgpro-vue/scripts/' + name, import.meta.url)
+    const source = fs.readFileSync(url, 'utf8')
+    const start = source.indexOf(name === 'test-tutorial-response-guidance.mjs' ? 'const front =' : 'const scriptDir =')
+    const end = source.indexOf('fs.mkdirSync(output,', start)
+    assert(start >= 0 && end > start)
+    const prefix = source.slice(start, end).replaceAll('import.meta.url', JSON.stringify(url.href))
+    for (const rejected of [false, true]) {
+      let calls = 0, writes = 0
+      const run = () => new Function('path', 'process', 'execFileSync', 'fs', 'assert', 'fileURLToPath',
+        prefix + ';fs.mkdirSync(output,{recursive:true})')(path,
+        { platform: process.platform, env: { L12_ARTIFACT_ROOT: root, L12_PWSH: pwsh, SystemRoot: 'C:/must-not-select-legacy-host' } },
+        (executable, args, options) => {
+          calls++
+          assert.equal(executable, pwsh, `${name} must prefer the initialized absolute host, not legacy Windows discovery`)
+          assert(args.at(-1).includes('Assert-L12GeneratedPath'))
+          assert(Object.values(options.env).some(value => value === root || String(value).startsWith(root + path.sep)))
+          if (rejected) throw new Error('SYNTHETIC_PHYSICAL_ROOT_REFUSED')
+        }, { mkdirSync: () => writes++ }, assert, fileURLToPath)
+      if (rejected) assert.throws(run, /SYNTHETIC_PHYSICAL_ROOT_REFUSED/)
+      else run()
+      assert.equal(calls, 1)
+      assert.equal(writes, Number(!rejected), 'refused physical root must precede every evidence write')
+    }
+    cases++
+  }
   for (const log of ['native fixture stdout\nfirst\nsecond\n', 'first\nnative fixture stdout\nsecond\n', 'first\nsecond\nnative fixture stdout\n'])
     assertCapturedNativeLines(log, 'first\nsecond')
   for (const log of ['first\nnative fixture stdout\n', 'first\nnative fixture stdout\nsecon\n', 'second\nnative fixture stdout\nfirst\n'])
@@ -156,4 +182,4 @@ try {
   }
   fs.rmdirSync(root)
 }
-console.log(`Actual CI step bodies passed: ${cases} groups (native stream interleaving/loss guards;13 bindings/fresh later step;host-error annotation;4 native exit/stdout/stderr cases including UTF-8 summary); standard npm mocked, no dependency install/product load; fixtures removed.`)
+console.log(`Actual CI step bodies passed: ${cases} groups (3 real tutorial QA prefixes bound-host/physical refusal;native stream interleaving/loss guards;13 bindings/fresh later step;host-error annotation;4 native exit/stdout/stderr cases including UTF-8 summary); standard npm mocked, no dependency install/product load; fixtures removed.`)
