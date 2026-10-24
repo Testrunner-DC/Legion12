@@ -1,6 +1,6 @@
 # 十二军团任务台账
 
-接续2026-10-24动效第一片（P2/P4）：Main核93EE8760 GameBoard＋2C11FE49 QA、完整读源及看实际两图，原12RED保留，最终16场209断言／6自由命令／6提示续播探针、1防守不抵挡及3观战局部链通过。只合并authority pending与真实演出busy封锁自由操作，精确Prompt／防守续办不堵；无网络／计时／规则／持久格式变更。Main更新一处原UI合同以保相同语义，不删保护；干净候选标准Batch待，唯一free-action-presentation-gate-20261024-main-acceptance。合成authority／假socket／鼠标模拟不冒完整真实恢复、真机或观战全链完成；阶段2及天灾视觉尚未授租约，开局草稿三叶仍不混本片。
+接续2026-10-24动效第一片（P2/P4）Main接受：93EE8760 GameBoard＋2C11FE49 QA完整读源／看图，原12RED保留，最终16场209断言／6自由命令／6续播探针、1防守续办及3观战局部链过。a713f660干净Batch的3旧literal合同失败保留，87b5dcbb仅对齐新分流字面形状、不删保护；从失败点实际续验40原步骤，361 UI／类型／双Vite全过（90CC11FA），原有效前缀复用，不冒新单轮Batch exit0。原始混合换行与Git LF文本全等，规范产品7BAF9848，预检中断保留。376520880B临时候选精确清除，唯一free-action-presentation-gate-20261024-main-acceptance/main-acceptance.json。无网络／计时／规则／持久格式／部署变更，合成authority／假socket／鼠标模拟不冒真恢复／真机／观战全链；后续阶段先只读具名计划，开局三草稿不混。
 
 接续2026-10-24 QA账本纳管（P2测试接入，不改产品）：原sink／client原字节纳仓库，Reader只提取原四函数；正常、恢复、本地消费者及测试转仓库，9个SHA／7路径强核，三个原代码仅留不可变证据。70仓库源／25相对依赖、11历史执行／8历史证据，19输入实际逐SHA通过，完整闭包false。新28＋原47归属、真实执行21（normal2＋local2实际sink）和恢复24通过，含DPAPI／CurrentUserOnly／完整60＋9／错误run及本地读者；零网络和正式数据变更。独审无实质阻断，c877d245提交后干净候选标准Batch实际exit0／类型／双Vite，Git blob及实际Windows换行过滤三源字节全同，无.git镜像96文件／47例成功且拒篡改。376478695B临时候选及325202B纯合成缓存精确清除，真实数据／依赖／证据保留；唯一qa-owned-ledger-20261024/main-acceptance.json。开局三草稿与动效两叶不混本批；后者已冻结返还，Main验收前不进入下一阶段。
 

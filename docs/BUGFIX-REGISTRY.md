@@ -5,7 +5,8 @@
 - 人类直接要求动作和观战连续、相关动效未播完不释放下一自由操作。共因是pendingAction只管权威往返，回包清掉它后真实presentation仍忙，出牌／移动／进攻／主动能力／结束回合表面与命令边界提前开放。本片沿既有cardPresentationBusy加合并门，不新增服务端锁或暂停计时；提示仅按当前promptId回传原不可变绑定，DefenseChoice受控防守者保必要续办，持久连线不当busy。
 - 全同类扫描GameBoard全部command／gameAction、手牌／双场面操作与放置／主宰／试炼／墓地入口；普通命令统一freeCommand，明确当前Prompt和防守分流。只修改GameBoard，开局PromptOverlay／DeckCover／specialAssets草稿不纳入；既有UI合同用新分流语义替代旧command字面形状，原最小化Prompt封锁与绑定保护全部保留。
 - Main完整读最终两叶、核93EE8760／2C11FE49与5B19D66A报告，看桌面不抵挡及竖屏续播图。原12玩家RED／3观战过保留；最终16场209断言，6忙时自由命令和6提示后续播探针确实执行，1当前防守续办、3观战重传／换局／离房通过。真实组件和net.gameAction但合成authority／假socket；无生产入站／服务端ACK／真触摸／减少动态／you=1观战或全链同序断言。
-- 唯一free-action-presentation-gate-20261024-main-acceptance；源码／局部证据接受，提交后干净标准Batch仍待。未部署、未关线上Bug、不提前实施军团落地／进攻接触／天灾后续阶段，回滚面仅该前端门与合同。
+- a713f660标准干净Batch在三旧literal合同失败，C1EB35E5原件保留；87b5dcbb只同步奥西里斯freeCommand、额外busy的双场面布阵限制、continuePrompt格位分流，原功能保护保留。从失败处实际续验40原步骤，361 UI／类型／双Vite过，90CC11FA；原通过前缀复用，不冒新单轮Batch exit0。原93EE与Git LF产品7BAF9848文本全等，预检原字节不等中断单列，不放松账本等具名hash-bound源。
+- 唯一free-action-presentation-gate-20261024-main-acceptance/main-acceptance.json；Main本地接受，两bundle实际核新提示，376520880B临时候选已精确回收，源码／依赖／原失败保留。未部署、未关线上Bug、不提前实施军团落地／进攻接触／天灾后续阶段，回滚面仅该前端门与合同。
 
 ## QA-20261024-LEDGER-CODE-OWNERSHIP｜账本代码不再依赖历史artifact执行
 

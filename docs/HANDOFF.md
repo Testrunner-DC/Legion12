@@ -1,10 +1,11 @@
 # 十二军团简短交接
 
-## 2026-10-24 动效第一片Main独验｜源码／实际局部链接受，待干净Batch
+## 2026-10-24 动效第一片Main接受｜干净标准前端失败点续验通过
 
 - 来源按人类要求分阶段；本片只修自由操作提前释放，不含军团重落地／攻击分段／天灾新演出。GameBoard 93EE8760统一pending＋真实presentation busy，当前Prompt经精确绑定续办、防守Decision结构分流，未改net／服务器／计时或持久连线；PromptOverlay开局草稿不混入。
 - Main完整读两叶diff／QA，核冻结源和5B19D66A原报告，看竖屏续播与桌面不抵挡图；原12玩家UI RED＋3观战通过保留，最终16场209断言全过，6忙时自由命令／6提示后续播命令探针真实执行，1防守不抵挡正常，3观战重传不重播及换局／离房清退通过。合成authority写入／假socket／鼠标尺寸模拟不冒生产入站ACK、真触摸、减少动态或you=1观战覆盖。
-- Main只另把现有UI合同的旧统一command字面断言更新为freeCommand封锁＋精确Prompt绑定＋防守分流的语义保护，不删原断言。下一单独提交后三叶＋玩家账本与记录进入干净D标准Batch；未接受前来源继续冻结，不进入阶段2、不部署。唯一free-action-presentation-gate-20261024-main-acceptance。
+- a713f660干净标准Batch在3条旧literal合同失败，原C1EB35E5保留；87b5dcbb只同步奥西里斯命令、战斗布阵和格位Prompt三条新分流形状，全部功能保护保留。从实际失败点续跑原链40步骤，361 UI／类型／双Vite全部通过、90CC11FA；复用原有效前缀，不冒单轮新Batch exit0。原始93EE与Git规范LF的7BAF9848文本全等，原字节guard预检中断保留，未改全局Git或产品。两真实bundle均核新门控文案。
+- 唯一free-action-presentation-gate-20261024-main-acceptance/main-acceptance.json；3158文件376520880B干净临时候选已精确回收，依赖／源码／全部失败证据保留。同步见synchronization，不部署／线上关单；来源第一片接受并保持冻结，下一仅第二片具名只读方案，不越过Main租约进入其他视觉阶段。
 
 ## 2026-10-24 QA账本代码纳管｜提交后镜像与标准Batch接受
 
