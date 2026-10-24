@@ -73,7 +73,14 @@ let recoverableFailure = false
 let recoveryRequested = false
 let recoveryVisible = false
 let lastRecoveryAt = Number.NEGATIVE_INFINITY
+let delayedRecoveryTimer: number | null = null
+let delayedRecoveryRequested = false
+let delayedRecoveryAttempts = 0
 const RECOVERY_COOLDOWN_MS = 30_000
+// Native image errors expose neither status nor Retry-After. Wait beyond the
+// current 60s admission window without adding a second fetch for every image.
+const DELAYED_RECOVERY_BASE_MS = 65_000
+const MAX_DELAYED_RECOVERIES = 2
 const MAX_SOURCE_RETRIES = 2
 const SOURCE_RETRY_DELAY_MS = 300
 let resolvedIdentity = `${props.cardId}\n${props.legacyUrl ?? ''}\n${props.intent}`
@@ -94,12 +101,30 @@ function clearSourceRetryTimers() {
   for (const timer of sourceRetryTimers) window.clearTimeout(timer)
   sourceRetryTimers.clear()
 }
+function clearDelayedRecoveryTimer() {
+  if (delayedRecoveryTimer !== null) window.clearTimeout(delayedRecoveryTimer)
+  delayedRecoveryTimer = null
+}
+function scheduleDelayedRecovery() {
+  if (disposed || !recoverableFailure || delayedRecoveryTimer !== null || delayedRecoveryRequested
+    || delayedRecoveryAttempts >= MAX_DELAYED_RECOVERIES || activeSource.value.kind !== 'placeholder') return
+  const generation = refreshGeneration, watchGeneration = recoveryWatchGeneration, identity = resolvedIdentity
+  delayedRecoveryTimer = window.setTimeout(() => {
+    delayedRecoveryTimer = null
+    if (disposed || generation !== refreshGeneration || watchGeneration !== recoveryWatchGeneration
+      || identity !== resolvedIdentity || !recoverableFailure || activeSource.value.kind !== 'placeholder') return
+    delayedRecoveryRequested = true
+    recoveryRequested = true
+    maybeRecoverImage()
+  }, DELAYED_RECOVERY_BASE_MS * (delayedRecoveryAttempts + 1))
+}
 function stopRecoveryMonitoring() {
   recoveryWatchGeneration++
   recoveryObserver?.disconnect(); recoveryObserver = null
   window.removeEventListener('online', onNetworkRecovery)
   document.removeEventListener('visibilitychange', onRecoveryVisibility)
   cancelCardRecovery(recoveryOwner)
+  clearDelayedRecoveryTimer(); delayedRecoveryRequested = false
   recoverableFailure = false; recoveryRequested = false; recoveryVisible = false
 }
 function maybeRecoverImage() {
@@ -110,8 +135,13 @@ function maybeRecoverImage() {
     if (disposed || generation !== refreshGeneration || identity !== resolvedIdentity
       || !recoverableFailure || !recoveryRequested || !recoveryVisible
       || document.visibilityState !== 'visible' || navigator.onLine === false) return
-    recoveryRequested = false
     if (performance.now() - lastRecoveryAt < RECOVERY_COOLDOWN_MS) return
+    if (delayedRecoveryRequested) {
+      if (delayedRecoveryAttempts >= MAX_DELAYED_RECOVERIES) return
+      delayedRecoveryAttempts++
+    }
+    recoveryRequested = false; delayedRecoveryRequested = false
+    clearDelayedRecoveryTimer()
     lastRecoveryAt = performance.now()
     clearSourceRetryTimers(); sourceRetryCounts.clear()
     highResolutionGeneration++; highResolutionPending = false
@@ -129,7 +159,8 @@ function onRecoveryVisibility() {
   else maybeRecoverImage()
 }
 function monitorFailedImage() {
-  if (recoverableFailure || disposed) return
+  if (disposed) return
+  if (recoverableFailure) { scheduleDelayedRecovery(); return }
   recoverableFailure = true
   const generation = ++recoveryWatchGeneration
   window.addEventListener('online', onNetworkRecovery)
@@ -144,6 +175,7 @@ function monitorFailedImage() {
     })
     recoveryObserver.observe(imageRoot.value)
   }
+  scheduleDelayedRecovery()
   // Without an observer fail closed: don't wake offscreen images as a whole-pool fallback.
 }
 
@@ -152,6 +184,7 @@ async function refresh() {
   const generation = ++refreshGeneration
   stopRecoveryMonitoring(); clearSourceRetryTimers()
   lastRecoveryAt = Number.NEGATIVE_INFINITY
+  delayedRecoveryAttempts = 0
   highResolutionGeneration += 1
   highResolutionPending = false
   const identityChanged = expected !== resolvedIdentity

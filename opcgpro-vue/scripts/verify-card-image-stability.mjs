@@ -71,6 +71,7 @@ const cardId = ref('CARD-A')
 const fit = ref('contain')
 const legacyUrl = ref(undefined)
 const recoveryVisible = ref(false), recoveryOffscreen = ref(false), recoveryId = ref('RECOVER'), thumbnailsVisible = ref(false)
+const cooldownSecondaryVisible = ref(false), cooldownSecondaryOffscreen = ref(true)
 const cornersVisible = ref(false)
 ${listSelectorCode}
 const uploadedCard = { id: 'CARD-A', imageUrl: ${JSON.stringify(uploadedOriginal)}, thumbnailUrl: ${JSON.stringify(uploadedThumb)} }
@@ -87,6 +88,8 @@ window.__cardHarness = {
   async setRecoveryId(value) { recoveryId.value = value; await nextTick() },
   async showThumbnails() { thumbnailsVisible.value = true; await nextTick() },
   async showCorners() { thumbnailsVisible.value = false; cornersVisible.value = true; await nextTick() },
+  async showCooldownFixtures(value = true) { recoveryOffscreen.value = false; recoveryVisible.value = value; cooldownSecondaryVisible.value = value; await nextTick() },
+  async revealCooldownSecondary() { cooldownSecondaryOffscreen.value = false; await nextTick() },
 }
 
 createApp({
@@ -104,6 +107,9 @@ createApp({
       })] : []),
       recoveryVisible.value ? h('section', { id: 'recovery-slot', style: { position: 'fixed', top: '8px', left: '8px', width: '100px', height: '140px', transform: recoveryOffscreen.value ? 'translateY(200vh)' : 'none' } }, [h(CardImage, {
         class: 'recovery-image', cardId: recoveryId.value, alt: 'recovery fixture', intent: 'thumb', eager: true,
+      })]) : null,
+      cooldownSecondaryVisible.value ? h('section', { style: { position: 'fixed', top: '8px', left: '132px', width: '100px', height: '140px', transform: cooldownSecondaryOffscreen.value ? 'translateY(200vh)' : 'none' } }, [h(CardImage, {
+        class: 'cooldown-secondary-image', cardId: 'RECOVER-SECOND', alt: 'offscreen cooldown fixture', intent: 'thumb', eager: true,
       })]) : null,
       thumbnailsVisible.value ? h('section', { id: 'thumbnail-slot' }, [
         h(CardImage, { class: 'archive-thumb-probe', cardId: uploadedCard.id, legacyUrl: archiveListImageUrl(uploadedCard), alt: 'thumbnail probe', intent: 'thumb', eager: true }),
@@ -153,7 +159,7 @@ const server = await createServer({
       devServer.middlewares.use((request, response, next) => {
         const url = new URL(request.url || '/', 'http://127.0.0.1')
         response.once('finish', () => {
-          if (url.pathname.startsWith('/__card_image__/')) requestTimeline.push({ event: 'response', pathname: url.pathname, status: response.statusCode, at: Date.now(), recoveryAvailable })
+          if (url.pathname.startsWith('/__card_image__/')) requestTimeline.push({ event: 'response', pathname: url.pathname, status: response.statusCode, retryAfter: response.getHeader('Retry-After'), at: Date.now(), recoveryAvailable })
         })
         if (url.pathname === '/card-assets/card-assets.manifest.json') {
           countRequest(url.pathname)
@@ -170,7 +176,9 @@ const server = await createServer({
           setTimeout(() => {
             response.setHeader('Cache-Control', 'no-store')
             if (failThisRequest) {
-              response.statusCode = 503
+              const cooldown429 = process.env.L12_CARD_IMAGE_QA_STAGE === 'cooldown' && stem.startsWith('recover')
+              response.statusCode = cooldown429 ? 429 : 503
+              if (cooldown429) response.setHeader('Retry-After', '60')
               response.end('transient card image failure')
               return
             }
@@ -209,7 +217,7 @@ const server = await createServer({
 
 let browser, activePage
 const stage = process.env.L12_CARD_IMAGE_QA_STAGE || 'full'
-assert(['full', 'recovery', 'pair', 'retirement'].includes(stage), 'Unknown QA stage')
+assert(['full', 'recovery', 'pair', 'retirement', 'cooldown'].includes(stage), 'Unknown QA stage')
 const report = { status: 'running', output, browserChannel, stage, requestedProfiles: [], finishedProfiles: [], profiles: [], checkpoints: [], pairs: [], errors: [], assertions: 0 }
 function check(value, message) {
   try {
@@ -232,10 +240,11 @@ try {
     { name: 'mobile-landscape-120hz', intervalMs: 8.33, viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true },
   ]
   const selectedProfile = process.env.L12_CARD_IMAGE_QA_PROFILE
-  assert(selectedProfile === undefined || profiles.some(profile => profile.name === selectedProfile), 'Empty, unknown or duplicate profile selection is refused')
+  const eligibleProfiles = stage === 'cooldown' ? profiles.filter(profile => profile.name !== 'desktop-120hz') : profiles
+  assert(selectedProfile === undefined || eligibleProfiles.some(profile => profile.name === selectedProfile), 'Empty, unknown or duplicate profile selection is refused')
   if (stage === 'retirement') assert.equal(selectedProfile, 'desktop-60hz', 'Retirement diagnosis is one desktop profile only')
-  report.requestedProfiles = profiles.filter(profile => selectedProfile === undefined || profile.name === selectedProfile).map(profile => profile.name)
-  for (const profile of profiles.filter(profile => !selectedProfile || profile.name === selectedProfile)) {
+  report.requestedProfiles = eligibleProfiles.filter(profile => selectedProfile === undefined || profile.name === selectedProfile).map(profile => profile.name)
+  for (const profile of eligibleProfiles.filter(profile => selectedProfile === undefined || profile.name === selectedProfile)) {
     requestCounts.clear()
     requestTimeline.length = 0
     recoveryAvailable = false
@@ -246,6 +255,59 @@ try {
     page.on('pageerror', error => pageErrors.push(error.message))
     await page.goto(`http://127.0.0.1:${port}/__card_image_stability__`, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('.primer-image img')?.naturalWidth > 0)
+
+    if (stage === 'cooldown') {
+      const result = { name: profile.name, scope: 'real local HTTP 429; unmodified product timers; no online event before recovery' }
+      report.profiles.push(result)
+      const primaryPath = '/__card_image__/recover-low.svg', secondaryPath = '/__card_image__/recover-second-low.svg'
+      await page.evaluate(() => {
+        window.__cooldownOnlineEvents = 0
+        window.addEventListener('online', () => window.__cooldownOnlineEvents++)
+      })
+      await page.evaluate(() => window.__cardHarness.showCooldownFixtures())
+      await page.waitForFunction(() => ['.recovery-image', '.cooldown-secondary-image']
+        .every(selector => document.querySelector(selector)?.dataset.source === 'placeholder'))
+      const failedResponses = requestTimeline.filter(event => event.event === 'response' && event.pathname === primaryPath)
+      check(failedResponses.length === 3 && failedResponses.every(event => event.status === 429 && event.retryAfter === '60'),
+        `${profile.name}: initial primary attempts are exactly three real 429 responses with Retry-After 60`)
+      check(requestCounts.get(secondaryPath) === 3, `${profile.name}: offscreen initial retry budget remains three attempts`)
+      result.failureCompletedAt = failedResponses.at(-1)?.at
+      recoveryAvailable = true
+      await page.waitForTimeout(1_000)
+      check(requestCounts.get(primaryPath) === 3 && requestCounts.get(secondaryPath) === 3,
+        `${profile.name}: becoming available does not bypass the delayed recovery cooldown`)
+      await page.waitForFunction(() => document.querySelector('.recovery-image img')?.currentSrc.includes('/recover-low.svg')
+        && document.querySelector('.recovery-image img')?.naturalWidth > 0, undefined, { timeout: 72_000 })
+      const restoredRequest = requestTimeline.find(event => event.event === 'request' && event.pathname === primaryPath && event.count === 4)
+      result.recoveryRequestedAt = restoredRequest?.at
+      result.realCooldownMilliseconds = result.recoveryRequestedAt - result.failureCompletedAt
+      check(result.realCooldownMilliseconds >= 65_000, `${profile.name}: actual original URL recovery waits the full product 65s cooldown (${result.realCooldownMilliseconds}ms)`)
+      check(requestCounts.get(primaryPath) === 4, `${profile.name}: visible continuously-online recovery uses the original 3+1 request budget`)
+      await page.waitForTimeout(250)
+      check(requestCounts.get(secondaryPath) === 3, `${profile.name}: offscreen image remains at three requests after its cooldown elapsed`)
+      result.onlineEventsBeforeRecovery = await page.evaluate(() => window.__cooldownOnlineEvents)
+      check(result.onlineEventsBeforeRecovery === 0, `${profile.name}: no synthetic or real online event caused cooldown recovery`)
+      await page.evaluate(() => window.__cardHarness.revealCooldownSecondary())
+      await page.waitForFunction(() => document.querySelector('.cooldown-secondary-image img')?.currentSrc.includes('/recover-second-low.svg')
+        && document.querySelector('.cooldown-secondary-image img')?.naturalWidth > 0, undefined, { timeout: 3_000 })
+      check(requestCounts.get(secondaryPath) === 4, `${profile.name}: entering the viewport spends exactly one pending automatic retry`)
+      await page.evaluate(() => { for (let index = 0; index < 5; index++) window.dispatchEvent(new Event('online')) })
+      await page.waitForTimeout(350)
+      check(requestCounts.get(primaryPath) === 4 && requestCounts.get(secondaryPath) === 4,
+        `${profile.name}: successful cooldown recovery is not reread on repeated online`)
+      await page.screenshot({ path: path.join(output, `${profile.name}-cooldown-recovery.png`) })
+      await page.evaluate(() => window.__cardHarness.showCooldownFixtures(false))
+      await page.waitForTimeout(350)
+      check(requestCounts.get(primaryPath) === 4 && requestCounts.get(secondaryPath) === 4,
+        `${profile.name}: actual component retirement does not add native requests`)
+      check(pageErrors.length === 0, `${profile.name}: browser errors: ${pageErrors.join('; ')}`)
+      result.requests = Object.fromEntries(requestCounts)
+      result.timeline = [...requestTimeline]
+      result.pageErrors = [...pageErrors]
+      report.finishedProfiles.push(profile.name)
+      await context.close()
+      continue
+    }
 
     if (stage === 'retirement') {
       const retirementPairs = []

@@ -28,6 +28,7 @@ function fixture(cardId = 'A', options = {}) {
   const dispatch = name => { for (const fn of [...(listeners.get(name) || [])]) fn() }
   const props = vue.reactive({ cardId, legacyUrl: undefined, intent: 'thumb', alt: 'synthetic', eager: true })
   const document = { visibilityState: 'visible', addEventListener: add, removeEventListener: remove }
+  const navigator = { onLine: true }
   class Observer {
     constructor(callback) { this.callback = callback; observers.add(this) }
     observe(target) { this.target = target }
@@ -42,7 +43,7 @@ function fixture(cardId = 'A', options = {}) {
   const window = { location: { href: 'https://synthetic.invalid/' }, innerWidth: 1000, innerHeight: 800,
     addEventListener: add, removeEventListener: remove, IntersectionObserver: Observer,
     setTimeout: (fn, delay = 0) => { const id = ++timerId; timers.set(id, { fn, at: now + delay }); return id }, clearTimeout: id => timers.delete(id) }
-  const environment = { ...vue, window, document, navigator: { onLine: true }, IntersectionObserver: Observer,
+  const environment = { ...vue, window, document, navigator, IntersectionObserver: Observer,
     defineProps: () => props, withDefaults: value => value, defineEmits: () => (name, ...args) => emitted.push({ name, args }),
     onMounted: fn => mounted.push(fn), onBeforeUnmount: fn => unmounted.push(fn),
     CARD_IMAGE_PLACEHOLDER: back, peekCardAsset: source, fallbackCardAsset: source, resolveCardAsset: async () => source(),
@@ -72,7 +73,7 @@ function fixture(cardId = 'A', options = {}) {
     intersectionRect: { width: value && !zeroArea ? 70 : 0, height: value ? 100 : 0 } }]) }
   function error() { currentImage.complete = false; currentImage.naturalWidth = 0; state.onError({ currentTarget: currentImage }) }
   function load(values = {}) { Object.assign(currentImage, { complete: true, naturalWidth: 100 }, values); state.onLoad({ currentTarget: currentImage }) }
-  return { state, props, document, dispatch, visible, advance, timers, error, load, emitted, currentImage: () => currentImage, rewindWallClock() { wallOffset -= 1_000_000 },
+  return { state, props, document, navigator, dispatch, visible, advance, timers, error, load, emitted, currentImage: () => currentImage, rewindWallClock() { wallOffset -= 1_000_000 },
     async mount() { for (const fn of mounted) await fn(); await flush() },
     async fail() { error(); await advance(300); error(); await advance(600); error(); await flush(); assert.equal(state.activeSource.value.kind, 'placeholder') },
     dispose() { if (!disposed) { disposed = true; unmounted.forEach(fn => fn()); scope.stop() } } }
@@ -215,6 +216,114 @@ export async function runCardImageRecoveryTests() {
     f.dispose(); Object.assign(removed, { complete: eventName === 'load', naturalWidth: eventName === 'load' ? 100 : 0 })
     f.state[eventName === 'error' ? 'onError' : 'onLoad']({ currentTarget: removed })
     assert.equal(f.timers.size, 0); assert.equal(f.emitted.length, emissions)
+  })
+  await test('continuously online failure recovers only after 65 seconds plus the original queue slot', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true)
+      await f.advance(64_999); assert.equal(f.state.imageUrl.value, back)
+      await f.advance(200); assert.equal(f.state.imageUrl.value, back)
+      await f.advance(1); assert.equal(f.state.imageUrl.value, '/A.webp')
+    } finally { f.dispose() }
+  })
+  await test('automatic recovery backs off to 130 seconds and stops after two cycles for one identity', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(65_200)
+      assert.equal(f.state.imageUrl.value, '/A.webp'); await f.fail()
+      await f.advance(130_199); assert.equal(f.state.imageUrl.value, back)
+      await f.advance(1); assert.equal(f.state.imageUrl.value, '/A.webp'); await f.fail()
+      const key = f.state.renderKey.value
+      await f.advance(600_000); assert.equal(f.state.imageUrl.value, back)
+      assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+    } finally { f.dispose() }
+  })
+  for (const blocked of ['offscreen', 'background', 'offline']) await test('elapsed automatic cooldown cannot load while ' + blocked, async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(blocked !== 'offscreen')
+      if (blocked === 'background') f.document.visibilityState = 'hidden'
+      if (blocked === 'offline') f.navigator.onLine = false
+      const key = f.state.renderKey.value
+      await f.advance(70_000); assert.equal(f.state.imageUrl.value, back); assert.equal(f.state.renderKey.value, key)
+      if (blocked === 'offscreen') f.visible(true)
+      if (blocked === 'background') { f.document.visibilityState = 'visible'; f.dispatch('visibilitychange') }
+      if (blocked === 'offline') { f.navigator.onLine = true; f.dispatch('online') }
+      await f.advance(200); assert.equal(f.state.imageUrl.value, '/A.webp')
+    } finally { f.dispose() }
+  })
+  await test('an offscreen deadline consumes no automatic attempt and remains pending without polling', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(false); await f.advance(600_000)
+      assert.equal(f.state.imageUrl.value, back); assert.equal(f.timers.size, 0)
+      f.visible(true); await f.advance(200); assert.equal(f.state.imageUrl.value, '/A.webp')
+      await f.fail(); await f.advance(130_200); assert.equal(f.state.imageUrl.value, '/A.webp')
+    } finally { f.dispose() }
+  })
+  await test('foreground return requeues an automatic attempt canceled after its deadline', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(65_000)
+      f.document.visibilityState = 'hidden'; f.dispatch('visibilitychange'); await f.advance(1_000)
+      assert.equal(f.state.imageUrl.value, back)
+      f.document.visibilityState = 'visible'; f.dispatch('visibilitychange'); await f.advance(200)
+      assert.equal(f.state.imageUrl.value, '/A.webp')
+    } finally { f.dispose() }
+  })
+  await test('successful automatic recovery removes all later timers and online rereads', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(65_200)
+      assert.equal(f.state.imageUrl.value, '/A.webp'); f.load()
+      const key = f.state.renderKey.value
+      f.dispatch('online'); await f.advance(600_000)
+      assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+    } finally { f.dispose() }
+  })
+  for (const property of ['cardId', 'legacyUrl', 'intent']) await test('automatic deadline is canceled on identity change/' + property, async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(64_000)
+      f.props[property] = property === 'cardId' ? 'B' : property === 'intent' ? 'board' : '/changed.webp'; await flush()
+      const key = f.state.renderKey.value
+      await f.advance(600_000); assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+    } finally { f.dispose() }
+  })
+  await test('an automatic deadline cannot return through an A-B-A identity roundtrip', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(64_000)
+      f.props.cardId = 'B'; await flush(); f.props.cardId = 'A'; await flush()
+      const key = f.state.renderKey.value
+      await f.advance(600_000); assert.equal(f.state.imageUrl.value, '/A.webp'); assert.equal(f.state.renderKey.value, key)
+    } finally { f.dispose() }
+  })
+  for (const at of [64_000, 65_000]) await test('unmount cancels automatic deadline or queued slot/' + at, async () => {
+    const f = fixture(); await f.mount(); await f.fail(); f.visible(true); await f.advance(at)
+    const key = f.state.renderKey.value; f.dispose(); await f.advance(600_000)
+    assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+  })
+  await test('online and an expired automatic deadline share a single queued recovery', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); const key = f.state.renderKey.value
+      await f.advance(65_000); for (let index = 0; index < 5; index++) f.dispatch('online')
+      await f.advance(200); assert.equal(f.state.imageUrl.value, '/A.webp'); assert.equal(f.state.renderKey.value, key + 1)
+      f.load(); await f.advance(600_000); assert.equal(f.state.renderKey.value, key + 1)
+    } finally { f.dispose() }
+  })
+  await test('an earlier online success cancels the old automatic deadline', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); await f.advance(64_000)
+      f.dispatch('online'); await f.advance(200); f.load()
+      const key = f.state.renderKey.value; await f.advance(600_000)
+      assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+    } finally { f.dispose() }
+  })
+  await test('automatic cooldown is independent of wall-clock rollback', async () => {
+    const f = fixture(); try {
+      await f.mount(); await f.fail(); f.visible(true); f.rewindWallClock(); await f.advance(65_200)
+      assert.equal(f.state.imageUrl.value, '/A.webp')
+    } finally { f.dispose() }
+  })
+  await test('deliberately concealed card-back never starts automatic recovery', async () => {
+    const f = fixture('HIDDEN'); try {
+      await f.mount(); const key = f.state.renderKey.value
+      f.visible(true); await f.advance(600_000)
+      assert.equal(f.state.imageUrl.value, back); assert.equal(f.state.renderKey.value, key); assert.equal(f.timers.size, 0)
+    } finally { f.dispose() }
   })
   await test('actual template retires old image sources on card identity change', async () => {
     const r = await renderedFixture(); try {

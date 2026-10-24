@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-card-image-delayed-recovery",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "失败卡图冷却恢复",
+  "changes": [{
+    "category": "content",
+    "text": "卡图加载失败后，即使网络始终在线，也会在冷却后对当前可见的卡图有界错峰重试；成功、换卡或离开页面后停止，屏外和后台不发起重试。",
+    "paths": ["opcgpro-vue/src/l12/CardImage.vue"]
+  }]
+}
