@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-24 本人回放分页收尾｜与反复细化的开场视觉分离
+
+- C后端四叶＋新测试已独审：本人新页复用原授权／保留期与唯一Sanitize／Journal还原，公开投影字节决定页边界，4MiB新输入保护仅新页opt-in，旧整场／admin默认路径与原格式不改。真实404前置、编码差异和UTF8反例保留，最终73专项过；Main固定08169/31BB只一次完整平台2460/2460零失败跳过，6308FB89 TRX／原七源和三DLL全等、148422762B受管临时树清退。不借旧媒体2434或新CI结果，唯一`http-replay-catalog-20261024/player-replay/main-review.json`。
+- 前端沿原platformRequest／ReplayArchiveLoader／exportReplayPayload接本人分页、按需播放与同格式分片JSON；主/客视角、管理员本人入口与特权入口分开，退出／切号／换记录取消，最终Blob并非恒定内存。Main发现刷新列表绕过selectMatch继续导出，已收敛selected.matchId同步watch；真实两RED及同ID正控后129过（含新39，非相加）。原transcript仅wrapper，完整原Node stdout已从来源执行原样取回native.json，不重复测试补计数。
+- 原正常前端映射有效前缀＋失败点续验、类型、双Vite均过，非新单轮Batch/Release：旧motion裸selector、minimized字面、导出忙态AST/文件名及渲染夹具逐项精确迁移，保普通模态、无载荷禁用、幂等忙锁、隐私及原破坏反例；全原失败保留。新production index6C06B41C（标识6cc7、C源逐SHA绑定）本地不可变预览四档实际过，13类交互／真实JSON下载导回／双视角／admin隔离／503恢复与几何通过，81926B52 manifest；Main独看两极图。35.05秒／自有进程与5197已清退，不把未提交UI当干净发布包。Git见同目录synchronization.json，不重建后端／重跑30＋10或再部署24a。
+- B纯等待／主宰本地几何已接受：非模态退出共享viewport/modal-in，双方休整／恢复仅内图合法朝向、标签正向，r8四定向零错误，owner／deployed先前两绿复用，非新full6。前六轮失败原件保，Main按精确覆盖规则收束，不再靠改位置猜测。仍与A新视觉共享Prompt而本地未同步；A上一四绿未获最终人类认可，最新真实透视方向／固定界面色ID／选中抬起净空已续三叶，不能冒已完成或混入C提交。
+- 原本次测试24a发布、正式3a和维护结束均不重开；新片无两服写／线上关单。公开匹配主宰异画另定位queue捕获牌库与session外观读取时序，仅新测试准备、未编译／未改RoomManager，不含在2460。图片恢复＋列表缩略图两点新批准另排，未加分页、提阈值或部署；真机仍未验。
+
 ## 2026-10-24 测试发布后的三族收尾｜只同步已验源码，不回流24a部署
 
 - 本轮“部署测试服”已由24a348fc及独验完成，正式3a与维护未动。其后开场基础实现（P4）、滚动弹框／公开牌库双击（P4）、媒体独立准入（P2）已本地接受，Git精确结果统一见`D:/GPT/Legion12/artifacts/dialog-deck-access-20261024/synchronization.json`；不等CI、不重包、不重开部署／维护／旧沙盒。

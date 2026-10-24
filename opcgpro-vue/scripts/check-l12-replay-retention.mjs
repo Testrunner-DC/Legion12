@@ -28,7 +28,7 @@ assert.match(source, /const detail = parseReplayPayload[^]*rememberImportedRepla
   'opening a JSON replay must navigate directly into playback')
 assert.doesNotMatch(source, /imported-record|consumeImportedReplay|(?:match|selected)\.deck[01]|record-decks/,
   'opened JSON replays must not join the history list and replay details must not show deck names')
-assert.match(source, /anchor\.download = `\$\{replayFileDate\(detail\.match\.startedUtc\)\}-\$\{detail\.match\.matchId\}\.json`/,
+assert.match(source, /const result = await exportPlayerReplayBlob\(matchId, controller\.signal\)[^]*anchor\.download = `\$\{replayFileDate\(result\.match\.startedUtc\)\}-\$\{result\.match\.matchId\}\.json`/,
   'downloaded replay JSON must be named with the match date and match ID only')
 assert.match(replayModel, /deck0:\s*'',\s*\n\s*deck1:\s*''/,
   'admin replay metadata must not expose deck names')

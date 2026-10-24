@@ -109,12 +109,22 @@ reject('duplicate JSON import entry', 'recordsHeaderAndImport', changed('matchRe
   '<button @click="openReplayImport">打开 JSON 回放</button>',
   '<button @click="openReplayImport">打开 JSON 回放</button><button @click="openReplayImport">打开 JSON 回放</button>'))
 reject('export loses unavailable disabled state', 'recordsReplayAvailability', changed('matchRecords',
-  '<button :disabled="!canUseSelectedReplay" @click="exportReplay">', '<button @click="exportReplay">'))
+  '<button :disabled="!canUseSelectedReplay || exporting" @click="exportReplay">', '<button @click="exportReplay">'))
+reject('export busy state cannot replace unavailable protection', 'recordsReplayAvailability', changed('matchRecords',
+  ':disabled="!canUseSelectedReplay || exporting"', ':disabled="exporting"'))
+reject('export cannot lose its in-flight duplicate guard', 'recordsReplayAvailability', changed('matchRecords',
+  ':disabled="!canUseSelectedReplay || exporting"', ':disabled="!canUseSelectedReplay"'))
+reject('export cannot require both blockers at once', 'recordsReplayAvailability', changed('matchRecords',
+  ':disabled="!canUseSelectedReplay || exporting"', ':disabled="!canUseSelectedReplay && exporting"'))
+reject('export label must not invert busy and available states', 'recordsReplayAvailability', changed('matchRecords',
+  "exporting ? '正在保存…' : '保存 JSON'", "exporting ? '保存 JSON' : '正在保存…'"))
+accept('export busy binding keeps equivalent outer parentheses', changed('matchRecords',
+  ':disabled="!canUseSelectedReplay || exporting"', ':disabled=" ( !canUseSelectedReplay || exporting ) "'))
 reject('playback loses unavailable disabled state', 'recordsReplayAvailability', changed('matchRecords',
   '<button class="primary" :disabled="!canUseSelectedReplay"', '<button class="primary"'))
 reject('disabled state borrowed by refresh button', 'recordsReplayAvailability', changed('matchRecords',
-  '<button :disabled="!canUseSelectedReplay" @click="exportReplay">保存 JSON</button>\n        <button @click="loadMatches">',
-  '<button @click="exportReplay">保存 JSON</button>\n        <button :disabled="!canUseSelectedReplay" @click="loadMatches">'))
+  '<button :disabled="!canUseSelectedReplay || exporting" @click="exportReplay">{{ exporting ? \'正在保存…\' : \'保存 JSON\' }}</button>\n        <button @click="loadMatches">',
+  '<button @click="exportReplay">{{ exporting ? \'正在保存…\' : \'保存 JSON\' }}</button>\n        <button :disabled="!canUseSelectedReplay || exporting" @click="loadMatches">'))
 reject('cleared payload wrong condition', 'recordsReplayAvailability', changed('matchRecords',
   'v-if="selected.commandCount === 0"', 'v-if="selected.commandCount < 0"'))
 reject('zero records cannot invent a retention cause', 'recordsReplayAvailability', changed('matchRecords',

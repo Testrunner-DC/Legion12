@@ -140,7 +140,7 @@ if(process.argv.includes('--baseline')){
  // Run the actual script-setup with Vue refs/watchers; only route/API/device/timers are controlled.
  function fixture(read,options={}){
   const mounted=[],unmounted=[],timers=new Map(),listeners=new Map();let timerId=0
-  const route=vue.reactive({name:'admin-match-replay',params:{matchId:'synthetic-only'},query:{}})
+  const route=vue.reactive({name:options.routeName||'admin-match-replay',params:{matchId:'synthetic-only'},query:{}})
   const platformState=vue.reactive({token:'synthetic-token',account:{id:'synthetic-admin',role:'admin',permissionVersion:1,disabled:false}})
   const scope=vue.effectScope(),calls=[]
   const summary={summary:{matchId:'synthetic-only',status:'completed',players:[{displayName:'A'},{displayName:'B'}],startedUtc:'2026-10-16T00:00:00Z',commandCount:total}}
@@ -148,6 +148,8 @@ if(process.argv.includes('--baseline')){
    onMounted:fn=>mounted.push(fn),onBeforeUnmount:fn=>unmounted.push(fn),useRoute:()=>route,useRouter:()=>({push(){}}),
    platformState,PlatformRequestError:RequestError,loadDeckCatalog:options.catalog||(async()=>[]),isMobileDeviceExperience:()=>false,landscapeTeleportTarget:()=>'body',
    adminApi:{match:async()=>summary,replayPage:async(match,cursor,limit,signal)=>{calls.push({match,cursor,signal});return read(cursor,signal)}},
+   createPlayerReplayReader:match=>async(cursor,signal)=>{calls.push({match,cursor,signal,player:true});return read(cursor,signal)},
+   consumeImportedReplay:()=>options.imported??model.consumeImportedReplay(),
    platformRequest:async()=>{throw Error('unexpected player read')},rememberSettingsOpener:()=>null,closeSettingsAndRestore:()=>{},openBugFeedbackFromSettings:()=>{},
    window:{setTimeout:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),addEventListener:(name,fn)=>listeners.set(name,fn),removeEventListener:name=>listeners.delete(name)},
    document:{getElementById:()=>null,querySelector:()=>null},Error,TypeError,AbortController,DOMException,TextEncoder,Math,Promise,console,setTimeout,clearTimeout}
@@ -256,11 +258,51 @@ if(process.argv.includes('--baseline')){
   assert.equal(diagnostics.length,0,ts.formatDiagnosticsWithColorAndContext(diagnostics,{getCurrentDirectory:()=>root,getCanonicalFileName:x=>x,getNewLine:()=> '\n'}))
  })
  const {parse,compileTemplate}=require('@vue/compiler-sfc')
+ for(const viewer of [0,1])await test(`actual player SFC uses account viewer even for admin account/${viewer}`,async()=>{
+  const ownPage=cursor=>{
+   const page=structuredClone(makePage(pageNumber(cursor)))
+   for(const item of page.items)item.state.Events=[{Sequence:item.sequence,Type:'play',PrivateTo:1-viewer,Cards:[{Name:'OPPONENT_PRIVATE_INDEX_SENTINEL'}]}]
+   return {...page,match:{...detail(all).match,deck0:'',deck1:''},viewerPlayerIndex:viewer,limit:50}
+  }
+  const f=fixture(async cursor=>ownPage(cursor),{routeName:'match-replay'})
+  try{await f.state.loadReplay();await flush();assert(f.state.currentGame.value);assert.equal(f.state.isAdminReplay.value,false)
+   assert.equal(f.state.detail.value.viewerPlayerIndex,viewer);assert.equal(f.state.currentGame.value.you,viewer)
+   assert.equal(f.state.detail.value.commands.length,0);assert(f.calls.every(call=>call.player));assert(f.state.archive.value)
+   assert(!JSON.stringify(f.state.replayIndex.value).includes('OPPONENT_PRIVATE_INDEX_SENTINEL'))
+  }finally{f.dispose()}
+ })
+ await test('actual imported SFC keeps local viewpoint and never reads an archive provider',async()=>{
+  const imported={...detail(all),viewerPlayerIndex:1},f=fixture(async()=>{throw Error('unexpected archive read')},{routeName:'json-replay',imported})
+  try{await f.state.loadReplay();assert(f.state.currentGame.value);assert.equal(f.state.currentGame.value.you,1)
+   assert.equal(f.state.archive.value,null);assert.equal(f.state.isAdminReplay.value,false);assert.equal(f.calls.length,0)
+  }finally{f.dispose()}
+ })
+ for(const phase of ['initial','continuation'])for(const change of ['account-ABA','route-ABA','token-ABA','disabled','unmount'])for(const late of ['success','failure'])await test(`actual player SFC abort and late response/${phase}/${change}/${late}`,async()=>{
+  const wait=deferred();let pendingSignal,disposed=false
+  const ownPage=n=>({...makePage(n),match:detail(all).match,viewerPlayerIndex:1,limit:50})
+  const f=fixture((cursor,signal)=>{if(phase==='initial'||cursor==='p1'){pendingSignal=signal;return wait.promise}return Promise.resolve(ownPage(0))},{routeName:'match-replay'})
+  try{const pending=f.state.loadReplay();await flush();if(phase==='continuation')await pending;await flush();assert(pendingSignal)
+   if(change==='account-ABA'){f.platformState.account.id='another';f.platformState.account.id='synthetic-admin'}
+   if(change==='route-ABA'){f.route.params.matchId='another';f.route.params.matchId='synthetic-only'}
+   if(change==='token-ABA'){f.platformState.token='another';f.platformState.token='synthetic-token'}
+   if(change==='disabled')f.platformState.account.disabled=true
+   if(change==='unmount'){f.dispose();disposed=true}
+   assert(pendingSignal.aborted);const calls=f.calls.length
+   if(late==='success')wait.resolve(ownPage(phase==='initial'?0:1));else wait.reject(new RequestError(503,'storage_unavailable'))
+   await pending;await flush()
+   assert.equal(f.state.detail.value,null);assert.equal(f.state.currentGame.value,null);assert.equal(f.state.archive.value,null)
+   assert.equal(f.state.playing.value,false);assert.equal(f.calls.length,calls)
+  }finally{if(!disposed)f.dispose()}
+ })
  await test('actual SFC template compiles and retains 1/2/3 speeds only',()=>{
   const parsed=parse(pageSource,{filename:'ReplayPage.vue'});assert.deepEqual(parsed.errors,[])
   const compiled=compileTemplate({source:parsed.descriptor.template.content,filename:'ReplayPage.vue',id:'replay-recovery'});assert.deepEqual(compiled.errors,[])
   assert(pageSource.includes('[1, 2, 3] as const'));assert(!pageSource.includes('[0.5,'))
+  assert(pageSource.includes(':reveal-both-hands="isAdminReplay" read-only'))
+  assert(pageSource.includes('createReplayIndexAccumulator(firstPage.viewerPlayerIndex, false)'))
  })
+ const {runPlayerReplayPagingTests}=await import('./test-player-replay-paging.mjs')
+ results.push(...await runPlayerReplayPagingTests())
 }
 console.log(JSON.stringify({suite:'replay recovery actual source',sourceRoot:root,total:results.length,passed:results.filter(x=>x.passed).length,failed:results.filter(x=>!x.passed).length,cases:results},null,2))
 if(results.some(x=>!x.passed))process.exitCode=1

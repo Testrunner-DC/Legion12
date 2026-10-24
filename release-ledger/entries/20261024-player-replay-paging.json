@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-player-replay-paging",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "对局回放",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "回放改为按需分段读取；离开页面、切换账号或改选记录后停止加载。保存 JSON 保持原兼容格式，仍可导入本地播放。",
+      "paths": [
+        "opcgpro-vue/src/l12/ReplayPage.vue",
+        "opcgpro-vue/src/l12/MatchRecords.vue",
+        "opcgpro-vue/src/l12/playerReplayArchive.ts",
+        "服务端WebSocket/TwelveLegions/L12WebSocketServer.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.AdminQueries.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.Journal.cs",
+        "服务端WebSocket/TwelveLegions/MatchRecorder.cs"
+      ]
+    }
+  ]
+}

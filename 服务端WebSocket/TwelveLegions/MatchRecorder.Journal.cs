@@ -400,7 +400,8 @@ public sealed partial class MatchRecorder
     private async Task<IReadOnlyList<L12RecordedCommand>> ReconstructJournalCommandsAsync(
         SqliteConnection connection, string matchId, long lastSequence = long.MaxValue,
         long afterSequence = 0,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<L12RecordedCommand, bool>? acceptProjectedFrame = null, long? maximumInputBytes = null)
     {
         var catalog = ResolveJournalCatalog();
         long? incompatibleSequence = null;
@@ -428,7 +429,7 @@ public sealed partial class MatchRecorder
         {
             if (!await reader.ReadAsync(cancellationToken))
                 throw new InvalidDataException("v2 对局缺少可用检查点");
-            initial = await ReadCheckpointAsync(reader, cancellationToken);
+            initial = await ReadCheckpointAsync(reader, cancellationToken, maximumInputBytes, matchId);
         }
         incompatibleSequence = initial.Sequence;
         incompatibleReason = "checkpoint-validation";
@@ -463,6 +464,8 @@ public sealed partial class MatchRecorder
             incompatibleDimension = "sequence";
             if (sequence != ++expectedSequence) throw new InvalidDataException("v2 命令序号不连续");
             var commandJson = rows.GetString(3);
+            if (maximumInputBytes is { } commandLimit && Encoding.UTF8.GetByteCount(commandJson) > commandLimit)
+                throw PlayerReplayInputTooLarge(matchId);
             var receivedUtc = DateTimeOffset.Parse(rows.GetString(1));
             using var commandDocument = JsonDocument.Parse(commandJson);
             var commandRoot = commandDocument.RootElement;
@@ -492,9 +495,21 @@ public sealed partial class MatchRecorder
                     : !revisionMatches ? "revision" : "state-hash";
                 throw new InvalidDataException($"v2 命令重放校验失败：{sequence}");
             }
-            result.Add(new L12RecordedCommand(sequence, rows.GetString(1), rows.GetInt32(2),
+            cancellationToken.ThrowIfCancellationRequested();
+            var state = maximumInputBytes is { } stateLimit
+                ? SerializeBoundedReplayState(engine.State, matchId, stateLimit)
+                : JsonSerializer.SerializeToElement(engine.State);
+            var item = new L12RecordedCommand(sequence, rows.GetString(1), rows.GetInt32(2),
                 commandRoot.Clone(), accepted, rows.IsDBNull(5) ? null : rows.GetString(5),
-                revision, stateHash, JsonSerializer.SerializeToElement(engine.State)));
+                revision, stateHash, state);
+            if (maximumInputBytes is { } frameLimit)
+            {
+                using var frameBuffer = new ReplayInputBuffer(matchId, frameLimit);
+                JsonSerializer.Serialize(frameBuffer, item);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            if (acceptProjectedFrame is null) result.Add(item);
+            else if (sequence > afterSequence && !acceptProjectedFrame(item)) break;
         }
         return result;
         }
@@ -887,20 +902,64 @@ public sealed partial class MatchRecorder
     }
 
     private static async Task<L12PersistedCheckpoint> ReadCheckpointAsync(SqliteDataReader reader,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, long? maximumInputBytes = null, string? matchId = null)
     {
         if (!string.Equals(reader.GetString(3), "json-br-v1", StringComparison.Ordinal))
             throw new InvalidDataException("对局检查点编码版本不受支持");
         var expectedBytes = reader.GetInt32(5);
+        if (maximumInputBytes is { } limit && (expectedBytes < 0 || expectedBytes > limit
+                || reader.GetBytes(4, 0, null, 0, 0) > limit))
+            throw PlayerReplayInputTooLarge(matchId!);
         await using var input = new MemoryStream((byte[])reader[4], writable: false);
         await using var brotli = new BrotliStream(input, CompressionMode.Decompress);
-        using var output = new MemoryStream(expectedBytes);
+        using var output = maximumInputBytes is { } maximum
+            ? new ReplayInputBuffer(matchId!, maximum) : new MemoryStream(expectedBytes);
         await brotli.CopyToAsync(output, cancellationToken);
         if (output.Length != expectedBytes) throw new InvalidDataException("对局检查点长度校验失败");
         return new L12PersistedCheckpoint(reader.GetInt64(0), reader.GetInt64(1), reader.GetString(2),
             Encoding.UTF8.GetString(output.ToArray()), reader.GetInt64(6), ReadRandomState(reader),
             reader.GetInt64(7),
             reader.GetInt32(8) == 1, reader.GetInt32(9) == 1);
+    }
+
+    private static JsonElement SerializeBoundedReplayState(object state, string matchId, long maximumBytes)
+    {
+        using var output = new ReplayInputBuffer(matchId, maximumBytes);
+        JsonSerializer.Serialize(output, state);
+        output.Position = 0;
+        using var document = JsonDocument.Parse(output);
+        return document.RootElement.Clone();
+    }
+
+    // Opt-in player-page input protection. Legacy/admin decoders retain their original path.
+    private sealed class ReplayInputBuffer(string matchId, long maximumBytes) : MemoryStream
+    {
+        private void Check(int count)
+        {
+            if (Position + count > maximumBytes) throw PlayerReplayInputTooLarge(matchId);
+        }
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            Check(count);
+            base.Write(buffer, offset, count);
+        }
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            Check(buffer.Length);
+            base.Write(buffer);
+        }
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Write(buffer, offset, count);
+            return Task.CompletedTask;
+        }
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Write(buffer.Span);
+            return ValueTask.CompletedTask;
+        }
     }
 
     private static L12RandomState ReadRandomState(SqliteDataReader reader)

@@ -5,11 +5,12 @@ import GameBoard from './game/GameBoard.vue'
 import L12SettingsModal from './site/L12SettingsModal.vue'
 import { closeSettingsAndRestore, openBugFeedbackFromSettings, rememberSettingsOpener } from './site/bugFeedbackEntry'
 import { loadDeckCatalog, type DeckCard } from './decks'
-import { adminApi, PlatformRequestError, platformRequest, platformState } from './platform'
+import { adminApi, PlatformRequestError, platformState } from './platform'
 import { adminReplayDetail, consumeImportedReplay, replayFocusCardAt, replayGameAt, type MatchDetail } from './replayModel'
 import { isMobileDeviceExperience, landscapeTeleportTarget } from './mobileViewport'
 import { buildReplayIndex, createReplayIndexAccumulator, type ReplayIndexCategory } from './replayIndex'
 import { ReplayArchiveLoader } from './replayArchiveLoader'
+import { createPlayerReplayReader } from './playerReplayArchive'
 import { recordedMatchOutcome } from './replayOutcome'
 
 const route = useRoute()
@@ -163,12 +164,29 @@ async function loadReplay() {
         archive.value = loader
         loader.seed(firstPage)
       }
-    } else {
+    } else if (route.name === 'match-replay') {
       const matchId = String(route.params.matchId ?? '')
       if (matchId) {
-        const result = await platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(matchId)}`, { signal: controller.signal })
+        const read = createPlayerReplayReader(matchId)
+        const firstPage = await read(undefined, controller.signal)
         if (!isCurrentRead(generation)) return
-        detail.value = result
+        detail.value = { match: firstPage.match, commands: [], viewerPlayerIndex: firstPage.viewerPlayerIndex }
+        indexBuilder = createReplayIndexAccumulator(firstPage.viewerPlayerIndex, false)
+        const loader = new ReplayArchiveLoader(read, {
+          matchId,
+          onPage: (commands, start) => indexBuilder.append(commands, start),
+          onChange: () => {
+            if (!isCurrentRead(generation)) return
+            if (loader.issue?.denied) {
+              detail.value = null; indexBuilder = createReplayIndexAccumulator(null, false)
+              error.value = '账号或权限已失效，请返回重新打开回放'; stop()
+            }
+            if (!loader.issue) indexError.value = ''
+            archiveVersion.value++
+          },
+        })
+        archive.value = loader
+        loader.seed(firstPage)
       }
     }
     if (!isCurrentRead(generation)) return
@@ -333,7 +351,7 @@ function openReplayFeedback() { void openBugFeedbackFromSettings(() => { setting
         <button v-for="speed in ([1, 2, 3] as const)" :key="speed" class="speed" :class="{ active: playbackSpeed === speed }" :aria-pressed="playbackSpeed === speed" @click="setPlaybackSpeed(speed)">{{ speed.toFixed(1) }}</button>
         <button :disabled="atLast || replayPresentationBusy || Boolean(replayIssue?.terminal)" @click="next">{{ replayBuffering ? '缓冲中' : '下一步' }}</button>
         <button :aria-expanded="indexOpen" aria-controls="replay-index" @click="openIndex">回放定位</button>
-        <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="isAdminReplay"> · 分页</template></small>
+        <small>步骤 {{ selectedStep + 1 }} / {{ totalSteps }}<template v-if="archive"> · 分页</template></small>
       </div>
 
       <section v-if="currentGame && indexOpen" id="replay-index" class="replay-index" aria-label="回放定位" @keydown.esc="closeIndex">
@@ -354,9 +372,9 @@ function openReplayFeedback() { void openBugFeedbackFromSettings(() => { setting
           <span>{{ filteredIndexEvents.length }}个事件</span>
           <button :disabled="indexPage === 0" @click="indexPage--">前页</button>
           <button :disabled="(indexPage + 1) * indexPageSize >= filteredIndexEvents.length" @click="indexPage++">后页</button>
-          <button v-if="isAdminReplay && replayNextCursor" :disabled="loadingReplayPage" @click="loadMoreIndex">{{ loadingReplayPage ? '加载中' : '继续加载索引' }}</button>
+          <button v-if="archive && replayNextCursor" :disabled="loadingReplayPage" @click="loadMoreIndex">{{ loadingReplayPage ? '加载中' : '继续加载索引' }}</button>
         </footer>
-        <p v-if="isAdminReplay && replayNextCursor" class="replay-index-note">已索引 {{ indexedSteps }} / {{ totalSteps }} 步</p>
+        <p v-if="archive && replayNextCursor" class="replay-index-note">已索引 {{ indexedSteps }} / {{ totalSteps }} 步</p>
         <p v-if="indexError" role="alert" class="replay-index-note">{{ indexError }}，可重试加载</p>
       </section>
 

@@ -345,17 +345,37 @@ public sealed partial class MatchRecorder
         string accountId, string legacyPlayerName, int limit = PlayerReplayWindowSize) =>
         ListRecentPlayerReplayMatchesAsync(accountId, legacyPlayerName, limit);
 
-    public async Task<L12MatchDetail?> GetMatchForAccountAsync(
+    public Task<L12MatchDetail?> GetMatchForAccountAsync(
         string matchId, string accountId, string legacyPlayerName)
+        => GetMatchForAccountAsync(matchId, accountId, legacyPlayerName, CancellationToken.None);
+
+    public async Task<L12MatchDetail?> GetMatchForAccountAsync(
+        string matchId, string accountId, string legacyPlayerName, CancellationToken cancellationToken)
+    {
+        var viewer = await ReadPlayerReplayViewerAsync(matchId, accountId, legacyPlayerName, cancellationToken);
+        if (viewer < 0) return null;
+        var detail = await GetMatchAsync(matchId, cancellationToken);
+        if (detail is null) return null;
+        var commands = new List<L12RecordedCommand>(detail.Commands.Count);
+        foreach (var command in detail.Commands)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            commands.Add(ProjectPlayerReplayCommand(command, viewer));
+        }
+        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
+    }
+
+    private async Task<int> ReadPlayerReplayViewerAsync(string matchId, string accountId,
+        string legacyPlayerName, CancellationToken cancellationToken)
     {
         // The URL must obey the same age-and-count ownership window as the list.
         // Check expiry before trying to reconstruct a journal whose checkpoints were pruned.
-        if (!await IsWithinRecentPlayerReplayWindowAsync(matchId, accountId, legacyPlayerName)
-            || await IsPlayerReplayPayloadExpiredAsync(matchId)) return null;
+        if (!await IsWithinRecentPlayerReplayWindowAsync(matchId, accountId, legacyPlayerName, cancellationToken)
+            || await IsPlayerReplayPayloadExpiredAsync(matchId, cancellationToken)) return -1;
         var viewer = -1;
         await using (var connection = new SqliteConnection(_connectionString))
         {
-            await connection.OpenAsync();
+            await connection.OpenAsync(cancellationToken);
             var visible = connection.CreateCommand();
             visible.CommandText = """
                 SELECT CASE
@@ -368,20 +388,119 @@ public sealed partial class MatchRecorder
             visible.Parameters.AddWithValue("$match", matchId);
             visible.Parameters.AddWithValue("$account", accountId);
             visible.Parameters.AddWithValue("$player", legacyPlayerName);
-            var scalar = await visible.ExecuteScalarAsync();
-            if (scalar is null) return null;
+            var scalar = await visible.ExecuteScalarAsync(cancellationToken);
+            if (scalar is null) return -1;
             viewer = Convert.ToInt32(scalar);
         }
-        if (viewer is < 0 or > 1) return null;
-        var detail = await GetMatchAsync(matchId);
-        if (detail is null) return null;
-        var commands = detail.Commands.Select(command => command with
+        return viewer is 0 or 1 ? viewer : -1;
+    }
+
+    private static L12RecordedCommand ProjectPlayerReplayCommand(L12RecordedCommand command, int viewer)
+        => command with
         {
             Command = SanitizeRecordedCommand(command.Command, command.PlayerIndex == viewer),
             State = SanitizeRecordedState(command.State, viewer),
-        }).ToArray();
-        return new L12MatchDetail(SanitizePlayerReplaySummary(detail.Match), commands, viewer);
+        };
+
+    private static readonly JsonSerializerOptions PlayerReplayWireJson =
+        new(new Microsoft.AspNetCore.Http.Json.JsonOptions().SerializerOptions);
+
+    public async Task<L12PlayerReplayPage?> GetPlayerReplayPageAsync(string matchId, string accountId,
+        string legacyPlayerName, string? cursor, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var viewer = await ReadPlayerReplayViewerAsync(matchId, accountId, legacyPlayerName, cancellationToken);
+        if (viewer < 0) return null;
+        var after = DecodeReplayCursor(matchId, cursor);
+        var take = Math.Clamp(limit, 1, MaximumReplayPageCommands);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        var originalSummary = await ReadReplaySummaryAsync(connection, matchId, cancellationToken);
+        if (originalSummary is null) return null;
+        var summary = SanitizePlayerReplaySummary(originalSummary);
+        var storageVersion = await ReadStorageVersionAsync(connection, matchId, cancellationToken);
+        var items = new List<L12RecordedCommand>(take);
+        long pageBytes = 2; // Exact wire items array: brackets, commas, and projected objects only.
+        var hasMore = false;
+        bool Accept(L12RecordedCommand raw)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var projected = ProjectPlayerReplayCommand(raw, viewer);
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(projected, PlayerReplayWireJson).LongLength;
+            var candidateBytes = pageBytes + bytes + (items.Count == 0 ? 0 : 1);
+            // Reserve the actual public envelope with the longest possible cursor for this row.
+            var envelope = new L12PlayerReplayPage(summary, [], EncodeReplayCursor(matchId, raw.Sequence),
+                take, candidateBytes, summary.CommandCount, viewer);
+            var envelopeBytes = JsonSerializer.SerializeToUtf8Bytes(envelope, PlayerReplayWireJson).LongLength - 2;
+            if (candidateBytes + envelopeBytes > MaximumReplayPageBytes)
+            {
+                if (items.Count == 0) throw PlayerReplayInputTooLarge(matchId);
+                hasMore = true;
+                return false;
+            }
+            items.Add(projected);
+            pageBytes = candidateBytes;
+            return true;
+        }
+
+        // Fetch one sequence of lookahead, never raw-size pre-cut a player's public page.
+        var bounds = connection.CreateCommand();
+        bounds.CommandText = """
+            SELECT sequence FROM match_events WHERE match_id=$match AND sequence>$after
+            ORDER BY sequence LIMIT $take;
+            """;
+        bounds.Parameters.AddWithValue("$match", matchId);
+        bounds.Parameters.AddWithValue("$after", after);
+        bounds.Parameters.AddWithValue("$take", take + 1);
+        var sequences = new List<long>(take + 1);
+        await using (var rows = await bounds.ExecuteReaderAsync(cancellationToken))
+            while (await rows.ReadAsync(cancellationToken)) sequences.Add(rows.GetInt64(0));
+        if (sequences.Count > take) hasMore = true;
+        if (sequences.Count > 0)
+        {
+            var last = sequences[Math.Min(take, sequences.Count) - 1];
+            if (storageVersion >= JournalStorageVersion)
+            {
+                await ReconstructJournalCommandsAsync(connection, matchId, last, after, cancellationToken,
+                    Accept, MaximumReplayPageBytes);
+            }
+            else
+            {
+                var rowsCommand = connection.CreateCommand();
+                rowsCommand.CommandText = """
+                    SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json,
+                        length(CAST(command_json AS BLOB))+length(CAST(state_json AS BLOB))
+                        +length(CAST(state_hash AS BLOB))+length(CAST(received_utc AS BLOB))
+                        +COALESCE(length(CAST(error AS BLOB)),0)
+                    FROM match_events WHERE match_id=$match AND sequence>$after AND sequence<=$last ORDER BY sequence;
+                    """;
+                rowsCommand.Parameters.AddWithValue("$match", matchId);
+                rowsCommand.Parameters.AddWithValue("$after", after);
+                rowsCommand.Parameters.AddWithValue("$last", last);
+                await using var rows = await rowsCommand.ExecuteReaderAsync(cancellationToken);
+                while (await rows.ReadAsync(cancellationToken))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (rows.GetInt64(9) > MaximumReplayPageBytes) throw PlayerReplayInputTooLarge(matchId);
+                    using var command = JsonDocument.Parse(rows.GetString(3));
+                    using var state = JsonDocument.Parse(rows.GetString(8));
+                    if (!Accept(new L12RecordedCommand(rows.GetInt64(0), rows.GetString(1), rows.GetInt32(2),
+                            command.RootElement.Clone(), rows.GetInt32(4) == 1,
+                            rows.IsDBNull(5) ? null : rows.GetString(5), rows.GetInt64(6), rows.GetString(7),
+                            state.RootElement.Clone()))) break;
+                }
+            }
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (await ReadPlayerReplayViewerAsync(matchId, accountId, legacyPlayerName, cancellationToken) != viewer)
+            return null;
+        return new L12PlayerReplayPage(summary, items,
+            hasMore && items.Count > 0 ? EncodeReplayCursor(matchId, items[^1].Sequence) : null,
+            take, pageBytes, summary.CommandCount, viewer);
     }
+
+    private static L12ReplayPayloadTooLargeException PlayerReplayInputTooLarge(string matchId)
+        => new(matchId, 0, 0, MaximumReplayPageCommands, MaximumReplayPageBytes);
 
     private static string BuildAdminMatchWhere(L12AdminMatchQuery query, bool includeCursor,
         out Dictionary<string, object> parameters)

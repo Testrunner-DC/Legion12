@@ -8,7 +8,7 @@ const { chromium } = require(process.env.L12_PLAYWRIGHT || 'C:/Users/neptu/.cach
 const origin = process.argv[2] || 'http://127.0.0.1:5197'
 const output = process.env.L12_REPLAY_INDEX_OUT || 'D:/GPT/Legion12/artifacts/replay-index-20261002'
 const storageGuard = spawnSync('C:/Users/neptu/.cache/codex-runtimes/codex-primary-runtime/dependencies/native/powershell/pwsh.exe',
-  ['-NoProfile', '-Command', ". 'D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/ops/windows/L12GeneratedStorage.ps1'; $null=Assert-L12GeneratedPath -Path $env:L12_REPLAY_INDEX_OUT -Purpose 'Replay browser acceptance'"],
+  ['-NoProfile', '-Command', ". 'D:/GPT/Legion12/worktrees/lubu-pingyang-20261001/ops/windows/L12GeneratedStorage.ps1'; $null=Assert-L12GeneratedPath -Path $env:L12_REPLAY_INDEX_OUT -Purpose 'Replay browser acceptance'; $null=Assert-L12GeneratedPath -Path (Join-Path $env:L12_REPLAY_INDEX_OUT 'downloads') -Purpose 'Replay browser downloads'; $null=Assert-L12GeneratedPath -Path $env:TEMP -Purpose 'Replay browser temporary profile'"],
   { env: { ...process.env, L12_REPLAY_INDEX_OUT: output }, encoding: 'utf8', windowsHide: true })
 assert.equal(storageGuard.status, 0, 'browser output must resolve to governed D/E storage')
 fs.mkdirSync(output, { recursive: true })
@@ -20,7 +20,7 @@ const resources = index => [false, true].flatMap(god => [false, true].map(tapped
 const player = index => ({ PlayerIndex: index, Name: index ? '乙' : '甲', Faction: 'otherworld', MasterId: `master-${index}`, MasterName: '主宰', Hp: 8, MaxHp: 8, Hand: [], Library: [], Morale: resources(index), MoraleDeck: [], Field: [[null, null, null], [null, null, null]], Graveyard: [], Resolving: [], ExtraRelics: [], SpecialZones: { Runes: 0, TrialLevel: 0, GodPower: [], Trials: [] }, MulliganDone: true })
 const commands = Array.from({ length: 75 }, (_, step) => ({ sequence: step + 1, playerIndex: step % 2, command: { type: 'passPriority' }, accepted: true, revision: step + 1, stateHash: `synthetic-${step}`, state: { MatchId: 'index-fixture', RoomCode: 'INDEX', ActivePlayer: Math.floor(step / 10) % 2, FirstPlayer: 0, Phase: 'Main', Round: 1 + Math.floor(step / 10), Players: [player(0), player(1)], Events: [{ Sequence: step + 1, Type: step % 3 === 0 ? 'cost' : 'effect-result', EffectResultStatus: step % 3 === 1 ? 'negated' : 'resolved', Cards: [{ InstanceId: 'public-source', CardId: 'SYNTHETIC', Name: `公开来源${step + 1}`, Hidden: false }] }] } }))
 const match = { matchId: 'index-fixture', roomCode: 'INDEX', player0: '甲', player1: '乙', deck0: '', deck1: '', status: 'completed', startedUtc: '2026-10-02T00:00:00Z', endedUtc: '2026-10-02T01:00:00Z', commandCount: commands.length, winner: 0 }
-const browser = await chromium.launch({ headless: true, channel: 'msedge' })
+const browser = await chromium.launch({ headless: true, channel: 'msedge', downloadsPath: path.join(output, 'downloads') })
 const audits = []
 try {
   for (const viewport of [{ width: 2560, height: 1440 }, { width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 1190, height: 650 }]) {
@@ -30,6 +30,7 @@ try {
     const errors = []
     const requests = []
     let failNextPage = true
+    let playerViewer = 0
     page.on('pageerror', error => errors.push(error.stack || error.message))
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url())
@@ -37,7 +38,13 @@ try {
       let body = {}
       let status = 200
       if (url.pathname === '/api/auth/me') body = account
+      if (url.pathname === '/api/matches') body = [match]
       if (url.pathname === '/api/matches/index-fixture') body = { match, commands }
+      if (url.pathname === '/api/matches/index-fixture/replay') {
+        const next = url.searchParams.has('cursor'), items = next ? commands.slice(50) : commands.slice(0, 50)
+        body = { match, items, nextCursor: next ? null : 'synthetic-player-next', limit: 50,
+          pageBytes: Buffer.byteLength(JSON.stringify(items)), totalCommands: commands.length, viewerPlayerIndex: playerViewer }
+      }
       if (url.pathname === '/api/admin/matches/index-fixture') body = { summary: { ...match, players: [{ displayName: '甲', result: 'win' }, { displayName: '乙', result: 'loss' }] }, replay: [] }
       if (url.pathname === '/api/admin/matches/index-fixture/replay') {
         const next = url.searchParams.has('cursor')
@@ -58,6 +65,8 @@ try {
       assert(await page.locator('.morale-orb .morale-lock-icon').evaluateAll(items => items.every(item => item.getAttribute('aria-label') === '下个重置阶段无法转为活跃')))
     }
     await assertResources()
+    assert(!requests.includes('/api/matches/index-fixture'), 'owned playback never reads the whole-match endpoint')
+    assert(requests.some(url => url.startsWith('/api/matches/index-fixture/replay?')), 'owned playback uses its account page provider')
     await page.getByRole('button', { name: '播放', exact: true }).click()
     await page.getByRole('button', { name: '回放定位', exact: true }).click()
     await page.locator('.replay-index').waitFor()
@@ -88,6 +97,35 @@ try {
     assert.deepEqual(geometry, { clipped: false, playbackOverlap: false, returnOverlap: false, overflow: false, hit: true })
     await page.locator('.replay-index').press('Escape')
     assert.equal(await page.locator('.replay-index').count(), 0)
+    assert(!requests.some(url => url.startsWith('/api/admin/matches/')), 'admin account on owned route never selects the privileged archive')
+    playerViewer = 1
+    await page.goto(`${origin}/battle/records/replay/index-fixture`, { waitUntil: 'networkidle' })
+    await page.getByRole('button', { name: '回放定位', exact: true }).click()
+    await page.locator('.replay-index-filters select').first().selectOption('2')
+    assert.match(await page.locator('.replay-index-rounds button').first().textContent(), /我方回合开始/, 'owned viewer 1 is not inferred from admin account role')
+    await page.locator('.replay-index-rounds button').first().click()
+    assert.match(await page.locator('.replay-controls small').textContent(), /步骤 11 \/ 75/)
+    await page.goto(`${origin}/battle/records`, { waitUntil: 'networkidle' })
+    await page.locator('.records-list>button').first().click()
+    const downloadEvent = page.waitForEvent('download')
+    await page.getByRole('button', { name: '保存 JSON', exact: true }).click()
+    const download = await downloadEvent, chunks = []
+    const stream = await download.createReadStream()
+    assert(stream)
+    for await (const chunk of stream) chunks.push(chunk)
+    const exported = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    assert.equal(exported.format, 'legion12-replay'); assert.equal(exported.version, 1)
+    assert.equal(exported.compatibilityVersion, 1); assert.equal(exported.detail.commands.length, 75)
+    assert.equal(exported.detail.viewerPlayerIndex, 1)
+    assert.equal(exported.detail.match.deck0, ''); assert.equal(exported.detail.match.deck1, '')
+    const readsBeforeImport = requests.filter(url => /\/matches\/index-fixture(?:\/replay)?(?:\?|$)/.test(url)).length
+    await page.locator('input[type=file]').setInputFiles({ name: 'synthetic-player-replay.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(exported)) })
+    await page.waitForURL('**/battle/records/replay/json')
+    await page.locator('.replay-controls').waitFor()
+    assert.equal(requests.filter(url => /\/matches\/index-fixture(?:\/replay)?(?:\?|$)/.test(url)).length, readsBeforeImport, 'imported replay remains local')
+    await page.getByRole('button', { name: '回放定位', exact: true }).click()
+    await page.locator('.replay-index-filters select').first().selectOption('2')
+    assert.match(await page.locator('.replay-index-rounds button').first().textContent(), /我方回合开始/, 'import preserves viewer 1')
     await page.goto(`${origin}/admin/matches/index-fixture/replay`, { waitUntil: 'networkidle' })
     await page.locator('.replay-controls').waitFor()
     await assertResources()
@@ -106,7 +144,7 @@ try {
     await page.locator('.replay-index-rounds button').first().click()
     assert.match(await page.locator('.replay-controls small').textContent(), /步骤 61 \/ 75/)
     assert.deepEqual(errors, [])
-    audits.push({ viewport, geometry, status: 'passed', cases: ['pause-and-seek', 'round', 'cost-search', 'exact-frame', 'keyboard-close', 'admin-incremental-index', '503-retry', 'loaded-playback-retained', 'player-and-admin-god-power-and-locks'] })
+    audits.push({ viewport, geometry, status: 'passed', cases: ['pause-and-seek', 'round', 'cost-search', 'exact-frame', 'keyboard-close', 'owned-viewers-0-and-1', 'admin-account-owned-boundary', 'paged-json-download-import', 'local-import-viewpoint', 'admin-incremental-index', '503-retry', 'loaded-playback-retained', 'player-and-admin-god-power-and-locks'] })
     await context.close()
   }
   fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify({ status: 'passed', generatedAt: new Date().toISOString(), audits }, null, 2))

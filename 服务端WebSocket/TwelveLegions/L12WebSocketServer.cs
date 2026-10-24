@@ -1084,7 +1084,8 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
             if (account is null) return Results.Unauthorized();
             try
             {
-                var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username);
+                var match = await _recorder.GetMatchForAccountAsync(matchId, account.Id, account.Username,
+                    request.HttpContext.RequestAborted);
                 if (match is not null && match.Commands.Count == 0)
                     return ApiError(request, "replay_payload_expired",
                         "回放载荷已清理或不可用；对局摘要与结算结果仍保留。",
@@ -1098,6 +1099,39 @@ public sealed partial class L12WebSocketServer : IAsyncDisposable
                 return ApiError(request, "replay_incompatible",
                     "这场回放暂时无法还原，仍可查看对局结果。",
                     StatusCodes.Status409Conflict);
+            }
+        });
+        _app.MapGet("/api/matches/{matchId}/replay", async (HttpRequest request, string matchId, int? limit) =>
+        {
+            var account = _platform.Authenticate(request.Headers.Authorization);
+            if (account is null) return Results.Unauthorized();
+            request.HttpContext.Response.Headers.CacheControl = "no-store";
+            try
+            {
+                var page = await _recorder.GetPlayerReplayPageAsync(matchId, account.Id, account.Username,
+                    QueryValue(request, "cursor"), limit ?? 50, request.HttpContext.RequestAborted);
+                request.HttpContext.RequestAborted.ThrowIfCancellationRequested();
+                if (_platform.Authenticate(request.Headers.Authorization)?.Id != account.Id)
+                    return Results.Unauthorized();
+                if (page is { TotalCommands: 0 })
+                    return ApiError(request, "replay_payload_expired",
+                        "回放载荷已清理或不可用；对局摘要与结算结果仍保留。", StatusCodes.Status410Gone);
+                return page is null ? Results.NotFound() : Results.Ok(page);
+            }
+            catch (L12ReplayPayloadTooLargeException)
+            {
+                return ApiError(request, "replay_page_too_large",
+                    "这场回放的单条状态超过分页读取上限（4 MiB），暂时无法读取。",
+                    StatusCodes.Status413PayloadTooLarge);
+            }
+            catch (InvalidDataException error) when (MatchRecorder.TryGetReplayIncompatibility(error, out _))
+            {
+                return ApiError(request, "replay_incompatible",
+                    "这场回放暂时无法还原，仍可查看对局结果。", StatusCodes.Status409Conflict);
+            }
+            catch (ArgumentException)
+            {
+                return ApiError(request, "invalid_replay_cursor", "回放分页游标无效", StatusCodes.Status400BadRequest);
             }
         });
         _app.MapGet("/api/admin/matches", async (HttpRequest request) =>

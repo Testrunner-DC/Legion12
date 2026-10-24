@@ -113,7 +113,7 @@ function renderedSurface(value, output = []) {
   return output
 }
 
-function renderRecords(render, deckNames) {
+function renderRecords(render, deckNames, exporting = false) {
   const summary = {
     matchId: 'privacy-fixture', roomCode: 'PRIVATE', player0: '甲', player1: '乙',
     deck0: deckNames[0], deck1: deckNames[1], startedUtc: '2026-10-08T08:00:00.000Z',
@@ -121,7 +121,7 @@ function renderRecords(render, deckNames) {
   }
   const noop = () => {}
   return render({
-    matches: [summary], selected: summary, loading: false, error: '', fileInput: null,
+    matches: [summary], selected: summary, loading: false, exporting, error: '', fileInput: null,
     canUseSelectedReplay: true, mobileReplayBlocked: false,
     importReplay: noop, openReplayImport: noop, exportReplay: noop, loadMatches: noop,
     selectMatch: noop, playSelected: noop, dateLabel: () => '10月08日 16:00',
@@ -173,10 +173,10 @@ check('deck-name projection preserves the existing permissive null-state parse b
   assert.equal(detail.match.deck0, privateDeckNames[0])
 })
 
-check('rendered player replay entries are independent of private deck names', () => {
+for (const exporting of [false, true]) check(`rendered player replay entries are independent of private deck names/exporting=${exporting}`, () => {
   const render = compileMatchRecordsRender()
-  const first = renderedSurface(renderRecords(render, privateDeckNames))
-  const second = renderedSurface(renderRecords(render, alternateDeckNames))
+  const first = renderedSurface(renderRecords(render, privateDeckNames, exporting))
+  const second = renderedSurface(renderRecords(render, alternateDeckNames, exporting))
   assert.deepEqual(first, second, 'changing only private deck names changed the rendered records surface')
   const rendered = JSON.stringify(first)
   for (const name of [...privateDeckNames, ...alternateDeckNames])

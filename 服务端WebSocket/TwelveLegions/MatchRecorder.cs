@@ -460,10 +460,46 @@ public sealed partial class MatchRecorder : IAsyncDisposable
         return matches;
     }
 
-    public async Task<L12MatchDetail?> GetMatchAsync(string matchId)
+    public Task<L12MatchDetail?> GetMatchAsync(string matchId)
+        => GetMatchAsync(matchId, CancellationToken.None);
+
+    public async Task<L12MatchDetail?> GetMatchAsync(string matchId, CancellationToken cancellationToken)
     {
         await using var connection = new SqliteConnection(_connectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(cancellationToken);
+        var summary = await ReadReplaySummaryAsync(connection, matchId, cancellationToken);
+        if (summary is null) return null;
+        var storageVersion = await ReadStorageVersionAsync(connection, matchId, cancellationToken);
+        if (storageVersion >= JournalStorageVersion)
+            return new L12MatchDetail(summary,
+                await ReconstructJournalCommandsAsync(connection, matchId, cancellationToken: cancellationToken));
+
+        var eventCommand = connection.CreateCommand();
+        eventCommand.CommandText = """
+            SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
+            FROM match_events WHERE match_id=$id ORDER BY sequence;
+            """;
+        eventCommand.Parameters.AddWithValue("$id", matchId);
+        var events = new List<L12RecordedCommand>();
+        await using var reader = await eventCommand.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var commandDocument = JsonDocument.Parse(reader.GetString(3));
+            using var stateDocument = JsonDocument.Parse(reader.GetString(8));
+            events.Add(new L12RecordedCommand(
+                reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2),
+                commandDocument.RootElement.Clone(), reader.GetInt32(4) == 1,
+                reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
+                stateDocument.RootElement.Clone()));
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return new L12MatchDetail(summary, events);
+    }
+
+    private static async Task<L12MatchSummary?> ReadReplaySummaryAsync(SqliteConnection connection,
+        string matchId, CancellationToken cancellationToken)
+    {
         var summaryCommand = connection.CreateCommand();
         summaryCommand.CommandText = """
             SELECT m.match_id,m.room_code,m.player_0,m.player_1,m.deck_0,m.deck_1,
@@ -476,40 +512,8 @@ public sealed partial class MatchRecorder : IAsyncDisposable
             WHERE m.match_id=$id GROUP BY m.match_id;
             """;
         summaryCommand.Parameters.AddWithValue("$id", matchId);
-        L12MatchSummary summary;
-        await using (var reader = await summaryCommand.ExecuteReaderAsync())
-        {
-            if (!await reader.ReadAsync()) return null;
-            summary = ReadSummary(reader);
-        }
-
-        var storageCommand = connection.CreateCommand();
-        storageCommand.CommandText = "SELECT storage_version FROM matches WHERE match_id=$id;";
-        storageCommand.Parameters.AddWithValue("$id", matchId);
-        var storageVersion = Convert.ToInt32(await storageCommand.ExecuteScalarAsync());
-        if (storageVersion >= JournalStorageVersion)
-            return new L12MatchDetail(summary,
-                await ReconstructJournalCommandsAsync(connection, matchId));
-
-        var eventCommand = connection.CreateCommand();
-        eventCommand.CommandText = """
-            SELECT sequence,received_utc,player_index,command_json,accepted,error,revision,state_hash,state_json
-            FROM match_events WHERE match_id=$id ORDER BY sequence;
-            """;
-        eventCommand.Parameters.AddWithValue("$id", matchId);
-        var events = new List<L12RecordedCommand>();
-        await using (var reader = await eventCommand.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                events.Add(new L12RecordedCommand(
-                    reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2),
-                    JsonDocument.Parse(reader.GetString(3)).RootElement.Clone(), reader.GetInt32(4) == 1,
-                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetInt64(6), reader.GetString(7),
-                    JsonDocument.Parse(reader.GetString(8)).RootElement.Clone()));
-            }
-        }
-        return new L12MatchDetail(summary, events);
+        await using var reader = await summaryCommand.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadSummary(reader) : null;
     }
 
     public async Task<L12MatchDetail?> GetMatchForPlayerAsync(string matchId, string playerName)
@@ -832,6 +836,9 @@ public sealed record L12RecordedCommand(
 
 public sealed record L12MatchDetail(L12MatchSummary Match, IReadOnlyList<L12RecordedCommand> Commands,
     int? ViewerPlayerIndex = null);
+
+public sealed record L12PlayerReplayPage(L12MatchSummary Match, IReadOnlyList<L12RecordedCommand> Items,
+    string? NextCursor, int Limit, long PageBytes, long TotalCommands, int ViewerPlayerIndex);
 
 public sealed record L12RankingMatch(
     string MatchId, string Player0, string Player1, string StartedUtc, string EndedUtc, int? Winner,

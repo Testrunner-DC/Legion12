@@ -275,9 +275,12 @@ export function replayEntryTemplateContract(sources) {
     && staticAttribute(node, 'ref', 'fileInput'))
   const importButton = fileActions && unique(renderedChildren(fileActions), node => node.tag === 'button'
     && staticText(node) === '打开 JSON 回放' && exactNode(node, { events: { click: 'openReplayImport' } }))
-  const exportButton = fileActions && unique(renderedChildren(fileActions), node => node.tag === 'button'
-    && staticText(node) === '保存 JSON'
-    && exactNode(node, { bindings: { disabled: '!canUseSelectedReplay' }, events: { click: 'exportReplay' } }))
+  const exportButton = fileActions && unique(renderedChildren(fileActions), node => {
+    const text = (node.children || []).filter(child => child.type !== 2 || child.content.trim())
+    return node.tag === 'button' && text.length === 1 && text[0].type === 5
+      && expressionIs(text[0].content?.content, "exporting ? '正在保存…' : '保存 JSON'")
+      && exactNode(node, { bindings: { disabled: '!canUseSelectedReplay || exporting' }, events: { click: 'exportReplay' } })
+  })
 
   const selectedDetail = recordsRoot && unique(records.nodes, node => node.tag === 'main'
     && hasClass(node, 'record-detail') && exactVisibility(node, 'if', 'selected')
@@ -297,7 +300,8 @@ export function replayEntryTemplateContract(sources) {
   const playButton = launch && unique(renderedChildren(launch), node => node.tag === 'button'
     && hasClass(node, 'primary') && staticText(node) === '播放回放'
     && exactNode(node, { bindings: { disabled: '!canUseSelectedReplay' }, events: { click: 'playSelected' } }))
-  const disabledReplayControls = records.nodes.filter(node => exactDirective(node, 'bind', 'disabled', '!canUseSelectedReplay'))
+  const disabledReplayControls = records.nodes.filter(node => exactDirective(node, 'bind', 'disabled', '!canUseSelectedReplay')
+    || exactDirective(node, 'bind', 'disabled', '!canUseSelectedReplay || exporting'))
 
   const replayRoot = unique(replay.nodes, node => node.tag === 'div' && hasClass(node, 'replay-page')
     && noVisibility(node) && !hasRenderingOverride(node) && templateRootReachable(replay, node))

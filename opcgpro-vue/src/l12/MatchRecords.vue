@@ -4,8 +4,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { authState, platformRequest, platformState } from './platform'
 import { recordedMatchOutcome } from './replayOutcome'
 import {
-  exportReplayPayload, parseReplayPayload, rememberImportedReplay, type MatchDetail, type MatchSummary,
+  parseReplayPayload, rememberImportedReplay, type MatchSummary,
 } from './replayModel'
+import { exportPlayerReplayBlob } from './playerReplayArchive'
 import { isMobileDeviceExperience } from './mobileViewport'
 import VisibleDisasterSummary from './site/VisibleDisasterSummary.vue'
 
@@ -14,6 +15,7 @@ const route = useRoute()
 const matches = ref<MatchSummary[]>([])
 const selected = ref<MatchSummary | null>(null)
 const loading = ref(false)
+const exporting = ref(false)
 const error = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
 const canUseSelectedReplay = computed(() => Boolean(selected.value?.endedUtc && selected.value.commandCount > 0))
@@ -22,6 +24,15 @@ let identityGeneration = 0
 let listReadGeneration = 0
 let disposed = false
 let initialSelectionPending = true
+let listReadController: AbortController | null = null
+let exportReadController: AbortController | null = null
+let exportGeneration = 0
+
+function cancelExport() {
+  exportGeneration++
+  exportReadController?.abort(); exportReadController = null; exporting.value = false
+}
+watch(() => selected.value?.matchId, cancelExport, { flush: 'sync' })
 
 function identityCurrent(generation: number) {
   return !disposed && generation === identityGeneration && authState.verified
@@ -29,13 +40,22 @@ function identityCurrent(generation: number) {
 }
 function clearIdentityRecords() {
   identityGeneration++; listReadGeneration++
+  listReadController?.abort(); listReadController = null
+  cancelExport()
   matches.value = []; selected.value = null; loading.value = false
   initialSelectionPending = false
   error.value = '账号或登录状态已变化，请重新读取对局记录'
 }
 watch(() => [platformState.token, platformState.account?.id, platformState.account?.disabled, authState.verified] as const,
   clearIdentityRecords, { flush: 'sync' })
-onBeforeUnmount(() => { disposed = true; identityGeneration++; listReadGeneration++ })
+watch(() => route.fullPath, () => {
+  listReadGeneration++; listReadController?.abort(); listReadController = null; loading.value = false
+  cancelExport()
+}, { flush: 'sync' })
+onBeforeUnmount(() => {
+  disposed = true; identityGeneration++; listReadGeneration++
+  listReadController?.abort(); listReadController = null; cancelExport()
+})
 
 function blockMobileReplay() {
   error.value = '请到电脑端查看回放'
@@ -44,6 +64,9 @@ function blockMobileReplay() {
 onMounted(() => { void loadMatches() })
 
 async function loadMatches() {
+  listReadController?.abort()
+  const controller = new AbortController()
+  listReadController = controller
   const identity = identityGeneration
   const read = ++listReadGeneration
   if (!identityCurrent(identity)) {
@@ -54,7 +77,7 @@ async function loadMatches() {
   loading.value = true
   error.value = ''
   try {
-    const incoming = await platformRequest<MatchSummary[]>('/api/matches?limit=10')
+    const incoming = await platformRequest<MatchSummary[]>('/api/matches?limit=10', { signal: controller.signal })
     if (!identityCurrent(identity) || read !== listReadGeneration) return
     const selectedId = selected.value?.matchId || (initialSelectionPending ? String(route.query.selected ?? '') : '')
     matches.value = incoming
@@ -63,7 +86,10 @@ async function loadMatches() {
   } catch (reason) {
     if (!identityCurrent(identity) || read !== listReadGeneration) return
     error.value = reason instanceof Error ? reason.message : '读取对局记录失败'
-  } finally { if (identityCurrent(identity) && read === listReadGeneration) loading.value = false }
+  } finally {
+    if (listReadController === controller) listReadController = null
+    if (identityCurrent(identity) && read === listReadGeneration) loading.value = false
+  }
 }
 
 function selectMatch(match: MatchSummary) {
@@ -83,14 +109,6 @@ function openReplayImport() {
   fileInput.value?.click()
 }
 
-async function resolveSelectedDetail() {
-  const identity = identityGeneration
-  const matchId = selected.value?.matchId
-  if (!matchId || !identityCurrent(identity)) return null
-  const detail = await platformRequest<MatchDetail>(`/api/matches/${encodeURIComponent(matchId)}`)
-  return identityCurrent(identity) && selected.value?.matchId === matchId ? detail : null
-}
-
 function replayFileDate(raw: string) {
   const date = new Date(raw)
   if (Number.isNaN(date.getTime())) return '日期未知'
@@ -101,20 +119,31 @@ function replayFileDate(raw: string) {
 }
 
 async function exportReplay() {
+  cancelExport()
   const identity = identityGeneration
+  const generation = exportGeneration
+  const matchId = selected.value?.matchId
+  if (!matchId || !canUseSelectedReplay.value || !identityCurrent(identity)) return
+  const controller = new AbortController()
+  exportReadController = controller
+  const current = () => !controller.signal.aborted && generation === exportGeneration
+    && identityCurrent(identity) && selected.value?.matchId === matchId
+  exporting.value = true
   error.value = ''
   try {
-    const detail = await resolveSelectedDetail()
-    if (!detail || !identityCurrent(identity)) return
-    const blob = new Blob([JSON.stringify(exportReplayPayload(detail))], { type: 'application/json' })
+    const result = await exportPlayerReplayBlob(matchId, controller.signal)
+    if (!current()) return
     const anchor = document.createElement('a')
-    anchor.href = URL.createObjectURL(blob)
-    anchor.download = `${replayFileDate(detail.match.startedUtc)}-${detail.match.matchId}.json`
+    anchor.href = URL.createObjectURL(result.blob)
+    anchor.download = `${replayFileDate(result.match.startedUtc)}-${result.match.matchId}.json`
     anchor.click()
     window.setTimeout(() => URL.revokeObjectURL(anchor.href), 1000)
   } catch (reason) {
-    if (!identityCurrent(identity)) return
+    if (!current()) return
     error.value = reason instanceof Error ? reason.message : '保存回放失败'
+  } finally {
+    if (exportReadController === controller) exportReadController = null
+    if (generation === exportGeneration) exporting.value = false
   }
 }
 
@@ -183,7 +212,7 @@ function resultLabel(match: MatchSummary) {
       <div class="record-file-actions">
         <input ref="fileInput" type="file" accept="application/json,.json" @change="importReplay"/>
         <button @click="openReplayImport">打开 JSON 回放</button>
-        <button :disabled="!canUseSelectedReplay" @click="exportReplay">保存 JSON</button>
+        <button :disabled="!canUseSelectedReplay || exporting" @click="exportReplay">{{ exporting ? '正在保存…' : '保存 JSON' }}</button>
         <button @click="loadMatches">刷新记录</button>
       </div>
     </header>
