@@ -82,6 +82,14 @@ assert(board.includes("if (event.type === 'effect-result') return effectResultPr
 assert(board.includes('event.sequence > lastPublicRevealSequence.value')
   && board.includes('lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)'),
   '重复投影仍按已有 sequence 水位去重')
+assert(board.includes("kind === 'fact-continuation' || kind === 'entry-continuation' || kind === 'linked-public-continuation'"),
+  'only explicitly proven fact/entry/public continuations may use the short text-tail budget')
+assert(board.includes('publicRevealDuration(publicReveal.value.kind)'),
+  'the queue must choose its reading budget from the proven presentation kind')
+assert(board.includes('l12AnimationDuration(900, 260)'),
+  'the live continuation tail keeps a clear standard/fast/off reading budget')
+assert(board.includes('return cardRevealDuration()'),
+  'full-card and conservative fallback presentations retain the complete card budget')
 
 if (process.argv.includes('--engine')) {
   const assemblyDirectory = process.env.L12_EFFECT_SAMPLE_ASSEMBLY_DIR

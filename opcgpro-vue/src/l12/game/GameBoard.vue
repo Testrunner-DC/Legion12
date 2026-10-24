@@ -42,7 +42,7 @@ import { alternateArtApi, type AlternateArt } from '../platform'
 import { landscapeTeleportTarget, viewportRect } from '../mobileViewport'
 import { useBattleViewportLayout } from './battleViewportLayout'
 import { createPresentationSequenceCoordinator, type PresentationReservation } from './presentationSequenceCoordinator'
-import { createPublicRevealPresentationTracker } from './publicRevealPresentation'
+import { createPublicRevealPresentationTracker, findLinkedPublicContinuationParent } from './publicRevealPresentation'
 
 type GmPlacementRequest = {
   type: 'placeCard' | 'playHandCard'
@@ -211,6 +211,7 @@ type PublicRevealQueueItem = {
   sequence: number
   cards: Card[]
   text: string
+  linkedContinuationTexts: string[]
   event: ActionEvent
   linkedPublicContinuation: boolean
   reservation: PresentationReservation
@@ -304,6 +305,13 @@ watch(cardPresentationBusy, busy => emit('presentationChange', busy), { immediat
 function cardRevealDuration() {
   if (!props.replayPlaybackSpeed) return l12AnimationDuration(3000, 700)
   return Math.max(300, Math.round(l12AnimationDuration(1600, 420) / props.replayPlaybackSpeed))
+}
+function publicRevealDuration(kind: PublicRevealPresentation['kind']) {
+  if (kind === 'fact-continuation' || kind === 'entry-continuation' || kind === 'linked-public-continuation') {
+    if (!props.replayPlaybackSpeed) return l12AnimationDuration(900, 260)
+    return Math.max(160, Math.round(l12AnimationDuration(600, 220) / props.replayPlaybackSpeed))
+  }
+  return cardRevealDuration()
 }
 const controlledPlayerIndex = computed(() => {
   if (props.readOnly || !l12State.gmEnabled) return props.game.you
@@ -869,12 +877,13 @@ async function showNextPublicReveal() {
   publicReveal.value = {
     sequence: next.sequence,
     cards: continuation || linkedPublicContinuation ? [] : next.cards,
-    text: next.text,
+    text: [next.text, ...next.linkedContinuationTexts].join('\n'),
     kind: linkedPublicContinuation ? 'linked-public-continuation'
       : presentationFacts ? 'fact-continuation' : entryTransactionKey ? 'entry-continuation' : 'full-card',
     transactionKey: presentationFacts ? `facts:${presentationFacts.join(',')}` : entryTransactionKey ?? undefined,
   }
   if (publicRevealTimer) clearTimeout(publicRevealTimer)
+  const duration = publicRevealDuration(publicReveal.value.kind)
   publicRevealTimer = setTimeout(() => {
     if (epoch !== presentationEpoch) return
     publicReveal.value = null
@@ -882,7 +891,7 @@ async function showNextPublicReveal() {
     publicRevealRelease?.()
     publicRevealRelease = null
     void showNextPublicReveal()
-  }, cardRevealDuration())
+  }, duration)
 }
 function publicRevealText(event: ActionEvent) {
   if (event.type === 'effect-result') return effectResultPresentationText(event, presentationCards(event)[0])
@@ -939,19 +948,28 @@ watch(() => props.game.recentEvents?.map(event => event.sequence).join(',') ?? '
             || (event.type === 'search' && /展示|加入手牌/.test(event.effectText || event.text)))))
       && !(event.type === 'effect-trigger' && /展示|公开/.test(event.text)))
     .sort((left, right) => left.sequence - right.sequence)
+  const batchParents = new Map<number, PublicRevealQueueItem>()
   for (const event of fresh) {
     if (event.sequence <= lastPublicRevealSequence.value) continue
-    const linkedPublicContinuation = publicRevealPresentationTracker.classify(event) === 'linked-continuation'
-    const reservation = cardPresentationCoordinator.reserve(event.sequence, 10)
-    reservation.setPaused(modalPresentationPaused.value)
-    publicRevealQueue.push({
+    const publicRevealDecision = publicRevealPresentationTracker.classify(event)
+    const parent = findLinkedPublicContinuationParent(publicRevealDecision, batchParents, publicRevealQueue)
+    if (parent) {
+      parent.linkedContinuationTexts.push(publicRevealText(event))
+      lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
+      continue
+    }
+    const queueItem: PublicRevealQueueItem = {
       sequence: event.sequence,
       cards: presentationCards(event),
       text: publicRevealText(event),
+      linkedContinuationTexts: [],
       event,
-      linkedPublicContinuation,
-      reservation,
-    })
+      linkedPublicContinuation: publicRevealDecision.kind === 'linked-continuation',
+      reservation: cardPresentationCoordinator.reserve(event.sequence, 10),
+    }
+    queueItem.reservation.setPaused(modalPresentationPaused.value)
+    publicRevealQueue.push(queueItem)
+    batchParents.set(event.sequence, queueItem)
     lastPublicRevealSequence.value = Math.max(lastPublicRevealSequence.value, event.sequence)
   }
   void showNextPublicReveal()

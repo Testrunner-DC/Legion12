@@ -1,5 +1,29 @@
 # Legion12 Bug 修复记录
 
+## UI-20261025-PLAY-SINGLE-OWNER｜普通圣物落位后效果重复整卡
+
+- 人类批准三项呈现修复。普通军团三视角为正控制；普通圣物真实DOM/WAAPI帧在落位后又出现full-card与权威圣物同时可见。前端entryMovementTransactionKey只接legion→field，漏普通artifact play/hand→relic；服务端L12Actions两类同样使用enter稳定日志身份，不能把timing或“已有新动画”当正确证据。
+- 最小限定扩该公开圣物事务，仍只在真实移动已开始后register，结果保文字；不扩墓地/牌库/特殊put/master/缺类型/隐藏或未知来源。全S1/S2/ST JSON按cardType=artifact扫描16张，共享入口均覆盖资格但不冒逐张自然链：山河/神碑/卡诺匹斯箱/四罐/格拉墨/草薙/统御戒/神农鼎/圣甲虫/安德华拉诺特/勾玉/锻造炉/光之剑。公开/反向/重入/恢复沿原权威sequence不按卡名去重。
+- 原RED53项45过8失败，其中6是三视角圣物重复/错误分类，2是模板外壳测量误判（改测真实moving-card，不计产品RED）；GREEN六组53/53、纯107通过。原49动效合同仅将legion-only旧literal精确改为legion及hand/play/relic圣物两白名单，隐藏/来源/真实开始/事务断言保。补两点RAF与最终Main组合资格另记；不冒用户未知军团根因、原私人局、物理手机或部署。唯一visual/entry-single-owner-*-20261025-01。
+
+## UI-20261025-PUBLIC-REVEAL-CONTINUITY｜同次公开续段共享阅读预算
+
+- 旧花魁去重只清第二整卡，GameBoard仍为每项reserve并等标准3000ms；本轮人类已批准同次连续呈现/保真实交互。沿原已证明producer的tracker返回精确parentSequence，只有同一到达批且当前队尾父项才能折叠，父子文字同一full-card/同一个lease和完整阅读预算；能力身份本身不冒发动身份，不扩其它无证明来源或新协议。
+- 已实际呈现的fact/entry以及晚到已证明linked子项保无卡图短尾，直播标准900/fast495/off260，回放沿原速度缩放；full/未知fallback仍原预算。Main审查时明确保晚到原text-only、父项full语义和真实换行，不以恒false假留guard。选牌/响应中未开始仍暂停、已开始自然撤去不重播；相同sequence/恢复/切局清旧关联。全producer查询PubliclyRevealThenAddCardToHandByEffect/search-add与既有fact引用；花魁唯一已证明pair，真实后续士气独立栈不合并。
+- 原17+7纯逻辑/消费者及结果文案/隐私通过。c-run-01/02的7有效场景保（同批三档/观战/插队/晚到/Prompt），恢复夹具先revision后events不符合真实一致快照，失败0不得改为通过；改夹具完整events先到再提交revision、保持connecting后，c-run-03精确晚到三档及恢复14项/4场景过，CA423921，源稳定/正常清退。原标准同批3303ms一次DOM，非两次3秒；最终晚到第二窗口0卡。并非新单轮8/8、所有卡效合并或真机。Main组合前端/Git待统一，不部署/不改后端、Journal或事实。
+
+## UI-20261025-OPENING-BOTH-VIEWERS｜共享开场不再误入被动等待瓦片
+
+- 人类报告只有掷骰选择方看到开场，并明确批准本地三项动画修复。P4：非选择方同样有initiative事实，但passiveWaiting误把无本方操作权等同普通等待，Teleport到board-local瓦片；真实GamePage/GameBoard宿主RED中owner为1366×768、waiting仅112.09×65.22且overflow hidden。不是服务端缺开场，权威选择权不变。
+- 最小两处：initiative等待不归passiveWaiting，且不附普通waiting蒙版；保原共享opening分支、发送、其它等待/防守/最小化与移动逻辑画布。同类扫描displayKind、Teleport/class与原initiative生命周期；不改规则、隐私、Journal或后端。
+- 原owner正控/等待负控、报告/截图保；修后具名11/11实际通过，含双方/两选择权、短横/旋转等待、权威骰点/重复修订/换局、三档偏好。01B18ED8报告源稳定、fixture一404保留。Main独读diff/报告并目视前后图；整体比例前端资格与Git待Main统一，不冒真机/玩家ACK/部署或线上关单。唯一initiative-both-viewers-20261025；回滚仅本呈现三叶与玩家账目。
+
+## IMAGE-20261025-DELAYED-RECOVERY｜持续在线时失败卡图有界冷却恢复
+
+- 来源L12-牌库界面优化人类“同意”已Main实读（01a16f1d），只批准修复/验收和窄候选，正式发布不在其中。旧online恢复无法覆盖始终在线的限流；native IMG不提供状态码/Retry-After，故不增加额外探测HTTP。共享正式图库的旧120/min限流仍是另一个线上未发布问题，CID不唯一绑定，不能据本前端片称根治。
+- 原同源CardImage生命周期上补65秒、再130秒、每身份最多两次自动尝试，复用200ms队列/单调冷却与可见/前台/在线门槛；屏外到期只保待尝试，不轮询/耗次数；成功/换卡/卸载撤计时，原退休源和隐藏卡背边界保。Main独读三叶与原49纯/42卡图合同，实际HTTP429两档22/22，65217/65210ms且online事件0，屏外3请求到入视后4、成功及退休不再请求，0BE44C13报告。
+- 实际第二130秒/封顶及后台边界用纯虚拟单调时间，不冒两轮真实等候；合成SVG不冒真实图库送达/物理手机/线上429全恢复。源75F73174/379B137B/E59AFA49冻结，Main组合前端资格后独立同步；本片无两服/维护/业务数据写。原main-review保留，冷却后片另记，不覆盖旧验收。
+
 ## UI-20261025-BATTLE-MOTION-PRECEDENCE｜游戏设置不再被系统动效偏好覆盖
 
 - 人类报告测试服开场与新对局动效不可见，明确游戏内为标准；源码发现三处JS直接读OS reduce及五组件CSS独立压制。人类本轮明确同意游戏设置优先并更新测试服。P4仅呈现，不改规则、计时、命令、隐私、Journal或结果；过去off/reduce合并预期由本次裁定取代，不追改旧回执。

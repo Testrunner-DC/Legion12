@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "20261025-public-reveal-continuity",
+  "date": "2026-10-25",
+  "audience": "players",
+  "title": "连续效果展示",
+  "changes": [{
+    "category": "battle",
+    "text": "花魁的馈赠同次公开展示和入手结果合并呈现，不再各等待一整段时间；已由登场或状态变化呈现的结果说明缩短停留，真实选牌、响应与后续独立效果保持原有流程。",
+    "paths": ["opcgpro-vue/src/l12/game/GameBoard.vue", "opcgpro-vue/src/l12/game/publicRevealPresentation.ts"]
+  }]
+}

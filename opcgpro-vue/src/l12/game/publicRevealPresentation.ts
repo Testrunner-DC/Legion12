@@ -1,6 +1,8 @@
 import type { ActionEvent } from '../types'
 
-export type PublicRevealPresentationDecision = 'full-card' | 'linked-continuation'
+export type PublicRevealPresentationDecision =
+  | { kind: 'full-card' }
+  | { kind: 'linked-continuation'; parentSequence: number }
 
 type RevealCorrelation = {
   sequence: number
@@ -58,14 +60,32 @@ export function createPublicRevealPresentationTracker() {
       const reveal = event.type === 'reveal' ? exactOiranScene(event, 'reveal-add') : null
       const search = event.type === 'search' ? exactOiranScene(event, 'search-add') : null
       const linked = Boolean(search && pendingReveal && matchesProvenOiranProducerPair(pendingReveal, search))
+      const parentSequence = linked ? pendingReveal?.sequence : undefined
       // Two reveal starts without the expected continuation are ambiguous. Do
       // not silently pair the second activation with a later result merely
       // because catalog identity, selected instance and sequence happen to fit.
       pendingReveal = reveal && !pendingReveal ? reveal : null
-      return linked ? 'linked-continuation' : 'full-card'
+      return parentSequence !== undefined
+        ? { kind: 'linked-continuation', parentSequence }
+        : { kind: 'full-card' }
     },
     reset() {
       pendingReveal = null
     },
   }
+}
+
+/**
+ * A producer-proven child can share presentation time only with the exact
+ * parent reserved by this same delivered batch. Requiring the queue tail keeps
+ * an unrelated authority reservation from being skipped or reordered.
+ */
+export function findLinkedPublicContinuationParent<T extends { sequence: number }>(
+  decision: PublicRevealPresentationDecision,
+  batchParents: ReadonlyMap<number, T>,
+  queue: readonly T[],
+): T | null {
+  if (decision.kind !== 'linked-continuation') return null
+  const parent = batchParents.get(decision.parentSequence)
+  return parent && queue.at(-1) === parent ? parent : null
 }
