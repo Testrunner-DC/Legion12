@@ -1,5 +1,13 @@
 # 十二军团简短交接
 
+## 2026-10-24 CI宿主与唯一入口复制片｜本地验收完成，Linux待实跑
+
+- 当前目标5仅修现有初始化器的宿主假设：Windows继续带盘符且文件存在，Unix使用现存绝对pwsh；原物理C禁写／跳转检查不变。workflow所有生成根绑定runner.temp，同一标准npm构建保一次，失败保原生退出码、完整日志与转义限长摘要，不造第二打包器。
+- 23宿主／原23存储、真实包装体三个原生退出码0/7/13、10workflow破坏及单构建缺失／重复反例通过。CRLF与长编码命令两次夹具失败、漏适配第二旧literal的mapped Batch失败均保留；只修对应夹具／精确合同，不减预算或跳门禁。
+- 干净c748基底的7工具标准Batch74521实际exit0：8378规则／2338平台全过无跳过，361 UI／类型／双Vite通过，AA4B9B74；两强制回执逐字节保全为F15F6ECE／CEFD1F0C，C#经Out-Host输出未全收进Tee，不能把该文件冒全量原生日志。后续5工具标准Batch23798实际exit0／6277727F；只有ArchitectureP2P3BoundaryTests直接读取变更脚本，固定现有程序集补4/4，F8F81FDA，未重复未变双套件。12叶与隔离副本逐字节全同，三开局产品草稿排除。
+- 现有公开CI40055055885／40056087329均在前端步失败，完整日志API403且注释只有exit1，不能声称具体根因。修正后的真实Linux CI及canonical verify-l12自动出包尚未接受；robocopy／native参数等剩余宿主资格后续仍走同一入口。
+- 唯一入口三处复制已接同一普通组件、原排除目录及schema／hash／runtime／预算保留，19实际文件系统例通过；祖先跳转隐藏重叠的RED只在工具输出01df55、没有Tee文件，修物理源根后通过。9个原生文件参数现用Join-Path并实际经Node完整往返，Python按本机Application解析，输出先物理guard。原Release缓存／篡改／dirty／例外失效全回归仍过，首新QA括号错误仅工具输出5a2f61。唯一main-acceptance及canonical-copy-acceptance，7＋5为同族两段验收，不冒单轮12叶fresh Batch、完整Windows／Linux发布包或CI通过。同步后核实际CI；自动可信素材输入和canonical CI接线仍未完成，不造第二打包器。
+
 ## 2026-10-24 动效第二片Main整合接受｜原失败点续验完成
 
 - 只纳ZoneMovement与两QA三叶：公开play／put／enter军团非field→field中央停驻再落地，公开正有限数兵力影响局部冲击；未知／隐藏／非军团不新增演出，reduce/off必要两端点，现有reservation／busy／安全卡背／prompt让位与取消不变。

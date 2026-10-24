@@ -16,7 +16,11 @@ assert(packageDocument.scripts['check:performance-architecture'].includes('check
 assert(packageDocument.scripts['check:performance-architecture'].includes('check-performance-observability.mjs'))
 assert(changeGate.includes('npm.cmd" @("run", "check:performance-architecture")'))
 assert.equal((workflow.match(/npm run check:performance-architecture/g) ?? []).length, 0)
-assert.equal((workflow.match(/run: npm run build/g) ?? []).length, 1)
+const assertSingleStandardBuild = source => assert.equal(
+  (source.match(/^\s+npm run build 2>&1 \| Tee-Object -FilePath \$log\s*$/gm) ?? []).length, 1)
+assertSingleStandardBuild(workflow)
+assert.throws(() => assertSingleStandardBuild(workflow.replace('npm run build 2>&1', 'echo skipped 2>&1')))
+assert.throws(() => assertSingleStandardBuild(workflow + '\n          npm run build 2>&1 | Tee-Object -FilePath $log\n'))
 
 assert.deepEqual(analyzeSource(`<script setup lang="ts">
   fetch('/api/example')

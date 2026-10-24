@@ -20,6 +20,21 @@ function check(source) {
   for (const command of ['python3 -I -B ops/ci/test-l12-card-assets-input.py --work-root "$RUNNER_TEMP/l12-card-input"',
     'python3 -I -B ops/ci/l12-card-assets-input.py check --lock ops/ci/l12-card-assets-input.lock.json'])
     assert.equal(source.includes(command), true, `CI must preserve trusted asset boundary: ${command}`)
+  for (const name of ['L12_WORK_CACHE', 'L12_DEPENDENCY_CACHE', 'L12_ARTIFACT_ROOT', 'L12_ARCHIVE_ROOT'])
+    assert.match(source, new RegExp(`^      ${name}: \\$\\{\\{ runner\\.temp \\}\\}/l12-ci/`, 'm'),
+      `CI must bind ${name} outside its source checkout`)
+  for (const command of ['& ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null',
+    '& ./scripts/test-l12-build-host.ps1 -WorkRoot $env:L12_WORK_CACHE',
+    'node scripts/test-ci-host-step.mjs',
+    "@('L12_PWSH','TEMP','TMP','TMPDIR','DOTNET_CLI_HOME','NUGET_PACKAGES','NUGET_HTTP_CACHE_PATH','npm_config_cache','COREPACK_HOME')",
+    'npm run build 2>&1 | Tee-Object -FilePath $log', '$buildExit = $LASTEXITCODE',
+    'if ($buildExit -ne 0)', 'exit $buildExit',
+    '$tail = $tail.Replace(\'%\',\'%25\').Replace("`r",\'%0D\').Replace("`n",\'%0A\')'])
+    assert.ok(source.includes(command), `CI must retain host/failure binding: ${command}`)
+  assert.ok(source.indexOf('& ./ops/windows/Initialize-L12BuildEnvironment.ps1') < source.indexOf('npm ci '),
+    'CI must bind host and all generated roots before dependency install and frontend execution')
+  assert.equal((source.match(/^          npm run build 2>&1 \| Tee-Object -FilePath \$log$/gm) || []).length, 1,
+    'CI still owns exactly one standard frontend build')
 }
 
 check(workflow)
@@ -38,4 +53,8 @@ assert.throws(() => check(workflow.replace('run: bash scripts/test-l12-runtime-b
   /synthetic backup-retention/)
 assert.throws(() => check(workflow.replace('python3 -I -B ops/ci/test-l12-card-assets-input.py', 'echo skipped-assets')), /trusted asset boundary/)
 assert.throws(() => check(workflow.replace('check --lock ops/ci/l12-card-assets-input.lock.json', 'check --lock other.json')), /trusted asset boundary/)
-console.log('CI single release entry: current workflow and six negative mutations passed; canonical package, trusted asset input and synthetic retention requirements retained.')
+assert.throws(() => check(workflow.replace('& ./ops/windows/Initialize-L12BuildEnvironment.ps1 | Out-Null', 'echo skipped-host')), /host\/failure binding/)
+assert.throws(() => check(workflow.replace('L12_WORK_CACHE: ${{ runner.temp }}', 'L12_WORK_CACHE: ${{ github.workspace }}')), /bind L12_WORK_CACHE/)
+assert.throws(() => check(workflow.replace('exit $buildExit', 'exit 0')), /host\/failure binding/)
+assert.throws(() => check(workflow.replace('.Replace("`n",\'%0A\')', '')), /host\/failure binding/)
+console.log('CI single release entry: current workflow and ten negative mutations passed; canonical package, trusted assets, synthetic retention and native failure propagation retained.')

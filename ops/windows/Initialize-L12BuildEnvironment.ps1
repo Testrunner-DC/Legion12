@@ -11,14 +11,23 @@ Set-StrictMode -Version Latest
 
 # Node-based acceptance probes must not rediscover a PowerShell executable via
 # a shortened npm child PATH. Bind the current host unless explicitly supplied.
+function Test-L12PowerShellHostPath {
+    param([AllowNull()][string]$Path, [bool]$WindowsHost)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+    if ($WindowsHost) { return $Path -match '^[A-Za-z]:[\\/]' }
+    # Do not reinterpret a drive alias, UNC/device path or relative command on
+    # a Unix runner. Existence and file type are checked separately below.
+    return $Path.StartsWith('/') -and -not $Path.StartsWith('//') -and -not $Path.Contains('\')
+}
+$windowsHost = [IO.Path]::DirectorySeparatorChar -eq '\'
 $resolvedPowerShellExecutable = $env:L12_PWSH
 if ([string]::IsNullOrWhiteSpace($resolvedPowerShellExecutable)) {
-    $resolvedPowerShellExecutable = Join-Path $PSHOME 'pwsh.exe'
-    if (-not (Test-Path -LiteralPath $resolvedPowerShellExecutable -PathType Leaf)) {
+    $resolvedPowerShellExecutable = Join-Path $PSHOME $(if ($windowsHost) { 'pwsh.exe' } else { 'pwsh' })
+    if ($windowsHost -and -not (Test-Path -LiteralPath $resolvedPowerShellExecutable -PathType Leaf)) {
         $resolvedPowerShellExecutable = Join-Path $PSHOME 'powershell.exe'
     }
 }
-if ($resolvedPowerShellExecutable -notmatch '^[A-Za-z]:[\\/]' -or
+if (-not (Test-L12PowerShellHostPath $resolvedPowerShellExecutable $windowsHost) -or
     -not (Test-Path -LiteralPath $resolvedPowerShellExecutable -PathType Leaf)) {
     throw 'L12_POWERSHELL_EXECUTABLE_INVALID: require an existing absolute local executable.'
 }

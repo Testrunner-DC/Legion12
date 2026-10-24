@@ -261,12 +261,12 @@ Assert-True ($platformProjectSource.Contains('<Compile Remove="EmailAuthAndAccou
 foreach ($activeTest in @("AdminResetAndLogicalDeletionProtectRootAndSelfAndScrubPersonalData", "MatchRecorderAnonymizesNamesDeckLabelsAndRecordedJson")) {
     Assert-True ($accountPrivacySource.Contains($activeTest)) "Active account/privacy regression is missing: $activeTest"
 }
-Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "rules" dotnet test "\.\\TwelveLegions\.Tests')).Count -eq 1) "Commit-level verifier must run full rules exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "platform" dotnet test "\.\\TwelveLegions\.Platform\.Tests')).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "deployment-drain-consumer" python -B "\.\\scripts\\test-l12-deployment-drain-consumer\.py"')).Count -eq 1) "Commit-level Release must run the deployment-drain fault matrix exactly once."
+Assert-True (([regex]::Matches($verifySource, [regex]::Escape('Invoke-TimedExternal "rules" dotnet test (Join-Path $repoRoot ''TwelveLegions.Tests/TwelveLegions.Tests.csproj'')'))).Count -eq 1) "Commit-level verifier must run full rules exactly once."
+Assert-True (([regex]::Matches($verifySource, [regex]::Escape('Invoke-TimedExternal "platform" dotnet test (Join-Path $repoRoot ''TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj'')'))).Count -eq 1) "Commit-level verifier must run the dedicated platform suite exactly once."
+Assert-True (([regex]::Matches($verifySource, [regex]::Escape('Invoke-TimedExternal "deployment-drain-consumer" $pythonExecutable -B (Join-Path $repoRoot ''scripts/test-l12-deployment-drain-consumer.py'')'))).Count -eq 1) "Commit-level Release must run the deployment-drain fault matrix exactly once."
 Assert-True ($verifySource.Contains('LogFileName=rules.trx') -and $verifySource.Contains('LogFileName=platform.trx') -and
     $verifySource.Contains('"--results-directory", $evidenceDirectory') -and $verifySource.Contains('trxOmittedForBudget = $trxOmittedForBudget')) "Both full suites must write distinct TRX files unless the budget omission is explicitly recorded."
-Assert-True (([regex]::Matches($verifySource, 'Invoke-External node "\.\\scripts\\test-release-status\.mjs"')).Count -eq 1) "Commit-level verifier must validate release state source exactly once."
+Assert-True (([regex]::Matches($verifySource, [regex]::Escape('Invoke-External node (Join-Path $repoRoot ''scripts/test-release-status.mjs'')'))).Count -eq 1) "Commit-level verifier must validate release state source exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-npm-ci" \$npmExecutable ci')).Count -eq 1) "Commit-level verifier must install the isolated frontend exactly once."
 Assert-True (([regex]::Matches($verifySource, 'Invoke-TimedExternal "frontend-build" \$npmExecutable run build')).Count -eq 1) "Commit-level verifier must build the isolated frontend exactly once."
 Assert-True ($deploySource.Contains('$cardAssetsProbe = if ($ServerArtifactRoot -eq "/www/legion12")')) "Deployment must probe the server content-addressed card cache before upload."
@@ -367,6 +367,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/lib/l12-test-storage.ps1') -Destination (Join-Path $fixtureRepo 'scripts/lib/l12-test-storage.ps1')
     Copy-Item -LiteralPath $cacheInitializer -Destination (Join-Path $fixtureRepo "ops\windows\Initialize-L12BuildEnvironment.ps1") -Force
     Copy-Item -LiteralPath (Join-Path $repoRoot 'ops/windows/L12GeneratedStorage.ps1') -Destination (Join-Path $fixtureRepo 'ops/windows/L12GeneratedStorage.ps1')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'ops/windows/L12PlainDirectoryCopy.ps1') -Destination (Join-Path $fixtureRepo 'ops/windows/L12PlainDirectoryCopy.ps1')
     Copy-Item -LiteralPath $performanceExceptions -Destination (Join-Path $fixtureRepo "ops\performance-exceptions.json") -Force
     Copy-Item -LiteralPath $changeGateScript -Destination (Join-Path $fixtureRepo "scripts\verify-l12-change.ps1") -Force
     Copy-Item -LiteralPath $releaseLedgerScript -Destination (Join-Path $fixtureRepo "scripts\release-ledger.mjs") -Force

@@ -10,6 +10,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot '../../scripts/lib/l12-test-storage.ps1')
+. (Join-Path $PSScriptRoot 'L12PlainDirectoryCopy.ps1')
 Set-StrictMode -Version Latest
 
 function Invoke-External {
@@ -190,6 +191,7 @@ function Test-CachedArtifact {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $cacheInitializer = Join-Path $PSScriptRoot "Initialize-L12BuildEnvironment.ps1"
 $resolvedCacheRoot = & $cacheInitializer -CacheRoot $CacheRoot | Select-Object -Last 1
+$OutputDirectory = Assert-L12GeneratedPath -Path $OutputDirectory -Purpose 'canonical release output'
 $originalLocation = Get-Location
 $stagingDirectory = $null
 $frontendWorkspaceDirectory = $null
@@ -201,14 +203,18 @@ $script:verificationTimings = [Collections.Generic.List[object]]::new()
 
 try {
     Set-Location $repoRoot
-    foreach ($commandName in @("git", "dotnet", "npm", "tar", "python")) { Require-Command $commandName }
+    foreach ($commandName in @("git", "dotnet", "npm", "tar", "node")) { Require-Command $commandName }
+    $pythonNames = if ([IO.Path]::DirectorySeparatorChar -eq '\') { @('python') } else { @('python3','python') }
+    $pythonCommand = Get-Command -Name $pythonNames -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $pythonCommand) { throw '缺少 Python 命令，无法执行发布围栏回归。' }
+    $pythonExecutable = $pythonCommand.Source
     $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
     $npmExecutable = if ($null -ne $npmCommand) { $npmCommand.Source } else { "npm" }
     $commit = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw "无法读取当前提交" }
     Assert-CleanCommit -ExpectedCommit $commit -Operation "验证或复用发布包"
-    Invoke-External node ".\scripts\release-ledger.mjs" validate --repo $repoRoot
-    Invoke-External node ".\scripts\test-release-status.mjs"
+    Invoke-External node (Join-Path $repoRoot 'scripts/release-ledger.mjs') validate --repo $repoRoot
+    Invoke-External node (Join-Path $repoRoot 'scripts/test-release-status.mjs')
     $CardAssetDirectory = (Resolve-Path -LiteralPath $CardAssetDirectory).Path
     $cardAssetManifestPath = Join-Path $CardAssetDirectory "card-assets.manifest.json"
     if (-not (Test-Path -LiteralPath $cardAssetManifestPath -PathType Leaf)) { throw "优化卡图目录缺少发布清单：$cardAssetManifestPath" }
@@ -219,8 +225,9 @@ try {
         throw "优化卡图发布清单必须为完整 schema v3（324 张可玩卡 + 42 张展示版本）内容寻址版本"
     }
     $cardAssetsHash = [string]$cardAssetManifest.assetVersion
-    $catalogRoot = Join-Path $repoRoot "服务端WebSocket\TwelveLegions\Data"
-    Invoke-External node ".\opcgpro-vue\scripts\audit-l12-card-cdn.mjs" --root $CardAssetDirectory --catalog-files "$catalogRoot\cards.s1.json;$catalogRoot\cards.s2.json;$catalogRoot\cards.st.json" --presentation-catalog "$catalogRoot\card-archive-assets.json"
+    $catalogRoot = Join-Path $repoRoot '服务端WebSocket/TwelveLegions/Data'
+    $catalogFiles = (@('cards.s1.json','cards.s2.json','cards.st.json') | ForEach-Object { Join-Path $catalogRoot $_ }) -join ';'
+    Invoke-External node (Join-Path $repoRoot 'opcgpro-vue/scripts/audit-l12-card-cdn.mjs') --root $CardAssetDirectory --catalog-files $catalogFiles --presentation-catalog (Join-Path $catalogRoot 'card-archive-assets.json')
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
     $artifactDirectory = Join-Path $OutputDirectory $commit
@@ -231,7 +238,7 @@ try {
         if ($ProductionBaseCommit -notmatch '^[0-9a-f]{40}$') { throw "正式服基线提交格式错误：$ProductionBaseCommit" }
         $effectiveReleaseBaseCommit = $ProductionBaseCommit.ToLowerInvariant()
         $releaseSummary = Join-Path $artifactDirectory "player-release-$effectiveReleaseBaseCommit-$commit.json"
-        Invoke-External node ".\scripts\release-ledger.mjs" release --repo $repoRoot `
+        Invoke-External node (Join-Path $repoRoot 'scripts/release-ledger.mjs') release --repo $repoRoot `
             --from $effectiveReleaseBaseCommit --to $commit --output $generatedPlayerRelease --summary $releaseSummary
     }
     else {
@@ -265,30 +272,22 @@ try {
     # Windows junctions. Keep the release gate serial so their process-wide pools
     # and temporary paths cannot race during teardown.
     $ruleTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=rules.trx", "--results-directory", $evidenceDirectory) }
-    Invoke-TimedExternal "rules" dotnet test ".\TwelveLegions.Tests\TwelveLegions.Tests.csproj" --configuration Release `
+    Invoke-TimedExternal "rules" dotnet test (Join-Path $repoRoot 'TwelveLegions.Tests/TwelveLegions.Tests.csproj') --configuration Release `
         @ruleTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
     Write-Host "[L12 验证] 运行平台持久化测试..."
     # 退役邮箱测试由项目文件显式排除；有效账号与隐私测试仍在平台套件中全量运行。
     $platformTrxArguments = if ($trxOmittedForBudget) { @() } else { @("--logger", "trx;LogFileName=platform.trx", "--results-directory", $evidenceDirectory) }
-    Invoke-TimedExternal "platform" dotnet test ".\TwelveLegions.Platform.Tests\TwelveLegions.Platform.Tests.csproj" --configuration Release `
+    Invoke-TimedExternal "platform" dotnet test (Join-Path $repoRoot 'TwelveLegions.Platform.Tests/TwelveLegions.Platform.Tests.csproj') --configuration Release `
         @platformTrxArguments '--' 'xUnit.ParallelizeTestCollections=false'
-    Invoke-TimedExternal "deployment-drain-consumer" python -B ".\scripts\test-l12-deployment-drain-consumer.py"
+    Invoke-TimedExternal "deployment-drain-consumer" $pythonExecutable -B (Join-Path $repoRoot 'scripts/test-l12-deployment-drain-consumer.py')
 
     Write-Host "[L12 验证] 在隔离目录安装锁定依赖并构建前端..."
     $frontendSourceRoot = Join-Path $repoRoot "opcgpro-vue"
     $frontendWorkspaceDirectory = Join-Path $artifactDirectory "frontend-work-$([Guid]::NewGuid().ToString('N'))"
     $frontendBuildDirectory = Join-Path $frontendWorkspaceDirectory "opcgpro-vue"
     New-Item -ItemType Directory -Path $frontendBuildDirectory -Force | Out-Null
-    $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
-    if ($null -ne $robocopy) {
-        & $robocopy.Source $frontendSourceRoot $frontendBuildDirectory /E `
-            /XD (Join-Path $frontendSourceRoot "node_modules") (Join-Path $frontendSourceRoot "dist") (Join-Path $frontendSourceRoot "dist-testrun") (Join-Path $frontendSourceRoot "public\cards") `
-            /NFL /NDL /NJH /NJS /NC /NS | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "复制隔离前端构建目录失败（robocopy 退出码 $LASTEXITCODE）" }
-    }
-    else {
-        throw "Windows 发布验证缺少 robocopy，无法安全隔离开发中的 node_modules"
-    }
+    $null = Copy-L12PlainDirectory -SourceRoot $frontendSourceRoot -DestinationRoot $frontendBuildDirectory `
+        -ExcludedRelativeDirectories @('node_modules','dist','dist-testrun','public/cards')
 
     # 前端契约检查会读取仓库根级的网络冒烟脚本、服务端入口和发布脚本。
     # 隔离工作区必须保留相同的相对目录结构，避免构建依赖开发工作树。
@@ -302,6 +301,7 @@ try {
         @{ Source = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs"; Target = "服务端WebSocket\TwelveLegions\L12WebSocketServer.cs" },
         @{ Source = "ops\windows\Initialize-L12BuildEnvironment.ps1"; Target = "ops\windows\Initialize-L12BuildEnvironment.ps1" },
         @{ Source = "ops\windows\L12GeneratedStorage.ps1"; Target = "ops\windows\L12GeneratedStorage.ps1" },
+        @{ Source = "ops\windows\L12PlainDirectoryCopy.ps1"; Target = "ops\windows\L12PlainDirectoryCopy.ps1" },
         @{ Source = "ops\windows\verify-l12.ps1"; Target = "ops\windows\verify-l12.ps1" },
         @{ Source = "ops\windows\verify-l12-testrun-performance.ps1"; Target = "ops\windows\verify-l12-testrun-performance.ps1" },
         @{ Source = "ops\windows\deploy-l12.ps1"; Target = "ops\windows\deploy-l12.ps1" },
@@ -386,8 +386,8 @@ try {
     New-Item -ItemType Directory -Path $webRoot, $testrunWebRoot, $publishRoot, $scriptsRoot -Force | Out-Null
 
     Write-Host "[L12 验证] 生成服务器兼容的框架依赖发布产物..."
-    Invoke-TimedExternal "server-restore" dotnet restore ".\服务端WebSocket\GrandUMIServer.csproj" --ignore-failed-sources
-    Invoke-TimedExternal "server-publish" dotnet publish ".\服务端WebSocket\GrandUMIServer.csproj" `
+    Invoke-TimedExternal "server-restore" dotnet restore (Join-Path $repoRoot '服务端WebSocket/GrandUMIServer.csproj') --ignore-failed-sources
+    Invoke-TimedExternal "server-publish" dotnet publish (Join-Path $repoRoot '服务端WebSocket/GrandUMIServer.csproj') `
         --configuration Release --self-contained false --output $publishRoot --no-restore
     $nativeRuntimesRoot = Join-Path $publishRoot "runtimes"
     if (-not (Test-Path -LiteralPath (Join-Path $nativeRuntimesRoot "linux-x64"))) {
@@ -435,19 +435,8 @@ try {
     $frontendCardsRoot = Join-Path $frontendDistRoot "cards"
     $frontendTestrunDistRoot = (Resolve-Path (Join-Path $frontendBuildDirectory "dist-testrun")).Path
     $frontendTestrunCardsRoot = Join-Path $frontendTestrunDistRoot "cards"
-    $robocopy = Get-Command "robocopy.exe" -ErrorAction SilentlyContinue
-    if ($null -ne $robocopy) {
-        & $robocopy.Source $frontendDistRoot $webRoot /E /XD $frontendCardsRoot /NFL /NDL /NJH /NJS /NC /NS | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "复制前端产物失败（robocopy 退出码 $LASTEXITCODE）" }
-        & $robocopy.Source $frontendTestrunDistRoot $testrunWebRoot /E /XD $frontendTestrunCardsRoot /NFL /NDL /NJH /NJS /NC /NS | Out-Null
-        if ($LASTEXITCODE -ge 8) { throw "复制测试服前端产物失败（robocopy 退出码 $LASTEXITCODE）" }
-    }
-    else {
-        Copy-Item ".\opcgpro-vue\dist\*" $webRoot -Recurse -Force
-        Remove-Item (Join-Path $webRoot "cards") -Recurse -Force -ErrorAction SilentlyContinue
-        Copy-Item ".\opcgpro-vue\dist-testrun\*" $testrunWebRoot -Recurse -Force
-        Remove-Item (Join-Path $testrunWebRoot "cards") -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    $null = Copy-L12PlainDirectory -SourceRoot $frontendDistRoot -DestinationRoot $webRoot -ExcludedRelativeDirectories @('cards')
+    $null = Copy-L12PlainDirectory -SourceRoot $frontendTestrunDistRoot -DestinationRoot $testrunWebRoot -ExcludedRelativeDirectories @('cards')
     if (Test-Path -LiteralPath (Join-Path $webRoot "cards")) {
         throw "运行包错误包含卡图目录"
     }
