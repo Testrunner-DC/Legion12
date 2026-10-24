@@ -42,7 +42,8 @@ public sealed class ArchitectureP1ContractFreezeTests
         // The separate capability guard below proves all newer state-hash changes.
         var game = CreatePriorProtocolEngine();
         CompleteMulligan(game);
-        var snapshotJson = JsonSerializer.Serialize(game.SnapshotFor(0), WireJson);
+        // Keep this era's byte guard before the separately reviewed placement-row projection.
+        var snapshotJson = JsonSerializer.Serialize(game.SnapshotFor(0) with { LegionPlacementRows = null }, WireJson);
         using var snapshot = JsonDocument.Parse(snapshotJson);
         var morale = snapshot.RootElement.GetProperty("players").EnumerateArray()
             .SelectMany(player => player.GetProperty("morale").EnumerateArray()).ToArray();
@@ -220,10 +221,10 @@ public sealed class ArchitectureP1ContractFreezeTests
     private static ContractManifest Capture(L12GameEngine game)
     {
         var initialState = Sha256(game.SerializeFullState());
-        var player0 = SnapshotHash(game.SnapshotFor(0));
-        var player1 = SnapshotHash(game.SnapshotFor(1));
-        var spectator = SnapshotHash(game.SnapshotForSpectator());
-        var referee = SnapshotHash(game.SnapshotForReferee());
+        var player0 = PriorPlacementRowsSnapshotHash(game.SnapshotFor(0));
+        var player1 = PriorPlacementRowsSnapshotHash(game.SnapshotFor(1));
+        var spectator = PriorPlacementRowsSnapshotHash(game.SnapshotForSpectator());
+        var referee = PriorPlacementRowsSnapshotHash(game.SnapshotForReferee());
         CompleteMulligan(game);
         return new ContractManifest(
             1,
@@ -239,7 +240,7 @@ public sealed class ArchitectureP1ContractFreezeTests
             spectator,
             referee,
             Sha256(game.SerializeFullState()),
-            SnapshotHash(game.SnapshotFor(0)));
+            PriorPlacementRowsSnapshotHash(game.SnapshotFor(0)));
     }
 
     private static L12GameEngine CreateEngine()
@@ -254,6 +255,42 @@ public sealed class ArchitectureP1ContractFreezeTests
 
     private static string SnapshotHash(L12GameSnapshot snapshot)
         => Sha256(JsonSerializer.Serialize(snapshot, WireJson));
+
+    private static string PriorPlacementRowsSnapshotHash(L12GameSnapshot snapshot)
+        => SnapshotHash(snapshot with { LegionPlacementRows = null });
+
+    [Fact]
+    public void LegionPlacementRowsIsTheOnlyReviewedAdditiveSnapshotProjection()
+    {
+        var property = typeof(L12GameSnapshot).GetProperty(nameof(L12GameSnapshot.LegionPlacementRows))!;
+        Assert.Equal(typeof(int[]), property.PropertyType);
+        Assert.Equal(System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            property.GetCustomAttribute<System.Text.Json.Serialization.JsonIgnoreAttribute>()!.Condition);
+        Assert.Equal("0ee35f1a818c800cfe09f0499e32180ed17ff979e984bb18ba008f94362b96e6",
+            SurfaceHash(typeof(L12GameSnapshot)));
+        Assert.Equal("a439e59f5f16ad4dca1daa04c557a6253e6a38a304e883254952bb2477722209",
+            SurfaceHashCore(true, typeof(L12GameSnapshot)));
+
+        var game = CreateEngine();
+        var checkpoint = game.SerializeFullState();
+        var stateHash = game.ComputeStateHash();
+        foreach (var view in new[] { game.SnapshotFor(0), game.SnapshotFor(1),
+                     game.SnapshotForSpectator(), game.SnapshotForReferee(), game.SnapshotForGm(0) })
+        {
+            var current = JsonSerializer.Serialize(view, WireJson);
+            var prior = JsonSerializer.Serialize(view with { LegionPlacementRows = null }, WireJson);
+            var projected = JsonNode.Parse(current)!.AsObject();
+            Assert.Equal(new[] { 0, 1 }, projected["legionPlacementRows"]!.AsArray()
+                .Select(row => row!.GetValue<int>()).ToArray());
+            Assert.True(projected.Remove("legionPlacementRows"));
+            Assert.Equal(prior, projected.ToJsonString(WireJson));
+            Assert.DoesNotContain("legionPlacementRows", prior);
+            Assert.Equal(stateHash, view.StateHash);
+        }
+        Assert.Equal(checkpoint, game.SerializeFullState());
+        Assert.Equal(stateHash, game.ComputeStateHash());
+        Assert.DoesNotContain(nameof(L12GameSnapshot.LegionPlacementRows), checkpoint);
+    }
 
     [Fact]
     public void SusanooDepartureRouteIsTheOnlyReviewedAbilityCatalogChange()
@@ -314,11 +351,16 @@ public sealed class ArchitectureP1ContractFreezeTests
     }
 
     private static string SurfaceHash(params Type[] types)
+        => SurfaceHashCore(false, types);
+
+    private static string SurfaceHashCore(bool includeLegionPlacementRows, params Type[] types)
     {
         var canonical = types.OrderBy(type => type.FullName, StringComparer.Ordinal)
             .SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
                 // Exact additive surface is asserted above; do not rebase prior golden hashes.
                 .Where(property => type != typeof(L12ActionEvent) || property.Name != nameof(L12ActionEvent.PlayerLibraryReturn))
+                .Where(property => includeLegionPlacementRows || type != typeof(L12GameSnapshot)
+                    || property.Name != nameof(L12GameSnapshot.LegionPlacementRows))
                 .OrderBy(property => property.Name, StringComparer.Ordinal)
                 .Select(property => $"{type.FullName}|{property.Name}|{CanonicalType(property.PropertyType)}|"
                     + $"read:{property.GetMethod is not null}|write:{property.SetMethod is not null}"));

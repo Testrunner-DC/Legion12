@@ -471,7 +471,11 @@ public sealed partial class L12GameEngine : IL12MatchKernel
             BuildSessionDisasterSnapshot(viewer, visibility.AllDisasters, displayOnlyCards),
             State.DisasterPreparationStep,
             waitingPrompt, prompts, stack, State.PendingDefense, State.Winner, State.WinnerReason, players, lastAction,
-            recentEvents, spectator || !visibility.LegalActions ? [] : BuildLegalAttackTargets(visibility.DeckOrder ? State.ActivePlayer : viewer), ComputeStateHash());
+            recentEvents, spectator || !visibility.LegalActions ? [] : BuildLegalAttackTargets(visibility.DeckOrder ? State.ActivePlayer : viewer), ComputeStateHash())
+        {
+            LegionPlacementRows = L12ActiveDisasterRules.ForbidsBackRowLegionPlacement(State.ActiveDisaster?.CardId)
+                ? [0] : [0, 1],
+        };
     }
 
     private L12PromptAutoCloseView? ResponseAutoCloseView(L12Prompt prompt, DateTimeOffset serverNowUtc)

@@ -146,14 +146,84 @@ public sealed class CurrentBugIntake20261023Tests(ITestOutputHelper output)
         if (permission == "legion") attacker.CanAttackLegionsOnSummonUntilTurn = game.State.TurnSerial;
         game = RestoreIfRequested(game, restore);
         var master = game.Handle(actor, new("attack", Attacker, Target: new L12AttackTarget("master")));
-        Assert.Equal(permission == "master", master.Accepted);
-        if (!master.Accepted)
+        Assert.False(master.Accepted);
+        Assert.Contains(permission == "master" ? "暴怒之罪" : "刚登场", master.Error);
+        var legion = game.Handle(actor, new("attack", Attacker,
+            Target: new L12AttackTarget("legion", Defender)));
+        Assert.Equal(permission == "legion", legion.Accepted);
+        if (!legion.Accepted) Assert.Contains("刚登场", legion.Error);
+    }
+
+    public static IEnumerable<object[]> RealMasterOnlyEntryCases()
+    {
+        foreach (var cardId in new[] { "S02-0301", "ST04-09" })
+        foreach (var actor in new[] { 0, 1 })
+        foreach (var restore in new[] { false, true })
+        foreach (var target in new[] { "ordinary", "ready-hannibal", "out-of-range", "none" })
+            yield return [cardId, actor, restore, target];
+    }
+
+    [Theory]
+    [MemberData(nameof(RealMasterOnlyEntryCases))]
+    public void WrathSeparatesRealMasterOnlyEntryPermissionFromMandatoryLegionEligibility(
+        string cardId, int actor, bool restore, string target)
+    {
+        var game = Create(actor);
+        var player = game.State.Players[actor];
+        var opponent = game.State.Players[1 - actor];
+        if (target != "none")
+            opponent.Field[target == "out-of-range" ? 1 : 0][0]
+                = Card(target == "ready-hannibal" ? "S02-0516" : "S01-0003", Defender, 1 - actor);
+        game.State.ActiveDisaster = Card("S02-DS05", "entry-wrath", actor);
+        var source = Card(cardId, Attacker, actor);
+        player.Hand.Add(source);
+        for (var index = 0; index < source.Cost; index++)
+            player.Morale.Add(new L12MoraleCard
+            {
+                InstanceId = $"entry-morale-{actor}-{index}", CardId = "S01-03C1",
+            });
+        var played = game.Handle(actor, new("playCard", source.InstanceId, Row: 0, Slot: 0));
+        Assert.True(played.Accepted, played.Error);
+        for (var step = 0; game.State.PendingPrompts.Count > 0 && step < 8; step++)
         {
-            Assert.Contains("刚登场", master.Error);
-            var legion = game.Handle(actor, new("attack", Attacker,
-                Target: new L12AttackTarget("legion", Defender)));
-            Assert.Equal(permission == "legion", legion.Accepted);
+            var prompt = game.State.PendingPrompts[0];
+            Assert.Equal("response", prompt.Kind);
+            var pass = game.Handle(prompt.PlayerIndex, new("resolvePrompt", PromptId: prompt.PromptId, Choice: "pass"));
+            Assert.True(pass.Accepted, pass.Error);
         }
+        Assert.Empty(game.State.PendingPrompts);
+        Assert.Empty(game.State.EffectStack);
+        Assert.Equal(cardId, player.Field[0][0]!.CardId);
+        Assert.Equal(game.State.Round, source.SummonRound);
+        Assert.Equal(game.State.TurnSerial, source.CanAttackMasterOnSummonUntilTurn);
+        Assert.NotEqual(game.State.TurnSerial, source.CanAttackLegionsOnSummonUntilTurn);
+        Assert.False(source.HasCharge);
+
+        game = RestoreIfRequested(game, restore);
+        var before = game.SerializeFullState();
+        var targets = game.SnapshotFor(actor).LegalAttackTargets;
+        var choices = targets.GetValueOrDefault(Attacker) ?? [];
+        Assert.DoesNotContain(Defender, choices);
+        if (target != "none")
+        {
+            var legion = game.Handle(actor, new("attack", Attacker, Target: new L12AttackTarget("legion", Defender)));
+            Assert.False(legion.Accepted);
+            Assert.Contains("刚登场", legion.Error);
+            Assert.Equal(before, game.SerializeFullState());
+        }
+        var master = game.Handle(actor, new("attack", Attacker, Target: new L12AttackTarget("master")));
+        var mustAttackLegion = target == "ordinary";
+        output.WriteLine($"real entry {cardId}, actor={actor}, restore={restore}, target={target}: master={master.Accepted}; error={master.Error}");
+        Assert.Equal(!mustAttackLegion, master.Accepted);
+        Assert.Equal(!mustAttackLegion, choices.Contains("master"));
+        if (mustAttackLegion)
+        {
+            Assert.Contains("暴怒之罪", master.Error);
+            Assert.Equal(before, game.SerializeFullState());
+            Assert.False(game.State.Players[actor].Field[0][0]!.Tapped);
+            Assert.Null(game.State.PendingDefense);
+        }
+        else Assert.Equal("master", game.State.PendingDefense?.Target.Type);
     }
 
     private static L12GameEngine AttackBoard(int actor, string targetCard, bool rested, bool wrath)

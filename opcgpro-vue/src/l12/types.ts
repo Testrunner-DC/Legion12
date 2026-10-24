@@ -273,6 +273,8 @@ export interface GameState {
   lastAction?: ActionEvent | null
   recentEvents?: ActionEvent[]
   legalAttackTargets?: Record<string, string[]>
+  /** Rule-allowed rows only, not complete payment or slot legality. Missing in older snapshots. */
+  legionPlacementRows?: number[]
   stateHash: string
 }
 

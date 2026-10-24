@@ -1,5 +1,11 @@
 # 十二军团任务台账
 
+## 2026-10-24 部署后新反馈续办｜仅本地，不回流24a发布
+
+- 已在来源`L12-牌库界面优化`实际读回人类两条新反馈及“可以，等这次测试服部署之后开始修复”。24a已完成，批准不重问。P0/P1暴怒片只拆登场类型许可与目标本身合法性；真实野猪王/雷神之锤在普通敌军前不能绕过军团优先攻主宰，也不因此获得打军团权限。汉尼拔/阿麦金/隐匿/范围/挑衅等目标边界不放宽，不做卡号特判。来源2叶已冻，Main完整读diff/真实赋予矩阵/严格V2恢复，实核RED45中9失败及最终100/100零失败跳过、源SHA和监督清退，接受focused，不冒新Batch/Release。唯一`D:/GPT/Legion12/artifacts/wrath-summon-target-20261024/main-review.json`。
+- 第二片6叶已返槽冻结：Models／L12GameEngine只读可选`LegionPlacementRows`、types／GameBoard及生命周期/SFC回归；不入权威状态/hash/存档或前端天灾卡号。真实JSON RED4/4→24/24零跳过、原生20双席宽屏鼠标/短横屏touch及全app类型过；Main完整读diff/QA、核原件、看两图，focused接受，非ACK/真机，70console主动阻止请求不冒0。唯一`D:/GPT/Legion12/artifacts/rotten-earth-placement-20261024/main-review.json`。全部8产品/测试叶冻结；Main已接唯一合并映射Batch（新攻击/快照共享面），不重跑分片专项、不建Release/30＋10或重部署24a。记录/Git归Main；两服未动、线上关单0。
+- Main合并已分段接受：原完整规则8414中8411过/3旧P1快照冻结失败/0跳，原ED3FE23F保留；只在测试叶加精确新字段/五角色去字段字节等价/原state/hash守卫，保两旧fixture及原SHA，9/9过。未变产品复用有效前缀，原AST剩余平台2397/2397、性能/361 UI/类型/双Vite一次通过，97948实际exit0、10源前后同、平台临时147227640B已监督清理；两次续办参数缺失均在进程前停止并保原件，不冒新单轮Batch/Release或完整8415全绿。玩家账目回归/272文案过。唯一`D:/GPT/Legion12/artifacts/disaster-legality-integration-20261024/main-acceptance.json`含Git结果，本批不打包/部署/维护/线上关单，真机未验；新开局视觉仍待人类确认。
+
 ## 2026-10-24 测试服部署完成（P2/P3，正式不动）
 
 - 24a348fcb4bc8b684bdc6e1d10350155a1c23577于11:32:08Z上线测试，PID709951；11:34:23Z独验PASS。含已接受的卡面/图鉴、画廊分页与赛季读取、开局/登场/天灾演出、单方判罚及账号按天禁赛。正式3a376f17／PID698071／重启0／维护false不变。359磁盘/12公网文件、四匿名WS、四health、schema10、7项配置及最新备份实核，无账号/对局/统计造数或线上关单。

@@ -439,6 +439,11 @@ const playableIds = computed(() => {
     .map(card => card.instanceId)
 })
 const selectedHandCard = computed(() => me.value.hand?.find(card => card.instanceId === selectedId.value) ?? null)
+const allowedLegionPlacementRows = computed(() => [0, 1].filter(row => (props.game.legionPlacementRows ?? [0, 1]).includes(row)))
+function isLegionPlacementRowAllowed(row: number) { return allowedLegionPlacementRows.value.includes(row) }
+const handPlacementRow = computed(() => isCounter(selectedHandCard.value) ? 1
+  : selectedHandCard.value?.cardType === 'legion' && allowedLegionPlacementRows.value.length === 1
+    ? allowedLegionPlacementRows.value[0] : null)
 const promotionFoundationTargetIds = computed(() => {
   const card = selectedHandCard.value
   return card ? promotionFoundationIdsFor(card) : []
@@ -1245,6 +1250,8 @@ function ownSlot(row: number, slot: number, card: Card | null) {
     playArmed.value = false
     return
   }
+  if (mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
+    && !isLegionPlacementRowAllowed(row)) return
   if (card && mode.value === 'play' && playArmed.value && selectedHandCard.value?.cardType === 'legion'
     && row === 1 && isCounter(card)) {
     freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: me.value.playerIndex })
@@ -1319,6 +1326,7 @@ function enemySlot(row: number, slot: number, card: Card | null) {
   if (boardTargetPrompt.value) { if (card) selectBoardTarget(card); return }
   if (hasBlockingPrompt.value) return
   if (mode.value === 'play' && playArmed.value && selectedHandCard.value && isInfiltrator(selectedHandCard.value) && !card) {
+    if (!isLegionPlacementRowAllowed(row)) return
     freeCommand('playCard', { cardInstanceId: selectedHandCard.value.instanceId, row, slot, targetPlayerIndex: enemy.value.playerIndex })
     selectedId.value = null
     playArmed.value = false
@@ -1552,8 +1560,8 @@ function statusTexts(card: Card) {
               :mobile-layout="mobileLandscapeViewport"
               :active="game.activePlayer === viewEnemy.playerIndex && !combat && !(mode === 'attack' && selectedId)" :viewer-player-index="game.you"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewEnemy.playerIndex) && isMyMain && !freeActionBusy"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
-              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewEnemy.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewEnemy.playerIndex) && mode === 'play' && playArmed && (isInfiltrator(selectedHandCard) || selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)) && (selectedHandCard?.cardType !== 'legion' || allowedLegionPlacementRows.length > 0)))"
+              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewEnemy.playerIndex) && mode === 'cavalryMove'"
@@ -1654,8 +1662,8 @@ function statusTexts(card: Card) {
               :turn-serial="game.turnSerial" :round="game.round" :hidden-reveal-card="hiddenRevealCard" :interaction-prompt-active="Boolean(hasBlockingPrompt)"
               :selected-id="selectedId" :selected-ids="supportIds" :actions-enabled="!hasBlockingPrompt && !readOnly && isControlledPlayer(viewMe.playerIndex) && isMyMain && !freeActionBusy"
               :move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'move'" :free-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'freeMove'" :cavalry-move-mode="isControlledPlayer(viewMe.playerIndex) && mode === 'cavalryMove'"
-              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard))))"
-              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="isCounter(selectedHandCard) ? 1 : null"
+              :placement-mode="!hasBlockingPrompt && (Boolean(gmPlacement && gmPlacement.targetPlayer === viewMe.playerIndex) || (!freeActionBusy && !combat && isMyMain && isControlledPlayer(viewMe.playerIndex) && mode === 'play' && playArmed && (selectedHandCard?.cardType === 'legion' || isCounter(selectedHandCard)) && (selectedHandCard?.cardType !== 'legion' || allowedLegionPlacementRows.length > 0)))"
+              :placement-can-replace-counter="selectedHandCard?.cardType === 'legion'" :placement-row="gmPlacement ? (isCounter(selectedHandCard) ? 1 : null) : handPlacementRow"
               :attack-mode="!combat && mode === 'attack' && Boolean(selectedId)"
               :selection-mode="selectionModeFor(viewMe.playerIndex)" :targetable-ids="targetableIdsFor(viewMe.playerIndex)"
               :prompt-slot-ids="boardSlotTargetPlayerIndex === viewMe.playerIndex ? (boardSlotPrompt?.validChoices ?? []) : []"

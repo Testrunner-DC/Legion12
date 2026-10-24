@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.Json;
 using TwelveLegions.Server;
 using Xunit;
 
@@ -87,6 +88,42 @@ public sealed class DisasterRottenEarthLiveLifecycleTests
         => Catalog.Cards.Values.Where(card => card.IsCounterTactic)
             .OrderBy(card => card.Id, StringComparer.Ordinal)
             .Select(card => new object[] { card.Id });
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(1, false)]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    public void AllowedLegionPlacementRowsAreReadOnlyProjectedForBothPlayersAndDisasterChanges(int viewer, bool restore)
+    {
+        var game = Create();
+        game.State.ActiveDisaster = Card("S01-DS03", "row-projection-rotten-earth", 0);
+        if (restore) game = Restore(game);
+        var before = game.SerializeFullState();
+        var beforeHash = game.SnapshotFor(viewer).StateHash;
+        Assert.Equal(new[] { 0 }, PlacementRows(game, viewer));
+        Assert.Equal(new[] { 0 }, PlacementRows(game, 1 - viewer));
+        Assert.Equal(before, game.SerializeFullState());
+        Assert.Equal(beforeHash, game.SnapshotFor(viewer).StateHash);
+
+        game.State.ActiveDisaster = Card("S01-DS02", "row-projection-next-disaster", 0);
+        if (restore) game = Restore(game);
+        before = game.SerializeFullState();
+        beforeHash = game.SnapshotFor(viewer).StateHash;
+        Assert.Equal(new[] { 0, 1 }, PlacementRows(game, viewer));
+        Assert.Equal(new[] { 0, 1 }, PlacementRows(game, 1 - viewer));
+        Assert.Equal(before, game.SerializeFullState());
+        Assert.Equal(beforeHash, game.SnapshotFor(viewer).StateHash);
+    }
+
+    private static int[] PlacementRows(L12GameEngine game, int viewer)
+    {
+        var snapshot = JsonSerializer.SerializeToElement(game.SnapshotFor(viewer),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.True(snapshot.TryGetProperty("legionPlacementRows", out var rows),
+            "The real wire snapshot must publish authority for ordinary legion placement rows.");
+        return rows.EnumerateArray().Select(row => row.GetInt32()).ToArray();
+    }
 
     [Fact]
     [Trait("L12Evidence", "card:S01-DS03")]

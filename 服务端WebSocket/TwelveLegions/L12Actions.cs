@@ -1033,6 +1033,19 @@ public sealed partial class L12GameEngine
             return false;
         }
 
+        return TryValidateAttackTargetEligibility(playerIndex, attacker, row, target,
+            out attackTarget, out isRanged, out error);
+    }
+
+    // Target eligibility is independent of the attacker's summon-turn permission.
+    // Actual attack commands must still pass TryValidateAttackTarget first.
+    private bool TryValidateAttackTargetEligibility(int playerIndex, L12CardInstance attacker, int row,
+        L12AttackTarget target, out L12CardInstance? attackTarget, out bool isRanged, out string error)
+    {
+        attackTarget = null;
+        isRanged = false;
+        error = string.Empty;
+
         var defender = State.Players[1 - playerIndex];
         if (target.Type == "master")
             return CanAttackMasterTarget(playerIndex, attacker, row, defender, out error);
@@ -1093,9 +1106,10 @@ public sealed partial class L12GameEngine
         {
             var target = defender.Field[targetRow][slot];
             if (target is null) continue;
-            // Only the real legion-target validator defines a mandatory target.
+            // Summon sickness does not erase a mandatory target, but target
+            // protection, range and taunt remain the same as a real attack.
             // The literal legion branch cannot recurse into master validation.
-            if (TryValidateAttackTarget(playerIndex, attacker, row,
+            if (TryValidateAttackTargetEligibility(playerIndex, attacker, row,
                     new L12AttackTarget("legion", target.InstanceId), out _, out _, out _))
                 return true;
         }

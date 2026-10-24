@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-disaster-attack-and-placement",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "天灾下的进攻与出牌位置",
+  "changes": [
+    {
+      "category": "card-effects",
+      "text": "修正〈暴怒之罪〉下〈野猪王〉、〈雷神之锤〉的登场回合进攻判定：范围内有可被进攻的军团时，不能绕过它进攻主宰，也不会额外获得进攻军团的能力。",
+      "paths": ["服务端WebSocket/TwelveLegions/L12Actions.cs"]
+    },
+    {
+      "category": "battle",
+      "text": "〈腐秽大地〉生效时，从手牌普通打出军团只点亮前排，不能选择后排；反击战术仍可正常盖伏在后排。",
+      "paths": [
+        "服务端WebSocket/TwelveLegions/Models.cs",
+        "服务端WebSocket/TwelveLegions/L12GameEngine.cs",
+        "opcgpro-vue/src/l12/types.ts",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}

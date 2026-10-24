@@ -1067,7 +1067,12 @@ public sealed record L12GameSnapshot(
     L12ActionEvent? LastAction,
     L12ActionEvent[] RecentEvents,
     Dictionary<string, string[]> LegalAttackTargets,
-    string StateHash);
+    string StateHash)
+{
+    // Public rule projection only; not a field of the authoritative game state.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int[]? LegionPlacementRows { get; init; }
+}
 
 public sealed record L12Command(
     string Type,

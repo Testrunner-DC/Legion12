@@ -339,6 +339,19 @@
 - 仅新增CurrentBugRuleCorrectness20261023Tests，两Theory×双方×逐命令严格V2共8新例＋既有刘备≤6正控，Main读全叶／实际规则入口后单次9／9过。TRX BDB79D96…，测试9AFCB1B5…；产品DLL仍FE8E，与先前冻结完整8236及平台2230同产品，未重跑或虚称8244新全套。唯一reproduction/rule-correctness-focused-r1/report.json；没有产品、线上状态或历史改写。
 - 两项本地证据已纳唯一work-items，连同三项修复共5条verify-live，余923对象保留；928／10、阶段537／周期629不变。后续只需实际当前部署绑定及既有关单流程，未擅自关闭或让用户再回忆玩家原场景。
 
+## BUG-20261024-ROTTEN-EARTH-PLACEMENT｜Main分段Batch接受，未部署
+
+- 人类确认腐秽期间后排不是军团合法打出位置，却仍亮起。服务端`PlayCard`原已拒绝，前端普通选位仅按空位/可替换反击，军团`placement-row=null`，没有消费规则行约束。仅在快照记录体加可选`LegionPlacementRows`，由原`ForbidsBackRowLegionPlacement`给[0]/[0,1]；不入权威状态/hash/存档、不改位置构造参数。前端不识别天灾卡号，普通军团高亮/本人及潜入点击共用约束；保原盖伏、Prompt/晋升、GM与移动路径，旧字段缺失兼容，不冒完整费用/格子合法性。
+- 四项真实JSON投影RED4/4，改后24/24零失败跳过，双方/严格V2/天灾替换及读取状态Hash不变，旧18生命周期与反击对照保留。Main独读6叶及整个QA、实核TRX1B9E6F19/6E6F6D7F和监督清退；实际全app类型通过。真实两SFC20组双席宽屏鼠标/短横屏touch过：后排空位/替换反击0包、前排/正常盖伏恰1包、旧字段/同挂载新权威/观战0包，pageError0。合成state与假WS发送探针不冒服务器ACK/真机；70console来自主动阻止本地请求，不能称全console0。原QA误判桌面需二次打出而失败的r1保留，仅修脚本真实操作路径。
+- Main已逐看两张最终图，仅前排高亮；唯一`D:/GPT/Legion12/artifacts/rotten-earth-placement-20261024/main-review.json`，20组result164FE63A、两图与type785CC9C2原件保留。6叶冻结，与暴怒片的Main映射验证分段通过，不重复专项或新增Release/30＋10/重部署24a；精确Git结果见合并Main回执，线上关单0。
+- Main完整规则8414中8411过、3旧P1冻结测试因新字段表面/字节改变而失败，原ED3FE23F TRX保留。只改测试叶保原两fixture及原SHA，历史Capture仅去精确可选字段；新独立守卫同时冻结完整新/旧surface、int[]与null-ignore、五角色JSON去字段全字节等价、原权威state/hash不变，原恢复测试仍核完整新投影。该完整类9/9实际过、777D9FBA TRX，产品8源不变；原标准平台2397/2397、性能/361 UI/类型/双Vite后缀实际exit0且10源前后同，不盲重基旧gold、不冒新整轮规则/Batch全绿。唯一合并`disaster-legality-integration-20261024/main-acceptance.json`，无新部署或关单。
+
+## BUG-20261024-WRATH-SUMMON-TARGET｜人类新裁定下Main分段Batch接受，未部署
+
+- 人类指出：野猪王／雷神之锤登场仅能攻主宰，并不消除暴怒的军团优先义务；范围内有本身可被进攻军团时，两类目标均不可进攻。旧`HasMandatoryDisasterLegionTarget`复用完整校验，把进攻方登场失调也当成目标不存在；本次明确纠正旧generic master-only可攻主宰预期，而非把旧绿当裁定。
+- 仅将现唯一校验拆为登场类型许可wrapper＋共享目标eligibility；真正进攻仍先走wrapper，暴怒literal legion只算目标合法性，保隐匿/不可攻/阿麦金/射程/挑衅/天灾限制，无卡号特判/存档变更。全池真实master-only赋予为S02-0301、ST04-09，legion-only及继承/复位消费者不扩权。
+- 同新测试D3BE5A61，旧产品RED45共9失败（真实两卡×双方×严格V2八场＋generic一场），非编译/夹具错；改后一次100/100零失败跳过，含32真实赋予矩阵与原保护、投石车许可、普通贯穿和持续天灾对照。Main完整独读两叶/原方法/真实恢复，逐核TRX E1E61EC4／76B42A7B、最终产品9F85CF03及监督清退；不重复同组、不冒新单轮Batch或部署。唯一`D:/GPT/Legion12/artifacts/wrath-summon-target-20261024/main-review.json`；与腐秽片的Main合并分段验证已通过，精确Git见`disaster-legality-integration-20261024/main-acceptance.json`，线上关单0，24a发布不重开。
+
 ## BUG-20261023-WRATH-LEGAL-TARGET｜本地接受，未部署
 
 - 25fcda37：活跃汉尼拔在真实军团进攻校验中不可被进攻，暴怒的独立“存在目标”判断却漏此限制，导致主宰也被阻断；FAQ24明确非合理目标。双方／严格V2真实Handle两RED、普通军团及休整汉尼拔两正控；不是原玩家局重放。
