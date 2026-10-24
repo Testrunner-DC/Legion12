@@ -14,7 +14,7 @@ if (fixtureStart < 'const entry = `'.length || fixtureEnd < fixtureStart)
   throw new Error('Unable to locate the sanitized GamePage fixture in verify-batch253-visual.mjs')
 
 const fixtureSetup = fixtureSource.slice(fixtureStart, fixtureEnd)
-const entry = "import '/src/l12/mobileViewport.css';\nimport '/src/l12/motion.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { audioPreferences, syncAudioStore } from '/src/l12/audioPreferences.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
+const entry = "import '/src/l12/mobileViewport.css';\nimport '/src/l12/motion.css';\nimport '/src/l12/site/uiSystem.css';\nimport GlobalBugFeedback from '/src/l12/site/GlobalBugFeedback.vue';\nimport { useLandscapeViewport } from '/src/l12/mobileViewport.ts';\nimport { audioPreferences, syncAudioStore } from '/src/l12/audioPreferences.ts';\nimport { ref as viewportRef } from 'vue';\n" + fixtureSetup + `
 // Visual QA may run in a desktop browser with a phone-sized viewport.  This flag
 // only affects the synthetic preview, allowing it to exercise the production
 // touch-landscape branch without changing application runtime detection.
@@ -357,6 +357,7 @@ if(params.has('opening-fixture')){
   const initiative=phase==='Initiative'
   const owner=winner===viewer
   const next={...previewState.game,matchId,phase,revision,you:viewer,activePlayer:firstPlayer,firstPlayer,diceWinner:winner,initiativeRolls:[...rolls],
+   players:previewState.game.players.map(player=>({...player,mulliganDone:phase==='Mulligan'?false:player.mulliganDone})),
    prompts:initiative&&owner?[initiativePrompt(winner,matchId)]:[],
    waitingPrompt:initiative&&!owner?{playerIndex:winner,playerName:previewState.game.players[winner]?.name||'对手',kind:'initiative',waitingSummary:'对手正在选择先攻或后攻'}:null}
   previewState.game=next;l12State.game=next
@@ -372,6 +373,7 @@ if(params.has('opening-fixture')){
   revise(){return publishOpening({revision:(Number(previewState.game.revision)||0)+1})},
   sameMatchPhase(phase){return publishOpening({phase,revision:(Number(previewState.game.revision)||0)+1})},
   nextMatch(matchId,phase='Initiative',{rolls=[6,3],winner=viewer,firstPlayer=winner}={}){return publishOpening({matchId,phase,rolls,winner,firstPlayer,revision:1})},
+  removeMasterAnchors(){const players=previewState.game.players.map(player=>({...player,master:{...player.master,deployedAsLegion:true}}));previewState.game={...previewState.game,players};l12State.game=previewState.game},
   setMotion(next){audioPreferences.animation=next;syncAudioStore();return document.documentElement.dataset.l12Animation},
  }
 }

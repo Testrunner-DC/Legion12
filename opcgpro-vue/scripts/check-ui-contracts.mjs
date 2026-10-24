@@ -973,7 +973,8 @@ const contracts = [
   [playerMat.includes('entry.enabled === false || entry.triggerOnly') && playerMat.includes('.faction-effect-actions button:disabled'), '不可发动与仅触发时发动的效果必须保留可查看文本、灰置且不可点击'],
   [deckEditor.includes('saved-list'), '保留既有牌库编辑器回滚防护'],
   [!deckEditor.includes('STARTER COPY') && !deckEditor.includes('importPreset'), '牌库编辑器不得重新引入 Starter Copy 区块'],
-  [specialAssets.includes('masterProfileUrl') && prompt.includes('masterProfileUrl(player.master.masterId'), '先后手掷骰必须使用官方主宰头像资源'],
+  [prompt.includes('<CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl"')
+    && prompt.includes('class="opening-master-card"'), '先后手开场必须通过既有卡图组件展示权威主宰卡面'],
   [playerMat.includes('godPowerLogoUrl') && specialAssets.includes('olympus-god-power.png'), '神力必须使用官方神力标志'],
   [deckProfile.includes('data-deck-profile') && deckProfile.includes('masterProfileUrl(masterId, fallbackUrl)') && deckProfile.includes('class="deck-profile__portrait"'), '独立主宰头像必须保留共享 Profile 资源读取，不得各自裁切卡面'],
   [privateModeLegalityContract(savedDeckSelector), '大厅共享牌库选择器必须逐副展示当前模式合法性并明确提示无可用牌库'],

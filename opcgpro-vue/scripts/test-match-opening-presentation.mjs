@@ -4,7 +4,9 @@ import ts from 'typescript'
 import { parse } from '@vue/compiler-sfc'
 
 const path = new URL('../src/l12/game/PromptOverlay.vue', import.meta.url)
+const gameBoardPath = new URL('../src/l12/game/GameBoard.vue', import.meta.url)
 const source = readFileSync(path, 'utf8')
+const gameBoardSource = readFileSync(gameBoardPath, 'utf8')
 const parsed = parse(source, { filename: 'PromptOverlay.vue' })
 assert.deepEqual(parsed.errors, [], 'PromptOverlay opening presentation must remain a valid Vue SFC')
 assert.ok(parsed.descriptor.scriptSetup?.content, 'PromptOverlay must retain script setup')
@@ -17,8 +19,8 @@ const style = parsed.descriptor.styles.map(block => block.content).join('\n')
 const scriptAst = ts.createSourceFile('PromptOverlay.ts', script, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
 assert.deepEqual(scriptAst.parseDiagnostics, [], 'PromptOverlay opening script must parse as TypeScript')
 
-assert.match(script, /import \{ masterDeckBannerUrl, masterProfileUrl \} from '\.\.\/specialAssets'/,
-  'the opening and deck cover must share the formal master banner registry')
+assert.doesNotMatch(script, /masterDeckBannerUrl|masterProfileUrl/,
+  'the opening must use the real master card face instead of a separate banner/profile treatment')
 assert.match(script, /const initiativeViewer = computed\(\(\) => props\.game\.players\.find\(player => player\.playerIndex === props\.game\.you\)/,
   'left/right identity must belong to the actual viewer instead of the sandbox-controlled actor')
 assert.match(script, /\.\.\.props\.game\.players\.filter\(player => player\.playerIndex !== initiativeViewer\.value\.playerIndex\),\s*initiativeViewer\.value/,
@@ -54,6 +56,21 @@ function runtimeFunction(name, bindings = {}) {
   return scope.__result
 }
 
+{
+  let queried = false
+  const offsets = { value: { 0: { x: 1, y: 1, scale: 1 } } }
+  const syncTargets = runtimeFunction('syncMasterTargets', {
+    nextTick(callback) { callback() },
+    openingStage: { value: { getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), querySelector() { queried = true; throw new Error('deployed master must not query a landing card') } } },
+    initiativePlayers: { value: [{ playerIndex: 0, master: { deployedAsLegion: true } }] },
+    document: { querySelector() { queried = true; throw new Error('deployed master must not query a zone anchor') } },
+    masterTargetOffsets: offsets,
+  })
+  syncTargets()
+  assert.equal(queried, false, 'a master already deployed as a legion must not use the persistent master placeholder as a landing target')
+  assert.deepEqual(offsets.value, {}, 'the previous match landing target must be cleared for a deployed master')
+}
+
 function executeDiceStart(animation, reduced = false) {
   let timeoutDelay = null
   let intervalStarts = 0
@@ -71,6 +88,7 @@ function executeDiceStart(animation, reduced = false) {
     setTimeout(callback, delay) { timeoutDelay = delay; return 12 },
     window: { matchMedia: () => ({ matches: reduced }) },
     l12AnimationDuration: standard => animation === 'off' ? 0 : animation === 'fast' ? Math.round(standard * .55) : standard,
+    syncMasterTargets() {},
     settleInitiativeDice() { settles += 1; return true },
   })
   start()
@@ -148,12 +166,19 @@ initialLaterPhase.lifecycle.transition({ matchId: 'B', phase: 'Mulligan' })
 assert.equal(initialLaterPhase.state.message, '', 'opening a match in a later phase must not backfill a result')
 assert.equal(initialLaterPhase.state.starts, 0)
 
-assert.equal((template.match(/data-ui-contract="match-opening-stage"/g) || []).length, 2,
-  'the initiative owner and waiting player must share the same opening stage')
-assert.match(template, /class="initiative-master-banner"[\s\S]*masterDeckBannerUrl\(player\.master\.masterId\)[\s\S]*@error="hideBrokenBanner"/,
-  'formal banners need the existing profile fallback when an asset cannot load')
-assert.match(template, /class="initiative-master-profile"[\s\S]*masterProfileUrl\(player\.master\.masterId, player\.master\.masterImageUrl\)/,
-  'master identity must remain visible without a banner')
+assert.equal((template.match(/data-ui-contract="match-opening-stage"/g) || []).length, 1,
+  'the initiative owner and waiting player must share one non-modal opening stage')
+const masterFaceSourcePattern = /class="opening-master-card"[\s\S]*<CardImage :card-id="player\.master\.masterId" :legacy-url="player\.master\.masterImageUrl"/
+assert.match(template, masterFaceSourcePattern,
+  'the opening must fly the real master card face into the current match')
+assert.doesNotMatch(template.replace(':card-id="player.master.masterId"', ':card-id="game.players[0].master.masterId"'), masterFaceSourcePattern,
+  'a hardcoded side cannot lend the current player master identity')
+assert.doesNotMatch(template.replace(':legacy-url="player.master.masterImageUrl"', ':legacy-url="fakeCardFace"'), masterFaceSourcePattern,
+  'an unrelated image cannot lend the authority master fallback')
+assert.match(script, /data-tutorial-anchor="master"\]\[data-tutorial-player-index="\$\{player\.playerIndex\}"\]/,
+  'the card landing must measure the existing player master-zone anchor')
+assert.match(script, /'--master-target-scale': String\(target\?\.scale \?\? 0\)/,
+  'a missing master-zone anchor must retract the presentation card instead of fabricating a landing target')
 assert.match(template, /class="initiative-skip" @click="skipOpeningIntro">跳过演出<\/button>/,
   'the pure entrance must remain locally skippable')
 assert.match(template, /class="initiative-resolution-message" role="status" aria-live="polite"/,
@@ -164,20 +189,36 @@ assert.doesNotMatch(template, /先攻[^<]{0,12}(?:标记|飞向)|后攻[^<]{0,12
   'no first/second marker may fly into or persist in either player area')
 assert.match(template, /:data-tutorial-choice="choice"/,
   'the existing authoritative initiative choice remains the actual interaction')
+assert.doesNotMatch(template, /opening-initiative-panel|initiative-opening-stage/,
+  'the accepted opening must not return to the framed two-banner panel')
+assert.match(template, /class="opening-versus"[^>]*>对阵<\/strong>/,
+  'the centered versus beat must remain plain settlement-style text')
+assert.match(template, /class="mulligan-stage"[\s\S]*你是先手[\s\S]*你是后手[\s\S]*请确认调度的手牌/,
+  'mulligan must explain the player role above the real hand without a modal panel')
+assert.match(template, /data-tutorial-action="keep-all-mulligan"[\s\S]*>全部保留<\/button>[\s\S]*data-tutorial-action="confirm-mulligan"[\s\S]*确认调度/,
+  'mulligan must expose the two approved actions below the hand')
+assert.match(gameBoardSource, /function keepAllMulligan\(\) \{\s*mulliganIds\.value = \[\]\s*freeCommand\('mulligan'\)/,
+  'keep all must atomically submit an explicit empty selection through the existing command')
+assert.match(gameBoardSource, /@mulligan-keep-all="keepAllMulligan"/,
+  'the real board must bind the approved keep-all action')
 
 for (const contract of [
-  '.opening-initiative-panel', '.initiative-opening-stage', '.initiative-master-banner',
-  '.initiative-master-profile', '.initiative-die', '.initiative-clash', '.initiative-resolution-message',
+  '.opening-presentation', '.opening-master-card', '.opening-versus',
+  '.opening-die', '.opening-action', '.mulligan-stage', '.initiative-resolution-message',
 ]) assert.ok(style.includes(contract), `opening style missing: ${contract}`)
 assert.match(style, /\.initiative-skip\{[^}]*min-height:44px/,
   'the skip control must remain a real mobile touch target')
 assert.match(style, /\.initiative-resolution-message\{[^}]*pointer-events:none/,
   'the brief result may not block the following disaster preparation interaction')
+assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.mulligan-stage \.mulligan-card-row\{[^}]*max-height:100%/,
+  'the mulligan hand must override the generic mobile strip cap so fixed-height cards are not clipped')
+assert.match(style, /\.l12-prompt-overlay\.mobile-safe-overlay \.prompt-card-strip\{[^}]*max-height:54vh/,
+  'other mobile prompt strips must retain their bounded scrolling height')
 assert.match(style, /@media\(max-width:900px\) and \(max-height:500px\)/,
   'short landscape battle canvases need a bounded opening layout')
-assert.match(style, /\.initiative-opening-stage\.skipped[^}]*animation:none!important/,
+assert.match(style, /\.opening-presentation\.skipped[^}]*opening-master-card/,
   'skip must end the entrance motion without changing game state')
-assert.match(style, /@media\(prefers-reduced-motion:reduce\)[^{]*\{[^}]*initiative-opening-stage/,
+assert.match(style, /@media\(prefers-reduced-motion:reduce\)[^{]*\{[^}]*opening-master-card/,
   'operating-system reduced motion must disable the new entrance animation')
 assert.match(style, /var\(--l12-animation-scale,1\)/,
   'new opening CSS must consume the existing fast/off animation scale')

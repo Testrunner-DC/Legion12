@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import { useMobileBattleDock } from './mobileBattleDock'
 const mobileDock = useMobileBattleDock()
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Card, DisasterCardView, GameState, Prompt } from '../types'
 import { isHorizontalCardType } from '../cardPresentation'
 import { l12AnimationDuration } from '../audioPreferences'
 import { gameAction, l12State, sandboxAction } from '../net'
-import { masterDeckBannerUrl, masterProfileUrl } from '../specialAssets'
-import { getFactionPresentation } from '../factionPresentation'
 import CardImage from '../CardImage.vue'
 import PromptCardCandidate from './PromptCardCandidate.vue'
 import SetupDecisionClock from './SetupDecisionClock.vue'
@@ -30,6 +28,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   mulliganToggle: [id: string]
   mulliganConfirm: []
+  mulliganKeepAll: []
   focusCard: [card: Card]
   minimizedChange: [minimized: boolean]
   responseTargetsChange: [ids: string[]]
@@ -107,6 +106,8 @@ const diceSettled = ref(false)
 const diceAnimationReadyToSettle = ref(false)
 const openingIntroSkipped = ref(false)
 const initiativeResolutionMessage = ref('')
+const openingStage = ref<HTMLElement | null>(null)
+const masterTargetOffsets = ref<Record<number, { x: number; y: number; scale: number }>>({})
 let diceTimer: ReturnType<typeof setInterval> | null = null
 let diceSettleTimer: ReturnType<typeof setTimeout> | null = null
 const autoCloseRemainingMs = ref(0)
@@ -135,12 +136,47 @@ watch(() => prompt.value?.autoClose
 }, { immediate: true })
 const dieFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 function dieFace(value: number) { return dieFaces[Math.max(1, Math.min(6, value)) - 1] }
+function syncMasterTargets() {
+  nextTick(() => {
+    const stage = openingStage.value
+    if (!stage) return
+    const stageRect = stage.getBoundingClientRect()
+    const next: Record<number, { x: number; y: number; scale: number }> = {}
+    initiativePlayers.value.forEach(player => {
+      if (player.master.deployedAsLegion) return
+      const card = stage.querySelector<HTMLElement>(`[data-opening-player="${player.playerIndex}"]`)
+      const target = document.querySelector<HTMLElement>(`[data-tutorial-anchor="master"][data-tutorial-player-index="${player.playerIndex}"]`)
+      if (!card || !target) return
+      const targetRect = target.getBoundingClientRect()
+      if (!card.offsetWidth || !card.offsetHeight || !targetRect.width || !targetRect.height) return
+      next[player.playerIndex] = {
+        x: targetRect.left + targetRect.width / 2 - (stageRect.left + stageRect.width / 2),
+        y: targetRect.top + targetRect.height / 2 - (stageRect.top + stageRect.height * .46),
+        scale: Math.min(targetRect.width / card.offsetWidth, targetRect.height / card.offsetHeight),
+      }
+    })
+    masterTargetOffsets.value = next
+  })
+}
+function initiativeCardStyle(playerIndex: number) {
+  const mine = playerIndex === props.game.you
+  const target = masterTargetOffsets.value[playerIndex]
+  return {
+    '--opening-start-x': mine ? '90px' : '-90px',
+    '--opening-side-x': mine ? 'clamp(120px, 27vw, 420px)' : 'clamp(-420px, -27vw, -120px)',
+    '--opening-rotation': mine ? '4deg' : '-4deg',
+    '--master-target-x': target ? `${target.x}px` : mine ? 'clamp(120px, 27vw, 420px)' : 'clamp(-420px, -27vw, -120px)',
+    '--master-target-y': target ? `${target.y}px` : '0px',
+    '--master-target-scale': String(target?.scale ?? 0),
+  }
+}
 function startInitiativeDice() {
   if (diceTimer) clearInterval(diceTimer)
   if (diceSettleTimer) clearTimeout(diceSettleTimer)
   diceSettled.value = false
   diceAnimationReadyToSettle.value = false
   openingIntroSkipped.value = false
+  syncMasterTargets()
   const duration = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
     ? 0 : l12AnimationDuration(1250)
   if (duration <= 0) {
@@ -178,15 +214,6 @@ function skipOpeningIntro() {
   diceAnimationReadyToSettle.value = true
   settleInitiativeDice()
 }
-function hideBrokenBanner(event: Event) {
-  if (event.currentTarget instanceof HTMLImageElement) event.currentTarget.hidden = true
-}
-function initiativePlayerStyle(faction: string) {
-  return { '--initiative-accent': getFactionPresentation(faction).color }
-}
-function initiativeFactionLabel(faction: string) {
-  return getFactionPresentation(faction).label
-}
 function initiativeWinnerText() {
   if (!diceSettled.value) return '双方掷骰中'
   const winner = props.game.players.find(player => player.playerIndex === props.game.diceWinner)
@@ -196,6 +223,7 @@ function initiativeWinnerText() {
 function initiativeResultText() {
   const chooser = props.game.players.find(player => player.playerIndex === props.game.diceWinner)
   const role = props.game.firstPlayer === props.game.diceWinner ? '先攻' : '后攻'
+  if (!props.readOnly) return props.game.firstPlayer === props.game.you ? '你是先手' : '你是后手'
   const actor = props.readOnly ? (chooser?.name || `玩家 ${props.game.diceWinner + 1}`)
     : props.game.diceWinner === props.game.you ? '你' : '对手'
   return `${actor}选择${role}`
@@ -272,7 +300,9 @@ onBeforeUnmount(() => {
   stopInitiativeDice()
   initiativeLifecycle.dispose()
   if (autoCloseTimer) clearTimeout(autoCloseTimer)
+  window.removeEventListener('resize', syncMasterTargets)
 })
+onMounted(() => window.addEventListener('resize', syncMasterTargets))
 
 watch(() => JSON.stringify([
   prompt.value?.promptId ?? '',
@@ -811,6 +841,9 @@ const overlayTitle = computed(() => {
   return waitingText()
 })
 const mulliganInstruction = computed(() => mulliganCopy(props.mulliganSelectedIds.length, (l12State.rankedClock?.operationLimitMs ?? 0) > 0))
+function keepAllMulligan() {
+  if (!props.busy) emit('mulliganKeepAll')
+}
 const setupClockPlayerIndex = computed(() => {
   if (isMulliganPhase.value)
     return isMulligan.value ? me.value.playerIndex : props.game.players.find(player => !player.mulliganDone)?.playerIndex ?? null
@@ -1004,7 +1037,42 @@ function kindLabel() {
           :role-label="setupRoleLabel(setupClockPlayerIndex)" />
       </section>
 
-      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'opening-initiative-panel': isInitiative, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
+      <section v-else-if="isInitiative" ref="openingStage" class="opening-presentation" data-ui-contract="match-opening-stage"
+        :class="{ settled: diceSettled, skipped: openingIntroSkipped }" role="region" aria-label="对局开场">
+        <article v-for="player in initiativePlayers" :key="player.playerIndex" class="opening-master-card"
+          :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you }"
+          :data-opening-player="player.playerIndex" :style="initiativeCardStyle(player.playerIndex)">
+          <CardImage :card-id="player.master.masterId" :legacy-url="player.master.masterImageUrl"
+            :alt="player.master.masterName" intent="detail" eager />
+          <div class="opening-master-name"><small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small><strong>{{ player.master.masterName }}</strong></div>
+        </article>
+        <strong class="opening-versus" aria-hidden="true">对阵</strong>
+        <div class="opening-dice-row" aria-label="先后手掷骰结果">
+          <div v-for="player in initiativePlayers" :key="`die-${player.playerIndex}`" class="opening-die"
+            :class="{ winner: diceSettled && game.diceWinner === player.playerIndex }">
+            <small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small>
+            <b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b>
+            <em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em>
+          </div>
+        </div>
+        <div class="opening-action" role="status" aria-live="polite">
+          <template v-if="prompt && diceSettled">
+            <strong>你取得先后手选择权</strong>
+            <span>请选择本局的行动顺序</span>
+            <div>
+              <button v-for="choice in prompt.validChoices" :key="choice" :disabled="l12State.pendingAction"
+                :data-tutorial-choice="choice" @click="resolveChoice(choice)">{{ label(choice) }}</button>
+            </div>
+          </template>
+          <template v-else>
+            <strong>{{ initiativeWinnerText() }}</strong>
+            <span v-if="waitingPrompt && diceSettled">{{ waitingText() }}</span>
+          </template>
+        </div>
+        <button v-if="!diceSettled && !openingIntroSkipped" type="button" class="initiative-skip" @click="skipOpeningIntro">跳过演出</button>
+      </section>
+
+      <section v-else-if="prompt" class="prompt-panel prompt-choice-panel" :class="{ 'prompt-information-panel': true, 'has-card-choices': hasCardChoices, 'single-card-row': isSingleCardRow, 'effect-decision': isEffectDecision }" role="dialog" aria-modal="true" :aria-label="promptTitle">
         <header :class="{ 'effect-decision-header': isEffectDecision }">
           <small v-if="!isPureEffectDecision">{{ kindLabel() }}</small><h2>{{ promptTitle }}</h2>
           <button class="prompt-minimize" aria-label="最小化弹框" title="最小化" @click="minimizePrompt">—</button>
@@ -1023,22 +1091,6 @@ function kindLabel() {
           {{ label(choice) }}：{{ choiceConsequence(choice) }}
         </p>
         <p v-if="autoCloseMessage" class="prompt-auto-close" role="timer" aria-live="polite">{{ autoCloseMessage }}</p>
-        <div v-if="isInitiative" class="initiative-opening-stage" data-ui-contract="match-opening-stage"
-          :class="{ settled: diceSettled, skipped: openingIntroSkipped }">
-          <article v-for="player in initiativePlayers" :key="player.playerIndex"
-            :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you, winner: diceSettled && game.diceWinner === player.playerIndex }"
-            :style="initiativePlayerStyle(player.faction)">
-            <img v-if="masterDeckBannerUrl(player.master.masterId)" class="initiative-master-banner"
-              :src="masterDeckBannerUrl(player.master.masterId)" alt="" aria-hidden="true" @error="hideBrokenBanner" />
-            <span class="initiative-master-wash" aria-hidden="true" />
-            <img class="initiative-master-profile" :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div class="initiative-identity"><small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small><strong>{{ player.master.masterName }}</strong><span>{{ initiativeFactionLabel(player.faction) }}</span></div>
-            <div class="initiative-die"><b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em></div>
-          </article>
-          <div class="initiative-clash" aria-hidden="true"><span>对阵</span></div>
-          <button v-if="!diceSettled && !openingIntroSkipped" type="button" class="initiative-skip" @click="skipOpeningIntro">跳过演出</button>
-          <strong class="initiative-status" role="status" aria-live="polite">{{ initiativeWinnerText() }}</strong>
-        </div>
         <div v-if="isDisasterPreparation" class="disaster-preparation-history" aria-label="天灾准备进度">
           <section v-for="group in disasterHistory" :key="group.key" :class="group.key">
             <header><b>{{ group.label }}</b><span>{{ group.entries.length }}</span></header>
@@ -1208,24 +1260,28 @@ function kindLabel() {
         </footer>
       </section>
 
-      <section v-else-if="isMulligan" class="prompt-panel prompt-choice-panel mulligan-panel has-card-choices" role="dialog" aria-modal="true" aria-label="起始手牌调度">
+      <section v-else-if="isMulligan" class="mulligan-stage" role="region" aria-label="起始手牌调度">
         <header>
-          <small>调度 · {{ game.firstPlayer === me.playerIndex ? '先攻' : '后攻' }}玩家</small><h2>选择要换掉的起始手牌</h2>
-          <button class="prompt-minimize" aria-label="最小化弹框" title="最小化以查看场面" @click="minimizePrompt">—</button>
+          <small>{{ game.firstPlayer === me.playerIndex ? '你是先手' : '你是后手' }}</small>
+          <h2>请确认调度的手牌</h2>
+          <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
+            :role-label="setupRoleLabel(setupClockPlayerIndex)" />
         </header>
-        <SetupDecisionClock :player-index="setupClockPlayerIndex" :phase="game.phase" :ranked-clock="l12State.rankedClock"
-          :role-label="setupRoleLabel(setupClockPlayerIndex)" />
-        <main class="prompt-choice-body" data-ui-contract="mobile-choice-scroll-body">
-           <p class="prompt-instruction">{{ mulliganInstruction }}</p>
-          <div class="prompt-choices prompt-card-strip">
+        <p class="mulligan-instruction">{{ mulliganInstruction }}</p>
+        <div class="mulligan-card-row prompt-card-strip" data-ui-contract="mobile-choice-scroll-body">
           <PromptCardCandidate v-for="card in me.hand" :key="card.instanceId"
             :data-tutorial-mulligan-card="card.instanceId"
             :card-id="card.cardId" :legacy-url="card.imageUrl" :name="card.name" meta="手牌"
             :horizontal="isHorizontalCardType(card.cardType)" :selected="mulliganSelectedIds.includes(card.instanceId)"
             @focus="focusChoice(card.instanceId)" @select="emit('mulliganToggle', card.instanceId)"/>
+        </div>
+        <footer data-ui-contract="equal-action-group">
+          <span>已选 {{ mulliganSelectedIds.length }} 张</span>
+          <div>
+            <button :disabled="busy" data-tutorial-action="keep-all-mulligan" @click="keepAllMulligan">全部保留</button>
+            <button class="primary" data-tutorial-action="confirm-mulligan" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : '确认调度' }}</button>
           </div>
-        </main>
-        <footer class="prompt-action-footer" data-ui-contract="equal-action-group"><span>已选 {{ mulliganSelectedIds.length }} 张</span><button class="primary" data-tutorial-action="confirm-mulligan" :disabled="busy" @click="emit('mulliganConfirm')">{{ busy ? '处理中…' : mulliganSelectedIds.length ? `换掉所选 ${mulliganSelectedIds.length} 张` : '保留全部手牌' }}</button></footer>
+        </footer>
       </section>
 
       <section v-else class="prompt-panel waiting-panel" role="status">
@@ -1239,22 +1295,6 @@ function kindLabel() {
                <CardImage v-else :card-id="entry.card.cardId || ''" :legacy-url="entry.card.imageUrl" :alt="entry.card.name || '天灾'" intent="detail" eager/><span>{{ entry.card.name || '未揭示天灾' }}</span><small>{{ entry.note }}</small>
             </button><p v-if="!group.entries.length">等待本阶段结果</p></div>
           </section>
-        </div>
-        <div v-if="isInitiative" class="initiative-opening-stage" data-ui-contract="match-opening-stage"
-          :class="{ settled: diceSettled, skipped: openingIntroSkipped }">
-          <article v-for="player in initiativePlayers" :key="player.playerIndex"
-            :class="{ mine: player.playerIndex === game.you, opponent: player.playerIndex !== game.you, winner: diceSettled && game.diceWinner === player.playerIndex }"
-            :style="initiativePlayerStyle(player.faction)">
-            <img v-if="masterDeckBannerUrl(player.master.masterId)" class="initiative-master-banner"
-              :src="masterDeckBannerUrl(player.master.masterId)" alt="" aria-hidden="true" @error="hideBrokenBanner" />
-            <span class="initiative-master-wash" aria-hidden="true" />
-            <img class="initiative-master-profile" :src="masterProfileUrl(player.master.masterId, player.master.masterImageUrl)" :alt="player.master.masterName" />
-            <div class="initiative-identity"><small>{{ player.playerIndex === game.you ? '你' : '对手' }}</small><strong>{{ player.master.masterName }}</strong><span>{{ initiativeFactionLabel(player.faction) }}</span></div>
-            <div class="initiative-die"><b>{{ dieFace(animatedRolls[player.playerIndex] ?? 1) }}</b><em>{{ animatedRolls[player.playerIndex] ?? 1 }} 点</em></div>
-          </article>
-          <div class="initiative-clash" aria-hidden="true"><span>对阵</span></div>
-          <button v-if="!diceSettled && !openingIntroSkipped" type="button" class="initiative-skip" @click="skipOpeningIntro">跳过演出</button>
-          <strong class="initiative-status" role="status" aria-live="polite">{{ initiativeWinnerText() }}</strong>
         </div>
         <small>{{ isMulliganPhase ? '调度' : waitingDefense ? '进攻结算' : '对手操作' }}</small>
         <h2>{{ isMulliganPhase ? overlayTitle : waitingText() }}</h2>
@@ -1302,25 +1342,21 @@ function kindLabel() {
 .disaster-preparation-history{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 12px;padding:9px;border:1px solid #3c4646;background:#080c0d;text-align:left}.disaster-preparation-history>section{min-width:0;border:1px solid #394240;background:#101516}.disaster-preparation-history>section>header{display:flex;align-items:center;justify-content:space-between;padding:6px 8px;border-bottom:1px solid #333c3a}.disaster-preparation-history>section>header b{font-size:var(--l12-board-copy,13px)}.disaster-preparation-history>section>header span{display:grid;width:19px;height:19px;place-items:center;background:#232a28;color:#fff;font:900 var(--l12-board-copy,13px) monospace}.disaster-preparation-history>section>div{display:flex;min-height:78px;align-items:center;gap:5px;overflow-x:auto;padding:6px}.disaster-preparation-history button{display:flex;width:112px;min-width:112px;flex-direction:column;gap:3px;padding:3px;border:2px solid #68706d;background:#080b0c;color:#fff}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:102px;height:auto;aspect-ratio:8/5}.disaster-preparation-history button span{overflow:hidden;font-size:var(--l12-board-copy,13px);font-weight:900;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history p{margin:auto;color:#626b68;font-size:var(--l12-board-copy,13px)}.disaster-preparation-history .banned button{border-color:#a83c46;box-shadow:0 0 8px rgba(168,60,70,.22)}.disaster-preparation-history .banned>header b{color:#ef7780}.disaster-preparation-history .revealed button{border-color:#d1b76c;box-shadow:0 0 8px rgba(209,183,108,.2)}.disaster-preparation-history .revealed>header b{color:#e8cf83}.disaster-preparation-history .chosen button{border-color:#3f9d73;box-shadow:0 0 8px rgba(63,157,115,.24)}.disaster-preparation-history .chosen>header b{color:#79d2a7}.l12-prompt-overlay.preparation .waiting-panel{width:min(1100px,calc(100vw - 36px));padding:16px 20px 22px}.l12-prompt-overlay.preparation .waiting-panel>small{display:block;margin-top:12px}
 .disaster-preparation-history{grid-template-columns:minmax(260px,.8fr) minmax(420px,1.2fr)}.disaster-preparation-history button small{display:block;width:100%;overflow:hidden;color:#9ca6a1;font-size:var(--l12-board-copy,13px);font-weight:900;text-align:center;text-overflow:ellipsis;white-space:nowrap}.disaster-preparation-history .chosen button small{color:#78d1a6}
 @media(max-width:700px){.disaster-preparation-history{grid-template-columns:1fr;max-height:260px;overflow:auto}.disaster-preparation-history>section>div{min-height:68px}.disaster-preparation-history button{width:96px;min-width:96px}.disaster-preparation-history img,.disaster-preparation-history .l12-card-image{width:86px}}
-.l12-prompt-overlay.initiative .prompt-panel.opening-initiative-panel{width:min(920px,calc(100vw - 36px));padding:18px}
-.initiative-opening-stage{position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;min-height:214px;margin:10px 0 14px;padding-bottom:34px;isolation:isolate;overflow:hidden}
-.initiative-opening-stage article{--initiative-accent:#b4b2af;position:relative;isolation:isolate;display:grid;min-width:0;min-height:178px;align-content:end;overflow:hidden;border:2px solid color-mix(in srgb,var(--initiative-accent) 62%,#4c5553);background:linear-gradient(135deg,color-mix(in srgb,var(--initiative-accent) 28%,#11191b),#080c0d 68%);box-shadow:inset 0 0 32px rgba(0,0,0,.66);animation:initiative-opponent-enter calc(480ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.8,.2,1) both}
-.initiative-opening-stage article.mine{animation-name:initiative-mine-enter}.initiative-opening-stage article.winner{border-color:#e4bd58;box-shadow:0 0 20px rgba(228,189,88,.42),inset 0 0 30px color-mix(in srgb,var(--initiative-accent) 20%,transparent)}
-.initiative-master-banner{position:absolute;z-index:-1;inset:0;width:100%;height:100%;object-fit:cover;opacity:.88;pointer-events:none}.initiative-master-wash{position:absolute;z-index:-2;inset:0;background:radial-gradient(circle at 72% 20%,color-mix(in srgb,var(--initiative-accent) 52%,transparent),transparent 58%),linear-gradient(120deg,#12191b,#050809)}
-.initiative-opening-stage article::after{content:'';position:absolute;z-index:-1;inset:0;background:linear-gradient(0deg,rgba(2,5,6,.94),rgba(2,5,6,.08) 72%),linear-gradient(90deg,rgba(2,5,6,.45),transparent 56%);pointer-events:none}
-.initiative-master-profile{position:absolute;z-index:1;top:12px;width:66px;height:66px;object-fit:cover;border:2px solid color-mix(in srgb,var(--initiative-accent) 70%,#ddd);background:#090d0e;box-shadow:0 8px 18px #000}.initiative-opening-stage article.opponent .initiative-master-profile{left:12px}.initiative-opening-stage article.mine .initiative-master-profile{right:12px}
-.initiative-identity{position:relative;z-index:2;display:grid;min-width:0;gap:2px;padding:12px 14px;text-shadow:0 2px 7px #000}.initiative-opening-stage article.mine .initiative-identity{text-align:right}.initiative-identity small{color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.12em}.initiative-identity strong{overflow:hidden;color:#fff;font-size:max(20px,var(--l12-board-copy,13px));line-height:1.25;text-overflow:ellipsis;white-space:nowrap}.initiative-identity span{color:#d1d8d3;font-size:var(--l12-board-copy,13px);font-weight:800}
-.initiative-die{position:absolute;z-index:3;top:48%;display:grid;width:68px;justify-items:center;transform:translateY(-50%)}.initiative-opening-stage article.opponent .initiative-die{right:12px}.initiative-opening-stage article.mine .initiative-die{left:12px}.initiative-die b{color:#fff;font-size:max(58px,var(--l12-board-copy,13px));line-height:.9;text-shadow:0 4px 14px #000;animation:dice-shake calc(180ms * var(--l12-animation-scale,1)) infinite alternate}.initiative-opening-stage.settled .initiative-die b{animation:dice-land calc(320ms * var(--l12-animation-scale,1)) ease-out}.initiative-die em{margin-top:4px;padding:2px 6px;border:1px solid rgba(228,189,88,.62);background:rgba(4,7,8,.82);color:#f4d778;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900;white-space:nowrap}
-.initiative-clash{position:absolute;z-index:5;left:50%;top:43%;display:grid;width:62px;height:62px;place-items:center;border:2px solid #e5c56f;background:#0b0e0f;box-shadow:0 0 0 5px rgba(4,7,8,.72),0 0 28px rgba(229,197,111,.42);color:#fff0bd;transform:translate(-50%,-50%) rotate(45deg);animation:initiative-clash-enter calc(420ms * var(--l12-animation-scale,1)) calc(240ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.8,.2,1) both}.initiative-clash span{font-size:max(16px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.08em;transform:rotate(-45deg)}
-.initiative-skip{position:absolute;z-index:7;right:0;bottom:0;box-sizing:border-box;min-width:96px;min-height:44px;padding:7px 12px;border:1px solid #7e8985;background:#111718;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900}.initiative-skip:hover,.initiative-skip:focus-visible{border-color:#70d7df;background:#174e54}
-.initiative-status{position:absolute;z-index:6;left:50%;bottom:2px;max-width:calc(100% - 210px);overflow:hidden;padding:6px 12px;border:1px solid #8c7650;background:rgba(7,10,11,.94);box-shadow:0 6px 18px #000;color:#fff2c7;font-size:var(--l12-board-copy,13px);text-align:center;text-overflow:ellipsis;white-space:nowrap;transform:translateX(-50%)}
-.initiative-opening-stage.skipped article,.initiative-opening-stage.skipped .initiative-clash{animation:none!important}.initiative-opening-stage.skipped .initiative-die b{animation:none!important}
-.initiative-resolution-message{position:fixed;z-index:2147483650;left:50%;top:50%;max-width:min(520px,calc(100vw - 32px));padding:14px 22px;border:2px solid #e4bd58;background:rgba(7,10,11,.96);box-shadow:0 0 32px rgba(228,189,88,.34),0 14px 34px #000;color:#fff2c7;font-size:max(22px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.06em;text-align:center;transform:translate(-50%,-50%);pointer-events:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:opacity calc(160ms * var(--l12-animation-scale,1)) ease,transform calc(160ms * var(--l12-animation-scale,1)) ease}.initiative-result-enter-from,.initiative-result-leave-to{opacity:0;transform:translate(-50%,-45%) scale(.96)}
-@keyframes initiative-opponent-enter{from{opacity:0;transform:translateX(-34px);filter:brightness(.4)}to{opacity:1;transform:none;filter:none}}@keyframes initiative-mine-enter{from{opacity:0;transform:translateX(34px);filter:brightness(.4)}to{opacity:1;transform:none;filter:none}}@keyframes initiative-clash-enter{from{opacity:0;transform:translate(-50%,-50%) rotate(45deg) scale(.45)}to{opacity:1;transform:translate(-50%,-50%) rotate(45deg) scale(1)}}
-@media(prefers-reduced-motion:reduce){.initiative-opening-stage article,.initiative-clash,.initiative-die b{animation:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:none!important}}
-@media(max-width:900px) and (max-height:500px){.l12-prompt-overlay.initiative .prompt-panel.opening-initiative-panel{padding:10px}.initiative-opening-stage{min-height:132px;margin:4px 0 7px;padding-bottom:28px;gap:8px}.initiative-opening-stage article{min-height:104px}.initiative-master-profile{top:7px;width:44px;height:44px}.initiative-opening-stage article.opponent .initiative-master-profile{left:7px}.initiative-opening-stage article.mine .initiative-master-profile{right:7px}.initiative-identity{padding:7px 9px}.initiative-identity strong{font-size:max(15px,var(--l12-board-copy,13px))}.initiative-die{top:45%;width:48px}.initiative-opening-stage article.opponent .initiative-die{right:6px}.initiative-opening-stage article.mine .initiative-die{left:6px}.initiative-die b{font-size:max(42px,var(--l12-board-copy,13px))}.initiative-die em{font-size:var(--l12-board-micro,9px)}.initiative-clash{top:40%;width:42px;height:42px}.initiative-clash span{font-size:var(--l12-board-copy,13px)}.initiative-status{bottom:0;max-width:calc(100% - 190px);padding:4px 8px}.initiative-skip{min-width:88px;min-height:44px;padding:5px 8px}.l12-prompt-overlay.initiative .prompt-choices{min-height:52px}.l12-prompt-overlay.initiative .prompt-choices>button{min-height:48px}}
+.opening-presentation{position:relative;width:100%;height:100%;isolation:isolate;overflow:hidden;color:#fff;pointer-events:none}
+.opening-master-card{position:absolute;z-index:4;left:50%;top:46%;display:grid;width:clamp(150px,19vw,250px);gap:7px;justify-items:center;filter:drop-shadow(0 18px 20px rgba(0,0,0,.72));transform-origin:center;animation:opening-master-sequence calc(1250ms * var(--l12-animation-scale,1)) cubic-bezier(.2,.75,.2,1) both;pointer-events:none}
+.opening-master-card :deep(.l12-card-image){width:100%;height:auto;aspect-ratio:5/7}.opening-master-card :deep(.l12-card-image__img){object-fit:contain}.opening-master-name{display:grid;max-width:100%;justify-items:center;text-align:center;text-shadow:0 3px 8px #000}.opening-master-name small{color:#76dce3;font-size:var(--l12-board-copy,13px);font-weight:900;letter-spacing:.16em}.opening-master-name strong{max-width:100%;overflow:hidden;color:#fff;font-size:max(16px,var(--l12-board-copy,13px));text-overflow:ellipsis;white-space:nowrap}
+.opening-versus{position:absolute;z-index:7;left:50%;top:43%;color:#fff2c7;font-size:clamp(34px,5vw,70px);font-weight:900;letter-spacing:.18em;text-shadow:0 3px 0 #201707,0 0 18px rgba(228,189,88,.66),0 10px 24px #000;transform:translate(-44%,-50%);animation:opening-versus-sequence calc(1250ms * var(--l12-animation-scale,1)) ease both;pointer-events:none}
+.opening-dice-row{position:absolute;z-index:8;left:50%;top:42%;display:grid;width:min(520px,72vw);grid-template-columns:1fr 1fr;gap:clamp(100px,22vw,260px);transform:translate(-50%,-50%);animation:opening-dice-enter calc(1250ms * var(--l12-animation-scale,1)) ease both}.opening-die{display:grid;justify-items:center;color:#fff;text-shadow:0 4px 14px #000}.opening-die small{color:#cbd5d0;font-size:var(--l12-board-copy,13px);font-weight:900}.opening-die b{font-size:clamp(48px,7vw,82px);line-height:.92;animation:dice-shake calc(180ms * var(--l12-animation-scale,1)) infinite alternate}.opening-die em{margin-top:4px;padding:2px 7px;border:1px solid #8c7650;background:rgba(7,10,11,.9);color:#f4d778;font-size:var(--l12-board-copy,13px);font-style:normal;font-weight:900}.opening-die.winner b{color:#fff2c7;filter:drop-shadow(0 0 12px rgba(228,189,88,.62))}.opening-presentation.settled .opening-die b{animation:dice-land calc(320ms * var(--l12-animation-scale,1)) ease-out}
+.opening-action{position:absolute;z-index:10;left:50%;bottom:clamp(18px,8vh,72px);display:grid;min-width:min(420px,calc(100vw - 32px));justify-items:center;gap:5px;text-align:center;text-shadow:0 3px 9px #000;transform:translateX(-50%);pointer-events:auto}.opening-action>strong{color:#fff2c7;font-size:max(20px,var(--l12-board-copy,13px));font-weight:900}.opening-action>span{color:#d5ddd8;font-size:var(--l12-board-copy,13px);font-weight:800}.opening-action>div{display:grid;width:min(420px,calc(100vw - 32px));grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}.opening-action button,.mulligan-stage footer button{box-sizing:border-box;min-height:48px;padding:9px 18px;border:2px solid #eeeadf;background:#121718;color:#fff;font-size:max(16px,var(--l12-board-copy,13px));font-weight:900}.opening-action button:hover,.opening-action button:focus-visible,.mulligan-stage footer button:hover,.mulligan-stage footer button:focus-visible{border-color:#70d7df;background:#174e54}.opening-action button:disabled,.mulligan-stage footer button:disabled{opacity:.48}
+.initiative-skip{position:absolute;z-index:12;right:14px;bottom:14px;box-sizing:border-box;min-width:96px;min-height:44px;padding:7px 12px;border:1px solid #7e8985;background:#111718;color:#fff;font-size:var(--l12-board-copy,13px);font-weight:900;pointer-events:auto}.initiative-skip:hover,.initiative-skip:focus-visible{border-color:#70d7df;background:#174e54}
+.opening-presentation.settled .opening-master-card{opacity:0;animation:none}.opening-presentation.settled .opening-versus{display:none}.opening-presentation.settled .opening-dice-row{opacity:1;animation:none}.opening-presentation.skipped .opening-master-card,.opening-presentation.skipped .opening-versus{display:none}.opening-presentation.skipped .opening-dice-row{opacity:1;animation:none}
+.initiative-resolution-message{position:fixed;z-index:2147483650;left:50%;top:50%;max-width:min(520px,calc(100vw - 32px));color:#fff2c7;font-size:clamp(32px,5vw,64px);font-weight:900;letter-spacing:.12em;text-align:center;text-shadow:0 3px 0 #201707,0 0 20px rgba(228,189,88,.65),0 12px 28px #000;transform:translate(-46%,-50%);pointer-events:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:opacity calc(160ms * var(--l12-animation-scale,1)) ease,transform calc(160ms * var(--l12-animation-scale,1)) ease}.initiative-result-enter-from,.initiative-result-leave-to{opacity:0;transform:translate(-46%,-45%) scale(.96)}
+.mulligan-stage{display:grid;width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 24px);grid-template-rows:auto auto minmax(0,1fr) auto;gap:8px;color:#fff;text-align:center}.mulligan-stage>header{display:grid;justify-items:center;gap:3px;text-shadow:0 3px 9px #000}.mulligan-stage>header>small{color:#76dce3;font-size:max(16px,var(--l12-board-copy,13px));font-weight:900;letter-spacing:.16em}.mulligan-stage>header h2{margin:0;color:#fff;font-size:clamp(24px,3vw,38px)}.mulligan-instruction{margin:0;color:#cbd5d0;font-size:var(--l12-board-copy,13px);font-weight:800;text-shadow:0 2px 7px #000}.mulligan-card-row{align-items:center;justify-content:safe center;padding:8px 2px 16px}.mulligan-card-row :deep(.prompt-card-candidate.selected){transform:translateY(-14px)}.mulligan-stage footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:10px}.mulligan-stage footer>span{color:#cbd5d0;font-size:var(--l12-board-copy,13px);font-weight:900}.mulligan-stage footer>div{display:grid;width:min(430px,100%);grid-template-columns:1fr 1fr;gap:10px}.mulligan-stage footer button.primary{border-color:#fff;background:#f2eee3;color:#090c0d}
+@keyframes opening-master-sequence{0%{opacity:0;transform:translate(calc(-50% + var(--opening-start-x)),-82vh) rotate(var(--opening-rotation)) scale(.7)}22%{opacity:1;transform:translate(calc(-50% + var(--opening-start-x)),-50%) rotate(var(--opening-rotation)) scale(1.08)}45%,68%{opacity:1;transform:translate(calc(-50% + var(--opening-side-x)),-50%) rotate(var(--opening-rotation)) scale(1)}88%{opacity:1;transform:translate(calc(-50% + var(--master-target-x)),calc(-50% + var(--master-target-y))) rotate(0) scale(var(--master-target-scale))}100%{opacity:0;transform:translate(calc(-50% + var(--master-target-x)),calc(-50% + var(--master-target-y))) rotate(0) scale(var(--master-target-scale))}}@keyframes opening-versus-sequence{0%,30%{opacity:0;transform:translate(-44%,-50%) scale(.72)}42%,64%{opacity:1;transform:translate(-44%,-50%) scale(1)}76%,100%{opacity:0;transform:translate(-44%,-50%) scale(1.08)}}@keyframes opening-dice-enter{0%,68%{opacity:0;transform:translate(-50%,-42%) scale(.8)}82%,100%{opacity:1;transform:translate(-50%,-50%) scale(1)}}
+@media(prefers-reduced-motion:reduce){.opening-master-card,.opening-versus,.opening-dice-row,.opening-die b{animation:none!important}.initiative-result-enter-active,.initiative-result-leave-active{transition:none!important}.opening-master-card,.opening-versus{display:none}.opening-dice-row{opacity:1}}
+@media(max-width:900px) and (max-height:500px){.opening-master-card{width:clamp(96px,14vw,132px)}.opening-master-name{gap:0}.opening-master-name small,.opening-master-name strong{font-size:var(--l12-board-micro,9px)}.opening-dice-row{top:38%;width:min(390px,70vw);gap:clamp(70px,20vw,190px)}.opening-die b{font-size:44px}.opening-action{bottom:8px}.opening-action>strong{font-size:max(17px,var(--l12-board-copy,13px))}.initiative-skip{right:8px;bottom:8px;min-height:46px}.mulligan-stage{width:min(940px,calc(100vw - 16px));max-height:calc(100vh - 12px);gap:3px}.mulligan-stage>header h2{font-size:max(19px,var(--l12-board-copy,13px))}.mulligan-instruction{font-size:var(--l12-board-micro,9px)}.mulligan-card-row{padding:3px 2px 8px}.mulligan-stage footer button{min-height:48px;padding:6px 12px}}
 .l12-prompt-overlay,.l12-prompt-overlay.minimized{z-index:3000!important}
-.l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
+.l12-prompt-overlay.mobile-safe-overlay{inset:var(--l12-viewport-top,0px) auto auto var(--l12-viewport-left,0px)!important;width:var(--l12-viewport-width,100vw)!important;height:var(--l12-viewport-height,100vh)!important;padding:8px!important;overflow:hidden}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel,.l12-prompt-overlay.mobile-safe-overlay .waiting-panel{box-sizing:border-box;max-width:100%!important;max-height:100%;overflow:auto}.l12-prompt-overlay.mobile-safe-overlay .prompt-panel{padding:12px}.l12-prompt-overlay.mobile-safe-overlay .mulligan-stage{box-sizing:border-box;width:min(1040px,calc(var(--l12-viewport-width,100vw) - 16px));height:calc(var(--l12-viewport-height,100vh) - 16px);max-width:100%;max-height:calc(var(--l12-viewport-height,100vh) - 16px);gap:3px}.l12-prompt-overlay.mobile-safe-overlay .mulligan-stage>header h2{font-size:max(19px,var(--l12-board-copy,13px))}.l12-prompt-overlay.mobile-safe-overlay .mulligan-instruction{font-size:var(--l12-board-micro,9px)}.l12-prompt-overlay.mobile-safe-overlay .mulligan-stage .mulligan-card-row{min-height:0;max-height:100%;padding:3px 2px 8px;overflow-x:auto;overflow-y:hidden}.l12-prompt-overlay.mobile-safe-overlay .mulligan-stage footer button{min-height:48px;padding:6px 12px}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip{position:relative;max-height:54vh;overflow-x:auto;overflow-y:hidden;overscroll-behavior-inline:contain;scroll-behavior:smooth;scrollbar-width:none;touch-action:pan-x}.l12-prompt-overlay.mobile-safe-overlay .prompt-card-strip::-webkit-scrollbar{display:none}.l12-prompt-overlay.mobile-safe-overlay.minimized{inset:auto calc(var(--l12-viewport-left,0px) + 8px) calc(var(--l12-viewport-top,0px) + 8px) auto!important;width:auto!important;height:auto!important;padding:0!important}
 /* Natural landscape belongs to the browser. Rotated candidate/history rows
    belong to the single touch owner above; neither direction may be stolen by
    the old pan-x rule. Keep placement workspaces' drag behavior unchanged. */

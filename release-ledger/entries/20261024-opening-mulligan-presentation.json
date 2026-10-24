@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "id": "20261024-opening-mulligan-presentation",
+  "date": "2026-10-24",
+  "audience": "players",
+  "title": "开场与手牌调度",
+  "changes": [
+    {
+      "category": "battle",
+      "text": "对局开场使用双方主宰卡连续演出，掷骰后直接选择先后手；手牌调度改为中央展示，提供“全部保留”和“确认调度”，并适配手机横竖屏。",
+      "paths": [
+        "opcgpro-vue/src/l12/game/PromptOverlay.vue",
+        "opcgpro-vue/src/l12/game/GameBoard.vue"
+      ]
+    }
+  ]
+}
